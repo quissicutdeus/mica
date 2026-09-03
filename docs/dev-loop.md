@@ -194,9 +194,9 @@ pnpm test:migrations
 ```
 
 It starts a throwaway MariaDB container on a free port, imports **both**
-`gphone.sql` and `gphone.esx.sql`, seeds the states a live server can be in,
-runs the migrations, and asserts the result. The container is removed
-afterwards, including on failure.
+`gos.sql` and `gos.esx.sql`, seeds the states a live server can be in, runs the
+migrations, and asserts the result. The container is removed afterwards,
+including on failure.
 
 ### What it proves that `server/__tests__/` cannot
 
@@ -218,7 +218,7 @@ fixture named `3-CIT_VICTIM`, which is the whole argument for the file.
 For each framework shape in turn it creates the owner table the way the
 framework ships it — qb `players`, and ESX `users` with no explicit collation so
 it takes the server default, which is the shape that refused a join in
-MICA-197 — imports the matching `gphone*.sql`, runs the migrator, seeds a few
+MICA-197 — imports the matching `gos*.sql`, runs the migrator, seeds a few
 rows, and calls the real repository methods that name an owner table
 (`ConversationRepository.findForCitizen`, `findParticipantsForConversations`,
 `PlayerDirectory.resolveByPhone` and the rest) through the bundled server code
@@ -226,13 +226,13 @@ with `oxmysql` stubbed by a real client. A statement that only fails against a
 real schema fails here.
 
 Both scripts accept a database from the environment instead of starting Docker:
-set `MICA_DB_HOST`, `MICA_DB_PORT`, `MICA_DB_USER` and
-`MICA_DB_PASSWORD` and they connect there; leave them unset and they start the
-throwaway container as before. Neither has a "no database, nothing to do" branch
-— unreachable is exit 1. That is what lets the `schema` job in
-`.github/workflows/build-test.yml` run both against a MariaDB service container
-on every push, so each path is one script rather than a local one and a CI copy.
-Still not part of `pnpm verify`, for the reason above.
+set `GOS_DB_HOST`, `GOS_DB_PORT`, `GOS_DB_USER` and `GOS_DB_PASSWORD` and they
+connect there; leave them unset and they start the throwaway container as
+before. Neither has a "no database, nothing to do" branch — unreachable is
+exit 1. That is what lets the `schema` job in `.github/workflows/build-test.yml`
+run both against a MariaDB service container on every push, so each path is one
+script rather than a local one and a CI copy. Still not part of `pnpm verify`,
+for the reason above.
 
 ### It drives the real module, deliberately
 
@@ -248,10 +248,10 @@ the ER 1062 bug survived a manual check in the first place — the person runnin
 it had hand-assembled the statements, so their idempotency result described
 their shell history rather than the file on disk.
 
-It also **regresses the schema before migrating**: `gphone.sql` is generated
-from the current declaration, so a fresh import already carries the unique key,
-and both guards would find their work done and skip. The harness drops the
-unique index, restores the old non-unique one and empties the ledger, so what it
+It also **regresses the schema before migrating**: `gos.sql` is generated from
+the current declaration, so a fresh import already carries the unique key, and
+both guards would find their work done and skip. The harness drops the unique
+index, restores the old non-unique one and empties the ledger, so what it
 migrates is a server that has genuinely never run this.
 
 ### A skip is never a pass

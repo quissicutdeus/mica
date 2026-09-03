@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '../support/test';
-import { DEVICES } from '@gphone/shared/devices';
+import { DEVICES } from '@gos/shared/devices';
 
 /**
  * Music, end to end — against a stand-in for YouTube, never YouTube. MICA-111 phase 1.
@@ -41,7 +41,7 @@ const VIDEO = 'dQw4w9WgXcQ';
 const OTHER_VIDEO = 'M7lc1UVf-VE';
 const PLAYLIST = 'PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI';
 
-const PLAYER = 'iframe[title="gPhone music player"]';
+const PLAYER = 'iframe[title="gOS music player"]';
 
 /** `state/display.ts`'s `PHONE_WIDTH`, from the device table; `support/homeGrid.ts` says why. */
 const PHONE_WIDTH = DEVICES.phone.frame.width;
@@ -255,7 +255,7 @@ test.describe('Music', () => {
     expect(url.searchParams.get('controls')).toBe('0');
     expect(url.searchParams.get('disablekb')).toBe('1');
     expect(url.searchParams.get('rel')).toBe('0');
-    // Our own origin, named rather than guessed — in game this is `https://cfx-nui-gphone`
+    // Our own origin, named rather than guessed — in game this is `https://cfx-nui-gos`
     // and is one of the things the in-game procedure checks.
     expect(url.searchParams.get('origin')).toBe(new URL(page.url()).origin);
     expect(src).not.toContain('onload');
@@ -291,7 +291,7 @@ test.describe('Music', () => {
     // "no state ever comes back" rather than an error.
     expect((await received(page))[0]).toEqual({
       event: 'listening',
-      id: 'gphone-music',
+      id: 'gos-music',
       channel: 'widget'
     });
 

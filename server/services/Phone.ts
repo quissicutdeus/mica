@@ -11,7 +11,7 @@ import { isAdmin } from './Admin';
 import { SEED_CHARACTERS } from '../lib/seed';
 import { isBlocked } from './Blocklist';
 
-const EMERGENCY_NUMBER_CONVAR = 'gphone_emergency_number';
+const EMERGENCY_NUMBER_CONVAR = 'gos_emergency_number';
 const DEFAULT_EMERGENCY_NUMBER = '911';
 
 /**
@@ -103,8 +103,8 @@ function endActiveCall(callId: number, endedBy: number): void {
   const call = activeCalls[callId];
   if (!call) return;
 
-  if (call.caller !== endedBy) emitNet('gphone:client:phone:ended', call.caller);
-  if (call.target !== endedBy) emitNet('gphone:client:phone:ended', call.target);
+  if (call.caller !== endedBy) emitNet('gos:client:phone:ended', call.caller);
+  if (call.target !== endedBy) emitNet('gos:client:phone:ended', call.target);
 
   logCallEnd(call);
 
@@ -114,7 +114,7 @@ function endActiveCall(callId: number, endedBy: number): void {
 }
 
 /**
- * `gphonecall` support (MICA-55): a synthetic source nothing real ever holds, so an
+ * `goscall` support (MICA-55): a synthetic source nothing real ever holds, so an
  * injected call's "caller" can never collide with an actual connected player. Recognizable
  * on sight in a console dump, too.
  */
@@ -143,7 +143,7 @@ export function injectIncomingCall(targetSrc: number, callerPhone: string): numb
 
   activeCalls[callId] = call;
   playerCalls[targetSrc] = callId;
-  emitNet('gphone:client:phone:incoming', targetSrc, { from: callerPhone, callId });
+  emitNet('gos:client:phone:incoming', targetSrc, { from: callerPhone, callId });
   return callId;
 }
 
@@ -181,10 +181,10 @@ function failUnreachable(src: number, targetPhone: string): void {
     message: 'Number unavailable',
     key: 'server.phone.numberUnavailable'
   });
-  emitNet('gphone:client:phone:failed', src);
+  emitNet('gos:client:phone:failed', src);
 }
 
-onNet('gphone:server:phone:start', async (rawTarget: unknown) => {
+onNet('gos:server:phone:start', async (rawTarget: unknown) => {
   // Rate limit *and* authenticate, in the order `ServiceEndpoint` uses. Raw `onNet`
   // handlers got neither until this; see `lib/netGuard.ts`.
   const player = guardNetEvent('phone', 'start');
@@ -237,13 +237,13 @@ onNet('gphone:server:phone:start', async (rawTarget: unknown) => {
 
   if (targetSrc === src) {
     notifyPlayer(src, { type: 'error', message: 'Busy', key: 'server.phone.busy' });
-    emitNet('gphone:client:phone:failed', src);
+    emitNet('gos:client:phone:failed', src);
     return;
   }
 
   if (playerCalls[targetSrc] || playerCalls[src]) {
     notifyPlayer(src, { type: 'error', message: 'Line busy', key: 'server.phone.lineBusy' });
-    emitNet('gphone:client:phone:failed', src);
+    emitNet('gos:client:phone:failed', src);
     return;
   }
 
@@ -263,13 +263,13 @@ onNet('gphone:server:phone:start', async (rawTarget: unknown) => {
   playerCalls[targetSrc] = callId;
 
   // Notify receiving player
-  emitNet('gphone:client:phone:incoming', targetSrc, {
+  emitNet('gos:client:phone:incoming', targetSrc, {
     from: callerPhone,
     callId: callId
   });
 });
 
-onNet('gphone:server:phone:answer', () => {
+onNet('gos:server:phone:answer', () => {
   // Rate limit *and* authenticate, in the order `ServiceEndpoint` uses. Raw `onNet`
   // handlers got neither until this; see `lib/netGuard.ts`.
   const player = guardNetEvent('phone', 'answer');
@@ -283,11 +283,11 @@ onNet('gphone:server:phone:answer', () => {
 
   call.answeredAt = Date.now();
 
-  emitNet('gphone:client:phone:accepted', call.caller, { callId });
-  emitNet('gphone:client:phone:accepted', call.target, { callId });
+  emitNet('gos:client:phone:accepted', call.caller, { callId });
+  emitNet('gos:client:phone:accepted', call.target, { callId });
 });
 
-onNet('gphone:server:phone:end', () => {
+onNet('gos:server:phone:end', () => {
   // Rate limit *and* authenticate, in the order `ServiceEndpoint` uses. Raw `onNet`
   // handlers got neither until this; see `lib/netGuard.ts`.
   const player = guardNetEvent('phone', 'end');
@@ -310,7 +310,7 @@ on('playerDropped', () => {
 });
 
 /**
- * `gphonecall` — ring yourself, in game, with one player (MICA-55).
+ * `goscall` — ring yourself, in game, with one player (MICA-55).
  *
  * `Phone.ts`'s own state machine requires a second connected player: `start` refuses a
  * self-call as "Busy", and `getPlayerByPhone` only ever finds someone online. This is
@@ -318,24 +318,24 @@ on('playerDropped', () => {
  * rest of the path (NUI focus, the `callStatus` messages, the pma-voice join on answer)
  * is exactly what a real call drives.
  *
- * `gphonecall [number]`     — ring yourself from an arbitrary number
- * `gphonecall <firstname>`  — ring yourself as a seeded character (`gphoneseed`),
- *                             mirroring `gphoneseed text <firstname>`
- * `gphonecall end`          — force-end your own active call
+ * `goscall [number]`     — ring yourself from an arbitrary number
+ * `goscall <firstname>`  — ring yourself as a seeded character (`gosseed`),
+ *                             mirroring `gosseed text <firstname>`
+ * `goscall end`          — force-end your own active call
  */
 
 const respondCall = (source: number, message: string, type: 'success' | 'error' = 'success') => {
   if (source === 0) {
-    console.log(`[gphonecall] ${message}`);
+    console.log(`[goscall] ${message}`);
     return;
   }
-  notifyPlayer(source, { type, title: 'gphonecall', message });
+  notifyPlayer(source, { type, title: 'goscall', message });
 };
 
 const DEFAULT_TEST_NUMBER = '5550100';
 
 RegisterCommand(
-  'gphonecall',
+  'goscall',
   (source: number, args: string[]) => {
     if (!isAdmin(source)) {
       respondCall(source, 'You do not have permission to use that.', 'error');
@@ -374,14 +374,14 @@ RegisterCommand(
 );
 
 /**
- * The NUI-reachable twin of `gphonecall [number]`, for Settings > Developer Tools'
+ * The NUI-reachable twin of `goscall [number]`, for Settings > Developer Tools'
  * "Simulate Incoming Call" — see `DeveloperTools.svelte`'s `triggerCall`. In a browser
  * that button fakes the toast locally, since there is no server to ask; in game it has
  * to go through here, the same as `applyBatteryLevel` ten lines above it in that file
  * routes through `setBatteryLevel` instead of setting client-only state. Admin-gated
  * independently of whatever the UI shows — a NUI request is not proof of intent (§2.9).
  */
-onNet('gphone:server:phone:simulateIncoming', (rawNumber: unknown) => {
+onNet('gos:server:phone:simulateIncoming', (rawNumber: unknown) => {
   const player = guardNetEvent('phone', 'simulateIncoming');
   if (!player) return;
 

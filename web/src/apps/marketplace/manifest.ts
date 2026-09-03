@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import Icon from './Icon.svelte';
-import { defineApp } from '@gphone/sdk/app';
+import { defineApp } from '@gos/sdk/app';
 
 export default defineApp({
   id: 'marketplace',
@@ -12,6 +12,6 @@ export default defineApp({
   icon: Icon,
   description: 'Buy and sell, no names attached.',
   permissions: ['call', 'marketplace', 'media', 'messages', 'notifications', 'reports'],
-  author: 'gPhone',
+  author: 'gOS',
   core: true
 });

@@ -29,7 +29,7 @@ const setPhoneCharge = (amount: number) => {
 
 const onBatteryDrained = () => {
   // End active phone call if battery dies
-  TriggerServerEvent('gphone:server:phone:end');
+  TriggerServerEvent('gos:server:phone:end');
   try {
     if (exports['pma-voice']?.removePlayerFromCall) {
       exports['pma-voice'].removePlayerFromCall();
@@ -48,12 +48,12 @@ const onBatteryDrained = () => {
 };
 
 // Listen for server recharge events
-onNet('gphone:client:battery:recharge', () => {
+onNet('gos:client:battery:recharge', () => {
   setPhoneCharge(100);
-  TriggerServerEvent('gphone:server:battery:save', 100);
+  TriggerServerEvent('gos:server:battery:save', 100);
 });
 
-onNet('gphone:client:battery:set', (amount: number) => {
+onNet('gos:client:battery:set', (amount: number) => {
   setPhoneCharge(amount);
 });
 
@@ -75,15 +75,15 @@ on('__cfx_nui:setBatteryLevel', (data: { level?: number }, cb: Function) => {
 
   setPhoneCharge(level);
   // Admin-gated, unlike the drain loop's `saveBattery`. The server rejects a caller
-  // without `gphone.admin` and leaves the stored charge alone, so the local value here
+  // without `gos.admin` and leaves the stored charge alone, so the local value here
   // reverts as soon as the next drain tick reports the truth.
-  TriggerServerEvent('gphone:server:admin:setBattery', level);
+  TriggerServerEvent('gos:server:admin:setBattery', level);
   cb({ ok: true, level });
 });
 
 // Load initial battery state on spawn/join
 setTimeout(() => {
-  TriggerServerEvent('gphone:server:battery:load');
+  TriggerServerEvent('gos:server:battery:load');
 }, 1000);
 
 /**

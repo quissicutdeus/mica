@@ -9,19 +9,19 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import Button from './Button.svelte';
   import { useReport } from '../host/useReport';
   import { usePhoneNotification } from '../host/usePhoneNotification';
-  import type { ReportCategory } from '@gphone/shared/types';
+  import type { ReportCategory } from '@gos/shared/types';
   import { messageOf } from '../lib/errors';
   import { focusTrap } from '../lib/focusTrap';
   import { t } from '../i18n';
   import './messages';
 
   interface Props {
-    /** The gPhone table the content lives in. Validated again server-side. */
+    /** The gOS table the content lives in. Validated again server-side. */
     /**
      * The table the reported row lives in, as its service declared it reportable.
      *
      * A plain string, deliberately. It was briefly a union naming every table — which
-     * meant this file, in the SDK that add-ons build *against*, named `gphone_blabber`:
+     * meant this file, in the SDK that add-ons build *against*, named `gos_blabber`:
      * core knowing about an app rather than the other way round, and the reason a
      * third-party app could not have made its own content reportable at all.
      *

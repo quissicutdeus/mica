@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { Button, useLocale } from '@gphone/sdk';
+  import { Button, useLocale } from '@gos/sdk';
 
   /**
    * `oncancel` is optional, and its absence is the point.

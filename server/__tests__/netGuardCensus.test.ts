@@ -10,7 +10,7 @@ import path from 'path';
  * The `onNet` census in `lib/netGuard.ts`'s docblock, checked against the tree.
  *
  * That comment defines the two categories of raw `onNet` handler and is where anyone auditing
- * gPhone's entry points starts. It has now been wrong twice: once when it said eight handlers
+ * gOS's entry points starts. It has now been wrong twice: once when it said eight handlers
  * across three files and named a file with no `onNet` at all, and again when MICA-150 moved
  * `Settings.ts` and `Battery.ts` onto a subscription and left it claiming twelve handlers in
  * three named files, two of which no longer participate.
@@ -110,8 +110,8 @@ const registrations = (): { file: string; event: string }[] => {
   return found;
 };
 
-/** gPhone's own namespace. Anything else is named by a framework, which is the whole point. */
-const isGphoneNamed = (event: string) => event.startsWith('gphone:');
+/** gOS's own namespace. Anything else is named by a framework, which is the whole point. */
+const isGphoneNamed = (event: string) => event.startsWith('gos:');
 
 /**
  * What the documented command actually prints, reproduced including its second stage.
@@ -146,18 +146,18 @@ describe('the onNet census in netGuard.ts is true', () => {
     ).toBe(stated);
   });
 
-  it('finds the number of gphone-named handlers the docblock claims', () => {
-    const stated = statedNumber(/(\w+) are gphone-named/);
+  it('finds the number of gos-named handlers the docblock claims', () => {
+    const stated = statedNumber(/(\w+) are gos-named/);
     expect(handlers.filter((h) => isGphoneNamed(h.event))).toHaveLength(stated);
   });
 
   it('finds them in exactly the files the docblock names', () => {
-    // The prose lists the gphone-named files inline. A handler in a fifth file is an entry
+    // The prose lists the gos-named files inline. A handler in a fifth file is an entry
     // point nobody has audited, which is how this comment went wrong the first time.
     // Up to the backtick that is followed by the sentence's full stop. A naive `[^.]+`
     // stops at the dot inside `Phone.ts` and captures nothing.
-    const sentence = docblock.match(/are gphone-named, across ([\s\S]*?`)\./);
-    expect(sentence, 'netGuard.ts no longer lists the gphone-named files').not.toBeNull();
+    const sentence = docblock.match(/are gos-named, across ([\s\S]*?`)\./);
+    expect(sentence, 'netGuard.ts no longer lists the gos-named files').not.toBeNull();
 
     const named = [...sentence![1].matchAll(/`([^`]+)`/g)].map((m) => m[1]).sort();
     const actual = [
@@ -206,7 +206,7 @@ describe('the onNet census in netGuard.ts is true', () => {
  * **What makes the prose safe to read is that these four claims are structural, not
  * narrative.** Two are `####` headings and two are bold lead-ins, and every number in the
  * page's *narrative* is deliberately excluded by that anchoring — `docs/security.md:88-89`
- * says the census "used to read six" and that "three gphone-named handlers had been added
+ * says the census "used to read six" and that "three gos-named handlers had been added
  * since it was written", and `:156` says "This was three until ESX support landed". All
  * three are true sentences about the past. An unanchored scan for number-words would read
  * them as current claims and punish the page for being well written; these patterns cannot
@@ -214,7 +214,7 @@ describe('the onNet census in netGuard.ts is true', () => {
  */
 describe('the onNet census in docs/security.md is true', () => {
   const handlers = registrations();
-  const gphoneNamed = handlers.filter((h) => isGphoneNamed(h.event));
+  const gosNamed = handlers.filter((h) => isGphoneNamed(h.event));
   const frameworkNamed = handlers.filter((h) => !isGphoneNamed(h.event));
 
   const inDoc = (pattern: RegExp, group = 1) =>
@@ -224,8 +224,8 @@ describe('the onNet census in docs/security.md is true', () => {
   const TOTAL_AND_FILES = /\*\*(\w+), across (\w+) files\*\*/;
   /** `**That prints twelve lines for ten handlers.**` */
   const PRINTS = /\*\*That prints (\w+) lines for (\w+) handlers\.\*\*/;
-  /** `#### gphone-named — nine, every one guarded` */
-  const MICA_HEADING = /^#### gphone-named — (\w+)/m;
+  /** `#### gos-named — nine, every one guarded` */
+  const GOS_HEADING = /^#### gos-named — (\w+)/m;
   /** `#### Framework-named — one, and this is the category that was missing` */
   const FRAMEWORK_HEADING = /^#### Framework-named — (\w+)/m;
 
@@ -245,7 +245,7 @@ describe('the onNet census in docs/security.md is true', () => {
   });
 
   it('heads each category with the count the tree has', () => {
-    expect(inDoc(MICA_HEADING)).toBe(gphoneNamed.length);
+    expect(inDoc(GOS_HEADING)).toBe(gosNamed.length);
     expect(inDoc(FRAMEWORK_HEADING)).toBe(frameworkNamed.length);
   });
 
@@ -254,10 +254,10 @@ describe('the onNet census in docs/security.md is true', () => {
     // the assertion whose failure message says the useful thing, because "the page and the
     // comment disagree" is what a reader actually experiences.
     expect(inDoc(TOTAL_AND_FILES)).toBe(statedNumber(/(\w+) handlers are raw `onNet` listeners/));
-    expect(inDoc(MICA_HEADING)).toBe(statedNumber(/(\w+) are gphone-named/));
+    expect(inDoc(GOS_HEADING)).toBe(statedNumber(/(\w+) are gos-named/));
   });
 
-  const ANCHORS = { TOTAL_AND_FILES, PRINTS, MICA_HEADING, FRAMEWORK_HEADING };
+  const ANCHORS = { TOTAL_AND_FILES, PRINTS, GOS_HEADING, FRAMEWORK_HEADING };
 
   /** The same pattern, global, so every occurrence in the page can be counted. */
   const occurrences = (pattern: RegExp) => [
@@ -294,7 +294,7 @@ describe('the onNet census in docs/security.md is true', () => {
     // and a count in plain prose without the bold markers the anchor requires.
     const narrative = [
       'The census used to read six, in two files, and it was wrong in both directions.',
-      'Two gphone-named handlers had been added since that paragraph was written.',
+      'Two gos-named handlers had been added since that paragraph was written.',
       '**This was three until ESX support landed, and the drop was a real reduction.**',
       'There are ten handlers here, across five files, if you would rather count by hand.'
     ];

@@ -6,8 +6,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { EmptyState, Skeleton, MediaThumb, useLocale, useMarketplace } from '@gphone/sdk';
-  import type { Listing } from '@gphone/shared/types';
+  import { EmptyState, Skeleton, MediaThumb, useLocale, useMarketplace } from '@gos/sdk';
+  import type { Listing } from '@gos/shared/types';
 
   let {
     onselect,

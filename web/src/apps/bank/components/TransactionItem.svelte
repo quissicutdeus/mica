@@ -5,8 +5,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { formatCurrency, formatTimestamp } from '@gphone/sdk';
-  import type { Transaction } from '@gphone/sdk';
+  import { formatCurrency, formatTimestamp } from '@gos/sdk';
+  import type { Transaction } from '@gos/sdk';
 
   let { transaction }: { transaction: Transaction } = $props();
 </script>

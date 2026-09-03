@@ -13,7 +13,7 @@
  * And inbound messages only ever reached the NUI through a **closed table** in
  * `shell/nuiMessages.ts` — nine hardcoded routes. A new app could not join it, and an add-on
  * installed from the Store physically cannot, because apps may import nothing outside
- * `@gphone/sdk` (`sdk/boundary.test.ts`).
+ * `@gos/sdk` (`sdk/boundary.test.ts`).
  */
 
 import { parseDeepLink } from './deepLink';
@@ -22,14 +22,14 @@ import { parseDeepLink } from './deepLink';
  * The one net event every app push travels on.
  *
  * A literal, and deliberately not built from a template. `server/__tests__/eventNames.test.ts`
- * scans for string **literals**, so `gphone:client:${app}:...` would be an *unchecked* name —
+ * scans for string **literals**, so `gos:client:${app}:...` would be an *unchecked* name —
  * whereas one literal here is checked for free by every assertion in that file. `shell` is the
  * right segment because the transport belongs to the phone rather than to any app, exactly as
- * `gphone:client:shell:notify` already does; the target app rides in the envelope.
+ * `gos:client:shell:notify` already does; the target app rides in the envelope.
  */
-export const APP_EVENT_NET_EVENT = 'gphone:client:shell:appEvent';
+export const APP_EVENT_NET_EVENT = 'gos:client:shell:appEvent';
 
-/** The NUI action it becomes. A separate namespace, so no `gphone:` prefix (§8). */
+/** The NUI action it becomes. A separate namespace, so no `gos:` prefix (§8). */
 export const APP_EVENT_NUI_ACTION = 'appEvent';
 
 /** App-defined event names. `*` is reserved for the wildcard subscription. */

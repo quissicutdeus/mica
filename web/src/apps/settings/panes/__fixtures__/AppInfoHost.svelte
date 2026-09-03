@@ -12,7 +12,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * own with a fixed prop can never see the prop go `null` under a running handler.
    */
   import AppInfo from '../AppInfo.svelte';
-  import { registerMessages, type AppManifest } from '@gphone/sdk';
+  import { registerMessages, type AppManifest } from '@gos/sdk';
   import type { Readable } from 'svelte/store';
   import en from '../../locales/en.json';
   import de from '../../locales/de.json';

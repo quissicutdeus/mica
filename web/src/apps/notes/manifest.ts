@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import Icon from './Icon.svelte';
-import { defineApp } from '@gphone/sdk/app';
+import { defineApp } from '@gos/sdk/app';
 
 export default defineApp({
   id: 'notes',
@@ -32,7 +32,7 @@ export default defineApp({
    * refuses a manifest that understates what its code imports.
    */
   devices: ['phone', 'tablet'],
-  // No `author`: it is written in this repo, so it inherits 'gPhone' from defineApp. It
+  // No `author`: it is written in this repo, so it inherits 'gOS' from defineApp. It
   // claimed 'Community' back when that string was what kept it out of the launcher —
   // `core: false` does that now, and the author is free to be true.
   core: false

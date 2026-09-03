@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import Icon from './Icon.svelte';
-import { defineApp } from '@gphone/sdk/app';
+import { defineApp } from '@gos/sdk/app';
 
 export default defineApp({
   id: 'settings',

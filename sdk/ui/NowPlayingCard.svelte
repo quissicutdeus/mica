@@ -27,7 +27,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    *
    * ## Where it lives
    *
-   * `sdk/ui`, exported from `@gphone/sdk/core` rather than `@gphone/sdk`. It is not a
+   * `sdk/ui`, exported from `@gos/sdk/core` rather than `@gos/sdk`. It is not a
    * primitive an add-on has any business with — it is the transport for the phone's *own*
    * player, which is why Music is a `core: true` app in the first place — and the public
    * SDK is a commitment. `core.ts` is the surface for exactly that: reachable by the shell
@@ -69,7 +69,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     MusicSource,
     MusicStatus
   } from '../vocabulary/music';
-  import { thumbnailUrlFor } from '@gphone/shared/youtube';
+  import { thumbnailUrlFor } from '@gos/shared/youtube';
   import { describeMusicError } from '../lib/musicErrors';
   import { t } from '../i18n';
   import './messages';

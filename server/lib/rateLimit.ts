@@ -7,7 +7,7 @@
  *
  * There was nothing here at all: `ServiceEndpoint` authenticates the caller and reduces the
  * payload to an allowlist, and then answers as many requests as arrive. §2.9 already says
- * every field in a `gphone:server:*` payload is attacker-controlled — the *rate* is too, and
+ * every field in a `gos:server:*` payload is attacker-controlled — the *rate* is too, and
  * a client with an executor can spam `create` until the table is the size of the disk.
  *
  * It matters more now than it did a week ago. While every read carried an ownership predicate
@@ -39,7 +39,7 @@ const WINDOW_MS = 60_000;
  */
 const DEFAULT_LIMIT = 60;
 
-const CONVAR = 'gphone_rate_limit';
+const CONVAR = 'gos_rate_limit';
 
 interface Window {
   count: number;

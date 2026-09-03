@@ -45,7 +45,7 @@ export interface DeviceFrame {
 
 export interface DeviceDescriptor {
   id: DeviceId;
-  /** Shown in FiveM's Key Bindings menu and gPhone's own Settings. */
+  /** Shown in FiveM's Key Bindings menu and gOS's own Settings. */
   label: string;
   /**
    * The wordmark the launcher paints over the wallpaper.
@@ -124,7 +124,7 @@ export const DEVICES: Readonly<Record<DeviceId, DeviceDescriptor>> = {
     chrome: { holePunch: true, hardwareButtons: true, lockScreen: true, calls: true, camera: true },
     // `togglePhone` predates the keybind table; players already have it bound.
     keybind: { id: 'openPhone', command: 'togglePhone', defaultKey: 'm' },
-    convars: { enable: null, item: 'gphone_phone_item' },
+    convars: { enable: null, item: 'gos_phone_item' },
     prop: { model: 'prop_npc_phone_02', bone: 28422, offset: [0, 0, 0], rotation: [0, 0, 0] },
     animation: { dict: 'cellphone@', anim: 'cellphone_text_read_base' }
   },
@@ -157,7 +157,7 @@ export const DEVICES: Readonly<Record<DeviceId, DeviceDescriptor>> = {
       camera: false
     },
     keybind: { id: 'openTablet', command: 'toggleTablet', defaultKey: 'F2' },
-    convars: { enable: 'gphone_tablet', item: 'gphone_tablet_item' },
+    convars: { enable: 'gos_tablet', item: 'gos_tablet_item' },
     // Right hand, held flat: the pairing most tablet resources use. Tuned in game by
     // MICA-262; until then these are the numbers to start from, not the answer.
     prop: {

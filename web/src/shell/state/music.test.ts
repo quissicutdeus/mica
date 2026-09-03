@@ -192,9 +192,9 @@ describe('embedUrlFor', () => {
   it('names an http(s) origin and refuses anything else', () => {
     expect(
       new URL(
-        embedUrlFor({ videoId: VIDEO, playlistId: null }, 'https://cfx-nui-gphone')!
+        embedUrlFor({ videoId: VIDEO, playlistId: null }, 'https://cfx-nui-gos')!
       ).searchParams.get('origin')
-    ).toBe('https://cfx-nui-gphone');
+    ).toBe('https://cfx-nui-gos');
     expect(
       new URL(embedUrlFor({ videoId: VIDEO, playlistId: null }, 'nui://game')!).searchParams.get(
         'origin'

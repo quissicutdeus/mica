@@ -24,7 +24,7 @@ import path from 'path';
  * whose comment happens to contain that string answers yes — and is then built as an add-on
  * bundle: compiled against `addon.ts`, wrapped by `bootAddOn`, and emitted as something the
  * Store can install and run in a sandboxed iframe. AGENTS.md §2.7 and §7 both rest on that
- * classification being right, because `core: true` is what gates `@gphone/sdk/core`, the raw
+ * classification being right, because `core: true` is what gates `@gos/sdk/core`, the raw
  * NUI transport. No manifest in the tree triggers it today, which is a fact about the current
  * comments rather than a property of the check.
  *

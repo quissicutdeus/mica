@@ -10,9 +10,9 @@ import { conversations, type ConversationRepo } from './Conversations';
 import { media } from './Media';
 import { defineService } from '../lib/defineService';
 import { conversationIdFrom, pageBounds } from '../lib/payload';
-import { messagesContract } from '@gphone/shared/contracts/messages';
+import { messagesContract } from '@gos/shared/contracts/messages';
 import { resolveOwnedAttachments } from '../lib/attachments';
-import { Message } from '@gphone/shared/types';
+import { Message } from '@gos/shared/types';
 import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { AuditLogger } from '../lib/AuditLogger';
 import { Database } from '../lib/Database';
@@ -21,7 +21,7 @@ import { blockedBy } from './Blocklist';
 /**
  * Messages: membership on both axes.
  *
- * `gphone_messages.citizenid` is the **sender**, not an owner, so ownership scoping is the
+ * `gos_messages.citizenid` is the **sender**, not an owner, so ownership scoping is the
  * wrong authorization question — access is decided by conversation membership. Both axes
  * are therefore `members`, which registers no generic CRUD at all: a membership check needs
  * the parent conversation id, and that is not part of the generic payload contract. Both
@@ -39,12 +39,12 @@ export const messages = defineService<Message, typeof messagesContract>({
   contract: messagesContract,
   id: 'messages',
   reportable: { label: 'Message', previewColumn: 'message' },
-  table: 'gphone_messages',
+  table: 'gos_messages',
   access: {
     read: 'members',
     write: 'members',
     membership: {
-      table: 'gphone_messages_participants',
+      table: 'gos_messages_participants',
       foreignKey: 'conversation_id',
       localKey: 'conversation_id',
       liveWhileNull: 'left_at'
@@ -55,7 +55,7 @@ export const messages = defineService<Message, typeof messagesContract>({
     conversation_id: {
       type: 'int',
       notNull: true,
-      references: { table: 'gphone_messages_conversations', column: 'id' }
+      references: { table: 'gos_messages_conversations', column: 'id' }
     },
     message: { type: 'text', notNull: true },
     /**
@@ -76,19 +76,19 @@ export const messages = defineService<Message, typeof messagesContract>({
      * without this MariaDB read every row of the conversation and filesorted it on every
      * page — the plan the schema harness now refuses. With `(conversation_id, id)` the
      * page is one backward index range scan, stopping at `n` rows. Additive, so
-     * `gphoneschema apply` picks it up with no versioned migration.
+     * `gosschema apply` picks it up with no versioned migration.
      */
     { name: 'conversation_id_id', columns: ['conversation_id', 'id'] },
     { name: 'reply_to_id', columns: ['reply_to_id'] }
   ],
   childTables: [
     {
-      name: 'gphone_messages_attachments',
+      name: 'gos_messages_attachments',
       columns: {
         message_id: {
           type: 'int',
           notNull: true,
-          references: { table: 'gphone_messages', column: 'id' }
+          references: { table: 'gos_messages', column: 'id' }
         },
         citizenid: {
           type: 'string',
@@ -99,7 +99,7 @@ export const messages = defineService<Message, typeof messagesContract>({
         photo_id: {
           type: 'int',
           notNull: true,
-          references: { table: 'gphone_media', column: 'id' }
+          references: { table: 'gos_media', column: 'id' }
         }
       },
       indexes: [
@@ -110,19 +110,19 @@ export const messages = defineService<Message, typeof messagesContract>({
     },
     /**
      * MICA-143: reactions on a message, using the shared client-side primitive
-     * (`createReactionStore`/`ReactionBar`, MICA-98) but **not** `gphone_account_reactions`
+     * (`createReactionStore`/`ReactionBar`, MICA-98) but **not** `gos_account_reactions`
      * — see the docblock above `requireReactableMessage` below for why that table does not
      * fit here. Keyed on `citizenid` rather than an `account_id`, because a message's own
      * membership is already decided by citizenid (`requireParticipant`), and Messages has no
      * account layer to key on instead.
      */
     {
-      name: 'gphone_messages_reactions',
+      name: 'gos_messages_reactions',
       columns: {
         message_id: {
           type: 'int',
           notNull: true,
-          references: { table: 'gphone_messages', column: 'id' }
+          references: { table: 'gos_messages', column: 'id' }
         },
         citizenid: {
           type: 'string',
@@ -130,7 +130,7 @@ export const messages = defineService<Message, typeof messagesContract>({
           notNull: true,
           references: { table: 'players', column: 'citizenid' }
         },
-        // Free text, matching `gphone_account_reactions.emoji`: the picker offers a fixed
+        // Free text, matching `gos_account_reactions.emoji`: the picker offers a fixed
         // palette plus a "+" for any other emoji, so the column has to accept anything the
         // palette does not enumerate.
         emoji: { type: 'string', length: 32, notNull: true },
@@ -139,7 +139,7 @@ export const messages = defineService<Message, typeof messagesContract>({
       indexes: [
         // One reaction per participant per emoji per message — tapping the same emoji
         // twice toggles it off rather than stacking a duplicate row, the same idempotency
-        // shape `gphone_account_reactions` uses.
+        // shape `gos_account_reactions` uses.
         {
           name: 'message_citizen_emoji',
           columns: ['message_id', 'citizenid', 'emoji'],
@@ -205,7 +205,7 @@ const requireParticipant = async (conversationId: number, citizenid: string): Pr
  * **Two predicates, and neither one is sufficient alone.** `findById` with a citizenid puts
  * the ownership predicate in the WHERE, so a row id is never authorization on its own
  * (§2.9); here it happens to be the right first question, because
- * `gphone_messages.citizenid` is the **sender**, so "did you write this" genuinely is an
+ * `gos_messages.citizenid` is the **sender**, so "did you write this" genuinely is an
  * ownership question. Membership then asks what ownership cannot: are you still in the
  * thread this message is in. Someone who left a conversation may not keep reaching into it,
  * even for their own words.
@@ -262,7 +262,7 @@ app.registerEvent('get', async (source, cbId, data, citizenid) => {
  * agreed to, and the other party would have no way of telling. So the thread renders an
  * "Edited" marker beside any message whose `updated_at` has moved past its `created_at`.
  * `MessageRepository.findByConversation` derives that in SQL, which is why this needed no
- * new column: `gphone_messages.updated_at` already carries
+ * new column: `gos_messages.updated_at` already carries
  * `ON UPDATE CURRENT_TIMESTAMP`, so the trace is a consequence of the write rather than a
  * second field somebody has to remember to set.
  *
@@ -323,7 +323,7 @@ app.registerEvent('edit', async (source, cbId, data, citizenid) => {
  * report may later be about — but `findByConversation` filters `status != 'deleted'` for
  * *every* participant, so what a reader sees is the message gone from the thread. Hiding
  * it for the sender alone would need per-participant state this table does not have
- * (`gphone_messages_participants` carries membership, not per-message visibility), and
+ * (`gos_messages_participants` carries membership, not per-message visibility), and
  * shipping the ambiguous version of a destructive action is worse than shipping neither.
  * The confirmation in the app names the consequence rather than leaving it to be guessed.
  *
@@ -344,7 +344,7 @@ app.registerEvent('delete', async (source, cbId, data, citizenid) => {
       service: 'messages',
       method: 'delete',
       targetId: row.id,
-      targetTable: 'gphone_messages'
+      targetTable: 'gos_messages'
     });
   }
   return success;
@@ -353,10 +353,10 @@ app.registerEvent('delete', async (source, cbId, data, citizenid) => {
 /**
  * MICA-143: reactions on Messages, reusing the shared client-side primitive
  * (`createReactionStore`/`ReactionBar`, MICA-98) with server-side storage of its own —
- * `gphone_messages_reactions` above, not `gphone_account_reactions`.
+ * `gos_messages_reactions` above, not `gos_account_reactions`.
  *
- * **Why not the shared accounts table.** `gphone_account_reactions.account_id` is a
- * `NOT NULL` foreign key onto `gphone_accounts`, Blabber's identity graph, where one player
+ * **Why not the shared accounts table.** `gos_account_reactions.account_id` is a
+ * `NOT NULL` foreign key onto `gos_accounts`, Blabber's identity graph, where one player
  * may hold several handles per app. Native Messages has no such layer at all — a message is
  * sent and read by the citizenid on the session, the same identity `requireParticipant`
  * already checks membership by. Two ways to reuse the shared table were considered and both
@@ -365,10 +365,10 @@ app.registerEvent('delete', async (source, cbId, data, citizenid) => {
  * was not about) and minting an implicit per-player "account" for a `messages` app (stretching
  * what an account *means* — a deliberately reclaimable, possibly-plural handle — onto a
  * system that is 1:1 with the character and has no handle at all). Either would also let
- * `gphone_messages`' numeric row ids collide with every other reactable table's ids inside
+ * `gos_messages`' numeric row ids collide with every other reactable table's ids inside
  * one shared column if `messages` were ever declared `reactable`, which is deliberately not
  * done: see the declaration above. A citizenid-keyed **child table** needed neither — it is
- * additive DDL only (`gphoneschema apply` picks it up the same way it does any new table,
+ * additive DDL only (`gosschema apply` picks it up the same way it does any new table,
  * no versioned migration), and it keys reactions on the identity Messages already uses.
  *
  * **Membership, not ownership — for `react`.** Any current participant may react to any
@@ -412,7 +412,7 @@ app.registerEvent('react', async (source, cbId, data, citizenid) => {
 
   try {
     await Database.insert(
-      `INSERT INTO \`gphone_messages_reactions\`
+      `INSERT INTO \`gos_messages_reactions\`
        (\`message_id\`, \`citizenid\`, \`emoji\`) VALUES (?, ?, ?)`,
       [messageId, citizenid, emoji]
     );
@@ -427,7 +427,7 @@ app.registerEvent('unreact', async (source, cbId, data, citizenid) => {
   const { message_id: messageId, emoji } = data;
 
   await Database.update(
-    `DELETE FROM \`gphone_messages_reactions\`
+    `DELETE FROM \`gos_messages_reactions\`
      WHERE \`message_id\` = ? AND \`citizenid\` = ? AND \`emoji\` = ?`,
     [messageId, citizenid, emoji]
   );
@@ -451,8 +451,8 @@ app.registerEvent('reactionsFor', async (source, cbId, data, citizenid) => {
   // the docblock above for why this batched read cannot trust every id in the payload the
   // way Blabber's equivalent, over public posts, safely can.
   const visible = await Database.query<{ id: number }[]>(
-    `SELECT m.\`id\` FROM \`gphone_messages\` m
-     JOIN \`gphone_messages_participants\` p ON p.\`conversation_id\` = m.\`conversation_id\`
+    `SELECT m.\`id\` FROM \`gos_messages\` m
+     JOIN \`gos_messages_participants\` p ON p.\`conversation_id\` = m.\`conversation_id\`
      WHERE m.\`id\` IN (${requestedPlaceholders}) AND p.\`citizenid\` = ? AND p.\`left_at\` IS NULL`,
     [...requested, citizenid]
   );
@@ -462,13 +462,13 @@ app.registerEvent('reactionsFor', async (source, cbId, data, citizenid) => {
   const placeholders = messageIds.map(() => '?').join(', ');
   const [counts, mine] = await Promise.all([
     Database.query<{ message_id: number; emoji: string; total: number }[]>(
-      `SELECT \`message_id\`, \`emoji\`, COUNT(*) AS total FROM \`gphone_messages_reactions\`
+      `SELECT \`message_id\`, \`emoji\`, COUNT(*) AS total FROM \`gos_messages_reactions\`
        WHERE \`message_id\` IN (${placeholders})
        GROUP BY \`message_id\`, \`emoji\``,
       messageIds
     ),
     Database.query<{ message_id: number; emoji: string }[]>(
-      `SELECT \`message_id\`, \`emoji\` FROM \`gphone_messages_reactions\`
+      `SELECT \`message_id\`, \`emoji\` FROM \`gos_messages_reactions\`
        WHERE \`message_id\` IN (${placeholders}) AND \`citizenid\` = ?`,
       [...messageIds, citizenid]
     )
@@ -523,7 +523,7 @@ export const deliverToParticipants = async (
   /**
    * Blocked (MICA-64): the row is still written — this only withholds the live push, the
    * same way an offline recipient's push is withheld — so a client-side-only block cannot be
-   * the whole story (§2.9, a modified client can already emit `gphone:server:messages:send`
+   * the whole story (§2.9, a modified client can already emit `gos:server:messages:send`
    * directly). This is deliberately narrower than hiding the message from the thread
    * entirely, which is a larger, more decision-heavy feature (does a block retroactively hide
    * history already read? does the thread itself disappear?) that this pass does not take a
@@ -541,7 +541,7 @@ export const deliverToParticipants = async (
 
     // The shape the shell's `receiveMessage` route already expects: it appends to the
     // thread and raises a toast with an inline reply.
-    emitNet('gphone:client:messages:received', target, {
+    emitNet('gos:client:messages:received', target, {
       conversation_id: conversationId,
       message: message.message,
       senderName: sender.name ?? undefined,

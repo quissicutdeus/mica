@@ -1,7 +1,7 @@
 import { test, expect, type Page, type Locator } from './support/test';
 import { installAddOn } from './support/addon';
 import { seedHomeGrid } from './support/homeGrid';
-import { DEVICES } from '@gphone/shared/devices';
+import { DEVICES } from '@gos/shared/devices';
 
 /**
  * `display.ts`'s `PHONE_WIDTH` and `SHADE_DRAG_REVEAL_DISTANCE`, read from the device table

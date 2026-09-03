@@ -30,7 +30,7 @@ import {
 } from '../lib/FrameworkBridge';
 
 /**
- * Every ownership check in gPhone resolves an identity through here, and it had no test.
+ * Every ownership check in gOS resolves an identity through here, and it had no test.
  *
  * A repository scopes by citizenid and asks no questions about where it came from, so
  * whatever this returns *is* the player as far as the rest of the server is concerned.
@@ -175,7 +175,7 @@ describe('FrameworkBridge.removeInventoryItem', () => {
 
 /**
  * Money, and the fact that this file is 200 lines of `any`-typed duck-typing against two
- * resources gPhone does not pin.
+ * resources gOS does not pin.
  *
  * `FrameworkPlayer` declares `removeMoney(): boolean` and `getMoney(): number`, and until
  * MICA-133 those declarations were decorative: `player` is `any`, so whatever qbx_core or
@@ -390,7 +390,7 @@ describe('FrameworkBridge on ESX — identity', () => {
     ['whitespace', '   '],
     ['a number', 42]
   ])('refuses to serve a player whose identifier is %s', (_label, identifier) => {
-    // The same rule as the qb branches: an identity gPhone cannot read is not one it invents.
+    // The same rule as the qb branches: an identity gOS cannot read is not one it invents.
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     useResources(esx({ 1: xPlayer(identifier as any) }));
 
@@ -537,11 +537,11 @@ describe('FrameworkBridge on ESX — the qb shape everything downstream reads', 
 
   it('carries metadata through for the legacy battery read', () => {
     const player = xPlayer(LICENSE);
-    player.getMeta = () => ({ gphone_battery: 42 });
+    player.getMeta = () => ({ gos_battery: 42 });
     useResources(esx({ 1: player }));
 
     expect(FrameworkBridge.getPlayer(1)!.rawPlayer.PlayerData.metadata).toEqual({
-      gphone_battery: 42
+      gos_battery: 42
     });
   });
 });
@@ -807,19 +807,19 @@ describe('FrameworkBridge on ESX — items, metadata and usable items', () => {
     const player = xPlayer(LICENSE);
     useResources(esx({ 1: player }));
 
-    FrameworkBridge.getPlayer(1)!.setMeta('gphone_battery', 42);
-    expect(player.setMeta).toHaveBeenCalledWith('gphone_battery', 42);
+    FrameworkBridge.getPlayer(1)!.setMeta('gos_battery', 42);
+    expect(player.setMeta).toHaveBeenCalledWith('gos_battery', 42);
   });
 
   it('degrades to a session variable on a build with no setMeta', () => {
     // Not persisted, and less than qb offers — but the only caller is Battery mirroring for
-    // *other* resources, and gPhone's own table is written either way.
+    // *other* resources, and gOS's own table is written either way.
     const player = xPlayer(LICENSE, { omit: ['setMeta'] });
     player.set = vi.fn();
     useResources(esx({ 1: player }));
 
-    FrameworkBridge.getPlayer(1)!.setMeta('gphone_battery', 42);
-    expect(player.set).toHaveBeenCalledWith('gphone_battery', 42);
+    FrameworkBridge.getPlayer(1)!.setMeta('gos_battery', 42);
+    expect(player.set).toHaveBeenCalledWith('gos_battery', 42);
   });
 
   it('drops the write on a build with neither, and never throws', () => {
@@ -829,8 +829,8 @@ describe('FrameworkBridge on ESX — items, metadata and usable items', () => {
     const bridged = FrameworkBridge.getPlayer(11)!;
 
     expect(() => {
-      bridged.setMeta('gphone_battery', 42);
-      bridged.setMeta('gphone_battery', 43);
+      bridged.setMeta('gos_battery', 42);
+      bridged.setMeta('gos_battery', 43);
     }).not.toThrow();
     expect(warn).toHaveBeenCalledTimes(1);
   });
@@ -857,7 +857,7 @@ describe('FrameworkBridge on ESX — items, metadata and usable items', () => {
     );
 
     for (const src of [1, 2, 3, 1, 2, 3]) {
-      FrameworkBridge.getPlayer(src)!.setMeta('gphone_battery', 42);
+      FrameworkBridge.getPlayer(src)!.setMeta('gos_battery', 42);
     }
 
     expect(warn).toHaveBeenCalledTimes(1);

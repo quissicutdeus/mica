@@ -29,7 +29,7 @@ interface TestRow {
 }
 
 class TestRepo extends Repository<TestRow> {
-  protected tableName = 'gphone_test';
+  protected tableName = 'gos_test';
   protected columns = ['id', 'citizenid', 'title', 'content', 'status', 'created_at', 'updated_at'];
   protected clientWritable = ['title', 'content'];
   protected clientFilterable = ['title'];
@@ -50,20 +50,20 @@ class NoStatusRepo extends Repository<{ id: number; citizenid: string; amount: n
  *  like this, since every primary table carries the framework's implicit columns, but
  *  `restore`'s own guard needs something to refuse. */
 class NoUpdatedAtRepo extends Repository<{ id: number; citizenid: string; status: string }> {
-  protected tableName = 'gphone_no_updated_at';
+  protected tableName = 'gos_no_updated_at';
   protected columns = ['id', 'citizenid', 'status'];
 }
 
 /** Hypothetical shared table with no per-player owner. */
 class NoOwnerRepo extends Repository<{ id: number; label: string; status: string }> {
-  protected tableName = 'gphone_global';
+  protected tableName = 'gos_global';
   protected columns = ['id', 'label', 'status'];
   protected clientWritable = ['label'];
 }
 
 /** Declares fields it must never be granted, plus one that isn't a column. */
 class OverreachingRepo extends Repository<TestRow> {
-  protected tableName = 'gphone_test';
+  protected tableName = 'gos_test';
   protected columns = ['id', 'citizenid', 'title', 'status', 'created_at', 'updated_at'];
   protected clientWritable = [
     'id',
@@ -125,7 +125,7 @@ describe('Repository — SQL identifier allowlist', () => {
 
     expect(id).toBe(42);
     expect(sqlOf(dbMock.insert.mock.calls[0])).toBe(
-      'INSERT INTO `gphone_test` (`title`, `content`) VALUES (?, ?)'
+      'INSERT INTO `gos_test` (`title`, `content`) VALUES (?, ?)'
     );
     expect(paramsOf(dbMock.insert.mock.calls[0])).toEqual(['Groceries', 'milk']);
   });
@@ -154,7 +154,7 @@ describe('Repository — ownership scoping', () => {
     await repo.update(7, { title: 'renamed' } as Partial<TestRow>, 'CIT_OWNER');
 
     expect(sqlOf(dbMock.update.mock.calls[0])).toBe(
-      "UPDATE `gphone_test` SET `title` = ? WHERE `id` = ? AND `citizenid` = ? AND `status` != 'moderated'"
+      "UPDATE `gos_test` SET `title` = ? WHERE `id` = ? AND `citizenid` = ? AND `status` != 'moderated'"
     );
     expect(paramsOf(dbMock.update.mock.calls[0])).toEqual(['renamed', 7, 'CIT_OWNER']);
   });
@@ -179,7 +179,7 @@ describe('Repository — ownership scoping', () => {
     await repo.exposeUpdateUnscoped(7, { status: 'deleted' } as Partial<TestRow>);
 
     expect(sqlOf(dbMock.update.mock.calls[0])).toBe(
-      'UPDATE `gphone_test` SET `status` = ? WHERE `id` = ?'
+      'UPDATE `gos_test` SET `status` = ? WHERE `id` = ?'
     );
     expect(paramsOf(dbMock.update.mock.calls[0])).toEqual(['deleted', 7]);
   });
@@ -205,7 +205,7 @@ describe('Repository — soft delete', () => {
 
     expect(success).toBe(true);
     expect(sqlOf(dbMock.update.mock.calls[0])).toBe(
-      "UPDATE `gphone_test` SET `status` = ? WHERE `id` = ? AND `citizenid` = ? AND `status` != 'moderated'"
+      "UPDATE `gos_test` SET `status` = ? WHERE `id` = ? AND `citizenid` = ? AND `status` != 'moderated'"
     );
     expect(paramsOf(dbMock.update.mock.calls[0])).toEqual(['deleted', 9, 'CIT_OWNER']);
   });
@@ -245,7 +245,7 @@ describe('Repository — restore (MICA-75)', () => {
 
     expect(success).toBe(true);
     expect(sqlOf(dbMock.update.mock.calls[0])).toBe(
-      "UPDATE `gphone_test` SET `status` = 'active' " +
+      "UPDATE `gos_test` SET `status` = 'active' " +
         "WHERE `id` = ? AND `citizenid` = ? AND `status` = 'deleted' " +
         'AND `updated_at` >= NOW() - INTERVAL ? DAY'
     );
@@ -300,7 +300,7 @@ describe('Repository — findDeleted (MICA-75-wiring)', () => {
     await repo.findDeleted('CIT_OWNER', 30);
 
     expect(sqlOf(dbMock.query.mock.calls[0])).toBe(
-      'SELECT * FROM `gphone_test` ' +
+      'SELECT * FROM `gos_test` ' +
         "WHERE `citizenid` = ? AND `status` = 'deleted' " +
         'AND `updated_at` >= NOW() - INTERVAL ? DAY ' +
         'ORDER BY `updated_at` DESC'
@@ -320,7 +320,7 @@ describe('Repository — findDeleted (MICA-75-wiring)', () => {
     await repo.findDeleted('CIT_OWNER', 30, ['id', 'title', 'updated_at']);
 
     expect(sqlOf(dbMock.query.mock.calls[0])).toBe(
-      'SELECT `id`, `title`, `updated_at` FROM `gphone_test` ' +
+      'SELECT `id`, `title`, `updated_at` FROM `gos_test` ' +
         "WHERE `citizenid` = ? AND `status` = 'deleted' " +
         'AND `updated_at` >= NOW() - INTERVAL ? DAY ' +
         'ORDER BY `updated_at` DESC'
@@ -362,7 +362,7 @@ describe('Repository — reads', () => {
     await new TestRepo().findAll({ citizenid: 'CIT_A' } as Partial<TestRow>);
 
     expect(sqlOf(dbMock.query.mock.calls[0])).toBe(
-      'SELECT * FROM `gphone_test` WHERE `citizenid` = ? AND `status` = ?'
+      'SELECT * FROM `gos_test` WHERE `citizenid` = ? AND `status` = ?'
     );
     expect(paramsOf(dbMock.query.mock.calls[0])).toEqual(['CIT_A', 'active']);
   });
@@ -393,7 +393,7 @@ describe('Repository — reads', () => {
     await new TestRepo().findById(3, 'CIT_OWNER');
 
     expect(sqlOf(dbMock.single.mock.calls[0])).toBe(
-      'SELECT * FROM `gphone_test` WHERE `id` = ? AND `citizenid` = ?'
+      'SELECT * FROM `gos_test` WHERE `id` = ? AND `citizenid` = ?'
     );
     expect(paramsOf(dbMock.single.mock.calls[0])).toEqual([3, 'CIT_OWNER']);
   });
@@ -401,7 +401,7 @@ describe('Repository — reads', () => {
   it('leaves findById unscoped for server-internal reads', async () => {
     await new TestRepo().findById(3);
 
-    expect(sqlOf(dbMock.single.mock.calls[0])).toBe('SELECT * FROM `gphone_test` WHERE `id` = ?');
+    expect(sqlOf(dbMock.single.mock.calls[0])).toBe('SELECT * FROM `gos_test` WHERE `id` = ?');
     expect(paramsOf(dbMock.single.mock.calls[0])).toEqual([3]);
   });
 
@@ -469,7 +469,7 @@ describe('Repository: keyset paging', () => {
     await new TestRepo().findAll({ citizenid: 'CIT_A' } as never);
 
     expect(dbMock.query.mock.calls[0][0]).toBe(
-      'SELECT * FROM `gphone_test` WHERE `citizenid` = ? AND `status` = ?'
+      'SELECT * FROM `gos_test` WHERE `citizenid` = ? AND `status` = ?'
     );
     expect(dbMock.query.mock.calls[0][0]).not.toContain('ORDER BY');
     expect(dbMock.query.mock.calls[0][0]).not.toContain('LIMIT');
@@ -479,7 +479,7 @@ describe('Repository: keyset paging', () => {
     await new TestRepo().findAll({} as never, { limit: 30 });
 
     const [sql, params] = dbMock.query.mock.calls[0];
-    expect(sql).toBe('SELECT * FROM `gphone_test` WHERE `status` = ? ORDER BY `id` DESC LIMIT ?');
+    expect(sql).toBe('SELECT * FROM `gos_test` WHERE `status` = ? ORDER BY `id` DESC LIMIT ?');
     expect(params).toEqual(['active', 30]);
   });
 

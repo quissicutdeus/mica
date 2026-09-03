@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
  * `degit` and builds with no clone of this repo. Its `vite.config.ts` is a **copy** of
  * `web/vite.addon.config.ts`'s decisions, and it has to be a copy rather than an import:
  * the phone's config lives in the `web` workspace, which the author does not have, and the
- * only two packages they do have (`@gphone/sdk`, `@gphone/shared`) deliberately publish no
+ * only two packages they do have (`@gos/sdk`, `@gos/shared`) deliberately publish no
  * build tooling.
  *
  * A copy drifts. The failure mode is specific and bad: an add-on built out of tree that
@@ -23,7 +23,7 @@ import { fileURLToPath } from 'node:url';
  * Raise `build.target` past `chrome92` and the bundle throws in game. Lose
  * `codeSplitting: false` and it emits a shared chunk the `data:`-URL loader can never
  * fetch. Lose `inlineCss` and the stylesheet is an asset nothing loads. Lose the `define`
- * block and every published add-on reads a confidently wrong `MICA_VERSION`, which is
+ * block and every published add-on reads a confidently wrong `GOS_VERSION`, which is
  * MICA-170 happening a second time to somebody who cannot see this repo. None of those
  * fails a build, and no suite an author can run would notice.
  *
@@ -41,7 +41,7 @@ import { fileURLToPath } from 'node:url';
  * template exists — and its whole value is that it names the file to go and edit.
  *
  * Importing the two configs and diffing the resolved objects would be stronger and was
- * tried. It does not work: the template's config resolves `@gphone/sdk` and
+ * tried. It does not work: the template's config resolves `@gos/sdk` and
  * `@sveltejs/vite-plugin-svelte` from `tools/addon-template/node_modules`, which exists
  * only after an author installs, and is not present in this repo's tree at all.
  */
@@ -75,28 +75,25 @@ const SHARED_DECISIONS: [name: string, pattern: RegExp][] = [
   ['build.minify is true', /minify:\s*true/],
   ['the output is a single ES lib entry', /formats:\s*\['es'\]/],
   // MICA-170. Both identifiers substituted, both with the empty string, on both sides.
+  ['__GOS_VERSION__ is defined as the empty string', /__GOS_VERSION__:\s*JSON\.stringify\(''\)/],
   [
-    '__MICA_VERSION__ is defined as the empty string',
-    /__MICA_VERSION__:\s*JSON\.stringify\(''\)/
+    '__GOS_BUILD_INFO__ is defined as the empty string',
+    /__GOS_BUILD_INFO__:\s*JSON\.stringify\(''\)/
   ],
-  [
-    '__MICA_BUILD_INFO__ is defined as the empty string',
-    /__MICA_BUILD_INFO__:\s*JSON\.stringify\(''\)/
-  ],
-  ['no `__MICA_*__` identifier may survive into the output', /__MICA_\[A-Za-z0-9_\]\*__/],
+  ['no `__GOS_*__` identifier may survive into the output', /__GOS_\[A-Za-z0-9_\]\*__/],
   // Neither package declares `sideEffects: false`, so without this every add-on ships a
   // Markdown parser and a sanitiser whether or not it renders Markdown.
   ['marked and dompurify are treeshaken as side-effect-free', /marked\|dompurify/],
   ['resolution prefers the browser condition', /conditions:\s*\['browser'\]/],
   // AGENTS.md §2.7. The one divergence that would be a privilege-escalation route rather
   // than a rendering bug.
-  ['@gphone/sdk/core is refused', /@gphone\\\/sdk\\\/core\(\\\/\.\*\)\?\$/],
+  ['@gos/sdk/core is refused', /@gos\\\/sdk\\\/core\(\\\/\.\*\)\?\$/],
   // MICA-205. A bundle may not declare fewer permissions than its imports reach for.
   // Understating buys no access — the shell re-checks every permission against
   // `HOOK_OF_FACET` — but it makes the Store's install sheet untrue, and the population
   // that sheet exists for builds out of tree. A build with the check and a build without it
   // are the same bundle right up until an author omits a permission.
-  ['the permission scan runs as a build plugin', /name:\s*'gphone-addon-permissions'/],
+  ['the permission scan runs as a build plugin', /name:\s*'gos-addon-permissions'/],
   ['a shortfall against the permission table fails the build', /permissionShortfall\(/],
   /**
    * MICA-190. A manifest property is read from comment-stripped text, on both sides.
@@ -106,7 +103,7 @@ const SHARED_DECISIONS: [name: string, pattern: RegExp][] = [
    * gets discussed, so a raw grep answers from the prose. The template hit that loudly on
    * its own sample manifest; the phone had it silently and pointing the other way, where a
    * `core: true` app whose comment contains `core: false` is emitted as an installable
-   * add-on and §2.7's gate on `@gphone/sdk/core` rests on a comment.
+   * add-on and §2.7's gate on `@gos/sdk/core` rests on a comment.
    *
    * The alternation is the decision showing up under two names rather than a weakened
    * check: the template strips inline, while the phone's config delegates the whole of
@@ -183,7 +180,7 @@ describe('the out-of-tree add-on template', () => {
 
   it('names one git ref for both unpublished packages', () => {
     /**
-     * `@gphone/sdk` and `@gphone/shared` are separate packages that share a wire
+     * `@gos/sdk` and `@gos/shared` are separate packages that share a wire
      * vocabulary, and the SDK re-exports from `shared`. Installing them from two different
      * commits typechecks in the easy cases and is wrong in the interesting ones, so the
      * dependency, the second dependency and the `overrides` entry that redirects the SDK's
@@ -196,14 +193,14 @@ describe('the out-of-tree add-on template', () => {
     const workspace = read(path.join(TEMPLATE_DIR, 'pnpm-workspace.yaml'));
 
     const refOf = (spec: string): string | undefined =>
-      /^github:quissicutdeus\/gPhone#([^&]+)&path:\/(sdk|shared)$/.exec(spec)?.[1];
+      /^github:quissicutdeus\/gos#([^&]+)&path:\/(sdk|shared)$/.exec(spec)?.[1];
 
-    const sdkRef = refOf(pkg.dependencies['@gphone/sdk'] ?? '');
-    const sharedRef = refOf(pkg.dependencies['@gphone/shared'] ?? '');
-    const overrideSpec = /'@gphone\/shared':\s*'([^']+)'/.exec(workspace)?.[1] ?? '';
+    const sdkRef = refOf(pkg.dependencies['@gos/sdk'] ?? '');
+    const sharedRef = refOf(pkg.dependencies['@gos/shared'] ?? '');
+    const overrideSpec = /'@gos\/shared':\s*'([^']+)'/.exec(workspace)?.[1] ?? '';
     const overrideRef = refOf(overrideSpec);
 
-    expect(sdkRef, '@gphone/sdk is not a github:…#<ref>&path:/sdk specifier').toBeDefined();
+    expect(sdkRef, '@gos/sdk is not a github:…#<ref>&path:/sdk specifier').toBeDefined();
     expect([sharedRef, overrideRef]).toEqual([sdkRef, sdkRef]);
 
     /**

@@ -54,7 +54,7 @@ test.describe('a NUI call with no browser mock', () => {
     await expect(page.getByTestId('phone-frame')).toBeVisible();
 
     const reply = await page.evaluate(() =>
-      window.fetchNui!('gphoneE2eNoSuchAction', {}, { defaultValue: 'default' })
+      window.fetchNui!('gosE2eNoSuchAction', {}, { defaultValue: 'default' })
     );
     // The call itself does not throw: a read with a default falls back, and only the
     // console line it printed on the way is what the fixture is meant to catch.
@@ -74,7 +74,7 @@ test.describe('a keyed server refusal', () => {
   test("is said in the phone's language", async ({ page }) => {
     await page.addInitScript(() => {
       if (window !== window.top) return;
-      window.localStorage.setItem('gphone:settings:locale', JSON.stringify('de'));
+      window.localStorage.setItem('gos:settings:locale', JSON.stringify('de'));
     });
     await page.goto('/');
     await expect(page.getByTestId('phone-frame')).toBeVisible();

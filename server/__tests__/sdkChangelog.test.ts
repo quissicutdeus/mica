@@ -14,7 +14,7 @@ import { PERMISSION_OF } from '../../sdk/permissions';
  * The SDK half of the CHANGELOG is written, enforced (MICA-125).
  *
  * `changelog.test.ts` beside this file holds the same document to the two schema changes
- * that put `gphoneschema apply` in front of a **server owner**. This one holds it to the
+ * that put `gosschema apply` in front of a **server owner**. This one holds it to the
  * changes that reach somebody who is not on this machine at all: the author of a
  * `core: false` add-on, deciding whether their bundle still compiles and whether its
  * manifest still asks for the right things.

@@ -9,7 +9,7 @@ import {
   DEVICES,
   type DeviceDescriptor,
   type DeviceId
-} from '@gphone/shared/devices';
+} from '@gos/shared/devices';
 import { usePersisted, type PersistedOptions } from '../../../../sdk/host/usePersisted';
 
 /**

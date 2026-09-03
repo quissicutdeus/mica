@@ -22,7 +22,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     useLocale,
     registerMessages,
     type AppPermission
-  } from '@gphone/sdk';
+  } from '@gos/sdk';
   import { addedPermissions, formatPermission, mergedCatalogApps } from './appInfo';
   import AppDetails from './components/AppDetails.svelte';
   import CatalogList from './components/CatalogList.svelte';

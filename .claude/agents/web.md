@@ -34,7 +34,7 @@ isn't in the skill's banned table; treat it the same as `color-mix()`.
 
 ## Where code may import from
 
-Apps consume the OS strictly through `@gphone/sdk` — no relative imports out of
+Apps consume the OS strictly through `@gos/sdk` — no relative imports out of
 `web/src/apps/` into `shell/`, `services/`, `nui/`, `lib/` or `sdk/`. The
 boundary itself, and what `core: false` means for an add-on's NUI access, is
 `sdk`'s to explain in full; §7 has the summary if you need it mid-task.

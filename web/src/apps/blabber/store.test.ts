@@ -74,14 +74,14 @@ import type {
   FollowStats,
   BlabberDmThread,
   BlabberDm
-} from '@gphone/shared/types';
+} from '@gos/shared/types';
 
 /**
  * Which action a call is for, whichever route it took.
  *
  * Blabber's own service goes through the one generic NUI callback now, so the action name
  * arrives inside the payload as `{ service, action }` rather than as the first argument.
- * The `accounts` calls are still named routes, because `gphone_accounts` is core.
+ * The `accounts` calls are still named routes, because `gos_accounts` is core.
  */
 const actionOf = (name: unknown, payload: unknown): string => {
   if (name !== 'svc') return String(name);
@@ -566,7 +566,7 @@ describe('blabber service', () => {
           {
             service: 'accounts',
             action: 'reactionsFor',
-            data: { app: 'blabber', target_table: 'gphone_blabber_dms', target_ids: [10, 11] }
+            data: { app: 'blabber', target_table: 'gos_blabber_dms', target_ids: [10, 11] }
           },
           { defaultValue: {} }
         );
@@ -585,7 +585,7 @@ describe('blabber service', () => {
           data: {
             app: 'blabber',
             account_id: 4,
-            target_table: 'gphone_blabber_dms',
+            target_table: 'gos_blabber_dms',
             target_id: 10,
             emoji: '\u{1F525}'
           }

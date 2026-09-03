@@ -42,7 +42,7 @@ const { dbMock, bridgeMock, handlers, networked, framework } = vi.hoisted(() => 
   };
   (globalThis as any).on = capture;
   // Recorded separately, because which registrar a name went through *is* the security
-  // property here: `onNet` declares the name net-safe inside gPhone and makes it reachable by
+  // property here: `onNet` declares the name net-safe inside gOS and makes it reachable by
   // any connected client, and `on` does not. MICA-150 added an ESX listener that must stay
   // on the `on` side, and nothing could tell the difference while both wrote to one map.
   (globalThis as any).onNet = (event: string, handler: Function) => {
@@ -183,11 +183,11 @@ describe('the network player-loaded listeners', () => {
       listener(undefined);
     }
 
-    expect(emitted()).toContainEqual(['gphone:client:shell:rehydrate', ATTACKER]);
-    expect(emitted()).toContainEqual(['gphone:client:settings:rehydrate', ATTACKER]);
+    expect(emitted()).toContainEqual(['gos:client:shell:rehydrate', ATTACKER]);
+    expect(emitted()).toContainEqual(['gos:client:settings:rehydrate', ATTACKER]);
     // Battery's load is async — the row read happens before the push.
     await vi.waitFor(() =>
-      expect(emitted()).toContainEqual(['gphone:client:battery:set', ATTACKER, 100])
+      expect(emitted()).toContainEqual(['gos:client:battery:set', ATTACKER, 100])
     );
   });
 
@@ -196,8 +196,8 @@ describe('the network player-loaded listeners', () => {
       listener({ PlayerData: { source: ATTACKER } });
     }
 
-    expect(emitted()).toContainEqual(['gphone:client:shell:rehydrate', ATTACKER]);
-    expect(emitted()).toContainEqual(['gphone:client:settings:rehydrate', ATTACKER]);
+    expect(emitted()).toContainEqual(['gos:client:shell:rehydrate', ATTACKER]);
+    expect(emitted()).toContainEqual(['gos:client:settings:rehydrate', ATTACKER]);
   });
 
   it('never seeds battery state for an id that never connected', async () => {
@@ -222,7 +222,7 @@ describe('the network player-loaded listeners', () => {
  * `guardNetEvent` refuses silently by design — no callback id, so nobody is waiting to be
  * told. Under stock qbx_core the ordering holds and it never refuses. Under a custom
  * multichar, or a core that announces a character before the framework has registered it,
- * gPhone would never rehydrate settings and never load battery, with no output anywhere and
+ * gOS would never rehydrate settings and never load battery, with no output anywhere and
  * this whole file still green: silence that reads as success.
  */
 describe('a refusal that nobody would otherwise notice', () => {
@@ -286,9 +286,9 @@ describe('a refusal that nobody would otherwise notice', () => {
  * `QBCore:Server:OnPlayerLoaded` had to be `onNet` and then had to be hardened by MICA-136.
  *
  * So the property asserted here is stronger than "the guard refuses a forged target": there is
- * no way in for a packet to be refused. gPhone registers this name with `on` only, and
+ * no way in for a packet to be refused. gOS registers this name with `on` only, and
  * `RegisterNetEvent`'s net-safety flag is per-resource, so the name is not net-safe inside
- * gPhone and a client emitting it reaches nothing. The first test below is the one that
+ * gOS and a client emitting it reaches nothing. The first test below is the one that
  * matters — it fails the moment somebody adds an `onNet` twin "to be safe" and quietly
  * manufactures the client-reachable entry point es_extended does not have.
  */
@@ -374,12 +374,12 @@ describe('the player-loaded registry', () => {
     // Shell, settings and battery all subscribe; one event feeds all three.
     for (const listener of loadedListeners()) listener(undefined);
 
-    expect(emitted()).toContainEqual(['gphone:client:shell:rehydrate', ATTACKER]);
-    expect(emitted()).toContainEqual(['gphone:client:settings:rehydrate', ATTACKER]);
+    expect(emitted()).toContainEqual(['gos:client:shell:rehydrate', ATTACKER]);
+    expect(emitted()).toContainEqual(['gos:client:settings:rehydrate', ATTACKER]);
   });
 
   it('keeps running the others when one subscriber throws', async () => {
-    // A broken subscriber degrades rather than taking the character load with it — gPhone has
+    // A broken subscriber degrades rather than taking the character load with it — gOS has
     // no way to fail a framework's player load and must not invent one.
     vi.spyOn(console, 'error').mockImplementation(() => {});
     onPlayerLoaded('exploding', () => {
@@ -390,9 +390,9 @@ describe('the player-loaded registry', () => {
       for (const listener of loadedListeners()) listener(undefined);
     }).not.toThrow();
 
-    expect(emitted()).toContainEqual(['gphone:client:shell:rehydrate', ATTACKER]);
+    expect(emitted()).toContainEqual(['gos:client:shell:rehydrate', ATTACKER]);
     await vi.waitFor(() =>
-      expect(emitted()).toContainEqual(['gphone:client:battery:set', ATTACKER, 100])
+      expect(emitted()).toContainEqual(['gos:client:battery:set', ATTACKER, 100])
     );
   });
 
@@ -448,7 +448,7 @@ describe("ESX's player-loaded event", () => {
     // local twin: no connection to derive one from, and no client able to reach it.
     for (const listener of esxListeners()) listener(VICTIM, { source: VICTIM });
 
-    expect(emitted()).toContainEqual(['gphone:client:shell:rehydrate', VICTIM]);
+    expect(emitted()).toContainEqual(['gos:client:shell:rehydrate', VICTIM]);
   });
 
   it('falls back to the xPlayer source when the first argument is not an id', () => {
@@ -456,7 +456,7 @@ describe("ESX's player-loaded event", () => {
     // silence, which is the failure mode this whole file exists to catch.
     for (const listener of esxListeners()) listener(undefined, { source: ATTACKER });
 
-    expect(emitted()).toContainEqual(['gphone:client:shell:rehydrate', ATTACKER]);
+    expect(emitted()).toContainEqual(['gos:client:shell:rehydrate', ATTACKER]);
   });
 
   it('does nothing when neither argument carries a source', () => {
@@ -471,10 +471,10 @@ describe("ESX's player-loaded event", () => {
     // cannot be forgotten for the next framework either.
     for (const listener of esxListeners()) listener(ATTACKER, { source: ATTACKER });
 
-    expect(emitted()).toContainEqual(['gphone:client:shell:rehydrate', ATTACKER]);
-    expect(emitted()).toContainEqual(['gphone:client:settings:rehydrate', ATTACKER]);
+    expect(emitted()).toContainEqual(['gos:client:shell:rehydrate', ATTACKER]);
+    expect(emitted()).toContainEqual(['gos:client:settings:rehydrate', ATTACKER]);
     return vi.waitFor(() =>
-      expect(emitted()).toContainEqual(['gphone:client:battery:set', ATTACKER, 100])
+      expect(emitted()).toContainEqual(['gos:client:battery:set', ATTACKER, 100])
     );
   });
 });
@@ -511,15 +511,15 @@ describe("standalone's player-loaded path", () => {
   it('dispatches for the connection when the server is standalone', () => {
     for (const listener of joinListeners()) listener();
 
-    expect(emitted()).toContainEqual(['gphone:client:shell:rehydrate', ATTACKER]);
-    expect(emitted()).toContainEqual(['gphone:client:settings:rehydrate', ATTACKER]);
+    expect(emitted()).toContainEqual(['gos:client:shell:rehydrate', ATTACKER]);
+    expect(emitted()).toContainEqual(['gos:client:settings:rehydrate', ATTACKER]);
   });
 
   it('reaches settings and battery too, through the one registry', async () => {
     for (const listener of joinListeners()) listener();
 
     await vi.waitFor(() =>
-      expect(emitted()).toContainEqual(['gphone:client:battery:set', ATTACKER, 100])
+      expect(emitted()).toContainEqual(['gos:client:battery:set', ATTACKER, 100])
     );
   });
 
@@ -528,7 +528,7 @@ describe("standalone's player-loaded path", () => {
     // offer, so it cannot be forgotten in favour of a payload.
     for (const listener of joinListeners()) listener(VICTIM);
 
-    expect(emitted()).toContainEqual(['gphone:client:shell:rehydrate', ATTACKER]);
+    expect(emitted()).toContainEqual(['gos:client:shell:rehydrate', ATTACKER]);
     expect(emitted().some((call) => call[1] === VICTIM)).toBe(false);
   });
 

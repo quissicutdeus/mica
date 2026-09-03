@@ -1,11 +1,11 @@
 # Testing calls solo
 
-MICA-55. Every other feature in this phone has a solo path — `gphoneseed` in
+MICA-55. Every other feature in this phone has a solo path — `gosseed` in
 game, the mock transport in a browser — because a real second player is
 expensive to arrange for every change. Calls didn't, for two structural reasons:
 `server/services/Phone.ts`'s `start` handler refuses a self-call as "Busy", and
 `FrameworkBridge.getPlayerByPhone` only ever finds someone online, so a
-`gphoneseed` character can be texted and never called.
+`gosseed` character can be texted and never called.
 
 Most of what actually breaks in a call needs neither a second player nor the
 game. This is the map of what each layer catches and, just as importantly, where
@@ -21,8 +21,8 @@ busy, line-busy, an unknown number, `playerDropped` mid-call, and `logCallEnd`'s
 caller-always-`outgoing` / target-`incoming`-or-`missed` rule.
 
 This is also where `injectIncomingCall`/`endActiveCallFor` live — the functions
-`gphonecall` (below) is a thin command wrapper around — so the harness
-`gphonecall` gives you in game has a matching, faster harness here first.
+`goscall` (below) is a thin command wrapper around — so the harness `goscall`
+gives you in game has a matching, faster harness here first.
 
 **Stops at:** the server's own bookkeeping. Proves the state machine is correct;
 proves nothing about whether a real client reacts to any of it.
@@ -50,15 +50,15 @@ in a browser to call.
 
 Two pieces, meant to be used together:
 
-- **`gphonecall`** (`server/services/Phone.ts`, `AGENTS.md` §1) —
-  `gphonecall [number]` or `gphonecall <firstname>` (a `gphoneseed` character)
-  rings yourself; `gphonecall end` force-ends it. Fakes only the peer (a
-  synthetic source, `CONSOLE_CALLER_SOURCE`, that can never collide with a real
-  player) and drives the rest of the real path: NUI focus, the `callStatus`
-  messages, and — answering it for real — the pma-voice join. Settings >
-  Developer Tools' "Simulate Incoming Call" routes through the same mechanism in
-  game (`gphone:server:phone:simulateIncoming`); in a browser it still fakes the
-  toast locally, since there's no server to ask.
+- **`goscall`** (`server/services/Phone.ts`, `AGENTS.md` §1) —
+  `goscall [number]` or `goscall <firstname>` (a `gosseed` character) rings
+  yourself; `goscall end` force-ends it. Fakes only the peer (a synthetic
+  source, `CONSOLE_CALLER_SOURCE`, that can never collide with a real player)
+  and drives the rest of the real path: NUI focus, the `callStatus` messages,
+  and — answering it for real — the pma-voice join. Settings > Developer Tools'
+  "Simulate Incoming Call" routes through the same mechanism in game
+  (`gos:server:phone:simulateIncoming`); in a browser it still fakes the toast
+  locally, since there's no server to ask.
 - **`tools/pma-voice-stub/`** — a dev-only FiveM resource, _not_ part of this
   one, that stands in for pma-voice: prints every `setPlayerTalkingOverride`/
   `addPlayerToCall`/`removePlayerFromCall` call, and flags it loudly if

@@ -3,15 +3,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { debugData } from '../lib/phone/debug';
-import type { DeviceId } from '@gphone/shared/devices';
-import { placeholderAvatar } from '@gphone/sdk';
+import type { DeviceId } from '@gos/shared/devices';
+import { placeholderAvatar } from '@gos/sdk';
 import { appRegistryStore } from './state/registry';
 import { openApp } from './state/navigation';
 import { fetchNui } from '../nui/fetchNui';
 import {
   MUSIC_BROADCASTS_NUI_ACTION,
   MUSIC_BROADCAST_VOLUMES_NUI_ACTION
-} from '@gphone/shared/musicBroadcast';
+} from '@gos/shared/musicBroadcast';
 
 /**
  * Browser-only scaffolding: seed the phone, and expose a console helper for firing
@@ -120,7 +120,7 @@ function openDeepLinkedApp(): void {
   // boot and asking whether one is loaded would refuse every app here — `openApp` fetches
   // the chunk itself.
   if (!appRegistryStore.isKnownApp(id)) {
-    console.warn(`[gPhone] ?app=${requested}: no app is registered under '${id}'.`);
+    console.warn(`[gOS] ?app=${requested}: no app is registered under '${id}'.`);
     return;
   }
 

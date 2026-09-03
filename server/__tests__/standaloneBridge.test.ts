@@ -5,7 +5,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 /**
- * MICA-151: gPhone with no framework resource at all.
+ * MICA-151: gOS with no framework resource at all.
  *
  * The whole feature turns on one line — `ServiceEndpoint` answers "Player not authenticated"
  * to every action of every service when `FrameworkBridge.getPlayer` returns null, so a server
@@ -222,7 +222,7 @@ describe('the standalone player', () => {
 
   it('refuses an over-length identifier rather than truncating it', () => {
     // `shared/framework.ts` explains why at length: a truncated citizenid is still
-    // self-consistent inside gPhone and joins to nothing outside it, which is what makes the
+    // self-consistent inside gOS and joins to nothing outside it, which is what makes the
     // orphan sweep read the player's rows as unowned.
     connect({ 5: { license: `license:${'a'.repeat(60)}` } });
 
@@ -271,7 +271,7 @@ describe('the qb shape everything downstream reads', () => {
     });
   });
 
-  it('carries the number gPhone issued, on the player and in the qb view', () => {
+  it('carries the number gOS issued, on the player and in the qb view', () => {
     // `getPlayer` is synchronous and the number lives in a table, so the cache in
     // `lib/phoneNumbers.ts` is what bridges them. `getPlayerByPhone` walks this same view.
     rememberNumber(LICENSE, '5561234');
@@ -340,7 +340,7 @@ describe('standalone metadata degrades and says so', () => {
   it('drops the write without throwing', () => {
     const player = FrameworkBridge.getPlayer(5);
 
-    expect(() => player?.setMeta('gphone_battery', 42)).not.toThrow();
+    expect(() => player?.setMeta('gos_battery', 42)).not.toThrow();
   });
 
   it('reports it once per resource start, because it is a property of the server', () => {
@@ -349,16 +349,16 @@ describe('standalone metadata degrades and says so', () => {
     const player = FrameworkBridge.getPlayer(5);
     const other = FrameworkBridge.getPlayer(5);
 
-    for (let i = 0; i < 10; i++) player?.setMeta('gphone_battery', i);
-    other?.setMeta('gphone_battery', 1);
+    for (let i = 0; i < 10; i++) player?.setMeta('gos_battery', i);
+    other?.setMeta('gos_battery', 1);
 
     expect(warnings().filter((line) => line.includes('mirror metadata'))).toHaveLength(1);
   });
 
   it('names the key that was dropped, so the log is actionable', () => {
-    FrameworkBridge.getPlayer(5)?.setMeta('gphone_battery', 42);
+    FrameworkBridge.getPlayer(5)?.setMeta('gos_battery', 42);
 
-    expect(warnings()[0]).toContain('gphone_battery');
+    expect(warnings()[0]).toContain('gos_battery');
   });
 });
 
@@ -405,7 +405,7 @@ describe('listing standalone players', () => {
 describe('the owner table, which decides what the orphan sweep may delete', () => {
   it('is null on standalone, so the sweep skips', () => {
     // There is no framework character table to compare a citizenid against. A wrong answer
-    // here — a leftover `players` from a previous install, say — reads every gPhone row as
+    // here — a leftover `players` from a previous install, say — reads every gOS row as
     // unowned and deletes the whole database at boot, with a log line saying it worked.
     expect(FrameworkBridge.ownerTable()).toBeNull();
   });
@@ -429,11 +429,11 @@ describe('offline lookups on standalone', () => {
 
     const queried = dbMock.single.mock.calls.map((call) => String(call[0]));
     expect(queried.some((query) => /\bplayers\b/.test(query))).toBe(false);
-    expect(queried.every((query) => query.includes('gphone_phone_numbers'))).toBe(true);
+    expect(queried.every((query) => query.includes('gos_phone_numbers'))).toBe(true);
   });
 
-  it('renders an offline player as the number gPhone issued them', async () => {
-    // gPhone is the only record a standalone player has, so its own table is the framework
+  it('renders an offline player as the number gOS issued them', async () => {
+    // gOS is the only record a standalone player has, so its own table is the framework
     // record. The name stays null on purpose: `GetPlayerName` answers only for a connected
     // client, and this lookup exists precisely for players who are not.
     dbMock.single.mockResolvedValue({ number: '5561234' });

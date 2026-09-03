@@ -24,7 +24,7 @@ import { schemeStore, setThemeSeed, themeStore } from './theme';
  * And because the picture and the seed were chosen separately, they could disagree: the
  * shipped "Dark Midnight" was a gray gradient with a blue seed.
  */
-import type { ThemeMode, WallpaperPreset, WallpaperState } from '@gphone/sdk';
+import type { ThemeMode, WallpaperPreset, WallpaperState } from '@gos/sdk';
 
 /**
  * The offered colors, chosen for **distinct hue**.

@@ -14,6 +14,6 @@ export function setConstants(c: AddOnConstants): void {
 }
 
 export function constants(): AddOnConstants {
-  if (!current) throw new Error('[gPhone] add-on constants used before bootAddOn() ran.');
+  if (!current) throw new Error('[gOS] add-on constants used before bootAddOn() ran.');
   return current;
 }

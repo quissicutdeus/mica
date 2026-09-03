@@ -3,14 +3,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import Icon from './Icon.svelte';
-import { defineApp } from '@gphone/sdk/app';
+import { defineApp } from '@gos/sdk/app';
 
 export default defineApp({
   id: 'media',
   tile: { bg: 'bg-blue-500', fg: 'text-white' },
   icon: Icon,
   preload: async () => {
-    const { useMedia } = await import('@gphone/sdk');
+    const { useMedia } = await import('@gos/sdk');
     return useMedia().media.load();
   },
   description: 'View your photo gallery and shared media',

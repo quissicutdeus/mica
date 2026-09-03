@@ -8,7 +8,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
  * The Blab edit window, and the one number behind it (MICA-108).
  *
  * There used to be two: a literal `editWindow: 900` in the `defineService` declaration, which
- * is what becomes the recency predicate on the `UPDATE`, and `gphone_blabber_edit_window` read
+ * is what becomes the recency predicate on the `UPDATE`, and `gos_blabber_edit_window` read
  * separately and reported to the client so the app could hide its Edit button. The convar moved
  * the button and not the rule, so a server that raised it showed an Edit button whose save the
  * server then refused.
@@ -45,7 +45,7 @@ vi.mock('../lib/FrameworkBridge', () => ({
   }
 }));
 
-const CONVAR = 'gphone_blabber_edit_window';
+const CONVAR = 'gos_blabber_edit_window';
 const MY_ACCOUNT = { id: 1, citizenid: 'CIT_A', app: 'blabber', handle: 'ada', status: 'active' };
 
 /** The predicate `Repository.update` adds when the service declares an edit window. */
@@ -68,7 +68,7 @@ const load = async (value?: string) => {
 };
 
 const call = async (action: string, data: unknown, citizenid = 'CIT_A') => {
-  const handler = handlers.get(`gphone:server:blabber:${action}`);
+  const handler = handlers.get(`gos:server:blabber:${action}`);
   if (!handler) throw new Error(`no handler for ${action}`);
   bridge.current = citizenid;
   (globalThis as any).source = 5;

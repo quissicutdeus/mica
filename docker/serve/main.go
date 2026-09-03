@@ -1,7 +1,7 @@
-// A static file server for the gPhone NUI bundle, and nothing else.
+// A static file server for the gOS NUI bundle, and nothing else.
 //
 // The web root is dist/web as Vite emits it: a non-hashed index.html, a
-// non-hashed gphone.svg from web/public/, and content-hashed everything else
+// non-hashed gos.svg from web/public/, and content-hashed everything else
 // under assets/. That split is the only reason there are two cache policies
 // here -- the hashed files can be cached for a year, the other two cannot be
 // cached at all.
@@ -116,7 +116,7 @@ func main() {
 	if _, ok := assets["/index.html"]; !ok {
 		log.Fatalf("%s/index.html is missing; the web stage produced no build", root)
 	}
-	log.Printf("gphone-serve: %d files from %s on :%d, TZ=%s (%s)",
+	log.Printf("gos-serve: %d files from %s on :%d, TZ=%s (%s)",
 		len(assets), root, port, zone, time.Now().In(zone).Format("2006-01-02 15:04:05 MST"))
 
 	srv := &http.Server{
@@ -136,7 +136,7 @@ func main() {
 	defer stop()
 	go func() {
 		<-ctx.Done()
-		log.Print("gphone-serve: shutting down")
+		log.Print("gos-serve: shutting down")
 		sh, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(sh)
@@ -168,7 +168,7 @@ func localZone() *time.Location {
 	if err != nil {
 		// Deliberately not fatal. A typo in TZ should not take a demo offline
 		// over the formatting of log lines.
-		log.Printf("gphone-serve: TZ=%q is not a known zone (%v); staying on %s", name, err, time.Local)
+		log.Printf("gos-serve: TZ=%q is not a known zone (%v); staying on %s", name, err, time.Local)
 		return time.Local
 	}
 	time.Local = loc

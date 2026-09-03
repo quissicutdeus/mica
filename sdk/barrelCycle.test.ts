@@ -11,13 +11,13 @@
  */
 import '../web/src/host/registerFacets';
 import { describe, it, expect } from 'vitest';
-import { useService, usePersisted, useAppEvents } from '@gphone/sdk';
-import { useNuiBridge } from '@gphone/sdk/core';
+import { useService, usePersisted, useAppEvents } from '@gos/sdk';
+import { useNuiBridge } from '@gos/sdk/core';
 
 /**
  * The SDK barrel must be importable from a module that runs early.
  *
- * It was not, and the cycle was this: `@gphone/sdk` re-exports `useAppRegistry`, which
+ * It was not, and the cycle was this: `@gos/sdk` re-exports `useAppRegistry`, which
  * imports `shell/state/registry.ts`, which globs every manifest under `apps/` **eagerly** —
  * and every manifest imported the barrel back while it was still evaluating. Every binding
  * came out `undefined`, and the symptom was `useService is not a function` on a line that
@@ -27,7 +27,7 @@ import { useNuiBridge } from '@gphone/sdk/core';
  * composition, Notes building its store on first use, both `preload`s reaching for
  * `import('./store')`, and Blabber's migration stalling on eight module-scope SDK calls.
  *
- * `@gphone/sdk/app` fixed it by being a leaf a manifest can import without pulling
+ * `@gos/sdk/app` fixed it by being a leaf a manifest can import without pulling
  * anything. **These calls are at module scope on purpose** — that is the exact position
  * that used to fail.
  *

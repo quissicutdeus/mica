@@ -89,7 +89,7 @@ describe('findNearbyVisiblePlayers', () => {
     expect(await findNearbyVisiblePlayers(1, 'CID_A')).toEqual([]);
   });
 
-  it('respects the gphone_bluetooth_range convar', async () => {
+  it('respects the gos_bluetooth_range convar', async () => {
     place(1, [0, 0, 0]);
     place(2, [20, 0, 0]); // outside the default 15m, inside a widened 25m
     (FrameworkBridge.getAllPlayers as any).mockReturnValue({
@@ -104,7 +104,7 @@ describe('findNearbyVisiblePlayers', () => {
    * MICA-115. Range was never a bound on how many: fifteen meters is a doorway on a
    * quiet street and a full club on a busy one, and every caller fans out per recipient —
    * Media's drop writes each of them a full copy of the payload. Proximity music already
-   * caps its roster with `gphone_music_max_nearby` for precisely this reason.
+   * caps its roster with `gos_music_max_nearby` for precisely this reason.
    */
   describe('the recipient cap (MICA-115)', () => {
     const crowd = (count: number) => {
@@ -134,10 +134,10 @@ describe('findNearbyVisiblePlayers', () => {
       expect(reached.map((p) => p.source)).toEqual([2, 3, 4, 5, 6]);
     });
 
-    it('respects gphone_bluetooth_max_nearby', async () => {
+    it('respects gos_bluetooth_max_nearby', async () => {
       crowd(20);
       (globalThis as any).GetConvarInt = (name: string, fallback: number) =>
-        name === 'gphone_bluetooth_max_nearby' ? 2 : fallback;
+        name === 'gos_bluetooth_max_nearby' ? 2 : fallback;
 
       expect(await findNearbyVisiblePlayers(1, 'CID_A')).toHaveLength(2);
     });
@@ -145,7 +145,7 @@ describe('findNearbyVisiblePlayers', () => {
     it('clamps a convar raised past the ceiling', async () => {
       crowd(20);
       (globalThis as any).GetConvarInt = (name: string, fallback: number) =>
-        name === 'gphone_bluetooth_max_nearby' ? 999 : fallback;
+        name === 'gos_bluetooth_max_nearby' ? 999 : fallback;
 
       // A convar is a dial, not a licence: one tap writes one row per recipient.
       expect(await findNearbyVisiblePlayers(1, 'CID_A')).toHaveLength(16);
@@ -154,9 +154,9 @@ describe('findNearbyVisiblePlayers', () => {
     it('falls back to the default on a value that is not a positive number', async () => {
       crowd(20);
       (globalThis as any).GetConvarInt = (name: string, fallback: number) =>
-        name === 'gphone_bluetooth_max_nearby' ? 0 : fallback;
+        name === 'gos_bluetooth_max_nearby' ? 0 : fallback;
 
-      // `gphone_bluetooth_range` is the knob that turns proximity sharing off; a typo in
+      // `gos_bluetooth_range` is the knob that turns proximity sharing off; a typo in
       // this one must not silently do the same thing by another route.
       expect(await findNearbyVisiblePlayers(1, 'CID_A')).toHaveLength(5);
     });

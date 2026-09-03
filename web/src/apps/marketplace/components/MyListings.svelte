@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { EmptyState, Skeleton, useLocale, useMarketplace } from '@gphone/sdk';
+  import { EmptyState, Skeleton, useLocale, useMarketplace } from '@gos/sdk';
 
   let { onback }: { onback: () => void } = $props();
 

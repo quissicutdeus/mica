@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { DEVICES, type DeviceId } from '@gphone/shared/devices';
+import { DEVICES, type DeviceId } from '@gos/shared/devices';
 import { sendNuiMessage } from './nui';
 import { DeviceState } from './DeviceState';
 import { sendChargeToNui } from '../services/Battery';

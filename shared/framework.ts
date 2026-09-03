@@ -29,7 +29,7 @@ export const CITIZENID_MAX_LENGTH = 50;
 type IdentifierRejection = 'not-a-string' | 'empty' | 'too-long';
 
 /**
- * The `citizenid` gPhone keys an ESX player's rows on.
+ * The `citizenid` gOS keys an ESX player's rows on.
  *
  * **The decision, stated rather than implied.** ESX has no citizenid. It identifies a player
  * by `identifier` — `license:<40 hex>`, `steam:<id>`, `fivem:<id>` — and issues it per
@@ -53,7 +53,7 @@ type IdentifierRejection = 'not-a-string' | 'empty' | 'too-long';
  * this one. An over-long identifier therefore reached MySQL unexamined, and MySQL decided.
  * Under `STRICT_TRANS_TABLES`, MariaDB's default, that is `ERROR 1406` on every write the
  * player makes: no notes, no messages, no contacts. Under a permissive `sql_mode` it is
- * worse, because it succeeds — the value is silently cut to fit, gPhone stays
+ * worse, because it succeeds — the value is silently cut to fit, gOS stays
  * self-consistent by writing and reading the same truncated string, and the phone appears to
  * work while the stored id no longer equals that player's `users.identifier`. Every join
  * across the two then misses: `findOfflineByCitizenId` renders them nameless, and the orphan
@@ -66,7 +66,7 @@ type IdentifierRejection = 'not-a-string' | 'empty' | 'too-long';
  * alarm switched off.
  *
  * Null rather than a placeholder, matching what the bridges do with an unnameable qb player:
- * an identity gPhone cannot read is not one it invents.
+ * an identity gOS cannot read is not one it invents.
  */
 export const citizenIdFromIdentifier = (identifier: unknown): string | null => {
   if (typeof identifier !== 'string') return null;

@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { citizenIdFromIdentifier, describeIdentifierRejection } from '@gphone/shared/framework';
+import { citizenIdFromIdentifier, describeIdentifierRejection } from '@gos/shared/framework';
 import { Database } from '../Database';
 import { numberFor, readCitizenIdByNumber, readNumber, PHONE_NUMBERS_TABLE } from '../phoneNumbers';
 import {
@@ -20,7 +20,7 @@ import {
  * Standalone (no framework at all)
  *
  * The fourth adapter, and the first with nothing behind it. Everything below exists so a
- * server running gPhone and nothing else reaches the rest of this file as the qb-shaped
+ * server running gOS and nothing else reaches the rest of this file as the qb-shaped
  * object it already knows how to read — the same trick the ESX section plays, with a
  * runtime that supplies an identity and nothing else.
  *
@@ -37,7 +37,7 @@ import {
  * something this code can observe. `exposes` swallows the throw FiveM's `exports` proxy
  * raises for a resource that has not started yet (see its own note, and `detectFramework`),
  * so "es_extended is three lines further down server.cfg" and "there is no framework here"
- * are the same answer to a probe, and gPhone's own `onResourceStart` fires inside exactly
+ * are the same answer to a probe, and gOS's own `onResourceStart` fires inside exactly
  * that window. A server that auto-detected standalone would key that boot's rows on a
  * license identifier and the next boot's on a citizenid — one player, two phones, and no
  * error anywhere.
@@ -45,7 +45,7 @@ import {
  * An operator saying so cannot be raced. It is one line in `server.cfg` and it is the whole
  * opt-in.
  */
-export const STANDALONE_CONVAR = 'gphone_standalone';
+export const STANDALONE_CONVAR = 'gos_standalone';
 
 /**
  * What counts as on and off, and why a third bucket exists.
@@ -53,7 +53,7 @@ export const STANDALONE_CONVAR = 'gphone_standalone';
  * `GetConvar` hands back a free-form string with no validation of its own — the fact
  * `orphanSweep.ts`'s `resolveOwnerOverride` documents at length for the convar that decides
  * which rows a sweep may delete. A value that is neither is **not** silently read as either:
- * `setr gphone_standalone yes-please` is an operator who meant to enable this and has not,
+ * `setr gos_standalone yes-please` is an operator who meant to enable this and has not,
  * and the difference between that and a working phone is one console line they can act on.
  */
 const STANDALONE_ON = new Set(['1', 'true', 'yes', 'on', 'enabled']);
@@ -104,8 +104,8 @@ const standaloneRequested = (): boolean => {
     standaloneConvarReported = true;
     console.warn(
       `[FrameworkBridge] ${STANDALONE_CONVAR} is set to '${raw}', which is neither on nor ` +
-        `off. Reading it as off, so gPhone is still waiting for a framework. Set it to '1' ` +
-        `(or true/yes/on) to run gPhone with no framework at all. Reported once per ` +
+        `off. Reading it as off, so gOS is still waiting for a framework. Set it to '1' ` +
+        `(or true/yes/on) to run gOS with no framework at all. Reported once per ` +
         `resource start.`
     );
   }
@@ -133,7 +133,7 @@ export const reportStandaloneConflict = (framework: 'qb' | 'esx'): void => {
   const kept = framework === 'qb' ? 'qb' : 'ESX';
   console.error(
     `[FrameworkBridge] ${STANDALONE_CONVAR} is set, but ${core} is running on this server. ` +
-      `Ignoring the convar and keeping ${kept} — it owns the identity every existing gPhone ` +
+      `Ignoring the convar and keeping ${kept} — it owns the identity every existing gOS ` +
       `row is keyed on, and switching that is a data migration rather than a fallback. ` +
       `Remove '${STANDALONE_CONVAR}' from server.cfg, or remove the framework, so this ` +
       `server has one answer. Reported once per resource start.`
@@ -198,7 +198,7 @@ const standaloneIdentifier = (src: number): string | null => {
  * real name beats a blank one. Split on the first space exactly as `esxCharinfo` does with
  * `getName()`, so a two-word name lands in the two fields those readers expect.
  *
- * **`phone` comes from gPhone's own table**, because nothing in the FiveM runtime has a phone
+ * **`phone` comes from gOS's own table**, because nothing in the FiveM runtime has a phone
  * number to offer and no framework is here to have issued one. `lib/phoneNumbers.ts` owns
  * that decision and the cache this reads; `services/PhoneNumbers.ts` owns the table and
  * assigns a number once, at connect. Null until that has happened, which every reader of
@@ -267,7 +267,7 @@ const reportStandaloneMoney = (call: string, src: number): void => {
  * same reason.
  *
  * The only caller is `Battery.ts`, mirroring the charge onto the framework player for the
- * benefit of *other* resources. gPhone's own source of truth is its `gphone_battery` table,
+ * benefit of *other* resources. gOS's own source of truth is its `gos_battery` table,
  * which is written either way — so a dropped mirror costs a third-party integration and
  * never the phone. On standalone there is no framework player to mirror onto and no third
  * party to read it, which makes this a no-op with a receipt rather than a failure.
@@ -277,7 +277,7 @@ const standaloneSetMeta = (src: number, key: string): void => {
   standaloneMetaReported = true;
   console.warn(
     `[FrameworkBridge] This server is running standalone, so there is no framework player to ` +
-      `mirror metadata onto — '${key}' was dropped, first seen for source ${src}. gPhone's ` +
+      `mirror metadata onto — '${key}' was dropped, first seen for source ${src}. gOS's ` +
       `own tables are unaffected. Reported once per resource start, because this is a ` +
       `property of the server rather than of a player.`
   );
@@ -384,10 +384,10 @@ const standaloneRegisterUsableItem = (item: string, cb: (source: number) => void
 };
 
 /**
- * The framework's own table of characters, and the column in it that holds what gPhone
+ * The framework's own table of characters, and the column in it that holds what gOS
  * stores as a `citizenid`.
  *
- * gPhone creates neither. qb owns `players(citizenid)`; es_extended owns
+ * gOS creates neither. qb owns `players(citizenid)`; es_extended owns
  * `users(identifier)`, which MICA-150 decided maps directly onto `citizenid` — one phone
  * per player rather than per character, recorded on that ticket.
  *
@@ -399,7 +399,7 @@ const standaloneRegisterUsableItem = (item: string, cb: (source: number) => void
  * the moment a second producer appears.
 
 /**
- * The offline record on a server whose only record is gPhone's own.
+ * The offline record on a server whose only record is gOS's own.
  *
  * There is no `players` and no `users` to read, but there *is* a number, because
  * `services/PhoneNumbers.ts` issued it. The name is null and stays null, deliberately:
@@ -408,8 +408,8 @@ const standaloneRegisterUsableItem = (item: string, cb: (source: number) => void
  * to be a record. An offline standalone player renders as a number without a name, which is
  * what a phone with an unknown contact does anyway.
  *
- * Null when they have no number: a citizenid gPhone has never issued a number to is a player
- * gPhone has no record of at all.
+ * Null when they have no number: a citizenid gOS has never issued a number to is a player
+ * gOS has no record of at all.
  */
 const findOfflineByCitizenId = async (citizenid: string): Promise<FrameworkIdentity | null> =>
   await offlineLookup('the standalone phone-number lookup by citizenid', async () => {
@@ -480,7 +480,7 @@ export const standaloneAdapter: FrameworkAdapter = {
   getAllPlayers: standaloneAllPlayers,
 
   /**
-   * **No character table at all** — gPhone is the only thing that knows a player exists — so
+   * **No character table at all** — gOS is the only thing that knows a player exists — so
    * there is nothing for the orphan sweep to compare a citizenid against and it must skip.
    * That `null` means "there is nothing here to tell", which a caller must treat exactly as it
    * treats `unknown`'s "I cannot tell yet": never as "there are no characters".
@@ -492,7 +492,7 @@ export const standaloneAdapter: FrameworkAdapter = {
 
   /**
    * **Standalone can answer this, and it is the only framework that can answer it well.**
-   * gPhone issued the number itself, so the reverse lookup is a query against a table it owns
+   * gOS issued the number itself, so the reverse lookup is a query against a table it owns
    * rather than a guess at somebody else's schema — which is exactly why ESX cannot. This is
    * what lets a standalone player start a conversation with, or dial, somebody offline.
    */

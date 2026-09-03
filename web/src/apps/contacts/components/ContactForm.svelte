@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { Avatar, Button, CloseIcon, EditIcon, useLocale } from '@gphone/sdk';
+  import { Avatar, Button, CloseIcon, EditIcon, useLocale } from '@gos/sdk';
 
   const { t } = useLocale();
 

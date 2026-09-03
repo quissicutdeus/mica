@@ -15,8 +15,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     useReports,
     onAppForeground,
     type AppProps
-  } from '@gphone/sdk';
-  import type { Report } from '@gphone/shared/types';
+  } from '@gos/sdk';
+  import type { Report } from '@gos/shared/types';
   import en from './locales/en.json';
   import de from './locales/de.json';
   import PendingReportCard from './components/PendingReportCard.svelte';

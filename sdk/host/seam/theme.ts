@@ -34,7 +34,7 @@ export { backgroundForScheme, buildSchemes, cssVarBlock } from '../../lib/m3';
  * A seam is reversible; an entry on `addon.ts` is not.
  *
  * `sdk/ui/NowPlayingCard.svelte` is the one place inside the package that derives a scheme
- * from a seed, and it is on `@gphone/sdk/core` — core apps only, never bundled into an
+ * from a seed, and it is on `@gos/sdk/core` — core apps only, never bundled into an
  * add-on — which is itself a prior decision pointing the same way.
  *
  * ## Two source modules, one file

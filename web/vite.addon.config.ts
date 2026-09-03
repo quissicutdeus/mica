@@ -27,7 +27,7 @@ const VIRTUAL = '\0addon-entry:';
 /** One virtual entry per add-on: manifest + component → bootAddOn. */
 function addOnEntries(): Plugin {
   return {
-    name: 'gphone-addon-entries',
+    name: 'gos-addon-entries',
     resolveId(id) {
       // Rolldown resolves a bare `lib.entry` value as a path relative to root before any
       // plugin sees it (`addon-entry:blabber` arrives here as `<root>/addon-entry:blabber`),
@@ -42,7 +42,7 @@ function addOnEntries(): Plugin {
         `import '${path.resolve(here, '../sdk/app.css')}';`,
         `import manifest from '${path.join(appsDir, app, 'manifest.ts')}';`,
         `import App from '${path.join(appsDir, app, 'index.svelte')}';`,
-        `import { bootAddOn } from '@gphone/sdk';`,
+        `import { bootAddOn } from '@gos/sdk';`,
         `void bootAddOn(manifest, App);`
       ].join('\n');
     }
@@ -63,13 +63,13 @@ function addOnEntries(): Plugin {
  * the add-on graph to a real path and fails on anything under `sdk/host/inProcess/`.
  */
 
-// MICA-129: matches the bare specifier and any subpath (`@gphone/sdk/core/whatever`),
+// MICA-129: matches the bare specifier and any subpath (`@gos/sdk/core/whatever`),
 // so a future file added under `sdk/core.ts` doesn't reopen the confusing-error gap this
 // plugin exists to close.
-const CORE_ENTRY_RE = /^@gphone\/sdk\/core(\/.*)?$/;
+const CORE_ENTRY_RE = /^@gos\/sdk\/core(\/.*)?$/;
 
 /**
- * `@gphone/sdk/core` has no `resolve.alias` entry in this config, unlike the shell's own
+ * `@gos/sdk/core` has no `resolve.alias` entry in this config, unlike the shell's own
  * `vite.config.ts` — deliberately: `useNuiBridge` is the raw transport and `boundary.test.ts`
  * already refuses it to any `core: false` app at the source level. But `tsconfig.app.json`
  * resolves the specifier fine (it has its own `paths` entry, and the package's own `exports`
@@ -81,13 +81,13 @@ const CORE_ENTRY_RE = /^@gphone\/sdk\/core(\/.*)?$/;
  */
 function refuseCoreEntry(): Plugin {
   return {
-    name: 'gphone-refuse-core-entry',
+    name: 'gos-refuse-core-entry',
     resolveId: {
       order: 'pre',
       handler(id) {
         if (!CORE_ENTRY_RE.test(id)) return null;
         this.error(
-          `[gPhone] an add-on may not import @gphone/sdk/core — it is the raw NUI transport, ` +
+          `[gOS] an add-on may not import @gos/sdk/core — it is the raw NUI transport, ` +
             `reserved for core: true apps (boundary.test.ts already refuses this at the ` +
             `source level). Reach your own server actions through useService(id) instead.`
         );
@@ -100,7 +100,7 @@ function refuseCoreEntry(): Plugin {
  * MICA-205. A bundle may not claim less than it reaches for.
  *
  * `permissions` is self-declared, and `sdk/permissions.test.ts` only ever held *this repo's*
- * apps to it: it walks `web/src/apps/<id>`, reads what each file imports from `@gphone/sdk`,
+ * apps to it: it walks `web/src/apps/<id>`, reads what each file imports from `@gos/sdk`,
  * and fails on a manifest that declares less. An add-on built anywhere else went through no
  * such check, and the consequence is not that it gains access — the shell re-checks every
  * permission against `HOOK_OF_FACET` before answering a call — it is that the Store shows a
@@ -113,7 +113,7 @@ function refuseCoreEntry(): Plugin {
  *
  * ## Why `transform` and not the finished chunk
  *
- * The names matter, not the text: which `@gphone/sdk` exports this app imports is what
+ * The names matter, not the text: which `@gos/sdk` exports this app imports is what
  * `PERMISSION_OF` is keyed by, and the chunk is minified by the time `generateBundle` sees
  * it — every local is renamed and the import statements are gone. `noUnsubstitutedDefines`
  * below reads the final chunk because it is looking for a literal that survives minification;
@@ -138,7 +138,7 @@ function refuseCoreEntry(): Plugin {
  * contributed no scanned file at all is a broken check, not a small app.
  */
 function requireDeclaredPermissions(): Plugin {
-  /** `@gphone/sdk` names imported by each app's own files, and how many of those were seen. */
+  /** `@gos/sdk` names imported by each app's own files, and how many of those were seen. */
   const imported = new Map<string, Set<string>>();
   const scanned = new Map<string, number>();
   let table: PermissionTable | undefined;
@@ -149,7 +149,7 @@ function requireDeclaredPermissions(): Plugin {
    *
    * A plain `import { PERMISSION_OF } from '../sdk/permissions'` reads better and does not
    * typecheck: `tsconfig.node.json` covers this config and the two files behind that import
-   * — `manifest.ts` and `version.ts` — reach for `import.meta.env` and the `__MICA_*__`
+   * — `manifest.ts` and `version.ts` — reach for `import.meta.env` and the `__GOS_*__`
    * defines, whose ambient declarations live in `sdk/env.d.ts`, which that program does not
    * include. The template has a harder version of the same problem: a Vite config is loaded
    * by **Node**, which resolves a `.ts` file but not an extensionless relative specifier
@@ -163,7 +163,7 @@ function requireDeclaredPermissions(): Plugin {
     };
     if (!module.PERMISSION_OF) {
       throw new Error(
-        `[gPhone] ${path.relative(repoRoot, file)} did not export PERMISSION_OF. The permission ` +
+        `[gOS] ${path.relative(repoRoot, file)} did not export PERMISSION_OF. The permission ` +
           `table is what every add-on's declaration is checked against, so this refuses to ` +
           `build rather than pass every bundle by comparing against nothing.`
       );
@@ -180,7 +180,7 @@ function requireDeclaredPermissions(): Plugin {
   };
 
   return {
-    name: 'gphone-addon-permissions',
+    name: 'gos-addon-permissions',
     async buildStart() {
       imported.clear();
       scanned.clear();
@@ -204,10 +204,10 @@ function requireDeclaredPermissions(): Plugin {
         for (const app of ids) {
           if ((scanned.get(app) ?? 0) === 0) {
             this.error(
-              `[gPhone] the permission scan saw no source file belonging to '${app}', so it ` +
+              `[gOS] the permission scan saw no source file belonging to '${app}', so it ` +
                 `checked nothing. That is this plugin being broken, not the add-on: every ` +
                 `bundle's entry imports its own manifest.ts and index.svelte. Fix the path ` +
-                `matching in gphone-addon-permissions rather than removing this check.`
+                `matching in gos-addon-permissions rather than removing this check.`
             );
           }
 
@@ -215,7 +215,7 @@ function requireDeclaredPermissions(): Plugin {
           const declared = declaredPermissions(fs.readFileSync(manifest, 'utf8'));
           if (!declared.ok) {
             this.error(
-              `[gPhone] ${path.relative(repoRoot, manifest)}: ${declared.reason} This build ` +
+              `[gOS] ${path.relative(repoRoot, manifest)}: ${declared.reason} This build ` +
                 `refuses to guess what an add-on discloses.`
             );
           }
@@ -227,7 +227,7 @@ function requireDeclaredPermissions(): Plugin {
           );
           if (shortfall.length > 0) {
             this.error(
-              `[gPhone] ${shortfallMessage(app, path.relative(repoRoot, manifest), shortfall)}`
+              `[gOS] ${shortfallMessage(app, path.relative(repoRoot, manifest), shortfall)}`
             );
           }
         }
@@ -239,7 +239,7 @@ function requireDeclaredPermissions(): Plugin {
 /** Inline the single CSS asset into every entry chunk; the frame has no <link> to load it from. */
 function inlineCss(): Plugin {
   return {
-    name: 'gphone-inline-css',
+    name: 'gos-inline-css',
     // `order: 'post'`, not the brief's plain `generateBundle`: Vite's own CSS asset is
     // written by its internal `vite:css-post` plugin, which — regardless of where this
     // plugin sits in the `plugins` array — always runs as an actual "post"-stage hook, so
@@ -266,9 +266,9 @@ function inlineCss(): Plugin {
 }
 
 /**
- * MICA-170. Every `__MICA_*__` identifier this tree injects has to be substituted here
+ * MICA-170. Every `__GOS_*__` identifier this tree injects has to be substituted here
  * too, and until this plugin existed nothing said so: `vite.config.ts` had a `define` block
- * and this config had none, so `__MICA_VERSION__` and `__MICA_BUILD_INFO__` survived
+ * and this config had none, so `__GOS_VERSION__` and `__GOS_BUILD_INFO__` survived
  * verbatim into all four shipped bundles. Inside the add-on iframe the identifiers are
  * undeclared, `sdk/version.ts`'s `typeof` guards held, and every published add-on read the
  * fallback — a plausible, confidently wrong `1.0.0`, on every server, forever.
@@ -286,9 +286,9 @@ function inlineCss(): Plugin {
  * unit suite before anyone gets as far as a build.
  */
 function noUnsubstitutedDefines(): Plugin {
-  const IDENTIFIER = /__MICA_[A-Za-z0-9_]*__/g;
+  const IDENTIFIER = /__GOS_[A-Za-z0-9_]*__/g;
   return {
-    name: 'gphone-no-unsubstituted-defines',
+    name: 'gos-no-unsubstituted-defines',
     // `order: 'post'`, and last in the `plugins` array, so this sees the final chunk text —
     // including whatever `inlineCss()` (also a post hook) has prepended by then.
     generateBundle: {
@@ -307,7 +307,7 @@ function noUnsubstitutedDefines(): Plugin {
           const found = [...new Set(text.match(IDENTIFIER) ?? [])];
           if (found.length > 0) {
             this.error(
-              `[gPhone] ${file} still contains unsubstituted build-time identifier(s): ` +
+              `[gOS] ${file} still contains unsubstituted build-time identifier(s): ` +
                 `${found.join(', ')}. An add-on bundle runs in a sandboxed iframe where these ` +
                 `are undeclared, so each one silently falls back to whatever default ` +
                 `sdk/version.ts holds instead of failing. Add it to this config's ` +
@@ -337,7 +337,7 @@ const ids = process.env.ADDON_ID ? [process.env.ADDON_ID] : addOnIds(appsDir);
 // that detour — this config is only ever meant to run through `build-addons.mjs`.
 if (!process.env.ADDON_ID && ids.length > 1) {
   throw new Error(
-    `[gPhone] vite.addon.config.ts needs ADDON_ID set to one of: ${ids.join(', ')} — run via scripts/build-addons.mjs, not vite build -c vite.addon.config.ts directly.`
+    `[gOS] vite.addon.config.ts needs ADDON_ID set to one of: ${ids.join(', ')} — run via scripts/build-addons.mjs, not vite build -c vite.addon.config.ts directly.`
   );
 }
 
@@ -351,7 +351,7 @@ export default defineConfig({
     // judge a graph that is finished.
     requireDeclaredPermissions(),
     inlineCss(),
-    // An add-on bundle inlines the SDK, so it carries gPhone's own code and the notice goes
+    // An add-on bundle inlines the SDK, so it carries gOS's own code and the notice goes
     // with it — see the README's "If you are writing an add-on": there is no linking
     // exception, which makes this the bundle where the banner matters most.
     licenseBanner(),
@@ -379,25 +379,25 @@ export default defineConfig({
    *
    * Defining them at all — rather than leaving the fallbacks in `sdk/version.ts` to produce
    * the same `''` — is what makes `noUnsubstitutedDefines()` above meaningful: a bundle
-   * carrying a bare `__MICA_*__` identifier is then always a mistake, never a shrug.
+   * carrying a bare `__GOS_*__` identifier is then always a mistake, never a shrug.
    */
   define: {
-    __MICA_VERSION__: JSON.stringify(''),
-    __MICA_BUILD_INFO__: JSON.stringify(''),
-    __MICA_BRANCH__: JSON.stringify('')
+    __GOS_VERSION__: JSON.stringify(''),
+    __GOS_BUILD_INFO__: JSON.stringify(''),
+    __GOS_BRANCH__: JSON.stringify('')
   },
   // `outDir` (`public/addons`) sits inside the shell's `publicDir` (`public/`, Vite's
   // default) so the main `vite build` can pick the bundles up through its own publicDir
   // copy — but that makes *this* config's default publicDir the same `public/` folder,
-  // which Vite warned about copying into its own subdirectory (and did: `gphone.svg`
+  // which Vite warned about copying into its own subdirectory (and did: `gos.svg`
   // showed up next to the bundles). This build has no use for the shell's public assets,
   // so turning its own publicDir handling off is the fix, not choosing a non-nested outDir.
   publicDir: false,
   resolve: {
     alias: [
-      { find: '@gphone/shared', replacement: path.resolve(here, '../shared') },
-      { find: '@gphone/sdk/app', replacement: path.resolve(here, '../sdk/app.ts') },
-      { find: '@gphone/sdk', replacement: path.resolve(here, '../sdk/addon.ts') }
+      { find: '@gos/shared', replacement: path.resolve(here, '../shared') },
+      { find: '@gos/sdk/app', replacement: path.resolve(here, '../sdk/app.ts') },
+      { find: '@gos/sdk', replacement: path.resolve(here, '../sdk/addon.ts') }
       /**
        * MICA-172 deleted the `nui/fetchNui` alias that used to sit here.
        *

@@ -22,7 +22,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
  * relative path. Nothing checked, so nothing stopped it.
  *
  * It matters for one concrete reason. An add-on installed through the Store resolves
- * `@gphone/sdk` and nothing else — `../../sdk/ui/Screen.svelte` does not exist for it.
+ * `@gos/sdk` and nothing else — `../../sdk/ui/Screen.svelte` does not exist for it.
  * Every relative import out of an app is a thing a third-party app cannot do, which
  * quietly makes the app-registry story only half true.
  *
@@ -96,7 +96,7 @@ describe('app boundary', () => {
 
     expect(
       offenders.sort(),
-      'export it from @gphone/sdk instead — an add-on cannot resolve a relative shell path'
+      'export it from @gos/sdk instead — an add-on cannot resolve a relative shell path'
     ).toEqual([]);
   });
 
@@ -135,7 +135,7 @@ describe('app boundary', () => {
       // Icons are generated; spot-check one that was imported by path before.
       'ChevronRightIcon'
     ]) {
-      expect(sdk, `@gphone/sdk is missing ${name}`).toHaveProperty(name);
+      expect(sdk, `@gos/sdk is missing ${name}`).toHaveProperty(name);
     }
     // Importing the barrel compiles every icon and component in the SDK — real work
     // that grew past the 5s default as the surface grew, and timed out rather than
@@ -157,7 +157,7 @@ describe('app boundary', () => {
       'VolumeHud',
       'Home'
     ]) {
-      expect(sdk, `@gphone/sdk should not expose ${shellOnly}`).not.toHaveProperty(shellOnly);
+      expect(sdk, `@gos/sdk should not expose ${shellOnly}`).not.toHaveProperty(shellOnly);
     }
   }, 30_000);
 });
@@ -195,7 +195,7 @@ describe('apps do not reach into each other', () => {
 
     expect(
       offenders.sort(),
-      'an app cannot resolve a sibling app it was not shipped with — share via @gphone/sdk instead'
+      'an app cannot resolve a sibling app it was not shipped with — share via @gos/sdk instead'
     ).toEqual([]);
   });
 });
@@ -205,13 +205,13 @@ describe('manifests import the leaf, never the barrel', () => {
    * The rule that keeps the SDK importable from a module that runs early.
    *
    * `shell/state/registry.ts` globs every manifest **eagerly**, and the barrel re-exports
-   * `useAppRegistry`, which imports that registry. So a manifest importing `@gphone/sdk`
+   * `useAppRegistry`, which imports that registry. So a manifest importing `@gos/sdk`
    * closes a cycle: the barrel loads every app, and every app loads the barrel back while
    * it is still evaluating. Every binding arrives `undefined`.
    *
-   * `@gphone/sdk/app` has no edges to close it with — `defineApp` and `lazyBadge` between
+   * `@gos/sdk/app` has no edges to close it with — `defineApp` and `lazyBadge` between
    * them import types and `./version`. Anything else a manifest wants comes from
-   * `await import('@gphone/sdk')` inside a deferred callback, which is a promise about a
+   * `await import('@gos/sdk')` inside a deferred callback, which is a promise about a
    * module rather than about a call.
    *
    * Source-read rather than behavioural, deliberately: the runtime symptom depends on
@@ -223,17 +223,17 @@ describe('manifests import the leaf, never the barrel', () => {
       .filter((id) => statSync(join(APPS, id)).isDirectory())
       .map((id) => ({ id, path: join(APPS, id, 'manifest.ts') }))
       .filter(({ path }) => existsSync(path))
-      .filter(({ path }) => /from\s+['"]@gphone\/sdk['"]/.test(readFileSync(path, 'utf8')))
+      .filter(({ path }) => /from\s+['"]@gos\/sdk['"]/.test(readFileSync(path, 'utf8')))
       .map(({ id }) => id);
 
     expect(
       offenders,
-      "import from '@gphone/sdk/app'; reach the rest with await import('@gphone/sdk') inside a deferred callback"
+      "import from '@gos/sdk/app'; reach the rest with await import('@gos/sdk') inside a deferred callback"
     ).toEqual([]);
   });
 });
 
-describe('only core apps may import @gphone/sdk/core', () => {
+describe('only core apps may import @gos/sdk/core', () => {
   /**
    * `useNuiBridge` reaches any registered NUI callback, which makes every permission an
    * add-on declares meaningless — it can fetch what `useContacts` would have fetched
@@ -242,9 +242,9 @@ describe('only core apps may import @gphone/sdk/core', () => {
    * anything `core: false`. An add-on installed from the Store cannot resolve this entry
    * at all; this test is what makes the in-tree add-ons honest about it. MICA-16.
    */
-  const CORE_ENTRY = new RegExp(String.raw`${IMPORT_PREFIX}['"]@gphone/sdk/core['"]`);
+  const CORE_ENTRY = new RegExp(String.raw`${IMPORT_PREFIX}['"]@gos/sdk/core['"]`);
 
-  it('no add-on imports @gphone/sdk/core', () => {
+  it('no add-on imports @gos/sdk/core', () => {
     const offenders: string[] = [];
     for (const file of FILES) {
       const appId = relative(APPS, file).split(sep)[0];

@@ -3,16 +3,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 /**
- * Centralized gPhone Versioning & Smart Build Information
+ * Centralized gOS Versioning & Smart Build Information
  *
  * Two numbers live here and they answer different questions. `SDK_CONTRACT_VERSION` is
- * *what an add-on compiled against*; `MICA_VERSION` is *which build of the phone is
+ * *what an add-on compiled against*; `GOS_VERSION` is *which build of the phone is
  * running it*. Only the first is stable enough to branch on, and only the first is
  * knowable from inside an add-on's own bundle — see each one below.
  */
 
 /**
- * The version of the **contract** `@gphone/sdk` publishes: the exported names of each entry
+ * The version of the **contract** `@gos/sdk` publishes: the exported names of each entry
  * point — **the values an add-on can call and the types it can name, equally** — the props
  * of every exported component, and the members of every exported string vocabulary. It
  * moves when that surface moves and at no other time, which is the whole reason it is worth
@@ -22,7 +22,7 @@
  * and leave it open, and the check behind it read the surface with a runtime `import *`,
  * which cannot see a type at all. Sixty-three published names on `index.ts` and sixty-two on
  * `addon.ts` were outside the gate in both directions until MICA-182 closed it. An add-on
- * that writes `import type { Note } from '@gphone/sdk'` is broken by that name disappearing
+ * that writes `import type { Note } from '@gos/sdk'` is broken by that name disappearing
  * in exactly the way one calling a deleted hook is, so this number moves for both.
  *
  * `publicSurface.test.ts` pins its frozen baselines to this value and imports it from here
@@ -31,7 +31,7 @@
  * `const` inside that test file until MICA-173, where nobody outside this repo could
  * import it; the file said as much itself.
  *
- * **Not** `MICA_VERSION` below, which is a CalVer build stamp computed from `git log` and
+ * **Not** `GOS_VERSION` below, which is a CalVer build stamp computed from `git log` and
  * moves on every push to `main` (eleven tags on 2026-08-27 alone) — an add-on branching on
  * it is branching on noise. **Not** `package.json`'s `1.0.0` either, which is a placeholder
  * read by no code and would advertise a published npm package that does not exist.
@@ -61,7 +61,7 @@ export const SDK_CONTRACT_VERSION: string = '1';
  * The running phone's CalVer build stamp — `YYYY.MM.DD.N` — or the empty string when the
  * bundle asking has no way to know it.
  *
- * `__MICA_VERSION__` is substituted by `define` at build time. The shell's
+ * `__GOS_VERSION__` is substituted by `define` at build time. The shell's
  * `vite.config.ts` supplies the real stamp. A `core: false` add-on's bundle
  * (`vite.addon.config.ts`) deliberately supplies `''` instead, and so does any third-party
  * bundler that has never heard of the identifier and leaves the fallback here to fire.
@@ -76,39 +76,37 @@ export const SDK_CONTRACT_VERSION: string = '1';
  * `{app.version || '1.0.0'}` and `{#if app.version}` call sites already treat a falsy
  * version as its own case.
  *
- * So: `if (MICA_VERSION)` before using it, and read `SDK_CONTRACT_VERSION` above for the
+ * So: `if (GOS_VERSION)` before using it, and read `SDK_CONTRACT_VERSION` above for the
  * question "what can I call?" — which is the one an add-on actually has.
  */
-export const MICA_VERSION: string =
-  typeof __MICA_VERSION__ !== 'undefined' ? __MICA_VERSION__ : '';
+export const GOS_VERSION: string = typeof __GOS_VERSION__ !== 'undefined' ? __GOS_VERSION__ : '';
 
 /**
  * The human-readable build line — `v2026.08.30.47 (branch@sha)` — shown in Settings >
- * About, or the empty string on the same terms as `MICA_VERSION` above.
+ * About, or the empty string on the same terms as `GOS_VERSION` above.
  *
- * The old `` `v${MICA_VERSION}-dev` `` fallback would now render as the meaningless
+ * The old `` `v${GOS_VERSION}-dev` `` fallback would now render as the meaningless
  * `v-dev`; with nothing to describe, it says nothing.
  */
-export const MICA_BUILD_INFO: string =
-  typeof __MICA_BUILD_INFO__ !== 'undefined'
-    ? __MICA_BUILD_INFO__
-    : MICA_VERSION
-      ? `v${MICA_VERSION}-dev`
+export const GOS_BUILD_INFO: string =
+  typeof __GOS_BUILD_INFO__ !== 'undefined'
+    ? __GOS_BUILD_INFO__
+    : GOS_VERSION
+      ? `v${GOS_VERSION}-dev`
       : '';
 
 /**
  * The branch this build came from, on its own rather than embedded in the line above.
  *
- * `MICA_BUILD_INFO` has carried the branch since it existed, welded into
+ * `GOS_BUILD_INFO` has carried the branch since it existed, welded into
  * `v<calver> (<branch>@<sha>)` for a human to read. MICA-192 needs it as a value —
  * `licenseNotice.ts` builds the §13 source address out of it — and picking it back out of
  * the display string with a regex would mean re-deriving something `vite.config.ts` already
  * had and threw away.
  *
- * Empty on the same terms as `MICA_VERSION`: an add-on bundle is compiled once and run by
+ * Empty on the same terms as `GOS_VERSION`: an add-on bundle is compiled once and run by
  * whatever phone installs it, so the host's branch is not knowable when the bundle is
  * written. `sourceUrlForBuild` degrades to the repository root rather than inventing a
  * `/tree/` path for a branch it cannot name.
  */
-export const MICA_BRANCH: string =
-  typeof __MICA_BRANCH__ !== 'undefined' ? __MICA_BRANCH__ : '';
+export const GOS_BRANCH: string = typeof __GOS_BRANCH__ !== 'undefined' ? __GOS_BRANCH__ : '';

@@ -4,9 +4,9 @@
 
 import { derived, get, writable, type Readable, type Writable } from 'svelte/store';
 import { usePersisted } from '../../../../sdk/host/usePersisted';
-import { isPlaylistId, isVideoId } from '@gphone/shared/youtube';
-import { MAX_NEARBY_BROADCASTS } from '@gphone/shared/musicBroadcast';
-import type { AudibleBroadcast, NearbyBroadcast } from '@gphone/sdk';
+import { isPlaylistId, isVideoId } from '@gos/shared/youtube';
+import { MAX_NEARBY_BROADCASTS } from '@gos/shared/musicBroadcast';
+import type { AudibleBroadcast, NearbyBroadcast } from '@gos/sdk';
 import { MAX_AUDIBLE_BROADCASTS } from '../../../../sdk/host/seam/music';
 import { joinOffsetSeconds, rankAudible } from '../../lib/phone/musicRanking';
 
@@ -87,7 +87,7 @@ import { joinOffsetSeconds, rankAudible } from '../../lib/phone/musicRanking';
  * So the mute list is persisted, and its durability is exactly the token's: **it survives a
  * relog and it does not survive a resource restart**, because tokens are reissued from an
  * in-memory table. Surviving a relog is the case that matters, since that is the whole of
- * mute evasion; surviving an `ensure gphone` is a nicety, and the price of it would be a
+ * mute evasion; surviving an `ensure gos` is a nicety, and the price of it would be a
  * stored cross-session identifier for every player who has ever pressed play.
  */
 

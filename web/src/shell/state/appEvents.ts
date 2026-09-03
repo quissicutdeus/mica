@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import type { AppEventEnvelope } from '@gphone/shared/appEvents';
+import type { AppEventEnvelope } from '@gos/shared/appEvents';
 
 /**
  * The bus a pushed event lands on, and the buffer that keeps it until somebody is listening.
@@ -20,7 +20,7 @@ import type { AppEventEnvelope } from '@gphone/shared/appEvents';
  *   - **Component scope** — mount-scoped, and replayed on subscribe from the buffer below.
  */
 
-import type { AppEvent } from '@gphone/sdk';
+import type { AppEvent } from '@gos/sdk';
 
 type Handler = (event: AppEvent) => void;
 

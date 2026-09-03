@@ -5,7 +5,7 @@
 import { writable, derived, get } from 'svelte/store';
 import { usePersisted } from '../../../../sdk/host/usePersisted';
 import { isBatteryDead } from './charge';
-import { isBrowser } from '@gphone/sdk';
+import { isBrowser } from '@gos/sdk';
 import type {
   RingMode,
   RingModeChoice,
@@ -61,7 +61,7 @@ const ALERT_EFFECTS: ReadonlySet<SoundEffect> = new Set<SoundEffect>([
 /**
  * **Vibrate is honest about being a label, for now.**
  *
- * There is no haptic device on the other side of this: gPhone renders in FiveM's CEF on a
+ * There is no haptic device on the other side of this: gOS renders in FiveM's CEF on a
  * desktop, and the buzz a real phone makes would have to come from the game — a
  * controller rumble or a prop animation out of `client/game/`, which is a native call and
  * not this file's to make. So vibrate silences the ringer exactly as silent does, and

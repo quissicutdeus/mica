@@ -4,8 +4,8 @@
 
 import { writable } from 'svelte/store';
 import { useService } from '../../../sdk/host/useService';
-import type { Listing } from '@gphone/shared/types';
-import type { CreateListingInput, ListingPage } from '@gphone/sdk';
+import type { Listing } from '@gos/shared/types';
+import type { CreateListingInput, ListingPage } from '@gos/sdk';
 
 const service = () => useService('marketplace');
 

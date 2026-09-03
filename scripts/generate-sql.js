@@ -9,7 +9,7 @@ import esbuild from 'esbuild';
 
 /**
  * Emit the whole schema — every defineService declaration, in dependency order, plus the
- * framework tables nothing declares — as one gphone.sql.
+ * framework tables nothing declares — as one gos.sql.
  *
  * Nothing here touches a database. The generated file is a reviewable artifact you
  * apply yourself — see the note in server/lib/schemaSql.ts for why runtime
@@ -22,17 +22,17 @@ import esbuild from 'esbuild';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
-const outFile = path.join(root, 'gphone.sql');
+const outFile = path.join(root, 'gos.sql');
 /**
  * The same schema without the qb `players` foreign keys — see `esxBanner` in `main`.
  *
- * **Two audiences, one file, and the name stays `gphone.esx.sql`.** It was written for ESX
+ * **Two audiences, one file, and the name stays `gos.esx.sql`.** It was written for ESX
  * (MICA-150) and standalone (MICA-151) needs exactly the same artifact for exactly the
  * same reason: neither has a `players` table for the constraints to point at. Renaming it to
  * something framework-neutral would break the link every ESX server owner already has, for a
  * filename. The banner says who it is for; the filename stays put.
  */
-const esxOutFile = path.join(root, 'gphone.esx.sql');
+const esxOutFile = path.join(root, 'gos.esx.sql');
 
 // Opt-in, because the artifact it produces destroys data.
 const withReset = process.argv.includes('--with-reset');
@@ -46,7 +46,7 @@ globalThis.onNet = globalThis.onNet ?? (() => {});
 globalThis.emitNet = globalThis.emitNet ?? (() => {});
 globalThis.on = globalThis.on ?? (() => {});
 globalThis.source = globalThis.source ?? 0;
-globalThis.GetCurrentResourceName = globalThis.GetCurrentResourceName ?? (() => 'gphone');
+globalThis.GetCurrentResourceName = globalThis.GetCurrentResourceName ?? (() => 'gos');
 globalThis.RegisterCommand = globalThis.RegisterCommand ?? (() => {});
 globalThis.IsPlayerAceAllowed = globalThis.IsPlayerAceAllowed ?? (() => false);
 globalThis.GetConvar = globalThis.GetConvar ?? ((_n, fallback) => fallback);
@@ -58,47 +58,47 @@ export { declaredServices } from '${path.join(root, 'server/lib/defineService.ts
 export { toSqlFile, schemaMigrationsLedgerDdl, schemaMigrationsSeedSql } from '${path.join(root, 'server/lib/schemaSql.ts').split(path.sep).join('/')}';
 `;
 
-const bundlePath = path.join(root, 'node_modules', '.cache', 'gphone-sqlgen.mjs');
+const bundlePath = path.join(root, 'node_modules', '.cache', 'gos-sqlgen.mjs');
 
 /**
  * The destructive half of `--with-reset`.
  *
- * Discovers `gphone_`-prefixed tables at apply time rather than listing the declared
+ * Discovers `gos_`-prefixed tables at apply time rather than listing the declared
  * ones, because the point of a reset is to clear tables whose declaration has since
  * been renamed or deleted — a static list cannot see those orphans.
  *
  * Safety properties, in order of how much they matter:
  *   - `table_schema = DATABASE()` confines it to the schema you are connected to.
  *   - `ESCAPE '|'` makes the underscore literal. Unescaped, `_` is a single-character
- *     LIKE wildcard, so `gphoneXfoo` would match too. A pipe is used rather than a
+ *     LIKE wildcard, so `gosXfoo` would match too. A pipe is used rather than a
  *     backslash so nothing has to survive JS-template escaping on the way here.
  *   - `table_type = 'BASE TABLE'` leaves views alone.
  *   - `CHAR(96)` is a backtick, for the same escaping reason.
  *   - FK checks are suspended so drop order does not matter, then restored.
  */
-const DROP_ALL_MICA_TABLES = [
-  '-- Drop every gphone_ table in the CURRENT schema.',
+const DROP_ALL_GOS_TABLES = [
+  '-- Drop every gos_ table in the CURRENT schema.',
   'SET FOREIGN_KEY_CHECKS = 0;',
   'SET SESSION group_concat_max_len = 1048576;',
   '',
-  'SET @gphone_tables = NULL;',
+  'SET @gos_tables = NULL;',
   '',
   'SELECT GROUP_CONCAT(CONCAT(CHAR(96), table_name, CHAR(96)))',
-  '  INTO @gphone_tables',
+  '  INTO @gos_tables',
   '  FROM information_schema.tables',
   ' WHERE table_schema = DATABASE()',
   "   AND table_type = 'BASE TABLE'",
-  "   AND table_name LIKE 'gphone|_%' ESCAPE '|';",
+  "   AND table_name LIKE 'gos|_%' ESCAPE '|';",
   '',
-  'SET @gphone_drop = IF(',
-  '  @gphone_tables IS NULL,',
+  'SET @gos_drop = IF(',
+  '  @gos_tables IS NULL,',
   "  'DO 0', -- nothing matched; a valid no-op statement",
-  "  CONCAT('DROP TABLE IF EXISTS ', @gphone_tables)",
+  "  CONCAT('DROP TABLE IF EXISTS ', @gos_tables)",
   ');',
   '',
-  'PREPARE gphone_drop_stmt FROM @gphone_drop;',
-  'EXECUTE gphone_drop_stmt;',
-  'DEALLOCATE PREPARE gphone_drop_stmt;',
+  'PREPARE gos_drop_stmt FROM @gos_drop;',
+  'EXECUTE gos_drop_stmt;',
+  'DEALLOCATE PREPARE gos_drop_stmt;',
   '',
   'SET FOREIGN_KEY_CHECKS = 1;'
 ].join('\n');
@@ -223,7 +223,7 @@ function buildResetSql(appFiles, migrationsBlock) {
     '-- ============================================================================',
     '-- DEVELOPMENT RESET — THIS DESTROYS ALL MICA DATA.',
     '--',
-    '-- Drops every `gphone_`-prefixed table in the schema you are connected to,',
+    '-- Drops every `gos_`-prefixed table in the schema you are connected to,',
     '-- including the moderation audit ledger, then recreates the full schema.',
     '--',
     '-- Generated by `pnpm generate:sql --with-reset`. Never run this against a live',
@@ -231,9 +231,9 @@ function buildResetSql(appFiles, migrationsBlock) {
     '-- footgun for anyone who clones the repo.',
     '-- ============================================================================',
     '',
-    DROP_ALL_MICA_TABLES,
+    DROP_ALL_GOS_TABLES,
     '',
-    '-- Framework schema (gphone.sql)',
+    '-- Framework schema (gos.sql)',
     frameworkSql,
     '',
     ...appFiles.flatMap(({ id, sql }) => [`-- App: ${id}`, sql.trimEnd(), '']),
@@ -268,12 +268,12 @@ async function main() {
   /**
    * One file, in dependency order.
    *
-   * It used to be `gphone.sql` plus a numbered file per service in `sql/apps/`, imported
+   * It used to be `gos.sql` plus a numbered file per service in `sql/apps/`, imported
    * in filename order — because foreign keys cross app boundaries and alphabetical is
    * wrong. That worked, and it cost a rule every server owner had to be told, a prefix
    * that renumbered existing files whenever an app was added, and two places to look for
    * one schema. Concatenating in the same order it already computed removes all three:
-   * the install is "import gphone.sql".
+   * the install is "import gos.sql".
    *
    * The framework half — the moderation audit ledger — leads, and lives in
    * `scripts/framework-schema.sql` because it has no `defineService` behind it: no owning
@@ -284,7 +284,7 @@ async function main() {
   const appFiles = ordered.map((resolved) => ({ id: resolved.id, sql: toSqlFile(resolved) }));
 
   const banner = [
-    '-- gPhone schema — the whole thing, in dependency order.',
+    '-- gOS schema — the whole thing, in dependency order.',
     '--',
     '-- GENERATED by `pnpm generate:sql`. Do not edit by hand: every app table comes from',
     '-- its `defineService` declaration, which is the single source of truth. A second',
@@ -299,9 +299,9 @@ async function main() {
   /**
    * The ESX artifact (MICA-150).
    *
-   * gPhone's tables all hang off `players(citizenid)`, which **qb creates and gPhone does
+   * gOS's tables all hang off `players(citizenid)`, which **qb creates and gOS does
    * not**. ESX has no such table — it has `users(identifier)` — so 22 of these CREATE
-   * statements fail at import on a pure `es_extended` server, and gPhone simply cannot be
+   * statements fail at import on a pure `es_extended` server, and gOS simply cannot be
    * installed there.
    *
    * A second file rather than one conditional file, because MySQL has no conditional DDL
@@ -321,21 +321,21 @@ async function main() {
   }));
 
   const esxBanner = [
-    '-- gPhone schema for ESX (`es_extended`) and for standalone — the whole thing, in',
+    '-- gOS schema for ESX (`es_extended`) and for standalone — the whole thing, in',
     '-- dependency order.',
     '--',
     '-- GENERATED by `pnpm generate:sql`. Do not edit by hand. Same declarations as',
-    '-- gphone.sql, with one difference: every foreign key onto `players` is omitted,',
+    '-- gos.sql, with one difference: every foreign key onto `players` is omitted,',
     '-- because that table belongs to qb and exists on neither an ESX server nor a',
-    '-- server running gPhone with no framework at all (`gphone_standalone`).',
+    '-- server running gOS with no framework at all (`gos_standalone`).',
     '--',
-    '-- Import THIS file on es_extended or standalone, and gphone.sql on qbx_core or',
+    '-- Import THIS file on es_extended or standalone, and gos.sql on qbx_core or',
     '-- qb-core. Importing the wrong one fails at the first constraint rather than',
     '-- silently.',
     '--',
     '-- The constraint carried ON DELETE CASCADE, so here a deleted character leaves its',
     '-- rows behind. On ESX nothing cleans them up. On standalone nothing needs to: there',
-    '-- is no character table to be deleted from, and gPhone is the only record a player',
+    '-- is no character table to be deleted from, and gOS is the only record a player',
     '-- has — which is also why the orphan sweep skips there rather than guessing.',
     ''
   ].join('\n');
@@ -375,16 +375,14 @@ async function main() {
   const UNDECLARED_TABLES = 2;
   const tableCount =
     declaredServices.reduce((n, a) => n + 1 + a.childTables.length, 0) + UNDECLARED_TABLES;
-  console.log(
-    `Generated gphone.sql — ${declaredServices.length} service(s), ${tableCount} table(s).`
-  );
+  console.log(`Generated gos.sql — ${declaredServices.length} service(s), ${tableCount} table(s).`);
 
   if (withReset) {
     const resetPath = path.join(root, 'sql', 'dev-reset.sql');
     fs.writeFileSync(resetPath, buildResetSql(appFiles, migrationsBlock));
     console.log('');
     console.log('Also wrote sql/dev-reset.sql — DESTRUCTIVE.');
-    console.log('  It drops every gphone_ table in the schema you connect it to,');
+    console.log('  It drops every gos_ table in the schema you connect it to,');
     console.log('  including the audit ledger, then recreates the whole schema.');
     console.log('  Dev only. Gitignored. Nothing here connects to a database.');
   }

@@ -14,8 +14,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     useDisplay,
     useDisplayWrite,
     useLocale
-  } from '@gphone/sdk';
-  import { DEVICES } from '@gphone/shared/devices';
+  } from '@gos/sdk';
+  import { DEVICES } from '@gos/shared/devices';
   import ThemeAndWallpaper from '../components/ThemeAndWallpaper.svelte';
 
   const { t } = useLocale();

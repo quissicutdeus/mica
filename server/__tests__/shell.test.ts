@@ -55,7 +55,7 @@ describe('notifyPlayer', () => {
   it('emits a toast to the given source', async () => {
     const { notifyPlayer } = await import('../lib/shell');
     notifyPlayer(7, { type: 'error', message: 'Busy' });
-    expect(globalThis.emitNet).toHaveBeenCalledWith('gphone:client:shell:notify', 7, {
+    expect(globalThis.emitNet).toHaveBeenCalledWith('gos:client:shell:notify', 7, {
       type: 'error',
       message: 'Busy'
     });
@@ -66,7 +66,7 @@ describe('pushRehydrate', () => {
   it('emits the shell rehydrate event to the given source', async () => {
     const { pushRehydrate } = await import('../lib/shell');
     pushRehydrate(7);
-    expect(globalThis.emitNet).toHaveBeenCalledWith('gphone:client:shell:rehydrate', 7);
+    expect(globalThis.emitNet).toHaveBeenCalledWith('gos:client:shell:rehydrate', 7);
   });
 });
 
@@ -78,18 +78,18 @@ describe('character-loaded listeners', () => {
 
   it('pushes a rehydrate to the connection when qbx_core sends no payload', () => {
     handlers.get('QBCore:Server:OnPlayerLoaded')!(undefined);
-    expect(globalThis.emitNet).toHaveBeenCalledWith('gphone:client:shell:rehydrate', CONNECTION);
+    expect(globalThis.emitNet).toHaveBeenCalledWith('gos:client:shell:rehydrate', CONNECTION);
   });
 
   it('pushes a rehydrate for a bare numeric payload that agrees with the connection', () => {
     handlers.get('QBCore:Server:OnPlayerLoaded')!(CONNECTION);
-    expect(globalThis.emitNet).toHaveBeenCalledWith('gphone:client:shell:rehydrate', CONNECTION);
+    expect(globalThis.emitNet).toHaveBeenCalledWith('gos:client:shell:rehydrate', CONNECTION);
   });
 
   it('pushes a rehydrate to the resolved source from a QBCore player object', () => {
     // The local twin, which no client can emit — it keeps reading the payload.
     handlers.get('QBCore:Server:PlayerLoaded')!({ PlayerData: { source: 9 } });
-    expect(globalThis.emitNet).toHaveBeenCalledWith('gphone:client:shell:rehydrate', 9);
+    expect(globalThis.emitNet).toHaveBeenCalledWith('gos:client:shell:rehydrate', 9);
   });
 
   it('ignores a network payload naming a third party', () => {

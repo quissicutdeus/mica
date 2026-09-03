@@ -28,7 +28,7 @@ import { blocklist, isBlocked } from '../services/Blocklist';
 import { __resetRateLimits } from '../lib/rateLimit';
 
 const call = async (action: string, data: unknown) => {
-  const handler = handlers.get(`gphone:server:blocklist:${action}`);
+  const handler = handlers.get(`gos:server:blocklist:${action}`);
   if (!handler) throw new Error(`no handler for blocklist:${action}`);
   (globalThis as any).source = 5;
   (globalThis as any).emitNet = vi.fn();
@@ -47,19 +47,17 @@ beforeEach(() => {
 
 describe('blocklist — the declaration', () => {
   it('registers get/create/delete but not the generic update', () => {
-    expect(handlers.has('gphone:server:blocklist:get')).toBe(true);
-    expect(handlers.has('gphone:server:blocklist:create')).toBe(true);
-    expect(handlers.has('gphone:server:blocklist:delete')).toBe(true);
-    expect(handlers.has('gphone:server:blocklist:update')).toBe(false);
+    expect(handlers.has('gos:server:blocklist:get')).toBe(true);
+    expect(handlers.has('gos:server:blocklist:create')).toBe(true);
+    expect(handlers.has('gos:server:blocklist:delete')).toBe(true);
+    expect(handlers.has('gos:server:blocklist:update')).toBe(false);
   });
 
   it('scopes create to the caller citizenid, never one the payload names', async () => {
     await call('create', { number: '555-0100', citizenid: 'CIT_VICTIM' });
 
     const [sql, params] = dbMock.insert.mock.calls[0];
-    expect(String(sql)).toBe(
-      'INSERT INTO `gphone_blocklist` (`number`, `citizenid`) VALUES (?, ?)'
-    );
+    expect(String(sql)).toBe('INSERT INTO `gos_blocklist` (`number`, `citizenid`) VALUES (?, ?)');
     expect(params).toEqual(['555-0100', 'CIT_A']);
   });
 
@@ -76,7 +74,7 @@ describe('isBlocked (MICA-64)', () => {
   it('asks against the normalised number and the given citizenid', async () => {
     await isBlocked('CIT_A', ' 555-0100 ');
 
-    expect(dbMock.scalar).toHaveBeenCalledWith(expect.stringContaining('gphone_blocklist'), [
+    expect(dbMock.scalar).toHaveBeenCalledWith(expect.stringContaining('gos_blocklist'), [
       'CIT_A',
       '555-0100'
     ]);

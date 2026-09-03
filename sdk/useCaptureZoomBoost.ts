@@ -8,7 +8,7 @@ import { captureZoomBoost } from './host/seam/captureZoom';
  * Draws the phone at its largest normal size while true, instead of the player's Display
  * setting, so a capture around it gets more real on-screen pixels.
  *
- * `core: true` only — exported from `@gphone/sdk/core`, not `@gphone/sdk`. This is a lever
+ * `core: true` only — exported from `@gos/sdk/core`, not `@gos/sdk`. This is a lever
  * on the shell's own rendering, not a capability any add-on has a legitimate reason to
  * pull: a sandboxed iframe forcing the whole phone bigger is a griefing vector, not a
  * feature, so it carries no host-protocol twin the way `useCamera`'s fields do.

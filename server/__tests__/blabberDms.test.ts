@@ -35,7 +35,7 @@ const MY_ACCOUNT = { id: 1, citizenid: 'CIT_A', app: 'blabber', handle: 'ada', s
 const PEER = { id: 2, citizenid: 'CIT_B', handle: 'nightowl' };
 
 const call = async (action: string, data: unknown, citizenid = 'CIT_A') => {
-  const handler = handlers.get(`gphone:server:blabber_dms:${action}`);
+  const handler = handlers.get(`gos:server:blabber_dms:${action}`);
   if (!handler) throw new Error(`no handler for ${action}`);
   bridge.current = citizenid;
   (globalThis as any).source = 5;
@@ -102,7 +102,7 @@ describe('sending', () => {
 
     // The push goes out on the shared app-event channel, addressed to the peer's owner.
     const pushes = (globalThis.emitNet as any).mock.calls.filter(
-      (args: unknown[]) => args[0] === 'gphone:client:shell:appEvent'
+      (args: unknown[]) => args[0] === 'gos:client:shell:appEvent'
     );
     expect(pushes).toHaveLength(1);
     expect(pushes[0][2]).toMatchObject({ app: 'blabber', event: 'dm' });

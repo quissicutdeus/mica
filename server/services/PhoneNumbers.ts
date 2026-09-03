@@ -18,9 +18,9 @@ import {
 } from '../lib/phoneNumbers';
 
 /**
- * The one table gPhone owns a phone number in (MICA-151).
+ * The one table gOS owns a phone number in (MICA-151).
  *
- * **The decision this table represents, stated rather than implied.** gPhone owns no numbers
+ * **The decision this table represents, stated rather than implied.** gOS owns no numbers
  * today: on qb the number is `charinfo.phone`, on ESX it is whichever field the operator's
  * community phone-number resource writes, and in both cases the framework is the source of
  * truth. Standalone has neither, and without a number `getPlayerByPhone`, dialling and
@@ -30,7 +30,7 @@ import {
  * two separate decisions and they were made separately.
  *
  * The DDL is unconditional because the generated artifacts are not per-framework subsets of
- * the schema — `gphone.sql` and `gphone.esx.sql` contain the same tables and differ only in
+ * the schema — `gos.sql` and `gos.esx.sql` contain the same tables and differ only in
  * whether the foreign keys onto `players` are emitted (see `SchemaSqlOptions.ownerTable`).
  * Emitting this table only for standalone would mean a third artifact and a third thing for a
  * server owner to import the wrong one of, to save an empty table.
@@ -38,14 +38,14 @@ import {
  * The *assignment* is gated on `detectFramework() === 'standalone'` because a second source
  * of truth for a phone number is precisely the drift `FrameworkBridge` exists to prevent. A
  * qb server's `charinfo.phone` is what every other resource on that server reads — the job
- * script that texts you, the dispatch system, the framework's own admin menu — and a gPhone
+ * script that texts you, the dispatch system, the framework's own admin menu — and a gOS
  * number sitting beside it would be a number the phone believes and nothing else does. It
- * would also be a number gPhone would have to write back into `charinfo` to make real, which
- * is a gPhone write into a table it does not own, and §10's rule against that is not
- * negotiable. So on qb and ESX this table stays empty, and gPhone keeps reading the number
+ * would also be a number gOS would have to write back into `charinfo` to make real, which
+ * is a gOS write into a table it does not own, and §10's rule against that is not
+ * negotiable. So on qb and ESX this table stays empty, and gOS keeps reading the number
  * the framework already issued.
  *
- * If a later ticket does want gPhone to own numbers everywhere, the change is to widen the
+ * If a later ticket does want gOS to own numbers everywhere, the change is to widen the
  * gate below and to migrate the existing framework numbers into this table in the same
  * commit — never to leave both sources live at once.
  *
@@ -152,7 +152,7 @@ const claimExistingRow = async (citizenid: string): Promise<string | null> => {
     );
     if (!reactivated) {
       console.error(
-        `[gphone] could not reactivate the soft-deleted phone number row for ${citizenid}. ` +
+        `[gos] could not reactivate the soft-deleted phone number row for ${citizenid}. ` +
           `They keep the number ${row.number} — every read of ${PHONE_NUMBERS_TABLE} is ` +
           `status-blind on purpose — but the row is still marked '${row.status}'.`
       );
@@ -208,7 +208,7 @@ export const ensureNumber = async (citizenid: string): Promise<string | null> =>
     } catch (error) {
       if (!isDuplicateEntry(error)) {
         console.error(
-          `[gphone] could not assign a phone number to ${citizenid}. They will have a phone ` +
+          `[gos] could not assign a phone number to ${citizenid}. They will have a phone ` +
             `that cannot be dialled until this is fixed; nothing else is affected. If the ` +
             `table is missing, import the schema for this server (${PHONE_NUMBERS_TABLE}).`,
           error
@@ -231,7 +231,7 @@ export const ensureNumber = async (citizenid: string): Promise<string | null> =>
   }
 
   console.error(
-    `[gphone] gave up assigning a phone number to ${citizenid} after ${MAX_ASSIGN_ATTEMPTS} ` +
+    `[gos] gave up assigning a phone number to ${citizenid} after ${MAX_ASSIGN_ATTEMPTS} ` +
       `attempts, every one of which collided with a number already issued. That means the ` +
       `number space is close to exhausted rather than that this player was unlucky — see ` +
       `lib/phoneNumbers.ts, which sizes it. No number was issued and none was reused.`
@@ -240,7 +240,7 @@ export const ensureNumber = async (citizenid: string): Promise<string | null> =>
 };
 
 /**
- * Assign on connect, and only where gPhone owns the number.
+ * Assign on connect, and only where gOS owns the number.
  *
  * Through `onPlayerLoaded` rather than a listener of its own, for the reason the registry
  * documents: a subscriber is handed a source that has already been established, so it has no
@@ -249,7 +249,7 @@ export const ensureNumber = async (citizenid: string): Promise<string | null> =>
  *
  * The framework check is here rather than inside `ensureNumber` so that the function stays
  * usable by a future caller that has already decided, and so that this file has exactly one
- * place expressing "gPhone owns numbers only on standalone".
+ * place expressing "gOS owns numbers only on standalone".
  */
 onPlayerLoaded('phonenumbers', async (src) => {
   if (detectFramework() !== 'standalone') return;

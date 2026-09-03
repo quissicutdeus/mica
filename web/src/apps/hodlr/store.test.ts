@@ -18,12 +18,12 @@ const service = vi.hoisted(() => ({ call: vi.fn() }));
  * every assertion below a check that the stub echoes its argument. `boundary.test.ts`
  * skips `.test.ts`, which is what makes the relative path legal in this one place.
  */
-vi.mock('@gphone/sdk', async () => {
+vi.mock('@gos/sdk', async () => {
   const { t, registerMessages } = await import('../../../../sdk/i18n');
   return { useService: () => ({ call: service.call }), t, registerMessages };
 });
 
-import { registerMessages } from '@gphone/sdk';
+import { registerMessages } from '@gos/sdk';
 import en from './locales/en.json';
 import de from './locales/de.json';
 
@@ -243,7 +243,7 @@ describe('hodlr store', () => {
   /**
    * MICA-99 put these sentences on screen; `Trade.test.ts` proves two of them reach the
    * player. The table itself is asserted here, because the server is what refuses — a
-   * modified client can emit `gphone:server:hodlr:sell` directly (AGENTS.md §2.9) — so
+   * modified client can emit `gos:server:hodlr:sell` directly (AGENTS.md §2.9) — so
    * every slug it can answer with has to be translatable, not just the ones the button
    * guard happens to let through.
    */

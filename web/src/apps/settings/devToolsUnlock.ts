@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { get, type Readable, type Writable } from 'svelte/store';
-import type { ToastMessage, Translate } from '@gphone/sdk';
+import type { ToastMessage, Translate } from '@gos/sdk';
 
 /**
  * Ten taps on the OS Version row reveals Developer Tools, the way Android reveals its

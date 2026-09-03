@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { isBrowser } from '@gphone/sdk';
+import { isBrowser } from '@gos/sdk';
 
 interface DebugEvent {
   action: string;

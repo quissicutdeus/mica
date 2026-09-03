@@ -47,7 +47,7 @@ COPY shared/package.json ./shared/package.json
 # package-import-method=copy because the store is a cache mount on another
 #   filesystem: pnpm's hardlinks would EXDEV and fall back to copying anyway,
 #   one warning per package.
-RUN --mount=type=cache,id=gphone-pnpm-store,target=/pnpm/store,sharing=locked \
+RUN --mount=type=cache,id=gos-pnpm-store,target=/pnpm/store,sharing=locked \
     pnpm install --frozen-lockfile --ignore-scripts \
       --filter web... \
       --store-dir=/pnpm/store \
@@ -55,7 +55,7 @@ RUN --mount=type=cache,id=gphone-pnpm-store,target=/pnpm/store,sharing=locked \
 
 # web/vite.config.ts reaches outside web/ for three things: `import pkg from
 # '../package.json'` (already copied), the @shared alias -> ../shared, and
-# @gphone/sdk -> ../sdk.
+# @gos/sdk -> ../sdk.
 #
 # That third one is why the image build broke on MICA-172 and stayed broken
 # for six pushes. The SDK used to live under web/src/, so `COPY web/` brought it
@@ -79,9 +79,9 @@ COPY scripts/ ./scripts/
 # full 40-char sha is fine to pass.
 ARG GIT_BRANCH=main
 ARG GIT_SHA=unknown
-ARG MICA_CALVER=
+ARG GOS_CALVER=
 
-# No font knob here on purpose. The `gphone:trim-fonts` plugin in
+# No font knob here on purpose. The `gos:trim-fonts` plugin in
 # web/vite.config.ts drops the unused subsets and the legacy `.woff` fallback for
 # EVERY build -- the FiveM NUI bundle carried the same 895KB of cyrillic, greek,
 # math and symbols faces this image would have, so it was never a container
@@ -99,7 +99,7 @@ ARG MICA_CALVER=
 # is MICA-126's deliberate default and is unchanged everywhere but here.
 #
 # Derived from GIT_BRANCH, which compose already passes, rather than added as
-# build args of its own: `scripts/deploy/gphone-deploy-*-compose.sh` pin a
+# build args of its own: `scripts/deploy/gos-deploy-*-compose.sh` pin a
 # sha256 of compose.yaml and refuse to deploy when it changes, and those wrappers
 # are root-owned on the box and deliberately do not self-update. A new build arg
 # would therefore stop both deploys until someone edited EXPECTED_SHA as root.
@@ -118,19 +118,19 @@ RUN case "$GIT_BRANCH" in \
     esac; \
     export ADDON_ORIGIN; \
     if [ -n "$ADDON_ORIGIN" ]; then \
-      VITE_MICA_ADDON_CATALOG="$ADDON_ORIGIN/addons/catalog.json"; \
-      VITE_MICA_ADDON_HOSTS="${ADDON_ORIGIN#https://}"; \
-      export VITE_MICA_ADDON_CATALOG VITE_MICA_ADDON_HOSTS; \
+      VITE_GOS_ADDON_CATALOG="$ADDON_ORIGIN/addons/catalog.json"; \
+      VITE_GOS_ADDON_HOSTS="${ADDON_ORIGIN#https://}"; \
+      export VITE_GOS_ADDON_CATALOG VITE_GOS_ADDON_HOSTS; \
     fi; \
-    GITHUB_REF_NAME="$GIT_BRANCH" GITHUB_SHA="$GIT_SHA" MICA_CALVER="$MICA_CALVER" \
+    GITHUB_REF_NAME="$GIT_BRANCH" GITHUB_SHA="$GIT_SHA" GOS_CALVER="$GOS_CALVER" \
       pnpm --filter web build; \
-    if [ -n "$ADDON_ORIGIN" ] && [ -n "$MICA_CALVER" ]; then \
-      MICA_CALVER="$MICA_CALVER" \
+    if [ -n "$ADDON_ORIGIN" ] && [ -n "$GOS_CALVER" ]; then \
+      GOS_CALVER="$GOS_CALVER" \
         node scripts/generate-catalog.js "$ADDON_ORIGIN" dist/web/addons; \
     elif [ -n "$ADDON_ORIGIN" ]; then \
-      echo "catalog: skipped -- MICA_CALVER is empty, so there is no version to publish."; \
+      echo "catalog: skipped -- GOS_CALVER is empty, so there is no version to publish."; \
       echo "catalog: the Store will list only bundled apps in this image. A stamped build"; \
-      echo "catalog: (compose passes MICA_CALVER through when it is set) produces one."; \
+      echo "catalog: (compose passes GOS_CALVER through when it is set) produces one."; \
     fi
 
 # The catalog is generated against `dist/web/addons`, after the build rather than
@@ -179,10 +179,10 @@ COPY docker/serve/main.go ./
 # Stdlib only -- no `go mod download`, no network, no lockfile. CGO_ENABLED=0 is
 # what makes it static, and it also keeps the pure-Go resolver (which nothing
 # here reaches anyway, since no name is ever resolved).
-RUN --mount=type=cache,id=gphone-go-build,target=/root/.cache/go-build \
-    CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /out/gphone-serve . \
- && if ldd /out/gphone-serve 2>/dev/null | grep -q '=>'; then \
-      echo 'gphone-serve is dynamically linked; it cannot run in scratch' >&2; \
+RUN --mount=type=cache,id=gos-go-build,target=/root/.cache/go-build \
+    CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /out/gos-serve . \
+ && if ldd /out/gos-serve 2>/dev/null | grep -q '=>'; then \
+      echo 'gos-serve is dynamically linked; it cannot run in scratch' >&2; \
       exit 1; \
     fi
 
@@ -200,8 +200,8 @@ RUN --mount=type=cache,id=gphone-go-build,target=/root/.cache/go-build \
 ARG COMPRESS_BINARY=1
 RUN if [ "$COMPRESS_BINARY" = "1" ]; then \
       apk add --no-cache upx >/dev/null && \
-      upx -q --best /out/gphone-serve >/dev/null && \
-      upx -qt /out/gphone-serve >/dev/null; \
+      upx -q --best /out/gos-serve >/dev/null && \
+      upx -qt /out/gos-serve >/dev/null; \
     fi
 
 # ---------------------------------------------------------------------------
@@ -209,11 +209,11 @@ RUN if [ "$COMPRESS_BINARY" = "1" ]; then \
 # ---------------------------------------------------------------------------
 FROM scratch
 
-LABEL org.opencontainers.image.source="https://github.com/quissicutdeus/gphone"
+LABEL org.opencontainers.image.source="https://github.com/quissicutdeus/gos"
 LABEL org.opencontainers.image.licenses="AGPL-3.0-or-later"
-LABEL org.opencontainers.image.description="gPhone NUI bundle, served standalone in mock mode"
+LABEL org.opencontainers.image.description="gOS NUI bundle, served standalone in mock mode"
 
-COPY --from=server /out/gphone-serve /gphone-serve
+COPY --from=server /out/gos-serve /gos-serve
 COPY --from=web    /app/dist/web     /www
 
 # Numeric on purpose. A named USER would mean shipping an /etc/passwd whose only
@@ -243,6 +243,6 @@ EXPOSE 8080
 # none here -- `HEALTHCHECK CMD wget ...` is the usual thing written on this line
 # and it cannot work. The probe is a mode of the server binary instead.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=2s --retries=3 \
-  CMD ["/gphone-serve", "-health"]
+  CMD ["/gos-serve", "-health"]
 
-ENTRYPOINT ["/gphone-serve"]
+ENTRYPOINT ["/gos-serve"]

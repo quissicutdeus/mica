@@ -12,7 +12,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     type AppUpdate,
     formatDate,
     useLocale
-  } from '@gphone/sdk';
+  } from '@gos/sdk';
   import { formatPermission, getAppStorageSize } from '../appInfo';
 
   const { t } = useLocale();

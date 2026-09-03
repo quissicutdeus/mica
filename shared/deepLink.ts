@@ -11,7 +11,7 @@
  * because there were **three** shapes in the tree and no parser at all.
  *
  *   `mail/12`                     what the server wrote
- *   `gphone://messages?threadId=1` what the browser mocks wrote
+ *   `gos://messages?threadId=1` what the browser mocks wrote
  *   `blab/(\d+)` by regex          what Blabber's notifications tab read
  *
  * And nothing parsed any of them: `NotificationShade` passed the whole string to
@@ -21,7 +21,7 @@
  *
  * ## The format
  *
- * `app?key=value&key=value`, with an optional `gphone://` prefix that is stripped.
+ * `app?key=value&key=value`, with an optional `gos://` prefix that is stripped.
  *
  * A query string rather than a path, because the props are **named**. `useDeepLink`
  * consumers read `mailId`, `conversationId`, `initialPhotoId` — a positional path like
@@ -70,7 +70,7 @@ export function buildDeepLink(app: string, props: Record<string, string | number
 export function parseDeepLink(link: string): DeepLink | null {
   if (typeof link !== 'string') return null;
 
-  const withoutScheme = link.trim().replace(/^gphone:\/\//i, '');
+  const withoutScheme = link.trim().replace(/^gos:\/\//i, '');
   if (!withoutScheme) return null;
 
   const [rawApp, rawQuery = ''] = withoutScheme.split('?');

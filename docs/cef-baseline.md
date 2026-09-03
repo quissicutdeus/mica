@@ -177,7 +177,7 @@ What is true today:
   a white-noise buffer. So the `audio` kind — voice notes — is equally
   unplayable, and renders a microphone placeholder from the same component. The
   ticket does not mention this.
-- `gphone_media` already stores what playback would need: `url` (`varchar(512)`,
+- `gos_media` already stores what playback would need: `url` (`varchar(512)`,
   server-written), `mime_type`, `thumbnail`, `duration_ms`.
 
 Why the version is not the blocker: `<video>` with H.264 or WebM is a 2011-era
@@ -200,14 +200,13 @@ So the action when M140 ships is **not** "video now works". It is:
 **A related but distinct question was answered separately.** MICA-111 built
 music streaming as a sandboxed cross-origin YouTube iframe driven by
 `postMessage` (`web/src/shell/MusicFrame.svelte`, `NearbyMusicFrame.svelte`) —
-not a `<video>` element, and not `gphone_media`, so nothing above changes it.
-Every capability that embed needs (`iframe sandbox`, Feature Policy, MSE, WebM,
-Web Audio) checks out below the Chromium 103 floor against this same
-`caniuse-lite` dataset, but whether CEF actually permits loading a third-party
-document at all was — as of this writing — still an open, in-game question, not
-one an upgrade would answer either. The verification procedure, its own
-capability table, and why it does not double as proof that stored-media
-`<video>` works are in
+not a `<video>` element, and not `gos_media`, so nothing above changes it. Every
+capability that embed needs (`iframe sandbox`, Feature Policy, MSE, WebM, Web
+Audio) checks out below the Chromium 103 floor against this same `caniuse-lite`
+dataset, but whether CEF actually permits loading a third-party document at all
+was — as of this writing — still an open, in-game question, not one an upgrade
+would answer either. The verification procedure, its own capability table, and
+why it does not double as proof that stored-media `<video>` works are in
 [`docs/testing-music-in-cef.md`](testing-music-in-cef.md), which depends on this
 file rather than repeating it.
 

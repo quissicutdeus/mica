@@ -7,7 +7,7 @@
  *
  * It lives in `lib/` rather than in the camera app because two callers outside the camera
  * need it: the gallery, thumbnailing a photo that predates thumbnails, and the camera
- * itself through `@gphone/sdk`. `lib/` is state-free and I/O-free by definition
+ * itself through `@gos/sdk`. `lib/` is state-free and I/O-free by definition
  * (AGENTS.md §8), which is what makes it safe to re-export to a sandboxed add-on.
  */
 
@@ -23,7 +23,7 @@
  *
  * `quality` is required rather than defaulted, because the two callers want genuinely
  * different answers — the camera's own, which the server sets with
- * `gphone_camera_quality` and defaults to 0.95, and `THUMBNAIL_QUALITY` for the small
+ * `gos_camera_quality` and defaults to 0.95, and `THUMBNAIL_QUALITY` for the small
  * copy — and a default would quietly make one of them wrong.
  */
 /**
@@ -87,7 +87,7 @@ export const THUMBNAIL_MAX_DIMENSION = 320;
  * dark gradients the game is full of, which is the other end of the range.
  *
  * The archival copy is untouched: `data` is still a single encode, at whatever
- * `gphone_camera_quality` says (0.95 unless a server owner turned it down). This number
+ * `gos_camera_quality` says (0.95 unless a server owner turned it down). This number
  * is fixed and does not follow it — the reasoning above is about a 123px tile, which is
  * 123px whatever the original was stored at.
  */

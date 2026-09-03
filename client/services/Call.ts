@@ -8,7 +8,7 @@ import { openDevice } from '../lib/DeviceVisibility';
 // Calls do not use ServiceProxy: these are fire-and-forget NUI callbacks with no cbId to
 // correlate and no server reply to await, so the request/response machinery does not
 // apply. They answer the NUI callback immediately and let the server push state changes
-// back through the `gphone:client:*` events below.
+// back through the `gos:client:*` events below.
 
 /**
  * `exports` is a genuine FiveM global at runtime, but the bare identifier resolves to
@@ -23,19 +23,19 @@ const pmaVoice = (): any =>
 // NUI Callbacks
 RegisterNuiCallbackType('startCall');
 on('__cfx_nui:startCall', (data: { number: string }, cb: Function) => {
-  TriggerServerEvent('gphone:server:phone:start', data.number);
+  TriggerServerEvent('gos:server:phone:start', data.number);
   cb({ status: 'dialing' });
 });
 
 RegisterNuiCallbackType('answerCall');
 on('__cfx_nui:answerCall', (_: any, cb: Function) => {
-  TriggerServerEvent('gphone:server:phone:answer');
+  TriggerServerEvent('gos:server:phone:answer');
   cb({ status: 'connected' });
 });
 
 RegisterNuiCallbackType('endCall');
 on('__cfx_nui:endCall', (_: any, cb: Function) => {
-  TriggerServerEvent('gphone:server:phone:end');
+  TriggerServerEvent('gos:server:phone:end');
   cb({ status: 'idle' });
 });
 
@@ -44,16 +44,16 @@ on('__cfx_nui:endCall', (_: any, cb: Function) => {
 // Settings' DevTools but registered nowhere, so declining silently did nothing.
 RegisterNuiCallbackType('rejectCall');
 on('__cfx_nui:rejectCall', (_: any, cb: Function) => {
-  TriggerServerEvent('gphone:server:phone:end');
+  TriggerServerEvent('gos:server:phone:end');
   cb({ status: 'idle' });
 });
 
 // Settings > Developer Tools' "Simulate Incoming Call", in game. Admin-gated
-// server-side (`gphone:server:phone:simulateIncoming`) independently of the DevTools
+// server-side (`gos:server:phone:simulateIncoming`) independently of the DevTools
 // unlock, which is a display gate only.
 RegisterNuiCallbackType('simulateIncomingCall');
 on('__cfx_nui:simulateIncomingCall', (data: { number?: string }, cb: Function) => {
-  TriggerServerEvent('gphone:server:phone:simulateIncoming', data?.number);
+  TriggerServerEvent('gos:server:phone:simulateIncoming', data?.number);
   cb({ success: true });
 });
 
@@ -81,7 +81,7 @@ on('__cfx_nui:toggleSpeaker', (data: { enabled: boolean }, cb: Function) => {
 });
 
 // Server Events
-onNet('gphone:client:phone:incoming', (data: { from: string; callId: number }) => {
+onNet('gos:client:phone:incoming', (data: { from: string; callId: number }) => {
   // The phone is now open whether or not the player asked for it, through the same
   // sequence the key uses: focus, the frame, the prop in hand. It used to set the flag
   // and push `setVisible` by hand, which left no prop and — before the flag was shared —
@@ -104,7 +104,7 @@ onNet('gphone:client:phone:incoming', (data: { from: string; callId: number }) =
   );
 });
 
-onNet('gphone:client:phone:accepted', (data: { callId: number }) => {
+onNet('gos:client:phone:accepted', (data: { callId: number }) => {
   // Connect to PMA Voice Channel. Guarded the same way `toggleMute` is: without pma-voice
   // present, or a version that renamed this export, an unguarded call threw inside this
   // handler and the UI update below never ran — the phone showed "dialing" forever on a
@@ -124,7 +124,7 @@ onNet('gphone:client:phone:accepted', (data: { callId: number }) => {
   );
 });
 
-onNet('gphone:client:phone:ended', () => {
+onNet('gos:client:phone:ended', () => {
   // Disconnect from PMA Voice. Same guard as `accepted` above — a throw here must not
   // stop the phone from returning to idle.
   try {
@@ -145,7 +145,7 @@ onNet('gphone:client:phone:ended', () => {
 // If calls fail. Only ever emitted from the server's `start` handler — before an
 // `accepted` event has ever been sent for this call — so no pma-voice channel was joined
 // and there is deliberately no `removePlayerFromCall()` here to undo.
-onNet('gphone:client:phone:failed', () => {
+onNet('gos:client:phone:failed', () => {
   SendNuiMessage(
     JSON.stringify({
       action: 'callStatus',

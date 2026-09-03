@@ -11,7 +11,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     useLocale,
     useSystemHardware,
     useSystemHardwareWrite
-  } from '@gphone/sdk';
+  } from '@gos/sdk';
 
   const { t } = useLocale();
   const { cellServiceEnabled, bluetoothEnabled } = useSystemHardware();

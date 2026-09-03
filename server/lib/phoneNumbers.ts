@@ -5,9 +5,9 @@
 import { Database } from './Database';
 
 /**
- * Phone numbers gPhone owns, for the servers where nothing else does.
+ * Phone numbers gOS owns, for the servers where nothing else does.
  *
- * **Why this exists at all.** gPhone has never owned a number. On qb it reads
+ * **Why this exists at all.** gOS has never owned a number. On qb it reads
  * `charinfo.phone`, on ESX it tries the several field names community resources have used
  * (`esxVariable('phoneNumber' | 'phone_number' | 'phone')`), and in both cases the framework
  * is the source of truth. A standalone server has no framework and therefore no source —
@@ -33,7 +33,7 @@ import { Database } from './Database';
  * way to build such a statement is from a closed set — one constant is the smallest closed
  * set there is, and it also means the schema and these two reads cannot drift apart.
  */
-export const PHONE_NUMBERS_TABLE = 'gphone_phone_numbers';
+export const PHONE_NUMBERS_TABLE = 'gos_phone_numbers';
 
 /** One row, as the declaration defines it. */
 export interface PhoneNumberRow {
@@ -148,7 +148,7 @@ export const readCitizenIdByNumber = async (number: string): Promise<string | nu
  * roughly eight million of them, at which point a collision is rare enough that the retry
  * below is a formality rather than a mechanism.
  *
- * **The whole `555` exchange is excluded, not just the four seeded numbers.** `gphoneseed`
+ * **The whole `555` exchange is excluded, not just the four seeded numbers.** `gosseed`
  * owns that block, and `clearSeed` deletes contacts by `phone` together with the seeded
  * name — so a real player assigned `5550101` who happened to be saved under the matching
  * name would have that contact removed by an admin tidying up after the seed. Reserving the
@@ -157,7 +157,7 @@ export const readCitizenIdByNumber = async (number: string): Promise<string | nu
  */
 const FIRST_NUMBER = 2000000;
 const LAST_NUMBER = 9999999;
-/** `gphoneseed`'s block. Never generated. */
+/** `gosseed`'s block. Never generated. */
 const RESERVED_FIRST = 5550000;
 const RESERVED_LAST = 5559999;
 const RESERVED_SIZE = RESERVED_LAST - RESERVED_FIRST + 1;
@@ -181,7 +181,7 @@ const SPACE = LAST_NUMBER - FIRST_NUMBER + 1 - RESERVED_SIZE;
  *
  * It is also not derived from the citizenid, which was the obvious shortcut and is wrong
  * twice: a derived number leaks the license identifier's entropy into a string other players
- * are shown, and it hands the same player the same number on every server that runs gPhone.
+ * are shown, and it hands the same player the same number on every server that runs gOS.
  */
 export const generatePhoneNumber = (random: () => number = Math.random): string => {
   const index = Math.floor(random() * SPACE);

@@ -21,7 +21,7 @@ import { unreadCounts, shadeNotifications } from '../../services/notifications';
  *
  * This is a regression test with a specific bug behind it. The badge used to sum three stores —
  * an in-memory mention counter, the unread total derived from DM threads, and the OS notification
- * count — and the server persists a `gphone_notifications` row for the very mentions and DMs the
+ * count — and the server persists a `gos_notifications` row for the very mentions and DMs the
  * first two were counting. So one mention put **2** on the launcher and one DM put 2 more, and
  * the number grew at twice the rate of the thing it described.
  *
@@ -32,7 +32,7 @@ import { unreadCounts, shadeNotifications } from '../../services/notifications';
 /**
  * Subscribe and read, which is what `lazyBadge` needs — it composes on first subscribe.
  *
- * It emits `0` synchronously and swaps in the real store only once `import('@gphone/sdk')` and
+ * It emits `0` synchronously and swaps in the real store only once `import('@gos/sdk')` and
  * the app's own store have resolved, so the composed value takes an indeterminate number of
  * ticks to arrive. Settling for a fixed delay would make this pass for the wrong reason on a slow
  * run and flake on a fast one; waiting for the subscription to fire again is the actual signal.
@@ -57,9 +57,9 @@ const readBadge = async (): Promise<number> => {
 
 beforeAll(async () => {
   // Resolve what `lazyBadge` will reach for, before anything is timed against it. A cold
-  // `import('@gphone/sdk')` is much slower than the composition itself, and warming it here is
+  // `import('@gos/sdk')` is much slower than the composition itself, and warming it here is
   // what keeps these tests measuring the badge rather than the module loader.
-  await import('@gphone/sdk');
+  await import('@gos/sdk');
   await import('./store');
   await readBadge();
 });

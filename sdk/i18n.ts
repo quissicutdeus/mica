@@ -67,7 +67,7 @@ export function availableLocales(): string[] {
 /**
  * The active locale, a BCP 47 tag such as `en` or `pt-BR`. Written by the shell's locale
  * state (`web/src/shell/state/locale.ts`), which resolves the player's setting, the
- * server's `gphone_locale` convar and the browser's own language in that order; an add-on
+ * server's `gos_locale` convar and the browser's own language in that order; an add-on
  * reads it through `useLocale()` and never sets it.
  */
 export const locale = writable<string>(FALLBACK_LOCALE);

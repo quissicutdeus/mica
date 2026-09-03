@@ -3,8 +3,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { requestEventFor, responseEventFor } from '@gphone/shared/rpc';
-import { ROUTES } from '@gphone/shared/routes';
+import { requestEventFor, responseEventFor } from '@gos/shared/rpc';
+import { ROUTES } from '@gos/shared/routes';
 
 /**
  * Capture what the service registers, before the module graph loads.
@@ -39,7 +39,7 @@ vi.mock('../lib/FrameworkBridge', () => ({
 import { capabilities } from '../services/Capabilities';
 import { __resetRateLimits } from '../lib/rateLimit';
 
-const REQUEST_EVENT = 'gphone:server:shell:capabilities';
+const REQUEST_EVENT = 'gos:server:shell:capabilities';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -68,7 +68,7 @@ describe('what money capability each framework answers', () => {
      * of the ticket would get wrong by folding `unknown` into "no framework".
      *
      * `unknown` means no framework has answered *yet*. FiveM starts resources in
-     * `server.cfg` order and `ensure gphone` above `ensure qb-core` is legal, so an
+     * `server.cfg` order and `ensure gos` above `ensure qb-core` is legal, so an
      * ordinary qb server passes through this state at boot. Answering `false` there would
      * take Bank and Hodlr off a working phone, silently, for the whole session — while
      * answering `true` on a server that really has no money costs an error message from a
@@ -89,7 +89,7 @@ describe('what money capability each framework answers', () => {
 });
 
 describe('the registered net event', () => {
-  it('is exactly gphone:server:shell:capabilities', () => {
+  it('is exactly gos:server:shell:capabilities', () => {
     // Pinned as a literal: this is the contract the client half derives, and a rename here
     // fails no compiler — the NUI callback would simply hang for 15s and time out.
     expect(handlers.has(REQUEST_EVENT)).toBe(true);
@@ -108,10 +108,10 @@ describe('the registered net event', () => {
     // §2.9: a registered net event is reachable whether or not a route points at it, and
     // `shell` has no table for a generic action to act on.
     const registered = [...handlers.keys()].filter((event) =>
-      event.startsWith('gphone:server:shell:')
+      event.startsWith('gos:server:shell:')
     );
     for (const action of ['get', 'create', 'update', 'delete']) {
-      expect(registered).not.toContain(`gphone:server:shell:${action}`);
+      expect(registered).not.toContain(`gos:server:shell:${action}`);
     }
   });
 });

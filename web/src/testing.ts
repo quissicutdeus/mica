@@ -3,14 +3,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 /**
- * MICA-172 moved this file out of `sdk/` and into `web/src/`, and `@gphone/sdk/testing` is
+ * MICA-172 moved this file out of `sdk/` and into `web/src/`, and `@gos/sdk/testing` is
  * now a **web-side alias** rather than a package export. It needs `createInProcessHost`, the
  * in-process facet set and `shell/state/navigation` — it renders an app the way the shell
  * does, which is a phone concern, not something the published SDK can carry across a package
- * boundary. Its own docblock below already said it is not exported from `@gphone/sdk`; the
+ * boundary. Its own docblock below already said it is not exported from `@gos/sdk`; the
  * specifier is unchanged and all four consumers are `web/` app tests.
  *
- * MICA-176. `@gphone/sdk/testing` is an entry point like `src/main.ts` and `bootAddOn`,
+ * MICA-176. `@gos/sdk/testing` is an entry point like `src/main.ts` and `bootAddOn`,
  * so it supplies a facet set the same way: a test that renders an app is standing in for
  * the shell, and gets the in-process facets. Before this ticket every hook pulled its own
  * facet onto the graph, so a test never had to say which side it was on.
@@ -31,9 +31,9 @@ import { createInProcessHost } from '../../sdk/host/inProcess/createInProcessHos
 import { registerHost } from '../../sdk/host/current';
 
 /**
- * Test-only SDK surface. **Not exported from `@gphone/sdk`** — importing this pulls in
+ * Test-only SDK surface. **Not exported from `@gos/sdk`** — importing this pulls in
  * `@testing-library/svelte` and `vitest`, neither of which belongs in a phone that
- * ships. Import it as `@gphone/sdk/testing`, which is aliased for exactly this.
+ * ships. Import it as `@gos/sdk/testing`, which is aliased for exactly this.
  *
  * Only 3 of 12 apps have any unit test, and the setup ritual is a large part of why.
  */

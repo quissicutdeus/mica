@@ -6,7 +6,7 @@ import { seedHomeGrid } from '../support/homeGrid';
  *
  * Worth stating plainly: this only checks the *launcher*. Hiding an icon is not a
  * permission — the report queue and every resolve action are gated again server-side,
- * because a NUI request is not proof of intent. `gphonecharge` already shipped once
+ * because a NUI request is not proof of intent. `goscharge` already shipped once
  * with its gate in the wrong place, and hiding a button would not have saved it.
  *
  * A browser has no ace list and no server to ask, so it stands in as admin. That is why

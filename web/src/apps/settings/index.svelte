@@ -18,7 +18,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     useLocale,
     useTimer,
     type AppProps
-  } from '@gphone/sdk';
+  } from '@gos/sdk';
   import About from './panes/About.svelte';
   import AppInfo from './panes/AppInfo.svelte';
   import Apps from './panes/Apps.svelte';
@@ -32,7 +32,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import Shortcuts from './panes/Shortcuts.svelte';
   import Sound from './panes/Sound.svelte';
   import Language from './panes/Language.svelte';
-  import { registerMessages } from '@gphone/sdk';
+  import { registerMessages } from '@gos/sdk';
   import { createDevToolsUnlock } from './devToolsUnlock';
   import en from './locales/en.json';
   import de from './locales/de.json';

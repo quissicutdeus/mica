@@ -73,7 +73,7 @@ export const conversationsContract = defineContract({
       input: s.object({
         /** The other party, as a number. Resolved server-side, and never a raw citizenid. */
         phone: s.string({ min: 1, max: 32 }).optional(),
-        /** A thread name the creator chose. `gphone_messages_conversations.name` is a varchar(255). */
+        /** A thread name the creator chose. `gos_messages_conversations.name` is a varchar(255). */
         name: s.string({ min: 1, max: 255 }).optional(),
         /**
          * Group members, each a phone number resolved the same way `phone` is.

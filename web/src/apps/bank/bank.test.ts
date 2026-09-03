@@ -5,7 +5,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, screen } from '@testing-library/svelte';
-import { renderApp } from '@gphone/sdk/testing';
+import { renderApp } from '@gos/sdk/testing';
 
 // jsdom has no Web Animations API and `SendMoneyModal`'s `transition:fade` calls it on mount.
 if (!Element.prototype.animate) {

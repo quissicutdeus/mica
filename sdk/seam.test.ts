@@ -9,7 +9,7 @@ import { join, relative } from 'node:path';
 /**
  * The kit may not reach the shell.
  *
- * `@gphone/sdk` is two things wearing one name (MICA-16). The **kit** — `ui/`, `kit/`,
+ * `@gos/sdk` is two things wearing one name (MICA-16). The **kit** — `ui/`, `kit/`,
  * `utils.ts`, `types.ts`, `app.ts` and what they import — is what an add-on bundles into
  * its own file. The **host API** — `host/` — is what an add-on asks the running shell for.
  * When add-ons move out of the shell's JS context, the kit travels with them and the host
@@ -116,11 +116,11 @@ const ALIASED_SPECIFIERS = [/(^|\/)shell\/state\/time$/, /(^|\/)nui\/fetchNui$/]
 /** Path aliases both tsconfig and the Vite configs define. Resolved, not skipped. */
 const PATH_ALIASES: [RegExp, string][] = [
   [/^@shared\/(.+)$/, join(ROOT, 'shared', '$1')],
-  [/^@gphone\/sdk\/app$/, join(SDK, 'app.ts')],
-  [/^@gphone\/sdk\/core$/, join(SDK, 'core.ts')],
+  [/^@gos\/sdk\/app$/, join(SDK, 'app.ts')],
+  [/^@gos\/sdk\/core$/, join(SDK, 'core.ts')],
   // Not a package export: it resolves into the consumer. See `web/tsconfig.app.json`.
-  [/^@gphone\/sdk\/testing$/, join(SRC, 'testing.ts')],
-  [/^@gphone\/sdk$/, join(SDK, 'index.ts')]
+  [/^@gos\/sdk\/testing$/, join(SRC, 'testing.ts')],
+  [/^@gos\/sdk$/, join(SDK, 'index.ts')]
 ];
 
 const asFile = (base: string): string | null => {
@@ -451,7 +451,7 @@ describe('the boot facet sets are exhaustive', () => {
     const target = join(SRC, 'host', 'registerFacets.ts');
     /**
      * Two entry points, and nothing else. `main.ts` is the shell's boot path; `testing.ts`
-     * backs `@gphone/sdk/testing` and stands in for the shell in a unit test.
+     * backs `@gos/sdk/testing` and stands in for the shell in a unit test.
      *
      * `sdk/index.ts` was on this list until MICA-172 and is deliberately off it now: the
      * in-process facets live in `web/src/host/`, so the SDK importing them would be a package

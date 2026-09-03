@@ -16,7 +16,7 @@ import { checkOwnerCollation, collationMismatchMessage } from '../lib/collationC
  */
 
 /**
- * `gphoneschema apply` — actually change the database.
+ * `gosschema apply` — actually change the database.
  *
  * Console-only: `source === 0` is the trust tier AGENTS.md §1 already draws around the
  * server console, and it is the one that can take a backup first, which an in-game admin
@@ -38,12 +38,12 @@ import { checkOwnerCollation, collationMismatchMessage } from '../lib/collationC
  */
 export const runApply = async (source: number): Promise<void> => {
   if (source !== 0) {
-    console.log('[gphoneschema] apply only runs from the server console.');
+    console.log('[gosschema] apply only runs from the server console.');
     return;
   }
 
   // MICA-157. Before any DDL: a `players` table whose `citizenid` collation disagrees with
-  // gPhone's own tables cannot host the foreign keys this pass's `ADD KEY` statements (and
+  // gOS's own tables cannot host the foreign keys this pass's `ADD KEY` statements (and
   // the versioned migrations before them) may need to create, and would otherwise fail with
   // MySQL's own opaque errno 150. A failure to determine collations at all (no database, no
   // `information_schema` access) is not itself grounds to refuse — that surfaces soon enough,
@@ -55,43 +55,43 @@ export const runApply = async (source: number): Promise<void> => {
       return;
     }
   } catch (error) {
-    console.error('[gphoneschema] could not check the players collation before applying:', error);
+    console.error('[gosschema] could not check the players collation before applying:', error);
   }
 
   const result = await runPendingMigrations();
-  for (const id of result.applied) console.log(`[gphone] applied migration ${id}`);
+  for (const id of result.applied) console.log(`[gos] applied migration ${id}`);
   if (result.failed) {
-    console.error(`[gphone] migration ${result.failed.id} failed: ${result.failed.error}`);
+    console.error(`[gos] migration ${result.failed.id} failed: ${result.failed.error}`);
     if (result.remaining.length > 0) {
-      console.error(`[gphone] not attempted: ${result.remaining.join(', ')}`);
+      console.error(`[gos] not attempted: ${result.remaining.join(', ')}`);
     }
-    console.error('[gphone] additive changes were not applied — fix the migration first.');
+    console.error('[gos] additive changes were not applied — fix the migration first.');
     return;
   }
 
   const additive = await SchemaMigrator.apply();
-  for (const line of additive.applied) console.log(`[gphone] ${line}`);
+  for (const line of additive.applied) console.log(`[gos] ${line}`);
   if (additive.failed) {
-    console.error(`[gphone] ${additive.failed.description} failed: ${additive.failed.error}`);
+    console.error(`[gos] ${additive.failed.description} failed: ${additive.failed.error}`);
     if (additive.remaining.length > 0) {
-      console.error(`[gphone] not attempted: ${additive.remaining.join(', ')}`);
+      console.error(`[gos] not attempted: ${additive.remaining.join(', ')}`);
     }
     return;
   }
 
   if (additive.applied.length === 0 && result.applied.length === 0) {
-    console.log('[gphone] schema is already up to date.');
+    console.log('[gos] schema is already up to date.');
   }
 };
 
 /**
- * `gphoneschema` — print what would change, without changing it.
+ * `gosschema` — print what would change, without changing it.
  *
  * Worth having even with `apply` available: it is how you check a live server before an
  * update, and how you see the drift the migrator deliberately refuses to touch.
  */
 RegisterCommand(
-  'gphoneschema',
+  'gosschema',
   (source: number, args: string[]) => {
     // Before the sub-dispatch, so a player without the ace gets the same refusal whichever
     // form they typed. `apply` would still refuse them on `source !== 0`, but silently and
@@ -110,7 +110,7 @@ RegisterCommand(
     // gate does not stand between an operator and `apply`.
     if ((args?.[0] ?? '').toLowerCase() === 'apply') {
       void runApply(source).catch((error) => {
-        console.error('[gphoneschema] apply failed:', error);
+        console.error('[gosschema] apply failed:', error);
       });
       return;
     }
@@ -122,12 +122,12 @@ RegisterCommand(
 
 /**
  * Report on resource start. Reports only — nothing here changes the database, including the
- * migrations ledger, which only `gphoneschema apply` ever creates.
+ * migrations ledger, which only `gosschema apply` ever creates.
  *
- * There was an auto-apply behind a `gphone_auto_migrate` convar, adding missing columns
+ * There was an auto-apply behind a `gos_auto_migrate` convar, adding missing columns
  * and indexes at start. It is gone: a boot that changes the schema by itself gives an
  * operator no moment at which to take a backup, and no say in whether today is the day.
- * Applying is a deliberate `gphoneschema apply` from the console — see `runApply` above —
+ * Applying is a deliberate `gosschema apply` from the console — see `runApply` above —
  * never this hook.
  *
  * Both reports are `.catch()`ed rather than left as bare `void` promises. This runs before
@@ -146,6 +146,6 @@ on('onResourceStart', (resourceName: string) => {
   if (resourceName !== GetCurrentResourceName()) return;
   void SchemaMigrator.report();
   void reportPendingMigrations().catch((error) => {
-    console.error('[gphone] could not report pending schema migrations:', error);
+    console.error('[gos] could not report pending schema migrations:', error);
   });
 });

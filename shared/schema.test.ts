@@ -213,7 +213,7 @@ describe('messages are safe to show a player', () => {
   it('names the field and nothing about the database', () => {
     const text = message(() => contact.parse({ number: 'x'.repeat(21) }));
     expect(text).toContain('number');
-    expect(text).not.toMatch(/gphone_|table|column|SELECT|INSERT|varchar/i);
+    expect(text).not.toMatch(/gos_|table|column|SELECT|INSERT|varchar/i);
   });
 
   it('carries every issue on the error, with the failing path', () => {
@@ -231,7 +231,7 @@ describe('Standard Schema v1', () => {
   it('every schema carries a v1 ~standard', () => {
     for (const schema of [s.string(), s.int(), s.object({}), s.array(s.int(), { max: 1 })]) {
       expect(schema['~standard'].version).toBe(1);
-      expect(schema['~standard'].vendor).toBe('gphone');
+      expect(schema['~standard'].vendor).toBe('gos');
       expect(isSchema(schema)).toBe(true);
     }
   });

@@ -14,9 +14,9 @@ declare module '*.svelte' {
   export default component;
 }
 
-declare const __MICA_VERSION__: string;
-declare const __MICA_BUILD_INFO__: string;
-declare const __MICA_BRANCH__: string;
+declare const __GOS_VERSION__: string;
+declare const __GOS_BUILD_INFO__: string;
+declare const __GOS_BRANCH__: string;
 
 /**
  * What CEF and the dev harness put on `window`.

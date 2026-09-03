@@ -44,7 +44,7 @@ jobs:
             echo "skip=" >> "$GITHUB_OUTPUT"
           fi
 
-      # MICA-125: the release is where @gphone/sdk is published.
+      # MICA-125: the release is where @gos/sdk is published.
       #
       # Not npm, deliberately -- an npm name is permanent, publishing means keeping two
       # packages in lockstep forever, and the git-dependency path MICA-175 proved already
@@ -80,15 +80,15 @@ jobs:
       # `pnpm build`, with its typecheck, rather than `build:nocheck`. Verify runs on this
       # same push and deploy.yml waits for it to be green; this job does not wait, and a
       # zip is a thing an owner installs, so it gets the check the source build an owner
-      # would otherwise run gets. MICA_CALVER is the tag's own number, so the About
+      # would otherwise run gets. GOS_CALVER is the tag's own number, so the About
       # screen, the tag and the zip name cannot disagree by a commit counted differently.
       - name: Build the resource
         if: steps.tag.outputs.skip == ''
         env:
-          MICA_CALVER: ${{ steps.tag.outputs.calver }}
+          GOS_CALVER: ${{ steps.tag.outputs.calver }}
         run: pnpm build
 
-      # Both packages or neither: the SDK depends on @gphone/shared, so a consumer given
+      # Both packages or neither: the SDK depends on @gos/shared, so a consumer given
       # only the first gets a 404 on a dependency it cannot see. This step clears
       # dist/release, so it runs before the zip is packed into the same directory.
       - name: Pack the SDK and shared
@@ -114,14 +114,14 @@ jobs:
       - name: Lint the tarballs
         if: steps.tag.outputs.skip == ''
         run: |
-          pnpm dlx publint dist/release/gphone-sdk-*.tgz
-          pnpm dlx publint dist/release/gphone-shared-*.tgz
+          pnpm dlx publint dist/release/gos-sdk-*.tgz
+          pnpm dlx publint dist/release/gos-shared-*.tgz
 
       # The zip has to start as a resource before it is released as one. It is piped over
       # SSH to the game server deploy.yml already reaches, where a forced command unpacks
       # it and a root-owned wrapper starts a throwaway FXServer with it, against a throwaway
-      # MariaDB that has just imported the zip's own gphone.esx.sql. The console has to say
-      # `gphone started!` and stay clean; anything else is a non-zero exit here and no
+      # MariaDB that has just imported the zip's own gos.esx.sql. The console has to say
+      # `gos started!` and stay clean; anything else is a non-zero exit here and no
       # release. scripts/deploy/README.md has the server side, and why it is a third key
       # rather than one of the two deploy keys: each of those is pinned to a forced command
       # that deploys, and sshd would run that instead.
@@ -142,7 +142,7 @@ jobs:
               exit 1
             fi
           done
-          set -- dist/release/gphone-*.zip
+          set -- dist/release/gos-*.zip
           zip=$1
           mkdir -p ~/.ssh
           echo "$SMOKE_KEY" > ~/.ssh/smoke_key

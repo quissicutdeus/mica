@@ -40,14 +40,14 @@ const marketplaceMock = vi.hoisted(() => {
     removeListing: vi.fn().mockResolvedValue(true)
   };
 });
-vi.mock('@gphone/sdk', async (importOriginal) => ({
+vi.mock('@gos/sdk', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   useMarketplace: () => marketplaceMock
 }));
 
 import MyListings from './MyListings.svelte';
 
-import { registerMessages } from '@gphone/sdk';
+import { registerMessages } from '@gos/sdk';
 import en from '../locales/en.json';
 import de from '../locales/de.json';
 

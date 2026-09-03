@@ -4,8 +4,8 @@
 
 import { PlayerFacingError } from '../lib/errors';
 import { defineService, SchemaRepository } from '../lib/defineService';
-import { SavedPlace } from '@gphone/shared/types';
-import { placesContract } from '@gphone/shared/contracts/places';
+import { SavedPlace } from '@gos/shared/types';
+import { placesContract } from '@gos/shared/contracts/places';
 import { playerCoords } from '../lib/playerCoords';
 
 const MAX_NAME_LENGTH = 100;

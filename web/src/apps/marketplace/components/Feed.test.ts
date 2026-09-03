@@ -36,14 +36,14 @@ const marketplaceMock = vi.hoisted(() => {
     searchListings: vi.fn().mockResolvedValue({ rows: [], nextCursor: null })
   };
 });
-vi.mock('@gphone/sdk', async (importOriginal) => ({
+vi.mock('@gos/sdk', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   useMarketplace: () => marketplaceMock
 }));
 
 import Feed from './Feed.svelte';
 
-import { registerMessages } from '@gphone/sdk';
+import { registerMessages } from '@gos/sdk';
 import en from '../locales/en.json';
 import de from '../locales/de.json';
 

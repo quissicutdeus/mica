@@ -34,7 +34,7 @@ const TABLE: PermissionTable = {
 
 describe('sdkImportNames', () => {
   it('reads the names out of an import list', () => {
-    expect(sdkImportNames(`import { useContacts, Screen } from '@gphone/sdk';`)).toEqual([
+    expect(sdkImportNames(`import { useContacts, Screen } from '@gos/sdk';`)).toEqual([
       'Screen',
       'useContacts'
     ]);
@@ -45,14 +45,14 @@ describe('sdkImportNames', () => {
       import {
         useContacts,
         useMedia
-      } from '@gphone/sdk';
-      import { Screen } from '@gphone/sdk';
+      } from '@gos/sdk';
+      import { Screen } from '@gos/sdk';
     `;
     expect(sdkImportNames(source)).toEqual(['Screen', 'useContacts', 'useMedia']);
   });
 
   it('resolves an alias back to the published name', () => {
-    expect(sdkImportNames(`import { useContacts as contacts } from '@gphone/sdk';`)).toEqual([
+    expect(sdkImportNames(`import { useContacts as contacts } from '@gos/sdk';`)).toEqual([
       'useContacts'
     ]);
   });
@@ -61,11 +61,11 @@ describe('sdkImportNames', () => {
     // The build scans a module's source as it enters the graph. A `.svelte` file whose
     // script has already been compiled has the same imports written with double quotes, so
     // a single-quote-only pattern would see nothing and pass every add-on.
-    expect(sdkImportNames(`import { useMedia } from "@gphone/sdk";`)).toEqual(['useMedia']);
+    expect(sdkImportNames(`import { useMedia } from "@gos/sdk";`)).toEqual(['useMedia']);
   });
 
   it('strips a `type` specifier inside a value import', () => {
-    expect(sdkImportNames(`import { useMedia, type Photo } from '@gphone/sdk';`)).toEqual([
+    expect(sdkImportNames(`import { useMedia, type Photo } from '@gos/sdk';`)).toEqual([
       'Photo',
       'useMedia'
     ]);
@@ -75,7 +75,7 @@ describe('sdkImportNames', () => {
     // Nothing callable is imported, so nothing is disclosed. The pattern cannot match it
     // because `\\s*` after `import` will not absorb the keyword — asserted rather than
     // assumed, because it is a property of the regex rather than of an explicit branch.
-    expect(sdkImportNames(`import type { Photo } from '@gphone/sdk';`)).toEqual([]);
+    expect(sdkImportNames(`import type { Photo } from '@gos/sdk';`)).toEqual([]);
   });
 
   it('ignores an import that is commented out', () => {
@@ -83,19 +83,19 @@ describe('sdkImportNames', () => {
     // permission they do not need — which makes the sheet a player reads *less* true, not
     // more. Both comment forms go before anything is read.
     const source = `
-      // import { useContacts } from '@gphone/sdk';
-      /* import { useMedia } from '@gphone/sdk'; */
-      import { Screen } from '@gphone/sdk';
+      // import { useContacts } from '@gos/sdk';
+      /* import { useMedia } from '@gos/sdk'; */
+      import { Screen } from '@gos/sdk';
     `;
     expect(sdkImportNames(source)).toEqual(['Screen']);
   });
 
   it('ignores the other two entry points', () => {
-    // `@gphone/sdk/app` publishes `defineApp` and discloses nothing; `@gphone/sdk/core` is
+    // `@gos/sdk/app` publishes `defineApp` and discloses nothing; `@gos/sdk/core` is
     // refused to an add-on outright, by a plugin that runs before this one.
     const source = `
-      import { defineApp } from '@gphone/sdk/app';
-      import { useNuiBridge } from '@gphone/sdk/core';
+      import { defineApp } from '@gos/sdk/app';
+      import { useNuiBridge } from '@gos/sdk/core';
     `;
     expect(sdkImportNames(source)).toEqual([]);
   });

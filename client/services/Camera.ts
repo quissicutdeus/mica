@@ -32,7 +32,7 @@ const takePhoto = async (): Promise<string> => {
       // discarded immediately and only the crop is ever stored.
       //
       // maxWidth/maxHeight: screencapture's own capture step defaults to 1920x1080 and
-      // silently downscales anything bigger before gPhone ever sees it — on a monitor
+      // silently downscales anything bigger before gOS ever sees it — on a monitor
       // wider than that (an ultrawide most of all, since its height is often still under
       // 1080) the whole frame gets shrunk well below native, and the phone's viewfinder
       // crop is a small fraction of that already-shrunk frame.
@@ -99,9 +99,9 @@ on('__cfx_nui:flipCamera', (data: { isFrontCamera?: boolean }, cb: Function) => 
 /**
  * Encoding quality for the stored photo, as a percentage.
  *
- * `gphone_camera_quality`, and it needs `setr` — the NUI cannot read a convar at all, so
+ * `gos_camera_quality`, and it needs `setr` — the NUI cannot read a convar at all, so
  * the value is read here and handed over. Replication is what makes that possible, the
- * same reason `gphone_music_range` is a `setr` (README).
+ * same reason `gos_music_range` is a `setr` (README).
  *
  * The default is the number the encode was tuned at. It is worth turning down: measured
  * through libwebp on a detail-dense plate, 90 is roughly 30% fewer bytes for about a
@@ -121,7 +121,7 @@ const DEFAULT_CAMERA_QUALITY = 95;
 export const cameraQuality = (): number => {
   const raw =
     typeof GetConvarInt === 'function'
-      ? GetConvarInt('gphone_camera_quality', DEFAULT_CAMERA_QUALITY)
+      ? GetConvarInt('gos_camera_quality', DEFAULT_CAMERA_QUALITY)
       : DEFAULT_CAMERA_QUALITY;
   if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_CAMERA_QUALITY;
   return Math.min(100, Math.max(1, Math.round(raw)));

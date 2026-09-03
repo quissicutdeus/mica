@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { writable, type Readable } from 'svelte/store';
-import type { ReactionSummary } from '@gphone/shared/types';
+import type { ReactionSummary } from '@gos/shared/types';
 
 /**
  * What a target with nothing on it looks like.
@@ -19,7 +19,7 @@ export const NO_REACTIONS: ReactionSummary = Object.freeze({ counts: {}, mine: [
  * How one app's reactions actually reach its server. Supplied by the app; the store never
  * names a route, a table, or an identity of its own.
  *
- * That split is the whole point. Blabber reacts to `gphone_blabber_dms` as an *account*
+ * That split is the whole point. Blabber reacts to `gos_blabber_dms` as an *account*
  * through the shared `accounts` facet; a future consumer may react to its own rows as a
  * citizenid through a service of its own. Neither of those is a property of "a reaction" —
  * the batched read, the optimistic toggle and the rollback are, and this file owns exactly

@@ -22,7 +22,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     registerMessages,
     useLocale,
     type AppProps
-  } from '@gphone/sdk';
+  } from '@gos/sdk';
   import en from './locales/en.json';
   import de from './locales/de.json';
 

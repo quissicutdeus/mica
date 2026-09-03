@@ -69,7 +69,7 @@ const facets: Facets = new Proxy({} as Facets, {
        * new unit test, which has neither entry point, so that instruction goes first.
        */
       throw new Error(
-        `[gPhone] host facet '${String(name)}' is not loaded — nothing has registered a facet ` +
+        `[gOS] host facet '${String(name)}' is not loaded — nothing has registered a facet ` +
           `set in this bundle. A unit test must import 'host/registerFacets' as ` +
           `its first import (it stands in for the shell). The shell itself does that from ` +
           `src/main.ts and an add-on gets 'sdk/host/iframe/registerFacets' from bootAddOn, so ` +

@@ -6,7 +6,7 @@ import { Repository } from './Repository';
 import { registerReportable, type ReportableDefinition } from './moderation';
 import { registerReactable, type ReactableDefinition } from './reactions';
 import { ServiceEndpoint, ServiceOptions } from './ServiceEndpoint';
-import type { ServiceContract } from '@gphone/shared/contract';
+import type { ServiceContract } from '@gos/shared/contract';
 
 /**
  * One declaration per app, replacing the hand-written repository + controller pair.
@@ -102,7 +102,7 @@ export interface ColumnRule {
 interface ColumnReference {
   table: string;
   column: string;
-  /** Defaults to CASCADE, matching every existing gphone FK. */
+  /** Defaults to CASCADE, matching every existing gos FK. */
   onDelete?: 'CASCADE' | 'SET NULL' | 'RESTRICT';
 }
 
@@ -155,7 +155,7 @@ export interface ColumnDef {
    * - **Secrecy**, on a public table: an app-specific field no other player may see.
    *   `citizenid` is excluded from every public projection automatically and does not need
    *   declaring — see `publicColumns`.
-   * - **Weight**, on an owner-scoped one: a payload the list has no use for. `gphone_media`
+   * - **Weight**, on an owner-scoped one: a payload the list has no use for. `gos_media`
    *   is the case that forced this. Its `data` column holds a whole base64 photo, so an
    *   unprojected owner read shipped a few hundred kilobytes per row to draw a 123px tile
    *   (MICA-110), and the ownership predicate — which bounds *who* may read — does nothing
@@ -179,7 +179,7 @@ export interface ColumnDef {
    *
    * The expression may reference only literal SQL and other columns **on this same
    * table** — a generated column cannot look across a join, so it is no substitute for
-   * one. `pair_key` on `gphone_messages_conversations` is the first use: a normalised
+   * one. `pair_key` on `gos_messages_conversations` is the first use: a normalised
    * `LEAST`/`GREATEST` over two citizenid columns on the same row, so it can carry a
    * unique index without a repair migration touching a single row of data.
    *
@@ -210,7 +210,7 @@ export interface ColumnDef {
  * whether they carry `status` or timestamps at all.
  */
 export interface ChildTableDefinition {
-  /** Full table name; no `gphone_` prefix is added. */
+  /** Full table name; no `gos_` prefix is added. */
   name: string;
   columns: Record<string, ColumnType | ColumnDef>;
   /** Emit `id int(11) NOT NULL AUTO_INCREMENT` + PRIMARY KEY. Defaults to true. */
@@ -399,7 +399,7 @@ export interface ServiceDefinition<C extends ServiceContract = ServiceContract> 
    * declaration exists to remove.
    */
   contract?: C;
-  /** Defaults to `gphone_<id>`. */
+  /** Defaults to `gos_<id>`. */
   table?: string;
   /**
    * Make this service's rows reportable, and say how the review queue describes one.
@@ -411,7 +411,7 @@ export interface ServiceDefinition<C extends ServiceContract = ServiceContract> 
    */
   reportable?: ReportableDefinition;
   /**
-   * Make this service's rows reactable — `gphone_account_reactions` may target them.
+   * Make this service's rows reactable — `gos_account_reactions` may target them.
    *
    * Same shape as `reportable` and for the same reason: declared here so core never has to
    * name an add-on's table, and validated at declaration time rather than failing the first
@@ -449,7 +449,7 @@ export interface ServiceDefinition<C extends ServiceContract = ServiceContract> 
   repositoryFactory?: (resolved: ResolvedService) => Repository<any>;
 }
 
-/** Columns every gPhone table carries. Declared by the framework, not by an app. */
+/** Columns every gOS table carries. Declared by the framework, not by an app. */
 const IMPLICIT_COLUMNS = ['id', 'citizenid', 'status', 'created_at', 'updated_at'] as const;
 
 const DEFAULT_STATUSES = ['active', 'deleted'] as const;
@@ -468,7 +468,7 @@ const isClientWritable = (def: ColumnDef, write: AccessDefinition['write']): boo
  * A field is filterable if it opted in, and **writability has nothing to do with it**.
  *
  * These two were one predicate until MICA-137, and the conflation was not academic:
- * `handle` on `gphone_accounts` is `clientWritable: false` precisely because a handle must
+ * `handle` on `gos_accounts` is `clientWritable: false` precisely because a handle must
  * never be renamed, and `clientFilterable: true` precisely because looking an account up by
  * handle is the only way to open a profile. Coupling them dropped `handle` from the filter
  * allowlist, `sanitizeFilter` returned `{}`, and the paged public read answered a profile
@@ -618,7 +618,7 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
     );
   }
 
-  const table = definition.table ?? `gphone_${id}`;
+  const table = definition.table ?? `gos_${id}`;
 
   let membership: ResolvedMembership | null = null;
   if (rawMembership) {

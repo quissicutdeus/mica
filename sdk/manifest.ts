@@ -4,7 +4,7 @@
 
 import type { Component, Snippet } from 'svelte';
 import type { Readable } from 'svelte/store';
-import { ALL_DEVICES, type DeviceId } from '@gphone/shared/devices';
+import { ALL_DEVICES, type DeviceId } from '@gos/shared/devices';
 
 /**
  * What an app may ask the shell for, one name per thing reached.
@@ -106,7 +106,7 @@ export type AppPermission = (typeof ALL_PERMISSIONS)[number];
  * What the *server* has to be able to do for an app to work at all, one name per thing
  * the phone cannot supply on its own.
  *
- * gPhone can run standalone, with no framework resource behind it — and a deployment with
+ * gOS can run standalone, with no framework resource behind it — and a deployment with
  * no framework has no money. `Bank` and `Hodlr` are the two apps that move it, and a phone
  * that shows a Bank which always errors is worse than one that does not show it at all.
  *
@@ -133,7 +133,7 @@ export type AppCapability = (typeof ALL_CAPABILITIES)[number];
 
 /**
  * The devices an app may declare it runs on (MICA-260). The vocabulary is the device
- * table's, `shared/devices.ts`, republished here so an add-on built against `@gphone/sdk`
+ * table's, `shared/devices.ts`, republished here so an add-on built against `@gos/sdk`
  * alone can name a member; `AppDevice` is the type `AppManifest.devices` is written in.
  */
 export { ALL_DEVICES };
@@ -229,7 +229,7 @@ export interface AppManifest {
   /**
    * Unique id — `contacts`, `crypto_tracker`. lower_snake_case.
    *
-   * The stable one. It is a directory name, the `gphone:<id>:` storage namespace, the
+   * The stable one. It is a directory name, the `gos:<id>:` storage namespace, the
    * `<app>` segment of every net event, a keybind claim and the `?app=` deep link. Renaming
    * it is a data migration, not a rename, which is exactly why it is not derived from
    * `name`: a display string should be free to change without orphaning stored data or
@@ -320,7 +320,7 @@ export interface AppManifest {
    *
    * **Required, and deliberately not inferred.** It was once `isSystem`, defaulted from
    * `author` — a display string — so an app whose author was anything other than
-   * `'Community'` silently became unremovable, and naming yourself `'gPhone'` was enough to
+   * `'Community'` silently became unremovable, and naming yourself `'gOS'` was enough to
    * do it. Two things followed from deriving a protection boundary instead of stating it:
    * the derivation was circular (`isSystem` read `author`, then `author` read `isSystem`),
    * and a second, subtly different copy of it grew in the Store — so the registry and the
@@ -434,7 +434,7 @@ export interface AppManifest {
    * **Absent is not "owns nothing".** Every add-on published before this field existed says
    * nothing, and for those the old prefix rule still answers — see `IframeHostServer`'s
    * `serviceAllowed`. Refusing them, or reading absence as an empty list, would break every
-   * one of them, which is exactly the failure `@gphone/sdk` is built to avoid. Declaring it
+   * one of them, which is exactly the failure `@gos/sdk` is built to avoid. Declaring it
    * is how an app opts into the stricter, checked answer.
    */
   services?: readonly string[];
@@ -459,7 +459,7 @@ export interface AppManifest {
    *
    * **Absent means "did not say", and is never refused.** Every add-on published before
    * this field existed omits it, and a bundle built by a third-party bundler that never
-   * heard of `__MICA_VERSION__` omits it too. Declaring it is how an add-on asks to be
+   * heard of `__GOS_VERSION__` omits it too. Declaring it is how an add-on asks to be
    * refused early and legibly rather than late and confusingly.
    */
   sdkContract?: string;
@@ -469,18 +469,18 @@ export interface AppManifest {
   updatedAt?: string;
 }
 
-import { MICA_VERSION } from './version';
+import { GOS_VERSION } from './version';
 // Not `export * from './permissions'` anywhere in `index.ts`/`addon.ts` — deliberately.
 // `validateManifestPermissions` is an internal check `defineApp` runs on every manifest,
 // not a capability an app author calls, and this module's every export is swept into
-// `@gphone/sdk`'s public surface by `index.ts`'s `export * from './manifest'`. Adding it
+// `@gos/sdk`'s public surface by `index.ts`'s `export * from './manifest'`. Adding it
 // here would make it public forever (MICA-16's "adding an export is a one-way door");
 // living in `permissions.ts` instead — already outside both barrels — keeps it callable
 // and independently testable without widening what an add-on can reach.
 import { validateManifestPermissions } from './permissions';
 
 /**
- * Helper function to define and validate a gPhone application manifest.
+ * Helper function to define and validate a gOS application manifest.
  * Ensures required fields exist and applies sensible defaults for third-party apps.
  */
 /** `crypto_tracker` -> `Crypto Tracker`. */
@@ -541,7 +541,7 @@ function resolveTile(id: string, input: { tile?: AppTile; color?: string }): App
    */
   if (tile && color !== undefined && color !== flattenTile(tile)) {
     throw new Error(
-      `gPhone App Manifest error: '${id}' declares both 'tile' and 'color', and they ` +
+      `gOS App Manifest error: '${id}' declares both 'tile' and 'color', and they ` +
         `disagree ('${flattenTile(tile)}' vs '${color}'). They are the same thing — ` +
         `'color' is the legacy spelling, derived from 'tile'. Keep 'tile'.`
     );
@@ -550,7 +550,7 @@ function resolveTile(id: string, input: { tile?: AppTile; color?: string }): App
   if (tile) {
     if (!BG_CLASS.test(tile.bg)) {
       throw new Error(
-        `gPhone App Manifest error: '${id}' has tile.bg '${tile.bg}', which is not a single ` +
+        `gOS App Manifest error: '${id}' has tile.bg '${tile.bg}', which is not a single ` +
           `'bg-' utility class from app-utilities.css. A hex value or a colour name is ` +
           `interpolated into a 'class' attribute and matches no rule, so the tile renders ` +
           `with no background at all.`
@@ -558,7 +558,7 @@ function resolveTile(id: string, input: { tile?: AppTile; color?: string }): App
     }
     if (tile.fg !== undefined && !FG_CLASS.test(tile.fg)) {
       throw new Error(
-        `gPhone App Manifest error: '${id}' has tile.fg '${tile.fg}', which is not a single ` +
+        `gOS App Manifest error: '${id}' has tile.fg '${tile.fg}', which is not a single ` +
           `'text-' utility class. Omit it entirely for a dark tile, where the glyph inherits ` +
           `'--color-on-surface' and is already legible.`
       );
@@ -568,7 +568,7 @@ function resolveTile(id: string, input: { tile?: AppTile; color?: string }): App
 
   if (typeof color !== 'string' || !color.trim()) {
     throw new Error(
-      `gPhone App Manifest error: '${id}' must declare 'tile'. It is what the launcher ` +
+      `gOS App Manifest error: '${id}' must declare 'tile'. It is what the launcher ` +
         `paints the icon with, and there is no sensible default — an app with no tile is ` +
         `an invisible one.`
     );
@@ -577,7 +577,7 @@ function resolveTile(id: string, input: { tile?: AppTile; color?: string }): App
   const split = tileFromColorClasses(color);
   if (!split) {
     throw new Error(
-      `gPhone App Manifest error: '${id}' has color '${color}', which names no 'bg-' ` +
+      `gOS App Manifest error: '${id}' has color '${color}', which names no 'bg-' ` +
         `utility class. It is interpolated into a 'class' attribute, so a hex value or a ` +
         `bare colour name renders no background at all. Prefer 'tile: { bg, fg }'.`
     );
@@ -587,10 +587,10 @@ function resolveTile(id: string, input: { tile?: AppTile; color?: string }): App
 
 export function defineApp(manifest: AppManifestInput): AppManifest {
   if (!manifest.id || typeof manifest.id !== 'string') {
-    throw new Error("gPhone App Manifest error: 'id' is required and must be a string.");
+    throw new Error("gOS App Manifest error: 'id' is required and must be a string.");
   }
   if (manifest.name !== undefined && (typeof manifest.name !== 'string' || !manifest.name)) {
-    throw new Error("gPhone App Manifest error: 'name' must be a non-empty string.");
+    throw new Error("gOS App Manifest error: 'name' must be a non-empty string.");
   }
 
   /**
@@ -605,10 +605,10 @@ export function defineApp(manifest: AppManifestInput): AppManifest {
   const id = manifest.id.toLowerCase();
 
   /**
-   * `ext_` belongs to resources outside gPhone.
+   * `ext_` belongs to resources outside gOS.
    *
    * An external script raises a notification under `ext_<resource>` so it gets its own
-   * group in the shade rather than borrowing an app's. That only holds if no gPhone app
+   * group in the shade rather than borrowing an app's. That only holds if no gOS app
    * can ever take one of those ids — otherwise the day somebody ships an app called
    * `ext_tracker` it silently merges with a server owner's notifications, and neither
    * side can tell.
@@ -618,21 +618,21 @@ export function defineApp(manifest: AppManifestInput): AppManifest {
    */
   if (id.startsWith('ext_')) {
     throw new Error(
-      `gPhone App Manifest error: id '${id}' uses the reserved 'ext_' prefix, which is ` +
-        `for notifications raised by resources outside gPhone. Choose another id.`
+      `gOS App Manifest error: id '${id}' uses the reserved 'ext_' prefix, which is ` +
+        `for notifications raised by resources outside gOS. Choose another id.`
     );
   }
 
   if (import.meta.env.DEV) {
     if (id !== manifest.id) {
       console.warn(
-        `gPhone App Manifest: id '${manifest.id}' is not lowercase and has been read as ` +
+        `gOS App Manifest: id '${manifest.id}' is not lowercase and has been read as ` +
           `'${id}'. It is a directory name, a storage namespace and an event segment — ` +
           `spell it lower_snake_case in the manifest.`
       );
     } else if (!ID_PATTERN.test(id)) {
       console.warn(
-        `gPhone App Manifest: id '${id}' is not lower_snake_case. ` +
+        `gOS App Manifest: id '${id}' is not lower_snake_case. ` +
           `'pnpm new:app' enforces ${ID_PATTERN}; a hand-written manifest does not.`
       );
     }
@@ -642,7 +642,7 @@ export function defineApp(manifest: AppManifestInput): AppManifest {
 
   if (isRemote && manifest.core === true) {
     throw new Error(
-      `gPhone App Manifest error: remote app '${id}' declares 'core: true'. A downloaded ` +
+      `gOS App Manifest error: remote app '${id}' declares 'core: true'. A downloaded ` +
         `bundle must stay uninstallable.`
     );
   }
@@ -655,7 +655,7 @@ export function defineApp(manifest: AppManifestInput): AppManifest {
 
   if (typeof core !== 'boolean') {
     throw new Error(
-      `gPhone App Manifest error: '${id}' must declare 'core'. It decides whether the app ` +
+      `gOS App Manifest error: '${id}' must declare 'core'. It decides whether the app ` +
         `can be uninstalled, and is deliberately not inferred — it used to be derived from ` +
         `'author', which made a display string load-bearing.`
     );
@@ -668,7 +668,7 @@ export function defineApp(manifest: AppManifestInput): AppManifest {
   const networkHosts = manifest.networkHosts ?? [];
   if (networkHosts.length > 0 && manifest.requiresNetwork !== true) {
     throw new Error(
-      `gPhone App Manifest error: '${id}' declares 'networkHosts' without 'requiresNetwork: ` +
+      `gOS App Manifest error: '${id}' declares 'networkHosts' without 'requiresNetwork: ` +
         `true'. A CSP allowlist for network the app claims not to need is a contradiction.`
     );
   }
@@ -676,7 +676,7 @@ export function defineApp(manifest: AppManifestInput): AppManifest {
   for (const host of networkHosts) {
     if (!ORIGIN_PATTERN.test(host)) {
       throw new Error(
-        `gPhone App Manifest error: '${id}' declares 'networkHosts' entry '${host}', which ` +
+        `gOS App Manifest error: '${id}' declares 'networkHosts' entry '${host}', which ` +
           `is not a bare https origin (scheme, host, optional port — no path). CSP's ` +
           `connect-src takes an origin, and 'srcdoc.ts' does not correct malformed entries.`
       );
@@ -697,21 +697,21 @@ export function defineApp(manifest: AppManifestInput): AppManifest {
   if (services !== undefined) {
     if (!Array.isArray(services)) {
       throw new Error(
-        `gPhone App Manifest error: '${id}' has a 'services' that is not an array. It names ` +
+        `gOS App Manifest error: '${id}' has a 'services' that is not an array. It names ` +
           `the server services the app owns — services: ['${id}', '${id}_extra'].`
       );
     }
     for (const service of services) {
       if (typeof service !== 'string' || !ID_PATTERN.test(service)) {
         throw new Error(
-          `gPhone App Manifest error: '${id}' declares service '${String(service)}', which is ` +
+          `gOS App Manifest error: '${id}' declares service '${String(service)}', which is ` +
             `not a lower_snake_case id. A service id is an event segment, so it is spelled ` +
             `the same way an app id is.`
         );
       }
       if (service !== id && !service.startsWith(`${id}_`)) {
         throw new Error(
-          `gPhone App Manifest error: '${id}' declares service '${service}', which is outside ` +
+          `gOS App Manifest error: '${id}' declares service '${service}', which is outside ` +
             `its own namespace. An app owns '${id}' and anything under '${id}_'; declaring ` +
             `'services' states which of those it uses, and cannot claim another app's.`
         );
@@ -729,14 +729,14 @@ export function defineApp(manifest: AppManifestInput): AppManifest {
   if (requires !== undefined) {
     if (!Array.isArray(requires)) {
       throw new Error(
-        `gPhone App Manifest error: '${id}' has a 'requires' that is not an array. It lists ` +
+        `gOS App Manifest error: '${id}' has a 'requires' that is not an array. It lists ` +
           `the server capabilities the app cannot work without — requires: ['money'].`
       );
     }
     for (const capability of requires) {
       if (!(ALL_CAPABILITIES as readonly string[]).includes(capability)) {
         throw new Error(
-          `gPhone App Manifest error: '${id}' declares an unknown capability ` +
+          `gOS App Manifest error: '${id}' declares an unknown capability ` +
             `'${String(capability)}' in 'requires'. Known capabilities: ` +
             `${ALL_CAPABILITIES.join(', ')}. An unknown one is never satisfied, so the app ` +
             `would be hidden on every server rather than on the ones that lack it.`
@@ -753,13 +753,13 @@ export function defineApp(manifest: AppManifestInput): AppManifest {
   if (devices !== undefined) {
     if (!Array.isArray(devices)) {
       throw new Error(
-        `gPhone App Manifest error: '${id}' has a 'devices' that is not an array. It lists ` +
+        `gOS App Manifest error: '${id}' has a 'devices' that is not an array. It lists ` +
           `the devices the app appears on — devices: ['phone', 'tablet'].`
       );
     }
     if (devices.length === 0) {
       throw new Error(
-        `gPhone App Manifest error: '${id}' declares 'devices: []', which would show it ` +
+        `gOS App Manifest error: '${id}' declares 'devices: []', which would show it ` +
           `nowhere. Omit the field for a phone app, or list the devices it runs on.`
       );
     }
@@ -767,14 +767,14 @@ export function defineApp(manifest: AppManifestInput): AppManifest {
     for (const device of devices as readonly unknown[]) {
       if (!(ALL_DEVICES as readonly string[]).includes(device as string)) {
         throw new Error(
-          `gPhone App Manifest error: '${id}' declares an unknown device ` +
+          `gOS App Manifest error: '${id}' declares an unknown device ` +
             `'${String(device)}' in 'devices'. Known devices: ${ALL_DEVICES.join(', ')}.`
         );
       }
     }
   }
 
-  const author = manifest.author || 'gPhone';
+  const author = manifest.author || 'gOS';
 
   /**
    * Both spellings, always in step. `color` is the flattened form every consumer already
@@ -794,10 +794,10 @@ export function defineApp(manifest: AppManifestInput): AppManifest {
      * The default is right where it applies: an app compiled into this build *is* this
      * build, which is the same reasoning `shell/state/appUpdates.ts` rests on when it skips
      * non-remote apps ("its version is the phone's own, and there is nowhere newer to get it
-     * from"). Inside a `core: false` add-on bundle, though, `MICA_VERSION` is `''` by
+     * from"). Inside a `core: false` add-on bundle, though, `GOS_VERSION` is `''` by
      * design (MICA-170): a bundle is compiled once and then installed by whatever phone
      * fetches it, so the host's build stamp is genuinely unknowable at authoring time. So is
-     * it for any third-party bundler that never heard of `__MICA_VERSION__`.
+     * it for any third-party bundler that never heard of `__GOS_VERSION__`.
      *
      * `''` and absent are different claims. `''` says "this manifest has a version, and it
      * is empty", which is a value no reader can do anything honest with; absent says "this
@@ -809,12 +809,12 @@ export function defineApp(manifest: AppManifestInput): AppManifest {
      * already fired on `''` and behave identically now. Nothing changes for a player; what
      * changes is that the manifest stops asserting something it does not know.
      *
-     * Conditional spread rather than `MICA_VERSION || undefined`, so the key is genuinely
+     * Conditional spread rather than `GOS_VERSION || undefined`, so the key is genuinely
      * absent instead of present-and-undefined — an object that gets spread onward (the
      * registry copies manifests) should not carry a key that overwrites a real version with
      * nothing.
      */
-    ...(MICA_VERSION ? { version: MICA_VERSION } : {}),
+    ...(GOS_VERSION ? { version: GOS_VERSION } : {}),
     permissions: [],
     defaultProps: {},
     ...manifest,

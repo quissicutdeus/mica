@@ -10,7 +10,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
  * Where the SDK's implementation lives, and what may not follow it. MICA-171, MICA-172,
  * MICA-181.
  *
- * MICA-171 split a flat `web/src/lib/` into `lib/sdk/` (owned by `@gphone/sdk`) and
+ * MICA-171 split a flat `web/src/lib/` into `lib/sdk/` (owned by `@gos/sdk`) and
  * `lib/phone/` (owned by the shell), because the SDK's *public* exports were implemented
  * outside `sdk/` — `isBrowser`, `filterByQuery`, the formatters, `renderMarkdown`,
  * `useScrollDetect` and the thumbnail set are re-exported by `sdk/utils.ts`, `fade`/`fly`
@@ -22,7 +22,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
  * `web/src/lib/sdk/` to `sdk/lib/`. So the seam this file guards is no longer two
  * sibling directories under `lib/` — it is now:
  *
- * - `sdk/lib/` — owned by `@gphone/sdk`, and travelling with it out of `web/`. It
+ * - `sdk/lib/` — owned by `@gos/sdk`, and travelling with it out of `web/`. It
  *   must stay bundle-safe and **self-contained**: see rule 4, which is the strong form of
  *   what used to be a list of forbidden directories.
  * - `web/src/lib/` — owned by the shell. Nothing under `sdk/` may reach it. It
@@ -77,7 +77,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
  * six names go through `sdk/host/seam/theme.ts` instead, which costs no contract and is
  * reversible, and the disclosure stays an open question rather than a side effect.
  * `app.css`, `app-utilities.css` and `app-reset.css` moved to `sdk/` on MICA-172
- * for the same reason: eight files under `shell/` already import `@gphone/sdk`, so an SDK
+ * for the same reason: eight files under `shell/` already import `@gos/sdk`, so an SDK
  * primitive depending on a stylesheet outside the package was a reverse edge — and a
  * primitive that renders unstyled unless the consumer separately remembers a CSS import
  * fails silently, which is the failure mode this repo cares most about.
@@ -95,7 +95,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
  * only.
  *
  * And rule 5 is a rule about *paths*, not about coupling. It has nothing to say about the
- * phone importing `@gphone/sdk` too widely, or about a published name that should never have
+ * phone importing `@gos/sdk` too widely, or about a published name that should never have
  * been published — `publicSurface.test.ts` is the gate for the second of those, and there is
  * no gate for the first.
  */
@@ -228,7 +228,7 @@ describe('the SDK owns its own implementation', () => {
 
     expect(
       offenders,
-      'sdk/lib ships inside @gphone/sdk and leaves web/ with it — a specifier that climbs out ' +
+      'sdk/lib ships inside @gos/sdk and leaves web/ with it — a specifier that climbs out ' +
         'of sdk cannot be spelled once the SDK is its own package. Ask through a host ' +
         'seam or a facet instead.'
     ).toEqual([]);
@@ -240,7 +240,7 @@ describe('the SDK owns its own implementation', () => {
    * Rule 4 stops the SDK reaching *out*. Nothing stopped the phone reaching *in*, and it
    * did: ten specifiers across seven files named `sdk/lib/m3`, `sdk/lib/musicBroadcast` and
    * `sdk/lib/musicErrors` by relative path, plus three more for `placeholderImage`,
-   * `isBrowser` and `thumbnail`. Those last three are names `@gphone/sdk` genuinely
+   * `isBrowser` and `thumbnail`. Those last three are names `@gos/sdk` genuinely
    * publishes, reached by a private path; the first three were **not exported from the
    * package at any entry point at all**, so the phone was depending on implementation the
    * SDK does not promise to keep.
@@ -316,11 +316,11 @@ describe('the SDK owns its own implementation', () => {
     const from = join(SRC, 'shell', 'state', 'x.ts');
     expect(reachesSdkLib(from, '../../../../sdk/lib/m3')).toBe(true);
     expect(reachesSdkLib(from, '../../../../sdk/lib/nested/deep')).toBe(true);
-    expect(reachesSdkLib(from, '@gphone/sdk/lib/m3')).toBe(true);
+    expect(reachesSdkLib(from, '@gos/sdk/lib/m3')).toBe(true);
     // The direction that is allowed to exist, and must not be caught by this.
     expect(reachesSdkLib(from, '../../../../sdk/host/seam/music')).toBe(false);
     expect(reachesSdkLib(from, '../../../../sdk/manifest')).toBe(false);
-    expect(reachesSdkLib(from, '@gphone/sdk')).toBe(false);
+    expect(reachesSdkLib(from, '@gos/sdk')).toBe(false);
     expect(reachesSdkLib(from, '../../lib/phone/musicRanking')).toBe(false);
   });
 
@@ -334,7 +334,7 @@ describe('the SDK owns its own implementation', () => {
 
     expect(
       sdkLibReaches(files),
-      'sdk/lib is @gphone/sdk implementation and is published from no entry point. Publish ' +
+      'sdk/lib is @gos/sdk implementation and is published from no entry point. Publish ' +
         'the name on index.ts and addon.ts, route it through sdk/host/seam, or move the ' +
         'module to web/src/lib/phone if the SDK does not import it — see the block above.'
     ).toEqual([]);
@@ -345,7 +345,7 @@ describe('the SDK owns its own implementation', () => {
     // rather than left as a filter. A new suite reaching into sdk/lib fails here until
     // somebody writes it down; one that stops reaching fails here too, so the list cannot
     // rot into a permission nobody needs any more.
-    // This file is skipped over itself. The self-test above spells `@gphone/sdk/lib/m3` as a
+    // This file is skipped over itself. The self-test above spells `@gos/sdk/lib/m3` as a
     // string literal so the detector can be driven with input the tree does not contain, and
     // `specifiers` cannot tell that from a real import — it reads quoted text, deliberately,
     // because a `vi.mock` path is a real edge. Without this the rule reports itself, which is

@@ -4,7 +4,7 @@
 
 import { captureZoomBoost } from '../../../../sdk/host/seam/captureZoom';
 import { derived, get, writable } from 'svelte/store';
-import { DEVICES, type DeviceFrame } from '@gphone/shared/devices';
+import { DEVICES, type DeviceFrame } from '@gos/shared/devices';
 import { frame, perDevice } from './device';
 import { isTypingTarget } from './keybinds';
 

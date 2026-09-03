@@ -1,5 +1,5 @@
 import { test, expect } from '../support/test';
-import { DEVICES } from '@gphone/shared/devices';
+import { DEVICES } from '@gos/shared/devices';
 import { gotoDevice, pressDeviceKey, settledFrameBox } from '../support/device';
 
 /**

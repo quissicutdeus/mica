@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import type { ReactionSummary } from '@gphone/shared/types';
+  import type { ReactionSummary } from '@gos/shared/types';
   import EmojiPicker from './EmojiPicker.svelte';
   import { NO_REACTIONS } from '../kit/createReactionStore';
   import { t } from '../i18n';

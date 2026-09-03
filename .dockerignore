@@ -24,4 +24,4 @@ web/playwright.config.ts
 web/playwright-report
 web/test-results
 web/README.md
-docker/serve/gphone-serve
+docker/serve/gos-serve

@@ -20,8 +20,8 @@ import '@fontsource/roboto/300.css';
 import '@fontsource/roboto/400.css';
 import '@fontsource/roboto/500.css';
 import '@fontsource/roboto/700.css';
-// MICA-172: a relative path rather than `@gphone/sdk/app.css`, deliberately. Vite's
-// string aliases match by prefix, so `@gphone/sdk/app.css` would hit the `@gphone/sdk/app`
+// MICA-172: a relative path rather than `@gos/sdk/app.css`, deliberately. Vite's
+// string aliases match by prefix, so `@gos/sdk/app.css` would hit the `@gos/sdk/app`
 // entry and resolve to `../sdk/app.ts.css`. The package's `exports` map does name the
 // stylesheet, for a consumer resolving through node rather than through these aliases.
 import '../../sdk/app.css';

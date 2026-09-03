@@ -7,7 +7,7 @@ import type { Facets } from '../../facets';
 import { store, type AsTwin } from './_shared';
 import { constants } from '../constants';
 import type { MotionPreference } from '../../../vocabulary/display';
-import { DEFAULT_DEVICE, DEVICES, type DeviceId } from '@gphone/shared/devices';
+import { DEFAULT_DEVICE, DEVICES, type DeviceId } from '@gos/shared/devices';
 
 type Twin = AsTwin<ReturnType<Facets['display']>>;
 

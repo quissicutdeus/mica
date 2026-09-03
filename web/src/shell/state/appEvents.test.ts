@@ -155,7 +155,7 @@ describe('a new app joins without editing the shell', () => {
      * The property in one assertion.
      *
      * `shell/nuiMessages.ts` used to be a closed table of nine names, and an add-on installed
-     * from the Store physically cannot edit it — apps may import nothing outside `@gphone/sdk`.
+     * from the Store physically cannot edit it — apps may import nothing outside `@gos/sdk`.
      * So the test is that a completely unknown app id, registered purely at runtime, receives
      * its own events.
      */

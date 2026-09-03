@@ -28,9 +28,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     useDeepLink,
     registerMessages,
     type AppProps
-  } from '@gphone/sdk';
+  } from '@gos/sdk';
   import { useBlabber } from './store';
-  import type { Account, Blab } from '@gphone/shared/types';
+  import type { Account, Blab } from '@gos/shared/types';
   import AccountMenu from './components/AccountMenu.svelte';
   import BlabRow from './components/BlabRow.svelte';
   import Composer from './components/Composer.svelte';

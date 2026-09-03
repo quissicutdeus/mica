@@ -127,7 +127,7 @@ describe('Transport Abstraction Module', () => {
     const result = await nuiTransport.send('customNuiEvent', { foo: 'bar' });
 
     expect(fetchSpy).toHaveBeenCalledWith(
-      'https://gphone/customNuiEvent',
+      'https://gos/customNuiEvent',
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({ foo: 'bar' })

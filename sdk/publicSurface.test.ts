@@ -50,7 +50,7 @@ import { SDK_CONTRACT_VERSION } from './version';
  *   4. the **members** of every exported string vocabulary (`ALL_PERMISSIONS`),
  *   5. the **members of the object every exported hook returns** (MICA-188), read off the
  *      hook's call signature through the same typechecker, and
- *   6. **parity between `index.ts` and `addon.ts`** — the two files `@gphone/sdk`
+ *   6. **parity between `index.ts` and `addon.ts`** — the two files `@gos/sdk`
  *      resolves to depending on who is building. See that section for why.
  *
  * The first two are deliberately two arms and not one, because they answer different
@@ -74,7 +74,7 @@ import { SDK_CONTRACT_VERSION } from './version';
  *   - a member dropped from what an exported hook returns — `useTheme()` going from
  *     `{ theme, setTheme }` to `{ theme }` moves no name, no type and no prop, and breaks
  *     every add-on that destructured it (MICA-127), and
- *   - a name that crosses one of the two `@gphone/sdk` barrels and not the other,
+ *   - a name that crosses one of the two `@gos/sdk` barrels and not the other,
  *     without being declared as a deliberate difference.
  *
  * **Additions pass, deliberately.** A new icon, a new hook, a new optional prop, a new
@@ -112,7 +112,7 @@ import { SDK_CONTRACT_VERSION } from './version';
  *   here closes it for types.
  * - **Behaviour behind a name that did not move.** A prop keeping its name and meaning
  *   something else is invisible here and always will be.
- * - **`@gphone/sdk/testing`.** Test-only, aliased for this repo's own suites and not for
+ * - **`@gos/sdk/testing`.** Test-only, aliased for this repo's own suites and not for
  *   an add-on's bundle (`vite.addon.config.ts` does not map it), so it is not a contract
  *   with anybody outside this tree.
  *
@@ -146,7 +146,7 @@ import { SDK_CONTRACT_VERSION } from './version';
  * The pin used to live here as well, and MICA-173 moved it: this file said outright that
  * "an add-on author cannot import this number", which made the one number in the tree with
  * real compatibility meaning unreadable by the only people who needed it. `sdk/version.ts`
- * is where it went, for the reasons written there — briefly, `MICA_VERSION` is a CalVer
+ * is where it went, for the reasons written there — briefly, `GOS_VERSION` is a CalVer
  * build stamp that moves on every push, and `package.json`'s `1.0.0` is read by no code.
  */
 const BASELINE_VERSION = '1';
@@ -156,7 +156,7 @@ const SDK_DIR = __dirname;
 /**
  * The entry points an app can name, and what each resolves to.
  *
- * `@gphone/sdk` appears twice on purpose. In-process it is `index.ts`; inside a
+ * `@gos/sdk` appears twice on purpose. In-process it is `index.ts`; inside a
  * `core: false` add-on's own bundle `vite.addon.config.ts` redirects it to `addon.ts`,
  * which is a **different and smaller** list. The add-on one is the contract that matters
  * for MICA-125 — it is what a published add-on actually compiled against — and the two
@@ -164,10 +164,10 @@ const SDK_DIR = __dirname;
  * until Notes reached for them).
  */
 const ENTRY_POINTS: Record<string, Record<string, unknown>> = {
-  '@gphone/sdk': sdkIndex,
-  '@gphone/sdk (add-on bundle)': sdkAddon,
-  '@gphone/sdk/app': sdkApp,
-  '@gphone/sdk/core': sdkCore
+  '@gos/sdk': sdkIndex,
+  '@gos/sdk (add-on bundle)': sdkAddon,
+  '@gos/sdk/app': sdkApp,
+  '@gos/sdk/core': sdkCore
 };
 
 /**
@@ -177,10 +177,10 @@ const ENTRY_POINTS: Record<string, Record<string, unknown>> = {
  * below asserts they name the same four, so one cannot quietly lose an entry the other has.
  */
 const ENTRY_FILES: Record<string, string> = {
-  '@gphone/sdk': 'index.ts',
-  '@gphone/sdk (add-on bundle)': 'addon.ts',
-  '@gphone/sdk/app': 'app.ts',
-  '@gphone/sdk/core': 'core.ts'
+  '@gos/sdk': 'index.ts',
+  '@gos/sdk (add-on bundle)': 'addon.ts',
+  '@gos/sdk/app': 'app.ts',
+  '@gos/sdk/core': 'core.ts'
 };
 
 /** Barrels that re-export a `.svelte` default, and so decide which components are public. */
@@ -429,7 +429,7 @@ const liveExports = (): Record<string, string[]> =>
  * deleted from both crossed nothing and reported nothing.
  *
  * That is the same class of silence as MICA-125 itself: an add-on that writes
- * `import type { Note } from '@gphone/sdk'` is as broken by that name disappearing as one
+ * `import type { Note } from '@gos/sdk'` is as broken by that name disappearing as one
  * that calls a deleted hook, and nothing in this tree ever compiles a real add-on against
  * the published contract to find out.
  *
@@ -667,7 +667,7 @@ const vocabularies = (module: Record<string, unknown>): Record<string, string[]>
  * would announce a break to add-on authors that has not happened.
  */
 const BASELINE_EXPORTS: Record<string, string[]> = {
-  '@gphone/sdk': [
+  '@gos/sdk': [
     'ALL_PERMISSIONS',
     'AddIcon',
     'AirplaneIcon',
@@ -702,8 +702,8 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'FlashlightIcon',
     'FlipCameraIcon',
     'FloatingActionButton',
-    'MICA_BUILD_INFO',
-    'MICA_VERSION',
+    'GOS_BUILD_INFO',
+    'GOS_VERSION',
     'HomeIcon',
     'KeypadIcon',
     'LightningWarningIcon',
@@ -871,8 +871,8 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'useWallpaperWrite',
     // MICA-192: the licence notice a player reads in Settings > About, published
     // for the same reason PRIVACY_NOTICE_TEXT is — an add-on carries the same licence.
-    'MICA_BRANCH',
-    'MICA_SOURCE_URL',
+    'GOS_BRANCH',
+    'GOS_SOURCE_URL',
     'LICENSE_COPYRIGHT',
     'LICENSE_FREEDOMS',
     'LICENSE_NAME',
@@ -882,7 +882,7 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'sourceUrlForBuild',
     'useSourceUrl'
   ],
-  '@gphone/sdk (add-on bundle)': [
+  '@gos/sdk (add-on bundle)': [
     'ALL_PERMISSIONS',
     'AddIcon',
     'AirplaneIcon',
@@ -917,8 +917,8 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'FlashlightIcon',
     'FlipCameraIcon',
     'FloatingActionButton',
-    'MICA_BUILD_INFO',
-    'MICA_VERSION',
+    'GOS_BUILD_INFO',
+    'GOS_VERSION',
     'HomeIcon',
     'KeypadIcon',
     'LightningWarningIcon',
@@ -1082,8 +1082,8 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'placeholderPhotos',
     // MICA-192: the licence notice a player reads in Settings > About, published
     // for the same reason PRIVACY_NOTICE_TEXT is — an add-on carries the same licence.
-    'MICA_BRANCH',
-    'MICA_SOURCE_URL',
+    'GOS_BRANCH',
+    'GOS_SOURCE_URL',
     'LICENSE_COPYRIGHT',
     'LICENSE_FREEDOMS',
     'LICENSE_NAME',
@@ -1093,8 +1093,8 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'sourceUrlForBuild',
     'useSourceUrl'
   ],
-  '@gphone/sdk/app': ['defineApp', 'lazyBadge'],
-  '@gphone/sdk/core': ['NowPlayingCard', 'useCaptureZoomBoost', 'useNuiBridge']
+  '@gos/sdk/app': ['defineApp', 'lazyBadge'],
+  '@gos/sdk/core': ['NowPlayingCard', 'useCaptureZoomBoost', 'useNuiBridge']
 };
 
 /**
@@ -1107,7 +1107,7 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
  * that breaks the contract regenerates the snapshot in the same breath, and the reviewer
  * sees a file that "just updated" rather than a name that went away.
  *
- * `@gphone/sdk/app` and `@gphone/sdk/core` export no types at all today. They are written
+ * `@gos/sdk/app` and `@gos/sdk/core` export no types at all today. They are written
  * down as empty rather than omitted, so `has a baseline to compare against` can assert all
  * four entry points are present and a list that goes missing cannot read as "nothing to
  * check here".
@@ -1116,7 +1116,7 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
  * and deliberately not on `addon.ts` — see `SHELL_ONLY_BY_DESIGN`.
  */
 const BASELINE_TYPE_EXPORTS: Record<string, string[]> = {
-  '@gphone/sdk': [
+  '@gos/sdk': [
     'AccountSearchQuery',
     'AppActionOptions',
     'AppCapability',
@@ -1188,7 +1188,7 @@ const BASELINE_TYPE_EXPORTS: Record<string, string[]> = {
     'WallpaperPreset',
     'WallpaperState'
   ],
-  '@gphone/sdk (add-on bundle)': [
+  '@gos/sdk (add-on bundle)': [
     'AccountSearchQuery',
     'AppActionOptions',
     'AppCapability',
@@ -1259,8 +1259,8 @@ const BASELINE_TYPE_EXPORTS: Record<string, string[]> = {
     'WallpaperPreset',
     'WallpaperState'
   ],
-  '@gphone/sdk/app': [],
-  '@gphone/sdk/core': []
+  '@gos/sdk/app': [],
+  '@gos/sdk/core': []
 };
 
 /**
@@ -1443,7 +1443,7 @@ const BASELINE_VOCABULARIES: Record<string, string[]> = {
  * `setTheme` — MICA-127, and the reason this list exists.
  *
  * Captured off the **checker**, from the same program the type arm builds, over the hooks
- * `@gphone/sdk` publishes — see `returnMembers` for why not off `Facets`, and the
+ * `@gos/sdk` publishes — see `returnMembers` for why not off `Facets`, and the
  * `freezes what every published hook returns` test for why `index.ts` and not `addon.ts`.
  *
  * Encoded like `BASELINE_PROPS`: a bare name, `name?` when the member is optional. Frozen
@@ -1739,7 +1739,7 @@ const BASELINE_HOOK_RETURNS: Record<string, string[]> = {
 /** One way the live surface would break something already written against the baseline. */
 interface Break {
   /**
-   * `'@gphone/sdk'` for an export or a type, the component name for a prop, the hook name
+   * `'@gos/sdk'` for an export or a type, the component name for a prop, the hook name
    * for a return member.
    */
   where: string;
@@ -1970,11 +1970,11 @@ const describeAddition = (a: Addition): string => `${a.where}: ${a.what} (${a.ki
 /**
  * The second half of this gate, and the half that catches a defect this repo has today.
  *
- * `@gphone/sdk` is **two files**. In-process it is `index.ts`; inside a `core: false`
+ * `@gos/sdk` is **two files**. In-process it is `index.ts`; inside a `core: false`
  * add-on's own bundle `vite.addon.config.ts` rewrites the specifier to `addon.ts`. But
  * `tsconfig.app.json` maps it to `index.ts` for everybody, so an add-on that imports a
  * name present on `index.ts` and absent from `addon.ts` **typechecks clean and fails at
- * `vite build`** — and there is no alias for `@gphone/sdk/core` in the add-on config at
+ * `vite build`** — and there is no alias for `@gos/sdk/core` in the add-on config at
  * all. `addon.ts`'s own docblock records that this has already bitten once: "Notes
  * reaching for `fade` is what found it."
  *
@@ -2063,9 +2063,9 @@ const undeclaredDivergence = (a: string[], b: string[], declared: string[]): str
 /**
  * Everything above reads the entry points **as files**. `import * as sdkApp from './app'`
  * and `ts.createProgram` on `app.ts` both prove what that file publishes — and neither
- * proves that `@gphone/sdk/app` still *names* it.
+ * proves that `@gos/sdk/app` still *names* it.
  *
- * That gap is not theoretical here, because **nothing in this tree resolves `@gphone/sdk`
+ * That gap is not theoretical here, because **nothing in this tree resolves `@gos/sdk`
  * through the `exports` map at all**. `web/vite.config.ts` aliases the bare specifier and
  * both subpaths to absolute paths; `web/vite.addon.config.ts` does the same and points the
  * bare one at `addon.ts`; `web/tsconfig.app.json` path-maps all three. Even `main.ts`
@@ -2085,7 +2085,7 @@ const undeclaredDivergence = (a: string[], b: string[], declared: string[]): str
  * **Two things it deliberately does not do.**
  *
  * First, `addon.ts` is in the frozen surface and absent from the map, and this gate
- * **records that rather than resolving it**. `@gphone/sdk` means `index.ts` to the
+ * **records that rather than resolving it**. `@gos/sdk` means `index.ts` to the
  * typechecker and `addon.ts` inside a `core: false` bundle, and it is
  * `vite.addon.config.ts` — not the package — that performs the swap, so an out-of-tree
  * add-on building without that config resolves `.` to the shell barrel. Whether the package
@@ -2117,9 +2117,9 @@ const packageExports = (): Record<string, unknown> => {
  * actually types. `ENTRY_FILES` says what each one has to resolve to.
  */
 const SUBPATH_OF_ENTRY: Record<string, string> = {
-  '@gphone/sdk (add-on bundle)': '.',
-  '@gphone/sdk/app': './app',
-  '@gphone/sdk/core': './core'
+  '@gos/sdk (add-on bundle)': '.',
+  '@gos/sdk/app': './app',
+  '@gos/sdk/core': './core'
 };
 
 /**
@@ -2127,17 +2127,17 @@ const SUBPATH_OF_ENTRY: Record<string, string> = {
  *
  * `index.ts` is the **shell's** barrel, and MICA-125 made `.` resolve to `addon.ts`
  * instead. The bare specifier is target-dependent by nature: in this repo the shell build
- * and the add-on build alias `@gphone/sdk` to different files, so the map can be right for
+ * and the add-on build alias `@gos/sdk` to different files, so the map can be right for
  * exactly one audience, and the audience that reads a map rather than an alias is the one
  * outside this repo. That is add-on authors.
  *
  * So the shell reaches its own barrel through `web/vite.config.ts`, the way `addon.ts` used
- * to be reached, and an outside consumer resolving `@gphone/sdk` now gets the barrel it can
+ * to be reached, and an outside consumer resolving `@gos/sdk` now gets the barrel it can
  * actually use. Publishing `index.ts` under some subpath of its own was considered and
  * rejected: it exports six shell-only names backed by shell state and no `bootAddOn`, so a
  * subpath for it would be a supported way to reach something unusable.
  */
-const UNPUBLISHED_BY_DESIGN = ['@gphone/sdk'];
+const UNPUBLISHED_BY_DESIGN = ['@gos/sdk'];
 
 /** Subpaths publishing the design system rather than a module. Out of contract (above). */
 const isStylesheet = (subpath: string): boolean => subpath.endsWith('.css');
@@ -2202,7 +2202,7 @@ const exportsMapProblems = (
 describe('the SDK public surface (MICA-125)', () => {
   const exportsNow = liveExports();
   const propsNow = liveProps();
-  // Read off `@gphone/sdk`, which is the superset: every vocabulary an add-on can see is
+  // Read off `@gos/sdk`, which is the superset: every vocabulary an add-on can see is
   // re-exported there too, and the parity block below is what keeps that true.
   const vocabulariesNow = vocabularies(sdkIndex);
   // One `ts.createProgram` for the whole file. Every assertion below reads this.
@@ -2210,9 +2210,9 @@ describe('the SDK public surface (MICA-125)', () => {
   const typesNow = Object.fromEntries(
     Object.entries(typedNow).map(([id, entry]) => [id, entry.types])
   );
-  // Read off `@gphone/sdk` alone, and not off all four entry points merged. See
+  // Read off `@gos/sdk` alone, and not off all four entry points merged. See
   // `freezes what every published hook returns` below for why that is the whole scope.
-  const hooksNow = typedNow['@gphone/sdk'].hooks;
+  const hooksNow = typedNow['@gos/sdk'].hooks;
 
   describe('the gate can actually run', () => {
     // Every assertion below compares two lists. If either side comes back empty — a
@@ -2232,10 +2232,10 @@ describe('the SDK public surface (MICA-125)', () => {
       // Floors, not exact counts: additions are allowed (see the header), so an equality
       // here would fire on every new icon. These are far enough below today's numbers to
       // be quiet, and far enough above zero that a half-resolved barrel is loud.
-      expect(exportsNow['@gphone/sdk'].length).toBeGreaterThanOrEqual(150);
-      expect(exportsNow['@gphone/sdk (add-on bundle)'].length).toBeGreaterThanOrEqual(150);
-      expect(exportsNow['@gphone/sdk/app'].length).toBeGreaterThanOrEqual(2);
-      expect(exportsNow['@gphone/sdk/core'].length).toBeGreaterThanOrEqual(3);
+      expect(exportsNow['@gos/sdk'].length).toBeGreaterThanOrEqual(150);
+      expect(exportsNow['@gos/sdk (add-on bundle)'].length).toBeGreaterThanOrEqual(150);
+      expect(exportsNow['@gos/sdk/app'].length).toBeGreaterThanOrEqual(2);
+      expect(exportsNow['@gos/sdk/core'].length).toBeGreaterThanOrEqual(3);
       expect(Object.keys(propsNow).length).toBeGreaterThanOrEqual(70);
       // `ALL_PERMISSIONS` at minimum. A zero here means the module resolved to something
       // that is not the SDK, and the vocabulary arm below would compare against nothing.
@@ -2255,14 +2255,14 @@ describe('the SDK public surface (MICA-125)', () => {
       // stopped reaching `declare module '*.svelte'`, every component export would resolve
       // to nothing and land in `types` instead of `values`. The counts, not an exception,
       // are what make that visible.
-      expect(typedNow['@gphone/sdk'].values.length).toBeGreaterThanOrEqual(150);
-      expect(typedNow['@gphone/sdk (add-on bundle)'].values.length).toBeGreaterThanOrEqual(150);
+      expect(typedNow['@gos/sdk'].values.length).toBeGreaterThanOrEqual(150);
+      expect(typedNow['@gos/sdk (add-on bundle)'].values.length).toBeGreaterThanOrEqual(150);
       expect(
-        typedNow['@gphone/sdk'].types.length,
+        typedNow['@gos/sdk'].types.length,
         'no type-only exports resolved out of index.ts — the program did not build the ' +
           'surface this arm exists to check'
       ).toBeGreaterThanOrEqual(60);
-      expect(typedNow['@gphone/sdk (add-on bundle)'].types.length).toBeGreaterThanOrEqual(59);
+      expect(typedNow['@gos/sdk (add-on bundle)'].types.length).toBeGreaterThanOrEqual(59);
     });
 
     it('classifies value against type the way the module loader does', () => {
@@ -2320,8 +2320,8 @@ describe('the SDK public surface (MICA-125)', () => {
         'the frozen export baseline is missing an entry point — restore it rather than ' +
           'letting the gate go quiet'
       ).toEqual(Object.keys(ENTRY_POINTS).sort());
-      expect(BASELINE_EXPORTS['@gphone/sdk'].length).toBeGreaterThanOrEqual(150);
-      expect(BASELINE_EXPORTS['@gphone/sdk (add-on bundle)'].length).toBeGreaterThanOrEqual(150);
+      expect(BASELINE_EXPORTS['@gos/sdk'].length).toBeGreaterThanOrEqual(150);
+      expect(BASELINE_EXPORTS['@gos/sdk (add-on bundle)'].length).toBeGreaterThanOrEqual(150);
       expect(Object.keys(BASELINE_PROPS).length).toBeGreaterThanOrEqual(70);
       expect(Object.values(BASELINE_PROPS).flat().length).toBeGreaterThanOrEqual(100);
       expect(
@@ -2335,10 +2335,8 @@ describe('the SDK public surface (MICA-125)', () => {
         'the frozen type-only baseline is missing an entry point — restore it rather than ' +
           'letting the gate go quiet'
       ).toEqual(Object.keys(ENTRY_POINTS).sort());
-      expect(BASELINE_TYPE_EXPORTS['@gphone/sdk'].length).toBeGreaterThanOrEqual(60);
-      expect(BASELINE_TYPE_EXPORTS['@gphone/sdk (add-on bundle)'].length).toBeGreaterThanOrEqual(
-        59
-      );
+      expect(BASELINE_TYPE_EXPORTS['@gos/sdk'].length).toBeGreaterThanOrEqual(60);
+      expect(BASELINE_TYPE_EXPORTS['@gos/sdk (add-on bundle)'].length).toBeGreaterThanOrEqual(59);
       // MICA-188. The hook arm is the one that goes quiet most cheaply: if the checker
       // stopped resolving call signatures — an ambient declaration lost, a hook re-exported
       // through something the program cannot see — `returnMembers` returns `null` for every
@@ -2391,7 +2389,7 @@ describe('the SDK public surface (MICA-125)', () => {
 
     expect(
       found,
-      `this changes the shape of \`@gphone/sdk\` under every published \`core: false\` ` +
+      `this changes the shape of \`@gos/sdk\` under every published \`core: false\` ` +
         `add-on, which compiled against v${SDK_CONTRACT_VERSION} and cannot be recompiled ` +
         'by you. If the change is intended: bump SDK_CONTRACT_VERSION, re-capture the two ' +
         'baselines below it in the same commit, and write the CHANGELOG entry under ' +
@@ -2458,7 +2456,7 @@ describe('the SDK public surface (MICA-125)', () => {
       expect(stars.length).toBeGreaterThan(3);
       expect(
         starReexports('addon.ts'),
-        'index.ts and addon.ts re-export different barrels, so `@gphone/sdk` means two ' +
+        'index.ts and addon.ts re-export different barrels, so `@gos/sdk` means two ' +
           'different things depending on who is building'
       ).toEqual(stars);
     });
@@ -2466,7 +2464,7 @@ describe('the SDK public surface (MICA-125)', () => {
     it('declares every name index.ts has and addon.ts does not', () => {
       expect(
         undeclaredDivergence(indexNamed, addonNamed, [...SHELL_ONLY_BY_DESIGN, ...KNOWN_DRIFT]),
-        'this name is on `@gphone/sdk` when the typechecker resolves it and missing when a ' +
+        'this name is on `@gos/sdk` when the typechecker resolves it and missing when a ' +
           '`core: false` add-on bundles it, so an add-on that imports it typechecks clean ' +
           'and fails at `vite build`. Add it to addon.ts, or — if it is shell-only on ' +
           'purpose — say so in SHELL_ONLY_BY_DESIGN.'
@@ -2490,15 +2488,15 @@ describe('the SDK public surface (MICA-125)', () => {
       );
       expect(
         undeclaredDivergence(
-          exportsNow['@gphone/sdk'],
-          exportsNow['@gphone/sdk (add-on bundle)'],
+          exportsNow['@gos/sdk'],
+          exportsNow['@gos/sdk (add-on bundle)'],
           declared
         )
       ).toEqual([]);
       expect(
         undeclaredDivergence(
-          exportsNow['@gphone/sdk (add-on bundle)'],
-          exportsNow['@gphone/sdk'],
+          exportsNow['@gos/sdk (add-on bundle)'],
+          exportsNow['@gos/sdk'],
           ADD_ON_ONLY_BY_DESIGN
         )
       ).toEqual([]);
@@ -2518,18 +2516,18 @@ describe('the SDK public surface (MICA-125)', () => {
 
       expect(
         undeclaredDivergence(
-          typedNow['@gphone/sdk'].types,
-          typedNow['@gphone/sdk (add-on bundle)'].types,
+          typedNow['@gos/sdk'].types,
+          typedNow['@gos/sdk (add-on bundle)'].types,
           shellOnlyTypes
         ),
-        'this type is on `@gphone/sdk` when the typechecker resolves it and absent from the ' +
+        'this type is on `@gos/sdk` when the typechecker resolves it and absent from the ' +
           'barrel a `core: false` add-on actually bundles, so `import type { ... }` in an ' +
           'add-on resolves in the editor and against nothing at build time'
       ).toEqual([]);
       expect(
         undeclaredDivergence(
-          typedNow['@gphone/sdk (add-on bundle)'].types,
-          typedNow['@gphone/sdk'].types,
+          typedNow['@gos/sdk (add-on bundle)'].types,
+          typedNow['@gos/sdk'].types,
           addOnOnlyTypes
         )
       ).toEqual([]);
@@ -2547,7 +2545,7 @@ describe('the SDK public surface (MICA-125)', () => {
 
     it('read the exports map, so the comparisons below are not vacuous', () => {
       // An empty or absent map would make every assertion below pass over nothing — and
-      // an absent one is itself the loudest possible break, since `@gphone/sdk` then
+      // an absent one is itself the loudest possible break, since `@gos/sdk` then
       // resolves to nothing at all.
       expect(
         Object.keys(map).length,
@@ -2623,17 +2621,17 @@ describe('the SDK public surface (MICA-125)', () => {
     it('sees an export that is gone', () => {
       expect(
         breakingChanges(
-          surface({ '@gphone/sdk': ['Button'] }),
-          surface({ '@gphone/sdk': ['Button', 'ReactionBar'] })
+          surface({ '@gos/sdk': ['Button'] }),
+          surface({ '@gos/sdk': ['Button', 'ReactionBar'] })
         ).map(describeBreak)
-      ).toEqual(['@gphone/sdk: ReactionBar (export removed)']);
+      ).toEqual(['@gos/sdk: ReactionBar (export removed)']);
     });
 
     it('lets an added export through', () => {
       expect(
         breakingChanges(
-          surface({ '@gphone/sdk': ['Button', 'Skeleton'] }),
-          surface({ '@gphone/sdk': ['Button'] })
+          surface({ '@gos/sdk': ['Button', 'Skeleton'] }),
+          surface({ '@gos/sdk': ['Button'] })
         )
       ).toEqual([]);
     });
@@ -2645,18 +2643,18 @@ describe('the SDK public surface (MICA-125)', () => {
     it('sees an export nobody decided to publish', () => {
       expect(
         undeclaredAdditions(
-          surface({ '@gphone/sdk': ['Button', 'Skeleton'] }),
-          surface({ '@gphone/sdk': ['Button'] }),
+          surface({ '@gos/sdk': ['Button', 'Skeleton'] }),
+          surface({ '@gos/sdk': ['Button'] }),
           new Set()
         ).map(describeAddition)
-      ).toEqual(['@gphone/sdk: Skeleton (export added)']);
+      ).toEqual(['@gos/sdk: Skeleton (export added)']);
     });
 
     it('lets a name through once the baseline records it', () => {
       expect(
         undeclaredAdditions(
-          surface({ '@gphone/sdk': ['Button', 'Skeleton'] }),
-          surface({ '@gphone/sdk': ['Button', 'Skeleton'] }),
+          surface({ '@gos/sdk': ['Button', 'Skeleton'] }),
+          surface({ '@gos/sdk': ['Button', 'Skeleton'] }),
           new Set()
         )
       ).toEqual([]);
@@ -2665,8 +2663,8 @@ describe('the SDK public surface (MICA-125)', () => {
     it('exempts a derived name, so a new icon costs nothing', () => {
       expect(
         undeclaredAdditions(
-          surface({ '@gphone/sdk': ['Button', 'PizzaIcon'] }),
-          surface({ '@gphone/sdk': ['Button'] }),
+          surface({ '@gos/sdk': ['Button', 'PizzaIcon'] }),
+          surface({ '@gos/sdk': ['Button'] }),
           new Set(['PizzaIcon'])
         )
       ).toEqual([]);
@@ -2677,10 +2675,10 @@ describe('the SDK public surface (MICA-125)', () => {
       // was nobody's decision", not "this name is outside the contract".
       expect(
         breakingChanges(
-          surface({ '@gphone/sdk': ['Button'] }),
-          surface({ '@gphone/sdk': ['Button', 'PizzaIcon'] })
+          surface({ '@gos/sdk': ['Button'] }),
+          surface({ '@gos/sdk': ['Button', 'PizzaIcon'] })
         ).map(describeBreak)
-      ).toEqual(['@gphone/sdk: PizzaIcon (export removed)']);
+      ).toEqual(['@gos/sdk: PizzaIcon (export removed)']);
     });
 
     it('sees a vocabulary member nobody decided to publish', () => {
@@ -2696,11 +2694,11 @@ describe('the SDK public surface (MICA-125)', () => {
     it('sees a type-only export nobody decided to publish', () => {
       expect(
         undeclaredAdditions(
-          { exports: {}, props: {}, types: { '@gphone/sdk': ['Note', 'Draft'] } },
-          { exports: {}, props: {}, types: { '@gphone/sdk': ['Note'] } },
+          { exports: {}, props: {}, types: { '@gos/sdk': ['Note', 'Draft'] } },
+          { exports: {}, props: {}, types: { '@gos/sdk': ['Note'] } },
           new Set()
         ).map(describeAddition)
-      ).toEqual(['@gphone/sdk: Draft (type export added)']);
+      ).toEqual(['@gos/sdk: Draft (type export added)']);
     });
 
     it('replays the ReactionBar break of 2026-08-28', () => {
@@ -2709,7 +2707,7 @@ describe('the SDK public surface (MICA-125)', () => {
       // precisely why an export-name gate would have missed this.
       const before = { ReactionBar: ['class?', 'counts?', 'mine?', 'onreact', 'onunreact'] };
       const after = { ReactionBar: ['class?', 'ontoggle', 'summary?'] };
-      const entry = { '@gphone/sdk': ['ReactionBar'] };
+      const entry = { '@gos/sdk': ['ReactionBar'] };
 
       expect(
         breakingChanges(surface(entry, after), surface(entry, before)).map(describeBreak)
@@ -2722,7 +2720,7 @@ describe('the SDK public surface (MICA-125)', () => {
     });
 
     it('sees a prop that was renamed', () => {
-      const entry = { '@gphone/sdk': ['Avatar'] };
+      const entry = { '@gos/sdk': ['Avatar'] };
       expect(
         breakingChanges(
           surface(entry, { Avatar: ['label?'] }),
@@ -2732,7 +2730,7 @@ describe('the SDK public surface (MICA-125)', () => {
     });
 
     it('sees a prop that lost its default, and says which', () => {
-      const entry = { '@gphone/sdk': ['Avatar'] };
+      const entry = { '@gos/sdk': ['Avatar'] };
       expect(
         breakingChanges(
           surface(entry, { Avatar: ['size'] }),
@@ -2742,7 +2740,7 @@ describe('the SDK public surface (MICA-125)', () => {
     });
 
     it('lets an added prop, and a newly optional one, through', () => {
-      const entry = { '@gphone/sdk': ['Avatar'] };
+      const entry = { '@gos/sdk': ['Avatar'] };
       expect(
         breakingChanges(
           surface(entry, { Avatar: ['name?', 'size', 'tone'] }),
@@ -2757,12 +2755,12 @@ describe('the SDK public surface (MICA-125)', () => {
     it('refuses to skip a component that is still exported but no longer parses', () => {
       // The fail-open case: `publicComponents()` stops matching a barrel it used to read,
       // so twenty components drop out of the parsed set while every one of them is still
-      // on `@gphone/sdk`. Skipping them the way a genuinely deleted component is skipped
+      // on `@gos/sdk`. Skipping them the way a genuinely deleted component is skipped
       // would retire half this gate in silence.
       expect(
         breakingChanges(
-          surface({ '@gphone/sdk': ['ReactionBar'] }, {}),
-          surface({ '@gphone/sdk': ['ReactionBar'] }, { ReactionBar: ['ontoggle'] })
+          surface({ '@gos/sdk': ['ReactionBar'] }, {}),
+          surface({ '@gos/sdk': ['ReactionBar'] }, { ReactionBar: ['ontoggle'] })
         ).map(describeBreak)
       ).toEqual(['ReactionBar: its props (shape could not be read)']);
     });
@@ -2770,19 +2768,19 @@ describe('the SDK public surface (MICA-125)', () => {
     it('sees a type-only export that is gone', () => {
       // The MICA-182 case. `Note` has no runtime footprint, so the arm above passes over
       // it entirely and every other gate in this repo stays green while an add-on's
-      // `import type { Note } from '@gphone/sdk'` stops resolving.
+      // `import type { Note } from '@gos/sdk'` stops resolving.
       expect(
         breakingChanges(
-          { ...surface({ '@gphone/sdk': [] }), types: { '@gphone/sdk': ['AppManifest'] } },
-          { ...surface({ '@gphone/sdk': [] }), types: { '@gphone/sdk': ['AppManifest', 'Note'] } }
+          { ...surface({ '@gos/sdk': [] }), types: { '@gos/sdk': ['AppManifest'] } },
+          { ...surface({ '@gos/sdk': [] }), types: { '@gos/sdk': ['AppManifest', 'Note'] } }
         ).map(describeBreak)
-      ).toEqual(['@gphone/sdk: Note (type export removed)']);
+      ).toEqual(['@gos/sdk: Note (type export removed)']);
     });
 
     it('sees a type-only export that was renamed, on the barrel an add-on bundles', () => {
       // A rename is a removal plus an addition, and only the removal is reported — which is
       // the correct half: the old name is what published code writes.
-      const entry = '@gphone/sdk (add-on bundle)';
+      const entry = '@gos/sdk (add-on bundle)';
       expect(
         breakingChanges(
           { ...surface({ [entry]: [] }), types: { [entry]: ['UIMessage'] } },
@@ -2796,8 +2794,8 @@ describe('the SDK public surface (MICA-125)', () => {
       // the header. A new exported type breaks nobody.
       expect(
         breakingChanges(
-          { ...surface({ '@gphone/sdk': [] }), types: { '@gphone/sdk': ['Note', 'Reaction'] } },
-          { ...surface({ '@gphone/sdk': [] }), types: { '@gphone/sdk': ['Note'] } }
+          { ...surface({ '@gos/sdk': [] }), types: { '@gos/sdk': ['Note', 'Reaction'] } },
+          { ...surface({ '@gos/sdk': [] }), types: { '@gos/sdk': ['Note'] } }
         )
       ).toEqual([]);
     });
@@ -2808,13 +2806,10 @@ describe('the SDK public surface (MICA-125)', () => {
       // loss of the surface into silence.
       expect(
         breakingChanges(
-          { ...surface({ '@gphone/sdk': [] }), types: {} },
-          { ...surface({ '@gphone/sdk': [] }), types: { '@gphone/sdk': ['Host', 'Note'] } }
+          { ...surface({ '@gos/sdk': [] }), types: {} },
+          { ...surface({ '@gos/sdk': [] }), types: { '@gos/sdk': ['Host', 'Note'] } }
         ).map(describeBreak)
-      ).toEqual([
-        '@gphone/sdk: Host (type export removed)',
-        '@gphone/sdk: Note (type export removed)'
-      ]);
+      ).toEqual(['@gos/sdk: Host (type export removed)', '@gos/sdk: Note (type export removed)']);
     });
 
     it('reads type-only exports out of the real program, not just out of a literal', () => {
@@ -2823,21 +2818,21 @@ describe('the SDK public surface (MICA-125)', () => {
       // is what the live classifier actually produces. `Host` and `Note` are published types
       // with no runtime footprint, and `useTimer` is a published value — the split has to
       // put each on the right side.
-      expect(typesNow['@gphone/sdk']).toContain('Host');
-      expect(typesNow['@gphone/sdk']).toContain('Note');
-      expect(typesNow['@gphone/sdk']).not.toContain('useTimer');
-      expect(exportsNow['@gphone/sdk']).toContain('useTimer');
-      // And `@gphone/sdk/app` publishes two values and no types, which is a fact about the
+      expect(typesNow['@gos/sdk']).toContain('Host');
+      expect(typesNow['@gos/sdk']).toContain('Note');
+      expect(typesNow['@gos/sdk']).not.toContain('useTimer');
+      expect(exportsNow['@gos/sdk']).toContain('useTimer');
+      // And `@gos/sdk/app` publishes two values and no types, which is a fact about the
       // entry point rather than an arm that failed to read it.
-      expect(typesNow['@gphone/sdk/app']).toEqual([]);
-      expect(exportsNow['@gphone/sdk/app'].length).toBeGreaterThan(0);
+      expect(typesNow['@gos/sdk/app']).toEqual([]);
+      expect(exportsNow['@gos/sdk/app'].length).toBeGreaterThan(0);
     });
 
     it('sees a member dropped from an exported vocabulary', () => {
       // The `'sound'` case: `ALL_PERMISSIONS` is still exported and still an array, so
       // every name-level check is satisfied, and a published manifest declaring the
       // removed permission keeps loading with its declaration quietly ignored.
-      const entry = { '@gphone/sdk': ['ALL_PERMISSIONS'] };
+      const entry = { '@gos/sdk': ['ALL_PERMISSIONS'] };
       expect(
         breakingChanges(
           { ...surface(entry), vocabularies: { ALL_PERMISSIONS: ['media', 'storage'] } },
@@ -2847,7 +2842,7 @@ describe('the SDK public surface (MICA-125)', () => {
     });
 
     it('lets a member added to a vocabulary through', () => {
-      const entry = { '@gphone/sdk': ['ALL_PERMISSIONS'] };
+      const entry = { '@gos/sdk': ['ALL_PERMISSIONS'] };
       expect(
         breakingChanges(
           { ...surface(entry), vocabularies: { ALL_PERMISSIONS: ['media', 'music'] } },
@@ -2860,7 +2855,7 @@ describe('the SDK public surface (MICA-125)', () => {
       // MICA-127, and the whole of MICA-188. `useTheme` is still exported, still a
       // function, still returns an object — every other arm of this file is satisfied — and
       // an add-on that wrote `const { setTheme } = useTheme()` now calls `undefined`.
-      const entry = { '@gphone/sdk': ['useTheme'] };
+      const entry = { '@gos/sdk': ['useTheme'] };
       expect(
         breakingChanges(
           { ...surface(entry), hooks: { useTheme: ['theme'] } },
@@ -2873,7 +2868,7 @@ describe('the SDK public surface (MICA-125)', () => {
       // Additions pass on this axis for the same reason they pass on every other one. A
       // hook that starts returning something extra breaks nobody, and a gate that demanded
       // a version bump for it would be a gate somebody switches off.
-      const entry = { '@gphone/sdk': ['useTheme'] };
+      const entry = { '@gos/sdk': ['useTheme'] };
       expect(
         breakingChanges(
           { ...surface(entry), hooks: { useTheme: ['setTheme', 'seed', 'theme'] } },
@@ -2887,7 +2882,7 @@ describe('the SDK public surface (MICA-125)', () => {
       // does not see (see the differ). Stated as a test rather than only as a comment, so
       // the day somebody wants it, this is the line that has to change and the blind spot
       // is not discovered by an add-on.
-      const entry = { '@gphone/sdk': ['useTheme'] };
+      const entry = { '@gos/sdk': ['useTheme'] };
       expect(
         breakingChanges(
           { ...surface(entry), hooks: { useTheme: ['setTheme?'] } },
@@ -2902,8 +2897,8 @@ describe('the SDK public surface (MICA-125)', () => {
       // nothing said, which is the failure AGENTS.md names.
       expect(
         breakingChanges(
-          { ...surface({ '@gphone/sdk': ['useTheme'] }), hooks: {} },
-          { ...surface({ '@gphone/sdk': ['useTheme'] }), hooks: { useTheme: ['theme'] } }
+          { ...surface({ '@gos/sdk': ['useTheme'] }), hooks: {} },
+          { ...surface({ '@gos/sdk': ['useTheme'] }), hooks: { useTheme: ['theme'] } }
         ).map(describeBreak)
       ).toEqual(['useTheme: what it returns (shape could not be read)']);
     });
@@ -2921,13 +2916,13 @@ describe('the SDK public surface (MICA-125)', () => {
       const empty = Object.entries(hooksNow).filter(([, members]) => members.length === 0);
       expect(empty, 'a hook was frozen with no members, which checks nothing').toEqual([]);
 
-      // **Scope**: every hook `@gphone/sdk` publishes, not only the ones on `addon.ts`.
+      // **Scope**: every hook `@gos/sdk` publishes, not only the ones on `addon.ts`.
       // The add-on barrel is the smaller list — it is what an outside author reaches, and
       // freezing only that would leave every `core: true` app's hooks ungated for no gain,
       // since both barrels re-export the same `host/index.ts` and the parity block above
       // already keeps the two name lists together. `index.ts` is the superset, so scoping
       // to it covers `addon.ts` and costs nothing extra.
-      const addonHooks = Object.keys(typedNow['@gphone/sdk (add-on bundle)'].hooks);
+      const addonHooks = Object.keys(typedNow['@gos/sdk (add-on bundle)'].hooks);
       expect(addonHooks.length).toBeGreaterThan(0);
       const missing = addonHooks.filter((hook) => !(hook in hooksNow));
       expect(
@@ -2947,10 +2942,10 @@ describe('the SDK public surface (MICA-125)', () => {
     it('reports a deleted component once, not once per prop', () => {
       expect(
         breakingChanges(
-          surface({ '@gphone/sdk': [] }),
-          surface({ '@gphone/sdk': ['ReactionBar'] }, { ReactionBar: ['ontoggle', 'summary?'] })
+          surface({ '@gos/sdk': [] }),
+          surface({ '@gos/sdk': ['ReactionBar'] }, { ReactionBar: ['ontoggle', 'summary?'] })
         ).map(describeBreak)
-      ).toEqual(['@gphone/sdk: ReactionBar (export removed)']);
+      ).toEqual(['@gos/sdk: ReactionBar (export removed)']);
     });
 
     it('reads props out of real components, so the parser is not asserted against itself', () => {
@@ -2982,22 +2977,22 @@ describe('the SDK public surface (MICA-125)', () => {
     // they are a silence. These hand `exportsMapProblems` the four maps this repo does not
     // have and check it says so.
     const files = {
-      '@gphone/sdk': 'index.ts',
-      '@gphone/sdk (add-on bundle)': 'addon.ts',
-      '@gphone/sdk/app': 'app.ts'
+      '@gos/sdk': 'index.ts',
+      '@gos/sdk (add-on bundle)': 'addon.ts',
+      '@gos/sdk/app': 'app.ts'
     };
-    const subpaths = { '@gphone/sdk': '.', '@gphone/sdk/app': './app' };
+    const subpaths = { '@gos/sdk': '.', '@gos/sdk/app': './app' };
 
     it('sees a subpath that is gone', () => {
       expect(exportsMapProblems({ '.': './index.ts' }, subpaths, files, [])).toEqual([
-        './app: not in the exports map, so `@gphone/sdk/app` no longer resolves'
+        './app: not in the exports map, so `@gos/sdk/app` no longer resolves'
       ]);
     });
 
     it('sees a subpath pointed at a different file', () => {
       expect(
         exportsMapProblems({ '.': './addon.ts', './app': './app.ts' }, subpaths, files, [])
-      ).toEqual([".: names ./addon.ts, but @gphone/sdk's frozen surface is ./index.ts"]);
+      ).toEqual([".: names ./addon.ts, but @gos/sdk's frozen surface is ./index.ts"]);
     });
 
     it('sees an entry point added with no frozen surface behind it', () => {
@@ -3017,18 +3012,18 @@ describe('the SDK public surface (MICA-125)', () => {
     it('sees the deferred `addon.ts` decision being made in the map', () => {
       // Not a judgement on which way it should go — the point is that it stops being
       // silent. The map publishing `addon.ts` today would mean an add-on could reach a
-      // second, smaller `@gphone/sdk` that nothing declares, so it reports and names the
+      // second, smaller `@gos/sdk` that nothing declares, so it reports and names the
       // declaration to move.
       expect(
         exportsMapProblems(
           { '.': './index.ts', './app': './app.ts', './addon': './addon.ts' },
           subpaths,
           files,
-          ['@gphone/sdk (add-on bundle)']
+          ['@gos/sdk (add-on bundle)']
         )
       ).toEqual([
         './addon: publishes ./addon.ts, which UNPUBLISHED_BY_DESIGN says this package does ' +
-          'not publish. If that decision has been made, move @gphone/sdk (add-on bundle) ' +
+          'not publish. If that decision has been made, move @gos/sdk (add-on bundle) ' +
           'into SUBPATH_OF_ENTRY and say so in the CHANGELOG'
       ]);
     });

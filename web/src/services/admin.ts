@@ -4,8 +4,8 @@
 
 import { writable } from 'svelte/store';
 import { call } from '../nui/call';
-import { adminContract } from '@gphone/shared/contracts/admin';
-import { isBrowser } from '@gphone/sdk';
+import { adminContract } from '@gos/shared/contracts/admin';
+import { isBrowser } from '@gos/sdk';
 
 /**
  * Whether the player holds an admin ace, as decided by the server.

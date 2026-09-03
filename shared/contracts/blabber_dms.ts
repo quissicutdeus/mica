@@ -44,7 +44,7 @@ export const blabberDmsContract = defineContract({
     send: {
       input: s.object({
         ...thread,
-        /** `gphone_blabber_dms.body` is a varchar(500), and this is that number. */
+        /** `gos_blabber_dms.body` is a varchar(500), and this is that number. */
         body: s.string({ min: 1, max: 500 })
       }),
       output: responseType<BlabberDm>()

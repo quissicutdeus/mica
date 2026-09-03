@@ -1,4 +1,4 @@
-# gPhone
+# gOS
 
 **A modern, open-source custom phone resource for FiveM** —
 [Live Demo](https://gphone.site/) · [SDK Docs](https://docs.gphone.site/)
@@ -9,10 +9,10 @@ Powered by TypeScript, Svelte 5, Vite, and esbuild.
 
 ## Overview
 
-**gPhone** is a feature-rich, open-source smartphone resource designed for FiveM
+**gOS** is a feature-rich, open-source smartphone resource designed for FiveM
 servers. Built from the ground up using modern web technologies and a decoupled
-TypeScript architecture, gPhone provides a slick, realistic mobile experience
-for players and seamless framework integration for server developers.
+TypeScript architecture, gOS provides a slick, realistic mobile experience for
+players and seamless framework integration for server developers.
 
 ---
 
@@ -39,10 +39,10 @@ for players and seamless framework integration for server developers.
 - **Bluetooth Proximity Sharing**: Share a contact or drop a photo to the
   nearest few Bluetooth-visible players — computed server-side from live in-game
   position, no external player list ever reaches the client. Range defaults to
-  15 meters (`gphone_bluetooth_range`) and one share reaches at most five
-  people, nearest first (`gphone_bluetooth_max_nearby`). A player turns
-  discoverability off in Settings > Network; while off, they are invisible to a
-  scan and receive nothing unsolicited.
+  15 meters (`gos_bluetooth_range`) and one share reaches at most five people,
+  nearest first (`gos_bluetooth_max_nearby`). A player turns discoverability off
+  in Settings > Network; while off, they are invisible to a scan and receive
+  nothing unsolicited.
 - **Calculator**: Full mathematical calculator with an optimized touchscreen
   keypad layout.
 - **Blabber** _(add-on)_: Short public posts under an `@handle`. Replies,
@@ -50,7 +50,7 @@ for players and seamless framework integration for server developers.
   `@mention` notifications, and strictly one-to-one direct messages. Follow an
   account and its posts turn up in a Following feed of their own; the counts on
   a profile open the lists behind them. An author can fix a typo for 15 minutes
-  — `gphone_blabber_edit_window` — and then the post freezes. A player may hold
+  — `gos_blabber_edit_window` — and then the post freezes. A player may hold
   several accounts and switch between them, and the owning `citizenid` never
   reaches another reader, so alts stay uncorrelated. Not on the home screen out
   of the box: it is the first genuinely non-core app and installs from the
@@ -89,7 +89,7 @@ for players and seamless framework integration for server developers.
 
 ### 🛠️ Backend & Core Architecture
 
-- **SDK-First Architecture (`@gphone/sdk`)**: OS hooks for data (`useContacts`,
+- **SDK-First Architecture (`@gos/sdk`)**: OS hooks for data (`useContacts`,
   `useMedia`, `useMail`, `useMessages`, `useAccount`/`useAccounts`, `useCall`,
   `useReports`/`useReport`, `useMarketplace`, `useHighscores`,
   `useNotifications`), for the device (`useSystemHardware`, `useClock`,
@@ -106,7 +106,7 @@ for players and seamless framework integration for server developers.
 - **Written for app authors**: `pnpm new:app <id>` scaffolds a working app,
   `localhost:5173/?app=<id>` boots straight into one (`?device=tablet` boots the
   1280x800 tablet frame instead of the phone), and `renderApp` from
-  `@gphone/sdk/testing` unit-tests one. See
+  `@gos/sdk/testing` unit-tests one. See
   [docs/writing-an-app.md](docs/writing-an-app.md).
 - **Client & NUI Transport Safety**: Deterministic ID generation and 15-second
   safety timeouts (`ClientApp.ts`) preventing NUI callbacks from hanging CEF
@@ -136,12 +136,12 @@ for players and seamless framework integration for server developers.
 - **Framework Bridge**: Built-in support for **QBX Core** (`qbx_core`),
   **QBCore** (`qb-core`) and **ESX** (`es_extended`), with automatic player
   lookup and money handlers. A framework is detected, not configured — there is
-  no convar that picks one. gPhone also runs **standalone**, with no framework
-  resource at all, and that mode alone is opt-in via `gphone_standalone`,
-  because "no framework is installed" and "the framework has not started yet"
-  look identical from inside the resource. On ESX a phone belongs to the
-  **player** where on a qb core it belongs to the **character**, and standalone
-  is per-player as well; that and the rest of the differences are set out under
+  no convar that picks one. gOS also runs **standalone**, with no framework
+  resource at all, and that mode alone is opt-in via `gos_standalone`, because
+  "no framework is installed" and "the framework has not started yet" look
+  identical from inside the resource. On ESX a phone belongs to the **player**
+  where on a qb core it belongs to the **character**, and standalone is
+  per-player as well; that and the rest of the differences are set out under
   Installation.
 - **Banking Bridge**: Reads transaction history through the banking resource's
   own exports rather than its tables (**Renewed-Banking** supported),
@@ -149,11 +149,11 @@ for players and seamless framework integration for server developers.
   list when no supported resource is present.
 - **Declarative Server Schema**: Each app declares its server half once via
   `defineService` — the schema drives the SQL identifier allowlist, the
-  client-writable field set, and the generated DDL in `gphone.sql`, so they
-  cannot drift apart.
+  client-writable field set, and the generated DDL in `gos.sql`, so they cannot
+  drift apart.
 - **Inventory Integration**: Out-of-the-box support for `ox_inventory` item
   registration and removal.
-- **Central Audit Logging**: Comprehensive action auditing (`gphone_audit_logs`)
+- **Central Audit Logging**: Comprehensive action auditing (`gos_audit_logs`)
   tracking archive, deletion, moderation, and participant events.
 - **Animation & Control**: Client-side animation, camera capture, and freelook
   camera systems.
@@ -197,10 +197,10 @@ requirements:
 - **Dependencies**:
   - `oxmysql`
   - Framework: `qbx_core`, `qb-core`, or `es_extended` — see the note on ESX
-    below before installing on the last of these. **Optional**: gPhone also runs
+    below before installing on the last of these. **Optional**: gOS also runs
     with no framework at all, which you turn on deliberately with
-    `gphone_standalone`. See "Running with no framework" below for what that
-    mode costs you.
+    `gos_standalone`. See "Running with no framework" below for what that mode
+    costs you.
   - _(Optional)_ `ox_inventory`
 
 **No toolchain.** A release zip is prebuilt, and nothing on that list is Node or
@@ -213,11 +213,11 @@ source" below, which is for changing the phone rather than running it.
 
 <!-- release-zip:start -->
 
-1. **Download the release.** Every GitHub release attaches
-   `gphone-<version>.zip`, built by CI from the tagged commit. Unpack it into
-   your server's `resources` directory: it unpacks to a single `gphone` folder
-   (for example `resources/[standalone]/gphone`) holding the manifest, the built
-   bundles, both schema files, the licence and a README.
+1. **Download the release.** Every GitHub release attaches `gos-<version>.zip`,
+   built by CI from the tagged commit. Unpack it into your server's `resources`
+   directory: it unpacks to a single `gos` folder (for example
+   `resources/[standalone]/gos`) holding the manifest, the built bundles, both
+   schema files, the licence and a README.
 
    The release also carries `SHA256SUMS` and a signed provenance attestation, so
    you can check the zip is the one CI built rather than a copy something else
@@ -225,34 +225,33 @@ source" below, which is for changing the phone rather than running it.
 
    ```sh
    sha256sum -c --ignore-missing SHA256SUMS
-   gh attestation verify gphone-<version>.zip --repo quissicutdeus/gphone
+   gh attestation verify gos-<version>.zip --repo quissicutdeus/gos
    ```
 
 2. **Database Setup — and there are two schema files, one per framework.** On
-   qbx_core or qb-core import [`gphone.sql`](gphone.sql). On es_extended import
-   [`gphone.esx.sql`](gphone.esx.sql). Both are generated by
-   `pnpm generate:sql`, both create the same twenty-nine tables, and importing
-   the wrong one fails at the first foreign key rather than quietly producing a
-   half-working phone.
+   qbx_core or qb-core import [`gos.sql`](gos.sql). On es_extended import
+   [`gos.esx.sql`](gos.esx.sql). Both are generated by `pnpm generate:sql`, both
+   create the same twenty-nine tables, and importing the wrong one fails at the
+   first foreign key rather than quietly producing a half-working phone.
 
    **On a qb core, import the framework's schema first.** Twenty-two of the
-   twenty-nine tables in `gphone.sql` carry a foreign key onto `players`
-   (`citizenid`), which belongs to qbx_core or qb-core and which `gphone.sql`
-   does not create. That is how a deleted character takes its phone data with it
+   twenty-nine tables in `gos.sql` carry a foreign key onto `players`
+   (`citizenid`), which belongs to qbx_core or qb-core and which `gos.sql` does
+   not create. That is how a deleted character takes its phone data with it
    rather than leaving orphaned rows behind. Run it against a database that has
    no `players` table and the first of those constraints fails with a
    foreign-key error part-way through the file. The tables above it are already
-   created by then, so importing the framework and re-running `gphone.sql` is
-   the fix and costs nothing — every statement is `CREATE TABLE IF NOT EXISTS`.
-   The error is easy to misread as a broken file; it is a missing prerequisite.
+   created by then, so importing the framework and re-running `gos.sql` is the
+   fix and costs nothing — every statement is `CREATE TABLE IF NOT EXISTS`. The
+   error is easy to misread as a broken file; it is a missing prerequisite.
 
-   **The framework's `players` table also has to share gPhone's collation.**
-   `gphone.sql` creates every table `COLLATE = utf8mb4_unicode_ci`, and a
-   foreign key requires both sides of the relationship to collate the same way.
-   MariaDB 11.4 and newer changed its own default `utf8mb4` collation to
+   **The framework's `players` table also has to share gOS's collation.**
+   `gos.sql` creates every table `COLLATE = utf8mb4_unicode_ci`, and a foreign
+   key requires both sides of the relationship to collate the same way. MariaDB
+   11.4 and newer changed its own default `utf8mb4` collation to
    `utf8mb4_uca1400_ai_ci`, so a `players` table created without an explicit
-   collation on a recent MariaDB mismatches gPhone's, and the import fails
-   partway through — some tables created, then a hard stop — with:
+   collation on a recent MariaDB mismatches gOS's, and the import fails partway
+   through — some tables created, then a hard stop — with:
 
    ```text
    errno: 150 "Foreign key constraint is incorrectly formed"
@@ -262,12 +261,12 @@ source" below, which is for changing the phone rather than running it.
    worth searching for. The fix is to recreate (or
    `ALTER ... CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`) the
    framework's `players` table so it collates `utf8mb4_unicode_ci` before
-   re-running `gphone.sql`. `gphoneschema apply` checks for this same mismatch
-   itself before touching the database, and refuses with a message naming the
-   actual table and both actual collations rather than letting this error
-   surface unexplained a second time.
+   re-running `gos.sql`. `gosschema apply` checks for this same mismatch itself
+   before touching the database, and refuses with a message naming the actual
+   table and both actual collations rather than letting this error surface
+   unexplained a second time.
 
-   **`gphone.esx.sql` carries none of those foreign keys**, because ESX has no
+   **`gos.esx.sql` carries none of those foreign keys**, because ESX has no
    `players` table to point them at — it identifies players in `users`, by
    `identifier`. It therefore has no prerequisite beyond an empty database, and
    no cascade either. What that costs you is under **Housekeeping on ESX**
@@ -280,30 +279,29 @@ source" below, which is for changing the phone rather than running it.
    that guard.
 
    Every statement is `CREATE TABLE IF NOT EXISTS`, so re-importing is harmless
-   — and does nothing to a table that already exists. gPhone applies no schema
-   changes automatically: `gphoneschema` in the server console reports any
+   — and does nothing to a table that already exists. gOS applies no schema
+   changes automatically: `gosschema` in the server console reports any
    difference between the database and what the code expects, and
-   `gphoneschema apply` — console-only — applies the safe, additive half of that
+   `gosschema apply` — console-only — applies the safe, additive half of that
    difference plus any pending versioned migration. A rename, a retype or a drop
    still needs its migration written and reviewed first; `apply` only ever runs
    migrations that already exist in `server/migrations/`.
 
    **Resetting the schema during development:** `pnpm generate:sql:reset`
-   additionally writes `sql/dev-reset.sql`, which **drops every
-   `gphone_`-prefixed table in the schema you run it against** — including the
-   audit ledger — and then recreates everything. It discovers tables from
-   `information_schema` at apply time, so it also clears orphans left behind by
-   a renamed table.
+   additionally writes `sql/dev-reset.sql`, which **drops every `gos_`-prefixed
+   table in the schema you run it against** — including the audit ledger — and
+   then recreates everything. It discovers tables from `information_schema` at
+   apply time, so it also clears orphans left behind by a renamed table.
 
    Development only, and never run against a live server. It is gitignored and
    is not produced by plain `pnpm generate:sql`.
 
-3. **Resource Manifest** Ensure `gphone` is started in your `server.cfg`:
+3. **Resource Manifest** Ensure `gos` is started in your `server.cfg`:
 
    ```cfg
    ensure oxmysql
    ensure qbx_core # or qb-core, or es_extended; omit it to run standalone
-   ensure gphone
+   ensure gos
    ```
 
 <!-- release-zip:end -->
@@ -314,8 +312,8 @@ source" below, which is for changing the phone rather than running it.
 needs Node.js 26 and pnpm 11:
 
 ```sh
-git clone https://github.com/quissicutdeus/gphone.git gphone
-cd gphone
+git clone https://github.com/quissicutdeus/gos.git gos
+cd gos
 pnpm install --frozen-lockfile
 pnpm build
 ```
@@ -333,7 +331,7 @@ Five differences an ESX operator will meet, none of which has a convar and most
 of which are consequences of the identity mapping rather than gaps waiting to be
 filled.
 
-**A phone belongs to the player, not the character.** gPhone keys every row on
+**A phone belongs to the player, not the character.** gOS keys every row on
 `citizenid`, and on ESX that column holds the player's own `identifier` — the
 `license:` or `steam:` string. ESX issues one per account where a qb core issues
 one per character, so every character a player has shares one phone: one contact
@@ -341,8 +339,8 @@ list, one inbox, one gallery. This is intended.
 
 **Cleanup after a deleted character is an orphan sweep here, not a cascade.** On
 a qb core the `ON DELETE CASCADE` above clears twenty-two tables for free.
-`gphone.esx.sql` has no cascade — there is no `players` table to point one at —
-so on ESX the sweep at every resource start is the whole mechanism rather than a
+`gos.esx.sql` has no cascade — there is no `players` table to point one at — so
+on ESX the sweep at every resource start is the whole mechanism rather than a
 backstop. It asks `users(identifier)` who exists and deletes the rows belonging
 to characters who do not.
 
@@ -350,7 +348,7 @@ to characters who do not.
 owner table it cannot read as "everybody is an orphan" would delete your
 database, so the sweep skips and logs a reason whenever it cannot prove what it
 is about to delete: no framework has answered yet, `users` is empty or
-unreadable, or none of the identities sampled from gPhone's own rows exist in
+unreadable, or none of the identities sampled from gOS's own rows exist in
 `users` at all. That last one is the guard for a box with a leftover `players`
 table from a previous qb install. Each prints one line naming the reason, and
 each is a refusal rather than a result — a skipped sweep leaves rows behind, it
@@ -359,53 +357,52 @@ when it finishes, including when it removed nothing, so "it ran and found
 nothing" is distinguishable from "it never got as far as the database".
 
 **A deletion flow can reclaim the space immediately** by triggering the server
-event `gphone:server:shell:characterDeleted` with the identifier, which removes
+event `gos:server:shell:characterDeleted` with the identifier, which removes
 that character's rows from every table at once instead of waiting for the next
-restart. `gphone:server:media:characterDeleted` still exists and still does
-exactly what it always did — media only. Both are local server events: another
-resource can fire them, a game client cannot.
+restart. `gos:server:media:characterDeleted` still exists and still does exactly
+what it always did — media only. Both are local server events: another resource
+can fire them, a game client cannot.
 
-**Phone numbers are not part of core ESX.** There is no `charinfo`. gPhone looks
+**Phone numbers are not part of core ESX.** There is no `charinfo`. gOS looks
 for `phoneNumber`, `phone_number` or `phone` on the player object and reports no
 number when it finds none, so a phone-number resource that stores it anywhere
 else leaves players without a number and without number-based lookup. Names
 degrade more gently: `esx_identity`'s first and last name are used when present,
 otherwise the framework's own `getName()` split at the first space.
 
-**An offline player resolves by identifier but never by phone number.** gPhone
+**An offline player resolves by identifier but never by phone number.** gOS
 reads es_extended's own `users` table for someone who is not connected, so an
 offline player renders with their name as they would on a qb core. Core `users`
 has no phone column, though, so messaging an offline player _by number_ does not
-resolve on ESX — and gPhone declines to guess, because the number lives in
+resolve on ESX — and gOS declines to guess, because the number lives in
 whichever community resource you installed and picking one would be right for
 that population and quietly wrong for everyone else.
 
-That read degrades rather than throws. `users` is a table gPhone neither creates
+That read degrades rather than throws. `users` is a table gOS neither creates
 nor migrates, so if it is missing a column your build does not have, the lookup
 returns nothing — a nameless offline player, which is exactly the behaviour
 before it existed — instead of failing the conversation being built around it.
 It logs once per distinct failure per resource start, so a genuinely broken
 table says so without filling your console.
 
-**Other resources may not see the battery level.** gPhone mirrors a player's
-charge onto the framework player object so other scripts can read it. ESX Legacy
-1.10+ takes that mirror exactly as a qb core does. Older builds accept it only
-as a session value that does not survive a reconnect, and a build offering
-neither drops it and warns once per resource start — once for the server, not
-once per player, since it is a property of the build rather than of anyone
-playing on it. The phone is unaffected in every case — gPhone's own
-`gphone_battery` table is the source of truth and is written either way — so
-what degrades is a third-party integration reading the mirror, never the battery
-itself.
+**Other resources may not see the battery level.** gOS mirrors a player's charge
+onto the framework player object so other scripts can read it. ESX Legacy 1.10+
+takes that mirror exactly as a qb core does. Older builds accept it only as a
+session value that does not survive a reconnect, and a build offering neither
+drops it and warns once per resource start — once for the server, not once per
+player, since it is a property of the build rather than of anyone playing on it.
+The phone is unaffected in every case — gOS's own `gos_battery` table is the
+source of truth and is written either way — so what degrades is a third-party
+integration reading the mirror, never the battery itself.
 
 ---
 
 ### Running with no framework
 
-Set `set gphone_standalone 1` and gPhone runs with no framework resource at all.
-Import [`gphone.esx.sql`](gphone.esx.sql) rather than
-[`gphone.sql`](gphone.sql): the two differ only in the foreign keys onto qb's
-`players` table, and a standalone server has no such table for them to point at.
+Set `set gos_standalone 1` and gOS runs with no framework resource at all.
+Import [`gos.esx.sql`](gos.esx.sql) rather than [`gos.sql`](gos.sql): the two
+differ only in the foreign keys onto qb's `players` table, and a standalone
+server has no such table for them to point at.
 
 **Identity is the player's `license:` identifier**, read from the FiveM runtime.
 A phone therefore belongs to the **player**, exactly as it does on ESX — one
@@ -414,9 +411,9 @@ carry over if you later install a framework: a license identifier and a qb
 `citizenid` are different strings, so moving between them is a data migration
 and not a config change.
 
-**gPhone issues the phone numbers**, because there is no framework to issue
-them. A number is generated at random on a player's first connection, stored in
-`gphone_phone_numbers`, and stays with them across reconnects — every contact
+**gOS issues the phone numbers**, because there is no framework to issue them. A
+number is generated at random on a player's first connection, stored in
+`gos_phone_numbers`, and stays with them across reconnects — every contact
 anyone had saved would break otherwise. On qb and ESX that table stays empty and
 the framework's own number is used exactly as before.
 
@@ -427,159 +424,157 @@ Marketplace is unaffected — it never moved money in the first place, and its
 buyers and sellers settle in-world.
 
 **Metadata mirroring degrades.** `setMeta` has no framework player to write to,
-so it is dropped and reported once per resource start. gPhone's own tables are
-untouched — the battery level lives in `gphone_battery` either way — so what is
+so it is dropped and reported once per resource start. gOS's own tables are
+untouched — the battery level lives in `gos_battery` either way — so what is
 lost is visibility to _other_ resources, never the phone's own state.
 
-**Offline players are looked up from gPhone's own table**, as there is no
-`players` or `users` table to read. Somebody gPhone has never seen has no name
-and no number, which is the same degraded-but-working answer ESX already gives
-for a phone number.
+**Offline players are looked up from gOS's own table**, as there is no `players`
+or `users` table to read. Somebody gOS has never seen has no name and no number,
+which is the same degraded-but-working answer ESX already gives for a phone
+number.
 
-**The orphan sweep does not run.** It removes gPhone rows whose character no
-longer exists, and it answers that question against the framework's own table.
+**The orphan sweep does not run.** It removes gOS rows whose character no longer
+exists, and it answers that question against the framework's own table.
 Standalone has none, so the sweep skips rather than guessing — and a sweep that
 guessed wrong here would delete the entire phone database.
 
 ## Configuration
 
 Everything a server owner can tune is a convar, set in `server.cfg` above
-`ensure gphone`. Most are read on the server, so plain `set` is enough. **Four
-need `setr`**, because a client reads them and a plain `set` never leaves the
-server:
+`ensure gos`. Most are read on the server, so plain `set` is enough. **Four need
+`setr`**, because a client reads them and a plain `set` never leaves the server:
 
-- **`gphone_music_range`** — both halves of proximity music read it: the server
-  to decide who is on a listener's roster, the client to decide what that roster
+- **`gos_music_range`** — both halves of proximity music read it: the server to
+  decide who is on a listener's roster, the client to decide what that roster
   sounds like. A plain `set` leaves every client on the default while the server
   fans out at your value.
-- **`gphone_camera_quality`** — the photo is encoded in the phone's own UI,
-  which cannot read a convar at all, so the client reads it and hands it over. A
-  plain `set` leaves every photo at the default.
-- **`gphone_addon_hosts`** and **`gphone_addon_catalog`** — the Store's install
-  path lives entirely in the phone's UI, for the same reason. A plain `set`
-  leaves every phone with an empty allowlist, which means every install is
-  refused.
+- **`gos_camera_quality`** — the photo is encoded in the phone's own UI, which
+  cannot read a convar at all, so the client reads it and hands it over. A plain
+  `set` leaves every photo at the default.
+- **`gos_addon_hosts`** and **`gos_addon_catalog`** — the Store's install path
+  lives entirely in the phone's UI, for the same reason. A plain `set` leaves
+  every phone with an empty allowlist, which means every install is refused.
 
 The values below are the defaults as written in the code, so a server that sets
 none of them behaves exactly as shown and this block is only worth pasting if
 you intend to change something.
 
 ```cfg
-set gphone_standalone ""
-set gphone_phone_item ""
-set gphone_admin_aces "gphone.admin,command"
-set gphone_rate_limit 60
-set gphone_lockscreen_scrypt_cost 16384
-set gphone_lockscreen_max_attempts 5
-set gphone_source_url "https://github.com/quissicutdeus/gPhone"
-set gphone_locale "en"
-set gphone_bank_transfer_max 50000
-set gphone_hodlr_trade_max 50000
-set gphone_hodlr_spread_pct 2
-set gphone_emergency_number "911"
-set gphone_max_accounts_per_app 3
-set gphone_bluetooth_range 15
-set gphone_bluetooth_max_nearby 5
-setr gphone_music_range 30
-set gphone_music_max_nearby 8
-setr gphone_camera_quality 95
-set gphone_blabber_edit_window 900
-set gphone_notification_retention 30
-set gphone_restore_window_days 30
-set gphone_media_quota_mb 64
-set gphone_media_retention 0
-set gphone_orphan_owner_table ""
-setr gphone_addon_hosts ""
-setr gphone_addon_catalog ""
+set gos_standalone ""
+set gos_phone_item ""
+set gos_admin_aces "gos.admin,command"
+set gos_rate_limit 60
+set gos_lockscreen_scrypt_cost 16384
+set gos_lockscreen_max_attempts 5
+set gos_source_url "https://github.com/quissicutdeus/gos"
+set gos_locale "en"
+set gos_bank_transfer_max 50000
+set gos_hodlr_trade_max 50000
+set gos_hodlr_spread_pct 2
+set gos_emergency_number "911"
+set gos_max_accounts_per_app 3
+set gos_bluetooth_range 15
+set gos_bluetooth_max_nearby 5
+setr gos_music_range 30
+set gos_music_max_nearby 8
+setr gos_camera_quality 95
+set gos_blabber_edit_window 900
+set gos_notification_retention 30
+set gos_restore_window_days 30
+set gos_media_quota_mb 64
+set gos_media_retention 0
+set gos_orphan_owner_table ""
+setr gos_addon_hosts ""
+setr gos_addon_catalog ""
 ```
 
-| Convar                           | Type                 | Default                | Controls                                                   |
-| -------------------------------- | -------------------- | ---------------------- | ---------------------------------------------------------- |
-| `gphone_standalone`              | boolean              | empty (off)            | Run with no framework resource at all                      |
-| `gphone_phone_item`              | item name            | empty (off)            | Gate the phone on holding this inventory item              |
-| `gphone_admin_aces`              | comma-separated aces | `gphone.admin,command` | Who counts as a gPhone admin                               |
-| `gphone_rate_limit`              | integer              | `60`                   | Requests per player, per action, per minute                |
-| `gphone_lockscreen_scrypt_cost`  | power of two         | `16384`                | Lock screen passcode hashing cost — lower on weak hardware |
-| `gphone_lockscreen_max_attempts` | integer              | `5`                    | Wrong passcodes before a one-minute lockout                |
-| `gphone_source_url`              | https:// URL         | this repository        | Where Settings > About > License says your source lives    |
-| `gphone_locale`                  | BCP 47 language tag  | unset                  | The phone's default language; players can override it      |
-| `gphone_bank_transfer_max`       | integer              | `50000`                | Ceiling on one player-to-player send                       |
-| `gphone_hodlr_trade_max`         | integer              | `50000`                | Ceiling on what one Hodlr buy or sell is worth             |
-| `gphone_hodlr_spread_pct`        | number, percent      | `2`                    | Gap between Hodlr's buy and sell quotes, around mid        |
-| `gphone_emergency_number`        | phone number         | `911`                  | Always connects, regardless of any block                   |
-| `gphone_max_accounts_per_app`    | integer              | `3`                    | Identities one player may hold in one social app           |
-| `gphone_bluetooth_range`         | integer, meters      | `15`                   | How far a proximity share reaches                          |
-| `gphone_bluetooth_max_nearby`    | integer              | `5`                    | How many phones one proximity share reaches                |
-| `gphone_music_range`             | integer, meters      | `30`                   | How far music from a phone is heard (needs `setr`)         |
-| `gphone_music_max_nearby`        | integer              | `8`                    | Broadcasters one listener is told about at once            |
-| `gphone_blabber_edit_window`     | integer, seconds     | `900`                  | How long a Blab stays editable by its author               |
-| `gphone_notification_retention`  | integer, days        | `30`                   | How long notification rows are kept                        |
-| `gphone_restore_window_days`     | integer, days        | `30`                   | How long a deleted Contact/Note/Media stays restorable     |
-| `gphone_camera_quality`          | integer, 1-100       | `95`                   | Encode quality of a stored photo (needs `setr`)            |
-| `gphone_media_quota_mb`          | integer, MiB         | `64`                   | Storage one player's photo library may occupy              |
-| `gphone_media_retention`         | integer, days        | `0` (off)              | How long stored media is kept, if you want a limit         |
-| `gphone_orphan_owner_table`      | `table.column`       | empty (off)            | Overrides which table the orphan sweep checks against      |
-| `gphone_addon_hosts`             | hostname list        | empty (off)            | Hosts a Store add-on may be fetched from                   |
-| `gphone_addon_catalog`           | https URL            | empty (off)            | The add-on catalog the Store lists                         |
+| Convar                        | Type                 | Default             | Controls                                                   |
+| ----------------------------- | -------------------- | ------------------- | ---------------------------------------------------------- |
+| `gos_standalone`              | boolean              | empty (off)         | Run with no framework resource at all                      |
+| `gos_phone_item`              | item name            | empty (off)         | Gate the phone on holding this inventory item              |
+| `gos_admin_aces`              | comma-separated aces | `gos.admin,command` | Who counts as a gOS admin                                  |
+| `gos_rate_limit`              | integer              | `60`                | Requests per player, per action, per minute                |
+| `gos_lockscreen_scrypt_cost`  | power of two         | `16384`             | Lock screen passcode hashing cost — lower on weak hardware |
+| `gos_lockscreen_max_attempts` | integer              | `5`                 | Wrong passcodes before a one-minute lockout                |
+| `gos_source_url`              | https:// URL         | this repository     | Where Settings > About > License says your source lives    |
+| `gos_locale`                  | BCP 47 language tag  | unset               | The phone's default language; players can override it      |
+| `gos_bank_transfer_max`       | integer              | `50000`             | Ceiling on one player-to-player send                       |
+| `gos_hodlr_trade_max`         | integer              | `50000`             | Ceiling on what one Hodlr buy or sell is worth             |
+| `gos_hodlr_spread_pct`        | number, percent      | `2`                 | Gap between Hodlr's buy and sell quotes, around mid        |
+| `gos_emergency_number`        | phone number         | `911`               | Always connects, regardless of any block                   |
+| `gos_max_accounts_per_app`    | integer              | `3`                 | Identities one player may hold in one social app           |
+| `gos_bluetooth_range`         | integer, meters      | `15`                | How far a proximity share reaches                          |
+| `gos_bluetooth_max_nearby`    | integer              | `5`                 | How many phones one proximity share reaches                |
+| `gos_music_range`             | integer, meters      | `30`                | How far music from a phone is heard (needs `setr`)         |
+| `gos_music_max_nearby`        | integer              | `8`                 | Broadcasters one listener is told about at once            |
+| `gos_blabber_edit_window`     | integer, seconds     | `900`               | How long a Blab stays editable by its author               |
+| `gos_notification_retention`  | integer, days        | `30`                | How long notification rows are kept                        |
+| `gos_restore_window_days`     | integer, days        | `30`                | How long a deleted Contact/Note/Media stays restorable     |
+| `gos_camera_quality`          | integer, 1-100       | `95`                | Encode quality of a stored photo (needs `setr`)            |
+| `gos_media_quota_mb`          | integer, MiB         | `64`                | Storage one player's photo library may occupy              |
+| `gos_media_retention`         | integer, days        | `0` (off)           | How long stored media is kept, if you want a limit         |
+| `gos_orphan_owner_table`      | `table.column`       | empty (off)         | Overrides which table the orphan sweep checks against      |
+| `gos_addon_hosts`             | hostname list        | empty (off)         | Hosts a Store add-on may be fetched from                   |
+| `gos_addon_catalog`           | https URL            | empty (off)         | The add-on catalog the Store lists                         |
 
 Seventeen of the twenty-one are read on every use rather than cached, so
 changing one with `set` from the live console takes effect on the next request
-and needs no restart. `gphone_blabber_edit_window` and
-`gphone_notification_retention` are read once at resource start, so a change to
-either needs a restart, for the reasons given under them below.
-`gphone_media_retention` and `gphone_orphan_owner_table` are the third and
-fourth exceptions and the mildest: both are read whenever the orphan sweep runs,
-which is at resource start and again on `gphonemedia prune`, so a change to
-either takes effect on the next sweep rather than needing a restart.
-`gphone_camera_quality` is read on every use as well, but the phone only asks
-for it when the Camera app comes to the foreground, so a change reaches a player
-the next time they open the camera rather than the next time they take a photo.
-`gphone_addon_hosts` and `gphone_addon_catalog` are the same shape: read
-whenever asked for, and asked for once, when a player's phone UI loads — so a
-change reaches them when they next reconnect.
+and needs no restart. `gos_blabber_edit_window` and `gos_notification_retention`
+are read once at resource start, so a change to either needs a restart, for the
+reasons given under them below. `gos_media_retention` and
+`gos_orphan_owner_table` are the third and fourth exceptions and the mildest:
+both are read whenever the orphan sweep runs, which is at resource start and
+again on `gosmedia prune`, so a change to either takes effect on the next sweep
+rather than needing a restart. `gos_camera_quality` is read on every use as
+well, but the phone only asks for it when the Camera app comes to the
+foreground, so a change reaches a player the next time they open the camera
+rather than the next time they take a photo. `gos_addon_hosts` and
+`gos_addon_catalog` are the same shape: read whenever asked for, and asked for
+once, when a player's phone UI loads — so a change reaches them when they next
+reconnect.
 
-- **`gphone_standalone`** — run gPhone with no framework resource at all. Off by
-  default, and the only convar here that changes where gPhone's _identity_ comes
-  from, which is why it is opt-in rather than inferred. gPhone cannot tell "this
+- **`gos_standalone`** — run gOS with no framework resource at all. Off by
+  default, and the only convar here that changes where gOS's _identity_ comes
+  from, which is why it is opt-in rather than inferred. gOS cannot tell "this
   server has no framework" apart from "the framework has not started yet": FiveM
-  starts resources in `server.cfg` order, `ensure gphone` above
-  `ensure qbx_core` is a legal config, and a resource that is not yet running
-  answers an export probe exactly the way one that does not exist does. Guessing
-  standalone on a qb server would key that server's rows on license identifiers
-  instead of citizenids — a silent identity switch on a live database — so
-  gPhone waits to be told instead. Setting it while a qb or ESX core is present
-  is a misconfiguration rather than an override: the real framework wins and
-  gPhone says so once in the console, rather than quietly picking one. A value
-  that is neither on nor off (`1`/`true`/`yes`/`on` against
+  starts resources in `server.cfg` order, `ensure gos` above `ensure qbx_core`
+  is a legal config, and a resource that is not yet running answers an export
+  probe exactly the way one that does not exist does. Guessing standalone on a
+  qb server would key that server's rows on license identifiers instead of
+  citizenids — a silent identity switch on a live database — so gOS waits to be
+  told instead. Setting it while a qb or ESX core is present is a
+  misconfiguration rather than an override: the real framework wins and gOS says
+  so once in the console, rather than quietly picking one. A value that is
+  neither on nor off (`1`/`true`/`yes`/`on` against
   empty/`0`/`false`/`no`/`off`) is read as off and reported once, because
-  `set gphone_standalone yes-please` is an operator who meant to enable this and
+  `set gos_standalone yes-please` is an operator who meant to enable this and
   has not.
-- **`gphone_admin_aces`** — which ace objects grant gPhone admin: the phone's
-  Developer Tools, and the `gphone*` console commands. The default recognises
-  two, and the second is the interesting one. `command` is the near-universal
-  proxy for "runs this server" (`add_ace group.admin command allow`), so an
-  owner who is already a full admin is not asked to grant themselves a second,
+- **`gos_admin_aces`** — which ace objects grant gOS admin: the phone's
+  Developer Tools, and the `gos*` console commands. The default recognises two,
+  and the second is the interesting one. `command` is the near-universal proxy
+  for "runs this server" (`add_ace group.admin command allow`), so an owner who
+  is already a full admin is not asked to grant themselves a second,
   phone-specific ace before the phone will believe them — but that convenience
-  is not free. gPhone admin includes the pending report queue, which has no
-  console equivalent, and its previews include excerpts of private messages and
-  DMs (`gphone_messages` and `gphone_blabber_dms` are both reportable, alongside
-  listings, accounts, Blabs and photos), plus moderate/un-moderate across those
-  six tables and `gphoneseed`/`gphonecharge`. A server that grants `command` to
-  a staff or moderator group so they can run `/kick`/`/ban` is granting all of
-  that too, whether or not anyone meant to. `gphone.admin` stays for the case
-  the dedicated ace actually exists for: giving phone admin to somebody who is
-  not a server admin. A staff-tier server that wants `/kick`/`/ban` without the
-  report queue and the rest should set `gphone_admin_aces "gphone.admin"`, which
-  drops `command` from the recognised set — or, to hand the phone to that staff
-  group deliberately instead of excluding them,
-  `set gphone_admin_aces "gphone.admin,mygroup.staff"`. Either way, note that
-  the value **replaces** the list rather than adding to it, so dropping
-  `command` revokes anyone whose only qualification was that ace, quite possibly
-  including you. An empty or whitespace-only value falls back to the default
-  rather than silently locking everyone out. The server console is trusted
-  whatever this says, and `gphoneschema apply` takes the console and nobody else
-  no matter how this is set.
-- **`gphone_rate_limit`** — how many requests one player may make of one action
+  is not free. gOS admin includes the pending report queue, which has no console
+  equivalent, and its previews include excerpts of private messages and DMs
+  (`gos_messages` and `gos_blabber_dms` are both reportable, alongside listings,
+  accounts, Blabs and photos), plus moderate/un-moderate across those six tables
+  and `gosseed`/`goscharge`. A server that grants `command` to a staff or
+  moderator group so they can run `/kick`/`/ban` is granting all of that too,
+  whether or not anyone meant to. `gos.admin` stays for the case the dedicated
+  ace actually exists for: giving phone admin to somebody who is not a server
+  admin. A staff-tier server that wants `/kick`/`/ban` without the report queue
+  and the rest should set `gos_admin_aces "gos.admin"`, which drops `command`
+  from the recognised set — or, to hand the phone to that staff group
+  deliberately instead of excluding them,
+  `set gos_admin_aces "gos.admin,mygroup.staff"`. Either way, note that the
+  value **replaces** the list rather than adding to it, so dropping `command`
+  revokes anyone whose only qualification was that ace, quite possibly including
+  you. An empty or whitespace-only value falls back to the default rather than
+  silently locking everyone out. The server console is trusted whatever this
+  says, and `gosschema apply` takes the console and nobody else no matter how
+  this is set.
+- **`gos_rate_limit`** — how many requests one player may make of one action
   within a fixed 60-second window, enforced at the net-event boundary so custom
   actions are covered and not just generic CRUD. Over the limit the request is
   answered with "Too many … requests. Slow down and try again." rather than
@@ -592,33 +587,33 @@ change reaches them when they next reconnect.
   busy server hit that message during ordinary use; lower it if you are being
   spammed by a modified client. A non-numeric or non-positive value falls back
   to 60.
-- **`gphone_bank_transfer_max`** — the ceiling on a single player-to-player send
+- **`gos_bank_transfer_max`** — the ceiling on a single player-to-player send
   from the Bank app; a larger amount is refused before any money moves. Per
   transfer, not per day: there is no cumulative cap, so this bounds what one
   request can do rather than what a session can. Set it against your economy's
   scale — it is the main brake on a compromised client emptying an account in
   one action. A non-numeric or non-positive value falls back to 50000.
-- **`gphone_hodlr_trade_max`** — the same ceiling for one Hodlr buy or sell,
+- **`gos_hodlr_trade_max`** — the same ceiling for one Hodlr buy or sell,
   measured in money rather than in coins: a coin cap would mean something very
   different at 50 a coin than at 5000. A larger trade is refused before any
   money or any coin moves. It exists for the same reason the bank one does — a
-  modified client can emit `gphone:server:hodlr:buy` with any quantity, and
-  without this the effective ceiling was the player's whole bank balance on a
-  buy and their whole holding on a sell, so one request moved an entire
-  position. Per trade, not per session: the rate limit bounds how many requests
-  a player makes, this bounds what one of them can be worth. A non-numeric or
+  modified client can emit `gos:server:hodlr:buy` with any quantity, and without
+  this the effective ceiling was the player's whole bank balance on a buy and
+  their whole holding on a sell, so one request moved an entire position. Per
+  trade, not per session: the rate limit bounds how many requests a player
+  makes, this bounds what one of them can be worth. A non-numeric or
   non-positive value falls back to 50000.
-- **`gphone_hodlr_spread_pct`** — the gap between what a buy costs and what a
-  sell nets, in percent of the mid/reference price the chart plots: a buy
-  settles slightly above mid, a sell slightly below, each rounded against the
-  trader (up for a buy, down for a sell) rather than to nearest, so a fractional
-  cent is never handed back for free. This is the real brake on rapid
-  buy-then-sell round-tripping — it costs the spread every time, by construction
-  — rather than a cooldown or a position limit, neither of which this release
-  adds. `0` is accepted and means exactly what it says: no spread, Hodlr trades
-  at a single flat price the way it always has. Only a negative or non-numeric
-  value falls back to the default of `2`.
-- **`gphone_emergency_number`** — the one number a block can never reach.
+- **`gos_hodlr_spread_pct`** — the gap between what a buy costs and what a sell
+  nets, in percent of the mid/reference price the chart plots: a buy settles
+  slightly above mid, a sell slightly below, each rounded against the trader (up
+  for a buy, down for a sell) rather than to nearest, so a fractional cent is
+  never handed back for free. This is the real brake on rapid buy-then-sell
+  round-tripping — it costs the spread every time, by construction — rather than
+  a cooldown or a position limit, neither of which this release adds. `0` is
+  accepted and means exactly what it says: no spread, Hodlr trades at a single
+  flat price the way it always has. Only a negative or non-numeric value falls
+  back to the default of `2`.
+- **`gos_emergency_number`** — the one number a block can never reach.
   `Phone.ts` skips the blocklist check entirely for a call dialing this number,
   so a player who has blocked someone (or been blocked) can still place, and
   still receive, an emergency call. It does not by itself make the number
@@ -628,7 +623,7 @@ change reaches them when they next reconnect.
   export, so that resource's own setup code can read the configured value
   instead of hardcoding `911` and drifting from a server that changed it. An
   empty value falls back to `911`.
-- **`gphone_max_accounts_per_app`** — how many identities one player may hold in
+- **`gos_max_accounts_per_app`** — how many identities one player may hold in
   one social app; Blabber's `@handle`s are the only current consumer. Capped
   because the handle namespace is public and finite: with no limit, one player
   can claim every good name in an afternoon. Three is a main and a couple of
@@ -637,18 +632,18 @@ change reaches them when they next reconnect.
   change. Lowering it takes nothing away — accounts already claimed keep
   working; their holder simply cannot create another until they are back under
   the cap. A non-numeric or non-positive value falls back to 3.
-- **`gphone_bluetooth_range`** — how far a Bluetooth proximity share reaches, in
+- **`gos_bluetooth_range`** — how far a Bluetooth proximity share reaches, in
   meters, measured server-side from live in-game position; the client never
   sends a distance and never receives a player list. Fifteen keeps it a "hand it
   to the person next to you" gesture, which is what the feature is for. A large
   value quietly turns every share into a broadcast across half the map and
   undoes the point of the discoverability toggle in Settings > Network. This is
-  the one value gPhone does not sanity-check before using: it is passed through
-  as given, so `0` disables proximity sharing outright — nobody is ever in range
-  — rather than falling back to 15.
-- **`gphone_bluetooth_max_nearby`** — how many phones one proximity share
-  reaches, nearest first. Range was never a bound on _how many_: fifteen meters
-  is a doorway on a quiet street and a full nightclub on a busy one, and each
+  the one value gOS does not sanity-check before using: it is passed through as
+  given, so `0` disables proximity sharing outright — nobody is ever in range —
+  rather than falling back to 15.
+- **`gos_bluetooth_max_nearby`** — how many phones one proximity share reaches,
+  nearest first. Range was never a bound on _how many_: fifteen meters is a
+  doorway on a quiet street and a full nightclub on a busy one, and each
   recipient of a photo drop is written their own full copy of it — so without
   this one tap in a crowd is a row per bystander, which is a griefing surface
   rather than a feature. Five is the gesture the feature is for, handing
@@ -657,8 +652,8 @@ change reaches them when they next reconnect.
   nothing, and because the sender's Share button reports how many phones took
   it, they can see it happen. Raising it past 16 gets 16 — the ceiling is in the
   code — and a non-numeric or non-positive value falls back to 5 rather than
-  disabling proximity sharing, which is `gphone_bluetooth_range 0`'s job.
-- **`gphone_music_range`** — how far a phone playing music out loud is heard, in
+  disabling proximity sharing, which is `gos_bluetooth_range 0`'s job.
+- **`gos_music_range`** — how far a phone playing music out loud is heard, in
   meters. **Set this one with `setr`.** The server uses it to decide who is told
   about a broadcast at all, and the client uses it to attenuate what it was told
   about; a plain `set` leaves the client on 30 while the server fans out at your
@@ -666,49 +661,48 @@ change reaches them when they next reconnect.
   full volume the moment they are on the roster. Fan out at least as far as the
   client attenuates — entries a client scores at zero are harmless, entries it
   never hears about are silence. A non-numeric value falls back to 30.
-- **`gphone_music_max_nearby`** — how many broadcasters one listener is told
-  about at once, nearest first. This is a bound on the _roster_, not on what
-  plays: the phone picks the nearest few of them to actually sound, because only
-  the client knows the distances that ranking depends on. It exists because
-  every broadcast a client accepts is another live YouTube player decoding video
+- **`gos_music_max_nearby`** — how many broadcasters one listener is told about
+  at once, nearest first. This is a bound on the _roster_, not on what plays:
+  the phone picks the nearest few of them to actually sound, because only the
+  client knows the distances that ranking depends on. It exists because every
+  broadcast a client accepts is another live YouTube player decoding video
   behind a running game, and a busy street corner is otherwise however many
   people are standing in it. Raising it past 16 gets 16 — the ceiling is in the
   code — and a non-numeric or non-positive value falls back to 8.
-- **`gphone_blabber_edit_window`** — how long after posting a Blab its author
-  may still fix a typo; after it the post freezes and only deleting is left,
-  since withdrawing your own words stays possible forever. One number does both
-  jobs: it becomes the recency predicate on the server's `UPDATE`, which is what
+- **`gos_blabber_edit_window`** — how long after posting a Blab its author may
+  still fix a typo; after it the post freezes and only deleting is left, since
+  withdrawing your own words stays possible forever. One number does both jobs:
+  it becomes the recency predicate on the server's `UPDATE`, which is what
   actually refuses a late edit, and the same value is reported to the app so the
   Edit button disappears at the moment the save would start failing rather than
   before or after it. **This one needs a restart.** Blabber's service
   declaration resolves the window when the resource starts, so `set` from a live
-  console changes nothing until `ensure gphone` runs again. A non-numeric or
+  console changes nothing until `ensure gos` runs again. A non-numeric or
   non-positive value falls back to 900 rather than removing the window — a typo
   here should not make every Blab editable forever.
-- **`gphone_notification_retention`** — how many days of notification history to
-  keep. At resource start gPhone deletes every row in `gphone_notifications`
-  older than this, read or unread, cleared or not, and nothing else ever prunes
-  them: there is no timer, so a server that never restarts never prunes, and one
-  that restarts often prunes at each start. That is also why this is the one
-  convar here whose change needs a restart — it is read once, at the moment the
-  prune runs. Raise it if you want players to keep more history; lower it if the
-  table grows faster than you care to carry. A non-positive value falls back
-  to 30.
-- **`gphone_restore_window_days`** — how many days after deleting a contact,
-  note or photo a player may still undo it through that app's `restore` action.
+- **`gos_notification_retention`** — how many days of notification history to
+  keep. At resource start gOS deletes every row in `gos_notifications` older
+  than this, read or unread, cleared or not, and nothing else ever prunes them:
+  there is no timer, so a server that never restarts never prunes, and one that
+  restarts often prunes at each start. That is also why this is the one convar
+  here whose change needs a restart — it is read once, at the moment the prune
+  runs. Raise it if you want players to keep more history; lower it if the table
+  grows faster than you care to carry. A non-positive value falls back to 30.
+- **`gos_restore_window_days`** — how many days after deleting a contact, note
+  or photo a player may still undo it through that app's `restore` action.
   Shared across all three rather than one convar each: a "recently deleted"
   window is the same kind of thing everywhere in the phone, and a server owner
   tuning it almost certainly wants one answer, not three that can drift apart.
   Read per call, not cached, so `set` from the console takes effect on the next
   restore attempt with no restart. Past the window the row is not gone — nothing
-  in gPhone ever hard-deletes a contact, note or photo, since the moderation
-  system depends on a soft-deleted row surviving — it is only no longer
-  reachable through `restore`. A non-positive value falls back to 30.
+  in gOS ever hard-deletes a contact, note or photo, since the moderation system
+  depends on a soft-deleted row surviving — it is only no longer reachable
+  through `restore`. A non-positive value falls back to 30.
 
-- **`gphone_camera_quality`** — how hard the phone squeezes a photo before it is
+- **`gos_camera_quality`** — how hard the phone squeezes a photo before it is
   stored, 1 to 100. Every capture is a single lossy encode (WebP where the
   browser has it, JPEG where it does not), and the result lives in a database
-  column, so this is the knob that decides how fast your `gphone_media` table
+  column, so this is the knob that decides how fast your `gos_media` table
   grows. 95 is the default and is close to visually lossless. 90 is worth
   considering: measured through libwebp on a detail-dense plate it is roughly a
   third fewer bytes for about a decibel, which is not a difference a player
@@ -717,69 +711,69 @@ change reaches them when they next reconnect.
   and applies from the next time a player opens the Camera app. A value the
   server cannot parse reads as 0, which would be unusable, so 0 and anything
   negative fall back to 95; anything above 100 is clamped to 100.
-- **`gphone_media_quota_mb`** — the most storage one player's photo library may
+- **`gos_media_quota_mb`** — the most storage one player's photo library may
   occupy, in mebibytes. Photos are base64 in a database column, so a gallery
   nobody bounds is a table that only ever grows; this is the bound, and it is
   the everyday one. It counts the rows a player can actually see — a photo they
   delete frees their allowance immediately — and it is measured the same way
-  `gphonemedia` reports sizes, so the number a player is held to and the number
-  you read in the console are the same number. 64MiB is roughly 150 to 200
-  captures at the default quality, which is a library a player has to work at to
-  fill; a hundred players at the ceiling is 6.4GB. It works with the 4MB
-  per-photo cap rather than replacing it: that bounds one write, this bounds the
-  sum. The check runs before the write, so a player just under the line can
-  still add one more photo — the true worst case is your value plus one capped
-  photo. A proximity share checks each recipient too, and quietly skips anyone
-  with no room, since a bystander should not be pushed over their ceiling by
-  somebody else's gesture. **A value gPhone cannot parse turns the quota off
-  rather than refusing every photo on the server**, which is the safer direction
-  for something in the write path; the resolved value is printed at resource
-  start so "off" is something you read rather than discover. Set it to 0 for no
+  `gosmedia` reports sizes, so the number a player is held to and the number you
+  read in the console are the same number. 64MiB is roughly 150 to 200 captures
+  at the default quality, which is a library a player has to work at to fill; a
+  hundred players at the ceiling is 6.4GB. It works with the 4MB per-photo cap
+  rather than replacing it: that bounds one write, this bounds the sum. The
+  check runs before the write, so a player just under the line can still add one
+  more photo — the true worst case is your value plus one capped photo. A
+  proximity share checks each recipient too, and quietly skips anyone with no
+  room, since a bystander should not be pushed over their ceiling by somebody
+  else's gesture. **A value gOS cannot parse turns the quota off rather than
+  refusing every photo on the server**, which is the safer direction for
+  something in the write path; the resolved value is printed at resource start
+  so "off" is something you read rather than discover. Set it to 0 for no
   ceiling.
-- **`gphone_media_retention`** — how many days of stored media to keep. **Off by
+- **`gos_media_retention`** — how many days of stored media to keep. **Off by
   default, and it deletes rows permanently when you turn it on**, so read this
-  before setting it. With a value, gPhone deletes every `gphone_media` row older
-  than that many days — at resource start, and again whenever you run
-  `gphonemedia prune` from the console. It covers every row, including ones a
+  before setting it. With a value, gOS deletes every `gos_media` row older than
+  that many days — at resource start, and again whenever you run
+  `gosmedia prune` from the console. It covers every row, including ones a
   player still has in their gallery, so the sentence to hold in mind is exactly
   "photos older than N days are removed" with no exceptions in it. It is a
   different thing from a player deleting a photo, which marks the row deleted
   and keeps every byte it had — which is why a busy server can still grow past
   the sum of every player's quota, and why this knob exists at all. Run
-  `gphonemedia` first: it reports the table's size and its biggest holders,
-  changes nothing, and is how you decide whether you need this. A non-numeric or
+  `gosmedia` first: it reports the table's size and its biggest holders, changes
+  nothing, and is how you decide whether you need this. A non-numeric or
   non-positive value means off.
 
 Two things about media storage that are not convars, since this is where you
-will be looking if the table is bigger than you expected. gPhone removes a
-deleted character's photos in three ways, in this order: on a qb core the table
-is created with `ON DELETE CASCADE` onto `players`, so a framework that removes
-the character's row takes the photos with it; a sweep at every resource start
+will be looking if the table is bigger than you expected. gOS removes a deleted
+character's photos in three ways, in this order: on a qb core the table is
+created with `ON DELETE CASCADE` onto `players`, so a framework that removes the
+character's row takes the photos with it; a sweep at every resource start
 deletes rows whose owner no longer exists, which covers an install whose table
 predates that constraint; and a deletion script of your own can trigger the
-server event `gphone:server:shell:characterDeleted` with a citizenid to reclaim
-the space immediately, across every table rather than photos alone.
-`gphone:server:media:characterDeleted` does the same for media only and is
+server event `gos:server:shell:characterDeleted` with a citizenid to reclaim the
+space immediately, across every table rather than photos alone.
+`gos:server:media:characterDeleted` does the same for media only and is
 unchanged. Both are local events — another server resource can fire them, a game
 client cannot.
 
-**On ESX the first of those does not exist and the other two do.**
-`gphone.esx.sql` has no cascade to carry the photos out, because there is no
-`players` table to point one at, so the start-up sweep is the mechanism rather
-than a backstop: it asks `users(identifier)` who exists and removes the rows of
-characters who do not.
+**On ESX the first of those does not exist and the other two do.** `gos.esx.sql`
+has no cascade to carry the photos out, because there is no `players` table to
+point one at, so the start-up sweep is the mechanism rather than a backstop: it
+asks `users(identifier)` who exists and removes the rows of characters who do
+not.
 
 **The sweep refuses rather than guesses.** It skips, and logs which of these it
 hit, whenever it cannot prove what it is about to delete: no framework has
 answered yet, the owner table is empty or unreadable, or not one of the
-identities sampled out of gPhone's own rows exists in that table. Treating an
-owner table it cannot read as "everybody is an orphan" would delete your
-database, so a refusal always leaves rows behind and never removes extra ones.
-It also logs a line when it starts and a line when it finishes, including a
-finish that removed nothing, so a sweep that ran and found nothing is
-distinguishable from one that never reached the database at all.
+identities sampled out of gOS's own rows exists in that table. Treating an owner
+table it cannot read as "everybody is an orphan" would delete your database, so
+a refusal always leaves rows behind and never removes extra ones. It also logs a
+line when it starts and a line when it finishes, including a finish that removed
+nothing, so a sweep that ran and found nothing is distinguishable from one that
+never reached the database at all.
 
-- **`gphone_orphan_owner_table`** — names the table and column the orphan sweep
+- **`gos_orphan_owner_table`** — names the table and column the orphan sweep
   should check against, as `table.column`, instead of only ever trusting the
   qb/ESX detection above. For a fork, a custom identity resource, or a framework
   migration in progress, where the detection above cannot know what you renamed
@@ -794,44 +788,44 @@ distinguishable from one that never reached the database at all.
 The last two are the Store's, and they are the only pair here that turns
 something **on** rather than tuning something already running. Both are empty by
 default, and a server that leaves them empty behaves exactly as it always has:
-the Store lists the add-ons that ship inside gPhone, and nothing is fetched from
+the Store lists the add-ons that ship inside gOS, and nothing is fetched from
 anywhere.
 
-- **`gphone_addon_hosts`** — the hostnames a Store add-on's bundle, and the
-  catalog listing it, may be fetched from. Separated by commas or spaces
-  (`setr gphone_addon_hosts "store.example.com cdn.example.com"`), and a whole
-  URL is accepted and reduced to its hostname, since that is the value you are
-  most likely to have in front of you. **Read this before setting it**: a host
-  here is one you are allowing to ship JavaScript that runs inside your players'
-  phones. gPhone bounds what that code can do — an add-on runs in a sandboxed
+- **`gos_addon_hosts`** — the hostnames a Store add-on's bundle, and the catalog
+  listing it, may be fetched from. Separated by commas or spaces
+  (`setr gos_addon_hosts "store.example.com cdn.example.com"`), and a whole URL
+  is accepted and reduced to its hostname, since that is the value you are most
+  likely to have in front of you. **Read this before setting it**: a host here
+  is one you are allowing to ship JavaScript that runs inside your players'
+  phones. gOS bounds what that code can do — an add-on runs in a sandboxed
   iframe with no access to the shell, it may only reach the exact server actions
   the permissions a player agreed to allow, and its bytes are checked against
   the SHA-256 the catalog published before they run at all — but the host is
   still choosing what code that is, on every fetch, forever. Allowlist a host
   you would give a database password to, and nobody else. Empty means no host,
   which is why nothing installs on a stock build.
-- **`gphone_addon_catalog`** — the `https://` URL of the JSON listing your Store
+- **`gos_addon_catalog`** — the `https://` URL of the JSON listing your Store
   offers, and the update check reads the same one. Its host has to appear in
-  `gphone_addon_hosts` too: gPhone holds the catalog to the same allowlist as
-  the bundles on it, so there is one list to keep right rather than two. Setting
+  `gos_addon_hosts` too: gOS holds the catalog to the same allowlist as the
+  bundles on it, so there is one list to keep right rather than two. Setting
   this and forgetting that is the mistake worth knowing about — the Store then
   lists nothing at all — so the client says so in the console at resource start
   rather than leaving you to find it. Empty means the Store shows only what
-  ships with gPhone. The entry format, the hash pinning and what the phone does
+  ships with gOS. The entry format, the hash pinning and what the phone does
   with a published update are in
   [`docs/addon-catalog.md`](docs/addon-catalog.md).
 
-One convar you may still find in an old config: `gphone_auto_migrate`. An
-earlier build added missing columns and indexes at start when it was set, and
-that behaviour is gone — nothing reads the name now. A boot that changes the
-schema by itself gives an operator no moment at which to take a backup and no
-say in whether today is the day, so schema changes are applied deliberately, by
-`gphoneschema apply` from the console. If the line is in your `server.cfg` it is
+One convar you may still find in an old config: `gos_auto_migrate`. An earlier
+build added missing columns and indexes at start when it was set, and that
+behaviour is gone — nothing reads the name now. A boot that changes the schema
+by itself gives an operator no moment at which to take a backup and no say in
+whether today is the day, so schema changes are applied deliberately, by
+`gosschema apply` from the console. If the line is in your `server.cfg` it is
 inert, and can be deleted.
 
 ### The phone as an item
 
-Set `gphone_phone_item` to the name of an inventory item and the phone becomes
+Set `gos_phone_item` to the name of an inventory item and the phone becomes
 something a player has to be holding. Using the item opens the phone; the
 keybind still works while they hold at least one; losing the last one closes the
 phone and keeps it closed, exactly as `SetPhoneEnabled(false)` would, until one
@@ -845,7 +839,7 @@ through the inventory and pushes the answer. A modified client gets exactly the
 phone its real inventory earns.
 
 **Define the item for your inventory first.** qb-core and ox_inventory both ship
-an item named `phone`, so on those `set gphone_phone_item "phone"` needs nothing
+an item named `phone`, so on those `set gos_phone_item "phone"` needs nothing
 else. Otherwise:
 
 ```lua
@@ -873,18 +867,18 @@ qb-core; ox_inventory and ESX make every registered item usable), or using it
 does nothing and only the keybind opens the phone.
 
 **Standalone ignores the gate.** With no framework there is no inventory to hold
-the item in, so `gphone_standalone` with `gphone_phone_item` set is reported
-once at start and the phone opens as it always did. A framework whose inventory
-gPhone cannot count through (none of ox_inventory's `GetItemCount`, a qb
-player's `GetItemByName`, or an ESX xPlayer's `getInventoryItem`) is reported
-the same way, and the phone is left open rather than locked for everyone.
+the item in, so `gos_standalone` with `gos_phone_item` set is reported once at
+start and the phone opens as it always did. A framework whose inventory gOS
+cannot count through (none of ox_inventory's `GetItemCount`, a qb player's
+`GetItemByName`, or an ESX xPlayer's `getInventoryItem`) is reported the same
+way, and the phone is left open rather than locked for everyone.
 
 ---
 
 ## Development
 
-gPhone uses `pnpm` workspaces for concurrent frontend and client/server
-development with live hot-reloading:
+gOS uses `pnpm` workspaces for concurrent frontend and client/server development
+with live hot-reloading:
 
 ### Start Development Server
 
@@ -979,14 +973,14 @@ pnpm --filter web test:e2e:report
 
 ## Exports for other resources
 
-gPhone publishes a small API so other scripts can reach the phone. Every export
+gOS publishes a small API so other scripts can reach the phone. Every export
 returns a discriminated outcome rather than a bare boolean — a `false` that
-cannot tell you "the player is offline" from "gPhone has not started yet" leaves
+cannot tell you "the player is offline" from "gOS has not started yet" leaves
 you guessing — and no export ever throws into your resource.
 
 ```lua
-local result = exports['gphone']:SendNotification(citizenid, {
-    app         = 'ext_towing',      -- your own group, or a gPhone app id
+local result = exports['gos']:SendNotification(citizenid, {
+    app         = 'ext_towing',      -- your own group, or a gOS app id
     sourceLabel = 'Tow Company',     -- required for ext_, shown in the shade
     title       = 'Job available',
     body        = 'Pickup at Sandy Shores',
@@ -994,7 +988,7 @@ local result = exports['gphone']:SendNotification(citizenid, {
 })
 
 if not result.ok then
-    print(('gphone refused: %s (%s)'):format(result.message, result.reason))
+    print(('gos refused: %s (%s)'):format(result.message, result.reason))
 end
 ```
 
@@ -1033,7 +1027,7 @@ resource would make that the wrong player.
 **`AddMedia` is how anything but a photo gets in.** The camera only ever
 produces a `photo`, so the other six kinds — `video`, `audio`, `gif`, `sticker`,
 `file`, `link` — exist only through this export. Pass either `url` (http(s)
-only) or `data` (base64); a `video` also wants a `thumbnail`, since gPhone draws
+only) or `data` (base64); a `video` also wants a `thumbnail`, since gOS draws
 the poster frame rather than playing the clip.
 
 **Reception is one primitive with a precedence order**, not two. A blackout is a
@@ -1048,7 +1042,7 @@ therefore lie about its own bars — deliberately fine, since signal gates
 presentation and never authority.
 
 **`ext_<resource>` is reserved for you.** Notifications raised under it get
-their own group in the shade, labelled with your `sourceLabel`. gPhone apps are
+their own group in the shade, labelled with your `sourceLabel`. gOS apps are
 forbidden from taking an `ext_` id, so your group can never be silently merged
 with one shipped later.
 
@@ -1057,11 +1051,11 @@ with one shipped later.
 ## Repository Structure
 
 ```text
-gphone/
+gos/
 ├── client/                       # Client-side systems (Animation, Battery, Camera, Call, Relay, etc.)
 ├── server/                       # Server-side services, FrameworkBridge, AuditLogger, & Database access
 ├── shared/                       # Shared types, interfaces, and constants
-├── sdk/                          # @gphone/sdk: the only thing an app may import — its own workspace package
+├── sdk/                          # @gos/sdk: the only thing an app may import — its own workspace package
 ├── web/                          # Svelte 5 + Vite frontend application (hand-written CSS)
 │   └── src/
 │       ├── apps/                 # One directory per app — the registry discovers them, nothing registers them
@@ -1071,7 +1065,7 @@ gphone/
 ├── docker/serve/                 # The demo image's static file server (Go, stdlib only)
 ├── scripts/                      # Manifest generation, SQL generation, and build automation
 ├── build/                        # esbuild bundle configuration
-├── gphone.sql                    # Generated: the whole schema (pnpm generate:sql)
+├── gos.sql                    # Generated: the whole schema (pnpm generate:sql)
 ├── scripts/framework-schema.sql  # Hand-written: the moderation audit ledger
 └── fxmanifest.lua                # Resource manifest file
 ```
@@ -1082,8 +1076,8 @@ gphone/
 
 - [docs/writing-an-app.md](docs/writing-an-app.md) — the five-minute path to a
   working app.
-- [docs.gphone.site](https://docs.gphone.site/) — the generated `@gphone/sdk`
-  API reference.
+- [docs.gphone.site](https://docs.gphone.site/) — the generated `@gos/sdk` API
+  reference.
 - [docs/demo-container.md](docs/demo-container.md) — the demo image: running it,
   and what it ships.
 - [docs/addon-catalog.md](docs/addon-catalog.md) — the `CatalogEntry` shape a
@@ -1114,22 +1108,22 @@ corresponds to (`MICA-16`) — the key, never the site URL.
 
 Copyright (C) 2026 quissicutdeus
 
-gPhone is free software: you can redistribute it and/or modify it under the
-terms of the GNU Affero General Public License as published by the Free Software
+gOS is free software: you can redistribute it and/or modify it under the terms
+of the GNU Affero General Public License as published by the Free Software
 Foundation, either version 3 of the License, or (at your option) any later
 version. See [LICENSE](LICENSE).
 
-gPhone is distributed in the hope that it will be useful, but WITHOUT ANY
-WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-PARTICULAR PURPOSE.
+gOS is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+PURPOSE.
 
 ### If you run a modified copy on your server
 
 **AGPL section 13 requires you to offer your players the source of your modified
-version.** Players interacting with gPhone over your server are remote users in
-the licence's sense, which is the whole point of the Affero clause — running a
-fork without publishing it is the case §13 exists to cover, and it applies
-whether or not you distribute the resource to anyone else.
+version.** Players interacting with gOS over your server are remote users in the
+licence's sense, which is the whole point of the Affero clause — running a fork
+without publishing it is the case §13 exists to cover, and it applies whether or
+not you distribute the resource to anyone else.
 
 Settings > About > License carries the notice and the address this build says
 its source lives at, with a button that copies it — a player cannot open a link
@@ -1137,18 +1131,18 @@ from inside the phone, because anchor navigation reloads the CEF instance and
 drops everything they were doing.
 
 By default it points at this repository, which is the true answer for a server
-running an unmodified copy. **If you run a fork, set `gphone_source_url` to your
+running an unmodified copy. **If you run a fork, set `gos_source_url` to your
 own repository** — §13's obligation is yours rather than this project's, and a
 phone telling your players the source is here points them at code you are not
 running.
 
 ### If you are writing an add-on
 
-**An add-on built against `@gphone/sdk` is covered by the same licence, and
-there is no linking exception.** This is worth stating outright because the
-build makes it non-obvious: `vite.addon.config.ts` inlines the SDK, its styles
-and its supporting code directly into your `<id>.js`, so what you ship contains
-gPhone's own code rather than merely calling it from a distance.
+**An add-on built against `@gos/sdk` is covered by the same licence, and there
+is no linking exception.** This is worth stating outright because the build
+makes it non-obvious: `vite.addon.config.ts` inlines the SDK, its styles and its
+supporting code directly into your `<id>.js`, so what you ship contains gOS's
+own code rather than merely calling it from a distance.
 
 What that means for the three people who actually ask:
 

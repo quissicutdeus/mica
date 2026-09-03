@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { useLocale } from '@gphone/sdk';
+  import { useLocale } from '@gos/sdk';
 
   const { t } = useLocale();
 

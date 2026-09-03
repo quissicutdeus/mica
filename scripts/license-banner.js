@@ -43,7 +43,7 @@
  */
 
 export const LICENSE_BANNER =
-  '/*! gPhone | Copyright (C) 2026 quissicutdeus | AGPL-3.0-or-later | https://github.com/quissicutdeus/gPhone */';
+  '/*! gOS | Copyright (C) 2026 quissicutdeus | AGPL-3.0-or-later | https://github.com/quissicutdeus/gos */';
 
 /**
  * Prepend the banner to every emitted JavaScript chunk.
@@ -54,7 +54,7 @@ export const LICENSE_BANNER =
  */
 export function licenseBanner() {
   return {
-    name: 'gphone-license-banner',
+    name: 'gos-license-banner',
     enforce: 'post',
     /**
      * `order: 'post'`, not a plain `generateBundle` — the same trap `vite.addon.config.ts`

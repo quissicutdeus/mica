@@ -14,17 +14,17 @@ import { time } from './state/time';
 import { hydrateSettings } from '../../../sdk/host/useStorage';
 import { bootstrapStores, resetBootstrapState } from './state/bootstrap';
 import { toast } from './state/toast';
-import { messageOf } from '@gphone/sdk';
+import { messageOf } from '@gos/sdk';
 import { get } from 'svelte/store';
 import { t } from './messages';
-import { APP_EVENT_NUI_ACTION, parseAppEventEnvelope } from '@gphone/shared/appEvents';
+import { APP_EVENT_NUI_ACTION, parseAppEventEnvelope } from '@gos/shared/appEvents';
 import {
   MUSIC_BROADCASTS_NUI_ACTION,
   MUSIC_BROADCAST_VOLUMES_NUI_ACTION
-} from '@gphone/shared/musicBroadcast';
+} from '@gos/shared/musicBroadcast';
 import { deliverAppEvent } from './state/appEvents';
-import { parseDeepLink } from '@gphone/shared/deepLink';
-import type { DeviceId } from '@gphone/shared/devices';
+import { parseDeepLink } from '@gos/shared/deepLink';
+import type { DeviceId } from '@gos/shared/devices';
 import { receiveNearbyBroadcasts, receiveNearbyVolumes } from './state/nearbyMusic';
 import {
   parseContactShare,
@@ -38,7 +38,7 @@ import {
   parseSetSignal,
   parseSetTime,
   parseUninstallApp
-} from '@gphone/shared/nui';
+} from '@gos/shared/nui';
 
 /** The little the router needs from the shell, rather than the whole component. */
 export interface NotificationBridge {
@@ -57,7 +57,7 @@ export interface NotificationBridge {
  */
 export function createNuiMessageRouter(bridge: NotificationBridge) {
   /**
-   * `@gphone/shared/nui` used to export a parser for this action that handed back a bare
+   * `@gos/shared/nui` used to export a parser for this action that handed back a bare
    * `{ url }`, and the shell would `import()` whatever module answered from it — the
    * exact thing MICA-16 step 4 forbids. That parser and its payload type were deleted
    * outright rather than widened: nothing else used them, and a dead export still
@@ -69,7 +69,7 @@ export function createNuiMessageRouter(bridge: NotificationBridge) {
    */
   const installApp = (data: unknown) => {
     if (!isCatalogEntry(data)) {
-      console.warn('[gPhone] installApp: payload is not a CatalogEntry', data);
+      console.warn('[gOS] installApp: payload is not a CatalogEntry', data);
       toast.show({
         type: 'error',
         app: 'store',
@@ -342,7 +342,7 @@ export function createNuiMessageRouter(bridge: NotificationBridge) {
      * How loud each of them is, from the game client's distance tick.
      *
      * Separate from the roster above because it arrives from a different sender at a
-     * different rate — see `parseMusicBroadcasts` in `@gphone/shared/nui`. This is the hottest
+     * different rate — see `parseMusicBroadcasts` in `@gos/shared/nui`. This is the hottest
      * route in the table by some distance, so it does exactly one thing.
      */
     [MUSIC_BROADCAST_VOLUMES_NUI_ACTION]: (data: unknown) => {

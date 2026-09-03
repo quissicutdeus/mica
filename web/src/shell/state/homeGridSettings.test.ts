@@ -15,7 +15,7 @@
  */
 import '../../host/registerFacets';
 import { describe, it, expect } from 'vitest';
-import { DEVICES } from '@gphone/shared/devices';
+import { DEVICES } from '@gos/shared/devices';
 import {
   clampColumns,
   clampRows,

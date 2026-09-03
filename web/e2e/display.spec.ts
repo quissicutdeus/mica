@@ -1,7 +1,7 @@
 import { test, expect, type Page } from './support/test';
 import { seedHomeGrid } from './support/homeGrid';
 import { settlePhoneOpen } from './support/phoneOpen';
-import { DEVICES } from '@gphone/shared/devices';
+import { DEVICES } from '@gos/shared/devices';
 
 /**
  * The phone is one shape drawn at many sizes.

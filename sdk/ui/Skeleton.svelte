@@ -11,7 +11,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   /**
    * A placeholder for content that has been asked for and has not arrived.
    *
-   * gPhone had no loading primitive at all, and the gap was not cosmetic: every list in
+   * gOS had no loading primitive at all, and the gap was not cosmetic: every list in
    * the phone starts empty, so the first frame after opening an app is indistinguishable
    * from having nothing. Bank rendered "No transactions" — a definite statement of fact —
    * for as long as the fetch took.

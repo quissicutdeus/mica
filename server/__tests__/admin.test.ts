@@ -24,13 +24,13 @@ beforeEach(() => {
 });
 
 describe('admin ace resolution', () => {
-  it('accepts the gPhone-specific ace', () => {
-    granted.add('gphone.admin');
+  it('accepts the gOS-specific ace', () => {
+    granted.add('gos.admin');
     expect(isAdmin(5)).toBe(true);
   });
 
-  it('accepts a server admin who never granted themselves gphone.admin', () => {
-    // The original check was `gphone.admin` alone, so a full server admin was refused
+  it('accepts a server admin who never granted themselves gos.admin', () => {
+    // The original check was `gos.admin` alone, so a full server admin was refused
     // by their own phone until they granted a second ace. `add_ace group.admin command
     // allow` is the near-universal setup and already lets them do everything the
     // Developer Tools offer, from console.
@@ -44,7 +44,7 @@ describe('admin ace resolution', () => {
   });
 
   it('refuses a different source holding the ace', () => {
-    granted.add('gphone.admin');
+    granted.add('gos.admin');
     expect(isAdmin(9)).toBe(false);
   });
 
@@ -59,8 +59,8 @@ describe('adminAces convar', () => {
   });
 
   it('honors an override and trims whitespace', () => {
-    convar = ' gphone.admin , mygroup.staff ';
-    expect(adminAces()).toEqual(['gphone.admin', 'mygroup.staff']);
+    convar = ' gos.admin , mygroup.staff ';
+    expect(adminAces()).toEqual(['gos.admin', 'mygroup.staff']);
   });
 
   it('an override actually changes who is admin', () => {

@@ -4,9 +4,9 @@
 
 import { derived, writable } from 'svelte/store';
 import { call, callOr } from '../nui/call';
-import { reportsContract } from '@gphone/shared/contracts/reports';
-import type { Report } from '@gphone/shared/types';
-import type { SubmitReportInput } from '@gphone/sdk';
+import { reportsContract } from '@gos/shared/contracts/reports';
+import type { Report } from '@gos/shared/types';
+import type { SubmitReportInput } from '@gos/sdk';
 
 /**
  * The moderation queue, and the badge that counts it.

@@ -44,8 +44,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
 
 const IMAGE = 'mariadb:11';
-const CONTAINER_LABEL = 'gphone-migration-harness';
-const ROOT_PASSWORD = 'gphone-throwaway';
+const CONTAINER_LABEL = 'gos-migration-harness';
+const ROOT_PASSWORD = 'gos-throwaway';
 /** How long to wait for the server to accept connections, in ms. */
 const READY_TIMEOUT = 90_000;
 
@@ -53,10 +53,10 @@ const READY_TIMEOUT = 90_000;
  * Accept an already-running database from the environment, avoiding Docker startup.
  * All four are required together; if any is set, all must be provided.
  */
-const DB_HOST = process.env.MICA_DB_HOST;
-const DB_PORT = process.env.MICA_DB_PORT;
-const DB_USER = process.env.MICA_DB_USER;
-const DB_PASSWORD = process.env.MICA_DB_PASSWORD;
+const DB_HOST = process.env.GOS_DB_HOST;
+const DB_PORT = process.env.GOS_DB_PORT;
+const DB_USER = process.env.GOS_DB_USER;
+const DB_PASSWORD = process.env.GOS_DB_PASSWORD;
 const EXTERNAL_DB = Boolean(DB_HOST || DB_PORT || DB_USER || DB_PASSWORD);
 
 /**
@@ -234,7 +234,7 @@ const loadServerModule = async () => {
     `export { __setResourceLookup, detectFramework, FrameworkBridge } from '${root}/server/lib/FrameworkBridge.ts';`
   ].join('\n');
 
-  const outfile = path.join(root, 'node_modules', '.cache', 'gphone-migration-harness.mjs');
+  const outfile = path.join(root, 'node_modules', '.cache', 'gos-migration-harness.mjs');
   await esbuild.build({
     stdin: { contents: entry, resolveDir: root, loader: 'ts' },
     bundle: true,
@@ -247,7 +247,7 @@ const loadServerModule = async () => {
         'globalThis.emitNet = globalThis.emitNet ?? (() => {});',
         'globalThis.on = globalThis.on ?? (() => {});',
         'globalThis.source = globalThis.source ?? 0;',
-        "globalThis.GetCurrentResourceName = globalThis.GetCurrentResourceName ?? (() => 'gphone');",
+        "globalThis.GetCurrentResourceName = globalThis.GetCurrentResourceName ?? (() => 'gos');",
         'globalThis.RegisterCommand = globalThis.RegisterCommand ?? (() => {});',
         'globalThis.IsPlayerAceAllowed = globalThis.IsPlayerAceAllowed ?? (() => false);',
         'globalThis.GetConvar = globalThis.GetConvar ?? ((_n, fallback) => fallback);',
@@ -309,7 +309,7 @@ const seedFixtures = async (connection, hasPlayers) => {
 
   const conversation = async (isGroup, name) => {
     const [result] = await connection.query(
-      'INSERT INTO gphone_messages_conversations (citizenid, is_group, name, status) VALUES (?, ?, ?, ?)',
+      'INSERT INTO gos_messages_conversations (citizenid, is_group, name, status) VALUES (?, ?, ?, ?)',
       ['CIT_A', isGroup, name, 'active']
     );
     return result.insertId;
@@ -317,7 +317,7 @@ const seedFixtures = async (connection, hasPlayers) => {
 
   const participant = async (conversationId, citizenid, { left = false, role = 'member' } = {}) => {
     await connection.query(
-      `INSERT INTO gphone_messages_participants
+      `INSERT INTO gos_messages_participants
          (conversation_id, citizenid, role, left_at, status)
        VALUES (?, ?, ?, ${left ? 'CURRENT_TIMESTAMP' : 'NULL'}, ?)`,
       [conversationId, citizenid, role, left ? 'left' : 'active']
@@ -363,7 +363,7 @@ const seedFixtures = async (connection, hasPlayers) => {
  * Put the participants table, and the conversations table, back into the shape a server
  * that has never migrated has.
  *
- * Without this the harness proves far less than it appears to. `gphone.sql` is generated
+ * Without this the harness proves far less than it appears to. `gos.sql` is generated
  * from the current declaration, so a fresh import already carries the unique key — both
  * `information_schema` guards would find their work done, skip, and report a pass having
  * executed no DDL at all. Regressing the index (0001) and dropping the pair-key columns
@@ -376,15 +376,15 @@ const seedFixtures = async (connection, hasPlayers) => {
  */
 const regressToPreMigrationShape = async (connection) => {
   await connection.query(
-    'ALTER TABLE gphone_messages_participants DROP INDEX conversation_participant_unique'
+    'ALTER TABLE gos_messages_participants DROP INDEX conversation_participant_unique'
   );
   await connection.query(
-    'ALTER TABLE gphone_messages_participants ADD KEY conversation_participant (conversation_id, citizenid)'
+    'ALTER TABLE gos_messages_participants ADD KEY conversation_participant (conversation_id, citizenid)'
   );
 
-  await connection.query('ALTER TABLE gphone_messages_conversations DROP COLUMN pair_key');
-  await connection.query('ALTER TABLE gphone_messages_conversations DROP COLUMN participant_a');
-  await connection.query('ALTER TABLE gphone_messages_conversations DROP COLUMN participant_b');
+  await connection.query('ALTER TABLE gos_messages_conversations DROP COLUMN pair_key');
+  await connection.query('ALTER TABLE gos_messages_conversations DROP COLUMN participant_a');
+  await connection.query('ALTER TABLE gos_messages_conversations DROP COLUMN participant_b');
 };
 
 /* -------------------------------------------------------------- assertions */
@@ -408,26 +408,26 @@ const scalar = async (connection, sql, params = []) => {
 const liveCount = (connection, conversationId, citizenid) =>
   scalar(
     connection,
-    'SELECT COUNT(*) FROM gphone_messages_participants WHERE conversation_id = ? AND citizenid = ? AND left_at IS NULL',
+    'SELECT COUNT(*) FROM gos_messages_participants WHERE conversation_id = ? AND citizenid = ? AND left_at IS NULL',
     [conversationId, citizenid]
   );
 
 const totalCount = (connection, conversationId, citizenid) =>
   scalar(
     connection,
-    'SELECT COUNT(*) FROM gphone_messages_participants WHERE conversation_id = ? AND citizenid = ?',
+    'SELECT COUNT(*) FROM gos_messages_participants WHERE conversation_id = ? AND citizenid = ?',
     [conversationId, citizenid]
   );
 
 const isGroupOf = (connection, conversationId) =>
-  scalar(connection, 'SELECT is_group FROM gphone_messages_conversations WHERE id = ?', [
+  scalar(connection, 'SELECT is_group FROM gos_messages_conversations WHERE id = ?', [
     conversationId
   ]);
 
 /* -------------------------------------------------------------- the run */
 
 const runVariant = async ({ connection, schemaFile, hasPlayers, server }) => {
-  const database = `gphone_${path.basename(schemaFile, '.sql').replace(/\./g, '_')}`;
+  const database = `gos_${path.basename(schemaFile, '.sql').replace(/\./g, '_')}`;
   step(`${schemaFile} — importing into \`${database}\``);
 
   await connection.query(`DROP DATABASE IF EXISTS \`${database}\``);
@@ -435,7 +435,7 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, server }) => {
   await connection.changeUser({ database });
 
   if (hasPlayers) {
-    // The framework owns this table; gPhone's foreign keys point at it. A stand-in with the
+    // The framework owns this table; gOS's foreign keys point at it. A stand-in with the
     // one column those keys name is all the schema needs to import.
     await connection.query(PLAYERS_TABLE);
   }
@@ -447,34 +447,41 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, server }) => {
 
   const tables = await scalar(
     connection,
-    "SELECT COUNT(*) FROM information_schema.TABLES WHERE table_schema = DATABASE() AND table_name LIKE 'gphone|_%' ESCAPE '|'"
+    "SELECT COUNT(*) FROM information_schema.TABLES WHERE table_schema = DATABASE() AND table_name LIKE 'gos|_%' ESCAPE '|'"
   );
-  check(`${schemaFile}: imports the gphone tables`, Number(tables) > 20, true);
+  check(`${schemaFile}: imports the gos tables`, Number(tables) > 20, true);
 
   /**
-   * A fresh install must NOT run the migration: `gphone.sql` seeds the ledger so every
+   * A fresh install must NOT run the migration: `gos.sql` seeds the ledger so every
    * migration is marked applied against tables that were created in their final shape.
    */
   const seeded = await scalar(
     connection,
-    'SELECT COUNT(*) FROM gphone_schema_migrations WHERE id = ?',
+    'SELECT COUNT(*) FROM gos_schema_migrations WHERE id = ?',
     ['0001_repair_conversation_participants']
   );
   check(`${schemaFile}: a fresh install has the migration pre-seeded`, Number(seeded), 1);
 
   const seededViewed = await scalar(
     connection,
-    'SELECT COUNT(*) FROM gphone_schema_migrations WHERE id = ?',
+    'SELECT COUNT(*) FROM gos_schema_migrations WHERE id = ?',
     ['0002_audit_logs_add_viewed_action']
   );
   check(`${schemaFile}: a fresh install has 0002 pre-seeded too`, Number(seededViewed), 1);
 
   const seeded0003 = await scalar(
     connection,
-    'SELECT COUNT(*) FROM gphone_schema_migrations WHERE id = ?',
+    'SELECT COUNT(*) FROM gos_schema_migrations WHERE id = ?',
     ['0003_conversations_pair_key']
   );
   check(`${schemaFile}: a fresh install has 0003 pre-seeded too`, Number(seeded0003), 1);
+
+  const seeded0004 = await scalar(
+    connection,
+    'SELECT COUNT(*) FROM gos_schema_migrations WHERE id = ?',
+    ['0004_rename_gphone_tables_to_gos']
+  );
+  check(`${schemaFile}: a fresh install has 0004 pre-seeded too`, Number(seeded0004), 1);
 
   const freshRun = await server.runPendingMigrations();
   check(`${schemaFile}: a fresh install applies nothing`, freshRun.applied, []);
@@ -482,10 +489,10 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, server }) => {
 
   step(`${schemaFile} — regressing to a pre-migration server and seeding fixtures`);
   // An existing server has neither the ledger row nor the unique key.
-  await connection.query('DELETE FROM gphone_schema_migrations');
+  await connection.query('DELETE FROM gos_schema_migrations');
   await regressToPreMigrationShape(connection);
 
-  const before = await indexesOn(connection, 'gphone_messages_participants');
+  const before = await indexesOn(connection, 'gos_messages_participants');
   check(
     `${schemaFile}: starts with the old non-unique index`,
     before.includes('conversation_participant'),
@@ -511,7 +518,7 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, server }) => {
 
   const forgedUpdatedAt = await scalar(
     connection,
-    'SELECT updated_at FROM gphone_messages_conversations WHERE id = ?',
+    'SELECT updated_at FROM gos_messages_conversations WHERE id = ?',
     [ids.forged]
   );
 
@@ -521,7 +528,8 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, server }) => {
   check(`${schemaFile}: applied the migration`, result.applied, [
     '0001_repair_conversation_participants',
     '0002_audit_logs_add_viewed_action',
-    '0003_conversations_pair_key'
+    '0003_conversations_pair_key',
+    '0004_rename_gphone_tables_to_gos'
   ]);
   check(`${schemaFile}: nothing left over`, result.remaining, []);
 
@@ -529,7 +537,7 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, server }) => {
   let viewedRejected = null;
   try {
     await connection.query(
-      `INSERT INTO gphone_audit_logs (citizenid, action, service, method, target_id)
+      `INSERT INTO gos_audit_logs (citizenid, action, service, method, target_id)
        VALUES (?, 'viewed', 'reports', 'queue', 1)`,
       ['CIT_A']
     );
@@ -602,14 +610,14 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, server }) => {
   );
 
   step(`${schemaFile} — the constraint, and updated_at`);
-  const after = await indexesOn(connection, 'gphone_messages_participants');
+  const after = await indexesOn(connection, 'gos_messages_participants');
   check(`the unique key is on`, after.includes('conversation_participant_unique (unique)'), true);
   check(`the old index is gone`, after.includes('conversation_participant'), false);
 
   let rejected = null;
   try {
     await connection.query(
-      `INSERT INTO gphone_messages_participants (conversation_id, citizenid, role, left_at, status)
+      `INSERT INTO gos_messages_participants (conversation_id, citizenid, role, left_at, status)
        VALUES (?, ?, 'member', NULL, 'active')`,
       [ids.genuine, 'CIT_B']
     );
@@ -620,7 +628,7 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, server }) => {
 
   const forgedUpdatedAfter = await scalar(
     connection,
-    'SELECT updated_at FROM gphone_messages_conversations WHERE id = ?',
+    'SELECT updated_at FROM gos_messages_conversations WHERE id = ?',
     [ids.forged]
   );
   check(
@@ -632,7 +640,7 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, server }) => {
   step(`${schemaFile} — MICA-161: the pair key, backfilled from 0001's own fixtures`);
   const pairRow = async (id) => {
     const [rows] = await connection.query(
-      'SELECT participant_a, participant_b, pair_key FROM gphone_messages_conversations WHERE id = ?',
+      'SELECT participant_a, participant_b, pair_key FROM gos_messages_conversations WHERE id = ?',
       [id]
     );
     return rows[0];
@@ -667,7 +675,7 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, server }) => {
     ['CIT_A', 'CIT_VICTIM2']
   );
 
-  const conversationIndexes = await indexesOn(connection, 'gphone_messages_conversations');
+  const conversationIndexes = await indexesOn(connection, 'gos_messages_conversations');
   check(
     `${schemaFile}: pair_key_unique is unique — none of 0001's fixtures collide`,
     conversationIndexes.includes('pair_key_unique (unique)'),
@@ -679,7 +687,7 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, server }) => {
     // The exact pair `genuine` already holds, with the two citizenids reversed —
     // `LEAST`/`GREATEST` must still see them as the same pair.
     await connection.query(
-      `INSERT INTO gphone_messages_conversations (citizenid, is_group, participant_a, participant_b, status)
+      `INSERT INTO gos_messages_conversations (citizenid, is_group, participant_a, participant_b, status)
        VALUES (?, 0, ?, ?, 'active')`,
       ['CIT_B', 'CIT_B', 'CIT_A']
     );
@@ -694,7 +702,7 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, server }) => {
   // existing row at all (`CIT_A`/`CIT_EAVESDROPPER` — a group member in `forged`, never a
   // pair on its own), so this cannot be confused with `genuine`'s still-live active row.
   const [deletedDup] = await connection.query(
-    `INSERT INTO gphone_messages_conversations (citizenid, is_group, participant_a, participant_b, status)
+    `INSERT INTO gos_messages_conversations (citizenid, is_group, participant_a, participant_b, status)
      VALUES (?, 0, ?, ?, 'deleted')`,
     ['CIT_A', 'CIT_A', 'CIT_EAVESDROPPER']
   );
@@ -702,7 +710,7 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, server }) => {
   let freshAfterDeleteId = null;
   try {
     const [inserted] = await connection.query(
-      `INSERT INTO gphone_messages_conversations (citizenid, is_group, participant_a, participant_b, status)
+      `INSERT INTO gos_messages_conversations (citizenid, is_group, participant_a, participant_b, status)
        VALUES (?, 0, ?, ?, 'active')`,
       ['CIT_A', 'CIT_EAVESDROPPER', 'CIT_A']
     );
@@ -716,19 +724,19 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, server }) => {
     null
   );
 
-  await connection.query('DELETE FROM gphone_messages_conversations WHERE id IN (?, ?)', [
+  await connection.query('DELETE FROM gos_messages_conversations WHERE id IN (?, ?)', [
     deletedDup.insertId,
     freshAfterDeleteId
   ]);
 
   step(`${schemaFile} — running it a second time`);
-  const rowsBefore = await scalar(connection, 'SELECT COUNT(*) FROM gphone_messages_participants');
+  const rowsBefore = await scalar(connection, 'SELECT COUNT(*) FROM gos_messages_participants');
   const second = await server.runPendingMigrations();
   check(`the ledger stops a second apply`, second.applied, []);
   check(`and reports no failure`, second.failed, null);
   check(
     `no rows changed`,
-    Number(await scalar(connection, 'SELECT COUNT(*) FROM gphone_messages_participants')),
+    Number(await scalar(connection, 'SELECT COUNT(*) FROM gos_messages_participants')),
     Number(rowsBefore)
   );
 
@@ -737,26 +745,27 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, server }) => {
    * behind — `runMigrations` tells an operator the migration ran but was not recorded, and
    * they have to decide whether to retry. This is that retry.
    */
-  await connection.query('DELETE FROM gphone_schema_migrations');
+  await connection.query('DELETE FROM gos_schema_migrations');
   const replay = await server.runPendingMigrations();
   check(`a forced replay still succeeds`, replay.failed, null);
   check(`a forced replay applies cleanly`, replay.applied, [
     '0001_repair_conversation_participants',
     '0002_audit_logs_add_viewed_action',
-    '0003_conversations_pair_key'
+    '0003_conversations_pair_key',
+    '0004_rename_gphone_tables_to_gos'
   ]);
   check(
     `a forced replay changes no rows`,
-    Number(await scalar(connection, 'SELECT COUNT(*) FROM gphone_messages_participants')),
+    Number(await scalar(connection, 'SELECT COUNT(*) FROM gos_messages_participants')),
     Number(rowsBefore)
   );
-  const replayIndexes = await indexesOn(connection, 'gphone_messages_participants');
+  const replayIndexes = await indexesOn(connection, 'gos_messages_participants');
   check(
     `a forced replay leaves the unique key alone`,
     replayIndexes.includes('conversation_participant_unique (unique)'),
     true
   );
-  const replayConversationIndexes = await indexesOn(connection, 'gphone_messages_conversations');
+  const replayConversationIndexes = await indexesOn(connection, 'gos_messages_conversations');
   check(
     `a forced replay leaves pair_key_unique alone too`,
     replayConversationIndexes.includes('pair_key_unique (unique)'),
@@ -769,11 +778,11 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, server }) => {
 /**
  * The one thing `runVariant`'s shared fixtures above cannot exercise: a server that
  * already has more than one active thread for the same pair by the time it upgrades.
- * The decision (`docs/schema-and-services.md`, via the `gphone-service` skill) is not to
+ * The decision (`docs/schema-and-services.md`, via the `gos-service` skill) is not to
  * repair that — a merge that mishandles which thread's read state or history is
  * authoritative corrupts something a player can see, silently — so the migration has to
  * *tolerate* it: add `pair_key_unique` as a plain, non-unique index instead of failing
- * `gphoneschema apply` outright.
+ * `gosschema apply` outright.
  *
  * A dedicated database, the same way `runSweepFixtures` gets its own. The unique-vs-plain
  * decision is table-wide, so proving the plain branch needs a table where a duplicate
@@ -781,7 +790,7 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, server }) => {
  * make that function's own "pair_key_unique is unique" assertion false.
  */
 const runPairKeyDuplicateFixture = async ({ connection, schemaFile, server }) => {
-  const database = 'gphone_pairkey_duplicate';
+  const database = 'gos_pairkey_duplicate';
   step(`${schemaFile} — MICA-161: a server with a pre-existing duplicate pair`);
 
   await connection.query(`DROP DATABASE IF EXISTS \`${database}\``);
@@ -792,18 +801,18 @@ const runPairKeyDuplicateFixture = async ({ connection, schemaFile, server }) =>
   await connection.query(fs.readFileSync(path.join(root, schemaFile), 'utf8'));
 
   // A server that has never applied either migration.
-  await connection.query('DELETE FROM gphone_schema_migrations');
+  await connection.query('DELETE FROM gos_schema_migrations');
   await regressToPreMigrationShape(connection);
 
   const conversation = async () => {
     const [result] = await connection.query(
-      "INSERT INTO gphone_messages_conversations (citizenid, is_group, status) VALUES ('CIT_A', 0, 'active')"
+      "INSERT INTO gos_messages_conversations (citizenid, is_group, status) VALUES ('CIT_A', 0, 'active')"
     );
     return result.insertId;
   };
   const participant = async (conversationId, citizenid, role) => {
     await connection.query(
-      `INSERT INTO gphone_messages_participants (conversation_id, citizenid, role, left_at, status)
+      `INSERT INTO gos_messages_participants (conversation_id, citizenid, role, left_at, status)
        VALUES (?, ?, ?, NULL, 'active')`,
       [conversationId, citizenid, role]
     );
@@ -829,17 +838,18 @@ const runPairKeyDuplicateFixture = async ({ connection, schemaFile, server }) =>
   check(`${database}: it applied every pending migration`, result.applied, [
     '0001_repair_conversation_participants',
     '0002_audit_logs_add_viewed_action',
-    '0003_conversations_pair_key'
+    '0003_conversations_pair_key',
+    '0004_rename_gphone_tables_to_gos'
   ]);
 
   const firstKey = await scalar(
     connection,
-    'SELECT pair_key FROM gphone_messages_conversations WHERE id = ?',
+    'SELECT pair_key FROM gos_messages_conversations WHERE id = ?',
     [first]
   );
   const secondKey = await scalar(
     connection,
-    'SELECT pair_key FROM gphone_messages_conversations WHERE id = ?',
+    'SELECT pair_key FROM gos_messages_conversations WHERE id = ?',
     [second]
   );
   check(
@@ -848,7 +858,7 @@ const runPairKeyDuplicateFixture = async ({ connection, schemaFile, server }) =>
     ['CIT_A|CIT_B', 'CIT_A|CIT_B']
   );
 
-  const indexes = await indexesOn(connection, 'gphone_messages_conversations');
+  const indexes = await indexesOn(connection, 'gos_messages_conversations');
   check(
     `pair_key_unique exists`,
     indexes.some((i) => i.startsWith('pair_key_unique')),
@@ -884,11 +894,11 @@ const runPairKeyDuplicateFixture = async ({ connection, schemaFile, server }) =>
 /* --------------------------------------------- MICA-152: the orphan sweep */
 
 /**
- * es_extended's own table, in the one shape gPhone reads it in.
+ * es_extended's own table, in the one shape gOS reads it in.
  *
- * `identifier` is wider than gPhone's `citizenid varchar(50)` on purpose — stock ESX varies
+ * `identifier` is wider than gOS's `citizenid varchar(50)` on purpose — stock ESX varies
  * between varchar(46) and varchar(60), and an `esx_multicharacter` identifier
- * (`char1:license:<40 hex>`) is 54. gPhone's column is the binding constraint, and the
+ * (`char1:license:<40 hex>`) is 54. gOS's column is the binding constraint, and the
  * mismatch that causes is MICA-158 rather than this ticket. The fixtures below stay inside
  * 50 characters so they are testing the sweep and not that bug.
  */
@@ -907,30 +917,30 @@ const SWEEP_GONE = 'char1:license:bbbbbbbbbbbbbbbbbb';
 const FRAMEWORK = {
   qb: (name) => (name === 'qbx_core' ? { GetPlayer: () => null } : undefined),
   esx: (name) => (name === 'es_extended' ? { getSharedObject: () => ({}) } : undefined),
-  /** Neither has started yet. A legal `server.cfg` puts gPhone above its framework. */
+  /** Neither has started yet. A legal `server.cfg` puts gOS above its framework. */
   none: () => undefined
 };
 
 /**
  * Rows for one character who exists and one who does not, across three tables.
  *
- * `gphone_audit_logs` is in there because it is the one swept table with no `defineService`
+ * `gos_audit_logs` is in there because it is the one swept table with no `defineService`
  * behind it, so a derivation bug that dropped it would otherwise show up nowhere.
  */
 const seedSweepRows = async (connection, live, gone) => {
-  for (const table of ['gphone_notes', 'gphone_contacts', 'gphone_audit_logs']) {
+  for (const table of ['gos_notes', 'gos_contacts', 'gos_audit_logs']) {
     await connection.query(`DELETE FROM ${table}`);
   }
   await connection.query(
-    'INSERT INTO gphone_notes (citizenid, title, content) VALUES (?,?,?), (?,?,?), (?,?,?)',
+    'INSERT INTO gos_notes (citizenid, title, content) VALUES (?,?,?), (?,?,?), (?,?,?)',
     [live, 'mine', 'a', gone, 'ghost', 'b', gone, 'ghost again', 'c']
   );
   await connection.query(
-    'INSERT INTO gphone_contacts (citizenid, firstname, phone) VALUES (?,?,?), (?,?,?)',
+    'INSERT INTO gos_contacts (citizenid, firstname, phone) VALUES (?,?,?), (?,?,?)',
     [live, 'Live', '555-0001', gone, 'Gone', '555-0002']
   );
   await connection.query(
-    'INSERT INTO gphone_audit_logs (citizenid, action, service, method, target_id) VALUES (?,?,?,?,?)',
+    'INSERT INTO gos_audit_logs (citizenid, action, service, method, target_id) VALUES (?,?,?,?,?)',
     [gone, 'deleted', 'notes', 'delete', 1]
   );
 };
@@ -953,7 +963,7 @@ const rowsIn = async (connection, table) =>
  */
 const runSweepFixtures = async ({ connection, schemaFile, hasPlayers, server }) => {
   const variant = hasPlayers ? 'qb' : 'esx';
-  const database = `gphone_sweep_${variant}`;
+  const database = `gos_sweep_${variant}`;
   const ownerTable = hasPlayers ? 'players' : 'users';
   const label = `${schemaFile} sweep`;
 
@@ -981,15 +991,15 @@ const runSweepFixtures = async ({ connection, schemaFile, hasPlayers, server }) 
   // The derived set, against the schema that actually imported. The unit suite ties it to
   // the committed file; this ties it to the live database, which is the thing rows are in.
   const swept = server.ownedTables().map((t) => t.table);
-  // `gphone_%` only, and the underscore escaped so it is a literal rather than a
+  // `gos_%` only, and the underscore escaped so it is a literal rather than a
   // single-character wildcard. On qb the framework's own `players` also has a `citizenid`
-  // column and is emphatically not something gPhone sweeps.
+  // column and is emphatically not something gOS sweeps.
   const [liveTables] = await connection.query(
     `SELECT t.table_name AS name FROM information_schema.TABLES t
        JOIN information_schema.COLUMNS c
          ON c.table_schema = t.table_schema AND c.table_name = t.table_name
       WHERE t.table_schema = DATABASE()
-        AND t.table_name LIKE 'gphone|_%' ESCAPE '|'
+        AND t.table_name LIKE 'gos|_%' ESCAPE '|'
         AND c.column_name = 'citizenid'`
   );
   check(
@@ -999,7 +1009,7 @@ const runSweepFixtures = async ({ connection, schemaFile, hasPlayers, server }) 
   );
   check(
     `${label}: includes the audit ledger, which no declaration produces`,
-    swept.includes('gphone_audit_logs'),
+    swept.includes('gos_audit_logs'),
     true
   );
   check(`${label}: never sweeps the framework's own table`, swept.includes(ownerTable), false);
@@ -1022,16 +1032,12 @@ const runSweepFixtures = async ({ connection, schemaFile, hasPlayers, server }) 
 
     const intact = await server.sweepOrphanedRows();
     check(`${label}: with the cascade intact the sweep removes nothing`, intact.removed, 0);
-    check(
-      `${label}: and leaves every row where it was`,
-      await rowsIn(connection, 'gphone_notes'),
-      3
-    );
+    check(`${label}: and leaves every row where it was`, await rowsIn(connection, 'gos_notes'), 3);
 
     await connection.query(`DELETE FROM ${ownerTable} WHERE ${ownerColumn} = ?`, [gone]);
     check(
       `${label}: the cascade still takes a deleted character's rows, unchanged`,
-      await rowsIn(connection, 'gphone_notes'),
+      await rowsIn(connection, 'gos_notes'),
       1
     );
 
@@ -1043,9 +1049,9 @@ const runSweepFixtures = async ({ connection, schemaFile, hasPlayers, server }) 
      * from a different direction.
      */
     for (const [table, key] of [
-      ['gphone_notes', 'fk_notes_citizenid'],
-      ['gphone_contacts', 'fk_contacts_citizenid'],
-      ['gphone_audit_logs', 'fk_audit_logs_citizenid']
+      ['gos_notes', 'fk_notes_citizenid'],
+      ['gos_contacts', 'fk_contacts_citizenid'],
+      ['gos_audit_logs', 'fk_audit_logs_citizenid']
     ]) {
       await connection.query(`ALTER TABLE ${table} DROP FOREIGN KEY ${key}`);
     }
@@ -1060,10 +1066,10 @@ const runSweepFixtures = async ({ connection, schemaFile, hasPlayers, server }) 
     sweptResult.failures.map((f) => f.table),
     []
   );
-  check(`${label}: the orphans are gone`, await rowsIn(connection, 'gphone_notes'), 1);
+  check(`${label}: the orphans are gone`, await rowsIn(connection, 'gos_notes'), 1);
   check(
     `${label}: the live character kept their contact`,
-    await rowsIn(connection, 'gphone_contacts'),
+    await rowsIn(connection, 'gos_contacts'),
     1
   );
 
@@ -1076,10 +1082,10 @@ const runSweepFixtures = async ({ connection, schemaFile, hasPlayers, server }) 
   };
 
   const refuses = async (why, expected) => {
-    const before = await rowsIn(connection, 'gphone_notes');
+    const before = await rowsIn(connection, 'gos_notes');
     const result = await server.sweepOrphanedRows();
     check(`${label}: ${why} — refuses with '${expected}'`, result.skipped, expected);
-    check(`${label}: ${why} — DELETED NOTHING`, await rowsIn(connection, 'gphone_notes'), before);
+    check(`${label}: ${why} — DELETED NOTHING`, await rowsIn(connection, 'gos_notes'), before);
   };
 
   await reseed();
@@ -1088,7 +1094,7 @@ const runSweepFixtures = async ({ connection, schemaFile, hasPlayers, server }) 
 
   // The one that would wipe twenty-two tables while logging success: an owner table that is
   // present and populated but holds identities from a different framework entirely. On an
-  // ESX box that is a leftover `players` from a previous qb install; every gPhone row then
+  // ESX box that is a leftover `players` from a previous qb install; every gOS row then
   // looks unowned.
   await connection.query(`INSERT INTO ${ownerTable} (${ownerColumn}) VALUES (?), (?)`, [
     'SOMEBODY_ELSE_1',
@@ -1102,7 +1108,7 @@ const runSweepFixtures = async ({ connection, schemaFile, hasPlayers, server }) 
   await refuses('an owner table that does not exist', 'owner-unreadable');
   await connection.query(`RENAME TABLE ${ownerTable}_hidden TO ${ownerTable}`);
 
-  // The boot-order case. gPhone can start before its framework, and a two-state verdict
+  // The boot-order case. gOS can start before its framework, and a two-state verdict
   // would answer "qb" here — on a box that may well still have a stale `players`.
   server.__setResourceLookup(FRAMEWORK.none);
   await refuses('no framework has answered yet', 'unknown-framework');
@@ -1116,12 +1122,12 @@ const runSweepFixtures = async ({ connection, schemaFile, hasPlayers, server }) 
   check(`${label}: the purge works with no framework at all`, purge.removed > 0, true);
   check(
     `${label}: the purge left the live character alone`,
-    await rowsIn(connection, 'gphone_notes'),
+    await rowsIn(connection, 'gos_notes'),
     1
   );
   check(
     `${label}: the purge reached the audit ledger`,
-    await rowsIn(connection, 'gphone_audit_logs'),
+    await rowsIn(connection, 'gos_audit_logs'),
     0
   );
 
@@ -1136,7 +1142,7 @@ const main = async () => {
       // Validate all four environment variables are set
       if (!DB_HOST || !DB_PORT || !DB_USER || !DB_PASSWORD) {
         throw new Error(
-          'all four of MICA_DB_HOST, MICA_DB_PORT, MICA_DB_USER, MICA_DB_PASSWORD ' +
+          'all four of GOS_DB_HOST, GOS_DB_PORT, GOS_DB_USER, GOS_DB_PASSWORD ' +
             'must be provided together. Nothing was tested.'
         );
       }
@@ -1167,23 +1173,23 @@ const main = async () => {
         .sort()
     );
 
-    // Both files, because `gphone.esx.sql` is generated by a transformation and has never
+    // Both files, because `gos.esx.sql` is generated by a transformation and has never
     // been imported anywhere. If it is not valid SQL, that is a MICA-150 finding.
-    await runVariant({ connection, schemaFile: 'gphone.sql', hasPlayers: true, server });
-    await runVariant({ connection, schemaFile: 'gphone.esx.sql', hasPlayers: false, server });
+    await runVariant({ connection, schemaFile: 'gos.sql', hasPlayers: true, server });
+    await runVariant({ connection, schemaFile: 'gos.esx.sql', hasPlayers: false, server });
 
     // MICA-161. One schema file is enough: the pair-key DDL and the unique-vs-plain
-    // decision do not depend on which framework's owner table gPhone is pointed at, unlike
+    // decision do not depend on which framework's owner table gOS is pointed at, unlike
     // the sweep just below, which genuinely differs by framework.
-    await runPairKeyDuplicateFixture({ connection, schemaFile: 'gphone.sql', server });
+    await runPairKeyDuplicateFixture({ connection, schemaFile: 'gos.sql', server });
 
     // MICA-152. Both frameworks, because the sweep's whole job is to be the cascade ESX
     // does not have — and because "qb is unchanged" is a claim worth executing rather than
     // reasoning about.
-    await runSweepFixtures({ connection, schemaFile: 'gphone.sql', hasPlayers: true, server });
+    await runSweepFixtures({ connection, schemaFile: 'gos.sql', hasPlayers: true, server });
     await runSweepFixtures({
       connection,
-      schemaFile: 'gphone.esx.sql',
+      schemaFile: 'gos.esx.sql',
       hasPlayers: false,
       server
     });

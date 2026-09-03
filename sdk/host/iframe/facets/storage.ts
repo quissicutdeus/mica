@@ -16,7 +16,7 @@ import {
 
 type Twin = AsTwin<ReturnType<Facets['storage']>>;
 
-const namespaceOf = (appId: string) => `gphone:${appId}:`;
+const namespaceOf = (appId: string) => `gos:${appId}:`;
 
 /**
  * Called by `usePersisted`'s `sync: false` (via the twin's `markUnsynced`), which cannot

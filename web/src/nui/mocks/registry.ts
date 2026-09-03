@@ -2,12 +2,12 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { taggedTopics } from '@gphone/shared/richText';
-import { GENERIC_SERVICE_ACTION } from '@gphone/shared/rpc';
+import { taggedTopics } from '@gos/shared/richText';
+import { GENERIC_SERVICE_ACTION } from '@gos/shared/rpc';
 // Type-only: `services/bank.ts` imports `fetchNui`, which imports this file's own
 // transport — a value import here would be a real import cycle, a type-only one is
 // erased before anything runs.
-import type { SendMoneyOutcome } from '@gphone/sdk';
+import type { SendMoneyOutcome } from '@gos/sdk';
 import type {
   Account,
   Blab,
@@ -24,7 +24,7 @@ import type {
   Report,
   SavedPlace,
   Transaction
-} from '@gphone/shared/types';
+} from '@gos/shared/types';
 import {
   mockContacts,
   mockConversations,
@@ -61,7 +61,7 @@ const mockReports: Report[] = [
   {
     id: 1,
     citizenid: 'REPORTER',
-    target_table: 'gphone_messages',
+    target_table: 'gos_messages',
     target_id: 4,
     category: 'harassment',
     note: 'Kept messaging after I asked them to stop.',
@@ -280,7 +280,7 @@ const mockBlabs: Blab[] = [
  * Hashtags per Blab, seeded from the real tokenizer so this fixture cannot say a tag exists
  * that the actual server-side indexer would not have extracted from the same body. `blabber:by_tag`,
  * `blabber:search_tags` and `blabber:trending_tags` all read this rather than re-scanning bodies —
- * mirroring `gphone_blabber_tags`, the child table the server writes at create time.
+ * mirroring `gos_blabber_tags`, the child table the server writes at create time.
  */
 const mockBlabTags = new Map<number, string[]>(
   mockBlabs.map((b) => [b.id, taggedTopics(b.body ?? '')])
@@ -388,7 +388,7 @@ const mockNotifications: NotificationItem[] = [
 /**
  * The follow graph, empty to begin with.
  *
- * Account-to-account, with no citizenid, exactly as the table is: every `gphone_accounts` row
+ * Account-to-account, with no citizenid, exactly as the table is: every `gos_accounts` row
  * carries an `app`, so a row can only link two accounts in the same one.
  */
 /** Mutated by `sendMoney` below, so a browser session sees its own transfer reflected. */
@@ -494,7 +494,7 @@ const mockReactions: { account: number; table: string; target: number; emoji: st
 
 /**
  * Reactions on a Messages thread (MICA-143), keyed by citizenid rather than an account —
- * `gphone_messages_reactions` is its own table, not `gphone_account_reactions`, and Messages
+ * `gos_messages_reactions` is its own table, not `gos_account_reactions`, and Messages
  * has no account layer to key on instead. Separate array from `mockReactions` above for the
  * same reason: two different tables, two different identity columns.
  *
@@ -552,7 +552,7 @@ let nextDmId = 50;
 let nextBlabId = 100;
 let nextAccountId = 10;
 
-/** Mirrors `gphone_max_accounts_per_app`'s default. The server is the boundary. */
+/** Mirrors `gos_max_accounts_per_app`'s default. The server is the boundary. */
 const MOCK_ACCOUNT_LIMIT = 3;
 
 const mockRegistry: Record<string, MockHandler> = {
@@ -1098,7 +1098,7 @@ const mockRegistry: Record<string, MockHandler> = {
       updated_at: new Date().toISOString()
     };
     mockBlabs.unshift(created);
-    // Indexed at create, matching `gphone_blabber_tags` — otherwise a Blab posted in the browser
+    // Indexed at create, matching `gos_blabber_tags` — otherwise a Blab posted in the browser
     // would never surface from a tag tap or trending chip added in this same session.
     mockBlabTags.set(created.id, taggedTopics(created.body ?? ''));
     return { ...created, editWindow: 900 };
@@ -1818,12 +1818,12 @@ const mockRegistry: Record<string, MockHandler> = {
     supported: true,
     isFrontCamera: !!data?.isFrontCamera
   }),
-  // The default `gphone_camera_quality`. A browser has no convars, so answering with the
+  // The default `gos_camera_quality`. A browser has no convars, so answering with the
   // number the client would answer with on an unconfigured server keeps the two paths
   // encoding the same bytes.
   cameraQuality: async () => ({ quality: 95 }),
   /**
-   * `gphone_addon_hosts` and `gphone_addon_catalog` (MICA-126).
+   * `gos_addon_hosts` and `gos_addon_catalog` (MICA-126).
    *
    * **Empty by default, because a stock server is.** A mock that helpfully returned a
    * catalog would make the dev browser the one place remote installs work, which is
@@ -1833,18 +1833,18 @@ const mockRegistry: Record<string, MockHandler> = {
    * operator configures in `server.cfg` can be walked end to end without a game running:
    *
    * ```sh
-   * VITE_MICA_ADDON_HOSTS=store.example.com \
-   * VITE_MICA_ADDON_CATALOG=https://store.example.com/catalog.json pnpm dev
+   * VITE_GOS_ADDON_HOSTS=store.example.com \
+   * VITE_GOS_ADDON_CATALOG=https://store.example.com/catalog.json pnpm dev
    * ```
    *
    * Unset — which is every ordinary `pnpm dev`, every Playwright run and every production
    * build — they resolve to exactly what an unconfigured client answers.
    */
   remoteAppConfig: async () => ({
-    hosts: String(import.meta.env.VITE_MICA_ADDON_HOSTS ?? '')
+    hosts: String(import.meta.env.VITE_GOS_ADDON_HOSTS ?? '')
       .split(/[\s,]+/)
       .filter(Boolean),
-    catalogUrl: String(import.meta.env.VITE_MICA_ADDON_CATALOG ?? '')
+    catalogUrl: String(import.meta.env.VITE_GOS_ADDON_CATALOG ?? '')
   }),
   onCameraApp: async () => true,
   // Media and mail are soft-deleted, as the server does it: a removed row is still
@@ -2179,7 +2179,7 @@ const mockRegistry: Record<string, MockHandler> = {
    * The AGPL §13 source address (`services/sourceUrl.ts`). Upstream here, because the mock
    * stands in for a server running an unmodified copy — which is what a browser session is.
    */
-  'shell:sourceUrl': () => ({ url: 'https://github.com/quissicutdeus/gPhone' }),
+  'shell:sourceUrl': () => ({ url: 'https://github.com/quissicutdeus/gos' }),
   // MICA-61: no owner default in the browser, so the player's own language decides.
   'shell:locale': () => ({ locale: '' }),
 

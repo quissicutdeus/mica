@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { CheckCircleIcon, ListBulletIcon, fade, useLocale, useTimer } from '@gphone/sdk';
+  import { CheckCircleIcon, ListBulletIcon, fade, useLocale, useTimer } from '@gos/sdk';
 
   /**
    * Notes' markdown editor: the title field, the content textarea, and the toolbar that

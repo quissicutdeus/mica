@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { nearbyBroadcastFixture } from '@gphone/shared/musicBroadcast.fixtures';
+import { nearbyBroadcastFixture } from '@gos/shared/musicBroadcast.fixtures';
 
 /**
  * The client hop of MICA-111 phase 2 — the half that takes the server's roster, hands
@@ -55,7 +55,7 @@ const load = async () => {
   setSources.mockClear();
   onUpdate.mockClear();
   await import('../services/Music');
-  const receive = netSubscriptions.get('gphone:client:shell:music');
+  const receive = netSubscriptions.get('gos:client:shell:music');
   if (!receive) throw new Error('Music.ts did not subscribe to the broadcast event');
   return {
     receive,

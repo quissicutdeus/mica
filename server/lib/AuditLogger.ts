@@ -8,14 +8,14 @@ import { Database } from './Database';
  * The moderation ledger's table.
  *
  * Named here rather than only inside the INSERT because it is **the one `citizenid`-bearing
- * gPhone table with no `defineService` behind it** — it is emitted verbatim from the
+ * gOS table with no `defineService` behind it** — it is emitted verbatim from the
  * hand-written `scripts/framework-schema.sql`, so nothing derives it from a declaration and
  * `declaredServices` yields 21 of the 22 tables that carry the owner cascade. The orphan
  * sweep imports this constant so the twenty-second table is named by the module that owns
- * it, and `orphanSweep.test.ts` holds the swept set against the committed `gphone.sql` so a
+ * it, and `orphanSweep.test.ts` holds the swept set against the committed `gos.sql` so a
  * future hand-written table cannot slip past the derivation the way this one did.
  */
-export const AUDIT_LOG_TABLE = 'gphone_audit_logs';
+export const AUDIT_LOG_TABLE = 'gos_audit_logs';
 
 type AuditAction =
   | 'archived'

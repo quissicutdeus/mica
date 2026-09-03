@@ -79,9 +79,7 @@ describe('planAppMigration', () => {
     live.columns = live.columns.filter((c) => c.name !== 'body');
 
     const plan = planAppMigration(schema, live);
-    expect(sqlOf(plan)).toEqual([
-      'ALTER TABLE `gphone_widgets` ADD COLUMN `body` text DEFAULT NULL'
-    ]);
+    expect(sqlOf(plan)).toEqual(['ALTER TABLE `gos_widgets` ADD COLUMN `body` text DEFAULT NULL']);
   });
 
   it('adds a missing index', () => {
@@ -90,7 +88,7 @@ describe('planAppMigration', () => {
 
     const plan = planAppMigration(schema, live);
     expect(sqlOf(plan)).toEqual([
-      'ALTER TABLE `gphone_widgets` ADD KEY `citizenid_title` (`citizenid`, `title`)'
+      'ALTER TABLE `gos_widgets` ADD KEY `citizenid_title` (`citizenid`, `title`)'
     ]);
   });
 
@@ -100,7 +98,7 @@ describe('planAppMigration', () => {
 
     const plan = planAppMigration(schema, live);
     expect(sqlOf(plan)).toEqual([
-      'ALTER TABLE `gphone_widgets` ADD KEY `citizenid_pinned` (`citizenid`, `pinned`)'
+      'ALTER TABLE `gos_widgets` ADD KEY `citizenid_pinned` (`citizenid`, `pinned`)'
     ]);
   });
 
@@ -129,7 +127,7 @@ describe('planAppMigration', () => {
 
     const plan = planAppMigration(schema, live);
     expect(plan.additive).toEqual([]);
-    expect(plan.drift).toEqual(['gphone_widgets.someone_elses exists but is not declared']);
+    expect(plan.drift).toEqual(['gos_widgets.someone_elses exists but is not declared']);
   });
 
   it('reports a type mismatch instead of altering it', () => {
@@ -140,9 +138,7 @@ describe('planAppMigration', () => {
 
     const plan = planAppMigration(schema, live);
     expect(plan.additive).toEqual([]);
-    expect(plan.drift).toEqual([
-      'gphone_widgets.title is `varchar(16)` but declared `varchar(64)`'
-    ]);
+    expect(plan.drift).toEqual(['gos_widgets.title is `varchar(16)` but declared `varchar(64)`']);
   });
 
   it('reports a status enum that has gained a value', () => {
@@ -182,7 +178,7 @@ describe('planAppMigration', () => {
 
     const plan = planAppMigration(schema, live);
     expect(plan.additive).toEqual([]);
-    expect(plan.drift).toEqual(['gphone_widgets.id is missing and cannot be added safely']);
+    expect(plan.drift).toEqual(['gos_widgets.id is missing and cannot be added safely']);
   });
 
   describe('a generated column (MICA-161)', () => {
@@ -229,7 +225,7 @@ describe('planAppMigration', () => {
 
       const plan = planAppMigration(genSchema, live);
       expect(sqlOf(plan)).toEqual([
-        'ALTER TABLE `gphone_genwidgets` ADD COLUMN `pair` varchar(101) ' +
+        'ALTER TABLE `gos_genwidgets` ADD COLUMN `pair` varchar(101) ' +
           'GENERATED ALWAYS AS (CONCAT(`a`, `b`)) VIRTUAL'
       ]);
     });
@@ -251,7 +247,7 @@ const liveChild = (): LiveTable => ({
 
 describe('planChildMigration', () => {
   const child = {
-    name: 'gphone_widget_parts',
+    name: 'gos_widget_parts',
     columns: {
       widget_id: { type: 'int' as const, notNull: true },
       label: { type: 'string' as const, length: 30 },
@@ -271,7 +267,7 @@ describe('planChildMigration', () => {
 
     const plan = planChildMigration(child, live);
     expect(sqlOf(plan)).toEqual([
-      'ALTER TABLE `gphone_widget_parts` ADD COLUMN `archived_at` timestamp DEFAULT NULL'
+      'ALTER TABLE `gos_widget_parts` ADD COLUMN `archived_at` timestamp DEFAULT NULL'
     ]);
   });
 
@@ -285,8 +281,8 @@ describe('planChildMigration', () => {
 });
 
 const statement = (name: string) => ({
-  description: `add column gphone_widgets.${name}`,
-  sql: `ALTER TABLE \`gphone_widgets\` ADD COLUMN \`${name}\` text`
+  description: `add column gos_widgets.${name}`,
+  sql: `ALTER TABLE \`gos_widgets\` ADD COLUMN \`${name}\` text`
 });
 
 describe('SchemaMigrator', () => {
@@ -304,12 +300,12 @@ describe('SchemaMigrator', () => {
   it('apply() runs every additive statement plan() finds', async () => {
     vi.spyOn(SchemaMigrator, 'plan').mockResolvedValueOnce([
       {
-        table: 'gphone_widgets',
+        table: 'gos_widgets',
         missingTable: false,
         additive: [
           {
-            description: 'add column gphone_widgets.body',
-            sql: 'ALTER TABLE `gphone_widgets` ADD COLUMN `body` text'
+            description: 'add column gos_widgets.body',
+            sql: 'ALTER TABLE `gos_widgets` ADD COLUMN `body` text'
           }
         ],
         drift: []
@@ -320,11 +316,11 @@ describe('SchemaMigrator', () => {
     const result = await SchemaMigrator.apply();
 
     expect(dbMock.query).toHaveBeenCalledWith(
-      'ALTER TABLE `gphone_widgets` ADD COLUMN `body` text',
+      'ALTER TABLE `gos_widgets` ADD COLUMN `body` text',
       []
     );
     expect(result).toEqual({
-      applied: ['add column gphone_widgets.body'],
+      applied: ['add column gos_widgets.body'],
       failed: null,
       remaining: []
     });
@@ -335,10 +331,10 @@ describe('SchemaMigrator', () => {
     dbMock.query.mockClear();
     vi.spyOn(SchemaMigrator, 'plan').mockResolvedValueOnce([
       {
-        table: 'gphone_widgets',
+        table: 'gos_widgets',
         missingTable: false,
         additive: [],
-        drift: ['gphone_widgets.x exists but is not declared']
+        drift: ['gos_widgets.x exists but is not declared']
       }
     ]);
     dbMock.query.mockResolvedValue([]);
@@ -358,16 +354,16 @@ describe('SchemaMigrator', () => {
     dbMock.query.mockClear();
     vi.spyOn(SchemaMigrator, 'plan').mockResolvedValueOnce([
       {
-        table: 'gphone_widgets',
+        table: 'gos_widgets',
         missingTable: false,
         additive: [statement('body'), statement('subtitle')],
         drift: []
       },
       {
-        table: 'gphone_notes',
+        table: 'gos_notes',
         missingTable: false,
         additive: [
-          { description: 'add column gphone_notes.pinned', sql: 'ALTER TABLE `gphone_notes` ...' }
+          { description: 'add column gos_notes.pinned', sql: 'ALTER TABLE `gos_notes` ...' }
         ],
         drift: []
       }
@@ -379,14 +375,14 @@ describe('SchemaMigrator', () => {
 
     const result = await SchemaMigrator.apply();
 
-    expect(result.applied).toEqual(['add column gphone_widgets.body']);
+    expect(result.applied).toEqual(['add column gos_widgets.body']);
     expect(result.failed).toEqual({
-      description: 'add column gphone_widgets.subtitle',
+      description: 'add column gos_widgets.subtitle',
       error: 'Duplicate column name'
     });
     // Statements after the failure span the plan boundary, so they are counted across
     // plans rather than per table — one flat list is what an operator reads.
-    expect(result.remaining).toEqual(['add column gphone_notes.pinned']);
+    expect(result.remaining).toEqual(['add column gos_notes.pinned']);
     // And nothing past the failure was attempted.
     expect(dbMock.query).toHaveBeenCalledTimes(2);
   });
@@ -405,7 +401,7 @@ describe('SchemaMigrator', () => {
 
   it('plans migration by querying information_schema', async () => {
     (globalThis as any).GetConvar = vi.fn().mockReturnValue('true');
-    dbMock.scalar.mockResolvedValueOnce('gphone_db');
+    dbMock.scalar.mockResolvedValueOnce('gos_db');
     // Return empty columns for readLiveTable query to simulate missing tables
     dbMock.query.mockResolvedValue([]);
 
@@ -422,28 +418,26 @@ describe('SchemaMigrator', () => {
 
     await SchemaMigrator.report();
 
-    expect(logSpy).toHaveBeenCalledWith('[gphone] schema is up to date.');
+    expect(logSpy).toHaveBeenCalledWith('[gos] schema is up to date.');
   });
 
   it('reports schema differences when missing tables or drift exist', async () => {
     vi.spyOn(SchemaMigrator, 'plan').mockResolvedValueOnce([
       {
-        table: 'gphone_widgets',
+        table: 'gos_widgets',
         missingTable: true,
         additive: [],
-        drift: ['gphone_widgets.foo exists but is not declared']
+        drift: ['gos_widgets.foo exists but is not declared']
       }
     ]);
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
     await SchemaMigrator.report();
 
-    expect(logSpy).toHaveBeenCalledWith('[gphone] schema differences:');
+    expect(logSpy).toHaveBeenCalledWith('[gos] schema differences:');
+    expect(logSpy).toHaveBeenCalledWith('  gos_widgets: table does not exist — import gos.sql');
     expect(logSpy).toHaveBeenCalledWith(
-      '  gphone_widgets: table does not exist — import gphone.sql'
-    );
-    expect(logSpy).toHaveBeenCalledWith(
-      '  needs a human: gphone_widgets.foo exists but is not declared'
+      '  needs a human: gos_widgets.foo exists but is not declared'
     );
   });
 });

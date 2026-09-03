@@ -10,7 +10,7 @@ import type { PhoneSetting } from '../types';
  * Preferences, addressed by `(app, key)` and never by row id — which is why no generic CRUD
  * action survives here and all four of these are custom.
  *
- * The bounds are `gphone_settings`'s own column lengths. Neither `app` nor `key` is ever
+ * The bounds are `gos_settings`'s own column lengths. Neither `app` nor `key` is ever
  * interpolated into SQL, so the risk they carry is not injection: it is a value too long for
  * its column, which MySQL truncates silently in non-strict mode. Refusing beats truncating,
  * because a preference that silently saved under a different key is a preference that reads

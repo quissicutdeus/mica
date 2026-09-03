@@ -190,10 +190,10 @@ export const pollSignal = (): void => {
     if (typeof GetPlayerName === 'function' && !GetPlayerName(String(src))) continue;
     if (typeof emitNet === 'function') {
       try {
-        emitNet('gphone:client:signal:set', src, level);
+        emitNet('gos:client:signal:set', src, level);
         lastPushed.set(src, level);
       } catch (error) {
-        console.error(`[gphone] signal push to ${src} failed:`, error);
+        console.error(`[gos] signal push to ${src} failed:`, error);
       }
     }
   }
@@ -239,7 +239,7 @@ export const setPlayerSignal = (src: number, level: number | null): void => {
 export const playerOverride = (src: number): number | null => overrides.get(src) ?? null;
 
 /**
- * `gphone:server:signal:rules` is deliberately absent.
+ * `gos:server:signal:rules` is deliberately absent.
  *
  * A client used to ask for the zone list so it could evaluate its own position. It has no
  * reason to know the zones now — the server pushes a level, not the rules that produce one

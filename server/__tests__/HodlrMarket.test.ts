@@ -271,7 +271,7 @@ describe('HodlrMarket boundaries', () => {
 /**
  * MICA-130, part 1: the price is state that survives a restart.
  *
- * `gphone_hodlr.quantity` always did. The price did not, so every restart re-valued every
+ * `gos_hodlr.quantity` always did. The price did not, so every restart re-valued every
  * holding at the 500 written in the source — buy below it, wait for a restart, sell.
  */
 describe('HodlrMarket restore', () => {
@@ -358,7 +358,7 @@ describe('HodlrMarket restore', () => {
    *
    * `Math.round(Number(null))` is `NaN`, so a history that reads empty used to leave
    * `currentPrice` at `STARTING_PRICE` and set `restored`. That reopens every holding at
-   * exactly the constant the original exploit was built on, with `gphone_hodlr.quantity`
+   * exactly the constant the original exploit was built on, with `gos_hodlr.quantity`
    * untouched — reachable by an operator truncating a table that still reads like a chart
    * cache, and by the pruning sweep on a server that has been down longer than the
    * retention window.
@@ -420,7 +420,7 @@ describe('HodlrMarket restore', () => {
    * `scalar_async` promise neither resolves nor rejects. `restoreInFlight` never cleared,
    * so `tickMarket` returned at its `!restored` guard every 30 seconds for the life of the
    * resource: every trade refused, no snapshots, a flat chart, and nothing short of
-   * `restart gphone` to recover. A *rejected* read was always fine and is covered above.
+   * `restart gos` to recover. A *rejected* read was always fine and is covered above.
    */
   describe('a restore read that never settles', () => {
     /** A promise that will never settle, exactly as a dropped export callback leaves one. */

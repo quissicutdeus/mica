@@ -15,12 +15,12 @@ import '../services/index';
 import { checkOwnerCollation, collationMismatchMessage } from '../lib/collationCheck';
 
 /**
- * MICA-157. `gphone.sql` declares every table `COLLATE = utf8mb4_unicode_ci`, and most of
+ * MICA-157. `gos.sql` declares every table `COLLATE = utf8mb4_unicode_ci`, and most of
  * them carry a foreign key onto the framework's `players(citizenid)`. A foreign key requires
  * both sides to share a collation; MariaDB 11.4+ changed its own `utf8mb4` default away from
  * this one, so an operator who created `players` without an explicit collation on a modern
  * MariaDB gets a raw-SQL import that fails partway through with an opaque MySQL errno 150 —
- * naming neither collation nor `players`. This is the detection half: `gphoneschema apply`
+ * naming neither collation nor `players`. This is the detection half: `gosschema apply`
  * asks `checkOwnerCollation` before running any DDL of its own, so the same underlying
  * mismatch is reported with the actual table and both actual collations instead.
  */
@@ -32,10 +32,10 @@ describe('checkOwnerCollation', () => {
   const mockSchema = (schema: string | null) => dbMock.scalar.mockResolvedValueOnce(schema);
 
   it('fails loud, naming the table and both collations, on a real mismatch', async () => {
-    mockSchema('gphone_db');
+    mockSchema('gos_db');
     // players.citizenid
     dbMock.scalar.mockResolvedValueOnce('utf8mb4_uca1400_ai_ci');
-    // no gPhone table exists yet (a fully-failed fresh import) — falls back to the
+    // no gOS table exists yet (a fully-failed fresh import) — falls back to the
     // generated file's own known collation.
     dbMock.scalar.mockResolvedValueOnce(null);
 
@@ -54,29 +54,29 @@ describe('checkOwnerCollation', () => {
     expect(message).toContain('errno 150');
   });
 
-  it("prefers an already-created gPhone table's live collation over the generated default", async () => {
-    mockSchema('gphone_db');
+  it("prefers an already-created gOS table's live collation over the generated default", async () => {
+    mockSchema('gos_db');
     dbMock.scalar.mockResolvedValueOnce('utf8mb4_uca1400_ai_ci'); // players
-    dbMock.scalar.mockResolvedValueOnce('utf8mb4_uca1400_ai_ci'); // a live gPhone table, same
+    dbMock.scalar.mockResolvedValueOnce('utf8mb4_uca1400_ai_ci'); // a live gOS table, same
 
     const mismatch = await checkOwnerCollation();
 
-    // Both sides actually agree once the live gPhone collation is used instead of the
+    // Both sides actually agree once the live gOS collation is used instead of the
     // hardcoded default — this is the case a hand-edited live table would produce, and it
     // must not be reported as a mismatch against a value nothing on this database has.
     expect(mismatch).toBeNull();
   });
 
   it('reports no mismatch when the collations already agree', async () => {
-    mockSchema('gphone_db');
+    mockSchema('gos_db');
     dbMock.scalar.mockResolvedValueOnce('utf8mb4_unicode_ci'); // players
-    dbMock.scalar.mockResolvedValueOnce(null); // no gPhone table yet, falls back to default
+    dbMock.scalar.mockResolvedValueOnce(null); // no gOS table yet, falls back to default
 
     expect(await checkOwnerCollation()).toBeNull();
   });
 
   it('has nothing to check on an ESX install, which has no players.citizenid at all', async () => {
-    mockSchema('gphone_db');
+    mockSchema('gos_db');
     dbMock.scalar.mockResolvedValueOnce(null); // information_schema finds no such column
 
     expect(await checkOwnerCollation()).toBeNull();

@@ -51,8 +51,8 @@
   },
   "dependencies": {
     "@fontsource/roboto": "^5.3.0",
-    "@gphone/sdk": "workspace:*",
-    "@gphone/shared": "workspace:*",
+    "@gos/sdk": "workspace:*",
+    "@gos/shared": "workspace:*",
     "@material/material-color-utilities": "0.4.0"
   }
 }

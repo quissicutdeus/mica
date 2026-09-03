@@ -7,7 +7,7 @@
  *
  * MICA-111. Phase 1 has no server, so nothing here crosses the wire yet — it lives in
  * `shared/` anyway, for the same reason `shared/richText.ts` and `shared/deepLink.ts` do:
- * phase 2 has the server extract the id from a `gphone:server:music:*` payload, and two
+ * phase 2 has the server extract the id from a `gos:server:music:*` payload, and two
  * implementations of "what counts as a YouTube id" is how you get a string the phone
  * accepts and the server stores wrong. One parser, both sides.
  *

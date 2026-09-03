@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, expect, it } from 'vitest';
-import { parseNotify } from '@gphone/shared/nui';
+import { parseNotify } from '@gos/shared/nui';
 
 /**
  * A server toast may carry catalog keys beside its English (MICA-216). The parser lets

@@ -54,10 +54,10 @@ const mockPlayer = (metadata: Record<string, unknown> = {}) => ({
   rawPlayer: { PlayerData: { metadata } }
 });
 
-/** The last `emitNet('gphone:client:battery:set', ...)` level, or undefined. */
+/** The last `emitNet('gos:client:battery:set', ...)` level, or undefined. */
 const emittedCharge = (): number | undefined => {
   const call = (globalThis.emitNet as any).mock.calls
-    .filter((c: any[]) => c[0] === 'gphone:client:battery:set')
+    .filter((c: any[]) => c[0] === 'gos:client:battery:set')
     .pop();
   return call?.[2];
 };
@@ -96,7 +96,7 @@ describe('savePlayerBattery', () => {
 
     expect(dbMock.insert).toHaveBeenCalledOnce();
     const [sql, params] = dbMock.insert.mock.calls[0];
-    expect(sql).toContain('INSERT INTO `gphone_battery`');
+    expect(sql).toContain('INSERT INTO `gos_battery`');
     expect(params).toEqual(expect.arrayContaining([CID, 42]));
   });
 
@@ -108,7 +108,7 @@ describe('savePlayerBattery', () => {
 
     expect(dbMock.insert).not.toHaveBeenCalled();
     const [sql, params] = dbMock.update.mock.calls[0];
-    expect(sql).toContain('UPDATE `gphone_battery`');
+    expect(sql).toContain('UPDATE `gos_battery`');
     // Ownership-scoped: the citizenid is in the WHERE clause, not just the lookup.
     expect(sql).toContain('AND `citizenid` = ?');
     expect(params).toEqual([42, 3, CID]);
@@ -175,7 +175,7 @@ describe('sendLoadedBatteryToClient', () => {
 
   it('falls back to framework metadata on the first load, then adopts it', async () => {
     // Players who had a charge before this table existed must not be reset to 100%.
-    const player = mockPlayer({ gphone_battery: 55 });
+    const player = mockPlayer({ gos_battery: 55 });
     bridgeMock.getPlayer.mockReturnValue(player);
     dbMock.query.mockResolvedValue([]);
 
@@ -226,21 +226,19 @@ describe('sendLoadedBatteryToClient', () => {
 });
 
 const notifies = () =>
-  (globalThis.emitNet as any).mock.calls.filter(
-    (c: any[]) => c[0] === 'gphone:client:shell:notify'
-  );
+  (globalThis.emitNet as any).mock.calls.filter((c: any[]) => c[0] === 'gos:client:shell:notify');
 const chargeCalls = () =>
-  (globalThis.emitNet as any).mock.calls.filter((c: any[]) => c[0] === 'gphone:client:battery:set');
+  (globalThis.emitNet as any).mock.calls.filter((c: any[]) => c[0] === 'gos:client:battery:set');
 
-describe('gphonecharge command', () => {
+describe('goscharge command', () => {
   beforeEach(() => {
     bridgeMock.getPlayer.mockReturnValue(mockPlayer());
     (globalThis as any).GetConvar = (_n: string, fallback: string) => fallback;
     (globalThis as any).IsPlayerAceAllowed = () => false;
   });
 
-  it('accepts a server admin holding `command` but not gphone.admin', async () => {
-    // The command ran its own `gphone.admin` check rather than going through isAdmin,
+  it('accepts a server admin holding `command` but not gos.admin', async () => {
+    // The command ran its own `gos.admin` check rather than going through isAdmin,
     // so it refused the very admins the rest of the resource accepts — and said
     // nothing, because at the time the denial notify had no client listener.
     (globalThis as any).IsPlayerAceAllowed = (_s: string, ace: string) => ace === 'command';

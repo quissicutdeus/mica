@@ -1,8 +1,8 @@
 # Security model
 
-What gPhone trusts, who it trusts it from, and why. `AGENTS.md` §2.9 and §7
-carry the rules this document explains; where they disagree, `AGENTS.md` wins
-and this file is wrong.
+What gOS trusts, who it trusts it from, and why. `AGENTS.md` §2.9 and §7 carry
+the rules this document explains; where they disagree, `AGENTS.md` wins and this
+file is wrong.
 
 Written after a pass over the resource's entry points. It is not a checklist — a
 checklist tells you what was done, and what matters here is what is _assumed_,
@@ -43,7 +43,7 @@ table was never in its path. And CEF XSS is not actually confined to the route
 table either: the generic `svc` callback (`shared/rpc.ts`,
 `client/services/Relay.ts`) relays any `{service, action}` pair matching a name
 pattern, not just the entries `shared/routes.ts` lists, to
-`gphone:server:<service>:<action>`. So:
+`gos:server:<service>:<action>`. So:
 
 > **A registered net event is reachable. "The UI does not call it" is not a
 > control.**
@@ -73,7 +73,7 @@ client-only actions that never reach the server. All of them land in
 `ServiceEndpoint.registerEvent`, which applies, in order:
 
 1. **Rate limit** — `allow(source, service, action)`, fixed 60-second window,
-   `gphone_rate_limit` per window. Before the player lookup, so a flood does not
+   `gos_rate_limit` per window. Before the player lookup, so a flood does not
    make the server walk the framework's player table. Cleared on
    `playerDropped`, because FiveM reuses server ids.
 2. **Authentication** — no loaded character, no answer.
@@ -117,7 +117,7 @@ they answer fire-and-forget events with no callback id, so they cannot go
 through it.
 
 This census used to read "six, in `Phone.ts` and `Battery.ts`", and it was wrong
-in both directions: three gphone-named handlers had been added since it was
+in both directions: three gos-named handlers had been added since it was
 written, and the **framework-named** category below had no row at all — which is
 how an inventory that reads exhaustive never mentioned it. Count from the tree,
 not from this page:
@@ -161,20 +161,20 @@ reading its number out of the wrong sentence — which is the failure this whole
 section is about, so it is caught rather than trusted. Reword one of the four
 out of shape and it fails too, saying which.
 
-#### gphone-named — ten, every one guarded
+#### gos-named — ten, every one guarded
 
-| Event                                  | Handler                           |
-| -------------------------------------- | --------------------------------- |
-| `gphone:server:phone:start`            | `server/services/Phone.ts:135`    |
-| `gphone:server:phone:answer`           | `server/services/Phone.ts:215`    |
-| `gphone:server:phone:end`              | `server/services/Phone.ts:233`    |
-| `gphone:server:phone:simulateIncoming` | `server/services/Phone.ts:327`    |
-| `gphone:server:battery:useItem`        | `server/services/Battery.ts:214`  |
-| `gphone:server:admin:setBattery`       | `server/services/Battery.ts:248`  |
-| `gphone:server:battery:load`           | `server/services/Battery.ts:320`  |
-| `gphone:server:contacts:share`         | `server/services/Contacts.ts:88`  |
-| `gphone:server:shell:setOpen`          | `server/lib/PhoneOpenState.ts:32` |
-| `gphone:server:shell:checkPhoneItem`   | `server/lib/phoneItem.ts:144`     |
+| Event                               | Handler                           |
+| ----------------------------------- | --------------------------------- |
+| `gos:server:phone:start`            | `server/services/Phone.ts:135`    |
+| `gos:server:phone:answer`           | `server/services/Phone.ts:215`    |
+| `gos:server:phone:end`              | `server/services/Phone.ts:233`    |
+| `gos:server:phone:simulateIncoming` | `server/services/Phone.ts:327`    |
+| `gos:server:battery:useItem`        | `server/services/Battery.ts:214`  |
+| `gos:server:admin:setBattery`       | `server/services/Battery.ts:248`  |
+| `gos:server:battery:load`           | `server/services/Battery.ts:320`  |
+| `gos:server:contacts:share`         | `server/services/Contacts.ts:88`  |
+| `gos:server:shell:setOpen`          | `server/lib/PhoneOpenState.ts:32` |
+| `gos:server:shell:checkPhoneItem`   | `server/lib/phoneItem.ts:144`     |
 
 `guardNetEvent` in `server/lib/netGuard.ts` is the preamble for all ten,
 applying the same two checks in the same order the endpoint uses: rate limit
@@ -189,7 +189,7 @@ The second is worth naming: `Number(null)` is `0` and `Number('')` is `0`, so a
 client sending nothing at all used to produce a valid "0% battery" rather than a
 refusal.
 
-`gphone:server:admin:setBattery` is gated on `isAdmin(source)`, as are the
+`gos:server:admin:setBattery` is gated on `isAdmin(source)`, as are the
 moderation actions in `Reports.ts`. Privilege is checked against the ace list,
 never against which route was used.
 
@@ -213,16 +213,16 @@ are one-line subscribers that are handed an already-resolved source and are
 never shown a payload to misread. Adding ESX would otherwise have made it a
 fourth listener in each of three files, and the next framework a fifth.
 
-It is easy to miss precisely because it does not look like gPhone's surface: the
-name belongs to the framework, the event is one gPhone listens to rather than
-defines, and `eventNames.test.ts` — which scans for `gphone:` names — has
-nothing to say about it. **A registered net event is reachable no matter whose
-name is on it.**
+It is easy to miss precisely because it does not look like gOS's surface: the
+name belongs to the framework, the event is one gOS listens to rather than
+defines, and `eventNames.test.ts` — which scans for `gos:` names — has nothing
+to say about it. **A registered net event is reachable no matter whose name is
+on it.**
 
 It is `onNet`, not `on`, and that is deliberate rather than sloppy: this name is
 fired **from the client**, so a plain `on()` throws "was not safe for net" the
 moment a player loads. Network-safety is per-resource, so another resource
-declaring it net-safe does nothing for gPhone's own handler.
+declaring it net-safe does nothing for gOS's own handler.
 
 Verified against `qbx_core` 1.24.0 as vendored, because the reasoning here was
 wrong for a long time in a way that happened to reach the right answer. It is
@@ -252,20 +252,20 @@ with `on`, not `onNet`. es_extended raises that name server-side and locally —
 `TriggerServerEvent` — which is precisely the property
 `QBCore:Server:OnPlayerLoaded` lacks and had to be hardened for. Network-safety
 is per-resource, the fact this section already leans on one direction over, so
-registering only `on` leaves the name un-net-safe inside gPhone and a client
+registering only `on` leaves the name un-net-safe inside gOS and a client
 emitting it reaches nothing here. There is no forged target to refuse, so there
 is no `loadedPlayerSource` on that path and the payload is the identity, on the
 same terms as the `QBCore:Server:PlayerLoaded` twin.
 
 Adding an `onNet` twin to it "to be safe" would invert that: it would declare
-the name net-safe for gPhone and manufacture a client-reachable entry point
+the name net-safe for gOS and manufacture a client-reachable entry point
 es_extended does not itself have. §2.9's rule against registering an action the
-app does not use holds for a framework-named event exactly as for a gphone-named
+app does not use holds for a framework-named event exactly as for a gos-named
 one — and this file is the record of what happens when a census organised by
-gPhone's own event names misses a category. **So ESX added a player-loaded
-handler and no entry point, and neither number above moved on its account.** If
-a fork is ever found firing this name from a client, the fix is an `onNet` twin
-routed through `loadedPlayerSource`, never a payload read.
+gOS's own event names misses a category. **So ESX added a player-loaded handler
+and no entry point, and neither number above moved on its account.** If a fork
+is ever found firing this name from a client, the fix is an `onNet` twin routed
+through `loadedPlayerSource`, never a payload read.
 
 **It derives the target from the connection**, via `loadedPlayerSource` in
 `server/lib/shell.ts`. `source` is runtime-set and unforgeable; the payload may
@@ -293,7 +293,7 @@ the character, settings and battery would otherwise never load and nothing would
 say so.
 
 It is guarded, not eliminated, so the census below still counts it — ten in
-total, nine gphone-named and this one.
+total, nine gos-named and this one.
 
 ### 3. Exports
 
@@ -330,8 +330,8 @@ else.
 
 ### Battery charge — moved
 
-The client ran the drain timer and reported over `gphone:server:battery:save`
-every fifteen seconds, so a modified client asserted whatever charge it liked.
+The client ran the drain timer and reported over `gos:server:battery:save` every
+fifteen seconds, so a modified client asserted whatever charge it liked.
 Validating that payload never changed what it was, so the event is **gone** and
 the server ticks the number itself.
 
@@ -359,7 +359,7 @@ An early-out means the ordinary case — no zones, full global signal — reads 
 coordinates at all, and a push happens only when a player's whole-bar value
 changes rather than every poll.
 
-`gphone:server:signal:rules` went with it, so the service has no raw `onNet`
+`gos:server:signal:rules` went with it, so the service has no raw `onNet`
 handler left — one fewer entry point rather than one better guarded.
 
 Done **before** any app reads the level, which was the point: the alternative
@@ -388,7 +388,7 @@ by this list until someone re-weighs it.
   does not overclaim by omission.
 - **A modified client can attempt bank transfers up to the rate limit, bounded
   only by real balance and a resolvable recipient.** `Bank.ts`'s `sendMoney`
-  caps a single transfer at `gphone_bank_transfer_max` (default 50,000) and
+  caps a single transfer at `gos_bank_transfer_max` (default 50,000) and
   resolves the recipient from a phone number server-side, never a client-
   supplied citizenid — `transfer()` then re-verifies the sender's real balance
   against the framework's own money API. None of that is in question; what is
@@ -492,30 +492,30 @@ by this list until someone re-weighs it.
   pass — MICA-202 holds it. `child-src 'none'` also stops Web Workers, and no
   subresource directive admits a plaintext scheme.
 - **Message and DM bodies are readable by whoever operates the server, and that
-  is inherent to what a FiveM resource is, not a defect in gPhone (MICA-70).**
-  A message lands in the operator's own MySQL database as plaintext
+  is inherent to what a FiveM resource is, not a defect in gOS (MICA-70).** A
+  message lands in the operator's own MySQL database as plaintext
   (`server/services/Messages.ts` declares `message` as the table's
   `reportable.previewColumn`, which is what lets an admin reviewing a report
   read the body being reported) and the same operator runs the server console —
   nothing a resource does can keep its own host from reading its own database.
   End-to-end encryption was considered and rejected as the wrong tool here, for
-  three reasons rather than one: gPhone ships the client as part of the
-  resource, so there is no independently distributed client whose code an
-  operator cannot alter — an operator controlling the code that encrypts defeats
-  E2EE's entire guarantee; there is nowhere durable to hold a private key, since
-  CEF's browser storage is per-machine and does not survive a reinstall or a new
-  PC; and E2EE would break the moderation/reports system above, which depends on
-  an admin being able to read a reported message's body to act on it. This
-  round's answer is disclosure and accountability, not secrecy: a privacy notice
-  on first run and from Settings says plainly that message content is readable
-  by the server operator, and an admin reading a message's body is now written
-  to the audit ledger (`server/lib/AuditLogger.ts`) so _that_ it was read is on
-  the record, even though the underlying database access it is auditing never
-  was and structurally cannot be prevented from the resource side. Three things
-  this round explicitly does **not** do, so nobody mistakes this slice for the
-  whole of MICA-70: no encryption at rest — a server owner with database
-  access still reads plaintext regardless of the audit log — no retention limit,
-  so messages are kept indefinitely by default, and no player-facing export or
+  three reasons rather than one: gOS ships the client as part of the resource,
+  so there is no independently distributed client whose code an operator cannot
+  alter — an operator controlling the code that encrypts defeats E2EE's entire
+  guarantee; there is nowhere durable to hold a private key, since CEF's browser
+  storage is per-machine and does not survive a reinstall or a new PC; and E2EE
+  would break the moderation/reports system above, which depends on an admin
+  being able to read a reported message's body to act on it. This round's answer
+  is disclosure and accountability, not secrecy: a privacy notice on first run
+  and from Settings says plainly that message content is readable by the server
+  operator, and an admin reading a message's body is now written to the audit
+  ledger (`server/lib/AuditLogger.ts`) so _that_ it was read is on the record,
+  even though the underlying database access it is auditing never was and
+  structurally cannot be prevented from the resource side. Three things this
+  round explicitly does **not** do, so nobody mistakes this slice for the whole
+  of MICA-70: no encryption at rest — a server owner with database access
+  still reads plaintext regardless of the audit log — no retention limit, so
+  messages are kept indefinitely by default, and no player-facing export or
   delete of their own message history. Those are deferred as separate follow-up
   work.
 

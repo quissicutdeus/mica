@@ -11,7 +11,7 @@
     "lib": ["es2021"],
     "noUnusedLocals": true,
     "paths": {
-      "@gphone/shared/*": ["../shared/*"]
+      "@gos/shared/*": ["../shared/*"]
     }
   },
   "include": ["./**/*", "../shared/**/*"],

@@ -253,8 +253,8 @@ describe('on ESX', () => {
   });
 
   it('degrades to a nameless player when the users table is not what it expects', async () => {
-    // Another resource's table, which gPhone neither creates nor migrates: a missing column
-    // or a missing table is not a gPhone bug and must not become an exception on a path that
+    // Another resource's table, which gOS neither creates nor migrates: a missing column
+    // or a missing table is not a gOS bug and must not become an exception on a path that
     // is only trying to render a name. Returning null is exactly the pre-existing behaviour
     // for an unknown player, so the failure mode is the status quo rather than a crash.
     vi.spyOn(console, 'error').mockImplementation(() => {});

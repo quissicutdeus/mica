@@ -12,7 +12,7 @@
 import '../../host/registerFacets';
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
-import type { Contact } from '@gphone/shared/types';
+import type { Contact } from '@gos/shared/types';
 
 const mocks = vi.hoisted(() => ({
   openApp: vi.fn(),
@@ -29,7 +29,7 @@ const mocks = vi.hoisted(() => ({
   } as Contact
 }));
 
-vi.mock('@gphone/sdk', async (importOriginal) => {
+vi.mock('@gos/sdk', async (importOriginal) => {
   const original = await importOriginal<object>();
   const store = <T>(value: T) => ({
     subscribe: (fn: (v: T) => void) => {

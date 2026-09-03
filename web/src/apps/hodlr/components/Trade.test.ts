@@ -14,7 +14,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, screen } from '@testing-library/svelte';
 
 const action = vi.hoisted(() => ({ errors: [] as string[] }));
-vi.mock('@gphone/sdk', async (importOriginal) => {
+vi.mock('@gos/sdk', async (importOriginal) => {
   const { writable } = await import('svelte/store');
   return {
     ...(await importOriginal<object>()),
@@ -47,7 +47,7 @@ vi.mock('../store', async (importOriginal) => {
 
 import Trade from './Trade.svelte';
 
-import { registerMessages } from '@gphone/sdk';
+import { registerMessages } from '@gos/sdk';
 import en from '../locales/en.json';
 import de from '../locales/de.json';
 

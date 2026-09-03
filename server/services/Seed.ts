@@ -10,7 +10,7 @@ import { isAdmin } from './Admin';
 import { notifyPlayer } from '../lib/shell';
 
 /**
- * `gphoneseed` — populate a dev server with someone to talk to.
+ * `gosseed` — populate a dev server with someone to talk to.
  *
  * A fresh database has one character and no contacts, which makes most of the phone
  * untestable: you cannot start a conversation with a number nobody owns, and the fake
@@ -22,7 +22,7 @@ import { notifyPlayer } from '../lib/shell';
 
 const respond = (source: number, message: string, type: 'success' | 'error' = 'success') => {
   if (source === 0) {
-    console.log(`[gphoneseed] ${message}`);
+    console.log(`[gosseed] ${message}`);
     return;
   }
   notifyPlayer(source, { type, title: 'Seed', message });
@@ -31,7 +31,7 @@ const respond = (source: number, message: string, type: 'success' | 'error' = 's
 const citizenIdFor = (source: number): string | null =>
   FrameworkBridge.getPlayer(source)?.citizenid ?? null;
 
-/** `gphoneseed text <firstname> <message…>` — have a seeded character text you. */
+/** `gosseed text <firstname> <message…>` — have a seeded character text you. */
 const runText = async (source: number, owner: string, args: string[]): Promise<void> => {
   const who = (args[1] ?? '').toLowerCase();
   const body = args.slice(2).join(' ').trim();
@@ -43,26 +43,26 @@ const runText = async (source: number, owner: string, args: string[]): Promise<v
     return;
   }
   if (!body) {
-    respond(source, 'Usage: gphoneseed text <firstname> <message>', 'error');
+    respond(source, 'Usage: gosseed text <firstname> <message>', 'error');
     return;
   }
 
   const rows = await Database.query<{ conversation_id: number }[]>(
     `SELECT p.conversation_id
-       FROM gphone_messages_participants p
-       JOIN gphone_messages_participants q ON q.conversation_id = p.conversation_id
+       FROM gos_messages_participants p
+       JOIN gos_messages_participants q ON q.conversation_id = p.conversation_id
       WHERE p.citizenid = ? AND q.citizenid = ?
       LIMIT 1`,
     [owner, character.citizenid]
   );
   const conversationId = rows?.[0]?.conversation_id;
   if (!conversationId) {
-    respond(source, 'No thread with them yet — run gphoneseed first.', 'error');
+    respond(source, 'No thread with them yet — run gosseed first.', 'error');
     return;
   }
 
   const result = await Database.query<any>(
-    `INSERT INTO gphone_messages (conversation_id, citizenid, message, status)
+    `INSERT INTO gos_messages (conversation_id, citizenid, message, status)
      VALUES (?, ?, ?, 'active')`,
     [conversationId, character.citizenid, body]
   );
@@ -110,7 +110,7 @@ const runSeedCommand = async (source: number, args: string[]): Promise<void> => 
   }
 
   if (sub && sub !== 'add') {
-    respond(source, 'Usage: gphoneseed [add | text <firstname> <message> | clear]', 'error');
+    respond(source, 'Usage: gosseed [add | text <firstname> <message> | clear]', 'error');
     return;
   }
 
@@ -119,10 +119,10 @@ const runSeedCommand = async (source: number, args: string[]): Promise<void> => 
 };
 
 RegisterCommand(
-  'gphoneseed',
+  'gosseed',
   (source: number, args: string[]) => {
     void runSeedCommand(source, args ?? []).catch((error) => {
-      console.error('[gphoneseed] failed:', error);
+      console.error('[gosseed] failed:', error);
       respond(source, 'Seeding failed — see the server console.', 'error');
     });
   },

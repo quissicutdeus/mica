@@ -11,7 +11,7 @@ import {
   type AppPermission,
   type CatalogEntry,
   type Translate
-} from '@gphone/sdk';
+} from '@gos/sdk';
 
 /**
  * What the Store knows about an app before anyone taps it.
@@ -32,11 +32,11 @@ import {
  * Marketplace — sat here as manifests with no code behind them, so the Store's catalog was
  * mostly fiction and installing any of it got a screen apologising for itself. Both are gone.
  * An app appears in the Store by *existing* and shipping `core: false`; the ideas the
- * fictions stood in for are tracked in the gPhone Jira project (`MICA`), which
+ * fictions stood in for are tracked in the gOS Jira project (`MICA`), which
  * cannot pretend to be installable.
  *
  * A function, not a constant, and it has to be. The registry globs every manifest eagerly,
- * each manifest imports `@gphone/sdk`, and the SDK barrel reaches back into the registry —
+ * each manifest imports `@gos/sdk`, and the SDK barrel reaches back into the registry —
  * so anything reading `bundledAddOns` at module scope reads it before that glob has
  * finished and gets `undefined`. Calling it at render time sidesteps the cycle entirely.
  */
@@ -82,7 +82,7 @@ export async function remoteCatalogApps(catalogUrl: string | undefined): Promise
     // The remote catalog is additive — the bundled add-ons above have nothing to do with
     // it. A down server, a bad host, or malformed JSON here must degrade to "no remote
     // apps this boot," not take the Store's own bundled list down with it.
-    console.warn(`gPhone Store: failed to fetch remote catalog from '${catalogUrl}':`, err);
+    console.warn(`gOS Store: failed to fetch remote catalog from '${catalogUrl}':`, err);
     return [];
   }
 }
@@ -94,7 +94,7 @@ export async function remoteCatalogApps(catalogUrl: string | undefined): Promise
  * this build also ships. `CatalogList` keys its `{#each}` on `id`, and Svelte 5 throws
  * `each_key_duplicate` on a repeated key — so the whole Store crashed to `AppCrashed` the
  * moment a catalog named `blabber`, `notes`, `hodlr` or `snek`. That is not an exotic
- * collision: those four are the only add-ons gPhone ships, so they are the obvious ids for
+ * collision: those four are the only add-ons gOS ships, so they are the obvious ids for
  * an operator republishing one with a change of their own, and it is the first thing anyone
  * following `docs/addon-catalog.md` would try. Nothing caught it, because nothing had ever
  * fetched a real catalog (MICA-126).
@@ -114,7 +114,7 @@ export async function mergedCatalogApps(catalogUrl: string | undefined): Promise
   const bundled = catalogApps().filter((app) => {
     if (!remoteIds.has(app.id)) return true;
     console.warn(
-      `gPhone Store: the catalog offers '${app.id}', which this build also ships. ` +
+      `gOS Store: the catalog offers '${app.id}', which this build also ships. ` +
         `Listing the catalog's copy.`
     );
     return false;
@@ -128,7 +128,7 @@ export async function mergedCatalogApps(catalogUrl: string | undefined): Promise
  *
  * It re-derived "does this ship with the phone" from `isRemote` and `author`, which is the
  * same question `defineApp` was answering separately — and the two answers differed. An
- * in-repo app authored by anyone but 'gPhone' or 'Community' was core to the registry
+ * in-repo app authored by anyone but 'gOS' or 'Community' was core to the registry
  * (so `unregisterApp` threw) and an add-on to this file, so the Store rendered an Uninstall
  * button that could only fail. Read `app.core`: one answer, decided once, by the manifest.
  */

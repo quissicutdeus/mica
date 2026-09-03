@@ -60,7 +60,7 @@ const SRC = 5;
  * threw. The reply crosses NUI as `emitNet`, so the assertions read that.
  */
 const call = async (action: string, data: unknown, citizenid = REPORTER) => {
-  const handler = handlers.get(`gphone:server:reports:${action}`);
+  const handler = handlers.get(`gos:server:reports:${action}`);
   if (!handler) throw new Error(`no handler for ${action}`);
 
   bridge.current = citizenid;
@@ -86,23 +86,23 @@ describe('reportable allowlist', () => {
     // `target_table` arrives in a NUI payload and is interpolated into SQL, because
     // MySQL cannot parameterise an identifier. The allowlist is the only thing making
     // that safe.
-    expect(isReportableTable('gphone_messages')).toBe(true);
-    expect(isReportableTable('gphone_media')).toBe(true);
+    expect(isReportableTable('gos_messages')).toBe(true);
+    expect(isReportableTable('gos_media')).toBe(true);
 
     // The social surfaces, which could not be reported at all before. Blabber is public,
     // its DMs let a stranger reach you, and an account carries the handle and bio a player
     // judges somebody by — and Blabber has honoured `moderated` defensively since it
     // shipped, on rows that could never acquire the status.
-    expect(isReportableTable('gphone_blabber')).toBe(true);
-    expect(isReportableTable('gphone_blabber_dms')).toBe(true);
-    expect(isReportableTable('gphone_accounts')).toBe(true);
+    expect(isReportableTable('gos_blabber')).toBe(true);
+    expect(isReportableTable('gos_blabber_dms')).toBe(true);
+    expect(isReportableTable('gos_accounts')).toBe(true);
 
     // And the old name is gone rather than kept "for compatibility". The allowlist is a
     // security boundary — `target_table` is interpolated into SQL because MySQL cannot
     // parameterise an identifier (§2.9) — so a stale entry is a second accepted name for
     // one table, and the migration rewrites existing rows to the new one.
-    expect(isReportableTable('gphone_photos')).toBe(false);
-    for (const bad of ['players', 'gphone_notes', 'gphone_messages; DROP TABLE x', '', null, 7]) {
+    expect(isReportableTable('gos_photos')).toBe(false);
+    for (const bad of ['players', 'gos_notes', 'gos_messages; DROP TABLE x', '', null, 7]) {
       expect(isReportableTable(bad), String(bad)).toBe(false);
     }
   });
@@ -135,7 +135,7 @@ describe('filing a report', () => {
     dbMock.single.mockResolvedValue(targetRow);
 
     const reply = await call('create', {
-      targetTable: 'gphone_messages',
+      targetTable: 'gos_messages',
       targetId: 12,
       category: 'harassment',
       note: 'rude'
@@ -143,8 +143,8 @@ describe('filing a report', () => {
 
     expect(reply).toMatchObject({ ok: true });
     const [sql, params] = dbMock.insert.mock.calls[0];
-    expect(sql).toContain('INSERT INTO `gphone_reports`');
-    expect(params).toEqual(expect.arrayContaining([REPORTER, 'gphone_messages', 12, 'harassment']));
+    expect(sql).toContain('INSERT INTO `gos_reports`');
+    expect(params).toEqual(expect.arrayContaining([REPORTER, 'gos_messages', 12, 'harassment']));
   });
 
   it('refuses a table that is not reportable', async () => {
@@ -155,7 +155,7 @@ describe('filing a report', () => {
 
   it('refuses content that no longer exists', async () => {
     dbMock.single.mockResolvedValue(null);
-    const reply = await call('create', { targetTable: 'gphone_media', targetId: 3 });
+    const reply = await call('create', { targetTable: 'gos_media', targetId: 3 });
     expect(reply).toMatchObject({ error: expect.stringMatching(/no longer exists/i) });
     expect(dbMock.insert).not.toHaveBeenCalled();
   });
@@ -163,7 +163,7 @@ describe('filing a report', () => {
   it('refuses a player reporting their own content', async () => {
     // Otherwise the queue fills with self-reports nobody can act on.
     dbMock.single.mockResolvedValue({ ...targetRow, citizenid: REPORTER });
-    const reply = await call('create', { targetTable: 'gphone_messages', targetId: 12 });
+    const reply = await call('create', { targetTable: 'gos_messages', targetId: 12 });
     expect(reply).toMatchObject({ error: expect.stringMatching(/your own content/i) });
     expect(dbMock.insert).not.toHaveBeenCalled();
   });
@@ -171,7 +171,7 @@ describe('filing a report', () => {
   it('falls back to `other` rather than storing an invented category', async () => {
     dbMock.single.mockResolvedValue(targetRow);
     await call('create', {
-      targetTable: 'gphone_messages',
+      targetTable: 'gos_messages',
       targetId: 12,
       category: '<script>alert(1)</script>'
     });
@@ -180,12 +180,12 @@ describe('filing a report', () => {
 
   it('refuses an oversized note rather than capping it', async () => {
     // It used to `slice(0, 500)`, so an admin read a report whose text stopped mid-sentence
-    // and the reporter was told it had been filed as written. `gphone_reports.note` is a
+    // and the reporter was told it had been filed as written. `gos_reports.note` is a
     // varchar(500) and the contract says so.
     dbMock.single.mockResolvedValue(targetRow);
 
     const reply = await call('create', {
-      targetTable: 'gphone_messages',
+      targetTable: 'gos_messages',
       targetId: 12,
       note: 'x'.repeat(5000)
     });
@@ -196,7 +196,7 @@ describe('filing a report', () => {
 
   it('rejects a non-scalar target id', async () => {
     dbMock.single.mockResolvedValue(targetRow);
-    const reply = await call('create', { targetTable: 'gphone_messages', targetId: [12] });
+    const reply = await call('create', { targetTable: 'gos_messages', targetId: [12] });
     expect(reply).toMatchObject({ error: expect.any(String) });
     expect(dbMock.insert).not.toHaveBeenCalled();
   });
@@ -232,7 +232,7 @@ describe('viewing the queue and history is audited', () => {
   /** Every audit-ledger insert, decoded into the columns `AuditLogger.log` wrote. */
   const auditEntries = () =>
     dbMock.insert.mock.calls
-      .filter(([sql]) => typeof sql === 'string' && sql.includes('gphone_audit_logs'))
+      .filter(([sql]) => typeof sql === 'string' && sql.includes('gos_audit_logs'))
       .map(([, params]) => {
         const [citizenid, action, service, method, targetId, targetTable, details] =
           params as unknown[];
@@ -254,14 +254,14 @@ describe('viewing the queue and history is audited', () => {
         id: 9,
         created_at: '2026-01-01T00:00:00Z',
         resolution: 'pending',
-        target_table: 'gphone_messages',
+        target_table: 'gos_messages',
         target_id: 4
       },
       {
         id: 10,
         created_at: '2026-01-02T00:00:00Z',
         resolution: 'pending',
-        target_table: 'gphone_media',
+        target_table: 'gos_media',
         target_id: 7
       }
     ]);
@@ -275,7 +275,7 @@ describe('viewing the queue and history is audited', () => {
         service: 'reports',
         method: 'queue',
         targetId: 4,
-        targetTable: 'gphone_messages',
+        targetTable: 'gos_messages',
         details: { reportId: 9 }
       },
       {
@@ -284,7 +284,7 @@ describe('viewing the queue and history is audited', () => {
         service: 'reports',
         method: 'queue',
         targetId: 7,
-        targetTable: 'gphone_media',
+        targetTable: 'gos_media',
         details: { reportId: 10 }
       }
     ]);
@@ -301,7 +301,7 @@ describe('viewing the queue and history is audited', () => {
 
   it('logs nothing when a player is refused before ever reaching the content', async () => {
     dbMock.query.mockResolvedValue([
-      { id: 9, target_table: 'gphone_messages', target_id: 4, resolution: 'pending' }
+      { id: 9, target_table: 'gos_messages', target_id: 4, resolution: 'pending' }
     ]);
 
     await call('queue', {});
@@ -316,7 +316,7 @@ describe('viewing the queue and history is audited', () => {
         id: 11,
         updated_at: '2026-01-03T00:00:00Z',
         resolution: 'actioned',
-        target_table: 'gphone_blabber',
+        target_table: 'gos_blabber',
         target_id: 2
       }
     ]);
@@ -330,7 +330,7 @@ describe('viewing the queue and history is audited', () => {
         service: 'reports',
         method: 'history',
         targetId: 2,
-        targetTable: 'gphone_blabber',
+        targetTable: 'gos_blabber',
         details: { reportId: 11 }
       }
     ]);
@@ -341,7 +341,7 @@ describe('resolving is admin-only', () => {
   const pending = {
     id: 9,
     resolution: 'pending',
-    target_table: 'gphone_messages',
+    target_table: 'gos_messages',
     target_id: 4,
     category: 'spam'
   };
@@ -363,15 +363,15 @@ describe('resolving is admin-only', () => {
 
     // Soft status change, not a delete: the audit trail has to keep pointing at a row.
     // The status is bound rather than interpolated, so this reads the parameters.
-    const hide = dbMock.update.mock.calls.find((c: any[]) => /UPDATE `gphone_messages`/.test(c[0]));
+    const hide = dbMock.update.mock.calls.find((c: any[]) => /UPDATE `gos_messages`/.test(c[0]));
     expect(hide, 'the content should be hidden').toBeTruthy();
     expect(hide[0]).not.toMatch(/DELETE/i);
     expect(hide[1]).toEqual(expect.arrayContaining(['moderated']));
 
     const statements = dbMock.update.mock.calls.map((c: any[]) => c[0]);
-    expect(statements.some((s: string) => /UPDATE `gphone_reports`/.test(s))).toBe(true);
+    expect(statements.some((s: string) => /UPDATE `gos_reports`/.test(s))).toBe(true);
 
-    const audited = dbMock.insert.mock.calls.some((c: any[]) => /gphone_audit_logs/.test(c[0]));
+    const audited = dbMock.insert.mock.calls.some((c: any[]) => /gos_audit_logs/.test(c[0]));
     expect(audited, 'moderation must be recorded in the ledger').toBe(true);
   });
 
@@ -383,7 +383,7 @@ describe('resolving is admin-only', () => {
     expect(reply).toMatchObject({ resolution: 'dismissed' });
 
     const statements = dbMock.update.mock.calls.map((c: any[]) => c[0]);
-    expect(statements.some((s: string) => /gphone_messages/.test(s))).toBe(false);
+    expect(statements.some((s: string) => /gos_messages/.test(s))).toBe(false);
   });
 
   it('refuses to resolve the same report twice', async () => {
@@ -412,10 +412,10 @@ describe('resolving is admin-only', () => {
     await call('resolve', { id: 9, action: 'moderate' }, ADMIN);
 
     const claimIndex = dbMock.update.mock.calls.findIndex((c: any[]) =>
-      /UPDATE `gphone_reports`/.test(c[0])
+      /UPDATE `gos_reports`/.test(c[0])
     );
     const moderateIndex = dbMock.update.mock.calls.findIndex((c: any[]) =>
-      /UPDATE `gphone_messages`/.test(c[0])
+      /UPDATE `gos_messages`/.test(c[0])
     );
     expect(claimIndex).toBeGreaterThanOrEqual(0);
     expect(moderateIndex).toBeGreaterThan(claimIndex);
@@ -439,7 +439,7 @@ describe('resolving is admin-only', () => {
 
     expect(reply).toMatchObject({ error: expect.stringMatching(/already resolved/i) });
     const moderated = dbMock.update.mock.calls.some((c: any[]) =>
-      /UPDATE `gphone_messages`/.test(c[0])
+      /UPDATE `gos_messages`/.test(c[0])
     );
     expect(moderated, 'the loser must not take the content down too').toBe(false);
   });
@@ -453,7 +453,7 @@ describe('resolving is admin-only', () => {
     let claimed = false;
     const gate: (() => void)[] = [];
     dbMock.update.mockImplementation(async (sql: string) => {
-      if (!/UPDATE `gphone_reports`/.test(sql)) return true;
+      if (!/UPDATE `gos_reports`/.test(sql)) return true;
       await new Promise<void>((resolve) => gate.push(resolve));
       if (claimed) return false;
       claimed = true;
@@ -464,7 +464,7 @@ describe('resolving is admin-only', () => {
     bridge.current = ADMIN;
     (globalThis as any).source = SRC;
     (globalThis as any).emitNet = vi.fn((...args: any[]) => replies.set(String(args[2]), args[3]));
-    const handler = handlers.get('gphone:server:reports:resolve')!;
+    const handler = handlers.get('gos:server:reports:resolve')!;
     const running = Promise.all([
       handler('cb-first', { id: 9, action: 'moderate' }),
       handler('cb-second', { id: 9, action: 'moderate' })
@@ -482,7 +482,7 @@ describe('resolving is admin-only', () => {
     );
     // One decision, one takedown.
     const takedowns = dbMock.update.mock.calls.filter((c: any[]) =>
-      /UPDATE `gphone_messages`/.test(c[0])
+      /UPDATE `gos_messages`/.test(c[0])
     );
     expect(takedowns).toHaveLength(1);
   });
@@ -493,7 +493,7 @@ describe('resolving is admin-only', () => {
     (globalThis as any).IsPlayerAceAllowed = () => true;
     dbMock.single.mockResolvedValue(pending);
     dbMock.update.mockImplementation(async (sql: string) => {
-      if (/UPDATE `gphone_messages`/.test(sql)) throw new Error('takedown exploded');
+      if (/UPDATE `gos_messages`/.test(sql)) throw new Error('takedown exploded');
       return true;
     });
 
@@ -501,7 +501,7 @@ describe('resolving is admin-only', () => {
 
     expect(reply.error).toBeTruthy();
     const reportWrites = dbMock.update.mock.calls.filter((c: any[]) =>
-      /UPDATE `gphone_reports`/.test(c[0])
+      /UPDATE `gos_reports`/.test(c[0])
     );
     // Claimed, then put back to pending so the queue still shows the work as undone.
     expect(reportWrites).toHaveLength(2);
@@ -522,7 +522,7 @@ describe('history and undo', () => {
   const actioned = {
     id: 9,
     resolution: 'actioned',
-    target_table: 'gphone_messages',
+    target_table: 'gos_messages',
     target_id: 4,
     category: 'spam'
   };
@@ -550,7 +550,7 @@ describe('history and undo', () => {
     expect(reply).toMatchObject({ ok: true, resolution: 'pending' });
 
     const statements = dbMock.update.mock.calls;
-    const restore = statements.find((c: any[]) => /UPDATE `gphone_messages`/.test(c[0]));
+    const restore = statements.find((c: any[]) => /UPDATE `gos_messages`/.test(c[0]));
     expect(restore, 'the content should be restored').toBeTruthy();
     expect(restore[1]).toEqual(expect.arrayContaining(['active']));
   });
@@ -560,7 +560,7 @@ describe('history and undo', () => {
     dbMock.single.mockResolvedValue({ ...actioned, resolution: 'dismissed' });
 
     await call('reopen', { id: 9 }, ADMIN);
-    const touched = dbMock.update.mock.calls.some((c: any[]) => /gphone_messages/.test(c[0]));
+    const touched = dbMock.update.mock.calls.some((c: any[]) => /gos_messages/.test(c[0]));
     expect(touched).toBe(false);
   });
 
@@ -579,7 +579,7 @@ describe('history and undo', () => {
     dbMock.single.mockResolvedValue(actioned);
 
     await call('reopen', { id: 9 }, ADMIN);
-    const audit = dbMock.insert.mock.calls.find((c: any[]) => /gphone_audit_logs/.test(c[0]));
+    const audit = dbMock.insert.mock.calls.find((c: any[]) => /gos_audit_logs/.test(c[0]));
     expect(audit[1]).toEqual(expect.arrayContaining(['unmoderated']));
   });
 });

@@ -2,8 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { createCrudStore, byNewest, useService } from '@gphone/sdk';
-import type { Note } from '@gphone/shared/types';
+import { createCrudStore, byNewest, useService } from '@gos/sdk';
+import type { Note } from '@gos/shared/types';
 
 /**
  * `restore`/`getDeleted` (MICA-75-wiring) are custom actions, not part of
@@ -29,8 +29,8 @@ const service = () => useService('notes');
  *
  * This was a lazily-constructed singleton, because calling `createCrudStore` at the top
  * level ran it whenever anything imported the file — and if that happened while the
- * `@gphone/sdk` barrel was still initialising, the imports came back `undefined`
- * (`byNewest is not a function`). `@gphone/sdk/app` fixed that at the source: a manifest
+ * `@gos/sdk` barrel was still initialising, the imports came back `undefined`
+ * (`byNewest is not a function`). `@gos/sdk/app` fixed that at the source: a manifest
  * imports a leaf, so importing the barrel no longer drags every app in behind it. The
  * indirection is gone because the reason for it is.
  *

@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import type { MediaPreview } from '@gphone/shared/types';
+import type { MediaPreview } from '@gos/shared/types';
 
 /**
  * A row from the "Recently Deleted" read (MICA-75-wiring) — `MediaPreview` plus the one

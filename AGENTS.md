@@ -1,6 +1,7 @@
 # AGENTS.md
 
-**gphone** — an open-source TypeScript phone for FiveM. AGPL-3.0-or-later.
+**gOS** — an open-source TypeScript phone and tablet OS for FiveM.
+AGPL-3.0-or-later.
 
 pnpm workspace, three build targets:
 
@@ -73,11 +74,10 @@ Run `pnpm format` to format code across the workspace.
 
 ### In-game commands
 
-`gphoneschema`, `gphonemedia`, `gphonecharge`, `gphoneseed` and `gphonecall`,
-all admin-gated by `isAdmin` in `server/services/Admin.ts`.
-**`gphoneschema apply` (changes a live schema, §8) and `gphonemedia prune`
-(deletes rows) take the server console and nobody else.** Every command, its
-gating, arguments and dry run:
+`gosschema`, `gosmedia`, `goscharge`, `gosseed` and `goscall`, all admin-gated
+by `isAdmin` in `server/services/Admin.ts`. **`gosschema apply` (changes a live
+schema, §8) and `gosmedia prune` (deletes rows) take the server console and
+nobody else.** Every command, its gating, arguments and dry run:
 [`docs/in-game-commands.md`](docs/in-game-commands.md).
 
 ### The two Vitest projects
@@ -151,8 +151,8 @@ not work around it.
 6. **Do not change** TypeScript versions in either package, Vite `build.outDir`,
    or `scripts/generate-barrels.js` output paths without asking.
 7. **SDK First.** Everything in `web/src/apps/`, and every external add-on,
-   consumes the OS strictly through `@gphone/sdk` — the data and OS-service
-   hooks, the UI primitives in `sdk/ui/`, and the four an app is built out of:
+   consumes the OS strictly through `@gos/sdk` — the data and OS-service hooks,
+   the UI primitives in `sdk/ui/`, and the four an app is built out of:
    `useAppLevels`, `useAppAction`, `useDeepLink`, `onAppForeground`. The
    exhaustive list is the SDK's own exports;
    [`docs/writing-an-app.md`](docs/writing-an-app.md) is the walkthrough. Three
@@ -161,7 +161,7 @@ not work around it.
    - **Relative imports out of an app are prohibited** — into `shell/`,
      `services/`, `nui/`, `lib/` or `sdk/` by path. `sdk/boundary.test.ts`
      enforces it.
-   - **`useNuiBridge` is on `@gphone/sdk/core`, and only a `core: true` app may
+   - **`useNuiBridge` is on `@gos/sdk/core`, and only a `core: true` app may
      import it.** It is the raw transport, and `boundary.test.ts` refuses it to
      add-ons. A `core: false` bundle has no NUI at all: it runs in a sandboxed
      iframe whose only route to the shell is `postMessage` (§7).
@@ -189,11 +189,11 @@ not work around it.
    enforceable half.
 
    **A registered net event is reachable**, regardless of whether any NUI route
-   points at it — a modified client emits `gphone:server:<service>:<action>`
+   points at it — a modified client emits `gos:server:<service>:<action>`
    directly. Do not register a generic action the app does not use —
    `server/__tests__/reachability.test.ts` keeps that honest.
 
-   Every field and row id in a `gphone:server:*` payload is attacker-controlled
+   Every field and row id in a `gos:server:*` payload is attacker-controlled
    (CEF XSS can `fetch` any registered callback, §7), so a NUI request is not
    proof of intent. Enforced in `server/lib/Repository.ts`:
 
@@ -506,16 +506,16 @@ cross-references all of them, both ways.
 **Response events are derived, never written by hand** — `shared/rpc.ts` owns
 them, and a hand-written reply name times out after 15s with no error.
 
-**Every net event is `gphone:<side>:<app>:<action>`, with no exceptions**, and
+**Every net event is `gos:<side>:<app>:<action>`, with no exceptions**, and
 `server/__tests__/eventNames.test.ts` fails on anything else — including an
 `<app>` segment that is neither a declared app nor one of the two non-app
 scopes, **`shell`** and **`admin`**. NUI _message_ actions (`setVisible`,
-`receiveMail`) are a **separate namespace** with no `gphone:` prefix.
+`receiveMail`) are a **separate namespace** with no `gos:` prefix.
 
 A **server push** mirrors this across four files and fails just as silently;
 `server/__tests__/appEventContract.test.ts` catches that. It is one literal net
-event, `gphone:client:shell:appEvent`, dispatched by app id from the envelope.
-**A push must never be allowed to fail the write that occasioned it**, and
+event, `gos:client:shell:appEvent`, dispatched by app id from the envelope. **A
+push must never be allowed to fail the write that occasioned it**, and
 `onAppForeground` (§11) is still required — a push does not excuse it.
 
 **Load the `nui-endpoint` skill before adding or changing any of this.** It
@@ -526,15 +526,15 @@ deduplicate-by-owner rule.
 ### Schema changes
 
 **A schema change is written once, in the declaration**, then
-`pnpm generate:sql` regenerates `gphone.sql` — committed, imported by hand,
-**never hand-edited**. A rename, retype, widened enum or drop additionally needs
-a **versioned migration** in `server/migrations/`, forward-only, after which
+`pnpm generate:sql` regenerates `gos.sql` — committed, imported by hand, **never
+hand-edited**. A rename, retype, widened enum or drop additionally needs a
+**versioned migration** in `server/migrations/`, forward-only, after which
 **re-run `pnpm generate:sql`**. `scripts/framework-schema.sql` is the
 hand-written audit ledger and has no `defineService` behind it.
 
-**Load the `gphone-service` skill before any of this.** It and
+**Load the `gos-service` skill before any of this.** It and
 [`docs/schema-and-services.md`](docs/schema-and-services.md) carry the migration
-file convention, `gphoneschema apply`'s migrations-then-additive ordering (a
+file convention, `gosschema apply`'s migrations-then-additive ordering (a
 correctness requirement, not a preference), and the worked example.
 
 ### Testing
@@ -635,7 +635,7 @@ the CRUD net events, and the DDL. Its `id` matches the app manifest id and the
 - **Never read another resource's tables** — go through that resource's exports,
   behind a `*Bridge` in `server/lib/`.
 
-The `gphone-service` skill is the working reference and
+The `gos-service` skill is the working reference and
 [`docs/schema-and-services.md`](docs/schema-and-services.md) is the
 field-by-field authority. Read the doc before declaring a `read: 'public'` or
 `access.membership` service for the first time.

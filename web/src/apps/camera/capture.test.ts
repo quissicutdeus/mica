@@ -4,7 +4,7 @@
 
 // @vitest-environment jsdom
 //
-// `capture.ts` reaches the shared image encoder through `@gphone/sdk` — an app may not
+// `capture.ts` reaches the shared image encoder through `@gos/sdk` — an app may not
 // import `lib/` by path (§2.7) — and the SDK barrel touches `window` at import time. The
 // node default is deliberate and cheaper (see `web/vite.config.ts`); this is the opt-in
 // that config describes, not a workaround. The thumbnail maths itself is tested in

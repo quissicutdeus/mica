@@ -5,8 +5,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { formatRelativeTime, useLocale } from '@gphone/sdk';
-  import type { Report } from '@gphone/shared/types';
+  import { formatRelativeTime, useLocale } from '@gos/sdk';
+  import type { Report } from '@gos/shared/types';
   import { CATEGORY_KEYS } from './labels';
   import ReportPreview from './ReportPreview.svelte';
 

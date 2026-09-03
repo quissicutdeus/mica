@@ -4,7 +4,7 @@
 
 import { SchemaRepository } from '../lib/defineService';
 import { Database } from '../lib/Database';
-import { Listing, MediaPreview } from '@gphone/shared/types';
+import { Listing, MediaPreview } from '@gos/shared/types';
 
 const distinctIds = (ids: number[]): number[] => [...new Set(ids)];
 
@@ -27,8 +27,8 @@ export class MarketplaceRepository extends SchemaRepository<Listing> {
       `SELECT a.id, a.listing_id,
               m.id AS media_id, m.kind, m.data, m.url, m.thumbnail,
               m.mime_type, m.duration_ms, m.alt_text
-         FROM \`gphone_marketplace_attachments\` a
-         JOIN \`gphone_media\` m ON a.media_id = m.id
+         FROM \`gos_marketplace_attachments\` a
+         JOIN \`gos_media\` m ON a.media_id = m.id
         WHERE a.listing_id IN (${placeholders})
         ORDER BY a.id ASC`,
       ids

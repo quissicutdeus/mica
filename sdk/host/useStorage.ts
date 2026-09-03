@@ -27,7 +27,7 @@ export function useStorage(appId: string) {
  *
  * The Store used to show a made-up number here — `(id.length + name.length +
  * permissions.length) * 85`, which meant declaring one more permission grew the app's
- * reported footprint. Everything an app writes is under `gphone:<appId>:` already, so the
+ * reported footprint. Everything an app writes is under `gos:<appId>:` already, so the
  * real answer is a sum away.
  *
  * Keys are counted alongside values: both occupy the quota, and an app storing many tiny
@@ -42,7 +42,7 @@ export function appStorageBytes(appId: string): number {
  *
  * Uninstalling used to drop the component and the saved bundle URL and leave the app's
  * keys behind, so reinstalling resurrected the old state — and an app removed for good
- * kept its storage for the life of the browser profile. The `gphone:<appId>:`
+ * kept its storage for the life of the browser profile. The `gos:<appId>:`
  * namespace was already there; nothing swept it.
  *
  * Live persisted stores are reset alongside the keys, so a `usePersisted` value in memory

@@ -14,9 +14,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     Skeleton,
     formatDate,
     useLocale
-  } from '@gphone/sdk';
+  } from '@gos/sdk';
   import { useBlabber } from '../store';
-  import type { Account } from '@gphone/shared/types';
+  import type { Account } from '@gos/shared/types';
   import DmComposer from './DmComposer.svelte';
   import BlabBody from './BlabBody.svelte';
 
@@ -243,7 +243,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 {#if reportingDm !== null}
   <ReportDialog
-    targetTable="gphone_blabber_dms"
+    targetTable="gos_blabber_dms"
     targetId={reportingDm}
     appId="blabber"
     onclose={() => (reportingDm = null)}

@@ -21,7 +21,7 @@ import path from 'path';
  * for real, with a token; `pnpm lint:actions` is the same run by hand.
  */
 const workflowDir = (uses: string): string => {
-  const dir = mkdtempSync(path.join(tmpdir(), 'gphone-actions-'));
+  const dir = mkdtempSync(path.join(tmpdir(), 'gos-actions-'));
   writeFileSync(path.join(dir, 'ci.yml'), `jobs:\n  x:\n    steps:\n      - uses: ${uses}\n`);
   return dir;
 };

@@ -2,11 +2,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import type { Contact } from '@gphone/shared/types';
+import type { Contact } from '@gos/shared/types';
 import type { AppManifest } from '../../../../sdk/manifest';
-import type { UIConversation } from '@gphone/sdk';
+import type { UIConversation } from '@gos/sdk';
 import { manifestVisible, type CapabilitySet } from '../../lib/phone/appVisibility';
-import { DEFAULT_DEVICE, type DeviceId } from '@gphone/shared/devices';
+import { DEFAULT_DEVICE, type DeviceId } from '@gos/shared/devices';
 
 /**
  * How many hits each group contributes at most.

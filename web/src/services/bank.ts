@@ -3,8 +3,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { call } from '../nui/call';
-import { bankContract } from '@gphone/shared/contracts/bank';
-import type { SendMoneyInput, SendMoneyOutcome } from '@gphone/sdk';
+import { bankContract } from '@gos/shared/contracts/bank';
+import type { SendMoneyInput, SendMoneyOutcome } from '@gos/sdk';
 
 /**
  * Sending money, kept out of `services/account.ts` on purpose.

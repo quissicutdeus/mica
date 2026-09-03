@@ -7,7 +7,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script lang="ts">
   import { t } from './messages';
   import { onMount, type Snippet } from 'svelte';
-  import { fly } from '@gphone/sdk';
+  import { fly } from '@gos/sdk';
   import { isBatteryDead } from './state/charge';
   import { stepVolume } from './state/audio';
   import { enableDragScroll } from '../lib/phone/dragScroll';

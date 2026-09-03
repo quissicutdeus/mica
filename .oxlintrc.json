@@ -54,5 +54,5 @@
   // in the commit that changed this line, and 77 warnings from two rules now turned off above
   // with the reasoning beside them.
   //
-  "ignorePatterns": ["**/node_modules/**", "**/dist/**", "gphone.sql", "fxmanifest.lua"]
+  "ignorePatterns": ["**/node_modules/**", "**/dist/**", "gos.sql", "fxmanifest.lua"]
 }

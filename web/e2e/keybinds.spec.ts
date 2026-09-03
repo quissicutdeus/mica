@@ -94,7 +94,7 @@ test.describe('Keyboard Shortcuts E2E', () => {
     // Rebind Back onto a plain letter first, so the press is unambiguously one the
     // dispatcher would otherwise claim.
     await page.evaluate(() => {
-      localStorage.setItem('gphone:settings:keybinds', JSON.stringify({ back: 'q' }));
+      localStorage.setItem('gos:settings:keybinds', JSON.stringify({ back: 'q' }));
     });
     await page.reload();
 

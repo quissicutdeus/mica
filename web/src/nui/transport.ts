@@ -2,9 +2,9 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { hostRuntime } from '@gphone/sdk';
+import { hostRuntime } from '@gos/sdk';
 import { MockRegistry } from './mocks/registry';
-import { GENERIC_SERVICE_ACTION } from '@gphone/shared/rpc';
+import { GENERIC_SERVICE_ACTION } from '@gos/shared/rpc';
 
 export interface ITransportAdapter {
   send<T = unknown>(event: string, data?: unknown): Promise<T>;
@@ -15,7 +15,7 @@ export class NuiTransportAdapter implements ITransportAdapter {
   private resourceName: string;
 
   constructor() {
-    this.resourceName = window.GetParentResourceName ? window.GetParentResourceName() : 'gphone';
+    this.resourceName = window.GetParentResourceName ? window.GetParentResourceName() : 'gos';
   }
 
   async send<T = unknown>(event: string, data?: unknown): Promise<T> {

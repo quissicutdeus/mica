@@ -6,7 +6,7 @@
     useAppLevels,
     onAppForeground,
     type AppProps
-  } from '@gphone/sdk';
+  } from '@gos/sdk';
 
   /**
    * The annotation form, not `$props<AppProps>()` — the generic form only accepts an inline
@@ -77,7 +77,7 @@
     </div>
   {:else}
     <div class="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 p-4">
-      <EmptyState title="Hello from an add-on" description="Built outside the gPhone repo." />
+      <EmptyState title="Hello from an add-on" description="Built outside the gOS repo." />
       <p class="text-body-large text-on-surface">Tapped {taps} times</p>
       <Button onclick={() => (taps += 1)}>Tap me</Button>
       <Button variant="secondary" onclick={() => (detail = 'Detail')}>Open a level</Button>

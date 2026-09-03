@@ -9,13 +9,13 @@
  * correctly in any browser you test it in, and wrong in game, with nothing in any test
  * suite able to see the difference.
  *
- * gPhone's own add-on build gets this by accident — `web/postcss.config.js` sits at the
+ * gOS's own add-on build gets this by accident — `web/postcss.config.js` sits at the
  * root Vite discovers from, so it applies to the shell build and the add-on build alike.
  * Out of tree there is nothing to inherit it from, so it is here explicitly.
  *
  * `oklab-function` with `preserve: true` covers the same ground for `oklab()`/`oklch()`,
  * which reached Chromium at 111. `autoprefixer` is largely redundant against a target this
- * old but is harmless; gPhone keeps it for the same reason.
+ * old but is harmless; gOS keeps it for the same reason.
  */
 export default {
   plugins: {

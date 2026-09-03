@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import type { Account } from '@gphone/shared/types';
+import type { Account } from '@gos/shared/types';
 
 /**
  * The social-identity nouns `Facets['accounts']` is written in terms of. MICA-172.

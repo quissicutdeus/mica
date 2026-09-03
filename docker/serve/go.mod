@@ -1,3 +1,3 @@
-module gphone-serve
+module gos-serve
 
 go 1.22

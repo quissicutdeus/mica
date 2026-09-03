@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect } from 'vitest';
-import type { NotificationItem } from '@gphone/shared/types';
+import type { NotificationItem } from '@gos/shared/types';
 import { groupNotificationsByConversation } from './notificationGrouping';
 
 function makeItem(overrides: Partial<NotificationItem> & { id: number }): NotificationItem {

@@ -13,9 +13,9 @@ import {
   accountsOwnedBy,
   activeAccount
 } from './Accounts';
-import { BlabberDm } from '@gphone/shared/types';
-import { blabberDmsContract } from '@gphone/shared/contracts/blabber_dms';
-import { buildDeepLink } from '@gphone/shared/deepLink';
+import { BlabberDm } from '@gos/shared/types';
+import { blabberDmsContract } from '@gos/shared/contracts/blabber_dms';
+import { buildDeepLink } from '@gos/shared/deepLink';
 
 const APP = 'blabber';
 
@@ -40,7 +40,7 @@ export const blabberDms = defineService<BlabberDm, typeof blabberDmsContract>({
   id: 'blabber_dms',
   reportable: { label: 'Direct message', previewColumn: 'body' },
   reactable: { label: 'Direct message' },
-  table: 'gphone_blabber_dms',
+  table: 'gos_blabber_dms',
   access: { read: 'owner', write: 'owner' },
   statuses: ['active', 'deleted', 'moderated'],
   schema: {
@@ -48,13 +48,13 @@ export const blabberDms = defineService<BlabberDm, typeof blabberDmsContract>({
       type: 'int',
       notNull: true,
       clientWritable: false,
-      references: { table: 'gphone_accounts', column: 'id' }
+      references: { table: 'gos_accounts', column: 'id' }
     },
     to_account: {
       type: 'int',
       notNull: true,
       clientWritable: false,
-      references: { table: 'gphone_accounts', column: 'id' }
+      references: { table: 'gos_accounts', column: 'id' }
     },
     /** Longer than a Blab: a DM is a conversation, not a broadcast. */
     body: { type: 'string', length: 500, notNull: true },
@@ -119,7 +119,7 @@ app.registerEvent('get', async (source, cbId, data, citizenid) => {
   params.push(limit + 1);
 
   const rows = await Database.query<BlabberDm[]>(
-    `SELECT * FROM \`gphone_blabber_dms\`
+    `SELECT * FROM \`gos_blabber_dms\`
      WHERE ((\`from_account\` = ? AND \`to_account\` = ?)
         OR (\`from_account\` = ? AND \`to_account\` = ?))
        AND \`status\` = 'active'${cursorClause}
@@ -153,7 +153,7 @@ app.registerEvent('threads', async (source, cbId, data, citizenid) => {
   const heads = await Database.query<{ peer: number; last_id: number }[]>(
     `SELECT IF(\`from_account\` IN (${list}), \`to_account\`, \`from_account\`) AS peer,
             MAX(\`id\`) AS last_id
-     FROM \`gphone_blabber_dms\`
+     FROM \`gos_blabber_dms\`
      WHERE (\`from_account\` IN (${list}) OR \`to_account\` IN (${list}))
        AND \`status\` = 'active'
      GROUP BY peer
@@ -165,7 +165,7 @@ app.registerEvent('threads', async (source, cbId, data, citizenid) => {
 
   const lastIds = heads.map((row) => Number(row.last_id));
   const messages = await Database.query<BlabberDm[]>(
-    `SELECT * FROM \`gphone_blabber_dms\` WHERE \`id\` IN (${lastIds.map(() => '?').join(', ')})`,
+    `SELECT * FROM \`gos_blabber_dms\` WHERE \`id\` IN (${lastIds.map(() => '?').join(', ')})`,
     lastIds
   );
 
@@ -175,7 +175,7 @@ app.registerEvent('threads', async (source, cbId, data, citizenid) => {
   const peers = await accountsByIds(peerIds);
 
   const unread = await Database.query<{ from_account: number; total: number }[]>(
-    `SELECT \`from_account\`, COUNT(*) AS total FROM \`gphone_blabber_dms\`
+    `SELECT \`from_account\`, COUNT(*) AS total FROM \`gos_blabber_dms\`
      WHERE \`to_account\` IN (${list}) AND \`read_at\` IS NULL AND \`status\` = 'active'
      GROUP BY \`from_account\``,
     accounts
@@ -297,7 +297,7 @@ app.registerEvent('read', async (source, cbId, data, citizenid) => {
 
   const peer = data.peer_account_id;
   return await Database.update(
-    `UPDATE \`gphone_blabber_dms\` SET \`read_at\` = CURRENT_TIMESTAMP
+    `UPDATE \`gos_blabber_dms\` SET \`read_at\` = CURRENT_TIMESTAMP
      WHERE \`to_account\` = ? AND \`from_account\` = ? AND \`read_at\` IS NULL`,
     [mine.id, peer]
   );

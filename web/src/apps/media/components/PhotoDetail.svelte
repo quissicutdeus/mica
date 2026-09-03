@@ -14,8 +14,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     fade,
     useLocale,
     useMedia
-  } from '@gphone/sdk';
-  import type { MediaItem } from '@gphone/shared/types';
+  } from '@gos/sdk';
+  import type { MediaItem } from '@gos/shared/types';
 
   const { t } = useLocale();
 

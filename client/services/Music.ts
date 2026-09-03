@@ -11,8 +11,8 @@ import {
   MUSIC_BROADCAST_NET_EVENT,
   MUSIC_BROADCAST_VOLUMES_NUI_ACTION,
   MUSIC_BROADCASTS_NUI_ACTION
-} from '@gphone/shared/musicBroadcast';
-import { isPlaylistId, isVideoId } from '@gphone/shared/youtube';
+} from '@gos/shared/musicBroadcast';
+import { isPlaylistId, isVideoId } from '@gos/shared/youtube';
 
 /**
  * MICA-111 phase 2, the client hop.

@@ -23,12 +23,12 @@ vi.mock('../lib/FrameworkBridge', () => ({
 import { serverLocale, sourceUrl } from '../services/Source';
 import { __resetRateLimits } from '../lib/rateLimit';
 
-const UPSTREAM = 'https://github.com/quissicutdeus/gPhone';
+const UPSTREAM = 'https://github.com/quissicutdeus/gos';
 
-/** Answer `gphone_source_url` with `value`, or fall through to the default. */
+/** Answer `gos_source_url` with `value`, or fall through to the default. */
 const withConvar = (value: string | null) => {
   (globalThis as any).GetConvar = (name: string, fallback: string) =>
-    name === 'gphone_source_url' && value !== null ? value : fallback;
+    name === 'gos_source_url' && value !== null ? value : fallback;
 };
 
 /**
@@ -56,8 +56,8 @@ describe('the source address a server reports', () => {
   });
 
   it("answers the operator's own repository when they set one", () => {
-    withConvar('https://git.example.com/rp/gphone-fork');
-    expect(sourceUrl()).toBe('https://git.example.com/rp/gphone-fork');
+    withConvar('https://git.example.com/rp/gos-fork');
+    expect(sourceUrl()).toBe('https://git.example.com/rp/gos-fork');
   });
 
   /**
@@ -84,13 +84,13 @@ describe('the source address a server reports', () => {
   });
 
   it('trims surrounding whitespace rather than rejecting the value for it', () => {
-    withConvar('  https://git.example.com/rp/gphone-fork  ');
-    expect(sourceUrl()).toBe('https://git.example.com/rp/gphone-fork');
+    withConvar('  https://git.example.com/rp/gos-fork  ');
+    expect(sourceUrl()).toBe('https://git.example.com/rp/gos-fork');
   });
 
   it('answers over NUI without reading anything from the payload', async () => {
-    withConvar('https://git.example.com/rp/gphone-fork');
-    const handler = handlers.get('gphone:server:shell:sourceUrl');
+    withConvar('https://git.example.com/rp/gos-fork');
+    const handler = handlers.get('gos:server:shell:sourceUrl');
     expect(handler).toBeDefined();
 
     (globalThis as any).source = 5;
@@ -98,7 +98,7 @@ describe('the source address a server reports', () => {
     await handler!('cb-1', undefined);
 
     expect((globalThis.emitNet as any).mock.calls[0]?.[3]).toEqual({
-      url: 'https://git.example.com/rp/gphone-fork'
+      url: 'https://git.example.com/rp/gos-fork'
     });
 
     // A steered payload changes nothing because it never arrives: the answer is a property
@@ -120,7 +120,7 @@ describe('the source address a server reports', () => {
 describe('the default locale a server reports', () => {
   const withLocale = (value: string | null) => {
     (globalThis as any).GetConvar = (name: string, fallback: string) =>
-      name === 'gphone_locale' && value !== null ? value : fallback;
+      name === 'gos_locale' && value !== null ? value : fallback;
   };
 
   beforeEach(() => {
@@ -143,12 +143,12 @@ describe('the default locale a server reports', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     withLocale('German please');
     expect(serverLocale()).toBe('');
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('gphone_locale'));
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('gos_locale'));
   });
 
   it('answers over NUI without reading anything from the payload', async () => {
     withLocale('fr');
-    const handler = handlers.get('gphone:server:shell:locale');
+    const handler = handlers.get('gos:server:shell:locale');
     expect(handler).toBeDefined();
     (globalThis as any).source = 5;
     (globalThis as any).emitNet = vi.fn();

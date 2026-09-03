@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { fly } from '@gphone/sdk';
+  import { fly } from '@gos/sdk';
   import { soundVolumePercent, soundMuted, volumeHudVisible } from './state/audio';
 </script>
 

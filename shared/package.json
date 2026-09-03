@@ -1,5 +1,5 @@
 {
-  "name": "@gphone/shared",
+  "name": "@gos/shared",
   "private": true,
   "version": "1.0.0",
   "//files": "MICA-125. Same rule as the SDK: source in, suites out.",
@@ -10,7 +10,7 @@
   ],
   "license": "AGPL-3.0-or-later",
   "type": "module",
-  "//": "MICA-186. The wire vocabulary every target keys on: types, routes, rpc, keybinds, richText. It was a bare directory reached through a tsconfig path alias, which is fine while everything builds from this tree and fails the moment @gphone/sdk ships as a tarball -- sdk/types.ts re-exports from here and is `export *`'d from both barrels, so these names are inside the SDK's published type surface, not an implementation detail. Consumed as source, exactly like @gphone/sdk: no build step, no `main`, and the wildcard `exports` maps @gphone/shared/<name> onto <name>.ts.",
+  "//": "MICA-186. The wire vocabulary every target keys on: types, routes, rpc, keybinds, richText. It was a bare directory reached through a tsconfig path alias, which is fine while everything builds from this tree and fails the moment @gos/sdk ships as a tarball -- sdk/types.ts re-exports from here and is `export *`'d from both barrels, so these names are inside the SDK's published type surface, not an implementation detail. Consumed as source, exactly like @gos/sdk: no build step, no `main`, and the wildcard `exports` maps @gos/shared/<name> onto <name>.ts.",
   "exports": {
     "./*": "./*.ts"
   }

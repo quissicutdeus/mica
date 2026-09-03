@@ -93,10 +93,10 @@ const nonTestTs = tsFiles.filter((f) => !f.endsWith('.test.ts'));
 // Only the specifier forms this package actually uses. A bare package name is external and
 // can never reach a `.svelte` in this tree, so it terminates the walk.
 const PATHS = {
-  '@gphone/sdk': path.join(SDK, 'index.ts'),
-  '@gphone/sdk/app': path.join(SDK, 'app.ts'),
-  '@gphone/sdk/core': path.join(SDK, 'core.ts'),
-  '@gphone/sdk/testing': path.join(ROOT, 'web/src/testing.ts')
+  '@gos/sdk': path.join(SDK, 'index.ts'),
+  '@gos/sdk/app': path.join(SDK, 'app.ts'),
+  '@gos/sdk/core': path.join(SDK, 'core.ts'),
+  '@gos/sdk/testing': path.join(ROOT, 'web/src/testing.ts')
 };
 const onDisk = new Set(all);
 const exists = (f) => onDisk.has(f) || fs.existsSync(f);
@@ -113,8 +113,8 @@ function candidates(base) {
 }
 function resolveSpecifier(spec, from) {
   if (PATHS[spec]) return PATHS[spec];
-  const base = spec.startsWith('@gphone/shared/')
-    ? path.join(ROOT, 'shared', spec.slice('@gphone/shared/'.length))
+  const base = spec.startsWith('@gos/shared/')
+    ? path.join(ROOT, 'shared', spec.slice('@gos/shared/'.length))
     : spec.startsWith('.')
       ? path.resolve(path.dirname(from), spec)
       : null;
@@ -148,7 +148,7 @@ function reachesSvelte(file, stack = []) {
   for (const spec of importsOf(file)) {
     const target = resolveSpecifier(spec, file);
     if (target === null) {
-      if (/^(\.|@shared\/|@gphone\/)/.test(spec)) unresolved.push(`${rel(file)} -> ${spec}`);
+      if (/^(\.|@shared\/|@gos\/)/.test(spec)) unresolved.push(`${rel(file)} -> ${spec}`);
       continue;
     }
     if (target.endsWith('.css')) continue;
@@ -230,7 +230,7 @@ for (const f of [...tsFiles, ...svelteFiles].sort()) {
 }
 
 // 3. Ambient declarations are shared, not partitioned: both programs need
-//    `__MICA_VERSION__` and the `Window` augmentation.
+//    `__GOS_VERSION__` and the `Window` augmentation.
 for (const d of dtsFiles) {
   if (!tscSet.has(d)) problems.push(`tsconfig.tsc.json: missing ambient ${rel(d)}`);
   if (!svelteSet.has(d)) problems.push(`sdk/tsconfig.json: missing ambient ${rel(d)}`);

@@ -5,8 +5,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { Avatar, formatDate, MediaThumb, ReportDialog, useLocale } from '@gphone/sdk';
-  import type { Blab, BlabEngagement } from '@gphone/shared/types';
+  import { Avatar, formatDate, MediaThumb, ReportDialog, useLocale } from '@gos/sdk';
+  import type { Blab, BlabEngagement } from '@gos/shared/types';
   import BlabBody from './BlabBody.svelte';
   import BlabActions from './BlabActions.svelte';
 
@@ -258,7 +258,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 {#if reporting}
   <ReportDialog
-    targetTable="gphone_blabber"
+    targetTable="gos_blabber"
     targetId={blab.id}
     appId="blabber"
     onclose={() => (reporting = false)}

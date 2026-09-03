@@ -5,7 +5,7 @@
 import { PlayerFacingError } from '../lib/errors';
 import { defineService, SchemaRepository, type ResolvedService } from '../lib/defineService';
 import { Database } from '../lib/Database';
-import { reportsContract } from '@gphone/shared/contracts/reports';
+import { reportsContract } from '@gos/shared/contracts/reports';
 import {
   MAX_NOTE_LENGTH,
   REPORT_CATEGORIES,
@@ -18,7 +18,7 @@ import {
 } from '../lib/moderation';
 import { AuditLogger } from '../lib/AuditLogger';
 import { isAdmin } from './Admin';
-import type { Report, ReportResolution } from '@gphone/shared/types';
+import type { Report, ReportResolution } from '@gos/shared/types';
 
 /**
  * Resolving is a privileged write: the row's `citizenid` is the reporter, so the
@@ -85,7 +85,7 @@ export const reports = defineService<Report, typeof reportsContract>({
   id: 'reports',
   access: { read: 'owner', write: 'server' },
   schema: {
-    // Not a foreign key, matching gphone_audit_logs: a report has to outlive the
+    // Not a foreign key, matching gos_audit_logs: a report has to outlive the
     // content it describes, which is the entire point once that content is moderated.
     target_table: { type: 'string', length: 64, notNull: true },
     target_id: { type: 'int', notNull: true },
@@ -217,7 +217,7 @@ const logContentViewed = async (
  *
  * Gated here rather than by hiding the Administration app. Hiding the app hides the
  * button, not the capability — a NUI request is not proof of intent (AGENTS.md §2.9),
- * and `gphonecharge` already shipped once with its gate in the wrong place.
+ * and `goscharge` already shipped once with its gate in the wrong place.
  */
 app.registerEvent('queue', async (source, cbId, data, citizenid) => {
   if (!isAdmin(source))

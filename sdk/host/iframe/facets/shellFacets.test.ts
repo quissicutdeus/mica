@@ -77,8 +77,8 @@ import { persisted } from './persisted';
 import { timer } from './timer';
 import { onAppForeground, lifecycle } from './lifecycle';
 
-/** A namespaced storage key. Built, not quoted: a `gphone:` literal reads as a net event to `server/__tests__/eventNames.test.ts`. */
-const storageKey = (app: string, key: string) => `gphone:${app}:${key}`;
+/** A namespaced storage key. Built, not quoted: a `gos:` literal reads as a net event to `server/__tests__/eventNames.test.ts`. */
+const storageKey = (app: string, key: string) => `gos:${app}:${key}`;
 
 const keys = (o: object) => Object.keys(o).sort();
 

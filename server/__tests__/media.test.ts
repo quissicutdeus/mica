@@ -44,13 +44,13 @@ vi.mock('../lib/proximity', () => ({
 
 import '../services/Media';
 
-const CREATE_EVENT = 'gphone:server:media:create';
-const DROP_EVENT = 'gphone:server:media:drop';
-const SHARE_LOCATION_EVENT = 'gphone:server:media:shareLocation';
-const GET_EVENT = 'gphone:server:media:get';
-const ITEM_EVENT = 'gphone:server:media:item';
-const THUMBNAIL_EVENT = 'gphone:server:media:thumbnail';
-const RESTORE_EVENT = 'gphone:server:media:restore';
+const CREATE_EVENT = 'gos:server:media:create';
+const DROP_EVENT = 'gos:server:media:drop';
+const SHARE_LOCATION_EVENT = 'gos:server:media:shareLocation';
+const GET_EVENT = 'gos:server:media:get';
+const ITEM_EVENT = 'gos:server:media:item';
+const THUMBNAIL_EVENT = 'gos:server:media:thumbnail';
+const RESTORE_EVENT = 'gos:server:media:restore';
 
 const call = async (event: string, data: unknown) => {
   const handler = handlers.get(event);
@@ -223,7 +223,7 @@ describe('media:drop', () => {
 
     expect(reply).toEqual({ count: 1 });
     const pushed = (globalThis.emitNet as any).mock.calls
-      .filter((args: unknown[]) => args[0] === 'gphone:client:shell:appEvent')
+      .filter((args: unknown[]) => args[0] === 'gos:client:shell:appEvent')
       .map((args: unknown[]) => args[1]);
     // 9 is CID_B's source: refused a row, so refused a notification too.
     expect(pushed).not.toContain(9);
@@ -258,7 +258,7 @@ describe('media:drop', () => {
 
     expect(reply).toEqual({ count: 1 });
     const pushes = (globalThis.emitNet as any).mock.calls.filter(
-      (args: unknown[]) => args[0] === 'gphone:client:shell:appEvent'
+      (args: unknown[]) => args[0] === 'gos:client:shell:appEvent'
     );
     expect(pushes).toHaveLength(1);
   });
@@ -270,7 +270,7 @@ describe('media:drop', () => {
     await callDrop({ mediaId: 42 });
 
     const push = (globalThis.emitNet as any).mock.calls.find(
-      (args: unknown[]) => args[0] === 'gphone:client:shell:appEvent'
+      (args: unknown[]) => args[0] === 'gos:client:shell:appEvent'
     );
     expect(push?.[2]).toMatchObject({ app: 'media', event: 'media_received' });
   });
@@ -446,7 +446,7 @@ describe('media:get — the list read (MICA-110)', () => {
   });
 
   it('refuses a cursor that is not a row id', async () => {
-    const reply = await callGet({ cursor: 'id; DROP TABLE gphone_media' });
+    const reply = await callGet({ cursor: 'id; DROP TABLE gos_media' });
 
     expect(reply.error).toMatch(/cursor/i);
   });
@@ -625,12 +625,12 @@ describe('media:thumbnail — storing a thumbnail a client generated', () => {
 /**
  * MICA-116. `data` is `mediumtext`, and that was the only bound `assertWritableValue`
  * had to check a photo against — 16,777,215 characters, sixty times a minute per player
- * under the default `gphone_rate_limit`, into a table with no retention. `thumbnail` next
+ * under the default `gos_rate_limit`, into a table with no retention. `thumbnail` next
  * door has had an explicit cap for exactly this reason; the column holding the megabytes
  * had none.
  *
  * The number is sized from the capture path — 1080 on the longer edge, one lossy encode at
- * `gphone_camera_quality`, base64 — and never from what the column tolerates.
+ * `gos_camera_quality`, base64 — and never from what the column tolerates.
  */
 describe('media:create — the size a photo may actually be (MICA-116)', () => {
   const MAX_DATA_LENGTH = 4 * 1024 * 1024;
@@ -647,7 +647,7 @@ describe('media:create — the size a photo may actually be (MICA-116)', () => {
 
   it('still accepts one several times larger than the camera has ever produced', async () => {
     // The cap is a backstop, not a compression target: it must never refuse a real photo
-    // taken on a server that set `gphone_camera_quality 100`.
+    // taken on a server that set `gos_camera_quality 100`.
     const reply = await callCreate({ kind: 'photo', data: photoOf(3 * 1024 * 1024) });
 
     expect(reply.error).toBeUndefined();
@@ -675,7 +675,7 @@ describe('media:create — the size a photo may actually be (MICA-116)', () => {
     const reply = await callCreate({ kind: 'photo', data: photoOf(MAX_DATA_LENGTH) });
 
     expect(reply.error).not.toContain('[Repository]');
-    expect(reply.error).not.toContain('gphone_media');
+    expect(reply.error).not.toContain('gos_media');
   });
 
   it('bounds what a payload may set, not what the table may hold', async () => {
@@ -705,7 +705,7 @@ describe('media:restore (MICA-75)', () => {
 
     expect(reply).toEqual({ ok: true });
     const [sql, params] = dbMock.update.mock.calls[0];
-    expect(String(sql)).toContain('UPDATE `gphone_media`');
+    expect(String(sql)).toContain('UPDATE `gos_media`');
     expect(params).toEqual([12, 'CID_A', 30]);
   });
 
@@ -746,7 +746,7 @@ describe('media:restore (MICA-75)', () => {
  * paying for.
  */
 describe('media:getDeleted (MICA-75-wiring)', () => {
-  const GET_DELETED_EVENT = 'gphone:server:media:getDeleted';
+  const GET_DELETED_EVENT = 'gos:server:media:getDeleted';
   const callGetDeleted = (data: unknown) => call(GET_DELETED_EVENT, data);
 
   it('reads only the caller’s own deleted rows, bounded to the restore window', async () => {
@@ -756,7 +756,7 @@ describe('media:getDeleted (MICA-75-wiring)', () => {
 
     expect(reply).toEqual([{ id: 12, citizenid: 'CID_A', status: 'deleted' }]);
     const [sql, params] = dbMock.query.mock.calls[0];
-    expect(String(sql)).toContain('FROM `gphone_media`');
+    expect(String(sql)).toContain('FROM `gos_media`');
     expect(String(sql)).toContain("`status` = 'deleted'");
     expect(params).toEqual(['CID_A', 30]);
   });

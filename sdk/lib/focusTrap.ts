@@ -6,7 +6,7 @@
  * Keep Tab inside a modal surface, and put focus back where it came from on close.
  *
  * A Svelte action, alongside `pointerDrag` and `longPressDrag`: DOM behaviour with no
- * gPhone state behind it, usable from `shell/` and from `sdk/ui/` without either
+ * gOS state behind it, usable from `shell/` and from `sdk/ui/` without either
  * importing the other.
  *
  * ## Why an element with `role="dialog"` needs this

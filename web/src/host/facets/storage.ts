@@ -26,7 +26,7 @@ function getStorageBackend() {
   };
 }
 
-const namespaceOf = (appId: string) => `gphone:${appId}:`;
+const namespaceOf = (appId: string) => `gos:${appId}:`;
 
 /**
  * Implementation of the `clearAppStorage` facet — see the `clearAppStorage` hook doc for

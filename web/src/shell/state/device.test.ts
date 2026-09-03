@@ -12,7 +12,7 @@
 import '../../host/registerFacets';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { get } from 'svelte/store';
-import { DEVICES } from '@gphone/shared/devices';
+import { DEVICES } from '@gos/shared/devices';
 import {
   activeDevice,
   descriptor,

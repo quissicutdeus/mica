@@ -64,12 +64,12 @@ vi.mock('../lib/FrameworkBridge', () => ({
 
 import { pollMusic, activeBroadcasts, __resetMusic } from '../services/Music';
 import { __resetRateLimits } from '../lib/rateLimit';
-import { MUSIC_BROADCAST_NET_EVENT } from '@gphone/shared/musicBroadcast';
-import { nearbyBroadcastFields } from '@gphone/shared/musicBroadcast.fixtures';
+import { MUSIC_BROADCAST_NET_EVENT } from '@gos/shared/musicBroadcast';
+import { nearbyBroadcastFields } from '@gos/shared/musicBroadcast.fixtures';
 
-const START = 'gphone:server:music:broadcastStart';
-const UPDATE = 'gphone:server:music:broadcastUpdate';
-const STOP = 'gphone:server:music:broadcastStop';
+const START = 'gos:server:music:broadcastStart';
+const UPDATE = 'gos:server:music:broadcastUpdate';
+const STOP = 'gos:server:music:broadcastStop';
 
 /** A real 11-character video id shape, and a playlist one. */
 const VIDEO = 'dQw4w9WgXcQ';
@@ -133,7 +133,7 @@ describe('what a broadcast may name', () => {
     place(1, [0, 0, 0]);
     await call(START, 1, { videoId: 'javascript:alert(1)' });
 
-    expect(replyTo('gphone:client:music:broadcastStart')).toEqual({
+    expect(replyTo('gos:client:music:broadcastStart')).toEqual({
       error: 'That is not a YouTube link.',
       key: 'server.music.notYouTube'
     });
@@ -155,7 +155,7 @@ describe('what a broadcast may name', () => {
     expect(activeBroadcasts()[0].videoId).toBe(VIDEO);
 
     await call(START, 1, { videoId: 'tooshort' });
-    expect(replyTo('gphone:client:music:broadcastStart')).toEqual({
+    expect(replyTo('gos:client:music:broadcastStart')).toEqual({
       error: 'That is not a YouTube link.',
       key: 'server.music.notYouTube'
     });
@@ -239,7 +239,7 @@ describe('who hears it', () => {
     await call(START, 3, { playlistId: PLAYLIST });
 
     (globalThis as any).GetConvarInt = (name: string, fallback: number) =>
-      name === 'gphone_music_max_nearby' ? 2 : fallback;
+      name === 'gos_music_max_nearby' ? 2 : fallback;
     pollMusic();
 
     expect(lastPushTo(10)?.broadcasters.map((b: any) => b.source)).toEqual([2, 3]);
@@ -251,7 +251,7 @@ describe('who hears it', () => {
     for (let src = 1; src <= 18; src += 1) await call(START, src, { videoId: VIDEO });
 
     (globalThis as any).GetConvarInt = (name: string, fallback: number) =>
-      name === 'gphone_music_max_nearby' ? 999 : fallback;
+      name === 'gos_music_max_nearby' ? 999 : fallback;
     pollMusic();
 
     expect(lastPushTo(10)?.broadcasters.length).toBe(16);
@@ -433,7 +433,7 @@ describe('when a broadcast ends', () => {
   it('does not treat a second stop as an error', async () => {
     place(1, [0, 0, 0]);
     await call(STOP, 1);
-    expect(replyTo('gphone:client:music:broadcastStop')).toEqual({ ok: true });
+    expect(replyTo('gos:client:music:broadcastStop')).toEqual({ ok: true });
   });
 
   /**
@@ -488,7 +488,7 @@ describe('when a broadcast ends', () => {
   it('answers an update from somebody who is not broadcasting rather than inventing one', async () => {
     place(1, [0, 0, 0]);
     await call(UPDATE, 1, { paused: true });
-    expect(replyTo('gphone:client:music:broadcastUpdate')).toEqual({
+    expect(replyTo('gos:client:music:broadcastUpdate')).toEqual({
       ok: false,
       reason: 'not_broadcasting'
     });
@@ -506,7 +506,7 @@ describe('the boundary', () => {
     place(1, [0, 0, 0]);
     for (let i = 0; i < 61; i += 1) await call(START, 1, { videoId: VIDEO });
 
-    expect(replyTo('gphone:client:music:broadcastStart')).toEqual({
+    expect(replyTo('gos:client:music:broadcastStart')).toEqual({
       error: 'Too many music broadcastStart requests. Slow down and try again.',
       key: 'server.rateLimited'
     });
@@ -516,14 +516,14 @@ describe('the boundary', () => {
     // §2.9: a registered event is reachable whether or not any route points at it, so a
     // service with no table must not leave `create`/`update`/`delete` lying around.
     for (const action of ['get', 'create', 'update', 'delete']) {
-      expect(handlers.has(`gphone:server:music:${action}`)).toBe(false);
+      expect(handlers.has(`gos:server:music:${action}`)).toBe(false);
     }
   });
 
   it('refuses a caller with no loaded character', async () => {
     // No `place()`, so `FrameworkBridge.getPlayer` answers null.
     await call(START, 99, { videoId: VIDEO });
-    expect(replyTo('gphone:client:music:broadcastStart')).toEqual({
+    expect(replyTo('gos:client:music:broadcastStart')).toEqual({
       error: 'Player not authenticated',
       key: 'server.notAuthenticated'
     });

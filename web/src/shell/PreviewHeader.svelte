@@ -5,8 +5,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { ALL_DEVICES, DEVICES, type DeviceId } from '@gphone/shared/devices';
-  import { OS_NAME } from '@gphone/shared/brand';
+  import { ALL_DEVICES, DEVICES, type DeviceId } from '@gos/shared/devices';
+  import { OS_NAME } from '@gos/shared/brand';
   import { t } from './messages';
   import { activeDevice } from './state/device';
 

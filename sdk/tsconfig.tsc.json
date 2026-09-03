@@ -25,10 +25,10 @@
     "noUnusedLocals": true,
     "moduleDetection": "force",
     "paths": {
-      "@gphone/shared/*": ["../shared/*"],
-      "@gphone/sdk": ["./index.ts"],
-      "@gphone/sdk/app": ["./app.ts"],
-      "@gphone/sdk/core": ["./core.ts"]
+      "@gos/shared/*": ["../shared/*"],
+      "@gos/sdk": ["./index.ts"],
+      "@gos/sdk/app": ["./app.ts"],
+      "@gos/sdk/core": ["./core.ts"]
     }
   },
   /**

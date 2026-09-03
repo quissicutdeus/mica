@@ -15,7 +15,7 @@ import { join, relative } from 'node:path';
  *
  *   - `sdk/utils.ts` exported `blabberTotalUnread`
  *   - `services/Accounts.ts` built a deep link with a hardcoded `'blabber'`
- *   - `lib/moderation.ts` listed `gphone_blabber` in the reportable allowlist
+ *   - `lib/moderation.ts` listed `gos_blabber` in the reportable allowlist
  *
  * Each was found by a person reading a diff, which is not a mechanism. The failure is
  * always the same shape: core needs some per-app fact, and a literal is the shortest way
@@ -168,7 +168,7 @@ describe('countFor matches a real reference, not a bare word', () => {
   });
 
   it('does not match a quoted string that only contains the id as a substring', () => {
-    expect(countFor(`const table = 'gphone_notes_dms';`, ['notes'])).toBe(0);
+    expect(countFor(`const table = 'gos_notes_dms';`, ['notes'])).toBe(0);
   });
 });
 

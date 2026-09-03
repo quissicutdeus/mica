@@ -3,13 +3,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect, vi } from 'vitest';
-import { GENERIC_SERVICE_ACTION } from '@gphone/shared/rpc';
+import { GENERIC_SERVICE_ACTION } from '@gos/shared/rpc';
 
 const fetchNui = vi.hoisted(() => vi.fn());
 vi.mock('./fetchNui', () => ({ fetchNui }));
 
 import { call, callOr } from './call';
-import { mediaContract } from '@gphone/shared/contracts/media';
+import { mediaContract } from '@gos/shared/contracts/media';
 
 /**
  * `call` is a thin, typed shape over the generic service action (MICA-213). What is

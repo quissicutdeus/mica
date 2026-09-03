@@ -18,9 +18,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     useAppAction,
     useLocale,
     useService
-  } from '@gphone/sdk';
+  } from '@gos/sdk';
   import { useBlabber } from '../store';
-  import type { Account, Blab } from '@gphone/shared/types';
+  import type { Account, Blab } from '@gos/shared/types';
   import BlabRow from './BlabRow.svelte';
 
   /**
@@ -79,7 +79,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     const reply = await getAccounts({ app: 'blabber', handle, limit: 1 });
     account = reply.rows?.[0] ?? null;
     // Counts come from the graph rather than from a column on the account: a stored
-    // `follower_count` is a second copy of a fact `gphone_account_follows` already holds.
+    // `follower_count` is a second copy of a fact `gos_account_follows` already holds.
     if (account) await loadFollowStats(account.id);
   };
 
@@ -299,7 +299,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 {#if reporting && account}
   <ReportDialog
-    targetTable="gphone_accounts"
+    targetTable="gos_accounts"
     targetId={account.id}
     appId="blabber"
     onclose={() => (reporting = false)}

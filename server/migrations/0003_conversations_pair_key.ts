@@ -5,8 +5,8 @@
 import type { Migration } from '../lib/migrations';
 import { Database } from '../lib/Database';
 
-const TABLE = 'gphone_messages_conversations';
-const PARTICIPANTS = 'gphone_messages_participants';
+const TABLE = 'gos_messages_conversations';
+const PARTICIPANTS = 'gos_messages_participants';
 const INDEX = 'pair_key_unique';
 
 /**
@@ -15,7 +15,7 @@ const INDEX = 'pair_key_unique';
  * Same reasoning `0001`'s `hasIndex` gives for guarding every DDL step rather than running
  * it blind: `runMigrations` has an explicit path for "it ran and recording it failed", which
  * hands an operator the choice to retry, and a second `ADD COLUMN` of something already
- * there errors and aborts the rest of `gphoneschema apply`.
+ * there errors and aborts the rest of `gosschema apply`.
  */
 const hasColumn = async (table: string, column: string): Promise<boolean> => {
   const count = await Database.scalar<number>(
@@ -74,7 +74,7 @@ const hasIndex = async (table: string, index: string): Promise<boolean> => {
  * declaration asks for (`unique: true` in `Conversations.ts`) is added only when the
  * backfill produced no collision; a server carrying a pre-existing duplicate gets a plain,
  * non-unique index under the **same name** instead. `SchemaMigrator`'s additive pass
- * compares live indexes by name only, never by uniqueness, so a later `gphoneschema apply`
+ * compares live indexes by name only, never by uniqueness, so a later `gosschema apply`
  * on that same server finds `pair_key_unique` already present and leaves it exactly as this
  * migration left it, rather than retrying an `ADD UNIQUE KEY` that would fail identically,
  * and for the same reason, every single time.
@@ -85,7 +85,7 @@ const hasIndex = async (table: string, index: string): Promise<boolean> => {
 export const migration: Migration = {
   id: '0003_conversations_pair_key',
   description:
-    'adds gphone_messages_conversations.participant_a/participant_b, backfills them for ' +
+    'adds gos_messages_conversations.participant_a/participant_b, backfills them for ' +
     'existing one-to-one threads, adds the generated pair_key column, and indexes it — ' +
     'uniquely where no existing pair already collides, or as a plain index otherwise',
   up: async () => {

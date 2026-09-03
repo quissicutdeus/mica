@@ -4,10 +4,10 @@
 
 import { PlayerFacingError } from '../lib/errors';
 import { defineService, SchemaRepository } from '../lib/defineService';
-import { MediaItem } from '@gphone/shared/types';
+import { MediaItem } from '@gos/shared/types';
 import { findNearbyVisiblePlayers } from '../lib/proximity';
 import { appEventChannel } from '../lib/appEvents';
-import { mediaContract } from '@gphone/shared/contracts/media';
+import { mediaContract } from '@gos/shared/contracts/media';
 import { playerCoords } from '../lib/playerCoords';
 import { Database } from '../lib/Database';
 import { sweepOrphanedRows } from '../lib/orphanSweep';
@@ -19,7 +19,7 @@ import { restoreWindowDays } from '../lib/retention';
  * The media table: owner-scoped, create/read/delete only.
  *
  * **The table, the service and the app id are all `media` now.** They were not always in
- * agreement — the table moved off `gphone_photos` first, to `gphone_media`, while the
+ * agreement — the table moved off `gos_photos` first, to `gos_media`, while the
  * service/app id stayed `photos` because an id is a key: it is the directory name, the
  * per-app storage namespace, the `<app>` segment of every event, the `?app=` deep link and
  * the launcher label, so renaming it is a bigger change than renaming a table (§11.1). That
@@ -62,7 +62,7 @@ import { restoreWindowDays } from '../lib/retention';
  *   crop math can emit is a square 1080x1080 — 1.17 megapixels. Today's viewfinder is
  *   portrait inside a 400x850 screen, so a real capture is nearer half that; the square is
  *   the ceiling a future landscape crop could reach under the same rule.
- * - One lossy encode at `gphone_camera_quality`, which a server owner may set as high as
+ * - One lossy encode at `gos_camera_quality`, which a server owner may set as high as
  *   100. Dense game content at that setting runs around two bytes a pixel worst case, so
  *   roughly 2.3MB of encoded bytes.
  * - Base64 and the data-URI prefix add a third: about 3.1MB on the wire.
@@ -71,7 +71,7 @@ import { restoreWindowDays } from '../lib/retention';
  * refused. Against a real capture — a few hundred kilobytes, the size MICA-110 measured
  * — it is roughly a tenfold margin; against the column it is a quarter. It is a backstop
  * for a payload nothing in this codebase could have produced, not a compression target:
- * `gphone_camera_quality` is the knob for how big photos actually get.
+ * `gos_camera_quality` is the knob for how big photos actually get.
  *
  * Checked at the boundary rather than in the schema for the same reason
  * `MAX_THUMBNAIL_LENGTH` is: a text column's only bound is its type. Making `maxLength` a
@@ -117,7 +117,7 @@ const assertStorableData = (value: unknown): void => {
  *   fetch per tile and an origin to configure, not less work.
  * - **The cost was never the encoding, it was the absence of bounds.** Base64 is a 33%
  *   tax; unbounded rows, no per-player ceiling and no retention were the actual problem,
- *   and those are fixable in place. `gphone_camera_quality`, `MAX_MEDIA_DATA_LENGTH` and
+ *   and those are fixable in place. `gos_camera_quality`, `MAX_MEDIA_DATA_LENGTH` and
  *   the quota below are worth far more than a third off a number nobody was capping.
  *
  * What would change the answer: media that is not a still photo. A voice clip is tens of
@@ -169,7 +169,7 @@ const BYTES_PER_MB = 1024 * 1024;
  * What one row costs, as SQL.
  *
  * One expression, used by the quota checks *and* by `mediaStorageStats`, so the number
- * `gphonemedia` reports and the number a player is measured against cannot drift apart —
+ * `gosmedia` reports and the number a player is measured against cannot drift apart —
  * a quota that disagrees with the report an owner uses to reason about it is worse than
  * no quota. `byte_size` (the column) is still not the answer: nothing writes it.
  *
@@ -193,7 +193,7 @@ const STORED_BYTES_SQL = 'IFNULL(LENGTH(data), 0) + IFNULL(LENGTH(thumbnail), 0)
 const quotaBytes = (): number => {
   const raw =
     typeof GetConvarInt === 'function'
-      ? GetConvarInt('gphone_media_quota_mb', DEFAULT_QUOTA_MB)
+      ? GetConvarInt('gos_media_quota_mb', DEFAULT_QUOTA_MB)
       : DEFAULT_QUOTA_MB;
   if (!Number.isFinite(raw) || raw <= 0) return 0;
   return Math.trunc(raw) * BYTES_PER_MB;
@@ -217,15 +217,15 @@ const storedBytesOf = (item: Partial<MediaItem>): number =>
  *
  * The consequence is stated rather than hidden: a soft-deleted row keeps its bytes and no
  * longer counts against anyone, so capture-then-delete can still grow the table past the
- * sum of every player's quota. `gphone_media_retention` is the owner's tool for that and
- * `gphonemedia` is how they see whether they need it. Closing it properly means either
+ * sum of every player's quota. `gos_media_retention` is the owner's tool for that and
+ * `gosmedia` is how they see whether they need it. Closing it properly means either
  * hard-deleting on the player's own delete — which throws away the evidence a report of
  * that photo is built on (`reportable.previewColumn`) — or a second grace-window knob, and
  * both are bigger decisions than this ticket.
  */
 const USED_BYTES_SQL =
   `SELECT COALESCE(SUM(${STORED_BYTES_SQL}), 0) AS used ` +
-  `FROM \`gphone_media\` WHERE \`citizenid\` = ? AND \`status\` = 'active'`;
+  `FROM \`gos_media\` WHERE \`citizenid\` = ? AND \`status\` = 'active'`;
 
 /**
  * The quota as a **predicate on the insert**, not a question asked before it. MICA-131.
@@ -267,7 +267,7 @@ const insertWithinQuota = async (
   const selection = columns.map(() => '?').join(', ');
 
   return await Database.insert(
-    `INSERT INTO \`gphone_media\` (${columnList})
+    `INSERT INTO \`gos_media\` (${columnList})
      SELECT ${selection}
      FROM (${USED_BYTES_SQL}) AS quota
      WHERE quota.used + ? <= ?`,
@@ -308,7 +308,7 @@ const COPIED_COLUMNS = [
 export const media = defineService<MediaItem, typeof mediaContract>({
   id: 'media',
   contract: mediaContract,
-  table: 'gphone_media',
+  table: 'gos_media',
   reportable: { label: 'Photo', previewColumn: 'data' },
   access: { read: 'owner', write: 'owner' },
   statuses: ['active', 'deleted', 'moderated'],
@@ -728,7 +728,7 @@ app.registerEvent('thumbnail', async (_source, _cbId, data, citizenid) => {
  * `findById(mediaId, citizenid)` is the ownership check (§2.9) — a `mediaId` naming a row
  * the caller does not own resolves to `null` and the whole request is refused before
  * anything nearby is even computed. Each recipient gets a **copy**, not a shared
- * reference: gPhone's gallery is owned per player, and the sender deleting their photo
+ * reference: gOS's gallery is owned per player, and the sender deleting their photo
  * later must not delete anyone else's.
  *
  * `findById` scopes by owner but not by `status` — it is the primitive `findById(id,
@@ -870,14 +870,14 @@ export const mediaStorageStats = async (): Promise<MediaStorageStats> => {
   const totals = await Database.single<MediaTotalsRow>(
     `SELECT COUNT(*) AS rowCount,
             SUM(${STORED_BYTES_SQL}) AS totalBytes
-     FROM gphone_media`
+     FROM gos_media`
   );
 
   const holders = await Database.query<MediaHolderRow[]>(
     `SELECT citizenid,
             COUNT(*) AS rowCount,
             SUM(${STORED_BYTES_SQL}) AS bytes
-     FROM gphone_media
+     FROM gos_media
      GROUP BY citizenid
      ORDER BY bytes DESC
      LIMIT ${TOP_HOLDER_COUNT}`
@@ -930,10 +930,10 @@ const affectedRows = (result: unknown): number => {
  * wants the reclaim opts into it, having read what it does.
  *
  * The quota above is what bounds ordinary growth without deleting anything; retention is
- * for the owner who has looked at `gphonemedia` and decided the table is still too big.
+ * for the owner who has looked at `gosmedia` and decided the table is still too big.
  */
 const retentionDays = (): number => {
-  const raw = typeof GetConvarInt === 'function' ? GetConvarInt('gphone_media_retention', 0) : 0;
+  const raw = typeof GetConvarInt === 'function' ? GetConvarInt('gos_media_retention', 0) : 0;
   return Number.isFinite(raw) && raw > 0 ? Math.trunc(raw) : 0;
 };
 
@@ -959,25 +959,23 @@ export const pruneExpiredMedia = async (): Promise<number> => {
   if (days <= 0) return 0;
 
   const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-  return affectedRows(
-    await Database.query('DELETE FROM gphone_media WHERE created_at < ?', [cutoff])
-  );
+  return affectedRows(await Database.query('DELETE FROM gos_media WHERE created_at < ?', [cutoff]));
 };
 
 /**
  * Delete media whose owner no longer exists. **A hard delete, and the character-deletion
  * cleanup.**
  *
- * The first line of defence is not this: on qb every gPhone table is generated with
+ * The first line of defence is not this: on qb every gOS table is generated with
  * `FOREIGN KEY (citizenid) REFERENCES players (citizenid) ON DELETE CASCADE`
- * (`lib/schemaSql.ts`), so on a table created from `gphone.sql` a deleted character takes
+ * (`lib/schemaSql.ts`), so on a table created from `gos.sql` a deleted character takes
  * its photos with it inside the same statement, with no resource involvement at all. That
  * is the mechanism, and it is already correct.
  *
  * This is the backstop for the four ways that guarantee does not hold, none of which the
  * database will tell you about:
  *
- * - **ESX**, which has no `players` table to point a constraint at, so `gphone.esx.sql`
+ * - **ESX**, which has no `players` table to point a constraint at, so `gos.esx.sql`
  *   carries no cascade to drop the rows (MICA-150). That is the case this sweep could
  *   not cover until MICA-152 taught it to ask `users(identifier)` the same question, and
  *   it is why this function no longer names a table itself.
@@ -993,13 +991,13 @@ export const pruneExpiredMedia = async (): Promise<number> => {
  * single table's worth of that reasoning here is how the two copies drift, and the copy
  * that drifts is the one that deletes.
  *
- * Still its own function, because `gphonemedia prune` reports media separately from
+ * Still its own function, because `gosmedia prune` reports media separately from
  * everything else and because this is the sweep the README told operators about.
  */
 export const pruneOrphanedMedia = async (): Promise<number> => {
   const { removed } = await sweepOrphanedRows({
     only: [{ table: media.resolved.table, column: 'citizenid' }],
-    label: 'gphonemedia'
+    label: 'gosmedia'
   });
   return removed;
 };
@@ -1015,9 +1013,7 @@ export const purgeMediaForCitizen = async (citizenid: string): Promise<number> =
   const owner = typeof citizenid === 'string' ? citizenid.trim() : '';
   if (owner.length === 0) return 0;
 
-  return affectedRows(
-    await Database.query('DELETE FROM gphone_media WHERE citizenid = ?', [owner])
-  );
+  return affectedRows(await Database.query('DELETE FROM gos_media WHERE citizenid = ?', [owner]));
 };
 
 /**
@@ -1029,25 +1025,25 @@ export const purgeMediaForCitizen = async (citizenid: string): Promise<number> =
  * entire gallery. `on` registers a local handler only, so the sole way to reach it is a
  * trigger from another **server** resource, which is code the owner installed.
  *
- * gPhone owns the name rather than listening for a framework's, deliberately. qb-core and
+ * gOS owns the name rather than listening for a framework's, deliberately. qb-core and
  * qbx_core do not agree on what they emit when a character is deleted, and several
  * multicharacter resources emit nothing at all — registering a handler for a guessed name
  * would be cleanup that silently never runs, which reads exactly like cleanup that works.
  * A name a server owner wires up on purpose either fires or visibly does not, and the FK
  * cascade plus `pruneOrphanedMedia` cover the owner who wires up nothing.
  */
-on('gphone:server:media:characterDeleted', (rawCitizenid: unknown) => {
+on('gos:server:media:characterDeleted', (rawCitizenid: unknown) => {
   const citizenid = typeof rawCitizenid === 'string' ? rawCitizenid.trim() : '';
   if (citizenid.length === 0) return;
 
   void purgeMediaForCitizen(citizenid)
     .then((removed) => {
       if (removed > 0) {
-        console.log(`[gphonemedia] purged ${removed} row(s) for deleted character ${citizenid}.`);
+        console.log(`[gosmedia] purged ${removed} row(s) for deleted character ${citizenid}.`);
       }
     })
     .catch((error) => {
-      console.error('[gphonemedia] purge for a deleted character failed:', error);
+      console.error('[gosmedia] purge for a deleted character failed:', error);
     });
 });
 
@@ -1067,13 +1063,13 @@ const logMediaLimits = (): void => {
   const limit = quotaBytes();
   const days = retentionDays();
   console.log(
-    `[gphonemedia] per-player quota ${limit > 0 ? formatBytes(limit) : 'off'}, ` +
+    `[gosmedia] per-player quota ${limit > 0 ? formatBytes(limit) : 'off'}, ` +
       `retention ${days > 0 ? `${days} day(s)` : 'off'}.`
   );
 };
 
 /**
- * The prune, as it runs on its own: at resource start, and again on `gphonemedia prune`.
+ * The prune, as it runs on its own: at resource start, and again on `gosmedia prune`.
  *
  * The orphan sweep runs whether or not retention is configured, because it only ever
  * reaches rows whose owner does not exist — data nothing in the phone can read, since
@@ -1089,34 +1085,34 @@ export const runMediaMaintenance = async (): Promise<{ expired: number; orphaned
   try {
     orphaned = await pruneOrphanedMedia();
     if (orphaned > 0) {
-      console.log(`[gphonemedia] removed ${orphaned} row(s) whose character no longer exists.`);
+      console.log(`[gosmedia] removed ${orphaned} row(s) whose character no longer exists.`);
     }
   } catch (error) {
-    console.error('[gphonemedia] orphan sweep failed:', error);
+    console.error('[gosmedia] orphan sweep failed:', error);
   }
 
   let expired = 0;
   try {
     expired = await pruneExpiredMedia();
     if (expired > 0) {
-      console.log(`[gphonemedia] removed ${expired} row(s) older than ${retentionDays()} day(s).`);
+      console.log(`[gosmedia] removed ${expired} row(s) older than ${retentionDays()} day(s).`);
     }
   } catch (error) {
-    console.error('[gphonemedia] retention sweep failed:', error);
+    console.error('[gosmedia] retention sweep failed:', error);
   }
 
   return { expired, orphaned };
 };
 
 /**
- * `gphonemedia prune` — run the sweeps now, and say exactly what went.
+ * `gosmedia prune` — run the sweeps now, and say exactly what went.
  *
- * **Console-only, the same gate `gphoneschema apply` carries and for the same reason**:
+ * **Console-only, the same gate `gosschema apply` carries and for the same reason**:
  * it is the one command in this file that destroys rows. `isAdmin` is checked first so an
  * ordinary player gets the same refusal they would get for the report, rather than being
  * told a privileged subcommand exists.
  *
- * There is no dry run, deliberately — `gphonemedia` with no argument is the dry run. It
+ * There is no dry run, deliberately — `gosmedia` with no argument is the dry run. It
  * reports the size and the top holders, changes nothing, and is what an owner should read
  * before setting a retention window.
  */
@@ -1133,7 +1129,7 @@ export const runMediaPruneCommand = async (source: number): Promise<void> => {
   if (source !== 0) {
     notifyPlayer(source, {
       type: 'error',
-      message: 'gphonemedia prune only runs from the server console.',
+      message: 'gosmedia prune only runs from the server console.',
       key: 'server.media.consoleOnly'
     });
     return;
@@ -1142,24 +1138,24 @@ export const runMediaPruneCommand = async (source: number): Promise<void> => {
   const days = retentionDays();
   if (days <= 0) {
     console.log(
-      '[gphonemedia] gphone_media_retention is not set, so nothing is expired by age. ' +
+      '[gosmedia] gos_media_retention is not set, so nothing is expired by age. ' +
         'The orphan sweep still runs.'
     );
   }
 
   const { expired, orphaned } = await runMediaMaintenance();
   console.log(
-    `[gphonemedia] prune finished: ${expired} expired row(s), ${orphaned} orphaned row(s) removed.`
+    `[gosmedia] prune finished: ${expired} expired row(s), ${orphaned} orphaned row(s) removed.`
   );
 };
 
 /**
- * `gphonemedia` — report-only, same shape as `gphoneschema` without an `apply` half:
+ * `gosmedia` — report-only, same shape as `gosschema` without an `apply` half:
  * nothing here writes anything. Console and any `isAdmin` caller both get the full
  * breakdown in the server console (a top-10 list does not fit a toast), plus a one-line
  * toast for whoever ran it in-game so they know it actually did something.
  *
- * `gphonemedia prune` is the one subcommand that writes, and it is gated harder — see
+ * `gosmedia prune` is the one subcommand that writes, and it is gated harder — see
  * `runMediaPruneCommand` above.
  */
 export const runMediaStatsCommand = async (source: number): Promise<void> => {
@@ -1175,14 +1171,14 @@ export const runMediaStatsCommand = async (source: number): Promise<void> => {
   const stats = await mediaStorageStats();
 
   console.log(
-    `[gphonemedia] ${stats.rowCount} row(s), ${formatBytes(stats.totalBytes)} total ` +
-      `(${stats.totalBytes} bytes) in gphone_media.`
+    `[gosmedia] ${stats.rowCount} row(s), ${formatBytes(stats.totalBytes)} total ` +
+      `(${stats.totalBytes} bytes) in gos_media.`
   );
   if (stats.topHolders.length > 0) {
-    console.log(`[gphonemedia] top ${stats.topHolders.length} by size:`);
+    console.log(`[gosmedia] top ${stats.topHolders.length} by size:`);
     for (const holder of stats.topHolders) {
       console.log(
-        `[gphonemedia]   ${holder.citizenid}: ${holder.rowCount} row(s), ` +
+        `[gosmedia]   ${holder.citizenid}: ${holder.rowCount} row(s), ` +
           `${formatBytes(holder.bytes)} (${holder.bytes} bytes)`
       );
     }
@@ -1191,7 +1187,7 @@ export const runMediaStatsCommand = async (source: number): Promise<void> => {
   if (source !== 0) {
     notifyPlayer(source, {
       type: 'success',
-      message: `gphone_media: ${stats.rowCount} rows, ${formatBytes(stats.totalBytes)} — see server console for the breakdown.`,
+      message: `gos_media: ${stats.rowCount} rows, ${formatBytes(stats.totalBytes)} — see server console for the breakdown.`,
       key: 'server.media.stats',
       params: { rows: stats.rowCount, size: formatBytes(stats.totalBytes) }
     });
@@ -1199,17 +1195,17 @@ export const runMediaStatsCommand = async (source: number): Promise<void> => {
 };
 
 RegisterCommand(
-  'gphonemedia',
+  'gosmedia',
   (source: number, args: string[]) => {
     if ((args?.[0] ?? '').toLowerCase() === 'prune') {
       void runMediaPruneCommand(source).catch((error) => {
-        console.error('[gphonemedia] prune failed:', error);
+        console.error('[gosmedia] prune failed:', error);
       });
       return;
     }
 
     void runMediaStatsCommand(source).catch((error) => {
-      console.error('[gphonemedia] failed:', error);
+      console.error('[gosmedia] failed:', error);
     });
   },
   false
@@ -1219,7 +1215,7 @@ RegisterCommand(
  * Resource start: say what the limits are, then sweep once.
  *
  * `onResourceStart` rather than module scope, which is where `Notifications.ts` puts its
- * own prune. Two reasons to be later: this reads `players`, a table gPhone does not own,
+ * own prune. Two reasons to be later: this reads `players`, a table gOS does not own,
  * and module evaluation is the earliest possible moment to ask oxmysql for anything; and
  * a sweep that ran on import would run inside every server test suite that loads this
  * file, filling their output with a warning about a `players` table no test has.
@@ -1232,6 +1228,6 @@ on('onResourceStart', (resourceName: string) => {
 
   logMediaLimits();
   void runMediaMaintenance().catch((error) => {
-    console.error('[gphonemedia] start-up maintenance failed:', error);
+    console.error('[gosmedia] start-up maintenance failed:', error);
   });
 });

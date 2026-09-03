@@ -3,9 +3,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { writable, derived } from 'svelte/store';
-import type { NotificationItem } from '@gphone/shared/types';
+import type { NotificationItem } from '@gos/shared/types';
 import { callOr } from '../nui/call';
-import { notificationsContract } from '@gphone/shared/contracts/notifications';
+import { notificationsContract } from '@gos/shared/contracts/notifications';
 import { subscribeAppEvent } from '../shell/state/appEvents';
 
 export const shadeNotifications = writable<NotificationItem[]>([]);

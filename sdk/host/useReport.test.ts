@@ -21,14 +21,14 @@ describe('useReport', () => {
   it('posts createReport and resolves when the server says ok', async () => {
     transport.fetchNui.mockResolvedValueOnce({ ok: true });
     await expect(
-      useReport().submit({ targetTable: 'gphone_blabs', targetId: 7, category: 'spam' })
+      useReport().submit({ targetTable: 'gos_blabs', targetId: 7, category: 'spam' })
     ).resolves.toBeUndefined();
     // The generic envelope the typed `call` sends (MICA-213): service and action from
     // the contract, the payload under `data`.
     expect(transport.fetchNui).toHaveBeenCalledWith('svc', {
       service: 'reports',
       action: 'create',
-      data: { targetTable: 'gphone_blabs', targetId: 7, category: 'spam' }
+      data: { targetTable: 'gos_blabs', targetId: 7, category: 'spam' }
     });
   });
 
@@ -37,7 +37,7 @@ describe('useReport', () => {
     // service used to re-check `reply.error` itself, and that dead check is gone.
     transport.fetchNui.mockRejectedValueOnce(new Error('rate limited'));
     await expect(
-      useReport().submit({ targetTable: 'gphone_blabs', targetId: 7, category: 'spam' })
+      useReport().submit({ targetTable: 'gos_blabs', targetId: 7, category: 'spam' })
     ).rejects.toThrow('rate limited');
   });
 });

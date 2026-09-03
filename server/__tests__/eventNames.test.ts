@@ -5,7 +5,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { parseRequestEvent, requestEventFor, responseEventFor } from '@gphone/shared/rpc';
+import { parseRequestEvent, requestEventFor, responseEventFor } from '@gos/shared/rpc';
 
 const { dbMock } = vi.hoisted(() => ({
   dbMock: { query: vi.fn(), insert: vi.fn(), update: vi.fn(), scalar: vi.fn(), single: vi.fn() }
@@ -18,19 +18,19 @@ import '../services';
 import { knownServices } from '../lib/services';
 
 /**
- * Every `gphone:` event name in the source has to match `gphone:<side>:<app>:<action>`.
+ * Every `gos:` event name in the source has to match `gos:<side>:<app>:<action>`.
  *
  * This is the point of the exercise. Renaming the fifteen offenders is a one-time fix;
  * this test is what stops the sixteenth. Names drifted in the first place because
- * nothing checked them — `gphone:call:failed` had no side segment at all, so you could
+ * nothing checked them — `gos:call:failed` had no side segment at all, so you could
  * not tell from the name whether it was emitted by the client or the server.
  *
  * Scans source text rather than a registry because that is where the risk lives: a
- * hand-written `onNet('gphone:server:doThing')` never passes through `requestEventFor`
+ * hand-written `onNet('gos:server:doThing')` never passes through `requestEventFor`
  * and so no amount of runtime validation would see it.
  *
  * `web/src` is scanned too, even though NUI message actions are a separate namespace
- * from net events and are not prefixed. That is the point: a `gphone:`-prefixed string
+ * from net events and are not prefixed. That is the point: a `gos:`-prefixed string
  * over there is either a net event in the wrong place or an action name borrowing a
  * prefix it has no business with. Both are worth a failure.
  */
@@ -76,9 +76,9 @@ const collect = (): Found[] => {
   for (const dir of SCAN_DIRS) {
     for (const file of walk(join(ROOT, dir))) {
       const text = readFileSync(file, 'utf8');
-      // Only string literals. A template like `gphone:server:${app}:get` is the
+      // Only string literals. A template like `gos:server:${app}:get` is the
       // convention being applied, not violated.
-      for (const match of text.matchAll(/['"`](gphone:[a-zA-Z0-9_:]+)['"`]/g)) {
+      for (const match of text.matchAll(/['"`](gos:[a-zA-Z0-9_:]+)['"`]/g)) {
         found.push({ event: match[1], file: relative(ROOT, file) });
       }
     }
@@ -95,7 +95,7 @@ describe('net event naming', () => {
     expect(ALL.length).toBeGreaterThan(20);
   });
 
-  it('every name is gphone:<side>:<app>:<action>', () => {
+  it('every name is gos:<side>:<app>:<action>', () => {
     const offenders = ALL.filter(({ event }) => {
       if (EXEMPT.has(event)) return false;
       const parts = event.split(':');
@@ -112,7 +112,7 @@ describe('net event naming', () => {
   });
 
   it('server request names round-trip through requestEventFor', () => {
-    const requests = ALL.filter(({ event }) => event.startsWith('gphone:server:'));
+    const requests = ALL.filter(({ event }) => event.startsWith('gos:server:'));
     expect(requests.length).toBeGreaterThan(0);
 
     for (const { event, file } of requests) {
@@ -123,7 +123,7 @@ describe('net event naming', () => {
   });
 
   it('the service segment names a real service', () => {
-    // Catches a typo'd or invented segment — `gphone:client:setting:x` would otherwise
+    // Catches a typo'd or invented segment — `gos:client:setting:x` would otherwise
     // satisfy the shape check and then match no listener.
     //
     // Reads the registry rather than a list kept here. This test used to carry
@@ -145,13 +145,13 @@ describe('net event naming', () => {
 
 describe('response event derivation', () => {
   it('maps the four CRUD actions to their reply names', () => {
-    expect(responseEventFor('notes', 'get')).toBe('gphone:client:notes:receive');
-    expect(responseEventFor('notes', 'create')).toBe('gphone:client:notes:created');
-    expect(responseEventFor('notes', 'update')).toBe('gphone:client:notes:updated');
-    expect(responseEventFor('notes', 'delete')).toBe('gphone:client:notes:deleted');
+    expect(responseEventFor('notes', 'get')).toBe('gos:client:notes:receive');
+    expect(responseEventFor('notes', 'create')).toBe('gos:client:notes:created');
+    expect(responseEventFor('notes', 'update')).toBe('gos:client:notes:updated');
+    expect(responseEventFor('notes', 'delete')).toBe('gos:client:notes:deleted');
   });
 
   it('passes a custom action through unchanged', () => {
-    expect(responseEventFor('mail', 'markAsRead')).toBe('gphone:client:mail:markAsRead');
+    expect(responseEventFor('mail', 'markAsRead')).toBe('gos:client:mail:markAsRead');
   });
 });

@@ -3,8 +3,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { call } from '../nui/call';
-import { highscoresContract } from '@gphone/shared/contracts/highscores';
-import type { LeaderboardEntry } from '@gphone/shared/types';
+import { highscoresContract } from '@gos/shared/contracts/highscores';
+import type { LeaderboardEntry } from '@gos/shared/types';
 
 /** Fire-and-forget: a failed submit must never block the game-over screen. */
 export const submitScore = async (app: string, score: number): Promise<void> => {

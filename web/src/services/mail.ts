@@ -4,9 +4,9 @@
 
 import { derived, get } from 'svelte/store';
 import { call } from '../nui/call';
-import { mailContract } from '@gphone/shared/contracts/mail';
+import { mailContract } from '@gos/shared/contracts/mail';
 import { createCrudStore } from '../../../sdk/createCrudStore';
-import type { Mail } from '@gphone/shared/types';
+import type { Mail } from '@gos/shared/types';
 
 // `service` set, so both actions ride the generic service action by their contracted
 // names and need no row in `shared/routes.ts` (MICA-213).

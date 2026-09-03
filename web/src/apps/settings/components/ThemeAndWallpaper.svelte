@@ -18,7 +18,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     SegmentedControl,
     useLocale,
     usePhoneNotification
-  } from '@gphone/sdk';
+  } from '@gos/sdk';
   import ColorWheelPicker from './ColorWheelPicker.svelte';
 
   const { t } = useLocale();

@@ -28,7 +28,7 @@ import { places } from '../services/Places';
 import { __resetRateLimits } from '../lib/rateLimit';
 
 const call = async (action: string, data: unknown) => {
-  const handler = handlers.get(`gphone:server:places:${action}`);
+  const handler = handlers.get(`gos:server:places:${action}`);
   if (!handler) throw new Error(`no handler for places:${action}`);
   (globalThis as any).source = 5;
   (globalThis as any).emitNet = vi.fn();
@@ -80,7 +80,7 @@ describe('places:create (MICA-65)', () => {
     expect(reply).toMatchObject({ id: 101, place: expect.objectContaining({ name: 'Home' }) });
     const [sql, params] = dbMock.insert.mock.calls[0];
     expect(String(sql)).toBe(
-      'INSERT INTO `gphone_places` (`name`, `x`, `y`, `z`, `citizenid`) VALUES (?, ?, ?, ?, ?)'
+      'INSERT INTO `gos_places` (`name`, `x`, `y`, `z`, `citizenid`) VALUES (?, ?, ?, ?, ?)'
     );
     expect(params).toEqual(['Home', 100, 200, 30, 'CIT_A']);
   });
@@ -156,7 +156,7 @@ describe('places:create (MICA-65)', () => {
 
 describe('places — the declaration', () => {
   it('disables the generic create in favour of the custom one', () => {
-    expect(handlers.has('gphone:server:places:create')).toBe(true);
+    expect(handlers.has('gos:server:places:create')).toBe(true);
     expect(places.resolved.columns).toContain('x');
   });
 
@@ -168,9 +168,9 @@ describe('places — the declaration', () => {
   });
 
   it('registers the generic get/update/delete, owner-scoped like every other saved row', () => {
-    expect(handlers.has('gphone:server:places:get')).toBe(true);
-    expect(handlers.has('gphone:server:places:update')).toBe(true);
-    expect(handlers.has('gphone:server:places:delete')).toBe(true);
+    expect(handlers.has('gos:server:places:get')).toBe(true);
+    expect(handlers.has('gos:server:places:update')).toBe(true);
+    expect(handlers.has('gos:server:places:delete')).toBe(true);
   });
 });
 

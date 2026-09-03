@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { requestEventFor, responseEventFor, parseRequestEvent } from '@gphone/shared/rpc';
+import { requestEventFor, responseEventFor, parseRequestEvent } from '@gos/shared/rpc';
 import { ServiceProxy } from '../lib/ServiceProxy';
 
 /**
@@ -40,27 +40,27 @@ describe('shared/rpc — one derivation for both sides', () => {
     ['update', 'updated'],
     ['delete', 'deleted']
   ])('maps the generic %s action to the %s reply', (action, reply) => {
-    expect(responseEventFor('notes', action)).toBe(`gphone:client:notes:${reply}`);
+    expect(responseEventFor('notes', action)).toBe(`gos:client:notes:${reply}`);
   });
 
   it('replies to a custom action on its own name', () => {
-    expect(responseEventFor('mail', 'getMail')).toBe('gphone:client:mail:getMail');
+    expect(responseEventFor('mail', 'getMail')).toBe('gos:client:mail:getMail');
   });
 
   it('builds request events', () => {
-    expect(requestEventFor('notes', 'get')).toBe('gphone:server:notes:get');
+    expect(requestEventFor('notes', 'get')).toBe('gos:server:notes:get');
   });
 
   it('round-trips a request event back to service and action', () => {
-    expect(parseRequestEvent('gphone:server:mail:markAsRead')).toEqual({
+    expect(parseRequestEvent('gos:server:mail:markAsRead')).toEqual({
       service: 'mail',
       action: 'markAsRead'
     });
   });
 
   it.each([
-    ['too few segments', 'gphone:server:noServiceSegment'],
-    ['wrong side', 'gphone:client:notes:get'],
+    ['too few segments', 'gos:server:noServiceSegment'],
+    ['wrong side', 'gos:client:notes:get'],
     ['foreign prefix', 'other:server:notes:get'],
     ['empty', '']
   ])('refuses to parse %s', (_label, event) => {
@@ -71,25 +71,25 @@ describe('shared/rpc — one derivation for both sides', () => {
 describe('ServiceProxy — subscribes the reply it will actually receive', () => {
   it('subscribes the derived reply for a generic CRUD action', () => {
     const app = new ServiceProxy('notes');
-    app.registerCallback('getNotes', 'gphone:server:notes:get');
+    app.registerCallback('getNotes', 'gos:server:notes:get');
 
-    expect([...netSubscriptions.keys()]).toEqual(['gphone:client:notes:receive']);
+    expect([...netSubscriptions.keys()]).toEqual(['gos:client:notes:receive']);
     expect(registeredNuiTypes).toEqual(['getNotes']);
   });
 
   it('subscribes the reply for a custom action — the mail regression', () => {
     // Every one of these used to reply into the void.
     const app = new ServiceProxy('mail');
-    app.registerCallback('getMail', 'gphone:server:mail:getMail');
-    app.registerCallback('markAsRead', 'gphone:server:mail:markAsRead');
-    app.registerCallback('archiveMail', 'gphone:server:mail:archiveMail');
-    app.registerCallback('deleteMail', 'gphone:server:mail:deleteMail');
+    app.registerCallback('getMail', 'gos:server:mail:getMail');
+    app.registerCallback('markAsRead', 'gos:server:mail:markAsRead');
+    app.registerCallback('archiveMail', 'gos:server:mail:archiveMail');
+    app.registerCallback('deleteMail', 'gos:server:mail:deleteMail');
 
     expect([...netSubscriptions.keys()].toSorted()).toEqual([
-      'gphone:client:mail:archiveMail',
-      'gphone:client:mail:deleteMail',
-      'gphone:client:mail:getMail',
-      'gphone:client:mail:markAsRead'
+      'gos:client:mail:archiveMail',
+      'gos:client:mail:deleteMail',
+      'gos:client:mail:getMail',
+      'gos:client:mail:markAsRead'
     ]);
   });
 
@@ -102,17 +102,17 @@ describe('ServiceProxy — subscribes the reply it will actually receive', () =>
     };
 
     const app = new ServiceProxy('conversations');
-    app.registerCallback('deleteConversation', 'gphone:server:conversations:delete');
-    app.registerCallback('leaveConversation', 'gphone:server:conversations:delete');
+    app.registerCallback('deleteConversation', 'gos:server:conversations:delete');
+    app.registerCallback('leaveConversation', 'gos:server:conversations:delete');
 
     expect(subscribeSpy).toHaveBeenCalledTimes(1);
-    expect(subscribeSpy).toHaveBeenCalledWith('gphone:client:conversations:deleted');
+    expect(subscribeSpy).toHaveBeenCalledWith('gos:client:conversations:deleted');
   });
 
   it('refuses a server event whose reply cannot be derived', () => {
     // A caller would otherwise hang for 15s. Fail at startup instead.
     const app = new ServiceProxy('phone');
-    expect(() => app.registerCallback('endCall', 'gphone:server:noAppSegment')).toThrow(
+    expect(() => app.registerCallback('endCall', 'gos:server:noAppSegment')).toThrow(
       /cannot be derived/
     );
   });
@@ -121,7 +121,7 @@ describe('ServiceProxy — subscribes the reply it will actually receive', () =>
 describe('ServiceProxy — request/response round trip', () => {
   it('resolves the NUI callback when the reply arrives', async () => {
     const app = new ServiceProxy('mail');
-    app.registerCallback('getMail', 'gphone:server:mail:getMail');
+    app.registerCallback('getMail', 'gos:server:mail:getMail');
 
     const resolved = vi.fn();
     nuiCallbacks.get('getMail')!({}, resolved);
@@ -129,20 +129,20 @@ describe('ServiceProxy — request/response round trip', () => {
     // The relay emitted to the server with a correlation id...
     expect(emitted).toHaveLength(1);
     const [event, cbId] = emitted[0] as [string, string, unknown];
-    expect(event).toBe('gphone:server:mail:getMail');
+    expect(event).toBe('gos:server:mail:getMail');
 
     // ...and the derived reply resolves that same id.
-    netSubscriptions.get('gphone:client:mail:getMail')!(cbId, [{ id: 1, subject: 'Statement' }]);
+    netSubscriptions.get('gos:client:mail:getMail')!(cbId, [{ id: 1, subject: 'Statement' }]);
 
     expect(resolved).toHaveBeenCalledWith([{ id: 1, subject: 'Statement' }]);
   });
 
   it('ignores a reply for an unknown correlation id', () => {
     const app = new ServiceProxy('notes');
-    app.registerCallback('getNotes', 'gphone:server:notes:get');
+    app.registerCallback('getNotes', 'gos:server:notes:get');
 
     expect(() =>
-      netSubscriptions.get('gphone:client:notes:receive')!('never-issued', [])
+      netSubscriptions.get('gos:client:notes:receive')!('never-issued', [])
     ).not.toThrow();
   });
 
@@ -151,7 +151,7 @@ describe('ServiceProxy — request/response round trip', () => {
     try {
       vi.spyOn(console, 'warn').mockImplementation(() => {});
       const app = new ServiceProxy('notes');
-      app.registerCallback('getNotes', 'gphone:server:notes:get');
+      app.registerCallback('getNotes', 'gos:server:notes:get');
 
       const resolved = vi.fn();
       nuiCallbacks.get('getNotes')!({}, resolved);

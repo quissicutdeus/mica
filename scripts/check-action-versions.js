@@ -68,7 +68,7 @@ function token() {
 const AUTH = token();
 
 async function api(url) {
-  const headers = { accept: 'application/vnd.github+json', 'user-agent': 'gphone-action-drift' };
+  const headers = { accept: 'application/vnd.github+json', 'user-agent': 'gos-action-drift' };
   if (AUTH) headers.authorization = `Bearer ${AUTH}`;
   const response = await fetch(url, { headers });
   if (!response.ok) {

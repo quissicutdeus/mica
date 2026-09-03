@@ -13,7 +13,7 @@ import { ownedTables, purgeOwnedRows, sweepOrphanedRows } from './orphanSweep';
  *
  * Most of its traffic goes one way, from the server out to a player's UI, and everything
  * in this file is that outbound half. It is not the whole service: `services/Capabilities.ts`
- * registers `gphone:server:shell:capabilities`, an inbound action answering what this
+ * registers `gos:server:shell:capabilities`, an inbound action answering what this
  * deployment can do so the launcher can hide what it cannot. That lives in its own file
  * rather than here because this one owns the push side and the player-loaded registry; the
  * two halves share only the `shell` name.
@@ -41,13 +41,13 @@ export interface ShellNotification {
 /**
  * Raise a toast on a player's phone.
  *
- * Replaces the same `emitNet('gphone:client:shell:notify', ...)` written out at five call
+ * Replaces the same `emitNet('gos:client:shell:notify', ...)` written out at five call
  * sites across four files. The event name is derived from the service id in exactly one
  * place, so it cannot drift from what the client listens for.
  */
 export const notifyPlayer = (source: number, notification: ShellNotification): void => {
   if (!notification?.message) return;
-  emitNet(`gphone:client:${SHELL_SERVICE}:notify`, source, notification);
+  emitNet(`gos:client:${SHELL_SERVICE}:notify`, source, notification);
 };
 
 /**
@@ -60,7 +60,7 @@ export const notifyPlayer = (source: number, notification: ShellNotification): v
  * the shell level, for the bootstrap state nothing else re-reads on its own.
  */
 export const pushRehydrate = (source: number): void => {
-  emitNet(`gphone:client:${SHELL_SERVICE}:rehydrate`, source);
+  emitNet(`gos:client:${SHELL_SERVICE}:rehydrate`, source);
 };
 
 /**
@@ -78,12 +78,12 @@ export const pushRehydrate = (source: number): void => {
  *   object. No client can emit it, so the payload is the identity.
  * - **`esxLocal`** is raised in-process by es_extended: `TriggerEvent('esx:playerLoaded',
  *   playerId, xPlayer, isNew)`. Not a `TriggerServerEvent`, so registering only `on` leaves
- *   the name un-net-safe inside gPhone and no client can reach it. An `onNet` twin added "to
+ *   the name un-net-safe inside gOS and no client can reach it. An `onNet` twin added "to
  *   be safe" would manufacture an entry point es_extended does not have.
  * - **`standaloneJoin`** is raised by the **FiveM runtime itself**, not by any framework —
  *   there is no framework on a standalone server to raise anything. It is local, so the same
  *   reasoning as `esxLocal` applies twice over: registering only `on` leaves it un-net-safe
- *   inside gPhone, and unlike the two above it carries no identity in its payload at all.
+ *   inside gOS, and unlike the two above it carries no identity in its payload at all.
  *   See the listener for why the connection is the only thing it reads.
  */
 export const PLAYER_LOADED_EVENTS = {
@@ -135,16 +135,14 @@ on('playerDropped', () => {
  * `guardNetEvent` refuses silently by design — these events carry no callback id, so there
  * is nobody waiting to be told (`lib/netGuard.ts`). That is right for a flood and wrong for
  * the ordering case: under a custom multichar, or a core that announces a character before
- * the framework has registered it, gPhone would simply never rehydrate settings and never
+ * the framework has registered it, gOS would simply never rehydrate settings and never
  * load battery, with no output anywhere and every suite still green. Silence that reads as
  * success is the thing the house rules exist to prevent, so this one refusal is audible.
  */
 const refuse = (connection: number, why: string): undefined => {
   if (!refusalsLogged.has(connection)) {
     refusalsLogged.add(connection);
-    console.warn(
-      `[gphone] ignored QBCore:Server:OnPlayerLoaded from source ${connection}: ${why}.`
-    );
+    console.warn(`[gos] ignored QBCore:Server:OnPlayerLoaded from source ${connection}: ${why}.`);
   }
   return undefined;
 };
@@ -215,7 +213,7 @@ export const loadedPlayerSource = (player: unknown): number | undefined => {
  * here), and `qbx_spawn/client/main.lua:218` does the same. A plain `on()` here would throw
  * "was not safe for net" the moment a player loads, because `RegisterNetEvent`'s
  * network-safety flag is per-resource: qbx_core declaring the name net-safe for itself does
- * nothing for gPhone's own handler.
+ * nothing for gOS's own handler.
  *
  * **Nothing fires this name locally with a Player object.** The local, Player-object
  * trigger is a *different event* — `QBCore:Server:PlayerLoaded`, from
@@ -265,15 +263,15 @@ const esxLoadedSource = (playerId: unknown, xPlayer: unknown): number | undefine
  * playerId, xPlayer, isNew)`. It is not a `TriggerServerEvent`, which is the whole reason
  * qbx's `QBCore:Server:OnPlayerLoaded` had to be `onNet` and had to be hardened. And
  * `RegisterNetEvent`'s network-safety flag is per-resource — the fact this file already
- * relies on, one direction over — so gPhone registering only `on` means this name is *not*
- * net-safe inside gPhone and a client emitting it reaches nothing here. There is no forged
+ * relies on, one direction over — so gOS registering only `on` means this name is *not*
+ * net-safe inside gOS and a client emitting it reaches nothing here. There is no forged
  * target to refuse, and so no `loadedPlayerSource` on this path.
  *
  * Adding an `onNet` twin "to be safe" would do the opposite: it would declare the name
- * net-safe for gPhone and manufacture a client-reachable entry point that es_extended does
+ * net-safe for gOS and manufacture a client-reachable entry point that es_extended does
  * not have. §2.9's rule against registering an action the app does not use applies to a
- * framework-named event exactly as it does to a gphone-named one — `docs/security.md`
- * records that a census organised by gphone event names is how this category got missed
+ * framework-named event exactly as it does to a gos-named one — `docs/security.md`
+ * records that a census organised by gos event names is how this category got missed
  * before. If a fork is ever found firing this name from a client, the fix is an `onNet`
  * twin routed through `loadedPlayerSource`, not a payload read.
  *
@@ -303,12 +301,12 @@ on(PLAYER_LOADED_EVENTS.esxLocal, (playerId: unknown, xPlayer: unknown) => {
  * the right name rather than an invented one:
  *
  * - **It already exists.** §2.9's rule against registering an action the app does not use
- *   applies to a runtime-named event exactly as it does to a gphone-named one, and the
- *   inverse applies here: gPhone listens to something the runtime already raises rather than
- *   asking the client to announce itself. A `gphone:server:shell:ready` would have been a new
+ *   applies to a runtime-named event exactly as it does to a gos-named one, and the
+ *   inverse applies here: gOS listens to something the runtime already raises rather than
+ *   asking the client to announce itself. A `gos:server:shell:ready` would have been a new
  *   client-reachable entry point, on the one path whose whole job is establishing identity.
  * - **`on`, never `onNet`.** The runtime raises it in-process, so registering only `on`
- *   leaves the name un-net-safe inside gPhone (`RegisterNetEvent`'s flag is per-resource —
+ *   leaves the name un-net-safe inside gOS (`RegisterNetEvent`'s flag is per-resource —
  *   the fact `esxLocal` relies on, one direction over) and a client emitting it reaches
  *   nothing here.
  * - **The payload is not read, and there is nothing in it to read.** `playerJoining`'s only
@@ -318,7 +316,7 @@ on(PLAYER_LOADED_EVENTS.esxLocal, (playerId: unknown, xPlayer: unknown) => {
  *   forgotten.
  *
  * Gated on `detectFramework()` answering `standalone`, which is only ever true when the
- * operator set `gphone_standalone` and no framework answered. On a qb or ESX server this
+ * operator set `gos_standalone` and no framework answered. On a qb or ESX server this
  * fires for every join and returns immediately — the framework's own event is what dispatches
  * there, and dispatching twice would rehydrate a phone whose character has not loaded yet.
  *
@@ -384,7 +382,7 @@ export const onPlayerLoaded = (name: string, run: PlayerLoadedRun): void => {
  * `Battery`'s subscriber is async and a `void`-ed rejection would otherwise surface as an
  * unhandled rejection with nothing naming the subscriber. Either way the remaining
  * subscribers still run, this returns normally, and the framework's own player-load path is
- * untouched — gPhone has no way to fail a character load and must not invent one. The cost
+ * untouched — gOS has no way to fail a character load and must not invent one. The cost
  * is that a broken subscriber is degraded rather than fatal, which is why it is logged with
  * its name: silence that reads as success is the failure mode this repo cares most about.
  */
@@ -395,7 +393,7 @@ const dispatchPlayerLoaded = (src: number): void => {
       if (pending && typeof pending.then === 'function') {
         void pending.catch((error: unknown) => {
           console.error(
-            `[gphone] player-loaded subscriber '${subscriber.name}' rejected for source ${src}. ` +
+            `[gos] player-loaded subscriber '${subscriber.name}' rejected for source ${src}. ` +
               `The other subscribers still ran.`,
             error
           );
@@ -403,7 +401,7 @@ const dispatchPlayerLoaded = (src: number): void => {
       }
     } catch (error) {
       console.error(
-        `[gphone] player-loaded subscriber '${subscriber.name}' threw for source ${src}. ` +
+        `[gos] player-loaded subscriber '${subscriber.name}' threw for source ${src}. ` +
           `The other subscribers still ran.`,
         error
       );
@@ -447,13 +445,13 @@ onPlayerLoaded('framework-sources', FrameworkBridge.rememberSource);
  * MICA-71 and `orphanSweep.test.ts` asserts it here; that assertion is the one thing that
  * catches an `onNet` slip, so it is carried across rather than paraphrased.
  *
- * gPhone owns the name rather than listening for a framework's, for the reason
+ * gOS owns the name rather than listening for a framework's, for the reason
  * `services/Media.ts` gives at length: qb-core, qbx_core and es_extended do not agree on
  * what they emit when a character is deleted, several multicharacter resources emit
  * nothing, and a handler for a guessed name is cleanup that silently never runs — which
  * reads exactly like cleanup that works.
  *
- * **The older `gphone:server:media:characterDeleted` is left alone, doing exactly what it
+ * **The older `gos:server:media:characterDeleted` is left alone, doing exactly what it
  * documented.** Widening it to a whole-phone purge would have been free reach for owners
  * already wired to it, and that is the argument against it: the README also describes it as
  * a way to reclaim media *space*, so somebody firing it at a character who still exists
@@ -462,7 +460,7 @@ onPlayerLoaded('framework-sources', FrameworkBridge.rememberSource);
  * to the old name keep media cleanup at once and get the other twenty-one tables at the
  * next restart's sweep, which is strictly better than they had.
  */
-on(`gphone:server:${SHELL_SERVICE}:characterDeleted`, (rawCitizenid: unknown) => {
+on(`gos:server:${SHELL_SERVICE}:characterDeleted`, (rawCitizenid: unknown) => {
   const citizenid = typeof rawCitizenid === 'string' ? rawCitizenid.trim() : '';
   if (citizenid.length === 0) return;
 
@@ -472,13 +470,13 @@ on(`gphone:server:${SHELL_SERVICE}:characterDeleted`, (rawCitizenid: unknown) =>
       // length: a query issued while oxmysql has no pool hangs rather than failing, so an
       // outcome logged only when there was something to say cannot be told apart from one
       // that never returned. An operator triggering this deliberately needs the difference.
-      console.log(`[gphone] purged ${removed} row(s) for deleted character ${citizenid}.`);
+      console.log(`[gos] purged ${removed} row(s) for deleted character ${citizenid}.`);
       for (const { table, error } of failures) {
-        console.error(`[gphone] could not purge ${table} for ${citizenid}:`, error);
+        console.error(`[gos] could not purge ${table} for ${citizenid}:`, error);
       }
     })
     .catch((error) => {
-      console.error('[gphone] purge for a deleted character failed:', error);
+      console.error('[gos] purge for a deleted character failed:', error);
     });
 });
 
@@ -514,7 +512,7 @@ on(`gphone:server:${SHELL_SERVICE}:characterDeleted`, (rawCitizenid: unknown) =>
  * `await Database.*` in the resource has it, and solving it locally is what left
  * `HodlrMarket.restorePrice` as the only caller that recovers.
  *
- * `gphone_media` is swept twice at start — once here and once by `runMediaMaintenance`,
+ * `gos_media` is swept twice at start — once here and once by `runMediaMaintenance`,
  * which also runs the retention prune and reports the pair. That is deliberate. The second
  * `DELETE … WHERE NOT EXISTS` over a table just swept removes nothing, and making either
  * conditional on the other would couple two lifecycles to save one no-op statement.
@@ -523,7 +521,7 @@ on('onResourceStart', (resourceName: string) => {
   if (resourceName !== GetCurrentResourceName()) return;
 
   const tables = ownedTables().length;
-  console.log(`[gphone] orphan sweep starting over ${tables} table(s).`);
+  console.log(`[gos] orphan sweep starting over ${tables} table(s).`);
 
   void sweepOrphanedRows()
     .then(({ removed, byTable, failures }) => {
@@ -531,13 +529,13 @@ on('onResourceStart', (resourceName: string) => {
         .map(([table, count]) => `${table} ${count}`)
         .join(', ');
       console.log(
-        `[gphone] orphan sweep finished: removed ${removed} row(s)${detail ? ` (${detail})` : ''}.`
+        `[gos] orphan sweep finished: removed ${removed} row(s)${detail ? ` (${detail})` : ''}.`
       );
       for (const { table, error } of failures) {
-        console.error(`[gphone] orphan sweep could not read ${table}:`, error);
+        console.error(`[gos] orphan sweep could not read ${table}:`, error);
       }
     })
     .catch((error) => {
-      console.error('[gphone] orphan sweep failed:', error);
+      console.error('[gos] orphan sweep failed:', error);
     });
 });

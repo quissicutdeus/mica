@@ -79,7 +79,7 @@ function trimFonts(subsets: string[] = FONT_SUBSETS): Plugin {
   const SUBSET_OF = /roboto-(.+)-\d+-(?:normal|italic)\.woff2/;
 
   return {
-    name: 'gphone:trim-fonts',
+    name: 'gos:trim-fonts',
     enforce: 'pre',
     transform(code: string, id: string) {
       if (!id.includes('@fontsource') || !id.endsWith('.css')) return null;
@@ -98,7 +98,7 @@ function trimFonts(subsets: string[] = FONT_SUBSETS): Plugin {
       // breaks is an upstream change to the filename convention the regex above reads.
       if (kept === 0) {
         this.error(
-          `gphone:trim-fonts matched no @font-face in ${id} for subsets [${subsets.join(', ')}]. ` +
+          `gos:trim-fonts matched no @font-face in ${id} for subsets [${subsets.join(', ')}]. ` +
             `If @fontsource changed its filename convention, SUBSET_OF needs updating.`
         );
       }
@@ -109,9 +109,9 @@ function trimFonts(subsets: string[] = FONT_SUBSETS): Plugin {
 
 // CalVer, "YYYY.MM.DD.N" (N = commit's position among same-day commits).
 // Docker excludes .git from the build context, so `deploy` passes this
-// precomputed via MICA_CALVER; falls back to git log for local builds.
+// precomputed via GOS_CALVER; falls back to git log for local builds.
 function getCalVer() {
-  if (process.env.MICA_CALVER) return process.env.MICA_CALVER;
+  if (process.env.GOS_CALVER) return process.env.GOS_CALVER;
   try {
     const dates = execSync("git log --format=%cd --date=format:'%Y.%m.%d'")
       .toString()
@@ -134,26 +134,26 @@ export default defineConfig({
   plugins: [trimFonts(), svelte(), licenseBanner()],
   base: './',
   define: {
-    __MICA_VERSION__: JSON.stringify(version),
-    __MICA_BUILD_INFO__: JSON.stringify(buildInfo),
+    __GOS_VERSION__: JSON.stringify(version),
+    __GOS_BUILD_INFO__: JSON.stringify(buildInfo),
     // MICA-192: the branch on its own, for the §13 source address. `buildInfo` above
     // already contains it, welded into a string meant for a human to read.
-    __MICA_BRANCH__: JSON.stringify(gitInfo.branch)
+    __GOS_BRANCH__: JSON.stringify(gitInfo.branch)
   },
   resolve: {
     alias: {
-      '@gphone/shared': path.resolve(import.meta.dirname, '../shared'),
-      // Before the bare `@gphone/sdk` entry, and it has to stay there: aliases are tried
+      '@gos/shared': path.resolve(import.meta.dirname, '../shared'),
+      // Before the bare `@gos/sdk` entry, and it has to stay there: aliases are tried
       // in order, and the shorter key matches this specifier as a prefix — resolving it
       // to `../sdk/index.ts/testing`, which is not a path.
-      '@gphone/sdk/testing': path.resolve(import.meta.dirname, './src/testing.ts'),
+      '@gos/sdk/testing': path.resolve(import.meta.dirname, './src/testing.ts'),
       // The leaf a manifest imports. Same ordering rule as above, and the reason it exists
       // is in `../sdk/app.ts`: a manifest that imports the full barrel closes a cycle,
       // because the barrel reaches the registry and the registry globs every manifest.
-      '@gphone/sdk/app': path.resolve(import.meta.dirname, '../sdk/app.ts'),
+      '@gos/sdk/app': path.resolve(import.meta.dirname, '../sdk/app.ts'),
       // Core-only surface. Same ordering rule as `/testing` above.
-      '@gphone/sdk/core': path.resolve(import.meta.dirname, '../sdk/core.ts'),
-      '@gphone/sdk': path.resolve(import.meta.dirname, '../sdk/index.ts')
+      '@gos/sdk/core': path.resolve(import.meta.dirname, '../sdk/core.ts'),
+      '@gos/sdk': path.resolve(import.meta.dirname, '../sdk/index.ts')
     },
     conditions: ['browser']
   },
@@ -199,7 +199,7 @@ export default defineConfig({
     // MICA-172: `../sdk/**` mirrors the `../shared/**` entry beside it. The SDK is its
     // own workspace package now, but it deliberately does NOT get a third Vitest project:
     // that would mean a second copy of the Svelte plugin, the jsdom opt-in convention, the
-    // `@gphone/shared` alias and the `@material/material-color-utilities` inline workaround — and
+    // `@gos/shared` alias and the `@material/material-color-utilities` inline workaround — and
     // four copies of a convention is how two of them end up disagreeing. Reaching across a
     // package boundary in this include is the established precedent, not a new one.
     include: [

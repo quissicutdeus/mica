@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { derived, writable } from 'svelte/store';
-import type { DeviceId } from '@gphone/shared/devices';
+import type { DeviceId } from '@gos/shared/devices';
 
 /**
  * Which device's frame is currently on screen, or `null` when none is — mirroring

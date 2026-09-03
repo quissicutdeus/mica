@@ -76,7 +76,7 @@ describe('the adapters, as a set', () => {
     expect(qbxAdapter.ownerTable()).toEqual({ table: 'players', column: 'citizenid' });
     expect(qbAdapter.ownerTable()).toEqual(qbxAdapter.ownerTable());
     expect(esxAdapter.ownerTable()).toEqual({ table: 'users', column: 'identifier' });
-    // Standalone has no character table at all — gPhone is the only record a player has.
+    // Standalone has no character table at all — gOS is the only record a player has.
     expect(standaloneAdapter.ownerTable()).toBeNull();
   });
 });
@@ -84,7 +84,7 @@ describe('the adapters, as a set', () => {
 /**
  * The order is a compatibility decision rather than a preference: a live server does not
  * change which string it calls a citizenid on the strength of a second resource being
- * installed, because every gPhone row is keyed on the one it already uses.
+ * installed, because every gOS row is keyed on the one it already uses.
  */
 describe('which framework wins when more than one answers', () => {
   it('prefers a qb core over es_extended', () => {

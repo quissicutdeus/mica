@@ -13,7 +13,7 @@ import { phoneNumberFrom } from '../lib/netGuard';
  * call from a blocked number before it ever rings, and `Messages.ts`'s
  * `deliverToParticipants` skips the live push to a recipient who has blocked the sender —
  * a client-side-only block is theatre, since a modified client can already emit
- * `gphone:server:phone:start`/`gphone:server:messages:send` directly (§2.9).
+ * `gos:server:phone:start`/`gos:server:messages:send` directly (§2.9).
  *
  * Owner-scoped generic CRUD, the same shape as any other small player-owned list
  * (Contacts, Notes): `get` lists a player's own blocked numbers, `create` adds one,
@@ -45,7 +45,7 @@ export const blocklist = defineService<BlockedNumber>({
  * Whether `citizenid` has blocked `number`.
  *
  * A plain exported function rather than a raw table read from `Phone.ts`/`Messages.ts` —
- * both need this question answered and neither owns `gphone_blocklist`, the same reason
+ * both need this question answered and neither owns `gos_blocklist`, the same reason
  * `Signal.ts` exports `isConnected` instead of every caller querying its own state
  * directly. `number` is normalised through `phoneNumberFrom` first: a caller here is
  * always passing a phone number already resolved server-side (the dialer's own number,
@@ -57,7 +57,7 @@ export const isBlocked = async (citizenid: string, number: string): Promise<bool
   if (!target) return false;
 
   const row = await Database.scalar<number | null>(
-    `SELECT 1 FROM \`gphone_blocklist\` WHERE \`citizenid\` = ? AND \`number\` = ? AND \`status\` = 'active' LIMIT 1`,
+    `SELECT 1 FROM \`gos_blocklist\` WHERE \`citizenid\` = ? AND \`number\` = ? AND \`status\` = 'active' LIMIT 1`,
     [citizenid, target]
   );
   return Boolean(row);
@@ -93,7 +93,7 @@ export const blockedBy = async (
 
   const placeholders = wanted.map(() => '?').join(', ');
   const rows = await Database.query<{ citizenid: string }[]>(
-    `SELECT \`citizenid\` FROM \`gphone_blocklist\`
+    `SELECT \`citizenid\` FROM \`gos_blocklist\`
      WHERE \`citizenid\` IN (${placeholders}) AND \`number\` = ? AND \`status\` = 'active'`,
     [...wanted, target]
   );

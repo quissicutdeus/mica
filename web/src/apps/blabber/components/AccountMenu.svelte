@@ -5,20 +5,20 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { Avatar, CheckIcon, useLocale } from '@gphone/sdk';
-  import type { Account } from '@gphone/shared/types';
+  import { Avatar, CheckIcon, useLocale } from '@gos/sdk';
+  import type { Account } from '@gos/shared/types';
 
   /**
    * Identity, as a menu dropping from the header avatar that opens it.
    *
    * Three things live here, and two of them had no way in at all before. The server has always
-   * allowed `gphone_max_accounts_per_app` identities (three by default) while `ClaimHandle`
+   * allowed `gos_max_accounts_per_app` identities (three by default) while `ClaimHandle`
    * rendered only when the list was *empty* — so a second handle was unreachable from the phone.
    * `display_name` and `bio` have likewise been client-writable columns with no UI and no route.
    *
    * **Anchored to the top, not risen from the bottom.** It began as a bottom sheet copying
    * `ReportDialog`, the repo's only one, and that was the wrong borrowing: a sheet slides up from
-   * the bottom because a phone is tall and a thumb lives down there. gPhone is a mouse-driven
+   * the bottom because a phone is tall and a thumb lives down there. gOS is a mouse-driven
    * overlay inside a game, so that reasoning does not transfer, and a five-item menu opening a
    * full screen-height away from the control that triggered it is only travel. A dialog that
    * needs the player's whole attention — reporting content — still belongs at the bottom.

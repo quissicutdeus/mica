@@ -50,7 +50,7 @@ vi.mock('../lib/FrameworkBridge', async (importOriginal) => {
 });
 
 // Imported for its side effect: loading the module registers
-// `gphone:server:conversations:get`, and for the declaration's own paging numbers.
+// `gos:server:conversations:get`, and for the declaration's own paging numbers.
 import { conversations } from '../services/Conversations';
 import { Database } from '../lib/Database';
 
@@ -77,9 +77,9 @@ beforeEach(() => {
   );
 });
 
-/** Drives `gphone:server:conversations:get` as the caller. */
+/** Drives `gos:server:conversations:get` as the caller. */
 const get = async (data: unknown) => {
-  const handler = handlers.get('gphone:server:conversations:get');
+  const handler = handlers.get('gos:server:conversations:get');
   if (!handler) throw new Error('no handler for get');
   await handler('cb-1', data);
   return replies[replies.length - 1] as {
@@ -209,7 +209,7 @@ describe('the cursor is a position in that order, and a bound rather than author
       await get({ cursor: bad });
 
       // The read never happens: the contract or `recencyCursor` refuses first.
-      expect(db.count(/gphone_messages_conversations/)).toBe(0);
+      expect(db.count(/gos_messages_conversations/)).toBe(0);
     });
   }
 });

@@ -30,7 +30,7 @@ import { __resetRateLimits } from '../lib/rateLimit';
 import { __resetLockscreenAttempts, __setLockscreenClock } from '../services/Lockscreen';
 
 const call = async (action: string, data: unknown, citizenid = 'CIT_A') => {
-  const handler = handlers.get(`gphone:server:lockscreen:${action}`);
+  const handler = handlers.get(`gos:server:lockscreen:${action}`);
   if (!handler) throw new Error(`no handler for ${action}`);
   bridge.current = citizenid;
   (globalThis as any).source = 5;
@@ -106,7 +106,7 @@ describe('lockscreen:set (MICA-60)', () => {
     await call('set', { passcode: '135790' });
 
     const [sql, params] = queryCalls()[0];
-    expect(String(sql)).toContain('INSERT INTO gphone_lockscreen');
+    expect(String(sql)).toContain('INSERT INTO gos_lockscreen');
     // citizenid, hash, salt — none of them the literal passcode.
     expect(params).not.toContain('135790');
     const [, hash, salt] = params as string[];
@@ -201,7 +201,7 @@ describe('lockscreen:clear (MICA-60)', () => {
     const reply = await call('clear', {});
     expect(reply).toEqual({ ok: true });
     const [sql, params] = queryCalls()[0];
-    expect(String(sql)).toContain('DELETE FROM gphone_lockscreen');
+    expect(String(sql)).toContain('DELETE FROM gos_lockscreen');
     expect(params).toEqual(['CIT_A']);
   });
 
@@ -226,12 +226,12 @@ describe('lockscreen:clear (MICA-60)', () => {
 describe('lockscreen — no generic action survives', () => {
   it('registers exactly the four named actions and nothing generic', () => {
     expect(
-      [...handlers.keys()].filter((e) => e.startsWith('gphone:server:lockscreen:')).toSorted()
+      [...handlers.keys()].filter((e) => e.startsWith('gos:server:lockscreen:')).toSorted()
     ).toEqual([
-      'gphone:server:lockscreen:check',
-      'gphone:server:lockscreen:clear',
-      'gphone:server:lockscreen:set',
-      'gphone:server:lockscreen:status'
+      'gos:server:lockscreen:check',
+      'gos:server:lockscreen:clear',
+      'gos:server:lockscreen:set',
+      'gos:server:lockscreen:status'
     ]);
   });
 });

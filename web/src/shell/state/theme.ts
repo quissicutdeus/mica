@@ -10,7 +10,7 @@ import {
   cssVarBlock,
   sanitizeSeed
 } from '../../../../sdk/host/seam/theme';
-import type { M3Tokens } from '@gphone/sdk';
+import type { M3Tokens } from '@gos/sdk';
 
 /**
  * The phone's active color theme.
@@ -34,7 +34,7 @@ import type { M3Tokens } from '@gphone/sdk';
  * by arithmetic (`lib/m3.ts`), so every seed works and none of them is a special case.
  */
 
-import type { ThemeMode, ThemeState } from '@gphone/sdk';
+import type { ThemeMode, ThemeState } from '@gos/sdk';
 
 export const DEFAULT_THEME: ThemeState = { seed: DEFAULT_SEED, mode: 'dark' };
 

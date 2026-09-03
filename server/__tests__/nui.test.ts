@@ -15,7 +15,7 @@ import {
   parseContactShare,
   parseCallStatus,
   parseSetVisible
-} from '@gphone/shared/nui';
+} from '@gos/shared/nui';
 
 describe('Shared NUI Payload Validation', () => {
   it('parses valid setTime payloads and rejects invalid ones', () => {

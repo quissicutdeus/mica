@@ -37,17 +37,17 @@ the whole install path lives in the phone's own UI and a plain `set` never
 leaves the server:
 
 ```cfg
-setr gphone_addon_hosts "store.example.com"
-setr gphone_addon_catalog "https://store.example.com/catalog.json"
+setr gos_addon_hosts "store.example.com"
+setr gos_addon_catalog "https://store.example.com/catalog.json"
 ```
 
-`gphone_addon_hosts` is the allowlist step 2 below checks, and
-`gphone_addon_catalog` is the URL the Store and the update check both fetch.
-**The catalog's own host must appear in the allowlist too** — gPhone holds the
-catalog to the same list as the bundles on it, so there is one list rather than
-two, and setting the catalog while forgetting the allowlist is the mistake that
-makes the Store list nothing. The client prints a line about that pairing at
-resource start rather than leaving it to be discovered.
+`gos_addon_hosts` is the allowlist step 2 below checks, and `gos_addon_catalog`
+is the URL the Store and the update check both fetch. **The catalog's own host
+must appear in the allowlist too** — gOS holds the catalog to the same list as
+the bundles on it, so there is one list rather than two, and setting the catalog
+while forgetting the allowlist is the mistake that makes the Store list nothing.
+The client prints a line about that pairing at resource start rather than
+leaving it to be discovered.
 
 `client/services/RemoteApps.ts` reads both and answers a `remoteAppConfig` NUI
 call with them; `web/src/shell/state/remoteAppConfig.ts` applies them at page
@@ -63,8 +63,8 @@ stock server does. Two env vars stand in for the convars when you want to walk
 the loop without a game running:
 
 ```sh
-VITE_MICA_ADDON_HOSTS=store.example.com \
-VITE_MICA_ADDON_CATALOG=https://store.example.com/catalog.json pnpm dev
+VITE_GOS_ADDON_HOSTS=store.example.com \
+VITE_GOS_ADDON_CATALOG=https://store.example.com/catalog.json pnpm dev
 ```
 
 ## The manifest comes from the entry, not the code
@@ -89,9 +89,9 @@ warning, since there is no path left to recover a manifest from it.
    verify.
 2. Refuse a `bundleUrl` whose host isn't on the trusted-remote-app allowlist
    (`web/src/shell/state/remoteAppSecurity.ts`'s `setTrustedRemoteAppHosts`/
-   `getTrustedRemoteAppHosts`), empty until `gphone_addon_hosts` fills it — so
-   on a server that has set no convars this step refuses everything, which is
-   the intended behaviour rather than a misconfiguration.
+   `getTrustedRemoteAppHosts`), empty until `gos_addon_hosts` fills it — so on a
+   server that has set no convars this step refuses everything, which is the
+   intended behaviour rather than a misconfiguration.
 3. Fetch the bytes, hash them, and compare against `entry.sha256`. A mismatch
    refuses the install. A pinned hash re-verifies on every boot, not just at
    install time, so a bundle swapped out server-side after install is refused
@@ -115,26 +115,26 @@ come from people who have not. `tools/addon-template/` (MICA-175) is the
 standalone project that closes that gap:
 
 ```sh
-pnpm dlx degit quissicutdeus/gPhone/tools/addon-template my-addon
+pnpm dlx degit quissicutdeus/gos/tools/addon-template my-addon
 cd my-addon && pnpm install && pnpm build   # -> dist/<id>.js
 ```
 
 It carries its own copy of the build decisions — one ES chunk with
 `codeSplitting: false`, the stylesheet inlined into it, `target: 'chrome92'`,
-minified, `__MICA_VERSION__` and `__MICA_BUILD_INFO__` substituted with the
-empty string — so what it emits has the same shape a `bundleUrl` is expected to
-serve. `web/src/lib/addonTemplate.test.ts` fails this repo's build if the two
-configs stop agreeing on any of that.
+minified, `__GOS_VERSION__` and `__GOS_BUILD_INFO__` substituted with the empty
+string — so what it emits has the same shape a `bundleUrl` is expected to serve.
+`web/src/lib/addonTemplate.test.ts` fails this repo's build if the two configs
+stop agreeing on any of that.
 
 Two things about it belong on this page rather than in the template:
 
-- **It installs `@gphone/sdk` and `@gphone/shared` as git dependencies on this
+- **It installs `@gos/sdk` and `@gos/shared` as git dependencies on this
   repository, because neither is published.** The template's README carries the
   four consequences (an `overrides` entry for the SDK's own `workspace:*`,
   `blockExoticSubdeps: false`, both in `pnpm-workspace.yaml` because pnpm 11
   ignores the `pnpm` field in `package.json`, and a ref that has to be `dev`
   today because `main` predates the packaged SDK).
-- **The template refuses `@gphone/sdk/core` and a `core: true` manifest at build
+- **The template refuses `@gos/sdk/core` and a `core: true` manifest at build
   time**, since `refuseCoreEntry()` and `sdk/boundary.test.ts` are both in files
   an outside author does not have. That is a courtesy that fails early. The
   boundary an operator is actually relying on is the one on this page — the host
@@ -145,7 +145,7 @@ Two things about it belong on this page rather than in the template:
 
 The bundle's `default`/`manifest` exports, if any, are not read by the shell —
 that information now lives on the `CatalogEntry` instead (see above). What the
-shell actually calls is `bootAddOn` (`@gphone/sdk`, re-exported from
+shell actually calls is `bootAddOn` (`@gos/sdk`, re-exported from
 `sdk/host/iframe/boot.ts`), which the bundle's own entry code is expected to
 invoke once it's running inside the sandboxed frame — `hello`-handshaking with
 the shell, then waiting for `hydrate` before rendering. See
@@ -161,10 +161,10 @@ nothing put them together, so an install could sit behind a published fix
 indefinitely (MICA-74). `web/src/shell/state/appUpdates.ts` is the join:
 
 - **`getRemoteCatalogUrl()`/`setRemoteCatalogUrl()`** (`catalog.ts`) hold the
-  operator's catalog URL, unset until `gphone_addon_catalog` fills it, exactly
-  like `setTrustedRemoteAppHosts`. It moved out of a `const` inside the Store
-  app because the update check runs at phone-open, before the Store has ever
-  been opened.
+  operator's catalog URL, unset until `gos_addon_catalog` fills it, exactly like
+  `setTrustedRemoteAppHosts`. It moved out of a `const` inside the Store app
+  because the update check runs at phone-open, before the Store has ever been
+  opened.
 - **`refreshAppUpdates()`** fetches that catalog and compares. It runs from the
   Store's manifest `preload` (so the launcher badge is right before first paint)
   and again from its `onAppForeground`. A failed fetch **keeps the previous

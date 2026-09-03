@@ -6,7 +6,7 @@ import { onMount } from 'svelte';
 import { guarded } from './guard';
 
 /**
- * Executes a callback when the application component mounts into the gPhone shell.
+ * Executes a callback when the application component mounts into the gOS shell.
  */
 export function onAppMount(handler: () => void): void {
   try {

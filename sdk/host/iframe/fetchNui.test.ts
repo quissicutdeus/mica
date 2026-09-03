@@ -5,7 +5,7 @@
 import { describe, it, expect } from 'vitest';
 import { fetchNui } from './fetchNui';
 import { fakeTransport } from './__fixtures__/fakeTransport';
-import { GENERIC_SERVICE_ACTION } from '@gphone/shared/rpc';
+import { GENERIC_SERVICE_ACTION } from '@gos/shared/rpc';
 import type { ToShell } from './messages';
 
 describe('fetchNui', () => {

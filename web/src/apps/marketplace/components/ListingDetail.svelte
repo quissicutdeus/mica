@@ -16,8 +16,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     useLocale,
     useMarketplace,
     useMessages
-  } from '@gphone/sdk';
-  import type { Listing } from '@gphone/shared/types';
+  } from '@gos/sdk';
+  import type { Listing } from '@gos/shared/types';
 
   let { id, onback }: { id: number; onback: () => void } = $props();
 
@@ -76,7 +76,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 {#if reporting}
   <ReportDialog
-    targetTable="gphone_marketplace"
+    targetTable="gos_marketplace"
     targetId={id}
     appId="marketplace"
     onclose={() => (reporting = false)}

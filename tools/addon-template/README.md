@@ -1,22 +1,22 @@
-# gPhone add-on template
+# gOS add-on template
 
-A standalone project that builds an installable gPhone add-on **without a clone
-of the gPhone repository**. What it emits is one self-contained ES module — the
-same shape `web/scripts/build-addons.mjs` emits for the add-ons that ship with
-the phone — which a Store catalog entry points at and the phone loads into a
+A standalone project that builds an installable gOS add-on **without a clone of
+the gOS repository**. What it emits is one self-contained ES module — the same
+shape `web/scripts/build-addons.mjs` emits for the add-ons that ship with the
+phone — which a Store catalog entry points at and the phone loads into a
 sandboxed iframe.
 
 ## Get it
 
 ```sh
-pnpm dlx degit quissicutdeus/gPhone/tools/addon-template my-addon
+pnpm dlx degit quissicutdeus/gos/tools/addon-template my-addon
 cd my-addon
 ```
 
 `degit` pulls the subdirectory out of GitHub's repository tarball; there is no
 clone and no `.git` in what you get. Downloading
-`https://github.com/quissicutdeus/gPhone/archive/refs/heads/dev.tar.gz` and
-lifting the same folder out by hand does exactly as well.
+`https://github.com/quissicutdeus/gos/archive/refs/heads/dev.tar.gz` and lifting
+the same folder out by hand does exactly as well.
 
 ## Build it
 
@@ -34,39 +34,39 @@ costs you a bundle.
 This is the part worth reading before you start, because every awkward line in
 `package.json` and `pnpm-workspace.yaml` comes from it.
 
-An add-on's imports resolve **two** workspace packages — `@gphone/sdk` (the
+An add-on's imports resolve **two** workspace packages — `@gos/sdk` (the
 contract: hooks, UI primitives, the manifest helper, the design system) and
-`@gphone/shared` (the wire vocabulary: types, routes, keybinds, rich text).
-`@gphone/sdk` re-exports from `@gphone/shared` and both are `"private": true` in
-gPhone's monorepo. **Neither is on npm, and that is a decision rather than an
-omission** — see "Why not npm" below. Both are also consumed _as source_ — no
-build step, no `main`, no `.d.ts` — so whatever route you get them by has to
-deliver TypeScript and Svelte files that your own toolchain compiles.
+`@gos/shared` (the wire vocabulary: types, routes, keybinds, rich text).
+`@gos/sdk` re-exports from `@gos/shared` and both are `"private": true` in gOS's
+monorepo. **Neither is on npm, and that is a decision rather than an omission**
+— see "Why not npm" below. Both are also consumed _as source_ — no build step,
+no `main`, no `.d.ts` — so whatever route you get them by has to deliver
+TypeScript and Svelte files that your own toolchain compiles.
 
 There are two routes. Take the first unless you specifically want the second.
 
 ### Route 1: release tarballs (recommended)
 
-Every gPhone release attaches both packages as tarballs. You get a real version
-to pin, and you are not tracking a moving branch.
+Every gOS release attaches both packages as tarballs. You get a real version to
+pin, and you are not tracking a moving branch.
 
 ```jsonc
 // package.json — one release, both packages
 "dependencies": {
-  "@gphone/sdk": "https://github.com/quissicutdeus/gPhone/releases/download/v2026.08.31.1/gphone-sdk-1.20260831.1.tgz"
+  "@gos/sdk": "https://github.com/quissicutdeus/gos/releases/download/v2026.08.31.1/gos-sdk-1.20260831.1.tgz"
 }
 ```
 
 ```yaml
-# pnpm-workspace.yaml — the SDK's own dependency on @gphone/shared
+# pnpm-workspace.yaml — the SDK's own dependency on @gos/shared
 overrides:
-  '@gphone/shared': 'https://github.com/quissicutdeus/gPhone/releases/download/v2026.08.31.1/gphone-shared-1.20260831.1.tgz'
+  '@gos/shared': 'https://github.com/quissicutdeus/gos/releases/download/v2026.08.31.1/gos-shared-1.20260831.1.tgz'
 ```
 
 **Both tarballs, from the same release, always.** The SDK asks for an exact
-`@gphone/shared` version and the matching tarball is the only thing that
-provides it; take them from different releases and `pnpm` tells you so rather
-than installing something incoherent.
+`@gos/shared` version and the matching tarball is the only thing that provides
+it; take them from different releases and `pnpm` tells you so rather than
+installing something incoherent.
 
 The version reads `<contract>.<yyyymmdd>.<n>`. The **major is
 `SDK_CONTRACT_VERSION`** — the number your add-on branches on, which moves only
@@ -87,8 +87,8 @@ lockfile, and hard-links it into your store like any other package.
 ```jsonc
 // package.json
 "dependencies": {
-  "@gphone/sdk": "github:quissicutdeus/gPhone#dev&path:/sdk",
-  "@gphone/shared": "github:quissicutdeus/gPhone#dev&path:/shared"
+  "@gos/sdk": "github:quissicutdeus/gos#dev&path:/sdk",
+  "@gos/shared": "github:quissicutdeus/gos#dev&path:/shared"
 }
 ```
 
@@ -98,8 +98,8 @@ Five things, and none of them is hidden. Route 1 pays only the first, in a
 simpler form: the SDK asks for an exact version rather than a workspace, so the
 override is a URL and there is no `blockExoticSubdeps` to switch off.
 
-1. **`@gphone/sdk` declares `"@gphone/shared": "workspace:*"`.** That specifier
-   means "the copy in gPhone's monorepo" and resolves to nothing anywhere else —
+1. **`@gos/sdk` declares `"@gos/shared": "workspace:*"`.** That specifier means
+   "the copy in gOS's monorepo" and resolves to nothing anywhere else —
    `pnpm install` fails outright with `ERR_PNPM_WORKSPACE_PKG_NOT_FOUND`,
    talking about a workspace that is not yours. The `overrides` entry in
    `pnpm-workspace.yaml` redirects that one specifier at the same git source.
@@ -125,17 +125,17 @@ override is a URL and there is no `blockExoticSubdeps` to switch off.
    commit as soon as you are past the first build:**
 
    ```jsonc
-   "@gphone/sdk": "github:quissicutdeus/gPhone#7b58646f0c9091a14d379dbcd17ec4e8e8ef671d&path:/sdk"
+   "@gos/sdk": "github:quissicutdeus/gos#7b58646f0c9091a14d379dbcd17ec4e8e8ef671d&path:/sdk"
    ```
 
    and put the same sha in the override. There is no version number worth
    pinning instead: the repository's tags are CalVer build stamps that move on
-   every push, and the SDK's own `MICA_VERSION` is documented as noise for
-   this purpose. `SDK_CONTRACT_VERSION` is the number that tracks the surface
-   you compiled against — read it, but it is not a thing you can install.
+   every push, and the SDK's own `GOS_VERSION` is documented as noise for this
+   purpose. `SDK_CONTRACT_VERSION` is the number that tracks the surface you
+   compiled against — read it, but it is not a thing you can install.
 
-5. **You are building gPhone's source, not a release artifact.** Your `svelte`
-   and `vite` compile the SDK's 85 components. That is why they are peer
+5. **You are building gOS's source, not a release artifact.** Your `svelte` and
+   `vite` compile the SDK's 85 components. That is why they are peer
    dependencies of the SDK rather than its own: two copies of Svelte in one
    bundle means two component registries and two sets of context keys, whose
    symptom is a component that renders and then silently stops reacting.
@@ -148,10 +148,10 @@ line and nothing else, and it costs more than it removes:
 - **An npm name is permanent**, and unpublishing has a 72-hour window. That is a
   commitment made before there is a release process to back it.
 - **It is two packages in lockstep, forever.** Every SDK release needs a
-  matching `@gphone/shared` release with a real range. Miss one and
-  `pnpm add @gphone/sdk` fails at install for everybody, not just for you.
-- **gPhone is AGPL-3.0-or-later with no linking exception** — the build inlines
-  the SDK into your bundle, so an add-on you distribute is a derivative work and
+  matching `@gos/shared` release with a real range. Miss one and
+  `pnpm add @gos/sdk` fails at install for everybody, not just for you.
+- **gOS is AGPL-3.0-or-later with no linking exception** — the build inlines the
+  SDK into your bundle, so an add-on you distribute is a derivative work and
   carries the same licence. A one-line `pnpm add` makes it very easy to not
   notice that. Getting a tarball URL from a release page does not.
 
@@ -171,16 +171,16 @@ line is the thing standing in the way, it opens.
 
 ## What is in here
 
-| File                  | Why it exists                                                                                                                |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `vite.config.ts`      | The build. Entry synthesis, the `core: true` refusal, the `@gphone/sdk/core` refusal, CSS inlining, the `__MICA_*__` guard |
-| `postcss.config.js`   | Lowers CSS to Chromium 103. **Not optional** — see below                                                                     |
-| `svelte.config.js`    | `vitePreprocess()`, and no `a11y` warning filter                                                                             |
-| `tsconfig.json`       | Makes the typechecker resolve `@gphone/sdk` to the same barrel the build does                                                |
-| `pnpm-workspace.yaml` | The override and `blockExoticSubdeps`, above                                                                                 |
-| `src/manifest.ts`     | Your app's identity, tile, permissions and `core: false`                                                                     |
-| `src/index.svelte`    | Your app                                                                                                                     |
-| `src/Icon.svelte`     | Your launcher glyph                                                                                                          |
+| File                  | Why it exists                                                                                                          |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `vite.config.ts`      | The build. Entry synthesis, the `core: true` refusal, the `@gos/sdk/core` refusal, CSS inlining, the `__GOS_*__` guard |
+| `postcss.config.js`   | Lowers CSS to Chromium 103. **Not optional** — see below                                                               |
+| `svelte.config.js`    | `vitePreprocess()`, and no `a11y` warning filter                                                                       |
+| `tsconfig.json`       | Makes the typechecker resolve `@gos/sdk` to the same barrel the build does                                             |
+| `pnpm-workspace.yaml` | The override and `blockExoticSubdeps`, above                                                                           |
+| `src/manifest.ts`     | Your app's identity, tile, permissions and `core: false`                                                               |
+| `src/index.svelte`    | Your app                                                                                                               |
+| `src/Icon.svelte`     | Your launcher glyph                                                                                                    |
 
 ## Two things that will bite you, and no test can catch either
 
@@ -221,7 +221,7 @@ sends the player home.
 
 ## The boundary you cannot build past
 
-`@gphone/sdk/core` — `useNuiBridge`, the raw NUI transport — is refused by
+`@gos/sdk/core` — `useNuiBridge`, the raw NUI transport — is refused by
 `vite.config.ts` at build time, with the rule in the error message. It is
 reserved for `core: true` apps that ship inside the phone. A manifest that says
 `core: true` is refused for the same reason: an add-on installed from the Store
@@ -230,10 +230,10 @@ origin, whose only route to the shell is `postMessage`, so the access
 `core: true` claims is not access this bundle can have.
 
 A third refusal reads your own code: `vite.config.ts` derives the permissions
-your `@gphone/sdk` imports need and fails the build if `permissions` in
+your `@gos/sdk` imports need and fails the build if `permissions` in
 `src/manifest.ts` names fewer. Declaring **more** than you use is always fine.
-The mapping is the SDK's own, loaded out of the `@gphone/sdk` you installed
-rather than copied here, so it is the same one gPhone holds its own apps to.
+The mapping is the SDK's own, loaded out of the `@gos/sdk` you installed rather
+than copied here, so it is the same one gOS holds its own apps to.
 
 Understating costs you nothing and costs the player something, which is why it
 is a build error rather than a lint: your permission list is what the Store
@@ -258,5 +258,5 @@ entry served by the operator's Store backend, which carries the id, name,
 version, description, the bundle URL, **a SHA-256 of the exact bytes**, the tile
 colour, the permissions to show the player before they install, and any outbound
 `networkHosts` your app needs. The server must also allowlist the host it is
-served from. `docs/addon-catalog.md` in the gPhone repository is the
-field-by-field reference.
+served from. `docs/addon-catalog.md` in the gOS repository is the field-by-field
+reference.

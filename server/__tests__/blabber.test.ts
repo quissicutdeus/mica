@@ -52,7 +52,7 @@ const author = (id: number, handle: string, over: Record<string, unknown> = {}) 
 });
 
 const call = async (action: string, data: unknown, citizenid = 'CIT_A') => {
-  const handler = handlers.get(`gphone:server:blabber:${action}`);
+  const handler = handlers.get(`gos:server:blabber:${action}`);
   if (!handler) throw new Error(`no handler for ${action}`);
   bridge.current = citizenid;
   (globalThis as any).source = 5;
@@ -121,7 +121,7 @@ describe('the declaration', () => {
   });
 
   it('makes an ear unique per account, in the child table', () => {
-    const ears = blabber.resolved.childTables.find((t) => t.name === 'gphone_blabber_ears');
+    const ears = blabber.resolved.childTables.find((t) => t.name === 'gos_blabber_ears');
     expect(ears).toBeDefined();
     const unique = (ears?.indexes ?? []).find((i: any) => i.name === 'blab_account');
     expect(unique).toMatchObject({ unique: true });
@@ -198,7 +198,7 @@ describe('attachments', () => {
     // One insert for the Blab row, one for the attachment join row.
     expect(dbMock.insert).toHaveBeenCalledTimes(2);
     const [table, values] = dbMock.insert.mock.calls[1];
-    expect(String(table)).toContain('gphone_blabber_attachments');
+    expect(String(table)).toContain('gos_blabber_attachments');
     expect(values).toEqual([50, 'CIT_A', 5]);
   });
 
@@ -285,7 +285,7 @@ describe('hashtag indexing', () => {
     await call('create', { account_id: 1, body: 'loving #LosAngeles and #losangeles today' });
 
     const tagInserts = dbMock.insert.mock.calls.filter(([sql]) =>
-      String(sql).includes('gphone_blabber_tags')
+      String(sql).includes('gos_blabber_tags')
     );
     expect(tagInserts).toHaveLength(1); // deduplicated by taggedTopics
     expect(tagInserts[0][1]).toEqual([50, 'losangeles']);
@@ -298,7 +298,7 @@ describe('hashtag indexing', () => {
     await call('create', { account_id: 1, body: 'no tags in this one' });
 
     const tagInserts = dbMock.insert.mock.calls.filter(([sql]) =>
-      String(sql).includes('gphone_blabber_tags')
+      String(sql).includes('gos_blabber_tags')
     );
     expect(tagInserts).toHaveLength(0);
   });
@@ -312,7 +312,7 @@ describe('hashtag indexing', () => {
     await call('create', { account_id: 1, body });
 
     const tagInserts = dbMock.insert.mock.calls.filter(([sql]) =>
-      String(sql).includes('gphone_blabber_tags')
+      String(sql).includes('gos_blabber_tags')
     );
     expect(tagInserts).toHaveLength(20);
   });
@@ -399,7 +399,7 @@ describe('the public feed', () => {
     await call('feed', {});
 
     const [sql, params] = dbMock.query.mock.calls[0];
-    expect(sql).not.toContain('gphone_account_blocks');
+    expect(sql).not.toContain('gos_account_blocks');
     // Just the limit+1 probe — no viewer id to bind.
     expect(params).toEqual([31]);
   });
@@ -422,7 +422,7 @@ describe('the public feed', () => {
     await call('feed', { account_id: 999 });
 
     const [sql] = dbMock.query.mock.calls[0];
-    expect(sql).not.toContain('gphone_account_blocks');
+    expect(sql).not.toContain('gos_account_blocks');
   });
 
   it('is top-level only, like Following', async () => {
@@ -536,7 +536,7 @@ describe('replies, mouths and ears', () => {
  * Author hydration.
  *
  * The bug this covers was invisible to every other suite: `Blab.handle`, `display_name` and
- * `avatar` are rendered by `BlabRow`, `Thread` and `Profile`, nothing joined `gphone_accounts`,
+ * `avatar` are rendered by `BlabRow`, `Thread` and `Profile`, nothing joined `gos_accounts`,
  * and the browser mock embeds a handle on every fixture — so `pnpm dev` and Playwright were
  * green while the feed in game rendered `@` and a blank name. A server test is the only place
  * this can be held, which is the point AGENTS.md §9 makes about server code being outside `tsc`.
@@ -560,7 +560,7 @@ describe('author hydration', () => {
     await repo.hydrate([blab()]);
 
     const sql = String(dbMock.query.mock.calls[0][0]);
-    expect(sql).toContain('gphone_accounts');
+    expect(sql).toContain('gos_accounts');
     expect(sql).not.toContain('citizenid');
   });
 

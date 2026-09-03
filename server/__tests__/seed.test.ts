@@ -18,7 +18,7 @@ vi.mock('../lib/Database', () => ({ Database: dbMock }));
 import { SEED_CHARACTERS, clearSeed, seedFor } from '../lib/seed';
 
 /**
- * `gphoneseed` writes and deletes rows in tables the framework owns, on a live server,
+ * `gosseed` writes and deletes rows in tables the framework owns, on a live server,
  * from a console command an admin runs casually. It had no test at all.
  *
  * These assert the shape of the SQL rather than its effect, which is the most a unit
@@ -49,14 +49,14 @@ describe('seed characters', () => {
 
 describe('clearSeed', () => {
   it('never deletes a contact on a seed number that the seed did not write', async () => {
-    // The defect: `DELETE FROM gphone_contacts WHERE phone IN (...)` and nothing else,
+    // The defect: `DELETE FROM gos_contacts WHERE phone IN (...)` and nothing else,
     // so a player who had saved 5550101 themselves lost it whenever an admin ran
-    // `gphoneseed clear`. A contact row carries no marker saying the seed wrote it, so
+    // `gosseed clear`. A contact row carries no marker saying the seed wrote it, so
     // the delete has to match everything the seed would have written.
     await clearSeed();
 
     const contactDeletes = dbMock.query.mock.calls.filter((c) =>
-      String(c[0]).includes('DELETE FROM gphone_contacts')
+      String(c[0]).includes('DELETE FROM gos_contacts')
     );
     expect(contactDeletes.length).toBe(SEED_CHARACTERS.length);
 
@@ -84,7 +84,7 @@ describe('clearSeed', () => {
     const flat = String(sql).replace(/\s+/g, ' ');
     expect(flat).toContain('license = ?');
     expect(flat).toContain('citizenid IN');
-    expect(params[0]).toBe('license:gphoneseed');
+    expect(params[0]).toBe('license:gosseed');
     expect(params.slice(1).toSorted()).toEqual(SEED_CHARACTERS.map((c) => c.citizenid).toSorted());
   });
 
@@ -95,10 +95,10 @@ describe('clearSeed', () => {
     await clearSeed();
 
     const order = queries();
-    const messages = order.findIndex((q) => q.includes('DELETE FROM gphone_messages WHERE'));
-    const participants = order.findIndex((q) => q.includes('gphone_messages_participants'));
+    const messages = order.findIndex((q) => q.includes('DELETE FROM gos_messages WHERE'));
+    const participants = order.findIndex((q) => q.includes('gos_messages_participants'));
     const conversations = order.findIndex((q) =>
-      q.includes('DELETE FROM gphone_messages_conversations')
+      q.includes('DELETE FROM gos_messages_conversations')
     );
 
     expect(messages).toBeGreaterThanOrEqual(0);
@@ -110,9 +110,7 @@ describe('clearSeed', () => {
     dbMock.query.mockResolvedValue([]);
     await clearSeed();
 
-    expect(queries().some((q) => q.includes('DELETE FROM gphone_messages_conversations'))).toBe(
-      false
-    );
+    expect(queries().some((q) => q.includes('DELETE FROM gos_messages_conversations'))).toBe(false);
   });
 });
 
@@ -122,7 +120,7 @@ describe('seedFor', () => {
     await seedFor('REAL_PLAYER');
 
     const inserts = dbMock.query.mock.calls.filter((c) =>
-      String(c[0]).includes('INSERT INTO gphone_contacts')
+      String(c[0]).includes('INSERT INTO gos_contacts')
     );
     expect(inserts.length).toBe(SEED_CHARACTERS.length);
     for (const [, params] of inserts) {
@@ -133,14 +131,14 @@ describe('seedFor', () => {
   it('does not create a contact the player already has', async () => {
     // Safe to run more than once is a documented promise of the command.
     dbMock.query.mockImplementation(async (sql: string) =>
-      String(sql).includes('SELECT id FROM gphone_contacts') ? [{ id: 1 }] : []
+      String(sql).includes('SELECT id FROM gos_contacts') ? [{ id: 1 }] : []
     );
 
     const result = await seedFor('REAL_PLAYER');
 
     expect(result.contacts).toBe(0);
     expect(
-      dbMock.query.mock.calls.some((c) => String(c[0]).includes('INSERT INTO gphone_contacts'))
+      dbMock.query.mock.calls.some((c) => String(c[0]).includes('INSERT INTO gos_contacts'))
     ).toBe(false);
   });
 });

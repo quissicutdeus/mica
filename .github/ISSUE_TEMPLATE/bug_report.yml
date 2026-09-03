@@ -1,5 +1,5 @@
 name: Bug report
-description: Something in gPhone is broken
+description: Something in gOS is broken
 labels: ['bug']
 body:
   - type: textarea
@@ -38,9 +38,9 @@ body:
       required: false
 
   - type: input
-    id: gphone-version
+    id: gos-version
     attributes:
-      label: gPhone version / commit
+      label: gOS version / commit
       placeholder: e.g. v1.2.3 or commit sha
     validations:
       required: false

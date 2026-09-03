@@ -6,7 +6,7 @@ import type { AppPermission } from '../manifest';
 import type { Facets } from './facets';
 
 /** Svelte context key an app-scoped `Host` is set/read under. */
-export const HOST_CONTEXT_KEY = 'gphone_host';
+export const HOST_CONTEXT_KEY = 'gos_host';
 
 /**
  * Moved verbatim from the old sdk/capability.ts, deleted in MICA-16 step 3: the host protocol is where

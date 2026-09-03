@@ -37,7 +37,7 @@ import { createZip } from '../../scripts/lib/zip.js';
 const ROOT = resolve(__dirname, '../..');
 const TAG = 'v2026.09.02.3';
 const VERSION = '2026.09.02.3';
-const REPOSITORY = 'https://github.com/quissicutdeus/gphone';
+const REPOSITORY = 'https://github.com/quissicutdeus/gos';
 
 const MANIFEST = `fx_version 'cerulean'
 game 'gta5'
@@ -63,7 +63,7 @@ files {
 describe('the zip is named for the tag', () => {
   it('takes the CalVer without its v', () => {
     expect(calVerOf(TAG)).toBe(VERSION);
-    expect(zipName(TAG)).toBe('gphone-2026.09.02.3.zip');
+    expect(zipName(TAG)).toBe('gos-2026.09.02.3.zip');
   });
 
   it('stamps every entry with midnight UTC on the tag date, so a repack is byte-identical', () => {
@@ -116,9 +116,9 @@ describe('the manifest globs the packer checks the zip against', () => {
     expect(deep.test('dist/web/index.html')).toBe(false);
 
     const flat = globToRegExp('dist/web/*.svg');
-    expect(flat.test('dist/web/gphone.svg')).toBe(true);
-    expect(flat.test('dist/web/assets/gphone.svg')).toBe(false);
-    expect(flat.test('dist/web/gphonexsvg')).toBe(false);
+    expect(flat.test('dist/web/gos.svg')).toBe(true);
+    expect(flat.test('dist/web/assets/gos.svg')).toBe(false);
+    expect(flat.test('dist/web/gosxsvg')).toBe(false);
   });
 
   it('names the glob nothing in the zip satisfies, which is a resource that will 404', () => {
@@ -127,7 +127,7 @@ describe('the manifest globs the packer checks the zip against', () => {
       'dist/client/client.js',
       'dist/web/index.html',
       'dist/web/assets/index-abc.js',
-      'dist/web/gphone.svg'
+      'dist/web/gos.svg'
     ];
 
     expect(uncoveredGlobs(MANIFEST, packed)).toEqual(['dist/web/addons/**/*']);
@@ -155,10 +155,10 @@ describe('the README the zip carries', () => {
   it('tells an owner where to unpack, what to import and what to ensure', () => {
     const excerpt = readmeExcerpt(readme, { tag: TAG, repository: REPOSITORY });
 
-    expect(excerpt).toMatch(/^# gPhone 2026\.09\.02\.3\n/);
+    expect(excerpt).toMatch(/^# gOS 2026\.09\.02\.3\n/);
     expect(excerpt).toContain(`${REPOSITORY}/blob/${TAG}/README.md`);
-    expect(excerpt).toContain('gphone.esx.sql');
-    expect(excerpt).toContain('ensure gphone');
+    expect(excerpt).toContain('gos.esx.sql');
+    expect(excerpt).toContain('ensure gos');
   });
 
   it('never tells an owner to run pnpm -- the zip exists so they need not', () => {
@@ -225,21 +225,21 @@ describe('the zip writer', () => {
   const mtime = new Date(Date.UTC(2026, 8, 2));
 
   it('round-trips every entry, sorted, with the one timestamp', () => {
-    const text = Buffer.from('ensure gphone\n'.repeat(200));
+    const text = Buffer.from('ensure gos\n'.repeat(200));
     const zip = createZip(
       [
-        { path: 'gphone/fxmanifest.lua', data: text },
-        { path: 'gphone/LICENSE', data: 'AGPL' },
-        { path: 'gphone/dist/web/index.html', data: Buffer.alloc(0) }
+        { path: 'gos/fxmanifest.lua', data: text },
+        { path: 'gos/LICENSE', data: 'AGPL' },
+        { path: 'gos/dist/web/index.html', data: Buffer.alloc(0) }
       ],
       { mtime }
     );
 
     const entries = readZip(zip);
     expect(entries.map((e) => e.path)).toEqual([
-      'gphone/LICENSE',
-      'gphone/dist/web/index.html',
-      'gphone/fxmanifest.lua'
+      'gos/LICENSE',
+      'gos/dist/web/index.html',
+      'gos/fxmanifest.lua'
     ]);
     expect(entries[2].data.equals(text)).toBe(true);
     expect(entries[0].data.toString()).toBe('AGPL');

@@ -46,7 +46,7 @@ export const messagesContract = defineContract({
       input: s.object({
         conversation_id: s.positiveInt(),
         /**
-         * `gphone_messages.message` is `text`, and the handler still calls
+         * `gos_messages.message` is `text`, and the handler still calls
          * `assertWritableValue`-equivalent bounds through the repository. A message with no
          * text is legal here and refused there, because it is only legal alongside an
          * attachment — a rule about the payload as a whole rather than about this field.

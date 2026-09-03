@@ -96,9 +96,9 @@ describe('clearAppStorage', () => {
     /**
      * Compared rather than asserted against a spelled-out key.
      *
-     * A namespaced key is `gphone:<appId>:<key>`, which is also the shape of a net event name —
+     * A namespaced key is `gos:<appId>:<key>`, which is also the shape of a net event name —
      * so writing one as a literal here trips `eventNames.test.ts`, which scans `web/src` for a
-     * borrowed `gphone:` prefix. The property under test is that a longer key costs more for the
+     * borrowed `gos:` prefix. The property under test is that a longer key costs more for the
      * same value, and that does not need the string.
      */
     usePersisted('bytes_short', 'n', 0).set(1);

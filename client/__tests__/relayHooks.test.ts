@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { requestEventFor, GENERIC_SERVICE_ACTION } from '@gphone/shared/rpc';
+import { requestEventFor, GENERIC_SERVICE_ACTION } from '@gos/shared/rpc';
 
 /**
  * The generic relay runs a contract's client hook before forwarding (MICA-213).

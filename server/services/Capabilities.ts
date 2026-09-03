@@ -4,7 +4,7 @@
 
 import { detectFramework } from '../lib/FrameworkBridge';
 import { ServiceEndpoint } from '../lib/ServiceEndpoint';
-import { shellContract } from '@gphone/shared/contracts/shell';
+import { shellContract } from '@gos/shared/contracts/shell';
 
 /**
  * What this server is actually able to do, so the UI can hide what it cannot.
@@ -46,8 +46,8 @@ export interface Capabilities {
  * `detectFramework` treats `unknown` as a first-class answer and its docblock is explicit
  * that it must never be folded into a default — because `unknown` does not mean "no
  * framework", it means **no framework has answered yet**. FiveM starts resources in
- * `server.cfg` order, `ensure gphone` above `ensure qb-core` is a legal config, and
- * gPhone's own `onResourceStart` fires inside exactly that window. So on an ordinary qb
+ * `server.cfg` order, `ensure gos` above `ensure qb-core` is a legal config, and
+ * gOS's own `onResourceStart` fires inside exactly that window. So on an ordinary qb
  * server, `unknown` is a state the boot passes through.
  *
  * Which makes the two wrong answers here wildly asymmetric, and that asymmetry — not a

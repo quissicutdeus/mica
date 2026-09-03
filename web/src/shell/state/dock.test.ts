@@ -16,7 +16,7 @@
 import '../../host/registerFacets';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { get } from 'svelte/store';
-import { DEVICES } from '@gphone/shared/devices';
+import { DEVICES } from '@gos/shared/devices';
 import { DEFAULT_DOCK_APP_IDS, dockAppIds, sanitizeDockAppIds, setDockSlot } from './dock';
 
 describe('Dock state', () => {

@@ -59,7 +59,7 @@ describe('runApply', () => {
   });
 
   /**
-   * MICA-157. A `players.citizenid` collated differently from gPhone's own tables cannot
+   * MICA-157. A `players.citizenid` collated differently from gOS's own tables cannot
    * host the foreign keys the additive pass (or a versioned migration) may need to add, and
    * would otherwise fail deep inside `SchemaMigrator.apply()` with MySQL's own opaque errno
    * 150. This is the fail-loud path instead: named collations, named table, and — the actual
@@ -92,7 +92,7 @@ describe('runApply', () => {
     await runApply(0);
 
     expect(errorSpy).toHaveBeenCalledWith(
-      '[gphoneschema] could not check the players collation before applying:',
+      '[gosschema] could not check the players collation before applying:',
       expect.any(Error)
     );
     expect(runPendingMigrationsMock).toHaveBeenCalled();
@@ -106,12 +106,12 @@ describe('runApply', () => {
 
     expect(applySpy).not.toHaveBeenCalled();
     expect(runPendingMigrationsMock).not.toHaveBeenCalled();
-    expect(logSpy).toHaveBeenCalledWith('[gphoneschema] apply only runs from the server console.');
+    expect(logSpy).toHaveBeenCalledWith('[gosschema] apply only runs from the server console.');
   });
 
   it('applies additive changes and logs each one, from the console', async () => {
     vi.spyOn(SchemaMigrator, 'apply').mockResolvedValueOnce({
-      applied: ['add column gphone_widgets.body'],
+      applied: ['add column gos_widgets.body'],
       failed: null,
       remaining: []
     });
@@ -119,7 +119,7 @@ describe('runApply', () => {
 
     await runApply(0);
 
-    expect(logSpy).toHaveBeenCalledWith('[gphone] add column gphone_widgets.body');
+    expect(logSpy).toHaveBeenCalledWith('[gos] add column gos_widgets.body');
   });
 
   it('applies pending migrations and logs each id', async () => {
@@ -133,8 +133,8 @@ describe('runApply', () => {
 
     await runApply(0);
 
-    expect(logSpy).toHaveBeenCalledWith('[gphone] applied migration 0001_a');
-    expect(logSpy).toHaveBeenCalledWith('[gphone] applied migration 0002_b');
+    expect(logSpy).toHaveBeenCalledWith('[gos] applied migration 0001_a');
+    expect(logSpy).toHaveBeenCalledWith('[gos] applied migration 0002_b');
   });
 
   /**
@@ -166,7 +166,7 @@ describe('runApply', () => {
 
     await runApply(0);
 
-    expect(logSpy).toHaveBeenCalledWith('[gphone] schema is already up to date.');
+    expect(logSpy).toHaveBeenCalledWith('[gos] schema is already up to date.');
   });
 
   it('reports a migration failure and what was not attempted', async () => {
@@ -180,38 +180,36 @@ describe('runApply', () => {
 
     await runApply(0);
 
-    expect(errorSpy).toHaveBeenCalledWith('[gphone] migration 0002_b failed: boom');
-    expect(errorSpy).toHaveBeenCalledWith('[gphone] not attempted: 0003_c');
+    expect(errorSpy).toHaveBeenCalledWith('[gos] migration 0002_b failed: boom');
+    expect(errorSpy).toHaveBeenCalledWith('[gos] not attempted: 0003_c');
     // A half-migrated table is the one shape the additive planner cannot reason about:
     // it would compare a partly-renamed table against the finished declaration and
     // "helpfully" add the columns the failed migration was mid-way through moving.
     expect(applySpy).not.toHaveBeenCalled();
     expect(errorSpy).toHaveBeenCalledWith(
-      '[gphone] additive changes were not applied — fix the migration first.'
+      '[gos] additive changes were not applied — fix the migration first.'
     );
   });
 
   it('reports the additive statements that ran before one failed', async () => {
     vi.spyOn(SchemaMigrator, 'apply').mockResolvedValueOnce({
-      applied: ['add column gphone_widgets.body'],
-      failed: { description: 'add key gphone_widgets.citizenid_title', error: 'boom' },
-      remaining: ['add column gphone_notes.pinned']
+      applied: ['add column gos_widgets.body'],
+      failed: { description: 'add key gos_widgets.citizenid_title', error: 'boom' },
+      remaining: ['add column gos_notes.pinned']
     });
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     await runApply(0);
 
-    expect(logSpy).toHaveBeenCalledWith('[gphone] add column gphone_widgets.body');
-    expect(errorSpy).toHaveBeenCalledWith(
-      '[gphone] add key gphone_widgets.citizenid_title failed: boom'
-    );
-    expect(errorSpy).toHaveBeenCalledWith('[gphone] not attempted: add column gphone_notes.pinned');
-    expect(logSpy).not.toHaveBeenCalledWith('[gphone] schema is already up to date.');
+    expect(logSpy).toHaveBeenCalledWith('[gos] add column gos_widgets.body');
+    expect(errorSpy).toHaveBeenCalledWith('[gos] add key gos_widgets.citizenid_title failed: boom');
+    expect(errorSpy).toHaveBeenCalledWith('[gos] not attempted: add column gos_notes.pinned');
+    expect(logSpy).not.toHaveBeenCalledWith('[gos] schema is already up to date.');
   });
 });
 
-describe('the gphoneschema command dispatch', () => {
+describe('the gosschema command dispatch', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     runPendingMigrationsMock.mockResolvedValue({ applied: [], failed: null, remaining: [] });
@@ -219,12 +217,12 @@ describe('the gphoneschema command dispatch', () => {
 
   // `runApply` itself is not supposed to catch its own errors — that's `SchemaMigrator.apply()`
   // and `runPendingMigrations()`'s callers' job to observe. The `.catch()` lives at the
-  // `RegisterCommand('gphoneschema', ...)` call site instead, so this test goes through the
+  // `RegisterCommand('gosschema', ...)` call site instead, so this test goes through the
   // actual registered handler rather than calling `runApply` directly — calling `runApply`
   // directly would just reject, which is correct for it and would prove nothing about the
   // dispatch boundary this test exists to cover.
   it('catches a thrown error at the dispatch boundary instead of an unhandled rejection', async () => {
-    const handler = registeredCommands.get('gphoneschema');
+    const handler = registeredCommands.get('gosschema');
     expect(handler).toBeDefined();
 
     const boom = new Error('could not determine the current database');
@@ -234,7 +232,7 @@ describe('the gphoneschema command dispatch', () => {
     handler!(0, ['apply']);
 
     await vi.waitFor(() => {
-      expect(errorSpy).toHaveBeenCalledWith('[gphoneschema] apply failed:', boom);
+      expect(errorSpy).toHaveBeenCalledWith('[gosschema] apply failed:', boom);
     });
   });
 
@@ -245,7 +243,7 @@ describe('the gphoneschema command dispatch', () => {
    * landed in the server console instead, and they could type it as often as they liked.
    */
   it('refuses a non-admin before the apply sub-dispatch, with feedback in game', async () => {
-    const handler = registeredCommands.get('gphoneschema');
+    const handler = registeredCommands.get('gosschema');
     const applySpy = vi.spyOn(SchemaMigrator, 'apply');
     const reportSpy = vi.spyOn(SchemaMigrator, 'report').mockResolvedValue();
 
@@ -262,7 +260,7 @@ describe('the gphoneschema command dispatch', () => {
   });
 
   it('still lets the console through the ace check to apply', async () => {
-    const handler = registeredCommands.get('gphoneschema');
+    const handler = registeredCommands.get('gosschema');
     vi.spyOn(SchemaMigrator, 'apply').mockResolvedValueOnce(noAdditive());
     vi.spyOn(console, 'log').mockImplementation(() => {});
 

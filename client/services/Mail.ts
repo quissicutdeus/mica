@@ -7,6 +7,6 @@
 
 import { sendNuiMessage } from '../lib/nui';
 
-onNet('gphone:client:mail:receive', (newMail: unknown) => {
+onNet('gos:client:mail:receive', (newMail: unknown) => {
   sendNuiMessage('receiveMail', newMail);
 });

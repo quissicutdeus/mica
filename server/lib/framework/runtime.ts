@@ -102,7 +102,7 @@ export const exposes = (name: string, key: string): boolean => {
  *
  * The declarations on `FrameworkPlayer` — `removeMoney(): boolean`, `getMoney(): number` —
  * were decorative until now. Whatever qbx_core or qb-core handed back was returned straight
- * through, and `any` satisfies every signature, so TypeScript never objected. gPhone pins
+ * through, and `any` satisfies every signature, so TypeScript never objected. gOS pins
  * `@citizenfx/*` exactly and pins neither of those resources: they belong to the operator and
  * move on the operator's schedule, which makes "RemoveMoney went async in the last release" an
  * ordinary event rather than a hypothetical.
@@ -186,7 +186,7 @@ export const balanceOf = (result: unknown, call: string, src: number): number =>
 export const unidentified = (src: number, framework: string, why?: string): null => {
   console.error(
     `[FrameworkBridge] ${framework} returned a player for source ${src} with no usable ` +
-      `citizenid${why ? ` — ${why}` : ''}. Refusing to serve gPhone data rather than ` +
+      `citizenid${why ? ` — ${why}` : ''}. Refusing to serve gOS data rather than ` +
       `inventing an identity.`
   );
   return null;
@@ -275,7 +275,7 @@ export interface FrameworkAdapter {
   getAllPlayers(): Record<string | number, any>;
 
   /**
-   * Where this framework keeps the characters gPhone's rows belong to, or `null` when it
+   * Where this framework keeps the characters gOS's rows belong to, or `null` when it
    * keeps none at all. Both fields are interpolated into SQL as identifiers, so an adapter
    * must return a frozen literal it wrote and never anything derived from a payload (§2.9).
    */
@@ -331,9 +331,9 @@ export const identityFromCharinfo = (citizenid: string, raw: unknown): Framework
 /**
  * An offline lookup that answers nothing rather than throwing.
  *
- * These read another resource's table, which gPhone neither creates nor migrates. The column
+ * These read another resource's table, which gOS neither creates nor migrates. The column
  * may be absent, the table may be absent, and on ESX the whole shape is a different framework
- * away — so a query here can fail for reasons that are not bugs in gPhone and must not become
+ * away — so a query here can fail for reasons that are not bugs in gOS and must not become
  * an exception on a path that is only ever trying to render a name.
  *
  * Returning null degrades to exactly the pre-existing behaviour: an offline player with no

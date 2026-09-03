@@ -6,7 +6,7 @@
 --
 -- Every destructive or state-changing action a player takes on their own content is
 -- recorded here by `server/lib/AuditLogger.ts`: deletions, archives, leaving or being
--- removed from a conversation, and moderation. It is append-only — nothing in gPhone
+-- removed from a conversation, and moderation. It is append-only — nothing in gOS
 -- updates or deletes a row in this table — so it stays a trustworthy record after the
 -- content it refers to has been soft-deleted.
 --
@@ -18,7 +18,7 @@
 -- `target_table` + `target_id` point at the affected row rather than using a foreign
 -- key, on purpose: the log must survive the row it describes, and it spans every app
 -- table. That is also why there is no FK on those columns.
-CREATE TABLE IF NOT EXISTS `gphone_audit_logs` (
+CREATE TABLE IF NOT EXISTS `gos_audit_logs` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
     `citizenid` varchar(50) NOT NULL,
     `action` ENUM(

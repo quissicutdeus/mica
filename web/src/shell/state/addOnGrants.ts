@@ -26,11 +26,11 @@ import { ALL_PERMISSIONS, type AppPermission } from '../../../../sdk/manifest';
  *
  * ## Where it lives, and why
  *
- * `usePersisted('shell', 'addOnGrants', …)` — the same `gphone_settings` storage the
+ * `usePersisted('shell', 'addOnGrants', …)` — the same `gos_settings` storage the
  * install list itself rides (`registry.ts`'s `installedAddOnIds`), so a grant follows the
  * character exactly as the install does, survives a character switch through
  * `usePersisted`'s own rehydrate, and needs no schema change. Server-side beside
- * `gphone_app_registry` would survive the same switch and would cost a table plus a
+ * `gos_app_registry` would survive the same switch and would cost a table plus a
  * migration to hold a fact the shell already knows how to persist per character.
  *
  * Namespaced under `'shell'`, not `'store'`: the whole point is that the record is not

@@ -3,9 +3,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { defineService, SchemaRepository } from '../lib/defineService';
-import { NotificationItem } from '@gphone/shared/types';
+import { NotificationItem } from '@gos/shared/types';
 import { Database } from '../lib/Database';
-import { notificationsContract } from '@gphone/shared/contracts/notifications';
+import { notificationsContract } from '@gos/shared/contracts/notifications';
 
 export class NotificationsRepository extends SchemaRepository<NotificationItem> {
   /** Unscoped batch create for background persistent pushes to online and offline recipients. */
@@ -13,7 +13,7 @@ export class NotificationsRepository extends SchemaRepository<NotificationItem> 
     if (items.length === 0) return;
     for (const item of items) {
       await Database.query(
-        `INSERT INTO gphone_notifications (citizenid, app, kind, title, body, avatar, deep_link, status, created_at, updated_at)
+        `INSERT INTO gos_notifications (citizenid, app, kind, title, body, avatar, deep_link, status, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, 'active', NOW(), NOW())`,
         [
           item.citizenid,
@@ -30,7 +30,7 @@ export class NotificationsRepository extends SchemaRepository<NotificationItem> 
 
   async findShadeNotifications(citizenid: string, limit = 50): Promise<NotificationItem[]> {
     return await Database.query<NotificationItem[]>(
-      `SELECT * FROM gphone_notifications
+      `SELECT * FROM gos_notifications
        WHERE citizenid = ? AND cleared_at IS NULL AND status = 'active'
        ORDER BY id DESC LIMIT ?`,
       [citizenid, limit]
@@ -39,7 +39,7 @@ export class NotificationsRepository extends SchemaRepository<NotificationItem> 
 
   async findNotificationHistory(citizenid: string, limit = 50): Promise<NotificationItem[]> {
     return await Database.query<NotificationItem[]>(
-      `SELECT * FROM gphone_notifications
+      `SELECT * FROM gos_notifications
        WHERE citizenid = ? AND cleared_at IS NOT NULL AND status = 'active'
        ORDER BY cleared_at DESC LIMIT ?`,
       [citizenid, limit]
@@ -48,7 +48,7 @@ export class NotificationsRepository extends SchemaRepository<NotificationItem> 
 
   async findUnreadCounts(citizenid: string): Promise<Record<string, number>> {
     const rows = await Database.query<{ app: string; unread: number }[]>(
-      `SELECT app, COUNT(*) as unread FROM gphone_notifications
+      `SELECT app, COUNT(*) as unread FROM gos_notifications
        WHERE citizenid = ? AND read_at IS NULL AND cleared_at IS NULL AND status = 'active'
        GROUP BY app`,
       [citizenid]
@@ -67,7 +67,7 @@ export class NotificationsRepository extends SchemaRepository<NotificationItem> 
     const now = new Date().toISOString();
     const placeholders = ids.map(() => '?').join(',');
     await Database.query(
-      `UPDATE gphone_notifications
+      `UPDATE gos_notifications
        SET read_at = ?
        WHERE citizenid = ? AND id IN (${placeholders}) AND read_at IS NULL`,
       [now, citizenid, ...ids]
@@ -80,7 +80,7 @@ export class NotificationsRepository extends SchemaRepository<NotificationItem> 
     const now = new Date().toISOString();
     const placeholders = ids.map(() => '?').join(',');
     await Database.query(
-      `UPDATE gphone_notifications
+      `UPDATE gos_notifications
        SET cleared_at = ?
        WHERE citizenid = ? AND id IN (${placeholders}) AND cleared_at IS NULL`,
       [now, citizenid, ...ids]
@@ -92,14 +92,14 @@ export class NotificationsRepository extends SchemaRepository<NotificationItem> 
     const now = new Date().toISOString();
     if (appId) {
       await Database.query(
-        `UPDATE gphone_notifications
+        `UPDATE gos_notifications
          SET cleared_at = ?
          WHERE citizenid = ? AND app = ? AND cleared_at IS NULL`,
         [now, citizenid, appId]
       );
     } else {
       await Database.query(
-        `UPDATE gphone_notifications
+        `UPDATE gos_notifications
          SET cleared_at = ?
          WHERE citizenid = ? AND cleared_at IS NULL`,
         [now, citizenid]
@@ -112,7 +112,7 @@ export class NotificationsRepository extends SchemaRepository<NotificationItem> 
     if (ids.length === 0) return true;
     const placeholders = ids.map(() => '?').join(',');
     await Database.query(
-      `UPDATE gphone_notifications
+      `UPDATE gos_notifications
        SET cleared_at = NULL, read_at = NULL
        WHERE citizenid = ? AND id IN (${placeholders})`,
       [citizenid, ...ids]
@@ -123,7 +123,7 @@ export class NotificationsRepository extends SchemaRepository<NotificationItem> 
   async pruneStale(retentionDays: number): Promise<number> {
     const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
     const result = await Database.query<{ affectedRows?: number }>(
-      `DELETE FROM gphone_notifications WHERE created_at < ?`,
+      `DELETE FROM gos_notifications WHERE created_at < ?`,
       [cutoff]
     );
     return result && typeof result === 'object' && 'affectedRows' in result
@@ -213,7 +213,7 @@ app.registerEvent('restoreNotifications', async (_source, _cbId, data, citizenid
 // Prune stale notifications on resource start
 const getRetentionDays = (): number => {
   if (typeof GetConvarInt === 'function') {
-    const val = GetConvarInt('gphone_notification_retention', 30);
+    const val = GetConvarInt('gos_notification_retention', 30);
     return val > 0 ? val : 30;
   }
   return 30;

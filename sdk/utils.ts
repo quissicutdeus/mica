@@ -6,7 +6,7 @@
  * Pure helpers apps are allowed to use.
  *
  * Same reasoning as `components.ts`: an add-on installed from the Store resolves
- * `@gphone/sdk` and nothing else, so a helper reachable only at `../../utils/` does not
+ * `@gos/sdk` and nothing else, so a helper reachable only at `../../utils/` does not
  * exist for it. Fifteen imports across the app modules were doing exactly that.
  *
  * Only things that are genuinely platform surface. App-specific helpers belong in the
@@ -62,7 +62,7 @@ export {
  * HTML. Building an HTML string for `{@html}` is the alternative, and it is how a message
  * becomes script.
  */
-export { tokenizeRichText } from '@gphone/shared/richText';
+export { tokenizeRichText } from '@gos/shared/richText';
 
 /**
  * Keep Tab inside a modal surface, and put focus back where it came from on close.
@@ -78,7 +78,7 @@ export { tokenizeRichText } from '@gphone/shared/richText';
  * this repo would rather make impossible than document.
  *
  * Exported here rather than from a barrel line of its own because it is the same kind of
- * thing as everything above: DOM behaviour with no gPhone state behind it, implemented in
+ * thing as everything above: DOM behaviour with no gOS state behind it, implemented in
  * `sdk/lib/` and therefore bundle-safe for a sandboxed add-on. Going through `utils.ts` is
  * also what gives it index/addon parity for free — both barrels `export *` from this file,
  * so it cannot end up resolvable to the typechecker and missing at `vite build`, which is

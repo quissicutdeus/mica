@@ -38,7 +38,7 @@ export const requestDeviceItemCheck = (): void => {
   if (!DeviceState.isAnyItemGated() || pending) return;
   pending = setTimeout(() => {
     pending = null;
-    TriggerServerEvent('gphone:server:shell:checkPhoneItem');
+    TriggerServerEvent('gos:server:shell:checkPhoneItem');
   }, COALESCE_MS);
 };
 

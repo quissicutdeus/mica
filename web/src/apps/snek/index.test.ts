@@ -4,7 +4,7 @@
 
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from 'vitest';
-import { renderApp } from '@gphone/sdk/testing';
+import { renderApp } from '@gos/sdk/testing';
 import Snek from './index.svelte';
 
 vi.mock('../../services/highscores', () => ({

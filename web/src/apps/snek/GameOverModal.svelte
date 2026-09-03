@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { useLocale } from '@gphone/sdk';
+  import { useLocale } from '@gos/sdk';
 
   const { t } = useLocale();
 

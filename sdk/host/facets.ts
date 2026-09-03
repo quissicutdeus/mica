@@ -30,7 +30,7 @@
  * `tsc --emitDeclarationOnly` over the in-process facets, converted verbatim — because a
  * hand-copied contract is a slightly-wrong contract, and "slightly wrong" here means a
  * public type that no longer describes what the shell actually returns. `Facets` is exported
- * from both `@gphone/sdk` and `@gphone/sdk` (add-on), and `publicSurface.test.ts` holds its
+ * from both `@gos/sdk` and `@gos/sdk` (add-on), and `publicSurface.test.ts` holds its
  * membership; if that file goes red, the contract moved rather than merely relocating.
  *
  * Conformance is enforced where it already was: `registerFacet<K extends keyof Facets>(name,
@@ -96,7 +96,7 @@ import type { MusicError } from '../lib/musicErrors';
 import type { CatalogEntry } from '../catalog';
 import type { ReactionStore } from '../kit/createReactionStore';
 import type { AppComponent, AppManifest, AppPermission, AppDevice } from '../manifest';
-import type { KeybindAction } from '@gphone/shared/keybinds';
+import type { KeybindAction } from '@gos/shared/keybinds';
 import type {
   Account,
   Contact,
@@ -112,7 +112,7 @@ import type {
   ReactionSummary,
   Report,
   Transaction
-} from '@gphone/shared/types';
+} from '@gos/shared/types';
 import type { Readable, Subscriber, Unsubscriber, Writable } from 'svelte/store';
 
 /** Toast wording for `useAppAction`'s wrapped work. Moved here from the facet in MICA-179. */
@@ -519,7 +519,7 @@ export interface Facets {
     /** Live map of actionId -> bound key. */
     bindings: Readable<Record<string, string>>;
     /**
-     * Everything configurable from gPhone's own Shortcuts screen, grouped by owner.
+     * Everything configurable from gOS's own Shortcuts screen, grouped by owner.
      *
      * Core first (`ownerId: 'core'`), then one group per installed app that declares its
      * own `keybinds`, sorted alphabetically by `ownerLabel`. An app with no declared

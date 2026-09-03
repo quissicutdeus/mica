@@ -51,12 +51,12 @@ name before assuming it is wired.
   `requestEventFor` / `responseEventFor`; `ServiceEndpoint` and `ServiceProxy`
   both import them, and `ServiceProxy.registerCallback` subscribes the derived
   reply itself. A hand-written reply name times out after 15s, silently.
-- **Event names are `gphone:<side>:<app>:<action>`, no exceptions.**
+- **Event names are `gos:<side>:<app>:<action>`, no exceptions.**
   `server/__tests__/eventNames.test.ts` scans source and rejects anything else,
   including an `<app>` segment that is not a declared app. Two non-app scopes:
   `shell` (the phone itself) and `admin` (the privileged surface). NUI _message_
   actions (`setVisible`, `receiveMail`) are a separate namespace and carry no
-  `gphone:` prefix.
+  `gos:` prefix.
 - **A registered net event is reachable** whether or not a route points at it —
   a modified client emits it directly. Do not register a generic action the app
   does not use; `server/__tests__/reachability.test.ts` keeps that honest.
@@ -79,7 +79,7 @@ name before assuming it is wired.
 The app subscribes with `useAppEvents(appId)`.
 `server/__tests__/appEventContract.test.ts` catches a missing layer.
 
-- **One literal net event**, `gphone:client:shell:appEvent`. A templated per-app
+- **One literal net event**, `gos:client:shell:appEvent`. A templated per-app
   name would be an unchecked name.
 - **Subscribe in the store, not the component, if you must not miss anything.**
   The CEF page never unloads; a store subscription is permanent, a component one

@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { parseRemoteAppConfig, type RemoteAppConfigPayload } from '@gphone/shared/nui';
+import { parseRemoteAppConfig, type RemoteAppConfigPayload } from '@gos/shared/nui';
 import { fetchNui } from '../../nui/fetchNui';
 import { setRemoteCatalogUrl } from '../../../../sdk/catalog';
 import { appRegistryStore } from './registry';
@@ -12,7 +12,7 @@ import { setTrustedRemoteAppHosts } from '../../../../sdk/remoteAppSecurity';
  * The one thing that ever fills the remote add-on trust boundary in a shipped build.
  *
  * `setTrustedRemoteAppHosts` and `setRemoteCatalogUrl` existed, were tested, were exported
- * from `@gphone/sdk` — and had no caller outside a unit test (MICA-126). With an empty
+ * from `@gos/sdk` — and had no caller outside a unit test (MICA-126). With an empty
  * allowlist `isTrustedRemoteUrl` answers `false` for every `https:` URL, so the whole
  * catalog path ended at its first check on every build anybody has ever run. This asks the
  * game client for the operator's two convars and applies them.

@@ -12,7 +12,7 @@
 import '../../../host/registerFacets';
 import { describe, it, expect, vi } from 'vitest';
 import { render, fireEvent, screen } from '@testing-library/svelte';
-import { registerMessages } from '@gphone/sdk';
+import { registerMessages } from '@gos/sdk';
 
 import Composer from './Composer.svelte';
 import en from '../locales/en.json';

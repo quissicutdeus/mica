@@ -127,7 +127,7 @@ async function loadPendingMigrations(): Promise<Migration[]> {
  * The read path's variant: reads the ledger, never creates it, and reports `null` rather
  * than throwing when it cannot be read at all.
  *
- * A missing ledger is the expected case here — a server upgrading from a `gphone.sql` older
+ * A missing ledger is the expected case here — a server upgrading from a `gos.sql` older
  * than the ledger has no such table until `apply` runs once. Any failure is treated as
  * "cannot report", rather than sniffing for `ER_NO_SUCH_TABLE`: the caller is advisory-only,
  * so being wrong about which error this is must not cost more than the report itself, and
@@ -146,7 +146,7 @@ async function readPendingMigrations(): Promise<{ pending: Migration[] } | { err
 
 /**
  * Applies every migration `server/migrations/` has that the ledger does not, in order.
- * Creates the ledger first. Backs `gphoneschema apply`, and nothing else calls it.
+ * Creates the ledger first. Backs `gosschema apply`, and nothing else calls it.
  */
 export async function runPendingMigrations(): Promise<MigrationRunResult> {
   const pending = await loadPendingMigrations();
@@ -171,16 +171,16 @@ export async function reportPendingMigrations(): Promise<void> {
   if ('error' in result) {
     if (migrationsOnDisk.length === 0) return;
     console.log(
-      `[gphone] could not read the migrations ledger (${result.error}) — run ` +
-        "'gphoneschema apply' from the server console to create it and apply what is pending."
+      `[gos] could not read the migrations ledger (${result.error}) — run ` +
+        "'gosschema apply' from the server console to create it and apply what is pending."
     );
     return;
   }
 
   if (result.pending.length === 0) return;
-  console.log('[gphone] pending schema migrations:');
+  console.log('[gos] pending schema migrations:');
   for (const migration of result.pending) {
     console.log(`  ${migration.id}: ${migration.description}`);
   }
-  console.log("[gphone] run 'gphoneschema apply' from the server console to apply them.");
+  console.log("[gos] run 'gosschema apply' from the server console to apply them.");
 }

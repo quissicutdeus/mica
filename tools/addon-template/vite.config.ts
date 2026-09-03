@@ -7,25 +7,25 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 /**
  * The add-on build, out of tree.
  *
- * This file is the standalone twin of gPhone's own `web/vite.addon.config.ts`, and it has
+ * This file is the standalone twin of gOS's own `web/vite.addon.config.ts`, and it has
  * to be a twin rather than an import: the phone's config lives in the `web` workspace,
  * which an add-on author does not have. Everything the shell relies on about a bundle is
  * decided here — one self-contained ES chunk, its CSS inlined, the Chromium 103 lowering
  * applied, the `core: true` surface refused — so a change to this file changes what your
  * bundle *is*, not merely how fast it builds.
  *
- * gPhone's `web/src/lib/addonTemplate.test.ts` compares the two files knob for knob and
+ * gOS's `web/src/lib/addonTemplate.test.ts` compares the two files knob for knob and
  * fails the phone's own build if they diverge, so the copy you are reading is checked
- * against the original rather than left to rot. That check runs in gPhone's repo, though,
+ * against the original rather than left to rot. That check runs in gOS's repo, though,
  * not in yours: if you edit the build options below, you are on your own.
  */
 
 const here = import.meta.dirname;
 
 /**
- * No alias for `@gphone/sdk` — the package resolves to the right barrel on its own.
+ * No alias for `@gos/sdk` — the package resolves to the right barrel on its own.
  *
- * This used to be the most important line in the file. `@gphone/sdk` names two different
+ * This used to be the most important line in the file. `@gos/sdk` names two different
  * barrels: `index.ts`, which the phone's shell builds against and which reaches modules
  * expecting to run in the shell's own JavaScript context, and `addon.ts`, whose host
  * facets talk `postMessage` because an add-on runs in a sandboxed iframe. The package's
@@ -34,7 +34,7 @@ const here = import.meta.dirname;
  *
  * MICA-125 pointed `.` at `addon.ts` instead. The bare specifier is target-dependent by
  * nature and the map can only be right for one audience; the audience that reads a map
- * rather than writing an alias is the one outside gPhone's repo, which is you. The shell
+ * rather than writing an alias is the one outside gOS's repo, which is you. The shell
  * aliases to its own barrel now, since it always has a Vite config to do it in.
  *
  * `requireIframeFacets()` below still checks the outcome rather than trusting it, and it
@@ -49,7 +49,7 @@ const COMPONENT = path.join(here, 'src/index.svelte');
  *
  * Not fastidiousness: the very first build of this template failed on its own sample
  * manifest, because the doc comment above `core: false` explains what `core: true` would
- * mean and a bare `/core:\s*true/` over the raw file found the prose. gPhone's own
+ * mean and a bare `/core:\s*true/` over the raw file found the prose. gOS's own
  * discovery greps unstripped manifest text and has the same hole pointing the other way —
  * a `core: true` app whose comment mentions `core: false` reads as an add-on there. This
  * strips block comments and whole-line `//` comments, which is where prose lives; a `//`
@@ -63,13 +63,13 @@ const withoutComments = (source: string): string =>
  * The add-on's id, read from the manifest text.
  *
  * Text, not an import: this runs while Vite is reading its config, long before anything
- * can compile a `.ts` file that imports Svelte components. gPhone's own add-on discovery
+ * can compile a `.ts` file that imports Svelte components. gOS's own add-on discovery
  * reads the same manifests the same way, for the same reason.
  */
 function readManifest(): { id: string } {
   if (!fs.existsSync(MANIFEST)) {
     throw new Error(
-      `[gphone-addon] no manifest at ${MANIFEST} — an add-on is a manifest and a component.`
+      `[gos-addon] no manifest at ${MANIFEST} — an add-on is a manifest and a component.`
     );
   }
   const source = withoutComments(fs.readFileSync(MANIFEST, 'utf8'));
@@ -78,9 +78,9 @@ function readManifest(): { id: string } {
    * The boundary, enforced where it ships.
    *
    * AGENTS.md §2.7: `core: true` means "ships with the phone and cannot be uninstalled",
-   * and it is what gates `@gphone/sdk/core` — the raw NUI transport. Nothing outside
-   * gPhone's own repo can be `core: true`: the Store installs `core: false` add-ons and
-   * runs them in a sandboxed iframe. gPhone enforces this with a build plugin in a config
+   * and it is what gates `@gos/sdk/core` — the raw NUI transport. Nothing outside
+   * gOS's own repo can be `core: true`: the Store installs `core: false` add-ons and
+   * runs them in a sandboxed iframe. gOS enforces this with a build plugin in a config
    * you do not have and a test that scans a directory you do not have, so it is enforced
    * here instead, in the file that travels with the template.
    *
@@ -91,17 +91,17 @@ function readManifest(): { id: string } {
    */
   if (/^\s*core:\s*true\s*,?\s*$/m.test(source)) {
     throw new Error(
-      `[gphone-addon] ${path.relative(here, MANIFEST)} declares \`core: true\`. An add-on built ` +
-        `outside gPhone's own repo is always \`core: false\`: \`core: true\` means the app ships ` +
+      `[gos-addon] ${path.relative(here, MANIFEST)} declares \`core: true\`. An add-on built ` +
+        `outside gOS's own repo is always \`core: false\`: \`core: true\` means the app ships ` +
         `with the phone and cannot be uninstalled, and it is the flag that gates ` +
-        `@gphone/sdk/core (the raw NUI transport). The Store installs \`core: false\` bundles ` +
+        `@gos/sdk/core (the raw NUI transport). The Store installs \`core: false\` bundles ` +
         `and runs them in a sandboxed iframe with no NUI at all, so a \`core: true\` bundle here ` +
         `would not gain the access it claims — it would simply be wrong about itself.`
     );
   }
   if (!/^\s*core:\s*false\s*,?\s*$/m.test(source)) {
     throw new Error(
-      `[gphone-addon] ${path.relative(here, MANIFEST)} does not declare \`core: false\`. It is a ` +
+      `[gos-addon] ${path.relative(here, MANIFEST)} does not declare \`core: false\`. It is a ` +
         `required manifest field and this build refuses to guess it.`
     );
   }
@@ -109,7 +109,7 @@ function readManifest(): { id: string } {
   const id = /^\s*id:\s*'([a-z][a-z0-9_]*)'/m.exec(source)?.[1];
   if (!id) {
     throw new Error(
-      `[gphone-addon] could not read \`id: '...'\` from ${path.relative(here, MANIFEST)}. It must be ` +
+      `[gos-addon] could not read \`id: '...'\` from ${path.relative(here, MANIFEST)}. It must be ` +
         `a single-quoted lower_snake_case literal — it is the bundle filename, the storage ` +
         `namespace, the event segment and the deep-link scheme, so it is read as text here ` +
         `rather than evaluated.`
@@ -118,7 +118,7 @@ function readManifest(): { id: string } {
   return { id };
 }
 
-const VIRTUAL = '\0gphone-addon-entry';
+const VIRTUAL = '\0gos-addon-entry';
 
 /**
  * The entry point, synthesised rather than written into `src/`.
@@ -130,18 +130,18 @@ const VIRTUAL = '\0gphone-addon-entry';
  */
 function addonEntry(): Plugin {
   return {
-    name: 'gphone-addon-entry',
+    name: 'gos-addon-entry',
     resolveId(source) {
-      const i = source.indexOf('gphone-addon-entry');
+      const i = source.indexOf('gos-addon-entry');
       return i === -1 ? null : VIRTUAL;
     },
     load(source) {
       if (source !== VIRTUAL) return null;
       return [
-        `import '@gphone/sdk/app.css';`,
+        `import '@gos/sdk/app.css';`,
         `import manifest from ${JSON.stringify(MANIFEST)};`,
         `import App from ${JSON.stringify(COMPONENT)};`,
-        `import { bootAddOn } from '@gphone/sdk';`,
+        `import { bootAddOn } from '@gos/sdk';`,
         `void bootAddOn(manifest, App);`
       ].join('\n');
     }
@@ -150,10 +150,10 @@ function addonEntry(): Plugin {
 
 // Matches the bare specifier and any subpath, so a file added under the package's `core`
 // entry cannot reopen the gap.
-const CORE_ENTRY_RE = /^@gphone\/sdk\/core(\/.*)?$/;
+const CORE_ENTRY_RE = /^@gos\/sdk\/core(\/.*)?$/;
 
 /**
- * `@gphone/sdk/core` is refused outright.
+ * `@gos/sdk/core` is refused outright.
  *
  * `useNuiBridge` is the raw NUI transport: any registered callback, by name, including the
  * ones with server-side effects. It is reserved for `core: true` apps. The package's
@@ -168,13 +168,13 @@ const CORE_ENTRY_RE = /^@gphone\/sdk\/core(\/.*)?$/;
  */
 function refuseCoreEntry(): Plugin {
   return {
-    name: 'gphone-refuse-core-entry',
+    name: 'gos-refuse-core-entry',
     resolveId: {
       order: 'pre',
       handler(source) {
         if (!CORE_ENTRY_RE.test(source)) return null;
         this.error(
-          `[gphone-addon] an add-on may not import @gphone/sdk/core — it is the raw NUI transport, ` +
+          `[gos-addon] an add-on may not import @gos/sdk/core — it is the raw NUI transport, ` +
             `reserved for core: true apps that ship with the phone. A core: false bundle runs in a ` +
             `sandboxed iframe with no NUI at all, so this import cannot work at runtime even if the ` +
             `build let it through. Reach your own server actions through useService(id) instead.`
@@ -194,7 +194,7 @@ function refuseCoreEntry(): Plugin {
  * loaded` at whoever opens it — so this asserts the positive rather than trusting that
  * resolution went the right way.
  *
- * It matters less than it did, now that `@gphone/sdk` resolves to `addon.ts` through the
+ * It matters less than it did, now that `@gos/sdk` resolves to `addon.ts` through the
  * package rather than through an alias this file had to get right. It is kept because the
  * thing it checks is the outcome, not the mechanism: a `resolve.alias` added here later, a
  * dependency override, or a future change to the package's `exports` map would all show up
@@ -203,13 +203,13 @@ function refuseCoreEntry(): Plugin {
  * Note what it deliberately does **not** ban: `sdk/host/inProcess/createInProcessHost` and
  * `sdk/host/inProcess/system` are legitimately on the add-on graph. They are shell-free,
  * and `bootAddOn` builds its own host out of the first. Banning the directory by name is
- * the shape-matching mistake gPhone's `sdk/seam.test.ts` documents at length; the
+ * the shape-matching mistake gOS's `sdk/seam.test.ts` documents at length; the
  * classification is by what a module imports, not by where it sits.
  */
 function requireIframeFacets(): Plugin {
   let seen = false;
   return {
-    name: 'gphone-addon-require-iframe-facets',
+    name: 'gos-addon-require-iframe-facets',
     buildStart() {
       seen = false;
     },
@@ -222,10 +222,10 @@ function requireIframeFacets(): Plugin {
       handler() {
         if (!seen) {
           this.error(
-            `[gphone-addon] this bundle does not contain the SDK's iframe facet set ` +
+            `[gos-addon] this bundle does not contain the SDK's iframe facet set ` +
               `(sdk/host/iframe/registerFacets). An add-on that boots without it mounts fine ` +
               `and then throws "host facet 'x' is not loaded" on the first hook it uses. The ` +
-              `usual cause is \`@gphone/sdk\` having resolved to the package's \`index.ts\` ` +
+              `usual cause is \`@gos/sdk\` having resolved to the package's \`index.ts\` ` +
               `(the shell barrel) rather than \`addon.ts\` — check for a \`resolve.alias\` ` +
               `or a dependency override redirecting it.`
           );
@@ -235,14 +235,14 @@ function requireIframeFacets(): Plugin {
   };
 }
 
-/** One capability your code reaches for, and the `@gphone/sdk` import that discloses it. */
+/** One capability your code reaches for, and the `@gos/sdk` import that discloses it. */
 interface PermissionShortfall {
   hook: string;
   permission: string;
 }
 
 /**
- * The part of gPhone's `sdk/lib/permissionScan.ts` this build uses, plus the table it needs.
+ * The part of gOS's `sdk/lib/permissionScan.ts` this build uses, plus the table it needs.
  *
  * Described here rather than imported as types: the SDK publishes no subpath for its build
  * helpers, so these files are reached by path (below) and TypeScript has nothing to follow.
@@ -268,7 +268,7 @@ interface SdkPermissionScan {
 }
 
 /**
- * gPhone's own permission derivation, loaded out of the `@gphone/sdk` you installed.
+ * gOS's own permission derivation, loaded out of the `@gos/sdk` you installed.
  *
  * The package is located through the one specifier it publishes, so this holds wherever your
  * package manager put it. Everything below that point is a plain file read of a package that
@@ -282,15 +282,15 @@ interface SdkPermissionScan {
 async function loadPermissionScan(): Promise<SdkPermissionScan> {
   // `await` because Vite substitutes its own `import.meta.resolve` in a config file; Node's
   // returns a string, and awaiting one costs nothing either way.
-  const entry = await Promise.resolve(import.meta.resolve('@gphone/sdk'));
+  const entry = await Promise.resolve(import.meta.resolve('@gos/sdk'));
   const sdkRoot = path.dirname(fileURLToPath(entry));
 
   const load = async (relative: string): Promise<Record<string, unknown>> => {
     const file = path.join(sdkRoot, relative);
     if (!fs.existsSync(file)) {
       throw new Error(
-        `[gphone-addon] cannot check this add-on's permissions: ${file} is not there. That ` +
-          `file is part of @gphone/sdk and this build reads it to learn which imports need ` +
+        `[gos-addon] cannot check this add-on's permissions: ${file} is not there. That ` +
+          `file is part of @gos/sdk and this build reads it to learn which imports need ` +
           `which permission. If your SDK is newer than this template, the file has moved — ` +
           `take the current template rather than deleting the check, which would let a ` +
           `manifest understate what your add-on does with nothing to notice.`
@@ -302,7 +302,7 @@ async function loadPermissionScan(): Promise<SdkPermissionScan> {
   const table = (await load('permissions.ts')).PERMISSION_OF as SdkPermissionScan['table'];
   if (!table || Object.keys(table).length === 0) {
     throw new Error(
-      `[gphone-addon] @gphone/sdk's permission table came back empty. Comparing against it ` +
+      `[gos-addon] @gos/sdk's permission table came back empty. Comparing against it ` +
         `would pass every manifest, so this build stops instead.`
     );
   }
@@ -317,7 +317,7 @@ async function loadPermissionScan(): Promise<SdkPermissionScan> {
   for (const name of required) {
     if (typeof scan[name] !== 'function') {
       throw new Error(
-        `[gphone-addon] @gphone/sdk's lib/permissionScan.ts does not export ${name}. This ` +
+        `[gos-addon] @gos/sdk's lib/permissionScan.ts does not export ${name}. This ` +
           `template is out of step with the SDK you installed; take the current one.`
       );
     }
@@ -335,37 +335,37 @@ async function loadPermissionScan(): Promise<SdkPermissionScan> {
 /**
  * Your manifest must not claim less than your code reaches for.
  *
- * `permissions` is what the Store shows a player before they install your add-on, and gPhone
+ * `permissions` is what the Store shows a player before they install your add-on, and gOS
  * asks them again when an update *widens* it. Declaring less than you use does not buy you
  * anything — the shell re-checks every permission against its own table before answering a
  * call, so an undeclared hook throws either way — it makes that disclosure untrue, and the
  * player meets the refusal as a toast in an app that told them it wanted nothing.
  *
- * gPhone's own add-on build runs this same check (MICA-205), and its test suite runs it
+ * gOS's own add-on build runs this same check (MICA-205), and its test suite runs it
  * over every app in that repo. Neither of those can see your bundle, so it runs here too.
  * Declaring *more* than you use is fine, always — this only ever fails on less.
  *
  * ## Where the answer comes from
  *
- * The mapping from an `@gphone/sdk` import to the permission it discloses is the SDK's, not
- * this file's: a copy of it here would be wrong the first time gPhone adds a hook. So the two
- * source files behind it are loaded out of the installed `@gphone/sdk` at build time —
+ * The mapping from an `@gos/sdk` import to the permission it discloses is the SDK's, not
+ * this file's: a copy of it here would be wrong the first time gOS adds a hook. So the two
+ * source files behind it are loaded out of the installed `@gos/sdk` at build time —
  * `permissions.ts` for the table and `lib/permissionScan.ts` for the derivation, which is the
- * very code gPhone's own build and test suite use.
+ * very code gOS's own build and test suite use.
  *
  * They are loaded **by path**, and by dynamic `import()` of a `file://` URL, because a Vite
  * config is read by Node rather than by Vite's own pipeline: every bare specifier in it is
  * handed to Node, and Node loads a `.ts` file but will not resolve an extensionless relative
  * specifier inside one. Both files are written with no relative import at all so that this
- * works, and gPhone's `sdk/lib/permissionScan.test.ts` starts a real Node and imports each of
+ * works, and gOS's `sdk/lib/permissionScan.test.ts` starts a real Node and imports each of
  * them, so the day that stops being true it fails there rather than here.
  *
- * If gPhone ever moves either file, this build stops with the path it looked for. That is the
+ * If gOS ever moves either file, this build stops with the path it looked for. That is the
  * intended failure: a permission check that quietly does nothing is worse than none, because
  * a green build reads as a checked one.
  */
 function requireDeclaredPermissions(): Plugin {
-  /** Every name your source imports from `@gphone/sdk`, and how many files were scanned. */
+  /** Every name your source imports from `@gos/sdk`, and how many files were scanned. */
   const imported = new Set<string>();
   let scanned = 0;
   let sdk: SdkPermissionScan | undefined;
@@ -378,7 +378,7 @@ function requireDeclaredPermissions(): Plugin {
   };
 
   return {
-    name: 'gphone-addon-permissions',
+    name: 'gos-addon-permissions',
     async buildStart() {
       imported.clear();
       scanned = 0;
@@ -400,7 +400,7 @@ function requireDeclaredPermissions(): Plugin {
       order: 'post',
       handler() {
         if (!sdk) {
-          this.error(`[gphone-addon] the permission scan did not load. This is a bug.`);
+          this.error(`[gos-addon] the permission scan did not load. This is a bug.`);
         }
         if (scanned === 0) {
           // The failure mode of a scanner is silence: if nothing matched, every manifest
@@ -408,7 +408,7 @@ function requireDeclaredPermissions(): Plugin {
           // looked at. Your entry imports src/manifest.ts and src/index.svelte, so zero
           // files means the matching is broken, not that your app is small.
           this.error(
-            `[gphone-addon] the permission scan saw none of your source files, so it checked ` +
+            `[gos-addon] the permission scan saw none of your source files, so it checked ` +
               `nothing. Refusing to report a pass it did not earn.`
           );
         }
@@ -416,7 +416,7 @@ function requireDeclaredPermissions(): Plugin {
         const declared = sdk.declaredPermissions(fs.readFileSync(MANIFEST, 'utf8'));
         if (!declared.ok) {
           this.error(
-            `[gphone-addon] ${path.relative(here, MANIFEST)}: ${declared.reason} This build ` +
+            `[gos-addon] ${path.relative(here, MANIFEST)}: ${declared.reason} This build ` +
               `refuses to guess what your add-on discloses.`
           );
         }
@@ -424,7 +424,7 @@ function requireDeclaredPermissions(): Plugin {
         const shortfall = sdk.permissionShortfall(imported, declared.permissions, sdk.table);
         if (shortfall.length > 0) {
           this.error(
-            `[gphone-addon] ${sdk.shortfallMessage(id, path.relative(here, MANIFEST), shortfall)}`
+            `[gos-addon] ${sdk.shortfallMessage(id, path.relative(here, MANIFEST), shortfall)}`
           );
         }
       }
@@ -445,7 +445,7 @@ function requireDeclaredPermissions(): Plugin {
  */
 function inlineCss(): Plugin {
   return {
-    name: 'gphone-addon-inline-css',
+    name: 'gos-addon-inline-css',
     generateBundle: {
       order: 'post',
       handler(_options, bundle) {
@@ -464,12 +464,12 @@ function inlineCss(): Plugin {
 }
 
 /**
- * No `__MICA_*__` identifier may survive into the output.
+ * No `__GOS_*__` identifier may survive into the output.
  *
  * `sdk/version.ts` reads two build-time globals behind `typeof` guards. Inside the add-on
  * iframe an unsubstituted identifier is simply undeclared, the guard holds, and the
  * fallback fires — so a missing `define` does not throw, it produces a bundle that is
- * confidently wrong about what it is running on. gPhone shipped exactly that for a while
+ * confidently wrong about what it is running on. gOS shipped exactly that for a while
  * (MICA-170). This fails the build instead.
  *
  * If a future SDK adds an identifier this does not know about, the fix is to add it to
@@ -477,9 +477,9 @@ function inlineCss(): Plugin {
  * the phone's, see that block.
  */
 function noUnsubstitutedDefines(): Plugin {
-  const IDENTIFIER = /__MICA_[A-Za-z0-9_]*__/g;
+  const IDENTIFIER = /__GOS_[A-Za-z0-9_]*__/g;
   return {
-    name: 'gphone-addon-no-unsubstituted-defines',
+    name: 'gos-addon-no-unsubstituted-defines',
     generateBundle: {
       order: 'post',
       handler(_options, bundle) {
@@ -493,7 +493,7 @@ function noUnsubstitutedDefines(): Plugin {
           const found = [...new Set(text.match(IDENTIFIER) ?? [])];
           if (found.length > 0) {
             this.error(
-              `[gphone-addon] ${file} still contains unsubstituted build-time identifier(s): ` +
+              `[gos-addon] ${file} still contains unsubstituted build-time identifier(s): ` +
                 `${found.join(', ')}. Inside the add-on iframe these are undeclared, so each one ` +
                 `silently falls back to whatever default the SDK holds instead of failing. Add it ` +
                 `to this config's \`define\` block with a value that is true for an add-on.`
@@ -525,23 +525,23 @@ export default defineConfig({
    * Both identifiers are the **empty string**, and that is the honest value rather than an
    * oversight.
    *
-   * `__MICA_VERSION__` is the running phone's CalVer build stamp. Your bundle is compiled
+   * `__GOS_VERSION__` is the running phone's CalVer build stamp. Your bundle is compiled
    * once and then loaded by whatever phone installs it, so at build time it genuinely does
    * not know. `''` is the encoding the SDK already gives to "not a version" — its
    * `lib/semver.ts` reads it as *not orderable* rather than folding it into "up to date" —
-   * and `MICA_VERSION` is documented to be checked for truthiness before use.
+   * and `GOS_VERSION` is documented to be checked for truthiness before use.
    *
    * The number you *can* act on is `SDK_CONTRACT_VERSION`, a plain source constant in the
    * SDK that needs no `define` and is correct in every bundle however it was built.
    */
   define: {
-    __MICA_VERSION__: JSON.stringify(''),
-    __MICA_BUILD_INFO__: JSON.stringify(''),
-    __MICA_BRANCH__: JSON.stringify('')
+    __GOS_VERSION__: JSON.stringify(''),
+    __GOS_BUILD_INFO__: JSON.stringify(''),
+    __GOS_BRANCH__: JSON.stringify('')
   },
   publicDir: false,
   resolve: {
-    // No `@gphone/sdk` alias: the package's own `exports` map resolves it to `addon.ts`.
+    // No `@gos/sdk` alias: the package's own `exports` map resolves it to `addon.ts`.
     // See the note at the top of this file for why that was not always true.
     conditions: ['browser']
   },
@@ -549,10 +549,10 @@ export default defineConfig({
     outDir: 'dist',
     emptyOutDir: true,
     /**
-     * FiveM's release CEF is Chromium 103 (AGENTS.md §6). `chrome92` is the floor gPhone's
+     * FiveM's release CEF is Chromium 103 (AGENTS.md §6). `chrome92` is the floor gOS's
      * own add-on build targets, deliberately below 103 rather than at it. Raising this
      * produces a bundle that runs in your browser and throws in game, and nothing in any
-     * test suite — yours or gPhone's — can catch that.
+     * test suite — yours or gOS's — can catch that.
      */
     target: 'chrome92',
     cssCodeSplit: false,
@@ -563,7 +563,7 @@ export default defineConfig({
      */
     minify: true,
     lib: {
-      entry: { [id]: 'gphone-addon-entry' },
+      entry: { [id]: 'gos-addon-entry' },
       formats: ['es'],
       fileName: (_format, name) => `${name}.js`
     },

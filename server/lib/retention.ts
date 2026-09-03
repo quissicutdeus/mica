@@ -13,18 +13,18 @@
  * with a genuinely different need is free to declare its own convar instead — nothing
  * about `Repository.restore`'s `windowDays` parameter requires this one.
  *
- * Read per call rather than cached, matching `gphone_notification_retention`'s own
+ * Read per call rather than cached, matching `gos_notification_retention`'s own
  * `getRetentionDays` in `Notifications.ts` and every other operator-facing knob in this
  * codebase (`Hodlr.ts`'s `tradeMax`/`spreadPct`): a server owner changing it with `set`
  * from the console should not need a restart.
  *
  * This is a **restorability** window, not a retention one, despite the convar's shape
- * matching `gphone_notification_retention`. Past it, `restore` simply matches no row —
+ * matching `gos_notification_retention`. Past it, `restore` simply matches no row —
  * the row itself is never hard-deleted by anything in this codebase, on purpose: the
  * moderation system depends on a soft-deleted row surviving forever, and this ticket was
  * explicitly asked not to add a hard-delete-after-window path.
  */
-const RESTORE_WINDOW_CONVAR = 'gphone_restore_window_days';
+const RESTORE_WINDOW_CONVAR = 'gos_restore_window_days';
 const DEFAULT_RESTORE_WINDOW_DAYS = 30;
 
 export const restoreWindowDays = (): number => {

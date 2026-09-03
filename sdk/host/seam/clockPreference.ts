@@ -6,7 +6,7 @@
  * Whether this player reads clocks in 24-hour time, and the one-slot seam behind it.
  *
  * MICA-172. `formatTime` in `sdk/lib/formatters.ts` needs this for its default, and
- * `formatters` is re-exported from `@gphone/sdk`'s `utils.ts` — so it is reachable from
+ * `formatters` is re-exported from `@gos/sdk`'s `utils.ts` — so it is reachable from
  * every add-on and from every corner of the shell. It used to reach the value by importing
  * `is24Hour` directly out of `shell/state/time.ts`, and that single import was the last
  * value edge from the SDK into the phone.
@@ -36,7 +36,7 @@
  * fallback for a mistake: it is what `shell/state/time.ts` itself defaults to, so a bundle
  * that never installs a preference formats the way an uninitialised phone would.
  *
- * `registerClockPreference` is **not** exported from `@gphone/sdk` — it is not in
+ * `registerClockPreference` is **not** exported from `@gos/sdk` — it is not in
  * `host/index.ts` (the barrel covers `host/*.ts`, not `host/seam/*.ts`) and nothing
  * re-exports it. `publicSurface.test.ts` is what would notice if that changed.
  */

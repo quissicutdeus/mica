@@ -9,13 +9,13 @@ import {
   isYouTubeSource,
   parseYouTubeSource,
   thumbnailUrlFor
-} from '@gphone/shared/youtube';
+} from '@gos/shared/youtube';
 
 /**
  * MICA-111. The parser is the sanitisation boundary — everything downstream interpolates
  * what comes out of here into an `<iframe src>`, which is a navigation, so a string that
  * escapes it is not defacement but a redirect out of the CEF instance. Tested from
- * `web/src/lib/` beside `richText.test.ts`, which covers `@gphone/shared/richText` the same way.
+ * `web/src/lib/` beside `richText.test.ts`, which covers `@gos/shared/richText` the same way.
  */
 
 const VIDEO = 'dQw4w9WgXcQ';

@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import type { PricePoint } from '@gphone/shared/types';
+  import type { PricePoint } from '@gos/shared/types';
 
   let { history }: { history: PricePoint[] } = $props();
 

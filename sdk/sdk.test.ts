@@ -28,7 +28,7 @@ import {
   useNotifications,
   onAppMount,
   onAppUnmount,
-  MICA_VERSION
+  GOS_VERSION
 } from './index';
 import { useNuiBridge } from './core';
 import { toast } from '../web/src/shell/state/toast';
@@ -36,7 +36,7 @@ import { contacts } from '../web/src/services/contacts';
 import { media } from '../web/src/services/media';
 import { get } from 'svelte/store';
 
-describe('gPhone SDK (@gphone/sdk)', () => {
+describe('gOS SDK (@gos/sdk)', () => {
   beforeEach(() => {
     toast.clear();
   });
@@ -57,26 +57,26 @@ describe('gPhone SDK (@gphone/sdk)', () => {
       expect(app.tile).toEqual({ bg: 'bg-yellow-500' });
       // Derived, so every consumer that interpolates one class string keeps working.
       expect(app.color).toBe('bg-yellow-500');
-      expect(app.version).toBe(MICA_VERSION);
+      expect(app.version).toBe(GOS_VERSION);
       expect(app.author).toBe('Community');
       expect(app.permissions).toEqual([]);
       expect(app.defaultProps).toEqual({});
     });
 
-    it('exports MICA_VERSION and MICA_BUILD_INFO constants', async () => {
-      const { MICA_VERSION, MICA_BUILD_INFO } = await import('./index');
-      expect(MICA_VERSION).toBeDefined();
-      expect(MICA_BUILD_INFO).toBeDefined();
+    it('exports GOS_VERSION and GOS_BUILD_INFO constants', async () => {
+      const { GOS_VERSION, GOS_BUILD_INFO } = await import('./index');
+      expect(GOS_VERSION).toBeDefined();
+      expect(GOS_BUILD_INFO).toBeDefined();
     });
 
     it('throws when id is missing, or name is present and empty', () => {
       expect(() => defineApp({ id: '', name: 'Test', color: 'red', icon: null } as any)).toThrow(
-        "gPhone App Manifest error: 'id' is required"
+        "gOS App Manifest error: 'id' is required"
       );
       // `name` is optional now and derived from the id when absent — but an empty string is
       // a supplied value rather than an omission, and there is nothing to derive from it.
       expect(() => defineApp({ id: 'app1', name: '', color: 'red', icon: null } as any)).toThrow(
-        "gPhone App Manifest error: 'name' must be a non-empty string"
+        "gOS App Manifest error: 'name' must be a non-empty string"
       );
     });
 
@@ -264,7 +264,7 @@ describe('gPhone SDK (@gphone/sdk)', () => {
       addReceivedMail({
         id: 99,
         citizenid: 'CIT_TEST',
-        sender: 'test@gphone.app',
+        sender: 'test@gos.app',
         subject: 'SDK Test',
         content: 'Body',
         read: false,

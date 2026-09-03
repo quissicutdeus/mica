@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { Database } from '../lib/Database';
-import type { PricePoint } from '@gphone/shared/types';
+import type { PricePoint } from '@gos/shared/types';
 
 /**
  * The single global coin price, ticked by the server and persisted for the chart.
@@ -13,17 +13,17 @@ import type { PricePoint } from '@gphone/shared/types';
  * there is exactly one price shared by every player rather than one value per source, so
  * there is no per-connection map here.
  *
- * `gphone_hodlr_price_history` is declared as a child table on `Hodlr.ts`'s
+ * `gos_hodlr_price_history` is declared as a child table on `Hodlr.ts`'s
  * `defineService` (see that file), not here — DDL generation only scans `defineService`
  * declarations, and there is no per-player owner for a global price to declare one
  * against. This module still owns every read/write against that table, the same way
- * `Marketplace.ts` owns `gphone_marketplace_attachments` despite declaring it on the
+ * `Marketplace.ts` owns `gos_marketplace_attachments` despite declaring it on the
  * `marketplace` service.
  *
  * ## The price is persistent state (MICA-130)
  *
  * It used to be module state and nothing else: `currentPrice` opened at `STARTING_PRICE`
- * on every resource start while `gphone_hodlr.quantity` — the holdings the price values —
+ * on every resource start while `gos_hodlr.quantity` — the holdings the price values —
  * was a real column that came straight back. So a restart re-valued every holding at 500,
  * a constant anyone can read in the AGPL source, and buying below it was a risk-free bet
  * on the next restart. The snapshot table already held the answer and was only ever read
@@ -48,13 +48,13 @@ const MAX_STEP_PCT = 0.03;
  * spring, and fast enough that a week of uptime does not end pinned to a boundary.
  */
 const REVERSION_PER_TICK = 0.002;
-const PRICE_HISTORY_TABLE = 'gphone_hodlr_price_history';
+const PRICE_HISTORY_TABLE = 'gos_hodlr_price_history';
 /**
  * Read, never written, by this module: it is `Hodlr.ts`'s table. What it answers here is
  * whether anybody holds a coin, which is what separates a fresh install from a lost history
  * — see `restorePrice`.
  */
-const HOLDINGS_TABLE = 'gphone_hodlr';
+const HOLDINGS_TABLE = 'gos_hodlr';
 /** How far back a chart request reads. Storage keeps more — see HISTORY_RETENTION_DAYS. */
 const CHART_WINDOW_HOURS = 24;
 /** How long a snapshot row survives before the pruning sweep removes it. */
@@ -82,7 +82,7 @@ let restoreInFlight = false;
  * *settles* latches the market closed for the life of the resource: `finally` never runs,
  * the flag stays `true`, and `tickMarket`'s `!restored` guard returns immediately every 30
  * seconds forever — every trade refused, no snapshots written, the chart flat, recoverable
- * only by restarting gphone.
+ * only by restarting gos.
  *
  * That is not hypothetical. `restart oxmysql` — or an oxmysql crash — while `scalar_async`
  * is outstanding drops the export callback, so the promise neither resolves nor rejects. A
@@ -164,7 +164,7 @@ const recordSnapshot = async (price: number): Promise<void> => {
   try {
     await Database.insert(`INSERT INTO \`${PRICE_HISTORY_TABLE}\` (\`price\`) VALUES (?)`, [price]);
   } catch (e) {
-    console.error('[gphone] failed to record hodlr price snapshot', e);
+    console.error('[gos] failed to record hodlr price snapshot', e);
   }
 };
 
@@ -195,7 +195,7 @@ const hasHoldings = async (): Promise<boolean> => {
  * briefly down must not be able to open the market at 500.
  *
  * **No usable price is only a fresh install if nobody holds a coin.** An empty history and
- * an empty `gphone_hodlr` is a server that has never traded, and it opens at
+ * an empty `gos_hodlr` is a server that has never traded, and it opens at
  * `STARTING_PRICE`. An empty history *while holdings exist* is a lost history, and opening
  * at `STARTING_PRICE` there re-creates the exact MICA-130 precondition this commit exists
  * to remove: every holding re-valued at the constant in the source, with `quantity`
@@ -223,7 +223,7 @@ const restorePrice = async (): Promise<void> => {
 
     if (traded) {
       console.error(
-        `[gphone] hodlr has holdings but no price history; market stays closed rather than ` +
+        `[gos] hodlr has holdings but no price history; market stays closed rather than ` +
           `reopening at ${STARTING_PRICE}. Restore \`${PRICE_HISTORY_TABLE}\` from a backup, ` +
           `or clear \`${HOLDINGS_TABLE}\` if this economy is genuinely being reset.`
       );
@@ -232,9 +232,9 @@ const restorePrice = async (): Promise<void> => {
 
     if (usable) currentPrice = clamp(price);
     restored = true;
-    console.log(`[gphone] hodlr market open at ${currentPrice}`);
+    console.log(`[gos] hodlr market open at ${currentPrice}`);
   } catch (e) {
-    console.error('[gphone] failed to restore the hodlr price; market closed until retried', e);
+    console.error('[gos] failed to restore the hodlr price; market closed until retried', e);
   } finally {
     if (attempt === restoreGeneration) restoreInFlight = false;
   }
@@ -251,7 +251,7 @@ const tickMarket = (): void => {
       if (++restoreTicksWaited < MAX_RESTORE_TICKS) return;
       restoreInFlight = false;
       restoreGeneration++;
-      console.error('[gphone] hodlr price restore did not settle; abandoning it and reading again');
+      console.error('[gos] hodlr price restore did not settle; abandoning it and reading again');
     }
     void restorePrice();
     return;
@@ -289,7 +289,7 @@ const pruneHistory = async (): Promise<void> => {
       [HISTORY_RETENTION_DAYS, Number(newest) || 0]
     );
   } catch (e) {
-    console.error('[gphone] failed to prune hodlr price history', e);
+    console.error('[gos] failed to prune hodlr price history', e);
   }
 };
 
@@ -344,7 +344,7 @@ export const getPriceHistory = async (): Promise<PricePoint[]> => {
       [CHART_WINDOW_HOURS]
     );
   } catch (e) {
-    console.error('[gphone] failed to read hodlr price history', e);
+    console.error('[gos] failed to read hodlr price history', e);
     return [];
   }
 };

@@ -32,7 +32,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     useScrollDetect,
     type AppProps,
     type RecentlyDeletedItem
-  } from '@gphone/sdk';
+  } from '@gos/sdk';
   import NoteEditor from './components/NoteEditor.svelte';
   import TabletRoot from './tablet.svelte';
   import en from './locales/en.json';

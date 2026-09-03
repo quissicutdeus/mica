@@ -7,7 +7,7 @@ import {
   APP_EVENT_NET_EVENT,
   APP_EVENT_NUI_ACTION,
   parseAppEventEnvelope
-} from '@gphone/shared/appEvents';
+} from '@gos/shared/appEvents';
 
 /**
  * Forwarding a server push into the NUI.

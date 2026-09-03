@@ -2,8 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { createCrudStore } from '@gphone/sdk';
-import type { SavedPlace } from '@gphone/shared/types';
+import { createCrudStore } from '@gos/sdk';
+import type { SavedPlace } from '@gos/shared/types';
 
 /**
  * Saved places' own data layer, inside the app — same shape as `apps/notes/store.ts`.

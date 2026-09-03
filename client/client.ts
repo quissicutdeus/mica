@@ -11,8 +11,8 @@ import { openDevice, closeDevice, closeOpenDevice } from './lib/DeviceVisibility
 import { DeviceAnimation } from './game/DeviceAnimation';
 import { Freelook } from './game/Freelook';
 import { PhoneCamera } from './game/PhoneCamera';
-import { GAME_SCOPE_ACTIONS } from '@gphone/shared/keybinds';
-import { ALL_DEVICES, DEVICES, type DeviceId } from '@gphone/shared/devices';
+import { GAME_SCOPE_ACTIONS } from '@gos/shared/keybinds';
+import { ALL_DEVICES, DEVICES, type DeviceId } from '@gos/shared/devices';
 import { requestDeviceItemCheck } from './services/DeviceItem';
 
 // Send system time to NUI

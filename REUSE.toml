@@ -12,9 +12,9 @@
 # this one — the last matching block wins.
 
 version = 1
-SPDX-PackageName = "gphone"
+SPDX-PackageName = "gos"
 SPDX-PackageSupplier = "quissicutdeus"
-SPDX-PackageDownloadLocation = "https://github.com/quissicutdeus/gphone"
+SPDX-PackageDownloadLocation = "https://github.com/quissicutdeus/gos"
 
 [[annotations]]
 path = "**"

@@ -11,7 +11,7 @@ import { constants } from '../constants';
  * `clock` member for a wall-clock ticker; the frame has no reason to run its own
  * `setInterval`), just the subset of `shell/state/time.ts`'s exports something reachable
  * from an add-on's module graph actually imports: `src/lib/formatters.ts` (re-exported
- * from `@gphone/sdk`'s `utils.ts`, so reachable from every add-on) reads `is24Hour` for
+ * from `@gos/sdk`'s `utils.ts`, so reachable from every add-on) reads `is24Hour` for
  * `formatTime`'s default, and the inProcess `clock` facet's own file — unreachable from an
  * add-on today, but resolved the same way if anything ever imports it that way — reads
  * `time`/`is24Hour`/`formattedTime`.

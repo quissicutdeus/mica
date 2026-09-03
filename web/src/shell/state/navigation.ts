@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { get, writable } from 'svelte/store';
-import type { DeviceId } from '@gphone/shared/devices';
+import type { DeviceId } from '@gos/shared/devices';
 import { fetchNui } from '../../nui/fetchNui';
 import { activeDevice } from './device';
 import { appRegistryStore } from './registry';
@@ -24,7 +24,7 @@ import { manifestSupportsDevice } from '../../lib/phone/appVisibility';
  * as scroll offset, which no save/restore API could reasonably capture.
  */
 
-import type { RunningApp } from '@gphone/sdk';
+import type { RunningApp } from '@gos/sdk';
 
 /**
  * How many apps stay resident. Beyond this the least recently used is unmounted.

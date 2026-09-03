@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { DEFAULT_DEVICE, isDeviceId, type DeviceId } from '@gphone/shared/devices';
+import { DEFAULT_DEVICE, isDeviceId, type DeviceId } from '@gos/shared/devices';
 import { sendNuiMessage } from '../lib/nui';
 import { DeviceState } from '../lib/DeviceState';
 import { openDevice, closeDevice } from '../lib/DeviceVisibility';
@@ -26,7 +26,7 @@ const closeIfDisabled = (id: DeviceId): void => {
  * any app.
  *
  * `shell` is the segment for these because the event name convention is
- * `gphone:<side>:<app>:<action>` and there is no app here. It matches what the rest of
+ * `gos:<side>:<app>:<action>` and there is no app here. It matches what the rest of
  * the codebase already calls this layer.
  */
 
@@ -37,19 +37,16 @@ const closeIfDisabled = (id: DeviceId): void => {
  * listening** — five call sites across the call and battery systems pushed
  * notifications into the void, so a player denied permission saw no feedback at all.
  */
-onNet(
-  'gphone:client:shell:notify',
-  (payload: { type?: string; title?: string; message?: string }) => {
-    const message = typeof payload?.message === 'string' ? payload.message : '';
-    if (!message) return;
+onNet('gos:client:shell:notify', (payload: { type?: string; title?: string; message?: string }) => {
+  const message = typeof payload?.message === 'string' ? payload.message : '';
+  if (!message) return;
 
-    sendNuiMessage('notify', {
-      type: payload?.type ?? 'info',
-      title: payload?.title,
-      message
-    });
-  }
-);
+  sendNuiMessage('notify', {
+    type: payload?.type ?? 'info',
+    title: payload?.title,
+    message
+  });
+});
 
 /**
  * A freshly loaded character's phone should stop showing the previous one's data.
@@ -59,7 +56,7 @@ onNet(
  * everything over the ordinary bootstrap round trip, which already scopes each read to the
  * caller's citizenid.
  */
-onNet('gphone:client:shell:rehydrate', () => {
+onNet('gos:client:shell:rehydrate', () => {
   sendNuiMessage('rehydrateShell', {});
 });
 
@@ -71,7 +68,7 @@ onNet('gphone:client:shell:rehydrate', () => {
  *
  * A bare boolean is the phone, as it always was; `{ device, enabled }` names another.
  */
-onNet('gphone:client:shell:setEnabled', (payload: unknown) => {
+onNet('gos:client:shell:setEnabled', (payload: unknown) => {
   const value =
     typeof payload === 'boolean' ? payload : (payload as { enabled?: unknown })?.enabled === true;
   const device = deviceOf(payload);
@@ -83,7 +80,7 @@ onNet('gphone:client:shell:setEnabled', (payload: unknown) => {
  * Whether this server has a device on at all — the descriptor's enable convar, pushed by
  * the server (MICA-263). The phone has no such convar and never receives this.
  */
-onNet('gphone:client:shell:setServerEnabled', (payload: unknown) => {
+onNet('gos:client:shell:setServerEnabled', (payload: unknown) => {
   const device = deviceOf(payload);
   DeviceState.setServerEnabled(device, (payload as { enabled?: unknown })?.enabled === true);
   closeIfDisabled(device);
@@ -95,7 +92,7 @@ onNet('gphone:client:shell:setServerEnabled', (payload: unknown) => {
  * for the same reason. Absent `device` is the phone (MICA-262).
  */
 onNet(
-  'gphone:client:shell:phoneItem',
+  'gos:client:shell:phoneItem',
   (payload: { device?: unknown; gated?: unknown; held?: unknown }) => {
     const device = deviceOf(payload);
     DeviceState.setItemGate(device, payload?.gated === true, payload?.held === true);
@@ -104,7 +101,7 @@ onNet(
 );
 
 /** Using a device's item opens it. Refused while disabled, like `openApp` below. */
-onNet('gphone:client:shell:open', (payload?: unknown) => {
+onNet('gos:client:shell:open', (payload?: unknown) => {
   const device = deviceOf(payload);
   if (!DeviceState.isEnabled(device) || DeviceState.isOpen(device)) return;
   openDevice(device);
@@ -119,7 +116,7 @@ onNet('gphone:client:shell:open', (payload?: unknown) => {
  * event to report through, matching `guardNetEvent`'s own reasoning on the server side.
  */
 onNet(
-  'gphone:client:shell:openApp',
+  'gos:client:shell:openApp',
   (payload: { appId?: string; props?: Record<string, unknown>; device?: unknown }) => {
     const device = deviceOf(payload);
     if (!DeviceState.isEnabled(device)) return;

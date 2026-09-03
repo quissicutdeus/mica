@@ -24,8 +24,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     type AppProps,
     type RecentlyDeletedItem,
     fade
-  } from '@gphone/sdk';
-  import type { MediaItem } from '@gphone/shared/types';
+  } from '@gos/sdk';
+  import type { MediaItem } from '@gos/shared/types';
   import PhotoGrid from './components/PhotoGrid.svelte';
   import PhotoDetail from './components/PhotoDetail.svelte';
   import en from './locales/en.json';
@@ -379,7 +379,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 {#if reporting && selectedPhoto}
   <ReportDialog
-    targetTable="gphone_media"
+    targetTable="gos_media"
     targetId={selectedPhoto.id}
     appId="media"
     onclose={() => (reporting = false)}

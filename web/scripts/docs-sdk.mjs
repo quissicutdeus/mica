@@ -13,7 +13,7 @@
  * reader had no way to tell what surface they were looking at; it silently described
  * whatever had last merged to `main`. `SDK_CONTRACT_VERSION` is read here, from the real
  * declaration, and `--name` is built from it — see the "Which version is this?" section of
- * `typedoc-home.md` for why that number and not `MICA_VERSION` or `package.json`'s.
+ * `typedoc-home.md` for why that number and not `GOS_VERSION` or `package.json`'s.
  *
  * **It cannot tell you it documented the wrong thing.** `web/typedoc.json` pointed at
  * `../sdk/index.ts` alone for as long as the site existed, which is the *shell's* barrel:
@@ -134,7 +134,7 @@ const main = async () => {
     }
   }
 
-  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'gphone-docs-'));
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'gos-docs-'));
   const jsonPath = path.join(scratch, 'sdk.json');
 
   // Pass 1 — the model, for the assertions and for the generated divergence section.
@@ -205,7 +205,7 @@ const main = async () => {
   fs.writeFileSync(homeGenerated, home);
 
   // Pass 2 — the site.
-  const name = `@gphone/sdk (SDK contract v${version})`;
+  const name = `@gos/sdk (SDK contract v${version})`;
   const footer = `SDK contract v${version} — <code>SDK_CONTRACT_VERSION</code> in <code>sdk/version.ts</code>. Not the phone's build version.`;
   runTypedoc(
     ['--readme', homeGenerated, '--name', name, '--customFooterHtml', footer, '--logLevel', 'Warn'],

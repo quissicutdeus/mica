@@ -1,5 +1,5 @@
 import Icon from './Icon.svelte';
-import { defineApp } from '@gphone/sdk/app';
+import { defineApp } from '@gos/sdk/app';
 
 export default defineApp({
   /**
@@ -24,7 +24,7 @@ export default defineApp({
    * access — it only misleads the player reading the install prompt. Declaring more than
    * you use is merely untidy.
    *
-   * `vite.config.ts` derives this from your `@gphone/sdk` imports and refuses to build a
+   * `vite.config.ts` derives this from your `@gos/sdk` imports and refuses to build a
    * list that is short, naming the import and the permission it needs. It is read from this
    * file as **text**, so keep it a literal array of quoted names.
    */
@@ -34,7 +34,7 @@ export default defineApp({
    * Always `false` here, and `vite.config.ts` refuses to build anything else.
    *
    * `core: true` means the app ships inside the phone and cannot be uninstalled, and it is
-   * the flag that gates `@gphone/sdk/core` — the raw NUI transport. A Store-installed
+   * the flag that gates `@gos/sdk/core` — the raw NUI transport. A Store-installed
    * add-on runs in a sandboxed iframe whose only route to the shell is `postMessage`, so
    * `core: true` on a bundle built here would not grant the access it claims.
    */

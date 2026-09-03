@@ -6,8 +6,8 @@
 import { PlayerFacingError } from '../lib/errors';
 import { defineService, SchemaRepository } from '../lib/defineService';
 import { Database } from '../lib/Database';
-import { PhoneSetting } from '@gphone/shared/types';
-import { settingsContract } from '@gphone/shared/contracts/settings';
+import { PhoneSetting } from '@gos/shared/types';
+import { settingsContract } from '@gos/shared/contracts/settings';
 import { onPlayerLoaded } from '../lib/shell';
 
 /**
@@ -34,7 +34,7 @@ export class SettingsRepository extends SchemaRepository<PhoneSetting> {
    */
   async findAllForPlayer(citizenid: string): Promise<PhoneSetting[]> {
     return await Database.query<PhoneSetting[]>(
-      `SELECT * FROM gphone_settings WHERE citizenid = ? AND status = 'active'`,
+      `SELECT * FROM gos_settings WHERE citizenid = ? AND status = 'active'`,
       [citizenid]
     );
   }
@@ -50,7 +50,7 @@ export class SettingsRepository extends SchemaRepository<PhoneSetting> {
    */
   async put(citizenid: string, app: string, key: string, value: string): Promise<void> {
     await Database.query(
-      `INSERT INTO gphone_settings (citizenid, app, setting_key, setting_value, status, created_at, updated_at)
+      `INSERT INTO gos_settings (citizenid, app, setting_key, setting_value, status, created_at, updated_at)
        VALUES (?, ?, ?, ?, 'active', NOW(), NOW())
        ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), status = 'active', updated_at = NOW()`,
       [citizenid, app, key, value]
@@ -71,7 +71,7 @@ export class SettingsRepository extends SchemaRepository<PhoneSetting> {
 
     const placeholders = citizenids.map(() => '?').join(',');
     const rows = await Database.query<{ citizenid: string; setting_value: string }[]>(
-      `SELECT citizenid, setting_value FROM gphone_settings
+      `SELECT citizenid, setting_value FROM gos_settings
        WHERE app = ? AND setting_key = ? AND status = 'active' AND citizenid IN (${placeholders})`,
       [app, key, ...citizenids]
     );
@@ -81,7 +81,7 @@ export class SettingsRepository extends SchemaRepository<PhoneSetting> {
   /** Remove one key. Hard delete: a tombstoned preference is not a preference. */
   async remove(citizenid: string, app: string, key: string): Promise<void> {
     await Database.query(
-      `DELETE FROM gphone_settings WHERE citizenid = ? AND app = ? AND setting_key = ?`,
+      `DELETE FROM gos_settings WHERE citizenid = ? AND app = ? AND setting_key = ?`,
       [citizenid, app, key]
     );
   }
@@ -94,7 +94,7 @@ export class SettingsRepository extends SchemaRepository<PhoneSetting> {
    * says it exists to prevent, moved one layer down.
    */
   async clearApp(citizenid: string, app: string): Promise<void> {
-    await Database.query(`DELETE FROM gphone_settings WHERE citizenid = ? AND app = ?`, [
+    await Database.query(`DELETE FROM gos_settings WHERE citizenid = ? AND app = ?`, [
       citizenid,
       app
     ]);
@@ -225,7 +225,7 @@ app.registerEvent('clearApp', async (_source, _cbId, data, citizenid) => {
  */
 const pushRehydrate = (src: number): void => {
   if (typeof emitNet !== 'function') return;
-  emitNet('gphone:client:settings:rehydrate', src);
+  emitNet('gos:client:settings:rehydrate', src);
 };
 
 /**

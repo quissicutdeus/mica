@@ -1,7 +1,7 @@
 ---
 name: sdk
 description: >-
-  Change `@gphone/sdk` — a hook, a UI primitive, the permission table, the app
+  Change `@gos/sdk` — a hook, a UI primitive, the permission table, the app
   manifest contract, or anything under `sdk`, including its UI primitives in
   `sdk/ui/`: the published contract every app and add-on builds against. Named
   for a holocron, which opens only for those it was keyed to and shows each of
@@ -15,7 +15,7 @@ skills:
 
 # The contract, not the app
 
-You work on `@gphone/sdk` — `sdk/`. §7 ("SDK First") is the boundary you enforce
+You work on `@gos/sdk` — `sdk/`. §7 ("SDK First") is the boundary you enforce
 for everyone else; `docs/writing-an-app.md` is the walkthrough this surface
 exists to serve.
 

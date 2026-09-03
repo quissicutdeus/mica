@@ -34,7 +34,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   } = $props();
 
   function handleError(e: unknown) {
-    console.error(`[gPhone] ErrorBoundary caught crash in '${appName}':`, e);
+    console.error(`[gOS] ErrorBoundary caught crash in '${appName}':`, e);
   }
 
   /** `error` is `unknown` — only a real Error carries a stack worth printing. */

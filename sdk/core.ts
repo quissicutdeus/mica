@@ -3,11 +3,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 /**
- * `@gphone/sdk/core` — the surface only a `core: true` app may import.
+ * `@gos/sdk/core` — the surface only a `core: true` app may import.
  *
  * `useNuiBridge` is the raw transport: any registered NUI callback, by name. An add-on
  * with it can reach everything every other permission guards, so it is not on
- * `@gphone/sdk` — `boundary.test.ts` refuses it to anything `core: false`. The specifier
+ * `@gos/sdk` — `boundary.test.ts` refuses it to anything `core: false`. The specifier
  * is unresolvable out-of-tree for a Store-installed bundle, and since MICA-16 Step 4
  * that is also a runtime refusal: a `core: false` bundle runs in a sandboxed iframe with
  * no NUI at all, only the `postMessage` protocol in `sdk/host/iframe/`. In-process,
@@ -21,7 +21,7 @@
  * `NowPlayingCard` is the third kind: not dangerous, not general. It is the transport for
  * the phone's *own* player, drawn by the Music app and by the notification shade, and it
  * is the reason Music is `core: true` at all — the player is hardware. Putting it on the
- * public `@gphone/sdk` would make a screen-sized component with one subject into an API
+ * public `@gos/sdk` would make a screen-sized component with one subject into an API
  * commitment to every add-on; putting it here keeps it reachable by the two things that
  * draw it. It grants nothing on its own: it is presentational, and the stores it renders
  * from are `useMusic()`'s, which is permission-gated as it always was.

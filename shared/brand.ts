@@ -11,11 +11,35 @@
  * software rather than the thing in the player's hand.
  *
  * A constant rather than a locale key, for the reason `brand` is one: it is a product
- * name, not prose, and a catalog entry per language would be the same six characters
+ * name, not prose, and a catalog entry per language would be the same few characters
  * copied into every one of them, free to drift. Prose *about* the OS still goes through
  * `$t` and takes this as a parameter, which is what `shell.previewNav` does.
- *
- * `web/src/apps/settings` still says `gPhone` in roughly twenty-five strings that mean
- * the software rather than the phone; MICA-267 is the pass that brings them here.
  */
 export const OS_NAME = 'gOS';
+
+/**
+ * The nine choirs, in the traditional order, highest first (MICA-273).
+ *
+ * An operating system puts its personality in its release names rather than its product
+ * name -- Android had desserts, Ubuntu has animals, macOS has places -- and this is that
+ * slot. The sequence is already ranked, so the next release picks itself and nobody has
+ * to hold an opinion about it.
+ *
+ * It is the world the `quissicutdeus` handle comes from -- "Quis sicut Deus", the cry of
+ * Michael, who is an archangel and so belongs to the eighth of these -- without putting
+ * anybody's first name on the product.
+ */
+export const OS_CODENAMES = [
+  'Seraphim',
+  'Cherubim',
+  'Thrones',
+  'Dominions',
+  'Virtues',
+  'Powers',
+  'Principalities',
+  'Archangels',
+  'Angels'
+] as const;
+
+/** The choir this major version ships under. Advance it with the major, not the patch. */
+export const OS_CODENAME: (typeof OS_CODENAMES)[number] = 'Seraphim';

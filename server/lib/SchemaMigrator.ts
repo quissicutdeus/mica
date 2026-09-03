@@ -15,11 +15,11 @@ import {
 /**
  * Reconcile the live database with the schema declarations, additively.
  *
- * `report()` runs at resource start; `apply()` runs only from `gphoneschema apply` at the
+ * `report()` runs at resource start; `apply()` runs only from `gosschema apply` at the
  * server console, and after the versioned migrations (AGENTS.md §8). Boot reports rather than
  * applies because the alternative — a resource that reshapes a live database on start — gives
  * an operator no moment at which to take a backup. It still has to say something at boot: an
- * upgraded gPhone whose database is missing a column the code expects otherwise fails later,
+ * upgraded gOS whose database is missing a column the code expects otherwise fails later,
  * as a query error in whichever app happened to touch it first.
  *
  * Additive only, and loud. Anything it will not do itself is printed with the exact
@@ -69,7 +69,7 @@ const readLiveTable = async (schema: string, table: string): Promise<LiveTable> 
   };
 };
 
-/** Every table gPhone declares, primary and child alike. */
+/** Every table gOS declares, primary and child alike. */
 const collectPlans = async (schema: string): Promise<MigrationPlan[]> => {
   const plans: MigrationPlan[] = [];
 
@@ -98,7 +98,7 @@ export interface AdditiveApplyResult {
 const describe = (plan: MigrationPlan): string[] => {
   const lines: string[] = [];
   if (plan.missingTable) {
-    lines.push(`  ${plan.table}: table does not exist — import gphone.sql`);
+    lines.push(`  ${plan.table}: table does not exist — import gos.sql`);
   }
   for (const statement of plan.additive) lines.push(`  ${statement.description}`);
   for (const issue of plan.drift) lines.push(`  needs a human: ${issue}`);
@@ -113,23 +113,23 @@ export const SchemaMigrator = {
     return await collectPlans(schema);
   },
 
-  /** Print what would change. Backs the `gphoneschema` command. */
+  /** Print what would change. Backs the `gosschema` command. */
   async report(): Promise<void> {
     let plans: MigrationPlan[];
     try {
       plans = await SchemaMigrator.plan();
     } catch (e) {
-      console.error('[gphone] schema check failed:', e);
+      console.error('[gos] schema check failed:', e);
       return;
     }
 
     const interesting = plans.filter((p) => !isNoop(p));
     if (interesting.length === 0) {
-      console.log('[gphone] schema is up to date.');
+      console.log('[gos] schema is up to date.');
       return;
     }
 
-    console.log('[gphone] schema differences:');
+    console.log('[gos] schema differences:');
     for (const plan of interesting) {
       for (const line of describe(plan)) console.log(line);
     }
@@ -144,7 +144,7 @@ export const SchemaMigrator = {
    * statement, so a failure on the third of five leaves the first two applied and permanent;
    * rejecting the whole call would tell the operator only that something went wrong, in the
    * one command that changes a live database. Same `{ applied, failed, remaining }` shape as
-   * `runMigrations` in `migrations.ts`, deliberately: `gphoneschema apply` runs both halves
+   * `runMigrations` in `migrations.ts`, deliberately: `gosschema apply` runs both halves
    * and should not need two ways to say the same thing. It stops at the first failure for
    * the same reason that runner does — the next statement may depend on the one that did
    * not land.

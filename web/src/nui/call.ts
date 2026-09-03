@@ -3,13 +3,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { fetchNui } from './fetchNui';
-import { GENERIC_SERVICE_ACTION } from '@gphone/shared/rpc';
+import { GENERIC_SERVICE_ACTION } from '@gos/shared/rpc';
 import type {
   ActionInput,
   ActionOutput,
   ContractAction,
   ServiceContract
-} from '@gphone/shared/contract';
+} from '@gos/shared/contract';
 
 /**
  * Call a contracted action by its declaration, not by a string (MICA-213).

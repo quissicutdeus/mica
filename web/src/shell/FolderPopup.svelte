@@ -7,7 +7,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script lang="ts">
   import { t } from './messages';
   import { badgeAllowed } from './state/notificationPolicy';
-  import { fade, focusTrap } from '@gphone/sdk';
+  import { fade, focusTrap } from '@gos/sdk';
   import { get } from 'svelte/store';
   import { registerHandler } from './state/keybinds';
   import { attachLongPressDrag } from '../lib/phone/longPressDrag';

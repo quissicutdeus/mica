@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { ServiceEndpoint } from '../lib/ServiceEndpoint';
-import { shellContract } from '@gphone/shared/contracts/shell';
+import { shellContract } from '@gos/shared/contracts/shell';
 
 /**
  * Where this server says its source lives (MICA-192, AGPL §13).
@@ -24,10 +24,10 @@ import { shellContract } from '@gphone/shared/contracts/shell';
  * server, and the cost of being right about it is one string read.
  */
 
-const CONVAR = 'gphone_source_url';
+const CONVAR = 'gos_source_url';
 
 /** Upstream, and the honest answer for the servers that have not modified anything. */
-const DEFAULT_SOURCE_URL = 'https://github.com/quissicutdeus/gPhone';
+const DEFAULT_SOURCE_URL = 'https://github.com/quissicutdeus/gos';
 
 /**
  * `https://` and nothing else.
@@ -47,7 +47,7 @@ export const sourceUrl = (): string => {
 
   if (!isDisplayableUrl(configured)) {
     console.warn(
-      `[gPhone] ${CONVAR} is '${configured}', which is not an https:// address. Falling back ` +
+      `[gOS] ${CONVAR} is '${configured}', which is not an https:// address. Falling back ` +
         `to ${DEFAULT_SOURCE_URL}. If you run a modified copy, AGPL section 13 asks you to ` +
         'point this at your own source.'
     );
@@ -69,14 +69,14 @@ const app = new ServiceEndpoint<never, typeof shellContract>('shell', null, {
 app.registerEvent('sourceUrl', async () => ({ url: sourceUrl() }));
 
 /**
- * The owner's default language for the phone (MICA-61), from the `gphone_locale` convar.
+ * The owner's default language for the phone (MICA-61), from the `gos_locale` convar.
  *
  * A BCP 47 tag such as `de` or `pt-BR`, answered as '' when the convar is unset or not a
  * tag, so the client falls through to the player's own browser language and then English.
  * The player's own choice in Settings > Language always wins over this; it is a default
  * for a community, not a lock.
  */
-const LOCALE_CONVAR = 'gphone_locale';
+const LOCALE_CONVAR = 'gos_locale';
 const LOCALE_TAG = /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/;
 
 export const serverLocale = (): string => {
@@ -84,7 +84,7 @@ export const serverLocale = (): string => {
   if (!configured) return '';
   if (!LOCALE_TAG.test(configured)) {
     console.warn(
-      `[gPhone] ${LOCALE_CONVAR} is '${configured}', which is not a language tag such as ` +
+      `[gOS] ${LOCALE_CONVAR} is '${configured}', which is not a language tag such as ` +
         "'de' or 'pt-BR'. Ignoring it; players fall back to their own language."
     );
     return '';

@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 /**
- * Whether another resource last told gPhone to lock a player's phone (MICA-60).
+ * Whether another resource last told gOS to lock a player's phone (MICA-60).
  *
  * Deliberately not tied to the passcode lock screen at all: `web/src/shell/state/
  * lockScreen.ts`'s `isLocked` is entirely client-local, computed from whether a passcode

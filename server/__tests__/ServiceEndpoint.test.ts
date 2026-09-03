@@ -23,8 +23,8 @@ vi.mock('../lib/AuditLogger', () => auditMock);
 import { Repository } from '../lib/Repository';
 import { ServiceEndpoint, ServiceOptions } from '../lib/ServiceEndpoint';
 import { GENERIC_ERROR_MESSAGE, PlayerFacingError } from '../lib/errors';
-import { defineContract } from '@gphone/shared/contract';
-import { s } from '@gphone/shared/schema';
+import { defineContract } from '@gos/shared/contract';
+import { s } from '@gos/shared/schema';
 
 interface TestRow {
   id: number;
@@ -37,7 +37,7 @@ interface TestRow {
 }
 
 class TestRepo extends Repository<TestRow> {
-  protected tableName = 'gphone_test';
+  protected tableName = 'gos_test';
   protected columns = ['id', 'citizenid', 'title', 'content', 'status', 'created_at', 'updated_at'];
   protected clientWritable = ['title', 'content'];
   protected clientFilterable = ['title'];
@@ -69,7 +69,7 @@ const mount = (options: ServiceOptions = {}) => {
 };
 
 const call = async (action: string, data: unknown) => {
-  const handler = handlers.get(`gphone:server:test:${action}`);
+  const handler = handlers.get(`gos:server:test:${action}`);
   if (!handler) throw new Error(`no handler registered for '${action}'`);
   await handler('cb-1', data);
 };
@@ -95,7 +95,7 @@ describe('ServiceEndpoint — payload cannot choose its own owner', () => {
 
     expect(dbMock.update.mock.calls[0][1]).toEqual(['renamed', 7, OWNER]);
     expect(sqlOf(dbMock.update.mock.calls[0])).toBe(
-      "UPDATE `gphone_test` SET `title` = ? WHERE `id` = ? AND `citizenid` = ? AND `status` != 'moderated'"
+      "UPDATE `gos_test` SET `title` = ? WHERE `id` = ? AND `citizenid` = ? AND `status` != 'moderated'"
     );
   });
 
@@ -105,7 +105,7 @@ describe('ServiceEndpoint — payload cannot choose its own owner', () => {
     await call('create', { title: 'mine', citizenid: 'CIT_VICTIM' });
 
     const [sql, params] = dbMock.insert.mock.calls[0];
-    expect(String(sql)).toBe('INSERT INTO `gphone_test` (`title`, `citizenid`) VALUES (?, ?)');
+    expect(String(sql)).toBe('INSERT INTO `gos_test` (`title`, `citizenid`) VALUES (?, ?)');
     expect(params).toEqual(['mine', OWNER]);
   });
 
@@ -131,7 +131,7 @@ describe('ServiceEndpoint — payload field allowlist', () => {
     });
 
     expect(sqlOf(dbMock.update.mock.calls[0])).toBe(
-      "UPDATE `gphone_test` SET `title` = ? WHERE `id` = ? AND `citizenid` = ? AND `status` != 'moderated'"
+      "UPDATE `gos_test` SET `title` = ? WHERE `id` = ? AND `citizenid` = ? AND `status` != 'moderated'"
     );
     expect(dbMock.update.mock.calls[0][1]).toEqual(['renamed', 7, OWNER]);
   });
@@ -177,7 +177,7 @@ describe('ServiceEndpoint — payload field allowlist', () => {
     await call('get', { title: 'Groceries', citizenid: 'CIT_VICTIM', evil: 1 });
 
     expect(sqlOf(dbMock.query.mock.calls[0])).toBe(
-      'SELECT * FROM `gphone_test` WHERE `title` = ? AND `citizenid` = ? AND `status` = ?'
+      'SELECT * FROM `gos_test` WHERE `title` = ? AND `citizenid` = ? AND `status` = ?'
     );
     expect(dbMock.query.mock.calls[0][1]).toEqual(['Groceries', OWNER, 'active']);
   });
@@ -253,7 +253,7 @@ describe('ServiceEndpoint — responses and side effects', () => {
         citizenid: OWNER,
         action: 'deleted',
         targetId: 9,
-        targetTable: 'gphone_test'
+        targetTable: 'gos_test'
       })
     );
   });
@@ -300,8 +300,8 @@ describe('ServiceEndpoint — authentication and registration', () => {
     mount({ disableUpdate: true, disableDelete: true });
 
     expect([...handlers.keys()].toSorted()).toEqual([
-      'gphone:server:test:create',
-      'gphone:server:test:get'
+      'gos:server:test:create',
+      'gos:server:test:get'
     ]);
   });
 
@@ -309,16 +309,16 @@ describe('ServiceEndpoint — authentication and registration', () => {
     mount();
 
     await call('get', null);
-    expect(emitted[0][0]).toBe('gphone:client:test:receive');
+    expect(emitted[0][0]).toBe('gos:client:test:receive');
 
     await call('create', { title: 'a' });
-    expect(emitted[1][0]).toBe('gphone:client:test:created');
+    expect(emitted[1][0]).toBe('gos:client:test:created');
 
     await call('update', { id: 1, title: 'b' });
-    expect(emitted[2][0]).toBe('gphone:client:test:updated');
+    expect(emitted[2][0]).toBe('gos:client:test:updated');
 
     await call('delete', { id: 1 });
-    expect(emitted[3][0]).toBe('gphone:client:test:deleted');
+    expect(emitted[3][0]).toBe('gos:client:test:deleted');
   });
 
   it('replies to the requesting source with the correlation id it was given', async () => {
@@ -368,7 +368,7 @@ const mountContract = () => {
 };
 
 const callContract = async (action: string, data: unknown) => {
-  const handler = handlers.get(`gphone:server:test_contract:${action}`);
+  const handler = handlers.get(`gos:server:test_contract:${action}`);
   if (!handler) throw new Error(`no handler registered for '${action}'`);
   await handler('cb-1', data);
 };
@@ -489,12 +489,12 @@ describe('ServiceEndpoint — what an error discloses', () => {
     const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
     const app = mountContract();
     app.registerEvent('refuse', async () => {
-      throw new Error("[Repository] update on 'gphone_test' requires a citizenid.");
+      throw new Error("[Repository] update on 'gos_test' requires a citizenid.");
     });
 
     await callContract('refuse', undefined);
 
-    expect(lastReply().error).not.toContain('gphone_test');
+    expect(lastReply().error).not.toContain('gos_test');
     expect(lastReply().error).not.toContain('[Repository]');
     logged.mockRestore();
   });

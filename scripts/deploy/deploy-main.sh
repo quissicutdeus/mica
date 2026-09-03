@@ -4,11 +4,11 @@
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-# Runs on the game server as the gphone deploy account, pinned by that account's
+# Runs on the game server as the gos deploy account, pinned by that account's
 # authorized_keys as a forced command:
 #
 #   command="/home/gphone/bin/deploy-main.sh",no-port-forwarding,no-X11-forwarding,\
-#   no-agent-forwarding,no-pty ssh-ed25519 AAAA... gphone-ci-deploy-main
+#   no-agent-forwarding,no-pty ssh-ed25519 AAAA... gos-ci-deploy-main
 #
 # .github/workflows/deploy.yml opens an SSH session with that key and sends
 # nothing; sshd runs this instead. See scripts/deploy/README.md -- these are NOT
@@ -37,9 +37,9 @@ flock -w 1800 9 || {
     exit 1
 }
 
-cd "/opt/fivem-main/server-data/resources/[standalone]/gPhone/"
+cd "/opt/fivem-main/server-data/resources/[standalone]/gos/"
 
-git fetch https://github.com/quissicutdeus/gPhone.git main
+git fetch https://github.com/quissicutdeus/gos.git main
 git reset --hard FETCH_HEAD
 
 # Re-install this script from the checkout it just reset. README.md here says a
@@ -80,7 +80,7 @@ if [ -d dist ]; then
 fi
 
 GIT_SHA=$(git rev-parse HEAD)
-MICA_CALVER=$(date +%Y.%m.%d).1
+GOS_CALVER=$(date +%Y.%m.%d).1
 
 # The wrapper rebuilds the container AND reloads the resource over RCON. The
 # reload used to live here and could not work: it reads RCON_PASSWORD from
@@ -89,7 +89,7 @@ MICA_CALVER=$(date +%Y.%m.%d).1
 # export's status rather than the command's, so `set -e` never fired and every
 # deploy sent an RCON packet with a blank password. Root can read that file;
 # this account has no business being able to.
-sudo MICA_PORT=8675 GIT_BRANCH=main GIT_SHA="$GIT_SHA" MICA_CALVER="$MICA_CALVER" MICA_CONTAINER_NAME=gphone-main MICA_IMAGE_TAG=gphone-main:local \
-    /usr/local/sbin/gphone-deploy-main-compose.sh
+sudo GOS_PORT=8675 GIT_BRANCH=main GIT_SHA="$GIT_SHA" GOS_CALVER="$GOS_CALVER" GOS_CONTAINER_NAME=gos-main GOS_IMAGE_TAG=gos-main:local \
+    /usr/local/sbin/gos-deploy-main-compose.sh
 
 echo "deployed main @ $GIT_SHA"

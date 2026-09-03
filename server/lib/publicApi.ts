@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 /**
- * Every export gPhone publishes, in one place.
+ * Every export gOS publishes, in one place.
  *
  * The scaffolding is `lib/exports.ts`; this is the surface itself. Split because the rules
  * about outcomes and never throwing are worth reading without the catalogue in the way,
@@ -16,14 +16,14 @@
  */
 import { FrameworkBridge } from './FrameworkBridge';
 import { appEventChannel } from './appEvents';
-import { buildDeepLink, parseDeepLink } from '@gphone/shared/deepLink';
+import { buildDeepLink, parseDeepLink } from '@gos/shared/deepLink';
 import { knownServices } from './services';
 import * as PlayerDirectory from './PlayerDirectory';
 import { isPhoneOpen } from './PhoneOpenState';
 import { isPhoneLocked, setPhoneLocked } from './LockState';
 import { currentEmergencyNumber } from '../services/Phone';
 import {
-  MICA_API_VERSION,
+  GOS_API_VERSION,
   ExportOutcome,
   fail,
   guarded,
@@ -46,14 +46,14 @@ import {
   setPlayerSignal,
   FULL_SIGNAL
 } from '../services/Signal';
-import type { Contact, MediaItem, MediaKind } from '@gphone/shared/types';
+import type { Contact, MediaItem, MediaKind } from '@gos/shared/types';
 
 /**
  * How an external resource names itself in the notification shade.
  *
  * `ext_<resource>` rather than a free string, and the reservation is enforced at the other
  * end: `defineApp` rejects an id starting with `ext_`, so an external id can never collide
- * with a gPhone app that ships later. Without that check the prefix is a convention, and a
+ * with a gOS app that ships later. Without that check the prefix is a convention, and a
  * convention is what fails the day somebody ships an app called `ext_tracker`.
  */
 const EXTERNAL_PREFIX = 'ext_';
@@ -71,7 +71,7 @@ const APP_ID = /^[a-z][a-z0-9_]*$/;
 const isKnownApp = (app: string): boolean => knownServices().includes(app);
 
 export interface ExternalNotification {
-  /** A gPhone app id, or `ext_<resource>` for your own group. */
+  /** A gOS app id, or `ext_<resource>` for your own group. */
   app: string;
   /** Required for an `ext_` id, refused for a real app id. What the shade shows as the group. */
   sourceLabel?: string;
@@ -116,7 +116,7 @@ const SendNotification = (
   if (!isExternal && !isKnownApp(app)) {
     return fail(
       'invalid_args',
-      `'${app}' is not a gPhone app. Use 'ext_<resource>' for your own notifications.`
+      `'${app}' is not a gOS app. Use 'ext_<resource>' for your own notifications.`
     );
   }
   if (isExternal && !String(opts.sourceLabel ?? '').trim()) {
@@ -288,7 +288,7 @@ const AddContact = async (
 export function registerPublicApi(): void {
   publish(
     'GetApiVersion',
-    guarded('GetApiVersion', () => ok(MICA_API_VERSION))
+    guarded('GetApiVersion', () => ok(GOS_API_VERSION))
   );
 
   /**
@@ -474,7 +474,7 @@ export function registerPublicApi(): void {
 
   /**
    * The number that always connects (MICA-64), so a dispatch resource's own setup code
-   * can read it rather than duplicating (and risking drift from) gPhone's own convar
+   * can read it rather than duplicating (and risking drift from) gOS's own convar
    * name. What "picks up the other end" in this pass is the framework, the same as any
    * other call: a dispatch resource registers a player or NPC session whose phone number
    * *is* this value, and `Phone.ts`'s ordinary `getPlayerByPhone` lookup finds it and
@@ -528,7 +528,7 @@ export function registerPublicApi(): void {
       if (typeof source !== 'number' || !isConnected(source)) {
         return fail('unknown_player', 'That player is not connected.');
       }
-      emitNet('gphone:client:shell:setEnabled', source, enabled === true);
+      emitNet('gos:client:shell:setEnabled', source, enabled === true);
       return ok();
     })
   );
@@ -548,7 +548,7 @@ export function registerPublicApi(): void {
         return fail('unknown_player', 'That player is not connected.');
       }
       setPhoneLocked(source, true);
-      emitNet('gphone:client:lockscreen:setLocked', source, true);
+      emitNet('gos:client:lockscreen:setLocked', source, true);
       return ok();
     })
   );
@@ -561,7 +561,7 @@ export function registerPublicApi(): void {
         return fail('unknown_player', 'That player is not connected.');
       }
       setPhoneLocked(source, false);
-      emitNet('gphone:client:lockscreen:setLocked', source, false);
+      emitNet('gos:client:lockscreen:setLocked', source, false);
       return ok();
     })
   );
@@ -593,9 +593,9 @@ export function registerPublicApi(): void {
       }
       const id = String(appId ?? '').toLowerCase();
       if (!APP_ID.test(id) || !isKnownApp(id)) {
-        return fail('invalid_args', `'${appId}' is not a gPhone app.`);
+        return fail('invalid_args', `'${appId}' is not a gOS app.`);
       }
-      emitNet('gphone:client:shell:openApp', source, {
+      emitNet('gos:client:shell:openApp', source, {
         appId: id,
         props: props && typeof props === 'object' ? props : {}
       });

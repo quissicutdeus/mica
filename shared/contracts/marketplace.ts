@@ -30,7 +30,7 @@ export const marketplaceContract = defineContract({
   actions: {
     create: {
       input: s.object({
-        /** `gphone_marketplace.title` is a varchar(100). */
+        /** `gos_marketplace.title` is a varchar(100). */
         title: s.string({ min: 1, max: 100 }),
         price: s.int({ min: 0, max: 2147483647 }),
         /** `description` is `text`. */

@@ -17,7 +17,7 @@ const marketplaceMock = vi.hoisted(() => ({ viewListing: vi.fn() }));
 const callMock = vi.hoisted(() => ({ startCall: vi.fn() }));
 const messagesMock = vi.hoisted(() => ({ startText: vi.fn() }));
 
-vi.mock('@gphone/sdk', async (importOriginal) => ({
+vi.mock('@gos/sdk', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   useMarketplace: () => marketplaceMock,
   useCall: () => callMock,
@@ -26,7 +26,7 @@ vi.mock('@gphone/sdk', async (importOriginal) => ({
 
 import ListingDetail from './ListingDetail.svelte';
 
-import { registerMessages } from '@gphone/sdk';
+import { registerMessages } from '@gos/sdk';
 import en from '../locales/en.json';
 import de from '../locales/de.json';
 

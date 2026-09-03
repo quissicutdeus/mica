@@ -34,8 +34,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     registerMessages,
     useLocale,
     type AppProps
-  } from '@gphone/sdk';
-  import type { Contact, MediaPreview } from '@gphone/shared/types';
+  } from '@gos/sdk';
+  import type { Contact, MediaPreview } from '@gos/shared/types';
   import en from './locales/en.json';
   import de from './locales/de.json';
 
@@ -183,7 +183,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         if (!(await conversationsStore.loadOlderMessages(conversationId))) break;
       }
     } catch (error) {
-      console.warn('gPhone Messages: could not load the whole conversation', error);
+      console.warn('gOS Messages: could not load the whole conversation', error);
     } finally {
       loadingWholeThread = false;
     }

@@ -37,7 +37,7 @@ const CITIZEN = 'CITIZEN_1';
 const SRC = 5;
 
 const call = async (action: string, data: unknown, citizenid = CITIZEN) => {
-  const handler = handlers.get(`gphone:server:notifications:${action}`);
+  const handler = handlers.get(`gos:server:notifications:${action}`);
   if (!handler) throw new Error(`no handler for notifications:${action}`);
 
   bridge.current = citizenid;
@@ -88,10 +88,12 @@ describe('Notifications Service & Repository', () => {
 
     const reply = await call('markAsRead', { ids: [1, 2] });
     expect(reply).toBe(true);
-    expect(dbMock.query).toHaveBeenCalledWith(
-      expect.stringContaining('UPDATE gphone_notifications'),
-      [expect.any(String), CITIZEN, 1, 2]
-    );
+    expect(dbMock.query).toHaveBeenCalledWith(expect.stringContaining('UPDATE gos_notifications'), [
+      expect.any(String),
+      CITIZEN,
+      1,
+      2
+    ]);
   });
 
   it('clears individual notifications', async () => {
@@ -99,10 +101,11 @@ describe('Notifications Service & Repository', () => {
 
     const reply = await call('clearNotifications', { ids: [1] });
     expect(reply).toBe(true);
-    expect(dbMock.query).toHaveBeenCalledWith(
-      expect.stringContaining('UPDATE gphone_notifications'),
-      [expect.any(String), CITIZEN, 1]
-    );
+    expect(dbMock.query).toHaveBeenCalledWith(expect.stringContaining('UPDATE gos_notifications'), [
+      expect.any(String),
+      CITIZEN,
+      1
+    ]);
   });
 
   it('clears all notifications for an app', async () => {
@@ -130,7 +133,7 @@ describe('Notifications Service & Repository', () => {
 
     expect(outcome.delivered).toBe(true);
     expect(dbMock.query).toHaveBeenCalledWith(
-      expect.stringContaining('INSERT INTO gphone_notifications'),
+      expect.stringContaining('INSERT INTO gos_notifications'),
       expect.arrayContaining([
         CITIZEN,
         'blabber',

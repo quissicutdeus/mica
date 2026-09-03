@@ -5,9 +5,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { Avatar, EmptyState, ListItem, Skeleton, usePagedList } from '@gphone/sdk';
+  import { Avatar, EmptyState, ListItem, Skeleton, usePagedList } from '@gos/sdk';
   import { useBlabber } from '../store';
-  import type { Account } from '@gphone/shared/types';
+  import type { Account } from '@gos/shared/types';
 
   /**
    * Who follows an account, or who it follows.

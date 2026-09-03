@@ -14,12 +14,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { refreshCapabilities } from '../services/capabilities';
   import { createNuiMessageRouter } from './nuiMessages';
   import { installDevHarness, seedBrowserPhone } from './devHarness';
-  import { isBrowser } from '@gphone/sdk';
+  import { isBrowser } from '@gos/sdk';
   import { currentApp, runningApps, openApp, goHome, closePhone } from './state/navigation';
   import { dispatchKey, isTypingTarget, registerHandler } from './state/keybinds';
-  import { findAction } from '@gphone/shared/keybinds';
-  import { ALL_DEVICES, DEVICES, isDeviceId, type DeviceId } from '@gphone/shared/devices';
-  import { parseSetVisible } from '@gphone/shared/nui';
+  import { findAction } from '@gos/shared/keybinds';
+  import { ALL_DEVICES, DEVICES, isDeviceId, type DeviceId } from '@gos/shared/devices';
+  import { parseSetVisible } from '@gos/shared/nui';
   import { lockDevTools } from './state/devtools';
   import {
     frameMargin,

@@ -3,13 +3,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 /**
- * `@gphone/sdk/app` — the entry a **manifest** imports, and nothing else.
+ * `@gos/sdk/app` — the entry a **manifest** imports, and nothing else.
  *
  * ## Why this exists
  *
  * A manifest has to be loadable before the SDK is. `shell/state/registry.ts` globs every
  * manifest eagerly to build the launcher, and `sdk/host/useAppRegistry.ts` reads that
- * registry — so importing `@gphone/sdk` loads every app, and every app imports the barrel
+ * registry — so importing `@gos/sdk` loads every app, and every app imports the barrel
  * back while it is still evaluating. Every binding comes out `undefined`, and the symptom
  * is `useService is not a function` on a line that plainly imports it.
  *
@@ -25,9 +25,9 @@
  *
  * ## What goes where
  *
- * - **`@gphone/sdk/app`** — a manifest. `defineApp`, `lazyBadge`, and the types either
+ * - **`@gos/sdk/app`** — a manifest. `defineApp`, `lazyBadge`, and the types either
  *   needs.
- * - **`@gphone/sdk`** — everything else an app is built from: hooks, UI, stores. Imported
+ * - **`@gos/sdk`** — everything else an app is built from: hooks, UI, stores. Imported
  *   by `index.svelte` and the app's own modules, which load when the app is opened, long
  *   after the barrel is up.
  *
@@ -36,7 +36,7 @@
  *
  * ```ts
  * badgeStore: lazyBadge(async () => {
- *   const { useMail } = await import('@gphone/sdk');
+ *   const { useMail } = await import('@gos/sdk');
  *   return useMail().unreadMailCount;
  * })
  * ```

@@ -10,7 +10,7 @@ import {
   type ResolvedService,
   type ResolvedIndex
 } from './defineService';
-import { CITIZENID_MAX_LENGTH } from '@gphone/shared/framework';
+import { CITIZENID_MAX_LENGTH } from '@gos/shared/framework';
 
 /**
  * Emit MySQL DDL from a resolved app schema.
@@ -19,7 +19,7 @@ import { CITIZENID_MAX_LENGTH } from '@gphone/shared/framework';
  * silently does nothing when the table already exists, so a schema change applied that way
  * would be a no-op with no error — the same silent-failure shape that produced the dead NUI
  * endpoints. Output goes to a reviewable file instead, and a live table is brought up to date
- * by `gphoneschema apply` (AGENTS.md §8) rather than by re-running this.
+ * by `gosschema apply` (AGENTS.md §8) rather than by re-running this.
  *
  * `schemaMigrationsLedgerDdl` below is the one exception, and `server/lib/migrations.ts` does
  * run it: that table has a single fixed shape and never gains a column, so `IF NOT EXISTS`
@@ -36,7 +36,7 @@ const SQL_TYPES: Record<ColumnType, (def: ColumnDef) => string> = {
   int: () => 'int(11)',
   // Single precision: GTA V world coordinates need sub-metre precision, not the ~15
   // significant digits `double` would give a value nothing computes further from —
-  // `gphone_places` (MICA-65) is the first column of this type.
+  // `gos_places` (MICA-65) is the first column of this type.
   float: () => 'float',
   bool: () => 'tinyint(1)',
   json: () => 'longtext',
@@ -98,7 +98,7 @@ const indexSql = ({ name, columns, unique }: ResolvedIndex): string => {
 };
 
 /**
- * The framework's own player table, which gPhone references but does not create.
+ * The framework's own player table, which gOS references but does not create.
  *
  * qb owns `players(citizenid)`. ESX has no such table — it has `users(identifier)` — so on a
  * pure `es_extended` server every constraint pointing here fails at import.
@@ -106,7 +106,7 @@ const indexSql = ({ name, columns, unique }: ResolvedIndex): string => {
 export const OWNER_TABLE = 'players';
 
 /**
- * The collation every gPhone-owned table is created with, on both generated files.
+ * The collation every gOS-owned table is created with, on both generated files.
  *
  * A single named constant rather than the literal repeated at each `CREATE TABLE`'s closing
  * line, because `collationCheck.ts` (MICA-157) needs the exact same value a live
@@ -125,13 +125,13 @@ export const TABLE_COLLATION = 'utf8mb4_unicode_ci';
  * framework to ask. The generator decides; this only renders what it is told.
  *
  * **Defaults to the qb answer**, so every existing call site emits exactly the bytes it
- * emitted before ESX was a thing. That is deliberate: the committed `gphone.sql` is the
+ * emitted before ESX was a thing. That is deliberate: the committed `gos.sql` is the
  * artifact server owners import by hand, and the ESX support is provably additive only if
  * that file does not move.
  */
 export interface SchemaSqlOptions {
   /**
-   * Does this server have a `players(citizenid)` table for gPhone's rows to hang off?
+   * Does this server have a `players(citizenid)` table for gOS's rows to hang off?
    *
    * `false` omits every foreign key targeting it — the implicit `citizenid` one on each app
    * table, and the three child tables that declare it explicitly (`Marketplace`, `Messages`,
@@ -212,7 +212,7 @@ export function expectedShape(resolved: ResolvedService): ExpectedShape {
     table,
     columns: [
       { name: 'id', def: { type: 'int', notNull: true }, autoIncrement: true },
-      // Width from `@gphone/shared/framework`, not a literal: the same constant bounds the
+      // Width from `@gos/shared/framework`, not a literal: the same constant bounds the
       // identifier that lands here, so the column and its guard cannot drift apart
       // (MICA-158).
       {
@@ -249,7 +249,7 @@ export const indexDefinitionSql = (index: ResolvedIndex): string =>
 
 /**
  * The full `CREATE TABLE` for an app's primary table, matching the conventions
- * already in gphone.sql: soft-delete `status` enum, citizenid FK onto `players` with
+ * already in gos.sql: soft-delete `status` enum, citizenid FK onto `players` with
  * cascade, and a `(citizenid, status)` index because every generic read filters on
  * both.
  */
@@ -352,7 +352,7 @@ export function toSqlFile(resolved: ResolvedService, options: SchemaSqlOptions =
  * infrastructure rather than an app table, so it does not fit the app-table shape
  * `expectedShape` produces.
  */
-export const SCHEMA_MIGRATIONS_TABLE = 'gphone_schema_migrations';
+export const SCHEMA_MIGRATIONS_TABLE = 'gos_schema_migrations';
 
 export const schemaMigrationsLedgerDdl = (): string =>
   [
@@ -370,8 +370,8 @@ export const schemaMigrationsLedgerDdl = (): string =>
  * never actually run — each would find a table that was never in the shape it expects to
  * find it in. Seeding the ledger marks them applied without running `up()`. `INSERT IGNORE`
  * rather than `INSERT`: re-running `pnpm generate:sql` against a database that already has
- * some of these rows (e.g. a dev database that both imported an older `gphone.sql` and later
- * ran `gphoneschema apply`) must not error.
+ * some of these rows (e.g. a dev database that both imported an older `gos.sql` and later
+ * ran `gosschema apply`) must not error.
  */
 export const schemaMigrationsSeedSql = (ids: readonly string[]): string | null => {
   if (ids.length === 0) return null;

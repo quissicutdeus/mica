@@ -3,16 +3,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { derived, writable } from 'svelte/store';
-import { usePersisted } from '@gphone/sdk';
+import { usePersisted } from '@gos/sdk';
 import { callOr } from '../../nui/call';
-import { shellContract } from '@gphone/shared/contracts/shell';
+import { shellContract } from '@gos/shared/contracts/shell';
 import { FALLBACK_LOCALE, locale } from '../../../../sdk/i18n';
 
 /**
  * Which language the phone is in (MICA-61), resolved from three sources in order:
  *
  * 1. the player's own choice in Settings > Language, persisted like every other setting;
- * 2. the server's default, the `gphone_locale` convar, so an owner sets a community's
+ * 2. the server's default, the `gos_locale` convar, so an owner sets a community's
  *    language once (`shell:locale`);
  * 3. the browser's language — in game that is the player's OS language — then English.
  *

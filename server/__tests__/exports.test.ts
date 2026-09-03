@@ -27,7 +27,7 @@ vi.mock('../lib/Database', () => ({ Database: dbMock }));
 vi.mock('../lib/FrameworkBridge', () => ({ FrameworkBridge: bridgeMock }));
 
 import { registerPublicApi } from '../lib/publicApi';
-import { publishedExport, publishedExports, MICA_API_VERSION } from '../lib/exports';
+import { publishedExport, publishedExports, GOS_API_VERSION } from '../lib/exports';
 
 const SRC = 7;
 const CID = 'ABC12345';
@@ -36,7 +36,7 @@ const CID = 'ABC12345';
  * The public surface, pinned.
  *
  * This is `routes.test.ts`'s job one layer out. These names are called from other people's
- * resources, so a rename is a break in somebody else's script that no gPhone test would
+ * resources, so a rename is a break in somebody else's script that no gOS test would
  * otherwise notice — and the person who finds out is a server owner reading an error in
  * production.
  *
@@ -88,7 +88,7 @@ describe('the public export surface', () => {
 
   it('reports a version a caller can branch on', () => {
     const result = publishedExport('GetApiVersion')!();
-    expect(result).toEqual({ ok: true, value: MICA_API_VERSION });
+    expect(result).toEqual({ ok: true, value: GOS_API_VERSION });
   });
 
   it('never throws across the boundary', () => {
@@ -102,7 +102,7 @@ describe('the public export surface', () => {
   });
 
   it('answers a bad call with a reason rather than a bare false', () => {
-    // A `false` that cannot distinguish "player offline" from "gPhone has not started" is
+    // A `false` that cannot distinguish "player offline" from "gOS has not started" is
     // unusable from the calling script.
     const result = publishedExport('SendNotification')!(undefined, undefined) as any;
     expect(result.ok).toBe(false);
@@ -115,11 +115,11 @@ const send = (options: unknown, citizenid: unknown = CID) =>
   publishedExport('SendNotification')!(citizenid, options) as any;
 
 describe('SendNotification', () => {
-  it('accepts a real gPhone app id', () => {
+  it('accepts a real gOS app id', () => {
     expect(send({ app: 'mail', title: 'Hi', body: 'there' }).ok).toBe(true);
   });
 
-  it('refuses an app gPhone does not have', () => {
+  it('refuses an app gOS does not have', () => {
     // Nothing validated `app` at any layer before this. An external caller makes it worth
     // closing: an invented id gets its own group in the shade and tells nobody anything.
     const result = send({ app: 'definitely_not_an_app', title: 'Hi', body: '' });
@@ -170,7 +170,7 @@ describe('battery exports', () => {
   });
 
   it('clamps rather than rejecting an out-of-range level', async () => {
-    // The request is legitimate; only the number is not — the same call the `gphonecharge`
+    // The request is legitimate; only the number is not — the same call the `goscharge`
     // command already makes.
     expect(((await publishedExport('SetBatteryLevel')!(SRC, 500)) as any).value).toBe(100);
     expect(((await publishedExport('SetBatteryLevel')!(SRC, -20)) as any).value).toBe(0);
@@ -187,7 +187,7 @@ describe('battery exports', () => {
     // joining it.
     const result = publishedExport('SetCharging')!(SRC, true) as any;
     expect(result.ok).toBe(true);
-    expect(globalThis.emitNet).toHaveBeenCalledWith('gphone:client:battery:charging', SRC, true);
+    expect(globalThis.emitNet).toHaveBeenCalledWith('gos:client:battery:charging', SRC, true);
   });
 });
 
@@ -315,7 +315,7 @@ describe('GetEmergencyNumber (MICA-64)', () => {
   it('reflects an operator-configured convar', () => {
     const previous = (globalThis as any).GetConvar;
     (globalThis as any).GetConvar = (name: string, fallback: string) =>
-      name === 'gphone_emergency_number' ? '112' : fallback;
+      name === 'gos_emergency_number' ? '112' : fallback;
 
     const result = publishedExport('GetEmergencyNumber')!() as any;
     (globalThis as any).GetConvar = previous;
@@ -339,7 +339,7 @@ describe('phone-state exports', () => {
   it('SetPhoneEnabled pushes to the client', () => {
     const result = publishedExport('SetPhoneEnabled')!(SRC, false) as any;
     expect(result.ok).toBe(true);
-    expect(globalThis.emitNet).toHaveBeenCalledWith('gphone:client:shell:setEnabled', SRC, false);
+    expect(globalThis.emitNet).toHaveBeenCalledWith('gos:client:shell:setEnabled', SRC, false);
   });
 
   it('IsPhoneLocked defaults to unlocked for a source never heard from', () => {
@@ -356,11 +356,7 @@ describe('phone-state exports', () => {
   it('LockPhone pushes to the client and IsPhoneLocked then answers true', () => {
     const locked = publishedExport('LockPhone')!(SRC) as any;
     expect(locked.ok).toBe(true);
-    expect(globalThis.emitNet).toHaveBeenCalledWith(
-      'gphone:client:lockscreen:setLocked',
-      SRC,
-      true
-    );
+    expect(globalThis.emitNet).toHaveBeenCalledWith('gos:client:lockscreen:setLocked', SRC, true);
 
     const status = publishedExport('IsPhoneLocked')!(SRC) as any;
     expect(status).toMatchObject({ ok: true, value: true });
@@ -370,11 +366,7 @@ describe('phone-state exports', () => {
     publishedExport('LockPhone')!(SRC);
     const unlocked = publishedExport('UnlockPhone')!(SRC) as any;
     expect(unlocked.ok).toBe(true);
-    expect(globalThis.emitNet).toHaveBeenCalledWith(
-      'gphone:client:lockscreen:setLocked',
-      SRC,
-      false
-    );
+    expect(globalThis.emitNet).toHaveBeenCalledWith('gos:client:lockscreen:setLocked', SRC, false);
 
     const status = publishedExport('IsPhoneLocked')!(SRC) as any;
     expect(status).toMatchObject({ ok: true, value: false });
@@ -386,7 +378,7 @@ describe('phone-state exports', () => {
     expect(result).toMatchObject({ ok: false, reason: 'unknown_player' });
   });
 
-  it('OpenApp refuses an app gPhone does not have', () => {
+  it('OpenApp refuses an app gOS does not have', () => {
     const result = publishedExport('OpenApp')!(SRC, 'not_an_app', {}) as any;
     expect(result).toMatchObject({ ok: false, reason: 'invalid_args' });
   });
@@ -394,7 +386,7 @@ describe('phone-state exports', () => {
   it('OpenApp pushes to the client for a known app', () => {
     const result = publishedExport('OpenApp')!(SRC, 'mail', { mailId: 1 }) as any;
     expect(result.ok).toBe(true);
-    expect(globalThis.emitNet).toHaveBeenCalledWith('gphone:client:shell:openApp', SRC, {
+    expect(globalThis.emitNet).toHaveBeenCalledWith('gos:client:shell:openApp', SRC, {
       appId: 'mail',
       props: { mailId: 1 }
     });

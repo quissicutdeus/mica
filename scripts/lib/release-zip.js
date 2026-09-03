@@ -15,16 +15,16 @@ export const TAG_PATTERN = /^v(\d{4}\.\d{2}\.\d{2})\.(\d+)$/;
 
 /**
  * The directory at the top of the zip, which is the resource's name once unpacked into
- * `resources/`. Lowercase, matching README's `ensure gphone` and the `gphone:` event prefix.
+ * `resources/`. Lowercase, matching README's `ensure gos` and the `gos:` event prefix.
  */
-export const RESOURCE_NAME = 'gphone';
+export const RESOURCE_NAME = 'gos';
 
 /** Fence the part of README.md the zip carries as its own README. Both must be present. */
 export const README_START = '<!-- release-zip:start -->';
 export const README_END = '<!-- release-zip:end -->';
 
 /** Files at the repository root that ship beside `dist/`, verbatim (the manifest stamped). */
-export const TOP_LEVEL_FILES = ['fxmanifest.lua', 'gphone.sql', 'gphone.esx.sql', 'LICENSE'];
+export const TOP_LEVEL_FILES = ['fxmanifest.lua', 'gos.sql', 'gos.esx.sql', 'LICENSE'];
 
 /** The build output the manifest declares, whole. `dist/release` is where the zip lands. */
 export const DIST_DIRS = ['dist/client', 'dist/server', 'dist/web'];
@@ -74,7 +74,7 @@ export function calVerFromGit() {
 /**
  * The tree's manifest says `version '1.0.0'`, read from `package.json`, which
  * `sdk/version.ts` calls a placeholder read by no code. The zipped copy says the release
- * it is, so `ensure gphone` and `resources` in a server console name a real version.
+ * it is, so `ensure gos` and `resources` in a server console name a real version.
  * Exactly one `version` line, or this refuses: two would mean the generator changed shape.
  */
 export function stampManifestVersion(manifest, version) {
@@ -112,8 +112,8 @@ export function readmeExcerpt(readme, { tag, repository }) {
   if (!body) throw new Error('README.md has nothing between the release-zip markers.');
   const version = calVerOf(tag);
   return (
-    `# gPhone ${version}\n\n` +
-    "This is the prebuilt release of gPhone, ready to unpack into a FiveM server's\n" +
+    `# gOS ${version}\n\n` +
+    "This is the prebuilt release of gOS, ready to unpack into a FiveM server's\n" +
     '`resources` directory. What follows is the installation section of the\n' +
     'project README as of this release. The full README, with every convar, the\n' +
     'notes on ESX and on running with no framework, and the exports other\n' +

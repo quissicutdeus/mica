@@ -6,11 +6,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script lang="ts">
   import { t } from './messages';
-  import { parseDeepLink } from '@gphone/shared/deepLink';
-  import type { NotificationItem } from '@gphone/shared/types';
+  import { parseDeepLink } from '@gos/shared/deepLink';
+  import type { NotificationItem } from '@gos/shared/types';
   import { onMount } from 'svelte';
   import { get } from 'svelte/store';
-  import { fade, fly, focusTrap } from '@gphone/sdk';
+  import { fade, fly, focusTrap } from '@gos/sdk';
   import { attachDragGesture } from '../lib/phone/pointerDrag';
   import { createSheetClose } from '../lib/phone/sheetDrag';
   import {

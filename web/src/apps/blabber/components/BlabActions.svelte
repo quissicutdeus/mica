@@ -5,8 +5,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { useLocale } from '@gphone/sdk';
-  import type { BlabEngagement } from '@gphone/shared/types';
+  import { useLocale } from '@gos/sdk';
+  import type { BlabEngagement } from '@gos/shared/types';
 
   /**
    * Reply / mouth / ear, with counts.

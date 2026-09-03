@@ -3,13 +3,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 /**
- * gPhone's public surface for other resources.
+ * gOS's public surface for other resources.
  *
  * One declaration site, for the same reason `shared/routes.ts` is one table: a surface
  * spread across the files that happen to implement it is one nobody can read, and one a
  * test cannot check. Before this, the entire public API was a single
  * `exports('SendSystemEmail', …)` sitting at the bottom of `services/Mail.ts` — everything
- * else in the tree named `exports` is gPhone *consuming* somebody else.
+ * else in the tree named `exports` is gOS *consuming* somebody else.
  *
  * The functions themselves stay in the service that owns them. Only the registration
  * lives here.
@@ -17,7 +17,7 @@
  * ## Five rules, each earned by something already in the tree
  *
  * **Discriminated outcomes, never a bare boolean.** A `false` that cannot distinguish
- * "player is offline" from "gPhone has not finished starting" is unusable from the calling
+ * "player is offline" from "gOS has not finished starting" is unusable from the calling
  * script — the author's only move is to guess. `appEvents.ts` already learned this and
  * returns a `PushOutcome`; this mirrors its shape.
  *
@@ -30,7 +30,7 @@
  * inherently live (battery, which the client half owns).
  *
  * **Never an implicit `source`.** `onNet` in CitizenFX also registers a local handler, so
- * another server resource can already fire `gphone:server:battery:save` with
+ * another server resource can already fire `gos:server:battery:save` with
  * `TriggerEvent` — and for a local trigger the `source` global is not the player it meant.
  * Every export takes the player explicitly.
  *
@@ -46,7 +46,7 @@
  * only question a version answers usefully. Additions are detectable by checking whether
  * the export exists.
  */
-export const MICA_API_VERSION = 1;
+export const GOS_API_VERSION = 1;
 
 /** Why an export could not do what was asked. */
 export type ExportFailure =
@@ -54,11 +54,11 @@ export type ExportFailure =
   | 'unknown_player'
   /** The player is not on the server. Their data is still safe to write by citizenid. */
   | 'offline'
-  /** gPhone has not finished starting. Retry, or wait for `onResourceStart`. */
+  /** gOS has not finished starting. Retry, or wait for `onResourceStart`. */
   | 'not_ready'
-  /** The arguments do not describe anything gPhone can act on. */
+  /** The arguments do not describe anything gOS can act on. */
   | 'invalid_args'
-  /** gPhone raised where it should not have. Reported rather than propagated. */
+  /** gOS raised where it should not have. Reported rather than propagated. */
   | 'internal_error';
 
 export type ExportOutcome<T = undefined> =
@@ -77,7 +77,7 @@ export const fail = <T = undefined>(reason: ExportFailure, message: string): Exp
 /**
  * Wrap a handler so nothing it does can reach the caller as an exception.
  *
- * The whole point of the boundary: a bug in gPhone must degrade the phone, never the
+ * The whole point of the boundary: a bug in gOS must degrade the phone, never the
  * script that asked it a question.
  */
 const guarded =
@@ -86,8 +86,8 @@ const guarded =
     try {
       return handler(...args);
     } catch (error) {
-      console.error(`[gphone] export '${name}' threw:`, error);
-      return fail<T>('internal_error', 'gPhone failed to handle that request.');
+      console.error(`[gos] export '${name}' threw:`, error);
+      return fail<T>('internal_error', 'gOS failed to handle that request.');
     }
   };
 
@@ -103,8 +103,8 @@ const guardedAsync =
     try {
       return await handler(...args);
     } catch (error) {
-      console.error(`[gphone] export '${name}' threw:`, error);
-      return fail<T>('internal_error', 'gPhone failed to handle that request.');
+      console.error(`[gos] export '${name}' threw:`, error);
+      return fail<T>('internal_error', 'gOS failed to handle that request.');
     }
   };
 

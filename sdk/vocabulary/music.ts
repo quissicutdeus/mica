@@ -74,7 +74,7 @@ export interface MusicNowPlaying {
 /**
  * One person the phone has been told is playing something within earshot.
  *
- * Structurally the wire's `NearbyBroadcast` (`@gphone/shared/musicBroadcast`) and re-declared
+ * Structurally the wire's `NearbyBroadcast` (`@gos/shared/musicBroadcast`) and re-declared
  * rather than imported, because this is the shape *after* narrowing: every field here has
  * been re-checked against `shared/youtube.ts` and bounded, and a row that failed is not
  * here at all. The names are the wire's on purpose — three lanes touch this row and a

@@ -20,7 +20,7 @@ import type { AppPermission } from './manifest';
  *   statement — not a call belonging to some other export in the same file — including
  *   the implicit (`null`) rows, which still resolve through `guarded()` even though they
  *   carry no permission to check
- * - every app's manifest declares what its `@gphone/sdk` imports need
+ * - every app's manifest declares what its `@gos/sdk` imports need
  *
  * The two kit-component rows (`PhotoPickerModal`, `ReportDialog`) are exempt from the
  * assert check: they live under `sdk/ui`, not `sdk/host`, and disclose through the host
@@ -278,7 +278,7 @@ export const SAFE_IMPLICIT_FACETS: ReadonlySet<string> = new Set([
  * ## Where the rows come from
  *
  * Each row is what the facet's **iframe twin** actually sends over the wire —
- * `sdk/host/iframe/facets/<facet>.ts`, the code an add-on's own `@gphone/sdk` resolves to —
+ * `sdk/host/iframe/facets/<facet>.ts`, the code an add-on's own `@gos/sdk` resolves to —
  * minus the members deliberately blocked below. That bound is the point: the twin is the
  * SDK, so a member it never names is one no honest add-on can be calling, and a raw
  * `postMessage` naming it is by definition reaching past the SDK. `permissions.test.ts`
@@ -633,7 +633,7 @@ export function validateManifestPermissions(
   // load, rather than trusting it.
   if (!Array.isArray(allPermissions) || allPermissions.length === 0) {
     throw new Error(
-      'gPhone App Manifest error: ALL_PERMISSIONS is empty or failed to import. The ' +
+      'gOS App Manifest error: ALL_PERMISSIONS is empty or failed to import. The ' +
         'permission vocabulary itself is broken, so no manifest can be validated against ' +
         "it — that is a build defect, not this app's."
     );
@@ -643,7 +643,7 @@ export function validateManifestPermissions(
     if (allPermissions.includes(perm)) continue;
     const suggestion = nearestPermission(perm, allPermissions);
     console.warn(
-      `gPhone App Manifest: '${id}' declares permission '${perm}', which is not in ` +
+      `gOS App Manifest: '${id}' declares permission '${perm}', which is not in ` +
         `ALL_PERMISSIONS.` +
         (suggestion ? ` Did you mean '${suggestion}'?` : '') +
         ` The app still loads, but the Store's permission sheet discloses nothing for this ` +

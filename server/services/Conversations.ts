@@ -5,12 +5,12 @@
 import { PlayerFacingError } from '../lib/errors';
 import { ConversationRepository } from '../repositories/ConversationRepository';
 import { defineService } from '../lib/defineService';
-import { Conversation, Participant } from '@gphone/shared/types';
+import { Conversation, Participant } from '@gos/shared/types';
 import { AuditLogger } from '../lib/AuditLogger';
 import { resolveByPhone, resolveMany } from '../lib/PlayerDirectory';
-import { CITIZENID_MAX_LENGTH } from '@gphone/shared/framework';
+import { CITIZENID_MAX_LENGTH } from '@gos/shared/framework';
 import { conversationIdFrom, pageBounds, recencyCursor } from '../lib/payload';
-import { conversationsContract } from '@gphone/shared/contracts/conversations';
+import { conversationsContract } from '@gos/shared/contracts/conversations';
 
 /**
  * The pair-key generated column's own width (MICA-161): two citizenids at
@@ -41,12 +41,12 @@ const PAIR_KEY_MAX_LENGTH = CITIZENID_MAX_LENGTH * 2 + 1;
 export const conversations = defineService<Conversation, typeof conversationsContract>({
   contract: conversationsContract,
   id: 'conversations',
-  table: 'gphone_messages_conversations',
+  table: 'gos_messages_conversations',
   access: {
     read: 'owner',
     write: 'owner',
     membership: {
-      table: 'gphone_messages_participants',
+      table: 'gos_messages_participants',
       foreignKey: 'conversation_id',
       // A conversation's membership is keyed on its own id.
       localKey: 'id',
@@ -80,7 +80,7 @@ export const conversations = defineService<Conversation, typeof conversationsCon
      *
      * `NULL` in two cases, both deliberate, since a unique index treats every `NULL` as
      * distinct from every other and therefore constrains nothing between them — the same
-     * technique `gphone_blabber`'s `(account_id, mouth_of)` index uses for a mouth-less
+     * technique `gos_blabber`'s `(account_id, mouth_of)` index uses for a mouth-less
      * post:
      *
      * - **A group thread.** `participant_a`/`participant_b` are both `NULL`, and `CONCAT`
@@ -148,12 +148,12 @@ export const conversations = defineService<Conversation, typeof conversationsCon
   ],
   childTables: [
     {
-      name: 'gphone_messages_participants',
+      name: 'gos_messages_participants',
       columns: {
         conversation_id: {
           type: 'int',
           notNull: true,
-          references: { table: 'gphone_messages_conversations', column: 'id' }
+          references: { table: 'gos_messages_conversations', column: 'id' }
         },
         citizenid: {
           type: 'string',
@@ -242,7 +242,7 @@ if (!CONVERSATION_PAGING) {
  * the list is online, since the framework answers those from memory.
  *
  * **Why the names are not a fourth column on the second query.** They were, and a throwaway
- * MariaDB loaded with `gphone.esx.sql` refused it: gPhone pins `utf8mb4_unicode_ci` and
+ * MariaDB loaded with `gos.esx.sql` refused it: gOS pins `utf8mb4_unicode_ci` and
  * es_extended's `users.identifier` takes the server default, so the column-to-column join is
  * errno 1267 rather than a slow query. `FrameworkBridge`'s note above
  * `findOfflineByCitizenIds` has the finding in full. `PlayerDirectory` compares against bound
@@ -388,7 +388,7 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
    * `FrameworkBridge`, a display name assembled inline from `charinfo`, and its own
    * `JSON_EXTRACT` fallback. It also carried a real defect — on a framework object with no
    * `PlayerData` it did `targetCitizenId = targetPlayer.phone_number`, putting a **phone
-   * number** where a citizenid goes, and `gphone_messages_participants.citizenid` is a foreign
+   * number** where a citizenid goes, and `gos_messages_participants.citizenid` is a foreign
    * key onto `players`.
    */
   let targetName: string | null = null;
@@ -596,7 +596,7 @@ app.registerEvent('delete', async (source, cbId, data, citizenid) => {
         service: 'conversations',
         method: 'delete',
         targetId: id,
-        targetTable: 'gphone_messages_conversations'
+        targetTable: 'gos_messages_conversations'
       });
     }
     return success;
@@ -609,7 +609,7 @@ app.registerEvent('delete', async (source, cbId, data, citizenid) => {
       service: 'conversations',
       method: 'delete',
       targetId: id,
-      targetTable: 'gphone_messages_participants'
+      targetTable: 'gos_messages_participants'
     });
     return true;
   }

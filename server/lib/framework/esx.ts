@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { citizenIdFromIdentifier, describeIdentifierRejection } from '@gphone/shared/framework';
+import { citizenIdFromIdentifier, describeIdentifierRejection } from '@gos/shared/framework';
 import { Database } from '../Database';
 import {
   balanceOf,
@@ -135,8 +135,8 @@ const esxCharinfo = (
 /**
  * ESX metadata as a plain table, or undefined.
  *
- * One reader: `Battery.ts` looks for a legacy `gphone_battery` value on
- * `rawPlayer.PlayerData.metadata` when the player has no row in gPhone's own table yet.
+ * One reader: `Battery.ts` looks for a legacy `gos_battery` value on
+ * `rawPlayer.PlayerData.metadata` when the player has no row in gOS's own table yet.
  * `xPlayer.getMeta()` with no key returns the whole table on ESX Legacy 1.10+; anything older
  * has no metadata to offer, and that reader already falls back to a full battery.
  */
@@ -175,7 +175,7 @@ const esxView = (xPlayer: any, citizenid: string, src: number) => ({
   xPlayer
 });
 
-/** gPhone's two money types in ESX's account names. `money` is ESX's word for cash. */
+/** gOS's two money types in ESX's account names. `money` is ESX's word for cash. */
 const ESX_ACCOUNT: Record<'bank' | 'cash', string> = { bank: 'bank', cash: 'money' };
 
 /** A balance off an ESX account, coerced by the same rule as every other framework answer. */
@@ -334,10 +334,10 @@ export const __resetEsxMetaWarning = (): void => {
  *
  * Degrading is safe here specifically because of who calls it. The only caller is
  * `Battery.ts`, mirroring the charge onto the framework player for the benefit of *other*
- * resources; gPhone's own source of truth is its `gphone_battery` table, which is written
+ * resources; gOS's own source of truth is its `gos_battery` table, which is written
  * either way. So a dropped mirror costs a third-party integration and never the phone — and
  * that is why the decision is degrade rather than refuse, which for a write with no reader
- * inside gPhone would only turn a missing integration into a broken battery.
+ * inside gOS would only turn a missing integration into a broken battery.
  */
 const esxSetMeta = (xPlayer: any, src: number, key: string, value: any): void => {
   try {
@@ -357,9 +357,9 @@ const esxSetMeta = (xPlayer: any, src: number, key: string, value: any): void =>
   if (!esxMetaUnsupportedReported) {
     esxMetaUnsupportedReported = true;
     console.warn(
-      `[FrameworkBridge] This es_extended build exposes neither setMeta nor set, so gPhone ` +
+      `[FrameworkBridge] This es_extended build exposes neither setMeta nor set, so gOS ` +
         `cannot mirror metadata onto the framework player — '${key}' was dropped, first seen ` +
-        `for source ${src}. gPhone's own tables are unaffected. Reported once per resource ` +
+        `for source ${src}. gOS's own tables are unaffected. Reported once per resource ` +
         `start, because this is a property of the build rather than of a player.`
     );
   }
@@ -475,7 +475,7 @@ const findOfflineByCitizenId = async (citizenid: string): Promise<FrameworkIdent
 /**
  * The same, for many, in one `IN (…)` (MICA-197).
  *
- * Bound parameters rather than a join onto `users`: gPhone pins `utf8mb4_unicode_ci` and
+ * Bound parameters rather than a join onto `users`: gOS pins `utf8mb4_unicode_ci` and
  * `users.identifier` takes the server default, so a column-to-column comparison is MySQL
  * errno 1267 on a stock MariaDB 11.4+. See the note above `FrameworkBridge`'s own
  * `findOfflineByCitizenIds`.

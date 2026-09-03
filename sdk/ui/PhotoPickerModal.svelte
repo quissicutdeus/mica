@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script lang="ts">
   import MediaThumb from './MediaThumb.svelte';
-  import type { MediaPreview } from '@gphone/shared/types';
+  import type { MediaPreview } from '@gos/shared/types';
   import { useMedia } from '../host/useMedia';
   import { usePhoneNotification } from '../host/usePhoneNotification';
   import PhotoIcon from './icons/PhotoIcon.svelte';

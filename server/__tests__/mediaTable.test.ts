@@ -24,7 +24,7 @@ import type { MessageRepository } from '../repositories/MessageRepository';
 import { REPORTABLE, isReportableTable } from '../lib/moderation';
 
 /**
- * `gphone_photos` became `gphone_media`, and later the service/app id followed it from
+ * `gos_photos` became `gos_media`, and later the service/app id followed it from
  * `photos` to `media` — two passes of the same rename, and the parts neither the
  * typechecker nor a passing build can see.
  *
@@ -44,7 +44,7 @@ describe('the media table rename', () => {
     // `?app=media` deep link all use it, so this pins that the second rename (id
     // following table) actually landed rather than leaving the two agreeing by accident.
     expect(media.resolved.id).toBe('media');
-    expect(media.resolved.table).toBe('gphone_media');
+    expect(media.resolved.table).toBe('gos_media');
   });
 
   it('carries every media kind, because widening the enum later costs a migration', () => {
@@ -74,7 +74,7 @@ describe('the media table rename', () => {
   });
 
   describe('the attachment join', () => {
-    it('selects from gphone_media, not the old table', async () => {
+    it('selects from gos_media, not the old table', async () => {
       // This query is a string. Nothing typechecks it, and it is the one place a message
       // attachment's bytes come from — so a missed rename here is an SQL error in game and
       // green everywhere else.
@@ -82,8 +82,8 @@ describe('the media table rename', () => {
       await (messages.repo as MessageRepository).findByConversation(4);
 
       const joinSql = dbMock.query.mock.calls[1][0] as string;
-      expect(joinSql).toContain('JOIN gphone_media');
-      expect(joinSql).not.toContain('gphone_photos');
+      expect(joinSql).toContain('JOIN gos_media');
+      expect(joinSql).not.toContain('gos_photos');
       expect(joinSql).toContain('p.data');
     });
 
@@ -131,12 +131,12 @@ describe('the media table rename', () => {
 
   describe('the moderation allowlist', () => {
     it('accepts the new table and previews the renamed column', () => {
-      expect(isReportableTable('gphone_media')).toBe(true);
-      expect(REPORTABLE().gphone_media.previewColumn).toBe('data');
+      expect(isReportableTable('gos_media')).toBe(true);
+      expect(REPORTABLE().gos_media.previewColumn).toBe('data');
     });
 
     it('names no app table in core, which is the point of the registry', () => {
-      // `lib/moderation.ts` used to hardcode the list, so core named `gphone_blabber` —
+      // `lib/moderation.ts` used to hardcode the list, so core named `gos_blabber` —
       // and Blabber is `core: false`, an add-on. That is the dependency pointing the wrong
       // way, and it cost something concrete: a third-party app from the Store could not
       // make its content reportable without editing core and the SDK. A service opts in
@@ -145,7 +145,7 @@ describe('the media table rename', () => {
       const declarations = source
         .split('\n')
         .filter((line) => !line.trim().startsWith('*') && !line.trim().startsWith('//'));
-      expect(declarations.join('\n')).not.toMatch(/gphone_[a-z_]+/);
+      expect(declarations.join('\n')).not.toMatch(/gos_[a-z_]+/);
     });
 
     it('previews every reportable table from a column that table has', () => {
@@ -163,7 +163,7 @@ describe('the media table rename', () => {
       // cannot parameterise an identifier, so this list is a security boundary (§2.9) and a
       // stale entry is a second accepted name for one table. The migration rewrites the
       // historical rows instead.
-      expect(isReportableTable('gphone_photos')).toBe(false);
+      expect(isReportableTable('gos_photos')).toBe(false);
     });
   });
 });

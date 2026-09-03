@@ -6,7 +6,7 @@ import type { AppActionOptions } from '../../../../sdk/host/facets';
 import { registerFacet } from '../../../../sdk/host/current';
 import { writable } from 'svelte/store';
 import { toast } from '../../shell/state/toast';
-import { messageOf } from '@gphone/sdk';
+import { messageOf } from '@gos/sdk';
 
 // MICA-179: defined once in the host contract; re-exported so existing importers keep working.
 /** Implementation of the `useAppAction` facet — see the `useAppAction` hook doc for the usage contract. */

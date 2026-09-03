@@ -16,7 +16,7 @@
  */
 RegisterNuiCallbackType('shareContact');
 on('__cfx_nui:shareContact', (data: unknown, cb: Function) => {
-  TriggerServerEvent('gphone:server:contacts:share', data);
+  TriggerServerEvent('gos:server:contacts:share', data);
   cb({ ok: true });
 });
 
@@ -26,6 +26,6 @@ on('__cfx_nui:shareContact', (data: unknown, cb: Function) => {
  * relay a server push — `web/src/shell/nuiMessages.ts`'s `receiveContactShare` is the
  * handler already built and waiting for it.
  */
-onNet('gphone:client:contacts:incoming', (payload: unknown) => {
+onNet('gos:client:contacts:incoming', (payload: unknown) => {
   SendNuiMessage(JSON.stringify({ action: 'shareContact', data: payload }));
 });

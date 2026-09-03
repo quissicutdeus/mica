@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { Screen, registerMessages, useAppLevels, useLocale, type AppProps } from '@gphone/sdk';
+  import { Screen, registerMessages, useAppLevels, useLocale, type AppProps } from '@gos/sdk';
   import Feed from './components/Feed.svelte';
   import ListingDetail from './components/ListingDetail.svelte';
   import CreateListing from './components/CreateListing.svelte';

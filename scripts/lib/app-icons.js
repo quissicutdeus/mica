@@ -164,7 +164,7 @@ export async function renderAppIcons({ root, appsDir, apps }) {
     }
   };
 
-  const work = mkdtempSync(join(tmpdir(), 'gphone-icons-'));
+  const work = mkdtempSync(join(tmpdir(), 'gos-icons-'));
   try {
     // `render` is bundled alongside the components rather than imported separately: a server
     // component and the runtime that renders it have to be the same copy of Svelte's

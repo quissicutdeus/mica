@@ -9,9 +9,9 @@
  * A version reaches us as a bare `string` and nothing validates it — `CatalogEntry.version`
  * is an operator-authored field (`shell/state/catalog.ts`) checked only for being non-empty,
  * and an installed manifest's `version` is either that same string (a catalog install) or
- * `MICA_VERSION`, which `defineApp` supplies as the default.
+ * `GOS_VERSION`, which `defineApp` supplies as the default.
  *
- * `MICA_VERSION` is **not** the repo's `package.json` version, which is what this comment
+ * `GOS_VERSION` is **not** the repo's `package.json` version, which is what this comment
  * claimed until MICA-170. It is a CalVer stamp computed from `git log` at build time — and
  * inside an add-on bundle it is the **empty string**, because a bundle is compiled once and
  * then installed by whatever phone fetches it, so the host's build stamp is not knowable when

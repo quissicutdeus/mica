@@ -33,7 +33,7 @@ const DEFAULT_RANGE = 15;
  * street and a full nightclub on a busy one, and every caller here fans out per recipient
  * — Media's drop writes each of them their own copy of the payload, Contacts emits each of
  * them a packet. So an uncapped scan turns one tap into however many people happen to be
- * standing there, which is the griefing surface `gphone_music_max_nearby` already exists
+ * standing there, which is the griefing surface `gos_music_max_nearby` already exists
  * to close on the music side.
  *
  * Five is the gesture the feature is actually for — handing something to the people around
@@ -43,7 +43,7 @@ const DEFAULT_RANGE = 15;
 const DEFAULT_MAX_NEARBY = 5;
 
 /**
- * The ceiling `gphone_bluetooth_max_nearby` cannot be raised past.
+ * The ceiling `gos_bluetooth_max_nearby` cannot be raised past.
  *
  * A convar is a server owner's dial, not a licence, exactly as `MAX_NEARBY_BROADCASTS` is
  * for music. The cost here is a database row per recipient holding a full copy of whatever
@@ -53,20 +53,20 @@ const MAX_NEARBY = 16;
 
 const rangeMeters = (): number =>
   typeof GetConvarInt === 'function'
-    ? GetConvarInt('gphone_bluetooth_range', DEFAULT_RANGE)
+    ? GetConvarInt('gos_bluetooth_range', DEFAULT_RANGE)
     : DEFAULT_RANGE;
 
 /**
  * How many recipients one scan may name, clamped to `MAX_NEARBY`.
  *
  * A non-numeric or non-positive value falls back to the default rather than disabling the
- * feature — `gphone_bluetooth_range` is the knob that turns proximity sharing off, and a
+ * feature — `gos_bluetooth_range` is the knob that turns proximity sharing off, and a
  * typo in this one should not silently do the same thing by another route.
  */
 const maxNearby = (): number => {
   const raw =
     typeof GetConvarInt === 'function'
-      ? GetConvarInt('gphone_bluetooth_max_nearby', DEFAULT_MAX_NEARBY)
+      ? GetConvarInt('gos_bluetooth_max_nearby', DEFAULT_MAX_NEARBY)
       : DEFAULT_MAX_NEARBY;
   if (!Number.isFinite(raw) || raw < 1) return DEFAULT_MAX_NEARBY;
   return Math.min(Math.trunc(raw), MAX_NEARBY);
@@ -116,7 +116,7 @@ export interface NearbyPlayer {
 
 /**
  * The nearest few players within Bluetooth range of `senderSource` who are currently
- * visible, closest first and no more than `gphone_bluetooth_max_nearby` of them.
+ * visible, closest first and no more than `gos_bluetooth_max_nearby` of them.
  *
  * The sender's own visibility is not checked here — turning Bluetooth off hides a player
  * from being *found*, it does not stop them from initiating a share. Excludes the sender

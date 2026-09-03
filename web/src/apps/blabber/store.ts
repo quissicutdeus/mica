@@ -10,7 +10,7 @@ import type {
   BlabberDm,
   BlabberDmThread,
   FollowStats
-} from '@gphone/shared/types';
+} from '@gos/shared/types';
 import {
   createPagedStore,
   createReactionStore,
@@ -18,7 +18,7 @@ import {
   useAppEvents,
   usePersisted,
   useService
-} from '@gphone/sdk';
+} from '@gos/sdk';
 
 /**
  * Blabber's own data layer, inside the app.
@@ -29,7 +29,7 @@ import {
  * `sdk/coreBoundary.test.ts` counted the references saying so.
  *
  * Blabber's own service goes through `useService`, so `shared/routes.ts` needs no rows for
- * it. **The `accounts` calls stay named**, and that is not an oversight: `gphone_accounts`
+ * it. **The `accounts` calls stay named**, and that is not an oversight: `gos_accounts`
  * is the shared identity service every social app posts under, so it is core, and its
  * routes are core's to declare.
  */
@@ -114,7 +114,7 @@ export const editWindow = writable(900);
 /**
  * How many accounts this player may hold in Blabber, as reported by the server.
  *
- * A convar (`gphone_max_accounts_per_app`) the phone cannot read, so it arrives with the account
+ * A convar (`gos_max_accounts_per_app`) the phone cannot read, so it arrives with the account
  * list. Not hardcoded here: a copy of a server default drifts the first time an owner raises it,
  * and the symptom is a Claim button missing for a player who is entitled to another handle.
  */
@@ -500,7 +500,7 @@ export const loadMoreReplies = async (
  *
  * There was one — a module-scope `writable(0)` incremented from the mention push — and it was
  * right for as long as nothing persisted a mention. Once the server began writing a
- * `gphone_notifications` row for the same event, the launcher badge summed both and one mention
+ * `gos_notifications` row for the same event, the launcher badge summed both and one mention
  * counted twice. The persisted count is the better of the two anyway: it survives a resource
  * restart, where an in-memory counter can only ever know what arrived while it was subscribed.
  *
@@ -575,11 +575,11 @@ export const sendDm = async (peerAccountId: number, body: string): Promise<void>
  * supplies only the part that is genuinely Blabber's: which table is being reacted to, and the
  * fact that identity here is an **account** rather than a citizenid.
  *
- * `gphone_account_reactions` lives on the shared `accounts` service (§10's "the accounts
+ * `gos_account_reactions` lives on the shared `accounts` service (§10's "the accounts
  * graph" framing), so the transport goes through the `accounts` facet rather than
  * `blabberService()` — an add-on reaches a *shared* service only through an enumerated facet.
  */
-const DM_TARGET_TABLE = 'gphone_blabber_dms';
+const DM_TARGET_TABLE = 'gos_blabber_dms';
 
 /**
  * The write payload, rebuilt per call rather than closed over.

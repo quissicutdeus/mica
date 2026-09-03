@@ -31,8 +31,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     loadImage,
     makeThumbnail,
     type AppProps
-  } from '@gphone/sdk';
-  import { useNuiBridge, useCaptureZoomBoost } from '@gphone/sdk/core';
+  } from '@gos/sdk';
+  import { useNuiBridge, useCaptureZoomBoost } from '@gos/sdk/core';
   import en from './locales/en.json';
   import de from './locales/de.json';
 
@@ -162,7 +162,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   // The thumbnail shows the newest photo, which may have arrived from anywhere.
   //
   // The encode quality is asked for here too. It is a convar, so it can change under a
-  // running client (`setr gphone_camera_quality 90` from the console), and foreground is
+  // running client (`setr gos_camera_quality 90` from the console), and foreground is
   // both often enough to notice and rare enough to cost nothing. A failure is not
   // reported: `setCaptureQuality` keeps the default, which is what the camera used before
   // the convar existed, and a toast about an encoder setting would mean nothing to the

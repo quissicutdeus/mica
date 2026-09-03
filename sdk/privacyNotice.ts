@@ -22,7 +22,7 @@
  * Lives here, state-free, rather than in `shell/state/privacyNotice.ts` (which owns the
  * "has this been dismissed" flag) — that file imports `usePersisted`, and `sdk/addon.ts`
  * bundles standalone into a sandboxed add-on with no shell to import at all
- * (`sdk/seam.test.ts`). Mirrors `sdk/version.ts`'s own reasoning for `MICA_BUILD_INFO`.
+ * (`sdk/seam.test.ts`). Mirrors `sdk/version.ts`'s own reasoning for `GOS_BUILD_INFO`.
  */
 export const PRIVACY_NOTICE_TEXT =
   'Messages, direct messages, and mail sent through this phone are stored in this server’s database and can be read by its administrators. That’s inherent to how the phone works — not a bug — and no setting in this app changes it. When an admin reviews a report, that access is logged.';

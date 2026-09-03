@@ -2,13 +2,13 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { Transaction } from '@gphone/shared/types';
+import { Transaction } from '@gos/shared/types';
 
 /**
  * Adapter over whichever banking resource the server runs, mirroring what
  * FrameworkBridge does for qbx/qb-core.
  *
- * gPhone must not read a banking resource's tables directly. Doing so couples the
+ * gOS must not read a banking resource's tables directly. Doing so couples the
  * phone to another script's schema, breaks on their migrations, and — for
  * Renewed-Banking specifically — reads stale data: their transactions live in an
  * in-memory cache that the `player_transactions` table lags behind. Their export

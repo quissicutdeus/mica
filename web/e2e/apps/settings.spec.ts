@@ -71,11 +71,11 @@ test.describe('Settings App E2E', () => {
     await expect(page.locator('text=Phone Number')).toBeVisible();
     // `exact`, because `text=` is a case-insensitive *substring* match and this screen also
     // renders the version stamp. On a branch called `worktree-MICA-35` that stamp reads
-    // `v1.0.0 (worktree-MICA-35@…)`, which contains "gphone" — so the loose form matched
+    // `v1.0.0 (worktree-MICA-35@…)`, which contains "gos" — so the loose form matched
     // two elements and died on strict mode. It fails in CI too, since GITHUB_REF_NAME feeds
     // the same stamp through getGitInfo(); every other `text=` here is a long enough string
     // that the stamp cannot collide with it (MICA-35).
-    await expect(page.getByText('gPhone', { exact: true })).toBeVisible();
+    await expect(page.getByTestId('phone-screen').getByText('gOS', { exact: true })).toBeVisible();
     await expect(page.locator('text=867-5309')).toBeVisible();
     await expect(page.locator('text=First Boot')).toBeVisible();
   });

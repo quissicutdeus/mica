@@ -13,7 +13,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     useLocale,
     AppIconTile,
     type AppManifest
-  } from '@gphone/sdk';
+  } from '@gos/sdk';
 
   /**
    * Everything installed, system apps and Store add-ons together.

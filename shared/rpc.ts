@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 /**
- * How gPhone builds its net event names — one definition, used by both sides.
+ * How gOS builds its net event names — one definition, used by both sides.
  *
  * A NUI round trip needs three strings to agree: the action the UI calls, the server
  * event the client relays to, and the event the server replies on. When the client and
@@ -26,17 +26,17 @@ const CRUD_RESPONSE_NAMES: Record<string, string> = {
   delete: 'deleted'
 };
 
-/** `gphone:server:<service>:<action>` — what the client emits to reach the server. */
+/** `gos:server:<service>:<action>` — what the client emits to reach the server. */
 export function requestEventFor(service: string, action: string): string {
-  return `gphone:server:${service}:${action}`;
+  return `gos:server:${service}:${action}`;
 }
 
 /**
- * `gphone:client:<service>:<response>` — what the server replies on, and therefore what
+ * `gos:client:<service>:<response>` — what the server replies on, and therefore what
  * the client must subscribe to. Derived from the action, never written by hand.
  */
 export function responseEventFor(service: string, action: string): string {
-  return `gphone:client:${service}:${CRUD_RESPONSE_NAMES[action] ?? action}`;
+  return `gos:client:${service}:${CRUD_RESPONSE_NAMES[action] ?? action}`;
 }
 
 /**
@@ -45,7 +45,7 @@ export function responseEventFor(service: string, action: string): string {
  */
 export function parseRequestEvent(event: string): { service: string; action: string } | null {
   const parts = event.split(':');
-  if (parts.length !== 4 || parts[0] !== 'gphone' || parts[1] !== 'server') return null;
+  if (parts.length !== 4 || parts[0] !== 'gos' || parts[1] !== 'server') return null;
   return { service: parts[2], action: parts[3] };
 }
 
@@ -97,7 +97,7 @@ const ACTION_SEGMENT = /^[a-z][a-zA-Z0-9_]*$/;
  * Narrow a generic request, or return null.
  *
  * Both segments are interpolated into an event name, so an unvalidated one could name any
- * event on the bus rather than a `gphone:server:*` one. The pattern is what keeps the
+ * event on the bus rather than a `gos:server:*` one. The pattern is what keeps the
  * derived name inside the namespace.
  */
 export function parseGenericRequest(raw: unknown): GenericServiceRequest | null {

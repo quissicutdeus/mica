@@ -126,21 +126,21 @@ are different bug reports and only one of them can be acted on.
 1. Developer mode on, and the resource running.
 2. F8 console: `nui_devTools`. (Or `http://localhost:13172/` in a desktop
    browser while the game runs — same DevTools, easier to type into.)
-3. In DevTools, use the **JavaScript context selector** to select the gPhone
-   frame — `https://cfx-nui-gphone`. Everything below runs in **that** context,
-   not in the top `nui://game` one.
+3. In DevTools, use the **JavaScript context selector** to select the gOS frame
+   — `https://cfx-nui-gos`. Everything below runs in **that** context, not in
+   the top `nui://game` one.
 4. Open the phone, open Music, and keep the **Network** panel recording.
 
 Paste this once, before anything else; several checks reuse `f`:
 
 ```js
-const f = () => document.querySelector('iframe[title="gPhone music player"]');
+const f = () => document.querySelector('iframe[title="gOS music player"]');
 ```
 
 ## Check 0 — where you actually are
 
 ```js
-location.origin; // expect "https://cfx-nui-gphone"
+location.origin; // expect "https://cfx-nui-gos"
 window.top === window; // false means the phone is a nested frame
 ```
 
@@ -188,7 +188,7 @@ independent of the embed in both directions — the frame can work while images 
 not, and images can work while the frame does not — so it gets its own check
 rather than being assumed to ride along on check 1.
 
-With something queued, in the gPhone context:
+With something queued, in the gOS context:
 
 ```js
 const a = document.querySelector('img[src^="https://img.youtube.com/"]');
@@ -229,7 +229,7 @@ first and refuse the second. If `Access-Control-Allow-Origin` does not come back
 for a `cfx-nui-` origin, the canvas is tainted and `getImageData` throws
 `SecurityError`.
 
-Only worth running if check 2 passed. In the gPhone context:
+Only worth running if check 2 passed. In the gOS context:
 
 ```js
 const probe = new Image();
@@ -265,7 +265,7 @@ theme. So this check is worth recording and is never worth blocking on.
 
 ## Check 3 — is the control channel answered?
 
-This is the one the whole `postMessage` design rests on. In the gPhone context:
+This is the one the whole `postMessage` design rests on. In the gOS context:
 
 ```js
 addEventListener('message', (e) => {
@@ -287,7 +287,7 @@ see a stream of `infoDelivery` messages.
   f().contentWindow.postMessage(
     JSON.stringify({
       event: 'listening',
-      id: 'gphone-music',
+      id: 'gos-music',
       channel: 'widget'
     }),
     O
@@ -299,11 +299,10 @@ see a stream of `infoDelivery` messages.
   ```
 
   Still nothing: the prime suspect is the `origin` URL parameter.
-  `https://cfx-nui-gphone` is not an origin YouTube has ever been asked about,
-  and it has no dot in its host. Drop it — `embedUrlFor` in
-  `shell/state/music.ts`, the `if (origin && …)` line — rebuild, and repeat. If
-  that fixes it, the fix is permanent and belongs in that function with a
-  comment saying why.
+  `https://cfx-nui-gos` is not an origin YouTube has ever been asked about, and
+  it has no dot in its host. Drop it — `embedUrlFor` in `shell/state/music.ts`,
+  the `if (origin && …)` line — rebuild, and repeat. If that fixes it, the fix
+  is permanent and belongs in that function with a comment saying why.
 
 ## Check 4 — does it talk back with data, and not just accept commands?
 
@@ -357,7 +356,7 @@ Now split the outcome, because the halves have completely different causes:
 
 ## Check 6 — the autoplay gate nobody has measured
 
-Two questions, and they fail differently. Run both in the gPhone context, with a
+Two questions, and they fail differently. Run both in the gOS context, with a
 track loaded:
 
 ```js
@@ -365,7 +364,7 @@ document.featurePolicy.allowsFeature('autoplay');
 f().featurePolicy.allowsFeature('autoplay', 'https://www.youtube-nocookie.com');
 ```
 
-- **First is `false`** — the gPhone document itself does not have the `autoplay`
+- **First is `false`** — the gOS document itself does not have the `autoplay`
   feature. The default allowlist for `autoplay` is `self`, so a cross-origin
   child frame only has it if the parent delegates it with `allow`. If the phone
   is a nested frame (check 0) and FiveM's root frame embeds it without

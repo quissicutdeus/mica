@@ -13,7 +13,7 @@ export { describeMusicError, reasonForCode } from '../../lib/musicErrors';
  * cap. The iframe twin lives inside the package and imports them from `sdk/lib/`
  * directly. The in-process twin does not, and until this file it reached across the
  * package boundary by relative path into `sdk/lib/musicErrors` and `sdk/lib/musicBroadcast`
- * — two modules `@gphone/sdk` publishes from no entry point at all.
+ * — two modules `@gos/sdk` publishes from no entry point at all.
  *
  * So this is the seam, on the same terms as `captureZoom.ts` beside it: a value the
  * package hands the phone, in a directory the phone is already entitled to reach, named
@@ -46,7 +46,7 @@ export { describeMusicError, reasonForCode } from '../../lib/musicErrors';
  * **This is the number to lower first** if an in-game test says four players at once (three
  * nearby plus your own) is too many. It is one line, and nothing else has to move.
  *
- * The division of labour with `@gphone/shared/musicBroadcast` is worth stating, because both have
+ * The division of labour with `@gos/shared/musicBroadcast` is worth stating, because both have
  * a cap in them and they are not the same cap. The server's `MAX_NEARBY_BROADCASTS` bounds
  * the *roster* — how many people it will name to one listener — and it is a message-size
  * decision. This one bounds how many of those actually get a player, and it is a

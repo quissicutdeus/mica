@@ -304,7 +304,7 @@ test('Music has no accessibility violations with a track loaded, in the app and 
   // click, so a second pass is both cheaper and less of a lie about what is being tested.
   await openMusicWithATrack();
   await page
-    .frameLocator('iframe[title="gPhone music player"]')
+    .frameLocator('iframe[title="gOS music player"]')
     .locator('body')
     .evaluate(() => (window as unknown as { __error: (code: number) => void }).__error(101));
   await expect(page.getByText("Can't play", { exact: true })).toBeVisible();
@@ -364,7 +364,7 @@ test('the wallpaper treatment reaches every run of text drawn on a photo', async
   await page.addInitScript(() => {
     // A 1x1 PNG is enough: `wallpaperNeedsContrast` keys on `type`, not on the pixels.
     window.localStorage.setItem(
-      'gphone:settings:wallpaper',
+      'gos:settings:wallpaper',
       JSON.stringify({
         type: 'image',
         image:

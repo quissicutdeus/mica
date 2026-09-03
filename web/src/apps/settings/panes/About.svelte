@@ -7,14 +7,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script lang="ts">
   import {
     ChevronRightIcon,
-    MICA_BUILD_INFO,
+    GOS_BUILD_INFO,
     SettingsSection,
     useAccount,
     useAppRegistry,
     useLocale,
     usePhoneNotification,
     formatDate
-  } from '@gphone/sdk';
+  } from '@gos/sdk';
+  import { OS_CODENAME } from '@gos/shared/brand';
 
   let { ontapbuild, onprivacy, onlicense } = $props<{
     ontapbuild: () => void;
@@ -96,14 +97,21 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </div>
       <!-- OS Version carries the build info: `v1.0.0 (branch@commit)`. Was a separate
          "Build / Commit" row saying almost the same thing. Ten taps here reveal
-         Developer Tools. -->
+         Developer Tools.
+
+         The codename sits above the build stamp rather than beside it (MICA-273): the
+         stamp is already long enough to wrap on the phone's 400px frame, and a release
+         is known by its choir, so that is the line worth reading first. -->
       <button
         type="button"
         onclick={ontapbuild}
         class="hover:bg-surface-container-high active:bg-surface-container-high duration-short ease-standard flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
       >
         <span class="text-on-surface font-medium">{$t('settings.about.osVersion')}</span>
-        <span class="text-secondary font-mono">{MICA_BUILD_INFO}</span>
+        <span class="flex min-w-0 flex-col items-end">
+          <span class="text-on-surface-variant text-body-small">{OS_CODENAME}</span>
+          <span class="text-secondary font-mono">{GOS_BUILD_INFO}</span>
+        </span>
       </button>
       <!-- A row rather than the paragraph itself. The notice is four sentences, and
            inlining it here made About a wall of text under a list of one-line facts.

@@ -26,13 +26,13 @@ import '../services/index';
  * gate that cries wolf gets bypassed, and then it is worse than no gate.
  *
  * So the rule is tied to what an owner must actually *do* rather than to the tag,
- * and there are exactly two things that put `gphoneschema apply` in front of them
+ * and there are exactly two things that put `gosschema apply` in front of them
  * (AGENTS.md §8):
  *
  *   1. A **versioned migration** in `server/migrations/` — a rename, retype,
  *      widened enum or drop.
  *   2. An **additive change** to a `defineService` declaration — a new column or
- *      a new index, applied by the second half of `gphoneschema apply`.
+ *      a new index, applied by the second half of `gosschema apply`.
  *
  * This file used to check only the first, and that was a check which could not
  * run: `server/migrations/` holds `index.ts` and nothing else, so the assertion
@@ -78,22 +78,22 @@ const CHANGELOG = 'CHANGELOG.md';
  *
  * Derived from `expectedShape()` over every `declaredServices` entry plus its
  * `childTables`, which is exactly what `pnpm generate:sql` emits and what
- * `gphoneschema apply` compares a live database against.
+ * `gosschema apply` compares a live database against.
  */
 const BASELINE: Record<string, { columns: string[]; indexes: string[] }> = {
-  gphone_account_blocks: {
+  gos_account_blocks: {
     columns: ['blocked_account_id', 'blocker_account_id', 'created_at', 'id'],
     indexes: ['blocked_account_id', 'blocker_blocked']
   },
-  gphone_account_follows: {
+  gos_account_follows: {
     columns: ['created_at', 'followee_account_id', 'follower_account_id', 'id'],
     indexes: ['followee_account_id', 'follower_followee', 'follower_recent']
   },
-  gphone_account_reactions: {
+  gos_account_reactions: {
     columns: ['account_id', 'created_at', 'emoji', 'id', 'target_id', 'target_table'],
     indexes: ['account_target_emoji', 'target']
   },
-  gphone_accounts: {
+  gos_accounts: {
     columns: [
       'app',
       'avatar',
@@ -108,11 +108,11 @@ const BASELINE: Record<string, { columns: string[]; indexes: string[] }> = {
     ],
     indexes: ['app_handle', 'citizenid_app', 'citizenid_status', 'status']
   },
-  gphone_battery: {
+  gos_battery: {
     columns: ['citizenid', 'created_at', 'id', 'level', 'status', 'updated_at'],
     indexes: ['citizenid_status', 'citizenid_unique', 'status']
   },
-  gphone_blabber: {
+  gos_blabber: {
     columns: [
       'account_id',
       'body',
@@ -127,11 +127,11 @@ const BASELINE: Record<string, { columns: string[]; indexes: string[] }> = {
     ],
     indexes: ['account_id', 'account_mouth', 'citizenid_status', 'reply_to', 'root_id', 'status']
   },
-  gphone_blabber_attachments: {
+  gos_blabber_attachments: {
     columns: ['blab_id', 'citizenid', 'id', 'media_id'],
     indexes: ['blab_id', 'citizenid', 'media_id']
   },
-  gphone_blabber_dms: {
+  gos_blabber_dms: {
     columns: [
       'body',
       'citizenid',
@@ -145,15 +145,15 @@ const BASELINE: Record<string, { columns: string[]; indexes: string[] }> = {
     ],
     indexes: ['citizenid_status', 'from_to', 'status', 'to_from', 'to_unread']
   },
-  gphone_blabber_ears: {
+  gos_blabber_ears: {
     columns: ['account_id', 'blab_id', 'created_at', 'id'],
     indexes: ['account_id', 'blab_account']
   },
-  gphone_blabber_tags: {
+  gos_blabber_tags: {
     columns: ['blab_id', 'id', 'tag'],
     indexes: ['blab_id', 'tag']
   },
-  gphone_contacts: {
+  gos_contacts: {
     columns: [
       'avatar',
       'citizenid',
@@ -169,19 +169,19 @@ const BASELINE: Record<string, { columns: string[]; indexes: string[] }> = {
     ],
     indexes: ['citizenid_favorite', 'citizenid_phone', 'citizenid_status', 'phone', 'status']
   },
-  gphone_highscores: {
+  gos_highscores: {
     columns: ['app', 'citizenid', 'created_at', 'id', 'score', 'status', 'updated_at'],
     indexes: ['citizenid_app', 'citizenid_status', 'status']
   },
-  gphone_hodlr: {
+  gos_hodlr: {
     columns: ['citizenid', 'created_at', 'id', 'quantity', 'status', 'updated_at'],
     indexes: ['citizenid_status', 'citizenid_unique', 'status']
   },
-  gphone_hodlr_price_history: {
+  gos_hodlr_price_history: {
     columns: ['id', 'price', 'recorded_at'],
     indexes: ['recorded_at']
   },
-  gphone_mail: {
+  gos_mail: {
     columns: [
       'citizenid',
       'content',
@@ -196,7 +196,7 @@ const BASELINE: Record<string, { columns: string[]; indexes: string[] }> = {
     ],
     indexes: ['citizenid_read_status', 'citizenid_status', 'citizenid_status_created', 'status']
   },
-  gphone_marketplace: {
+  gos_marketplace: {
     columns: [
       'citizenid',
       'created_at',
@@ -209,11 +209,11 @@ const BASELINE: Record<string, { columns: string[]; indexes: string[] }> = {
     ],
     indexes: ['citizenid_status', 'status']
   },
-  gphone_marketplace_attachments: {
+  gos_marketplace_attachments: {
     columns: ['citizenid', 'id', 'listing_id', 'media_id'],
     indexes: ['citizenid', 'listing_id', 'media_id']
   },
-  gphone_media: {
+  gos_media: {
     columns: [
       'alt_text',
       'byte_size',
@@ -233,7 +233,7 @@ const BASELINE: Record<string, { columns: string[]; indexes: string[] }> = {
     ],
     indexes: ['citizenid_status', 'citizenid_status_created', 'status']
   },
-  gphone_messages: {
+  gos_messages: {
     columns: [
       'citizenid',
       'conversation_id',
@@ -245,15 +245,15 @@ const BASELINE: Record<string, { columns: string[]; indexes: string[] }> = {
     ],
     indexes: ['citizenid', 'citizenid_status', 'conversation_status_created', 'status']
   },
-  gphone_messages_attachments: {
+  gos_messages_attachments: {
     columns: ['citizenid', 'id', 'message_id', 'photo_id'],
     indexes: ['citizenid', 'message_id', 'photo_id']
   },
-  gphone_messages_conversations: {
+  gos_messages_conversations: {
     columns: ['citizenid', 'created_at', 'id', 'is_group', 'name', 'status', 'updated_at'],
     indexes: ['citizenid_status', 'citizenid_status_updated', 'status', 'updated_at']
   },
-  gphone_messages_participants: {
+  gos_messages_participants: {
     columns: [
       'archived_at',
       'citizenid',
@@ -274,11 +274,11 @@ const BASELINE: Record<string, { columns: string[]; indexes: string[] }> = {
       'status'
     ]
   },
-  gphone_notes: {
+  gos_notes: {
     columns: ['citizenid', 'content', 'created_at', 'id', 'status', 'title', 'updated_at'],
     indexes: ['citizenid_status', 'citizenid_status_updated', 'status']
   },
-  gphone_notifications: {
+  gos_notifications: {
     columns: [
       'app',
       'avatar',
@@ -302,7 +302,7 @@ const BASELINE: Record<string, { columns: string[]; indexes: string[] }> = {
       'status'
     ]
   },
-  gphone_phone_call_log: {
+  gos_phone_call_log: {
     columns: [
       'citizenid',
       'created_at',
@@ -315,7 +315,7 @@ const BASELINE: Record<string, { columns: string[]; indexes: string[] }> = {
     ],
     indexes: ['citizenid_status', 'citizenid_status_created', 'status']
   },
-  gphone_reports: {
+  gos_reports: {
     columns: [
       'category',
       'citizenid',
@@ -332,7 +332,7 @@ const BASELINE: Record<string, { columns: string[]; indexes: string[] }> = {
     ],
     indexes: ['citizenid_status', 'resolution_created', 'status', 'target']
   },
-  gphone_settings: {
+  gos_settings: {
     columns: [
       'app',
       'citizenid',
@@ -372,7 +372,7 @@ const changelogText = (): string => readFileSync(join(ROOT, CHANGELOG), 'utf8');
 const datedSections = (changelog: string): string[] =>
   [...changelog.matchAll(/^## (\d{4}-\d{2}-\d{2})\s*$/gm)].map((m) => m[1]);
 
-/** A table's shape, reduced to the two things `gphoneschema apply` can add. */
+/** A table's shape, reduced to the two things `gosschema apply` can add. */
 interface TableShape {
   columns: string[];
   indexes: string[];
@@ -381,9 +381,9 @@ interface TableShape {
 /**
  * What the declarations say every table looks like, right now.
  *
- * Derived rather than read out of `gphone.sql`, deliberately. The declaration is
+ * Derived rather than read out of `gos.sql`, deliberately. The declaration is
  * the source of truth (AGENTS.md §8, "a schema change is written once, in the
- * declaration") and `gphone.sql` is regenerated from it — so a scan of the SQL
+ * declaration") and `gos.sql` is regenerated from it — so a scan of the SQL
  * would go blind for exactly as long as somebody forgot to regenerate, which is
  * the window this gate most needs to see into.
  */
@@ -446,8 +446,8 @@ const schemaDrift = (
  * The text of every inline code span in a markdown document, run together.
  *
  * The matcher reads code spans rather than the whole file because this changelog
- * writes every identifier in backticks — `gphone_media`, `gphone_music_range`,
- * `gphoneschema apply` — and a column called `url` or `role` would otherwise be
+ * writes every identifier in backticks — `gos_media`, `gos_music_range`,
+ * `gosschema apply` — and a column called `url` or `role` would otherwise be
  * "announced" by the word appearing in an unrelated sentence. That is a structural
  * convention, not a required sentence: what the entry says about the column is
  * still entirely the author's.
@@ -472,7 +472,7 @@ const isNamed = (name: string, spans: string): boolean =>
  * name (`title`, `url`) from being satisfied by an unrelated line. An index is
  * held to the table only: index names are derived (`citizenid_status_updated`)
  * and reciting one at a server owner is noise, but "this table gained a key, so
- * run `gphoneschema apply`" is exactly what they need.
+ * run `gosschema apply`" is exactly what they need.
  *
  * Pure, so the probes below can drive it with input this repo does not have.
  */
@@ -487,7 +487,7 @@ const unannouncedSchemaChanges = (changes: SchemaChange[], changelog: string): s
 
 /** A one-table schema for the probes, which need input this repo does not have. */
 const shapes = (columns: string[], indexes: string[] = []) => ({
-  gphone_widgets: { columns, indexes }
+  gos_widgets: { columns, indexes }
 });
 
 describe('changelog (MICA-72)', () => {
@@ -496,7 +496,7 @@ describe('changelog (MICA-72)', () => {
 
     expect(
       missing,
-      `a migration makes an update need \`gphoneschema apply\` — name it in ${CHANGELOG} ` +
+      `a migration makes an update need \`gosschema apply\` — name it in ${CHANGELOG} ` +
         `under "Action required", so an owner reads it before pulling`
     ).toEqual([]);
   });
@@ -534,7 +534,7 @@ describe('changelog (MICA-72)', () => {
 
       expect(
         missing,
-        `a new column or key makes an update need \`gphoneschema apply\` on every existing ` +
+        `a new column or key makes an update need \`gosschema apply\` on every existing ` +
           `install — name the table and the column in backticks in ${CHANGELOG}, under ` +
           `"Action required", so an owner reads it before pulling. A removal needs a ` +
           `versioned migration as well (AGENTS.md §8).`
@@ -559,20 +559,20 @@ describe('changelog (MICA-72)', () => {
 
     it('sees a column the declarations grew', () => {
       expect(schemaDrift(shapes(['id', 'label']), shapes(['id']))).toEqual([
-        { table: 'gphone_widgets', name: 'label', kind: 'column', direction: 'added' }
+        { table: 'gos_widgets', name: 'label', kind: 'column', direction: 'added' }
       ]);
     });
 
     it('sees a column they lost, and a key either way', () => {
       expect(schemaDrift(shapes(['id'], ['a']), shapes(['id', 'label'], ['b']))).toEqual([
-        { table: 'gphone_widgets', name: 'label', kind: 'column', direction: 'removed' },
-        { table: 'gphone_widgets', name: 'a', kind: 'index', direction: 'added' },
-        { table: 'gphone_widgets', name: 'b', kind: 'index', direction: 'removed' }
+        { table: 'gos_widgets', name: 'label', kind: 'column', direction: 'removed' },
+        { table: 'gos_widgets', name: 'a', kind: 'index', direction: 'added' },
+        { table: 'gos_widgets', name: 'b', kind: 'index', direction: 'removed' }
       ]);
     });
 
     const added: SchemaChange = {
-      table: 'gphone_widgets',
+      table: 'gos_widgets',
       name: 'label',
       kind: 'column',
       direction: 'added'
@@ -580,13 +580,12 @@ describe('changelog (MICA-72)', () => {
 
     it('reports a column the changelog does not name', () => {
       expect(unannouncedSchemaChanges([added], '# Changelog\n\nNothing here.\n')).toEqual([
-        'gphone_widgets.label (column added)'
+        'gos_widgets.label (column added)'
       ]);
     });
 
     it('accepts one written down as prose plus identifiers', () => {
-      const entry =
-        '# Changelog\n\n- `gphone_widgets` gains a `label`; run `gphoneschema apply`.\n';
+      const entry = '# Changelog\n\n- `gos_widgets` gains a `label`; run `gosschema apply`.\n';
 
       expect(unannouncedSchemaChanges([added], entry)).toEqual([]);
     });
@@ -597,34 +596,34 @@ describe('changelog (MICA-72)', () => {
       const prose = '# Changelog\n\nThe widgets table now shows a label on each row.\n';
 
       expect(unannouncedSchemaChanges([added], prose)).toEqual([
-        'gphone_widgets.label (column added)'
+        'gos_widgets.label (column added)'
       ]);
     });
 
     it('holds an index to its table rather than to its derived name', () => {
       const index: SchemaChange = {
-        table: 'gphone_widgets',
+        table: 'gos_widgets',
         name: 'citizenid_status_updated',
         kind: 'index',
         direction: 'added'
       };
 
       expect(unannouncedSchemaChanges([index], '# Changelog\n\nNothing.\n')).toEqual([
-        'gphone_widgets.citizenid_status_updated (index added)'
+        'gos_widgets.citizenid_status_updated (index added)'
       ]);
       expect(
-        unannouncedSchemaChanges([index], '# Changelog\n\n- `gphone_widgets` gains a key.\n')
+        unannouncedSchemaChanges([index], '# Changelog\n\n- `gos_widgets` gains a key.\n')
       ).toEqual([]);
     });
 
     it('lets a migration id announce the column it drops', () => {
       const dropped: SchemaChange = {
-        table: 'gphone_widgets',
+        table: 'gos_widgets',
         name: 'best_streak',
         kind: 'column',
         direction: 'removed'
       };
-      const entry = '# Changelog\n\n- `0001_drop_gphone_widgets_best_streak` — run it.\n';
+      const entry = '# Changelog\n\n- `0001_drop_gos_widgets_best_streak` — run it.\n';
 
       expect(unannouncedSchemaChanges([dropped], entry)).toEqual([]);
     });

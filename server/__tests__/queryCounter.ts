@@ -47,7 +47,7 @@ export interface CountingDatabase {
    * How many statements were issued — all of them, or only those whose SQL matches.
    *
    * A pattern is what makes a budget legible: "one statement mentioning
-   * `gphone_messages_participants`" says what is being counted, where a bare total also
+   * `gos_messages_participants`" says what is being counted, where a bare total also
    * counts whatever the endpoint wrapper happens to do around it.
    */
   count(pattern?: RegExp): number;

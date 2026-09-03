@@ -23,7 +23,7 @@
  * add-on bring zod, valibot or arktype for its own service without this repo taking a
  * dependency on any of them, and it is why `parseInput` below validates through
  * `~standard.validate` rather than through `.parse`: `.parse` is zod's spelling and valibot
- * has no such method. `.parse` survives on gPhone-native schemas because it reads better in a
+ * has no such method. `.parse` survives on gOS-native schemas because it reads better in a
  * test, and it is exactly `parseInput` restricted to this vendor.
  *
  * ## Messages reach players
@@ -71,7 +71,7 @@ export type Schema<Output = unknown> = StandardSchemaV1<unknown, Output>;
 /**
  * The value a schema yields.
  *
- * Reads the phantom `types` the spec defines, so it works identically on a gPhone schema and
+ * Reads the phantom `types` the spec defines, so it works identically on a gOS schema and
  * on a zod or valibot one an add-on brought — which is the entire reason the contract is
  * typed against `~standard` rather than against `GphoneSchema`.
  */
@@ -115,7 +115,7 @@ const fail = (path: Path, message: string): Outcome<never> => ({
   issues: [{ message: `${describe(path)} ${message}`, path: [...path] }]
 });
 
-/** A gPhone-native schema. Structural, so `s.string()` and `s.object({...})` are the same type. */
+/** A gOS-native schema. Structural, so `s.string()` and `s.object({...})` are the same type. */
 export interface GphoneSchema<T> extends StandardSchemaV1<unknown, T> {
   /**
    * Validate, or throw a `SchemaError`. The sync half of `parseInput`, kept because a test
@@ -129,7 +129,7 @@ export interface GphoneSchema<T> extends StandardSchemaV1<unknown, T> {
 }
 
 /**
- * Every gPhone schema's raw checker, which takes the path it is being checked at.
+ * Every gOS schema's raw checker, which takes the path it is being checked at.
  *
  * A composite has to hand its children the path they live at, or the message a player reads
  * says "That value must be 255 characters or fewer" instead of naming `label`. The Standard
@@ -146,7 +146,7 @@ const make = <T>(check: (value: unknown, path: Path) => Outcome<T>): GphoneSchem
   const schema: GphoneSchema<T> = {
     '~standard': {
       version: 1,
-      vendor: 'gphone',
+      vendor: 'gos',
       validate: (value: unknown) => {
         const outcome = check(value, []);
         return outcome.ok ? { value: outcome.value } : { issues: outcome.issues };
@@ -180,7 +180,7 @@ const checkerOf =
     const result = schema['~standard'].validate(value);
     if (result instanceof Promise) {
       // A composite cannot await inside a sync `parse`. Reachable only for a foreign schema
-      // nested in a gPhone one, which no contract does today — and a loud refusal beats a
+      // nested in a gOS one, which no contract does today — and a loud refusal beats a
       // pending promise silently reaching SQL as `[object Promise]`.
       return fail(path, 'could not be checked synchronously.');
     }
@@ -421,7 +421,7 @@ export const s = {
  * Validate a value against any Standard Schema, or throw a `SchemaError`.
  *
  * Async because the spec allows an async `validate` and a foreign schema may use one. Every
- * gPhone schema resolves synchronously, so the await costs a microtask on the server's hot
+ * gOS schema resolves synchronously, so the await costs a microtask on the server's hot
  * path and buys an add-on the right to bring whatever validator it already uses.
  */
 export async function parseInput<S extends StandardSchemaV1>(

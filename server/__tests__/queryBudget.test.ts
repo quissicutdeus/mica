@@ -93,7 +93,7 @@ vi.mock('../lib/FrameworkBridge', async (importOriginal) => {
 });
 
 // Imported for its side effect: loading the module is what registers
-// `gphone:server:conversations:get`, which `call` below drives.
+// `gos:server:conversations:get`, which `call` below drives.
 import '../services/Conversations';
 import { deliverToParticipants } from '../services/Messages';
 import { Database } from '../lib/Database';
@@ -114,9 +114,9 @@ beforeEach(() => {
   });
 });
 
-/** Drives a registered `gphone:server:conversations:<action>` handler as the caller. */
+/** Drives a registered `gos:server:conversations:<action>` handler as the caller. */
 const call = async (action: string, data: unknown) => {
-  const handler = handlers.get(`gphone:server:conversations:${action}`);
+  const handler = handlers.get(`gos:server:conversations:${action}`);
   if (!handler) throw new Error(`no handler for ${action}`);
   await handler('cb-1', data);
 };
@@ -173,7 +173,7 @@ describe('the conversation list is three queries at most, whatever the list hold
    * membership and the names rather than, say, the page three times.
    *
    * The third is the one that could have been a `LEFT JOIN` onto the framework's character
-   * table and is deliberately not: gPhone pins `utf8mb4_unicode_ci` and es_extended's
+   * table and is deliberately not: gOS pins `utf8mb4_unicode_ci` and es_extended's
    * `users.identifier` takes the server default, so a column-to-column comparison is MySQL
    * errno 1267 on a stock ESX install. A bound-parameter `IN` has no such problem.
    */
@@ -183,8 +183,8 @@ describe('the conversation list is three queries at most, whatever the list hold
     await call('get', {});
 
     expect(db.statements).toHaveLength(3);
-    expect(db.statements[0].sql).toContain('FROM gphone_messages_conversations c');
-    expect(db.statements[1].sql).toContain('FROM `gphone_messages_participants` p');
+    expect(db.statements[0].sql).toContain('FROM gos_messages_conversations c');
+    expect(db.statements[1].sql).toContain('FROM `gos_messages_participants` p');
     // One placeholder per conversation on the page, and the ids are bound, never inlined.
     expect(db.statements[1].sql).toContain('IN (?, ?, ?)');
     expect(db.statements[1].params).toEqual([1, 2, 3]);
@@ -268,8 +268,8 @@ describe('a group send is bounded, whatever the group holds', () => {
     await deliverToParticipants(7, 'SENDER', { name: 'A B', phone: '5550100' }, message);
 
     expect(db.statements).toHaveLength(2);
-    expect(db.statements[0].sql).toContain('FROM gphone_messages_participants');
-    expect(db.statements[1].sql).toContain('FROM `gphone_blocklist`');
+    expect(db.statements[0].sql).toContain('FROM gos_messages_participants');
+    expect(db.statements[1].sql).toContain('FROM `gos_blocklist`');
     // Every recipient in one statement, and the sender's number last.
     expect(db.statements[1].params).toEqual(['CIT_R1', 'CIT_R2', 'CIT_R3', '5550100']);
   });

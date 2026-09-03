@@ -4,9 +4,9 @@
 
 import { get } from 'svelte/store';
 import { call } from '../nui/call';
-import { musicContract } from '@gphone/shared/contracts/music';
+import { musicContract } from '@gos/shared/contracts/music';
 import { musicPosition, musicSeek, musicSource, musicStatus } from '../shell/state/music';
-import type { MusicSource } from '@gphone/sdk';
+import type { MusicSource } from '@gos/sdk';
 
 /**
  * Telling the server what this phone is playing out loud. MICA-111 phase 2.
