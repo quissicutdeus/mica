@@ -2,9 +2,24 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { DEFAULT_DEVICE, isDeviceId, type DeviceId } from '@gphone/shared/devices';
 import { sendNuiMessage } from '../lib/nui';
-import { PhoneState } from '../lib/PhoneState';
-import { openPhone, closePhone } from '../lib/PhoneVisibility';
+import { DeviceState } from '../lib/DeviceState';
+import { openDevice, closeDevice } from '../lib/DeviceVisibility';
+
+/**
+ * The device a payload names, or the phone (MICA-262). Every shell event carried no
+ * device before the tablet, so absent has to keep meaning what it always did.
+ */
+const deviceOf = (payload: unknown): DeviceId => {
+  const device = (payload as { device?: unknown } | null | undefined)?.device;
+  return isDeviceId(device) ? device : DEFAULT_DEVICE;
+};
+
+/** Lower the device if a gate just closed on it while it was up. */
+const closeIfDisabled = (id: DeviceId): void => {
+  if (!DeviceState.isEnabled(id) && DeviceState.isOpen(id)) closeDevice(id);
+};
 
 /**
  * Shell-scoped client events — the ones that belong to the phone itself rather than to
@@ -53,50 +68,67 @@ onNet('gphone:client:shell:rehydrate', () => {
  *
  * Disabling while open force-closes it the same way `hideFrame` does — leaving it open
  * would mean the ban applies to the *next* press of `M` rather than to right now.
+ *
+ * A bare boolean is the phone, as it always was; `{ device, enabled }` names another.
  */
-onNet('gphone:client:shell:setEnabled', (enabled: unknown) => {
-  const value = enabled === true;
-  PhoneState.setEnabled(value);
-  if (!value && PhoneState.isOpen()) {
-    closePhone();
-  }
+onNet('gphone:client:shell:setEnabled', (payload: unknown) => {
+  const value =
+    typeof payload === 'boolean' ? payload : (payload as { enabled?: unknown })?.enabled === true;
+  const device = deviceOf(payload);
+  DeviceState.setEnabled(device, value);
+  closeIfDisabled(device);
+});
+
+/**
+ * Whether this server has a device on at all — the descriptor's enable convar, pushed by
+ * the server (MICA-263). The phone has no such convar and never receives this.
+ */
+onNet('gphone:client:shell:setServerEnabled', (payload: unknown) => {
+  const device = deviceOf(payload);
+  DeviceState.setServerEnabled(device, (payload as { enabled?: unknown })?.enabled === true);
+  closeIfDisabled(device);
 });
 
 /**
  * The item gate (MICA-229). The server counts and pushes; this only remembers, and closes
- * the phone when the last phone item has just gone -- the same force-close `setEnabled` does,
- * for the same reason.
+ * the device when its last item has just gone -- the same force-close `setEnabled` does,
+ * for the same reason. Absent `device` is the phone (MICA-262).
  */
-onNet('gphone:client:shell:phoneItem', (payload: { gated?: unknown; held?: unknown }) => {
-  PhoneState.setItemGate(payload?.gated === true, payload?.held === true);
-  if (!PhoneState.isEnabled() && PhoneState.isOpen()) {
-    closePhone();
+onNet(
+  'gphone:client:shell:phoneItem',
+  (payload: { device?: unknown; gated?: unknown; held?: unknown }) => {
+    const device = deviceOf(payload);
+    DeviceState.setItemGate(device, payload?.gated === true, payload?.held === true);
+    closeIfDisabled(device);
   }
-});
+);
 
-/** Using the phone item opens the phone. Refused while disabled, like `openApp` below. */
-onNet('gphone:client:shell:open', () => {
-  if (!PhoneState.isEnabled() || PhoneState.isOpen()) return;
-  openPhone();
+/** Using a device's item opens it. Refused while disabled, like `openApp` below. */
+onNet('gphone:client:shell:open', (payload?: unknown) => {
+  const device = deviceOf(payload);
+  if (!DeviceState.isEnabled(device) || DeviceState.isOpen(device)) return;
+  openDevice(device);
 });
 
 /**
- * The `OpenApp` export. Force-opens the phone and lands on the named app, the same
- * `appId?key=value` shape a notification's deep link already carries.
+ * The `OpenApp` export. Force-opens a device and lands on the named app, the same
+ * `appId?key=value` shape a notification's deep link already carries. The device is the
+ * one named, else the phone; raising it lowers the other (MICA-262).
  *
- * Silently refused while the phone is disabled — there is no reply channel for this
+ * Silently refused while that device is disabled — there is no reply channel for this
  * event to report through, matching `guardNetEvent`'s own reasoning on the server side.
  */
 onNet(
   'gphone:client:shell:openApp',
-  (payload: { appId?: string; props?: Record<string, unknown> }) => {
-    if (!PhoneState.isEnabled()) return;
+  (payload: { appId?: string; props?: Record<string, unknown>; device?: unknown }) => {
+    const device = deviceOf(payload);
+    if (!DeviceState.isEnabled(device)) return;
     const appId = payload?.appId;
     if (!appId) return;
 
-    if (!PhoneState.isOpen()) {
-      openPhone();
+    if (!DeviceState.isOpen(device)) {
+      openDevice(device);
     }
-    sendNuiMessage('openApp', { appId, props: payload?.props ?? {} });
+    sendNuiMessage('openApp', { appId, props: payload?.props ?? {}, device });
   }
 );

@@ -26,16 +26,21 @@ let pmaVoice: {
   removePlayerFromCall: ReturnType<typeof vi.fn>;
 };
 
-const { setOpenSpy } = vi.hoisted(() => ({ setOpenSpy: vi.fn() }));
-vi.mock('../lib/PhoneState', () => ({
-  PhoneState: {
-    setOpen: setOpenSpy
-  }
+// The incoming-call path raises the phone through `DeviceVisibility` (MICA-262), the
+// same sequence the key uses; that sequence has its own suite, so here it is a spy.
+const { openDeviceSpy, phoneOpen } = vi.hoisted(() => ({
+  openDeviceSpy: vi.fn(),
+  phoneOpen: { value: false }
+}));
+vi.mock('../lib/DeviceVisibility', () => ({ openDevice: openDeviceSpy }));
+vi.mock('../lib/DeviceState', () => ({
+  DeviceState: { isOpen: (id: string) => id === 'phone' && phoneOpen.value }
 }));
 
 beforeEach(async () => {
   vi.resetModules();
-  setOpenSpy.mockClear();
+  openDeviceSpy.mockClear();
+  phoneOpen.value = false;
 
   nuiCallbacks = new Map();
   netSubscriptions = new Map();
@@ -148,18 +153,27 @@ describe('NUI callbacks', () => {
 });
 
 describe('incoming call', () => {
-  it('forces NUI focus, marks the phone open, and pushes visible + incoming status', () => {
+  it('raises the phone through the shared open sequence, then pushes the incoming status', () => {
     serverEvent('gphone:client:phone:incoming', { from: '555-0199', callId: 42 });
 
-    expect(nuiFocusCalls).toEqual([[true, true]]);
-    expect(setOpenSpy).toHaveBeenCalledWith(true);
+    expect(openDeviceSpy).toHaveBeenCalledWith('phone');
     expect(sentNuiMessages).toEqual([
-      { action: 'setVisible', data: true },
       {
         action: 'callStatus',
         data: { status: 'incoming', number: '555-0199', name: 'Unknown' }
       }
     ]);
+  });
+
+  it('leaves a phone that is already up alone', () => {
+    phoneOpen.value = true;
+    serverEvent('gphone:client:phone:incoming', { from: '555-0199', callId: 42 });
+
+    expect(openDeviceSpy).not.toHaveBeenCalled();
+    expect(sentNuiMessages[0]).toEqual({
+      action: 'callStatus',
+      data: { status: 'incoming', number: '555-0199', name: 'Unknown' }
+    });
   });
 });
 

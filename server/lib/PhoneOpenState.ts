@@ -23,10 +23,18 @@ const open = new Map<number, boolean>();
 /** For the `IsPhoneOpen` export. Defaults to closed for a source never heard from. */
 export const isPhoneOpen = (source: number): boolean => open.get(source) ?? false;
 
-onNet('gphone:server:shell:setOpen', (isOpen: unknown) => {
+/**
+ * The client pushes `{ device, open }` since MICA-262 and pushed a bare boolean before
+ * it. Both are read; keying by device is MICA-263's, so until then any device's open
+ * state is "the phone's" here — one frame is ever up at a time, so this is at worst the
+ * tablet answering for the phone, never two answers.
+ */
+onNet('gphone:server:shell:setOpen', (payload: unknown) => {
   const player = guardNetEvent('shell', 'setOpen');
   if (!player) return;
-  open.set(source, isOpen === true);
+  const isOpen =
+    typeof payload === 'boolean' ? payload : (payload as { open?: unknown } | null)?.open === true;
+  open.set(source, isOpen);
 });
 
 on('playerDropped', () => {

@@ -173,7 +173,7 @@ out of shape and it fails too, saying which.
 | `gphone:server:admin:setBattery`       | `server/services/Battery.ts:248`  |
 | `gphone:server:battery:load`           | `server/services/Battery.ts:320`  |
 | `gphone:server:contacts:share`         | `server/services/Contacts.ts:88`  |
-| `gphone:server:shell:setOpen`          | `server/lib/PhoneOpenState.ts:22` |
+| `gphone:server:shell:setOpen`          | `server/lib/PhoneOpenState.ts:32` |
 | `gphone:server:shell:checkPhoneItem`   | `server/lib/phoneItem.ts:144`     |
 
 `guardNetEvent` in `server/lib/netGuard.ts` is the preamble for all ten,
@@ -321,7 +321,7 @@ read as "cannot move". That framing was wrong and worth correcting: the default
 is server-authoritative, and anything the client owns needs a reason it _cannot_
 move rather than a reason it has not.
 
-### `PhoneState.isTyping` — legitimately client-owned
+### `DeviceState.isTyping` — legitimately client-owned
 
 The server cannot see DOM focus. There is no server-side version of "this player
 has a text field focused", so the web pushes it over on `focusin`/`focusout`. It

@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { PhoneAnimation } from './PhoneAnimation';
+import { DeviceAnimation } from './DeviceAnimation';
 import { sendNuiMessage } from '../lib/nui';
 
 /**
@@ -139,14 +139,14 @@ export class PhoneCamera {
   }
 
   private static hidePhoneProp(): void {
-    const prop = PhoneAnimation.getPhoneProp();
+    const prop = DeviceAnimation.getProp();
     if (prop === null || !DoesEntityExist(prop)) return;
     PhoneCamera.propWasVisible = IsEntityVisible(prop);
     SetEntityVisible(prop, false, false);
   }
 
   private static restorePhoneProp(): void {
-    const prop = PhoneAnimation.getPhoneProp();
+    const prop = DeviceAnimation.getProp();
     if (prop === null || !DoesEntityExist(prop)) return;
     SetEntityVisible(prop, PhoneCamera.propWasVisible, false);
   }

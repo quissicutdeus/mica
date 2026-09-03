@@ -2,7 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { PhoneState } from '../lib/PhoneState';
+import { DeviceState } from '../lib/DeviceState';
+import { openDevice } from '../lib/DeviceVisibility';
 
 // Calls do not use ServiceProxy: these are fire-and-forget NUI callbacks with no cbId to
 // correlate and no server reply to await, so the request/response machinery does not
@@ -81,17 +82,12 @@ on('__cfx_nui:toggleSpeaker', (data: { enabled: boolean }, cb: Function) => {
 
 // Server Events
 onNet('gphone:client:phone:incoming', (data: { from: string; callId: number }) => {
-  SetNuiFocus(true, true);
-  // The phone is now open whether or not the player asked for it. Without this the flag
-  // in PhoneState still reads false, so the next `M` re-opens instead of closing and
-  // freelook refuses to engage.
-  PhoneState.setOpen(true);
-  SendNuiMessage(
-    JSON.stringify({
-      action: 'setVisible',
-      data: true
-    })
-  );
+  // The phone is now open whether or not the player asked for it, through the same
+  // sequence the key uses: focus, the frame, the prop in hand. It used to set the flag
+  // and push `setVisible` by hand, which left no prop and — before the flag was shared —
+  // a `M` press that re-opened instead of closing. Calls are the phone's (`chrome.calls`),
+  // so a tablet that was up goes down (MICA-262).
+  if (!DeviceState.isOpen('phone')) openDevice('phone');
 
   // Send incoming status
   SendNuiMessage(

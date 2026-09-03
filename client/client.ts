@@ -6,13 +6,14 @@ import './services';
 import './game';
 import { FrameworkBridge } from './lib/FrameworkBridge';
 import { sendNuiMessage } from './lib/nui';
-import { PhoneState } from './lib/PhoneState';
-import { openPhone, closePhone } from './lib/PhoneVisibility';
-import { PhoneAnimation } from './game/PhoneAnimation';
+import { DeviceState } from './lib/DeviceState';
+import { openDevice, closeDevice, closeOpenDevice } from './lib/DeviceVisibility';
+import { DeviceAnimation } from './game/DeviceAnimation';
 import { Freelook } from './game/Freelook';
 import { PhoneCamera } from './game/PhoneCamera';
 import { GAME_SCOPE_ACTIONS } from '@gphone/shared/keybinds';
-import { requestPhoneItemCheck } from './services/PhoneItem';
+import { ALL_DEVICES, DEVICES, type DeviceId } from '@gphone/shared/devices';
+import { requestDeviceItemCheck } from './services/DeviceItem';
 
 // Send system time to NUI
 const sendTimeToNui = () => {
@@ -21,31 +22,35 @@ const sendTimeToNui = () => {
   sendNuiMessage('setTime', { hours, minutes });
 };
 
-// Toggle Phone Command
-RegisterCommand(
-  'togglePhone',
-  () => {
-    // Belt and braces alongside the dispatcher's own guard: whatever key ends up bound
-    // to this, it must never fire out from under a focused text field.
-    if (PhoneState.isTyping()) return;
+/**
+ * The toggle behind each device's key (MICA-262). Pressing the key of the device that
+ * is up puts it down; pressing the other device's key raises it, which lowers the first
+ * on the way — one frame at a time is the rule (`lib/DeviceVisibility.ts`).
+ */
+const toggleDevice = (id: DeviceId): void => {
+  // Belt and braces alongside the dispatcher's own guard: whatever key ends up bound
+  // to this, it must never fire out from under a focused text field.
+  if (DeviceState.isTyping()) return;
 
-    const open = !PhoneState.isOpen();
-    // A disabled phone refuses to open at all; closing it is always allowed.
-    if (open && !PhoneState.isEnabled()) {
-      // MICA-229: a refusal for want of the item is the moment to make sure the server's
-      // last word is current -- an inventory event can be missed, and this costs one request.
-      requestPhoneItemCheck();
-      return;
-    }
+  if (DeviceState.isOpen(id)) {
+    closeDevice(id);
+    return;
+  }
+  // A disabled device refuses to open at all; closing it is always allowed.
+  if (!DeviceState.isEnabled(id)) {
+    // MICA-229: a refusal for want of the item is the moment to make sure the server's
+    // last word is current -- an inventory event can be missed, and this costs one request.
+    requestDeviceItemCheck();
+    return;
+  }
+  openDevice(id);
+};
 
-    if (open) {
-      openPhone();
-    } else {
-      closePhone();
-    }
-  },
-  false
-);
+// One command per device, named by the descriptor: `togglePhone` predates the table and
+// players already have it bound; `toggleTablet` is the tablet's.
+for (const id of ALL_DEVICES) {
+  RegisterCommand(DEVICES[id].keybind.command, () => toggleDevice(id), false);
+}
 
 /**
  * Register every game-scope action from the shared table.
@@ -55,12 +60,11 @@ RegisterCommand(
  * cannot fire. In-phone keys are dispatched by the web and rebound in Settings >
  * Shortcuts instead. Registering these through `RegisterKeyMapping` is what puts them
  * in FiveM's own Key Bindings menu.
+ *
+ * Only the actions whose command the loop above registered: a mapping for a command
+ * nobody has registered would put a key in FiveM's menu that does nothing.
  */
-//
-// Only the actions whose command this file registers. `openTablet` joined the table with
-// MICA-258 and its command arrives with MICA-262; a mapping for a command nobody has
-// registered would put "Open Tablet" in FiveM's menu as a key that does nothing.
-const REGISTERED_COMMANDS = new Set(['togglePhone']);
+const REGISTERED_COMMANDS = new Set(ALL_DEVICES.map((id) => DEVICES[id].keybind.command));
 
 for (const action of GAME_SCOPE_ACTIONS) {
   const command = action.command ?? action.id;
@@ -71,7 +75,7 @@ for (const action of GAME_SCOPE_ACTIONS) {
 // NUI Callback to toggle freelook
 RegisterNuiCallbackType('toggleFreelook');
 on('__cfx_nui:toggleFreelook', (data: { state: boolean }, cb: Function) => {
-  if (PhoneState.isOpen()) {
+  if (DeviceState.isAnyOpen()) {
     if (data && data.state) {
       // The camera app holds this open indefinitely, so it gets the narrower profile.
       Freelook.enableFreelook(PhoneCamera.isActive() ? 'camera' : 'freelook');
@@ -85,15 +89,15 @@ on('__cfx_nui:toggleFreelook', (data: { state: boolean }, cb: Function) => {
 // Whether a text field in the NUI has focus. See PhoneState.isTyping.
 RegisterNuiCallbackType('setTyping');
 on('__cfx_nui:setTyping', (data: { typing: boolean }, cb: Function) => {
-  PhoneState.setTyping(Boolean(data?.typing));
+  DeviceState.setTyping(Boolean(data?.typing));
   cb({});
 });
 
-// NUI Callback to close phone
+// NUI Callback to close whichever device is up.
 RegisterNuiCallbackType('hideFrame');
 on('__cfx_nui:hideFrame', (_: any, cb: Function) => {
-  PhoneState.setTyping(false);
-  closePhone();
+  DeviceState.setTyping(false);
+  closeOpenDevice();
   cb({});
 });
 
@@ -102,11 +106,12 @@ RegisterNuiCallbackType('onCameraApp');
 on('__cfx_nui:onCameraApp', async (data: { state: boolean }, cb: Function) => {
   const ped = PlayerPedId();
   const active = Boolean(data?.state);
-  await PhoneAnimation.setCameraApp(ped, active, PhoneState.isOpen());
+  // Phone only: the camera app cannot be on the tablet (`chrome.camera`).
+  await DeviceAnimation.setCameraApp(ped, active, DeviceState.isOpen('phone'));
 
   // After the animation, so the prop exists and the hand is in position before the cam
   // attaches and hides it.
-  if (active && PhoneState.isOpen()) {
+  if (active && DeviceState.isOpen('phone')) {
     PhoneCamera.enable();
   } else {
     PhoneCamera.disable();
@@ -137,7 +142,7 @@ on('__cfx_nui:getPhoneNumber', (_: any, cb: Function) => {
 
 // Time Sync Loop
 setInterval(() => {
-  if (PhoneState.isOpen()) {
+  if (DeviceState.isAnyOpen()) {
     sendTimeToNui();
   }
 }, 1000);
