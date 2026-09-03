@@ -303,12 +303,21 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     }
   });
 
-  // Always lowers the phone, from anywhere. Deliberately not "back at the top level":
-  // there is no state in which this does something else.
-  registerHandler('closePhone', () => {
+  /**
+   * Lower whichever device is up.
+   *
+   * One function rather than the same two lines at each call site: the NUI handler, the
+   * keybind, and now both frames' power buttons all mean exactly this, and the tablet
+   * grew a power button (MICA-261) by being handed this rather than a third copy.
+   */
+  const closeFrame = () => {
     if (isBrowser()) visible = false;
     closePhone();
-  });
+  };
+
+  // Always lowers the phone, from anywhere. Deliberately not "back at the top level":
+  // there is no state in which this does something else.
+  registerHandler('closePhone', closeFrame);
 
   const setFreelook = (state: boolean) => {
     if (isFreelook === state) return;
@@ -381,7 +390,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * The dev browser's stand-in for `openPhone` on the client.
    *
    * In game the phone is opened by `setVisible`; a browser has no client to send one, so
-   * without this the page would load to the "Open gPhone" button and every e2e spec would
+   * without this the page would load to the reopen button and every e2e spec would
    * have to click it first. Opening here rather than seeding `visible = true` above is the
    * point of the exercise: `onMount` runs after initial render, so the frame is created by
    * a state change and its `transition:fly` actually plays — the same path the game takes.
@@ -445,8 +454,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       if (device) {
         event.preventDefault();
         if (visible && device === $activeDevice) {
-          visible = false;
-          closePhone();
+          closeFrame();
         } else {
           setActiveDevice(device);
           visible = true;
@@ -638,7 +646,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       ></span>
       <span class="relative inline-flex h-2 w-2 rounded-full bg-emerald-500"></span>
     </span>
-    {$t('shell.openPhone')}
+    {$t('shell.openDevice', { brand: $descriptor.brand })}
   </button>
 {/if}
 
@@ -677,16 +685,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         style="width: {$frame.width}px; height: {$frame.height}px; transform: scale({$phoneScale});"
       >
         {#if $descriptor.id === 'tablet'}
-          <TabletFrame children={screen} />
+          <TabletFrame onClose={closeFrame} children={screen} />
         {:else}
           <PhoneFrame
             transparent={$currentApp.id === 'camera' && !$isPreviewingPhoto}
-            onClose={() => {
-              if (isBrowser()) {
-                visible = false;
-              }
-              closePhone();
-            }}
+            onClose={closeFrame}
             children={screen}
           />
         {/if}

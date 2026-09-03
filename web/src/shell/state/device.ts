@@ -22,7 +22,7 @@ import { usePersisted, type PersistedOptions } from '../../../../sdk/host/usePer
  * from it, so switching device is one `set` rather than a tour of the shell.
  *
  * Distinct from `phoneOpen.ts`'s `openDevice`, which says whether a frame is *on screen*.
- * A closed shell still has an active device: the browser's "Open gPhone" button opens
+ * A closed shell still has an active device: the browser's reopen button raises
  * whichever this names, and the tablet's persisted home grid has to be the one that loads
  * when `?device=tablet` boots the page closed and the first open follows.
  *

@@ -1,6 +1,5 @@
 {
-  "brand": "gPhone",
-  "openPhone": "Open gPhone",
+  "openDevice": "Open {brand}",
   "homeScreen": "Home Screen",
   "dock": "Dock",
   "swipeUpForApps": "Swipe up for apps",

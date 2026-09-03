@@ -18,6 +18,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { homeGridColumns, homeGridRows } from './state/homeGridSettings';
   import { homeGridItems, openFolderId, type HomeGridItem } from './state/homeGrid';
   import { wallpaperNeedsContrast } from './state/wallpaper';
+  import { descriptor } from './state/device';
   import {
     iconDragState,
     resolveDropAtPoint,
@@ -233,7 +234,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
          3px `surface`-coloured stroke, so what it is really read against is `surface` —
          16.28:1 in light and 14.30:1 in dark, whatever is behind it. -->
     <h1 class="text-4xl font-bold tracking-tight" class:text-on-wallpaper={$wallpaperNeedsContrast}>
-      {$t('shell.brand')}
+      {$descriptor.brand}
     </h1>
   </div>
 

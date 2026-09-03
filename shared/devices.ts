@@ -47,6 +47,17 @@ export interface DeviceDescriptor {
   id: DeviceId;
   /** Shown in FiveM's Key Bindings menu and gPhone's own Settings. */
   label: string;
+  /**
+   * The wordmark the launcher paints over the wallpaper.
+   *
+   * Here rather than in `shell/locales/*.json`, where it used to be one `shell.brand`
+   * key: it is a product name, not prose -- `en` and `de` both said `gPhone`, which is
+   * what a string that is never actually translated looks like -- and it is a fact
+   * about the device, so it belongs beside the other facts about the device. A third
+   * entry in this table names itself; it does not also need a locale key adding to
+   * every language file.
+   */
+  brand: string;
   frame: DeviceFrame;
   /** The bezel drawn around the screen, in design px. */
   bezel: number;
@@ -96,6 +107,7 @@ export const DEVICES: Readonly<Record<DeviceId, DeviceDescriptor>> = {
   phone: {
     id: 'phone',
     label: 'Phone',
+    brand: 'gPhone',
     // 17:8 exactly; the screen inside the 8px bezel is 384x834, within a hair of the 19.5:9
     // every phone since the iPhone X has used. `display.ts` has the longer reasoning.
     frame: { width: 400, height: 850 },
@@ -119,6 +131,7 @@ export const DEVICES: Readonly<Record<DeviceId, DeviceDescriptor>> = {
   tablet: {
     id: 'tablet',
     label: 'Tablet',
+    brand: 'gTablet',
     // 16:10, the owner's call (MICA-252): wide enough for a two-pane MDT layout, and it
     // fits a 1080p screen at design size with the frame margin to spare.
     frame: { width: 1280, height: 800 },
@@ -133,10 +146,12 @@ export const DEVICES: Readonly<Record<DeviceId, DeviceDescriptor>> = {
       drawerColumns: 8
     },
     // The lock screen follows the passcode row, which is per device only once MICA-264
-    // gives a tablet its own identity; calls and the camera are the phone's.
+    // gives a tablet its own identity; calls and the camera are the phone's. The power
+    // and volume keys are not: a tablet has them like any other handheld, and without
+    // them the only way to put this one down was its keybind.
     chrome: {
       holePunch: false,
-      hardwareButtons: false,
+      hardwareButtons: true,
       lockScreen: false,
       calls: false,
       camera: false
