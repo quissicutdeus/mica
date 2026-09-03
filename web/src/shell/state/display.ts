@@ -5,8 +5,7 @@
 import { captureZoomBoost } from '../../../../sdk/host/seam/captureZoom';
 import { derived, get, writable } from 'svelte/store';
 import { DEVICES, type DeviceFrame } from '@gphone/shared/devices';
-import { usePersisted } from '../../../../sdk/host/usePersisted';
-import { frame } from './device';
+import { frame, perDevice } from './device';
 import { isTypingTarget } from './keybinds';
 
 /**
@@ -174,9 +173,17 @@ const sanitizeSize = (value: unknown): number => {
   return n;
 };
 
-export const displaySize = usePersisted<number>('settings', 'displaySize', DISPLAY_SIZE_DEFAULT, {
-  sanitize: sanitizeSize
-});
+/**
+ * One value per device, following `activeDevice` (MICA-261). A 40% phone is a phone
+ * held close; a 40% tablet is unreadable, and the two are size-limited on different
+ * windows anyway. The phone's key is unchanged, so an existing setting still means the
+ * phone; the tablet's is `displaySize:tablet`.
+ */
+export const displaySize = perDevice<number>(
+  'displaySize',
+  () => DISPLAY_SIZE_DEFAULT,
+  (value) => sanitizeSize(value)
+);
 
 export const setDisplaySize = (size: number) => displaySize.set(size);
 

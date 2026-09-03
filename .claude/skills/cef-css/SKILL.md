@@ -75,12 +75,13 @@ Native CSS nesting **is** fine — postcss handles it.
 
 **The screen is a fixed size per device — 400×850 on the phone, 1280×800 on the
 tablet (`shared/devices.ts`) — and an app must not try to be responsive.** Those
-numbers live in `shell/state/display.ts` and nowhere else. Settings > Display
-resizes the phone with one `transform: scale()` on a wrapper in `Shell.svelte` —
-a zoom, so the layout is identical at every size. Breakpoints (`sm:`, `md:`) and
-viewport units (`vh`, `vw`, `dvh`) respond to the _window_, which is not the
-phone, so they are always wrong. Size against the frame: `h-full`, `flex-1`, and
-the `safe-top` / `safe-bottom` insets.
+numbers live in the `DEVICES` table and nowhere else; `shell/state/device.ts`
+says which device is up and `shell/state/display.ts` decides its zoom.
+Settings > Display resizes the frame with one `transform: scale()` on a wrapper
+in `Shell.svelte`, per device — a zoom, so the layout is identical at every
+size. Breakpoints (`sm:`, `md:`) and viewport units (`vh`, `vw`, `dvh`) respond
+to the _window_, which is not the phone, so they are always wrong. Size against
+the frame: `h-full`, `flex-1`, and the `safe-top` / `safe-bottom` insets.
 
 **Inside `Screen`, fill with `min-h-0 flex-1` — never `h-full`, never bare
 `flex-1`.** `Screen`'s content box hands the app a definite height. `h-full` is

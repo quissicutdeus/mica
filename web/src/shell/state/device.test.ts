@@ -100,6 +100,16 @@ describe('a per-device setting', () => {
     expect(get(setting)).toBe(3);
   });
 
+  it('gives the tablet its own Display size', () => {
+    displaySize.set(40);
+    setActiveDevice('tablet');
+    expect(get(displaySize)).toBe(DISPLAY_SIZE_DEFAULT);
+    displaySize.set(90);
+    setActiveDevice('phone');
+    expect(get(displaySize)).toBe(40);
+    displaySize.set(DISPLAY_SIZE_DEFAULT);
+  });
+
   it('gives the tablet its own launcher grid, dock and home-grid items', () => {
     homeGridItems.set([{ position: 0, kind: 'app', appId: 'notes' }]);
     expect(get(homeGridColumns)).toBe(DEVICES.phone.launcher.columns);

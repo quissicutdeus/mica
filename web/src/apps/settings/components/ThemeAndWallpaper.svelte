@@ -38,7 +38,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   const { media, fullMedia } = useMedia();
   const { toast } = usePhoneNotification();
   const { formattedTime } = useClock();
-  const { phoneBox } = useDisplay();
+  const { phoneBox, frame } = useDisplay();
+  // The preview is the device on screen (MICA-261): its ratio, and wider when landscape.
+  const landscape = $derived($frame.width > $frame.height);
 
   const wallpaper = $derived($wallpaperStore);
   const seed = $derived($activeSeed);
@@ -152,8 +154,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
            both simpler and guaranteed to match what the phone will actually do. Only the
            wallpaper is inline, because it is generated rather than a token. -->
       <div
-        class="border-outline shadow-elevation-3 relative flex w-[132px] flex-col overflow-hidden rounded-box border-2"
-        style={`aspect-ratio: 400 / 850; background: ${background};`}
+        class="border-outline shadow-elevation-3 relative flex flex-col overflow-hidden rounded-box border-2 {landscape
+          ? 'w-1/3'
+          : 'w-[132px]'}"
+        style={`aspect-ratio: ${$frame.width} / ${$frame.height}; background: ${background};`}
       >
         <div class="text-on-surface text-label-small flex items-center justify-between px-2 pt-1.5">
           <span class:text-on-wallpaper={wallpaper.type === 'image'}>{$formattedTime}</span>
