@@ -9,6 +9,7 @@ import './Location';
 import './Mail';
 import './Message';
 import './Music';
+import './PhoneItem';
 import './Relay';
 import './RemoteApps';
 import './Settings';

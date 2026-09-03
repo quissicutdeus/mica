@@ -465,6 +465,7 @@ you intend to change something.
 
 ```cfg
 set gphone_standalone ""
+set gphone_phone_item ""
 set gphone_admin_aces "gphone.admin,command"
 set gphone_rate_limit 60
 set gphone_lockscreen_scrypt_cost 16384
@@ -494,6 +495,7 @@ setr gphone_addon_catalog ""
 | Convar                           | Type                 | Default                | Controls                                                   |
 | -------------------------------- | -------------------- | ---------------------- | ---------------------------------------------------------- |
 | `gphone_standalone`              | boolean              | empty (off)            | Run with no framework resource at all                      |
+| `gphone_phone_item`              | item name            | empty (off)            | Gate the phone on holding this inventory item              |
 | `gphone_admin_aces`              | comma-separated aces | `gphone.admin,command` | Who counts as a gPhone admin                               |
 | `gphone_rate_limit`              | integer              | `60`                   | Requests per player, per action, per minute                |
 | `gphone_lockscreen_scrypt_cost`  | power of two         | `16384`                | Lock screen passcode hashing cost — lower on weak hardware |
@@ -825,6 +827,56 @@ schema by itself gives an operator no moment at which to take a backup and no
 say in whether today is the day, so schema changes are applied deliberately, by
 `gphoneschema apply` from the console. If the line is in your `server.cfg` it is
 inert, and can be deleted.
+
+### The phone as an item
+
+Set `gphone_phone_item` to the name of an inventory item and the phone becomes
+something a player has to be holding. Using the item opens the phone; the
+keybind still works while they hold at least one; losing the last one closes the
+phone and keeps it closed, exactly as `SetPhoneEnabled(false)` would, until one
+is picked up again. The two are independent: a phone a job has confiscated stays
+confiscated whatever the inventory says, and the other way round. Empty, which
+is the default, gates nothing.
+
+The server decides, every time. A client never reports what it holds; it asks
+the server to look again when its inventory changes, and the server counts
+through the inventory and pushes the answer. A modified client gets exactly the
+phone its real inventory earns.
+
+**Define the item for your inventory first.** qb-core and ox_inventory both ship
+an item named `phone`, so on those `set gphone_phone_item "phone"` needs nothing
+else. Otherwise:
+
+```lua
+-- ox_inventory (qbx_core, or ox_inventory on qb-core or ESX): data/items.lua
+['phone'] = {
+    label = 'Phone',
+    weight = 190,
+    stack = false,
+    close = true,
+    description = 'Ring ring'
+},
+
+-- qb-core with qb-inventory: shared/items.lua
+phone = { name = 'phone', label = 'Phone', weight = 700, type = 'item', image = 'phone.png',
+          unique = true, useable = true, shouldClose = true, description = 'Ring ring' },
+```
+
+```sql
+-- es_extended with its own inventory: the items table
+INSERT INTO items (name, label, weight) VALUES ('phone', 'Phone', 1);
+```
+
+The item has to be **usable** in the inventory's own terms (`useable = true` on
+qb-core; ox_inventory and ESX make every registered item usable), or using it
+does nothing and only the keybind opens the phone.
+
+**Standalone ignores the gate.** With no framework there is no inventory to hold
+the item in, so `gphone_standalone` with `gphone_phone_item` set is reported
+once at start and the phone opens as it always did. A framework whose inventory
+gPhone cannot count through (none of ox_inventory's `GetItemCount`, a qb
+player's `GetItemByName`, or an ESX xPlayer's `getInventoryItem`) is reported
+the same way, and the phone is left open rather than locked for everyone.
 
 ---
 

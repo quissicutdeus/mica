@@ -63,6 +63,24 @@ onNet('gphone:client:shell:setEnabled', (enabled: unknown) => {
 });
 
 /**
+ * The item gate (MICA-229). The server counts and pushes; this only remembers, and closes
+ * the phone when the last phone item has just gone -- the same force-close `setEnabled` does,
+ * for the same reason.
+ */
+onNet('gphone:client:shell:phoneItem', (payload: { gated?: unknown; held?: unknown }) => {
+  PhoneState.setItemGate(payload?.gated === true, payload?.held === true);
+  if (!PhoneState.isEnabled() && PhoneState.isOpen()) {
+    closePhone();
+  }
+});
+
+/** Using the phone item opens the phone. Refused while disabled, like `openApp` below. */
+onNet('gphone:client:shell:open', () => {
+  if (!PhoneState.isEnabled() || PhoneState.isOpen()) return;
+  openPhone();
+});
+
+/**
  * The `OpenApp` export. Force-opens the phone and lands on the named app, the same
  * `appId?key=value` shape a notification's deep link already carries.
  *

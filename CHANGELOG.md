@@ -296,6 +296,16 @@ that sets none of them changes nothing for your players.
 
 ### Added
 
+**The phone can be an item (MICA-229).** Set `gphone_phone_item` to the name
+of an inventory item and the phone opens only for a player holding at least one:
+using the item opens it, the keybind works while they hold one, and losing the
+last one closes it the way `SetPhoneEnabled(false)` does, until one is picked up
+again. The server counts the item itself on every check, so a modified client
+cannot claim one. Empty, which is the default, changes nothing, and standalone
+ignores it. **Owner action only if you want the gate:** define the item for your
+inventory (README, "The phone as an item"; qb-core and ox_inventory already ship
+one named `phone`) and set the convar.
+
 **Every release now attaches the resource itself, prebuilt, as
 `gphone-<version>.zip` (MICA-220).** Unpack it into `resources` and
 `ensure gphone`: no Node, no pnpm, no build. It carries the manifest, stamped

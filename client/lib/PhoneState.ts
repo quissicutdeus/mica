@@ -14,6 +14,10 @@
 let phoneOpen = false;
 let typing = false;
 let enabled = true;
+// MICA-229: what the server last said about the phone item. Ungated until it says
+// otherwise, so a server with no gate never has to say so before the first open.
+let itemGated = false;
+let itemHeld = true;
 
 export const PhoneState = {
   isOpen: (): boolean => phoneOpen,
@@ -29,14 +33,25 @@ export const PhoneState = {
   },
 
   /**
-   * Whether the phone may be opened at all, set by `SetPhoneEnabled` for a job or an
-   * item that needs to confiscate it. `togglePhone` refuses to open while this is false,
-   * and disabling it while open force-closes it the same way `hideFrame` does.
+   * Whether the phone may be opened at all. Two things say no independently: `SetPhoneEnabled`
+   * (a job confiscating it) and the item gate (MICA-229: `gphone_phone_item` is set and this
+   * player holds none). Either alone keeps it shut, so neither can undo the other.
+   * `togglePhone` refuses to open while this is false, and either going false while open
+   * force-closes it the same way `hideFrame` does.
    */
-  isEnabled: (): boolean => enabled,
+  isEnabled: (): boolean => enabled && itemHeld,
 
   setEnabled: (value: boolean): void => {
     enabled = value;
+  },
+
+  /** Whether this server gates the phone on an item at all, so inventory changes are worth relaying. */
+  isItemGated: (): boolean => itemGated,
+
+  /** The server's last word on the item gate. Ungated means held, whatever `held` says. */
+  setItemGate: (gated: boolean, held: boolean): void => {
+    itemGated = gated;
+    itemHeld = !gated || held;
   },
 
   /**

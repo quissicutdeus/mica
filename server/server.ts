@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import './services';
+import './lib/phoneItem';
 import { BankingBridge } from './lib/BankingBridge';
 import { registerPublicApi } from './lib/publicApi';
 

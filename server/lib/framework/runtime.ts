@@ -402,3 +402,35 @@ export const removeInventoryItem = (
   );
   return true;
 };
+
+/**
+ * How many of an item a player holds, through whatever inventory this server has, or `null`
+ * when nothing here can count (MICA-229).
+ *
+ * The same walk `removeInventoryItem` makes, the other way round: ox_inventory first, because
+ * on a qbx server it *is* the inventory and the core's own `GetItemByName` reads a mirror ox
+ * maintains; then the qb player object; then ESX's xPlayer, which the ESX adapter keeps on
+ * `rawPlayer.xPlayer` beside the qb-shaped view.
+ *
+ * `null` rather than `0` when no inventory answers, deliberately. The one caller is a gate,
+ * and "nobody could count" must not read as "the player has none" -- that would lock every
+ * phone on a server whose inventory this cannot see. What the gate does with `null` is its
+ * decision, said out loud where it is made.
+ */
+export const countInventoryItem = (src: number, player: any, item: string): number | null => {
+  const counted = (value: unknown): number =>
+    typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+
+  if (exposes('ox_inventory', 'GetItemCount')) {
+    return counted(resource('ox_inventory').GetItemCount(src, item));
+  }
+  if (typeof player?.Functions?.GetItemByName === 'function') {
+    const found = player.Functions.GetItemByName(item);
+    return counted(found?.amount ?? found?.count);
+  }
+  const xPlayer = player?.xPlayer ?? player;
+  if (typeof xPlayer?.getInventoryItem === 'function') {
+    return counted(xPlayer.getInventoryItem(item)?.count);
+  }
+  return null;
+};

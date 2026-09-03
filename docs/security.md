@@ -111,7 +111,7 @@ the handler wrote, in either language.
 
 ### 2. Raw `onNet` handlers
 
-**Ten, across five files**, and they fall into two categories that need
+**Eleven, across six files**, and they fall into two categories that need
 different things said about them. They sit outside `ServiceEndpoint` because
 they answer fire-and-forget events with no callback id, so they cannot go
 through it.
@@ -126,12 +126,13 @@ not from this page:
 grep -rn "onNet(" server --include="*.ts" | grep -v __tests__
 ```
 
-**That prints twelve lines for ten handlers.** Two of them are not entry points:
-`ServiceEndpoint.ts`'s generic registrar, which is the machinery behind category
-1 of this document, and the worked example in `netGuard.ts`'s doc comment.
+**That prints thirteen lines for eleven handlers.** Two of them are not entry
+points: `ServiceEndpoint.ts`'s generic registrar, which is the machinery behind
+category 1 of this document, and the worked example in `netGuard.ts`'s doc
+comment.
 
 Keep both stages of the pipe if you reproduce it. The second one silently drops
-a thirteenth line — the copy of this very command inside `netGuard.ts`'s
+a fourteenth line — the copy of this very command inside `netGuard.ts`'s
 docblock, which matches `onNet(` and is filtered out only because it also quotes
 `__tests__`. Drop `grep -v __tests__` and the total moves for a reason that has
 nothing to do with the handlers.
@@ -160,7 +161,7 @@ reading its number out of the wrong sentence — which is the failure this whole
 section is about, so it is caught rather than trusted. Reword one of the four
 out of shape and it fails too, saying which.
 
-#### gphone-named — nine, every one guarded
+#### gphone-named — ten, every one guarded
 
 | Event                                  | Handler                           |
 | -------------------------------------- | --------------------------------- |
@@ -173,8 +174,9 @@ out of shape and it fails too, saying which.
 | `gphone:server:battery:load`           | `server/services/Battery.ts:320`  |
 | `gphone:server:contacts:share`         | `server/services/Contacts.ts:88`  |
 | `gphone:server:shell:setOpen`          | `server/lib/PhoneOpenState.ts:22` |
+| `gphone:server:shell:checkPhoneItem`   | `server/lib/phoneItem.ts:144`     |
 
-`guardNetEvent` in `server/lib/netGuard.ts` is the preamble for all nine,
+`guardNetEvent` in `server/lib/netGuard.ts` is the preamble for all ten,
 applying the same two checks in the same order the endpoint uses: rate limit
 first, then the authenticated player lookup — `getPlayer` walks the framework's
 player table and a flood should not make the server pay for that. Refused

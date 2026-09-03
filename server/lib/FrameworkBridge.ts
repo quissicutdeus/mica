@@ -8,6 +8,7 @@ import { qbAdapter } from './framework/qb';
 import { qbxAdapter } from './framework/qbx';
 import { reportStandaloneConflict, standaloneAdapter } from './framework/standalone';
 import {
+  countInventoryItem as countItemThroughInventory,
   removeInventoryItem as removeItemThroughInventory,
   type FrameworkAdapter,
   type FrameworkIdentity,
@@ -486,6 +487,15 @@ export class FrameworkBridge {
     count: number
   ): boolean {
     return removeItemThroughInventory(src, player, item, count);
+  }
+
+  /**
+   * How many of an item a loaded player holds, or `null` when no inventory here can say
+   * (MICA-229). `lib/phoneItem.ts` is the caller; `countInventoryItem` has the order it
+   * asks in and why `null` is not `0`.
+   */
+  public static countItem(player: FrameworkPlayer, item: string): number | null {
+    return countItemThroughInventory(player.source, player.rawPlayer, item);
   }
 
   /**

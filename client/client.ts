@@ -12,6 +12,7 @@ import { PhoneAnimation } from './game/PhoneAnimation';
 import { Freelook } from './game/Freelook';
 import { PhoneCamera } from './game/PhoneCamera';
 import { GAME_SCOPE_ACTIONS } from '@gphone/shared/keybinds';
+import { requestPhoneItemCheck } from './services/PhoneItem';
 
 // Send system time to NUI
 const sendTimeToNui = () => {
@@ -30,7 +31,12 @@ RegisterCommand(
 
     const open = !PhoneState.isOpen();
     // A disabled phone refuses to open at all; closing it is always allowed.
-    if (open && !PhoneState.isEnabled()) return;
+    if (open && !PhoneState.isEnabled()) {
+      // MICA-229: a refusal for want of the item is the moment to make sure the server's
+      // last word is current -- an inventory event can be missed, and this costs one request.
+      requestPhoneItemCheck();
+      return;
+    }
 
     if (open) {
       openPhone();
