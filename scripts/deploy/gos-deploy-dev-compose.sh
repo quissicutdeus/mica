@@ -19,7 +19,11 @@
 set -euo pipefail
 
 COMPOSE_FILE="/opt/fivem-dev/server-data/vendor/gos/compose.yaml"
-EXPECTED_SHA="88c13de5c40784af450283f0d4ff7e86d9982071baf667dd9040f1ded771ff0d"
+# Re-pinned for MICA-269: the gPhone -> gOS rename changed every
+# MICA_* variable and the image and container names in compose.yaml.
+# Reviewed before re-pinning, which is the whole point of this gate:
+# the diff is the rename and nothing structural.
+EXPECTED_SHA="7e803fb94fdf95ada841d88f07b1e4573af4329aa77b400c7c4169dcea04f661"
 ENV_FILE="/opt/fivem-dev/.env"
 FIVEM_PORT=30121
 
