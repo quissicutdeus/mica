@@ -1,5 +1,5 @@
 import { expect, type Page, type Locator } from '@playwright/test';
-import { DEVICES } from '@gphone/shared/devices';
+import { DEVICES, type DeviceId } from '@gphone/shared/devices';
 
 /**
  * The phone's design width, from the device table rather than restated. A spec drives the
@@ -36,17 +36,28 @@ const currentScale = async (page: Page) => (await frameBox(page)).width / PHONE_
  * instead of driving the drag gesture. `home-grid.spec.ts` is the one place that drives the
  * gesture for real, via `openAppDrawer`/`dragIconTo` below.
  */
-export async function seedHomeGrid(page: Page, appIds: string[]): Promise<void> {
-  await page.addInitScript((ids: string[]) => {
-    // An init script runs in every frame the page creates, and a `core: false` add-on runs
-    // in a sandboxed frame with an opaque origin, where reading `window.localStorage` throws
-    // a SecurityError — 155 uncaught page errors across one suite run, every one of them
-    // this line, none of them the phone's (MICA-206). The seed is for the shell's own
-    // document and nothing else, so it stops at the top window.
-    if (window !== window.top) return;
-    const items = ids.map((appId, position) => ({ position, kind: 'app', appId }));
-    window.localStorage.setItem('gphone:settings:homeGridItems', JSON.stringify(items));
-  }, appIds);
+export async function seedHomeGrid(
+  page: Page,
+  appIds: string[],
+  device: DeviceId = 'phone'
+): Promise<void> {
+  // The phone's key is the one it always was; every other device's is suffixed
+  // (`shell/state/device.ts`, MICA-259). Spelled here rather than imported: a spec
+  // drives the built page, not app source.
+  const key = device === 'phone' ? 'homeGridItems' : `homeGridItems:${device}`;
+  await page.addInitScript(
+    ({ ids, key }: { ids: string[]; key: string }) => {
+      // An init script runs in every frame the page creates, and a `core: false` add-on runs
+      // in a sandboxed frame with an opaque origin, where reading `window.localStorage` throws
+      // a SecurityError — 155 uncaught page errors across one suite run, every one of them
+      // this line, none of them the phone's (MICA-206). The seed is for the shell's own
+      // document and nothing else, so it stops at the top window.
+      if (window !== window.top) return;
+      const items = ids.map((appId, position) => ({ position, kind: 'app', appId }));
+      window.localStorage.setItem(`gphone:settings:${key}`, JSON.stringify(items));
+    },
+    { ids: appIds, key }
+  );
 }
 
 /**

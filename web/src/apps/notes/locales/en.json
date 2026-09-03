@@ -22,9 +22,12 @@
   "insertHeadingLevel": "Insert Heading {level}",
   "saving": "Saving...",
   "save": "Save",
+  "cancel": "Cancel",
   "search": "Search notes...",
   "noMatching": "No matching notes",
   "empty": "No notes yet",
+  "selectNote": "No note selected",
+  "selectNoteHint": "Pick a note from the list, or start a new one.",
   "deleteTitle": "Delete Note?",
   "deleteMessage": "Are you sure you want to delete \"{title}\"? This action cannot be undone.",
   "delete": "Delete"

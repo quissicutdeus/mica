@@ -10,6 +10,11 @@ export default defineApp({
   tile: { bg: 'bg-gray-700' },
   icon: Icon,
   description: 'Configure phone settings and preferences',
+  // The tablet ships a second root (`tablet.svelte`, MICA-261): the same panes, with the
+  // list left and the pane itself right, rather than the phone's drill-in. Every setting
+  // Settings owns is per player, not per device, so there is nothing here the wide frame
+  // cannot show.
+  devices: ['phone', 'tablet'],
   // `storage` because the Apps pane reads and clears what other apps have stored, `media`
   // because Display/Wallpaper accesses photos for wallpaper previews, and `music` because
   // Sound owns the music channel's volume and mute.

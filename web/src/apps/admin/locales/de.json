@@ -29,5 +29,8 @@
   "categoryImpersonation": "Identitätsmissbrauch",
   "categoryOther": "Sonstiges",
   "resolutionActioned": "Inhalt entfernt",
-  "resolutionDismissed": "Keine Maßnahme ergriffen"
+  "resolutionDismissed": "Keine Maßnahme ergriffen",
+  "reporter": "Gemeldet von",
+  "selectReport": "Meldung auswählen",
+  "selectReportHint": "Wähle links eine Meldung aus, um sie zu prüfen."
 }

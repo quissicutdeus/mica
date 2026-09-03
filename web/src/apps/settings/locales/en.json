@@ -1,5 +1,6 @@
 {
   "title": "Settings",
+  "tablet.sections": "Settings sections",
 
   "network.title": "Network",
   "network.subtitle": "Cellular service and Bluetooth proximity",

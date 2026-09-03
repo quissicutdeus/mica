@@ -29,5 +29,8 @@
   "categoryImpersonation": "Impersonation",
   "categoryOther": "Other",
   "resolutionActioned": "Content removed",
-  "resolutionDismissed": "No action taken"
+  "resolutionDismissed": "No action taken",
+  "reporter": "Reported by",
+  "selectReport": "Select a report",
+  "selectReportHint": "Pick a report on the left to review it."
 }

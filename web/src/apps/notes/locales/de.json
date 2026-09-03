@@ -22,9 +22,12 @@
   "insertHeadingLevel": "Überschrift {level} einfügen",
   "saving": "Speichern...",
   "save": "Speichern",
+  "cancel": "Abbrechen",
   "search": "Notizen durchsuchen...",
   "noMatching": "Keine passenden Notizen",
   "empty": "Noch keine Notizen",
+  "selectNote": "Keine Notiz ausgewählt",
+  "selectNoteHint": "Wähle links eine Notiz aus oder erstelle eine neue.",
   "deleteTitle": "Notiz löschen?",
   "deleteMessage": "Soll „{title}“ wirklich gelöscht werden? Das lässt sich nicht rückgängig machen.",
   "delete": "Löschen"

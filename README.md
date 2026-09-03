@@ -930,11 +930,13 @@ pnpm demo:down     # stop and remove
 pnpm demo:smoke    # probe a running container
 ```
 
-It binds to `127.0.0.1`, not every interface, and runs read-only with all
-capabilities dropped. This is not a development loop — there is no bind mount
-and no live reload, because `pnpm dev` already does that better. See
-[docs/demo-container.md](docs/demo-container.md) for stamping a real version
-into Settings > About, the `TZ` and port knobs, and what the gates check.
+Open `http://127.0.0.1:8080/?device=tablet` and it boots the 1280x800 tablet
+instead of the phone (MICA-252). It binds to `127.0.0.1`, not every interface,
+and runs read-only with all capabilities dropped. This is not a development loop
+— there is no bind mount and no live reload, because `pnpm dev` already does
+that better. See [docs/demo-container.md](docs/demo-container.md) for stamping a
+real version into Settings > About, the `TZ` and port knobs, and what the gates
+check.
 
 ### Scaffolding an App
 

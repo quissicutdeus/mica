@@ -19,7 +19,19 @@ export default defineApp({
    */
   preload: () => import('./store').then((m) => m.notes.load()),
   description: 'Create and store personal notes',
-  permissions: ['storage'],
+  permissions: ['storage', 'display'],
+  /**
+   * MICA-261: Notes is usable in the wide frame. It is `core: false`, so the shell
+   * cannot mount a second root for it — the add-on bundle has one entry, `index.svelte`
+   * (`web/vite.addon.config.ts`), and a separate tablet entry is MICA-265. So this is
+   * the "one root, two layouts" path: `index.svelte` reads `useDisplay().device` and
+   * renders `tablet.svelte` in the tablet frame. `tablet.svelte` is a real root all the
+   * same, so the day the add-on build learns about it nothing here has to move.
+   *
+   * `display` above is what pays for that read — the add-on build's permission scan
+   * refuses a manifest that understates what its code imports.
+   */
+  devices: ['phone', 'tablet'],
   // No `author`: it is written in this repo, so it inherits 'gPhone' from defineApp. It
   // claimed 'Community' back when that string was what kept it out of the launcher —
   // `core: false` does that now, and the author is free to be true.

@@ -33,6 +33,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import Sound from './panes/Sound.svelte';
   import Language from './panes/Language.svelte';
   import { registerMessages } from '@gphone/sdk';
+  import { createDevToolsUnlock } from './devToolsUnlock';
   import en from './locales/en.json';
   import de from './locales/de.json';
 
@@ -143,19 +144,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     ]
   });
 
-  /**
-   * Ten taps on the OS Version row reveals Developer Tools, the way Android reveals its
-   * developer options.
-   *
-   * The flag lives in a module-scope store rather than here, and is not persisted — see
-   * `store/devtools.ts`. It resets when the phone closes, so the row is absent on every
-   * fresh open until the taps are done again.
-   */
-  let devToolsTaps = $state(0);
-  let cancelTapReset: (() => void) | undefined;
   const { after } = useTimer();
-
-  const TAPS_TO_UNLOCK = 10;
 
   /**
    * Admin status comes from the shared store rather than a private fetch.
@@ -166,60 +155,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    */
   const { isAdmin } = useAdmin();
 
-  const tapBuildRow = () => {
-    if ($devToolsUnlocked) return;
-
-    if (!$isAdmin) {
-      // Say so outright. Silently counting to ten and then showing nothing reads as a
-      // broken build.
-      toast.show({
-        type: 'error',
-        app: 'settings',
-        message: $t('settings.devtools.adminRequired')
-      });
-      return;
-    }
-
-    devToolsTaps += 1;
-    cancelTapReset?.();
-    // Taps must be consecutive; drifting off resets the count.
-    cancelTapReset = after(2000, () => (devToolsTaps = 0));
-
-    const remaining = TAPS_TO_UNLOCK - devToolsTaps;
-    const title = $t('settings.devtools.title');
-
-    if (remaining <= 0) {
-      devToolsUnlocked.set(true);
-      devToolsTaps = 0;
-      cancelTapReset?.();
-      toast.show({
-        type: 'success',
-        app: 'settings',
-        title,
-        message: $t('settings.devtools.unlockedToast')
-      });
-    } else if (remaining <= 3) {
-      toast.show({
-        type: 'info',
-        app: 'settings',
-        title,
-        message: $t('settings.devtools.moreToUnlock', { remaining })
-      });
-    }
-  };
+  // The ten-taps unlock is shared with the tablet root, so it lives in its own module
+  // (MICA-261) and is handed the hooks only a component can resolve.
+  const devTools = createDevToolsUnlock({ t, toast, devToolsUnlocked, isAdmin, after });
 
   /** The row only appears with the ace *and* the ten taps — in a browser too. */
   const showDevTools = $derived($isAdmin && $devToolsUnlocked);
 
   const hideDevTools = () => {
-    devToolsUnlocked.set(false);
-    devToolsTaps = 0;
+    devTools.hide();
     pane = 'root';
-    toast.show({
-      type: 'info',
-      app: 'settings',
-      message: $t('settings.devtools.hiddenToast')
-    });
   };
 
   // Admin status is granted server-side and can change between visits.
@@ -254,7 +199,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <DeveloperTools onhide={hideDevTools} />
   {:else if pane === 'about'}
     <About
-      ontapbuild={tapBuildRow}
+      ontapbuild={devTools.tap}
       onprivacy={() => (pane = 'privacy')}
       onlicense={() => (pane = 'license')}
     />

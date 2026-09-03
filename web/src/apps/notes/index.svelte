@@ -17,10 +17,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     SearchBar,
     Skeleton,
     AddIcon,
-    CheckCircleIcon,
     DocumentIcon,
     EditIcon,
-    ListBulletIcon,
     TrashIcon,
     filterByQuery,
     formatDate,
@@ -28,14 +26,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     renderMarkdown,
     useAppAction,
     useAppLevels,
+    useDisplay,
     useLocale,
     registerMessages,
     useScrollDetect,
-    useTimer,
     type AppProps,
-    type RecentlyDeletedItem,
-    fade
+    type RecentlyDeletedItem
   } from '@gphone/sdk';
+  import NoteEditor from './components/NoteEditor.svelte';
+  import TabletRoot from './tablet.svelte';
   import en from './locales/en.json';
   import de from './locales/de.json';
 
@@ -49,7 +48,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   const { notesStore: notes, getDeletedNotes, restoreNote } = useNotes();
   const notesLoaded = notes.loaded;
   const { busy, run } = useAppAction('notes');
-  const { after } = useTimer();
+
+  /**
+   * MICA-261. Notes is `core: false`, so the shell has one root to mount for it and the
+   * add-on bundle has one entry — the registry's "render `tablet.svelte` instead" path is
+   * for core apps. So the branch is here, in the one root, and `tablet.svelte` is a real
+   * root behind it rather than a partial: nothing about it has to change when the add-on
+   * build learns to ship a second entry (MICA-265).
+   *
+   * Everything below this line is the phone, unchanged.
+   */
+  const { device } = useDisplay();
 
   let { onback }: AppProps = $props();
 
@@ -60,8 +69,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   let searchQuery = $state('');
   let isScrolled = $state(false);
   let showDeleteConfirm = $state(false);
-  let showHeadingDropdown = $state(false);
-  let textAreaRef: HTMLTextAreaElement | null = $state(null);
   let showRecentlyDeleted = $state(false);
   let deletedNotes = $state<Note[]>([]);
 
@@ -189,52 +196,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   // note list's own scroller rather than `Screen`'s.
   useScrollDetect((scrolled) => (isScrolled = scrolled));
 
-  const focus = (node: HTMLElement) => {
-    node.focus();
-  };
-
   const startEditing = () => {
     if (selectedNote) {
       draftNote = { ...selectedNote }; // Create a copy
       isEditing = true;
     }
   };
-
-  /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access --
-     `textAreaRef` is `HTMLTextAreaElement | null` (svelte-check is clean on this
-     function) — typescript-eslint's project service just can't resolve its type
-     here, downstream of the `useTimer()`/facet generic lookup used lower in this
-     function. Tooling gap, not a real `any`. */
-  const insertMarkdown = (prefix: string, suffix: string = '', placeholder: string = '') => {
-    if (!textAreaRef) return;
-
-    const start = textAreaRef.selectionStart;
-    const end = textAreaRef.selectionEnd;
-    const text = textAreaRef.value;
-    const selectedText = text.substring(start, end) || placeholder;
-
-    const textBefore = text.substring(0, start);
-    const textAfter = text.substring(end);
-
-    const newText = textBefore + prefix + selectedText + suffix + textAfter;
-
-    // Update draft content
-    if (draftNote) {
-      draftNote.content = newText;
-    } else if (isAdding) {
-      newNote.content = newText;
-    }
-
-    // Restore focus and selection
-    after(0, () => {
-      if (textAreaRef) {
-        textAreaRef.focus();
-        const newCursorPos = start + prefix.length + selectedText.length + suffix.length;
-        textAreaRef.setSelectionRange(newCursorPos, newCursorPos);
-      }
-    });
-  };
-  /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
 
   // No sort here — the store keeps the list newest-edited-first however it changed, so a
   // note saved while the list is on screen moves immediately rather than at next load.
@@ -279,250 +246,130 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   {/if}
 {/snippet}
 
-<Screen title={app.title} onback={app.back} actions={headerActions} overlay={fabOverlay}>
-  {#if showRecentlyDeleted}
-    <!-- No `onpermanentdelete` (MICA-75-wiring): the server ships no hard-delete this
-         round — soft-deleted stays soft-deleted forever — so this is restore-only. -->
-    <RecentlyDeleted
-      items={recentlyDeletedItems}
-      onrestore={restoreDeletedNote}
-      emptyTitle={$t('notes.noDeleted')}
-      emptyDescription={$t('notes.noDeletedHint')}
-    />
-  {:else if !selectedNote}
-    {#if isAdding}
-      <div
-        class="animate-in fade-in slide-in-from-right bg-surface-container m-2 flex flex-1 flex-col space-y-3 rounded-box p-4"
-      >
-        <input
-          class="bg-surface-container-high placeholder-on-surface-variant w-full rounded-chip p-2 text-lg font-bold"
-          placeholder={$t('notes.titlePlaceholder')}
-          bind:value={newNote.title}
-          use:focus
-          disabled={$busy}
-        />
-        <div class="relative min-h-0 flex-1">
-          <textarea
-            class="no-scrollbar bg-surface-container-high placeholder-on-surface-variant h-full w-full resize-none rounded-chip p-2 pb-12"
-            placeholder={$t('notes.contentPlaceholder')}
-            bind:this={textAreaRef}
-            bind:value={newNote.content}
-            disabled={$busy}></textarea>
-          <!-- Markdown Toolbar -->
-          <div
-            class="border-outline bg-surface-container shadow-elevation-3 absolute right-2 bottom-2 left-2 flex justify-evenly gap-1 rounded-box border p-1"
-          >
-            <button
-              class="text-on-surface hover:bg-surface-container-high rounded-chip p-2 font-bold"
-              onclick={() => insertMarkdown('**', '**', 'bold')}
-              title={$t('notes.bold')}>B</button
-            >
-            <button
-              class="text-on-surface hover:bg-surface-container-high rounded-chip p-2 font-serif italic"
-              onclick={() => insertMarkdown('*', '*', 'italic')}
-              title={$t('notes.italic')}>I</button
-            >
-            <button
-              class="text-on-surface hover:bg-surface-container-high rounded-chip p-2"
-              onclick={() => insertMarkdown('- ', '', 'item')}
-              title={$t('notes.insertList')}
-            >
-              <ListBulletIcon />
-            </button>
-            <button
-              class="text-on-surface hover:bg-surface-container-high rounded-chip p-2"
-              onclick={() => insertMarkdown('- [ ] ', '', 'task')}
-              title={$t('notes.insertTask')}
-            >
-              <CheckCircleIcon />
-            </button>
-            <div class="relative">
-              <button
-                class="text-on-surface hover:bg-surface-container-high rounded-chip p-2 font-bold"
-                onclick={() => (showHeadingDropdown = !showHeadingDropdown)}
-                title={$t('notes.insertHeading')}>H</button
-              >
-              {#if showHeadingDropdown}
-                <div
-                  class="border-outline-variant bg-surface-container shadow-elevation-4 absolute right-0 bottom-full mb-2 flex min-w-[3rem] flex-col overflow-hidden rounded-box border"
-                  transition:fade={{ duration: 100 }}
-                >
-                  {#each [1, 2, 3, 4, 5, 6] as level (level)}
-                    <button
-                      class="border-outline-variant text-on-surface hover:bg-surface-container-high text-body-medium border-b px-3 py-2 text-left last:border-0"
-                      onclick={() => {
-                        insertMarkdown('#'.repeat(level) + ' ', '', `Heading ${level}`);
-                        showHeadingDropdown = false;
-                      }}
-                      title={$t('notes.insertHeadingLevel', { level })}
-                    >
-                      H{level}
-                    </button>
-                  {/each}
-                </div>
-              {/if}
-            </div>
-          </div>
-        </div>
-        <div class="flex space-x-2">
-          <Button
-            class="flex-1"
-            variant="secondary"
-            onclick={() => (isAdding = false)}
-            disabled={$busy}>{$t('notes.cancel')}</Button
-          >
-          <Button class="flex-1" onclick={addNote} disabled={$busy}>
-            {$busy ? $t('notes.saving') : $t('notes.save')}
-          </Button>
-        </div>
-      </div>
-    {:else}
-      <div class="no-scrollbar flex min-h-0 flex-1 flex-col space-y-2 overflow-y-auto p-2">
-        {#if !isAdding && $notes.length > 0}
-          <div class="mb-2">
-            <SearchBar
-              bind:value={searchQuery}
-              placeholder={$t('notes.search')}
-              focusRingClass="focus:ring-yellow-500"
-            />
-          </div>
-        {/if}
-
-        {#each filteredNotes as note (note.id)}
-          <ListItem
-            class="bg-surface-container mb-2 rounded-box p-4"
-            onclick={() => (selectedNote = note)}
-          >
-            <div class="flex w-full flex-col">
-              <h2 class="text-on-surface truncate text-lg font-bold">
-                {note.title || $t('notes.untitled')}
-              </h2>
-              <p class="text-on-surface-variant text-body-medium mt-1 line-clamp-2">
-                {note.content}
-              </p>
-              <span class="text-on-surface-variant text-body-small mt-2 block">
-                {formatDate(note.updated_at)}
-              </span>
-            </div>
-          </ListItem>
-        {/each}
-        {#if !$notesLoaded}
-          <Skeleton count={4} height="h-20" />
-        {:else if filteredNotes.length === 0}
-          <EmptyState title={searchQuery ? $t('notes.noMatching') : $t('notes.empty')}>
-            {#snippet icon()}
-              <DocumentIcon class="h-12 w-12" />
-            {/snippet}
-          </EmptyState>
-        {/if}
-      </div>
-    {/if}
-  {:else}
-    <!-- Detailed View / Edit -->
-    <div class="bg-surface relative flex min-h-0 flex-1 flex-col">
-      {#if isEditing && draftNote}
-        <div class="flex h-full flex-col gap-4 p-4">
-          <input
-            class="border-outline-variant bg-surface-container placeholder-on-surface-variant w-full rounded-chip border p-2 text-xl font-bold focus:border-yellow-500 focus:outline-none"
-            bind:value={draftNote.title}
-            placeholder={$t('notes.titlePlaceholder')}
-            disabled={$busy}
+{#if $device === 'tablet'}
+  <TabletRoot {onback} />
+{:else}
+  <Screen title={app.title} onback={app.back} actions={headerActions} overlay={fabOverlay}>
+    {#if showRecentlyDeleted}
+      <!-- No `onpermanentdelete` (MICA-75-wiring): the server ships no hard-delete this
+           round — soft-deleted stays soft-deleted forever — so this is restore-only. -->
+      <RecentlyDeleted
+        items={recentlyDeletedItems}
+        onrestore={restoreDeletedNote}
+        emptyTitle={$t('notes.noDeleted')}
+        emptyDescription={$t('notes.noDeletedHint')}
+      />
+    {:else if !selectedNote}
+      {#if isAdding}
+        <div
+          class="animate-in fade-in slide-in-from-right bg-surface-container m-2 flex flex-1 flex-col space-y-3 rounded-box p-4"
+        >
+          <NoteEditor
+            bind:title={newNote.title}
+            bind:content={newNote.content}
+            busy={$busy}
+            variant="add"
+            autofocusTitle
           />
-          <div class="relative min-h-0 flex-1">
-            <textarea
-              class="no-scrollbar border-outline-variant bg-surface-container placeholder-on-surface-variant text-body-medium h-full w-full resize-none rounded-chip border p-2 pb-12 font-mono focus:border-yellow-500 focus:outline-none"
-              bind:this={textAreaRef}
-              bind:value={draftNote.content}
-              placeholder={$t('notes.markdownPlaceholder')}
-              disabled={$busy}></textarea>
-            <!-- Markdown Toolbar -->
-            <div
-              class="border-outline bg-surface-container-high shadow-elevation-3 absolute right-2 bottom-2 left-2 flex justify-evenly gap-1 rounded-box border p-1 backdrop-blur"
-            >
-              <button
-                class="text-on-surface hover:bg-surface-container-highest rounded-chip p-2 font-bold"
-                onclick={() => insertMarkdown('**', '**', 'bold')}
-                title={$t('notes.bold')}>B</button
-              >
-              <button
-                class="text-on-surface hover:bg-surface-container-highest rounded-chip p-2 font-serif italic"
-                onclick={() => insertMarkdown('*', '*', 'italic')}
-                title={$t('notes.italic')}>I</button
-              >
-              <button
-                class="text-on-surface hover:bg-surface-container-highest rounded-chip p-2"
-                onclick={() => insertMarkdown('- ', '', 'item')}
-                title={$t('notes.insertList')}
-              >
-                <ListBulletIcon />
-              </button>
-              <button
-                class="text-on-surface hover:bg-surface-container-highest rounded-chip p-2"
-                onclick={() => insertMarkdown('- [ ] ', '', 'task')}
-                title={$t('notes.insertTask')}
-              >
-                <CheckCircleIcon />
-              </button>
-              <div class="relative">
-                <button
-                  class="text-on-surface hover:bg-surface-container-highest rounded-chip p-2 font-bold"
-                  onclick={() => (showHeadingDropdown = !showHeadingDropdown)}
-                  title={$t('notes.insertHeading')}>H</button
-                >
-                {#if showHeadingDropdown}
-                  <div
-                    class="border-outline-variant bg-surface-container shadow-elevation-4 absolute right-0 bottom-full mb-2 flex min-w-[3rem] flex-col overflow-hidden rounded-box border"
-                    transition:fade={{ duration: 100 }}
-                  >
-                    {#each [1, 2, 3, 4, 5, 6] as level (level)}
-                      <button
-                        class="border-outline-variant text-on-surface hover:bg-surface-container-high text-body-medium border-b px-3 py-2 text-left last:border-0"
-                        onclick={() => {
-                          insertMarkdown('#'.repeat(level) + ' ', '', `Heading ${level}`);
-                          showHeadingDropdown = false;
-                        }}
-                        title={$t('notes.insertHeadingLevel', { level })}
-                      >
-                        H{level}
-                      </button>
-                    {/each}
-                  </div>
-                {/if}
-              </div>
-            </div>
-          </div>
-
-          <div class="flex gap-2">
+          <div class="flex space-x-2">
             <Button
               class="flex-1"
-              variant="danger"
-              onclick={() => (showDeleteConfirm = true)}
-              disabled={$busy}>{$t('notes.delete')}</Button
+              variant="secondary"
+              onclick={() => (isAdding = false)}
+              disabled={$busy}>{$t('notes.cancel')}</Button
             >
-            <Button class="flex-1" onclick={updateNote} disabled={$busy}>
+            <Button class="flex-1" onclick={addNote} disabled={$busy}>
               {$busy ? $t('notes.saving') : $t('notes.save')}
             </Button>
           </div>
         </div>
       {:else}
-        <div class="no-scrollbar flex-1 overflow-y-auto p-4">
-          <div class="prose max-w-none">
-            <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-            {@html renderMarkdown(selectedNote.content)}
-          </div>
+        <div class="no-scrollbar flex min-h-0 flex-1 flex-col space-y-2 overflow-y-auto p-2">
+          {#if !isAdding && $notes.length > 0}
+            <div class="mb-2">
+              <SearchBar
+                bind:value={searchQuery}
+                placeholder={$t('notes.search')}
+                focusRingClass="focus:ring-yellow-500"
+              />
+            </div>
+          {/if}
+
+          {#each filteredNotes as note (note.id)}
+            <ListItem
+              class="bg-surface-container mb-2 rounded-box p-4"
+              onclick={() => (selectedNote = note)}
+            >
+              <div class="flex w-full flex-col">
+                <h2 class="text-on-surface truncate text-lg font-bold">
+                  {note.title || $t('notes.untitled')}
+                </h2>
+                <p class="text-on-surface-variant text-body-medium mt-1 line-clamp-2">
+                  {note.content}
+                </p>
+                <span class="text-on-surface-variant text-body-small mt-2 block">
+                  {formatDate(note.updated_at)}
+                </span>
+              </div>
+            </ListItem>
+          {/each}
+          {#if !$notesLoaded}
+            <Skeleton count={4} height="h-20" />
+          {:else if filteredNotes.length === 0}
+            <EmptyState title={searchQuery ? $t('notes.noMatching') : $t('notes.empty')}>
+              {#snippet icon()}
+                <DocumentIcon class="h-12 w-12" />
+              {/snippet}
+            </EmptyState>
+          {/if}
         </div>
       {/if}
+    {:else}
+      <!-- Detailed View / Edit -->
+      <div class="bg-surface relative flex min-h-0 flex-1 flex-col">
+        {#if isEditing && draftNote}
+          <div class="flex h-full flex-col gap-4 p-4">
+            <NoteEditor
+              bind:title={draftNote.title}
+              bind:content={draftNote.content}
+              busy={$busy}
+              variant="edit"
+            />
 
-      {#if showDeleteConfirm}
-        <ConfirmDialog
-          title={$t('notes.deleteTitle')}
-          message={$t('notes.deleteMessage', { title: selectedNote.title || $t('notes.untitled') })}
-          confirmText={$t('notes.delete')}
-          isLoading={$busy}
-          oncancel={() => (showDeleteConfirm = false)}
-          onconfirm={deleteNote}
-        />
-      {/if}
-    </div>
-  {/if}
-</Screen>
+            <div class="flex gap-2">
+              <Button
+                class="flex-1"
+                variant="danger"
+                onclick={() => (showDeleteConfirm = true)}
+                disabled={$busy}>{$t('notes.delete')}</Button
+              >
+              <Button class="flex-1" onclick={updateNote} disabled={$busy}>
+                {$busy ? $t('notes.saving') : $t('notes.save')}
+              </Button>
+            </div>
+          </div>
+        {:else}
+          <div class="no-scrollbar flex-1 overflow-y-auto p-4">
+            <div class="prose max-w-none">
+              <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+              {@html renderMarkdown(selectedNote.content)}
+            </div>
+          </div>
+        {/if}
+
+        {#if showDeleteConfirm}
+          <ConfirmDialog
+            title={$t('notes.deleteTitle')}
+            message={$t('notes.deleteMessage', {
+              title: selectedNote.title || $t('notes.untitled')
+            })}
+            confirmText={$t('notes.delete')}
+            isLoading={$busy}
+            oncancel={() => (showDeleteConfirm = false)}
+            onconfirm={deleteNote}
+          />
+        {/if}
+      </div>
+    {/if}
+  </Screen>
+{/if}

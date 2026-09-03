@@ -165,7 +165,33 @@ export default defineConfig({
      */
     {
       name: 'chromium',
+      // The tablet specs run under their own project below, on a window that fits the
+      // frame; here they would only ever see it size-limited.
+      testIgnore: /tablet\//,
       use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 960 } }
+    },
+    /**
+     * The tablet (MICA-261): every spec under `e2e/tablet/`, on a window with room for
+     * the 1280x800 frame and its margins (1312x832 is the floor; 1440x1000 leaves some
+     * zoom either way). The privacy seed is repeated for the reason `chromium-light`
+     * repeats it: a project-level `storageState` replaces the top-level one.
+     */
+    {
+      name: 'tablet',
+      testMatch: /tablet\//,
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1440, height: 1000 },
+        storageState: {
+          cookies: [],
+          origins: [
+            {
+              origin: `http://127.0.0.1:${PORT}`,
+              localStorage: [{ name: 'gphone:settings:privacyNoticeSeen', value: 'true' }]
+            }
+          ]
+        }
+      }
     },
     /**
      * The colour-asserting specs again, in light.

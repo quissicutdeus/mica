@@ -8,19 +8,21 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import {
     Screen,
     EmptyState,
-    ConfirmDialog,
     SegmentedControl,
     useAppAction,
     useLocale,
     registerMessages,
     useReports,
     onAppForeground,
-    formatRelativeTime,
     type AppProps
   } from '@gphone/sdk';
   import type { Report } from '@gphone/shared/types';
   import en from './locales/en.json';
   import de from './locales/de.json';
+  import PendingReportCard from './components/PendingReportCard.svelte';
+  import HistoryRow from './components/HistoryRow.svelte';
+  import ResolveDialog from './components/ResolveDialog.svelte';
+  import type { ResolveAction } from './components/labels';
 
   // MICA-215: the moderation queue reads its strings out of a catalog like every other
   // app, so a server whose admins do not read English is not stuck with this screen.
@@ -41,21 +43,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   type Tab = 'pending' | 'history';
   let tab = $state<Tab>('pending');
-  let confirming = $state<{ report: Report; action: 'moderate' | 'dismiss' } | null>(null);
-
-  const CATEGORY_LABELS = $derived<Record<string, string>>({
-    spam: $t('admin.categorySpam'),
-    harassment: $t('admin.categoryHarassment'),
-    threats: $t('admin.categoryThreats'),
-    sexual: $t('admin.categorySexual'),
-    impersonation: $t('admin.categoryImpersonation'),
-    other: $t('admin.categoryOther')
-  });
-
-  const RESOLUTION_LABELS = $derived<Record<string, string>>({
-    actioned: $t('admin.resolutionActioned'),
-    dismissed: $t('admin.resolutionDismissed')
-  });
+  let confirming = $state<{ report: Report; action: ResolveAction } | null>(null);
 
   // Refreshed on every visit: reports are filed by other players and nothing pushes
   // them here, so a queue fetched once at open would be stale the moment it mattered.
@@ -65,13 +53,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   });
 
   /** Every decision closes its confirmation, whether or not the server agreed. */
-  const decide = async (work: () => Promise<void>, success: string) => {
-    await run(work, { success });
+  const decide = async (report: Report, action: ResolveAction, success: string) => {
+    await run(() => resolveReport(report.id, action), { success });
     confirming = null;
   };
-
-  /** A photo's stored preview is a base64 data URI; anything else is text. */
-  const isImage = (preview?: string) => Boolean(preview?.startsWith('data:image'));
 </script>
 
 <Screen title={$t('admin.title')} {onback}>
@@ -99,65 +84,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       {:else}
         <div class="space-y-4">
           {#each $pendingReports as report (report.id)}
-            <div class="bg-surface-container text-body-medium overflow-hidden rounded-box">
-              <div class="flex items-start justify-between gap-3 p-4">
-                <div class="min-w-0">
-                  <p class="text-error font-medium">
-                    {CATEGORY_LABELS[report.category] ?? report.category}
-                  </p>
-                  <p class="text-on-surface-variant text-body-small mt-0.5">
-                    {$t('admin.reported', { when: formatRelativeTime(report.created_at) })}
-                  </p>
-                </div>
-                <span
-                  class="bg-surface text-on-surface-variant text-label-small shrink-0 rounded-chip px-2 py-0.5 font-mono"
-                >
-                  #{report.id}
-                </span>
-              </div>
-
-              <!-- Captured when the report was filed, so it still says what was reported
-                   after the content is gone. Another player's text: rendered as text. -->
-              <div class="border-outline-variant border-t px-4 py-3">
-                {#if isImage(report.target_preview)}
-                  <img
-                    src={report.target_preview}
-                    alt=""
-                    class="max-h-40 rounded-box object-contain"
-                  />
-                {:else}
-                  <p class="text-on-surface break-words whitespace-pre-wrap">
-                    {report.target_preview || $t('admin.contentUnavailable')}
-                  </p>
-                {/if}
-                {#if report.note}
-                  <p
-                    class="border-outline text-on-surface-variant text-body-small mt-2 border-l-2 pl-2"
-                  >
-                    {report.note}
-                  </p>
-                {/if}
-              </div>
-
-              <div class="bg-surface-container-high grid grid-cols-2 gap-px">
-                <button
-                  type="button"
-                  disabled={$busy}
-                  onclick={() => (confirming = { report, action: 'dismiss' })}
-                  class="bg-surface-container text-on-surface hover:bg-surface-container-high duration-short ease-standard cursor-pointer py-3 font-medium transition-colors disabled:opacity-50"
-                >
-                  {$t('admin.allow')}
-                </button>
-                <button
-                  type="button"
-                  disabled={$busy}
-                  onclick={() => (confirming = { report, action: 'moderate' })}
-                  class="bg-surface-container text-error hover:bg-surface-container-high duration-short ease-standard cursor-pointer py-3 font-medium transition-colors disabled:opacity-50"
-                >
-                  {$t('admin.removeForEveryone')}
-                </button>
-              </div>
-            </div>
+            <PendingReportCard
+              {report}
+              busy={$busy}
+              onallow={() => (confirming = { report, action: 'dismiss' })}
+              onremove={() => (confirming = { report, action: 'moderate' })}
+            />
           {/each}
         </div>
       {/if}
@@ -166,39 +98,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     {:else}
       <div class="space-y-3">
         {#each $resolvedReports as report (report.id)}
-          <div class="bg-surface-container text-body-medium overflow-hidden rounded-box">
-            <div class="flex items-start justify-between gap-3 p-4">
-              <div class="min-w-0">
-                <p class="text-on-surface font-medium">
-                  {CATEGORY_LABELS[report.category] ?? report.category}
-                </p>
-                <p
-                  class="text-body-small mt-0.5 {report.resolution === 'actioned'
-                    ? 'text-error'
-                    : 'text-on-surface-variant'}"
-                >
-                  {RESOLUTION_LABELS[report.resolution] ?? report.resolution} ·
-                  {formatRelativeTime(report.updated_at)}
-                </p>
-              </div>
-              <button
-                type="button"
-                disabled={$busy}
-                onclick={() =>
-                  run(() => reopenReport(report.id), {
-                    success: $t('admin.reopened')
-                  })}
-                class="border-outline text-on-surface hover:bg-surface-container-high duration-short ease-standard text-body-small shrink-0 cursor-pointer rounded-box border px-3 py-1.5 transition-colors disabled:opacity-50"
-              >
-                {$t('admin.undo')}
-              </button>
-            </div>
-            <p
-              class="border-outline-variant text-on-surface-variant text-body-small truncate border-t px-4 py-2"
-            >
-              {isImage(report.target_preview) ? $t('admin.photo') : report.target_preview || '—'}
-            </p>
-          </div>
+          <HistoryRow
+            {report}
+            busy={$busy}
+            onundo={() => run(() => reopenReport(report.id), { success: $t('admin.reopened') })}
+          />
         {/each}
       </div>
     {/if}
@@ -206,21 +110,5 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </Screen>
 
 {#if confirming}
-  <ConfirmDialog
-    title={confirming.action === 'moderate' ? $t('admin.removeTitle') : $t('admin.allowTitle')}
-    message={confirming.action === 'moderate'
-      ? $t('admin.removeMessage')
-      : $t('admin.allowMessage')}
-    confirmText={confirming.action === 'moderate'
-      ? $t('admin.confirmRemove')
-      : $t('admin.confirmAllow')}
-    confirmVariant={confirming.action === 'moderate' ? 'danger' : 'primary'}
-    onconfirm={() =>
-      confirming &&
-      decide(
-        () => resolveReport(confirming!.report.id, confirming!.action),
-        confirming.action === 'moderate' ? $t('admin.contentRemoved') : $t('admin.reportClosed')
-      )}
-    oncancel={() => (confirming = null)}
-  />
+  <ResolveDialog pending={confirming} onconfirm={decide} oncancel={() => (confirming = null)} />
 {/if}

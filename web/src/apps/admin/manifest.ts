@@ -26,5 +26,8 @@ export default defineApp({
   // Installed like any other core app, but the home screen hides it from players
   // without an admin ace. The server gates the queue and every action independently.
   core: true,
-  requiresAdmin: true
+  requiresAdmin: true,
+  // MICA-261: the queue is a list and a decision, which is the two-pane shape the wide
+  // frame is for. `tablet.svelte` is the second root; the phone keeps `index.svelte`.
+  devices: ['phone', 'tablet']
 });

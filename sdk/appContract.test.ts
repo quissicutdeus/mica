@@ -17,6 +17,7 @@ import type { AppComponent } from './manifest';
 import { bundledAddOns, registeredApps } from '../web/src/shell/state/registry';
 
 import Admin from '../web/src/apps/admin/index.svelte';
+import AdminTablet from '../web/src/apps/admin/tablet.svelte';
 import Bank from '../web/src/apps/bank/index.svelte';
 import Blabber from '../web/src/apps/blabber/index.svelte';
 import Calculator from '../web/src/apps/calculator/index.svelte';
@@ -29,9 +30,11 @@ import Media from '../web/src/apps/media/index.svelte';
 import Messages from '../web/src/apps/messages/index.svelte';
 import Music from '../web/src/apps/music/index.svelte';
 import Notes from '../web/src/apps/notes/index.svelte';
+import NotesTablet from '../web/src/apps/notes/tablet.svelte';
 import Phone from '../web/src/apps/phone/index.svelte';
 import Places from '../web/src/apps/places/index.svelte';
 import Settings from '../web/src/apps/settings/index.svelte';
+import SettingsTablet from '../web/src/apps/settings/tablet.svelte';
 import Snek from '../web/src/apps/snek/index.svelte';
 import Store from '../web/src/apps/store/index.svelte';
 
@@ -72,12 +75,16 @@ const APPS: Record<string, AppComponent> = {
 };
 
 /**
- * Every `tablet.svelte` an app ships, held to `AppProps` the same way (MICA-260). Empty
- * until MICA-261 lands the first three; the test below keeps it equal to what is on disk
- * and refuses a tablet root on an app whose manifest does not list `'tablet'` — a root
- * nothing can ever render.
+ * Every `tablet.svelte` an app ships, held to `AppProps` the same way (MICA-260). The
+ * test below keeps it equal to what is on disk and refuses a tablet root on an app whose
+ * manifest does not list `'tablet'` — a root nothing can ever render. The first three are
+ * MICA-261's reference apps.
  */
-const TABLET_ROOTS: Record<string, AppComponent> = {};
+const TABLET_ROOTS: Record<string, AppComponent> = {
+  admin: AdminTablet,
+  notes: NotesTablet,
+  settings: SettingsTablet
+};
 
 // MICA-172: `__dirname` is `sdk/` at the repo root now. One hop up is the repo root,
 // and the phone it reasons about is its sibling `web/`.

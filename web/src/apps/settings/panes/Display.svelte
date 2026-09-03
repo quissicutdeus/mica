@@ -15,6 +15,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     useDisplayWrite,
     useLocale
   } from '@gphone/sdk';
+  import { DEVICES } from '@gphone/shared/devices';
   import ThemeAndWallpaper from '../components/ThemeAndWallpaper.svelte';
 
   const { t } = useLocale();
@@ -27,20 +28,32 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   const { is24Hour } = useClock();
   const { setIs24Hour } = useClockWrite();
   const {
+    device,
     displaySize,
     displaySizeDefault,
     phoneBox,
     isSizeLimited,
     homeGridColumns,
     homeGridRows,
-    homeGridColumnsMin,
-    homeGridColumnsMax,
-    homeGridRowsMin,
-    homeGridRowsMax,
     motionPreference,
     reducedMotion
   } = useDisplay();
   const { setDisplaySize, setHomeGridSize, setMotionPreference } = useDisplayWrite();
+
+  /**
+   * The stepper's bounds are the *active* device's, not the phone's (MICA-261).
+   *
+   * `useDisplay()` still exposes `homeGridColumnsMin`/`Max` and friends, but those are the
+   * phone's constants: on a tablet, whose launcher runs 6-10 columns by 3-5 rows, they
+   * would disable the + button three columns before the grid is actually full and let the
+   * − button walk the rows below what the frame draws. `DEVICES` is the one table both the
+   * launcher and this stepper read, so the two cannot disagree.
+   */
+  const launcherRanges = $derived(DEVICES[$device].launcher);
+  const columnsMin = $derived(launcherRanges.columnRange[0]);
+  const columnsMax = $derived(launcherRanges.columnRange[1]);
+  const rowsMin = $derived(launcherRanges.rowRange[0]);
+  const rowsMax = $derived(launcherRanges.rowRange[1]);
 
   /**
    * Three states rather than a switch, because "off" and "follow the system" are
@@ -117,7 +130,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <button
             type="button"
             aria-label={$t('settings.display.fewerColumns')}
-            disabled={$homeGridColumns <= homeGridColumnsMin}
+            disabled={$homeGridColumns <= columnsMin}
             onclick={() => setHomeGridSize($homeGridColumns - 1, $homeGridRows)}
             class="bg-surface text-on-surface hover:bg-surface-container-high text-body-medium h-7 w-7 cursor-pointer rounded-full disabled:cursor-default disabled:opacity-40"
             >−</button
@@ -126,7 +139,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <button
             type="button"
             aria-label={$t('settings.display.moreColumns')}
-            disabled={$homeGridColumns >= homeGridColumnsMax}
+            disabled={$homeGridColumns >= columnsMax}
             onclick={() => setHomeGridSize($homeGridColumns + 1, $homeGridRows)}
             class="bg-surface text-on-surface hover:bg-surface-container-high text-body-medium h-7 w-7 cursor-pointer rounded-full disabled:cursor-default disabled:opacity-40"
             >+</button
@@ -139,7 +152,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <button
             type="button"
             aria-label={$t('settings.display.fewerRows')}
-            disabled={$homeGridRows <= homeGridRowsMin}
+            disabled={$homeGridRows <= rowsMin}
             onclick={() => setHomeGridSize($homeGridColumns, $homeGridRows - 1)}
             class="bg-surface text-on-surface hover:bg-surface-container-high text-body-medium h-7 w-7 cursor-pointer rounded-full disabled:cursor-default disabled:opacity-40"
             >−</button
@@ -148,7 +161,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <button
             type="button"
             aria-label={$t('settings.display.moreRows')}
-            disabled={$homeGridRows >= homeGridRowsMax}
+            disabled={$homeGridRows >= rowsMax}
             onclick={() => setHomeGridSize($homeGridColumns, $homeGridRows + 1)}
             class="bg-surface text-on-surface hover:bg-surface-container-high text-body-medium h-7 w-7 cursor-pointer rounded-full disabled:cursor-default disabled:opacity-40"
             >+</button
