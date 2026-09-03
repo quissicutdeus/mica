@@ -96,6 +96,13 @@ The display name is derived from it — `journal` becomes "Journal",
 id cannot express it ("GPS"). Keep it under about eight characters or it
 truncates under the icon; that is why "Administration" is called "Admin".
 
+`devices` is which frames the app appears on: `['phone']` when absent, which is
+what every manifest written before the field existed means, or
+`['phone', 'tablet']` for an app that is usable at 1280x800 too. It is a
+visibility contract like `requires`: an app whose list omits the device on
+screen has no icon on it and `openApp` refuses it. See "Your app on the tablet"
+below before listing the tablet.
+
 `color` is a utility **class** from `sdk/app-utilities.css` (e.g.
 `bg-blue-500`), not a color. It is interpolated into a `class` attribute, so a
 hex string renders an icon with no background at all. `defineApp` warns about
@@ -129,20 +136,46 @@ Two things that look like noise and are not:
 - `onback: () => onback()` — the closure. `useAppLevels` reads the value once at
   init, so passing the prop by reference freezes whatever it was then.
 
+## Your app on the tablet
+
+The shell is one OS drawing one of two devices: the phone at 400x850 and the
+tablet at 1280x800 (`shared/devices.ts`). Neither is responsive, and an app is
+not asked to be responsive between them either. It is asked to say which it
+supports, and to ship a layout for each it names.
+
+Listing `'tablet'` in `devices` says the app is usable in the wide frame. Two
+ways to make that true:
+
+- **A second root.** Ship `tablet.svelte` beside `index.svelte` and the shell
+  renders it instead, inside the tablet frame, with the same `AppProps` and the
+  same hooks. Two panes, list left and detail right, is the shape the reference
+  apps take. `pnpm new:app <id> --tablet` scaffolds one, and
+  `sdk/appContract.test.ts` holds it to `AppProps` exactly as it holds
+  `index.svelte`, and refuses a `tablet.svelte` on an app whose manifest does
+  not list the tablet.
+- **One root, two layouts.** Read `useDisplay().device` (`'phone'` or
+  `'tablet'`) and `useDisplay().frame` (the design size) and branch. This is
+  what a `core: false` add-on does today: the sandboxed frame fills whichever
+  device is up, and a tablet-specific add-on root is a later ticket.
+
+An app that lists only the phone is simply absent on the tablet: no icon, no
+search result, no deep link. Nothing about its server half changes.
+
 ## The rules that are enforced, not suggested
 
 A test fails if you break these, so you will find out at `pnpm verify` rather
 than in game:
 
-| Rule                                                     | Enforced by                           |
-| -------------------------------------------------------- | ------------------------------------- |
-| Import from `@gphone/sdk` and nothing else               | `sdk/boundary.test.ts`                |
-| Accept `AppProps`; every app is checked against it       | `sdk/appContract.test.ts`             |
-| Ship `preload` if you ship a `badgeStore`                | `sdk/appContract.test.ts`             |
-| No new opacity modifiers                                 | `sdk/cef.test.ts`                     |
-| No `:has()`, `@container`, or other CSS Chrome 103 lacks | `pnpm lint:css` (stylelint + doiuse)  |
-| Every `fetchNui` action has a route                      | `server/__tests__/routes.test.ts`     |
-| Net events read `gphone:<side>:<app>:<action>`           | `server/__tests__/eventNames.test.ts` |
+| Rule                                                      | Enforced by                           |
+| --------------------------------------------------------- | ------------------------------------- |
+| Import from `@gphone/sdk` and nothing else                | `sdk/boundary.test.ts`                |
+| Accept `AppProps`; every app is checked against it        | `sdk/appContract.test.ts`             |
+| Ship `preload` if you ship a `badgeStore`                 | `sdk/appContract.test.ts`             |
+| A `tablet.svelte` belongs to an app that lists the tablet | `sdk/appContract.test.ts`             |
+| No new opacity modifiers                                  | `sdk/cef.test.ts`                     |
+| No `:has()`, `@container`, or other CSS Chrome 103 lacks  | `pnpm lint:css` (stylelint + doiuse)  |
+| Every `fetchNui` action has a route                       | `server/__tests__/routes.test.ts`     |
+| Net events read `gphone:<side>:<app>:<action>`            | `server/__tests__/eventNames.test.ts` |
 
 The first two exist because an add-on installed through the Store resolves
 `@gphone/sdk` and nothing else — every relative import out of an app is

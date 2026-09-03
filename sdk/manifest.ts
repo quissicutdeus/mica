@@ -4,6 +4,7 @@
 
 import type { Component, Snippet } from 'svelte';
 import type { Readable } from 'svelte/store';
+import { ALL_DEVICES, type DeviceId } from '@gphone/shared/devices';
 
 /**
  * What an app may ask the shell for, one name per thing reached.
@@ -129,6 +130,14 @@ export const ALL_CAPABILITIES = [
  * One capability an app may declare it cannot work without. See `AppManifest.requires`.
  */
 export type AppCapability = (typeof ALL_CAPABILITIES)[number];
+
+/**
+ * The devices an app may declare it runs on (MICA-260). The vocabulary is the device
+ * table's, `shared/devices.ts`, republished here so an add-on built against `@gphone/sdk`
+ * alone can name a member; `AppDevice` is the type `AppManifest.devices` is written in.
+ */
+export { ALL_DEVICES };
+export type AppDevice = DeviceId;
 
 /**
  * What the shell hands an app component.
@@ -352,6 +361,23 @@ export interface AppManifest {
    * behaviour and no consumer has to distinguish `undefined` from `[]`.
    */
   requires?: AppCapability[];
+  /**
+   * Which devices this app appears on (MICA-260). Absent means `['phone']`.
+   *
+   * A visibility contract exactly as `requires` is: an app whose list lacks the device
+   * on screen has no icon on it, in the launcher, the dock, the drawer, a folder or
+   * search, and `openApp` refuses it. Nothing about the server changes.
+   *
+   * Listing `'tablet'` says the app is *usable* at 1280x800, not merely that it loads:
+   * the shell renders `tablet.svelte` beside `index.svelte` when the app ships one and
+   * `index.svelte` stretched to the frame when it does not. `useDisplay().device` says
+   * which frame the app is in, for the app that wants one root and two layouts.
+   *
+   * `defineApp` supplies no default, for the reason `requires` has none: absent is the
+   * only thing a bundle published before this field existed can say, and it has to keep
+   * meaning what it always did — a phone app.
+   */
+  devices?: readonly AppDevice[];
   /**
    * Does this app need the NUI bridge to work at all?
    *
@@ -714,6 +740,35 @@ export function defineApp(manifest: AppManifestInput): AppManifest {
             `'${String(capability)}' in 'requires'. Known capabilities: ` +
             `${ALL_CAPABILITIES.join(', ')}. An unknown one is never satisfied, so the app ` +
             `would be hidden on every server rather than on the ones that lack it.`
+        );
+      }
+    }
+  }
+
+  /**
+   * Validated the way `requires` is, and for the same reason: an app declaring
+   * `devices: ['tablet ']` or `[]` would be shown on no device at all, silently.
+   */
+  const devices = manifest.devices;
+  if (devices !== undefined) {
+    if (!Array.isArray(devices)) {
+      throw new Error(
+        `gPhone App Manifest error: '${id}' has a 'devices' that is not an array. It lists ` +
+          `the devices the app appears on — devices: ['phone', 'tablet'].`
+      );
+    }
+    if (devices.length === 0) {
+      throw new Error(
+        `gPhone App Manifest error: '${id}' declares 'devices: []', which would show it ` +
+          `nowhere. Omit the field for a phone app, or list the devices it runs on.`
+      );
+    }
+    // `Array.isArray` widens a readonly array to `any[]`; say `unknown` before reading it.
+    for (const device of devices as readonly unknown[]) {
+      if (!(ALL_DEVICES as readonly string[]).includes(device as string)) {
+        throw new Error(
+          `gPhone App Manifest error: '${id}' declares an unknown device ` +
+            `'${String(device)}' in 'devices'. Known devices: ${ALL_DEVICES.join(', ')}.`
         );
       }
     }

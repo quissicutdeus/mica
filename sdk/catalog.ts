@@ -8,7 +8,9 @@ import {
   ALL_PERMISSIONS,
   tileFromColorClasses,
   type AppCapability,
-  type AppPermission
+  type AppPermission,
+  ALL_DEVICES,
+  type AppDevice
 } from './manifest';
 
 /**
@@ -39,6 +41,12 @@ export interface CatalogEntry {
    * default and the only thing a catalog written before this field existed can say.
    */
   requires?: AppCapability[];
+  /**
+   * MICA-260: the devices the app appears on. See `AppManifest.devices`. Here for the
+   * reason `requires` is; absent means the phone, which is what every catalog written
+   * before the field existed says.
+   */
+  devices?: readonly AppDevice[];
   /** Whether the phone should block this app while signal is out. Defaults to `false`. */
   requiresNetwork?: boolean;
   /** MICA-24: the exact origins the installed add-on's frame may `fetch()`. See `AppManifest.networkHosts`. */
@@ -118,6 +126,12 @@ export function isCatalogEntry(value: unknown): value is CatalogEntry {
     (v.requires === undefined ||
       (Array.isArray(v.requires) &&
         v.requires.every((c) => (ALL_CAPABILITIES as readonly string[]).includes(c as string)))) &&
+    // Non-empty as well as known, for the reason `defineApp` refuses `[]`: a row that
+    // lists no device is an app shown nowhere, and `installVerified` would throw on it.
+    (v.devices === undefined ||
+      (Array.isArray(v.devices) &&
+        v.devices.length > 0 &&
+        v.devices.every((d) => (ALL_DEVICES as readonly string[]).includes(d as string)))) &&
     (v.requiresNetwork === undefined || typeof v.requiresNetwork === 'boolean') &&
     (v.networkHosts === undefined ||
       (Array.isArray(v.networkHosts) && v.networkHosts.every((h) => typeof h === 'string'))) &&

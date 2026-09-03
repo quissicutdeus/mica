@@ -95,7 +95,7 @@ import type {
 import type { MusicError } from '../lib/musicErrors';
 import type { CatalogEntry } from '../catalog';
 import type { ReactionStore } from '../kit/createReactionStore';
-import type { AppComponent, AppManifest, AppPermission } from '../manifest';
+import type { AppComponent, AppManifest, AppPermission, AppDevice } from '../manifest';
 import type { KeybindAction } from '@gphone/shared/keybinds';
 import type {
   Account,
@@ -445,6 +445,14 @@ export interface Facets {
     lock: () => void;
   };
   display: () => {
+    /**
+     * Which frame the app is in (MICA-260): `'phone'` or `'tablet'`. The one thing an
+     * app with a single root needs to lay itself out for either; an app that ships
+     * `tablet.svelte` already knows.
+     */
+    device: Readable<AppDevice>;
+    /** The frame's design size in CSS px, before the zoom — 400x850 or 1280x800. */
+    frame: Readable<{ width: number; height: number }>;
     /** The Display > Phone Size setting, 0-100. */
     displaySize: Writable<number>;
     /** Where the slider starts, so a Reset control needs no second copy of the number. */

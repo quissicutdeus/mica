@@ -92,6 +92,14 @@ describe('searchEverything', () => {
     );
   });
 
+  it('lists on the tablet only what its launcher would draw (MICA-260)', () => {
+    const both = app('admin', 'Admin', { devices: ['phone', 'tablet'] });
+    const withDevices = { ...sources, apps: [app('camera', 'Camera'), both] };
+    expect(searchEverything('camera', withDevices, { device: 'tablet' })).toEqual([]);
+    expect(searchEverything('admin', withDevices, { device: 'tablet' })).toHaveLength(1);
+    expect(searchEverything('camera', withDevices)).toHaveLength(1);
+  });
+
   it('caps each group so one crowded group cannot bury another', () => {
     const manyContacts = Array.from({ length: SEARCH_RESULTS_PER_GROUP + 3 }, (_, i) =>
       contact(i + 100, `Jim${i}`, 'Doe', `555-02${i}`)

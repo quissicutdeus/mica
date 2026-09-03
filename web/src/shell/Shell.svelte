@@ -731,7 +731,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     {/if}
 
     {#each $runningApps as instance (instance.id)}
-      {@const AppComponent = appRegistryStore.getComponent(instance.id)}
+      {@const AppComponent = appRegistryStore.getComponent(instance.id, $activeDevice)}
       {@const isActive = $currentApp.id === instance.id}
       {@const manifest = appRegistryStore.getManifest(instance.id)}
       {@const isNetworkBlocked = (manifest?.requiresNetwork ?? false) && $clampedSignalLevel === 0}

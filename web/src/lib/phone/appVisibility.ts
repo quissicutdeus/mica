@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import type { AppCapability, AppManifest } from '../../../../sdk/manifest';
+import { DEFAULT_DEVICE, type DeviceId } from '@gphone/shared/devices';
 
 /**
  * Whether an app should appear on this phone at all — the rule, with no stores behind it.
@@ -31,7 +32,17 @@ export type CapabilitySet = Readonly<Partial<Record<AppCapability, boolean>>>;
 export interface VisibilityFacts {
   isAdmin: boolean;
   capabilities: CapabilitySet;
+  /** The device on screen (MICA-260). An app is hidden on one its `devices` omits. */
+  device: DeviceId;
 }
+
+/**
+ * Whether an app appears on a device. Absent `devices` is the phone and only the phone —
+ * what every manifest written before the field existed means, and what `defineApp`
+ * deliberately does not default (`sdk/manifest.ts`).
+ */
+export const manifestSupportsDevice = (manifest: AppManifest, device: DeviceId): boolean =>
+  (manifest.devices ?? [DEFAULT_DEVICE]).includes(device);
 
 /** Whether `requires` is satisfied by a given answer. Absent and `false` are the same no. */
 export const capabilitiesSatisfy = (
@@ -52,6 +63,7 @@ export const manifestVisible = (
   facts: VisibilityFacts
 ): boolean => {
   if (!manifest) return false;
+  if (!manifestSupportsDevice(manifest, facts.device)) return false;
   if (manifest.requiresAdmin && !facts.isAdmin) return false;
   return capabilitiesSatisfy(facts.capabilities, manifest.requires);
 };

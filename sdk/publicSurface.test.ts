@@ -856,6 +856,8 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     // legible as one.
     'ALL_CAPABILITIES',
     'PRIVACY_NOTICE_TEXT',
+    // MICA-260: the device vocabulary an `AppManifest.devices` member is drawn from.
+    'ALL_DEVICES',
     'RecentlyDeleted',
     'useAppRegistryWrite',
     'useClockWrite',
@@ -1062,6 +1064,8 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     // legible as one.
     'ALL_CAPABILITIES',
     'PRIVACY_NOTICE_TEXT',
+    // MICA-260: the device vocabulary an `AppManifest.devices` member is drawn from.
+    'ALL_DEVICES',
     'RecentlyDeleted',
     'useAppRegistryWrite',
     'useClockWrite',
@@ -1117,6 +1121,8 @@ const BASELINE_TYPE_EXPORTS: Record<string, string[]> = {
     'AppActionOptions',
     'AppCapability',
     'AppComponent',
+    // MICA-260
+    'AppDevice',
     'AppEvent',
     'AppKeybindInput',
     'AppLevelsConfig',
@@ -1187,6 +1193,8 @@ const BASELINE_TYPE_EXPORTS: Record<string, string[]> = {
     'AppActionOptions',
     'AppCapability',
     'AppComponent',
+    // MICA-260
+    'AppDevice',
     'AppEvent',
     'AppKeybindInput',
     'AppLevelsConfig',
@@ -1374,6 +1382,11 @@ const BASELINE_VOCABULARIES: Record<string, string[]> = {
    * add-on authors that has not happened.
    */
   ALL_CAPABILITIES: ['money'],
+  /**
+   * MICA-260. `AppDevice` is derived from this and `AppManifest.devices` is typed by it;
+   * a member dropped here would hide every add-on that named it, on every device.
+   */
+  ALL_DEVICES: ['phone', 'tablet'],
   ALL_PERMISSIONS: [
     'account',
     'admin',
@@ -1508,8 +1521,10 @@ const BASELINE_HOOK_RETURNS: Record<string, string[]> = {
   ],
   useDevTools: ['devToolsUnlocked', 'lock', 'unlock'],
   useDisplay: [
+    'device',
     'displaySize',
     'displaySizeDefault',
+    'frame',
     'homeGridColumns',
     'homeGridColumnsDefault',
     'homeGridColumnsMax',

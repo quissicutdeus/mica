@@ -7,6 +7,7 @@ import type { DeviceId } from '@gphone/shared/devices';
 import { fetchNui } from '../../nui/fetchNui';
 import { activeDevice } from './device';
 import { appRegistryStore } from './registry';
+import { manifestSupportsDevice } from '../../lib/phone/appVisibility';
 
 /**
  * Which app is on screen, and which apps are still alive behind it.
@@ -113,6 +114,20 @@ export const openApp = (appName: string, props: Record<string, unknown> = {}) =>
     return;
   }
 
+  /**
+   * And does it run on the device that is up (MICA-260). The launcher, dock, drawer,
+   * folders and search already hide it; this is the deep link, the notification tap and
+   * the client's `openApp`, which would otherwise put a phone-only root inside the tablet
+   * frame. A manifest the registry cannot resolve yet is let through, as the guard above
+   * lets a chunk still in flight through.
+   */
+  const device = get(activeDevice);
+  const manifest = appRegistryStore.getManifest(id);
+  if (manifest && !manifestSupportsDevice(manifest, device)) {
+    console.warn(`[navigation] Refusing to open '${id}': it does not run on the ${device}.`);
+    return;
+  }
+
   let resolved: RunningApp = { id, props };
 
   runningApps.update((apps) => {
@@ -157,7 +172,9 @@ export const openApp = (appName: string, props: Record<string, unknown> = {}) =>
    * placeholder until some other state happened to change. Idempotent: `loadComponent`
    * caches both the module and the in-flight promise.
    */
-  void appRegistryStore.loadComponent(id).then(() => runningApps.update((apps) => [...apps]));
+  void appRegistryStore
+    .loadComponent(id, device)
+    .then(() => runningApps.update((apps) => [...apps]));
 };
 
 /**

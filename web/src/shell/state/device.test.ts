@@ -133,6 +133,29 @@ describe('navigation per device', () => {
     closeAllApps();
     vi.spyOn(appRegistryStore, 'isKnownApp').mockReturnValue(true);
     vi.spyOn(appRegistryStore, 'loadComponent').mockResolvedValue(undefined);
+    // Every app runs on both devices here; the refusal itself is tested below.
+    vi.spyOn(appRegistryStore, 'getManifest').mockImplementation(
+      (id) => ({ id, devices: ['phone', 'tablet'] }) as never
+    );
+  });
+
+  it('refuses an app the active device cannot show, and lets it through where it can (MICA-260)', () => {
+    vi.spyOn(appRegistryStore, 'getManifest').mockImplementation((id) => ({ id }) as never);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    openApp('camera');
+    expect(get(currentApp).id).toBe('camera');
+
+    setActiveDevice('tablet');
+    openApp('camera');
+    expect(get(currentApp).id).toBe('home');
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('does not run on the tablet'));
+
+    vi.spyOn(appRegistryStore, 'getManifest').mockImplementation(
+      (id) => ({ id, devices: ['tablet'] }) as never
+    );
+    openApp('admin');
+    expect(get(currentApp).id).toBe('admin');
+    warn.mockRestore();
   });
 
   it('stashes the resident apps and the screen when the device changes, and restores them', () => {

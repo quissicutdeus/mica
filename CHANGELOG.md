@@ -561,6 +561,16 @@ somebody maintaining a `core: false` add-on outside this repo, and it answers
 one question: does that bundle still compile against this release, and does its
 manifest still ask for the right things.
 
+**A manifest may say which devices it runs on (MICA-260).** `devices` is a new
+optional field, `['phone']` when absent, so nothing already published changes.
+List `'tablet'` and the add-on appears on the 1280x800 tablet frame the shell
+can now draw, rendering its one root inside it; `useDisplay()` gained `device`
+(`'phone'` or `'tablet'`) and `frame` (the design size) so a root can lay itself
+out for either. `ALL_DEVICES` and the `AppDevice` type are exported from
+`@gphone/sdk`, and a catalog entry carries `devices` the same way. No hook was
+added or re-gated and the contract version is unchanged; an add-on that says
+nothing is a phone add-on, exactly as before.
+
 Every release now attaches a `SHA256SUMS` file beside the two tarballs, and each
 tarball carries a signed build-provenance attestation. `sha256sum -c SHA256SUMS`
 checks a download;

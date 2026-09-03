@@ -10,29 +10,29 @@ read that before this.
 
 ## The directories
 
-| Path                           | Runs in      | Notes                                                                        |
-| ------------------------------ | ------------ | ---------------------------------------------------------------------------- |
-| `client/services/`             | FiveM client | The client half of each service — NUI callbacks, server pushes               |
-| `client/game/`                 | FiveM client | GTA world: camera, freelook, phone prop and animations                       |
-| `client/lib/`                  | FiveM client | `ServiceProxy` (NUI↔server relay), `FrameworkBridge`, `nui`                  |
-| `server/services/`             | FiveM server | One file per service, named for the service, auto-indexed                    |
-| `server/lib/`                  | FiveM server | `ServiceEndpoint`, `defineService`, `Repository`, `Database`, `framework/`   |
-| `server/repositories/`         | FiveM server | `SchemaRepository` subclasses — the joins the generic path cannot express    |
-| `server/migrations/`           | FiveM server | Forward-only versioned migrations; `index.ts` is generated                   |
-| `gphone.sql`                   | generated    | The whole schema from `pnpm generate:sql`; imported by hand                  |
-| `scripts/framework-schema.sql` | hand-written | The audit ledger, which has no `defineService` behind it                     |
-| `server/__tests__/`            | Vitest/node  | Excluded from `tsc`; see AGENTS.md §1                                        |
-| `shared/types.ts`              | both         | `@shared/types` path alias, not a workspace package (AGENTS.md §3)           |
-| `shared/richText.ts`           | both         | One tokenizer for `@handle` — the UI renders and the server notifies from it |
-| `web/src/shell/`               | CEF+browser  | The OS: `Shell.svelte`, `PhoneFrame`/`TabletFrame`, `Launcher`, `ToastHost`  |
-| `web/src/shell/frame/`         | CEF+browser  | What both frames share: status bar, home indicator, their gestures           |
-| `web/src/shell/state/`         | CEF+browser  | State the phone itself owns: navigation, keybinds, hardware, size            |
-| `web/src/services/`            | CEF+browser  | Client-side cache of each server service. Reached via the SDK                |
-| `sdk/`                         | CEF+browser  | `@gphone/sdk` — the public surface for apps (AGENTS.md §2.7)                 |
-| `sdk/ui/`                      | CEF+browser  | UI primitives and icons apps may build with                                  |
-| `web/src/apps/`                | CEF+browser  | One dir per app: `manifest.ts` + `index.svelte` + `Icon.svelte`              |
-| `web/src/nui/`                 | CEF+browser  | The bridge: transport, `fetchNui`, `useNuiEvent`, browser mocks              |
-| `web/src/lib/`                 | CEF+browser  | Helpers with no gPhone state and no I/O — formatters, markdown               |
+| Path                           | Runs in      | Notes                                                                                     |
+| ------------------------------ | ------------ | ----------------------------------------------------------------------------------------- |
+| `client/services/`             | FiveM client | The client half of each service — NUI callbacks, server pushes                            |
+| `client/game/`                 | FiveM client | GTA world: camera, freelook, phone prop and animations                                    |
+| `client/lib/`                  | FiveM client | `ServiceProxy` (NUI↔server relay), `FrameworkBridge`, `nui`                               |
+| `server/services/`             | FiveM server | One file per service, named for the service, auto-indexed                                 |
+| `server/lib/`                  | FiveM server | `ServiceEndpoint`, `defineService`, `Repository`, `Database`, `framework/`                |
+| `server/repositories/`         | FiveM server | `SchemaRepository` subclasses — the joins the generic path cannot express                 |
+| `server/migrations/`           | FiveM server | Forward-only versioned migrations; `index.ts` is generated                                |
+| `gphone.sql`                   | generated    | The whole schema from `pnpm generate:sql`; imported by hand                               |
+| `scripts/framework-schema.sql` | hand-written | The audit ledger, which has no `defineService` behind it                                  |
+| `server/__tests__/`            | Vitest/node  | Excluded from `tsc`; see AGENTS.md §1                                                     |
+| `shared/types.ts`              | both         | `@shared/types` path alias, not a workspace package (AGENTS.md §3)                        |
+| `shared/richText.ts`           | both         | One tokenizer for `@handle` — the UI renders and the server notifies from it              |
+| `web/src/shell/`               | CEF+browser  | The OS: `Shell.svelte`, `PhoneFrame`/`TabletFrame`, `Launcher`, `ToastHost`               |
+| `web/src/shell/frame/`         | CEF+browser  | What both frames share: status bar, home indicator, their gestures                        |
+| `web/src/shell/state/`         | CEF+browser  | State the phone itself owns: navigation, keybinds, hardware, size                         |
+| `web/src/services/`            | CEF+browser  | Client-side cache of each server service. Reached via the SDK                             |
+| `sdk/`                         | CEF+browser  | `@gphone/sdk` — the public surface for apps (AGENTS.md §2.7)                              |
+| `sdk/ui/`                      | CEF+browser  | UI primitives and icons apps may build with                                               |
+| `web/src/apps/`                | CEF+browser  | One dir per app: `manifest.ts` + `index.svelte` + `Icon.svelte`, `tablet.svelte` optional |
+| `web/src/nui/`                 | CEF+browser  | The bridge: transport, `fetchNui`, `useNuiEvent`, browser mocks                           |
+| `web/src/lib/`                 | CEF+browser  | Helpers with no gPhone state and no I/O — formatters, markdown                            |
 
 Seven `index.ts` files in that tree are **generated** by
 `scripts/generate-barrels.js` — `client/services/`, `client/game/`,

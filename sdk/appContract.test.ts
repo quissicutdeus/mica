@@ -11,7 +11,7 @@
  */
 import '../web/src/host/registerFacets';
 import { describe, it, expect } from 'vitest';
-import { readdirSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { AppComponent } from './manifest';
 import { bundledAddOns, registeredApps } from '../web/src/shell/state/registry';
@@ -71,6 +71,14 @@ const APPS: Record<string, AppComponent> = {
   store: Store
 };
 
+/**
+ * Every `tablet.svelte` an app ships, held to `AppProps` the same way (MICA-260). Empty
+ * until MICA-261 lands the first three; the test below keeps it equal to what is on disk
+ * and refuses a tablet root on an app whose manifest does not list `'tablet'` — a root
+ * nothing can ever render.
+ */
+const TABLET_ROOTS: Record<string, AppComponent> = {};
+
 // MICA-172: `__dirname` is `sdk/` at the repo root now. One hop up is the repo root,
 // and the phone it reasons about is its sibling `web/`.
 const APPS_DIR = join(__dirname, '..', 'web', 'src', 'apps');
@@ -84,6 +92,19 @@ describe('app component contract', () => {
       .sort();
 
     expect(Object.keys(APPS).sort(), 'add the new app to APPS above').toEqual(onDisk);
+  });
+
+  it('covers every tablet root in apps/, each on an app that lists the tablet', () => {
+    const onDisk = readdirSync(APPS_DIR)
+      .filter((entry) => existsSync(join(APPS_DIR, entry, 'tablet.svelte')))
+      .sort();
+    expect(Object.keys(TABLET_ROOTS).sort(), 'add the tablet root to TABLET_ROOTS above').toEqual(
+      onDisk
+    );
+
+    const manifests = new Map([...registeredApps, ...bundledAddOns].map((app) => [app.id, app]));
+    const unlisted = onDisk.filter((id) => !(manifests.get(id)?.devices ?? []).includes('tablet'));
+    expect(unlisted, "declare devices: ['phone', 'tablet'] in the manifest").toEqual([]);
   });
 
   it('preloads every badge it draws', () => {

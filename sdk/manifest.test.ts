@@ -401,6 +401,38 @@ describe('defineApp: services', () => {
   });
 });
 
+describe('defineApp: devices (MICA-260)', () => {
+  const base = { color: 'bg-green-600', icon: null, core: false } as const;
+
+  it('keeps a declared list on the way out, and leaves an add-on that predates it alone', () => {
+    expect(defineApp({ id: 'twofer', ...base, devices: ['phone', 'tablet'] }).devices).toEqual([
+      'phone',
+      'tablet'
+    ]);
+    const legacy = defineApp({ id: 'phone_only', ...base });
+    expect(legacy.devices).toBeUndefined();
+    expect('devices' in legacy).toBe(false);
+  });
+
+  it('refuses an unknown device, naming the ones that exist', () => {
+    expect(() => defineApp({ id: 'typo', ...base, devices: ['watch'] as never })).toThrow(
+      /unknown device 'watch'.*Known devices: phone, tablet/
+    );
+  });
+
+  it('refuses an empty list, which would show the app nowhere', () => {
+    expect(() => defineApp({ id: 'nowhere', ...base, devices: [] })).toThrow(
+      /'devices: \[\]', which would show it nowhere/
+    );
+  });
+
+  it('refuses a non-array', () => {
+    expect(() => defineApp({ id: 'stringly', ...base, devices: 'tablet' as never })).toThrow(
+      /'devices' that is not an array/
+    );
+  });
+});
+
 describe('defineApp: requires', () => {
   it('keeps a declared capability on the way out', () => {
     const manifest = defineApp({

@@ -7,6 +7,7 @@ import type { Facets } from '../../facets';
 import { store, type AsTwin } from './_shared';
 import { constants } from '../constants';
 import type { MotionPreference } from '../../../vocabulary/display';
+import { DEFAULT_DEVICE, DEVICES, type DeviceId } from '@gphone/shared/devices';
 
 type Twin = AsTwin<ReturnType<Facets['display']>>;
 
@@ -14,6 +15,10 @@ export function display(): Twin {
   const c = constants().display;
 
   return {
+    // MICA-260. The phone until the shell says otherwise, over the same subscribe path
+    // as every store below; the live value is in the first push.
+    device: store<DeviceId>('display', [], 'device', DEFAULT_DEVICE),
+    frame: store('display', [], 'frame', DEVICES[DEFAULT_DEVICE].frame),
     displaySize: store('display', [], 'displaySize', c.displaySizeDefault ?? 50),
     displaySizeDefault: c.displaySizeDefault,
     phoneScale: store('display', [], 'phoneScale', 1),

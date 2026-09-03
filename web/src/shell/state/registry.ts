@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { get, writable } from 'svelte/store';
+import { DEFAULT_DEVICE, type DeviceId } from '@gphone/shared/devices';
 // Imported from their own files rather than the `@gphone/sdk` barrel: that barrel
 // re-exports every hook, including `useAppLevels`/`useKeybinds`, which import
 // `./keybinds.ts`, which imports `appRegistryStore` from this file — going through the
@@ -47,6 +48,12 @@ export type { AppManifest } from '../../../../sdk/manifest';
  */
 const manifestFiles = import.meta.glob('../../apps/*/manifest.ts', { eager: true });
 const appComponents = import.meta.glob('../../apps/*/index.svelte');
+/**
+ * An app's tablet root, when it ships one (MICA-260). Optional beside `index.svelte`:
+ * an app that lists `'tablet'` in its manifest without one renders `index.svelte` in the
+ * tablet frame, and `useDisplay().device` is how a single root tells the two apart.
+ */
+const tabletComponents = import.meta.glob('../../apps/*/tablet.svelte');
 
 const FIRST_BOOT_KEY = 'gphone_first_boot_time';
 
@@ -91,6 +98,16 @@ const seenManifestIds = new Set<string>();
  * other is what has been installed since boot.
  */
 const bundledComponents = new Map<string, () => Promise<unknown>>();
+/** The `tablet.svelte` loaders, for the apps that have one. */
+const bundledTabletComponents = new Map<string, () => Promise<unknown>>();
+
+/**
+ * Which cache row a component lives in. The phone root is keyed by the id alone, so every
+ * caller that never asks for a device reads exactly what it always did; a tablet root is
+ * keyed apart, and an app with no tablet root resolves to its phone row on the tablet too.
+ */
+const rootKey = (appId: string, device: DeviceId): string =>
+  device === 'tablet' && bundledTabletComponents.has(appId) ? `${appId}:tablet` : appId;
 
 /**
  * Components that have finished loading — core apps, or a `core: false` fixture
@@ -149,8 +166,13 @@ const sourceLoads = new Map<string, Promise<string | undefined>>();
  * at all — the same guarantee with nothing to remember, and what CodeQL's
  * `js/unvalidated-dynamic-method-call` is asking for at the `loader()` call below.
  */
-const resolveComponent = (appId: string): AppComponent | undefined =>
-  componentRegistry.get(appId) ?? loadedComponents.get(appId);
+const resolveComponent = (
+  appId: string,
+  device: DeviceId = DEFAULT_DEVICE
+): AppComponent | undefined =>
+  device === 'tablet' && bundledTabletComponents.has(appId)
+    ? loadedComponents.get(rootKey(appId, device))
+    : (componentRegistry.get(appId) ?? loadedComponents.get(appId));
 
 /**
  * Whether an app exists at all, as opposed to whether its code has arrived yet.
@@ -227,20 +249,24 @@ const offerReloadForStaleBuild = (): void => {
  * turns into a refusal. A failed import is logged and cached as a miss rather than
  * retried on every render — a chunk that will not load is not going to start.
  */
-const loadComponent = async (appId: string): Promise<AppComponent | undefined> => {
-  const already = resolveComponent(appId);
+const loadComponent = async (
+  appId: string,
+  device: DeviceId = DEFAULT_DEVICE
+): Promise<AppComponent | undefined> => {
+  const already = resolveComponent(appId, device);
   if (already) return already;
 
-  const inFlight = loading.get(appId);
+  const key = rootKey(appId, device);
+  const inFlight = loading.get(key);
   if (inFlight) return inFlight;
 
-  const loader = bundledComponents.get(appId);
+  const loader = key === appId ? bundledComponents.get(appId) : bundledTabletComponents.get(appId);
   if (!loader) return undefined;
 
   const load = loader()
     .then((module) => {
       const component = (module as { default: AppComponent }).default;
-      loadedComponents.set(appId, component);
+      loadedComponents.set(key, component);
       return component;
     })
     .catch((error) => {
@@ -256,7 +282,7 @@ const loadComponent = async (appId: string): Promise<AppComponent | undefined> =
       return undefined;
     });
 
-  loading.set(appId, load);
+  loading.set(key, load);
   return load;
 };
 
@@ -327,6 +353,10 @@ for (const path in manifestFiles) {
     if (manifest.core && appComponents[componentPath]) {
       // The loader, not the component. Called when the app is first opened.
       bundledComponents.set(manifest.id, appComponents[componentPath]);
+      const tabletPath = path.replace('manifest.ts', 'tablet.svelte');
+      if (tabletComponents[tabletPath]) {
+        bundledTabletComponents.set(manifest.id, tabletComponents[tabletPath]);
+      }
     }
 
     // Core apps start installed on OS startup.
@@ -790,7 +820,9 @@ function createAppRegistry() {
       revokeConsent(appId);
       update((apps) => apps.filter((a) => a.id !== appId));
     },
-    getComponent: (appId: string): AppComponent | undefined => resolveComponent(appId),
+    /** The root for a device: `tablet.svelte` when asked for and shipped, else `index.svelte`. */
+    getComponent: (appId: string, device: DeviceId = DEFAULT_DEVICE): AppComponent | undefined =>
+      resolveComponent(appId, device),
     /** Whether the app exists, regardless of whether its chunk has arrived. */
     isKnownApp,
     /** Fetch an app's component. Idempotent, and the only thing that imports app code. */
@@ -923,6 +955,8 @@ function createAppRegistry() {
       // ungated on a server that cannot run it. `isCatalogEntry` has already refused any
       // row naming a capability `ALL_CAPABILITIES` does not know.
       ...(entry.requires ? { requires: entry.requires } : {}),
+      // MICA-260, and conditional for the reason `requires` is: absent means the phone.
+      ...(entry.devices ? { devices: entry.devices } : {}),
       // Conditional for the reason `requires` is: absent and `[]` are different claims
       // here. `[]` says "owns no service", which stops the app calling its own; absent
       // says "did not state one", which is what a catalog written before MICA-196 means

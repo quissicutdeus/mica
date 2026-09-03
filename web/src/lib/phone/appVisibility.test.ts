@@ -3,7 +3,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect } from 'vitest';
-import { capabilitiesSatisfy, manifestVisible, type VisibilityFacts } from './appVisibility';
+import {
+  capabilitiesSatisfy,
+  manifestSupportsDevice,
+  manifestVisible,
+  type VisibilityFacts
+} from './appVisibility';
 import type { AppManifest } from '../../../../sdk/manifest';
 
 const app = (extra: Partial<AppManifest> = {}): AppManifest =>
@@ -19,12 +24,23 @@ const app = (extra: Partial<AppManifest> = {}): AppManifest =>
 
 const facts = (isAdmin: boolean, money: boolean): VisibilityFacts => ({
   isAdmin,
-  capabilities: { money }
+  capabilities: { money },
+  device: 'phone'
 });
 
 describe('manifestVisible', () => {
   it('shows an app that asks for nothing, whatever the phone can do', () => {
     expect(manifestVisible(app(), facts(false, false))).toBe(true);
+  });
+
+  it('hides an app on a device its manifest does not list, and absent means the phone', () => {
+    // MICA-260. Every manifest written before the field existed is a phone app.
+    const tablet = { ...facts(true, true), device: 'tablet' as const };
+    expect(manifestVisible(app(), tablet)).toBe(false);
+    expect(manifestVisible(app({ devices: ['phone', 'tablet'] }), tablet)).toBe(true);
+    expect(manifestVisible(app({ devices: ['tablet'] }), facts(true, true))).toBe(false);
+    expect(manifestSupportsDevice(app(), 'phone')).toBe(true);
+    expect(manifestSupportsDevice(app({ devices: ['tablet'] }), 'phone')).toBe(false);
   });
 
   it('hides an app whose id no longer resolves to a manifest', () => {
@@ -60,9 +76,13 @@ describe('manifestVisible', () => {
     // The store starts empty in game and fills in when the server replies. Until then an
     // app that needs something is absent, which is the direction that fails loudly rather
     // than shipping an ungated launcher whenever the endpoint is missing.
-    expect(manifestVisible(app({ requires: ['money'] }), { isAdmin: true, capabilities: {} })).toBe(
-      false
-    );
+    expect(
+      manifestVisible(app({ requires: ['money'] }), {
+        isAdmin: true,
+        capabilities: {},
+        device: 'phone'
+      })
+    ).toBe(false);
   });
 });
 

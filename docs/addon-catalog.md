@@ -17,6 +17,8 @@ interface CatalogEntry {
   icon?: string;
   /** What this app discloses it reaches for — shown to a player before they install it. */
   permissions: AppPermission[];
+  /** The devices the app appears on: 'phone' and/or 'tablet'. Absent means the phone. */
+  devices?: AppDevice[];
   /** Whether the phone should block this app while signal is out. Defaults to `false`. */
   requiresNetwork?: boolean;
   /** The exact origins the installed app's frame may `fetch()`. Defaults to none (MICA-24). */

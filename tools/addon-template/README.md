@@ -201,13 +201,16 @@ PostCSS, so a colour function past the 103 floor in one is not lowered, not
 warned about, and silently dropped. Prefer a utility class from the SDK's
 stylesheet.
 
-### The phone is 400x850 and never anything else
+### The phone is 400x850, the tablet is 1280x800, and neither is anything else
 
 Do not write responsive CSS. Breakpoints and viewport units (`vh`, `vw`, `dvh`)
 answer to the browser window, which is not the phone — the phone is a fixed-size
 frame that Settings > Display scales with a single `transform`, so the layout is
-identical at every size. Size against the frame: `h-full`, `flex-1`, and the
-`safe-top` / `safe-bottom` insets.
+identical at every size. The tablet is a second fixed frame, not a wider phone:
+your manifest's `devices` says which you support (absent means the phone), and
+an add-on that lists `'tablet'` renders its one root inside the tablet frame,
+reading `useDisplay().device` to lay itself out for it. Size against the frame:
+`h-full`, `flex-1`, and the `safe-top` / `safe-bottom` insets.
 
 Inside `Screen`, fill with **`min-h-0 flex-1`** — never `h-full`, never a bare
 `flex-1`. Both fail silently and only once there is enough content to overflow.

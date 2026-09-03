@@ -436,6 +436,8 @@ export const FACET_MEMBERS: Readonly<Record<string, readonly string[]>> = {
   clockWrite: ['setIs24Hour'],
   devTools: ['devToolsUnlocked', 'unlock', 'lock'],
   display: [
+    'device',
+    'frame',
     'displaySize',
     'phoneScale',
     'phoneBox',

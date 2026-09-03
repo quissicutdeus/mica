@@ -78,6 +78,14 @@ describe('isCatalogEntry', () => {
     expect(isCatalogEntry(validEntry)).toBe(true);
   });
 
+  it('accepts devices drawn from the device table, non-empty, and nothing else (MICA-260)', () => {
+    expect(isCatalogEntry({ ...validEntry, devices: ['phone', 'tablet'] })).toBe(true);
+    expect(isCatalogEntry({ ...validEntry, devices: ['tablet'] })).toBe(true);
+    expect(isCatalogEntry({ ...validEntry, devices: [] })).toBe(false);
+    expect(isCatalogEntry({ ...validEntry, devices: ['watch'] })).toBe(false);
+    expect(isCatalogEntry({ ...validEntry, devices: 'tablet' })).toBe(false);
+  });
+
   it('accepts requiresNetwork as an optional boolean', () => {
     expect(isCatalogEntry({ ...validEntry, requiresNetwork: true })).toBe(true);
     expect(isCatalogEntry({ ...validEntry, requiresNetwork: 'yes' })).toBe(false);

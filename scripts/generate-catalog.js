@@ -263,6 +263,7 @@ const entries = manifests.map((manifest, i) => {
     icon: icons[i],
     permissions: manifest.permissions ?? [],
     ...(manifest.requires ? { requires: manifest.requires } : {}),
+    ...(manifest.devices ? { devices: manifest.devices } : {}),
     ...(manifest.requiresNetwork === undefined
       ? {}
       : { requiresNetwork: manifest.requiresNetwork }),

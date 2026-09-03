@@ -6,6 +6,7 @@ import type { Contact } from '@gphone/shared/types';
 import type { AppManifest } from '../../../../sdk/manifest';
 import type { UIConversation } from '@gphone/sdk';
 import { manifestVisible, type CapabilitySet } from '../../lib/phone/appVisibility';
+import { DEFAULT_DEVICE, type DeviceId } from '@gphone/shared/devices';
 
 /**
  * How many hits each group contributes at most.
@@ -59,6 +60,8 @@ export interface SearchSources {
 export interface SearchOptions {
   isAdmin?: boolean;
   capabilities?: CapabilitySet;
+  /** The device on screen (MICA-260); search lists what its launcher would draw. */
+  device?: DeviceId;
 }
 
 const NOTHING_SATISFIED: CapabilitySet = {};
@@ -88,13 +91,15 @@ const contactName = (c: Contact) => [c.firstname, c.lastname].filter(Boolean).jo
 export function searchEverything(
   query: string,
   sources: SearchSources,
-  { isAdmin = false, capabilities = NOTHING_SATISFIED }: SearchOptions = {}
+  { isAdmin = false, capabilities = NOTHING_SATISFIED, device = DEFAULT_DEVICE }: SearchOptions = {}
 ): SearchResult[] {
   const needle = query.trim().toLowerCase();
   if (!needle) return [];
 
   const apps: AppSearchResult[] = sources.apps
-    .filter((app) => manifestVisible(app, { isAdmin, capabilities }) && matches(needle, app.name))
+    .filter(
+      (app) => manifestVisible(app, { isAdmin, capabilities, device }) && matches(needle, app.name)
+    )
     .slice(0, SEARCH_RESULTS_PER_GROUP)
     .map((manifest) => ({
       kind: 'app',

@@ -25,6 +25,7 @@ import {
   reducedMotion,
   MOTION_PREFERENCE_DEFAULT
 } from '../../shell/state/motion';
+import { activeDevice, frame } from '../../shell/state/device';
 
 /**
  * How big the phone is drawn on screen — read-only. Its own hook rather than a corner of
@@ -37,6 +38,9 @@ import {
  */
 export function display() {
   return {
+    /** Which frame the app is in, and its design size (MICA-260). */
+    device: activeDevice,
+    frame,
     /** The Display > Phone Size setting, 0-100. */
     displaySize,
     /** Where the slider starts, so a Reset control needs no second copy of the number. */

@@ -6,6 +6,7 @@ import { derived } from 'svelte/store';
 import { isAdmin } from '../../services/admin';
 import { capabilities } from '../../services/capabilities';
 import { manifestVisible } from '../../lib/phone/appVisibility';
+import { activeDevice } from './device';
 import type { AppManifest } from '../../../../sdk/manifest';
 
 /**
@@ -24,8 +25,12 @@ import type { AppManifest } from '../../../../sdk/manifest';
  * second one landed after it, which `refreshCapabilities` does by construction.
  */
 export const appVisible = derived(
-  [isAdmin, capabilities],
-  ([$isAdmin, $capabilities]) =>
+  [isAdmin, capabilities, activeDevice],
+  ([$isAdmin, $capabilities, $device]) =>
     (manifest: AppManifest | null | undefined): boolean =>
-      manifestVisible(manifest, { isAdmin: $isAdmin, capabilities: $capabilities })
+      manifestVisible(manifest, {
+        isAdmin: $isAdmin,
+        capabilities: $capabilities,
+        device: $device
+      })
 );

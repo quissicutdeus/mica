@@ -648,7 +648,7 @@ field-by-field authority. Read the doc before declaring a `read: 'public'` or
 `web/src/apps/<id>/`. Nothing else registers it; `shell/state/registry.ts`
 discovers apps via `import.meta.glob`. The id is lowercase and a **key** —
 directory, storage namespace, event segment, keybind claim, deep-link — so
-renaming it later is a data migration. Four things bite before you open the
+renaming it later is a data migration. Five things bite before you open the
 walkthrough:
 
 - **`core` is required** and has teeth: `true` ships with the phone and can't be
@@ -663,17 +663,18 @@ walkthrough:
 - **A NUI round trip touches three files** and fails silently if one is missing
   (§8). `server/__tests__/routes.test.ts` cross-references all three plus the
   browser mock.
+- **`devices` is a visibility contract.** Absent means the phone; list
+  `'tablet'` only with a layout for it (`tablet.svelte`, or
+  `useDisplay().device`).
 - **Load with `onAppForeground`, never `onMount`/`$effect`.** Apps are resident
   and mount once per session, so anything fetched in `onMount` goes stale the
   moment the app backgrounds. The one exception is a manifest `preload`,
   required if the app ships a `badgeStore` (`sdk/appContract.test.ts` enforces
   the pairing) — a badge has to be right before the launcher paints.
 
-The full walkthrough — directory scaffold, every manifest field, the
-service/route/store/mock layers, `core: true` vs `false`, the wiring hooks, and
-the pre-verify checklist — is
-[`docs/writing-an-app.md`](docs/writing-an-app.md). Notes is the smallest
-complete example to copy from; Bank is the example with no table.
+The full walkthrough is [`docs/writing-an-app.md`](docs/writing-an-app.md).
+Notes is the smallest complete example to copy from; Bank is the example with no
+table.
 
 `pnpm verify` before calling it done (§9). Then run it in game — a green suite
 is not evidence a NUI feature works (§6, §8).

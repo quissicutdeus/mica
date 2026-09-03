@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
  *
  *   pnpm new:app journal              a UI-only app, like Calculator
  *   pnpm new:app journal --service    plus a server service, store, routes and mocks
+ *   pnpm new:app journal --tablet     plus a tablet root, and the manifest line that shows it
  *
  * It writes the app directory and, with `--service`, the server declaration and client
  * store. It does not edit `shared/routes.ts` or the mock registry — those are tables a
@@ -28,13 +29,14 @@ const ROOT = path.resolve(__dirname, '..');
 
 const [, , rawId, ...flags] = process.argv;
 const WITH_SERVICE = flags.includes('--service');
+const WITH_TABLET = flags.includes('--tablet');
 
 const die = (message) => {
   console.error(`\x1b[31m${message}\x1b[0m`);
   process.exit(1);
 };
 
-if (!rawId) die('usage: pnpm new:app <id> [--service]');
+if (!rawId) die('usage: pnpm new:app <id> [--service] [--tablet]');
 
 const id = rawId.toLowerCase();
 if (!/^[a-z][a-z0-9_]*$/.test(id)) {
@@ -98,7 +100,14 @@ export default defineApp({
   tile: { bg: 'bg-slate-500' },
   icon: Icon,
   description: 'TODO: one line, shown in the Store.',
-  permissions: [],
+  permissions: [],${
+    WITH_TABLET
+      ? `
+  // Which frames the app appears on. Absent means the phone alone; listing the tablet
+  // says the app is usable at 1280x800, which \`tablet.svelte\` beside this file provides.
+  devices: ['phone', 'tablet'],`
+      : ''
+  }
   author: 'gPhone',
   // Required. \`false\` makes this an add-on: absent from the launcher, offered by the
   // Store, and uninstallable. Set it to \`true\` only for something that ships with the
@@ -180,6 +189,39 @@ ${
 `
 );
 
+if (WITH_TABLET) {
+  write(
+    `web/src/apps/${id}/tablet.svelte`,
+    `<script lang="ts">
+  import { EmptyState, Screen, useAppLevels, type AppProps } from '@gphone/sdk';
+
+  // The tablet root: rendered in place of index.svelte inside the 1280x800 frame, for an
+  // app whose manifest lists 'tablet'. Same contract, same hooks; a wider layout. An app
+  // that wants one root for both reads \`useDisplay().device\` instead of shipping this file.
+  let { onback }: AppProps = $props();
+
+  const app = useAppLevels({
+    appId: '${id}',
+    title: '${title}',
+    onback: () => onback(),
+    levels: []
+  });
+</script>
+
+<Screen title={app.title} onback={app.back}>
+  <div class="flex min-h-0 flex-1">
+    <div class="border-outline-variant w-1/3 border-r p-4">
+      <EmptyState title="${title}" description="TODO: the list, on the left." />
+    </div>
+    <div class="min-h-0 flex-1 p-4">
+      <EmptyState title="${title}" description="TODO: the detail, on the right." />
+    </div>
+  </div>
+</Screen>
+`
+  );
+}
+
 // --- keep the typed app contract covering it -----------------------------------------
 
 /**
@@ -228,6 +270,28 @@ const registerInAppContract = () => {
     entries[0],
     `const APPS: Record<string, AppComponent> = {\n${sortedRows.map((r) => `  ${r}`).join(',\n')}\n};`
   );
+
+  if (WITH_TABLET) {
+    const tabletImport = `import ${Pascal}Tablet from '../web/src/apps/${id}/tablet.svelte';`;
+    contract = contract.replace(importLine, `${importLine}\n${tabletImport}`);
+    const roots = contract.match(
+      /const TABLET_ROOTS: Record<string, AppComponent> = \{\n?([\s\S]*?)\n?\};/
+    );
+    if (!roots) {
+      throw new Error(`${relative}: no TABLET_ROOTS map to register the tablet root in.`);
+    }
+    const rootRows = roots[1]
+      .split('\n')
+      .map((line) => line.trim().replace(/,$/, ''))
+      .filter(Boolean);
+    const sortedRootRows = [...rootRows, `${id}: ${Pascal}Tablet`].toSorted((a, b) =>
+      a.localeCompare(b)
+    );
+    contract = contract.replace(
+      roots[0],
+      `const TABLET_ROOTS: Record<string, AppComponent> = {\n${sortedRootRows.map((r) => `  ${r}`).join(',\n')}\n};`
+    );
+  }
 
   fs.writeFileSync(full, contract);
   console.log(`  updated  ${relative}`);
