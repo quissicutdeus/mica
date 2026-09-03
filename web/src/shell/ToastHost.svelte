@@ -135,7 +135,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
      remount rather than a content swap, which is the crossfade MICA-37 exists to
      prevent. -->
 <div
-  class="pointer-events-none absolute top-12 right-3 left-3 z-50 flex flex-col gap-2"
+  class="pointer-events-none absolute top-12 right-3 left-3 z-50 mx-auto flex max-w-3xl flex-col gap-2"
   role={isCall ? 'alert' : 'status'}
   aria-live={isCall ? 'assertive' : 'polite'}
 >

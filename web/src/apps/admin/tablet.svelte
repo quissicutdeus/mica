@@ -105,9 +105,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <Screen title={$t('admin.title')} {onback}>
   <div class="flex min-h-0 flex-1">
-    <!-- The queue. A third of the 1280px frame is a little over 420px, which is about a
-         phone's width — the list is the same list, just permanently on screen. -->
-    <div class="border-outline-variant flex min-h-0 w-1/3 shrink-0 flex-col border-r">
+    <!-- The queue. `w-96` is 384px, the phone's screen width exactly — the list is the same
+         list, just permanently on screen — and it stops short of the home pill, which a
+         third of the frame ran straight into. -->
+    <div class="border-outline-variant flex min-h-0 w-96 shrink-0 flex-col border-r">
       <div class="p-4">
         <SegmentedControl
           aria-label={$t('admin.queue')}
@@ -120,7 +121,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         />
       </div>
 
-      <div class="flex-1 overflow-y-auto px-4 pb-4">
+      <div class="flex-1 overflow-y-auto px-4 pb-home-indicator">
         {#if rows.length === 0}
           <EmptyState
             title={tab === 'pending' ? $t('admin.nothingToReview') : $t('admin.noHistory')}

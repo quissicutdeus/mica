@@ -177,50 +177,46 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   });
 </script>
 
+<!-- One sidebar row. Selected is `primary-container`, the one filled role in the list, so
+     the eye finds the open section without reading; the rest are quiet until hovered. -->
+{#snippet sidebarRow(which: Pane, subtitleKey: string)}
+  {@const selected = pane === which}
+  <button
+    type="button"
+    onclick={() => select(which)}
+    aria-current={selected ? 'page' : undefined}
+    class="duration-short ease-standard flex w-full cursor-pointer flex-col rounded-box px-3 py-2.5 text-left transition-colors {selected
+      ? 'bg-primary-container text-on-primary-container'
+      : 'text-on-surface hover:bg-surface-container-high active:bg-surface-container-high-pressed'}"
+  >
+    <span class="font-medium">{paneTitle(which)}</span>
+    <span class="text-body-small {selected ? '' : 'text-on-surface-variant'}"
+      >{$t(subtitleKey)}</span
+    >
+  </button>
+{/snippet}
+
 <Screen title={app.title} onback={app.back}>
   <div class="flex min-h-0 flex-1">
     <!-- The list. `shrink-0` because the right pane is the one that gives: a section title
          that wraps mid-word is worse than a narrower detail pane. -->
     <nav
       aria-label={$t('settings.tablet.sections')}
-      class="border-outline-variant divide-outline-variant bg-surface-container text-body-medium w-72 shrink-0 divide-y overflow-y-auto border-r"
+      class="bg-surface-container text-body-medium w-72 shrink-0 space-y-1 overflow-y-auto p-3 pb-home-indicator"
     >
       {#each SIDEBAR as row (row.id)}
-        <button
-          type="button"
-          onclick={() => select(row.id)}
-          aria-current={pane === row.id ? 'page' : undefined}
-          class="hover:bg-surface-container-hover active:bg-surface-container-pressed duration-short ease-standard flex w-full cursor-pointer flex-col p-4 text-left transition-colors {pane ===
-          row.id
-            ? 'bg-surface-container-high-selected'
-            : ''}"
-        >
-          <span class="text-on-surface font-medium">{paneTitle(row.id)}</span>
-          <span class="text-on-surface-variant text-body-small">{$t(row.subtitleKey)}</span>
-        </button>
+        {@render sidebarRow(row.id, row.subtitleKey)}
       {/each}
       {#if showDevTools}
-        <button
-          type="button"
-          onclick={() => select('devtools')}
-          aria-current={pane === 'devtools' ? 'page' : undefined}
-          class="hover:bg-surface-container-hover active:bg-surface-container-pressed duration-short ease-standard flex w-full cursor-pointer flex-col p-4 text-left transition-colors {pane ===
-          'devtools'
-            ? 'bg-surface-container-high-selected'
-            : ''}"
-        >
-          <span class="text-on-surface font-medium">{$t('settings.devtools.title')}</span>
-          <span class="text-on-surface-variant text-body-small"
-            >{$t('settings.devtools.subtitle')}</span
-          >
-        </button>
+        {@render sidebarRow('devtools', 'settings.devtools.subtitle')}
       {/if}
     </nav>
 
     <!-- The pane itself, scrolling on its own so the list stays put. Every component under
          `panes/` is the phone's, unchanged: they are already a column that fills its
-         parent, and none of them assumes a 400px frame. -->
-    <div class="min-w-0 flex-1 overflow-y-auto">
+         parent, and none of them assumes a 400px frame. `pb-home-indicator` so the last
+         thing in a long pane can scroll clear of the gesture bar. -->
+    <div class="min-w-0 flex-1 overflow-y-auto pb-home-indicator">
       {#if pane === 'network'}
         <Network />
       {:else if pane === 'notifications'}

@@ -266,7 +266,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           emptyDescription={$t('notes.noDeletedHint')}
         />
       {:else if isAdding}
-        <div class="flex min-h-0 flex-1 flex-col gap-4 p-4">
+        <div class="flex min-h-0 flex-1 flex-col gap-4 p-4 pb-home-indicator">
           <NoteEditor
             bind:title={newNote.title}
             bind:content={newNote.content}
@@ -287,7 +287,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           </div>
         </div>
       {:else if isEditing && draftNote}
-        <div class="flex min-h-0 flex-1 flex-col gap-4 p-4">
+        <div class="flex min-h-0 flex-1 flex-col gap-4 p-4 pb-home-indicator">
           <NoteEditor
             bind:title={draftNote.title}
             bind:content={draftNote.content}
@@ -331,7 +331,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <EditIcon />
           </button>
         </div>
-        <div class="no-scrollbar min-h-0 flex-1 overflow-y-auto p-4">
+        <div class="no-scrollbar min-h-0 flex-1 overflow-y-auto p-4 pb-home-indicator">
           <div class="prose max-w-none">
             <!-- eslint-disable-next-line svelte/no-at-html-tags -->
             {@html renderMarkdown(selectedNote.content)}

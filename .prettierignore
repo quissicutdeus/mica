@@ -16,3 +16,7 @@ web/docs
 # Subagent-driven-development scratch state (ledgers, task briefs, review
 # packages). Gitignored via .superpowers/sdd/.gitignore, same reason as above.
 .superpowers
+
+# The remember plugin's session scratch. Gitignored via .remember/.gitignore,
+# same reason as above.
+.remember

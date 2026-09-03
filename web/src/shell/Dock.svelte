@@ -15,6 +15,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { appRegistryStore } from './state/registry';
   import { appVisible } from './state/appVisibility';
   import { dockAppIds, dockSlotCount } from './state/dock';
+  import { iconDragState } from './state/iconDrag';
   import {
     openDrawer,
     isDrawerOpen,
@@ -123,7 +124,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   bind:this={dockElement}
   role="toolbar"
   aria-label={$t('shell.dock')}
-  class="absolute inset-x-0 bottom-20 z-20 grid cursor-pointer px-4 pt-4 pb-0 select-none"
+  class="absolute inset-x-0 bottom-20 z-20 mx-auto grid max-w-3xl cursor-pointer px-4 pt-4 pb-0 select-none"
   style="grid-template-columns: repeat({$dockSlotCount}, 1fr);"
 >
   {#each slots as slot (slot.index)}
@@ -141,7 +142,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           }}
         />
       {:else}
-        <div class="border-outline-variant h-14 w-14 rounded-box border border-dashed"></div>
+        <!-- The slot keeps its footprint so a drop can land on it, but draws its dashed
+             outline only while an icon is being dragged: at rest an empty slot is empty,
+             not a row of placeholder boxes -- which the tablet's six-slot dock made
+             obvious. -->
+        <div
+          class="h-14 w-14 rounded-box border border-dashed {$iconDragState.appId
+            ? 'border-outline-variant'
+            : 'border-transparent'}"
+        ></div>
       {/if}
     </div>
   {/each}

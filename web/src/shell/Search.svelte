@@ -41,7 +41,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <!-- `bottom-8` sits between the home bar (`bottom-0`) and the Dock (`bottom-20`).
      Hidden while the drawer is open — it carries its own copy of this input. -->
 {#if !$isDrawerOpen}
-  <div class="absolute inset-x-0 bottom-8 z-20 px-4">
+  <div class="absolute inset-x-0 bottom-8 z-20 mx-auto max-w-3xl px-4">
     <button
       bind:this={collapsedBarRef}
       type="button"
