@@ -33,8 +33,8 @@ umask 002
 # script itself needs no separate lockfile to create, permission, or clean up.
 exec 9<"$0"
 flock -w 1800 9 || {
-  echo "another deploy has held the lock for 30 minutes; refusing to pile on" >&2
-  exit 1
+    echo "another deploy has held the lock for 30 minutes; refusing to pile on" >&2
+    exit 1
 }
 
 cd "/opt/fivem-dev/server-data/resources/[standalone]/gPhone/"
@@ -90,6 +90,6 @@ MICA_CALVER=$(date +%Y.%m.%d).1
 # deploy sent an RCON packet with a blank password. Root can read that file;
 # this account has no business being able to.
 sudo MICA_PORT=8676 GIT_BRANCH=dev GIT_SHA="$GIT_SHA" MICA_CALVER="$MICA_CALVER" MICA_CONTAINER_NAME=gphone-dev MICA_IMAGE_TAG=gphone-dev:local \
-  /usr/local/sbin/gphone-deploy-dev-compose.sh
+    /usr/local/sbin/gphone-deploy-dev-compose.sh
 
 echo "deployed dev @ $GIT_SHA"

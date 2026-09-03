@@ -39,11 +39,11 @@ FIVEM_PORT=30121
 
 ACTUAL_SHA=$(sha256sum "$COMPOSE_FILE" | cut -d' ' -f1)
 if [[ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]]; then
-  echo "REFUSED: $COMPOSE_FILE does not match the pinned hash." >&2
-  echo "expected: $EXPECTED_SHA" >&2
-  echo "actual:   $ACTUAL_SHA" >&2
-  echo "If this is a legitimate change, update EXPECTED_SHA in this script by hand." >&2
-  exit 1
+    echo "REFUSED: $COMPOSE_FILE does not match the pinned hash." >&2
+    echo "expected: $EXPECTED_SHA" >&2
+    echo "actual:   $ACTUAL_SHA" >&2
+    echo "If this is a legitimate change, update EXPECTED_SHA in this script by hand." >&2
+    exit 1
 fi
 
 docker compose -p gphone-dev -f "$COMPOSE_FILE" up -d --build
@@ -52,8 +52,8 @@ docker compose -p gphone-dev -f "$COMPOSE_FILE" up -d --build
 # `export VAR=$(...)`, which is what hid this failure for two days.
 RCON_PASSWORD=$(grep -m1 '^RCON_PASSWORD=' "$ENV_FILE" | cut -d= -f2- || true)
 if [[ -z "$RCON_PASSWORD" ]]; then
-  echo "REFUSED: no RCON_PASSWORD in $ENV_FILE -- gPhone was rebuilt but NOT reloaded" >&2
-  exit 1
+    echo "REFUSED: no RCON_PASSWORD in $ENV_FILE -- gPhone was rebuilt but NOT reloaded" >&2
+    exit 1
 fi
 
 export RCON_PASSWORD FIVEM_PORT
