@@ -4,11 +4,11 @@
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-# Runs on the game server as the mica deploy account, pinned by that account's
+# Runs on the game server as the gphone deploy account, pinned by that account's
 # authorized_keys as a forced command:
 #
 #   command="/home/gphone/bin/deploy-main.sh",no-port-forwarding,no-X11-forwarding,\
-#   no-agent-forwarding,no-pty ssh-ed25519 AAAA... mica-ci-deploy-main
+#   no-agent-forwarding,no-pty ssh-ed25519 AAAA... gphone-ci-deploy-main
 #
 # .github/workflows/deploy.yml opens an SSH session with that key and sends
 # nothing; sshd runs this instead. See scripts/deploy/README.md -- these are NOT

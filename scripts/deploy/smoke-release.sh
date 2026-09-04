@@ -4,7 +4,7 @@
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-# Runs on the game server as the mica deploy account, pinned by that account's
+# Runs on the game server as the gphone deploy account, pinned by that account's
 # authorized_keys as a forced command (MICA-220):
 #
 #   command="/home/gphone/bin/smoke-release.sh",no-port-forwarding,no-X11-forwarding,\
@@ -49,7 +49,7 @@ unzip -q "$run/mica.zip" -d "$run/resources" || die "stdin is not a zip unzip ca
 [ -f "$run/resources/mica/fxmanifest.lua" ] ||
     die "the zip does not unpack to mica/fxmanifest.lua; that is the layout the release ships"
 
-# The privileged half: mica is not in the docker group (see README.md here),
+# The privileged half: gphone is not in the docker group (see README.md here),
 # so the containers are started by a root-owned wrapper that sudoers lets this
 # account invoke by exact path, with a run directory under $SMOKE_ROOT as its
 # one argument.

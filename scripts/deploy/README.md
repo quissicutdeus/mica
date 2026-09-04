@@ -97,7 +97,7 @@ install -m 755 scripts/deploy/smoke-release.sh ~gphone/bin/smoke-release.sh
 sudo install -m 700 -o root -g root \
   scripts/deploy/mica-smoke-release.sh /usr/local/sbin/
 
-# let mica invoke it by exact path, with a run directory as its one argument
+# let gphone invoke it by exact path, with a run directory as its one argument
 echo 'gphone ALL=(root) NOPASSWD: /usr/local/sbin/mica-smoke-release.sh /home/gphone/smoke/*' |
   sudo tee /etc/sudoers.d/mica-smoke >/dev/null && sudo chmod 440 /etc/sudoers.d/mica-smoke
 
@@ -182,10 +182,10 @@ sudo -u gphone /home/gphone/bin/deploy-dev.sh
 
 ## Why the split
 
-`mica` is not in the `docker` group — on a shared host that is root-equivalent,
-and this path runs `pnpm install` over third-party dependencies. So the
-container rebuild happens in a root-owned wrapper that `sudoers` lets this
-account invoke by exact path and nothing else.
+`gphone` is not in the `docker` group — on a shared host that is
+root-equivalent, and this path runs `pnpm install` over third-party
+dependencies. So the container rebuild happens in a root-owned wrapper that
+`sudoers` lets this account invoke by exact path and nothing else.
 
 The wrapper verifies `compose.yaml` against a pinned SHA256 before acting on it.
 The deploy account can write that file (git needs to), so the file is not
