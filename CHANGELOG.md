@@ -62,19 +62,16 @@ so they fail as unknown commands rather than doing nothing quietly.
 
 **Your database moves with it — run `micaschema apply` from your server console
 after updating, or import the regenerated `mica.sql` / `mica.esx.sql` on a fresh
-install.** Two migrations do it, and `micaschema apply` runs them in order for
-you: `0004_rename_gphone_tables_to_gos` and then
-`0005_rename_gos_tables_to_mica`. The intermediate name was a first pass at this
-rename that never reached a release, and the two hops are kept rather than
-collapsed because 0004 has already run against databases — a migration that
-changes meaning after it has been applied is one whose ledger entry no longer
-describes what happened. Each hop renames every table in one atomic statement,
-so no foreign key ever sees a half-renamed schema.
+install.** One migration does it, `0000_rename_legacy_tables_to_mica`, and it
+handles either old name: a database still on `gphone_*`, and one that got as far
+as the short-lived `gos_*` before this release, both land on `mica_*`. Each
+prefix is renamed in one atomic statement, so no foreign key ever sees a
+half-renamed schema.
 
-If you start the new resource _before_ running the migrations, the additive half
+If you start the new resource _before_ running the migration, the additive half
 of `micaschema apply` will create the new tables empty beside your old ones and
-every player will look like a fresh install; the migrations then refuse to
-overwrite the empty table and tell you which pair to look at, so nothing is
+every player will look like a fresh install; the migration then refuses to
+overwrite the empty table and tells you which pair to look at, so nothing is
 lost, but the tidy order is to apply first.
 
 The phone itself is still called gPhone, and so is the device in a player's

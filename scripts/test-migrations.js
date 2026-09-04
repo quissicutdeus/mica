@@ -479,16 +479,9 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, server }) => {
   const seeded0004 = await scalar(
     connection,
     'SELECT COUNT(*) FROM mica_schema_migrations WHERE id = ?',
-    ['0004_rename_gphone_tables_to_gos']
+    ['0000_rename_legacy_tables_to_mica']
   );
   check(`${schemaFile}: a fresh install has 0004 pre-seeded too`, Number(seeded0004), 1);
-
-  const seeded0005 = await scalar(
-    connection,
-    'SELECT COUNT(*) FROM mica_schema_migrations WHERE id = ?',
-    ['0005_rename_gos_tables_to_mica']
-  );
-  check(`${schemaFile}: a fresh install has 0005 pre-seeded too`, Number(seeded0005), 1);
 
   const freshRun = await server.runPendingMigrations();
   check(`${schemaFile}: a fresh install applies nothing`, freshRun.applied, []);
@@ -533,11 +526,10 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, server }) => {
   const result = await server.runPendingMigrations();
   check(`${schemaFile}: reports no failure`, result.failed, null);
   check(`${schemaFile}: applied the migration`, result.applied, [
+    '0000_rename_legacy_tables_to_mica',
     '0001_repair_conversation_participants',
     '0002_audit_logs_add_viewed_action',
-    '0003_conversations_pair_key',
-    '0004_rename_gphone_tables_to_gos',
-    '0005_rename_gos_tables_to_mica'
+    '0003_conversations_pair_key'
   ]);
   check(`${schemaFile}: nothing left over`, result.remaining, []);
 
@@ -757,11 +749,10 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, server }) => {
   const replay = await server.runPendingMigrations();
   check(`a forced replay still succeeds`, replay.failed, null);
   check(`a forced replay applies cleanly`, replay.applied, [
+    '0000_rename_legacy_tables_to_mica',
     '0001_repair_conversation_participants',
     '0002_audit_logs_add_viewed_action',
-    '0003_conversations_pair_key',
-    '0004_rename_gphone_tables_to_gos',
-    '0005_rename_gos_tables_to_mica'
+    '0003_conversations_pair_key'
   ]);
   check(
     `a forced replay changes no rows`,
@@ -845,11 +836,10 @@ const runPairKeyDuplicateFixture = async ({ connection, schemaFile, server }) =>
     null
   );
   check(`${database}: it applied every pending migration`, result.applied, [
+    '0000_rename_legacy_tables_to_mica',
     '0001_repair_conversation_participants',
     '0002_audit_logs_add_viewed_action',
-    '0003_conversations_pair_key',
-    '0004_rename_gphone_tables_to_gos',
-    '0005_rename_gos_tables_to_mica'
+    '0003_conversations_pair_key'
   ]);
 
   const firstKey = await scalar(
@@ -1166,7 +1156,7 @@ const runSweepFixtures = async ({ connection, schemaFile, hasPlayers, server }) 
  */
 const runPrefixRenameFixture = async ({ connection, schemaFile, server }) => {
   const database = 'mica_prefix_rename';
-  step(`${schemaFile} — MICA-274: 0005 carries gos_* rows onto mica_*`);
+  step(`${schemaFile} — MICA-274: 0000 carries gphone_* and gos_* rows onto mica_*`);
 
   await connection.query(`DROP DATABASE IF EXISTS \`${database}\``);
   await connection.query(`CREATE DATABASE \`${database}\``);
@@ -1176,40 +1166,65 @@ const runPrefixRenameFixture = async ({ connection, schemaFile, server }) => {
   await connection.query(fs.readFileSync(path.join(root, schemaFile), 'utf8'));
 
   await connection.query(
-    "INSERT INTO mica_notes (citizenid, title, content, status) VALUES ('CIT_A', 'survives', 'body', 'active')"
+    "INSERT INTO mica_notes (citizenid, title, content, status) VALUES ('CIT_A', 'oldest', 'body', 'active')"
   );
   await connection.query(
     "INSERT INTO mica_contacts (citizenid, firstname, phone, status) VALUES ('CIT_A', 'collides', '555', 'active')"
   );
+  await connection.query(
+    "INSERT INTO mica_audit_logs (citizenid, action, service, method, target_id) VALUES ('CIT_A', 'viewed', 'reports', 'queue', 1)"
+  );
 
-  // Regress to a pre-micaOS database: the tables carry the old prefix, and the ledger has
-  // never seen 0005.
-  await connection.query('RENAME TABLE `mica_notes` TO `gos_notes`');
+  // Three shapes at once, because a real database is only ever one of them and the
+  // migration must not care which:
+  //   notes      -- never renamed at all, still on the original gphone_ prefix
+  //   audit_logs -- got as far as the intermediate gos_ and stopped there
+  //   contacts   -- gos_, and the server was started once on the new code, so the empty
+  //                 mica_ table is already sitting on the name the rename wants
+  await connection.query('RENAME TABLE `mica_notes` TO `gphone_notes`');
+  await connection.query('RENAME TABLE `mica_audit_logs` TO `gos_audit_logs`');
   await connection.query('RENAME TABLE `mica_contacts` TO `gos_contacts`');
-  await connection.query('RENAME TABLE `mica_schema_migrations` TO `gos_schema_migrations`');
-  await connection.query('CREATE TABLE `mica_schema_migrations` LIKE `gos_schema_migrations`');
-
-  // An operator who started the server once on the new code, so the empty new table is
-  // already sitting on the name 0005 wants.
   await connection.query('CREATE TABLE `mica_contacts` LIKE `gos_contacts`');
+
+  // A ledger under each old name, neither of which may be moved while runMigrations is
+  // reading the new one.
+  await connection.query('RENAME TABLE `mica_schema_migrations` TO `gphone_schema_migrations`');
+  await connection.query('CREATE TABLE `mica_schema_migrations` LIKE `gphone_schema_migrations`');
 
   const result = await server.runPendingMigrations();
   check(`${schemaFile}: the prefix rename reports no failure`, result.failed, null);
   check(
-    `${schemaFile}: 0005 is in the applied list`,
-    result.applied.includes('0005_rename_gos_tables_to_mica'),
+    `${schemaFile}: 0000 is in the applied list`,
+    result.applied.includes('0000_rename_legacy_tables_to_mica'),
     true
   );
 
-  check(`${schemaFile}: gos_notes is gone`, Number(await tableExists(connection, 'gos_notes')), 0);
+  check(
+    `${schemaFile}: the gphone_ table is gone`,
+    Number(await tableExists(connection, 'gphone_notes')),
+    0
+  );
   check(
     `${schemaFile}: its row arrived on mica_notes`,
-    Number(await scalar(connection, "SELECT COUNT(*) FROM mica_notes WHERE title = 'survives'")),
+    Number(await scalar(connection, "SELECT COUNT(*) FROM mica_notes WHERE title = 'oldest'")),
     1
   );
 
-  // The collision branch: both names existed, so 0005 leaves the pair alone rather than
-  // erroring and aborting the rest of the run.
+  check(
+    `${schemaFile}: the gos_ table is gone too`,
+    Number(await tableExists(connection, 'gos_audit_logs')),
+    0
+  );
+  check(
+    `${schemaFile}: its row arrived on mica_audit_logs`,
+    Number(
+      await scalar(connection, "SELECT COUNT(*) FROM mica_audit_logs WHERE action = 'viewed'")
+    ),
+    1
+  );
+
+  // The collision branch: both names existed, so the rename leaves the pair alone rather
+  // than erroring and aborting the rest of the run.
   check(
     `${schemaFile}: the occupied name is skipped, not clobbered`,
     Number(await tableExists(connection, 'gos_contacts')),
@@ -1223,11 +1238,9 @@ const runPrefixRenameFixture = async ({ connection, schemaFile, server }) => {
     1
   );
 
-  // The ledger 0005 is deliberately not moving, because runMigrations is reading the new
-  // one while it runs.
   check(
     `${schemaFile}: the old ledger is left where it is`,
-    Number(await tableExists(connection, 'gos_schema_migrations')),
+    Number(await tableExists(connection, 'gphone_schema_migrations')),
     1
   );
 };

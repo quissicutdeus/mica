@@ -703,8 +703,7 @@ CREATE TABLE IF NOT EXISTS `mica_schema_migrations` (
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
 INSERT IGNORE INTO `mica_schema_migrations` (`id`) VALUES
+  ('0000_rename_legacy_tables_to_mica'),
   ('0001_repair_conversation_participants'),
   ('0002_audit_logs_add_viewed_action'),
-  ('0003_conversations_pair_key'),
-  ('0004_rename_gphone_tables_to_gos'),
-  ('0005_rename_gos_tables_to_mica');
+  ('0003_conversations_pair_key');
