@@ -38,12 +38,12 @@ describe('AuditLogger', () => {
       service: 'reports',
       method: 'resolve',
       targetId: 42,
-      targetTable: 'gos_media'
+      targetTable: 'mica_media'
     });
 
     const sql = String(dbMock.insert.mock.calls[0][0]).replace(/\s+/g, ' ');
     expect(sql).toContain('(citizenid, action, service, method, target_id, target_table, details)');
-    expect(params()).toEqual(['CIT_A', 'moderated', 'reports', 'resolve', 42, 'gos_media', null]);
+    expect(params()).toEqual(['CIT_A', 'moderated', 'reports', 'resolve', 42, 'mica_media', null]);
   });
 
   it('serialises details, and writes null rather than "undefined"', async () => {

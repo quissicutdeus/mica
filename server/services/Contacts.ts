@@ -3,12 +3,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { defineService, SchemaRepository } from '../lib/defineService';
-import { Contact, SharedContactCard } from '@gos/shared/types';
+import { Contact, SharedContactCard } from '@mica/shared/types';
 import { guardNetEvent } from '../lib/netGuard';
 import { findNearbyVisiblePlayers } from '../lib/proximity';
 import { appEventChannel } from '../lib/appEvents';
 import { fields } from '../lib/payload';
-import { contactsContract } from '@gos/shared/contracts/contacts';
+import { contactsContract } from '@mica/shared/contracts/contacts';
 import { resolve as resolvePlayer } from '../lib/PlayerDirectory';
 import { restoreWindowDays } from '../lib/retention';
 
@@ -145,7 +145,7 @@ const sanitizeShare = (data: unknown): SharedCardFields | null => {
  * sender here would break sharing someone else's card at all. `sender` is the fix instead —
  * provenance the receiving client can check independently of what the card claims to be.
  */
-onNet('gos:server:contacts:share', (data: unknown) => {
+onNet('mica:server:contacts:share', (data: unknown) => {
   const player = guardNetEvent('contacts', 'share');
   if (!player) return;
 
@@ -171,7 +171,7 @@ onNet('gos:server:contacts:share', (data: unknown) => {
 
     if (typeof emitNet === 'function') {
       for (const target of nearby) {
-        emitNet('gos:client:contacts:incoming', target.source, share);
+        emitNet('mica:client:contacts:incoming', target.source, share);
       }
     }
 

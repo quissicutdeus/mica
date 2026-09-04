@@ -3,10 +3,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { writable, derived } from 'svelte/store';
-import { isBrowser } from '@gos/sdk';
+import { isBrowser } from '@mica/sdk';
 import { usePersisted } from '../../../../sdk/host/usePersisted';
 
-import type { TimeState } from '@gos/sdk';
+import type { TimeState } from '@mica/sdk';
 
 const getRealTime = (): TimeState => {
   const now = new Date();

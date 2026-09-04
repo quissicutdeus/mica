@@ -21,7 +21,7 @@ import * as ts from 'typescript-ast-parser';
  * and Hodlr's `buy`/`sell` — and each is safe for the same reason: the balance check and the
  * debit/credit it gates run in one synchronous span, so nothing can interleave between
  * deciding and acting. That is true because neither span contains an `await`, not because of
- * any SQL predicate — gOS owns no money table, and the framework's own atomic decrement
+ * any SQL predicate — micaOS owns no money table, and the framework's own atomic decrement
  * was considered and rejected (`Payments.ts:108-112`: frameworks disagree about whether an
  * overdraw refuses or clamps, so the affordability decision does not belong to the framework).
  *

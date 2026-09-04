@@ -5,9 +5,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { MAX_ATTACHMENTS } from '@gos/shared/attachments';
-  import { Button, PhotoPickerModal, useLocale, useMarketplace } from '@gos/sdk';
-  import type { MediaPreview } from '@gos/shared/types';
+  import { MAX_ATTACHMENTS } from '@mica/shared/attachments';
+  import { Button, PhotoPickerModal, useLocale, useMarketplace } from '@mica/sdk';
+  import type { MediaPreview } from '@mica/shared/types';
 
   let { onposted, oncancel }: { onposted: (id: number) => void; oncancel: () => void } = $props();
 

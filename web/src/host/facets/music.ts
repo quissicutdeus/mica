@@ -47,7 +47,7 @@ import {
   toggleMuteAllNearby,
   unmuteBroadcaster
 } from '../../shell/state/nearbyMusic';
-import { isYouTubeSource, thumbnailUrlFor } from '@gos/shared/youtube';
+import { isYouTubeSource, thumbnailUrlFor } from '@mica/shared/youtube';
 /**
  * MICA-181: through the host seam, not `sdk/lib/` by path. The iframe twin
  * (`sdk/host/iframe/facets/music.ts`) reads the same two from the same module, which is the

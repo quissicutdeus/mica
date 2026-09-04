@@ -380,7 +380,7 @@ jobs:
           load: true
           # `set` is a list of `target.name=value` overrides and nothing else -- a `#`
           # line inside it is parsed as one and fails with "invalid override", so the
-          # note about GOS_CALVER below lives out here.
+          # note about MICA_CALVER below lives out here.
           #
           # It is passed so the add-on catalog is actually generated in this job
           # (MICA-191). The Dockerfile skips the catalog when the stamp is empty,
@@ -393,7 +393,7 @@ jobs:
             demo.cache-to=type=gha,mode=max
             demo.args.GIT_BRANCH=${{ github.ref_name }}
             demo.args.GIT_SHA=${{ github.sha }}
-            demo.args.GOS_CALVER=0.0.0-ci.${{ github.run_number }}
+            demo.args.MICA_CALVER=0.0.0-ci.${{ github.run_number }}
 
       # `docker build` succeeding proves the image assembles, not that it serves.
       - name: Start it
@@ -446,7 +446,7 @@ jobs:
       mariadb:
         image: mariadb@sha256:2439dcd7d14010ecd1ff7a4e1c5abe8e208c34fe35290744deeeaac3569043c3
         env:
-          MARIADB_ROOT_PASSWORD: gos-test
+          MARIADB_ROOT_PASSWORD: mica-test
         options: >-
           --health-cmd="mariadb-admin ping"
           --health-interval=10s
@@ -470,15 +470,15 @@ jobs:
         run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Test migrations
         env:
-          GOS_DB_HOST: localhost
-          GOS_DB_PORT: 3306
-          GOS_DB_USER: root
-          GOS_DB_PASSWORD: gos-test
+          MICA_DB_HOST: localhost
+          MICA_DB_PORT: 3306
+          MICA_DB_USER: root
+          MICA_DB_PASSWORD: mica-test
         run: node scripts/test-migrations.js
       - name: Test schemas
         env:
-          GOS_DB_HOST: localhost
-          GOS_DB_PORT: 3306
-          GOS_DB_USER: root
-          GOS_DB_PASSWORD: gos-test
+          MICA_DB_HOST: localhost
+          MICA_DB_PORT: 3306
+          MICA_DB_USER: root
+          MICA_DB_PASSWORD: mica-test
         run: node scripts/test-schema.js

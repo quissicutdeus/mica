@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { ALL_DEVICES, DEVICES, type DeviceId } from '@gos/shared/devices';
+import { ALL_DEVICES, DEVICES, type DeviceId } from '@mica/shared/devices';
 
 /**
  * Client-side device state that more than one controller needs to agree on (MICA-262).
@@ -27,7 +27,7 @@ interface DeviceEntry {
    * Whether this server has the device on at all — the descriptor's `convars.enable`, as
    * the server last said. A device with no enable convar (the phone) is always on; the
    * tablet starts off until the server pushes otherwise (MICA-263), which is decision 5
-   * of MICA-252: `gos_tablet` defaults off until the tablet has its own identity.
+   * of MICA-252: `mica_tablet` defaults off until the tablet has its own identity.
    */
   serverEnabled: boolean;
   /** MICA-229: what the server last said about the item gate. */
@@ -68,7 +68,7 @@ export const DeviceState = {
    */
   setOpen: (id: DeviceId, open: boolean): void => {
     entry(id).open = open;
-    TriggerServerEvent('gos:server:shell:setOpen', { device: id, open });
+    TriggerServerEvent('mica:server:shell:setOpen', { device: id, open });
   },
 
   /**

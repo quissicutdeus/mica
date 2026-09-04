@@ -5,13 +5,13 @@
 import { writable } from 'svelte/store';
 import { fetchNui } from '../nui/fetchNui';
 import { callOr } from '../nui/call';
-import { bankContract } from '@gos/shared/contracts/bank';
-import type { Transaction } from '@gos/shared/types';
+import { bankContract } from '@mica/shared/contracts/bank';
+import type { Transaction } from '@mica/shared/types';
 
 // Was a second, divergent Transaction interface declared here. `shared/types.ts` is
 // the one contract now — BankingBridge normalizes onto it, so the mock, the UI and
 // the server cannot drift apart again.
-export type { Transaction } from '@gos/shared/types';
+export type { Transaction } from '@mica/shared/types';
 
 export const bankBalance = writable<number>(0);
 export const transactions = writable<Transaction[]>([]);

@@ -4,7 +4,7 @@
 
 import { writable, type Readable } from 'svelte/store';
 import { fetchNui } from './nui/transport';
-import { GENERIC_SERVICE_ACTION } from '@gos/shared/rpc';
+import { GENERIC_SERVICE_ACTION } from '@mica/shared/rpc';
 
 /**
  * A store over a server-paged list.
@@ -78,7 +78,7 @@ export function createPagedStore<T extends { id: number }>(
      *
      * Set it and `action` becomes a **server** action name — `get`, `following` — instead
      * of a row in `shared/routes.ts`. That table and `web/src/services/` both ship inside
-     * gOS, so an app installed from the Store can add to neither; this is the only path
+     * micaOS, so an app installed from the Store can add to neither; this is the only path
      * open to it. Mirrors `CrudOptions.service`, deliberately: an app should not have to
      * learn two different ways to say the same thing depending on whether its list is
      * paged.

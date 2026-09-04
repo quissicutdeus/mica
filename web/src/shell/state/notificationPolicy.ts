@@ -14,7 +14,7 @@ import { contacts } from '../../services/contacts';
  * **The decision this file encodes: policy is evaluated on the phone, never on the server.**
  *
  * A notification here is two separate things that the codebase already keeps apart — a *row*
- * (`gos_notifications`, written by `persistNotificationsAsync` in `server/lib/appEvents.ts`
+ * (`mica_notifications`, written by `persistNotificationsAsync` in `server/lib/appEvents.ts`
  * whether or not the player is online) and an *interruption* (the toast `ToastHost` paints and
  * the sound `audio.play` makes). Muting is a statement about the second one only. So the server
  * keeps writing the row and keeps pushing the envelope, and this module decides whether the

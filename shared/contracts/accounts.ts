@@ -11,7 +11,7 @@ import type { Account } from '../types';
  * treats it as optional: the app segment is the only thing keeping two graphs apart, so a
  * request that does not name one is not a request about anything.
  *
- * `gos_accounts.app` is a varchar(32). The value itself is not enumerated — it names an
+ * `mica_accounts.app` is a varchar(32). The value itself is not enumerated — it names an
  * app, and half the apps that use this service are not in this repository.
  */
 const app = s.string({ min: 1, max: 32 });

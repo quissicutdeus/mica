@@ -87,7 +87,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     loadsSeen += 1;
     if (loadsSeen < 2) return;
     console.error(
-      `[gOS] add-on '${appId}' loaded a second document into its frame; it has navigated ` +
+      `[micaOS] add-on '${appId}' loaded a second document into its frame; it has navigated ` +
         `away from its own bundle. The frame has been shut down.`
     );
     server?.dispose();
@@ -162,7 +162,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
          */
         guest: () => el.contentWindow,
         onError: (message, stack) => {
-          console.error(`[gOS] add-on '${appId}' crashed:`, message);
+          console.error(`[micaOS] add-on '${appId}' crashed:`, message);
           crashed = { message, stack };
         },
         /**

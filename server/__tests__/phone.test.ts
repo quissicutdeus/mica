@@ -66,9 +66,9 @@ import '../services/Phone';
 import { __resetCalls, injectIncomingCall, endActiveCallFor } from '../services/Phone';
 import { __resetRateLimits, allow } from '../lib/rateLimit';
 
-const START = 'gos:server:phone:start';
-const ANSWER = 'gos:server:phone:answer';
-const END = 'gos:server:phone:end';
+const START = 'mica:server:phone:start';
+const ANSWER = 'mica:server:phone:answer';
+const END = 'mica:server:phone:end';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -122,7 +122,7 @@ describe('Phone call log writes', () => {
     expect(inserts).toHaveLength(2);
 
     const [callerSql, callerParams] = inserts[0];
-    expect(callerSql).toMatch(/gos_phone_call_log/);
+    expect(callerSql).toMatch(/mica_phone_call_log/);
     expect(callerParams).toEqual(expect.arrayContaining(['CID_CALLER', 'outgoing', '555-0002']));
 
     const [, targetParams] = inserts[1];
@@ -168,8 +168,8 @@ describe('playerDropped teardown', () => {
     await fire(START, 1, '555-0002');
     await drop(1);
 
-    const ended = emitCalls().filter(([event]) => event === 'gos:client:phone:ended');
-    expect(ended).toEqual([['gos:client:phone:ended', 2]]);
+    const ended = emitCalls().filter(([event]) => event === 'mica:client:phone:ended');
+    expect(ended).toEqual([['mica:client:phone:ended', 2]]);
 
     const inserts = createCalls();
     expect(inserts[0][1]).toEqual(expect.arrayContaining(['CID_CALLER', 'outgoing', 0]));
@@ -178,15 +178,15 @@ describe('playerDropped teardown', () => {
     // Both maps are fully cleared — the survivor can immediately place a new call.
     (globalThis as any).emitNet.mockClear();
     await fire(START, 2, '555-0003');
-    expect(emitCalls().filter(([event]) => event === 'gos:client:phone:incoming')).toHaveLength(1);
+    expect(emitCalls().filter(([event]) => event === 'mica:client:phone:incoming')).toHaveLength(1);
   });
 
   it('notifies the caller and logs missed when the target drops before answering', async () => {
     await fire(START, 1, '555-0002');
     await drop(2);
 
-    const ended = emitCalls().filter(([event]) => event === 'gos:client:phone:ended');
-    expect(ended).toEqual([['gos:client:phone:ended', 1]]);
+    const ended = emitCalls().filter(([event]) => event === 'mica:client:phone:ended');
+    expect(ended).toEqual([['mica:client:phone:ended', 1]]);
 
     const inserts = createCalls();
     expect(inserts[1][1]).toEqual(expect.arrayContaining(['CID_TARGET', 'missed', 0]));
@@ -200,11 +200,11 @@ describe('playerDropped teardown', () => {
   });
 });
 
-// `notifyPlayer` fires its own `gos:client:shell:notify` before the handler's own
+// `notifyPlayer` fires its own `mica:client:shell:notify` before the handler's own
 // `phone:failed`, so every refusal below is asserted by filtering for the one event that
 // tells the client to reset, not by the full call list.
 const failedTo = (src: number) =>
-  emitCalls().filter(([event, dest]) => event === 'gos:client:phone:failed' && dest === src);
+  emitCalls().filter(([event, dest]) => event === 'mica:client:phone:failed' && dest === src);
 
 describe('start: refusals', () => {
   it('refuses a self-call as Busy and tells the client to reset', async () => {
@@ -229,7 +229,7 @@ describe('start: refusals', () => {
     const inserts = createCalls();
     expect(inserts).toHaveLength(1);
     const [sql, params] = inserts[0];
-    expect(sql).toMatch(/gos_phone_call_log/);
+    expect(sql).toMatch(/mica_phone_call_log/);
     expect(params).toEqual(expect.arrayContaining(['CID_CALLER', 'outgoing', '555-9999', 0]));
   });
 
@@ -251,7 +251,7 @@ describe('start: refusals', () => {
 
     expect(failedTo(1)).toHaveLength(1);
     // The original call is untouched — no second insert, no incoming to 3.
-    expect(emitCalls().filter(([event]) => event === 'gos:client:phone:incoming')).toHaveLength(0);
+    expect(emitCalls().filter(([event]) => event === 'mica:client:phone:incoming')).toHaveLength(0);
   });
 
   it('refuses when the target is already on a call', async () => {
@@ -285,7 +285,7 @@ describe('start: blocking (MICA-64)', () => {
 
     expect(failedTo(1)).toHaveLength(1);
     // No `incoming` ever reached the target — the call never rang at all.
-    expect(emitCalls().filter(([event]) => event === 'gos:client:phone:incoming')).toHaveLength(0);
+    expect(emitCalls().filter(([event]) => event === 'mica:client:phone:incoming')).toHaveLength(0);
   });
 
   it('logs the same call-log row a genuinely unreachable number would', async () => {
@@ -299,7 +299,7 @@ describe('start: blocking (MICA-64)', () => {
     const inserts = createCalls();
     expect(inserts).toHaveLength(1);
     const [sql, params] = inserts[0];
-    expect(sql).toMatch(/gos_phone_call_log/);
+    expect(sql).toMatch(/mica_phone_call_log/);
     expect(params).toEqual(expect.arrayContaining(['CID_CALLER', 'outgoing', '555-0002', 0]));
   });
 
@@ -316,7 +316,7 @@ describe('start: blocking (MICA-64)', () => {
 
     await fire(START, 1, '555-0002');
 
-    expect(emitCalls().filter(([event]) => event === 'gos:client:phone:incoming')).toHaveLength(1);
+    expect(emitCalls().filter(([event]) => event === 'mica:client:phone:incoming')).toHaveLength(1);
   });
 });
 
@@ -338,7 +338,7 @@ describe('start: the emergency number always connects (MICA-64)', () => {
 
     await fire(START, 1, '911');
 
-    expect(emitCalls().filter(([event]) => event === 'gos:client:phone:incoming')).toHaveLength(1);
+    expect(emitCalls().filter(([event]) => event === 'mica:client:phone:incoming')).toHaveLength(1);
     expect(failedTo(1)).toHaveLength(0);
   });
 
@@ -353,20 +353,20 @@ describe('start: the emergency number always connects (MICA-64)', () => {
   it('honours an operator-configured emergency number rather than only 911', async () => {
     const previous = (globalThis as any).GetConvar;
     (globalThis as any).GetConvar = (name: string, fallback: string) =>
-      name === 'gos_emergency_number' ? '112' : fallback;
+      name === 'mica_emergency_number' ? '112' : fallback;
     bridge.phones.set(EMERGENCY_SRC, '112');
     dbMock.scalar.mockResolvedValue(1);
 
     await fire(START, 1, '112');
 
     (globalThis as any).GetConvar = previous;
-    expect(emitCalls().filter(([event]) => event === 'gos:client:phone:incoming')).toHaveLength(1);
+    expect(emitCalls().filter(([event]) => event === 'mica:client:phone:incoming')).toHaveLength(1);
   });
 
   it('still checks the blocklist for 911 once the convar points somewhere else', async () => {
     const previous = (globalThis as any).GetConvar;
     (globalThis as any).GetConvar = (name: string, fallback: string) =>
-      name === 'gos_emergency_number' ? '112' : fallback;
+      name === 'mica_emergency_number' ? '112' : fallback;
     dbMock.scalar.mockResolvedValue(1); // blocked
 
     await fire(START, 1, '911');
@@ -435,12 +435,12 @@ describe('rate limiting and payload guards on the raw onNet handlers', () => {
   });
 });
 
-describe('injectIncomingCall / endActiveCallFor — goscall support', () => {
+describe('injectIncomingCall / endActiveCallFor — micacall support', () => {
   it('rings the target with the given caller phone', async () => {
     const callId = injectIncomingCall(2, '555-9999');
 
     expect(callId).not.toBeNull();
-    expect(emitCalls()).toEqual([['gos:client:phone:incoming', 2, { from: '555-9999', callId }]]);
+    expect(emitCalls()).toEqual([['mica:client:phone:incoming', 2, { from: '555-9999', callId }]]);
   });
 
   it('refuses to inject onto a target already on a call', async () => {
@@ -462,7 +462,7 @@ describe('injectIncomingCall / endActiveCallFor — goscall support', () => {
     // The fake caller (-1) hears 'accepted' too, same as the real handler always does —
     // harmless, since nothing real is ever connected at that source.
     expect(emitCalls()).toEqual(
-      expect.arrayContaining([['gos:client:phone:accepted', 2, { callId }]])
+      expect.arrayContaining([['mica:client:phone:accepted', 2, { callId }]])
     );
   });
 
@@ -473,7 +473,7 @@ describe('injectIncomingCall / endActiveCallFor — goscall support', () => {
     const ended = endActiveCallFor(2);
 
     expect(ended).toBe(true);
-    expect(emitCalls()).toEqual([['gos:client:phone:ended', 2]]);
+    expect(emitCalls()).toEqual([['mica:client:phone:ended', 2]]);
 
     // No caller-side row — there is no real citizenid behind the synthetic source.
     const inserts = createCalls();
@@ -489,65 +489,65 @@ describe('injectIncomingCall / endActiveCallFor — goscall support', () => {
 // `respondCall` notifies the caller of the outcome via `shell:notify`, same as
 // `notifyPlayer` elsewhere in this file — every assertion below filters for the one
 // event that matters rather than the full emit list.
-const incomingCalls = () => emitCalls().filter(([event]) => event === 'gos:client:phone:incoming');
-const endedCalls = () => emitCalls().filter(([event]) => event === 'gos:client:phone:ended');
+const incomingCalls = () => emitCalls().filter(([event]) => event === 'mica:client:phone:incoming');
+const endedCalls = () => emitCalls().filter(([event]) => event === 'mica:client:phone:ended');
 
-describe('goscall command', () => {
+describe('micacall command', () => {
   it('refuses a non-admin', async () => {
     adminState.isAdmin = false;
 
-    await runCommand('goscall', 1);
+    await runCommand('micacall', 1);
 
     expect(incomingCalls()).toHaveLength(0);
   });
 
   it('refuses the console — there is no player source to ring', async () => {
-    await runCommand('goscall', 0);
+    await runCommand('micacall', 0);
 
     expect(emitCalls()).toHaveLength(0);
   });
 
   it('rings the caller with a default number when no argument is given', async () => {
-    await runCommand('goscall', 1);
+    await runCommand('micacall', 1);
 
-    const incoming = emitCalls().find(([event]) => event === 'gos:client:phone:incoming');
+    const incoming = emitCalls().find(([event]) => event === 'mica:client:phone:incoming');
     expect(incoming?.[2]).toEqual(expect.objectContaining({ from: '5550100' }));
   });
 
   it('rings from a seeded character by first name', async () => {
-    await runCommand('goscall', 1, ['Marla']);
+    await runCommand('micacall', 1, ['Marla']);
 
-    const incoming = emitCalls().find(([event]) => event === 'gos:client:phone:incoming');
+    const incoming = emitCalls().find(([event]) => event === 'mica:client:phone:incoming');
     expect(incoming?.[2]).toEqual(expect.objectContaining({ from: '5550101' }));
   });
 
   it('rings from an arbitrary literal number', async () => {
-    await runCommand('goscall', 1, ['5559999']);
+    await runCommand('micacall', 1, ['5559999']);
 
-    const incoming = emitCalls().find(([event]) => event === 'gos:client:phone:incoming');
+    const incoming = emitCalls().find(([event]) => event === 'mica:client:phone:incoming');
     expect(incoming?.[2]).toEqual(expect.objectContaining({ from: '5559999' }));
   });
 
   it('refuses to ring someone already on a call', async () => {
-    await runCommand('goscall', 1);
+    await runCommand('micacall', 1);
     (globalThis as any).emitNet.mockClear();
 
-    await runCommand('goscall', 1);
+    await runCommand('micacall', 1);
 
     expect(incomingCalls()).toHaveLength(0);
   });
 
   it("end tears down the caller's own active call", async () => {
-    await runCommand('goscall', 1);
+    await runCommand('micacall', 1);
     (globalThis as any).emitNet.mockClear();
 
-    await runCommand('goscall', 1, ['end']);
+    await runCommand('micacall', 1, ['end']);
 
-    expect(endedCalls()).toEqual([['gos:client:phone:ended', 1]]);
+    expect(endedCalls()).toEqual([['mica:client:phone:ended', 1]]);
   });
 
   it('end on a caller with no active call does not throw or emit', async () => {
-    await runCommand('goscall', 1, ['end']);
+    await runCommand('micacall', 1, ['end']);
 
     expect(endedCalls()).toHaveLength(0);
   });

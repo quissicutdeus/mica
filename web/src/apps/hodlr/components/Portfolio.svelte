@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { EmptyState, Skeleton, onAppForeground, useLocale } from '@gos/sdk';
+  import { EmptyState, Skeleton, onAppForeground, useLocale } from '@mica/sdk';
   import { useHodlr, buyPriceOf, sellPriceOf } from '../store';
   import Chart from './Chart.svelte';
 

@@ -1,5 +1,5 @@
 {
-  "name": "my-gos-addon",
+  "name": "my-mica-addon",
   "private": true,
   "license": "AGPL-3.0-or-later",
   "version": "1.0.0",
@@ -10,8 +10,8 @@
     "check": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings"
   },
   "dependencies": {
-    "@gos/sdk": "github:quissicutdeus/gos#dev&path:/sdk",
-    "@gos/shared": "github:quissicutdeus/gos#dev&path:/shared"
+    "@mica/sdk": "github:quissicutdeus/mica#dev&path:/sdk",
+    "@mica/shared": "github:quissicutdeus/mica#dev&path:/shared"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.0",

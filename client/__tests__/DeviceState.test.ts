@@ -33,11 +33,11 @@ describe('DeviceState', () => {
     DeviceState.setOpen('tablet', true);
     expect(DeviceState.isOpen('tablet')).toBe(true);
     expect(DeviceState.openDevice()).toBe('tablet');
-    expect(triggered).toEqual([['gos:server:shell:setOpen', { device: 'tablet', open: true }]]);
+    expect(triggered).toEqual([['mica:server:shell:setOpen', { device: 'tablet', open: true }]]);
 
     DeviceState.setOpen('tablet', false);
     expect(DeviceState.isAnyOpen()).toBe(false);
-    expect(triggered[1]).toEqual(['gos:server:shell:setOpen', { device: 'tablet', open: false }]);
+    expect(triggered[1]).toEqual(['mica:server:shell:setOpen', { device: 'tablet', open: false }]);
   });
 
   it('keeps the three gates independent, any one of which keeps a device shut', () => {

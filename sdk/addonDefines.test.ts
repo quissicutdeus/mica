@@ -12,12 +12,12 @@ import { join } from 'node:path';
  *
  * ## The incident this exists for
  *
- * `web/vite.config.ts` has a `define` block for `__GOS_VERSION__` and
- * `__GOS_BUILD_INFO__`. `web/vite.addon.config.ts` had none, so both identifiers
+ * `web/vite.config.ts` has a `define` block for `__MICA_VERSION__` and
+ * `__MICA_BUILD_INFO__`. `web/vite.addon.config.ts` had none, so both identifiers
  * survived verbatim into all four shipped `core: false` bundles. Inside the sandboxed
  * add-on iframe they are undeclared, `sdk/version.ts`'s `typeof` guards therefore held, and
- * every published add-on read the fallback — `GOS_VERSION === '1.0.0'` and
- * `GOS_BUILD_INFO === 'v1.0.0-dev'` — on every server, forever. A plausible number, not
+ * every published add-on read the fallback — `MICA_VERSION === '1.0.0'` and
+ * `MICA_BUILD_INFO === 'v1.0.0-dev'` — on every server, forever. A plausible number, not
  * an obvious error, which is what let it stand.
  *
  * ## Why this test is a source read and not a bundle read
@@ -30,7 +30,7 @@ import { join } from 'node:path';
  * So the coverage is split in two, and both halves are needed:
  *
  *   1. **This file**, which reads two tracked sources and so runs identically everywhere:
- *      it fails the moment a new `__GOS_*__` global is declared and wired into the shell
+ *      it fails the moment a new `__MICA_*__` global is declared and wired into the shell
  *      build without being given a deliberate value for add-ons. That is the mistake that
  *      actually happened, and it is caught here before anyone reaches a build.
  *   2. **`noUnsubstitutedDefines()` in `vite.addon.config.ts`**, which reads the finished
@@ -50,9 +50,9 @@ const WEB_DIR = join(__dirname, '..', 'web');
 const AMBIENT_DECLARATIONS = join(WEB_DIR, 'src', 'vite-env.d.ts');
 const ADDON_CONFIG = join(WEB_DIR, 'vite.addon.config.ts');
 
-/** `declare const __GOS_VERSION__: string;` → `__GOS_VERSION__`. */
+/** `declare const __MICA_VERSION__: string;` → `__MICA_VERSION__`. */
 const declaredIdentifiers = (source: string): string[] =>
-  [...source.matchAll(/declare\s+const\s+(__GOS_[A-Za-z0-9_]*__)\s*:/g)].map((m) => m[1]).sort();
+  [...source.matchAll(/declare\s+const\s+(__MICA_[A-Za-z0-9_]*__)\s*:/g)].map((m) => m[1]).sort();
 
 /**
  * The contents of the config's `define: { … }` block.
@@ -76,7 +76,7 @@ describe('the add-on build substitutes every injected identifier', () => {
     // reading as a clean bill of health.
     expect(
       declared.length,
-      `no \`declare const __GOS_*__\` found in ${AMBIENT_DECLARATIONS} — if the ambient ` +
+      `no \`declare const __MICA_*__\` found in ${AMBIENT_DECLARATIONS} — if the ambient ` +
         'declarations moved, point this test at their new home rather than deleting it'
     ).toBeGreaterThan(0);
     expect(
@@ -87,7 +87,7 @@ describe('the add-on build substitutes every injected identifier', () => {
     ).not.toBe('');
   });
 
-  it.each(['__GOS_VERSION__', '__GOS_BUILD_INFO__'])(
+  it.each(['__MICA_VERSION__', '__MICA_BUILD_INFO__'])(
     'still declares %s, so this test is checking the identifiers it was written for',
     (name) => {
       // Pinned by name, not just counted: dropping one of these from `vite-env.d.ts` while

@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect } from 'vitest';
-import { mentionedHandles, taggedTopics, tokenizeRichText } from '@gos/shared/richText';
+import { mentionedHandles, taggedTopics, tokenizeRichText } from '@mica/shared/richText';
 
 /**
  * The tokenizer every app that renders player text shares.

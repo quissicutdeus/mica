@@ -153,7 +153,7 @@ const deliverToShell = async () => {
 
 /** Announce one broadcaster from the server and let both hops run. */
 const announce = async (rows: Record<string, unknown>[]) => {
-  const receive = netSubscriptions.get('gos:client:shell:music');
+  const receive = netSubscriptions.get('mica:client:shell:music');
   if (!receive) throw new Error('client/services/Music.ts did not subscribe to the net event');
   receive({ at: Date.now(), broadcasters: rows });
   settle();

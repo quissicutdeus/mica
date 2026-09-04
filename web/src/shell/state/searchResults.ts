@@ -2,11 +2,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import type { Contact } from '@gos/shared/types';
+import type { Contact } from '@mica/shared/types';
 import type { AppManifest } from '../../../../sdk/manifest';
-import type { UIConversation } from '@gos/sdk';
+import type { UIConversation } from '@mica/sdk';
 import { manifestVisible, type CapabilitySet } from '../../lib/phone/appVisibility';
-import { DEFAULT_DEVICE, type DeviceId } from '@gos/shared/devices';
+import { DEFAULT_DEVICE, type DeviceId } from '@mica/shared/devices';
 
 /**
  * How many hits each group contributes at most.

@@ -3,8 +3,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { get, writable } from 'svelte/store';
-import { DEFAULT_DEVICE, type DeviceId } from '@gos/shared/devices';
-// Imported from their own files rather than the `@gos/sdk` barrel: that barrel
+import { DEFAULT_DEVICE, type DeviceId } from '@mica/shared/devices';
+// Imported from their own files rather than the `@mica/sdk` barrel: that barrel
 // re-exports every hook, including `useAppLevels`/`useKeybinds`, which import
 // `./keybinds.ts`, which imports `appRegistryStore` from this file — going through the
 // barrel here would close that cycle and leave `appRegistryStore` unset when `keybinds.ts`
@@ -16,7 +16,7 @@ import {
   defineApp
 } from '../../../../sdk/manifest';
 import { clearAppStorage } from '../../../../sdk/host/useStorage';
-import { isBrowser, messageOf } from '@gos/sdk';
+import { isBrowser, messageOf } from '@mica/sdk';
 import { capabilities, capabilitiesKnown } from '../../services/capabilities';
 import { usePersisted } from '../../../../sdk/host/usePersisted';
 import { adoptExistingGrant, grantedPermissions, revokeConsent } from './addOnGrants';
@@ -37,7 +37,7 @@ export type { AppManifest } from '../../../../sdk/manifest';
  *
  * A manifest is small and the launcher cannot paint without one — name, icon, colour,
  * badge, whether the app is core. They are also safe to load early now: every manifest
- * imports `@gos/sdk/app`, a leaf, rather than the barrel this module is part of.
+ * imports `@mica/sdk/app`, a leaf, rather than the barrel this module is part of.
  *
  * A component is the whole app. Loading all thirteen at boot means parsing every screen of
  * every app before the phone draws anything, and it does not scale — thirty apps would
@@ -55,7 +55,7 @@ const appComponents = import.meta.glob('../../apps/*/index.svelte');
  */
 const tabletComponents = import.meta.glob('../../apps/*/tablet.svelte');
 
-const FIRST_BOOT_KEY = 'gos_first_boot_time';
+const FIRST_BOOT_KEY = 'mica_first_boot_time';
 
 export function getFirstBootTime(): string {
   if (typeof localStorage === 'undefined') {
@@ -223,7 +223,7 @@ const offerReloadForStaleBuild = (): void => {
   toast.show({
     app: 'system',
     source: 'feedback',
-    title: 'gOS could not load that app',
+    title: 'micaOS could not load that app',
     message: 'If it updated while this page was open, reloading will pick up the new version.',
     type: 'error',
     // Sticky: it is asking for a decision, and a prompt that vanishes after four seconds is
@@ -274,7 +274,7 @@ const loadComponent = async (
       // parameter is a format string, so an id containing `%s` would consume the message
       // after it and print something that never happened.
       console.error(
-        'gOS App Registry: failed to load %s',
+        'micaOS App Registry: failed to load %s',
         appId,
         messageOf(error, 'unknown error')
       );
@@ -315,7 +315,7 @@ const getAddOnSource = (appId: string): Promise<string | undefined> => {
     })
     .catch((error) => {
       console.error(
-        `gOS App Registry: failed to fetch add-on source for '${appId}'`,
+        `micaOS App Registry: failed to fetch add-on source for '${appId}'`,
         messageOf(error, 'unknown error')
       );
       return undefined;
@@ -340,7 +340,7 @@ for (const path in manifestFiles) {
       // component while both stayed listed in the launcher, so one of the two icons opened
       // the other app and nothing said why.
       console.warn(
-        `gOS App Registry: '${manifest.id}' is declared by more than one app in apps/. ` +
+        `micaOS App Registry: '${manifest.id}' is declared by more than one app in apps/. ` +
           `The last one loaded wins, and ids are also storage namespaces — rename one.`
       );
     }
@@ -382,7 +382,7 @@ export const registeredApps = loadedApps;
 export const bundledAddOns = [...addOns].sort((a, b) => a.name.localeCompare(b.name));
 
 const CORE_APP_IDS = new Set(loadedApps.filter((a) => a.core).map((a) => a.id));
-const LOCAL_STORAGE_KEY = 'gos_installed_remote_apps';
+const LOCAL_STORAGE_KEY = 'mica_installed_remote_apps';
 
 interface SavedRemoteApp {
   url: string;
@@ -422,7 +422,7 @@ function getSavedRemoteApps(): SavedRemoteApp[] {
         const entry = rowObj?.entry;
         if (!isCatalogEntry(entry)) {
           console.warn(
-            `gOS Registry: dropped a saved remote app install for '${url}' — it has no ` +
+            `micaOS Registry: dropped a saved remote app install for '${url}' — it has no ` +
               `catalog entry to rehydrate a manifest from (installed before this build ` +
               `could save one).`
           );
@@ -517,7 +517,7 @@ const sanitizeInstalledAddOnIds = (value: unknown): string[] =>
  * Bundled add-ons the player installed from the Store, character-scoped.
  *
  * Unlike `LOCAL_STORAGE_KEY` above (the remote-app URL list — machine-scoped, raw
- * localStorage), this rides `usePersisted`/`gos_settings` so an install follows the
+ * localStorage), this rides `usePersisted`/`mica_settings` so an install follows the
  * character rather than the PC, consistent with every other preference in the phone.
  * Namespaced under `'store'`, the app that owns this bookkeeping — not `'settings'` (a
  * phone-wide preference) and not the add-on's own id (its own namespace is its data, not
@@ -546,7 +546,7 @@ const installedAddOnIds = usePersisted<string[]>('store', 'installedAddOns', [],
  *
  * A thrown error rather than a quiet skip: `useAppAction`'s `run` in the Store surfaces the
  * message as a toast, and rehydration already logs whatever `installVerified` rejects with.
- * Which is why this one alone among the registry's errors carries no `gOS App Registry
+ * Which is why this one alone among the registry's errors carries no `micaOS App Registry
  * error:` prefix and names the app the way the player sees it — every other error here
  * describes a programming mistake nobody but a developer should ever read, and this one is
  * an ordinary fact about a standalone server.
@@ -594,7 +594,7 @@ function assertServicesUnclaimed(manifest: AppManifest, installedApps: AppManife
       servicesOf(other).find((service) => claimsService(manifest, service));
     if (clash === undefined) continue;
     throw new Error(
-      `gOS App Registry error: '${manifest.id}' claims the service '${clash}', which ` +
+      `micaOS App Registry error: '${manifest.id}' claims the service '${clash}', which ` +
         `'${other.id}' already owns. Service ids are one flat namespace, so two apps ` +
         `cannot share one.`
     );
@@ -616,7 +616,7 @@ function assertServicesUnclaimed(manifest: AppManifest, installedApps: AppManife
  * every add-on published before the field existed omits it, and so does any third-party
  * bundler that never heard of it.
  *
- * No `gOS App Registry error:` prefix and the app named as the player sees it, for the
+ * No `micaOS App Registry error:` prefix and the app named as the player sees it, for the
  * same reason `assertCapabilitiesAvailable` below drops them: `useAppAction`'s `run` in
  * the Store surfaces this as a toast, and this is an ordinary fact about a version, not a
  * programming mistake only a developer should read.
@@ -626,7 +626,7 @@ function assertContractSupported(manifest: AppManifest): void {
   if (built === undefined || built === SDK_CONTRACT_VERSION) return;
 
   throw new Error(
-    `${manifest.name} was built for gOS SDK contract ${built}, and this phone provides ` +
+    `${manifest.name} was built for micaOS SDK contract ${built}, and this phone provides ` +
       `${SDK_CONTRACT_VERSION}. Installing it would leave it broken in ways nothing here ` +
       `can predict.`
   );
@@ -663,13 +663,13 @@ function createAppRegistry() {
       !loadedApps.some((a) => a.id === validatedManifest.id)
     ) {
       throw new Error(
-        `gOS App Registry error: Overwriting core app '${validatedManifest.id}' is prohibited.`
+        `micaOS App Registry error: Overwriting core app '${validatedManifest.id}' is prohibited.`
       );
     }
 
     if (import.meta.env.DEV && get(installed).some((a) => a.id === validatedManifest.id)) {
       console.warn(
-        `gOS App Registry: '${validatedManifest.id}' is already registered and is ` +
+        `micaOS App Registry: '${validatedManifest.id}' is already registered and is ` +
           `being replaced. Expected when reinstalling that app; a bug if this is a ` +
           `different one claiming a taken id.`
       );
@@ -748,7 +748,7 @@ function createAppRegistry() {
       const validatedManifest = defineApp(manifest);
       if (!validatedManifest.core && !import.meta.env.DEV) {
         throw new Error(
-          'gOS App Registry error: add-ons register through registerAddOn(manifest, source).'
+          'micaOS App Registry error: add-ons register through registerAddOn(manifest, source).'
         );
       }
       componentRegistry.set(validatedManifest.id, component);
@@ -771,7 +771,7 @@ function createAppRegistry() {
         addOnSources.set(validatedManifest.id, source);
       } else if (!addOnIds.has(validatedManifest.id)) {
         throw new Error(
-          `gOS App Registry error: '${validatedManifest.id}' was registered with no ` +
+          `micaOS App Registry error: '${validatedManifest.id}' was registered with no ` +
             `source and is not one of this build's bundled add-ons — there is nothing for ` +
             `getAddOnSource to fetch.`
         );
@@ -791,7 +791,9 @@ function createAppRegistry() {
        * why the remote path is now normalized there rather than trusted here.
        */
       if (CORE_APP_IDS.has(appId) || targetApp?.core) {
-        throw new Error(`gOS App Registry error: Unregistering core app '${appId}' is prohibited.`);
+        throw new Error(
+          `micaOS App Registry error: Unregistering core app '${appId}' is prohibited.`
+        );
       }
       if (targetApp?.bundleUrl) {
         removeSavedRemoteApp(targetApp.bundleUrl);
@@ -886,7 +888,10 @@ function createAppRegistry() {
           // A pinned hash re-verifies on every boot, not only at install time — a bundle
           // swapped out after install must be refused, not silently re-run.
           installVerified(saved.entry, true).catch((err) => {
-            console.warn(`gOS Registry failed to re-hydrate remote app from '${saved.url}':`, err);
+            console.warn(
+              `micaOS Registry failed to re-hydrate remote app from '${saved.url}':`,
+              err
+            );
           })
         )
       );
@@ -911,20 +916,20 @@ function createAppRegistry() {
     // the same boundary `nuiMessages.ts`'s `installApp` applies to an NUI payload.
     if (entry.bundleUrl.startsWith('data:')) {
       throw new Error(
-        `gOS App Loader error: '${entry.bundleUrl}' is a data: URL, which a catalog entry ` +
+        `micaOS App Loader error: '${entry.bundleUrl}' is a data: URL, which a catalog entry ` +
           'may not use.'
       );
     }
     if (!isTrustedRemoteUrl(entry.bundleUrl)) {
       throw new Error(
-        `gOS App Loader error: '${entry.bundleUrl}' is not on the trusted remote-app host allowlist.`
+        `micaOS App Loader error: '${entry.bundleUrl}' is not on the trusted remote-app host allowlist.`
       );
     }
 
     const response = await fetch(entry.bundleUrl);
     if (!response.ok) {
       throw new Error(
-        `gOS App Loader error: HTTP ${response.status} fetching '${entry.bundleUrl}'.`
+        `micaOS App Loader error: HTTP ${response.status} fetching '${entry.bundleUrl}'.`
       );
     }
     const code = await response.text();
@@ -932,7 +937,7 @@ function createAppRegistry() {
     const verified = await matchesHash(code, entry.sha256);
     if (!verified) {
       throw new Error(
-        `gOS App Loader error: '${entry.bundleUrl}' did not match its published checksum. ` +
+        `micaOS App Loader error: '${entry.bundleUrl}' did not match its published checksum. ` +
           'Refusing to run it.'
       );
     }

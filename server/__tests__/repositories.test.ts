@@ -208,7 +208,7 @@ describe('shipped repositories — inherited guarantees', () => {
 
     const sql = String(dbMock.single.mock.calls[0][0]);
     expect(sql).toContain('`left_at` IS NULL');
-    expect(sql).toContain('`gos_messages_participants`');
+    expect(sql).toContain('`mica_messages_participants`');
     expect(dbMock.single.mock.calls[0][1]).toEqual([3, 'CIT_A']);
   });
 
@@ -234,7 +234,7 @@ describe('shipped repositories — inherited guarantees', () => {
 
     const sql = String(dbMock.update.mock.calls[0][0]).replace(/\s+/g, ' ').trim();
     expect(sql).toBe(
-      'UPDATE gos_messages_participants SET last_read = CURRENT_TIMESTAMP ' +
+      'UPDATE mica_messages_participants SET last_read = CURRENT_TIMESTAMP ' +
         'WHERE conversation_id = ? AND citizenid = ? AND left_at IS NULL'
     );
     expect(dbMock.update.mock.calls[0][1]).toEqual([3, 'CIT_A']);
@@ -248,7 +248,7 @@ describe('shipped repositories — inherited guarantees', () => {
 
     const sql = String(dbMock.query.mock.calls[0][0]).replace(/\s+/g, ' ');
     // Joins the caller's own participant row so last_read is in scope...
-    expect(sql).toContain('JOIN gos_messages_participants me');
+    expect(sql).toContain('JOIN mica_messages_participants me');
     expect(sql).toContain('me.citizenid = ?');
     expect(sql).toContain('me.left_at IS NULL');
     // ...counts only messages newer than it, and never the caller's own.
@@ -360,7 +360,7 @@ describe('shipped repositories — inherited guarantees', () => {
     const sql = String(dbMock.update.mock.calls[0][0]).replace(/\s+/g, ' ');
     // No ownership predicate — the caller authorized via participant role — but
     // still confined to a single conversation id.
-    expect(sql).toBe('UPDATE `gos_messages_conversations` SET `status` = ? WHERE `id` = ?');
+    expect(sql).toBe('UPDATE `mica_messages_conversations` SET `status` = ? WHERE `id` = ?');
     expect(dbMock.update.mock.calls[0][1]).toEqual(['deleted', 12]);
   });
 });

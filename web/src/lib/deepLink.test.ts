@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect } from 'vitest';
-import { buildDeepLink, parseDeepLink } from '@gos/shared/deepLink';
+import { buildDeepLink, parseDeepLink } from '@mica/shared/deepLink';
 
 /**
  * The contract between what the server writes and what the phone opens.
@@ -40,8 +40,8 @@ describe('deep links', () => {
     expect(parseDeepLink('blabber?handle=123')?.props.handle).toBe(123);
   });
 
-  it('tolerates the gos:// prefix the mocks used to write', () => {
-    expect(parseDeepLink('gos://messages?conversationId=1')).toEqual({
+  it('tolerates the mica:// prefix the mocks used to write', () => {
+    expect(parseDeepLink('mica://messages?conversationId=1')).toEqual({
       app: 'messages',
       props: { conversationId: 1 }
     });

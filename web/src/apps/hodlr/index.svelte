@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { Screen, registerMessages, useAppLevels, useLocale, type AppProps } from '@gos/sdk';
+  import { Screen, registerMessages, useAppLevels, useLocale, type AppProps } from '@mica/sdk';
   import Portfolio from './components/Portfolio.svelte';
   import Trade from './components/Trade.svelte';
   import en from './locales/en.json';

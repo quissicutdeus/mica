@@ -9,7 +9,7 @@ import { type AsTwin } from './_shared';
 type Twin = AsTwin<ReturnType<Facets['appRegistryWrite']>>;
 
 const refused = () => {
-  throw new Error('[gOS] only a core app may install or remove apps');
+  throw new Error('[micaOS] only a core app may install or remove apps');
 };
 
 /**

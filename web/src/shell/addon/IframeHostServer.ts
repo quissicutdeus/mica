@@ -19,7 +19,7 @@ import { isCallbackRef } from '../../../../sdk/host/iframe/messages';
 import { grantFor } from '../state/registry';
 import { themeStyleStore } from '../state/theme';
 import { is24Hour } from '../state/time';
-import { messageOf } from '@gos/sdk';
+import { messageOf } from '@mica/sdk';
 
 /** The guest end of the channel: the window a frame is currently running. */
 export interface GuestWindow {
@@ -71,16 +71,16 @@ const isStore = (v: unknown): v is { subscribe: (cb: (x: unknown) => void) => ()
   !!v && typeof v === 'object' && typeof (v as { subscribe?: unknown }).subscribe === 'function';
 
 /**
- * Every `gos:<appId>:` key, raw — the frame's sync storage reads come from this.
+ * Every `mica:<appId>:` key, raw — the frame's sync storage reads come from this.
  *
- * Keys stay **full** (`gos:<appId>:<key>`), not stripped of their prefix: the iframe
+ * Keys stay **full** (`mica:<appId>:<key>`), not stripped of their prefix: the iframe
  * twin's `storage.ts` reads its cache with `getStorageKey`, which re-adds the same prefix
  * before every `readKey`/`writeKey` call — so a stripped snapshot key never matched what
  * the twin looked up, and every `useStorage`/`usePersisted` read inside an add-on silently
  * fell through to its default value.
  */
 function storageSnapshot(appId: string): Record<string, string> {
-  const prefix = `gos:${appId}:`;
+  const prefix = `mica:${appId}:`;
   const out: Record<string, string> = {};
   if (typeof localStorage === 'undefined') return out;
   for (const key of Object.keys(localStorage)) {
@@ -282,14 +282,14 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
   /** Throws unless `member` is reachable on `facet` from inside the sandbox. */
   function requireMember(facet: string, member: string): void {
     if (DENIED_FACETS.has(facet)) {
-      throw new Error(`[gOS] '${facet}' is not reachable directly`);
+      throw new Error(`[micaOS] '${facet}' is not reachable directly`);
     }
     const allowed = membersOfFacet(facet);
     if (!allowed) {
-      throw new Error(`[gOS] '${facet}' is not reachable from an add-on`);
+      throw new Error(`[micaOS] '${facet}' is not reachable from an add-on`);
     }
     if (!allowed.includes(member)) {
-      throw new Error(`[gOS] '${facet}.${member}' is core only`);
+      throw new Error(`[micaOS] '${facet}.${member}' is core only`);
     }
   }
 
@@ -346,12 +346,12 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
    */
   function instance(facet: string, factoryArgs: readonly unknown[]): Record<string, unknown> {
     const perm = permissionOfFacet(facet);
-    if (!perm) throw new Error(`[gOS] unknown facet '${facet}'`);
+    if (!perm) throw new Error(`[micaOS] unknown facet '${facet}'`);
     host.require(perm.needed, perm.hook);
     requireGranted(perm.needed, perm.hook);
     if (facet === 'service' && !serviceAllowed(factoryArgs[0])) {
       throw new Error(
-        `[gOS] '${host.appId}' may only use its own service, not '${String(factoryArgs[0])}'`
+        `[micaOS] '${host.appId}' may only use its own service, not '${String(factoryArgs[0])}'`
       );
     }
     // After the checks, before the cache key: an id the frame sent must never reach the
@@ -366,7 +366,7 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
       // an add-on's own object silently stop working instead of failing where it asked.
       if (instances.size >= ADDON_LIMITS.instances) {
         throw new Error(
-          `[gOS] '${host.appId}' has too many live facet instances (${ADDON_LIMITS.instances})`
+          `[micaOS] '${host.appId}' has too many live facet instances (${ADDON_LIMITS.instances})`
         );
       }
       const factory = (facets as unknown as Record<string, (...a: unknown[]) => unknown>)[facet];
@@ -427,7 +427,7 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
     try {
       if (!withinBudget()) {
         throw new Error(
-          `[gOS] '${host.appId}' is calling the shell too fast ` +
+          `[micaOS] '${host.appId}' is calling the shell too fast ` +
             `(over ${ADDON_LIMITS.requestsPerWindow} in ${ADDON_LIMITS.windowMs}ms)`
         );
       }
@@ -435,7 +435,7 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
       const obj = instance(msg.facet, msg.factoryArgs);
       const member = obj[msg.member];
       if (typeof member !== 'function')
-        throw new Error(`[gOS] '${msg.facet}.${msg.member}' is not callable`);
+        throw new Error(`[micaOS] '${msg.facet}.${msg.member}' is not callable`);
       const args = decodeArgs(msg.args);
       const value: unknown = await member.apply(obj, args);
       if (!disposed) post({ kind: 'reply', id: msg.id, ok: true, value: encodeResult(value) });
@@ -454,7 +454,7 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
     try {
       if (!withinBudget()) {
         throw new Error(
-          `[gOS] '${host.appId}' is calling the shell too fast ` +
+          `[micaOS] '${host.appId}' is calling the shell too fast ` +
             `(over ${ADDON_LIMITS.requestsPerWindow} in ${ADDON_LIMITS.windowMs}ms)`
         );
       }
@@ -465,14 +465,14 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
       // previous document's whole set — so it is not counted against the cap twice.
       if (!subscriptions.has(msg.id) && subscriptions.size >= ADDON_LIMITS.subscriptions) {
         throw new Error(
-          `[gOS] '${host.appId}' holds too many live subscriptions ` +
+          `[micaOS] '${host.appId}' holds too many live subscriptions ` +
             `(${ADDON_LIMITS.subscriptions})`
         );
       }
       requireMember(msg.facet, msg.member);
       const obj = instance(msg.facet, msg.factoryArgs);
       const member = obj[msg.member];
-      if (!isStore(member)) throw new Error(`[gOS] '${msg.facet}.${msg.member}' is not a store`);
+      if (!isStore(member)) throw new Error(`[micaOS] '${msg.facet}.${msg.member}' is not a store`);
       subscriptions.set(
         msg.id,
         member.subscribe((value) => {
@@ -480,7 +480,7 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
         })
       );
     } catch (e) {
-      console.error(`[gOS] add-on '${host.appId}' subscribe failed:`, e);
+      console.error(`[micaOS] add-on '${host.appId}' subscribe failed:`, e);
     }
   }
 
@@ -519,7 +519,7 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
       escaped(
         `its bundle was built against SDK contract '${built}' and this phone provides ` +
           `'${SDK_CONTRACT_VERSION}'`,
-        `${manifest.name} was built for a different version of gOS (SDK contract ` +
+        `${manifest.name} was built for a different version of micaOS (SDK contract ` +
           `${built}; this phone provides ${SDK_CONTRACT_VERSION}).`
       );
       return;
@@ -566,7 +566,7 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
    */
   function escaped(detail: string, message: string): void {
     if (disposed) return;
-    console.error(`[gOS] add-on '${manifest.id}': ${detail}. The frame has been shut down.`);
+    console.error(`[micaOS] add-on '${manifest.id}': ${detail}. The frame has been shut down.`);
     shutDown();
     opts.onEscape?.(message);
   }
@@ -623,7 +623,7 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
         const stray = event.data as { kind?: unknown; appId?: unknown } | null;
         if (stray && typeof stray === 'object' && stray.kind === 'hello') {
           console.error(
-            `[gOS] add-on '${manifest.id}' said hello from a window that is not the one ` +
+            `[micaOS] add-on '${manifest.id}' said hello from a window that is not the one ` +
               `in its frame, and will stay blank. The frame it came from is not the one ` +
               `this host was given.`
           );
@@ -636,7 +636,7 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
         case 'hello':
           if (msg.appId !== manifest.id) {
             console.error(
-              `[gOS] add-on frame for '${manifest.id}' announced '${msg.appId}'; refused.`
+              `[micaOS] add-on frame for '${manifest.id}' announced '${msg.appId}'; refused.`
             );
             return;
           }

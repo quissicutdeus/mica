@@ -14,7 +14,7 @@
  *
  * Real CEF (verified live against Chrome/103.0.5060.141, the documented CEF baseline —
  * see AGENTS.md §6) delivers `SendNUIMessage` with `event.source === window.top`, the
- * root `nui://game` window gOS's own frame is embedded in — not null/undefined as
+ * root `nui://game` window micaOS's own frame is embedded in — not null/undefined as
  * previously assumed here, which silently discarded every real NUI message including
  * `setVisible` and left the phone permanently blank. The dev harness (`devHarness.ts`)
  * posts fixtures with `window.postMessage(fixture, '*')`, which arrives back with

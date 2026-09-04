@@ -10,7 +10,7 @@ import type { Transaction } from '../types';
 type SendMoneyResult = { ok: true } | { ok: false; reason: string };
 
 /**
- * Bank has no gOS table — it reads the banking resource's own export — so every action it
+ * Bank has no micaOS table — it reads the banking resource's own export — so every action it
  * answers is custom and every one of them is here.
  *
  * `sendMoney` is the most forgeable request in the phone, which is why the recipient is a

@@ -4,7 +4,7 @@
 
 import { registerFacet } from '../../../../sdk/host/current';
 import { submitReport } from '../../services/reports';
-import type { SubmitReportInput } from '@gos/sdk';
+import type { SubmitReportInput } from '@mica/sdk';
 
 /**
  * Report a piece of content.

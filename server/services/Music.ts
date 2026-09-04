@@ -5,10 +5,10 @@
 // The server half of the music service: who is playing out loud, and who can hear it.
 import { PlayerFacingError } from '../lib/errors';
 import { ServiceEndpoint } from '../lib/ServiceEndpoint';
-import { musicContract } from '@gos/shared/contracts/music';
+import { musicContract } from '@mica/shared/contracts/music';
 import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { playerCoords } from '../lib/playerCoords';
-import { isPlaylistId, isVideoId, parseYouTubeSource } from '@gos/shared/youtube';
+import { isPlaylistId, isVideoId, parseYouTubeSource } from '@mica/shared/youtube';
 import {
   DEFAULT_MAX_NEARBY,
   DEFAULT_MUSIC_RANGE,
@@ -16,7 +16,7 @@ import {
   MUSIC_BROADCAST_NET_EVENT,
   type NearbyBroadcast,
   type NearbyMusicEnvelope
-} from '@gos/shared/musicBroadcast';
+} from '@mica/shared/musicBroadcast';
 
 /**
  * MICA-111 phase 2 — the half that makes a phone audible to the people standing next to
@@ -31,7 +31,7 @@ import {
  * persisted there (`web/src/shell/state/music.ts`), so a table would carry a migration and
  * buy nothing but the ability to resurrect a stereo nobody is standing next to.
  *
- * **So the answer to "does this survive `ensure gos`" is no, deliberately.** A restart
+ * **So the answer to "does this survive `ensure mica`" is no, deliberately.** A restart
  * clears every broadcast, the CEF page reloads with it, and every client comes back
  * silent. That is the correct end state rather than a limitation: the alternative is a
  * server that remembers a track a player has long since stopped.
@@ -126,7 +126,7 @@ const lastPushed = new Map<number, string>();
  *
  * Never cleared on disconnect — surviving one is the entire point. It is cleared by a
  * resource restart, which is the documented limit: a mute survives a relog, not an
- * `ensure gos`. One short string per character who has ever pressed play.
+ * `ensure mica`. One short string per character who has ever pressed play.
  */
 const tokens = new Map<string, string>();
 
@@ -156,7 +156,7 @@ export const __resetMusic = (): void => {
   tokens.clear();
 };
 
-/** Read-only view of the live state, for tests and for `gosmusic`-style diagnostics. */
+/** Read-only view of the live state, for tests and for `micamusic`-style diagnostics. */
 export const activeBroadcasts = (): Broadcast[] => [...broadcasts.values()];
 
 const POLL_MS = 2000;
@@ -176,7 +176,7 @@ const MAX_POSITION_MS = 12 * 60 * 60 * 1000;
 
 const rangeMeters = (): number =>
   typeof GetConvarInt === 'function'
-    ? GetConvarInt('gos_music_range', DEFAULT_MUSIC_RANGE)
+    ? GetConvarInt('mica_music_range', DEFAULT_MUSIC_RANGE)
     : DEFAULT_MUSIC_RANGE;
 
 /**
@@ -192,7 +192,7 @@ const rangeMeters = (): number =>
 const maxNearby = (): number => {
   const raw =
     typeof GetConvarInt === 'function'
-      ? GetConvarInt('gos_music_max_nearby', DEFAULT_MAX_NEARBY)
+      ? GetConvarInt('mica_music_max_nearby', DEFAULT_MAX_NEARBY)
       : DEFAULT_MAX_NEARBY;
   if (!Number.isFinite(raw) || raw < 1) return DEFAULT_MAX_NEARBY;
   return Math.min(Math.trunc(raw), MAX_NEARBY_BROADCASTS);
@@ -359,7 +359,7 @@ const send = (src: number, envelope: NearbyMusicEnvelope): boolean => {
     emitNet(MUSIC_BROADCAST_NET_EVENT, src, envelope);
     return true;
   } catch (error) {
-    console.error(`[gos] music push to ${src} failed:`, error);
+    console.error(`[mica] music push to ${src} failed:`, error);
     return false;
   }
 };

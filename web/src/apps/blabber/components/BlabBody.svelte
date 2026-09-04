@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { tokenizeRichText } from '@gos/sdk';
+  import { tokenizeRichText } from '@mica/sdk';
 
   /**
    * A post's text, with mentions and tags styled.

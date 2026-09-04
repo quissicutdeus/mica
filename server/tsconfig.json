@@ -16,7 +16,7 @@
     "lib": ["es2023"],
     "noUnusedLocals": true,
     "paths": {
-      "@gos/shared/*": ["../shared/*"]
+      "@mica/shared/*": ["../shared/*"]
     }
   },
   "include": ["./**/*", "../shared/**/*"],

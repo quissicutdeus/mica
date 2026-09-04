@@ -35,11 +35,13 @@ test.describe('Store E2E', () => {
 
     await expect(page.locator('h3', { hasText: 'Notes' })).toBeVisible();
     await expect(page.locator('text=Local Storage')).toBeVisible();
-    // gOS, not 'Community': Notes is written in this repo, and its author no longer has
+    // micaOS, not 'Community': Notes is written in this repo, and its author no longer has
     // to lie to keep it out of the launcher. Exact, because `text=` is a case-insensitive
-    // substring match and 'gOS' appears in the OS name too. Scoped to the screen
+    // substring match and 'micaOS' appears in the OS name too. Scoped to the screen
     // because the preview header paints the same wordmark outside the device.
-    await expect(page.getByTestId('phone-screen').getByText('gOS', { exact: true })).toBeVisible();
+    await expect(
+      page.getByTestId('phone-screen').getByText('micaOS', { exact: true })
+    ).toBeVisible();
   });
 
   test('installs community add-on app and verifies icon appears on home screen', async ({

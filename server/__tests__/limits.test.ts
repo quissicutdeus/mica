@@ -122,7 +122,7 @@ describe('column limits — derived from the declaration, not invented', () => {
 
     expect(message).toBe("'firstname' is limited to 50 characters.");
     expect(message).not.toContain('[Repository]');
-    expect(message).not.toContain('gos_');
+    expect(message).not.toContain('mica_');
   });
 
   it('says nothing about a column it has no rule for', () => {
@@ -141,7 +141,7 @@ describe('column limits — derived from the declaration, not invented', () => {
     // there; this repository declares `status` writable directly, the way a hand-written
     // one could, and the backstop must still win.
     class HandWrittenRepository extends Repository<{ status: string }> {
-      protected tableName = 'gos_hand_written';
+      protected tableName = 'mica_hand_written';
       protected columns = ['id', 'citizenid', 'status', 'created_at', 'updated_at'] as const;
       protected clientWritable = ['status'] as const;
     }
@@ -202,7 +202,7 @@ describe('rate limiting', () => {
 
   it('honors a convar override', () => {
     (globalThis as Record<string, unknown>).GetConvar = (name: string, fallback: string) =>
-      name === 'gos_rate_limit' ? '2' : fallback;
+      name === 'mica_rate_limit' ? '2' : fallback;
 
     expect(allow(1, 'notes', 'create')).toBe(true);
     expect(allow(1, 'notes', 'create')).toBe(true);
@@ -211,7 +211,7 @@ describe('rate limiting', () => {
 
   it('falls back to the default for a convar that is not a positive number', () => {
     (globalThis as Record<string, unknown>).GetConvar = (name: string, fallback: string) =>
-      name === 'gos_rate_limit' ? 'off' : fallback;
+      name === 'mica_rate_limit' ? 'off' : fallback;
 
     for (let i = 0; i < 60; i++) expect(allow(1, 'notes', 'create')).toBe(true);
     expect(allow(1, 'notes', 'create')).toBe(false);

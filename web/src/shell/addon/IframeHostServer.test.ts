@@ -10,7 +10,7 @@
  * which side it is standing in for. In-process, because a unit test stands in for the shell.
  */
 import '../../host/registerFacets';
-import type { AppPermission } from '@gos/sdk';
+import type { AppPermission } from '@mica/sdk';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { get, writable } from 'svelte/store';
 import { createInProcessHost } from '../../../../sdk/host/inProcess/createInProcessHost';
@@ -28,8 +28,8 @@ import '../../../../sdk/host/useWallpaper';
 import '../../../../sdk/host/useSystemHardware';
 import '../../../../sdk/host/useTheme';
 
-/** A namespaced storage key. Built, not quoted: a `gos:` literal reads as a net event to `server/__tests__/eventNames.test.ts`. */
-const storageKey = (app: string, key: string) => `gos:${app}:${key}`;
+/** A namespaced storage key. Built, not quoted: a `mica:` literal reads as a net event to `server/__tests__/eventNames.test.ts`. */
+const storageKey = (app: string, key: string) => `mica:${app}:${key}`;
 
 const manifest = defineApp({
   id: 'probe',
@@ -153,7 +153,7 @@ describe('IframeHostServer', () => {
     expect(hydrate.payload.constants.clock).toEqual({ is24Hour: get(shellIs24Hour) });
     expect(typeof hydrate.payload.constants.clock.is24Hour).toBe('boolean');
   });
-  it('hydrate storage keeps the full gos:<appId>:<key>, not stripped of its prefix', () => {
+  it('hydrate storage keeps the full mica:<appId>:<key>, not stripped of its prefix', () => {
     // This suite's jsdom has no real `localStorage` (see `sdk/storage.test.ts`'s doc
     // comment — deliberate, matching the in-memory fallback CEF's own storage backend
     // uses), so `storageSnapshot`'s `typeof localStorage === 'undefined'` guard would
@@ -1099,7 +1099,7 @@ describe('IframeHostServer', () => {
       s.handle({
         data: { action: 'appEvent', data: {} },
         source: {},
-        origin: 'https://cfx-nui-gos'
+        origin: 'https://cfx-nui-mica'
       } as unknown as MessageEvent);
 
       expect(onEscape).not.toHaveBeenCalled();

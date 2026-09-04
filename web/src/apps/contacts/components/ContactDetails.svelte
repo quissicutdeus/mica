@@ -19,7 +19,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     useLocale,
     type Contact,
     type UIMessage
-  } from '@gos/sdk';
+  } from '@mica/sdk';
 
   const { t } = useLocale();
 

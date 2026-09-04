@@ -4,13 +4,13 @@
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-# Root-owned smoke-test wrapper (MICA-220). gos can only invoke this exact
+# Root-owned smoke-test wrapper (MICA-220). gphone can only invoke this exact
 # script via sudoers; it cannot edit it. It takes one argument, a run directory
 # that ~gphone/bin/smoke-release.sh has just unpacked a release zip into, and
 # proves the zip is a resource FXServer can start: a throwaway MariaDB gets the
-# zip's own gos.esx.sql imported, a throwaway FXServer from the stack's own
-# image gets the zip's gos mounted read-only beside the stack's oxmysql, and
-# the console has to say `gos started!` with no error from gos or oxmysql
+# zip's own mica.esx.sql imported, a throwaway FXServer from the stack's own
+# image gets the zip's mica mounted read-only beside the stack's oxmysql, and
+# the console has to say `mica started!` with no error from mica or oxmysql
 # after it. Everything it starts is torn down on exit, whichever way it exits.
 #
 # What it trusts and what it does not. The run directory has to be under
@@ -22,15 +22,15 @@
 #
 # Settings live in ENV_FILE, root-owned, read one named key at a time rather
 # than sourced. LICENSE_KEY is required: without one FXServer starts every
-# resource and then quits, which proves the zip loads but not that gos
+# resource and then quits, which proves the zip loads but not that mica
 # reaches its database. A key registered for this box, and NOT the one either
 # live stack uses -- two servers on one key will not both stay up -- is what
-# makes the second half provable. GOS_SMOKE_KEYLESS=1 runs without one and
+# makes the second half provable. MICA_SMOKE_KEYLESS=1 runs without one and
 # says so on every line it prints; it exists for trying this script by hand.
 set -euo pipefail
 
 SMOKE_ROOT=/home/gphone/smoke
-ENV_FILE=/etc/gos-smoke.env
+ENV_FILE=/etc/mica-smoke.env
 
 # Overridable from ENV_FILE. The defaults are the stack as scripts/deploy/README.md
 # describes it: compose project `fivem`, so the image is `fivem-server`, and the
@@ -40,8 +40,8 @@ DB_IMAGE=mariadb:noble
 OXMYSQL_DIR=/opt/fivem-main/server-data/vendor/oxmysql
 LICENSE_KEY=
 
-# How long FXServer gets to print `gos started!`, and how long the server is
-# then left running for gos's asynchronous start -- the oxmysql connection,
+# How long FXServer gets to print `mica started!`, and how long the server is
+# then left running for mica's asynchronous start -- the oxmysql connection,
 # the schema report, the orphan sweep's refusal on standalone -- to say anything.
 START_TIMEOUT=180
 SETTLE_SECONDS=20
@@ -55,8 +55,8 @@ die() {
 # sudo this runs as root, and root ignores both: sudoers does not pass them and
 # the trust root of a privileged script is not something its caller chooses.
 if [[ $(id -u) -ne 0 ]]; then
-    SMOKE_ROOT=${GOS_SMOKE_ROOT:-$SMOKE_ROOT}
-    ENV_FILE=${GOS_SMOKE_ENV:-$ENV_FILE}
+    SMOKE_ROOT=${MICA_SMOKE_ROOT:-$SMOKE_ROOT}
+    ENV_FILE=${MICA_SMOKE_ENV:-$ENV_FILE}
 fi
 
 run=${1:?usage: $0 <run directory under $SMOKE_ROOT>}
@@ -73,9 +73,9 @@ esac
 if [[ -n $(find "$real" -type l -print -quit) ]]; then
     die "$real contains a symlink; the zip this repo ships carries none"
 fi
-resource="$real/resources/gos"
+resource="$real/resources/mica"
 [[ -f $resource/fxmanifest.lua ]] || die "$resource/fxmanifest.lua is missing"
-[[ -f $resource/gos.esx.sql ]] || die "$resource/gos.esx.sql is missing"
+[[ -f $resource/mica.esx.sql ]] || die "$resource/mica.esx.sql is missing"
 owner=$(stat -c '%u:%g' "$real")
 
 # One key per line, read by name. Sourcing the file would let it run anything.
@@ -88,12 +88,12 @@ fi
 
 keyless=0
 if [[ -z $LICENSE_KEY ]]; then
-    if [[ ${GOS_SMOKE_KEYLESS:-} == 1 ]]; then
+    if [[ ${MICA_SMOKE_KEYLESS:-} == 1 ]]; then
         keyless=1
         echo "smoke: KEYLESS -- no LICENSE_KEY, so FXServer will quit right after the resources start." >&2
         echo "smoke: KEYLESS -- this proves the zip loads and nothing past that." >&2
     else
-        die "no LICENSE_KEY in $ENV_FILE. Register a key for this box at https://portal.cfx.re/ and write LICENSE_KEY=<key> there (0600, root-owned); a keyless run proves too little to release on. GOS_SMOKE_KEYLESS=1 overrides, for a trial by hand."
+        die "no LICENSE_KEY in $ENV_FILE. Register a key for this box at https://portal.cfx.re/ and write LICENSE_KEY=<key> there (0600, root-owned); a keyless run proves too little to release on. MICA_SMOKE_KEYLESS=1 overrides, for a trial by hand."
     fi
 fi
 
@@ -103,9 +103,9 @@ docker image inspect "$FX_IMAGE" >/dev/null 2>&1 ||
     die "$OXMYSQL_DIR is not an oxmysql checkout; set OXMYSQL_DIR in $ENV_FILE"
 
 id=$(basename "$real")
-net="gos-smoke-$id"
-db="gos-smoke-db-$id"
-fx="gos-smoke-fx-$id"
+net="mica-smoke-$id"
+db="mica-smoke-db-$id"
+fx="mica-smoke-fx-$id"
 
 teardown() {
     docker rm -f "$fx" "$db" >/dev/null 2>&1 || true
@@ -118,9 +118,9 @@ plain() { sed 's/\x1b\[[0-9;]*m//g'; }
 
 docker network create "$net" >/dev/null
 
-echo "smoke: starting $DB_IMAGE and importing the zip's gos.esx.sql"
+echo "smoke: starting $DB_IMAGE and importing the zip's mica.esx.sql"
 docker run -d --name "$db" --network "$net" \
-    -e MARIADB_ROOT_PASSWORD=smoke -e MARIADB_DATABASE=gos \
+    -e MARIADB_ROOT_PASSWORD=smoke -e MARIADB_DATABASE=mica \
     "$DB_IMAGE" >/dev/null
 # An authenticated query, not a ping: the image's first-boot init runs a
 # temporary server that answers ping before the root password exists, and an
@@ -134,31 +134,31 @@ ready || die "$DB_IMAGE did not accept a root login within 90s"
 # The import is itself half the test: the file an owner is told to import has to
 # import. Standalone mode wants the ESX file, which carries no foreign key onto a
 # framework table that this database does not have.
-docker exec -i "$db" mariadb -uroot -psmoke gos <"$resource/gos.esx.sql" ||
-    die "gos.esx.sql from the zip failed to import"
-tables=$(docker exec "$db" mariadb -uroot -psmoke -N -e "select count(*) from information_schema.tables where table_schema='gos'")
-echo "smoke: imported gos.esx.sql -- $tables tables"
+docker exec -i "$db" mariadb -uroot -psmoke mica <"$resource/mica.esx.sql" ||
+    die "mica.esx.sql from the zip failed to import"
+tables=$(docker exec "$db" mariadb -uroot -psmoke -N -e "select count(*) from information_schema.tables where table_schema='mica'")
+echo "smoke: imported mica.esx.sql -- $tables tables"
 
 # A server-data of its own: the config below, and whatever FXServer writes
 # beside it (its cache). Owned by the run directory's owner, which is the uid the
 # container runs as, so it can write there and nowhere else.
 sd="$real/server-data"
-mkdir -p "$sd/resources/oxmysql" "$sd/resources/gos"
+mkdir -p "$sd/resources/oxmysql" "$sd/resources/mica"
 {
     echo 'endpoint_add_tcp "0.0.0.0:30120"'
     echo 'endpoint_add_udp "0.0.0.0:30120"'
-    echo 'set sv_hostname "gos release smoke"'
+    echo 'set sv_hostname "mica release smoke"'
     echo 'set sv_maxclients 1'
     [[ $keyless == 1 ]] || echo "set sv_licenseKey \"$LICENSE_KEY\""
-    echo 'set mysql_connection_string "mysql://root:smoke@'"$db"':3306/gos?charset=utf8mb4"'
-    echo 'set gos_standalone 1'
+    echo 'set mysql_connection_string "mysql://root:smoke@'"$db"':3306/mica?charset=utf8mb4"'
+    echo 'set mica_standalone 1'
     echo 'ensure oxmysql'
-    echo 'ensure gos'
+    echo 'ensure mica'
 } >"$sd/server.cfg"
 chmod 600 "$sd/server.cfg"
 chown -R "$owner" "$sd"
 
-echo "smoke: starting $FX_IMAGE with the zip's gos and $OXMYSQL_DIR"
+echo "smoke: starting $FX_IMAGE with the zip's mica and $OXMYSQL_DIR"
 # `-w`: the image's entrypoint renders server.cfg from a template only when none
 # exists in its working directory, then execs run.sh there. `+exec` is what the
 # stack's own compose deliberately never passes (it would skip txAdmin's wizard);
@@ -167,18 +167,18 @@ docker run -d --name "$fx" --network "$net" --user "$owner" \
     -w /opt/fivem/server-data \
     -v "$sd:/opt/fivem/server-data" \
     -v "$OXMYSQL_DIR:/opt/fivem/server-data/resources/oxmysql:ro" \
-    -v "$resource:/opt/fivem/server-data/resources/gos:ro" \
+    -v "$resource:/opt/fivem/server-data/resources/mica:ro" \
     "$FX_IMAGE" +exec server.cfg >/dev/null
 
 started=0
 deadline=$((SECONDS + START_TIMEOUT))
 while ((SECONDS < deadline)); do
     logs=$(docker logs "$fx" 2>&1 | plain || true)
-    if grep -q 'gos started!' <<<"$logs"; then
+    if grep -q 'mica started!' <<<"$logs"; then
         started=1
         break
     fi
-    if grep -qiE "Couldn't find resource gos|Failed to (load|start) resource gos|Could not (load|start) resource gos" <<<"$logs"; then
+    if grep -qiE "Couldn't find resource mica|Failed to (load|start) resource mica|Could not (load|start) resource mica" <<<"$logs"; then
         break
     fi
     if [[ $(docker inspect -f '{{.State.Running}}' "$fx" 2>/dev/null) != true ]]; then
@@ -188,36 +188,36 @@ while ((SECONDS < deadline)); do
 done
 
 report() {
-    echo "---- FXServer console, gos and oxmysql lines ----"
-    docker logs "$fx" 2>&1 | plain | grep -iE 'gos|oxmysql|resources\]|svadhesive|Quitting' || true
+    echo "---- FXServer console, mica and oxmysql lines ----"
+    docker logs "$fx" 2>&1 | plain | grep -iE 'mica|oxmysql|resources\]|svadhesive|Quitting' || true
     echo "----------------------------------------------------"
 }
 
 if [[ $started != 1 ]]; then
     report
-    die "FXServer never printed 'gos started!' within ${START_TIMEOUT}s -- the zip does not start as a resource"
+    die "FXServer never printed 'mica started!' within ${START_TIMEOUT}s -- the zip does not start as a resource"
 fi
 
 if [[ $keyless == 1 ]]; then
     report
-    echo "smoke: KEYLESS -- gos started; FXServer quits without a key, so its database start is NOT proven"
+    echo "smoke: KEYLESS -- mica started; FXServer quits without a key, so its database start is NOT proven"
     exit 0
 fi
 
-# The keyed half. The server stays up, so gos's asynchronous start gets a
+# The keyed half. The server stays up, so mica's asynchronous start gets a
 # fixed window to complain in, and then the console is read for the things that
-# would make a released zip a bad one: a script error from gos, or oxmysql
+# would make a released zip a bad one: a script error from mica, or oxmysql
 # failing to connect to a database that was imported seconds ago.
 sleep "$SETTLE_SECONDS"
 logs=$(docker logs "$fx" 2>&1 | plain || true)
 report
 if [[ $(docker inspect -f '{{.State.Running}}' "$fx" 2>/dev/null) != true ]]; then
-    die "FXServer exited after gos started; with a key it should stay up (a key already in use elsewhere does this)"
+    die "FXServer exited after mica started; with a key it should stay up (a key already in use elsewhere does this)"
 fi
-if grep -iE 'script:gos' <<<"$logs" | grep -qiE 'error|exception|unhandled'; then
-    die "gos logged an error after starting"
+if grep -iE 'script:mica' <<<"$logs" | grep -qiE 'error|exception|unhandled'; then
+    die "mica logged an error after starting"
 fi
 if grep -iE 'oxmysql' <<<"$logs" | grep -qiE 'error|refused|denied|unable to (connect|establish)'; then
-    die "oxmysql could not reach the database gos.esx.sql was imported into"
+    die "oxmysql could not reach the database mica.esx.sql was imported into"
 fi
-echo "smoke: gos started against gos.esx.sql and stayed clean for ${SETTLE_SECONDS}s"
+echo "smoke: mica started against mica.esx.sql and stayed clean for ${SETTLE_SECONDS}s"

@@ -4,7 +4,7 @@
 
 import { writable } from 'svelte/store';
 import { fetchNui } from './nui/transport';
-import { GENERIC_SERVICE_ACTION } from '@gos/shared/rpc';
+import { GENERIC_SERVICE_ACTION } from '@mica/shared/rpc';
 
 /** The NUI action names a `createCrudStore` reads and writes through. */
 export interface CrudEvents {
@@ -40,7 +40,7 @@ export interface CrudOptions<T, TDraft> {
    * Set it and `events` become **server** action names — `get`, `create`, `update`,
    * `delete` — rather than rows in `shared/routes.ts`. That is the only path open to an
    * app installed from the Store, which cannot add a route to a table shipping inside
-   * gOS.
+   * micaOS.
    *
    * A core service sets it too whenever an action it lists is contracted (MICA-213):
    * `routes.test.ts` then holds each scoped mock to a registered server event, the same
@@ -99,7 +99,7 @@ export function createCrudStore<T extends { id: number }, TDraft = Omit<T, 'id'>
    * every core service uses, and the one `routes.test.ts` cross-references. With it, they
    * are **server action names** (`get`, `create`) sent through the one generic callback,
    * which is the only path available to an app the Store installed: it cannot add a row
-   * to a route table that ships inside gOS.
+   * to a route table that ships inside micaOS.
    *
    * Here rather than in a second store factory, because everything below this line — the
    * ordering, the `loaded` flag, the validation, refusing to optimistically assert a write

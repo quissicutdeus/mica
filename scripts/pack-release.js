@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { releaseManifest } from './lib/release-manifest.js';
 
 /**
- * Pack `@gos/sdk` and `@gos/shared` as tarballs for a GitHub Release.
+ * Pack `@mica/sdk` and `@mica/shared` as tarballs for a GitHub Release.
  *
  * MICA-125 asked for a published, versioned contract someone outside this repo can build
  * against. This is that, without an npm name. The decision and its reasoning are on the
@@ -18,7 +18,7 @@ import { releaseManifest } from './lib/release-manifest.js';
  * already works — so a versioned artifact attached to the release that already exists gets
  * the benefit and leaves the one-way door shut.
  *
- * **Both packages, always.** `@gos/sdk` depends on `@gos/shared`, and `sdk/types.ts`
+ * **Both packages, always.** `@mica/sdk` depends on `@mica/shared`, and `sdk/types.ts`
  * re-exports from it into both barrels, so a consumer resolving the SDK alone gets a 404 on
  * a dependency it cannot see. Shipping one without the other is shipping neither.
  *
@@ -89,7 +89,7 @@ try {
   }
 
   // `releaseManifest` has already turned the SDK's `workspace:*` dependency on
-  // `@gos/shared` into this same version, so both tarballs agree and neither needs a
+  // `@mica/shared` into this same version, so both tarballs agree and neither needs a
   // workspace to be understood. That rewrite used to be left to `pnpm pack`, which cannot
   // do it without an install — see `lib/release-manifest.js` for what that cost.
   for (const { dir } of manifests) {

@@ -1,5 +1,5 @@
 import { expect, type Page, type Locator } from '@playwright/test';
-import { DEVICES, type DeviceId } from '@gos/shared/devices';
+import { DEVICES, type DeviceId } from '@mica/shared/devices';
 
 /**
  * The phone's design width, from the device table rather than restated. A spec drives the
@@ -54,7 +54,7 @@ export async function seedHomeGrid(
       // document and nothing else, so it stops at the top window.
       if (window !== window.top) return;
       const items = ids.map((appId, position) => ({ position, kind: 'app', appId }));
-      window.localStorage.setItem(`gos:settings:${key}`, JSON.stringify(items));
+      window.localStorage.setItem(`mica:settings:${key}`, JSON.stringify(items));
     },
     { ids: appIds, key }
   );

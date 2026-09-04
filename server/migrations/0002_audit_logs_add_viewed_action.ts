@@ -6,10 +6,10 @@ import type { Migration } from '../lib/migrations';
 import { Database } from '../lib/Database';
 
 /**
- * Widen `gos_audit_logs.action` to accept `'viewed'` (MICA-70): an admin reading
+ * Widen `mica_audit_logs.action` to accept `'viewed'` (MICA-70): an admin reading
  * reported content, rather than acting on it.
  *
- * `gos_audit_logs` has no `defineService` behind it — it is emitted verbatim from
+ * `mica_audit_logs` has no `defineService` behind it — it is emitted verbatim from
  * `scripts/framework-schema.sql`, the one `citizenid`-bearing table with no declaration —
  * so `SchemaMigrator`'s additive pass never looks at it (`declaredServices` does not know
  * it exists) and a widened enum here gets no help from that machinery at all. It still
@@ -27,11 +27,11 @@ import { Database } from '../lib/Database';
 export const migration: Migration = {
   id: '0002_audit_logs_add_viewed_action',
   description:
-    "widens gos_audit_logs.action to accept 'viewed' — an admin reading reported " +
+    "widens mica_audit_logs.action to accept 'viewed' — an admin reading reported " +
     'content rather than acting on it',
   up: async () => {
     await Database.query(
-      `ALTER TABLE \`gos_audit_logs\` MODIFY COLUMN \`action\` ENUM(
+      `ALTER TABLE \`mica_audit_logs\` MODIFY COLUMN \`action\` ENUM(
          'archived',
          'unarchived',
          'deleted',

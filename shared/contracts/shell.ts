@@ -29,7 +29,7 @@ export const shellContract = defineContract({
      */
     capabilities: { input: s.none(), output: responseType<{ money: boolean }>() },
     sourceUrl: { input: s.none(), output: responseType<{ url: string }>() },
-    /** MICA-61: the owner's default language (`gos_locale`), or '' when unset. */
+    /** MICA-61: the owner's default language (`mica_locale`), or '' when unset. */
     locale: { input: s.none(), output: responseType<{ locale: string }>() }
   }
 });

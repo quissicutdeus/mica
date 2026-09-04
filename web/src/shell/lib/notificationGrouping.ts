@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import type { NotificationItem } from '@gos/shared/types';
+import type { NotificationItem } from '@mica/shared/types';
 
 export interface NotificationConversationGroup {
   title: string;

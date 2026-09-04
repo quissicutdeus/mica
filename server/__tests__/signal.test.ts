@@ -58,7 +58,7 @@ describe('signal rules', () => {
     addDeadZone({ x: 0, y: 0, z: 0, radius: 50, level: 0 });
 
     const events = (globalThis.emitNet as any).mock.calls.map((c: unknown[]) => c[0]);
-    expect(events).not.toContain('gos:client:signal:rules');
+    expect(events).not.toContain('mica:client:signal:rules');
   });
 
   it('hands back an id, which is the only thing a caller can do with a zone', () => {
@@ -101,7 +101,7 @@ describe('signal rules', () => {
       // No ped yet beats a spurious blackout — the same fallback an unspawned player
       // already gets.
       const pushed = (globalThis.emitNet as any).mock.calls.find(
-        (c: unknown[]) => c[0] === 'gos:client:signal:set' && c[1] === 5
+        (c: unknown[]) => c[0] === 'mica:client:signal:set' && c[1] === 5
       );
       expect(pushed?.[2]).toBe(FULL_SIGNAL);
     } finally {
@@ -130,7 +130,7 @@ describe('signal rules', () => {
 
       const pushedTo = () =>
         (globalThis.emitNet as any).mock.calls
-          .filter((c: unknown[]) => c[0] === 'gos:client:signal:set')
+          .filter((c: unknown[]) => c[0] === 'mica:client:signal:set')
           .map((c: unknown[]) => c[1]);
       expect(pushedTo()).not.toContain(5);
       expect(pushedTo()).toContain(6);
@@ -156,14 +156,14 @@ describe('signal rules', () => {
     (FrameworkBridge.getAllPlayers as any).mockReturnValue({ 5: {}, 6: {} });
     let failing = true;
     (globalThis.emitNet as any).mockImplementation((event: string, src: number) => {
-      if (event === 'gos:client:signal:set' && src === 5 && failing) {
+      if (event === 'mica:client:signal:set' && src === 5 && failing) {
         throw new Error('native 000000002f7a49e6: Argument at index 1 was null.');
       }
     });
 
     const attemptsFor = (src: number) =>
       (globalThis.emitNet as any).mock.calls.filter(
-        (c: unknown[]) => c[0] === 'gos:client:signal:set' && c[1] === src
+        (c: unknown[]) => c[0] === 'mica:client:signal:set' && c[1] === src
       ).length;
 
     expect(() => pollSignal()).not.toThrow();

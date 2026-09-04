@@ -27,7 +27,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     registerMessages,
     type AppProps,
     type RecentlyDeletedItem
-  } from '@gos/sdk';
+  } from '@mica/sdk';
   import NoteEditor from './components/NoteEditor.svelte';
   import en from './locales/en.json';
   import de from './locales/de.json';

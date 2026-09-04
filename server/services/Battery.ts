@@ -5,20 +5,20 @@
 // The server half of the battery service.
 import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { defineService } from '../lib/defineService';
-import { PhoneBattery } from '@gos/shared/types';
+import { PhoneBattery } from '@mica/shared/types';
 import { isAdmin } from './Admin';
 import { onPlayerLoaded, notifyPlayer } from '../lib/shell';
 import { guardNetEvent, levelFrom } from '../lib/netGuard';
 
 /**
- * gOS owns the saved charge, in its own table.
+ * micaOS owns the saved charge, in its own table.
  *
  * It used to live only in framework character metadata, which is why it kept coming
  * back as 100%: metadata is held in memory and written to the `players` row when the
  * *framework* decides to save — logout, its autosave interval, a clean shutdown. A
  * server crash, an `ensure qbx_core`, or a restart between autosaves throws the value
  * away. The in-memory `playerBatteryStore` fallback was worse still: wiped by every
- * `ensure gos`.
+ * `ensure mica`.
  *
  * No NUI surface: all four generic actions are off and the client reaches battery only
  * through the named events below. `write: 'server'` keeps the columns non-client-writable
@@ -85,7 +85,7 @@ export const __resetBatteryCache = () => lastWritten.clear();
  * Charge per connected source, ticked by the server.
  *
  * This lived on the client: it ran the drain timer and reported over
- * `gos:server:battery:save` every 15 seconds, so a modified client asserted whatever
+ * `mica:server:battery:save` every 15 seconds, so a modified client asserted whatever
  * charge it liked. The fix is not a better check on that event — it is that the event is
  * gone and the number is ours.
  *
@@ -105,7 +105,7 @@ const CHARGE_PER_MINUTE = 10;
 const TICK_MS = 5000;
 
 const pushCharge = (src: number, level: number): void => {
-  if (typeof emitNet === 'function') emitNet('gos:client:battery:set', src, level);
+  if (typeof emitNet === 'function') emitNet('mica:client:battery:set', src, level);
 };
 
 /**
@@ -196,9 +196,9 @@ export const savePlayerBattery = async (src: number, level: number): Promise<voi
   if (lastWritten.get(citizenid) === safeLevel) return;
   rememberWrite(citizenid, safeLevel);
 
-  // Mirrored into character metadata so other resources reading `gos_battery` keep
+  // Mirrored into character metadata so other resources reading `mica_battery` keep
   // working. Our table is the authority; this is a courtesy copy.
-  player.setMeta('gos_battery', safeLevel);
+  player.setMeta('mica_battery', safeLevel);
 
   try {
     const [existing] = await batteryApp.repo.findAll({ citizenid } as Partial<PhoneBattery>);
@@ -210,12 +210,12 @@ export const savePlayerBattery = async (src: number, level: number): Promise<voi
   } catch (e) {
     // A failed write must not take the event handler down; the next report retries.
     lastWritten.delete(citizenid);
-    console.error('[gos] failed to save battery', e);
+    console.error('[mica] failed to save battery', e);
   }
 };
 
 // Event handler for battery_bank item or custom server trigger to recharge phone
-onNet('gos:server:battery:useItem', () => {
+onNet('mica:server:battery:useItem', () => {
   // Rate limit *and* authenticate, in the order `ServiceEndpoint` uses. Raw `onNet`
   // handlers got neither until this; see `lib/netGuard.ts`.
   const player = guardNetEvent('battery', 'useItem');
@@ -225,12 +225,12 @@ onNet('gos:server:battery:useItem', () => {
   const removed = removeBatteryBankItem(src);
   if (removed) {
     void savePlayerBattery(src, 100);
-    emitNet('gos:client:battery:recharge', src);
+    emitNet('mica:client:battery:recharge', src);
   }
 });
 
 /**
- * `gos:server:battery:save` is deliberately absent.
+ * `mica:server:battery:save` is deliberately absent.
  *
  * It let the client tell the server what its charge was, which is the whole of the
  * tampering surface — no amount of validating that payload makes it something else. The
@@ -238,7 +238,7 @@ onNet('gos:server:battery:useItem', () => {
  */
 
 /**
- * The Developer Tools battery slider, gated on `gos.admin`.
+ * The Developer Tools battery slider, gated on `mica.admin`.
  *
  * Kept separate from `saveBattery` because that one is called by **every** client's
  * drain loop every 15 seconds and so cannot require admin.
@@ -249,7 +249,7 @@ onNet('gos:server:battery:useItem', () => {
  * convenient UI, not the capability. Server-authoritative battery is a separate,
  * larger change: persistence (below) is not the same thing as authority.
  */
-onNet('gos:server:admin:setBattery', (rawCharge: unknown) => {
+onNet('mica:server:admin:setBattery', (rawCharge: unknown) => {
   // Rate limit *and* authenticate, in the order `ServiceEndpoint` uses. Raw `onNet`
   // handlers got neither until this; see `lib/netGuard.ts`.
   const player = guardNetEvent('admin', 'setBattery');
@@ -269,7 +269,7 @@ onNet('gos:server:admin:setBattery', (rawCharge: unknown) => {
   if (level === null) return;
 
   void savePlayerBattery(src, level);
-  emitNet('gos:client:battery:set', src, level);
+  emitNet('mica:client:battery:set', src, level);
 });
 
 /**
@@ -287,7 +287,7 @@ export const sendLoadedBatteryToClient = async (src: number): Promise<void> => {
   // to look up, and `src_<id>` would key a row to a source number that gets reused.
   if (!citizenid) {
     charge.set(src, 100);
-    emitNet('gos:client:battery:set', src, 100);
+    emitNet('mica:client:battery:set', src, 100);
     return;
   }
 
@@ -300,12 +300,12 @@ export const sendLoadedBatteryToClient = async (src: number): Promise<void> => {
     const [row] = await batteryApp.repo.findAll({ citizenid } as Partial<PhoneBattery>);
     if (row) savedCharge = Number(row.level);
   } catch (e) {
-    console.error('[gos] failed to load battery', e);
+    console.error('[mica] failed to load battery', e);
   }
 
   if (savedCharge === null) {
     const metadata = player.rawPlayer?.PlayerData?.metadata;
-    const legacy = metadata?.gos_battery ?? metadata?.phone_battery;
+    const legacy = metadata?.mica_battery ?? metadata?.phone_battery;
     savedCharge = legacy === undefined ? 100 : Number(legacy);
     // Adopt it, so the next load reads our table. Awaited rather than fired and
     // forgotten: a `loadBattery` racing the drain loop's first `saveBattery` could
@@ -318,11 +318,11 @@ export const sendLoadedBatteryToClient = async (src: number): Promise<void> => {
   // only told the client would leave the server ticking down from 100 for somebody whose
   // saved charge is 12.
   charge.set(src, savedCharge);
-  emitNet('gos:client:battery:set', src, savedCharge);
+  emitNet('mica:client:battery:set', src, savedCharge);
 };
 
 // Event for client to request saved battery level on spawn / join
-onNet('gos:server:battery:load', () => {
+onNet('mica:server:battery:load', () => {
   // Rate limit *and* authenticate, in the order `ServiceEndpoint` uses. Raw `onNet`
   // handlers got neither until this; see `lib/netGuard.ts`.
   const player = guardNetEvent('battery', 'load');
@@ -350,7 +350,7 @@ onNet('gos:server:battery:load', () => {
 onPlayerLoaded('battery', (src) => sendLoadedBatteryToClient(src));
 
 /**
- * Out-of-band recharge: `goscharge [playerId] <0-100>`.
+ * Out-of-band recharge: `micacharge [playerId] <0-100>`.
  *
  * Until now the only way to add charge was the `battery_bank` item, so a flat battery
  * with no item in your inventory meant a phone that could not be turned on — and the
@@ -362,7 +362,7 @@ onPlayerLoaded('battery', (src) => sendLoadedBatteryToClient(src));
 /** Report back on whichever channel the caller used. */
 const respond = (source: number, message: string, isError = false) => {
   if (source === 0) {
-    console.log(`[gos] ${message}`);
+    console.log(`[mica] ${message}`);
     return;
   }
   notifyPlayer(source, {
@@ -373,7 +373,7 @@ const respond = (source: number, message: string, isError = false) => {
 
 export const runChargeCommand = (source: number, args: string[]): void => {
   // Routed through `isAdmin` rather than repeating an ace check. The inline
-  // `IsPlayerAceAllowed(..., 'gos.admin')` this replaces did not learn about the
+  // `IsPlayerAceAllowed(..., 'mica.admin')` this replaces did not learn about the
   // wider admin list, so a full server admin was refused by a command that then said
   // nothing, because the denial notify had no client listener at the time.
   if (!isAdmin(source)) {
@@ -388,11 +388,11 @@ export const runChargeCommand = (source: number, args: string[]): void => {
   const level = Math.max(0, Math.min(100, Number(rawLevel)));
 
   if (!Number.isInteger(target) || target <= 0) {
-    respond(source, 'usage: goscharge <playerId> <0-100>', true);
+    respond(source, 'usage: micacharge <playerId> <0-100>', true);
     return;
   }
   if (rawLevel === undefined || !Number.isFinite(Number(rawLevel))) {
-    respond(source, 'usage: goscharge [playerId] <0-100>', true);
+    respond(source, 'usage: micacharge [playerId] <0-100>', true);
     return;
   }
 
@@ -405,7 +405,7 @@ export const runChargeCommand = (source: number, args: string[]): void => {
 };
 
 RegisterCommand(
-  'goscharge',
+  'micacharge',
   (source: number, args: string[]) => runChargeCommand(source, args),
   false
 );
@@ -414,7 +414,7 @@ RegisterCommand(
 FrameworkBridge.registerUsableItem('battery_bank', (source: number) => {
   const removed = removeBatteryBankItem(source);
   if (removed) {
-    emitNet('gos:client:battery:recharge', source);
+    emitNet('mica:client:battery:recharge', source);
   }
 });
 
@@ -429,7 +429,7 @@ export const getBatteryLevel = async (citizenid: string): Promise<number> => {
     const [row] = await batteryApp.repo.findAll({ citizenid } as Partial<PhoneBattery>);
     return row ? Number(row.level) : 100;
   } catch (e) {
-    console.error('[gos] failed to read battery', e);
+    console.error('[mica] failed to read battery', e);
     return 100;
   }
 };
@@ -466,5 +466,5 @@ export const setCharging = (src: number, isCharging: boolean): void => {
   // state the client's own timer had to honour.
   if (isCharging) charging.add(src);
   else charging.delete(src);
-  if (typeof emitNet === 'function') emitNet('gos:client:battery:charging', src, isCharging);
+  if (typeof emitNet === 'function') emitNet('mica:client:battery:charging', src, isCharging);
 };

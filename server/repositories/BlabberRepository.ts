@@ -4,14 +4,14 @@
 
 import { SchemaRepository, type ResolvedService } from '../lib/defineService';
 import { Database } from '../lib/Database';
-import { Blab, MediaPreview } from '@gos/shared/types';
+import { Blab, MediaPreview } from '@mica/shared/types';
 
 /**
  * Author hydration for Blabber.
  *
  * `Blab.handle`, `display_name` and `avatar` are documented in `shared/types.ts` as "hydrated
  * for display", and `BlabRow`, `Thread` and `Profile` all render them — but nothing joined
- * `gos_accounts`, so every feed in game rendered `@` with a silhouette and a blank name.
+ * `mica_accounts`, so every feed in game rendered `@` with a silhouette and a blank name.
  * Only `create`'s echo carried a handle, which is why posting looked correct and reloading did
  * not. The browser mock embeds handles on every fixture, so `pnpm dev` and Playwright were both
  * green throughout: the bug was only ever visible against a real database.
@@ -19,7 +19,7 @@ import { Blab, MediaPreview } from '@gos/shared/types';
  * Batched per page rather than per row, exactly as `MessageRepository` batches attachments — a
  * feed of thirty posts is two queries, not sixty.
  *
- * The join **never selects `gos_accounts.citizenid`**. `publicColumns` already withholds
+ * The join **never selects `mica_accounts.citizenid`**. `publicColumns` already withholds
  * Blabber's own, and re-adding the author's through a join would hand back the same
  * de-anonymisation vector by another route: a public read returns rows the reader does not own,
  * and with several accounts per player the owner's citizenid correlates two deliberately-separate
@@ -69,7 +69,7 @@ export class BlabberRepository extends SchemaRepository<Blab> {
     if (attachments && attachments.length > 0) {
       for (const attachment of attachments) {
         await Database.insert(
-          'INSERT INTO `gos_blabber_attachments` (`blab_id`, `citizenid`, `media_id`) VALUES (?, ?, ?)',
+          'INSERT INTO `mica_blabber_attachments` (`blab_id`, `citizenid`, `media_id`) VALUES (?, ?, ?)',
           [id, data.citizenid, attachment.photo_id]
         );
       }
@@ -151,8 +151,8 @@ export class BlabberRepository extends SchemaRepository<Blab> {
       `SELECT a.id, a.blab_id,
               m.id AS media_id, m.kind, m.data, m.url, m.thumbnail,
               m.mime_type, m.duration_ms, m.alt_text
-         FROM \`gos_blabber_attachments\` a
-         JOIN \`gos_media\` m ON a.media_id = m.id
+         FROM \`mica_blabber_attachments\` a
+         JOIN \`mica_media\` m ON a.media_id = m.id
         WHERE a.blab_id IN (${placeholders})
         ORDER BY a.id ASC`,
       ids
@@ -283,7 +283,7 @@ export class BlabberRepository extends SchemaRepository<Blab> {
    * The display fields for a set of accounts.
    *
    * Not filtered by account `status`, and that is a decision rather than an oversight: nothing
-   * writes `moderated` onto `gos_accounts` yet, and filtering here would render a post from a
+   * writes `moderated` onto `mica_accounts` yet, and filtering here would render a post from a
    * deleted account with a blank author — which is the exact bug this class exists to fix.
    * Moderating an account has to hide its *posts*, which is a cascade for the moderation phase,
    * not something a projection can stand in for.
@@ -293,7 +293,7 @@ export class BlabberRepository extends SchemaRepository<Blab> {
 
     const placeholders = ids.map(() => '?').join(', ');
     const rows = await Database.query<AuthorRow[]>(
-      `SELECT \`id\`, \`handle\`, \`display_name\`, \`avatar\` FROM \`gos_accounts\`
+      `SELECT \`id\`, \`handle\`, \`display_name\`, \`avatar\` FROM \`mica_accounts\`
        WHERE \`id\` IN (${placeholders})`,
       ids
     );

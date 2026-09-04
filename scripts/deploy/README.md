@@ -5,14 +5,14 @@ The half of the deploy that runs on the game server.
 it opens an SSH session with a key that `authorized_keys` pins to a forced
 command, and the server decides what runs.
 
-| File                         | Installed to                        | Runs as                      |
-| ---------------------------- | ----------------------------------- | ---------------------------- |
-| `deploy-dev.sh`              | `/home/gphone/bin/deploy-dev.sh`    | `gphone`, via forced command |
-| `deploy-main.sh`             | `/home/gphone/bin/deploy-main.sh`   | `gphone`, via forced command |
-| `gos-deploy-dev-compose.sh`  | `/usr/local/sbin/`                  | `root`, via `sudoers`        |
-| `gos-deploy-main-compose.sh` | `/usr/local/sbin/`                  | `root`, via `sudoers`        |
-| `smoke-release.sh`           | `/home/gphone/bin/smoke-release.sh` | `gphone`, via forced command |
-| `gos-smoke-release.sh`       | `/usr/local/sbin/`                  | `root`, via `sudoers`        |
+| File                          | Installed to                        | Runs as                      |
+| ----------------------------- | ----------------------------------- | ---------------------------- |
+| `deploy-dev.sh`               | `/home/gphone/bin/deploy-dev.sh`    | `gphone`, via forced command |
+| `deploy-main.sh`              | `/home/gphone/bin/deploy-main.sh`   | `gphone`, via forced command |
+| `mica-deploy-dev-compose.sh`  | `/usr/local/sbin/`                  | `root`, via `sudoers`        |
+| `mica-deploy-main-compose.sh` | `/usr/local/sbin/`                  | `root`, via `sudoers`        |
+| `smoke-release.sh`            | `/home/gphone/bin/smoke-release.sh` | `gphone`, via forced command |
+| `mica-smoke-release.sh`       | `/usr/local/sbin/`                  | `root`, via `sudoers`        |
 
 ## The unprivileged half self-installs; the privileged half does not
 
@@ -27,7 +27,7 @@ The root-owned compose scripts still need copying by hand:
 ```sh
 # privileged half -- root-owned so the deploy account cannot edit what it invokes
 sudo install -m 700 -o root -g root \
-  scripts/deploy/gos-deploy-dev-compose.sh /usr/local/sbin/
+  scripts/deploy/mica-deploy-dev-compose.sh /usr/local/sbin/
 ```
 
 That asymmetry is the point: a deploy account that could rewrite the script it
@@ -54,17 +54,17 @@ both; the lock is the only guard that sees every caller.
 ## The release smoke test
 
 The other thing this box does for CI (MICA-220): before `release.yml` attaches
-`gos-<version>.zip` to a release, it pipes the zip over SSH to a third forced
+`mica-<version>.zip` to a release, it pipes the zip over SSH to a third forced
 command here, and the zip is released only if it starts.
 
 `smoke-release.sh` runs as `gphone` with the zip on stdin. It caps the size,
 unpacks it into a directory of its own under `~gphone/smoke/`, checks it
-unpacked to `gos/fxmanifest.lua`, and hands that directory to the root wrapper.
-`gos-smoke-release.sh` then starts a throwaway MariaDB, imports the zip's own
-`gos.esx.sql` into it, and starts a throwaway FXServer from the stack's own
-image with the zip's `gos` mounted read-only beside the main checkout's
-`oxmysql`, in `gos_standalone` mode. The console has to print `gos started!`
-within three minutes, and then, for twenty seconds more, nothing from gos or
+unpacked to `mica/fxmanifest.lua`, and hands that directory to the root wrapper.
+`mica-smoke-release.sh` then starts a throwaway MariaDB, imports the zip's own
+`mica.esx.sql` into it, and starts a throwaway FXServer from the stack's own
+image with the zip's `mica` mounted read-only beside the main checkout's
+`oxmysql`, in `mica_standalone` mode. The console has to print `mica started!`
+within three minutes, and then, for twenty seconds more, nothing from mica or
 oxmysql that reads as an error. Both containers and their network are removed on
 exit, whichever way it exits, and nothing here touches either live stack: the
 containers are on a network of their own and publish no port.
@@ -76,12 +76,12 @@ smoke test that tested nothing.
 
 **Why a licence key of its own.** Without `sv_licenseKey` FXServer starts every
 resource and then quits, which proves the zip loads and nothing past that. With
-one the server stays up and gos's asynchronous start — the oxmysql connection,
+one the server stays up and mica's asynchronous start — the oxmysql connection,
 the schema report, the orphan sweep's refusal on standalone — gets its window to
 fail in. It has to be a key registered for this box and **not the one either
 live stack uses**: two servers on one key will not both stay up, and the one
 that loses could be the live one. The wrapper refuses to run without a key;
-`GOS_SMOKE_KEYLESS=1` overrides that for a trial by hand and says so on every
+`MICA_SMOKE_KEYLESS=1` overrides that for a trial by hand and says so on every
 line it prints.
 
 ### Installing it
@@ -90,20 +90,20 @@ Once, and none of it updates itself — `smoke-release.sh` has no checkout to
 re-install from, unlike `deploy-<target>.sh`:
 
 ```sh
-# the unprivileged half, as gos
+# the unprivileged half, as gphone
 install -m 755 scripts/deploy/smoke-release.sh ~gphone/bin/smoke-release.sh
 
 # the privileged half, root-owned so the deploy account cannot edit what it invokes
 sudo install -m 700 -o root -g root \
-  scripts/deploy/gos-smoke-release.sh /usr/local/sbin/
+  scripts/deploy/mica-smoke-release.sh /usr/local/sbin/
 
-# let gos invoke it by exact path, with a run directory as its one argument
-echo 'gphone ALL=(root) NOPASSWD: /usr/local/sbin/gos-smoke-release.sh /home/gphone/smoke/*' |
-  sudo tee /etc/sudoers.d/gos-smoke >/dev/null && sudo chmod 440 /etc/sudoers.d/gos-smoke
+# let mica invoke it by exact path, with a run directory as its one argument
+echo 'gphone ALL=(root) NOPASSWD: /usr/local/sbin/mica-smoke-release.sh /home/gphone/smoke/*' |
+  sudo tee /etc/sudoers.d/mica-smoke >/dev/null && sudo chmod 440 /etc/sudoers.d/mica-smoke
 
 # the licence key, and anything the defaults get wrong for this box
-sudo install -m 600 -o root -g root /dev/null /etc/gos-smoke.env
-sudo tee /etc/gos-smoke.env >/dev/null <<'ENV'
+sudo install -m 600 -o root -g root /dev/null /etc/mica-smoke.env
+sudo tee /etc/mica-smoke.env >/dev/null <<'ENV'
 LICENSE_KEY=<a key registered for this box, distinct from both stacks'>
 # FX_IMAGE=fivem-server:latest
 # DB_IMAGE=mariadb:noble
@@ -141,16 +141,16 @@ the wrapper is not root:
 
 ```sh
 mkdir -p /tmp/smoke/root && run=$(mktemp -d /tmp/smoke/root/XXXXXXXX)
-mkdir "$run/resources" && unzip -q dist/release/gos-*.zip -d "$run/resources"
+mkdir "$run/resources" && unzip -q dist/release/mica-*.zip -d "$run/resources"
 printf 'OXMYSQL_DIR=/opt/fivem/server-data/vendor/oxmysql\n' > /tmp/smoke/settings
-GOS_SMOKE_KEYLESS=1 GOS_SMOKE_ROOT=/tmp/smoke/root GOS_SMOKE_ENV=/tmp/smoke/settings \
-  scripts/deploy/gos-smoke-release.sh "$run"
+MICA_SMOKE_KEYLESS=1 MICA_SMOKE_ROOT=/tmp/smoke/root MICA_SMOKE_ENV=/tmp/smoke/settings \
+  scripts/deploy/mica-smoke-release.sh "$run"
 ```
 
 On the box itself, the whole path as CI drives it:
 
 ```sh
-ssh -i ~/.ssh/gphone-ci-smoke-release gphone@localhost < dist/release/gos-*.zip
+ssh -i ~/.ssh/gphone-ci-smoke-release gphone@localhost < dist/release/mica-*.zip
 ```
 
 ## Never invoke two at once
@@ -182,7 +182,7 @@ sudo -u gphone /home/gphone/bin/deploy-dev.sh
 
 ## Why the split
 
-`gos` is not in the `docker` group — on a shared host that is root-equivalent,
+`mica` is not in the `docker` group — on a shared host that is root-equivalent,
 and this path runs `pnpm install` over third-party dependencies. So the
 container rebuild happens in a root-owned wrapper that `sudoers` lets this
 account invoke by exact path and nothing else.

@@ -41,7 +41,7 @@ quietly wrong.
 
 | Variable          | Default                 | What it does                                                                  |
 | ----------------- | ----------------------- | ----------------------------------------------------------------------------- |
-| `GOS_PORT`        | `8080`                  | Host port. The container always listens on 8080.                              |
+| `MICA_PORT`       | `8080`                  | Host port. The container always listens on 8080.                              |
 | `TZ`              | `America/Los_Angeles`   | The **server log** timestamps, and nothing else — see below.                  |
 | `GIT_BRANCH`      | _(Dockerfile: main)_    | Version stamp, branch half.                                                   |
 | `GIT_SHA`         | _(Dockerfile: unknown)_ | Version stamp, commit half.                                                   |
@@ -156,7 +156,7 @@ So, when a change adds or moves a top-level directory that `web/` builds
 against, or adds a file the bundle reads at build time:
 
 ```sh
-docker build -t gos-demo-test:local .   # the only way to check this locally
+docker build -t mica-demo-test:local .   # the only way to check this locally
 ```
 
 Two minutes, and it is the difference between finding this now and finding it
@@ -165,7 +165,7 @@ rather than reporting a green `pnpm verify` as though it covered this.
 
 ## When it will not start
 
-The healthcheck is the server binary in a second mode (`/gos-serve -health`),
+The healthcheck is the server binary in a second mode (`/mica-serve -health`),
 because a `scratch` image has no shell and no `wget` for the usual line. If the
 container never reports healthy:
 

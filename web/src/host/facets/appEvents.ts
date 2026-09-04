@@ -5,7 +5,7 @@
 import { registerFacet } from '../../../../sdk/host/current';
 import { onDestroy } from 'svelte';
 import { clearAppEvents, subscribeAppEvent } from '../../shell/state/appEvents';
-import type { AppEvent } from '@gos/sdk';
+import type { AppEvent } from '@mica/sdk';
 
 /** Implementation of the `useAppEvents` facet — see the `useAppEvents` hook doc for the usage contract. */
 export function appEvents(appId: string) {

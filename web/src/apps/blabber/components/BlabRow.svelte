@@ -5,8 +5,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { Avatar, formatDate, MediaThumb, ReportDialog, useLocale } from '@gos/sdk';
-  import type { Blab, BlabEngagement } from '@gos/shared/types';
+  import { Avatar, formatDate, MediaThumb, ReportDialog, useLocale } from '@mica/sdk';
+  import type { Blab, BlabEngagement } from '@mica/shared/types';
   import BlabBody from './BlabBody.svelte';
   import BlabActions from './BlabActions.svelte';
 
@@ -258,7 +258,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 {#if reporting}
   <ReportDialog
-    targetTable="gos_blabber"
+    targetTable="mica_blabber"
     targetId={blab.id}
     appId="blabber"
     onclose={() => (reporting = false)}

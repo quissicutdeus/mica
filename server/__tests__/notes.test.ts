@@ -28,7 +28,7 @@ import { notes } from '../services/Notes';
 import { __resetRateLimits } from '../lib/rateLimit';
 
 const call = async (action: string, data: unknown) => {
-  const handler = handlers.get(`gos:server:notes:${action}`);
+  const handler = handlers.get(`mica:server:notes:${action}`);
   if (!handler) throw new Error(`no handler for notes:${action}`);
   (globalThis as any).source = 5;
   (globalThis as any).emitNet = vi.fn();
@@ -54,7 +54,7 @@ describe('notes:restore (MICA-75)', () => {
 
     expect(reply).toEqual({ ok: true });
     const [sql, params] = dbMock.update.mock.calls[0];
-    expect(String(sql)).toContain('UPDATE `gos_notes`');
+    expect(String(sql)).toContain('UPDATE `mica_notes`');
     expect(params).toEqual([5, 'CIT_A', 30]);
   });
 
@@ -84,11 +84,11 @@ describe('notes:restore (MICA-75)', () => {
   });
 
   it('leaves the generic CRUD actions registered alongside it', () => {
-    expect(handlers.has('gos:server:notes:restore')).toBe(true);
-    expect(handlers.has('gos:server:notes:get')).toBe(true);
-    expect(handlers.has('gos:server:notes:create')).toBe(true);
-    expect(handlers.has('gos:server:notes:update')).toBe(true);
-    expect(handlers.has('gos:server:notes:delete')).toBe(true);
+    expect(handlers.has('mica:server:notes:restore')).toBe(true);
+    expect(handlers.has('mica:server:notes:get')).toBe(true);
+    expect(handlers.has('mica:server:notes:create')).toBe(true);
+    expect(handlers.has('mica:server:notes:update')).toBe(true);
+    expect(handlers.has('mica:server:notes:delete')).toBe(true);
     expect(notes.resolved.id).toBe('notes');
   });
 });
@@ -108,7 +108,7 @@ describe('notes:getDeleted (MICA-75-wiring)', () => {
 
     expect(reply).toEqual([{ id: 5, citizenid: 'CIT_A', status: 'deleted' }]);
     const [sql, params] = dbMock.query.mock.calls[0];
-    expect(String(sql)).toContain('FROM `gos_notes`');
+    expect(String(sql)).toContain('FROM `mica_notes`');
     expect(String(sql)).toContain("`status` = 'deleted'");
     expect(params).toEqual(['CIT_A', 30]);
   });
@@ -121,6 +121,6 @@ describe('notes:getDeleted (MICA-75-wiring)', () => {
   });
 
   it('is registered alongside restore', () => {
-    expect(handlers.has('gos:server:notes:getDeleted')).toBe(true);
+    expect(handlers.has('mica:server:notes:getDeleted')).toBe(true);
   });
 });

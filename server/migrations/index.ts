@@ -4,5 +4,6 @@ import { migration as m0 } from './0001_repair_conversation_participants';
 import { migration as m1 } from './0002_audit_logs_add_viewed_action';
 import { migration as m2 } from './0003_conversations_pair_key';
 import { migration as m3 } from './0004_rename_gphone_tables_to_gos';
+import { migration as m4 } from './0005_rename_gos_tables_to_mica';
 
-export const migrations = [m0, m1, m2, m3];
+export const migrations = [m0, m1, m2, m3, m4];

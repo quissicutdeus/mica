@@ -70,7 +70,7 @@ export const ROUTES: readonly Route[] = [
   // Notes
   // Notes is `core: false` and reaches its service through the generic route instead, so
   // it needs no row here. That is the whole point of the generic route: this table ships
-  // inside gOS, and an app installed from the Store cannot add to it.
+  // inside micaOS, and an app installed from the Store cannot add to it.
 
   // Reports. `queue` and `resolve` are admin-only, enforced server-side rather than by
   // hiding the Administration app — hiding the app hides the button, not the capability.
@@ -108,7 +108,7 @@ export const ROUTES: readonly Route[] = [
   // the caller and `sdk/host/settingsSync.ts` is what drives it.
 ] as const;
 
-/** The `gos:server:<app>:<action>` event a route forwards to. */
+/** The `mica:server:<app>:<action>` event a route forwards to. */
 export const serverEventFor = (r: Route): string => requestEventFor(r.service, r.serverAction);
 
 /**
@@ -143,10 +143,10 @@ export const CLIENT_ONLY_ACTIONS: readonly string[] = [
   'takePhoto',
   // Front/rear toggle on the scripted camera.
   'flipCamera',
-  // `gos_camera_quality`. The NUI cannot read a convar, so the client reads it and
+  // `mica_camera_quality`. The NUI cannot read a convar, so the client reads it and
   // answers with it — a hardware read like the four above, not a service call.
   'cameraQuality',
-  // `gos_addon_hosts` and `gos_addon_catalog`, the same way and for the same reason
+  // `mica_addon_hosts` and `mica_addon_catalog`, the same way and for the same reason
   // (MICA-126). Asked once at page load, before the registry re-verifies saved remote
   // installs — the allowlist has to be in place before that check can mean anything.
   'remoteAppConfig',

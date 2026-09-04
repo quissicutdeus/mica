@@ -18,7 +18,7 @@ import {
  * The camera's own numbers, restated rather than imported: `lib/` may not import an app,
  * and the relationships below are exactly what would go unnoticed if one side moved.
  */
-/** The default `gos_camera_quality`; a server owner may set it lower. */
+/** The default `mica_camera_quality`; a server owner may set it lower. */
 const CAPTURE_QUALITY = 0.95;
 const CAPTURE_MAX_DIMENSION = 1080;
 

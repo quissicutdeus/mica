@@ -12,9 +12,9 @@
 # this one — the last matching block wins.
 
 version = 1
-SPDX-PackageName = "gos"
+SPDX-PackageName = "mica"
 SPDX-PackageSupplier = "quissicutdeus"
-SPDX-PackageDownloadLocation = "https://github.com/quissicutdeus/gos"
+SPDX-PackageDownloadLocation = "https://github.com/quissicutdeus/mica"
 
 [[annotations]]
 path = "**"

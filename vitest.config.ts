@@ -14,7 +14,7 @@ import path from 'path';
 export default defineConfig({
   resolve: {
     alias: {
-      '@gos/shared': path.resolve(import.meta.dirname, 'shared')
+      '@mica/shared': path.resolve(import.meta.dirname, 'shared')
     }
   },
   test: {

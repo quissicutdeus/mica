@@ -7,7 +7,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render } from '@testing-library/svelte';
 import PreviewHeader from './PreviewHeader.svelte';
 import { setActiveDevice } from './state/device';
-import { ALL_DEVICES, DEVICES } from '@gos/shared/devices';
+import { ALL_DEVICES, DEVICES } from '@mica/shared/devices';
 
 /**
  * The preview's own chrome. Everything asserted here is about not disturbing what is

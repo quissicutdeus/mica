@@ -10,9 +10,9 @@ import {
   CLIENT_ONLY_ACTIONS,
   UNIMPLEMENTED_ACTIONS,
   serverEventFor
-} from '@gos/shared/routes';
-import { requestEventFor } from '@gos/shared/rpc';
-import { allContracts } from '@gos/shared/contract';
+} from '@mica/shared/routes';
+import { requestEventFor } from '@mica/shared/rpc';
+import { allContracts } from '@mica/shared/contract';
 
 /**
  * The NUI round trip has three layers — `web/` calls, `client/` relays, `server/`
@@ -310,7 +310,7 @@ describe('route table', () => {
     // which moves down as well as up: Blabber's `followers`/`following` stores now read
     // through the `accounts` facet (MICA-16 step 4 — an add-on cannot name a NUI route
     // from inside the sandbox), so they declare no action name for this collector to find.
-    // It moved down again for MICA-110: `gos_media` declares `paging`, which changes
+    // It moved down again for MICA-110: `mica_media` declares `paging`, which changes
     // the generic `get` reply from a bare array to `{ rows, nextCursor }`, so the gallery
     // is a `createPagedStore` now and its three CRUD names are no longer declared in the
     // shape this collector reads. They are still routed, still called, and still checked —
@@ -405,7 +405,7 @@ describe('no dead weight', () => {
         'nothing in game would answer the same call — route it, or delete the mock'
     ).toEqual([]);
 
-    // A scoped mock claims the server answers `gos:server:<service>:<action>`. The
+    // A scoped mock claims the server answers `mica:server:<service>:<action>`. The
     // claim is checked against what the server really registered at import, the same
     // way the routes above are: a `'journal:archive'` mock with no such event answers a
     // call in the browser that the game would leave hanging for 15s.
@@ -427,7 +427,7 @@ describe('no dead weight', () => {
  * service action, in place of a string-named `fetchNui` plus a row in `shared/routes.ts`.
  *
  * A typed call has no route to check, so it is held to the two layers it does have: the
- * server must have registered `gos:server:<service>:<action>`, and the browser mock must
+ * server must have registered `mica:server:<service>:<action>`, and the browser mock must
  * answer the scoped key `'<service>:<action>'`. The two ratchets below are what makes the
  * migration finish rather than stall: each number may only go down, and the ticket closes
  * when both are zero.

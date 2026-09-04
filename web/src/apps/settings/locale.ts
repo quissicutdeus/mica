@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { usePersisted } from '@gos/sdk';
+import { usePersisted } from '@mica/sdk';
 
 /**
  * The player's own language choice, as Settings shows it: '' is "Automatic". The same

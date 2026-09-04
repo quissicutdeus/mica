@@ -46,7 +46,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    *    origin: "YouTube is refused" and "any external document is refused" are different
    *    findings with different fallbacks.
    * 2. Whether the `postMessage` channel is answered. The `origin` parameter on the embed
-   *    URL is what the player validates commands against, and `https://cfx-nui-gos` is
+   *    URL is what the player validates commands against, and `https://cfx-nui-mica` is
    *    not an origin YouTube has ever been asked about.
    * 3. Whether it talks *back*, which is not the same as accepting a command. The title
    *    the queue draws comes from `videoData` in the same `infoDelivery` payload parsed

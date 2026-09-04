@@ -13,8 +13,8 @@ import type {
   MediaPreview,
   PricePoint,
   SavedPlace
-} from '@gos/shared/types';
-import { placeholderAvatar, placeholderPhoto, placeholderPhotos } from '@gos/sdk';
+} from '@mica/shared/types';
+import { placeholderAvatar, placeholderPhoto, placeholderPhotos } from '@mica/sdk';
 
 /** Inject created_at / updated_at timestamps into a mock object. Accepts an optional offset (ms before now). */
 const ts = (offsetMs: number = 0) => {
@@ -40,7 +40,7 @@ const getUniqueAvatar = (seed: string, setIndex: number = 1) =>
  * Generated now, so `pnpm dev` and the Playwright suite render identically offline and a
  * public demo sends no visitor's IP to a third party. See `lib/placeholderImage.ts`.
  */
-export const sampleAvatars = placeholderPhotos('gos-gallery', 20);
+export const sampleAvatars = placeholderPhotos('mica-gallery', 20);
 
 /**
  * The URL goes in `data`, not `url`, and that is deliberate.
@@ -106,7 +106,7 @@ const mockThumbnaillessCaptures: MediaItem[] = [
     id: 951,
     citizenid: 'mock-id',
     kind: 'photo',
-    data: placeholderPhoto('gos-gallery-legacy-b'),
+    data: placeholderPhoto('mica-gallery-legacy-b'),
     alt_text: 'Dropped in by another resource',
     status: 'active',
     ...ts()
@@ -115,7 +115,7 @@ const mockThumbnaillessCaptures: MediaItem[] = [
     id: 950,
     citizenid: 'mock-id',
     kind: 'photo',
-    data: placeholderPhoto('gos-gallery-legacy-a'),
+    data: placeholderPhoto('mica-gallery-legacy-a'),
     alt_text: 'Taken before thumbnails existed',
     status: 'active',
     ...ts()
@@ -268,7 +268,7 @@ export const mockNotes: Note[] = [
  * fixtures elsewhere in this file, so a "Set Waypoint" tap in the browser lands somewhere
  * recognizable rather than in the ocean.
  *
- * PENDING (Cody): stands in for a real `gos_places` table — no server service exists
+ * PENDING (Cody): stands in for a real `mica_places` table — no server service exists
  * for this yet (`shared/routes.ts`'s `getSavedPlaces`/`createSavedPlace`/
  * `updateSavedPlace`/`deleteSavedPlace`).
  */

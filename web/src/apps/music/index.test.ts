@@ -6,7 +6,7 @@
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { tick } from 'svelte';
 import { get } from 'svelte/store';
-import { renderApp } from '@gos/sdk/testing';
+import { renderApp } from '@mica/sdk/testing';
 import { fireEvent } from '@testing-library/svelte';
 import Music from './index.svelte';
 import {

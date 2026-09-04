@@ -7,6 +7,6 @@
 
 import { sendNuiMessage } from '../lib/nui';
 
-onNet('gos:client:mail:receive', (newMail: unknown) => {
+onNet('mica:client:mail:receive', (newMail: unknown) => {
   sendNuiMessage('receiveMail', newMail);
 });

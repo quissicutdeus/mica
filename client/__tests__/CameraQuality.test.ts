@@ -5,7 +5,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 /**
- * `gos_camera_quality` — the one knob that decides how big every stored photo is.
+ * `mica_camera_quality` — the one knob that decides how big every stored photo is.
  *
  * Worth a test rather than a reading, because the failure is silent in the direction that
  * matters: `GetConvarInt` answers 0 for a convar it cannot parse, and 0 is a number the
@@ -44,15 +44,15 @@ describe('cameraQuality', () => {
   });
 
   it('takes the convar when a server owner sets one', async () => {
-    convars.gos_camera_quality = 90;
+    convars.mica_camera_quality = 90;
     const { cameraQuality } = await load();
     expect(cameraQuality()).toBe(90);
   });
 
   it('refuses 0, which is what an unparseable convar reads as', async () => {
-    // `set gos_camera_quality high` is a plausible thing to type, and GetConvarInt
+    // `set mica_camera_quality high` is a plausible thing to type, and GetConvarInt
     // answers 0 for it. Encoding every photo at 0 would be worse than ignoring them.
-    convars.gos_camera_quality = 0;
+    convars.mica_camera_quality = 0;
     const { cameraQuality } = await load();
     expect(cameraQuality()).toBe(95);
   });
@@ -60,15 +60,15 @@ describe('cameraQuality', () => {
   it('clamps a number outside the range instead of refusing it', async () => {
     // Out of range means the owner meant something; the nearest usable value is a better
     // answer than the default they clearly did not want.
-    convars.gos_camera_quality = 250;
+    convars.mica_camera_quality = 250;
     expect((await load()).cameraQuality()).toBe(100);
 
-    convars.gos_camera_quality = -20;
+    convars.mica_camera_quality = -20;
     expect((await load()).cameraQuality()).toBe(95);
   });
 
   it('rounds a fractional value rather than passing it through', async () => {
-    convars.gos_camera_quality = 87.6;
+    convars.mica_camera_quality = 87.6;
     const { cameraQuality } = await load();
     expect(cameraQuality()).toBe(88);
   });

@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import type { AppCapability, AppManifest } from '../../../../sdk/manifest';
-import { DEFAULT_DEVICE, type DeviceId } from '@gos/shared/devices';
+import { DEFAULT_DEVICE, type DeviceId } from '@mica/shared/devices';
 
 /**
  * Whether an app should appear on this phone at all — the rule, with no stores behind it.

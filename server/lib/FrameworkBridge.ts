@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { citizenIdFromIdentifier, CITIZENID_MAX_LENGTH } from '@gos/shared/framework';
+import { citizenIdFromIdentifier, CITIZENID_MAX_LENGTH } from '@mica/shared/framework';
 import { esxAdapter } from './framework/esx';
 import { qbAdapter } from './framework/qb';
 import { qbxAdapter } from './framework/qbx';
@@ -100,11 +100,11 @@ const activeAdapter = (): FrameworkAdapter | null => {
  * The third state is real, not theoretical. `exposes` swallows the throw a FiveM `exports`
  * proxy raises for a resource that is not running, so "es_extended has not started yet" and
  * "this is a qb server" are the same answer to a boolean. FiveM starts resources in
- * `server.cfg` order and nothing in this repo controls it: `ensure gos` above
- * `ensure es_extended` is a legal config, and gOS's own `onResourceStart` fires inside
+ * `server.cfg` order and nothing in this repo controls it: `ensure mica` above
+ * `ensure es_extended` is a legal config, and micaOS's own `onResourceStart` fires inside
  * that window. A sweep that resolved `unknown` to qb on such a server would compare ESX
  * identifiers against a `players` table — and if that box carries a leftover, non-empty
- * `players` from a previous qb install, every gOS row looks unowned and the whole phone
+ * `players` from a previous qb install, every micaOS row looks unowned and the whole phone
  * database is deleted at boot with a log line saying it worked.
  *
  * So: `unknown` is a first-class answer, and a caller that cannot act safely without knowing
@@ -115,7 +115,7 @@ const activeAdapter = (): FrameworkAdapter | null => {
  * present.
  *
  * **`standalone` is the fourth answer, and it is only ever reached by an operator asking for
- * it** — `gos_standalone`, read by `standaloneRequested`. It is deliberately *not* what
+ * it** — `mica_standalone`, read by `standaloneRequested`. It is deliberately *not* what
  * `unknown` resolves to when nothing answers, for the reason the paragraph above gives: the
  * probe cannot tell a missing framework from one that has not started yet, so inferring
  * standalone from silence would re-key a real server's rows during its own boot window.
@@ -166,9 +166,9 @@ const serving = (can: (adapter: FrameworkAdapter) => boolean): FrameworkAdapter 
  * reason is worth keeping (MICA-197).
  *
  * The obvious way to put a name beside a row is a `LEFT JOIN` onto `ownerTable()`. It was
- * written that way first, and a throwaway MariaDB 11.8 loaded with `gos.esx.sql` plus a
+ * written that way first, and a throwaway MariaDB 11.8 loaded with `mica.esx.sql` plus a
  * stock es_extended `users` refused it outright: MySQL errno 1267, *Illegal mix of
- * collations*. `schemaSql.TABLE_COLLATION` pins every gOS column to `utf8mb4_unicode_ci`
+ * collations*. `schemaSql.TABLE_COLLATION` pins every micaOS column to `utf8mb4_unicode_ci`
  * while `users.identifier` takes the server default, which from MariaDB 11.4 is
  * `utf8mb4_uca1400_ai_ci` — and a **column-to-column** comparison, unlike one against a bound
  * parameter, has no coercible side to settle on.
@@ -234,10 +234,10 @@ const citizenBySource = new Map<number, string>();
 
 export class FrameworkBridge {
   /**
-   * Where this server keeps the characters gOS's rows belong to — or `null`.
+   * Where this server keeps the characters micaOS's rows belong to — or `null`.
    *
    * Behind the bridge for the same reason `findOfflineByCitizenId` is: it is a framework
-   * question, not a phone one. The difference is that this answers it for *any* gOS
+   * question, not a phone one. The difference is that this answers it for *any* micaOS
    * table rather than for one lookup, which is what lets a single sweep clean up after a
    * deleted character on either framework (MICA-152).
    *
@@ -261,7 +261,7 @@ export class FrameworkBridge {
    * Behind the bridge rather than in `PlayerDirectory` because it is a framework question:
    * qb keeps players in `players(citizenid)` with a `charinfo` JSON column, ESX keeps them
    * in `users(identifier)` with `firstname`/`lastname` columns, standalone keeps only the
-   * number gOS itself issued, and every other framework will keep them somewhere else
+   * number micaOS itself issued, and every other framework will keep them somewhere else
    * again. `PlayerDirectory` asks who somebody is; the adapter knows where to look.
    */
   public static async findOfflineByCitizenId(citizenid: string): Promise<FrameworkIdentity | null> {
@@ -280,11 +280,11 @@ export class FrameworkBridge {
    * to match rows back up by position.
    *
    * **Bound parameters, never a join.** Putting the name beside a row with a `LEFT JOIN`
-   * onto the character table looks obviously right and is not: gOS pins every column to
+   * onto the character table looks obviously right and is not: micaOS pins every column to
    * `utf8mb4_unicode_ci` and es_extended's `users.identifier` takes the server default,
    * which from MariaDB 11.4 is `utf8mb4_uca1400_ai_ci`. A column-to-column comparison
    * across two collations is MySQL errno 1267 — verified against a throwaway MariaDB 11.8
-   * loaded with `gos.esx.sql` — where a comparison against a parameter has a coercible
+   * loaded with `mica.esx.sql` — where a comparison against a parameter has a coercible
    * side and settles. `collationCheck.ts` (MICA-157) exists for that hazard and
    * explicitly exempts ESX on the grounds that nothing there joins to `users`. This is what
    * keeps that true.
@@ -303,7 +303,7 @@ export class FrameworkBridge {
    * ESX answers nothing here and says so by answering nothing: core `users` has no phone
    * column, so there is nothing to match on, and guessing at another resource's table would
    * be right for one server population and silently wrong for the rest. Standalone answers
-   * it best of all, because gOS issued the number itself.
+   * it best of all, because micaOS issued the number itself.
    */
   public static async findOfflineByPhone(phone: string): Promise<FrameworkIdentity | null> {
     if (!phone) return null;

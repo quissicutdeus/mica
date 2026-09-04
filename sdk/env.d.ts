@@ -17,10 +17,10 @@
  * the phone's half (the dev-harness `window` hooks, `appRegistryStore`, `mockCalls`), which
  * the SDK does not touch.
  *
- * Both files declare `__GOS_VERSION__` and `__GOS_BUILD_INFO__`. That is duplication,
+ * Both files declare `__MICA_VERSION__` and `__MICA_BUILD_INFO__`. That is duplication,
  * but not the kind that drifts dangerously: they are `define` substitutions supplied by
  * whichever Vite config is building, and `vite.addon.config.ts` already fails the build on
- * any that survives unsubstituted (`gos-no-unsubstituted-defines`). A mismatch is caught
+ * any that survives unsubstituted (`mica-no-unsubstituted-defines`). A mismatch is caught
  * there rather than shipped.
  */
 
@@ -30,9 +30,9 @@ declare module '*.svelte' {
   export default component;
 }
 
-declare const __GOS_VERSION__: string;
-declare const __GOS_BUILD_INFO__: string;
-declare const __GOS_BRANCH__: string;
+declare const __MICA_VERSION__: string;
+declare const __MICA_BUILD_INFO__: string;
+declare const __MICA_BRANCH__: string;
 
 interface Window {
   /**

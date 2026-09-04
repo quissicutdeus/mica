@@ -23,16 +23,16 @@ import { addOnIds, coreValueOf } from '../../web/scripts/addon-ids.js';
  * `core: false`?", so a **`core: true` app whose comment contains that string answers yes**
  * and is built as an add-on: compiled against `addon.ts`, wrapped by `bootAddOn`, emitted as
  * something the Store can install into a sandboxed iframe. §2.7 and §7 both rest on that
- * classification, since `core: true` is what gates `@gos/sdk/core`, the raw NUI transport.
+ * classification, since `core: true` is what gates `@mica/sdk/core`, the raw NUI transport.
  */
 
 const ROOT = resolve(__dirname, '../..');
 
-const manifest = (body: string) => `import { defineApp } from '@gos/sdk';\n${body}\n`;
+const manifest = (body: string) => `import { defineApp } from '@mica/sdk';\n${body}\n`;
 
 /** A throwaway apps directory holding exactly the manifests a case needs. */
 const appsDirWith = (apps: Record<string, string>): string => {
-  const dir = mkdtempSync(join(tmpdir(), 'gos-addon-ids-'));
+  const dir = mkdtempSync(join(tmpdir(), 'mica-addon-ids-'));
   for (const [id, source] of Object.entries(apps)) {
     mkdirSync(join(dir, id), { recursive: true });
     writeFileSync(join(dir, id, 'manifest.ts'), source);
@@ -54,7 +54,7 @@ export default defineApp({ id: 'settings', core: true });`)
 
     try {
       // Before this fix the comment answered for the property, and Settings — which gates
-      // \`@gos/sdk/core\` on being core — would have been built as an installable add-on.
+      // \`@mica/sdk/core\` on being core — would have been built as an installable add-on.
       expect(addOnIds(dir)).toEqual([]);
     } finally {
       rmSync(dir, { recursive: true, force: true });

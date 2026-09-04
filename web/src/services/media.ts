@@ -6,9 +6,9 @@ import { get } from 'svelte/store';
 import { createPagedStore } from '../../../sdk/createPagedStore';
 import { fetchNui } from '../nui/fetchNui';
 import { call, callOr } from '../nui/call';
-import { mediaContract } from '@gos/shared/contracts/media';
-import { makeThumbnail } from '@gos/sdk';
-import type { MediaItem, MediaPreview } from '@gos/shared/types';
+import { mediaContract } from '@mica/shared/contracts/media';
+import { makeThumbnail } from '@mica/sdk';
+import type { MediaItem, MediaPreview } from '@mica/shared/types';
 import type { DeletedMediaItem } from '../../../sdk/vocabulary/media';
 
 /**

@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { DEVICES } from '@gos/shared/devices';
+import { DEVICES } from '@mica/shared/devices';
 
 /**
  * The open/close sequence, per device (MICA-262). The game-side pieces it drives are

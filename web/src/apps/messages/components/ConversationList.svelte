@@ -16,7 +16,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     formatRelativeTime,
     useLocale,
     type UIConversation
-  } from '@gos/sdk';
+  } from '@mica/sdk';
 
   const { t } = useLocale();
 

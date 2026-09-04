@@ -9,7 +9,7 @@ import { type AsTwin } from './_shared';
 type Twin = AsTwin<ReturnType<Facets['notificationSettingsWrite']>>;
 
 const refused = () => {
-  throw new Error('[gOS] only a core app may change notification settings');
+  throw new Error('[micaOS] only a core app may change notification settings');
 };
 
 /**

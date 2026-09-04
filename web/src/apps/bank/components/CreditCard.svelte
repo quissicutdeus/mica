@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { formatCurrency, useLocale } from '@gos/sdk';
+  import { formatCurrency, useLocale } from '@mica/sdk';
 
   import { hashStringToCardNumber } from '../cardUtils';
 

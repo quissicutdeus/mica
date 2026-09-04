@@ -3,8 +3,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { callOr } from '../nui/call';
-import { settingsContract } from '@gos/shared/contracts/settings';
-import type { PhoneSetting } from '@gos/shared/types';
+import { settingsContract } from '@mica/shared/contracts/settings';
+import type { PhoneSetting } from '@mica/shared/types';
 
 /**
  * The client half of the `settings` service.

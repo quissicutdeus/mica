@@ -17,7 +17,7 @@ import '../web/src/host/registerFacets';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { get } from 'svelte/store';
 import { ALL_CAPABILITIES, defineApp } from './manifest';
-import { GOS_VERSION } from './version';
+import { MICA_VERSION } from './version';
 import { appRegistryStore } from '../web/src/shell/state/registry';
 import { currentApp, openApp, goHome } from '../web/src/shell/state/navigation';
 
@@ -172,7 +172,7 @@ describe('registry: duplicate ids', () => {
 /**
  * `core` decides whether an app can be uninstalled, and it is the one manifest field with
  * teeth. It replaced `isSystem`, which was defaulted from `author` — so a **display string**
- * decided a protection boundary, and naming your app's author 'gOS' was enough to make it
+ * decided a protection boundary, and naming your app's author 'micaOS' was enough to make it
  * permanent. These pin down the three ways that went wrong.
  */
 describe('defineApp: core', () => {
@@ -188,18 +188,18 @@ describe('defineApp: core', () => {
   });
 
   it('does not let author decide it', () => {
-    // The original defect. 'gOS' was the derivation's trigger value, so this exact
+    // The original defect. 'micaOS' was the derivation's trigger value, so this exact
     // manifest used to come back protected.
     const app = defineApp({
       id: 'authored',
       color: 'bg-blue-600',
       icon: null,
-      author: 'gOS',
+      author: 'micaOS',
       core: false
     });
 
     expect(app.core).toBe(false);
-    expect(app.author).toBe('gOS');
+    expect(app.author).toBe('micaOS');
   });
 
   it('forces a remote app to be non-core even when it claims otherwise', () => {
@@ -554,20 +554,20 @@ describe('defineApp: version', () => {
 
     // Not pinned to a literal — the stamp is computed from `git log` at build time, so any
     // assertion on its value would fail on the next push. What matters is that the default
-    // fired at all, and that it is the same string `GOS_VERSION` reports.
-    expect(manifest.version).toBe(GOS_VERSION);
+    // fired at all, and that it is the same string `MICA_VERSION` reports.
+    expect(manifest.version).toBe(MICA_VERSION);
     expect(manifest.version).toBeTruthy();
   });
 
   it('omits the field entirely when there is no build stamp, rather than setting it empty', async () => {
     // The state an add-on bundle is actually in: `vite.addon.config.ts` defines
-    // `__GOS_VERSION__` as `''` on purpose (MICA-170), because a bundle is compiled
+    // `__MICA_VERSION__` as `''` on purpose (MICA-170), because a bundle is compiled
     // once and then installed by whatever phone fetches it. So does any third-party bundler
     // that has never heard of the identifier.
     vi.resetModules();
     vi.doMock('./version', () => ({
-      GOS_VERSION: '',
-      GOS_BUILD_INFO: '',
+      MICA_VERSION: '',
+      MICA_BUILD_INFO: '',
       SDK_CONTRACT_VERSION: '1'
     }));
     const { defineApp: defineWithoutStamp } = await import('./manifest');
@@ -598,8 +598,8 @@ describe('defineApp: version', () => {
 
     vi.resetModules();
     vi.doMock('./version', () => ({
-      GOS_VERSION: '',
-      GOS_BUILD_INFO: '',
+      MICA_VERSION: '',
+      MICA_BUILD_INFO: '',
       SDK_CONTRACT_VERSION: '1'
     }));
     const { defineApp: defineWithoutStamp } = await import('./manifest');

@@ -15,7 +15,7 @@
  * `MAX_AUDIBLE_BROADCASTS`, and the shell reached across the package boundary by relative
  * path to get at it. Splitting the module was the answer rather than publishing it,
  * because the two halves failed the same test differently: the cap has an importer inside
- * `@gos/sdk` (`sdk/host/iframe/facets/music.ts`, which offers it to an add-on as
+ * `@mica/sdk` (`sdk/host/iframe/facets/music.ts`, which offers it to an add-on as
  * `useMusic().maxAudibleBroadcasts`) and stayed, at `sdk/host/seam/music.ts`. Everything
  * here had **no importer in the SDK at all** — only `shell/state/nearbyMusic.ts` and its
  * suite — so it is the shell's ranking, and it belongs on the shell's side.

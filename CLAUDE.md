@@ -21,7 +21,7 @@ the work calls for it:
   game** while passing every suite.
 - `cef-css` — before writing any CSS, colour, or layout under `web/`. FiveM's
   CEF is Chromium 103.
-- `gos-service` — before declaring a service, changing a column, or writing a
+- `mica-service` — before declaring a service, changing a column, or writing a
   migration. Pulls in `docs/schema-and-services.md`.
 - `ticket-flow` — before writing a branch name, commit message, PR body, or
   issue comment.

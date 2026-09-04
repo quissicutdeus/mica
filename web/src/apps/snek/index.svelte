@@ -13,7 +13,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     usePersisted,
     useHighscores,
     type AppProps
-  } from '@gos/sdk';
+  } from '@mica/sdk';
   import { createGame, tick, type GameState, type Difficulty, type Direction } from './game';
   import Board from './Board.svelte';
   import Hud from './Hud.svelte';

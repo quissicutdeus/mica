@@ -4,7 +4,7 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { resolveOwnedAttachments } from '../lib/attachments';
-import { MAX_ATTACHMENTS } from '@gos/shared/attachments';
+import { MAX_ATTACHMENTS } from '@mica/shared/attachments';
 
 /**
  * The shared ownership check behind every attachment write — Messages first, Blabber

@@ -5,14 +5,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 /**
- * MICA-151: the numbers gOS issues when nothing else will.
+ * MICA-151: the numbers micaOS issues when nothing else will.
  *
  * On qb the number is `charinfo.phone` and on ESX it is whichever field the operator's
  * community resource writes. A standalone server has neither, and without a number
  * `getPlayerByPhone`, dialling and `conversations:create` resolve nobody — so Phone, Messages
  * and Contacts do not work at all. This is the table that fixes that, and the properties
  * asserted below are the four that make a phone number usable: stable, unique, in the format
- * the rest of the repo already uses, and clear of the block `gosseed` owns.
+ * the rest of the repo already uses, and clear of the block `micaseed` owns.
  *
  * `Database` is mocked because it reads `exports.oxmysql` in module scope and must never
  * reach a real connection (AGENTS.md §1). Nothing here executes SQL, so nothing here proves
@@ -101,7 +101,7 @@ describe('the generated number', () => {
     for (const number of draws(500)) expect(number).toMatch(/^\d{7}$/);
   });
 
-  it('never lands in the exchange `gosseed` owns', () => {
+  it('never lands in the exchange `micaseed` owns', () => {
     // `clearSeed` deletes contacts by phone together with the seeded name, so a real player
     // issued 5550101 and saved under the matching name would lose that contact to an admin
     // tidying up after the seed. The whole 555 block is reserved, not just the four literals,
@@ -131,7 +131,7 @@ describe('the generated number', () => {
 
   it('is not derived from the citizenid', () => {
     // A derived number leaks the license identifier's entropy into a string other players are
-    // shown, and hands the same player the same number on every server running gOS.
+    // shown, and hands the same player the same number on every server running micaOS.
     const many = new Set(draws(200));
 
     expect(many.size).toBeGreaterThan(150);
@@ -157,7 +157,7 @@ describe('telling a duplicate key from a real failure', () => {
   });
 
   it.each([
-    ['a table that was never imported', new Error("Table 'gos_phone_numbers' doesn't exist")],
+    ['a table that was never imported', new Error("Table 'mica_phone_numbers' doesn't exist")],
     ['a dead connection', Object.assign(new Error('ECONNREFUSED'), { errno: -111 })],
     ['nothing at all', undefined],
     ['null', null]
@@ -233,7 +233,7 @@ describe('assigning a number', () => {
   });
 
   it('stops at once on a failure that is not a duplicate, and names the table', async () => {
-    dbMock.insert.mockRejectedValue(new Error("Table 'gos_phone_numbers' doesn't exist"));
+    dbMock.insert.mockRejectedValue(new Error("Table 'mica_phone_numbers' doesn't exist"));
 
     await expect(ensureNumber(CITIZEN)).resolves.toBeNull();
     expect(dbMock.insert).toHaveBeenCalledTimes(1);
@@ -365,7 +365,7 @@ describe('the declaration', () => {
     // chooses or deletes.
     const registered = (globalThis.onNet as any).mock?.calls ?? [];
     const mine = registered.filter((call: unknown[]) =>
-      String(call[0]).startsWith('gos:server:phonenumbers:')
+      String(call[0]).startsWith('mica:server:phonenumbers:')
     );
 
     expect(mine).toEqual([]);
@@ -415,10 +415,10 @@ describe('when a number is assigned', () => {
     expect(dbMock.insert).toHaveBeenCalledTimes(1);
   });
 
-  it('assigns nothing on a framework server, whose numbers gOS does not own', async () => {
+  it('assigns nothing on a framework server, whose numbers micaOS does not own', async () => {
     // Two sources of truth for a phone number is the drift `FrameworkBridge` exists to
     // prevent: a qb server's `charinfo.phone` is what every other resource on that server
-    // reads, and a gOS number beside it would be one only the phone believed.
+    // reads, and a micaOS number beside it would be one only the phone believed.
     for (const kind of ['qb', 'esx', 'unknown']) {
       framework.kind = kind;
       await connect(5);

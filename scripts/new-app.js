@@ -91,7 +91,7 @@ const write = (relative, contents) => {
 write(
   `web/src/apps/${id}/manifest.ts`,
   `import Icon from './Icon.svelte';
-import { defineApp } from '@gos/sdk/app';
+import { defineApp } from '@mica/sdk/app';
 
 export default defineApp({
   id: '${id}',
@@ -108,7 +108,7 @@ export default defineApp({
   devices: ['phone', 'tablet'],`
       : ''
   }
-  author: 'gOS',
+  author: 'micaOS',
   // Required. \`false\` makes this an add-on: absent from the launcher, offered by the
   // Store, and uninstallable. Set it to \`true\` only for something that ships with the
   // phone and must not be removable.
@@ -140,7 +140,7 @@ const dataImports = WITH_SERVICE ? `,\n  Skeleton,\n  onAppForeground,\n  use${P
 write(
   `web/src/apps/${id}/index.svelte`,
   `<script lang="ts">
-  import { EmptyState, Screen, useAppLevels, type AppProps${dataImports} } from '@gos/sdk';
+  import { EmptyState, Screen, useAppLevels, type AppProps${dataImports} } from '@mica/sdk';
 
   // The annotation, not \`$props<AppProps>()\` — that form only works for an inline object
   // literal and reports "Expected 0 type arguments" for a named type.
@@ -193,7 +193,7 @@ if (WITH_TABLET) {
   write(
     `web/src/apps/${id}/tablet.svelte`,
     `<script lang="ts">
-  import { EmptyState, Screen, useAppLevels, type AppProps } from '@gos/sdk';
+  import { EmptyState, Screen, useAppLevels, type AppProps } from '@mica/sdk';
 
   // The tablet root: rendered in place of index.svelte inside the 1280x800 frame, for an
   // app whose manifest lists 'tablet'. Same contract, same hooks; a wider layout. An app
@@ -405,7 +405,7 @@ if (WITH_SERVICE) {
       `merge into one is worse than a missing line. \`pnpm verify\` fails until both are\n` +
       `there — routes.test.ts cross-references every layer.\x1b[0m`
   );
-  console.log(`\nThen: \x1b[1mpnpm generate:sql\x1b[0m and re-import \`gos.sql\`.`);
+  console.log(`\nThen: \x1b[1mpnpm generate:sql\x1b[0m and re-import \`mica.sql\`.`);
 
   console.log(`\n\x1b[1mThe permission table is also hand-curated. Update it:\x1b[0m\n`);
   console.log(

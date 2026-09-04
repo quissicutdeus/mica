@@ -8,7 +8,7 @@ import { useNuiEvent } from './nui/useNuiEvent';
 /**
  * OS Service Hook for the FiveM NUI transport.
  *
- * `core: true` only — exported from `@gos/sdk/core`, not `@gos/sdk`. A `core: false`
+ * `core: true` only — exported from `@mica/sdk/core`, not `@mica/sdk`. A `core: false`
  * add-on runs in a sandboxed iframe with no NUI to bridge to; its build swaps `fetchNui` for
  * the `postMessage` twin in `sdk/host/iframe/fetchNui.ts` instead of this hook.
  *

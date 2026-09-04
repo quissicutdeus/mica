@@ -309,12 +309,12 @@ describe('MusicProximity', () => {
     expect(updates.at(-1)![0].volume).toBeGreaterThan(0);
   });
 
-  it('honours gos_music_range, clamped so a bad value cannot make the tick meaningless', async () => {
+  it('honours mica_music_range, clamped so a bad value cannot make the tick meaningless', async () => {
     const { MusicProximity } = await load();
     const updates: { volume: number }[][] = [];
     MusicProximity.onUpdate((levels) => updates.push(levels.map(({ volume }) => ({ volume }))));
 
-    convars.gos_music_range = 10;
+    convars.mica_music_range = 10;
     peds.set(7, [20, 0, 0]);
     MusicProximity.setSources([7]);
     for (let i = 0; i < 200; i += 1) frame();
@@ -328,7 +328,7 @@ describe('MusicProximity', () => {
     const updates: { volume: number }[][] = [];
     MusicProximity.onUpdate((levels) => updates.push(levels.map(({ volume }) => ({ volume }))));
 
-    convars.gos_music_range = 100000;
+    convars.mica_music_range = 100000;
     peds.set(7, [200, 0, 0]);
     MusicProximity.setSources([7]);
     for (let i = 0; i < 200; i += 1) frame();

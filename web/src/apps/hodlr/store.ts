@@ -3,8 +3,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { get, writable } from 'svelte/store';
-import { t, useService } from '@gos/sdk';
-import type { PricePoint } from '@gos/shared/types';
+import { t, useService } from '@mica/sdk';
+import type { PricePoint } from '@mica/shared/types';
 
 /**
  * Hodlr's own data layer, inside the app — see `apps/notes/store.ts` for why: an
@@ -67,7 +67,7 @@ export type TradeOutcome =
  * `buy`/`sell` answer with a machine slug rather than a sentence, and Trade used to render
  * that slug straight into the screen — so a rejected sell read `insufficient_holdings`
  * (MICA-99). The server is the thing that refuses (a modified client can emit
- * `gos:server:hodlr:sell` with any quantity, AGENTS.md §2.9), so the slug always has to
+ * `mica:server:hodlr:sell` with any quantity, AGENTS.md §2.9), so the slug always has to
  * be translatable here rather than only being avoided by the button guard.
  *
  * An unrecognised slug falls through to a generic line instead of being shown raw: a new

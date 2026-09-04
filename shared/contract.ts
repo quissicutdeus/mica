@@ -55,7 +55,7 @@ export interface ActionContract {
 export interface ServiceContract<
   A extends Record<string, ActionContract> = Record<string, ActionContract>
 > {
-  /** Matches the `<service>` segment of `gos:server:<service>:<action>`. */
+  /** Matches the `<service>` segment of `mica:server:<service>:<action>`. */
   readonly id: string;
   readonly actions: A;
 }
@@ -176,7 +176,7 @@ export function responseType<T>(): Schema<T> & { readonly '~responseOnly': true 
   return {
     '~standard': {
       version: 1,
-      vendor: 'gos',
+      vendor: 'mica',
       validate: (value: unknown) => ({ value: value as T })
     },
     '~responseOnly': true

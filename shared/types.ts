@@ -6,7 +6,7 @@
  * The client's ringtone choices (`web/src/shell/state/audio.ts`'s `RingtoneId`),
  * mirrored here rather than imported — `shared/` is read by `server/`, which must not
  * depend on `web/`. Keep the two lists in sync by hand; a mismatch fails loudly, since
- * the server-side `enum` column (`gos_contacts.ringtone`) rejects anything not in
+ * the server-side `enum` column (`mica_contacts.ringtone`) rejects anything not in
  * this list.
  */
 export type RingtoneId = 'classic' | 'chime' | 'beacon' | 'pulse' | 'ascent';
@@ -33,7 +33,7 @@ export interface Contact {
 }
 
 /**
- * What the `gos:client:contacts:incoming` NUI message carries (MICA-155).
+ * What the `mica:client:contacts:incoming` NUI message carries (MICA-155).
  *
  * `firstname`/`lastname`/`phone`/`avatar` are the sender's own choice, and stay arbitrary by
  * design — `contacts.share` on the web side offers *any* saved card, not necessarily the
@@ -65,7 +65,7 @@ export interface Conversation {
   name?: string;
   /**
    * The two sides of a 1:1 thread (MICA-161), null for a group thread. Set once at
-   * creation by the server and never client-writable — see `gos_messages_conversations`
+   * creation by the server and never client-writable — see `mica_messages_conversations`
    * in `server/services/Conversations.ts` for the generated `pair_key` these back.
    */
   participant_a?: string | null;
@@ -147,7 +147,7 @@ export interface Transaction {
 /**
  * A player's saved phone charge.
  *
- * gOS owns this rather than leaning on framework character metadata: metadata is
+ * micaOS owns this rather than leaning on framework character metadata: metadata is
  * only flushed to the `players` row when the framework decides to save (logout,
  * autosave interval, shutdown), so a crash or a `restart qbx_core` loses it, and the
  * shape of the metadata API differs per core. One row per citizenid.
@@ -221,7 +221,7 @@ export type ReportResolution = 'pending' | 'actioned' | 'dismissed';
 /**
  * A player's report of someone else's content.
  *
- * `target_table` + `target_id` rather than a foreign key, matching `gos_audit_logs`
+ * `target_table` + `target_id` rather than a foreign key, matching `mica_audit_logs`
  * and for the same reason: the report has to outlive the content, which is the entire
  * point once that content has been moderated away.
  */
@@ -326,7 +326,7 @@ export interface Blab {
 }
 
 /**
- * A row in `gos_marketplace`. Semi-anonymous by construction: `citizenid` is the
+ * A row in `mica_marketplace`. Semi-anonymous by construction: `citizenid` is the
  * owner for write authority, and is never part of a public projection — see
  * `publicColumns` in `server/lib/defineService.ts`. There is no display-identity
  * column at all, unlike `Blab`'s `account_id`: a listing has no persona to switch
@@ -358,7 +358,7 @@ export interface BlabEngagement {
  * One account's standing in the follow graph.
  *
  * Counted on read rather than stored on the account row: a `follower_count` column is a second
- * copy of a fact `gos_account_follows` already holds, and it drifts the first time a follow is
+ * copy of a fact `mica_account_follows` already holds, and it drifts the first time a follow is
  * removed by a path that forgets to decrement.
  *
  * `followedByMe` is about **one** of the viewer's accounts, not all of them — a main and an alt
@@ -457,12 +457,12 @@ export type MediaPreview = Pick<
   'id' | 'kind' | 'data' | 'url' | 'thumbnail' | 'mime_type' | 'duration_ms' | 'alt_text'
 >;
 
-/** What `gos_media` can hold. Over-provisioned on purpose — see `services/Photos.ts`. */
+/** What `mica_media` can hold. Over-provisioned on purpose — see `services/Photos.ts`. */
 export type MediaKind =
   'photo' | 'video' | 'audio' | 'gif' | 'sticker' | 'file' | 'link' | 'location';
 
 /**
- * A row in `gos_media` — the table the Media app is built on.
+ * A row in `mica_media` — the table the Media app is built on.
  *
  * Named for what it holds, and now the service and app id agree: both are `media`, the
  * same rename the table made first (§11.1 — an id is a key, so it was the bigger of the

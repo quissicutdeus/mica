@@ -26,7 +26,7 @@ function getStorageBackend() {
   };
 }
 
-const namespaceOf = (appId: string) => `gos:${appId}:`;
+const namespaceOf = (appId: string) => `mica:${appId}:`;
 
 /**
  * Implementation of the `clearAppStorage` facet — see the `clearAppStorage` hook doc for

@@ -3,14 +3,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { defineService, SchemaRepository } from '../lib/defineService';
-import { Mail } from '@gos/shared/types';
+import { Mail } from '@mica/shared/types';
 import { AuditLogger } from '../lib/AuditLogger';
 import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { Database } from '../lib/Database';
 import { appEventChannel } from '../lib/appEvents';
 import { flagUnlessFalse } from '../lib/payload';
-import { mailContract } from '@gos/shared/contracts/mail';
-import { buildDeepLink } from '@gos/shared/deepLink';
+import { mailContract } from '@mica/shared/contracts/mail';
+import { buildDeepLink } from '@mica/shared/deepLink';
 
 /**
  * Mail: `read: 'owner'`, `write: 'server'`.
@@ -38,7 +38,7 @@ class MailRepository extends SchemaRepository<Mail> {
   /** Everything not deleted, newest first — archived mail still shows in the UI. */
   async findAllByCitizenId(citizenid: string): Promise<Mail[]> {
     const query = `
-            SELECT * FROM \`gos_mail\`
+            SELECT * FROM \`mica_mail\`
             WHERE \`citizenid\` = ? AND \`status\` != 'deleted'
             ORDER BY \`created_at\` DESC
         `;
@@ -46,12 +46,12 @@ class MailRepository extends SchemaRepository<Mail> {
   }
 
   async markAsRead(id: number, citizenid: string): Promise<boolean> {
-    const query = 'UPDATE `gos_mail` SET `read` = 1 WHERE `id` = ? AND `citizenid` = ?';
+    const query = 'UPDATE `mica_mail` SET `read` = 1 WHERE `id` = ? AND `citizenid` = ?';
     return await Database.update(query, [id, citizenid]);
   }
 
   async archive(id: number, citizenid: string, archiveState: boolean = true): Promise<boolean> {
-    const query = 'UPDATE `gos_mail` SET `status` = ? WHERE `id` = ? AND `citizenid` = ?';
+    const query = 'UPDATE `mica_mail` SET `status` = ? WHERE `id` = ? AND `citizenid` = ?';
     return await Database.update(query, [archiveState ? 'archived' : 'active', id, citizenid]);
   }
 
@@ -97,7 +97,7 @@ const auditMail = (citizenid: string, action: 'archived' | 'unarchived' | 'delet
     service: 'mail',
     method: action === 'deleted' ? 'deleteMail' : 'archiveMail',
     targetId: id,
-    targetTable: 'gos_mail'
+    targetTable: 'mica_mail'
   });
 
 app.registerEvent('getMail', async (source, cbId, data, citizenid) => {
@@ -149,7 +149,7 @@ export const SendSystemEmail = async (
     const mailItem: Partial<Mail> = {
       citizenid: targetCitizenId,
       sender: emailData.sender,
-      sender_address: emailData.sender_address || 'system@gos.local',
+      sender_address: emailData.sender_address || 'system@mica.local',
       subject: emailData.subject,
       content: emailData.content,
       status: 'active',
@@ -168,7 +168,7 @@ export const SendSystemEmail = async (
     const players = FrameworkBridge.getAllPlayers();
     for (const src in players) {
       if (players[src]?.PlayerData?.citizenid === targetCitizenId) {
-        emitNet('gos:client:mail:receive', parseInt(src, 10), newMail);
+        emitNet('mica:client:mail:receive', parseInt(src, 10), newMail);
         break;
       }
     }

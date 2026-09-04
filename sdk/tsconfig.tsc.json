@@ -25,10 +25,10 @@
     "noUnusedLocals": true,
     "moduleDetection": "force",
     "paths": {
-      "@gos/shared/*": ["../shared/*"],
-      "@gos/sdk": ["./index.ts"],
-      "@gos/sdk/app": ["./app.ts"],
-      "@gos/sdk/core": ["./core.ts"]
+      "@mica/shared/*": ["../shared/*"],
+      "@mica/sdk": ["./index.ts"],
+      "@mica/sdk/app": ["./app.ts"],
+      "@mica/sdk/core": ["./core.ts"]
     }
   },
   /**

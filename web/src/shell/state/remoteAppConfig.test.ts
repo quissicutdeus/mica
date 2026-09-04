@@ -8,7 +8,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
  * The one caller of `setTrustedRemoteAppHosts` and `setRemoteCatalogUrl` in a shipped build
  * (MICA-126).
  *
- * Both setters were tested, exported from `@gos/sdk`, and reachable from nothing — so
+ * Both setters were tested, exported from `@mica/sdk`, and reachable from nothing — so
  * the tests here are about the *wiring* rather than about the setters: that the reply is
  * asked for, that it is applied, that an absent one leaves the phone in the
  * configured-nothing state, and that the registry re-verifies saved installs only once

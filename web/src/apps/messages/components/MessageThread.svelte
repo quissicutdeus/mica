@@ -5,10 +5,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { EmptyState, useLocale, type UIConversation, type UIMessage } from '@gos/sdk';
+  import { EmptyState, useLocale, type UIConversation, type UIMessage } from '@mica/sdk';
 
   const { t } = useLocale();
-  import type { ReactionSummary } from '@gos/shared/types';
+  import type { ReactionSummary } from '@mica/shared/types';
   import MessageBubble from './MessageBubble.svelte';
 
   /**

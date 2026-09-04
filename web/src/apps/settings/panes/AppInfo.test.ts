@@ -29,7 +29,7 @@ const seam = vi.hoisted(() => ({
   cleared: [] as string[]
 }));
 
-vi.mock('@gos/sdk', async (importOriginal) => ({
+vi.mock('@mica/sdk', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   useAppRegistryWrite: () => ({
     unregisterApp: async (id: string) => {
@@ -43,7 +43,7 @@ vi.mock('@gos/sdk', async (importOriginal) => ({
 }));
 
 import AppInfoHost from './__fixtures__/AppInfoHost.svelte';
-import { ArchiveIcon, type AppManifest } from '@gos/sdk';
+import { ArchiveIcon, type AppManifest } from '@mica/sdk';
 
 // jsdom has no Web Animations API and some SDK transitions call it on mount.
 if (!Element.prototype.animate) {

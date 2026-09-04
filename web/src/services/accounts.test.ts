@@ -39,13 +39,13 @@ describe('accounts service', () => {
 
   it('getReactionsFor defaults to an empty map', async () => {
     transport.fetchNui.mockResolvedValueOnce({});
-    await getReactionsFor({ app: 'blabber', target_table: 'gos_blabs', target_ids: [1] });
+    await getReactionsFor({ app: 'blabber', target_table: 'mica_blabs', target_ids: [1] });
     expect(transport.fetchNui).toHaveBeenCalledWith(
       'svc',
       {
         service: 'accounts',
         action: 'reactionsFor',
-        data: { app: 'blabber', target_table: 'gos_blabs', target_ids: [1] }
+        data: { app: 'blabber', target_table: 'mica_blabs', target_ids: [1] }
       },
       { defaultValue: {} }
     );

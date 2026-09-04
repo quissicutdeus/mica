@@ -11,7 +11,7 @@
  */
 import '../../web/src/host/registerFacets';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { GENERIC_SERVICE_ACTION, parseGenericRequest } from '@gos/shared/rpc';
+import { GENERIC_SERVICE_ACTION, parseGenericRequest } from '@mica/shared/rpc';
 
 const nui = vi.hoisted(() => ({ fetchNui: vi.fn() }));
 vi.mock('../../web/src/nui/fetchNui', () => nui);
@@ -78,10 +78,10 @@ describe('the generic request contract', () => {
     });
   });
 
-  it('refuses a segment that could address something other than a gos service', () => {
+  it('refuses a segment that could address something other than a mica service', () => {
     // Both segments are interpolated into an event name. Unvalidated, one could name any
     // event on the bus — `playerDropped`, another resource's — rather than a
-    // `gos:server:*` one.
+    // `mica:server:*` one.
     for (const bad of [
       { service: 'jour:nal', action: 'get' },
       { service: 'journal', action: 'get:extra' },

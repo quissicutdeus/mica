@@ -39,7 +39,7 @@ vi.mock('../lib/proximity', () => ({
 import { contacts } from '../services/Contacts';
 import { __resetRateLimits } from '../lib/rateLimit';
 
-const SHARE_EVENT = 'gos:server:contacts:share';
+const SHARE_EVENT = 'mica:server:contacts:share';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -86,7 +86,7 @@ describe('contacts:share', () => {
 
     await call({ firstname: 'Ada', lastname: 'Lovelace', phone: '555-0100', avatar: '' });
 
-    const incoming = pushesTo('gos:client:contacts:incoming');
+    const incoming = pushesTo('mica:client:contacts:incoming');
     expect(incoming).toHaveLength(1);
     expect(incoming[0][1]).toBe(9);
     expect(incoming[0][2]).toMatchObject({
@@ -104,7 +104,7 @@ describe('contacts:share', () => {
 
     await call({ firstname: 'Ada', phone: '555-0100' });
 
-    expect(pushesTo('gos:client:contacts:incoming')).toHaveLength(2);
+    expect(pushesTo('mica:client:contacts:incoming')).toHaveLength(2);
   });
 
   it('tells the sender how many nearby phones received it', async () => {
@@ -112,7 +112,7 @@ describe('contacts:share', () => {
 
     await call({ firstname: 'Ada', phone: '555-0100' });
 
-    const push = pushesTo('gos:client:shell:appEvent');
+    const push = pushesTo('mica:client:shell:appEvent');
     expect(push).toHaveLength(1);
     expect(push[0][2]).toMatchObject({
       app: 'contacts',
@@ -126,8 +126,8 @@ describe('contacts:share', () => {
 
     await call({ firstname: 'Ada', phone: '555-0100' });
 
-    expect(pushesTo('gos:client:contacts:incoming')).toHaveLength(0);
-    const push = pushesTo('gos:client:shell:appEvent');
+    expect(pushesTo('mica:client:contacts:incoming')).toHaveLength(0);
+    const push = pushesTo('mica:client:shell:appEvent');
     expect(push[0][2]).toMatchObject({ payload: { count: 0 } });
   });
 
@@ -136,7 +136,7 @@ describe('contacts:share', () => {
 
     await call({ firstname: 'A'.repeat(200), phone: '5'.repeat(200) });
 
-    const incoming = pushesTo('gos:client:contacts:incoming');
+    const incoming = pushesTo('mica:client:contacts:incoming');
     expect(incoming[0][2].firstname.length).toBe(50);
     expect(incoming[0][2].phone.length).toBe(20);
   });
@@ -146,7 +146,7 @@ describe('contacts:share', () => {
 
     await call({ firstname: 'Ada', phone: '555-0100', avatar: 'A'.repeat(20_000_000) });
 
-    const incoming = pushesTo('gos:client:contacts:incoming');
+    const incoming = pushesTo('mica:client:contacts:incoming');
     // `blob` is capped at MAX_LENGTH_BY_TYPE.blob (16777215) in `defineService.ts` — the
     // exact number is an implementation detail of that table; what matters here is that
     // something bounded it well short of the 20,000,000 sent.
@@ -173,7 +173,7 @@ describe('contacts:share', () => {
         citizenid: 'CID_SPOOFED'
       });
 
-      const incoming = pushesTo('gos:client:contacts:incoming');
+      const incoming = pushesTo('mica:client:contacts:incoming');
       expect(incoming[0][2].sender.citizenid).toBe('CID_A');
       expect(incoming[0][2].sender).not.toMatchObject({ citizenid: 'CID_SPOOFED' });
     });
@@ -186,7 +186,7 @@ describe('contacts:share', () => {
 
       await call({ firstname: 'Ada', phone: '555-0100' });
 
-      const incoming = pushesTo('gos:client:contacts:incoming');
+      const incoming = pushesTo('mica:client:contacts:incoming');
       expect(incoming[0][2].sender.citizenid).toBe('CID_C');
     });
 
@@ -197,7 +197,7 @@ describe('contacts:share', () => {
 
       await call({ firstname: 'Someone Else', phone: '555-7777' });
 
-      const incoming = pushesTo('gos:client:contacts:incoming');
+      const incoming = pushesTo('mica:client:contacts:incoming');
       expect(incoming[0][2].firstname).toBe('Someone Else');
       expect(incoming[0][2].phone).toBe('555-7777');
       expect(incoming[0][2].sender.citizenid).toBe('CID_A');
@@ -213,7 +213,7 @@ describe('contacts:share', () => {
  */
 describe('contacts:ringtone (MICA-142)', () => {
   const genericCall = async (action: 'create' | 'update' | 'get', data: unknown) => {
-    const handler = handlers.get(`gos:server:contacts:${action}`);
+    const handler = handlers.get(`mica:server:contacts:${action}`);
     if (!handler) throw new Error(`no handler for contacts:${action}`);
     await (handler as any)('cb-1', data);
   };
@@ -257,7 +257,7 @@ describe('contacts:ringtone (MICA-142)', () => {
     await genericCall('update', { id: 3, ringtone: 'airhorn' });
 
     expect(dbMock.update).not.toHaveBeenCalled();
-    const reply = lastReplyTo('gos:client:contacts:updated');
+    const reply = lastReplyTo('mica:client:contacts:updated');
     expect(reply.error).toMatch(/'ringtone' must be one of/);
   });
 
@@ -268,7 +268,7 @@ describe('contacts:ringtone (MICA-142)', () => {
 
     await genericCall('get', {});
 
-    const reply = lastReplyTo('gos:client:contacts:receive');
+    const reply = lastReplyTo('mica:client:contacts:receive');
     expect(reply).toEqual(
       expect.arrayContaining([expect.objectContaining({ ringtone: 'beacon' })])
     );
@@ -282,7 +282,7 @@ describe('contacts:ringtone (MICA-142)', () => {
  */
 describe('contacts:restore (MICA-75)', () => {
   const genericCall = async (action: 'restore', data: unknown) => {
-    const handler = handlers.get(`gos:server:contacts:${action}`);
+    const handler = handlers.get(`mica:server:contacts:${action}`);
     if (!handler) throw new Error(`no handler for contacts:${action}`);
     await (handler as any)('cb-1', data);
     return (globalThis.emitNet as any).mock.calls.at(-1)?.[3];
@@ -295,7 +295,7 @@ describe('contacts:restore (MICA-75)', () => {
 
     expect(reply).toEqual({ ok: true });
     const [sql, params] = dbMock.update.mock.calls[0];
-    expect(String(sql)).toContain('UPDATE `gos_contacts`');
+    expect(String(sql)).toContain('UPDATE `mica_contacts`');
     expect(String(sql)).toContain("`status` = 'deleted'");
     expect(params).toEqual([3, 'CID_A', 30]);
   });
@@ -323,7 +323,7 @@ describe('contacts:restore (MICA-75)', () => {
   it('honours an operator-configured restore window', async () => {
     const previous = (globalThis as any).GetConvar;
     (globalThis as any).GetConvar = (name: string, fallback: string) =>
-      name === 'gos_restore_window_days' ? '7' : fallback;
+      name === 'mica_restore_window_days' ? '7' : fallback;
     dbMock.update.mockResolvedValue(true);
 
     await genericCall('restore', { id: 3 });
@@ -340,7 +340,7 @@ describe('contacts:restore (MICA-75)', () => {
   });
 
   it('is registered alongside the generic CRUD actions', () => {
-    expect(handlers.has('gos:server:contacts:restore')).toBe(true);
+    expect(handlers.has('mica:server:contacts:restore')).toBe(true);
     expect(contacts.resolved.id).toBe('contacts');
   });
 });
@@ -352,7 +352,7 @@ describe('contacts:restore (MICA-75)', () => {
  */
 describe('contacts:getDeleted (MICA-75-wiring)', () => {
   const call = async (data: unknown = {}) => {
-    const handler = handlers.get('gos:server:contacts:getDeleted');
+    const handler = handlers.get('mica:server:contacts:getDeleted');
     if (!handler) throw new Error('no handler for contacts:getDeleted');
     await (handler as any)('cb-1', data);
     return (globalThis.emitNet as any).mock.calls.at(-1)?.[3];
@@ -365,7 +365,7 @@ describe('contacts:getDeleted (MICA-75-wiring)', () => {
 
     expect(reply).toEqual([{ id: 3, citizenid: 'CID_A', status: 'deleted' }]);
     const [sql, params] = dbMock.query.mock.calls[0];
-    expect(String(sql)).toContain('FROM `gos_contacts`');
+    expect(String(sql)).toContain('FROM `mica_contacts`');
     expect(String(sql)).toContain("`status` = 'deleted'");
     expect(params).toEqual(['CID_A', 30]);
   });
@@ -378,6 +378,6 @@ describe('contacts:getDeleted (MICA-75-wiring)', () => {
   });
 
   it('is registered alongside restore', () => {
-    expect(handlers.has('gos:server:contacts:getDeleted')).toBe(true);
+    expect(handlers.has('mica:server:contacts:getDeleted')).toBe(true);
   });
 });

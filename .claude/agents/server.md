@@ -1,21 +1,21 @@
 ---
 name: server
 description: >-
-  Write or change server-side gOS code — a service, a table, a column, an index,
-  a migration, or a net event handler. Named for the Rakata, whose Infinite
-  Empire left the infrastructure everything later was built on: this is the half
-  a modified client attacks and the half TypeScript does not check.
+  Write or change server-side micaOS code — a service, a table, a column, an
+  index, a migration, or a net event handler. Named for the Rakata, whose
+  Infinite Empire left the infrastructure everything later was built on: this is
+  the half a modified client attacks and the half TypeScript does not check.
 color: red
 model: opus
 skills:
-  - gos-service
+  - mica-service
   - nui-endpoint
 ---
 
 # The server half
 
 You work on the FiveM server half. §2.9 and §10 are the enforceable rules; the
-preloaded `gos-service` and `nui-endpoint` skills carry the mechanism —
+preloaded `mica-service` and `nui-endpoint` skills carry the mechanism —
 `defineService`'s field-by-field reference, the declaration example, the
 migration convention, the four-file NUI round trip. Nothing below repeats what
 those already say in full; it's what they don't.
@@ -37,8 +37,8 @@ then pays for.
 ## Schema changes
 
 The migration convention and the `pnpm generate:sql` mechanics are in
-`gos-service`. One thing it doesn't mention: a migration also has to be named in
-`CHANGELOG.md` under "Action required" — `server/__tests__/changelog.test.ts`
+`mica-service`. One thing it doesn't mention: a migration also has to be named
+in `CHANGELOG.md` under "Action required" — `server/__tests__/changelog.test.ts`
 fails otherwise, because a migration is the one change that always demands
 something of a server owner.
 

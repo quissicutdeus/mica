@@ -3,9 +3,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { defineService } from '../lib/defineService';
-import { Note } from '@gos/shared/types';
-import { defineContract, responseType } from '@gos/shared/contract';
-import { s } from '@gos/shared/schema';
+import { Note } from '@mica/shared/types';
+import { defineContract, responseType } from '@mica/shared/contract';
+import { s } from '@mica/shared/schema';
 import { restoreWindowDays } from '../lib/retention';
 
 /**
@@ -37,7 +37,7 @@ export const notesContract = defineContract({
  *
  * Replaces the hand-written NoteRepository + ServiceEndpoint pair. The schema drives the
  * `columns` allowlist, the `clientWritable` set, and the generated DDL in
- * the generated `gos.sql` — so they cannot diverge.
+ * the generated `mica.sql` — so they cannot diverge.
  */
 export const notes = defineService<Note, typeof notesContract>({
   id: 'notes',

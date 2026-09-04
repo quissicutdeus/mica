@@ -75,12 +75,12 @@ export interface TransferRequest {
  *
  * **Both players must be online**, and that is a real restriction rather than an oversight.
  * Crediting an offline player would mean writing to the framework's own `players` table, and
- * §10 is explicit that gOS never touches another resource's tables — the framework owns
+ * §10 is explicit that micaOS never touches another resource's tables — the framework owns
  * that money and may cache it in memory for a loaded character. Neither `qbx_core` nor
  * `qb-core` exposes a dependable offline-credit call.
  *
  * So an offline recipient is refused rather than silently dropped. The fix, when a marketplace
- * needs it, is a gOS-owned pending-payments table flushed on `playerLoaded` — a mailbox,
+ * needs it, is a micaOS-owned pending-payments table flushed on `playerLoaded` — a mailbox,
  * which is legitimate precisely because the money would then be in *our* ledger and not
  * pretended into theirs. That is deliberately not built ahead of the app that needs it.
  */
@@ -88,7 +88,7 @@ export interface TransferRequest {
  * **`balance` through `removeMoney` must never yield (MICA-134).** Everything from the
  * `getMoney` read below to the `removeMoney` debit that follows it has to stay one
  * synchronous span with no `await` in between. This function is `async`, but that span
- * contains none, which is what actually makes it atomic — not any SQL predicate. gOS
+ * contains none, which is what actually makes it atomic — not any SQL predicate. micaOS
  * owns no money table here, and there is no transaction spanning `qbx_core`/`qb-core`'s own
  * money system to lean on instead (see the file header). The framework's own atomic
  * decrement was considered and rejected for the same reason: frameworks disagree about

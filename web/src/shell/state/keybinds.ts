@@ -3,16 +3,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { derived, get } from 'svelte/store';
-import { PHONE_SCOPE_ACTIONS, type KeybindAction } from '@gos/shared/keybinds';
+import { PHONE_SCOPE_ACTIONS, type KeybindAction } from '@mica/shared/keybinds';
 import { usePersisted } from '../../../../sdk/host/usePersisted';
-import type { ResolvedKeybindAction } from '@gos/sdk';
+import type { ResolvedKeybindAction } from '@mica/sdk';
 import { appRegistryStore } from './registry';
 
 /**
  * Resolved key bindings, plus the registry the dispatcher routes through.
  *
  * Overrides persist through `usePersisted` rather than raw `useStorage`, so they share the
- * `gos:settings:*` namespace with the DevTools unlock and rehydrate when the server's
+ * `mica:settings:*` namespace with the DevTools unlock and rehydrate when the server's
  * copy arrives — a plain `useStorage`-backed writable reads its key once at construction and
  * never learns about a later hydrate.
  */

@@ -14,7 +14,7 @@ importers:
       '@citizenfx/server':
         specifier: 2.0.34410-1
         version: 2.0.34410-1
-      '@gos/shared':
+      '@mica/shared':
         specifier: workspace:*
         version: link:shared
       '@types/node':
@@ -71,12 +71,12 @@ importers:
 
   sdk:
     dependencies:
-      '@gos/shared':
-        specifier: workspace:*
-        version: link:../shared
       '@material/material-color-utilities':
         specifier: 0.4.0
         version: 0.4.0
+      '@mica/shared':
+        specifier: workspace:*
+        version: link:../shared
       dompurify:
         specifier: ^3.4.14
         version: 3.4.14
@@ -137,15 +137,15 @@ importers:
       '@fontsource/roboto':
         specifier: ^5.3.0
         version: 5.3.0
-      '@gos/sdk':
-        specifier: workspace:*
-        version: link:../sdk
-      '@gos/shared':
-        specifier: workspace:*
-        version: link:../shared
       '@material/material-color-utilities':
         specifier: 0.4.0
         version: 0.4.0
+      '@mica/sdk':
+        specifier: workspace:*
+        version: link:../sdk
+      '@mica/shared':
+        specifier: workspace:*
+        version: link:../shared
     devDependencies:
       '@axe-core/playwright':
         specifier: ^4.13.0

@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { DEVICES, type DeviceDescriptor } from '@gos/shared/devices';
+import { DEVICES, type DeviceDescriptor } from '@mica/shared/devices';
 import { perDevice } from './device';
 
 /**

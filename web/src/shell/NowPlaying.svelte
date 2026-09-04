@@ -48,7 +48,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    *
    * This file used to draw its own version — no artwork, no shuffle, no repeat, a
    * different word for the same failure — and the difference was drift rather than design.
-   * The card is now `NowPlayingCard` from `@gos/sdk/core`, the same component the Music
+   * The card is now `NowPlayingCard` from `@mica/sdk/core`, the same component the Music
    * app draws, in its `compact` mode: the same wording, the same controls under the same
    * conditions, the same album-art tint, and less padding, because here it sits above a
    * scrolling list of notifications. Everything about why the card looks and behaves as it
@@ -108,7 +108,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { themeStore } from './state/theme';
   import { openApp } from './state/navigation';
   import { closeShade } from './state/shade';
-  import { NowPlayingCard } from '@gos/sdk/core';
+  import { NowPlayingCard } from '@mica/sdk/core';
 
   /**
    * The stores the card renders from, as one object.

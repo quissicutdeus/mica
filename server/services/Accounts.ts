@@ -7,10 +7,10 @@ import { defineService, SchemaRepository, type ResolvedService } from '../lib/de
 import { Database } from '../lib/Database';
 import { appEventChannel } from '../lib/appEvents';
 import { isReactableTable } from '../lib/reactions';
-import { Account } from '@gos/shared/types';
+import { Account } from '@mica/shared/types';
 import { pageBounds, requirePositiveInt } from '../lib/payload';
-import { accountsContract } from '@gos/shared/contracts/accounts';
-import { buildDeepLink } from '@gos/shared/deepLink';
+import { accountsContract } from '@mica/shared/contracts/accounts';
+import { buildDeepLink } from '@mica/shared/deepLink';
 
 /**
  * Social identities, shared by every social app.
@@ -20,7 +20,7 @@ import { buildDeepLink } from '@gos/shared/deepLink';
  * avatar and a bio — an account is just "an identity you post under", and none of them
  * disagree about what that means. What differs is the *content* model, which stays per app.
  *
- * The alternative — `gos_blabber_accounts`, `gos_instagram_accounts` — buys independence
+ * The alternative — `mica_blabber_accounts`, `mica_instagram_accounts` — buys independence
  * nobody asked for and costs the same three things per app: list my accounts, verify this
  * account is mine before accepting a write, and keep handles unique. That is precisely the
  * duplication `isSystemApp` and `isParticipant` were.
@@ -135,7 +135,7 @@ export const accounts = defineService<Account, typeof accountsContract>({
    *
    * It is account-to-account, and accounts are shared, so a future Instagram-alike inherits the
    * graph instead of growing a parallel one. **No `citizenid` column**, and none is needed:
-   * every `gos_accounts` row carries an `app`, so a row can only ever link two accounts in
+   * every `mica_accounts` row carries an `app`, so a row can only ever link two accounts in
    * the same app — following `@bob` on Blabber cannot touch `@bob` somewhere else, because that
    * is a different account id. Ownership stays behind each account and invisible to readers,
    * exactly as it is for a Blab.
@@ -145,17 +145,17 @@ export const accounts = defineService<Account, typeof accountsContract>({
    */
   childTables: [
     {
-      name: 'gos_account_follows',
+      name: 'mica_account_follows',
       columns: {
         follower_account_id: {
           type: 'int',
           notNull: true,
-          references: { table: 'gos_accounts', column: 'id' }
+          references: { table: 'mica_accounts', column: 'id' }
         },
         followee_account_id: {
           type: 'int',
           notNull: true,
-          references: { table: 'gos_accounts', column: 'id' }
+          references: { table: 'mica_accounts', column: 'id' }
         },
         created_at: { type: 'timestamp', notNull: true, defaultNow: true }
       },
@@ -198,17 +198,17 @@ export const accounts = defineService<Account, typeof accountsContract>({
      * one would be a second, larger UX surface than the roadmap item asked for.
      */
     {
-      name: 'gos_account_blocks',
+      name: 'mica_account_blocks',
       columns: {
         blocker_account_id: {
           type: 'int',
           notNull: true,
-          references: { table: 'gos_accounts', column: 'id' }
+          references: { table: 'mica_accounts', column: 'id' }
         },
         blocked_account_id: {
           type: 'int',
           notNull: true,
-          references: { table: 'gos_accounts', column: 'id' }
+          references: { table: 'mica_accounts', column: 'id' }
         },
         created_at: { type: 'timestamp', notNull: true, defaultNow: true }
       },
@@ -234,12 +234,12 @@ export const accounts = defineService<Account, typeof accountsContract>({
      * between this column and a client naming a table it has no business reacting to.
      */
     {
-      name: 'gos_account_reactions',
+      name: 'mica_account_reactions',
       columns: {
         account_id: {
           type: 'int',
           notNull: true,
-          references: { table: 'gos_accounts', column: 'id' }
+          references: { table: 'mica_accounts', column: 'id' }
         },
         target_table: { type: 'string', length: 64, notNull: true },
         target_id: { type: 'int', notNull: true },
@@ -269,7 +269,7 @@ export const accounts = defineService<Account, typeof accountsContract>({
      * Nothing offers "delete your account", so nothing should register the endpoint.
      *
      * A registered action is reachable, full stop — a modified client can emit
-     * `gos:server:accounts:delete` directly, with or without a NUI route in front of
+     * `mica:server:accounts:delete` directly, with or without a NUI route in front of
      * it. The route table never bounded that; it only ever bounded CEF XSS, which is
      * confined to registered NUI callbacks. So "the UI does not call it" is not a control,
      * and the only real one is not registering it.
@@ -302,7 +302,7 @@ if (!paging) {
 /** 3–32 characters, lowercase, alphanumeric and underscore. No leading `@`; that is display. */
 const HANDLE_PATTERN = /^[a-z0-9_]{3,32}$/;
 
-const MAX_PER_APP_CONVAR = 'gos_max_accounts_per_app';
+const MAX_PER_APP_CONVAR = 'mica_max_accounts_per_app';
 const DEFAULT_MAX_PER_APP = 3;
 
 /**
@@ -332,7 +332,7 @@ app.registerEvent('mine', async (source, cbId, data, citizenid) => {
   const appId = data.app;
 
   const rows = await Database.query<Account[]>(
-    `SELECT * FROM \`gos_accounts\`
+    `SELECT * FROM \`mica_accounts\`
      WHERE \`citizenid\` = ? AND \`app\` = ? AND \`status\` = 'active'
      ORDER BY \`id\` ASC`,
     [citizenid, appId]
@@ -363,7 +363,7 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
    */
   const limit = maxPerApp();
   const held = await Database.scalar<number>(
-    `SELECT COUNT(*) FROM \`gos_accounts\`
+    `SELECT COUNT(*) FROM \`mica_accounts\`
      WHERE \`citizenid\` = ? AND \`app\` = ? AND \`status\` = 'active'`,
     [citizenid, appId]
   );
@@ -381,7 +381,7 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
    * reason the constraint exists rather than this check standing alone.
    */
   const taken = await Database.single<{ id: number }>(
-    'SELECT `id` FROM `gos_accounts` WHERE `app` = ? AND `handle` = ? LIMIT 1',
+    'SELECT `id` FROM `mica_accounts` WHERE `app` = ? AND `handle` = ? LIMIT 1',
     [appId, handle]
   );
   if (taken)
@@ -460,7 +460,7 @@ app.registerEvent('follow', async (source, cbId, data, citizenid) => {
    * feed could explain, and the app segment is the only thing keeping the two graphs apart.
    */
   const followee = await Database.single<{ id: number; citizenid: string; handle: string }>(
-    `SELECT \`id\`, \`citizenid\`, \`handle\` FROM \`gos_accounts\`
+    `SELECT \`id\`, \`citizenid\`, \`handle\` FROM \`mica_accounts\`
      WHERE \`id\` = ? AND \`app\` = ? AND \`status\` = 'active' LIMIT 1`,
     [followeeId, appId]
   );
@@ -471,7 +471,7 @@ app.registerEvent('follow', async (source, cbId, data, citizenid) => {
 
   try {
     await Database.insert(
-      'INSERT INTO `gos_account_follows` (`follower_account_id`, `followee_account_id`) VALUES (?, ?)',
+      'INSERT INTO `mica_account_follows` (`follower_account_id`, `followee_account_id`) VALUES (?, ?)',
       [follower.id, followee.id]
     );
 
@@ -520,7 +520,7 @@ app.registerEvent('unfollow', async (source, cbId, data, citizenid) => {
   // Scoped to the caller's own account, so a row id is not authorization to remove somebody
   // else's follow (§2.9).
   await Database.update(
-    'DELETE FROM `gos_account_follows` WHERE `follower_account_id` = ? AND `followee_account_id` = ?',
+    'DELETE FROM `mica_account_follows` WHERE `follower_account_id` = ? AND `followee_account_id` = ?',
     [follower.id, followeeId]
   );
   return true;
@@ -549,7 +549,7 @@ app.registerEvent('block', async (source, cbId, data, citizenid) => {
     });
 
   const blocked = await Database.single<{ id: number }>(
-    "SELECT `id` FROM `gos_accounts` WHERE `id` = ? AND `app` = ? AND `status` = 'active' LIMIT 1",
+    "SELECT `id` FROM `mica_accounts` WHERE `id` = ? AND `app` = ? AND `status` = 'active' LIMIT 1",
     [blockedId, appId]
   );
   if (!blocked)
@@ -559,7 +559,7 @@ app.registerEvent('block', async (source, cbId, data, citizenid) => {
 
   try {
     await Database.insert(
-      'INSERT INTO `gos_account_blocks` (`blocker_account_id`, `blocked_account_id`) VALUES (?, ?)',
+      'INSERT INTO `mica_account_blocks` (`blocker_account_id`, `blocked_account_id`) VALUES (?, ?)',
       [blocker.id, blocked.id]
     );
   } catch (error) {
@@ -569,7 +569,7 @@ app.registerEvent('block', async (source, cbId, data, citizenid) => {
   }
 
   await Database.update(
-    `DELETE FROM \`gos_account_follows\`
+    `DELETE FROM \`mica_account_follows\`
      WHERE (\`follower_account_id\` = ? AND \`followee_account_id\` = ?)
         OR (\`follower_account_id\` = ? AND \`followee_account_id\` = ?)`,
     [blocker.id, blocked.id, blocked.id, blocker.id]
@@ -590,7 +590,7 @@ app.registerEvent('unblock', async (source, cbId, data, citizenid) => {
   // Scoped to the caller's own account, so a row id is not authorization to lift somebody
   // else's block (§2.9). Unblocking does not restore any follow the block cascade removed.
   await Database.update(
-    'DELETE FROM `gos_account_blocks` WHERE `blocker_account_id` = ? AND `blocked_account_id` = ?',
+    'DELETE FROM `mica_account_blocks` WHERE `blocker_account_id` = ? AND `blocked_account_id` = ?',
     [blocker.id, blockedId]
   );
   return true;
@@ -625,7 +625,7 @@ app.registerEvent('react', async (source, cbId, data, citizenid) => {
 
   try {
     await Database.insert(
-      `INSERT INTO \`gos_account_reactions\`
+      `INSERT INTO \`mica_account_reactions\`
        (\`account_id\`, \`target_table\`, \`target_id\`, \`emoji\`) VALUES (?, ?, ?, ?)`,
       [account.id, targetTable, targetId, data.emoji]
     );
@@ -653,7 +653,7 @@ app.registerEvent('unreact', async (source, cbId, data, citizenid) => {
   // Scoped to the caller's own account, so a row id is not authorization to remove somebody
   // else's reaction (§2.9).
   await Database.update(
-    `DELETE FROM \`gos_account_reactions\`
+    `DELETE FROM \`mica_account_reactions\`
      WHERE \`account_id\` = ? AND \`target_table\` = ? AND \`target_id\` = ? AND \`emoji\` = ?`,
     [account.id, targetTable, targetId, data.emoji]
   );
@@ -683,20 +683,20 @@ app.registerEvent('reactionsFor', async (source, cbId, data, citizenid) => {
   const placeholders = targetIds.map(() => '?').join(', ');
   const [counts, mine] = await Promise.all([
     Database.query<{ target_id: number; emoji: string; total: number }[]>(
-      `SELECT \`target_id\`, \`emoji\`, COUNT(*) AS total FROM \`gos_account_reactions\`
+      `SELECT \`target_id\`, \`emoji\`, COUNT(*) AS total FROM \`mica_account_reactions\`
        WHERE \`target_table\` = ? AND \`target_id\` IN (${placeholders})
        GROUP BY \`target_id\`, \`emoji\``,
       [targetTable, ...targetIds]
     ),
     (async () => {
       const mineAccounts = await Database.query<{ id: number }[]>(
-        "SELECT `id` FROM `gos_accounts` WHERE `citizenid` = ? AND `app` = ? AND `status` = 'active'",
+        "SELECT `id` FROM `mica_accounts` WHERE `citizenid` = ? AND `app` = ? AND `status` = 'active'",
         [citizenid, appId]
       );
       const myIds = mineAccounts.map((row) => row.id);
       if (myIds.length === 0) return [];
       return await Database.query<{ target_id: number; emoji: string }[]>(
-        `SELECT \`target_id\`, \`emoji\` FROM \`gos_account_reactions\`
+        `SELECT \`target_id\`, \`emoji\` FROM \`mica_account_reactions\`
          WHERE \`target_table\` = ? AND \`target_id\` IN (${placeholders})
          AND \`account_id\` IN (${myIds.map(() => '?').join(', ')})`,
         [targetTable, ...targetIds, ...myIds]
@@ -718,7 +718,7 @@ app.registerEvent('reactionsFor', async (source, cbId, data, citizenid) => {
 /**
  * Follower and following counts for one account, plus whether the viewer follows it.
  *
- * Counted rather than denormalised onto `gos_accounts`. A `follower_count` column is a second
+ * Counted rather than denormalised onto `mica_accounts`. A `follower_count` column is a second
  * copy of a fact the graph already holds, and it drifts the first time a follow is removed by a
  * path that forgets to decrement — the same reasoning that keeps Blabber's like counts out of
  * the Blab row.
@@ -740,16 +740,16 @@ app.registerEvent('follows', async (source, cbId, data, citizenid) => {
 
   const [followers, following, mine, blocked] = await Promise.all([
     Database.scalar<number>(
-      'SELECT COUNT(*) FROM `gos_account_follows` WHERE `followee_account_id` = ?',
+      'SELECT COUNT(*) FROM `mica_account_follows` WHERE `followee_account_id` = ?',
       [accountId]
     ),
     Database.scalar<number>(
-      'SELECT COUNT(*) FROM `gos_account_follows` WHERE `follower_account_id` = ?',
+      'SELECT COUNT(*) FROM `mica_account_follows` WHERE `follower_account_id` = ?',
       [accountId]
     ),
     viewer
       ? Database.single<{ id: number }>(
-          `SELECT \`id\` FROM \`gos_account_follows\`
+          `SELECT \`id\` FROM \`mica_account_follows\`
            WHERE \`follower_account_id\` = ? AND \`followee_account_id\` = ? LIMIT 1`,
           [viewer.id, accountId]
         )
@@ -775,7 +775,7 @@ app.registerEvent('follows', async (source, cbId, data, citizenid) => {
  * These are that link.
  *
  * **Public, like the counts.** Reading who follows an account is not a privileged act — every row
- * returned is a public projection of `gos_accounts`, so `citizenid` is withheld exactly as it is
+ * returned is a public projection of `mica_accounts`, so `citizenid` is withheld exactly as it is
  * on a Blab. There is no `ownedAccount` check and there must not be one: requiring ownership would
  * mean you could only see your own followers, which is not what the number on a stranger's profile
  * is counting.
@@ -829,8 +829,8 @@ const followList = async (
 
   const rows = await Database.query<(Account & { cursor_id: number })[]>(
     `SELECT ${projection}, f.\`id\` AS \`cursor_id\`
-     FROM \`gos_account_follows\` f
-     JOIN \`gos_accounts\` a ON a.\`id\` = f.\`${listedColumn}\`
+     FROM \`mica_account_follows\` f
+     JOIN \`mica_accounts\` a ON a.\`id\` = f.\`${listedColumn}\`
      WHERE f.\`${subjectColumn}\` = ? AND a.\`app\` = ? AND a.\`status\` = 'active'${cursorClause}
      ORDER BY f.\`id\` DESC
      LIMIT ?`,
@@ -856,7 +856,7 @@ app.registerEvent('following', (source, cbId, data) => followList(data, 'followi
 /**
  * Find an account by handle or display name, within one app.
  *
- * Placed here rather than on Blabber: identity is shared (`gos_accounts`), and a future
+ * Placed here rather than on Blabber: identity is shared (`mica_accounts`), and a future
  * social app gets the same search for free — the same reasoning `followers`/`following` are
  * declared here rather than per-app.
  *
@@ -879,7 +879,7 @@ app.registerEvent('search', async (source, cbId, data) => {
   params.push(limit + 1);
 
   const rows = await Database.query<Account[]>(
-    `SELECT ${projection} FROM \`gos_accounts\`
+    `SELECT ${projection} FROM \`mica_accounts\`
      WHERE \`app\` = ? AND \`status\` = 'active' AND (\`handle\` LIKE ? OR \`display_name\` LIKE ?)${cursorClause}
      ORDER BY \`id\` DESC
      LIMIT ?`,
@@ -914,7 +914,7 @@ export async function ownedAccount(
   }
 
   return await Database.single<Account>(
-    `SELECT * FROM \`gos_accounts\`
+    `SELECT * FROM \`mica_accounts\`
      WHERE \`id\` = ? AND \`citizenid\` = ? AND \`app\` = ? AND \`status\` = 'active'
      LIMIT 1`,
     [id, citizenid, appId]
@@ -929,7 +929,7 @@ export async function ownedAccount(
  * service file, and the block graph is this service's table.
  *
  * **Named for the identity it asks about, because there is a second block graph.**
- * `Blocklist.ts` exports an `isBlocked` too, over `gos_blocklist`, and it takes a
+ * `Blocklist.ts` exports an `isBlocked` too, over `mica_blocklist`, and it takes a
  * `(citizenid, phone number)` — a different table, a different question, and the same word.
  * Both were imported under that bare name in different files (`Phone.ts` reached for one and
  * `Blabber.ts` for the other), so a reader had to check the import line to know which graph a
@@ -943,7 +943,7 @@ export async function accountHasBlocked(
   blockedAccountId: number
 ): Promise<boolean> {
   const row = await Database.single<{ id: number }>(
-    `SELECT \`id\` FROM \`gos_account_blocks\`
+    `SELECT \`id\` FROM \`mica_account_blocks\`
      WHERE \`blocker_account_id\` = ? AND \`blocked_account_id\` = ? LIMIT 1`,
     [blockerAccountId, blockedAccountId]
   );
@@ -953,7 +953,7 @@ export async function accountHasBlocked(
 /* ──────────────────────────────────────────────────────────────────────────────
  * Reading accounts, for the apps built on them (MICA-197)
  *
- * `gos_accounts` is this service's table and three other services were querying it by
+ * `mica_accounts` is this service's table and three other services were querying it by
  * hand: `Blabber.ts` twice, `BlabberDms.ts` three times, each with its own spelling of the
  * same `app = ? AND status = 'active'` predicate. That is the shape AGENTS.md §10 forbids
  * across *resources* — never read another resource's tables — applied one level in: a
@@ -1003,7 +1003,7 @@ export async function accountsOwnedBy(
   if (!citizenid || !appId) return [];
 
   return await Database.query<AccountIdentity[]>(
-    `SELECT ${ACCOUNT_IDENTITY} FROM \`gos_accounts\`
+    `SELECT ${ACCOUNT_IDENTITY} FROM \`mica_accounts\`
      WHERE \`citizenid\` = ? AND \`app\` = ? AND \`status\` = 'active'
      ORDER BY \`id\` ASC`,
     [citizenid, appId]
@@ -1030,7 +1030,7 @@ export async function accountsByHandle(
 
   const placeholders = wanted.map(() => '?').join(', ');
   return await Database.query<AccountIdentity[]>(
-    `SELECT ${ACCOUNT_IDENTITY} FROM \`gos_accounts\`
+    `SELECT ${ACCOUNT_IDENTITY} FROM \`mica_accounts\`
      WHERE \`app\` = ? AND \`status\` = 'active' AND \`handle\` IN (${placeholders})`,
     [appId, ...wanted]
   );
@@ -1052,7 +1052,7 @@ export async function accountsByIds(ids: readonly number[]): Promise<AccountIden
 
   const placeholders = wanted.map(() => '?').join(', ');
   return await Database.query<AccountIdentity[]>(
-    `SELECT ${ACCOUNT_IDENTITY} FROM \`gos_accounts\`
+    `SELECT ${ACCOUNT_IDENTITY} FROM \`mica_accounts\`
      WHERE \`id\` IN (${placeholders})`,
     wanted
   );
@@ -1075,7 +1075,7 @@ export async function activeAccount(
   if (!Number.isInteger(accountId) || accountId <= 0 || !appId) return null;
 
   return await Database.single<AccountIdentity>(
-    `SELECT ${ACCOUNT_IDENTITY} FROM \`gos_accounts\`
+    `SELECT ${ACCOUNT_IDENTITY} FROM \`mica_accounts\`
      WHERE \`id\` = ? AND \`app\` = ? AND \`status\` = 'active' LIMIT 1`,
     [accountId, appId]
   );

@@ -12,8 +12,8 @@ import { releaseManifest, hasWorkspaceSpec } from '../../scripts/lib/release-man
 /**
  * What a release tarball declares, checked on every push rather than on `main` alone.
  *
- * `release.yml` runs on `main` and nowhere else, so the first time it saw `@gos/sdk`
- * depend on `@gos/shared` through `workspace:*` was the release itself, which failed with
+ * `release.yml` runs on `main` and nowhere else, so the first time it saw `@mica/sdk`
+ * depend on `@mica/shared` through `workspace:*` was the release itself, which failed with
  * `ERR_PNPM_CANNOT_RESOLVE_WORKSPACE_PROTOCOL`. The job deliberately skips `pnpm install` —
  * "`pnpm pack` reads a manifest and archives files" — and that is true of everything except
  * resolving the workspace protocol, which needs the linked package to be installed.
@@ -60,16 +60,16 @@ describe('the manifest a release tarball ships', () => {
     // release provides.
     const packed = JSON.parse(releaseManifest(manifestOf('sdk'), VERSION));
 
-    expect(packed.dependencies['@gos/shared']).toBe(VERSION);
+    expect(packed.dependencies['@mica/shared']).toBe(VERSION);
   });
 
   it('leaves an ordinary version range alone', () => {
     const packed = JSON.parse(
       releaseManifest(
         JSON.stringify({
-          name: '@gos/sdk',
+          name: '@mica/sdk',
           version: '1.0.0',
-          dependencies: { '@gos/shared': 'workspace:*', marked: '^18.0.11' },
+          dependencies: { '@mica/shared': 'workspace:*', marked: '^18.0.11' },
           peerDependencies: { svelte: '^5.46.4' }
         }),
         VERSION

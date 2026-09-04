@@ -24,18 +24,18 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
 
 const IMAGE = 'mariadb:11';
-const CONTAINER_LABEL = 'gos-schema-harness';
-const ROOT_PASSWORD = 'gos-throwaway';
+const CONTAINER_LABEL = 'mica-schema-harness';
+const ROOT_PASSWORD = 'mica-throwaway';
 const READY_TIMEOUT = 90_000;
 
 /**
  * Accept an already-running database from the environment, avoiding Docker startup.
  * All four are required together; if any is set, all must be provided.
  */
-const DB_HOST = process.env.GOS_DB_HOST;
-const DB_PORT = process.env.GOS_DB_PORT;
-const DB_USER = process.env.GOS_DB_USER;
-const DB_PASSWORD = process.env.GOS_DB_PASSWORD;
+const DB_HOST = process.env.MICA_DB_HOST;
+const DB_PORT = process.env.MICA_DB_PORT;
+const DB_USER = process.env.MICA_DB_USER;
+const DB_PASSWORD = process.env.MICA_DB_PASSWORD;
 const EXTERNAL_DB = Boolean(DB_HOST || DB_PORT || DB_USER || DB_PASSWORD);
 
 let checksRun = 0;
@@ -148,7 +148,7 @@ let pagedThreadStatement = { sql: '', params: [] };
 const installOxmysql = (connection) => {
   const oxmysql = {
     query_async: async (sql, params = []) => {
-      if (/FROM gos_messages m/.test(sql) && /AND m\.id < \?/.test(sql)) {
+      if (/FROM mica_messages m/.test(sql) && /AND m\.id < \?/.test(sql)) {
         pagedThreadStatement = { sql, params };
       }
       const [rows] = await connection.query(sql, params);
@@ -187,7 +187,7 @@ const loadServerModule = async () => {
     `export { resolveByPhone, resolveByPhoneMany } from '${root}/server/lib/PlayerDirectory.ts';`
   ].join('\n');
 
-  const outfile = path.join(root, 'node_modules', '.cache', 'gos-schema-harness.mjs');
+  const outfile = path.join(root, 'node_modules', '.cache', 'mica-schema-harness.mjs');
   await esbuild.build({
     stdin: { contents: entry, resolveDir: root, loader: 'ts' },
     bundle: true,
@@ -200,7 +200,7 @@ const loadServerModule = async () => {
         'globalThis.emitNet = globalThis.emitNet ?? (() => {});',
         'globalThis.on = globalThis.on ?? (() => {});',
         'globalThis.source = globalThis.source ?? 0;',
-        "globalThis.GetCurrentResourceName = globalThis.GetCurrentResourceName ?? (() => 'gos');",
+        "globalThis.GetCurrentResourceName = globalThis.GetCurrentResourceName ?? (() => 'mica');",
         'globalThis.RegisterCommand = globalThis.RegisterCommand ?? (() => {});',
         'globalThis.IsPlayerAceAllowed = globalThis.IsPlayerAceAllowed ?? (() => false);',
         'globalThis.GetConvar = globalThis.GetConvar ?? ((_n, fallback) => fallback);',
@@ -238,7 +238,7 @@ const FRAMEWORK = {
 };
 
 const seedFrameworkAndGPhone = async ({ connection, schemaFile, hasPlayers }) => {
-  const database = `gos_${path.basename(schemaFile, '.sql').replace(/\./g, '_')}_schema`;
+  const database = `mica_${path.basename(schemaFile, '.sql').replace(/\./g, '_')}_schema`;
   step(`${schemaFile}: importing into \`${database}\``);
 
   await connection.query(`DROP DATABASE IF EXISTS \`${database}\``);
@@ -269,7 +269,7 @@ const seedFrameworkAndGPhone = async ({ connection, schemaFile, hasPlayers }) =>
     );
   }
 
-  // Import the gOS schema
+  // Import the micaOS schema
   const sql = fs.readFileSync(path.join(root, schemaFile), 'utf8');
   await connection.query(sql);
   console.log(`    imported ${schemaFile} without error`);
@@ -288,19 +288,19 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, modules }) => {
 
   // Create test data
   const [convResult] = await connection.query(
-    'INSERT INTO gos_messages_conversations (citizenid, is_group, status) VALUES (?, ?, ?)',
+    'INSERT INTO mica_messages_conversations (citizenid, is_group, status) VALUES (?, ?, ?)',
     [ownerA, 0, 'active']
   );
   const conversationId = convResult.insertId;
 
   await connection.query(
-    `INSERT INTO gos_messages_participants (conversation_id, citizenid, role, left_at, status)
+    `INSERT INTO mica_messages_participants (conversation_id, citizenid, role, left_at, status)
      VALUES (?, ?, 'admin', NULL, 'active'), (?, ?, 'member', NULL, 'active')`,
     [conversationId, ownerA, conversationId, ownerB]
   );
 
   await connection.query(
-    `INSERT INTO gos_messages (conversation_id, citizenid, message, status)
+    `INSERT INTO mica_messages (conversation_id, citizenid, message, status)
      VALUES (?, ?, 'Hello', 'active')`,
     [conversationId, ownerA]
   );
@@ -323,7 +323,7 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, modules }) => {
   const extraConversations = [];
   for (let i = 0; i < THREADS; i++) {
     const [r] = await connection.query(
-      'INSERT INTO gos_messages_conversations (citizenid, is_group, status) VALUES (?, ?, ?)',
+      'INSERT INTO mica_messages_conversations (citizenid, is_group, status) VALUES (?, ?, ?)',
       [ownerA, 0, 'active']
     );
     extraConversations.push(r.insertId);
@@ -335,10 +335,10 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, modules }) => {
     seeded.push([conv, i % 2 ? ownerA : ownerB, `seed ${i}`, 'active']);
   }
   await connection.query(
-    'INSERT INTO gos_messages (conversation_id, citizenid, message, status) VALUES ?',
+    'INSERT INTO mica_messages (conversation_id, citizenid, message, status) VALUES ?',
     [seeded]
   );
-  await connection.query('ANALYZE TABLE gos_messages');
+  await connection.query('ANALYZE TABLE mica_messages');
 
   step(`${schemaFile} — MessageRepository.findByConversation pages by index`);
   const messageRepo = new modules.MessageRepository(database);
@@ -432,7 +432,7 @@ const main = async () => {
       // Validate all four environment variables are set
       if (!DB_HOST || !DB_PORT || !DB_USER || !DB_PASSWORD) {
         throw new Error(
-          'all four of GOS_DB_HOST, GOS_DB_PORT, GOS_DB_USER, GOS_DB_PASSWORD ' +
+          'all four of MICA_DB_HOST, MICA_DB_PORT, MICA_DB_USER, MICA_DB_PASSWORD ' +
             'must be provided together. Nothing was tested.'
         );
       }
@@ -454,8 +454,8 @@ const main = async () => {
     const modules = await loadServerModule();
 
     // Test both schemas and both framework shapes
-    await runVariant({ connection, schemaFile: 'gos.sql', hasPlayers: true, modules });
-    await runVariant({ connection, schemaFile: 'gos.esx.sql', hasPlayers: false, modules });
+    await runVariant({ connection, schemaFile: 'mica.sql', hasPlayers: true, modules });
+    await runVariant({ connection, schemaFile: 'mica.esx.sql', hasPlayers: false, modules });
 
     if (checksRun < MINIMUM_CHECKS) {
       throw new Error(

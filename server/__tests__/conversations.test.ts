@@ -42,7 +42,7 @@ import { conversations } from '../services/Conversations';
 import { GENERIC_ERROR_MESSAGE } from '../lib/errors';
 
 const call = async (action: string, data: unknown) => {
-  const handler = handlers.get(`gos:server:conversations:${action}`);
+  const handler = handlers.get(`mica:server:conversations:${action}`);
   if (!handler) throw new Error(`no handler for ${action}`);
   (globalThis as any).source = 5;
   (globalThis as any).emitNet = vi.fn();
@@ -53,7 +53,7 @@ const call = async (action: string, data: unknown) => {
 /** Citizenids handed to a participants-table insert, in the order they were written. */
 const participantsAdded = () =>
   dbMock.insert.mock.calls
-    .filter(([sql]) => typeof sql === 'string' && sql.includes('gos_messages_participants'))
+    .filter(([sql]) => typeof sql === 'string' && sql.includes('mica_messages_participants'))
     .map(([, params]) => (params as unknown[])[1]);
 
 beforeEach(() => {
@@ -84,7 +84,7 @@ describe('conversations:create — citizenids only via phone resolution', () => 
     expect(reply).toMatchObject({ error: expect.stringContaining('participant') });
 
     const addedCitizenids = dbMock.insert.mock.calls
-      .filter(([sql]) => typeof sql === 'string' && sql.includes('gos_messages_participants'))
+      .filter(([sql]) => typeof sql === 'string' && sql.includes('mica_messages_participants'))
       .map(([, params]) => (params as unknown[])[1]);
     expect(addedCitizenids).toEqual([]);
   });
@@ -93,7 +93,7 @@ describe('conversations:create — citizenids only via phone resolution', () => 
     await call('create', { participant: { firstname: 'Jax', lastname: 'Reed' } });
 
     const addedCitizenids = dbMock.insert.mock.calls
-      .filter(([sql]) => typeof sql === 'string' && sql.includes('gos_messages_participants'))
+      .filter(([sql]) => typeof sql === 'string' && sql.includes('mica_messages_participants'))
       .map(([, params]) => (params as unknown[])[1]);
 
     // Only the caller themselves was added; the card contributed a name and nothing else.
@@ -106,7 +106,7 @@ describe('conversations:create — citizenids only via phone resolution', () => 
     await call('create', { is_group: true, participants: ['555-0100', '555-9999', 'CIT_C'] });
 
     const addedCitizenids = dbMock.insert.mock.calls
-      .filter(([sql]) => typeof sql === 'string' && sql.includes('gos_messages_participants'))
+      .filter(([sql]) => typeof sql === 'string' && sql.includes('mica_messages_participants'))
       .map(([, params]) => (params as unknown[])[1]);
 
     // 555-0100 resolves to CIT_B and is added; 555-9999 resolves to nobody and is skipped;
@@ -122,7 +122,7 @@ describe('conversations:create — citizenids only via phone resolution', () => 
     await call('create', { phone: '555-0100' });
 
     const addedCitizenids = dbMock.insert.mock.calls
-      .filter(([sql]) => typeof sql === 'string' && sql.includes('gos_messages_participants'))
+      .filter(([sql]) => typeof sql === 'string' && sql.includes('mica_messages_participants'))
       .map(([, params]) => (params as unknown[])[1]);
 
     expect(addedCitizenids).toEqual(expect.arrayContaining(['CIT_A', 'CIT_B']));
@@ -272,14 +272,14 @@ describe('conversations:create — a thread lost to a race stands down', () => {
   const scalarAnswers = ({ canonical, messages }: { canonical: unknown; messages?: number }) => {
     dbMock.scalar.mockImplementation(async (sql: string) => {
       if (sql.includes('ORDER BY c.id ASC')) return canonical;
-      if (sql.includes('COUNT(*) FROM gos_messages')) return messages ?? 0;
+      if (sql.includes('COUNT(*) FROM mica_messages')) return messages ?? 0;
       return null;
     });
   };
 
   const discarded = () =>
     dbMock.update.mock.calls
-      .filter(([sql]) => typeof sql === 'string' && sql.includes('gos_messages_conversations'))
+      .filter(([sql]) => typeof sql === 'string' && sql.includes('mica_messages_conversations'))
       .map(([, params]) => params);
 
   beforeEach(() => {
@@ -378,7 +378,7 @@ describe('addParticipant — the live row is unique by construction', () => {
 
 describe('the declaration', () => {
   it('still disables the generic create in favor of this custom handler', () => {
-    expect(handlers.has('gos:server:conversations:create')).toBe(true);
+    expect(handlers.has('mica:server:conversations:create')).toBe(true);
     expect(conversations.resolved.columns).not.toContain('participant');
   });
 
@@ -409,9 +409,10 @@ describe('conversations:create — participant_a/participant_b and the unique-in
    */
   const conversationInsertColumns = (): Record<string, unknown> => {
     const call = dbMock.insert.mock.calls.find(
-      ([sql]) => typeof sql === 'string' && sql.includes('INSERT INTO `gos_messages_conversations`')
+      ([sql]) =>
+        typeof sql === 'string' && sql.includes('INSERT INTO `mica_messages_conversations`')
     ) as [string, unknown[]] | undefined;
-    if (!call) throw new Error('no insert into gos_messages_conversations');
+    if (!call) throw new Error('no insert into mica_messages_conversations');
     const [sql, params] = call;
     const names = (sql.match(/\(([^)]+)\)/)?.[1] ?? '')
       .split(',')

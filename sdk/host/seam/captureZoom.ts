@@ -14,7 +14,7 @@ import { writable } from 'svelte/store';
  * it moves to the side of the boundary that publishes it and `display.ts` reads it back
  * (`web/` importing the SDK is the direction that is allowed to exist).
  *
- * `core: true` only — `@gos/sdk/core`, not `@gos/sdk`. It is a lever on the shell's
+ * `core: true` only — `@mica/sdk/core`, not `@mica/sdk`. It is a lever on the shell's
  * own rendering, and a sandboxed iframe forcing the whole phone bigger is a griefing
  * vector rather than a feature, which is why it has no host-protocol twin.
  */

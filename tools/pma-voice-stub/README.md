@@ -3,7 +3,7 @@
 A dev-only stand-in for [pma-voice](https://github.com/AvarianKnight/pma-voice),
 for testing calls in game with one player (MICA-55). Not a working voice
 implementation — it does no actual audio routing. What it does is print every
-call gOS's client makes to `exports['pma-voice']`, and flag it loudly if
+call micaOS's client makes to `exports['pma-voice']`, and flag it loudly if
 `addPlayerToCall`/`removePlayerFromCall` are ever called out of balance, which
 is the channel-leak class of bug this exists to catch — see
 `client/__tests__/Call.test.ts` for the same check against a mocked client.
@@ -16,9 +16,9 @@ is the channel-leak class of bug this exists to catch — see
    for `exports['pma-voice']` to resolve to it.
 2. Do **not** also run the real pma-voice at the same time — whichever starts
    last wins the export namespace, and you want this one to.
-3. `ensure pma-voice` before `ensure gos` in your `server.cfg`, same ordering
+3. `ensure pma-voice` before `ensure mica` in your `server.cfg`, same ordering
    the real resource needs.
-4. Watch the server console. `goscall [number]` (AGENTS.md §1) rings yourself;
+4. Watch the server console. `micacall [number]` (AGENTS.md §1) rings yourself;
    answer it and confirm `addPlayerToCall` printed with the right call id; hang
    up (or have the simulated peer's side end it) and confirm
    `removePlayerFromCall` printed too. No "already in a call" or "called with no
@@ -34,6 +34,6 @@ the client hold up its end of the pma-voice contract, symmetrically, every time.
 ## Never ship this
 
 This folder is not referenced by `fxmanifest.lua`, `build/build-bundle.js`, or
-anything under `dist/` — it is not part of the `gos` resource and never reaches
+anything under `dist/` — it is not part of the `mica` resource and never reaches
 a player who installs it. Keep it that way: it exists to be dropped into a
 **dev** server's `resources/` folder by hand, and nowhere else.

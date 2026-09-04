@@ -4,7 +4,7 @@
 
 import { Database } from './Database';
 import { AuditLogger } from './AuditLogger';
-import type { ReportCategory } from '@gos/shared/types';
+import type { ReportCategory } from '@mica/shared/types';
 
 /**
  * Hiding someone else's content, and the allowlist that makes it safe.
@@ -34,8 +34,8 @@ export interface ReportableDefinition {
  * identifier, so refusing anything not on this list is the only safe move (§2.9).
  *
  * **Populated by declaration, not by a literal here.** It used to be a hardcoded object,
- * which meant this file — core, in `server/lib/` — named `gos_blabber` and
- * `gos_blabber_dms`. Blabber is `core: false`: an add-on. Core naming an add-on is the
+ * which meant this file — core, in `server/lib/` — named `mica_blabber` and
+ * `mica_blabber_dms`. Blabber is `core: false`: an add-on. Core naming an add-on is the
  * dependency pointing the wrong way, and it had a concrete cost rather than an aesthetic
  * one — a third-party app installed from the Store could not make its content reportable
  * at all, because doing so meant editing this file and the SDK.

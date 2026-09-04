@@ -11,7 +11,7 @@
  */
 import '../../host/registerFacets';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { defineApp, type AppComponent } from '@gos/sdk';
+import { defineApp, type AppComponent } from '@mica/sdk';
 import { get } from 'svelte/store';
 
 const serviceMock = vi.hoisted(() => ({
@@ -305,11 +305,11 @@ describe('App Registry Store', () => {
     });
 
     it('refuses one built against a different contract, and says so in prose', () => {
-      // No `gOS App Registry error:` prefix and the app named as the player sees it:
+      // No `micaOS App Registry error:` prefix and the app named as the player sees it:
       // the Store toasts this through `useAppAction`'s `run`, and it is an ordinary fact
       // about a version rather than a programming mistake only a developer should read.
       expect(() => appRegistryStore.registerAddOn(contractAddOn('99'), 'export {}')).toThrow(
-        `Contract Probe was built for gOS SDK contract 99, and this phone provides ` +
+        `Contract Probe was built for micaOS SDK contract 99, and this phone provides ` +
           `${SDK_CONTRACT_VERSION}.`
       );
       expect(appRegistryStore.isInstalled('contract_probe')).toBe(false);
@@ -433,7 +433,7 @@ describe('App Registry Store', () => {
 
   it('prohibits unregistering built-in core apps', () => {
     expect(() => appRegistryStore.unregisterApp('contacts')).toThrow(
-      "gOS App Registry error: Unregistering core app 'contacts' is prohibited."
+      "micaOS App Registry error: Unregistering core app 'contacts' is prohibited."
     );
   });
 });
@@ -665,7 +665,7 @@ describe('remote app persistence and rehydration', () => {
     const entry = entryFor(sha256);
     await appRegistryStore.installFromCatalog(entry);
 
-    const stored = JSON.parse(localStorage.getItem('gos_installed_remote_apps') ?? '[]');
+    const stored = JSON.parse(localStorage.getItem('mica_installed_remote_apps') ?? '[]');
     expect(stored).toEqual([{ url: bundleUrl, entry }]);
   });
 
@@ -674,7 +674,7 @@ describe('remote app persistence and rehydration', () => {
     // exactly what "swapped out after install" looks like.
     const sha256 = await sha256Hex(bundleCode);
     const entry = entryFor(sha256);
-    localStorage.setItem('gos_installed_remote_apps', JSON.stringify([{ url: bundleUrl, entry }]));
+    localStorage.setItem('mica_installed_remote_apps', JSON.stringify([{ url: bundleUrl, entry }]));
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(fetchResponse(bundleCode + '// tampered'));
 
@@ -690,7 +690,7 @@ describe('remote app persistence and rehydration', () => {
   it('rehydrates a hash-pinned install whose bundle still matches', async () => {
     const sha256 = await sha256Hex(bundleCode);
     const entry = entryFor(sha256);
-    localStorage.setItem('gos_installed_remote_apps', JSON.stringify([{ url: bundleUrl, entry }]));
+    localStorage.setItem('mica_installed_remote_apps', JSON.stringify([{ url: bundleUrl, entry }]));
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(fetchResponse(bundleCode));
 
     await appRegistryStore.rehydrateSavedRemoteApps();
@@ -714,7 +714,7 @@ describe('remote app persistence and rehydration', () => {
 
     await appRegistryStore.installFromCatalog(updatedEntry);
 
-    const stored = JSON.parse(localStorage.getItem('gos_installed_remote_apps') ?? '[]');
+    const stored = JSON.parse(localStorage.getItem('mica_installed_remote_apps') ?? '[]');
     expect(stored).toEqual([{ url: bundleUrl, entry: updatedEntry }]);
   });
 
@@ -736,7 +736,7 @@ describe('remote app persistence and rehydration', () => {
     });
     await appRegistryStore.installFromCatalog(updatedEntry);
 
-    const stored = JSON.parse(localStorage.getItem('gos_installed_remote_apps') ?? '[]');
+    const stored = JSON.parse(localStorage.getItem('mica_installed_remote_apps') ?? '[]');
     expect(stored).toEqual([{ url: updatedUrl, entry: updatedEntry }]);
   });
 
@@ -745,7 +745,7 @@ describe('remote app persistence and rehydration', () => {
     // to rebuild a manifest from. Neither can be rehydrated any more — this registry
     // never re-runs fetched code to ask it what it is.
     localStorage.setItem(
-      'gos_installed_remote_apps',
+      'mica_installed_remote_apps',
       JSON.stringify([bundleUrl, { url: 'https://store.example.com/apps/other.js', sha256: 'x' }])
     );
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});

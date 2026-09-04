@@ -1,10 +1,10 @@
 ---
-name: gos-service
+name: mica-service
 description:
   Declare or change a server service, table, or schema. Use when adding a
   defineService declaration, changing a column, adding an index, writing a
   migration, exposing a public or membership read, or wiring an app to a
-  resource it does not own. Covers gos.sql generation and gosschema apply.
+  resource it does not own. Covers mica.sql generation and micaschema apply.
 ---
 
 # Declaring a service, and changing a schema
@@ -16,7 +16,7 @@ allowlist, the CRUD net events, and the DDL.
 
 `docs/schema-and-services.md` is the authority — every field, the
 accounts/identity model shared social apps build on, Blabber as the worked
-public-read example, and the `gos.sql` generation and dev-reset mechanics. Read
+public-read example, and the `mica.sql` generation and dev-reset mechanics. Read
 it before your first `read: 'public'` or `access.membership` service.
 
 ## The declaration
@@ -56,7 +56,7 @@ export const notes = defineService<Note>({
 - `repositoryFactory` subclasses `SchemaRepository` for reads the single-table
   generic path cannot express, without losing the identifier allowlist or the
   ownership scoping. `server/repositories/` holds the two that need it.
-- `table` overrides the default `gos_<id>`; `options` (`disableGet`,
+- `table` overrides the default `mica_<id>`; `options` (`disableGet`,
   `disableCreate`, …) turns off a generic action the shape doesn't fit.
 
 **An app with no table** — Bank — has no declaration: pass `null` as the
@@ -86,12 +86,12 @@ Full model: `docs/security.md`. Constraints: AGENTS.md §2.9.
 
 **Write the change once, in the declaration**, then `pnpm generate:sql`.
 
-`gos.sql` is generated in full, committed, and **imported by hand**. Never
+`mica.sql` is generated in full, committed, and **imported by hand**. Never
 hand-edit it — a stale copy silently breaks the `columns` allowlist, whose
 safety property holds only while it matches the real table. No app table is ever
 created at runtime.
 
-A live install is brought up to date by **`gosschema apply`** from the server
+A live install is brought up to date by **`micaschema apply`** from the server
 console (console-only, `source === 0`). It runs versioned migrations
 oldest-first, **then** the additive `ADD COLUMN` / `ADD KEY` pass — that order
 is a correctness requirement, not a preference: run the additive pass first and
@@ -112,9 +112,9 @@ breaking change in `server/migrations/`, `NNNN_snake_case_description.ts`:
 ```ts
 export const migration: Migration = {
   id: '0001_rename_media_image_to_data',
-  description: 'gos_media.image becomes gos_media.data',
+  description: 'mica_media.image becomes mica_media.data',
   up: async () => {
-    await Database.query('ALTER TABLE `gos_media` CHANGE COLUMN ...', []);
+    await Database.query('ALTER TABLE `mica_media` CHANGE COLUMN ...', []);
   }
 };
 ```
@@ -133,7 +133,7 @@ export const migration: Migration = {
 ## Never read another resource's tables
 
 Bank transactions, character data — go through that resource's **exports**,
-behind a `*Bridge` in `server/lib/`. Querying their tables couples gOS to a
+behind a `*Bridge` in `server/lib/`. Querying their tables couples micaOS to a
 schema it does not own and can read stale data.
 
 The bridge also **normalizes**, because these resources disagree silently:

@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { DEFAULT_MUSIC_RANGE } from '@gos/shared/musicBroadcast';
+import { DEFAULT_MUSIC_RANGE } from '@mica/shared/musicBroadcast';
 
 /**
  * How loud a neighbour's phone is, from where this ped is standing. MICA-111 phase 2.
@@ -46,11 +46,11 @@ import { DEFAULT_MUSIC_RANGE } from '@gos/shared/musicBroadcast';
  *
  * ## Range, and the one way an owner gets it wrong
  *
- * `gos_music_range` — the same convar and the same {@link DEFAULT_MUSIC_RANGE} the
+ * `mica_music_range` — the same convar and the same {@link DEFAULT_MUSIC_RANGE} the
  * server fans out on, deliberately one number rather than two that can disagree. It is not
- * `gos_bluetooth_range`, which is a hand-to-hand 15m and means something else.
+ * `mica_bluetooth_range`, which is a hand-to-hand 15m and means something else.
  *
- * **A client only sees replicated convars.** `set gos_music_range 40` in `server.cfg`
+ * **A client only sees replicated convars.** `set mica_music_range 40` in `server.cfg`
  * reaches the server's fan-out and not this, so the two disagree; `setr` reaches both. The
  * disagreement is deliberately survivable in the direction it actually happens: the
  * unreplicated case leaves the client's range *smaller* than the server's, so entries
@@ -200,7 +200,7 @@ const byDistance = (a: MusicLevel, b: MusicLevel): number => {
  * server, most of whom will never hear a note.
  *
  * How many broadcasters can be in here is not this file's decision: the server applies
- * `gos_music_max_audible` before it sends, and `parseNearbyMusicEnvelope` bounds it
+ * `mica_music_max_audible` before it sends, and `parseNearbyMusicEnvelope` bounds it
  * again at `MAX_AUDIBLE_BROADCASTS`. A second cap here would be a second rule about the
  * same thing, and the one that lost would be invisible.
  */
@@ -269,7 +269,7 @@ export class MusicProximity {
 
     const raw =
       typeof GetConvarInt === 'function'
-        ? GetConvarInt('gos_music_range', DEFAULT_MUSIC_RANGE)
+        ? GetConvarInt('mica_music_range', DEFAULT_MUSIC_RANGE)
         : DEFAULT_MUSIC_RANGE;
     const value = Number.isFinite(raw) ? raw : DEFAULT_MUSIC_RANGE;
     MusicProximity.cachedRange = Math.max(MIN_RANGE_METERS, Math.min(MAX_RANGE_METERS, value));

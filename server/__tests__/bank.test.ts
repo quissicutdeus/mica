@@ -44,7 +44,7 @@ import '../services/Bank';
  * file about what `sendMoney` adds on top rather than re-proving what it wraps.
  */
 describe('bank: sendMoney', () => {
-  const SEND = 'gos:server:bank:sendMoney';
+  const SEND = 'mica:server:bank:sendMoney';
 
   const call = async (data: unknown, src = 1) => {
     (globalThis as any).source = src;
@@ -111,7 +111,7 @@ describe('bank: sendMoney', () => {
   it('refuses an amount over the configured cap without ever calling transfer', async () => {
     bridge.byPhone.set('555-0002', { citizenid: 'CID_TARGET', source: 2 });
     (globalThis as any).GetConvar = (name: string, fallback: string) =>
-      name === 'gos_bank_transfer_max' ? '1000' : fallback;
+      name === 'mica_bank_transfer_max' ? '1000' : fallback;
 
     const reply = await call({ phone: '555-0002', amount: 5000 });
 

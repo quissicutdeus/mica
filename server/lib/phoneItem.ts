@@ -12,7 +12,7 @@ import { onPlayerLoaded } from './shell';
  * MICA-219).
  *
  * The phone opened for anyone with the keybind, so a server could not make it something you
- * buy, lose or have taken. `gos_phone_item` names an inventory item; while it is set, the
+ * buy, lose or have taken. `mica_phone_item` names an inventory item; while it is set, the
  * phone opens only for a player holding at least one, using the item opens it, and losing the
  * last one closes it the way `SetPhoneEnabled(false)` does. Empty, which is the default, gates
  * nothing, so an existing install is untouched.
@@ -24,7 +24,7 @@ import { onPlayerLoaded } from './shell';
  * earns. What it can do is ask often, which `guardNetEvent`'s limiter bounds.
  *
  * **Standalone ignores the gate**, as the ticket says: with no framework there is no
- * inventory to hold the item in. `gos_standalone` with `gos_phone_item` set is reported
+ * inventory to hold the item in. `mica_standalone` with `mica_phone_item` set is reported
  * once and then behaves as though the item convar were empty.
  *
  * **Fail-open when nothing can count**, said out loud like `removeInventoryItem`. A server
@@ -33,13 +33,13 @@ import { onPlayerLoaded } from './shell';
  * so the phone stays open and the line says why.
  */
 
-export const PHONE_ITEM_CONVAR = 'gos_phone_item';
+export const PHONE_ITEM_CONVAR = 'mica_phone_item';
 
 /** An inventory item name: what qb, ox_inventory and ESX all accept, and nothing else. */
 const ITEM_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 
-const PUSH_EVENT = 'gos:client:shell:phoneItem';
-const OPEN_EVENT = 'gos:client:shell:open';
+const PUSH_EVENT = 'mica:client:shell:phoneItem';
+const OPEN_EVENT = 'mica:client:shell:open';
 
 export interface PhoneItemState {
   /** Whether a phone item is required on this server at all. */
@@ -71,7 +71,7 @@ export const phoneItemName = (): string | null => {
   if (!ITEM_NAME.test(raw)) {
     reportOnce(
       'name',
-      `[gos] ${PHONE_ITEM_CONVAR} is set to '${raw}', which is not an item name any ` +
+      `[mica] ${PHONE_ITEM_CONVAR} is set to '${raw}', which is not an item name any ` +
         `inventory here would accept (letters, digits, '_' and '-', up to 64). The phone is ` +
         `not gated on it. Reported once per resource start.`
     );
@@ -80,7 +80,7 @@ export const phoneItemName = (): string | null => {
   if (detectFramework() === 'standalone') {
     reportOnce(
       'standalone',
-      `[gos] ${PHONE_ITEM_CONVAR} is set to '${raw}', but this server runs standalone and ` +
+      `[mica] ${PHONE_ITEM_CONVAR} is set to '${raw}', but this server runs standalone and ` +
         `has no inventory to hold it in, so the phone is not gated on it. Reported once per ` +
         `resource start.`
     );
@@ -94,7 +94,7 @@ const heldBy = (player: FrameworkPlayer, item: string): boolean => {
   if (count === null) {
     reportOnce(
       'count',
-      `[gos] ${PHONE_ITEM_CONVAR} is '${item}', but no inventory here can say how many a ` +
+      `[mica] ${PHONE_ITEM_CONVAR} is '${item}', but no inventory here can say how many a ` +
         `player holds (ox_inventory's GetItemCount, a qb player's GetItemByName, or an ESX ` +
         `xPlayer's getInventoryItem). The phone is left open rather than locked for everyone. ` +
         `Reported once per resource start.`
@@ -141,7 +141,7 @@ if (configured) {
  * counts. Guarded like every other raw net event (`docs/security.md`, category 2), and the
  * request carries nothing, so there is nothing in it to believe.
  */
-onNet('gos:server:shell:checkPhoneItem', () => {
+onNet('mica:server:shell:checkPhoneItem', () => {
   const src = source;
   if (!guardNetEvent('shell', 'checkPhoneItem')) return;
   evaluatePhoneItem(src);

@@ -16,8 +16,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     onAppForeground,
     formatRelativeTime,
     type AppProps
-  } from '@gos/sdk';
-  import type { Report } from '@gos/shared/types';
+  } from '@mica/sdk';
+  import type { Report } from '@mica/shared/types';
   import en from './locales/en.json';
   import de from './locales/de.json';
   import ReportPreview from './components/ReportPreview.svelte';

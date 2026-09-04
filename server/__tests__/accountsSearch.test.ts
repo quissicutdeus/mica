@@ -24,7 +24,7 @@ vi.mock('../lib/FrameworkBridge', () => ({
 import '../services/Accounts';
 
 const call = async (data: unknown) => {
-  const handler = handlers.get('gos:server:accounts:search');
+  const handler = handlers.get('mica:server:accounts:search');
   if (!handler) throw new Error('accounts:search is not registered');
   (globalThis as any).source = 5;
   (globalThis as any).emitNet = vi.fn();

@@ -368,7 +368,7 @@ a {
  * two halves behaved differently and why it was not obvious.
  *
  * **A drop shadow alone is not enough, and that was the first attempt.** A 2px blur plus a
- * diffuse 8px halo separates the 4xl "gOS" heading and does almost nothing for a 12px
+ * diffuse 8px halo separates the 4xl "micaOS" heading and does almost nothing for a 12px
  * `text-xs` label over bright sky — small glyphs have too little area for a soft shadow to
  * build contrast against. What works at that size is an outline.
  *

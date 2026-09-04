@@ -109,7 +109,7 @@ test.describe('Home Grid drag-and-drop', () => {
       // would test the seed, not the removal.
       await expect
         .poll(async () =>
-          page.evaluate(() => window.localStorage.getItem('gos:settings:homeGridItems'))
+          page.evaluate(() => window.localStorage.getItem('mica:settings:homeGridItems'))
         )
         .toBe('[]');
     });

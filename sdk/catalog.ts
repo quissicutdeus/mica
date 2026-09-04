@@ -157,17 +157,17 @@ export function isCatalogEntry(value: unknown): value is CatalogEntry {
  */
 export async function fetchCatalog(catalogUrl: string): Promise<CatalogEntry[]> {
   if (!isTrustedRemoteUrl(catalogUrl)) {
-    throw new Error(`gOS Catalog error: '${catalogUrl}' is not on the trusted host allowlist.`);
+    throw new Error(`micaOS Catalog error: '${catalogUrl}' is not on the trusted host allowlist.`);
   }
 
   const response = await fetch(catalogUrl);
   if (!response.ok) {
-    throw new Error(`gOS Catalog error: HTTP ${response.status} fetching '${catalogUrl}'.`);
+    throw new Error(`micaOS Catalog error: HTTP ${response.status} fetching '${catalogUrl}'.`);
   }
 
   const body: unknown = await response.json();
   if (!Array.isArray(body)) {
-    throw new Error(`gOS Catalog error: '${catalogUrl}' did not return a JSON array.`);
+    throw new Error(`micaOS Catalog error: '${catalogUrl}' did not return a JSON array.`);
   }
 
   const entries: CatalogEntry[] = [];
@@ -175,7 +175,7 @@ export async function fetchCatalog(catalogUrl: string): Promise<CatalogEntry[]> 
     if (isCatalogEntry(row)) {
       entries.push(row);
     } else {
-      console.warn(`gOS Catalog: dropped a malformed entry from '${catalogUrl}'.`, row);
+      console.warn(`micaOS Catalog: dropped a malformed entry from '${catalogUrl}'.`, row);
     }
   }
   return entries;

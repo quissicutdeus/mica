@@ -105,12 +105,12 @@ beforeEach(async () => {
   ({ deliverToParticipants } = await import('../services/Messages'));
 });
 
-/** Drives a registered `gos:server:messages:<action>` handler as `citizenid`@`source`. */
+/** Drives a registered `mica:server:messages:<action>` handler as `citizenid`@`source`. */
 const call = async (action: string, source: number, citizenid: string, data: unknown) => {
   player.current = { citizenid, source };
   (globalThis as any).source = source;
   (globalThis as any).emitNet = vi.fn();
-  const handler = handlers.get(`gos:server:messages:${action}`);
+  const handler = handlers.get(`mica:server:messages:${action}`);
   if (!handler) throw new Error(`no handler for ${action}`);
   await handler('cb-1', data);
   return (globalThis.emitNet as any).mock.calls.at(-1)?.[3];
@@ -127,7 +127,7 @@ describe('deliverToParticipants', () => {
     await deliverToParticipants(7, 'SENDER', { name: 'A B', phone: '5550100' }, message);
 
     expect(emitted).toHaveLength(1);
-    expect(emitted[0].event).toBe('gos:client:messages:received');
+    expect(emitted[0].event).toBe('mica:client:messages:received');
     expect(emitted[0].target).toBe(3);
   });
 
@@ -267,10 +267,10 @@ describe('deliverToParticipants', () => {
 });
 
 /**
- * MICA-143: reactions on Messages, storing into `gos_messages_reactions` —
- * `server/services/Messages.ts`'s own child table, not the shared `gos_account_reactions`
+ * MICA-143: reactions on Messages, storing into `mica_messages_reactions` —
+ * `server/services/Messages.ts`'s own child table, not the shared `mica_account_reactions`
  * Blabber DMs use. See the docblock above `requireReactableMessage` in that file for why: that
- * table's `account_id` is a foreign key onto `gos_accounts`, and native Messages has no
+ * table's `account_id` is a foreign key onto `mica_accounts`, and native Messages has no
  * account layer to key on — it authorizes by citizenid, the same identity conversation
  * membership already uses.
  */
@@ -289,8 +289,8 @@ describe('reactions on Messages (MICA-143)', () => {
   /** `messageRepo.findById` finds the message, and `isMember` confirms current membership. */
   const asParticipant = (row: unknown = activeMessage) => {
     dbMock.single.mockImplementation(async (sql: string) => {
-      if (sql.includes('gos_messages_participants')) return { placeholder: 1 };
-      if (sql.includes('gos_messages')) return row;
+      if (sql.includes('mica_messages_participants')) return { placeholder: 1 };
+      if (sql.includes('mica_messages')) return row;
       throw new Error(`unexpected single(): ${sql}`);
     });
   };
@@ -304,15 +304,15 @@ describe('reactions on Messages (MICA-143)', () => {
 
       expect(reply).toBe(true);
       expect(dbMock.insert).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO `gos_messages_reactions`'),
+        expect.stringContaining('INSERT INTO `mica_messages_reactions`'),
         [42, 'OTHER', '👍']
       );
     });
 
     it('refuses a reactor who is not a participant in the thread', async () => {
       dbMock.single.mockImplementation(async (sql: string) => {
-        if (sql.includes('gos_messages_participants')) return undefined;
-        if (sql.includes('gos_messages')) return activeMessage;
+        if (sql.includes('mica_messages_participants')) return undefined;
+        if (sql.includes('mica_messages')) return activeMessage;
         throw new Error(`unexpected single(): ${sql}`);
       });
 
@@ -366,7 +366,7 @@ describe('reactions on Messages (MICA-143)', () => {
 
       expect(reply).toBe(true);
       expect(dbMock.update).toHaveBeenCalledWith(
-        expect.stringContaining('DELETE FROM `gos_messages_reactions`'),
+        expect.stringContaining('DELETE FROM `mica_messages_reactions`'),
         [42, 'OTHER', '👍']
       );
       // Taking back your own reaction stays possible even after leaving the thread, the
@@ -379,7 +379,7 @@ describe('reactions on Messages (MICA-143)', () => {
   describe('reactionsFor', () => {
     it("reports counts and the caller's own reactions only for messages they can currently see", async () => {
       dbMock.query.mockImplementation(async (sql: string) => {
-        if (sql.includes('gos_messages_participants')) return [{ id: 42 }];
+        if (sql.includes('mica_messages_participants')) return [{ id: 42 }];
         if (sql.includes('GROUP BY')) {
           return [
             { message_id: 42, emoji: '👍', total: 2 },
@@ -396,7 +396,7 @@ describe('reactions on Messages (MICA-143)', () => {
 
     it('omits a message the caller is not currently a live participant in — never trusting the id alone', async () => {
       dbMock.query.mockImplementation(async (sql: string) => {
-        if (sql.includes('gos_messages_participants')) return []; // not visible to this caller
+        if (sql.includes('mica_messages_participants')) return []; // not visible to this caller
         throw new Error(`unexpected query(): ${sql}`);
       });
 
@@ -424,14 +424,14 @@ describe('send persists reply_to_id (MICA-209)', () => {
   /** `isMember` confirms the caller is in the thread; nothing else is answered. */
   const asParticipant = () => {
     dbMock.single.mockImplementation(async (sql: string) => {
-      if (sql.includes('gos_messages_participants')) return { placeholder: 1 };
+      if (sql.includes('mica_messages_participants')) return { placeholder: 1 };
       throw new Error(`unexpected single(): ${sql}`);
     });
     dbMock.insert.mockResolvedValue(99);
   };
 
   const messageInsert = () =>
-    dbMock.insert.mock.calls.find(([sql]) => String(sql).includes('INSERT INTO `gos_messages`'));
+    dbMock.insert.mock.calls.find(([sql]) => String(sql).includes('INSERT INTO `mica_messages`'));
 
   it('writes the target when it sits in the same conversation', async () => {
     asParticipant();

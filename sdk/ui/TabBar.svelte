@@ -35,7 +35,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   export interface TabOption {
     id: string;
     label: string;
-    /** Any `@gos/sdk` icon — the contract is a component taking a `class`. */
+    /** Any `@mica/sdk` icon — the contract is a component taking a `class`. */
     icon: Component<{ class?: string }>;
     badge?: number;
   }

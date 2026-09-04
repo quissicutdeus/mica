@@ -50,7 +50,7 @@ const SRC = 3;
  * not `rejects.toThrow`.
  */
 const call = async (action: string, data: unknown, citizenid = CID) => {
-  const handler = handlers.get(`gos:server:settings:${action}`);
+  const handler = handlers.get(`mica:server:settings:${action}`);
   if (!handler) throw new Error(`no handler for ${action}`);
   bridge.current = citizenid;
   (globalThis as any).source = SRC;
@@ -90,13 +90,13 @@ describe('settings service', () => {
     // update or delete has nothing to act on and `get` would answer a page when the phone
     // needs the whole set.
     for (const action of ['get', 'create', 'update', 'delete']) {
-      expect(handlers.has(`gos:server:settings:${action}`), action).toBe(false);
+      expect(handlers.has(`mica:server:settings:${action}`), action).toBe(false);
     }
   });
 
   it('registers exactly the four named actions', () => {
     for (const action of ['getAll', 'set', 'remove', 'clearApp']) {
-      expect(handlers.has(`gos:server:settings:${action}`), action).toBe(true);
+      expect(handlers.has(`mica:server:settings:${action}`), action).toBe(true);
     }
   });
 
@@ -205,7 +205,7 @@ describe('settings service', () => {
       // These are the one family of throws here a player reaches, so they must not read
       // like a stack trace (§2.9).
       const reply = await call('set', { app: 'settings', key: 'theme', value: 'x'.repeat(9000) });
-      expect(reply?.error).not.toMatch(/gos_settings|Repository/);
+      expect(reply?.error).not.toMatch(/mica_settings|Repository/);
     });
 
     it('stores a non-string value as JSON so the column always parses', async () => {
@@ -248,14 +248,14 @@ describe('character-loaded listeners', () => {
     (globalThis as any).emitNet = vi.fn();
     (globalThis as any).source = SRC;
     handlers.get('QBCore:Server:OnPlayerLoaded')!(undefined);
-    expect(globalThis.emitNet).toHaveBeenCalledWith('gos:client:settings:rehydrate', SRC);
+    expect(globalThis.emitNet).toHaveBeenCalledWith('mica:client:settings:rehydrate', SRC);
   });
 
   it('pushes a rehydrate to the resolved source from a QBCore player object', () => {
     // The local twin, which no client can emit — it keeps reading the payload.
     (globalThis as any).emitNet = vi.fn();
     handlers.get('QBCore:Server:PlayerLoaded')!({ PlayerData: { source: SRC } });
-    expect(globalThis.emitNet).toHaveBeenCalledWith('gos:client:settings:rehydrate', SRC);
+    expect(globalThis.emitNet).toHaveBeenCalledWith('mica:client:settings:rehydrate', SRC);
   });
 
   it('ignores a network payload naming a third party', () => {

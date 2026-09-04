@@ -214,7 +214,7 @@ describe('reportPendingMigrations', () => {
   });
 
   it('does not reject when the ledger does not exist yet', async () => {
-    dbMock.query.mockRejectedValue(new Error("Table 'gos.gos_schema_migrations' doesn't exist"));
+    dbMock.query.mockRejectedValue(new Error("Table 'mica.mica_schema_migrations' doesn't exist"));
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
     await expect(reportPendingMigrations()).resolves.toBeUndefined();
@@ -222,7 +222,7 @@ describe('reportPendingMigrations', () => {
     // Two migrations are mocked onto disk in this suite, so there is something the
     // unreadable ledger could have been hiding — say so, and name the fix.
     expect(logSpy).toHaveBeenCalledWith(
-      expect.stringContaining("run 'gosschema apply' from the server console")
+      expect.stringContaining("run 'micaschema apply' from the server console")
     );
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("doesn't exist"));
   });
@@ -273,7 +273,7 @@ describe('reportPendingMigrations with nothing on disk', () => {
   });
 
   it('says nothing at all when the ledger does not exist yet', async () => {
-    dbMock.query.mockRejectedValue(new Error("Table 'gos.gos_schema_migrations' doesn't exist"));
+    dbMock.query.mockRejectedValue(new Error("Table 'mica.mica_schema_migrations' doesn't exist"));
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 

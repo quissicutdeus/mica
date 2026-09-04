@@ -15,7 +15,7 @@ import type { LeaderboardEntry } from '../types';
  * shape the field has and the service says which values exist; the check is still there, it
  * is just in the half of the tree allowed to know the answer.
  *
- * The 32-character bound is `gos_highscores.app`'s own declared length.
+ * The 32-character bound is `mica_highscores.app`'s own declared length.
  */
 export const highscoresContract = defineContract({
   id: 'highscores',

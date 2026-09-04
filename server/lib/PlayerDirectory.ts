@@ -23,7 +23,7 @@ import { FrameworkBridge, type FrameworkIdentity, type FrameworkPlayer } from '.
  * showing a stale name for as long as the TTL, which is a bug traded for nothing. Add one when
  * a caller makes it necessary, and it will be obvious which caller that was.
  *
- * Deliberately **no `gos_profiles` table** yet either. Handles and avatars are Blabber's
+ * Deliberately **no `mica_profiles` table** yet either. Handles and avatars are Blabber's
  * requirement, and a table with no reader is the thing §7's ActionSheet note warns about.
  */
 
@@ -68,7 +68,7 @@ const nameFromCharinfo = (charinfo: unknown): string | null => {
  * Returns null rather than guessing. The code this replaces had a real defect worth naming: on
  * a framework object with no `PlayerData` it did `targetCitizenId = targetPlayer.phone_number`
  * — assigning a **phone number to a citizenid**. That value then went into
- * `gos_messages_participants.citizenid`, which is a foreign key onto `players`, so the
+ * `mica_messages_participants.citizenid`, which is a foreign key onto `players`, so the
  * write either failed or created a participant keyed to something that is not a person.
  */
 export async function resolveByPhone(phone: string): Promise<DirectoryEntry | null> {

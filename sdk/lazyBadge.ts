@@ -12,7 +12,7 @@ import { messageOf } from './lib/errors';
  * phone's life — earlier than any component, and earlier than the SDK barrel has finished
  * evaluating. So a manifest that calls a hook at module scope to build its count crashes
  * with `useX is not a function`: `shell/state/registry.ts` globs every manifest, and a
- * manifest importing `@gos/sdk` closes a cycle back onto a module that is still
+ * manifest importing `@mica/sdk` closes a cycle back onto a module that is still
  * initializing.
  *
  * This defers the composition to the first `subscribe`, by which point every module is
@@ -46,11 +46,11 @@ export function lazyBadge(
       if (!(composed instanceof Promise)) return composed.subscribe(run, invalidate);
 
       /**
-       * The async form, which is what makes `@gos/sdk/app` a leaf.
+       * The async form, which is what makes `@mica/sdk/app` a leaf.
        *
        * Deferring the *call* was never enough on its own: the manifest still had to name
        * the hook, and a static import of the barrel is the cycle regardless of when the
-       * function runs. `await import('@gos/sdk')` in here is the only way to say
+       * function runs. `await import('@mica/sdk')` in here is the only way to say
        * "later" about a module rather than about a call.
        *
        * Zero until it resolves, which is the honest answer — the count is not yet known,
@@ -67,7 +67,7 @@ export function lazyBadge(
         })
         .catch((error) => {
           if (!cancelled) {
-            console.error('gOS Badge: failed to compose', messageOf(error, 'unknown error'));
+            console.error('micaOS Badge: failed to compose', messageOf(error, 'unknown error'));
           }
         });
 

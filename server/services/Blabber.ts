@@ -8,21 +8,21 @@ import { ownedAccount, accountHasBlocked, accountsByHandle, accountsOwnedBy } fr
 // Media is a declared app; reuse its derived repository rather than a second instance, so
 // the attachment-ownership check runs against the same allowlist Messages already uses.
 import { media } from './Media';
-import { Blab } from '@gos/shared/types';
+import { Blab } from '@mica/shared/types';
 import { pageBounds, requirePositiveInt, type PayloadNoun } from '../lib/payload';
-import { defineContract } from '@gos/shared/contract';
-import { s } from '@gos/shared/schema';
+import { defineContract } from '@mica/shared/contract';
+import { s } from '@mica/shared/schema';
 import { resolveOwnedAttachments } from '../lib/attachments';
 import { Database } from '../lib/Database';
 import { appEventChannel } from '../lib/appEvents';
-import { mentionedHandles, taggedTopics } from '@gos/shared/richText';
+import { mentionedHandles, taggedTopics } from '@mica/shared/richText';
 import { BlabberRepository } from '../repositories/BlabberRepository';
-import { buildDeepLink } from '@gos/shared/deepLink';
+import { buildDeepLink } from '@mica/shared/deepLink';
 
 /** The app id, which is also the handle namespace accounts are claimed in. */
 const APP = 'blabber';
 
-const EDIT_WINDOW_CONVAR = 'gos_blabber_edit_window';
+const EDIT_WINDOW_CONVAR = 'mica_blabber_edit_window';
 const DEFAULT_EDIT_WINDOW = 900;
 
 /**
@@ -42,7 +42,7 @@ const DEFAULT_EDIT_WINDOW = 900;
  * forced rather than chosen: `defineService` resolves `access.editWindow` at declaration time,
  * and the alternative — widening the resolver to a per-request thunk — buys a live tunable for
  * a policy nobody adjusts mid-session, at the cost of a core API every service pays for.
- * `gos_notification_retention` makes the same deal, and the README says so for both.
+ * `mica_notification_retention` makes the same deal, and the README says so for both.
  *
  * A non-numeric or non-positive value falls back to fifteen minutes rather than removing the
  * window: a typo in `server.cfg` should not make every Blab editable forever.
@@ -101,7 +101,7 @@ export const blabberContract = defineContract({
       input: s.object({
         account_id: s.positiveInt(),
         /**
-         * `gos_blabber.body` is a varchar(280), and this is that number. It used to be
+         * `mica_blabber.body` is a varchar(280), and this is that number. It used to be
          * unbounded here and bounded only by the column, which in non-strict MySQL means a
          * post silently stored shorter than it was written.
          */
@@ -167,7 +167,7 @@ export const blabber = defineService<Blab, typeof blabberContract>({
     read: 'public',
     write: 'owner',
     /**
-     * Fifteen minutes to fix a typo, then the post freezes — `gos_blabber_edit_window`
+     * Fifteen minutes to fix a typo, then the post freezes — `mica_blabber_edit_window`
      * seconds, in fact, since `EDIT_WINDOW_SECONDS` above is the one number behind both this
      * predicate and the window `create` reports to the UI. Read at resource start, so a change
      * takes effect on the next restart.
@@ -187,7 +187,7 @@ export const blabber = defineService<Blab, typeof blabberContract>({
       notNull: true,
       clientWritable: false,
       clientFilterable: true,
-      references: { table: 'gos_accounts', column: 'id' }
+      references: { table: 'mica_accounts', column: 'id' }
     },
     /**
      * 280 characters, enforced server-side from this declaration (§2.9).
@@ -207,7 +207,7 @@ export const blabber = defineService<Blab, typeof blabberContract>({
       // author re-parent their own words into somebody else's thread retroactively.
       clientWritable: false,
       clientFilterable: true,
-      references: { table: 'gos_blabber', column: 'id' }
+      references: { table: 'mica_blabber', column: 'id' }
     },
     /**
      * The Blab this one repeats — a **mouth**.
@@ -224,7 +224,7 @@ export const blabber = defineService<Blab, typeof blabberContract>({
       type: 'int',
       clientWritable: false,
       clientFilterable: true,
-      references: { table: 'gos_blabber', column: 'id' }
+      references: { table: 'mica_blabber', column: 'id' }
     },
     /**
      * The top-level ancestor of this Blab's reply chain, or null if this Blab is itself
@@ -238,7 +238,7 @@ export const blabber = defineService<Blab, typeof blabberContract>({
       type: 'int',
       clientWritable: false,
       clientFilterable: true,
-      references: { table: 'gos_blabber', column: 'id' }
+      references: { table: 'mica_blabber', column: 'id' }
     }
   },
   /**
@@ -272,17 +272,17 @@ export const blabber = defineService<Blab, typeof blabberContract>({
    */
   childTables: [
     {
-      name: 'gos_blabber_ears',
+      name: 'mica_blabber_ears',
       columns: {
         blab_id: {
           type: 'int',
           notNull: true,
-          references: { table: 'gos_blabber', column: 'id' }
+          references: { table: 'mica_blabber', column: 'id' }
         },
         account_id: {
           type: 'int',
           notNull: true,
-          references: { table: 'gos_accounts', column: 'id' }
+          references: { table: 'mica_accounts', column: 'id' }
         },
         created_at: { type: 'timestamp', notNull: true, defaultNow: true }
       },
@@ -296,12 +296,12 @@ export const blabber = defineService<Blab, typeof blabberContract>({
      * only ever needs insert and a keyword lookup, never the generic CRUD path.
      */
     {
-      name: 'gos_blabber_tags',
+      name: 'mica_blabber_tags',
       columns: {
         blab_id: {
           type: 'int',
           notNull: true,
-          references: { table: 'gos_blabber', column: 'id' }
+          references: { table: 'mica_blabber', column: 'id' }
         },
         tag: { type: 'string', length: 32, notNull: true }
       },
@@ -311,7 +311,7 @@ export const blabber = defineService<Blab, typeof blabberContract>({
       ]
     },
     /**
-     * Attachments. Mirrors `gos_messages_attachments` — `media_id` rather than a bare
+     * Attachments. Mirrors `mica_messages_attachments` — `media_id` rather than a bare
      * base64 blob, so an attachment can be a photo, a video or a GIF without a second shape.
      * `citizenid` is carried for the same reason it is on the Messages table: the ownership
      * check in `resolveOwnedAttachments` runs before insert, but the row still needs to say
@@ -319,12 +319,12 @@ export const blabber = defineService<Blab, typeof blabberContract>({
      * projects it back out (§10).
      */
     {
-      name: 'gos_blabber_attachments',
+      name: 'mica_blabber_attachments',
       columns: {
         blab_id: {
           type: 'int',
           notNull: true,
-          references: { table: 'gos_blabber', column: 'id' }
+          references: { table: 'mica_blabber', column: 'id' }
         },
         citizenid: {
           type: 'string',
@@ -335,7 +335,7 @@ export const blabber = defineService<Blab, typeof blabberContract>({
         media_id: {
           type: 'int',
           notNull: true,
-          references: { table: 'gos_media', column: 'id' }
+          references: { table: 'mica_media', column: 'id' }
         }
       },
       indexes: [
@@ -521,7 +521,7 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
     if (tags.length > 0) {
       void Promise.all(
         tags.map((tag) =>
-          Database.insert('INSERT INTO `gos_blabber_tags` (`blab_id`, `tag`) VALUES (?, ?)', [
+          Database.insert('INSERT INTO `mica_blabber_tags` (`blab_id`, `tag`) VALUES (?, ?)', [
             id,
             tag
           ])
@@ -532,7 +532,7 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
     /**
      * Tell whoever was mentioned.
      *
-     * Derived with the **same tokenizer the UI renders with** (`@gos/shared/richText`), which is why
+     * Derived with the **same tokenizer the UI renders with** (`@mica/shared/richText`), which is why
      * that file lives in `shared/` rather than under `web/`. Two definitions of "what counts as
      * a mention" is how you get one that highlights and never notifies.
      *
@@ -610,7 +610,7 @@ app.registerEvent('ear', async (source, cbId, data, citizenid) => {
 
   try {
     await Database.insert(
-      'INSERT INTO `gos_blabber_ears` (`blab_id`, `account_id`) VALUES (?, ?)',
+      'INSERT INTO `mica_blabber_ears` (`blab_id`, `account_id`) VALUES (?, ?)',
       [target.id, account.id]
     );
   } catch (error) {
@@ -628,10 +628,10 @@ app.registerEvent('unear', async (source, cbId, data, citizenid) => {
   const blabId = data.blab_id;
   // Scoped to the caller's own account, so a row id is not authorization to remove somebody
   // else's ear (§2.9).
-  await Database.update('DELETE FROM `gos_blabber_ears` WHERE `blab_id` = ? AND `account_id` = ?', [
-    blabId,
-    account.id
-  ]);
+  await Database.update(
+    'DELETE FROM `mica_blabber_ears` WHERE `blab_id` = ? AND `account_id` = ?',
+    [blabId, account.id]
+  );
   return true;
 });
 
@@ -667,19 +667,19 @@ app.registerEvent('engagement', async (source, cbId, data, citizenid) => {
 
   const [replies, mouths, ears] = await Promise.all([
     Database.query<{ parent: number; total: number }[]>(
-      `SELECT \`reply_to\` AS parent, COUNT(*) AS total FROM \`gos_blabber\`
+      `SELECT \`reply_to\` AS parent, COUNT(*) AS total FROM \`mica_blabber\`
        WHERE \`reply_to\` IN (${placeholders}) AND \`status\` = 'active'
        GROUP BY \`reply_to\``,
       ids
     ),
     Database.query<{ parent: number; total: number; account_id: number }[]>(
-      `SELECT \`mouth_of\` AS parent, COUNT(*) AS total FROM \`gos_blabber\`
+      `SELECT \`mouth_of\` AS parent, COUNT(*) AS total FROM \`mica_blabber\`
        WHERE \`mouth_of\` IN (${placeholders}) AND \`status\` = 'active'
        GROUP BY \`mouth_of\``,
       ids
     ),
     Database.query<{ blab_id: number; total: number }[]>(
-      `SELECT \`blab_id\`, COUNT(*) AS total FROM \`gos_blabber_ears\`
+      `SELECT \`blab_id\`, COUNT(*) AS total FROM \`mica_blabber_ears\`
        WHERE \`blab_id\` IN (${placeholders})
        GROUP BY \`blab_id\``,
       ids
@@ -688,7 +688,7 @@ app.registerEvent('engagement', async (source, cbId, data, citizenid) => {
 
   const myEars = myAccountIds.length
     ? await Database.query<{ blab_id: number }[]>(
-        `SELECT \`blab_id\` FROM \`gos_blabber_ears\`
+        `SELECT \`blab_id\` FROM \`mica_blabber_ears\`
          WHERE \`blab_id\` IN (${placeholders})
          AND \`account_id\` IN (${myAccountIds.map(() => '?').join(', ')})`,
         [...ids, ...myAccountIds]
@@ -697,7 +697,7 @@ app.registerEvent('engagement', async (source, cbId, data, citizenid) => {
 
   const myMouths = myAccountIds.length
     ? await Database.query<{ mouth_of: number }[]>(
-        `SELECT \`mouth_of\` FROM \`gos_blabber\`
+        `SELECT \`mouth_of\` FROM \`mica_blabber\`
          WHERE \`mouth_of\` IN (${placeholders})
          AND \`account_id\` IN (${myAccountIds.map(() => '?').join(', ')})
          AND \`status\` = 'active'`,
@@ -771,7 +771,7 @@ app.registerEvent('feed', async (source, cbId, data, citizenid) => {
   const projection = blabber.resolved.publicColumns.map((column) => `\`${column}\``).join(', ');
   const cursorClause = cursor === null ? '' : ' AND `id` < ?';
   const blockClause = viewer
-    ? ' AND `account_id` NOT IN (SELECT `blocked_account_id` FROM `gos_account_blocks` WHERE `blocker_account_id` = ?)'
+    ? ' AND `account_id` NOT IN (SELECT `blocked_account_id` FROM `mica_account_blocks` WHERE `blocker_account_id` = ?)'
     : '';
 
   const params: unknown[] = [];
@@ -780,7 +780,7 @@ app.registerEvent('feed', async (source, cbId, data, citizenid) => {
   params.push(limit + 1);
 
   const rows = await Database.query<Blab[]>(
-    `SELECT ${projection} FROM \`gos_blabber\`
+    `SELECT ${projection} FROM \`mica_blabber\`
      WHERE \`status\` = 'active' AND \`reply_to\` IS NULL${blockClause}${cursorClause}
      ORDER BY \`id\` DESC
      LIMIT ?`,
@@ -868,7 +868,7 @@ app.registerEvent('search', async (source, cbId, data) => {
   params.push(limit + 1);
 
   const rows = await Database.query<Blab[]>(
-    `SELECT ${projection} FROM \`gos_blabber\`
+    `SELECT ${projection} FROM \`mica_blabber\`
      WHERE \`status\` = 'active' AND \`body\` LIKE ?${cursorClause}
      ORDER BY \`id\` DESC
      LIMIT ?`,
@@ -891,7 +891,7 @@ app.registerEvent('search_tags', async (source, cbId, data) => {
   const q = data.q;
 
   const rows = await Database.query<{ tag: string; uses: number }[]>(
-    `SELECT \`tag\`, COUNT(*) AS uses FROM \`gos_blabber_tags\`
+    `SELECT \`tag\`, COUNT(*) AS uses FROM \`mica_blabber_tags\`
      WHERE \`tag\` LIKE ?
      GROUP BY \`tag\`
      ORDER BY uses DESC
@@ -921,8 +921,8 @@ app.registerEvent('by_tag', async (source, cbId, data) => {
   params.push(limit + 1);
 
   const rows = await Database.query<Blab[]>(
-    `SELECT ${projection} FROM \`gos_blabber_tags\` t
-     JOIN \`gos_blabber\` b ON b.\`id\` = t.\`blab_id\`
+    `SELECT ${projection} FROM \`mica_blabber_tags\` t
+     JOIN \`mica_blabber\` b ON b.\`id\` = t.\`blab_id\`
      WHERE t.\`tag\` = ? AND b.\`status\` = 'active'${cursorClause}
      ORDER BY b.\`id\` DESC
      LIMIT ?`,
@@ -944,8 +944,8 @@ app.registerEvent('by_tag', async (source, cbId, data) => {
 app.registerEvent('trending_tags', async () => {
   return await Database.query<{ tag: string; uses: number }[]>(
     `SELECT t.\`tag\`, COUNT(*) AS uses
-     FROM \`gos_blabber_tags\` t
-     JOIN \`gos_blabber\` b ON b.\`id\` = t.\`blab_id\`
+     FROM \`mica_blabber_tags\` t
+     JOIN \`mica_blabber\` b ON b.\`id\` = t.\`blab_id\`
      WHERE b.\`status\` = 'active' AND b.\`created_at\` > NOW() - INTERVAL 48 HOUR
      GROUP BY t.\`tag\`
      ORDER BY uses DESC
@@ -993,7 +993,7 @@ app.registerEvent('profile', async (source, cbId, data, citizenid) => {
   params.push(limit + 1);
 
   const rows = await Database.query<Blab[]>(
-    `SELECT ${projection} FROM \`gos_blabber\`
+    `SELECT ${projection} FROM \`mica_blabber\`
      WHERE \`account_id\` = ? AND \`status\` = 'active' AND \`reply_to\` ${parentClause}${cursorClause}
      ORDER BY \`id\` DESC
      LIMIT ?`,
@@ -1049,13 +1049,13 @@ app.registerEvent('following', async (source, cbId, data, citizenid) => {
   params.push(limit + 1);
 
   const rows = await Database.query<Blab[]>(
-    `SELECT ${projection} FROM \`gos_blabber\`
+    `SELECT ${projection} FROM \`mica_blabber\`
      WHERE \`account_id\` IN (
-       SELECT \`followee_account_id\` FROM \`gos_account_follows\`
+       SELECT \`followee_account_id\` FROM \`mica_account_follows\`
        WHERE \`follower_account_id\` = ?
      )
      AND \`account_id\` NOT IN (
-       SELECT \`blocked_account_id\` FROM \`gos_account_blocks\` WHERE \`blocker_account_id\` = ?
+       SELECT \`blocked_account_id\` FROM \`mica_account_blocks\` WHERE \`blocker_account_id\` = ?
      )
      AND \`status\` = 'active' AND \`reply_to\` IS NULL${cursorClause}
      ORDER BY \`id\` DESC

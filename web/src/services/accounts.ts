@@ -4,14 +4,14 @@
 
 import { fetchNui } from '../nui/fetchNui';
 import { call, callOr } from '../nui/call';
-import { accountsContract } from '@gos/shared/contracts/accounts';
-import type { Account, FollowStats } from '@gos/shared/types';
-import type { AccountSearchQuery, FollowListQuery, FollowPage, ReactionTarget } from '@gos/sdk';
+import { accountsContract } from '@mica/shared/contracts/accounts';
+import type { Account, FollowStats } from '@mica/shared/types';
+import type { AccountSearchQuery, FollowListQuery, FollowPage, ReactionTarget } from '@mica/sdk';
 
 /**
  * The shared social-identity service, as functions.
  *
- * `gos_accounts` is core — every social app posts under a handle from it — so its
+ * `mica_accounts` is core — every social app posts under a handle from it — so its
  * routes are named rows in `shared/routes.ts`, and until now the only way an add-on
  * could reach them was the raw transport. Blabber did exactly that through
  * `useNuiBridge`, which is the hatch MICA-16 closes. No store here on purpose: which

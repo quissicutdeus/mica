@@ -4,7 +4,7 @@
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-# Runs on the game server as the gos deploy account, pinned by that account's
+# Runs on the game server as the mica deploy account, pinned by that account's
 # authorized_keys as a forced command (MICA-220):
 #
 #   command="/home/gphone/bin/smoke-release.sh",no-port-forwarding,no-X11-forwarding,\
@@ -36,8 +36,8 @@ trap cleanup EXIT
 
 # One byte past the cap, so an oversize stream is detected rather than silently
 # truncated into something unzip then rejects for the wrong reason.
-head -c "$((MAX_BYTES + 1))" >"$run/gos.zip"
-size=$(stat -c %s "$run/gos.zip")
+head -c "$((MAX_BYTES + 1))" >"$run/mica.zip"
+size=$(stat -c %s "$run/mica.zip")
 [ "$size" -gt 0 ] || die "nothing arrived on stdin; the zip is expected there"
 [ "$size" -le "$MAX_BYTES" ] || die "stdin exceeds ${MAX_BYTES} bytes; refusing"
 
@@ -45,12 +45,12 @@ size=$(stat -c %s "$run/gos.zip")
 # repo writes carries neither, nor symlinks, and the wrapper checks that again
 # before mounting anything.
 mkdir "$run/resources"
-unzip -q "$run/gos.zip" -d "$run/resources" || die "stdin is not a zip unzip can read"
-[ -f "$run/resources/gos/fxmanifest.lua" ] ||
-    die "the zip does not unpack to gos/fxmanifest.lua; that is the layout the release ships"
+unzip -q "$run/mica.zip" -d "$run/resources" || die "stdin is not a zip unzip can read"
+[ -f "$run/resources/mica/fxmanifest.lua" ] ||
+    die "the zip does not unpack to mica/fxmanifest.lua; that is the layout the release ships"
 
-# The privileged half: gos is not in the docker group (see README.md here),
+# The privileged half: mica is not in the docker group (see README.md here),
 # so the containers are started by a root-owned wrapper that sudoers lets this
 # account invoke by exact path, with a run directory under $SMOKE_ROOT as its
 # one argument.
-exec sudo /usr/local/sbin/gos-smoke-release.sh "$run"
+exec sudo /usr/local/sbin/mica-smoke-release.sh "$run"

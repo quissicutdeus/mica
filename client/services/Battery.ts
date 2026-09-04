@@ -29,7 +29,7 @@ const setPhoneCharge = (amount: number) => {
 
 const onBatteryDrained = () => {
   // End active phone call if battery dies
-  TriggerServerEvent('gos:server:phone:end');
+  TriggerServerEvent('mica:server:phone:end');
   try {
     if (exports['pma-voice']?.removePlayerFromCall) {
       exports['pma-voice'].removePlayerFromCall();
@@ -48,12 +48,12 @@ const onBatteryDrained = () => {
 };
 
 // Listen for server recharge events
-onNet('gos:client:battery:recharge', () => {
+onNet('mica:client:battery:recharge', () => {
   setPhoneCharge(100);
-  TriggerServerEvent('gos:server:battery:save', 100);
+  TriggerServerEvent('mica:server:battery:save', 100);
 });
 
-onNet('gos:client:battery:set', (amount: number) => {
+onNet('mica:client:battery:set', (amount: number) => {
   setPhoneCharge(amount);
 });
 
@@ -75,15 +75,15 @@ on('__cfx_nui:setBatteryLevel', (data: { level?: number }, cb: Function) => {
 
   setPhoneCharge(level);
   // Admin-gated, unlike the drain loop's `saveBattery`. The server rejects a caller
-  // without `gos.admin` and leaves the stored charge alone, so the local value here
+  // without `mica.admin` and leaves the stored charge alone, so the local value here
   // reverts as soon as the next drain tick reports the truth.
-  TriggerServerEvent('gos:server:admin:setBattery', level);
+  TriggerServerEvent('mica:server:admin:setBattery', level);
   cb({ ok: true, level });
 });
 
 // Load initial battery state on spawn/join
 setTimeout(() => {
-  TriggerServerEvent('gos:server:battery:load');
+  TriggerServerEvent('mica:server:battery:load');
 }, 1000);
 
 /**

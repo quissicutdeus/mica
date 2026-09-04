@@ -4,13 +4,13 @@
 
 import { ServiceProxy } from '../lib/ServiceProxy';
 import { clientHookFor } from '../lib/clientHooks';
-import { ROUTES, serverEventFor } from '@gos/shared/routes';
-import { GENERIC_SERVICE_ACTION, parseGenericRequest, requestEventFor } from '@gos/shared/rpc';
-import { contractFor, isClientPrepared } from '@gos/shared/contract';
+import { ROUTES, serverEventFor } from '@mica/shared/routes';
+import { GENERIC_SERVICE_ACTION, parseGenericRequest, requestEventFor } from '@mica/shared/rpc';
+import { contractFor, isClientPrepared } from '@mica/shared/contract';
 // Evaluating the barrel is what populates `contractFor` — the same registration-by-import
 // the server relies on. Without it every contract answers undefined here and no action
 // would ever be seen as `clientPrepared`.
-import '@gos/shared/contracts';
+import '@mica/shared/contracts';
 
 /**
  * Registers every declared route.
@@ -40,7 +40,7 @@ for (const route of ROUTES) {
  *
  * The table above is core code enumerating every action of every app, which is why an
  * add-on installed from the Store cannot have a server half: it cannot add a row to a
- * file that ships inside gOS. This is the door that does not require one.
+ * file that ships inside micaOS. This is the door that does not require one.
  *
  * The proxy is shared with the named routes deliberately — same map, so a service reached
  * both ways has one response subscription and one pending-callback table rather than two
@@ -56,7 +56,7 @@ on(`__cfx_nui:${GENERIC_SERVICE_ACTION}`, async (payload: unknown, cb: Function)
   const request = parseGenericRequest(payload);
   if (!request) {
     // Refused rather than relayed: both segments are interpolated into an event name, so
-    // an unchecked one could address anything on the bus instead of a gos service.
+    // an unchecked one could address anything on the bus instead of a mica service.
     cb({ error: 'Malformed service request' });
     return;
   }

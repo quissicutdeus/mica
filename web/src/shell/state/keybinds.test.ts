@@ -25,7 +25,7 @@ import {
   type KeybindEnvironment
 } from './keybinds';
 import { appRegistryStore } from './registry';
-import { findAction } from '@gos/shared/keybinds';
+import { findAction } from '@mica/shared/keybinds';
 import { useStorage } from '../../../../sdk/host/useStorage';
 
 const IDLE: KeybindEnvironment = { currentApp: 'home', callStatus: 'idle' };

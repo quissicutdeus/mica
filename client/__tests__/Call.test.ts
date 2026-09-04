@@ -98,35 +98,35 @@ describe('NUI callbacks', () => {
   it('startCall relays the number and answers dialing', async () => {
     const result = await nuiCall('startCall', { number: '555-0199' });
 
-    expect(triggeredServerEvents).toEqual([['gos:server:phone:start', '555-0199']]);
+    expect(triggeredServerEvents).toEqual([['mica:server:phone:start', '555-0199']]);
     expect(result).toEqual({ status: 'dialing' });
   });
 
   it('answerCall relays with no payload and answers connected', async () => {
     const result = await nuiCall('answerCall');
 
-    expect(triggeredServerEvents).toEqual([['gos:server:phone:answer']]);
+    expect(triggeredServerEvents).toEqual([['mica:server:phone:answer']]);
     expect(result).toEqual({ status: 'connected' });
   });
 
   it('endCall relays end and answers idle', async () => {
     const result = await nuiCall('endCall');
 
-    expect(triggeredServerEvents).toEqual([['gos:server:phone:end']]);
+    expect(triggeredServerEvents).toEqual([['mica:server:phone:end']]);
     expect(result).toEqual({ status: 'idle' });
   });
 
   it('rejectCall is the same server action as hanging up', async () => {
     const result = await nuiCall('rejectCall');
 
-    expect(triggeredServerEvents).toEqual([['gos:server:phone:end']]);
+    expect(triggeredServerEvents).toEqual([['mica:server:phone:end']]);
     expect(result).toEqual({ status: 'idle' });
   });
 
   it('simulateIncomingCall relays the number and always answers success', async () => {
     const result = await nuiCall('simulateIncomingCall', { number: '555-0177' });
 
-    expect(triggeredServerEvents).toEqual([['gos:server:phone:simulateIncoming', '555-0177']]);
+    expect(triggeredServerEvents).toEqual([['mica:server:phone:simulateIncoming', '555-0177']]);
     expect(result).toEqual({ success: true });
   });
 
@@ -154,7 +154,7 @@ describe('NUI callbacks', () => {
 
 describe('incoming call', () => {
   it('raises the phone through the shared open sequence, then pushes the incoming status', () => {
-    serverEvent('gos:client:phone:incoming', { from: '555-0199', callId: 42 });
+    serverEvent('mica:client:phone:incoming', { from: '555-0199', callId: 42 });
 
     expect(openDeviceSpy).toHaveBeenCalledWith('phone');
     expect(sentNuiMessages).toEqual([
@@ -167,7 +167,7 @@ describe('incoming call', () => {
 
   it('leaves a phone that is already up alone', () => {
     phoneOpen.value = true;
-    serverEvent('gos:client:phone:incoming', { from: '555-0199', callId: 42 });
+    serverEvent('mica:client:phone:incoming', { from: '555-0199', callId: 42 });
 
     expect(openDeviceSpy).not.toHaveBeenCalled();
     expect(sentNuiMessages[0]).toEqual({
@@ -179,7 +179,7 @@ describe('incoming call', () => {
 
 describe('accepted', () => {
   it('joins the pma-voice channel with the call id and shows connected', () => {
-    serverEvent('gos:client:phone:accepted', { callId: 42 });
+    serverEvent('mica:client:phone:accepted', { callId: 42 });
 
     expect(pmaVoice.addPlayerToCall).toHaveBeenCalledWith(42);
     expect(sentNuiMessages).toEqual([{ action: 'callStatus', data: { status: 'connected' } }]);
@@ -188,14 +188,14 @@ describe('accepted', () => {
   it('still shows connected when pma-voice is absent, rather than throwing', () => {
     (globalThis as any).exports['pma-voice'] = undefined;
 
-    expect(() => serverEvent('gos:client:phone:accepted', { callId: 42 })).not.toThrow();
+    expect(() => serverEvent('mica:client:phone:accepted', { callId: 42 })).not.toThrow();
     expect(sentNuiMessages).toEqual([{ action: 'callStatus', data: { status: 'connected' } }]);
   });
 });
 
 describe('ended', () => {
   it('leaves the pma-voice channel and returns to idle — every teardown path funnels here', () => {
-    serverEvent('gos:client:phone:ended');
+    serverEvent('mica:client:phone:ended');
 
     expect(pmaVoice.removePlayerFromCall).toHaveBeenCalledTimes(1);
     expect(sentNuiMessages).toEqual([{ action: 'callStatus', data: { status: 'idle' } }]);
@@ -204,14 +204,14 @@ describe('ended', () => {
   it('still returns to idle when pma-voice is absent, rather than stranding the UI', () => {
     (globalThis as any).exports['pma-voice'] = undefined;
 
-    expect(() => serverEvent('gos:client:phone:ended')).not.toThrow();
+    expect(() => serverEvent('mica:client:phone:ended')).not.toThrow();
     expect(sentNuiMessages).toEqual([{ action: 'callStatus', data: { status: 'idle' } }]);
   });
 });
 
 describe('failed', () => {
   it('returns to idle without touching pma-voice — no channel was ever joined at this point', () => {
-    serverEvent('gos:client:phone:failed');
+    serverEvent('mica:client:phone:failed');
 
     expect(pmaVoice.addPlayerToCall).not.toHaveBeenCalled();
     expect(pmaVoice.removePlayerFromCall).not.toHaveBeenCalled();

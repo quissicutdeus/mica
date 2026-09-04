@@ -5,8 +5,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { useHighscores, useLocale, EmptyState } from '@gos/sdk';
-  import type { LeaderboardEntry } from '@gos/shared/types';
+  import { useHighscores, useLocale, EmptyState } from '@mica/sdk';
+  import type { LeaderboardEntry } from '@mica/shared/types';
 
   let { onback }: { onback: () => void } = $props();
 

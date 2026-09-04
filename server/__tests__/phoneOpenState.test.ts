@@ -42,32 +42,32 @@ describe('PhoneOpenState', () => {
   });
 
   it('remembers what the client last pushed', () => {
-    netHandlers['gos:server:shell:setOpen'](true);
+    netHandlers['mica:server:shell:setOpen'](true);
     expect(isPhoneOpen(SRC)).toBe(true);
 
-    netHandlers['gos:server:shell:setOpen'](false);
+    netHandlers['mica:server:shell:setOpen'](false);
     expect(isPhoneOpen(SRC)).toBe(false);
   });
 
   it('reads the device-shaped push the client sends since MICA-262', () => {
-    netHandlers['gos:server:shell:setOpen']({ device: 'tablet', open: true });
+    netHandlers['mica:server:shell:setOpen']({ device: 'tablet', open: true });
     expect(isPhoneOpen(SRC)).toBe(true);
 
-    netHandlers['gos:server:shell:setOpen']({ device: 'tablet', open: false });
+    netHandlers['mica:server:shell:setOpen']({ device: 'tablet', open: false });
     expect(isPhoneOpen(SRC)).toBe(false);
 
-    netHandlers['gos:server:shell:setOpen']({ device: 'phone' });
+    netHandlers['mica:server:shell:setOpen']({ device: 'phone' });
     expect(isPhoneOpen(SRC)).toBe(false);
   });
 
   it('ignores a push from a source with no loaded character', () => {
     bridgeMock.getPlayer.mockReturnValue(undefined);
-    netHandlers['gos:server:shell:setOpen'](true);
+    netHandlers['mica:server:shell:setOpen'](true);
     expect(isPhoneOpen(SRC)).toBe(false);
   });
 
   it('forgets a source when it drops, so the next player does not inherit it', () => {
-    netHandlers['gos:server:shell:setOpen'](true);
+    netHandlers['mica:server:shell:setOpen'](true);
     expect(isPhoneOpen(SRC)).toBe(true);
 
     for (const handler of dropHandlers) handler();

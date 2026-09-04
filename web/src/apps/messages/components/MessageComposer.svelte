@@ -5,9 +5,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { MAX_ATTACHMENTS } from '@gos/shared/attachments';
-  import { MediaThumb, useLocation, useAppAction, useContacts, useLocale, fly } from '@gos/sdk';
-  import type { MediaPreview } from '@gos/shared/types';
+  import { MAX_ATTACHMENTS } from '@mica/shared/attachments';
+  import { MediaThumb, useLocation, useAppAction, useContacts, useLocale, fly } from '@mica/sdk';
+  import type { MediaPreview } from '@mica/shared/types';
   import {
     CloseIcon,
     EditIcon,
@@ -20,7 +20,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     Avatar,
     type UIMessage,
     type UIConversation
-  } from '@gos/sdk';
+  } from '@mica/sdk';
 
   /**
    * The message input: attachments tray, attach menu, photo picker, send.

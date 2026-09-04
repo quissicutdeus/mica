@@ -9,7 +9,7 @@ import {
   DEVICES,
   type DeviceDescriptor,
   type DeviceId
-} from '@gos/shared/devices';
+} from '@mica/shared/devices';
 import { usePersisted, type PersistedOptions } from '../../../../sdk/host/usePersisted';
 
 /**

@@ -4,8 +4,8 @@
 
 import { writable } from 'svelte/store';
 import { useService } from '../../../sdk/host/useService';
-import type { Listing } from '@gos/shared/types';
-import type { CreateListingInput, ListingPage } from '@gos/sdk';
+import type { Listing } from '@mica/shared/types';
+import type { CreateListingInput, ListingPage } from '@mica/sdk';
 
 const service = () => useService('marketplace');
 

@@ -3,10 +3,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect } from 'vitest';
-import { parseDeepLink } from '@gos/shared/deepLink';
+import { parseDeepLink } from '@mica/shared/deepLink';
 import { MockRegistry } from './registry';
 import { mockConversations, mockEmails } from './data';
-import type { NotificationItem } from '@gos/shared/types';
+import type { NotificationItem } from '@mica/shared/types';
 
 /**
  * Every fixture notification points at a fixture that exists.

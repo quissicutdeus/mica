@@ -15,7 +15,7 @@ import {
   parseContactShare,
   parseCallStatus,
   parseSetVisible
-} from '@gos/shared/nui';
+} from '@mica/shared/nui';
 
 describe('Shared NUI Payload Validation', () => {
   it('parses valid setTime payloads and rejects invalid ones', () => {

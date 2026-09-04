@@ -15,7 +15,7 @@ const { bridgeMock, convar, netHandlers, loadedSubscribers, emitNet } = vi.hoist
   // Set before the module loads: registration happens at import, from the convar.
   const value = { current: 'phone' };
   (globalThis as any).GetConvar = (name: string, fallback: string) =>
-    name === 'gos_phone_item' ? value.current : fallback;
+    name === 'mica_phone_item' ? value.current : fallback;
   return {
     bridgeMock: {
       getPlayer: vi.fn(),
@@ -57,11 +57,11 @@ const registeredAtImport = bridgeMock.registerUsableItem.mock.calls[0] as
 
 const SRC = 7;
 const PLAYER = { citizenid: 'ABC12345', source: SRC, rawPlayer: {} };
-const PUSH = 'gos:client:shell:phoneItem';
-const OPEN = 'gos:client:shell:open';
+const PUSH = 'mica:client:shell:phoneItem';
+const OPEN = 'mica:client:shell:open';
 
 /**
- * MICA-229: the phone opens only for a player holding the item `gos_phone_item` names.
+ * MICA-229: the phone opens only for a player holding the item `mica_phone_item` names.
  * The server counts and pushes; these drive the count and read what was pushed.
  */
 describe('the phone item gate', () => {
@@ -84,7 +84,7 @@ describe('the phone item gate', () => {
   });
 
   it('is named by the convar the README documents', () => {
-    expect(PHONE_ITEM_CONVAR).toBe('gos_phone_item');
+    expect(PHONE_ITEM_CONVAR).toBe('mica_phone_item');
     expect(phoneItemName()).toBe('phone');
   });
 
@@ -166,7 +166,7 @@ describe('the phone item gate', () => {
     it('counts and pushes for a loaded player', () => {
       bridgeMock.countItem.mockReturnValue(0);
 
-      netHandlers['gos:server:shell:checkPhoneItem']();
+      netHandlers['mica:server:shell:checkPhoneItem']();
 
       expect(emitNet).toHaveBeenCalledWith(PUSH, SRC, { gated: true, held: false });
     });
@@ -174,7 +174,7 @@ describe('the phone item gate', () => {
     it('is refused silently for a source with no loaded character', () => {
       bridgeMock.getPlayer.mockReturnValue(undefined);
 
-      netHandlers['gos:server:shell:checkPhoneItem']();
+      netHandlers['mica:server:shell:checkPhoneItem']();
 
       expect(bridgeMock.countItem).not.toHaveBeenCalled();
       expect(emitNet).not.toHaveBeenCalled();

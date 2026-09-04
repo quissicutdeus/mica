@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { citizenIdFromIdentifier, describeIdentifierRejection } from '@gos/shared/framework';
+import { citizenIdFromIdentifier, describeIdentifierRejection } from '@mica/shared/framework';
 
 /**
  * The client half of the framework bridge, and it is **display only**.

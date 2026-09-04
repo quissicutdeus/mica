@@ -33,7 +33,7 @@ import { OWNER_TABLE } from './schemaSql';
  * messages, contacts, notes, mail, Blabs, holdings, settings, call log, notifications and
  * reports with it inside the same statement, with no resource involvement.
  *
- * ESX has `users(identifier)` and no `players`, so `gos.esx.sql` drops that constraint —
+ * ESX has `users(identifier)` and no `players`, so `mica.esx.sql` drops that constraint —
  * it has to, or the schema will not import at all (MICA-150). **Dropping it drops the
  * cascade with it, and nothing replaced it** (MICA-152). This is the replacement, and its
  * job is to reproduce what the cascade does on qb: exactly the rows the cascade would have
@@ -41,14 +41,14 @@ import { OWNER_TABLE } from './schemaSql';
  *
  * That framing settles two questions that would otherwise be judgement calls. It is why the
  * swept set is *derived* from what carries the owner foreign key rather than from what looks
- * like it holds a citizenid — `gos_reports.target_author` is a `varchar(50)` citizenid
+ * like it holds a citizenid — `mica_reports.target_author` is a `varchar(50)` citizenid
  * with no FK, deliberately, because evidence has to outlive the character it names. And it
  * is why this stays a **backstop on qb**: the cascade still does the work there, this finds
  * nothing, and if it ever finds something that is an install whose table predates the
  * constraint.
  */
 
-/** The column every gOS table names its owner in. */
+/** The column every micaOS table names its owner in. */
 const OWNER_COLUMN = 'citizenid';
 
 /**
@@ -73,7 +73,7 @@ const MAX_CHUNKS = 200;
 /** How many distinct owners are sampled to check the two sides speak the same identity. */
 const IDENTITY_SAMPLE = 25;
 
-/** A gOS table and the column in it that names the character the rows belong to. */
+/** A micaOS table and the column in it that names the character the rows belong to. */
 export interface OwnedTable {
   table: string;
   column: string;
@@ -112,7 +112,7 @@ const identifier = (value: unknown, what: string): string => {
  * **Default empty means "use the framework verdict"**, not "skip the sweep" — an operator who
  * never touches this convar gets exactly MICA-152's behavior, unchanged.
  */
-export const OWNER_OVERRIDE_CONVAR = 'gos_orphan_owner_table';
+export const OWNER_OVERRIDE_CONVAR = 'mica_orphan_owner_table';
 
 export interface OwnerOverride {
   /** The resolved override, when the convar named a real table and column. `null` covers
@@ -183,13 +183,13 @@ const asColumnDef = (spec: ColumnType | ColumnDef): ColumnDef =>
  *   `defineService` supplies, so every one of them has an owner.
  * - **Every child table that declares a column referencing the owner table.** Child tables
  *   are DDL-only — no repository, no events — and four of them
- *   (`gos_messages_participants`, and the three attachment tables) carry their own
+ *   (`mica_messages_participants`, and the three attachment tables) carry their own
  *   `citizenid` with its own foreign key. A derivation that walked only `declaredServices`
  *   would miss all four; `SchemaMigrator` already walks both levels for the same reason.
- * - **`gos_audit_logs`**, which has no declaration behind it — see `AUDIT_LOG_TABLE`.
+ * - **`mica_audit_logs`**, which has no declaration behind it — see `AUDIT_LOG_TABLE`.
  *
- * Six further child tables cascade off gOS's *own* tables rather than off the owner
- * (`gos_account_follows` → `gos_accounts(id)`, and friends). They are deliberately not
+ * Six further child tables cascade off micaOS's *own* tables rather than off the owner
+ * (`mica_account_follows` → `mica_accounts(id)`, and friends). They are deliberately not
  * here: those foreign keys survive on ESX, so deleting the parent row takes them, and they
  * carry no citizenid for this to key on in any case. That is also why this must issue real
  * per-table `DELETE`s and never a `TRUNCATE` or anything under `FOREIGN_KEY_CHECKS = 0` —
@@ -255,7 +255,7 @@ const skip = (reason: SkipReason): SweepResult => ({
 });
 
 /**
- * Distinct owners out of gOS's own rows, from the first table that has any.
+ * Distinct owners out of micaOS's own rows, from the first table that has any.
  *
  * A non-array answer is treated as no answer and throws, rather than being read as an empty
  * sample: "the driver gave me something I do not understand" must not become "this server
@@ -300,7 +300,7 @@ const announceSkip = (
       console.warn(
         `[${label}] no qb core and no es_extended answered yet, so which table owns these ` +
           'rows is not known — the orphan sweep was skipped rather than guessing. If ' +
-          'gOS starts before your framework, this is expected and the next restart, or ' +
+          'micaOS starts before your framework, this is expected and the next restart, or ' +
           'the character-deleted hook, will do the work.'
       );
       return;
@@ -354,7 +354,7 @@ const announceSkip = (
  * 3. **`owner-empty`.** A real answer of zero. A server with no characters has no orphans
  *    by definition, so there is nothing this could correctly delete either way.
  * 4. **`identity-mismatch`.** The belt-and-braces one, and the only guard that catches a
- *    reachable, populated, *wrong* owner table: sample distinct owners out of gOS's own
+ *    reachable, populated, *wrong* owner table: sample distinct owners out of micaOS's own
  *    rows and require at least one of them to exist on the other side. "Every single row on
  *    this server is an orphan" is never a true answer on a live database — it is the
  *    signature of a wrong owner table, a half-started framework, or an identifier that was
@@ -403,7 +403,7 @@ const resolveOwner = async (tables: readonly OwnedTable[]): Promise<OwnerVerdict
   } catch {
     return { owner, skipped: 'owner-unreadable' };
   }
-  // No gOS rows at all: there is nothing to sweep, and nothing to check an identity
+  // No micaOS rows at all: there is nothing to sweep, and nothing to check an identity
   // against either. Refusing rather than proceeding costs nothing — a sweep of an empty
   // table set removes zero rows by construction — and keeps "we verified" honest.
   if (sample.length === 0) return { owner, skipped: 'nothing-owned' };
@@ -441,7 +441,7 @@ const affectedRows = (result: unknown): number => {
  * makes everything outside the fetched page an orphan. `NOT EXISTS` against the live table
  * has no such failure mode. This is the "optimisation" to refuse.
  *
- * On qb this is the statement MICA-71 shipped for `gos_media`, with a `LIMIT` on the
+ * On qb this is the statement MICA-71 shipped for `mica_media`, with a `LIMIT` on the
  * end; the alias stays `p` so that remains visibly true.
  */
 export const orphanDeleteSql = (owned: OwnedTable, owner: OwnerTable): string => {
@@ -472,7 +472,7 @@ const sweepOneTable = async (owned: OwnedTable, owner: OwnerTable): Promise<numb
   }
 
   console.warn(
-    `[gos] ${owned.table} still had orphans after ${MAX_CHUNKS * DELETE_CHUNK} rows; the ` +
+    `[mica] ${owned.table} still had orphans after ${MAX_CHUNKS * DELETE_CHUNK} rows; the ` +
       'rest are left for the next sweep rather than held in one long transaction.'
   );
   return removed;
@@ -481,7 +481,7 @@ const sweepOneTable = async (owned: OwnedTable, owner: OwnerTable): Promise<numb
 export interface SweepOptions {
   /** Sweep only these. Defaults to every owned table. */
   only?: readonly OwnedTable[];
-  /** Console prefix, so `gosmedia prune` still sounds like itself. */
+  /** Console prefix, so `micamedia prune` still sounds like itself. */
   label?: string;
 }
 
@@ -498,7 +498,7 @@ export interface SweepOptions {
  * exists to avoid, arrived at from the other direction.
  */
 export const sweepOrphanedRows = async (options: SweepOptions = {}): Promise<SweepResult> => {
-  const label = options.label ?? 'gos';
+  const label = options.label ?? 'mica';
   const tables = options.only ?? ownedTables();
   if (tables.length === 0) return skip('nothing-owned');
 

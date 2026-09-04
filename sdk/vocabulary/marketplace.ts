@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import type { Listing } from '@gos/shared/types';
+import type { Listing } from '@mica/shared/types';
 
 /** What `Facets['marketplace']` reads and writes. MICA-172 — see `./accounts.ts`. */
 

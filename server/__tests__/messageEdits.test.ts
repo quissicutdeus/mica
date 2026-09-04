@@ -7,7 +7,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 /**
  * Editing and unsending a message (MICA-68).
  *
- * `gos_messages` is the awkward table: `citizenid` is the **sender**, and the rows are
+ * `mica_messages` is the awkward table: `citizenid` is the **sender**, and the rows are
  * shared between everyone in the thread. So neither authorization question is sufficient on
  * its own — ownership says whether you wrote it, membership says whether you are still in
  * the conversation it belongs to, and both have to hold. §2.9's rule that a row id is never
@@ -52,7 +52,7 @@ const world = {
 };
 
 const call = async (action: string, data: unknown) => {
-  const handler = handlers.get(`gos:server:messages:${action}`);
+  const handler = handlers.get(`mica:server:messages:${action}`);
   if (!handler) throw new Error(`no handler for ${action}`);
   (globalThis as any).source = 5;
   (globalThis as any).emitNet = vi.fn();
@@ -60,10 +60,10 @@ const call = async (action: string, data: unknown) => {
   return (globalThis.emitNet as any).mock.calls.at(-1)?.[3];
 };
 
-/** Every `UPDATE gos_messages …` the call issued, as `[sql, params]`. */
+/** Every `UPDATE mica_messages …` the call issued, as `[sql, params]`. */
 const messageUpdates = () =>
   dbMock.update.mock.calls.filter(
-    ([sql]) => typeof sql === 'string' && sql.includes('`gos_messages`')
+    ([sql]) => typeof sql === 'string' && sql.includes('`mica_messages`')
   );
 
 beforeEach(() => {
@@ -83,7 +83,7 @@ beforeEach(() => {
   dbMock.update.mockResolvedValue(true);
   // Both `findById` and `isMember` go through `Database.single`; the statement says which.
   dbMock.single.mockImplementation(async (sql: string) =>
-    sql.includes('gos_messages_participants') ? (world.isMember ? 1 : null) : world.row
+    sql.includes('mica_messages_participants') ? (world.isMember ? 1 : null) : world.row
   );
   (globalThis as any).GetConvar = (_n: string, f: string) => f;
 });
@@ -130,7 +130,7 @@ describe('messages:edit — who may rewrite what', () => {
     await call('edit', { id: 42, message: 'reaching' });
 
     const membershipCalls = dbMock.single.mock.calls.filter(([sql]) =>
-      String(sql).includes('gos_messages_participants')
+      String(sql).includes('mica_messages_participants')
     );
     expect(membershipCalls).toHaveLength(1);
     // 7 is the row's own conversation, read off the row and never off the payload.
@@ -239,11 +239,11 @@ describe('messages:delete — an unsend, soft in the schema', () => {
     await call('delete', { id: 42 });
 
     const audits = dbMock.insert.mock.calls.filter(([sql]) =>
-      String(sql).includes('gos_audit_logs')
+      String(sql).includes('mica_audit_logs')
     );
     expect(audits).toHaveLength(1);
     expect(audits[0][1]).toEqual(
-      expect.arrayContaining(['CIT_A', 'deleted', 'messages', 42, 'gos_messages'])
+      expect.arrayContaining(['CIT_A', 'deleted', 'messages', 42, 'mica_messages'])
     );
   });
 });

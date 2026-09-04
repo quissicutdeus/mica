@@ -6,8 +6,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script lang="ts">
   import { untrack } from 'svelte';
-  import { Button, useLocale } from '@gos/sdk';
-  import type { Account } from '@gos/shared/types';
+  import { Button, useLocale } from '@mica/sdk';
+  import type { Account } from '@mica/shared/types';
 
   /**
    * The editable half of an identity.
@@ -16,11 +16,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * it is `clientWritable: false` because renaming it would silently break every mention already
    * posted, and there is nothing to un-break them with.
    *
-   * **No avatar picker yet, deliberately.** `gos_accounts.avatar` is `varchar(255)` and the
+   * **No avatar picker yet, deliberately.** `mica_accounts.avatar` is `varchar(255)` and the
    * gallery hands back a base64 image — `PhotoPickerModal`'s `onselect` gives the image data, not
    * a reference — so wiring it up produces a value the server's per-column length rule rejects.
    * It is not a missing prop; it needs the column to hold a media reference, which is the
-   * `gos_media` work. Widening the column is a type change, and `SchemaMigrator` is
+   * `mica_media` work. Widening the column is a type change, and `SchemaMigrator` is
    * additive-only.
    *
    * `maxlength` mirrors each column so the field cannot accept what the write path would refuse.

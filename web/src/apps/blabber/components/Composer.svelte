@@ -5,12 +5,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { MAX_ATTACHMENTS } from '@gos/shared/attachments';
+  import { MAX_ATTACHMENTS } from '@mica/shared/attachments';
   import { untrack } from 'svelte';
-  import { Button, CloseIcon, MediaThumb, PhotoIcon, PhotoPickerModal, useLocale } from '@gos/sdk';
-  import type { MediaPreview } from '@gos/shared/types';
+  import { Button, CloseIcon, MediaThumb, PhotoIcon, PhotoPickerModal, useLocale } from '@mica/sdk';
+  import type { MediaPreview } from '@mica/shared/types';
 
-  /** 280, matching `gos_blabber.body`. The server enforces it from the same declaration. */
+  /** 280, matching `mica_blabber.body`. The server enforces it from the same declaration. */
   const LIMIT = 280;
 
   const { t } = useLocale();

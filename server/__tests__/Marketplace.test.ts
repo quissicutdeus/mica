@@ -43,7 +43,7 @@ const repo = marketplace.repo as MarketplaceRepository;
 void repo;
 
 const call = async (action: string, data: unknown, citizenid = 'CIT_A') => {
-  const handler = handlers.get(`gos:server:marketplace:${action}`);
+  const handler = handlers.get(`mica:server:marketplace:${action}`);
   if (!handler) throw new Error(`no handler for ${action}`);
   bridge.current = citizenid;
   (globalThis as any).source = 5;
@@ -145,7 +145,7 @@ describe('Marketplace service', () => {
       });
 
       const attachmentInsert = dbMock.insert.mock.calls.find(([sql]) =>
-        String(sql).includes('gos_marketplace_attachments')
+        String(sql).includes('mica_marketplace_attachments')
       );
       expect(attachmentInsert?.[1]).toEqual([42, 'CIT_A', 1]);
     });
@@ -272,7 +272,7 @@ describe('Marketplace service', () => {
 
       await Promise.all(
         specs.map((spec) => {
-          const handler = handlers.get(`gos:server:marketplace:${spec.action}`);
+          const handler = handlers.get(`mica:server:marketplace:${spec.action}`);
           if (!handler) throw new Error(`no handler for ${spec.action}`);
           return handler(spec.cbId, { id: 1 });
         })

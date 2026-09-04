@@ -41,10 +41,10 @@ describe('the licence banner on built output', () => {
   });
 
   it('names the four things a reader of dist/ needs', () => {
-    expect(LICENSE_BANNER).toContain('gOS');
+    expect(LICENSE_BANNER).toContain('micaOS');
     expect(LICENSE_BANNER).toContain('Copyright (C)');
     expect(LICENSE_BANNER).toContain('AGPL-3.0-or-later');
-    expect(LICENSE_BANNER).toContain('https://github.com/quissicutdeus/gos');
+    expect(LICENSE_BANNER).toContain('https://github.com/quissicutdeus/mica');
   });
 
   /**

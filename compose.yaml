@@ -1,4 +1,4 @@
-# The gOS web demo: the NUI bundle in mock mode, served standalone.
+# The micaOS web demo: the NUI bundle in mock mode, served standalone.
 #
 # `compose.yaml` and not `docker-compose.yml` -- the former is the name the Compose
 # Specification looks for first, and the latter is the v1 spelling kept working for
@@ -31,25 +31,25 @@ services:
         # To stamp a real build:
         #   GIT_BRANCH=$(git rev-parse --abbrev-ref HEAD) \
         #   GIT_SHA=$(git rev-parse HEAD) \
-        #   GOS_CALVER=$(date +%Y.%m.%d).1 docker compose up --build
+        #   MICA_CALVER=$(date +%Y.%m.%d).1 docker compose up --build
         GIT_BRANCH:
         GIT_SHA:
-        GOS_CALVER:
+        MICA_CALVER:
         # Set to 0 to skip UPX and ship the binary plain -- ~0.5MB larger, ~165ms faster
         # to start, and legible to `strings`/`nm` if you are debugging or scanning it.
         COMPRESS_BINARY: ${COMPRESS_BINARY:-1}
 
     # A multi-instance deployment (one demo per branch on the same host) needs its
-    # own tag too, or the second build silently steals `gos-demo:local` from the
+    # own tag too, or the second build silently steals `mica-demo:local` from the
     # first -- the first container keeps running fine, but its image becomes an
     # untagged, orphan-looking hash with nothing pointing at it anymore.
-    image: ${GOS_IMAGE_TAG:-gos-demo:local}
+    image: ${MICA_IMAGE_TAG:-mica-demo:local}
 
     # Lets a multi-instance deployment (e.g. one demo per branch on the same host)
     # give each container a distinct, stable name instead of Compose's default
     # <project>-demo-1. Unset, this keeps the name `docker compose up` has always
     # produced for a single local instance.
-    container_name: ${GOS_CONTAINER_NAME:-gos-demo}
+    container_name: ${MICA_CONTAINER_NAME:-mica-demo}
 
     # Host side only. The container always listens on 8080 (`ENV PORT` in the Dockerfile);
     # changing where that is published does not change what the server binds.
@@ -59,7 +59,7 @@ services:
     # a host firewall's INPUT rules never see. That surprise belongs to a deliberate
     # deployment, not to `docker compose up` on a laptop.
     ports:
-      - '127.0.0.1:${GOS_PORT:-8080}:8080'
+      - '127.0.0.1:${MICA_PORT:-8080}:8080'
 
     # Moves the server's log timestamps and nothing else -- the phone's clock and every
     # message timestamp are rendered in the browser from the *viewer's* system zone. The
@@ -79,7 +79,7 @@ services:
     security_opt:
       - no-new-privileges:true
 
-    # No `healthcheck:` block: the image already declares one (`/gos-serve -health`,
+    # No `healthcheck:` block: the image already declares one (`/mica-serve -health`,
     # the same binary in a second mode, because a scratch image has no shell and no
     # curl for the usual `wget -q` line). Compose inherits it. Repeating it here would
     # be a second copy to keep in step with the first.

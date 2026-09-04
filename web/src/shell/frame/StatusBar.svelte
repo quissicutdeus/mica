@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { fade } from '@gos/sdk';
+  import { fade } from '@mica/sdk';
   import { formattedTime, formattedDate } from '../state/time';
   import { currentApp } from '../state/navigation';
   import { displayCharge } from '../state/charge';

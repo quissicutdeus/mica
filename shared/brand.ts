@@ -15,7 +15,7 @@
  * copied into every one of them, free to drift. Prose *about* the OS still goes through
  * `$t` and takes this as a parameter, which is what `shell.previewNav` does.
  */
-export const OS_NAME = 'gOS';
+export const OS_NAME = 'micaOS';
 
 /**
  * The nine choirs, in the traditional order, highest first (MICA-273).

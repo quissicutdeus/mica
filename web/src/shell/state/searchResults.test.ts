@@ -3,9 +3,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect } from 'vitest';
-import type { Contact } from '@gos/shared/types';
+import type { Contact } from '@mica/shared/types';
 import type { AppManifest } from '../../../../sdk/manifest';
-import type { UIConversation } from '@gos/sdk';
+import type { UIConversation } from '@mica/sdk';
 import { searchEverything, SEARCH_RESULTS_PER_GROUP } from './searchResults';
 
 const app = (id: string, name: string, extra: Partial<AppManifest> = {}): AppManifest =>

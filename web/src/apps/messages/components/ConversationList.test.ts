@@ -12,7 +12,7 @@
 import '../../../host/registerFacets';
 import { describe, it, expect, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
-import { registerMessages, type UIConversation } from '@gos/sdk';
+import { registerMessages, type UIConversation } from '@mica/sdk';
 import ConversationList from './ConversationList.svelte';
 import en from '../locales/en.json';
 import de from '../locales/de.json';

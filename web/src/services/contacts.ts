@@ -5,9 +5,9 @@
 import { derived } from 'svelte/store';
 import { fetchNui } from '../nui/fetchNui';
 import { callOr } from '../nui/call';
-import { contactsContract } from '@gos/shared/contracts/contacts';
+import { contactsContract } from '@mica/shared/contracts/contacts';
 import { createCrudStore } from '../../../sdk/createCrudStore';
-import type { Contact } from '@gos/shared/types';
+import type { Contact } from '@mica/shared/types';
 
 /**
  * The one rule, applied to a create, an update and a share alike.

@@ -10,7 +10,7 @@ vi.mock('../lib/Database', () => ({
 
 import { appEventChannel } from '../lib/appEvents';
 import { __setResourceLookup } from '../lib/FrameworkBridge';
-import { APP_EVENT_NET_EVENT, parseAppEventEnvelope } from '@gos/shared/appEvents';
+import { APP_EVENT_NET_EVENT, parseAppEventEnvelope } from '@mica/shared/appEvents';
 
 /**
  * Pushing to a specific player's app.

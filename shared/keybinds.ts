@@ -12,7 +12,7 @@
  *
  *   scope 'game'  — registered with RegisterKeyMapping. Rebindable in FiveM's own
  *                   Key Bindings menu. Only useful while the phone is closed.
- *   scope 'phone' — dispatched by web/'s keydown handler. Rebindable in gOS's own
+ *   scope 'phone' — dispatched by web/'s keydown handler. Rebindable in micaOS's own
  *                   Settings > Shortcuts, since FiveM's menu cannot see these.
  *
  * Keys are compared against `KeyboardEvent.key` for phone scope; game scope uses FiveM's
@@ -31,7 +31,7 @@ export type KeybindContext = 'call:incoming' | 'call:active' | 'call:any' | `app
 
 export interface KeybindAction {
   id: string;
-  /** Shown in gOS's Shortcuts screen, and as the FiveM mapping description. */
+  /** Shown in micaOS's Shortcuts screen, and as the FiveM mapping description. */
   label: string;
   defaultKey: string;
   scope: KeybindScope;

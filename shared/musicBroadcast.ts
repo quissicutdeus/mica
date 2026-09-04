@@ -15,7 +15,7 @@
  * The thing being driven is the shell's player (`web/src/shell/`), not the Music app —
  * closing the app must not silence a neighbour's stereo any more than it silences your
  * own. `shell` is the established segment for "the phone itself rather than any app"
- * (`gos:client:shell:notify`, `gos:client:shell:appEvent`), and `server/lib/shell.ts`
+ * (`mica:client:shell:notify`, `mica:client:shell:appEvent`), and `server/lib/shell.ts`
  * already registers it as a service, so `eventNames.test.ts` checks this name for free.
  *
  * It is deliberately **not** an `appEventChannel` push either. That channel addresses an
@@ -42,10 +42,10 @@
  * The one net event. A literal, so `eventNames.test.ts` sees it — the same reasoning
  * `APP_EVENT_NET_EVENT` records for itself.
  */
-export const MUSIC_BROADCAST_NET_EVENT = 'gos:client:shell:music';
+export const MUSIC_BROADCAST_NET_EVENT = 'mica:client:shell:music';
 
 /**
- * Metres. What `gos_music_range` defaults to when a server sets nothing.
+ * Metres. What `mica_music_range` defaults to when a server sets nothing.
  *
  * Read by the server, which decides who is on a listener's roster, and by
  * `client/services/Music.ts`, which decides what that roster sounds like. Both read the
@@ -65,7 +65,7 @@ export const DEFAULT_MUSIC_RANGE = 30;
 export const DEFAULT_MAX_NEARBY = 8;
 
 /**
- * The ceiling `gos_music_max_nearby` cannot be raised past.
+ * The ceiling `mica_music_max_nearby` cannot be raised past.
  *
  * A convar is a server owner's dial, not a licence: the client's tick costs one entity
  * position per roster entry per frame, and it holds no more than this many anyway.
@@ -140,7 +140,7 @@ export interface NearbyMusicEnvelope {
 /**
  * The NUI action the roster becomes, once `client/services/Music.ts` has forwarded it.
  *
- * A separate namespace from net events, so no `gos:` prefix (AGENTS.md §8) — and named
+ * A separate namespace from net events, so no `mica:` prefix (AGENTS.md §8) — and named
  * here rather than written out at each end, because the client hop and
  * `web/src/shell/nuiMessages.ts` are the only two things that will ever say it and a typo
  * between them is a feature that is dead in game while every suite passes. `parseMusicBroadcasts`

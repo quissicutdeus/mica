@@ -4,7 +4,7 @@
 
 import { derived, get, writable, type Readable, type Writable } from 'svelte/store';
 import { usePersisted } from '../../../../sdk/host/usePersisted';
-import { parseYouTubeSource, isPlaylistId, isVideoId } from '@gos/shared/youtube';
+import { parseYouTubeSource, isPlaylistId, isVideoId } from '@mica/shared/youtube';
 import { reasonForCode } from '../../../../sdk/host/seam/music';
 import { callStore } from '../../services/call';
 import type {
@@ -16,10 +16,10 @@ import type {
   MusicSource,
   MusicStatus,
   QueueEntry
-} from '@gos/sdk';
+} from '@mica/sdk';
 
 /**
- * `MusicError` and `MusicErrorReason` come off `@gos/sdk`, not out of `sdk/lib/` by
+ * `MusicError` and `MusicErrorReason` come off `@mica/sdk`, not out of `sdk/lib/` by
  * path (MICA-181): `useMusic.ts` re-exports them, so they are published contract and the
  * phone reads them the way an app does. `reasonForCode` above is the half that is not
  * published — it maps YouTube's IFrame API codes, which is the shell's conversation with

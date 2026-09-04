@@ -7,16 +7,16 @@ import { ServiceEndpoint } from '../lib/ServiceEndpoint';
 import { BankingBridge } from '../lib/BankingBridge';
 import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { phoneNumberFrom } from '../lib/netGuard';
-import { bankContract } from '@gos/shared/contracts/bank';
+import { bankContract } from '@mica/shared/contracts/bank';
 import { transfer, type PaymentOutcome } from '../lib/Payments';
-import { Transaction } from '@gos/shared/types';
+import { Transaction } from '@mica/shared/types';
 
 /**
  * Bank: read-only, and backed by the banking resource's own export rather than its
  * database.
  *
  * There is no repository and no `defineService` declaration here on purpose.
- * `player_transactions` belongs to the banking script, not to gOS — declaring it
+ * `player_transactions` belongs to the banking script, not to micaOS — declaring it
  * would generate DDL for someone else's table, and querying it directly would couple
  * the phone to their schema and read data their in-memory cache has already moved
  * past. `BankingBridge` adapts, the same way `FrameworkBridge` does for cores.
@@ -33,7 +33,7 @@ app.registerEvent('getTransactions', async (source, cbId, data, citizenid) => {
   return BankingBridge.getTransactions(citizenid);
 });
 
-const TRANSFER_MAX_CONVAR = 'gos_bank_transfer_max';
+const TRANSFER_MAX_CONVAR = 'mica_bank_transfer_max';
 const DEFAULT_TRANSFER_MAX = 50_000;
 
 /** The configured per-transfer ceiling, or the default. Read per call, like every other convar here. */

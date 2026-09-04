@@ -13,7 +13,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     Screen,
     BackspaceIcon,
     type AppProps
-  } from '@gos/sdk';
+  } from '@mica/sdk';
   import en from './locales/en.json';
   import de from './locales/de.json';
 

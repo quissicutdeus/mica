@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import type { KeybindAction } from '@gos/shared/keybinds';
+import type { KeybindAction } from '@mica/shared/keybinds';
 import type { CatalogEntry } from '../catalog';
 
 /**
@@ -17,7 +17,7 @@ import type { CatalogEntry } from '../catalog';
  * The published names are unchanged; only the module behind each one moved.
  *
  * `AppUpdate` names `CatalogEntry`, which was already inside the package, and
- * `ResolvedKeybindAction` extends `@gos/shared/keybinds` — the wire definition the server shares.
+ * `ResolvedKeybindAction` extends `@mica/shared/keybinds` — the wire definition the server shares.
  * Neither acquired a new dependency by moving.
  */
 

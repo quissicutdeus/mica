@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { registerFacet } from '../../../../sdk/host/current';
-import type { Mail } from '@gos/shared/types';
+import type { Mail } from '@mica/shared/types';
 import { mailStore, unreadMailCount } from '../../services/mail';
 export { unreadMailCount };
 

@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 /**
- * Trust boundary for remote (Store-installed) gOS add-ons.
+ * Trust boundary for remote (Store-installed) micaOS add-ons.
  *
  * This module decides two questions, both answered *before* a bundle is booted: is it
  * coming from somewhere the operator chose to trust, and is it the exact bytes the

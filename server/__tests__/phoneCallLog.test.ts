@@ -9,9 +9,9 @@ import '../services/PhoneCallLog';
 describe('PhoneCallLog service declaration', () => {
   const resolved = declaredServices.find((s) => s.id === 'phone_call_log');
 
-  it('registers a service named phone_call_log backed by gos_phone_call_log', () => {
+  it('registers a service named phone_call_log backed by mica_phone_call_log', () => {
     expect(resolved).toBeDefined();
-    expect(resolved?.table).toBe('gos_phone_call_log');
+    expect(resolved?.table).toBe('mica_phone_call_log');
   });
 
   it('declares kind, number and duration as columns', () => {

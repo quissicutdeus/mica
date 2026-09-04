@@ -124,7 +124,7 @@ const { build } = await import(
   ).href
 );
 
-const work = mkdtempSync(join(tmpdir(), 'gos-catalog-'));
+const work = mkdtempSync(join(tmpdir(), 'mica-catalog-'));
 let manifests;
 let isCatalogEntry;
 let tileFromColorClasses;
@@ -149,10 +149,10 @@ export default [${ids.map((_, i) => `m${i}`).join(', ')}];`
     platform: 'node',
     logLevel: 'warning',
     plugins: [stubSvelte],
-    // No `alias` for `@gos/sdk`: since MICA-186 both it and `@gos/shared` are real
+    // No `alias` for `@mica/sdk`: since MICA-186 both it and `@mica/shared` are real
     // workspace packages, so ordinary resolution finds them through their `exports` maps.
     // An alias here would also be wrong rather than merely redundant — esbuild matches it
-    // as a prefix, so mapping `@gos/sdk` at a file rewrites `@gos/sdk/app` into a
+    // as a prefix, so mapping `@mica/sdk` at a file rewrites `@mica/sdk/app` into a
     // path underneath that file and fails to resolve it.
     absWorkingDir: root,
     conditions: ['import'],
@@ -197,7 +197,7 @@ const REQUIRED = ['id', 'name', 'description', 'color'];
  * So an app that states a version keeps it, and one that does not takes the build's. That
  * is the honest reading of the same sentence rather than a placeholder.
  */
-const fallbackVersion = process.env.GOS_CALVER?.trim();
+const fallbackVersion = process.env.MICA_CALVER?.trim();
 
 /**
  * Every icon, rendered before the rows are built.
@@ -245,8 +245,8 @@ const entries = manifests.map((manifest, i) => {
   const version = manifest.version ?? fallbackVersion;
   if (!version) {
     console.error(
-      `generate-catalog: ${id} states no version and GOS_CALVER is unset, so there is ` +
-        'nothing honest to put in the entry. Set GOS_CALVER to the build stamp, or give ' +
+      `generate-catalog: ${id} states no version and MICA_CALVER is unset, so there is ` +
+        'nothing honest to put in the entry. Set MICA_CALVER to the build stamp, or give ' +
         'the manifest a version of its own.'
     );
     process.exit(1);

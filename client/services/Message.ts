@@ -16,7 +16,7 @@ import { sendNuiMessage } from '../lib/nui';
  * `receiveMessage` is the shell's existing route: it adds the message to the thread and
  * raises a toast with an inline reply. It was already wired and simply never fired.
  */
-onNet('gos:client:messages:received', (payload: unknown) => {
+onNet('mica:client:messages:received', (payload: unknown) => {
   const data = payload as { conversation_id?: number } | null;
   if (!data?.conversation_id) return;
   sendNuiMessage('receiveMessage', data);

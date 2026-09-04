@@ -21,7 +21,7 @@ import { test, expect, type Page } from './support/test';
 
 const seed = (page: Page, key: string, value: unknown) =>
   page.addInitScript(([k, v]) => window.localStorage.setItem(k, v as string), [
-    `gos:settings:${key}`,
+    `mica:settings:${key}`,
     JSON.stringify(value)
   ] as const);
 

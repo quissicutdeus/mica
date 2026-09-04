@@ -18,7 +18,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     useTimer,
     registerMessages,
     type AppProps
-  } from '@gos/sdk';
+  } from '@mica/sdk';
   import About from './panes/About.svelte';
   import AppInfo from './panes/AppInfo.svelte';
   import Apps from './panes/Apps.svelte';

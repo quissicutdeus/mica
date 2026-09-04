@@ -7,15 +7,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script lang="ts">
   import {
     ChevronRightIcon,
-    GOS_BUILD_INFO,
+    MICA_BUILD_INFO,
     SettingsSection,
     useAccount,
     useAppRegistry,
     useLocale,
     usePhoneNotification,
     formatDate
-  } from '@gos/sdk';
-  import { OS_CODENAME } from '@gos/shared/brand';
+  } from '@mica/sdk';
+  import { OS_CODENAME } from '@mica/shared/brand';
 
   let { ontapbuild, onprivacy, onlicense } = $props<{
     ontapbuild: () => void;
@@ -110,7 +110,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <span class="text-on-surface font-medium">{$t('settings.about.osVersion')}</span>
         <span class="flex min-w-0 flex-col items-end">
           <span class="text-on-surface-variant text-body-small">{OS_CODENAME}</span>
-          <span class="text-secondary font-mono">{GOS_BUILD_INFO}</span>
+          <span class="text-secondary font-mono">{MICA_BUILD_INFO}</span>
         </span>
       </button>
       <!-- A row rather than the paragraph itself. The notice is four sentences, and

@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { SearchBar, SegmentedControl, EmptyState, Skeleton, useLocale } from '@gos/sdk';
+  import { SearchBar, SegmentedControl, EmptyState, Skeleton, useLocale } from '@mica/sdk';
   import { useBlabber } from '../store';
   import BlabRow from './BlabRow.svelte';
 

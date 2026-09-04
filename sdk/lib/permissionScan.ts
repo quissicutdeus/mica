@@ -7,7 +7,7 @@
  *
  * `permissions` on a manifest is self-declared, and until now only *this repo's* apps were
  * held to it: `permissions.test.ts` walks `web/src/apps/<id>`, reads what each file imports
- * from `@gos/sdk`, and fails if a manifest declares less than its imports need. An add-on
+ * from `@mica/sdk`, and fails if a manifest declares less than its imports need. An add-on
  * built outside this repo — the population the sandbox exists for — went through no such
  * check. It could declare nothing and import `useContacts`, and the only consequence was the
  * shell refusing the call at run time with a toast the player cannot act on, long after the
@@ -69,7 +69,7 @@ export type PermissionTable = Readonly<Record<string, PermissionRow>>;
 
 /** One capability a bundle reaches for, and the name that discloses it. */
 export interface PermissionShortfall {
-  /** The `@gos/sdk` import that needs it — what the author actually wrote. */
+  /** The `@mica/sdk` import that needs it — what the author actually wrote. */
   hook: string;
   /** The permission it requires, spelled as it must appear in `permissions`. */
   permission: string;
@@ -98,10 +98,10 @@ const withoutComments = (source: string): string =>
   source.replaceAll(/\/\*[\s\S]*?\*\//g, '').replaceAll(/^\s*\/\/.*$/gm, '');
 
 /**
- * A named import from the bare `@gos/sdk` specifier, in either quote style.
+ * A named import from the bare `@mica/sdk` specifier, in either quote style.
  *
- * Only the bare specifier. `@gos/sdk/app` publishes `defineApp` and the manifest types,
- * which disclose nothing; `@gos/sdk/core` is refused to an add-on outright by both add-on
+ * Only the bare specifier. `@mica/sdk/app` publishes `defineApp` and the manifest types,
+ * which disclose nothing; `@mica/sdk/core` is refused to an add-on outright by both add-on
  * builds before this ever runs.
  *
  * A whole-statement `import type { … }` does not match, and that is the intent rather than an
@@ -110,10 +110,10 @@ const withoutComments = (source: string): string =>
  * *inside* a value import is stripped per-name below, because the statement around it is
  * still importing hooks.
  */
-const SDK_IMPORT = /import\s*(?:[\w$]+\s*,\s*)?\{([^}]*)\}\s*from\s*['"]@gos\/sdk['"]/g;
+const SDK_IMPORT = /import\s*(?:[\w$]+\s*,\s*)?\{([^}]*)\}\s*from\s*['"]@mica\/sdk['"]/g;
 
 /**
- * Every name one file imports from `@gos/sdk`, sorted.
+ * Every name one file imports from `@mica/sdk`, sorted.
  *
  * Read from the import lists rather than by searching the text for hook names: a hook
  * mentioned in a comment is not a hook used, and to call one you must import it. Aliases are
@@ -189,7 +189,7 @@ export function declaredPermissions(manifestSource: string): DeclaredPermissions
 function assertTable(table: PermissionTable): void {
   if (table === null || typeof table !== 'object' || Object.keys(table).length === 0) {
     throw new Error(
-      'gOS permission scan: the permission table is empty or failed to import. Nothing can ' +
+      'micaOS permission scan: the permission table is empty or failed to import. Nothing can ' +
         'be derived from it, so this refuses to compare against it — that is a build defect, ' +
         "not the add-on's."
     );
@@ -199,7 +199,7 @@ function assertTable(table: PermissionTable): void {
 /**
  * Every permission the imported names need, each paired with the name that needs it.
  *
- * A name with no row is not an error: most of what an add-on imports from `@gos/sdk` is UI
+ * A name with no row is not an error: most of what an add-on imports from `@mica/sdk` is UI
  * — `Screen`, `Button`, an icon — and discloses nothing. A row of `null` is the deliberate
  * implicit set, the handful every app is built out of, which is never declared. Both are
  * skipped, and `permissions.test.ts` is what proves the table is total, so a hook with no row

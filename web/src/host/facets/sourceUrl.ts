@@ -9,7 +9,7 @@ import { refreshSourceUrl, sourceUrl } from '../../services/sourceUrl';
  * OS Service Hook for where this server says its source lives (MICA-192, AGPL §13).
  *
  * A facet rather than a relative import from the pane that shows it: Settings is an app,
- * and an app reaches the OS through `@gos/sdk` alone (AGENTS.md §2.7, enforced by
+ * and an app reaches the OS through `@mica/sdk` alone (AGENTS.md §2.7, enforced by
  * `sdk/boundary.test.ts`). `useService('shell')` is not the door either — `permissions.ts`
  * restricts that id to the calling app's own.
  *

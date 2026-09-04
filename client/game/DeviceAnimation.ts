@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { DEVICES, type DeviceDescriptor } from '@gos/shared/devices';
+import { DEVICES, type DeviceDescriptor } from '@mica/shared/devices';
 
 /**
  * The held prop and the idle animation, for whichever device is up (MICA-262).

@@ -4,7 +4,7 @@
 
 import { writable } from 'svelte/store';
 import { call, callOr } from '../nui/call';
-import { lockscreenContract } from '@gos/shared/contracts/lockscreen';
+import { lockscreenContract } from '@mica/shared/contracts/lockscreen';
 
 /**
  * The lock screen's passcode, entirely server-side (MICA-60).

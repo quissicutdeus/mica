@@ -52,7 +52,7 @@ const PLAYER = 'PLAYER1';
 const SRC = 5;
 
 const call = async (action: string, data: unknown, citizenid = PLAYER) => {
-  const handler = handlers.get(`gos:server:highscores:${action}`);
+  const handler = handlers.get(`mica:server:highscores:${action}`);
   if (!handler) throw new Error(`no handler for ${action}`);
 
   bridge.current = citizenid;

@@ -53,13 +53,13 @@ import '../services/Mail';
 import '../services';
 import { __resetRateLimits } from '../lib/rateLimit';
 import { registeredCustomActions } from '../lib/services';
-import { actionsOf, allContracts, contractFor } from '@gos/shared/contract';
+import { actionsOf, allContracts, contractFor } from '@mica/shared/contract';
 
 /**
  * What a client can reach, and why the route table was never the answer.
  *
  * A registered net event is reachable. Not "reachable if a NUI route points at it" — a
- * modified client emits `gos:server:<service>:<action>` directly and never touches the
+ * modified client emits `mica:server:<service>:<action>` directly and never touches the
  * NUI bridge at all. `shared/routes.ts` only ever bounded CEF XSS, which is confined to
  * registered NUI callbacks (§7).
  *
@@ -84,12 +84,12 @@ describe('nothing registers an action the app does not use', () => {
    * which is the point.
    */
   it.each([
-    ['gos:server:accounts:delete', 'deleting an account orphans its Blabs and follows'],
-    ['gos:server:battery:save', 'the client no longer owns its own charge'],
-    ['gos:server:signal:rules', 'the client no longer holds the zone list'],
-    ['gos:server:notifications:get', 'the shade reads through getShadeNotifications'],
-    ['gos:server:notifications:delete', 'clearing is a soft delete onto cleared_at'],
-    ['gos:server:blabber_dms:delete', 'a sent DM is not deletable']
+    ['mica:server:accounts:delete', 'deleting an account orphans its Blabs and follows'],
+    ['mica:server:battery:save', 'the client no longer owns its own charge'],
+    ['mica:server:signal:rules', 'the client no longer holds the zone list'],
+    ['mica:server:notifications:get', 'the shade reads through getShadeNotifications'],
+    ['mica:server:notifications:delete', 'clearing is a soft delete onto cleared_at'],
+    ['mica:server:blabber_dms:delete', 'a sent DM is not deletable']
   ])('%s is not registered — %s', (event) => {
     expect(handlers.has(event)).toBe(false);
   });
@@ -99,9 +99,9 @@ describe('nothing registers an action the app does not use', () => {
     // feature silently, since a missing handler is indistinguishable from a slow one until
     // the 15-second timeout.
     for (const event of [
-      'gos:server:accounts:update',
-      'gos:server:notifications:markAsRead',
-      'gos:server:blabber_dms:send'
+      'mica:server:accounts:update',
+      'mica:server:notifications:markAsRead',
+      'mica:server:blabber_dms:send'
     ]) {
       expect(handlers.has(event), event).toBe(true);
     }
@@ -132,18 +132,18 @@ describe('mail is receive-only (MICA-58)', () => {
 
   it('registers nothing on mail but reading and filing', () => {
     const registered = [...handlers.keys()]
-      .filter((event) => event.startsWith('gos:server:mail:'))
-      .map((event) => event.slice('gos:server:mail:'.length))
+      .filter((event) => event.startsWith('mica:server:mail:'))
+      .map((event) => event.slice('mica:server:mail:'.length))
       .toSorted();
 
     expect(registered).toEqual(MAIL_ACTIONS.toSorted());
   });
 
   it.each([
-    ['gos:server:mail:create', 'nobody writes mail from their own phone'],
-    ['gos:server:mail:update', 'a delivered mail is not editable by its recipient'],
-    ['gos:server:mail:send', 'there is no player-to-player mail'],
-    ['gos:server:mail:reply', 'a system sender has no address to reply to']
+    ['mica:server:mail:create', 'nobody writes mail from their own phone'],
+    ['mica:server:mail:update', 'a delivered mail is not editable by its recipient'],
+    ['mica:server:mail:send', 'there is no player-to-player mail'],
+    ['mica:server:mail:reply', 'a system sender has no address to reply to']
   ])('%s is not registered — %s', (event) => {
     expect(handlers.has(event)).toBe(false);
   });
@@ -161,7 +161,7 @@ describe('raw onNet handlers are rate limited', () => {
     for (let i = 0; i < times; i++) handler(arg);
   };
 
-  it.each([['gos:server:phone:start', '555-0100']])(
+  it.each([['mica:server:phone:start', '555-0100']])(
     '%s stops answering once the window is spent',
     (event, arg) => {
       // The default budget is 60 per minute; 200 calls is well past it. What matters is that
@@ -176,7 +176,7 @@ describe('raw onNet handlers are rate limited', () => {
 
   it('lets an ordinary number of calls through', async () => {
     (globalThis as any).emitNet = vi.fn();
-    drive('gos:server:battery:load', 3);
+    drive('mica:server:battery:load', 3);
 
     // `battery:load` reads the saved charge before it pushes, so the emit lands a
     // microtask later. Asserting synchronously would pass against a limiter that refused
@@ -204,8 +204,8 @@ describe('raw onNet handlers authenticate', () => {
   };
 
   it.each([
-    ['gos:server:battery:load', undefined],
-    ['gos:server:phone:answer', undefined]
+    ['mica:server:battery:load', undefined],
+    ['mica:server:phone:answer', undefined]
   ])('%s does nothing for a source with no character', (event, arg) => {
     bridge.loaded = false;
     (globalThis as any).emitNet = vi.fn();
@@ -228,7 +228,7 @@ describe('raw onNet handlers validate their payload', () => {
     // injection — an unbounded or wrongly-typed value reaching somebody else's lookup.
     (globalThis as any).emitNet = vi.fn();
     for (const bad of [undefined, 42, {}, '   ', 'x'.repeat(200)]) {
-      call('gos:server:phone:start', bad);
+      call('mica:server:phone:start', bad);
     }
     expect((globalThis.emitNet as any).mock.calls).toHaveLength(0);
   });
@@ -237,7 +237,7 @@ describe('raw onNet handlers validate their payload', () => {
 describe('the server owns the battery', () => {
   /**
    * The charge used to be the client's: it ran the drain timer and reported over
-   * `gos:server:battery:save`, so a modified client asserted whatever number it liked.
+   * `mica:server:battery:save`, so a modified client asserted whatever number it liked.
    * Validating that payload never changed what it was — the event is gone, and these
    * assertions are what say so.
    */

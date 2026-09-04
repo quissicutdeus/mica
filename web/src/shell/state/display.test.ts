@@ -33,7 +33,7 @@ import {
   STATUS_BAR_MAX_NOTIFICATION_ICONS,
   statusBarIconCap
 } from './display';
-import { DEVICES } from '@gos/shared/devices';
+import { DEVICES } from '@mica/shared/devices';
 
 describe('the phone is one ratio at many sizes', () => {
   beforeEach(() => {

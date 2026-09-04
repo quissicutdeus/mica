@@ -21,11 +21,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     type AppProps,
     type NearbyBroadcast,
     type QueueEntry
-  } from '@gos/sdk';
+  } from '@mica/sdk';
   // The now-playing card is `core:`-only rather than public SDK — it draws the phone's own
   // player, which is the same reason this app is `core: true`. `shell/NowPlaying.svelte`
   // draws the identical component in its compact mode; see the component for why.
-  import { NowPlayingCard } from '@gos/sdk/core';
+  import { NowPlayingCard } from '@mica/sdk/core';
   import en from './locales/en.json';
   import de from './locales/de.json';
 

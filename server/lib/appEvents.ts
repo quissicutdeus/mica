@@ -8,7 +8,7 @@ import {
   APP_EVENT_NAME_PATTERN,
   type AppEventEnvelope,
   type AppEventNotification
-} from '@gos/shared/appEvents';
+} from '@mica/shared/appEvents';
 import { getNotificationsRepository } from '../services/Notifications';
 
 type PushOutcome =

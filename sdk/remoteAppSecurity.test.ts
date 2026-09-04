@@ -62,13 +62,13 @@ describe('bundle hash verification', () => {
   });
 
   it('matches when the text hashes to the expected digest', async () => {
-    const hash = await sha256Hex('hello gOS');
-    expect(await matchesHash('hello gOS', hash)).toBe(true);
+    const hash = await sha256Hex('hello micaOS');
+    expect(await matchesHash('hello micaOS', hash)).toBe(true);
   });
 
   it('does not match when the text has been tampered with', async () => {
-    const hash = await sha256Hex('hello gOS');
-    expect(await matchesHash('hello gos (tampered)', hash)).toBe(false);
+    const hash = await sha256Hex('hello micaOS');
+    expect(await matchesHash('hello mica (tampered)', hash)).toBe(false);
   });
 
   it('is case-insensitive comparing the expected digest', async () => {

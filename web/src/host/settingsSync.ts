@@ -17,7 +17,7 @@ import { saveSetting, removeSetting, clearAppSettings } from '../services/settin
  * written back in the background. Nothing at any call site changes, which is the whole
  * reason every namespace could move at once rather than only `settings`.
  *
- * Internal. Not exported from `@gos/sdk`: an app reaches this through `useStorage`, and
+ * Internal. Not exported from `@mica/sdk`: an app reaches this through `useStorage`, and
  * a hook that let an add-on force a hydrate is a way to stamp on another app's namespace.
  */
 

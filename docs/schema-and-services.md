@@ -7,17 +7,17 @@ re-read on every turn.
 ## Schema changes
 
 **A schema change is written once, in the declaration.** Change the
-`defineService` schema and run `pnpm generate:sql`: that regenerates `gos.sql`,
+`defineService` schema and run `pnpm generate:sql`: that regenerates `mica.sql`,
 which is what a fresh install imports and is always the whole truth. Nothing
 happens to a live database on its own — not at import, not at resource start. An
-install that already has data is brought up to date by **`gosschema apply`**
+install that already has data is brought up to date by **`micaschema apply`**
 from the server console, the only thing in this resource that changes a live
 schema.
 
 `apply` runs two halves in one pass, in this order and not the other:
 
 1. **Versioned migrations** — every file in `server/migrations/` the
-   `gos_schema_migrations` ledger has no row for, oldest id first.
+   `mica_schema_migrations` ledger has no row for, oldest id first.
    `server/lib/migrations.ts`.
 2. **The additive pass** — `SchemaMigrator.apply()` executing the `ADD COLUMN` /
    `ADD KEY` statements `plan()` derives from the difference between
@@ -63,19 +63,19 @@ ledger only after its `up()` returns; a ledger write that fails _after_ a
 successful `up()` says exactly that, because it is the one failure where
 retrying without looking at the table first is unsafe.
 
-**A fresh install never runs inherited migrations.** `gos.sql` declares every
+**A fresh install never runs inherited migrations.** `mica.sql` declares every
 table in its final shape already, so a migration renaming a column would meet a
 table that never had the old name on this install. `pnpm generate:sql` scans
 `server/migrations/` and pre-seeds the ledger with every id that exists as of
 that generation, via `INSERT IGNORE` — the way Rails' `schema.rb` does. A new
 install's ledger reads "already applied" for all of history without ever calling
-`up()`, and only a database upgrading from an older `gos.sql` has gaps for the
+`up()`, and only a database upgrading from an older `mica.sql` has gaps for the
 runner to fill.
 
 **`apply` is console-only**, and the check is `source === 0` inside `runApply`
 itself rather than only at the command dispatch. That is the trust tier
 AGENTS.md §1 already draws, and it is the one caller that can take a backup
-first, which an in-game admin typically cannot. `gosschema` with no subcommand
+first, which an in-game admin typically cannot. `micaschema` with no subcommand
 still only reports, and so does the report at resource start: neither creates a
 table, the migrations ledger included. Worth stating because it was broken once
 — the boot report created the ledger, which is real DDL from a function whose
@@ -87,7 +87,7 @@ migration planner read. Do not restate a table's columns anywhere else: a fresh
 install and an upgraded one must not be able to disagree.
 
 **In development none of this is the fast path.** Against a database you do not
-mind losing, `pnpm generate:sql:reset` writes the file that drops every `gos_`
+mind losing, `pnpm generate:sql:reset` writes the file that drops every `mica_`
 table and rebuilds the schema — one import, no migration to write and review.
 
 ### Writing a migration
@@ -95,7 +95,7 @@ table and rebuilds the schema — one import, no migration to write and review.
 One file in `server/migrations/`, named `NNNN_snake_case_description.ts`, and
 **the filename is the id**. The directory is empty today — nothing has needed a
 breaking change since the runner shipped — so the example below is the one
-rename this codebase did make, `gos_media.image` to `.data`, back when
+rename this codebase did make, `mica_media.image` to `.data`, back when
 wipe-and-reimport was the only way to do it:
 
 ```ts
@@ -104,10 +104,10 @@ import type { Migration } from '../lib/migrations';
 
 export const migration: Migration = {
   id: '0001_rename_media_image_to_data',
-  description: 'gos_media.image becomes gos_media.data',
+  description: 'mica_media.image becomes mica_media.data',
   up: async () => {
     await Database.query(
-      'ALTER TABLE `gos_media` CHANGE COLUMN `image` `data` mediumtext DEFAULT NULL',
+      'ALTER TABLE `mica_media` CHANGE COLUMN `image` `data` mediumtext DEFAULT NULL',
       []
     );
   }
@@ -121,7 +121,7 @@ export const migration: Migration = {
   fails otherwise — and the number is apply order. Ids sort as strings, so keep
   the width.
 - **Re-run `pnpm generate:sql` after adding one.** Without it the ledger seed in
-  `gos.sql` does not name the new migration, and every fresh install runs it
+  `mica.sql` does not name the new migration, and every fresh install runs it
   against a table that never needed it. Same test catches this.
 - `server/migrations/` holds migration files and the generated `index.ts`,
   nothing else. The barrel imports `migration` from every `.ts` in there that is
@@ -157,7 +157,7 @@ export const notes = defineService<Note>({
 ```
 
 **Why one declaration and not two lists.** The `columns` allowlist from
-AGENTS.md §2.9 is only _safe_ if it matches the real table. Keeping `gos.sql`
+AGENTS.md §2.9 is only _safe_ if it matches the real table. Keeping `mica.sql`
 and a hand-written `columns` array in sync by hand means a silent divergence
 breaks either security or writes. One schema drives both, plus the generated
 DDL.
@@ -279,7 +279,7 @@ DDL.
 - `default` on a field emits a SQL default. Set it when migrating an existing
   table — `favorite tinyint(1) DEFAULT 0` behaves differently from
   `DEFAULT NULL` once anything aggregates.
-- **`table` overrides the table name; the default is `gos_<id>`.** Two apps may
+- **`table` overrides the table name; the default is `mica_<id>`.** Two apps may
   not declare the same table, and the check is on the resolved name rather than
   the id.
 - **`options` passes through to `ServiceEndpoint` to turn a generic action off**
@@ -357,7 +357,7 @@ never whose.
 
 ### Identity: one accounts table, shared
 
-`gos_accounts` (`server/services/Accounts.ts`) is the identity every social app
+`mica_accounts` (`server/services/Accounts.ts`) is the identity every social app
 posts under — a handle, a display name, an avatar, a bio — with `app` as a
 column rather than one table per app, because those fields do not differ between
 a Twitter-alike and an Instagram-alike. An app-specific _presentation_ field, if
@@ -414,27 +414,27 @@ reach for two columns when it cannot.
 
 ### Apps that own more than one table
 
-The primary `schema` describes a table in the standard gOS shape: `id`,
+The primary `schema` describes a table in the standard micaOS shape: `id`,
 `citizenid`, `status`, `created_at`, `updated_at` supplied by the framework.
-Join and attachment tables do not fit that — `gos_messages_participants` carries
-`role`, its own status enum and two nullable timestamps;
-`gos_messages_attachments` carries neither `status` nor timestamps. Declare them
-as `childTables`:
+Join and attachment tables do not fit that — `mica_messages_participants`
+carries `role`, its own status enum and two nullable timestamps;
+`mica_messages_attachments` carries neither `status` nor timestamps. Declare
+them as `childTables`:
 
 ```ts
 childTables: [
   {
-    name: 'gos_messages_attachments',
+    name: 'mica_messages_attachments',
     columns: {
       message_id: {
         type: 'int',
         notNull: true,
-        references: { table: 'gos_messages', column: 'id' }
+        references: { table: 'mica_messages', column: 'id' }
       },
       photo_id: {
         type: 'int',
         notNull: true,
-        references: { table: 'gos_media', column: 'id' }
+        references: { table: 'mica_media', column: 'id' }
       }
     },
     indexes: [['message_id']]
@@ -477,9 +477,9 @@ Media uses this because `image` can come back as a Buffer depending on driver
 and column type, which would cross NUI as `{type:'Buffer',data:[...]}` and
 render as nothing.
 
-### Generating `gos.sql`
+### Generating `mica.sql`
 
-**`gos.sql` is generated in full and must not be hand-edited.** It holds the
+**`mica.sql` is generated in full and must not be hand-edited.** It holds the
 framework half — the audit ledger, which has no owning module and does not fit
 the app-table shape, and which lives in `scripts/framework-schema.sql` —
 followed by every app table in dependency order. Editing the output reintroduces
@@ -487,7 +487,7 @@ exactly the drift the generator removes, and a stale copy silently breaks the
 `columns` allowlist's safety property (AGENTS.md §2.9): that allowlist is only
 sound while it matches the real table.
 
-It used to be `gos.sql` plus one numbered file per service in `sql/apps/`,
+It used to be `mica.sql` plus one numbered file per service in `sql/apps/`,
 imported in filename order because foreign keys cross app boundaries. That
 worked and cost three things: a rule every server owner had to be told, a
 numeric prefix that renumbered existing files whenever an app was added, and two
@@ -497,7 +497,7 @@ computed removes all three.
 #### The dev reset
 
 `pnpm generate:sql:reset` additionally writes `sql/dev-reset.sql`: a single file
-that **drops every `gos_`-prefixed table in the schema it is run against** —
+that **drops every `mica_`-prefixed table in the schema it is run against** —
 audit ledger included — then recreates the whole schema. Development only.
 
 - It discovers tables at apply time from `information_schema` rather than
@@ -511,22 +511,22 @@ audit ledger included — then recreates the whole schema. Development only.
 - Nothing in this repo connects to a database. Apply the file yourself in a DB
   client; it uses `PREPARE`/`EXECUTE`, so it will not run through oxmysql.
 
-`pnpm generate:sql` writes `gos.sql`, which is **committed and imported by
+`pnpm generate:sql` writes `mica.sql`, which is **committed and imported by
 hand**. No app table is ever created at runtime: `CREATE TABLE IF NOT EXISTS`
 silently does nothing against an existing table, so a schema change applied that
 way would be a no-op with no error — the same silent-failure shape as a missing
 NUI layer. Regenerate and review the diff.
 
 What a running server _can_ do is bring an existing table up to date, and only
-when an operator asks it to by name: `gosschema apply` runs the versioned
+when an operator asks it to by name: `micaschema apply` runs the versioned
 migrations and then the additive plan. Its one `CREATE TABLE IF NOT EXISTS` is
-the `gos_schema_migrations` ledger, which is exempt from the objection above
+the `mica_schema_migrations` ledger, which is exempt from the objection above
 because it has a single fixed shape and will never gain a column — "already
 there" really is nothing to do, rather than a change quietly skipped.
 
 **The numeric prefix is apply order, and alphabetical would be wrong.** Foreign
-keys cross app boundaries — `gos_messages_attachments` references `gos_media`,
-and `messages` sorts before `photos`; `gos_blabber` references `gos_accounts`.
+keys cross app boundaries — `mica_messages_attachments` references `mica_media`,
+and `messages` sorts before `photos`; `mica_blabber` references `mica_accounts`.
 `orderAppsByDependency` in `scripts/generate-sql.js` topologically sorts the
 declared services and numbers the files, so globbing the directory or importing
 it in name order is correct by default rather than correct if you happen to read
@@ -535,17 +535,17 @@ constrain the order. The prefix is positional, so **adding an app can renumber
 existing files** — that is a real diff, not a spurious one, and stale output is
 deleted rather than left to orphan.
 
-Every gOS-owned table is now declared. `server/repositories/` holds
+Every micaOS-owned table is now declared. `server/repositories/` holds
 `SchemaRepository` subclasses for the two apps with multi-table queries — the
 declaration owns the schema, the subclass owns the joins the single-table
 generic path cannot express.
 
 ### Never read another resource's tables
 
-Some data gOS displays belongs to a different resource — bank transactions to
+Some data micaOS displays belongs to a different resource — bank transactions to
 the banking script, character data to the core. **Go through that resource's
 exports, behind a `*Bridge` in `server/lib/`.** Querying their tables directly
-couples gOS to a schema it does not own, breaks on their migrations, and can
+couples micaOS to a schema it does not own, breaks on their migrations, and can
 read stale data: Renewed-Banking keeps transactions in an in-memory cache that
 `player_transactions` lags behind, so the export is both correct and fresher
 than the table.

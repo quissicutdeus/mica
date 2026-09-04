@@ -8,7 +8,7 @@ import { guarded } from './guard';
  * OS Service Hook for the address this server says its source lives at (AGPL §13).
  *
  * The default is upstream and true for an unmodified server; an operator running a fork
- * sets `gos_source_url`, because §13's obligation is theirs and their players are
+ * sets `mica_source_url`, because §13's obligation is theirs and their players are
  * entitled to *their* source. Settings > About > License is what shows it.
  */
 export function useSourceUrl() {

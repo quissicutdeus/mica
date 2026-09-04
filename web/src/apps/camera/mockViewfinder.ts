@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { placeholderPhotos } from '@gos/sdk';
+import { placeholderPhotos } from '@mica/sdk';
 
 /**
  * Stand-in viewfinder frames for browser development.
@@ -19,4 +19,4 @@ import { placeholderPhotos } from '@gos/sdk';
  * import still crosses the boundary, just one file further away. These are the camera's
  * own dev fixtures and nothing else reads them.
  */
-export const sampleAvatars = placeholderPhotos('gos-viewfinder', 6);
+export const sampleAvatars = placeholderPhotos('mica-viewfinder', 6);

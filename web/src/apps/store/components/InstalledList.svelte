@@ -12,7 +12,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     formatDate,
     formatRelativeTime,
     useLocale
-  } from '@gos/sdk';
+  } from '@mica/sdk';
   import { getAppStorageSize } from '../appInfo';
 
   const { t } = useLocale();
@@ -117,7 +117,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <div class="min-w-0 flex-1">
           <span class="text-on-surface text-body-medium block truncate">{app.name}</span>
           <div class="text-on-surface-variant text-label-small flex items-center gap-1.5 truncate">
-            <span>{app.author || 'gOS'}</span>
+            <span>{app.author || 'micaOS'}</span>
             <span>•</span>
             <span>{getAppStorageSize(app)}</span>
             {#if app.installedAt}

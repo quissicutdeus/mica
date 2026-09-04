@@ -16,15 +16,15 @@ registerPublicApi();
 
 on('onResourceStart', (resName: string) => {
   if (resName === GetCurrentResourceName()) {
-    console.log('gos started!');
+    console.log('mica started!');
 
     // Surfaced at startup because a missing banking resource degrades silently to an
     // empty transaction list — which looks identical to "you have no transactions".
     const banking = BankingBridge.detect();
     console.log(
       banking
-        ? `gos: banking bridge -> ${banking}`
-        : 'gos: no supported banking resource detected; the Bank app will show no transactions'
+        ? `mica: banking bridge -> ${banking}`
+        : 'mica: no supported banking resource detected; the Bank app will show no transactions'
     );
   }
 });

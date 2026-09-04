@@ -15,7 +15,7 @@
  */
 import '../host/registerFacets';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { GENERIC_SERVICE_ACTION } from '@gos/shared/rpc';
+import { GENERIC_SERVICE_ACTION } from '@mica/shared/rpc';
 
 vi.mock('../nui/fetchNui', () => ({ fetchNui: vi.fn(async () => ({ ok: true })) }));
 

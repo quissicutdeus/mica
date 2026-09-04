@@ -3,10 +3,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { parseRemoteAppConfig } from '@gos/shared/nui';
+import { parseRemoteAppConfig } from '@mica/shared/nui';
 
 /**
- * `gos_addon_hosts` and `gos_addon_catalog` — the two values that decide whether the
+ * `mica_addon_hosts` and `mica_addon_catalog` — the two values that decide whether the
  * Store can install anything at all (MICA-126).
  *
  * The case that has to hold above every other is the **unset** one. Everything in the
@@ -56,8 +56,8 @@ describe('remoteAppConfig', () => {
   });
 
   it('reads both convars when an operator sets them', async () => {
-    convars.gos_addon_hosts = 'store.example.com';
-    convars.gos_addon_catalog = 'https://store.example.com/catalog.json';
+    convars.mica_addon_hosts = 'store.example.com';
+    convars.mica_addon_catalog = 'https://store.example.com/catalog.json';
     const { remoteAppConfig } = await load();
     expect(remoteAppConfig()).toEqual({
       hosts: ['store.example.com'],
@@ -69,22 +69,22 @@ describe('remoteAppConfig', () => {
     // The evening-costing mistake: set the catalog, forget the allowlist. `fetchCatalog`
     // holds the catalog URL to the same allowlist as every bundle, so this configuration
     // lists nothing and explains itself only in a console nobody opens.
-    convars.gos_addon_catalog = 'https://store.example.com/catalog.json';
+    convars.mica_addon_catalog = 'https://store.example.com/catalog.json';
     const { catalogWarning, remoteAppConfig } = await load();
-    expect(catalogWarning(remoteAppConfig())).toMatch(/gos_addon_hosts/);
-    expect(warnings.join('\n')).toMatch(/gos_addon_hosts/);
+    expect(catalogWarning(remoteAppConfig())).toMatch(/mica_addon_hosts/);
+    expect(warnings.join('\n')).toMatch(/mica_addon_hosts/);
   });
 
   it('warns about a catalog URL that is not https', async () => {
-    convars.gos_addon_hosts = 'store.example.com';
-    convars.gos_addon_catalog = 'http://store.example.com/catalog.json';
+    convars.mica_addon_hosts = 'store.example.com';
+    convars.mica_addon_catalog = 'http://store.example.com/catalog.json';
     const { catalogWarning, remoteAppConfig } = await load();
     expect(catalogWarning(remoteAppConfig())).toMatch(/https/);
   });
 
   it('says nothing when the two agree', async () => {
-    convars.gos_addon_hosts = 'store.example.com';
-    convars.gos_addon_catalog = 'https://store.example.com/catalog.json';
+    convars.mica_addon_hosts = 'store.example.com';
+    convars.mica_addon_catalog = 'https://store.example.com/catalog.json';
     const { catalogWarning, remoteAppConfig } = await load();
     expect(catalogWarning(remoteAppConfig())).toBeNull();
     expect(warnings).toEqual([]);

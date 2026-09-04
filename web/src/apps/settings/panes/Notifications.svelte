@@ -14,7 +14,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     useNotificationSettings,
     useNotificationSettingsWrite,
     type AppManifest
-  } from '@gos/sdk';
+  } from '@mica/sdk';
 
   /**
    * The whole notification policy surface (MICA-63).

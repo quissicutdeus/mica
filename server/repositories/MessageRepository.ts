@@ -4,7 +4,7 @@
 
 import { SchemaRepository } from '../lib/defineService';
 import { Database } from '../lib/Database';
-import { Message } from '@gos/shared/types';
+import { Message } from '@mica/shared/types';
 
 /**
  * Bespoke queries for the messages table. The schema, the `columns` allowlist and
@@ -27,7 +27,7 @@ export class MessageRepository extends SchemaRepository<Message> {
       for (const attachment of data.attachments) {
         if (attachment.photo_id) {
           await Database.insert(
-            'INSERT INTO gos_messages_attachments (message_id, citizenid, photo_id) VALUES (?, ?, ?)',
+            'INSERT INTO mica_messages_attachments (message_id, citizenid, photo_id) VALUES (?, ?, ?)',
             [messageId, data.citizenid, attachment.photo_id]
           );
         }
@@ -36,7 +36,7 @@ export class MessageRepository extends SchemaRepository<Message> {
 
     // 3. Update Conversation updated_at
     await Database.query(
-      'UPDATE gos_messages_conversations SET updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      'UPDATE mica_messages_conversations SET updated_at = CURRENT_TIMESTAMP WHERE id = ?',
       [data.conversation_id]
     );
 
@@ -51,7 +51,7 @@ export class MessageRepository extends SchemaRepository<Message> {
    */
   async inConversation(messageId: number, conversationId: number): Promise<boolean> {
     const found = await Database.scalar<number | null>(
-      'SELECT 1 FROM `gos_messages` WHERE `id` = ? AND `conversation_id` = ? LIMIT 1',
+      'SELECT 1 FROM `mica_messages` WHERE `id` = ? AND `conversation_id` = ? LIMIT 1',
       [messageId, conversationId]
     );
     return found !== null && found !== undefined;
@@ -91,7 +91,7 @@ export class MessageRepository extends SchemaRepository<Message> {
      * server. Doing it in the statement means one definition of "this was edited", in the
      * same clock the write used.
      *
-     * It is derived rather than stored because `gos_messages.updated_at` already carries
+     * It is derived rather than stored because `mica_messages.updated_at` already carries
      * `ON UPDATE CURRENT_TIMESTAMP` — the trace falls out of the edit itself, so there is no
      * column to add, no migration, and no way for the flag and the row to disagree.
      *
@@ -106,7 +106,7 @@ export class MessageRepository extends SchemaRepository<Message> {
 
     const fetched = await Database.query<Message[]>(
       `SELECT m.*, (m.updated_at > m.created_at) AS edited
-         FROM gos_messages m
+         FROM mica_messages m
         WHERE m.conversation_id = ? AND m.status != 'deleted'
           ${cursorClause}
         ORDER BY m.id DESC
@@ -123,7 +123,7 @@ export class MessageRepository extends SchemaRepository<Message> {
     if (messages.length === 0) return { rows: [], nextCursor: null };
 
     /**
-     * Attachments, joined to `gos_media`.
+     * Attachments, joined to `mica_media`.
      *
      * **The column list is explicit and `p.citizenid` is deliberately not in it.** A
      * conversation is shared, so anything selected here reaches every participant — and
@@ -145,8 +145,8 @@ export class MessageRepository extends SchemaRepository<Message> {
       `SELECT a.id, a.message_id,
               p.id AS media_id, p.kind, p.data, p.url, p.thumbnail,
               p.mime_type, p.duration_ms, p.alt_text
-         FROM gos_messages_attachments a
-         JOIN gos_media p ON a.photo_id = p.id
+         FROM mica_messages_attachments a
+         JOIN mica_media p ON a.photo_id = p.id
         WHERE a.message_id IN (${placeholders})`,
       messageIds
     );

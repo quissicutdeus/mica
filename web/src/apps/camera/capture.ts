@@ -14,12 +14,12 @@
  * The client now sends a lossless PNG, so everything here is the single encode.
  */
 
-import { encodeCanvas, releaseCanvas } from '@gos/sdk';
+import { encodeCanvas, releaseCanvas } from '@mica/sdk';
 
 /**
  * Quality for the stored crop when the server has not said otherwise.
  *
- * The number the encode was tuned at, and the one `gos_camera_quality` defaults to.
+ * The number the encode was tuned at, and the one `mica_camera_quality` defaults to.
  */
 export const DEFAULT_CAPTURE_QUALITY = 0.95;
 

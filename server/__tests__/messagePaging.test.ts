@@ -47,7 +47,7 @@ vi.mock('../lib/FrameworkBridge', async (importOriginal) => {
   return { ...actual, FrameworkBridge: TestBridge };
 });
 
-// Imported for its side effect: loading the module registers `gos:server:messages:get`.
+// Imported for its side effect: loading the module registers `mica:server:messages:get`.
 import { messages } from '../services/Messages';
 import { Database } from '../lib/Database';
 
@@ -74,9 +74,9 @@ beforeEach(() => {
   );
 });
 
-/** Drives `gos:server:messages:get` as the caller, a participant unless told otherwise. */
+/** Drives `mica:server:messages:get` as the caller, a participant unless told otherwise. */
 const get = async (data: unknown, { member = true } = {}) => {
-  const handler = handlers.get('gos:server:messages:get');
+  const handler = handlers.get('mica:server:messages:get');
   if (!handler) throw new Error('no handler for get');
   if (member) db.answerSingle(1);
   await handler('cb-1', data);
@@ -124,12 +124,12 @@ describe('a thread page is three statements at most, whatever the thread holds',
     await get({ conversation_id: 7 });
 
     expect(db.statements[0].method).toBe('single');
-    expect(db.statements[0].sql).toContain('gos_messages_participants');
-    expect(db.statements[1].sql).toContain('FROM gos_messages m');
+    expect(db.statements[0].sql).toContain('mica_messages_participants');
+    expect(db.statements[1].sql).toContain('FROM mica_messages m');
     expect(db.statements[1].sql).toContain('ORDER BY m.id DESC');
     // Bound to the page's ids, not to the conversation: the old join re-hydrated every
     // attachment in the thread on every open.
-    expect(db.statements[2].sql).toContain('FROM gos_messages_attachments a');
+    expect(db.statements[2].sql).toContain('FROM mica_messages_attachments a');
     expect(db.statements[2].sql).toContain('IN (?, ?, ?)');
     expect(db.statements[2].sql).not.toContain('conversation_id');
     expect(db.statements[2].params).toEqual([998, 999, 1000]);
@@ -148,7 +148,7 @@ describe('a thread page is three statements at most, whatever the thread holds',
     await get({ conversation_id: 7 }, { member: false });
 
     expect(db.count()).toBe(1);
-    expect(db.count(/FROM gos_messages m/)).toBe(0);
+    expect(db.count(/FROM mica_messages m/)).toBe(0);
   });
 });
 
@@ -158,7 +158,7 @@ describe('the page is a keyset on id, newest first, in reading order', () => {
 
     await get({ conversation_id: 7 });
 
-    const page = statement(/FROM gos_messages m/);
+    const page = statement(/FROM mica_messages m/);
     expect(page.sql).toContain('LIMIT ?');
     expect(page.params).toEqual([7, PAGE + 1]);
 
@@ -184,7 +184,7 @@ describe('the page is a keyset on id, newest first, in reading order', () => {
 
     await get({ conversation_id: 7, cursor: 401 });
 
-    const page = statement(/FROM gos_messages m/);
+    const page = statement(/FROM mica_messages m/);
     expect(page.sql).toContain('m.conversation_id = ?');
     expect(page.sql).toContain('AND m.id < ?');
     expect(page.params).toEqual([7, 401, PAGE + 1]);
@@ -195,7 +195,7 @@ describe('the page is a keyset on id, newest first, in reading order', () => {
 
     await get({ conversation_id: 7, limit: 5000 });
 
-    expect(statement(/FROM gos_messages m/).params).toEqual([7, MAX_PAGE + 1]);
+    expect(statement(/FROM mica_messages m/).params).toEqual([7, MAX_PAGE + 1]);
   });
 
   it('never orders by created_at — an insert at the head must not shift the keyset', async () => {
@@ -203,7 +203,7 @@ describe('the page is a keyset on id, newest first, in reading order', () => {
 
     await get({ conversation_id: 7 });
 
-    expect(statement(/FROM gos_messages m/).sql).not.toContain('ORDER BY m.created_at');
+    expect(statement(/FROM mica_messages m/).sql).not.toContain('ORDER BY m.created_at');
   });
 });
 
@@ -218,7 +218,7 @@ describe('a cursor is a bound, never authorization', () => {
 
     await get({ conversation_id: 7, cursor: 9001 });
 
-    const page = statement(/FROM gos_messages m/);
+    const page = statement(/FROM mica_messages m/);
     expect(page.sql.indexOf('m.conversation_id = ?')).toBeLessThan(page.sql.indexOf('m.id < ?'));
     expect(page.params[0]).toBe(7);
     expect(page.params[1]).toBe(9001);
@@ -229,13 +229,13 @@ describe('a cursor is a bound, never authorization', () => {
   it('checks membership of the named thread; a non-member gets no page for any cursor', async () => {
     await get({ conversation_id: 9, cursor: 9001 }, { member: false });
 
-    expect(db.count(/FROM gos_messages m/)).toBe(0);
+    expect(db.count(/FROM mica_messages m/)).toBe(0);
     expect(db.statements[0].params).toEqual([9, CALLER]);
   });
 
   it('refuses a cursor that is not a row id', async () => {
     await get({ conversation_id: 7, cursor: 'not-an-id' });
 
-    expect(db.count(/FROM gos_messages m/)).toBe(0);
+    expect(db.count(/FROM mica_messages m/)).toBe(0);
   });
 });

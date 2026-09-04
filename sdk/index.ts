@@ -46,10 +46,10 @@ export { setTrustedRemoteAppHosts, getTrustedRemoteAppHosts } from './remoteAppS
  * MICA-70's one privacy-disclosure string, read by both the first-run notice
  * (`shell/PrivacyNotice.svelte`) and the permanent copy in Settings > About — plain text
  * with nothing reactive about it, so there is no facet or permission to gate it behind
- * (the same reasoning `GOS_BUILD_INFO` above already rests on).
+ * (the same reasoning `MICA_BUILD_INFO` above already rests on).
  */
 export {
-  GOS_SOURCE_URL,
+  MICA_SOURCE_URL,
   LICENSE_COPYRIGHT,
   LICENSE_FREEDOMS,
   LICENSE_NAME,

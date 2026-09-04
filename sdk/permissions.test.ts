@@ -63,7 +63,7 @@ const walk = (dir: string): string[] =>
   });
 
 /**
- * What an app imports from `@gos/sdk`, across every file it owns.
+ * What an app imports from `@mica/sdk`, across every file it owns.
  *
  * The per-file reading is `lib/permissionScan.ts` since MICA-205, and this walk is the
  * only part left here. The scanner moved because the two add-on builds have to run the same

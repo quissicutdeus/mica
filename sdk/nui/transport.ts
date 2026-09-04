@@ -57,7 +57,7 @@ export const fetchNui: FetchNui = (...args) => {
   const [eventName] = args;
   if (!transport) {
     throw new Error(
-      `[gOS] no NUI transport is installed, so '${eventName}' has nowhere to go. The phone ` +
+      `[micaOS] no NUI transport is installed, so '${eventName}' has nowhere to go. The phone ` +
         `installs one by importing 'web/src/nui/fetchNui'; a sandboxed add-on gets one from ` +
         `bootAddOn. A unit test that exercises a server round trip needs whichever of those ` +
         `matches the side it is standing in for.`

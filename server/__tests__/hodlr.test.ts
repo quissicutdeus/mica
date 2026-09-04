@@ -56,13 +56,13 @@ import { quoteSpread } from '../services/Hodlr';
  * service disables all four generic CRUD actions and declares `write: 'server'`.
  *
  * The point of most of this file is MICA-99: the UI's Confirm guard is a courtesy, and
- * a modified client can emit `gos:server:hodlr:sell` with any quantity it likes
+ * a modified client can emit `mica:server:hodlr:sell` with any quantity it likes
  * (AGENTS.md §2.9). So the refusal is asserted at the server, with the bank credit and
  * the SQL both checked — a refusal that still paid out would be worse than no refusal.
  */
 describe('hodlr: buy and sell', () => {
-  const BUY = 'gos:server:hodlr:buy';
-  const SELL = 'gos:server:hodlr:sell';
+  const BUY = 'mica:server:hodlr:buy';
+  const SELL = 'mica:server:hodlr:sell';
 
   const HOLDING = {
     id: 7,
@@ -138,7 +138,7 @@ describe('hodlr: buy and sell', () => {
 
       expect(reply).toEqual({ ok: false, reason: 'credit_failed' });
       expect(increments()).toEqual([
-        ['UPDATE `gos_hodlr` SET `quantity` = `quantity` + ? WHERE `id` = ?', [2, HOLDING.id]]
+        ['UPDATE `mica_hodlr` SET `quantity` = `quantity` + ? WHERE `id` = ?', [2, HOLDING.id]]
       ]);
     });
 
@@ -187,7 +187,7 @@ describe('hodlr: buy and sell', () => {
 
       expect(player.removeMoney).toHaveBeenCalledWith('bank', 33);
       expect(increments()).toEqual([
-        ['UPDATE `gos_hodlr` SET `quantity` = `quantity` + ? WHERE `id` = ?', [3, HOLDING.id]]
+        ['UPDATE `mica_hodlr` SET `quantity` = `quantity` + ? WHERE `id` = ?', [3, HOLDING.id]]
       ]);
       expect(reply).toEqual({ ok: true, quantity: 8, price: 11, cost: 33 });
     });
@@ -257,7 +257,7 @@ describe('hodlr: buy and sell', () => {
       dbMock.query.mockResolvedValue([]);
       dbMock.insert.mockResolvedValue(42);
 
-      const reply = await call('gos:server:hodlr:portfolio', {});
+      const reply = await call('mica:server:hodlr:portfolio', {});
 
       expect(reply).toEqual({ ready: true, quantity: 0, currentPrice: 10, currentValue: 0 });
     });
@@ -265,7 +265,7 @@ describe('hodlr: buy and sell', () => {
     it('quotes the live price with the history behind it', async () => {
       // MICA-147/149: `buyPrice`/`sellPrice` are the spread's two quotes around `current`,
       // the mid/reference price the chart still plots unchanged.
-      const reply = await call('gos:server:hodlr:price', {});
+      const reply = await call('mica:server:hodlr:price', {});
 
       expect(reply).toEqual({
         ready: true,
@@ -297,13 +297,13 @@ describe('hodlr: buy and sell', () => {
      */
     beforeEach(() => {
       (globalThis as any).GetConvar = (name: string, fallback: string) =>
-        name === 'gos_hodlr_spread_pct' ? '0' : fallback;
+        name === 'mica_hodlr_spread_pct' ? '0' : fallback;
     });
 
     const withConvar = (value: string, run: () => Promise<void>) => {
       const previous = (globalThis as any).GetConvar;
       (globalThis as any).GetConvar = (name: string, fallback: string) =>
-        name === 'gos_hodlr_trade_max' ? value : name === 'gos_hodlr_spread_pct' ? '0' : fallback;
+        name === 'mica_hodlr_trade_max' ? value : name === 'mica_hodlr_spread_pct' ? '0' : fallback;
       return run().finally(() => {
         (globalThis as any).GetConvar = previous;
       });
@@ -401,19 +401,19 @@ describe('hodlr: buy and sell', () => {
      * `price` got the same number. The quote is withheld and the state named instead.
      */
     it('withholds the quote from price rather than answering with the opening constant', async () => {
-      const reply = await call('gos:server:hodlr:price', {});
+      const reply = await call('mica:server:hodlr:price', {});
 
       expect(reply).toEqual({ ready: false, current: 0, history: HISTORY });
     });
 
     it('withholds the valuation from portfolio but still discloses the holding', async () => {
-      const reply = await call('gos:server:hodlr:portfolio', {});
+      const reply = await call('mica:server:hodlr:portfolio', {});
 
       expect(reply).toEqual({ ready: false, quantity: 5, currentPrice: 0, currentValue: 0 });
     });
 
     it('keeps serving the chart, which reads storage rather than the unrestored price', async () => {
-      const reply = (await call('gos:server:hodlr:price', {})) as { history: unknown[] };
+      const reply = (await call('mica:server:hodlr:price', {})) as { history: unknown[] };
 
       expect(reply.history).toEqual(HISTORY);
     });
@@ -563,11 +563,11 @@ describe('quoteSpread — the buy/sell spread (MICA-147/149)', () => {
     });
   });
 
-  describe('the spread convar (gos_hodlr_spread_pct)', () => {
+  describe('the spread convar (mica_hodlr_spread_pct)', () => {
     const withSpreadConvar = (value: string, run: () => Promise<void> | void) => {
       const previous = (globalThis as any).GetConvar;
       (globalThis as any).GetConvar = (name: string, fallback: string) =>
-        name === 'gos_hodlr_spread_pct' ? value : fallback;
+        name === 'mica_hodlr_spread_pct' ? value : fallback;
       return Promise.resolve(run()).finally(() => {
         (globalThis as any).GetConvar = previous;
       });
@@ -602,7 +602,7 @@ describe('quoteSpread — the buy/sell spread (MICA-147/149)', () => {
         // mid 10, 50% spread: half-spread 25%, buy = ceil(12.5) = 13, sell = floor(7.5) = 7
         // — chosen to disagree with the 2% default's 11/9, so this actually proves the
         // convar moved the quote rather than merely landing on the same numbers by luck.
-        const priceReply = (await call('gos:server:hodlr:price', {})) as {
+        const priceReply = (await call('mica:server:hodlr:price', {})) as {
           buyPrice: number;
           sellPrice: number;
         };
@@ -613,7 +613,7 @@ describe('quoteSpread — the buy/sell spread (MICA-147/149)', () => {
 
     it('falls back to the 2% default when the convar is not a usable number', async () => {
       await withSpreadConvar('not-a-number', async () => {
-        const priceReply = (await call('gos:server:hodlr:price', {})) as {
+        const priceReply = (await call('mica:server:hodlr:price', {})) as {
           buyPrice: number;
           sellPrice: number;
         };
@@ -624,7 +624,7 @@ describe('quoteSpread — the buy/sell spread (MICA-147/149)', () => {
 
     it('honours an explicit 0 rather than treating it as unset', async () => {
       await withSpreadConvar('0', async () => {
-        const priceReply = (await call('gos:server:hodlr:price', {})) as {
+        const priceReply = (await call('mica:server:hodlr:price', {})) as {
           buyPrice: number;
           sellPrice: number;
         };
@@ -636,7 +636,7 @@ describe('quoteSpread — the buy/sell spread (MICA-147/149)', () => {
     it('settles an actual buy at the convar-configured spread, not the default', async () => {
       await withSpreadConvar('40', async () => {
         // mid 10, 40% spread: half-spread 20%, buy = ceil(12) = 12.
-        const reply = (await call('gos:server:hodlr:buy', { quantity: 2 })) as {
+        const reply = (await call('mica:server:hodlr:buy', { quantity: 2 })) as {
           ok: boolean;
           price: number;
           cost: number;
@@ -648,7 +648,7 @@ describe('quoteSpread — the buy/sell spread (MICA-147/149)', () => {
     it('settles an actual sell at the convar-configured spread, not the default', async () => {
       await withSpreadConvar('40', async () => {
         // mid 10, 40% spread: half-spread 20%, sell = floor(8) = 8.
-        const reply = (await call('gos:server:hodlr:sell', { quantity: 2 })) as {
+        const reply = (await call('mica:server:hodlr:sell', { quantity: 2 })) as {
           ok: boolean;
           price: number;
           proceeds: number;

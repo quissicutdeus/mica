@@ -68,7 +68,7 @@ export type { Messages, Catalog, TranslateParams, Translate } from './i18n';
  * sandboxed add-on unchanged. Mirrors `index.ts`'s own re-export.
  */
 export {
-  GOS_SOURCE_URL,
+  MICA_SOURCE_URL,
   LICENSE_COPYRIGHT,
   LICENSE_FREEDOMS,
   LICENSE_NAME,

@@ -76,9 +76,9 @@ import {
   runMediaPruneCommand
 } from '../services/Media';
 
-const CREATE_EVENT = 'gos:server:media:create';
-const DROP_EVENT = 'gos:server:media:drop';
-const CHARACTER_DELETED_EVENT = 'gos:server:media:characterDeleted';
+const CREATE_EVENT = 'mica:server:media:create';
+const DROP_EVENT = 'mica:server:media:drop';
+const CHARACTER_DELETED_EVENT = 'mica:server:media:characterDeleted';
 
 const MB = 1024 * 1024;
 
@@ -152,7 +152,7 @@ describe('the per-player quota (MICA-71, made atomic by MICA-131)', () => {
     return { sql: String(written[0]).replace(/\s+/g, ' '), params: written[1] as unknown[] };
   };
 
-  it('measures the library the same way gosmedia reports it', async () => {
+  it('measures the library the same way micamedia reports it', async () => {
     await call(CREATE_EVENT, { kind: 'photo', data: photoOf(1024) });
 
     const { sql, params } = lastInsert();
@@ -181,7 +181,7 @@ describe('the per-player quota (MICA-71, made atomic by MICA-131)', () => {
     await call(CREATE_EVENT, { kind: 'photo', data: photoOf(1024) });
 
     const { sql } = lastInsert();
-    expect(sql).toContain('INSERT INTO `gos_media`');
+    expect(sql).toContain('INSERT INTO `mica_media`');
     expect(sql).toContain('WHERE quota.used + ? <= ?');
     // Nothing measures the library on its own any more, so there is no second opinion for
     // the write to disagree with.
@@ -217,7 +217,7 @@ describe('the per-player quota (MICA-71, made atomic by MICA-131)', () => {
    * anything could say no.
    */
   it('refuses the second of two overlapping captures once the first has taken the room', async () => {
-    withConvars({ gos_media_quota_mb: 1 });
+    withConvars({ mica_media_quota_mb: 1 });
 
     let used = 900 * 1024;
     const gate: (() => void)[] = [];
@@ -258,11 +258,11 @@ describe('the per-player quota (MICA-71, made atomic by MICA-131)', () => {
     const reply = await call(CREATE_EVENT, { kind: 'photo', data: photoOf(400 * 1024) });
 
     expect(reply.error).not.toContain('[Repository]');
-    expect(reply.error).not.toContain('gos_media');
+    expect(reply.error).not.toContain('mica_media');
   });
 
   it('honours the convar rather than the compiled-in default', async () => {
-    withConvars({ gos_media_quota_mb: 1 });
+    withConvars({ mica_media_quota_mb: 1 });
 
     await call(CREATE_EVENT, { kind: 'photo', data: photoOf(200 * 1024) });
 
@@ -274,7 +274,7 @@ describe('the per-player quota (MICA-71, made atomic by MICA-131)', () => {
   it('is off at zero, and off rather than closed for a value it cannot parse', async () => {
     // `GetConvarInt` answers 0 for a non-numeric convar, so this is also the typo case:
     // the failure direction is "no quota", never "no photos on this server".
-    withConvars({ gos_media_quota_mb: 0 });
+    withConvars({ mica_media_quota_mb: 0 });
 
     const reply = await call(CREATE_EVENT, { kind: 'photo', data: photoOf(400 * 1024) });
 
@@ -286,7 +286,7 @@ describe('the per-player quota (MICA-71, made atomic by MICA-131)', () => {
 
   it('composes with the per-row cap rather than replacing it', async () => {
     // MICA-116's 4MiB bound still applies to a single write, quota or no quota.
-    withConvars({ gos_media_quota_mb: 0 });
+    withConvars({ mica_media_quota_mb: 0 });
 
     const reply = await call(CREATE_EVENT, { kind: 'photo', data: photoOf(5 * MB) });
 
@@ -358,12 +358,12 @@ describe('the retention prune', () => {
   });
 
   it('hard-deletes rows older than the window, bounding the cutoff as a parameter', async () => {
-    withConvars({ gos_media_retention: 30 });
+    withConvars({ mica_media_retention: 30 });
     dbMock.query.mockResolvedValue({ affectedRows: 7 });
 
     expect(await pruneExpiredMedia()).toBe(7);
 
-    expect(lastQuery()).toBe('DELETE FROM gos_media WHERE created_at < ?');
+    expect(lastQuery()).toBe('DELETE FROM mica_media WHERE created_at < ?');
     const [cutoff] = dbMock.query.mock.calls.at(-1)![1] as string[];
     const days = (Date.now() - Date.parse(cutoff)) / (24 * 60 * 60 * 1000);
     expect(days).toBeGreaterThan(29.9);
@@ -371,7 +371,7 @@ describe('the retention prune', () => {
   });
 
   it('covers every status, so the window an owner is told about has no exceptions', async () => {
-    withConvars({ gos_media_retention: 30 });
+    withConvars({ mica_media_retention: 30 });
     dbMock.query.mockResolvedValue({ affectedRows: 0 });
 
     await pruneExpiredMedia();
@@ -380,7 +380,7 @@ describe('the retention prune', () => {
   });
 
   it('reports zero rather than NaN when the driver answers something else', async () => {
-    withConvars({ gos_media_retention: 30 });
+    withConvars({ mica_media_retention: 30 });
     dbMock.query.mockResolvedValue(undefined);
 
     expect(await pruneExpiredMedia()).toBe(0);
@@ -391,7 +391,7 @@ describe('the retention prune', () => {
  * A server the sweep is willing to act on.
  *
  * MICA-152 put two questions in front of the DELETE rather than one: how many characters
- * the framework can see, and whether a sample of the citizenids in gOS's own rows can be
+ * the framework can see, and whether a sample of the citizenids in micaOS's own rows can be
  * found among them. The second is what catches a *populated but wrong* owner table — a
  * leftover qb `players` on an ESX box, or a truncated identifier — where "every row is an
  * orphan" would otherwise be the answer and the whole database the cost.
@@ -431,8 +431,8 @@ describe('the orphan sweep — cleanup after a character is deleted', () => {
     expect(await pruneOrphanedMedia()).toBe(3);
 
     const sql = lastQuery();
-    expect(sql).toContain('DELETE FROM gos_media WHERE NOT EXISTS');
-    expect(sql).toContain('p.citizenid = gos_media.citizenid');
+    expect(sql).toContain('DELETE FROM mica_media WHERE NOT EXISTS');
+    expect(sql).toContain('p.citizenid = mica_media.citizenid');
     // NOT IN against a subquery holding a NULL is unknown for every row and deletes none.
     expect(sql).not.toContain('NOT IN');
   });
@@ -443,7 +443,7 @@ describe('purging one character', () => {
     dbMock.query.mockResolvedValue({ affectedRows: 12 });
 
     expect(await purgeMediaForCitizen('CID_Z')).toBe(12);
-    expect(lastQuery()).toBe('DELETE FROM gos_media WHERE citizenid = ?');
+    expect(lastQuery()).toBe('DELETE FROM mica_media WHERE citizenid = ?');
     expect(dbMock.query.mock.calls.at(-1)![1]).toEqual(['CID_Z']);
   });
 
@@ -465,7 +465,7 @@ describe('purging one character', () => {
     localHandlers.get(CHARACTER_DELETED_EVENT)!('CID_Z');
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(lastQuery()).toBe('DELETE FROM gos_media WHERE citizenid = ?');
+    expect(lastQuery()).toBe('DELETE FROM mica_media WHERE citizenid = ?');
     expect(dbMock.query.mock.calls.at(-1)![1]).toEqual(['CID_Z']);
   });
 
@@ -485,7 +485,7 @@ describe('runMediaMaintenance', () => {
   });
 
   it('still runs retention when the orphan sweep throws', async () => {
-    withConvars({ gos_media_retention: 10 });
+    withConvars({ mica_media_retention: 10 });
     dbMock.single.mockRejectedValue(new Error('no players table'));
     dbMock.query.mockResolvedValue({ affectedRows: 6 });
 
@@ -493,7 +493,7 @@ describe('runMediaMaintenance', () => {
   });
 
   it('never rejects, so start-up cannot be taken down by maintenance', async () => {
-    withConvars({ gos_media_retention: 10 });
+    withConvars({ mica_media_retention: 10 });
     dbMock.single.mockRejectedValue(new Error('nope'));
     dbMock.query.mockRejectedValue(new Error('nope'));
 
@@ -501,9 +501,11 @@ describe('runMediaMaintenance', () => {
   });
 });
 
-describe('gosmedia prune', () => {
+describe('micamedia prune', () => {
   const notifies = () =>
-    (globalThis.emitNet as any).mock.calls.filter((c: any[]) => c[0] === 'gos:client:shell:notify');
+    (globalThis.emitNet as any).mock.calls.filter(
+      (c: any[]) => c[0] === 'mica:client:shell:notify'
+    );
 
   it('refuses a player with no admin ace, before mentioning the subcommand exists', async () => {
     await runMediaPruneCommand(7);
@@ -527,6 +529,6 @@ describe('gosmedia prune', () => {
 
     await runMediaPruneCommand(0);
 
-    expect(lastQuery()).toContain('DELETE FROM gos_media WHERE NOT EXISTS');
+    expect(lastQuery()).toContain('DELETE FROM mica_media WHERE NOT EXISTS');
   });
 });

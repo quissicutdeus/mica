@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { Button, useAppAction, useLocale } from '@gos/sdk';
+  import { Button, useAppAction, useLocale } from '@mica/sdk';
   import { useHodlr, buyPriceOf, sellPriceOf } from '../store';
 
   let { side, onback }: { side: 'buy' | 'sell'; onback: () => void } = $props();

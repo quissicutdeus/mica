@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { ServiceEndpoint } from '../lib/ServiceEndpoint';
-import { adminContract } from '@gos/shared/contracts/admin';
+import { adminContract } from '@mica/shared/contracts/admin';
 
 /**
  * Whether the caller counts as an admin.
@@ -15,32 +15,32 @@ import { adminContract } from '@gos/shared/contracts/admin';
  */
 
 /**
- * Aces that grant gOS admin, in order of specificity.
+ * Aces that grant micaOS admin, in order of specificity.
  *
- * `gos.admin` alone was wrong: a server owner who is already a full admin had to
- * grant themselves a second, gOS-specific ace before the phone would believe them,
+ * `mica.admin` alone was wrong: a server owner who is already a full admin had to
+ * grant themselves a second, micaOS-specific ace before the phone would believe them,
  * which reads as the resource being broken rather than strict.
  *
  * `command` is the standard proxy for "runs this server" — `add_ace group.admin command
  * allow` is the near-universal setup, and anyone holding it can already do anything the
  * phone's Developer Tools offer, by console. Recognising it grants nothing new.
  *
- * `gos.admin` remains for granting phone admin to someone who is *not* a server
+ * `mica.admin` remains for granting phone admin to someone who is *not* a server
  * admin, which is the case the dedicated ace actually exists for.
  *
- * Note ace objects are hierarchical, so allowing `gos` covers `gos.admin` already
+ * Note ace objects are hierarchical, so allowing `mica` covers `mica.admin` already
  * — there is no need to list parents here.
  */
-export const DEFAULT_ADMIN_ACES = ['gos.admin', 'command'] as const;
+export const DEFAULT_ADMIN_ACES = ['mica.admin', 'command'] as const;
 
 /**
- * Override with, e.g. `setr gos_admin_aces "gos.admin,mygroup.staff"`.
+ * Override with, e.g. `setr mica_admin_aces "mica.admin,mygroup.staff"`.
  *
  * Read per check rather than cached: a server owner adjusting permissions should not
  * have to restart the resource to see it take effect.
  */
 export const adminAces = (): string[] => {
-  const raw = GetConvar('gos_admin_aces', DEFAULT_ADMIN_ACES.join(','));
+  const raw = GetConvar('mica_admin_aces', DEFAULT_ADMIN_ACES.join(','));
   const parsed = raw
     .split(',')
     .map((ace) => ace.trim())

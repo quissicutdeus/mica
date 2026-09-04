@@ -25,8 +25,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     registerMessages,
     useLocale,
     type AppProps
-  } from '@gos/sdk';
-  import type { SavedPlace, MediaPreview } from '@gos/shared/types';
+  } from '@mica/sdk';
+  import type { SavedPlace, MediaPreview } from '@mica/shared/types';
   import { useSavedPlaces } from './store';
   import en from './locales/en.json';
   import de from './locales/de.json';

@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { derived, get } from 'svelte/store';
-import { DEVICES, type DeviceDescriptor, type DeviceId } from '@gos/shared/devices';
+import { DEVICES, type DeviceDescriptor, type DeviceId } from '@mica/shared/devices';
 import { activeDevice, descriptor, perDevice } from './device';
 
 /** The active device's slot count — 4 on the phone, 6 on the tablet (MICA-259). */

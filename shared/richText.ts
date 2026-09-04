@@ -28,7 +28,7 @@ export type RichTextToken =
   | { kind: 'tag'; value: string };
 
 /**
- * Handle and tag shapes, matching what `gos_accounts.handle` accepts: lowercase letters,
+ * Handle and tag shapes, matching what `mica_accounts.handle` accepts: lowercase letters,
  * numbers and underscore, 3–32 characters.
  *
  * Case-insensitive on the way in because people type `@Ada`, and normalized on the way out —

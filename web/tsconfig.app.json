@@ -24,7 +24,7 @@
     // `_` to satisfy the compiler is noise rather than cleanliness.
     "noUnusedLocals": true,
     "moduleDetection": "force",
-    // `@gos/sdk` here always resolves to `index.ts`, even for the source of a `core: false`
+    // `@mica/sdk` here always resolves to `index.ts`, even for the source of a `core: false`
     // add-on — only `vite.addon.config.ts` redirects the bare specifier to the smaller
     // `addon.ts` for a real add-on bundle. A single `tsconfig` cannot fork that resolution
     // per source directory (paths are project-wide), and a second project scoped to just
@@ -36,21 +36,21 @@
     // any undeclared difference, which is what actually catches "typechecks clean, breaks at
     // `vite build`" without a second resolution graph to keep in sync.
     "paths": {
-      "@gos/shared/*": ["../shared/*"],
+      "@mica/shared/*": ["../shared/*"],
       // MICA-172: explicit and first, and it is the one specifier that does NOT resolve
       // into the package. `testing.ts` renders an app the way the shell does, so it is a
       // phone helper rather than published contract (`sdk/publicSurface.test.ts` says so),
       // and it stays on this side. Documented in `docs/writing-an-app.md`, so the name is
       // kept even though a package subpath pointing back into the consumer reads oddly.
-      "@gos/sdk/testing": ["./src/testing.ts"],
-      // The `@gos/sdk/*` wildcard is deliberately GONE. Once `sdk/` is a real workspace
+      "@mica/sdk/testing": ["./src/testing.ts"],
+      // The `@mica/sdk/*` wildcard is deliberately GONE. Once `sdk/` is a real workspace
       // package its subpaths resolve through its own `exports` map, so the wildcard is
-      // unnecessary — and it was actively harmful twice: it hid a broken `@gos/sdk/testing`
-      // resolution behind a fallback, and it made `@gos/sdk/lib/m3` typecheck while failing
+      // unnecessary — and it was actively harmful twice: it hid a broken `@mica/sdk/testing`
+      // resolution behind a fallback, and it made `@mica/sdk/lib/m3` typecheck while failing
       // at `vite build`, because `vite.config.ts` has no matching alias. Enumerate instead.
-      "@gos/sdk": ["../sdk/index.ts"],
-      "@gos/sdk/app": ["../sdk/app.ts"],
-      "@gos/sdk/core": ["../sdk/core.ts"]
+      "@mica/sdk": ["../sdk/index.ts"],
+      "@mica/sdk/app": ["../sdk/app.ts"],
+      "@mica/sdk/core": ["../sdk/core.ts"]
     }
   },
   "include": ["src/**/*.ts", "src/**/*.js", "src/**/*.svelte"]

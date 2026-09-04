@@ -3,14 +3,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import Icon from './Icon.svelte';
-import { defineApp, lazyBadge } from '@gos/sdk/app';
+import { defineApp, lazyBadge } from '@mica/sdk/app';
 
 export default defineApp({
   id: 'store',
   tile: { bg: 'bg-indigo-600' },
   icon: Icon,
-  author: 'gOS',
-  description: 'Browse, install, and manage gOS community apps and permissions',
+  author: 'micaOS',
+  description: 'Browse, install, and manage micaOS community apps and permissions',
   permissions: ['app-registry', 'app-registry-write', 'navigation', 'storage'],
   requiresNetwork: true,
   core: true,
@@ -26,7 +26,7 @@ export default defineApp({
    * calling `useAppRegistry()` out here throws.
    */
   badgeStore: lazyBadge(async () => {
-    const { useAppRegistry } = await import('@gos/sdk');
+    const { useAppRegistry } = await import('@mica/sdk');
     return useAppRegistry().updateCount;
   }),
   /**
@@ -36,7 +36,7 @@ export default defineApp({
    * already gone looking. A no-op with no catalog configured.
    */
   preload: async () => {
-    const { useAppRegistryWrite } = await import('@gos/sdk');
+    const { useAppRegistryWrite } = await import('@mica/sdk');
     await useAppRegistryWrite().refreshUpdates();
   }
 });

@@ -3,14 +3,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import Icon from './Icon.svelte';
-import { defineApp, lazyBadge } from '@gos/sdk/app';
+import { defineApp, lazyBadge } from '@mica/sdk/app';
 
 export default defineApp({
   id: 'blabber',
   tile: { bg: 'bg-sky-500' },
   icon: Icon,
   description: 'Post short updates and follow other players',
-  author: 'gOS',
+  author: 'micaOS',
   // An add-on: absent from the launcher until installed from the Store. The first real
   // non-core app, and the first genuine listing the Store has ever had.
   core: false,
@@ -20,7 +20,7 @@ export default defineApp({
    * This app's unread persistent notifications, and nothing added to them.
    *
    * Composed here rather than handed over finished by the SDK. It used to be a
-   * `blabberTotalUnread` store exported from `@gos/sdk`, which meant the contract every
+   * `blabberTotalUnread` store exported from `@mica/sdk`, which meant the contract every
    * app builds against held a hardcoded reference to one app's service — so an add-on the
    * SDK has never heard of could not produce a badge at all. What a badge counts is the
    * app's business; the platform only says when it may be computed.
@@ -39,7 +39,7 @@ export default defineApp({
    * — calling a hook out here directly throws `useBlabber is not a function`.
    */
   badgeStore: lazyBadge(async () => {
-    const { useNotifications } = await import('@gos/sdk');
+    const { useNotifications } = await import('@mica/sdk');
     return useNotifications('blabber').unreadCount;
   }),
   // Required alongside a badgeStore (`sdk/appContract.test.ts`): the count has to be correct

@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { parseRequestEvent, requestEventFor, responseEventFor } from '@gos/shared/rpc';
+import { parseRequestEvent, requestEventFor, responseEventFor } from '@mica/shared/rpc';
 
 export class ServiceProxy {
   private pendingCallbacks = new Map<string, Function>();
@@ -41,7 +41,7 @@ export class ServiceProxy {
   /**
    * Subscribe the event the server will reply on. Idempotent, because several NUI
    * actions can map to one server action — `deleteConversation` and `leaveConversation`
-   * both reply on `gos:client:conversations:deleted`.
+   * both reply on `mica:client:conversations:deleted`.
    */
   private subscribeResponse(responseEvent: string) {
     if (this.subscribed.has(responseEvent)) return;
@@ -63,11 +63,11 @@ export class ServiceProxy {
 
     const target = parseRequestEvent(serverEvent);
     if (!target) {
-      // A server event outside the gos:server:<service>:<action> convention has no
+      // A server event outside the mica:server:<service>:<action> convention has no
       // derivable reply, so a caller would hang. Refuse loudly at startup instead.
       throw new Error(
         `[ServiceProxy:${this.serviceName}] '${serverEvent}' does not match ` +
-          'gos:server:<service>:<action>, so its response event cannot be derived.'
+          'mica:server:<service>:<action>, so its response event cannot be derived.'
       );
     }
     this.subscribeResponse(responseEventFor(target.service, target.action));

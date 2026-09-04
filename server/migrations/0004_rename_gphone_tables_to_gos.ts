@@ -10,7 +10,7 @@ import { Database } from '../lib/Database';
  *
  * The rename moved the table prefix in `defineService`, so a server that upgrades has a
  * schema full of `gphone_*` tables and a resource that will only ever ask for `gos_*`.
- * Without this it does not fail loudly — `gosschema apply`'s additive half simply creates
+ * Without this it does not fail loudly — `micaschema apply`'s additive half simply creates
  * the new tables empty beside the old ones, and every player looks like a fresh install
  * with their messages, contacts and photos still sitting in tables nothing reads.
  *
@@ -26,7 +26,7 @@ import { Database } from '../lib/Database';
  *
  * **Skips a name already taken.** If both `gphone_notes` and `gos_notes` exist — an
  * operator who started the server once on the new code before running this — renaming
- * onto the occupied name errors and aborts the rest of `gosschema apply`. The empty new
+ * onto the occupied name errors and aborts the rest of `micaschema apply`. The empty new
  * table is the one worth losing, but this migration will not make that choice on an
  * operator's behalf: it leaves the pair alone and says so, so the operator can look.
  *

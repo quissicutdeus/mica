@@ -6,7 +6,7 @@ import { onMount } from 'svelte';
 import { guarded } from './guard';
 
 /**
- * Executes a callback when the application component mounts into the gOS shell.
+ * Executes a callback when the application component mounts into the micaOS shell.
  */
 export function onAppMount(handler: () => void): void {
   try {

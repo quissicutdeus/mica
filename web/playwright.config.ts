@@ -105,7 +105,7 @@ export default defineConfig({
       origins: [
         {
           origin: `http://127.0.0.1:${PORT}`,
-          localStorage: [{ name: 'gos:settings:privacyNoticeSeen', value: 'true' }]
+          localStorage: [{ name: 'mica:settings:privacyNoticeSeen', value: 'true' }]
         }
       ]
     }
@@ -187,7 +187,7 @@ export default defineConfig({
           origins: [
             {
               origin: `http://127.0.0.1:${PORT}`,
-              localStorage: [{ name: 'gos:settings:privacyNoticeSeen', value: 'true' }]
+              localStorage: [{ name: 'mica:settings:privacyNoticeSeen', value: 'true' }]
             }
           ]
         }
@@ -219,10 +219,10 @@ export default defineConfig({
               origin: `http://127.0.0.1:${PORT}`,
               localStorage: [
                 {
-                  name: 'gos:settings:theme',
+                  name: 'mica:settings:theme',
                   value: JSON.stringify({ seed: '#155dfc', mode: 'light' })
                 },
-                { name: 'gos:settings:privacyNoticeSeen', value: 'true' }
+                { name: 'mica:settings:privacyNoticeSeen', value: 'true' }
               ]
             }
           ]

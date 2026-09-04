@@ -7,7 +7,7 @@ import fs from 'fs';
 import path from 'path';
 
 const MIGRATIONS_DIR = path.join(__dirname, '..', 'migrations');
-const GOS_SQL = path.join(__dirname, '..', '..', 'gos.sql');
+const MICA_SQL = path.join(__dirname, '..', '..', 'mica.sql');
 
 const migrationIdsOnDisk = (): string[] =>
   fs
@@ -17,12 +17,12 @@ const migrationIdsOnDisk = (): string[] =>
     .toSorted();
 
 describe('the migrations ledger seed stays in sync with server/migrations/', () => {
-  it('lists every migration id in the generated gos.sql seed', () => {
+  it('lists every migration id in the generated mica.sql seed', () => {
     const ids = migrationIdsOnDisk();
     // Nothing to check yet: no breaking schema change has needed one (AGENTS.md §8).
     if (ids.length === 0) return;
 
-    const sql = fs.readFileSync(GOS_SQL, 'utf8');
+    const sql = fs.readFileSync(MICA_SQL, 'utf8');
     for (const id of ids) {
       expect(sql).toContain(`('${id}')`);
     }

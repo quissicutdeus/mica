@@ -5,12 +5,12 @@
 import { Repository } from './Repository';
 import { AuditLogger } from './AuditLogger';
 import { type CallbackId, requirePositiveInt } from './payload';
-import { requestEventFor, responseEventFor } from '@gos/shared/rpc';
+import { requestEventFor, responseEventFor } from '@mica/shared/rpc';
 import { FrameworkBridge, FrameworkPlayer } from './FrameworkBridge';
 import { registerCustomAction, registerService } from './services';
 import { allow, installRateLimitCleanup } from './rateLimit';
-import { type ActionInput, type ContractAction, type ServiceContract } from '@gos/shared/contract';
-import { parseInput, SchemaError, type Schema } from '@gos/shared/schema';
+import { type ActionInput, type ContractAction, type ServiceContract } from '@mica/shared/contract';
+import { parseInput, SchemaError, type Schema } from '@mica/shared/schema';
 import { GENERIC_ERROR_KEY, GENERIC_ERROR_MESSAGE, PlayerFacingError } from './errors';
 
 // Once per process, not once per service: `on('playerDropped')` would otherwise be registered
@@ -58,7 +58,7 @@ export interface ServiceOptions<C extends ServiceContract = ServiceContract> {
    *
    * An owner-scoped read narrows for a different reason than a public one: not because the
    * caller may not see the column, but because a list has no use for it and it is expensive
-   * — `gos_media.data` is a whole base64 photo per row (MICA-110). The row is still the
+   * — `mica_media.data` is a whole base64 photo per row (MICA-110). The row is still the
    * caller's own, so what is withheld here is withheld from the *list*, not from them.
    */
   listColumns?: readonly string[];
@@ -68,7 +68,7 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
   constructor(
     private serviceName: string,
     /**
-     * Null for a service with no gOS-owned table — Bank reads another resource's
+     * Null for a service with no micaOS-owned table — Bank reads another resource's
      * export instead. Such a service must disable every generic CRUD action.
      */
     private repo: Repository<T> | null,
@@ -94,7 +94,7 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
    *
    * Iterates the allowlist rather than the payload, so a hostile key never gets
    * inspected at all — it simply has no slot to land in. Values must be scalars:
-   * no gos column takes a structured value, and handing an object or array to
+   * no mica column takes a structured value, and handing an object or array to
    * the driver as a bound parameter has no well-defined meaning.
    */
   private pickColumns(data: unknown, allowed: readonly string[]): Record<string, unknown> {
@@ -333,7 +333,7 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
               service: this.serviceName,
               method: 'delete',
               targetId: id,
-              targetTable: this.options.tableName || `gos_${this.serviceName}`
+              targetTable: this.options.tableName || `mica_${this.serviceName}`
             });
             if (this.options.onAfterDelete) {
               await this.options.onAfterDelete(citizenid, id);

@@ -4,7 +4,7 @@
 
 import { registerFacet } from '../../../../sdk/host/current';
 import { fetchNui } from '../../nui/fetchNui';
-import { GENERIC_SERVICE_ACTION } from '@gos/shared/rpc';
+import { GENERIC_SERVICE_ACTION } from '@mica/shared/rpc';
 
 /**
  * Implementation of the `useService` facet — see the `useService` hook doc for the usage

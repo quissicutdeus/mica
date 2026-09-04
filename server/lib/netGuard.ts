@@ -13,11 +13,11 @@ import { allow } from './rateLimit';
  * with no callback id, so they cannot go through the endpoint — and they had neither.
  * A modified client could drive any of them in a loop, as an unauthenticated source.
  *
- * Ten are gos-named, across `Phone.ts`, `Battery.ts`, `Contacts.ts`, `PhoneOpenState.ts`
+ * Ten are mica-named, across `Phone.ts`, `Battery.ts`, `Contacts.ts`, `PhoneOpenState.ts`
  * and `phoneItem.ts`. The eleventh is framework-named — `QBCore:Server:OnPlayerLoaded` in
  * `shell.ts` — and reaches this preamble through `loadedPlayerSource`. `docs/security.md`
  * explains why that category was missed for so long: an entry-point census organised by
- * gos event names has no row for an event somebody else named.
+ * mica event names has no row for an event somebody else named.
  *
  * **That category used to have three rows, and the drop is a smaller attack surface rather
  * than a recount.** `Settings.ts` and `Battery.ts` each registered the same framework event
@@ -26,7 +26,7 @@ import { allow } from './rateLimit';
  * through `onPlayerLoaded`, so they are handed a source that has already been established —
  * a subscriber cannot misread an identity it is never shown. `esx:playerLoaded` is
  * deliberately not in this list: it is registered with `on`, so it is not net-safe inside
- * gOS and no client can reach it.
+ * micaOS and no client can reach it.
  *
  * Recount rather than trusting this comment, which has been wrong before:
  * `grep -rn "onNet(" server --include="*.ts" | grep -v __tests__`. That returns thirteen
@@ -41,7 +41,7 @@ import { allow } from './rateLimit';
  * looking it up twice is how the two checks drift apart.
  *
  * ```ts
- * onNet('gos:server:phone:answer', () => {
+ * onNet('mica:server:phone:answer', () => {
  *   const player = guardNetEvent('phone', 'answer');
  *   if (!player) return;
  *   …

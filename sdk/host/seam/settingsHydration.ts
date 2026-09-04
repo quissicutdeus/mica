@@ -24,7 +24,7 @@
  * The no-op default is the honest answer for a frame rather than a fallback for a mistake:
  * an add-on's settings are already hydrated by the time its code runs.
  *
- * `registerSettingsHydrator` is **not** exported from `@gos/sdk` — it is not in
+ * `registerSettingsHydrator` is **not** exported from `@mica/sdk` — it is not in
  * `host/index.ts` (the barrel covers `host/*.ts`, not `host/seam/*.ts`) and nothing
  * re-exports it. `publicSurface.test.ts` is what would notice if that changed.
  */

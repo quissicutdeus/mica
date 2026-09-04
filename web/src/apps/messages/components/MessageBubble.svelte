@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { MediaThumb, useLocation, useAppAction, useLocale } from '@gos/sdk';
+  import { MediaThumb, useLocation, useAppAction, useLocale } from '@mica/sdk';
   import {
     useNavigation,
     useContacts,
@@ -21,8 +21,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     EditIcon,
     ReplyIcon,
     TrashIcon
-  } from '@gos/sdk';
-  import type { Contact, MediaPreview, ReactionSummary } from '@gos/shared/types';
+  } from '@mica/sdk';
+  import type { Contact, MediaPreview, ReactionSummary } from '@mica/shared/types';
 
   const { openApp } = useNavigation();
   const { contactsStore: contacts } = useContacts();
@@ -142,7 +142,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 {#if reporting}
   <ReportDialog
-    targetTable="gos_messages"
+    targetTable="mica_messages"
     targetId={msg.id}
     appId="messages"
     onclose={() => (reporting = false)}

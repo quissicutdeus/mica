@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import type { ReportCategory } from '@gos/shared/types';
+import type { ReportCategory } from '@mica/shared/types';
 
 /** What `Facets['report']` files. MICA-172 — see `./accounts.ts`. */
 export interface SubmitReportInput {

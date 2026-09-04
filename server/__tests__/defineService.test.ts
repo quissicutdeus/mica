@@ -20,7 +20,7 @@ vi.mock('../lib/Database', () => ({ Database: dbMock }));
 vi.mock('../lib/FrameworkBridge', () => bridgeMock);
 vi.mock('../lib/AuditLogger', () => auditMock);
 
-import { CITIZENID_MAX_LENGTH, citizenIdFromIdentifier } from '@gos/shared/framework';
+import { CITIZENID_MAX_LENGTH, citizenIdFromIdentifier } from '@mica/shared/framework';
 
 import {
   resolveAppSchema,
@@ -54,8 +54,8 @@ describe('resolveAppSchema — derived lists', () => {
     ]);
   });
 
-  it('defaults the table name to gos_<id>', () => {
-    expect(resolveAppSchema(notesDefinition).table).toBe('gos_notes');
+  it('defaults the table name to mica_<id>', () => {
+    expect(resolveAppSchema(notesDefinition).table).toBe('mica_notes');
     expect(resolveAppSchema({ ...notesDefinition, table: 'custom' }).table).toBe('custom');
   });
 
@@ -149,7 +149,7 @@ describe('resolveAppSchema — derived lists', () => {
       access: {
         read: 'members',
         write: 'members',
-        membership: { table: 'gos_members', foreignKey: 'parent_id' }
+        membership: { table: 'mica_members', foreignKey: 'parent_id' }
       },
       schema: { name: 'string' }
     });
@@ -164,13 +164,13 @@ describe('resolveAppSchema — derived lists', () => {
       access: {
         read: 'members',
         write: 'members',
-        membership: { table: 'gos_ride_members', foreignKey: 'ride_id' }
+        membership: { table: 'mica_ride_members', foreignKey: 'ride_id' }
       },
       schema: { destination: 'string' }
     });
 
     expect(resolved.membership).toEqual({
-      table: 'gos_ride_members',
+      table: 'mica_ride_members',
       foreignKey: 'ride_id',
       localKey: 'id',
       citizenColumn: 'citizenid',
@@ -197,7 +197,7 @@ describe('resolveAppSchema — derived lists', () => {
         access: {
           read: 'members',
           write: 'members',
-          membership: { table: 'gos_selfref', foreignKey: 'parent_id' }
+          membership: { table: 'mica_selfref', foreignKey: 'parent_id' }
         },
         schema: { label: 'string' }
       })
@@ -213,7 +213,7 @@ describe('resolveAppSchema — derived lists', () => {
         access: {
           read: 'members',
           write: 'members',
-          membership: { table: 'gos_m; DROP TABLE users', foreignKey: 'parent_id' }
+          membership: { table: 'mica_m; DROP TABLE users', foreignKey: 'parent_id' }
         },
         schema: { label: 'string' }
       })
@@ -305,7 +305,7 @@ describe('buildRepository — inherits every Phase 1 guarantee', () => {
  * `private` narrows the generic list read on **both** access axes (MICA-110).
  *
  * It began as a public-read rule — an app-specific secret on an otherwise public table —
- * and the weight case is the second reason a column earns it: `gos_media.data` is a
+ * and the weight case is the second reason a column earns it: `mica_media.data` is a
  * whole base64 photo, so an unprojected owner read shipped hundreds of kilobytes a row to
  * draw a grid of 123px tiles. The ownership predicate bounds *who* may read, and nothing
  * about *how much*.
@@ -373,10 +373,10 @@ describe('defineService — event registration', () => {
     const events = mountAndCapture({ id: 'owned_a', schema: { label: 'string' } });
 
     expect(events.toSorted()).toEqual([
-      'gos:server:owned_a:create',
-      'gos:server:owned_a:delete',
-      'gos:server:owned_a:get',
-      'gos:server:owned_a:update'
+      'mica:server:owned_a:create',
+      'mica:server:owned_a:delete',
+      'mica:server:owned_a:get',
+      'mica:server:owned_a:update'
     ]);
   });
 
@@ -390,7 +390,7 @@ describe('defineService — event registration', () => {
       access: {
         read: 'members',
         write: 'members',
-        membership: { table: 'gos_shared_a_members', foreignKey: 'parent_id' }
+        membership: { table: 'mica_shared_a_members', foreignKey: 'parent_id' }
       },
       schema: { label: 'string' }
     });
@@ -408,8 +408,8 @@ describe('defineService — event registration', () => {
     });
 
     expect(events.toSorted()).toEqual([
-      'gos:server:authored_a:delete',
-      'gos:server:authored_a:get'
+      'mica:server:authored_a:delete',
+      'mica:server:authored_a:get'
     ]);
   });
 
@@ -420,11 +420,11 @@ describe('defineService — event registration', () => {
       options: { disableUpdate: true, disableDelete: true }
     });
 
-    expect(events.toSorted()).toEqual(['gos:server:owned_b:create', 'gos:server:owned_b:get']);
+    expect(events.toSorted()).toEqual(['mica:server:owned_b:create', 'mica:server:owned_b:get']);
   });
 
   it('audits a delete against the declared table, not the id-derived default', async () => {
-    // ServiceEndpoint defaults targetTable to `gos_<appName>`. An app with a custom table
+    // ServiceEndpoint defaults targetTable to `mica_<appName>`. An app with a custom table
     // would otherwise log deletions against a table that does not exist.
     const handlers = new Map<string, (cbId: string, data: unknown) => Promise<void>>();
     (globalThis as Record<string, unknown>).onNet = (event: string, cb: any) => {
@@ -438,7 +438,7 @@ describe('defineService — event registration', () => {
     auditMock.AuditLogger.log.mockClear();
 
     defineService({ id: 'owned_d', table: 'legacy_table', schema: { label: 'string' } });
-    await handlers.get('gos:server:owned_d:delete')!('cb-1', { id: 3 });
+    await handlers.get('mica:server:owned_d:delete')!('cb-1', { id: 3 });
 
     expect(auditMock.AuditLogger.log).toHaveBeenCalledWith(
       expect.objectContaining({ targetTable: 'legacy_table', targetId: 3, citizenid: 'CIT_A' })
@@ -454,10 +454,10 @@ describe('defineService — event registration', () => {
   });
 
   it('refuses two apps declaring the same table', () => {
-    defineService({ id: 'first_owner', table: 'gos_contested', schema: { a: 'string' } });
+    defineService({ id: 'first_owner', table: 'mica_contested', schema: { a: 'string' } });
 
     expect(() =>
-      defineService({ id: 'second_owner', table: 'gos_contested', schema: { b: 'string' } })
+      defineService({ id: 'second_owner', table: 'mica_contested', schema: { b: 'string' } })
     ).toThrow(/already declared by another app/);
   });
 });
@@ -513,7 +513,7 @@ describe('child tables', () => {
           message_id: {
             type: 'int' as const,
             notNull: true,
-            references: { table: 'gos_messages', column: 'id' }
+            references: { table: 'mica_messages', column: 'id' }
           },
           kind: { type: 'enum' as const, values: ['photo', 'file'], notNull: true },
           seen_at: { type: 'timestamp' as const },
@@ -532,7 +532,7 @@ describe('child tables', () => {
   it('emits the child table after the primary one, so foreign keys resolve', () => {
     const file = toSqlFile(resolveAppSchema(messagesish));
 
-    expect(file.indexOf('`gos_threads`')).toBeLessThan(file.indexOf('`thread_attachments`'));
+    expect(file.indexOf('`mica_threads`')).toBeLessThan(file.indexOf('`thread_attachments`'));
   });
 
   it('gives a child table no implicit status or citizenid', () => {
@@ -564,7 +564,7 @@ describe('child tables', () => {
     expect(sql).toContain(
       'CONSTRAINT `fk_thread_attachments_message_id` FOREIGN KEY (`message_id`)'
     );
-    expect(sql).toContain('REFERENCES `gos_messages` (`id`) ON DELETE CASCADE');
+    expect(sql).toContain('REFERENCES `mica_messages` (`id`) ON DELETE CASCADE');
   });
 
   it('honors a non-cascading onDelete', () => {
@@ -604,7 +604,7 @@ describe('child tables', () => {
       resolveAppSchema({
         id: 'x',
         schema: { a: 'string' },
-        childTables: [{ name: 'gos_x', columns: { b: 'string' } }]
+        childTables: [{ name: 'mica_x', columns: { b: 'string' } }]
       })
     ).toThrow(/collides with the primary table/);
   });
@@ -754,15 +754,15 @@ describe('toSqlFile', () => {
 
     expect(file).toContain("-- Generated from the 'notes' defineService declaration.");
     expect(file).toContain('Do not edit by hand');
-    expect(file).toContain('CREATE TABLE IF NOT EXISTS `gos_notes`');
+    expect(file).toContain('CREATE TABLE IF NOT EXISTS `mica_notes`');
   });
 });
 
 describe('toCreateTableSql', () => {
   const sql = toCreateTableSql(resolveAppSchema(notesDefinition));
 
-  it('reproduces the shape of the hand-written gos_notes table', () => {
-    expect(sql).toContain('CREATE TABLE IF NOT EXISTS `gos_notes`');
+  it('reproduces the shape of the hand-written mica_notes table', () => {
+    expect(sql).toContain('CREATE TABLE IF NOT EXISTS `mica_notes`');
     expect(sql).toContain('`id` int(11) NOT NULL AUTO_INCREMENT');
     expect(sql).toContain(`\`citizenid\` varchar(${CITIZENID_MAX_LENGTH}) NOT NULL`);
     expect(sql).toContain('`title` varchar(255) DEFAULT NULL');
@@ -950,7 +950,7 @@ describe('resolveAppSchema — public reads and paging', () => {
       schema: { body: 'string' }
     });
 
-    expect(registered).toContain('gos:server:feed_b:get');
+    expect(registered).toContain('mica:server:feed_b:get');
   });
 });
 

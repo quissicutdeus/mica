@@ -7,8 +7,8 @@ import { compareVersions } from '../../lib/phone/semver';
 import { fetchCatalog, getRemoteCatalogUrl, type CatalogEntry } from '../../../../sdk/catalog';
 import { appRegistryStore } from './registry';
 import type { AppManifest } from '../../../../sdk/manifest';
-import type { AppUpdate } from '@gos/sdk';
-import { messageOf } from '@gos/sdk';
+import type { AppUpdate } from '@mica/sdk';
+import { messageOf } from '@mica/sdk';
 
 /**
  * Whether an installed add-on has fallen behind the catalog.
@@ -113,7 +113,7 @@ export async function refreshAppUpdates(): Promise<AppUpdate[]> {
     catalogSnapshot.set(await fetchCatalog(catalogUrl));
   } catch (error) {
     console.warn(
-      `gOS Store: could not check '${catalogUrl}' for add-on updates:`,
+      `micaOS Store: could not check '${catalogUrl}' for add-on updates:`,
       messageOf(error, 'unknown error')
     );
   }

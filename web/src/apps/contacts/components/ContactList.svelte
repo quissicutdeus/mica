@@ -13,7 +13,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     StarIcon,
     useLocale,
     type Contact
-  } from '@gos/sdk';
+  } from '@mica/sdk';
 
   const { t } = useLocale();
 

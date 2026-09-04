@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { Button, useLocale } from '@gos/sdk';
+  import { Button, useLocale } from '@mica/sdk';
 
   /**
    * `oncancel` is optional, and its absence is the point.

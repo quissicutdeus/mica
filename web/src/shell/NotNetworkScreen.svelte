@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script lang="ts">
   import { t } from './messages';
-  import { EmptyState, Screen } from '@gos/sdk';
+  import { EmptyState, Screen } from '@mica/sdk';
 
   let { title, onback }: { title: string; onback: () => void } = $props();
 </script>

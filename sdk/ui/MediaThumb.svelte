@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import type { MediaPreview } from '@gos/shared/types';
+  import type { MediaPreview } from '@mica/shared/types';
   import DocumentIcon from './icons/DocumentIcon.svelte';
   import LinkIcon from './icons/LinkIcon.svelte';
   import LocationIcon from './icons/LocationIcon.svelte';
@@ -17,7 +17,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   /**
    * One media row, drawn by its `kind`.
    *
-   * `gos_media` holds seven kinds and every surface that shows one — the gallery grid,
+   * `mica_media` holds seven kinds and every surface that shows one — the gallery grid,
    * the full view, the picker, a message attachment — needs the same answer to "what does
    * this look like". Four copies of that answer is four places to forget `kind` exists,
    * which is how a video ends up rendering as a broken `<img>`.

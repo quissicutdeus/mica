@@ -5,9 +5,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { Avatar, EmptyState, ListItem, Skeleton, usePagedList } from '@gos/sdk';
+  import { Avatar, EmptyState, ListItem, Skeleton, usePagedList } from '@mica/sdk';
   import { useBlabber } from '../store';
-  import type { Account } from '@gos/shared/types';
+  import type { Account } from '@mica/shared/types';
 
   /**
    * Who follows an account, or who it follows.

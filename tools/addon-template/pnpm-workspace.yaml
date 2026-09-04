@@ -1,19 +1,19 @@
 # A one-package project with a workspace file, for two settings that have nowhere else to
-# live under pnpm 11. Both exist because `@gos/sdk` and `@gos/shared` are unpublished
+# live under pnpm 11. Both exist because `@mica/sdk` and `@mica/shared` are unpublished
 # — see the "Two packages, neither published" section of README.md, which is the whole
 # story. Do not delete this file: without it `pnpm install` fails, and it fails while
-# talking about `workspace:*`, which is a sentence about gOS's repo rather than yours.
+# talking about `workspace:*`, which is a sentence about micaOS's repo rather than yours.
 
-# `@gos/sdk`'s own package.json declares `"@gos/shared": "workspace:*"`, which means
-# "the copy in gOS's monorepo" and resolves to nothing outside it. This redirects that
+# `@mica/sdk`'s own package.json declares `"@mica/shared": "workspace:*"`, which means
+# "the copy in micaOS's monorepo" and resolves to nothing outside it. This redirects that
 # one specifier at the same git source you are pulling the SDK from, so the SDK and the
 # shared vocabulary come from the same commit. Keep the two refs in step: a mismatch is a
 # type error at best and a silently wrong wire vocabulary at worst.
 overrides:
-  '@gos/shared': 'github:quissicutdeus/gos#dev&path:/shared'
+  '@mica/shared': 'github:quissicutdeus/mica#dev&path:/shared'
 
 # The override above installs a git dependency for something that is a *sub*dependency (of
-# @gos/sdk), which pnpm 11 refuses by default. That default is a supply-chain guard and
+# @mica/sdk), which pnpm 11 refuses by default. That default is a supply-chain guard and
 # turning it off is a real, if narrow, cost of the unpublished-package situation: it applies
 # to this project as a whole, not just to the one override that needs it.
 blockExoticSubdeps: false

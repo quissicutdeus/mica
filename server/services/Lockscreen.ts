@@ -6,7 +6,7 @@ import { PlayerFacingError } from '../lib/errors';
 import { randomBytes, scrypt } from 'node:crypto';
 import { defineService, SchemaRepository } from '../lib/defineService';
 import { Database } from '../lib/Database';
-import { lockscreenContract } from '@gos/shared/contracts/lockscreen';
+import { lockscreenContract } from '@mica/shared/contracts/lockscreen';
 
 /**
  * The lock screen's passcode (MICA-60): display state, not a security boundary. Nothing
@@ -16,7 +16,7 @@ import { lockscreenContract } from '@gos/shared/contracts/lockscreen';
  * server is asked "is this the passcode?" and answers a bare boolean, never anything a
  * client could use to narrow down the value.
  *
- * A dedicated tiny service rather than a column on `gos_settings` (`Settings.ts`'s
+ * A dedicated tiny service rather than a column on `mica_settings` (`Settings.ts`'s
  * `findAllForPlayer` selects every key a player owns and ships the lot back to hydrate the
  * UI) — a passcode hash sitting in that table would cross the wire to its own owner on
  * every load, which is exactly the "never sent back to the client in any form" this ticket
@@ -26,7 +26,7 @@ import { lockscreenContract } from '@gos/shared/contracts/lockscreen';
 export class LockscreenRepository extends SchemaRepository<LockscreenRow> {
   async findByCitizenId(citizenid: string): Promise<LockscreenRow | null> {
     return await Database.single<LockscreenRow>(
-      `SELECT * FROM gos_lockscreen WHERE citizenid = ?`,
+      `SELECT * FROM mica_lockscreen WHERE citizenid = ?`,
       [citizenid]
     );
   }
@@ -40,7 +40,7 @@ export class LockscreenRepository extends SchemaRepository<LockscreenRow> {
    */
   async upsert(citizenid: string, hash: string, salt: string): Promise<void> {
     await Database.query(
-      `INSERT INTO gos_lockscreen (citizenid, passcode_hash, passcode_salt, status, created_at, updated_at)
+      `INSERT INTO mica_lockscreen (citizenid, passcode_hash, passcode_salt, status, created_at, updated_at)
        VALUES (?, ?, ?, 'active', NOW(), NOW())
        ON DUPLICATE KEY UPDATE passcode_hash = VALUES(passcode_hash),
          passcode_salt = VALUES(passcode_salt), status = 'active', updated_at = NOW()`,
@@ -50,7 +50,7 @@ export class LockscreenRepository extends SchemaRepository<LockscreenRow> {
 
   /** Hard delete: an unset passcode is not a row to keep around, and there is nothing to audit. */
   async clear(citizenid: string): Promise<void> {
-    await Database.query(`DELETE FROM gos_lockscreen WHERE citizenid = ?`, [citizenid]);
+    await Database.query(`DELETE FROM mica_lockscreen WHERE citizenid = ?`, [citizenid]);
   }
 }
 
@@ -132,7 +132,7 @@ const KEY_LENGTH = 32;
  * action a player takes when they open their phone and never in a loop. An operator on weak
  * hardware turns it down; one who cares more than we do turns it up.
  */
-const COST_CONVAR = 'gos_lockscreen_scrypt_cost';
+const COST_CONVAR = 'mica_lockscreen_scrypt_cost';
 const DEFAULT_COST = 16384;
 const BLOCK_SIZE = 8;
 
@@ -143,7 +143,7 @@ const scryptCost = (): number => {
   // falls back to the default and says so once.
   if (!Number.isInteger(raw) || raw < 2 || (raw & (raw - 1)) !== 0) {
     console.warn(
-      `[gOS] ${COST_CONVAR} is '${GetConvar(COST_CONVAR, '')}', which is not a power of ` +
+      `[micaOS] ${COST_CONVAR} is '${GetConvar(COST_CONVAR, '')}', which is not a power of ` +
         `two of at least 2. Using ${DEFAULT_COST}.`
     );
     return DEFAULT_COST;
@@ -216,7 +216,7 @@ const timingSafeStringEqual = (a: string, b: string): boolean => {
  * A successful entry clears the streak: the limit exists to price guessing, and somebody who
  * just proved they know the passcode is not guessing.
  */
-const ATTEMPTS_CONVAR = 'gos_lockscreen_max_attempts';
+const ATTEMPTS_CONVAR = 'mica_lockscreen_max_attempts';
 const DEFAULT_MAX_ATTEMPTS = 5;
 const LOCKOUT_MS = 60_000;
 

@@ -17,7 +17,7 @@
  * to the NUI and knows nothing about zones, which is the point: a client that cannot see
  * them cannot decide it is outside one.
  */
-onNet('gos:client:signal:set', (level: unknown) => {
+onNet('mica:client:signal:set', (level: unknown) => {
   const bars = Number(level);
   if (!Number.isFinite(bars)) return;
 

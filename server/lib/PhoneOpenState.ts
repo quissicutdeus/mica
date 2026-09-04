@@ -29,7 +29,7 @@ export const isPhoneOpen = (source: number): boolean => open.get(source) ?? fals
  * state is "the phone's" here — one frame is ever up at a time, so this is at worst the
  * tablet answering for the phone, never two answers.
  */
-onNet('gos:server:shell:setOpen', (payload: unknown) => {
+onNet('mica:server:shell:setOpen', (payload: unknown) => {
   const player = guardNetEvent('shell', 'setOpen');
   if (!player) return;
   const isOpen =

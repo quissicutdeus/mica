@@ -3,15 +3,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { writable } from 'svelte/store';
-import { GOS_SOURCE_URL } from '@gos/sdk';
+import { MICA_SOURCE_URL } from '@mica/sdk';
 import { callOr } from '../nui/call';
-import { shellContract } from '@gos/shared/contracts/shell';
+import { shellContract } from '@mica/shared/contracts/shell';
 
 /**
  * Where this server says its source lives (MICA-192, AGPL §13).
  *
  * The default is upstream, and it is the honest answer for a server running an unmodified
- * copy — which is most of them. An operator running a fork sets `gos_source_url`, and
+ * copy — which is most of them. An operator running a fork sets `mica_source_url`, and
  * §13 is the reason they should: the obligation is theirs, and a phone pointing at this
  * repository tells their players something false about code they are actually running.
  *
@@ -19,7 +19,7 @@ import { shellContract } from '@gos/shared/contracts/shell';
  * resident once opened (AGENTS.md §11), so a value fetched on mount would be whatever it
  * was the first time the player ever looked.
  */
-export const sourceUrl = writable<string>(GOS_SOURCE_URL);
+export const sourceUrl = writable<string>(MICA_SOURCE_URL);
 
 /**
  * Ask the server, and keep the default if it does not answer.

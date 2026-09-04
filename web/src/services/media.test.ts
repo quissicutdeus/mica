@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { GENERIC_SERVICE_ACTION } from '@gos/shared/rpc';
+import { GENERIC_SERVICE_ACTION } from '@mica/shared/rpc';
 import { get } from 'svelte/store';
 import { media } from './media';
 import * as fetchNuiModule from '../nui/fetchNui';

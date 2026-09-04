@@ -3,7 +3,7 @@
   "entryPoints": ["../sdk/index.ts", "../sdk/addon.ts", "../sdk/app.ts", "../sdk/core.ts"],
   "tsconfig": "tsconfig.docs.json",
   "excludeExternals": true,
-  "name": "@gos/sdk",
+  "name": "@mica/sdk",
   "skipErrorChecking": true,
   "ignoredHighlightLanguages": ["svelte"]
 }

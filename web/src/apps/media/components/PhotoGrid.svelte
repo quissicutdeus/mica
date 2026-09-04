@@ -14,8 +14,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     usePagedList,
     useLocale,
     useMedia
-  } from '@gos/sdk';
-  import type { MediaItem } from '@gos/shared/types';
+  } from '@mica/sdk';
+  import type { MediaItem } from '@mica/shared/types';
 
   const { t } = useLocale();
 

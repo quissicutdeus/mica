@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { isBrowser } from '@gos/sdk';
+import { isBrowser } from '@mica/sdk';
 
 interface DebugEvent {
   action: string;

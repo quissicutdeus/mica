@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { GOS_BRANCH } from './version';
+import { MICA_BRANCH } from './version';
 
 /**
  * MICA-192, stage 5: the licence, said in the phone rather than only in the repository.
@@ -31,11 +31,11 @@ export const LICENSE_NAME = 'GNU Affero General Public License v3.0 or later';
 export const LICENSE_SPDX = 'AGPL-3.0-or-later';
 
 export const LICENSE_WARRANTY =
-  'gOS is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; ' +
+  'micaOS is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; ' +
   'without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.';
 
 export const LICENSE_FREEDOMS =
-  'gOS is free software. You may redistribute and modify it under the terms of the GNU ' +
+  'micaOS is free software. You may redistribute and modify it under the terms of the GNU ' +
   'Affero General Public License as published by the Free Software Foundation, either ' +
   'version 3 of the License, or (at your option) any later version.';
 
@@ -51,7 +51,7 @@ export const LICENSE_SOURCE_OFFER =
   'its source; the address below is where this build says its source lives.';
 
 /** The upstream repository, and the default an operator has not overridden. */
-export const GOS_SOURCE_URL = 'https://github.com/quissicutdeus/gos';
+export const MICA_SOURCE_URL = 'https://github.com/quissicutdeus/mica';
 
 /**
  * Where the running build's source lives.
@@ -64,13 +64,13 @@ export const GOS_SOURCE_URL = 'https://github.com/quissicutdeus/gos';
  * `v<calver> (<branch>@<commit>)`, so a reader has both the precise version and a URL that
  * works.
  *
- * `base` is the operator's own repository once `gos_source_url` reaches this (still to
+ * `base` is the operator's own repository once `mica_source_url` reaches this (still to
  * come); until then every phone points at upstream, which is the honest answer for a server
  * running an unmodified copy and the wrong one for a fork. That gap is why the offer above
  * says "where this build *says* its source lives" rather than asserting it.
  */
-export function sourceUrlForBuild(base: string = GOS_SOURCE_URL): string {
+export function sourceUrlForBuild(base: string = MICA_SOURCE_URL): string {
   const repository = base.replace(/\/+$/, '');
-  if (!GOS_BRANCH) return repository;
-  return `${repository}/tree/${GOS_BRANCH}`;
+  if (!MICA_BRANCH) return repository;
+  return `${repository}/tree/${MICA_BRANCH}`;
 }

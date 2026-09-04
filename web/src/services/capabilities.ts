@@ -4,8 +4,8 @@
 
 import { writable } from 'svelte/store';
 import { call } from '../nui/call';
-import { shellContract } from '@gos/shared/contracts/shell';
-import { isBrowser } from '@gos/sdk';
+import { shellContract } from '@mica/shared/contracts/shell';
+import { isBrowser } from '@mica/sdk';
 import { ALL_CAPABILITIES, type AppCapability } from '../../../sdk/manifest';
 import type { CapabilitySet } from '../lib/phone/appVisibility';
 

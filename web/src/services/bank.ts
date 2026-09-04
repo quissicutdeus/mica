@@ -3,8 +3,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { call } from '../nui/call';
-import { bankContract } from '@gos/shared/contracts/bank';
-import type { SendMoneyInput, SendMoneyOutcome } from '@gos/sdk';
+import { bankContract } from '@mica/shared/contracts/bank';
+import type { SendMoneyInput, SendMoneyOutcome } from '@mica/sdk';
 
 /**
  * Sending money, kept out of `services/account.ts` on purpose.

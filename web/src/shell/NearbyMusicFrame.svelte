@@ -56,7 +56,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    */
   import MusicFrame from './MusicFrame.svelte';
   import { embedUrlFor, musicOutputVolume, playerCommand } from './state/music';
-  import type { AudibleBroadcast } from '@gos/sdk';
+  import type { AudibleBroadcast } from '@mica/sdk';
 
   interface Props {
     broadcast: AudibleBroadcast;

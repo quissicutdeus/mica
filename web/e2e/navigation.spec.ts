@@ -9,7 +9,7 @@ test.describe('Phone Navigation & Home Screen', () => {
     await page.goto('/');
   });
 
-  test('displays gOS header and app icons grid on home screen', async ({ page }) => {
+  test('displays micaOS header and app icons grid on home screen', async ({ page }) => {
     await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
     // Scoped to the home screen region, not a bare `.grid` — `Dock.svelte`'s own icon
     // row is a CSS grid too now (aligned to the home grid's own columns), so an

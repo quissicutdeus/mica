@@ -22,7 +22,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     useLocale,
     useLockScreen,
     useLockScreenWrite
-  } from '@gos/sdk';
+  } from '@mica/sdk';
 
   const { t } = useLocale();
   const { hasPasscode, autoLockPolicy, autoLockPolicyChoices } = useLockScreen();

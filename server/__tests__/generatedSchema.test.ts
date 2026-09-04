@@ -16,13 +16,13 @@ import { toSqlFile, SCHEMA_MIGRATIONS_TABLE, OWNER_TABLE } from '../lib/schemaSq
 import '../services/index';
 
 /**
- * `gos.sql` is generated, committed, and **imported by hand on a fresh install** —
+ * `mica.sql` is generated, committed, and **imported by hand on a fresh install** —
  * nothing regenerates it, and no suite has ever checked that it still matches the
  * declarations it came from.
  *
  * That makes drift both consequential and invisible. A column added to a `defineService`
  * without re-running `pnpm generate:sql` means a fresh install creates the table without
- * it, while every existing install — brought up to date by `gosschema apply`, which
+ * it, while every existing install — brought up to date by `micaschema apply`, which
  * reads the declarations rather than this file — is fine. Every suite stays green, every
  * developer machine stays working, and only a new server owner ever sees it.
  *
@@ -41,11 +41,11 @@ import '../services/index';
  * MySQL import proves the file is valid SQL.
  */
 
-const GOS_SQL = path.join(__dirname, '..', '..', 'gos.sql');
-const sql = fs.readFileSync(GOS_SQL, 'utf8');
+const MICA_SQL = path.join(__dirname, '..', '..', 'mica.sql');
+const sql = fs.readFileSync(MICA_SQL, 'utf8');
 
-const GOS_ESX_SQL = path.join(__dirname, '..', '..', 'gos.esx.sql');
-const esxSql = fs.readFileSync(GOS_ESX_SQL, 'utf8');
+const MICA_ESX_SQL = path.join(__dirname, '..', '..', 'mica.esx.sql');
+const esxSql = fs.readFileSync(MICA_ESX_SQL, 'utf8');
 
 /** The header `toSqlFile` stamps on each service's block, and our slice boundary. */
 const blockHeader = (id: string) => `-- Generated from the '${id}' defineService declaration.`;
@@ -68,7 +68,7 @@ function committedBlock(id: string): string | null {
   return sql.slice(start, end).trimEnd();
 }
 
-describe('gos.sql matches the declarations it was generated from', () => {
+describe('mica.sql matches the declarations it was generated from', () => {
   it('has at least one service to check', () => {
     // A mocked-away or reordered import graph would leave `declaredServices` empty, and
     // every `it.each` below would silently pass by running zero cases.
@@ -82,7 +82,7 @@ describe('gos.sql matches the declarations it was generated from', () => {
 
       expect(
         committed,
-        `gos.sql has no block for the '${id}' service. It was declared without running ` +
+        `mica.sql has no block for the '${id}' service. It was declared without running ` +
           '`pnpm generate:sql`, so a fresh install never creates its table.'
       ).not.toBeNull();
 
@@ -99,14 +99,14 @@ describe('gos.sql matches the declarations it was generated from', () => {
 
     // The two the generator emits with no `defineService` behind them: the moderation
     // audit ledger from `scripts/framework-schema.sql`, and the migrations ledger.
-    const undeclared = new Set(['gos_audit_logs', SCHEMA_MIGRATIONS_TABLE]);
+    const undeclared = new Set(['mica_audit_logs', SCHEMA_MIGRATIONS_TABLE]);
 
     const created = [...sql.matchAll(/CREATE TABLE IF NOT EXISTS `([^`]+)`/g)].map((m) => m[1]);
 
     const orphans = created.filter((table) => !declared.has(table) && !undeclared.has(table));
     expect(
       orphans,
-      'gos.sql creates tables nothing declares — a deleted or renamed service left ' +
+      'mica.sql creates tables nothing declares — a deleted or renamed service left ' +
         'behind, or a hand edit. Re-run `pnpm generate:sql`.'
     ).toEqual([]);
 
@@ -136,7 +136,7 @@ describe('gos.sql matches the declarations it was generated from', () => {
     for (const fk of sql.matchAll(/FOREIGN KEY \([^)]*\)\s*REFERENCES `([^`]+)`/g)) {
       const target = fk[1];
       const targetAt = createdAt.get(target);
-      // `players` and anything else gOS does not own is the server owner's problem,
+      // `players` and anything else micaOS does not own is the server owner's problem,
       // not this file's ordering.
       if (targetAt === undefined) continue;
       if (targetAt > fk.index) violations.push(`${tableAt(fk.index)} references ${target}`);
@@ -144,7 +144,7 @@ describe('gos.sql matches the declarations it was generated from', () => {
 
     expect(
       violations,
-      'gos.sql references a table it has not created yet; importing it fails with ' + 'errno 150.'
+      'mica.sql references a table it has not created yet; importing it fails with ' + 'errno 150.'
     ).toEqual([]);
   });
 });
@@ -152,17 +152,17 @@ describe('gos.sql matches the declarations it was generated from', () => {
 /**
  * The ESX artifact (MICA-150), under the same rules as its qb twin.
  *
- * `players(citizenid)` is qb's table; gOS references it and never creates it. ESX has no
- * such table, so a fresh `es_extended` server importing `gos.sql` fails part-way through
- * on the first of 22 constraints and gOS cannot be installed at all.
+ * `players(citizenid)` is qb's table; micaOS references it and never creates it. ESX has no
+ * such table, so a fresh `es_extended` server importing `mica.sql` fails part-way through
+ * on the first of 22 constraints and micaOS cannot be installed at all.
  *
- * `gos.esx.sql` is the same declarations with those constraints omitted, emitted in the
- * same pass so it cannot drift from the code or from `gos.sql`. The three properties below
+ * `mica.esx.sql` is the same declarations with those constraints omitted, emitted in the
+ * same pass so it cannot drift from the code or from `mica.sql`. The three properties below
  * are what make it safe: it is generated rather than hand-maintained, it contains no reference
  * to a table ESX does not have, and — the one that would be silent — it is *only* the owner
  * keys that went, not the cross-app ones the tables genuinely depend on.
  */
-describe('gos.esx.sql', () => {
+describe('mica.esx.sql', () => {
   const esxBlock = (id: string): string | null => {
     const start = esxSql.indexOf(blockHeader(id));
     if (start === -1) return null;
@@ -182,7 +182,7 @@ describe('gos.esx.sql', () => {
 
       expect(
         committed,
-        `gos.esx.sql has no block for the '${id}' service. Re-run \`pnpm generate:sql\`.`
+        `mica.esx.sql has no block for the '${id}' service. Re-run \`pnpm generate:sql\`.`
       ).not.toBeNull();
 
       expect(committed).toBe(toSqlFile(resolved, { ownerTable: false }).trimEnd());
@@ -210,7 +210,7 @@ describe('gos.esx.sql', () => {
   it('keeps every foreign key that is not onto players', () => {
     // The failure this catches is over-stripping: a pattern that removed all constraints
     // rather than the owner ones would still import cleanly on ESX and would silently give
-    // that server no referential integrity between gOS's own tables.
+    // that server no referential integrity between micaOS's own tables.
     const fksIn = (text: string) => [...text.matchAll(/REFERENCES `([^`]+)`/g)].map((m) => m[1]);
 
     const kept = fksIn(esxSql);

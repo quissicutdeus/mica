@@ -5,10 +5,10 @@
 import { writable, derived, get } from 'svelte/store';
 import { fetchNui } from '../nui/fetchNui';
 import { call, callOr } from '../nui/call';
-import { conversationsContract } from '@gos/shared/contracts/conversations';
-import { messagesContract } from '@gos/shared/contracts/messages';
-import type { Contact, Conversation } from '@gos/shared/types';
-import type { UIConversation, UIMessage } from '@gos/sdk';
+import { conversationsContract } from '@mica/shared/contracts/conversations';
+import { messagesContract } from '@mica/shared/contracts/messages';
+import type { Contact, Conversation } from '@mica/shared/types';
+import type { UIConversation, UIMessage } from '@mica/sdk';
 import { byNewest } from '../../../sdk/createCrudStore';
 import { createPagedStore, type PageReader } from '../../../sdk/createPagedStore';
 import { createReactionStore } from '../../../sdk/kit/createReactionStore';
@@ -718,9 +718,9 @@ export const unreadMessagesCount = derived(
 /**
  * Reactions on a message, on the shared primitive (MICA-98/MICA-143).
  *
- * `gos_messages_reactions` is its own child table under the `messages` service, keyed on
+ * `mica_messages_reactions` is its own child table under the `messages` service, keyed on
  * citizenid rather than an account — see `Messages.ts`'s docblock above
- * `requireReactableMessage` for why this is not `gos_account_reactions`. Messages is core,
+ * `requireReactableMessage` for why this is not `mica_account_reactions`. Messages is core,
  * so this reaches the server through the typed `call` against `messagesContract`
  * (`react`/`unreact`/`reactionsFor`) exactly like the rest of this file, rather than through a
  * facet the way Blabber's `dmReactions` must for a `core: false` add-on.

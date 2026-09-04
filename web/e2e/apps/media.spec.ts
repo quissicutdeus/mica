@@ -89,7 +89,7 @@ test.describe('Media App E2E', () => {
  * a byte count taken here would be a number about the fixtures and nothing else — and an
  * assertion like "the gallery is now small" would look like proof while proving the
  * opposite of what it claimed. The ticket says the same thing about its own measurement
- * step, and the one real measurement is `gosmedia` against a live library in game.
+ * step, and the one real measurement is `micamedia` against a live library in game.
  *
  * What is provable is the *structure*, and it holds at any fixture size: the list read
  * carries no payload column, the grid draws the small still, opening a photo fetches and

@@ -22,7 +22,7 @@
  * - `fields` survives for the two raw `onNet` handlers that never pass through
  *   `ServiceEndpoint` and so have no contract in front of them.
  *
- * Every id in a `gos:server:*` payload is still attacker-controlled (AGENTS.md §2.9); what
+ * Every id in a `mica:server:*` payload is still attacker-controlled (AGENTS.md §2.9); what
  * changed is where that is written down.
  */
 import { PlayerFacingError } from './errors';

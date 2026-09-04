@@ -69,12 +69,12 @@ import { FrameworkBridge, __setResourceLookup, detectFramework } from '../lib/Fr
 // `defineService`, so without this the derivation below has nothing to derive from.
 import '../services/index';
 
-const CHARACTER_DELETED_EVENT = 'gos:server:shell:characterDeleted';
+const CHARACTER_DELETED_EVENT = 'mica:server:shell:characterDeleted';
 
 /** The historical qb statement, from `pruneOrphanedMedia` as MICA-71 shipped it. */
-const GOS_71_MEDIA_DELETE =
-  'DELETE FROM gos_media WHERE NOT EXISTS ' +
-  '(SELECT 1 FROM players p WHERE p.citizenid = gos_media.citizenid)';
+const MICA_71_MEDIA_DELETE =
+  'DELETE FROM mica_media WHERE NOT EXISTS ' +
+  '(SELECT 1 FROM players p WHERE p.citizenid = mica_media.citizenid)';
 
 const QB = { table: 'players', column: 'citizenid' };
 const ESX = { table: 'users', column: 'identifier' };
@@ -99,7 +99,7 @@ const deletes = (): string[] =>
     .filter((sql) => sql.trimStart().startsWith('DELETE'));
 
 /**
- * A server where everything is answerable: characters exist, gOS has rows, and the
+ * A server where everything is answerable: characters exist, micaOS has rows, and the
  * sampled identities are found on the other side. Every fail-closed test below breaks
  * exactly one of those and asserts nothing is deleted.
  */
@@ -133,14 +133,14 @@ describe('which tables the sweep covers, and how that set is derived', () => {
    * service, and it goes stale *silently* — the new table is simply never swept, which
    * looks exactly like a table with nothing to sweep.
    *
-   * `gos.sql` is the committed artifact an operator imports, so holding the swept set
+   * `mica.sql` is the committed artifact an operator imports, so holding the swept set
    * against it asserts the thing that actually matters: every table that carries an owner
    * is covered, whether a declaration produced it or a hand-written file did. That is how
-   * `gos_audit_logs` — the one table with no `defineService` behind it — is kept honest
+   * `mica_audit_logs` — the one table with no `defineService` behind it — is kept honest
    * rather than trusted to a comment.
    */
-  it('covers exactly the tables in the committed gos.sql that carry a citizenid', () => {
-    const sql = readFileSync(join(__dirname, '..', '..', 'gos.sql'), 'utf8');
+  it('covers exactly the tables in the committed mica.sql that carry a citizenid', () => {
+    const sql = readFileSync(join(__dirname, '..', '..', 'mica.sql'), 'utf8');
 
     const withOwner = new Set<string>();
     let current: string | null = null;
@@ -164,39 +164,39 @@ describe('which tables the sweep covers, and how that set is derived', () => {
     // DDL-only — no repository, no events — so a derivation that walked only
     // `declaredServices[].table` would miss every one of them.
     for (const table of [
-      'gos_messages_participants',
-      'gos_messages_attachments',
-      'gos_marketplace_attachments',
-      'gos_blabber_attachments'
+      'mica_messages_participants',
+      'mica_messages_attachments',
+      'mica_marketplace_attachments',
+      'mica_blabber_attachments'
     ]) {
       expect(tables, table).toContain(table);
     }
   });
 
-  it('leaves the child tables that cascade off gOS’s own rows alone', () => {
+  it('leaves the child tables that cascade off micaOS’s own rows alone', () => {
     const tables = ownedTables().map((t) => t.table);
-    // These key on `gos_accounts(id)` / `gos_blabber(id)`, whose foreign keys survive
+    // These key on `mica_accounts(id)` / `mica_blabber(id)`, whose foreign keys survive
     // on ESX. They carry no citizenid, so there is nothing here to sweep them by, and the
     // parent's DELETE is what takes them — which is why the sweep must never use TRUNCATE
     // or disable foreign key checks.
     for (const table of [
-      'gos_account_blocks',
-      'gos_account_follows',
-      'gos_account_reactions',
-      'gos_blabber_ears',
-      'gos_blabber_tags',
-      'gos_hodlr_price_history'
+      'mica_account_blocks',
+      'mica_account_follows',
+      'mica_account_reactions',
+      'mica_blabber_ears',
+      'mica_blabber_tags',
+      'mica_hodlr_price_history'
     ]) {
       expect(tables, table).not.toContain(table);
     }
   });
 
   it('names the audit ledger, which no declaration produces', () => {
-    expect(ownedTables().map((t) => t.table)).toContain('gos_audit_logs');
+    expect(ownedTables().map((t) => t.table)).toContain('mica_audit_logs');
   });
 
   it('keys on the citizenid column itself, never on a citizenid-shaped one', () => {
-    // `gos_reports.target_author` is a varchar(50) holding a citizenid with no foreign
+    // `mica_reports.target_author` is a varchar(50) holding a citizenid with no foreign
     // key, deliberately: evidence has to outlive the character it names. A derivation that
     // matched on shape would sweep reports by their subject.
     expect(ownedTables().every((t) => t.column === 'citizenid')).toBe(true);
@@ -236,7 +236,7 @@ describe('fail-closed: nothing is deleted on evidence the sweep does not have', 
   /**
    * The one that loses a server's whole database, and the one no other test would catch.
    *
-   * FiveM starts resources in `server.cfg` order and `ensure gos` above
+   * FiveM starts resources in `server.cfg` order and `ensure mica` above
    * `ensure es_extended` is legal. If "not started yet" fell back to qb, an ESX box with a
    * leftover non-empty `players` table from an old qb install would pass the population
    * guard, compare ESX identifiers against qb citizenids, find every row unowned, and
@@ -257,7 +257,7 @@ describe('fail-closed: nothing is deleted on evidence the sweep does not have', 
   });
 
   it('skips when the owner table cannot be read at all', async () => {
-    dbMock.single.mockRejectedValue(new Error('Table gos.players doesn’t exist'));
+    dbMock.single.mockRejectedValue(new Error('Table mica.players doesn’t exist'));
 
     const result = await sweepOrphanedRows();
 
@@ -293,7 +293,7 @@ describe('fail-closed: nothing is deleted on evidence the sweep does not have', 
     expect(deletes()).toEqual([]);
   });
 
-  it('skips when it cannot sample gOS’s own rows', async () => {
+  it('skips when it cannot sample micaOS’s own rows', async () => {
     dbMock.single.mockResolvedValue({ total: 120 });
     dbMock.query.mockRejectedValue(new Error('connection lost'));
 
@@ -315,7 +315,7 @@ describe('fail-closed: nothing is deleted on evidence the sweep does not have', 
     expect(deletes()).toEqual([]);
   });
 
-  it('does nothing when gOS holds no rows to sweep', async () => {
+  it('does nothing when micaOS holds no rows to sweep', async () => {
     dbMock.single.mockResolvedValue({ total: 120 });
     dbMock.query.mockResolvedValue([]);
 
@@ -399,7 +399,7 @@ describe('the owner-table override convar (MICA-159)', () => {
     withOverride('custom_characters.character_id');
     healthyServer({ matched: 1, removedPerTable: 2 });
     dbMock.scalar.mockImplementation(async (sql: string) => {
-      if (sql === 'SELECT DATABASE()') return 'gos_db';
+      if (sql === 'SELECT DATABASE()') return 'mica_db';
       if (sql.includes('information_schema.COLUMNS')) return 1;
       throw new Error(`unexpected scalar(): ${sql}`);
     });
@@ -434,7 +434,7 @@ describe('the owner-table override convar (MICA-159)', () => {
     withOverride('players.no_such_column');
     healthyServer({ removedPerTable: 5 });
     dbMock.scalar.mockImplementation(async (sql: string) => {
-      if (sql === 'SELECT DATABASE()') return 'gos_db';
+      if (sql === 'SELECT DATABASE()') return 'mica_db';
       if (sql.includes('information_schema.COLUMNS')) return null; // not found
       throw new Error(`unexpected scalar(): ${sql}`);
     });
@@ -501,24 +501,24 @@ describe('the owner verdict is resolved once, not per table', () => {
 
 describe('the statement itself', () => {
   it('is the statement MICA-71 shipped, on qb, plus a bound on how much it may lock', () => {
-    const sql = orphanDeleteSql({ table: 'gos_media', column: 'citizenid' }, QB);
+    const sql = orphanDeleteSql({ table: 'mica_media', column: 'citizenid' }, QB);
 
-    expect(sql.startsWith(GOS_71_MEDIA_DELETE)).toBe(true);
+    expect(sql.startsWith(MICA_71_MEDIA_DELETE)).toBe(true);
     expect(sql).toMatch(/ LIMIT \d+$/);
   });
 
   it('asks the ESX question of the ESX table', () => {
-    const sql = orphanDeleteSql({ table: 'gos_notes', column: 'citizenid' }, ESX);
+    const sql = orphanDeleteSql({ table: 'mica_notes', column: 'citizenid' }, ESX);
 
     expect(sql).toContain('FROM users p');
-    expect(sql).toContain('p.identifier = gos_notes.citizenid');
+    expect(sql).toContain('p.identifier = mica_notes.citizenid');
   });
 
   it('never uses NOT IN', () => {
     // `NOT IN` against a subquery holding a single NULL is unknown for every row and
     // deletes nothing at all — a prune that quietly does nothing reads exactly like one
     // that had nothing to do.
-    expect(orphanDeleteSql({ table: 'gos_notes', column: 'citizenid' }, QB)).not.toContain(
+    expect(orphanDeleteSql({ table: 'mica_notes', column: 'citizenid' }, QB)).not.toContain(
       'NOT IN'
     );
   });
@@ -527,19 +527,19 @@ describe('the statement itself', () => {
     // Nothing off the wire can reach here today. The guard is at the point of
     // concatenation because that is the line the next person to add a parameter reads.
     expect(() =>
-      orphanDeleteSql({ table: 'gos_notes; DROP TABLE players; --', column: 'citizenid' }, QB)
+      orphanDeleteSql({ table: 'mica_notes; DROP TABLE players; --', column: 'citizenid' }, QB)
     ).toThrow(/plain identifier/);
-    expect(() => orphanDeleteSql({ table: 'gos_notes', column: '*' }, QB)).toThrow(
+    expect(() => orphanDeleteSql({ table: 'mica_notes', column: '*' }, QB)).toThrow(
       /plain identifier/
     );
     expect(() =>
-      orphanDeleteSql({ table: 'gos_notes', column: 'citizenid' }, { table: 'a b', column: 'c' })
+      orphanDeleteSql({ table: 'mica_notes', column: 'citizenid' }, { table: 'a b', column: 'c' })
     ).toThrow(/plain identifier/);
   });
 });
 
 describe('deleting in chunks rather than in one long lock', () => {
-  const oneTable: OwnedTable[] = [{ table: 'gos_media', column: 'citizenid' }];
+  const oneTable: OwnedTable[] = [{ table: 'mica_media', column: 'citizenid' }];
 
   const chunkOf = (sql: string): number => Number(sql.match(/LIMIT (\d+)$/)?.[1] ?? 0);
 
@@ -613,7 +613,7 @@ describe('purging one named character', () => {
     expect(statements).toHaveLength(ownedTables().length);
     expect(removed).toBe(ownedTables().length);
     for (const call of dbMock.query.mock.calls) {
-      expect(String(call[0])).toMatch(/^DELETE FROM gos_[a-z_]+ WHERE citizenid = \?$/);
+      expect(String(call[0])).toMatch(/^DELETE FROM mica_[a-z_]+ WHERE citizenid = \?$/);
       expect(call[1]).toEqual(['CID_Z']);
     }
   });
@@ -691,7 +691,7 @@ describe('the character-deleted hook', () => {
       const handlers = localHandlers.get('onResourceStart') ?? [];
       const sweepStart = handlers.find((fn) => /orphan sweep starting/.test(String(fn)));
       expect(sweepStart, 'no onResourceStart handler runs the orphan sweep').toBeDefined();
-      sweepStart!('gos');
+      sweepStart!('mica');
       await new Promise((resolve) => setTimeout(resolve, 0));
 
       expect(logged.some((line) => /orphan sweep starting over \d+ table\(s\)/.test(line))).toBe(
@@ -708,12 +708,12 @@ describe('the character-deleted hook', () => {
   it('leaves the older media-only hook registered and media-only', async () => {
     // Renaming it would silently switch off cleanup for every owner already wired to it,
     // and widening it would delete more than the caller asked for. It stays as documented.
-    expect(localHandlers.has('gos:server:media:characterDeleted')).toBe(true);
+    expect(localHandlers.has('mica:server:media:characterDeleted')).toBe(true);
 
     dbMock.query.mockResolvedValue({ affectedRows: 1 });
-    localHandlers.get('gos:server:media:characterDeleted')![0]('CID_Z');
+    localHandlers.get('mica:server:media:characterDeleted')![0]('CID_Z');
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(deletes()).toEqual(['DELETE FROM gos_media WHERE citizenid = ?']);
+    expect(deletes()).toEqual(['DELETE FROM mica_media WHERE citizenid = ?']);
   });
 });

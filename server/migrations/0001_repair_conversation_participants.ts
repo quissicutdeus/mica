@@ -5,7 +5,7 @@
 import type { Migration } from '../lib/migrations';
 import { Database } from '../lib/Database';
 
-const PARTICIPANTS = 'gos_messages_participants';
+const PARTICIPANTS = 'mica_messages_participants';
 const OLD_INDEX = 'conversation_participant';
 const UNIQUE_INDEX = 'conversation_participant_unique';
 
@@ -16,7 +16,7 @@ const UNIQUE_INDEX = 'conversation_participant_unique';
  * survive being run twice. The ledger normally prevents that, but `runMigrations` has an
  * explicit path for "it ran and recording it failed", which hands an operator the decision
  * to retry — and a second `ADD UNIQUE KEY` or a `DROP INDEX` of something already gone errors
- * and aborts the rest of `gosschema apply`. `table_schema = DATABASE()` confines the
+ * and aborts the rest of `micaschema apply`. `table_schema = DATABASE()` confines the
  * question to the schema this resource is connected to.
  */
 const hasIndex = async (table: string, index: string): Promise<boolean> => {
@@ -33,7 +33,7 @@ const hasIndex = async (table: string, index: string): Promise<boolean> => {
  * being written again — in that order, because the constraint cannot be added over the
  * rows it forbids.
  *
- * **This migration deletes rows**, and outside `gosmedia prune` it is the only thing in
+ * **This migration deletes rows**, and outside `micamedia prune` it is the only thing in
  * this resource that does. Only surplus participant rows go: rows naming a person a second
  * or five-hundredth time in a thread they are already in, which the bug wrote and nobody
  * asked for. No conversation and no message is touched.
@@ -57,7 +57,7 @@ const hasIndex = async (table: string, index: string): Promise<boolean> => {
 export const migration: Migration = {
   id: '0001_repair_conversation_participants',
   description:
-    'deletes duplicate participant rows, recomputes gos_messages_conversations.is_group from the live participant count, and replaces the conversation_participant index with a unique one',
+    'deletes duplicate participant rows, recomputes mica_messages_conversations.is_group from the live participant count, and replaces the conversation_participant index with a unique one',
   up: async () => {
     /**
      * Keep one row for each person in each thread and delete the rest.
@@ -126,7 +126,7 @@ export const migration: Migration = {
      * reorder inboxes. Threads with no live participants match no row and are left alone.
      */
     await Database.query(
-      `UPDATE gos_messages_conversations c
+      `UPDATE mica_messages_conversations c
          JOIN (
                 SELECT conversation_id, COUNT(*) AS live_members
                   FROM ${PARTICIPANTS}
@@ -147,7 +147,7 @@ export const migration: Migration = {
      * failing to add — which is exactly what ER 1062 did on a table still holding
      * duplicates — leaves the table with no `(conversation_id, citizenid)` index at all:
      * slower than before the upgrade, still unprotected, with two repairs already committed
-     * and `gosschema apply` aborted. Adding first means a failure leaves the table
+     * and `micaschema apply` aborted. Adding first means a failure leaves the table
      * exactly as it was found. It also means the `conversation_id` foreign key never sits
      * without a usable index for even one statement.
      *

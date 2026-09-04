@@ -335,7 +335,7 @@ describe('addMoney on the bridge', () => {
 /**
  * MICA-133: what `transfer` does when the framework's contract moves under it.
  *
- * gOS pins `@citizenfx/*` exactly and pins neither qbx_core nor qb-core — those are the
+ * micaOS pins `@citizenfx/*` exactly and pins neither qbx_core nor qb-core — those are the
  * operator's own resources, upgraded on the operator's schedule. So "RemoveMoney went async"
  * is not a hypothetical, it is a Tuesday. These drive `transfer` end to end through a bridge
  * fed a framework that answers with something other than a boolean, and assert the refusal

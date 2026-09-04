@@ -12,7 +12,7 @@ import {
   registerHandler,
   currentOverrides
 } from '../../shell/state/keybinds';
-import { conflictsWith, findAction } from '@gos/shared/keybinds';
+import { conflictsWith, findAction } from '@mica/shared/keybinds';
 
 // MICA-179: defined once in the host contract; re-exported so existing importers keep working.
 /** Core's group renders without picking it out of the pack — it's the phone's own list. */
@@ -49,7 +49,7 @@ export function keybinds() {
     bindings,
 
     /**
-     * Everything configurable from gOS's own Shortcuts screen, grouped by owner.
+     * Everything configurable from micaOS's own Shortcuts screen, grouped by owner.
      *
      * Core first (`ownerId: 'core'`), then one group per installed app that declares its
      * own `keybinds`, sorted alphabetically by `ownerLabel`. An app with no declared

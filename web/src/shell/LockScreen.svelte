@@ -26,12 +26,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { unlock } from './state/lockScreen';
   import { callStore } from '../services/call';
   import { openApp } from './state/navigation';
-  import { fade } from '@gos/sdk';
+  import { fade } from '@mica/sdk';
   import PhoneIcon from '../../../sdk/ui/icons/PhoneIcon.svelte';
 
   /**
-   * `gos_emergency_number` does not exist as a convar yet — reading one from `web/`
-   * needs a client-side NUI action to hand it over (the way `gos_camera_quality`
+   * `mica_emergency_number` does not exist as a convar yet — reading one from `web/`
+   * needs a client-side NUI action to hand it over (the way `mica_camera_quality`
    * reaches `cameraQuality` in `client/services/`), and this round is `web/`-only. MICA-64
    * ("a real emergency number concept") is a separate, not-yet-built ticket. Stubbed
    * plainly rather than silently, so it reads as a placeholder rather than a finished

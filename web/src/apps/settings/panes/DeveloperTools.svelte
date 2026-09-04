@@ -18,8 +18,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     ToggleSwitch,
     isBrowser,
     placeholderAvatar
-  } from '@gos/sdk';
-  import { useNuiBridge } from '@gos/sdk/core';
+  } from '@mica/sdk';
+  import { useNuiBridge } from '@mica/sdk/core';
 
   let { onhide } = $props<{ onhide: () => void }>();
 
@@ -57,8 +57,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * has. In game it used to do the exact same thing: a toast with no call behind it,
    * where Accept opened the Phone app onto a call that didn't exist and Decline told
    * the server to end one it had never started. Now it drives the real call machinery
-   * instead — `gos:server:phone:simulateIncoming`, the NUI-reachable twin of the
-   * `goscall` console command — and Shell.svelte's own `callStatus` handler takes it
+   * instead — `mica:server:phone:simulateIncoming`, the NUI-reachable twin of the
+   * `micacall` console command — and Shell.svelte's own `callStatus` handler takes it
    * from there, the same as any real incoming call. The display name won't be
    * `callName` unless it happens to match a saved contact; that's what a real call
    * does too.

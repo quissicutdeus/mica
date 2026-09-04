@@ -7,7 +7,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script lang="ts">
   import { closedPhoneToast } from './state/toast';
   import { frameMargin, phoneBox, viewportSize } from './state/display';
-  import { fly } from '@gos/sdk';
+  import { fly } from '@mica/sdk';
   import Avatar from '../../../sdk/ui/Avatar.svelte';
   import { appRegistryStore } from './state/registry';
 

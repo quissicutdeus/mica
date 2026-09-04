@@ -32,7 +32,7 @@ export const reportsContract = defineContract({
          * report, and losing it to a spelling would be the wrong trade.
          */
         category: s.string({ max: 32 }).optional(),
-        /** Free text from the reporter. `gos_reports.note` is a varchar(500). */
+        /** Free text from the reporter. `mica_reports.note` is a varchar(500). */
         note: s.string({ max: 500 }).optional()
       }),
       output: responseType<{ id: number }>()

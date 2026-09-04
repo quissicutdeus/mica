@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { writable } from 'svelte/store';
-import type { PhoneCallLogEntry } from '@gos/shared/types';
+import type { PhoneCallLogEntry } from '@mica/shared/types';
 import { fetchNui } from '../nui/fetchNui';
 
 /** The signed-in player's call history, newest first. */

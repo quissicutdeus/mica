@@ -29,7 +29,7 @@ const repo = media.repo;
 void repo;
 
 const notifies = () =>
-  (globalThis.emitNet as any).mock.calls.filter((c: any[]) => c[0] === 'gos:client:shell:notify');
+  (globalThis.emitNet as any).mock.calls.filter((c: any[]) => c[0] === 'mica:client:shell:notify');
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -70,7 +70,7 @@ describe('mediaStorageStats', () => {
   });
 });
 
-describe('gosmedia command', () => {
+describe('micamedia command', () => {
   beforeEach(() => {
     dbMock.single.mockResolvedValue({ rowCount: 1, totalBytes: 1000 });
     dbMock.query.mockResolvedValue([{ citizenid: 'CID_A', rowCount: 1, bytes: 1000 }]);

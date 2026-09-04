@@ -16,7 +16,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     useLocale,
     usePhoneNotification,
     useSourceUrl
-  } from '@gos/sdk';
+  } from '@mica/sdk';
 
   /**
    * MICA-192 stage 5: the licence, where a player can actually reach it.
@@ -48,7 +48,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   /**
    * The base comes from the server, the branch from this build.
    *
-   * An operator running a fork sets `gos_source_url` and their players get their source;
+   * An operator running a fork sets `mica_source_url` and their players get their source;
    * everyone else gets upstream, which is true for them. The branch is still the running
    * build's own, so the address names the code in front of the player rather than whatever
    * the repository's default branch happens to be.

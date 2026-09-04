@@ -14,14 +14,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, screen } from '@testing-library/svelte';
 
 const marketplaceMock = vi.hoisted(() => ({ postListing: vi.fn() }));
-vi.mock('@gos/sdk', async (importOriginal) => ({
+vi.mock('@mica/sdk', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   useMarketplace: () => marketplaceMock
 }));
 
 import CreateListing from './CreateListing.svelte';
 
-import { registerMessages } from '@gos/sdk';
+import { registerMessages } from '@mica/sdk';
 import en from '../locales/en.json';
 import de from '../locales/de.json';
 

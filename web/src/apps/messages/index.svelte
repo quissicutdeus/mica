@@ -34,8 +34,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     registerMessages,
     useLocale,
     type AppProps
-  } from '@gos/sdk';
-  import type { Contact, MediaPreview } from '@gos/shared/types';
+  } from '@mica/sdk';
+  import type { Contact, MediaPreview } from '@mica/shared/types';
   import en from './locales/en.json';
   import de from './locales/de.json';
 
@@ -183,7 +183,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         if (!(await conversationsStore.loadOlderMessages(conversationId))) break;
       }
     } catch (error) {
-      console.warn('gOS Messages: could not load the whole conversation', error);
+      console.warn('micaOS Messages: could not load the whole conversation', error);
     } finally {
       loadingWholeThread = false;
     }

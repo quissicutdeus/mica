@@ -5,9 +5,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { EmptyState, Skeleton, useLocale, usePagedList } from '@gos/sdk';
+  import { EmptyState, Skeleton, useLocale, usePagedList } from '@mica/sdk';
   import { useBlabber } from '../store';
-  import type { Blab } from '@gos/shared/types';
+  import type { Blab } from '@mica/shared/types';
   import BlabRow from './BlabRow.svelte';
 
   /**

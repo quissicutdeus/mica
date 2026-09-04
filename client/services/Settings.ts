@@ -16,7 +16,7 @@
  * who switches character without a resource restart keeps the previous character's phone
  * on screen, settings and all, which is the exact bug server-backed settings exist to fix.
  */
-onNet('gos:client:settings:rehydrate', () => {
+onNet('mica:client:settings:rehydrate', () => {
   SendNuiMessage(
     JSON.stringify({
       action: 'rehydrateSettings',

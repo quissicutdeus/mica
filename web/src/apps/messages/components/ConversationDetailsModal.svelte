@@ -18,7 +18,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     Avatar,
     Button,
     useLocale
-  } from '@gos/sdk';
+  } from '@mica/sdk';
 
   const { openApp } = useNavigation();
   const { contactsStore: contacts } = useContacts();

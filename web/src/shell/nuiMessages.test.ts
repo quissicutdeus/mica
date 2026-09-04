@@ -218,7 +218,7 @@ describe('installApp', () => {
     route(message('installApp', { url: 'https://example.com/app.js' }));
 
     expect(installFromCatalog).not.toHaveBeenCalled();
-    expect(warn).toHaveBeenCalledWith('[gOS] installApp: payload is not a CatalogEntry', {
+    expect(warn).toHaveBeenCalledWith('[micaOS] installApp: payload is not a CatalogEntry', {
       url: 'https://example.com/app.js'
     });
     expect(lastToast()).toMatchObject({

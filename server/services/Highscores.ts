@@ -5,9 +5,9 @@
 import { PlayerFacingError } from '../lib/errors';
 import { defineService, SchemaRepository, type ResolvedService } from '../lib/defineService';
 import { Database } from '../lib/Database';
-import { highscoresContract } from '@gos/shared/contracts/highscores';
+import { highscoresContract } from '@mica/shared/contracts/highscores';
 import { resolveMany } from '../lib/PlayerDirectory';
-import type { Highscore, LeaderboardEntry } from '@gos/shared/types';
+import type { Highscore, LeaderboardEntry } from '@mica/shared/types';
 
 /**
  * Every game (or scoreboard-shaped app) this table serves. Extend when the next one ships —
@@ -52,7 +52,7 @@ class HighscoreRepository extends SchemaRepository<Highscore> {
 
 /**
  * Shared highscore table for every game in the phone, discriminated by `app` — the same
- * "one table, an `app` column" shape as `gos_accounts`, so a second game reuses this
+ * "one table, an `app` column" shape as `mica_accounts`, so a second game reuses this
  * instead of shipping its own table and migration.
  *
  * Generic get/create/update/delete are all off: writes go through `submit`'s upsert-if-higher

@@ -9,7 +9,7 @@ import { Database } from './Database';
  *
  * The problem this solves: with one character on a dev server there is nobody to text.
  * `conversations:create` resolves a phone number to a `citizenid` and gives up
- * when it cannot, and `gos_messages_participants.citizenid` is a foreign key onto
+ * when it cannot, and `mica_messages_participants.citizenid` is a foreign key onto
  * `players` — so a conversation counterpart has to be a real row in `players`, not a
  * made-up string.
  *
@@ -17,12 +17,12 @@ import { Database } from './Database';
  * by a `citizenid` prefix, which is what lets `clearSeed` find and remove exactly its own
  * rows and nothing a person made.
  *
- * Nothing here runs automatically. It is reachable only through the `gosseed` command,
+ * Nothing here runs automatically. It is reachable only through the `micaseed` command,
  * which is admin-gated.
  */
 
 /** Marks a `players` row as ours. Nothing else in the database uses this license. */
-const SEED_LICENSE = 'license:gosseed';
+const SEED_LICENSE = 'license:micaseed';
 
 /** Every seeded citizenid starts with this. */
 
@@ -99,13 +99,13 @@ const createContacts = async (owner: string): Promise<number> => {
   let added = 0;
   for (const character of SEED_CHARACTERS) {
     const existing = await Database.query<{ id: number }[]>(
-      'SELECT id FROM gos_contacts WHERE citizenid = ? AND phone = ? LIMIT 1',
+      'SELECT id FROM mica_contacts WHERE citizenid = ? AND phone = ? LIMIT 1',
       [owner, character.phone]
     );
     if (existing?.length) continue;
 
     await Database.query(
-      `INSERT INTO gos_contacts (citizenid, firstname, lastname, phone, status)
+      `INSERT INTO mica_contacts (citizenid, firstname, lastname, phone, status)
        VALUES (?, ?, ?, ?, 'active')`,
       [owner, character.firstname, character.lastname, character.phone]
     );
@@ -129,8 +129,8 @@ const createConversations = async (owner: string): Promise<number> => {
 
     const existing = await Database.query<{ conversation_id: number }[]>(
       `SELECT p.conversation_id
-         FROM gos_messages_participants p
-         JOIN gos_messages_participants q ON q.conversation_id = p.conversation_id
+         FROM mica_messages_participants p
+         JOIN mica_messages_participants q ON q.conversation_id = p.conversation_id
         WHERE p.citizenid = ? AND q.citizenid = ?
         LIMIT 1`,
       [owner, character.citizenid]
@@ -138,7 +138,7 @@ const createConversations = async (owner: string): Promise<number> => {
     if (existing?.length) continue;
 
     const result = await Database.query<any>(
-      `INSERT INTO gos_messages_conversations (citizenid, is_group, name, status)
+      `INSERT INTO mica_messages_conversations (citizenid, is_group, name, status)
        VALUES (?, 0, NULL, 'active')`,
       [owner]
     );
@@ -147,7 +147,7 @@ const createConversations = async (owner: string): Promise<number> => {
 
     for (const citizenid of [owner, character.citizenid]) {
       await Database.query(
-        `INSERT INTO gos_messages_participants
+        `INSERT INTO mica_messages_participants
            (conversation_id, citizenid, role, status, left_at)
          VALUES (?, ?, 'member', 'active', NULL)`,
         [conversationId, citizenid]
@@ -156,7 +156,7 @@ const createConversations = async (owner: string): Promise<number> => {
 
     for (const body of openers) {
       await Database.query(
-        `INSERT INTO gos_messages (conversation_id, citizenid, message, status)
+        `INSERT INTO mica_messages (conversation_id, citizenid, message, status)
          VALUES (?, ?, ?, 'active')`,
         [conversationId, character.citizenid, body]
       );
@@ -200,7 +200,7 @@ export const clearSeed = async (): Promise<void> => {
   const placeholders = ids.map(() => '?').join(',');
 
   const conversations = await Database.query<{ conversation_id: number }[]>(
-    `SELECT DISTINCT conversation_id FROM gos_messages_participants
+    `SELECT DISTINCT conversation_id FROM mica_messages_participants
       WHERE citizenid IN (${placeholders})`,
     ids
   );
@@ -210,15 +210,15 @@ export const clearSeed = async (): Promise<void> => {
     const convPlaceholders = conversationIds.map(() => '?').join(',');
     // Children first: both tables carry a foreign key onto the conversation.
     await Database.query(
-      `DELETE FROM gos_messages WHERE conversation_id IN (${convPlaceholders})`,
+      `DELETE FROM mica_messages WHERE conversation_id IN (${convPlaceholders})`,
       conversationIds
     );
     await Database.query(
-      `DELETE FROM gos_messages_participants WHERE conversation_id IN (${convPlaceholders})`,
+      `DELETE FROM mica_messages_participants WHERE conversation_id IN (${convPlaceholders})`,
       conversationIds
     );
     await Database.query(
-      `DELETE FROM gos_messages_conversations WHERE id IN (${convPlaceholders})`,
+      `DELETE FROM mica_messages_conversations WHERE id IN (${convPlaceholders})`,
       conversationIds
     );
   }
@@ -228,11 +228,11 @@ export const clearSeed = async (): Promise<void> => {
   // This was `WHERE phone IN (...)` with no other condition, which deleted any row on
   // one of the seed numbers regardless of who owned it or where it came from. A player
   // who had saved 5550101 themselves lost that contact the next time an admin ran
-  // `gosseed clear`. `createContacts` writes the name as well, so requiring it back
+  // `micaseed clear`. `createContacts` writes the name as well, so requiring it back
   // means the delete only reaches rows the seed could have written.
   for (const character of SEED_CHARACTERS) {
     await Database.query(
-      `DELETE FROM gos_contacts WHERE phone = ? AND firstname = ? AND lastname = ?`,
+      `DELETE FROM mica_contacts WHERE phone = ? AND firstname = ? AND lastname = ?`,
       [character.phone, character.firstname, character.lastname]
     );
   }

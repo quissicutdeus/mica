@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { SchemaRepository } from '../lib/defineService';
-import { Conversation, Participant } from '@gos/shared/types';
+import { Conversation, Participant } from '@mica/shared/types';
 import { Database } from '../lib/Database';
 import { toSqlDateTime, type RecencyCursor } from '../lib/payload';
 
@@ -11,7 +11,7 @@ import { toSqlDateTime, type RecencyCursor } from '../lib/payload';
  * Bespoke queries for conversations. The schema and both allowlists come from the
  * declaration in `services/Conversations.ts` via `defineService`.
  *
- * Nine of the methods below read or join `gos_messages_participants`, which is why
+ * Nine of the methods below read or join `mica_messages_participants`, which is why
  * this class exists: membership lives in a join table that the generic single-table
  * path cannot reach. The join table's DDL is declared as a child table on the
  * conversations app so the generated schema stays complete.
@@ -71,12 +71,12 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
     role: 'admin' | 'member' = 'member'
   ): Promise<boolean> {
     const query = `
-            INSERT INTO gos_messages_participants
+            INSERT INTO mica_messages_participants
                 (conversation_id, citizenid, role, left_at, status)
             SELECT ?, ?, ?, NULL, 'active' FROM DUAL
             WHERE NOT EXISTS (
                 SELECT 1 FROM (
-                    SELECT 1 FROM gos_messages_participants
+                    SELECT 1 FROM mica_messages_participants
                     WHERE conversation_id = ? AND citizenid = ? AND left_at IS NULL
                     LIMIT 1
                 ) live
@@ -97,7 +97,7 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
     // Find existing active session (left_at IS NULL) and close it
     // Status: 1=Active, -1=Moderated, 0=Left, 2=Removed
     const query = `
-            UPDATE gos_messages_participants 
+            UPDATE mica_messages_participants 
             SET left_at = CURRENT_TIMESTAMP, status = ? 
             WHERE conversation_id = ? AND citizenid = ? AND left_at IS NULL
         `;
@@ -107,7 +107,7 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
   async findParticipants(conversationId: number): Promise<Participant[]> {
     // Simply find those with left_at IS NULL
     const query = `
-            SELECT * FROM gos_messages_participants 
+            SELECT * FROM mica_messages_participants 
             WHERE conversation_id = ? AND left_at IS NULL
         `;
     const participants = await Database.query<Participant[]>(query, [conversationId]);
@@ -122,7 +122,7 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
    */
   async markRead(conversationId: number, citizenid: string): Promise<boolean> {
     const query = `
-            UPDATE gos_messages_participants
+            UPDATE mica_messages_participants
             SET last_read = CURRENT_TIMESTAMP
             WHERE conversation_id = ? AND citizenid = ? AND left_at IS NULL
         `;
@@ -142,7 +142,7 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
     archived: boolean
   ): Promise<boolean> {
     const query = `
-            UPDATE gos_messages_participants
+            UPDATE mica_messages_participants
             SET archived_at = ${archived ? 'CURRENT_TIMESTAMP' : 'NULL'}
             WHERE conversation_id = ? AND citizenid = ? AND left_at IS NULL
         `;
@@ -157,7 +157,7 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
    * does not have, so the whole Messages list threw on ESX (MICA-197).
    *
    * **No join onto the framework's character table, deliberately.** Putting the name here
-   * looks obviously right and is not: gOS pins every column to `utf8mb4_unicode_ci` and
+   * looks obviously right and is not: micaOS pins every column to `utf8mb4_unicode_ci` and
    * es_extended's `users.identifier` takes the server default, which from MariaDB 11.4 is
    * `utf8mb4_uca1400_ai_ci` — and a column-to-column comparison across two collations is
    * MySQL errno 1267 rather than a slow query. `FrameworkBridge`'s own note above
@@ -178,7 +178,7 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
     const placeholders = ids.map(() => '?').join(', ');
     const query = `
             SELECT p.*
-            FROM \`gos_messages_participants\` p
+            FROM \`mica_messages_participants\` p
             WHERE p.\`conversation_id\` IN (${placeholders}) AND p.\`left_at\` IS NULL
         `;
     return await Database.query<Participant[]>(query, ids);
@@ -252,7 +252,7 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
     // (`me`) is in scope — `me.last_read` is what makes unread_count computable.
     const query = `
             SELECT c.*,
-            (SELECT COUNT(*) FROM gos_messages unread
+            (SELECT COUNT(*) FROM mica_messages unread
                 WHERE unread.conversation_id = c.id
                 AND unread.status != 'deleted'
                 AND unread.citizenid <> me.citizenid
@@ -261,13 +261,13 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
             m.created_at as last_message_time,
             m.citizenid as last_message_sender,
             me.archived_at as archived_at
-            FROM gos_messages_conversations c
-            JOIN gos_messages_participants me
+            FROM mica_messages_conversations c
+            JOIN mica_messages_participants me
                 ON me.conversation_id = c.id
                 AND me.citizenid = ?
                 AND me.left_at IS NULL
-            LEFT JOIN gos_messages m ON m.id = (
-                SELECT id FROM gos_messages
+            LEFT JOIN mica_messages m ON m.id = (
+                SELECT id FROM mica_messages
                 WHERE conversation_id = c.id AND status != 'deleted'
                 ORDER BY created_at DESC LIMIT 1
             )
@@ -353,14 +353,14 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
     const canonical = await Database.scalar<number | null>(
       `
             SELECT c.id
-            FROM gos_messages_conversations c
+            FROM mica_messages_conversations c
             WHERE c.is_group = 0 AND c.status = 'active'
             AND EXISTS (
-                SELECT 1 FROM gos_messages_participants p1
+                SELECT 1 FROM mica_messages_participants p1
                 WHERE p1.conversation_id = c.id AND p1.citizenid = ? AND p1.left_at IS NULL
             )
             AND EXISTS (
-                SELECT 1 FROM gos_messages_participants p2
+                SELECT 1 FROM mica_messages_participants p2
                 WHERE p2.conversation_id = c.id AND p2.citizenid = ? AND p2.left_at IS NULL
             )
             ORDER BY c.id ASC
@@ -374,7 +374,7 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
     if (typeof canonical !== 'number' || canonical === conversationId) return conversationId;
 
     const messages = await Database.scalar<number>(
-      `SELECT COUNT(*) FROM gos_messages WHERE conversation_id = ? AND status <> 'deleted'`,
+      `SELECT COUNT(*) FROM mica_messages WHERE conversation_id = ? AND status <> 'deleted'`,
       [conversationId]
     );
     if (Number(messages) > 0) return conversationId;
@@ -399,14 +399,14 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
     // Find active 1-on-1 where both users are currently active participants
     const query = `
             SELECT c.*
-            FROM gos_messages_conversations c
+            FROM mica_messages_conversations c
             WHERE c.is_group = 0 AND c.status = 'active'
             AND EXISTS (
-                SELECT 1 FROM gos_messages_participants p1
+                SELECT 1 FROM mica_messages_participants p1
                 WHERE p1.conversation_id = c.id AND p1.citizenid = ? AND p1.left_at IS NULL
             )
             AND EXISTS (
-                SELECT 1 FROM gos_messages_participants p2
+                SELECT 1 FROM mica_messages_participants p2
                 WHERE p2.conversation_id = c.id AND p2.citizenid = ? AND p2.left_at IS NULL
             )
             LIMIT 1

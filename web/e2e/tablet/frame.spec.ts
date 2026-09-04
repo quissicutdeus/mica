@@ -1,5 +1,5 @@
 import { test, expect } from '../support/test';
-import { DEVICES } from '@gos/shared/devices';
+import { DEVICES } from '@mica/shared/devices';
 import { gotoDevice, pressDeviceKey, settledFrameBox } from '../support/device';
 
 /**

@@ -20,11 +20,11 @@ import {
 import { createZip } from './lib/zip.js';
 
 /**
- * Pack the built resource as `dist/release/gos-<calver>.zip` (MICA-220).
+ * Pack the built resource as `dist/release/mica-<calver>.zip` (MICA-220).
  *
- * Installing gOS used to mean a clone, a `pnpm install` and a `pnpm build` on Node 26 --
+ * Installing micaOS used to mean a clone, a `pnpm install` and a `pnpm build` on Node 26 --
  * `dist/` is gitignored, so the repository alone is not a resource. The FiveM audience
- * downloads a zip and writes `ensure gos`, and a toolchain requirement is where most of
+ * downloads a zip and writes `ensure mica`, and a toolchain requirement is where most of
  * them stop. This is the zip: unpack it into `resources/` and the directory it leaves is
  * the resource, manifest, bundles, both schema files, the licence and a README beside them.
  *

@@ -41,7 +41,7 @@ function guarded(hookName: keyof typeof PERMISSION_OF, appId?: string): Host {
     }
     if (import.meta.env.DEV && markSystemHostWarned(hookName)) {
       console.warn(
-        `[gOS] '${hookName}' fell back to the system host — no app-scoped Host was found.`
+        `[micaOS] '${hookName}' fell back to the system host — no app-scoped Host was found.`
       );
     }
   }

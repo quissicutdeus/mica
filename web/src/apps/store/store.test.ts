@@ -17,11 +17,11 @@ import {
   useAppRegistryWrite,
   setTrustedRemoteAppHosts,
   setRemoteCatalogUrl
-} from '@gos/sdk';
-import type { AppManifest } from '@gos/sdk';
-import { renderApp } from '@gos/sdk/testing';
+} from '@mica/sdk';
+import type { AppManifest } from '@mica/sdk';
+import { renderApp } from '@mica/sdk/testing';
 import { catalogApps, remoteCatalogApps, mergedCatalogApps } from './appInfo';
-import type { AppComponent } from '@gos/sdk';
+import type { AppComponent } from '@mica/sdk';
 import { get } from 'svelte/store';
 
 vi.mock('../../nui/fetchNui', () => ({
@@ -60,7 +60,7 @@ describe('Store Module', () => {
   it('exports a valid system app manifest', () => {
     expect(manifest.id).toBe('store');
     expect(manifest.name).toBe('Store');
-    expect(manifest.author).toBe('gOS');
+    expect(manifest.author).toBe('micaOS');
     expect(manifest.permissions).toContain('storage');
     expect(manifest.requiresNetwork).toBe(true);
   });
@@ -76,7 +76,7 @@ describe('Store Module', () => {
   it('prohibits unregistering the Store system app', () => {
     appRegistryStore.registerApp(manifest, stubComponent);
     expect(() => appRegistryStore.unregisterApp('store')).toThrow(
-      "gOS App Registry error: Unregistering core app 'store' is prohibited."
+      "micaOS App Registry error: Unregistering core app 'store' is prohibited."
     );
   });
 });
@@ -230,7 +230,7 @@ describe('remote catalog', () => {
     // Found the first time a real catalog was ever fetched (MICA-126). `CatalogList`
     // keys its `{#each}` on `id`, so two rows for `notes` threw `each_key_duplicate` and
     // the Store crashed to `AppCrashed` — no listing, no install, nothing to retry but a
-    // Restart button. The four ids gOS ships are exactly the ones an operator is most
+    // Restart button. The four ids micaOS ships are exactly the ones an operator is most
     // likely to republish, so this is the first thing anybody would have hit.
     const shadowing = {
       ...remoteEntry,

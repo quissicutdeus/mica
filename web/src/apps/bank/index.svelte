@@ -16,7 +16,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     useLocale,
     usePhoneNotification,
     type AppProps
-  } from '@gos/sdk';
+  } from '@mica/sdk';
   import CreditCard from './components/CreditCard.svelte';
   import TransactionItem from './components/TransactionItem.svelte';
   import SendMoneyModal from './components/SendMoneyModal.svelte';

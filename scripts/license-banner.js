@@ -43,7 +43,7 @@
  */
 
 export const LICENSE_BANNER =
-  '/*! gOS | Copyright (C) 2026 quissicutdeus | AGPL-3.0-or-later | https://github.com/quissicutdeus/gos */';
+  '/*! micaOS | Copyright (C) 2026 quissicutdeus | AGPL-3.0-or-later | https://github.com/quissicutdeus/mica */';
 
 /**
  * Prepend the banner to every emitted JavaScript chunk.
@@ -54,7 +54,7 @@ export const LICENSE_BANNER =
  */
 export function licenseBanner() {
   return {
-    name: 'gos-license-banner',
+    name: 'mica-license-banner',
     enforce: 'post',
     /**
      * `order: 'post'`, not a plain `generateBundle` — the same trap `vite.addon.config.ts`

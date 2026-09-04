@@ -11,7 +11,7 @@
     "lib": ["es2021"],
     "noUnusedLocals": true,
     "paths": {
-      "@gos/shared/*": ["../shared/*"]
+      "@mica/shared/*": ["../shared/*"]
     }
   },
   "include": ["./**/*", "../shared/**/*"],

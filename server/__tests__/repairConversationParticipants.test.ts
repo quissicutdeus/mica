@@ -46,8 +46,8 @@ describe('0001_repair_conversation_participants', () => {
      * would stamp `is_group = 1` on a genuine one-to-one and replace one wrong answer with
      * another.
      */
-    expect(dedup).toContain('DELETE p FROM gos_messages_participants');
-    expect(recount).toContain('UPDATE gos_messages_conversations');
+    expect(dedup).toContain('DELETE p FROM mica_messages_participants');
+    expect(recount).toContain('UPDATE mica_messages_conversations');
     expect(recount).toContain('live_members');
   });
 
@@ -80,7 +80,7 @@ describe('0001_repair_conversation_participants', () => {
     // The grouping subquery restricts nothing: no WHERE at all, so every row for a pair is
     // counted. `left_at` appears in it only inside the CASE that picks which row survives.
     const grouping = dedup.slice(dedup.indexOf('JOIN ('), dedup.indexOf(') duplicated'));
-    expect(grouping).toContain('FROM gos_messages_participants GROUP BY');
+    expect(grouping).toContain('FROM mica_messages_participants GROUP BY');
     expect(grouping).not.toContain('WHERE');
   });
 
@@ -143,15 +143,15 @@ describe('0001_repair_conversation_participants — the unique key', () => {
    * Add before drop, which is the failure-mode question rather than a style one. The
    * reverse order was tried against a real MariaDB: the `ADD` failed, and because the
    * `DROP` had already committed the table was left with no `(conversation_id, citizenid)`
-   * index at all — slower than before the upgrade, still unprotected, and `gosschema
+   * index at all — slower than before the upgrade, still unprotected, and `micaschema
    * apply` aborted. This way a failure leaves the table exactly as it was found.
    */
   it('adds the unique key before dropping the old index', async () => {
     await migration.up();
 
     expect(ddl()).toEqual([
-      'ALTER TABLE `gos_messages_participants` ADD UNIQUE KEY `conversation_participant_unique` (`conversation_id`, `citizenid`)',
-      'ALTER TABLE `gos_messages_participants` DROP INDEX `conversation_participant`'
+      'ALTER TABLE `mica_messages_participants` ADD UNIQUE KEY `conversation_participant_unique` (`conversation_id`, `citizenid`)',
+      'ALTER TABLE `mica_messages_participants` DROP INDEX `conversation_participant`'
     ]);
   });
 
@@ -162,7 +162,7 @@ describe('0001_repair_conversation_participants — the unique key', () => {
 
     await expect(migration.up()).rejects.toThrow('ER_DUP_ENTRY');
     expect(ddl()).not.toContain(
-      'ALTER TABLE `gos_messages_participants` DROP INDEX `conversation_participant`'
+      'ALTER TABLE `mica_messages_participants` DROP INDEX `conversation_participant`'
     );
   });
 
@@ -185,14 +185,14 @@ describe('0001_repair_conversation_participants — the unique key', () => {
       expect(String(sql).replace(/\s+/g, ' ')).toContain(
         'FROM information_schema.STATISTICS WHERE table_schema = DATABASE()'
       );
-      expect(params[0]).toBe('gos_messages_participants');
+      expect(params[0]).toBe('mica_messages_participants');
     }
   });
 
   /**
    * The ledger normally stops a second run, but `runMigrations` has an explicit path for
    * "it ran and recording it failed", which leaves an operator deciding whether to retry.
-   * A blind `ADD UNIQUE KEY` would error there and abort the rest of `gosschema apply`.
+   * A blind `ADD UNIQUE KEY` would error there and abort the rest of `micaschema apply`.
    */
   it('skips both DDL steps when the table already has the shape they produce', async () => {
     dbMock.scalar.mockImplementation(async (_sql: string, params: unknown[]) =>
@@ -212,7 +212,7 @@ describe('0001_repair_conversation_participants — the unique key', () => {
     await migration.up();
 
     expect(ddl()).toEqual([
-      'ALTER TABLE `gos_messages_participants` ADD UNIQUE KEY `conversation_participant_unique` (`conversation_id`, `citizenid`)'
+      'ALTER TABLE `mica_messages_participants` ADD UNIQUE KEY `conversation_participant_unique` (`conversation_id`, `citizenid`)'
     ]);
   });
 });

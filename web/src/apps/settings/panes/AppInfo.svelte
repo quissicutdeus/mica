@@ -20,7 +20,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     useNotificationSettingsWrite,
     AppIconTile,
     type AppManifest
-  } from '@gos/sdk';
+  } from '@mica/sdk';
 
   /**
    * One app, and the two things a player can do to it.

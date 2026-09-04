@@ -7,8 +7,8 @@ re-derive wrongly.
 
 ## pnpm 11 moved two settings that this depends on
 
-`@gos/sdk` and `@gos/shared` are both `private: true` and unpublished, and the
-SDK declares `"@gos/shared": "workspace:*"`. Installing the SDK anywhere else
+`@mica/sdk` and `@mica/shared` are both `private: true` and unpublished, and the
+SDK declares `"@mica/shared": "workspace:*"`. Installing the SDK anywhere else
 therefore fails with `ERR_PNPM_WORKSPACE_PKG_NOT_FOUND`, naming a workspace the
 consumer does not have. Fixing it takes an override — and under pnpm 11:
 
@@ -19,13 +19,13 @@ consumer does not have. Fixing it takes an override — and under pnpm 11:
   even for a one-package project.
 - **`blockExoticSubdeps` defaults to on** and refuses a git dependency reached
   as a subdependency — which is exactly what an override for the SDK's own
-  `@gos/shared` is. `blockExoticSubdeps: false`, same file.
+  `@mica/shared` is. `blockExoticSubdeps: false`, same file.
 
 ## The git-dependency specifier that works
 
 ```jsonc
-"@gos/sdk": "github:quissicutdeus/gos#dev&path:/sdk"
-"@gos/sdk": "github:quissicutdeus/gos#<40-char sha>&path:/sdk"  // pinned
+"@mica/sdk": "github:quissicutdeus/mica#dev&path:/sdk"
+"@mica/sdk": "github:quissicutdeus/mica#<40-char sha>&path:/sdk"  // pinned
 ```
 
 `#path:/sub` alone works too and follows the repository's default branch (`dev`
@@ -36,12 +36,12 @@ carries it, which is how you tell which commit a build actually used.
 `main` was not usable for this while the packaged `sdk/` (MICA-172) and
 `shared/` (MICA-186) existed only on `dev`. That stopped being true on
 2026-08-31: `main` carries both, and from `v2026.08.31.44` the release itself
-publishes `gos-sdk-*.tgz` and `gos-shared-*.tgz` (MICA-125). Pinning a release
-tarball is now the better answer than a git specifier for anyone who wants a
-version rather than a branch — the tarball's `@gos/shared` dependency is a
-concrete version, so none of the `workspace:*` trouble above applies to it.
+publishes `mica-sdk-*.tgz` and `mica-shared-*.tgz` (MICA-125). Pinning a
+release tarball is now the better answer than a git specifier for anyone who
+wants a version rather than a branch — the tarball's `@mica/shared` dependency
+is a concrete version, so none of the `workspace:*` trouble above applies to it.
 
-## `@gos/sdk` resolves to the wrong barrel out of tree
+## `@mica/sdk` resolves to the wrong barrel out of tree
 
 The package's `exports` map points `.` at `index.ts` — the **shell** barrel. An
 add-on needs `addon.ts`, which the package does not publish under any subpath
@@ -49,12 +49,12 @@ add-on needs `addon.ts`, which the package does not publish under any subpath
 `UNPUBLISHED_BY_DESIGN`; adding a subpath for it fails that gate). So an
 out-of-tree build has to alias it, exactly as `web/vite.addon.config.ts` does.
 
-Finding the file without a path into the package: `require.resolve('@gos/sdk')`
+Finding the file without a path into the package: `require.resolve('@mica/sdk')`
 returns `index.ts`, so `path.dirname()` of it is the package root and `addon.ts`
-is a sibling. `require.resolve('@gos/sdk/package.json')` does **not** work — the
-exports map does not publish it, and Node's resolver enforces that. Going
-through `@gos/sdk/app.css` (which is published) is the same trick without naming
-the wrong barrel in the line above the fix.
+is a sibling. `require.resolve('@mica/sdk/package.json')` does **not** work —
+the exports map does not publish it, and Node's resolver enforces that. Going
+through `@mica/sdk/app.css` (which is published) is the same trick without
+naming the wrong barrel in the line above the fix.
 
 Dropping the alias is loud, not silent: `index.ts` does not export `bootAddOn`,
 so the build dies with `MISSING_EXPORT`.
@@ -84,7 +84,7 @@ Building `notes` out of tree at the same commit with the same svelte/vite gave
 1. **rolldown emits `//#region <module path>` comments even under
    `minify: true`.** 330 of them, identical in count; only the paths differ
    (`../node_modules/.pnpm/svelte@…` vs
-   `node_modules/.pnpm/@gos+sdk@https+++codeload…`). Worth knowing separately:
+   `node_modules/.pnpm/@mica+sdk@https+++codeload…`). Worth knowing separately:
    **every add-on bundle this repo ships embeds its build machine's module
    paths.**
 2. **Vite does not apply a dependency's own `tsconfig.json` to files under

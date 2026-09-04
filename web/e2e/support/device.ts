@@ -1,5 +1,5 @@
 import { expect, type Page } from '@playwright/test';
-import { DEVICES, type DeviceId } from '@gos/shared/devices';
+import { DEVICES, type DeviceId } from '@mica/shared/devices';
 
 /**
  * Boot the page as a device (MICA-261).

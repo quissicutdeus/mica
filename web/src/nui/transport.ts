@@ -2,9 +2,9 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { hostRuntime } from '@gos/sdk';
+import { hostRuntime } from '@mica/sdk';
 import { MockRegistry } from './mocks/registry';
-import { GENERIC_SERVICE_ACTION } from '@gos/shared/rpc';
+import { GENERIC_SERVICE_ACTION } from '@mica/shared/rpc';
 
 export interface ITransportAdapter {
   send<T = unknown>(event: string, data?: unknown): Promise<T>;
@@ -15,7 +15,7 @@ export class NuiTransportAdapter implements ITransportAdapter {
   private resourceName: string;
 
   constructor() {
-    this.resourceName = window.GetParentResourceName ? window.GetParentResourceName() : 'gos';
+    this.resourceName = window.GetParentResourceName ? window.GetParentResourceName() : 'mica';
   }
 
   async send<T = unknown>(event: string, data?: unknown): Promise<T> {

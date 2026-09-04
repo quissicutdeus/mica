@@ -10,11 +10,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    *
    * The list is whatever any registered catalog provides — `availableLocales()` — so a
    * language appears here the moment one app ships it, and "Automatic" is the setting
-   * cleared: the server's `gos_locale` default, then the player's own browser
+   * cleared: the server's `mica_locale` default, then the player's own browser
    * language, then English. Names are the language's own, from `Intl.DisplayNames`, so a
    * player who cannot read the current language can still find theirs.
    */
-  import { SettingsSection, useLocale } from '@gos/sdk';
+  import { SettingsSection, useLocale } from '@mica/sdk';
   import { localeSetting } from '../locale';
 
   const { locale, setLocale, t, availableLocales } = useLocale();

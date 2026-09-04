@@ -6,7 +6,7 @@
  * Every service name the server answers to.
  *
  * A service is a named group of server actions — the `<service>` segment of
- * `gos:<side>:<service>:<action>`. Most are backed by a table and declared with
+ * `mica:<side>:<service>:<action>`. Most are backed by a table and declared with
  * `defineService`, but not all: `phone` is pure signalling, and `shell` only ever pushes
  * outward.
  *

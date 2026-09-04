@@ -13,7 +13,7 @@
  * the grab.
  *
  * Measured off the element rather than read from the `phoneScale` store so this stays a
- * DOM helper with no gOS state (AGENTS.md §8), and so it is right for any transform in
+ * DOM helper with no micaOS state (AGENTS.md §8), and so it is right for any transform in
  * the ancestry rather than only the one we know about. Zero on either side means nothing
  * has been laid out — jsdom — so there is no ratio to apply.
  */

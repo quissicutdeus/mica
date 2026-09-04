@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import Icon from './Icon.svelte';
-import { defineApp, lazyBadge } from '@gos/sdk/app';
+import { defineApp, lazyBadge } from '@mica/sdk/app';
 
 export default defineApp({
   id: 'admin',
@@ -13,16 +13,16 @@ export default defineApp({
   // does not clear it — unlike an unread count, a report stays outstanding until
   // somebody acts on it.
   badgeStore: lazyBadge(async () => {
-    const { pendingReportCount } = await import('@gos/sdk');
+    const { pendingReportCount } = await import('@mica/sdk');
     return pendingReportCount;
   }),
   preload: async () => {
-    const { useReports } = await import('@gos/sdk');
+    const { useReports } = await import('@mica/sdk');
     return useReports().loadPendingReports();
   },
   description: 'Review player reports and moderate content',
   permissions: ['admin'],
-  author: 'gOS',
+  author: 'micaOS',
   // Installed like any other core app, but the home screen hides it from players
   // without an admin ace. The server gates the queue and every action independently.
   core: true,

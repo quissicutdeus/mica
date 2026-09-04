@@ -46,12 +46,12 @@ import { registerReactable } from '../lib/reactions';
 // Registered by `BlabberDms.ts`'s own `defineService` call in the real app, which this file
 // never imports — so the reactions tests below register it directly rather than pulling in an
 // unrelated service just to trigger its module-scope side effect.
-registerReactable('gos_blabber_dms', { label: 'Direct message' });
+registerReactable('mica_blabber_dms', { label: 'Direct message' });
 
 const SRC = 5;
 
 const call = async (action: string, data: unknown, citizenid = 'CIT_A') => {
-  const handler = handlers.get(`gos:server:accounts:${action}`);
+  const handler = handlers.get(`mica:server:accounts:${action}`);
   if (!handler) throw new Error(`no handler for ${action}`);
 
   bridge.current = citizenid;
@@ -229,7 +229,7 @@ describe('claiming a handle', () => {
 
     const [sql, params] = dbMock.insert.mock.calls[0];
     const flat = String(sql).replace(/\s+/g, ' ');
-    expect(flat).toContain('INSERT INTO `gos_accounts`');
+    expect(flat).toContain('INSERT INTO `mica_accounts`');
     expect(flat).toContain('COUNT(*) AS held');
     expect(flat).toContain('WHERE cap.held < ?');
     // Owner, app and ceiling, bound after the inserted values.
@@ -267,7 +267,7 @@ describe('claiming a handle', () => {
     bridge.current = 'CIT_A';
     (globalThis as any).source = SRC;
     (globalThis as any).emitNet = vi.fn((...args: any[]) => replies.set(String(args[2]), args[3]));
-    const handler = handlers.get('gos:server:accounts:create')!;
+    const handler = handlers.get('mica:server:accounts:create')!;
     const running = Promise.all([
       handler('cb-alpha', { app: 'blabber', handle: 'alpha' }),
       handler('cb-beta', { app: 'blabber', handle: 'beta' })
@@ -285,7 +285,7 @@ describe('claiming a handle', () => {
 
   it('honors a convar raising the cap', async () => {
     (globalThis as any).GetConvar = (name: string, f: string) =>
-      name === 'gos_max_accounts_per_app' ? '5' : f;
+      name === 'mica_max_accounts_per_app' ? '5' : f;
     dbMock.scalar.mockResolvedValueOnce(3);
 
     const reply = await call('create', { app: 'blabber', handle: 'alt' });
@@ -326,7 +326,7 @@ describe('listing my own accounts', () => {
 
   it('reports a raised cap from the convar', async () => {
     (globalThis as any).GetConvar = (name: string, f: string) =>
-      name === 'gos_max_accounts_per_app' ? '5' : f;
+      name === 'mica_max_accounts_per_app' ? '5' : f;
     dbMock.query.mockResolvedValueOnce([]);
 
     const reply = await call('mine', { app: 'blabber' });
@@ -591,7 +591,7 @@ describe('blocking', () => {
     // Both directions in one statement, so a stale "blocked but still following" row cannot
     // survive either way.
     const [sql, params] = dbMock.update.mock.calls[0];
-    expect(String(sql)).toContain('gos_account_follows');
+    expect(String(sql)).toContain('mica_account_follows');
     expect(params).toEqual([3, 4, 4, 3]);
   });
 
@@ -674,7 +674,7 @@ describe('reactions', () => {
     const reply = await call('react', {
       app: 'blabber',
       account_id: 9,
-      target_table: 'gos_blabber_dms',
+      target_table: 'mica_blabber_dms',
       target_id: 4,
       emoji: '👍'
     });
@@ -689,7 +689,7 @@ describe('reactions', () => {
     const reply = await call('react', {
       app: 'blabber',
       account_id: 3,
-      target_table: 'gos_players',
+      target_table: 'mica_players',
       target_id: 4,
       emoji: '👍'
     });
@@ -704,7 +704,7 @@ describe('reactions', () => {
     const reply = await call('react', {
       app: 'blabber',
       account_id: 3,
-      target_table: 'gos_blabber_dms',
+      target_table: 'mica_blabber_dms',
       target_id: 4,
       emoji: 'not an emoji at all, this is far too long'
     });
@@ -719,12 +719,12 @@ describe('reactions', () => {
     await call('react', {
       app: 'blabber',
       account_id: 3,
-      target_table: 'gos_blabber_dms',
+      target_table: 'mica_blabber_dms',
       target_id: 4,
       emoji: '👍'
     });
 
-    expect(dbMock.insert.mock.calls[0][1]).toEqual([3, 'gos_blabber_dms', 4, '👍']);
+    expect(dbMock.insert.mock.calls[0][1]).toEqual([3, 'mica_blabber_dms', 4, '👍']);
   });
 
   it('treats a duplicate reaction as success', async () => {
@@ -734,7 +734,7 @@ describe('reactions', () => {
     const reply = await call('react', {
       app: 'blabber',
       account_id: 3,
-      target_table: 'gos_blabber_dms',
+      target_table: 'mica_blabber_dms',
       target_id: 4,
       emoji: '👍'
     });
@@ -748,18 +748,18 @@ describe('reactions', () => {
     await call('unreact', {
       app: 'blabber',
       account_id: 3,
-      target_table: 'gos_blabber_dms',
+      target_table: 'mica_blabber_dms',
       target_id: 4,
       emoji: '👍'
     });
 
-    expect(dbMock.update.mock.calls[0][1]).toEqual([3, 'gos_blabber_dms', 4, '👍']);
+    expect(dbMock.update.mock.calls[0][1]).toEqual([3, 'mica_blabber_dms', 4, '👍']);
   });
 
   it('refuses reactionsFor on a table that never opted in', async () => {
     const reply = await call('reactionsFor', {
       app: 'blabber',
-      target_table: 'gos_players',
+      target_table: 'mica_players',
       target_ids: [1, 2]
     });
 
@@ -770,7 +770,7 @@ describe('reactions', () => {
   it('answers empty for no target ids, without querying', async () => {
     const reply = await call('reactionsFor', {
       app: 'blabber',
-      target_table: 'gos_blabber_dms',
+      target_table: 'mica_blabber_dms',
       target_ids: []
     });
 
@@ -790,7 +790,7 @@ describe('reactions', () => {
 
     const reply = await call('reactionsFor', {
       app: 'blabber',
-      target_table: 'gos_blabber_dms',
+      target_table: 'mica_blabber_dms',
       target_ids: [4, 5]
     });
 
@@ -828,7 +828,7 @@ describe('follower and following lists', () => {
     const [sql, params] = dbMock.query.mock.calls[0];
     // The subject is the followee, and the row listed is the follower.
     expect(sql).toMatch(/WHERE f\.`followee_account_id` = \?/);
-    expect(sql).toMatch(/JOIN `gos_accounts` a ON a\.`id` = f\.`follower_account_id`/);
+    expect(sql).toMatch(/JOIN `mica_accounts` a ON a\.`id` = f\.`follower_account_id`/);
     // On the follow row's own id, not the account's: account order is "whoever signed up first",
     // which is not a thing a reader can make sense of in a follower list.
     expect(sql).toMatch(/ORDER BY f\.`id` DESC/);
@@ -843,7 +843,7 @@ describe('follower and following lists', () => {
 
     const [sql] = dbMock.query.mock.calls[0];
     expect(sql).toMatch(/WHERE f\.`follower_account_id` = \?/);
-    expect(sql).toMatch(/JOIN `gos_accounts` a ON a\.`id` = f\.`followee_account_id`/);
+    expect(sql).toMatch(/JOIN `mica_accounts` a ON a\.`id` = f\.`followee_account_id`/);
   });
 
   it('never projects citizenid, on either direction', async () => {
@@ -923,7 +923,7 @@ describe('follower and following lists', () => {
 describe('the follow graph declaration', () => {
   it('is a child table with no citizenid', () => {
     const follows = accounts.resolved.childTables?.find(
-      (table) => table.name === 'gos_account_follows'
+      (table) => table.name === 'mica_account_follows'
     );
 
     expect(follows).toBeDefined();
@@ -938,7 +938,7 @@ describe('the follow graph declaration', () => {
 
   it('indexes the following list so its paging is a range scan', () => {
     const follows = accounts.resolved.childTables?.find(
-      (table) => table.name === 'gos_account_follows'
+      (table) => table.name === 'mica_account_follows'
     );
 
     /**
@@ -955,7 +955,7 @@ describe('the follow graph declaration', () => {
 
   it('constrains one row per relation in the database', () => {
     const follows = accounts.resolved.childTables?.find(
-      (table) => table.name === 'gos_account_follows'
+      (table) => table.name === 'mica_account_follows'
     );
     const unique = follows!.indexes?.find((index: any) => index.unique);
 
@@ -968,7 +968,7 @@ describe('the follow graph declaration', () => {
 });
 
 /**
- * MICA-197. `gos_accounts` is this service's table and `Blabber.ts` and `BlabberDms.ts`
+ * MICA-197. `mica_accounts` is this service's table and `Blabber.ts` and `BlabberDms.ts`
  * were querying it by hand — five hand-written spellings of the same
  * `app = ? AND status = 'active'` predicate, across three files. That is what AGENTS.md §10
  * forbids across resources, applied one level in: "active" is the clause deciding whether a
@@ -1063,8 +1063,8 @@ describe('the account resolver', () => {
 
 /**
  * Two block graphs shared one name. `Blocklist.ts` still exports `isBlocked`, over
- * `gos_blocklist`, keyed on a citizenid and a phone number; this one is over
- * `gos_account_blocks` and keyed on two account ids. A file importing the bare name gave a
+ * `mica_blocklist`, keyed on a citizenid and a phone number; this one is over
+ * `mica_account_blocks` and keyed on two account ids. A file importing the bare name gave a
  * reader no way to tell which without checking the import line, and the two signatures are
  * only two argument types apart.
  */
@@ -1075,7 +1075,7 @@ describe('accountHasBlocked', () => {
     await expect(accountHasBlocked(4, 9)).resolves.toBe(true);
 
     const sql = String(dbMock.single.mock.calls[0][0]).replace(/\s+/g, ' ');
-    expect(sql).toContain('FROM `gos_account_blocks`');
+    expect(sql).toContain('FROM `mica_account_blocks`');
     expect(sql).toContain('`blocker_account_id` = ? AND `blocked_account_id` = ?');
     expect(dbMock.single.mock.calls[0][1]).toEqual([4, 9]);
   });

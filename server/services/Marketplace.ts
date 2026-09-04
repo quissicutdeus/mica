@@ -4,10 +4,10 @@
 
 import { PlayerFacingError } from '../lib/errors';
 import { defineService } from '../lib/defineService';
-import { Listing } from '@gos/shared/types';
+import { Listing } from '@mica/shared/types';
 import { MarketplaceRepository } from '../repositories/MarketplaceRepository';
 import { pageBounds } from '../lib/payload';
-import { marketplaceContract } from '@gos/shared/contracts/marketplace';
+import { marketplaceContract } from '@mica/shared/contracts/marketplace';
 import { resolveOwnedAttachments } from '../lib/attachments';
 import { media } from './Media';
 import { Database } from '../lib/Database';
@@ -57,19 +57,19 @@ export const marketplace = defineService<Listing, typeof marketplaceContract>({
    */
   options: { disableCreate: true, disableGet: true, disableUpdate: true, disableDelete: true },
   /**
-   * Attachments. Identical shape to `gos_blabber_attachments` and
-   * `gos_messages_attachments` — `media_id` rather than a bare blob, `citizenid`
+   * Attachments. Identical shape to `mica_blabber_attachments` and
+   * `mica_messages_attachments` — `media_id` rather than a bare blob, `citizenid`
    * carried for the ownership check in `resolveOwnedAttachments` and for any later
    * moderation pass, never projected back out on a public read.
    */
   childTables: [
     {
-      name: 'gos_marketplace_attachments',
+      name: 'mica_marketplace_attachments',
       columns: {
         listing_id: {
           type: 'int',
           notNull: true,
-          references: { table: 'gos_marketplace', column: 'id' }
+          references: { table: 'mica_marketplace', column: 'id' }
         },
         citizenid: {
           type: 'string',
@@ -80,7 +80,7 @@ export const marketplace = defineService<Listing, typeof marketplaceContract>({
         media_id: {
           type: 'int',
           notNull: true,
-          references: { table: 'gos_media', column: 'id' }
+          references: { table: 'mica_media', column: 'id' }
         }
       },
       indexes: [
@@ -123,13 +123,13 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
   const attachments = await resolveOwnedAttachments(data.attachments, citizenid, mediaRepo);
 
   const id = await Database.insert(
-    'INSERT INTO `gos_marketplace` (`citizenid`, `title`, `price`, `description`, `status`) VALUES (?, ?, ?, ?, ?)',
+    'INSERT INTO `mica_marketplace` (`citizenid`, `title`, `price`, `description`, `status`) VALUES (?, ?, ?, ?, ?)',
     [citizenid, title, price, description, 'active']
   );
 
   for (const attachment of attachments) {
     await Database.insert(
-      'INSERT INTO `gos_marketplace_attachments` (`listing_id`, `citizenid`, `media_id`) VALUES (?, ?, ?)',
+      'INSERT INTO `mica_marketplace_attachments` (`listing_id`, `citizenid`, `media_id`) VALUES (?, ?, ?)',
       [id, citizenid, attachment.photo_id]
     );
   }
@@ -159,7 +159,7 @@ app.registerEvent('view', async (source, cbId, data, citizenid) => {
   const id = data.id;
   const projection = marketplace.resolved.publicColumns.map((c) => `\`${c}\``).join(', ');
   const row = await Database.single<any>(
-    `SELECT ${projection} FROM \`gos_marketplace\` WHERE \`id\` = ? AND \`status\` = 'active'`,
+    `SELECT ${projection} FROM \`mica_marketplace\` WHERE \`id\` = ? AND \`status\` = 'active'`,
     [id]
   );
   if (!row)
@@ -168,7 +168,7 @@ app.registerEvent('view', async (source, cbId, data, citizenid) => {
     });
 
   const owner = await Database.single<{ citizenid: string }>(
-    'SELECT `citizenid` FROM `gos_marketplace` WHERE `id` = ?',
+    'SELECT `citizenid` FROM `mica_marketplace` WHERE `id` = ?',
     [id]
   );
   const contact = owner ? await resolvePlayer(owner.citizenid) : null;
@@ -192,7 +192,7 @@ app.registerEvent('feed', async (source, cbId, data) => {
   params.push(limit + 1);
 
   const rows = await Database.query<any[]>(
-    `SELECT ${projection} FROM \`gos_marketplace\`
+    `SELECT ${projection} FROM \`mica_marketplace\`
      WHERE \`status\` = 'active'${cursorClause}
      ORDER BY \`id\` DESC
      LIMIT ?`,
@@ -219,7 +219,7 @@ app.registerEvent('search', async (source, cbId, data) => {
   params.push(limit + 1);
 
   const rows = await Database.query<any[]>(
-    `SELECT ${projection} FROM \`gos_marketplace\`
+    `SELECT ${projection} FROM \`mica_marketplace\`
      WHERE \`status\` = 'active' AND (\`title\` LIKE ? OR \`description\` LIKE ?)${cursorClause}
      ORDER BY \`id\` DESC
      LIMIT ?`,
@@ -244,7 +244,7 @@ app.registerEvent('mine', async (source, cbId, data, citizenid) => {
   params.push(limit + 1);
 
   const rows = await Database.query<any[]>(
-    `SELECT * FROM \`gos_marketplace\`
+    `SELECT * FROM \`mica_marketplace\`
      WHERE \`citizenid\` = ?${cursorClause}
      ORDER BY \`id\` DESC
      LIMIT ?`,
@@ -273,7 +273,7 @@ app.registerEvent('mine', async (source, cbId, data, citizenid) => {
  */
 const requireOwnedActiveListing = async (id: number, citizenid: string): Promise<void> => {
   const row = await Database.single<{ id: number; citizenid: string; status: string }>(
-    'SELECT `id`, `citizenid`, `status` FROM `gos_marketplace` WHERE `id` = ?',
+    'SELECT `id`, `citizenid`, `status` FROM `mica_marketplace` WHERE `id` = ?',
     [id]
   );
   if (!row || row.citizenid !== citizenid) {
@@ -304,7 +304,7 @@ const transitionActiveListing = async (
   next: 'sold' | 'removed'
 ): Promise<boolean> =>
   await Database.update(
-    'UPDATE `gos_marketplace` SET `status` = ? ' +
+    'UPDATE `mica_marketplace` SET `status` = ? ' +
       "WHERE `id` = ? AND `citizenid` = ? AND `status` = 'active'",
     [next, id, citizenid]
   );

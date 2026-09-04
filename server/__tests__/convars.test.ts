@@ -119,11 +119,11 @@ describe('resolveConstConvarName (MICA-124)', () => {
   it('finds the declaration the call site actually names, not an earlier unrelated one', () => {
     const text = `
       const APP = 'blabber';
-      const EDIT_WINDOW_CONVAR = 'gos_blabber_edit_window';
+      const EDIT_WINDOW_CONVAR = 'mica_blabber_edit_window';
       GetConvar(EDIT_WINDOW_CONVAR, '900');
     `;
 
-    expect(resolveConstConvarName('EDIT_WINDOW_CONVAR', text)).toBe('gos_blabber_edit_window');
+    expect(resolveConstConvarName('EDIT_WINDOW_CONVAR', text)).toBe('mica_blabber_edit_window');
   });
 
   it('does NOT fall back to an earlier decoy assignment when the real one is later', () => {
@@ -132,7 +132,7 @@ describe('resolveConstConvarName (MICA-124)', () => {
     // than trivially passing regardless of which string comes out.
     const text = `
       const APP = 'blabber';
-      const EDIT_WINDOW_CONVAR = 'gos_blabber_edit_window';
+      const EDIT_WINDOW_CONVAR = 'mica_blabber_edit_window';
       GetConvar(EDIT_WINDOW_CONVAR, '900');
     `;
 
@@ -141,7 +141,7 @@ describe('resolveConstConvarName (MICA-124)', () => {
 
   it('returns null — not a coincidental match — when no matching declaration exists', () => {
     const text = `
-      const SOMETHING_ELSE = 'gos_unrelated';
+      const SOMETHING_ELSE = 'mica_unrelated';
       GetConvar(TYPOED_CONVAR, '30');
     `;
 

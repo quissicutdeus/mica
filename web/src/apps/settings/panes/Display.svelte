@@ -14,8 +14,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     useDisplay,
     useDisplayWrite,
     useLocale
-  } from '@gos/sdk';
-  import { DEVICES } from '@gos/shared/devices';
+  } from '@mica/sdk';
+  import { DEVICES } from '@mica/shared/devices';
   import ThemeAndWallpaper from '../components/ThemeAndWallpaper.svelte';
 
   const { t } = useLocale();

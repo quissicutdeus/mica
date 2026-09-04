@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { EmojiPicker, MessageBar } from '@gos/sdk';
+  import { EmojiPicker, MessageBar } from '@mica/sdk';
 
   /**
    * The DM input.
@@ -25,7 +25,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * limit its column imposes.
    */
 
-  /** 500, matching `gos_blabber_dms.body`. The server enforces it from the same declaration. */
+  /** 500, matching `mica_blabber_dms.body`. The server enforces it from the same declaration. */
   const LIMIT = 500;
 
   let {

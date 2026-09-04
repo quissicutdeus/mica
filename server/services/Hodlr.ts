@@ -3,9 +3,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { defineService } from '../lib/defineService';
-import type { HodlrHolding } from '@gos/shared/types';
-import { defineContract } from '@gos/shared/contract';
-import { s } from '@gos/shared/schema';
+import type { HodlrHolding } from '@mica/shared/types';
+import { defineContract } from '@mica/shared/contract';
+import { s } from '@mica/shared/schema';
 import { getCurrentPrice, getPriceHistory, isMarketReady } from './HodlrMarket';
 import { Database } from '../lib/Database';
 
@@ -66,7 +66,7 @@ export const hodlr = defineService<HodlrHolding, typeof hodlrContract>({
    */
   childTables: [
     {
-      name: 'gos_hodlr_price_history',
+      name: 'mica_hodlr_price_history',
       columns: {
         price: { type: 'int', notNull: true },
         recorded_at: { type: 'timestamp', notNull: true, defaultNow: true }
@@ -79,10 +79,10 @@ export const hodlr = defineService<HodlrHolding, typeof hodlrContract>({
 const app = hodlr.app;
 const repo = hodlr.repo;
 
-const TRADE_MAX_CONVAR = 'gos_hodlr_trade_max';
+const TRADE_MAX_CONVAR = 'mica_hodlr_trade_max';
 const DEFAULT_TRADE_MAX = 50_000;
 
-const SPREAD_CONVAR = 'gos_hodlr_spread_pct';
+const SPREAD_CONVAR = 'mica_hodlr_spread_pct';
 /**
  * The mock UI shipped against before this landed (`web/src/nui/mocks/data.ts`) picked 2%
  * "only so the two numbers actually differ" and left the real width to this file. 2% is
@@ -97,7 +97,7 @@ const DEFAULT_SPREAD_PCT = 2;
 
 /**
  * The bid-ask spread, in percent of the mid/reference price — an operator-facing knob,
- * read per call the same way `tradeMax()` reads `gos_hodlr_trade_max`.
+ * read per call the same way `tradeMax()` reads `mica_hodlr_trade_max`.
  *
  * Unlike `tradeMax`, `0` is accepted rather than falling back to the default: a spread of
  * zero is a real, meaningful choice (an operator who wants Hodlr to behave like the old
@@ -141,7 +141,7 @@ export const quoteSpread = (mid: number, pct: number): { buy: number; sell: numb
 /**
  * The ceiling on what one buy or sell may move, in money rather than in coins — a coin cap
  * would mean something different at 50 than at 5000. Read per call, the way `Bank.ts` reads
- * `gos_bank_transfer_max`, and deliberately the same default: a Hodlr trade and a bank
+ * `mica_bank_transfer_max`, and deliberately the same default: a Hodlr trade and a bank
  * send are the same kind of hole in an economy, and until MICA-130 only one of them was
  * bounded. `requirePositiveInt` accepts any positive integer, so the effective cap on a buy
  * was the whole bank balance and on a sell the whole holding — one call, one position.
@@ -183,7 +183,7 @@ const findOrCreateHolding = async (citizenid: string): Promise<HodlrHolding> => 
  */
 const currentQuantityOf = async (id: number, fallback: number): Promise<number> => {
   const quantity = await Database.scalar<number | null>(
-    'SELECT `quantity` FROM `gos_hodlr` WHERE `id` = ?',
+    'SELECT `quantity` FROM `mica_hodlr` WHERE `id` = ?',
     [id]
   );
   return quantity ?? fallback;
@@ -280,7 +280,7 @@ app.registerEvent('buy', async (source, cbId, data, citizenid, player) => {
   let credited = false;
   try {
     credited = await Database.update(
-      'UPDATE `gos_hodlr` SET `quantity` = `quantity` + ? WHERE `id` = ?',
+      'UPDATE `mica_hodlr` SET `quantity` = `quantity` + ? WHERE `id` = ?',
       [quantity, holding.id]
     );
   } catch (error) {
@@ -331,7 +331,7 @@ app.registerEvent('sell', async (source, cbId, data, citizenid, player) => {
   // cannot both pass the check and jointly overdraw the same holding (TOCTOU).
   // The bank credit only happens once this decrement is confirmed to have applied.
   const decremented = await Database.update(
-    'UPDATE `gos_hodlr` SET `quantity` = `quantity` - ? WHERE `id` = ? AND `quantity` >= ?',
+    'UPDATE `mica_hodlr` SET `quantity` = `quantity` - ? WHERE `id` = ? AND `quantity` >= ?',
     [quantity, holding.id, quantity]
   );
   if (!decremented) {
@@ -345,7 +345,7 @@ app.registerEvent('sell', async (source, cbId, data, citizenid, player) => {
   if (!player.addMoney('bank', proceeds)) {
     // The decrement already committed — refund the coins rather than leave the
     // player short with nothing to show for it.
-    await Database.update('UPDATE `gos_hodlr` SET `quantity` = `quantity` + ? WHERE `id` = ?', [
+    await Database.update('UPDATE `mica_hodlr` SET `quantity` = `quantity` + ? WHERE `id` = ?', [
       quantity,
       holding.id
     ]);

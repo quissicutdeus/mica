@@ -153,7 +153,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * away is the whole failure.
    */
   const onLoad = () => {
-    post(JSON.stringify({ event: 'listening', id: 'gos-music', channel: 'widget' }));
+    post(JSON.stringify({ event: 'listening', id: 'mica-music', channel: 'widget' }));
     post(playerCommand('setVolume', [level(volume)]));
     ready = true;
   };

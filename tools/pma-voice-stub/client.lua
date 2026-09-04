@@ -1,4 +1,4 @@
--- Stub of the three pma-voice exports gOS's call path calls, for solo in-game
+-- Stub of the three pma-voice exports micaOS's call path calls, for solo in-game
 -- testing (MICA-55). See README.md in this folder for how to run it.
 --
 -- Does no actual voice routing. What it does is print every call, with an

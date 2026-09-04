@@ -25,12 +25,12 @@ if (!Element.prototype.animate) {
 }
 
 const bankMock = vi.hoisted(() => ({ sendMoney: vi.fn() }));
-vi.mock('@gos/sdk', async (importOriginal) => ({
+vi.mock('@mica/sdk', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   useBank: () => bankMock
 }));
 
-import { registerMessages } from '@gos/sdk';
+import { registerMessages } from '@mica/sdk';
 import SendMoneyModal from './SendMoneyModal.svelte';
 import en from '../locales/en.json';
 import de from '../locales/de.json';

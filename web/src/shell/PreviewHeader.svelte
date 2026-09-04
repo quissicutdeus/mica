@@ -5,13 +5,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { ALL_DEVICES, DEVICES, type DeviceId } from '@gos/shared/devices';
-  import { OS_NAME } from '@gos/shared/brand';
+  import { ALL_DEVICES, DEVICES, type DeviceId } from '@mica/shared/devices';
+  import { OS_NAME } from '@mica/shared/brand';
   import { t } from './messages';
   import { activeDevice } from './state/device';
 
   /**
-   * The browser preview's own chrome: a gOS mark and one link per device.
+   * The browser preview's own chrome: a micaOS mark and one link per device.
    *
    * **Outside the device, and browser-only.** `Shell.svelte` renders this behind
    * `isBrowser()`, so it exists in `pnpm dev` and `vite preview` and never in CEF, where

@@ -15,9 +15,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     MessageIcon,
     formatTime,
     useLocale
-  } from '@gos/sdk';
-  import type { NotificationItem } from '@gos/shared/types';
-  import { parseDeepLink } from '@gos/shared/deepLink';
+  } from '@mica/sdk';
+  import type { NotificationItem } from '@mica/shared/types';
+  import { parseDeepLink } from '@mica/shared/deepLink';
 
   interface Props {
     onopenblab?: (blabId: number) => void;
