@@ -18,9 +18,20 @@ command, and the server decides what runs.
 
 `deploy-dev.sh` and `deploy-main.sh` re-install themselves from the checkout
 they just reset, so a change to either reaches the box on the next deploy and
-takes effect on the one after that. They copy to a temp name and `mv` it into
-place rather than writing over themselves: bash reads a script incrementally,
-and overwriting it mid-run corrupts whatever it has not read yet.
+takes effect on the one after that.
+
+**That only holds if the deploy gets far enough to reach the self-install.** The
+`cd` into the resource directory is line 40; the self-install is line 55. So a
+change to the path in that `cd` -- a resource rename -- cannot arrive this way:
+the installed copy dies on line 40 looking for the old directory, never reaches
+line 55, and stays frozen at the old path no matter how many correct pushes
+follow. That is not hypothetical; it is what kept every deploy failing in nine
+seconds between 2026-09-03 and 2026-09-04, on both stacks, while the repo said
+something else entirely. **A rename that touches these paths has to be
+hand-installed on the box, both halves**, and the `sha256sum` check below is how
+you confirm it took. They copy to a temp name and `mv` it into place rather than
+writing over themselves: bash reads a script incrementally, and overwriting it
+mid-run corrupts whatever it has not read yet.
 
 The root-owned compose scripts still need copying by hand:
 
@@ -50,6 +61,47 @@ concurrently for about two and a half minutes against the same checkout, both
 reporting success. `.github/workflows/deploy.yml` now fixes the cause it knew
 about and adds a `concurrency` group, but a run started by hand still bypasses
 both; the lock is the only guard that sees every caller.
+
+## The sudoers rules, in full
+
+Neither wrapper can be invoked without these, and they are not derivable from
+anything in this repo, so they are written out here rather than described:
+
+```sh
+# /etc/sudoers.d/gphone-deploy, mode 440, root:root
+gphone ALL=(root) NOPASSWD:SETENV: /usr/local/sbin/mica-deploy-dev-compose.sh
+gphone ALL=(root) NOPASSWD:SETENV: /usr/local/sbin/mica-deploy-main-compose.sh
+```
+
+**`SETENV:` is load-bearing and easy to drop.** `deploy-<target>.sh` passes the
+compose variables inline --
+`sudo MICA_PORT=8676 GIT_BRANCH=dev ... /usr/local/ sbin/mica-deploy-dev-compose.sh`
+-- and setting a variable on a `sudo` command line requires that tag. Without it
+sudo refuses the whole invocation with
+`sorry, you are not allowed to set the following environment variables`, after
+the deploy has already spent two minutes installing dependencies and building.
+It is tagged per command rather than granted to the user with
+`Defaults:gphone setenv`, so it reaches only these two root-owned scripts and
+nothing else the account may later be allowed to run.
+
+Rename the wrappers and this file has to move with them: the rules name the
+commands by **exact path**, and a stale path fails as a permission error that
+says nothing about renaming.
+
+**Validate before installing, always.** A malformed file under `/etc/sudoers.d/`
+takes out `sudo` itself, and you may not have another way back in:
+
+```sh
+sudo visudo -cf /tmp/gphone-deploy.new   # must say: parsed OK
+sudo install -m 440 -o root -g root /tmp/gphone-deploy.new /etc/sudoers.d/gphone-deploy
+sudo visudo -c                           # every file, after
+```
+
+Read the file you are replacing in full first. `grep`-ing it for the command
+paths and rewriting from what matched is how the `SETENV` tag got dropped on
+2026-09-04 -- a `Defaults:` line contains no command path, so it does not appear
+in that grep and vanishes silently. `sudo -l -U gphone` prints what sudo
+actually believes, which is the thing to check afterwards.
 
 ## The release smoke test
 
