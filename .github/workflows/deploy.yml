@@ -53,7 +53,7 @@ jobs:
     # it means a commit landed on `dev` and the server did not move. Folding them together
     # made those two outcomes identical in the UI: both produced a skipped job, a skipped
     # job is not a failure, so GitHub drew the run green and told nobody. On 2026-08-27 a
-    # flake (MICA-106) left dev.gphone.site a commit behind and the only thing that
+    # flake (MICA-106) left dev.mica.gg a commit behind and the only thing that
     # caught it was somebody going to look. MICA-107 is that half.
     #
     # `event == 'push'` is load-bearing, not a tidy-up. Verify runs twice for every push
@@ -90,7 +90,7 @@ jobs:
           RUN_URL: ${{ github.event.workflow_run.html_url }}
         run: |
           message="Verify concluded '${CONCLUSION}' for ${HEAD_SHA} on dev, so"
-          message="${message} dev.gphone.site was NOT deployed and is still on the previous"
+          message="${message} dev.mica.gg was NOT deployed and is still on the previous"
           message="${message} commit. Verify run: ${RUN_URL}"
           echo "::error title=Deploy blocked::${message}"
           {
@@ -102,7 +102,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           exit 1
 
-      - name: Deploy dev.gphone.site + FiveM resource
+      - name: Deploy dev.mica.gg + FiveM resource
         run: |
           mkdir -p ~/.ssh
           echo "$DEPLOY_KEY" > ~/.ssh/deploy_key
@@ -133,7 +133,7 @@ jobs:
           RUN_URL: ${{ github.event.workflow_run.html_url }}
         run: |
           message="Verify concluded '${CONCLUSION}' for ${HEAD_SHA} on main, so"
-          message="${message} gphone.site was NOT deployed and is still on the previous"
+          message="${message} mica.gg was NOT deployed and is still on the previous"
           message="${message} commit. Verify run: ${RUN_URL}"
           echo "::error title=Deploy blocked::${message}"
           {
@@ -145,7 +145,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           exit 1
 
-      - name: Deploy gphone.site
+      - name: Deploy mica.gg
         run: |
           mkdir -p ~/.ssh
           echo "$DEPLOY_KEY" > ~/.ssh/deploy_key

@@ -1,7 +1,7 @@
 # micaOS
 
 **A modern, open-source custom phone resource for FiveM** —
-[Live Demo](https://gphone.site/) · [SDK Docs](https://docs.gphone.site/)
+[Live Demo](https://mica.gg/) · [SDK Docs](https://docs.mica.gg/)
 
 Powered by TypeScript, Svelte 5, Vite, and esbuild.
 
@@ -1078,7 +1078,7 @@ mica/
 
 - [docs/writing-an-app.md](docs/writing-an-app.md) — the five-minute path to a
   working app.
-- [docs.gphone.site](https://docs.gphone.site/) — the generated `@mica/sdk` API
+- [docs.mica.gg](https://docs.mica.gg/) — the generated `@mica/sdk` API
   reference.
 - [docs/demo-container.md](docs/demo-container.md) — the demo image: running it,
   and what it ships.

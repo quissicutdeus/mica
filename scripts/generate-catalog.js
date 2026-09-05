@@ -55,7 +55,7 @@ const outDir = process.argv[3] ?? 'dist/web/addons';
 
 if (!origin || !/^https?:\/\/[^/]+$/.test(origin)) {
   console.error(
-    `generate-catalog: expected an origin like https://dev.gphone.site, got ${origin ?? '(nothing)'}.\n` +
+    `generate-catalog: expected an origin like https://dev.mica.gg, got ${origin ?? '(nothing)'}.\n` +
       '`bundleUrl` has to be absolute — the shell matches its host against the allowlist, so a\n' +
       'relative URL cannot be checked and is refused.'
   );

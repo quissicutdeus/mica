@@ -112,8 +112,8 @@ ARG MICA_CALVER=
 # ordinary local demo to serve the deployed one, so it says what it skipped and
 # why instead.
 RUN case "$GIT_BRANCH" in \
-      main) ADDON_ORIGIN="https://gphone.site" ;; \
-      dev)  ADDON_ORIGIN="https://dev.gphone.site" ;; \
+      main) ADDON_ORIGIN="https://mica.gg" ;; \
+      dev)  ADDON_ORIGIN="https://dev.mica.gg" ;; \
       *)    ADDON_ORIGIN="" ;; \
     esac; \
     export ADDON_ORIGIN; \

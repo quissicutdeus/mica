@@ -2,8 +2,8 @@
 
 The phone, in a browser, with no FiveM server behind it — the NUI bundle served
 standalone against the mock transport. It is what runs at
-[gphone.site](https://gphone.site/), and it is the fastest way to show someone
-the phone without them installing a thing.
+[mica.gg](https://mica.gg/), and it is the fastest way to show someone the phone
+without them installing a thing.
 
 ```sh
 pnpm demo          # build and serve on http://127.0.0.1:8080
