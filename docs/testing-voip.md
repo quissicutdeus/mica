@@ -1,8 +1,8 @@
 # Testing calls solo
 
-MICA-55. Every other feature in this phone has a solo path — `micaseed` in
-game, the mock transport in a browser — because a real second player is
-expensive to arrange for every change. Calls didn't, for two structural reasons:
+MICA-55. Every other feature in this phone has a solo path — `micaseed` in game,
+the mock transport in a browser — because a real second player is expensive to
+arrange for every change. Calls didn't, for two structural reasons:
 `server/services/Phone.ts`'s `start` handler refuses a self-call as "Busy", and
 `FrameworkBridge.getPlayerByPhone` only ever finds someone online, so a
 `micaseed` character can be texted and never called.

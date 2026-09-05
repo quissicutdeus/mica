@@ -79,8 +79,8 @@ client-only actions that never reach the server. All of them land in
 2. **Authentication** — no loaded character, no answer.
 3. **Declared input, for a custom action** — the payload is parsed against the
    action's contract (`shared/contracts/<service>.ts`, or the add-on's own
-   server file; MICA-195) before the handler sees it. Objects are strict, so
-   an unknown key is refused rather than ignored; a cap refuses rather than
+   server file; MICA-195) before the handler sees it. Objects are strict, so an
+   unknown key is refused rather than ignored; a cap refuses rather than
    truncates; an id must be a positive integer. A handler registered for an
    action the contract does not declare fails the resource at start, and
    `server/__tests__/reachability.test.ts` proves the two agree both ways.
@@ -100,14 +100,14 @@ error with statement text or a `[Repository]` error naming a table, is logged
 with its stack on the server and answered with one generic sentence. A handler
 that means to tell the player something throws the player-facing kind.
 
-Since MICA-216 that reply also carries a **message key** beside the English
-text (`{ error, key, params }`), and the shell resolves the key through its
-`server` catalog so the refusal reads in the player's language. The key widens
-nothing: it names a catalog entry, never a table or a statement, and a key the
-catalog lacks falls back to the English beside it. `params` are the values the
-handler chose to interpolate, and they are bounded on the way in (`parseNotify`
-keeps short scalars only). What a player learns from a refusal is exactly what
-the handler wrote, in either language.
+Since MICA-216 that reply also carries a **message key** beside the English text
+(`{ error, key, params }`), and the shell resolves the key through its `server`
+catalog so the refusal reads in the player's language. The key widens nothing:
+it names a catalog entry, never a table or a statement, and a key the catalog
+lacks falls back to the English beside it. `params` are the values the handler
+chose to interpolate, and they are bounded on the way in (`parseNotify` keeps
+short scalars only). What a player learns from a refusal is exactly what the
+handler wrote, in either language.
 
 ### 2. Raw `onNet` handlers
 
@@ -421,11 +421,11 @@ by this list until someone re-weighs it.
   courtesy, not the boundary. `sdk/permissions.ts` maps every host hook to a
   permission; `permissions.test.ts` fails the build where a manifest understates
   its imports. **Consent is the shell's own record, not the manifest**
-  (MICA-201). It used to be neither: MICA-196 compared an update's
-  permissions against the _installed manifest_, so the manifest was its own
-  authorization and anything able to write one — a modified Store, or any core
-  path that installs a catalog entry — widened what an add-on could reach with
-  nobody asked. The set the player accepted now lives in
+  (MICA-201). It used to be neither: MICA-196 compared an update's permissions
+  against the _installed manifest_, so the manifest was its own authorization
+  and anything able to write one — a modified Store, or any core path that
+  installs a catalog entry — widened what an add-on could reach with nobody
+  asked. The set the player accepted now lives in
   `web/src/shell/state/addOnGrants.ts`, keyed by add-on id and persisted per
   character alongside the install list itself; it is written **only** through
   `appRegistryWrite`'s `recordConsent`, a member no add-on can name
@@ -492,8 +492,8 @@ by this list until someone re-weighs it.
   pass — MICA-202 holds it. `child-src 'none'` also stops Web Workers, and no
   subresource directive admits a plaintext scheme.
 - **Message and DM bodies are readable by whoever operates the server, and that
-  is inherent to what a FiveM resource is, not a defect in micaOS (MICA-70).**
-  A message lands in the operator's own MySQL database as plaintext
+  is inherent to what a FiveM resource is, not a defect in micaOS (MICA-70).** A
+  message lands in the operator's own MySQL database as plaintext
   (`server/services/Messages.ts` declares `message` as the table's
   `reportable.previewColumn`, which is what lets an admin reviewing a report
   read the body being reported) and the same operator runs the server console —
@@ -513,9 +513,9 @@ by this list until someone re-weighs it.
   the record, even though the underlying database access it is auditing never
   was and structurally cannot be prevented from the resource side. Three things
   this round explicitly does **not** do, so nobody mistakes this slice for the
-  whole of MICA-70: no encryption at rest — a server owner with database
-  access still reads plaintext regardless of the audit log — no retention limit,
-  so messages are kept indefinitely by default, and no player-facing export or
+  whole of MICA-70: no encryption at rest — a server owner with database access
+  still reads plaintext regardless of the audit log — no retention limit, so
+  messages are kept indefinitely by default, and no player-facing export or
   delete of their own message history. Those are deferred as separate follow-up
   work.
 

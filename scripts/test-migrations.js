@@ -60,17 +60,17 @@ const DB_PASSWORD = process.env.MICA_DB_PASSWORD;
 const EXTERNAL_DB = Boolean(DB_HOST || DB_PORT || DB_USER || DB_PASSWORD);
 
 /**
- * The number of duplicate rows the fixtures build. Large enough that a bug which processes
- * only the first duplicate is visible in a count, small enough not to slow the run.
- */
-const DUPLICATES = 500;
-
-/**
  * Assertions are counted, and the run fails if too few of them happened.
  *
  * The same reasoning as `changelog.test.ts`'s "the check fires, rather than merely being
  * configured": a harness that returns early — a fixture that silently seeded nothing, a loop
  * over an empty list — would otherwise print a pass having checked almost nothing.
+ *
+ * The flatten cut the migration fixtures out and the run currently makes **78** checks, so
+ * the margin here is eight. That is deliberately tight: losing either `runVariant` (17) or
+ * either `runSweepFixtures` (17) drops below it and fails, which is the whole point. Raise
+ * the floor when you add checks, rather than letting the gap widen until it stops catching
+ * anything.
  */
 const MINIMUM_CHECKS = 70;
 let checksRun = 0;
@@ -287,16 +287,19 @@ CREATE TABLE IF NOT EXISTS players (
     PRIMARY KEY (citizenid)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;`;
 
-const PEOPLE = ['CIT_A', 'CIT_B', 'CIT_EAVESDROPPER', 'CIT_VICTIM', 'CIT_VICTIM2', 'CIT_C'];
+const PEOPLE = ['CIT_A', 'CIT_B', 'CIT_EAVESDROPPER'];
 
 /**
- * The five states MICA-153 has to survive, plus the rows the constraint has to reject.
+ * The rows the flattened baseline's constraints are judged against.
  *
- * Numbers 3 and 4 are the pair the migration's ordering is about, and 5 is the one that
- * decides whether a person currently in a thread can be deleted out of it: its closed row is
- * inserted *first*, so it holds the lower id and a naive `MIN(id)` would keep the wrong one.
+ * Before the flatten this seeded five fixtures full of duplicates, because migrations
+ * existed to clean them up and the fixtures were the mess they had to survive. The
+ * baseline now creates `conversation_participant_unique` and `pair_key_unique` in their
+ * final shape, so a duplicate cannot be inserted here at all -- which is the property
+ * worth proving instead. What is left is the smallest legal graph the rejection tests
+ * need: one genuine pair, and the people to build a second one from.
  */
-const seedFixtures = async (connection, hasPlayers) => {
+const seedBaselineRows = async (connection, hasPlayers) => {
   if (hasPlayers) {
     await connection.query(PLAYERS_TABLE);
     for (const citizenid of PEOPLE) {
@@ -307,84 +310,27 @@ const seedFixtures = async (connection, hasPlayers) => {
     }
   }
 
-  const conversation = async (isGroup, name) => {
-    const [result] = await connection.query(
-      'INSERT INTO mica_messages_conversations (citizenid, is_group, name, status) VALUES (?, ?, ?, ?)',
-      ['CIT_A', isGroup, name, 'active']
-    );
-    return result.insertId;
-  };
+  const [conversation] = await connection.query(
+    `INSERT INTO mica_messages_conversations
+       (citizenid, is_group, name, participant_a, participant_b, status)
+     VALUES (?, 0, ?, ?, ?, 'active')`,
+    ['CIT_A', 'genuine pair', 'CIT_A', 'CIT_B']
+  );
+  const genuine = conversation.insertId;
 
-  const participant = async (conversationId, citizenid, { left = false, role = 'member' } = {}) => {
+  for (const [citizenid, role] of [
+    ['CIT_A', 'admin'],
+    ['CIT_B', 'member']
+  ]) {
     await connection.query(
       `INSERT INTO mica_messages_participants
          (conversation_id, citizenid, role, left_at, status)
-       VALUES (?, ?, ?, ${left ? 'CURRENT_TIMESTAMP' : 'NULL'}, ?)`,
-      [conversationId, citizenid, role, left ? 'left' : 'active']
+       VALUES (?, ?, ?, NULL, 'active')`,
+      [genuine, citizenid, role]
     );
-  };
-
-  // 1. A genuine one-to-one. Must stay a one-to-one.
-  const genuine = await conversation(0, 'genuine pair');
-  await participant(genuine, 'CIT_A', { role: 'admin' });
-  await participant(genuine, 'CIT_B');
-
-  // 2. The attack: is_group forged to 0 with a silent third party. Must flip to 1.
-  const forged = await conversation(0, 'forged pair');
-  await participant(forged, 'CIT_A', { role: 'admin' });
-  await participant(forged, 'CIT_B');
-  await participant(forged, 'CIT_EAVESDROPPER');
-
-  // 3. A one-to-one where the victim carries DUPLICATES live rows. Must stay 0, which only
-  //    holds if the dedupe runs before the recount.
-  const liveDupes = await conversation(0, 'live duplicates');
-  await participant(liveDupes, 'CIT_A', { role: 'admin' });
-  for (let i = 0; i < DUPLICATES; i += 1) await participant(liveDupes, 'CIT_VICTIM');
-
-  // 4. The same, but the victim already left, so `removeParticipant` closed every row at
-  //    once. Invisible to a live-only dedupe, and still a constraint violation.
-  const closedDupes = await conversation(0, 'closed duplicates');
-  await participant(closedDupes, 'CIT_A', { role: 'admin' });
-  for (let i = 0; i < DUPLICATES; i += 1) {
-    await participant(closedDupes, 'CIT_VICTIM2', { left: true });
   }
 
-  // 5. One closed row inserted before a live one, so the live row has the higher id. The
-  //    live row must survive: deleting it would drop a current member out of the thread.
-  const mixed = await conversation(0, 'closed then live');
-  await participant(mixed, 'CIT_A', { role: 'admin' });
-  await participant(mixed, 'CIT_C', { left: true });
-  await participant(mixed, 'CIT_C');
-
-  return { genuine, forged, liveDupes, closedDupes, mixed };
-};
-
-/**
- * Put the participants table, and the conversations table, back into the shape a server
- * that has never migrated has.
- *
- * Without this the harness proves far less than it appears to. `mica.sql` is generated
- * from the current declaration, so a fresh import already carries the unique key — both
- * `information_schema` guards would find their work done, skip, and report a pass having
- * executed no DDL at all. Regressing the index (0001) and dropping the pair-key columns
- * (0002) is what makes each migration's real DDL path execute rather than no-op.
- *
- * Dropping `pair_key` first, rather than the two ordinary columns first, is deliberate:
- * MySQL/MariaDB drop an index automatically when the last column it covers is dropped, so
- * this one statement also removes `pair_key_unique` — there is nothing else indexing
- * `participant_a`/`participant_b` to worry about disturbing by dropping them after.
- */
-const regressToPreMigrationShape = async (connection) => {
-  await connection.query(
-    'ALTER TABLE mica_messages_participants DROP INDEX conversation_participant_unique'
-  );
-  await connection.query(
-    'ALTER TABLE mica_messages_participants ADD KEY conversation_participant (conversation_id, citizenid)'
-  );
-
-  await connection.query('ALTER TABLE mica_messages_conversations DROP COLUMN pair_key');
-  await connection.query('ALTER TABLE mica_messages_conversations DROP COLUMN participant_a');
-  await connection.query('ALTER TABLE mica_messages_conversations DROP COLUMN participant_b');
+  return { genuine };
 };
 
 /* -------------------------------------------------------------- assertions */
@@ -404,28 +350,18 @@ const scalar = async (connection, sql, params = []) => {
   const [rows] = await connection.query(sql, params);
   return rows.length > 0 ? Object.values(rows[0])[0] : null;
 };
-
-const liveCount = (connection, conversationId, citizenid) =>
-  scalar(
-    connection,
-    'SELECT COUNT(*) FROM mica_messages_participants WHERE conversation_id = ? AND citizenid = ? AND left_at IS NULL',
-    [conversationId, citizenid]
-  );
-
-const totalCount = (connection, conversationId, citizenid) =>
-  scalar(
-    connection,
-    'SELECT COUNT(*) FROM mica_messages_participants WHERE conversation_id = ? AND citizenid = ?',
-    [conversationId, citizenid]
-  );
-
-const isGroupOf = (connection, conversationId) =>
-  scalar(connection, 'SELECT is_group FROM mica_messages_conversations WHERE id = ?', [
-    conversationId
-  ]);
-
 /* -------------------------------------------------------------- the run */
 
+/**
+ * Import a schema file into its own database and judge what it created.
+ *
+ * This used to be a migration test: regress the schema to its pre-migration shape, seed
+ * the mess, run `runPendingMigrations`, assert it cleaned up. The flatten removed every
+ * migration, so there is no "before" to regress to -- the baseline *is* the end state.
+ * What survives is the half that was never really about migrations: that both generated
+ * files import into a real MariaDB at all, and that the constraints they declare are
+ * enforced by the database rather than merely written down.
+ */
 const runVariant = async ({ connection, schemaFile, hasPlayers, server }) => {
   const database = `mica_${path.basename(schemaFile, '.sql').replace(/\./g, '_')}`;
   step(`${schemaFile} — importing into \`${database}\``);
@@ -452,86 +388,55 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, server }) => {
   check(`${schemaFile}: imports the mica tables`, Number(tables) > 20, true);
 
   /**
-   * A fresh install must NOT run the migration: `mica.sql` seeds the ledger so every
-   * migration is marked applied against tables that were created in their final shape.
+   * The ledger table outlives the migrations themselves, deliberately. Flattening reset
+   * the list to empty; it did not delete the mechanism, and the next migration this repo
+   * writes needs somewhere to record itself. A baseline that stopped creating the table
+   * would fail that migration on a server that installed in between.
    */
-  const seeded = await scalar(
+  const ledger = await scalar(
     connection,
-    'SELECT COUNT(*) FROM mica_schema_migrations WHERE id = ?',
-    ['0001_repair_conversation_participants']
+    "SELECT COUNT(*) FROM information_schema.TABLES WHERE table_schema = DATABASE() AND table_name = 'mica_schema_migrations'"
   );
-  check(`${schemaFile}: a fresh install has the migration pre-seeded`, Number(seeded), 1);
+  check(`${schemaFile}: the ledger table is still created`, Number(ledger), 1);
 
-  const seededViewed = await scalar(
-    connection,
-    'SELECT COUNT(*) FROM mica_schema_migrations WHERE id = ?',
-    ['0002_audit_logs_add_viewed_action']
-  );
-  check(`${schemaFile}: a fresh install has 0002 pre-seeded too`, Number(seededViewed), 1);
-
-  const seeded0003 = await scalar(
-    connection,
-    'SELECT COUNT(*) FROM mica_schema_migrations WHERE id = ?',
-    ['0003_conversations_pair_key']
-  );
-  check(`${schemaFile}: a fresh install has 0003 pre-seeded too`, Number(seeded0003), 1);
-
-  const seeded0004 = await scalar(
-    connection,
-    'SELECT COUNT(*) FROM mica_schema_migrations WHERE id = ?',
-    ['0000_rename_legacy_tables_to_mica']
-  );
-  check(`${schemaFile}: a fresh install has 0004 pre-seeded too`, Number(seeded0004), 1);
+  const seeded = await scalar(connection, 'SELECT COUNT(*) FROM mica_schema_migrations');
+  check(`${schemaFile}: and a fresh install seeds no migration rows`, Number(seeded), 0);
 
   const freshRun = await server.runPendingMigrations();
   check(`${schemaFile}: a fresh install applies nothing`, freshRun.applied, []);
   check(`${schemaFile}: a fresh install fails nothing`, freshRun.failed, null);
+  check(`${schemaFile}: and has nothing left pending`, freshRun.remaining, []);
 
-  step(`${schemaFile} — regressing to a pre-migration server and seeding fixtures`);
-  // An existing server has neither the ledger row nor the unique key.
-  await connection.query('DELETE FROM mica_schema_migrations');
-  await regressToPreMigrationShape(connection);
+  step(`${schemaFile} — the constraints the baseline ships with`);
+  const ids = await seedBaselineRows(connection, hasPlayers);
 
-  const before = await indexesOn(connection, 'mica_messages_participants');
+  const participantIndexes = await indexesOn(connection, 'mica_messages_participants');
   check(
-    `${schemaFile}: starts with the old non-unique index`,
-    before.includes('conversation_participant'),
+    `${schemaFile}: the unique participant key is on`,
+    participantIndexes.includes('conversation_participant_unique (unique)'),
     true
   );
   check(
-    `${schemaFile}: starts without the unique one`,
-    before.includes('conversation_participant_unique (unique)'),
+    `${schemaFile}: and the old non-unique index is not`,
+    participantIndexes.includes('conversation_participant'),
     false
   );
 
-  const ids = await seedFixtures(connection, hasPlayers);
+  let rejected = null;
+  try {
+    await connection.query(
+      `INSERT INTO mica_messages_participants (conversation_id, citizenid, role, left_at, status)
+       VALUES (?, ?, 'member', NULL, 'active')`,
+      [ids.genuine, 'CIT_B']
+    );
+  } catch (error) {
+    rejected = error.code;
+  }
   check(
-    `${schemaFile}: fixture 3 seeded ${DUPLICATES} live rows`,
-    Number(await liveCount(connection, ids.liveDupes, 'CIT_VICTIM')),
-    DUPLICATES
+    `${schemaFile}: a duplicate participant is rejected by the database`,
+    rejected,
+    'ER_DUP_ENTRY'
   );
-  check(
-    `${schemaFile}: fixture 4 seeded ${DUPLICATES} closed rows`,
-    Number(await totalCount(connection, ids.closedDupes, 'CIT_VICTIM2')),
-    DUPLICATES
-  );
-
-  const forgedUpdatedAt = await scalar(
-    connection,
-    'SELECT updated_at FROM mica_messages_conversations WHERE id = ?',
-    [ids.forged]
-  );
-
-  step(`${schemaFile} — running the real runPendingMigrations`);
-  const result = await server.runPendingMigrations();
-  check(`${schemaFile}: reports no failure`, result.failed, null);
-  check(`${schemaFile}: applied the migration`, result.applied, [
-    '0000_rename_legacy_tables_to_mica',
-    '0001_repair_conversation_participants',
-    '0002_audit_logs_add_viewed_action',
-    '0003_conversations_pair_key'
-  ]);
-  check(`${schemaFile}: nothing left over`, result.remaining, []);
 
   step(`${schemaFile} — MICA-70: the audit ledger accepts 'viewed'`);
   let viewedRejected = null;
@@ -545,146 +450,28 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, server }) => {
     viewedRejected = error.code;
   }
   check(
-    `an audit row with action 'viewed' is accepted, not rejected by the enum`,
+    `${schemaFile}: an audit row with action 'viewed' is accepted, not rejected by the enum`,
     viewedRejected,
     null
   );
 
-  step(`${schemaFile} — the five fixtures`);
-  check(
-    `1. a genuine one-to-one stays a one-to-one`,
-    Number(await isGroupOf(connection, ids.genuine)),
-    0
+  step(`${schemaFile} — MICA-161: the generated pair key`);
+  const [pairRows] = await connection.query(
+    'SELECT participant_a, participant_b, pair_key FROM mica_messages_conversations WHERE id = ?',
+    [ids.genuine]
   );
-  check(
-    `2. a forged one-to-one with a third party flips to a group`,
-    Number(await isGroupOf(connection, ids.forged)),
-    1
-  );
-  check(
-    `3. duplicates do not turn a one-to-one into a group`,
-    Number(await isGroupOf(connection, ids.liveDupes)),
-    0
-  );
-  check(
-    `3. the victim keeps exactly one live row`,
-    Number(await liveCount(connection, ids.liveDupes, 'CIT_VICTIM')),
-    1
-  );
-  check(
-    `3. and exactly one row in total`,
-    Number(await totalCount(connection, ids.liveDupes, 'CIT_VICTIM')),
-    1
-  );
-  check(
-    `4. closed duplicates do not make a group either`,
-    Number(await isGroupOf(connection, ids.closedDupes)),
-    0
-  );
-  check(
-    `4. the departed victim keeps exactly one row`,
-    Number(await totalCount(connection, ids.closedDupes, 'CIT_VICTIM2')),
-    1
-  );
-  check(
-    `5. the live row survives an older closed one`,
-    Number(await liveCount(connection, ids.mixed, 'CIT_C')),
-    1
-  );
-  check(
-    `5. and it is the only row left`,
-    Number(await totalCount(connection, ids.mixed, 'CIT_C')),
-    1
-  );
-
-  // Everyone who should still be in a thread still is.
-  check(
-    `nobody was deleted out of a thread`,
-    Number(await liveCount(connection, ids.genuine, 'CIT_B')),
-    1
-  );
-  check(
-    `the eavesdropper is still there, now visible`,
-    Number(await liveCount(connection, ids.forged, 'CIT_EAVESDROPPER')),
-    1
-  );
-
-  step(`${schemaFile} — the constraint, and updated_at`);
-  const after = await indexesOn(connection, 'mica_messages_participants');
-  check(`the unique key is on`, after.includes('conversation_participant_unique (unique)'), true);
-  check(`the old index is gone`, after.includes('conversation_participant'), false);
-
-  let rejected = null;
-  try {
-    await connection.query(
-      `INSERT INTO mica_messages_participants (conversation_id, citizenid, role, left_at, status)
-       VALUES (?, ?, 'member', NULL, 'active')`,
-      [ids.genuine, 'CIT_B']
-    );
-  } catch (error) {
-    rejected = error.code;
-  }
-  check(`a fresh duplicate is rejected by the database`, rejected, 'ER_DUP_ENTRY');
-
-  const forgedUpdatedAfter = await scalar(
-    connection,
-    'SELECT updated_at FROM mica_messages_conversations WHERE id = ?',
-    [ids.forged]
-  );
-  check(
-    `updated_at is preserved on a row the migration changed`,
-    String(forgedUpdatedAfter),
-    String(forgedUpdatedAt)
-  );
-
-  step(`${schemaFile} — MICA-161: the pair key, backfilled from 0001's own fixtures`);
-  const pairRow = async (id) => {
-    const [rows] = await connection.query(
-      'SELECT participant_a, participant_b, pair_key FROM mica_messages_conversations WHERE id = ?',
-      [id]
-    );
-    return rows[0];
-  };
-
-  const genuinePair = await pairRow(ids.genuine);
-  check(
-    `1. the genuine pair is backfilled, order-independent`,
-    [genuinePair.participant_a, genuinePair.participant_b].sort(),
-    ['CIT_A', 'CIT_B']
-  );
-  check(`1. and its pair_key is normalised`, genuinePair.pair_key, 'CIT_A|CIT_B');
-
-  const forgedPair = await pairRow(ids.forged);
-  check(
-    `2. a thread 0001 flipped to a group gets no pair key`,
-    [forgedPair.participant_a, forgedPair.participant_b, forgedPair.pair_key],
-    [null, null, null]
-  );
-
-  const liveDupesPair = await pairRow(ids.liveDupes);
-  check(
-    `3. the deduplicated live-duplicates thread still resolves to its real pair`,
-    [liveDupesPair.participant_a, liveDupesPair.participant_b].sort(),
-    ['CIT_A', 'CIT_VICTIM']
-  );
-
-  const closedDupesPair = await pairRow(ids.closedDupes);
-  check(
-    `4. a pair whose only other member already left keeps a pair key`,
-    [closedDupesPair.participant_a, closedDupesPair.participant_b].sort(),
-    ['CIT_A', 'CIT_VICTIM2']
-  );
+  check(`${schemaFile}: pair_key is generated and normalised`, pairRows[0].pair_key, 'CIT_A|CIT_B');
 
   const conversationIndexes = await indexesOn(connection, 'mica_messages_conversations');
   check(
-    `${schemaFile}: pair_key_unique is unique — none of 0001's fixtures collide`,
+    `${schemaFile}: pair_key_unique is unique`,
     conversationIndexes.includes('pair_key_unique (unique)'),
     true
   );
 
   let pairRejected = null;
   try {
-    // The exact pair `genuine` already holds, with the two citizenids reversed —
+    // The exact pair the seed already holds, with the two citizenids reversed —
     // `LEAST`/`GREATEST` must still see them as the same pair.
     await connection.query(
       `INSERT INTO mica_messages_conversations (citizenid, is_group, participant_a, participant_b, status)
@@ -694,201 +481,36 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, server }) => {
   } catch (error) {
     pairRejected = error.code;
   }
-  check(`a fresh duplicate pair is rejected by the database`, pairRejected, 'ER_DUP_ENTRY');
+  check(`${schemaFile}: a reversed duplicate pair is rejected`, pairRejected, 'ER_DUP_ENTRY');
 
-  // But a *soft-deleted* duplicate must not block a later, genuinely new active pair —
+  // A *soft-deleted* duplicate must not block a later, genuinely new active pair —
   // `pair_key`'s CASE only ever gives an `active` row a non-null key, so a deleted row
-  // occupies no slot in the unique index for a fresh pair to collide with. A pair with no
-  // existing row at all (`CIT_A`/`CIT_EAVESDROPPER` — a group member in `forged`, never a
-  // pair on its own), so this cannot be confused with `genuine`'s still-live active row.
-  const [deletedDup] = await connection.query(
+  // occupies no slot in the unique index for a fresh pair to collide with.
+  await connection.query(
     `INSERT INTO mica_messages_conversations (citizenid, is_group, participant_a, participant_b, status)
      VALUES (?, 0, ?, ?, 'deleted')`,
     ['CIT_A', 'CIT_A', 'CIT_EAVESDROPPER']
   );
   let freshAfterDeleteRejected = null;
-  let freshAfterDeleteId = null;
   try {
-    const [inserted] = await connection.query(
+    await connection.query(
       `INSERT INTO mica_messages_conversations (citizenid, is_group, participant_a, participant_b, status)
        VALUES (?, 0, ?, ?, 'active')`,
       ['CIT_A', 'CIT_EAVESDROPPER', 'CIT_A']
     );
-    freshAfterDeleteId = inserted.insertId;
   } catch (error) {
     freshAfterDeleteRejected = error.code;
   }
   check(
-    `a soft-deleted duplicate does not block a fresh active pair`,
+    `${schemaFile}: a soft-deleted duplicate does not block a fresh active pair`,
     freshAfterDeleteRejected,
     null
   );
 
-  await connection.query('DELETE FROM mica_messages_conversations WHERE id IN (?, ?)', [
-    deletedDup.insertId,
-    freshAfterDeleteId
-  ]);
-
-  step(`${schemaFile} — running it a second time`);
-  const rowsBefore = await scalar(connection, 'SELECT COUNT(*) FROM mica_messages_participants');
+  step(`${schemaFile} — the runner is idempotent with nothing to run`);
   const second = await server.runPendingMigrations();
-  check(`the ledger stops a second apply`, second.applied, []);
-  check(`and reports no failure`, second.failed, null);
-  check(
-    `no rows changed`,
-    Number(await scalar(connection, 'SELECT COUNT(*) FROM mica_messages_participants')),
-    Number(rowsBefore)
-  );
-
-  /**
-   * And once more with the ledger cleared, which is the state a failed ledger write leaves
-   * behind — `runMigrations` tells an operator the migration ran but was not recorded, and
-   * they have to decide whether to retry. This is that retry.
-   */
-  await connection.query('DELETE FROM mica_schema_migrations');
-  const replay = await server.runPendingMigrations();
-  check(`a forced replay still succeeds`, replay.failed, null);
-  check(`a forced replay applies cleanly`, replay.applied, [
-    '0000_rename_legacy_tables_to_mica',
-    '0001_repair_conversation_participants',
-    '0002_audit_logs_add_viewed_action',
-    '0003_conversations_pair_key'
-  ]);
-  check(
-    `a forced replay changes no rows`,
-    Number(await scalar(connection, 'SELECT COUNT(*) FROM mica_messages_participants')),
-    Number(rowsBefore)
-  );
-  const replayIndexes = await indexesOn(connection, 'mica_messages_participants');
-  check(
-    `a forced replay leaves the unique key alone`,
-    replayIndexes.includes('conversation_participant_unique (unique)'),
-    true
-  );
-  const replayConversationIndexes = await indexesOn(connection, 'mica_messages_conversations');
-  check(
-    `a forced replay leaves pair_key_unique alone too`,
-    replayConversationIndexes.includes('pair_key_unique (unique)'),
-    true
-  );
-};
-
-/* ---------------------------------- MICA-161: the duplicate-tolerance branch */
-
-/**
- * The one thing `runVariant`'s shared fixtures above cannot exercise: a server that
- * already has more than one active thread for the same pair by the time it upgrades.
- * The decision (`docs/schema-and-services.md`, via the `mica-service` skill) is not to
- * repair that — a merge that mishandles which thread's read state or history is
- * authoritative corrupts something a player can see, silently — so the migration has to
- * *tolerate* it: add `pair_key_unique` as a plain, non-unique index instead of failing
- * `micaschema apply` outright.
- *
- * A dedicated database, the same way `runSweepFixtures` gets its own. The unique-vs-plain
- * decision is table-wide, so proving the plain branch needs a table where a duplicate
- * pair is the *only* thing in it — mixing this into `runVariant`'s shared fixtures would
- * make that function's own "pair_key_unique is unique" assertion false.
- */
-const runPairKeyDuplicateFixture = async ({ connection, schemaFile, server }) => {
-  const database = 'mica_pairkey_duplicate';
-  step(`${schemaFile} — MICA-161: a server with a pre-existing duplicate pair`);
-
-  await connection.query(`DROP DATABASE IF EXISTS \`${database}\``);
-  await connection.query(`CREATE DATABASE \`${database}\``);
-  await connection.changeUser({ database });
-  await connection.query(PLAYERS_TABLE);
-  await connection.query('INSERT INTO players (citizenid) VALUES (?), (?)', ['CIT_A', 'CIT_B']);
-  await connection.query(fs.readFileSync(path.join(root, schemaFile), 'utf8'));
-
-  // A server that has never applied either migration.
-  await connection.query('DELETE FROM mica_schema_migrations');
-  await regressToPreMigrationShape(connection);
-
-  const conversation = async () => {
-    const [result] = await connection.query(
-      "INSERT INTO mica_messages_conversations (citizenid, is_group, status) VALUES ('CIT_A', 0, 'active')"
-    );
-    return result.insertId;
-  };
-  const participant = async (conversationId, citizenid, role) => {
-    await connection.query(
-      `INSERT INTO mica_messages_participants (conversation_id, citizenid, role, left_at, status)
-       VALUES (?, ?, ?, NULL, 'active')`,
-      [conversationId, citizenid, role]
-    );
-  };
-
-  // The residue `reconcilePairDuplicate`'s post-hoc check could not always catch before
-  // `pair_key_unique` existed: two genuinely separate threads, both alive, for the same
-  // two people — the ordinary MICA-156 race, from before this fix, left uncleaned.
-  const first = await conversation();
-  await participant(first, 'CIT_A', 'admin');
-  await participant(first, 'CIT_B', 'member');
-
-  const second = await conversation();
-  await participant(second, 'CIT_A', 'admin');
-  await participant(second, 'CIT_B', 'member');
-
-  const result = await server.runPendingMigrations();
-  check(
-    `${database}: the migration still succeeds over a pre-existing duplicate`,
-    result.failed,
-    null
-  );
-  check(`${database}: it applied every pending migration`, result.applied, [
-    '0000_rename_legacy_tables_to_mica',
-    '0001_repair_conversation_participants',
-    '0002_audit_logs_add_viewed_action',
-    '0003_conversations_pair_key'
-  ]);
-
-  const firstKey = await scalar(
-    connection,
-    'SELECT pair_key FROM mica_messages_conversations WHERE id = ?',
-    [first]
-  );
-  const secondKey = await scalar(
-    connection,
-    'SELECT pair_key FROM mica_messages_conversations WHERE id = ?',
-    [second]
-  );
-  check(
-    `both threads backfill to the same, real pair key`,
-    [firstKey, secondKey],
-    ['CIT_A|CIT_B', 'CIT_A|CIT_B']
-  );
-
-  const indexes = await indexesOn(connection, 'mica_messages_conversations');
-  check(
-    `pair_key_unique exists`,
-    indexes.some((i) => i.startsWith('pair_key_unique')),
-    true
-  );
-  check(
-    `but it is not unique — the migration did not fail, and it did not merge anything`,
-    indexes.includes('pair_key_unique (unique)'),
-    false
-  );
-
-  // Genuinely non-unique, not merely reported as such: a third duplicate must be
-  // accepted, because refusing it would be enforcing a constraint the declaration says
-  // this server does not actually have.
-  let thirdRejected = null;
-  try {
-    const third = await conversation();
-    await participant(third, 'CIT_A', 'admin');
-    await participant(third, 'CIT_B', 'member');
-  } catch (error) {
-    thirdRejected = error.code;
-  }
-  check(`a third duplicate is accepted rather than refused`, thirdRejected, null);
-
-  // Running it again must neither fail nor try to upgrade the index it already decided
-  // not to make unique — `SchemaMigrator`'s planner (and this migration's own
-  // `hasIndex` guard) sees `pair_key_unique` present by name and leaves it alone.
-  const secondRun = await server.runPendingMigrations();
-  check(`a second run reports nothing pending`, secondRun.applied, []);
-  check(`and no failure`, secondRun.failed, null);
+  check(`${schemaFile}: a second call still applies nothing`, second.applied, []);
+  check(`${schemaFile}: and still reports no failure`, second.failed, null);
 };
 
 /* --------------------------------------------- MICA-152: the orphan sweep */
@@ -944,13 +566,6 @@ const seedSweepRows = async (connection, live, gone) => {
     [gone, 'deleted', 'notes', 'delete', 1]
   );
 };
-
-const tableExists = (connection, table) =>
-  scalar(
-    connection,
-    'SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?',
-    [table]
-  );
 
 const rowsIn = async (connection, table) =>
   Number(await scalar(connection, `SELECT COUNT(*) FROM ${table}`));
@@ -1141,110 +756,6 @@ const runSweepFixtures = async ({ connection, schemaFile, hasPlayers, server }) 
   server.__setResourceLookup();
 };
 
-/**
- * MICA-274: 0005 actually moves the rows, which nothing else in this harness proves.
- *
- * `regressToPreMigrationShape` regresses indexes and columns, never the table prefix, so
- * both rename migrations run as no-ops in every other fixture here — they look for a
- * prefix that is not present and return early. That is a green suite that says nothing
- * about the single failure these migrations exist to prevent: a player's messages
- * stranded in a table nothing reads, while an empty one is created beside it and the
- * whole server looks like a fresh install.
- *
- * A dedicated database seeded with `gos_*` tables holding real rows is the only way to
- * see it, and it covers the collision branch in the same pass.
- */
-const runPrefixRenameFixture = async ({ connection, schemaFile, server }) => {
-  const database = 'mica_prefix_rename';
-  step(`${schemaFile} — MICA-274: 0000 carries gphone_* and gos_* rows onto mica_*`);
-
-  await connection.query(`DROP DATABASE IF EXISTS \`${database}\``);
-  await connection.query(`CREATE DATABASE \`${database}\``);
-  await connection.changeUser({ database });
-  await connection.query(PLAYERS_TABLE);
-  await connection.query('INSERT INTO players (citizenid) VALUES (?)', ['CIT_A']);
-  await connection.query(fs.readFileSync(path.join(root, schemaFile), 'utf8'));
-
-  await connection.query(
-    "INSERT INTO mica_notes (citizenid, title, content, status) VALUES ('CIT_A', 'oldest', 'body', 'active')"
-  );
-  await connection.query(
-    "INSERT INTO mica_contacts (citizenid, firstname, phone, status) VALUES ('CIT_A', 'collides', '555', 'active')"
-  );
-  await connection.query(
-    "INSERT INTO mica_audit_logs (citizenid, action, service, method, target_id) VALUES ('CIT_A', 'viewed', 'reports', 'queue', 1)"
-  );
-
-  // Three shapes at once, because a real database is only ever one of them and the
-  // migration must not care which:
-  //   notes      -- never renamed at all, still on the original gphone_ prefix
-  //   audit_logs -- got as far as the intermediate gos_ and stopped there
-  //   contacts   -- gos_, and the server was started once on the new code, so the empty
-  //                 mica_ table is already sitting on the name the rename wants
-  await connection.query('RENAME TABLE `mica_notes` TO `gphone_notes`');
-  await connection.query('RENAME TABLE `mica_audit_logs` TO `gos_audit_logs`');
-  await connection.query('RENAME TABLE `mica_contacts` TO `gos_contacts`');
-  await connection.query('CREATE TABLE `mica_contacts` LIKE `gos_contacts`');
-
-  // A ledger under each old name, neither of which may be moved while runMigrations is
-  // reading the new one.
-  await connection.query('RENAME TABLE `mica_schema_migrations` TO `gphone_schema_migrations`');
-  await connection.query('CREATE TABLE `mica_schema_migrations` LIKE `gphone_schema_migrations`');
-
-  const result = await server.runPendingMigrations();
-  check(`${schemaFile}: the prefix rename reports no failure`, result.failed, null);
-  check(
-    `${schemaFile}: 0000 is in the applied list`,
-    result.applied.includes('0000_rename_legacy_tables_to_mica'),
-    true
-  );
-
-  check(
-    `${schemaFile}: the gphone_ table is gone`,
-    Number(await tableExists(connection, 'gphone_notes')),
-    0
-  );
-  check(
-    `${schemaFile}: its row arrived on mica_notes`,
-    Number(await scalar(connection, "SELECT COUNT(*) FROM mica_notes WHERE title = 'oldest'")),
-    1
-  );
-
-  check(
-    `${schemaFile}: the gos_ table is gone too`,
-    Number(await tableExists(connection, 'gos_audit_logs')),
-    0
-  );
-  check(
-    `${schemaFile}: its row arrived on mica_audit_logs`,
-    Number(
-      await scalar(connection, "SELECT COUNT(*) FROM mica_audit_logs WHERE action = 'viewed'")
-    ),
-    1
-  );
-
-  // The collision branch: both names existed, so the rename leaves the pair alone rather
-  // than erroring and aborting the rest of the run.
-  check(
-    `${schemaFile}: the occupied name is skipped, not clobbered`,
-    Number(await tableExists(connection, 'gos_contacts')),
-    1
-  );
-  check(
-    `${schemaFile}: and the real rows are still on the old name`,
-    Number(
-      await scalar(connection, "SELECT COUNT(*) FROM gos_contacts WHERE firstname = 'collides'")
-    ),
-    1
-  );
-
-  check(
-    `${schemaFile}: the old ledger is left where it is`,
-    Number(await tableExists(connection, 'gphone_schema_migrations')),
-    1
-  );
-};
-
 const main = async () => {
   let container;
   let connection;
@@ -1274,6 +785,9 @@ const main = async () => {
     installOxmysql(connection);
     const server = await loadServerModule();
 
+    // After the flatten both sides of this are empty, and it is still worth running: it is
+    // what catches a migration added to the directory without the barrel being regenerated,
+    // which is the first thing that will happen the next time one is written.
     check(
       'the barrel exposes every migration on disk',
       server.migrations.map((m) => m.id),
@@ -1289,11 +803,6 @@ const main = async () => {
     await runVariant({ connection, schemaFile: 'mica.sql', hasPlayers: true, server });
     await runVariant({ connection, schemaFile: 'mica.esx.sql', hasPlayers: false, server });
 
-    // MICA-161. One schema file is enough: the pair-key DDL and the unique-vs-plain
-    // decision do not depend on which framework's owner table micaOS is pointed at, unlike
-    // the sweep just below, which genuinely differs by framework.
-    await runPairKeyDuplicateFixture({ connection, schemaFile: 'mica.sql', server });
-
     // MICA-152. Both frameworks, because the sweep's whole job is to be the cascade ESX
     // does not have — and because "qb is unchanged" is a claim worth executing rather than
     // reasoning about.
@@ -1304,8 +813,6 @@ const main = async () => {
       hasPlayers: false,
       server
     });
-
-    await runPrefixRenameFixture({ connection, schemaFile: 'mica.sql', server });
 
     if (checksRun < MINIMUM_CHECKS) {
       throw new Error(

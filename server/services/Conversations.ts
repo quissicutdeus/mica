@@ -99,11 +99,11 @@ export const conversations = defineService<Conversation, typeof conversationsCon
      * built from are no more secret than what `findForCitizen`'s hydrated participant list
      * already hands every member of a thread.
      *
-     * **Mirrored by hand in `server/migrations/0003_conversations_pair_key.ts`.** A
-     * migration is frozen at the moment it shipped and must not import a service module
-     * whose shape can move out from under it (the same reason `0001` hardcodes its own
-     * table and index names rather than importing them) — so the two copies of this
-     * expression have to be kept in sync by eye rather than by the type system.
+     * This expression used to be mirrored by hand in a migration, because a migration is
+     * frozen at the moment it shipped and must not import a service module whose shape can
+     * move out from under it. The flatten removed every migration, so this declaration is
+     * now the only copy and `mica.sql` is generated from it — nothing to keep in sync by
+     * eye. Restore the warning if a future migration ever restates this expression.
      */
     pair_key: {
       type: 'string',

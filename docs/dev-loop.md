@@ -116,9 +116,9 @@ once you commit it.
 
 ## Why `pnpm test:unit` (the full one) takes as long as it does
 
-Originally profiled during MICA-29 at ~112s for the `web` project, ~70s of
-that being jsdom environment creation/teardown. Two follow-up tickets acted on
-that finding:
+Originally profiled during MICA-29 at ~112s for the `web` project, ~70s of that
+being jsdom environment creation/teardown. Two follow-up tickets acted on that
+finding:
 
 **MICA-32 tried swapping the DOM implementation** (`jsdom` → `happy-dom`, the
 usual faster alternative for a Vitest suite) and reverted it. It really was
@@ -128,12 +128,12 @@ handler, and an `<a href>` link all passed straight through un-stripped under
 happy-dom, where jsdom correctly strips them, and nothing about that failure was
 loud enough to trust switching wholesale. `jsdom` stays the DOM implementation.
 
-**MICA-32 also found the actual fix**, once the diagnosis moved from "which
-DOM implementation" to "how many files pay for one at all": most test files in
-this suite never touch the DOM. `environment: 'node'` (`web/vite.config.ts`) is
-now the _default_ — essentially free to set up — and a file opts into a real
-`jsdom` with a `// @vitest-environment jsdom` docblock as its first line.
-Getting the classification wrong is loud and immediate
+**MICA-32 also found the actual fix**, once the diagnosis moved from "which DOM
+implementation" to "how many files pay for one at all": most test files in this
+suite never touch the DOM. `environment: 'node'` (`web/vite.config.ts`) is now
+the _default_ — essentially free to set up — and a file opts into a real `jsdom`
+with a `// @vitest-environment jsdom` docblock as its first line. Getting the
+classification wrong is loud and immediate
 (`ReferenceError: document is not defined`) rather than a silent behavior
 change, which is what made this safe to adopt where swapping DOM implementations
 wasn't. Net effect: the full `web` suite dropped from ~112s to ~78s, with zero
@@ -205,21 +205,21 @@ and call ordering and nothing else. That is blind to every question MySQL
 answers: whether a statement parses, whether an `ALTER` succeeds against the
 rows actually present, whether a constraint rejects what it should.
 
-MICA-153 is the worked example. A draft of `0001` soft-closed its duplicate
-rows instead of deleting them, and `UNIQUE (conversation_id, citizenid)` counts
-rows rather than live rows — so `ADD UNIQUE KEY` aborted with ER 1062 on the
-first database that had the duplicates the migration existed to remove. Every
-mocked assertion passed. Re-introducing that bug today fails this harness on the
+MICA-153 is the worked example. A draft of `0001` soft-closed its duplicate rows
+instead of deleting them, and `UNIQUE (conversation_id, citizenid)` counts rows
+rather than live rows — so `ADD UNIQUE KEY` aborted with ER 1062 on the first
+database that had the duplicates the migration existed to remove. Every mocked
+assertion passed. Re-introducing that bug today fails this harness on the
 fixture named `3-CIT_VICTIM`, which is the whole argument for the file.
 
 ### `pnpm test:schema`, and the CI job that runs both
 
-`scripts/test-schema.js` (MICA-203) takes the same harness one step further.
-For each framework shape in turn it creates the owner table the way the
-framework ships it — qb `players`, and ESX `users` with no explicit collation so
-it takes the server default, which is the shape that refused a join in
-MICA-197 — imports the matching `mica*.sql`, runs the migrator, seeds a few
-rows, and calls the real repository methods that name an owner table
+`scripts/test-schema.js` (MICA-203) takes the same harness one step further. For
+each framework shape in turn it creates the owner table the way the framework
+ships it — qb `players`, and ESX `users` with no explicit collation so it takes
+the server default, which is the shape that refused a join in MICA-197 — imports
+the matching `mica*.sql`, runs the migrator, seeds a few rows, and calls the
+real repository methods that name an owner table
 (`ConversationRepository.findForCitizen`, `findParticipantsForConversations`,
 `PlayerDirectory.resolveByPhone` and the rest) through the bundled server code
 with `oxmysql` stubbed by a real client. A statement that only fails against a
@@ -348,8 +348,8 @@ are different claims and only one of them is checkable. Time the gate.
 Agent worktrees accumulate. Each one holds a branch checked out, which is why
 `git checkout MICA-136` can fail with "already checked out" on a ticket nobody
 is working on any more — and why AGENTS.md §2.12 says to take the slugged form
-(`MICA-136-player-loaded`) rather than fight it. That is the cheap fix.
-Removing the worktree is the real one, and it is the step to be careful about.
+(`MICA-136-player-loaded`) rather than fight it. That is the cheap fix. Removing
+the worktree is the real one, and it is the step to be careful about.
 
 **Never blanket-prune.** `git worktree prune` only removes entries whose
 directory is already gone; `git worktree remove` on a live directory throws away

@@ -45,10 +45,10 @@ game, say which is which.
 Prose wrapped at 80 columns. `pnpm lint:md` is strict and `markdownlint-cli2`
 covers `**/*.md`, so a new file is in scope the moment you create it.
 
-Jira `MICA` is the only planning system: do not restart `docs/roadmap.md` or
-any committed file as a shadow backlog, and do not keep an untracked local plan.
-A design doc names the **issue key only** (`MICA-16`), never the site URL,
-which identifies the owner.
+Jira `MICA` is the only planning system: do not restart `docs/roadmap.md` or any
+committed file as a shadow backlog, and do not keep an untracked local plan. A
+design doc names the **issue key only** (`MICA-16`), never the site URL, which
+identifies the owner.
 
 **§2.10's attribution ban is absolute and applies to everything you write** —
 commit messages, PR bodies, issue comments, release notes, changelog entries. No

@@ -247,10 +247,10 @@ not work around it.
     Config for other assistants (`.cursor/`, `.continue/`) is nobody else's
     business; keep it out.
 
-11. **One planning system of record, the Jira project `MICA`, and do not
-    create a second.** It is a pure backlog — proposed-but-unbuilt work and app
-    ideas — and nothing in it describes code that exists: a shipped proposal
-    gets its issue closed, not relabeled "done" in place. Do not restart
+11. **One planning system of record, the Jira project `MICA`, and do not create
+    a second.** It is a pure backlog — proposed-but-unbuilt work and app ideas —
+    and nothing in it describes code that exists: a shipped proposal gets its
+    issue closed, not relabeled "done" in place. Do not restart
     `docs/roadmap.md` (its predecessor) or any other committed file as a shadow
     backlog, and do not keep an untracked local plan either. A design doc or
     phased plan names the Jira issue key it corresponds to (`MICA-16`) — **the
@@ -260,8 +260,8 @@ not work around it.
     fix that ships within the hour does not need one; the commit is the record.
 
 12. **A branch is named for its Jira key** — `MICA-<n>`, optionally with a
-    lowercase slug (`MICA-56`, `MICA-56-bank-send`). `main` and `dev` are
-    the only other legal names. No `feature/`, no tool-generated names, no
+    lowercase slug (`MICA-56`, `MICA-56-bank-send`). `main` and `dev` are the
+    only other legal names. No `feature/`, no tool-generated names, no
     `claude/…`.
 
     **Committing straight to `dev` is fine, and is the normal path here.** This
@@ -300,8 +300,8 @@ they get the native compiler now and `web/` waits.
   ships 85 Svelte components, so it needs `svelte-check` exactly as `web/` does.
   The two unblock at 7.1 together; neither can move first.
 - **`sdk/`'s 165 non-Svelte `.ts` files are _also_ checked by TS 7**
-  (`sdk/tsconfig.tsc.json`, run by `typecheck:sdk` — MICA-184). Additive, not
-  a partition: `svelte-check` still covers the package whole, so a file leaving
+  (`sdk/tsconfig.tsc.json`, run by `typecheck:sdk` — MICA-184). Additive, not a
+  partition: `svelte-check` still covers the package whole, so a file leaving
   the TS 7 set loses strictness, never checking. **That drift is silent in both
   directions** — `svelte/types` declares `*.svelte` ambiently, so `tsc` does
   _not_ error on a component import. `scripts/check-sdk-partition.js` derives
@@ -417,9 +417,9 @@ the change is unverified in CEF.
 
 The `cef-css` skill is the working reference. Every accommodation this repo
 makes for the 103 floor — and which Chromium version retires it — is inventoried
-in [`docs/cef-baseline.md`](docs/cef-baseline.md), the MICA-67 watch item.
-Read it before deleting anything as obsolete; several entries that look
-version-gated are not.
+in [`docs/cef-baseline.md`](docs/cef-baseline.md), the MICA-67 watch item. Read
+it before deleting anything as obsolete; several entries that look version-gated
+are not.
 
 ---
 

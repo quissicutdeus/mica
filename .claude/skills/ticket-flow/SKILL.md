@@ -40,9 +40,9 @@ are frequently more specific than the request that pointed you at it.
 say which ticket it serves is one nobody else can triage.
 
 Take the slugged form when the bare key is already checked out somewhere — git
-refuses a second checkout of one branch, so a stale worktree holding
-`MICA-136` makes the plain key unavailable. That is ordinary, not an error to
-route around; `docs/dev-loop.md` has the pruning procedure.
+refuses a second checkout of one branch, so a stale worktree holding `MICA-136`
+makes the plain key unavailable. That is ordinary, not an error to route around;
+`docs/dev-loop.md` has the pruning procedure.
 
 Enforced in exactly one place: `scripts/pre-push.js` (via
 `scripts/check-branch-name.js`) judges the **remote** ref of each push, then

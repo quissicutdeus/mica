@@ -36,10 +36,10 @@ carries it, which is how you tell which commit a build actually used.
 `main` was not usable for this while the packaged `sdk/` (MICA-172) and
 `shared/` (MICA-186) existed only on `dev`. That stopped being true on
 2026-08-31: `main` carries both, and from `v2026.08.31.44` the release itself
-publishes `mica-sdk-*.tgz` and `mica-shared-*.tgz` (MICA-125). Pinning a
-release tarball is now the better answer than a git specifier for anyone who
-wants a version rather than a branch — the tarball's `@mica/shared` dependency
-is a concrete version, so none of the `workspace:*` trouble above applies to it.
+publishes `mica-sdk-*.tgz` and `mica-shared-*.tgz` (MICA-125). Pinning a release
+tarball is now the better answer than a git specifier for anyone who wants a
+version rather than a branch — the tarball's `@mica/shared` dependency is a
+concrete version, so none of the `workspace:*` trouble above applies to it.
 
 ## `@mica/sdk` resolves to the wrong barrel out of tree
 

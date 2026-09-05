@@ -1,7 +1,7 @@
 # Does the Music embed work in CEF? The procedure that settles it
 
-MICA-111 phase 1 exists to answer one question, and no test suite can answer
-it: **does a cross-origin YouTube iframe, driven by `postMessage`, work inside
+MICA-111 phase 1 exists to answer one question, and no test suite can answer it:
+**does a cross-origin YouTube iframe, driven by `postMessage`, work inside
 FiveM's CEF?** `pnpm test:e2e` drives a modern Chromium against a stub
 (`web/e2e/apps/music.spec.ts`), the unit tests drive jsdom, and neither has ever
 loaded a player. This file is the procedure that does, at an F8 console, in

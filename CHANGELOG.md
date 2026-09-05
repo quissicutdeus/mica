@@ -60,19 +60,19 @@ this is worth a read of your `server.cfg` rather than a glance.
 `micacharge`, `micacall` and `micaseed`. The old spellings are not registered,
 so they fail as unknown commands rather than doing nothing quietly.
 
-**Your database moves with it — run `micaschema apply` from your server console
-after updating, or import the regenerated `mica.sql` / `mica.esx.sql` on a fresh
-install.** One migration does it, `0000_rename_legacy_tables_to_mica`, and it
-handles either old name: a database still on `gphone_*`, and one that got as far
-as the short-lived `gos_*` before this release, both land on `mica_*`. Each
-prefix is renamed in one atomic statement, so no foreign key ever sees a
-half-renamed schema.
+**Your database does not move with it. Import `mica.sql` (or `mica.esx.sql`)
+fresh.** The schema ships as a single baseline with no migration chain behind
+it: the versioned migrations that carried a `gphone_*` or `gos_*` database onto
+the `mica_*` prefix have been removed along with the rest of the chain, because
+micaOS had no installs outside this repo to carry. There is no upgrade path from
+a pre-rename database, and there is deliberately no code left that pretends
+otherwise.
 
-If you start the new resource _before_ running the migration, the additive half
-of `micaschema apply` will create the new tables empty beside your old ones and
-every player will look like a fresh install; the migration then refuses to
-overwrite the empty table and tells you which pair to look at, so nothing is
-lost, but the tidy order is to apply first.
+If you are somehow running a `gphone_*` or `gos_*` schema, rename the tables to
+`mica_*` by hand before starting the resource. Starting it first is the failure
+worth avoiding: the additive half of `micaschema apply` creates the new tables
+empty beside your old ones and every player looks like a fresh install, with
+their real rows still sitting in tables nothing reads.
 
 The phone itself is still called gPhone, and so is the device in a player's
 hand. What changed is the name of the software it runs: a gPhone and a gTablet
@@ -325,10 +325,10 @@ that sets none of them changes nothing for your players.
 
 ### Added
 
-**The phone can be an item (MICA-229).** Set `mica_phone_item` to the name of
-an inventory item and the phone opens only for a player holding at least one:
-using the item opens it, the keybind works while they hold one, and losing the
-last one closes it the way `SetPhoneEnabled(false)` does, until one is picked up
+**The phone can be an item (MICA-229).** Set `mica_phone_item` to the name of an
+inventory item and the phone opens only for a player holding at least one: using
+the item opens it, the keybind works while they hold one, and losing the last
+one closes it the way `SetPhoneEnabled(false)` does, until one is picked up
 again. The server counts the item itself on every check, so a modified client
 cannot claim one. Empty, which is the default, changes nothing, and standalone
 ignores it. **Owner action only if you want the gate:** define the item for your
@@ -336,27 +336,26 @@ inventory (README, "The phone as an item"; qb-core and ox_inventory already ship
 one named `phone`) and set the convar.
 
 **Every release now attaches the resource itself, prebuilt, as
-`mica-<version>.zip` (MICA-220).** Unpack it into `resources` and
-`ensure mica`: no Node, no pnpm, no build. It carries the manifest, stamped with
-the release version, the built bundles, both schema files, the licence and the
-installation section of README. `SHA256SUMS` and the provenance attestation on
-each release cover it exactly as they cover the SDK tarballs. Before it is
-attached, the release job unpacks it on a FiveM server beside a throwaway
-database, imports its own `mica.esx.sql` and starts it; a zip that does not
-start is not released. An install built from source keeps working and the
-resource inside is the same build, so there is nothing to move to. No owner
-action.
+`mica-<version>.zip` (MICA-220).** Unpack it into `resources` and `ensure mica`:
+no Node, no pnpm, no build. It carries the manifest, stamped with the release
+version, the built bundles, both schema files, the licence and the installation
+section of README. `SHA256SUMS` and the provenance attestation on each release
+cover it exactly as they cover the SDK tarballs. Before it is attached, the
+release job unpacks it on a FiveM server beside a throwaway database, imports
+its own `mica.esx.sql` and starts it; a zip that does not start is not released.
+An install built from source keeps working and the resource inside is the same
+build, so there is nothing to move to. No owner action.
 
-**The phone speaks the player's language (MICA-61).** Settings > Language
-lists every language any app provides, and `Automatic` follows a new convar,
+**The phone speaks the player's language (MICA-61).** Settings > Language lists
+every language any app provides, and `Automatic` follows a new convar,
 `mica_locale`, then the player's own game language, then English. Set
 `mica_locale "de"` (a BCP 47 tag; a value that is not one is ignored with a
 console warning) to give a community a default without each player choosing.
 Every screen the phone draws — the shell, Settings, the shared dialogs and all
 sixteen apps — reads its strings from a catalog, and every one ships German
-alongside English (MICA-214, MICA-215). What is still English on a German
-phone is the text the server itself composes, such as a refusal in a toast; that
-is MICA-216. Dates, times and currency format under the chosen language. A
+alongside English (MICA-214, MICA-215). What is still English on a German phone
+is the text the server itself composes, such as a refusal in a toast; that is
+MICA-216. Dates, times and currency format under the chosen language. A
 translator who wants to add a language edits the `locales/*.json` files beside
 each app; nothing else is needed.
 
@@ -368,18 +367,18 @@ text as the admin typed it (`micacall`, `micaseed` and the battery command
 echo), since it is not fixed prose. No owner action.
 
 **The phone itself now holds what a player consented to when installing an
-add-on (MICA-201).** The Store used to be the only witness; the shell now
-keeps the accepted permission set per add-on and refuses any call the grant does
-not cover, the same way it refuses an undeclared one. Existing installs adopt
-their installed manifest as the grant once, at the first boot after updating. An
+add-on (MICA-201).** The Store used to be the only witness; the shell now keeps
+the accepted permission set per add-on and refuses any call the grant does not
+cover, the same way it refuses an undeclared one. Existing installs adopt their
+installed manifest as the grant once, at the first boot after updating. An
 add-on you push from the server with the `installApp` NUI message is granted its
 declared permissions at push time, since you, not the player, are the one
 choosing it. No owner action.
 
 **The Messages inbox pages by last-message recency, twenty-five threads at a
-time (MICA-211).** It used to walk thread ids two hundred at a time, which
-could push an old thread with a fresh message onto a later page. No schema
-change and no owner action.
+time (MICA-211).** It used to walk thread ids two hundred at a time, which could
+push an old thread with a fresh message onto a later page. No schema change and
+no owner action.
 
 - The lock screen passcode is stored with **scrypt** rather than a single salted
   SHA-256 pass, and wrong guesses are now rate limited on the server rather than
@@ -625,9 +624,9 @@ the Store checks at install. Rebuild against this SDK, add both fields, and
 declare in `networkHosts` any host you fetch from.
 
 **A custom action on a service you declare now needs a contract, and the server
-refuses to start without one (MICA-195).** Declare it with `defineContract`
-from `@mica/shared/contract` and pass it to `defineService` as `contract`.
-Objects are strict, so an undeclared field refuses the request rather than being
+refuses to start without one (MICA-195).** Declare it with `defineContract` from
+`@mica/shared/contract` and pass it to `defineService` as `contract`. Objects
+are strict, so an undeclared field refuses the request rather than being
 dropped; a length cap refuses rather than truncates; a malformed id anywhere in
 a batch refuses the whole request. Generic CRUD is unchanged and needs no
 declaration. Notes, Blabber and Hodlr in this repo show the shape.
@@ -658,15 +657,15 @@ message is the translation instead. Your own server half is unaffected: send
 with keys under a namespace you register from your bundle and it translates.
 `notifyPlayer` on the server takes `key`, `titleKey` and `params` the same way.
 
-**`useMessages()` gains `hasOlderMessages` and `loadOlderMessages`
-(MICA-212).** A thread is read one page at a time now — fifty newest first,
-older pages through a cursor — and `messages:get` answers `{ rows, nextCursor }`
-rather than a bare array. Both names are additive; nothing an add-on already
-calls changed shape except that read, which no add-on reaches through the SDK.
+**`useMessages()` gains `hasOlderMessages` and `loadOlderMessages` (MICA-212).**
+A thread is read one page at a time now — fifty newest first, older pages
+through a cursor — and `messages:get` answers `{ rows, nextCursor }` rather than
+a bare array. Both names are additive; nothing an add-on already calls changed
+shape except that read, which no add-on reaches through the SDK.
 
-**Consent is checked by the shell, not the Store (MICA-201).** A permission
-your manifest declares but the player never granted is refused at call time with
-the same `AppPermissionError` an undeclared one gets, and an update that widens
+**Consent is checked by the shell, not the Store (MICA-201).** A permission your
+manifest declares but the player never granted is refused at call time with the
+same `AppPermissionError` an undeclared one gets, and an update that widens
 `permissions` is refused until the player accepts the wider set. The
 `appRegistryWrite` facet gains `recordConsent` and `grantedPermissions`, both
 refused to a sandboxed frame. Additive; the contract stays `v1`.

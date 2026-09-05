@@ -68,10 +68,10 @@ Declare what you use — an undeclared hook crashes your app with
 a test. The full list is `AppPermission` in `sdk/manifest.ts`.
 
 **For a `core: false` add-on, the build derives the list and refuses a manifest
-that understates it** (MICA-205). A Vite plugin reads every module that
-entered the bundle, maps each name imported from `@mica/sdk` through
-`PERMISSION_OF`, and fails the build naming the import and the permission the
-manifest lacks. Declaring more than the scan finds is fine. The scanner is
+that understates it** (MICA-205). A Vite plugin reads every module that entered
+the bundle, maps each name imported from `@mica/sdk` through `PERMISSION_OF`,
+and fails the build naming the import and the permission the manifest lacks.
+Declaring more than the scan finds is fine. The scanner is
 `sdk/lib/permissionScan.ts`; `web/vite.addon.config.ts` runs it for the add-ons
 in this repo and `tools/addon-template/vite.config.ts` runs the same one outside
 it, so an author without the repo is held to the same rule. The old runtime
@@ -439,12 +439,12 @@ That costs four things, none of them hidden, and all four are in the template's
   ignores it, so a `pnpm.overrides` block there looks right, does nothing, and
   leaves you reading the same `workspace:*` error.
 - The template names `#dev`, and today it has to: the packaged form of the SDK —
-  `sdk/` as a root-level package with an `exports` map (MICA-172) — exists
-  only on `dev`. `refs/heads/main` predates it and so does every `v2026.*` tag.
-  An author should pin a commit sha as soon as they are past the first build;
-  there is no version number worth pinning instead, since the tags are CalVer
-  build stamps and `MICA_VERSION` is deliberately empty in an add-on bundle
-  (MICA-170 — the constant `1.0.0` some older notes describe is long gone).
+  `sdk/` as a root-level package with an `exports` map (MICA-172) — exists only
+  on `dev`. `refs/heads/main` predates it and so does every `v2026.*` tag. An
+  author should pin a commit sha as soon as they are past the first build; there
+  is no version number worth pinning instead, since the tags are CalVer build
+  stamps and `MICA_VERSION` is deliberately empty in an add-on bundle (MICA-170
+  — the constant `1.0.0` some older notes describe is long gone).
 
 **The boundary travels with the template.** `refuseCoreEntry()` in
 `web/vite.addon.config.ts` and `sdk/boundary.test.ts`'s scan of `web/src/apps/`
