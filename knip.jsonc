@@ -66,12 +66,17 @@
     // `host/iframe/facets/*.ts` twins are reached only through the add-on build's alias
     // (`web/vite.addon.config.ts`), never by a static import in this repo.
     //
+    // `addon.ts` is deliberately NOT listed either, for the opposite reason to `index.ts`:
+    // it is this package's `exports["."]`, and knip reads package.json exports as entry
+    // points already. Listing it a second time earned a "Remove redundant entry pattern"
+    // hint. `app.ts` and `core.ts` are covered the same way and were never listed.
+    //
     // The `jsdom` wart noted in `ignoreDependencies` above now applies here too: this
     // package's suite runs under `web`'s Vitest project (its `include` globs `../sdk/**`),
     // so knip attributes SDK test files to a package.json that is not the one declaring the
     // test runner's environment. Extend that note rather than switching the check off.
     "sdk": {
-      "entry": ["icons.ts", "addon.ts", "host/iframe/facets/*.ts"],
+      "entry": ["icons.ts", "host/iframe/facets/*.ts"],
       "project": ["**/*.{ts,svelte}"]
     }
   }
