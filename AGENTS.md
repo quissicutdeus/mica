@@ -582,7 +582,10 @@ on a clean tree and is not evidence on its own.
 Then, before saying it works:
 
 - **New or changed server logic gets a test** in `server/__tests__/`. Server
-  code is excluded from `tsc`, so tests are the only thing standing behind it.
+  code _is_ typechecked, under the stricter TS 7 (§3) — what `tsc` cannot prove
+  is behaviour, and the net-event and framework-bridge halves are all behaviour.
+  The test files themselves are the unchecked part: both tsconfigs exclude
+  `__tests__`, so `pnpm test:unit:server` is the only thing reading them (§8).
 - **Report failures as failures.** If a suite is red, say so and paste the
   output. A pipeline like `pnpm test:e2e | tail -5` reports `tail`'s exit code,
   not the suite's — check the real one.
