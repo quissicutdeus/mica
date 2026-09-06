@@ -111,10 +111,9 @@ handler wrote, in either language.
 
 ### 2. Raw `onNet` handlers
 
-**Eleven, across six files**, and they fall into two categories that need
-different things said about them. They sit outside `ServiceEndpoint` because
-they answer fire-and-forget events with no callback id, so they cannot go
-through it.
+**Ten, across six files**, and they fall into two categories that need different
+things said about them. They sit outside `ServiceEndpoint` because they answer
+fire-and-forget events with no callback id, so they cannot go through it.
 
 This census used to read "six, in `Phone.ts` and `Battery.ts`", and it was wrong
 in both directions: three mica-named handlers had been added since it was
@@ -126,13 +125,12 @@ not from this page:
 grep -rn "onNet(" server --include="*.ts" | grep -v __tests__
 ```
 
-**That prints thirteen lines for eleven handlers.** Two of them are not entry
-points: `ServiceEndpoint.ts`'s generic registrar, which is the machinery behind
-category 1 of this document, and the worked example in `netGuard.ts`'s doc
-comment.
+**That prints twelve lines for ten handlers.** Two of them are not entry points:
+`ServiceEndpoint.ts`'s generic registrar, which is the machinery behind category
+1 of this document, and the worked example in `netGuard.ts`'s doc comment.
 
 Keep both stages of the pipe if you reproduce it. The second one silently drops
-a fourteenth line — the copy of this very command inside `netGuard.ts`'s
+a thirteenth line — the copy of this very command inside `netGuard.ts`'s
 docblock, which matches `onNet(` and is filtered out only because it also quotes
 `__tests__`. Drop `grep -v __tests__` and the total moves for a reason that has
 nothing to do with the handlers.
@@ -161,22 +159,21 @@ reading its number out of the wrong sentence — which is the failure this whole
 section is about, so it is caught rather than trusted. Reword one of the four
 out of shape and it fails too, saying which.
 
-#### mica-named — ten, every one guarded
+#### mica-named — nine, every one guarded
 
 | Event                                | Handler                           |
 | ------------------------------------ | --------------------------------- |
-| `mica:server:phone:start`            | `server/services/Phone.ts:135`    |
-| `mica:server:phone:answer`           | `server/services/Phone.ts:215`    |
-| `mica:server:phone:end`              | `server/services/Phone.ts:233`    |
-| `mica:server:phone:simulateIncoming` | `server/services/Phone.ts:327`    |
-| `mica:server:battery:useItem`        | `server/services/Battery.ts:214`  |
-| `mica:server:admin:setBattery`       | `server/services/Battery.ts:248`  |
-| `mica:server:battery:load`           | `server/services/Battery.ts:320`  |
-| `mica:server:contacts:share`         | `server/services/Contacts.ts:88`  |
+| `mica:server:phone:start`            | `server/services/Phone.ts:478`    |
+| `mica:server:phone:answer`           | `server/services/Phone.ts:487`    |
+| `mica:server:phone:end`              | `server/services/Phone.ts:505`    |
+| `mica:server:phone:simulateIncoming` | `server/services/Phone.ts:591`    |
+| `mica:server:admin:setBattery`       | `server/services/Battery.ts:318`  |
+| `mica:server:battery:load`           | `server/services/Battery.ts:391`  |
+| `mica:server:contacts:share`         | `server/services/Contacts.ts:148` |
 | `mica:server:shell:setOpen`          | `server/lib/PhoneOpenState.ts:32` |
 | `mica:server:shell:checkPhoneItem`   | `server/lib/phoneItem.ts:144`     |
 
-`guardNetEvent` in `server/lib/netGuard.ts` is the preamble for all ten,
+`guardNetEvent` in `server/lib/netGuard.ts` is the preamble for all nine,
 applying the same two checks in the same order the endpoint uses: rate limit
 first, then the authenticated player lookup — `getPlayer` walks the framework's
 player table and a flood should not make the server pay for that. Refused
@@ -193,10 +190,13 @@ refusal.
 moderation actions in `Reports.ts`. Privilege is checked against the ace list,
 never against which route was used.
 
-Two are gone rather than guarded — `battery:save` and `signal:rules`. Both
-existed so the client could tell the server something the server now decides for
-itself, and deleting an entry point beats hardening one. `Signal.ts` has no
-`onNet` left at all.
+Three are gone rather than guarded — `battery:save`, `battery:useItem` and
+`signal:rules`. The first and last existed so the client could tell the server
+something the server now decides for itself. `battery:useItem` is a different
+shape and the same answer: it consumed an inventory item on a raw event any
+client can emit, while nothing in micaOS ever emitted it and the framework's
+usable-item callback did the job properly. Deleting an entry point beats
+hardening one. `Signal.ts` has no `onNet` left at all.
 
 #### Framework-named — one, and this is the category that was missing
 

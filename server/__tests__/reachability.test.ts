@@ -86,6 +86,7 @@ describe('nothing registers an action the app does not use', () => {
   it.each([
     ['mica:server:accounts:delete', 'deleting an account orphans its Blabs and follows'],
     ['mica:server:battery:save', 'the client no longer owns its own charge'],
+    ['mica:server:battery:useItem', 'the usable-item callback is how an item is spent'],
     ['mica:server:signal:rules', 'the client no longer holds the zone list'],
     ['mica:server:notifications:get', 'the shade reads through getShadeNotifications'],
     ['mica:server:notifications:delete', 'clearing is a soft delete onto cleared_at'],

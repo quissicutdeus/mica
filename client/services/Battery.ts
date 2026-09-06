@@ -47,12 +47,18 @@ const onBatteryDrained = () => {
   );
 };
 
-// Listen for server recharge events
-onNet('mica:client:battery:recharge', () => {
-  setPhoneCharge(100);
-  TriggerServerEvent('mica:server:battery:save', 100);
-});
-
+/**
+ * `mica:client:battery:recharge` is gone (MICA-257).
+ *
+ * It said "you are now at 100" and then reported that back over
+ * `mica:server:battery:save`, an event the server stopped handling when it took ownership of
+ * the number — so the emit was dead code that read as if the client still had a say. The
+ * hardcoded 100 was the worse half: `mica_battery_item_charge` lets an owner make a battery
+ * bank worth 25%, and this would have painted 100 over it until the next whole-percent tick.
+ *
+ * `applyCharge` already pushes the real level over `battery:set`, so there is one way the
+ * charge reaches the phone and it carries the number the server actually stored.
+ */
 onNet('mica:client:battery:set', (amount: number) => {
   setPhoneCharge(amount);
 });

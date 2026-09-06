@@ -35,6 +35,7 @@ const fivemGlobals: Record<string, unknown> = {
   GetInvokingResource: () => 'test-resource',
   RegisterCommand: noop,
   GetConvar: (_name: string, fallback: string) => fallback,
+  GetConvarInt: (_name: string, fallback: number) => fallback,
   IsPlayerAceAllowed: () => false
 };
 

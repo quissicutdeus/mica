@@ -32,16 +32,30 @@ vi.mock('../lib/Database', () => ({ Database: dbMock }));
 vi.mock('../lib/FrameworkBridge', () => ({ FrameworkBridge: bridgeMock }));
 
 import {
+  applyCharge,
   batteryApp,
+  batteryItemCharge,
+  batteryItemName,
   currentCharge,
   runChargeCommand,
   savePlayerBattery,
   sendLoadedBatteryToClient,
   setCharging,
   __resetBatteryCache,
+  __resetBatteryItemWarnings,
   __resetBatteryState,
   __tickBattery
 } from '../services/Battery';
+
+/**
+ * The usable-item registration runs at import time, and `beforeEach`'s `clearAllMocks` wipes
+ * the record of it — so the callback is taken here, once, while the call is still there.
+ * Matched by item name rather than by position, because `phoneItem.ts` registers through the
+ * same mock when `mica_phone_item` is set.
+ */
+const batteryItemHandler: (src: number) => void = bridgeMock.registerUsableItem.mock.calls.find(
+  (call: unknown[]) => call[0] === 'battery_bank'
+)?.[1];
 import { __resetRateLimits } from '../lib/rateLimit';
 
 const SRC = 7;
@@ -421,5 +435,135 @@ describe('the write-skip cache', () => {
     await savePlayerBattery(SRC, 42);
 
     expect(dbMock.insert).toHaveBeenCalledTimes(limit + 2);
+  });
+});
+
+/**
+ * The battery bank (MICA-257).
+ *
+ * None of this was covered: the item plumbing had tests in `FrameworkBridge.test.ts` and the
+ * handler behind it had none, which is how both use paths came to skip `applyCharge` and get
+ * silently reverted by the very next drain tick.
+ */
+describe('the battery bank item', () => {
+  const playerHolding = (removed: boolean) => ({
+    ...mockPlayer(),
+    removeItem: vi.fn().mockReturnValue(removed)
+  });
+
+  /** Seed the live charge without needing `getPlayer` to answer, which this case removes. */
+  const charge40WithoutAPlayer = () => {
+    bridgeMock.getPlayer.mockReturnValueOnce(mockPlayer());
+    applyCharge(SRC, 40);
+    bridgeMock.getPlayer.mockReturnValue(undefined);
+  };
+
+  beforeEach(() => {
+    __resetBatteryState();
+    __resetBatteryItemWarnings();
+    globalThis.GetConvar = ((_n: string, fallback: string) => fallback) as any;
+    globalThis.GetConvarInt = ((_n: string, fallback: number) => fallback) as any;
+  });
+
+  it('is registered under the name the convar gives, so an owner can rename it', () => {
+    expect(batteryItemHandler).toBeTypeOf('function');
+  });
+
+  it('spends the item and applies the charge, so the next tick cannot revert it', async () => {
+    const player = playerHolding(true);
+    bridgeMock.getPlayer.mockReturnValue(player);
+    applyCharge(SRC, 40);
+
+    batteryItemHandler(SRC);
+
+    expect(player.removeItem).toHaveBeenCalledWith('battery_bank', 1);
+    // The map, not just the wire. A push alone is what the drain loop used to paint over.
+    expect(currentCharge(SRC)).toBe(100);
+    expect(emittedCharge()).toBe(100);
+  });
+
+  it('adds only the percent the convar asks for', () => {
+    bridgeMock.getPlayer.mockReturnValue(playerHolding(true));
+    globalThis.GetConvarInt = ((_n: string, _f: number) => 25) as any;
+    applyCharge(SRC, 40);
+
+    batteryItemHandler(SRC);
+
+    expect(currentCharge(SRC)).toBe(65);
+  });
+
+  it('clamps rather than overflowing a phone that is nearly full', () => {
+    bridgeMock.getPlayer.mockReturnValue(playerHolding(true));
+    applyCharge(SRC, 80);
+
+    batteryItemHandler(SRC);
+
+    expect(currentCharge(SRC)).toBe(100);
+  });
+
+  it('changes nothing when the item was not really in the inventory', () => {
+    const player = playerHolding(false);
+    bridgeMock.getPlayer.mockReturnValue(player);
+    applyCharge(SRC, 40);
+    (globalThis.emitNet as any).mockClear();
+
+    batteryItemHandler(SRC);
+
+    expect(currentCharge(SRC)).toBe(40);
+    expect(emittedCharge()).toBeUndefined();
+  });
+
+  it('hands out nothing when there is no player to take the item from', () => {
+    bridgeMock.getPlayer.mockReturnValue(undefined);
+    charge40WithoutAPlayer();
+    (globalThis.emitNet as any).mockClear();
+
+    batteryItemHandler(SRC);
+
+    // Fails closed. This answered "removed" for an unloaded source and gave the charge away.
+    expect(currentCharge(SRC)).toBe(40);
+    expect(emittedCharge()).toBeUndefined();
+  });
+});
+
+describe('the battery item convars', () => {
+  beforeEach(() => {
+    __resetBatteryItemWarnings();
+    globalThis.GetConvar = ((_n: string, fallback: string) => fallback) as any;
+    globalThis.GetConvarInt = ((_n: string, fallback: number) => fallback) as any;
+  });
+
+  it('defaults to battery_bank at a full charge', () => {
+    expect(batteryItemName()).toBe('battery_bank');
+    expect(batteryItemCharge()).toBe(100);
+  });
+
+  it('takes the name an owner sets', () => {
+    globalThis.GetConvar = ((_n: string, _f: string) => 'powerbank') as any;
+    expect(batteryItemName()).toBe('powerbank');
+  });
+
+  it('turns the item off entirely when the convar is emptied', () => {
+    globalThis.GetConvar = ((_n: string, _f: string) => '  ') as any;
+    expect(batteryItemName()).toBeNull();
+  });
+
+  it('refuses a name no inventory would accept, and says so once', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    globalThis.GetConvar = ((_n: string, _f: string) => 'battery bank; DROP TABLE') as any;
+
+    expect(batteryItemName()).toBeNull();
+    expect(batteryItemName()).toBeNull();
+
+    expect(warn).toHaveBeenCalledOnce();
+    warn.mockRestore();
+  });
+
+  it('clamps a charge outside 1-100 rather than trusting the typo', () => {
+    globalThis.GetConvarInt = ((_n: string, _f: number) => 900) as any;
+    expect(batteryItemCharge()).toBe(100);
+
+    globalThis.GetConvarInt = ((_n: string, _f: number) => 0) as any;
+    expect(batteryItemCharge()).toBe(1);
   });
 });

@@ -178,11 +178,79 @@ export const applyCharge = (src: number, level: number): number => {
   return clamped;
 };
 
-// Helper to remove item from inventory
-const removeBatteryBankItem = (src: number): boolean => {
+/**
+ * The battery bank, as a server owner's option rather than a hardcoded item (MICA-257).
+ *
+ * `mica_battery_item` names the item that recharges a phone and `mica_battery_item_charge`
+ * says how many percent it adds, so an owner picks both without editing TypeScript — the
+ * same shape as `mica_phone_item` in `lib/phoneItem.ts`, and the other half of MICA-219's
+ * "the phone is a thing you carry". Empty turns the item off entirely, for a server that
+ * would rather recharge through a charger prop or `SetBatteryLevel`.
+ *
+ * The default is on. Unlike the phone item, which locks the phone for everyone when it is
+ * set to an item no server defines, an item nobody has is simply an item nobody uses.
+ */
+export const BATTERY_ITEM_CONVAR = 'mica_battery_item';
+export const BATTERY_ITEM_CHARGE_CONVAR = 'mica_battery_item_charge';
+
+const DEFAULT_BATTERY_ITEM = 'battery_bank';
+const DEFAULT_BATTERY_ITEM_CHARGE = 100;
+
+/** An inventory item name: what qb, ox_inventory and ESX all accept, and nothing else. */
+const ITEM_NAME = /^[A-Za-z0-9_-]{1,64}$/;
+
+let reportedBadName = false;
+
+/** Test seam, like `__resetPhoneItemWarnings`. */
+export const __resetBatteryItemWarnings = (): void => {
+  reportedBadName = false;
+};
+
+/** The item that recharges a phone, or `null` when this server has turned it off. */
+export const batteryItemName = (): string | null => {
+  const raw = String(GetConvar(BATTERY_ITEM_CONVAR, DEFAULT_BATTERY_ITEM)).trim();
+  if (!raw) return null;
+  if (!ITEM_NAME.test(raw)) {
+    if (!reportedBadName) {
+      reportedBadName = true;
+      console.warn(
+        `[mica] ${BATTERY_ITEM_CONVAR} is set to '${raw}', which is not an item name any ` +
+          `inventory here would accept (letters, digits, '_' and '-', up to 64). No item ` +
+          `recharges the phone. Reported once per resource start.`
+      );
+    }
+    return null;
+  }
+  return raw;
+};
+
+/**
+ * Percent added by one use, 1-100.
+ *
+ * Clamped rather than trusted: `set mica_battery_item_charge 900` is a typo, not a licence
+ * to overflow the charge, and `applyCharge` would clamp the result anyway — this keeps the
+ * number honest at the place an owner reads it back. The floor is 1 because an item that
+ * adds nothing is an item that reads as broken.
+ */
+export const batteryItemCharge = (): number => {
+  const raw = GetConvarInt(BATTERY_ITEM_CHARGE_CONVAR, DEFAULT_BATTERY_ITEM_CHARGE);
+  if (!Number.isFinite(raw)) return DEFAULT_BATTERY_ITEM_CHARGE;
+  return Math.max(1, Math.min(100, Math.round(raw)));
+};
+
+/**
+ * Take one from the player's inventory, and say whether it was really there.
+ *
+ * **Fails closed**, which is the reverse of what this did. A source with no loaded character
+ * used to answer `true` — "removed" — so anything that could reach the use path got the
+ * charge without ever holding the item. `phoneItem.ts` fails *open* for the opposite reason:
+ * it gates access, so an inventory it cannot read must not lock everybody out. This grants
+ * something, so an inventory it cannot read must not hand it over.
+ */
+const removeBatteryItem = (src: number, item: string): boolean => {
   const player = FrameworkBridge.getPlayer(src);
-  if (!player) return true;
-  return player.removeItem('battery_bank', 1);
+  if (!player) return false;
+  return player.removeItem(item, 1);
 };
 
 /** Persist a player's charge. Returns silently for a source with no loaded character. */
@@ -214,20 +282,18 @@ export const savePlayerBattery = async (src: number, level: number): Promise<voi
   }
 };
 
-// Event handler for battery_bank item or custom server trigger to recharge phone
-onNet('mica:server:battery:useItem', () => {
-  // Rate limit *and* authenticate, in the order `ServiceEndpoint` uses. Raw `onNet`
-  // handlers got neither until this; see `lib/netGuard.ts`.
-  const player = guardNetEvent('battery', 'useItem');
-  if (!player) return;
-
-  const src = source;
-  const removed = removeBatteryBankItem(src);
-  if (removed) {
-    void savePlayerBattery(src, 100);
-    emitNet('mica:client:battery:recharge', src);
-  }
-});
+/**
+ * `mica:server:battery:useItem` is deliberately absent (MICA-257).
+ *
+ * It was a raw net event that consumed inventory, reachable by any modified client whether
+ * or not anything routed to it — and nothing did: no client code, no NUI route, no export.
+ * The framework's usable-item callback below is the real path, because only the framework
+ * can say the item was in *that* player's inventory. A resource wanting to recharge without
+ * an item has `SetBatteryLevel` and `AddBatteryCharge`, which are authenticated exports
+ * rather than an event anyone can emit. MICA-210 is about exactly this category.
+ *
+ * Deleting an entry point beats hardening one, which is the same call `battery:save` got.
+ */
 
 /**
  * `mica:server:battery:save` is deliberately absent.
@@ -410,13 +476,30 @@ RegisterCommand(
   false
 );
 
-// Register usable item with framework
-FrameworkBridge.registerUsableItem('battery_bank', (source: number) => {
-  const removed = removeBatteryBankItem(source);
-  if (removed) {
-    emitNet('mica:client:battery:recharge', source);
-  }
-});
+/**
+ * Using the item recharges the phone.
+ *
+ * Through `applyCharge`, not a bare push. The charge lives in three places — the map the
+ * drain loop ticks, the phone, and the table — and this used to set only the phone: the
+ * very next tick pushed the old low level straight back over the 100 the player had just
+ * paid an item for. It is the identical trap `micacharge` was pulled out of, and the reason
+ * `applyCharge` exists at all.
+ *
+ * The name is captured at registration rather than read again here, so the item the
+ * framework calls us for is the item we charge for even if the convar is changed underneath
+ * a running resource.
+ */
+const batteryItemUsed = (src: number, item: string): void => {
+  if (!removeBatteryItem(src, item)) return;
+  applyCharge(src, currentCharge(src) + batteryItemCharge());
+};
+
+const configuredBatteryItem = batteryItemName();
+if (configuredBatteryItem) {
+  FrameworkBridge.registerUsableItem(configuredBatteryItem, (src: number) =>
+    batteryItemUsed(src, configuredBatteryItem)
+  );
+}
 
 /**
  * Read a player's saved charge, for the public API.

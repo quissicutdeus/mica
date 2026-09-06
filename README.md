@@ -464,6 +464,8 @@ you intend to change something.
 ```cfg
 set mica_standalone ""
 set mica_phone_item ""
+set mica_battery_item "battery_bank"
+set mica_battery_item_charge 100
 set mica_admin_aces "mica.admin,command"
 set mica_rate_limit 60
 set mica_lockscreen_scrypt_cost 16384
@@ -494,6 +496,8 @@ setr mica_addon_catalog ""
 | ------------------------------ | -------------------- | -------------------- | ---------------------------------------------------------- |
 | `mica_standalone`              | boolean              | empty (off)          | Run with no framework resource at all                      |
 | `mica_phone_item`              | item name            | empty (off)          | Gate the phone on holding this inventory item              |
+| `mica_battery_item`            | item name            | `battery_bank`       | Item that recharges the phone; empty turns it off          |
+| `mica_battery_item_charge`     | integer, 1-100       | `100`                | Percent one use of that item adds                          |
 | `mica_admin_aces`              | comma-separated aces | `mica.admin,command` | Who counts as a micaOS admin                               |
 | `mica_rate_limit`              | integer              | `60`                 | Requests per player, per action, per minute                |
 | `mica_lockscreen_scrypt_cost`  | power of two         | `16384`              | Lock screen passcode hashing cost — lower on weak hardware |
@@ -874,6 +878,58 @@ start and the phone opens as it always did. A framework whose inventory micaOS
 cannot count through (none of ox_inventory's `GetItemCount`, a qb player's
 `GetItemByName`, or an ESX xPlayer's `getInventoryItem`) is reported the same
 way, and the phone is left open rather than locked for everyone.
+
+### The battery bank
+
+The phone's charge drains while a player carries it, and `mica_battery_item`
+names the inventory item that tops it back up. Using one removes it and adds
+`mica_battery_item_charge` percent — 100 by default, so one battery bank is a
+full phone. Set the charge lower and a bank becomes a partial top-up worth
+carrying several of:
+
+```cfg
+set mica_battery_item "battery_bank"
+set mica_battery_item_charge 25
+```
+
+Set `mica_battery_item ""` to turn the item off entirely, for a server that
+would rather recharge through a charger prop calling `SetCharging`, through
+`SetBatteryLevel` from your own script, or not at all. The `micacharge` admin
+command works either way, so a flat phone is never unrecoverable.
+
+**Define the item for your inventory first**, the same as the phone item above.
+Nothing ships `battery_bank`, so until you add it the item simply does not exist
+and nothing recharges:
+
+```lua
+-- ox_inventory (qbx_core, or ox_inventory on qb-core or ESX): data/items.lua
+['battery_bank'] = {
+    label = 'Battery Bank',
+    weight = 200,
+    stack = true,
+    close = true,
+    description = 'Enough for one more night'
+},
+
+-- qb-core with qb-inventory: shared/items.lua
+battery_bank = { name = 'battery_bank', label = 'Battery Bank', weight = 200, type = 'item',
+                 image = 'battery_bank.png', unique = false, useable = true,
+                 shouldClose = true, description = 'Enough for one more night' },
+```
+
+```sql
+-- es_extended with its own inventory: the items table
+INSERT INTO items (name, label, weight) VALUES ('battery_bank', 'Battery Bank', 1);
+```
+
+As with the phone item, it has to be **usable** in the inventory's own terms
+(`useable = true` on qb-core; ox_inventory and ESX make every registered item
+usable), or using it does nothing.
+
+The item is the only path a player drives. There is no net event to emit: a
+resource that wants to add charge without an item calls the `AddBatteryCharge`
+or `SetBatteryLevel` export, which authenticates its caller the way an event
+could not.
 
 ---
 

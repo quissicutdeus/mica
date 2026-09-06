@@ -518,6 +518,24 @@ README's [Configuration](README.md#configuration) section — the distinction
 matters, because the two that the game client reads are silently ignored unless
 they are replicated.
 
+**The battery bank is now a server owner's choice, through `mica_battery_item`
+and `mica_battery_item_charge` (MICA-257).** The first names the inventory item
+that recharges a phone — `battery_bank` by default, as before — and the second
+says how many percent one use adds, 100 by default. Set the charge to 25 and a
+bank becomes a partial top-up worth carrying several of; set the item to `""`
+and nothing but a charger, `SetBatteryLevel` or `micacharge` refills a phone.
+**No owner action:** the defaults are exactly what the item did before. Nothing
+ships a `battery_bank` item definition, so the README's
+[battery bank](README.md#the-battery-bank) section has one to paste for
+ox_inventory, qb-core and ESX, beside the phone item's.
+
+**The undocumented net event `mica:server:battery:useItem` is gone.** It spent
+an inventory item on a raw event any client could emit, nothing in micaOS ever
+emitted it, and the framework's usable-item callback — which alone can say the
+item was in _that_ player's inventory — did the job properly. A script that
+somehow emitted it should call the `AddBatteryCharge` or `SetBatteryLevel`
+export instead, which authenticates its caller.
+
 ### Fixed
 
 **On ESX the Messages app opened empty: the conversation list joined a `players`
@@ -597,6 +615,18 @@ that today and no owner action is needed.
   tick rounded back to 50 and was discarded, so a holder sitting there had no
   downside at all. Both boundaries now turn a step around rather than swallowing
   it (MICA-130).
+
+**Using a battery bank appeared to work and then silently undid itself
+(MICA-257).** The recharge set the phone's display and the stored row but never
+the live value the server's drain loop ticks from, so the next tick pushed the
+old low charge straight back over the 100 the player had just spent an item for.
+It goes through the same one-way-in that `micacharge` was moved onto, so all
+three copies of the number agree.
+
+**A battery bank could be spent by a source with no loaded character, and pay
+out anyway.** The inventory removal answered "removed" when there was no player
+to remove it from, which meant the charge was granted without the item ever
+being held. It fails closed now.
 
 ### For add-on authors
 
