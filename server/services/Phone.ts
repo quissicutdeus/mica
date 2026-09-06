@@ -164,12 +164,34 @@ export function injectIncomingCall(targetSrc: number, callerPhone: string): numb
   return callId;
 }
 
+/**
+ * Drop whatever `src` holds — an established call, or a reservation with no call behind it.
+ *
+ * `connectLineCall` claims `playerCalls[src]` before it awaits a handler owned by another
+ * resource, so for up to `HANDLER_TIMEOUT_MS` a source can hold a key whose `ActiveCall`
+ * does not exist yet. Releasing that key is also how a caller who hangs up mid-ring tells
+ * that path to abandon the call, since it re-checks the key before connecting.
+ * `endActiveCall` cannot do this on its own: it is keyed by call id and returns early when
+ * no call answers to it, which would leave the reservation held until the resource stopped.
+ *
+ * Returns whether anything was held.
+ */
+function releaseCallFor(src: number, endedBy: number): boolean {
+  const callId = playerCalls[src];
+  if (!callId) return false;
+
+  if (!activeCalls[callId]) {
+    delete playerCalls[src];
+    return true;
+  }
+
+  endActiveCall(callId, endedBy);
+  return true;
+}
+
 /** Force-end whatever call `targetSrc` is on, without going through their client at all. */
 export function endActiveCallFor(targetSrc: number): boolean {
-  const callId = playerCalls[targetSrc];
-  if (!callId) return false;
-  endActiveCall(callId, CONSOLE_CALLER_SOURCE);
-  return true;
+  return releaseCallFor(targetSrc, CONSOLE_CALLER_SOURCE);
 }
 
 /**
@@ -248,6 +270,14 @@ export async function placeCall(src: number, rawTarget: unknown): Promise<void> 
    * - A line registered with `blockable: false` (MICA-226), which is how a script says its
    *   number is infrastructure rather than a person.
    *
+   * The `true` half of that second term is a timing guarantee and nothing more, which is
+   * worth saying plainly because the code reads as though it does more. A blocklist row is
+   * keyed by the *blocking* character's citizenid, and a line has none — so a blockable
+   * line asks about `''`, matches no row, and can never actually be blocked. The `await`
+   * still has to happen: skip it and a registered number becomes measurably faster to dial
+   * than a made-up one, which is the side channel the paragraph above exists to close.
+   * Blocking a line by number is a separate ticket, not something this branch does today.
+   *
    * There is nothing to bypass for DND or signal — neither has ever gated a call here; DND
    * only suppresses a *notification* (`web/src/shell/state/notificationPolicy.ts`) and
    * signal has never refused one on this file's own evidence — so "connects regardless of
@@ -323,8 +353,20 @@ async function connectLineCall(
   }
 
   const callId = generateCallId();
-  const lineSource = allocateLineSource();
+
+  // Claim the caller's key *before* awaiting a handler that belongs to another resource and
+  // may take up to `HANDLER_TIMEOUT_MS` — a window whose length that resource controls. Read
+  // without claiming, a second `start` inside it passes the busy check too, and its call
+  // overwrites this key, orphaning an `ActiveCall` that neither `end` nor `playerDropped`
+  // can reach again. Every path out of here below either connects on this key or releases it.
+  playerCalls[src] = callId;
+
   const verdict = await askLine(line, { from: callerPhone, source: src, callId });
+
+  // The caller hung up or dropped while the handler was thinking: `releaseCallFor` took the
+  // key back (or a newer call of theirs owns it now), so there is nobody left to connect and
+  // nothing of ours to release.
+  if (playerCalls[src] !== callId) return;
 
   // A forward re-dials by the target's own number, which cannot land back here: a number a
   // character holds is refused at registration and loses to the player lookup on every call,
@@ -332,6 +374,9 @@ async function connectLineCall(
   // which `phoneNumberFrom` rejects and `placeCall` returns on — hence the explicit
   // `getPlayer` check first, so a forward to nobody fails visibly rather than silently.
   if (verdict.action === 'forward') {
+    // Released before re-entering, or `placeCall`'s own busy check would refuse the caller
+    // the call this line just asked for.
+    delete playerCalls[src];
     if (!FrameworkBridge.getPlayer(verdict.source)) {
       failUnreachable(src, targetPhone);
       return;
@@ -343,10 +388,12 @@ async function connectLineCall(
   // `askLine` answers `reject` for a handler that throws, hangs or returns nonsense, so a
   // broken integration is indistinguishable from a number nobody holds (MICA-64's shape).
   if (verdict.action !== 'accept') {
+    delete playerCalls[src];
     failUnreachable(src, targetPhone);
     return;
   }
 
+  const lineSource = allocateLineSource();
   activeCalls[callId] = {
     id: callId,
     caller: src,
@@ -358,7 +405,7 @@ async function connectLineCall(
     // second client would otherwise have to leave.
     answeredAt: Date.now()
   };
-  playerCalls[src] = callId;
+  // `playerCalls[src]` is already this call — claimed before the await above.
   playerCalls[lineSource] = callId;
 
   emitNet('mica:client:phone:accepted', src, { callId });
@@ -373,7 +420,13 @@ async function connectLineCall(
  */
 onLineReleased((number: string) => {
   for (const call of Object.values(activeCalls)) {
-    if (call.targetPhone === number) endActiveCall(call.id, CONSOLE_CALLER_SOURCE);
+    // `targetPhone` alone over-matches: a player-to-player call stores the dialled number in
+    // the same field, so a number the framework has since reassigned to a real character
+    // would see that call torn down too. Only a line call has a line pseudo-source on the
+    // far end, and `FIRST_LINE_SOURCE` is the highest of those.
+    if (call.targetPhone === number && call.target <= FIRST_LINE_SOURCE) {
+      endActiveCall(call.id, CONSOLE_CALLER_SOURCE);
+    }
   }
 });
 
@@ -410,20 +463,12 @@ onNet('mica:server:phone:end', () => {
   const player = guardNetEvent('phone', 'end');
   if (!player) return;
 
-  const src = source;
-  const callId = playerCalls[src];
-  if (!callId) return;
-
-  endActiveCall(callId, src);
+  releaseCallFor(source, source);
 });
 
 // Clean up on drop
 on('playerDropped', () => {
-  const src = source;
-  const callId = playerCalls[src];
-  if (callId) {
-    endActiveCall(callId, src);
-  }
+  releaseCallFor(source, source);
 });
 
 /**

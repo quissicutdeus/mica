@@ -65,7 +65,7 @@ vi.mock('../lib/FrameworkBridge', () => ({
 import '../services/Phone';
 import { __resetCalls, injectIncomingCall, endActiveCallFor, placeCall } from '../services/Phone';
 import { __resetRateLimits, allow } from '../lib/rateLimit';
-import { registerNumber, releaseResource } from '../lib/numberRegistry';
+import { registerNumber, releaseResource, type CallVerdict } from '../lib/numberRegistry';
 
 const START = 'mica:server:phone:start';
 const ANSWER = 'mica:server:phone:answer';
@@ -564,6 +564,9 @@ describe('start: registered lines (MICA-226)', () => {
   const LINE = '5559999';
   const LINE_HOLDER_SRC = 4;
 
+  // `releaseResource`, not `__resetRegistry()`: the latter also resets `onLineReleased` to
+  // a noop, silently unhooking the handler `Phone.ts` installs at import — after which the
+  // release test below fails for a reason that looks nothing like its cause.
   afterEach(() => {
     releaseResource('taxi');
     bridge.players.delete(LINE_HOLDER_SRC);
@@ -653,16 +656,19 @@ describe('start: registered lines (MICA-226)', () => {
     expect(emitCalls().filter(([event]) => event === 'mica:client:phone:accepted')).toHaveLength(0);
   });
 
-  it('asks the blocklist about a blockable line, and refuses when it answers yes', async () => {
-    dbMock.scalar.mockResolvedValue(1);
+  it('still pays for the blocklist lookup on a blockable line, so the timing is flat', async () => {
     const onCall = vi.fn(() => ({ action: 'accept' }) as const);
     registerNumber(LINE, { onCall }, 'taxi');
 
     await fire(START, 1, LINE);
 
-    expect(dbMock.scalar).toHaveBeenCalled();
-    expect(onCall).not.toHaveBeenCalled();
-    expect(failedTo(1)).toHaveLength(1);
+    // Asserted on the citizenid deliberately: a blocklist row is keyed by the *blocking*
+    // character's id and a line has none, so this asks about `''` and can never come back
+    // true. The query is not the block — it is the MICA-64 timing channel being held shut,
+    // and a line that skipped it would be measurably faster to dial than a made-up number.
+    expect(dbMock.scalar).toHaveBeenCalledWith(expect.any(String), ['', '555-0001']);
+    expect(onCall).toHaveBeenCalled();
+    expect(failedTo(1)).toHaveLength(0);
   });
 
   it('never asks the blocklist at all for an unblockable line', async () => {
@@ -677,6 +683,20 @@ describe('start: registered lines (MICA-226)', () => {
     expect(failedTo(1)).toHaveLength(0);
   });
 
+  it('leaves a player-to-player call on the same number alone when the line is released', async () => {
+    registerNumber(LINE, { onCall: () => ({ action: 'accept' }) as const }, 'taxi');
+    // The framework can hand a registered number to a real character at any time, and then
+    // the dialled number on an ordinary call matches the released line's.
+    bridge.players.set(LINE_HOLDER_SRC, 'CID_LINE');
+    bridge.phones.set(LINE_HOLDER_SRC, LINE);
+    await fire(START, 1, LINE);
+    (globalThis as any).emitNet.mockClear();
+
+    releaseResource('taxi');
+
+    expect(endedCalls()).toHaveLength(0);
+  });
+
   it('ends a live call on a line whose owning resource goes away', async () => {
     registerNumber(LINE, { onCall: () => ({ action: 'accept' }) as const }, 'taxi');
     await fire(START, 1, LINE);
@@ -686,5 +706,53 @@ describe('start: registered lines (MICA-226)', () => {
 
     // Without this the caller's phone stays on a call whose far end is a dead function ref.
     expect(endedCalls()).toEqual(expect.arrayContaining([['mica:client:phone:ended', 1]]));
+  });
+
+  /**
+   * `askLine` waits on a handler owned by another resource, so the caller is mid-setup for
+   * as long as that resource decides to take. Both cases below drive that window directly by
+   * holding the verdict open, which is the only way to reach the state at all.
+   */
+  const pendingLine = () => {
+    let answer!: (verdict: CallVerdict) => void;
+    const onCall = vi.fn(() => new Promise<CallVerdict>((resolve) => (answer = resolve)));
+    registerNumber(LINE, { onCall }, 'taxi');
+    return { onCall, answer: (verdict: CallVerdict) => answer(verdict) };
+  };
+
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  it('refuses a second call placed while the line handler is still thinking', async () => {
+    const line = pendingLine();
+    const first = placeCall(1, LINE);
+    await settle();
+
+    await fire(START, 1, '555-0002');
+
+    // Refused as busy on the strength of the reservation alone — no `ActiveCall` exists yet.
+    expect(failedTo(1)).toHaveLength(1);
+    expect(emitCalls().filter(([event]) => event === 'mica:client:phone:incoming')).toHaveLength(0);
+
+    line.answer({ action: 'accept' });
+    await first;
+
+    // And the first call is still the one that connects, rather than having been overwritten.
+    expect(emitCalls().filter(([event]) => event === 'mica:client:phone:accepted')).toHaveLength(1);
+  });
+
+  it('does not connect a caller who hung up while the line handler was thinking', async () => {
+    const line = pendingLine();
+    const pending = placeCall(1, LINE);
+    await settle();
+
+    await fire(END, 1);
+    line.answer({ action: 'accept' });
+    await pending;
+
+    expect(emitCalls().filter(([event]) => event === 'mica:client:phone:accepted')).toHaveLength(0);
+
+    // The reservation was released rather than stranded, so the caller can dial again.
+    await fire(START, 1, '555-0002');
+    expect(emitCalls().filter(([event]) => event === 'mica:client:phone:incoming')).toHaveLength(1);
   });
 });
