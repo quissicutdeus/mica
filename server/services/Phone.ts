@@ -10,7 +10,13 @@ import { phoneCallLog } from './PhoneCallLog';
 import { isAdmin } from './Admin';
 import { SEED_CHARACTERS } from '../lib/seed';
 import { isBlocked } from './Blocklist';
-import { lookupLine, askLine, onLineReleased, type RegisteredLine } from '../lib/numberRegistry';
+import {
+  registerNumber,
+  lookupLine,
+  askLine,
+  onLineReleased,
+  type RegisteredLine
+} from '../lib/numberRegistry';
 
 const EMERGENCY_NUMBER_CONVAR = 'mica_emergency_number';
 const DEFAULT_EMERGENCY_NUMBER = '911';
@@ -29,6 +35,36 @@ const emergencyNumber = (): string =>
 
 /** For `GetEmergencyNumber` (`publicApi.ts`) — a dispatch resource's own setup code. */
 export const currentEmergencyNumber = (): string => emergencyNumber();
+
+/**
+ * The emergency number, as the first registered line.
+ *
+ * `Phone.ts` still names the number directly in `placeCall`'s `unblockable` expression below
+ * (a second controller ruling withdrew the plan to remove that: `line` is only consulted when
+ * no player holds the number, and a staffed 911 would silently stop being exempt without it).
+ * This registration is purely additive — it gives a dispatch resource something to take over
+ * with its own `registerNumber` call, inheriting `blockable: false` instead of having to know
+ * the number is special. No handler: until something registers one, a call to it still fails
+ * as unreachable, exactly as before.
+ */
+const emergencyLineRegistration = registerNumber(
+  emergencyNumber(),
+  { onCall: () => ({ action: 'reject' }), blockable: false },
+  GetCurrentResourceName()
+);
+
+if (!emergencyLineRegistration.ok) {
+  // A character can legitimately hold the emergency number before this module loads — a
+  // dispatcher who was already online when the resource (re)started is the ordinary case,
+  // not a bug, and `targetPhone === emergencyNumber()` in `placeCall` below still exempts
+  // every call to it either way. This is still worth a log line rather than a silent
+  // no-op: if the reason is `already_registered`, some *other* resource beat mica to the
+  // number, and whoever administers the server should not have to discover that by
+  // watching a dispatch resource's own registration attempt fail later.
+  console.log(
+    `[mica] emergency number not registered as a line at boot: ${emergencyLineRegistration.message}`
+  );
+}
 
 // Dictionary to track active calls: CallID -> { caller: source, target: source }
 interface ActiveCall {

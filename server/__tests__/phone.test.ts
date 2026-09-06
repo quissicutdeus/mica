@@ -65,7 +65,12 @@ vi.mock('../lib/FrameworkBridge', () => ({
 import '../services/Phone';
 import { __resetCalls, injectIncomingCall, endActiveCallFor, placeCall } from '../services/Phone';
 import { __resetRateLimits, allow } from '../lib/rateLimit';
-import { registerNumber, releaseResource, type CallVerdict } from '../lib/numberRegistry';
+import {
+  registerNumber,
+  releaseResource,
+  lookupLine,
+  type CallVerdict
+} from '../lib/numberRegistry';
 
 const START = 'mica:server:phone:start';
 const ANSWER = 'mica:server:phone:answer';
@@ -754,5 +759,47 @@ describe('start: registered lines (MICA-226)', () => {
     // The reservation was released rather than stranded, so the caller can dial again.
     await fire(START, 1, '555-0002');
     expect(emitCalls().filter(([event]) => event === 'mica:client:phone:incoming')).toHaveLength(1);
+  });
+});
+
+describe('start: the emergency number is a registered line (MICA-226)', () => {
+  const EMERGENCY_SRC = 9;
+
+  afterEach(() => {
+    releaseResource('taxi');
+    bridge.players.delete(EMERGENCY_SRC);
+    bridge.phones.delete(EMERGENCY_SRC);
+  });
+
+  it('registers the emergency number to micaOS itself at boot', () => {
+    expect(lookupLine('911')?.owner).toBe('mica');
+    expect(lookupLine('911')?.blockable).toBe(false);
+  });
+
+  it('never blocks the emergency number, because its line is unblockable', async () => {
+    dbMock.scalar.mockResolvedValue(1); // would refuse any other number
+
+    await fire(START, 1, '911');
+
+    expect(dbMock.scalar).not.toHaveBeenCalled();
+  });
+
+  it('still blocks an ordinary registered line', async () => {
+    registerNumber('5559999', { onCall: () => ({ action: 'accept' }) as const }, 'taxi');
+    dbMock.scalar.mockResolvedValue(1);
+
+    await fire(START, 1, '5559999');
+
+    expect(failedTo(1)).toHaveLength(1);
+  });
+
+  it('still exempts the emergency number when a real dispatcher holds it', async () => {
+    bridge.players.set(EMERGENCY_SRC, 'CID_DISPATCH');
+    bridge.phones.set(EMERGENCY_SRC, '911');
+    dbMock.scalar.mockResolvedValue(1);
+
+    await fire(START, 1, '911');
+
+    expect(dbMock.scalar).not.toHaveBeenCalled();
   });
 });
