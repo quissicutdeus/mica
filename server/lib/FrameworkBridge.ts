@@ -16,6 +16,7 @@ import {
   type FrameworkPlayer,
   type OwnerTable
 } from './framework/runtime';
+import { readItemSlots, writeItemMetadata, type ItemSlot } from './framework/itemMetadata';
 
 /**
  * The one door every framework question goes through.
@@ -496,6 +497,33 @@ export class FrameworkBridge {
    */
   public static countItem(player: FrameworkPlayer, item: string): number | null {
     return countItemThroughInventory(player.source, player.rawPlayer, item);
+  }
+
+  /**
+   * Every slot holding an item, with what that copy carries, or `null` when this inventory
+   * cannot carry metadata at all (MICA-279).
+   *
+   * `null` is not "none held" — `framework/itemMetadata.ts` has which inventories can answer
+   * and why the distinction is the whole point.
+   */
+  public static itemSlots(player: FrameworkPlayer, item: string): ItemSlot[] | null {
+    return readItemSlots(player.source, player.rawPlayer, item);
+  }
+
+  /**
+   * Merge a patch into one slot's metadata, answering whether it was really stored.
+   *
+   * Merged rather than replaced, because ox_inventory's `SetMetadata` assigns the whole
+   * table. A `false` here means the value is not on the item, so a caller must not act as
+   * though it is.
+   */
+  public static setItemMetadata(
+    player: FrameworkPlayer,
+    item: string,
+    slot: number,
+    patch: Record<string, unknown>
+  ): boolean {
+    return writeItemMetadata(player.source, player.rawPlayer, item, slot, patch);
   }
 
   /**
