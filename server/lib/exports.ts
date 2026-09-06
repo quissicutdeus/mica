@@ -59,7 +59,13 @@ export type ExportFailure =
   /** The arguments do not describe anything micaOS can act on. */
   | 'invalid_args'
   /** micaOS raised where it should not have. Reported rather than propagated. */
-  | 'internal_error';
+  | 'internal_error'
+  /** Another resource already holds that number. */
+  | 'already_registered'
+  /** That number belongs to a different resource. */
+  | 'not_owner'
+  /** A character already holds that number, and a player always wins. */
+  | 'number_in_use';
 
 export type ExportOutcome<T = undefined> =
   | ({ ok: true } & (T extends undefined ? { value?: undefined } : { value: T }))

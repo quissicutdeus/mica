@@ -32,6 +32,7 @@ const fivemGlobals: Record<string, unknown> = {
   onNetSafe: noop,
   source: 0,
   GetCurrentResourceName: () => 'mica',
+  GetInvokingResource: () => 'test-resource',
   RegisterCommand: noop,
   GetConvar: (_name: string, fallback: string) => fallback,
   IsPlayerAceAllowed: () => false
