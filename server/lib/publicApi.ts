@@ -23,7 +23,6 @@ import { isPhoneOpen } from './PhoneOpenState';
 import { isPhoneLocked, setPhoneLocked } from './LockState';
 import { currentEmergencyNumber, placeCall } from '../services/Phone';
 import { registerNumber, unregisterNumber, type LineOptions } from './numberRegistry';
-import { phoneNumberFrom } from './netGuard';
 import {
   MICA_API_VERSION,
   ExportOutcome,
@@ -627,17 +626,29 @@ export function registerPublicApi(): void {
     )
   );
 
-  /** Start a call for a player, as a payphone or a dispatch pick-up would. */
+  /**
+   * Start a call for a player, as a payphone or a dispatch pick-up would.
+   *
+   * `placeCall` reports what actually happened rather than a bare `void`, because two of
+   * its early returns are silent — a caller with no phone number, or a target that never
+   * parsed as a number — and this export has no client-side UI to let a caller *see* that
+   * nothing occurred the way `phone:start`'s own dead end does. `'placed'` covers every
+   * other outcome (ringing, busy, blocked, unreachable), all of which are visible to `src`
+   * through a client event or a connected call either way.
+   */
   publish(
     'CreateCall',
     guardedAsync('CreateCall', async (src: unknown, number: unknown) => {
       if (typeof src !== 'number' || !FrameworkBridge.getPlayer(src)) {
         return fail('unknown_player', 'That player is not connected.');
       }
-      if (!phoneNumberFrom(number)) {
+      const result = await placeCall(src, number);
+      if (result === 'invalid_target') {
         return fail('invalid_args', 'A phone number is required.');
       }
-      await placeCall(src, number);
+      if (result === 'caller_has_no_phone') {
+        return fail('unknown_player', 'That player has no phone number.');
+      }
       return ok();
     })
   );

@@ -14,6 +14,7 @@ const { dbMock, bridgeMock } = vi.hoisted(() => ({
     // is the case these assertions mostly want anyway.
     getSourceByCitizenId: vi.fn(() => undefined),
     getPlayerByPhone: vi.fn(() => undefined),
+    getPlayerPhone: vi.fn(),
     // The offline half of `PlayerDirectory`. It used to query `players` here directly, so
     // these cases drove it through `dbMock.single`; MICA-150 moved it behind the bridge,
     // because which table an offline player lives in is a framework question and ESX keeps
@@ -50,6 +51,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   bridgeMock.getPlayer.mockReturnValue({ citizenid: CID, source: SRC, setMeta: vi.fn() });
   bridgeMock.getSourceByCitizenId.mockReturnValue(undefined);
+  // A connected player has a phone by default; tests of the "no phone" gap override this.
+  bridgeMock.getPlayerPhone.mockReturnValue('555-0100');
   dbMock.query.mockResolvedValue([]);
   (globalThis as any).emitNet = vi.fn();
   registerPublicApi();
@@ -412,5 +415,32 @@ describe('line exports (MICA-226)', () => {
       ok: false,
       reason: 'unknown_player'
     });
+  });
+
+  it('CreateCall refuses a connected caller with no phone number, rather than reporting ok', async () => {
+    // `placeCall` returns silently for this case — no client event, nothing for the caller
+    // to see go wrong. This is the gap the return-value contract exists to close: without
+    // it a script would be told a call was placed when placeCall never got past its own
+    // second line.
+    bridgeMock.getPlayerPhone.mockReturnValue(null);
+    const createCall = publishedExport('CreateCall')!;
+    await expect(createCall(SRC, '5551234')).resolves.toMatchObject({
+      ok: false,
+      reason: 'unknown_player'
+    });
+  });
+
+  it('CreateCall reports ok only once placeCall actually placed the call', async () => {
+    const onCall = vi.fn(() => ({ action: 'reject' }) as const);
+    (publishedExport('RegisterNumber')! as Function)('5559999', { onCall });
+
+    const createCall = publishedExport('CreateCall')!;
+    const result = await createCall(SRC, '5559999');
+
+    // `ok` alone would also be true for a call that never happened before this fix — the
+    // handler call is what proves `placeCall` actually ran the line-call path rather than
+    // returning early.
+    expect(result).toMatchObject({ ok: true });
+    expect(onCall).toHaveBeenCalled();
   });
 });

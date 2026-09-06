@@ -236,21 +236,33 @@ function failUnreachable(src: number, targetPhone: string): void {
 }
 
 /**
+ * What `placeCall` actually did, for a caller that needs to know.
+ *
+ * `'placed'` covers everything from here on out — ringing, busy, blocked, unreachable — all
+ * of which are visible to `src` through a client event or a call connecting. The other two
+ * are the silent early returns: nothing happened and nothing told anyone, which is exactly
+ * the gap `CreateCall` (`publicApi.ts`) needs to not paper over with a bare `ok()`.
+ */
+export type PlaceCallResult = 'placed' | 'caller_has_no_phone' | 'invalid_target';
+
+/**
  * Place a call from `src` to a dialed number, whatever placed it.
  *
  * Extracted from the `start` handler so `phone:start` and the `CreateCall` export share one
  * body rather than one of them growing its own subtly different rules — the whole point of
- * §2.9 being enforced here is that there is exactly one place a call can be set up.
+ * §2.9 being enforced here is that there is exactly one place a call can be set up. The
+ * `onNet` handler ignores the return value, since a client that dialed badly already sees
+ * nothing happen; `CreateCall` cannot afford to, since its caller gets no such visual cue.
  */
-export async function placeCall(src: number, rawTarget: unknown): Promise<void> {
+export async function placeCall(src: number, rawTarget: unknown): Promise<PlaceCallResult> {
   // Typed and bounded before it reaches `getPlayerByPhone`, which belongs to the
   // framework rather than to us. Not injection — an unbounded or non-string value
   // reaching somebody else's lookup.
   const targetPhone = phoneNumberFrom(rawTarget);
-  if (!targetPhone) return;
+  if (!targetPhone) return 'invalid_target';
 
   const callerPhone = FrameworkBridge.getPlayerPhone(src);
-  if (!callerPhone) return;
+  if (!callerPhone) return 'caller_has_no_phone';
 
   // A character always wins over a registered line, so a number the framework later
   // issues to a real player stops reaching the script rather than intercepting them.
@@ -301,24 +313,24 @@ export async function placeCall(src: number, rawTarget: unknown): Promise<void> 
 
   if (!targetSrc && line && !blocked) {
     await connectLineCall(src, callerPhone, targetPhone, line);
-    return;
+    return 'placed';
   }
 
   if (!targetSrc || blocked) {
     failUnreachable(src, targetPhone);
-    return;
+    return 'placed';
   }
 
   if (targetSrc === src) {
     notifyPlayer(src, { type: 'error', message: 'Busy', key: 'server.phone.busy' });
     emitNet('mica:client:phone:failed', src);
-    return;
+    return 'placed';
   }
 
   if (playerCalls[targetSrc] || playerCalls[src]) {
     notifyPlayer(src, { type: 'error', message: 'Line busy', key: 'server.phone.lineBusy' });
     emitNet('mica:client:phone:failed', src);
-    return;
+    return 'placed';
   }
 
   const callId = generateCallId();
@@ -341,6 +353,7 @@ export async function placeCall(src: number, rawTarget: unknown): Promise<void> 
     from: callerPhone,
     callId: callId
   });
+  return 'placed';
 }
 
 /**
