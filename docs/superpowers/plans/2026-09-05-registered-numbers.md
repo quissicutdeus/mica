@@ -1249,14 +1249,19 @@ git rm docs/superpowers/specs/2026-09-05-registered-numbers-design.md
 git rm docs/superpowers/plans/2026-09-05-registered-numbers.md
 ```
 
-- [ ] **Step 4: Commit and push**
+- [ ] **Step 4: Commit — do NOT push**
 
 ```bash
 pnpm format
 git add -A
 git commit -m "MICA-226: retire the registered-numbers design and plan, now that it has shipped"
-git push origin dev
 ```
+
+**Controller ruling: the push is removed from this task.** The work is on the
+`MICA-226` branch, so `git push origin dev` would move a shared branch from a
+place it was never meant to move, and pushing anywhere is a decision for the
+person who owns the repository rather than for an implementer finishing a task.
+Commit and stop; the branch gets presented for merge separately.
 
 - [ ] **Step 5: Say what was not verified**
 
