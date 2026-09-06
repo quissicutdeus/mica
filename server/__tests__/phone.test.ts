@@ -656,6 +656,30 @@ describe('start: registered lines (MICA-226)', () => {
     expect(emitCalls().filter(([event]) => event === 'mica:client:phone:accepted')).toHaveLength(0);
   });
 
+  it('fails a forward to a connected player who has no phone number', async () => {
+    // Not the same case as the one above, and the one a `getPlayer` check alone misses: this
+    // source *is* connected, so the player lookup passes, and `getPlayerPhone` still answers
+    // null — `FrameworkPlayer.phone` is nullable and core ESX has nowhere to keep a number.
+    // The re-dial then has nothing to dial, and `placeCall` refuses a bad number silently, so
+    // without checking what it returned the caller would be told nothing at all.
+    bridge.players.set(LINE_HOLDER_SRC, 'CID_LINE');
+    registerNumber(
+      LINE,
+      { onCall: () => ({ action: 'forward', source: LINE_HOLDER_SRC }) as const },
+      'taxi'
+    );
+
+    await fire(START, 1, LINE);
+
+    // The same observable result an unreachable number produces: the reset event, and one
+    // zero-duration outgoing row so the caller's own Recents shows the attempt.
+    expect(failedTo(1)).toHaveLength(1);
+    expect(emitCalls().filter(([event]) => event === 'mica:client:phone:accepted')).toHaveLength(0);
+    const inserts = createCalls();
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0][1]).toEqual(expect.arrayContaining(['CID_CALLER', 'outgoing', LINE, 0]));
+  });
+
   it('still pays for the blocklist lookup on a blockable line, so the timing is flat', async () => {
     const onCall = vi.fn(() => ({ action: 'accept' }) as const);
     registerNumber(LINE, { onCall }, 'taxi');
@@ -752,6 +776,26 @@ describe('start: registered lines (MICA-226)', () => {
     expect(emitCalls().filter(([event]) => event === 'mica:client:phone:accepted')).toHaveLength(0);
 
     // The reservation was released rather than stranded, so the caller can dial again.
+    await fire(START, 1, '555-0002');
+    expect(emitCalls().filter(([event]) => event === 'mica:client:phone:incoming')).toHaveLength(1);
+  });
+
+  it('does not connect a caller whose line was released while the handler was thinking', async () => {
+    const line = pendingLine();
+    const pending = placeCall(1, LINE);
+    await settle();
+
+    // The owning resource stops mid-handler. `onLineReleased`'s sweep cannot help here — no
+    // `ActiveCall` exists yet — so accepting after it would strand the caller on a call whose
+    // far end is already gone, with only their own hangup to end it.
+    releaseResource('taxi');
+    line.answer({ action: 'accept' });
+    await pending;
+
+    expect(emitCalls().filter(([event]) => event === 'mica:client:phone:accepted')).toHaveLength(0);
+    expect(failedTo(1)).toHaveLength(1);
+
+    // And the reservation went back, rather than leaving the caller permanently busy.
     await fire(START, 1, '555-0002');
     expect(emitCalls().filter(([event]) => event === 'mica:client:phone:incoming')).toHaveLength(1);
   });

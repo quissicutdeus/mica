@@ -994,8 +994,10 @@ if not result.ok then
 end
 ```
 
-`reason` is one of `unknown_player`, `offline`, `not_ready`, `invalid_args` or
-`internal_error`.
+`reason` is one of `unknown_player`, `offline`, `not_ready`, `invalid_args`,
+`internal_error`, `already_registered` (another resource already holds that
+number), `not_owner` (that number belongs to a different resource) or
+`number_in_use` (a character holds it, and a character always wins).
 
 | Export                              | Identifies a player by | Does                                                                                              |
 | ----------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------- |
@@ -1020,6 +1022,9 @@ end
 | `RemoveDeadZone(id)`                | —                      | Removes one by the id `AddDeadZone` gave you                                                      |
 | `SetSignal(source, level)`          | source                 | One player, overriding the zones. `null` hands them back to the world                             |
 | `GetSignal(source)`                 | source                 | The rules they are subject to — not their bars, which depend on where they stand                  |
+| `RegisterNumber(number, options)`   | —                      | Owns a phone number, so a call placed to it reaches your handler instead of failing               |
+| `UnregisterNumber(number)`          | —                      | Gives a number back. Only the resource that registered it may                                     |
+| `CreateCall(source, number)`        | source                 | Places a call for a player, the way a payphone or a dispatch pick-up would. Async                 |
 
 **citizenid or source, and it matters which.** Anything that must work while the
 player is offline takes a citizenid; anything inherently live takes a source. No
@@ -1042,6 +1047,69 @@ pushes, because the server does not know where anybody is standing and asking
 every player every tick is the cost this design avoids. A modified client can
 therefore lie about its own bars — deliberately fine, since signal gates
 presentation and never authority.
+
+**A phone number can belong to a script rather than to a character.**
+`RegisterNumber` claims one for your resource, and a call placed to it reaches
+your handler instead of failing as unreachable — a taxi dispatcher, a pizza
+line, a 911 desk.
+
+```lua
+local result = exports['mica']:RegisterNumber('5559999', {
+    onCall = function(call)
+        -- call.from is the caller's number, call.source their server id,
+        -- call.callId this call.
+        if not dispatcherOnDuty() then
+            return { action = 'reject' }
+        end
+        return { action = 'forward', source = nearestDispatcher() }
+    end,
+    blockable = false                -- optional; defaults to true
+})
+
+if not result.ok then
+    print(('mica refused: %s (%s)'):format(result.message, result.reason))
+end
+
+exports['mica']:UnregisterNumber('5559999')     -- when you are done with it
+```
+
+- **The number must be a string.** `'911'`, not `911`. A number literal is
+  refused with `invalid_args`, because the same parser that validates a dialled
+  number rejects anything that is not a string — and from Lua that mistake is
+  easy to make and silent to read.
+- **`onCall` is required**, and answers one of `{ action = 'accept' }`,
+  `{ action = 'reject' }` or `{ action = 'forward', source = <server id> }`.
+  `accept` connects the caller to your script — no second player joins voice, so
+  you are expected to be doing the talking some other way. `reject` fails the
+  call exactly like a number nobody holds. `forward` re-dials the call at that
+  player's own number, so voice, blocking and call logging behave as if the
+  caller had dialled them directly; a source nobody is connected on, or one with
+  no phone number, fails the call rather than dropping it.
+- **It may answer synchronously or return a promise, and it has five seconds.**
+  A handler that throws, hangs, overruns or answers nonsense is treated as
+  `reject`, so a bug in your script strands nobody's phone.
+- **The line belongs to the resource that registered it**, attributed by
+  `GetInvokingResource()`. Another resource cannot take it
+  (`already_registered`) or give it back (`not_owner`), a number a character
+  already holds cannot be claimed at all (`number_in_use`), and a character who
+  is later issued that number wins from that call onwards. Everything your
+  resource holds is released when it stops, and any live call on one of those
+  numbers is ended — so a crashed script leaves no number swallowing calls.
+- **`blockable: true` (the default) currently buys the timing shape only, not an
+  actual block.** A blocklist row is keyed by the blocking character's citizenid
+  and a line has none, so a line cannot be blocked by a player today. What the
+  flag does do is decide whether micaOS pays for the blocklist lookup at all:
+  `false` skips it, which is right for infrastructure like a dispatch desk.
+  Leave it at the default unless your number is one nobody should be able to
+  block. Blocking a line by its number is a separate piece of work.
+- **`CreateCall(source, number)` places a call as that player**, which is what a
+  payphone, a radio prop or a dispatch pick-up wants. It is async, so from Lua
+  the outcome arrives later. It refuses a source nobody is connected on
+  (`unknown_player`), a player with no phone number of their own
+  (`unknown_player`) and a number it cannot parse (`invalid_args`). `ok` means
+  micaOS placed the call, not that it connected — a busy, blocked or unreachable
+  number reports `ok` as well, since the caller's own phone is what tells them
+  which of those happened.
 
 **`ext_<resource>` is reserved for you.** Notifications raised under it get
 their own group in the shade, labelled with your `sourceLabel`. micaOS apps are

@@ -325,6 +325,22 @@ that sets none of them changes nothing for your players.
 
 ### Added
 
+**A phone number can belong to a script, through three new exports:
+`RegisterNumber`, `UnregisterNumber` and `CreateCall` (MICA-226).** A resource
+claims a number and answers calls placed to it — a taxi dispatcher, a pizza
+line, a 911 desk — where before, any number no character held simply failed as
+unreachable. The handler may accept the call, reject it, or forward it to a real
+player, and has five seconds to say which; a line is owned by the resource that
+registered it and is released, along with any live call on it, when that
+resource stops. `CreateCall` places a call as a player, the way a payphone or a
+dispatch pick-up would. **No owner action:** nothing changes for a server that
+installs no script using them, and micaOS still does not claim the emergency
+number itself, precisely so a dispatch resource can. The signatures, the failure
+reasons — which have grown `already_registered`, `not_owner` and `number_in_use`
+— and the one trap worth knowing (the number must be a string, so
+`RegisterNumber(911, …)` from Lua is refused) are in the README's
+[Exports for other resources](README.md#exports-for-other-resources).
+
 **The phone can be an item (MICA-229).** Set `mica_phone_item` to the name of an
 inventory item and the phone opens only for a player holding at least one: using
 the item opens it, the keybind works while they hold one, and losing the last

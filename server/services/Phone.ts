@@ -393,25 +393,45 @@ async function connectLineCall(
   // nothing of ours to release.
   if (playerCalls[src] !== callId) return;
 
+  // The *line* can also go away inside that same window: `releaseResource` sweeps the numbers
+  // a stopping resource held, and the `onLineReleased` hook below only reaches calls that
+  // already exist — this one does not yet, so the sweep cannot see it. Connecting anyway
+  // would leave the caller on a silent call whose far end is a dead function ref, endable
+  // only by their own hangup. Compared by identity rather than presence, because a
+  // re-registration inside the window is a different line and this verdict is not its answer.
+  if (lookupLine(targetPhone) !== line) {
+    delete playerCalls[src];
+    failUnreachable(src, targetPhone);
+    return;
+  }
+
   // A forward re-dials by the target's own number, which cannot land back here: a number a
   // character holds is refused at registration and loses to the player lookup on every call,
-  // so `placeCall` resolves it down the player path. A source with no phone yields `''`,
-  // which `phoneNumberFrom` rejects and `placeCall` returns on — hence the explicit
-  // `getPlayer` check first, so a forward to nobody fails visibly rather than silently.
+  // so `placeCall` resolves it down the player path.
+  //
+  // Two things make that re-dial reach nothing, and neither is hypothetical: a `source`
+  // nobody is connected on, and a connected player whose `phone` is null, which is an
+  // ordinary ESX shape rather than a broken one. Both arrive as a number `phoneNumberFrom`
+  // refuses, and `placeCall`'s refusals for a bad number are silent by design. So its answer
+  // is checked rather than discarded: anything but `'placed'` means nothing was emitted, and
+  // the caller — whose reservation is already released — would otherwise sit on the dialling
+  // screen with no toast and no call-log row until they hung up themselves.
   if (verdict.action === 'forward') {
     // Released before re-entering, or `placeCall`'s own busy check would refuse the caller
     // the call this line just asked for.
     delete playerCalls[src];
-    if (!FrameworkBridge.getPlayer(verdict.source)) {
+    if ((await placeCall(src, FrameworkBridge.getPlayerPhone(verdict.source) ?? '')) !== 'placed')
       failUnreachable(src, targetPhone);
-      return;
-    }
-    await placeCall(src, FrameworkBridge.getPlayerPhone(verdict.source) ?? '');
     return;
   }
 
   // `askLine` answers `reject` for a handler that throws, hangs or returns nonsense, so a
-  // broken integration is indistinguishable from a number nobody holds (MICA-64's shape).
+  // broken integration produces the same *content* as a number nobody holds: same message,
+  // same call-log row, same client event (MICA-64's shape). Not the same timing, though — a
+  // number nobody holds fails on the spot, while a line's rejection waits on somebody else's
+  // handler and can take up to `HANDLER_TIMEOUT_MS`. So a line's existence stays detectable
+  // by a caller with a stopwatch whatever `blockable` says; only the content half of that
+  // guarantee holds here.
   if (verdict.action !== 'accept') {
     delete playerCalls[src];
     failUnreachable(src, targetPhone);
