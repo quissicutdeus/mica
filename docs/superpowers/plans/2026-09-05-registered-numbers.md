@@ -985,6 +985,16 @@ git commit -m "MICA-226: fall back to a registered line when no character holds 
 - Produces: nothing new. `currentEmergencyNumber()` keeps its signature so
   `publicApi.ts`'s `GetEmergencyNumber` is untouched.
 
+**Second controller ruling, after Task 4.** The original criterion "the
+emergency number is re-expressed as the first registered number and `Phone.ts`
+no longer names it" is **withdrawn**. `line` is consulted only when no player
+holds the number, and the emergency number is normally held by a real dispatcher
+— so a registry-only exemption silently stops applying the moment 911 is
+staffed, which is precisely when it matters. Task 4 proved this against three
+existing tests. Keep `targetPhone === emergencyNumber()`. This task is now
+strictly additive: register the emergency number as an unblockable line with no
+handler, so a dispatch resource can own 911 without a player behind it.
+
 **Controller ruling, applied before dispatch.** `isBlocked(citizenid, number)`
 queries `mica_blocklist WHERE citizenid = ?`, and that citizenid is the person
 who did the blocking. A line has no citizenid, so `isBlocked('', callerPhone)`
@@ -1030,6 +1040,18 @@ it('registers the emergency number to micaOS itself at boot', () => {
   expect(lookupLine('911')?.owner).toBe('mica');
   expect(lookupLine('911')?.blockable).toBe(false);
 });
+
+it('still exempts the emergency number when a real dispatcher holds it', async () => {
+  bridgeMock.getPlayerByPhone.mockReturnValue({
+    source: EMERGENCY_SRC,
+    citizenid: CID_DISPATCH
+  });
+  isBlockedMock.mockResolvedValue(true);
+
+  await placeCall(CALLER_SRC, '911');
+
+  expect(isBlockedMock).not.toHaveBeenCalled();
+});
 ```
 
 - [ ] **Step 2: Run it and watch it fail**
@@ -1059,14 +1081,14 @@ registerNumber(
 );
 ```
 
-Then confirm no `emergencyNumber()` comparison remains in the dial path:
+Then confirm the emergency comparison in the dial path is **still there**:
 
 ```bash
 grep -n "emergencyNumber()" server/services/Phone.ts
 ```
 
-Only the definition, `currentEmergencyNumber`, and this registration should
-appear. The comparison inside the dial path must be gone.
+It must still appear in the `unblockable` expression. Deleting it is the one
+thing this task must not do — see the ruling above.
 
 - [ ] **Step 4: Run the tests and watch them pass**
 
