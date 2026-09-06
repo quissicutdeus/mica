@@ -320,6 +320,24 @@ needed first — so an apply that is interrupted can simply be run again. The ne
 key goes on before the old one comes off, so if anything does go wrong your
 table is left exactly as it was rather than with no index at all.
 
+**`mica_phones` is a new table — run `micaschema apply` from your server console
+after updating, or import the regenerated `mica.sql` / `mica.esx.sql` on a fresh
+install (MICA-280).** It carries `id`, `citizenid`, `phone_id`, `status`,
+`created_at` and `updated_at`, with a `status` key, a `citizenid_status` key and
+a unique `phone_id_unique` key. It is the first step of the phone becoming a
+thing you carry rather than something a character simply has: a phone gets an
+identity of its own, minted into the inventory item's metadata the first time it
+is used, so two phones are two phones. **Nothing reads it yet** — no data moves
+onto it in this release and no behaviour changes — but the table has to exist
+before the work that does.
+
+`phone_id` is unique; `citizenid` deliberately is not, because a character is
+meant to be able to hold more than one phone. **This needs `ox_inventory`**: it
+is the only inventory with per-item metadata to mint an id into. On qb-inventory
+support depends on whether your build exposes `SetItemData`, and es_extended's
+own inventory stores quantities only and cannot carry a phone id at all — those
+servers keep exactly the behaviour they have now, and say so once at start.
+
 Every convar below defaults to the behaviour a server already had, so an update
 that sets none of them changes nothing for your players.
 

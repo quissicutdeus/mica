@@ -123,10 +123,57 @@ export const evaluatePhoneItem = (src: number): PhoneItemState | null => {
 };
 
 /**
+ * Which slot each source last used a phone from (MICA-280).
+ *
+ * The active phone is "the one you last used", and this is where that is recorded — here
+ * rather than beside the resolver in `services/Phones.ts`, because that file imports this one
+ * and the reverse would close a runtime cycle. The rule that *reads* this still lives in one
+ * place; only the fact being recorded lives here, next to the callback that observes it.
+ *
+ * **Cleared on `playerDropped`, and that is not optional.** FiveM hands server ids straight
+ * back out, so an entry left behind points whoever lands on that id next at a slot in an
+ * inventory that is not theirs — `Battery.ts`'s `forgetSource` is the same hazard, written up
+ * at length. Keyed by source rather than citizenid because "which phone am I holding" is a
+ * property of the session, not of the character.
+ */
+const lastUsed = new Map<number, number>();
+
+/** The slot this source last used a phone from, if they have used one this session. */
+export const lastUsedPhoneSlot = (src: number): number | undefined => lastUsed.get(src);
+
+/** Test seam, like `__resetPhoneItemWarnings`. */
+export const __resetLastUsedPhone = (): void => {
+  lastUsed.clear();
+};
+
+on('playerDropped', () => {
+  lastUsed.delete(source);
+});
+
+/**
+ * What the framework hands the callback beside the source.
+ *
+ * qbx_core annotates `CreateUseableItem`'s callback as `fun(source, item)` and ox_inventory
+ * fills that second argument with the slot data. It is typed loosely because it is another
+ * resource's shape: a framework that passes nothing simply means no slot was observed, and
+ * the resolver falls back to the lowest slot rather than failing.
+ */
+export interface UsedItem {
+  slot?: unknown;
+}
+
+/**
  * Using the item opens the phone. The framework calls this only for an item in that player's
  * own inventory, so holding it is established and the count is not asked again.
+ *
+ * The slot is recorded because using a phone is what makes it the active one. A player with a
+ * burner and their own phone switches between them by using the one they want, which is a
+ * visible act — where switching by dragging items between slots would not be.
  */
-const phoneItemUsed = (source: number): void => {
+const phoneItemUsed = (source: number, used?: UsedItem): void => {
+  const slot = used?.slot;
+  if (typeof slot === 'number' && Number.isInteger(slot) && slot > 0) lastUsed.set(source, slot);
+
   emitNet(PUSH_EVENT, source, { gated: true, held: true } satisfies PhoneItemState);
   emitNet(OPEN_EVENT, source);
 };

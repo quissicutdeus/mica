@@ -534,7 +534,13 @@ export class FrameworkBridge {
    * line saying what the operator loses rather than returning quietly, which reads exactly
    * like a registration that worked.
    */
-  public static registerUsableItem(item: string, cb: (source: number) => void): void {
+  public static registerUsableItem(
+    item: string,
+    // qbx_core annotates its own callback as `fun(source, item)` and ox_inventory fills
+    // that second argument with the slot data, which is how MICA-280 knows *which* phone
+    // was used. Typed loosely because the shape belongs to another resource.
+    cb: (source: number, used?: { slot?: unknown }) => void
+  ): void {
     try {
       // The predicate registers: `serving` walks the adapters in order and stops at the
       // first that says it handled it, which is the chain the old else-if ladder was.

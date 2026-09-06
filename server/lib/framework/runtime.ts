@@ -292,7 +292,10 @@ export interface FrameworkAdapter {
    * a silent no-op — the distinction `standaloneRegisterUsableItem` was written to make
    * audible rather than leaving it to look like success.
    */
-  registerUsableItem(item: string, cb: (source: number) => void): boolean;
+  registerUsableItem(
+    item: string,
+    cb: (source: number, used?: { slot?: unknown }) => void
+  ): boolean;
 }
 
 export const trimmedOrNull = (value: unknown): string | null => {

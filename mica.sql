@@ -629,6 +629,24 @@ CREATE TABLE IF NOT EXISTS `mica_phone_numbers` (
         REFERENCES `players` (`citizenid`) ON DELETE CASCADE
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
+-- Generated from the 'phones' defineService declaration.
+-- Do not edit by hand; change the declaration and regenerate.
+
+CREATE TABLE IF NOT EXISTS `mica_phones` (
+    `id` int(11) NOT NULL AUTO_INCREMENT,
+    `citizenid` varchar(50) NOT NULL,
+    `phone_id` varchar(32) NOT NULL,
+    `status` ENUM('active', 'deleted') NOT NULL DEFAULT 'active',
+    `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `status` (`status`),
+    KEY `citizenid_status` (`citizenid`, `status`),
+    UNIQUE KEY `phone_id_unique` (`phone_id`),
+    CONSTRAINT `fk_phones_citizenid` FOREIGN KEY (`citizenid`)
+        REFERENCES `players` (`citizenid`) ON DELETE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
 -- Generated from the 'places' defineService declaration.
 -- Do not edit by hand; change the declaration and regenerate.
 
