@@ -13,8 +13,10 @@ import {
   registerNumber,
   unregisterNumber,
   lookupLine,
-  __resetRegistry
+  __resetRegistry,
+  type LineOptions
 } from '../lib/numberRegistry';
+import { askLine, HANDLER_TIMEOUT_MS } from '../lib/numberRegistry';
 
 const onCall = () => ({ action: 'reject' }) as const;
 
@@ -98,5 +100,76 @@ describe('numberRegistry storage', () => {
       ok: false,
       reason: 'invalid_args'
     });
+  });
+});
+
+describe('numberRegistry handler invocation', () => {
+  beforeEach(() => {
+    __resetRegistry();
+    bridgeMock.getPlayerByPhone.mockReturnValue(undefined);
+  });
+
+  const lineWith = (handler: LineOptions['onCall']) => {
+    registerNumber('5551234', { onCall: handler }, 'taxi');
+    return lookupLine('5551234')!;
+  };
+
+  const incoming = { from: '5550100', source: 3, callId: 42 };
+
+  it('passes the call through and returns the verdict', async () => {
+    const handler = vi.fn(() => ({ action: 'accept' }) as const);
+    await expect(askLine(lineWith(handler), incoming)).resolves.toEqual({
+      action: 'accept'
+    });
+    expect(handler).toHaveBeenCalledWith(incoming);
+  });
+
+  it('awaits an async handler', async () => {
+    const handler = async () => ({ action: 'forward', source: 9 }) as const;
+    await expect(askLine(lineWith(handler), incoming)).resolves.toEqual({
+      action: 'forward',
+      source: 9
+    });
+  });
+
+  it('treats a throwing handler as a reject rather than propagating', async () => {
+    const handler = () => {
+      throw new Error('script bug');
+    };
+    await expect(askLine(lineWith(handler), incoming)).resolves.toEqual({
+      action: 'reject'
+    });
+  });
+
+  it('treats a rejected promise as a reject', async () => {
+    const handler = async () => {
+      throw new Error('async script bug');
+    };
+    await expect(askLine(lineWith(handler), incoming)).resolves.toEqual({
+      action: 'reject'
+    });
+  });
+
+  it('treats a verdict it does not recognise as a reject', async () => {
+    const handler = () => ({ action: 'explode' }) as never;
+    await expect(askLine(lineWith(handler), incoming)).resolves.toEqual({
+      action: 'reject'
+    });
+  });
+
+  it('rejects a forward whose source is not a number', async () => {
+    const handler = () => ({ action: 'forward', source: 'nope' }) as never;
+    await expect(askLine(lineWith(handler), incoming)).resolves.toEqual({
+      action: 'reject'
+    });
+  });
+
+  it('gives up on a handler that never returns', async () => {
+    vi.useFakeTimers();
+    const handler = () => new Promise<never>(() => {});
+    const pending = askLine(lineWith(handler), incoming);
+    await vi.advanceTimersByTimeAsync(HANDLER_TIMEOUT_MS + 1);
+    await expect(pending).resolves.toEqual({ action: 'reject' });
+    vi.useRealTimers();
   });
 });

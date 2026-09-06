@@ -104,3 +104,61 @@ export function unregisterNumber(rawNumber: unknown, owner: string): ExportOutco
   lines.delete(number);
   return ok();
 }
+
+/**
+ * How long a line's handler gets before the call is treated as unanswered.
+ *
+ * Long enough for a script doing a database read, short enough that a caller is not left
+ * ringing a dead line. A handler that overruns is answered as `reject`, which reaches the
+ * caller as `failUnreachable` — so a broken integration is indistinguishable from a number
+ * nobody holds, the same guarantee MICA-64 makes about a blocked call.
+ */
+export const HANDLER_TIMEOUT_MS = 5000;
+
+const REJECT: CallVerdict = { action: 'reject' };
+
+/** A verdict shaped the way this module promised, or null. */
+const verdictFrom = (raw: unknown): CallVerdict | null => {
+  if (!raw || typeof raw !== 'object') return null;
+  const action = (raw as { action?: unknown }).action;
+  if (action === 'accept' || action === 'reject') return { action };
+  if (action === 'forward') {
+    const source = (raw as { source?: unknown }).source;
+    return typeof source === 'number' && Number.isInteger(source)
+      ? { action: 'forward', source }
+      : null;
+  }
+  return null;
+};
+
+/**
+ * Ask a line what to do with a call. Never throws, never hangs.
+ *
+ * The handler belongs to another resource and is reached through a function ref, so all
+ * three failure modes are somebody else's bug rather than ours: it can throw, it can reject,
+ * and it can simply never come back. Each answers `reject`, because the alternative is a
+ * caller whose phone rings forever.
+ */
+export async function askLine(line: RegisteredLine, call: IncomingLineCall): Promise<CallVerdict> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const verdict = await Promise.race([
+      Promise.resolve(line.onCall(call)),
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => {
+          console.error(
+            `[mica] line ${line.number} (${line.owner}) did not answer within ` +
+              `${HANDLER_TIMEOUT_MS}ms; treating the call as unreachable.`
+          );
+          resolve(null);
+        }, HANDLER_TIMEOUT_MS);
+      })
+    ]);
+    return verdictFrom(verdict) ?? REJECT;
+  } catch (error) {
+    console.error(`[mica] line ${line.number} (${line.owner}) threw:`, error);
+    return REJECT;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
