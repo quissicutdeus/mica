@@ -63,8 +63,9 @@ vi.mock('../lib/FrameworkBridge', () => ({
 }));
 
 import '../services/Phone';
-import { __resetCalls, injectIncomingCall, endActiveCallFor } from '../services/Phone';
+import { __resetCalls, injectIncomingCall, endActiveCallFor, placeCall } from '../services/Phone';
 import { __resetRateLimits, allow } from '../lib/rateLimit';
+import { registerNumber, releaseResource } from '../lib/numberRegistry';
 
 const START = 'mica:server:phone:start';
 const ANSWER = 'mica:server:phone:answer';
@@ -550,5 +551,140 @@ describe('micacall command', () => {
     await runCommand('micacall', 1, ['end']);
 
     expect(endedCalls()).toHaveLength(0);
+  });
+});
+
+/**
+ * MICA-226. A number no character holds now falls back to `numberRegistry` before it is
+ * declared unreachable. The registry itself is exercised in `numberRegistry.test.ts`; what
+ * is under test here is only the wiring — which of the two lookups wins, whether the
+ * blocklist is still consulted, and that a line call tears down like any other.
+ */
+describe('start: registered lines (MICA-226)', () => {
+  const LINE = '5559999';
+  const LINE_HOLDER_SRC = 4;
+
+  afterEach(() => {
+    releaseResource('taxi');
+    bridge.players.delete(LINE_HOLDER_SRC);
+    bridge.phones.delete(LINE_HOLDER_SRC);
+  });
+
+  it('rings the line handler when no character holds the number', async () => {
+    const onCall = vi.fn(() => ({ action: 'accept' }) as const);
+    registerNumber(LINE, { onCall }, 'taxi');
+
+    await fire(START, 1, LINE);
+
+    expect(onCall).toHaveBeenCalledWith(expect.objectContaining({ from: '555-0001', source: 1 }));
+    expect(emitCalls()).toEqual(
+      expect.arrayContaining([['mica:client:phone:accepted', 1, { callId: expect.any(Number) }]])
+    );
+  });
+
+  it('lets a character who holds the number win over the line that registered it', async () => {
+    const onCall = vi.fn(() => ({ action: 'accept' }) as const);
+    registerNumber(LINE, { onCall }, 'taxi');
+    // The framework can hand this number to a character after registration, so the
+    // per-call ordering rather than the registration check is what has to hold.
+    bridge.players.set(LINE_HOLDER_SRC, 'CID_LINE');
+    bridge.phones.set(LINE_HOLDER_SRC, LINE);
+
+    await fire(START, 1, LINE);
+
+    expect(onCall).not.toHaveBeenCalled();
+    expect(emitCalls()).toEqual(
+      expect.arrayContaining([
+        [
+          'mica:client:phone:incoming',
+          LINE_HOLDER_SRC,
+          { from: '555-0001', callId: expect.any(Number) }
+        ]
+      ])
+    );
+  });
+
+  it('gives two callers of one line a call each rather than refusing the second', async () => {
+    registerNumber(LINE, { onCall: () => ({ action: 'accept' }) as const }, 'taxi');
+
+    await placeCall(1, LINE);
+    await placeCall(3, LINE);
+
+    const accepted = emitCalls().filter(([event]) => event === 'mica:client:phone:accepted');
+    expect(accepted.map(([, dest]) => dest)).toEqual([1, 3]);
+    const ids = accepted.map(([, , payload]) => (payload as { callId: number }).callId);
+    expect(new Set(ids).size).toBe(2);
+    expect(failedTo(3)).toHaveLength(0);
+  });
+
+  it('fails a rejecting line exactly like an unreachable number', async () => {
+    registerNumber(LINE, { onCall: () => ({ action: 'reject' }) as const }, 'taxi');
+
+    await fire(START, 1, LINE);
+
+    // Same three things `still logs an unreachable number` asserts: the reset event, one
+    // zero-duration outgoing row, and nothing else.
+    expect(failedTo(1)).toHaveLength(1);
+    const inserts = createCalls();
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0][1]).toEqual(expect.arrayContaining(['CID_CALLER', 'outgoing', LINE, 0]));
+  });
+
+  it('forwards to the real player path when the handler names a source', async () => {
+    registerNumber(LINE, { onCall: () => ({ action: 'forward', source: 2 }) as const }, 'taxi');
+
+    await fire(START, 1, LINE);
+
+    // Re-dialled by 2's own number, so this is an ordinary player-to-player call from here
+    // on — the target's client rings, rather than the caller being told the call connected.
+    expect(emitCalls()).toEqual(
+      expect.arrayContaining([
+        ['mica:client:phone:incoming', 2, { from: '555-0001', callId: expect.any(Number) }]
+      ])
+    );
+  });
+
+  it('fails a forward to a source nobody is connected on', async () => {
+    registerNumber(LINE, { onCall: () => ({ action: 'forward', source: 99 }) as const }, 'taxi');
+
+    await fire(START, 1, LINE);
+
+    expect(failedTo(1)).toHaveLength(1);
+    expect(emitCalls().filter(([event]) => event === 'mica:client:phone:accepted')).toHaveLength(0);
+  });
+
+  it('asks the blocklist about a blockable line, and refuses when it answers yes', async () => {
+    dbMock.scalar.mockResolvedValue(1);
+    const onCall = vi.fn(() => ({ action: 'accept' }) as const);
+    registerNumber(LINE, { onCall }, 'taxi');
+
+    await fire(START, 1, LINE);
+
+    expect(dbMock.scalar).toHaveBeenCalled();
+    expect(onCall).not.toHaveBeenCalled();
+    expect(failedTo(1)).toHaveLength(1);
+  });
+
+  it('never asks the blocklist at all for an unblockable line', async () => {
+    dbMock.scalar.mockResolvedValue(1); // would refuse any blockable number
+    const onCall = vi.fn(() => ({ action: 'accept' }) as const);
+    registerNumber(LINE, { onCall, blockable: false }, 'taxi');
+
+    await fire(START, 1, LINE);
+
+    expect(dbMock.scalar).not.toHaveBeenCalled();
+    expect(onCall).toHaveBeenCalled();
+    expect(failedTo(1)).toHaveLength(0);
+  });
+
+  it('ends a live call on a line whose owning resource goes away', async () => {
+    registerNumber(LINE, { onCall: () => ({ action: 'accept' }) as const }, 'taxi');
+    await fire(START, 1, LINE);
+    (globalThis as any).emitNet.mockClear();
+
+    releaseResource('taxi');
+
+    // Without this the caller's phone stays on a call whose far end is a dead function ref.
+    expect(endedCalls()).toEqual(expect.arrayContaining([['mica:client:phone:ended', 1]]));
   });
 });

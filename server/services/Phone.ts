@@ -10,6 +10,7 @@ import { phoneCallLog } from './PhoneCallLog';
 import { isAdmin } from './Admin';
 import { SEED_CHARACTERS } from '../lib/seed';
 import { isBlocked } from './Blocklist';
+import { lookupLine, askLine, onLineReleased, type RegisteredLine } from '../lib/numberRegistry';
 
 const EMERGENCY_NUMBER_CONVAR = 'mica_emergency_number';
 const DEFAULT_EMERGENCY_NUMBER = '911';
@@ -54,6 +55,7 @@ const generateCallId = () => Math.floor(Math.random() * 900000) + 100000;
 export const __resetCalls = (): void => {
   for (const key of Object.keys(activeCalls)) delete activeCalls[Number(key)];
   for (const key of Object.keys(playerCalls)) delete playerCalls[Number(key)];
+  nextLineSource = FIRST_LINE_SOURCE;
 };
 
 /**
@@ -121,6 +123,21 @@ function endActiveCall(callId: number, endedBy: number): void {
 const CONSOLE_CALLER_SOURCE = -1;
 
 /**
+ * The far end of a line call gets its own negative source, one per call.
+ *
+ * `playerCalls` is keyed by source, so every live call needs a key nothing else is using.
+ * `CONSOLE_CALLER_SOURCE` is a single sentinel and cannot serve: two players talking to one
+ * taxi line at once would share the key, and ending either call would delete the other's
+ * entry from under it. Counting down from -2 leaves -1 to the console and hands out a fresh
+ * key per call. Every behaviour a negative source already has still holds — `getCitizenId`
+ * answers null, so `logCallEnd` writes no row for this side and `endActiveCall` notifies a
+ * source nobody is connected on, exactly as an injected call already does.
+ */
+const FIRST_LINE_SOURCE = -2;
+let nextLineSource = FIRST_LINE_SOURCE;
+const allocateLineSource = (): number => nextLineSource--;
+
+/**
  * Ring `targetSrc` from `callerPhone` with no real caller behind it. Everything past this
  * point is the genuine client/server path — NUI focus, the `callStatus` messages, the
  * pma-voice join on answer — with only the peer faked. `logCallEnd` already skips writing
@@ -184,26 +201,28 @@ function failUnreachable(src: number, targetPhone: string): void {
   emitNet('mica:client:phone:failed', src);
 }
 
-onNet('mica:server:phone:start', async (rawTarget: unknown) => {
-  // Rate limit *and* authenticate, in the order `ServiceEndpoint` uses. Raw `onNet`
-  // handlers got neither until this; see `lib/netGuard.ts`.
-  const player = guardNetEvent('phone', 'start');
-  if (!player) return;
-
+/**
+ * Place a call from `src` to a dialed number, whatever placed it.
+ *
+ * Extracted from the `start` handler so `phone:start` and the `CreateCall` export share one
+ * body rather than one of them growing its own subtly different rules — the whole point of
+ * §2.9 being enforced here is that there is exactly one place a call can be set up.
+ */
+export async function placeCall(src: number, rawTarget: unknown): Promise<void> {
   // Typed and bounded before it reaches `getPlayerByPhone`, which belongs to the
   // framework rather than to us. Not injection — an unbounded or non-string value
   // reaching somebody else's lookup.
   const targetPhone = phoneNumberFrom(rawTarget);
   if (!targetPhone) return;
 
-  const src = source;
   const callerPhone = FrameworkBridge.getPlayerPhone(src);
-
   if (!callerPhone) return;
 
-  // Look up target via FrameworkBridge
+  // A character always wins over a registered line, so a number the framework later
+  // issues to a real player stops reaching the script rather than intercepting them.
   const targetPlayer = FrameworkBridge.getPlayerByPhone(targetPhone);
   const targetSrc = targetPlayer?.source || null;
+  const line = targetSrc ? undefined : lookupLine(targetPhone);
 
   /**
    * A blocked call fails exactly like an unreachable one (MICA-64) — same message, same
@@ -217,18 +236,31 @@ onNet('mica:server:phone:start', async (rawTarget: unknown) => {
    * row (`''` when there's no target) keeps the query's cost identical either way while
    * still always resolving to `false` for an unreachable number.
    *
-   * The emergency number always connects and skips this check entirely, rather than
-   * calling `isBlocked` and having the answer not matter: `targetPhone` is compared
-   * before the (async) lookup so a blocked emergency number, however that arose, is
-   * never even asked about. There is nothing to bypass for DND or signal — neither has
-   * ever gated a call here; DND only suppresses a *notification*
-   * (`web/src/shell/state/notificationPolicy.ts`) and signal has never refused one on
-   * this file's own evidence — so "connects regardless of them" already holds for every
-   * call, emergency or not.
+   * An **unblockable** target skips the check entirely, rather than calling `isBlocked` and
+   * having the answer not matter: it is decided before the (async) lookup, so a blocked
+   * emergency number — however that arose — is never even asked about. Two things make a
+   * target unblockable, and they are independent:
+   *
+   * - The configured emergency number, whoever is answering it. This term must not be
+   *   folded into the line term below: the emergency number is normally held by a *player*
+   *   (a dispatcher on 911), and `line` is only ever looked up when no player holds the
+   *   number, so a line-only condition would quietly make a staffed 911 blockable again.
+   * - A line registered with `blockable: false` (MICA-226), which is how a script says its
+   *   number is infrastructure rather than a person.
+   *
+   * There is nothing to bypass for DND or signal — neither has ever gated a call here; DND
+   * only suppresses a *notification* (`web/src/shell/state/notificationPolicy.ts`) and
+   * signal has never refused one on this file's own evidence — so "connects regardless of
+   * them" already holds for every call, unblockable or not.
    */
-  const blocked =
-    targetPhone !== emergencyNumber() &&
-    (await isBlocked(targetPlayer?.citizenid ?? '', callerPhone));
+  const unblockable = targetPhone === emergencyNumber() || (line ? !line.blockable : false);
+
+  const blocked = !unblockable && (await isBlocked(targetPlayer?.citizenid ?? '', callerPhone));
+
+  if (!targetSrc && line && !blocked) {
+    await connectLineCall(src, callerPhone, targetPhone, line);
+    return;
+  }
 
   if (!targetSrc || blocked) {
     failUnreachable(src, targetPhone);
@@ -267,6 +299,91 @@ onNet('mica:server:phone:start', async (rawTarget: unknown) => {
     from: callerPhone,
     callId: callId
   });
+}
+
+/**
+ * Ring a script-owned line and act on its verdict.
+ *
+ * `accept` connects through the same `accepted` event a player answering emits, so the
+ * caller's UI shows a connected call — there is no second client on the other end, so
+ * nothing joins pma-voice and the script is expected to be doing the talking some other
+ * way. `forward` instead re-enters `placeCall` at a real player's own number, which is what
+ * keeps voice, blocking and call logging identical to a call dialed directly.
+ */
+async function connectLineCall(
+  src: number,
+  callerPhone: string,
+  targetPhone: string,
+  line: RegisteredLine
+): Promise<void> {
+  if (playerCalls[src]) {
+    notifyPlayer(src, { type: 'error', message: 'Line busy', key: 'server.phone.lineBusy' });
+    emitNet('mica:client:phone:failed', src);
+    return;
+  }
+
+  const callId = generateCallId();
+  const lineSource = allocateLineSource();
+  const verdict = await askLine(line, { from: callerPhone, source: src, callId });
+
+  // A forward re-dials by the target's own number, which cannot land back here: a number a
+  // character holds is refused at registration and loses to the player lookup on every call,
+  // so `placeCall` resolves it down the player path. A source with no phone yields `''`,
+  // which `phoneNumberFrom` rejects and `placeCall` returns on — hence the explicit
+  // `getPlayer` check first, so a forward to nobody fails visibly rather than silently.
+  if (verdict.action === 'forward') {
+    if (!FrameworkBridge.getPlayer(verdict.source)) {
+      failUnreachable(src, targetPhone);
+      return;
+    }
+    await placeCall(src, FrameworkBridge.getPlayerPhone(verdict.source) ?? '');
+    return;
+  }
+
+  // `askLine` answers `reject` for a handler that throws, hangs or returns nonsense, so a
+  // broken integration is indistinguishable from a number nobody holds (MICA-64's shape).
+  if (verdict.action !== 'accept') {
+    failUnreachable(src, targetPhone);
+    return;
+  }
+
+  activeCalls[callId] = {
+    id: callId,
+    caller: src,
+    target: lineSource,
+    callerPhone,
+    targetPhone,
+    startTime: Date.now(),
+    // Answered on the spot: the handler already said yes, so there is no ringing state a
+    // second client would otherwise have to leave.
+    answeredAt: Date.now()
+  };
+  playerCalls[src] = callId;
+  playerCalls[lineSource] = callId;
+
+  emitNet('mica:client:phone:accepted', src, { callId });
+}
+
+/**
+ * A line that goes away takes its live calls with it.
+ *
+ * Registered from here rather than called from `numberRegistry.ts` because `lib/` must not
+ * import `services/`. Without it a caller connected to a stopped resource is left on a call
+ * whose far end is a dead function ref and which only their own hangup can end.
+ */
+onLineReleased((number: string) => {
+  for (const call of Object.values(activeCalls)) {
+    if (call.targetPhone === number) endActiveCall(call.id, CONSOLE_CALLER_SOURCE);
+  }
+});
+
+onNet('mica:server:phone:start', async (rawTarget: unknown) => {
+  // Rate limit *and* authenticate, in the order `ServiceEndpoint` uses. Raw `onNet`
+  // handlers got neither until this; see `lib/netGuard.ts`.
+  const player = guardNetEvent('phone', 'start');
+  if (!player) return;
+
+  await placeCall(source, rawTarget);
 });
 
 onNet('mica:server:phone:answer', () => {
