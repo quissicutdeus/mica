@@ -17,6 +17,7 @@ import {
   type LineOptions
 } from '../lib/numberRegistry';
 import { askLine, HANDLER_TIMEOUT_MS } from '../lib/numberRegistry';
+import { releaseResource, onLineReleased } from '../lib/numberRegistry';
 
 const onCall = () => ({ action: 'reject' }) as const;
 
@@ -171,5 +172,60 @@ describe('numberRegistry handler invocation', () => {
     await vi.advanceTimersByTimeAsync(HANDLER_TIMEOUT_MS + 1);
     await expect(pending).resolves.toEqual({ action: 'reject' });
     vi.useRealTimers();
+  });
+
+  it('treats a bare string verdict as a reject', async () => {
+    const handler = () => 'ok' as never;
+    await expect(askLine(lineWith(handler), incoming)).resolves.toEqual({
+      action: 'reject'
+    });
+  });
+
+  it('treats a null verdict as a reject', async () => {
+    const handler = () => null as never;
+    await expect(askLine(lineWith(handler), incoming)).resolves.toEqual({
+      action: 'reject'
+    });
+  });
+
+  it('treats an undefined verdict as a reject', async () => {
+    const handler = () => undefined as never;
+    await expect(askLine(lineWith(handler), incoming)).resolves.toEqual({
+      action: 'reject'
+    });
+  });
+});
+
+describe('numberRegistry resource lifecycle', () => {
+  beforeEach(() => {
+    __resetRegistry();
+    bridgeMock.getPlayerByPhone.mockReturnValue(undefined);
+  });
+
+  it("drops every number the stopping resource owned, and nobody else's", () => {
+    registerNumber('5551111', { onCall }, 'taxi');
+    registerNumber('5552222', { onCall }, 'taxi');
+    registerNumber('5553333', { onCall }, 'mechanic');
+
+    const dropped = releaseResource('taxi');
+
+    expect(dropped.sort()).toEqual(['5551111', '5552222']);
+    expect(lookupLine('5551111')).toBeUndefined();
+    expect(lookupLine('5552222')).toBeUndefined();
+    expect(lookupLine('5553333')).toBeDefined();
+  });
+
+  it('tells the call layer about each released number', () => {
+    const released: string[] = [];
+    onLineReleased((number) => released.push(number));
+    registerNumber('5551111', { onCall }, 'taxi');
+
+    releaseResource('taxi');
+
+    expect(released).toEqual(['5551111']);
+  });
+
+  it('is a no-op for a resource that held nothing', () => {
+    expect(releaseResource('unrelated')).toEqual([]);
   });
 });

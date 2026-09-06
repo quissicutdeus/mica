@@ -54,6 +54,7 @@ const lines = new Map<string, RegisteredLine>();
 /** Test seam, matching `__resetCalls` in `Phone.ts`. */
 export const __resetRegistry = (): void => {
   lines.clear();
+  lineReleased = () => {};
 };
 
 export const lookupLine = (number: string): RegisteredLine | undefined => lines.get(number);
@@ -162,3 +163,39 @@ export async function askLine(line: RegisteredLine, call: IncomingLineCall): Pro
     if (timer) clearTimeout(timer);
   }
 }
+
+/**
+ * Told when a line goes away, so live calls on it can be ended.
+ *
+ * A hook rather than a direct call because this module lives in `lib/` and the call state
+ * lives in `services/Phone.ts`; importing the service from here would close the same runtime
+ * cycle `lib/phoneNumbers.ts` documents avoiding. `Phone.ts` fills the slot at import time.
+ */
+let lineReleased: (number: string) => void = () => {};
+
+export const onLineReleased = (fn: (number: string) => void): void => {
+  lineReleased = fn;
+};
+
+/**
+ * Drop every number a resource owns, and return them.
+ *
+ * Without this a stopped script leaves a number that swallows calls into a dead function
+ * ref forever — the failure mode function refs trade against, and the reason the export
+ * takes refs at all rather than resource+export-name strings.
+ */
+export function releaseResource(owner: string): string[] {
+  const dropped = linesOwnedBy(owner).map((line) => line.number);
+  for (const number of dropped) {
+    lines.delete(number);
+    lineReleased(number);
+  }
+  return dropped;
+}
+
+on('onResourceStop', (resource: string) => {
+  const dropped = releaseResource(resource);
+  if (dropped.length > 0) {
+    console.log(`[mica] released ${dropped.length} number(s) held by ${resource}.`);
+  }
+});
