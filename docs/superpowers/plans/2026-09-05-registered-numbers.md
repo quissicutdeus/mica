@@ -979,6 +979,16 @@ git commit -m "MICA-226: fall back to a registered line when no character holds 
 - Produces: nothing new. `currentEmergencyNumber()` keeps its signature so
   `publicApi.ts`'s `GetEmergencyNumber` is untouched.
 
+**Controller ruling, applied before dispatch.** `isBlocked(citizenid, number)`
+queries `mica_blocklist WHERE citizenid = ?`, and that citizenid is the person
+who did the blocking. A line has no citizenid, so `isBlocked('', callerPhone)`
+is always false and a `blockable: true` line cannot actually be blocked today.
+The flag still earns its place — its job here is to replace the hardcoded
+`targetPhone !== emergencyNumber()` comparison, which it does correctly — but do
+not write a test claiming a line gets blocked. The test below asserts what is
+true: an unblockable line never consults the blocklist, a blockable one does.
+Blocking a script line is a follow-up, not this ticket.
+
 `Phone.ts:230` currently reads
 `targetPhone !== emergencyNumber() && (await isBlocked(...))`. Task 4 already
 replaced that with `(line ? line.blockable : true)`. This task registers the
