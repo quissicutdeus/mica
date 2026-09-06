@@ -203,10 +203,13 @@ not work around it.
      hand-written otherwise.
    - **Never mutate a row without an ownership predicate.** `update`/`delete`
      require a `citizenid` in the `WHERE`; a row id alone is never
-     authorization. For rows shared between players (conversations, messages),
-     check membership via `Repository.isMember` (§10) instead. Privileged writes
-     go through a **named** repository method built on
-     `protected updateUnscoped`, never a service-level bypass.
+     authorization. A **phone id** is not either, and is the more tempting
+     mistake because it looks like an identity — it comes out of inventory
+     metadata, so it is a claim. It may only _narrow_ a predicate that already
+     names the citizen, never replace one. For rows shared between players
+     (conversations, messages), check membership via `Repository.isMember` (§10)
+     instead. Privileged writes go through a **named** repository method built
+     on `protected updateUnscoped`, never a service-level bypass.
    - **`clientWritable` declares what a payload may set**, and `ServiceEndpoint`
      reduces to that set before it reaches SQL. `id`, `citizenid`, `created_at`,
      `updated_at` and `status` are never client-writable.

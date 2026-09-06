@@ -22,7 +22,14 @@ import type { ColumnRule, ResolvedMembership } from './defineService';
  * "hand-written otherwise" — where a repository sets `clientWritable` directly
  * and passes through no declaration that could vet it.
  */
-const NEVER_CLIENT_WRITABLE = new Set(['id', 'citizenid', 'status', 'created_at', 'updated_at']);
+const NEVER_CLIENT_WRITABLE = new Set([
+  'id',
+  'citizenid',
+  'phone_id',
+  'status',
+  'created_at',
+  'updated_at'
+]);
 
 /**
  * Columns no client may filter on, whatever a repository declares. Subtracted last, exactly
@@ -43,13 +50,18 @@ const NEVER_CLIENT_WRITABLE = new Set(['id', 'citizenid', 'status', 'created_at'
  * - **`status`** — `findAll` supplies `'active'` *only when the filter does not name it*, so a
  *   filterable `status` is a client-supplied override: ask for `'deleted'` or `'moderated'`
  *   and the soft-delete and the moderation sweep both read back.
+ * - **`phone_id`** — for the same reason as `citizenid`, and it arrives by an easier route
+ *   (MICA-281). A phone id is carried in inventory metadata, so any player who has ever held
+ *   a phone has seen one, and a modified inventory can read the id off a phone that passes
+ *   through their hands. A filterable `phone_id` would turn "I once held this phone" into a
+ *   query for everything that phone owns.
  *
  * **What actually protects a derived table, so nobody mistakes this for it:** both names are
  * in `IMPLICIT_COLUMNS`, and `resolveAppSchema` throws if a schema declares one. Neither can
  * become a `field`, so no derivation in `defineService` can put it in `clientFilterable` —
  * which was true before MICA-137 decoupled filtering from writing and is untouched by it.
  */
-const NEVER_CLIENT_FILTERABLE = new Set(['citizenid', 'status']);
+const NEVER_CLIENT_FILTERABLE = new Set(['citizenid', 'phone_id', 'status']);
 
 export abstract class Repository<T> {
   protected abstract tableName: string;
@@ -184,6 +196,41 @@ export abstract class Repository<T> {
     return this.columns.includes('citizenid');
   }
 
+  /** Does this table follow the phone rather than only the citizen (MICA-281)? */
+  protected get hasPhoneColumn(): boolean {
+    return this.columns.includes('phone_id');
+  }
+
+  /**
+   * The phone half of an ownership predicate — **never the whole of one** (MICA-281).
+   *
+   * §2.9 says a row id is never authorization. A phone id is not either, and it is the more
+   * tempting mistake of the two because it *looks* like an identity: it is opaque, unique, and
+   * names exactly one phone. It comes out of inventory item metadata, which is another
+   * resource's storage that a modified inventory can write — so a phone id off the wire is
+   * a claim, not a fact.
+   *
+   * The rule this enforces is therefore **both, or neither**: a caller narrowing to one phone
+   * still passes the citizenid the server resolved from the framework connection, and this
+   * appends to that predicate rather than replacing it. Every scoped method below takes the
+   * citizenid as a required positional argument for exactly this reason — the phone id can
+   * only ever be added to a `WHERE` that already has an owner in it.
+   *
+   * A phone id offered for a table with no `phone_id` column **throws**. Ignoring it would be
+   * a narrowing predicate that silently did not narrow, which reads as a pass — the failure
+   * mode this repo treats as worse than no check at all.
+   */
+  private phonePredicate(method: string, phoneId?: string): { sql: string; param?: string } {
+    if (!phoneId) return { sql: '' };
+    if (!this.hasPhoneColumn) {
+      throw new Error(
+        `[Repository] ${method} on '${this.tableName}' cannot scope by phone: no 'phone_id' ` +
+          `column. This table belongs to the citizen, not the device.`
+      );
+    }
+    return { sql: ' AND `phone_id` = ?', param: phoneId };
+  }
+
   /**
    * Is this player a live member of the given parent row?
    *
@@ -267,7 +314,7 @@ export abstract class Repository<T> {
    * of a player so the ownership predicate applies; omit it only for
    * server-internal reads that are already authorized.
    */
-  async findById(id: number | string, citizenid?: string): Promise<T | null> {
+  async findById(id: number | string, citizenid?: string, phoneId?: string): Promise<T | null> {
     let query = `SELECT * FROM \`${this.tableName}\` WHERE \`id\` = ?`;
     const params: unknown[] = [id];
 
@@ -279,6 +326,19 @@ export abstract class Repository<T> {
       }
       query += ' AND `citizenid` = ?';
       params.push(citizenid);
+    }
+
+    // Only ever *inside* the owner branch: a phone id narrows a predicate that already names
+    // the citizen, and on its own it is not one. An unauthorized internal read passes neither.
+    if (citizenid) {
+      const phone = this.phonePredicate('findById', phoneId);
+      query += phone.sql;
+      if (phone.param !== undefined) params.push(phone.param);
+    } else if (phoneId) {
+      throw new Error(
+        `[Repository] findById on '${this.tableName}' was given a phone id with no citizenid. ` +
+          `A phone id is never authorization on its own (AGENTS.md §2.9).`
+      );
     }
 
     return await Database.single<T>(query, params);
@@ -373,8 +433,14 @@ export abstract class Repository<T> {
    * Ownership-scoped update. The `citizenid` lands in the WHERE clause, so a row
    * the caller does not own cannot be modified even when they know its id.
    */
-  async update(id: number | string, data: Partial<T>, citizenid: string): Promise<boolean> {
-    return await this.updateOwned(id, data as Record<string, unknown>, citizenid, true);
+  async update(
+    id: number | string,
+    data: Partial<T>,
+    citizenid: string,
+    /** Narrows to one phone on a device-owned table. Never a substitute for the citizenid. */
+    phoneId?: string
+  ): Promise<boolean> {
+    return await this.updateOwned(id, data as Record<string, unknown>, citizenid, true, phoneId);
   }
 
   private async updateOwned(
@@ -389,8 +455,11 @@ export abstract class Repository<T> {
      * window is about rewriting, not about withdrawing. The first version of this shared one
      * code path and silently made an expired post undeletable.
      */
-    enforceEditWindow: boolean
+    enforceEditWindow: boolean,
+    phoneId?: string
   ): Promise<boolean> {
+    // Unchanged and load-bearing: a phone id cannot get a caller past this, because it is a
+    // separate argument and this one is still required.
     if (!citizenid) {
       throw new Error(`[Repository] update on '${this.tableName}' requires a citizenid.`);
     }
@@ -399,7 +468,7 @@ export abstract class Repository<T> {
         `[Repository] update on '${this.tableName}' cannot scope by owner: no 'citizenid' column.`
       );
     }
-    return await this.applyUpdate(id, data, citizenid, enforceEditWindow);
+    return await this.applyUpdate(id, data, citizenid, enforceEditWindow, phoneId);
   }
 
   /**
@@ -411,6 +480,8 @@ export abstract class Repository<T> {
    * which keeps `update` the only generic mutation path.
    */
   protected async updateUnscoped(id: number | string, data: Partial<T>): Promise<boolean> {
+    // Deliberately takes no phone id. There is no owner predicate here to narrow, and a
+    // phone-only `WHERE` is precisely the shape §2.9 forbids.
     return await this.applyUpdate(id, data as Record<string, unknown>);
   }
 
@@ -418,7 +489,8 @@ export abstract class Repository<T> {
     id: number | string,
     data: Record<string, unknown>,
     citizenid?: string,
-    enforceEditWindow = false
+    enforceEditWindow = false,
+    phoneId?: string
   ): Promise<boolean> {
     const { keys, values } = this.prepareColumns(data, 'update');
     const setClause = keys.map((key) => `\`${key}\` = ?`).join(', ');
@@ -429,6 +501,10 @@ export abstract class Repository<T> {
     if (citizenid) {
       query += ' AND `citizenid` = ?';
       params.push(citizenid);
+
+      const phone = this.phonePredicate('update', phoneId);
+      query += phone.sql;
+      if (phone.param !== undefined) params.push(phone.param);
 
       /**
        * An owner may not edit content a moderator has removed.
@@ -470,7 +546,7 @@ export abstract class Repository<T> {
    * Ownership-scoped soft delete. Rows are never removed — `status` moves to
    * `deleted` so moderation and audit history stay intact.
    */
-  async delete(id: number | string, citizenid: string): Promise<boolean> {
+  async delete(id: number | string, citizenid: string, phoneId?: string): Promise<boolean> {
     if (!this.hasStatusColumn) {
       throw new Error(
         `[Repository] delete on '${this.tableName}' requires a 'status' column for soft delete.`
@@ -478,7 +554,7 @@ export abstract class Repository<T> {
     }
     // `enforceEditWindow: false` — see `updateOwned`. The moderation predicate still
     // applies: deleting a moderated row would overwrite the moderation record with 'deleted'.
-    return await this.updateOwned(id, { status: 'deleted' }, citizenid, false);
+    return await this.updateOwned(id, { status: 'deleted' }, citizenid, false, phoneId);
   }
 
   /**

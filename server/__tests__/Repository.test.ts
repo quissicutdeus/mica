@@ -40,6 +40,26 @@ class TestRepo extends Repository<TestRow> {
   }
 }
 
+/**
+ * A device-owned table: it carries `phone_id` as well as `citizenid` (MICA-281).
+ */
+interface PhoneRow {
+  id: number;
+  citizenid: string;
+  phone_id: string;
+  body: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+class DeviceOwnedRepo extends Repository<PhoneRow> {
+  protected tableName = 'mica_device_owned';
+  protected columns = ['id', 'citizenid', 'phone_id', 'body', 'status', 'created_at', 'updated_at'];
+  protected clientWritable = ['body', 'phone_id', 'citizenid'];
+  protected clientFilterable = ['body', 'phone_id', 'citizenid'];
+}
+
 /** Framework-owned shape: no soft-delete column. */
 class NoStatusRepo extends Repository<{ id: number; citizenid: string; amount: number }> {
   protected tableName = 'player_ledger';
@@ -510,5 +530,88 @@ describe('Repository: keyset paging', () => {
     expect(dbMock.query.mock.calls[0][0]).toBe(
       'SELECT * FROM `player_ledger` WHERE `id` < ? ORDER BY `id` DESC LIMIT ?'
     );
+  });
+});
+
+/**
+ * The phone half of an ownership predicate (MICA-281).
+ *
+ * **These are the assertions that matter, and they are negative ones.** A phone id looks like
+ * an identity — opaque, unique, naming exactly one phone — but it comes out of inventory item
+ * metadata, which a modified inventory can write. Every happy-path test in this file would
+ * still pass if `phone_id` had quietly *replaced* `citizenid` in the `WHERE`, and the bug
+ * would be that anyone who can name a phone id reads that phone's rows.
+ */
+describe('scoping by phone id', () => {
+  let repo: DeviceOwnedRepo;
+
+  // `applyUpdate` goes through `Database.update`, not `query`.
+  const sql = (): string => String(dbMock.update.mock.calls.at(-1)?.[0] ?? '');
+  const params = (): unknown[] => (dbMock.update.mock.calls.at(-1)?.[1] ?? []) as unknown[];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    dbMock.update.mockResolvedValue(true);
+    dbMock.query.mockResolvedValue([]);
+    dbMock.single.mockResolvedValue(null);
+    repo = new DeviceOwnedRepo();
+  });
+
+  it('adds the phone to the owner predicate rather than replacing it', async () => {
+    await repo.update(5, { body: 'hi' } as Partial<PhoneRow>, 'CID1', 'a'.repeat(32));
+
+    // Both, in the same WHERE. Either one alone is the bug this exists to prevent.
+    expect(sql()).toContain('`citizenid` = ?');
+    expect(sql()).toContain('`phone_id` = ?');
+    expect(params()).toEqual(expect.arrayContaining(['CID1', 'a'.repeat(32)]));
+  });
+
+  it('still refuses an update with no citizenid, whatever phone is named', async () => {
+    await expect(
+      repo.update(5, { body: 'hi' } as Partial<PhoneRow>, '', 'a'.repeat(32))
+    ).rejects.toThrow(/requires a citizenid/);
+    expect(dbMock.update).not.toHaveBeenCalled();
+  });
+
+  it('scopes a soft delete by both as well', async () => {
+    await repo.delete(5, 'CID1', 'a'.repeat(32));
+
+    expect(sql()).toContain('`citizenid` = ?');
+    expect(sql()).toContain('`phone_id` = ?');
+  });
+
+  it('refuses a phone id on a table that belongs to the citizen', async () => {
+    // Silently ignoring it would be a narrowing predicate that does not narrow, which reads
+    // as a pass — worse than no check.
+    const citizenOwned = new TestRepo();
+
+    await expect(
+      citizenOwned.update(5, { title: 'x' } as Partial<TestRow>, 'CID1', 'a'.repeat(32))
+    ).rejects.toThrow(/cannot scope by phone/);
+  });
+
+  it('refuses a phone id offered to findById with no citizenid behind it', async () => {
+    await expect(repo.findById(5, undefined, 'a'.repeat(32))).rejects.toThrow(
+      /never authorization on its own/
+    );
+  });
+
+  it('narrows findById to one phone when both are given', async () => {
+    await repo.findById(5, 'CID1', 'a'.repeat(32));
+
+    const query = String(dbMock.single.mock.calls.at(-1)?.[0] ?? '');
+    expect(query).toContain('`citizenid` = ?');
+    expect(query).toContain('`phone_id` = ?');
+  });
+
+  it('never lets a payload write or filter a phone id, whatever the repository declares', () => {
+    // `DeviceOwnedRepo` deliberately declares both, the way a hand-written repository can.
+    // The blanket sets are subtracted last precisely so that declaration cannot win.
+    expect(repo.writableColumns).not.toContain('phone_id');
+    expect(repo.writableColumns).not.toContain('citizenid');
+    expect(repo.filterableColumns).not.toContain('phone_id');
+    expect(repo.filterableColumns).not.toContain('citizenid');
+    // The column the table is actually for is untouched.
+    expect(repo.writableColumns).toContain('body');
   });
 });

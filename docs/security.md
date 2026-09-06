@@ -372,6 +372,22 @@ Accepted against the feature set at `0922a9b` (2026-08-29) — a risk below was
 weighed against what existed then, and a service added afterward is not covered
 by this list until someone re-weighs it.
 
+- **Item metadata is attacker-controlled input, and a phone id comes out of it
+  (MICA-281).** micaOS mints a phone id into the phone item's inventory metadata
+  and reads it back to decide which phone a player is on. That storage belongs
+  to the inventory resource, not to micaOS: a server running a modified
+  inventory — or any other resource with write access to it — can put whatever
+  it likes there, and a phone id is visible to anyone who has ever held that
+  phone. Treated as a claim rather than a fact, in three places. `Repository`
+  will not accept a phone id as an ownership predicate on its own: the citizenid
+  the server resolved from the framework connection stays required, and the
+  phone id only ever narrows a `WHERE` that already has an owner in it.
+  `phone_id` is in both `NEVER_CLIENT_WRITABLE` and `NEVER_CLIENT_FILTERABLE`,
+  so a payload can neither set one nor filter by one — the latter matters
+  because "I once held this phone" would otherwise become a query for everything
+  that phone owns. And a phone id in a shape micaOS would not have written is
+  re-minted rather than trusted. What is **not** claimed: a phone id is not a
+  secret, and nothing should ever be authorized by one alone.
 - **Owner-scoped actions reachable beyond what the UI offers.** A modified
   client can invoke any registered action against its own rows. Closing that
   entirely would mean an allowlist per action on top of the access axes that
