@@ -65,12 +65,7 @@ vi.mock('../lib/FrameworkBridge', () => ({
 import '../services/Phone';
 import { __resetCalls, injectIncomingCall, endActiveCallFor, placeCall } from '../services/Phone';
 import { __resetRateLimits, allow } from '../lib/rateLimit';
-import {
-  registerNumber,
-  releaseResource,
-  lookupLine,
-  type CallVerdict
-} from '../lib/numberRegistry';
+import { registerNumber, releaseResource, type CallVerdict } from '../lib/numberRegistry';
 
 const START = 'mica:server:phone:start';
 const ANSWER = 'mica:server:phone:answer';
@@ -762,7 +757,12 @@ describe('start: registered lines (MICA-226)', () => {
   });
 });
 
-describe('start: the emergency number is a registered line (MICA-226)', () => {
+// micaOS does not register 911 as a line of its own — see the docblock above
+// `currentEmergencyNumber` in `Phone.ts` for why. These cover the ruling that came out of
+// that decision: the exemption lives entirely in `placeCall`'s direct comparison, so it holds
+// whether nobody is on the number, a script line is (MICA-226's original ask), or a real
+// dispatcher is (the case the ruling turned on).
+describe('start: the emergency number is exempt without needing a line (MICA-226)', () => {
   const EMERGENCY_SRC = 9;
 
   afterEach(() => {
@@ -771,12 +771,7 @@ describe('start: the emergency number is a registered line (MICA-226)', () => {
     bridge.phones.delete(EMERGENCY_SRC);
   });
 
-  it('registers the emergency number to micaOS itself at boot', () => {
-    expect(lookupLine('911')?.owner).toBe('mica');
-    expect(lookupLine('911')?.blockable).toBe(false);
-  });
-
-  it('never blocks the emergency number, because its line is unblockable', async () => {
+  it('never asks the blocklist about the emergency number, even when nobody holds it', async () => {
     dbMock.scalar.mockResolvedValue(1); // would refuse any other number
 
     await fire(START, 1, '911');
