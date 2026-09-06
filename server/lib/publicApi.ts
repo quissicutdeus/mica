@@ -21,7 +21,9 @@ import { knownServices } from './services';
 import * as PlayerDirectory from './PlayerDirectory';
 import { isPhoneOpen } from './PhoneOpenState';
 import { isPhoneLocked, setPhoneLocked } from './LockState';
-import { currentEmergencyNumber } from '../services/Phone';
+import { currentEmergencyNumber, placeCall } from '../services/Phone';
+import { registerNumber, unregisterNumber, type LineOptions } from './numberRegistry';
+import { phoneNumberFrom } from './netGuard';
 import {
   MICA_API_VERSION,
   ExportOutcome,
@@ -599,6 +601,43 @@ export function registerPublicApi(): void {
         appId: id,
         props: props && typeof props === 'object' ? props : {}
       });
+      return ok();
+    })
+  );
+
+  /**
+   * Own a phone number, and answer calls placed to it (MICA-226).
+   *
+   * The line belongs to the calling resource and is released when that resource stops, so a
+   * script that crashes does not leave a number swallowing calls. `onCall` is a function ref
+   * across the resource boundary: it may return `{ action: 'accept' | 'reject' }` or
+   * `{ action: 'forward', source }`, synchronously or as a promise, and has five seconds.
+   */
+  publish(
+    'RegisterNumber',
+    guarded('RegisterNumber', (number: unknown, options: unknown) =>
+      registerNumber(number, options as LineOptions, GetInvokingResource())
+    )
+  );
+
+  publish(
+    'UnregisterNumber',
+    guarded('UnregisterNumber', (number: unknown) =>
+      unregisterNumber(number, GetInvokingResource())
+    )
+  );
+
+  /** Start a call for a player, as a payphone or a dispatch pick-up would. */
+  publish(
+    'CreateCall',
+    guardedAsync('CreateCall', async (src: unknown, number: unknown) => {
+      if (typeof src !== 'number' || !FrameworkBridge.getPlayer(src)) {
+        return fail('unknown_player', 'That player is not connected.');
+      }
+      if (!phoneNumberFrom(number)) {
+        return fail('invalid_args', 'A phone number is required.');
+      }
+      await placeCall(src, number);
       return ok();
     })
   );

@@ -28,6 +28,7 @@ vi.mock('../lib/FrameworkBridge', () => ({ FrameworkBridge: bridgeMock }));
 
 import { registerPublicApi } from '../lib/publicApi';
 import { publishedExport, publishedExports, MICA_API_VERSION } from '../lib/exports';
+import { lookupLine } from '../lib/numberRegistry';
 
 const SRC = 7;
 const CID = 'ABC12345';
@@ -64,6 +65,7 @@ describe('the public export surface', () => {
       'AddMedia',
       'BuildDeepLink',
       'ClearGlobalSignal',
+      'CreateCall',
       'GetApiVersion',
       'GetBatteryLevel',
       'GetCitizenId',
@@ -74,6 +76,7 @@ describe('the public export surface', () => {
       'IsPhoneOpen',
       'LockPhone',
       'OpenApp',
+      'RegisterNumber',
       'RemoveDeadZone',
       'SendNotification',
       'SendSystemEmail',
@@ -82,7 +85,8 @@ describe('the public export surface', () => {
       'SetGlobalSignal',
       'SetPhoneEnabled',
       'SetSignal',
-      'UnlockPhone'
+      'UnlockPhone',
+      'UnregisterNumber'
     ]);
   });
 
@@ -389,6 +393,24 @@ describe('phone-state exports', () => {
     expect(globalThis.emitNet).toHaveBeenCalledWith('mica:client:shell:openApp', SRC, {
       appId: 'mail',
       props: { mailId: 1 }
+    });
+  });
+});
+
+describe('line exports (MICA-226)', () => {
+  it('RegisterNumber attributes the line to the calling resource', () => {
+    const register = publishedExport('RegisterNumber')!;
+    const result = register('5551234', { onCall: () => ({ action: 'reject' }) });
+    expect(result).toMatchObject({ ok: true });
+    expect(lookupLine('5551234')?.owner).toBe('test-resource');
+  });
+
+  it('CreateCall refuses a source nobody is connected on', async () => {
+    bridgeMock.getPlayer.mockReturnValue(undefined);
+    const createCall = publishedExport('CreateCall')!;
+    await expect(createCall(999, '5551234')).resolves.toMatchObject({
+      ok: false,
+      reason: 'unknown_player'
     });
   });
 });
