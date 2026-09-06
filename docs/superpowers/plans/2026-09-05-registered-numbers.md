@@ -26,7 +26,10 @@ Vitest 4 under the root `vitest.config.ts`, FiveM server natives.
   `// SPDX-FileCopyrightText: 2026 quissicutdeus` then
   `// SPDX-License-Identifier: AGPL-3.0-or-later`.
 - Server tests live in `server/__tests__/`, run with `pnpm test:unit:server`.
-  They are **not** typechecked; the source they exercise is.
+  They are **not** typechecked; the source they exercise is. **To run one file,
+  use `pnpm exec vitest run <path>`** — `test:unit:server` is a bare
+  `vitest run` and `pnpm test:unit:server -- <pattern>` does not narrow it; it
+  runs all 101 files. Run the full suite once before committing.
 - Prettier at 100 columns for code, 80 for prose. Run `pnpm format`.
 - No AI attribution in any commit message (AGENTS.md §2.10).
 - Commit subjects are imperative and lead with the key: `MICA-226: <decision>`.
@@ -198,8 +201,8 @@ describe('numberRegistry storage', () => {
 
 - [ ] **Step 2: Run it and watch it fail**
 
-Run: `pnpm test:unit:server -- numberRegistry` Expected: FAIL — cannot resolve
-`../lib/numberRegistry`.
+Run: `pnpm exec vitest run server/__tests__/numberRegistry.test.ts` Expected:
+FAIL — cannot resolve `../lib/numberRegistry`.
 
 - [ ] **Step 3: Extend the failure union**
 
@@ -349,7 +352,8 @@ export function unregisterNumber(
 
 - [ ] **Step 6: Run the tests and watch them pass**
 
-Run: `pnpm test:unit:server -- numberRegistry` Expected: PASS, 10 tests.
+Run: `pnpm exec vitest run server/__tests__/numberRegistry.test.ts` Expected:
+PASS, 10 tests.
 
 - [ ] **Step 7: Typecheck, format, commit**
 
@@ -459,8 +463,8 @@ Add `type LineOptions` to the existing import from `../lib/numberRegistry`.
 
 - [ ] **Step 2: Run it and watch it fail**
 
-Run: `pnpm test:unit:server -- numberRegistry` Expected: FAIL — `askLine` is not
-exported.
+Run: `pnpm exec vitest run server/__tests__/numberRegistry.test.ts` Expected:
+FAIL — `askLine` is not exported.
 
 - [ ] **Step 3: Implement `askLine`**
 
@@ -531,7 +535,8 @@ export async function askLine(
 
 - [ ] **Step 4: Run the tests and watch them pass**
 
-Run: `pnpm test:unit:server -- numberRegistry` Expected: PASS, 17 tests.
+Run: `pnpm exec vitest run server/__tests__/numberRegistry.test.ts` Expected:
+PASS, 17 tests.
 
 - [ ] **Step 5: Typecheck, format, commit**
 
@@ -603,8 +608,8 @@ describe('numberRegistry resource lifecycle', () => {
 
 - [ ] **Step 2: Run it and watch it fail**
 
-Run: `pnpm test:unit:server -- numberRegistry` Expected: FAIL —
-`releaseResource` is not exported.
+Run: `pnpm exec vitest run server/__tests__/numberRegistry.test.ts` Expected:
+FAIL — `releaseResource` is not exported.
 
 - [ ] **Step 3: Implement the release path**
 
@@ -662,7 +667,8 @@ export const __resetRegistry = (): void => {
 
 - [ ] **Step 4: Run the tests and watch them pass**
 
-Run: `pnpm test:unit:server -- numberRegistry` Expected: PASS, 20 tests.
+Run: `pnpm exec vitest run server/__tests__/numberRegistry.test.ts` Expected:
+PASS, 20 tests.
 
 - [ ] **Step 5: Typecheck, format, commit**
 
@@ -755,8 +761,8 @@ it('a rejecting line fails exactly like an unreachable number', async () => {
 
 - [ ] **Step 2: Run it and watch it fail**
 
-Run: `pnpm test:unit:server -- phone` Expected: FAIL — `placeCall` is not
-exported.
+Run: `pnpm exec vitest run server/__tests__/phone.test.ts` Expected: FAIL —
+`placeCall` is not exported.
 
 - [ ] **Step 3: Add the pseudo-source pool**
 
@@ -952,8 +958,8 @@ onLineReleased((number) => {
 
 - [ ] **Step 5: Run the tests and watch them pass**
 
-Run: `pnpm test:unit:server -- phone` Expected: PASS, including the four new
-cases.
+Run: `pnpm exec vitest run server/__tests__/phone.test.ts` Expected: PASS,
+including the four new cases.
 
 - [ ] **Step 6: Typecheck, format, commit**
 
@@ -1028,7 +1034,8 @@ it('registers the emergency number to micaOS itself at boot', () => {
 
 - [ ] **Step 2: Run it and watch it fail**
 
-Run: `pnpm test:unit:server -- phone` Expected: FAIL — nothing holds `911`.
+Run: `pnpm exec vitest run server/__tests__/phone.test.ts` Expected: FAIL —
+nothing holds `911`.
 
 - [ ] **Step 3: Register it at boot**
 
@@ -1063,7 +1070,7 @@ appear. The comparison inside the dial path must be gone.
 
 - [ ] **Step 4: Run the tests and watch them pass**
 
-Run: `pnpm test:unit:server -- phone` Expected: PASS.
+Run: `pnpm exec vitest run server/__tests__/phone.test.ts` Expected: PASS.
 
 - [ ] **Step 5: Typecheck, format, commit**
 
@@ -1114,8 +1121,8 @@ it('CreateCall refuses a source nobody is connected on', async () => {
 
 - [ ] **Step 2: Run it and watch it fail**
 
-Run: `pnpm test:unit:server -- exports` Expected: FAIL — the names are not
-published.
+Run: `pnpm exec vitest run server/__tests__/exports.test.ts` Expected: FAIL —
+the names are not published.
 
 - [ ] **Step 3: Publish them**
 
@@ -1174,7 +1181,7 @@ import { phoneNumberFrom } from './netGuard';
 
 - [ ] **Step 4: Run the tests and watch them pass**
 
-Run: `pnpm test:unit:server -- exports` Expected: PASS.
+Run: `pnpm exec vitest run server/__tests__/exports.test.ts` Expected: PASS.
 
 - [ ] **Step 5: Typecheck, format, commit**
 
@@ -1198,10 +1205,12 @@ git commit -m "MICA-226: publish RegisterNumber, UnregisterNumber and CreateCall
 
 - [ ] **Step 1: Confirm the client surface did not grow**
 
-Run: `pnpm test:unit:server -- reachability eventNames` Expected: PASS, with
-**no snapshot or fixture updated**. This feature adds no net events and no
-generic service actions; if either suite demands a change, stop — something
-became reachable from a modified client and that was not the design.
+Run:
+`pnpm exec vitest run server/__tests__/reachability.test.ts server/__tests__/eventNames.test.ts`
+Expected: PASS, with **no snapshot or fixture updated**. This feature adds no
+net events and no generic service actions; if either suite demands a change,
+stop — something became reachable from a modified client and that was not the
+design.
 
 - [ ] **Step 2: Run every gate**
 
