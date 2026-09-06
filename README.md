@@ -872,6 +872,24 @@ The item has to be **usable** in the inventory's own terms (`useable = true` on
 qb-core; ox_inventory and ESX make every registered item usable), or using it
 does nothing and only the keybind opens the phone.
 
+**A phone has an identity of its own.** The first time a player uses their phone
+item, micaOS mints an id into that item's inventory metadata and remembers it.
+Two phones are therefore two phones: the id travels with the item, so it
+survives a relog, a stash, a trade or a robbery, and it is what later releases
+key a phone's contacts, messages and media on. **The phone you last used is the
+active one**, falling back to the lowest inventory slot holding one if you have
+not used either this session — so switching between your own phone and a burner
+is a matter of using the one you want.
+
+**This needs `ox_inventory`.** It is the only inventory with real per-item
+metadata to mint an id into, and it is what qbx_core uses. On qb-inventory it
+depends on whether your build exposes `SetItemData`. es_extended's own inventory
+stores quantities and nothing else and cannot carry an id at all — those servers
+keep exactly the behaviour they have today, and say so once at start rather than
+failing quietly. Nothing about a phone's identity is a secret or a credential:
+the server always checks the character presenting the phone as well, so a copied
+id on its own grants nothing.
+
 **Standalone ignores the gate.** With no framework there is no inventory to hold
 the item in, so `mica_standalone` with `mica_phone_item` set is reported once at
 start and the phone opens as it always did. A framework whose inventory micaOS
