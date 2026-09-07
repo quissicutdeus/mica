@@ -228,6 +228,15 @@ export default defineConfig({
      * costs the other minute.
      */
     fileParallelism: true,
+    /**
+     * Four times the default 5s. The timeout is a guard against a hung test, not a
+     * budget for a fast one, and the default was sized for neither: nine suites here
+     * call `vi.resetModules()` and re-import their module under test per case, so each
+     * case pays a fresh resolve of that module graph while every other worker is doing
+     * the same. On a 4-core CI runner with two game servers beside it, four of those
+     * cases crossed 5s with every assertion still to pass. A hang still fails, 15s later.
+     */
+    testTimeout: 20_000,
     server: {
       deps: {
         // `@material/material-color-utilities@0.4.0` ships extensionless relative
