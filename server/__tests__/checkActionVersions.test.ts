@@ -54,4 +54,28 @@ describe('check-action-versions', () => {
     expect(result.status).toBe(1);
     expect(result.stdout).toContain("comment 'main' is not a vN tag");
   });
+
+  /**
+   * A hold is the one way a pin may stay an older major, and it has to say why where the
+   * pin is. Neither case below reaches the network: a hold is not compared to the latest
+   * major at all, which is the whole point of it.
+   */
+  it('accepts a pin held at an older major when the hold gives its reason', () => {
+    const result = run(
+      workflowDir(
+        'actions/upload-artifact@ff15f0306b3f739f7b6fd43fb5d26cd321bd4de5 # v3 held: v4+ refuses non-github.com hosts'
+      )
+    );
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('held      actions/upload-artifact@ff15f030');
+    expect(result.stdout).toContain('at v3: v4+ refuses non-github.com hosts');
+  });
+
+  it("refuses 'held:' with no reason, so the marker cannot silence the check quietly", () => {
+    const result = run(
+      workflowDir('actions/upload-artifact@ff15f0306b3f739f7b6fd43fb5d26cd321bd4de5 # v3 held:')
+    );
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("'held:' with no reason is not a hold");
+  });
 });

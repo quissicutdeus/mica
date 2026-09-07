@@ -223,9 +223,15 @@ jobs:
       # uploading only the failed shard's would give a report that silently omits half the
       # results while looking complete. On a green run these are small (traces are
       # retain-on-failure) and nothing downloads them; they expire in a day.
+      # `upload-artifact` and `download-artifact` are held at v3 on purpose. v4 and later
+      # speak GitHub's newer artifact API and refuse outright on anything that is not
+      # github.com ("not supported on GHES"), and this workflow runs on Forgejo too, which
+      # speaks the v3 protocol. `pnpm lint:actions` reads the `held:` marker in the
+      # comment and stops asking for a newer major of these two; everything else is still
+      # held to its latest.
       - name: Upload blob report
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@ff15f0306b3f739f7b6fd43fb5d26cd321bd4de5 # v3 held: v4+ refuses non-github.com hosts; Forgejo speaks v3
         with:
           name: blob-report-${{ strategy.job-index }}
           path: web/blob-report
@@ -259,18 +265,25 @@ jobs:
         run: pnpm install --frozen-lockfile --ignore-scripts
 
       # Every shard's blob into one directory; merge-reports reads the set, not a file.
+      # v3 has no `pattern`/`merge-multiple`: with no `name` it downloads every artifact of
+      # the run into its own subdirectory, so the blobs are gathered into one afterwards.
+      # Held at v3 for the reason given above the upload step.
       - name: Download blob reports
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9bc31d5ccc31df68ecc42ccf4149144866c47d8a # v3 held: v4+ refuses non-github.com hosts; Forgejo speaks v3
         with:
-          path: web/blob-report
-          pattern: blob-report-*
-          merge-multiple: true
+          path: web/blob-reports
+
+      - name: Gather the shards' blobs
+        run: |
+          mkdir -p web/blob-report
+          find web/blob-reports -mindepth 2 -type f -name '*.zip' -exec mv -t web/blob-report/ {} +
+          ls -l web/blob-report
 
       - name: Merge into one report
         run: pnpm --filter web exec playwright merge-reports --reporter html ./blob-report
 
       - name: Upload Playwright report
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@ff15f0306b3f739f7b6fd43fb5d26cd321bd4de5 # v3 held: v4+ refuses non-github.com hosts; Forgejo speaks v3
         with:
           name: playwright-report
           path: web/playwright-report

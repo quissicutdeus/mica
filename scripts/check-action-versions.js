@@ -14,6 +14,13 @@
  * Only the major, deliberately: drift inside a major is what the SHA pin exists to hold
  * still, and drift across one is where a runtime deprecation lands.
  *
+ * A pin may be **held** at an older major on purpose, and the hold has to be written
+ * where the pin is: `@<sha> # v3 held: <reason>`. The tag is still recorded and the SHA is
+ * still required; what changes is that no newer major is asked for. The first hold was
+ * `actions/upload-artifact`, whose v4+ refuses to run on any host but github.com while
+ * the same workflow also runs on Forgejo. A hold with no reason is not a hold -- the
+ * marker without text is reported as unresolved, so "held:" cannot become a way to
+ * silence the check without saying why.
  * `.github/dependabot.yml` used to watch the majors and was deleted -- every merge of one
  * of its pull requests put dependabot[bot] in the repository's contributor list, which is
  * not a trade worth making for a weekly bump. Renovate was considered for the SHA pins and
@@ -55,6 +62,9 @@ const USES =
 
 /** A tag this can reason about: `v7`, `v7.1`, `v7.1.2`. Anything else is unresolvable. */
 const VTAG = /^v(\d+)(?:\.\d+)*$/;
+
+/** `v3 held: <reason>` -- a deliberate stop at an older major, with the reason beside it. */
+const HELD = /^(v\d+(?:\.\d+)*)\s+held:\s*(.*)$/;
 
 /** A full commit SHA: 40 hex characters */
 const SHA = /^[0-9a-f]{40}$/;
@@ -135,6 +145,7 @@ const notSha = [];
 const behind = [];
 const unresolved = [];
 const current = [];
+const held = [];
 
 for (const [repo, { refs, files }] of [...pins].sort()) {
   const where = [...files].sort().join(', ');
@@ -149,6 +160,18 @@ for (const [repo, { refs, files }] of [...pins].sort()) {
     // major check has nothing to compare, and "could not check" is a failure here, not a
     // pass -- see the docblock.
     const version = (comment ?? '').trim();
+
+    // A hold: the tag is recorded, the major is not compared. The reason is mandatory.
+    const hold = HELD.exec(version);
+    if (hold) {
+      if (!hold[2].trim()) {
+        unresolved.push({ repo, ref, version, where, why: "'held:' with no reason is not a hold" });
+      } else {
+        held.push({ repo, ref, version: hold[1], reason: hold[2].trim() });
+      }
+      continue;
+    }
+
     const pinned = VTAG.exec(version);
     if (!pinned) {
       unresolved.push({
@@ -177,6 +200,9 @@ for (const [repo, { refs, files }] of [...pins].sort()) {
 for (const { repo, ref, latest } of current) {
   console.log(`  ok        ${repo}@${ref.slice(0, 8)}...  (${latest})`);
 }
+for (const { repo, ref, version, reason } of held) {
+  console.log(`  held      ${repo}@${ref.slice(0, 8)}...  at ${version}: ${reason}`);
+}
 for (const { repo, ref, latest, where } of behind) {
   console.log(`  BEHIND    ${repo}@${ref.slice(0, 8)}... -> ${latest}   in ${where}`);
 }
@@ -188,7 +214,7 @@ for (const { repo, ref, where, comment } of notSha) {
 }
 
 console.log(
-  `\n${current.length} pinned, ${behind.length} behind, ${unresolved.length} unresolved, ${notSha.length} not SHA-pinned`
+  `\n${current.length} pinned, ${held.length} held, ${behind.length} behind, ${unresolved.length} unresolved, ${notSha.length} not SHA-pinned`
 );
 
 if (LIST_ONLY) process.exit(0);
