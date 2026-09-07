@@ -9,6 +9,10 @@ on:
   push:
     branches: [main, dev]
   pull_request:
+  # A manual run behaves like a pull request: every job runs, including the ones a push
+  # to dev skips. It exists so those jobs can be exercised on a self-hosted runner without
+  # opening a pull request to do it.
+  workflow_dispatch:
 
 # Supersede a pull request's own in-flight runs; never a push's.
 #
@@ -151,10 +155,12 @@ jobs:
   e2e:
     name: E2E ${{ matrix.shard }}
     runs-on: ubuntu-latest
-    # Same carve-out as `verify` above and `container` below. Every job needs its own
-    # copy: the condition is per-job, so a new job without it silently reintroduces the
-    # doubled run on every push to dev.
-    if: github.event_name != 'pull_request' || github.head_ref != 'dev'
+    # Not on a push to dev. A push to dev runs `verify` and `schema` only; the e2e shards
+    # and the image build run on every pull request -- the standing dev->main one
+    # included, which is where they gate what reaches main -- on a push to main, and on a
+    # manual run. On a single self-hosted runner the five jobs of a dev push serialised to
+    # the better part of an hour; these two accounted for most of it.
+    if: github.event_name != 'push' || github.ref == 'refs/heads/main'
     # Pinned to the @playwright/test version in pnpm-lock.yaml (currently 1.62.1). This
     # image ships Chromium and its OS deps preinstalled, replacing what `--with-deps`
     # used to spend a minute-plus on every run downloading/apt-installing. Bump this tag
@@ -303,8 +309,8 @@ jobs:
   container:
     name: Demo container
     runs-on: ubuntu-latest
-    # Same carve-out as `verify` above, for the same reason — this job doubled too.
-    if: github.event_name != 'pull_request' || github.head_ref != 'dev'
+    # Not on a push to dev -- the same condition as `e2e`, for the same reason.
+    if: github.event_name != 'push' || github.ref == 'refs/heads/main'
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -349,6 +355,22 @@ jobs:
       # that into a failure, so the checks are guaranteed to have actually run somewhere.
       - name: Lint the Go server and the Dockerfile
         run: node scripts/lint-container.js --require
+
+      # On GitHub the steps run on the VM, next to its daemon. On a Forgejo runner they run
+      # in a container inside a docker-in-docker daemon that listens, plaintext, on the
+      # gateway of the job's own network and nowhere the steps could find by themselves.
+      # `ip` is not in the job image, so the gateway is read from the routing table.
+      # `docker version` is the check that the address is right: a wrong one fails here,
+      # with the daemon named, not three steps later inside Buildx.
+      - name: Reach the runner's Docker daemon
+        if: github.server_url != 'https://github.com'
+        run: |
+          gw=$(awk '$2 == "00000000" { print $3; exit }' /proc/net/route)
+          host=$(printf '%d.%d.%d.%d' \
+            "0x$(echo "$gw" | cut -c7-8)" "0x$(echo "$gw" | cut -c5-6)" \
+            "0x$(echo "$gw" | cut -c3-4)" "0x$(echo "$gw" | cut -c1-2)")
+          echo "DOCKER_HOST=tcp://$host:2375" >> "$GITHUB_ENV"
+          DOCKER_HOST="tcp://$host:2375" docker version --format 'daemon {{.Server.Version}}'
 
       # A container-driver builder. `cache-to` needs one: the default `docker` driver
       # cannot export a build cache at all, so without this the next step would warn and
@@ -426,7 +448,23 @@ jobs:
           exit 1
 
       - name: Smoke test
+        if: github.server_url == 'https://github.com'
         run: node scripts/smoke-image.js
+
+      # compose.yaml publishes the port on 127.0.0.1 of the daemon's host, which on a
+      # Forgejo runner is the docker-in-docker container, not the one running these steps.
+      # Rather than publish it wider, the job container joins the demo's network for the
+      # length of the test and reaches the server by its service name. The disconnect
+      # matters: `docker compose down` cannot remove a network that still has a member.
+      - name: Smoke test, from inside the demo's network
+        if: github.server_url != 'https://github.com'
+        run: |
+          net=$(docker inspect \
+            --format '{{range $name, $_ := .NetworkSettings.Networks}}{{$name}}{{end}}' \
+            "$(docker compose ps -q demo)")
+          docker network connect "$net" "$(hostname)"
+          trap 'docker network disconnect "$net" "$(hostname)"' EXIT
+          node scripts/smoke-image.js http://demo:8080
 
       - name: Server logs
         if: failure()
@@ -445,10 +483,17 @@ jobs:
   schema:
     name: Schema tests
     runs-on: ubuntu-latest
-    # Same carve-out as `verify` above and `container` below. Every job needs its own
-    # copy: the condition is per-job, so a new job without it silently reintroduces the
-    # doubled run on every push to dev.
+    # Same carve-out as `verify` above. Every job needs its own copy: the condition is
+    # per-job, so a new job without it silently reintroduces the doubled run on every
+    # push to dev.
     if: github.event_name != 'pull_request' || github.head_ref != 'dev'
+    # Where the service container answers depends on who is running the job. GitHub runs
+    # the steps on the VM and publishes the service's port to it, so it is `localhost`.
+    # A Forgejo runner puts the steps in a container on a per-job network with the
+    # service, where it answers by its service name and nothing is published to
+    # localhost -- the harness reported ECONNREFUSED 127.0.0.1:3306 there.
+    env:
+      MICA_DB_HOST: ${{ github.server_url == 'https://github.com' && 'localhost' || 'mariadb' }}
     strategy:
       matrix:
         node-version: [26]
@@ -483,14 +528,12 @@ jobs:
         run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Test migrations
         env:
-          MICA_DB_HOST: localhost
           MICA_DB_PORT: 3306
           MICA_DB_USER: root
           MICA_DB_PASSWORD: mica-test
         run: node scripts/test-migrations.js
       - name: Test schemas
         env:
-          MICA_DB_HOST: localhost
           MICA_DB_PORT: 3306
           MICA_DB_USER: root
           MICA_DB_PASSWORD: mica-test

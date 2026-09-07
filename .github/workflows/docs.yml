@@ -22,7 +22,7 @@ run-name: Publish SDK docs - ${{ github.ref_name }}
 # skips it, silently and correctly.
 on:
   push:
-    branches: [main, dev]
+    branches: [main]
 
 permissions:
   contents: read
@@ -60,7 +60,11 @@ jobs:
       # add-on barrel or loses its contract-version stamp. See web/scripts/docs-sdk.mjs.
       - name: Generate SDK docs
         run: pnpm run docs:sdk
+      # GitHub Pages only. The action does not exist anywhere but github.com and there is
+      # no Pages to publish to elsewhere; the build above still runs, so a self-hosted
+      # runner keeps proving the site generates.
       - name: Upload pages artifact
+        if: github.server_url == 'https://github.com'
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
           path: web/docs
@@ -71,7 +75,7 @@ jobs:
     # Routing, not gating: dev has a site to build and no site to publish to. A skipped
     # job notifies nobody, which is the correct outcome here and the wrong one for the
     # build above — hence the split.
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && github.server_url == 'https://github.com'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
