@@ -5,6 +5,7 @@
 import type {
   Contact,
   Conversation,
+  JobView,
   Listing,
   Mail,
   Message,
@@ -319,6 +320,52 @@ export const mockHodlrHolding = { quantity: 3 };
 const MOCK_HODLR_SPREAD_FRACTION = 0.02;
 export const mockHodlrBuyPrice = Math.round(mockHodlrPrice * (1 + MOCK_HODLR_SPREAD_FRACTION / 2));
 export const mockHodlrSellPrice = Math.round(mockHodlrPrice * (1 - MOCK_HODLR_SPREAD_FRACTION / 2));
+
+/**
+ * The jobs the mock player holds (MICA-228), shaped exactly as `server/services/Jobs.ts`
+ * answers `getJobs`: active first, a society balance only on a boss grade, `onDuty: null`
+ * for a job whose framework has no duty notion. The labels are what the Jobs e2e spec
+ * looks for. `'jobs:setActiveJob'` and `'jobs:setDuty'` in `registry.ts` mutate this in
+ * place the way the framework would.
+ */
+export const mockJobs: JobView[] = [
+  {
+    name: 'police',
+    label: 'LSPD',
+    grade: 2,
+    gradeLabel: 'Sergeant',
+    salary: 750,
+    onDuty: true,
+    isBoss: false,
+    active: true,
+    lines: [],
+    societyBalance: null
+  },
+  {
+    name: 'mechanic',
+    label: 'Los Santos Customs',
+    grade: 3,
+    gradeLabel: 'Owner',
+    salary: 500,
+    onDuty: false,
+    isBoss: true,
+    active: false,
+    lines: [{ number: '555-0142', label: 'LSC Front Desk' }],
+    societyBalance: 48200
+  },
+  {
+    name: 'taxi',
+    label: 'Downtown Cab Co.',
+    grade: 0,
+    gradeLabel: 'Driver',
+    salary: 250,
+    onDuty: null,
+    isBoss: false,
+    active: false,
+    lines: [],
+    societyBalance: null
+  }
+];
 
 // GTA V / FiveM Core Characters
 const gtaCoreContacts: Contact[] = [

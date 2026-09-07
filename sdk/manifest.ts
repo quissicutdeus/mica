@@ -29,6 +29,11 @@ export const ALL_PERMISSIONS = [
   'camera',
   'contacts',
   'highscores',
+  // MICA-228. Reads the jobs a player holds *and switches between them*. Not bundled into
+  // `account` on purpose: a switch changes what every other resource on the server thinks
+  // the player is doing, which is a far wider effect than reading a balance, and `account`
+  // is declared by anything that shows one.
+  'jobs',
   'location',
   'mail',
   'marketplace',
@@ -123,7 +128,10 @@ export type AppPermission = (typeof ALL_PERMISSIONS)[number];
 export const ALL_CAPABILITIES = [
   // Balances, transfers, prices — anything that moves currency. Comes from the framework
   // bridge, so it is simply absent in standalone mode.
-  'money'
+  'money',
+  // Jobs, grades, duty and the active one (MICA-228). Also framework-supplied, so absent
+  // in standalone mode for the same reason as `money`.
+  'jobs'
 ] as const;
 
 /**

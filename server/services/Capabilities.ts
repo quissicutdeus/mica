@@ -26,7 +26,7 @@ import { shellContract } from '@mica/shared/contracts/shell';
  * is in it.
  */
 
-/** Everything the phone asks about. One field today; the shape is the extension point. */
+/** Everything the phone asks about. Two fields today; the shape is the extension point. */
 export interface Capabilities {
   /**
    * Can money move on this server at all?
@@ -38,6 +38,15 @@ export interface Capabilities {
    * rendering. (Marketplace moves none; it is a noticeboard.)
    */
   money: boolean;
+  /**
+   * Does anyone here know what a player does for a living? (MICA-228)
+   *
+   * False only in standalone, by the same reasoning as `money`: `FrameworkPlayer.getJobs`
+   * there answers `[]` and both setters refuse, so a Jobs app would be a screen with nothing
+   * behind it. `unknown` answers `true` for the reason spelled out below — a booting qb
+   * server passes through `unknown`, and hiding the app for a session is the silent failure.
+   */
+  jobs: boolean;
 }
 
 /**
@@ -65,9 +74,13 @@ export interface Capabilities {
  * operator said so in a convar that cannot be raced (see `STANDALONE_CONVAR`). Everything
  * else is "money, as far as this can tell", with the fail-closed money paths underneath it.
  */
-export const capabilities = (): Capabilities => ({
-  money: detectFramework() !== 'standalone'
-});
+export const capabilities = (): Capabilities => {
+  const framework = detectFramework();
+  return {
+    money: framework !== 'standalone',
+    jobs: framework !== 'standalone'
+  };
+};
 
 const app = new ServiceEndpoint<never, typeof shellContract>('shell', null, {
   contract: shellContract,

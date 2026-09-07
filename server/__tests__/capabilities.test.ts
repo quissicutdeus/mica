@@ -54,12 +54,12 @@ describe('what money capability each framework answers', () => {
     // `-Infinity` sentinel from `getMoney` and `false` from both money moves, so Bank and
     // Hodlr have nothing behind them.
     framework.kind = 'standalone';
-    expect(capabilities()).toEqual({ money: false });
+    expect(capabilities()).toEqual({ money: false, jobs: false });
   });
 
   it.each(['qb', 'esx'] as const)('allows money on %s', (kind) => {
     framework.kind = kind;
-    expect(capabilities()).toEqual({ money: true });
+    expect(capabilities()).toEqual({ money: true, jobs: true });
   });
 
   it('allows money while the framework is still unknown', () => {
@@ -75,7 +75,7 @@ describe('what money capability each framework answers', () => {
      * money path that already fails closed.
      */
     framework.kind = 'unknown';
-    expect(capabilities()).toEqual({ money: true });
+    expect(capabilities()).toEqual({ money: true, jobs: true });
   });
 
   it('reads the framework per call, so boot order does not freeze the answer', () => {
@@ -85,6 +85,18 @@ describe('what money capability each framework answers', () => {
     expect(capabilities().money).toBe(true);
     framework.kind = 'standalone';
     expect(capabilities().money).toBe(false);
+  });
+
+  it('answers jobs on the same axis as money (MICA-228)', () => {
+    // Standalone is the one state that positively knows there is no framework to hold a
+    // job, so it is the one state that hides the Jobs app; `unknown` is a boot window and
+    // gets the same benefit of the doubt money does.
+    framework.kind = 'standalone';
+    expect(capabilities().jobs).toBe(false);
+    for (const kind of ['qb', 'esx', 'unknown'] as const) {
+      framework.kind = kind;
+      expect(capabilities().jobs, kind).toBe(true);
+    }
   });
 });
 
@@ -131,7 +143,7 @@ describe('what the handler answers over the wire', () => {
     expect(calls[0][0]).toBe(responseEventFor('shell', 'capabilities'));
     expect(calls[0][1]).toBe(5);
     expect(calls[0][2]).toBe(1);
-    expect(calls[0][3]).toEqual({ money: false });
+    expect(calls[0][3]).toEqual({ money: false, jobs: false });
   });
 
   it('answers the same for every empty payload, and refuses a steered one', async () => {
@@ -147,7 +159,8 @@ describe('what the handler answers over the wire', () => {
       (globalThis as any).source = 5;
       await handlers.get(REQUEST_EVENT)!(2, empty);
       expect((globalThis.emitNet as any).mock.calls[0][3], JSON.stringify(empty)).toEqual({
-        money: true
+        money: true,
+        jobs: true
       });
     }
 

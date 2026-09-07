@@ -111,6 +111,8 @@ import type {
   PhoneCallLogEntry,
   ReactionSummary,
   Report,
+  JobActionOutcome,
+  JobView,
   Transaction
 } from '@mica/shared/types';
 import type { Readable, Subscriber, Unsubscriber, Writable } from 'svelte/store';
@@ -504,6 +506,20 @@ export interface Facets {
   highscores: () => {
     submitScore: (app: string, score: number) => Promise<void>;
     getLeaderboard: (app: string) => Promise<LeaderboardEntry[]>;
+  };
+  /**
+   * MICA-228. Every job the player holds, and the two things the phone may do about
+   * them. `setActiveJob` and `setDuty` answer with the re-read list on success, and the
+   * in-process facet writes it into `jobs` before resolving, so a caller need not fetch
+   * again. The name is only ever compared against the player's own list on the server —
+   * `unknown_job` is the answer for anything else.
+   */
+  jobs: () => {
+    jobs: Writable<JobView[]>;
+    jobsLoaded: Writable<boolean>;
+    fetchJobs: () => Promise<void>;
+    setActiveJob: (name: string) => Promise<JobActionOutcome>;
+    setDuty: (name: string, onDuty: boolean) => Promise<JobActionOutcome>;
   };
   keybinds: () => {
     /**

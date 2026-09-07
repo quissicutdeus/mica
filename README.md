@@ -33,6 +33,11 @@ for players and seamless framework integration for server developers.
   and the server registers no action that would author one.
 - **Banking**: Dynamic bank card generation based on player citizen ID, live
   balance tracking, and transfer handling.
+- **Jobs**: Every job the character holds, on the framework's own multi-job
+  model where it has one, with a tap to switch the active job, a duty toggle
+  where the framework has duty, the society balance for a boss grade, and any
+  number a job script registered as a line to call. The framework is the
+  authority; the app only asks, and hides itself on a server with no framework.
 - **Media & Camera**: In-game screenshot/camera integration, automatic image
   compression, gallery view, location sharing, and attachment sharing.
 - **Notes**: Full-featured note-taking app with instant saving.
@@ -91,7 +96,7 @@ for players and seamless framework integration for server developers.
 
 - **SDK-First Architecture (`@mica/sdk`)**: OS hooks for data (`useContacts`,
   `useMedia`, `useMail`, `useMessages`, `useAccount`/`useAccounts`, `useCall`,
-  `useReports`/`useReport`, `useMarketplace`, `useHighscores`,
+  `useReports`/`useReport`, `useMarketplace`, `useHighscores`, `useJobs`,
   `useNotifications`), for the device (`useSystemHardware`, `useClock`,
   `useDisplay`, `useCamera`, `useSound`, `useKeybinds`, `useLocation`), and for
   the app itself (`useNavigation`, `useAppLevels`, `useAppAction`, `useStorage`,

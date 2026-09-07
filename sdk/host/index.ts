@@ -21,6 +21,7 @@ export * from './useDevTools';
 export * from './useDisplay';
 export * from './useDisplayWrite';
 export * from './useHighscores';
+export * from './useJobs';
 export * from './useKeybinds';
 export * from './useKeybindsWrite';
 export * from './useLocale';

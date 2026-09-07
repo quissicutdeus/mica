@@ -83,6 +83,7 @@ export const PERMISSION_OF: Record<string, AppPermission | readonly AppPermissio
   useCamera: 'camera',
   useContacts: 'contacts',
   useHighscores: 'highscores',
+  useJobs: 'jobs',
   useLocation: 'location',
   useMail: 'mail',
   useMarketplace: 'marketplace',
@@ -141,6 +142,7 @@ export const HOOK_OF_FACET = {
   camera: 'useCamera',
   contacts: 'useContacts',
   highscores: 'useHighscores',
+  jobs: 'useJobs',
   location: 'useLocation',
   mail: 'useMail',
   marketplace: 'useMarketplace',
@@ -365,6 +367,7 @@ export const FACET_MEMBERS: Readonly<Record<string, readonly string[]>> = {
     'restoreContact'
   ],
   highscores: ['submitScore', 'getLeaderboard'],
+  jobs: ['jobs', 'jobsLoaded', 'fetchJobs', 'setActiveJob', 'setDuty'],
   location: ['shareLocation', 'setWaypoint'],
   mail: [
     'mailStore',

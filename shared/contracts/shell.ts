@@ -24,10 +24,13 @@ export const shellContract = defineContract({
   actions: {
     /**
      * The shape is spelled out rather than imported: `Capabilities` is declared in
-     * `server/services/Capabilities.ts`, and `shared/` cannot reach into `server/`. One
-     * boolean is not worth moving a type for, but the authority is there and not here.
+     * `server/services/Capabilities.ts`, and `shared/` cannot reach into `server/`. Two
+     * booleans are not worth moving a type for, but the authority is there and not here.
      */
-    capabilities: { input: s.none(), output: responseType<{ money: boolean }>() },
+    capabilities: {
+      input: s.none(),
+      output: responseType<{ money: boolean; jobs: boolean }>()
+    },
     sourceUrl: { input: s.none(), output: responseType<{ url: string }>() },
     /** MICA-61: the owner's default language (`mica_locale`), or '' when unset. */
     locale: { input: s.none(), output: responseType<{ locale: string }>() }

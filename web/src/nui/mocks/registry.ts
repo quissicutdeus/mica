@@ -14,6 +14,8 @@ import type {
   BlabberDm,
   Contact,
   Conversation,
+  JobActionOutcome,
+  JobView,
   Listing,
   Mail,
   MediaItem,
@@ -34,6 +36,7 @@ import {
   mockHodlrPrice,
   mockHodlrPriceHistory,
   mockHodlrSellPrice,
+  mockJobs,
   mockListings,
   mockLocationShare,
   mockMedia,
@@ -1757,6 +1760,29 @@ const mockRegistry: Record<string, MockHandler> = {
   },
 
   /**
+   * Jobs (MICA-228). Mirrors `server/services/Jobs.ts` refusal for refusal, so the Jobs
+   * app's copy for each is reachable in a browser: a name outside the held list is
+   * `unknown_job`, duty on a job with no duty notion is `unsupported`, duty on a job
+   * that is not active is `not_active`. Each success answers the re-read list, the way
+   * the server does, so the app never has to fetch again.
+   */
+  'jobs:getJobs': (): JobView[] => mockJobs,
+  'jobs:setActiveJob': (payload?: { name?: string }): JobActionOutcome => {
+    const job = mockJobs.find((j) => j.name === payload?.name);
+    if (!job) return { ok: false, reason: 'unknown_job' };
+    for (const j of mockJobs) j.active = j === job;
+    return { ok: true, jobs: mockJobs };
+  },
+  'jobs:setDuty': (payload?: { name?: string; onDuty?: boolean }): JobActionOutcome => {
+    const job = mockJobs.find((j) => j.name === payload?.name);
+    if (!job) return { ok: false, reason: 'unknown_job' };
+    if (job.onDuty === null) return { ok: false, reason: 'unsupported' };
+    if (!job.active) return { ok: false, reason: 'not_active' };
+    job.onDuty = payload?.onDuty === true;
+    return { ok: true, jobs: mockJobs };
+  },
+
+  /**
    * Call. There is only ever one player, so `startCall` plays both ends: it rings for
    * `RING_MS`, then either connects (posting the same `callStatus` window message the
    * real client forwards from the server's `phone:accepted` push) or, for
@@ -2173,7 +2199,7 @@ const mockRegistry: Record<string, MockHandler> = {
    * transport in a browser too, instead of short-circuiting on `isBrowser()`, so a mock
    * that goes missing here shows up as two apps disappearing rather than as nothing at all.
    */
-  'shell:capabilities': () => ({ money: true }),
+  'shell:capabilities': () => ({ money: true, jobs: true }),
 
   /**
    * The AGPL §13 source address (`services/sourceUrl.ts`). Upstream here, because the mock

@@ -27,6 +27,7 @@ import { call as inCall } from '../../../../web/src/host/facets/call';
 import { camera as inCamera } from '../../../../web/src/host/facets/camera';
 import { contacts as inContacts } from '../../../../web/src/host/facets/contacts';
 import { highscores as inHighscores } from '../../../../web/src/host/facets/highscores';
+import { jobs as inJobs } from '../../../../web/src/host/facets/jobs';
 import { location as inLocation } from '../../../../web/src/host/facets/location';
 import { mail as inMail } from '../../../../web/src/host/facets/mail';
 import { marketplace as inMarketplace } from '../../../../web/src/host/facets/marketplace';
@@ -44,6 +45,7 @@ import { call } from './call';
 import { camera } from './camera';
 import { contacts } from './contacts';
 import { highscores } from './highscores';
+import { jobs } from './jobs';
 import { location } from './location';
 import { mail } from './mail';
 import { marketplace } from './marketplace';
@@ -65,6 +67,7 @@ describe('iframe data facet twins — key parity with inProcess', () => {
     ['camera', camera, inCamera],
     ['contacts', contacts, inContacts],
     ['highscores', highscores, inHighscores],
+    ['jobs', jobs, inJobs],
     ['location', location, inLocation],
     ['mail', mail, inMail],
     ['marketplace', marketplace, inMarketplace],

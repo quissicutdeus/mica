@@ -47,6 +47,7 @@ import './facets/devTools';
 import './facets/display';
 import './facets/displayWrite';
 import './facets/highscores';
+import './facets/jobs';
 import './facets/keybinds';
 import './facets/keybindsWrite';
 import './facets/lifecycle';

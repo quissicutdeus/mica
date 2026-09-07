@@ -16,7 +16,7 @@
 import '../web/src/host/registerFacets';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { get } from 'svelte/store';
-import { ALL_CAPABILITIES, defineApp } from './manifest';
+import { ALL_CAPABILITIES, ALL_PERMISSIONS, defineApp } from './manifest';
 import { MICA_VERSION } from './version';
 import { appRegistryStore } from '../web/src/shell/state/registry';
 import { currentApp, openApp, goHome } from '../web/src/shell/state/navigation';
@@ -535,6 +535,14 @@ describe('ALL_CAPABILITIES', () => {
     // import turns a check that looks strict into one that accepts everything.
     expect(ALL_CAPABILITIES.length).toBeGreaterThan(0);
     expect(ALL_CAPABILITIES).toContain('money');
+  });
+
+  it("names 'jobs', and so does the permission vocabulary (MICA-228)", () => {
+    // Two answers, deliberately independent: `requires: ['jobs']` hides an app on a
+    // standalone server, `permissions: ['jobs']` tells a player the app can switch what
+    // they are doing. One name in both lists, so an app declares them together.
+    expect(ALL_CAPABILITIES).toContain('jobs');
+    expect(ALL_PERMISSIONS).toContain('jobs');
   });
 });
 

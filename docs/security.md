@@ -450,6 +450,16 @@ by this list until someone re-weighs it.
   total payload byte count, nor the sum across several writes. Neither gap is a
   defect in what these limiters were built to do; naming them here is so the doc
   does not overclaim by omission.
+- **The Jobs service takes a job name from the client and acts on it — but only
+  after matching it against the framework's own list for that player.**
+  `Jobs.ts`'s `setActiveJob` and `setDuty` compare the payload's `name` against
+  `FrameworkPlayer.getJobs()` first and answer `unknown_job` on a miss, so a
+  name never reaches `SetPlayerPrimaryJob`, a duty setter or the banking
+  bridge's society read unless the core already says the player holds that job.
+  What a modified client can do is switch between jobs it genuinely holds and
+  clock on or off, which is what the in-game commands already let it do; the
+  society balance is answered only for a boss grade of the job named, and no
+  action moves society money.
 - **A modified client can attempt bank transfers up to the rate limit, bounded
   only by real balance and a resolvable recipient.** `Bank.ts`'s `sendMoney`
   caps a single transfer at `mica_bank_transfer_max` (default 50,000) and

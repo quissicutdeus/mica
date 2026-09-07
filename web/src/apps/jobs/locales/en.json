@@ -1,0 +1,17 @@
+{
+  "title": "Jobs",
+  "active": "Active",
+  "grade": "Grade {grade} · {label}",
+  "salary": "Salary ${salary}",
+  "onDuty": "On duty",
+  "offDuty": "Off duty",
+  "dutyNeedsActive": "Switch to this job to clock in.",
+  "societyBalance": "Society balance",
+  "call": "Call",
+  "noJobs": "No jobs",
+  "noJobsHint": "You do not hold a job right now.",
+  "refusalUnknownJob": "You do not hold that job.",
+  "refusalNotActive": "Switch to that job before changing duty.",
+  "refusalRefused": "The server refused the change.",
+  "refusalUnsupported": "That job has no duty to toggle."
+}

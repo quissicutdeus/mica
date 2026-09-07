@@ -24,6 +24,7 @@ import Calculator from '../web/src/apps/calculator/index.svelte';
 import Camera from '../web/src/apps/camera/index.svelte';
 import Contacts from '../web/src/apps/contacts/index.svelte';
 import Hodlr from '../web/src/apps/hodlr/index.svelte';
+import Jobs from '../web/src/apps/jobs/index.svelte';
 import Mail from '../web/src/apps/mail/index.svelte';
 import Marketplace from '../web/src/apps/marketplace/index.svelte';
 import Media from '../web/src/apps/media/index.svelte';
@@ -61,6 +62,7 @@ const APPS: Record<string, AppComponent> = {
   camera: Camera,
   contacts: Contacts,
   hodlr: Hodlr,
+  jobs: Jobs,
   mail: Mail,
   marketplace: Marketplace,
   media: Media,

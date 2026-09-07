@@ -509,6 +509,16 @@ reasons — which have grown `already_registered`, `not_owner` and `number_in_us
 `RegisterNumber(911, …)` from Lua is refused) are in the README's
 [Exports for other resources](README.md#exports-for-other-resources).
 
+**A Jobs app (MICA-228).** A core app that lists every job the character holds,
+switches the active one with a tap, toggles duty where the framework has duty,
+shows a boss grade its society balance, and lists any number a job script
+registered with `RegisterNumber({ job = '…' })` with a call button beside it.
+The framework is authoritative throughout: every answer is the list re-read from
+the core after the ask, and a switch the core refuses is reported as refused
+rather than shown. It refreshes itself when a script changes the player's job
+outside the phone. **No owner action**: it is hidden on a standalone server,
+which has no jobs, and appears on every other one.
+
 **The phone knows what job a player holds (MICA-227).** The framework bridge now
 reads every job a character has — name, label, grade, salary and duty state —
 and can switch the active one or toggle duty through the framework's own calls,
@@ -816,6 +826,16 @@ Everything above is written for a server owner. This part is not. It is for
 somebody maintaining a `core: false` add-on outside this repo, and it answers
 one question: does that bundle still compile against this release, and does its
 manifest still ask for the right things.
+
+**`useJobs()`, behind a new `jobs` permission and a new `jobs` capability
+(MICA-228).** The hook answers `jobs` and `jobsLoaded` stores, `fetchJobs()`,
+`setActiveJob(name)` and `setDuty(name, onDuty)`; the `JobView`, `JobLine` and
+`JobActionOutcome` types are exported from both barrels. `jobs` is its own
+permission rather than part of `account` because switching a job changes what
+every other resource thinks the player is doing, which is not a read. Declare
+`requires: ['jobs']` if your add-on cannot work without one — the capability is
+absent on a standalone server, exactly as `money` is. Nothing already published
+changes and the contract version is unchanged.
 
 **A manifest may say which devices it runs on (MICA-260).** `devices` is a new
 optional field, `['phone']` when absent, so nothing already published changes.

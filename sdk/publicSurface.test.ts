@@ -826,6 +826,7 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'useDevTools',
     'useDisplay',
     'useHighscores',
+    'useJobs',
     'useKeybinds',
     'useLocation',
     'useMail',
@@ -1034,6 +1035,7 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'useDevTools',
     'useDisplay',
     'useHighscores',
+    'useJobs',
     'useKeybinds',
     'useLocation',
     'useMail',
@@ -1147,6 +1149,9 @@ const BASELINE_TYPE_EXPORTS: Record<string, string[]> = {
     'FollowPage',
     'Host',
     'HostRuntime',
+    'JobActionOutcome',
+    'JobLine',
+    'JobView',
     'KeybindGroup',
     'ListingPage',
     'M3Tokens',
@@ -1218,6 +1223,9 @@ const BASELINE_TYPE_EXPORTS: Record<string, string[]> = {
     'FollowPage',
     'Host',
     'HostRuntime',
+    'JobActionOutcome',
+    'JobLine',
+    'JobView',
     'KeybindGroup',
     'ListingPage',
     'M3Tokens',
@@ -1381,7 +1389,7 @@ const BASELINE_VOCABULARIES: Record<string, string[]> = {
    * is the only thing the pin is there to date-stamp. Bumping it would announce a break to
    * add-on authors that has not happened.
    */
-  ALL_CAPABILITIES: ['money'],
+  ALL_CAPABILITIES: ['money', 'jobs'],
   /**
    * MICA-260. `AppDevice` is derived from this and `AppManifest.devices` is typed by it;
    * a member dropped here would hide every add-on that named it, on every device.
@@ -1400,6 +1408,7 @@ const BASELINE_VOCABULARIES: Record<string, string[]> = {
     'devtools',
     'display',
     'highscores',
+    'jobs',
     'keybinds',
     'location',
     'mail',
@@ -1542,6 +1551,7 @@ const BASELINE_HOOK_RETURNS: Record<string, string[]> = {
   ],
   useDisplayWrite: ['setDisplaySize', 'setHomeGridSize', 'setMotionPreference'],
   useHighscores: ['getLeaderboard', 'submitScore'],
+  useJobs: ['fetchJobs', 'jobs', 'jobsLoaded', 'setActiveJob', 'setDuty'],
   useKeybinds: ['bindings', 'findConflict', 'groups', 'onKeybind'],
   useKeybindsWrite: ['resetBindings', 'setBinding'],
   useLocale: ['availableLocales', 'locale', 'plural', 'setLocale', 't'],
