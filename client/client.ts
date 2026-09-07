@@ -7,13 +7,13 @@ import './game';
 import { FrameworkBridge } from './lib/FrameworkBridge';
 import { sendNuiMessage } from './lib/nui';
 import { DeviceState } from './lib/DeviceState';
-import { openDevice, closeDevice, closeOpenDevice } from './lib/DeviceVisibility';
+import { closeOpenDevice, toggleDevice } from './lib/DeviceVisibility';
+import { registerClientApi } from './lib/publicApi';
 import { DeviceAnimation } from './game/DeviceAnimation';
 import { Freelook } from './game/Freelook';
 import { PhoneCamera } from './game/PhoneCamera';
 import { GAME_SCOPE_ACTIONS } from '@mica/shared/keybinds';
-import { ALL_DEVICES, DEVICES, type DeviceId } from '@mica/shared/devices';
-import { requestDeviceItemCheck } from './services/DeviceItem';
+import { ALL_DEVICES, DEVICES } from '@mica/shared/devices';
 
 // Send system time to NUI
 const sendTimeToNui = () => {
@@ -22,35 +22,15 @@ const sendTimeToNui = () => {
   sendNuiMessage('setTime', { hours, minutes });
 };
 
-/**
- * The toggle behind each device's key (MICA-262). Pressing the key of the device that
- * is up puts it down; pressing the other device's key raises it, which lowers the first
- * on the way — one frame at a time is the rule (`lib/DeviceVisibility.ts`).
- */
-const toggleDevice = (id: DeviceId): void => {
-  // Belt and braces alongside the dispatcher's own guard: whatever key ends up bound
-  // to this, it must never fire out from under a focused text field.
-  if (DeviceState.isTyping()) return;
-
-  if (DeviceState.isOpen(id)) {
-    closeDevice(id);
-    return;
-  }
-  // A disabled device refuses to open at all; closing it is always allowed.
-  if (!DeviceState.isEnabled(id)) {
-    // MICA-229: a refusal for want of the item is the moment to make sure the server's
-    // last word is current -- an inventory event can be missed, and this costs one request.
-    requestDeviceItemCheck();
-    return;
-  }
-  openDevice(id);
-};
-
 // One command per device, named by the descriptor: `togglePhone` predates the table and
 // players already have it bound; `toggleTablet` is the tablet's.
 for (const id of ALL_DEVICES) {
   RegisterCommand(DEVICES[id].keybind.command, () => toggleDevice(id), false);
 }
+
+// After `./services`, the way the server registers its own after its services: everything
+// an export reaches for exists before any resource can call one (MICA-224).
+registerClientApi();
 
 /**
  * Register every game-scope action from the shared table.

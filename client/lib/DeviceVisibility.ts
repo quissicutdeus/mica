@@ -9,6 +9,7 @@ import { sendChargeToNui } from '../services/Battery';
 import { DeviceAnimation } from '../game/DeviceAnimation';
 import { Freelook } from '../game/Freelook';
 import { PhoneCamera } from '../game/PhoneCamera';
+import { requestDeviceItemCheck } from '../services/DeviceItem';
 
 /**
  * The open/close sequence the toggle command used to own outright, factored out so
@@ -62,4 +63,37 @@ export const closeDevice = (id: DeviceId): void => {
 export const closeOpenDevice = (): void => {
   const open = DeviceState.openDevice();
   if (open) closeDevice(open);
+};
+
+/**
+ * The toggle behind each device's key (MICA-262), and behind the client export of the same
+ * name (MICA-224). Pressing the key of the device that is open closes it; pressing the key
+ * of a closed one opens it, unless it is disabled, in which case nothing opens.
+ */
+export const toggleDevice = (id: DeviceId): void => {
+  // Belt and braces alongside the dispatcher's own guard: whatever key ends up bound
+  // to this, it must never fire out from under a focused text field.
+  if (DeviceState.isTyping()) return;
+  if (DeviceState.isOpen(id)) {
+    closeDevice(id);
+    return;
+  }
+  // A disabled device refuses to open at all; closing it is always allowed.
+  if (!DeviceState.isEnabled(id)) {
+    // MICA-229: a refusal for want of the item is the moment to make sure the server's
+    // last word is current -- an inventory event can be missed, and this costs one request.
+    requestDeviceItemCheck();
+    return;
+  }
+  openDevice(id);
+};
+
+/**
+ * Confiscate or return a device: the one flag both the server's `SetPhoneEnabled` push and
+ * the client export of that name set (MICA-224), so the two sides agree whichever spoke
+ * last. Disabling a device that is open puts it down; enabling one opens nothing.
+ */
+export const setDeviceEnabled = (id: DeviceId, enabled: boolean): void => {
+  DeviceState.setEnabled(id, enabled);
+  if (!DeviceState.isEnabled(id) && DeviceState.isOpen(id)) closeDevice(id);
 };

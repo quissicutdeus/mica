@@ -49,45 +49,15 @@
 export const MICA_API_VERSION = 1;
 
 /** Why an export could not do what was asked. */
-export type ExportFailure =
-  /** No player with that source, or no character loaded on it. */
-  | 'unknown_player'
-  /** The player is not on the server. Their data is still safe to write by citizenid. */
-  | 'offline'
-  /** micaOS has not finished starting. Retry, or wait for `onResourceStart`. */
-  | 'not_ready'
-  /** The arguments do not describe anything micaOS can act on. */
-  | 'invalid_args'
-  /** micaOS raised where it should not have. Reported rather than propagated. */
-  | 'internal_error'
-  /** Another resource already holds that number. */
-  | 'already_registered'
-  /** That number belongs to a different resource. */
-  | 'not_owner'
-  /** A character already holds that number, and a player always wins. */
-  | 'number_in_use'
-  /** The calling resource has exceeded an export's per-minute allowance (MICA-223). */
-  | 'rate_limited';
-
-export type ExportOutcome<T = undefined> =
-  | ({ ok: true } & (T extends undefined ? { value?: undefined } : { value: T }))
-  | { ok: false; reason: ExportFailure; message: string };
-
-export const ok = <T = undefined>(value?: T): ExportOutcome<T> =>
-  ({ ok: true, value }) as ExportOutcome<T>;
-
-export const fail = <T = undefined>(reason: ExportFailure, message: string): ExportOutcome<T> => ({
-  ok: false,
-  reason,
-  message
-});
-
 /**
- * Wrap a handler so nothing it does can reach the caller as an exception.
- *
- * The whole point of the boundary: a bug in micaOS must degrade the phone, never the
- * script that asked it a question.
+ * The outcome shape is shared with the client's export surface (MICA-224): one contract,
+ * read once by a script that calls both sides. Re-exported here so every existing import of
+ * `ok`, `fail` and the types keeps working unchanged.
  */
+export { ok, fail } from '@mica/shared/exports';
+export type { ExportOutcome } from '@mica/shared/exports';
+import { fail, type ExportOutcome } from '@mica/shared/exports';
+
 const guarded =
   <A extends unknown[], T>(name: string, handler: (...args: A) => ExportOutcome<T>) =>
   (...args: A): ExportOutcome<T> => {

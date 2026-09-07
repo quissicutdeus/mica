@@ -314,6 +314,16 @@ character holds, so a resource can text as a business or a line but never as a
 player, and the row it writes carries `external_sender` so the recipient's phone
 never mistakes it for their own words -- nor lets them edit it as such.
 
+**The client has an export surface too, and it is not a boundary at all**
+(MICA-224). `client/lib/publicApi.ts` lets a client script open, close, toggle
+or disable the device, read the framework's phone number and raise a toast. All
+of it acts on the calling client's own `DeviceState` and NUI, which a modified
+client controls outright already, so nothing server-side trusts any of it:
+`IsPhoneOpen` on the server is a mirror of what the client last said, and a
+confiscation that has to hold is the server export's job. The client set exists
+for latency and convenience, not for enforcement, and the README says so where
+the names are listed.
+
 **The one rate limit at this boundary is per calling resource, not per player.**
 `SendMessage` allows 120 calls a minute from each resource and answers
 `rate_limited` past that (`rateLimited` in `server/lib/exports.ts`). The threat

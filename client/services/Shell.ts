@@ -5,7 +5,7 @@
 import { DEFAULT_DEVICE, isDeviceId, type DeviceId } from '@mica/shared/devices';
 import { sendNuiMessage } from '../lib/nui';
 import { DeviceState } from '../lib/DeviceState';
-import { openDevice, closeDevice } from '../lib/DeviceVisibility';
+import { openDevice, closeDevice, setDeviceEnabled } from '../lib/DeviceVisibility';
 
 /**
  * The device a payload names, or the phone (MICA-262). Every shell event carried no
@@ -74,9 +74,9 @@ onNet('mica:client:shell:rehydrate', () => {
 onNet('mica:client:shell:setEnabled', (payload: unknown) => {
   const value =
     typeof payload === 'boolean' ? payload : (payload as { enabled?: unknown })?.enabled === true;
-  const device = deviceOf(payload);
-  DeviceState.setEnabled(device, value);
-  closeIfDisabled(device);
+  // The same flag the client export `SetPhoneEnabled` sets (MICA-224): confiscation from
+  // either side lands in one place, so the two cannot disagree.
+  setDeviceEnabled(deviceOf(payload), value);
 });
 
 /**

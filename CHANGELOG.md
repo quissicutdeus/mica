@@ -451,6 +451,18 @@ with `internal_error` and the rest of Messages is unaffected.
 
 ### Added
 
+**The client publishes exports of its own (MICA-224).** `IsPhoneOpen`,
+`OpenPhone`, `ClosePhone`, `TogglePhone`, `SetPhoneEnabled`, `GetPhoneNumber`,
+`OpenApp`, `Notify` and `GetApiVersion`, callable as `exports['mica']:...` from
+any client script, answering the same `{ ok, value }` or
+`{ ok = false, reason, message }` shape the server's do. Where a name matches a
+server export it is the same concept from the other side, and README's table
+says which side is authoritative; `SetPhoneEnabled` from either side sets the
+one flag, so a confiscation agrees whoever spoke last. One new reason,
+`disabled`, is what `OpenPhone` and `OpenApp` answer while the device will not
+open. Nothing on the client is authority, and nothing changes for a script that
+only ever called the server.
+
 **`SendMessage(citizenid, message)` is the export that writes such a text
 (MICA-223).** It takes the recipient's citizenid and a table with `from` -- a
 `name`, a `number`, or both -- and a `body`. It creates or reuses the thread

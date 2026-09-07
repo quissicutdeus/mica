@@ -1107,9 +1107,10 @@ end
 `reason` is one of `unknown_player`, `offline`, `not_ready`, `invalid_args`,
 `internal_error`, `already_registered` (another resource already holds that
 number), `not_owner` (that number belongs to a different resource),
-`number_in_use` (a character holds it, and a character always wins) or
+`number_in_use` (a character holds it, and a character always wins),
 `rate_limited` (your resource has called that export more times this minute than
-it allows; the call was dropped).
+it allows; the call was dropped) or `disabled` (the device will not open for
+this player right now: confiscated, switched off, or an item they do not hold).
 
 | Export                              | Identifies a player by | Does                                                                                              |
 | ----------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------- |
@@ -1251,6 +1252,48 @@ exports['mica']:UnregisterNumber('5559999')     -- when you are done with it
 their own group in the shade, labelled with your `sourceLabel`. micaOS apps are
 forbidden from taking an `ext_` id, so your group can never be silently merged
 with one shipped later.
+
+### From the client
+
+Inventory, target, progress-bar and vehicle scripts run on the client and want
+to ask the phone whether it is open, put it down while a minigame runs, or show
+a toast, without a server round trip. The client publishes a small export set of
+its own for that, answering the same outcome shape as the server's and never
+throwing into your script. Where the same concept exists on both sides the name
+is the same, and the table says which side is authoritative.
+
+```lua
+-- client script
+if exports['mica']:IsPhoneOpen().value then
+    exports['mica']:ClosePhone()                  -- put it down for the minigame
+end
+exports['mica']:Notify({ type = 'success', title = 'Lockpick', message = 'Door open' })
+exports['mica']:OpenApp('contacts')               -- optional props table as the second argument
+```
+
+| Client export                       | Server counterpart                  | Does                                                                                      |
+| ----------------------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------- |
+| `GetApiVersion()`                   | `GetApiVersion()`                   | The client API version, numbered separately from the server's                             |
+| `IsPhoneOpen(device?)`              | `IsPhoneOpen(source)`               | Whether this player's device is open. The client is the truth; the server mirrors it      |
+| `OpenPhone(device?)`                | —                                   | Opens it as the key would. `disabled` while confiscated, switched off or the item is gone |
+| `ClosePhone(device?)`               | —                                   | Puts it down. Always allowed                                                              |
+| `TogglePhone(device?)`              | —                                   | Exactly what the key does, refusals included; answers `{ open }` afterwards               |
+| `SetPhoneEnabled(enabled, device?)` | `SetPhoneEnabled(source, enabled)`  | Confiscates or returns it. One flag, set from either side; the last word wins             |
+| `GetPhoneNumber()`                  | `GetPhoneNumber(citizenid)`         | This player's number, as the framework reports it. `not_ready` before a character loads   |
+| `OpenApp(appId, props?, device?)`   | `OpenApp(source, appId, props)`     | Force-opens the device on an app. Only the server can check the app exists                |
+| `Notify(opts)`                      | `SendNotification(citizenid, opts)` | A toast and nothing else. The server's writes a row the player finds in the shade later   |
+
+`device` is optional everywhere it appears: omit it for the phone, pass
+`'tablet'` for the tablet. Anything else is refused with `invalid_args` rather
+than defaulted, because a typo acting on the phone when the tablet was meant is
+the kind of bug that survives a test run.
+
+**Nothing on the client is authority.** Every one of these acts on the calling
+client's own state and its NUI, which a modified client already controls
+outright, so the server trusts none of it: confiscating a phone that has to
+stick is the server export's job, and `SetPhoneEnabled` from either side is
+client-local and not persisted -- reapply it on your own player-loaded event if
+it must survive a relog, the same as you would for the server's.
 
 ---
 
