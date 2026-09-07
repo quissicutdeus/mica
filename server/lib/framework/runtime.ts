@@ -52,8 +52,79 @@ export interface FrameworkPlayer {
    * community resource's field.
    */
   setPhone?(number: string): boolean;
+  /**
+   * Every job this character holds, active one first (MICA-227).
+   *
+   * `[]` on a server with no job notion, never a placeholder `unemployed` — the Jobs app
+   * decides what an empty list looks like. Exactly one entry is `active` when the list is
+   * non-empty, because every framework keeps one job as *the* job even when it lets a player
+   * hold several.
+   */
+  getJobs(): FrameworkJob[];
+  /**
+   * Make one of the held jobs the active one.
+   *
+   * `true` only when the framework's own state says so afterwards — read back, never taken
+   * from the call's return value, for the reason `esxMove` gives at length: a framework
+   * whose setter answers `true` and changes nothing is the failure this has to notice. A
+   * name the player does not hold is an ordinary refusal and is not logged.
+   */
+  setActiveJob(name: string): boolean;
+  /**
+   * Clock the active job on or off duty. Refuses, quietly, for a job that is not the active
+   * one — no framework keeps duty per held job, only per active one — and for a job whose
+   * `onDuty` is `null`. Verified by re-read like `setActiveJob`.
+   */
+  setDuty(name: string, onDuty: boolean): boolean;
   rawPlayer: any;
 }
+
+/**
+ * One job a player holds, in the shape every framework can be read into (MICA-227).
+ *
+ * Presentation fields fall back rather than refuse — a job with no label is still a job the
+ * player has — so only `name` is load-bearing. `onDuty` is three-valued because the frameworks
+ * disagree about whether duty exists at all: qb keeps it on the active job, ESX only from
+ * Legacy 1.10, and a job that is held but not active has no duty anywhere.
+ */
+export interface FrameworkJob {
+  /** The framework's key: `'police'`. Lower case. */
+  name: string;
+  /** What a player reads: `'LSPD'`. Falls back to `name` when the framework has none. */
+  label: string;
+  /** Grade level, 0-based as every framework keeps it. */
+  grade: number;
+  /** `'Sergeant'`. Falls back to `String(grade)`. */
+  gradeLabel: string;
+  /** Per-paycheque amount. 0 when unknown. */
+  salary: number;
+  /** `null` when this framework, or this job, has no duty notion at all. */
+  onDuty: boolean | null;
+  isBoss: boolean;
+  /** Exactly one entry is active when the list is non-empty. */
+  active: boolean;
+}
+
+/**
+ * What an adapter can answer about jobs, in one line for the start-up log (MICA-227).
+ *
+ * `via` names the export or field the answer comes from, and what is deliberately *not*
+ * read — the qb-multijob-style resources disagree with each other about where they keep a
+ * second job, so an operator running one should learn from the console, not from an empty
+ * list, that it is not consulted.
+ */
+export interface JobSupport {
+  multiJob: boolean;
+  duty: boolean;
+  via: string;
+}
+
+/** What `FrameworkBridge.jobSupport` answers before any adapter has. */
+export const NO_JOB_SUPPORT: JobSupport = Object.freeze({
+  multiJob: false,
+  duty: false,
+  via: 'no framework has answered yet'
+});
 
 /**
  * Another resource's exports.
@@ -305,7 +376,45 @@ export interface FrameworkAdapter {
     item: string,
     cb: (source: number, used?: { slot?: unknown }) => void
   ): boolean;
+
+  /**
+   * What this adapter can answer about jobs, and through what (MICA-227). Printed once at
+   * start-up beside the banking line, so an operator learns *before* opening the Jobs app
+   * that their second job lives in a resource this does not read.
+   */
+  jobSupport(): JobSupport;
 }
+
+/**
+ * A literal boolean off a framework's own state, or `null` for a refusal (MICA-227).
+ *
+ * `moved`'s rule, applied to a field rather than a return value. The job setters never
+ * believe what the call answers with — a Lua export reached from JS hands back its first
+ * return value and drops the error beside it, and a build whose setter went async answers a
+ * promise — so they read the framework's own record back instead. That record is the only
+ * evidence, and a record that is not a boolean is evidence the contract moved.
+ *
+ * `null` rather than `false`, because a setter compares the re-read against what it asked
+ * for: a shapeless answer folded into `false` would confirm every request to clock *off*.
+ * Either boolean is an ordinary answer and is not logged; only a shapeless one is.
+ */
+export const booleanOf = (value: unknown, what: string, src: number): boolean | null => {
+  if (typeof value === 'boolean') return value;
+  console.error(
+    `[FrameworkBridge] ${what} for source ${src} reads as ${shapeOf(value)} rather than a ` +
+      `boolean. Refusing — the framework's contract has changed and this cannot tell what ` +
+      `the real state is.`
+  );
+  return null;
+};
+
+/** A finite number, or the fallback. Silent: these are presentation fields, not state. */
+export const numberOr = (value: unknown, fallback: number): number =>
+  typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+
+/** A non-empty string, or the fallback. Silent for the same reason as `numberOr`. */
+export const stringOr = (value: unknown, fallback: string): string =>
+  typeof value === 'string' && value.length > 0 ? value : fallback;
 
 export const trimmedOrNull = (value: unknown): string | null => {
   if (typeof value !== 'string') return null;

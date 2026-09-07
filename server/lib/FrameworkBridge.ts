@@ -9,11 +9,13 @@ import { qbxAdapter } from './framework/qbx';
 import { reportStandaloneConflict, standaloneAdapter } from './framework/standalone';
 import {
   countInventoryItem as countItemThroughInventory,
+  NO_JOB_SUPPORT,
   removeInventoryItem as removeItemThroughInventory,
   type FrameworkAdapter,
   type FrameworkIdentity,
   type FrameworkKind,
   type FrameworkPlayer,
+  type JobSupport,
   type OwnerTable
 } from './framework/runtime';
 import { readItemSlots, writeItemMetadata, type ItemSlot } from './framework/itemMetadata';
@@ -44,7 +46,14 @@ import { citizenIdForNumber } from './phoneNumbers';
  */
 
 export { citizenIdFromIdentifier, CITIZENID_MAX_LENGTH };
-export type { FrameworkAdapter, FrameworkIdentity, FrameworkKind, FrameworkPlayer, OwnerTable };
+export type {
+  FrameworkAdapter,
+  FrameworkIdentity,
+  FrameworkKind,
+  FrameworkPlayer,
+  JobSupport,
+  OwnerTable
+};
 export { __setResourceLookup, __resetOfflineLookupWarnings } from './framework/runtime';
 export { __resetEsxMetaWarning } from './framework/esx';
 export { STANDALONE_CONVAR, __resetStandaloneWarnings } from './framework/standalone';
@@ -255,6 +264,18 @@ export class FrameworkBridge {
    */
   public static ownerTable(): OwnerTable | null {
     return activeAdapter()?.ownerTable() ?? null;
+  }
+
+  /**
+   * What this server can answer about jobs, for the start-up log (MICA-227).
+   *
+   * The active adapter's answer, resolved the way `ownerTable` is, so the two cannot name
+   * different frameworks. The fallback is the same third state `detectFramework` keeps as
+   * `unknown`: asked inside the boot window before the core has started, this says so
+   * rather than reporting the absence of jobs as a fact about the server.
+   */
+  public static jobSupport(): JobSupport {
+    return activeAdapter()?.jobSupport() ?? NO_JOB_SUPPORT;
   }
 
   /**

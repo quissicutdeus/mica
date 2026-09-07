@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { FrameworkBridge } from './FrameworkBridge';
+import { BankingBridge } from './BankingBridge';
 
 /**
  * Moving money between two players.
@@ -43,6 +44,9 @@ export type PaymentOutcome =
    * - `stranded`           — the credit failed **and** the refund failed. Money has left the
    *                         payer and reached nobody. Logged loudly because it needs a human;
    *                         it is the one outcome no amount of retrying fixes.
+   * - `society_unavailable` — `payFromSociety` only: no banking resource on this server can
+   *                         hold a society account, or the job has none. Distinct from
+   *                         `insufficient_funds`, which says the account exists and is short.
    */
   | {
       ok: false;
@@ -54,7 +58,8 @@ export type PaymentOutcome =
         | 'insufficient_funds'
         | 'debit_failed'
         | 'credit_failed'
-        | 'stranded';
+        | 'stranded'
+        | 'society_unavailable';
     };
 
 export interface TransferRequest {
@@ -161,4 +166,83 @@ export async function transfer(request: TransferRequest): Promise<PaymentOutcome
 
   console.log(`[Payments] ${from} -> ${to}: ${amount} (${account}) for '${reason}'.`);
   return { ok: true, from, to, amount };
+}
+
+export interface SocietyPaymentRequest {
+  /** The framework job whose society account pays: 'police'. */
+  job: string;
+  /** citizenid being paid. */
+  to: string;
+  /** Whole currency units, positive. */
+  amount: number;
+  /** Why, for the log. Not player-facing. */
+  reason: string;
+}
+
+/**
+ * Debit a society account and credit a player (MICA-227).
+ *
+ * The same shape as `transfer` with the payer swapped for a job's account in whichever
+ * banking resource holds one — `BankingBridge` decides which, and answers `null`/`false`
+ * when none does, which is `society_unavailable` here. The credit lands in the player's
+ * `bank` balance, since a society has no cash drawer.
+ *
+ * **No client endpoint, deliberately — and more so than for `transfer`.** A society account
+ * is shared money that a whole job's members have a stake in, and "pay this citizenid this
+ * much from the police account" is a payload no boss check makes safe: a NUI request is not
+ * proof of intent (§2.9), and a boss's own client can be modified. The Jobs service
+ * (MICA-228) exposes the balance *read*, boss-gated, and nothing that names an amount. A
+ * server-side script — a payroll, a bonus — calls this from its own code, where the amount
+ * and the recipient are the server's decision.
+ *
+ * **The society read through `removeSocietyMoney` must never yield**, for the reason
+ * `transfer` gives at length: the affordability check and the debit it gates are one
+ * synchronous span, and an `await` between them reopens a double-spend for two paycheques
+ * racing the same account. This function is `async` for the shape of the outcome only and
+ * contains no `await` at all.
+ */
+export async function payFromSociety(request: SocietyPaymentRequest): Promise<PaymentOutcome> {
+  const { job, to, reason } = request;
+  const amount = request.amount;
+
+  if (!Number.isInteger(amount) || amount <= 0) {
+    return { ok: false, reason: 'invalid_amount' };
+  }
+  if (!job) return { ok: false, reason: 'society_unavailable' };
+  if (!to) return { ok: false, reason: 'recipient_offline' };
+
+  const payeeSource = FrameworkBridge.getSourceByCitizenId(to);
+  if (payeeSource === null) return { ok: false, reason: 'recipient_offline' };
+  const payee = FrameworkBridge.getPlayer(payeeSource);
+  if (!payee) return { ok: false, reason: 'recipient_offline' };
+
+  // `null` is "nobody can answer" — no banking resource, or a job with no account. Checked
+  // before debiting for the reason `transfer` gives: whether an overdraw refuses or clamps is
+  // the banking resource's decision, and the affordability decision has to stay ours.
+  const balance = BankingBridge.getSocietyBalance(job);
+  if (balance === null) return { ok: false, reason: 'society_unavailable' };
+  if (balance < amount) return { ok: false, reason: 'insufficient_funds' };
+
+  if (!BankingBridge.removeSocietyMoney(job, amount)) {
+    return { ok: false, reason: 'debit_failed' };
+  }
+
+  if (!payee.addMoney('bank', amount)) {
+    const refunded = BankingBridge.addSocietyMoney(job, amount);
+    if (!refunded) {
+      console.error(
+        `[Payments] STRANDED ${amount} from society '${job}' to ${to} for '${reason}': the ` +
+          'credit failed and the refund failed. The society has been debited and nobody ' +
+          'was paid. This needs a human.'
+      );
+      return { ok: false, reason: 'stranded' };
+    }
+    console.warn(
+      `[Payments] Credit to ${to} failed for '${reason}'; refunded ${amount} to society '${job}'.`
+    );
+    return { ok: false, reason: 'credit_failed' };
+  }
+
+  console.log(`[Payments] society '${job}' -> ${to}: ${amount} (bank) for '${reason}'.`);
+  return { ok: true, from: `society:${job}`, to, amount };
 }

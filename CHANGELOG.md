@@ -509,6 +509,20 @@ reasons — which have grown `already_registered`, `not_owner` and `number_in_us
 `RegisterNumber(911, …)` from Lua is refused) are in the README's
 [Exports for other resources](README.md#exports-for-other-resources).
 
+**The phone knows what job a player holds (MICA-227).** The framework bridge now
+reads every job a character has — name, label, grade, salary and duty state —
+and can switch the active one or toggle duty through the framework's own calls,
+never through a micaOS table. On qbx_core that is the core's multi-job model as
+it stands; qb-core and es_extended answer their one job, and a multi-job add-on
+for either is not read, because those add-ons disagree with each other about
+where they keep the list. The server console says which it found at start
+(`mica: jobs -> …`). A job's society account is readable through the banking
+bridge — Renewed-Banking is verified, qb-banking and qb-management are wired
+from their published export names — and a script may now tag a line it registers
+with `job` and `label` so the Jobs app can list it. **No owner action**: nothing
+is shown to a player until the Jobs app (MICA-228) ships, and a server whose
+banking resource has no society accounts answers "unknown" rather than zero.
+
 **The phone can be an item (MICA-229).** Set `mica_phone_item` to the name of an
 inventory item and the phone opens only for a player holding at least one: using
 the item opens it, the keybind works while they hold one, and losing the last

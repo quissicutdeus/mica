@@ -6,15 +6,19 @@ import { citizenIdFromIdentifier, describeIdentifierRejection } from '@mica/shar
 import { Database } from '../Database';
 import {
   balanceOf,
+  booleanOf,
   exposes,
   moved,
+  numberOr,
   offlineLookup,
   removeInventoryItem,
   resource,
+  stringOr,
   trimmedOrNull,
   unidentified,
   type FrameworkAdapter,
   type FrameworkIdentity,
+  type FrameworkJob,
   type FrameworkPlayer,
   type OwnerTable
 } from './runtime';
@@ -365,6 +369,68 @@ const esxSetMeta = (xPlayer: any, src: number, key: string, value: any): void =>
   }
 };
 
+/**
+ * The raw ESX job table, through the accessor when there is one (MICA-227).
+ *
+ * `xPlayer.getJob()` is the Legacy accessor and `xPlayer.job` the table behind it — the
+ * same "try the accessor, then the table" shape `esxVariable` uses, for the same reason.
+ * Shape, from es_extended's documentation and **unverified against an installed copy**:
+ * `{ name, label, grade, grade_name, grade_label, grade_salary, onDuty? }`, with `onDuty`
+ * present only from Legacy 1.10.
+ */
+const esxRawJob = (xPlayer: any): any => {
+  const viaGet = typeof xPlayer?.getJob === 'function' ? xPlayer.getJob() : undefined;
+  return viaGet && typeof viaGet === 'object' ? viaGet : xPlayer?.job;
+};
+
+/**
+ * The one job an ESX player holds, as a `FrameworkJob`.
+ *
+ * One, not several: core ESX keeps exactly one `job`, and esx_multijob and its forks each
+ * keep the others in a table of their own that none of the others agree on, so they are
+ * not read — `jobSupport` says so. `onDuty` is `null` unless the core field is a boolean,
+ * because a pre-1.10 build has no duty at all and must not read as "off duty". `isBoss` is
+ * `false`: core ESX has no boss flag on the job, and guessing at one add-on's field
+ * would be right for one server and silently wrong for the rest.
+ */
+const esxJob = (xPlayer: any): FrameworkJob | null => {
+  const raw = esxRawJob(xPlayer);
+  const name = stringOr(raw?.name, '');
+  if (!name) return null;
+  const grade = numberOr(raw.grade, 0);
+  return {
+    name,
+    label: stringOr(raw.label, name),
+    grade,
+    gradeLabel: stringOr(raw.grade_label, stringOr(raw.grade_name, String(grade))),
+    salary: numberOr(raw.grade_salary, 0),
+    onDuty: typeof raw.onDuty === 'boolean' ? raw.onDuty : null,
+    isBoss: false,
+    active: true
+  };
+};
+
+/**
+ * Clock the ESX job on or off, and prove it by reading `job.onDuty` back.
+ *
+ * `xPlayer.setJob(name, grade, onDuty)` — the Legacy 1.10 signature, whose third argument
+ * is the duty flag; unverified against an installed copy. Refused outright when the current
+ * job carries no boolean `onDuty`, because on such a build the third argument is ignored and
+ * the re-read could never confirm anything. Refused quietly for any name but the active job.
+ */
+const esxSetDuty = (xPlayer: any, src: number, name: string, onDuty: boolean): boolean => {
+  const raw = esxRawJob(xPlayer);
+  if (!raw || raw.name !== name || typeof raw.onDuty !== 'boolean') return false;
+  if (typeof xPlayer?.setJob !== 'function') return false;
+  try {
+    xPlayer.setJob(name, numberOr(raw.grade, 0), onDuty);
+  } catch (error) {
+    console.error(`[FrameworkBridge] ESX.setJob for source ${src} threw:`, error);
+    return false;
+  }
+  return booleanOf(esxRawJob(xPlayer)?.onDuty, 'ESX job.onDuty', src) === onDuty;
+};
+
 /** An ESX `xPlayer` as a `FrameworkPlayer`, or null when it cannot be identified. */
 const esxFrameworkPlayer = (xPlayer: any, src: number): FrameworkPlayer | null => {
   if (!xPlayer) return null;
@@ -390,6 +456,13 @@ const esxFrameworkPlayer = (xPlayer: any, src: number): FrameworkPlayer | null =
       esxMove(xPlayer, 'credit', type, amount, src),
     setMeta: (key: string, value: any) => esxSetMeta(xPlayer, src, key, value),
     removeItem: (item: string, count: number) => esxRemoveItem(xPlayer, src, item, count),
+    getJobs: () => {
+      const job = esxJob(xPlayer);
+      return job ? [job] : [];
+    },
+    // One job, so there is nothing to switch to: true iff it is already the active one.
+    setActiveJob: (name: string) => esxJob(xPlayer)?.name === name,
+    setDuty: (name: string, onDuty: boolean) => esxSetDuty(xPlayer, src, name, onDuty),
     // The qb-shaped view, not the bare xPlayer: `PlayerDirectory`, `Messages` and `Battery`
     // all read `rawPlayer.PlayerData`. ESX's own object is on `rawPlayer.xPlayer`.
     rawPlayer: view
@@ -558,5 +631,16 @@ export const esxAdapter: FrameworkAdapter = {
     if (!esx?.RegisterUsableItem) return false;
     esx.RegisterUsableItem(item, cb);
     return true;
-  }
+  },
+
+  // `duty: false` at the adapter level even though a Legacy 1.10+ player can answer it:
+  // whether `job.onDuty` exists is only knowable per loaded player, and the per-job
+  // `onDuty: null` is what a caller keys on. The start-up line says the whole truth.
+  jobSupport: () => ({
+    multiJob: false,
+    duty: false,
+    via:
+      'es_extended xPlayer.job (one job; duty only where job.onDuty is a boolean, Legacy ' +
+      '1.10+; esx_multijob-style resources are not read)'
+  })
 };

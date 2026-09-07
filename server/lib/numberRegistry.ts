@@ -40,14 +40,28 @@ export interface LineOptions {
   onCall: (call: IncomingLineCall) => CallVerdict | Promise<CallVerdict>;
   /** Defaults to true. A blockable line can be blocked like any other number. */
   blockable?: boolean;
+  /** Shown as the contact's name: 'LSPD Dispatch'. At most 40 characters after trimming. */
+  label?: string;
+  /**
+   * The framework job this line belongs to ('police'), lower_snake_case, so the Jobs app
+   * (MICA-228) can list a job's numbers under the job. A claim by the registering script,
+   * not a check against the framework — a job the framework does not have simply lists
+   * nowhere.
+   */
+  job?: string;
 }
 
 export interface RegisteredLine {
   number: string;
   owner: string;
   blockable: boolean;
+  label: string | null;
+  job: string | null;
   onCall: LineOptions['onCall'];
 }
+
+export const LABEL_MAX = 40;
+const JOB_KEY = /^[a-z][a-z0-9_]*$/;
 
 const lines = new Map<string, RegisteredLine>();
 
@@ -63,6 +77,10 @@ export const lookupLine = (number: string): RegisteredLine | undefined => lines.
 export const linesOwnedBy = (owner: string): RegisteredLine[] =>
   [...lines.values()].filter((line) => line.owner === owner);
 
+/** Every line registered under a job, for the Jobs app. `[]` for a job nobody claimed. */
+export const linesForJob = (job: string): RegisteredLine[] =>
+  [...lines.values()].filter((line) => line.job === job);
+
 export function registerNumber(
   rawNumber: unknown,
   options: LineOptions,
@@ -74,6 +92,27 @@ export function registerNumber(
   }
   if (typeof options?.onCall !== 'function') {
     return fail('invalid_args', 'onCall must be a function.');
+  }
+
+  // Refused rather than truncated or dropped: a label cut short reads as a different name,
+  // and a job silently dropped is a line that never appears where the script expected it.
+  let label: string | null = null;
+  if (options.label !== undefined) {
+    if (typeof options.label !== 'string') {
+      return fail('invalid_args', 'label must be a string.');
+    }
+    label = options.label.trim();
+    if (label.length === 0) label = null;
+    else if (label.length > LABEL_MAX) {
+      return fail('invalid_args', `label must be at most ${LABEL_MAX} characters.`);
+    }
+  }
+  let job: string | null = null;
+  if (options.job !== undefined) {
+    if (typeof options.job !== 'string' || !JOB_KEY.test(options.job)) {
+      return fail('invalid_args', "job must be a lower_snake_case job name, like 'police'.");
+    }
+    job = options.job;
   }
 
   const held = lines.get(number);
@@ -89,6 +128,8 @@ export function registerNumber(
     number,
     owner,
     blockable: options.blockable !== false,
+    label,
+    job,
     onCall: options.onCall
   });
   return ok();

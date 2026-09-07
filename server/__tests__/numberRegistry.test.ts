@@ -18,6 +18,7 @@ import {
 } from '../lib/numberRegistry';
 import { askLine, HANDLER_TIMEOUT_MS } from '../lib/numberRegistry';
 import { releaseResource, onLineReleased } from '../lib/numberRegistry';
+import { linesForJob, LABEL_MAX } from '../lib/numberRegistry';
 
 const onCall = () => ({ action: 'reject' }) as const;
 
@@ -76,6 +77,65 @@ describe('numberRegistry storage', () => {
       ok: false,
       reason: 'invalid_args'
     });
+  });
+
+  it('leaves label and job null when a script gives neither', () => {
+    registerNumber('5551234', { onCall }, 'taxi');
+    expect(lookupLine('5551234')).toMatchObject({ label: null, job: null });
+  });
+
+  it('carries a label and a job through, trimmed', () => {
+    registerNumber('5551234', { onCall, label: '  LSPD Dispatch ', job: 'police' }, 'lspd');
+    expect(lookupLine('5551234')).toMatchObject({ label: 'LSPD Dispatch', job: 'police' });
+  });
+
+  it('refuses a label over the limit rather than cutting it short', () => {
+    // A name cut short reads as a different name. Trimming happens before counting, so a
+    // label padded over the limit is still fine.
+    expect(
+      registerNumber('5551234', { onCall, label: 'x'.repeat(LABEL_MAX + 1) }, 'lspd')
+    ).toMatchObject({ ok: false, reason: 'invalid_args' });
+    expect(lookupLine('5551234')).toBeUndefined();
+    expect(
+      registerNumber('5551234', { onCall, label: ' ' + 'x'.repeat(LABEL_MAX) + ' ' }, 'lspd').ok
+    ).toBe(true);
+  });
+
+  it('refuses a label that is not a string, and treats a blank one as none', () => {
+    expect(registerNumber('5551234', { onCall, label: 42 as never }, 'lspd')).toMatchObject({
+      ok: false,
+      reason: 'invalid_args'
+    });
+    registerNumber('5551234', { onCall, label: '   ' }, 'lspd');
+    expect(lookupLine('5551234')?.label).toBeNull();
+  });
+
+  it.each(['Police', 'police dept', '1police', 'police-dept', '', 7])(
+    'refuses %s as a job name',
+    (job) => {
+      // The same key every framework uses and every event segment is built from; a job that
+      // does not match would never list under anything.
+      expect(registerNumber('5551234', { onCall, job: job as never }, 'lspd')).toMatchObject({
+        ok: false,
+        reason: 'invalid_args'
+      });
+      expect(lookupLine('5551234')).toBeUndefined();
+    }
+  );
+
+  it("lists a job's lines, and nobody else's", () => {
+    registerNumber('5551111', { onCall, job: 'police', label: 'Dispatch' }, 'lspd');
+    registerNumber('5552222', { onCall, job: 'police' }, 'lspd');
+    registerNumber('5553333', { onCall, job: 'ambulance' }, 'ems');
+    registerNumber('5554444', { onCall }, 'taxi');
+
+    expect(
+      linesForJob('police')
+        .map((line) => line.number)
+        .sort()
+    ).toEqual(['5551111', '5552222']);
+    expect(linesForJob('ambulance').map((line) => line.number)).toEqual(['5553333']);
+    expect(linesForJob('taxi')).toEqual([]);
   });
 
   it('refuses a registration with no callable onCall', () => {

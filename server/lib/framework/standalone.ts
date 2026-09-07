@@ -326,6 +326,12 @@ const standaloneFrameworkPlayer = (src: number): FrameworkPlayer | null => {
     // view above already reads it. Answering true is the honest answer — there is no other
     // copy of the number anywhere on the server to be stale.
     setPhone: () => true,
+    // No framework, so no jobs. Quiet, unlike money: an empty job list on a jobless server
+    // is not a surprise worth a console line, and the setters refusing is the same answer
+    // `[]` already gave.
+    getJobs: () => [],
+    setActiveJob: () => false,
+    setDuty: () => false,
     rawPlayer: view
   };
 };
@@ -515,5 +521,11 @@ export const standaloneAdapter: FrameworkAdapter = {
     // or says once what the operator loses. Returning false would make `FrameworkBridge` fall
     // through to nothing, which is the silence that reads as success.
     return true;
-  }
+  },
+
+  jobSupport: () => ({
+    multiJob: false,
+    duty: false,
+    via: 'standalone (no framework, so no jobs)'
+  })
 };

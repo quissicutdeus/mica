@@ -487,6 +487,33 @@ describe('line exports (MICA-226)', () => {
     expect(lookupLine('5551234')?.owner).toBe('test-resource');
   });
 
+  it('RegisterNumber carries label and job through the same two arguments (MICA-227)', () => {
+    // Still two arguments: both ride in the options table, so a Lua caller written against
+    // MICA-226 keeps working and one written against this gains the fields.
+    const register = publishedExport('RegisterNumber')! as Function;
+    const result = register('5551235', {
+      onCall: () => ({ action: 'reject' }),
+      label: 'LSPD Dispatch',
+      job: 'police'
+    });
+    expect(result).toMatchObject({ ok: true });
+    expect(lookupLine('5551235')).toMatchObject({ label: 'LSPD Dispatch', job: 'police' });
+  });
+
+  it('RegisterNumber refuses a malformed label or job with a reason', () => {
+    const register = publishedExport('RegisterNumber')! as Function;
+    const onCall = () => ({ action: 'reject' });
+    expect(register('5551236', { onCall, label: 'x'.repeat(41) })).toMatchObject({
+      ok: false,
+      reason: 'invalid_args'
+    });
+    expect(register('5551236', { onCall, job: 'Police Dept' })).toMatchObject({
+      ok: false,
+      reason: 'invalid_args'
+    });
+    expect(lookupLine('5551236')).toBeUndefined();
+  });
+
   it('CreateCall refuses a source nobody is connected on', async () => {
     bridgeMock.getPlayer.mockReturnValue(undefined);
     const createCall = publishedExport('CreateCall')!;

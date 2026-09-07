@@ -159,6 +159,50 @@ export interface Transaction {
 }
 
 /**
+ * A phone number a script registered under a job (MICA-227's `RegisterNumber({ job, label })`),
+ * as the Jobs app lists it: a name and something to dial, nothing a player can edit.
+ */
+export interface JobLine {
+  number: string;
+  /** The script's `label`, or the number itself when it gave none. */
+  label: string;
+}
+
+/**
+ * One job a player holds, as the phone reads it (MICA-228).
+ *
+ * The framework is the authority for every field: the server re-reads the whole list from
+ * the bridge after any switch or duty change and answers with that, so nothing here is ever
+ * a client's belief about its own job. `onDuty` is `null` for a framework or a job with no
+ * duty notion at all, which is a different statement from "off duty" and renders as no
+ * toggle rather than an off one. `societyBalance` is filled only for a boss grade, and is
+ * `null` rather than zero when no banking resource can answer for the account.
+ */
+export interface JobView {
+  /** The framework's key: `police`. */
+  name: string;
+  /** What a player reads: `LSPD`. */
+  label: string;
+  grade: number;
+  gradeLabel: string;
+  salary: number;
+  onDuty: boolean | null;
+  isBoss: boolean;
+  /** Exactly one job is active when the list is non-empty. */
+  active: boolean;
+  lines: JobLine[];
+  societyBalance: number | null;
+}
+
+/**
+ * What a switch or a duty change answers. On `ok` the list is the framework's own state
+ * re-read after the change, so the store can replace itself with it rather than guess.
+ */
+export type JobActionOutcome =
+  | { ok: true; jobs: JobView[] }
+  | { ok: false; reason: 'unknown_job' | 'not_active' | 'refused' | 'unsupported' };
+
+/**
  * A player's saved phone charge.
  *
  * micaOS owns this rather than leaning on framework character metadata: metadata is

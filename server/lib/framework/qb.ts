@@ -6,15 +6,19 @@ import { Database } from '../Database';
 import { numberFor, readCitizenIdByNumber } from '../phoneNumbers';
 import {
   balanceOf,
+  booleanOf,
   exposes,
   identityFromCharinfo,
   moved,
+  numberOr,
   offlineLookup,
   removeInventoryItem,
   resource,
+  stringOr,
   unidentified,
   type FrameworkAdapter,
   type FrameworkIdentity,
+  type FrameworkJob,
   type FrameworkPlayer,
   type OwnerTable
 } from './runtime';
@@ -142,6 +146,57 @@ export const qbSetPhone = (player: any, number: string): boolean => {
   return true;
 };
 
+/**
+ * The qb family's active job, `PlayerData.job`, as a `FrameworkJob` (MICA-227).
+ *
+ * Both cores keep the same shape — `{ name, label, isboss, onduty, payment, grade: { name,
+ * level } }`, qbx_core `server/player.lua:217` (`toPlayerJob`) and qb-core's `PlayerData.job`
+ * as documented — so it is read once, here. `null` when there is no job with a name, which
+ * is what an unloaded player looks like; every other field falls back, because a job with
+ * no label is still a job the player has.
+ *
+ * `onDuty` is `null` rather than `false` when `onduty` is not a boolean: the field is what
+ * `setDuty` re-reads, and a caller must not be told a job is off duty that this cannot read.
+ */
+export const qbActiveJob = (raw: any): FrameworkJob | null => {
+  const name = stringOr(raw?.name, '');
+  if (!name) return null;
+  const grade = numberOr(raw.grade?.level, 0);
+  return {
+    name,
+    label: stringOr(raw.label, name),
+    grade,
+    gradeLabel: stringOr(raw.grade?.name, String(grade)),
+    salary: numberOr(raw.payment, 0),
+    onDuty: typeof raw.onduty === 'boolean' ? raw.onduty : null,
+    isBoss: raw.isboss === true,
+    active: true
+  };
+};
+
+/**
+ * Clock the active job through the player method both cores expose (MICA-227).
+ *
+ * `player.Functions.SetJobDuty(onDuty)` — qbx_core `server/player.lua:806` (deprecated there
+ * in favour of the export `qbx.ts` tries first, but still present), and qb-core's player
+ * object as documented, unverified against an installed copy of qb-core. Both assign
+ * `PlayerData.job.onduty` synchronously, which is what the re-read below depends on.
+ *
+ * Refuses for any job but the active one, quietly: neither core keeps duty per held job.
+ */
+export const qbSetDuty = (player: any, src: number, name: string, onDuty: boolean): boolean => {
+  const job = player?.PlayerData?.job;
+  if (!job || job.name !== name || typeof job.onduty !== 'boolean') return false;
+  if (typeof player?.Functions?.SetJobDuty !== 'function') return false;
+  try {
+    player.Functions.SetJobDuty(onDuty);
+  } catch (error) {
+    console.error(`[FrameworkBridge] SetJobDuty for source ${src} threw:`, error);
+    return false;
+  }
+  return booleanOf(player.PlayerData?.job?.onduty, 'PlayerData.job.onduty', src) === onDuty;
+};
+
 /** A loaded qb-core player, or null. */
 const qbPlayer = (src: number): FrameworkPlayer | null => {
   const QBCore = resource('qb-core').GetCoreObject();
@@ -177,6 +232,18 @@ const qbPlayer = (src: number): FrameworkPlayer | null => {
       return removeInventoryItem(src, player, item, count);
     },
     setPhone: (number: string) => qbSetPhone(player, number),
+    /**
+     * One job, the active one. qb-core itself holds exactly one, and the multi-job resources
+     * built beside it (qb-multijob and its forks) disagree with each other about where the
+     * others are kept, so none of them is read — `jobSupport` says so on the console.
+     */
+    getJobs: () => {
+      const job = qbActiveJob(player.PlayerData?.job);
+      return job ? [job] : [];
+    },
+    // With one job there is nothing to switch to: true iff it is already the active one.
+    setActiveJob: (name: string) => qbActiveJob(player.PlayerData?.job)?.name === name,
+    setDuty: (name: string, onDuty: boolean) => qbSetDuty(player, src, name, onDuty),
     rawPlayer: player
   };
 };
@@ -225,5 +292,11 @@ export const qbAdapter: FrameworkAdapter = {
     if (!QBCore?.Functions?.CreateUseableItem) return false;
     QBCore.Functions.CreateUseableItem(item, cb);
     return true;
-  }
+  },
+
+  jobSupport: () => ({
+    multiJob: false,
+    duty: true,
+    via: 'qb-core PlayerData.job (one job; qb-multijob-style resources are not read)'
+  })
 };

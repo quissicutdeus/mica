@@ -1237,7 +1237,9 @@ local result = exports['mica']:RegisterNumber('5559999', {
         end
         return { action = 'forward', source = nearestDispatcher() }
     end,
-    blockable = false                -- optional; defaults to true
+    blockable = false,               -- optional; defaults to true
+    label = 'Downtown Cab Co.',      -- optional; what the Jobs app shows for it
+    job = 'taxi'                     -- optional; which job's players see it
 })
 
 if not result.ok then
@@ -1276,6 +1278,13 @@ exports['mica']:UnregisterNumber('5559999')     -- when you are done with it
   `false` skips it, which is right for infrastructure like a dispatch desk.
   Leave it at the default unless your number is one nobody should be able to
   block. Blocking a line by its number is a separate piece of work.
+- **`label` and `job` put the line in the Jobs app (MICA-227).** A line
+  registered with `job = 'taxi'` is listed, under that job, on the phone of
+  every player who holds it, with `label` as its name and a call button beside
+  it. `label` is trimmed and may be up to 40 characters; `job` is the
+  framework's own key for the job, lower-case. Either being malformed refuses
+  the registration with `invalid_args` rather than dropping the field, and a
+  line with neither is exactly what it was before.
 - **`CreateCall(source, number)` places a call as that player**, which is what a
   payphone, a radio prop or a dispatch pick-up wants. It is async, so from Lua
   the outcome arrives later. It refuses a source nobody is connected on

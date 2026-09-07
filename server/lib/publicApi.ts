@@ -695,6 +695,11 @@ export function registerPublicApi(): void {
    * script that crashes does not leave a number swallowing calls. `onCall` is a function ref
    * across the resource boundary: it may return `{ action: 'accept' | 'reject' }` or
    * `{ action: 'forward', source }`, synchronously or as a promise, and has five seconds.
+   *
+   * `label` (at most 40 characters) names the line where a contact's name would show, and
+   * `job` ('police', lower_snake_case) files it under a framework job for the Jobs app
+   * (MICA-227). Both are optional and both are refused with `invalid_args` when malformed,
+   * rather than trimmed or dropped. Still two arguments — both ride in the options table.
    */
   publish(
     'RegisterNumber',
