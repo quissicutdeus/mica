@@ -908,6 +908,15 @@ phone-number resource provides, issues none of its own, and says so once at
 start. Without the gate, every server behaves as one number per character, as it
 always has.
 
+**The phone's data follows it too.** Contacts, notes, photos, saved places, the
+passcode, settings, notifications, the call log, the block list and message
+threads belong to the phone: steal one and they come with it, carry two and each
+has its own, and a message sent to a number reaches whichever phone that number
+is on. Bank, Hodlr, Marketplace listings, Blabber, mail and high scores stay
+with the character. The migration that ships this puts every existing row on its
+owner's phone, and the first phone item a character uses picks that phone up;
+`docs/schema-and-services.md` has the table-by-table split.
+
 **Standalone ignores the gate.** With no framework there is no inventory to hold
 the item in, so `mica_standalone` with `mica_phone_item` set is reported once at
 start and the phone opens as it always did. A framework whose inventory micaOS

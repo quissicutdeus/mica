@@ -31,13 +31,18 @@ export class PlacesRepository extends SchemaRepository<SavedPlace> {
    * identifier allowlist and ownership stamping the base class already does are not
    * duplicated here.
    */
-  async addForPlayer(citizenid: string, item: Partial<SavedPlace>): Promise<number> {
-    return await super.create({ ...item, citizenid } as Partial<SavedPlace>);
+  async addForPlayer(
+    citizenid: string,
+    phoneId: string,
+    item: Partial<SavedPlace>
+  ): Promise<number> {
+    return await super.create({ ...item, citizenid, phone_id: phoneId } as Partial<SavedPlace>);
   }
 }
 
 export const places = defineService<SavedPlace, typeof placesContract>({
   contract: placesContract,
+  deviceOwned: true,
   id: 'places',
   access: { read: 'owner', write: 'owner' },
   statuses: ['active', 'deleted', 'moderated'],
@@ -66,7 +71,7 @@ const repo = places.repo as PlacesRepository;
  * generic `create` being disabled above is what makes this registration legal rather than
  * a collision — `ServiceEndpoint` never wires the generic one when `disableCreate` is set.
  */
-app.registerEvent('create', async (source, cbId, data, citizenid) => {
+app.registerEvent('create', async (source, cbId, data, citizenid, _player, phoneId) => {
   // Trimmed, not capped: the contract already refused anything over the column's length, so
   // trimming here can only ever shorten a name that already fits.
   const name = data.name.trim();
@@ -88,13 +93,18 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
   // `Repository.create` builds its column list from `Object.keys`, which cannot tell an
   // omitted key from one set to `undefined`, and an `undefined` bind parameter is a
   // driver error rather than the SQL NULL an unset label needs.
-  const id = await repo.addForPlayer(citizenid, {
-    name,
-    ...(streetLabel ? { street_label: streetLabel } : {}),
-    x,
-    y,
-    z
-  } as Partial<SavedPlace>);
+  // A device-owned service always has one; the endpoint refused the request otherwise.
+  const id = await repo.addForPlayer(
+    citizenid,
+    phoneId as string,
+    {
+      name,
+      ...(streetLabel ? { street_label: streetLabel } : {}),
+      x,
+      y,
+      z
+    } as Partial<SavedPlace>
+  );
 
-  return { id, place: await repo.findById(id, citizenid) };
+  return { id, place: await repo.findById(id, citizenid, phoneId) };
 });

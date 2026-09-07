@@ -4,6 +4,7 @@
 
 import { PlayerFacingError } from '../lib/errors';
 import { MessageRepository } from '../repositories/MessageRepository';
+import { phoneForRequest } from '../lib/phoneIdentity';
 import { conversations, type ConversationRepo } from './Conversations';
 // Media is a declared app; reuse its derived repository rather than a second
 // instance, so the attachment-ownership check runs against the same allowlist.
@@ -47,6 +48,9 @@ export const messages = defineService<Message, typeof messagesContract>({
       table: 'mica_messages_participants',
       foreignKey: 'conversation_id',
       localKey: 'conversation_id',
+      // Per phone (MICA-282), like the conversation's own membership: `requireParticipant`
+      // asks about the phone in the caller's hand, not every phone they carry.
+      phoneColumn: 'phone_id',
       liveWhileNull: 'left_at'
     }
   },
@@ -190,8 +194,13 @@ if (!MESSAGE_PAGING) {
  * `ConversationRepository`. Both used to exist and had to agree on what "still in the
  * thread" meant; now there is one definition and it is the declaration.
  */
-const requireParticipant = async (conversationId: number, citizenid: string): Promise<void> => {
-  if (!(await messageRepo.isMember(conversationId, citizenid))) {
+const requireParticipant = async (
+  conversationId: number,
+  citizenid: string,
+  /** The phone in the caller's hand (MICA-282): membership is the phone's, and the citizen's. */
+  phoneId: string
+): Promise<void> => {
+  if (!(await messageRepo.isMember(conversationId, citizenid, phoneId))) {
     throw new PlayerFacingError('Not a participant in this conversation.', {
       key: 'server.messages.notParticipant'
     });
@@ -219,7 +228,11 @@ const requireParticipant = async (conversationId: number, citizenid: string): Pr
  * `Repository.update` excludes `moderated` anyway, and an unsend of an unsent message
  * would report success for a write that did nothing.
  */
-const requireOwnMessage = async (data: { id: number }, citizenid: string): Promise<Message> => {
+const requireOwnMessage = async (
+  data: { id: number },
+  citizenid: string,
+  phoneId: string
+): Promise<Message> => {
   const row = await messageRepo.findById(data.id, citizenid);
   if (!row) {
     throw new PlayerFacingError('That message is not yours to change.', {
@@ -231,7 +244,7 @@ const requireOwnMessage = async (data: { id: number }, citizenid: string): Promi
       key: 'server.messages.noLongerAvailable'
     });
   }
-  await requireParticipant(row.conversation_id, citizenid);
+  await requireParticipant(row.conversation_id, citizenid, phoneId);
   return row;
 };
 
@@ -249,7 +262,7 @@ const requireOwnMessage = async (data: { id: number }, citizenid: string): Promi
 app.registerEvent('get', async (source, cbId, data, citizenid) => {
   const conversationId = conversationIdFrom(data);
   const page = pageBounds(data, MESSAGE_PAGING);
-  await requireParticipant(conversationId, citizenid);
+  await requireParticipant(conversationId, citizenid, await phoneForRequest(source, citizenid));
 
   return await messageRepo.findByConversation(conversationId, page);
 });
@@ -280,7 +293,7 @@ app.registerEvent('get', async (source, cbId, data, citizenid) => {
  * unsend, and that is the other action, with its own confirmation in front of it.
  */
 app.registerEvent('edit', async (source, cbId, data, citizenid) => {
-  const row = await requireOwnMessage(data, citizenid);
+  const row = await requireOwnMessage(data, citizenid, await phoneForRequest(source, citizenid));
 
   const message = data.message.trim();
   if (!message) {
@@ -334,7 +347,7 @@ app.registerEvent('edit', async (source, cbId, data, citizenid) => {
  * message that is no longer in the thread needs to know it was the author who removed it.
  */
 app.registerEvent('delete', async (source, cbId, data, citizenid) => {
-  const row = await requireOwnMessage(data, citizenid);
+  const row = await requireOwnMessage(data, citizenid, await phoneForRequest(source, citizenid));
 
   const success = await messageRepo.delete(row.id, citizenid);
   if (success) {
@@ -389,14 +402,18 @@ app.registerEvent('delete', async (source, cbId, data, citizenid) => {
  * in the payload (§2.9) would hand back reaction counts, and which emoji the caller used,
  * for a conversation it has no other way to see into.
  */
-const requireReactableMessage = async (messageId: number, citizenid: string): Promise<Message> => {
+const requireReactableMessage = async (
+  messageId: number,
+  citizenid: string,
+  phoneId: string
+): Promise<Message> => {
   const row = await messageRepo.findById(messageId);
   if (!row) {
     throw new PlayerFacingError('That message is not available.', {
       key: 'server.messages.notAvailable'
     });
   }
-  await requireParticipant(row.conversation_id, citizenid);
+  await requireParticipant(row.conversation_id, citizenid, phoneId);
   if ((row.status ?? 'active') !== 'active') {
     throw new PlayerFacingError('That message is no longer available.', {
       key: 'server.messages.noLongerAvailable'
@@ -408,7 +425,7 @@ const requireReactableMessage = async (messageId: number, citizenid: string): Pr
 app.registerEvent('react', async (source, cbId, data, citizenid) => {
   const { message_id: messageId, emoji } = data;
 
-  await requireReactableMessage(messageId, citizenid);
+  await requireReactableMessage(messageId, citizenid, await phoneForRequest(source, citizenid));
 
   try {
     await Database.insert(
@@ -447,14 +464,16 @@ app.registerEvent('reactionsFor', async (source, cbId, data, citizenid) => {
   if (requested.length === 0) return {};
 
   const requestedPlaceholders = requested.map(() => '?').join(', ');
-  // Only messages in a conversation the caller is a *live* participant of right now — see
-  // the docblock above for why this batched read cannot trust every id in the payload the
-  // way Blabber's equivalent, over public posts, safely can.
+  const phoneId = await phoneForRequest(source, citizenid);
+  // Only messages in a conversation the caller is a *live* participant of right now, on the
+  // phone in their hand — see the docblock above for why this batched read cannot trust
+  // every id in the payload the way Blabber's equivalent, over public posts, safely can.
   const visible = await Database.query<{ id: number }[]>(
     `SELECT m.\`id\` FROM \`mica_messages\` m
      JOIN \`mica_messages_participants\` p ON p.\`conversation_id\` = m.\`conversation_id\`
-     WHERE m.\`id\` IN (${requestedPlaceholders}) AND p.\`citizenid\` = ? AND p.\`left_at\` IS NULL`,
-    [...requested, citizenid]
+     WHERE m.\`id\` IN (${requestedPlaceholders}) AND p.\`citizenid\` = ? AND p.\`phone_id\` = ?
+       AND p.\`left_at\` IS NULL`,
+    [...requested, citizenid, phoneId]
   );
   const messageIds = visible.map((row) => row.id);
   if (messageIds.length === 0) return {};
@@ -553,7 +572,7 @@ export const deliverToParticipants = async (
 
 app.registerEvent('send', async (source, cbId, data, citizenid) => {
   const conversationId = data.conversation_id;
-  await requireParticipant(conversationId, citizenid);
+  await requireParticipant(conversationId, citizenid, await phoneForRequest(source, citizenid));
 
   const message = data.message;
   const attachments = await resolveOwnedAttachments(data.attachments, citizenid, mediaRepo);

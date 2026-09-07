@@ -40,6 +40,7 @@
   "phone.busy": "Besetzt",
   "phone.lineBusy": "Leitung besetzt",
   "phone.numberUnavailable": "Nummer nicht verfügbar",
+  "phone.notHeld": "Du hältst kein Telefon.",
   "places.nameRequired": "Ein Name ist erforderlich.",
   "places.noLocation": "Dein Standort konnte nicht ermittelt werden.",
   "schema.noPermission": "Du hast keine Berechtigung, das zu benutzen.",

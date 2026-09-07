@@ -26,6 +26,7 @@ vi.mock('../lib/FrameworkBridge', () => ({
 
 import { places } from '../services/Places';
 import { __resetRateLimits } from '../lib/rateLimit';
+import { TEST_PHONE_ID } from './phoneStub';
 
 const call = async (action: string, data: unknown) => {
   const handler = handlers.get(`mica:server:places:${action}`);
@@ -80,9 +81,9 @@ describe('places:create (MICA-65)', () => {
     expect(reply).toMatchObject({ id: 101, place: expect.objectContaining({ name: 'Home' }) });
     const [sql, params] = dbMock.insert.mock.calls[0];
     expect(String(sql)).toBe(
-      'INSERT INTO `mica_places` (`name`, `x`, `y`, `z`, `citizenid`) VALUES (?, ?, ?, ?, ?)'
+      'INSERT INTO `mica_places` (`name`, `x`, `y`, `z`, `citizenid`, `phone_id`) VALUES (?, ?, ?, ?, ?, ?)'
     );
-    expect(params).toEqual(['Home', 100, 200, 30, 'CIT_A']);
+    expect(params).toEqual(['Home', 100, 200, 30, 'CIT_A', TEST_PHONE_ID]);
   });
 
   it('carries street_label when the caller sends one', async () => {
@@ -144,7 +145,9 @@ describe('places:create (MICA-65)', () => {
     await call('create', { name: 'Home' });
 
     const [, params] = dbMock.insert.mock.calls[0];
-    expect(params.at(-1)).toBe('CIT_A');
+    // The citizen, then the phone in their hand (MICA-282) — both resolved by the server.
+    expect(params.at(-2)).toBe('CIT_A');
+    expect(params.at(-1)).toBe(TEST_PHONE_ID);
 
     dbMock.insert.mockClear();
     const reply = await call('create', { name: 'Home', citizenid: 'CIT_VICTIM' });
@@ -178,18 +181,18 @@ describe('places:update / places:delete — ownership, not just an id', () => {
   it('scopes update to the caller citizenid', async () => {
     await call('update', { id: 7, name: 'Renamed' });
 
-    expect(dbMock.update.mock.calls[0][1]).toEqual(['Renamed', 7, 'CIT_A']);
+    expect(dbMock.update.mock.calls[0][1]).toEqual(['Renamed', 7, 'CIT_A', TEST_PHONE_ID]);
   });
 
   it('scopes delete to the caller citizenid', async () => {
     await call('delete', { id: 7 });
 
-    expect(dbMock.update.mock.calls[0][1]).toEqual(['deleted', 7, 'CIT_A']);
+    expect(dbMock.update.mock.calls[0][1]).toEqual(['deleted', 7, 'CIT_A', TEST_PHONE_ID]);
   });
 
   it('scopes get to the caller citizenid', async () => {
     await call('get', {});
 
-    expect(dbMock.query.mock.calls[0][1]).toEqual(['CIT_A', 'active']);
+    expect(dbMock.query.mock.calls[0][1]).toEqual(['CIT_A', TEST_PHONE_ID, 'active']);
   });
 });

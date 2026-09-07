@@ -79,6 +79,47 @@ hand. What changed is the name of the software it runs: a gPhone and a gTablet
 both run micaOS. This release is **Seraphim**, the first of the nine choirs the
 codenames now follow.
 
+**A phone's data now belongs to the phone: contacts, notes, media, the lock
+screen, settings, notifications, the call log, saved places, the block list and
+a thread's membership all follow the item — run `micaschema apply` from your
+server console after updating, before players connect (MICA-282).** This is the
+change the whole phone-as-item work was for: steal a phone and its contacts,
+messages and photos come with it; carry two and each has its own. It reaches
+every server, gated or not, because it changes the shape of ten tables, and it
+is the one migration in this series an owner cannot skip.
+
+`mica_contacts`, `mica_notes`, `mica_media`, `mica_lockscreen`, `mica_settings`,
+`mica_notifications`, `mica_phone_call_log`, `mica_places`, `mica_blocklist` and
+`mica_messages_participants` each gain a `phone_id` column and a `phone_id` key.
+`mica_phones` gains a `claimed` column. The migration
+`0002_phone_data_follows_the_phone` then puts every existing row on its owner's
+phone — a character who already has a phone keeps it, and one who does not gets
+one minted for them, which the first phone item they use picks up — attaches
+each character's number to it, rewrites a 1:1 thread's `participant_a` and
+`participant_b` from the two characters to their two phones, and replaces four
+per-character unique keys with per-phone ones: `mica_lockscreen` loses
+`citizenid_unique` for `phone_id_unique`, `mica_settings` loses
+`citizenid_app_key` for `phone_app_key`, `mica_blocklist` loses
+`citizenid_number_unique` for `phone_number_unique`, and
+`mica_messages_participants` loses `conversation_participant_unique` for
+`conversation_phone_unique`. No row is deleted and nothing is rewritten but
+those columns and keys. `citizenid` stays on every table: it now names whoever
+holds the phone, and moves with the phone when it changes hands.
+
+**What a player sees.** On a server that gates the phone on an item, a phone
+shows its own contacts, threads, photos and settings and nothing from the
+player's other phones; a player holding no phone is told so rather than shown
+somebody else's data. A stolen phone continues its own threads and keeps its own
+passcode until the thief clears it. On a server without the gate — every ESX
+server, standalone, and any qb server that never set `mica_phone_item` — nothing
+changes: each character has exactly one phone, as before.
+
+**What stays with the person, deliberately:** bank, Hodlr, Marketplace listings,
+Blabber and its accounts, high scores, reports, the audit log, mail, and the
+messages a player wrote — the author of a message keeps its authorship, it is
+the _thread_ that follows the phone. The full split and its reasoning is in
+`docs/schema-and-services.md`.
+
 **A phone number now belongs to the phone, not the character, and micaOS owns
 the numbers on qb as well as standalone — run `micaschema apply` from your
 server console after updating (MICA-284).** This is the one change in the

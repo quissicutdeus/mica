@@ -4,6 +4,7 @@
 
 import { PlayerFacingError } from '../lib/errors';
 import { defineService, SchemaRepository } from '../lib/defineService';
+import { phoneForCitizen } from '../lib/phoneIdentity';
 import { MediaItem } from '@mica/shared/types';
 import { findNearbyVisiblePlayers } from '../lib/proximity';
 import { appEventChannel } from '../lib/appEvents';
@@ -309,6 +310,7 @@ export const media = defineService<MediaItem, typeof mediaContract>({
   id: 'media',
   contract: mediaContract,
   table: 'mica_media',
+  deviceOwned: true,
   reportable: { label: 'Photo', previewColumn: 'data' },
   access: { read: 'owner', write: 'owner' },
   statuses: ['active', 'deleted', 'moderated'],
@@ -401,7 +403,11 @@ export const media = defineService<MediaItem, typeof mediaContract>({
        * the column's bound rather than the camera's.
        */
       async addForPlayer(citizenid: string, item: Partial<MediaItem>): Promise<number> {
-        return await super.create({ ...item, citizenid } as Partial<MediaItem>);
+        // Onto the phone the citizen is on (MICA-282), unless the caller already knows which —
+        // `shareLocation` does, from the request; `AddMedia` does not, and a row on no phone
+        // is one no phone ever shows.
+        const phone_id = item.phone_id ?? (await phoneForCitizen(citizenid));
+        return await super.create({ ...item, citizenid, phone_id } as Partial<MediaItem>);
       }
 
       /**
@@ -499,7 +505,7 @@ export const media = defineService<MediaItem, typeof mediaContract>({
       async copyToPlayers(citizenids: readonly string[], item: MediaItem): Promise<string[]> {
         if (citizenids.length === 0) return [];
 
-        const columns = ['citizenid', ...COPIED_COLUMNS];
+        const columns = ['citizenid', 'phone_id', ...COPIED_COLUMNS];
         // Literals rather than payload keys, and still held to the table's own allowlist:
         // a column renamed out from under this list fails loudly instead of building SQL.
         for (const column of columns) {
@@ -517,15 +523,18 @@ export const media = defineService<MediaItem, typeof mediaContract>({
         const written = await Promise.all(
           citizenids.map(async (citizenid) => {
             try {
+              // Each copy lands on the phone its recipient is on (MICA-282) — they are nearby,
+              // so almost always the one in their hand.
+              const phoneId = await phoneForCitizen(citizenid);
               const id =
                 limit <= 0
                   ? await Database.insert(
                       `INSERT INTO \`${this.tableName}\` (${columnList}) VALUES (${placeholders})`,
-                      [citizenid, ...copied]
+                      [citizenid, phoneId, ...copied]
                     )
                   : await insertWithinQuota(
                       columns,
-                      [citizenid, ...copied],
+                      [citizenid, phoneId, ...copied],
                       citizenid,
                       incoming,
                       limit
@@ -584,16 +593,26 @@ export const media = defineService<MediaItem, typeof mediaContract>({
        * The column names are literals in this file, never payload keys, so there is no
        * identifier to check against an allowlist — only the three bound values.
        */
-      async storeThumbnail(id: number, citizenid: string, thumbnail: string): Promise<boolean> {
+      async storeThumbnail(
+        id: number,
+        citizenid: string,
+        phoneId: string,
+        thumbnail: string
+      ): Promise<boolean> {
         return await Database.update(
           `UPDATE \`${this.tableName}\` SET \`thumbnail\` = ? ` +
-            "WHERE `id` = ? AND `citizenid` = ? AND `status` = 'active' AND `thumbnail` IS NULL",
-          [thumbnail, id, citizenid]
+            'WHERE `id` = ? AND `citizenid` = ? AND `phone_id` = ? ' +
+            "AND `status` = 'active' AND `thumbnail` IS NULL",
+          [thumbnail, id, citizenid, phoneId]
         );
       }
 
-      async findById(id: number | string, citizenid?: string): Promise<MediaItem | null> {
-        const row = await super.findById(id, citizenid);
+      async findById(
+        id: number | string,
+        citizenid?: string,
+        phoneId?: string
+      ): Promise<MediaItem | null> {
+        const row = await super.findById(id, citizenid, phoneId);
         return row ? coerceBinaryText(row) : null;
       }
     })(resolved)
@@ -618,8 +637,11 @@ const repo = media.repo;
  * deletion timestamp. Not to be confused with `drop` below, which shares a photo to
  * nearby phones and has nothing to do with this row's own `status`.
  */
-app.registerEvent('restore', async (_source, _cbId, data, citizenid) => {
-  const ok = await repo.restore(data.id, citizenid, restoreWindowDays());
+// Every handler below is scoped to the phone in the caller's hand as well as to them
+// (MICA-282). The phone id is always present on a device-owned service — the endpoint
+// refused the request otherwise — and the casts say so where the type cannot.
+app.registerEvent('restore', async (_source, _cbId, data, citizenid, _player, phoneId) => {
+  const ok = await repo.restore(data.id, citizenid, restoreWindowDays(), phoneId);
   return { ok };
 });
 
@@ -630,16 +652,13 @@ app.registerEvent('restore', async (_source, _cbId, data, citizenid) => {
  * no `data`, so a deleted row full of base64 bytes does not cost its whole payload just to
  * appear in a list that only needs a caption and a small still.
  */
-app.registerEvent('getDeleted', async (_source, _cbId, _data, citizenid) => {
-  return await repo.findDeleted(citizenid, restoreWindowDays(), [
-    'id',
-    'kind',
-    'thumbnail',
-    'mime_type',
-    'alt_text',
-    'created_at',
-    'updated_at'
-  ]);
+app.registerEvent('getDeleted', async (_source, _cbId, _data, citizenid, _player, phoneId) => {
+  return await repo.findDeleted(
+    citizenid,
+    restoreWindowDays(),
+    ['id', 'kind', 'thumbnail', 'mime_type', 'alt_text', 'created_at', 'updated_at'],
+    phoneId
+  );
 });
 
 /**
@@ -660,8 +679,8 @@ app.registerEvent('getDeleted', async (_source, _cbId, _data, citizenid) => {
  * both get, deliberately: distinguishing them would answer "does this id exist" for ids the
  * caller does not own.
  */
-app.registerEvent('item', async (_source, _cbId, data, citizenid) => {
-  const row = await repo.findById(data.id, citizenid);
+app.registerEvent('item', async (_source, _cbId, data, citizenid, _player, phoneId) => {
+  const row = await repo.findById(data.id, citizenid, phoneId);
   if (!row || row.status !== 'active')
     throw new PlayerFacingError('That photo could not be found.', {
       key: 'server.media.notFound'
@@ -708,11 +727,18 @@ app.registerEvent('item', async (_source, _cbId, data, citizenid) => {
  * sessions and the same photo race by nature, and "somebody got there first" is a normal
  * outcome rather than a failure a player should be told about.
  */
-app.registerEvent('thumbnail', async (_source, _cbId, data, citizenid) => {
+app.registerEvent('thumbnail', async (_source, _cbId, data, citizenid, _player, phoneId) => {
   const privileged = repo as unknown as {
-    storeThumbnail(id: number, citizenid: string, thumbnail: string): Promise<boolean>;
+    storeThumbnail(
+      id: number,
+      citizenid: string,
+      phoneId: string,
+      thumbnail: string
+    ): Promise<boolean>;
   };
-  return { stored: await privileged.storeThumbnail(data.id, citizenid, data.thumbnail) };
+  return {
+    stored: await privileged.storeThumbnail(data.id, citizenid, phoneId as string, data.thumbnail)
+  };
 });
 
 /**
@@ -738,8 +764,8 @@ app.registerEvent('thumbnail', async (_source, _cbId, data, citizenid) => {
  * reachable by its id and would go right back out to nearby players, the same hole
  * `access.editWindow`'s `status != 'moderated'` predicate closes on the write side.
  */
-app.registerEvent('drop', async (source, _cbId, data, citizenid) => {
-  const owned = await repo.findById(data.mediaId, citizenid);
+app.registerEvent('drop', async (source, _cbId, data, citizenid, _player, phoneId) => {
+  const owned = await repo.findById(data.mediaId, citizenid, phoneId);
   if (!owned || owned.status !== 'active')
     throw new PlayerFacingError('That photo could not be found.', {
       key: 'server.media.notFound'
@@ -818,7 +844,7 @@ app.registerEvent('drop', async (source, _cbId, data, citizenid) => {
  * client-writable path, because `data` and `alt_text` here are both server-determined —
  * a location row's `data` is never something the client itself should be free to set.
  */
-app.registerEvent('shareLocation', async (source, _cbId, data, citizenid) => {
+app.registerEvent('shareLocation', async (source, _cbId, data, citizenid, _player, phoneId) => {
   const label = data.label?.trim() || undefined;
 
   const coords = playerCoords(source);
@@ -834,10 +860,12 @@ app.registerEvent('shareLocation', async (source, _cbId, data, citizenid) => {
   const id = await privileged.addForPlayer(citizenid, {
     kind: 'location',
     data: JSON.stringify({ x, y, z }),
-    alt_text: label
+    alt_text: label,
+    // The phone in hand, rather than the one `addForPlayer` would resolve for the citizen.
+    phone_id: phoneId
   } as Partial<MediaItem>);
 
-  return { id, media: await repo.findById(id, citizenid) };
+  return { id, media: await repo.findById(id, citizenid, phoneId) };
 });
 
 interface MediaTotalsRow {

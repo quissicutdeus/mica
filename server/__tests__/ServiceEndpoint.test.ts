@@ -23,6 +23,8 @@ vi.mock('../lib/AuditLogger', () => auditMock);
 import { Repository } from '../lib/Repository';
 import { ServiceEndpoint, ServiceOptions } from '../lib/ServiceEndpoint';
 import { GENERIC_ERROR_MESSAGE, PlayerFacingError } from '../lib/errors';
+import { __setPhoneResolvers } from '../lib/phoneIdentity';
+import { TEST_PHONE_ID } from './phoneStub';
 import { defineContract } from '@mica/shared/contract';
 import { s } from '@mica/shared/schema';
 
@@ -497,5 +499,151 @@ describe('ServiceEndpoint — what an error discloses', () => {
     expect(lastReply().error).not.toContain('mica_test');
     expect(lastReply().error).not.toContain('[Repository]');
     logged.mockRestore();
+  });
+});
+
+/**
+ * MICA-282: a device-owned service scopes every generic action by the caller's phone as well
+ * as their citizenid, and hands the phone to every handler. The phone comes from the resolver
+ * in `lib/phoneIdentity.ts` — `setup.ts` installs a stub answering `TEST_PHONE_ID` for every
+ * suite — and never from the payload: `phone_id` is on the blanket refusal lists (MICA-281).
+ */
+describe('ServiceEndpoint — a device-owned service follows the phone', () => {
+  class DeviceRepo extends Repository<TestRow & { phone_id: string }> {
+    protected tableName = 'mica_device_test';
+    protected columns = [
+      'id',
+      'citizenid',
+      'phone_id',
+      'title',
+      'content',
+      'status',
+      'created_at',
+      'updated_at'
+    ];
+    protected clientWritable = ['title', 'content', 'phone_id'];
+    protected clientFilterable = ['title', 'phone_id'];
+  }
+
+  const mountDevice = (options: ServiceOptions = {}) => {
+    handlers = new Map();
+    emitted = [];
+    (globalThis as Record<string, unknown>).onNet = (event: string, cb: Handler) => {
+      handlers.set(event, cb);
+    };
+    (globalThis as Record<string, unknown>).emitNet = (...args: unknown[]) => {
+      emitted.push(args);
+    };
+    (globalThis as Record<string, unknown>).source = 5;
+    return new ServiceEndpoint<TestRow>('test', new DeviceRepo() as any, {
+      deviceOwned: true,
+      ...options
+    });
+  };
+
+  it('filters the generic read by the phone in hand, beside the citizen', async () => {
+    mountDevice();
+
+    await call('get', { title: 'x', phone_id: 'SOMEBODY_ELSES' });
+
+    const [sql, params] = dbMock.query.mock.calls[0];
+    expect(String(sql)).toContain('`citizenid` = ?');
+    expect(String(sql)).toContain('`phone_id` = ?');
+    // The payload's phone id never reaches the statement; the resolver's does.
+    expect(params).toEqual(['x', OWNER, TEST_PHONE_ID, 'active']);
+  });
+
+  it('stamps the phone on create, whatever the payload claimed', async () => {
+    mountDevice();
+
+    await call('create', { title: 'mine', phone_id: 'SOMEBODY_ELSES' });
+
+    const [sql, params] = dbMock.insert.mock.calls[0];
+    expect(String(sql)).toBe(
+      'INSERT INTO `mica_device_test` (`title`, `citizenid`, `phone_id`) VALUES (?, ?, ?)'
+    );
+    expect(params).toEqual(['mine', OWNER, TEST_PHONE_ID]);
+  });
+
+  it('narrows update and delete to the phone, never dropping the citizen', async () => {
+    mountDevice();
+
+    await call('update', { id: 7, title: 'renamed' });
+    expect(sqlOf(dbMock.update.mock.calls[0])).toContain(
+      'WHERE `id` = ? AND `citizenid` = ? AND `phone_id` = ?'
+    );
+    expect(dbMock.update.mock.calls[0][1]).toEqual(['renamed', 7, OWNER, TEST_PHONE_ID]);
+
+    await call('delete', { id: 9 });
+    expect(dbMock.update.mock.calls[1][1]).toEqual(['deleted', 9, OWNER, TEST_PHONE_ID]);
+  });
+
+  it('hands a custom handler the phone as its sixth argument', async () => {
+    const seen: unknown[] = [];
+    handlers = new Map();
+    emitted = [];
+    (globalThis as Record<string, unknown>).onNet = (event: string, cb: Handler) => {
+      handlers.set(event, cb);
+    };
+    (globalThis as Record<string, unknown>).emitNet = (...args: unknown[]) => {
+      emitted.push(args);
+    };
+    (globalThis as Record<string, unknown>).source = 5;
+    const app = new ServiceEndpoint<TestRow, typeof boundaryContract>(
+      'test_contract',
+      new DeviceRepo() as any,
+      {
+        deviceOwned: true,
+        contract: boundaryContract,
+        disableGet: true,
+        disableCreate: true,
+        disableUpdate: true,
+        disableDelete: true
+      }
+    );
+    app.registerEvent('refuse', async (_s, _cb, _d, citizenid, _player, phoneId) => {
+      seen.push(citizenid, phoneId);
+      return true;
+    });
+
+    await callContract('refuse', undefined);
+
+    expect(seen).toEqual([OWNER, TEST_PHONE_ID]);
+  });
+
+  it('refuses the whole request, as a toast, when the player holds no phone', async () => {
+    __setPhoneResolvers({
+      forRequest: async () => {
+        throw new PlayerFacingError('You are not holding a phone.', {
+          key: 'server.phone.notHeld'
+        });
+      }
+    });
+    mountDevice();
+
+    await call('get', {});
+
+    expect(lastReply()).toEqual({
+      error: 'You are not holding a phone.',
+      key: 'server.phone.notHeld',
+      params: undefined
+    });
+    expect(dbMock.query).not.toHaveBeenCalled();
+  });
+
+  it('does not ask which phone at all for a service that belongs to the citizen', async () => {
+    let asked = 0;
+    __setPhoneResolvers({
+      forRequest: async () => {
+        asked += 1;
+        return TEST_PHONE_ID;
+      }
+    });
+    mount();
+
+    await call('get', {});
+
+    expect(asked).toBe(0);
+    expect(dbMock.query.mock.calls[0][1]).toEqual([OWNER, 'active']);
   });
 });

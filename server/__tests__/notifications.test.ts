@@ -32,6 +32,7 @@ vi.mock('../lib/FrameworkBridge', () => ({
 
 import '../services/Notifications';
 import { appEventChannel } from '../lib/appEvents';
+import { TEST_PHONE_ID } from './phoneStub';
 
 const CITIZEN = 'CITIZEN_1';
 const SRC = 5;
@@ -90,7 +91,7 @@ describe('Notifications Service & Repository', () => {
     expect(reply).toBe(true);
     expect(dbMock.query).toHaveBeenCalledWith(
       expect.stringContaining('UPDATE mica_notifications'),
-      [expect.any(String), CITIZEN, 1, 2]
+      [expect.any(String), CITIZEN, TEST_PHONE_ID, 1, 2]
     );
   });
 
@@ -101,7 +102,7 @@ describe('Notifications Service & Repository', () => {
     expect(reply).toBe(true);
     expect(dbMock.query).toHaveBeenCalledWith(
       expect.stringContaining('UPDATE mica_notifications'),
-      [expect.any(String), CITIZEN, 1]
+      [expect.any(String), CITIZEN, TEST_PHONE_ID, 1]
     );
   });
 
@@ -111,8 +112,10 @@ describe('Notifications Service & Repository', () => {
     const reply = await call('clearAllNotifications', { appId: 'blabber' });
     expect(reply).toBe(true);
     expect(dbMock.query).toHaveBeenCalledWith(
-      expect.stringContaining('WHERE citizenid = ? AND app = ? AND cleared_at IS NULL'),
-      expect.arrayContaining([CITIZEN, 'blabber'])
+      expect.stringContaining(
+        'WHERE citizenid = ? AND phone_id = ? AND app = ? AND cleared_at IS NULL'
+      ),
+      expect.arrayContaining([CITIZEN, TEST_PHONE_ID, 'blabber'])
     );
   });
 
@@ -129,10 +132,14 @@ describe('Notifications Service & Repository', () => {
     );
 
     expect(outcome.delivered).toBe(true);
+    // The row lands on the recipient's phone (MICA-282), resolved before the insert — so the
+    // write is a tick later than the push.
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(dbMock.query).toHaveBeenCalledWith(
       expect.stringContaining('INSERT INTO mica_notifications'),
       expect.arrayContaining([
         CITIZEN,
+        TEST_PHONE_ID,
         'blabber',
         'mention',
         'New Mention',

@@ -293,10 +293,18 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, modules }) => {
   );
   const conversationId = convResult.insertId;
 
+  // A membership is the phone's (MICA-282): one phone per owner, minted here as the
+  // migration would, so the repository's phone-scoped reads have something to match.
+  const phoneA = 'a'.repeat(32);
+  const phoneB = 'b'.repeat(32);
   await connection.query(
-    `INSERT INTO mica_messages_participants (conversation_id, citizenid, role, left_at, status)
-     VALUES (?, ?, 'admin', NULL, 'active'), (?, ?, 'member', NULL, 'active')`,
-    [conversationId, ownerA, conversationId, ownerB]
+    `INSERT INTO mica_phones (citizenid, phone_id, claimed) VALUES (?, ?, 0), (?, ?, 0)`,
+    [ownerA, phoneA, ownerB, phoneB]
+  );
+  await connection.query(
+    `INSERT INTO mica_messages_participants (conversation_id, citizenid, phone_id, role, left_at, status)
+     VALUES (?, ?, ?, 'admin', NULL, 'active'), (?, ?, ?, 'member', NULL, 'active')`,
+    [conversationId, ownerA, phoneA, conversationId, ownerB, phoneB]
   );
 
   await connection.query(
@@ -371,10 +379,14 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, modules }) => {
   check(`the page is a range scan`, row.type, 'range');
   check(`the page needs no filesort`, /filesort/i.test(row.Extra ?? ''), false);
 
-  step(`${schemaFile} — ConversationRepository.findForCitizen`);
+  step(`${schemaFile} — ConversationRepository.findForPhone`);
   const repo = new modules.ConversationRepository(database);
-  // MICA-211: the list is paged by recency; the first page is a null cursor.
-  const { rows: conversations } = await repo.findForCitizen(ownerA, { limit: 25, cursor: null });
+  // MICA-211: the list is paged by recency; the first page is a null cursor. MICA-282: the
+  // list is the phone's, so the caller's phone rides beside their citizenid.
+  const { rows: conversations } = await repo.findForPhone(ownerA, phoneA, {
+    limit: 25,
+    cursor: null
+  });
   check(`returns at least one conversation for ${ownerA}`, conversations.length > 0, true);
   check(
     `includes the created conversation`,
@@ -414,7 +426,8 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, modules }) => {
   check(`participants were inserted correctly`, participants.length, 2);
 
   // Test that addParticipant works and returns correct result
-  const added = await repo.addParticipant(conversationId, ownerB);
+  // The same phone that is already in the thread (MICA-282): the guard is per phone now.
+  const added = await repo.addParticipant(conversationId, ownerB, phoneB);
   check(`addParticipant returns false for existing participant`, added, false);
 
   // Test finding a conversation's participants again

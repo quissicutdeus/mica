@@ -615,3 +615,43 @@ describe('scoping by phone id', () => {
     expect(repo.writableColumns).toContain('body');
   });
 });
+
+/**
+ * MICA-282: the write that makes a device-owned table follow the device. §2.9's predicate is
+ * untouched — what moves is which citizen the rows name — so the assertions are about the
+ * statement's shape (a phone in the `WHERE`, the holder in the `SET`, the timestamp pinned) and
+ * about the tables that refuse it.
+ */
+describe('handing a phone over', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    dbMock.update.mockResolvedValue(true);
+  });
+
+  it('moves every row on the phone to its new holder, pinning updated_at', async () => {
+    const repo = new DeviceOwnedRepo();
+
+    await repo.transferPhoneRows('PHONE_X', 'CIT_THIEF');
+
+    const [sql, params] = dbMock.update.mock.calls[0];
+    expect(String(sql).replace(/\s+/g, ' ')).toBe(
+      'UPDATE `mica_device_owned` SET `citizenid` = ?, `updated_at` = `updated_at` ' +
+        'WHERE `phone_id` = ? AND `citizenid` <> ?'
+    );
+    expect(params).toEqual(['CIT_THIEF', 'PHONE_X', 'CIT_THIEF']);
+  });
+
+  it('refuses on a table with no phone_id — those rows belong to the citizen', async () => {
+    const repo = new TestRepo();
+    await expect(repo.transferPhoneRows('PHONE_X', 'CIT_THIEF')).rejects.toThrow(
+      /no 'phone_id' column/
+    );
+    expect(dbMock.update).not.toHaveBeenCalled();
+  });
+
+  it('refuses without both a phone and a holder', async () => {
+    const repo = new DeviceOwnedRepo();
+    await expect(repo.transferPhoneRows('', 'CIT_THIEF')).rejects.toThrow(/both/);
+    await expect(repo.transferPhoneRows('PHONE_X', '')).rejects.toThrow(/both/);
+  });
+});

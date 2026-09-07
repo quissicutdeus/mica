@@ -180,6 +180,21 @@ export const readNumber = async (citizenid: string): Promise<string | null> => {
 /** The status a live row carries. The only other value the enum permits is `deleted`. */
 export const ACTIVE_STATUS = 'active';
 
+/**
+ * The phone this number is on, or null — for a legacy row not yet attached to one, and for a
+ * number micaOS has no row for at all (ESX). What a message or a call addressed to a number
+ * lands on (MICA-282): the phone, not whoever happens to hold it, which is the same thing
+ * only until the phone changes hands.
+ */
+export const readPhoneIdByNumber = async (number: string): Promise<string | null> => {
+  if (!number) return null;
+  const row = await Database.single<{ phone_id: string | null } | null>(
+    `SELECT \`phone_id\` FROM \`${PHONE_NUMBERS_TABLE}\` WHERE \`number\` = ? LIMIT 1`,
+    [number]
+  );
+  return row?.phone_id ?? null;
+};
+
 /** Whoever holds this number, or null. The reverse of `readNumber`, for dialling. */
 export const readCitizenIdByNumber = async (number: string): Promise<string | null> => {
   if (!number) return null;

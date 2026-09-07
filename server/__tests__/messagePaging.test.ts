@@ -50,6 +50,7 @@ vi.mock('../lib/FrameworkBridge', async (importOriginal) => {
 // Imported for its side effect: loading the module registers `mica:server:messages:get`.
 import { messages } from '../services/Messages';
 import { Database } from '../lib/Database';
+import { TEST_PHONE_ID } from './phoneStub';
 
 const db = Database as unknown as CountingDatabase;
 
@@ -223,14 +224,14 @@ describe('a cursor is a bound, never authorization', () => {
     expect(page.params[0]).toBe(7);
     expect(page.params[1]).toBe(9001);
     // Membership was asked of thread 7, the one the caller named — not the cursor's.
-    expect(db.statements[0].params).toEqual([7, CALLER]);
+    expect(db.statements[0].params).toEqual([7, CALLER, TEST_PHONE_ID]);
   });
 
   it('checks membership of the named thread; a non-member gets no page for any cursor', async () => {
     await get({ conversation_id: 9, cursor: 9001 }, { member: false });
 
     expect(db.count(/FROM mica_messages m/)).toBe(0);
-    expect(db.statements[0].params).toEqual([9, CALLER]);
+    expect(db.statements[0].params).toEqual([9, CALLER, TEST_PHONE_ID]);
   });
 
   it('refuses a cursor that is not a row id', async () => {

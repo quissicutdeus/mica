@@ -53,6 +53,7 @@ vi.mock('../lib/FrameworkBridge', async (importOriginal) => {
 // `mica:server:conversations:get`, and for the declaration's own paging numbers.
 import { conversations } from '../services/Conversations';
 import { Database } from '../lib/Database';
+import { TEST_PHONE_ID } from './phoneStub';
 
 const db = Database as unknown as CountingDatabase;
 
@@ -179,7 +180,14 @@ describe('the cursor is a position in that order, and a bound rather than author
     );
     // The caller's own citizenid first — the join that makes this their inbox and not anyone
     // else's — then the cursor's two halves, then the limit. A cursor never widens that join.
-    expect(params).toEqual([CALLER, '2026-05-05 05:05:05', '2026-05-05 05:05:05', 12, 11]);
+    expect(params).toEqual([
+      CALLER,
+      TEST_PHONE_ID,
+      '2026-05-05 05:05:05',
+      '2026-05-05 05:05:05',
+      12,
+      11
+    ]);
   });
 
   /** No cursor means no predicate at all, rather than a sentinel date to compare against. */
@@ -189,7 +197,7 @@ describe('the cursor is a position in that order, and a bound rather than author
     await get({});
 
     expect(db.statements[0].sql).not.toContain('OR (COALESCE');
-    expect(db.statements[0].params).toEqual([CALLER, PAGE + 1]);
+    expect(db.statements[0].params).toEqual([CALLER, TEST_PHONE_ID, PAGE + 1]);
   });
 
   /**
@@ -232,7 +240,7 @@ describe('the reply says where the next page starts, rather than leaving it to b
 
     const reply = await get({ limit: 2 });
 
-    expect(db.statements[0].params).toEqual([CALLER, 3]);
+    expect(db.statements[0].params).toEqual([CALLER, TEST_PHONE_ID, 3]);
     expect(reply.rows.map((r) => r.id)).toEqual([1, 2]);
     expect(reply.nextCursor).toEqual({ time: '2026-08-01 12:00:00', id: 2 });
   });
@@ -280,6 +288,6 @@ describe('the reply says where the next page starts, rather than leaving it to b
 
     await get({ limit: MAX_PAGE + 500 });
 
-    expect(db.statements[0].params).toEqual([CALLER, MAX_PAGE + 1]);
+    expect(db.statements[0].params).toEqual([CALLER, TEST_PHONE_ID, MAX_PAGE + 1]);
   });
 });

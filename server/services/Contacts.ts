@@ -11,6 +11,7 @@ import { fields } from '../lib/payload';
 import { contactsContract } from '@mica/shared/contracts/contacts';
 import { resolve as resolvePlayer } from '../lib/PlayerDirectory';
 import { restoreWindowDays } from '../lib/retention';
+import { phoneForCitizen } from '../lib/phoneIdentity';
 
 /**
  * Contacts: owner-scoped address book, all four generic CRUD actions.
@@ -22,6 +23,7 @@ import { restoreWindowDays } from '../lib/retention';
 export const contacts = defineService<Contact, typeof contactsContract>({
   id: 'contacts',
   contract: contactsContract,
+  deviceOwned: true,
   access: { read: 'owner', write: 'owner' },
   statuses: ['active', 'deleted', 'moderated'],
   schema: {
@@ -56,8 +58,14 @@ export const contacts = defineService<Contact, typeof contactsContract>({
    */
   repositoryFactory: (resolved) =>
     new (class extends SchemaRepository<Contact> {
+      /**
+       * Onto the phone the citizen is on (MICA-282): their active one, or the one they used
+       * last, or their identity phone — `phoneForCitizen` decides, and a row with no phone
+       * would be one no phone ever shows.
+       */
       async addForPlayer(citizenid: string, item: Partial<Contact>): Promise<number> {
-        return await this.create({ ...item, citizenid } as Partial<Contact>);
+        const phone_id = await phoneForCitizen(citizenid);
+        return await this.create({ ...item, citizenid, phone_id } as Partial<Contact>);
       }
     })(resolved)
 });
@@ -67,8 +75,8 @@ export const contacts = defineService<Contact, typeof contactsContract>({
  * `Repository.restore` for the ownership scoping and why `updated_at` stands in for a
  * deletion timestamp.
  */
-contacts.app.registerEvent('restore', async (source, cbId, data, citizenid) => {
-  const ok = await contacts.repo.restore(data.id, citizenid, restoreWindowDays());
+contacts.app.registerEvent('restore', async (source, cbId, data, citizenid, _player, phoneId) => {
+  const ok = await contacts.repo.restore(data.id, citizenid, restoreWindowDays(), phoneId);
   return { ok };
 });
 
@@ -77,9 +85,12 @@ contacts.app.registerEvent('restore', async (source, cbId, data, citizenid) => {
  * could still bring back. See `Repository.findDeleted` for why this is a named action
  * rather than the generic `get`: `status` is never client-filterable.
  */
-contacts.app.registerEvent('getDeleted', async (source, cbId, data, citizenid) => {
-  return await contacts.repo.findDeleted(citizenid, restoreWindowDays());
-});
+contacts.app.registerEvent(
+  'getDeleted',
+  async (source, cbId, data, citizenid, _player, phoneId) => {
+    return await contacts.repo.findDeleted(citizenid, restoreWindowDays(), undefined, phoneId);
+  }
+);
 
 const MAX_SHARE_NAME_LENGTH = 50;
 const MAX_SHARE_PHONE_LENGTH = 20;

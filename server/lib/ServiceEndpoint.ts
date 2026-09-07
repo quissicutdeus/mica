@@ -12,6 +12,7 @@ import { allow, installRateLimitCleanup } from './rateLimit';
 import { type ActionInput, type ContractAction, type ServiceContract } from '@mica/shared/contract';
 import { parseInput, SchemaError, type Schema } from '@mica/shared/schema';
 import { GENERIC_ERROR_KEY, GENERIC_ERROR_MESSAGE, PlayerFacingError } from './errors';
+import { phoneForRequest } from './phoneIdentity';
 
 // Once per process, not once per service: `on('playerDropped')` would otherwise be registered
 // thirteen times and do the same sweep thirteen times per disconnect.
@@ -31,6 +32,16 @@ export interface ServiceOptions<C extends ServiceContract = ServiceContract> {
    * restated here (see `ActionContract`).
    */
   contract?: C;
+  /**
+   * The rows follow the phone (MICA-282). Set from `ServiceDefinition.deviceOwned`.
+   *
+   * Every generic action then scopes by the caller's active phone as well as their citizenid
+   * — the read filters on it, the create stamps it, update and delete narrow by it — and every
+   * handler, generic or custom, is handed it as its sixth argument. Resolved once per request
+   * through `phoneForRequest`, *after* authentication: a player with no loaded character has
+   * no inventory to hold a phone in.
+   */
+  deviceOwned?: boolean;
   disableGet?: boolean;
   disableCreate?: boolean;
   disableUpdate?: boolean;
@@ -219,7 +230,14 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
     if (!this.options.disableGet) {
       this.registerGeneric(
         'get',
-        async (source: number, cbId: CallbackId, data: unknown, citizenid: string) => {
+        async (
+          source: number,
+          cbId: CallbackId,
+          data: unknown,
+          citizenid: string,
+          _player: FrameworkPlayer,
+          phoneId?: string
+        ) => {
           const filter = this.sanitizeFilter(data);
 
           // The ownership predicate is the *default*, and dropping it is opt-in per service
@@ -227,6 +245,9 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
           if (!this.options.publicRead) {
             (filter as Record<string, unknown>).citizenid = citizenid;
           }
+          // And the device beside it, on a table that follows the phone (MICA-282): a phone
+          // shows its own rows, not every row its holder has on every phone they carry.
+          if (phoneId) (filter as Record<string, unknown>).phone_id = phoneId;
 
           /**
            * Both axes narrow, for different reasons, and each has its own list.
@@ -283,7 +304,14 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
     if (!this.options.disableCreate) {
       this.registerGeneric(
         'create',
-        async (source: number, cbId: CallbackId, data: unknown, citizenid: string) => {
+        async (
+          source: number,
+          cbId: CallbackId,
+          data: unknown,
+          citizenid: string,
+          _player: FrameworkPlayer,
+          phoneId?: string
+        ) => {
           const fields = this.sanitizeWrite(data);
           if (Object.keys(fields).length === 0) {
             throw new PlayerFacingError(
@@ -292,7 +320,9 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
             );
           }
 
-          const newItem = { ...fields, citizenid };
+          // Stamped by the server, never read from the payload — `phone_id` is refused by the
+          // write allowlist whatever the client sent (MICA-281).
+          const newItem = { ...fields, citizenid, ...(phoneId ? { phone_id: phoneId } : {}) };
           const id = await this.repository.create(newItem as any);
           return { ...this.serverStampedFields(), ...newItem, id };
         }
@@ -303,7 +333,14 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
     if (!this.options.disableUpdate) {
       this.registerGeneric(
         'update',
-        async (source: number, cbId: CallbackId, data: unknown, citizenid: string) => {
+        async (
+          source: number,
+          cbId: CallbackId,
+          data: unknown,
+          citizenid: string,
+          _player: FrameworkPlayer,
+          phoneId?: string
+        ) => {
           const id = this.requireId(data);
           const fields = this.sanitizeWrite(data);
           if (Object.keys(fields).length === 0) {
@@ -313,7 +350,7 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
             );
           }
 
-          const success = await this.repository.update(id, fields as any, citizenid);
+          const success = await this.repository.update(id, fields as any, citizenid, phoneId);
           return success;
         }
       );
@@ -323,9 +360,16 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
     if (!this.options.disableDelete) {
       this.registerGeneric(
         'delete',
-        async (source: number, cbId: CallbackId, data: unknown, citizenid: string) => {
+        async (
+          source: number,
+          cbId: CallbackId,
+          data: unknown,
+          citizenid: string,
+          _player: FrameworkPlayer,
+          phoneId?: string
+        ) => {
           const id = this.requireId(data);
-          const success = await this.repository.delete(id, citizenid);
+          const success = await this.repository.delete(id, citizenid, phoneId);
           if (success) {
             await AuditLogger.log({
               citizenid,
@@ -363,7 +407,8 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
       cbId: CallbackId,
       data: unknown,
       citizenid: string,
-      player: FrameworkPlayer
+      player: FrameworkPlayer,
+      phoneId?: string
     ) => Promise<any>
   ) {
     const contract = this.options.contract;
@@ -394,7 +439,9 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
       cbId: CallbackId,
       data: ActionInput<C, A>,
       citizenid: string,
-      player: FrameworkPlayer
+      player: FrameworkPlayer,
+      /** The caller's active phone, on a `deviceOwned` service; undefined otherwise (MICA-282). */
+      phoneId?: string
     ) => Promise<any>
   ) {
     const contract = this.options.contract;
@@ -426,7 +473,8 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
         cbId: CallbackId,
         data: unknown,
         citizenid: string,
-        player: FrameworkPlayer
+        player: FrameworkPlayer,
+        phoneId?: string
       ) => Promise<any>
     );
   }
@@ -440,7 +488,8 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
       cbId: CallbackId,
       data: unknown,
       citizenid: string,
-      player: FrameworkPlayer
+      player: FrameworkPlayer,
+      phoneId?: string
     ) => Promise<any>
   ) {
     // Both names come from shared/rpc.ts so the client derives exactly the same ones.
@@ -492,7 +541,21 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
          */
         const payload = input ? await parseInput(input, data) : data;
 
-        const result = await handler(src, cbId, payload, player.citizenid, player);
+        /**
+         * Which phone this is for, on a table that follows the phone (MICA-282).
+         *
+         * After authentication, because a source with no character has no inventory, and
+         * after validation, because a payload that is not even the right shape should not
+         * cost an inventory read. The resolver throws a `PlayerFacingError` for a player
+         * holding no phone on a server that gates on one — it lands in the catch below and
+         * reaches them as a toast — and degrades to the citizen's identity phone where no
+         * phone identity can be had. `services/Phones.ts` has the three cases.
+         */
+        const phoneId = this.options.deviceOwned
+          ? await phoneForRequest(src, player.citizenid)
+          : undefined;
+
+        const result = await handler(src, cbId, payload, player.citizenid, player, phoneId);
 
         if (result !== undefined) {
           emitNet(clientEventName, src, cbId, result);

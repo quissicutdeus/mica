@@ -23,6 +23,8 @@ import { phoneNumberFrom } from '../lib/netGuard';
 export interface BlockedNumber {
   id: number;
   citizenid: string;
+  /** The phone the block was made on (MICA-282). */
+  phone_id?: string | null;
   number: string;
   status?: 'active' | 'deleted';
   created_at: Date | string;
@@ -31,18 +33,28 @@ export interface BlockedNumber {
 
 export const blocklist = defineService<BlockedNumber>({
   id: 'blocklist',
+  deviceOwned: true,
   access: { read: 'owner', write: 'owner' },
   schema: {
     number: { type: 'string', length: 32, notNull: true, clientFilterable: true }
   },
-  // One row per (blocker, blocked number) — enforced by the database rather than a
-  // find-then-insert a double-tap on "Block" could race.
-  indexes: [{ name: 'citizenid_number_unique', columns: ['citizenid', 'number'], unique: true }],
+  // One row per (blocking phone, blocked number) — enforced by the database rather than a
+  // find-then-insert a double-tap on "Block" could race. Per phone since MICA-282
+  // (`0002_phone_data_follows_the_phone` swaps the old `citizenid_number_unique` for it);
+  // the *enforcement* in `isBlocked`/`blockedBy` stays by citizen — see their notes.
+  indexes: [{ name: 'phone_number_unique', columns: ['phone_id', 'number'], unique: true }],
   options: { disableUpdate: true }
 });
 
 /**
- * Whether `citizenid` has blocked `number`.
+ * Whether `citizenid` has blocked `number` — on any phone they hold.
+ *
+ * The rows are device-owned (MICA-282) and each phone shows and edits its own list, but the
+ * *enforcement* is by citizen: a number blocked on any phone a player holds is blocked for
+ * that player. The alternative — enforcing per phone — needs the callee's phone resolved
+ * from the dialled number on every call and every delivery, for a distinction (a number
+ * blocked on my burner still ringing my main phone) nobody has asked for. Since a stolen
+ * phone's rows move to its holder, this stays consistent with the model either way.
  *
  * A plain exported function rather than a raw table read from `Phone.ts`/`Messages.ts` —
  * both need this question answered and neither owns `mica_blocklist`, the same reason

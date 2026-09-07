@@ -40,6 +40,7 @@ vi.mock('../lib/PlayerDirectory', () => ({
 
 import { conversations } from '../services/Conversations';
 import { GENERIC_ERROR_MESSAGE } from '../lib/errors';
+import { TEST_PHONE_ID } from './phoneStub';
 
 const call = async (action: string, data: unknown) => {
   const handler = handlers.get(`mica:server:conversations:${action}`);
@@ -344,11 +345,16 @@ describe('conversations:create — a thread lost to a race stands down', () => {
 
 describe('addParticipant — the live row is unique by construction', () => {
   const repo = conversations.repo as unknown as {
-    addParticipant: (id: number, citizenid: string, role?: 'admin' | 'member') => Promise<boolean>;
+    addParticipant: (
+      id: number,
+      citizenid: string,
+      phoneId: string,
+      role?: 'admin' | 'member'
+    ) => Promise<boolean>;
   };
 
-  it('guards the insert on there being no live row for that person', async () => {
-    await repo.addParticipant(7, 'CIT_B');
+  it('guards the insert on there being no live row for that phone', async () => {
+    await repo.addParticipant(7, 'CIT_B', 'PHONE_B');
 
     const [sql, params] = dbMock.insert.mock.calls.at(-1) as [string, unknown[]];
     const normalized = sql.replace(/\s+/g, ' ');
@@ -358,21 +364,22 @@ describe('addParticipant — the live row is unique by construction', () => {
     // them coming back.
     expect(normalized).toContain('left_at IS NULL');
     expect(normalized).not.toContain('ON DUPLICATE KEY');
-    // Conversation and citizenid are bound twice — once for the row, once for the guard.
-    expect(params).toEqual([7, 'CIT_B', 'member', 7, 'CIT_B']);
+    // Conversation and phone are bound twice — once for the row, once for the guard. The
+    // membership is the phone's (MICA-282); the citizen rides along as its holder.
+    expect(params).toEqual([7, 'CIT_B', 'PHONE_B', 'member', 7, 'PHONE_B']);
   });
 
   it('reports that nothing was written when the guard matched an existing live row', async () => {
     // A conditional insert that inserted no row reports an insert id of 0.
     dbMock.insert.mockResolvedValueOnce(0);
 
-    await expect(repo.addParticipant(7, 'CIT_B')).resolves.toBe(false);
+    await expect(repo.addParticipant(7, 'CIT_B', 'PHONE_B')).resolves.toBe(false);
   });
 
   it('reports a write when the row was actually inserted', async () => {
     dbMock.insert.mockResolvedValueOnce(42);
 
-    await expect(repo.addParticipant(7, 'CIT_B')).resolves.toBe(true);
+    await expect(repo.addParticipant(7, 'CIT_B', 'PHONE_B')).resolves.toBe(true);
   });
 });
 
@@ -422,13 +429,18 @@ describe('conversations:create — participant_a/participant_b and the unique-in
 
   beforeEach(() => {
     directory.byPhone.set('555-0100', { citizenid: 'CIT_B' });
+    // The number 555-0100 is on phone PHONE_B (`mica_phone_numbers`), so that is the phone the
+    // thread reaches — a pair is two phones since MICA-282, not two people.
+    dbMock.single.mockResolvedValue({ phone_id: 'PHONE_B' });
   });
 
-  it('stamps participant_a/participant_b on a 1:1 create', async () => {
+  it('stamps participant_a/participant_b on a 1:1 create, as the two phones', async () => {
     await call('create', { phone: '555-0100' });
 
     const columns = conversationInsertColumns();
-    expect([columns.participant_a, columns.participant_b].sort()).toEqual(['CIT_A', 'CIT_B']);
+    expect([columns.participant_a, columns.participant_b].sort()).toEqual(
+      [TEST_PHONE_ID, 'PHONE_B'].sort()
+    );
   });
 
   it('writes participant_a/participant_b as null, not undefined, on a group create', async () => {
@@ -517,7 +529,7 @@ describe('conversations:archive — the direction is the status the caller names
     const reply = await call('archive', { conversation_id: 7, status: 'archived' });
     expect(reply).toBe(true);
     expect(archiveSql()).toContain('SET archived_at = CURRENT_TIMESTAMP');
-    expect(dbMock.update.mock.calls.at(-1)?.[1]).toEqual([7, 'CIT_A']);
+    expect(dbMock.update.mock.calls.at(-1)?.[1]).toEqual([7, 'CIT_A', TEST_PHONE_ID]);
   });
 
   it('unarchives when the caller asks for active', async () => {

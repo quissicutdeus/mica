@@ -17,6 +17,7 @@ import { PhoneCallLogEntry } from '@mica/shared/types';
  */
 export const phoneCallLog = defineService<PhoneCallLogEntry>({
   id: 'phone_call_log',
+  deviceOwned: true,
   access: { read: 'owner', write: 'server' },
   paging: {},
   statuses: ['active', 'deleted', 'moderated'],

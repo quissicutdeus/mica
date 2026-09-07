@@ -32,28 +32,38 @@ export class SettingsRepository extends SchemaRepository<PhoneSetting> {
    * it is read exactly once per session, and the phone needs all of it before it paints.
    * Paging here would mean the theme arrives on page two.
    */
-  async findAllForPlayer(citizenid: string): Promise<PhoneSetting[]> {
+  async findAllForPlayer(citizenid: string, phoneId: string): Promise<PhoneSetting[]> {
     return await Database.query<PhoneSetting[]>(
-      `SELECT * FROM mica_settings WHERE citizenid = ? AND status = 'active'`,
-      [citizenid]
+      `SELECT * FROM mica_settings WHERE citizenid = ? AND phone_id = ? AND status = 'active'`,
+      [citizenid, phoneId]
     );
   }
 
   /**
    * Write one key.
    *
-   * `ON DUPLICATE KEY UPDATE` against the unique `(citizenid, app, setting_key)` index,
+   * `ON DUPLICATE KEY UPDATE` against the unique `(phone_id, app, setting_key)` index,
    * rather than find-then-insert. Two rapid writes to the same key — which is what
    * dragging a slider produces — race in the find-then-insert form and the loser becomes
    * either a duplicate row or a lost write. The constraint decides, not the order the
    * two queries interleave in.
+   *
+   * `citizenid` is written on the insert and **also on the update** (MICA-282): the row
+   * belongs to the phone, and the phone belongs to whoever holds it now, so a preference set
+   * on a phone that has changed hands names its new holder.
    */
-  async put(citizenid: string, app: string, key: string, value: string): Promise<void> {
+  async put(
+    citizenid: string,
+    phoneId: string,
+    app: string,
+    key: string,
+    value: string
+  ): Promise<void> {
     await Database.query(
-      `INSERT INTO mica_settings (citizenid, app, setting_key, setting_value, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, 'active', NOW(), NOW())
-       ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), status = 'active', updated_at = NOW()`,
-      [citizenid, app, key, value]
+      `INSERT INTO mica_settings (citizenid, phone_id, app, setting_key, setting_value, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 'active', NOW(), NOW())
+       ON DUPLICATE KEY UPDATE citizenid = VALUES(citizenid), setting_value = VALUES(setting_value), status = 'active', updated_at = NOW()`,
+      [citizenid, phoneId, app, key, value]
     );
   }
 
@@ -79,10 +89,10 @@ export class SettingsRepository extends SchemaRepository<PhoneSetting> {
   }
 
   /** Remove one key. Hard delete: a tombstoned preference is not a preference. */
-  async remove(citizenid: string, app: string, key: string): Promise<void> {
+  async remove(citizenid: string, phoneId: string, app: string, key: string): Promise<void> {
     await Database.query(
-      `DELETE FROM mica_settings WHERE citizenid = ? AND app = ? AND setting_key = ?`,
-      [citizenid, app, key]
+      `DELETE FROM mica_settings WHERE citizenid = ? AND phone_id = ? AND app = ? AND setting_key = ?`,
+      [citizenid, phoneId, app, key]
     );
   }
 
@@ -93,11 +103,11 @@ export class SettingsRepository extends SchemaRepository<PhoneSetting> {
    * next hydrate — which is exactly the resurrection bug `clearAppStorage`'s own comment
    * says it exists to prevent, moved one layer down.
    */
-  async clearApp(citizenid: string, app: string): Promise<void> {
-    await Database.query(`DELETE FROM mica_settings WHERE citizenid = ? AND app = ?`, [
-      citizenid,
-      app
-    ]);
+  async clearApp(citizenid: string, phoneId: string, app: string): Promise<void> {
+    await Database.query(
+      `DELETE FROM mica_settings WHERE citizenid = ? AND phone_id = ? AND app = ?`,
+      [citizenid, phoneId, app]
+    );
   }
 }
 
@@ -105,6 +115,7 @@ let settingsRepo: SettingsRepository | null = null;
 
 export const settings = defineService<PhoneSetting, typeof settingsContract>({
   contract: settingsContract,
+  deviceOwned: true,
   id: 'settings',
   access: { read: 'owner', write: 'owner' },
   schema: {
@@ -116,9 +127,17 @@ export const settings = defineService<PhoneSetting, typeof settingsContract>({
    * A constraint rather than an optimisation (§10). It is what makes the upsert above
    * safe; without it two writes in the same tick produce two rows for one preference and
    * the read picks whichever the engine returns first.
+   *
+   * `phone_id` itself is injected by `deviceOwned` (MICA-282): a preference belongs to the
+   * phone it was set on, and follows it.
    */
   indexes: [
-    { name: 'citizenid_app_key', columns: ['citizenid', 'app', 'setting_key'], unique: true }
+    /**
+     * Per phone since MICA-282 (`0002_phone_data_follows_the_phone` swaps the old
+     * `citizenid_app_key` for it): a character with two phones has two themes, and the upsert
+     * in `put` collides on this key and no other.
+     */
+    { name: 'phone_app_key', columns: ['phone_id', 'app', 'setting_key'], unique: true }
   ],
   /**
    * No generic action survives. The client addresses a row by `(app, setting_key)` and
@@ -174,11 +193,13 @@ const namespaceOf = (data: { app: string; key: string }): { app: string; key: st
  */
 const MAX_VALUE_LENGTH = 8192;
 
-app.registerEvent('getAll', async (_source, _cbId, _data, citizenid) => {
-  return settingsRepo ? await settingsRepo.findAllForPlayer(citizenid) : [];
+// A device-owned service always has a phone id by the time a handler runs; the endpoint
+// refused the request otherwise. The cast says so where the type cannot.
+app.registerEvent('getAll', async (_source, _cbId, _data, citizenid, _player, phoneId) => {
+  return settingsRepo ? await settingsRepo.findAllForPlayer(citizenid, phoneId as string) : [];
 });
 
-app.registerEvent('set', async (_source, _cbId, data, citizenid) => {
+app.registerEvent('set', async (_source, _cbId, data, citizenid, _player, phoneId) => {
   if (!settingsRepo) return false;
   const { app: appId, key } = namespaceOf(data);
 
@@ -193,25 +214,25 @@ app.registerEvent('set', async (_source, _cbId, data, citizenid) => {
     });
   }
 
-  await settingsRepo.put(citizenid, appId, key, value);
+  await settingsRepo.put(citizenid, phoneId as string, appId, key, value);
   return true;
 });
 
-app.registerEvent('remove', async (_source, _cbId, data, citizenid) => {
+app.registerEvent('remove', async (_source, _cbId, data, citizenid, _player, phoneId) => {
   if (!settingsRepo) return false;
   const { app: appId, key } = namespaceOf(data);
-  await settingsRepo.remove(citizenid, appId, key);
+  await settingsRepo.remove(citizenid, phoneId as string, appId, key);
   return true;
 });
 
-app.registerEvent('clearApp', async (_source, _cbId, data, citizenid) => {
+app.registerEvent('clearApp', async (_source, _cbId, data, citizenid, _player, phoneId) => {
   if (!settingsRepo) return false;
   const appId = data.app.trim();
   if (!appId)
     throw new PlayerFacingError('That app could not be cleared.', {
       key: 'server.settings.appNotCleared'
     });
-  await settingsRepo.clearApp(citizenid, appId);
+  await settingsRepo.clearApp(citizenid, phoneId as string, appId);
   return true;
 });
 

@@ -177,6 +177,7 @@ CREATE TABLE IF NOT EXISTS `mica_blabber_dms` (
 CREATE TABLE IF NOT EXISTS `mica_blocklist` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
     `citizenid` varchar(50) NOT NULL,
+    `phone_id` varchar(32) DEFAULT NULL,
     `number` varchar(32) NOT NULL,
     `status` ENUM('active', 'deleted') NOT NULL DEFAULT 'active',
     `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -184,7 +185,8 @@ CREATE TABLE IF NOT EXISTS `mica_blocklist` (
     PRIMARY KEY (`id`),
     KEY `status` (`status`),
     KEY `citizenid_status` (`citizenid`, `status`),
-    UNIQUE KEY `citizenid_number_unique` (`citizenid`, `number`),
+    UNIQUE KEY `phone_number_unique` (`phone_id`, `number`),
+    KEY `phone_id` (`phone_id`),
     CONSTRAINT `fk_blocklist_citizenid` FOREIGN KEY (`citizenid`)
         REFERENCES `players` (`citizenid`) ON DELETE CASCADE
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
@@ -195,6 +197,7 @@ CREATE TABLE IF NOT EXISTS `mica_blocklist` (
 CREATE TABLE IF NOT EXISTS `mica_contacts` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
     `citizenid` varchar(50) NOT NULL,
+    `phone_id` varchar(32) DEFAULT NULL,
     `firstname` varchar(50) NOT NULL,
     `lastname` varchar(50) DEFAULT NULL,
     `phone` varchar(20) NOT NULL,
@@ -211,6 +214,7 @@ CREATE TABLE IF NOT EXISTS `mica_contacts` (
     KEY `phone` (`phone`),
     KEY `citizenid_phone` (`citizenid`, `phone`),
     KEY `citizenid_favorite` (`citizenid`, `favorite`, `status`),
+    KEY `phone_id` (`phone_id`),
     CONSTRAINT `fk_contacts_citizenid` FOREIGN KEY (`citizenid`)
         REFERENCES `players` (`citizenid`) ON DELETE CASCADE
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
@@ -243,6 +247,7 @@ CREATE TABLE IF NOT EXISTS `mica_messages_participants` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
     `conversation_id` int(11) NOT NULL,
     `citizenid` varchar(50) NOT NULL,
+    `phone_id` varchar(32) DEFAULT NULL,
     `role` varchar(20) NOT NULL DEFAULT 'member',
     `status` ENUM('active', 'left', 'removed', 'moderated') NOT NULL DEFAULT 'active',
     `last_read` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -252,7 +257,8 @@ CREATE TABLE IF NOT EXISTS `mica_messages_participants` (
     `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     KEY `status` (`status`),
-    UNIQUE KEY `conversation_participant_unique` (`conversation_id`, `citizenid`),
+    UNIQUE KEY `conversation_phone_unique` (`conversation_id`, `phone_id`),
+    KEY `phone_id` (`phone_id`),
     KEY `citizenid_status` (`citizenid`, `status`),
     KEY `conversation_status` (`conversation_id`, `status`),
     KEY `participant_last_read` (`citizenid`, `last_read`),
@@ -313,6 +319,7 @@ CREATE TABLE IF NOT EXISTS `mica_hodlr_price_history` (
 CREATE TABLE IF NOT EXISTS `mica_lockscreen` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
     `citizenid` varchar(50) NOT NULL,
+    `phone_id` varchar(32) DEFAULT NULL,
     `passcode_hash` varchar(64) DEFAULT NULL,
     `passcode_salt` varchar(32) DEFAULT NULL,
     `status` ENUM('active', 'deleted') NOT NULL DEFAULT 'active',
@@ -321,7 +328,8 @@ CREATE TABLE IF NOT EXISTS `mica_lockscreen` (
     PRIMARY KEY (`id`),
     KEY `status` (`status`),
     KEY `citizenid_status` (`citizenid`, `status`),
-    UNIQUE KEY `citizenid_unique` (`citizenid`),
+    UNIQUE KEY `phone_id_unique` (`phone_id`),
+    KEY `phone_id` (`phone_id`),
     CONSTRAINT `fk_lockscreen_citizenid` FOREIGN KEY (`citizenid`)
         REFERENCES `players` (`citizenid`) ON DELETE CASCADE
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
@@ -355,6 +363,7 @@ CREATE TABLE IF NOT EXISTS `mica_mail` (
 CREATE TABLE IF NOT EXISTS `mica_media` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
     `citizenid` varchar(50) NOT NULL,
+    `phone_id` varchar(32) DEFAULT NULL,
     `kind` ENUM('photo', 'video', 'audio', 'gif', 'sticker', 'file', 'link', 'location') NOT NULL DEFAULT 'photo',
     `data` mediumtext DEFAULT NULL,
     `url` varchar(512) DEFAULT NULL,
@@ -372,6 +381,7 @@ CREATE TABLE IF NOT EXISTS `mica_media` (
     KEY `status` (`status`),
     KEY `citizenid_status` (`citizenid`, `status`),
     KEY `citizenid_status_created` (`citizenid`, `status`, `created_at`),
+    KEY `phone_id` (`phone_id`),
     CONSTRAINT `fk_media_citizenid` FOREIGN KEY (`citizenid`)
         REFERENCES `players` (`citizenid`) ON DELETE CASCADE
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
@@ -550,6 +560,7 @@ CREATE TABLE IF NOT EXISTS `mica_messages_reactions` (
 CREATE TABLE IF NOT EXISTS `mica_notes` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
     `citizenid` varchar(50) NOT NULL,
+    `phone_id` varchar(32) DEFAULT NULL,
     `title` varchar(255) DEFAULT NULL,
     `content` text DEFAULT NULL,
     `status` ENUM('active', 'archived', 'deleted', 'moderated') NOT NULL DEFAULT 'active',
@@ -559,6 +570,7 @@ CREATE TABLE IF NOT EXISTS `mica_notes` (
     KEY `status` (`status`),
     KEY `citizenid_status` (`citizenid`, `status`),
     KEY `citizenid_status_updated` (`citizenid`, `status`, `updated_at`),
+    KEY `phone_id` (`phone_id`),
     CONSTRAINT `fk_notes_citizenid` FOREIGN KEY (`citizenid`)
         REFERENCES `players` (`citizenid`) ON DELETE CASCADE
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
@@ -569,6 +581,7 @@ CREATE TABLE IF NOT EXISTS `mica_notes` (
 CREATE TABLE IF NOT EXISTS `mica_notifications` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
     `citizenid` varchar(50) NOT NULL,
+    `phone_id` varchar(32) DEFAULT NULL,
     `app` varchar(32) NOT NULL,
     `kind` varchar(32) NOT NULL,
     `title` varchar(80) NOT NULL,
@@ -586,6 +599,7 @@ CREATE TABLE IF NOT EXISTS `mica_notifications` (
     KEY `citizenid_cleared_id` (`citizenid`, `cleared_at`, `id`),
     KEY `citizenid_app_id` (`citizenid`, `app`, `id`),
     KEY `citizenid_read` (`citizenid`, `read_at`),
+    KEY `phone_id` (`phone_id`),
     CONSTRAINT `fk_notifications_citizenid` FOREIGN KEY (`citizenid`)
         REFERENCES `players` (`citizenid`) ON DELETE CASCADE
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
@@ -596,6 +610,7 @@ CREATE TABLE IF NOT EXISTS `mica_notifications` (
 CREATE TABLE IF NOT EXISTS `mica_phone_call_log` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
     `citizenid` varchar(50) NOT NULL,
+    `phone_id` varchar(32) DEFAULT NULL,
     `kind` ENUM('incoming', 'outgoing', 'missed') NOT NULL,
     `number` varchar(20) NOT NULL,
     `duration` int(11) NOT NULL,
@@ -606,6 +621,7 @@ CREATE TABLE IF NOT EXISTS `mica_phone_call_log` (
     KEY `status` (`status`),
     KEY `citizenid_status` (`citizenid`, `status`),
     KEY `citizenid_status_created` (`citizenid`, `status`, `created_at`),
+    KEY `phone_id` (`phone_id`),
     CONSTRAINT `fk_phone_call_log_citizenid` FOREIGN KEY (`citizenid`)
         REFERENCES `players` (`citizenid`) ON DELETE CASCADE
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
@@ -637,6 +653,7 @@ CREATE TABLE IF NOT EXISTS `mica_phones` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
     `citizenid` varchar(50) NOT NULL,
     `phone_id` varchar(32) NOT NULL,
+    `claimed` tinyint(1) NOT NULL DEFAULT 0,
     `status` ENUM('active', 'deleted') NOT NULL DEFAULT 'active',
     `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -654,6 +671,7 @@ CREATE TABLE IF NOT EXISTS `mica_phones` (
 CREATE TABLE IF NOT EXISTS `mica_places` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
     `citizenid` varchar(50) NOT NULL,
+    `phone_id` varchar(32) DEFAULT NULL,
     `name` varchar(100) NOT NULL,
     `street_label` varchar(255) DEFAULT NULL,
     `x` float DEFAULT NULL,
@@ -665,6 +683,7 @@ CREATE TABLE IF NOT EXISTS `mica_places` (
     PRIMARY KEY (`id`),
     KEY `status` (`status`),
     KEY `citizenid_status` (`citizenid`, `status`),
+    KEY `phone_id` (`phone_id`),
     CONSTRAINT `fk_places_citizenid` FOREIGN KEY (`citizenid`)
         REFERENCES `players` (`citizenid`) ON DELETE CASCADE
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
@@ -700,6 +719,7 @@ CREATE TABLE IF NOT EXISTS `mica_reports` (
 CREATE TABLE IF NOT EXISTS `mica_settings` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
     `citizenid` varchar(50) NOT NULL,
+    `phone_id` varchar(32) DEFAULT NULL,
     `app` varchar(32) NOT NULL,
     `setting_key` varchar(64) NOT NULL,
     `setting_value` text DEFAULT NULL,
@@ -709,7 +729,8 @@ CREATE TABLE IF NOT EXISTS `mica_settings` (
     PRIMARY KEY (`id`),
     KEY `status` (`status`),
     KEY `citizenid_status` (`citizenid`, `status`),
-    UNIQUE KEY `citizenid_app_key` (`citizenid`, `app`, `setting_key`),
+    UNIQUE KEY `phone_app_key` (`phone_id`, `app`, `setting_key`),
+    KEY `phone_id` (`phone_id`),
     CONSTRAINT `fk_settings_citizenid` FOREIGN KEY (`citizenid`)
         REFERENCES `players` (`citizenid`) ON DELETE CASCADE
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
@@ -722,4 +743,5 @@ CREATE TABLE IF NOT EXISTS `mica_schema_migrations` (
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
 INSERT IGNORE INTO `mica_schema_migrations` (`id`) VALUES
-  ('0001_phone_numbers_follow_the_phone');
+  ('0001_phone_numbers_follow_the_phone'),
+  ('0002_phone_data_follows_the_phone');

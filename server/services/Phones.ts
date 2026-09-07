@@ -3,24 +3,32 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { randomBytes } from 'node:crypto';
-import { defineService } from '../lib/defineService';
+import { Database } from '../lib/Database';
+import { defineService, phoneKeyedRepositories } from '../lib/defineService';
+import { PlayerFacingError } from '../lib/errors';
 import { FrameworkBridge } from '../lib/FrameworkBridge';
+import { installPhoneResolvers } from '../lib/phoneIdentity';
 import { lastUsedPhoneSlot, phoneItemName } from '../lib/phoneItem';
 
 /**
- * The phone as a thing with an identity of its own (MICA-280, on MICA-279's seam).
+ * The phone as a thing with an identity of its own (MICA-280, on MICA-279's seam), and the
+ * thing every device-owned row belongs to (MICA-282).
  *
- * **Why this is a new table rather than `mica_phone_numbers`, which MICA-280 asked for.**
- * That table is deliberately populated on **standalone only** — its own declaration explains
- * at length that a micaOS-owned number sitting beside qb's `charinfo.phone` would be a number
- * the phone believes and no other resource does, and that widening the gate has to happen in
- * one commit together with migrating the framework's existing numbers. Minting a phone id into
- * that table would have populated it on qb and ESX and quietly begun exactly that widening, as
- * a side effect of a slice about identity rather than about numbers.
+ * **Why this is its own table rather than `mica_phone_numbers`.** The number table is what a
+ * phone *has*; this is what a phone *is*. MICA-284 moved the number onto the phone, and
+ * MICA-282 moved contacts, notes, media and the rest — every table declared `deviceOwned`
+ * carries a `phone_id` that points here. `citizenid` on this row, as on every one of those,
+ * is **whoever holds the phone now**, and it moves with the phone: see `handOver`.
  *
- * So the phone entity lives here, on every framework, and the number keeps whatever source of
- * truth it already had. Whether a **number** follows the phone is a real question and a
- * separate one; it belongs to the slice that is willing to answer it for qb and ESX too.
+ * **`claimed` is what makes the upgrade work without minting into items.** A phone id lives
+ * in inventory item metadata and can only be written there at runtime, when a player holds
+ * the item — SQL cannot do it. So `0002_phone_data_follows_the_phone` mints one *unclaimed*
+ * phone per citizen who had rows and re-keys those rows onto it, and the first item a citizen
+ * uses with no id of its own **adopts** that phone rather than minting a fresh one, so the
+ * data they had lands on the item in their hand. A server whose inventory cannot carry an id
+ * at all — an ungated qb server, standalone, es_extended's own inventory — keeps the
+ * unclaimed phone as the citizen's *identity phone* for good: one phone per citizen, which is
+ * exactly what they had before.
  *
  * **Nothing here is reachable from a client.** Every generic action is off, so this
  * declaration registers no net event at all — a phone id is minted by the server and is never
@@ -30,7 +38,10 @@ export interface PhoneRow {
   id: number;
   citizenid: string;
   phone_id: string;
+  /** Bound to an inventory item, or still waiting for the first item its citizen uses. */
+  claimed: number | boolean;
   status: string;
+  updated_at?: Date | string;
 }
 
 export const phones = defineService<PhoneRow>({
@@ -48,11 +59,17 @@ export const phones = defineService<PhoneRow>({
      * MICA-281 makes a phone id useless without the citizen predicate beside it — but there is
      * no reason to hand out a guessable one.
      */
-    phone_id: { type: 'string', length: 32, notNull: true, clientWritable: false }
+    phone_id: { type: 'string', length: 32, notNull: true, clientWritable: false },
+    /**
+     * `0` until the phone is written into an inventory item; `1` from then on. A `tinyint`
+     * rather than a nullable timestamp because MariaDB's implicit `NOT NULL` on `timestamp`
+     * makes `DEFAULT NULL` a per-server question, and this needs one answer.
+     */
+    claimed: { type: 'bool', notNull: true, default: 0, clientWritable: false }
   },
   indexes: [
     // Uniqueness is the schema's job. Two phones sharing an id would be two players sharing a
-    // phone once MICA-282 keys rows on it.
+    // phone now that MICA-282 keys rows on it.
     // Not unique on citizenid, deliberately: the whole point of MICA-219 is that a character
     // may hold several phones. `defineService` already emits a `citizenid_status` key, and a
     // lookup by citizenid alone uses its leading column, so no separate one is declared here.
@@ -66,17 +83,40 @@ export const phones = defineService<PhoneRow>({
   }
 });
 
+const repo = phones.repo;
+
 /** What a minted id looks like, and the only shape trusted off item metadata. */
 const PHONE_ID = /^[0-9a-f]{32}$/;
 
 const newPhoneId = (): string => randomBytes(16).toString('hex');
 
-/** Phone ids this process has already confirmed have a row, so the hot path is not a query. */
-const rowKnown = new Set<string>();
+/** Who this process last confirmed holds each phone, so the hot path is not a query. */
+const holderOf = new Map<string, string>();
+/** The phone each citizen most recently resolved to, for rows written on their behalf. */
+const activeByCitizen = new Map<string, string>();
+/** Each citizen's identity phone, once found or minted. */
+const identityByCitizen = new Map<string, string>();
 
-/** Test seam: module state that would otherwise leak between cases. */
+/**
+ * Whoever needs to move rows that `transferPhoneRows` cannot reach when a phone changes hands.
+ *
+ * Every table with a `phone_id` column is walked automatically through
+ * `phoneKeyedRepositories`; this is for the one shape that list cannot hold — a child table
+ * with no repository of its own, which is `mica_messages_participants`. `Conversations.ts`
+ * registers it.
+ */
+type HandoverRun = (phoneId: string, citizenid: string) => Promise<unknown> | unknown;
+const handoverHooks: { name: string; run: HandoverRun }[] = [];
+
+export const onPhoneHandover = (name: string, run: HandoverRun): void => {
+  handoverHooks.push({ name, run });
+};
+
+/** Test seam: module state that would otherwise leak between cases. Hooks are registrations and stay. */
 export const __resetPhoneState = (): void => {
-  rowKnown.clear();
+  holderOf.clear();
+  activeByCitizen.clear();
+  identityByCitizen.clear();
 };
 
 /** The phone a player is currently on. */
@@ -86,34 +126,131 @@ export interface ActivePhone {
 }
 
 /**
- * Make sure a minted id has a row, without paying a query on every resolve.
+ * The phone changed hands: every row on it now belongs to whoever is holding it (MICA-282).
+ *
+ * This is what makes a stolen phone show its data to the thief, and it is deliberately a
+ * *transfer* rather than a weaker predicate. §2.9's rule — every read and write names the
+ * citizen and the phone — is untouched; what moves is which citizen the rows name. The
+ * authorization is the inventory's own export having just said this player holds the item
+ * carrying this id, which is the same trust the framework itself is given.
+ *
+ * Each table is its own statement and its own failure: a table that could not be moved is
+ * logged and the rest still move, because half a handover with a line saying which half is
+ * better than a phone that stays the victim's in every table because one of them errored.
+ */
+const handOver = async (phoneId: string, citizenid: string): Promise<void> => {
+  for (const keyed of phoneKeyedRepositories) {
+    try {
+      await keyed.transferPhoneRows(phoneId, citizenid);
+    } catch (error) {
+      console.error(`[mica] could not move part of phone ${phoneId} to ${citizenid}.`, error);
+    }
+  }
+  for (const hook of handoverHooks) {
+    try {
+      await hook.run(phoneId, citizenid);
+    } catch (error) {
+      console.error(`[mica] handover hook '${hook.name}' failed for phone ${phoneId}.`, error);
+    }
+  }
+  console.log(`[mica] phone ${phoneId} is now held by ${citizenid}; its rows moved with it.`);
+};
+
+/**
+ * Make sure the phone has a row naming this holder, without paying a query on every resolve.
  *
  * Keyed on `phone_id` rather than the row id, because the id in item metadata is all a caller
- * has. A create that loses a race with a concurrent one violates `phone_id_unique`, which is
- * the correct outcome — the row exists either way, which is all this promises.
+ * has. Three outcomes: no row yet, so one is created already claimed (the id is on an item);
+ * a row naming somebody else, which is a handover; a row still unclaimed, which this claims.
+ * A create that loses a race with a concurrent one violates `phone_id_unique`, which is the
+ * correct outcome — the row exists either way, and the next resolve reads it.
  */
-const ensureRow = async (phoneId: string, citizenid: string): Promise<void> => {
-  if (rowKnown.has(phoneId)) return;
+const ensureHeld = async (phoneId: string, citizenid: string): Promise<void> => {
+  if (holderOf.get(phoneId) === citizenid) return;
 
   try {
-    const [existing] = await phones.repo.findAll({ phone_id: phoneId } as Partial<PhoneRow>);
-    if (!existing) await phones.repo.create({ citizenid, phone_id: phoneId });
-    rowKnown.add(phoneId);
+    const [existing] = await repo.findAll({ phone_id: phoneId } as Partial<PhoneRow>);
+    if (!existing) {
+      await repo.create({ citizenid, phone_id: phoneId, claimed: 1 } as Partial<PhoneRow>);
+    } else {
+      if (existing.citizenid !== citizenid) await handOver(phoneId, citizenid);
+      if (!Number(existing.claimed)) {
+        await repo.update(existing.id, { claimed: 1 } as Partial<PhoneRow>, citizenid);
+      }
+    }
+    holderOf.set(phoneId, citizenid);
+    identityByCitizen.delete(citizenid);
   } catch (error) {
     // Not fatal and not cached: the id is on the item either way, so the next resolve retries.
     console.error(`[mica] could not record the phone row for ${phoneId}`, error);
   }
 };
 
+/** The citizen's phone that is bound to no item yet, or null. Lowest id when there are several. */
+const readUnclaimed = async (citizenid: string): Promise<PhoneRow | null> => {
+  const rows = await repo.findAll({ citizenid, claimed: 0 } as Partial<PhoneRow>);
+  if (rows.length === 0) return null;
+  return rows.reduce((lowest, row) => (row.id < lowest.id ? row : lowest));
+};
+
+/**
+ * The phone a citizen is on when no item can say (MICA-282).
+ *
+ * One phone per citizen, minted server-side and never written into an item — the shape every
+ * server had before phones were items, kept for the servers that still cannot carry one: an
+ * ungated qb server, standalone, es_extended's own inventory. On a gated server it is also
+ * the phone the first item a citizen uses adopts, which is how the migration's backfill lands
+ * on a real item; `resolvePhone` clears the cache below when that happens.
+ */
+export const identityPhone = async (citizenid: string): Promise<string> => {
+  const known = identityByCitizen.get(citizenid);
+  if (known) return known;
+
+  const unclaimed = await readUnclaimed(citizenid);
+  let phoneId: string;
+  if (unclaimed) {
+    phoneId = unclaimed.phone_id;
+  } else {
+    phoneId = newPhoneId();
+    await repo.create({ citizenid, phone_id: phoneId, claimed: 0 } as Partial<PhoneRow>);
+  }
+  identityByCitizen.set(citizenid, phoneId);
+  return phoneId;
+};
+
+/**
+ * The phone a citizen is on, for a row written on their behalf — a notification, a photo
+ * dropped onto them, a contact a job hands them, a call logged against them.
+ *
+ * Their active phone when this process has resolved one; else the phone they touched most
+ * recently, which a handover and a claim both move `updated_at` for; else their identity
+ * phone, created if they have none at all. The middle case is an offline player on a gated
+ * server: nothing is in hand to ask, and the phone they last used is the best answer there is.
+ */
+export const phoneForCitizen = async (citizenid: string): Promise<string> => {
+  const active = activeByCitizen.get(citizenid);
+  if (active) return active;
+
+  const latest = await Database.single<{ phone_id: string } | null>(
+    `SELECT \`phone_id\` FROM \`mica_phones\` WHERE \`citizenid\` = ? AND \`status\` = 'active'
+     ORDER BY \`updated_at\` DESC, \`id\` DESC LIMIT 1`,
+    [citizenid]
+  );
+  if (latest?.phone_id) return latest.phone_id;
+
+  return await identityPhone(citizenid);
+};
+
 /**
  * What resolving a source's phone can come to, and why three answers rather than a nullable.
  *
  * MICA-280 folded every non-answer into `null`, and for its one caller that was right. The
- * number sync (MICA-284) has to tell two of them apart: a player on a gated server who holds
- * **no** phone must be left exactly as they are — no number resolved, nothing written back —
- * while a server that cannot carry a phone id at all degrades to one number per citizen. The
- * other causes of `'unavailable'` (no gate configured, no loaded character, the metadata write
- * failed) all want that same degrade.
+ * number sync (MICA-284) and the request resolver (MICA-282) have to tell two of them apart: a
+ * player on a gated server who holds **no** phone must be refused — they have no phone for
+ * rows to belong to, and the phone is closed for them anyway — while a server that cannot
+ * carry a phone id at all degrades to the citizen's identity phone. The other causes of
+ * `'unavailable'` (no gate configured, no loaded character, the metadata write failed) all
+ * want that same degrade.
  */
 export type PhoneResolution =
   | { status: 'active'; phone: ActivePhone }
@@ -132,6 +269,11 @@ const UNAVAILABLE: PhoneResolution = { status: 'unavailable' };
  * than purely positional because a player switches phones by using one, which is visible,
  * where switching by dragging items between slots is not. `readItemSlots` returns slots
  * ascending precisely so the fallback is `slots[0]` rather than a sort somebody has to repeat.
+ *
+ * **An item with no id adopts the citizen's unclaimed phone before minting.** That is the
+ * runtime half of the migration's backfill: the rows it re-keyed are on that phone, and the
+ * first item in the player's hand is the one they should land on. Only when there is none is
+ * a fresh id minted.
  *
  * **A minted id is written to the item before it is recorded**, and the resolve answers
  * `'unavailable'` if that write fails. The other order is worse: a row created for an id that
@@ -156,28 +298,60 @@ export const resolvePhone = async (src: number): Promise<PhoneResolution> => {
 
   const carried = chosen.metadata.phoneId;
   if (typeof carried === 'string' && PHONE_ID.test(carried)) {
-    await ensureRow(carried, player.citizenid);
+    await ensureHeld(carried, player.citizenid);
+    activeByCitizen.set(player.citizenid, carried);
     return { status: 'active', phone: { phoneId: carried, slot: chosen.slot } };
   }
 
-  const minted = newPhoneId();
-  if (!FrameworkBridge.setItemMetadata(player, item, chosen.slot, { phoneId: minted })) {
+  let adopted: string | null = null;
+  try {
+    adopted = (await readUnclaimed(player.citizenid))?.phone_id ?? null;
+  } catch (error) {
+    // A fresh id is the safe answer: nothing is lost, the unclaimed phone stays where it is.
+    console.error(`[mica] could not look for ${player.citizenid}'s unclaimed phone`, error);
+  }
+  const phoneId = adopted ?? newPhoneId();
+
+  if (!FrameworkBridge.setItemMetadata(player, item, chosen.slot, { phoneId })) {
     // `writeItemMetadata` has already said why, once. Claiming an id the item does not carry
     // would hand this player a different phone on their next relog.
     return UNAVAILABLE;
   }
 
-  await ensureRow(minted, player.citizenid);
-  return { status: 'active', phone: { phoneId: minted, slot: chosen.slot } };
+  await ensureHeld(phoneId, player.citizenid);
+  activeByCitizen.set(player.citizenid, phoneId);
+  return { status: 'active', phone: { phoneId, slot: chosen.slot } };
 };
 
 /**
  * The phone this source is using, or `null` when they have no phone identity right now.
  *
  * `resolvePhone` with its three answers folded to one, for a caller that does not need to
- * tell "holds none" from "cannot say" — which is every caller except the number sync.
+ * tell "holds none" from "cannot say".
  */
 export const activePhone = async (src: number): Promise<ActivePhone | null> => {
   const resolution = await resolvePhone(src);
   return resolution.status === 'active' ? resolution.phone : null;
 };
+
+/**
+ * The phone a request is for — what `ServiceEndpoint` asks before running a device-owned
+ * action (MICA-282).
+ *
+ * Holding no phone on a gated server is a refusal the player can read, not a fallthrough: they
+ * have no phone for rows to belong to, and the phone is closed for them anyway
+ * (`phoneItem.ts`), so the only way this is reached is a client that opened it regardless.
+ * Everything else that is not an item in hand degrades to the identity phone.
+ */
+export const phoneForRequest = async (src: number, citizenid: string): Promise<string> => {
+  const resolution = await resolvePhone(src);
+  if (resolution.status === 'active') return resolution.phone.phoneId;
+  if (resolution.status === 'none') {
+    throw new PlayerFacingError('You are not holding a phone.', { key: 'server.phone.notHeld' });
+  }
+  const identity = await identityPhone(citizenid);
+  activeByCitizen.set(citizenid, identity);
+  return identity;
+};
+
+installPhoneResolvers({ forRequest: phoneForRequest, forCitizen: phoneForCitizen });

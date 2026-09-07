@@ -44,6 +44,7 @@ vi.mock('../lib/FrameworkBridge', () => ({
 import { messages } from '../services/Messages';
 import { MessageRepository } from '../repositories/MessageRepository';
 import { __resetRateLimits } from '../lib/rateLimit';
+import { TEST_PHONE_ID } from './phoneStub';
 
 /** The row `findById` will answer with, or null for "no such message of yours". */
 const world = {
@@ -134,7 +135,8 @@ describe('messages:edit — who may rewrite what', () => {
     );
     expect(membershipCalls).toHaveLength(1);
     // 7 is the row's own conversation, read off the row and never off the payload.
-    expect(membershipCalls[0][1]).toEqual([7, 'CIT_A']);
+    // ...and the phone in the caller's hand beside the citizen (MICA-282).
+    expect(membershipCalls[0][1]).toEqual([7, 'CIT_A', TEST_PHONE_ID]);
 
     // A caller naming their own thread while editing a message from one they are not in was
     // already ignored; `edit`'s contract declares no `conversation_id` at all, so the request

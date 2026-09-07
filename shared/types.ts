@@ -14,6 +14,8 @@ export type RingtoneId = 'classic' | 'chime' | 'beacon' | 'pulse' | 'ascent';
 export interface Contact {
   id: number;
   citizenid: string;
+  /** The phone this row is on (MICA-282). Set by the server; absent on a row written before phones were items. */
+  phone_id?: string | null;
   firstname: string;
   lastname?: string;
   phone: string;
@@ -66,7 +68,9 @@ export interface Conversation {
   /**
    * The two sides of a 1:1 thread (MICA-161), null for a group thread. Set once at
    * creation by the server and never client-writable — see `mica_messages_conversations`
-   * in `server/services/Conversations.ts` for the generated `pair_key` these back.
+   * in `server/services/Conversations.ts` for the generated `pair_key` these back. **Phone
+   * ids since MICA-282**, not citizenids: a pair is two phones, so one person's two phones
+   * can each hold a thread with the same contact.
    */
   participant_a?: string | null;
   participant_b?: string | null;
@@ -82,6 +86,8 @@ export interface Participant {
   id: number;
   conversation_id: number;
   citizenid: string;
+  /** The phone this membership is on (MICA-282): the thread lives on the device. */
+  phone_id?: string | null;
   role: 'admin' | 'member';
   status?: 'active' | 'left' | 'removed' | 'moderated';
   last_read: Date | string;
@@ -173,6 +179,8 @@ export interface PhoneBattery {
 export interface PhoneCallLogEntry {
   id: number;
   citizenid: string;
+  /** The phone this row is on (MICA-282). Set by the server; absent on a row written before phones were items. */
+  phone_id?: string | null;
   kind: 'incoming' | 'outgoing' | 'missed';
   number: string;
   /** Seconds. 0 when the call was never answered. */
@@ -198,6 +206,8 @@ export interface PhoneCallLogEntry {
 export interface PhoneSetting {
   id: number;
   citizenid: string;
+  /** The phone this row is on (MICA-282). Set by the server; absent on a row written before phones were items. */
+  phone_id?: string | null;
   /** Storage namespace — `settings`, `blabber`, or an add-on's id. */
   app: string;
   setting_key: string;
@@ -416,6 +426,8 @@ export interface BlabberDmThread {
 export interface Note {
   id: number;
   citizenid: string;
+  /** The phone this row is on (MICA-282). Set by the server; absent on a row written before phones were items. */
+  phone_id?: string | null;
   title: string;
   content: string;
   status?: 'active' | 'archived' | 'deleted' | 'moderated';
@@ -435,6 +447,8 @@ export interface Note {
 export interface SavedPlace {
   id: number;
   citizenid: string;
+  /** The phone this row is on (MICA-282). Set by the server; absent on a row written before phones were items. */
+  phone_id?: string | null;
   name: string;
   street_label?: string;
   x: number;
@@ -474,6 +488,8 @@ export type MediaKind =
 export interface MediaItem {
   id: number;
   citizenid: string;
+  /** The phone this row is on (MICA-282). Set by the server; absent on a row written before phones were items. */
+  phone_id?: string | null;
   kind: MediaKind;
   /** Base64. Was `image`, and still the only field anything writes today. */
   data?: string;
@@ -541,6 +557,8 @@ export interface HodlrHolding {
 export interface SavedPlace {
   id: number;
   citizenid: string;
+  /** The phone this row is on (MICA-282). Set by the server; absent on a row written before phones were items. */
+  phone_id?: string | null;
   name: string;
   street_label?: string;
   x: number;
@@ -554,6 +572,8 @@ export interface SavedPlace {
 export interface NotificationItem {
   id: number;
   citizenid: string;
+  /** The phone this row is on (MICA-282). Set by the server; absent on a row written before phones were items. */
+  phone_id?: string | null;
   app: string;
   kind: string;
   title: string;

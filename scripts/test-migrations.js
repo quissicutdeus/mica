@@ -66,13 +66,14 @@ const EXTERNAL_DB = Boolean(DB_HOST || DB_PORT || DB_USER || DB_PASSWORD);
  * configured": a harness that returns early — a fixture that silently seeded nothing, a loop
  * over an empty list — would otherwise print a pass having checked almost nothing.
  *
- * The run currently makes **115** checks — the two `runVariant`s (17 each), the two
- * `runSweepFixtures` (17 each) and the two `runNumberMigration`s (MICA-284; 21 on qb, 16 on
- * ESX) — so the margin here is eight. That is deliberately tight: losing any one fixture
- * drops below it and fails, which is the whole point. Raise the floor when you add checks,
- * rather than letting the gap widen until it stops catching anything.
+ * The run currently makes **191** checks — the two `runVariant`s (17 each), the two
+ * `runSweepFixtures` (17 each), the two `runNumberMigration`s (MICA-284; 21 on qb, 16 on
+ * ESX) and the two `runDataMigration`s (MICA-282; 38 each) — so the margin here is eight.
+ * That is deliberately tight: losing any one fixture drops below it and fails, which is the
+ * whole point. Raise the floor when you add checks, rather than letting the gap widen until it
+ * stops catching anything.
  */
-const MINIMUM_CHECKS = 107;
+const MINIMUM_CHECKS = 183;
 let checksRun = 0;
 
 const check = (label, actual, expected) => {
@@ -291,13 +292,16 @@ CREATE TABLE IF NOT EXISTS players (
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;`;
 
 const PEOPLE = ['CIT_A', 'CIT_B', 'CIT_EAVESDROPPER'];
+/** Two phones, one per person in the genuine pair. Fixed ids, so assertions can name them. */
+const A_PHONE = 'a'.repeat(32);
+const B_PHONE = 'b'.repeat(32);
 
 /**
  * The rows the flattened baseline's constraints are judged against.
  *
  * Before the flatten this seeded five fixtures full of duplicates, because migrations
  * existed to clean them up and the fixtures were the mess they had to survive. The
- * baseline now creates `conversation_participant_unique` and `pair_key_unique` in their
+ * baseline now creates `conversation_phone_unique` and `pair_key_unique` in their
  * final shape, so a duplicate cannot be inserted here at all -- which is the property
  * worth proving instead. What is left is the smallest legal graph the rejection tests
  * need: one genuine pair, and the people to build a second one from.
@@ -321,15 +325,16 @@ const seedBaselineRows = async (connection, hasPlayers) => {
   );
   const genuine = conversation.insertId;
 
-  for (const [citizenid, role] of [
-    ['CIT_A', 'admin'],
-    ['CIT_B', 'member']
+  // A membership is the phone's (MICA-282): each row names the phone it is on.
+  for (const [citizenid, phoneId, role] of [
+    ['CIT_A', A_PHONE, 'admin'],
+    ['CIT_B', B_PHONE, 'member']
   ]) {
     await connection.query(
       `INSERT INTO mica_messages_participants
-         (conversation_id, citizenid, role, left_at, status)
-       VALUES (?, ?, ?, NULL, 'active')`,
-      [genuine, citizenid, role]
+         (conversation_id, citizenid, phone_id, role, left_at, status)
+       VALUES (?, ?, ?, ?, NULL, 'active')`,
+      [genuine, citizenid, phoneId, role]
     );
   }
 
@@ -421,22 +426,22 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, server }) => {
 
   const participantIndexes = await indexesOn(connection, 'mica_messages_participants');
   check(
-    `${schemaFile}: the unique participant key is on`,
-    participantIndexes.includes('conversation_participant_unique (unique)'),
+    `${schemaFile}: the unique participant key is on, per phone (MICA-282)`,
+    participantIndexes.includes('conversation_phone_unique (unique)'),
     true
   );
   check(
-    `${schemaFile}: and the old non-unique index is not`,
-    participantIndexes.includes('conversation_participant'),
+    `${schemaFile}: and neither the old non-unique index nor the per-citizen key is`,
+    participantIndexes.some((k) => k.startsWith('conversation_participant')),
     false
   );
 
   let rejected = null;
   try {
     await connection.query(
-      `INSERT INTO mica_messages_participants (conversation_id, citizenid, role, left_at, status)
-       VALUES (?, ?, 'member', NULL, 'active')`,
-      [ids.genuine, 'CIT_B']
+      `INSERT INTO mica_messages_participants (conversation_id, citizenid, phone_id, role, left_at, status)
+       VALUES (?, ?, ?, 'member', NULL, 'active')`,
+      [ids.genuine, 'CIT_B', B_PHONE]
     );
   } catch (error) {
     rejected = error.code;
@@ -769,8 +774,6 @@ const runSweepFixtures = async ({ connection, schemaFile, hasPlayers, server }) 
 
 const NUMBERS = 'mica_phone_numbers';
 const NUMBER_MIGRATION = '0001_phone_numbers_follow_the_phone';
-const A_PHONE = 'a'.repeat(32);
-const B_PHONE = 'b'.repeat(32);
 
 /**
  * Put `mica_phone_numbers` back into the shape MICA-151 shipped, so there is something to
@@ -979,6 +982,320 @@ const runNumberMigration = async ({ connection, schemaFile, hasPlayers, server }
   check(`${label}: and reports no failure`, second.failed, null);
 };
 
+/* ------------------------------ MICA-282: the phone's data follows the phone */
+
+const DATA_MIGRATION = '0002_phone_data_follows_the_phone';
+const DEVICE_TABLES = [
+  'mica_contacts',
+  'mica_notes',
+  'mica_media',
+  'mica_lockscreen',
+  'mica_settings',
+  'mica_notifications',
+  'mica_phone_call_log',
+  'mica_places',
+  'mica_blocklist',
+  'mica_messages_participants'
+];
+/** The per-phone unique keys 0002 adds, and the per-citizen ones it replaces. */
+const KEY_SWAPS = [
+  ['mica_lockscreen', 'phone_id_unique', 'citizenid_unique', '(citizenid)'],
+  ['mica_settings', 'phone_app_key', 'citizenid_app_key', '(citizenid, app, setting_key)'],
+  ['mica_blocklist', 'phone_number_unique', 'citizenid_number_unique', '(citizenid, number)'],
+  [
+    'mica_messages_participants',
+    'conversation_phone_unique',
+    'conversation_participant_unique',
+    '(conversation_id, citizenid)'
+  ]
+];
+
+/**
+ * Put the schema back into the shape it had before 0002: no `phone_id` anywhere but the
+ * two tables that already carried it, no `claimed`, and the four per-citizen unique keys.
+ * Reconstructed by hand from the DDL as it stood, the same way `regressNumbersTable` is.
+ */
+const regressDeviceTables = async (connection) => {
+  for (const [table, added, dropped, columns] of KEY_SWAPS) {
+    await connection.query(
+      `ALTER TABLE ${table} DROP KEY ${added}, ADD UNIQUE KEY ${dropped} ${columns}`
+    );
+  }
+  for (const table of DEVICE_TABLES) {
+    await connection.query(`ALTER TABLE ${table} DROP KEY phone_id, DROP COLUMN phone_id`);
+  }
+  await connection.query('ALTER TABLE mica_phones DROP COLUMN claimed');
+  await connection.query('DELETE FROM mica_schema_migrations WHERE id = ?', [DATA_MIGRATION]);
+};
+
+const columnsOn = async (connection, table) => {
+  const [rows] = await connection.query(
+    `SELECT column_name AS name FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE() AND table_name = ? ORDER BY column_name`,
+    [table]
+  );
+  return rows.map((r) => r.name);
+};
+
+const phoneOf = async (connection, citizenid) =>
+  await scalar(connection, 'SELECT phone_id FROM mica_phones WHERE citizenid = ? ORDER BY id', [
+    citizenid
+  ]);
+
+/**
+ * 0002, executed against rows rather than read.
+ *
+ * Four characters, one of each kind the migration has to get right: one who already has a
+ * phone minted into an item (kept, and their rows land on it), two who have rows and no phone
+ * (one unclaimed phone each), and one with nothing (no phone at all). Between them: a 1:1
+ * thread whose pair columns have to become phones, a legacy number that must attach and one
+ * that must not because its phone already has a number, and a row on every one of the four
+ * tables whose unique key changes shape — with the pair that used to collide only by citizen
+ * (two people blocking the same number) still legal under the per-phone key.
+ */
+const runDataMigration = async ({ connection, schemaFile, hasPlayers, server }) => {
+  const variant = hasPlayers ? 'qb' : 'esx';
+  const database = `mica_devices_${variant}`;
+  const label = `${schemaFile} devices`;
+  const cid = (name) =>
+    hasPlayers ? `CIT_${name}` : `char1:license:${name.toLowerCase().repeat(6)}`;
+  const A = cid('A');
+  const B = cid('B');
+  const C = cid('C');
+  const D = cid('D');
+  const PHONE_A = 'a'.repeat(32);
+
+  step(`${schemaFile} — MICA-282 ${DATA_MIGRATION}, on a ${variant} server`);
+
+  await connection.query(`DROP DATABASE IF EXISTS \`${database}\``);
+  await connection.query(`CREATE DATABASE \`${database}\``);
+  await connection.changeUser({ database });
+  if (hasPlayers) {
+    await connection.query(PLAYERS_TABLE);
+    for (const citizenid of [A, B, C, D]) {
+      await connection.query('INSERT INTO players (citizenid, charinfo) VALUES (?, ?)', [
+        citizenid,
+        JSON.stringify({ firstname: citizenid, lastname: 'Test' })
+      ]);
+    }
+  }
+  await connection.query(fs.readFileSync(path.join(root, schemaFile), 'utf8'));
+  await regressDeviceTables(connection);
+
+  check(
+    `${label}: the regressed tables carry no phone_id`,
+    (await columnsOn(connection, 'mica_contacts')).includes('phone_id'),
+    false
+  );
+
+  // A already has a phone on an item (MICA-280 minted it); B and C have rows and no phone.
+  await connection.query('INSERT INTO mica_phones (citizenid, phone_id) VALUES (?, ?)', [
+    A,
+    PHONE_A
+  ]);
+  await connection.query(
+    'INSERT INTO mica_contacts (citizenid, firstname, phone) VALUES (?, ?, ?), (?, ?, ?)',
+    [A, 'Ada', '5550001', B, 'Bob', '5550002']
+  );
+  await connection.query('INSERT INTO mica_notes (citizenid, title, content) VALUES (?, ?, ?)', [
+    B,
+    'note',
+    'body'
+  ]);
+  await connection.query(
+    'INSERT INTO mica_lockscreen (citizenid, passcode_hash, passcode_salt) VALUES (?, ?, ?), (?, ?, ?)',
+    [A, 'h'.repeat(64), 's'.repeat(32), B, 'h'.repeat(64), 't'.repeat(32)]
+  );
+  await connection.query(
+    'INSERT INTO mica_settings (citizenid, app, setting_key, setting_value) VALUES (?, ?, ?, ?), (?, ?, ?, ?)',
+    [A, 'settings', 'theme', 'dark', B, 'settings', 'theme', 'light']
+  );
+  // Two people blocking the same number: legal by citizen, and it has to stay legal by phone.
+  await connection.query('INSERT INTO mica_blocklist (citizenid, number) VALUES (?, ?), (?, ?)', [
+    A,
+    '5559999',
+    B,
+    '5559999'
+  ]);
+  await connection.query(
+    'INSERT INTO mica_notifications (citizenid, app, kind, title, body) VALUES (?, ?, ?, ?, ?)',
+    [C, 'messages', 'message', 'Hi', 'hello']
+  );
+  // A 1:1 thread between A and B, keyed by citizen as MICA-161 wrote it.
+  const [conv] = await connection.query(
+    `INSERT INTO mica_messages_conversations (citizenid, is_group, participant_a, participant_b, status)
+     VALUES (?, 0, ?, ?, 'active')`,
+    [A, A, B]
+  );
+  await connection.query(
+    `INSERT INTO mica_messages_participants (conversation_id, citizenid, role, left_at, status)
+     VALUES (?, ?, 'admin', NULL, 'active'), (?, ?, 'member', NULL, 'active')`,
+    [conv.insertId, A, conv.insertId, B]
+  );
+  // Numbers: A's phone already carries one, so A's legacy row must stay unattached; B's legacy
+  // row attaches to the phone B is about to be minted.
+  await connection.query(
+    'INSERT INTO mica_phone_numbers (citizenid, number, phone_id) VALUES (?, ?, ?), (?, ?, NULL), (?, ?, NULL)',
+    [A, '5550009', PHONE_A, A, '5550001', B, '5550002']
+  );
+
+  const run = await server.runPendingMigrations();
+  check(`${label}: the migration applied`, run.applied, [DATA_MIGRATION]);
+  check(`${label}: and failed nothing`, run.failed, null);
+
+  step(`${schemaFile} — who has a phone afterwards`);
+  const phoneB = await phoneOf(connection, B);
+  const phoneC = await phoneOf(connection, C);
+  check(`${label}: A keeps the phone already on their item`, await phoneOf(connection, A), PHONE_A);
+  check(
+    `${label}: B and C each got one unclaimed phone`,
+    [/^[0-9a-f]{32}$/.test(phoneB), /^[0-9a-f]{32}$/.test(phoneC), phoneB !== phoneC],
+    [true, true, true]
+  );
+  check(`${label}: D, who owns nothing, got none`, await phoneOf(connection, D), null);
+  check(
+    `${label}: the pre-existing phone is claimed and the minted ones are not`,
+    (
+      await connection.query('SELECT citizenid, claimed FROM mica_phones ORDER BY citizenid')
+    )[0].map((r) => `${r.citizenid}:${r.claimed}`),
+    [`${A}:1`, `${B}:0`, `${C}:0`]
+  );
+
+  step(`${schemaFile} — every row is on its owner's phone`);
+  const rowsOf = async (table, extra = '') =>
+    (await connection.query(`SELECT citizenid, phone_id${extra} FROM ${table} ORDER BY id`))[0];
+  check(
+    `${label}: contacts`,
+    (await rowsOf('mica_contacts')).map((r) => r.phone_id),
+    [PHONE_A, phoneB]
+  );
+  check(
+    `${label}: notes`,
+    (await rowsOf('mica_notes')).map((r) => r.phone_id),
+    [phoneB]
+  );
+  check(
+    `${label}: lockscreen`,
+    (await rowsOf('mica_lockscreen')).map((r) => r.phone_id),
+    [PHONE_A, phoneB]
+  );
+  check(
+    `${label}: settings`,
+    (await rowsOf('mica_settings')).map((r) => r.phone_id),
+    [PHONE_A, phoneB]
+  );
+  check(
+    `${label}: blocklist`,
+    (await rowsOf('mica_blocklist')).map((r) => r.phone_id),
+    [PHONE_A, phoneB]
+  );
+  check(
+    `${label}: notifications`,
+    (await rowsOf('mica_notifications')).map((r) => r.phone_id),
+    [phoneC]
+  );
+  check(
+    `${label}: participants`,
+    (await rowsOf('mica_messages_participants')).map((r) => r.phone_id),
+    [PHONE_A, phoneB]
+  );
+
+  const [[pair]] = await connection.query(
+    'SELECT participant_a, participant_b, pair_key FROM mica_messages_conversations WHERE id = ?',
+    [conv.insertId]
+  );
+  check(
+    `${label}: the pair columns are the two phones now`,
+    [pair.participant_a, pair.participant_b],
+    [PHONE_A, phoneB]
+  );
+  check(
+    `${label}: and the generated pair key follows`,
+    pair.pair_key,
+    `${[PHONE_A, phoneB].sort()[0]}|${[PHONE_A, phoneB].sort()[1]}`
+  );
+
+  const numbers = (
+    await connection.query('SELECT number, phone_id FROM mica_phone_numbers ORDER BY id')
+  )[0];
+  check(
+    `${label}: B's legacy number is on B's phone; A's stays legacy because A's phone has one`,
+    numbers.map((n) => `${n.number}:${n.phone_id ?? 'NULL'}`),
+    [`5550009:${PHONE_A}`, '5550001:NULL', `5550002:${phoneB}`]
+  );
+
+  step(`${schemaFile} — the migrated tables are the declared tables`);
+  const plans = await server.SchemaMigrator.plan();
+  for (const table of [...DEVICE_TABLES, 'mica_phones']) {
+    const plan = plans.find((p) => p.table === table);
+    check(`${label}: ${table} — nothing to add, no drift`, [plan.additive, plan.drift], [[], []]);
+  }
+  for (const [table, added, dropped] of KEY_SWAPS) {
+    const keys = await indexesOn(connection, table);
+    check(
+      `${label}: ${table} — ${added} is unique and ${dropped} is gone`,
+      [keys.includes(`${added} (unique)`), keys.some((k) => k.startsWith(dropped))],
+      [true, false]
+    );
+  }
+
+  step(`${schemaFile} — running up() a second time changes nothing`);
+  const snapshot = async () => ({
+    phones: await rowsIn(connection, 'mica_phones'),
+    contacts: await rowsIn(connection, 'mica_contacts'),
+    numbers: numbers.length
+  });
+  const before = await snapshot();
+  await server.migrations.find((m) => m.id === DATA_MIGRATION).up();
+  check(`${label}: no phone minted, no row added`, await snapshot(), before);
+  const second = await server.runPendingMigrations();
+  check(`${label}: a second run applies nothing`, second.applied, []);
+
+  step(`${schemaFile} — what the new keys allow and refuse`);
+  check(
+    `${label}: a second passcode for A on another phone is allowed`,
+    await rejects(() =>
+      connection.query(
+        'INSERT INTO mica_lockscreen (citizenid, phone_id, passcode_hash, passcode_salt) VALUES (?, ?, ?, ?)',
+        [A, B_PHONE, 'x'.repeat(64), 'y'.repeat(32)]
+      )
+    ),
+    null
+  );
+  check(
+    `${label}: a second passcode on the same phone is rejected`,
+    await rejects(() =>
+      connection.query(
+        'INSERT INTO mica_lockscreen (citizenid, phone_id, passcode_hash, passcode_salt) VALUES (?, ?, ?, ?)',
+        [A, PHONE_A, 'x'.repeat(64), 'y'.repeat(32)]
+      )
+    ),
+    'ER_DUP_ENTRY'
+  );
+  check(
+    `${label}: the same phone twice in one thread is rejected`,
+    await rejects(() =>
+      connection.query(
+        `INSERT INTO mica_messages_participants (conversation_id, citizenid, phone_id, role, left_at, status)
+         VALUES (?, ?, ?, 'member', NULL, 'active')`,
+        [conv.insertId, A, PHONE_A]
+      )
+    ),
+    'ER_DUP_ENTRY'
+  );
+  check(
+    `${label}: the same person's second phone in that thread is allowed`,
+    await rejects(() =>
+      connection.query(
+        `INSERT INTO mica_messages_participants (conversation_id, citizenid, phone_id, role, left_at, status)
+         VALUES (?, ?, ?, 'member', NULL, 'active')`,
+        [conv.insertId, A, B_PHONE]
+      )
+    ),
+    null
+  );
+};
+
 const main = async () => {
   let container;
   let connection;
@@ -1039,6 +1356,17 @@ const main = async () => {
     // nothing — loudly — where there is no such table.
     await runNumberMigration({ connection, schemaFile: 'mica.sql', hasPlayers: true, server });
     await runNumberMigration({
+      connection,
+      schemaFile: 'mica.esx.sql',
+      hasPlayers: false,
+      server
+    });
+
+    // MICA-282. Both shapes again: the seed and the pair rewrite touch only micaOS's own
+    // tables, so the difference between them is the foreign keys onto `players` alone — which
+    // is exactly the thing worth proving does not change what the migration does.
+    await runDataMigration({ connection, schemaFile: 'mica.sql', hasPlayers: true, server });
+    await runDataMigration({
       connection,
       schemaFile: 'mica.esx.sql',
       hasPlayers: false,

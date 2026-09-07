@@ -7,6 +7,8 @@ import { notifyPlayer } from '../lib/shell';
 import { registerService } from '../lib/services';
 import { guardNetEvent, phoneNumberFrom } from '../lib/netGuard';
 import { phoneCallLog } from './PhoneCallLog';
+import { phoneForCitizen } from '../lib/phoneIdentity';
+import { readPhoneIdByNumber } from '../lib/phoneNumbers';
 import { isAdmin } from './Admin';
 import { SEED_CHARACTERS } from '../lib/seed';
 import { isBlocked } from './Blocklist';
@@ -91,20 +93,39 @@ function logCallEnd(call: ActiveCall): void {
   const targetCitizenid = FrameworkBridge.getCitizenId(call.target);
 
   if (callerCitizenid) {
-    void phoneCallLog.repo.create({
-      citizenid: callerCitizenid,
-      kind: 'outgoing',
-      number: call.targetPhone,
-      duration: durationSec
-    });
+    void logCall(callerCitizenid, call.callerPhone, 'outgoing', call.targetPhone, durationSec);
   }
   if (targetCitizenid) {
-    void phoneCallLog.repo.create({
-      citizenid: targetCitizenid,
-      kind: answered ? 'incoming' : 'missed',
-      number: call.callerPhone,
-      duration: durationSec
-    });
+    void logCall(
+      targetCitizenid,
+      call.targetPhone,
+      answered ? 'incoming' : 'missed',
+      call.callerPhone,
+      durationSec
+    );
+  }
+}
+
+/**
+ * One call-log row, on the phone the number was used from (MICA-282).
+ *
+ * The phone that owns `ownNumber` is the phone the call happened on — the caller dialled from
+ * it, the callee was rung on it — so that is where the row belongs, whoever holds it later.
+ * A number micaOS has no row for (ESX) falls back to whichever phone the citizen is on. Never
+ * throws: a call log that could not be written is a line in the log, not a failed call.
+ */
+async function logCall(
+  citizenid: string,
+  ownNumber: string,
+  kind: 'incoming' | 'outgoing' | 'missed',
+  number: string,
+  duration: number
+): Promise<void> {
+  try {
+    const phone_id = (await readPhoneIdByNumber(ownNumber)) ?? (await phoneForCitizen(citizenid));
+    await phoneCallLog.repo.create({ citizenid, phone_id, kind, number, duration });
+  } catch (error) {
+    console.error(`[mica] could not log a ${kind} call for ${citizenid}.`, error);
   }
 }
 
@@ -217,12 +238,13 @@ export function endActiveCallFor(targetSrc: number): boolean {
 function failUnreachable(src: number, targetPhone: string): void {
   const callerCitizenid = FrameworkBridge.getCitizenId(src);
   if (callerCitizenid) {
-    void phoneCallLog.repo.create({
-      citizenid: callerCitizenid,
-      kind: 'outgoing',
-      number: targetPhone,
-      duration: 0
-    });
+    void logCall(
+      callerCitizenid,
+      FrameworkBridge.getPlayerPhone(src) ?? '',
+      'outgoing',
+      targetPhone,
+      0
+    );
   }
 
   // Issued before the `failed` push, which is what sends the caller's phone back to idle

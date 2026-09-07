@@ -38,6 +38,7 @@ vi.mock('../lib/proximity', () => ({
 
 import { contacts } from '../services/Contacts';
 import { __resetRateLimits } from '../lib/rateLimit';
+import { TEST_PHONE_ID } from './phoneStub';
 
 const SHARE_EVENT = 'mica:server:contacts:share';
 
@@ -297,7 +298,7 @@ describe('contacts:restore (MICA-75)', () => {
     const [sql, params] = dbMock.update.mock.calls[0];
     expect(String(sql)).toContain('UPDATE `mica_contacts`');
     expect(String(sql)).toContain("`status` = 'deleted'");
-    expect(params).toEqual([3, 'CID_A', 30]);
+    expect(params).toEqual([3, 'CID_A', TEST_PHONE_ID, 30]);
   });
 
   it('reports false rather than throwing once the window has passed', async () => {
@@ -329,7 +330,7 @@ describe('contacts:restore (MICA-75)', () => {
     await genericCall('restore', { id: 3 });
 
     (globalThis as any).GetConvar = previous;
-    expect(dbMock.update.mock.calls[0][1]).toEqual([3, 'CID_A', 7]);
+    expect(dbMock.update.mock.calls[0][1]).toEqual([3, 'CID_A', TEST_PHONE_ID, 7]);
   });
 
   it('rejects a missing or invalid id before touching the database', async () => {
@@ -367,7 +368,7 @@ describe('contacts:getDeleted (MICA-75-wiring)', () => {
     const [sql, params] = dbMock.query.mock.calls[0];
     expect(String(sql)).toContain('FROM `mica_contacts`');
     expect(String(sql)).toContain("`status` = 'deleted'");
-    expect(params).toEqual(['CID_A', 30]);
+    expect(params).toEqual(['CID_A', TEST_PHONE_ID, 30]);
   });
 
   it('refuses a payload claiming a citizenid — the list takes no payload at all', async () => {

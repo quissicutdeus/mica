@@ -28,6 +28,7 @@ vi.mock('../lib/FrameworkBridge', () => ({
 import '../services/Lockscreen';
 import { __resetRateLimits } from '../lib/rateLimit';
 import { __resetLockscreenAttempts, __setLockscreenClock } from '../services/Lockscreen';
+import { TEST_PHONE_ID } from './phoneStub';
 
 const call = async (action: string, data: unknown, citizenid = 'CIT_A') => {
   const handler = handlers.get(`mica:server:lockscreen:${action}`);
@@ -71,7 +72,7 @@ describe('lockscreen:status (MICA-60)', () => {
 
   it('reads only the caller citizenid, and refuses a payload that names one', async () => {
     await call('status', {});
-    expect(dbMock.single.mock.calls[0][1]).toEqual(['CIT_A']);
+    expect(dbMock.single.mock.calls[0][1]).toEqual(['CIT_A', TEST_PHONE_ID]);
 
     dbMock.single.mockClear();
     const reply = await call('status', { citizenid: 'CIT_VICTIM' });
@@ -107,9 +108,9 @@ describe('lockscreen:set (MICA-60)', () => {
 
     const [sql, params] = queryCalls()[0];
     expect(String(sql)).toContain('INSERT INTO mica_lockscreen');
-    // citizenid, hash, salt — none of them the literal passcode.
+    // citizenid, phone, hash, salt — none of them the literal passcode.
     expect(params).not.toContain('135790');
-    const [, hash, salt] = params as string[];
+    const [, , hash, salt] = params as string[];
     expect(hash).not.toBe('135790');
     expect(hash).toMatch(/^[0-9a-f]{64}$/); // sha256 hex digest
     expect(salt).toMatch(/^[0-9a-f]{32}$/); // 16 random bytes, hex
@@ -119,8 +120,8 @@ describe('lockscreen:set (MICA-60)', () => {
     await call('set', { passcode: '111111' }, 'CIT_A');
     await call('set', { passcode: '111111' }, 'CIT_B');
 
-    const [, hashA, saltA] = queryCalls()[0][1] as string[];
-    const [, hashB, saltB] = queryCalls()[1][1] as string[];
+    const [, , hashA, saltA] = queryCalls()[0][1] as string[];
+    const [, , hashB, saltB] = queryCalls()[1][1] as string[];
     expect(saltA).not.toBe(saltB);
     expect(hashA).not.toBe(hashB);
   });
@@ -141,7 +142,8 @@ describe('lockscreen:check (MICA-60)', () => {
   /** Round-trips a `set` through the mocked upsert so `check` can be handed the same row back. */
   const setAndCapture = async (passcode: string) => {
     await call('set', { passcode });
-    const [, passcode_hash, passcode_salt] = queryCalls()[0][1] as string[];
+    // citizenid, phone_id, hash, salt — the phone rides beside the citizen since MICA-282.
+    const [, , passcode_hash, passcode_salt] = queryCalls()[0][1] as string[];
     dbMock.single.mockResolvedValue({
       id: 1,
       citizenid: 'CIT_A',
@@ -189,7 +191,7 @@ describe('lockscreen:check (MICA-60)', () => {
     await setAndCapture('482091');
     await call('check', { passcode: '482091' });
     // The lookup is keyed on the resolved caller. There is no payload claim to prefer it to.
-    expect(dbMock.single.mock.calls.at(-1)?.[1]).toEqual(['CIT_A']);
+    expect(dbMock.single.mock.calls.at(-1)?.[1]).toEqual(['CIT_A', TEST_PHONE_ID]);
 
     const reply = await call('check', { passcode: '482091', citizenid: 'CIT_VICTIM' });
     expect(reply).toMatchObject({ error: expect.stringContaining('citizenid') });
@@ -202,7 +204,7 @@ describe('lockscreen:clear (MICA-60)', () => {
     expect(reply).toEqual({ ok: true });
     const [sql, params] = queryCalls()[0];
     expect(String(sql)).toContain('DELETE FROM mica_lockscreen');
-    expect(params).toEqual(['CIT_A']);
+    expect(params).toEqual(['CIT_A', TEST_PHONE_ID]);
   });
 
   it('is idempotent — clearing an already-unset passcode still answers ok', async () => {
@@ -213,7 +215,7 @@ describe('lockscreen:clear (MICA-60)', () => {
 
   it('clears only the caller citizenid, and refuses a payload that names one', async () => {
     await call('clear', {});
-    expect(queryCalls()[0][1]).toEqual(['CIT_A']);
+    expect(queryCalls()[0][1]).toEqual(['CIT_A', TEST_PHONE_ID]);
 
     dbMock.query.mockClear();
     const reply = await call('clear', { citizenid: 'CIT_VICTIM' });
@@ -251,12 +253,12 @@ describe('the passcode KDF (MICA-164)', () => {
   const storedHash = async (passcode: string): Promise<string> => {
     await call('set', { passcode });
     const row = queryCalls().at(-1)?.[1];
-    return row[1];
+    return row[2];
   };
 
   it('does not store the passcode as a bare SHA-256 of salt and passcode', async () => {
     const hash = await storedHash('482091');
-    const salt = queryCalls().at(-1)?.[1][2];
+    const salt = queryCalls().at(-1)?.[1][3];
 
     // The exact shape the old implementation wrote. If this ever matches again, the KDF has
     // been reverted to something a laptop can exhaust over lunch.
@@ -289,8 +291,8 @@ describe('the passcode KDF (MICA-164)', () => {
   it('verifies a passcode it hashed itself', async () => {
     await call('set', { passcode: '482091' });
     dbMock.single.mockResolvedValue({
-      passcode_hash: queryCalls().at(-1)?.[1][1],
-      passcode_salt: queryCalls().at(-1)?.[1][2]
+      passcode_hash: queryCalls().at(-1)?.[1][2],
+      passcode_salt: queryCalls().at(-1)?.[1][3]
     });
 
     expect(await call('check', { passcode: '482091' })).toEqual({ ok: true });
@@ -304,8 +306,8 @@ describe('passcode attempt limiting (MICA-164)', () => {
   beforeEach(async () => {
     await call('set', { passcode: '482091' });
     dbMock.single.mockResolvedValue({
-      passcode_hash: queryCalls().at(-1)?.[1][1],
-      passcode_salt: queryCalls().at(-1)?.[1][2]
+      passcode_hash: queryCalls().at(-1)?.[1][2],
+      passcode_salt: queryCalls().at(-1)?.[1][3]
     });
   });
 

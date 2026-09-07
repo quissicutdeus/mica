@@ -476,6 +476,9 @@ describe('injectIncomingCall / endActiveCallFor — micacall support', () => {
     expect(ended).toBe(true);
     expect(emitCalls()).toEqual([['mica:client:phone:ended', 2]]);
 
+    // The log row is written after the phone it belongs to is resolved (MICA-282), so let
+    // that settle before reading the inserts.
+    await new Promise((resolve) => setTimeout(resolve, 0));
     // No caller-side row — there is no real citizenid behind the synthetic source.
     const inserts = createCalls();
     expect(inserts).toHaveLength(1);

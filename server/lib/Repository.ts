@@ -253,7 +253,17 @@ export abstract class Repository<T> {
    * message's `conversation_id`. Every identifier here is validated at declaration time
    * (§2.9: MySQL cannot parameterize an identifier), and both values stay bound.
    */
-  async isMember(parentId: number | string, citizenid: string): Promise<boolean> {
+  async isMember(
+    parentId: number | string,
+    citizenid: string,
+    /**
+     * Narrow membership to one phone (MICA-282). The same rule as `phonePredicate`: added
+     * beside the citizen, never instead of it, and refused outright when the membership
+     * table declares no phone column — a narrowing that silently did not narrow reads as a
+     * pass.
+     */
+    phoneId?: string
+  ): Promise<boolean> {
     if (!this.membership) {
       throw new Error(
         `[Repository] isMember on '${this.tableName}' requires a 'membership' declaration. ` +
@@ -262,13 +272,61 @@ export abstract class Repository<T> {
     }
     if (!citizenid) return false;
 
-    const { table, foreignKey, citizenColumn, liveWhileNull } = this.membership;
+    const { table, foreignKey, citizenColumn, phoneColumn, liveWhileNull } = this.membership;
+    if (phoneId && !phoneColumn) {
+      throw new Error(
+        `[Repository] isMember on '${this.tableName}' cannot scope by phone: its membership ` +
+          `table declares no 'phoneColumn'. Membership here belongs to the citizen, not the device.`
+      );
+    }
     const live = liveWhileNull ? ` AND \`${liveWhileNull}\` IS NULL` : '';
+    const phone = phoneId ? ` AND \`${phoneColumn}\` = ?` : '';
     const query =
       `SELECT 1 FROM \`${table}\` ` +
-      `WHERE \`${foreignKey}\` = ? AND \`${citizenColumn}\` = ?${live} LIMIT 1`;
+      `WHERE \`${foreignKey}\` = ? AND \`${citizenColumn}\` = ?${phone}${live} LIMIT 1`;
+    const params: unknown[] = [parentId, citizenid];
+    if (phoneId) params.push(phoneId);
 
-    return Boolean(await Database.single<unknown>(query, [parentId, citizenid]));
+    return Boolean(await Database.single<unknown>(query, params));
+  }
+
+  /**
+   * The phone changed hands: every row on it now belongs to whoever is holding it (MICA-282).
+   *
+   * This is the write that makes a device-owned table follow the device. §2.9's predicate is
+   * unchanged — every read and write still names `citizenid` **and** `phone_id` — and what
+   * moves is which citizen the rows name. The caller is `services/Phones.ts`, which has just
+   * established through the inventory's own export that this player holds the item carrying
+   * this id; nothing reaching here comes from a payload. A named method over a raw statement
+   * rather than a service-level bypass, which is where §2.9 puts a privileged write.
+   *
+   * `updated_at` is pinned, so a handover does not look like an edit: the restore window
+   * `Repository.restore` reads off it stays honest, and a thread's inbox order stays put.
+   *
+   * Refused on a table with no `phone_id` — there is nothing on it that follows a phone —
+   * and on one with no `citizenid`, which has no holder to move to.
+   */
+  async transferPhoneRows(phoneId: string, citizenid: string): Promise<boolean> {
+    if (!this.hasPhoneColumn) {
+      throw new Error(
+        `[Repository] transferPhoneRows on '${this.tableName}': no 'phone_id' column. This ` +
+          `table belongs to the citizen, not the device.`
+      );
+    }
+    if (!this.hasOwnerColumn) {
+      throw new Error(
+        `[Repository] transferPhoneRows on '${this.tableName}': no 'citizenid' column.`
+      );
+    }
+    if (!phoneId || !citizenid) {
+      throw new Error(`[Repository] transferPhoneRows requires both a phone id and a citizenid.`);
+    }
+    const pin = this.columns.includes('updated_at') ? ', `updated_at` = `updated_at`' : '';
+    return await Database.update(
+      `UPDATE \`${this.tableName}\` SET \`citizenid\` = ?${pin} ` +
+        'WHERE `phone_id` = ? AND `citizenid` <> ?',
+      [citizenid, phoneId, citizenid]
+    );
   }
 
   /** Reject any key that is not a real column on this table. */
@@ -581,7 +639,13 @@ export abstract class Repository<T> {
    * and `updated_at` are fixed column names this class already knows about, not payload
    * keys, so nothing here reaches `assertColumns`' allowlist and nothing needs to.
    */
-  async restore(id: number | string, citizenid: string, windowDays: number): Promise<boolean> {
+  async restore(
+    id: number | string,
+    citizenid: string,
+    windowDays: number,
+    /** Narrows to one phone on a device-owned table (MICA-282). Never a substitute for the citizenid. */
+    phoneId?: string
+  ): Promise<boolean> {
     if (!this.hasStatusColumn) {
       throw new Error(
         `[Repository] restore on '${this.tableName}' requires a 'status' column for soft delete.`
@@ -592,11 +656,15 @@ export abstract class Repository<T> {
         `[Repository] restore on '${this.tableName}' requires an 'updated_at' column.`
       );
     }
+    const phone = this.phonePredicate('restore', phoneId);
+    const params: unknown[] = [id, citizenid];
+    if (phone.param !== undefined) params.push(phone.param);
+    params.push(windowDays);
     return await Database.update(
       `UPDATE \`${this.tableName}\` SET \`status\` = 'active'
-       WHERE \`id\` = ? AND \`citizenid\` = ? AND \`status\` = 'deleted'
+       WHERE \`id\` = ? AND \`citizenid\` = ?${phone.sql} AND \`status\` = 'deleted'
          AND \`updated_at\` >= NOW() - INTERVAL ? DAY`,
-      [id, citizenid, windowDays]
+      params
     );
   }
 
@@ -625,7 +693,9 @@ export abstract class Repository<T> {
   async findDeleted(
     citizenid: string,
     windowDays: number,
-    projection?: readonly string[]
+    projection?: readonly string[],
+    /** Narrows to one phone on a device-owned table (MICA-282). Never a substitute for the citizenid. */
+    phoneId?: string
   ): Promise<T[]> {
     if (!this.hasStatusColumn) {
       throw new Error(
@@ -644,12 +714,16 @@ export abstract class Repository<T> {
       selection = projection.map((column) => `\`${column}\``).join(', ');
     }
 
+    const phone = this.phonePredicate('findDeleted', phoneId);
+    const params: unknown[] = [citizenid];
+    if (phone.param !== undefined) params.push(phone.param);
+    params.push(windowDays);
     return await Database.query<T[]>(
       `SELECT ${selection} FROM \`${this.tableName}\`
-       WHERE \`citizenid\` = ? AND \`status\` = 'deleted'
+       WHERE \`citizenid\` = ?${phone.sql} AND \`status\` = 'deleted'
          AND \`updated_at\` >= NOW() - INTERVAL ? DAY
        ORDER BY \`updated_at\` DESC`,
-      [citizenid, windowDays]
+      params
     );
   }
 }

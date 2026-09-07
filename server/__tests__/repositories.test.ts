@@ -230,26 +230,28 @@ describe('shipped repositories — inherited guarantees', () => {
     dbMock.update.mockResolvedValue(true);
     dbMock.update.mockClear();
 
-    await (conversations.repo as any).markRead(3, 'CIT_A');
+    await (conversations.repo as any).markRead(3, 'CIT_A', 'PHONE_A');
 
     const sql = String(dbMock.update.mock.calls[0][0]).replace(/\s+/g, ' ').trim();
+    // The citizen and the phone (MICA-282): a membership is the phone's, held by the citizen.
     expect(sql).toBe(
       'UPDATE mica_messages_participants SET last_read = CURRENT_TIMESTAMP ' +
-        'WHERE conversation_id = ? AND citizenid = ? AND left_at IS NULL'
+        'WHERE conversation_id = ? AND citizenid = ? AND phone_id = ? AND left_at IS NULL'
     );
-    expect(dbMock.update.mock.calls[0][1]).toEqual([3, 'CIT_A']);
+    expect(dbMock.update.mock.calls[0][1]).toEqual([3, 'CIT_A', 'PHONE_A']);
   });
 
-  it('findForCitizen computes unread_count from the caller own last_read', async () => {
+  it('findForPhone computes unread_count from the caller own last_read', async () => {
     dbMock.query.mockResolvedValue([]);
     dbMock.query.mockClear();
 
-    await (conversations.repo as any).findForCitizen('CIT_A', { limit: 25, cursor: null });
+    await (conversations.repo as any).findForPhone('CIT_A', 'PHONE_A', { limit: 25, cursor: null });
 
     const sql = String(dbMock.query.mock.calls[0][0]).replace(/\s+/g, ' ');
     // Joins the caller's own participant row so last_read is in scope...
     expect(sql).toContain('JOIN mica_messages_participants me');
     expect(sql).toContain('me.citizenid = ?');
+    expect(sql).toContain('me.phone_id = ?');
     expect(sql).toContain('me.left_at IS NULL');
     // ...counts only messages newer than it, and never the caller's own.
     expect(sql).toContain('unread.created_at > me.last_read');
@@ -261,11 +263,11 @@ describe('shipped repositories — inherited guarantees', () => {
      * asked for since MICA-211 — the probe row that makes `nextCursor` exact rather than
      * inferred from a short page — so 25 is asked for as 26 and the extra is dropped.
      */
-    expect(dbMock.query.mock.calls[0][1]).toEqual(['CIT_A', 26]);
+    expect(dbMock.query.mock.calls[0][1]).toEqual(['CIT_A', 'PHONE_A', 26]);
   });
 
   /**
-   * MICA-197 bounded this read: `findForCitizen` returned every thread a player had ever
+   * MICA-197 bounded this read: `findForPhone` (then `findForCitizen`) returned every thread a player had ever
    * been in, and each returned row carried correlated subqueries, so the cost of the list grew
    * without bound. Keyset rather than an offset, matching every other paged read here — a
    * thread created while somebody is paging shifts an offset and makes them see a row twice or
@@ -280,11 +282,11 @@ describe('shipped repositories — inherited guarantees', () => {
    * what is held here is that both halves are **bound parameters** and never interpolated
    * (§2.9), which is the property that survives every future change to the ordering.
    */
-  it('findForCitizen is keyset-paged on recency then id, both cursor halves bound', async () => {
+  it('findForPhone is keyset-paged on recency then id, both cursor halves bound', async () => {
     dbMock.query.mockResolvedValue([]);
     dbMock.query.mockClear();
 
-    await (conversations.repo as any).findForCitizen('CIT_A', {
+    await (conversations.repo as any).findForPhone('CIT_A', 'PHONE_A', {
       limit: 25,
       cursor: { time: '2026-05-05 05:05:05', id: 900 }
     });
@@ -299,6 +301,7 @@ describe('shipped repositories — inherited guarantees', () => {
     // the cursor reaches the SQL text.
     expect(dbMock.query.mock.calls[0][1]).toEqual([
       'CIT_A',
+      'PHONE_A',
       '2026-05-05 05:05:05',
       '2026-05-05 05:05:05',
       900,
@@ -306,18 +309,18 @@ describe('shipped repositories — inherited guarantees', () => {
     ]);
   });
 
-  it('findForCitizen omits the cursor clause entirely on the first page', async () => {
+  it('findForPhone omits the cursor clause entirely on the first page', async () => {
     dbMock.query.mockResolvedValue([]);
     dbMock.query.mockClear();
 
-    await (conversations.repo as any).findForCitizen('CIT_A', { limit: 25, cursor: null });
+    await (conversations.repo as any).findForPhone('CIT_A', 'PHONE_A', { limit: 25, cursor: null });
 
     const sql = String(dbMock.query.mock.calls[0][0]).replace(/\s+/g, ' ');
     // No predicate at all rather than a sentinel date compared against — the `ORDER BY` still
     // names the sort key, so the assertion is about the comparison, not the expression.
     expect(sql).not.toContain('c.`id` < ?');
     expect(sql).not.toContain('COALESCE(m.`created_at`, c.`updated_at`) < ?');
-    expect(dbMock.query.mock.calls[0][1]).toEqual(['CIT_A', 26]);
+    expect(dbMock.query.mock.calls[0][1]).toEqual(['CIT_A', 'PHONE_A', 26]);
   });
 
   /**

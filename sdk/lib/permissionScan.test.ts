@@ -257,7 +257,10 @@ describe('an out-of-tree add-on build can load this', () => {
         [
           '--input-type=module',
           '-e',
-          `const m = await import(${JSON.stringify(url)}); console.log(Object.keys(m).length);`
+          // `process.stdout.write`, not `console.log`: a shell that sets `FORCE_COLOR` makes
+          // Node wrap a logged number in ANSI colour codes even on a pipe, and the count
+          // came back as `NaN` for a file that loaded perfectly well.
+          `const m = await import(${JSON.stringify(url)}); process.stdout.write(String(Object.keys(m).length));`
         ],
         { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }
       );

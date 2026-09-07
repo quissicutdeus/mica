@@ -26,6 +26,7 @@ vi.mock('../lib/FrameworkBridge', () => ({
 
 import { notes } from '../services/Notes';
 import { __resetRateLimits } from '../lib/rateLimit';
+import { TEST_PHONE_ID } from './phoneStub';
 
 const call = async (action: string, data: unknown) => {
   const handler = handlers.get(`mica:server:notes:${action}`);
@@ -55,7 +56,7 @@ describe('notes:restore (MICA-75)', () => {
     expect(reply).toEqual({ ok: true });
     const [sql, params] = dbMock.update.mock.calls[0];
     expect(String(sql)).toContain('UPDATE `mica_notes`');
-    expect(params).toEqual([5, 'CIT_A', 30]);
+    expect(params).toEqual([5, 'CIT_A', TEST_PHONE_ID, 30]);
   });
 
   it('reports false once the window has passed, rather than throwing', async () => {
@@ -110,7 +111,7 @@ describe('notes:getDeleted (MICA-75-wiring)', () => {
     const [sql, params] = dbMock.query.mock.calls[0];
     expect(String(sql)).toContain('FROM `mica_notes`');
     expect(String(sql)).toContain("`status` = 'deleted'");
-    expect(params).toEqual(['CIT_A', 30]);
+    expect(params).toEqual(['CIT_A', TEST_PHONE_ID, 30]);
   });
 
   it('refuses a payload claiming a citizenid — the list takes no payload at all', async () => {

@@ -39,7 +39,14 @@ vi.mock('../lib/FrameworkBridge', () => ({
   detectFramework: () => 'qbx'
 }));
 
-import { activePhone, phones, __resetPhoneState } from '../services/Phones';
+import {
+  activePhone,
+  onPhoneHandover,
+  phoneForCitizen,
+  phoneForRequest,
+  phones,
+  __resetPhoneState
+} from '../services/Phones';
 import { __resetLastUsedPhone, __resetPhoneItemWarnings } from '../lib/phoneItem';
 
 /**
@@ -77,6 +84,8 @@ beforeEach(() => {
   globalThis.emitNet = vi.fn() as any;
   dbMock.query.mockResolvedValue([]);
   dbMock.insert.mockResolvedValue(1);
+  dbMock.update.mockResolvedValue(true);
+  dbMock.single.mockResolvedValue(null);
   bridgeMock.getPlayer.mockReturnValue(player);
   bridgeMock.setItemMetadata.mockReturnValue(true);
   gateOn();
@@ -196,5 +205,134 @@ describe('refusing to mint when it would be wrong', () => {
     const active = await activePhone(SRC);
 
     expect(active?.phoneId).toMatch(ID_SHAPE);
+  });
+});
+
+/**
+ * MICA-282: the phone a request is for, and what happens when a phone changes hands.
+ *
+ * Driven through `phoneForRequest` directly rather than the seam in `lib/phoneIdentity.ts`,
+ * because `setup.ts` puts a stub in that seam before every test; the real resolver is what
+ * is under test here.
+ */
+describe('the phone a request is for', () => {
+  const OTHER = 'ZZZ99999';
+
+  it('is the phone in hand on a gated server', async () => {
+    bridgeMock.itemSlots.mockReturnValue([{ slot: 3, metadata: { phoneId: 'a'.repeat(32) } }]);
+    dbMock.query.mockResolvedValue([
+      { id: 1, citizenid: CID, phone_id: 'a'.repeat(32), claimed: 1 }
+    ]);
+
+    await expect(phoneForRequest(SRC, CID)).resolves.toBe('a'.repeat(32));
+    expect(dbMock.update).not.toHaveBeenCalled();
+  });
+
+  it('refuses a player holding no phone on a gated server, in words they can read', async () => {
+    bridgeMock.itemSlots.mockReturnValue([]);
+
+    await expect(phoneForRequest(SRC, CID)).rejects.toMatchObject({
+      name: 'PlayerFacingError',
+      key: 'server.phone.notHeld'
+    });
+    expect(dbMock.insert).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the identity phone where no phone id can be carried, minting it once', async () => {
+    // `null` from the seam: this inventory cannot hold metadata. One phone per citizen, then.
+    bridgeMock.itemSlots.mockReturnValue(null);
+    dbMock.query.mockResolvedValue([]);
+
+    const first = await phoneForRequest(SRC, CID);
+    const second = await phoneForRequest(SRC, CID);
+
+    expect(first).toMatch(ID_SHAPE);
+    expect(second).toBe(first);
+    // Minted unclaimed — never written into an item — and only the once.
+    expect(dbMock.insert).toHaveBeenCalledOnce();
+    expect(dbMock.insert.mock.calls[0][1]).toEqual([CID, first, 0]);
+  });
+
+  it('reuses an unclaimed phone the migration minted rather than minting a second', async () => {
+    bridgeMock.itemSlots.mockReturnValue(null);
+    dbMock.query.mockResolvedValue([
+      { id: 9, citizenid: CID, phone_id: 'e'.repeat(32), claimed: 0 }
+    ]);
+
+    await expect(phoneForRequest(SRC, CID)).resolves.toBe('e'.repeat(32));
+    expect(dbMock.insert).not.toHaveBeenCalled();
+  });
+
+  it('adopts the unclaimed phone into the first item with no id, and claims it', async () => {
+    // The upgrade path: the migration's backfill is on the unclaimed phone, so the item in
+    // hand takes that id instead of a fresh one, and the rows land where the player expects.
+    bridgeMock.itemSlots.mockReturnValue([{ slot: 3, metadata: {} }]);
+    dbMock.query.mockResolvedValue([
+      { id: 9, citizenid: CID, phone_id: 'e'.repeat(32), claimed: 0 }
+    ]);
+
+    await expect(phoneForRequest(SRC, CID)).resolves.toBe('e'.repeat(32));
+
+    expect(bridgeMock.setItemMetadata).toHaveBeenCalledWith(player, 'phone', 3, {
+      phoneId: 'e'.repeat(32)
+    });
+    expect(dbMock.insert).not.toHaveBeenCalled();
+    const claim = dbMock.update.mock.calls.find(([sql]) => String(sql).includes('`claimed` = ?'));
+    expect(claim, 'the phone is marked claimed').toBeDefined();
+    expect(claim![1]).toEqual([1, 9, CID]);
+  });
+
+  it('hands a phone over to whoever is holding it, moving every phone-keyed table', async () => {
+    // Steal a phone: the row names the previous holder, the item is in this player's hand.
+    bridgeMock.itemSlots.mockReturnValue([{ slot: 3, metadata: { phoneId: 'a'.repeat(32) } }]);
+    dbMock.query.mockResolvedValue([
+      { id: 1, citizenid: OTHER, phone_id: 'a'.repeat(32), claimed: 1 }
+    ]);
+    const hook = vi.fn();
+    onPhoneHandover('test-hook', hook);
+
+    await expect(phoneForRequest(SRC, CID)).resolves.toBe('a'.repeat(32));
+
+    const transfers = dbMock.update.mock.calls
+      .map(([sql, params]) => ({ sql: String(sql).replace(/\s+/g, ' '), params }))
+      .filter((c) => c.sql.includes('WHERE `phone_id` = ? AND `citizenid` <> ?'));
+    // Every repository that carries a phone_id — this suite declares `phones` alone — and
+    // the same three parameters for each: the new holder, the phone, and the new holder again.
+    expect(transfers.length).toBeGreaterThan(0);
+    for (const t of transfers) {
+      expect(t.sql).toMatch(/^UPDATE `mica_\w+` SET `citizenid` = \?/);
+      expect(t.params).toEqual([CID, 'a'.repeat(32), CID]);
+    }
+    expect(hook).toHaveBeenCalledWith('a'.repeat(32), CID);
+  });
+
+  it('does not hand over a phone whose holder is unchanged, and asks nothing twice', async () => {
+    bridgeMock.itemSlots.mockReturnValue([{ slot: 3, metadata: { phoneId: 'a'.repeat(32) } }]);
+    dbMock.query.mockResolvedValue([
+      { id: 1, citizenid: CID, phone_id: 'a'.repeat(32), claimed: 1 }
+    ]);
+
+    await phoneForRequest(SRC, CID);
+    await phoneForRequest(SRC, CID);
+
+    expect(dbMock.update).not.toHaveBeenCalled();
+    // The holder is cached after the first resolve.
+    expect(dbMock.query).toHaveBeenCalledOnce();
+  });
+
+  it("resolves a citizen's phone for a row written on their behalf", async () => {
+    // Nothing resolved this process, no row in `mica_phones`: an identity phone is minted.
+    dbMock.single.mockResolvedValue(null);
+    dbMock.query.mockResolvedValue([]);
+
+    const minted = await phoneForCitizen(CID);
+    expect(minted).toMatch(ID_SHAPE);
+
+    // With a phone on record, the most recently touched one wins and nothing is minted.
+    dbMock.insert.mockClear();
+    __resetPhoneState();
+    dbMock.single.mockResolvedValue({ phone_id: 'f'.repeat(32) });
+    await expect(phoneForCitizen(CID)).resolves.toBe('f'.repeat(32));
+    expect(dbMock.insert).not.toHaveBeenCalled();
   });
 });

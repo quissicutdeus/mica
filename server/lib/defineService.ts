@@ -327,6 +327,11 @@ interface MembershipDefinition {
   localKey?: string;
   /** Column on the join table holding the member. Defaults to `citizenid`. */
   citizenColumn?: string;
+  /**
+   * The column on the join table naming the phone a member is on (MICA-282), so `isMember`
+   * can narrow to one device. Declare it only when the table really carries one.
+   */
+  phoneColumn?: string;
   /** Membership is live only while this column IS NULL — `left_at`. */
   liveWhileNull?: string;
 }
@@ -380,6 +385,8 @@ export interface ResolvedMembership {
   foreignKey: string;
   localKey: string;
   citizenColumn: string;
+  /** The membership table's phone column, or null when membership belongs to the citizen alone. */
+  phoneColumn: string | null;
   liveWhileNull: string | null;
 }
 
@@ -418,6 +425,20 @@ export interface ServiceDefinition<C extends ServiceContract = ServiceContract> 
    * time a reaction targets it.
    */
   reactable?: ReactableDefinition;
+  /**
+   * The rows follow the phone, not the character (MICA-282).
+   *
+   * Injects a nullable `phone_id` column and a `phone_id` index, and makes every generic
+   * action scope by the caller's active phone as well as their citizenid — the phone id is
+   * resolved by `ServiceEndpoint` from the item in the caller's own inventory and handed to
+   * custom handlers as their sixth argument. A row's `citizenid` names whoever holds the phone
+   * now, and moves with it: `services/Phones.ts` calls `transferPhoneRows` on every table
+   * with a `phone_id` column when a phone changes hands. Declare it for what belongs to the
+   * *device* — contacts, notes, media, the lock screen — and never for what belongs to the
+   * *person*, or a stolen phone hands over somebody's money. `docs/schema-and-services.md`
+   * has the split, table by table.
+   */
+  deviceOwned?: boolean;
   /** Defaults to `{ read: 'owner', write: 'owner' }`. */
   access?: AccessDefinition;
   /** Keyset paging on the generic read. **Required** when `access.read` is `public`. */
@@ -493,6 +514,8 @@ const isClientFilterable = (def: ColumnDef): boolean => def.clientFilterable ===
 export interface ResolvedService {
   id: string;
   table: string;
+  /** See `ServiceDefinition.deviceOwned`. */
+  deviceOwned: boolean;
   access: Required<Pick<AccessDefinition, 'read' | 'write'>>;
   /** Resolved defaults filled in; null unless an axis is `members`. */
   membership: ResolvedMembership | null;
@@ -627,6 +650,7 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
       ['foreignKey', rawMembership.foreignKey],
       ['localKey', rawMembership.localKey],
       ['citizenColumn', rawMembership.citizenColumn],
+      ['phoneColumn', rawMembership.phoneColumn],
       ['liveWhileNull', rawMembership.liveWhileNull]
     ];
     for (const [field, value] of identifiers) {
@@ -654,6 +678,7 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
       foreignKey: rawMembership.foreignKey,
       localKey: rawMembership.localKey ?? 'id',
       citizenColumn: rawMembership.citizenColumn ?? 'citizenid',
+      phoneColumn: rawMembership.phoneColumn ?? null,
       liveWhileNull: rawMembership.liveWhileNull ?? null
     };
   }
@@ -666,7 +691,26 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
     );
   }
 
+  const deviceOwned = definition.deviceOwned === true;
+
   const fields: { name: string; def: ColumnDef }[] = [];
+  /**
+   * The device column, first among the declared fields so it sits beside `citizenid` in the
+   * DDL. Nullable, because the migration that introduces it to a live table backfills it
+   * afterwards and the additive planner compares types, not nullability — a fresh install
+   * and an upgraded one have to agree. Never client-writable or filterable: `Repository`'s
+   * blanket lists refuse both whatever a declaration says (MICA-281), and it is set by the
+   * endpoint from the caller's own inventory.
+   */
+  if (deviceOwned) {
+    if (Object.prototype.hasOwnProperty.call(schema, 'phone_id')) {
+      throw new Error(
+        `defineService('${id}'): 'phone_id' is supplied by 'deviceOwned' and must not be ` +
+          'declared in the schema as well.'
+      );
+    }
+    fields.push({ name: 'phone_id', def: { type: 'string', length: 32, clientWritable: false } });
+  }
   for (const [name, spec] of Object.entries(schema)) {
     if ((IMPLICIT_COLUMNS as readonly string[]).includes(name)) {
       throw new Error(
@@ -727,6 +771,9 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
   const columns = [...IMPLICIT_COLUMNS, ...fields.map((f) => f.name)] as string[];
 
   const indexes = (definition.indexes ?? []).map(normalizeIndex);
+  // The handover's own lookup — `UPDATE … WHERE phone_id = ?` — and the narrowing half of
+  // every scoped read. One plain key, named for the column like `citizenid_status` is.
+  if (deviceOwned) indexes.push({ name: 'phone_id', columns: ['phone_id'], unique: false });
   for (const index of indexes) {
     if (index.columns.length === 0) {
       throw new Error(`defineService('${id}'): an index must name at least one column.`);
@@ -820,6 +867,7 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
   return {
     id,
     table,
+    deviceOwned,
     access,
     membership,
     editWindow,
@@ -882,6 +930,16 @@ export interface ServerAppHandle<T, C extends ServiceContract = ServiceContract>
 export const declaredServices: ResolvedService[] = [];
 
 /**
+ * Every repository whose table carries a `phone_id`, declared this process (MICA-282).
+ *
+ * The handover in `services/Phones.ts` walks this list and calls `transferPhoneRows` on each,
+ * so a table that follows the phone follows it without being named anywhere but its own
+ * declaration — the same reason `declaredServices` exists for the DDL. `mica_phones` and
+ * `mica_phone_numbers` are in it too, by the same rule: they carry the column.
+ */
+export const phoneKeyedRepositories: Repository<any>[] = [];
+
+/**
  * Declare an app's server half: derives the repository, registers the generic CRUD
  * events, and hands back the pieces so custom actions can be added on top.
  *
@@ -920,6 +978,7 @@ export function defineService<T, C extends ServiceContract = ServiceContract>(
     );
   }
   declaredServices.push(resolved);
+  if (resolved.columns.includes('phone_id')) phoneKeyedRepositories.push(repo);
 
   /**
    * Opt in to moderation, if the declaration asked for it.
@@ -955,6 +1014,7 @@ export function defineService<T, C extends ServiceContract = ServiceContract>(
 
   const app = new ServiceEndpoint<T, C>(resolved.id, repo, {
     tableName: resolved.table,
+    ...(resolved.deviceOwned ? { deviceOwned: true } : {}),
     ...(definition.contract ? { contract: definition.contract } : {}),
     ...(resolved.access.read === 'public'
       ? { publicRead: true, publicColumns: resolved.publicColumns }

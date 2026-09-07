@@ -38,6 +38,7 @@ vi.mock('../lib/FrameworkBridge', () => ({
 
 import { settings, getSettingsRepository } from '../services/Settings';
 import { __resetRateLimits } from '../lib/rateLimit';
+import { TEST_PHONE_ID } from './phoneStub';
 
 const CID = 'ABC12345';
 const SRC = 3;
@@ -77,12 +78,13 @@ describe('settings service', () => {
     // Not decoration. Without it two writes in the same tick — which is what dragging a
     // slider produces — leave two rows for one preference, and the read picks whichever
     // the engine returns first.
+    // Per phone since MICA-282: a character with two phones has two themes.
     const index = (settings.resolved.indexes ?? []).find(
-      (i: any) => i.name === 'citizenid_app_key'
+      (i: any) => i.name === 'phone_app_key'
     ) as any;
     expect(index).toBeDefined();
     expect(index.unique).toBe(true);
-    expect(index.columns).toEqual(['citizenid', 'app', 'setting_key']);
+    expect(index.columns).toEqual(['phone_id', 'app', 'setting_key']);
   });
 
   it('registers no generic CRUD action', () => {
@@ -102,38 +104,38 @@ describe('settings service', () => {
 
   describe('repository', () => {
     it('upserts in one statement rather than find-then-insert', async () => {
-      await repo().put(CID, 'settings', 'theme', '{"mode":"dark"}');
+      await repo().put(CID, TEST_PHONE_ID, 'settings', 'theme', '{"mode":"dark"}');
 
       expect(dbMock.query).toHaveBeenCalledTimes(1);
       const [sql, params] = dbMock.query.mock.calls[0];
       expect(sql).toMatch(/ON DUPLICATE KEY UPDATE/i);
-      expect(params).toEqual([CID, 'settings', 'theme', '{"mode":"dark"}']);
+      expect(params).toEqual([CID, TEST_PHONE_ID, 'settings', 'theme', '{"mode":"dark"}']);
     });
 
     it('scopes every read to the caller, not to a payload', async () => {
-      await repo().findAllForPlayer(CID);
+      await repo().findAllForPlayer(CID, TEST_PHONE_ID);
 
       const [sql, params] = dbMock.query.mock.calls[0];
-      expect(sql).toMatch(/WHERE citizenid = \?/);
-      expect(params).toEqual([CID]);
+      expect(sql).toMatch(/WHERE citizenid = \? AND phone_id = \?/);
+      expect(params).toEqual([CID, TEST_PHONE_ID]);
     });
 
     it('scopes a delete by citizenid as well as key', async () => {
       // A row id alone is never authorization (§2.9) — and here there is no id at all, so
       // the predicate is the entire protection.
-      await repo().remove(CID, 'blabber', 'activeAccountId');
+      await repo().remove(CID, TEST_PHONE_ID, 'blabber', 'activeAccountId');
 
       const [sql, params] = dbMock.query.mock.calls[0];
-      expect(sql).toMatch(/citizenid = \? AND app = \? AND setting_key = \?/);
-      expect(params).toEqual([CID, 'blabber', 'activeAccountId']);
+      expect(sql).toMatch(/citizenid = \? AND phone_id = \? AND app = \? AND setting_key = \?/);
+      expect(params).toEqual([CID, TEST_PHONE_ID, 'blabber', 'activeAccountId']);
     });
 
     it('clears a namespace without reaching another player', async () => {
-      await repo().clearApp(CID, 'snake');
+      await repo().clearApp(CID, TEST_PHONE_ID, 'snake');
 
       const [sql, params] = dbMock.query.mock.calls[0];
-      expect(sql).toMatch(/citizenid = \? AND app = \?/);
-      expect(params).toEqual([CID, 'snake']);
+      expect(sql).toMatch(/citizenid = \? AND phone_id = \? AND app = \?/);
+      expect(params).toEqual([CID, TEST_PHONE_ID, 'snake']);
     });
 
     it('reads one setting for many players in one query', async () => {
@@ -212,7 +214,7 @@ describe('settings service', () => {
       await call('set', { app: 'settings', key: 'displaySize', value: 50 });
 
       const [, params] = dbMock.query.mock.calls[0];
-      expect(params[3]).toBe('50');
+      expect(params[4]).toBe('50');
     });
 
     it('writes under the caller citizenid, and refuses a payload that names one', async () => {

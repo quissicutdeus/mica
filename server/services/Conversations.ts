@@ -11,13 +11,17 @@ import { resolveByPhone, resolveMany } from '../lib/PlayerDirectory';
 import { CITIZENID_MAX_LENGTH } from '@mica/shared/framework';
 import { conversationIdFrom, pageBounds, recencyCursor } from '../lib/payload';
 import { conversationsContract } from '@mica/shared/contracts/conversations';
+import { phoneForCitizen, phoneForRequest } from '../lib/phoneIdentity';
+import { readPhoneIdByNumber } from '../lib/phoneNumbers';
+import { onPhoneHandover } from './Phones';
 
 /**
- * The pair-key generated column's own width (MICA-161): two citizenids at
- * `CITIZENID_MAX_LENGTH` each, joined by one separator byte that cannot appear in a
- * citizenid — `'|'` is not a character `resolveByPhone`/the framework bridge ever hands
- * back, so it cannot be produced by one citizenid alone and mistaken for the boundary
- * between two.
+ * The pair-key generated column's own width (MICA-161): two sides at `CITIZENID_MAX_LENGTH`
+ * each, joined by one separator byte that cannot appear in either — `'|'` is not a character
+ * the framework bridge or `randomBytes(...).toString('hex')` ever hands back, so it cannot be
+ * produced by one side alone and mistaken for the boundary between two. The sides are phone
+ * ids since MICA-282 (32 hex characters), which fit the width a citizenid needed with room to
+ * spare; the column is not narrowed, because a retype is a migration for nothing.
  */
 const PAIR_KEY_MAX_LENGTH = CITIZENID_MAX_LENGTH * 2 + 1;
 
@@ -50,6 +54,9 @@ export const conversations = defineService<Conversation, typeof conversationsCon
       foreignKey: 'conversation_id',
       // A conversation's membership is keyed on its own id.
       localKey: 'id',
+      // Membership is per phone (MICA-282): the thread is on the device, and `isMember` can
+      // narrow to the one in the caller's hand.
+      phoneColumn: 'phone_id',
       liveWhileNull: 'left_at'
     }
   },
@@ -70,6 +77,8 @@ export const conversations = defineService<Conversation, typeof conversationsCon
      * Changing that blast radius is a decision for its own ticket, not a side effect of
      * closing this race.
      */
+    // The two phones of a 1:1 thread since MICA-282 (citizenids before it; the migration
+    // rewrites them). Width kept, because narrowing a column is a migration for nothing.
     participant_a: { type: 'string', length: CITIZENID_MAX_LENGTH, clientWritable: false },
     participant_b: { type: 'string', length: CITIZENID_MAX_LENGTH, clientWritable: false },
     /**
@@ -161,6 +170,14 @@ export const conversations = defineService<Conversation, typeof conversationsCon
           notNull: true,
           references: { table: 'players', column: 'citizenid' }
         },
+        /**
+         * The phone this membership is on (MICA-282). A thread lives on the device: the
+         * participant row names the phone, `citizenid` names whoever holds that phone now,
+         * and the handover hook below moves the latter when the phone changes hands. Nullable
+         * for the same reason `deviceOwned` columns are — the migration backfills it — and
+         * because a child table has no repository to refuse a NULL through.
+         */
+        phone_id: { type: 'string', length: 32 },
         role: { type: 'string', length: 20, notNull: true, default: 'member' },
         status: {
           type: 'enum',
@@ -182,25 +199,27 @@ export const conversations = defineService<Conversation, typeof conversationsCon
       indexes: [
         { name: 'status', columns: ['status'] },
         /**
-         * One row per person per thread, enforced by the database rather than by the code
-         * that writes it (MICA-153). Nothing adds a participant to an existing
-         * conversation — `addParticipant` is reached only from `create`, and leaving a
-         * thread and messaging that person again starts a new one — so there is no
-         * rejoin this can refuse.
+         * One row per **phone** per thread, enforced by the database rather than by the
+         * code that writes it (MICA-153, re-keyed by MICA-282). Nothing adds a participant
+         * to an existing conversation — `addParticipant` is reached only from `create`, and
+         * leaving a thread and messaging that person again starts a new one — so there is
+         * no rejoin this can refuse. Per phone rather than per person because one person's
+         * two phones are two members: a thread between my burner and Bob and a thread
+         * between my main phone and Bob are two threads.
          *
-         * It replaces the non-unique `conversation_participant`, which covered the same
-         * two columns in the same order and is redundant beside it. The name had to
-         * change: `SchemaMigrator` compares live indexes **by name only**
-         * (`server/lib/migrate.ts`), so flipping the old one to unique in place would have
-         * been a silent no-op on every server that already has it, leaving upgraded
-         * installs permanently unlike fresh ones with nothing reporting it. Migration
-         * `0001` does the drop and the add explicitly for the same reason.
+         * It replaces `conversation_participant_unique` on `(conversation_id, citizenid)`,
+         * which `0002_phone_data_follows_the_phone` drops. The name had to change:
+         * `SchemaMigrator` compares live indexes **by name only** (`server/lib/migrate.ts`),
+         * so re-pointing the old one in place would have been a silent no-op on every
+         * server that already has it, leaving upgraded installs permanently unlike fresh
+         * ones with nothing reporting it.
          */
         {
-          name: 'conversation_participant_unique',
-          columns: ['conversation_id', 'citizenid'],
+          name: 'conversation_phone_unique',
+          columns: ['conversation_id', 'phone_id'],
           unique: true
         },
+        { name: 'phone_id', columns: ['phone_id'] },
         { name: 'citizenid_status', columns: ['citizenid', 'status'] },
         { name: 'conversation_status', columns: ['conversation_id', 'status'] },
         { name: 'participant_last_read', columns: ['citizenid', 'last_read'] }
@@ -266,10 +285,12 @@ if (!CONVERSATION_PAGING) {
  */
 app.registerEvent('get', async (source, cbId, data, citizenid) => {
   const page = pageBounds(data, CONVERSATION_PAGING, recencyCursor);
+  // The thread list is the phone's, not the person's (MICA-282): the one in the caller's hand.
+  const phoneId = await phoneForRequest(source, citizenid);
 
   // Named `list`, not `conversations`: the module-level export of that name is the
   // app handle, and shadowing it here would be a trap for the next reader.
-  const { rows: list, nextCursor } = await conversationRepo.findForCitizen(citizenid, page);
+  const { rows: list, nextCursor } = await conversationRepo.findForPhone(citizenid, phoneId, page);
   if (list.length === 0) return { rows: list, nextCursor };
 
   const rows = await conversationRepo.findParticipantsForConversations(list.map((c) => c.id));
@@ -366,7 +387,20 @@ const nameOf = (participant?: { firstname?: string; lastname?: string }): string
 };
 
 // Create/Start conversation
+/**
+ * The phone a number reaches (MICA-282): the one that owns the number, whoever holds it. A
+ * number micaOS has no row for — ESX, where the framework keeps the number — falls back to
+ * whichever phone its citizen is on, which on ESX is their one identity phone.
+ */
+const phoneForNumber = async (phone: string, citizenid: string): Promise<string> =>
+  (await readPhoneIdByNumber(phone)) ?? (await phoneForCitizen(citizenid));
+
 app.registerEvent('create', async (source, cbId, data, citizenid) => {
+  // The phone this thread is being started from. A conversation is between phones (MICA-282):
+  // the creator's participant row names it, the pair columns are phones, and the recipients
+  // are the phones that own the numbers given.
+  const ownPhoneId = await phoneForRequest(source, citizenid);
+
   // The client chooses every field here except `is_group`, which is derived below, so each
   // is read once into a named local with the shape it is actually allowed to have.
   // `participant` is the second exception and stays loose: the UI sends either a whole
@@ -380,6 +414,8 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
   const participant = data.participant;
 
   let targetCitizenId: string | undefined;
+  /** Every member's phone, by citizenid — the creator's is the one in their hand. */
+  const phoneOf = new Map<string, string>([[citizenid, ownPhoneId]]);
 
   /**
    * Resolve the number to a person, online or off.
@@ -400,6 +436,7 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
     }
     targetCitizenId = target.citizenid;
     targetName = target.displayName;
+    phoneOf.set(target.citizenid, await phoneForNumber(phone, target.citizenid));
   }
 
   /**
@@ -441,6 +478,10 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
   for (const memberPhone of uniquePhones) {
     const target = await resolveByPhone(memberPhone);
     if (!target) continue; // unknown number
+    // The first number that reaches a person decides which of their phones is in the thread.
+    if (!phoneOf.has(target.citizenid)) {
+      phoneOf.set(target.citizenid, await phoneForNumber(memberPhone, target.citizenid));
+    }
     members.add(target.citizenid);
   }
 
@@ -465,12 +506,14 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
 
   // The other side of a 1:1 thread, or null for a group (or a solo, participant-less)
   // one — there is no pair for `pair_key_unique` to constrain. Read once so the create
-  // below, the pre-check, and the post-insert reconciliation all agree on it.
+  // below, the pre-check, and the post-insert reconciliation all agree on it. A pair is two
+  // **phones** (MICA-282): the one in the caller's hand and the one the number reaches.
   const pairCitizenId = !isGroup && others.length === 1 ? others[0] : null;
+  const pairPhoneId = pairCitizenId ? (phoneOf.get(pairCitizenId) ?? null) : null;
 
   // Logic for 1-on-1: existing check
-  if (pairCitizenId) {
-    const existing = await conversationRepo.findOneToOne(citizenid, pairCitizenId);
+  if (pairPhoneId) {
+    const existing = await conversationRepo.findOneToOne(ownPhoneId, pairPhoneId);
     if (existing) return existing;
   }
 
@@ -487,8 +530,8 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
     // treats `undefined` as a bind-parameter error rather than a SQL NULL. `null` is what
     // `pair_key`'s generated expression turns into a `NULL` pair key, which a unique
     // index never treats as a collision.
-    participant_a: pairCitizenId ? citizenid : null,
-    participant_b: pairCitizenId ?? null
+    participant_a: pairPhoneId ? ownPhoneId : null,
+    participant_b: pairPhoneId ?? null
   };
 
   let conversationId: number;
@@ -506,16 +549,21 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
      * be swallowed as though it were this one.
      */
     const message = error instanceof Error ? error.message : '';
-    if (pairCitizenId && /duplicate/i.test(message)) {
-      const winner = await conversationRepo.findOneToOne(citizenid, pairCitizenId);
+    if (pairPhoneId && /duplicate/i.test(message)) {
+      const winner = await conversationRepo.findOneToOne(ownPhoneId, pairPhoneId);
       if (winner) return winner;
     }
     throw error;
   }
 
-  await conversationRepo.addParticipant(conversationId, citizenid, 'admin');
+  await conversationRepo.addParticipant(conversationId, citizenid, ownPhoneId, 'admin');
   for (const memberCitizenId of others) {
-    await conversationRepo.addParticipant(conversationId, memberCitizenId, 'member');
+    await conversationRepo.addParticipant(
+      conversationId,
+      memberCitizenId,
+      phoneOf.get(memberCitizenId) ?? (await phoneForCitizen(memberCitizenId)),
+      'member'
+    );
   }
 
   /**
@@ -535,11 +583,11 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
    * inserts can each succeed (their pair keys committed far enough apart not to collide)
    * and still both be racing to become *the* canonical thread for this pair.
    */
-  if (pairCitizenId) {
+  if (pairPhoneId) {
     conversationId = await conversationRepo.reconcilePairDuplicate(
       conversationId,
-      citizenid,
-      pairCitizenId
+      ownPhoneId,
+      pairPhoneId
     );
   }
 
@@ -553,7 +601,8 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
 // Mark this participant's thread as read. Scoped to the caller's own membership.
 app.registerEvent('read', async (source, cbId, data, citizenid) => {
   const id = conversationIdFrom(data);
-  return await conversationRepo.markRead(id, citizenid);
+  const phoneId = await phoneForRequest(source, citizenid);
+  return await conversationRepo.markRead(id, citizenid, phoneId);
 });
 
 /**
@@ -566,18 +615,20 @@ app.registerEvent('read', async (source, cbId, data, citizenid) => {
  */
 app.registerEvent('archive', async (source, cbId, data, citizenid) => {
   const id = conversationIdFrom(data);
+  const phoneId = await phoneForRequest(source, citizenid);
   // `status` is a required enum in the contract, so there is no absent case to default —
   // the old `flagUnlessFalse(data.archive)` read a flag the web never sent (MICA-208).
-  return await conversationRepo.setArchived(id, citizenid, data.status === 'archived');
+  return await conversationRepo.setArchived(id, citizenid, phoneId, data.status === 'archived');
 });
 
 // Delete/Leave
 app.registerEvent('delete', async (source, cbId, data, citizenid) => {
   const id = conversationIdFrom(data);
+  const phoneId = await phoneForRequest(source, citizenid);
 
-  // Check role
+  // Check role — of the membership on the phone in hand, which is the one being acted on.
   const participants = await conversationRepo.findParticipants(id);
-  const self = participants.find((p) => p.citizenid === citizenid);
+  const self = participants.find((p) => p.citizenid === citizenid && p.phone_id === phoneId);
 
   if (!self) {
     throw new PlayerFacingError('Not a participant', {
@@ -602,7 +653,7 @@ app.registerEvent('delete', async (source, cbId, data, citizenid) => {
     return success;
   } else {
     // Insert new row with status 'left' (Left Voluntarily)
-    await conversationRepo.removeParticipant(id, citizenid, 'left');
+    await conversationRepo.removeParticipant(id, citizenid, phoneId, 'left');
     await AuditLogger.log({
       citizenid,
       action: 'left',
@@ -614,3 +665,15 @@ app.registerEvent('delete', async (source, cbId, data, citizenid) => {
     return true;
   }
 });
+
+/**
+ * A phone changed hands: its memberships now belong to whoever holds it (MICA-282).
+ *
+ * `mica_messages_participants` is a child table with no repository of its own, so the
+ * automatic walk over `phoneKeyedRepositories` in `services/Phones.ts` cannot reach it; this
+ * is the one hook that list needs. The thread stays the phone's — `phone_id` and the pair
+ * columns are untouched — and the person reading it is now the holder.
+ */
+onPhoneHandover('conversations', (phoneId, citizenid) =>
+  conversationRepo.transferParticipants(phoneId, citizenid)
+);

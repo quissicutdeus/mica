@@ -40,6 +40,7 @@
   "phone.busy": "Busy",
   "phone.lineBusy": "Line busy",
   "phone.numberUnavailable": "Number unavailable",
+  "phone.notHeld": "You are not holding a phone.",
   "places.nameRequired": "A name is required.",
   "places.noLocation": "Could not determine your location.",
   "schema.noPermission": "You do not have permission to use that.",

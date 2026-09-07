@@ -388,6 +388,22 @@ by this list until someone re-weighs it.
   that phone owns. And a phone id in a shape micaOS would not have written is
   re-minted rather than trusted. What is **not** claimed: a phone id is not a
   secret, and nothing should ever be authorized by one alone.
+
+  **MICA-282 made holding the item the thing that moves rows**, and it is worth
+  saying exactly what is trusted. When `resolvePhone` finds an item in a
+  player's inventory carrying a phone id whose `mica_phones` row names somebody
+  else, every table with a `phone_id` column gets its `citizenid` rewritten to
+  the holder (`Repository.transferPhoneRows`). The predicate on every read and
+  write is unchanged — still `citizenid` **and** `phone_id` — so what is trusted
+  is the inventory resource's own export saying "this player holds this item",
+  which is the same trust the framework's `GetPlayer` is given. The residual
+  risk is therefore the inventory's: a resource that can write item metadata can
+  hand any phone, and everything on it, to any player. No client can; item
+  metadata is server-authoritative in every inventory micaOS reads. What stays
+  with the person regardless — money, listings, social accounts, authored
+  messages — is listed in `docs/schema-and-services.md`, and a table is moved
+  onto the phone only by declaring `deviceOwned` on it.
+
 - **Owner-scoped actions reachable beyond what the UI offers.** A modified
   client can invoke any registered action against its own rows. Closing that
   entirely would mean an allowlist per action on top of the access axes that

@@ -308,6 +308,73 @@ DDL.
   There is still no equality meaning "has a parent", which is why Blabber's
   profile tabs are a custom action.
 
+### Which tables follow the phone
+
+A phone is an item (MICA-219), and since MICA-282 its data belongs to the
+**phone**, not to the character holding it. A service opts in with
+`deviceOwned: true`, which injects a nullable `phone_id` column and a `phone_id`
+key, makes every generic action scope by the caller's active phone as well as
+their citizenid, and hands custom handlers the phone id as their sixth argument.
+The phone id is resolved by `ServiceEndpoint` from the item in the caller's own
+inventory (`services/Phones.ts`, through `lib/phoneIdentity.ts`), never from a
+payload — `phone_id` is refused by the write and filter allowlists whatever a
+client sends (MICA-281).
+
+**The predicate is still both.** Every read and write on a device-owned table
+names `citizenid = ? AND phone_id = ?`. What makes a stolen phone show its data
+to the thief is a _handover_, not a weaker predicate: when `resolvePhone` finds
+a player holding an item whose `mica_phones` row names somebody else, every
+table with a `phone_id` column gets
+`UPDATE … SET citizenid = holder WHERE phone_id = ?` through
+`Repository.transferPhoneRows`, a named privileged write. A child table with no
+repository registers a hook with `onPhoneHandover` (`mica_messages_participants`
+does). So `citizenid` on a device-owned row means _whoever holds the phone now_,
+and it stays the orphan sweep's key.
+
+**The split, decided table by table** — a table moved by accident is a data-loss
+bug that looks like a feature, so the reasoning is written down:
+
+| Follows the phone (`deviceOwned`)                          | Why                                                       |
+| ---------------------------------------------------------- | --------------------------------------------------------- |
+| `mica_contacts`, `mica_notes`, `mica_media`, `mica_places` | What is stored _on_ a device                              |
+| `mica_lockscreen`, `mica_settings`                         | A passcode and a theme are the device's                   |
+| `mica_notifications`, `mica_phone_call_log`                | Arrive at, and are logged by, one phone                   |
+| `mica_blocklist`                                           | Kept per phone; **enforced** per citizen, see `isBlocked` |
+| `mica_messages_participants`                               | Membership: the thread lives on the phone                 |
+| `mica_phones`, `mica_phone_numbers`                        | The phone itself, and its number (MICA-284)               |
+
+| Stays with the person                                                           | Why                                                                                               |
+| ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `mica_accounts`, `mica_blabber`, `mica_blabber_dms`, `mica_blabber_attachments` | Social identities are the person's                                                                |
+| `mica_hodlr`, `mica_marketplace`, `mica_marketplace_attachments`                | Money and listings — a stolen phone must not hand them over                                       |
+| `mica_highscores`, `mica_reports`, `mica_audit_logs`                            | Scores, moderation and audit are about the person                                                 |
+| `mica_mail`                                                                     | Addressed to the character by other resources, by citizenid                                       |
+| `mica_messages`, `mica_messages_attachments`, `mica_messages_reactions`         | Authored content: the author keeps authorship, the _thread_ follows via participants              |
+| `mica_messages_conversations`                                                   | The creator's row; its `participant_a`/`participant_b` are **phone ids**, so a pair is two phones |
+| `mica_battery`                                                                  | MICA-283                                                                                          |
+
+**Unique keys widen with the split.** A character with two phones has two
+passcodes, two themes, two block lists and two memberships in a thread, so
+`mica_lockscreen`, `mica_settings`, `mica_blocklist` and
+`mica_messages_participants` are unique per phone, not per citizen.
+`0002_phone_data_follows_the_phone` did the swap; a new device-owned table with
+a per-owner unique key should name `phone_id` in it from the start.
+
+**Rows written on a player's behalf** — a notification, a photo dropped on them,
+a contact a job hands them, a call logged against them — land on the phone
+`phoneForCitizen` resolves: the one in their hand, else the one they used last,
+else their identity phone. A row addressed by **number** lands on the phone that
+owns the number (`readPhoneIdByNumber`), which is what makes a message to a
+stolen phone reach the thief.
+
+**A server that cannot carry a phone id** — an ungated qb server, standalone,
+es_extended's own inventory — gives every citizen one unclaimed _identity phone_
+(`mica_phones.claimed = 0`), minted on demand and never written into an item. On
+a gated server the first item a citizen uses adopts that phone, which is how the
+migration's backfill lands on a real item. A player on a gated server holding no
+phone is refused with a player-facing message; there is no phone for their rows
+to belong to.
+
 ### Declaring the custom actions: `contract`
 
 Generic CRUD derives its allowlist from the columns. A custom action has no

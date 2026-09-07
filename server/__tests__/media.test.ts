@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { TEST_PHONE_ID } from './phoneStub';
 
 const { dbMock, handlers } = vi.hoisted(() => {
   const captured = new Map<string, Function>();
@@ -592,7 +593,7 @@ describe('media:thumbnail — storing a thumbnail a client generated', () => {
     // Write-once. Without it the one door to a `clientWritable: false` column is also a way
     // to rewrite it repeatedly.
     expect(sql as string).toContain('`thumbnail` IS NULL');
-    expect(params as unknown[]).toEqual([TINY_STILL, 42, 'CID_A']);
+    expect(params as unknown[]).toEqual([TINY_STILL, 42, 'CID_A', TEST_PHONE_ID]);
     expect(reply).toEqual({ stored: true });
   });
 
@@ -706,7 +707,7 @@ describe('media:restore (MICA-75)', () => {
     expect(reply).toEqual({ ok: true });
     const [sql, params] = dbMock.update.mock.calls[0];
     expect(String(sql)).toContain('UPDATE `mica_media`');
-    expect(params).toEqual([12, 'CID_A', 30]);
+    expect(params).toEqual([12, 'CID_A', TEST_PHONE_ID, 30]);
   });
 
   it('reports false once the window has passed, rather than throwing', async () => {
@@ -758,7 +759,7 @@ describe('media:getDeleted (MICA-75-wiring)', () => {
     const [sql, params] = dbMock.query.mock.calls[0];
     expect(String(sql)).toContain('FROM `mica_media`');
     expect(String(sql)).toContain("`status` = 'deleted'");
-    expect(params).toEqual(['CID_A', 30]);
+    expect(params).toEqual(['CID_A', TEST_PHONE_ID, 30]);
   });
 
   it('projects the columns down — no `data` blob in a list read', async () => {

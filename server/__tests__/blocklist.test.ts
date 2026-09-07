@@ -26,6 +26,7 @@ vi.mock('../lib/FrameworkBridge', () => ({
 
 import { blocklist, isBlocked } from '../services/Blocklist';
 import { __resetRateLimits } from '../lib/rateLimit';
+import { TEST_PHONE_ID } from './phoneStub';
 
 const call = async (action: string, data: unknown) => {
   const handler = handlers.get(`mica:server:blocklist:${action}`);
@@ -57,16 +58,19 @@ describe('blocklist — the declaration', () => {
     await call('create', { number: '555-0100', citizenid: 'CIT_VICTIM' });
 
     const [sql, params] = dbMock.insert.mock.calls[0];
-    expect(String(sql)).toBe('INSERT INTO `mica_blocklist` (`number`, `citizenid`) VALUES (?, ?)');
-    expect(params).toEqual(['555-0100', 'CIT_A']);
+    // The phone beside the citizen (MICA-282): stamped by the server, never from the payload.
+    expect(String(sql)).toBe(
+      'INSERT INTO `mica_blocklist` (`number`, `citizenid`, `phone_id`) VALUES (?, ?, ?)'
+    );
+    expect(params).toEqual(['555-0100', 'CIT_A', TEST_PHONE_ID]);
   });
 
   it('scopes get and delete to the caller citizenid', async () => {
     await call('get', {});
-    expect(dbMock.query.mock.calls[0][1]).toEqual(['CIT_A', 'active']);
+    expect(dbMock.query.mock.calls[0][1]).toEqual(['CIT_A', TEST_PHONE_ID, 'active']);
 
     await call('delete', { id: 7 });
-    expect(dbMock.update.mock.calls[0][1]).toEqual(['deleted', 7, 'CIT_A']);
+    expect(dbMock.update.mock.calls[0][1]).toEqual(['deleted', 7, 'CIT_A', TEST_PHONE_ID]);
   });
 });
 
@@ -105,9 +109,10 @@ describe('isBlocked (MICA-64)', () => {
 });
 
 describe('blocklist schema', () => {
-  it('is unique per citizenid and number', () => {
+  it('is unique per phone and number', () => {
+    // Per phone since MICA-282: each phone keeps its own list, so the key names the device.
     expect(blocklist.resolved.indexes).toContainEqual(
-      expect.objectContaining({ columns: ['citizenid', 'number'], unique: true })
+      expect.objectContaining({ columns: ['phone_id', 'number'], unique: true })
     );
   });
 });

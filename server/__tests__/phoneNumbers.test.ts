@@ -137,9 +137,12 @@ beforeEach(() => {
   dbMock.single.mockResolvedValue(null);
   dbMock.insert.mockResolvedValue(1);
   dbMock.update.mockResolvedValue(true);
-  // The `mica_phones` row already exists, so `resolvePhone` inserts nothing of its own and
-  // every `insert` counted below is a number.
-  dbMock.query.mockResolvedValue([{ id: 1 }]);
+  // The `mica_phones` row already exists and names this citizen as its claimed holder, so
+  // `resolvePhone` neither inserts a phone nor hands one over, and every `insert` and
+  // `update` counted below is about a number.
+  dbMock.query.mockResolvedValue([
+    { id: 1, citizenid: CITIZEN, phone_id: 'c'.repeat(32), claimed: 1 }
+  ]);
   bridgeMock.itemSlots.mockReturnValue(null);
   bridgeMock.setItemMetadata.mockReturnValue(true);
 });

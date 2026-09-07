@@ -11,7 +11,7 @@ import { toSqlDateTime, type RecencyCursor } from '../lib/payload';
  * Bespoke queries for conversations. The schema and both allowlists come from the
  * declaration in `services/Conversations.ts` via `defineService`.
  *
- * Nine of the methods below read or join `mica_messages_participants`, which is why
+ * Most of the methods below read or join `mica_messages_participants`, which is why
  * this class exists: membership lives in a join table that the generic single-table
  * path cannot reach. The join table's DDL is declared as a child table on the
  * conversations app so the generated schema stays complete.
@@ -68,16 +68,18 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
   async addParticipant(
     conversationId: number,
     citizenid: string,
+    /** The phone the membership is on (MICA-282): the thread lives on the device. */
+    phoneId: string,
     role: 'admin' | 'member' = 'member'
   ): Promise<boolean> {
     const query = `
             INSERT INTO mica_messages_participants
-                (conversation_id, citizenid, role, left_at, status)
-            SELECT ?, ?, ?, NULL, 'active' FROM DUAL
+                (conversation_id, citizenid, phone_id, role, left_at, status)
+            SELECT ?, ?, ?, ?, NULL, 'active' FROM DUAL
             WHERE NOT EXISTS (
                 SELECT 1 FROM (
                     SELECT 1 FROM mica_messages_participants
-                    WHERE conversation_id = ? AND citizenid = ? AND left_at IS NULL
+                    WHERE conversation_id = ? AND phone_id = ? AND left_at IS NULL
                     LIMIT 1
                 ) live
             )
@@ -85,23 +87,47 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
     const insertId = await Database.insert(query, [
       conversationId,
       citizenid,
+      phoneId,
       role,
       conversationId,
-      citizenid
+      phoneId
     ]);
     // A conditional insert that matched nothing reports an insert id of 0.
     return Boolean(insertId);
   }
 
-  async removeParticipant(conversationId: number, citizenid: string, status: string = 'removed') {
+  async removeParticipant(
+    conversationId: number,
+    citizenid: string,
+    phoneId: string,
+    status: string = 'removed'
+  ) {
     // Find existing active session (left_at IS NULL) and close it
     // Status: 1=Active, -1=Moderated, 0=Left, 2=Removed
     const query = `
-            UPDATE mica_messages_participants 
-            SET left_at = CURRENT_TIMESTAMP, status = ? 
-            WHERE conversation_id = ? AND citizenid = ? AND left_at IS NULL
+            UPDATE mica_messages_participants
+            SET left_at = CURRENT_TIMESTAMP, status = ?
+            WHERE conversation_id = ? AND citizenid = ? AND phone_id = ? AND left_at IS NULL
         `;
-    return await Database.update(query, [status, conversationId, citizenid]);
+    return await Database.update(query, [status, conversationId, citizenid, phoneId]);
+  }
+
+  /**
+   * A phone changed hands: every membership on it now names its new holder (MICA-282).
+   *
+   * The child-table twin of `Repository.transferPhoneRows`, reached through the handover hook
+   * `Conversations.ts` registers because this table has no repository for the automatic walk
+   * to find. `updated_at` is pinned so a handover does not reorder anyone's inbox. Named and
+   * privileged for the same reason `markDeletedByAdmin` is: the row's citizenid is exactly
+   * what is being changed, so no ownership predicate could express it.
+   */
+  async transferParticipants(phoneId: string, citizenid: string): Promise<boolean> {
+    return await Database.update(
+      `UPDATE mica_messages_participants
+          SET citizenid = ?, updated_at = updated_at
+        WHERE phone_id = ? AND citizenid <> ?`,
+      [citizenid, phoneId, citizenid]
+    );
   }
 
   async findParticipants(conversationId: number): Promise<Participant[]> {
@@ -120,13 +146,13 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
    * Scoped by citizenid and `left_at IS NULL`, so a player can only ever mark
    * their own membership read, and only while they are still in the thread.
    */
-  async markRead(conversationId: number, citizenid: string): Promise<boolean> {
+  async markRead(conversationId: number, citizenid: string, phoneId: string): Promise<boolean> {
     const query = `
             UPDATE mica_messages_participants
             SET last_read = CURRENT_TIMESTAMP
-            WHERE conversation_id = ? AND citizenid = ? AND left_at IS NULL
+            WHERE conversation_id = ? AND citizenid = ? AND phone_id = ? AND left_at IS NULL
         `;
-    return await Database.update(query, [conversationId, citizenid]);
+    return await Database.update(query, [conversationId, citizenid, phoneId]);
   }
 
   /**
@@ -139,14 +165,15 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
   async setArchived(
     conversationId: number,
     citizenid: string,
+    phoneId: string,
     archived: boolean
   ): Promise<boolean> {
     const query = `
             UPDATE mica_messages_participants
             SET archived_at = ${archived ? 'CURRENT_TIMESTAMP' : 'NULL'}
-            WHERE conversation_id = ? AND citizenid = ? AND left_at IS NULL
+            WHERE conversation_id = ? AND citizenid = ? AND phone_id = ? AND left_at IS NULL
         `;
-    return await Database.update(query, [conversationId, citizenid]);
+    return await Database.update(query, [conversationId, citizenid, phoneId]);
   }
 
   /**
@@ -225,11 +252,13 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
    * `unread_count` stays a subquery — it needs `me.last_read`, which only this join has in
    * scope — but it is now evaluated for one page rather than for a whole history.
    */
-  async findForCitizen(
+  async findForPhone(
     citizenid: string,
+    /** The phone whose inbox this is (MICA-282) — beside the citizen, never instead (§2.9). */
+    phoneId: string,
     page: { limit: number; cursor: RecencyCursor | null }
   ): Promise<{ rows: Conversation[]; nextCursor: RecencyCursor | null }> {
-    const params: unknown[] = [citizenid];
+    const params: unknown[] = [citizenid, phoneId];
 
     /**
      * Written once and used three times — the projection, the cursor predicate and the sort —
@@ -265,6 +294,7 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
             JOIN mica_messages_participants me
                 ON me.conversation_id = c.id
                 AND me.citizenid = ?
+                AND me.phone_id = ?
                 AND me.left_at IS NULL
             LEFT JOIN mica_messages m ON m.id = (
                 SELECT id FROM mica_messages
@@ -347,8 +377,9 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
    */
   async reconcilePairDuplicate(
     conversationId: number,
-    citizenid1: string,
-    citizenid2: string
+    /** The two phones of the pair (MICA-282). */
+    phone1: string,
+    phone2: string
   ): Promise<number> {
     const canonical = await Database.scalar<number | null>(
       `
@@ -357,16 +388,16 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
             WHERE c.is_group = 0 AND c.status = 'active'
             AND EXISTS (
                 SELECT 1 FROM mica_messages_participants p1
-                WHERE p1.conversation_id = c.id AND p1.citizenid = ? AND p1.left_at IS NULL
+                WHERE p1.conversation_id = c.id AND p1.phone_id = ? AND p1.left_at IS NULL
             )
             AND EXISTS (
                 SELECT 1 FROM mica_messages_participants p2
-                WHERE p2.conversation_id = c.id AND p2.citizenid = ? AND p2.left_at IS NULL
+                WHERE p2.conversation_id = c.id AND p2.phone_id = ? AND p2.left_at IS NULL
             )
             ORDER BY c.id ASC
             LIMIT 1
         `,
-      [citizenid1, citizenid2]
+      [phone1, phone2]
     );
 
     // No answer means the pair is not readable as a pair — a participant write that has not
@@ -395,23 +426,29 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
     return await this.updateUnscoped(conversationId, { status: 'deleted' });
   }
 
-  async findOneToOne(citizenid1: string, citizenid2: string): Promise<Conversation | null> {
-    // Find active 1-on-1 where both users are currently active participants
+  /**
+   * The live 1:1 thread between two **phones** (MICA-282), or null.
+   *
+   * Phones rather than people, so one person's two phones can each hold a thread with the
+   * same contact — and so a stolen phone continues the thread it was in rather than starting
+   * a second one beside it.
+   */
+  async findOneToOne(phone1: string, phone2: string): Promise<Conversation | null> {
     const query = `
             SELECT c.*
             FROM mica_messages_conversations c
             WHERE c.is_group = 0 AND c.status = 'active'
             AND EXISTS (
                 SELECT 1 FROM mica_messages_participants p1
-                WHERE p1.conversation_id = c.id AND p1.citizenid = ? AND p1.left_at IS NULL
+                WHERE p1.conversation_id = c.id AND p1.phone_id = ? AND p1.left_at IS NULL
             )
             AND EXISTS (
                 SELECT 1 FROM mica_messages_participants p2
-                WHERE p2.conversation_id = c.id AND p2.citizenid = ? AND p2.left_at IS NULL
+                WHERE p2.conversation_id = c.id AND p2.phone_id = ? AND p2.left_at IS NULL
             )
             LIMIT 1
         `;
-    const result = await Database.query<Conversation[]>(query, [citizenid1, citizenid2]);
+    const result = await Database.query<Conversation[]>(query, [phone1, phone2]);
     return result.length > 0 ? result[0] : null;
   }
 }
