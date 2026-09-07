@@ -5,7 +5,7 @@
 import { detectFramework, FrameworkBridge } from './FrameworkBridge';
 import type { FrameworkPlayer } from './framework/runtime';
 import { guardNetEvent } from './netGuard';
-import { onPlayerLoaded } from './shell';
+import { onPlayerLoaded, pushRehydrate } from './shell';
 
 /**
  * The phone as something a player has to be holding (MICA-229, the first slice of
@@ -130,6 +130,10 @@ export const onPhoneStateChanged = (name: string, run: PhoneStateRun): void => {
   phoneStateSubscribers.push({ name, run });
 };
 
+/** Test seam: what has subscribed, so a suite can drive one subscriber by name. */
+export const __phoneStateSubscribers = (): readonly { name: string; run: PhoneStateRun }[] =>
+  phoneStateSubscribers;
+
 const notifyPhoneState = (src: number): void => {
   for (const subscriber of phoneStateSubscribers) {
     try {
@@ -223,11 +227,20 @@ export interface UsedItem {
  */
 const phoneItemUsed = (source: number, used?: UsedItem): void => {
   const slot = used?.slot;
+  const previous = lastUsed.get(source);
   if (typeof slot === 'number' && Number.isInteger(slot) && slot > 0) lastUsed.set(source, slot);
 
   emitNet(PUSH_EVENT, source, { gated: true, held: true } satisfies PhoneItemState);
   emitNet(OPEN_EVENT, source);
   notifyPhoneState(source);
+
+  /**
+   * Switching phones switches the whole phone (MICA-283). The shell's stores were loaded
+   * for the phone that was active before, so a different slot means everything the phone
+   * shows — contacts, threads, settings, the lock screen's own passcode status — is somebody
+   * else's until re-read. The same push a character load sends, for the same reason.
+   */
+  if (previous !== undefined && lastUsed.get(source) !== previous) pushRehydrate(source);
 };
 
 const configured = phoneItemName();

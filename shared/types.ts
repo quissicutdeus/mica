@@ -161,6 +161,8 @@ export interface Transaction {
 export interface PhoneBattery {
   id: number;
   citizenid: string;
+  /** The phone this charge belongs to (MICA-283). */
+  phone_id?: string | null;
   level: number;
   status?: 'active' | 'deleted';
   created_at: Date | string;

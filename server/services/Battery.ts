@@ -9,6 +9,9 @@ import { PhoneBattery } from '@mica/shared/types';
 import { isAdmin } from './Admin';
 import { onPlayerLoaded, notifyPlayer } from '../lib/shell';
 import { guardNetEvent, levelFrom } from '../lib/netGuard';
+import { onPhoneStateChanged } from '../lib/phoneItem';
+import { phoneForCitizen, phoneForRequest } from '../lib/phoneIdentity';
+import { PlayerFacingError } from '../lib/errors';
 
 /**
  * micaOS owns the saved charge, in its own table.
@@ -26,13 +29,17 @@ import { guardNetEvent, levelFrom } from '../lib/netGuard';
  */
 export const batteryApp = defineService<PhoneBattery>({
   id: 'battery',
+  // The charge is the phone's (MICA-283): two phones hold two charges, and a battery bank
+  // charges the one in hand.
+  deviceOwned: true,
   access: { read: 'owner', write: 'server' },
   schema: {
     level: { type: 'int', notNull: true, default: 100 }
   },
-  // One row per player, enforced by the database rather than by a find-then-write that
-  // can interleave with the 15-second drain save.
-  indexes: [{ name: 'citizenid_unique', columns: ['citizenid'], unique: true }],
+  // One row per **phone**, enforced by the database rather than by a find-then-write that
+  // can interleave with the drain save. `0003_battery_follows_the_phone` swapped the old
+  // `citizenid_unique` for it.
+  indexes: [{ name: 'phone_id_unique', columns: ['phone_id'], unique: true }],
   options: {
     disableGet: true,
     disableCreate: true,
@@ -42,24 +49,23 @@ export const batteryApp = defineService<PhoneBattery>({
 });
 
 /**
- * Last level written per citizenid.
+ * Last level written per **phone** (MICA-283; per citizenid before it).
  *
  * The drain loop reports every 15 seconds but only moves the charge 0.25% in that time,
  * so most reports are the same whole percent as the last. Skipping those turns four
  * writes per player per minute into one.
  *
- * Bounded, because the key is a citizenid rather than a source: nothing removes an entry on
- * the ordinary path, so a server that has been up for a week would hold every character
- * that ever logged in. `Map` iterates in insertion order, so evicting the first key drops
- * the character written longest ago — and a character that ages out simply pays one
- * redundant write on its next report, which is the cost this cache exists to avoid, not a
- * correctness problem.
+ * Bounded, because the key is a phone rather than a source: nothing removes an entry on
+ * the ordinary path, so a server that has been up for a week would hold every phone that
+ * ever logged in. `Map` iterates in insertion order, so evicting the first key drops the
+ * phone written longest ago — and a phone that ages out simply pays one redundant write on
+ * its next report, which is the cost this cache exists to avoid, not a correctness problem.
  */
 const WRITE_CACHE_LIMIT = 512;
 const lastWritten = new Map<string, number>();
 
-const rememberWrite = (citizenid: string, level: number): void => {
-  lastWritten.set(citizenid, level);
+const rememberWrite = (phoneId: string, level: number): void => {
+  lastWritten.set(phoneId, level);
   while (lastWritten.size > WRITE_CACHE_LIMIT) {
     const oldest = lastWritten.keys().next().value;
     if (oldest === undefined) break;
@@ -68,15 +74,16 @@ const rememberWrite = (citizenid: string, level: number): void => {
 };
 
 /**
- * Which character each connected source is playing.
+ * Which phone each connected source's live charge belongs to (MICA-283).
  *
- * The live maps below are keyed by source and the write-skip cache is keyed by citizenid,
- * so a disconnect can only forget the right cache entry if it knows which character that
- * source belonged to. Recorded here rather than read back from `FrameworkBridge` on the way
- * out, because by the time `playerDropped` fires the framework may already have unloaded
- * the player and there would be nothing left to ask.
+ * The live maps below are keyed by source and the write-skip cache by phone, so a disconnect
+ * can only forget the right cache entry if it knows which phone that source was on — and a
+ * phone switch can only save the old phone's charge if it still knows which phone that was.
+ * Recorded here rather than resolved on the way out, because by the time `playerDropped`
+ * fires the framework may already have unloaded the player and there would be nothing left
+ * to ask.
  */
-const ownerOf = new Map<number, string>();
+const phoneOf = new Map<number, string>();
 
 /** Test seam: the write-skip cache is module state that would leak between cases. */
 export const __resetBatteryCache = () => lastWritten.clear();
@@ -136,7 +143,7 @@ export const __tickBattery = tickBattery;
 export const __resetBatteryState = (): void => {
   charge.clear();
   charging.clear();
-  ownerOf.clear();
+  phoneOf.clear();
   lastWritten.clear();
 };
 
@@ -157,9 +164,9 @@ const forgetSource = (src: number): void => {
   charge.delete(src);
   charging.delete(src);
 
-  const citizenid = ownerOf.get(src);
-  if (citizenid !== undefined) lastWritten.delete(citizenid);
-  ownerOf.delete(src);
+  const phoneId = phoneOf.get(src);
+  if (phoneId !== undefined) lastWritten.delete(phoneId);
+  phoneOf.delete(src);
 };
 
 on('playerDropped', () => {
@@ -253,31 +260,63 @@ const removeBatteryItem = (src: number, item: string): boolean => {
   return player.removeItem(item, 1);
 };
 
-/** Persist a player's charge. Returns silently for a source with no loaded character. */
-export const savePlayerBattery = async (src: number, level: number): Promise<void> => {
+/**
+ * The phone a source's charge belongs to: the one already recorded for it, else the one in
+ * its hand. `null` for a player holding no phone on a gated server — there is nothing for a
+ * charge to belong to, and `phoneForRequest` says so as a `PlayerFacingError`, which is not
+ * an error here but an answer.
+ */
+const phoneForSource = async (src: number, citizenid: string): Promise<string | null> => {
+  const known = phoneOf.get(src);
+  if (known) return known;
+  try {
+    return await phoneForRequest(src, citizenid);
+  } catch (error) {
+    if (error instanceof PlayerFacingError) return null;
+    throw error;
+  }
+};
+
+/**
+ * Persist a charge to a phone. Returns silently for a source with no loaded character, and
+ * for one holding no phone.
+ *
+ * `phoneId` names the phone explicitly when the caller knows better than the cache — the
+ * switch saves the *old* phone's charge after `phoneOf` has already moved on.
+ */
+export const savePlayerBattery = async (
+  src: number,
+  level: number,
+  phoneId?: string
+): Promise<void> => {
   const player = FrameworkBridge.getPlayer(src);
   if (!player?.citizenid) return;
 
   const { citizenid } = player;
-  ownerOf.set(src, citizenid);
+  const phone = phoneId ?? (await phoneForSource(src, citizenid));
+  if (!phone) return;
+  if (!phoneId) phoneOf.set(src, phone);
+
   const safeLevel = Math.max(0, Math.min(100, Math.round(level)));
-  if (lastWritten.get(citizenid) === safeLevel) return;
-  rememberWrite(citizenid, safeLevel);
+  if (lastWritten.get(phone) === safeLevel) return;
+  rememberWrite(phone, safeLevel);
 
   // Mirrored into character metadata so other resources reading `mica_battery` keep
-  // working. Our table is the authority; this is a courtesy copy.
+  // working. Our table is the authority; this is a courtesy copy — of the phone in hand.
   player.setMeta('mica_battery', safeLevel);
 
   try {
-    const [existing] = await batteryApp.repo.findAll({ citizenid } as Partial<PhoneBattery>);
+    const [existing] = await batteryApp.repo.findAll({ phone_id: phone } as Partial<PhoneBattery>);
     if (existing) {
-      await batteryApp.repo.update(existing.id, { level: safeLevel }, citizenid);
+      // Scoped by the holder as well as the phone (§2.9). The holder is this citizen: the
+      // resolve that produced `phone` moved the row to them if it had to.
+      await batteryApp.repo.update(existing.id, { level: safeLevel }, citizenid, phone);
     } else {
-      await batteryApp.repo.create({ citizenid, level: safeLevel });
+      await batteryApp.repo.create({ citizenid, phone_id: phone, level: safeLevel });
     }
   } catch (e) {
     // A failed write must not take the event handler down; the next report retries.
-    lastWritten.delete(citizenid);
+    lastWritten.delete(phone);
     console.error('[mica] failed to save battery', e);
   }
 };
@@ -357,13 +396,20 @@ export const sendLoadedBatteryToClient = async (src: number): Promise<void> => {
     return;
   }
 
-  // Recorded before the lookup, so a disconnect knows whose cache entry to forget even if
-  // this player's charge never moves far enough to be written.
-  ownerOf.set(src, citizenid);
+  // The phone in hand (MICA-283). Holding none on a gated server means there is no charge
+  // to show and nothing to tick: the phone is closed for them anyway.
+  const phone = await phoneForSource(src, citizenid);
+  if (!phone) {
+    charge.delete(src);
+    return;
+  }
+  // Recorded before the lookup, so a disconnect knows which cache entry to forget even if
+  // this phone's charge never moves far enough to be written.
+  phoneOf.set(src, phone);
 
   let savedCharge: number | null = null;
   try {
-    const [row] = await batteryApp.repo.findAll({ citizenid } as Partial<PhoneBattery>);
+    const [row] = await batteryApp.repo.findAll({ phone_id: phone } as Partial<PhoneBattery>);
     if (row) savedCharge = Number(row.level);
   } catch (e) {
     console.error('[mica] failed to load battery', e);
@@ -376,7 +422,7 @@ export const sendLoadedBatteryToClient = async (src: number): Promise<void> => {
     // Adopt it, so the next load reads our table. Awaited rather than fired and
     // forgotten: a `loadBattery` racing the drain loop's first `saveBattery` could
     // otherwise both see no row and both insert.
-    await savePlayerBattery(src, savedCharge);
+    await savePlayerBattery(src, savedCharge, phone);
   }
 
   if (!Number.isFinite(savedCharge)) savedCharge = 100;
@@ -414,6 +460,40 @@ onNet('mica:server:battery:load', () => {
  * where a swallowed one would be an unhandled rejection with nothing pointing at battery.
  */
 onPlayerLoaded('battery', (src) => sendLoadedBatteryToClient(src));
+
+/**
+ * The phone in hand may have changed (MICA-283): the live charge belongs to the old phone,
+ * so it is saved there, and the new phone's charge is loaded in its place. Fired on load
+ * too, where `phoneOf` is still empty and the `onPlayerLoaded` subscriber above is the one
+ * doing the loading — so an empty `phoneOf` is left to it rather than loaded twice.
+ */
+const switchBatteryPhone = async (src: number): Promise<void> => {
+  const previous = phoneOf.get(src);
+  if (!previous) return;
+
+  const player = FrameworkBridge.getPlayer(src);
+  if (!player?.citizenid) return;
+
+  let next: string | null;
+  try {
+    next = await phoneForRequest(src, player.citizenid);
+  } catch (error) {
+    if (!(error instanceof PlayerFacingError)) throw error;
+    // Holding no phone now. The old phone's charge is saved and nothing ticks until a phone is
+    // in hand again.
+    await savePlayerBattery(src, currentCharge(src), previous);
+    phoneOf.delete(src);
+    charge.delete(src);
+    return;
+  }
+  if (next === previous) return;
+
+  await savePlayerBattery(src, currentCharge(src), previous);
+  phoneOf.delete(src);
+  await sendLoadedBatteryToClient(src);
+};
+
+onPhoneStateChanged('battery', (src) => switchBatteryPhone(src));
 
 /**
  * Out-of-band recharge: `micacharge [playerId] <0-100>`.
@@ -509,7 +589,10 @@ if (configuredBatteryItem) {
  */
 export const getBatteryLevel = async (citizenid: string): Promise<number> => {
   try {
-    const [row] = await batteryApp.repo.findAll({ citizenid } as Partial<PhoneBattery>);
+    // The phone this citizen is on — in hand, else last used, else their identity phone —
+    // so the export answers for the phone a reconnect would restore (MICA-283).
+    const phone = await phoneForCitizen(citizenid);
+    const [row] = await batteryApp.repo.findAll({ phone_id: phone } as Partial<PhoneBattery>);
     return row ? Number(row.level) : 100;
   } catch (e) {
     console.error('[mica] failed to read battery', e);

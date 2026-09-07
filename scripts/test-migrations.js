@@ -66,14 +66,14 @@ const EXTERNAL_DB = Boolean(DB_HOST || DB_PORT || DB_USER || DB_PASSWORD);
  * configured": a harness that returns early — a fixture that silently seeded nothing, a loop
  * over an empty list — would otherwise print a pass having checked almost nothing.
  *
- * The run currently makes **191** checks — the two `runVariant`s (17 each), the two
+ * The run currently makes **209** checks — the two `runVariant`s (17 each), the two
  * `runSweepFixtures` (17 each), the two `runNumberMigration`s (MICA-284; 21 on qb, 16 on
- * ESX) and the two `runDataMigration`s (MICA-282; 38 each) — so the margin here is eight.
- * That is deliberately tight: losing any one fixture drops below it and fails, which is the
- * whole point. Raise the floor when you add checks, rather than letting the gap widen until it
- * stops catching anything.
+ * ESX), the two `runDataMigration`s (MICA-282; 38 each) and the two `runBatteryMigration`s
+ * (MICA-283; 9 each) — so the margin here is eight. That is deliberately tight: losing any
+ * one fixture drops below it and fails, which is the whole point. Raise the floor when you
+ * add checks, rather than letting the gap widen until it stops catching anything.
  */
-const MINIMUM_CHECKS = 183;
+const MINIMUM_CHECKS = 201;
 let checksRun = 0;
 
 const check = (label, actual, expected) => {
@@ -1296,6 +1296,107 @@ const runDataMigration = async ({ connection, schemaFile, hasPlayers, server }) 
   );
 };
 
+/* --------------------------------------- MICA-283: the charge follows the phone */
+
+const BATTERY_MIGRATION = '0003_battery_follows_the_phone';
+
+/**
+ * 0003, executed rather than read. The battery is the one table 0002 left on the citizen, and
+ * the one nearly every character has a row in without owning anything else — so the mint here
+ * is the common path, not the edge.
+ */
+const runBatteryMigration = async ({ connection, schemaFile, hasPlayers, server }) => {
+  const variant = hasPlayers ? 'qb' : 'esx';
+  const database = `mica_battery_${variant}`;
+  const label = `${schemaFile} battery`;
+  const cid = (name) =>
+    hasPlayers ? `CIT_${name}` : `char1:license:${name.toLowerCase().repeat(6)}`;
+  const A = cid('A');
+  const B = cid('B');
+  const PHONE_A = 'a'.repeat(32);
+
+  step(`${schemaFile} — MICA-283 ${BATTERY_MIGRATION}, on a ${variant} server`);
+
+  await connection.query(`DROP DATABASE IF EXISTS \`${database}\``);
+  await connection.query(`CREATE DATABASE \`${database}\``);
+  await connection.changeUser({ database });
+  if (hasPlayers) {
+    await connection.query(PLAYERS_TABLE);
+    for (const citizenid of [A, B]) {
+      await connection.query('INSERT INTO players (citizenid, charinfo) VALUES (?, ?)', [
+        citizenid,
+        JSON.stringify({ firstname: citizenid, lastname: 'Test' })
+      ]);
+    }
+  }
+  await connection.query(fs.readFileSync(path.join(root, schemaFile), 'utf8'));
+  await connection.query(
+    'ALTER TABLE mica_battery DROP KEY phone_id_unique, DROP KEY phone_id, DROP COLUMN phone_id, ADD UNIQUE KEY citizenid_unique (citizenid)'
+  );
+  await connection.query('DELETE FROM mica_schema_migrations WHERE id = ?', [BATTERY_MIGRATION]);
+
+  // A has a phone (on an item); B has only a charge.
+  await connection.query(
+    'INSERT INTO mica_phones (citizenid, phone_id, claimed) VALUES (?, ?, 1)',
+    [A, PHONE_A]
+  );
+  await connection.query('INSERT INTO mica_battery (citizenid, level) VALUES (?, 42), (?, 7)', [
+    A,
+    B
+  ]);
+
+  const run = await server.runPendingMigrations();
+  check(`${label}: the migration applied`, run.applied, [BATTERY_MIGRATION]);
+  check(`${label}: and failed nothing`, run.failed, null);
+
+  const phoneB = await phoneOf(connection, B);
+  check(`${label}: B got an unclaimed phone for their charge`, /^[0-9a-f]{32}$/.test(phoneB), true);
+  check(
+    `${label}: every charge is on its owner's phone`,
+    (
+      await connection.query('SELECT citizenid, phone_id, level FROM mica_battery ORDER BY id')
+    )[0].map((r) => `${r.phone_id}:${r.level}`),
+    [`${PHONE_A}:42`, `${phoneB}:7`]
+  );
+  const keys = await indexesOn(connection, 'mica_battery');
+  check(
+    `${label}: phone_id_unique is unique and citizenid_unique is gone`,
+    [keys.includes('phone_id_unique (unique)'), keys.includes('citizenid_unique (unique)')],
+    [true, false]
+  );
+  const plan = (await server.SchemaMigrator.plan()).find((p) => p.table === 'mica_battery');
+  check(`${label}: mica_battery — nothing to add, no drift`, [plan.additive, plan.drift], [[], []]);
+
+  check(
+    `${label}: a second charge for A, on another phone, is allowed`,
+    await rejects(() =>
+      connection.query('INSERT INTO mica_battery (citizenid, phone_id, level) VALUES (?, ?, 99)', [
+        A,
+        B_PHONE
+      ])
+    ),
+    null
+  );
+  check(
+    `${label}: a second charge on the same phone is rejected`,
+    await rejects(() =>
+      connection.query('INSERT INTO mica_battery (citizenid, phone_id, level) VALUES (?, ?, 99)', [
+        A,
+        PHONE_A
+      ])
+    ),
+    'ER_DUP_ENTRY'
+  );
+
+  const before = await rowsIn(connection, 'mica_phones');
+  await server.migrations.find((m) => m.id === BATTERY_MIGRATION).up();
+  check(
+    `${label}: running up() a second time mints nothing`,
+    await rowsIn(connection, 'mica_phones'),
+    before
+  );
+};
+
 const main = async () => {
   let container;
   let connection;
@@ -1367,6 +1468,15 @@ const main = async () => {
     // is exactly the thing worth proving does not change what the migration does.
     await runDataMigration({ connection, schemaFile: 'mica.sql', hasPlayers: true, server });
     await runDataMigration({
+      connection,
+      schemaFile: 'mica.esx.sql',
+      hasPlayers: false,
+      server
+    });
+
+    // MICA-283. The battery, on both shapes.
+    await runBatteryMigration({ connection, schemaFile: 'mica.sql', hasPlayers: true, server });
+    await runBatteryMigration({
       connection,
       schemaFile: 'mica.esx.sql',
       hasPlayers: false,

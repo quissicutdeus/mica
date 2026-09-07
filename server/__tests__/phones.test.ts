@@ -7,9 +7,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const { dbMock, bridgeMock, handlers } = vi.hoisted(() => {
   (globalThis as any).GetConvar = (name: string, fallback: string) =>
     name === 'mica_phone_item' ? 'phone' : fallback;
-  const captured = new Map<string, Function>();
+  // Every handler per event, not the last: `phoneItem.ts` and `Phones.ts` both listen for
+  // `playerDropped`, and a Map that kept one would test whichever registered second.
+  const captured = new Map<string, Function[]>();
   const capture = (event: string, handler: Function) => {
-    captured.set(event, handler);
+    captured.set(event, [...(captured.get(event) ?? []), handler]);
   };
   (globalThis as any).on = capture;
   (globalThis as any).onNet = capture;
@@ -27,7 +29,10 @@ const { dbMock, bridgeMock, handlers } = vi.hoisted(() => {
       itemSlots: vi.fn(),
       setItemMetadata: vi.fn(() => true),
       registerUsableItem: vi.fn(),
-      countItem: vi.fn(() => 1)
+      countItem: vi.fn(() => 1),
+      // `lib/shell.ts` also listens for `playerDropped`, and this suite fires every listener.
+      forgetSource: vi.fn(),
+      rememberSource: vi.fn()
     },
     handlers: captured
   };
@@ -41,10 +46,12 @@ vi.mock('../lib/FrameworkBridge', () => ({
 
 import {
   activePhone,
+  activePhoneIdOf,
   onPhoneHandover,
   phoneForCitizen,
   phoneForRequest,
   phones,
+  resolvePhone,
   __resetPhoneState
 } from '../services/Phones';
 import { __resetLastUsedPhone, __resetPhoneItemWarnings } from '../lib/phoneItem';
@@ -154,7 +161,7 @@ describe('resolving the active phone', () => {
     usePhoneItem(SRC, { slot: 8 });
 
     (globalThis as any).source = SRC;
-    handlers.get('playerDropped')!();
+    for (const dropped of handlers.get('playerDropped')!) dropped();
 
     expect((await activePhone(SRC))?.slot).toBe(2);
   });
@@ -334,5 +341,30 @@ describe('the phone a request is for', () => {
     dbMock.single.mockResolvedValue({ phone_id: 'f'.repeat(32) });
     await expect(phoneForCitizen(CID)).resolves.toBe('f'.repeat(32));
     expect(dbMock.insert).not.toHaveBeenCalled();
+  });
+});
+
+describe('the phone a source is on, synchronously', () => {
+  it('is unknown before the first resolve, known after it, and forgotten on a disconnect', async () => {
+    expect(activePhoneIdOf(SRC)).toBeNull();
+
+    bridgeMock.itemSlots.mockReturnValue([{ slot: 3, metadata: { phoneId: 'a'.repeat(32) } }]);
+    dbMock.query.mockResolvedValue([
+      { id: 1, citizenid: CID, phone_id: 'a'.repeat(32), claimed: 1 }
+    ]);
+    await resolvePhone(SRC);
+    expect(activePhoneIdOf(SRC)).toBe('a'.repeat(32));
+
+    (globalThis as any).source = SRC;
+    for (const dropped of handlers.get('playerDropped')!) dropped();
+    expect(activePhoneIdOf(SRC)).toBeNull();
+  });
+
+  it('is the identity phone where no item can carry one', async () => {
+    bridgeMock.itemSlots.mockReturnValue(null);
+    dbMock.query.mockResolvedValue([]);
+
+    const identity = await phoneForRequest(SRC, CID);
+    expect(activePhoneIdOf(SRC)).toBe(identity);
   });
 });

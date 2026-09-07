@@ -57,6 +57,8 @@ const batteryItemHandler: (src: number) => void = bridgeMock.registerUsableItem.
   (call: unknown[]) => call[0] === 'battery_bank'
 )?.[1];
 import { __resetRateLimits } from '../lib/rateLimit';
+import { __setPhoneResolvers } from '../lib/phoneIdentity';
+import { TEST_PHONE_ID } from './phoneStub';
 
 const SRC = 7;
 const CID = 'ABC12345';
@@ -96,9 +98,10 @@ describe('battery table declaration', () => {
     expect(batteryApp.repo.writableColumns).toEqual([]);
   });
 
-  it('carries a unique index on citizenid, so a player cannot end up with two rows', () => {
+  it('carries a unique index on the phone, so a phone cannot end up with two rows', () => {
+    // Per phone since MICA-283: two phones hold two charges, so the key names the device.
     const unique = batteryApp.resolved.indexes.filter((i) => i.unique);
-    expect(unique).toEqual([{ name: 'citizenid_unique', columns: ['citizenid'], unique: true }]);
+    expect(unique).toEqual([{ name: 'phone_id_unique', columns: ['phone_id'], unique: true }]);
   });
 });
 
@@ -123,9 +126,11 @@ describe('savePlayerBattery', () => {
     expect(dbMock.insert).not.toHaveBeenCalled();
     const [sql, params] = dbMock.update.mock.calls[0];
     expect(sql).toContain('UPDATE `mica_battery`');
-    // Ownership-scoped: the citizenid is in the WHERE clause, not just the lookup.
+    // Ownership-scoped: the citizenid is in the WHERE clause, not just the lookup — and the
+    // phone beside it (MICA-283).
     expect(sql).toContain('AND `citizenid` = ?');
-    expect(params).toEqual([42, 3, CID]);
+    expect(sql).toContain('AND `phone_id` = ?');
+    expect(params).toEqual([42, 3, CID, TEST_PHONE_ID]);
   });
 
   it('skips the write when the whole percent has not moved', async () => {
@@ -420,6 +425,9 @@ describe('the write-skip cache', () => {
     // rather than quietly stopping being a test of the bound.
     const limit = 512;
     __resetBatteryState();
+    // The cache is keyed by phone since MICA-283, so every character here is on a phone of
+    // their own, and each report comes from its own source — one source is one character.
+    __setPhoneResolvers({ forRequest: async (_src, citizenid) => `phone-of-${citizenid}` });
     bridgeMock.getPlayer.mockReturnValue(playerFor(CID));
 
     await savePlayerBattery(SRC, 42);
@@ -427,10 +435,10 @@ describe('the write-skip cache', () => {
 
     for (let i = 0; i < limit; i += 1) {
       bridgeMock.getPlayer.mockReturnValue(playerFor(`CID_${i}`));
-      await savePlayerBattery(SRC, 42);
+      await savePlayerBattery(SRC + 1 + i, 42);
     }
 
-    // The first character has aged out, so its next report is a write rather than a skip.
+    // The first phone has aged out, so its next report is a write rather than a skip.
     bridgeMock.getPlayer.mockReturnValue(playerFor(CID));
     await savePlayerBattery(SRC, 42);
 
@@ -565,5 +573,105 @@ describe('the battery item convars', () => {
 
     globalThis.GetConvarInt = ((_n: string, _f: number) => 0) as any;
     expect(batteryItemCharge()).toBe(1);
+  });
+});
+
+/**
+ * MICA-283: the charge belongs to the phone in hand. Two phones hold two charges, the live
+ * charge follows a switch, and a battery bank charges the one being used.
+ */
+describe('the charge follows the phone', () => {
+  const PHONE_A = 'a'.repeat(32);
+  const PHONE_B = 'b'.repeat(32);
+  /** The phone-state subscriber Battery registered at import, run for one source. */
+  const phoneStateChanged = async (src: number) => {
+    const { __phoneStateSubscribers } = await import('../lib/phoneItem');
+    for (const subscriber of __phoneStateSubscribers()) {
+      if (subscriber.name === 'battery') await subscriber.run(src);
+    }
+  };
+
+  beforeEach(() => {
+    __resetBatteryState();
+    __resetRateLimits();
+    (globalThis as any).emitNet = vi.fn();
+    bridgeMock.getPlayer.mockReturnValue(mockPlayer());
+  });
+
+  it('loads and saves the charge of the phone in hand, not the character', async () => {
+    __setPhoneResolvers({ forRequest: async () => PHONE_A });
+    dbMock.query.mockResolvedValue([{ id: 1, citizenid: CID, phone_id: PHONE_A, level: 30 }]);
+
+    await sendLoadedBatteryToClient(SRC);
+
+    expect(dbMock.query.mock.calls[0][1]).toEqual([PHONE_A, 'active']);
+    expect(currentCharge(SRC)).toBe(30);
+  });
+
+  it('switching phones saves the old charge and loads the new one', async () => {
+    let phone = PHONE_A;
+    __setPhoneResolvers({ forRequest: async () => phone });
+    dbMock.query.mockImplementation(async (_sql: string, params: unknown[]) =>
+      params[0] === PHONE_A
+        ? [{ id: 1, citizenid: CID, phone_id: PHONE_A, level: 30 }]
+        : [{ id: 2, citizenid: CID, phone_id: PHONE_B, level: 80 }]
+    );
+    await sendLoadedBatteryToClient(SRC);
+    applyCharge(SRC, 25);
+    dbMock.update.mockClear();
+
+    phone = PHONE_B;
+    await phoneStateChanged(SRC);
+
+    // The old phone got the charge it had; the live value is now the new phone's.
+    const saves = dbMock.update.mock.calls.map(([, params]) => params as unknown[]);
+    expect(saves.some((p) => p[0] === 25 && p.includes(PHONE_A))).toBe(true);
+    expect(currentCharge(SRC)).toBe(80);
+    expect((globalThis.emitNet as any).mock.calls.at(-1)).toEqual([
+      'mica:client:battery:set',
+      SRC,
+      80
+    ]);
+  });
+
+  it('does nothing on a phone-state event that did not change the phone', async () => {
+    __setPhoneResolvers({ forRequest: async () => PHONE_A });
+    dbMock.query.mockResolvedValue([{ id: 1, citizenid: CID, phone_id: PHONE_A, level: 30 }]);
+    await sendLoadedBatteryToClient(SRC);
+    dbMock.query.mockClear();
+    dbMock.update.mockClear();
+
+    await phoneStateChanged(SRC);
+
+    expect(dbMock.query).not.toHaveBeenCalled();
+    expect(dbMock.update).not.toHaveBeenCalled();
+    expect(currentCharge(SRC)).toBe(30);
+  });
+
+  it('holds nothing live for a player holding no phone on a gated server', async () => {
+    const { PlayerFacingError } = await import('../lib/errors');
+    __setPhoneResolvers({
+      forRequest: async () => {
+        throw new PlayerFacingError('You are not holding a phone.', {
+          key: 'server.phone.notHeld'
+        });
+      }
+    });
+
+    await sendLoadedBatteryToClient(SRC);
+    await savePlayerBattery(SRC, 50);
+
+    expect(dbMock.query).not.toHaveBeenCalled();
+    expect(dbMock.insert).not.toHaveBeenCalled();
+    expect(currentCharge(SRC)).toBe(100);
+  });
+
+  it('answers the export for the phone the character is on', async () => {
+    __setPhoneResolvers({ forCitizen: async () => PHONE_B });
+    dbMock.query.mockResolvedValue([{ id: 2, citizenid: CID, phone_id: PHONE_B, level: 63 }]);
+    const { getBatteryLevel } = await import('../services/Battery');
+
+    await expect(getBatteryLevel(CID)).resolves.toBe(63);
+    expect(dbMock.query.mock.calls[0][1]).toEqual([PHONE_B, 'active']);
   });
 });

@@ -881,7 +881,14 @@ survives a relog, a stash, a trade or a robbery, and it is what later releases
 key a phone's contacts, messages and media on. **The phone you last used is the
 active one**, falling back to the lowest inventory slot holding one if you have
 not used either this session — so switching between your own phone and a burner
-is a matter of using the one you want.
+is a matter of using the one you want. What "using" means is the inventory's use
+action on that item (right-click, or however your inventory uses things);
+dragging a phone between slots changes nothing, and neither does picking one up.
+Using the other phone switches everything: its contacts, threads, photos,
+settings, passcode, battery charge and number replace the previous phone's on
+screen, and its number is what the framework now reports for you. A player
+holding no phone at all sees a closed phone and, if a script asks anyway, is
+told they are not holding one.
 
 **This needs `ox_inventory`.** It is the only inventory with real per-item
 metadata to mint an id into, and it is what qbx_core uses. On qb-inventory it
@@ -909,10 +916,12 @@ start. Without the gate, every server behaves as one number per character, as it
 always has.
 
 **The phone's data follows it too.** Contacts, notes, photos, saved places, the
-passcode, settings, notifications, the call log, the block list and message
-threads belong to the phone: steal one and they come with it, carry two and each
-has its own, and a message sent to a number reaches whichever phone that number
-is on. Bank, Hodlr, Marketplace listings, Blabber, mail and high scores stay
+passcode, settings, notifications, the call log, the block list, message threads
+and the battery charge belong to the phone: steal one and they come with it,
+carry two and each has its own, and a message sent to a number reaches whichever
+phone that number is on. A battery bank charges the phone in your hand, and a
+phone another script locked (`LockPhone`) stays locked in whoever's hand it
+lands. Bank, Hodlr, Marketplace listings, Blabber, mail and high scores stay
 with the character. The migration that ships this puts every existing row on its
 owner's phone, and the first phone item a character uses picks that phone up;
 `docs/schema-and-services.md` has the table-by-table split.

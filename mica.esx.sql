@@ -136,6 +136,7 @@ CREATE TABLE IF NOT EXISTS `mica_account_reactions` (
 CREATE TABLE IF NOT EXISTS `mica_battery` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
     `citizenid` varchar(50) NOT NULL,
+    `phone_id` varchar(32) DEFAULT NULL,
     `level` int(11) NOT NULL DEFAULT 100,
     `status` ENUM('active', 'deleted') NOT NULL DEFAULT 'active',
     `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -143,7 +144,8 @@ CREATE TABLE IF NOT EXISTS `mica_battery` (
     PRIMARY KEY (`id`),
     KEY `status` (`status`),
     KEY `citizenid_status` (`citizenid`, `status`),
-    UNIQUE KEY `citizenid_unique` (`citizenid`)
+    UNIQUE KEY `phone_id_unique` (`phone_id`),
+    KEY `phone_id` (`phone_id`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
 -- Generated from the 'blabber_dms' defineService declaration.
@@ -696,4 +698,5 @@ CREATE TABLE IF NOT EXISTS `mica_schema_migrations` (
 
 INSERT IGNORE INTO `mica_schema_migrations` (`id`) VALUES
   ('0001_phone_numbers_follow_the_phone'),
-  ('0002_phone_data_follows_the_phone');
+  ('0002_phone_data_follows_the_phone'),
+  ('0003_battery_follows_the_phone');

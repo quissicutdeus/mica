@@ -79,6 +79,23 @@ hand. What changed is the name of the software it runs: a gPhone and a gTablet
 both run micaOS. This release is **Seraphim**, the first of the nine choirs the
 codenames now follow.
 
+**The battery charge, the external lock and the last of the phone's state follow
+the phone too — run `micaschema apply` from your server console after updating
+(MICA-283).** `mica_battery` gains a `phone_id` column and key, and the
+migration `0003_battery_follows_the_phone` puts every existing charge on its
+owner's phone, minting an unclaimed phone for any character who had a charge and
+nothing else, and replaces `citizenid_unique` with `phone_id_unique`: two phones
+hold two charges, and a battery bank charges the one in hand. Switching phones
+saves the old phone's charge and loads the new one's. `LockPhone`, `UnlockPhone`
+and `IsPhoneLocked` are keyed on the phone in the player's hand rather than on
+the player, so a burner picked up locked stays locked and unlocking one phone
+unlocks nothing else; a lock applied before a player has resolved a phone stays
+on the player, as before. Using a different phone item now rehydrates the shell,
+so the screen shows that phone's contacts, threads, settings and passcode status
+rather than the previous phone's until the next open. `GetBatteryLevel` answers
+for the phone the character is on. Nothing here changes on a server without the
+phone-item gate, where every character still has exactly one phone.
+
 **A phone's data now belongs to the phone: contacts, notes, media, the lock
 screen, settings, notifications, the call log, saved places, the block list and
 a thread's membership all follow the item — run `micaschema apply` from your

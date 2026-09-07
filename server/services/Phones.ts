@@ -94,6 +94,14 @@ const newPhoneId = (): string => randomBytes(16).toString('hex');
 const holderOf = new Map<string, string>();
 /** The phone each citizen most recently resolved to, for rows written on their behalf. */
 const activeByCitizen = new Map<string, string>();
+/**
+ * The phone each connected source most recently resolved to (MICA-283), for the two callers
+ * that need the answer **synchronously**: `LockState` keys the external lock on it, and the
+ * battery's tick loop asks which phone a live charge belongs to. Keyed by source, so cleared
+ * on `playerDropped` — FiveM reuses server ids, and a stale entry would key the next player's
+ * lock and charge to a phone they have never held.
+ */
+const activeBySource = new Map<number, string>();
 /** Each citizen's identity phone, once found or minted. */
 const identityByCitizen = new Map<string, string>();
 
@@ -116,8 +124,23 @@ export const onPhoneHandover = (name: string, run: HandoverRun): void => {
 export const __resetPhoneState = (): void => {
   holderOf.clear();
   activeByCitizen.clear();
+  activeBySource.clear();
   identityByCitizen.clear();
 };
+
+/**
+ * The phone a connected source last resolved to, or null before its first resolve.
+ *
+ * Synchronous by design and therefore a cache, not a lookup: it answers what the last
+ * `resolvePhone`/`phoneForRequest` for this source found. Every device-owned request
+ * refreshes it, and so does the sync `phoneItem.ts` fires on load, use and inventory change,
+ * so it is stale for at most the gap between using a phone and the server hearing about it.
+ */
+export const activePhoneIdOf = (src: number): string | null => activeBySource.get(src) ?? null;
+
+on('playerDropped', () => {
+  activeBySource.delete(source);
+});
 
 /** The phone a player is currently on. */
 export interface ActivePhone {
@@ -300,6 +323,7 @@ export const resolvePhone = async (src: number): Promise<PhoneResolution> => {
   if (typeof carried === 'string' && PHONE_ID.test(carried)) {
     await ensureHeld(carried, player.citizenid);
     activeByCitizen.set(player.citizenid, carried);
+    activeBySource.set(src, carried);
     return { status: 'active', phone: { phoneId: carried, slot: chosen.slot } };
   }
 
@@ -320,6 +344,7 @@ export const resolvePhone = async (src: number): Promise<PhoneResolution> => {
 
   await ensureHeld(phoneId, player.citizenid);
   activeByCitizen.set(player.citizenid, phoneId);
+  activeBySource.set(src, phoneId);
   return { status: 'active', phone: { phoneId, slot: chosen.slot } };
 };
 
@@ -351,6 +376,7 @@ export const phoneForRequest = async (src: number, citizenid: string): Promise<s
   }
   const identity = await identityPhone(citizenid);
   activeByCitizen.set(citizenid, identity);
+  activeBySource.set(src, identity);
   return identity;
 };
 

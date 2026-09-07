@@ -334,14 +334,15 @@ and it stays the orphan sweep's key.
 **The split, decided table by table** — a table moved by accident is a data-loss
 bug that looks like a feature, so the reasoning is written down:
 
-| Follows the phone (`deviceOwned`)                          | Why                                                       |
-| ---------------------------------------------------------- | --------------------------------------------------------- |
-| `mica_contacts`, `mica_notes`, `mica_media`, `mica_places` | What is stored _on_ a device                              |
-| `mica_lockscreen`, `mica_settings`                         | A passcode and a theme are the device's                   |
-| `mica_notifications`, `mica_phone_call_log`                | Arrive at, and are logged by, one phone                   |
-| `mica_blocklist`                                           | Kept per phone; **enforced** per citizen, see `isBlocked` |
-| `mica_messages_participants`                               | Membership: the thread lives on the phone                 |
-| `mica_phones`, `mica_phone_numbers`                        | The phone itself, and its number (MICA-284)               |
+| Follows the phone (`deviceOwned`)                          | Why                                                                   |
+| ---------------------------------------------------------- | --------------------------------------------------------------------- |
+| `mica_contacts`, `mica_notes`, `mica_media`, `mica_places` | What is stored _on_ a device                                          |
+| `mica_lockscreen`, `mica_settings`                         | A passcode and a theme are the device's                               |
+| `mica_notifications`, `mica_phone_call_log`                | Arrive at, and are logged by, one phone                               |
+| `mica_blocklist`                                           | Kept per phone; **enforced** per citizen, see `isBlocked`             |
+| `mica_messages_participants`                               | Membership: the thread lives on the phone                             |
+| `mica_battery`                                             | The charge is the device's; a bank charges the one in hand (MICA-283) |
+| `mica_phones`, `mica_phone_numbers`                        | The phone itself, and its number (MICA-284)                           |
 
 | Stays with the person                                                           | Why                                                                                               |
 | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
@@ -351,7 +352,6 @@ bug that looks like a feature, so the reasoning is written down:
 | `mica_mail`                                                                     | Addressed to the character by other resources, by citizenid                                       |
 | `mica_messages`, `mica_messages_attachments`, `mica_messages_reactions`         | Authored content: the author keeps authorship, the _thread_ follows via participants              |
 | `mica_messages_conversations`                                                   | The creator's row; its `participant_a`/`participant_b` are **phone ids**, so a pair is two phones |
-| `mica_battery`                                                                  | MICA-283                                                                                          |
 
 **Unique keys widen with the split.** A character with two phones has two
 passcodes, two themes, two block lists and two memberships in a thread, so
