@@ -1258,6 +1258,9 @@ mica/
   working app.
 - [docs.mica.gg](https://docs.mica.gg/) — the generated `@mica/sdk` API
   reference.
+- [docs/phone-as-an-item.md](docs/phone-as-an-item.md) — what a phone shop, a
+  robbery, a confiscation and a burner look like on top of the item model, and
+  what happens to a phone's data when the item is destroyed.
 - [docs/demo-container.md](docs/demo-container.md) — the demo image: running it,
   and what it ships.
 - [docs/addon-catalog.md](docs/addon-catalog.md) — the `CatalogEntry` shape a

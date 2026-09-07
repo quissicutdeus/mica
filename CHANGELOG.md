@@ -442,6 +442,15 @@ that sets none of them changes nothing for your players.
 
 ### Added
 
+**`docs/phone-as-an-item.md` answers the questions the item model raises
+(MICA-231):** how a shop sells a blank phone and what happens on first use, what
+a robbery or a trade moves and what it leaves with the character, how a
+confiscation script takes a phone and gives it back with its data intact, what
+becomes of the rows when an item is destroyed, and what a burner does and does
+not hide. Read it before wiring any of those scripts to the item; the one rule
+it keeps returning to is that a script which removes the item and adds a fresh
+one has made a different phone.
+
 **A phone number can belong to a script, through three new exports:
 `RegisterNumber`, `UnregisterNumber` and `CreateCall` (MICA-226).** A resource
 claims a number and answers calls placed to it — a taxi dispatcher, a pizza
