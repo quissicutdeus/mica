@@ -20,3 +20,9 @@ web/docs
 # The remember plugin's session scratch. Gitignored via .remember/.gitignore,
 # same reason as above.
 .remember
+
+# pnpm's content-addressed store, when a runner keeps it inside the workspace
+# rather than under $HOME -- forgejo-runner's job containers do. Prettier does
+# not read .gitignore, and a store file is JavaScript with no extension or a
+# shebang that is not a stylesheet, so a walk into it is a red format gate.
+.pnpm-store

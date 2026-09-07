@@ -22,3 +22,6 @@ sql/dev-reset.sql
 .claude/settings.local.json
 .claude/worktrees/
 .worktrees/
+
+# pnpm store, when a CI runner keeps it inside the workspace. See .prettierignore.
+.pnpm-store
