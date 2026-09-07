@@ -451,6 +451,16 @@ with `internal_error` and the rest of Messages is unaffected.
 
 ### Added
 
+**qb scripts that mail or notify the phone work unmodified (MICA-222).** micaOS
+answers `qb-phone:server:sendNewMail`, `qb-phone:server:sendNewMailToOffline`
+and `qb-phone:client:CustomNotification` with the payload shapes qb scripts
+already send, landing them on Mail and on the shell's toast. Two things differ
+from qb-phone on purpose: the offline form is a local event only, so a client
+can no longer mail an arbitrary citizenid, and a mail's `button` is dropped
+because micaOS's Mail has nothing to fire. Nothing else under the `qb-phone:`
+prefix is answered; the server console lists what is at start, and README's
+"Coming from qb-phone" section has the rest.
+
 **The client publishes exports of its own (MICA-224).** `IsPhoneOpen`,
 `OpenPhone`, `ClosePhone`, `TogglePhone`, `SetPhoneEnabled`, `GetPhoneNumber`,
 `OpenApp`, `Notify` and `GetApiVersion`, callable as `exports['mica']:...` from

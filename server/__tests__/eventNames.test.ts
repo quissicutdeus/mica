@@ -16,6 +16,7 @@ vi.mock('../lib/Database', () => ({ Database: dbMock }));
 // effect of constructing each endpoint, not by importing the module that holds it.
 import '../services';
 import { knownServices } from '../lib/services';
+import { QB_PHONE_ANSWERED } from '@mica/shared/qbPhoneEvents';
 
 /**
  * Every `mica:` event name in the source has to match `mica:<side>:<app>:<action>`.
@@ -88,6 +89,31 @@ const collect = (): Found[] => {
 
 const ALL = collect();
 
+/**
+ * Names under another phone's prefix (MICA-222). micaOS answers a handful of qb-phone's
+ * events so qb scripts work unmodified, and every one of them is declared in
+ * `shared/qbPhoneEvents.ts` -- the list the start-up line prints and the README repeats.
+ * A foreign-prefixed literal anywhere else is a name nobody wrote down.
+ */
+const FOREIGN_PREFIXES = ['qb-phone', 'lb-phone', 'npwd', 'gksphone', 'qs-smartphone'];
+
+const collectForeign = (): Found[] => {
+  const found: Found[] = [];
+  const pattern = new RegExp(
+    `['"\`]((?:${FOREIGN_PREFIXES.join('|')}):[A-Za-z0-9_:-]+)['"\`]`,
+    'g'
+  );
+  for (const dir of SCAN_DIRS) {
+    for (const file of walk(join(ROOT, dir))) {
+      const text = readFileSync(file, 'utf8');
+      for (const match of text.matchAll(pattern)) {
+        found.push({ event: match[1], file: relative(ROOT, file) });
+      }
+    }
+  }
+  return found;
+};
+
 describe('net event naming', () => {
   it('finds event names to check at all', () => {
     // Guards the regex and the walk: a scanner that silently matches nothing would let
@@ -153,5 +179,30 @@ describe('response event derivation', () => {
 
   it('passes a custom action through unchanged', () => {
     expect(responseEventFor('mail', 'markAsRead')).toBe('mica:client:mail:markAsRead');
+  });
+});
+
+describe("another phone's event names", () => {
+  const foreign = collectForeign();
+
+  it('finds the qb-phone names micaOS answers, so the check is not vacuous', () => {
+    expect(foreign.length).toBeGreaterThan(0);
+  });
+
+  it('every foreign-prefixed name is one shared/qbPhoneEvents.ts declares', () => {
+    const declared = new Set<string>(QB_PHONE_ANSWERED);
+    const undeclared = foreign.filter(({ event }) => !declared.has(event));
+    expect(
+      undeclared.map(({ event, file }) => `${event}  (${file})`).toSorted(),
+      'declare it in shared/qbPhoneEvents.ts, where the start-up line and the README read it'
+    ).toEqual([]);
+  });
+
+  it('every declared name is registered somewhere, or the README promises a listener that does not exist', () => {
+    // The declaration itself does not count as a listener.
+    const seen = new Set(
+      foreign.filter(({ file }) => !file.startsWith('shared/')).map(({ event }) => event)
+    );
+    expect(QB_PHONE_ANSWERED.filter((event) => !seen.has(event))).toEqual([]);
   });
 });

@@ -4,6 +4,7 @@
 
 import './services';
 import './lib/phoneItem';
+import './lib/qbPhoneCompat';
 import { BankingBridge } from './lib/BankingBridge';
 import { registerPublicApi } from './lib/publicApi';
 

@@ -441,6 +441,43 @@ longer exists, and it answers that question against the framework's own table.
 Standalone has none, so the sweep skips rather than guessing — and a sweep that
 guessed wrong here would delete the entire phone database.
 
+### Coming from qb-phone
+
+Hundreds of qb-core scripts mail or notify the phone by firing qb-phone's own
+net events, and a server replacing qb-phone should not have to edit them. Net
+events are global rather than keyed by resource, so micaOS listens for the ones
+those scripts fire and answers them itself, with the payload shapes they already
+send. Nothing to configure; the server console says what is answered at start:
+
+```text
+[mica] answering qb-phone events: qb-phone:server:sendNewMail, qb-phone:server:sendNewMailToOffline, qb-phone:client:CustomNotification
+```
+
+| qb-phone event                         | Fired as                                                                   | Becomes                                                                          |
+| -------------------------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `qb-phone:server:sendNewMail`          | `TriggerEvent(name, { sender, subject, message })`, player as `source`     | Mail to that player, through `SendSystemEmail`                                   |
+| `qb-phone:server:sendNewMailToOffline` | `TriggerEvent(name, citizenid, { sender, subject, message })`, server only | Mail to that citizen, online or off                                              |
+| `qb-phone:client:CustomNotification`   | `TriggerClientEvent(name, src, title, text, icon, color, timeout)`         | The shell's toast, with the title and text. Icon, colour and timeout are dropped |
+
+What is deliberately different from qb-phone:
+
+- **`sendNewMailToOffline` is a local event here, not a net event.** qb-phone
+  registered it so that any client could name any citizenid; micaOS answers it
+  only from another server resource. A script firing it from the server, which
+  is what every one of them does, notices nothing.
+- **`sendNewMail` mails the `source`, and only the `source`.** A client can fire
+  it and gets mail to itself, rate limited like every other raw net event. A
+  server script firing it outside a player's own event context has no `source`
+  to speak of and mails nobody; use the offline form with a citizenid instead.
+- **A qb mail `button` is dropped.** micaOS's Mail has no client event to fire
+  when a mail is tapped. The mail arrives; the button does not.
+- **Everything else with the `qb-phone:` prefix is not answered**, and cannot be
+  reported: an event nobody listens for never reaches this resource. Calls,
+  adverts, tweets, garage lists and the like are qb-phone's own UI talking to
+  its own server half, and micaOS has its own shape for each. A script that used
+  qb-phone's QBCore callbacks (`qb-phone:server:GetCallState` and its kind)
+  needs the corresponding export from the table above instead.
+
 ## Configuration
 
 Everything a server owner can tune is a convar, set in `server.cfg` above

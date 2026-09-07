@@ -167,13 +167,18 @@ describe('the onNet census in netGuard.ts is true', () => {
     expect(actual).toEqual(named);
   });
 
-  it('has exactly one framework-named handler, in shell.ts', () => {
+  it('has exactly two framework-named handlers, in shell.ts and qbPhoneCompat.ts', () => {
     // Three, before MICA-150 — `Settings.ts` and `Battery.ts` each pasted the same listener,
     // which is why all three carried MICA-136's payload bug simultaneously. They subscribe
-    // through `onPlayerLoaded` now and register nothing, so this is the whole category.
+    // through `onPlayerLoaded` now and register nothing. MICA-222 added the second on
+    // purpose: qb-phone's `sendNewMail` is fired by qb scripts with the player as `source`,
+    // and answering it is the point. This is the whole category.
     const framework = handlers.filter((h) => !isGphoneNamed(h.event));
 
-    expect(framework.map((h) => h.file)).toEqual([path.join('lib', 'shell.ts')]);
+    expect(framework.map((h) => h.file).sort()).toEqual([
+      path.join('lib', 'qbPhoneCompat.ts'),
+      path.join('lib', 'shell.ts')
+    ]);
   });
 
   it('counts the two grep results that are not handlers', () => {

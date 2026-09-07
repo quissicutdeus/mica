@@ -10,6 +10,7 @@ import './Location';
 import './Mail';
 import './Message';
 import './Music';
+import './QbPhoneCompat';
 import './Relay';
 import './RemoteApps';
 import './Settings';

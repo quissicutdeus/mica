@@ -9,15 +9,18 @@ import { allow } from './rateLimit';
  * The preamble every `onNet` handler needs, in one place.
  *
  * `ServiceEndpoint` applies rate limiting and authentication to every action it registers.
- * Ten handlers are raw `onNet` listeners instead — they answer fire-and-forget events
+ * Eleven handlers are raw `onNet` listeners instead — they answer fire-and-forget events
  * with no callback id, so they cannot go through the endpoint — and they had neither.
  * A modified client could drive any of them in a loop, as an unauthenticated source.
  *
  * Nine are mica-named, across `Phone.ts`, `Battery.ts`, `Contacts.ts`, `PhoneOpenState.ts`
- * and `phoneItem.ts`. The tenth is framework-named — `QBCore:Server:OnPlayerLoaded` in
- * `shell.ts` — and reaches this preamble through `loadedPlayerSource`. `docs/security.md`
- * explains why that category was missed for so long: an entry-point census organised by
- * mica event names has no row for an event somebody else named.
+ * and `phoneItem.ts`. The other two are framework-named. `QBCore:Server:OnPlayerLoaded` in
+ * `shell.ts` reaches this preamble through `loadedPlayerSource`. `qb-phone:server:sendNewMail`
+ * in `qbPhoneCompat.ts` (MICA-222) is answered on purpose so qb scripts work unmodified, and
+ * applies the same two checks inline -- `allow`, then `getPlayer` -- because the only thing
+ * it can do is mail the source. `docs/security.md` explains why that category was missed for
+ * so long: an entry-point census organised by mica event names has no row for an event
+ * somebody else named.
  *
  * **That category used to have three rows, and the drop is a smaller attack surface rather
  * than a recount.** `Settings.ts` and `Battery.ts` each registered the same framework event
@@ -29,8 +32,8 @@ import { allow } from './rateLimit';
  * micaOS and no client can reach it.
  *
  * Recount rather than trusting this comment, which has been wrong before:
- * `grep -rn "onNet(" server --include="*.ts" | grep -v __tests__`. That returns twelve
- * lines for ten handlers — the other two are `ServiceEndpoint.ts`'s own generic registrar
+ * `grep -rn "onNet(" server --include="*.ts" | grep -v __tests__`. That returns thirteen
+ * lines for eleven handlers — the other two are `ServiceEndpoint.ts`'s own generic registrar
  * and the example below, neither a handler.
  *
  * Rate limit **before** the player lookup, matching `ServiceEndpoint`: `getPlayer` walks

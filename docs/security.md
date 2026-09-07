@@ -111,9 +111,10 @@ handler wrote, in either language.
 
 ### 2. Raw `onNet` handlers
 
-**Ten, across six files**, and they fall into two categories that need different
-things said about them. They sit outside `ServiceEndpoint` because they answer
-fire-and-forget events with no callback id, so they cannot go through it.
+**Eleven, across seven files**, and they fall into two categories that need
+different things said about them. They sit outside `ServiceEndpoint` because
+they answer fire-and-forget events with no callback id, so they cannot go
+through it.
 
 This census used to read "six, in `Phone.ts` and `Battery.ts`", and it was wrong
 in both directions: three mica-named handlers had been added since it was
@@ -125,9 +126,10 @@ not from this page:
 grep -rn "onNet(" server --include="*.ts" | grep -v __tests__
 ```
 
-**That prints twelve lines for ten handlers.** Two of them are not entry points:
-`ServiceEndpoint.ts`'s generic registrar, which is the machinery behind category
-1 of this document, and the worked example in `netGuard.ts`'s doc comment.
+**That prints thirteen lines for eleven handlers.** Two of them are not entry
+points: `ServiceEndpoint.ts`'s generic registrar, which is the machinery behind
+category 1 of this document, and the worked example in `netGuard.ts`'s doc
+comment.
 
 Keep both stages of the pipe if you reproduce it. The second one silently drops
 a thirteenth line — the copy of this very command inside `netGuard.ts`'s
@@ -198,11 +200,19 @@ client can emit, while nothing in micaOS ever emitted it and the framework's
 usable-item callback did the job properly. Deleting an entry point beats
 hardening one. `Signal.ts` has no `onNet` left at all.
 
-#### Framework-named — one, and this is the category that was missing
+#### Framework-named — two, and this is the category that was missing
 
-| Event                          | Handler                   |
-| ------------------------------ | ------------------------- |
-| `QBCore:Server:OnPlayerLoaded` | `server/lib/shell.ts:188` |
+| Event                          | Handler                          |
+| ------------------------------ | -------------------------------- |
+| `QBCore:Server:OnPlayerLoaded` | `server/lib/shell.ts:188`        |
+| `qb-phone:server:sendNewMail`  | `server/lib/qbPhoneCompat.ts:66` |
+
+The second is deliberate (MICA-222): qb scripts fire it with the player as
+`source` to mail that player, and answering it unmodified is the point. It can
+do nothing but mail the source, it applies the same two checks inline -- `allow`
+first, `getPlayer` second -- and its sibling `sendNewMailToOffline`, which names
+a citizenid, is registered with `on` and is not an entry point at all. qb-phone
+had that one as a net event; the hole did not come across.
 
 **This was three until ESX support landed, and the drop is a real reduction in
 surface rather than a recount.** `Settings.ts` and `Battery.ts` each registered
@@ -238,7 +248,7 @@ basis. It does not. The local Player-object trigger is
 `QBCore:Server:PlayerLoaded` — a **different event** — at
 `qbx_core/server/player.lua:1064`. The **matching `QBCore:Server:PlayerLoaded`
 listener beside it is `on()`, is local-only, and is not an entry point** — which
-is why this category counts one and not two.
+is why the player-loaded flow contributes one row here and not two.
 
 Vanilla `qb-core` was not available to check. If it ever does fire this name
 locally, that arrives with `source` 0 and is refused, and the `on()` twin is
