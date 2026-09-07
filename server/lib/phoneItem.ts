@@ -105,11 +105,61 @@ const heldBy = (player: FrameworkPlayer, item: string): boolean => {
 };
 
 /**
+ * Whoever needs to know that a player's phone situation may have changed (MICA-284).
+ *
+ * Three things can change which phone a player is on, and this file is where all three are
+ * observed: the load, the usable-item callback (which is how a player *switches* phones), and
+ * the client's relay of an inventory change (which is how a player loses one). A subscriber
+ * here is told about all three, once each, and is handed a source that has already been
+ * established — the load through `onPlayerLoaded`, the other two from a framework callback
+ * or a guarded net event on the connection itself — so it has no identity to resolve and
+ * therefore none to get wrong (MICA-136).
+ *
+ * Its first subscriber is the number sync in `services/PhoneNumbers.ts`, which cannot import
+ * this module's callers without a cycle and cannot subscribe to `onPlayerLoaded` alone without
+ * going stale the moment a player picks up a second phone.
+ *
+ * The same contract as `dispatchPlayerLoaded`: one subscriber failing must not take the others
+ * with it, and must not fail the event that fired it.
+ */
+type PhoneStateRun = (src: number) => unknown;
+
+const phoneStateSubscribers: { name: string; run: PhoneStateRun }[] = [];
+
+export const onPhoneStateChanged = (name: string, run: PhoneStateRun): void => {
+  phoneStateSubscribers.push({ name, run });
+};
+
+const notifyPhoneState = (src: number): void => {
+  for (const subscriber of phoneStateSubscribers) {
+    try {
+      const pending = subscriber.run(src);
+      if (pending && typeof (pending as Promise<unknown>).then === 'function') {
+        void (pending as Promise<unknown>).catch((error: unknown) => {
+          console.error(
+            `[mica] phone-state subscriber '${subscriber.name}' rejected for source ${src}. ` +
+              `The other subscribers still ran.`,
+            error
+          );
+        });
+      }
+    } catch (error) {
+      console.error(
+        `[mica] phone-state subscriber '${subscriber.name}' threw for source ${src}. ` +
+          `The other subscribers still ran.`,
+        error
+      );
+    }
+  }
+};
+
+/**
  * Count now and tell the client. `null`, and nothing pushed, for a source with no loaded
  * character; `onPlayerLoaded` brings them here once there is one.
  *
  * Pushed even when there is no gate, so the client learns it need not relay inventory
- * changes at all.
+ * changes at all. Then the phone-state subscribers are told, gate or no gate: on an ungated
+ * server this is the one moment per load a number sync happens.
  */
 export const evaluatePhoneItem = (src: number): PhoneItemState | null => {
   const player = FrameworkBridge.getPlayer(src);
@@ -119,6 +169,7 @@ export const evaluatePhoneItem = (src: number): PhoneItemState | null => {
     ? { gated: true, held: heldBy(player, item) }
     : { gated: false, held: true };
   emitNet(PUSH_EVENT, src, state);
+  notifyPhoneState(src);
   return state;
 };
 
@@ -176,6 +227,7 @@ const phoneItemUsed = (source: number, used?: UsedItem): void => {
 
   emitNet(PUSH_EVENT, source, { gated: true, held: true } satisfies PhoneItemState);
   emitNet(OPEN_EVENT, source);
+  notifyPhoneState(source);
 };
 
 const configured = phoneItemName();

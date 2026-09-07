@@ -66,13 +66,13 @@ const EXTERNAL_DB = Boolean(DB_HOST || DB_PORT || DB_USER || DB_PASSWORD);
  * configured": a harness that returns early — a fixture that silently seeded nothing, a loop
  * over an empty list — would otherwise print a pass having checked almost nothing.
  *
- * The flatten cut the migration fixtures out and the run currently makes **78** checks, so
- * the margin here is eight. That is deliberately tight: losing either `runVariant` (17) or
- * either `runSweepFixtures` (17) drops below it and fails, which is the whole point. Raise
- * the floor when you add checks, rather than letting the gap widen until it stops catching
- * anything.
+ * The run currently makes **115** checks — the two `runVariant`s (17 each), the two
+ * `runSweepFixtures` (17 each) and the two `runNumberMigration`s (MICA-284; 21 on qb, 16 on
+ * ESX) — so the margin here is eight. That is deliberately tight: losing any one fixture
+ * drops below it and fails, which is the whole point. Raise the floor when you add checks,
+ * rather than letting the gap widen until it stops catching anything.
  */
-const MINIMUM_CHECKS = 70;
+const MINIMUM_CHECKS = 107;
 let checksRun = 0;
 
 const check = (label, actual, expected) => {
@@ -231,7 +231,10 @@ const loadServerModule = async () => {
     // derivation rather than a list retyped here.
     `import '${root}/server/services/index.ts';`,
     `export { sweepOrphanedRows, purgeOwnedRows, ownedTables } from '${root}/server/lib/orphanSweep.ts';`,
-    `export { __setResourceLookup, detectFramework, FrameworkBridge } from '${root}/server/lib/FrameworkBridge.ts';`
+    `export { __setResourceLookup, detectFramework, FrameworkBridge } from '${root}/server/lib/FrameworkBridge.ts';`,
+    // MICA-284. The additive planner, so a migration can be held to "leaves the table in the
+    // declared shape": a fresh install and an upgraded one must not be able to disagree.
+    `export { SchemaMigrator } from '${root}/server/lib/SchemaMigrator.ts';`
   ].join('\n');
 
   const outfile = path.join(root, 'node_modules', '.cache', 'mica-migration-harness.mjs');
@@ -399,8 +402,14 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, server }) => {
   );
   check(`${schemaFile}: the ledger table is still created`, Number(ledger), 1);
 
+  // Pre-seeded with every migration on disk, so a fresh install never runs one against a
+  // table that was created in its final shape.
   const seeded = await scalar(connection, 'SELECT COUNT(*) FROM mica_schema_migrations');
-  check(`${schemaFile}: and a fresh install seeds no migration rows`, Number(seeded), 0);
+  check(
+    `${schemaFile}: a fresh install seeds every migration on disk as already applied`,
+    Number(seeded),
+    server.migrations.length
+  );
 
   const freshRun = await server.runPendingMigrations();
   check(`${schemaFile}: a fresh install applies nothing`, freshRun.applied, []);
@@ -756,6 +765,220 @@ const runSweepFixtures = async ({ connection, schemaFile, hasPlayers, server }) 
   server.__setResourceLookup();
 };
 
+/* --------------------------------- MICA-284: the number follows the phone */
+
+const NUMBERS = 'mica_phone_numbers';
+const NUMBER_MIGRATION = '0001_phone_numbers_follow_the_phone';
+const A_PHONE = 'a'.repeat(32);
+const B_PHONE = 'b'.repeat(32);
+
+/**
+ * Put `mica_phone_numbers` back into the shape MICA-151 shipped, so there is something to
+ * migrate. The baseline is the end state, so the "before" is reconstructed by hand from the
+ * DDL as it stood: no `phone_id`, no `phone_id_unique`, `citizenid_unique` present — and the
+ * ledger row the seed pre-inserted taken out, so the runner sees the migration as pending.
+ */
+const regressNumbersTable = async (connection) => {
+  await connection.query(
+    `ALTER TABLE ${NUMBERS}
+       DROP KEY phone_id_unique,
+       DROP COLUMN phone_id,
+       ADD UNIQUE KEY citizenid_unique (citizenid)`
+  );
+  await connection.query('DELETE FROM mica_schema_migrations WHERE id = ?', [NUMBER_MIGRATION]);
+};
+
+/**
+ * The qb characters the seed is judged against. One of each thing `charinfo` can do to it.
+ *
+ * `CIT_HAS` is a server that ran standalone before installing qb: a micaOS row already exists,
+ * carrying a different number than `charinfo` says, and it has to win. The pair sharing a
+ * number is the one case where somebody's number *does* change, and the migration prints how
+ * many.
+ */
+const QB_CHARACTERS = [
+  ['CIT_A', { firstname: 'Ada', lastname: 'Lovelace', phone: '5550001' }],
+  ['CIT_B', { firstname: 'Bob', lastname: 'Test', phone: '5550002' }],
+  ['CIT_DUP1', { phone: '5550009' }],
+  ['CIT_DUP2', { phone: '5550009' }],
+  ['CIT_NONE', { firstname: 'No', lastname: 'Phone' }],
+  ['CIT_NULL', { phone: null }],
+  ['CIT_EMPTY', { phone: '' }],
+  ['CIT_LONG', { phone: '1'.repeat(17) }],
+  ['CIT_NUM', { phone: 5550004 }],
+  ['CIT_HAS', { phone: '5550005' }]
+];
+
+const insertNumber = (connection, citizenid, number, phoneId) =>
+  connection.query(`INSERT INTO ${NUMBERS} (citizenid, number, phone_id) VALUES (?, ?, ?)`, [
+    citizenid,
+    number,
+    phoneId
+  ]);
+
+const rejects = async (run) => {
+  try {
+    await run();
+    return null;
+  } catch (error) {
+    return error.code;
+  }
+};
+
+/**
+ * MICA-284's migration, executed rather than read.
+ *
+ * The unit suite asserts the statements as text and cannot tell you whether MariaDB accepts
+ * `INSERT IGNORE ... SELECT ... NOT EXISTS` over a JSON column, whether the seed really skips
+ * what it says it skips, or whether the column the migration adds is the column the
+ * declaration describes. The last is the one worth a container: a fresh install and an
+ * upgraded one must end up identical, and the additive planner is what judges that.
+ */
+const runNumberMigration = async ({ connection, schemaFile, hasPlayers, server }) => {
+  const variant = hasPlayers ? 'qb' : 'esx';
+  const database = `mica_numbers_${variant}`;
+  const label = `${schemaFile} numbers`;
+
+  step(`${schemaFile} — MICA-284 ${NUMBER_MIGRATION}, on a ${variant} server`);
+
+  await connection.query(`DROP DATABASE IF EXISTS \`${database}\``);
+  await connection.query(`CREATE DATABASE \`${database}\``);
+  await connection.changeUser({ database });
+  if (hasPlayers) await connection.query(PLAYERS_TABLE);
+  await connection.query(fs.readFileSync(path.join(root, schemaFile), 'utf8'));
+  await regressNumbersTable(connection);
+
+  const before = await indexesOn(connection, NUMBERS);
+  check(
+    `${label}: the regressed table is MICA-151's shape`,
+    [before.includes('citizenid_unique (unique)'), before.includes('phone_id_unique (unique)')],
+    [true, false]
+  );
+
+  const live = hasPlayers ? 'CIT_A' : SWEEP_LIVE;
+  if (hasPlayers) {
+    for (const [citizenid, charinfo] of QB_CHARACTERS) {
+      await connection.query('INSERT INTO players (citizenid, charinfo) VALUES (?, ?)', [
+        citizenid,
+        JSON.stringify(charinfo)
+      ]);
+    }
+    await connection.query('INSERT INTO players (citizenid, charinfo) VALUES (?, ?)', [
+      'CIT_BAD',
+      '{not json'
+    ]);
+    await connection.query(`INSERT INTO ${NUMBERS} (citizenid, number) VALUES (?, ?)`, [
+      'CIT_HAS',
+      '5560005'
+    ]);
+  } else {
+    // Rows standalone issued, which only need the new column. Nothing to seed from.
+    await connection.query(`INSERT INTO ${NUMBERS} (citizenid, number) VALUES (?, ?), (?, ?)`, [
+      SWEEP_LIVE,
+      '5560001',
+      SWEEP_GONE,
+      '5560002'
+    ]);
+  }
+
+  const run = await server.runPendingMigrations();
+  check(`${label}: the migration applied`, run.applied, [NUMBER_MIGRATION]);
+  check(`${label}: and failed nothing`, run.failed, null);
+
+  const after = await indexesOn(connection, NUMBERS);
+  check(
+    `${label}: phone_id_unique is on, citizenid_unique is gone, number_unique stays`,
+    [
+      after.includes('phone_id_unique (unique)'),
+      after.includes('citizenid_unique (unique)'),
+      after.includes('number_unique (unique)')
+    ],
+    [true, false, true]
+  );
+
+  const [columns] = await connection.query(
+    `SELECT column_type AS type, is_nullable AS nullable FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE() AND table_name = ? AND column_name = 'phone_id'`,
+    [NUMBERS]
+  );
+  check(`${label}: phone_id is a nullable varchar(32)`, columns[0], {
+    type: 'varchar(32)',
+    nullable: 'YES'
+  });
+
+  // The property that matters most: the migrated table *is* the declared table, so the
+  // additive pass that follows in `micaschema apply` has nothing to add and nothing to
+  // report. A fresh install and an upgraded one cannot disagree.
+  const plan = (await server.SchemaMigrator.plan()).find((p) => p.table === NUMBERS);
+  check(`${label}: the additive pass finds nothing to add`, plan.additive, []);
+  check(`${label}: and reports no drift`, plan.drift, []);
+
+  const [rows] = await connection.query(
+    `SELECT citizenid, number, phone_id FROM ${NUMBERS} ORDER BY citizenid`
+  );
+  const numbers = Object.fromEntries(rows.map((r) => [r.citizenid, r.number]));
+
+  if (hasPlayers) {
+    const dups = Object.keys(numbers).filter((c) => c.startsWith('CIT_DUP'));
+    check(`${label}: exactly one of the pair sharing a number got it`, dups.length, 1);
+    check(`${label}: and it is the number they shared`, numbers[dups[0]], '5550009');
+    check(
+      `${label}: every other character with a usable number got a legacy row, and nobody else`,
+      Object.keys(numbers)
+        .filter((c) => !c.startsWith('CIT_DUP'))
+        .sort(),
+      ['CIT_A', 'CIT_B', 'CIT_HAS', 'CIT_NUM']
+    );
+    check(`${label}: a string number is seeded as-is`, numbers.CIT_A, '5550001');
+    check(`${label}: a JSON number is seeded as text`, numbers.CIT_NUM, '5550004');
+    check(`${label}: a row that already existed keeps its number`, numbers.CIT_HAS, '5560005');
+  } else {
+    check(`${label}: the rows standalone issued are untouched`, numbers, {
+      [SWEEP_LIVE]: '5560001',
+      [SWEEP_GONE]: '5560002'
+    });
+  }
+  check(
+    `${label}: no seeded row is on a phone yet`,
+    rows.every((r) => r.phone_id === null),
+    true
+  );
+
+  // Re-running `up()` by hand — a retry after a failed ledger write — adds nothing now that
+  // the citizen key is gone. This is the claim the `NOT EXISTS` in the seed exists for.
+  const count = () => rowsIn(connection, NUMBERS);
+  const beforeRetry = await count();
+  await server.migrations.find((m) => m.id === NUMBER_MIGRATION).up();
+  check(`${label}: running up() a second time adds no rows`, await count(), beforeRetry);
+
+  step(`${schemaFile} — the constraints the migrated table enforces`);
+  await insertNumber(connection, live, '5567777', A_PHONE);
+  check(
+    `${label}: a citizen may now hold a second number, on a phone`,
+    await scalar(connection, `SELECT COUNT(*) FROM ${NUMBERS} WHERE citizenid = ?`, [live]),
+    2
+  );
+  check(
+    `${label}: a second number on the same phone is rejected by the database`,
+    await rejects(() => insertNumber(connection, live, '5568888', A_PHONE)),
+    'ER_DUP_ENTRY'
+  );
+  check(
+    `${label}: the same number on a second phone is rejected too`,
+    await rejects(() => insertNumber(connection, live, '5567777', B_PHONE)),
+    'ER_DUP_ENTRY'
+  );
+  check(
+    `${label}: any number of legacy rows coexist, because NULL is exempt from the key`,
+    await rejects(() => insertNumber(connection, live, '5569999', null)),
+    null
+  );
+
+  const second = await server.runPendingMigrations();
+  check(`${label}: a second run applies nothing`, second.applied, []);
+  check(`${label}: and reports no failure`, second.failed, null);
+};
+
 const main = async () => {
   let container;
   let connection;
@@ -785,9 +1008,7 @@ const main = async () => {
     installOxmysql(connection);
     const server = await loadServerModule();
 
-    // After the flatten both sides of this are empty, and it is still worth running: it is
-    // what catches a migration added to the directory without the barrel being regenerated,
-    // which is the first thing that will happen the next time one is written.
+    // What catches a migration added to the directory without the barrel being regenerated.
     check(
       'the barrel exposes every migration on disk',
       server.migrations.map((m) => m.id),
@@ -808,6 +1029,16 @@ const main = async () => {
     // reasoning about.
     await runSweepFixtures({ connection, schemaFile: 'mica.sql', hasPlayers: true, server });
     await runSweepFixtures({
+      connection,
+      schemaFile: 'mica.esx.sql',
+      hasPlayers: false,
+      server
+    });
+
+    // MICA-284. Both shapes, because the seed reads qb's `players.charinfo` and has to do
+    // nothing — loudly — where there is no such table.
+    await runNumberMigration({ connection, schemaFile: 'mica.sql', hasPlayers: true, server });
+    await runNumberMigration({
       connection,
       schemaFile: 'mica.esx.sql',
       hasPlayers: false,

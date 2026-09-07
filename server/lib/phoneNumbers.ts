@@ -5,22 +5,25 @@
 import { Database } from './Database';
 
 /**
- * Phone numbers micaOS owns, for the servers where nothing else does.
+ * Phone numbers micaOS owns, and the phone each one belongs to (MICA-151, MICA-284).
  *
- * **Why this exists at all.** micaOS has never owned a number. On qb it reads
- * `charinfo.phone`, on ESX it tries the several field names community resources have used
- * (`esxVariable('phoneNumber' | 'phone_number' | 'phone')`), and in both cases the framework
- * is the source of truth. A standalone server has no framework and therefore no source —
- * and without one `getPlayerByPhone`, dialling, and `conversations:create` cannot resolve
- * anybody, so Phone, Messages and Contacts do not work. That is not a missing nicety; it is
- * three of the core apps.
+ * **Why this exists at all.** micaOS used to own no numbers: on qb it read `charinfo.phone`,
+ * on ESX whichever field a community resource wrote, and standalone — with no framework to
+ * issue one — got this table (MICA-151). MICA-284 turned that around for qb: **the number
+ * belongs to the phone**, so stealing a phone steals its number, and micaOS is the source of
+ * truth on standalone and on both qb cores. The framework's own `charinfo.phone` is kept in
+ * step by a write-back through the framework's export, so every other resource on the server
+ * keeps reading a number that is still right. ESX keeps the number on the character, because
+ * there is no standard setter to write it back through and a number only micaOS believed
+ * would be worse than one micaOS does not own; `services/PhoneNumbers.ts` says so once.
  *
  * The cache and the reads live here in `lib/` rather than beside the declaration in
- * `services/PhoneNumbers.ts` for one structural reason: `FrameworkBridge` needs them, and
- * `services/PhoneNumbers.ts` imports `defineService`, which imports `ServiceEndpoint`, which
- * imports `FrameworkBridge`. A bridge reaching back into the service would close that
- * runtime cycle. The table's shape, its DDL and the assignment that writes to it stay in the
- * declaration, which is where the schema belongs; only what the bridge has to read is here.
+ * `services/PhoneNumbers.ts` for one structural reason: `FrameworkBridge` and its adapters
+ * need them, and `services/PhoneNumbers.ts` imports `defineService`, which imports
+ * `ServiceEndpoint`, which imports `FrameworkBridge`. A bridge reaching back into the service
+ * would close that runtime cycle. The table's shape, its DDL and the assignment that writes
+ * to it stay in the declaration, which is where the schema belongs; only what the bridge has
+ * to read is here.
  */
 
 /**
@@ -31,12 +34,87 @@ import { Database } from './Database';
  * of `players` and `users` are: it is a frozen literal a server author wrote, never anything
  * that came off a payload. MySQL cannot parameterize an identifier (§2.9), and the only safe
  * way to build such a statement is from a closed set — one constant is the smallest closed
- * set there is, and it also means the schema and these two reads cannot drift apart.
+ * set there is, and it also means the schema and these reads cannot drift apart.
  */
 export const PHONE_NUMBERS_TABLE = 'mica_phone_numbers';
 
-/** One row, as the declaration defines it. */
+/**
+ * One row, as the declaration defines it.
+ *
+ * `phone_id` is the phone this number belongs to, or **`NULL` for a legacy row**: a number
+ * that is this citizen's and has not yet been attached to a phone. Every row was a legacy row
+ * before MICA-284, and on a server whose inventory cannot carry a phone id (standalone, or
+ * es_extended's own inventory) every row stays one — one number per citizen, exactly as
+ * before. `citizenid` is whoever last used the phone the number is on, which is what makes a
+ * stolen phone ring for the thief.
+ */
 export interface PhoneNumberRow {
+  id: number;
+  citizenid: string;
+  number: string;
+  phone_id: string | null;
+  status: string;
+}
+
+/**
+ * The two caches, and why there are two.
+ *
+ * `FrameworkBridge.getPlayer` is synchronous — `FrameworkPlayer.phone` is a field, and every
+ * framework fills it from an object it already has in hand — while the number lives in a
+ * table. `assigned` bridges those two: citizenid to the number of the phone that citizen is
+ * currently on, filled by `syncNumber` when they load, use a phone, or their inventory
+ * changes. `holders` is the reverse, number to the citizen holding it, and is what
+ * `getPlayerByPhone` consults before it walks every connected player's `charinfo` — because
+ * on qb the `charinfo` mirror is deliberately left stale for a player whose phone was taken
+ * (see `writeBack` in the service), so the walk alone would find the victim.
+ *
+ * **Keyed by identity, never by source**, which is what keeps them out of the unbounded-map
+ * hazard MICA-113/114 closed. FiveM recycles server ids, so a source-keyed cache has to be
+ * cleared on `playerDropped` or it eventually hands one player another's number; a
+ * citizenid-keyed one cannot go wrong that way. They are therefore deliberately not cleared
+ * on drop: the cost is one short string pair per distinct player since the last restart, and
+ * the benefit is that a reconnecting player's number is right immediately.
+ *
+ * A number is no longer assigned once and never changed — it moves with the phone — so an
+ * entry here is "true as of the last sync" rather than true forever. `rememberNumber` keeps
+ * both maps consistent: a number arriving under a new holder leaves the old holder's forward
+ * entry only if it pointed somewhere else.
+ */
+const assigned = new Map<string, string>();
+const holders = new Map<string, string>();
+
+/** The number a citizenid is currently on, if this process has resolved it. No query. */
+export const numberFor = (citizenid: string): string | null => assigned.get(citizenid) ?? null;
+
+/** Whoever this process last saw holding a number, if anyone. No query. */
+export const citizenIdForNumber = (number: string): string | null => holders.get(number) ?? null;
+
+/**
+ * Record that a citizen is on this number now.
+ *
+ * If somebody else was recorded holding it, their forward entry is dropped: the number is
+ * on a phone they no longer have, and `numberFor` answering it for them would let a
+ * synchronous reader believe they are still reachable there. The framework's own field is
+ * a separate question and is not touched here — see `writeBack` in the service for why a
+ * player left with no phone keeps the last value the framework had.
+ */
+export const rememberNumber = (citizenid: string, number: string): void => {
+  const previous = holders.get(number);
+  if (previous && previous !== citizenid && assigned.get(previous) === number) {
+    assigned.delete(previous);
+  }
+  assigned.set(citizenid, number);
+  holders.set(number, citizenid);
+};
+
+/** Test seam. Nothing in the resource clears these — see the note on the caches. */
+export const __resetAssignedNumbers = (): void => {
+  assigned.clear();
+  holders.clear();
+};
+
+/** A row as the assignment path needs to see it. */
+export interface AssignedNumberRow {
   id: number;
   citizenid: string;
   number: string;
@@ -44,77 +122,58 @@ export interface PhoneNumberRow {
 }
 
 /**
- * Numbers already resolved this resource start, keyed by **citizenid**.
+ * A citizenid's **legacy** row — their number that is not yet on any phone — or null.
  *
- * `FrameworkBridge.getPlayer` is synchronous — `FrameworkPlayer.phone` is a field, and every
- * framework fills it from an object it already has in hand — while the number lives in a
- * table. A cache is what bridges those two, and it is filled by `ensureNumber` at join.
+ * `phone_id IS NULL` is the whole definition. Before MICA-284 every row was one of these,
+ * and the migration seeds one per existing qb character, so on upgrade this is where a
+ * player's number is found the first time they use a phone, and the row is then attached to
+ * it rather than a fresh number issued. On a server that cannot carry a phone id every row
+ * stays legacy and this is simply "their number", as it was.
  *
- * **Keyed by identity, never by source**, which is what keeps it out of the unbounded-map
- * hazard MICA-113/114 closed. FiveM recycles server ids, so a source-keyed cache has to be
- * cleared on `playerDropped` or it will eventually hand one player another's number; a
- * citizenid-keyed one cannot go wrong that way, because the entry stays *true* forever — a
- * number is assigned once and never changes. It is therefore deliberately not cleared on
- * drop: the cost is one short string pair per distinct player who has connected since the
- * last restart, and the benefit is that a reconnecting player's number is right immediately
- * rather than after a round trip.
+ * **Status-blind on purpose.** `lib/retention.ts` is explicit that nothing in this codebase
+ * ever hard-deletes a soft-deleted row, so a row that ever reached `status = 'deleted'` still
+ * holds this citizen's number. A read that filtered on `'active'` would report "no number"
+ * about a row that then collides with the fresh one issued in its place. The row is the
+ * player's identity rather than a piece of their content, so the right answer is always to
+ * find it and bring it back; `claimRow` in the service does the reactivation.
+ *
+ * `ORDER BY id` so two legacy rows for one citizen — possible only through a race two
+ * connects apart, now that `citizenid_unique` is gone — answer the same one every time.
  */
-const assigned = new Map<string, string>();
-
-/** The number for a citizenid if it is already known, without touching the database. */
-export const numberFor = (citizenid: string): string | null => assigned.get(citizenid) ?? null;
-
-/** Record a number this process has resolved. */
-export const rememberNumber = (citizenid: string, number: string): void => {
-  assigned.set(citizenid, number);
-};
-
-/** Test seam. Nothing in the resource clears this — see the note on `assigned`. */
-export const __resetAssignedNumbers = (): void => {
-  assigned.clear();
-};
-
-/** A player's row, as the assignment path needs to see it. */
-export interface AssignedNumberRow {
-  id: number;
-  number: string;
-  status: string;
-}
-
-/**
- * A citizenid's row, **whatever status it is in**.
- *
- * Status-blind on purpose, and this is the half of MICA-151's soft-delete invariant that
- * lives outside the declaration. `citizenid_unique` is on the citizenid alone, so a row that
- * has been soft-deleted still occupies that citizenid's slot — and `lib/retention.ts` is
- * explicit that nothing in this codebase ever hard-deletes a soft-deleted row, because the
- * moderation system depends on one surviving forever. A read that filtered on
- * `status = 'active'` would therefore report "this player has no number" about a row that
- * makes issuing them one impossible, and the assignment loop would burn every attempt on a
- * constraint no new candidate can satisfy.
- *
- * The row is the player's identity rather than a piece of their content, so the right answer
- * is always to find it and use it. `ensureNumber` reactivates it; see its note.
- */
-export const readAssignedRow = async (citizenid: string): Promise<AssignedNumberRow | null> => {
+export const readLegacyRow = async (citizenid: string): Promise<AssignedNumberRow | null> => {
   if (!citizenid) return null;
   return await Database.single<AssignedNumberRow | null>(
-    `SELECT \`id\`, \`number\`, \`status\` FROM \`${PHONE_NUMBERS_TABLE}\`
-     WHERE \`citizenid\` = ? LIMIT 1`,
+    `SELECT \`id\`, \`citizenid\`, \`number\`, \`status\` FROM \`${PHONE_NUMBERS_TABLE}\`
+     WHERE \`citizenid\` = ? AND \`phone_id\` IS NULL ORDER BY \`id\` LIMIT 1`,
     [citizenid]
   );
 };
 
+/** The number row on a phone, whoever holds it, or null when the phone has none yet. */
+export const readRowByPhoneId = async (phoneId: string): Promise<AssignedNumberRow | null> => {
+  if (!phoneId) return null;
+  return await Database.single<AssignedNumberRow | null>(
+    `SELECT \`id\`, \`citizenid\`, \`number\`, \`status\` FROM \`${PHONE_NUMBERS_TABLE}\`
+     WHERE \`phone_id\` = ? LIMIT 1`,
+    [phoneId]
+  );
+};
+
 /**
- * The stored number for a citizenid, or null when they have never been assigned one.
+ * The stored number for a citizenid, or null when they have never had one.
  *
- * Built on `readAssignedRow` rather than issuing its own narrower query, so there is one
- * definition of "this player's row" and it cannot become status-blind in one place and not
- * the other. A soft-deleted number is still that player's number — it is what
- * `findOfflineByCitizenId` should render for them, and what `ensureNumber` will hand back.
+ * The number of the phone they most recently used, which is what `updated_at DESC` says: a
+ * row's `citizenid` moves to whoever uses the phone, and moving it touches `updated_at`. For
+ * a citizen with one legacy row — every citizen, on a server that cannot carry a phone id —
+ * this is simply their number. Status-blind, for the reason `readLegacyRow` gives.
  */
 export const readNumber = async (citizenid: string): Promise<string | null> => {
-  const row = await readAssignedRow(citizenid);
+  if (!citizenid) return null;
+  const row = await Database.single<{ number: string } | null>(
+    `SELECT \`number\` FROM \`${PHONE_NUMBERS_TABLE}\`
+     WHERE \`citizenid\` = ? ORDER BY \`updated_at\` DESC, \`id\` DESC LIMIT 1`,
+    [citizenid]
+  );
   return row?.number ?? null;
 };
 
@@ -138,15 +197,15 @@ export const readCitizenIdByNumber = async (number: string): Promise<string | nu
  * through `5550104`, and `netGuard.phoneNumberFrom` — the only thing a number off the wire
  * passes through — trims and caps at 32 characters and normalises nothing else. So a format
  * that disagreed with the seed's would not be corrected anywhere; it would simply be a
- * second format, rendered differently in the same contact list.
+ * second format, rendered differently in the same contact list. A number adopted from a qb
+ * `charinfo` keeps whatever shape qb gave it; only the ones micaOS generates look like this.
  *
  * **Eight million candidates, less the reserved exchange.** A fixed `555` prefix would have
  * matched the seed most closely and left only ten thousand numbers, which a long-lived
- * server exhausts: every player who has ever connected keeps their number forever, so the
- * space has to be sized against the lifetime population rather than the concurrent one. A
- * leading digit of 2–9 keeps the number seven digits long and dialable-looking while giving
- * roughly eight million of them, at which point a collision is rare enough that the retry
- * below is a formality rather than a mechanism.
+ * server exhausts: every phone that has ever had a number keeps it, so the space has to be
+ * sized against the lifetime population rather than the concurrent one. A leading digit of
+ * 2–9 keeps the number seven digits long and dialable-looking while giving roughly eight
+ * million of them, at which point a collision is rare enough that the retry is a formality.
  *
  * **The whole `555` exchange is excluded, not just the four seeded numbers.** `micaseed`
  * owns that block, and `clearSeed` deletes contacts by `phone` together with the seeded
@@ -218,7 +277,7 @@ export const isDuplicateEntry = (error: unknown): boolean => {
  * Bounded rather than infinite, and loud rather than silent, because the two ways this loop
  * can fail need different answers and neither is "keep going". With roughly eight million
  * numbers, eight consecutive collisions require the space to be about half full — some four
- * million players — and at that point retrying harder is not the fix. Below that the first
+ * million phones — and at that point retrying harder is not the fix. Below that the first
  * attempt almost always wins.
  */
 export const MAX_ASSIGN_ATTEMPTS = 8;

@@ -24,6 +24,7 @@ import { esxAdapter } from '../lib/framework/esx';
 import { qbAdapter } from '../lib/framework/qb';
 import { qbxAdapter } from '../lib/framework/qbx';
 import { standaloneAdapter } from '../lib/framework/standalone';
+import { __resetAssignedNumbers, rememberNumber } from '../lib/phoneNumbers';
 
 /**
  * MICA-197 split `FrameworkBridge` into one adapter per framework. `FrameworkBridge.test.ts`
@@ -48,6 +49,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   convar.value = '';
   __resetStandaloneWarnings();
+  __resetAssignedNumbers();
   (globalThis as any).GetConvar = (name: string, fallback: string) =>
     name === STANDALONE_CONVAR ? convar.value : fallback;
   vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -243,5 +245,85 @@ describe('offline reads when no framework has answered yet', () => {
 
     expect(await FrameworkBridge.findOfflineByCitizenIds([])).toEqual(new Map());
     expect(dbMock.query).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * MICA-284: the number micaOS decides on is written back into the framework's own record,
+ * through its export or player method and never a table write (§10). Each adapter knows its
+ * framework's call; the service only knows to ask.
+ */
+describe('writing a phone number back', () => {
+  it('goes through qbx_core.SetCharInfo when the build exposes it', () => {
+    const SetCharInfo = vi.fn();
+    useResources({
+      qbx_core: { GetPlayer: () => ({ PlayerData: { citizenid: 'CIT_A' } }), SetCharInfo }
+    });
+
+    expect(FrameworkBridge.getPlayer(5)?.setPhone?.('5561234')).toBe(true);
+    expect(SetCharInfo).toHaveBeenCalledWith(5, 'phone', '5561234');
+  });
+
+  it("falls back to the player's SetPlayerData on a qbx build without the export", () => {
+    const SetPlayerData = vi.fn();
+    const player = {
+      PlayerData: { citizenid: 'CIT_A', charinfo: { phone: '5550000' } },
+      Functions: { SetPlayerData }
+    };
+    useResources({ qbx_core: { GetPlayer: () => player } });
+
+    expect(FrameworkBridge.getPlayer(5)?.setPhone?.('5561234')).toBe(true);
+    // The same table, mutated, so references qb-core keeps to it see the new number too.
+    expect(player.PlayerData.charinfo.phone).toBe('5561234');
+    expect(SetPlayerData).toHaveBeenCalledWith('charinfo', player.PlayerData.charinfo);
+  });
+
+  it('uses SetPlayerData on qb-core, and refuses when the player has no such method', () => {
+    const SetPlayerData = vi.fn();
+    const player = {
+      PlayerData: { citizenid: 'CIT_A', charinfo: { phone: '5550000' } },
+      Functions: { SetPlayerData }
+    };
+    useResources({
+      'qb-core': { GetCoreObject: () => ({ Functions: { GetPlayer: () => player } }) }
+    });
+
+    expect(FrameworkBridge.getPlayer(5)?.setPhone?.('5561234')).toBe(true);
+    expect(SetPlayerData).toHaveBeenCalledWith('charinfo', { phone: '5561234' });
+
+    const bare = { PlayerData: { citizenid: 'CIT_B', charinfo: {} } };
+    useResources({
+      'qb-core': { GetCoreObject: () => ({ Functions: { GetPlayer: () => bare } }) }
+    });
+    expect(FrameworkBridge.getPlayer(6)?.setPhone?.('5561234')).toBe(false);
+  });
+
+  it('has nothing to write on standalone, and no way to write on ESX', () => {
+    convar.value = '1';
+    (globalThis as any).GetPlayerIdentifierByType = () => `license:${'a'.repeat(40)}`;
+    useResources({});
+    expect(FrameworkBridge.getPlayer(5)?.setPhone?.('5561234')).toBe(true);
+    delete (globalThis as any).GetPlayerIdentifierByType;
+
+    convar.value = '';
+    const xPlayer = { identifier: `char1:license:${'b'.repeat(30)}`, getName: () => 'Ada L' };
+    useResources({
+      es_extended: { getSharedObject: () => ({ GetPlayerFromId: () => xPlayer }) }
+    });
+    expect(FrameworkBridge.getPlayer(5)?.setPhone).toBeUndefined();
+  });
+
+  it('reads the number micaOS resolved before the charinfo mirror, on both qb cores', () => {
+    const player = { PlayerData: { citizenid: 'CIT_A', charinfo: { phone: '5550000' } } };
+    useResources({ qbx_core: { GetPlayer: () => player } });
+    expect(FrameworkBridge.getPlayerPhone(5)).toBe('5550000');
+
+    rememberNumber('CIT_A', '5561234');
+    expect(FrameworkBridge.getPlayerPhone(5)).toBe('5561234');
+
+    useResources({
+      'qb-core': { GetCoreObject: () => ({ Functions: { GetPlayer: () => player } }) }
+    });
+    expect(FrameworkBridge.getPlayerPhone(5)).toBe('5561234');
   });
 });

@@ -322,6 +322,10 @@ const standaloneFrameworkPlayer = (src: number): FrameworkPlayer | null => {
     // warning. That policy is stated where it lives and is not changed by there being no
     // framework: a consumable whose effect has already happened is not worth refusing over.
     removeItem: (item: string, count: number) => removeInventoryItem(src, {}, item, count),
+    // Nothing to mirror onto: micaOS's own table *is* the framework's record here, and the
+    // view above already reads it. Answering true is the honest answer — there is no other
+    // copy of the number anywhere on the server to be stale.
+    setPhone: () => true,
     rawPlayer: view
   };
 };
@@ -426,9 +430,11 @@ const findOfflineByCitizenIds = async (
   const placeholders = citizenids.map(() => '?').join(', ');
 
   await offlineLookup('the standalone phone-number lookup by citizenid', async () => {
+    // Oldest first, so a citizen with more than one row lands on the most recently used —
+    // the same answer `readNumber` gives for one.
     const rows = await Database.query<{ citizenid: string; number: string }[]>(
       `SELECT \`citizenid\`, \`number\` FROM \`${PHONE_NUMBERS_TABLE}\`
-       WHERE \`citizenid\` IN (${placeholders})`,
+       WHERE \`citizenid\` IN (${placeholders}) ORDER BY \`updated_at\`, \`id\``,
       [...citizenids]
     );
     for (const row of rows) {

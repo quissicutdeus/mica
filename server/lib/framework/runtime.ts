@@ -43,6 +43,15 @@ export interface FrameworkPlayer {
   addMoney(type: 'bank' | 'cash', amount: number): boolean;
   setMeta(key: string, value: any): void;
   removeItem(item: string, count: number): boolean;
+  /**
+   * Write a phone number back into the framework's own record of this character (MICA-284).
+   *
+   * `true` only when the framework took it, through its own export or player method — never
+   * a table write (§10). Optional because ESX has no standard setter and says so by having
+   * none: `services/PhoneNumbers.ts` reports the absence once rather than guessing at a
+   * community resource's field.
+   */
+  setPhone?(number: string): boolean;
   rawPlayer: any;
 }
 

@@ -415,8 +415,10 @@ and not a config change.
 **micaOS issues the phone numbers**, because there is no framework to issue
 them. A number is generated at random on a player's first connection, stored in
 `mica_phone_numbers`, and stays with them across reconnects — every contact
-anyone had saved would break otherwise. On qb and ESX that table stays empty and
-the framework's own number is used exactly as before.
+anyone had saved would break otherwise. The same table records every number on a
+qb core too, mirrored into `charinfo.phone` (see "A number belongs to the phone"
+under the phone-as-item section); on ESX it stays empty and the framework's own
+number is used exactly as before.
 
 **There is no money, and the apps that need it are hidden rather than broken.**
 Bank and Hodlr do not appear on a standalone server. That is deliberate: a Bank
@@ -889,6 +891,22 @@ keep exactly the behaviour they have today, and say so once at start rather than
 failing quietly. Nothing about a phone's identity is a secret or a credential:
 the server always checks the character presenting the phone as well, so a copied
 id on its own grants nothing.
+
+**A number belongs to the phone.** On standalone and on both qb cores micaOS is
+the source of truth for phone numbers, recorded in `mica_phone_numbers` against
+the phone they are on. Using a phone makes its number your number; a phone that
+changes hands takes its number with it, and rings for whoever is holding it.
+Nothing changes for an existing server on upgrade — the migration copies every
+character's `charinfo.phone` in, and a new character keeps the number qb issued
+— and whenever your active phone changes, its number is written back into
+`charinfo.phone` through the framework's own export (`SetCharInfo` on qbx_core,
+`SetPlayerData` on qb-core), so `GetPlayerByPhone`, dispatch and job scripts
+keep working unmodified. A player holding no phone keeps the last value the
+framework had rather than a blank. **ESX is the exception**: there is no
+standard setter for an ESX phone number, so micaOS keeps reading whatever your
+phone-number resource provides, issues none of its own, and says so once at
+start. Without the gate, every server behaves as one number per character, as it
+always has.
 
 **Standalone ignores the gate.** With no framework there is no inventory to hold
 the item in, so `mica_standalone` with `mica_phone_item` set is reported once at

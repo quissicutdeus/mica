@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { Database } from '../Database';
+import { numberFor, readCitizenIdByNumber } from '../phoneNumbers';
 import {
   balanceOf,
   exposes,
@@ -77,9 +78,26 @@ export const qbFindOfflineByCitizenIds = async (
   return found;
 };
 
-/** Who holds this number, out of `charinfo`. The one framework that keeps a phone in core. */
-export const qbFindOfflineByPhone = async (phone: string): Promise<FrameworkIdentity | null> =>
-  await offlineLookup('the `players` lookup by phone number', async () => {
+/**
+ * Who holds this number.
+ *
+ * **micaOS's own table first** (MICA-284): a number belongs to a phone, and the phone's row
+ * names whoever used it last. `charinfo.phone` is a mirror micaOS writes back on every switch,
+ * and it is deliberately left stale for a player whose phone was taken — so the mirror alone
+ * would answer with the victim. The `charinfo` read stays as the fallback for a character
+ * micaOS has no row for yet: a fresh install onto a server with existing characters, before
+ * they have connected once and had their number adopted.
+ */
+export const qbFindOfflineByPhone = async (phone: string): Promise<FrameworkIdentity | null> => {
+  const holder = await offlineLookup('the `mica_phone_numbers` lookup by number', () =>
+    readCitizenIdByNumber(phone)
+  );
+  if (holder) {
+    const identity = await qbFindOfflineByCitizenId(holder);
+    if (identity) return { ...identity, phone };
+  }
+
+  return await offlineLookup('the `players` lookup by phone number', async () => {
     const row = await Database.single<{ citizenid: string; charinfo: unknown }>(
       `SELECT ${QB_OWNER_TABLE.column}, charinfo FROM ${QB_OWNER_TABLE.table}
      WHERE JSON_UNQUOTE(JSON_EXTRACT(charinfo, '$.phone')) = ?
@@ -89,6 +107,40 @@ export const qbFindOfflineByPhone = async (phone: string): Promise<FrameworkIden
     if (!row?.citizenid) return null;
     return identityFromCharinfo(row.citizenid, row.charinfo);
   });
+};
+
+/**
+ * The number a loaded qb player is on (MICA-284).
+ *
+ * micaOS's own cache first, because it is the source of truth and is filled by the sync
+ * before the write-back lands; `charinfo.phone` second, because it is the mirror of the same
+ * value and is all there is before the first sync, and forever on a build whose write-back
+ * could not be made (see `writeBack` in `services/PhoneNumbers.ts`).
+ */
+export const qbPhoneNumber = (citizenid: string, player: any): string | null => {
+  const cached = numberFor(citizenid);
+  if (cached) return cached;
+  const mirrored = player?.PlayerData?.charinfo?.phone;
+  return mirrored === null || mirrored === undefined || mirrored === '' ? null : String(mirrored);
+};
+
+/**
+ * Write a number back through qb-core's player object.
+ *
+ * `SetPlayerData(key, value)` assigns the key and calls `UpdatePlayerData`, which is what
+ * persists `charinfo` and raises the client event other resources listen to. The `charinfo`
+ * table is mutated in place and handed back rather than copied, because qb-core keeps
+ * references to it and a copy would leave those pointing at the old number until the next
+ * full load. False when the shape is not there, which `writeBack` reports once.
+ */
+export const qbSetPhone = (player: any, number: string): boolean => {
+  const charinfo = player?.PlayerData?.charinfo;
+  if (!charinfo || typeof charinfo !== 'object') return false;
+  if (typeof player?.Functions?.SetPlayerData !== 'function') return false;
+  charinfo.phone = number;
+  player.Functions.SetPlayerData('charinfo', charinfo);
+  return true;
+};
 
 /** A loaded qb-core player, or null. */
 const qbPlayer = (src: number): FrameworkPlayer | null => {
@@ -97,7 +149,7 @@ const qbPlayer = (src: number): FrameworkPlayer | null => {
   if (!player) return null;
   const citizenid = player.PlayerData?.citizenid;
   if (!citizenid) return unidentified(src, 'qb-core');
-  const phone = player.PlayerData?.charinfo?.phone || null;
+  const phone = qbPhoneNumber(citizenid, player) ?? undefined;
   return {
     citizenid,
     source: src,
@@ -124,6 +176,7 @@ const qbPlayer = (src: number): FrameworkPlayer | null => {
     removeItem: (item: string, count: number) => {
       return removeInventoryItem(src, player, item, count);
     },
+    setPhone: (number: string) => qbSetPhone(player, number),
     rawPlayer: player
   };
 };

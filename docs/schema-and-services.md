@@ -93,10 +93,12 @@ table and rebuilds the schema — one import, no migration to write and review.
 ### Writing a migration
 
 One file in `server/migrations/`, named `NNNN_snake_case_description.ts`, and
-**the filename is the id**. The directory is empty today — nothing has needed a
-breaking change since the runner shipped — so the example below is the one
-rename this codebase did make, `mica_media.image` to `.data`, back when
-wipe-and-reimport was the only way to do it:
+**the filename is the id**. `0001_phone_numbers_follow_the_phone` (MICA-284) is
+the real one to read — it adds a column, seeds rows from another resource's
+table, and drops a key, each step guarded so a retry is a no-op — and
+`scripts/test-migrations.js` is what executes it against a real MariaDB on both
+framework shapes, which no suite in `pnpm verify` does. The shape, at its
+smallest, is the rename this codebase once made by hand:
 
 ```ts
 import { Database } from '../lib/Database';

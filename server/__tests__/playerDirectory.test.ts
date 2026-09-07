@@ -62,7 +62,9 @@ describe('resolveByPhone', () => {
 
   it('falls back to one SQL read when nobody is online with that number', async () => {
     __setResourceLookup(() => undefined);
-    dbMock.single.mockResolvedValueOnce({ citizenid: 'CIT_OFFLINE', charinfo });
+    dbMock.single
+      .mockResolvedValueOnce(null) // micaOS has no row for this number
+      .mockResolvedValueOnce({ citizenid: 'CIT_OFFLINE', charinfo });
 
     await expect(resolveByPhone('555-0100')).resolves.toEqual({
       citizenid: 'CIT_OFFLINE',
@@ -71,14 +73,39 @@ describe('resolveByPhone', () => {
     });
   });
 
+  it("resolves through micaOS's own table first, so a taken phone finds its holder", async () => {
+    // MICA-284: the number belongs to the phone. `charinfo.phone` is a mirror micaOS writes
+    // back on a switch and deliberately leaves alone for the player whose phone was taken, so
+    // the `JSON_EXTRACT` walk over `players` would answer with the victim. The row in
+    // `mica_phone_numbers` names whoever used the phone last.
+    __setResourceLookup(() => undefined);
+    dbMock.single
+      .mockResolvedValueOnce({ citizenid: 'CIT_THIEF' }) // mica_phone_numbers by number
+      .mockResolvedValueOnce({
+        citizenid: 'CIT_THIEF',
+        charinfo: { firstname: 'Grace', lastname: 'Hopper', phone: '555-0999' }
+      });
+
+    await expect(resolveByPhone('555-0100')).resolves.toEqual({
+      citizenid: 'CIT_THIEF',
+      displayName: 'Grace Hopper',
+      // The number asked about, not the stale one in the thief's own charinfo.
+      phone: '555-0100'
+    });
+    expect(String(dbMock.single.mock.calls[0][0])).toContain('mica_phone_numbers');
+    expect(String(dbMock.single.mock.calls[1][0])).toContain('players');
+  });
+
   it('parses charinfo that arrives as a JSON string', async () => {
     // Driver- and column-type-dependent: some return the column as text, some as an object.
     // Both shapes reach here, so both are handled rather than one being assumed.
     __setResourceLookup(() => undefined);
-    dbMock.single.mockResolvedValueOnce({
-      citizenid: 'CIT_OFFLINE',
-      charinfo: JSON.stringify(charinfo)
-    });
+    dbMock.single
+      .mockResolvedValueOnce(null) // micaOS has no row for this number
+      .mockResolvedValueOnce({
+        citizenid: 'CIT_OFFLINE',
+        charinfo: JSON.stringify(charinfo)
+      });
 
     await expect(resolveByPhone('555-0100')).resolves.toMatchObject({
       displayName: 'Ada Lovelace'
@@ -90,7 +117,7 @@ describe('resolveByPhone', () => {
     // when the framework returned an object with no PlayerData — putting a **phone number**
     // where a citizenid goes, into a column that is a foreign key onto `players`.
     __setResourceLookup(() => undefined);
-    dbMock.single.mockResolvedValueOnce(null);
+    dbMock.single.mockResolvedValue(null);
 
     await expect(resolveByPhone('555-9999')).resolves.toBeNull();
   });
@@ -104,7 +131,9 @@ describe('resolveByPhone', () => {
     // `${first} ${last}` on two empty strings is " ", which would render as a blank name that
     // looks like a rendering bug rather than missing data.
     __setResourceLookup(() => undefined);
-    dbMock.single.mockResolvedValueOnce({ citizenid: 'CIT_X', charinfo: null });
+    dbMock.single
+      .mockResolvedValueOnce(null) // micaOS has no row for this number
+      .mockResolvedValueOnce({ citizenid: 'CIT_X', charinfo: null });
 
     await expect(resolveByPhone('555-0100')).resolves.toEqual({
       citizenid: 'CIT_X',

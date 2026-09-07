@@ -16,7 +16,9 @@ import {
   QB_OWNER_TABLE,
   qbFindOfflineByCitizenId,
   qbFindOfflineByCitizenIds,
-  qbFindOfflineByPhone
+  qbFindOfflineByPhone,
+  qbPhoneNumber,
+  qbSetPhone
 } from './qb';
 
 /**
@@ -36,7 +38,7 @@ const qbxPlayer = (src: number): FrameworkPlayer | null => {
   if (!player) return null;
   const citizenid = player.PlayerData?.citizenid || player.citizenid;
   if (!citizenid) return unidentified(src, 'qbx_core');
-  const phone = player.PlayerData?.charinfo?.phone || null;
+  const phone = qbPhoneNumber(citizenid, player) ?? undefined;
   return {
     citizenid,
     source: src,
@@ -78,6 +80,19 @@ const qbxPlayer = (src: number): FrameworkPlayer | null => {
     },
     removeItem: (item: string, count: number) => {
       return removeInventoryItem(src, player, item, count);
+    },
+    /**
+     * `exports.qbx_core:SetCharInfo(source, 'phone', value)` — verified against the installed
+     * copy: it assigns `PlayerData.charinfo[key]` and persists through `UpdatePlayerData`, and
+     * qbx's own `GetPlayerByPhone` reads that field, so every other resource follows. A build
+     * without the export falls back to the qb-core player method, one name over.
+     */
+    setPhone: (number: string) => {
+      if (exposes('qbx_core', 'SetCharInfo')) {
+        resource('qbx_core').SetCharInfo(src, 'phone', number);
+        return true;
+      }
+      return qbSetPhone(player, number);
     },
     rawPlayer: player
   };

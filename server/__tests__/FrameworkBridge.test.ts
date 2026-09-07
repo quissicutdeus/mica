@@ -28,6 +28,7 @@ import {
   __resetEsxMetaWarning,
   __resetOfflineLookupWarnings
 } from '../lib/FrameworkBridge';
+import { __resetAssignedNumbers, rememberNumber } from '../lib/phoneNumbers';
 
 /**
  * Every ownership check in micaOS resolves an identity through here, and it had no test.
@@ -44,7 +45,10 @@ const qb = (player: unknown) => ({
 const useResources = (map: Record<string, unknown>) =>
   __setResourceLookup((name) => (map as Record<string, any>)[name]);
 
-beforeEach(() => vi.restoreAllMocks());
+beforeEach(() => {
+  vi.restoreAllMocks();
+  __resetAssignedNumbers();
+});
 afterEach(() => __setResourceLookup());
 
 describe('FrameworkBridge.getPlayer', () => {
@@ -134,6 +138,37 @@ describe('FrameworkBridge lookups', () => {
     });
     expect(FrameworkBridge.getPlayerByPhone('5552000')?.citizenid).toBe('CIT_B');
     expect(FrameworkBridge.getPlayerByPhone('5559999')).toBeNull();
+  });
+
+  /**
+   * MICA-284: a number belongs to a phone, and `charinfo.phone` is a mirror micaOS writes back
+   * on a switch and deliberately leaves alone for a player whose phone was taken. So the walk
+   * over `charinfo` finds the victim beside the thief; micaOS's own record of who last used the
+   * phone is asked first, and the walk is only for a number it has not resolved.
+   */
+  it('asks its own record before walking charinfo, so a taken phone rings for its holder', () => {
+    useResources({
+      qbx_core: {
+        GetQBPlayers: () => online,
+        GetPlayer: (src: number) => (online as Record<number, unknown>)[src]
+      }
+    });
+    // CIT_B's charinfo still says 5552000; CIT_A is the one holding the phone it is on now.
+    rememberNumber('CIT_A', '5552000');
+
+    expect(FrameworkBridge.getPlayerByPhone('5552000')?.citizenid).toBe('CIT_A');
+  });
+
+  it('finds nobody for a number whose recorded holder is offline, whatever charinfo says', () => {
+    useResources({
+      qbx_core: {
+        GetQBPlayers: () => online,
+        GetPlayer: (src: number) => (online as Record<number, unknown>)[src]
+      }
+    });
+    rememberNumber('CIT_GONE', '5552000');
+
+    expect(FrameworkBridge.getPlayerByPhone('5552000')).toBeNull();
   });
 });
 

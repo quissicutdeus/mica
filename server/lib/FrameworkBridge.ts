@@ -17,6 +17,7 @@ import {
   type OwnerTable
 } from './framework/runtime';
 import { readItemSlots, writeItemMetadata, type ItemSlot } from './framework/itemMetadata';
+import { citizenIdForNumber } from './phoneNumbers';
 
 /**
  * The one door every framework question goes through.
@@ -458,7 +459,30 @@ export class FrameworkBridge {
     return found;
   }
 
+  /**
+   * The connected player on this number, or null.
+   *
+   * **micaOS's own record first** (MICA-284). A number belongs to a phone, and the cache in
+   * `lib/phoneNumbers.ts` knows who last used the phone it is on. The walk over every
+   * connected player's `charinfo.phone` below is the fallback for a number micaOS has not
+   * resolved this process — ESX, or a character who has not synced since the restart — and it
+   * cannot be the first answer on qb: `charinfo.phone` is a mirror micaOS writes back on a
+   * switch and deliberately leaves alone for a player whose phone was taken, so the walk would
+   * find the victim beside the thief and answer with whichever came first.
+   *
+   * When the record names a holder who is not connected, the answer is null rather than the
+   * walk: the number is theirs, and finding somebody else still carrying it in `charinfo`
+   * would ring the wrong phone.
+   */
   public static getPlayerByPhone(phone: string): FrameworkPlayer | null {
+    const holder = citizenIdForNumber(phone);
+    if (holder) {
+      const src = FrameworkBridge.getSourceByCitizenId(holder);
+      if (src === null) return null;
+      const player = FrameworkBridge.getPlayer(src);
+      return player?.citizenid === holder ? player : null;
+    }
+
     try {
       const players = FrameworkBridge.getAllPlayers();
       for (const src in players) {

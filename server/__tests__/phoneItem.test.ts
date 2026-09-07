@@ -43,6 +43,7 @@ import {
   PHONE_ITEM_CONVAR,
   __resetPhoneItemWarnings,
   evaluatePhoneItem,
+  onPhoneStateChanged,
   phoneItemName
 } from '../lib/phoneItem';
 import { __resetRateLimits } from '../lib/rateLimit';
@@ -179,6 +180,65 @@ describe('the phone item gate', () => {
       expect(bridgeMock.countItem).not.toHaveBeenCalled();
       expect(emitNet).not.toHaveBeenCalled();
     });
+  });
+});
+
+/**
+ * MICA-284: whoever needs to know a player's phone situation may have changed is told from
+ * here, because this is where all three triggers are observed. The number sync is the first
+ * subscriber, and it cannot hang off `onPlayerLoaded` alone without going stale the moment a
+ * player picks up a second phone.
+ */
+describe('the phone-state registry', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    __resetPhoneItemWarnings();
+    __resetRateLimits();
+    convar.current = 'phone';
+    bridgeMock.framework = 'qb';
+    bridgeMock.getPlayer.mockReturnValue(PLAYER);
+    bridgeMock.countItem.mockReturnValue(1);
+    (globalThis as any).source = SRC;
+  });
+
+  it('tells a subscriber on load, on use, and on the look-again event', () => {
+    const run = vi.fn();
+    onPhoneStateChanged('test-load-use-relay', run);
+
+    loadedSubscribers.find((s) => s.name === 'phone-item')!.run(SRC);
+    registeredAtImport![1](SRC);
+    netHandlers['mica:server:shell:checkPhoneItem']();
+
+    expect(run.mock.calls).toEqual([[SRC], [SRC], [SRC]]);
+  });
+
+  it('tells nobody about a source with no loaded character', () => {
+    const run = vi.fn();
+    onPhoneStateChanged('test-unloaded', run);
+    bridgeMock.getPlayer.mockReturnValue(undefined);
+
+    evaluatePhoneItem(SRC);
+
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it('still tells the others when one subscriber throws or rejects, and names it', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const after = vi.fn();
+    onPhoneStateChanged('test-throws', () => {
+      throw new Error('boom');
+    });
+    onPhoneStateChanged('test-rejects', () => Promise.reject(new Error('later')));
+    onPhoneStateChanged('test-after', after);
+
+    evaluatePhoneItem(SRC);
+    await Promise.resolve();
+
+    expect(after).toHaveBeenCalledWith(SRC);
+    const said = error.mock.calls.map((c) => String(c[0]));
+    expect(said.some((line) => line.includes("'test-throws' threw"))).toBe(true);
+    expect(said.some((line) => line.includes("'test-rejects' rejected"))).toBe(true);
+    error.mockRestore();
   });
 });
 

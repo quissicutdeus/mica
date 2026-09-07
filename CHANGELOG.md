@@ -79,6 +79,47 @@ hand. What changed is the name of the software it runs: a gPhone and a gTablet
 both run micaOS. This release is **Seraphim**, the first of the nine choirs the
 codenames now follow.
 
+**A phone number now belongs to the phone, not the character, and micaOS owns
+the numbers on qb as well as standalone — run `micaschema apply` from your
+server console after updating (MICA-284).** This is the one change in the
+phone-as-item work that changes who a number belongs to, even though no
+individual number changes value. `mica_phone_numbers` gains a nullable
+`phone_id` column with a unique `phone_id_unique` key, and the migration
+`0001_phone_numbers_follow_the_phone` drops `citizenid_unique`, because a
+character holding two phones holds two numbers.
+
+**Nobody's number changes on upgrade.** On qb and qbx the migration copies every
+existing character's `charinfo.phone` into `mica_phone_numbers` as that
+character's number, and the first time they use a phone the number moves onto
+it. A character created after the update keeps the number qb issued too: micaOS
+adopts it the first time they connect rather than generating one. The one
+exception is two characters sharing a `charinfo.phone`, which qb does not
+prevent — the second to connect is issued a fresh number, and the migration
+prints how many characters that affects. Apply the migration before players
+connect; a server that skips it has micaOS issue and write back fresh numbers as
+players load, which is the behaviour the migration exists to avoid.
+
+**The framework is kept in step.** Whenever the active phone changes, its number
+is written into `charinfo.phone` through the framework's own export — qbx_core's
+`SetCharInfo`, or a qb-core player's `SetPlayerData` — so `GetPlayerByPhone`,
+your dispatch and job scripts, and anything else reading `charinfo.phone` keep
+working unmodified. A player left holding no phone keeps the last value the
+framework had rather than a blank, which would break those scripts; a stolen
+phone rings for whoever is holding it, and micaOS's own lookups resolve through
+the phone rather than through the stale field.
+
+**On es_extended nothing changes.** There is no standard way to set an ESX
+character's phone number, so micaOS keeps reading whatever your phone-number
+resource provides, issues none of its own, and says so once at start. A phone
+that changes hands there keeps the holder's own number. Standalone is unchanged
+apart from the new column: it was already micaOS's number, and a standalone
+server has no inventory to hold two phones in.
+
+This needs the phone-as-item gate (`mica_phone_item`) and `ox_inventory` to mean
+anything per phone; without them every server, qb included, behaves as one
+number per character, exactly as before, with the number now recorded in
+`mica_phone_numbers` as well as `charinfo`.
+
 **`mica_messages` gains a `conversation_id_id` key on `(conversation_id, id)` —
 run `micaschema apply` from your server console after updating, or import the
 regenerated `mica.sql` / `mica.esx.sql` on a fresh install (MICA-218).** A
@@ -109,15 +150,15 @@ half is untouched; it runs in the game client's own V8, not in Node.
 
 **`mica_phone_numbers` is a new table — run `micaschema apply` from your server
 console after updating, or import the regenerated `mica.sql` / `mica.esx.sql` on
-a fresh install.** It carries `id`, `citizenid`, `number`, `status`,
+a fresh install.** It carries `id`, `citizenid`, `number`, `phone_id`, `status`,
 `created_at` and `updated_at`, with a `status` key, a `citizenid_status` key,
-and two unique keys, `number_unique` and `citizenid_unique`. It is how micaOS
-issues a phone number on a server running with no framework, where there is no
-framework to issue one — a number is generated at random on a player's first
-connection and stays with them across reconnects. **On qb and ESX the table is
-created and stays empty**, and the framework's own number is used exactly as
-before; nothing about an existing server's numbering changes. It is created on
-every framework rather than only on standalone because `mica.sql` and
+and two unique keys, `number_unique` and `phone_id_unique`. It began as the way
+micaOS issues a phone number on a server running with no framework, where there
+is no framework to issue one — a number generated at random on a player's first
+connection that stays with them across reconnects — and MICA-284 above made it
+the record of every number on qb too. **On ESX the table is created and stays
+empty**, and the framework's own number is used exactly as before. It is created
+on every framework rather than only where it is used because `mica.sql` and
 `mica.esx.sql` differ only in their foreign keys onto `players`, and a third
 artifact would be a third thing to import the wrong one of.
 
@@ -327,9 +368,9 @@ install (MICA-280).** It carries `id`, `citizenid`, `phone_id`, `status`,
 a unique `phone_id_unique` key. It is the first step of the phone becoming a
 thing you carry rather than something a character simply has: a phone gets an
 identity of its own, minted into the inventory item's metadata the first time it
-is used, so two phones are two phones. **Nothing reads it yet** — no data moves
-onto it in this release and no behaviour changes — but the table has to exist
-before the work that does.
+is used, so two phones are two phones. The phone number is the first thing to
+follow it (MICA-284, above); contacts, messages and the rest of a phone's data
+come in a later release.
 
 `phone_id` is unique; `citizenid` deliberately is not, because a character is
 meant to be able to hold more than one phone. **This needs `ox_inventory`**: it

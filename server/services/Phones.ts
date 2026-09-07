@@ -106,6 +106,25 @@ const ensureRow = async (phoneId: string, citizenid: string): Promise<void> => {
 };
 
 /**
+ * What resolving a source's phone can come to, and why three answers rather than a nullable.
+ *
+ * MICA-280 folded every non-answer into `null`, and for its one caller that was right. The
+ * number sync (MICA-284) has to tell two of them apart: a player on a gated server who holds
+ * **no** phone must be left exactly as they are — no number resolved, nothing written back —
+ * while a server that cannot carry a phone id at all degrades to one number per citizen. The
+ * other causes of `'unavailable'` (no gate configured, no loaded character, the metadata write
+ * failed) all want that same degrade.
+ */
+export type PhoneResolution =
+  | { status: 'active'; phone: ActivePhone }
+  /** A phone item is required here and this player holds none. */
+  | { status: 'none' }
+  /** No phone identity can be had on this server, or for this source, right now. */
+  | { status: 'unavailable' };
+
+const UNAVAILABLE: PhoneResolution = { status: 'unavailable' };
+
+/**
  * The phone this source is using, minting one into the item the first time.
  *
  * **The rule lives here and nowhere else**, so no service re-implements it: the phone in the
@@ -114,27 +133,23 @@ const ensureRow = async (phoneId: string, citizenid: string): Promise<void> => {
  * where switching by dragging items between slots is not. `readItemSlots` returns slots
  * ascending precisely so the fallback is `slots[0]` rather than a sort somebody has to repeat.
  *
- * `null` has four distinct causes and every one of them means the same thing to a caller —
- * this player has no phone identity right now — so they are not distinguished in the return:
- * the server gates no phone item at all, the player is not loaded, the inventory cannot carry
- * metadata (MICA-279), or they hold no phone.
- *
- * **A minted id is written to the item before it is recorded**, and the resolve returns null
- * if that write fails. The other order is worse: a row created for an id that never reached
- * the item is an orphan nothing will ever point at, where an id on an item with no row yet is
- * simply picked up and recorded by the next resolve.
+ * **A minted id is written to the item before it is recorded**, and the resolve answers
+ * `'unavailable'` if that write fails. The other order is worse: a row created for an id that
+ * never reached the item is an orphan nothing will ever point at, where an id on an item with
+ * no row yet is simply picked up and recorded by the next resolve.
  */
-export const activePhone = async (src: number): Promise<ActivePhone | null> => {
+export const resolvePhone = async (src: number): Promise<PhoneResolution> => {
   const item = phoneItemName();
-  if (!item) return null;
+  if (!item) return UNAVAILABLE;
 
   const player = FrameworkBridge.getPlayer(src);
-  if (!player?.citizenid) return null;
+  if (!player?.citizenid) return UNAVAILABLE;
 
   const slots = FrameworkBridge.itemSlots(player, item);
   // `null` is "this inventory cannot say", never "holds none" — treating them alike would mint
   // a fresh phone on every resolve for a server that can never store one.
-  if (slots === null || slots.length === 0) return null;
+  if (slots === null) return UNAVAILABLE;
+  if (slots.length === 0) return { status: 'none' };
 
   const preferred = lastUsedPhoneSlot(src);
   const chosen = slots.find((entry) => entry.slot === preferred) ?? slots[0];
@@ -142,16 +157,27 @@ export const activePhone = async (src: number): Promise<ActivePhone | null> => {
   const carried = chosen.metadata.phoneId;
   if (typeof carried === 'string' && PHONE_ID.test(carried)) {
     await ensureRow(carried, player.citizenid);
-    return { phoneId: carried, slot: chosen.slot };
+    return { status: 'active', phone: { phoneId: carried, slot: chosen.slot } };
   }
 
   const minted = newPhoneId();
   if (!FrameworkBridge.setItemMetadata(player, item, chosen.slot, { phoneId: minted })) {
     // `writeItemMetadata` has already said why, once. Claiming an id the item does not carry
     // would hand this player a different phone on their next relog.
-    return null;
+    return UNAVAILABLE;
   }
 
   await ensureRow(minted, player.citizenid);
-  return { phoneId: minted, slot: chosen.slot };
+  return { status: 'active', phone: { phoneId: minted, slot: chosen.slot } };
+};
+
+/**
+ * The phone this source is using, or `null` when they have no phone identity right now.
+ *
+ * `resolvePhone` with its three answers folded to one, for a caller that does not need to
+ * tell "holds none" from "cannot say" — which is every caller except the number sync.
+ */
+export const activePhone = async (src: number): Promise<ActivePhone | null> => {
+  const resolution = await resolvePhone(src);
+  return resolution.status === 'active' ? resolution.phone : null;
 };

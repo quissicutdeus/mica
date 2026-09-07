@@ -579,6 +579,7 @@ CREATE TABLE IF NOT EXISTS `mica_phone_numbers` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
     `citizenid` varchar(50) NOT NULL,
     `number` varchar(16) NOT NULL,
+    `phone_id` varchar(32) DEFAULT NULL,
     `status` ENUM('active', 'deleted') NOT NULL DEFAULT 'active',
     `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -586,7 +587,7 @@ CREATE TABLE IF NOT EXISTS `mica_phone_numbers` (
     KEY `status` (`status`),
     KEY `citizenid_status` (`citizenid`, `status`),
     UNIQUE KEY `number_unique` (`number`),
-    UNIQUE KEY `citizenid_unique` (`citizenid`)
+    UNIQUE KEY `phone_id_unique` (`phone_id`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
 -- Generated from the 'phones' defineService declaration.
@@ -671,3 +672,6 @@ CREATE TABLE IF NOT EXISTS `mica_schema_migrations` (
     `applied_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+INSERT IGNORE INTO `mica_schema_migrations` (`id`) VALUES
+  ('0001_phone_numbers_follow_the_phone');
