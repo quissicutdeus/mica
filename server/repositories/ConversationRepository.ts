@@ -284,11 +284,12 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
             (SELECT COUNT(*) FROM mica_messages unread
                 WHERE unread.conversation_id = c.id
                 AND unread.status != 'deleted'
-                AND unread.citizenid <> me.citizenid
+                AND (unread.citizenid <> me.citizenid OR unread.external_sender IS NOT NULL)
                 AND unread.created_at > me.last_read) as unread_count,
             m.message as last_message_text,
             m.created_at as last_message_time,
             m.citizenid as last_message_sender,
+            m.external_sender as last_message_external,
             me.archived_at as archived_at
             FROM mica_messages_conversations c
             JOIN mica_messages_participants me
@@ -318,7 +319,10 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
         ? {
             message: row.last_message_text,
             created_at: row.last_message_time,
-            citizenid: row.last_message_sender
+            citizenid: row.last_message_sender,
+            // A text from a line (MICA-223) is owned by the recipient's row but was not
+            // written by them; the inbox reads this before it draws a "sent" tick.
+            external_sender: row.last_message_external ?? null
           }
         : undefined
     }));
@@ -433,6 +437,26 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
    * same contact — and so a stolen phone continues the thread it was in rather than starting
    * a second one beside it.
    */
+  /**
+   * The thread between a phone and a line that is not a player (MICA-223).
+   *
+   * `findOneToOne` asks for two participant rows and a line has none: the only member of
+   * such a thread is the phone. So the pair columns are the key here, in either order --
+   * `pair_key_unique` is what guarantees there is at most one of them.
+   */
+  async findExternalThread(phoneId: string, externalKey: string): Promise<Conversation | null> {
+    const rows = await Database.query<Conversation[]>(
+      `SELECT c.*
+         FROM mica_messages_conversations c
+        WHERE c.is_group = 0 AND c.status = 'active'
+          AND ((c.participant_a = ? AND c.participant_b = ?)
+            OR (c.participant_a = ? AND c.participant_b = ?))
+        LIMIT 1`,
+      [phoneId, externalKey, externalKey, phoneId]
+    );
+    return rows.length > 0 ? rows[0] : null;
+  }
+
   async findOneToOne(phone1: string, phone2: string): Promise<Conversation | null> {
     const query = `
             SELECT c.*

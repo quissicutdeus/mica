@@ -29,10 +29,14 @@ import {
   fail,
   guarded,
   guardedAsync,
+  rateLimited,
   ok,
   publish
 } from './exports';
 import { SendSystemEmail } from '../services/Mail';
+import { sendFromLine, type LineSender } from '../services/Messages';
+import { readCitizenIdByNumber } from './phoneNumbers';
+import { phoneNumberFrom } from './netGuard';
 import { getBatteryLevel, setBatteryLevel, setCharging } from '../services/Battery';
 // Aliased: `AddMedia`'s own parameter is named `media` (the raw payload), which would
 // otherwise shadow this import for the whole function body.
@@ -286,6 +290,81 @@ const AddContact = async (
   return ok({ id });
 };
 
+/**
+ * A text from something that is not a player (MICA-223): `SendMessage(citizenid, message)`.
+ *
+ * `from` names the sender -- `name` (a business, shown as the thread's title) and/or
+ * `number` (a line, what a block is checked against and what shows when there is no name).
+ * A number a character holds is refused: this export speaks for businesses and lines, and
+ * putting words in a player's mouth is not a thing another resource gets to do quietly.
+ * The recipient is a citizenid because this has to work offline; the row lands in the thread
+ * and the toast is skipped, and `delivered` says which happened.
+ */
+export interface ExternalMessage {
+  from: { name?: string; number?: string };
+  body: string;
+  attachments?: unknown;
+}
+
+/** Per calling resource. A dispatch script texting a whole department fits; a stuck loop does not. */
+const SEND_MESSAGE_PER_MINUTE = 120;
+
+/** `mica_messages.message` is `text`; the same bound the player-facing contract enforces. */
+const MESSAGE_BODY_MAX = 65535;
+
+const LABEL_MAX = 50;
+
+const SendMessage = async (
+  citizenid: unknown,
+  message: unknown
+): Promise<ExportOutcome<{ conversationId: number; messageId: number; delivered: boolean }>> => {
+  type Result = { conversationId: number; messageId: number; delivered: boolean };
+  if (typeof citizenid !== 'string' || !citizenid.trim()) {
+    return fail<Result>('invalid_args', 'A citizenid is required.');
+  }
+  if (!message || typeof message !== 'object') {
+    return fail<Result>('invalid_args', 'A message object is required.');
+  }
+  const opts = message as Partial<ExternalMessage>;
+  const rawFrom = opts.from;
+  if (!rawFrom || typeof rawFrom !== 'object') {
+    return fail<Result>('invalid_args', "'from' is required: a name, a number, or both.");
+  }
+  const name = typeof rawFrom.name === 'string' ? rawFrom.name.trim() : '';
+  if (name.length > LABEL_MAX) {
+    return fail<Result>('invalid_args', `'from.name' is at most ${LABEL_MAX} characters.`);
+  }
+  const number = rawFrom.number === undefined ? null : phoneNumberFrom(rawFrom.number);
+  if (rawFrom.number !== undefined && number === null) {
+    return fail<Result>('invalid_args', "'from.number' must be a phone number string.");
+  }
+  if (!name && !number) {
+    return fail<Result>('invalid_args', "'from' needs a name or a number.");
+  }
+  if (typeof opts.body !== 'string' || !opts.body.trim()) {
+    return fail<Result>('invalid_args', 'A message body is required.');
+  }
+  if (opts.body.length > MESSAGE_BODY_MAX) {
+    return fail<Result>(
+      'invalid_args',
+      `A message body is at most ${MESSAGE_BODY_MAX} characters.`
+    );
+  }
+
+  const recipient = await PlayerDirectory.resolve(citizenid);
+  if (!recipient) return fail<Result>('unknown_player', 'No character with that citizenid.');
+
+  if (number && (await readCitizenIdByNumber(number))) {
+    return fail<Result>(
+      'number_in_use',
+      'A character holds that number. SendMessage speaks for businesses and lines, not for players.'
+    );
+  }
+
+  const from: LineSender = { name: name || null, number };
+  return ok(await sendFromLine(citizenid, from, opts.body, opts.attachments));
+};
+
 export function registerPublicApi(): void {
   publish(
     'GetApiVersion',
@@ -300,6 +379,11 @@ export function registerPublicApi(): void {
    * New exports use the outcome shape.
    */
   publish('SendSystemEmail', SendSystemEmail);
+
+  publish(
+    'SendMessage',
+    guardedAsync('SendMessage', rateLimited('SendMessage', SEND_MESSAGE_PER_MINUTE, SendMessage))
+  );
 
   publish('SendNotification', guarded('SendNotification', SendNotification));
 

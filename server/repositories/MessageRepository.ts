@@ -19,7 +19,8 @@ export class MessageRepository extends SchemaRepository<Message> {
       conversation_id: data.conversation_id,
       citizenid: data.citizenid,
       message: data.message,
-      reply_to_id: data.reply_to_id ?? null
+      reply_to_id: data.reply_to_id ?? null,
+      external_sender: data.external_sender ?? null
     });
 
     // 2. Insert Attachments if any

@@ -105,7 +105,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           </span>
         </div>
         <div class="flex items-center">
-          {#if conv.last_message?.citizenid === myCitizenId}
+          {#if conv.last_message?.citizenid === myCitizenId && !conv.last_message?.external_sender}
             <MessageStatusIcon
               status={isLastMsgReadByOther(conv) ? 'read' : 'delivered'}
               class="mr-1.5 h-3.5 w-3.5 shrink-0"

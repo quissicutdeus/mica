@@ -508,6 +508,7 @@ CREATE TABLE IF NOT EXISTS `mica_messages` (
     `conversation_id` int(11) NOT NULL,
     `message` text NOT NULL,
     `reply_to_id` int(11) DEFAULT NULL,
+    `external_sender` varchar(50) DEFAULT NULL,
     `status` ENUM('active', 'deleted', 'moderated') NOT NULL DEFAULT 'active',
     `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

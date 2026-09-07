@@ -1106,13 +1106,16 @@ end
 
 `reason` is one of `unknown_player`, `offline`, `not_ready`, `invalid_args`,
 `internal_error`, `already_registered` (another resource already holds that
-number), `not_owner` (that number belongs to a different resource) or
-`number_in_use` (a character holds it, and a character always wins).
+number), `not_owner` (that number belongs to a different resource),
+`number_in_use` (a character holds it, and a character always wins) or
+`rate_limited` (your resource has called that export more times this minute than
+it allows; the call was dropped).
 
 | Export                              | Identifies a player by | Does                                                                                              |
 | ----------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------- |
 | `GetApiVersion()`                   | —                      | The API version. Bumped when an existing export changes shape, not when one is added              |
 | `SendSystemEmail(...)`              | citizenid              | Sends mail. Predates this API and keeps its original signature                                    |
+| `SendMessage(citizenid, message)`   | citizenid              | Puts a text in Messages from a business or a line, never a player. Works offline; see below       |
 | `SendNotification(citizenid, opts)` | citizenid              | Raises a notification. Works offline — the row is written and shown next time they open the phone |
 | `BuildDeepLink(app, props)`         | —                      | Builds a `app?key=value` link without needing to know the format                                  |
 | `AddMedia(citizenid, media)`        | citizenid              | Puts a GIF, a video poster, a voice clip or a file in a player's gallery                          |
@@ -1140,6 +1143,29 @@ number), `not_owner` (that number belongs to a different resource) or
 player is offline takes a citizenid; anything inherently live takes a source. No
 export reads an implicit `source` global, because `TriggerEvent` from another
 resource would make that the wrong player.
+
+**`SendMessage` is a text, not mail, and the sender is not a player.** Delivery,
+dispatch, taxi and business scripts text the player from a name, a number, or
+both; the thread is titled with the name and a block is checked against the
+number, so give the number you registered with `RegisterNumber` when you have
+one and replies to it will at least reach a thread the player recognises.
+
+```lua
+local result = exports['mica']:SendMessage(citizenid, {
+    from = { name = 'Downtown Cab', number = '5550199' },  -- one of the two at least
+    body = 'Your ride is outside.',
+    attachments = { { photo_id = mediaId } }  -- optional; the player's own media, see AddMedia
+})
+-- result.value = { conversationId = 12, messageId = 340, delivered = true }
+```
+
+Works offline: the row lands in the thread and `delivered` is `false`. A number
+a character holds is refused with `number_in_use` -- putting words in a player's
+mouth is not something another resource gets to do quietly -- and the call is
+rate limited per calling resource at 120 a minute, answering `rate_limited` past
+that. The player can reply in the thread; nothing is delivered anywhere for a
+reply yet, so a script that wants to hear back registers the number and takes
+calls, or reads the thread it created.
 
 **`AddMedia` is how anything but a photo gets in.** The camera only ever
 produces a `photo`, so the other six kinds — `video`, `audio`, `gif`, `sticker`,

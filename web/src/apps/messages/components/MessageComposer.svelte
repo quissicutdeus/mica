@@ -74,6 +74,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     if (targetMsg.sender === 'me') {
       return { name: $t('messages.you'), avatar: undefined };
     }
+    if (targetMsg.external_sender) return { name: targetMsg.external_sender, avatar: undefined };
     if (!currentConv) return { name: $t('messages.member'), avatar: undefined };
     const p = currentConv.participants?.find((part) => part.citizenid === targetMsg.citizenid);
     const contact = p?.contact || $contacts.find((c) => c.citizenid === targetMsg.citizenid);

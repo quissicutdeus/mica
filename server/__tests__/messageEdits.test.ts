@@ -115,6 +115,20 @@ describe('messages:edit — who may rewrite what', () => {
     expect(messageUpdates()).toEqual([]);
   });
 
+  it('refuses a text from a line, which sits under the recipient but is not theirs', async () => {
+    // MICA-223: `citizenid` on such a row is the recipient, so the ownership predicate alone
+    // finds it. `external_sender` is what says it arrived rather than left.
+    world.row = { ...world.row, external_sender: 'Downtown Cab' };
+
+    const reply = await call('edit', { id: 42, message: 'the cab said something else' });
+
+    expect(reply).toMatchObject({
+      error: 'That message is not yours to change.',
+      key: 'server.messages.notYours'
+    });
+    expect(messageUpdates()).toEqual([]);
+  });
+
   it('refuses somebody who has left the conversation', async () => {
     world.isMember = false;
 

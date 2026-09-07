@@ -39,7 +39,7 @@ const DB_PASSWORD = process.env.MICA_DB_PASSWORD;
 const EXTERNAL_DB = Boolean(DB_HOST || DB_PORT || DB_USER || DB_PASSWORD);
 
 let checksRun = 0;
-const MINIMUM_CHECKS = 40;
+const MINIMUM_CHECKS = 48;
 
 const check = (label, actual, expected) => {
   checksRun += 1;
@@ -433,6 +433,43 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, modules }) => {
   // Test finding a conversation's participants again
   const allParticipants = await repo.findParticipants(conversationId);
   check(`findParticipants includes both users`, allParticipants.length >= 2, true);
+
+  step(`${schemaFile} — a thread with a line that is not a player (MICA-223)`);
+  // The far side is a key in the pair columns, not a participant: a line has no players row.
+  // Raw inserts, like the seed above: the repositories here are built on a bare database
+  // name and have no resolved declaration to validate a write against.
+  const lineKey = 'ext:5550199';
+  const [lineConv] = await connection.query(
+    `INSERT INTO mica_messages_conversations (citizenid, is_group, name, participant_a, participant_b, status)
+     VALUES (?, 0, 'Downtown Cab', ?, ?, 'active')`,
+    [ownerA, phoneA, lineKey]
+  );
+  const lineThreadId = lineConv.insertId;
+  await repo.addParticipant(lineThreadId, ownerA, phoneA, 'member');
+  // `last_read` defaults to now, and the text below lands in the same second; a real
+  // recipient read the thread some time before the text arrived.
+  await connection.query(
+    'UPDATE mica_messages_participants SET last_read = DATE_SUB(NOW(), INTERVAL 1 MINUTE) WHERE conversation_id = ?',
+    [lineThreadId]
+  );
+  const foundThread = await repo.findExternalThread(phoneA, lineKey);
+  check(`findExternalThread finds the thread by its pair columns`, foundThread?.id, lineThreadId);
+  const reversedThread = await repo.findExternalThread(lineKey, phoneA);
+  check(`findExternalThread finds it in either order`, reversedThread?.id, lineThreadId);
+  await connection.query(
+    `INSERT INTO mica_messages (conversation_id, citizenid, message, external_sender, status)
+     VALUES (?, ?, 'Your ride is outside.', 'Downtown Cab', 'active')`,
+    [lineThreadId, ownerA]
+  );
+  const { rows: withLine } = await repo.findForPhone(ownerA, phoneA, { limit: 25, cursor: null });
+  const lineRow = withLine.find((c) => c.id === lineThreadId);
+  // Owned by the recipient's row, so `citizenid <> me.citizenid` alone would never count it.
+  check(`a text from a line counts as unread for its recipient`, Number(lineRow?.unread_count), 1);
+  check(
+    `the inbox row says who really sent the last message`,
+    lineRow?.last_message?.external_sender,
+    'Downtown Cab'
+  );
 
   console.log(`    schema test passed for ${framework}`);
 };

@@ -255,7 +255,9 @@ function createMessagesStore() {
     const rows = Array.isArray(page?.rows) ? page.rows : [];
     const mapped: UIMessage[] = rows.map((m) => ({
       ...m,
-      sender: m.citizenid === myId ? 'me' : 'other',
+      // A text from a line is owned by the recipient's row but not written by them
+      // (`external_sender`); it reads as theirs, never as mine.
+      sender: m.citizenid === myId && !m.external_sender ? 'me' : 'other',
       replyToMsg: null
     }));
     return {

@@ -116,6 +116,14 @@ export interface Message {
   edited?: boolean;
   reply_to_id?: number | null;
   /**
+   * Who sent this, when it was not a player (MICA-223): the label a resource gave
+   * `SendMessage` -- a business name, or the number it registered. `citizenid` on such a row
+   * is the **recipient**, because the row is theirs to keep and to lose with their character,
+   * so a reader deciding "mine or theirs" checks this before it compares citizenids. Null,
+   * and absent from the wire, for a message a player wrote.
+   */
+  external_sender?: string | null;
+  /**
    * `photo_id` on the way in, `media` on the way back.
    *
    * It used to be a bare base64 string, which made every attachment a photo by

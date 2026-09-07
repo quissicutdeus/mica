@@ -309,7 +309,19 @@ implicit `source` global — `onNet` also registers a local handler, so
 
 `SendNotification` validates its `app` against known services and namespaces
 external callers under `ext_`; `AddMedia` refuses a `url` or `thumbnail` whose
-scheme is not `http(s)` or `data:image`.
+scheme is not `http(s)` or `data:image`; `SendMessage` refuses a `from.number` a
+character holds, so a resource can text as a business or a line but never as a
+player, and the row it writes carries `external_sender` so the recipient's phone
+never mistakes it for their own words -- nor lets them edit it as such.
+
+**The one rate limit at this boundary is per calling resource, not per player.**
+`SendMessage` allows 120 calls a minute from each resource and answers
+`rate_limited` past that (`rateLimited` in `server/lib/exports.ts`). The threat
+it answers is a stuck loop in a well-meaning script, which the per-source
+limiter in `rateLimit.ts` cannot see: an export has no source. Nothing else at
+this boundary is limited, deliberately: a hostile resource is out of scope, and
+a bug that calls `SendNotification` in a loop costs a notification row per call
+where a text costs a thread, a participant and a push.
 
 ---
 

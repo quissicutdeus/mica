@@ -440,7 +440,27 @@ servers keep exactly the behaviour they have now, and say so once at start.
 Every convar below defaults to the behaviour a server already had, so an update
 that sets none of them changes nothing for your players.
 
+**`SendMessage(citizenid, message)` puts a text in a player's Messages from a
+sender that is not a player, and needs `micaschema apply` (MICA-223).**
+`mica_messages` gains an `external_sender` column: the label a resource gave for
+the sender -- a business name, or the number of a line it holds. On such a row
+`citizenid` is the recipient, because the row is theirs to keep and to lose with
+their character, and the column is what tells the phone the text arrived rather
+than left. Run `micaschema apply` after updating; until you do, the export fails
+with `internal_error` and the rest of Messages is unaffected.
+
 ### Added
+
+**`SendMessage(citizenid, message)` is the export that writes such a text
+(MICA-223).** It takes the recipient's citizenid and a table with `from` -- a
+`name`, a `number`, or both -- and a `body`. It creates or reuses the thread
+between the player's phone and that sender, pushes to the app when they are
+online and lands in the thread when they are not, and answers
+`{ conversationId, messageId, delivered }`. A number a character holds is
+refused with `number_in_use`: this export speaks for businesses and lines, not
+for players. It is rate limited per calling resource at 120 a minute, and over
+that answers a new reason, `rate_limited`, which every caller's error handling
+should expect from any export from now on. README's export table has the rest.
 
 **`docs/phone-as-an-item.md` answers the questions the item model raises
 (MICA-231):** how a shop sells a blank phone and what happens on first use, what

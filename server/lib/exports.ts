@@ -65,7 +65,9 @@ export type ExportFailure =
   /** That number belongs to a different resource. */
   | 'not_owner'
   /** A character already holds that number, and a player always wins. */
-  | 'number_in_use';
+  | 'number_in_use'
+  /** The calling resource has exceeded an export's per-minute allowance (MICA-223). */
+  | 'rate_limited';
 
 export type ExportOutcome<T = undefined> =
   | ({ ok: true } & (T extends undefined ? { value?: undefined } : { value: T }))
@@ -115,6 +117,56 @@ const guardedAsync =
   };
 
 /** Registered names, so the contract test can read the surface without a FiveM runtime. */
+/**
+ * Per calling resource, per export, per minute (MICA-223).
+ *
+ * The rate limiter in `rateLimit.ts` is keyed on a player's source, because what it guards
+ * is a modified client hammering a net event. An export has no source: the caller is another
+ * resource, and the one that misbehaves is not hostile but looping -- a dispatch script
+ * texting every officer on every tick of a stuck timer. Keyed on `GetInvokingResource()`, so
+ * one resource's loop starves nobody else's calls, and a fixed window rather than a token
+ * bucket so the answer a caller reads is simple: this many per minute, and then `rate_limited`
+ * until the minute turns.
+ *
+ * Counted before the handler runs, invalid calls included -- a loop that is also wrong is
+ * still a loop.
+ */
+const EXPORT_WINDOW_MS = 60_000;
+
+const exportWindows = new Map<string, { count: number; startedAt: number }>();
+
+/** Test seam, like `rateLimit.ts`'s `__resetRateLimits`. */
+export const __resetExportRateLimits = (): void => {
+  exportWindows.clear();
+};
+
+const invokingResource = (): string => {
+  const name = typeof GetInvokingResource === 'function' ? GetInvokingResource() : null;
+  return typeof name === 'string' && name.length > 0 ? name : 'unknown';
+};
+
+const rateLimited =
+  <A extends unknown[], T>(
+    name: string,
+    perMinute: number,
+    handler: (...args: A) => Promise<ExportOutcome<T>>
+  ) =>
+  async (...args: A): Promise<ExportOutcome<T>> => {
+    const caller = invokingResource();
+    const key = `${caller}:${name}`;
+    const at = Date.now();
+    const current = exportWindows.get(key);
+    if (!current || at - current.startedAt >= EXPORT_WINDOW_MS) {
+      exportWindows.set(key, { count: 1, startedAt: at });
+    } else if (++current.count > perMinute) {
+      return fail<T>(
+        'rate_limited',
+        `'${caller}' has called ${name} more than ${perMinute} times this minute; this call was dropped.`
+      );
+    }
+    return handler(...args);
+  };
+
 const registered = new Map<string, Function>();
 
 /**
@@ -139,4 +191,4 @@ export const publishedExports = (): string[] => [...registered.keys()].sort();
 /** One published export, for driving it in a test. */
 export const publishedExport = (name: string): Function | undefined => registered.get(name);
 
-export { guarded, guardedAsync };
+export { guarded, guardedAsync, rateLimited };

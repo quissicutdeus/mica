@@ -18,6 +18,7 @@ const server = vi.hoisted(() => ({
   pageRequests: [] as any[],
   /** When set, `getMessages` answers a second row that quotes the first (MICA-209). */
   threadHasReply: false,
+  threadHasLineText: false,
   /**
    * A long thread for the paging cases (MICA-212), keyed by conversation id. When a
    * thread is listed here `getMessages` pages it the way the server does; otherwise it
@@ -190,6 +191,19 @@ vi.mock('../nui/fetchNui', () => ({
                 created_at: '2026-07-24T21:05:00Z'
               }
             ]
+          : []),
+        // A text from a line (MICA-223): owned by my row, written by somebody else.
+        ...(server.threadHasLineText
+          ? [
+              {
+                id: 203,
+                conversation_id: data.conversation_id,
+                citizenid: 'my-id',
+                external_sender: 'Downtown Cab',
+                message: 'Your ride is outside.',
+                created_at: '2026-07-24T21:06:00Z'
+              }
+            ]
           : [])
       ];
       return Promise.resolve({ rows, nextCursor: null });
@@ -221,6 +235,7 @@ vi.mock('../nui/fetchNui', () => ({
 beforeEach(async () => {
   server.conversations = DEFAULT_CONVERSATIONS.map((c) => ({ ...c }));
   server.threadHasReply = false;
+  server.threadHasLineText = false;
   server.threads = {};
   conversationsStore.setActiveConversationId(null);
   // The store is a module singleton, so its window, cursor and thread cache outlive a case.
@@ -257,6 +272,16 @@ describe('messages store', () => {
     expect(msgs).toHaveLength(1);
     expect(msgs[0].sender).toBe('me');
     expect(msgs[0].message).toBe('Stash is secure.');
+  });
+
+  it('reads a text from a line as theirs even though the row is mine', async () => {
+    // The recipient owns the row (`citizenid`), so comparing citizenids alone would draw it
+    // as a sent bubble. `external_sender` is what says it arrived.
+    server.threadHasLineText = true;
+    await conversationsStore.loadMessages(2);
+    const line = get(conversationsStore.messages)[2].find((m) => m.id === 203);
+    expect(line?.sender).toBe('other');
+    expect(line?.external_sender).toBe('Downtown Cab');
   });
 
   it('sends message, updates conversation snippet, and sorts conversation to top', async () => {

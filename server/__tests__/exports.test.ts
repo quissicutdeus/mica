@@ -26,9 +26,23 @@ const { dbMock, bridgeMock } = vi.hoisted(() => ({
 }));
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
 vi.mock('../lib/FrameworkBridge', () => ({ FrameworkBridge: bridgeMock }));
+// The Messages service does the writing; what is under test here is the boundary in front
+// of it -- argument checks, the refusals, the rate limit. `sendFromLine.test.ts` has the rest.
+const sendFromLine = vi.hoisted(() =>
+  vi.fn(async () => ({ conversationId: 1, messageId: 2, delivered: false }))
+);
+vi.mock('../services/Messages', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../services/Messages')>()),
+  sendFromLine
+}));
 
 import { registerPublicApi } from '../lib/publicApi';
-import { publishedExport, publishedExports, MICA_API_VERSION } from '../lib/exports';
+import {
+  publishedExport,
+  publishedExports,
+  MICA_API_VERSION,
+  __resetExportRateLimits
+} from '../lib/exports';
 import { lookupLine } from '../lib/numberRegistry';
 
 const SRC = 7;
@@ -54,6 +68,8 @@ beforeEach(() => {
   // A connected player has a phone by default; tests of the "no phone" gap override this.
   bridgeMock.getPlayerPhone.mockReturnValue('555-0100');
   dbMock.query.mockResolvedValue([]);
+  dbMock.single.mockResolvedValue(null);
+  __resetExportRateLimits();
   (globalThis as any).emitNet = vi.fn();
   registerPublicApi();
 });
@@ -81,6 +97,7 @@ describe('the public export surface', () => {
       'OpenApp',
       'RegisterNumber',
       'RemoveDeadZone',
+      'SendMessage',
       'SendNotification',
       'SendSystemEmail',
       'SetBatteryLevel',
@@ -120,6 +137,68 @@ describe('the public export surface', () => {
 
 const send = (options: unknown, citizenid: unknown = CID) =>
   publishedExport('SendNotification')!(citizenid, options) as any;
+
+describe('SendMessage', () => {
+  const text = (message: unknown, citizenid: unknown = CID) =>
+    publishedExport('SendMessage')!(citizenid, message) as Promise<any>;
+  const cab = { from: { name: 'Downtown Cab', number: '5550199' }, body: 'Your ride is here.' };
+
+  it('hands a well-formed text to Messages and answers with where it landed', async () => {
+    const result = await text(cab);
+    expect(result).toEqual({
+      ok: true,
+      value: { conversationId: 1, messageId: 2, delivered: false }
+    });
+    expect(sendFromLine).toHaveBeenCalledWith(
+      CID,
+      { name: 'Downtown Cab', number: '5550199' },
+      'Your ride is here.',
+      undefined
+    );
+  });
+
+  it('requires a citizenid, a sender and a body', async () => {
+    expect((await text(cab, '')).reason).toBe('invalid_args');
+    expect((await text({ body: 'hi' })).reason).toBe('invalid_args');
+    expect((await text({ from: {}, body: 'hi' })).reason).toBe('invalid_args');
+    expect((await text({ from: { name: 'Cab' }, body: '   ' })).reason).toBe('invalid_args');
+    expect(sendFromLine).not.toHaveBeenCalled();
+  });
+
+  it('takes a name alone or a number alone, and refuses a number that is not a string', async () => {
+    expect((await text({ from: { name: 'Downtown Cab' }, body: 'hi' })).ok).toBe(true);
+    expect((await text({ from: { number: '5550199' }, body: 'hi' })).ok).toBe(true);
+    // From Lua this mistake is easy to make and silent to read, the same as RegisterNumber.
+    expect((await text({ from: { number: 5550199 }, body: 'hi' })).reason).toBe('invalid_args');
+  });
+
+  it('refuses a number a character holds rather than speak in their name', async () => {
+    // `readCitizenIdByNumber` answers from `mica_phone_numbers` through `Database.single`.
+    dbMock.single.mockResolvedValueOnce({ citizenid: 'SOMEBODY' });
+    const result = await text(cab);
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe('number_in_use');
+    expect(sendFromLine).not.toHaveBeenCalled();
+  });
+
+  it('refuses a recipient nobody has heard of, online or off', async () => {
+    bridgeMock.getSourceByCitizenId.mockReturnValue(null);
+    bridgeMock.getPlayer.mockReturnValue(null);
+    const result = await text(cab, 'NOBODY');
+    expect(result.reason).toBe('unknown_player');
+  });
+
+  it('is rate limited per calling resource, invalid calls included', async () => {
+    for (let i = 0; i < 120; i += 1) {
+      expect((await text(undefined, undefined)).reason).toBe('invalid_args');
+    }
+    const result = await text(cab);
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe('rate_limited');
+    expect(result.message).toContain('test-resource');
+    expect(sendFromLine).not.toHaveBeenCalled();
+  });
+});
 
 describe('SendNotification', () => {
   it('accepts a real micaOS app id', () => {

@@ -18,6 +18,8 @@ import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { AuditLogger } from '../lib/AuditLogger';
 import { Database } from '../lib/Database';
 import { blockedBy } from './Blocklist';
+import { phoneForCitizen } from './Phones';
+import { CITIZENID_MAX_LENGTH } from '@mica/shared/framework';
 
 /**
  * Messages: membership on both axes.
@@ -68,7 +70,13 @@ export const messages = defineService<Message, typeof messagesContract>({
      * key across that boundary would either refuse the unsend or cascade the reply away.
      * Written only by `send`, which checks the target sits in the same conversation.
      */
-    reply_to_id: { type: 'int', clientWritable: false }
+    reply_to_id: { type: 'int', clientWritable: false },
+    // The label of a sender that is not a player (MICA-223): what `SendMessage` was given for
+    // a business or a registered line. On such a row `citizenid` is the *recipient* -- the
+    // column carries the owner cascade and a line has no `players` row to name -- so this is
+    // what tells a reader the message arrived rather than left. Never client-writable: a
+    // player cannot dress their own text up as a bank's.
+    external_sender: { type: 'string', length: 50, clientWritable: false }
   },
   indexes: [
     { name: 'citizenid', columns: ['citizenid'] },
@@ -234,7 +242,9 @@ const requireOwnMessage = async (
   phoneId: string
 ): Promise<Message> => {
   const row = await messageRepo.findById(data.id, citizenid);
-  if (!row) {
+  // A text from a line sits under the recipient's citizenid (MICA-223), so the ownership
+  // predicate alone would let them rewrite the bank's message. It is not theirs to change.
+  if (!row || row.external_sender) {
     throw new PlayerFacingError('That message is not yours to change.', {
       key: 'server.messages.notYours'
     });
@@ -516,7 +526,7 @@ export const deliverToParticipants = async (
   senderCitizenId: string,
   sender: { name?: string | null; phone?: string | null },
   message: Message & { id: number }
-): Promise<void> => {
+): Promise<boolean> => {
   const participants = await conversationRepo.findParticipants(conversationId);
 
   /**
@@ -532,12 +542,12 @@ export const deliverToParticipants = async (
     .filter((participant) => !participant.status || participant.status === 'active')
     .map((participant) => participant.citizenid);
 
-  if (recipients.length === 0) return;
+  if (recipients.length === 0) return false;
 
   // One registry lookup rather than one framework walk per recipient. Anyone missing from it
   // is offline; the row is written, so they get it from the normal fetch next time.
   const sources = FrameworkBridge.getSourcesByCitizenId(recipients);
-  if (sources.size === 0) return;
+  if (sources.size === 0) return false;
 
   /**
    * Blocked (MICA-64): the row is still written — this only withholds the live push, the
@@ -555,6 +565,7 @@ export const deliverToParticipants = async (
     ? await blockedBy([...sources.keys()], sender.phone)
     : new Set<string>();
 
+  let pushed = false;
   for (const [citizenid, target] of sources) {
     if (blocked.has(citizenid)) continue;
 
@@ -567,7 +578,121 @@ export const deliverToParticipants = async (
       phone: sender.phone ?? undefined,
       row: message
     });
+    pushed = true;
   }
+  return pushed;
+};
+
+/**
+ * A sender that is not a player (MICA-223): a business name, a registered line, or both.
+ * At least one is present; `publicApi.ts` has refused the call otherwise.
+ */
+export interface LineSender {
+  name: string | null;
+  number: string | null;
+}
+
+/**
+ * The far side of a thread with a line, in the pair columns' own terms.
+ *
+ * A 1:1 thread is keyed on two phone ids. A line has no phone, so it gets a key that cannot
+ * collide with one -- phone ids are bare hex, this carries a prefix -- built from the number
+ * when there is one, else the name. Two resources texting from the same number therefore
+ * share a thread, which is what a player expects of a number, and the same name with no
+ * number is one thread too. Cut to the pair column's width; a label that long is truncated in
+ * the thread name as well.
+ */
+export const lineKey = (from: LineSender): string =>
+  `ext:${(from.number ?? from.name ?? '').trim().toLowerCase()}`.slice(0, CITIZENID_MAX_LENGTH);
+
+/** What the thread and every message in it are labelled with. `name` wins when both exist. */
+export const lineLabel = (from: LineSender): string =>
+  (from.name ?? from.number ?? '').trim().slice(0, 50);
+
+/**
+ * Put a text from a line into a player's Messages, online or not (MICA-223).
+ *
+ * Reuses the thread between the player's phone and this line if there is one, else creates
+ * it with the player as its only participant: a line has no `players` row, so it cannot hold
+ * a participant row, and the pair columns carry it instead (`ConversationRepository.
+ * findExternalThread`). The message row is owned by the recipient -- `citizenid` carries the
+ * cascade -- and marked with `external_sender` so every reader knows it arrived.
+ *
+ * The phone is the one `phoneForCitizen` resolves: in hand, else last used, else their
+ * identity phone -- the same rule a notification or a dropped photo follows, so an offline
+ * player finds the text on the phone they will pick up.
+ *
+ * Attachments are the recipient's own media, by id, the same as a player attaching from
+ * their gallery: a resource that wants to send an image calls `AddMedia` first. Delivery
+ * never fails the write, the same as `send`.
+ */
+export const sendFromLine = async (
+  citizenid: string,
+  from: LineSender,
+  body: string,
+  attachments: unknown
+): Promise<{ conversationId: number; messageId: number; delivered: boolean }> => {
+  const phoneId = await phoneForCitizen(citizenid);
+  const key = lineKey(from);
+  const label = lineLabel(from);
+
+  let conversationId: number;
+  const existing = await conversationRepo.findExternalThread(phoneId, key);
+  if (existing) {
+    conversationId = existing.id;
+  } else {
+    try {
+      conversationId = await conversationRepo.createConversation({
+        citizenid,
+        is_group: false,
+        name: label,
+        participant_a: phoneId,
+        participant_b: key
+      });
+    } catch (error) {
+      // Two texts from the same line in the same instant: `pair_key_unique` refused the
+      // second. The first one's thread is the answer.
+      const winner = /duplicate/i.test(error instanceof Error ? error.message : '')
+        ? await conversationRepo.findExternalThread(phoneId, key)
+        : null;
+      if (!winner) throw error;
+      conversationId = winner.id;
+    }
+    await conversationRepo.addParticipant(conversationId, citizenid, phoneId, 'member');
+  }
+
+  const resolvedAttachments = await resolveOwnedAttachments(attachments, citizenid, mediaRepo);
+  const now = new Date().toISOString();
+  const row: Partial<Message> = {
+    conversation_id: conversationId,
+    citizenid,
+    message: body,
+    external_sender: label,
+    reply_to_id: null,
+    attachments: resolvedAttachments,
+    created_at: now,
+    updated_at: now,
+    status: 'active'
+  };
+  const messageId = await messageRepo.create(row);
+  const stored = { ...row, id: messageId } as Message & { id: number };
+
+  let delivered = false;
+  try {
+    // The line's key stands in for the sender's citizenid: it matches no participant, so
+    // the recipient is not filtered out as "the sender", and the number is what a block
+    // is checked against.
+    delivered = await deliverToParticipants(
+      conversationId,
+      key,
+      { name: label, phone: from.number },
+      stored
+    );
+  } catch (error) {
+    console.error('[Messages] Delivery from a line failed for conversation', conversationId, error);
+  }
+
+  return { conversationId, messageId, delivered };
 };
 
 app.registerEvent('send', async (source, cbId, data, citizenid) => {
