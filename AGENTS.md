@@ -470,41 +470,29 @@ a file to the directory; do not edit the index.** And **`shared/types.ts` is a
 path alias, not a workspace package** (§3), while `shared/richText.ts` holds the
 one `@handle` tokenizer the UI renders from and the server notifies from.
 
-### A NUI round trip touches three files, and fails silently if one is missing
+### A NUI round trip touches four layers, and fails silently if one is missing
 
 The single most common source of half-built features. A custom action reaches
-the database only if every layer exists: a **contract** in `shared/contracts/`
-(no declared input fails the resource at start, MICA-195), the typed
-**`call(contract, action, input)`** from `web/src/nui/call.ts` at the call site
-(MICA-213; it rides the generic service action, no route), and a
-**`registerEvent`** handler in `server/services/`. Generic CRUD is the
-exception: a `createCrudStore` reaches it through a **`route()`** in
-`shared/routes.ts`. A native-only step is a `registerClientHook`.
+the database only if every layer exists:
 
-**The mock is a layer too.** `web/src/nui/mocks/registry.ts` answers a typed
-call under `'<service>:<action>'` and a route by its action name; a missing one
-fails only the e2e spec that reaches it. `server/__tests__/routes.test.ts`
-cross-references all of them, both ways.
+1. **Contract** in `shared/contracts/` (`defineContract`, MICA-195).
+2. **Call** via `call(contract, action, input)` from `web/src/nui/call.ts`
+   (MICA-213). Generic CRUD uses `createCrudStore` + `route()` in
+   `shared/routes.ts`.
+3. **Handler** in `server/services/` via `registerEvent('<action>', ...)`.
+4. **Mock** in `web/src/nui/mocks/registry.ts` under `'<service>:<action>'`.
 
-**Response events are derived, never written by hand** — `shared/rpc.ts` owns
-them, and a hand-written reply name times out after 15s with no error.
+`server/__tests__/routes.test.ts` cross-references all layers both ways.
 
-**Every net event is `mica:<side>:<app>:<action>`, with no exceptions**, and
-`server/__tests__/eventNames.test.ts` fails on anything else — including an
-`<app>` segment that is neither a declared app nor one of the two non-app
-scopes, **`shell`** and **`admin`**. NUI _message_ actions (`setVisible`,
-`receiveMail`) are a **separate namespace** with no `mica:` prefix.
-
-A **server push** mirrors this across four files and fails just as silently;
-`server/__tests__/appEventContract.test.ts` catches that. It is one literal net
-event, `mica:client:shell:appEvent`, dispatched by app id from the envelope. **A
-push must never be allowed to fail the write that occasioned it**, and
-`onAppForeground` (§11) is still required — a push does not excuse it.
+- **Response events are derived, never written by hand** (`shared/rpc.ts`).
+- **Every net event is `mica:<side>:<app>:<action>`, no exceptions**
+  (`server/__tests__/eventNames.test.ts`). Non-app scopes: `shell`, `admin`.
+- **A server push** mirrors this across four files via literal net event
+  `mica:client:shell:appEvent` (`server/__tests__/appEventContract.test.ts`). A
+  push must never fail the write that occasioned it.
 
 **Load the `nui-endpoint` skill before adding or changing any of this.** It
-carries the full tables, the payload-shape rules, where to subscribe and why
-residency makes that a correctness question, and `pushMany`'s
-deduplicate-by-owner rule.
+carries the wiring tables, payload shapes, and push deduplication rules.
 
 ### Schema changes
 
@@ -604,66 +592,46 @@ Then, before saying it works:
 
 A service is a named group of server actions backed by a table, declared once
 via `server/lib/defineService.ts` rather than hand-writing a repository and an
-endpoint. One declaration derives the repository, the write allowlist (§2.9),
-the CRUD net events, and the DDL. Its `id` matches the app manifest id and the
-`<service>` event segment. What bites if you guess it:
+endpoint. The declaration derives the repository, the write allowlist (§2.9),
+the CRUD net events, and DDL. `id` matches the app manifest and `<service>`
+event segment.
 
-- `id, citizenid, status, created_at, updated_at` are **supplied by the
-  framework** — declaring one in `schema` is an error.
-- `access` is two independent axes, `read` and `write`. **`read: 'public'`
-  requires `paging`** and `defineService` throws without it. **`'members'` and
-  `'public'` reads register no generic `get`**; membership needs
-  `access.membership`, which derives `Repository.isMember`.
-- `access.editWindow` time-boxes an ownership-scoped **update** only — never a
-  `delete`. `paging` is always keyset on `id DESC`, never offset. `childTables`
-  are **DDL-only**; declare every column explicitly. A public projection
-  withholds `citizenid` automatically, and anything else marked `private: true`.
-- **Never read another resource's tables** — go through that resource's exports,
-  behind a `*Bridge` in `server/lib/`.
+- `id, citizenid, status, created_at, updated_at` are framework-supplied;
+  declaring them in `schema` is an error.
+- `access` has two axes (`read`/`write`). **`read: 'public'` requires `paging`**
+  (keyset on `id DESC`, never offset). `'members'`/`'public'` register no
+  generic `get`; membership requires `access.membership`.
+- `access.editWindow` time-boxes updates only, never deletes.
+- **Never read another resource's tables** — query exports behind a `*Bridge`.
 
 The `mica-service` skill is the working reference and
 [`docs/schema-and-services.md`](docs/schema-and-services.md) is the
-field-by-field authority. Read the doc before declaring a `read: 'public'` or
-`access.membership` service for the first time.
+field-by-field authority.
 
 ---
 
 ## 11. Adding an app
 
-`pnpm new:app <id>` (or `--service` to scaffold the data half too) writes
-`web/src/apps/<id>/`. Nothing else registers it; `shell/state/registry.ts`
-discovers apps via `import.meta.glob`. The id is lowercase and a **key** —
-directory, storage namespace, event segment, keybind claim, deep-link — so
-renaming it later is a data migration. Five things bite before you open the
-walkthrough:
+`pnpm new:app <id>` (or `--service` to scaffold server data too) writes
+`web/src/apps/<id>/`. `shell/state/registry.ts` discovers apps via
+`import.meta.glob`. The lowercase `id` is a permanent key across storage,
+events, and keybinds.
 
-- **`core` is required** and has teeth: `true` ships with the phone and can't be
-  uninstalled; `false` is a Store add-on. Read `manifest.core` and nothing else
-  — never infer it.
-- **`tile: { bg, fg }` is required too**, and both are utility classes rather
-  than colour values — a hex string paints nothing. Omit `fg` on a dark tile;
-  state it on a light one, or the glyph is illegible (MICA-88). `defineApp`
-  throws on either mistake. The old free-form `color` string is still accepted
-  so a published add-on keeps loading, but it is derived from `tile` now — do
-  not author it.
-- **A NUI round trip touches three files** and fails silently if one is missing
-  (§8). `server/__tests__/routes.test.ts` cross-references all three plus the
-  browser mock.
-- **`devices` is a visibility contract.** Absent means the phone; list
-  `'tablet'` only with a layout for it (`tablet.svelte`, or
-  `useDisplay().device`).
+- **`core` is required**: `true` is built-in; `false` is a Store add-on. Never
+  infer it.
+- **`tile: { bg, fg }` uses utility classes**, not hex colors. Omit `fg` on dark
+  tiles; state `fg` on light tiles (MICA-88).
+- **A NUI round trip touches four layers** and fails silently if one is missing
+  (§8).
+- **`devices` is a visibility contract.** Absent means phone-only; list
+  `'tablet'` only with a layout for it.
 - **Load with `onAppForeground`, never `onMount`/`$effect`.** Apps are resident
-  and mount once per session, so anything fetched in `onMount` goes stale the
-  moment the app backgrounds. The one exception is a manifest `preload`,
-  required if the app ships a `badgeStore` (`sdk/appContract.test.ts` enforces
-  the pairing) — a badge has to be right before the launcher paints.
+  and mount once per session. `preload` in manifest is required only if shipping
+  a `badgeStore` (`sdk/appContract.test.ts`).
 
-The full walkthrough is [`docs/writing-an-app.md`](docs/writing-an-app.md).
-Notes is the smallest complete example to copy from; Bank is the example with no
-table.
-
-`pnpm verify` before calling it done (§9). Then run it in game — a green suite
-is not evidence a NUI feature works (§6, §8).
+Full walkthrough: [`docs/writing-an-app.md`](docs/writing-an-app.md). Notes is
+the minimal complete example; Bank has no table. `pnpm verify` before calling it
+done (§9).
 
 ---
 

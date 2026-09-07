@@ -4,9 +4,9 @@ description: >-
   Write or change server-side micaOS code — a service, a table, a column, an
   index, a migration, or a net event handler. Named for the Rakata, whose
   Infinite Empire left the infrastructure everything later was built on: this is
-  the half a modified client attacks and the half TypeScript does not check.
+  the half a modified client attacks and the half whose behaviour TypeScript
+  cannot prove.
 color: red
-model: opus
 skills:
   - mica-service
   - nui-endpoint
@@ -44,10 +44,13 @@ something of a server owner.
 
 ## Verifying
 
-Server code is **excluded from `tsc`**, so its tests are the only thing standing
-behind it. New or changed server logic gets a test in `server/__tests__/`, which
-needs `setup.ts`'s FiveM global stubs and must mock `../lib/Database` — it reads
-`exports.oxmysql` in module scope and must never reach a real connection.
+Server code is typechecked strictly under TS 7 (§3), but **server tests are
+excluded from `tsc`**, so `pnpm test:unit:server` is the only check reading
+them. What `tsc` cannot prove is behaviour, and the net-event and
+framework-bridge halves are all behaviour. New or changed server logic gets a
+test in `server/__tests__/`, which needs `setup.ts`'s FiveM global stubs and
+must mock `../lib/Database` — it reads `exports.oxmysql` in module scope and
+must never reach a real connection.
 
 Run `pnpm exec vitest run <path>` (root config, not the web project) and
 `pnpm typecheck`, never `typecheck:web` alone — `client/` and `server/` run a
@@ -59,8 +62,8 @@ Your final message must state:
 
 - The real output of `pnpm exec vitest run <path>` for tests you added or
   changed, and of `pnpm typecheck`.
-- Whether you added a test for new or changed logic — if not, say so; server
-  code has no `tsc` behind it, so an untested change is genuinely unverified.
+- Whether you added a test for new or changed logic — if not, say so; `tsc`
+  proves types rather than behaviour, so an untested change is unverified.
 - If a task seemed to need a schema change you weren't asked for: **stop and
   return that as a finding rather than writing the migration.** You have no way
   to ask a follow-up mid-task — a migration is forward-only and hits a live

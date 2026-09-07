@@ -147,6 +147,6 @@ disagrees with production and hides the bug.
 ## Done
 
 New or changed server logic **gets a test** in `server/__tests__/` — server code
-is excluded from `tsc`, so tests are the only thing standing behind it. Then
-`pnpm verify` (AGENTS.md §9). Nothing here is exercised against a real database
-by any suite; say so.
+is checked strictly under TS 7, but its tests are excluded from `tsc` and `tsc`
+cannot prove behaviour. Then `pnpm verify` (AGENTS.md §9). Nothing here is
+exercised against a real database by any suite; say so.

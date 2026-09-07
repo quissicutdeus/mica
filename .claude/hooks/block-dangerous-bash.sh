@@ -152,8 +152,12 @@ esac
 #
 # `||` is excluded by the trailing `[^|]`, since it is control flow and the
 # left-hand side keeps its own exit status.
-if echo "$cmd" | grep -qE '(^|[[:space:]`(])(p?npm|yarn)[[:space:]]+(run[[:space:]]+)?(verify|test|typecheck|lint|build|check|format|deadcode|docs)(:[a-z:-]+)?([^;|&]|&[^&])*\|[^|]'; then
+if echo "$cmd" | grep -qE '(^|[[:space:]`(])(p?npm|yarn)[[:space:]]+((run|dlx)[[:space:]]+)?(verify|test|typecheck|lint|build|check|format|deadcode|docs)(:[a-z:-]+)?([^;|&]|&[^&])*\|[^|]'; then
     pipe_block "a pnpm gate is piped into another command"
+fi
+
+if echo "$cmd" | grep -qE '(^|[[:space:]`(])node[[:space:]]+scripts/(verify|check-[a-z-]+|lint-[a-z-]+)\.js([^;|&]|&[^&])*\|[^|]'; then
+    pipe_block "a verification script is piped into another command"
 fi
 
 if echo "$cmd" | grep -qE '(^|[[:space:]`(])(vitest|playwright|tsc|svelte-check|eslint|knip|prettier|shellcheck|hadolint)([^;|&]|&[^&])*\|[^|]'; then

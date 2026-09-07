@@ -8,7 +8,6 @@ description: >-
   ignored them: a gate that judges nothing is worse than no gate, because it
   reads as a pass.
 color: yellow
-model: haiku
 ---
 
 # Gates that fail loudly

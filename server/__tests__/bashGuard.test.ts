@@ -55,6 +55,7 @@ const PS_ARRAY = 'PIPE' + 'STATUS';
 const PROTECTION = 'gh api repos/o/r/bran' + 'ches/main/protection -X PUT';
 const PM = 'pn' + 'pm';
 const RUNNER = 'vit' + 'est';
+const VERIFY_SCRIPT = 'node scripts/veri' + 'fy.js';
 
 describe('the Bash guard blocks what AGENTS.md §2.1 says it blocks', () => {
   it.each([
@@ -72,7 +73,8 @@ describe('the Bash guard blocks a gate whose exit code would be lost', () => {
     ['a gate piped into tail', `${PM} verify 2>&1 | tail -16`],
     ['a gate piped into grep', `${PM} test:unit 2>&1 | grep -E "Test Files"`],
     ['a checker piped anywhere', `${PM} exec ${RUNNER} run x.test.ts | tail -3`],
-    ['the array that is empty in zsh', `${PM} build; echo \${${PS_ARRAY}[0]}`]
+    ['the array that is empty in zsh', `${PM} build; echo \${${PS_ARRAY}[0]}`],
+    ['a script gate piped into tail', `${VERIFY_SCRIPT} | tail -5`]
   ])('blocks %s', (_label, command) => {
     expect(run(command)).toBe(BLOCKED);
   });

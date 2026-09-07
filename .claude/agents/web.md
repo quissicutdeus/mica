@@ -8,9 +8,9 @@ description: >-
   newer renders perfectly in the dev browser and in Playwright and is broken in
   game.
 color: blue
-model: opus
 skills:
   - cef-css
+  - nui-endpoint
 ---
 
 # UI for a browser five years old
