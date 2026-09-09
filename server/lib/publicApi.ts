@@ -819,12 +819,17 @@ export function registerPublicApi(): void {
   /**
    * Start a call for a player, as a payphone or a dispatch pick-up would.
    *
-   * `placeCall` reports what actually happened rather than a bare `void`, because two of
-   * its early returns are silent — a caller with no phone number, or a target that never
-   * parsed as a number — and this export has no client-side UI to let a caller *see* that
-   * nothing occurred the way `phone:start`'s own dead end does. `'placed'` covers every
-   * other outcome (ringing, busy, blocked, unreachable), all of which are visible to `src`
-   * through a client event or a connected call either way.
+   * `placeCall` reports what happened to the call rather than a bare `void`, and every
+   * refusal it names becomes a failure here (MICA-276): before that, `ok` meant "dispatched"
+   * and covered a rejecting line, a number nobody holds, a busy line and a blocked caller,
+   * so a dispatch resource could not tell a connected call from one that had already toasted
+   * the player and failed. `ok` now means the call is ringing or connected.
+   *
+   * Each maps onto a reason a caller already branches on rather than a new one:
+   * `'unreachable'` is `unknown_player`, the same answer `GetCitizenId` gives for a number no
+   * character holds — and it is the one word for a wrong number, a blocked caller and a line
+   * that rejected, on purpose (MICA-64, see `PlaceCallResult`); `'busy'` is `not_ready`, the
+   * reason whose documented remedy is to retry.
    */
   publish(
     'CreateCall',
@@ -833,13 +838,18 @@ export function registerPublicApi(): void {
         return fail('unknown_player', 'That player is not connected.');
       }
       const result = await placeCall(src, number);
-      if (result === 'invalid_target') {
-        return fail('invalid_args', 'A phone number is required.');
+      switch (result) {
+        case 'placed':
+          return ok();
+        case 'invalid_target':
+          return fail('invalid_args', 'A phone number is required.');
+        case 'caller_has_no_phone':
+          return fail('unknown_player', 'That player has no phone number.');
+        case 'unreachable':
+          return fail('unknown_player', 'That number is unreachable.');
+        case 'busy':
+          return fail('not_ready', 'That player or that number is already on a call.');
       }
-      if (result === 'caller_has_no_phone') {
-        return fail('unknown_player', 'That player has no phone number.');
-      }
-      return ok();
     })
   );
 }

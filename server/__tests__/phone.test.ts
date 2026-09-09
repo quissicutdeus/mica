@@ -826,6 +826,76 @@ describe('start: registered lines (MICA-226)', () => {
   });
 });
 
+/**
+ * MICA-276. `placeCall`'s answer names what happened to the call, so `CreateCall` can refuse
+ * what the player's own phone already refused. Every refusal the caller was toasted about
+ * has a word; the two silent early returns keep theirs.
+ */
+describe('placeCall: what it reports', () => {
+  const LINE = '5559999';
+  afterEach(() => releaseResource('taxi'));
+
+  it('reports placed for a call that rings a player', async () => {
+    await expect(placeCall(1, '555-0002')).resolves.toBe('placed');
+  });
+
+  it('reports placed for a call a line accepted', async () => {
+    registerNumber(LINE, { onCall: () => ({ action: 'accept' }) as const }, 'taxi');
+    await expect(placeCall(1, LINE)).resolves.toBe('placed');
+  });
+
+  it('reports unreachable for a number nobody holds', async () => {
+    await expect(placeCall(1, '555-0000')).resolves.toBe('unreachable');
+  });
+
+  it('reports unreachable for a line that rejected, with no word of its own', async () => {
+    registerNumber(LINE, { onCall: () => ({ action: 'reject' }) as const }, 'taxi');
+    await expect(placeCall(1, LINE)).resolves.toBe('unreachable');
+  });
+
+  it('reports a blocked caller as unreachable, after the same blocklist lookup (MICA-64)', async () => {
+    dbMock.scalar.mockResolvedValue(1);
+    await expect(placeCall(1, '555-0002')).resolves.toBe('unreachable');
+
+    // The return value must not be a new tell: an unreachable number pays for the same
+    // query, so neither the word nor the wait separates the two.
+    dbMock.scalar.mockClear();
+    dbMock.scalar.mockResolvedValue(null);
+    await expect(placeCall(1, '555-0000')).resolves.toBe('unreachable');
+    expect(dbMock.scalar).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports busy for a self-call', async () => {
+    await expect(placeCall(1, '555-0001')).resolves.toBe('busy');
+  });
+
+  it('reports busy for a target already on a call', async () => {
+    await fire(START, 1, '555-0002');
+    await expect(placeCall(3, '555-0002')).resolves.toBe('busy');
+  });
+
+  it('reports busy for a caller already on a call, on the line path too', async () => {
+    registerNumber(LINE, { onCall: () => ({ action: 'accept' }) as const }, 'taxi');
+    await fire(START, 1, '555-0002');
+    await expect(placeCall(1, LINE)).resolves.toBe('busy');
+  });
+
+  it('reports unreachable for a forward to a source nobody is connected on', async () => {
+    registerNumber(LINE, { onCall: () => ({ action: 'forward', source: 99 }) as const }, 'taxi');
+    await expect(placeCall(1, LINE)).resolves.toBe('unreachable');
+  });
+
+  it("passes a forwarded call's own answer through", async () => {
+    registerNumber(LINE, { onCall: () => ({ action: 'forward', source: 2 }) as const }, 'taxi');
+    await expect(placeCall(1, LINE)).resolves.toBe('placed');
+  });
+
+  it('keeps the silent early returns', async () => {
+    await expect(placeCall(1, 42)).resolves.toBe('invalid_target');
+    await expect(placeCall(99, '555-0002')).resolves.toBe('caller_has_no_phone');
+  });
+});
+
 // micaOS does not register 911 as a line of its own — see the docblock above
 // `currentEmergencyNumber` in `Phone.ts` for why. These cover the ruling that came out of
 // that decision: the exemption lives entirely in `placeCall`'s direct comparison, so it holds

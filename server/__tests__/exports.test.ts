@@ -43,7 +43,8 @@ import {
   MICA_API_VERSION,
   __resetExportRateLimits
 } from '../lib/exports';
-import { lookupLine } from '../lib/numberRegistry';
+import { lookupLine, releaseResource } from '../lib/numberRegistry';
+import { __resetCalls } from '../services/Phone';
 
 const SRC = 7;
 const CID = 'ABC12345';
@@ -67,9 +68,16 @@ beforeEach(() => {
   bridgeMock.getSourceByCitizenId.mockReturnValue(undefined);
   // A connected player has a phone by default; tests of the "no phone" gap override this.
   bridgeMock.getPlayerPhone.mockReturnValue('555-0100');
+  // And dials nobody by default; `vi.clearAllMocks` keeps a return value a case set.
+  bridgeMock.getPlayerByPhone.mockReturnValue(undefined);
   dbMock.query.mockResolvedValue([]);
   dbMock.single.mockResolvedValue(null);
   __resetExportRateLimits();
+  // `CreateCall` cases below register a line and leave a player on a call; a later case
+  // must inherit neither. `releaseResource` rather than `__resetRegistry`, which would also
+  // unhook the `onLineReleased` handler `Phone.ts` installs at import.
+  __resetCalls();
+  releaseResource('test-resource');
   (globalThis as any).emitNet = vi.fn();
   registerPublicApi();
 });
@@ -537,8 +545,8 @@ describe('line exports (MICA-226)', () => {
     });
   });
 
-  it('CreateCall reports ok only once placeCall actually placed the call', async () => {
-    const onCall = vi.fn(() => ({ action: 'reject' }) as const);
+  it('CreateCall reports ok once a line accepted the call', async () => {
+    const onCall = vi.fn(() => ({ action: 'accept' }) as const);
     (publishedExport('RegisterNumber')! as Function)('5559999', { onCall });
 
     const createCall = publishedExport('CreateCall')!;
@@ -549,5 +557,83 @@ describe('line exports (MICA-226)', () => {
     // returning early.
     expect(result).toMatchObject({ ok: true });
     expect(onCall).toHaveBeenCalled();
+  });
+
+  it('CreateCall reports ok for a player call that is ringing', async () => {
+    bridgeMock.getPlayerByPhone.mockReturnValue({ citizenid: 'TARGET01', source: 8 } as any);
+
+    await expect(publishedExport('CreateCall')!(SRC, '5550200')).resolves.toMatchObject({
+      ok: true
+    });
+    expect((globalThis as any).emitNet).toHaveBeenCalledWith(
+      'mica:client:phone:incoming',
+      8,
+      expect.objectContaining({ from: '555-0100' })
+    );
+  });
+
+  // MICA-276. Until this, every case below was `ok: true` — "placed" meant dispatched, and a
+  // script could not tell a connected call from one that had already failed on the player's
+  // own screen.
+  it('CreateCall fails a line that rejected the call, as unreachable', async () => {
+    const onCall = vi.fn(() => ({ action: 'reject' }) as const);
+    (publishedExport('RegisterNumber')! as Function)('5559999', { onCall });
+
+    await expect(publishedExport('CreateCall')!(SRC, '5559999')).resolves.toMatchObject({
+      ok: false,
+      reason: 'unknown_player'
+    });
+    expect(onCall).toHaveBeenCalled();
+  });
+
+  it('CreateCall fails a number nobody holds, as unreachable', async () => {
+    await expect(publishedExport('CreateCall')!(SRC, '5550000')).resolves.toMatchObject({
+      ok: false,
+      reason: 'unknown_player'
+    });
+  });
+
+  it('CreateCall fails a blocked caller with the same reason as a number nobody holds (MICA-64)', async () => {
+    bridgeMock.getPlayerByPhone.mockReturnValue({ citizenid: 'TARGET01', source: 8 } as any);
+    dbMock.scalar.mockResolvedValue(1); // TARGET01 has blocked 555-0100
+
+    const blocked = await publishedExport('CreateCall')!(SRC, '5550200');
+    dbMock.scalar.mockResolvedValue(null);
+    bridgeMock.getPlayerByPhone.mockReturnValue(undefined);
+    const unreachable = await publishedExport('CreateCall')!(SRC, '5550000');
+
+    // Same `ok`, same `reason`, same message: the export must not be the tell the player's
+    // own phone is careful not to give.
+    expect(blocked).toEqual(unreachable);
+    expect(blocked).toMatchObject({ ok: false, reason: 'unknown_player' });
+  });
+
+  it('CreateCall fails a caller who is already on a call, as busy', async () => {
+    (publishedExport('RegisterNumber')! as Function)('5559999', {
+      onCall: () => ({ action: 'accept' })
+    });
+    const createCall = publishedExport('CreateCall')!;
+    await expect(createCall(SRC, '5559999')).resolves.toMatchObject({ ok: true });
+
+    await expect(createCall(SRC, '5559999')).resolves.toMatchObject({
+      ok: false,
+      reason: 'not_ready'
+    });
+  });
+
+  it('CreateCall fails a target who is already on a call, as busy', async () => {
+    (publishedExport('RegisterNumber')! as Function)('5559999', {
+      onCall: () => ({ action: 'accept' })
+    });
+    const createCall = publishedExport('CreateCall')!;
+    await expect(createCall(SRC, '5559999')).resolves.toMatchObject({ ok: true });
+
+    // A second player dials the first, who is on the line call above.
+    bridgeMock.getPlayerPhone.mockReturnValue('555-0300');
+    bridgeMock.getPlayerByPhone.mockReturnValue({ citizenid: CID, source: SRC } as any);
+    await expect(createCall(9, '555-0100')).resolves.toMatchObject({
+      ok: false,
+      reason: 'not_ready'
+    });
   });
 });

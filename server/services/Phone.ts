@@ -285,12 +285,19 @@ function failUnreachable(src: number, targetPhone: string): void {
 /**
  * What `placeCall` actually did, for a caller that needs to know.
  *
- * `'placed'` covers everything from here on out — ringing, busy, blocked, unreachable — all
- * of which are visible to `src` through a client event or a call connecting. The other two
- * are the silent early returns: nothing happened and nothing told anyone, which is exactly
- * the gap `CreateCall` (`publicApi.ts`) needs to not paper over with a bare `ok()`.
+ * Named for what happened to the call, not for which branch fired. `'placed'` is the call
+ * ringing or connected; `'unreachable'` and `'busy'` are the two refusals the caller's own
+ * phone was told about (toast, reset event, and for unreachable a call-log row); the last
+ * two are the silent early returns, where nothing happened and nothing told anyone.
+ *
+ * `'unreachable'` is one value on purpose (MICA-64): a number nobody holds, a blocked
+ * caller, and a line that rejected or went away all arrive here as the same word, after the
+ * same work, so `CreateCall` (`publicApi.ts`) hands nothing to a script that the caller's
+ * own phone does not already show. Before MICA-276 every one of these was `'placed'`, and
+ * a dispatch resource could not tell a connected call from one that had already failed.
  */
-export type PlaceCallResult = 'placed' | 'caller_has_no_phone' | 'invalid_target';
+export type PlaceCallResult =
+  'placed' | 'unreachable' | 'busy' | 'caller_has_no_phone' | 'invalid_target';
 
 /**
  * Place a call from `src` to a dialed number, whatever placed it.
@@ -359,25 +366,27 @@ export async function placeCall(src: number, rawTarget: unknown): Promise<PlaceC
   const blocked = !unblockable && (await isBlocked(targetPlayer?.citizenid ?? '', callerPhone));
 
   if (!targetSrc && line && !blocked) {
-    await connectLineCall(src, callerPhone, targetPhone, line);
-    return 'placed';
+    return connectLineCall(src, callerPhone, targetPhone, line);
   }
 
+  // One word for both, deliberately — see `PlaceCallResult`. The `isBlocked` await above
+  // has already happened on every path, so the return value adds no timing to what the
+  // caller's phone was told.
   if (!targetSrc || blocked) {
     failUnreachable(src, targetPhone);
-    return 'placed';
+    return 'unreachable';
   }
 
   if (targetSrc === src) {
     notifyPlayer(src, { type: 'error', message: 'Busy', key: 'server.phone.busy' });
     emitNet('mica:client:phone:failed', src);
-    return 'placed';
+    return 'busy';
   }
 
   if (playerCalls[targetSrc] || playerCalls[src]) {
     notifyPlayer(src, { type: 'error', message: 'Line busy', key: 'server.phone.lineBusy' });
     emitNet('mica:client:phone:failed', src);
-    return 'placed';
+    return 'busy';
   }
 
   const callId = generateCallId();
@@ -417,11 +426,11 @@ async function connectLineCall(
   callerPhone: string,
   targetPhone: string,
   line: RegisteredLine
-): Promise<void> {
+): Promise<PlaceCallResult> {
   if (playerCalls[src]) {
     notifyPlayer(src, { type: 'error', message: 'Line busy', key: 'server.phone.lineBusy' });
     emitNet('mica:client:phone:failed', src);
-    return;
+    return 'busy';
   }
 
   const callId = generateCallId();
@@ -437,8 +446,9 @@ async function connectLineCall(
 
   // The caller hung up or dropped while the handler was thinking: `releaseCallFor` took the
   // key back (or a newer call of theirs owns it now), so there is nobody left to connect and
-  // nothing of ours to release.
-  if (playerCalls[src] !== callId) return;
+  // nothing of ours to release. `'placed'` is the honest word: the call went out and the
+  // caller, not micaOS, decided how it ended — the same as hanging up on a ringing player.
+  if (playerCalls[src] !== callId) return 'placed';
 
   // The *line* can also go away inside that same window: `releaseResource` sweeps the numbers
   // a stopping resource held, and the `onLineReleased` hook below only reaches calls that
@@ -449,7 +459,7 @@ async function connectLineCall(
   if (lookupLine(targetPhone) !== line) {
     delete playerCalls[src];
     failUnreachable(src, targetPhone);
-    return;
+    return 'unreachable';
   }
 
   // A forward re-dials by the target's own number, which cannot land back here: a number a
@@ -460,16 +470,20 @@ async function connectLineCall(
   // nobody is connected on, and a connected player whose `phone` is null, which is an
   // ordinary ESX shape rather than a broken one. Both arrive as a number `phoneNumberFrom`
   // refuses, and `placeCall`'s refusals for a bad number are silent by design. So its answer
-  // is checked rather than discarded: anything but `'placed'` means nothing was emitted, and
-  // the caller — whose reservation is already released — would otherwise sit on the dialling
-  // screen with no toast and no call-log row until they hung up themselves.
+  // is checked rather than discarded: a silent refusal means nothing was emitted, and the
+  // caller — whose reservation is already released — would otherwise sit on the dialling
+  // screen with no toast and no call-log row until they hung up themselves. The re-dial's
+  // own refusals (`'unreachable'`, `'busy'`) have already told the caller and pass through.
   if (verdict.action === 'forward') {
     // Released before re-entering, or `placeCall`'s own busy check would refuse the caller
     // the call this line just asked for.
     delete playerCalls[src];
-    if ((await placeCall(src, FrameworkBridge.getPlayerPhone(verdict.source) ?? '')) !== 'placed')
+    const redial = await placeCall(src, FrameworkBridge.getPlayerPhone(verdict.source) ?? '');
+    if (redial === 'invalid_target' || redial === 'caller_has_no_phone') {
       failUnreachable(src, targetPhone);
-    return;
+      return 'unreachable';
+    }
+    return redial;
   }
 
   // `askLine` answers `reject` for a handler that throws, hangs or returns nonsense, so a
@@ -482,7 +496,7 @@ async function connectLineCall(
   if (verdict.action !== 'accept') {
     delete playerCalls[src];
     failUnreachable(src, targetPhone);
-    return;
+    return 'unreachable';
   }
 
   const lineSource = allocateLineSource();
@@ -501,6 +515,7 @@ async function connectLineCall(
   playerCalls[lineSource] = callId;
 
   emitNet('mica:client:phone:accepted', src, { callId });
+  return 'placed';
 }
 
 /**

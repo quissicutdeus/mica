@@ -1308,9 +1308,13 @@ exports['mica']:UnregisterNumber('5559999')     -- when you are done with it
   the outcome arrives later. It refuses a source nobody is connected on
   (`unknown_player`), a player with no phone number of their own
   (`unknown_player`) and a number it cannot parse (`invalid_args`). `ok` means
-  micaOS placed the call, not that it connected — a busy, blocked or unreachable
-  number reports `ok` as well, since the caller's own phone is what tells them
-  which of those happened.
+  the call is ringing or connected. A number nobody answers — one no character
+  or line holds, one whose line rejected the call, or one that has blocked the
+  caller — fails with `unknown_player`, deliberately the same reason for all
+  three: the caller's phone shows one "Number unavailable" for them, and a
+  script is told nothing more than the player sees. A caller or target already
+  on a call fails with `not_ready`, which is the reason to retry on. Whatever
+  the outcome, the player's own phone is told first.
 
 **A resource can bill a player, and they pay from the phone (MICA-240).**
 `SendInvoice` writes an open invoice and puts a notification in the player's
