@@ -36,6 +36,7 @@
   "volumeUp": "Lauter",
   "volumeDown": "Leiser",
   "batteryLow": "Akku fast leer",
+  "batteryLowMessage": "Noch {percent}% Akku. Bitte bald aufladen.",
   "connectBatteryBank": "Powerbank anschließen",
   "replySent": "Antwort gesendet",
   "dismissNotification": "Mitteilung ausblenden",

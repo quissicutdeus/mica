@@ -14,6 +14,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { frame } from './state/device';
   import VolumeHud from './VolumeHud.svelte';
   import NotificationShade from './NotificationShade.svelte';
+  import BatteryWarning from './BatteryWarning.svelte';
   import DragGhost from './DragGhost.svelte';
   import RemoveTarget from './RemoveTarget.svelte';
   import StatusBar from './frame/StatusBar.svelte';
@@ -140,6 +141,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
     <!-- Notification Shade Overlay -->
     <NotificationShade />
+
+    <!-- Low-battery warning (MICA-193): no markup, only the effect that shows the toast. -->
+    <BatteryWarning />
 
     <!-- Take-it-off-the-home-screen drop target. Rendered here rather than in
          `Launcher.svelte` for the same reason the ghost is: a drag can begin on the home
