@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -109,5 +109,95 @@ describe('the add-on build substitutes every injected identifier', () => {
         'shell sees; a bundle is compiled once and run by whatever phone installs it) and ' +
         'add it there.'
     ).toEqual([]);
+  });
+});
+
+/**
+ * MICA-178. The build-time half, `noUnsubstitutedDefines()`, driven directly.
+ *
+ * `generateBundle` receives rolldown's `OutputBundle`: `fileName` → `OutputChunk`
+ * (`type: 'chunk'`, executable JavaScript in `.code`) or `OutputAsset` (`type: 'asset'`,
+ * bytes or text in `.source`). A source map is an asset whose `sourcesContent` holds every
+ * module's pre-substitution source, so the plugin used to fail a legitimate
+ * `build.sourcemap: true` build on `sdk/version.ts`'s own `typeof __MICA_VERSION__`. The
+ * fix is to scan only what the iframe executes — chunks — and these two cases pin both
+ * edges of that: the map must not fail, and a chunk still must.
+ *
+ * The plugin is imported from the real config rather than re-implemented, so a rewrite of
+ * the predicate is judged here. The config throws at import when no `ADDON_ID` is set and
+ * more than one add-on exists — the fail-fast for a bare `vite build` — so one is set first.
+ */
+describe('noUnsubstitutedDefines scans chunks, not assets (MICA-178)', () => {
+  type Handler = (this: { error(msg: string): never }, _: unknown, bundle: object) => void;
+  let run: (bundle: object) => void;
+
+  beforeAll(async () => {
+    process.env.ADDON_ID ??= 'addonDefines.test';
+    const { noUnsubstitutedDefines } = await import('../web/vite.addon.config');
+    const hook = noUnsubstitutedDefines().generateBundle;
+    // rolldown's `ObjectHook`: either a bare function or `{ order, handler }`. The plugin
+    // writes the object form; resolving both keeps this from reading as "no hook" if that
+    // ever changes.
+    const handler = (typeof hook === 'function' ? hook : hook?.handler) as Handler | undefined;
+    expect(
+      handler,
+      'the plugin has no generateBundle hook — nothing below tests anything'
+    ).toBeTypeOf('function');
+    run = (bundle) =>
+      handler!.call(
+        {
+          error(msg: string): never {
+            throw new Error(msg);
+          }
+        },
+        {},
+        bundle
+      );
+  });
+
+  const map = (sourcesContent: string[]) => ({
+    type: 'asset' as const,
+    fileName: 'snek.js.map',
+    source: JSON.stringify({ version: 3, sources: ['sdk/version.ts'], sourcesContent })
+  });
+  const chunk = (code: string) => ({
+    type: 'chunk' as const,
+    fileName: 'snek.js',
+    isEntry: true,
+    code
+  });
+
+  it('passes a substituted chunk whose sourcemap asset still holds the raw source', () => {
+    expect(() =>
+      run({
+        'snek.js': chunk('const v = "" || "1.0.0";'),
+        'snek.js.map': map(['typeof __MICA_VERSION__ === "string" ? __MICA_VERSION__ : "1.0.0"'])
+      })
+    ).not.toThrow();
+  });
+
+  it('still fails a chunk that carries an unsubstituted identifier', () => {
+    expect(() =>
+      run({
+        'snek.js': chunk(
+          'const v = typeof __MICA_VERSION__ === "string" ? __MICA_VERSION__ : "1.0.0";'
+        )
+      })
+    ).toThrow(/snek\.js still contains unsubstituted build-time identifier\(s\): __MICA_VERSION__/);
+  });
+
+  it('never reads an asset, whatever its shape', () => {
+    // A `Uint8Array` asset is the case the old decoder path existed for. It is ignored
+    // outright now, and this pins that an asset of any shape cannot fail the build.
+    expect(() =>
+      run({
+        'snek.js': chunk('ok'),
+        'blob.bin': {
+          type: 'asset',
+          fileName: 'blob.bin',
+          source: new TextEncoder().encode('__MICA_X__')
+        }
+      })
+    ).not.toThrow();
   });
 });

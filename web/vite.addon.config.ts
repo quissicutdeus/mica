@@ -283,7 +283,30 @@ function inlineCss(): Plugin {
  *
  * `addonDefines.test.ts` covers the other half statically — that this config defines every
  * identifier `src/vite-env.d.ts` declares — so a newly injected global is caught by the
- * unit suite before anyone gets as far as a build.
+ * unit suite before anyone gets as far as a build. It also drives this plugin's
+ * `generateBundle` directly against a hand-built bundle, so the chunk/asset split below is
+ * held by the suite and not only by whoever last ran a build with sourcemaps on.
+ *
+ * ## MICA-178: chunks only, never assets
+ *
+ * `generateBundle` receives rolldown's `OutputBundle` — a record of `fileName` to either an
+ * `OutputChunk` (`type: 'chunk'`, JavaScript in `.code`) or an `OutputAsset`
+ * (`type: 'asset'`, bytes or text in `.source`). Until MICA-178 this scanned both, and a
+ * source map is an asset: `build.sourcemap: true` emits `<name>.js.map` whose
+ * `sourcesContent` is every module's *pre-substitution* source, so `sdk/version.ts`'s
+ * `typeof __MICA_VERSION__` read as a leak and a legitimate build failed with an error
+ * indistinguishable from the real one. That is a false positive, not a weaker check: the
+ * failure this guards against is an identifier the *iframe executes*, and the only thing
+ * in the bundle that executes is a chunk's `.code`. Nothing in an asset — a map, an image
+ * pulled in by a CSS `url()` — is evaluated by the sandbox, and the CSS itself has already
+ * been inlined into the entry chunk by `inlineCss()` (also `post`, earlier in `plugins`)
+ * by the time this runs, so it is scanned as chunk text.
+ *
+ * The narrowing is on `type`, deliberately, rather than on a `.map` filename: `type` is the
+ * discriminant rolldown itself uses to say whether a file is executable output, and a
+ * filename pattern would silently re-widen the moment an asset with a new extension showed
+ * up. The build is left with sourcemaps off by default (unchanged); this only stops
+ * `--sourcemap` from being a build-breaking flag.
  */
 function noUnsubstitutedDefines(): Plugin {
   const IDENTIFIER = /__MICA_[A-Za-z0-9_]*__/g;
@@ -294,17 +317,9 @@ function noUnsubstitutedDefines(): Plugin {
     generateBundle: {
       order: 'post',
       handler(_, bundle) {
-        for (const [file, chunk] of Object.entries(bundle)) {
-          // Assets are decoded rather than `.toString()`-ed: a `Uint8Array`'s own
-          // `toString` yields `"104,101,..."`, in which nothing ever matches and every
-          // binary asset would silently read as clean.
-          const text =
-            chunk.type === 'chunk'
-              ? chunk.code
-              : typeof chunk.source === 'string'
-                ? chunk.source
-                : new TextDecoder().decode(chunk.source);
-          const found = [...new Set(text.match(IDENTIFIER) ?? [])];
+        for (const [file, output] of Object.entries(bundle)) {
+          if (output.type !== 'chunk') continue;
+          const found = [...new Set(output.code.match(IDENTIFIER) ?? [])];
           if (found.length > 0) {
             this.error(
               `[micaOS] ${file} still contains unsubstituted build-time identifier(s): ` +
@@ -320,6 +335,12 @@ function noUnsubstitutedDefines(): Plugin {
     }
   };
 }
+
+/**
+ * Exported for `sdk/addonDefines.test.ts`, which calls its `generateBundle` against a fake
+ * bundle holding a chunk and a `.map` asset. Vite ignores named exports on a config file.
+ */
+export { noUnsubstitutedDefines };
 
 // MICA-16 step 4: `output.codeSplitting: false` below is what makes each bundle
 // self-contained on Vite 8's rolldown build path, and rolldown rejects more than one
