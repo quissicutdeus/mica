@@ -216,6 +216,15 @@ describe('the onNet census in netGuard.ts is true', () => {
  * three are true sentences about the past. An unanchored scan for number-words would read
  * them as current claims and punish the page for being well written; these patterns cannot
  * match them, which is asserted below rather than asserted about.
+ *
+ * **A row in the page's handler tables names a file, not a line.** The rows used to read
+ * `server/services/Phone.ts:135`, and nothing held the number: by MICA-285 nine of eleven
+ * were wrong, one by more than three hundred lines, and a wrong line number reads as
+ * precision. The choice was to assert the line here or drop it, and dropping won — a gated
+ * line fails a suite on every edit that moves a handler, for a number a reader never needs
+ * once they have the file and the event name to grep for. So a new row owes a file, the file
+ * set is already held by the docblock check above, and the last test below refuses any row
+ * that carries a `:<digits>` suffix so the numbers cannot creep back one row at a time.
  */
 describe('the onNet census in docs/security.md is true', () => {
   const handlers = registrations();
@@ -309,5 +318,23 @@ describe('the onNet census in docs/security.md is true', () => {
         expect(pattern.test(line), `${name} must not match narrative: ${line}`).toBe(false);
       }
     }
+  });
+
+  it('names a file and never a line in the handler tables', () => {
+    // A table row is `| \`<event>\` | \`<path>\` |`. Only rows are read, so line-suffixed
+    // references in the surrounding prose — vendored qbx_core paths pinned to a version — are
+    // not this test's business. Zero rows would be the emptiness-shaped pass, so the row
+    // count is asserted against the tree first.
+    const rows = [...securityDoc.matchAll(/^\| `[^`]+` +\| `(server\/[^`]+)` +\|$/gm)].map(
+      (m) => m[1]
+    );
+    expect(rows, 'no handler rows found in docs/security.md').toHaveLength(handlers.length);
+
+    const suffixed = rows.filter((ref) => /:\d+$/.test(ref));
+    expect(
+      suffixed,
+      'a handler row carries a line number. Nothing checks it, and handlers move; name the ' +
+        'file only (MICA-285).'
+    ).toEqual([]);
   });
 });

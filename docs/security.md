@@ -161,19 +161,29 @@ reading its number out of the wrong sentence — which is the failure this whole
 section is about, so it is caught rather than trusted. Reword one of the four
 out of shape and it fails too, saying which.
 
+The tables below name a **file** per handler and no line. They used to carry
+one, and nothing checked it: by the time MICA-285 looked, nine of the eleven
+were wrong, one by more than three hundred lines. A line number that nothing
+holds true reads as precision and is worse than none, so the choice was to gate
+them or drop them, and gating lost — every edit that moves a handler would fail
+a suite until this page was retyped, for a number a reader never needs, because
+`grep -n` on the event name finds the handler in one step. The census suite
+asserts that no row here carries a `:<digits>` suffix, so a line cannot creep
+back in with a new row.
+
 #### mica-named — nine, every one guarded
 
-| Event                                | Handler                           |
-| ------------------------------------ | --------------------------------- |
-| `mica:server:phone:start`            | `server/services/Phone.ts:478`    |
-| `mica:server:phone:answer`           | `server/services/Phone.ts:487`    |
-| `mica:server:phone:end`              | `server/services/Phone.ts:505`    |
-| `mica:server:phone:simulateIncoming` | `server/services/Phone.ts:591`    |
-| `mica:server:admin:setBattery`       | `server/services/Battery.ts:318`  |
-| `mica:server:battery:load`           | `server/services/Battery.ts:391`  |
-| `mica:server:contacts:share`         | `server/services/Contacts.ts:148` |
-| `mica:server:shell:setOpen`          | `server/lib/PhoneOpenState.ts:32` |
-| `mica:server:shell:checkPhoneItem`   | `server/lib/phoneItem.ts:144`     |
+| Event                                | Handler                        |
+| ------------------------------------ | ------------------------------ |
+| `mica:server:phone:start`            | `server/services/Phone.ts`     |
+| `mica:server:phone:answer`           | `server/services/Phone.ts`     |
+| `mica:server:phone:end`              | `server/services/Phone.ts`     |
+| `mica:server:phone:simulateIncoming` | `server/services/Phone.ts`     |
+| `mica:server:admin:setBattery`       | `server/services/Battery.ts`   |
+| `mica:server:battery:load`           | `server/services/Battery.ts`   |
+| `mica:server:contacts:share`         | `server/services/Contacts.ts`  |
+| `mica:server:shell:setOpen`          | `server/lib/PhoneOpenState.ts` |
+| `mica:server:shell:checkPhoneItem`   | `server/lib/phoneItem.ts`      |
 
 `guardNetEvent` in `server/lib/netGuard.ts` is the preamble for all nine,
 applying the same two checks in the same order the endpoint uses: rate limit
@@ -202,10 +212,10 @@ hardening one. `Signal.ts` has no `onNet` left at all.
 
 #### Framework-named — two, and this is the category that was missing
 
-| Event                          | Handler                          |
-| ------------------------------ | -------------------------------- |
-| `QBCore:Server:OnPlayerLoaded` | `server/lib/shell.ts:188`        |
-| `qb-phone:server:sendNewMail`  | `server/lib/qbPhoneCompat.ts:66` |
+| Event                          | Handler                       |
+| ------------------------------ | ----------------------------- |
+| `QBCore:Server:OnPlayerLoaded` | `server/lib/shell.ts`         |
+| `qb-phone:server:sendNewMail`  | `server/lib/qbPhoneCompat.ts` |
 
 The second is deliberate (MICA-222): qb scripts fire it with the player as
 `source` to mail that player, and answering it unmodified is the point. It can
@@ -256,8 +266,8 @@ where such a core belongs.
 
 **ESX support added a fourth player-loaded handler and no fourth entry point,
 and the distinction is the whole reason this section counts what it counts.**
-`server/lib/shell.ts:216` listens for `esx:playerLoaded`, and it is registered
-with `on`, not `onNet`. es_extended raises that name server-side and locally —
+`server/lib/shell.ts` listens for `esx:playerLoaded`, and it is registered with
+`on`, not `onNet`. es_extended raises that name server-side and locally —
 `TriggerEvent('esx:playerLoaded', playerId, xPlayer, isNew)`, not
 `TriggerServerEvent` — which is precisely the property
 `QBCore:Server:OnPlayerLoaded` lacks and had to be hardened for. Network-safety
