@@ -59,6 +59,6 @@ on, not one the shell enforces for you.
 
 TypeDoc reads TypeScript, not Svelte. The SDK's UI primitives — `Screen`,
 `Button`, `ListItem`, `Avatar` and the rest of `sdk/ui/` — are `.svelte` files,
-so they are exported by these barrels but have no page here, and any type
-declared inside a component's `<script>` block renders as `any`. Read `sdk/ui/`
-in the repository for those.
+so they are exported by these barrels but have no page here. Read `sdk/ui/` in
+the repository for those. A type an app needs to name is declared in a `.ts`
+sibling beside its component, so it does have a page.

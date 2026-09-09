@@ -12,25 +12,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { formatRelativeTime } from '../lib/formatters';
   import { t } from '../i18n';
   import './messages';
-
-  /**
-   * One soft-deleted row, as any of Contacts, Notes or Media can describe it.
-   *
-   * Deliberately this thin. `status = 'deleted'` exists so a reported row survives its
-   * owner deleting it (`Reports.ts`/`moderation.ts` still needs to reach it) — MICA-75 is
-   * only about giving the owner a way back in, and every app that wants one has a name and a
-   * timestamp for a row even when the row's own shape is otherwise nothing alike: a contact's
-   * display name, a note's title, a photo's caption or its `kind`. `preview` is the one field
-   * that is genuinely optional — a note has an excerpt worth a second line, a contact usually
-   * does not.
-   */
-  export interface RecentlyDeletedItem {
-    id: string | number;
-    label: string;
-    /** A second line under the label — a note's excerpt, a contact's number. Omit if there's nothing worth showing. */
-    preview?: string;
-    deletedAt: string | number | Date;
-  }
+  import type { RecentlyDeletedItem } from './recentlyDeleted';
 
   /**
    * The Contacts/Notes/Media "Recently Deleted" screen, once (MICA-75).

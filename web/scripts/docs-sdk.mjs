@@ -33,16 +33,16 @@
  *
  * ## On `skipErrorChecking`
  *
- * `web/typedoc.json` sets it, and that is not a gate being switched off. TypeDoc runs plain
- * `tsc`, which cannot read a `.svelte` file: `sdk/components.ts` re-exports a type declared
- * inside `RecentlyDeleted.svelte`, and `svelte/types`' ambient `declare module '*.svelte'`
- * has no such member, so the docs build has been failing with TS2614 since MICA-172 —
- * failing in the fail-open way, because `docs.yml` only fires on `main` and the site simply
- * kept serving its last successful build. The package *is* typechecked, correctly and by
- * something that understands Svelte: `svelte-check` over the whole of `sdk/` plus TS 7 over
- * its pure core, both under `pnpm typecheck`. What is turned off here is a third, weaker
- * compiler pass that reports errors the real gates correctly do not. The cost is that such
- * a type renders as `any` on the site; `typedoc-home.md` says so out loud.
+ * `web/typedoc.json` used to set it, and it was not a gate being switched off. TypeDoc runs
+ * plain `tsc`, which cannot read a `.svelte` file: `sdk/components.ts` re-exported a type
+ * declared inside `RecentlyDeleted.svelte`, and `svelte/types`' ambient
+ * `declare module '*.svelte'` has no such member, so the docs build failed with TS2614 from
+ * MICA-172 on — failing in the fail-open way, because `docs.yml` only fires on `main` and
+ * the site kept serving its last successful build. Skipping the error let it build, at the
+ * cost of rendering that type as `any`. MICA-189 moved the interface into
+ * `sdk/ui/recentlyDeleted.ts`, where all three compilers resolve it, and the flag came out.
+ * It stays out: a type-only re-export from a `.svelte` file is the one shape that breaks
+ * this pass, and the fix is a `.ts` sibling, not the flag.
  */
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';

@@ -4,6 +4,5 @@
   "tsconfig": "tsconfig.docs.json",
   "excludeExternals": true,
   "name": "@mica/sdk",
-  "skipErrorChecking": true,
   "ignoredHighlightLanguages": ["svelte"]
 }
