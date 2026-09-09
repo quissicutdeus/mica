@@ -315,6 +315,32 @@ CREATE TABLE IF NOT EXISTS `mica_hodlr_price_history` (
     KEY `recorded_at` (`recorded_at`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
+-- Generated from the 'invoices' defineService declaration.
+-- Do not edit by hand; change the declaration and regenerate.
+
+CREATE TABLE IF NOT EXISTS `mica_invoices` (
+    `id` int(11) NOT NULL AUTO_INCREMENT,
+    `citizenid` varchar(50) NOT NULL,
+    `from_label` varchar(64) NOT NULL,
+    `amount` int(11) NOT NULL,
+    `memo` varchar(140) DEFAULT NULL,
+    `society` varchar(64) DEFAULT NULL,
+    `payee` varchar(50) DEFAULT NULL,
+    `resource` varchar(64) NOT NULL,
+    `expires_at` int(11) NOT NULL,
+    `paid_at` int(11) DEFAULT NULL,
+    `status` ENUM('active', 'paid', 'declined', 'expired', 'deleted') NOT NULL DEFAULT 'active',
+    `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `status` (`status`),
+    KEY `citizenid_status` (`citizenid`, `status`),
+    KEY `citizenid_status_expires` (`citizenid`, `status`, `expires_at`),
+    KEY `status_expires` (`status`, `expires_at`),
+    CONSTRAINT `fk_invoices_citizenid` FOREIGN KEY (`citizenid`)
+        REFERENCES `players` (`citizenid`) ON DELETE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
 -- Generated from the 'lockscreen' defineService declaration.
 -- Do not edit by hand; change the declaration and regenerate.
 

@@ -42,6 +42,7 @@ import { getBatteryLevel, setBatteryLevel, setCharging } from '../services/Batte
 // otherwise shadow this import for the whole function body.
 import { media as mediaService } from '../services/Media';
 import { contacts } from '../services/Contacts';
+import { createInvoice, type InvoiceCallbacks } from '../services/Invoices';
 import {
   addDeadZone,
   describeSignalFor,
@@ -365,6 +366,101 @@ const SendMessage = async (
   return ok(await sendFromLine(citizenid, from, opts.body, opts.attachments));
 };
 
+/** What `SendInvoice` takes beside the citizenid. */
+export interface ExternalInvoice {
+  /** What the player reads as the biller. At most 64 characters. */
+  from: string;
+  /** Whole currency units, positive. */
+  amount: number;
+  /** At most 140 characters. Shown to the player and passed to the payment log. */
+  memo?: string;
+  /** The job whose society account is paid. Exactly one of `society` and `payee`. */
+  society?: string;
+  /** The character paid. Exactly one of `society` and `payee`. */
+  payee?: string;
+  /** Called when the player pays or declines. In memory only; see `Invoices.ts`. */
+  onPaid?: (invoice: unknown) => unknown;
+  onDeclined?: (invoice: unknown) => unknown;
+}
+
+const INVOICE_FROM_MAX = 64;
+const INVOICE_MEMO_MAX = 140;
+const INVOICE_AMOUNT_MAX = 1_000_000_000;
+const SOCIETY_KEY = /^[a-z][a-z0-9_]*$/;
+const SEND_INVOICE_PER_MINUTE = 60;
+
+/**
+ * Bill a player (MICA-240). Works offline: the row is written and the notification is in
+ * their shade when they next open the phone. The server decides the amount and the
+ * counterparty here, which is what keeps `Payments`' "no client-facing endpoint" true.
+ */
+const SendInvoice = async (
+  citizenid: unknown,
+  options: unknown
+): Promise<ExportOutcome<{ id: number }>> => {
+  type Result = { id: number };
+  if (typeof citizenid !== 'string' || !citizenid.trim()) {
+    return fail<Result>('invalid_args', 'A citizenid is required.');
+  }
+  if (!options || typeof options !== 'object') {
+    return fail<Result>('invalid_args', 'An invoice object is required.');
+  }
+  const opts = options as Partial<ExternalInvoice>;
+
+  const from = typeof opts.from === 'string' ? opts.from.trim() : '';
+  if (!from) return fail<Result>('invalid_args', "'from' is required.");
+  if (from.length > INVOICE_FROM_MAX) {
+    return fail<Result>('invalid_args', `'from' is at most ${INVOICE_FROM_MAX} characters.`);
+  }
+  const amount = opts.amount;
+  if (
+    !Number.isInteger(amount) ||
+    (amount as number) <= 0 ||
+    (amount as number) > INVOICE_AMOUNT_MAX
+  ) {
+    return fail<Result>('invalid_args', "'amount' must be a positive whole number.");
+  }
+  const memo = opts.memo === undefined || opts.memo === null ? '' : String(opts.memo).trim();
+  if (memo.length > INVOICE_MEMO_MAX) {
+    return fail<Result>('invalid_args', `'memo' is at most ${INVOICE_MEMO_MAX} characters.`);
+  }
+  const society = typeof opts.society === 'string' ? opts.society.trim() : '';
+  const payee = typeof opts.payee === 'string' ? opts.payee.trim() : '';
+  if ((society && payee) || (!society && !payee)) {
+    return fail<Result>('invalid_args', "Exactly one of 'society' and 'payee' is required.");
+  }
+  if (society && !SOCIETY_KEY.test(society)) {
+    return fail<Result>('invalid_args', "'society' must be a lower_snake_case job name.");
+  }
+  if (opts.onPaid !== undefined && typeof opts.onPaid !== 'function') {
+    return fail<Result>('invalid_args', "'onPaid' must be a function.");
+  }
+  if (opts.onDeclined !== undefined && typeof opts.onDeclined !== 'function') {
+    return fail<Result>('invalid_args', "'onDeclined' must be a function.");
+  }
+
+  const recipient = await PlayerDirectory.resolve(citizenid);
+  if (!recipient) return fail<Result>('unknown_player', 'No character with that citizenid.');
+
+  const callbacks: InvoiceCallbacks = {
+    onPaid: opts.onPaid as InvoiceCallbacks['onPaid'],
+    onDeclined: opts.onDeclined as InvoiceCallbacks['onDeclined']
+  };
+  const id = await createInvoice(
+    {
+      citizenid,
+      from_label: from,
+      amount: amount as number,
+      memo: memo || null,
+      society: society || null,
+      payee: payee || null,
+      resource: GetInvokingResource()
+    },
+    callbacks
+  );
+  return ok({ id });
+};
+
 export function registerPublicApi(): void {
   publish(
     'GetApiVersion',
@@ -386,6 +482,11 @@ export function registerPublicApi(): void {
   );
 
   publish('SendNotification', guarded('SendNotification', SendNotification));
+
+  publish(
+    'SendInvoice',
+    guardedAsync('SendInvoice', rateLimited('SendInvoice', SEND_INVOICE_PER_MINUTE, SendInvoice))
+  );
 
   publish('AddMedia', guardedAsync('AddMedia', AddMedia));
 

@@ -101,6 +101,8 @@ import type {
   Account,
   BankHistorySource,
   Contact,
+  Invoice,
+  InvoiceActionOutcome,
   FollowStats,
   LeaderboardEntry,
   Listing,
@@ -365,6 +367,12 @@ export interface Facets {
   appStorageBytes: (appId: string) => number;
   bank: () => {
     sendMoney: (input: SendMoneyInput) => Promise<SendMoneyOutcome>;
+    /** Open invoices the player can pay or decline (MICA-240). */
+    invoices: Writable<Invoice[]>;
+    invoicesLoaded: Writable<boolean>;
+    fetchInvoices: () => Promise<void>;
+    payInvoice: (id: number) => Promise<InvoiceActionOutcome>;
+    declineInvoice: (id: number) => Promise<InvoiceActionOutcome>;
   };
   call: () => {
     callStore: {

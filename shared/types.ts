@@ -180,6 +180,64 @@ export interface BankHistory extends BankHistorySource {
 }
 
 /**
+ * A bill a resource presented to a player through the phone (MICA-240).
+ *
+ * Created only by the server, through the `SendInvoice` export — no generic action on the
+ * `invoices` service is registered, so nothing a client sends can mint, edit or delete one.
+ * `status` is `active` while it can still be paid or declined; `paid`, `declined` and
+ * `expired` are terminal, and `expires_at` is when an open one stops being payable, set from
+ * `mica_invoice_expiry_days` at creation. Exactly one of `society` and `payee` names where the
+ * money goes: a job's society account through the banking bridge, or a character's bank.
+ */
+export interface Invoice {
+  id: number;
+  /** Who is billed. */
+  citizenid: string;
+  /** What the player reads as the biller: a business or a job name. */
+  from_label: string;
+  /** Whole currency units. */
+  amount: number;
+  memo: string | null;
+  /** The job whose society account is paid, or null when a character is. */
+  society: string | null;
+  /** The character paid, or null when a society is. */
+  payee: string | null;
+  /** The resource that sent it, so a payment can be reported back to it. */
+  resource: string;
+  /** Epoch seconds. */
+  expires_at: number;
+  /** Epoch seconds, once paid; null otherwise. */
+  paid_at: number | null;
+  status: 'active' | 'paid' | 'declined' | 'expired' | 'deleted';
+  created_at: Date | string;
+  updated_at: Date | string;
+}
+
+/**
+ * What paying or declining answers. On `ok` the list is the player's open invoices re-read
+ * after the change, so the store replaces itself rather than removing a row it hopes is gone.
+ * The money reasons are `Payments`' own, passed through so the app can say which.
+ */
+export type InvoiceActionOutcome =
+  | { ok: true; invoices: Invoice[] }
+  | {
+      ok: false;
+      reason:
+        | 'unknown_invoice'
+        | 'not_open'
+        | 'expired'
+        | 'invalid_amount'
+        | 'same_player'
+        | 'payer_offline'
+        | 'recipient_offline'
+        | 'insufficient_funds'
+        | 'society_unavailable'
+        | 'debit_failed'
+        | 'credit_failed'
+        | 'stranded';
+    };
+
+/**
  * A phone number a script registered under a job (MICA-227's `RegisterNumber({ job, label })`),
  * as the Jobs app lists it: a name and something to dial, nothing a player can edit.
  */

@@ -79,6 +79,27 @@ hand. What changed is the name of the software it runs: a gPhone and a gTablet
 both run micaOS. This release is **Seraphim**, the first of the nine choirs the
 codenames now follow.
 
+**`mica_invoices` is a new table — run `micaschema apply` from your server
+console after updating, or import the regenerated `mica.sql` / `mica.esx.sql` on
+a fresh install (MICA-240).** It carries `id`, `citizenid`, `from_label`,
+`amount`, `memo`, `society`, `payee`, `resource`, `expires_at`, `paid_at`,
+`status`, `created_at` and `updated_at`, with a `status` key, a
+`citizenid_status` key, a `citizenid_status_expires` key and a `status_expires`
+key. It is how a resource bills a player through the phone: a new
+`SendInvoice(citizenid, invoice)` export — `from`, `amount`, `memo`, one of
+`society` or `payee`, and optional `onPaid` and `onDeclined` — writes an open
+invoice and puts a notification in the player's shade whether or not they are
+online, and the Bank app grew an Invoices tab where they pay or decline it.
+Paying moves the money through the same payment code a transfer uses — to a
+job's society account through the banking bridge, or to a character's bank —
+with its refund path, and an invoice is claimed before the money moves so it can
+never be paid twice. A character payee has to be online to be paid, exactly as a
+transfer's recipient does; the invoice stays open until they are. Open invoices
+lapse after `mica_invoice_expiry_days` (default 7) and are swept hourly. **The
+`onPaid` and `onDeclined` callbacks live in memory** and do not survive either
+resource restarting; a script that needs to know about a payment made after its
+own restart reads the invoice row, which says `paid` and when.
+
 **The battery charge, the external lock and the last of the phone's state follow
 the phone too — run `micaschema apply` from your server console after updating
 (MICA-283).** `mica_battery` gains a `phone_id` column and key, and the

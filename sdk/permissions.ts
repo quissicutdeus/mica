@@ -348,7 +348,14 @@ export const FACET_MEMBERS: Readonly<Record<string, readonly string[]>> = {
     'unreactToTarget'
   ],
   admin: ['isAdmin', 'refreshAdmin'],
-  bank: ['sendMoney'],
+  bank: [
+    'sendMoney',
+    'invoices',
+    'invoicesLoaded',
+    'fetchInvoices',
+    'payInvoice',
+    'declineInvoice'
+  ],
   call: [
     'callStore',
     'startCall',

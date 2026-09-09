@@ -246,3 +246,72 @@ export async function payFromSociety(request: SocietyPaymentRequest): Promise<Pa
   console.log(`[Payments] society '${job}' -> ${to}: ${amount} (bank) for '${reason}'.`);
   return { ok: true, from: `society:${job}`, to, amount };
 }
+
+export interface SocietyChargeRequest {
+  /** citizenid paying. */
+  from: string;
+  /** The job whose society account is credited. */
+  job: string;
+  /** Whole currency units, positive. */
+  amount: number;
+  /** Why, for the log. Not player-facing. */
+  reason: string;
+}
+
+/**
+ * Debit a player and credit a society — `payFromSociety` the other way round (MICA-240).
+ *
+ * The same discipline: affordability is decided here from `getMoney`, the span from that read
+ * through `removeMoney` contains no `await`, a credit that fails refunds the player, and a
+ * refund that also fails is `stranded` and shouts. `society_unavailable` before any money moves
+ * when no banking resource can hold the account, so a server without one refuses cleanly
+ * rather than debiting into nothing.
+ */
+export async function payToSociety(request: SocietyChargeRequest): Promise<PaymentOutcome> {
+  const { from, job, reason } = request;
+  const amount = request.amount;
+
+  if (!Number.isInteger(amount) || amount <= 0) {
+    return { ok: false, reason: 'invalid_amount' };
+  }
+  if (!from) return { ok: false, reason: 'payer_offline' };
+  if (!job) return { ok: false, reason: 'society_unavailable' };
+
+  const payerSource = FrameworkBridge.getSourceByCitizenId(from);
+  if (payerSource === null) return { ok: false, reason: 'payer_offline' };
+  const payer = FrameworkBridge.getPlayer(payerSource);
+  if (!payer) return { ok: false, reason: 'payer_offline' };
+
+  // Asked before the debit so a server with no society account never takes the money.
+  if (BankingBridge.getSocietyBalance(job) === null) {
+    return { ok: false, reason: 'society_unavailable' };
+  }
+
+  const balance = payer.getMoney('bank');
+  if (!Number.isFinite(balance) || balance < amount) {
+    return { ok: false, reason: 'insufficient_funds' };
+  }
+
+  if (!payer.removeMoney('bank', amount)) {
+    return { ok: false, reason: 'debit_failed' };
+  }
+
+  if (!BankingBridge.addSocietyMoney(job, amount)) {
+    const refunded = payer.addMoney('bank', amount);
+    if (!refunded) {
+      console.error(
+        `[Payments] STRANDED ${amount} from ${from} to society '${job}' for '${reason}': the ` +
+          'credit failed and the refund failed. The payer has been debited and nobody ' +
+          'was paid. This needs a human.'
+      );
+      return { ok: false, reason: 'stranded' };
+    }
+    console.warn(
+      `[Payments] Credit to society '${job}' failed for '${reason}'; refunded ${amount} to ${from}.`
+    );
+    return { ok: false, reason: 'credit_failed' };
+  }
+
+  console.log(`[Payments] ${from} -> society '${job}': ${amount} (bank) for '${reason}'.`);
+  return { ok: true, from, to: `society:${job}`, amount };
+}

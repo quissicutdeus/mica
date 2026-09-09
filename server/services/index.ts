@@ -13,6 +13,7 @@ import './Conversations';
 import './Highscores';
 import './Hodlr';
 import './HodlrMarket';
+import './Invoices';
 import './Jobs';
 import './Lockscreen';
 import './Mail';

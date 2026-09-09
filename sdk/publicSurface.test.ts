@@ -1149,6 +1149,8 @@ const BASELINE_TYPE_EXPORTS: Record<string, string[]> = {
     'FollowPage',
     'Host',
     'HostRuntime',
+    'Invoice',
+    'InvoiceActionOutcome',
     'JobActionOutcome',
     'JobLine',
     'JobView',
@@ -1225,6 +1227,8 @@ const BASELINE_TYPE_EXPORTS: Record<string, string[]> = {
     'FollowPage',
     'Host',
     'HostRuntime',
+    'Invoice',
+    'InvoiceActionOutcome',
     'JobActionOutcome',
     'JobLine',
     'JobView',
@@ -1512,7 +1516,14 @@ const BASELINE_HOOK_RETURNS: Record<string, string[]> = {
     'unregisterApp',
     'updateApp'
   ],
-  useBank: ['sendMoney'],
+  useBank: [
+    'declineInvoice',
+    'fetchInvoices',
+    'invoices',
+    'invoicesLoaded',
+    'payInvoice',
+    'sendMoney'
+  ],
   useCall: [
     'answerCall',
     'callLog',

@@ -7,6 +7,7 @@ export * from './blabber_dms';
 export * from './contacts';
 export * from './conversations';
 export * from './highscores';
+export * from './invoices';
 export * from './jobs';
 export * from './lockscreen';
 export * from './mail';

@@ -560,6 +560,7 @@ setr mica_addon_catalog ""
 | `mica_source_url`              | https:// URL         | this repository      | Where Settings > About > License says your source lives    |
 | `mica_locale`                  | BCP 47 language tag  | unset                | The phone's default language; players can override it      |
 | `mica_bank_transfer_max`       | integer              | `50000`              | Ceiling on one player-to-player send                       |
+| `mica_invoice_expiry_days`     | integer              | `7`                  | Days an unpaid invoice stays payable before it lapses      |
 | `mica_hodlr_trade_max`         | integer              | `50000`              | Ceiling on what one Hodlr buy or sell is worth             |
 | `mica_hodlr_spread_pct`        | number, percent      | `2`                  | Gap between Hodlr's buy and sell quotes, around mid        |
 | `mica_emergency_number`        | phone number         | `911`                | Always connects, regardless of any block                   |
@@ -1171,6 +1172,7 @@ this player right now: confiscated, switched off, or an item they do not hold).
 | `SendSystemEmail(...)`              | citizenid              | Sends mail. Predates this API and keeps its original signature                                    |
 | `SendMessage(citizenid, message)`   | citizenid              | Puts a text in Messages from a business or a line, never a player. Works offline; see below       |
 | `SendNotification(citizenid, opts)` | citizenid              | Raises a notification. Works offline — the row is written and shown next time they open the phone |
+| `SendInvoice(citizenid, invoice)`   | citizenid              | Bills a player; they pay or decline from the Bank app. Works offline; see below                   |
 | `BuildDeepLink(app, props)`         | —                      | Builds a `app?key=value` link without needing to know the format                                  |
 | `AddMedia(citizenid, media)`        | citizenid              | Puts a GIF, a video poster, a voice clip or a file in a player's gallery                          |
 | `AddContact(citizenid, contact)`    | citizenid              | Adds a contact to a player's address book. Works offline, same as `AddMedia`                      |
@@ -1309,6 +1311,37 @@ exports['mica']:UnregisterNumber('5559999')     -- when you are done with it
   micaOS placed the call, not that it connected — a busy, blocked or unreachable
   number reports `ok` as well, since the caller's own phone is what tells them
   which of those happened.
+
+**A resource can bill a player, and they pay from the phone (MICA-240).**
+`SendInvoice` writes an open invoice and puts a notification in the player's
+shade, online or not; the Bank app's Invoices tab is where they pay or decline
+it, and the money moves through the same code a transfer uses.
+
+```lua
+local result = exports['mica']:SendInvoice(citizenid, {
+    from = 'Los Santos Customs',   -- what the player reads as the biller, ≤ 64
+    amount = 450,                  -- whole currency units
+    memo = 'Engine rebuild',       -- optional, ≤ 140
+    society = 'mechanic',          -- the job whose society account is paid …
+    -- payee = otherCitizenid,     -- … or the character paid; exactly one of the two
+    onPaid = function(invoice) end,        -- optional
+    onDeclined = function(invoice) end     -- optional
+})
+-- result.value.id is the invoice id on success
+```
+
+- **Exactly one of `society` and `payee`.** A society is paid through the
+  banking bridge (Renewed-Banking, qb-banking or qb-management); a character is
+  paid into their bank and has to be online at the moment of payment, as a
+  transfer's recipient does — the invoice stays open until they are.
+- **It cannot be paid twice.** The invoice is claimed before the money moves and
+  reopened if the payment does not go through, so two taps charge once.
+- **Open invoices lapse** after `mica_invoice_expiry_days` (default 7) and are
+  swept hourly; a lapsed one cannot be paid or declined.
+- **`onPaid` and `onDeclined` are function refs and live in memory.** They do
+  not survive either resource restarting and are released when yours stops. The
+  invoice row itself says `paid` or `declined` and when, so a script that must
+  not miss a payment reads that rather than relying on the callback.
 
 **`ext_<resource>` is reserved for you.** Notifications raised under it get
 their own group in the shade, labelled with your `sourceLabel`. micaOS apps are

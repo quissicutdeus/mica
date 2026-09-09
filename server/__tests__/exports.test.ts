@@ -97,6 +97,7 @@ describe('the public export surface', () => {
       'OpenApp',
       'RegisterNumber',
       'RemoveDeadZone',
+      'SendInvoice',
       'SendMessage',
       'SendNotification',
       'SendSystemEmail',
