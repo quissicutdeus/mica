@@ -4,7 +4,7 @@
 
 import { defineContract, responseType } from '../contract';
 import { s } from '../schema';
-import type { Transaction } from '../types';
+import type { BankHistory } from '../types';
 
 /** What a `sendMoney` can answer with. Every reason but the last comes from `Payments`. */
 type SendMoneyResult = { ok: true } | { ok: false; reason: string };
@@ -23,8 +23,12 @@ type SendMoneyResult = { ok: true } | { ok: false; reason: string };
 export const bankContract = defineContract({
   id: 'bank',
   actions: {
-    /** The caller's own transaction list. The citizenid is the whole predicate. */
-    getTransactions: { input: s.none(), output: responseType<Transaction[]>() },
+    /**
+     * The caller's own transaction history and where it came from. The citizenid is the
+     * whole predicate. `transactions` is empty both when the account has none and when the
+     * banking resource cannot say — `available` is what tells the two apart (MICA-241).
+     */
+    getTransactions: { input: s.none(), output: responseType<BankHistory>() },
 
     sendMoney: {
       input: s.object({

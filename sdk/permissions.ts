@@ -323,6 +323,7 @@ export const FACET_MEMBERS: Readonly<Record<string, readonly string[]>> = {
     'bankBalance',
     'transactions',
     'transactionsLoaded',
+    'historySource',
     'citizenid',
     'fetchPhoneNumber',
     'fetchBalance',

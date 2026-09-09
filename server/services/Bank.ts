@@ -30,7 +30,7 @@ const app = new ServiceEndpoint<Transaction, typeof bankContract>('bank', null, 
 });
 
 app.registerEvent('getTransactions', async (source, cbId, data, citizenid) => {
-  return BankingBridge.getTransactions(citizenid);
+  return BankingBridge.getHistory(citizenid);
 });
 
 const TRANSFER_MAX_CONVAR = 'mica_bank_transfer_max';

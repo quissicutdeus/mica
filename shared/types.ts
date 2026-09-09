@@ -159,6 +159,27 @@ export interface Transaction {
 }
 
 /**
+ * Where a player's transaction history comes from, and whether it can come at all (MICA-241).
+ *
+ * `provider` is the banking resource `BankingBridge` detected, or `null` when none of the
+ * ones it knows is running. `available` is whether that resource exposes its history through
+ * an export: qb-banking and ox_banking keep their statements to themselves — the first serves
+ * them to its own UI over a callback, the second reads its own table — and micaOS reads
+ * exports, never another resource's tables (§10). So a detected-but-silent script is a real
+ * state, and the Bank app tells the player which rather than showing an empty list that reads
+ * as broken.
+ */
+export interface BankHistorySource {
+  provider: string | null;
+  available: boolean;
+}
+
+/** What `bank:getTransactions` answers: the source, and the rows when it has any. */
+export interface BankHistory extends BankHistorySource {
+  transactions: Transaction[];
+}
+
+/**
  * A phone number a script registered under a job (MICA-227's `RegisterNumber({ job, label })`),
  * as the Jobs app lists it: a name and something to dial, nothing a player can edit.
  */

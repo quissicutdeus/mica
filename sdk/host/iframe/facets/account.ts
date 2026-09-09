@@ -14,6 +14,7 @@ export function account(): Twin {
     bankBalance: store('account', [], 'bankBalance', 0),
     transactions: store('account', [], 'transactions', []),
     transactionsLoaded: store('account', [], 'transactionsLoaded', false),
+    historySource: store('account', [], 'historySource', { provider: null, available: false }),
     citizenid: store('account', [], 'citizenid', ''),
     fetchPhoneNumber: fn('account', [], 'fetchPhoneNumber'),
     fetchBalance: fn('account', [], 'fetchBalance'),

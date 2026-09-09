@@ -34,6 +34,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     bankBalance,
     transactions,
     transactionsLoaded,
+    historySource,
     citizenid,
     fetchBalance,
     fetchTransactions,
@@ -82,10 +83,25 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         {#each $transactions as transaction (transaction.id)}
           <TransactionItem {transaction} />
         {:else}
-          <EmptyState
-            title={$t('bank.noTransactions')}
-            description={$t('bank.noTransactionsHint')}
-          />
+          <!-- Three empty lists that mean three things (MICA-241): the account has none, the
+               banking resource keeps its statements to itself, or no supported resource is
+               running. Only the first is "no transactions"; the others used to look like it. -->
+          {#if $historySource.available}
+            <EmptyState
+              title={$t('bank.noTransactions')}
+              description={$t('bank.noTransactionsHint')}
+            />
+          {:else if $historySource.provider}
+            <EmptyState
+              title={$t('bank.historyUnavailable')}
+              description={$t('bank.historyKeptByScript', { script: $historySource.provider })}
+            />
+          {:else}
+            <EmptyState
+              title={$t('bank.historyUnavailable')}
+              description={$t('bank.historyNoScript')}
+            />
+          {/if}
         {/each}
       {/if}
     </div>

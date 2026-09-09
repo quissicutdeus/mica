@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { Transaction } from '@mica/shared/types';
+import type { BankHistory, Transaction } from '@mica/shared/types';
 import { exposes, resource, shapeOf } from './framework/runtime';
 
 /**
@@ -134,29 +134,149 @@ const societyBank = (): SocietyBank | null => {
   return null;
 };
 
+/**
+ * okokBanking: `GetPlayerTransactions(citizenid, limit)` answers records shaped as its own
+ * `AddTransaction` takes them — `{ sender_identifier, sender_name, receiver_identifier,
+ * receiver_name, value, type, reason }` — per its published docs (MICA-241). okokBanking is
+ * escrowed, so this is **from the documentation, not from source**: the docs do not name a
+ * timestamp field, so `date`/`time` are read if present, as epoch seconds, epoch
+ * milliseconds or a datetime string, and `0` otherwise, which sorts an undated row last
+ * rather than dropping it.
+ *
+ * Direction comes from `type` where it says something (`deposit` in, `withdraw` out) and
+ * from which end of the transfer is this citizen otherwise — never from the sign of `value`,
+ * for the reason `fromRenewed` gives.
+ */
+const asTime = (value: unknown): number => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    // Milliseconds if it is too large to be seconds this century.
+    return value > 100_000_000_000 ? Math.floor(value / 1000) : Math.floor(value);
+  }
+  if (typeof value === 'string' && value.length > 0) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) return asTime(numeric);
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? Math.floor(parsed / 1000) : 0;
+  }
+  return 0;
+};
+
+const fromOkok = (raw: RawRecord, citizenid: string, index: number): Transaction => {
+  const type = asString(raw.type)?.toLowerCase();
+  const receiver = asString(raw.receiver_identifier);
+  const direction: Transaction['direction'] =
+    type === 'deposit' ? 'in' : type === 'withdraw' ? 'out' : receiver === citizenid ? 'in' : 'out';
+  return {
+    // okokBanking's records carry no id in the documented shape; a stable per-read index is
+    // enough for a list key and is never used as a row id anywhere.
+    id: asString(raw.id) ?? asString(raw.transaction_id) ?? `okok-${index}`,
+    title: asString(raw.type),
+    amount: Math.abs(asNumber(raw.value)),
+    direction,
+    message: asString(raw.reason),
+    issuer: asString(raw.sender_name),
+    receiver: asString(raw.receiver_name),
+    time: asTime(raw.date ?? raw.time)
+  };
+};
+
+export function normalizeOkokTransactions(raw: unknown, citizenid: string): Transaction[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((record): record is RawRecord => !!record && typeof record === 'object')
+    .map((record, index) => fromOkok(record, citizenid, index))
+    .sort((a, b) => b.time - a.time);
+}
+
+/**
+ * One banking resource, as far as history is concerned (MICA-241).
+ *
+ * `read` is absent for a script that keeps its statements to itself. That is not a gap this
+ * bridge can close: qb-banking serves its `bank_statements` to its own UI over a QBCore
+ * callback and publishes no export for them (verified against `server.lua` on `main` —
+ * `CreateBankStatement` writes, nothing reads); ox_banking publishes no exports at all and
+ * reads `accounts_transactions` itself, and ox_core's account exports stop at balances and
+ * invoices. Reading their tables would couple the phone to a schema they may change and, for
+ * qb-banking, to rows its in-memory cache has moved past — the reason `fromRenewed` exists.
+ * So both are **detected**, so the Bank app can name them, and answer no rows.
+ */
+interface HistoryAdapter {
+  name: string;
+  detect(): boolean;
+  read?(citizenid: string): unknown;
+  normalize?(raw: unknown, citizenid: string): Transaction[];
+}
+
+/** Is a resource running at all, when it exposes nothing this can probe for. */
+const running = (name: string): boolean => {
+  try {
+    return Boolean(resource(name));
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * In the order they are asked. A server running two of these keeps whichever comes first,
+ * which is a compatibility decision like `FRAMEWORK_ADAPTERS`' — Renewed-Banking stays first
+ * because it was the only one before MICA-241 and a server that had history must keep it.
+ */
+const HISTORY_ADAPTERS: readonly HistoryAdapter[] = [
+  {
+    name: 'Renewed-Banking',
+    detect: () => exposes('Renewed-Banking', 'getAccountTransactions'),
+    // Cache-only on their side, and `false` for an unknown account (vendored, main.lua:692).
+    read: (citizenid) => resource('Renewed-Banking').getAccountTransactions(citizenid),
+    normalize: (raw) => normalizeRenewedTransactions(raw)
+  },
+  {
+    name: 'okokBanking',
+    detect: () => exposes('okokBanking', 'GetPlayerTransactions'),
+    // `limit` nil answers every row per the docs; 200 is a screen's worth and bounds the walk.
+    read: (citizenid) => resource('okokBanking').GetPlayerTransactions(citizenid, 200),
+    normalize: normalizeOkokTransactions
+  },
+  { name: 'qb-banking', detect: () => exposes('qb-banking', 'GetAccountBalance') },
+  { name: 'ox_banking', detect: () => running('ox_banking') }
+];
+
+const historyAdapter = (): HistoryAdapter | null =>
+  HISTORY_ADAPTERS.find((adapter) => adapter.detect()) ?? null;
+
 export class BankingBridge {
   /**
-   * A player's transaction history, newest first.
+   * A player's transaction history, newest first, and where it came from (MICA-241).
    *
-   * `citizenid` is the account key for a personal account. Returns [] rather than
-   * throwing when no supported banking resource is present — a phone with no bank
-   * script should show an empty list, not fail to open.
+   * `citizenid` is the account key for a personal account. Never throws: a resource that
+   * answers nonsense is an empty list under its own name, so a phone with a broken bank
+   * script still opens. `available: false` with a `provider` is the detected-but-silent
+   * case the type explains; with `null` it is "no supported banking resource at all".
    */
-  public static getTransactions(citizenid: string): Transaction[] {
-    if (!citizenid) return [];
-    return normalizeRenewedTransactions(BankingBridge.readRaw(citizenid));
+  public static getHistory(citizenid: string): BankHistory {
+    const adapter = historyAdapter();
+    if (!adapter) return { provider: null, available: false, transactions: [] };
+    if (!adapter.read || !adapter.normalize) {
+      return { provider: adapter.name, available: false, transactions: [] };
+    }
+    if (!citizenid) return { provider: adapter.name, available: true, transactions: [] };
+
+    let raw: unknown;
+    try {
+      raw = adapter.read(citizenid);
+    } catch (error) {
+      console.error(`[BankingBridge] ${adapter.name} threw reading transactions:`, error);
+      return { provider: adapter.name, available: true, transactions: [] };
+    }
+    return {
+      provider: adapter.name,
+      available: true,
+      transactions: adapter.normalize(raw === false ? [] : raw, citizenid)
+    };
   }
 
   /** Which banking resource answered, or null. Useful for a startup log. */
   public static detect(): string | null {
-    try {
-      if (typeof exports['Renewed-Banking']?.getAccountTransactions === 'function') {
-        return 'Renewed-Banking';
-      }
-    } catch {
-      // Resource absent; fall through.
-    }
-    return null;
+    return historyAdapter()?.name ?? null;
   }
 
   /**
@@ -225,19 +345,5 @@ export class BankingBridge {
       console.error(`[BankingBridge] Error moving society money (${direction}):`, error);
       return false;
     }
-  }
-
-  private static readRaw(citizenid: string): unknown {
-    try {
-      if (typeof exports['Renewed-Banking']?.getAccountTransactions === 'function') {
-        // Cache-only on their side, and returns `false` for an unknown account.
-        const result = exports['Renewed-Banking'].getAccountTransactions(citizenid);
-        return result === false ? [] : result;
-      }
-    } catch (error) {
-      console.error('[BankingBridge] Error reading transactions:', error);
-    }
-
-    return [];
   }
 }

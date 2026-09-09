@@ -6,7 +6,7 @@ import { writable } from 'svelte/store';
 import { fetchNui } from '../nui/fetchNui';
 import { callOr } from '../nui/call';
 import { bankContract } from '@mica/shared/contracts/bank';
-import type { Transaction } from '@mica/shared/types';
+import type { BankHistory, BankHistorySource, Transaction } from '@mica/shared/types';
 
 // Was a second, divergent Transaction interface declared here. `shared/types.ts` is
 // the one contract now — BankingBridge normalizes onto it, so the mock, the UI and
@@ -24,6 +24,13 @@ export const transactions = writable<Transaction[]>([]);
  * second one while still waiting for the first.
  */
 export const transactionsLoaded = writable(false);
+
+/**
+ * Which banking resource the history came from, and whether it can come at all (MICA-241).
+ * Starts as "unknown, unavailable" so an empty list before the first fetch is never read as
+ * "this script keeps its statements to itself".
+ */
+export const historySource = writable<BankHistorySource>({ provider: null, available: false });
 export const citizenid = writable<string>('');
 export const myPhoneNumber = writable<string>('555-0199');
 
@@ -61,8 +68,14 @@ export const fetchBalance = async () => {
 
 export const fetchTransactions = async () => {
   try {
-    const data = await callOr(bankContract, 'getTransactions', undefined, [] as Transaction[]);
-    transactions.set(data);
+    const empty: BankHistory = { provider: null, available: false, transactions: [] };
+    const data = await callOr(bankContract, 'getTransactions', undefined, empty);
+    // A reply that is not the contract's shape — a stale server, a mock answering the old
+    // bare array — is treated as the default rather than thrown on: the list stays empty and
+    // the source stays "unknown", which is the honest state for an answer this cannot read.
+    const history = data && Array.isArray(data.transactions) ? data : empty;
+    transactions.set(history.transactions);
+    historySource.set({ provider: history.provider, available: history.available });
   } catch (error) {
     console.error('Failed to fetch transactions:', error);
   } finally {

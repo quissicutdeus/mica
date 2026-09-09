@@ -10,6 +10,7 @@ import { GENERIC_SERVICE_ACTION } from '@mica/shared/rpc';
 import type { SendMoneyOutcome } from '@mica/sdk';
 import type {
   Account,
+  BankHistory,
   Blab,
   BlabberDm,
   Contact,
@@ -1715,7 +1716,13 @@ const mockRegistry: Record<string, MockHandler> = {
   // Shaped exactly like BankingBridge output: positive magnitudes with an explicit
   // direction. The previous mock used signed amounts, which no banking resource
   // produces — so red/green rendering worked here and was wrong in game.
-  'bank:getTransactions': (): Transaction[] => mockBankTransactions,
+  // The source is named the way the server names it (MICA-241): the mock stands in for a
+  // server running Renewed-Banking, the one resource whose history is verified against source.
+  'bank:getTransactions': (): BankHistory => ({
+    provider: 'Renewed-Banking',
+    available: true,
+    transactions: mockBankTransactions
+  }),
   /**
    * Mirrors `server/services/Bank.ts`'s `sendMoney` refusal reasons, so the same UI
    * copy in `SendMoneyModal.svelte` is exercised in a browser as in game. `867-5309` is

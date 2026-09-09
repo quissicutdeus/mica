@@ -509,6 +509,18 @@ reasons — which have grown `already_registered`, `not_owner` and `number_in_us
 `RegisterNumber(911, …)` from Lua is refused) are in the README's
 [Exports for other resources](README.md#exports-for-other-resources).
 
+**The Bank app reads history from okokBanking, and says why it cannot from
+qb-banking or ox_banking (MICA-241).** Only Renewed-Banking's transaction export
+was read before; every other server saw a balance with an empty list underneath,
+which reads as broken. okokBanking's `GetPlayerTransactions` is now read too,
+from its published docs rather than source since the script is escrowed.
+qb-banking and ox_banking publish no export for their statements — the first
+serves them to its own UI over a callback, the second reads its own table — and
+micaOS does not read another resource's tables, so on those the app shows
+"History not available" with the script's name instead of an empty list, and a
+server with no supported banking resource at all says so the same way. **No
+owner action.**
+
 **A Jobs app (MICA-228).** A core app that lists every job the character holds,
 switches the active one with a tap, toggles duty where the framework has duty,
 shows a boss grade its society balance, and lists any number a job script
@@ -842,6 +854,12 @@ Everything above is written for a server owner. This part is not. It is for
 somebody maintaining a `core: false` add-on outside this repo, and it answers
 one question: does that bundle still compile against this release, and does its
 manifest still ask for the right things.
+
+**`useAccount()` gained `historySource` (MICA-241)**, a store of
+`{ provider, available }` saying which banking resource `transactions` came from
+and whether it can supply history at all; `BankHistory` and `BankHistorySource`
+are exported types. Additive: nothing already published changes and the contract
+version is unchanged.
 
 **`useJobs()`, behind a new `jobs` permission and a new `jobs` capability
 (MICA-228).** The hook answers `jobs` and `jobsLoaded` stores, `fetchJobs()`,

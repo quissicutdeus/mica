@@ -99,6 +99,7 @@ import type { AppComponent, AppManifest, AppPermission, AppDevice } from '../man
 import type { KeybindAction } from '@mica/shared/keybinds';
 import type {
   Account,
+  BankHistorySource,
   Contact,
   FollowStats,
   LeaderboardEntry,
@@ -194,6 +195,8 @@ export interface Facets {
     bankBalance: Writable<number>;
     transactions: Writable<Transaction[]>;
     transactionsLoaded: Writable<boolean>;
+    /** Where `transactions` came from, and whether the script can say (MICA-241). */
+    historySource: Writable<BankHistorySource>;
     citizenid: Writable<string>;
     fetchPhoneNumber: () => Promise<string>;
     fetchBalance: () => Promise<void>;

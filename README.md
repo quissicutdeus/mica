@@ -148,10 +148,15 @@ for players and seamless framework integration for server developers.
   where on a qb core it belongs to the **character**, and standalone is
   per-player as well; that and the rest of the differences are set out under
   Installation.
-- **Banking Bridge**: Reads transaction history through the banking resource's
-  own exports rather than its tables (**Renewed-Banking** supported),
-  normalizing each script's record shape onto one contract. Degrades to an empty
-  list when no supported resource is present.
+- **Banking Bridge**: Reads transaction history and society balances through the
+  banking resource's own exports rather than its tables, normalizing each
+  script's record shape onto one contract. **Renewed-Banking** (verified against
+  source) and **okokBanking** (from its published export docs) provide history;
+  **qb-banking** and **ox_banking** are detected but publish no export for their
+  statements, so the Bank app says "history not available" and names the script
+  rather than showing an empty list. Society balances come from Renewed-Banking,
+  qb-banking or qb-management. No supported resource at all is said once at
+  start (`mica: banking bridge -> …`).
 - **Declarative Server Schema**: Each app declares its server half once via
   `defineService` — the schema drives the SQL identifier allowlist, the
   client-writable field set, and the generated DDL in `mica.sql`, so they cannot
