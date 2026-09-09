@@ -250,6 +250,24 @@ describe('NowPlaying', () => {
     expect(queryByTestId('now-playing')).toBeNull();
   });
 
+  it('stays up after the track ends, and play starts it over', async () => {
+    // MICA-194. The card is drawn while something is loaded, and the end of the last
+    // track used to unload it — so the one moment a person wants "again" had no button.
+    const { musicSeek, reportPlayerState } = await import('./state/music');
+    playSource(`https://youtu.be/${VIDEO}`);
+    const { findByLabelText, findByTestId, queryByTestId } = render(NowPlaying);
+    await findByTestId('now-playing');
+
+    reportPlayerState('ended');
+    await tick();
+    expect(queryByTestId('now-playing')).not.toBeNull();
+    expect(get(musicStatus)).toBe('paused');
+
+    await fireEvent.click(await findByLabelText('Play'));
+    expect(get(musicSeek)).toMatchObject({ seconds: 0, resume: true });
+    expect(get(musicStatus)).toBe('loading');
+  });
+
   it('pauses and resumes without unloading the track', async () => {
     playSource(`https://youtu.be/${VIDEO}`);
     const { findByLabelText } = render(NowPlaying);

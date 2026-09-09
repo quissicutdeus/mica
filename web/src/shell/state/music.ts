@@ -323,6 +323,35 @@ const positionStore = writable<MusicPosition>({ current: 0, duration: 0 });
 const seekStore = writable<MusicSeek | null>(null);
 
 /**
+ * True once the loaded track ran to its end and nothing took its place. MICA-194.
+ *
+ * ## The decisions, in one place
+ *
+ * - **A natural end keeps the card.** `advanceAfterEnd` used to call `stopMusic` when the
+ *   queue had nowhere to go, and the shade's card — which renders exactly while
+ *   `musicSource` is non-null — vanished at the last second of the last song. A player
+ *   who wanted to hear it again had to reopen the app and find the row. Now the row stays
+ *   loaded, `musicStatus` reads `paused`, and the position is pinned to the duration so
+ *   the scrubber sits at the end rather than wherever the last progress report landed.
+ * - **Play restarts from the start.** `resumeMusic` reads this flag and reloads the same
+ *   row through `goTo` — which is the existing "same source, seek to 0, play" path — rather
+ *   than telling an ended embed `playVideo` and trusting it to rewind.
+ * - **An explicit stop still clears**, and so does anything that unloads: `stopMusic`,
+ *   `clearQueue`, `nextTrack` off the end, removing the row. None of those paths changed.
+ * - **A different track replaces it.** `goTo` clears the flag on every load.
+ *
+ * `paused` rather than a new `ended` member of `MusicStatus`, because that union is
+ * published SDK vocabulary (`sdk/vocabulary/music.ts`) and every add-on's exhaustive
+ * switch over it is somebody else's code. The card draws the play control for `paused`,
+ * which is the control this exists to keep on screen. A shell-internal `musicEnded` is
+ * exported beside `musicSeek` for a surface that wants to say "Ended" rather than
+ * "Paused"; that word is not on the card until the vocabulary grows.
+ *
+ * A `writable`, not a rune, like everything else in this file (AGENTS.md §4).
+ */
+const endedStore = writable<boolean>(false);
+
+/**
  * How far music drops under a ringing phone.
  *
  * A fifth, not silence: the point of ducking rather than pausing is that the ringtone and
@@ -400,6 +429,9 @@ export const musicPosition: Readable<MusicPosition> = { subscribe: positionStore
 /** @internal The shell's own channel to the frame — see `MusicSeek`. Not on the SDK. */
 export const musicSeek: Readable<MusicSeek | null> = { subscribe: seekStore.subscribe };
 
+/** @internal Whether the loaded track ran to its end and is waiting to be replayed. See `endedStore`. */
+export const musicEnded: Readable<boolean> = { subscribe: endedStore.subscribe };
+
 /**
  * The volume the frame is actually told, as opposed to the one the person set.
  *
@@ -465,6 +497,7 @@ function goTo(index: number, remember = true): void {
   // A different track: whatever the player last said is about the old one, failure
   // included. The row keeps its own copy, so nothing is forgotten by clearing this.
   errorStore.set(null);
+  endedStore.set(false);
   if (!restart) nowPlayingStore.set(null);
   statusStore.set('loading');
   if (restart) requestSeek(0, true);
@@ -542,6 +575,7 @@ export function removeFromQueue(key: string): void {
     indexStore.set(-1);
     if (!remaining.length) {
       nowPlayingStore.set(null);
+      endedStore.set(false);
       statusStore.set('idle');
       return;
     }
@@ -571,6 +605,12 @@ export function resumeMusic(): void {
     if (queue.length) goTo(Math.min(get(resumeIndexStore), queue.length - 1));
     return;
   }
+  // A track that ran out is played again from the top, not resumed from its last second.
+  // `remember: false` — this is the same row, not a step forward. See `endedStore`.
+  if (get(endedStore)) {
+    goTo(get(indexStore), false);
+    return;
+  }
   statusStore.set('playing');
 }
 
@@ -596,6 +636,7 @@ export function stopMusic(): void {
   indexStore.set(-1);
   nowPlayingStore.set(null);
   errorStore.set(null);
+  endedStore.set(false);
   positionStore.set({ current: 0, duration: 0 });
   statusStore.set('idle');
   history = [];
@@ -804,7 +845,11 @@ function advanceAfterEnd(): void {
 
   const next = pickNext();
   if (next === null) {
-    stopMusic();
+    // Nowhere to go: hold the row rather than unload it, so the card stays up with a play
+    // control that starts it over. MICA-194 — the reasoning is on `endedStore`.
+    endedStore.set(true);
+    statusStore.set('paused');
+    positionStore.update((previous) => ({ ...previous, current: previous.duration }));
     return;
   }
   goTo(next);
@@ -1017,6 +1062,7 @@ export function resetMusicForTest(): void {
   errorStore.set(null);
   positionStore.set({ current: 0, duration: 0 });
   seekStore.set(null);
+  endedStore.set(false);
   seekToken = 0;
   musicMuted.set(false);
   duckedStore.set(false);

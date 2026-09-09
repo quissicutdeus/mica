@@ -30,6 +30,7 @@ import {
   musicPosition,
   musicQueue,
   musicRepeat,
+  musicEnded,
   musicSeek,
   musicShuffle,
   musicSource,
@@ -148,13 +149,6 @@ describe('reportPlayerState', () => {
     expect(get(musicStatus)).toBe('playing');
   });
 
-  it('unloads when the track ends', () => {
-    playSource(VIDEO);
-    reportPlayerState('ended');
-    expect(get(musicSource)).toBeNull();
-    expect(get(musicStatus)).toBe('idle');
-  });
-
   it('does not undo a pause the person just asked for', () => {
     // The embed's own `paused`/`playing` reports race the command that caused them; only
     // `ended` is news the phone could not already know.
@@ -166,6 +160,65 @@ describe('reportPlayerState', () => {
 
   it('ignores a report arriving after everything was stopped', () => {
     reportPlayerState('ended');
+    expect(get(musicStatus)).toBe('idle');
+  });
+});
+
+/**
+ * MICA-194. A track that ran out used to unload, and the shade's card — drawn exactly while
+ * something is loaded — went with it, one second after the player had wanted to press play
+ * again. The decisions are written on `endedStore` in `music.ts`; these hold each of them.
+ */
+describe('a track that ends with nowhere to go', () => {
+  it('keeps the entry loaded, paused, with the playhead at the end', () => {
+    playSource(VIDEO);
+    reportPlayerProgress({ currentTime: 199, duration: 200 });
+    reportPlayerState('ended');
+    expect(get(musicSource)).toEqual({ videoId: VIDEO, playlistId: null });
+    expect(get(musicStatus)).toBe('paused');
+    expect(get(musicEnded)).toBe(true);
+    expect(get(musicPosition)).toEqual({ current: 200, duration: 200 });
+  });
+
+  it('play restarts the same track from position 0', () => {
+    playSource(VIDEO);
+    reportPlayerProgress({ currentTime: 200, duration: 200 });
+    reportPlayerState('ended');
+    const before = get(musicSeek)?.token ?? 0;
+
+    resumeMusic();
+
+    expect(get(musicSource)).toEqual({ videoId: VIDEO, playlistId: null });
+    expect(get(musicSeek)).toEqual({ token: before + 1, seconds: 0, resume: true });
+    expect(get(musicPosition)).toEqual({ current: 0, duration: 0 });
+    expect(get(musicStatus)).toBe('loading');
+    expect(get(musicEnded)).toBe(false);
+    reportPlayerState('playing');
+    expect(get(musicStatus)).toBe('playing');
+  });
+
+  it('an explicit stop still clears it', () => {
+    playSource(VIDEO);
+    reportPlayerState('ended');
+    stopMusic();
+    expect(get(musicSource)).toBeNull();
+    expect(get(musicStatus)).toBe('idle');
+    expect(get(musicEnded)).toBe(false);
+  });
+
+  it('is replaced by playing a different track', () => {
+    playSource(A);
+    reportPlayerState('ended');
+    playSource(B);
+    expect(get(musicSource)).toEqual({ videoId: B, playlistId: null });
+    expect(get(musicStatus)).toBe('loading');
+    expect(get(musicEnded)).toBe(false);
+  });
+
+  it('is not what next does — a skip off the end still stops', () => {
+    playSource(VIDEO);
+    nextTrack();
+    expect(get(musicSource)).toBeNull();
     expect(get(musicStatus)).toBe('idle');
   });
 });
