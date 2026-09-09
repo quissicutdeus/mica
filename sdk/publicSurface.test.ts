@@ -40,7 +40,7 @@ import { SDK_CONTRACT_VERSION } from './version';
  * eleven breaking SDK changes in this project's life, a name-level snapshot would have
  * caught six, and none of the three most recent.
  *
- * So this file captures six things, and only the first two are lists of names:
+ * So this file captures seven things, and only the first two are lists of names:
  *
  *   1. the exported **values** of each entry point an app can actually call, read by
  *      importing the real modules,
@@ -49,8 +49,11 @@ import { SDK_CONTRACT_VERSION } from './version';
  *   3. the **props** of every exported Svelte component,
  *   4. the **members** of every exported string vocabulary (`ALL_PERMISSIONS`),
  *   5. the **members of the object every exported hook returns** (MICA-188), read off the
- *      hook's call signature through the same typechecker, and
- *   6. **parity between `index.ts` and `addon.ts`** — the two files `@mica/sdk`
+ *      hook's call signature through the same typechecker,
+ *   6. the **fields of every exported object type and the members of every exported
+ *      literal union** (MICA-185), read off the declared type through the same
+ *      typechecker, and
+ *   7. **parity between `index.ts` and `addon.ts`** — the two files `@mica/sdk`
  *      resolves to depending on who is building. See that section for why.
  *
  * The first two are deliberately two arms and not one, because they answer different
@@ -62,7 +65,7 @@ import { SDK_CONTRACT_VERSION } from './version';
  *
  * ## What counts as breaking
  *
- * Six things fail this gate, and every one of them breaks code that already exists:
+ * Eight things fail this gate, and every one of them breaks code that already exists:
  *
  *   - an export in the baseline that is gone,
  *   - a type-only export in the baseline that is gone (a **rename** is exactly this: the
@@ -73,7 +76,11 @@ import { SDK_CONTRACT_VERSION } from './version';
  *   - a member dropped from an exported vocabulary,
  *   - a member dropped from what an exported hook returns — `useTheme()` going from
  *     `{ theme, setTheme }` to `{ theme }` moves no name, no type and no prop, and breaks
- *     every add-on that destructured it (MICA-127), and
+ *     every add-on that destructured it (MICA-127),
+ *   - a field dropped from a published object type, or a member dropped from a published
+ *     literal union — `AppTile.fg` becoming `AppTile.glyph`, or `'unordered'` leaving
+ *     `AppUpdateKind`, keeps the type's name on the entry point and breaks every add-on
+ *     that wrote the old one (MICA-185), and
  *   - a name that crosses one of the two `@mica/sdk` barrels and not the other,
  *     without being declared as a deliberate difference.
  *
@@ -103,13 +110,16 @@ import { SDK_CONTRACT_VERSION } from './version';
  *   way. Optional-with-no-default is normal here (`Screen`'s `onback`), so treating a new
  *   no-default prop as required would fire on changes that break nothing. Rather than cry
  *   wolf, this gate does not see it.
- * - **A type's *shape*.** MICA-182 closed the hole where an exported type could be
- *   renamed or deleted outright with every gate green, but only at the level of names.
- *   `interface AppProps { id: string }` becoming `{ appId: string }` keeps the name
- *   `AppProps` on the entry point and passes here, exactly as a renamed prop on a
- *   still-exported component would have before `BASELINE_PROPS` existed. That is the same
- *   gap `BASELINE_PROPS` was written to close for components, one level up, and nothing
- *   here closes it for types.
+ * - **A type's shape beyond its names.** MICA-182 closed the hole where an exported type
+ *   could be renamed or deleted outright with every gate green, at the level of names;
+ *   MICA-185 closed it one level down, at the level of a type's field names and a union's
+ *   members (`BASELINE_TYPE_SHAPES`). What that arm still does not read, said plainly: a
+ *   field's **type text** (`bg: string` becoming `bg: TileClass`), a field going from
+ *   optional to required, and the shape of anything that is not an object or a literal
+ *   union — a function type like `PageReader`, an index signature like `M3Tokens`. Each is
+ *   a real break this file is blind to, and each is deferred rather than forgotten: the
+ *   member encoding carries optionality already, so the second is a differ change and not
+ *   a re-freeze when somebody wants it.
  * - **Behaviour behind a name that did not move.** A prop keeping its name and meaning
  *   something else is invisible here and always will be.
  * - **`@mica/sdk/testing`.** Test-only, aliased for this repo's own suites and not for
@@ -473,7 +483,91 @@ interface TypedEntry {
    * empty list, so "nothing to freeze" and "the shape went blind" stay distinguishable.
    */
   hooks: Record<string, string[]>;
+  /**
+   * MICA-185. Every type-only export whose shape can be enumerated, and that shape — the
+   * fields of an object type, or the members of a literal union — in the encoding
+   * `shapeMembers` describes.
+   *
+   * A type with nothing to enumerate — a function type (`PageReader`), an index signature
+   * (`M3Tokens`), a union of non-literals — is absent rather than present with an empty
+   * list, on the same terms as `hooks`: "nothing to freeze" and "the shape went blind" stay
+   * distinguishable.
+   */
+  shapes: Record<string, string[]>;
 }
+
+/**
+ * MICA-185. The shape of one published type, or `null` when there is nothing to freeze.
+ *
+ * ## Why this arm exists when `typecheck` is green
+ *
+ * Renaming `AppTile.fg` or `CrudEvents.remove` fails `pnpm typecheck` today — but only
+ * because the phone's own code happens to consume those fields. That is not a gate, it is a
+ * coincidence: seven published type names (`AppKeybindInput`, `AppManifestInput`,
+ * `AppTile`, `AppUpdateKind`, `CrudEvents`, `PageReader`, `PagedListOptions`) are consumed by
+ * nothing in this tree, so a rename on any of them typechecks clean, and *every* exported
+ * type is in that position relative to an add-on whose source this repo cannot see. Green
+ * `typecheck` says the shell still compiles against the SDK; it says nothing about a bundle
+ * that compiled against last week's. Widening `AppUpdateKind` is silent everywhere, even
+ * in-tree. So the shape is read here, off the same program, and frozen.
+ *
+ * ## The encoding
+ *
+ * Read off the **declared** type through the checker, so a generic interface
+ * (`PagedListOptions<T>`) is read with its parameter unresolved rather than instantiated,
+ * and an alias (`AppManifestInput`, an `Omit<...> & {...}`) is read as what it resolves to
+ * rather than as the text it was written in — which is what an add-on sees too.
+ *
+ * - An **object type** yields its property names, `name` or `name?`, exactly as
+ *   `BASELINE_PROPS` and `BASELINE_HOOK_RETURNS` spell them. A union of object types yields
+ *   the properties common to every branch, the conservative answer `returnMembers` gives
+ *   for the same reason.
+ * - A **union of literals** — string, number, boolean, `null`, `undefined` — yields each
+ *   member as `|value`, the way TypeScript itself writes the union: `|newer`, `|unordered`.
+ *   The prefix is what lets one flat list carry both kinds, and what makes a type that
+ *   changes *kind* (an object becoming a union, or the reverse) read as every member
+ *   removed rather than as nothing.
+ * - Anything else yields `null`. A **callable** — `PageReader`, `Translate`, `CancelTimer`,
+ *   and `AppComponent`, which is Svelte's `Component` and has a call signature — has a
+ *   signature rather than fields, and freezing a signature is the type-text increment this
+ *   ticket deliberately does not take. An **index signature** (`M3Tokens`, `Messages`) has
+ *   no named members at all.
+ *
+ * Optionality is carried in the encoding and **not compared**, matching the hook arm: a
+ * field going from optional to required is a real narrowing this does not report, and it is
+ * a differ change rather than a re-freeze when somebody wants it.
+ */
+const shapeMembers = (checker: any, symbol: any): string[] | null => {
+  if ((symbol.declarations ?? []).length === 0) return null;
+  const type = checker.getDeclaredTypeOfSymbol(symbol);
+
+  const LITERALISH =
+    ts.TypeFlags.StringLiteral |
+    ts.TypeFlags.NumberLiteral |
+    ts.TypeFlags.BooleanLiteral |
+    ts.TypeFlags.Null |
+    ts.TypeFlags.Undefined;
+  if (type.isUnion() && type.types.every((t: any) => t.flags & LITERALISH)) {
+    return type.types
+      .map((t: any) =>
+        t.flags & (ts.TypeFlags.StringLiteral | ts.TypeFlags.NumberLiteral)
+          ? `|${String(t.value)}`
+          : `|${String(t.intrinsicName)}`
+      )
+      .sort();
+  }
+
+  if (type.getCallSignatures().length > 0) return null;
+
+  const members: string[] = checker
+    .getPropertiesOfType(type)
+    // A synthetic member the compiler invented is not a name anybody writes — see
+    // `returnMembers`.
+    .filter((member: any) => !member.name.startsWith('__'))
+    .map((member: any) => `${member.name}${member.flags & ts.SymbolFlags.Optional ? '?' : ''}`)
+    .sort();
+  return members.length === 0 ? null : members;
+};
 
 /**
  * MICA-188. A hook by name — `use` followed by a capital, which is the whole convention
@@ -549,8 +643,10 @@ const returnMembers = (checker: any, symbol: any): string[] | null => {
  *   declarations behind it did not resolve, and claiming it as a runtime value would put a
  *   name in the wrong list.
  *
- *   The two overlap on the one case in this tree that needs either. `components.ts` writes
- *   `export type { RecentlyDeletedItem } from './ui/RecentlyDeleted.svelte'`; the target is
+ *   The two overlapped on the one case in this tree that needed either — until MICA-189
+ *   moved the interface into `ui/recentlyDeleted.ts`, where it resolves. Kept for the next
+ *   one: `components.ts` wrote
+ *   `export type { RecentlyDeletedItem } from './ui/RecentlyDeleted.svelte'`; the target was
  *   an `interface` in a `.svelte` module context this program cannot see, so
  *   `getAliasedSymbol` hands back the unknown symbol, which does carry `SymbolFlags.Value`
  *   — measured: with neither guard, that pure type is filed as a runtime value and the
@@ -591,6 +687,7 @@ const typecheckerExports = (): Record<string, TypedEntry> => {
     const values: string[] = [];
     const types: string[] = [];
     const hooks: Record<string, string[]> = {};
+    const shapes: Record<string, string[]> = {};
     for (const exported of checker.getExportsOfModule(symbol)) {
       if (exported.name === 'default') continue;
       const typeOnlySpecifier = (exported.declarations ?? []).some(
@@ -613,8 +710,14 @@ const typecheckerExports = (): Record<string, TypedEntry> => {
         const members = returnMembers(checker, resolved);
         if (members !== null) hooks[exported.name] = members;
       }
+      if (!isValue) {
+        // MICA-185. Same program, no second `createProgram`: the checker already holds the
+        // resolved symbol, and the declared type is one more question of it.
+        const members = shapeMembers(checker, resolved);
+        if (members !== null) shapes[exported.name] = members;
+      }
     }
-    out[id] = { values: values.sort(), types: types.sort(), hooks };
+    out[id] = { values: values.sort(), types: types.sort(), hooks, shapes };
   }
   return out;
 };
@@ -1758,6 +1861,401 @@ const BASELINE_HOOK_RETURNS: Record<string, string[]> = {
   ]
 };
 
+/**
+ * MICA-185. The shape of every published type, frozen: the field names of each object
+ * type, and the members of each literal union, in the encoding `shapeMembers` produces —
+ * `name` / `name?` for a field, `|value` for a union member.
+ *
+ * Captured off the **checker**, from the one program the type arm builds, over the types
+ * `@mica/sdk` publishes — `index.ts` is the superset and the parity block keeps it so, the
+ * same scoping `BASELINE_HOOK_RETURNS` uses and for the same reason. A type absent from
+ * this list — `PageReader`, `Translate`, `CancelTimer`, `AppComponent`, `M3Tokens`,
+ * `Messages`, `Catalog`, `TranslateParams` — has no fields to freeze (see `shapeMembers`),
+ * not a shape nobody looked at; `reads the shape of every published type` below asserts
+ * that is why.
+ *
+ * Frozen on the same terms as everything else here: additions never need writing down,
+ * and the only reason to edit a line is a removal, which is a `SDK_CONTRACT_VERSION` bump —
+ * `sdk/version.ts` says why a field is a name an add-on compiled against exactly as an
+ * export is. `AppPermission`, `AppCapability` and `AppDevice` duplicate the three
+ * vocabularies above at the type level, on purpose: the array is what `defineApp` reads at
+ * runtime, the union is what an add-on's manifest is typed by, and the `'sound'` break
+ * needs both halves gone before it is silent.
+ */
+const BASELINE_TYPE_SHAPES: Record<string, string[]> = {
+  AccountSearchQuery: ['app', 'cursor?', 'limit?', 'q'],
+  AppActionOptions: ['error?', 'success?', 'title?'],
+  AppCapability: ['|jobs', '|money'],
+  AppDevice: ['|phone', '|tablet'],
+  AppEvent: ['app', 'at', 'event', 'payload', 'replayed'],
+  AppKeybindInput: ['defaultKey', 'id', 'label'],
+  AppLevelsConfig: ['appId', 'levels', 'onback?', 'title'],
+  AppManifest: [
+    'author?',
+    'badgeStore?',
+    'bundleUrl?',
+    'color',
+    'core',
+    'defaultProps?',
+    'description?',
+    'devices?',
+    'icon',
+    'id',
+    'installedAt?',
+    'isRemote?',
+    'keybinds?',
+    'name',
+    'networkHosts?',
+    'permissions?',
+    'preload?',
+    'requires?',
+    'requiresAdmin?',
+    'requiresNetwork?',
+    'sdkContract?',
+    'services?',
+    'tile',
+    'updatedAt?',
+    'version?'
+  ],
+  AppManifestInput: [
+    'author?',
+    'badgeStore?',
+    'bundleUrl?',
+    'color?',
+    'core',
+    'defaultProps?',
+    'description?',
+    'devices?',
+    'icon',
+    'id',
+    'installedAt?',
+    'isRemote?',
+    'keybinds?',
+    'name?',
+    'networkHosts?',
+    'permissions?',
+    'preload?',
+    'requires?',
+    'requiresAdmin?',
+    'requiresNetwork?',
+    'sdkContract?',
+    'services?',
+    'tile?',
+    'updatedAt?',
+    'version?'
+  ],
+  AppPermission: [
+    '|account',
+    '|admin',
+    '|app-events',
+    '|app-registry',
+    '|app-registry-write',
+    '|bank',
+    '|call',
+    '|camera',
+    '|clock',
+    '|clock-write',
+    '|contacts',
+    '|devtools',
+    '|display',
+    '|display-write',
+    '|highscores',
+    '|jobs',
+    '|keybinds',
+    '|keybinds-write',
+    '|location',
+    '|lock-screen',
+    '|lock-screen-write',
+    '|mail',
+    '|marketplace',
+    '|media',
+    '|messages',
+    '|music',
+    '|navigation',
+    '|notification-settings',
+    '|notification-settings-write',
+    '|notifications',
+    '|reports',
+    '|social',
+    '|storage',
+    '|system-hardware',
+    '|system-hardware-write',
+    '|theme',
+    '|theme-write',
+    '|wallpaper',
+    '|wallpaper-write'
+  ],
+  AppProps: ['onback'],
+  AppTile: ['bg', 'fg?'],
+  AppUpdate: ['appId', 'availableVersion', 'entry', 'installedVersion', 'kind', 'name'],
+  AppUpdateKind: ['|newer', '|unordered'],
+  AudibleBroadcast: [
+    'attenuation',
+    'label',
+    'paused',
+    'playlistId',
+    'source',
+    'startAt',
+    'startedAt',
+    'token',
+    'videoId'
+  ],
+  BankHistory: ['available', 'provider', 'transactions'],
+  BankHistorySource: ['available', 'provider'],
+  CatalogEntry: [
+    'bundleUrl',
+    'color',
+    'description',
+    'devices?',
+    'icon?',
+    'id',
+    'name',
+    'networkHosts?',
+    'permissions',
+    'requires?',
+    'requiresNetwork?',
+    'sdkContract?',
+    'services?',
+    'sha256',
+    'version'
+  ],
+  Contact: [
+    'avatar?',
+    'citizenid',
+    'created_at',
+    'email?',
+    'favorite',
+    'firstname',
+    'id',
+    'lastname?',
+    'phone',
+    'phone_id?',
+    'ringtone?',
+    'status?',
+    'updated_at'
+  ],
+  CreateListingInput: ['attachments', 'description', 'price', 'title'],
+  CrudEvents: ['create?', 'list', 'remove?', 'update?'],
+  CrudOptions: ['service?', 'sort?', 'validate?'],
+  Facets: [
+    'account',
+    'accounts',
+    'admin',
+    'appAction',
+    'appEvents',
+    'appLevels',
+    'appRegistry',
+    'appRegistryWrite',
+    'appStorageBytes',
+    'bank',
+    'call',
+    'camera',
+    'clearAppStorage',
+    'clock',
+    'clockWrite',
+    'contacts',
+    'deepLink',
+    'devTools',
+    'display',
+    'displayWrite',
+    'highscores',
+    'jobs',
+    'keybinds',
+    'keybindsWrite',
+    'lifecycle',
+    'locale',
+    'location',
+    'lockScreen',
+    'lockScreenWrite',
+    'mail',
+    'marketplace',
+    'media',
+    'messages',
+    'music',
+    'navigation',
+    'notificationSettings',
+    'notificationSettingsWrite',
+    'notifications',
+    'onAppForeground',
+    'onAppUnmount',
+    'persisted',
+    'phoneNotification',
+    'report',
+    'reports',
+    'service',
+    'sound',
+    'sourceUrl',
+    'storage',
+    'systemHardware',
+    'systemHardwareWrite',
+    'theme',
+    'themeWrite',
+    'timer',
+    'wallpaper',
+    'wallpaperWrite'
+  ],
+  FocusTrapOptions: ['enabled?', 'returnFocusTo?'],
+  FollowListQuery: ['account_id', 'app', 'cursor?', 'limit?'],
+  FollowPage: ['nextCursor', 'rows'],
+  Host: ['appId', 'facets', 'permissions', 'require'],
+  HostRuntime: ['|browser', '|cef', '|headless'],
+  Invoice: [
+    'amount',
+    'citizenid',
+    'created_at',
+    'expires_at',
+    'from_label',
+    'id',
+    'memo',
+    'paid_at',
+    'payee',
+    'resource',
+    'society',
+    'status',
+    'updated_at'
+  ],
+  InvoiceActionOutcome: ['ok'],
+  JobActionOutcome: ['ok'],
+  JobLine: ['label', 'number'],
+  JobView: [
+    'active',
+    'grade',
+    'gradeLabel',
+    'isBoss',
+    'label',
+    'lines',
+    'name',
+    'onDuty',
+    'salary',
+    'societyBalance'
+  ],
+  KeybindGroup: ['actions', 'ownerId', 'ownerLabel'],
+  ListingPage: ['nextCursor', 'rows'],
+  Mail: [
+    'citizenid',
+    'content',
+    'created_at',
+    'id',
+    'read',
+    'sender',
+    'sender_address?',
+    'status?',
+    'subject',
+    'updated_at'
+  ],
+  MusicError: ['code', 'reason'],
+  MusicErrorReason: ['|embed-blocked', '|unavailable', '|unplayable'],
+  MusicNowPlaying: ['playlistCount', 'playlistIndex', 'title', 'videoId'],
+  MusicPosition: ['current', 'duration'],
+  MusicRepeat: ['|all', '|off', '|one'],
+  MusicSource: ['playlistId', 'videoId'],
+  MusicStatus: ['|error', '|idle', '|loading', '|paused', '|playing'],
+  NearbyBroadcast: ['label', 'paused', 'playlistId', 'source', 'startedAt', 'token', 'videoId'],
+  Note: ['citizenid', 'content', 'created_at', 'id', 'phone_id?', 'status?', 'title', 'updated_at'],
+  PagedListOptions: [
+    'container?',
+    'hasMore?',
+    'items',
+    'loadOlder?',
+    'olderAt?',
+    'pageSize?',
+    'threshold?'
+  ],
+  PagedStore: [
+    'hasMore',
+    'load',
+    'loadMore',
+    'loaded',
+    'prepend',
+    'remove',
+    'replace',
+    'subscribe'
+  ],
+  PersistedOptions: ['sanitize?', 'sync?'],
+  QueueEntry: ['error?', 'key', 'playlistId', 'title', 'videoId'],
+  ReactionStore: ['load', 'subscribe', 'toggle'],
+  ReactionTarget: ['app', 'target_ids', 'target_table'],
+  ReactionTransport: ['load', 'react', 'unreact'],
+  RecentlyDeletedItem: ['deletedAt', 'id', 'label', 'preview?'],
+  ResolvedKeybindAction: [
+    'command?',
+    'defaultKey',
+    'id',
+    'label',
+    'ownerId',
+    'ownerLabel',
+    'scope',
+    'when?'
+  ],
+  RunningApp: ['id', 'props'],
+  SendMoneyInput: ['amount', 'note?', 'phone'],
+  SendMoneyOutcome: ['ok'],
+  SendNotificationOptions: ['avatar?', 'duration?', 'message', 'onClick?', 'title?', 'type?'],
+  SubmitReportInput: ['category', 'note?', 'targetId', 'targetTable'],
+  ThemeMode: ['|dark', '|light'],
+  ThemeState: ['mode', 'seed'],
+  TimeState: ['hours', 'minutes'],
+  ToastMessage: [
+    'actions?',
+    'app?',
+    'avatar?',
+    'breakThrough?',
+    'deepLink?',
+    'duration?',
+    'hasReplyInput?',
+    'id',
+    'message',
+    'notificationId?',
+    'onClick?',
+    'onExpire?',
+    'onReply?',
+    'persist?',
+    'replyPlaceholder?',
+    'sender?',
+    'source?',
+    'title?',
+    'type'
+  ],
+  Transaction: ['amount', 'direction', 'id', 'issuer?', 'message?', 'receiver?', 'time', 'title?'],
+  UIConversation: [
+    'citizenid',
+    'created_at',
+    'id',
+    'is_group',
+    'lastMessage',
+    'lastMessageAt',
+    'last_message?',
+    'name?',
+    'participant_a?',
+    'participant_b?',
+    'participants?',
+    'status?',
+    'target',
+    'targetAvatar?',
+    'targetName',
+    'unreadCount',
+    'unread_count?',
+    'updated_at'
+  ],
+  UIMessage: [
+    'attachments?',
+    'citizenid',
+    'conversation_id',
+    'created_at',
+    'edited?',
+    'external_sender?',
+    'id',
+    'message',
+    'replyToMsg?',
+    'reply_to_id?',
+    'sender',
+    'status?',
+    'updated_at'
+  ],
+  WallpaperPreset: ['id', 'label', 'seed'],
+  WallpaperState: ['type']
+};
+
 // ---------------------------------------------------------------------------
 // The difference that matters
 // ---------------------------------------------------------------------------
@@ -1777,7 +2275,9 @@ interface Break {
     | 'prop lost its default'
     | 'shape could not be read'
     | 'vocabulary member removed'
-    | 'hook return member removed';
+    | 'hook return member removed'
+    | 'type field removed'
+    | 'type union member removed';
 }
 
 /**
@@ -1803,6 +2303,8 @@ interface Surface {
   types?: Record<string, string[]>;
   /** What each exported hook returns, keyed by hook name. Optional on the same terms. */
   hooks?: Record<string, string[]>;
+  /** The shape of each exported type, keyed by type name. Optional on the same terms. */
+  shapes?: Record<string, string[]>;
 }
 
 const breakingChanges = (live: Surface, baseline: Surface): Break[] => {
@@ -1898,6 +2400,55 @@ const breakingChanges = (live: Surface, baseline: Surface): Break[] => {
       const name = member.replace(/\?$/, '');
       if (!now.has(name)) {
         breaks.push({ where: hook, what: member, kind: 'hook return member removed' });
+      }
+    }
+  }
+
+  // MICA-185. The type arm above reads a name at the entry point and stops; this one reads
+  // the shape behind it. `AppTile.fg` becoming `AppTile.glyph` moves no export, no type
+  // name, no prop and no hook member — `AppTile` is still published, still an object — and
+  // every add-on that wrote `tile: { bg, fg }` is now passing a field `defineApp` does not
+  // read. `typecheck` catches that one today only because the shell reads `fg` itself,
+  // which is a coincidence and not a gate: the seven fixtures named on `shapeMembers` are
+  // consumed by nothing in-tree, and every published type is in that position relative to
+  // code this repo cannot see.
+  //
+  // **Additions are silent, deliberately, and this is the explicit answer.** A new
+  // optional field, a new required field, a new union member: none is reported here, and
+  // none is reported by `undeclaredAdditions` either. That is the same answer the name arm
+  // gave under MICA-180 and the prop and hook arms give — an add-on reading a type is not
+  // broken by the type gaining a member, and a gate demanding a version bump for one is a
+  // gate somebody switches off. Two things follow and are worth saying. A *required* field
+  // added to an input type (`AppKeybindInput` gaining `when: string`) does break an add-on
+  // at its next build; it does not break a bundle already published, which is the case
+  // this file exists for, and the optionality increment is where that distinction would be
+  // drawn. And a *widened* union (`AppUpdateKind` gaining `'older'`) breaks an exhaustive
+  // `switch` at the add-on's next build and nothing at runtime — the same shape, the same
+  // answer.
+  //
+  // Optionality is compared by stripping the `?`, as the hook arm does, so a field going
+  // required-to-optional (a widening) and optional-to-required (a narrowing) both pass.
+  // The second is a blind spot and it is stated as a test below.
+  for (const [name, members] of Object.entries(baseline.shapes ?? {})) {
+    if (!(name in (live.shapes ?? {}))) {
+      // Same shape as the props and hook arms: a type that is gone entirely is already a
+      // `type export removed` line, but one still published whose shape came back
+      // unreadable — an object turned into an index signature, a resolution that broke —
+      // is a parse that went blind, and skipping it is the fail-open AGENTS.md names.
+      const stillPublished = Object.values(live.types ?? {}).some((names) => names.includes(name));
+      if (stillPublished) {
+        breaks.push({ where: name, what: 'its shape', kind: 'shape could not be read' });
+      }
+      continue;
+    }
+    const now = new Set((live.shapes?.[name] ?? []).map((m) => m.replace(/\?$/, '')));
+    for (const member of members) {
+      if (!now.has(member.replace(/\?$/, ''))) {
+        breaks.push({
+          where: name,
+          what: member,
+          kind: member.startsWith('|') ? 'type union member removed' : 'type field removed'
+        });
       }
     }
   }
@@ -2239,6 +2790,9 @@ describe('the SDK public surface (MICA-125)', () => {
   // Read off `@mica/sdk` alone, and not off all four entry points merged. See
   // `freezes what every published hook returns` below for why that is the whole scope.
   const hooksNow = typedNow['@mica/sdk'].hooks;
+  // MICA-185. Scoped to `@mica/sdk` on the same terms as `hooksNow`; see `reads the shape
+  // of every published type` for the assertion that this still covers `addon.ts`.
+  const shapesNow = typedNow['@mica/sdk'].shapes;
 
   describe('the gate can actually run', () => {
     // Every assertion below compares two lists. If either side comes back empty — a
@@ -2377,6 +2931,18 @@ describe('the SDK public surface (MICA-125)', () => {
       expect(Object.values(BASELINE_HOOK_RETURNS).flat().length).toBeGreaterThanOrEqual(250);
       expect(Object.keys(hooksNow).length).toBeGreaterThanOrEqual(45);
       expect(Object.values(hooksNow).flat().length).toBeGreaterThanOrEqual(250);
+      // MICA-185. Same reasoning for the shape arm: if `getDeclaredTypeOfSymbol` stopped
+      // resolving, `shapesNow` would come back `{}` and every frozen type would be reported
+      // as unreadable — loud. These floors keep the *baseline* side as loud, so a
+      // half-deleted list cannot pass by checking nothing. 68 types and 451 members today.
+      expect(
+        Object.keys(BASELINE_TYPE_SHAPES).length,
+        'the frozen type-shape baseline is missing — restore it rather than letting the ' +
+          'gate go quiet'
+      ).toBeGreaterThanOrEqual(60);
+      expect(Object.values(BASELINE_TYPE_SHAPES).flat().length).toBeGreaterThanOrEqual(400);
+      expect(Object.keys(shapesNow).length).toBeGreaterThanOrEqual(60);
+      expect(Object.values(shapesNow).flat().length).toBeGreaterThanOrEqual(400);
     });
   });
 
@@ -2402,14 +2968,16 @@ describe('the SDK public surface (MICA-125)', () => {
         props,
         vocabularies: vocabulariesNow,
         types: typesNow,
-        hooks: hooksNow
+        hooks: hooksNow,
+        shapes: shapesNow
       },
       {
         exports: BASELINE_EXPORTS,
         props: BASELINE_PROPS,
         vocabularies: BASELINE_VOCABULARIES,
         types: BASELINE_TYPE_EXPORTS,
-        hooks: BASELINE_HOOK_RETURNS
+        hooks: BASELINE_HOOK_RETURNS,
+        shapes: BASELINE_TYPE_SHAPES
       }
     ).map(describeBreak);
 
@@ -2422,8 +2990,11 @@ describe('the SDK public surface (MICA-125)', () => {
         '"Action required" naming what an add-on author has to change. That applies to a ' +
         '`type export removed` line exactly as it does to a value: an add-on that writes ' +
         '`import type { Note }` is as broken by the name going away as one that calls a ' +
-        'deleted hook. Adding an export or an optional prop needs none of that and does ' +
-        'not reach here.'
+        'deleted hook — and so is a `type field removed` or `type union member removed` ' +
+        'line: the name is still there and the add-on that wrote the old field is not ' +
+        'compiled against it. `typecheck` being green is not evidence either way; it says ' +
+        'the shell still compiles, not that a published bundle does. Adding an export, an ' +
+        'optional prop, a field or a union member needs none of that and does not reach here.'
     ).toEqual([]);
   });
 
@@ -2955,6 +3526,151 @@ describe('the SDK public surface (MICA-125)', () => {
         missing,
         'a hook reaches the add-on barrel and not `index.ts`, so scoping this arm to ' +
           '`index.ts` no longer covers what an add-on can call'
+      ).toEqual([]);
+    });
+
+    // MICA-185. The shape arm, driven the same way: literals through the pure differ, then
+    // one assertion that the live reader produces the encoding those literals are written in.
+    it('sees a field renamed on a published type the phone never reads', () => {
+      // `AppTile` is the fixture: exported, typed by `defineApp`'s input, and read by no
+      // in-tree consumer through the SDK — so `fg` becoming `glyph` typechecks clean. The
+      // name `AppTile` survives, which is precisely why the type-name arm misses it.
+      const entry = { '@mica/sdk': [] as string[] };
+      const types = { '@mica/sdk': ['AppTile'] };
+      expect(
+        breakingChanges(
+          { ...surface(entry), types, shapes: { AppTile: ['bg', 'glyph?'] } },
+          { ...surface(entry), types, shapes: { AppTile: ['bg', 'fg?'] } }
+        ).map(describeBreak)
+      ).toEqual(['AppTile: fg? (type field removed)']);
+    });
+
+    it('sees a published union narrowed', () => {
+      const entry = { '@mica/sdk': [] as string[] };
+      const types = { '@mica/sdk': ['AppUpdateKind'] };
+      expect(
+        breakingChanges(
+          { ...surface(entry), types, shapes: { AppUpdateKind: ['|newer'] } },
+          { ...surface(entry), types, shapes: { AppUpdateKind: ['|newer', '|unordered'] } }
+        ).map(describeBreak)
+      ).toEqual(['AppUpdateKind: |unordered (type union member removed)']);
+    });
+
+    it('lets a field added to a type, and a union widened, through', () => {
+      // The explicit answer on additions, stated as a test so it is a decision and not a
+      // gap: silent, on the same terms as a new export, prop or hook member. See the differ
+      // for the two cases that *do* break an add-on at its next build and why they are
+      // still not this file's to report.
+      const entry = { '@mica/sdk': [] as string[] };
+      const types = { '@mica/sdk': ['AppKeybindInput', 'AppUpdateKind'] };
+      expect(
+        breakingChanges(
+          {
+            ...surface(entry),
+            types,
+            shapes: {
+              AppKeybindInput: ['defaultKey', 'id', 'label', 'when'],
+              AppUpdateKind: ['|newer', '|older', '|unordered']
+            }
+          },
+          {
+            ...surface(entry),
+            types,
+            shapes: {
+              AppKeybindInput: ['defaultKey', 'id', 'label'],
+              AppUpdateKind: ['|newer', '|unordered']
+            }
+          }
+        )
+      ).toEqual([]);
+    });
+
+    it('does not report a field that became required, or the reverse', () => {
+      // The optionality blind spot, stated as a test on the same terms as the hook arm's:
+      // this is the line that changes the day somebody wants it reported.
+      const entry = { '@mica/sdk': [] as string[] };
+      const types = { '@mica/sdk': ['CrudEvents'] };
+      expect(
+        breakingChanges(
+          { ...surface(entry), types, shapes: { CrudEvents: ['list', 'remove'] } },
+          { ...surface(entry), types, shapes: { CrudEvents: ['list', 'remove?'] } }
+        )
+      ).toEqual([]);
+      expect(
+        breakingChanges(
+          { ...surface(entry), types, shapes: { CrudEvents: ['list?'] } },
+          { ...surface(entry), types, shapes: { CrudEvents: ['list'] } }
+        )
+      ).toEqual([]);
+    });
+
+    it('reports a type whose shape stopped being readable, once', () => {
+      // Still published, no longer enumerable — `AppTile` rewritten as an index signature,
+      // say. Every field would otherwise read as removed; one line names the real event.
+      const entry = { '@mica/sdk': [] as string[] };
+      expect(
+        breakingChanges(
+          { ...surface(entry), types: { '@mica/sdk': ['AppTile'] }, shapes: {} },
+          { ...surface(entry), types: { '@mica/sdk': ['AppTile'] }, shapes: { AppTile: ['bg'] } }
+        ).map(describeBreak)
+      ).toEqual(['AppTile: its shape (shape could not be read)']);
+      // And a type that is gone entirely is the `type export removed` line already, not a
+      // second one about its shape.
+      expect(
+        breakingChanges(
+          { ...surface(entry), types: { '@mica/sdk': [] }, shapes: {} },
+          { ...surface(entry), types: { '@mica/sdk': ['AppTile'] }, shapes: { AppTile: ['bg'] } }
+        ).map(describeBreak)
+      ).toEqual(['@mica/sdk: AppTile (type export removed)']);
+    });
+
+    it('reads the shape of every published type out of the real program', () => {
+      // The other half: the encoding the literals above are written in has to be what
+      // `shapeMembers` actually produces for the live SDK. Memberships rather than whole
+      // lists, since additions are allowed. The seven fixtures nothing in-tree consumes are
+      // the ones asserted, because they are the ones `typecheck` would never speak for.
+      expect(shapesNow.AppTile).toEqual(['bg', 'fg?']);
+      expect(shapesNow.AppKeybindInput).toEqual(['defaultKey', 'id', 'label']);
+      expect(shapesNow.CrudEvents).toContain('remove?');
+      expect(shapesNow.AppManifestInput).toContain('tile?'); // through `Omit<...> & {...}`
+      expect(shapesNow.PagedListOptions).toContain('items'); // generic, read unresolved
+      expect(shapesNow.AppUpdateKind).toEqual(['|newer', '|unordered']);
+      // `PageReader` is a function type: nothing to freeze, so absent rather than empty —
+      // and absent by that rule, not because the reader went blind on it.
+      expect(shapesNow).not.toHaveProperty('PageReader');
+      expect(typesNow['@mica/sdk']).toContain('PageReader');
+      const empty = Object.entries(shapesNow).filter(([, members]) => members.length === 0);
+      expect(empty, 'a type was frozen with no members, which checks nothing').toEqual([]);
+
+      // Every type with no shape is one `shapeMembers` documents as unreadable by rule, so
+      // a type that silently drops out of the arm has to be added to this list on purpose.
+      const NO_SHAPE_BY_RULE = [
+        'AppComponent',
+        'CancelTimer',
+        'Catalog',
+        'M3Tokens',
+        'Messages',
+        'PageReader',
+        'Translate',
+        'TranslateParams'
+      ];
+      const unshaped = typesNow['@mica/sdk'].filter((name) => !(name in shapesNow));
+      expect(
+        unshaped,
+        'a published type has no readable shape and is not on the list of types that have ' +
+          'none by rule — either it stopped resolving, or it is a new kind of type this arm ' +
+          'has to be taught'
+      ).toEqual(NO_SHAPE_BY_RULE);
+
+      // **Scope**: `index.ts` is the superset, as with hooks; this is the assertion that
+      // scoping to it still covers every type the add-on barrel publishes.
+      const addonShapes = Object.keys(typedNow['@mica/sdk (add-on bundle)'].shapes);
+      expect(addonShapes.length).toBeGreaterThan(0);
+      const missing = addonShapes.filter((name) => !(name in shapesNow));
+      expect(
+        missing,
+        'a type reaches the add-on barrel and not `index.ts`, so scoping this arm to ' +
+          '`index.ts` no longer covers what an add-on can name'
       ).toEqual([]);
     });
 

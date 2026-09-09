@@ -25,6 +25,17 @@
  * that writes `import type { Note } from '@mica/sdk'` is broken by that name disappearing
  * in exactly the way one calling a deleted hook is, so this number moves for both.
  *
+ * And it moves for a type's **shape** on the same reasoning (MICA-185): the fields of a
+ * published object type and the members of a published literal union are names an add-on
+ * compiled against too. `AppTile.fg` becoming `AppTile.glyph`, or `'unordered'` leaving
+ * `AppUpdateKind`, keeps `AppTile` and `AppUpdateKind` on the entry point and breaks every
+ * bundle that wrote the old one — and `pnpm typecheck` staying green says nothing about it,
+ * because that only proves the shell still compiles against the SDK, not that a bundle
+ * built against last week's does. Seven published types are consumed by nothing in this
+ * tree at all, so for those it would not even fail by accident. Removing a field or
+ * narrowing a union is therefore a bump; adding a field or widening a union is not, on the
+ * same terms as adding an export.
+ *
  * `publicSurface.test.ts` pins its frozen baselines to this value and imports it from here
  * rather than declaring a copy — landing a break means bumping this *and* re-freezing those
  * baselines in the same commit, so the break is a reviewable line in a diff. It lived as a
