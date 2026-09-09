@@ -460,11 +460,33 @@ describe('injectIncomingCall / endActiveCallFor — micacall support', () => {
 
     await fire(ANSWER, 2);
 
-    // The fake caller (-1) hears 'accepted' too, same as the real handler always does —
-    // harmless, since nothing real is ever connected at that source.
-    expect(emitCalls()).toEqual(
-      expect.arrayContaining([['mica:client:phone:accepted', 2, { callId }]])
-    );
+    // Only the real party. `emitNet(event, -1)` is a broadcast in FiveM, so an `accepted`
+    // addressed to the fake caller used to put every connected client into the voice call
+    // (MICA-277). Exact equality, not `arrayContaining`: the whole point is what is absent.
+    expect(emitCalls()).toEqual([['mica:client:phone:accepted', 2, { callId }]]);
+  });
+
+  /**
+   * MICA-277. `micacall`'s caller is `-1`, and in FiveM `emitNet(event, -1)` reaches
+   * **every** client. When the target ended an injected call themselves, `endActiveCall`
+   * notified "the other side" — the console — and `client/services/Call.ts` acts on
+   * `phone:ended` unconditionally, so one admin test call knocked the whole server out of
+   * their calls. Nothing in the suite distinguished "emitted to one player" from "emitted
+   * to everyone" before this: every assertion filtered for the event it wanted.
+   */
+  it('never emits to a source nobody is connected on, however the injected call ends', async () => {
+    injectIncomingCall(2, '555-9999');
+    await fire(ANSWER, 2);
+    (globalThis as any).emitNet.mockClear();
+
+    // The target hangs up through the real handler, so `endedBy` is the target and the
+    // side "still owed" a notification is the console's sentinel.
+    await fire(END, 2);
+
+    const toNobody = emitCalls().filter(([, src]) => !Number.isInteger(src) || src <= 0);
+    expect(toNobody).toEqual([]);
+    // And nothing to the target either — they are the one who ended it.
+    expect(endedCalls()).toEqual([]);
   });
 
   it('notifies only the real party and logs on their side alone', async () => {

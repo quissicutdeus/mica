@@ -730,6 +730,13 @@ export instead, which authenticates its caller.
 
 ### Fixed
 
+**Ending a `micacall` test call knocked every player on the server out of their
+own call (MICA-277).** The injected call's caller is the console, kept as server
+id `-1`, and in FiveM emitting to `-1` reaches every connected client — so when
+the target hung up, the "you have been ended" event went to the whole server,
+and answering one put every client into the voice channel. Both events are now
+sent only to a side somebody is actually connected on. No owner action.
+
 **On ESX the Messages app opened empty: the conversation list joined a `players`
 table es_extended does not have, and the query threw.** Names now come from the
 framework's own character table, by parameter rather than by join (MICA-197).

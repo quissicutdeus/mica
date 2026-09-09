@@ -130,6 +130,28 @@ async function logCall(
 }
 
 /**
+ * Emit to one side of a call, and only if somebody is actually there (MICA-277).
+ *
+ * A call's two sides are server ids, and two kinds of side are not real players: the
+ * console's `CONSOLE_CALLER_SOURCE` (-1) and a line's pseudo-source (-2 and below). FiveM's
+ * `emitNet` treats -1 specially — it **broadcasts to every connected client** — so an
+ * `ended` addressed to the console caller reached the whole server, and
+ * `client/services/Call.ts` acts on `phone:ended` unconditionally: one admin-injected test
+ * call, ended normally by its target, dropped every player from whatever call they were on.
+ * `accepted` had the same hole, one step earlier, and puts every client into a voice call.
+ *
+ * Guarded here, at the emit, rather than at each caller, so that nothing that ever ends,
+ * answers or fails a call has to remember which negative number is the special one. A line
+ * pseudo-source below -1 is not special to `emitNet` — it addresses nobody and is dropped —
+ * but it is not a player either, and skipping it is the honest reading of "nobody there".
+ */
+const notifyParty = (event: string, src: number, payload?: unknown): void => {
+  if (!Number.isInteger(src) || src <= 0) return;
+  if (payload === undefined) emitNet(event, src);
+  else emitNet(event, src, payload);
+};
+
+/**
  * Notify whoever's still owed one, log it, and clear both maps. `endedBy` is whichever
  * side already knows — the real `end` handler's own caller, or `CONSOLE_CALLER_SOURCE`
  * for a console-driven teardown, which is nobody, so both real parties get notified.
@@ -138,8 +160,8 @@ function endActiveCall(callId: number, endedBy: number): void {
   const call = activeCalls[callId];
   if (!call) return;
 
-  if (call.caller !== endedBy) emitNet('mica:client:phone:ended', call.caller);
-  if (call.target !== endedBy) emitNet('mica:client:phone:ended', call.target);
+  if (call.caller !== endedBy) notifyParty('mica:client:phone:ended', call.caller);
+  if (call.target !== endedBy) notifyParty('mica:client:phone:ended', call.target);
 
   logCallEnd(call);
 
@@ -163,8 +185,11 @@ const CONSOLE_CALLER_SOURCE = -1;
  * taxi line at once would share the key, and ending either call would delete the other's
  * entry from under it. Counting down from -2 leaves -1 to the console and hands out a fresh
  * key per call. Every behaviour a negative source already has still holds — `getCitizenId`
- * answers null, so `logCallEnd` writes no row for this side and `endActiveCall` notifies a
- * source nobody is connected on, exactly as an injected call already does.
+ * answers null, so `logCallEnd` writes no row for this side, and `notifyParty` sends nothing
+ * to it. That last part is where the two negative kinds differ, and it is the reason the
+ * guard exists: `-1` is the one negative source `emitNet` treats as "everyone" (MICA-277),
+ * where a line's pseudo-source merely addresses nobody. The keying is the same; the emit is
+ * not, and `notifyParty` is what makes both read as "nobody there".
  */
 const FIRST_LINE_SOURCE = -2;
 let nextLineSource = FIRST_LINE_SOURCE;
@@ -520,8 +545,8 @@ onNet('mica:server:phone:answer', () => {
 
   call.answeredAt = Date.now();
 
-  emitNet('mica:client:phone:accepted', call.caller, { callId });
-  emitNet('mica:client:phone:accepted', call.target, { callId });
+  notifyParty('mica:client:phone:accepted', call.caller, { callId });
+  notifyParty('mica:client:phone:accepted', call.target, { callId });
 });
 
 onNet('mica:server:phone:end', () => {
