@@ -333,14 +333,24 @@ test.describe('Music', () => {
     await expect(page.getByText('Playing', { exact: true })).toBeVisible();
   });
 
-  test('a track ending clears the source and takes the frame with it', async ({ page }) => {
+  // MICA-194: a track running out used to unload the source and take the frame with it,
+  // so the shade's card vanished on the last second. Now the row stays loaded with the
+  // playhead at the end and the card offers Play, which starts the same track over. Only
+  // an explicit stop tears the frame down — the spec below this one holds that half.
+  test('a track ending keeps the frame, and the shade offers to play it again', async ({
+    page
+  }) => {
     await paste(page, VIDEO);
     await settleHandshake(page);
     await report(page, 1);
     await expect(page.getByText('Playing', { exact: true })).toBeVisible();
 
     await report(page, 0);
-    await expectNoPlayer(page);
+    await expect(page.locator(PLAYER)).toHaveCount(1);
+    await page.getByRole('button', { name: 'Open notification shade' }).click();
+    const card = page.getByTestId('now-playing');
+    await expect(card).toBeVisible();
+    await expect(card.getByRole('button', { name: 'Play', exact: true })).toBeVisible();
   });
 
   test('ignores a state report that did not come from the player', async ({ page }) => {
@@ -359,10 +369,15 @@ test.describe('Music', () => {
     // A bare "nothing happened" assertion passes instantly whether or not the guard works,
     // so the positive control is second: the same report *from the frame* must still land.
     // If it does, the channel was live throughout and the forged one was refused on its
-    // origin rather than lost in a race.
-    await expect(page.locator(PLAYER)).toHaveCount(1);
+    // origin rather than lost in a race. Since MICA-194 an ended track keeps its frame, so
+    // the observable is the shade card's transport button: Pause while the forged report
+    // is ignored, Play once the real one lands.
+    await page.getByRole('button', { name: 'Open notification shade' }).click();
+    const card = page.getByTestId('now-playing');
+    await expect(card.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
     await report(page, 0);
-    await expect(page.locator(PLAYER)).toHaveCount(0);
+    await expect(card.getByRole('button', { name: 'Play', exact: true })).toBeVisible();
+    await expect(page.locator(PLAYER)).toHaveCount(1);
   });
 
   test('stop tears the frame down rather than leaving a silent one running', async ({ page }) => {
