@@ -375,13 +375,19 @@ else leaves players without a number and without number-based lookup. Names
 degrade more gently: `esx_identity`'s first and last name are used when present,
 otherwise the framework's own `getName()` split at the first space.
 
-**An offline player resolves by identifier but never by phone number.** micaOS
-reads es_extended's own `users` table for someone who is not connected, so an
-offline player renders with their name as they would on a qb core. Core `users`
-has no phone column, though, so messaging an offline player _by number_ does not
-resolve on ESX — and micaOS declines to guess, because the number lives in
-whichever community resource you installed and picking one would be right for
-that population and quietly wrong for everyone else.
+**An offline player resolves by identifier, and by phone number when `users`
+carries one.** micaOS reads es_extended's own `users` table for someone who is
+not connected, so an offline player renders with their name as they would on a
+qb core. Core `users` has no phone column; the resources that add one call it
+`phoneNumber`, `phone_number` or `phone`, so at start micaOS asks the database
+which of those three the table actually has and reads by that one, saying which
+in the console
+(`es_extended: offline lookup by phone number reads users.phone_number`). A
+`users` with none of them means an offline player is found by identifier only —
+mail to a number nobody online holds does not deliver, and `GetCitizenId(phone)`
+answers `unknown_player` — and the console says that too. A resource that keeps
+the number in its own table rather than on `users` is not read; micaOS declines
+to guess at another project's schema.
 
 That read degrades rather than throws. `users` is a table micaOS neither creates
 nor migrates, so if it is missing a column your build does not have, the lookup

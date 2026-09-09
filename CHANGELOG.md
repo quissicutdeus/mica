@@ -730,6 +730,15 @@ export instead, which authenticates its caller.
 
 ### Fixed
 
+**On ESX, an offline player can now be found by phone number (MICA-225).**
+Before, `GetCitizenId(phone)`, `SendSystemEmail` to a number nobody online held,
+and sharing a contact who was offline all silently did nothing on es_extended,
+because core `users` has no phone column and micaOS declined to guess which
+community resource had added one. It now asks the database once at start which
+of `phoneNumber`, `phone_number` or `phone` the table has and reads through that
+column, printing which in the console. **No owner action**: a `users` with none
+of the three behaves exactly as before, and says so once at start.
+
 **Ending a `micacall` test call knocked every player on the server out of their
 own call (MICA-277).** The injected call's caller is the console, kept as server
 id `-1`, and in FiveM emitting to `-1` reaches every connected client — so when

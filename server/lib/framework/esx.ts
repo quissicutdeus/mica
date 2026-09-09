@@ -583,6 +583,99 @@ const findOfflineByCitizenIds = async (
 };
 
 /**
+ * Where a community resource keeps the phone number on `users`, if anywhere (MICA-225).
+ *
+ * Core es_extended has no phone column, and the resources that add one disagree about its
+ * name — the same three spellings `esxCharinfo` tries on the loaded player. So the offline
+ * lookup by number used to answer nothing on ESX, which meant `GetCitizenId(phone)`, offline
+ * mail and contact sharing all silently did nothing on the framework with the largest install
+ * base. Rather than pick one project's column and be wrong for everyone who chose another,
+ * this asks `information_schema` which of the three the table actually has, once per
+ * resource start, and reads through that one.
+ *
+ * **A frozen allowlist, because the winner is interpolated as an identifier.** MySQL cannot
+ * parameterize a column name (§2.9), so nothing that reaches SQL here may come from a payload
+ * or from the table itself: the probe only ever narrows this list, and the list is written
+ * here. `DATABASE()` scopes the probe to the schema the connection is on, so a leftover
+ * `users` in another database on the same server cannot answer for this one.
+ */
+export const ESX_PHONE_COLUMNS: readonly string[] = Object.freeze([
+  'phoneNumber',
+  'phone_number',
+  'phone'
+]);
+
+/** `undefined` until probed; `null` once probed and found nothing. */
+let esxPhoneColumn: string | null | undefined;
+
+/** Test seam, like `__resetEsxMetaWarning`. */
+export const __resetEsxPhoneColumn = (): void => {
+  esxPhoneColumn = undefined;
+};
+
+/**
+ * The column, probed once. A probe that throws — no `users` table at all, no privilege on
+ * `information_schema` — is answered `null` and said once by `offlineLookup`, so a broken
+ * table degrades to "no offline lookup by number", which is exactly what ESX had before.
+ */
+const detectEsxPhoneColumn = async (): Promise<string | null> => {
+  if (esxPhoneColumn !== undefined) return esxPhoneColumn;
+
+  const found = await offlineLookup('the `users` phone-column probe', async () => {
+    const placeholders = ESX_PHONE_COLUMNS.map(() => '?').join(', ');
+    const rows = await Database.query<{ COLUMN_NAME: string }[]>(
+      `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME IN (${placeholders})`,
+      [ESX_OWNER_TABLE.table, ...ESX_PHONE_COLUMNS]
+    );
+    const present = new Set((rows ?? []).map((row) => row?.COLUMN_NAME).filter(Boolean));
+    // In allowlist order, so a table carrying two of them answers the same one every start.
+    return ESX_PHONE_COLUMNS.find((column) => present.has(column)) ?? null;
+  });
+
+  esxPhoneColumn = found;
+  console.log(
+    found
+      ? `[FrameworkBridge] es_extended: offline lookup by phone number reads \`users.${found}\`.`
+      : `[FrameworkBridge] es_extended: \`users\` has none of ${ESX_PHONE_COLUMNS.join(', ')}, ` +
+          `so an offline player cannot be found by phone number on this server. A loaded ` +
+          `player still resolves. Reported once per resource start.`
+  );
+  return found;
+};
+
+/**
+ * An offline ESX player by number, through whichever column the probe found.
+ *
+ * `null` on a server whose `users` carries no number, which is the same answer this gave
+ * unconditionally before MICA-225: an offline player is simply not found, and every caller
+ * already reads that as an unknown number.
+ */
+const findOfflineByPhone = async (phone: string): Promise<FrameworkIdentity | null> => {
+  const column = await detectEsxPhoneColumn();
+  if (!column) return null;
+
+  return await offlineLookup('the es_extended `users` lookup by phone number', async () => {
+    const row = await Database.single<{
+      identifier: string;
+      firstname: unknown;
+      lastname: unknown;
+    }>(
+      `SELECT ${ESX_OWNER_TABLE.column}, firstname, lastname FROM ${ESX_OWNER_TABLE.table}
+       WHERE \`${column}\` = ? LIMIT 1`,
+      [phone]
+    );
+    if (!row?.identifier) return null;
+    return {
+      citizenid: row.identifier,
+      firstname: trimmedOrNull(row.firstname),
+      lastname: trimmedOrNull(row.lastname),
+      phone
+    };
+  });
+};
+
+/**
  * The es_extended adapter.
  *
  * `detect` is `esxCore() !== null`, which is the same probe `getPlayer` used when this was one
@@ -616,14 +709,8 @@ export const esxAdapter: FrameworkAdapter = {
   findOfflineByCitizenId,
   findOfflineByCitizenIds,
 
-  /**
-   * **ESX cannot answer this, and says so by answering nothing.** Core `users` has no phone
-   * column, so there is nothing to match on; guessing at `esx_phone`'s or another resource's
-   * table would be right for one server population and silently wrong for the rest. The
-   * caller already handles null — an offline player is simply not found — which is the same
-   * outcome as an unknown number.
-   */
-  findOfflineByPhone: async () => null,
+  // Through whichever number column `users` turns out to have — see `ESX_PHONE_COLUMNS`.
+  findOfflineByPhone,
 
   registerUsableItem: (item, cb) => {
     // `ESX.RegisterUsableItem(item, cb)` — same contract, one name over.

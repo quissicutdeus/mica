@@ -229,6 +229,7 @@ CREATE TABLE IF NOT EXISTS users (
     identifier varchar(60) NOT NULL,
     firstname varchar(50) DEFAULT NULL,
     lastname varchar(50) DEFAULT NULL,
+    phone_number varchar(20) DEFAULT NULL,
     PRIMARY KEY (identifier)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;`;
 
@@ -257,14 +258,18 @@ const seedFrameworkAndGPhone = async ({ connection, schemaFile, hasPlayers }) =>
   } else {
     await connection.query(USERS_TABLE);
     await connection.query(
-      'INSERT INTO users (identifier, firstname, lastname) VALUES (?, ?, ?), (?, ?, ?)',
+      // `phone_number` is one of the three spellings the ESX adapter probes for (MICA-225);
+      // core es_extended has no such column and a community resource adds it.
+      'INSERT INTO users (identifier, firstname, lastname, phone_number) VALUES (?, ?, ?, ?), (?, ?, ?, ?)',
       [
         'char1:license:aaaaaaaaaaaaaaaaaaa',
         'Alice',
         'Test',
+        '555-0001',
         'char1:license:bbbbbbbbbbbbbbbbbbb',
         'Bob',
-        'Test'
+        'Test',
+        '555-0002'
       ]
     );
   }
@@ -412,14 +417,15 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, modules }) => {
   // Set the framework before calling resolveByPhone so the offline lookup uses the correct table
   modules.__setResourceLookup(FRAMEWORK[framework]);
 
-  // This tests the offline lookup which joins the owner table
+  // The offline lookup against the owner table: qb through `charinfo`, ESX through the
+  // number column the adapter probes `information_schema` for (MICA-225) — which is the one
+  // read in this repo that interpolates a column name, and the reason it runs against a real
+  // MariaDB rather than a mock that would accept any string.
   const resolved = await modules.resolveByPhone('555-0001');
-  if (framework === 'qb') {
-    check(`qb resolves phone to citizenid`, resolved?.citizenid === ownerA, true);
-  } else {
-    // On ESX, the phone column is not in users table; just verify resolveByPhone doesn't crash
-    check(`esx resolveByPhone completes`, true, true);
-  }
+  check(`${framework} resolves a phone number to its citizenid`, resolved?.citizenid, ownerA);
+  check(`${framework} names the offline player`, resolved?.displayName, 'Alice Test');
+  const unknown = await modules.resolveByPhone('555-9999');
+  check(`${framework} answers null for a number nobody holds`, unknown, null);
 
   step(`${schemaFile} — additional repository methods on ${framework}`);
   check(`repository instance exists`, Boolean(repo), true);

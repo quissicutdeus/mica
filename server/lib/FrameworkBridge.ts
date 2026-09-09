@@ -55,7 +55,7 @@ export type {
   OwnerTable
 };
 export { __setResourceLookup, __resetOfflineLookupWarnings } from './framework/runtime';
-export { __resetEsxMetaWarning } from './framework/esx';
+export { __resetEsxMetaWarning, __resetEsxPhoneColumn } from './framework/esx';
 export { STANDALONE_CONVAR, __resetStandaloneWarnings } from './framework/standalone';
 
 /**
