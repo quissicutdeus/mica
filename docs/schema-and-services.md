@@ -609,6 +609,35 @@ Every micaOS-owned table is now declared. `server/repositories/` holds
 declaration owns the schema, the subclass owns the joins the single-table
 generic path cannot express.
 
+### The owner column must share micaOS's collation
+
+Every micaOS table is created `COLLATE = utf8mb4_unicode_ci` (`TABLE_COLLATION`
+in `server/lib/schemaSql.ts`). The framework's owner column —
+`players.citizenid` on qb, `users.identifier` on ESX — must carry the same one,
+and neither framework guarantees it: both create the column with no explicit
+collation, so it takes the server default, which MariaDB 11.4 moved to
+`utf8mb4_uca1400_ai_ci`.
+
+What breaks differs by framework, which is why the exemption ESX used to have
+was wrong. On qb the foreign keys onto `players(citizenid)` fail at DDL time
+with errno 150. On ESX nothing points a foreign key at `users`, so the import
+succeeds — and a **column-to-column join**
+(`LEFT JOIN users ON users.identifier = p.citizenid`) fails at query time with
+errno 1267 "Illegal mix of collations" instead. A comparison against a **bound
+parameter** is safe on either: the parameter has no collation of its own and is
+coerced to the column's. That is why `PlayerDirectory` looks names up by
+parameter and `ConversationRepository.findParticipantsForConversations`
+deliberately does not join the character table. The rule holds only while
+nothing joins the two, which nothing in the suites can prove.
+
+So `micaschema apply` checks first (`server/lib/collationCheck.ts`, MICA-157 and
+MICA-200): it probes `players.citizenid`, then `users.identifier`, and refuses
+to apply on the first it finds whose live collation disagrees with micaOS's —
+naming the table, both collations, and the errno the operator would otherwise
+meet. It compares against a live micaOS `citizenid` column where one exists and
+`TABLE_COLLATION` otherwise. Neither column present is not a mismatch; it is a
+database no framework has populated yet.
+
 ### Never read another resource's tables
 
 Some data micaOS displays belongs to a different resource — bank transactions to
