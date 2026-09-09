@@ -450,6 +450,16 @@ by this list until someone re-weighs it.
   total payload byte count, nor the sum across several writes. Neither gap is a
   defect in what these limiters were built to do; naming them here is so the doc
   does not overclaim by omission.
+- **An invoice is the one row a client can move money against, and a client can
+  only point at one of its own.** `Invoices.ts` registers no generic action; a
+  row exists only through the `SendInvoice` export, where the server decides the
+  amount and the counterparty. `pay` and `decline` resolve the id through the
+  owner-scoped `findById`, so somebody else's id answers `unknown_invoice`
+  exactly as a bad id does, and `pay` claims the row out of `active` in one
+  statement before `Payments` runs — the statement's own predicate is the
+  double-pay defence, not a check-then-write in TypeScript. A modified client
+  can pay or decline its own invoices faster than a finger can, and nothing
+  else.
 - **The Jobs service takes a job name from the client and acts on it — but only
   after matching it against the framework's own list for that player.**
   `Jobs.ts`'s `setActiveJob` and `setDuty` compare the payload's `name` against

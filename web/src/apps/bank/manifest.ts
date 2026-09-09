@@ -11,7 +11,9 @@ export default defineApp({
   icon: Icon,
   description: 'Manage bank accounts and transfer funds',
   // 'notifications': the post-transfer success toast, via `usePhoneNotification`.
-  permissions: ['account', 'bank', 'notifications'],
+  // 'app-events': the server's push when a new invoice lands (MICA-240), so the list
+  // re-reads while Bank is resident rather than waiting for the next foreground.
+  permissions: ['account', 'bank', 'notifications', 'app-events'],
   // Every screen in here moves money, which comes from the framework bridge and is simply
   // absent in standalone mode. Distinct from the `bank` permission above: that discloses
   // what this app reaches for, this states what the server has to be able to do.

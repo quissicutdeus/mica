@@ -26,5 +26,22 @@
   "refusalInsufficientFunds": "Dein Guthaben reicht für diese Überweisung nicht aus.",
   "refusalDebitFailed": "Deine Bank hat die Abbuchung abgelehnt. Es wurde nichts gesendet.",
   "refusalCreditFailed": "Die Überweisung konnte nicht abgeschlossen werden und wurde dir erstattet.",
-  "refusalStranded": "Etwas ist schiefgelaufen. Wende dich an einen Admin — das muss geprüft werden."
+  "refusalStranded": "Etwas ist schiefgelaufen. Wende dich an einen Admin — das muss geprüft werden.",
+  "sections": "Bankbereiche",
+  "account": "Konto",
+  "invoices": "Rechnungen",
+  "openInvoices": "Offene Rechnungen",
+  "noInvoices": "Keine offenen Rechnungen",
+  "noInvoicesHint": "Es wartet nichts auf Bezahlung.",
+  "invoiceAmount": "{amount} $",
+  "expiresToday": "Läuft heute ab",
+  "expiresIn.one": "Läuft in {count} Tag ab",
+  "expiresIn.other": "Läuft in {count} Tagen ab",
+  "pay": "Bezahlen",
+  "decline": "Ablehnen",
+  "invoicePaid": "{amount} $ an {biller} bezahlt.",
+  "invoiceDeclined": "Rechnung von {biller} abgelehnt.",
+  "invoiceRefusalNotOpen": "Diese Rechnung ist nicht mehr offen.",
+  "invoiceRefusalExpired": "Diese Rechnung ist abgelaufen und kann nicht mehr bezahlt werden.",
+  "invoiceRefusalSocietyUnavailable": "Das Unternehmen hinter dieser Rechnung kann gerade kein Geld empfangen."
 }

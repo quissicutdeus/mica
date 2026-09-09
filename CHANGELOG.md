@@ -876,6 +876,13 @@ somebody maintaining a `core: false` add-on outside this repo, and it answers
 one question: does that bundle still compile against this release, and does its
 manifest still ask for the right things.
 
+**`useBank()` gained the invoice half (MICA-240)**: `invoices` and
+`invoicesLoaded` stores, `fetchInvoices()`, `payInvoice(id)` and
+`declineInvoice(id)`, with `Invoice` and `InvoiceActionOutcome` exported as
+types. They sit behind the existing `bank` permission, since paying an invoice
+moves money exactly as `sendMoney` does. Additive: nothing already published
+changes and the contract version is unchanged.
+
 **`useAccount()` gained `historySource` (MICA-241)**, a store of
 `{ provider, available }` saying which banking resource `transactions` came from
 and whether it can supply history at all; `BankHistory` and `BankHistorySource`

@@ -26,5 +26,22 @@
   "refusalInsufficientFunds": "Your balance is too low for this transfer.",
   "refusalDebitFailed": "Your bank refused the charge. Nothing was sent.",
   "refusalCreditFailed": "The transfer could not be completed and was refunded to you.",
-  "refusalStranded": "Something went wrong. Contact an admin — this needs to be looked at."
+  "refusalStranded": "Something went wrong. Contact an admin — this needs to be looked at.",
+  "sections": "Bank sections",
+  "account": "Account",
+  "invoices": "Invoices",
+  "openInvoices": "Open Invoices",
+  "noInvoices": "No open invoices",
+  "noInvoicesHint": "Nothing is waiting to be paid.",
+  "invoiceAmount": "${amount}",
+  "expiresToday": "Expires today",
+  "expiresIn.one": "Expires in {count} day",
+  "expiresIn.other": "Expires in {count} days",
+  "pay": "Pay",
+  "decline": "Decline",
+  "invoicePaid": "Paid ${amount} to {biller}.",
+  "invoiceDeclined": "Declined the invoice from {biller}.",
+  "invoiceRefusalNotOpen": "This invoice is no longer open.",
+  "invoiceRefusalExpired": "This invoice has expired and can no longer be paid.",
+  "invoiceRefusalSocietyUnavailable": "The business that sent this invoice cannot receive money right now."
 }

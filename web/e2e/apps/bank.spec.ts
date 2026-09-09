@@ -1,4 +1,4 @@
-import { test, expect } from '../support/test';
+import { test, expect, type Page } from '../support/test';
 import { seedHomeGrid } from '../support/homeGrid';
 
 test.describe('Bank App E2E', () => {
@@ -77,6 +77,92 @@ test.describe('Bank App E2E', () => {
 
       await expect(page.getByPlaceholder("Recipient's phone number")).toBeHidden();
       await expect(page.getByText('$12,450.00')).toBeVisible();
+    });
+  });
+
+  /**
+   * Invoices (MICA-240). The mock registry's `invoices:pay` and `invoices:decline` play the
+   * server's state machine — a row leaves `active`, the reply carries the re-read open
+   * list, and paying debits the balance and writes a transaction — so every assertion here
+   * reads back a state change, not the fixture as shipped. The fixture is module state in
+   * the bundle, so each test's fresh `page.goto` starts from the same two open rows.
+   */
+  test.describe('Invoices', () => {
+    const sections = (page: Page) => page.getByRole('navigation', { name: 'Bank sections' });
+    const invoicesTab = (page: Page) => sections(page).getByRole('button', { name: 'Invoices' });
+    const accountTab = (page: Page) => sections(page).getByRole('button', { name: 'Account' });
+    // The badge is the one number inside the tab; with nothing open it is not rendered at
+    // all, so "gone" is a count of zero rather than a text of "0".
+    const badge = (page: Page) => invoicesTab(page).locator('.rounded-full');
+    // A row is the card carrying the biller's name; its buttons are found inside it so a
+    // Pay tap can never land on the other invoice.
+    const row = (page: Page, biller: string) =>
+      page.locator('.rounded-box', { has: page.getByText(biller, { exact: true }) });
+    // The list under the heading, and its first card: "at the top" is a position, and
+    // `getByText` alone would pass with the row anywhere in the list. Scoped to the list
+    // rather than the page because the success toast names the biller too, and a page-wide
+    // "no Pillbox Medical" would sit waiting on the toast's own dismissal timer.
+    const transactions = (page: Page) =>
+      page
+        .getByRole('heading', { name: 'Recent Transactions' })
+        .locator('xpath=following-sibling::div[1]');
+    const topTransaction = (page: Page) => transactions(page).locator('xpath=div[1]');
+
+    test('badges the open count and lists only the open invoices', async ({ page }) => {
+      await expect(badge(page)).toHaveText('2');
+
+      await invoicesTab(page).click();
+      await expect(invoicesTab(page)).toHaveAttribute('aria-pressed', 'true');
+      await expect(page.getByRole('heading', { name: 'Open Invoices' })).toBeVisible();
+
+      await expect(row(page, 'Los Santos Customs')).toContainText('Engine rebuild');
+      await expect(row(page, 'Los Santos Customs')).toContainText('$450.00');
+      await expect(row(page, 'Pillbox Medical')).toContainText('$120.00');
+      // Paid already in the fixture: the list is the open ones only, the way `findOpen`
+      // reads it on the server.
+      await expect(page.getByText('Downtown Cab Co.')).toHaveCount(0);
+    });
+
+    test('paying removes the row, drops the badge, and moves the money', async ({ page }) => {
+      await invoicesTab(page).click();
+      await row(page, 'Los Santos Customs').getByRole('button', { name: 'Pay' }).click();
+
+      await expect(row(page, 'Los Santos Customs')).toHaveCount(0);
+      await expect(row(page, 'Pillbox Medical')).toBeVisible();
+      await expect(badge(page)).toHaveText('1');
+
+      // Back on Account the card was re-read, not patched: the balance is the mock's
+      // debit and the transaction it wrote sits at the top of the list.
+      await accountTab(page).click();
+      await expect(page.getByText('$12,000.00')).toBeVisible();
+      await expect(page.getByText('$12,450.00')).toHaveCount(0);
+      await expect(topTransaction(page)).toContainText('Paid Los Santos Customs');
+      await expect(topTransaction(page)).toContainText('-$450.00');
+    });
+
+    test('declining removes the row and leaves the balance alone', async ({ page }) => {
+      await invoicesTab(page).click();
+      await row(page, 'Pillbox Medical').getByRole('button', { name: 'Decline' }).click();
+
+      await expect(row(page, 'Pillbox Medical')).toHaveCount(0);
+      await expect(row(page, 'Los Santos Customs')).toBeVisible();
+      await expect(badge(page)).toHaveText('1');
+
+      await accountTab(page).click();
+      await expect(page.getByText('$12,450.00')).toBeVisible();
+      await expect(transactions(page)).not.toContainText('Pillbox Medical');
+    });
+
+    test('shows the empty state once every invoice is settled', async ({ page }) => {
+      await invoicesTab(page).click();
+      await row(page, 'Los Santos Customs').getByRole('button', { name: 'Pay' }).click();
+      await expect(row(page, 'Los Santos Customs')).toHaveCount(0);
+      await row(page, 'Pillbox Medical').getByRole('button', { name: 'Decline' }).click();
+      await expect(row(page, 'Pillbox Medical')).toHaveCount(0);
+
+      await expect(page.getByText('No open invoices')).toBeVisible();
+      await expect(page.getByText('Nothing is waiting to be paid.')).toBeVisible();
+      await expect(badge(page)).toHaveCount(0);
     });
   });
 });
