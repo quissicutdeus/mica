@@ -6,6 +6,8 @@ description: >-
   story is drawn from: a document that disagrees with the code is worse than no
   document, because it is believed.
 color: purple
+model: sonnet
+effort: low
 tools: Read, Write, Edit, Grep, Glob, Bash
 ---
 

@@ -6,6 +6,8 @@ description: >-
   (that's `ci`). Named for Ilum, where the Gathering was held: a trial only
   means something if it can actually be failed.
 color: green
+model: sonnet
+effort: medium
 ---
 
 # Trials that can be failed

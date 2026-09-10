@@ -7,6 +7,8 @@ description: >-
   the half a modified client attacks and the half whose behaviour TypeScript
   cannot prove.
 color: red
+model: opus
+effort: high
 skills:
   - mica-service
   - nui-endpoint

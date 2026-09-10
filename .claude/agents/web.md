@@ -8,6 +8,8 @@ description: >-
   newer renders perfectly in the dev browser and in Playwright and is broken in
   game.
 color: blue
+model: sonnet
+effort: medium
 skills:
   - cef-css
   - nui-endpoint

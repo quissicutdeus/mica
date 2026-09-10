@@ -8,6 +8,8 @@ description: >-
   them a different face: this is the only surface an add-on can reach, and the
   table in it decides what that surface discloses.
 color: cyan
+model: opus
+effort: medium
 skills:
   - cef-css
 ---

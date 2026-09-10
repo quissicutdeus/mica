@@ -125,6 +125,22 @@ describe('assistant config', () => {
     // to the thing choosing between them, which is barely better than not parsing.
     expect(typeof front.description, `${label}: no \`description\``).toBe('string');
     expect(String(front.description).trim(), `${label}: empty \`description\``).not.toBe('');
+
+    // A misspelt `model` or `effort` does not fail anything either — the agent just runs on
+    // the session's model and effort, which is the expensive default these keys exist to
+    // override. Both are optional; a value that is present must be one Claude Code accepts.
+    if (front.model !== undefined) {
+      expect(
+        String(front.model),
+        `${label}: \`model: ${front.model}\` is not an alias, a model id, or inherit`
+      ).toMatch(/^(inherit|opus|sonnet|haiku|fable|claude-[a-z0-9-]+)$/);
+    }
+    if (front.effort !== undefined) {
+      expect(
+        ['low', 'medium', 'high', 'xhigh', 'max'],
+        `${label}: \`effort: ${front.effort}\` is not a level Claude Code accepts`
+      ).toContain(front.effort);
+    }
   });
 
   /**
