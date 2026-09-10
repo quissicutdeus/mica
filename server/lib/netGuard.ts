@@ -5,6 +5,7 @@
 import { s, type GphoneSchema } from '@mica/shared/schema';
 import { FrameworkBridge, type FrameworkPlayer } from './FrameworkBridge';
 import { allow } from './rateLimit';
+import { disabledAppFor } from './ownerConfig';
 
 /**
  * The preamble every `onNet` handler needs, in one place.
@@ -88,6 +89,9 @@ export function guardNetEvent<T>(
   const src = source;
 
   if (!allow(src, service, action)) return null;
+  // An owner-disabled app's events (MICA-234), as `ServiceEndpoint` refuses them, and as
+  // silently as everything else here. No raw handler today belongs to a refusable service.
+  if (disabledAppFor(service)) return null;
 
   const outcome = schema['~standard'].validate(args);
   // Every micaOS schema resolves synchronously; `GphoneSchema` is the parameter type so a

@@ -12,6 +12,8 @@ import { s } from '@mica/shared/schema';
 import { resolve as resolvePlayer } from '../lib/PlayerDirectory';
 import { restoreWindowDays } from '../lib/retention';
 import { phoneForCitizen } from '../lib/phoneIdentity';
+import { defaultContacts } from '../lib/ownerConfig';
+import { onPhoneCreated } from './Phones';
 
 /**
  * Contacts: owner-scoped address book, all four generic CRUD actions.
@@ -68,6 +70,28 @@ export const contacts = defineService<Contact, typeof contactsContract>({
         return await this.create({ ...item, citizenid, phone_id } as Partial<Contact>);
       }
     })(resolved)
+});
+
+/**
+ * The owner's default contacts (`mica_default_contacts`, MICA-234), written into a phone the
+ * moment this server first creates it and never again — see `onPhoneCreated` for why the
+ * phone's own insert is the once-only mark. Onto that phone id directly rather than through
+ * `addForPlayer`, whose `phoneForCitizen` could name a different phone the citizen holds.
+ * A throw here is logged by `Phones.ts` and the phone is created regardless.
+ */
+onPhoneCreated('defaultContacts', async (phoneId, citizenid) => {
+  const seed = defaultContacts({
+    name: contacts.resolved.columnRules.firstname?.maxLength ?? 50,
+    number: contacts.resolved.columnRules.phone?.maxLength ?? 20
+  });
+  for (const entry of seed) {
+    await contacts.repo.create({
+      firstname: entry.name,
+      phone: entry.number,
+      citizenid,
+      phone_id: phoneId
+    } as Partial<Contact>);
+  }
 });
 
 /**

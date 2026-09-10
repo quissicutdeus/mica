@@ -486,6 +486,22 @@ describe('phone-state exports', () => {
       props: { mailId: 1 }
     });
   });
+
+  it('OpenApp refuses an app the owner disabled, with its own reason (MICA-234)', () => {
+    const previous = globalThis.GetConvar;
+    (globalThis as any).GetConvar = (name: string, fallback: string) =>
+      name === 'mica_disabled_apps' ? 'mail' : fallback;
+    try {
+      const refused = publishedExport('OpenApp')!(SRC, 'mail', {}) as any;
+      expect(refused).toMatchObject({ ok: false, reason: 'app_disabled' });
+      expect(globalThis.emitNet).not.toHaveBeenCalled();
+
+      // Another app is unaffected by the list.
+      expect((publishedExport('OpenApp')!(SRC, 'contacts', {}) as any).ok).toBe(true);
+    } finally {
+      globalThis.GetConvar = previous;
+    }
+  });
 });
 
 describe('line exports (MICA-226)', () => {

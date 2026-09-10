@@ -120,6 +120,36 @@ export const onPhoneHandover = (name: string, run: HandoverRun): void => {
   handoverHooks.push({ name, run });
 };
 
+/**
+ * Whoever sets a phone up the first time it exists (MICA-234) — `Contacts.ts`, which seeds the
+ * owner's default contacts. Registered here rather than imported, for the reason the handover
+ * hooks are: this file must not import the services that key on it.
+ *
+ * "New" means this server just inserted the phone's `mica_phones` row, which happens once per
+ * phone id (`phone_id_unique`) and never again: nothing deletes a phone row, a handover and a
+ * claim update the one that exists, and the rows `0002_phone_data_follows_the_phone` backfilled
+ * were inserted by SQL, not here, so an existing player's phone is never treated as new. That
+ * once-only insert is the mark — a player who deletes a seeded contact is never re-seeded,
+ * because nothing re-creates the phone.
+ */
+type CreatedRun = (phoneId: string, citizenid: string) => Promise<unknown> | unknown;
+const createdHooks: { name: string; run: CreatedRun }[] = [];
+
+export const onPhoneCreated = (name: string, run: CreatedRun): void => {
+  createdHooks.push({ name, run });
+};
+
+/** Each hook is its own failure, and none can fail the phone the row was just written for. */
+const announceCreated = async (phoneId: string, citizenid: string): Promise<void> => {
+  for (const hook of createdHooks) {
+    try {
+      await hook.run(phoneId, citizenid);
+    } catch (error) {
+      console.error(`[mica] new-phone hook '${hook.name}' failed for phone ${phoneId}.`, error);
+    }
+  }
+};
+
 /** Test seam: module state that would otherwise leak between cases. Hooks are registrations and stay. */
 export const __resetPhoneState = (): void => {
   holderOf.clear();
@@ -195,6 +225,7 @@ const ensureHeld = async (phoneId: string, citizenid: string): Promise<void> => 
     const [existing] = await repo.findAll({ phone_id: phoneId } as Partial<PhoneRow>);
     if (!existing) {
       await repo.create({ citizenid, phone_id: phoneId, claimed: 1 } as Partial<PhoneRow>);
+      await announceCreated(phoneId, citizenid);
     } else {
       if (existing.citizenid !== citizenid) await handOver(phoneId, citizenid);
       if (!Number(existing.claimed)) {
@@ -236,6 +267,7 @@ export const identityPhone = async (citizenid: string): Promise<string> => {
   } else {
     phoneId = newPhoneId();
     await repo.create({ citizenid, phone_id: phoneId, claimed: 0 } as Partial<PhoneRow>);
+    await announceCreated(phoneId, citizenid);
   }
   identityByCitizen.set(citizenid, phoneId);
   return phoneId;

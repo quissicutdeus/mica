@@ -4,6 +4,7 @@
 
 import { ServiceEndpoint } from '../lib/ServiceEndpoint';
 import { shellContract } from '@mica/shared/contracts/shell';
+import { ownerConfig } from '../lib/ownerConfig';
 
 /**
  * Where this server says its source lives (MICA-192, AGPL §13).
@@ -93,3 +94,11 @@ export const serverLocale = (): string => {
 };
 
 app.registerEvent('locale', async () => ({ locale: serverLocale() }));
+
+/**
+ * Which apps the owner switched off and what the phone's dock holds (MICA-234), from
+ * `mica_disabled_apps` and `mica_default_dock`, parsed by `shared/ownerConfig.ts`. Same shape
+ * as the two above: read per call, nothing read from the payload. Default contacts are not
+ * here; the server seeds them into a new phone's rows (`services/Contacts.ts`).
+ */
+app.registerEvent('ownerConfig', async () => ownerConfig());

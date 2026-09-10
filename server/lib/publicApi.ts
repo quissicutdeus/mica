@@ -18,6 +18,7 @@ import { FrameworkBridge } from './FrameworkBridge';
 import { appEventChannel } from './appEvents';
 import { buildDeepLink, parseDeepLink } from '@mica/shared/deepLink';
 import { knownServices } from './services';
+import { isAppDisabled } from './ownerConfig';
 import * as PlayerDirectory from './PlayerDirectory';
 import { isPhoneOpen } from './PhoneOpenState';
 import { isPhoneLocked, setPhoneLocked } from './LockState';
@@ -780,6 +781,11 @@ export function registerPublicApi(): void {
       const id = String(appId ?? '').toLowerCase();
       if (!APP_ID.test(id) || !isKnownApp(id)) {
         return fail('invalid_args', `'${appId}' is not a micaOS app.`);
+      }
+      // The owner switched it off (MICA-234). Its own reason rather than `disabled`, which is
+      // this player's device: nothing the player does brings the app back, so do not retry.
+      if (isAppDisabled(id)) {
+        return fail('app_disabled', `The owner has turned '${id}' off on this server.`);
       }
       emitNet('mica:client:shell:openApp', source, {
         appId: id,

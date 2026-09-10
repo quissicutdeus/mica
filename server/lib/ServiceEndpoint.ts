@@ -13,6 +13,7 @@ import { type ActionInput, type ContractAction, type ServiceContract } from '@mi
 import { parseInput, SchemaError, type Schema } from '@mica/shared/schema';
 import { GENERIC_ERROR_KEY, GENERIC_ERROR_MESSAGE, PlayerFacingError } from './errors';
 import { phoneForRequest } from './phoneIdentity';
+import { appDisabledError, disabledAppFor } from './ownerConfig';
 
 // Once per process, not once per service: `on('playerDropped')` would otherwise be registered
 // thirteen times and do the same sweep thirteen times per disconnect.
@@ -518,6 +519,16 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
           });
           return;
         }
+
+        /**
+         * An app the owner switched off with `mica_disabled_apps` (MICA-234), refused here
+         * rather than in each handler so a custom action is covered as well as generic CRUD.
+         * After the limiter, so a flood still pays nothing, and before the player lookup, since
+         * the answer is the same for every caller. Only a service one app owns is ever refused —
+         * `lib/ownerConfig.ts` has the table, and why a shared one never is.
+         */
+        const disabledApp = disabledAppFor(this.serviceName);
+        if (disabledApp) throw appDisabledError(disabledApp);
 
         const player = FrameworkBridge.getPlayer(src);
 

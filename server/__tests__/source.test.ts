@@ -156,3 +156,43 @@ describe('the default locale a server reports', () => {
     expect((globalThis.emitNet as any).mock.calls.at(-1)?.[3]).toEqual({ locale: 'fr' });
   });
 });
+
+/**
+ * What the owner switched off and what the dock holds (MICA-234), answered over the same
+ * endpoint and the same way: from convars, with nothing read from the payload.
+ */
+describe('the owner config a server reports', () => {
+  beforeEach(() => {
+    __resetRateLimits();
+  });
+
+  it('answers the parsed disabled list and dock over NUI', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    (globalThis as any).GetConvar = (name: string, fallback: string) =>
+      ({ mica_disabled_apps: 'hodlr,settings', mica_default_dock: 'phone,,camera' })[name] ??
+      fallback;
+    const handler = handlers.get('mica:server:shell:ownerConfig');
+    expect(handler).toBeDefined();
+
+    (globalThis as any).source = 5;
+    (globalThis as any).emitNet = vi.fn();
+    await handler!('cb-1', undefined);
+
+    expect((globalThis.emitNet as any).mock.calls.at(-1)?.[3]).toEqual({
+      disabledApps: ['hodlr'],
+      defaultDock: ['phone', '', 'camera', '']
+    });
+  });
+
+  it('answers nothing disabled and the built-in dock when the owner set neither', async () => {
+    (globalThis as any).GetConvar = (_name: string, fallback: string) => fallback;
+    (globalThis as any).source = 5;
+    (globalThis as any).emitNet = vi.fn();
+    await handlers.get('mica:server:shell:ownerConfig')!('cb-1', undefined);
+
+    expect((globalThis.emitNet as any).mock.calls.at(-1)?.[3]).toEqual({
+      disabledApps: [],
+      defaultDock: []
+    });
+  });
+});
