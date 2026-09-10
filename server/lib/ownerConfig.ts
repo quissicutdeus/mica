@@ -103,6 +103,8 @@ export const isAppDisabled = (appId: string): boolean => disabledApps().includes
  * It names no add-on, and must not.
  */
 export const NEVER_REFUSED_SERVICES: readonly string[] = [
+  // Its contract serves social add-ons outside this repo; one app being off must not refuse them.
+  'accounts',
   'admin',
   'bank',
   'battery',

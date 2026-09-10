@@ -381,14 +381,14 @@ describe('which services a disabled app takes down', () => {
   it("reads each service's app from its own declaration, under another name too", () => {
     withConvars({ mica_disabled_apps: 'blabber,bank,snek' });
     expect(disabledAppFor('blabber_dms')).toBe('blabber');
-    expect(disabledAppFor('accounts')).toBe('blabber');
+    // Shared with social add-ons outside this repo, so Blabber being off does not refuse it.
+    expect(disabledAppFor('accounts')).toBeNull();
     expect(disabledAppFor('invoices')).toBe('bank');
     expect(disabledAppFor('highscores')).toBe('snek');
   });
 
   it('names the refused service-to-app pairs exactly', () => {
     expect(Object.fromEntries([...serviceApps()].sort(([a], [b]) => a.localeCompare(b)))).toEqual({
-      accounts: 'blabber',
       blabber: 'blabber',
       blabber_dms: 'blabber',
       highscores: 'snek',

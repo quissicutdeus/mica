@@ -83,9 +83,6 @@ class AccountRepository extends SchemaRepository<Account> {
 export const accounts = defineService<Account, typeof accountsContract>({
   contract: accountsContract,
   id: 'accounts',
-  // Reached through the `social` permission, which only Blabber declares today. Another social
-  // app makes this shared: drop `app` and list the service in `NEVER_REFUSED_SERVICES`.
-  app: 'blabber',
   /**
    * Previewed by **handle**, not bio. The handle identifies the account and cannot be
    * edited away between the report and the review; a bio can be blanked in seconds.
