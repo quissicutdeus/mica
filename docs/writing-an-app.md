@@ -524,6 +524,67 @@ the `__MICA_*__` substitutions).
   "you have nothing"; every list in the phone used to make the second one while
   still waiting for the first.
 
+## Being findable from the home search
+
+The drawer's search finds apps, contacts, conversations, photos, mail and
+listings because the shell holds all six. It holds nothing your app owns, and
+for a `core: false` app it never can: core may not name an app the Store
+installs, and your rows live in a sandboxed frame the shell cannot read. So you
+answer for them.
+
+```ts
+useSearchProvider('notes', (needle) =>
+  filterByQuery($notes, needle, (n) => [n.title, n.content]).map((note) => ({
+    id: note.id,
+    title: note.title || $t('notes.untitled'),
+    subtitle: note.content.replace(/\s+/g, ' ').trim(),
+    props: { noteId: note.id }
+  }))
+);
+```
+
+That is Notes, which is the whole of the first implementation and worth copying.
+`needle` arrives trimmed and lower-cased and is never empty — an empty query
+clears your rows without asking you anything. `id` need only be unique among
+your own hits. The call returns a release function for a provider scoped to one
+screen; otherwise unmount ends it.
+
+**`props` is a deep link into your app**, the same object `useDeepLink` reads
+back, because a tap is `openApp(appId, props)`. A provider is therefore only as
+useful as the deep link behind it: omit `props` and the row opens your app root,
+which is honest where a dead tap would not be, but it is half a feature. Wire
+the deep link first, then the provider.
+
+Three consequences of apps being resident, and they are why this is a hook and
+not a manifest field:
+
+- **Your app has to be running.** Apps mount on first open and stay mounted, so
+  a phone that has not opened your app this session lists nothing from it. No
+  hook can fix that; an app that is not running has no code in memory to ask.
+- **Nothing is fetched to answer a search.** `search` is synchronous by
+  construction and answers from what you already hold. If your rows should be
+  findable before your app is first opened, that is what `preload` in the
+  manifest is for.
+- **Keep it cheap.** It runs on a keystroke, and in a frame it runs on the other
+  side of two messages. A `search` that throws is caught and your app
+  contributes nothing for that keystroke, logged once rather than once per
+  character, so a bug in yours never breaks the phone's search.
+
+What crosses the seam is only what you returned. The shell publishes the needle,
+your frame answers with the hits it chose, and the rows behind them stay where
+they are. The app id on that facet is stamped by the host from the frame the
+call came from, so a provider can only ever publish under its own name. An
+answer for a needle nobody is searching any more is dropped rather than shown,
+because a reply for `not` can land after the player has typed `note`. A hit
+missing an `id` or a title is dropped too; `props` is handed back to you
+untouched and the shell reads none of it.
+
+Two caps, and they are different numbers on purpose. The drawer draws five rows
+per group, as it does for every other source. The shell holds up to twenty per
+app, so an app that ranks its own hits may publish a few spares, and a frame
+that published fifty thousand cannot make the shell keep them. Everything held
+is forgotten as soon as nothing is being searched.
+
 ## Keyboard shortcuts, and why handlers are a stack
 
 AGENTS.md §2.7 carries the rule: never a raw `keydown` listener or
