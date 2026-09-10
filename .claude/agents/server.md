@@ -68,3 +68,8 @@ Your final message must state:
   return that as a finding rather than writing the migration.** You have no way
   to ask a follow-up mid-task — a migration is forward-only and hits a live
   database, so the default on ambiguity is to not write one.
+- **Whether any Playwright spec under `web/e2e` exercises what you changed.**
+  Before writing "no e2e spec covers this", grep `web/e2e` for the testids,
+  labels, store names and behaviours in your diff; if a spec matches, run that
+  one spec and report its result. A spec that pins the behaviour you removed
+  turns the full verify red long after your own gates were green (MICA-194).

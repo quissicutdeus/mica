@@ -81,3 +81,8 @@ Your final message must state:
   can run FiveM's CEF. Your argument rests on which Chromium version a feature
   shipped in — say so plainly, and name the version, rather than implying the
   green suite covers it.
+- **Whether any Playwright spec under `web/e2e` exercises what you changed.**
+  Before writing "no e2e spec covers this", grep `web/e2e` for the testids,
+  labels, store names and behaviours in your diff; if a spec matches, run that
+  one spec and report its result. A spec that pins the behaviour you removed
+  turns the full verify red long after your own gates were green (MICA-194).
