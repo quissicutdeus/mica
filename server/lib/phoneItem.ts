@@ -4,7 +4,7 @@
 
 import { detectFramework, FrameworkBridge } from './FrameworkBridge';
 import type { FrameworkPlayer } from './framework/runtime';
-import { guardNetEvent } from './netGuard';
+import { guardNetEvent, noInput } from './netGuard';
 import { onPlayerLoaded, pushRehydrate } from './shell';
 
 /**
@@ -253,9 +253,9 @@ if (configured) {
  * counts. Guarded like every other raw net event (`docs/security.md`, category 2), and the
  * request carries nothing, so there is nothing in it to believe.
  */
-onNet('mica:server:shell:checkPhoneItem', () => {
+onNet('mica:server:shell:checkPhoneItem', (...args: unknown[]) => {
   const src = source;
-  if (!guardNetEvent('shell', 'checkPhoneItem')) return;
+  if (!guardNetEvent('shell', 'checkPhoneItem', noInput, args)) return;
   evaluatePhoneItem(src);
 });
 

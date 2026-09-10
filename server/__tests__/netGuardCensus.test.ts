@@ -338,3 +338,120 @@ describe('the onNet census in docs/security.md is true', () => {
     ).toEqual([]);
   });
 });
+
+/**
+ * MICA-210: every raw handler declares its input, and the declaration is a tuple schema.
+ *
+ * `ServiceEndpoint` refuses to register an action without a contract, so the keyed-payload
+ * half of the surface cannot lose its schema by accident. The positional half can: a raw
+ * handler is one `onNet` call, and nothing at registration time asks whether it parses. The
+ * compiler now requires a schema argument on `guardNetEvent`, which closes the "called the
+ * guard without one" case — and this closes the other, a handler that never calls the guard
+ * at all, which the compiler has no opinion about.
+ *
+ * Read from the tree, like the census above, because the handlers register at import from
+ * five modules with five different mocking needs, and a runtime registry would only ever
+ * see the modules a test happened to load.
+ */
+describe('every raw onNet handler declares its input (MICA-210)', () => {
+  const handlers = registrations();
+
+  /**
+   * The one handler that parses inline rather than through `guardNetEvent`. It answers a
+   * qb-phone event so qb scripts work unmodified (MICA-222), applies the same rate limit and
+   * player lookup by hand, and narrows its payload with `qbMailFrom`. Held here by name so a
+   * second exemption is a visible edit to this list rather than a quiet omission.
+   */
+  const INLINE = new Map([
+    // As `registrations()` records it: the constant it is registered through, not the
+    // string it resolves to.
+    [path.join('lib', 'qbPhoneCompat.ts'), 'QB_PHONE_SERVER_EVENTS.sendNewMail']
+  ]);
+
+  /** Source with comment lines removed, so a docblock's worked example is never a call. */
+  const code = (file: string): string =>
+    fs
+      .readFileSync(path.join(SERVER, file), 'utf8')
+      .split('\n')
+      .filter((line) => {
+        const trimmed = line.trim();
+        return !(trimmed.startsWith('*') || trimmed.startsWith('//') || trimmed.startsWith('/*'));
+      })
+      .join('\n');
+
+  /**
+   * The handler body: from its registration line to the first `});` at column zero. Every
+   * raw handler is a top-level statement, and the census above already refuses one that is
+   * not a string literal or a SCREAMING_CASE constant, so this is the whole shape.
+   */
+  const bodyOf = (file: string, event: string): string => {
+    const text = code(file);
+    const start = text.search(new RegExp(`\\bonNet\\(\\s*(?:['"]${event}['"]|${event})`));
+    if (start < 0) throw new Error(`${file} no longer registers ${event}`);
+    const end = text.indexOf('\n});', start);
+    return text.slice(start, end < 0 ? undefined : end);
+  };
+
+  it('routes every handler through guardNetEvent, or through loadedPlayerSource, which does', () => {
+    const unguarded = handlers
+      .filter((h) => INLINE.get(h.file) !== h.event)
+      .filter((h) => !/\b(guardNetEvent|loadedPlayerSource)\(/.test(bodyOf(h.file, h.event)))
+      .map((h) => `${h.file}  ${h.event}`);
+
+    expect(
+      unguarded,
+      'a raw onNet handler never calls guardNetEvent, so its arguments reach the body ' +
+        'unparsed, unlimited and unauthenticated. Declare an s.tuple([...]) and pass it.'
+    ).toEqual([]);
+  });
+
+  it('names a schema declared with s.tuple at every guardNetEvent call site', () => {
+    // The third argument has to be an identifier — a name, so the declaration can be found
+    // and read — and that name has to be declared with `s.tuple(` in the same file, or be
+    // `noInput`, which `netGuard.ts` declares that way for the handlers that take nothing.
+    const CALL = /\bguardNetEvent\(\s*[^,()]+,\s*[^,()]+,\s*([A-Za-z_$][\w$]*)\s*,\s*[^()]+\)/g;
+    const failures: string[] = [];
+    let sites = 0;
+
+    for (const file of sourceFiles(SERVER)) {
+      const relative = path.relative(SERVER, file);
+      const text = code(relative);
+      const calls = text.match(/\bguardNetEvent\(/g)?.length ?? 0;
+      if (calls === 0) continue;
+      if (relative === path.join('lib', 'netGuard.ts')) continue; // the declaration itself
+
+      const shaped = [...text.matchAll(CALL)];
+      if (shaped.length !== calls) {
+        failures.push(
+          `${relative}: ${calls - shaped.length} guardNetEvent call(s) without a schema`
+        );
+      }
+      for (const [, name] of shaped) {
+        sites++;
+        const declared =
+          name === 'noInput'
+            ? /\bnoInput\b[^;]*from '(\.\.\/lib\/netGuard|\.\/netGuard)'/.test(text)
+            : new RegExp(`\\bconst ${name} = s\\s*\\.tuple\\(`).test(text);
+        if (!declared) failures.push(`${relative}: ${name} is not declared with s.tuple(...)`);
+      }
+    }
+
+    expect(failures).toEqual([]);
+    // One site per guarded handler. The emptiness-shaped pass would be a regex that matched
+    // nothing; the count is what refuses it.
+    expect(sites).toBe(handlers.length - INLINE.size);
+  });
+
+  it('keeps the inline exemption to the handler that documents it, still parsed by hand', () => {
+    for (const [file, event] of INLINE) {
+      expect(
+        handlers.some((h) => h.file === file && h.event === event),
+        `${event} moved`
+      ).toBe(true);
+      const body = bodyOf(file, event);
+      for (const check of ['allow(', 'getPlayer(', 'qbMailFrom(']) {
+        expect(body, `${event} no longer applies ${check} inline`).toContain(check);
+      }
+    }
+  });
+});

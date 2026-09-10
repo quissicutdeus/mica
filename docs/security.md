@@ -186,17 +186,38 @@ back in with a new row.
 | `mica:server:shell:checkPhoneItem`   | `server/lib/phoneItem.ts`      |
 
 `guardNetEvent` in `server/lib/netGuard.ts` is the preamble for all nine,
-applying the same two checks in the same order the endpoint uses: rate limit
-first, then the authenticated player lookup — `getPlayer` walks the framework's
-player table and a flood should not make the server pay for that. Refused
-**silently**, because there is nobody waiting on a reply to be told;
-`ServiceEndpoint` answers its refusals only because `fetchNui` would otherwise
-hang for fifteen seconds.
+applying the same three checks in the same order the endpoint uses: rate limit
+first, then the declared input schema, then the authenticated player lookup —
+`getPlayer` walks the framework's player table and neither a flood nor a
+malformed packet should make the server pay for that. Refused **silently**,
+because there is nobody waiting on a reply to be told; `ServiceEndpoint` answers
+its refusals only because `fetchNui` would otherwise hang for fifteen seconds.
 
-Payloads are narrowed by `phoneNumberFrom` and `levelFrom` in the same module.
-The second is worth naming: `Number(null)` is `0` and `Number('')` is `0`, so a
-client sending nothing at all used to produce a valid "0% battery" rather than a
-refusal.
+**Every raw handler declares its input once, as a tuple schema, and the guard
+parses it before the body runs (MICA-210).** MICA-195 put a contract in front of
+every `registerEvent` action; these events carry positional scalars rather than
+a keyed payload, so each one declares its arguments with `s.tuple([...])` from
+`shared/schema.ts` — `[phoneNumber]` for `phone:start`, `[batteryLevel]` for
+`admin:setBattery`, a stripped-down `Contact` card for `contacts:share`, a
+boolean-or-`{ device, open }` union for `shell:setOpen`, and `noInput` for the
+four that take nothing — and passes it to `guardNetEvent`, which will not
+compile without one. The schema is the only place a handler's shape is written:
+`phoneNumber` and `batteryLevel` are the shared elements and the rest sit beside
+their handler, so the hand-rolled parsers each one used to keep are gone. The
+second is still worth naming: `Number(null)` is `0` and `Number('')` is `0`, so
+a client sending nothing at all used to produce a valid "0% battery" rather than
+a refusal, and `s.number()` refuses both before the clamp runs.
+
+`netGuardCensus.test.ts` holds this the same way it holds the counts: from the
+tree, it refuses any raw handler whose body never calls `guardNetEvent` (or
+`loadedPlayerSource`, which does), refuses any call to it whose third argument
+is not a name declared with `s.tuple(`, and counts the call sites against the
+handlers so a regex matching nothing cannot pass. `netGuard.test.ts` drives each
+of the five shapes with a malformed argument list and a well-formed one. The one
+handler outside the mechanism is the framework-named
+`qb-phone:server:sendNewMail` below, which parses inline; the census names it as
+the single exemption, so a second one is an edit to that list rather than a
+quiet omission.
 
 `mica:server:admin:setBattery` is gated on `isAdmin(source)`, as are the
 moderation actions in `Reports.ts`. Privilege is checked against the ace list,

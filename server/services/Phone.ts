@@ -5,7 +5,8 @@
 import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { notifyPlayer } from '../lib/shell';
 import { registerService } from '../lib/services';
-import { guardNetEvent, phoneNumberFrom } from '../lib/netGuard';
+import { guardNetEvent, noInput, phoneNumber, phoneNumberFrom } from '../lib/netGuard';
+import { s } from '@mica/shared/schema';
 import { phoneCallLog } from './PhoneCallLog';
 import { phoneForCitizen } from '../lib/phoneIdentity';
 import { readPhoneIdByNumber } from '../lib/phoneNumbers';
@@ -537,20 +538,23 @@ onLineReleased((number: string) => {
   }
 });
 
-onNet('mica:server:phone:start', async (rawTarget: unknown) => {
-  // Rate limit *and* authenticate, in the order `ServiceEndpoint` uses. Raw `onNet`
-  // handlers got neither until this; see `lib/netGuard.ts`.
-  const player = guardNetEvent('phone', 'start');
-  if (!player) return;
+/** The dialled number, and nothing else (MICA-210). */
+const START_INPUT = s.tuple([phoneNumber]);
 
-  await placeCall(source, rawTarget);
+onNet('mica:server:phone:start', async (...args: unknown[]) => {
+  // Rate limit, parse and authenticate, in the order `ServiceEndpoint` uses. Raw `onNet`
+  // handlers got none of the three until this; see `lib/netGuard.ts`.
+  const guarded = guardNetEvent('phone', 'start', START_INPUT, args);
+  if (!guarded) return;
+  const [target] = guarded.input;
+
+  await placeCall(source, target);
 });
 
-onNet('mica:server:phone:answer', () => {
-  // Rate limit *and* authenticate, in the order `ServiceEndpoint` uses. Raw `onNet`
-  // handlers got neither until this; see `lib/netGuard.ts`.
-  const player = guardNetEvent('phone', 'answer');
-  if (!player) return;
+onNet('mica:server:phone:answer', (...args: unknown[]) => {
+  // Rate limit, parse and authenticate, in the order `ServiceEndpoint` uses. Raw `onNet`
+  // handlers got none of the three until this; see `lib/netGuard.ts`.
+  if (!guardNetEvent('phone', 'answer', noInput, args)) return;
 
   const src = source;
   const callId = playerCalls[src];
@@ -564,11 +568,8 @@ onNet('mica:server:phone:answer', () => {
   notifyParty('mica:client:phone:accepted', call.target, { callId });
 });
 
-onNet('mica:server:phone:end', () => {
-  // Rate limit *and* authenticate, in the order `ServiceEndpoint` uses. Raw `onNet`
-  // handlers got neither until this; see `lib/netGuard.ts`.
-  const player = guardNetEvent('phone', 'end');
-  if (!player) return;
+onNet('mica:server:phone:end', (...args: unknown[]) => {
+  if (!guardNetEvent('phone', 'end', noInput, args)) return;
 
   releaseCallFor(source, source);
 });
@@ -650,13 +651,20 @@ RegisterCommand(
  * routes through `setBatteryLevel` instead of setting client-only state. Admin-gated
  * independently of whatever the UI shows — a NUI request is not proof of intent (§2.9).
  */
-onNet('mica:server:phone:simulateIncoming', (rawNumber: unknown) => {
-  const player = guardNetEvent('phone', 'simulateIncoming');
-  if (!player) return;
+/**
+ * An optional caller number. Blank or absent falls back to `DEFAULT_TEST_NUMBER`, the
+ * same way `micacall` with no argument does; anything that is not phone-number-shaped is
+ * refused rather than defaulted, since the button only ever sends a string or nothing.
+ */
+const SIMULATE_INCOMING_INPUT = s.tuple([s.string({ trim: true, max: 32 }).optional()]);
+
+onNet('mica:server:phone:simulateIncoming', (...args: unknown[]) => {
+  const guarded = guardNetEvent('phone', 'simulateIncoming', SIMULATE_INCOMING_INPUT, args);
+  if (!guarded) return;
+  const [number] = guarded.input;
 
   const src = source;
   if (!isAdmin(src)) return;
 
-  const number = phoneNumberFrom(rawNumber) ?? DEFAULT_TEST_NUMBER;
-  injectIncomingCall(src, number);
+  injectIncomingCall(src, number || DEFAULT_TEST_NUMBER);
 });

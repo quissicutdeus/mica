@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { s } from '@mica/shared/schema';
 import { guardNetEvent } from './netGuard';
 
 /**
@@ -29,11 +30,18 @@ export const isPhoneOpen = (source: number): boolean => open.get(source) ?? fals
  * state is "the phone's" here — one frame is ever up at a time, so this is at worst the
  * tablet answering for the phone, never two answers.
  */
-onNet('mica:server:shell:setOpen', (payload: unknown) => {
-  const player = guardNetEvent('shell', 'setOpen');
-  if (!player) return;
-  const isOpen =
-    typeof payload === 'boolean' ? payload : (payload as { open?: unknown } | null)?.open === true;
+const SET_OPEN_INPUT = s.tuple([
+  s.union([
+    s.boolean(),
+    s.object({ device: s.string({ max: 32 }).optional(), open: s.boolean().optional() })
+  ])
+]);
+
+onNet('mica:server:shell:setOpen', (...args: unknown[]) => {
+  const guarded = guardNetEvent('shell', 'setOpen', SET_OPEN_INPUT, args);
+  if (!guarded) return;
+  const [payload] = guarded.input;
+  const isOpen = typeof payload === 'boolean' ? payload : payload.open === true;
   open.set(source, isOpen);
 });
 

@@ -4,6 +4,7 @@
 
 import type { MessageParams } from './errors';
 import { detectFramework, FrameworkBridge } from './FrameworkBridge';
+import { s } from '@mica/shared/schema';
 import { guardNetEvent } from './netGuard';
 import { registerService } from './services';
 import { ownedTables, purgeOwnedRows, sweepOrphanedRows } from './orphanSweep';
@@ -148,6 +149,17 @@ const refuse = (connection: number, why: string): undefined => {
 };
 
 /**
+ * The one argument a player-loaded packet may carry, declared as `unknown` on purpose.
+ *
+ * Every raw handler declares its input (MICA-210), and this is the honest declaration for
+ * this one: no legitimate emitter sends anything, and whatever does arrive is a *claim*
+ * that `loadedPlayerSource` compares against the connection rather than a value it reads.
+ * A stricter shape would refuse a forged payload before the comparison could name it in
+ * the once-per-connection warning, which is the only reason the payload is looked at.
+ */
+const PLAYER_LOADED_INPUT = s.tuple([s.unknown()]);
+
+/**
  * Who a network `QBCore:Server:OnPlayerLoaded` may be acted on for, or `undefined`.
  *
  * `onNet` means *any* connected client can emit this name themselves, and until MICA-136
@@ -183,7 +195,7 @@ export const loadedPlayerSource = (player: unknown): number | undefined => {
 
   // Rate limit and authenticate before comparing, so every invocation is counted rather
   // than only the ones that turn out to be honest.
-  if (!guardNetEvent(SHELL_SERVICE, 'playerLoaded')) {
+  if (!guardNetEvent(SHELL_SERVICE, 'playerLoaded', PLAYER_LOADED_INPUT, [player])) {
     return refuse(
       connection,
       'no loaded character behind it yet, or too many in one minute. If this player never ' +

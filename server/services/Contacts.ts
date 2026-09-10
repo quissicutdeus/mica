@@ -7,8 +7,8 @@ import { Contact, SharedContactCard } from '@mica/shared/types';
 import { guardNetEvent } from '../lib/netGuard';
 import { findNearbyVisiblePlayers } from '../lib/proximity';
 import { appEventChannel } from '../lib/appEvents';
-import { fields } from '../lib/payload';
 import { contactsContract } from '@mica/shared/contracts/contacts';
+import { s } from '@mica/shared/schema';
 import { resolve as resolvePlayer } from '../lib/PlayerDirectory';
 import { restoreWindowDays } from '../lib/retention';
 import { phoneForCitizen } from '../lib/phoneIdentity';
@@ -110,34 +110,33 @@ const MAX_SHARE_AVATAR_LENGTH =
  * offers any saved contact, not necessarily the sender's own identity (sharing someone
  * else's business card is the point), so these stay exactly what the payload said. Provenance
  * is `sender`'s job now, attached separately and never from here.
+ *
+ * Same clamps `AddContact` applies — the columns behind them are unchanged — declared once
+ * as the event's input (MICA-210). `truncate` rather than `max` because an oversized name
+ * is clipped and delivered, not refused; `min: 1` after `trim` is "not blank". Unknown keys
+ * are stripped rather than refused because the web sends the whole `Contact` row it was
+ * offered, and a `sender` or `citizenid` in it is ignored here exactly as any other column
+ * is: the sender is stamped from the connection below, never read.
  */
-interface SharedCardFields {
-  firstname: string;
-  lastname: string;
-  phone: string;
-  avatar: string;
-}
+const SHARED_CARD = s.object(
+  {
+    firstname: s.string({ trim: true, min: 1, truncate: MAX_SHARE_NAME_LENGTH }),
+    lastname: s
+      .string({ trim: true, truncate: MAX_SHARE_NAME_LENGTH })
+      .optional()
+      .nullable()
+      .transform((value) => value ?? ''),
+    phone: s.string({ trim: true, min: 1, truncate: MAX_SHARE_PHONE_LENGTH }),
+    avatar: s
+      .string({ truncate: MAX_SHARE_AVATAR_LENGTH })
+      .optional()
+      .nullable()
+      .transform((value) => value ?? '')
+  },
+  { unknownKeys: 'strip' }
+);
 
-/** Same clamps `AddContact` applies — the columns behind them are unchanged. */
-const sanitizeShare = (data: unknown): SharedCardFields | null => {
-  const payload = fields(data);
-  const firstname = String(payload.firstname ?? '')
-    .trim()
-    .slice(0, MAX_SHARE_NAME_LENGTH);
-  const phone = String(payload.phone ?? '')
-    .trim()
-    .slice(0, MAX_SHARE_PHONE_LENGTH);
-  if (!firstname || !phone) return null;
-
-  return {
-    firstname,
-    lastname: payload.lastname
-      ? String(payload.lastname).trim().slice(0, MAX_SHARE_NAME_LENGTH)
-      : '',
-    phone,
-    avatar: payload.avatar ? String(payload.avatar).slice(0, MAX_SHARE_AVATAR_LENGTH) : ''
-  };
-};
+const SHARE_INPUT = s.tuple([SHARED_CARD]);
 
 /**
  * Proximity contact sharing — finishes the stub in `client/services/Contact.ts`.
@@ -156,12 +155,11 @@ const sanitizeShare = (data: unknown): SharedCardFields | null => {
  * sender here would break sharing someone else's card at all. `sender` is the fix instead —
  * provenance the receiving client can check independently of what the card claims to be.
  */
-onNet('mica:server:contacts:share', (data: unknown) => {
-  const player = guardNetEvent('contacts', 'share');
-  if (!player) return;
-
-  const cardFields = sanitizeShare(data);
-  if (!cardFields) return;
+onNet('mica:server:contacts:share', (...args: unknown[]) => {
+  const guarded = guardNetEvent('contacts', 'share', SHARE_INPUT, args);
+  if (!guarded) return;
+  const { player } = guarded;
+  const [cardFields] = guarded.input;
 
   void (async () => {
     const nearby = await findNearbyVisiblePlayers(player.source, player.citizenid);

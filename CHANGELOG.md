@@ -774,6 +774,17 @@ export instead, which authenticates its caller.
 
 ### Fixed
 
+**Every raw net event declares its arguments as a schema before its handler runs
+(MICA-210).** The five fire-and-forget events outside the contract mechanism —
+`phone:*`, `battery:*`, `signal:*`, `admin:setBattery` and `contacts:share` —
+each parsed their positional scalars by hand. `guardNetEvent` now takes a tuple
+schema and refuses a payload that fails it, silently, as the guard always did;
+the census test fails on a raw handler with no schema. Three edges tightened:
+`setBattery` parses before the admin check, so a non-admin sending garbage is
+dropped rather than toasted; a shared card with a non-string name or number is
+refused instead of coerced; and `simulateIncoming` refuses a non-string instead
+of defaulting.
+
 **On ESX, an offline player can now be found by phone number (MICA-225).**
 Before, `GetCitizenId(phone)`, `SendSystemEmail` to a number nobody online held,
 and sharing a contact who was offline all silently did nothing on es_extended,

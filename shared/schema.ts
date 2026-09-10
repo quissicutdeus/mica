@@ -126,6 +126,13 @@ export interface GphoneSchema<T> extends StandardSchemaV1<unknown, T> {
   optional(): GphoneSchema<T | undefined>;
   /** Accept `null` as well. Distinct from `optional` — a JSON null is a value, not an absence. */
   nullable(): GphoneSchema<T | null>;
+  /**
+   * Derive a value from one that has already passed. Runs only on success, so `fn` sees a
+   * `T` and never a raw payload — which is what keeps a default (`v ?? ''`) or a clamp out of
+   * the handler body and inside the declaration. It cannot refuse; a shape rule belongs in
+   * the schema before it, not in the function after.
+   */
+  transform<U>(fn: (value: T) => U): GphoneSchema<U>;
 }
 
 /**
@@ -164,7 +171,12 @@ const make = <T>(check: (value: unknown, path: Path) => Outcome<T>): GphoneSchem
     nullable: () =>
       make<T | null>((value, path) =>
         value === null ? { ok: true, value: null } : check(value, path)
-      )
+      ),
+    transform: <U>(fn: (value: T) => U) =>
+      make<U>((value, path) => {
+        const outcome = check(value, path);
+        return outcome.ok ? { ok: true, value: fn(outcome.value) } : outcome;
+      })
   };
   checkers.set(schema, check as (value: unknown, path: Path) => Outcome<unknown>);
   return schema;
@@ -208,6 +220,17 @@ export interface StringOptions {
   max?: number;
   /** Shape the value must match. Anchor it — an unanchored pattern matches a substring. */
   pattern?: RegExp;
+  /**
+   * Strip surrounding whitespace before any other rule runs, so `min: 1` means "not blank"
+   * rather than "not empty" and `max` bounds what is kept rather than what was sent.
+   */
+  trim?: boolean;
+  /**
+   * Keep only the first N characters rather than refusing a longer value. The opposite call
+   * to `max`, for a value the caller wants delivered clipped — a shared card's name — rather
+   * than refused. Applied last, after `min`, `max` and `pattern`.
+   */
+  truncate?: number;
 }
 
 export interface NumberOptions {
@@ -254,6 +277,23 @@ const bounded = (value: number, path: Path, options: NumberOptions): Outcome<num
 
 type ObjectShape = Record<string, StandardSchemaV1<unknown, unknown>>;
 
+export interface ObjectOptions {
+  /**
+   * What to do with a key the shape does not declare. `'refuse'` is the default and the
+   * rule; `'strip'` drops the key and is for a payload that legitimately carries more than
+   * the handler reads — a whole `Contact` row offered as a card, of which four fields are
+   * the card — where refusing would turn every column the UI adds into a broken share.
+   */
+  unknownKeys?: 'refuse' | 'strip';
+}
+
+type TupleShape = readonly StandardSchemaV1<unknown, unknown>[];
+
+/** The tuple an `s.tuple([...])` yields, element for element. */
+export type TupleOutput<E extends TupleShape> = {
+  [K in keyof E]: E[K] extends StandardSchemaV1<unknown, unknown> ? Infer<E[K]> : never;
+};
+
 type OptionalKeys<S extends ObjectShape> = {
   [K in keyof S]: undefined extends Infer<S[K]> ? K : never;
 }[keyof S];
@@ -273,8 +313,9 @@ export type ObjectOutput<S extends ObjectShape> = {
 
 export const s = {
   string(options: StringOptions = {}): GphoneSchema<string> {
-    return make<string>((value, path) => {
-      if (typeof value !== 'string') return fail(path, 'must be text.');
+    return make<string>((raw, path) => {
+      if (typeof raw !== 'string') return fail(path, 'must be text.');
+      const value = options.trim ? raw.trim() : raw;
       if (options.min !== undefined && value.length < options.min) {
         return options.min === 1
           ? fail(path, 'cannot be empty.')
@@ -286,7 +327,10 @@ export const s = {
       if (options.pattern && !options.pattern.test(value)) {
         return fail(path, 'is not in the expected format.');
       }
-      return { ok: true, value };
+      return {
+        ok: true,
+        value: options.truncate !== undefined ? value.slice(0, options.truncate) : value
+      };
     });
   },
 
@@ -362,17 +406,23 @@ export const s = {
    * the server disagreeing about a field name. `ServiceEndpoint.pickColumns` still reduces
    * the *generic CRUD* payload by allowlist; this is the custom-action half of the same rule.
    */
-  object<S extends ObjectShape>(shape: S): GphoneSchema<ObjectOutput<S>> {
+  object<S extends ObjectShape>(
+    shape: S,
+    options: ObjectOptions = {}
+  ): GphoneSchema<ObjectOutput<S>> {
     const entries = Object.entries(shape).map(([key, schema]) => [key, checkerOf(schema)] as const);
     const declared = new Set(Object.keys(shape));
+    const refuseUnknown = options.unknownKeys !== 'strip';
     return make<ObjectOutput<S>>((value, path) => {
       if (value === null || typeof value !== 'object' || Array.isArray(value)) {
         return fail(path, 'must be an object.');
       }
       const input = value as Record<string, unknown>;
-      for (const key of Object.keys(input)) {
-        if (!declared.has(key)) {
-          return fail([...path, key], 'is not a field this request accepts.');
+      if (refuseUnknown) {
+        for (const key of Object.keys(input)) {
+          if (!declared.has(key)) {
+            return fail([...path, key], 'is not a field this request accepts.');
+          }
         }
       }
       const out: Record<string, unknown> = {};
@@ -384,6 +434,60 @@ export const s = {
         if (outcome.value !== undefined || key in input) out[key] = outcome.value;
       }
       return { ok: true, value: out as ObjectOutput<S> };
+    });
+  },
+
+  /**
+   * Positional arguments, for an event that carries them instead of a keyed payload.
+   *
+   * A raw `onNet` handler is called with whatever the client emitted, in order, and the
+   * contract mechanism has no slot for that shape: `defineContract` describes one payload
+   * object per action. This is the positional twin — one schema per argument, checked at
+   * `[0]`, `[1]`, … so a refusal names the position. An argument the client did not send is
+   * `undefined` and goes to its element's schema, which is where `.optional()` decides.
+   *
+   * Anything past the declared length must be `undefined`: a relay that forwards a
+   * no-argument emit as one explicit `undefined` is the shape the runtime produces, and an
+   * extra argument carrying a value is a payload the handler never declared.
+   */
+  tuple<const E extends TupleShape>(elements: E): GphoneSchema<TupleOutput<E>> {
+    const checks = elements.map(checkerOf);
+    return make<TupleOutput<E>>((value, path) => {
+      if (!Array.isArray(value)) return fail(path, 'must be a list of arguments.');
+      for (let index = checks.length; index < value.length; index++) {
+        if (value[index] !== undefined) {
+          return fail([...path, index], 'is an argument this event does not take.');
+        }
+      }
+      const out: unknown[] = [];
+      for (let index = 0; index < checks.length; index++) {
+        const outcome = checks[index](value[index], [...path, index]);
+        if (!outcome.ok) return outcome;
+        out.push(outcome.value);
+      }
+      return { ok: true, value: out as unknown as TupleOutput<E> };
+    });
+  },
+
+  /**
+   * Any one of several shapes, tried in order; the first to pass wins.
+   *
+   * For an event whose wire shape changed and both are still read — a bare boolean before
+   * MICA-262, `{ device, open }` since. Reported as the *last* member's refusal when none
+   * match, on the grounds that the newest shape is the one a current client sends and its
+   * message is the one worth reading.
+   */
+  union<const M extends readonly [StandardSchemaV1<unknown, unknown>, ...TupleShape]>(
+    members: M
+  ): GphoneSchema<Infer<M[number]>> {
+    const checks = members.map(checkerOf);
+    return make<Infer<M[number]>>((value, path) => {
+      let last: Outcome<unknown> = fail(path, 'is not in the expected format.');
+      for (const check of checks) {
+        last = check(value, path);
+        if (last.ok) return last as Outcome<Infer<M[number]>>;
+      }
+      return last as Outcome<Infer<M[number]>>;
     });
   },
 

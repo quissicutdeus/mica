@@ -8,7 +8,8 @@ import { defineService } from '../lib/defineService';
 import { PhoneBattery } from '@mica/shared/types';
 import { isAdmin } from './Admin';
 import { onPlayerLoaded, notifyPlayer } from '../lib/shell';
-import { guardNetEvent, levelFrom } from '../lib/netGuard';
+import { batteryLevel, guardNetEvent, noInput } from '../lib/netGuard';
+import { s } from '@mica/shared/schema';
 import { onPhoneStateChanged } from '../lib/phoneItem';
 import { phoneForCitizen, phoneForRequest } from '../lib/phoneIdentity';
 import { PlayerFacingError } from '../lib/errors';
@@ -354,11 +355,15 @@ export const savePlayerBattery = async (
  * convenient UI, not the capability. Server-authoritative battery is a separate,
  * larger change: persistence (below) is not the same thing as authority.
  */
-onNet('mica:server:admin:setBattery', (rawCharge: unknown) => {
-  // Rate limit *and* authenticate, in the order `ServiceEndpoint` uses. Raw `onNet`
-  // handlers got neither until this; see `lib/netGuard.ts`.
-  const player = guardNetEvent('admin', 'setBattery');
-  if (!player) return;
+const SET_BATTERY_INPUT = s.tuple([batteryLevel]);
+
+onNet('mica:server:admin:setBattery', (...args: unknown[]) => {
+  // Rate limit, parse and authenticate, in the order `ServiceEndpoint` uses. Raw `onNet`
+  // handlers got none of the three until this; see `lib/netGuard.ts`. The parse comes
+  // before the admin check, so a non-admin sending garbage is dropped rather than toasted.
+  const guarded = guardNetEvent('admin', 'setBattery', SET_BATTERY_INPUT, args);
+  if (!guarded) return;
+  const [level] = guarded.input;
 
   const src = source;
   if (!isAdmin(src)) {
@@ -369,9 +374,6 @@ onNet('mica:server:admin:setBattery', (rawCharge: unknown) => {
     });
     return;
   }
-
-  const level = levelFrom(rawCharge);
-  if (level === null) return;
 
   void savePlayerBattery(src, level);
   emitNet('mica:client:battery:set', src, level);
@@ -434,11 +436,8 @@ export const sendLoadedBatteryToClient = async (src: number): Promise<void> => {
 };
 
 // Event for client to request saved battery level on spawn / join
-onNet('mica:server:battery:load', () => {
-  // Rate limit *and* authenticate, in the order `ServiceEndpoint` uses. Raw `onNet`
-  // handlers got neither until this; see `lib/netGuard.ts`.
-  const player = guardNetEvent('battery', 'load');
-  if (!player) return;
+onNet('mica:server:battery:load', (...args: unknown[]) => {
+  if (!guardNetEvent('battery', 'load', noInput, args)) return;
 
   void sendLoadedBatteryToClient(source);
 });
