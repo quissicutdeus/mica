@@ -73,7 +73,10 @@ behaviour turns the full verify red long after every lane gate was green
 (MICA-194). Before you write "the test covers this", read the test and ask what
 input would make it fail. Where a claim can be executed for the price of one
 command — a single test file, a `git show HEAD:<file>`, a `gh api` for a pinned
-SHA — execute it rather than reason about it, and say which you did.
+SHA — execute it rather than reason about it, and say which you did. The one
+exception is Playwright: it needs port 4173, which the `verify` lane usually
+holds while you read, so run a spec only when the brief says the port is yours,
+and otherwise name the spec and leave the run to the lead.
 
 ## Report
 

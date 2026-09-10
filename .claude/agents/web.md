@@ -24,6 +24,14 @@ preloaded `cef-css` skill is the long form — the banned-feature table, the
 rules, `min-h-0 flex-1` inside `Screen`, the home-indicator clearance. Nothing
 below repeats any of that; it's what the skill doesn't cover.
 
+## Start on the tree you were given
+
+`git log -1 --format=%H` first, and compare it to the sha in the brief. A
+worktree is cut from wherever the harness thinks HEAD is, not from `dev`'s tip,
+so the tree you were handed is usually behind; `git reset --hard <sha>` onto the
+brief's tip before reading a line, and say so if the brief named none. Work
+built on the wrong base merges as a conflict or, worse, cleanly.
+
 ## What the skill doesn't tell you
 
 An inline `style=` attribute is **outside PostCSS entirely**, so a `var()` that
@@ -75,7 +83,10 @@ into `sdk/` to add it — that is a different lane's file and a different review
 index, one file per finding. The CEF-103 floor throws up a steady stream of
 "this shipped in Chromium N, that fallback works" findings — write the
 non-obvious ones there, add a line to the index, and commit both, rather than
-re-deriving the same answer next time.
+re-deriving the same answer next time. Each file opens with a `#` heading and
+carries no YAML frontmatter — that is the lead's memory format, not this one —
+because `lint:md` fails the whole branch on a file whose first line is not a
+heading, and did so twice on MICA-234.
 
 ## Verifying
 
@@ -89,12 +100,23 @@ version, so a web-only check proves nothing about them.
 Do not run `pnpm verify`, `pnpm dev`, or any Playwright command unless your
 instructions say the port is yours; other lanes may hold it.
 
+A gate runs to completion inside your turn: in the foreground with a long
+timeout, or in the background with an `until` loop on its rc file in the same
+call. Ending a turn "while the gate finishes" ends the task with no result — the
+lead cannot see the process, only your report.
+
+To prove a check fires, break the code with the Edit tool, run the gate as its
+own Bash call, restore with Edit. A one-liner that rewrites a file through a
+shell variable is refused by the worktree guard and proves nothing.
+
 ## Report
 
 Your final message goes to the lead, who is short on attention. **Ten lines at
-most** — no headers, no tables, no restating the brief. A gate you ran is one
-line: the command, pass or fail, and the counts it printed. Paste output only
-for a failure, and only the failing part. Within that, state:
+most** — no headers, no tables, no restating the brief. The first line is the
+sha of your commit; the lead cherry-picks it and reads nothing you did not
+commit. A gate you ran is one line: the command, pass or fail, and the counts it
+printed. Paste output only for a failure, and only the failing part. Within
+that, state:
 
 - The result of the tests and typecheck you ran.
 - **That in-game and CEF rendering are unverified.** Neither you nor the suites
@@ -103,6 +125,7 @@ for a failure, and only the failing part. Within that, state:
   green suite covers it.
 - **Whether any Playwright spec under `web/e2e` exercises what you changed.**
   Before writing "no e2e spec covers this", grep `web/e2e` for the testids,
-  labels, store names and behaviours in your diff; if a spec matches, run that
-  one spec and report its result. A spec that pins the behaviour you removed
-  turns the full verify red long after your own gates were green (MICA-194).
+  labels, store names and behaviours in your diff. If a spec matches, name it
+  for the lead; run it yourself only when the brief says port 4173 is yours. A
+  spec that pins the behaviour you removed turns the full verify red long after
+  your own gates were green (MICA-194).

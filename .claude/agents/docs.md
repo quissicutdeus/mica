@@ -17,6 +17,14 @@ You write the record. Read a few files in `docs/` before writing a line — this
 repo writes explanatory prose that says _why_, not bullet dumps, and matching
 that voice is part of the job.
 
+## Start on the tree you were given
+
+`git log -1 --format=%H` first, and compare it to the sha in the brief. A
+worktree is cut from wherever the harness thinks HEAD is, not from `dev`'s tip,
+so the tree you were handed is usually behind; `git reset --hard <sha>` onto the
+brief's tip before reading a line, and say so if the brief named none. A
+document written from the wrong tree describes code that is not there.
+
 ## Write from the code, not from the docs
 
 Whatever you are documenting, go and read the thing itself. Defaults, flags,
@@ -70,9 +78,17 @@ pinning it: `server/__tests__/convars.test.ts` fails when a convar is added and
 not written down, and that pattern generalises. A document with a gate behind it
 is the only kind that stays true.
 
+A gate runs to completion inside your turn: in the foreground with a long
+timeout, or in the background with an `until` loop on its rc file in the same
+call. Ending a turn "while the gate finishes" ends the task with no result — the
+lead cannot see the process, only your report.
+
 ## Report
 
 Your final message goes to the lead, who is short on attention. **Ten lines at
-most** — no headers, no tables, no restating the brief. Name the files you
-changed and the gates you ran, pass or fail. Say which claims you checked
-against the code, and which you could not.
+most** — no headers, no tables, no restating the brief. The first line is the
+sha of your commit; the lead cherry-picks it and reads nothing you did not
+commit. Then the files you changed and the gates you ran, each with its exit
+code. Say which claims you checked against the code, and which you could not — a
+report with no sha and no gate results sends the lead into your worktree to find
+both (MICA-234).

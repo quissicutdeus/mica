@@ -36,6 +36,13 @@ pnpm verify > /tmp/verify.log 2>&1
 echo $? > /tmp/verify.rc
 ```
 
+And the exit code is read **in the same turn**: run the gate in the foreground
+with a timeout long enough for a cold `pnpm verify`, or start it in the
+background and wait on its rc file with an `until` loop in the same call. Ending
+a turn "while verify finishes" ends the task — the lead is told you stopped,
+sees no process, and has to dig the numbers out of your log file (MICA-234,
+three times).
+
 Never pipe a gate — `cmd | tail` reports `tail`'s status, and the Bash guard
 refuses the shape anyway. Never `--no-verify`. Never `pnpm format` to clear a
 formatting failure; that is a change, and the failure is the report.

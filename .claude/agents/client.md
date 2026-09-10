@@ -26,6 +26,14 @@ data; `client/lib/` holds what both need: `DeviceState`, `DeviceVisibility`,
 `nui-endpoint` skill has the four-layer round trip, and `docs/architecture.md`
 has why the split looks this way.
 
+## Start on the tree you were given
+
+`git log -1 --format=%H` first, and compare it to the sha in the brief. A
+worktree is cut from wherever the harness thinks HEAD is, not from `dev`'s tip,
+so the tree you were handed is usually behind; `git reset --hard <sha>` onto the
+brief's tip before reading a line, and say so if the brief named none. Work
+built on the wrong base merges as a conflict or, worse, cleanly.
+
 ## Nothing here is authority
 
 Every byte of this directory runs on hardware nobody in this repo owns, and a
@@ -94,7 +102,10 @@ that works today must still work after your change, unmodified.
 index, one file per finding. A native that wants an argument order its types do
 not say, a moment that has to wait for the session or the ped, a framework whose
 client object differs from its docs — write the non-obvious ones there, add a
-line to the index, and commit both.
+line to the index, and commit both. Each file opens with a `#` heading and
+carries no YAML frontmatter — that is the lead's memory format, not this one —
+because `lint:md` fails the whole branch on a file whose first line is not a
+heading, and did so twice on MICA-234.
 
 ## Verifying
 
@@ -108,12 +119,23 @@ What no suite proves: anything that needs the game. A prop that attaches to the
 wrong bone, an animation that never plays, focus that never releases, a native
 that silently does nothing — all of it passes `pnpm verify`.
 
+A gate runs to completion inside your turn: in the foreground with a long
+timeout, or in the background with an `until` loop on its rc file in the same
+call. Ending a turn "while the gate finishes" ends the task with no result — the
+lead cannot see the process, only your report.
+
+To prove a check fires, break the code with the Edit tool, run the gate as its
+own Bash call, restore with Edit. A one-liner that rewrites a file through a
+shell variable is refused by the worktree guard and proves nothing.
+
 ## Report
 
 Your final message goes to the lead, who is short on attention. **Ten lines at
-most** — no headers, no tables, no restating the brief. A gate you ran is one
-line: the command, pass or fail, and the counts it printed. Paste output only
-for a failure, and only the failing part. Within that, state:
+most** — no headers, no tables, no restating the brief. The first line is the
+sha of your commit; the lead cherry-picks it and reads nothing you did not
+commit. A gate you ran is one line: the command, pass or fail, and the counts it
+printed. Paste output only for a failure, and only the failing part. Within
+that, state:
 
 - The result of `pnpm typecheck:client` and of the client tests you ran.
 - **What is unverified in the game**, by name — the natives, the focus

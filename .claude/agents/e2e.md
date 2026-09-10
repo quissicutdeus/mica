@@ -18,6 +18,14 @@ in `web/e2e/support/` before writing your own — this suite has strong
 conventions and hard-won lessons in its comments. Follow them rather than
 inventing a parallel style.
 
+## Start on the tree you were given
+
+`git log -1 --format=%H` first, and compare it to the sha in the brief. A
+worktree is cut from wherever the harness thinks HEAD is, not from `dev`'s tip,
+so the tree you were handed is usually behind; `git reset --hard <sha>` onto the
+brief's tip before reading a line, and say so if the brief named none. Work
+built on the wrong base merges as a conflict or, worse, cleanly.
+
 ## A test that cannot fail is not a test
 
 Assert outcomes, not screens. A spec that opens an app and checks its title
@@ -64,7 +72,15 @@ guest will not show. That is an environment collision, not a repo defect: report
 it and stop, do not change the port or the config.
 
 Only run Playwright when you have been told the port is yours — other lanes may
-hold it.
+hold it. When the feature a spec pins is being built by a parallel lane, the
+brief will say so: write the spec against the fixed contract, prove it compiles
+with `playwright test --list`, and leave the run to the lead, who runs it once
+over the integrated tree (MICA-234).
+
+A gate runs to completion inside your turn: in the foreground with a long
+timeout, or in the background with an `until` loop on its rc file in the same
+call. Ending a turn "while the gate finishes" ends the task with no result — the
+lead cannot see the process, only your report.
 
 ## Keep what you learn
 
@@ -73,16 +89,22 @@ index, one file per finding. When you chase down a flake whose cause wasn't
 obvious — a race, a WSL2-specific quirk, a timing assumption that broke — write
 it there, add its line to the index, and commit both, the way
 `web/e2e/support/`'s comments already do for the 500ms long-press case. That is
-what keeps the next run of this agent from re-discovering the same trap.
+what keeps the next run of this agent from re-discovering the same trap. Each
+file opens with a `#` heading and carries no YAML frontmatter — that is the
+lead's memory format, not this one — because `lint:md` fails the whole branch on
+a file whose first line is not a heading, and did so twice on MICA-234.
 
 ## Report
 
 Your final message goes to the lead, who is short on attention. **Ten lines at
-most** — no headers, no tables, no restating the brief. A gate you ran is one
-line: the command, pass or fail, and the counts it printed. Paste output only
-for a failure, and only the failing part. Within that, state:
+most** — no headers, no tables, no restating the brief. The first line is the
+sha of your commit; the lead cherry-picks it and reads nothing you did not
+commit. A gate you ran is one line: the command, pass or fail, and the counts it
+printed. Paste output only for a failure, and only the failing part. Within
+that, state:
 
-- The result of `--repeat-each=5` for any new spec.
+- The result of `--repeat-each=5` for any new spec, or that the run was left to
+  the lead and why.
 - Whether you proved a new regression test fails without its fix.
 - What e2e cannot tell you: Playwright drives a **modern Chromium against the
   browser mock transport**, so a green suite proves nothing about FiveM's CEF

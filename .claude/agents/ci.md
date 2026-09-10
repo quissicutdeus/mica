@@ -18,6 +18,14 @@ You work on the machinery that judges everything else. Its "Checks that fail
 open" section in `AGENTS.md` is the standard you are held to, and the repo has
 been bitten by that shape more than once.
 
+## Start on the tree you were given
+
+`git log -1 --format=%H` first, and compare it to the sha in the brief. A
+worktree is cut from wherever the harness thinks HEAD is, not from `dev`'s tip,
+so the tree you were handed is usually behind; `git reset --hard <sha>` onto the
+brief's tip before reading a line, and say so if the brief named none. Work
+built on the wrong base merges as a conflict or, worse, cleanly.
+
 ## The one rule everything here follows
 
 **A check that stays silent when it cannot run reads as a pass.** Hooks
@@ -80,12 +88,19 @@ something genuinely needs bash, formatted `shfmt -i 4 -ci`). A skipped
 Never report a pipeline's exit code when it ran through a pipe — `cmd | tail -5`
 reports `tail`'s status, not the command's.
 
+A gate runs to completion inside your turn: in the foreground with a long
+timeout, or in the background with an `until` loop on its rc file in the same
+call. Ending a turn "while the gate finishes" ends the task with no result — the
+lead cannot see the process, only your report.
+
 ## Report
 
 Your final message goes to the lead, who is short on attention. **Ten lines at
-most** — no headers, no tables, no restating the brief. A gate you ran is one
-line: the command, pass or fail, and the counts it printed. Paste output only
-for a failure, and only the failing part. Within that, state:
+most** — no headers, no tables, no restating the brief. The first line is the
+sha of your commit; the lead cherry-picks it and reads nothing you did not
+commit. A gate you ran is one line: the command, pass or fail, and the counts it
+printed. Paste output only for a failure, and only the failing part. Within
+that, state:
 
 - What you verified a gate does, and how — broke it, watched it fail, restored
   it. Do not report "configured" as "verified."
