@@ -472,6 +472,22 @@ with `internal_error` and the rest of Messages is unaffected.
 
 ### Added
 
+**Disable apps, set the dock and seed contacts from `server.cfg` (MICA-234).**
+Three new convars, all off by default, so an update changes nothing until you
+set one. `mica_disabled_apps` takes a comma list of app ids and hides them from
+the launcher, drawer, search, dock and Store; the server also refuses the events
+of an app whose service no other app uses (Blabber, Hodlr, Jobs, Mail, Snatchr,
+Notes, Places, and Bank's invoices), while Messages, Contacts, Media, Music and
+Bank are hidden only, since other apps depend on them. Settings cannot be
+disabled. Set it with `setr` if you want the client `OpenApp` export to refuse a
+disabled app as well; it returns `app_disabled`. `mica_default_dock` sets the
+phone's four dock slots for a player who has not arranged their own.
+`mica_default_contacts` takes inline JSON or a path to a JSON file inside the
+resource, and seeds those contacts into a phone once, when the server first
+creates it — phones that already exist are not seeded, and a contact a player
+deletes stays deleted. No schema change. The convar table in README has all
+three.
+
 **Home search reaches Notes, and any app that asks (MICA-286).** MICA-248 left
 Notes out, because it is a `core: false` add-on whose store lives inside its
 frame and core cannot name an add-on. An app now contributes its own rows
