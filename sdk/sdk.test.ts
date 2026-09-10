@@ -64,9 +64,9 @@ describe('micaOS SDK (@mica/sdk)', () => {
     });
 
     it('exports MICA_VERSION and MICA_BUILD_INFO constants', async () => {
-      const { MICA_VERSION, MICA_BUILD_INFO } = await import('./index');
-      expect(MICA_VERSION).toBeDefined();
-      expect(MICA_BUILD_INFO).toBeDefined();
+      const exported = await import('./index');
+      expect(exported.MICA_VERSION).toBeDefined();
+      expect(exported.MICA_BUILD_INFO).toBeDefined();
     });
 
     it('throws when id is missing, or name is present and empty', () => {

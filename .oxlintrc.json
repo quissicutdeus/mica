@@ -54,5 +54,17 @@
   // in the commit that changed this line, and 77 warnings from two rules now turned off above
   // with the reasoning beside them.
   //
+  // Who owns what: `web/eslint.config.js` and `sdk/eslint.config.js` are the linters of
+  // record for their packages, and a rule both enable is turned off *here*, not there, so a
+  // finding has one owner. oxlint is the second opinion over the whole tree, and a warning
+  // from it does not fail `pnpm lint` — only an error does.
+  //
+  // Re-measured on the MICA-183 close-out: `sdk/` is at zero. `web/` carries 19 warnings
+  // from three rules — `no-shadow` 15, `no-unmodified-loop-condition` 3, `no-useless-concat`
+  // 1 — left as they are, deliberately: they are warnings, they are in files other lanes were
+  // editing, and the MICA-183 report holds the per-file list. Fix them when the file is open
+  // for another reason, or turn the rule off above with a sentence if it keeps firing on
+  // patterns that are fine.
+  //
   "ignorePatterns": ["**/node_modules/**", "**/dist/**", "mica.sql", "fxmanifest.lua"]
 }
