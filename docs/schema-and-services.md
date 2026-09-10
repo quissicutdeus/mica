@@ -172,11 +172,19 @@ DDL.
   from the UI. It is not always the service's own `id`: Blabber's DMs declare
   `app: 'blabber'`, not `app: 'blabber_dms'`, and Snek's high-score board
   declares `app: 'snek'` from a service called `highscores`. Leave it off for a
-  service more than one app legitimately reaches — Contacts, Media and Bank's
-  own balance are none of them — and it is never refused, whatever the owner
-  names. `server/lib/ownerConfig.ts` reads it back through
-  `server/lib/services.ts`; core itself never names an app, so the declaration
-  lives on the service, not in a table core would have to keep in sync.
+  service more than one app legitimately reaches — Contacts, Media, and Bank's
+  own balance are three of them — and it is never refused, whatever the owner
+  names. **A service that leaves `app` off must be listed in
+  `NEVER_REFUSED_SERVICES` (`server/lib/ownerConfig.ts`)**, or
+  `server/__tests__/ownerConfig.test.ts` fails: every registered service has to
+  declare an app or appear there, never both, so a forgotten declaration cannot
+  pass silently. `app` is not `defineService`-only, either — a hand-built
+  `ServiceEndpoint` takes it in its own options object, the same way Jobs does
+  (`server/services/Jobs.ts`), for a service with no table and no
+  `defineService` declaration behind it at all. `server/lib/ownerConfig.ts`
+  reads it back through `server/lib/services.ts`; core itself never names an
+  app, so the declaration lives on the service, not in a table core would have
+  to keep in sync.
 - Declared fields are client-writable by default; opt out with
   `clientWritable: false`. Filtering is opt-in via `clientFilterable: true`.
 - **`access` is two axes, not one.** It replaced a single `scope`, which

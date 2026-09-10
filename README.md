@@ -507,9 +507,10 @@ What is deliberately different from qb-phone:
 ## Configuration
 
 Everything a server owner can tune is a convar, set in `server.cfg` above
-`ensure mica`. Most are read on the server, so plain `set` is enough. **Five
-need `setr`**, because a client reads them and a plain `set` never leaves the
-server:
+`ensure mica`. Most are read on the server, so plain `set` is enough. **Five are
+worth `setr`**, because a client reads them and a plain `set` never leaves the
+server — though for one of them, `mica_disabled_apps`, only the client's own
+`OpenApp` export depends on it; see below:
 
 - **`mica_music_range`** — both halves of proximity music read it: the server to
   decide who is on a listener's roster, the client to decide what that roster
@@ -521,10 +522,12 @@ server:
 - **`mica_addon_hosts`** and **`mica_addon_catalog`** — the Store's install path
   lives entirely in the phone's UI, for the same reason. A plain `set` leaves
   every phone with an empty allowlist, which means every install is refused.
-- **`mica_disabled_apps`** — the client's own `OpenApp` export also has to
-  refuse a disabled app, not just the shell UI and (for the apps it can) the
-  server. A plain `set` still reaches the shell and the server, but leaves the
-  client export believing it is still open for business.
+- **`mica_disabled_apps`** — the client's own `OpenApp` export checks the convar
+  locally, ahead of the round trip that would otherwise refuse it. With a plain
+  `set` it cannot read the list, so it answers `ok()` for an app the shell still
+  refuses once its NUI message arrives — the phone lands on its home screen, not
+  the app, exactly as it would for any other disabled id. `setr` only changes
+  what the export itself reports.
 
 The values below are the defaults as written in the code, so a server that sets
 none of them behaves exactly as shown and this block is only worth pasting if
@@ -623,7 +626,11 @@ reconnect. `mica_disabled_apps` and `mica_default_dock` are the same shape
 again: both are answered once, together, by `shell:ownerConfig` when a phone
 loads, so a change to either reaches a player on their next reconnect too.
 `mica_default_contacts` is read only when seeding a brand-new phone, so a change
-to it affects phones created after the change, never one already seeded.
+to it affects phones created after the change, never one already seeded — but
+that is only true of the convar's own value. When it points at a file, the
+resolved contacts are memoized against that value (`contactsMemo` in
+`server/lib/ownerConfig.ts`), so editing the file's contents without changing
+the convar is invisible until the resource restarts.
 
 - **`mica_standalone`** — run micaOS with no framework resource at all. Off by
   default, and the only convar here that changes where micaOS's _identity_ comes
@@ -931,25 +938,30 @@ anywhere.
 
 - **`mica_disabled_apps`** — a comma-separated list of app ids to hide: from the
   launcher, the app drawer, search, the dock and the Store, all at once. Hiding
-  needs nothing but a plain `set` — it is server-pushed state, not a client-side
-  read. Server-side refusal is separate, and narrower: a service is refused only
-  when it declares the one app it belongs to, and only when no other app reaches
-  it. Today that is Blabber (its own service and Blabber DMs), Bank's invoices,
-  Hodlr, Jobs, Mail, Marketplace (the Snatchr app), Notes, Places, and Snek's
-  high scores — disable any of those and a modified client's direct net event is
-  refused too, not just the UI. Everything else — Messages, Contacts, Media,
-  Music, Bank's own balance and transfers, Accounts (shared with whatever Store
-  social add-on reaches it), and the phone's own services (Settings, battery,
-  lock screen and the rest) — is hidden only: the server keeps answering because
-  another app still legitimately reaches the same data. `settings` cannot be
-  named here — a phone with Language, Display and Shortcuts disabled cannot be
-  recovered from a bad choice a player made in one of them — and an attempt to
-  disable it is ignored with a warning rather than silently dropped. **`setr` is
-  still worth setting**, because the client's own `OpenApp` export refuses a
-  disabled app locally too, and only learns the list if it can read the convar
-  itself; with a plain `set` that export still opens what the launcher already
-  hides. When it does refuse, `OpenApp` fails with `app_disabled`. Re-enabling
-  an app brings it back where it was.
+  needs nothing but a plain `set`: the phone asks for the list itself, over
+  `shell:ownerConfig`, when it loads — the server does not push it — so a plain
+  `set` is read correctly regardless of who is asking. Server-side refusal is
+  separate, and narrower: a service is refused only when it declares the one app
+  it belongs to, and only when no other app reaches it. Today that is Blabber
+  (its own service and Blabber DMs), Bank's invoices, Hodlr, Jobs, Mail,
+  Marketplace (the Snatchr app), Notes, Places, and Snek's high scores — disable
+  any of those and a modified client's direct net event is refused too, not just
+  the UI. Everything else — Messages, Contacts, Media, Music, Bank's own balance
+  and transfers, Accounts (shared with whatever Store social add-on reaches it),
+  and the phone's own services (Settings, battery, lock screen and the rest) —
+  is hidden only: the server keeps answering because another app still
+  legitimately reaches the same data. `settings` cannot be named here — a phone
+  with Language, Display and Shortcuts disabled cannot be recovered from a bad
+  choice a player made in one of them — and an attempt to disable it is ignored
+  with a warning rather than silently dropped. The server's own `OpenApp` export
+  refuses a disabled app and fails with `app_disabled` on a plain `set`, the
+  same as the UI. **`setr` is still worth setting**, because the client's own
+  `OpenApp` export checks the convar locally, ahead of that round trip: with a
+  plain `set` it cannot see the list, so it answers `ok()` for an app it then
+  hands to the shell — which still refuses it and opens the phone on its home
+  screen rather than the app, exactly as it would for any other disabled id. The
+  difference is only that the export itself does not report `app_disabled` back
+  to its caller. Re-enabling an app brings it back where it was.
 - **`mica_default_dock`** — up to four app ids, comma-separated and positional:
   the first is slot one, and so on. An empty entry between commas is an empty
   slot, so `phone,,camera,messages` leaves slot two blank rather than shifting
