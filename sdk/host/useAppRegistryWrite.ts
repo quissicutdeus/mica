@@ -14,6 +14,9 @@ import { guarded } from './guard';
  * member — including `registerAddOn` — throws, and `IframeHostServer`'s `MEMBER_ALLOWLIST`
  * refuses a raw `postMessage` naming this facet's members too: only a core app installs or
  * removes apps, regardless of whether an add-on's manifest declares `app-registry-write`.
+ *
+ * Installing an app the server owner has disabled (MICA-234) is refused, through
+ * `registerAddOn` and `installFromCatalog` alike, so the Store cannot put one back.
  */
 export function useAppRegistryWrite() {
   return guarded('useAppRegistryWrite').facets.appRegistryWrite();
