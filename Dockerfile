@@ -81,6 +81,21 @@ ARG GIT_BRANCH=main
 ARG GIT_SHA=unknown
 ARG MICA_CALVER=
 
+# MICA-234: what an owner disables, docks and seeds without editing TypeScript. Default
+# empty means the unconfigured phone -- nothing disabled, the built-in dock, no seeded
+# contacts -- which is what every `pnpm demo` and the CI `container` job build today.
+# `shared/ownerConfig.ts` parses these same three shapes for the live resource, reading
+# them off `mica_disabled_apps`, `mica_default_dock` and `mica_default_contacts` at
+# runtime; baking them in here instead lets the mock transport answer `shell:ownerConfig`
+# the same way without a FiveM server behind it, so the demo shows what a configured
+# owner actually gets rather than always the default. Contacts are the one exception on
+# the real resource -- the server seeds them into rows rather than answering them from
+# `shell:ownerConfig` -- but the mock has no rows to seed, so it reads this convar
+# directly; see web/src/nui/mocks/registry.ts.
+ARG VITE_MICA_DISABLED_APPS=
+ARG VITE_MICA_DEFAULT_DOCK=
+ARG VITE_MICA_DEFAULT_CONTACTS=
+
 # No font knob here on purpose. The `mica:trim-fonts` plugin in
 # web/vite.config.ts drops the unused subsets and the legacy `.woff` fallback for
 # EVERY build -- the FiveM NUI bundle carried the same 895KB of cyrillic, greek,
@@ -111,7 +126,15 @@ ARG MICA_CALVER=
 # with nothing exported, supplies none. Failing there would have broken the
 # ordinary local demo to serve the deployed one, so it says what it skipped and
 # why instead.
-RUN case "$GIT_BRANCH" in \
+#
+# `set -eu` is load-bearing here and was missing before MICA-234 touched this block:
+# every statement below is `;`-separated, not `&&`-chained, so without it a failing
+# `pnpm --filter web build` does not stop the script -- the trailing catalog if/elif
+# still runs, its `echo`s still exit 0, and that becomes the RUN's exit status. A
+# broken web build passed as a successful `docker build`, caught only later (if at
+# all) by the container failing its healthcheck.
+RUN set -eu; \
+    case "$GIT_BRANCH" in \
       main) ADDON_ORIGIN="https://mica.gg" ;; \
       dev)  ADDON_ORIGIN="https://dev.mica.gg" ;; \
       *)    ADDON_ORIGIN="" ;; \
@@ -122,6 +145,8 @@ RUN case "$GIT_BRANCH" in \
       VITE_MICA_ADDON_HOSTS="${ADDON_ORIGIN#https://}"; \
       export VITE_MICA_ADDON_CATALOG VITE_MICA_ADDON_HOSTS; \
     fi; \
+    export VITE_MICA_DISABLED_APPS VITE_MICA_DEFAULT_DOCK VITE_MICA_DEFAULT_CONTACTS; \
+    node scripts/warn-owner-config.js; \
     GITHUB_REF_NAME="$GIT_BRANCH" GITHUB_SHA="$GIT_SHA" MICA_CALVER="$MICA_CALVER" \
       pnpm --filter web build; \
     if [ -n "$ADDON_ORIGIN" ] && [ -n "$MICA_CALVER" ]; then \

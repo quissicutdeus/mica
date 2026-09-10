@@ -38,6 +38,15 @@ services:
         # Set to 0 to skip UPX and ship the binary plain -- ~0.5MB larger, ~165ms faster
         # to start, and legible to `strings`/`nm` if you are debugging or scanning it.
         COMPRESS_BINARY: ${COMPRESS_BINARY:-1}
+        # MICA-234: what an owner disables, docks and seeds, baked into the mock transport
+        # so the demo shows the effect with no FiveM server behind it. Same pass-through
+        # form as GIT_BRANCH above -- unset here means the Dockerfile's own empty default,
+        # not an empty override of it. VITE_MICA_DEFAULT_CONTACTS is inline JSON; quote it
+        # for the shell that sets it, e.g.:
+        #   VITE_MICA_DEFAULT_CONTACTS='[{"name":"Dispatch","number":"911"}]' pnpm demo
+        VITE_MICA_DISABLED_APPS:
+        VITE_MICA_DEFAULT_DOCK:
+        VITE_MICA_DEFAULT_CONTACTS:
 
     # A multi-instance deployment (one demo per branch on the same host) needs its
     # own tag too, or the second build silently steals `mica-demo:local` from the

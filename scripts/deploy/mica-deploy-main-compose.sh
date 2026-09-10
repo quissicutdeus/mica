@@ -19,11 +19,12 @@
 set -euo pipefail
 
 COMPOSE_FILE="/opt/fivem-main/server-data/vendor/mica/compose.yaml"
-# Re-pinned for MICA-274: the micaOS rename moved every MICA_* variable and
-# the image and container names in compose.yaml. Reviewed before re-pinning,
-# which is the whole point of this gate: the diff is the rename, and nothing
-# about what runs as root is structurally different.
-EXPECTED_SHA="844b055c32f278ccf8c3e3993da752570a84ef47f78ef00a19640924def6bae9"
+# Re-pinned for MICA-234: three new pass-through build args (VITE_MICA_DISABLED_APPS,
+# VITE_MICA_DEFAULT_DOCK, VITE_MICA_DEFAULT_CONTACTS), same empty-unless-set form as
+# GIT_BRANCH above. Reviewed before re-pinning, which is the whole point of this gate:
+# the diff is three added args, and nothing about what runs as root is structurally
+# different.
+EXPECTED_SHA="7065c501b674ce719c9a9fb12831a3b0a987682d5f3c9c73c3927a33462df88b"
 ENV_FILE="/opt/fivem-main/.env"
 FIVEM_PORT=30120
 
