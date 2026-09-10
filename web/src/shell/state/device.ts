@@ -58,11 +58,21 @@ export const frame = derived(descriptor, ($d) => $d.frame);
  * Only a second device takes a suffix — `homeGridItems:tablet` — which also keeps the
  * `settings` namespace flat enough that `hydrateSettings` can carry it as one row.
  */
+export interface PerDeviceStore<T> extends Writable<T> {
+  /**
+   * The named device's own store, bypassing `activeDevice` — for a write that must land on
+   * one device regardless of which is on screen. MICA-234's owner default dock is phone-only
+   * (`shared/ownerConfig.ts` doesn't configure the tablet's), and the answer can arrive while
+   * the tablet is up.
+   */
+  forDevice: (id: DeviceId) => Writable<T>;
+}
+
 export const perDevice = <T>(
   key: string,
   initial: (device: DeviceDescriptor) => T,
   sanitize: (value: unknown, device: DeviceDescriptor) => T
-): Writable<T> => {
+): PerDeviceStore<T> => {
   const stores = Object.fromEntries(
     ALL_DEVICES.map((id) => {
       const device = DEVICES[id];
@@ -80,7 +90,8 @@ export const perDevice = <T>(
   return {
     subscribe: value.subscribe,
     set: (next) => current().set(next),
-    update: (fn) => current().update(fn)
+    update: (fn) => current().update(fn),
+    forDevice: (id) => stores[id]
   };
 };
 

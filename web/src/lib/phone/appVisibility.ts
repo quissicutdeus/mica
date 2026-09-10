@@ -34,6 +34,13 @@ export interface VisibilityFacts {
   capabilities: CapabilitySet;
   /** The device on screen (MICA-260). An app is hidden on one its `devices` omits. */
   device: DeviceId;
+  /**
+   * Ids the server owner has disabled (MICA-234, `shared/ownerConfig.ts`). A disabled app
+   * is treated exactly like one whose manifest no longer resolves — absent from every
+   * surface this rule gates. The home-grid cell, folder entry or dock slot naming it is
+   * untouched by this: re-enabling brings it back where the player left it.
+   */
+  disabledAppIds: ReadonlySet<string>;
 }
 
 /**
@@ -63,6 +70,7 @@ export const manifestVisible = (
   facts: VisibilityFacts
 ): boolean => {
   if (!manifest) return false;
+  if (facts.disabledAppIds.has(manifest.id)) return false;
   if (!manifestSupportsDevice(manifest, facts.device)) return false;
   if (manifest.requiresAdmin && !facts.isAdmin) return false;
   return capabilitiesSatisfy(facts.capabilities, manifest.requires);

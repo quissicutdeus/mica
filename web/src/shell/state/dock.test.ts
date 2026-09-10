@@ -14,10 +14,13 @@
  * which side it is standing in for. In-process, because a unit test stands in for the shell.
  */
 import '../../host/registerFacets';
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { get } from 'svelte/store';
 import { DEVICES } from '@mica/shared/devices';
+import { setActiveDevice } from './device';
+import { ownerConfig } from './ownerConfig';
 import { DEFAULT_DOCK_APP_IDS, dockAppIds, sanitizeDockAppIds, setDockSlot } from './dock';
+import { storage } from '../../host/facets/storage';
 
 describe('Dock state', () => {
   beforeEach(() => {
@@ -82,6 +85,46 @@ describe('Dock state', () => {
     it('ignores an out-of-range index', () => {
       setDockSlot(4, 'notes');
       expect(get(dockAppIds)).toEqual(DEFAULT_DOCK_APP_IDS);
+    });
+  });
+
+  describe('the owner default dock (MICA-234)', () => {
+    const settingsStorage = storage('settings');
+
+    afterEach(() => {
+      ownerConfig.set({ disabledApps: [], defaultDock: [] });
+      setActiveDevice('phone');
+    });
+
+    it('fills a dock nothing has been saved to yet, once the owner answer arrives', () => {
+      // `beforeEach` above already called `dockAppIds.set(...)`, which persists — so this
+      // is the async-arrival race the store's own doc describes: `perDevice` has already
+      // written the built-in default by the time the config answer lands, and only the
+      // storage key, not that in-memory value, says whether the player has one of their
+      // own. Clearing it here stands in for a player who never has.
+      settingsStorage.removeItem('dockAppIds');
+      ownerConfig.set({ disabledApps: [], defaultDock: ['bank', '', 'notes', ''] });
+      expect(get(dockAppIds)).toEqual(['bank', '', 'notes', '']);
+    });
+
+    it('never overwrites a dock the player has already saved', () => {
+      setDockSlot(1, 'notes');
+      ownerConfig.set({ disabledApps: [], defaultDock: ['bank', 'camera', 'weather', 'mail'] });
+      expect(get(dockAppIds)).toEqual(['phone', 'notes', 'media', 'camera']);
+    });
+
+    it('applies only to the phone, which the convar configures — never the tablet', () => {
+      setActiveDevice('tablet');
+      const before = get(dockAppIds);
+      ownerConfig.set({ disabledApps: [], defaultDock: ['bank', '', '', ''] });
+      expect(get(dockAppIds)).toEqual(before);
+    });
+
+    it('is a no-op with an unset convar', () => {
+      settingsStorage.removeItem('dockAppIds');
+      const before = get(dockAppIds);
+      ownerConfig.set({ disabledApps: [], defaultDock: [] });
+      expect(get(dockAppIds)).toEqual(before);
     });
   });
 });

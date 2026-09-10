@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { get, writable } from 'svelte/store';
+import { derived, get, writable } from 'svelte/store';
 import { DEFAULT_DEVICE, type DeviceId } from '@mica/shared/devices';
 // Imported from their own files rather than the `@mica/sdk` barrel: that barrel
 // re-exports every hook, including `useAppLevels`/`useKeybinds`, which import
@@ -29,6 +29,15 @@ import {
 import { isCatalogEntry, type CatalogEntry } from '../../../../sdk/catalog';
 import { SDK_CONTRACT_VERSION } from '../../../../sdk/version';
 import { toast } from './toast';
+import { disabledAppIds } from './ownerConfig';
+
+/**
+ * Whether the owner has disabled `appId` (MICA-234). Read fresh at every call site below
+ * rather than threaded through as a parameter: every one of these is a plain function or a
+ * one-shot method, not a derived value, so `get()` at the moment of the call is exactly the
+ * answer a caller synchronously invoking right after `ownerConfig.set(...)` expects.
+ */
+const isDisabled = (appId: string): boolean => get(disabledAppIds).has(appId);
 
 export type { AppManifest } from '../../../../sdk/manifest';
 
@@ -184,8 +193,13 @@ const resolveComponent = (
  * glob is a fact about the build, not the install, same as `bundledComponents` always was
  * for a core app — and an installed remote/dev add-on is known once its source has
  * arrived (`addOnSources`).
+ *
+ * An app the owner has disabled (MICA-234) is unknown too, for exactly this same reason:
+ * `openApp` (`navigation.ts`) refuses on this check alone, so a disabled id is refused the
+ * same way an id naming no app is, with no separate check to keep in sync.
  */
 const isKnownApp = (appId: string): boolean =>
+  !isDisabled(appId) &&
   Boolean(
     componentRegistry.has(appId) ||
     bundledComponents.has(appId) ||
@@ -651,6 +665,19 @@ function createAppRegistry() {
   const { subscribe, update } = installed;
 
   /**
+   * The public store's own `subscribe` (MICA-234): live-filtered against the owner's
+   * disabled list, not a snapshot taken at read time. An app an add-on already subscribed
+   * to over `postMessage` — or a core app holding the store from `useAppRegistry()` — has
+   * to see one it named disappear from an *existing* subscription the moment the owner's
+   * answer changes, the same way the launcher does; a plain filter applied only where
+   * `getManifest`/`isInstalled` are called would leave anyone already subscribed looking at
+   * a list from before the config arrived.
+   */
+  const visibleInstalled = derived([installed, disabledAppIds], ([$installed, $disabled]) =>
+    $installed.filter((a) => !$disabled.has(a.id))
+  );
+
+  /**
    * The bookkeeping every registration path shares — the store update, the installed-
    * add-on tracking, and the home-grid placement — regardless of whether the caller is
    * `registerApp` (a component, core apps and DEV-only fixtures) or `registerAddOn` (a
@@ -733,7 +760,7 @@ function createAppRegistry() {
   }
 
   const store = {
-    subscribe,
+    subscribe: visibleInstalled.subscribe,
     /**
      * Register a manifest **with its component already loaded** — the in-process path.
      *
@@ -764,6 +791,17 @@ function createAppRegistry() {
      */
     registerAddOn: (manifest: AppManifest, source?: string) => {
       const validatedManifest = defineApp(manifest);
+      // MICA-234: the Store's own install path, refused before anything is recorded — the
+      // same fact `bundledAddOns` (the facet's filtered answer) already keeps this add-on
+      // from being offered for, restated here for a caller that reaches `registerAddOn`
+      // directly (a catalog install, or a dev/test fixture) rather than through the Store's
+      // listing. No `micaOS App Registry error:` prefix: this is an ordinary fact about the
+      // server, not a programming mistake, and `useAppAction`'s `run` surfaces it as a toast.
+      if (isDisabled(validatedManifest.id)) {
+        throw new Error(
+          `${validatedManifest.name} has been disabled by this server's owner and cannot be installed.`
+        );
+      }
       assertContractSupported(validatedManifest);
       assertCapabilitiesAvailable(validatedManifest);
       assertServicesUnclaimed(validatedManifest, get(installed));
@@ -845,7 +883,7 @@ function createAppRegistry() {
      * raising toasts. Installed-ness is its own fact, so it gets its own question.
      */
     isInstalled: (appId: string): boolean =>
-      get(installed).some((a: AppManifest) => a.id === appId),
+      !isDisabled(appId) && get(installed).some((a: AppManifest) => a.id === appId),
     /**
      * The manifest for an app the shell can render — installed, or a bundled add-on.
      *
@@ -864,8 +902,10 @@ function createAppRegistry() {
      * from the manifest glob and nothing that is not in this bundle can appear in it.
      */
     getManifest: (appId: string): AppManifest | undefined =>
-      get(installed).find((a: AppManifest) => a.id === appId) ??
-      addOns.find((a: AppManifest) => a.id === appId),
+      isDisabled(appId)
+        ? undefined
+        : (get(installed).find((a: AppManifest) => a.id === appId) ??
+          addOns.find((a: AppManifest) => a.id === appId)),
     /**
      * The only way a remote app is ever installed. Builds the manifest from `entry` —
      * never from anything the fetched bundle itself claims to be — after the bundle's
@@ -908,6 +948,16 @@ function createAppRegistry() {
     entry: CatalogEntry,
     adoptGrant = false
   ): Promise<{ manifest: AppManifest }> {
+    // MICA-234: checked by `entry.id` before any fetch, so a disabled catalog id costs
+    // nothing and never reaches the network. Also what refuses re-installing an id the
+    // owner disabled after it was saved (`rehydrateSavedRemoteApps` catches and warns
+    // rather than throwing further, so this drops it from the effectively-installed set
+    // on the next boot rather than crashing one).
+    if (isDisabled(entry.id)) {
+      throw new Error(
+        `'${entry.id}' has been disabled by this server's owner and cannot be installed.`
+      );
+    }
     // `isTrustedRemoteUrl` exempts `data:` URLs — safe for its other callers, which only
     // ever build one internally from bytes already hash-verified, never from anything an
     // operator's catalog (or a saved/rehydrated row derived from one) supplied. A catalog

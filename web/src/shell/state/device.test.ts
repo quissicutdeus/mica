@@ -100,6 +100,23 @@ describe('a per-device setting', () => {
     expect(get(setting)).toBe(3);
   });
 
+  it("writes a named device's own store, bypassing whichever device is active", () => {
+    const setting = perDevice<number>(
+      'device.test.forDevice',
+      (device) => device.launcher.columns,
+      (value, device) => (typeof value === 'number' ? value : device.launcher.columns)
+    );
+
+    setActiveDevice('tablet');
+    setting.forDevice('phone').set(11);
+    // Writing the phone's own store while the tablet is active must not touch what the
+    // tablet reads.
+    expect(get(setting)).toBe(8);
+
+    setActiveDevice('phone');
+    expect(get(setting)).toBe(11);
+  });
+
   it('gives the tablet its own Display size', () => {
     displaySize.set(40);
     setActiveDevice('tablet');

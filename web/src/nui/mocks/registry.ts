@@ -4,6 +4,11 @@
 
 import { taggedTopics } from '@mica/shared/richText';
 import { GENERIC_SERVICE_ACTION } from '@mica/shared/rpc';
+import {
+  parseDefaultContacts,
+  parseDefaultDock,
+  parseDisabledApps
+} from '@mica/shared/ownerConfig';
 // Type-only: `services/bank.ts` imports `fetchNui`, which imports this file's own
 // transport — a value import here would be a real import cycle, a type-only one is
 // erased before anything runs.
@@ -60,6 +65,54 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 // parameter isn't itself `unknown`.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- see comment above
 export type MockHandler<T = any> = (data?: any) => Promise<T> | T;
+
+/**
+ * The owner-config convars (MICA-234), as this transport's stand-in for `server.cfg`:
+ * `window.location.search` first — read only, never navigated (§6 bans it in CEF, and a
+ * browser tab has no reason to either) — then a `VITE_MICA_*` build-time env var, so both
+ * an e2e spec (`?mica_disabled_apps=...`) and a `pnpm dev` session
+ * (`VITE_MICA_DISABLED_APPS=... pnpm dev`) can walk the loop end to end without a server.
+ * Unset, which is every ordinary `pnpm dev`, every Playwright run and every production
+ * build, resolves to exactly what an unconfigured client answers.
+ */
+const ownerConfigRaw = (query: string, envValue: string | undefined): string => {
+  if (typeof window !== 'undefined') {
+    const fromQuery = new URLSearchParams(window.location.search).get(query);
+    if (fromQuery !== null) return fromQuery;
+  }
+  return String(envValue ?? '');
+};
+
+const mockDisabledApps = parseDisabledApps(
+  ownerConfigRaw('mica_disabled_apps', import.meta.env.VITE_MICA_DISABLED_APPS)
+).value;
+const mockDefaultDock = parseDefaultDock(
+  ownerConfigRaw('mica_default_dock', import.meta.env.VITE_MICA_DEFAULT_DOCK)
+).value;
+
+/**
+ * Default contacts an owner seeds (MICA-234). The real server seeds rows into the
+ * `mica_contacts` table; this mock has no server to seed, so the entries are appended to
+ * `mockContacts` directly, at ids well past every other fixture's range (the highest,
+ * `deletedContact`, sits at 9999) so a real one is never overwritten.
+ */
+const OWNER_DEFAULT_CONTACT_ID_BASE = 20000;
+parseDefaultContacts(
+  ownerConfigRaw('mica_default_contacts', import.meta.env.VITE_MICA_DEFAULT_CONTACTS)
+).value.forEach((entry, index) => {
+  const now = new Date().toISOString();
+  mockContacts.push({
+    id: OWNER_DEFAULT_CONTACT_ID_BASE + index,
+    citizenid: `owner-default-${index}`,
+    firstname: entry.name,
+    lastname: '',
+    phone: entry.number,
+    favorite: false,
+    status: 'active',
+    created_at: now,
+    updated_at: now
+  });
+});
 
 let mockPhotoIndex = 5;
 
@@ -2302,6 +2355,11 @@ const mockRegistry: Record<string, MockHandler> = {
   'shell:sourceUrl': () => ({ url: 'https://github.com/quissicutdeus/mica' }),
   // MICA-61: no owner default in the browser, so the player's own language decides.
   'shell:locale': () => ({ locale: '' }),
+  /**
+   * `mica_disabled_apps` / `mica_default_dock` (MICA-234), parsed once above so this and
+   * the appended `mockContacts` rows read from the same answer.
+   */
+  'shell:ownerConfig': () => ({ disabledApps: mockDisabledApps, defaultDock: mockDefaultDock }),
 
   /**
    * Broadcasting to people nearby (MICA-111 phase 2), which in a browser means nobody.

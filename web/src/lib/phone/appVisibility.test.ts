@@ -25,7 +25,8 @@ const app = (extra: Partial<AppManifest> = {}): AppManifest =>
 const facts = (isAdmin: boolean, money: boolean): VisibilityFacts => ({
   isAdmin,
   capabilities: { money },
-  device: 'phone'
+  device: 'phone',
+  disabledAppIds: new Set()
 });
 
 describe('manifestVisible', () => {
@@ -80,9 +81,19 @@ describe('manifestVisible', () => {
       manifestVisible(app({ requires: ['money'] }), {
         isAdmin: true,
         capabilities: {},
-        device: 'phone'
+        device: 'phone',
+        disabledAppIds: new Set()
       })
     ).toBe(false);
+  });
+
+  it('hides an app the owner disabled, same as one that no longer resolves (MICA-234)', () => {
+    expect(
+      manifestVisible(app(), { ...facts(true, true), disabledAppIds: new Set(['widget']) })
+    ).toBe(false);
+    expect(
+      manifestVisible(app(), { ...facts(true, true), disabledAppIds: new Set(['other']) })
+    ).toBe(true);
   });
 });
 

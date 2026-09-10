@@ -4,7 +4,9 @@
 
 import { derived, get } from 'svelte/store';
 import { DEVICES, type DeviceDescriptor, type DeviceId } from '@mica/shared/devices';
-import { activeDevice, descriptor, perDevice } from './device';
+import { activeDevice, descriptor, perDevice, persistedKeyFor } from './device';
+import { ownerConfig } from './ownerConfig';
+import { storage } from '../../host/facets/storage';
 
 /** The active device's slot count — 4 on the phone, 6 on the tablet (MICA-259). */
 export const dockSlotCount = derived(descriptor, ($d) => $d.launcher.dockSlots);
@@ -82,3 +84,34 @@ export function setDockSlot(index: number, appId: string): void {
     return next;
   });
 }
+
+const settingsStorage = storage('settings');
+
+/**
+ * Whether the phone's dock has ever actually been written to storage — distinct from
+ * `dockAppIds` merely *holding* the built-in default, which is equally true of a fresh
+ * install nobody has touched. `usePersisted` deliberately writes nothing at construction
+ * (see its own doc), so an unset key is the honest signal of "nobody has an opinion yet";
+ * reading the raw stored value (rather than trusting `dockAppIds`'s current in-memory
+ * value) is what tells "never saved" apart from "saved, and happens to equal the default".
+ */
+const hasStoredPhoneDock = (): boolean =>
+  settingsStorage.getItem<string[]>(persistedKeyFor('dockAppIds', 'phone')) !== null;
+
+/**
+ * MICA-234: an owner's `mica_default_dock` replaces the phone's built-in default dock —
+ * never the tablet's, which the convar does not configure (`shared/ownerConfig.ts`) — and
+ * only for a player who has not touched (or been given) a dock of their own.
+ *
+ * The config answer arrives asynchronously, strictly after `perDevice` has already
+ * constructed the phone's dock store with the built-in default as its starting value — see
+ * `hasStoredPhoneDock`'s own doc for why that starting value is not itself evidence of a
+ * save. Writing straight to `dockAppIds.forDevice('phone')` rather than through the
+ * `activeDevice`-following `dockAppIds` proxy is deliberate too: the config can answer while
+ * the tablet is the device on screen, and this must land on the phone's slot regardless.
+ */
+ownerConfig.subscribe(($config) => {
+  if ($config.defaultDock.length === 0) return;
+  if (hasStoredPhoneDock()) return;
+  dockAppIds.forDevice('phone').set(sanitizeDockAppIds($config.defaultDock, DEVICES.phone));
+});

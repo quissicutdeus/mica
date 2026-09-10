@@ -27,6 +27,7 @@ import { hydrateSettings, useStorage } from '../../../../sdk/host/useStorage';
 import { setTrustedRemoteAppHosts, sha256Hex } from '../../../../sdk/remoteAppSecurity';
 import { SDK_CONTRACT_VERSION } from '../../../../sdk/version';
 import { capabilities, capabilitiesKnown } from '../../services/capabilities';
+import { ownerConfig } from './ownerConfig';
 import type { CatalogEntry } from '../../../../sdk/catalog';
 
 const fetchResponse = (text: string, ok = true, status = 200): Response =>
@@ -438,6 +439,90 @@ describe('App Registry Store', () => {
   });
 });
 
+describe('an app the owner has disabled (MICA-234)', () => {
+  const disable = (...ids: string[]) => ownerConfig.set({ disabledApps: ids, defaultDock: [] });
+
+  afterEach(() => disable());
+
+  it('is unknown, unresolvable and not installed, and comes back when re-enabled', () => {
+    expect(appRegistryStore.isKnownApp('notes')).toBe(true);
+    expect(appRegistryStore.getManifest('notes')).toBeDefined();
+
+    disable('notes');
+    expect(appRegistryStore.isKnownApp('notes')).toBe(false);
+    expect(appRegistryStore.getManifest('notes')).toBeUndefined();
+
+    disable();
+    expect(appRegistryStore.isKnownApp('notes')).toBe(true);
+    expect(appRegistryStore.getManifest('notes')?.id).toBe('notes');
+  });
+
+  it('drops out of isInstalled once installed and disabled together', () => {
+    try {
+      appRegistryStore.registerAddOn({
+        id: 'blabber',
+        name: 'Blabber',
+        color: 'bg-sky-500',
+        tile: { bg: 'bg-sky-500' },
+        icon: null,
+        core: false
+      });
+      expect(appRegistryStore.isInstalled('blabber')).toBe(true);
+
+      disable('blabber');
+      expect(appRegistryStore.isInstalled('blabber')).toBe(false);
+    } finally {
+      disable();
+      appRegistryStore.unregisterApp('blabber');
+    }
+  });
+
+  it('drops out of a live subscription to the store the moment the owner disables it, and returns on re-enable', () => {
+    // A core app, not an add-on — 'notes' starts uninstalled (`addOns`, not `loadedApps`),
+    // so it would be absent from a fresh subscription with or without the owner's config.
+    let seen: string[] = [];
+    const stop = appRegistryStore.subscribe((apps) => (seen = apps.map((a) => a.id)));
+    try {
+      expect(seen).toContain('contacts');
+
+      disable('contacts');
+      expect(seen).not.toContain('contacts');
+
+      disable();
+      expect(seen).toContain('contacts');
+    } finally {
+      stop();
+    }
+  });
+
+  it('refuses registerAddOn, and installs once re-enabled', () => {
+    disable('blabber');
+    expect(() =>
+      appRegistryStore.registerAddOn({
+        id: 'blabber',
+        name: 'Blabber',
+        color: 'bg-sky-500',
+        tile: { bg: 'bg-sky-500' },
+        icon: null,
+        core: false
+      })
+    ).toThrow('has been disabled by this');
+    expect(appRegistryStore.isInstalled('blabber')).toBe(false);
+
+    disable();
+    appRegistryStore.registerAddOn({
+      id: 'blabber',
+      name: 'Blabber',
+      color: 'bg-sky-500',
+      tile: { bg: 'bg-sky-500' },
+      icon: null,
+      core: false
+    });
+    expect(appRegistryStore.isInstalled('blabber')).toBe(true);
+    appRegistryStore.unregisterApp('blabber');
+  });
+});
+
 describe('installFromCatalog', () => {
   const bundleCode = `export const manifest = { id: 'remote_catalog_app' };`;
   const bundleUrl = 'https://store.example.com/apps/catalog_app.js';
@@ -608,6 +693,20 @@ describe('installFromCatalog', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(fetchResponse('', false, 404));
 
     await expect(appRegistryStore.installFromCatalog(catalogEntry)).rejects.toThrow('HTTP 404');
+  });
+
+  it('refuses a catalog id the owner disabled, before ever fetching it (MICA-234)', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    ownerConfig.set({ disabledApps: ['remote_catalog_app'], defaultDock: [] });
+
+    try {
+      await expect(appRegistryStore.installFromCatalog(catalogEntry)).rejects.toThrow(
+        'has been disabled by this'
+      );
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      ownerConfig.set({ disabledApps: [], defaultDock: [] });
+    }
   });
 });
 

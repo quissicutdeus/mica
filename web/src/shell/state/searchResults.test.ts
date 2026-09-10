@@ -194,6 +194,18 @@ describe('searchEverything', () => {
     );
   });
 
+  it('hides an app the owner disabled, and its own contacts group with it (MICA-234)', () => {
+    expect(searchEverything('cam', sources, { disabledAppIds: new Set(['camera']) })).toEqual([]);
+    // '555-0100' is Jim Halpert's phone number and matches nothing else in `sources`, so
+    // this isolates the contacts group from the 'Jim Halpert' conversation title above it.
+    expect(
+      searchEverything('555-0100', sources, { disabledAppIds: new Set(['contacts']) })
+    ).toEqual([]);
+    expect(
+      searchEverything('555-0100', sources, { disabledAppIds: new Set(['camera']) })
+    ).toHaveLength(1);
+  });
+
   it('lists on the tablet only what its launcher would draw (MICA-260)', () => {
     const both = app('admin', 'Admin', { devices: ['phone', 'tablet'] });
     const withDevices = { ...sources, apps: [app('camera', 'Camera'), both] };

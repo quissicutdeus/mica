@@ -132,9 +132,9 @@ export interface SearchSources {
 }
 
 /**
- * The two facts that decide whether an app is on this phone at all.
+ * The facts that decide whether an app is on this phone at all.
  *
- * Both default to the least-privileged answer, so a caller that forgets one gets a search
+ * Each defaults to the least-privileged answer, so a caller that forgets one gets a search
  * that hides too much rather than one that surfaces an app the launcher does not draw —
  * search is a way *into* an app, so listing a hidden one is the same broken promise as the
  * icon, one tap earlier.
@@ -144,9 +144,12 @@ export interface SearchOptions {
   capabilities?: CapabilitySet;
   /** The device on screen (MICA-260); search lists what its launcher would draw. */
   device?: DeviceId;
+  /** Ids the server owner has disabled (MICA-234); absent means nothing is. */
+  disabledAppIds?: ReadonlySet<string>;
 }
 
 const NOTHING_SATISFIED: CapabilitySet = {};
+const NOTHING_DISABLED: ReadonlySet<string> = new Set();
 
 const matches = (needle: string, ...haystack: (string | undefined)[]): boolean =>
   haystack.some((value) => value?.toLowerCase().includes(needle));
@@ -184,12 +187,17 @@ const mediaTitle = (item: SearchableMedia): string =>
 export function searchEverything(
   query: string,
   sources: SearchSources,
-  { isAdmin = false, capabilities = NOTHING_SATISFIED, device = DEFAULT_DEVICE }: SearchOptions = {}
+  {
+    isAdmin = false,
+    capabilities = NOTHING_SATISFIED,
+    device = DEFAULT_DEVICE,
+    disabledAppIds = NOTHING_DISABLED
+  }: SearchOptions = {}
 ): SearchResult[] {
   const needle = query.trim().toLowerCase();
   if (!needle) return [];
 
-  const facts = { isAdmin, capabilities, device };
+  const facts = { isAdmin, capabilities, device, disabledAppIds };
   const visible = (manifest: AppManifest) => manifestVisible(manifest, facts);
   const ownerVisible = (appId: string): boolean =>
     sources.apps.some((app) => app.id === appId && visible(app));

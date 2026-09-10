@@ -7,6 +7,7 @@ import { isAdmin } from '../../services/admin';
 import { capabilities } from '../../services/capabilities';
 import { manifestVisible } from '../../lib/phone/appVisibility';
 import { activeDevice } from './device';
+import { disabledAppIds } from './ownerConfig';
 import type { AppManifest } from '../../../../sdk/manifest';
 
 /**
@@ -25,12 +26,13 @@ import type { AppManifest } from '../../../../sdk/manifest';
  * second one landed after it, which `refreshCapabilities` does by construction.
  */
 export const appVisible = derived(
-  [isAdmin, capabilities, activeDevice],
-  ([$isAdmin, $capabilities, $device]) =>
+  [isAdmin, capabilities, activeDevice, disabledAppIds],
+  ([$isAdmin, $capabilities, $device, $disabledAppIds]) =>
     (manifest: AppManifest | null | undefined): boolean =>
       manifestVisible(manifest, {
         isAdmin: $isAdmin,
         capabilities: $capabilities,
-        device: $device
+        device: $device,
+        disabledAppIds: $disabledAppIds
       })
 );

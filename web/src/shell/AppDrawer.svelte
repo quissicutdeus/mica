@@ -18,6 +18,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { isAdmin } from '../services/admin';
   import { capabilities } from '../services/capabilities';
   import { appVisible } from './state/appVisibility';
+  import { disabledAppIds } from './state/ownerConfig';
   import { contacts } from '../services/contacts';
   import { conversationsStore } from '../services/conversations';
   import { media } from '../services/media';
@@ -86,7 +87,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         listings: $cachedListings,
         providers: $searchProviders
       },
-      { isAdmin: $isAdmin, capabilities: $capabilities }
+      { isAdmin: $isAdmin, capabilities: $capabilities, disabledAppIds: $disabledAppIds }
     )
   );
 
