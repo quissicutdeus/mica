@@ -59,6 +59,7 @@
   "endpoint.badId": "A valid numeric id is required for this {service} operation.",
   "endpoint.noWritableCreate": "No writable fields supplied for {service} create.",
   "endpoint.noWritableUpdate": "No writable fields supplied for {service} update.",
+  "endpoint.appDisabled": "The {app} app is turned off on this server.",
   "highscores.unknownGame": "Unknown game.",
   "lockscreen.tooManyAttempts": "Too many attempts. Try again in {seconds}s.",
   "payload.required.id": "A valid numeric id is required.",

@@ -59,6 +59,7 @@
   "endpoint.badId": "Für diesen {service}-Vorgang ist eine gültige numerische ID erforderlich.",
   "endpoint.noWritableCreate": "Für {service} create wurden keine beschreibbaren Felder übermittelt.",
   "endpoint.noWritableUpdate": "Für {service} update wurden keine beschreibbaren Felder übermittelt.",
+  "endpoint.appDisabled": "Die App {app} ist auf diesem Server deaktiviert.",
   "highscores.unknownGame": "Unbekanntes Spiel.",
   "lockscreen.tooManyAttempts": "Zu viele Versuche. Versuche es in {seconds}s erneut.",
   "payload.required.id": "Eine gültige numerische ID ist erforderlich.",
