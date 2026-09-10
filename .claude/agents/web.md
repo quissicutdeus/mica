@@ -76,9 +76,12 @@ instructions say the port is yours; other lanes may hold it.
 
 ## Report
 
-Your final message must state:
+Your final message goes to the lead, who is short on attention. **Ten lines at
+most** — no headers, no tables, no restating the brief. A gate you ran is one
+line: the command, pass or fail, and the counts it printed. Paste output only
+for a failure, and only the failing part. Within that, state:
 
-- The real output of the tests and typecheck you ran.
+- The result of the tests and typecheck you ran.
 - **That in-game and CEF rendering are unverified.** Neither you nor the suites
   can run FiveM's CEF. Your argument rests on which Chromium version a feature
   shipped in — say so plainly, and name the version, rather than implying the

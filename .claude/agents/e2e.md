@@ -72,9 +72,12 @@ what keeps the next run of this agent from re-discovering the same trap.
 
 ## Report
 
-Your final message must state:
+Your final message goes to the lead, who is short on attention. **Ten lines at
+most** — no headers, no tables, no restating the brief. A gate you ran is one
+line: the command, pass or fail, and the counts it printed. Paste output only
+for a failure, and only the failing part. Within that, state:
 
-- The real output of `--repeat-each=5` for any new spec.
+- The result of `--repeat-each=5` for any new spec.
 - Whether you proved a new regression test fails without its fix.
 - What e2e cannot tell you: Playwright drives a **modern Chromium against the
   browser mock transport**, so a green suite proves nothing about FiveM's CEF

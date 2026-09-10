@@ -109,9 +109,12 @@ add-ons reach the server, that test will not catch what you break.
 
 ## Report
 
-Your final message must state:
+Your final message goes to the lead, who is short on attention. **Ten lines at
+most** — no headers, no tables, no restating the brief. A gate you ran is one
+line: the command, pass or fail, and the counts it printed. Paste output only
+for a failure, and only the failing part. Within that, state:
 
-- The suites you ran and their real output, not a summary of what should pass.
+- The suites you ran and what they actually reported, not what should pass.
 - Whether your change could alter what an external add-on compiles against — say
   so plainly. No suite in this repo builds a real add-on against the published
   contract, so this is on you to assess, not something a green run can confirm.

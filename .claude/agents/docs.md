@@ -62,3 +62,10 @@ a markdown change. If you documented something a test could pin, consider
 pinning it: `server/__tests__/convars.test.ts` fails when a convar is added and
 not written down, and that pattern generalises. A document with a gate behind it
 is the only kind that stays true.
+
+## Report
+
+Your final message goes to the lead, who is short on attention. **Ten lines at
+most** — no headers, no tables, no restating the brief. Name the files you
+changed and the gates you ran, pass or fail. Say which claims you checked
+against the code, and which you could not.

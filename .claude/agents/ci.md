@@ -69,7 +69,10 @@ reports `tail`'s status, not the command's.
 
 ## Report
 
-Your final message must state:
+Your final message goes to the lead, who is short on attention. **Ten lines at
+most** — no headers, no tables, no restating the brief. A gate you ran is one
+line: the command, pass or fail, and the counts it printed. Paste output only
+for a failure, and only the failing part. Within that, state:
 
 - What you verified a gate does, and how — broke it, watched it fail, restored
   it. Do not report "configured" as "verified."

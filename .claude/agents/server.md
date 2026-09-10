@@ -60,10 +60,13 @@ different TypeScript version and are checked more strictly.
 
 ## Report
 
-Your final message must state:
+Your final message goes to the lead, who is short on attention. **Ten lines at
+most** — no headers, no tables, no restating the brief. A gate you ran is one
+line: the command, pass or fail, and the counts it printed. Paste output only
+for a failure, and only the failing part. Within that, state:
 
-- The real output of `pnpm exec vitest run <path>` for tests you added or
-  changed, and of `pnpm typecheck`.
+- The result of `pnpm exec vitest run <path>` for tests you added or changed,
+  and of `pnpm typecheck`.
 - Whether you added a test for new or changed logic — if not, say so; `tsc`
   proves types rather than behaviour, so an untested change is unverified.
 - If a task seemed to need a schema change you weren't asked for: **stop and
