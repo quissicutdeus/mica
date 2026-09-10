@@ -62,6 +62,9 @@ class HighscoreRepository extends SchemaRepository<Highscore> {
 export const highscores = defineService<Highscore, typeof highscoresContract>({
   contract: highscoresContract,
   id: 'highscores',
+  // Snek is the only game `KNOWN_APPS` accepts, so disabling it closes the board. A second game
+  // makes this shared: drop `app` and list the service in `NEVER_REFUSED_SERVICES`.
+  app: 'snek',
   access: { read: 'owner', write: 'owner' },
   schema: {
     app: { type: 'string', length: 32, notNull: true, clientWritable: false },

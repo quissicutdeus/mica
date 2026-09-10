@@ -10,6 +10,7 @@ import {
   type OwnerConfig
 } from '@mica/shared/ownerConfig';
 import { PlayerFacingError } from './errors';
+import { appOfService } from './services';
 
 /**
  * The server's read of what an owner configures without editing TypeScript (MICA-234).
@@ -71,50 +72,43 @@ export const ownerConfig = (): OwnerConfig => ({
 export const isAppDisabled = (appId: string): boolean => disabledApps().includes(appId);
 
 /**
- * Which app owns each service a disabled app takes down with it.
+ * Which services a disabled app takes down with it.
  *
- * **Only services no other app reaches.** Disabling an app refuses its server events so a
+ * **Only services no other app reaches**, and each says so itself: `app` on its
+ * `defineService` or `ServiceEndpoint`, read back through `lib/services.ts`. Not a table here,
+ * because this directory is core and an app the Store installs is not in this repository for
+ * core to name (`sdk/coreBoundary.test.ts`). Disabling an app refuses its server events so a
  * modified client cannot drive a feature the owner turned off, but most services are not one
  * app's: the phone and Messages read contacts, Camera and Blabber write media, Messages and
- * Settings read the bank balance. Refusing those because their namesake app is off would
- * break every other app that holds the facet, so they are listed below as never refused. The
+ * Settings read the bank balance. Refusing those because their namesake app is off would break
+ * every other app that holds the facet, so they declare no app and are listed below. The
  * source for "who reaches it" is each manifest's `permissions` and the web service that calls
  * the contract.
  *
- * A service id is not always its app's id, which is why this is a table rather than
- * `service === app`: Blabber's DMs are `blabber_dms`, and Bank's invoices are `invoices`.
- * `ownerConfig.test.ts` holds every registered service to exactly one of the two lists, so a
- * new service is a decision somebody makes rather than a default nobody noticed.
+ * A service id is not always its app's id, which is why it is a declaration rather than
+ * `service === app`: Blabber's DMs are `blabber_dms`, Bank's invoices are `invoices`, and
+ * Snek's board is `highscores`. `bank` itself declares no app: `useAccount` reads its
+ * transactions from Messages and Settings.
  */
-export const APP_OF_SERVICE: Readonly<Record<string, string>> = {
-  blabber: 'blabber',
-  blabber_dms: 'blabber',
-  hodlr: 'hodlr',
-  // `bank` itself is not here: `useAccount` reads its transactions from Messages and Settings.
-  invoices: 'bank',
-  jobs: 'jobs',
-  mail: 'mail',
-  marketplace: 'marketplace',
-  notes: 'notes',
-  places: 'places'
-};
 
 /**
- * Services an owner's disabled list never refuses, whatever it names.
+ * Services an owner's disabled list never refuses, whatever it names: every registered service
+ * that declares no app.
  *
- * The phone itself (`shell`, `phone`, `phones`, `phonenumbers`, `battery`, `signal`,
- * `lockscreen`, `notifications`, `settings`) and the privileged surface (`admin`, `reports`)
- * are not apps. The rest are data several apps share through a permission facet.
+ * A list rather than the silent default, so a forgotten declaration still fails a test —
+ * `ownerConfig.test.ts` holds every registered service to declaring an app or appearing here,
+ * never both. The phone itself (`shell`, `phone`, `phones`, `phonenumbers`, `battery`,
+ * `signal`, `lockscreen`, `notifications`, `settings`) and the privileged surface (`admin`,
+ * `reports`) are not apps. The rest are data several apps share through a permission facet.
+ * It names no add-on, and must not.
  */
 export const NEVER_REFUSED_SERVICES: readonly string[] = [
-  'accounts',
   'admin',
   'bank',
   'battery',
   'blocklist',
   'contacts',
   'conversations',
-  'highscores',
   'lockscreen',
   'media',
   'messages',
@@ -133,11 +127,11 @@ export const NEVER_REFUSED_SERVICES: readonly string[] = [
 /**
  * The disabled app this service belongs to, or null when a request to it may proceed.
  *
- * An unmapped service costs no convar read: the common case is a shared service, and the
- * request path pays for this on every call.
+ * A service that declared no app costs no convar read: the common case is a shared service,
+ * and the request path pays for this on every call.
  */
 export const disabledAppFor = (service: string): string | null => {
-  const app = APP_OF_SERVICE[service];
+  const app = appOfService(service);
   if (!app) return null;
   return isAppDisabled(app) ? app : null;
 };
@@ -205,11 +199,21 @@ export const resolveDefaultContacts = (
   return { ...parsed, problem: null };
 };
 
+/**
+ * The most default contacts a new phone is seeded with.
+ *
+ * Each is its own insert against a phone that did not exist a moment ago, so an owner's file of
+ * thousands would be thousands of writes per new phone. Entries past the cap are refused and
+ * named in the one warning, like any other, rather than silently dropped.
+ */
+export const MAX_DEFAULT_CONTACTS = 50;
+
 /** The last value resolved, so a file is read once per value rather than once per phone. */
 let contactsMemo: { raw: string; value: DefaultContact[] } | null = null;
 
 /**
- * The contacts a new phone starts with, each held to the columns it lands in.
+ * The contacts a new phone starts with, each held to the columns it lands in, and at most
+ * `MAX_DEFAULT_CONTACTS` of them — the first that fit, in the owner's order.
  *
  * `limits` are the `mica_contacts` column lengths, passed in by `services/Contacts.ts` so this
  * file never names another service's table. An entry too long for them is refused and named
@@ -226,7 +230,8 @@ export const defaultContacts = (limits: { name: number; number: number }): Defau
   const value: DefaultContact[] = [];
   const rejected = [...resolved.rejected];
   for (const entry of resolved.value) {
-    if (entry.name.length <= limits.name && entry.number.length <= limits.number) {
+    const fits = entry.name.length <= limits.name && entry.number.length <= limits.number;
+    if (fits && value.length < MAX_DEFAULT_CONTACTS) {
       value.push(entry);
     } else {
       rejected.push(JSON.stringify(entry));
@@ -243,7 +248,7 @@ export const defaultContacts = (limits: { name: number; number: number }): Defau
     raw,
     rejected,
     `Each entry needs a "name" of at most ${limits.name} characters and a "number" of at ` +
-      `most ${limits.number}.`
+      `most ${limits.number}, and a new phone gets at most ${MAX_DEFAULT_CONTACTS} of them.`
   );
 
   contactsMemo = { raw, value };

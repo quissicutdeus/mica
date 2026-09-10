@@ -66,6 +66,7 @@ let mailRepo!: MailRepository;
 export const mail = defineService<Mail, typeof mailContract>({
   contract: mailContract,
   id: 'mail',
+  app: 'mail',
   access: { read: 'owner', write: 'server' },
   statuses: ['active', 'archived', 'deleted', 'moderated'],
   schema: {

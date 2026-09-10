@@ -34,6 +34,7 @@ import { resolve as resolvePlayer } from '../lib/PlayerDirectory';
 export const marketplace = defineService<Listing, typeof marketplaceContract>({
   contract: marketplaceContract,
   id: 'marketplace',
+  app: 'marketplace',
   reportable: { label: 'Listing', previewColumn: 'title' },
   access: { read: 'public', write: 'owner' },
   paging: { pageSize: 30, maxPageSize: 60 },

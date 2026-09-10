@@ -25,6 +25,7 @@ import type { JobActionOutcome, JobView } from '@mica/shared/types';
  * that job — never the client's spelling of it.
  */
 const app = new ServiceEndpoint<never, typeof jobsContract>('jobs', null, {
+  app: 'jobs',
   contract: jobsContract,
   disableGet: true,
   disableCreate: true,

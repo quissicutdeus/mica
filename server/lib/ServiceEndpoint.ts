@@ -34,6 +34,15 @@ export interface ServiceOptions<C extends ServiceContract = ServiceContract> {
    */
   contract?: C;
   /**
+   * The one app this service belongs to, so an owner disabling that app with
+   * `mica_disabled_apps` (MICA-234) refuses every event here. Set from `ServiceDefinition.app`.
+   *
+   * Leave it off for a service several apps reach, or for the phone itself: a service that
+   * declares no app is never refused. `ownerConfig.test.ts` holds every registered service to
+   * declaring one or being listed in `NEVER_REFUSED_SERVICES`, so leaving it off is a decision.
+   */
+  app?: string;
+  /**
    * The rows follow the phone (MICA-282). Set from `ServiceDefinition.deviceOwned`.
    *
    * Every generic action then scopes by the caller's active phone as well as their citizenid
@@ -86,7 +95,7 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
     private repo: Repository<T> | null,
     private options: ServiceOptions<C> = {}
   ) {
-    registerService(serviceName);
+    registerService(serviceName, options.app);
     this.registerCrudEvents();
   }
 
@@ -524,8 +533,8 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
          * An app the owner switched off with `mica_disabled_apps` (MICA-234), refused here
          * rather than in each handler so a custom action is covered as well as generic CRUD.
          * After the limiter, so a flood still pays nothing, and before the player lookup, since
-         * the answer is the same for every caller. Only a service one app owns is ever refused —
-         * `lib/ownerConfig.ts` has the table, and why a shared one never is.
+         * the answer is the same for every caller. Only a service that declared its app is ever
+         * refused (`ServiceOptions.app`); `lib/ownerConfig.ts` says why a shared one never is.
          */
         const disabledApp = disabledAppFor(this.serviceName);
         if (disabledApp) throw appDisabledError(disabledApp);

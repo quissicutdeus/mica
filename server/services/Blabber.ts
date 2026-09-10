@@ -162,6 +162,7 @@ export const blabberContract = defineContract({
 export const blabber = defineService<Blab, typeof blabberContract>({
   contract: blabberContract,
   id: APP,
+  app: APP,
   reportable: { label: 'Blab', previewColumn: 'body' },
   access: {
     read: 'public',

@@ -17,7 +17,7 @@ import {
   parseDisabledApps
 } from '@mica/shared/ownerConfig';
 import {
-  APP_OF_SERVICE,
+  MAX_DEFAULT_CONTACTS,
   NEVER_REFUSED_SERVICES,
   __resetOwnerConfig,
   defaultContacts,
@@ -28,7 +28,7 @@ import {
 } from '../lib/ownerConfig';
 // Loading every service is what fills the registry the classification check reads.
 import '../services';
-import { knownServices } from '../lib/services';
+import { knownServices, registerService, serviceApps } from '../lib/services';
 
 /**
  * What an owner configures without editing TypeScript (MICA-234): the three parsers in
@@ -267,6 +267,35 @@ describe('defaultContacts, as the server reads it', () => {
     expect(warn.mock.calls[0][0]).toContain('555-0100');
   });
 
+  it('seeds at most the cap, the first that fit, and names the rest in the one warning', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const entries = Array.from({ length: MAX_DEFAULT_CONTACTS + 3 }, (_, i) => ({
+      name: `C${i}`,
+      number: `${i}`
+    }));
+    // A refused entry ahead of them does not use up a place.
+    withConvars({
+      mica_default_contacts: JSON.stringify([
+        { name: 'A name far too long', number: '1' },
+        ...entries
+      ])
+    });
+
+    const value = defaultContacts(LIMITS);
+    defaultContacts(LIMITS);
+
+    expect(MAX_DEFAULT_CONTACTS).toBe(50);
+    expect(value).toEqual(entries.slice(0, MAX_DEFAULT_CONTACTS));
+    expect(warn).toHaveBeenCalledOnce();
+    const message = warn.mock.calls[0][0] as string;
+    expect(message).toContain(`at most ${MAX_DEFAULT_CONTACTS} of them`);
+    expect(message).toContain('A name far too long');
+    for (let i = MAX_DEFAULT_CONTACTS; i < MAX_DEFAULT_CONTACTS + 3; i++) {
+      expect(message).toContain(`"name":"C${i}"`);
+    }
+    expect(message).not.toContain(`"name":"C${MAX_DEFAULT_CONTACTS - 1}"`);
+  });
+
   it('warns about a missing file and answers no contacts', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     (globalThis as any).LoadResourceFile = () => null;
@@ -317,41 +346,68 @@ describe('the disabled list and the dock, as the server reads them', () => {
 });
 
 describe('which services a disabled app takes down', () => {
-  it('classifies every registered service exactly once', () => {
+  it('holds every registered service to declaring an app or being listed, never both', () => {
     const services = knownServices();
     expect(services.length, 'services did not load').toBeGreaterThan(20);
 
-    const mapped = new Set(Object.keys(APP_OF_SERVICE));
+    const declared = new Set(serviceApps().keys());
     const never = new Set(NEVER_REFUSED_SERVICES);
+    expect(declared.size, 'no service declared an app').toBeGreaterThan(5);
 
-    const unclassified = services.filter((id) => !mapped.has(id) && !never.has(id));
-    const both = services.filter((id) => mapped.has(id) && never.has(id));
-    const stale = [...mapped, ...never].filter((id) => !services.includes(id));
+    const unclassified = services.filter((id) => !declared.has(id) && !never.has(id));
+    const both = services.filter((id) => declared.has(id) && never.has(id));
+    const stale = [...never].filter((id) => !services.includes(id));
 
     expect(
       unclassified,
-      'decide whether disabling an app refuses this service — lib/ownerConfig.ts'
+      "declare this service's `app`, or list it in NEVER_REFUSED_SERVICES — lib/ownerConfig.ts"
     ).toEqual([]);
     expect(both).toEqual([]);
     expect(stale, 'a listed service nothing registers is a typo').toEqual([]);
   });
 
-  it('maps only to apps that exist, and never to Settings', () => {
+  it('declares only apps that exist, and never Settings', () => {
     const appsDir = join(__dirname, '..', '..', 'web', 'src', 'apps');
     const apps = readdirSync(appsDir).filter((entry) =>
       statSync(join(appsDir, entry)).isDirectory()
     );
 
-    for (const app of Object.values(APP_OF_SERVICE)) {
+    for (const app of serviceApps().values()) {
       expect(apps, `${app} is not an app`).toContain(app);
       expect(app).not.toBe('settings');
     }
   });
 
-  it('follows a service owned by an app under another name', () => {
-    withConvars({ mica_disabled_apps: 'blabber,bank' });
+  it("reads each service's app from its own declaration, under another name too", () => {
+    withConvars({ mica_disabled_apps: 'blabber,bank,snek' });
     expect(disabledAppFor('blabber_dms')).toBe('blabber');
+    expect(disabledAppFor('accounts')).toBe('blabber');
     expect(disabledAppFor('invoices')).toBe('bank');
+    expect(disabledAppFor('highscores')).toBe('snek');
+  });
+
+  it('names the refused service-to-app pairs exactly', () => {
+    expect(Object.fromEntries([...serviceApps()].sort(([a], [b]) => a.localeCompare(b)))).toEqual({
+      accounts: 'blabber',
+      blabber: 'blabber',
+      blabber_dms: 'blabber',
+      highscores: 'snek',
+      hodlr: 'hodlr',
+      invoices: 'bank',
+      jobs: 'jobs',
+      mail: 'mail',
+      marketplace: 'marketplace',
+      notes: 'notes',
+      places: 'places'
+    });
+  });
+
+  it('refuses a second declaration naming a different app', () => {
+    expect(() => registerService('highscores', 'snek')).not.toThrow();
+    expect(() => registerService('highscores', 'notes')).toThrow(/already declared as 'snek'/);
+    expect(disabledAppFor('highscores')).toBeNull();
+    withConvars({ mica_disabled_apps: 'snek' });
+    expect(disabledAppFor('highscores')).toBe('snek');
   });
 
   it('never refuses the phone itself or a shared service, even when the list names it', () => {

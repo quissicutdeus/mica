@@ -41,6 +41,7 @@ export const notesContract = defineContract({
  */
 export const notes = defineService<Note, typeof notesContract>({
   id: 'notes',
+  app: 'notes',
   contract: notesContract,
   deviceOwned: true,
   access: { read: 'owner', write: 'owner' },

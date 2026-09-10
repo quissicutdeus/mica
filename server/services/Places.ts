@@ -44,6 +44,7 @@ export const places = defineService<SavedPlace, typeof placesContract>({
   contract: placesContract,
   deviceOwned: true,
   id: 'places',
+  app: 'places',
   access: { read: 'owner', write: 'owner' },
   statuses: ['active', 'deleted', 'moderated'],
   schema: {

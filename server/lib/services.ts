@@ -20,14 +20,44 @@
  */
 const services = new Set<string>();
 
-/** Declare a service. Returns the id so it can be used inline. */
-export const registerService = (id: string): string => {
+/**
+ * The one app each service belongs to, for the services that declared one (MICA-234).
+ *
+ * Declared by the service itself — `app` on its `defineService` or `ServiceEndpoint` — so this
+ * directory never names an app: an add-on the Store installs is not in this repository for core
+ * to list, and `sdk/coreBoundary.test.ts` holds `server/lib` to that. `lib/ownerConfig.ts` reads
+ * it to decide which services a disabled app takes down.
+ */
+const appOf = new Map<string, string>();
+
+/**
+ * Declare a service, and optionally the app it belongs to. Returns the id so it can be used
+ * inline.
+ *
+ * A service may be registered more than once (`shell` has two endpoints), but never as two
+ * different apps' — that is two owners each believing a disable switches it off, so it fails
+ * at resource start rather than refusing for whichever registered last.
+ */
+export const registerService = (id: string, app?: string): string => {
   services.add(id);
+  if (app !== undefined) {
+    const existing = appOf.get(id);
+    if (existing !== undefined && existing !== app) {
+      throw new Error(`registerService('${id}'): already declared as '${existing}', not '${app}'.`);
+    }
+    appOf.set(id, app);
+  }
   return id;
 };
 
 /** Every declared service name, table-backed or not. */
 export const knownServices = (): string[] => [...services];
+
+/** The app a service declared, or null when it declared none. */
+export const appOfService = (id: string): string | null => appOf.get(id) ?? null;
+
+/** Every service that declared an app, with that app. */
+export const serviceApps = (): ReadonlyMap<string, string> => new Map(appOf);
 
 /**
  * Every custom action registered this process, as `<service>:<action>`.

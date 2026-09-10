@@ -131,6 +131,11 @@ export const onPhoneHandover = (name: string, run: HandoverRun): void => {
  * were inserted by SQL, not here, so an existing player's phone is never treated as new. That
  * once-only insert is the mark — a player who deletes a seeded contact is never re-seeded,
  * because nothing re-creates the phone.
+ *
+ * Hooks run **after** the phone is answered, not inside the request that created it: a new
+ * phone's first request should not wait on an owner's contact list. So a hook's work may land
+ * a moment after the phone does, and nothing may depend on it having finished. A failed hook
+ * is logged and not retried, as before, since the phone row that marks it done already exists.
  */
 type CreatedRun = (phoneId: string, citizenid: string) => Promise<unknown> | unknown;
 const createdHooks: { name: string; run: CreatedRun }[] = [];
@@ -139,7 +144,10 @@ export const onPhoneCreated = (name: string, run: CreatedRun): void => {
   createdHooks.push({ name, run });
 };
 
-/** Each hook is its own failure, and none can fail the phone the row was just written for. */
+/**
+ * Each hook is its own failure, and none can fail the phone the row was just written for.
+ * Never rejects, which is what lets the two callers start it without awaiting it.
+ */
 const announceCreated = async (phoneId: string, citizenid: string): Promise<void> => {
   for (const hook of createdHooks) {
     try {
@@ -225,7 +233,7 @@ const ensureHeld = async (phoneId: string, citizenid: string): Promise<void> => 
     const [existing] = await repo.findAll({ phone_id: phoneId } as Partial<PhoneRow>);
     if (!existing) {
       await repo.create({ citizenid, phone_id: phoneId, claimed: 1 } as Partial<PhoneRow>);
-      await announceCreated(phoneId, citizenid);
+      void announceCreated(phoneId, citizenid);
     } else {
       if (existing.citizenid !== citizenid) await handOver(phoneId, citizenid);
       if (!Number(existing.claimed)) {
@@ -267,7 +275,7 @@ export const identityPhone = async (citizenid: string): Promise<string> => {
   } else {
     phoneId = newPhoneId();
     await repo.create({ citizenid, phone_id: phoneId, claimed: 0 } as Partial<PhoneRow>);
-    await announceCreated(phoneId, citizenid);
+    void announceCreated(phoneId, citizenid);
   }
   identityByCitizen.set(citizenid, phoneId);
   return phoneId;

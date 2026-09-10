@@ -38,6 +38,7 @@ const APP = 'blabber';
 export const blabberDms = defineService<BlabberDm, typeof blabberDmsContract>({
   contract: blabberDmsContract,
   id: 'blabber_dms',
+  app: 'blabber',
   reportable: { label: 'Direct message', previewColumn: 'body' },
   reactable: { label: 'Direct message' },
   table: 'mica_blabber_dms',

@@ -50,6 +50,7 @@ export const hodlrContract = defineContract({
 export const hodlr = defineService<HodlrHolding, typeof hodlrContract>({
   contract: hodlrContract,
   id: 'hodlr',
+  app: 'hodlr',
   access: { read: 'owner', write: 'server' },
   schema: {
     quantity: { type: 'int', notNull: true, default: 0 }

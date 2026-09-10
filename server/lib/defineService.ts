@@ -394,6 +394,15 @@ export interface ServiceDefinition<C extends ServiceContract = ServiceContract> 
   /** Matches the web module's manifest id. */
   id: string;
   /**
+   * The one app this service belongs to, when no other app reaches it (MICA-234).
+   *
+   * An owner disabling that app with `mica_disabled_apps` then refuses every event here, custom
+   * and generic. Not always `id`: Blabber's DMs are `blabber_dms`. Declared here rather than in
+   * `lib/ownerConfig.ts` so core never names an app. Leave it off for a service several apps
+   * share — see `ServiceOptions.app`.
+   */
+  app?: string;
+  /**
    * This service's custom actions, declared once in `shared/contracts/<id>.ts`.
    *
    * The CRUD actions `ServiceEndpoint` derives from `schema` below are **not** in it and must
@@ -1014,6 +1023,7 @@ export function defineService<T, C extends ServiceContract = ServiceContract>(
 
   const app = new ServiceEndpoint<T, C>(resolved.id, repo, {
     tableName: resolved.table,
+    ...(definition.app ? { app: definition.app } : {}),
     ...(resolved.deviceOwned ? { deviceOwned: true } : {}),
     ...(definition.contract ? { contract: definition.contract } : {}),
     ...(resolved.access.read === 'public'

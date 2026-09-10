@@ -34,6 +34,7 @@ import { payToSociety, transfer, type PaymentOutcome } from '../lib/Payments';
  */
 export const invoices = defineService<Invoice, typeof invoicesContract>({
   id: 'invoices',
+  app: 'bank',
   contract: invoicesContract,
   access: { read: 'owner', write: 'server' },
   statuses: ['active', 'paid', 'declined', 'expired', 'deleted'],
