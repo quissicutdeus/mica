@@ -5,6 +5,16 @@
 
 Powered by TypeScript, Svelte 5, Vite, and esbuild.
 
+| Home                                      | Messages                                            | Contacts                                   | Media                                            | Bank                               | Settings                                   | Blabber                                                  |
+| ----------------------------------------- | --------------------------------------------------- | ------------------------------------------ | ------------------------------------------------ | ---------------------------------- | ------------------------------------------ | -------------------------------------------------------- |
+| ![Home screen](docs/screenshots/home.png) | ![A Messages thread](docs/screenshots/messages.png) | ![Contacts](docs/screenshots/contacts.png) | ![The Media gallery](docs/screenshots/media.png) | ![Bank](docs/screenshots/bank.png) | ![Settings](docs/screenshots/settings.png) | ![Blabber, a Store add-on](docs/screenshots/blabber.png) |
+
+Every picture above is taken from the phone itself by
+`web/e2e/screenshots.spec.ts`, against the same mock transport the e2e suite
+runs on, so it cannot drift from the build. Regenerate them with
+`SCREENSHOTS=1 pnpm --filter web exec playwright test e2e/screenshots.spec.ts`;
+the normal suite never writes them.
+
 ---
 
 ## Overview
