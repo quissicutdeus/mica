@@ -84,10 +84,10 @@ const ownerConfigRaw = (query: string, envValue: string | undefined): string => 
 };
 
 const mockDisabledApps = parseDisabledApps(
-  ownerConfigRaw('mica_disabled_apps', import.meta.env.VITE_MICA_DISABLED_APPS)
+  ownerConfigRaw('mica_disabled_apps', String(import.meta.env.VITE_MICA_DISABLED_APPS ?? ''))
 ).value;
 const mockDefaultDock = parseDefaultDock(
-  ownerConfigRaw('mica_default_dock', import.meta.env.VITE_MICA_DEFAULT_DOCK)
+  ownerConfigRaw('mica_default_dock', String(import.meta.env.VITE_MICA_DEFAULT_DOCK ?? ''))
 ).value;
 
 /**
@@ -98,7 +98,7 @@ const mockDefaultDock = parseDefaultDock(
  */
 const OWNER_DEFAULT_CONTACT_ID_BASE = 20000;
 parseDefaultContacts(
-  ownerConfigRaw('mica_default_contacts', import.meta.env.VITE_MICA_DEFAULT_CONTACTS)
+  ownerConfigRaw('mica_default_contacts', String(import.meta.env.VITE_MICA_DEFAULT_CONTACTS ?? ''))
 ).value.forEach((entry, index) => {
   const now = new Date().toISOString();
   mockContacts.push({

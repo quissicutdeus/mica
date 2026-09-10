@@ -14,7 +14,7 @@
  * which side it is standing in for. In-process, because a unit test stands in for the shell.
  */
 import '../../host/registerFacets';
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { get } from 'svelte/store';
 import {
   currentApp,
@@ -27,6 +27,8 @@ import {
   consumeAppProps,
   MAX_RESIDENT_APPS
 } from './navigation';
+import { setActiveDevice } from './device';
+import { ownerConfig } from './ownerConfig';
 import * as fetchNuiModule from '../../nui/fetchNui';
 
 const names = () => get(runningApps).map((a) => a.id);
@@ -227,6 +229,56 @@ describe('closing an app', () => {
     openApp('notes');
     openApp('mail');
     closeAllApps();
+    expect(names()).toEqual([]);
+    expect(get(currentApp).id).toBe('home');
+  });
+});
+
+describe('an app the owner disables while it is resident (MICA-234)', () => {
+  afterEach(() => {
+    ownerConfig.set({ disabledApps: [], defaultDock: [] });
+    setActiveDevice('phone');
+  });
+
+  it('closes it and returns home when it was on screen', () => {
+    openApp('notes');
+    ownerConfig.set({ disabledApps: ['notes'], defaultDock: [] });
+    expect(names()).toEqual([]);
+    expect(get(currentApp).id).toBe('home');
+  });
+
+  it('closes it in the background and leaves the foreground app alone', () => {
+    openApp('notes');
+    openApp('mail');
+    ownerConfig.set({ disabledApps: ['notes'], defaultDock: [] });
+    expect(names()).toEqual(['mail']);
+    expect(get(currentApp).id).toBe('mail');
+  });
+
+  it('leaves a different, still-enabled app untouched', () => {
+    openApp('mail');
+    ownerConfig.set({ disabledApps: ['notes'], defaultDock: [] });
+    expect(names()).toEqual(['mail']);
+    expect(get(currentApp).id).toBe('mail');
+  });
+
+  it('is a no-op with nothing disabled', () => {
+    openApp('notes');
+    ownerConfig.set({ disabledApps: [], defaultDock: [] });
+    expect(names()).toEqual(['notes']);
+  });
+
+  it('reaches a device that is not the active one, via its stashed snapshot', () => {
+    // Notes runs on both devices (its manifest lists 'tablet'), so opening it here and
+    // disabling it after the tablet has taken over exercises the *stashed* snapshot in
+    // `navigation.ts`, not the live stores this file's other cases already cover.
+    openApp('notes');
+    setActiveDevice('tablet');
+    expect(names()).toEqual([]);
+
+    ownerConfig.set({ disabledApps: ['notes'], defaultDock: [] });
+
+    setActiveDevice('phone');
     expect(names()).toEqual([]);
     expect(get(currentApp).id).toBe('home');
   });

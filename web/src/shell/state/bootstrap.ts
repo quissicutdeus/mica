@@ -2,11 +2,12 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { get } from 'svelte/store';
 import { fetchCitizenId, fetchBalance } from '../../services/account';
 import { refreshAdmin } from '../../services/admin';
 import { refreshCapabilities } from '../../services/capabilities';
 import { refreshLocale } from './locale';
-import { refreshOwnerConfig } from './ownerConfig';
+import { disabledAppIds, refreshOwnerConfig } from './ownerConfig';
 import { loadUnreadCounts } from '../../services/notifications';
 import { bundledAddOns, registeredApps } from './registry';
 
@@ -61,7 +62,18 @@ export async function bootstrapStores(force: boolean = false): Promise<void> {
         fetchCitizenId(),
         fetchBalance(),
         loadUnreadCounts(),
-        ...[...registeredApps, ...bundledAddOns].map((app) => app.preload?.())
+        // MICA-234: skip a preload the owner has already told us is disabled — its data is
+        // refused server-side regardless (§2.9), so calling for it here is only ever wasted
+        // work and a refusal to log. Read with `get`, not awaited: `refreshOwnerConfig()` is
+        // one of this same array's entries and has not necessarily answered yet, so this is
+        // whatever the *last* bootstrap already knew — nothing, on a player's very first
+        // boot, and the real list from then on, since a character switch re-runs this whole
+        // function. Not gated on the answer landing first, deliberately, the same as
+        // `openApp` (`navigation.ts`) never gates *opening* on it: this is a courtesy that
+        // cuts noise, not a security boundary, so it must not cost every boot the round trip.
+        ...[...registeredApps, ...bundledAddOns]
+          .filter((app) => !get(disabledAppIds).has(app.id))
+          .map((app) => app.preload?.())
       ]);
       isBootstrapped = true;
     } catch (error) {

@@ -4,7 +4,13 @@
 
 import { derived, get } from 'svelte/store';
 import { DEVICES, type DeviceDescriptor, type DeviceId } from '@mica/shared/devices';
-import { activeDevice, descriptor, perDevice, persistedKeyFor } from './device';
+import {
+  activeDevice,
+  descriptor,
+  perDevice,
+  persistedKeyFor,
+  type PerDeviceStore
+} from './device';
 import { ownerConfig } from './ownerConfig';
 import { storage } from '../../host/facets/storage';
 
@@ -67,51 +73,74 @@ const defaultDockFor = (device: DeviceDescriptor): string[] => {
   return slots;
 };
 
-/** One dock per device, following `activeDevice` — see `perDevice`. */
-export const dockAppIds = perDevice<string[]>('dockAppIds', defaultDockFor, sanitizeDockAppIds);
-
-/** Replaces one slot outright — used when an app is dragged onto the dock. */
-export function setDockSlot(index: number, appId: string): void {
-  const device = DEVICES[get(activeDevice)];
-  if (index < 0 || index >= device.launcher.dockSlots) return;
-  dockAppIds.update((current) => {
-    const next = sanitizeDockAppIds(current, device);
-    // The app may already occupy another slot; dragging it onto a new one moves it rather
-    // than duplicating it across two slots.
-    const previousIndex = next.indexOf(appId);
-    if (previousIndex !== -1) next[previousIndex] = '';
-    next[index] = appId;
-    return next;
-  });
-}
+/**
+ * One dock per device, following `activeDevice` — see `perDevice`. Internal: every other
+ * module reads and writes through `dockAppIds` below, which overlays the owner's default
+ * onto this one rather than ever writing it in.
+ */
+const savedDockAppIds = perDevice<string[]>('dockAppIds', defaultDockFor, sanitizeDockAppIds);
 
 const settingsStorage = storage('settings');
 
 /**
  * Whether the phone's dock has ever actually been written to storage — distinct from
- * `dockAppIds` merely *holding* the built-in default, which is equally true of a fresh
+ * `savedDockAppIds` merely *holding* the built-in default, which is equally true of a fresh
  * install nobody has touched. `usePersisted` deliberately writes nothing at construction
  * (see its own doc), so an unset key is the honest signal of "nobody has an opinion yet";
- * reading the raw stored value (rather than trusting `dockAppIds`'s current in-memory
- * value) is what tells "never saved" apart from "saved, and happens to equal the default".
+ * reading the raw stored value (rather than trusting the in-memory value) is what tells
+ * "never saved" apart from "saved, and happens to equal the default".
  */
 const hasStoredPhoneDock = (): boolean =>
   settingsStorage.getItem<string[]>(persistedKeyFor('dockAppIds', 'phone')) !== null;
 
 /**
- * MICA-234: an owner's `mica_default_dock` replaces the phone's built-in default dock —
- * never the tablet's, which the convar does not configure (`shared/ownerConfig.ts`) — and
- * only for a player who has not touched (or been given) a dock of their own.
+ * MICA-234: an owner's `mica_default_dock` overlaid onto the phone's saved one — never the
+ * tablet's, which the convar does not configure (`shared/ownerConfig.ts`) — for as long as
+ * nobody has touched (or been given) a dock of their own.
  *
- * The config answer arrives asynchronously, strictly after `perDevice` has already
- * constructed the phone's dock store with the built-in default as its starting value — see
- * `hasStoredPhoneDock`'s own doc for why that starting value is not itself evidence of a
- * save. Writing straight to `dockAppIds.forDevice('phone')` rather than through the
- * `activeDevice`-following `dockAppIds` proxy is deliberate too: the config can answer while
- * the tablet is the device on screen, and this must land on the phone's slot regardless.
+ * A `derived` that recomputes on every change of either input, rather than the one-shot
+ * write `ownerConfig.subscribe` used to make straight into `savedDockAppIds.forDevice('phone')`.
+ * That write was the bug: `usePersisted`'s outer `set` both writes the key *and* queues a
+ * debounced save to the server (`storage.ts`'s `queueWrite`, 400ms), so whichever of
+ * `shell:ownerConfig` and the settings rehydrate answered first decided the outcome —
+ * `ownerConfig` first meant the owner's default got written as if the player had chosen it,
+ * and the queued save could then land *after* the rehydrate and overwrite the player's real
+ * saved dock on the server with it. A character switch made it worse: the dock the previous
+ * character saved is still sitting in the shared local cache until this character's own
+ * rehydrate lands, so `hasStoredPhoneDock` could see a key that was never this character's.
+ *
+ * Recomputing instead of writing means the owner default is applied fresh every time,
+ * never persisted on its own, and a rehydrated server value — which lands through
+ * `savedDockAppIds` the same way any other write does — always wins simply by making
+ * `hasStoredPhoneDock` true. Order between the two answers stops mattering.
  */
-ownerConfig.subscribe(($config) => {
-  if ($config.defaultDock.length === 0) return;
-  if (hasStoredPhoneDock()) return;
-  dockAppIds.forDevice('phone').set(sanitizeDockAppIds($config.defaultDock, DEVICES.phone));
-});
+const dockOverlay = derived(
+  [savedDockAppIds, ownerConfig, activeDevice],
+  ([$saved, $owner, $device]): string[] =>
+    $device === 'phone' && $owner.defaultDock.length > 0 && !hasStoredPhoneDock()
+      ? sanitizeDockAppIds($owner.defaultDock, DEVICES.phone)
+      : $saved
+);
+
+/** What every other module reads and writes — see `dockOverlay`'s doc for the read half. */
+export const dockAppIds: PerDeviceStore<string[]> = {
+  subscribe: dockOverlay.subscribe,
+  set: savedDockAppIds.set,
+  update: savedDockAppIds.update,
+  forDevice: savedDockAppIds.forDevice
+};
+
+/** Replaces one slot outright — used when an app is dragged onto the dock. */
+export function setDockSlot(index: number, appId: string): void {
+  const device = DEVICES[get(activeDevice)];
+  if (index < 0 || index >= device.launcher.dockSlots) return;
+  // Built from what is actually on screen, owner default included — a drag the player can
+  // see has to move the app relative to that, not to a saved value that may not be showing.
+  const next = sanitizeDockAppIds(get(dockAppIds), device);
+  // The app may already occupy another slot; dragging it onto a new one moves it rather
+  // than duplicating it across two slots.
+  const previousIndex = next.indexOf(appId);
+  if (previousIndex !== -1) next[previousIndex] = '';
+  next[index] = appId;
+  savedDockAppIds.set(next);
+}

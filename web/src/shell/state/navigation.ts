@@ -8,6 +8,7 @@ import { fetchNui } from '../../nui/fetchNui';
 import { activeDevice } from './device';
 import { appRegistryStore } from './registry';
 import { manifestSupportsDevice } from '../../lib/phone/appVisibility';
+import { disabledAppIds } from './ownerConfig';
 
 /**
  * Which app is on screen, and which apps are still alive behind it.
@@ -83,6 +84,51 @@ activeDevice.subscribe((next) => {
   recency = restored?.recency ?? [];
   runningApps.set(restored?.running ?? []);
   currentApp.set(restored?.current ?? { id: 'home', props: {} });
+});
+
+/**
+ * Drop a disabled id out of one device's navigation state — a plain filter, not a call to
+ * `closeApp`: `closeApp` only ever reaches the *active* device's live stores, and a device
+ * the player is not holding has its own state sitting in `snapshots` instead.
+ */
+const withoutDisabled = (snapshot: NavSnapshot, $disabled: ReadonlySet<string>): NavSnapshot => ({
+  running: snapshot.running.filter((a) => !$disabled.has(a.id)),
+  current: $disabled.has(snapshot.current.id) ? { id: 'home', props: {} } : snapshot.current,
+  recency: snapshot.recency.filter((r) => !$disabled.has(r))
+});
+
+/**
+ * MICA-234: close an app the owner just disabled, wherever it is resident.
+ *
+ * `isKnownApp` already refuses to *open* a disabled id, but a deep link, a notification
+ * tap, or the client's own `openApp` can all run before `shell:ownerConfig` has answered
+ * (`refreshOwnerConfig` is one of several `Promise.allSettled` entries in `bootstrapStores`,
+ * with nothing that makes it win the race) — that is `devHarness.ts`'s `openDeepLinkedApp`,
+ * called from `Shell.svelte`'s `onMount`, strictly before the `$effect` that calls
+ * `bootstrapStores`. So the guard alone is not enough: an app already open when the answer
+ * lands, or a live config change from an admin command, has to be torn down too.
+ *
+ * Deliberately a plain filter recomputed on every `disabledAppIds` change rather than a
+ * one-shot reaction to newly-added ids: an id that is disabled and later re-enabled is not
+ * running any more by the time it comes back (this same subscription already closed it), so
+ * there is nothing to reopen either way, and recomputing needs no memory of the previous set.
+ * The empty-set short-circuit below is what keeps this a no-op for every ordinary session,
+ * where nothing is ever disabled.
+ */
+disabledAppIds.subscribe(($disabled) => {
+  if ($disabled.size === 0) return;
+
+  const activeNext = withoutDisabled(
+    { running: get(runningApps), current: get(currentApp), recency },
+    $disabled
+  );
+  recency = activeNext.recency;
+  runningApps.set(activeNext.running);
+  currentApp.set(activeNext.current);
+
+  for (const [id, snapshot] of snapshots) {
+    snapshots.set(id, withoutDisabled(snapshot, $disabled));
+  }
 });
 
 export const openApp = (appName: string, props: Record<string, unknown> = {}) => {

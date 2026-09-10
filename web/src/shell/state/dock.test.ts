@@ -21,6 +21,7 @@ import { setActiveDevice } from './device';
 import { ownerConfig } from './ownerConfig';
 import { DEFAULT_DOCK_APP_IDS, dockAppIds, sanitizeDockAppIds, setDockSlot } from './dock';
 import { storage } from '../../host/facets/storage';
+import { persistedRehydratorsAll } from '../../../../sdk/host/seam/persistedRegistry';
 
 describe('Dock state', () => {
   beforeEach(() => {
@@ -125,6 +126,36 @@ describe('Dock state', () => {
       const before = get(dockAppIds);
       ownerConfig.set({ disabledApps: [], defaultDock: [] });
       expect(get(dockAppIds)).toEqual(before);
+    });
+
+    /**
+     * The reply-order bug this overlay replaced: `ownerConfig.subscribe` used to write the
+     * owner's default straight into storage the first time it saw an empty dock, which both
+     * queued a debounced server save and made the *next* answer, whichever it was, race that
+     * queued save. These two prove the fix from both ends — the default never leaves a mark
+     * to race against, and a rehydrated dock wins regardless of which of the two lands second.
+     */
+    it('shows the owner default without writing it — there is nothing for a later rehydrate to race', () => {
+      settingsStorage.removeItem('dockAppIds');
+      ownerConfig.set({ disabledApps: [], defaultDock: ['bank', '', 'notes', ''] });
+      expect(get(dockAppIds)).toEqual(['bank', '', 'notes', '']);
+      expect(settingsStorage.getItem('dockAppIds')).toBeNull();
+
+      // The player's real dock, landing the way a settings rehydrate actually writes it:
+      // straight into storage, then every persisted store re-reads its own key.
+      settingsStorage.setItem('dockAppIds', ['weather', '', '', '']);
+      for (const rehydrate of persistedRehydratorsAll()) rehydrate();
+      expect(get(dockAppIds)).toEqual(['weather', '', '', '']);
+    });
+
+    it('a rehydrated dock landing before the owner answer still wins', () => {
+      settingsStorage.removeItem('dockAppIds');
+      settingsStorage.setItem('dockAppIds', ['weather', '', '', '']);
+      for (const rehydrate of persistedRehydratorsAll()) rehydrate();
+      expect(get(dockAppIds)).toEqual(['weather', '', '', '']);
+
+      ownerConfig.set({ disabledApps: [], defaultDock: ['bank', '', 'notes', ''] });
+      expect(get(dockAppIds)).toEqual(['weather', '', '', '']);
     });
   });
 });
