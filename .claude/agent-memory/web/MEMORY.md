@@ -12,3 +12,6 @@ its one-line summary.
 - [First test pays the cold transform](cold-import-first-test-timeout.md) — on
   the Forgejo runner that is the whole 20s budget; warm the import in
   `beforeAll`, do not raise `testTimeout`
+- [A persisted default must not persist](persisted-default-must-not-persist.md)
+  — `usePersisted`'s outer `set` always writes storage and queues a debounced
+  server save; overlay a runtime default with `derived`, never write it in
