@@ -507,7 +507,7 @@ What is deliberately different from qb-phone:
 ## Configuration
 
 Everything a server owner can tune is a convar, set in `server.cfg` above
-`ensure mica`. Most are read on the server, so plain `set` is enough. **Four
+`ensure mica`. Most are read on the server, so plain `set` is enough. **Five
 need `setr`**, because a client reads them and a plain `set` never leaves the
 server:
 
@@ -521,6 +521,10 @@ server:
 - **`mica_addon_hosts`** and **`mica_addon_catalog`** — the Store's install path
   lives entirely in the phone's UI, for the same reason. A plain `set` leaves
   every phone with an empty allowlist, which means every install is refused.
+- **`mica_disabled_apps`** — the client's own `OpenApp` export also has to
+  refuse a disabled app, not just the shell UI and the server. A plain `set`
+  still gets a disabled app refused by the shell and the server, but leaves the
+  client export believing it is still open for business.
 
 The values below are the defaults as written in the code, so a server that sets
 none of them behaves exactly as shown and this block is only worth pasting if
@@ -558,42 +562,48 @@ setr mica_addon_catalog ""
 set mica_discord_webhook ""
 set mica_discord_webhook_payment_min 10000
 set mica_discord_webhook_content ""
+setr mica_disabled_apps ""
+set mica_default_dock ""
+set mica_default_contacts ""
 ```
 
-| Convar                             | Type                 | Default              | Controls                                                   |
-| ---------------------------------- | -------------------- | -------------------- | ---------------------------------------------------------- |
-| `mica_standalone`                  | boolean              | empty (off)          | Run with no framework resource at all                      |
-| `mica_phone_item`                  | item name            | empty (off)          | Gate the phone on holding this inventory item              |
-| `mica_battery_item`                | item name            | `battery_bank`       | Item that recharges the phone; empty turns it off          |
-| `mica_battery_item_charge`         | integer, 1-100       | `100`                | Percent one use of that item adds                          |
-| `mica_admin_aces`                  | comma-separated aces | `mica.admin,command` | Who counts as a micaOS admin                               |
-| `mica_rate_limit`                  | integer              | `60`                 | Requests per player, per action, per minute                |
-| `mica_lockscreen_scrypt_cost`      | power of two         | `16384`              | Lock screen passcode hashing cost — lower on weak hardware |
-| `mica_lockscreen_max_attempts`     | integer              | `5`                  | Wrong passcodes before a one-minute lockout                |
-| `mica_source_url`                  | https:// URL         | this repository      | Where Settings > About > License says your source lives    |
-| `mica_locale`                      | BCP 47 language tag  | unset                | The phone's default language; players can override it      |
-| `mica_bank_transfer_max`           | integer              | `50000`              | Ceiling on one player-to-player send                       |
-| `mica_invoice_expiry_days`         | integer              | `7`                  | Days an unpaid invoice stays payable before it lapses      |
-| `mica_hodlr_trade_max`             | integer              | `50000`              | Ceiling on what one Hodlr buy or sell is worth             |
-| `mica_hodlr_spread_pct`            | number, percent      | `2`                  | Gap between Hodlr's buy and sell quotes, around mid        |
-| `mica_emergency_number`            | phone number         | `911`                | Always connects, regardless of any block                   |
-| `mica_max_accounts_per_app`        | integer              | `3`                  | Identities one player may hold in one social app           |
-| `mica_bluetooth_range`             | integer, meters      | `15`                 | How far a proximity share reaches                          |
-| `mica_bluetooth_max_nearby`        | integer              | `5`                  | How many phones one proximity share reaches                |
-| `mica_music_range`                 | integer, meters      | `30`                 | How far music from a phone is heard (needs `setr`)         |
-| `mica_music_max_nearby`            | integer              | `8`                  | Broadcasters one listener is told about at once            |
-| `mica_blabber_edit_window`         | integer, seconds     | `900`                | How long a Blab stays editable by its author               |
-| `mica_notification_retention`      | integer, days        | `30`                 | How long notification rows are kept                        |
-| `mica_restore_window_days`         | integer, days        | `30`                 | How long a deleted Contact/Note/Media stays restorable     |
-| `mica_camera_quality`              | integer, 1-100       | `95`                 | Encode quality of a stored photo (needs `setr`)            |
-| `mica_media_quota_mb`              | integer, MiB         | `64`                 | Storage one player's photo library may occupy              |
-| `mica_media_retention`             | integer, days        | `0` (off)            | How long stored media is kept, if you want a limit         |
-| `mica_orphan_owner_table`          | `table.column`       | empty (off)          | Overrides which table the orphan sweep checks against      |
-| `mica_addon_hosts`                 | hostname list        | empty (off)          | Hosts a Store add-on may be fetched from                   |
-| `mica_addon_catalog`               | https URL            | empty (off)          | The add-on catalog the Store lists                         |
-| `mica_discord_webhook`             | https URL            | empty (off)          | Discord webhook that receives moderation events            |
-| `mica_discord_webhook_payment_min` | integer              | `10000`              | Smallest payment the webhook is told about                 |
-| `mica_discord_webhook_content`     | boolean              | empty (off)          | Let moderation reasons and report notes reach Discord      |
+| Convar                             | Type                                | Default               | Controls                                                               |
+| ---------------------------------- | ----------------------------------- | --------------------- | ---------------------------------------------------------------------- |
+| `mica_standalone`                  | boolean                             | empty (off)           | Run with no framework resource at all                                  |
+| `mica_phone_item`                  | item name                           | empty (off)           | Gate the phone on holding this inventory item                          |
+| `mica_battery_item`                | item name                           | `battery_bank`        | Item that recharges the phone; empty turns it off                      |
+| `mica_battery_item_charge`         | integer, 1-100                      | `100`                 | Percent one use of that item adds                                      |
+| `mica_admin_aces`                  | comma-separated aces                | `mica.admin,command`  | Who counts as a micaOS admin                                           |
+| `mica_rate_limit`                  | integer                             | `60`                  | Requests per player, per action, per minute                            |
+| `mica_lockscreen_scrypt_cost`      | power of two                        | `16384`               | Lock screen passcode hashing cost — lower on weak hardware             |
+| `mica_lockscreen_max_attempts`     | integer                             | `5`                   | Wrong passcodes before a one-minute lockout                            |
+| `mica_source_url`                  | https:// URL                        | this repository       | Where Settings > About > License says your source lives                |
+| `mica_locale`                      | BCP 47 language tag                 | unset                 | The phone's default language; players can override it                  |
+| `mica_bank_transfer_max`           | integer                             | `50000`               | Ceiling on one player-to-player send                                   |
+| `mica_invoice_expiry_days`         | integer                             | `7`                   | Days an unpaid invoice stays payable before it lapses                  |
+| `mica_hodlr_trade_max`             | integer                             | `50000`               | Ceiling on what one Hodlr buy or sell is worth                         |
+| `mica_hodlr_spread_pct`            | number, percent                     | `2`                   | Gap between Hodlr's buy and sell quotes, around mid                    |
+| `mica_emergency_number`            | phone number                        | `911`                 | Always connects, regardless of any block                               |
+| `mica_max_accounts_per_app`        | integer                             | `3`                   | Identities one player may hold in one social app                       |
+| `mica_bluetooth_range`             | integer, meters                     | `15`                  | How far a proximity share reaches                                      |
+| `mica_bluetooth_max_nearby`        | integer                             | `5`                   | How many phones one proximity share reaches                            |
+| `mica_music_range`                 | integer, meters                     | `30`                  | How far music from a phone is heard (needs `setr`)                     |
+| `mica_music_max_nearby`            | integer                             | `8`                   | Broadcasters one listener is told about at once                        |
+| `mica_blabber_edit_window`         | integer, seconds                    | `900`                 | How long a Blab stays editable by its author                           |
+| `mica_notification_retention`      | integer, days                       | `30`                  | How long notification rows are kept                                    |
+| `mica_restore_window_days`         | integer, days                       | `30`                  | How long a deleted Contact/Note/Media stays restorable                 |
+| `mica_camera_quality`              | integer, 1-100                      | `95`                  | Encode quality of a stored photo (needs `setr`)                        |
+| `mica_media_quota_mb`              | integer, MiB                        | `64`                  | Storage one player's photo library may occupy                          |
+| `mica_media_retention`             | integer, days                       | `0` (off)             | How long stored media is kept, if you want a limit                     |
+| `mica_orphan_owner_table`          | `table.column`                      | empty (off)           | Overrides which table the orphan sweep checks against                  |
+| `mica_addon_hosts`                 | hostname list                       | empty (off)           | Hosts a Store add-on may be fetched from                               |
+| `mica_addon_catalog`               | https URL                           | empty (off)           | The add-on catalog the Store lists                                     |
+| `mica_discord_webhook`             | https URL                           | empty (off)           | Discord webhook that receives moderation events                        |
+| `mica_discord_webhook_payment_min` | integer                             | `10000`               | Smallest payment the webhook is told about                             |
+| `mica_discord_webhook_content`     | boolean                             | empty (off)           | Let moderation reasons and report notes reach Discord                  |
+| `mica_disabled_apps`               | comma-separated app ids             | empty (off)           | Hide apps from launcher, drawer, search, dock and Store (needs `setr`) |
+| `mica_default_dock`                | comma-separated app ids, positional | empty (built-in dock) | Dock a phone starts with, until its player rearranges it               |
+| `mica_default_contacts`            | JSON array, or a path to one        | empty (off)           | Contacts seeded once into every new phone                              |
 
 Twenty of the twenty-four are read on every use rather than cached, so changing
 one with `set` from the live console takes effect on the next request and needs
@@ -609,7 +619,11 @@ foreground, so a change reaches a player the next time they open the camera
 rather than the next time they take a photo. `mica_addon_hosts` and
 `mica_addon_catalog` are the same shape: read whenever asked for, and asked for
 once, when a player's phone UI loads — so a change reaches them when they next
-reconnect.
+reconnect. `mica_disabled_apps` and `mica_default_dock` are the same shape
+again: both are answered once, together, by `shell:ownerConfig` when a phone
+loads, so a change to either reaches a player on their next reconnect too.
+`mica_default_contacts` is read only when seeding a brand-new phone, so a change
+to it affects phones created after the change, never one already seeded.
 
 - **`mica_standalone`** — run micaOS with no framework resource at all. Off by
   default, and the only convar here that changes where micaOS's _identity_ comes
@@ -914,6 +928,30 @@ anywhere.
   timestamp, and nothing a player wrote. On (`1`, `true`, `on`, `yes`), the
   moderation reason, a reporter's note and a payment's reason line are added. No
   message body, photo or attachment reaches Discord under either setting.
+
+- **`mica_disabled_apps`** — a comma-separated list of app ids to hide: from the
+  launcher, the app drawer, search, the dock and the Store, all at once, and the
+  server refuses that app's events regardless of what the UI shows. `settings`
+  cannot be named here — a phone with Language, Display and Shortcuts disabled
+  cannot be recovered from a bad choice a player made in one of them — and an
+  attempt to disable it is ignored with a warning rather than silently dropped.
+  Set with `setr`, or the client's own `OpenApp` export does not learn about it
+  (see above). Re-enabling an app brings it back where it was.
+- **`mica_default_dock`** — up to four app ids, comma-separated and positional:
+  the first is slot one, and so on. An empty entry between commas is an empty
+  slot, so `phone,,camera,messages` leaves slot two blank rather than shifting
+  `camera` into it. Phone only — this convar does not touch the tablet's dock.
+  It applies to a phone whose player has not arranged their own dock; a player
+  who already has stops seeing this convar's value. Unset, or blank, means the
+  built-in dock: phone, messages, media, camera.
+- **`mica_default_contacts`** — the contacts a brand-new phone starts with,
+  either as inline JSON (an array of `{ "name": "...", "number": "..." }`
+  objects) or as a path to a JSON file of the same shape, resolved inside this
+  resource — no absolute path, and no `..` segment. Seeded once, when a phone is
+  created; a player who deletes a seeded contact does not have it come back. A
+  malformed entry — missing a name or a number, or the document itself not being
+  valid JSON or not an array — is skipped, with a warning naming what was
+  skipped, rather than failing the rest of the seed.
 
 One convar you may still find in an old config: `mica_auto_migrate`. An earlier
 build added missing columns and indexes at start when it was set, and that

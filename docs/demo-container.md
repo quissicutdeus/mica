@@ -39,13 +39,24 @@ quietly wrong.
 
 ## Knobs
 
-| Variable          | Default                 | What it does                                                                  |
-| ----------------- | ----------------------- | ----------------------------------------------------------------------------- |
-| `MICA_PORT`       | `8080`                  | Host port. The container always listens on 8080.                              |
-| `TZ`              | `America/Los_Angeles`   | The **server log** timestamps, and nothing else — see below.                  |
-| `GIT_BRANCH`      | _(Dockerfile: main)_    | Version stamp, branch half.                                                   |
-| `GIT_SHA`         | _(Dockerfile: unknown)_ | Version stamp, commit half.                                                   |
-| `COMPRESS_BINARY` | `1`                     | `0` skips UPX: ~0.5 MB larger, ~165 ms faster to start, legible to `strings`. |
+| Variable                     | Default                 | What it does                                                                  |
+| ---------------------------- | ----------------------- | ----------------------------------------------------------------------------- |
+| `MICA_PORT`                  | `8080`                  | Host port. The container always listens on 8080.                              |
+| `TZ`                         | `America/Los_Angeles`   | The **server log** timestamps, and nothing else — see below.                  |
+| `GIT_BRANCH`                 | _(Dockerfile: main)_    | Version stamp, branch half.                                                   |
+| `GIT_SHA`                    | _(Dockerfile: unknown)_ | Version stamp, commit half.                                                   |
+| `COMPRESS_BINARY`            | `1`                     | `0` skips UPX: ~0.5 MB larger, ~165 ms faster to start, legible to `strings`. |
+| `VITE_MICA_DISABLED_APPS`    | empty (off)             | Baked into the build, same shape as `mica_disabled_apps` (see README).        |
+| `VITE_MICA_DEFAULT_DOCK`     | empty (built-in dock)   | Baked into the build, same shape as `mica_default_dock` (see README).         |
+| `VITE_MICA_DEFAULT_CONTACTS` | empty (off)             | Baked into the build, same shape as `mica_default_contacts` (see README).     |
+
+The last three exist because the demo has no `server.cfg` to hold a convar in —
+`pnpm --filter web build` reads them as `import.meta.env` values, the same
+mechanism `VITE_MICA_ADDON_HOSTS`/`VITE_MICA_ADDON_CATALOG` already use for the
+add-on catalog (`docs/addon-catalog.md`), and bakes the answer into the built
+bundle rather than answering it live. A player of the demo image therefore
+cannot get a different answer without a rebuild, unlike a real server, where the
+convars are read live.
 
 `TZ` moves the server's log lines only. The phone's clock and every message
 timestamp are rendered in the browser from the **viewer's** own system zone, so
@@ -58,6 +69,19 @@ the host, pass its zone:
 ```sh
 TZ=$(readlink /etc/localtime | sed 's#.*/zoneinfo/##') pnpm demo
 ```
+
+## Previewing owner configuration without a rebuild
+
+`pnpm dev`'s mock transport reads the same three names — `mica_disabled_apps`,
+`mica_default_dock`, `mica_default_contacts` — as URL query parameters, so you
+can try a value without rebuilding the demo image at all:
+
+```text
+http://localhost:5173/?mica_disabled_apps=camera,media&mica_default_dock=phone,,camera,messages
+```
+
+That is the fast loop for trying a value; baking one into the demo image itself
+is the `VITE_MICA_*` build args above.
 
 ## It binds to loopback
 
