@@ -887,6 +887,13 @@ somebody maintaining a `core: false` add-on outside this repo, and it answers
 one question: does that bundle still compile against this release, and does its
 manifest still ask for the right things.
 
+**Seed theming is on `@mica/sdk/core`, not `@mica/sdk` (MICA-187).**
+`DEFAULT_SEED`, `sanitizeSeed`, `seedFromRgbString`, `buildSchemes`,
+`cssVarBlock` and `backgroundForScheme` are published for `core: true` apps
+only; an add-on keeps reading the phone's scheme through
+`useTheme().schemeStore`, and its bundle is unchanged. Additive: the contract
+version does not move.
+
 **`useBank()` gained the invoice half (MICA-240)**: `invoices` and
 `invoicesLoaded` stores, `fetchInvoices()`, `payInvoice(id)` and
 `declineInvoice(id)`, with `Invoice` and `InvoiceActionOutcome` exported as

@@ -37,6 +37,19 @@ export { backgroundForScheme, buildSchemes, cssVarBlock } from '../../lib/m3';
  * from a seed, and it is on `@mica/sdk/core` — core apps only, never bundled into an
  * add-on — which is itself a prior decision pointing the same way.
  *
+ * ## Where it did publish (MICA-187)
+ *
+ * The question above was answered with that number in hand: `core.ts` re-exports this
+ * whole list, and neither barrel does. `@mica/sdk/core` has no alias in
+ * `vite.addon.config.ts`, so nothing on it can enter a `core: false` bundle — all four
+ * add-ons were rebuilt before and after the export and came out byte-identical — while a
+ * core app runs in the process where the shell has already loaded the engine, and pays
+ * nothing either. `core.ts` is the entry point already reserved for capability that stays
+ * in-process, and it is where the one consumer sits. The 21 kB decision for add-ons is
+ * still deliberately open, and stays with whoever brings the first add-on that needs a
+ * seed other than the phone's. This file remains the shell's route; `core.ts` reads from
+ * it rather than from `lib/` directly, so there is one place that says what the set is.
+ *
  * ## Two source modules, one file
  *
  * `lib/seed.ts` is the pure half (MICA-16 step 4 split it out so the iframe theme twin

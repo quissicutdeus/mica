@@ -362,6 +362,20 @@ micaOS — `apps/notes/store.ts` exports `useNotes`, `apps/blabber/store.ts`
 exports `useBlabber`. Either way the store itself is never reached by path from
 another app; the hook is the only handle.
 
+**The theme.** Both kinds read the phone's current scheme through
+`useTheme().schemeStore`, and that is what an app theming itself to the phone
+needs. Deriving a scheme from some _other_ seed — `buildSchemes`, `cssVarBlock`,
+`backgroundForScheme`, with `DEFAULT_SEED`, `sanitizeSeed` and
+`seedFromRgbString` beside them — is on `@mica/sdk/core` only (MICA-187). Not
+because it is dangerous: `buildSchemes` pulls
+`@material/material-color-utilities` into any bundle that can reach it, about 21
+kB gzipped, and Rollup does not shake it out of an add-on that never calls it
+(MICA-181 measured a snake game gaining 104 kB for nothing). A core app runs
+in-process where the shell has already loaded the engine, so it pays nothing; an
+add-on cannot resolve `@mica/sdk/core`, so its bundle is unchanged — all four
+were rebuilt byte-identical before and after the export. If a real add-on ever
+needs its own seed, that cost gets weighed then, on `@mica/sdk`.
+
 ### Your app runs in a frame
 
 If `core: false`, your compiled bundle does not run in the shell's window — it

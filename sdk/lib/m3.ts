@@ -51,6 +51,15 @@ export { DEFAULT_SEED, sanitizeSeed, seedFromRgbString };
  * The dependency is pinned exactly, no caret. The role set changed between 0.2.x and
  * 0.4 and deprecated the statics on the way; a caret range means every color in the
  * phone can move on an unrelated `pnpm install`.
+ *
+ * ## Who may import this
+ *
+ * Nothing outside the package by path. The shell reaches it through `host/seam/theme.ts`,
+ * and a `core: true` app through `@mica/sdk/core`, which re-exports the seam (MICA-187).
+ * It is deliberately absent from `@mica/sdk`: the import above is what makes a bundle
+ * that can reach `buildSchemes` about 21 kB gzipped heavier whether or not it calls it,
+ * and an add-on has `useTheme().schemeStore` for the scheme it actually wants. Only
+ * `M3Tokens`, the type, is on both barrels. The seam's docblock carries the numbers.
  */
 
 /**

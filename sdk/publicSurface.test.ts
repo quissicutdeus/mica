@@ -1199,7 +1199,17 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'useSourceUrl'
   ],
   '@mica/sdk/app': ['defineApp', 'lazyBadge'],
-  '@mica/sdk/core': ['NowPlayingCard', 'useCaptureZoomBoost', 'useNuiBridge']
+  '@mica/sdk/core': [
+    'DEFAULT_SEED',
+    'NowPlayingCard',
+    'backgroundForScheme',
+    'buildSchemes',
+    'cssVarBlock',
+    'sanitizeSeed',
+    'seedFromRgbString',
+    'useCaptureZoomBoost',
+    'useNuiBridge'
+  ]
 };
 
 /**
