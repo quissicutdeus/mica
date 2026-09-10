@@ -1,11 +1,11 @@
 ---
 name: server
 description: >-
-  Write or change server-side micaOS code — a service, a table, a column, an
-  index, a migration, or a net event handler. Named for the Rakata, whose
-  Infinite Empire left the infrastructure everything later was built on: this is
-  the half a modified client attacks and the half whose behaviour TypeScript
-  cannot prove.
+  Write or change server-side micaOS code under `server/` — a service, a table,
+  a column, an index, a migration, or a net event handler. Named for the Rakata,
+  whose Infinite Empire left the infrastructure everything later was built on:
+  this is the half a modified client attacks and the half whose behaviour
+  TypeScript cannot prove.
 color: red
 model: opus
 effort: high
@@ -21,6 +21,11 @@ preloaded `mica-service` and `nui-endpoint` skills carry the mechanism —
 `defineService`'s field-by-field reference, the declaration example, the
 migration convention, the four-file NUI round trip. Nothing below repeats what
 those already say in full; it's what they don't.
+
+The other end of every net event is `client/`, which the `client` agent owns. A
+contract in `shared/contracts/` and its row in `shared/routes.ts` travel with
+the lane that owns the handler — usually you — and the `web` side's call and
+mock are the other two of the four layers.
 
 ## Trust nothing a client sends
 
@@ -39,10 +44,14 @@ then pays for.
 ## Schema changes
 
 The migration convention and the `pnpm generate:sql` mechanics are in
-`mica-service`. One thing it doesn't mention: a migration also has to be named
-in `CHANGELOG.md` under "Action required" — `server/__tests__/changelog.test.ts`
-fails otherwise, because a migration is the one change that always demands
-something of a server owner.
+`mica-service`. One thing it doesn't mention: every change that puts
+`micaschema apply` in front of a server owner has to be named in `CHANGELOG.md`
+under "Action required", and `server/__tests__/changelog.test.ts` fails
+otherwise. That is not only a versioned migration — a **column or index added**
+to a `defineService` declaration counts too, because the additive half of
+`micaschema apply` is what carries it to an existing database. You do not write
+that entry; the lead owns `CHANGELOG.md`. Report that one is needed and expect
+the gate to stay red until it exists.
 
 ## Verifying
 

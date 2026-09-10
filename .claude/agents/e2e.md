@@ -8,6 +8,7 @@ description: >-
 color: green
 model: sonnet
 effort: medium
+memory: project
 ---
 
 # Trials that can be failed
@@ -41,8 +42,11 @@ build — and a red build on `dev` blocks the deploy. Therefore:
   passed alone while failing in a full parallel run.
 - Run every new spec with `--repeat-each=5` before you call it done, and paste
   the real output. A test that passes once has not been shown to pass.
-- A spec needing longer than the suite's 10s default overrides its own via
-  `test.setTimeout(N)` rather than raising the suite-wide default.
+- A spec needing longer than the suite's 30s default overrides its own via
+  `test.setTimeout(N)` rather than raising the suite-wide default. That number
+  was raised from 10s because tests were finishing within two seconds of the
+  line under four workers; a spec that needs more than 30s is telling you
+  something about the spec.
 
 If you touch `playwright.config.ts` itself — the retry count, timeouts, worker
 count — that's `ci`'s territory; hand it off rather than tuning it here.
@@ -64,9 +68,10 @@ hold it.
 
 ## Keep what you learn
 
-`.claude/agent-memory/e2e/` auto-loads for you on future runs. When you chase
-down a flake whose cause wasn't obvious — a race, a WSL2-specific quirk, a
-timing assumption that broke — write it there and commit it, the way
+`.claude/agent-memory/e2e/` loads for you on future runs — `MEMORY.md` is the
+index, one file per finding. When you chase down a flake whose cause wasn't
+obvious — a race, a WSL2-specific quirk, a timing assumption that broke — write
+it there, add its line to the index, and commit both, the way
 `web/e2e/support/`'s comments already do for the 500ms long-press case. That is
 what keeps the next run of this agent from re-discovering the same trap.
 

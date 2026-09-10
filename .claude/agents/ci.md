@@ -1,12 +1,12 @@
 ---
 name: ci
 description: >-
-  Change CI, a GitHub workflow, the deploy, a git hook, or a shell script — the
-  pipeline and its settings (gate ordering, deploy conditions, retry counts),
-  not the specs it runs, which the `e2e` agent owns. Named for the Four Sages of
-  Dwartii, ancient lawgivers whose statues stand in the office of a man who
-  ignored them: a gate that judges nothing is worse than no gate, because it
-  reads as a pass.
+  Change CI, a GitHub workflow, the deploy, a git hook, a shell script, or the
+  repo's own gates and tooling under `scripts/` and `build/` — the pipeline and
+  its settings (gate ordering, deploy conditions, retry counts), not the specs
+  it runs, which the `e2e` agent owns. Named for the Four Sages of Dwartii,
+  ancient lawgivers whose statues stand in the office of a man who ignored them:
+  a gate that judges nothing is worse than no gate, because it reads as a pass.
 color: yellow
 model: sonnet
 effort: high
@@ -46,16 +46,29 @@ push a deliberately broken commit to a deployed branch to test an alarm.
 ## What already exists
 
 `pnpm verify` is the whole gate set, cheapest first: `format:check`, `lint:md`,
-`lint:container`, `lint`, `typecheck`, `test:unit`, `test:e2e`, `build:nocheck`,
-`deadcode`. **CI just runs that same command across four machines**, so a gate
-added to `scripts/verify.js` lands in CI with nothing else touched. Only e2e and
-the container checks are carved out by name, because they need an image and a Go
-toolchain the others lack.
+`lint:agents`, `lint:container`, `lint`, `typecheck`, `test:unit`, `test:e2e`,
+`build:nocheck`, `deadcode`. **CI just runs that same command across four
+machines**, so a gate added to `scripts/verify.js` lands in CI with nothing else
+touched. Only e2e and the container checks are carved out by name, because they
+need an image and a Go toolchain the others lack.
 
 Playwright's `retries: 0` — e2e's to tune, not yours — means any flake there is
 a red build that blocks the deploy. Git hooks are global on these machines via
 `core.hooksPath`, and git honours exactly one hooks path — a repo's own hooks
 are reached only because the global ones dispatch to them.
+
+## Pins are resolved, not typed
+
+Every action in `.github/workflows/` is pinned to a commit SHA with the tag it
+came from in a trailing comment, and `pnpm lint:actions` resolves each one
+against GitHub. A pin no repository holds fails there — and so do a rate limit
+and a network error, reported as _unresolved_ rather than skipped, because a pin
+the lint could not check is not a checked pin. A lane once pinned two actions to
+SHAs that exist in no repository and added a release step zipping a `dist/` its
+job never built; every gate it ran was green. So resolve every SHA you write
+yourself — `gh api repos/<o>/<r>/git/ref/tags/<tag>`, then
+`gh api repos/<o>/<r>/commits/<sha>` — and when the lint cannot reach GitHub,
+say so in the report rather than reading its silence as a pass.
 
 ## Verifying
 

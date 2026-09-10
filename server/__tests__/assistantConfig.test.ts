@@ -41,6 +41,12 @@ const ROOT = join(__dirname, '..', '..');
 const AGENTS_DIR = join(ROOT, '.claude', 'agents');
 const SKILLS_DIR = join(ROOT, '.claude', 'skills');
 
+/**
+ * The colours Claude Code's agent frontmatter accepts. A value outside this set is not an
+ * error there; it is the default colour, which is to say no colour, silently.
+ */
+const AGENT_COLORS = ['red', 'blue', 'green', 'yellow', 'purple', 'orange', 'pink', 'cyan'];
+
 interface Definition {
   /** Path relative to the repo root, for a failure message that names the file. */
   label: string;
@@ -61,6 +67,12 @@ const frontmatterOf = (text: string): string | null => {
   const end = text.indexOf('\n---', 3);
   if (end === -1) return null;
   return text.slice(text.indexOf('\n', 3) + 1, end);
+};
+
+/** The prose after the frontmatter — what the agent is actually told. */
+const bodyOf = (text: string): string => {
+  const end = text.indexOf('\n---', 3);
+  return end === -1 ? text : text.slice(end + 4);
 };
 
 const agentDefinitions = (): Definition[] =>
@@ -141,6 +153,88 @@ describe('assistant config', () => {
         `${label}: \`effort: ${front.effort}\` is not a level Claude Code accepts`
       ).toContain(front.effort);
     }
+
+    // The rest of the frontmatter fails the same silent way. A `memory` scope Claude Code
+    // does not know is no memory; a `skills` entry naming no skill preloads nothing; a
+    // `color` it does not recognise is the default colour; a `tools` list that is not a
+    // list is ignored. None of them errors, so each is checked here.
+    if (front.memory !== undefined) {
+      expect(
+        ['user', 'project', 'local'],
+        `${label}: \`memory: ${front.memory}\` is not a scope Claude Code accepts`
+      ).toContain(front.memory);
+    }
+    if (front.color !== undefined) {
+      expect(
+        AGENT_COLORS,
+        `${label}: \`color: ${front.color}\` is not a colour Claude Code accepts`
+      ).toContain(front.color);
+    }
+    if (front.skills !== undefined) {
+      expect(Array.isArray(front.skills), `${label}: \`skills\` must be a list`).toBe(true);
+      for (const skill of front.skills as unknown[]) {
+        expect(
+          existsSync(join(SKILLS_DIR, String(skill), 'SKILL.md')),
+          `${label}: preloads skill "${skill}", which does not exist under .claude/skills/`
+        ).toBe(true);
+      }
+    }
+    for (const key of ['tools', 'disallowedTools']) {
+      const value = front[key];
+      if (value === undefined) continue;
+      const wellFormed =
+        typeof value === 'string' ||
+        (Array.isArray(value) && value.every((entry) => typeof entry === 'string'));
+      expect(wellFormed, `${label}: \`${key}\` must be a string or a list of strings`).toBe(true);
+    }
+  });
+
+  /**
+   * An agent whose body tells it that `.claude/agent-memory/<name>/` loads on every run,
+   * while its frontmatter declares no `memory:` scope, is the quietest failure in this
+   * file: nothing loads, the agent writes what it learns into a directory nothing reads,
+   * and every run re-discovers the same trap. Two agents shipped exactly that way, with
+   * real findings sitting unread in the directory the whole time.
+   */
+  it('every agent whose body relies on agent memory declares a memory scope', () => {
+    const reliant = agentDefinitions().filter(({ path }) =>
+      bodyOf(readFileSync(path, 'utf8')).includes('agent-memory')
+    );
+    // A filter that matches nothing would pass the loop below for free.
+    expect(
+      reliant.length,
+      'no agent body mentions agent-memory — has the wording moved out from under this?'
+    ).toBeGreaterThan(0);
+    for (const { label, path } of reliant) {
+      const front = (parse(frontmatterOf(readFileSync(path, 'utf8')) ?? '') ?? {}) as Record<
+        string,
+        unknown
+      >;
+      expect(
+        front.memory,
+        `${label}: the body says .claude/agent-memory/ loads for this agent, but the ` +
+          'frontmatter declares no `memory:` scope, so nothing loads and its notes are ' +
+          'read by nobody'
+      ).toBeDefined();
+    }
+  });
+
+  /**
+   * `CLAUDE.md` is the routing table: the lead reads its list to pick an agent type or a
+   * skill, and a name missing from it is one the lead never picks. The list uses one bullet
+   * shape for agents and skills alike, so the check is over the union — every name on disk
+   * is listed, and every name listed is on disk. A rename that updates one side and not the
+   * other fails here instead of quietly routing work to `general-purpose`.
+   */
+  it('CLAUDE.md lists every agent and skill on disk, and nothing else', () => {
+    const claudeMd = readFileSync(join(ROOT, 'CLAUDE.md'), 'utf8');
+    const listed = [...claudeMd.matchAll(/^- `([a-z0-9-]+)` — /gmu)]
+      .map((match) => match[1])
+      .sort();
+    expect(listed.length, 'CLAUDE.md has no `- `name` — …` routing list').toBeGreaterThan(0);
+
+    const onDisk = definitions.map(({ expectedName }) => expectedName).sort();
+    expect(listed).toEqual(onDisk);
   });
 
   /**

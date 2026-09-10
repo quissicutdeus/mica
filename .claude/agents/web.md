@@ -1,9 +1,9 @@
 ---
 name: web
 description: >-
-  Build or change the phone's UI — any Svelte component, CSS, utility class,
-  colour, or layout under `web/src`, excluding `sdk`, which the `sdk` agent
-  owns. Named for the Massassi, who raised temples that still stand on
+  Build or change the phone's UI — any Svelte component, app, CSS, utility
+  class, colour, or layout under `web/src`, excluding `sdk`, which the `sdk`
+  agent owns. Named for the Massassi, who raised temples that still stand on
   foundations far older than they look: FiveM's CEF is Chromium 103, so anything
   newer renders perfectly in the dev browser and in Playwright and is broken in
   game.
@@ -13,6 +13,7 @@ effort: medium
 skills:
   - cef-css
   - nui-endpoint
+memory: project
 ---
 
 # UI for a browser five years old
@@ -33,6 +34,19 @@ reason.
 
 Relative colour syntax (`rgb(from ...)`) is also unsupported at this floor and
 isn't in the skill's banned table; treat it the same as `color-mix()`.
+
+## If the work is an app
+
+Most work under `web/src/` is an app under `web/src/apps/<id>/`, and an app is a
+consumer of the contract, not part of the OS. §11 has the manifest rules (`core`
+is required, `tile` takes utility classes, `devices` is a visibility contract, a
+`badgeStore` needs `preload`), §2.7 has the four hooks an app is built out of
+and the keybind rule, and `docs/writing-an-app.md` is the walkthrough. Notes is
+the minimal complete example; read it before building by hand, and scaffold with
+`pnpm new:app <id>` rather than copying a directory. Apps are resident — they
+mount once per session — so loading goes in `onAppForeground`, never `onMount`
+or `$effect`. When a manifest question turns on what the SDK promises, the `sdk`
+agent's definition is the authority, not a re-derivation.
 
 ## Where code may import from
 
@@ -57,9 +71,10 @@ into `sdk/` to add it — that is a different lane's file and a different review
 
 ## Keep what you learn
 
-`.claude/agent-memory/web/` auto-loads for you on future runs. The CEF-103 floor
-throws up a steady stream of "this shipped in Chromium N, that fallback works"
-findings — write the non-obvious ones there and commit them, rather than
+`.claude/agent-memory/web/` loads for you on future runs — `MEMORY.md` is the
+index, one file per finding. The CEF-103 floor throws up a steady stream of
+"this shipped in Chromium N, that fallback works" findings — write the
+non-obvious ones there, add a line to the index, and commit both, rather than
 re-deriving the same answer next time.
 
 ## Verifying

@@ -34,10 +34,10 @@ gate, the shell pieces that stay unexported); nothing below relaxes any of it.
 workspace package, so "the SDK must not import the shell" is a resolution error
 rather than a test that scans paths — which is what the old arrangement missed
 when `index.ts` came to import `shell/state/catalog`. Source edges out of `sdk/`
-are zero and must stay zero. The **test suite** is the documented exception: 24
-files reach `../web/src/...` across 74 imports, because a test says which side
-it stands in for. Reach for the phone from anything that is not a test and you
-are writing an edge the package cannot spell.
+are zero and must stay zero. The **test suite** is the documented exception: a
+test may reach `../web/src/...`, because a test says which side it stands in
+for. Reach for the phone from anything that is not a test and you are writing an
+edge the package cannot spell.
 
 ## `permissions.ts` is the one table
 
@@ -118,14 +118,13 @@ for a failure, and only the failing part. Within that, state:
 - Whether your change could alter what an external add-on compiles against — say
   so plainly. No suite in this repo builds a real add-on against the published
   contract, so this is on you to assess, not something a green run can confirm.
-- **`publicSurface.test.ts` sees types as well as values** (MICA-182, landed in
-  `db32c6a`). It reads each entry point twice: a runtime `import *` for values,
-  and `ts.createProgram` + `checker.getExportsOfModule` for the alias-resolved
-  type surface, frozen in `BASELINE_TYPE_EXPORTS`. The 63 type-only exports on
-  `index.ts` and the 62 on `addon.ts` were ungated in both directions until that
-  landed; they are gated now. So a renamed or deleted `export type` fails the
-  suite, and `SDK_CONTRACT_VERSION` moves for a type-only break exactly as it
-  does for a value one — see the doc comment on it in `sdk/version.ts`.
+- **`publicSurface.test.ts` sees types as well as values** (MICA-182). It reads
+  each entry point twice: a runtime `import *` for values, and
+  `ts.createProgram` + `checker.getExportsOfModule` for the alias-resolved type
+  surface, frozen in `BASELINE_TYPE_EXPORTS`. So a renamed or deleted
+  `export type` fails the suite, and `SDK_CONTRACT_VERSION` moves for a
+  type-only break exactly as it does for a value one — see the doc comment on it
+  in `sdk/version.ts`.
 - If the task seemed to need exporting a shell piece (`PhoneFrame`, `Launcher`,
   `ToastHost`, `VolumeHud`, `ErrorBoundary`) or widening the permission table
   beyond what was asked: **stop and return that as a finding rather than doing

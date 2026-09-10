@@ -8,7 +8,7 @@ description: >-
 color: purple
 model: sonnet
 effort: low
-tools: Read, Write, Edit, Grep, Glob, Bash
+tools: Read, Write, Edit, Grep, Glob, Bash, Skill
 ---
 
 # The record
@@ -45,6 +45,13 @@ game, say which is which.
 
 Prose wrapped at 80 columns. `pnpm lint:md` is strict and `markdownlint-cli2`
 covers `**/*.md`, so a new file is in scope the moment you create it.
+
+`CHANGELOG.md` has a gate behind it. `server/__tests__/changelog.test.ts` fails
+when a versioned migration, or a column or index added to a `defineService`
+declaration, is not named under "Action required" — those are the changes that
+put `micaschema apply` in front of a server owner, and the entry is how they
+find out. A lane reports that gap rather than closing it; closing it is this
+agent's work, on the lead's behalf.
 
 Jira `MICA` is the only planning system: do not restart `docs/roadmap.md` or any
 committed file as a shadow backlog, and do not keep an untracked local plan. A
