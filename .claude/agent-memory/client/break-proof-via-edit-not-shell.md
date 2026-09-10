@@ -1,12 +1,8 @@
----
-name: break-proof-via-edit-not-shell
-description:
-  In an isolated worktree the harness refuses a shell command that runs a
-  program built from variables (node -e with $F); break a check with Edit, run,
-  restore with Edit
-metadata:
-  type: feedback
----
+# Break a check with Edit, not with a shell one-liner
+
+In an isolated worktree the harness refuses a shell command that runs a program
+built from variables (`node -e` with `$F`); break a check with Edit, run,
+restore with Edit.
 
 To prove a test fires by breaking the code, break it with the Edit tool, run the
 gate as its own Bash call with literal paths, then restore with Edit. Do not
