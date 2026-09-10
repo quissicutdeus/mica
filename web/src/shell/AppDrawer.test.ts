@@ -26,6 +26,8 @@ import {
   searchQuery
 } from './state/appDrawer';
 import { get } from 'svelte/store';
+import { tick } from 'svelte';
+import { publishSearchHits } from './state/searchProviders';
 
 const type = async (text: string) => {
   const input = screen.getByLabelText('Search your phone');
@@ -294,6 +296,51 @@ describe('App Drawer', () => {
       expect(screen.getByRole('heading', { name: 'Listings' })).toBeTruthy();
       await fireEvent.click(screen.getByText('Dirt Bike'));
       expect(openApp).toHaveBeenCalledWith('marketplace', { listingId: 1 });
+    });
+  });
+
+  /**
+   * MICA-286: the one source the shell does not hold. An app answers the needle through
+   * `useSearchProvider`, and what it published is what the drawer draws — under the app's
+   * own heading, opening the app on the hit's own props.
+   *
+   * Snatchr stands in for the app here because it is installed by default; the mechanism
+   * is the same one a `core: false` add-on reaches through the seam, and nothing in this
+   * file may name an add-on anyway (`sdk/coreBoundary.test.ts`).
+   */
+  describe('an app contributes its own rows (MICA-286)', () => {
+    beforeEach(() => searchQuery.set(''));
+
+    const publish = async (needle: string, hits: unknown) => {
+      publishSearchHits('marketplace', needle, hits);
+      await tick();
+    };
+
+    it('lists them under the app name and opens the app on the hit', async () => {
+      openDrawer();
+      const openApp = vi.fn();
+      render(AppDrawer, { props: { openApp } });
+
+      await type('safehouse');
+      await publish('safehouse', [
+        { id: 7, title: 'Safehouse code', subtitle: '4821', props: { listingId: 7 } }
+      ]);
+
+      expect(screen.getByRole('heading', { name: 'Snatchr' })).toBeTruthy();
+      await fireEvent.click(screen.getByText('Safehouse code'));
+      expect(openApp).toHaveBeenCalledWith('marketplace', { listingId: 7 });
+    });
+
+    it('draws nothing for a needle the player has already typed past', async () => {
+      openDrawer();
+      render(AppDrawer, { props: { openApp: () => {} } });
+
+      await type('safehouse');
+      // The app's answer to an earlier keystroke, arriving late.
+      await publish('safe', [{ id: 7, title: 'Stale row' }]);
+
+      expect(screen.queryByText('Stale row')).toBeNull();
+      expect(screen.getByText(/No results for/)).toBeTruthy();
     });
   });
 

@@ -26,8 +26,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     renderMarkdown,
     useAppAction,
     useAppLevels,
+    useDeepLink,
     useDisplay,
     useLocale,
+    useSearchProvider,
     registerMessages,
     useScrollDetect,
     type AppProps,
@@ -60,7 +62,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    */
   const { device } = useDisplay();
 
-  let { onback }: AppProps = $props();
+  let { onback, noteId }: AppProps & { noteId?: number } = $props();
 
   let selectedNote: Note | null = $state(null);
   let draftNote: Note | null = $state(null); // Draft state for editing
@@ -71,6 +73,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   let showDeleteConfirm = $state(false);
   let showRecentlyDeleted = $state(false);
   let deletedNotes = $state<Note[]>([]);
+  /** What a `noteId` deep link resolved to, for the tablet root to select (MICA-286). */
+  let linkedNote = $state<Note | null>(null);
 
   // New Note State
   let newNote = $state({
@@ -191,6 +195,51 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     void notes.load();
   });
 
+  /**
+   * Notes in the phone's own search (MICA-286).
+   *
+   * The shell holds nothing of this app's — it is `core: false`, so its rows live in a
+   * sandboxed frame core may not read, and core may not name it either
+   * (`sdk/coreBoundary.test.ts`). The needle comes in, the search runs here against the
+   * list already loaded, and only the hits go back. `props` is this app's own deep link,
+   * which is what makes a hit open the note rather than the app.
+   *
+   * `filterByQuery` is the same matcher the in-app search bar uses, so a note findable
+   * from inside Notes is findable from the home screen and by the same words.
+   */
+  useSearchProvider('notes', (needle) =>
+    filterByQuery($notes, needle, (n) => [n.title, n.content]).map((note) => ({
+      id: note.id,
+      title: note.title || $t('notes.untitled'),
+      // One line: the drawer's row truncates, and a note's own newlines would otherwise
+      // be a stretch of blank subtitle rather than the words after them.
+      subtitle: note.content.replace(/\s+/g, ' ').trim(),
+      props: { noteId: note.id }
+    }))
+  );
+
+  /**
+   * Open the note a search result named.
+   *
+   * Returns `false` until the list has arrived, which is what keeps a cold open working:
+   * the link survives until the note it names exists (see `useDeepLink`).
+   */
+  useDeepLink('notes', () => {
+    if (!noteId) return false;
+    const found = $notes.find((n) => n.id === noteId);
+    if (!found) return false;
+    // The tablet root owns its own selection, so it is handed the note rather than having
+    // this root reach into it. On the phone this root is the one rendering.
+    if ($device === 'tablet') linkedNote = found;
+    else {
+      isAdding = false;
+      isEditing = false;
+      showRecentlyDeleted = false;
+      selectedNote = found;
+    }
+    return true;
+  });
+
   // Collapses the FAB to its icon once the list has scrolled, the same as Contacts and
   // Messages. The detector watches any `.overflow-y-auto` in the app, which here is the
   // note list's own scroller rather than `Screen`'s.
@@ -247,7 +296,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 {/snippet}
 
 {#if $device === 'tablet'}
-  <TabletRoot {onback} />
+  <TabletRoot {onback} initialNote={linkedNote} />
 {:else}
   <Screen title={app.title} onback={app.back} actions={headerActions} overlay={fabOverlay}>
     {#if showRecentlyDeleted}

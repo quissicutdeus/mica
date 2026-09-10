@@ -249,6 +249,9 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
     'appEvents',
     'notifications',
     'appAction',
+    // MICA-286. A provider publishes hits under a heading the drawer labels with the app's
+    // own name, so an unpinned id would let one add-on put rows under another's name.
+    'searchProvider',
     'persisted',
     'deepLink',
     'lifecycle'

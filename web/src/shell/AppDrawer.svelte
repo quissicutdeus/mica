@@ -34,6 +34,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     searchQuery
   } from './state/appDrawer';
   import { searchEverything, type SearchGroup, type SearchResult } from './state/searchResults';
+  import { searchProviders } from './state/searchProviders';
   import {
     iconDragState,
     resolveDropAtPoint,
@@ -66,10 +67,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * on demand — so the drawer asks for the first page once, on the first open that finds
    * the feed empty (MICA-248); after that the app's own store keeps it current.
    *
-   * Notes is deliberately absent. It is `core: false`, and core may neither name nor
-   * import an add-on (`sdk/coreBoundary.test.ts`); its rows reach this list the day the
-   * SDK lets an app register a `SearchProvider` (`state/searchResults.ts`) — the
-   * `providers` slot below is the shell's half of that, waiting on the SDK's.
+   * An app's own rows arrive the other way round (MICA-286). Core may neither name nor
+   * import an app the Store installs (`sdk/coreBoundary.test.ts`), so nothing here reads
+   * an add-on's data: each running app answers the needle through `useSearchProvider` and
+   * `state/searchProviders.ts` holds the last answer, which is what `providers` is. An app
+   * that has not been opened this session is not running and contributes nothing — see
+   * that file and the hook's doc.
    */
   const results = $derived(
     searchEverything(
@@ -80,7 +83,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         conversations: $conversationsStore,
         media: $media,
         mail: $mailStore,
-        listings: $cachedListings
+        listings: $cachedListings,
+        providers: $searchProviders
       },
       { isAdmin: $isAdmin, capabilities: $capabilities }
     )
@@ -132,8 +136,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     } else if (result.kind === 'mail') {
       openApp('mail', { mailId: result.mailId });
     } else if (result.kind === 'listing') {
-      // Snatchr has no `useDeepLink` into one listing; this lands on the feed and carries
-      // the id so the app can pick it up the day it grows one.
       openApp('marketplace', { listingId: result.listingId });
     } else {
       openApp(result.appId, result.props);

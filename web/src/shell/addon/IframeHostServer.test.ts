@@ -371,6 +371,13 @@ describe('IframeHostServer', () => {
           return { notificationsStore: writable([]), clear: () => true };
         }) as any
       );
+      registerFacet(
+        'searchProvider' as any,
+        ((appId?: unknown) => {
+          built.push({ facet: 'searchProvider', appId });
+          return { query: writable(''), publish: () => true };
+        }) as any
+      );
     });
 
     it("replaces a call's factoryArgs[0] with the server's own appId", async () => {
@@ -430,6 +437,31 @@ describe('IframeHostServer', () => {
         // in-process side; a frame does not get that view.
         { facet: 'notifications', appId: 'probe' }
       ]);
+    });
+
+    /**
+     * MICA-286, and the reason this test names the facet rather than trusting the set.
+     *
+     * `APP_SCOPED_FACETS` is a list, and a facet that takes an app id but is left off it
+     * fails open: everything works, and one add-on can publish search rows under another
+     * app's name. The tests above prove the *mechanism* pins whatever is in the set; this
+     * one proves `searchProvider` is in it, so deleting that entry turns something red.
+     */
+    it('pins a search provider, so an add-on cannot publish hits under another app', async () => {
+      const { from } = server([] as AppPermission[]);
+      from({
+        kind: 'call',
+        id: 5,
+        facet: 'searchProvider',
+        factoryArgs: ['notes'],
+        member: 'publish',
+        args: ['ren', [{ id: 1, title: 'not mine' }]]
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+
+      // Not 'notes' — the frame said so, and saying so is not being so.
+      expect(built).toEqual([{ facet: 'searchProvider', appId: 'probe' }]);
     });
   });
 

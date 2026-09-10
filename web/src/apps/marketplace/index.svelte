@@ -5,7 +5,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { Screen, registerMessages, useAppLevels, useLocale, type AppProps } from '@mica/sdk';
+  import {
+    Screen,
+    registerMessages,
+    useAppLevels,
+    useDeepLink,
+    useLocale,
+    type AppProps
+  } from '@mica/sdk';
   import Feed from './components/Feed.svelte';
   import ListingDetail from './components/ListingDetail.svelte';
   import CreateListing from './components/CreateListing.svelte';
@@ -17,12 +24,26 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   registerMessages('marketplace', { en, de });
   const { t } = useLocale();
 
-  let { onback }: AppProps = $props();
+  let { onback, listingId }: AppProps & { listingId?: number } = $props();
 
   type MarketplaceScreen =
     { name: 'feed' } | { name: 'detail'; id: number } | { name: 'create' } | { name: 'mine' };
 
   let screen = $state<MarketplaceScreen>({ name: 'feed' });
+
+  /**
+   * Open the listing a search result named (MICA-286).
+   *
+   * No wait for the feed: `ListingDetail` reads its own row by id, so a link into a
+   * listing that is not in the cached page still lands on the listing rather than on the
+   * feed. That is why this returns `true` immediately, unlike the deep links whose target
+   * has to exist in a store first.
+   */
+  useDeepLink('marketplace', () => {
+    if (!listingId) return false;
+    screen = { name: 'detail', id: listingId };
+    return true;
+  });
 
   const app = useAppLevels({
     appId: 'marketplace',

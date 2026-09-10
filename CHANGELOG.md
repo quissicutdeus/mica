@@ -472,6 +472,13 @@ with `internal_error` and the rest of Messages is unaffected.
 
 ### Added
 
+**Home search reaches Notes, and any app that asks (MICA-286).** MICA-248 left
+Notes out, because it is a `core: false` add-on whose store lives inside its
+frame and core cannot name an add-on. An app now contributes its own rows
+through `useSearchProvider`, so Notes is searchable, and a note hit opens that
+note. Snatchr's listings gained the per-listing deep link they were missing, so
+a listing hit opens the listing rather than the app root.
+
 **Home search reaches the gallery, mail and Snatchr listings (MICA-248).** The
 drawer's search covered apps, contacts and conversations. It now composes three
 more sources from their client-side caches, each in its own section with a deep
@@ -908,6 +915,17 @@ Everything above is written for a server owner. This part is not. It is for
 somebody maintaining a `core: false` add-on outside this repo, and it answers
 one question: does that bundle still compile against this release, and does its
 manifest still ask for the right things.
+
+**`useSearchProvider` is new, and needs no permission (MICA-286).** An app
+answers the phone's home search for its own rows:
+`useSearchProvider(appId, search)` runs your `search(needle)` and publishes what
+it returns as hits under your app's own heading, and the shell opens your app
+with the props a hit carries. A `core: false` add-on gets this over the seam
+without its rows ever leaving the frame — the shell publishes the query, the
+frame answers with the hits it chose — and the app id is stamped by the host, so
+a provider can only ever publish under its own name. `ProvidedHit` is exported
+beside it. Notes is the first app on it. Additive: the contract version does not
+move.
 
 **`useStreamerMode` is new, and needs no permission (MICA-249).** Streamer mode
 is a Privacy toggle that blurs every player-supplied picture until it is tapped

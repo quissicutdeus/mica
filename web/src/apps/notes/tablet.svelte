@@ -50,7 +50,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   const notesLoaded = notes.loaded;
   const { busy, run } = useAppAction('notes');
 
-  let { onback }: AppProps = $props();
+  /**
+   * `initialNote` is what a `noteId` deep link resolved to (MICA-286). The phone root owns
+   * the link — it is the one the shell mounts — and hands the note over rather than
+   * reaching into this root's own selection.
+   */
+  let { onback, initialNote = null }: AppProps & { initialNote?: Note | null } = $props();
 
   let selectedNote: Note | null = $state(null);
   let draftNote: Note | null = $state(null);
@@ -147,6 +152,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     showRecentlyDeleted = false;
     selectedNote = note;
   };
+
+  // Only when the link changes: selecting a note by hand afterwards must stick, and
+  // `selectNote` writes nothing this effect reads, so there is no loop to fall into.
+  $effect(() => {
+    if (initialNote) selectNote(initialNote);
+  });
 
   const addNote = async () => {
     if (!newNote.title.trim() && !newNote.content.trim()) return;

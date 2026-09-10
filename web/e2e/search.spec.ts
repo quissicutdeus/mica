@@ -1,4 +1,6 @@
 import { test, expect, type Page } from './support/test';
+import { seedHomeGrid } from './support/homeGrid';
+import { addOnFrame, installAddOn, openInstalledApp } from './support/addon';
 
 /**
  * MICA-248: the home search reaches every source the shell can see, one section each,
@@ -10,10 +12,11 @@ import { test, expect, type Page } from './support/test';
  * screen is showing": a result that resolves and renders the app root is the failure
  * being pinned, the same rule `deep-links.spec.ts` follows.
  *
- * Notes is not here, deliberately. It is `core: false`, and core may not name an add-on
- * (`sdk/coreBoundary.test.ts`), so its rows reach the home search only through the
- * app-contributed `SearchProvider` slot in `shell/state/searchResults.ts`, which needs an
- * SDK hook to declare into. Add its case when that hook exists.
+ * Notes is the last describe, and it is the one that proves the whole path: it is
+ * `core: false`, so its rows live in a sandboxed frame core may neither read nor name
+ * (`sdk/coreBoundary.test.ts`). They reach this sheet only by the app answering the needle
+ * through `useSearchProvider` (MICA-286), over the same `postMessage` seam everything else
+ * an add-on does goes through — which is why it is worth an e2e rather than a unit test.
  */
 
 const sheet = (page: Page) => page.getByRole('dialog', { name: 'App Drawer' });
@@ -87,14 +90,45 @@ test.describe('Home search reaches every source (MICA-248)', () => {
     await expect(page.getByText('Citation #90214')).toBeVisible();
   });
 
-  test('a Snatchr listing, on the feed', async ({ page }) => {
+  test('a Snatchr listing, on that listing', async ({ page }) => {
     // The feed is not preloaded; the drawer fetched its first page when it opened, which
     // is what makes this row exist without Snatchr ever having been opened.
     await type(page, 'dirt bike');
     await (await expectOneHit(page, 'Listings', /Dirt Bike/)).click();
 
-    // No per-listing deep link yet — the app root is the contract, and the listing is on it.
     await expect(page.locator('h1', { hasText: 'Snatchr' })).toBeVisible();
-    await expect(page.locator('button', { hasText: 'Dirt Bike' })).toBeVisible();
+    // The listing's own screen, not the feed it sits in (MICA-286). The description and
+    // the seller's contact buttons only exist on the detail read, so this is what
+    // separates "opened the listing" from "opened the app with the listing on screen".
+    await expect(page.getByText('Runs great, needs a new chain.')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Call' })).toBeVisible();
+  });
+});
+
+test.describe('An app contributes its own rows (MICA-286)', () => {
+  test('a note, on that note', async ({ page }) => {
+    // The real path a player takes to an add-on: the Store installs it, and opening it
+    // once is what puts it in memory. An app that has never run this session has no code
+    // to ask, which is the documented limit of `useSearchProvider` rather than a flake —
+    // so this opens Notes first, on purpose.
+    await seedHomeGrid(page, ['store']);
+    await page.goto('/');
+    await installAddOn(page, 'Notes');
+    await openInstalledApp(page, 'Notes');
+    await expect(addOnFrame(page, 'notes').locator('h1', { hasText: 'Notes' })).toBeVisible();
+
+    await page.locator("button[aria-label='Return to home screen']").click();
+    await openSearch(page);
+
+    // 'Grocery List' is a fixture of the Notes app alone; the shell holds no copy of it,
+    // so a row under this heading is the frame having answered.
+    await type(page, 'grocery');
+    await (await expectOneHit(page, 'Notes', /Grocery List/)).click();
+
+    // The hit carried `{ noteId }`, and the app's own `useDeepLink` opened it — the note's
+    // title is the screen's, which the app root never shows.
+    await expect(
+      addOnFrame(page, 'notes').locator('h1', { hasText: 'Grocery List' })
+    ).toBeVisible();
   });
 });

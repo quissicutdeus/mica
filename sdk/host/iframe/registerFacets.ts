@@ -67,6 +67,7 @@ import './facets/notifications';
 import './facets/phoneNotification';
 import './facets/report';
 import './facets/reports';
+import './facets/searchProvider';
 import './facets/service';
 import './facets/sound';
 import './facets/storage';

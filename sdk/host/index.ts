@@ -41,6 +41,7 @@ export * from './usePersisted';
 export * from './usePhoneNotification';
 export * from './useReport';
 export * from './useReports';
+export * from './useSearchProvider';
 export * from './useService';
 export * from './useSound';
 export * from './useSourceUrl';

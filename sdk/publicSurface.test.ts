@@ -986,7 +986,9 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'sourceUrlForBuild',
     'useSourceUrl',
     // MICA-249: streamer mode, a read-only flag every add-on that draws a picture may honour.
-    'useStreamerMode'
+    'useStreamerMode',
+    // MICA-286: an app answers the home search for its own rows.
+    'useSearchProvider'
   ],
   '@mica/sdk (add-on bundle)': [
     'ALL_PERMISSIONS',
@@ -1200,7 +1202,9 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'sourceUrlForBuild',
     'useSourceUrl',
     // MICA-249: streamer mode, a read-only flag every add-on that draws a picture may honour.
-    'useStreamerMode'
+    'useStreamerMode',
+    // MICA-286: an app answers the home search for its own rows.
+    'useSearchProvider'
   ],
   '@mica/sdk/app': ['defineApp', 'lazyBadge'],
   '@mica/sdk/core': [
@@ -1289,6 +1293,7 @@ const BASELINE_TYPE_EXPORTS: Record<string, string[]> = {
     'PagedListOptions',
     'PagedStore',
     'PersistedOptions',
+    'ProvidedHit',
     'QueueEntry',
     'ReactionStore',
     'ReactionTarget',
@@ -1367,6 +1372,7 @@ const BASELINE_TYPE_EXPORTS: Record<string, string[]> = {
     'PagedListOptions',
     'PagedStore',
     'PersistedOptions',
+    'ProvidedHit',
     'QueueEntry',
     'ReactionStore',
     'ReactionTarget',

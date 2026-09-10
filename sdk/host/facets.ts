@@ -190,6 +190,22 @@ export interface PersistedOptions<T> {
   sync?: boolean;
 }
 
+/**
+ * One hit an app contributed to the phone's own search (MICA-286).
+ *
+ * `id` need only be unique within the app that published it — the shell keys the row by
+ * `<appId>:<id>`. `props` is what `openApp(appId, props)` is called with when the row is
+ * tapped, so it is the app's own deep link and nothing the shell interprets; omit it to
+ * land on the app root.
+ */
+export interface ProvidedHit {
+  id: string | number;
+  title: string;
+  subtitle?: string;
+  /** Deep-link props for this app, exactly as `useDeepLink` will read them back. */
+  props?: Record<string, unknown>;
+}
+
 /** One key per facet. The runtime object behind this shape is the `facets` Proxy in `current.ts`. */
 export interface Facets {
   account: () => {
@@ -1025,6 +1041,28 @@ export interface Facets {
     loadReportHistory: () => Promise<void>;
     resolveReport: (id: number, action: 'moderate' | 'dismiss') => Promise<void>;
     reopenReport: (id: number) => Promise<void>;
+  };
+  /**
+   * MICA-286: an app's own rows in the phone's search, without the app handing a function
+   * across the add-on seam.
+   *
+   * The seam carries data one way — the shell pushes store values into a frame and answers
+   * calls out of it — and has no shell-to-frame call direction at all, so
+   * `SearchProvider.search` (`web/src/shell/state/searchResults.ts`) is not something a
+   * sandboxed add-on could ever be. This inverts it into the two shapes the seam already
+   * has: `query` is a store the shell pushes, `publish` is a call the frame makes.
+   *
+   * `query` is the current needle, already trimmed and lower-cased — the same string
+   * `searchEverything` hands a provider, so an app matches against one spelling rather
+   * than inventing its own. It is `''` whenever nothing is being searched.
+   *
+   * `publish` states which needle the hits answer, so the shell can drop a reply for a
+   * query the player has already typed past. The app searches its **own** rows inside its
+   * own process; nothing but the hits it chose crosses the seam.
+   */
+  searchProvider: (appId: string) => {
+    query: Readable<string>;
+    publish: (needle: string, hits: readonly ProvidedHit[]) => void;
   };
   service: (serviceId: string) => {
     id: string;

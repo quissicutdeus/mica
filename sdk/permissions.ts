@@ -79,6 +79,13 @@ export const PERMISSION_OF: Record<string, AppPermission | readonly AppPermissio
   // reads it for every app — so gating it would mean a kit component every app renders
   // needs a permission no app has a reason to declare. The setter is core only.
   useStreamerMode: null,
+  // MICA-286: an app listing its own rows in the phone's search. Implicit for the same
+  // reason `useAppLevels` and `useDeepLink` are — it is a way *into* this app and nothing
+  // else. The shell pushes it one string, the player's own query, which the player is
+  // typing at a sheet the app cannot see; the app answers with rows it already holds. A
+  // permission here would gate an app's ability to be found, which is the one thing every
+  // app on the home screen already is.
+  useSearchProvider: null,
   // data
   useAccount: 'account',
   useAdmin: 'admin',
@@ -184,6 +191,7 @@ export const HOOK_OF_FACET = {
   themeWrite: 'useThemeWrite',
   wallpaper: 'useWallpaper',
   wallpaperWrite: 'useWallpaperWrite',
+  searchProvider: 'useSearchProvider',
   storage: 'useStorage',
   appStorageBytes: 'appStorageBytes',
   clearAppStorage: 'clearAppStorage',
@@ -260,7 +268,13 @@ export const SAFE_IMPLICIT_FACETS: ReadonlySet<string> = new Set([
   'locale',
   // MICA-249. One boolean every picture-drawing surface reads; `setStreamerMode` is not
   // on the allowlist, so a frame can honour the flag and cannot flip the player's.
-  'streamerMode'
+  'streamerMode',
+  // MICA-286. Returns a real object with two named members, so it is nothing like the
+  // bare-function shape `DENIED_FACETS` exists for. What it takes is an app id, and an app
+  // id is a claim: it decides which heading a frame's hits appear under, so it is pinned
+  // in `IframeHostServer.ts`'s `APP_SCOPED_FACETS` alongside `storage`/`notifications`
+  // rather than trusted. Safe *because* of that pin, not independently of it.
+  'searchProvider'
 ]);
 
 /**
@@ -527,6 +541,12 @@ export const FACET_MEMBERS: Readonly<Record<string, readonly string[]>> = {
   notificationSettingsWrite: [],
   persisted: [],
   phoneNotification: ['sendNotification', 'dismissNotification', 'toast'],
+  /**
+   * MICA-286. Both members, and there are only two: read the needle the player typed,
+   * answer with hits. Neither reaches anything but the phone's own search sheet, and the
+   * app id they act under is pinned rather than named on the wire.
+   */
+  searchProvider: ['query', 'publish'],
   service: ['call'],
   sound: ['play'],
   sourceUrl: ['sourceUrl', 'refreshSourceUrl'],

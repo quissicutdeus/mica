@@ -4,7 +4,7 @@
 
 import type { Contact, Listing, Mail } from '@mica/shared/types';
 import type { AppManifest } from '../../../../sdk/manifest';
-import type { UIConversation } from '@mica/sdk';
+import type { ProvidedHit, UIConversation } from '@mica/sdk';
 import { manifestVisible, type CapabilitySet } from '../../lib/phone/appVisibility';
 import { DEFAULT_DEVICE, type DeviceId } from '@mica/shared/devices';
 import { matchesMedia, type SearchableMedia } from '../../services/media';
@@ -66,8 +66,8 @@ export interface MailSearchResult extends SearchResultBase {
 }
 
 /**
- * A Snatchr listing. The app has no deep link into one listing yet, so the drawer opens
- * the app root and carries `listingId` for the day it grows one.
+ * A Snatchr listing; opens the app on that listing via its `listingId` deep link
+ * (MICA-286, which is the day the app grew one).
  */
 export interface ListingSearchResult extends SearchResultBase {
   kind: 'listing';
@@ -94,14 +94,15 @@ export type SearchResult =
   | ListingSearchResult
   | ExternalSearchResult;
 
-/** One hit from a `SearchProvider`; `id` need only be unique within that provider. */
-export interface ProvidedHit {
-  id: string | number;
-  title: string;
-  subtitle?: string;
-  /** Deep-link props for `openApp(appId, props)`; omit to land on the app root. */
-  props?: Record<string, unknown>;
-}
+/**
+ * One hit from a `SearchProvider`; `id` need only be unique within that provider.
+ *
+ * The SDK owns this shape (MICA-286): it is the return type of the `search` an app writes
+ * for `useSearchProvider`, so it is part of the published contract rather than the shell's
+ * private vocabulary. Re-exported here because every consumer of a result in this file
+ * reaches for it beside `SearchProvider`.
+ */
+export type { ProvidedHit };
 
 /**
  * An app's own search, contributed to the home screen.
@@ -109,6 +110,11 @@ export interface ProvidedHit {
  * The shell knows the app only by `appId`, checks that app's visibility exactly as it
  * does for the built-in sources, caps the hits per provider, and never sees the rows the
  * provider searched. `search` receives the trimmed, lower-cased query.
+ *
+ * **Synchronous, and it has to stay that way** — this function is called during a render
+ * that is already deriving the result list. An app that cannot answer synchronously is not
+ * a provider: `shell/state/searchProviders.ts` is what turns a sandboxed add-on's
+ * asynchronous answer into one of these.
  */
 export interface SearchProvider {
   appId: string;
