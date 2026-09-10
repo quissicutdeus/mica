@@ -34,7 +34,13 @@ export type ExportFailure =
    * `SetPhoneEnabled(false)`, switched off by the server, or gated on an item they do not
    * hold. Closing it is always allowed; opening it is what this refuses.
    */
-  | 'disabled';
+  | 'disabled'
+  /**
+   * The server owner has switched that app off with `mica_disabled_apps` (MICA-234). Distinct
+   * from `disabled`, which is this player's device: nothing this player does brings the app
+   * back, so a caller should not retry or offer to.
+   */
+  | 'app_disabled';
 
 export type ExportOutcome<T = undefined> =
   | ({ ok: true } & (T extends undefined ? { value?: undefined } : { value: T }))

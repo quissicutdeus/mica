@@ -26,6 +26,7 @@ import { DeviceState } from './DeviceState';
 import { openDevice, closeDevice, setDeviceEnabled, toggleDevice } from './DeviceVisibility';
 import { sendNuiMessage } from './nui';
 import { FrameworkBridge } from './FrameworkBridge';
+import { isAppDisabled } from './ownerConfig';
 
 /** Bumped when an existing export changes shape, not when one is added -- the server's rule. */
 export const MICA_CLIENT_API_VERSION = 1;
@@ -166,6 +167,11 @@ export const registerClientApi = (): void => {
    * without the hop. The client has no list of installed apps to check against -- only the
    * server does -- so the id is checked for shape here and an unknown one is the shell's to
    * ignore. Refused while the device is disabled, the same as the server's push is.
+   *
+   * An app the owner lists in `mica_disabled_apps` is refused with `app_disabled` before the
+   * device is touched (MICA-234), and ahead of `disabled`: that one is owner config no player
+   * state undoes, so it is the answer that tells the caller not to retry. Only when the owner
+   * set the convar with `setr` -- see `lib/ownerConfig.ts`; otherwise the shell refuses it.
    */
   publish(
     'OpenApp',
@@ -175,6 +181,9 @@ export const registerClientApi = (): void => {
         return fail('invalid_args', `'${String(appId)}' is not a valid app id.`);
       const device = deviceFrom(rawDevice);
       if (!device) return badDevice<undefined>(rawDevice);
+      if (isAppDisabled(id)) {
+        return fail('app_disabled', `The server owner has disabled '${id}'.`);
+      }
       if (!DeviceState.isEnabled(device)) {
         return fail('disabled', 'The device is disabled for this player right now.');
       }

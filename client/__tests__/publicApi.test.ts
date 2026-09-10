@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 /**
  * The client export surface (MICA-224), pinned the way `server/__tests__/exports.test.ts`
@@ -158,6 +158,48 @@ describe('the rest', () => {
     call('SetPhoneEnabled', false);
     expect(call('OpenApp', 'contacts').reason).toBe('disabled');
     expect(sent.some((m) => m.action === 'openApp')).toBe(false);
+  });
+
+  describe('an app the owner disabled (MICA-234)', () => {
+    const originalGetConvar = g.GetConvar;
+    const withDisabled = (value: string) => {
+      g.GetConvar = (name: string, fallback: string) =>
+        name === 'mica_disabled_apps' ? value : fallback;
+    };
+    afterEach(() => {
+      g.GetConvar = originalGetConvar;
+    });
+
+    it('is refused with app_disabled, and the device is not raised', () => {
+      withDisabled('bank, Contacts');
+      const refused = call('OpenApp', 'contacts', { contactId: 4 });
+      expect(refused).toMatchObject({ ok: false, reason: 'app_disabled' });
+      expect(DeviceState.isOpen('phone')).toBe(false);
+      expect(sent).toEqual([]);
+    });
+
+    it('answers app_disabled ahead of disabled, since no player state brings it back', () => {
+      withDisabled('contacts');
+      call('SetPhoneEnabled', false);
+      expect(call('OpenApp', 'contacts').reason).toBe('app_disabled');
+    });
+
+    it('opens an app the list does not name', () => {
+      withDisabled('bank');
+      expect(call('OpenApp', 'contacts')).toEqual({ ok: true, value: undefined });
+      expect(sent.at(-1)?.action).toBe('openApp');
+    });
+
+    it('refuses nothing when the convar is unset, missing or unreadable', () => {
+      // Unset, or set with `set` rather than `setr`: the fallback comes back.
+      expect(call('OpenApp', 'contacts').ok).toBe(true);
+      g.GetConvar = undefined;
+      expect(call('OpenApp', 'contacts').ok).toBe(true);
+      g.GetConvar = () => {
+        throw new Error('no convars here');
+      };
+      expect(call('OpenApp', 'contacts').ok).toBe(true);
+    });
   });
 
   it('raises a toast and nothing more', () => {

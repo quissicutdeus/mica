@@ -6,6 +6,7 @@ import { DEFAULT_DEVICE, isDeviceId, type DeviceId } from '@mica/shared/devices'
 import { sendNuiMessage } from '../lib/nui';
 import { DeviceState } from '../lib/DeviceState';
 import { openDevice, closeDevice, setDeviceEnabled } from '../lib/DeviceVisibility';
+import { isAppDisabled } from '../lib/ownerConfig';
 
 /**
  * The device a payload names, or the phone (MICA-262). Every shell event carried no
@@ -117,6 +118,9 @@ onNet('mica:client:shell:open', (payload?: unknown) => {
  *
  * Silently refused while that device is disabled — there is no reply channel for this
  * event to report through, matching `guardNetEvent`'s own reasoning on the server side.
+ * Refused the same way, and without raising the device, when the owner has disabled the
+ * app (MICA-234, `lib/ownerConfig.ts`): a phone opened onto a home screen the caller did
+ * not ask for is not a softer answer, just a wrong one.
  */
 onNet(
   'mica:client:shell:openApp',
@@ -124,7 +128,8 @@ onNet(
     const device = deviceOf(payload);
     if (!DeviceState.isEnabled(device)) return;
     const appId = payload?.appId;
-    if (!appId) return;
+    if (!appId || typeof appId !== 'string') return;
+    if (isAppDisabled(appId)) return;
 
     if (!DeviceState.isOpen(device)) {
       openDevice(device);
