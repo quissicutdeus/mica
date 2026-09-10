@@ -10,10 +10,7 @@ description: >-
 color: pink
 model: opus
 effort: high
-disallowedTools:
-  - Edit
-  - Write
-  - NotebookEdit
+disallowedTools: Edit, Write, NotebookEdit
 skills:
   - nui-endpoint
 ---
