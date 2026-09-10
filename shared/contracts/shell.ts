@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { defineContract, responseType } from '../contract';
+import type { OwnerConfig } from '../ownerConfig';
 import { s } from '../schema';
 
 /**
@@ -33,6 +34,8 @@ export const shellContract = defineContract({
     },
     sourceUrl: { input: s.none(), output: responseType<{ url: string }>() },
     /** MICA-61: the owner's default language (`mica_locale`), or '' when unset. */
-    locale: { input: s.none(), output: responseType<{ locale: string }>() }
+    locale: { input: s.none(), output: responseType<{ locale: string }>() },
+    /** MICA-234: `mica_disabled_apps` and `mica_default_dock`, parsed by `shared/ownerConfig`. */
+    ownerConfig: { input: s.none(), output: responseType<OwnerConfig>() }
   }
 });
