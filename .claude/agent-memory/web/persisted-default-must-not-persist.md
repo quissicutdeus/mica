@@ -1,12 +1,8 @@
----
-name: persisted-default-must-not-persist
-description:
-  usePersisted's outer set() always writes storage AND queues a debounced server
-  save — never use it to apply a runtime default; overlay with a derived store
-  instead
-metadata:
-  type: project
----
+# A persisted store's default must not be written through its own set
+
+`usePersisted`'s outer `set()` always writes storage and queues a debounced
+server save — never use it to apply a runtime default; overlay with a derived
+store instead.
 
 `web/src/host/facets/persisted.ts`'s `usePersisted` store has two `set`s: the
 outer one it returns (persists — `appStorage.setItem` then
@@ -33,11 +29,11 @@ every change of either input. Never write the fallback into the store. See
 what the player actually sees) rather than the raw saved store, since a player
 dragging onto a slot is acting on what's on screen.
 
-**Why:** found reviewing MICA-234's dock-default fix — Rex flagged that the
-naive `ownerConfig.subscribe(() => dockAppIds.forDevice('phone').set(...))`
-could overwrite a player's real dock on the server depending on race order
-between `shell:ownerConfig` and the settings rehydrate, and that a stale
-per-character local cache made it worse.
+**Why:** found reviewing MICA-234's dock-default fix — the naive
+`ownerConfig.subscribe(() => dockAppIds.forDevice('phone').set(...))` could
+overwrite a player's real dock on the server depending on race order between
+`shell:ownerConfig` and the settings rehydrate, and a stale per-character local
+cache made it worse.
 
 **How to apply:** any future "owner/server default that should show until the
 player's own value arrives" (not just docks) should reach for this overlay
