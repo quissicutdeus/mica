@@ -166,6 +166,17 @@ DDL.
 
 - `id, citizenid, status, created_at, updated_at` are **supplied by the
   framework**. Declaring any of them in `schema` is an error.
+- **`app` names the one app this service belongs to (MICA-234), when no other
+  app reaches it.** An owner who disables that app with `mica_disabled_apps`
+  then has every event here refused too, custom and generic — not just hidden
+  from the UI. It is not always the service's own `id`: Blabber's DMs declare
+  `app: 'blabber'`, not `app: 'blabber_dms'`, and Snek's high-score board
+  declares `app: 'snek'` from a service called `highscores`. Leave it off for a
+  service more than one app legitimately reaches — Contacts, Media and Bank's
+  own balance are none of them — and it is never refused, whatever the owner
+  names. `server/lib/ownerConfig.ts` reads it back through
+  `server/lib/services.ts`; core itself never names an app, so the declaration
+  lives on the service, not in a table core would have to keep in sync.
 - Declared fields are client-writable by default; opt out with
   `clientWritable: false`. Filtering is opt-in via `clientFilterable: true`.
 - **`access` is two axes, not one.** It replaced a single `scope`, which
