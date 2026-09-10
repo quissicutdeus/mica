@@ -14,6 +14,9 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, fireEvent, screen } from '@testing-library/svelte';
 import AppDrawer from './AppDrawer.svelte';
 import { isAdmin } from '../services/admin';
+import { mailStore } from '../services/mail';
+import { media } from '../services/media';
+import { feedStore } from '../services/marketplace';
 import {
   openDrawer,
   closeDrawer,
@@ -25,7 +28,7 @@ import {
 import { get } from 'svelte/store';
 
 const type = async (text: string) => {
-  const input = screen.getByLabelText('Search apps, contacts and messages');
+  const input = screen.getByLabelText('Search your phone');
   await fireEvent.input(input, { target: { value: text } });
 };
 
@@ -211,9 +214,87 @@ describe('App Drawer', () => {
     openDrawer();
     render(AppDrawer, { props: { openApp: () => {} } });
 
-    expect(screen.getByLabelText('Search apps, contacts and messages')).toBe(
-      document.activeElement
-    );
+    expect(screen.getByLabelText('Search your phone')).toBe(document.activeElement);
+  });
+
+  /**
+   * MICA-248: the three new sources, driven through the real component so the section
+   * heading, the row and the deep link each land. The stores are set directly — the
+   * drawer reads caches and this is what a populated cache looks like.
+   */
+  describe('search across media, mail and listings (MICA-248)', () => {
+    beforeEach(() => {
+      mailStore.set([
+        {
+          id: 2,
+          citizenid: 'me',
+          sender: 'LSPD',
+          subject: 'Traffic Citation Notice',
+          content: 'Citation #90214',
+          read: true,
+          status: 'active',
+          created_at: '2026-01-01',
+          updated_at: '2026-01-01'
+        }
+      ]);
+      media.prepend({
+        id: 900,
+        citizenid: 'me',
+        kind: 'video',
+        alt_text: 'Dashcam clip',
+        status: 'active',
+        created_at: '2026-01-01',
+        updated_at: '2026-01-01'
+      });
+      feedStore.set({
+        rows: [
+          {
+            id: 1,
+            citizenid: 'other',
+            title: 'Dirt Bike',
+            price: 4500,
+            description: 'Runs great',
+            status: 'active',
+            created_at: '2026-01-01',
+            updated_at: '2026-01-01'
+          }
+        ],
+        nextCursor: null
+      });
+    });
+
+    it('opens a mail hit on that message', async () => {
+      openDrawer();
+      const openApp = vi.fn();
+      render(AppDrawer, { props: { openApp } });
+      await type('citation');
+
+      expect(screen.getByRole('heading', { name: 'Mail' })).toBeTruthy();
+      await fireEvent.click(screen.getByText('Traffic Citation Notice'));
+      expect(openApp).toHaveBeenCalledWith('mail', { mailId: 2 });
+    });
+
+    it('opens a gallery hit on that item', async () => {
+      openDrawer();
+      const openApp = vi.fn();
+      render(AppDrawer, { props: { openApp } });
+      await type('dashcam');
+
+      expect(screen.getByRole('heading', { name: 'Media' })).toBeTruthy();
+      await fireEvent.click(screen.getByText('Dashcam clip'));
+      expect(openApp).toHaveBeenCalledWith('media', { initialPhotoId: 900 });
+    });
+
+    it('opens a listing hit on Snatchr, carrying the listing id', async () => {
+      openDrawer();
+      const openApp = vi.fn();
+      render(AppDrawer, { props: { openApp } });
+      await type('dirt bike');
+
+      expect(screen.getByRole('heading', { name: 'Listings' })).toBeTruthy();
+      await fireEvent.click(screen.getByText('Dirt Bike'));
+      expect(openApp).toHaveBeenCalledWith('marketplace', { listingId: 1 });
+    });
   });
 
   it('depends on Contacts and Messages preloading their stores at boot', async () => {

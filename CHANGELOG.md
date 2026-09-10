@@ -472,6 +472,17 @@ with `internal_error` and the rest of Messages is unaffected.
 
 ### Added
 
+**Home search reaches the gallery, mail and Snatchr listings (MICA-248).** The
+drawer's search covered apps, contacts and conversations. It now composes three
+more sources from their client-side caches, each in its own section with a deep
+link into the item: a photo opens Media on it, a mail opens Mail on it, and a
+listing opens Snatchr, which has no per-listing deep link yet. Every source
+contributes only when its owning app is visible to this player and device, the
+same rule the app row uses. Notes is a `core: false` add-on whose store lives
+inside its frame, so it is not searched yet: the shell half of an add-on
+provider registry landed with this, and the SDK hook and facet it needs are the
+remaining piece. The field's label now says "Search your phone".
+
 **The moderation ledger can mirror to a Discord webhook (MICA-242).** Set
 `mica_discord_webhook` and a staff channel receives an embed for every
 moderation action, every admin read of reported content, every report filed and

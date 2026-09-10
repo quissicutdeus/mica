@@ -20,6 +20,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { appVisible } from './state/appVisibility';
   import { contacts } from '../services/contacts';
   import { conversationsStore } from '../services/conversations';
+  import { media } from '../services/media';
+  import { mailStore } from '../services/mail';
+  import { cachedListings, feedStore, loadFeed } from '../services/marketplace';
   import { appRegistryStore } from './state/registry';
   import { shadeDragRevealDistance } from './state/display';
   import { descriptor } from './state/device';
@@ -30,7 +33,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     drawerDragProgress,
     searchQuery
   } from './state/appDrawer';
-  import { searchEverything, type SearchResult } from './state/searchResults';
+  import { searchEverything, type SearchGroup, type SearchResult } from './state/searchResults';
   import {
     iconDragState,
     resolveDropAtPoint,
@@ -56,28 +59,64 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   );
 
   /**
-   * Search never fetches. It reads the same three stores the apps themselves read, and it
-   * can do that because Contacts and Messages both declare a `preload` in their manifests
-   * that `bootstrapStores` runs when the phone opens — so both lists are already populated
-   * before the home screen paints, whether or not the player has ever opened those apps.
+   * Search reads caches. Contacts, Messages, Media and Mail each declare a `preload` in
+   * their manifests that `bootstrapStores` runs when the phone opens, so those lists are
+   * populated before the home screen paints, whether or not the player has ever opened
+   * those apps. Snatchr has no preload — its feed is a public read the phone only pays for
+   * on demand — so the drawer asks for the first page once, on the first open that finds
+   * the feed empty (MICA-248); after that the app's own store keeps it current.
+   *
+   * Notes is deliberately absent. It is `core: false`, and core may neither name nor
+   * import an add-on (`sdk/coreBoundary.test.ts`); its rows reach this list the day the
+   * SDK lets an app register a `SearchProvider` (`state/searchResults.ts`) — the
+   * `providers` slot below is the shell's half of that, waiting on the SDK's.
    */
   const results = $derived(
     searchEverything(
       $searchQuery,
-      { apps: $appRegistryStore, contacts: $contacts, conversations: $conversationsStore },
+      {
+        apps: $appRegistryStore,
+        contacts: $contacts,
+        conversations: $conversationsStore,
+        media: $media,
+        mail: $mailStore,
+        listings: $cachedListings
+      },
       { isAdmin: $isAdmin, capabilities: $capabilities }
     )
   );
 
+  $effect(() => {
+    if (!$isDrawerOpen) return;
+    const snatchrInstalled = $appRegistryStore.some((app) => app.id === 'marketplace');
+    if (snatchrInstalled && get(feedStore).rows.length === 0) void loadFeed();
+  });
+
   /**
    * Group headers are derived from the result order rather than stored on each result:
-   * `searchEverything` already guarantees apps-then-contacts-then-messages, so a header
-   * belongs exactly where a result's kind differs from its predecessor's.
+   * `searchEverything` already guarantees a fixed group order, so a header belongs
+   * exactly where a result's group differs from its predecessor's. An app-contributed
+   * group is headed by the app's own name.
    */
-  const GROUP_LABEL = $derived<Record<SearchResult['kind'], string>>({
-    app: $t('shell.groupApps'),
-    contact: $t('shell.groupContacts'),
-    message: $t('shell.groupMessages')
+  const groupLabel = $derived((group: SearchGroup): string => {
+    switch (group) {
+      case 'apps':
+        return $t('shell.groupApps');
+      case 'contacts':
+        return $t('shell.groupContacts');
+      case 'messages':
+        return $t('shell.groupMessages');
+      case 'media':
+        return $t('shell.groupMedia');
+      case 'mail':
+        return $t('shell.groupMail');
+      case 'listings':
+        return $t('shell.groupListings');
+      default: {
+        const appId = group.slice('app:'.length);
+        return $appRegistryStore.find((app) => app.id === appId)?.name ?? appId;
+      }
+    }
   });
 
   function launch(result: SearchResult) {
@@ -86,8 +125,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       openApp(result.id);
     } else if (result.kind === 'contact') {
       openApp('contacts', { initialContact: result.contact });
-    } else {
+    } else if (result.kind === 'message') {
       openApp('messages', { conversationId: result.conversationId });
+    } else if (result.kind === 'media') {
+      openApp('media', { initialPhotoId: result.mediaId });
+    } else if (result.kind === 'mail') {
+      openApp('mail', { mailId: result.mailId });
+    } else if (result.kind === 'listing') {
+      // Snatchr has no `useDeepLink` into one listing; this lands on the feed and carries
+      // the id so the app can pick it up the day it grows one.
+      openApp('marketplace', { listingId: result.listingId });
+    } else {
+      openApp(result.appId, result.props);
     }
   }
 
@@ -292,9 +341,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </p>
       {:else}
         {#each results as result, index (result.key)}
-          {#if index === 0 || results[index - 1].kind !== result.kind}
+          {#if index === 0 || results[index - 1].group !== result.group}
             <h2 class="text-primary text-label-small px-2 pt-3 pb-1 tracking-wider uppercase">
-              {GROUP_LABEL[result.kind]}
+              {groupLabel(result.group)}
             </h2>
           {/if}
           <button
@@ -302,9 +351,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             onclick={() => launch(result)}
             class="hover:bg-surface-container-highest duration-short ease-standard flex w-full cursor-pointer items-center gap-3 rounded-box px-2 py-2 text-left transition-colors"
           >
-            <!-- An app shows its own tile colour and glyph; a contact or a conversation has
-                 no icon of its own, so it gets a neutral monogram rather than borrowing some
-                 other app's identity. -->
+            <!-- An app shows its own tile colour and glyph; every other result is a row
+                 with no icon of its own, so it gets a neutral monogram rather than
+                 borrowing some other app's identity. -->
             {#if result.kind === 'app'}
               <AppIconTile
                 name={result.manifest.name}

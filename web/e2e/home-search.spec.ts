@@ -13,7 +13,7 @@ const openSearch = async (page: import('@playwright/test').Page) => {
 };
 
 const type = async (page: import('@playwright/test').Page, text: string) => {
-  await page.getByLabel('Search apps, contacts and messages').fill(text);
+  await page.getByLabel('Search your phone').fill(text);
 };
 
 test.describe('Home screen search', () => {
@@ -63,7 +63,7 @@ test.describe('Home screen search', () => {
     });
 
     expect(maxScrollTop).toBe(0);
-    await expect(page.getByLabel('Search apps, contacts and messages')).toBeFocused();
+    await expect(page.getByLabel('Search your phone')).toBeFocused();
   });
 
   test('typing an app name finds the app and opens it', async ({ page }) => {

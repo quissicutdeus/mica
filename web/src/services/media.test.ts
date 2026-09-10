@@ -70,6 +70,28 @@ describe('media store', () => {
     vi.restoreAllMocks();
   });
 
+  describe('search (MICA-248)', () => {
+    it('matches the window by caption or kind, case-insensitively, and never fetches', async () => {
+      const spy = respond({
+        getMedia: {
+          rows: [
+            row(3, { kind: 'video', alt_text: 'Dashcam clip' }),
+            row(2, { alt_text: 'Vespucci Beach' }),
+            row(1)
+          ],
+          nextCursor: null
+        }
+      });
+      await media.load();
+      spy.mockClear();
+
+      expect(media.search('DASHCAM').map((r) => r.id)).toEqual([3]);
+      expect(media.search('photo').map((r) => r.id)).toEqual([2, 1]);
+      expect(media.search('  ')).toEqual([]);
+      expect(spy).not.toHaveBeenCalled();
+    });
+  });
+
   describe('the paged list', () => {
     it('loads a page of rows and tracks whether the server has more', async () => {
       respond({ getMedia: { rows: [row(2), row(1)], nextCursor: 1 } });

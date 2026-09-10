@@ -19,6 +19,8 @@ void (null as unknown as typeof UseServiceModule);
 vi.mock('../../../sdk/host/useService', () => ({ useService: () => serviceMock }));
 
 import {
+  cachedListings,
+  searchCachedListings,
   feedStore,
   mineStore,
   loadFeed,
@@ -87,5 +89,29 @@ describe('marketplace client store', () => {
     serviceMock.call.mockResolvedValue(true);
     await removeListing(1);
     expect(get(mineStore).rows[0].status).toBe('removed');
+  });
+
+  it('searches the feed and own listings once each, active rows only (MICA-248)', () => {
+    const row = (id: number, title: string, status: 'active' | 'sold' = 'active') => ({
+      id,
+      title,
+      description: 'desc',
+      price: 1,
+      status
+    });
+    feedStore.set({
+      rows: [row(1, 'Dirt Bike'), row(2, 'Burner Phone')] as never,
+      nextCursor: null
+    });
+    // Own listings overlap the feed on id 1 and add a sold row that the feed never shows.
+    mineStore.set({
+      rows: [row(1, 'Dirt Bike'), row(3, 'Old Bike', 'sold')] as never,
+      nextCursor: null
+    });
+
+    expect(get(cachedListings).map((l) => l.id)).toEqual([1, 2]);
+    expect(searchCachedListings('bike').map((l) => l.id)).toEqual([1]);
+    expect(searchCachedListings('DESC').map((l) => l.id)).toEqual([1, 2]);
+    expect(searchCachedListings('')).toEqual([]);
   });
 });

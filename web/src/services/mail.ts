@@ -16,8 +16,23 @@ const store = createCrudStore<Mail>(
   { service: 'mail' }
 );
 
+/**
+ * Whether a message answers a home-search query (MICA-248): sender, subject or body,
+ * for anything the inbox or archive still shows. `needle` is trimmed and lower-cased by
+ * the caller — `searchEverything` owns the shared ranking rule, this is Mail's half.
+ */
+export const matchesMail = (mail: Mail, needle: string): boolean =>
+  (mail.status ?? 'active') !== 'deleted' &&
+  [mail.sender, mail.subject, mail.content].some((value) => value?.toLowerCase().includes(needle));
+
 export const mailStore = {
   ...store,
+
+  /** The cached messages matching `query`, case-insensitively; never fetches. */
+  search: (query: string): Mail[] => {
+    const needle = query.trim().toLowerCase();
+    return needle ? get(store).filter((mail) => matchesMail(mail, needle)) : [];
+  },
 
   /**
    * Mail is read-only from the phone's side apart from these two flags, so they are the

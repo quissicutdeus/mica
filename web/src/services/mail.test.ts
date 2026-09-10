@@ -107,4 +107,23 @@ describe('mailStore', () => {
 
     expect(get(mailStore)).toContainEqual(newMail);
   });
+
+  it('searches the cached list by sender, subject and body, skipping deleted rows (MICA-248)', async () => {
+    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue([
+      {
+        id: 1,
+        sender: 'Maze Bank',
+        subject: 'Statement',
+        content: 'Balance $15',
+        status: 'active'
+      },
+      { id: 2, sender: 'LSPD', subject: 'Citation', content: 'Pay up', status: 'archived' },
+      { id: 3, sender: 'LSPD', subject: 'Old citation', content: 'gone', status: 'deleted' }
+    ]);
+    await mailStore.load();
+
+    expect(mailStore.search('lspd').map((m) => m.id)).toEqual([2]);
+    expect(mailStore.search('BALANCE').map((m) => m.id)).toEqual([1]);
+    expect(mailStore.search('   ')).toEqual([]);
+  });
 });

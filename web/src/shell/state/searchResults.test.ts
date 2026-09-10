@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect } from 'vitest';
-import type { Contact } from '@mica/shared/types';
+import type { Contact, Listing, Mail, MediaItem } from '@mica/shared/types';
 import type { AppManifest } from '../../../../sdk/manifest';
 import type { UIConversation } from '@mica/sdk';
 import { searchEverything, SEARCH_RESULTS_PER_GROUP } from './searchResults';
@@ -24,13 +24,41 @@ const conversation = (id: number, targetName: string, lastMessage: string): UICo
     unreadCount: 0
   }) as UIConversation;
 
+const mediaRow = (id: number, kind: MediaItem['kind'], alt_text?: string): MediaItem =>
+  ({ id, citizenid: 'me', kind, alt_text, status: 'active' }) as MediaItem;
+
+const mailRow = (id: number, sender: string, subject: string, content: string): Mail =>
+  ({ id, citizenid: 'me', sender, subject, content, read: false, status: 'active' }) as Mail;
+
+const listing = (id: number, title: string, description: string, price = 100): Listing =>
+  ({ id, citizenid: 'me', title, description, price, status: 'active' }) as Listing;
+
+/**
+ * Every owning app is listed, because a source is only as visible as its app: a fixture
+ * that left `contacts` out would search no contacts at all, which is the rule working,
+ * not a result to assert against.
+ */
 const sources = {
-  apps: [app('messages', 'Messages'), app('camera', 'Camera'), app('bank', 'Bank')],
+  apps: [
+    app('messages', 'Messages'),
+    app('camera', 'Camera'),
+    app('bank', 'Bank'),
+    app('contacts', 'Contacts'),
+    app('media', 'Media'),
+    app('mail', 'Mail'),
+    app('marketplace', 'Snatchr')
+  ],
   contacts: [contact(1, 'Jim', 'Halpert', '555-0100'), contact(2, 'Pam', 'Beesly', '555-0199')],
   conversations: [
     conversation(10, 'Jim Halpert', 'are you coming?'),
     conversation(11, 'Dwight', 'bears beets')
-  ]
+  ],
+  media: [mediaRow(903, 'location', 'Vespucci Beach'), mediaRow(7, 'photo')],
+  mail: [
+    mailRow(1, 'Fleeca Bank', 'Statement ready', 'Balance: $15,450'),
+    mailRow(2, 'LSPD', 'Traffic citation', 'Citation #90214 registered')
+  ],
+  listings: [listing(1, 'Dirt Bike', 'Runs great', 4500), listing(2, 'Burner Phone', 'Clean')]
 };
 
 describe('searchEverything', () => {
@@ -62,16 +90,90 @@ describe('searchEverything', () => {
     expect(byName.filter((r) => r.kind === 'message').map((r) => r.conversationId)).toEqual([11]);
   });
 
-  it('orders apps first, then contacts, then messages', () => {
+  it('orders apps, contacts, messages, media, mail, listings, then app-contributed hits', () => {
     const withEveryKind = {
       ...sources,
-      apps: [...sources.apps, app('jim_tracker', 'Jim Tracker')]
+      apps: [...sources.apps, app('jim_tracker', 'Jim Tracker'), app('journal', 'Journal')],
+      media: [mediaRow(1, 'photo', 'Jim at the beach')],
+      mail: [mailRow(9, 'Jim', 'hi', 'hello')],
+      listings: [listing(3, "Jim's bike", 'as new')],
+      providers: [{ appId: 'journal', search: () => [{ id: 1, title: 'Dear Jim' }] }]
     };
     expect(searchEverything('jim', withEveryKind).map((r) => r.kind)).toEqual([
       'app',
       'contact',
-      'message'
+      'message',
+      'media',
+      'mail',
+      'listing',
+      'external'
     ]);
+  });
+
+  it('matches a gallery row by caption or kind and carries its media id (MICA-248)', () => {
+    expect(searchEverything('vespucci', sources)).toEqual([
+      expect.objectContaining({
+        kind: 'media',
+        group: 'media',
+        mediaId: 903,
+        title: 'Vespucci Beach'
+      })
+    ]);
+    // A row with no caption is titled by its kind, and found by it.
+    expect(searchEverything('photo', sources)).toEqual([
+      expect.objectContaining({ kind: 'media', mediaId: 7, title: 'Photo' })
+    ]);
+  });
+
+  it('matches mail by sender, subject and body and carries its mail id', () => {
+    expect(searchEverything('90214', sources)).toEqual([
+      expect.objectContaining({ kind: 'mail', mailId: 2, title: 'Traffic citation' })
+    ]);
+    expect(searchEverything('fleeca', sources).map((r) => r.kind)).toEqual(['mail']);
+  });
+
+  it('matches a listing by title or description, and shows its price', () => {
+    expect(searchEverything('runs great', sources)).toEqual([
+      expect.objectContaining({ kind: 'listing', listingId: 1, subtitle: '4500 · Runs great' })
+    ]);
+  });
+
+  it('contributes nothing from a source whose app is hidden or not installed', () => {
+    // Mail is admin-only on this phone; Snatchr is not installed at all.
+    const locked = {
+      ...sources,
+      apps: sources.apps
+        .filter((a) => a.id !== 'marketplace')
+        .map((a) => (a.id === 'mail' ? app('mail', 'Mail', { requiresAdmin: true }) : a))
+    };
+    expect(searchEverything('fleeca', locked)).toEqual([]);
+    expect(searchEverything('fleeca', locked, { isAdmin: true })).toHaveLength(1);
+    expect(searchEverything('dirt bike', locked)).toEqual([]);
+    expect(searchEverything('dirt bike', sources)).toHaveLength(1);
+  });
+
+  it('gates an app-contributed provider on its app, caps it, and heads it by the app', () => {
+    const hits = Array.from({ length: SEARCH_RESULTS_PER_GROUP + 2 }, (_, i) => ({
+      id: i,
+      title: `Entry ${i}`,
+      props: { entryId: i }
+    }));
+    const provider = { appId: 'journal', search: () => hits };
+
+    // Not installed: the provider is never even asked.
+    expect(searchEverything('entry', { ...sources, providers: [provider] })).toEqual([]);
+
+    const installed = { ...sources, apps: [...sources.apps, app('journal', 'Journal')] };
+    const results = searchEverything('entry', { ...installed, providers: [provider] });
+    expect(results).toHaveLength(SEARCH_RESULTS_PER_GROUP);
+    expect(results[0]).toEqual(
+      expect.objectContaining({
+        kind: 'external',
+        group: 'app:journal',
+        appId: 'journal',
+        props: { entryId: 0 }
+      })
+    );
   });
 
   it('hides an admin-only app from a non-admin', () => {

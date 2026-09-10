@@ -85,6 +85,20 @@ let queue: Promise<void> = Promise.resolve();
  * nothing visible; it only means the next open pays for the bytes again. `makeThumbnail`
  * answers `null` rather than throwing for an image it cannot decode.
  */
+/**
+ * Whether a gallery row answers a home-search query (MICA-248).
+ *
+ * Caption and kind, and nothing else: they are the only text a projected row carries.
+ * `needle` is already trimmed and lower-cased by `searchEverything`, which owns the one
+ * ranking rule every source shares; this is the per-source half of it, exported so the
+ * shell and `media.search` cannot disagree about what a hit is.
+ */
+export type SearchableMedia = Pick<MediaItem, 'id' | 'kind' | 'alt_text' | 'status'>;
+
+export const matchesMedia = (item: SearchableMedia, needle: string): boolean =>
+  item.status !== 'deleted' &&
+  [item.alt_text, item.kind].some((value) => value?.toLowerCase().includes(needle));
+
 const backfill = async (row: MediaItem): Promise<void> => {
   if (!row.data) return;
   try {
@@ -103,6 +117,16 @@ const backfill = async (row: MediaItem): Promise<void> => {
 
 export const media = {
   ...store,
+
+  /**
+   * The rows in the current window that match `query`, case-insensitively. Reads the
+   * cache only — a gallery search never fetches, the same rule the home search follows
+   * for every source (MICA-248).
+   */
+  search: (query: string): MediaItem[] => {
+    const needle = query.trim().toLowerCase();
+    return needle ? get(store).filter((item) => matchesMedia(item, needle)) : [];
+  },
 
   /**
    * The whole row, `data` included. What a photo is opened with.
