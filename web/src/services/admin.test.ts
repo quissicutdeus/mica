@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { get } from 'svelte/store';
 
 /**
@@ -20,6 +20,22 @@ const loadAdmin = async (browser: boolean, reply: () => Promise<unknown>) => {
   vi.doMock('../nui/fetchNui', () => ({ fetchNui, isBrowser: () => browser }));
   return { ...(await import('./admin')), fetchNui };
 };
+
+/**
+ * Pay the cold import once, outside any test's budget.
+ *
+ * `loadAdmin` re-imports `./admin` per test, and the first import in a fresh worker
+ * transforms the whole graph behind it — `@mica/sdk`, the contracts, the NUI call — while
+ * every later one re-executes from the transform cache in about 20ms. Locally that first
+ * import is under a second; on the Forgejo runner it crossed the 20s `testTimeout` on every
+ * push from run 76 (5779b36a) to run 80, always in this file's first test, while the other
+ * five and the rest of the suite passed. The test was not hung, it was first in line. Warming
+ * the import here keeps the per-test timeout meaning "hung" rather than "cold", and the hook
+ * gets its own generous ceiling so the warm-up itself cannot become the timeout.
+ */
+beforeAll(async () => {
+  await import('./admin');
+}, 60_000);
 
 beforeEach(() => vi.resetModules());
 afterEach(() => vi.doUnmock('../../../sdk/lib/isBrowser'));

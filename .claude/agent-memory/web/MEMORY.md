@@ -9,3 +9,6 @@ its one-line summary.
   reads overrides from `pnpm-workspace.yaml` only; the git specifier that works
 - [CSP violations in the add-on sandbox](csp-blockeduri-opaque-frame.md) —
   `blockedURI` is an origin from an opaque frame; assert on that, never a path
+- [First test pays the cold transform](cold-import-first-test-timeout.md) — on
+  the Forgejo runner that is the whole 20s budget; warm the import in
+  `beforeAll`, do not raise `testTimeout`
