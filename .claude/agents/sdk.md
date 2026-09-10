@@ -9,7 +9,7 @@ description: >-
   table in it decides what that surface discloses.
 color: cyan
 model: opus
-effort: medium
+effort: high
 skills:
   - cef-css
 ---

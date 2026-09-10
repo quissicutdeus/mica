@@ -7,7 +7,7 @@ description: >-
   document, because it is believed.
 color: purple
 model: sonnet
-effort: low
+effort: medium
 tools: Read, Write, Edit, Grep, Glob, Bash, Skill
 ---
 

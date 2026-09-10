@@ -9,7 +9,7 @@ description: >-
   game.
 color: blue
 model: sonnet
-effort: medium
+effort: high
 skills:
   - cef-css
   - nui-endpoint

@@ -7,7 +7,7 @@ description: >-
   means something if it can actually be failed.
 color: green
 model: sonnet
-effort: medium
+effort: high
 memory: project
 ---
 
