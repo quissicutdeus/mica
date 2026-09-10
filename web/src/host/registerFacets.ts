@@ -64,6 +64,7 @@ import './facets/account';
 import './facets/accounts';
 import './facets/admin';
 import './facets/sourceUrl';
+import './facets/streamerMode';
 import './facets/locale';
 import './facets/appAction';
 import './facets/appEvents';

@@ -287,6 +287,18 @@ export interface Facets {
     locale: Readable<string>;
     setLocale: (next: string) => void;
   };
+  /**
+   * MICA-249: streamer mode. `streamerMode` is the player's choice — blur every
+   * player-supplied picture until it is tapped; `revealGeneration` bumps whenever a revealed
+   * picture should hide again (the flag flips, the foreground app changes, the device
+   * closes). `setStreamerMode` is for Settings; an add-on reads both stores and never sets
+   * the flag (`FACET_MEMBERS`).
+   */
+  streamerMode: () => {
+    streamerMode: Readable<boolean>;
+    revealGeneration: Readable<number>;
+    setStreamerMode: (on: boolean) => void;
+  };
   appAction: (appId?: string) => {
     busy: Writable<boolean>;
     run: (work: () => unknown, options?: AppActionOptions) => Promise<boolean>;

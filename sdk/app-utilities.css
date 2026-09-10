@@ -1382,6 +1382,12 @@
 .overflow-auto {
   overflow: auto;
 }
+.blur-media {
+  /* MICA-249: a streamer-mode picture before it is tapped. `filter: blur()` is Chrome 53;
+     the scale keeps the blur's soft edge inside the tile instead of fading to transparent. */
+  filter: blur(14px);
+  transform: scale(1.15);
+}
 .overflow-hidden {
   overflow: hidden;
 }

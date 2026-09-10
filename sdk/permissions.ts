@@ -74,6 +74,11 @@ export const PERMISSION_OF: Record<string, AppPermission | readonly AppPermissio
   // address is — every app needs it to render at all, it carries no player data, and the
   // only member an add-on could steer is withheld by `MEMBER_ALLOWLIST`.
   useLocale: null,
+  // MICA-249: whether the player asked for every picture to be blurred until tapped. One
+  // boolean, no player data, and the one primitive that draws pictures (`MediaThumb`)
+  // reads it for every app — so gating it would mean a kit component every app renders
+  // needs a permission no app has a reason to declare. The setter is core only.
+  useStreamerMode: null,
   // data
   useAccount: 'account',
   useAdmin: 'admin',
@@ -137,6 +142,7 @@ export const HOOK_OF_FACET = {
   admin: 'useAdmin',
   sourceUrl: 'useSourceUrl',
   locale: 'useLocale',
+  streamerMode: 'useStreamerMode',
   bank: 'useBank',
   call: 'useCall',
   camera: 'useCamera',
@@ -251,7 +257,10 @@ export const SAFE_IMPLICIT_FACETS: ReadonlySet<string> = new Set([
   'sourceUrl',
   // MICA-61. The locale is one string every app needs to render; `setLocale` is not on
   // the allowlist, so a frame can read the language and cannot change the player's.
-  'locale'
+  'locale',
+  // MICA-249. One boolean every picture-drawing surface reads; `setStreamerMode` is not
+  // on the allowlist, so a frame can honour the flag and cannot flip the player's.
+  'streamerMode'
 ]);
 
 /**
@@ -522,6 +531,7 @@ export const FACET_MEMBERS: Readonly<Record<string, readonly string[]>> = {
   sound: ['play'],
   sourceUrl: ['sourceUrl', 'refreshSourceUrl'],
   locale: ['locale'],
+  streamerMode: ['streamerMode', 'revealGeneration'],
   systemHardware: [
     'charge',
     'signalLevel',

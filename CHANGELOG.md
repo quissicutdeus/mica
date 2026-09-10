@@ -909,6 +909,16 @@ somebody maintaining a `core: false` add-on outside this repo, and it answers
 one question: does that bundle still compile against this release, and does its
 manifest still ask for the right things.
 
+**`useStreamerMode` is new, and needs no permission (MICA-249).** Streamer mode
+is a Privacy toggle that blurs every player-supplied picture until it is tapped
+and re-blurs it when the view closes, persisted per character through the
+settings service. Every image an add-on draws through `MediaThumb` already
+honours it. An add-on drawing one some other way reads
+`useStreamerMode().streamerMode` for the flag and `revealGeneration`, which
+bumps whenever a reveal should be forgotten; `setStreamerMode` is on the hook's
+type but the shell refuses it from a `core: false` frame, so only Settings can
+flip it. Additive: the contract version does not move.
+
 **`networkHosts` now governs every outbound request from a `core: false` frame,
 images, media and fonts included (MICA-202).** The sandbox's `img-src`,
 `media-src` and `font-src` were `https: data: blob:`, which let an add-on — or

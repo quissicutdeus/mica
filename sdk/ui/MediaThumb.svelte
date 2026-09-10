@@ -13,6 +13,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import PlayIcon from './icons/PlayIcon.svelte';
   import { t } from '../i18n';
   import './messages';
+  import { useStreamerMode } from '../host/useStreamerMode';
 
   /**
    * One media row, drawn by its `kind`.
@@ -106,11 +107,56 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     const total = Math.round(ms / 1000);
     return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
   };
+
+  /**
+   * Streamer mode (MICA-249): a still is blurred until tapped, and only here.
+   *
+   * Every player-supplied picture on the phone draws through this component, which is
+   * what makes one implementation enough — a message attachment, a gallery tile, a
+   * marketplace photo and a Blab's picture all get the same blur and the same tap, and
+   * an app has nothing to remember. The hook is implicit (`PERMISSION_OF`), so rendering
+   * this costs an app no permission it did not already have.
+   *
+   * `revealed` is this instance's own: a detail view mounts fresh and starts hidden. It
+   * is also cleared on every bump of `revealGeneration`, which is how a thumb that stays
+   * mounted in a resident app — Media's grid, a Messages thread — hides again when the
+   * flag flips, the foreground app changes or the device closes.
+   *
+   * The reveal is a tap that goes no further. Most thumbs sit inside a button that opens
+   * the picture, and a first tap on a blurred one must not also open it — that would put
+   * the full-size original on screen, which is the exact thing the mode exists to stop.
+   * So the overlay swallows the event; the second tap reaches the parent as before. Not a
+   * `<button>`: that parent is often one already, and a button inside a button is invalid.
+   */
+  const { streamerMode, revealGeneration } = useStreamerMode();
+  let revealed = $state(false);
+  $effect(() => {
+    void $revealGeneration;
+    revealed = false;
+  });
+
+  let hidden = $derived($streamerMode && !!still && !revealed);
+  /** What the tests and the e2e specs read; absent when the mode is off. */
+  let streamerState = $derived(
+    $streamerMode && still ? (revealed ? 'revealed' : 'blurred') : undefined
+  );
+
+  const reveal = (event: Event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    revealed = true;
+  };
+  const onRevealKey = (event: KeyboardEvent) => {
+    if (event.key === 'Enter' || event.key === ' ') reveal(event);
+  };
 </script>
 
-<div class="relative h-full w-full {className}">
+<div
+  class="relative h-full w-full {hidden ? 'overflow-hidden' : ''} {className}"
+  data-streamer={streamerState}
+>
   {#if still}
-    <img src={still} alt={label} class="h-full w-full {objectFit}" />
+    <img src={still} alt={label} class="h-full w-full {objectFit} {hidden ? 'blur-media' : ''}" />
   {:else}
     <!-- No still to draw: audio, a file, or a link with no preview image. A labelled
          placeholder rather than a broken image, which is what an <img> with no src is. -->
@@ -127,6 +173,21 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <DocumentIcon class="size-icon-lg" />
       {/if}
       <span class="text-label-small w-full truncate text-center">{label}</span>
+    </div>
+  {/if}
+
+  {#if hidden}
+    <div
+      role="button"
+      tabindex="0"
+      aria-label={$t('ui.revealMedia')}
+      class="absolute inset-0 z-10 flex cursor-pointer items-center justify-center"
+      onclick={reveal}
+      onkeydown={onRevealKey}
+    >
+      <span class="bg-media-overlay text-label-small rounded-chip px-2 py-1 text-white">
+        {$t('ui.revealMedia')}
+      </span>
     </div>
   {/if}
 

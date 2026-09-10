@@ -984,7 +984,9 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'LICENSE_SPDX',
     'LICENSE_WARRANTY',
     'sourceUrlForBuild',
-    'useSourceUrl'
+    'useSourceUrl',
+    // MICA-249: streamer mode, a read-only flag every add-on that draws a picture may honour.
+    'useStreamerMode'
   ],
   '@mica/sdk (add-on bundle)': [
     'ALL_PERMISSIONS',
@@ -1196,7 +1198,9 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'LICENSE_SPDX',
     'LICENSE_WARRANTY',
     'sourceUrlForBuild',
-    'useSourceUrl'
+    'useSourceUrl',
+    // MICA-249: streamer mode, a read-only flag every add-on that draws a picture may honour.
+    'useStreamerMode'
   ],
   '@mica/sdk/app': ['defineApp', 'lazyBadge'],
   '@mica/sdk/core': [
@@ -1816,6 +1820,7 @@ const BASELINE_HOOK_RETURNS: Record<string, string[]> = {
   useSound: ['play'],
   useSourceUrl: ['refreshSourceUrl', 'sourceUrl'],
   useStorage: ['clear', 'getItem', 'markUnsynced', 'removeItem', 'setItem'],
+  useStreamerMode: ['revealGeneration', 'setStreamerMode', 'streamerMode'],
   useSystemHardware: [
     'bluetoothEnabled',
     'cellServiceEnabled',

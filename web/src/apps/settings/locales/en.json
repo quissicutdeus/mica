@@ -194,6 +194,10 @@
   "about.copyFailed": "Could not copy your number",
 
   "privacy.title": "Privacy",
+  "privacy.pictures": "Pictures",
+  "privacy.streamerMode": "Streamer Mode",
+  "privacy.streamerModeDescription": "Blur every picture until you tap it",
+  "privacy.streamerModeFooter": "Attachments, gallery photos and listing pictures stay blurred until tapped, and blur again when you leave the app.",
 
   "license.title": "License",
   "license.source": "Source",

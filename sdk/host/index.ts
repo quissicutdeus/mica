@@ -45,6 +45,7 @@ export * from './useService';
 export * from './useSound';
 export * from './useSourceUrl';
 export * from './useStorage';
+export * from './useStreamerMode';
 export * from './useSystemHardware';
 export * from './useSystemHardwareWrite';
 export * from './useTheme';

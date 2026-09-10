@@ -194,6 +194,10 @@
   "about.copyFailed": "Deine Nummer konnte nicht kopiert werden",
 
   "privacy.title": "Datenschutz",
+  "privacy.pictures": "Bilder",
+  "privacy.streamerMode": "Streamer-Modus",
+  "privacy.streamerModeDescription": "Jedes Bild bleibt unscharf, bis du es antippst",
+  "privacy.streamerModeFooter": "Anhänge, Galeriefotos und Anzeigenbilder bleiben unscharf, bis du sie antippst, und werden beim Verlassen der App wieder unscharf.",
 
   "license.title": "Lizenz",
   "license.source": "Quellcode",
