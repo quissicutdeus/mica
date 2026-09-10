@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { Database } from './Database';
+import { forwardAudit } from './DiscordWebhook';
 
 /**
  * The moderation ledger's table.
@@ -48,6 +49,10 @@ export interface AuditLogOptions {
 
 export class AuditLogger {
   static async log(options: AuditLogOptions): Promise<boolean> {
+    // The Discord mirror (MICA-242) is fed before the insert rather than after it, so a
+    // ledger write that fails still reaches the staff channel — the one place left that will
+    // hear about it. `forwardAudit` is synchronous, filters for itself, and never throws.
+    forwardAudit(options);
     try {
       const query = `
                 INSERT INTO ${AUDIT_LOG_TABLE}

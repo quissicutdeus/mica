@@ -8,6 +8,8 @@ const { dbMock } = vi.hoisted(() => ({
   dbMock: { query: vi.fn(), insert: vi.fn(), update: vi.fn(), scalar: vi.fn(), single: vi.fn() }
 }));
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
+const { forwardAudit } = vi.hoisted(() => ({ forwardAudit: vi.fn() }));
+vi.mock('../lib/DiscordWebhook', () => ({ forwardAudit }));
 
 import { AuditLogger } from '../lib/AuditLogger';
 
@@ -86,6 +88,23 @@ describe('AuditLogger', () => {
     ).resolves.toBe(false);
 
     expect(error).toHaveBeenCalled();
+  });
+
+  it('hands every entry to the Discord mirror, even one the insert then loses', async () => {
+    // MICA-242. The mirror filters for itself, so the logger passes the entry whole; and it
+    // is fed before the insert so a broken ledger still reaches the staff channel.
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    dbMock.insert.mockRejectedValue(new Error('table missing'));
+    const entry = {
+      citizenid: 'CIT_A',
+      action: 'moderated' as const,
+      service: 'reports',
+      method: 'resolve',
+      targetId: 42
+    };
+    await AuditLogger.log(entry);
+    expect(forwardAudit).toHaveBeenCalledTimes(1);
+    expect(forwardAudit).toHaveBeenCalledWith(entry);
   });
 
   it('says it succeeded only when the insert did', async () => {

@@ -472,6 +472,17 @@ with `internal_error` and the rest of Messages is unaffected.
 
 ### Added
 
+**The moderation ledger can mirror to a Discord webhook (MICA-242).** Set
+`mica_discord_webhook` and a staff channel receives an embed for every
+moderation action, every admin read of reported content, every report filed and
+every payment at or above `mica_discord_webhook_payment_min` (`10000` by
+default). Posts are batched ten embeds at a time and held to Discord's rate
+limit; a failed post is logged once and dropped, never retried. Off by default,
+and no player-written text leaves the server unless
+`mica_discord_webhook_content` is on — even then only a moderation reason, a
+report note or a payment's reason line, never a message body or an image. The
+convar table in README has all three.
+
 **qb scripts that mail or notify the phone work unmodified (MICA-222).** micaOS
 answers `qb-phone:server:sendNewMail`, `qb-phone:server:sendNewMailToOffline`
 and `qb-phone:client:CustomNotification` with the payload shapes qb scripts

@@ -4,6 +4,7 @@
 
 import { FrameworkBridge } from './FrameworkBridge';
 import { BankingBridge } from './BankingBridge';
+import { forwardPayment } from './DiscordWebhook';
 
 /**
  * Moving money between two players.
@@ -165,6 +166,9 @@ export async function transfer(request: TransferRequest): Promise<PaymentOutcome
   }
 
   console.log(`[Payments] ${from} -> ${to}: ${amount} (${account}) for '${reason}'.`);
+  // The Discord mirror (MICA-242) hears about the money only once it has actually moved;
+  // it filters by `mica_discord_webhook_payment_min` itself and never throws.
+  forwardPayment({ from, to, amount, service: account, reason });
   return { ok: true, from, to, amount };
 }
 
@@ -244,6 +248,7 @@ export async function payFromSociety(request: SocietyPaymentRequest): Promise<Pa
   }
 
   console.log(`[Payments] society '${job}' -> ${to}: ${amount} (bank) for '${reason}'.`);
+  forwardPayment({ from: `society:${job}`, to, amount, service: 'society', reason });
   return { ok: true, from: `society:${job}`, to, amount };
 }
 
@@ -313,5 +318,6 @@ export async function payToSociety(request: SocietyChargeRequest): Promise<Payme
   }
 
   console.log(`[Payments] ${from} -> society '${job}': ${amount} (bank) for '${reason}'.`);
+  forwardPayment({ from, to: `society:${job}`, amount, service: 'society', reason });
   return { ok: true, from, to: `society:${job}`, amount };
 }

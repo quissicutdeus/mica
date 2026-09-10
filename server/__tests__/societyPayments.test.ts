@@ -4,6 +4,9 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
+const forwardPayment = vi.hoisted(() => vi.fn());
+vi.mock('../lib/DiscordWebhook', () => ({ forwardPayment }));
+
 vi.mock('../lib/Database', () => ({
   Database: { query: vi.fn(), insert: vi.fn(), update: vi.fn(), scalar: vi.fn(), single: vi.fn() }
 }));
@@ -194,9 +197,18 @@ describe('payFromSociety', () => {
     expect(result).toEqual({ ok: true, from: 'society:police', to: 'CIT_B', amount: 250 });
     expect(renewed.read('police')).toBe(750);
     expect(payee.read()).toBe(350);
+    // MICA-242: the mirror names the society as the payer, the way the outcome does.
+    expect(forwardPayment).toHaveBeenCalledWith({
+      from: 'society:police',
+      to: 'CIT_B',
+      amount: 250,
+      service: 'society',
+      reason: 'pay'
+    });
   });
 
   it('refunds the society when the credit fails', async () => {
+    forwardPayment.mockClear();
     const renewed = makeRenewed({ police: 1_000 });
     const payee = makePlayer('CIT_B', 100, { canAdd: false });
     install(renewed, { 2: payee });
@@ -204,6 +216,7 @@ describe('payFromSociety', () => {
     const result = await payFromSociety({ job: 'police', to: 'CIT_B', amount: 250, reason: 'pay' });
 
     expect(result).toEqual({ ok: false, reason: 'credit_failed' });
+    expect(forwardPayment).not.toHaveBeenCalled();
     expect(renewed.read('police')).toBe(1_000);
     expect(payee.read()).toBe(100);
   });

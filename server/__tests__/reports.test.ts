@@ -26,6 +26,8 @@ const { dbMock, handlers } = vi.hoisted(() => {
   };
 });
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
+const forwardReportFiled = vi.hoisted(() => vi.fn());
+vi.mock('../lib/DiscordWebhook', () => ({ forwardReportFiled, forwardAudit: vi.fn() }));
 
 /** `ServiceEndpoint` resolves the caller's citizenid through the bridge before dispatching. */
 const bridge = vi.hoisted(() => ({ current: 'REPORTER1' }));
@@ -145,6 +147,33 @@ describe('filing a report', () => {
     const [sql, params] = dbMock.insert.mock.calls[0];
     expect(sql).toContain('INSERT INTO `mica_reports`');
     expect(params).toEqual(expect.arrayContaining([REPORTER, 'mica_messages', 12, 'harassment']));
+  });
+
+  it('tells the Discord mirror once the row is written (MICA-242)', async () => {
+    forwardReportFiled.mockClear();
+    dbMock.single.mockResolvedValue(targetRow);
+
+    const reply = await call('create', {
+      targetTable: 'mica_messages',
+      targetId: 12,
+      category: 'harassment',
+      note: 'rude'
+    });
+
+    expect(forwardReportFiled).toHaveBeenCalledWith({
+      reportId: reply.id,
+      citizenid: REPORTER,
+      targetTable: 'mica_messages',
+      targetId: 12,
+      category: 'harassment',
+      note: 'rude'
+    });
+  });
+
+  it('does not tell the mirror about a filing that was refused', async () => {
+    forwardReportFiled.mockClear();
+    await call('create', { targetTable: 'players', targetId: 1 });
+    expect(forwardReportFiled).not.toHaveBeenCalled();
   });
 
   it('refuses a table that is not reportable', async () => {

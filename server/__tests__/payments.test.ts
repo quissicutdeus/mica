@@ -4,6 +4,9 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
+const forwardPayment = vi.hoisted(() => vi.fn());
+vi.mock('../lib/DiscordWebhook', () => ({ forwardPayment }));
+
 vi.mock('../lib/Database', () => ({
   Database: { query: vi.fn(), insert: vi.fn(), update: vi.fn(), scalar: vi.fn(), single: vi.fn() }
 }));
@@ -72,6 +75,25 @@ describe('transfer', () => {
     expect(result).toEqual({ ok: true, from: 'CIT_A', to: 'CIT_B', amount: 250 });
     expect(payer.read()).toBe(250);
     expect(payee.read()).toBe(350);
+  });
+
+  it('tells the Discord mirror only once the money has moved (MICA-242)', async () => {
+    forwardPayment.mockClear();
+    const payer = makePlayer('CIT_A', 500);
+    install({ 1: payer, 2: makePlayer('CIT_B', 100) });
+
+    await transfer({ from: 'CIT_A', to: 'CIT_B', amount: 250, reason: 'sale' });
+    expect(forwardPayment).toHaveBeenCalledWith({
+      from: 'CIT_A',
+      to: 'CIT_B',
+      amount: 250,
+      service: 'bank',
+      reason: 'sale'
+    });
+
+    forwardPayment.mockClear();
+    await transfer({ from: 'CIT_A', to: 'CIT_B', amount: 1_000, reason: 'too much' });
+    expect(forwardPayment).not.toHaveBeenCalled();
   });
 
   it('refunds the payer when the credit fails, rather than keeping the debit', async () => {

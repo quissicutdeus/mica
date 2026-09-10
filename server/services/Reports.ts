@@ -17,6 +17,7 @@ import {
   type ReportableTable
 } from '../lib/moderation';
 import { AuditLogger } from '../lib/AuditLogger';
+import { forwardReportFiled } from '../lib/DiscordWebhook';
 import { isAdmin } from './Admin';
 import type { Report, ReportResolution } from '@mica/shared/types';
 
@@ -167,6 +168,10 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
     target_preview: target.preview,
     target_author: target.citizenid
   } as Partial<Report>);
+
+  // The row is written; the staff channel hears about it now (MICA-242). The mirror is
+  // synchronous and never throws, so a dead webhook cannot fail the filing.
+  forwardReportFiled({ reportId: id, citizenid, targetTable: table, targetId, category, note });
 
   return { id, ok: true };
 });
