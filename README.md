@@ -522,8 +522,8 @@ server:
   lives entirely in the phone's UI, for the same reason. A plain `set` leaves
   every phone with an empty allowlist, which means every install is refused.
 - **`mica_disabled_apps`** — the client's own `OpenApp` export also has to
-  refuse a disabled app, not just the shell UI and the server. A plain `set`
-  still gets a disabled app refused by the shell and the server, but leaves the
+  refuse a disabled app, not just the shell UI and (for the apps it can) the
+  server. A plain `set` still reaches the shell and the server, but leaves the
   client export believing it is still open for business.
 
 The values below are the defaults as written in the code, so a server that sets
@@ -930,13 +930,20 @@ anywhere.
   message body, photo or attachment reaches Discord under either setting.
 
 - **`mica_disabled_apps`** — a comma-separated list of app ids to hide: from the
-  launcher, the app drawer, search, the dock and the Store, all at once, and the
-  server refuses that app's events regardless of what the UI shows. `settings`
-  cannot be named here — a phone with Language, Display and Shortcuts disabled
-  cannot be recovered from a bad choice a player made in one of them — and an
-  attempt to disable it is ignored with a warning rather than silently dropped.
-  Set with `setr`, or the client's own `OpenApp` export does not learn about it
-  (see above). Re-enabling an app brings it back where it was.
+  launcher, the app drawer, search, the dock and the Store, all at once.
+  Server-side refusal is partial, deliberately: an app whose service nothing
+  else reaches (Blabber, Blabber DMs, Bank's invoices, Hodlr, Jobs, Mail,
+  Marketplace, Notes, Places) is refused at the server too, so a modified client
+  cannot drive it while it is off. Disabling Messages, Contacts, Media, Music or
+  Bank itself only hides the app — the server keeps answering those services'
+  events, because other apps (the phone itself, Settings, Camera, Blabber) reach
+  the same data and cannot be broken by someone else's app being turned off.
+  `settings` cannot be named here — a phone with Language, Display and Shortcuts
+  disabled cannot be recovered from a bad choice a player made in one of them —
+  and an attempt to disable it is ignored with a warning rather than silently
+  dropped. Set with `setr`, or the client's own `OpenApp` export does not learn
+  about it (see above); when it does, `OpenApp` fails with `app_disabled`.
+  Re-enabling an app brings it back where it was.
 - **`mica_default_dock`** — up to four app ids, comma-separated and positional:
   the first is slot one, and so on. An empty entry between commas is an empty
   slot, so `phone,,camera,messages` leaves slot two blank rather than shifting
@@ -947,11 +954,14 @@ anywhere.
 - **`mica_default_contacts`** — the contacts a brand-new phone starts with,
   either as inline JSON (an array of `{ "name": "...", "number": "..." }`
   objects) or as a path to a JSON file of the same shape, resolved inside this
-  resource — no absolute path, and no `..` segment. Seeded once, when a phone is
-  created; a player who deletes a seeded contact does not have it come back. A
-  malformed entry — missing a name or a number, or the document itself not being
-  valid JSON or not an array — is skipped, with a warning naming what was
-  skipped, rather than failing the rest of the seed.
+  resource — no absolute path, and no `..` segment. Seeded the moment this
+  server first creates the phone's row, and never again — there is no marker
+  column; the row's own one-time insert is the mark, so a phone that already
+  existed is never seeded and a player who deletes a seeded contact does not
+  have it come back. A failed seed is logged and not retried; the phone itself
+  is still created either way. A malformed entry — missing a name or a number,
+  or the document itself not being valid JSON or not an array — is skipped, with
+  a warning naming what was skipped, rather than failing the rest of the seed.
 
 One convar you may still find in an old config: `mica_auto_migrate`. An earlier
 build added missing columns and indexes at start when it was set, and that

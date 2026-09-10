@@ -58,6 +58,12 @@ bundle rather than answering it live. A player of the demo image therefore
 cannot get a different answer without a rebuild, unlike a real server, where the
 convars are read live.
 
+`shared/ownerConfig.ts`'s parsers are total — a malformed value never fails a
+live server — which would otherwise make a bad build arg indistinguishable from
+an unset one. `scripts/warn-owner-config.js` runs the real parsers against these
+three during the image build and prints what each one rejected; it never fails
+the build, since the image is still usable with the bad piece dropped.
+
 `TZ` moves the server's log lines only. The phone's clock and every message
 timestamp are rendered in the browser from the **viewer's** own system zone, so
 a visitor in Berlin sees Berlin time no matter what this container is set to.
