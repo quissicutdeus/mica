@@ -15,3 +15,14 @@ its one-line summary.
 - [A persisted default must not persist](persisted-default-must-not-persist.md)
   — `usePersisted`'s outer `set` always writes storage and queues a debounced
   server save; overlay a runtime default with `derived`, never write it in
+- [`callOr`'s default hides failure](callor-default-hides-failure.md) — `[]` on
+  failure and `[]` on real-empty are the same value; swap to `call` in place,
+  keep the export's name, check `vi.mock` sites outside your fence first
+- [Persisted registry has no unregister](persisted-registry-vs-frame-lifecycle.md)
+  — don't wire a disposable object (an add-on frame server) into a permanent sdk
+  registry; give it its own registry with a real unregister instead
+- [A sweep needs a real load signal](hydrate-must-not-sweep-on-every-call.md) —
+  don't sweep on every hydrate call; the e2e/dev mock's `[]` looks identical to
+  a real empty answer. Also: don't cancel a pending write, exclude its key.
+  Also: `pnpm test:e2e -- <files>` from root doesn't filter, use web's
+  playwright
