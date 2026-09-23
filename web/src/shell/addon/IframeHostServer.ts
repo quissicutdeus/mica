@@ -20,6 +20,7 @@ import { grantFor } from '../state/registry';
 import { themeStyleStore } from '../state/theme';
 import { is24Hour } from '../state/time';
 import { messageOf } from '@mica/sdk';
+import { registerAddOnStoragePush } from '../../host/settingsSync';
 
 /** The guest end of the channel: the window a frame is currently running. */
 export interface GuestWindow {
@@ -167,6 +168,8 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
   let nextHandle = 1;
   let disposed = false;
   let stopTheme: (() => void) | undefined;
+  /** MICA-287: unregisters this frame's `pushStorageToAddOns` callback — see `hydrate()`. */
+  let stopAddOnStoragePush: (() => void) | undefined;
   /** The window whose `hello` was last answered — how a reload is recognised. */
   let hydrated: unknown;
   /** The fixed request window: when it opened, and how many have arrived in it. */
@@ -497,6 +500,8 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
   function forgetGuest() {
     stopTheme?.();
     stopTheme = undefined;
+    stopAddOnStoragePush?.();
+    stopAddOnStoragePush = undefined;
     for (const off of subscriptions.values()) off();
     subscriptions.clear();
     handles.clear();
@@ -556,6 +561,21 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
     // gets a live theme feed, and the first (synchronous) value is already in the
     // hydrate payload above, so a later push is only ever a real change.
     if (!stopTheme) stopTheme = themeStyleStore.subscribe((css) => post({ kind: 'theme', css }));
+    /**
+     * MICA-287: the character-switch half of the same fix. `storageSnapshot` above is
+     * this app's whole local cache, already in the hydrate payload; this is what keeps a
+     * *live* frame's copy from going stale after the character changes underneath it —
+     * without it, an add-on kept the previous character's values for the rest of the
+     * session, the same bug the in-process sweep in `host/facets/storage.ts` fixes for
+     * every other app. Guarded the same way as `stopTheme`: registered once per guest
+     * document, dropped in `forgetGuest` so a reload or a real teardown does not leave a
+     * second, permanently-stale entry behind.
+     */
+    if (!stopAddOnStoragePush) {
+      stopAddOnStoragePush = registerAddOnStoragePush(() =>
+        post({ kind: 'storage', snapshot: storageSnapshot(host.appId) })
+      );
+    }
   }
 
   /**

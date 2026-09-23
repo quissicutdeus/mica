@@ -14,7 +14,7 @@
  * which side it is standing in for. In-process, because a unit test stands in for the shell.
  */
 import '../../host/registerFacets';
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { get } from 'svelte/store';
 import { DEVICES } from '@mica/shared/devices';
 import { setActiveDevice } from './device';
@@ -22,6 +22,23 @@ import { ownerConfig } from './ownerConfig';
 import { DEFAULT_DOCK_APP_IDS, dockAppIds, sanitizeDockAppIds, setDockSlot } from './dock';
 import { storage } from '../../host/facets/storage';
 import { persistedRehydratorsAll } from '../../../../sdk/host/seam/persistedRegistry';
+
+/**
+ * MICA-287: mocked here (this file previously let `setItem`/`removeItem` reach the real
+ * `services/settings` transport, harmlessly, since nothing asserted on it) so the new
+ * "owner default after a character switch" test below can drive the sweeping hydrate with
+ * two different, explicitly successful answers — the distinction a rejected fetch and an
+ * empty-but-real one now carry (`host/facets/storage.ts`).
+ */
+const serviceMock = vi.hoisted(() => ({
+  fetchSettings: vi.fn().mockResolvedValue([]),
+  saveSetting: vi.fn(),
+  removeSetting: vi.fn(),
+  clearAppSettings: vi.fn()
+}));
+vi.mock('../../services/settings', () => serviceMock);
+
+import { hydrateSettingsOnCharacterLoad } from '../../host/facets/storage';
 
 describe('Dock state', () => {
   beforeEach(() => {
@@ -156,6 +173,44 @@ describe('Dock state', () => {
 
       ownerConfig.set({ disabledApps: [], defaultDock: ['bank', '', 'notes', ''] });
       expect(get(dockAppIds)).toEqual(['weather', '', '', '']);
+    });
+
+    /**
+     * MICA-287: `hasStoredPhoneDock`'s own doc names this exact failure — the previous
+     * character's `dockAppIds` sitting in the shared local cache made a fresh character
+     * with no dock of their own look like they already had one, so the owner default never
+     * showed. Driven through the real `hydrateSettingsOnCharacterLoad` — the sweeping,
+     * character-load hydrate (round 3 moved the sweep out of the sdk seam's plain
+     * `hydrateSettings()`, which stays additive-only) — not a manual storage write, so this
+     * exercises the sweep in `host/facets/storage.ts` and not just `dockOverlay`'s own
+     * derived logic.
+     */
+    it('MICA-287: shows the owner default for a fresh character after a switch, not the previous one’s dock', async () => {
+      // `beforeEach` above's `dockAppIds.set(...)` queued a debounced write for this same
+      // key that has not flushed yet — a key with a write still pending is protected from
+      // the hydrate below on purpose (round 3, finding 3), so it has to be cleared first
+      // or the hydrate would (correctly) refuse to touch it and this test would prove
+      // nothing. `removeItem` cancels the pending write synchronously, the same way the
+      // existing tests above use it to stand in for "nothing saved yet".
+      settingsStorage.removeItem('dockAppIds');
+
+      // Character A had a dock of their own.
+      serviceMock.fetchSettings.mockResolvedValueOnce([
+        { app: 'settings', setting_key: 'dockAppIds', setting_value: '["weather","","",""]' }
+      ]);
+      await hydrateSettingsOnCharacterLoad();
+      expect(get(dockAppIds)).toEqual(['weather', '', '', '']);
+
+      ownerConfig.set({ disabledApps: [], defaultDock: ['bank', '', 'notes', ''] });
+
+      // Character B has no dock row at all — a genuinely successful, empty answer, not a
+      // failed fetch. Without the sweep, `weather` would still be sitting under
+      // `mica:settings:dockAppIds` and `hasStoredPhoneDock` would see a key that was never
+      // this character's.
+      serviceMock.fetchSettings.mockResolvedValueOnce([]);
+      await hydrateSettingsOnCharacterLoad();
+
+      expect(get(dockAppIds)).toEqual(['bank', '', 'notes', '']);
     });
   });
 });

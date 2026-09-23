@@ -59,4 +59,17 @@ describe('App Drawer first-run hint migration', () => {
     await migrateAppDrawerHintForExistingSaves();
     expect(serviceMock.fetchSettings).not.toHaveBeenCalled();
   });
+
+  /**
+   * MICA-287: `fetchSettings` now rejects instead of resolving `[]` on a failed request,
+   * including the routine "Player not authenticated" reply this call site can genuinely
+   * race — it chains directly off the very first, boot-time hydrate in `Shell.svelte`,
+   * with no guarantee a character has loaded by the time that settles. A rejection here
+   * must resolve quietly, or it is an unhandled one the e2e page-error check or CEF sees.
+   */
+  it('skips quietly on a failed fetch, rather than leaving an unhandled rejection', async () => {
+    serviceMock.fetchSettings.mockRejectedValue(new Error('Player not authenticated'));
+    await expect(migrateAppDrawerHintForExistingSaves()).resolves.toBeUndefined();
+    expect(get(appDrawerHintSeen)).toBe(false);
+  });
 });

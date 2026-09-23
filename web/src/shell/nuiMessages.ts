@@ -11,7 +11,7 @@ import { recordConsent } from './state/addOnGrants';
 import { isCatalogEntry, type CatalogEntry } from '../../../sdk/catalog';
 import { setSignal } from './state/signal';
 import { time } from './state/time';
-import { hydrateSettings } from '../../../sdk/host/useStorage';
+import { hydrateSettingsOnCharacterLoad } from '../host/facets/storage';
 import { bootstrapStores, resetBootstrapState } from './state/bootstrap';
 import { toast } from './state/toast';
 import { messageOf } from '@mica/sdk';
@@ -287,12 +287,22 @@ export function createNuiMessageRouter(bridge: NotificationBridge) {
       const parsed = parseSetCharge(data);
       if (parsed !== null) charge.set(parsed);
     },
+    /**
+     * MICA-287 round 3: the *sweeping* hydrate, not the sdk seam's `hydrateSettings()` —
+     * see `host/facets/storage.ts` for why the two are no longer the same function. This
+     * route is a real character-load signal, so clearing whatever the answer omits is
+     * correct here in a way it is not at page load.
+     */
     rehydrateSettings: () => {
-      void hydrateSettings();
+      void hydrateSettingsOnCharacterLoad();
     },
     rehydrateShell: () => {
       resetBootstrapState();
       void bootstrapStores(true);
+      // A phone switch (`server/lib/phoneItem.ts`) sends only this route, never
+      // `rehydrateSettings` — and settings are stored per phone id, so the previous
+      // phone's values need the same sweep or they stay on screen under the new one.
+      void hydrateSettingsOnCharacterLoad();
     },
     setSignal: (data) => {
       const parsed = parseSetSignal(data);

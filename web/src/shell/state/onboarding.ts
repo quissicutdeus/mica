@@ -19,10 +19,19 @@ export function markAppDrawerHintSeen(): void {
  * showing them a first-run hint would be a false first run. Call once at boot, after
  * `hydrateSettings` has had a chance to apply any real `appDrawerHintSeen` row from the
  * server, so this only fires for a character with none.
+ *
+ * MICA-287: `fetchSettings` now rejects instead of resolving `[]` on a failed request —
+ * including the routine "Player not authenticated" reply this call site can genuinely
+ * race, since it is chained directly off the very first, boot-time hydrate and nothing
+ * guarantees a character has loaded by the time that settles. A failed answer means this
+ * check cannot tell "no other settings" from "we don't know" either way, so it skips
+ * quietly rather than leaving an unhandled rejection for the e2e page-error check or CEF
+ * to trip over — the same "nothing happens" outcome the old `[]` produced for it.
  */
 export async function migrateAppDrawerHintForExistingSaves(): Promise<void> {
   if (get(appDrawerHintSeen)) return;
-  const rows = await fetchSettings();
+  const rows = await fetchSettings().catch(() => null);
+  if (rows === null) return;
   const hasOtherSettings = rows.some(
     (row) => !(row.app === 'settings' && row.setting_key === 'appDrawerHintSeen')
   );

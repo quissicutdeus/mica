@@ -21,6 +21,7 @@ import { DENIED_FACETS } from '../../../../sdk/permissions';
 import { SDK_CONTRACT_VERSION } from '../../../../sdk/version';
 import { is24Hour as shellIs24Hour } from '../state/time';
 import { recordConsent, resetGrantsForTest } from '../state/addOnGrants';
+import { pushStorageToAddOns, __resetSettingsSync } from '../../host/settingsSync';
 import type { ToFrame } from '../../../../sdk/host/iframe/messages';
 import '../../../../sdk/host/useContacts';
 import '../../../../sdk/host/useDisplay';
@@ -115,6 +116,11 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  // Every `server()` in this file that reaches `hello` registers a real, module-scope
+  // `pushStorageToAddOns` callback (MICA-287) — most never call `dispose()`, since that
+  // is not what they are testing, so this is what keeps that registry from growing one
+  // stale entry per test for the rest of the file.
+  __resetSettingsSync();
 });
 
 describe('IframeHostServer', () => {
@@ -1363,5 +1369,72 @@ describe('IframeHostServer', () => {
     from({ kind: 'typing', typing: true });
     expect(onError).toHaveBeenCalledWith('boom', null);
     expect(onTyping).toHaveBeenCalledWith(true);
+  });
+
+  /**
+   * MICA-287: a live add-on frame keeps its own storage cache, filled once at hydrate.
+   * Before this, a character switch's settings hydrate never told a frame that was
+   * already open, so it went on reading the previous character's values for the rest of
+   * the session — the same bug fixed for every in-process app in `host/facets/storage.ts`,
+   * for this one wall-crossing case. `pushStorageToAddOns` is the seam `storage.ts` calls
+   * on every successful hydrate; these tests stand in for that call directly, since
+   * driving the real character-switch flow end to end is `settingsSync.test.ts`'s job.
+   */
+  describe('MICA-287: a settings hydrate pushes a fresh snapshot to a live frame', () => {
+    /** A `Storage`-shaped stub that is its own backing store, so mutating it after hello
+     * changes what both `Object.keys` and `getItem` see — a character switch, in place. */
+    function stubLocalStorage(): Record<string, string> {
+      const stub: Record<string, unknown> = {
+        getItem: (key: string) => (stub[key] as string) ?? null
+      };
+      vi.stubGlobal('localStorage', stub);
+      return stub as Record<string, string>;
+    }
+
+    it('sends the current snapshot, with a key the new character does not have gone', () => {
+      const rawStorage = stubLocalStorage();
+      rawStorage[storageKey('probe', 'k')] = '"character A"';
+
+      const { posted, from } = server();
+      from({ kind: 'hello', appId: manifest.id });
+      posted.length = 0;
+
+      // The switch: the previous character's key is gone, the new one has a different row.
+      delete rawStorage[storageKey('probe', 'k')];
+      rawStorage[storageKey('probe', 'k2')] = '"character B"';
+
+      pushStorageToAddOns();
+
+      expect(posted).toEqual([
+        { kind: 'storage', snapshot: { [storageKey('probe', 'k2')]: '"character B"' } }
+      ]);
+    });
+
+    it('stops pushing once disposed, rather than holding the frame forever', () => {
+      stubLocalStorage();
+      const { posted, from, s } = server();
+      from({ kind: 'hello', appId: manifest.id });
+      s.dispose();
+      posted.length = 0;
+
+      pushStorageToAddOns();
+
+      expect(posted).toHaveLength(0);
+    });
+
+    it('registers once per guest document, not once per hello — a reload does not double-push', () => {
+      const rawStorage = stubLocalStorage();
+      const { posted, from, reload } = server();
+      from({ kind: 'hello', appId: manifest.id });
+
+      const fresh = reload();
+      from({ kind: 'hello', appId: manifest.id }, fresh);
+      posted.length = 0;
+
+      rawStorage[storageKey('probe', 'k')] = '"still just one push"';
+      pushStorageToAddOns();
+
+      expect(posted.filter((m) => m.kind === 'storage')).toHaveLength(1);
+    });
   });
 });

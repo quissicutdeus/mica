@@ -23,6 +23,7 @@ vi.mock('../services/settings', () => serviceMock);
 
 import { usePersisted } from '../../../sdk/host/usePersisted';
 import { clearAppStorage, hydrateSettings, useStorage } from '../../../sdk/host/useStorage';
+import { hydrateSettingsOnCharacterLoad } from './facets/storage';
 import { __resetSettingsSync } from './settingsSync';
 
 /**
@@ -175,5 +176,194 @@ describe('server-backed storage', () => {
     // The pending write for that key is dropped rather than landing after the delete and
     // resurrecting it.
     expect(serviceMock.saveSetting).not.toHaveBeenCalled();
+  });
+
+  /**
+   * MICA-287 round 3: the sdk seam's `hydrateSettings()` — what runs at page load — must
+   * stay purely additive. Round 1 put the sweep in this same function and shipped it
+   * through review: the dev/e2e mock's `settings:getAll` starts empty and answers `[]` on
+   * every page load with no concept of "not authenticated" to reject on, so the sweep
+   * deleted every seeded `mica:*` key on first paint, in `pnpm dev`, the demo container and
+   * most of the e2e suite. The sweeping half now only exists in
+   * `hydrateSettingsOnCharacterLoad`, below, which the page-load path never reaches.
+   */
+  it('a page-load hydrate answering [] removes nothing', async () => {
+    const storage = useStorage('settings');
+    storage.setItem('greeting', 'seeded before this page load');
+
+    serviceMock.fetchSettings.mockResolvedValueOnce([]);
+    await hydrateSettings();
+
+    expect(storage.getItem('greeting')).toBe('seeded before this page load');
+  });
+
+  /**
+   * `hydrateSettingsOnCharacterLoad` (`host/facets/storage.ts`) is the sweeping half MICA-287
+   * round 1 wrongly put in the page-load path. It is reached only from a real character-load
+   * signal — `nuiMessages.ts`'s `rehydrateSettings` and `rehydrateShell` routes
+   * (`nuiMessages.test.ts` covers that wiring) — never from the sdk seam's
+   * `hydrateSettings()` above.
+   */
+  describe('the character-load hydrate (MICA-287)', () => {
+    it('clears a setting the new character has no row for, and the live store re-reads', async () => {
+      const store = usePersisted<string>('settings', 'greeting', 'default');
+
+      serviceMock.fetchSettings.mockResolvedValueOnce([
+        { app: 'settings', setting_key: 'greeting', setting_value: '"character A"' }
+      ]);
+      await hydrateSettingsOnCharacterLoad();
+      expect(get(store)).toBe('character A');
+
+      // Character B's answer is a genuinely successful, empty one — not a failure. `[]`
+      // here must mean "no rows", or the sweep below could never fire on a real answer.
+      serviceMock.fetchSettings.mockResolvedValueOnce([]);
+      await hydrateSettingsOnCharacterLoad();
+
+      expect(get(store)).toBe('default');
+      expect(useStorage('settings').getItem('greeting')).toBeNull();
+    });
+
+    it('does not carry one character’s value into the next character’s store', async () => {
+      const store = usePersisted<string>('settings', 'theme', 'light');
+
+      serviceMock.fetchSettings.mockResolvedValueOnce([
+        { app: 'settings', setting_key: 'theme', setting_value: '"dark"' }
+      ]);
+      await hydrateSettingsOnCharacterLoad();
+      expect(get(store)).toBe('dark');
+
+      serviceMock.fetchSettings.mockResolvedValueOnce([
+        { app: 'settings', setting_key: 'theme', setting_value: '"amoled"' }
+      ]);
+      await hydrateSettingsOnCharacterLoad();
+      expect(get(store)).toBe('amoled');
+
+      // A third character with no row at all sees neither predecessor's value.
+      serviceMock.fetchSettings.mockResolvedValueOnce([]);
+      await hydrateSettingsOnCharacterLoad();
+      expect(get(store)).toBe('light');
+    });
+
+    it('does not clear an unsynced key just because the new answer omits it', async () => {
+      // Unsynced keys never had a server row to begin with (the wallpaper case above) —
+      // their absence from an answer says nothing about which character is loaded.
+      const store = usePersisted<string>('settings', 'wallpaper', 'none', { sync: false });
+      store.set('local choice');
+
+      serviceMock.fetchSettings.mockResolvedValueOnce([]);
+      await hydrateSettingsOnCharacterLoad();
+
+      expect(get(store)).toBe('local choice');
+    });
+
+    /**
+     * MICA-287 round 3: this ticket's first attempt cancelled every pending write before
+     * sweeping, on the theory that a switch happens seconds apart from any edit. qbx fires
+     * both of its player-loaded events for one real load, so this function runs twice in a
+     * row with no switch at all — and the second run's cancel dropped whatever the player
+     * had changed in the ~400ms since the first. The fix is not to cancel: a key with a
+     * write still queued is simply excluded from both the sweep and the write below, since
+     * the local value is newer than anything the server could have answered with.
+     */
+    it('a key with a pending write survives a rehydrate, and so does its local value', async () => {
+      const storage = useStorage('settings');
+      // Not yet flushed — still inside the 400ms debounce when the rehydrate lands.
+      storage.setItem('greeting', 'chosen mid-drag');
+
+      // The server's answer has no row for it yet, precisely because the write is still
+      // in flight — a sweep with no pending-write guard would read this as "cleared".
+      serviceMock.fetchSettings.mockResolvedValueOnce([]);
+      await hydrateSettingsOnCharacterLoad();
+
+      expect(storage.getItem('greeting')).toBe('chosen mid-drag');
+
+      // And the write itself still lands — nothing cancelled it.
+      await vi.runAllTimersAsync();
+      expect(serviceMock.saveSetting).toHaveBeenCalledWith(
+        'settings',
+        'greeting',
+        '"chosen mid-drag"'
+      );
+    });
+
+    it('does not overwrite a pending write with a stale answer for the same key', async () => {
+      const store = usePersisted<string>('settings', 'greeting', 'default');
+      store.set('chosen mid-drag');
+
+      // The server's row still holds whatever was there before this edit queued.
+      serviceMock.fetchSettings.mockResolvedValueOnce([
+        { app: 'settings', setting_key: 'greeting', setting_value: '"stale server value"' }
+      ]);
+      await hydrateSettingsOnCharacterLoad();
+
+      expect(get(store)).toBe('chosen mid-drag');
+    });
+
+    it('treats "Player not authenticated" as the expected pre-character reply, without logging', async () => {
+      const store = usePersisted<string>('settings', 'greeting', 'default');
+      store.set('chosen by the player');
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      serviceMock.fetchSettings.mockRejectedValueOnce(new Error('Player not authenticated'));
+      await hydrateSettingsOnCharacterLoad();
+
+      // A failure, even the routine boot-time one, may never clear what was already there.
+      expect(get(store)).toBe('chosen by the player');
+      expect(errorSpy).not.toHaveBeenCalled();
+
+      errorSpy.mockRestore();
+    });
+
+    it('still logs a failure that is not the expected pre-character reply', async () => {
+      const store = usePersisted<string>('settings', 'greeting', 'default');
+      store.set('chosen by the player');
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      serviceMock.fetchSettings.mockRejectedValueOnce(new Error('offline'));
+      await hydrateSettingsOnCharacterLoad();
+
+      expect(get(store)).toBe('chosen by the player');
+      expect(errorSpy).toHaveBeenCalled();
+
+      errorSpy.mockRestore();
+    });
+  });
+
+  /**
+   * MICA-287 round 3: an add-on marks its own `sync: false` keys unsynced only when its
+   * frame boots (`sdk/host/iframe/facets/persisted.ts`, over a `remoteCall`), and an add-on
+   * is opened on demand — not necessarily before the next character-load sweep, possibly
+   * not even this session at all. Persisting the mark on the device is what lets a fresh
+   * module instance (a page reload) already know, with no `markUnsynced` call of its own.
+   */
+  describe('the unsynced record survives a fresh module instance', () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it('an add-on marked unsynced in an earlier session stays unsynced with no markUnsynced call this time', async () => {
+      // A real, persistent backing — `vi.resetModules()` clears the module cache, not this
+      // object, which is exactly what a device's actual localStorage does across a reload.
+      const backing: Record<string, string> = {};
+      vi.stubGlobal('localStorage', {
+        getItem: (key: string) => backing[key] ?? null,
+        setItem: (key: string, value: string) => {
+          backing[key] = value;
+        },
+        removeItem: (key: string) => {
+          delete backing[key];
+        }
+      });
+
+      const firstSession = await import('./settingsSync');
+      firstSession.markUnsynced('blabber', 'wallpaper');
+
+      vi.resetModules();
+      const secondSession = await import('./settingsSync');
+
+      // No `markUnsynced` call on this instance — the add-on has not booted this session —
+      // and it already knows, because the record lives on the device, not in module state.
+      expect(secondSession.isUnsynced('blabber', 'wallpaper')).toBe(true);
+    });
   });
 });

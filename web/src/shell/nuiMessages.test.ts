@@ -15,6 +15,20 @@ import { get } from 'svelte/store';
 
 vi.mock('../nui/fetchNui', () => ({ fetchNui: vi.fn(async () => ({})) }));
 
+/**
+ * MICA-287 round 3: only for the `rehydrateSettings`/`rehydrateShell` tests below, which
+ * need to control what a settings hydrate answers with more precisely than the generic
+ * `fetchNui` stub above (which resolves `{}` for every call, an answer the sweep would
+ * choke on trying to iterate as rows).
+ */
+const settingsServiceMock = vi.hoisted(() => ({
+  fetchSettings: vi.fn().mockResolvedValue([]),
+  saveSetting: vi.fn(),
+  removeSetting: vi.fn(),
+  clearAppSettings: vi.fn()
+}));
+vi.mock('../services/settings', () => settingsServiceMock);
+
 import { createNuiMessageRouter } from './nuiMessages';
 import { toast } from './state/toast';
 import { time } from './state/time';
@@ -23,6 +37,7 @@ import { signalLevel } from './state/signal';
 import { contacts } from '../services/contacts';
 import { appRegistryStore } from './state/registry';
 import { audibleBroadcasts, nearbyBroadcasts, resetNearbyMusicForTest } from './state/nearbyMusic';
+import { usePersisted } from '../../../sdk/host/usePersisted';
 
 /**
  * These twelve branches previously lived inside `App.svelte` and had no unit tests at
@@ -45,6 +60,7 @@ beforeEach(() => {
   opened = [];
   toast.clear();
   vi.restoreAllMocks();
+  settingsServiceMock.fetchSettings.mockResolvedValue([]);
 });
 
 describe('routing', () => {
@@ -410,5 +426,58 @@ describe('nearby music', () => {
     );
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
     expect(get(audibleBroadcasts).map((b) => b.token)).toEqual(['a']);
+  });
+});
+
+/**
+ * MICA-287 round 3: `rehydrateSettings` and `rehydrateShell` are the two real
+ * character-load signals — the only routes that may reach the sweeping
+ * `hydrateSettingsOnCharacterLoad`, as opposed to the sdk seam's page-load-only
+ * `hydrateSettings()`. `rehydrateShell` needs it too: a phone switch
+ * (`server/lib/phoneItem.ts`) sends only this route, never `rehydrateSettings`, and
+ * settings are stored per phone id.
+ */
+describe('rehydrateSettings and rehydrateShell sweep settings (MICA-287 round 3)', () => {
+  it('rehydrateSettings clears a setting the new answer omits, and the live store re-reads', async () => {
+    const store = usePersisted<string>('settings', 'probeGreeting', 'default');
+
+    // Seeded through the route itself, not a manual `storage.setItem` — that queues a
+    // debounced write, and a key with one still pending is deliberately protected from
+    // the sweep (round 3, finding 3), which would make this seed step exercise that guard
+    // instead of setting up the "previous character had a value" state this test needs.
+    settingsServiceMock.fetchSettings.mockResolvedValueOnce([
+      { app: 'settings', setting_key: 'probeGreeting', setting_value: '"previous character"' }
+    ]);
+    expect(route(message('rehydrateSettings'))).toBe(true);
+    await vi.waitFor(() => {
+      expect(get(store)).toBe('previous character');
+    });
+
+    // The new character's answer is a genuinely successful, empty one — not a failure.
+    settingsServiceMock.fetchSettings.mockResolvedValueOnce([]);
+    expect(route(message('rehydrateSettings'))).toBe(true);
+
+    await vi.waitFor(() => {
+      expect(get(store)).toBe('default');
+    });
+  });
+
+  it('rehydrateShell also sweeps, for the phone-switch case that never sends rehydrateSettings', async () => {
+    const store = usePersisted<string>('settings', 'probeGreeting2', 'default');
+
+    settingsServiceMock.fetchSettings.mockResolvedValueOnce([
+      { app: 'settings', setting_key: 'probeGreeting2', setting_value: '"the other phone"' }
+    ]);
+    expect(route(message('rehydrateShell'))).toBe(true);
+    await vi.waitFor(() => {
+      expect(get(store)).toBe('the other phone');
+    });
+
+    settingsServiceMock.fetchSettings.mockResolvedValueOnce([]);
+    expect(route(message('rehydrateShell'))).toBe(true);
+
+    await vi.waitFor(() => {
+      expect(get(store)).toBe('default');
+    });
   });
 });

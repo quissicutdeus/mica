@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { callOr } from '../nui/call';
+import { call, callOr } from '../nui/call';
 import { settingsContract } from '@mica/shared/contracts/settings';
 import type { PhoneSetting } from '@mica/shared/types';
 
@@ -18,18 +18,30 @@ import type { PhoneSetting } from '@mica/shared/types';
  */
 
 /**
- * Every preference this character has. `[]` for a browser with no server behind it.
+ * Every preference this character has — or a rejection, deliberately, on any failure
+ * including the "Player not authenticated" reply the CEF page gets at resource start,
+ * before a character is selected.
  *
- * `quiet: true` because the CEF page hydrates at resource start, before a character is
- * selected — the server's "Player not authenticated" reply is the expected first answer,
- * not a failure worth a console warning. `hydrateSettings` already treats any failure here
- * as tolerable by design ("keeping the values already on the phone" beats resetting a
- * working phone over one bad request), so there is no later call where this same warning
- * would suddenly mean something — quieting it here is consistent with that, not a special
- * case for the boot-time one.
+ * MICA-287: this used to default to `[]` on failure (`callOr`, quieted for exactly that
+ * boot-time reply). That collapsed "this character has zero saved rows" and "the request
+ * never reached the server" into the same value, and the character-switch hydrate in
+ * `host/facets/storage.ts` needs to tell them apart — it clears a locally cached setting
+ * the new character's answer does not include, and doing that off an `[]` that might only
+ * mean "failed" would wipe a working phone on a bad connection. `call` throws instead of
+ * defaulting, which is the only way to carry that distinction to the caller.
+ *
+ * Still quiet in practice: `fetchNui` only prints its own warning on the defaulting path,
+ * never on the one that throws, so the expected boot-time failure costs no console line
+ * here either — `hydrateSettingsInProcess` decides on its own whether the rejection is
+ * worth logging.
+ *
+ * `onboarding.ts`'s one call site (`migrateAppDrawerHintForExistingSaves`) chains directly
+ * off the very first, boot-time `hydrateSettings()` call in `Shell.svelte` — the same
+ * pre-authentication window this docstring is about — so it now catches the rejection and
+ * skips quietly, the same "nothing happens" outcome the old `[]` produced for it.
  */
 export const fetchSettings = (): Promise<PhoneSetting[]> =>
-  callOr(settingsContract, 'getAll', undefined, [] as PhoneSetting[], { quiet: true });
+  call(settingsContract, 'getAll', undefined);
 
 /**
  * Write one key. `value` is the JSON string `useStorage` already produced.
