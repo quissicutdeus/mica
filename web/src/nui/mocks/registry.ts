@@ -234,6 +234,35 @@ const startFresh =
     : new URLSearchParams(window.location.search).get('state')) === 'fresh';
 
 /**
+ * `?mica_boot=unauthenticated` presents the mock the way a fresh server presents the
+ * real one (MICA-266): `bootstrapStores` preloads before the framework has loaded a
+ * character, `ServiceEndpoint` refuses every `svc` call with `{ error: 'Player not
+ * authenticated' }`, and the phone recovers only once `server/lib/shell.ts`'s
+ * `pushRehydrate` sends the `rehydrateShell` NUI message that `resetBootstrapState` +
+ * `bootstrapStores(true)` answer. The mock has no such boot sequence of its own — every
+ * call has always just answered — so this state was unreachable in the browser and in
+ * Playwright, and the `derived_inert` warning MICA-266 investigates only shows up inside
+ * it.
+ *
+ * Scoped to the generic `svc` action alone, in `getMockData` below, because that is the
+ * only door the real refusal sits behind: `getCitizenId` and `getBankBalance`
+ * (`services/account.ts`) are answered by the *client*'s own `RegisterNuiCallbackType`
+ * handlers (`client/client.ts`), never routed through `ServiceEndpoint`, so they keep
+ * answering here too rather than joining a failure they would never see in game.
+ */
+let mockAuthenticated =
+  (typeof window === 'undefined'
+    ? null
+    : new URLSearchParams(window.location.search).get('mica_boot')) !== 'unauthenticated';
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('message', (event: MessageEvent) => {
+    const { action } = (event.data ?? {}) as { action?: unknown };
+    if (action === 'rehydrateShell') mockAuthenticated = true;
+  });
+}
+
+/**
  * Which of those the player owns.
  *
  * The mock had no notion of ownership at all — `getMyAccounts` filtered by `app` alone, so every
@@ -2399,6 +2428,8 @@ function resolveGeneric(data?: unknown): { key: string; payload: unknown } | nul
 
 async function getMockData(eventName: string, data?: unknown): Promise<unknown> {
   if (eventName === GENERIC_SERVICE_ACTION) {
+    if (!mockAuthenticated) return { error: 'Player not authenticated' };
+
     const resolved = resolveGeneric(data);
     // Malformed shape (not even `{ service, action }`) is a caller bug, not a missing
     // mock — the real `ServiceEndpoint` answers a bad request rather than crashing the
