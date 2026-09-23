@@ -11,7 +11,7 @@
  */
 import '../../../host/registerFacets';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent, screen } from '@testing-library/svelte';
+import { render, fireEvent, screen, waitFor } from '@testing-library/svelte';
 
 const action = vi.hoisted(() => ({ errors: [] as string[] }));
 vi.mock('@mica/sdk', async (importOriginal) => {
@@ -191,6 +191,45 @@ describe('Trade', () => {
     // Never the withheld quote dressed up as a real one.
     expect(screen.queryByText(/at \$0 each/)).toBeNull();
     expect(trades.buy).not.toHaveBeenCalled();
+  });
+
+  /**
+   * MICA-266: `maxSell` used to be read straight off the `$derived` inside the refusal
+   * message, built *after* `await sell(amount)` resolved — so a holding that changed
+   * server-side while the request was in flight (the exact race the comment above already
+   * describes) reported the *new* number in a message about a trade sized against the
+   * *old* one. Worse, if `onback` (no `busy` guard on Cancel) had already destroyed this
+   * component by the time the answer came back, that read is a `$derived` whose owning
+   * effect is gone — `derived_inert`, a Svelte console warning this suite cannot assert on
+   * directly: `@testing-library/svelte`'s `unmount()` tears down the `$portfolioStore`
+   * subscription immediately, before a post-unmount `.set()` can ever mark `maxSell`
+   * dirty, so the destroyed-and-dirty combination the warning needs is not reachable
+   * through this harness even with the bug in place. What *is* reachable, and is the
+   * behavioural half of the same fix, is this: the message must name the holding the
+   * player actually saw when they hit Confirm, not whatever the store says by the time the
+   * server answers. Fixed by snapshotting before the await, the same way
+   * `sdk/ui/NowPlayingCard.svelte`'s `live` guard already does for its own late answer.
+   */
+  it('reports the holding as of Confirm, not as of the server answering', async () => {
+    let resolveSell: (outcome: { ok: boolean; reason?: string }) => void = () => {};
+    trades.sell.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSell = resolve;
+        })
+    );
+
+    render(Trade, { props: { side: 'sell', onback: () => {} } });
+    await enter('4');
+    await fireEvent.click(confirm());
+
+    // The holding moves while the request is still in flight — a second device, or (in
+    // game) the server's own answer disagreeing with what this screen last loaded.
+    portfolioStore.set({ ready: true, quantity: 2, currentPrice: 10, currentValue: 20 });
+    resolveSell({ ok: false, reason: 'insufficient_holdings' });
+    await waitFor(() => expect(action.errors.length).toBeGreaterThan(0));
+
+    expect(action.errors).toEqual(['You only have 5 gCoin to sell.']);
   });
 
   it('leaves the trade screen once the sell is accepted', async () => {

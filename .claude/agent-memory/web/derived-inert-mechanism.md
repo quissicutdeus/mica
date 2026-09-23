@@ -1,43 +1,121 @@
 # `derived_inert` only fires for a rune `$derived` in a `.svelte` file
 
 MICA-266 investigated a `https://svelte.dev/e/derived_inert` warning seen in
-game alongside a fresh-character boot. The trigger, from
-`node_modules/.../svelte/src/internal/client/reactivity/deriveds.js`'s
-`execute_derived`: it fires when something reads a `Derived` signal whose owning
-effect (`derived.parent`) carries the `DESTROYED` or `INERT` flag. That flag
-lives on the _rune_ implementation only.
+game alongside a fresh-character boot. Round one of this ticket wrongly said
+`web/src/shell/AppDrawer.svelte` was the only shell component using the rune —
+`grep -rln '\$derived' web/src sdk --include='*.svelte'` actually lists 81
+files. Grep before claiming a search was exhaustive.
 
-`svelte/store`'s own `derived()` (used throughout this repo per AGENTS.md §4 —
-see `shell/state/locale.ts`'s `effectiveLocale`, `shell/state/ownerConfig.ts`'s
-`disabledAppIds`) compiles a `$store` read to `store_get()` in
-`internal/client/reactivity/store.js`, which is backed by a plain
-`mutable_source` (a `$state`-shaped Source), not a `Derived`. It never touches
-`execute_derived` and cannot produce this warning. Only a `$derived(...)` rune
-written directly inside a `.svelte` `<script>` block can. A grep for `$derived(`
-narrows the search a lot more than one for "stores fed by a given piece of boot
-state."
+## The exact trigger, from Svelte's own source
 
-In this codebase the only home-lifecycle component using the rune is
-`web/src/shell/AppDrawer.svelte` (`visibleApps`, `results`, `groupLabel` — the
-last is a `$derived` that returns a function, called later as
-`groupLabel(result.group)` in the template). `Launcher.svelte`, `Dock.svelte`
-and `Search.svelte` use none.
+`execute_derived` in
+`node_modules/.../svelte/src/internal/client/reactivity/deriveds.js`:
 
-Real destruction points for a home-lifecycle component, in `Shell.svelte`:
-navigating away from Home destroys Home, Dock, Search and AppDrawer entirely
-(unlike a resident app, which only goes `display:none` + `inert`); an app's own
-`<svelte:boundary>` catching a render error does too (`ErrorBoundary.svelte`'s
-own comment: "Svelte destroys the main effect the moment it catches"); and
-closing the phone tears down everything inside it at once.
+```js
+if (
+  !is_destroying_effect &&
+  parent !== null &&
+  derived.v !== UNINITIALIZED &&
+  (parent.f & (DESTROYED | INERT)) !== 0
+) {
+  w.derived_inert();
+  return derived.v; // the *old* value, not recomputed
+}
+```
 
-Tried and failed to reproduce empirically via Playwright against the mock
-transport: opening/closing the App Drawer (plain grid and with a live search
-query) around a `rehydrateShell` message, switching apps mid-rehydrate, closing
-and reopening the phone across it, and an unwaited/racy version of all of the
-above (no `await` between actions, `rehydrateShell` fired twice). None produced
-the warning. The mechanism above is solid (verified in Svelte's own source), but
-the exact interleaving that trips it — apparently a promise/timer callback
-closing over a `$derived` read after its component's destroy — did not show up
-under Playwright's event-loop timing. If this comes up again, look for an app
-crash via the boundary (a real render throw, not just a slow fetch) coinciding
-with a store refill still in flight, rather than plain navigation races.
+Two things this means in practice:
+
+- **`execute_derived` only runs when the derived is dirty** (`runtime.js`'s
+  `get()` calls `update_derived` only `if (is_dirty(derived))`). Simply reading
+  a `$derived` variable from a destroyed component's closure is silent if
+  nothing changed the derived's dependencies since it was last computed — the
+  read just returns the cached value via a fast path that never reaches the
+  INERT check. **You need dirty AND destroyed/inert at the same instant.**
+- **A `$derived` fed by a plain `svelte/store`** (`$someStore`, compiled to
+  `store_get()` in `internal/client/reactivity/store.js`, backed by a
+  `mutable_source`, not a `Derived`) **cannot itself warn** — only a
+  `$derived(...)` rune can. But it can still go dirty and drag a dependent
+  `$derived` into the trap, _except_: `store_get()` unsubscribes from the store
+  the moment the component is torn down (checks `IS_UNMOUNTED`). So a store
+  update sent **after** a component is fully destroyed never reaches its
+  deriveds at all — there is no dirtying to exploit. Confirmed empirically: see
+  the Trade.svelte test below, where `portfolioStore.set(...)` after
+  `@testing-library/svelte`'s `unmount()` provably does nothing to the destroyed
+  component's `$derived`.
+
+## Where the warning is actually reachable
+
+Given the two points above, the trigger needs the read to happen **during**
+destruction, not after it's complete — the INERT window, not the DESTROYED one.
+Two known routes in this codebase:
+
+1. **A component with `out:`/bidirectional `transition:...|global`** stays
+   mounted (DOM present, store subscriptions still live) for the duration of the
+   transition while its effect is flagged INERT, not yet DESTROYED.
+   `PhoneFrame.svelte` and `TabletFrame.svelte` both have
+   `transition:fly|global={{ ... duration: 500 }}` on their root — closing the
+   phone (`Shell.svelte`'s `{#if visible}` going false) keeps _everything_
+   inside it (every resident app, Home, AppDrawer, ToastHost) alive-but-INERT
+   for 500ms. A store update landing in that window (a `rehydrateShell`-driven
+   refill is exactly this) can dirty a derived that a still-attached DOM event
+   handler then reads. Not reproduced empirically — jsdom/Playwright's event
+   loop did not land a hit inside this specific 500ms window in several tries.
+2. **An async continuation (or an unguarded timer/subscribe callback) that reads
+   one of the component's own `$derived` values after resuming**, when the
+   component can be destroyed before that continuation runs. This one doesn't
+   need the transition window at all if the dirtying source is something other
+   than an auto-subscribed store (a component-local `$state`, or another
+   `$derived`) — but in practice most of this codebase's `$derived`s bottom out
+   in a store, so point 1's severed-subscription behavior usually protects it
+   _unless_ the read happens before full destroy.
+
+## Two real hits found by static audit (round two), both fixed
+
+- **`web/src/apps/hodlr/components/Trade.svelte`**: `submit()`'s
+  `run(async () => { ...await buy/sell...; if (!outcome.ok) throw new Error(tradeFailureMessage(outcome.reason, maxSell)) })`
+  read the `maxSell` `$derived` _after_ the await. `Trade` is an `{:else if}`
+  branch in `hodlr/index.svelte` — `onback()` (Cancel) destroys it immediately,
+  and nothing disables Cancel while a trade is `busy`. Fixed by snapshotting
+  `const holdingAtSubmit = maxSell` before the await, mirroring
+  `sdk/ui/NowPlayingCard.svelte`'s pre-existing `live` boolean guard pattern
+  (that file is the one example in the codebase that already does this right).
+- **`web/src/apps/settings/panes/License.svelte`**: `copySource`'s `catch`
+  branch re-read `sourceUrl` (`$derived`) after
+  `await navigator.clipboard.writeText(...)` rejected. `License` is an
+  `{:else if pane === 'license'}` branch — navigating back destroys it. Fixed
+  the same way (snapshot into a local `const` before the `try`).
+
+Both fixes are justified by Svelte's source-level semantics regardless of
+whether the exact warning could be reproduced under test — see the
+`Trade.test.ts` note above for why a `$derived`-over-`$store` case specifically
+resists a jsdom/testing-library repro. The safer, testable regression coverage
+for `Trade.svelte` ended up being behavioral (the error message must name the
+holding as of Confirm, not as of the server's answer) rather than a console-spy
+assertion, in `web/src/apps/hodlr/components/Trade.test.ts`.
+
+## What was audited and found clean
+
+All 18 `web/src/shell/*.svelte` files and all 13 `sdk/ui/*.svelte` files (Rex's
+stated priority) were checked by hand for: an async handler reading its own
+`$derived` after an `await`; a bare `setTimeout`/`setInterval`/
+`requestAnimationFrame` not cleared on destroy; and a `.subscribe()` not torn
+down via `$effect`'s cleanup or `onDestroy`. Findings:
+
+- `useTimer()`'s `after`/`every` (`sdk/host/useTimer.ts`,
+  `web/src/host/facets/timer.ts`) are safe by construction — `onAppUnmount`
+  (literally `onDestroy`) clears every pending timer, so a scheduled callback
+  never starts after the owning app is torn down. `camera/index.svelte`'s
+  `after(...)`-wrapped photo-capture flow, which reads `isLandscape`/
+  `currentViewfinderImage`, is fine.
+- `AppDrawer.svelte`'s and `NotificationShade.svelte`'s own `setTimeout`s are
+  both cleaned up via the `$effect`'s own returned cleanup function — safe.
+- `sdk/ui/NowPlayingCard.svelte`'s `dominantColorFrom(url).then(...)` already
+  uses the `let live = true; ... return () => { live = false }` guard — the
+  correct pattern, worth copying rather than reinventing.
+- `web/src/apps/blabber/index.svelte` and
+  `web/src/apps/blabber/components/TaggedFeed.svelte` have a top-level (not
+  `$effect`-wrapped)
+  `taggedBlabs.hasMore.subscribe(...)`/`feed.hasMore.subscribe(...)` that is
+  never unsubscribed — a real memory leak, but the callback only writes a
+  `$state`, never reads a `$derived`, so it cannot produce this warning. Out of
+  scope for this ticket; flagged here for whoever next touches Blabber.

@@ -26,6 +26,6 @@ its one-line summary.
   a real empty answer. Also: don't cancel a pending write, exclude its key.
   Also: `pnpm test:e2e -- <files>` from root doesn't filter, use web's
   playwright
-- [`derived_inert` only fires for a rune](derived-inert-mechanism.md) — plain
-  `svelte/store` derived can't trigger it; real destroy points in this repo, and
-  what MICA-266 tried and failed to reproduce
+- [`derived_inert` only fires for a rune](derived-inert-mechanism.md) — needs
+  dirty+INERT/DESTROYED at once; store-backed deriveds sever on unmount before
+  they can be dirtied; two real hits fixed (Trade.svelte, License.svelte)

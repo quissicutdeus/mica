@@ -70,13 +70,20 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * open web and entirely reliable here.
    */
   const copySource = async () => {
+    // Snapshotted once, before the await (MICA-266): About/License is an `{:else if}`
+    // branch in `settings/index.svelte`, so navigating back destroys this component, and
+    // `navigator.clipboard.writeText` can still be pending when that happens (a
+    // permission prompt, in particular). Reading `sourceUrl` again in the `catch` would be
+    // a `$derived` read after its owning effect is gone — `derived_inert` — for a value
+    // that has not changed since the click anyway.
+    const url = sourceUrl;
     let copied = false;
     try {
-      await navigator.clipboard.writeText(sourceUrl);
+      await navigator.clipboard.writeText(url);
       copied = true;
     } catch {
       const field = document.createElement('textarea');
-      field.value = sourceUrl;
+      field.value = url;
       field.setAttribute('readonly', '');
       document.body.appendChild(field);
       field.select();

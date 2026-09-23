@@ -53,13 +53,21 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   const submit = async () => {
     const amount = Number(quantity);
+    // Snapshotted before the await, not read off `maxSell` after it (MICA-266): `onback`
+    // above destroys this component the moment the player taps Cancel, which the `busy`
+    // guard above does nothing to prevent, and `buy`/`sell` can still be in flight when
+    // that happens — especially the slow or refused round trip a fresh-character boot
+    // produces. Reading a `$derived` after its owning effect is gone is a stale-value
+    // warning (`derived_inert`) at best; capturing the holding the player actually saw
+    // when they confirmed is also the more honest number to quote back in the refusal.
+    const holdingAtSubmit = maxSell;
     const traded = await run(
       async () => {
         const outcome = side === 'buy' ? await buy(amount) : await sell(amount);
         // `buy`/`sell` answer with an outcome rather than throwing, so the refusal is
         // turned into one here — that is what `run` toasts and what makes the server's
         // own refusal visible when the guard above was bypassed or raced a price tick.
-        if (!outcome.ok) throw new Error(tradeFailureMessage(outcome.reason, maxSell));
+        if (!outcome.ok) throw new Error(tradeFailureMessage(outcome.reason, holdingAtSubmit));
       },
       { title: $t('hodlr.title') }
     );
