@@ -1,4 +1,4 @@
-# The sdk persisted registries have no unregister — don't reuse them for a disposable object
+# The sdk persisted registries have no unregister; keep disposables out
 
 `sdk/host/seam/persistedRegistry.ts`'s
 `registerPersistedRehydrate`/`registerPersistedReset` are correct exactly

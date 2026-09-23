@@ -160,6 +160,34 @@ const mockReports: Report[] = [
  */
 const mockSettings = new Map<string, string>();
 
+/**
+ * Every `mica:<app>:<key>` entry currently in `localStorage`, as `<app>:<key>` → value —
+ * the same composite `mockSettings` above uses, so the two merge without a second pass.
+ *
+ * MICA-287 round 4: `settings:getAll` used to answer from `mockSettings` alone, which
+ * starts empty on every load. A browser has no server, so an e2e that seeds `localStorage`
+ * directly (`web/e2e/support/homeGrid.ts`, `settings-persistence.spec.ts`'s own `seed`) is
+ * standing in for "the server already has this row" — exactly the shape a real character's
+ * saved settings arrive in. Answering `[]` while those keys sat right there in
+ * `localStorage` meant the character-load sweep in `host/facets/storage.ts` read a
+ * genuinely successful, empty answer as "this character has nothing" and deleted every one
+ * of them, which is a real, not just a mock, bug the sweep would repeat for a player whose
+ * `settings:getAll` request outraced their own settings save — the mock now models that
+ * correctly instead of hiding it. Excludes anything outside the `mica:<app>:<key>` shape
+ * (`mica_first_boot_time` and friends) the same way `host/facets/storage.ts`'s own
+ * `parseSettingsKey` does — those are device state, never a server row.
+ */
+function settingsFromLocalStorage(): [string, string][] {
+  if (typeof localStorage === 'undefined') return [];
+  const entries: [string, string][] = [];
+  for (const key of Object.keys(localStorage)) {
+    const match = /^mica:([^:]+):(.+)$/.exec(key);
+    if (!match) continue;
+    entries.push([`${match[1]}:${match[2]}`, localStorage.getItem(key) ?? '']);
+  }
+  return entries;
+}
+
 /** The lock screen's passcode (MICA-60) — `null` until `setPasscode` is called. */
 let mockPasscodeValue: string | null = null;
 
@@ -2224,12 +2252,21 @@ const mockRegistry: Record<string, MockHandler> = {
    * `pnpm dev` and in Playwright, which is the exact failure `defineMockCrud` exists to
    * stop for the CRUD path.
    *
-   * It is deliberately empty at start. A fresh character has written no preferences, so
-   * hydration must return nothing and leave the shipped defaults standing — seeding it
-   * would hide the case where hydration wrongly blanks a store.
+   * `mockSettings` starts empty, deliberately — a fresh character has written no
+   * preferences of their own this session. But the answer is `mockSettings` merged with
+   * `settingsFromLocalStorage()` (see that function's doc for why): `localStorage` is what
+   * an e2e seeds to mean "the server already has this row". `mockSettings` is layered on
+   * top only because it is written second, immediately after the debounced write in
+   * `settingsSync.ts` flushes, not because it is more authoritative — the two agree on
+   * every key `mockSettings` actually holds; the only place they can differ is a key
+   * `useStorage.setItem` just wrote locally whose debounce has not landed yet, and there
+   * `mockSettings` has no entry to overwrite the fresher `localStorage` value with.
    */
-  'settings:getAll': async () =>
-    [...mockSettings.entries()].map(([composite, setting_value], index) => {
+  'settings:getAll': async () => {
+    const merged = new Map<string, string>(settingsFromLocalStorage());
+    for (const [composite, value] of mockSettings) merged.set(composite, value);
+
+    return [...merged.entries()].map(([composite, setting_value], index) => {
       const [app, ...rest] = composite.split(':');
       return {
         id: index + 1,
@@ -2241,7 +2278,8 @@ const mockRegistry: Record<string, MockHandler> = {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
-    }),
+    });
+  },
 
   'settings:set': async (data?: { app?: string; key?: string; value?: string }) => {
     if (!data?.app || !data?.key) return false;

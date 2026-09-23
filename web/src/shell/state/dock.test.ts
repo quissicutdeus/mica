@@ -204,9 +204,9 @@ describe('Dock state', () => {
       ownerConfig.set({ disabledApps: [], defaultDock: ['bank', '', 'notes', ''] });
 
       // Character B has no dock row at all — a genuinely successful, empty answer, not a
-      // failed fetch. Without the sweep, `weather` would still be sitting under
-      // `mica:settings:dockAppIds` and `hasStoredPhoneDock` would see a key that was never
-      // this character's.
+      // failed fetch. Without the sweep, `weather` would still be sitting under the
+      // settings app's `dockAppIds` key and `hasStoredPhoneDock` would see a key that was
+      // never this character's.
       serviceMock.fetchSettings.mockResolvedValueOnce([]);
       await hydrateSettingsOnCharacterLoad();
 

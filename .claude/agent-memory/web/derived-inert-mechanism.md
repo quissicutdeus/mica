@@ -71,12 +71,12 @@ Two known routes in this codebase:
 
 ## Two real hits found by static audit (round two), both fixed
 
-- **`web/src/apps/hodlr/components/Trade.svelte`**: `submit()`'s
-  `run(async () => { ...await buy/sell...; if (!outcome.ok) throw new Error(tradeFailureMessage(outcome.reason, maxSell)) })`
-  read the `maxSell` `$derived` _after_ the await. `Trade` is an `{:else if}`
-  branch in `hodlr/index.svelte` — `onback()` (Cancel) destroys it immediately,
-  and nothing disables Cancel while a trade is `busy`. Fixed by snapshotting
-  `const holdingAtSubmit = maxSell` before the await, mirroring
+- **`web/src/apps/hodlr/components/Trade.svelte`**: `submit()`'s `run()` body
+  awaited `buy`/`sell`, then passed `maxSell` to `tradeFailureMessage` on a
+  refusal, so it read the `maxSell` `$derived` _after_ the await. `Trade` is an
+  `{:else if}` branch in `hodlr/index.svelte` — `onback()` (Cancel) destroys it
+  immediately, and nothing disables Cancel while a trade is `busy`. Fixed by
+  snapshotting `const holdingAtSubmit = maxSell` before the await, mirroring
   `sdk/ui/NowPlayingCard.svelte`'s pre-existing `live` boolean guard pattern
   (that file is the one example in the codebase that already does this right).
 - **`web/src/apps/settings/panes/License.svelte`**: `copySource`'s `catch`
