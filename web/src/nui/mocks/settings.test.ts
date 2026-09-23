@@ -4,12 +4,17 @@
 
 // @vitest-environment jsdom
 /**
- * MICA-287 round 4: `settingsFromLocalStorage` (`./registry.ts`) reads `localStorage`
+ * MICA-287 round 4: `initialLocalStorageSettings` (`./registry.ts`) reads `localStorage`
  * directly, which this project's jsdom does not actually provide — see
  * `IframeHostServer.test.ts`'s own note on the same fact — so every test here stubs a
  * minimal `Storage`-shaped global rather than relying on jsdom's. `vi.resetModules()`
  * before each case is what `ownerConfig.test.ts` does too: `mockSettings` is module scope,
  * and a write from one test must not answer the next.
+ *
+ * MICA-287 round 5: `initialLocalStorageSettings` is captured **once, at module import**,
+ * not read live — so every test that wants a key in the answer has to seed
+ * `localStorage` *before* `await import('./registry')`, exactly the ordering
+ * `page.addInitScript` guarantees against a real page's own scripts.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
@@ -81,6 +86,29 @@ describe('the settings:getAll mock (MICA-287 round 4)', () => {
     const { MockRegistry } = await import('./registry');
 
     expect(await MockRegistry.handle('settings:getAll')).toEqual([]);
+  });
+
+  /**
+   * MICA-287 round 5: `settings:getAll` used to read `localStorage` live, on every call —
+   * so it also reported keys the phone's own boot had written by the time it was asked,
+   * not only ones an e2e had seeded before navigation. `onboarding.ts`'s
+   * `migrateAppDrawerHintForExistingSaves` read that as "this character already has
+   * settings" and marked the first-run hint seen on every fresh install
+   * (`defects.spec.ts`'s "the hint sits above the Dock icons" test).
+   */
+  it('does not report a key written to localStorage after module init unless it went through settings:set', async () => {
+    const store = stubLocalStorage({ [storageKey('settings', 'theme')]: '"dark"' });
+    const { MockRegistry } = await import('./registry');
+
+    // Stands in for the phone's own boot writing straight to `localStorage` after this
+    // module already took its snapshot — the exact live write the fix stops from leaking
+    // into `getAll`.
+    store[storageKey('settings', 'volume')] = '5';
+
+    const rows = (await MockRegistry.handle('settings:getAll')) as Array<{
+      setting_key: string;
+    }>;
+    expect(rows.map((r) => r.setting_key)).toEqual(['theme']);
   });
 
   it('merges a write made through settings:set with what localStorage already holds', async () => {

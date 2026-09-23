@@ -87,28 +87,7 @@ export default defineConfig({
     baseURL: `http://127.0.0.1:${PORT}`,
     // No retries to be the 'first' of, so capture on the failure itself.
     trace: 'retain-on-failure',
-    viewport: { width: 1280, height: 960 },
-    /**
-     * MICA-70's first-run privacy notice defaults `privacyNoticeSeen` to `false`, and
-     * `PhoneFrame.svelte` renders it as a `z-[9999]` scrim above everything else in the
-     * phone the moment that's true — which every spec here now is, since none of them have
-     * ever seen it. Left unseeded, it intercepts the very first click of nearly the entire
-     * suite (visible as `locator.click: ... intercepts pointer events` against the scrim,
-     * not against whatever the test actually meant to click), so this is not a per-spec
-     * concern to dismiss — it is seeded true for the whole suite, the same way the theme
-     * key is seeded below for `chromium-light`. A spec that wants to test the notice
-     * itself overrides this with its own `storageState`/`addInitScript`, same as any other
-     * persisted default a test needs to defeat.
-     */
-    storageState: {
-      cookies: [],
-      origins: [
-        {
-          origin: `http://127.0.0.1:${PORT}`,
-          localStorage: [{ name: 'mica:settings:privacyNoticeSeen', value: 'true' }]
-        }
-      ]
-    }
+    viewport: { width: 1280, height: 960 }
   },
   projects: [
     /**
@@ -173,24 +152,14 @@ export default defineConfig({
     /**
      * The tablet (MICA-261): every spec under `e2e/tablet/`, on a window with room for
      * the 1280x800 frame and its margins (1312x832 is the floor; 1440x1000 leaves some
-     * zoom either way). The privacy seed is repeated for the reason `chromium-light`
-     * repeats it: a project-level `storageState` replaces the top-level one.
+     * zoom either way).
      */
     {
       name: 'tablet',
       testMatch: /tablet\//,
       use: {
         ...devices['Desktop Chrome'],
-        viewport: { width: 1440, height: 1000 },
-        storageState: {
-          cookies: [],
-          origins: [
-            {
-              origin: `http://127.0.0.1:${PORT}`,
-              localStorage: [{ name: 'mica:settings:privacyNoticeSeen', value: 'true' }]
-            }
-          ]
-        }
+        viewport: { width: 1440, height: 1000 }
       }
     },
     /**
@@ -208,10 +177,6 @@ export default defineConfig({
       use: {
         ...devices['Desktop Chrome'],
         viewport: { width: 1280, height: 960 },
-        // A project-level `storageState` fully replaces the top-level one rather than
-        // merging with it, so the privacy-notice seed above has to be repeated here too —
-        // otherwise this project's own specs would hit the exact scrim-intercepts-clicks
-        // failure the top-level seed exists to prevent.
         storageState: {
           cookies: [],
           origins: [
@@ -221,8 +186,7 @@ export default defineConfig({
                 {
                   name: 'mica:settings:theme',
                   value: JSON.stringify({ seed: '#155dfc', mode: 'light' })
-                },
-                { name: 'mica:settings:privacyNoticeSeen', value: 'true' }
+                }
               ]
             }
           ]

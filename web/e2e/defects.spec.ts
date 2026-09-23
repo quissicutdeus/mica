@@ -1,6 +1,5 @@
 import { test, expect } from './support/test';
 import { seedHomeGrid } from './support/homeGrid';
-import { settlePhoneOpen } from './support/phoneOpen';
 
 /**
  * Regressions for defects found in the pre-app-phase survey.
@@ -227,38 +226,9 @@ test.describe('Contacts', () => {
   });
 });
 
-test.describe('The first-run hint does not overlap the Dock', () => {
-  // A fresh install ships with pinned Dock apps out of the box (`DEFAULT_DOCK_APP_IDS` in
-  // `state/dock.ts`) and shows the "Swipe up for apps" hint until the drawer is opened
-  // once. `Dock.svelte` positioned the hint at `bottom-32` and the Dock itself at
-  // `bottom-10` with `py-4` padding, and the Dock's icon-and-label content was taller
-  // than the gap between those two anchors — so the hint was drawn directly over the
-  // pinned icons themselves on every fresh install, not just over blank padding above
-  // them. Checked against an actual icon's box, not the Dock toolbar's own bounding box
-  // (which includes its top padding) — overlapping that padding is harmless, since
-  // nothing is drawn there and the hint is `pointer-events-none`.
-  test('the hint sits above the Dock icons, not over them', async ({ page }) => {
-    await page.goto('/');
-    await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
-
-    // Both boxes below are read while the phone is on screen, and the phone flies in over
-    // 500ms — without this the two reads sample the element at two different points in
-    // that flight and the comparison is meaningless. See `support/phoneOpen.ts`.
-    await settlePhoneOpen(page);
-
-    const hint = page.getByText('Swipe up for apps');
-    await expect(hint).toBeVisible();
-    const hintBox = await hint.boundingBox();
-    const iconBox = await page
-      .getByRole('toolbar', { name: 'Dock' })
-      .getByRole('button')
-      .first()
-      .boundingBox();
-    if (!hintBox || !iconBox) throw new Error('hint or dock icon not on screen');
-
-    expect(hintBox.y + hintBox.height).toBeLessThanOrEqual(iconBox.y);
-  });
-});
+// MICA-287 round 5: "The first-run hint does not overlap the Dock" moved to its own
+// `first-run-hint.spec.ts` — this file's `beforeEach` seeds a home grid, and a seeded
+// setting now makes the mock report an existing save, which hid the hint that test checks.
 
 test.describe('Notes and Contacts persist in the browser mock', () => {
   // The mock handlers never touched their fixtures, so a created note vanished and a
