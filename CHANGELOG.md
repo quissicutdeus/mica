@@ -810,6 +810,16 @@ export instead, which authenticates its caller.
 
 ### Fixed
 
+**A character switch no longer carries the last character's phone settings over
+(MICA-287).** The phone caches settings in the client's browser storage, and a
+character load only ever added the new character's rows to that cache. A
+character with no saved dock therefore kept the previous one's, and
+`mica_default_dock` never showed for them. The same went for every other
+setting, add-ons included. A character load, or switching to a different phone
+item, now removes whatever the new character's saved settings do not include. A
+setting changed in the last moment before a reload is kept, and so is anything
+an app deliberately stores per device. No owner action.
+
 **Every raw net event declares its arguments as a schema before its handler runs
 (MICA-210).** The five fire-and-forget events outside the contract mechanism —
 `phone:*`, `battery:*`, `signal:*`, `admin:setBattery` and `contacts:share` —
