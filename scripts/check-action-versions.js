@@ -69,9 +69,24 @@ const HELD = /^(v\d+(?:\.\d+)*)\s+held:\s*(.*)$/;
 /** A full commit SHA: 40 hex characters */
 const SHA = /^[0-9a-f]{40}$/;
 
+/**
+ * A job's `GITHUB_TOKEN` is issued by whichever server runs the job. On Forgejo that is a
+ * Forgejo token, and api.github.com answers it with 401 -- every lookup came back
+ * UNKNOWN on the weekly run until this checked where the token came from. A token that
+ * github.com did not issue is not sent; the run falls back to `gh`, then to anonymous,
+ * which fits the one lookup per action below inside the 60-an-hour limit.
+ */
 function token() {
-  if (process.env.GITHUB_TOKEN) return process.env.GITHUB_TOKEN;
-  const gh = spawnSync('gh', ['auth', 'token'], { encoding: 'utf8' });
+  const server = process.env.GITHUB_SERVER_URL;
+  const env = { ...process.env };
+  if (env.GITHUB_TOKEN) {
+    if (!server || server === 'https://github.com') return env.GITHUB_TOKEN;
+    console.log(`ignoring GITHUB_TOKEN: it was issued by ${server}, not github.com`);
+    // `gh` treats GITHUB_TOKEN in its environment as its own login, so asking it would
+    // hand the same foreign token straight back. The runner image ships `gh`.
+    delete env.GITHUB_TOKEN;
+  }
+  const gh = spawnSync('gh', ['auth', 'token'], { encoding: 'utf8', env });
   return gh.status === 0 ? gh.stdout.trim() : '';
 }
 
@@ -116,6 +131,17 @@ async function latestMajor(repo) {
   if (best === null) throw new Error(`no vN release or tag found for ${repo}`);
   return best;
 }
+
+/**
+ * One lookup per repository, however many times it is pinned. `refs` holds an entry per
+ * `uses:` line, so `actions/checkout` alone was asked for nine times -- thirty requests
+ * where thirteen answer the question, which an anonymous run cannot afford.
+ */
+const latestByRepo = new Map();
+const latestMajorOnce = (repo) => {
+  if (!latestByRepo.has(repo)) latestByRepo.set(repo, latestMajor(repo));
+  return latestByRepo.get(repo);
+};
 
 /** Every `owner/repo` used across the workflows, with the SHAs and tags it is pinned at. */
 function collect() {
@@ -185,7 +211,7 @@ for (const [repo, { refs, files }] of [...pins].sort()) {
     }
 
     try {
-      const latest = await latestMajor(repo);
+      const latest = await latestMajorOnce(repo);
       if (latest.major > Number(pinned[1])) {
         behind.push({ repo, ref, version, latest: latest.tag, where });
       } else {

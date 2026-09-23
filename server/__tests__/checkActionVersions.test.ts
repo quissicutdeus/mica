@@ -78,4 +78,38 @@ describe('check-action-versions', () => {
     expect(result.status).toBe(1);
     expect(result.stdout).toContain("'held:' with no reason is not a hold");
   });
+
+  /**
+   * On Forgejo the job's `GITHUB_TOKEN` is Forgejo's, and sending it to api.github.com
+   * turned every lookup into a 401 (runs 85 and 86). A held pin keeps both cases off the
+   * network; what is asserted is only whether the token was accepted.
+   */
+  const HELD_PIN =
+    'actions/upload-artifact@ff15f0306b3f739f7b6fd43fb5d26cd321bd4de5 # v3 held: v4+ refuses non-github.com hosts';
+  const runWith = (env: Record<string, string>) =>
+    spawnSync('node', ['scripts/check-action-versions.js', `--dir=${workflowDir(HELD_PIN)}`], {
+      cwd: path.resolve('.'),
+      encoding: 'utf8',
+      env: { ...process.env, ...env }
+    });
+
+  it('does not send a GITHUB_TOKEN that another server issued to api.github.com', () => {
+    const result = runWith({
+      GITHUB_TOKEN: 'forgejo-token',
+      GITHUB_SERVER_URL: 'https://git.example.com'
+    });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain(
+      'ignoring GITHUB_TOKEN: it was issued by https://git.example.com, not github.com'
+    );
+  });
+
+  it('keeps a GITHUB_TOKEN that github.com issued', () => {
+    const result = runWith({
+      GITHUB_TOKEN: 'github-token',
+      GITHUB_SERVER_URL: 'https://github.com'
+    });
+    expect(result.status).toBe(0);
+    expect(result.stdout).not.toContain('ignoring GITHUB_TOKEN');
+  });
 });
