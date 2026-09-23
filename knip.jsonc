@@ -4,7 +4,7 @@
   // Without this, knip reports eighteen "unused files" and four unused exports that are
   // all false positives, and a report you have to mentally filter is a report nobody
   // reads. The point of the config is that a hit means something.
-  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "$schema": "https://unpkg.com/knip@6/schema.json",
   // A type exported for a consumer to name, but referenced within its own file, is not
   // dead — `PushOptions` types `push()`'s parameter and `KeybindContext` types a field on
   // `KeybindAction`. Reporting those trains people to ignore the report, which is the one
@@ -50,7 +50,15 @@
     },
     "web": {
       "entry": ["e2e/**/*.spec.ts", "*.config.ts"],
-      "project": ["src/**/*.{ts,svelte}"]
+      "project": ["src/**/*.{ts,svelte}"],
+      // knip's Playwright plugin imports `playwright.config.ts` itself to read testMatch
+      // and reporter settings. That config deliberately throws when `CI` is set without
+      // `CEF_FLOOR_CHROMIUM` (the cef-floor project is not optional in CI, MICA-198), and
+      // the Verify job never sets that variable -- only the e2e jobs do. The specs and
+      // `*.config.ts` above are already explicit entries, so the plugin bought nothing
+      // this repo doesn't already cover, at the cost of `deadcode` failing to even start
+      // in CI. Disabled rather than weakening the throw.
+      "playwright": false
     },
     // MICA-172: its own workspace now that `sdk/` is a root-level package. Same entry
     // reasoning as when these lines lived under `web`:
