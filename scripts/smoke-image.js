@@ -17,6 +17,10 @@
  *    from the `.gz` at startup. Hence: assert all three encodings decode to identical
  *    bytes, which is the only thing that proves the inflation is correct rather than
  *    merely non-crashing.
+ *  - MICA-221 moved the phone bundle from `/` to `/demo/` and put a landing page at the
+ *    root, so `/`, `/demo` and `/demo/` are three different documents with three
+ *    different fallback rules -- a bundle-only check would not have caught any of them
+ *    disagreeing about where the other's files live.
  *
  * Node's `fetch` transparently decodes `Content-Encoding`, which would make that last
  * check assert nothing, so this uses `node:http` and decompresses by hand.
@@ -29,7 +33,8 @@ import { createHash } from 'node:crypto';
 
 const BASE = new URL(process.argv[2] ?? 'http://127.0.0.1:8080');
 
-/** Raw HTTP: status, headers, and undecoded bytes. */
+/** Raw HTTP: status, headers, and undecoded bytes. Never follows a redirect itself --
+ * the one redirect this server issues (`/demo` -> `/demo/`) is asserted on directly. */
 const get = (path, headers = {}) =>
   new Promise((resolve, reject) => {
     const req = httpRequest(
@@ -56,55 +61,91 @@ const eq = (name, want, got) => (want === got ? ok(name) : bad(name, `want ${wan
 
 const sha = (buf) => createHash('sha256').update(buf).digest('hex').slice(0, 16);
 
-const main = async () => {
-  // --- the document ---
-  const index = await get('/');
-  eq('index 200', 200, index.status);
-  eq('index content-type', 'text/html; charset=utf-8', index.headers['content-type']);
-  eq('index no-cache', 'no-cache', index.headers['cache-control']);
+/**
+ * Every reference in `index.html` and every stylesheet is written `./relative`, the same
+ * convention `web/vite.config.ts`'s `base: './'` uses so the bundle works under any
+ * subpath. Resolving one against the *document's own* directory, rather than assuming it
+ * sits at `/`, is what makes this function work for both the landing page (dir `/`) and
+ * the demo bundle (dir `/demo/`).
+ */
+const resolveRef = (dir, ref) => `${dir}${ref.replace(/^\.\//, '')}`;
+
+/**
+ * Fetch a document at `path`, assert the baseline headers every page here shares, and
+ * return every `./`-relative reference it makes, resolved to a fetchable path.
+ */
+const checkDocument = async (label, docPath, dir) => {
+  const index = await get(docPath);
+  eq(`${label} 200`, 200, index.status);
+  eq(`${label} content-type`, 'text/html; charset=utf-8', index.headers['content-type']);
+  eq(`${label} no-cache`, 'no-cache', index.headers['cache-control']);
   const html = index.body.toString('utf8');
 
-  // --- every reference in the HTML resolves ---
-  const htmlRefs = [...html.matchAll(/(?:src|href)="(\.\/[^"]+)"/g)].map((m) => m[1].slice(1));
+  const htmlRefs = [...html.matchAll(/(?:src|href)="(\.\/[^"]+)"/g)].map((m) =>
+    resolveRef(dir, m[1])
+  );
   for (const ref of htmlRefs) {
     const r = await get(ref);
     if (r.status === 200) {
-      ok(`html ref ${ref}`);
+      ok(`${label} html ref ${ref}`);
     } else {
-      bad(`html ref ${ref}`, `status ${r.status}`);
+      bad(`${label} html ref ${ref}`, `status ${r.status}`);
     }
   }
+  return htmlRefs;
+};
 
-  // --- every url() in every stylesheet resolves ---
-  // This is the check that catches font pruning outrunning the CSS that names the fonts.
+/** Every `url()` in every referenced stylesheet resolves. Zero stylesheets, or zero
+ * `url()`s in them, is a pass -- the landing page has neither. */
+const checkCssRefs = async (label, htmlRefs) => {
   let cssRefs = 0;
   for (const css of htmlRefs.filter((r) => r.endsWith('.css'))) {
     const sheet = (await get(css)).body.toString('utf8');
-    const dir = css.slice(0, css.lastIndexOf('/'));
+    const dir = css.slice(0, css.lastIndexOf('/') + 1);
     for (const m of sheet.matchAll(/url\(\s*['"]?([^'")]+)['"]?\s*\)/g)) {
       if (m[1].startsWith('data:')) continue;
-      const target = `${dir}/${m[1].replace(/^\.\//, '')}`;
+      const target = resolveRef(dir, m[1]);
       const r = await get(target);
-      if (r.status !== 200) bad(`css ref ${target}`, `status ${r.status}`);
+      if (r.status !== 200) bad(`${label} css ref ${target}`, `status ${r.status}`);
       cssRefs++;
     }
   }
-  ok(`css refs resolve (${cssRefs} checked)`);
+  ok(`${label} css refs resolve (${cssRefs} checked)`);
+};
+
+const main = async () => {
+  // --- the landing page, at / ---
+  // Hand-written HTML/CSS with no build step (docker/landing/), so there is no JS bundle
+  // and no font here to check -- only that its own references (style.css, the screenshot)
+  // resolve, same as any other document.
+  const landingRefs = await checkDocument('landing', '/', '/');
+  await checkCssRefs('landing', landingRefs);
+
+  // --- /demo redirects to /demo/ ---
+  // Every reference the demo bundle emits is `./relative`; landing on `/demo` without the
+  // trailing slash would resolve every one of them one directory too high.
+  const bareDemo = await get('/demo');
+  eq('/demo redirects', 301, bareDemo.status);
+  eq('/demo redirects to /demo/', '/demo/', bareDemo.headers.location);
+
+  // --- the demo bundle, at /demo/ ---
+  const demoRefs = await checkDocument('demo', '/demo/', '/demo/');
+  await checkCssRefs('demo', demoRefs);
 
   // --- MIME types that a scratch image gets wrong by default ---
-  const js = htmlRefs.find((r) => r.endsWith('.js'));
+  const js = demoRefs.find((r) => r.endsWith('.js'));
   const jsRes = await get(js);
   eq('js content-type', 'text/javascript; charset=utf-8', jsRes.headers['content-type']);
   eq('js immutable', 'public, max-age=31536000, immutable', jsRes.headers['cache-control']);
 
-  const anyCss = htmlRefs.find((r) => r.endsWith('.css'));
+  const anyCss = demoRefs.find((r) => r.endsWith('.css'));
   const sheet = (await get(anyCss)).body.toString('utf8');
   const font = sheet.match(/url\(\s*['"]?([^'")]+\.woff2)['"]?\s*\)/);
   if (!font) {
     bad('woff2 present', 'no .woff2 referenced by any stylesheet');
   } else {
-    const dir = anyCss.slice(0, anyCss.lastIndexOf('/'));
-    const fr = await get(`${dir}/${font[1].replace(/^\.\//, '')}`);
+    const dir = anyCss.slice(0, anyCss.lastIndexOf('/') + 1);
+    const fr = await get(resolveRef(dir, font[1]));
     eq('woff2 content-type', 'font/woff2', fr.headers['content-type']);
   }
 
@@ -120,8 +161,9 @@ const main = async () => {
   eq('br declares content-length', String(br.body.length), br.headers['content-length']);
 
   // --- routing semantics ---
-  eq('missing chunk 404', 404, (await get('/assets/definitely-not-real.js')).status);
-  eq('stray path falls back', 200, (await get('/some/deep/path')).status);
+  eq('missing demo chunk 404', 404, (await get('/demo/assets/definitely-not-real.js')).status);
+  eq('stray demo path falls back', 200, (await get('/demo/some/deep/path')).status);
+  eq('stray top-level path 404s', 404, (await get('/some/deep/path')).status);
   eq('healthz', 200, (await get('/healthz')).status);
 
   // --- conditional request ---

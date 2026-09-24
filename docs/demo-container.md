@@ -1,9 +1,11 @@
 # The web demo container
 
-The phone, in a browser, with no FiveM server behind it — the NUI bundle served
-standalone against the mock transport. It is what runs at
-[mica.gg](https://mica.gg/), and it is the fastest way to show someone the phone
-without them installing a thing.
+[mica.gg](https://mica.gg/) serves two things behind one binary: a landing page
+at `/`, and the phone, in a browser with no FiveM server behind it, at `/demo/`
+— the NUI bundle served standalone against the mock transport. The demo is the
+fastest way to show someone the phone without them installing a thing; the
+landing page is what a visitor who typed the bare domain sees first, with the
+demo, the docs, the latest release, and the repo one link away.
 
 ```sh
 pnpm demo          # build and serve on http://127.0.0.1:8080
@@ -12,8 +14,8 @@ pnpm demo:down     # stop and remove
 pnpm demo:smoke    # probe a running container
 ```
 
-The whole image is **3.62 MB**: one static binary and one directory of static
-files, on `scratch`.
+The whole image is a few megabytes: one static binary and one directory of
+static files, on `scratch`.
 
 This is not a development loop. There is deliberately no bind mount and no live
 reload — `pnpm dev` already does that far better than a container round-trip
@@ -89,6 +91,39 @@ http://localhost:5173/?mica_disabled_apps=camera,media&mica_default_dock=phone,,
 That is the fast loop for trying a value; baking one into the demo image itself
 is the `VITE_MICA_*` build args above.
 
+## Routing: `/` is the landing page, `/demo/` is the phone
+
+`docker/serve/main.go` tells the two apart by path prefix, on the same tree and
+the same binary:
+
+- `/` serves `docker/landing/index.html` — plain hand-written HTML and CSS, no
+  build step, no framework, no external request of any kind (no Google Fonts, no
+  CDN script), with one screenshot copied into that directory rather than
+  hotlinked. It links the demo, [docs.mica.gg](https://docs.mica.gg/), the
+  [latest release](https://github.com/quissicutdeus/mica/releases/latest), and
+  the repo. It is not a single-page app, so a path under `/` that is not one of
+  its own files 404s — there is no client-side router to hand an unknown path
+  off to.
+- `/demo` (no trailing slash) redirects to `/demo/`, because every reference the
+  demo bundle emits is `./relative` (`base: './'` in `web/vite.config.ts`) and
+  resolves against the request's own directory — landing on `/demo` without the
+  slash would resolve every one of them one level too high.
+- `/demo/` and everything under it serve the phone bundle. A miss under
+  `/demo/assets/` (Vite's hashed-chunk directory) is a genuine 404 — masking a
+  missing chunk with an HTML 200 is how you get an unreadable "unexpected token
+  '<'" in the console instead. Any other miss under `/demo/` falls back to
+  `/demo/index.html`, because the phone's own navigation
+  (`web/src/shell/state/navigation.ts`) is in-memory Svelte stores with no
+  History API use anywhere in `web/src` — no URL but `/demo/` is ever actually
+  requested by the app itself, and this is only for a visitor who typed
+  something else by hand.
+- Add-on bundles and the catalog the Store installs from live under
+  `/demo/addons/` now, not `/addons/` — `scripts/generate-catalog.js` writes
+  `bundleUrl`s with that prefix, and the Dockerfile derives
+  `VITE_MICA_ADDON_CATALOG` the same way. `VITE_MICA_ADDON_HOSTS` is unaffected:
+  the shell checks a fetched bundle's URL by **host**, never by path
+  (`docs/addon-catalog.md`), so the path move needed no change there.
+
 ## It binds to loopback
 
 `compose.yaml` publishes `127.0.0.1:8080`, not the conventional `8080:8080`. A
@@ -106,14 +141,21 @@ anything here: the image never writes, never execs, and never resolves a name.
 
 Three stages, in `Dockerfile`:
 
-1. **`node:26-alpine`** builds the assets, then writes brotli and gzip sidecars
-   for the compressible ones and **deletes the identity copy** of everything
-   that got a `.gz` — about 760 KB of duplicate bytes whose only job was serving
-   a client that sends no `Accept-Encoding` at all.
+1. **`node:26-alpine`** builds the phone bundle with Vite into `dist/web`,
+   copies the hand-written landing page from `docker/landing/` in unmodified,
+   then assembles both into `dist/site` — the landing page at the root, the
+   bundle under `demo/` — before writing brotli and gzip sidecars for the
+   compressible files in that merged tree and **deleting the identity copy** of
+   everything that got a `.gz` — about 760 KB of duplicate bytes whose only job
+   was serving a client that sends no `Accept-Encoding` at all. `dist/web`
+   itself never moves — `web/vite.config.ts`'s `build.outDir` is not this
+   Dockerfile's to change (AGENTS.md §2.6) — only this stage's own copy of it is
+   rearranged afterward, and nothing outside the image build ever reads
+   `dist/site`.
 2. **`golang:1-alpine`** builds `docker/serve` — stdlib only, `CGO_ENABLED=0`,
    verified static with `ldd` because a dynamically linked binary cannot run in
    the final stage — then packs it with UPX.
-3. **`scratch`** takes the binary and `/www`, and nothing else.
+3. **`scratch`** takes the binary and `dist/site` as `/www`, and nothing else.
 
 The server reads the whole tree into memory at startup. That is a few megabytes,
 and it buys an ETag per encoding for free, no per-request `stat`, and no path
@@ -122,10 +164,11 @@ a path that is not a real file simply is not a key. It inflates the deleted
 identity copies back from their `.gz` on the way in.
 
 Two cache policies, because Vite's output splits cleanly along them.
-Content-hashed files under `assets/` get a year and `immutable` — the name
-changes whenever the bytes do, so a stale response is not reachable.
-`index.html` gets `no-cache`, because it is the document that _names_ those
-hashed files, and caching it is precisely how you pin a client to a dead build.
+Content-hashed files under `demo/assets/` get a year and `immutable` — the name
+changes whenever the bytes do, so a stale response is not reachable. Everything
+else — `demo/index.html`, which is the document that _names_ those hashed files,
+and the whole landing page, which has no build step to hash it in the first
+place — gets `no-cache`.
 
 ## Gates
 
@@ -156,6 +199,12 @@ that failed for real while this was being built:
 - The image ships no identity copy of anything compressible. So it asserts that
   all three encodings decode to **identical bytes**, which is the only thing
   that proves the startup inflation is correct rather than merely non-crashing.
+- The landing page and the demo bundle are two documents with two different
+  fallback rules sharing one binary. So it checks both `/` and `/demo/`
+  independently, asserts `/demo` redirects to `/demo/`, and asserts a stray path
+  404s under the landing page but falls back to the phone under `/demo/` — the
+  two are opposite behaviors and a routing regression could satisfy either check
+  alone.
 
 Both run in CI as a separate `container` job — separate because the main
 `verify` job runs inside the Playwright image, which has no Go toolchain, no
@@ -203,6 +252,7 @@ container never reports healthy:
 docker compose logs --no-log-prefix demo
 ```
 
-A startup that dies on `/www/index.html is missing` means the web stage produced
-no build. `PORT=... is not a valid port` is fatal on purpose; an unknown `TZ` is
-not, and only warns.
+A startup that dies on `/www/index.html is missing` means the landing page did
+not make it into the image; `/www/demo/index.html is missing` means the web
+stage produced no build. `PORT=... is not a valid port` is fatal on purpose; an
+unknown `TZ` is not, and only warns.

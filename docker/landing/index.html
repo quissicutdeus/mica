@@ -1,0 +1,60 @@
+<!-- SPDX-FileCopyrightText: 2026 quissicutdeus -->
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+
+<!--
+  The mica.gg / dev.mica.gg landing page.
+
+  Plain hand-written HTML and CSS, no framework, no build step -- these bytes
+  are what `docker/serve/main.go` serves at `/`, byte for byte. Deliberately
+  self-contained: no Google Fonts, no CDN script, no analytics, no remote
+  image. The one screenshot is copied into this directory rather than
+  hotlinked to docs/screenshots/, so this page has no dependency on anything
+  outside `docker/landing/`.
+
+  This is a real page for real browsers (mica.gg visitors), not FiveM's CEF --
+  the Chromium-103 floor in AGENTS.md §6 and the `cef-css` skill do not apply
+  here.
+-->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="micaOS: an open-source TypeScript phone and tablet OS for FiveM. Works with qbcore, qbox, esx, or standalone. Try the live demo or install from a release."
+    />
+    <title>micaOS</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main>
+      <header class="hero">
+        <h1>micaOS</h1>
+        <p class="tagline">
+          An open-source, in-game phone and tablet OS for FiveM. Works with
+          <strong>qbcore</strong>, <strong>qbox</strong>, <strong>esx</strong>, or standalone. Ships
+          with an SDK for building your own add-ons, and installs from a release zip.
+        </p>
+        <p class="license">AGPL-3.0-or-later</p>
+        <nav class="links" aria-label="micaOS">
+          <a class="button primary" href="./demo/">Live demo</a>
+          <a class="button" href="https://docs.mica.gg/">Docs</a>
+          <a class="button" href="https://github.com/quissicutdeus/mica/releases/latest"
+            >Latest release</a
+          >
+          <a class="button" href="https://github.com/quissicutdeus/mica">GitHub</a>
+        </nav>
+      </header>
+
+      <figure class="screenshot">
+        <img
+          src="./screenshot.png"
+          width="646"
+          height="1374"
+          alt="The micaOS home screen: a launcher grid of apps including Messages, Contacts, Bank, and Media, framed as an in-game phone."
+        />
+      </figure>
+    </main>
+  </body>
+</html>

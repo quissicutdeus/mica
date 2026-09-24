@@ -1,10 +1,14 @@
-// A static file server for the micaOS NUI bundle, and nothing else.
+// A static file server for the mica.gg landing page and the micaOS demo, and
+// nothing else.
 //
-// The web root is dist/web as Vite emits it: a non-hashed index.html, a
-// non-hashed mica.svg from web/public/, and content-hashed everything else
-// under assets/. That split is the only reason there are two cache policies
-// here -- the hashed files can be cached for a year, the other two cannot be
-// cached at all.
+// The web root is /www, assembled by the Dockerfile's `dist/site` step: the
+// hand-written landing page at the top (index.html, style.css, one
+// screenshot), and the demo -- dist/web as Vite emits it, a non-hashed
+// index.html, a non-hashed mica.svg and add-on catalog from web/public/, and
+// content-hashed everything else under assets/ -- under demo/. That hashed
+// split is the only reason there are two cache policies here -- assets under
+// demo/assets/ can be cached for a year, everything else cannot be cached at
+// all, landing page included, since none of it is named by a content hash.
 //
 // The whole tree is read into memory at startup. It is a few megabytes, and it
 // buys three things: an ETag per encoding for free, no per-request stat, and no
@@ -114,7 +118,10 @@ func main() {
 		log.Fatalf("load %s: %v", root, err)
 	}
 	if _, ok := assets["/index.html"]; !ok {
-		log.Fatalf("%s/index.html is missing; the web stage produced no build", root)
+		log.Fatalf("%s/index.html is missing; the landing page did not make it into the image", root)
+	}
+	if _, ok := assets["/demo/index.html"]; !ok {
+		log.Fatalf("%s/demo/index.html is missing; the web stage produced no build", root)
 	}
 	log.Printf("mica-serve: %d files from %s on :%d, TZ=%s (%s)",
 		len(assets), root, port, zone, time.Now().In(zone).Format("2006-01-02 15:04:05 MST"))
@@ -259,7 +266,7 @@ func gunzip(b []byte) ([]byte, error) {
 }
 
 func handler(assets map[string]*asset) http.Handler {
-	index := assets["/index.html"]
+	demoIndex := assets["/demo/index.html"]
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -275,24 +282,56 @@ func handler(assets map[string]*asset) http.Handler {
 		}
 
 		p := path.Clean("/" + r.URL.Path)
+
+		// `/demo` (no trailing slash) is not a file and is never one of ours to
+		// 404 -- every relative reference the demo bundle emits (base: './' in
+		// web/vite.config.ts) resolves against the directory the request landed
+		// in, so a visitor who typed the bare path and got the bundle anyway
+		// would have every one of those references resolve one level too high.
+		// Gated on the *raw* path lacking the trailing slash, not just the
+		// cleaned one -- path.Clean strips a trailing slash from "/demo/" too,
+		// and comparing only the cleaned form would redirect that request right
+		// back to itself.
+		if p == "/demo" && !strings.HasSuffix(r.URL.Path, "/") {
+			target := "/demo/"
+			if r.URL.RawQuery != "" {
+				target += "?" + r.URL.RawQuery
+			}
+			http.Redirect(w, r, target, http.StatusMovedPermanently)
+			return
+		}
+
 		if strings.HasSuffix(r.URL.Path, "/") {
 			p = path.Join(p, "index.html")
 		}
 
 		a, ok := assets[p]
 		if !ok {
-			// Not an SPA rewrite: navigation in web/src/shell/state/navigation.ts
-			// is in-memory Svelte stores and there is no History API use anywhere
-			// in web/src, so no URL but / is ever requested. This is here so a
-			// stray path renders the phone rather than an empty 404 -- and it is
-			// safe only because a miss under /assets/ 404s first. Masking a
-			// genuinely missing chunk with an HTML 200 is how you get an
-			// unreadable "unexpected token '<'" instead of a 404.
-			if strings.HasPrefix(p, "/assets/") {
+			switch {
+			case strings.HasPrefix(p, "/demo/assets/"):
+				// A miss under the demo bundle's own hashed-asset directory is a
+				// genuinely missing chunk, not a route to hand off. Masking it
+				// with an HTML 200 is how you get an unreadable "unexpected
+				// token '<'" in the browser console instead of a 404.
+				http.NotFound(w, r)
+				return
+			case strings.HasPrefix(p, "/demo/"):
+				// Not an SPA rewrite: navigation in
+				// web/src/shell/state/navigation.ts is in-memory Svelte stores
+				// and there is no History API use anywhere in web/src, so no URL
+				// under /demo/ but /demo/ itself is ever requested by the phone.
+				// This is here so a stray path still renders the phone rather
+				// than an empty 404, and it is safe only because the case above
+				// already caught a missing hashed chunk.
+				a = demoIndex
+			default:
+				// The landing page is a handful of static files with no
+				// client-side router of its own -- unlike the demo bundle,
+				// there is no in-memory route for a stray path to resolve to,
+				// so a miss here means the path genuinely does not exist.
 				http.NotFound(w, r)
 				return
 			}
-			a = index
 		}
 
 		h := w.Header()
@@ -339,13 +378,15 @@ func handler(assets map[string]*asset) http.Handler {
 	})
 }
 
-// Vite emits assets/[name]-[hash][ext], so the name changes whenever the bytes
-// do -- a year of immutable caching cannot serve a stale file, and `immutable`
-// also suppresses the revalidation a reload would otherwise force. index.html is
-// the document that *names* those hashed files, so caching it is precisely how
-// you pin a client to a dead build.
+// Vite emits demo/assets/[name]-[hash][ext], so the name changes whenever the
+// bytes do -- a year of immutable caching cannot serve a stale file, and
+// `immutable` also suppresses the revalidation a reload would otherwise force.
+// Nothing else is content-hashed -- not demo/index.html, which is the document
+// that *names* those hashed files, and not the landing page, which has no
+// build step to hash it in the first place -- so everything else stays
+// `no-cache` and revalidates on every load.
 func cacheControl(p string) string {
-	if strings.HasPrefix(p, "/assets/") {
+	if strings.HasPrefix(p, "/demo/assets/") {
 		return "public, max-age=31536000, immutable"
 	}
 	return "no-cache"

@@ -72,6 +72,12 @@ COPY web/ ./web/
 # in this image and it must not need them.
 COPY scripts/ ./scripts/
 
+# The landing page: plain hand-written HTML/CSS with one screenshot copied in
+# (never hotlinked), no build step of its own -- these bytes are copied
+# straight into the served tree below, unmodified. Kept out of `web/` because
+# it is not part of the Vite bundle and Vite must not process it.
+COPY docker/landing/ ./landing/
+
 # Declared here, not at the top, so they cannot invalidate the install layers.
 # getGitInfo() in web/vite.config.ts takes the env path only when BOTH are
 # non-empty; otherwise it shells out to `git rev-parse`, which is exactly why
@@ -109,9 +115,14 @@ ARG VITE_MICA_DEFAULT_CONTACTS=
 # MICA-126 built the whole remote-install path -- fetch, host allowlist,
 # SHA-256 verification, sandboxed iframe -- and left it reachable only by
 # hand-writing a catalog. This image already serves the add-on bundles at
-# /addons/<id>.js, so the one missing piece was a catalog beside them and two
-# values telling the shell where to look. Both are empty in a stock build, which
-# is MICA-126's deliberate default and is unchanged everywhere but here.
+# /demo/addons/<id>.js (MICA-221 moved the demo bundle off `/` to make room for
+# the landing page there), so the one missing piece was a catalog beside them
+# and two values telling the shell where to look. Both are empty in a stock
+# build, which is MICA-126's deliberate default and is unchanged everywhere but
+# here. The host half of the allowlist, `VITE_MICA_ADDON_HOSTS`, stays a bare
+# host with no path -- the shell checks a fetched bundle's URL by host, never
+# by path, so the `/demo` prefix below only has to agree with where the files
+# actually land, not with this value.
 #
 # Derived from GIT_BRANCH, which compose already passes, rather than added as
 # build args of its own: `scripts/deploy/mica-deploy-*-compose.sh` pin a
@@ -141,7 +152,7 @@ RUN set -eu; \
     esac; \
     export ADDON_ORIGIN; \
     if [ -n "$ADDON_ORIGIN" ]; then \
-      VITE_MICA_ADDON_CATALOG="$ADDON_ORIGIN/addons/catalog.json"; \
+      VITE_MICA_ADDON_CATALOG="$ADDON_ORIGIN/demo/addons/catalog.json"; \
       VITE_MICA_ADDON_HOSTS="${ADDON_ORIGIN#https://}"; \
       export VITE_MICA_ADDON_CATALOG VITE_MICA_ADDON_HOSTS; \
     fi; \
@@ -166,12 +177,24 @@ RUN set -eu; \
 # built on the box and one built here are not byte-identical -- and a catalog
 # whose sha256 came from the wrong one fails every install with a hash mismatch.
 
+# Assemble the tree mica-serve actually ships: the phone bundle under `demo/`,
+# the landing page at the root. `dist/web` stays exactly where
+# `web/vite.config.ts`'s `build.outDir` puts it (AGENTS.md §2.6 -- that path is
+# not this Dockerfile's to move); this only rearranges *this image's own copy*
+# of it afterward; a `pnpm build` run outside Docker, and everything
+# `scripts/pack-resource.js` and `scripts/generate-barrels.js` read, never see
+# `dist/site` at all. `docker/serve/main.go` routes on this same `demo/` prefix.
+RUN set -eu; \
+    mkdir -p dist/site; \
+    cp -r dist/web dist/site/demo; \
+    cp -r landing/. dist/site/
+
 # Sidecars for the server's precompressed negotiation. Deliberately not the
 # .woff2 or the images -- they are already compressed, and a .br of them comes
 # out larger than the original. Files under 1KB are skipped for the same reason.
 # A shell loop rather than `find -exec`, because busybox gzip has no -k.
 RUN set -eu; \
-    find /app/dist/web -type f -size +1k \
+    find /app/dist/site -type f -size +1k \
       \( -name '*.js' -o -name '*.css' -o -name '*.html' \
          -o -name '*.svg' -o -name '*.json' -o -name '*.map' \) \
     | while IFS= read -r f; do \
@@ -185,7 +208,7 @@ RUN set -eu; \
 # and a few milliseconds once. Keyed off the .gz existing, so the sub-1KB files
 # that skipped compression above keep their originals.
 RUN set -eu; \
-    find /app/dist/web -type f -name '*.gz' \
+    find /app/dist/site -type f -name '*.gz' \
     | while IFS= read -r gz; do rm -f "${gz%.gz}"; done
 
 # ---------------------------------------------------------------------------
@@ -239,7 +262,7 @@ LABEL org.opencontainers.image.licenses="AGPL-3.0-or-later"
 LABEL org.opencontainers.image.description="micaOS NUI bundle, served standalone in mock mode"
 
 COPY --from=server /out/mica-serve /mica-serve
-COPY --from=web    /app/dist/web     /www
+COPY --from=web    /app/dist/site   /www
 
 # Numeric on purpose. A named USER would mean shipping an /etc/passwd whose only
 # job is translating a name this image never prints back into this same number.

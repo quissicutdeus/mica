@@ -53,6 +53,19 @@ import { renderAppIcons } from './lib/app-icons.js';
 const origin = process.argv[2];
 const outDir = process.argv[3] ?? 'dist/web/addons';
 
+/**
+ * Where the bundles this catalog describes are actually served, relative to `origin`.
+ *
+ * MICA-221 moved the demo image's phone bundle from `/` to `/demo/` to make room for a
+ * landing page at the root, and `docker/serve/main.go`'s `dist/site` assembly carries the
+ * add-on bundles along with it -- they land at `/demo/addons/<id>.js`, not `/addons/<id>.js`.
+ * This is the one place that path is spelled out for `bundleUrl`; `outDir` above is the
+ * on-disk side of the same move and is passed in by the Dockerfile rather than assumed here,
+ * since the two can drift independently (a hand run of this script can point `outDir`
+ * anywhere).
+ */
+const BUNDLE_PATH_PREFIX = '/demo/addons';
+
 if (!origin || !/^https?:\/\/[^/]+$/.test(origin)) {
   console.error(
     `generate-catalog: expected an origin like https://dev.mica.gg, got ${origin ?? '(nothing)'}.\n` +
@@ -257,7 +270,7 @@ const entries = manifests.map((manifest, i) => {
     name: manifest.name,
     version,
     description: manifest.description,
-    bundleUrl: `${origin}/addons/${id}.js`,
+    bundleUrl: `${origin}${BUNDLE_PATH_PREFIX}/${id}.js`,
     sha256: createHash('sha256').update(readFileSync(bundle)).digest('hex'),
     color: manifest.color,
     icon: icons[i],
