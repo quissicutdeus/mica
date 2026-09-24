@@ -170,6 +170,18 @@ jobs:
             dist/release/*.tgz
             dist/release/*.zip
 
+      # MICA-221: an owner reads a release for one question -- "does this need anything from
+      # me" -- and a commit list cannot answer it. `scripts/lib/release-notes.js` picks the
+      # CHANGELOG.md entry (or entries) this tag covers and prints them, with an explicit
+      # "nothing for an owner to do" line when none apply (a checked, intentional state, not
+      # a bug -- see the reasoning in that file and in CHANGELOG.md's own preamble). A tag
+      # that does not parse, or a CHANGELOG.md whose structure the script no longer
+      # recognises, is a non-zero exit here and no release -- the same "a missing secret is a
+      # failure, not a skip" rule as the smoke test above (AGENTS.md, §9).
+      - name: Summarize the CHANGELOG for this release
+        if: steps.tag.outputs.skip == ''
+        run: node scripts/release-notes.js "${{ steps.tag.outputs.tag }}" > release-notes.md
+
       # Draft, then attach, then publish — and every part of that order is load-bearing.
       #
       # Releases on this repository are **immutable**: a published release cannot take an
@@ -183,6 +195,12 @@ jobs:
       # repository setting turned off, because immutability is fixed when the release is
       # made rather than read at upload time. They were deleted rather than left as two
       # releases promising an SDK they do not carry.
+      #
+      # `--notes-file` together with `--generate-notes`: gh reads the file into the release
+      # body and *prepends* it to the auto-generated notes rather than replacing them (its
+      # own `--help` says as much of `--notes`, and `--notes-file` fills the same field), so
+      # the commit list GitHub built stays underneath the CHANGELOG summary instead of being
+      # lost.
       - name: Draft the release with all assets attached
         if: steps.tag.outputs.skip == ''
         env:
@@ -191,6 +209,7 @@ jobs:
           gh release create "${{ steps.tag.outputs.tag }}" \
             --draft \
             --title "${{ steps.tag.outputs.tag }}" \
+            --notes-file release-notes.md \
             --generate-notes \
             dist/release/*.tgz \
             dist/release/*.zip \
