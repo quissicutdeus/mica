@@ -217,7 +217,7 @@ const SHIPPED_0004 = [
 
 describe('0004_citizenid_widens_on_esx', () => {
   const alters = () =>
-    dbMock.query.mock.calls.map((call) => String(call[0])).filter((sql) => /^ALTER/.test(sql));
+    dbMock.query.mock.calls.map((call) => String(call[0])).filter((sql) => sql.startsWith('ALTER'));
 
   /** `columns` maps `table.column` to its live shape; anything absent does not exist. */
   const database = (

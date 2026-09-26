@@ -28,7 +28,7 @@ describe('CatalogList (MICA-169)', () => {
       unavailable: (a: AppManifest) => (a.id === 'hodlr' ? 'Needs a server with money' : null)
     });
     expect(screen.getByText('Needs a server with money')).toBeTruthy();
-    const buttons = screen.getAllByRole('button', { name: 'Install' }) as HTMLButtonElement[];
+    const buttons = screen.getAllByRole<HTMLButtonElement>('button', { name: 'Install' });
     expect(buttons.map((b) => b.disabled)).toEqual([true, false]);
     await fireEvent.click(buttons[0]);
     expect(oninstall).not.toHaveBeenCalled();

@@ -66,7 +66,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   /** MICA-169: see `unavailableReason` — unavailable apps are shown with a reason, not hidden. */
   const unavailableFor = (app: AppManifest): string | null =>
-    unavailableReason(app.requires, $caps.missing, $t);
+    unavailableReason(app.requires, (requires) => $caps.missing(requires), $t);
 
   /**
    * `onAppForeground`, not `$effect`/`onMount` (§11): apps are resident, so a fetch that ran
