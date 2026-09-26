@@ -550,7 +550,9 @@ export const FACET_MEMBERS: Readonly<Record<string, readonly string[]>> = {
   service: ['call'],
   sound: ['play'],
   sourceUrl: ['sourceUrl', 'refreshSourceUrl'],
-  locale: ['locale'],
+  // MICA-235: `catalogs` is pinned to the caller (`APP_SCOPED_FACETS`) and carries only its
+  // own namespace and `ui`, never another app's strings.
+  locale: ['locale', 'catalogs'],
   streamerMode: ['streamerMode', 'revealGeneration'],
   systemHardware: [
     'charge',

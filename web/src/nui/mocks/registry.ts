@@ -2466,6 +2466,26 @@ const mockRegistry: Record<string, MockHandler> = {
   'shell:sourceUrl': () => ({ url: 'https://github.com/quissicutdeus/mica' }),
   // MICA-61: no owner default in the browser, so the player's own language decides.
   'shell:locale': () => ({ locale: '' }),
+  // MICA-235: a language only the "server" knows, so Settings > Language and the e2e suite
+  // can exercise the disk path without a resource on disk.
+  'shell:locales': () => ({ languages: ['en', 'fr'] }),
+  'shell:catalog': (data: unknown) => {
+    const wanted = (data as { locale?: string } | undefined)?.locale;
+    return {
+      catalogs:
+        wanted === 'fr'
+          ? {
+              shell: { search: 'Rechercher' },
+              settings: {
+                'language.title': 'Langue',
+                'language.subtitle': 'La langue du téléphone',
+                'language.section': 'Langue',
+                'language.automatic': 'Automatique'
+              }
+            }
+          : {}
+    };
+  },
   /**
    * `mica_disabled_apps` / `mica_default_dock` (MICA-234), parsed once above so this and
    * the appended `mockContacts` rows read from the same answer.

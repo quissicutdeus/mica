@@ -25,6 +25,7 @@ import { HOST_CONTEXT_KEY } from '../protocol';
 import { hydrateStorage } from './storageCache';
 import { setConstants } from './constants';
 import { lifecycle } from './facets/lifecycle';
+import { locale } from './facets/locale';
 import { liveAddOnProps, setLiveAddOnProps } from './liveProps.svelte';
 import type { AppComponent, AppManifest } from '../../manifest';
 
@@ -99,6 +100,11 @@ export async function bootAddOn(manifest: AppManifest, App: AppComponent): Promi
   const host = createInProcessHost(payload.appId, payload.permissions);
   registerHost(host);
   setSystemHost(host);
+  // MICA-235: follow the shell's language and its catalogs before the first paint, not
+  // only once the add-on happens to call `useLocale()`. The SDK primitives and an app's
+  // own `$t` read the bundle's `locale` directly, so a frame that never asked stayed in
+  // English whatever the player chose.
+  locale();
 
   // `onback` lives outside `setLiveAddOnProps`'s tracked keys deliberately (see
   // `liveProps.svelte.ts`) — it is host-owned and must survive every deep-link props push,

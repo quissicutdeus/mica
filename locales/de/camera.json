@@ -1,0 +1,15 @@
+{
+  "switchFailed": "Kamera konnte nicht gewechselt werden",
+  "saveFailed": "Dieses Foto konnte nicht gespeichert werden",
+  "viewfinderMock": "Sucher-Attrappe der Kamera",
+  "back": "Zurück",
+  "openGallery": "Galerie öffnen",
+  "recentCapture": "Letzte Aufnahme",
+  "takePhoto": "Foto aufnehmen",
+  "flipCamera": "Kamera umschalten",
+  "spaceKey": "Leertaste",
+  "hintShoot": "Auslösen",
+  "hintClose": "Schließen",
+  "hintCursor": "Zeiger",
+  "comingSoon": "Demnächst"
+}

@@ -1,0 +1,22 @@
+{
+  "title": "Snatchr",
+  "searchPlaceholder": "Search listings",
+  "myListings": "My Listings",
+  "createListing": "Create listing",
+  "feedEmptyTitle": "No listings",
+  "feedEmptyDescription": "Nothing matches yet.",
+  "titlePlaceholder": "Title",
+  "pricePlaceholder": "Price",
+  "descriptionPlaceholder": "Description",
+  "addPhotos": "Add photos ({count}/{max})",
+  "cancel": "Cancel",
+  "post": "Post",
+  "selectPhotos": "Select Photos",
+  "back": "Back",
+  "call": "Call",
+  "text": "Text",
+  "mineEmptyTitle": "No listings yet",
+  "mineEmptyDescription": "Post something from the Feed.",
+  "markSold": "Mark Sold",
+  "remove": "Remove"
+}

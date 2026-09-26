@@ -5,6 +5,7 @@
 import { ServiceEndpoint } from '../lib/ServiceEndpoint';
 import { shellContract } from '@mica/shared/contracts/shell';
 import { ownerConfig } from '../lib/ownerConfig';
+import { catalogFor, locales, normalizeTag } from '../lib/locales';
 
 /**
  * Where this server says its source lives (MICA-192, AGPL §13).
@@ -72,28 +73,66 @@ app.registerEvent('sourceUrl', async () => ({ url: sourceUrl() }));
 /**
  * The owner's default language for the phone (MICA-61), from the `mica_locale` convar.
  *
- * A BCP 47 tag such as `de` or `pt-BR`, answered as '' when the convar is unset or not a
- * tag, so the client falls through to the player's own browser language and then English.
- * The player's own choice in Settings > Language always wins over this; it is a default
- * for a community, not a lock.
+ * A BCP 47 tag such as `de` or `pt-BR`, answered as '' when the convar is unset, so the client
+ * falls through to the player's own browser language and then English. The player's own choice
+ * in Settings > Language always wins over this; it is a default for a community, not a lock.
+ *
+ * **Any language the `locales/` folder has, and only those** (MICA-235). A tag with no files
+ * behind it would put every player on a language the phone cannot show, so it is warned about —
+ * once per value, since this is read per call — and answered as ''.
  */
 const LOCALE_CONVAR = 'mica_locale';
-const LOCALE_TAG = /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/;
+const warnedLocales = new Set<string>();
+
+const warnLocaleOnce = (configured: string, message: string): void => {
+  if (warnedLocales.has(configured)) return;
+  warnedLocales.add(configured);
+  console.warn(message);
+};
 
 export const serverLocale = (): string => {
   const configured = GetConvar(LOCALE_CONVAR, '').trim();
   if (!configured) return '';
-  if (!LOCALE_TAG.test(configured)) {
-    console.warn(
+  const tag = normalizeTag(configured);
+  if (!tag) {
+    warnLocaleOnce(
+      configured,
       `[micaOS] ${LOCALE_CONVAR} is '${configured}', which is not a language tag such as ` +
         "'de' or 'pt-BR'. Ignoring it; players fall back to their own language."
     );
     return '';
   }
-  return configured;
+  const { languages } = locales();
+  if (!languages.includes(tag)) {
+    warnLocaleOnce(
+      configured,
+      `[micaOS] ${LOCALE_CONVAR} is '${configured}', but locales/ has no '${tag}' folder with a ` +
+        `valid file (available: ${languages.join(', ')}). Ignoring it; players fall back to ` +
+        'their own language.'
+    );
+    return '';
+  }
+  return tag;
+};
+
+/** Test seam: warn again about a value already warned about. */
+export const __resetLocaleWarnings = (): void => {
+  warnedLocales.clear();
 };
 
 app.registerEvent('locale', async () => ({ locale: serverLocale() }));
+
+/** MICA-235. The folder as read at resource start; nothing read from the payload. */
+app.registerEvent('locales', async () => ({ languages: [...locales().languages] }));
+
+/**
+ * MICA-235. The contract has already refused anything that is not a language tag; this only
+ * looks the tag up among the languages read at start. An unknown one is `{}`, not an error: the
+ * phone falls back to its bundled English, which is what it would show anyway.
+ */
+app.registerEvent('catalog', async (_source, _cbId, data) => ({
+  catalogs: catalogFor(data.locale) ?? {}
+}));
 
 /**
  * Which apps the owner switched off and what the phone's dock holds (MICA-234), from

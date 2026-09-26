@@ -94,6 +94,7 @@ import type {
 } from '../vocabulary/shell';
 import type { MusicError } from '../lib/musicErrors';
 import type { CatalogEntry } from '../catalog';
+import type { Catalog } from '../i18n';
 import type { ReactionStore } from '../kit/createReactionStore';
 import type { AppComponent, AppManifest, AppPermission, AppDevice } from '../manifest';
 import type { KeybindAction } from '@mica/shared/keybinds';
@@ -297,11 +298,19 @@ export interface Facets {
   };
   /**
    * MICA-61: the active locale, and the one way to change it. `setLocale` is for
-   * Settings; an add-on may read the locale and never set it (`MEMBER_ALLOWLIST`).
+   * Settings; an add-on may read the locale and never set it (`FACET_MEMBERS`).
+   *
+   * MICA-235: `catalogs` is what the shell's registry holds for `appId`'s own namespace and
+   * `ui`, along the active locale's fallback chain (its base language, then `en`), as
+   * `{ [namespace]: { [locale]: messages } }` — how an owner's `locales/` files reach a
+   * sandboxed frame, which merges it with `registerMessages`. For an add-on the shell pins
+   * `appId` to the caller, so no frame can ask for another app's strings; with no `appId`
+   * it is empty, since an in-process app already shares the shell's registry.
    */
-  locale: () => {
+  locale: (appId?: string) => {
     locale: Readable<string>;
     setLocale: (next: string) => void;
+    catalogs: Readable<Readonly<Record<string, Catalog>>>;
   };
   /**
    * MICA-249: streamer mode. `streamerMode` is the player's choice — blur every

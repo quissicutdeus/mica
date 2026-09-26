@@ -56,6 +56,24 @@ export function registerMessages(namespace: string, catalog: Catalog): void {
   revision.update((n) => n + 1);
 }
 
+/**
+ * Bumps whenever any catalog is registered (MICA-235). Read-only; the host's `locale` facet
+ * watches it so a sandboxed add-on's frame is re-sent its strings when an owner's
+ * `locales/` files arrive after the frame booted. Not re-exported from an entry point.
+ */
+export const catalogRevision: Readable<number> = { subscribe: revision.subscribe };
+
+/**
+ * The strings this bundle holds for one namespace in exactly one locale — no fallback walk
+ * — or `undefined` if it holds none (MICA-235). A copy, so a caller cannot mutate the
+ * registry. Not re-exported from an entry point: the shell reads it to hand an add-on its
+ * own namespace, and nothing else has a reason to.
+ */
+export function catalogFor(namespace: string, localeTag: string): Messages | undefined {
+  const messages = catalogs.get(namespace)?.[localeTag];
+  return messages ? { ...messages } : undefined;
+}
+
 /** The locales any registered catalog provides, `en` first, for a Language picker. */
 export function availableLocales(): string[] {
   const found = new Set<string>([FALLBACK_LOCALE]);

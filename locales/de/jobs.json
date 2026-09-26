@@ -1,0 +1,17 @@
+{
+  "title": "Jobs",
+  "active": "Aktiv",
+  "grade": "Rang {grade} · {label}",
+  "salary": "Gehalt {salary} $",
+  "onDuty": "Im Dienst",
+  "offDuty": "Außer Dienst",
+  "dutyNeedsActive": "Wechsle zu diesem Job, um dich einzustempeln.",
+  "societyBalance": "Firmenkonto",
+  "call": "Anrufen",
+  "noJobs": "Keine Jobs",
+  "noJobsHint": "Du hast im Moment keinen Job.",
+  "refusalUnknownJob": "Diesen Job hast du nicht.",
+  "refusalNotActive": "Wechsle zuerst zu diesem Job, bevor du den Dienst änderst.",
+  "refusalRefused": "Der Server hat die Änderung abgelehnt.",
+  "refusalUnsupported": "Dieser Job kennt keinen Dienst."
+}

@@ -1,0 +1,15 @@
+{
+  "title": "Mail",
+  "archivedTitle": "Archived Mail",
+  "message": "Message",
+  "deleteMessage": "Delete message",
+  "moveToInbox": "Move to Inbox",
+  "archiveMessage": "Archive message",
+  "viewArchive": "View Archive",
+  "viewInbox": "View Inbox",
+  "noReply": "No-reply address · answer in Messages",
+  "emptyInbox": "No inbox messages",
+  "emptyArchive": "No archived messages",
+  "emptyInboxHint": "Mail arrives from jobs, businesses and dispatches. This inbox only receives — conversations live in Messages.",
+  "emptyArchiveHint": "Archived messages will be stored here."
+}

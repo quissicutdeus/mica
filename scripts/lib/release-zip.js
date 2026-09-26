@@ -40,6 +40,14 @@ export const DIST_DIRS = ['dist/client', 'dist/server', 'dist/web'];
  */
 export const BRIDGES_DIR = 'bridges';
 
+/**
+ * The language files (MICA-235), shipped at `mica/locales/<lang>/<namespace>.json`. The
+ * server reads them from disk at start and the NUI never fetches them, so the manifest does
+ * not list them and FiveM does not serve them; they are in the zip so an owner can copy
+ * `locales/en` to a new language without a build.
+ */
+export const LOCALES_DIR = 'locales';
+
 /** `v2026.09.02.3` -> `2026.09.02.3`, the version the About screen shows. */
 export function calVerOf(tag) {
   const match = TAG_PATTERN.exec(tag ?? '');

@@ -1,0 +1,16 @@
+{
+  "title": "Snek",
+  "leaderboard": "Leaderboard",
+  "gameOver": "Game Over",
+  "easy": "Easy",
+  "medium": "Medium",
+  "hard": "Hard",
+  "best": "Best:",
+  "score": "Score:",
+  "newHighScore": "New high score!",
+  "playAgain": "Play Again",
+  "back": "Back",
+  "noScores": "No scores yet",
+  "noScoresHint": "Be the first to play.",
+  "unknown": "Unknown"
+}

@@ -1,0 +1,22 @@
+{
+  "title": "Snatchr",
+  "searchPlaceholder": "Anzeigen durchsuchen",
+  "myListings": "Meine Anzeigen",
+  "createListing": "Anzeige erstellen",
+  "feedEmptyTitle": "Keine Anzeigen",
+  "feedEmptyDescription": "Noch passt nichts.",
+  "titlePlaceholder": "Titel",
+  "pricePlaceholder": "Preis",
+  "descriptionPlaceholder": "Beschreibung",
+  "addPhotos": "Fotos hinzufügen ({count}/{max})",
+  "cancel": "Abbrechen",
+  "post": "Veröffentlichen",
+  "selectPhotos": "Fotos auswählen",
+  "back": "Zurück",
+  "call": "Anrufen",
+  "text": "Schreiben",
+  "mineEmptyTitle": "Noch keine Anzeigen",
+  "mineEmptyDescription": "Veröffentliche etwas über den Feed.",
+  "markSold": "Als verkauft markieren",
+  "remove": "Entfernen"
+}

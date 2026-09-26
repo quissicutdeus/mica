@@ -6,7 +6,7 @@ import { get } from 'svelte/store';
 import { fetchCitizenId, fetchBalance } from '../../services/account';
 import { refreshAdmin } from '../../services/admin';
 import { refreshCapabilities } from '../../services/capabilities';
-import { refreshLocale } from './locale';
+import { refreshLocale, refreshServerLanguages } from './locale';
 import { disabledAppIds, refreshOwnerConfig } from './ownerConfig';
 import { loadUnreadCounts } from '../../services/notifications';
 import { bundledAddOns, registeredApps } from './registry';
@@ -56,6 +56,8 @@ export async function bootstrapStores(force: boolean = false): Promise<void> {
         refreshCapabilities(),
         // MICA-61: the owner's default language, before the first screen renders.
         refreshLocale(),
+        // MICA-235: languages an owner dropped on disk, and (via the store) their strings.
+        refreshServerLanguages(),
         // MICA-234: which apps the owner disabled, and the default dock, before the
         // launcher and dock draw a slot they should be hiding or filling.
         refreshOwnerConfig(),

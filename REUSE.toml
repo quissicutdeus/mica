@@ -16,6 +16,9 @@ SPDX-PackageName = "mica"
 SPDX-PackageSupplier = "quissicutdeus"
 SPDX-PackageDownloadLocation = "https://github.com/quissicutdeus/mica"
 
+# `locales/**/*.json` (MICA-235) is generated from the catalogs in `web/` and `sdk/` and
+# cannot hold a comment; the block below covers it like any other JSON. Named here so a
+# reader looking for why a language file has no header finds the answer.
 [[annotations]]
 path = "**"
 precedence = "closest"

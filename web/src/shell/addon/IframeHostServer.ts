@@ -257,7 +257,10 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
     'searchProvider',
     'persisted',
     'deepLink',
-    'lifecycle'
+    'lifecycle',
+    // MICA-235. `catalogs` hands back the strings of whichever app the id names; pinned, it
+    // can only ever be this frame's own namespace and `ui`.
+    'locale'
   ]);
 
   /**

@@ -8,6 +8,7 @@ import { join, posix, relative } from 'node:path';
 import {
   BRIDGES_DIR,
   DIST_DIRS,
+  LOCALES_DIR,
   RESOURCE_NAME,
   TOP_LEVEL_FILES,
   calVerFromGit,
@@ -116,14 +117,18 @@ if (!repository) {
   process.exit(1);
 }
 
-/** The bridges, which the manifest does not declare and so are not in `relPaths`. */
-const bridgePaths = walk(BRIDGES_DIR).map((file) =>
+/**
+ * The bridges and the language files, which the manifest does not declare and so are not in
+ * `relPaths`. `locales/` is committed output (`pnpm generate:locales`); an absent directory
+ * is a broken checkout, and `walk` throwing on it is the loud failure that deserves.
+ */
+const extraPaths = [...walk(BRIDGES_DIR), ...walk(LOCALES_DIR)].map((file) =>
   relative('.', file).split('\\').join(posix.sep)
 );
 
 const entries = [
   ...relPaths.map((path) => ({ path, data: readFileSync(path) })),
-  ...bridgePaths.map((path) => ({ path, data: readFileSync(path) })),
+  ...extraPaths.map((path) => ({ path, data: readFileSync(path) })),
   ...TOP_LEVEL_FILES.map((path) => ({
     path,
     data: path === 'fxmanifest.lua' ? stampManifestVersion(manifest, version) : readFileSync(path)

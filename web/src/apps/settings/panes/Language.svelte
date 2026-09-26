@@ -27,7 +27,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     }
   };
 
-  const choices = availableLocales();
+  // Re-read whenever a catalog registers (`$t` re-derives on every registration), so a
+  // language the server added on disk appears without reopening the pane (MICA-235).
+  const choices = $derived.by(() => {
+    void $t;
+    return availableLocales();
+  });
 </script>
 
 <div class="space-y-6 p-4">

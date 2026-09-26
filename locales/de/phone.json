@@ -1,0 +1,21 @@
+{
+  "title": "Telefon",
+  "viewLabel": "Telefonansicht",
+  "keypad": "Tastenfeld",
+  "recents": "Zuletzt",
+  "favorites": "Favoriten",
+  "call": "Anrufen",
+  "backspace": "Rücktaste",
+  "noRecentCalls": "Keine kürzlichen Anrufe",
+  "dialing": "Wählen...",
+  "incomingCall": "Eingehender Anruf...",
+  "mute": "Stumm",
+  "unmute": "Stumm aus",
+  "speaker": "Lautsprecher",
+  "answerCall": "Anruf annehmen",
+  "endCall": "Anruf beenden",
+  "justNow": "Gerade eben",
+  "minutesAgo": "vor {minutes} Min.",
+  "hoursAgo": "vor {hours} Std.",
+  "daysAgo": "vor {days} T."
+}

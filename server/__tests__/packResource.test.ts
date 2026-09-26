@@ -8,6 +8,7 @@ import { join, resolve } from 'node:path';
 import { crc32, inflateRawSync } from 'node:zlib';
 
 import {
+  LOCALES_DIR,
   README_END,
   README_START,
   calVerOf,
@@ -22,6 +23,8 @@ import {
 } from '../../scripts/lib/release-zip.js';
 // @ts-expect-error -- same.
 import { createZip } from '../../scripts/lib/zip.js';
+// @ts-expect-error -- same.
+import { LOCALES_DIR as GENERATED_LOCALES_DIR } from '../../scripts/lib/locales.js';
 
 /**
  * What the release zip is made of, checked on every push rather than on `main` alone --
@@ -220,6 +223,28 @@ const readZip = (zip: Buffer) => {
   }
   return entries;
 };
+
+describe('the language files the zip carries (MICA-235)', () => {
+  it('packs the directory the generator writes, at mica/locales/', () => {
+    expect(LOCALES_DIR).toBe(GENERATED_LOCALES_DIR);
+    const packer = readFileSync(join(ROOT, 'scripts/pack-resource.js'), 'utf8');
+    expect(packer).toContain('walk(LOCALES_DIR)');
+    // Every entry is prefixed with the resource name, so locales/en/ui.json lands at
+    // mica/locales/en/ui.json.
+    expect(packer).toContain('path: `${RESOURCE_NAME}/${path}`');
+  });
+
+  it('are not declared by the manifest: the server reads them from disk, the NUI never does', () => {
+    const generator = readFileSync(join(ROOT, 'scripts/generate-barrels.js'), 'utf8');
+    const template = /const manifest = `([\s\S]*?)`;/.exec(generator)?.[1] ?? '';
+    const globs = manifestGlobs(template);
+    expect(globs.length).toBeGreaterThan(0);
+    for (const path of ['locales/en/ui.json', 'locales/de/notes.json', 'locales/fr/shell.json']) {
+      for (const glob of globs)
+        expect(globToRegExp(glob).test(path), `${glob} ${path}`).toBe(false);
+    }
+  });
+});
 
 describe('the zip writer', () => {
   const mtime = new Date(Date.UTC(2026, 8, 2));

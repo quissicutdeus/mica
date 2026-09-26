@@ -62,6 +62,18 @@ test.describe('Settings App E2E', () => {
     await expect(page.getByRole('button', { name: /^Automatic\b/ })).toBeVisible();
   });
 
+  /**
+   * A language only the server has (MICA-235). The mock's `shell:locales` lists `fr` with a
+   * handful of Settings strings; picking it must change what the pane says, and the rest
+   * fall back to English per key.
+   */
+  test('Language lists a server-provided language and applies its strings', async ({ page }) => {
+    await page.getByRole('button', { name: /^Language\b/ }).click();
+    await page.getByRole('button', { name: /fran/i }).click();
+    await expect(page.getByRole('button', { name: /^Automatique\b/ })).toBeVisible();
+    await expect(page.locator('h1', { hasText: 'Langue' })).toBeVisible();
+  });
+
   test('displays About sub-page with phone number, OS name, first boot date, and smart versioning info', async ({
     page
   }) => {

@@ -35,6 +35,24 @@ export const shellContract = defineContract({
     sourceUrl: { input: s.none(), output: responseType<{ url: string }>() },
     /** MICA-61: the owner's default language (`mica_locale`), or '' when unset. */
     locale: { input: s.none(), output: responseType<{ locale: string }>() },
+    /**
+     * MICA-235: every language with at least one valid file in the resource's `locales/`
+     * folder, `en` first and always, the rest sorted. Read at resource start, so an owner adds a
+     * language by dropping files in and restarting — no rebuild.
+     */
+    locales: { input: s.none(), output: responseType<{ languages: string[] }>() },
+    /**
+     * MICA-235: one language's messages, namespace → key → text, or `{}` for a language with no
+     * files. The tag is a language tag and nothing else (letters, digits and hyphens, the shape
+     * `normalizeLocale` accepts), so `..` and slashes are refused before any handler runs — and
+     * the handler only ever looks it up among the languages already read, never opens a path.
+     */
+    catalog: {
+      input: s.object({
+        locale: s.string({ trim: true, max: 35, pattern: /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/ })
+      }),
+      output: responseType<{ catalogs: Record<string, Record<string, string>> }>()
+    },
     /** MICA-234: `mica_disabled_apps` and `mica_default_dock`, parsed by `shared/ownerConfig`. */
     ownerConfig: { input: s.none(), output: responseType<OwnerConfig>() }
   }

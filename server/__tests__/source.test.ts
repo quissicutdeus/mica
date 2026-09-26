@@ -20,7 +20,11 @@ vi.mock('../lib/FrameworkBridge', () => ({
   }
 }));
 
-import { serverLocale, sourceUrl } from '../services/Source';
+import { __resetLocaleWarnings, serverLocale, sourceUrl } from '../services/Source';
+import { reloadLocales } from '../lib/locales';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { __resetRateLimits } from '../lib/rateLimit';
 
 const UPSTREAM = 'https://github.com/quissicutdeus/mica';
@@ -123,9 +127,24 @@ describe('the default locale a server reports', () => {
       name === 'mica_locale' && value !== null ? value : fallback;
   };
 
+  // Since MICA-235 the convar names a language the `locales/` folder has; these have one.
+  let root: string;
   beforeEach(() => {
     __resetRateLimits();
+    __resetLocaleWarnings();
     withLocale(null);
+    root = mkdtempSync(join(tmpdir(), 'mica-source-locales-'));
+    for (const lang of ['de', 'pt-BR', 'fr']) {
+      mkdirSync(join(root, lang));
+      writeFileSync(join(root, lang, 'shell.json'), '{"lock":"x"}');
+    }
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    reloadLocales(root);
+    vi.restoreAllMocks();
+  });
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
   });
 
   it("answers '' when the operator has set nothing, so the player's own language decides", () => {

@@ -1,0 +1,12 @@
+{
+  "title": "Calculator",
+  "keyClear": "Clear",
+  "keyPlusMinus": "Plus minus",
+  "keyPercent": "Percent",
+  "keyDivide": "Divide",
+  "keyMultiply": "Multiply",
+  "keyMinus": "Minus",
+  "keyPlus": "Plus",
+  "keyBackspace": "Backspace",
+  "keyEquals": "Equals"
+}

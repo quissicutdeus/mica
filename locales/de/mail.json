@@ -1,0 +1,15 @@
+{
+  "title": "E-Mail",
+  "archivedTitle": "Archivierte E-Mails",
+  "message": "Nachricht",
+  "deleteMessage": "Nachricht löschen",
+  "moveToInbox": "In den Posteingang verschieben",
+  "archiveMessage": "Nachricht archivieren",
+  "viewArchive": "Archiv anzeigen",
+  "viewInbox": "Posteingang anzeigen",
+  "noReply": "Keine Antwortadresse · antworte in Nachrichten",
+  "emptyInbox": "Keine Nachrichten im Posteingang",
+  "emptyArchive": "Keine archivierten Nachrichten",
+  "emptyInboxHint": "E-Mails kommen von Jobs, Unternehmen und Einsatzzentralen. Dieser Posteingang empfängt nur — Unterhaltungen laufen in Nachrichten.",
+  "emptyArchiveHint": "Archivierte Nachrichten werden hier gespeichert."
+}

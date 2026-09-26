@@ -185,6 +185,7 @@ const results = [];
 
 /** Every gate in the order it runs. Only used to report the ones that did not. */
 const GATES = [
+  'locales',
   'format',
   'markdown',
   'agents',
@@ -276,6 +277,10 @@ const main = async () => {
   // cost.
   const stop = () => BAIL && results.some((r) => r.code !== 0);
 
+  // `locales/` against the catalogs it is generated from (MICA-235). Committed output, like
+  // `mica.sql`: an edited catalog with no regenerate ships an `en` template that is missing
+  // keys, and nothing else would notice. About a second, so it runs before `format`.
+  if (!stop()) await gate('locales', 'node', ['scripts/generate-locales.js', '--check']);
   if (!stop()) await gate('format', 'pnpm', ['format:check']);
   if (!stop()) await gate('markdown', 'pnpm', ['lint:md']);
 

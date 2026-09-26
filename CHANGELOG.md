@@ -480,6 +480,20 @@ with `internal_error` and the rest of Messages is unaffected.
 
 ### Added
 
+**Add a language by dropping files in, with no rebuild (MICA-235).** The release
+now carries `locales/en/` and `locales/de/` — every string the phone shows, one
+JSON file per app — and the server reads the whole `locales/` folder at start.
+Copy `locales/en/` to `locales/<lang>/`, translate the values and restart the
+resource: the language appears in Settings > Language and `mica_locale` accepts
+it. A key a file leaves out falls back to English, and the server console lists
+what each language is missing. A file in `locales/en/` or `locales/de/`
+overrides the built-in string for its keys. Store add-ons are translated the
+same way, from `locales/<lang>/<add-on id>.json`. README's "Adding a language"
+has the layout. **One change to check:** `mica_locale` now has to name a
+language present in `locales/`; `en` and `de` always are, and anything else logs
+a warning at start and falls back to the player's own language, as an unset
+convar does.
+
 **Bring players' data across from qb-phone, lb-phone or NPWD (MICA-233).**
 `micaimport <qb-phone|lb-phone|npwd>` in the server console reads the old
 phone's tables where they sit, in the same database, and reports what it would
@@ -992,6 +1006,16 @@ Everything above is written for a server owner. This part is not. It is for
 somebody maintaining a `core: false` add-on outside this repo, and it answers
 one question: does that bundle still compile against this release, and does its
 manifest still ask for the right things.
+
+**Your frame follows the player's language, and owners can translate it
+(MICA-235).** Before this, an add-on's frame changed language only if the add-on
+itself called `useLocale()`, so most stayed in English whatever the player
+chose; the SDK's frame boot now subscribes for you. An owner's
+`locales/<lang>/<your app id>.json` and `locales/<lang>/ui.json` are sent into
+your frame and merged over your bundled catalogs — only your own namespace and
+`ui`, never another app's. Rebuild against this SDK to get the boot fix; nothing
+in your code has to change. The `locale` facet gained a `catalogs` member,
+additively, so the contract version does not move.
 
 **`useSearchProvider` is new, and needs no permission (MICA-286).** An app
 answers the phone's home search for its own rows:
