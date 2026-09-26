@@ -188,11 +188,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     olderAt: 'end',
     pageSize: 30,
     loadOlder: () => feed.loadMore(),
-    hasMore: () => hasMoreSnapshot
+    hasMore: () => $feedHasMore
   });
 
-  let hasMoreSnapshot = $state(false);
-  feed.hasMore.subscribe((value) => (hasMoreSnapshot = value));
+  const feedHasMore = feed.hasMore;
 
   /**
    * The Following window, its own `usePagedList` over its own store.
@@ -206,11 +205,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     olderAt: 'end',
     pageSize: 30,
     loadOlder: () => followingFeed.loadMore(),
-    hasMore: () => followingHasMore
+    hasMore: () => $followingHasMore
   });
 
-  let followingHasMore = $state(false);
-  followingFeed.hasMore.subscribe((value) => (followingHasMore = value));
+  const followingHasMore = followingFeed.hasMore;
 
   const followingLoaded = followingFeed.loaded;
 

@@ -34,6 +34,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   const { taggedBlabs, loadTaggedBlabs, engagement, loadEngagement } = useBlabber();
   const loaded = taggedBlabs.loaded;
+  const taggedHasMore = taggedBlabs.hasMore;
 
   $effect(() => {
     void tag;
@@ -45,11 +46,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     olderAt: 'end',
     pageSize: 30,
     loadOlder: () => taggedBlabs.loadMore(),
-    hasMore: () => hasMoreSnapshot
+    hasMore: () => $taggedHasMore
   });
-
-  let hasMoreSnapshot = $state(false);
-  taggedBlabs.hasMore.subscribe((value) => (hasMoreSnapshot = value));
 
   $effect(() => {
     const ids = page.visible.map((blab) => blab.id);

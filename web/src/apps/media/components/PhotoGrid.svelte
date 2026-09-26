@@ -40,8 +40,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   const { media } = useMedia();
   const mediaLoaded = media.loaded;
 
-  let hasMore = $state(false);
-  media.hasMore.subscribe((value) => (hasMore = value));
+  const hasMore = media.hasMore;
 
   /**
    * A window over the store's window.
@@ -60,7 +59,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     // ask the server for a second page before the first was on screen.
     pageSize: 21,
     loadOlder: () => media.loadMore(),
-    hasMore: () => hasMore
+    hasMore: () => $hasMore
   });
 
   /**
