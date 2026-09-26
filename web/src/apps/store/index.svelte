@@ -23,7 +23,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     registerMessages,
     type AppPermission
   } from '@mica/sdk';
-  import { addedPermissions, formatPermission, mergedCatalogApps } from './appInfo';
+  import { useCapabilities } from '@mica/sdk/core';
+  import {
+    addedPermissions,
+    formatPermission,
+    mergedCatalogApps,
+    unavailableReason
+  } from './appInfo';
   import AppDetails from './components/AppDetails.svelte';
   import CatalogList from './components/CatalogList.svelte';
   import InstalledList from './components/InstalledList.svelte';
@@ -55,6 +61,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   const { openApp: openPhoneApp } = useNavigation();
   const { run } = useAppAction('store');
+  // A store, so the reason appears when the server's answer does; `missing` is [] until then.
+  const caps = useCapabilities();
+
+  /** MICA-169: see `unavailableReason` — unavailable apps are shown with a reason, not hidden. */
+  const unavailableFor = (app: AppManifest): string | null =>
+    unavailableReason(app.requires, $caps.missing, $t);
 
   /**
    * `onAppForeground`, not `$effect`/`onMount` (§11): apps are resident, so a fetch that ran
@@ -112,6 +124,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   );
 
   function handleInstall(app: AppManifest) {
+    if (unavailableFor(app)) return;
     if (app.isRemote && app.bundleUrl) {
       const target = app;
       void run(
@@ -232,6 +245,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <AppDetails
       app={selectedApp}
       installed={isInstalled(selectedApp.id)}
+      unavailable={unavailableFor(selectedApp)}
       update={updateFor(selectedApp.id)}
       onback={() => (selectedApp = null)}
       oninstall={handleInstall}
@@ -283,6 +297,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             onselect={(app: AppManifest) => (selectedApp = app)}
             oninstall={handleInstall}
             onuninstall={requestUninstall}
+            unavailable={unavailableFor}
           />
         {:else}
           <InstalledList

@@ -20,13 +20,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     isInstalled,
     onselect,
     oninstall,
-    onuninstall
+    onuninstall,
+    unavailable = () => null
   }: {
     apps: AppManifest[];
     isInstalled: (id: string) => boolean;
     onselect: (app: AppManifest) => void;
     oninstall: (app: AppManifest) => void;
     onuninstall: (app: AppManifest) => void;
+    /** Why this server cannot install the app, or `null` (MICA-169). Shown, never hidden. */
+    unavailable?: (app: AppManifest) => string | null;
   } = $props();
 </script>
 
@@ -38,6 +41,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   <div class="grid w-full gap-3">
     {#each apps as app (app.id)}
       {@const installed = isInstalled(app.id)}
+      {@const reason = installed ? null : unavailable(app)}
       <div
         data-testid="app-row"
         class="bg-surface-container border-outline-variant hover:bg-surface duration-short ease-standard flex w-full min-w-0 items-center justify-between gap-3 rounded-box border p-3 transition"
@@ -58,6 +62,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <p class="text-on-surface-variant text-body-small line-clamp-1">
               {app.description}
             </p>
+            {#if reason}
+              <p
+                data-testid="app-unavailable"
+                class="text-on-surface-variant text-label-small whitespace-pre-wrap"
+              >
+                {reason}
+              </p>
+            {/if}
           </div>
         </button>
 
@@ -70,6 +82,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             class="bg-error text-on-error hover:bg-error text-body-small duration-short ease-standard shrink-0 rounded-box px-3 py-1.5 transition active:scale-95"
           >
             {$t('store.uninstall')}
+          </button>
+        {:else if reason}
+          <button
+            disabled
+            class="disabled:bg-disabled-container disabled:text-disabled-content text-body-small shrink-0 disabled:cursor-not-allowed rounded-box px-3 py-1.5"
+          >
+            {$t('store.install')}
           </button>
         {:else}
           <button

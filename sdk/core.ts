@@ -26,6 +26,10 @@
  * draw it. It grants nothing on its own: it is presentational, and the stores it renders
  * from are `useMusic()`'s, which is permission-gated as it always was.
  *
+ * `useCapabilities` (MICA-169) is the server's `requires` answer, for the phone's own
+ * catalog to explain an app it would refuse. Harmless to disclose, but with no add-on
+ * asking for it — `useCapabilities.ts` has the reasoning and why it has no facet.
+ *
  * The seed-theming set — `DEFAULT_SEED`, `sanitizeSeed`, `seedFromRgbString`,
  * `buildSchemes`, `cssVarBlock`, `backgroundForScheme` — is the fourth kind, and it is
  * here for cost rather than for danger. MICA-187 decided where it publishes, with the
@@ -43,6 +47,7 @@
  */
 export { useNuiBridge } from './useNuiBridge';
 export { useCaptureZoomBoost } from './useCaptureZoomBoost';
+export { useCapabilities } from './useCapabilities';
 export { default as NowPlayingCard } from './ui/NowPlayingCard.svelte';
 export {
   DEFAULT_SEED,

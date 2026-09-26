@@ -24,6 +24,16 @@ import { catalogApps, remoteCatalogApps, mergedCatalogApps } from './appInfo';
 import type { AppComponent } from '@mica/sdk';
 import { get } from 'svelte/store';
 
+// MICA-169: stubs `useCapabilities` (a store plus a snapshot); every capability present — the
+// state these tests were written for.
+vi.mock('@mica/sdk/core', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  useCapabilities: () => {
+    const answer = { known: true, missing: () => [] };
+    return { ...answer, subscribe: (run: (v: typeof answer) => void) => (run(answer), () => {}) };
+  }
+}));
+
 vi.mock('../../nui/fetchNui', () => ({
   fetchNui: vi.fn(async () => null),
   isBrowser: () => true

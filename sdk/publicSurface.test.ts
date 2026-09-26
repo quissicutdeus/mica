@@ -1215,6 +1215,8 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'cssVarBlock',
     'sanitizeSeed',
     'seedFromRgbString',
+    // MICA-169: the server's `requires` answer, for the phone's own catalog. Core only.
+    'useCapabilities',
     'useCaptureZoomBoost',
     'useNuiBridge'
   ]

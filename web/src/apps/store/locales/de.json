@@ -90,5 +90,7 @@
   "permission.theme": "Design (Lesen)",
   "permission.theme-write": "Design des Telefons ändern",
   "permission.wallpaper": "Hintergrundbild (Lesen)",
-  "permission.wallpaper-write": "Hintergrundbild ändern"
+  "permission.wallpaper-write": "Hintergrundbild ändern",
+  "needs.money": "Benötigt einen Server mit Geldsystem",
+  "needs.jobs": "Benötigt einen Server mit Job-System"
 }

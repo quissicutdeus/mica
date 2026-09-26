@@ -305,6 +305,17 @@ const startFresh =
     : new URLSearchParams(window.location.search).get('state')) === 'fresh';
 
 /**
+ * `?mica_no_money=1` answers `shell:capabilities` the way a standalone server does — no
+ * framework, so no money (MICA-169). The default stays fully capable, for the reason
+ * documented on the handler; this only lets a spec see the moneyless server.
+ */
+const mockNoMoney =
+  (typeof window === 'undefined'
+    ? null
+    : new URLSearchParams(window.location.search).get('mica_no_money')) === '1';
+const mockCapabilities = () => ({ money: !mockNoMoney, jobs: true });
+
+/**
  * `?mica_boot=unauthenticated` presents the mock the way a fresh server presents the
  * real one (MICA-266): `bootstrapStores` preloads before the framework has loaded a
  * character, `ServiceEndpoint` refuses every `svc` call with `{ error: 'Player not
@@ -2469,7 +2480,7 @@ const mockRegistry: Record<string, MockHandler> = {
    * transport in a browser too, instead of short-circuiting on `isBrowser()`, so a mock
    * that goes missing here shows up as two apps disappearing rather than as nothing at all.
    */
-  'shell:capabilities': () => ({ money: true, jobs: true }),
+  'shell:capabilities': () => mockCapabilities(),
 
   /**
    * The AGPL §13 source address (`services/sourceUrl.ts`). Upstream here, because the mock

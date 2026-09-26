@@ -33,7 +33,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     oninstall,
     onupdate,
     onuninstall,
-    onopen
+    onopen,
+    unavailable = null
   }: {
     app: AppManifest;
     installed: boolean;
@@ -44,6 +45,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     onupdate: (app: AppManifest) => void;
     onuninstall: (app: AppManifest) => void;
     onopen: (id: string) => void;
+    /** Why this server cannot install the app, or `null` (MICA-169). */
+    unavailable?: string | null;
   } = $props();
 
   const system = $derived(app.core);
@@ -143,6 +146,19 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               {$t('store.uninstall')}
             </button>
           </div>
+        {:else if unavailable}
+          <button
+            disabled
+            class="disabled:bg-disabled-container disabled:text-disabled-content text-body-small w-full disabled:cursor-not-allowed rounded-box py-2.5"
+          >
+            {$t('store.installApplication')}
+          </button>
+          <p
+            data-testid="app-unavailable"
+            class="text-on-surface-variant text-body-small mt-2 whitespace-pre-wrap"
+          >
+            {unavailable}
+          </p>
         {:else}
           <button
             onclick={() => {

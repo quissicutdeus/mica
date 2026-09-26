@@ -7,6 +7,7 @@ import {
   useAppRegistry,
   fetchCatalog,
   tileFromColorClasses,
+  type AppCapability,
   type AppManifest,
   type AppPermission,
   type CatalogEntry,
@@ -50,7 +51,7 @@ export const catalogApps = (): AppManifest[] =>
  * `icon`/`color`, every one of which a `CatalogEntry` already carries. `isRemote`/`bundleUrl`
  * ride along so `handleInstall` in `index.svelte` can tell which install path to call.
  */
-const toAppManifest = (entry: CatalogEntry): AppManifest => ({
+export const toAppManifest = (entry: CatalogEntry): AppManifest => ({
   id: entry.id,
   name: entry.name,
   version: entry.version,
@@ -65,6 +66,10 @@ const toAppManifest = (entry: CatalogEntry): AppManifest => ({
   isRemote: true,
   bundleUrl: entry.bundleUrl,
   permissions: entry.permissions,
+  // Carried so the catalog row and the manifest `installVerified` builds from the same entry
+  // agree on what the app needs (MICA-169). Dropping it made a remote add-on that needs
+  // money look installable on a server with none.
+  requires: entry.requires,
   requiresNetwork: entry.requiresNetwork ?? false
 });
 
@@ -243,4 +248,30 @@ export function addedPermissions(
 ): AppPermission[] {
   const held = new Set(granted ?? []);
   return (entry.permissions ?? []).filter((perm) => !held.has(perm));
+}
+
+/**
+ * Why an app cannot be installed on this server, in the phone's language — or `null` when
+ * it can (MICA-169).
+ *
+ * **The Store shows an unavailable app; it does not hide it.** Every other surface hides an
+ * app whose `requires` are unmet (`lib/phone/appVisibility.ts`), because a launcher icon
+ * that always errors is noise. The Store is different: it is a browsing surface, and a
+ * player who knows an app exists and cannot find it has no way to learn why. So the row
+ * stays, Install is disabled, and this string says what is missing. Visibility, not
+ * authorization — the install path refuses on its own (AGENTS.md §2.9).
+ *
+ * One line per missing capability (render with `whitespace-pre-wrap`).
+ *
+ * `missing` is `useCapabilities().missing`, passed in so this stays a pure function.
+ */
+export function unavailableReason(
+  requires: readonly AppCapability[] | undefined,
+  missing: (requires: readonly AppCapability[]) => readonly AppCapability[],
+  translate: Translate
+): string | null {
+  if (!requires || requires.length === 0) return null;
+  const lacking = missing(requires);
+  if (lacking.length === 0) return null;
+  return lacking.map((name) => translate(`store.needs.${name}`)).join('\n');
 }

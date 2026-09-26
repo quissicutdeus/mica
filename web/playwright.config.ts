@@ -32,7 +32,10 @@ const THEME_SPECS = [
   // (No apostrophes in this comment, deliberately. `lib/e2eThemeCoverage.test.ts` reads
   // this array out of the file with a naive single-quote scan, so one would look like the
   // start of a glob and swallow the entry below it.)
-  '**/music-artwork.spec.ts'
+  '**/music-artwork.spec.ts',
+  // The greyed Store row (MICA-169): its reason text and disabled button are scanned by axe in
+  // both schemes, since a disabled control is the classic place a contrast rule gets skipped.
+  '**/store-unavailable.spec.ts'
 ];
 
 export default defineConfig({

@@ -112,3 +112,8 @@ import './facets/themeWrite';
 import './facets/timer';
 import './facets/wallpaper';
 import './facets/wallpaperWrite';
+
+// Not a facet: it mirrors the shell's capability answer into the seam `@mica/sdk/core`'s
+// `useCapabilities` reads (MICA-169). Here because this is the file both shell entry points
+// load; see `capabilitiesSync.ts`.
+import './capabilitiesSync';

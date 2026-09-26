@@ -12,7 +12,9 @@
 import '../../host/registerFacets';
 import { describe, it, expect } from 'vitest';
 import { ALL_PERMISSIONS, type AppPermission } from '../../../../sdk/manifest';
-import { addedPermissions, formatPermission } from './appInfo';
+import { addedPermissions, formatPermission, toAppManifest, unavailableReason } from './appInfo';
+import type { CatalogEntry } from '@mica/sdk';
+import type { AppCapability } from '../../../../sdk/manifest';
 
 import en from './locales/en.json';
 import de from './locales/de.json';
@@ -86,5 +88,49 @@ describe('addedPermissions', () => {
 
   it('adds nothing for an entry that asks for nothing', () => {
     expect(addedPermissions(installed(['contacts']), { permissions: [] })).toEqual([]);
+  });
+});
+
+describe('unavailableReason (MICA-169)', () => {
+  const translate = (key: string) => (key === 'store.needs.money' ? 'Needs money' : key);
+  const lacking = (have: AppCapability[]) => (r: readonly AppCapability[]) =>
+    r.filter((c) => !have.includes(c));
+
+  it('is null when nothing is required or everything is present', () => {
+    expect(unavailableReason(undefined, lacking([]), translate)).toBeNull();
+    expect(unavailableReason([], lacking([]), translate)).toBeNull();
+    expect(unavailableReason(['money'], lacking(['money']), translate)).toBeNull();
+  });
+
+  it('names what is missing, in the translator it is given', () => {
+    expect(unavailableReason(['money'], lacking([]), translate)).toBe('Needs money');
+  });
+
+  it('puts each missing capability on its own line', () => {
+    expect(unavailableReason(['money', 'jobs'], lacking([]), (k) => k)).toBe(
+      'store.needs.money\nstore.needs.jobs'
+    );
+  });
+
+  it.each(Object.entries({ en, de }))('has a %s line for every capability', (_l, cat) => {
+    const c = cat as Record<string, string>;
+    expect(c['needs.money']).toBeTruthy();
+    expect(c['needs.jobs']).toBeTruthy();
+  });
+});
+
+describe('toAppManifest', () => {
+  it('carries requires, so the row and the installed manifest agree', () => {
+    const entry = {
+      id: 'x',
+      name: 'X',
+      version: '1.0.0',
+      description: 'd',
+      color: 'bg-indigo-600',
+      bundleUrl: 'https://example.com/x.js',
+      sha256: 'a'.repeat(64),
+      requires: ['money']
+    } as CatalogEntry;
+    expect(toAppManifest(entry).requires).toEqual(['money']);
   });
 });

@@ -90,5 +90,7 @@
   "permission.theme": "Theme (Read)",
   "permission.theme-write": "Change the Phone's Theme",
   "permission.wallpaper": "Wallpaper (Read)",
-  "permission.wallpaper-write": "Change the Wallpaper"
+  "permission.wallpaper-write": "Change the Wallpaper",
+  "needs.money": "Needs a server with money",
+  "needs.jobs": "Needs a server with jobs"
 }
