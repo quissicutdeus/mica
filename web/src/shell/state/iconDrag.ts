@@ -6,6 +6,7 @@ import { get, writable } from 'svelte/store';
 import type { AppManifest } from '@mica/sdk';
 import { dockAppIds, setDockSlot } from './dock';
 import {
+  homeGridItems,
   moveGridItem,
   placeAppOnGrid,
   removeAppFromFolderOnly,
@@ -102,6 +103,17 @@ export function resolveIconDrop(
     else clearDockSlotIfStillThere(origin.index, appId);
     endIconDrag();
     return 'removed';
+  }
+
+  // A widget is not an app: it has no dock slot to fill, so a drop there is refused rather
+  // than writing a widget id into the dock. Move-on-grid and remove need no special case.
+  if (
+    target.kind === 'dock' &&
+    origin.kind === 'grid' &&
+    get(homeGridItems).some((i) => i.kind === 'widget' && i.position === origin.position)
+  ) {
+    cancelIconDrag();
+    return 'rejected';
   }
 
   // Leaving a folder is committed the moment the app lands anywhere else — the folder

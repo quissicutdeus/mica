@@ -41,7 +41,12 @@ export type ToShell =
       metaKey: boolean;
       typing: boolean;
     }
-  | { kind: 'typing'; typing: boolean };
+  | { kind: 'typing'; typing: boolean }
+  /**
+   * MICA-245: a widget frame's root has mounted. The shell's crash-loop breaker clears its
+   * "booting" marker on this, so a widget that hangs while mounting stays marked.
+   */
+  | { kind: 'ready' };
 
 export interface HydratePayload {
   appId: string;
@@ -56,6 +61,13 @@ export interface HydratePayload {
    */
   storage: Record<string, string>;
   constants: AddOnConstants;
+  /**
+   * MICA-245: which root this frame mounts. Absent is `'app'`, which is all a shell older
+   * than widgets ever sent. A `'widget'` frame mounts the root the bundle handed `bootAddOn`
+   * as `widget`, with `props` carrying its `size` — and nothing else about it differs: the
+   * permissions above are the same intersection the app frame gets.
+   */
+  mode?: 'app' | 'widget';
 }
 
 export interface AddOnConstants {

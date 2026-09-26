@@ -24,5 +24,13 @@
   "muted": "Muted",
   "volume": "Volume",
   "volumeLabel": "Music volume",
-  "nearbyWarning": "People nearby can hear this while it plays."
+  "nearbyWarning": "People nearby can hear this while it plays.",
+  "widgetLabel": "Now playing",
+  "widgetOpen": "Open Music: {title}",
+  "widgetPlay": "Play",
+  "widgetPause": "Pause",
+  "widgetNext": "Next track",
+  "widgetEmptyTitle": "Nothing playing",
+  "widgetEmptyHint": "Tap to open Music",
+  "widgetOpenEmpty": "Open Music"
 }

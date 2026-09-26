@@ -28,6 +28,7 @@ import {
   isGridCellOccupied,
   compactGridToCurrentCapacity,
   itemsBeyondCapacity,
+  placeWidgetOnGrid,
   type HomeGridFolder
 } from './homeGrid';
 import { homeGridColumns, homeGridRows } from './homeGridSettings';
@@ -305,6 +306,120 @@ describe('Home grid state', () => {
         { position: 2, kind: 'app', appId: 'notes' }
       ]);
       expect(result).toEqual([{ position: 2, kind: 'app', appId: 'notes' }]);
+    });
+  });
+});
+
+describe('widgets (MICA-245)', () => {
+  const widget = (position: number, size: '2x1' | '2x2' = '2x1', widgetId = 'shell.clock') =>
+    ({ position, kind: 'widget', widgetId, size }) as const;
+
+  beforeEach(() => {
+    homeGridItems.set([]);
+    homeGridColumns.set(4);
+    homeGridRows.set(5);
+  });
+
+  it('a widget occupies every cell of its footprint', () => {
+    homeGridItems.set([widget(1, '2x2')]);
+    const items = get(homeGridItems);
+    for (const cell of [1, 2, 5, 6]) expect(isGridCellOccupied(cell, items)).toBe(true);
+    for (const cell of [0, 3, 4, 7]) expect(isGridCellOccupied(cell, items)).toBe(false);
+  });
+
+  it('places a widget at the first free rectangle and never straddles a row end', () => {
+    for (const p of [0, 1]) placeAppOnGrid(`app${p}`, p);
+    expect(placeWidgetOnGrid('shell.clock', '2x1')).toBe('placed');
+    expect(get(homeGridItems).find((i) => i.kind === 'widget')?.position).toBe(2);
+    homeGridItems.set(
+      [0, 1, 2].map((p) => ({ position: p, kind: 'app', appId: `a${p}` }) as const)
+    );
+    expect(placeWidgetOnGrid('shell.status', '2x2')).toBe('placed');
+    // Position 3 is free but would straddle the row end, so the first fit is 4.
+    expect(get(homeGridItems).find((i) => i.kind === 'widget')?.position).toBe(4);
+  });
+
+  it('refuses a second instance of the same widget', () => {
+    expect(placeWidgetOnGrid('shell.clock', '2x1')).toBe('placed');
+    expect(placeWidgetOnGrid('shell.clock', '2x2')).toBe('rejected');
+  });
+
+  it('an icon dropped on a widget is refused', () => {
+    homeGridItems.set([widget(0, '2x2')]);
+    expect(placeAppOnGrid('notes', 5)).toBe('rejected');
+    expect(get(homeGridItems)).toHaveLength(1);
+  });
+
+  it('moves a widget, nudging it in from the right edge, and refuses a collision', () => {
+    homeGridItems.set([widget(0), { position: 9, kind: 'app', appId: 'notes' }]);
+    expect(moveGridItem(0, 7)).toBe('placed'); // col 3 nudged to col 2
+    expect(get(homeGridItems).find((i) => i.kind === 'widget')?.position).toBe(6);
+    expect(moveGridItem(6, 9)).toBe('rejected'); // 9 is an icon
+  });
+
+  it('removes a widget by its anchor', () => {
+    homeGridItems.set([widget(2, '2x2')]);
+    removeFromGrid(2);
+    expect(get(homeGridItems)).toEqual([]);
+  });
+
+  it('shrinking 5 -> 4 -> 3 columns keeps the widget, and moves the icon under it', () => {
+    homeGridColumns.set(5);
+    homeGridRows.set(6);
+    homeGridItems.set([widget(3, '2x2'), { position: 0, kind: 'app', appId: 'notes' }]);
+    for (const columns of [4, 3]) {
+      expect(itemsBeyondCapacity(columns * 6, columns)).toBe(0);
+      homeGridColumns.set(columns);
+      expect(compactGridToCurrentCapacity()).toBe(0);
+      const w = get(homeGridItems).find((i) => i.kind === 'widget')!;
+      expect(w.position % columns).toBeLessThanOrEqual(columns - 2);
+      expect(get(homeGridItems)).toHaveLength(2);
+    }
+  });
+
+  it('an icon that a reflowed widget lands on moves to the next free cell', () => {
+    homeGridItems.set([widget(3), { position: 1, kind: 'app', appId: 'notes' }]);
+    homeGridColumns.set(3); // widget at 3 is now col 0, row 1 -> fine; force a collision instead
+    homeGridItems.set([widget(2), { position: 3, kind: 'app', appId: 'notes' }]);
+    expect(compactGridToCurrentCapacity()).toBe(0);
+    const items = get(homeGridItems);
+    const w = items.find((i) => i.kind === 'widget')!;
+    const icon = items.find((i) => i.kind === 'app')!;
+    expect(w.position % 3).toBeLessThanOrEqual(1);
+    expect(isGridCellOccupied(icon.position, [w])).toBe(false);
+  });
+
+  it('refuses a shrink that cannot hold the widgets, and changes nothing', () => {
+    homeGridColumns.set(3);
+    homeGridRows.set(4);
+    homeGridItems.set([widget(0, '2x2', 'a'), widget(6, '2x2', 'b'), widget(2, '2x2', 'c')]);
+    // 12 cells of widget in a 12-cell grid, and the third still cannot be packed.
+    expect(itemsBeyondCapacity(12, 3)).toBe(1);
+    const before = get(homeGridItems);
+    expect(compactGridToCurrentCapacity()).toBe(1);
+    expect(get(homeGridItems)).toEqual(before);
+  });
+
+  describe('persistence shape', () => {
+    it('accepts a widget and drops a malformed one', () => {
+      expect(sanitizeHomeGridItems([widget(0)])).toHaveLength(1);
+      expect(
+        sanitizeHomeGridItems([{ position: 0, kind: 'widget', widgetId: 'x', size: '3x3' }])
+      ).toEqual([]);
+      expect(sanitizeHomeGridItems([{ position: 0, kind: 'widget', size: '2x1' }])).toEqual([]);
+    });
+
+    it('legacy layouts with only apps and folders load unchanged', () => {
+      const legacy = [
+        { position: 0, kind: 'app', appId: 'notes' },
+        { position: 4, kind: 'folder', folderId: 'f', name: 'F', appIds: ['mail'] }
+      ];
+      expect(sanitizeHomeGridItems(legacy)).toEqual(legacy);
+    });
+
+    it('keeps an unknown widgetId — it is the registry that hides it, not the data', () => {
+      const kept = sanitizeHomeGridItems([widget(0, '2x1', 'uninstalled-app')]);
+      expect(kept).toEqual([widget(0, '2x1', 'uninstalled-app')]);
     });
   });
 });

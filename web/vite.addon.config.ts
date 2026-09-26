@@ -38,12 +38,20 @@ function addOnEntries(): Plugin {
     load(id) {
       if (!id.startsWith(VIRTUAL)) return null;
       const app = id.slice(VIRTUAL.length);
+      // MICA-245: a `widget.svelte` beside `index.svelte` is the add-on's home-screen widget,
+      // handed to `bootAddOn` as a second root. The manifest's `widget.sizes` is still what
+      // tells the shell to boot it; this only puts the component in the bundle.
+      const widget = path.join(appsDir, app, 'widget.svelte');
+      const hasWidget = fs.existsSync(widget);
       return [
         `import '${path.resolve(here, '../sdk/app.css')}';`,
         `import manifest from '${path.join(appsDir, app, 'manifest.ts')}';`,
         `import App from '${path.join(appsDir, app, 'index.svelte')}';`,
+        ...(hasWidget ? [`import Widget from '${widget}';`] : []),
         `import { bootAddOn } from '@mica/sdk';`,
-        `void bootAddOn(manifest, App);`
+        hasWidget
+          ? `void bootAddOn(manifest, App, { widget: Widget });`
+          : `void bootAddOn(manifest, App);`
       ].join('\n');
     }
   };

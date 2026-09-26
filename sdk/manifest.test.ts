@@ -433,6 +433,64 @@ describe('defineApp: devices (MICA-260)', () => {
   });
 });
 
+describe('defineApp: widget (MICA-245)', () => {
+  const addOn = { color: 'bg-green-600', icon: null, core: false } as const;
+  const core = { ...addOn, core: true } as const;
+  const load = () => Promise.resolve({ default: (() => {}) as never });
+
+  it('keeps a declared widget, and leaves an app that predates the field alone', () => {
+    expect(defineApp({ id: 'wide', ...addOn, widget: { sizes: ['2x1', '2x2'] } }).widget).toEqual({
+      sizes: ['2x1', '2x2']
+    });
+    const legacy = defineApp({ id: 'plain', ...addOn });
+    expect('widget' in legacy).toBe(false);
+  });
+
+  it('lets a core app load its widget in-process', () => {
+    const m = defineApp({ id: 'clocky', ...core, widget: { sizes: ['2x2'], load } });
+    expect(m.widget?.load).toBe(load);
+  });
+
+  it("refuses 'load' on an add-on, whose code the shell never imports", () => {
+    expect(() => defineApp({ id: 'sneaky', ...addOn, widget: { sizes: ['2x1'], load } })).toThrow(
+      /add-on 'sneaky' declares 'widget.load'.*pass the widget root to bootAddOn/
+    );
+  });
+
+  it('refuses an empty size list', () => {
+    expect(() => defineApp({ id: 'nowhere', ...addOn, widget: { sizes: [] } })).toThrow(
+      /'widget.sizes: \[\]', which no home screen can place/
+    );
+  });
+
+  it('refuses an unknown size, naming the ones that exist', () => {
+    expect(() => defineApp({ id: 'huge', ...addOn, widget: { sizes: ['4x4'] as never } })).toThrow(
+      /unknown widget size '4x4'.*Known sizes: 2x1, 2x2/
+    );
+  });
+
+  it('refuses a repeated size', () => {
+    expect(() => defineApp({ id: 'twice', ...addOn, widget: { sizes: ['2x1', '2x1'] } })).toThrow(
+      /repeats a size in 'widget.sizes'/
+    );
+  });
+
+  it('refuses a widget with no sizes array', () => {
+    expect(() => defineApp({ id: 'shapeless', ...addOn, widget: {} as never })).toThrow(
+      /'widget' without a 'sizes' array/
+    );
+    expect(() =>
+      defineApp({ id: 'stringly', ...addOn, widget: { sizes: '2x1' } as never })
+    ).toThrow(/'widget' without a 'sizes' array/);
+  });
+
+  it("refuses a core app's 'load' that is not a function", () => {
+    expect(() =>
+      defineApp({ id: 'notfn', ...core, widget: { sizes: ['2x1'], load: 'x' as never } })
+    ).toThrow(/'widget.load' that is not a function/);
+  });
+});
+
 describe('defineApp: requires', () => {
   it('keeps a declared capability on the way out', () => {
     const manifest = defineApp({

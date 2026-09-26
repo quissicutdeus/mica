@@ -43,6 +43,7 @@ const here = import.meta.dirname;
  */
 const MANIFEST = path.join(here, 'src/manifest.ts');
 const COMPONENT = path.join(here, 'src/index.svelte');
+const WIDGET = path.join(here, 'src/widget.svelte');
 
 /**
  * Comments out, before anything below reads a property out of the manifest.
@@ -137,12 +138,19 @@ function addonEntry(): Plugin {
     },
     load(source) {
       if (source !== VIRTUAL) return null;
+      // A `src/widget.svelte` is the add-on's home-screen widget, handed to `bootAddOn` as
+      // a second root. Declare `widget: { sizes: ['2x1'] }` in the manifest as well: that is
+      // what tells the phone to boot it.
+      const hasWidget = fs.existsSync(WIDGET);
       return [
         `import '@mica/sdk/app.css';`,
         `import manifest from ${JSON.stringify(MANIFEST)};`,
         `import App from ${JSON.stringify(COMPONENT)};`,
+        ...(hasWidget ? [`import Widget from ${JSON.stringify(WIDGET)};`] : []),
         `import { bootAddOn } from '@mica/sdk';`,
-        `void bootAddOn(manifest, App);`
+        hasWidget
+          ? `void bootAddOn(manifest, App, { widget: Widget });`
+          : `void bootAddOn(manifest, App);`
       ].join('\n');
     }
   };

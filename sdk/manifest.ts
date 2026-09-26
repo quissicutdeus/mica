@@ -184,6 +184,17 @@ export interface AppProps {
 export type AppComponent = Component<AppProps>;
 
 /**
+ * The footprints a home-screen widget may take, in launcher cells, width by height
+ * (MICA-245). Two cells wide always: a widget is a strip or a square beside the icons, not
+ * something a single tile's slot can hold.
+ *
+ * The list itself is not exported — only the type is. `defineApp` is what checks a
+ * manifest against it, and a published array is a second promise nobody asked for.
+ */
+const WIDGET_SIZES = ['2x1', '2x2'] as const;
+export type WidgetSize = (typeof WIDGET_SIZES)[number];
+
+/**
  * A manifest as an author writes it, before `defineApp` fills in the defaults.
  *
  * Separate from `AppManifest` for one reason: `name` is optional here and guaranteed on the
@@ -471,6 +482,20 @@ export interface AppManifest {
    * refused early and legibly rather than late and confusingly.
    */
   sdkContract?: string;
+  /**
+   * MICA-245: what this app offers the home screen besides its icon. Absent means nothing.
+   *
+   * `sizes` is the whole declaration for a `core: false` add-on: its bundle hands a widget
+   * root to `bootAddOn` beside the app root, and the shell boots it in a sandboxed frame of
+   * its own under exactly the permissions, grant and facet table the app runs with. `load`
+   * is for a `core: true` app only — the widget component, lazily, as the registry loads the
+   * app's own entry — and `defineApp` refuses it on an add-on, whose code the shell never
+   * imports. `sizes` is non-empty, repeats nothing, and names only `'2x1'` and `'2x2'`.
+   */
+  widget?: {
+    sizes: readonly WidgetSize[];
+    load?: () => Promise<{ default: Component<{ size: WidgetSize }> }>;
+  };
   /** ISO date string when app was installed */
   installedAt?: string;
   /** ISO date string when app was last updated */
@@ -591,6 +616,61 @@ function resolveTile(id: string, input: { tile?: AppTile; color?: string }): App
     );
   }
   return split;
+}
+
+/**
+ * MICA-245. Refused at definition time for the reason `devices` is: a widget declared at a
+ * size the home grid has no slot for, or `sizes: []`, would simply never appear, with
+ * nothing said anywhere.
+ *
+ * `load` on an add-on is refused rather than ignored. The shell never imports a `core:
+ * false` bundle's code — it runs in a sandboxed frame — so a loader there is a component
+ * the author expects to see and the phone will never call.
+ */
+function validateWidget(id: string, core: boolean, widget: AppManifest['widget']): void {
+  if (widget === undefined) return;
+  if (!widget || typeof widget !== 'object' || !Array.isArray(widget.sizes)) {
+    throw new Error(
+      `micaOS App Manifest error: '${id}' has a 'widget' without a 'sizes' array. It lists ` +
+        `the footprints the widget can take — widget: { sizes: ['2x1'] }.`
+    );
+  }
+  const sizes = widget.sizes as readonly unknown[];
+  if (sizes.length === 0) {
+    throw new Error(
+      `micaOS App Manifest error: '${id}' declares 'widget.sizes: []', which no home ` +
+        `screen can place. Omit 'widget' for an app without one.`
+    );
+  }
+  for (const size of sizes) {
+    if (!(WIDGET_SIZES as readonly unknown[]).includes(size)) {
+      throw new Error(
+        `micaOS App Manifest error: '${id}' declares an unknown widget size ` +
+          `'${String(size)}'. Known sizes: ${WIDGET_SIZES.join(', ')}.`
+      );
+    }
+  }
+  if (new Set(sizes).size !== sizes.length) {
+    throw new Error(
+      `micaOS App Manifest error: '${id}' repeats a size in 'widget.sizes'. Each footprint ` +
+        `is listed once.`
+    );
+  }
+  if (widget.load !== undefined) {
+    if (!core) {
+      throw new Error(
+        `micaOS App Manifest error: add-on '${id}' declares 'widget.load'. A 'core: false' ` +
+          `add-on runs in a sandboxed frame and the shell never imports its code; pass the ` +
+          `widget root to bootAddOn instead and declare only 'widget.sizes'.`
+      );
+    }
+    if (typeof widget.load !== 'function') {
+      throw new Error(
+        `micaOS App Manifest error: '${id}' has a 'widget.load' that is not a function. It ` +
+          `lazily imports the widget component — load: () => import('./widget.svelte').`
+      );
+    }
+  }
 }
 
 export function defineApp(manifest: AppManifestInput): AppManifest {
@@ -781,6 +861,8 @@ export function defineApp(manifest: AppManifestInput): AppManifest {
       }
     }
   }
+
+  validateWidget(id, core, manifest.widget);
 
   const author = manifest.author || 'micaOS';
 

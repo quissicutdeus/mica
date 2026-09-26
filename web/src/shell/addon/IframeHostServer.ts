@@ -66,6 +66,14 @@ export interface IframeHostServerOptions {
   onEscape?(message: string): void;
   onKey(key: Extract<ToShell, { kind: 'key' }>): void;
   onTyping(typing: boolean): void;
+  /**
+   * MICA-245: which root the frame mounts. Absent is the app. It changes the one word in
+   * the hydrate payload and nothing else — the host, the grant, the facet table and every
+   * limit below are the app frame's, because a widget is the same add-on on another surface.
+   */
+  mode?: 'app' | 'widget';
+  /** MICA-245: the frame says its widget root mounted. Only a widget frame sends it. */
+  onReady?(): void;
 }
 
 const isStore = (v: unknown): v is { subscribe: (cb: (x: unknown) => void) => () => void } =>
@@ -557,7 +565,10 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
       props: opts.props,
       theme: get(themeStyleStore),
       storage: storageSnapshot(host.appId),
-      constants: constantsFor()
+      constants: constantsFor(),
+      // Spread only when it says something, so an app frame's payload is byte-for-byte what
+      // it was before widgets existed.
+      ...(opts.mode === 'widget' ? { mode: 'widget' as const } : {})
     };
     post({ kind: 'hydrate', payload });
     // Started only once a hello is answered: an app that never announces itself never
@@ -706,6 +717,9 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
           break;
         case 'typing':
           opts.onTyping(msg.typing);
+          break;
+        case 'ready':
+          opts.onReady?.();
           break;
       }
     },

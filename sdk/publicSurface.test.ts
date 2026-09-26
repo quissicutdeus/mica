@@ -1319,7 +1319,8 @@ const BASELINE_TYPE_EXPORTS: Record<string, string[]> = {
     'UIConversation',
     'UIMessage',
     'WallpaperPreset',
-    'WallpaperState'
+    'WallpaperState',
+    'WidgetSize'
   ],
   '@mica/sdk (add-on bundle)': [
     'AccountSearchQuery',
@@ -1398,7 +1399,8 @@ const BASELINE_TYPE_EXPORTS: Record<string, string[]> = {
     'UIConversation',
     'UIMessage',
     'WallpaperPreset',
-    'WallpaperState'
+    'WallpaperState',
+    'WidgetSize'
   ],
   '@mica/sdk/app': [],
   '@mica/sdk/core': []
@@ -1944,7 +1946,8 @@ const BASELINE_TYPE_SHAPES: Record<string, string[]> = {
     'services?',
     'tile',
     'updatedAt?',
-    'version?'
+    'version?',
+    'widget?'
   ],
   AppManifestInput: [
     'author?',
@@ -1971,7 +1974,8 @@ const BASELINE_TYPE_SHAPES: Record<string, string[]> = {
     'services?',
     'tile?',
     'updatedAt?',
-    'version?'
+    'version?',
+    'widget?'
   ],
   AppPermission: [
     '|account',
@@ -2282,7 +2286,8 @@ const BASELINE_TYPE_SHAPES: Record<string, string[]> = {
     'updated_at'
   ],
   WallpaperPreset: ['id', 'label', 'seed'],
-  WallpaperState: ['type']
+  WallpaperState: ['type'],
+  WidgetSize: ['|2x1', '|2x2']
 };
 
 // ---------------------------------------------------------------------------

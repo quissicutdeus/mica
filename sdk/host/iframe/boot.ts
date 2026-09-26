@@ -26,8 +26,14 @@ import { hydrateStorage } from './storageCache';
 import { setConstants } from './constants';
 import { lifecycle } from './facets/lifecycle';
 import { locale } from './facets/locale';
-import { liveAddOnProps, setLiveAddOnProps } from './liveProps.svelte';
-import type { AppComponent, AppManifest } from '../../manifest';
+import {
+  liveAddOnProps,
+  liveWidgetProps,
+  setLiveAddOnProps,
+  setLiveWidgetProps
+} from './liveProps.svelte';
+import type { Component } from 'svelte';
+import type { AppComponent, AppManifest, WidgetSize } from '../../manifest';
 
 // MICA-16 step 4: the add-on's entry point, called by the bundle every add-on ships
 // instead of the shell mounting it in-process. Wires the transport, waits for hydrate,
@@ -37,29 +43,17 @@ const TYPING_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT']);
 const isTyping = (t: EventTarget | null) =>
   t instanceof HTMLElement && (TYPING_TAGS.has(t.tagName) || t.isContentEditable);
 
-function applyTheme(css: string) {
-  // The same `--color-*:` block PhoneFrame puts on the screen element, on this document's root.
-  document.documentElement.setAttribute('style', css);
-}
-
-export async function bootAddOn(manifest: AppManifest, App: AppComponent): Promise<void> {
-  const transport = clientTransport();
-
-  window.addEventListener('error', (e) =>
-    transport.send({
-      kind: 'error',
-      message: e.message,
-      stack: e.error instanceof Error ? (e.error.stack ?? null) : null
-    })
-  );
-  window.addEventListener('unhandledrejection', (e) =>
-    transport.send({
-      kind: 'error',
-      message: e.reason instanceof Error ? e.reason.message : String(e.reason),
-      stack: e.reason instanceof Error ? (e.reason.stack ?? null) : null
-    })
-  );
+/**
+ * Keys and focus, forwarded to the shell. Attached before `hello`, so a phone-level key
+ * pressed while the app frame is still hydrating is not swallowed; the returned function
+ * stops it, which a widget frame does the moment hydrate says that is what it is. A widget
+ * sits on the home screen behind nothing — it is never what the player is typing into — so
+ * it has no business replaying keybinds or toggling the game's input capture (MICA-245).
+ */
+function forwardInput(transport: ReturnType<typeof clientTransport>): () => void {
+  let on = true;
   window.addEventListener('keydown', (e) => {
+    if (!on) return;
     // A held key repeat-fires `keydown` with no `repeat` flag on the wire message —
     // `routeKey` on the shell side drops `event.repeat` for the real listener, but a
     // synthetic `KeyboardEvent` it rebuilds from this message is never "held" in that
@@ -79,11 +73,57 @@ export async function bootAddOn(manifest: AppManifest, App: AppComponent): Promi
     });
   });
   window.addEventListener('focusin', (e) => {
-    if (isTyping(e.target)) transport.send({ kind: 'typing', typing: true });
+    if (on && isTyping(e.target)) transport.send({ kind: 'typing', typing: true });
   });
   window.addEventListener('focusout', (e) => {
-    if (isTyping(e.target)) transport.send({ kind: 'typing', typing: false });
+    if (on && isTyping(e.target)) transport.send({ kind: 'typing', typing: false });
   });
+  return () => {
+    on = false;
+  };
+}
+
+function applyTheme(css: string) {
+  // The same `--color-*:` block PhoneFrame puts on the screen element, on this document's root.
+  document.documentElement.setAttribute('style', css);
+}
+
+/**
+ * The optional roots a bundle ships beside its app (MICA-245). An object rather than more
+ * positional arguments so the next one — a tablet root, MICA-265 — is another key and not a
+ * fourth parameter every caller has to count to.
+ */
+interface BootRoots {
+  /**
+   * The home-screen widget, mounted instead of `App` when the shell boots this bundle in a
+   * widget frame. Declare `widget: { sizes }` on the manifest too: nothing else tells the
+   * shell there is one to boot.
+   */
+  widget?: Component<{ size: WidgetSize }>;
+}
+
+export async function bootAddOn(
+  manifest: AppManifest,
+  App: AppComponent,
+  roots: BootRoots = {}
+): Promise<void> {
+  const transport = clientTransport();
+
+  window.addEventListener('error', (e) =>
+    transport.send({
+      kind: 'error',
+      message: e.message,
+      stack: e.error instanceof Error ? (e.error.stack ?? null) : null
+    })
+  );
+  window.addEventListener('unhandledrejection', (e) =>
+    transport.send({
+      kind: 'error',
+      message: e.reason instanceof Error ? e.reason.message : String(e.reason),
+      stack: e.reason instanceof Error ? (e.reason.stack ?? null) : null
+    })
+  );
+  const stopForwarding = forwardInput(transport);
 
   transport.send({ kind: 'hello', appId: manifest.id });
   const payload = await transport.hydrated();
@@ -106,6 +146,28 @@ export async function bootAddOn(manifest: AppManifest, App: AppComponent): Promi
   // English whatever the player chose.
   locale();
 
+  const target = document.getElementById('app') ?? document.body;
+  const context = new Map([[HOST_CONTEXT_KEY, host]]);
+
+  if (payload.mode === 'widget') {
+    stopForwarding();
+    // Reported rather than falling back to the app root: an app squeezed into a 2x1 cell
+    // is not a widget, and the shell shows nothing for a frame that errors.
+    if (!roots.widget) {
+      transport.send({
+        kind: 'error',
+        message: `add-on '${payload.appId}' was booted as a widget but passed no widget root`,
+        stack: null
+      });
+      return;
+    }
+    setLiveWidgetProps(payload.props);
+    transport.onProps(setLiveWidgetProps);
+    mount(roots.widget, { target, props: liveWidgetProps, context });
+    transport.send({ kind: 'ready' });
+    return;
+  }
+
   // `onback` lives outside `setLiveAddOnProps`'s tracked keys deliberately (see
   // `liveProps.svelte.ts`) — it is host-owned and must survive every deep-link props push,
   // not just the first.
@@ -117,10 +179,5 @@ export async function bootAddOn(manifest: AppManifest, App: AppComponent): Promi
   // way for a second deep link to reach an app that was already open.
   transport.onProps(setLiveAddOnProps);
 
-  const target = document.getElementById('app') ?? document.body;
-  mount(App, {
-    target,
-    props: liveAddOnProps,
-    context: new Map([[HOST_CONTEXT_KEY, host]])
-  });
+  mount(App, { target, props: liveAddOnProps, context });
 }

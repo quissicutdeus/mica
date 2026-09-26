@@ -1438,3 +1438,94 @@ describe('IframeHostServer', () => {
     });
   });
 });
+
+/**
+ * MICA-245: a widget frame is the same add-on on another surface, so the server that
+ * answers it must be the app frame's in everything but the one word that picks the root.
+ * Each case below runs the same script against both and compares what comes back.
+ */
+describe('IframeHostServer in widget mode', () => {
+  function pair(permissions: AppPermission[], granted: AppPermission[]) {
+    recordConsent('probe', granted);
+    const build = (mode: 'app' | 'widget' | undefined) => {
+      const posted: ToFrame[] = [];
+      const guest = { postMessage: (m: ToFrame) => posted.push(m) };
+      const s = createIframeHostServer({
+        host: createInProcessHost('probe', permissions),
+        manifest,
+        props: mode === 'widget' ? { size: '2x1' } : {},
+        mode,
+        guest: () => guest,
+        onError: vi.fn(),
+        onKey: vi.fn(),
+        onTyping: vi.fn()
+      });
+      const from = (data: unknown) =>
+        s.handle({ data, source: guest, origin: 'null' } as unknown as MessageEvent);
+      return { posted, from };
+    };
+    return { app: build(undefined), widget: build('widget') };
+  }
+
+  const payloadOf = (posted: ToFrame[]) =>
+    (posted.find((m) => m.kind === 'hydrate') as Extract<ToFrame, { kind: 'hydrate' }>).payload;
+
+  it('hydrates with the mode and size, and otherwise exactly the app frame’s payload', () => {
+    const { app, widget } = pair(['contacts', 'storage'], ['storage']);
+    app.from({ kind: 'hello', appId: 'probe' });
+    widget.from({ kind: 'hello', appId: 'probe' });
+
+    const a = payloadOf(app.posted);
+    const w = payloadOf(widget.posted);
+    expect('mode' in a).toBe(false);
+    expect(w.mode).toBe('widget');
+    expect(w.props).toEqual({ size: '2x1' });
+    expect(w.permissions).toEqual(['storage']);
+    const { mode: _m, props: _wp, ...wRest } = w;
+    const { props: _ap, ...aRest } = a;
+    expect(wRest).toEqual(aRest);
+  });
+
+  it('refuses an undeclared and an ungranted permission exactly as the app frame does', async () => {
+    const undeclared = pair([], []);
+    const ungranted = pair(['contacts'], []);
+    const call = {
+      kind: 'call',
+      id: 1,
+      facet: 'contacts',
+      factoryArgs: [],
+      member: 'addContact',
+      args: ['ab']
+    };
+    for (const { app, widget } of [undeclared, ungranted]) {
+      app.from(call);
+      widget.from(call);
+      await vi.waitFor(() => expect(widget.posted).toHaveLength(1));
+      await vi.waitFor(() => expect(app.posted).toHaveLength(1));
+      expect(widget.posted[0]).toMatchObject({
+        kind: 'reply',
+        ok: false,
+        error: { name: 'AppPermissionError', permission: 'contacts' }
+      });
+      expect(widget.posted).toEqual(app.posted);
+    }
+  });
+
+  it('answers a granted call exactly as the app frame does', async () => {
+    const { app, widget } = pair(['contacts'], ['contacts']);
+    const call = {
+      kind: 'call',
+      id: 1,
+      facet: 'contacts',
+      factoryArgs: [],
+      member: 'addContact',
+      args: ['ab']
+    };
+    app.from(call);
+    widget.from(call);
+    await vi.waitFor(() => expect(widget.posted).toHaveLength(1));
+    await vi.waitFor(() => expect(app.posted).toHaveLength(1));
+    expect(widget.posted[0]).toMatchObject({ kind: 'reply', ok: true, value: { id: 2 } });
+    expect(widget.posted).toEqual(app.posted);
+  });
+});

@@ -492,6 +492,15 @@ with `internal_error` and the rest of Messages is unaffected.
 
 ### Added
 
+**Home-screen widgets (MICA-245).** Long-press an empty spot on the home screen
+to enter edit mode, then Add widget: a clock and date, battery and signal, or
+what Music is playing, each in a wide (2x1) or large (2x2) size. Widgets move,
+persist and are removed like icons, and shrinking the grid to fewer columns
+reflows them rather than dropping them. Store add-ons can ship a widget of their
+own; it runs in the add-on's sandbox with the add-on's permissions, and one that
+hangs the home screen is paused on the next start ("Widget paused") until the
+player removes and re-adds it. No owner action.
+
 **A registered line can hang up, and `blockable = false` works (MICA-278).** The
 new `EndLineCall(callId)` export ends a call your line answered, with the
 `callId` `onCall` received, and refuses one on another resource's line. A player
@@ -1046,6 +1055,15 @@ Everything above is written for a server owner. This part is not. It is for
 somebody maintaining a `core: false` add-on outside this repo, and it answers
 one question: does that bundle still compile against this release, and does its
 manifest still ask for the right things.
+
+**An add-on can ship a home-screen widget (MICA-245).** Declare
+`widget: { sizes: ['2x1'] }` (or `'2x2'`, or both) in the manifest and add
+`src/widget.svelte`, which receives `{ size }`; the template passes it to
+`bootAddOn` as `{ widget }`. It runs in its own sandboxed frame with your app's
+permissions and gets no keyboard or pointer input: a tap on it opens your app.
+`widget.load` is for core apps only and is refused on `core: false`. A widget
+that never finishes mounting is paused on the next start. Purely additive: a
+bundle built before this is unchanged.
 
 **Your frame follows the player's language, and owners can translate it
 (MICA-235).** Before this, an add-on's frame changed language only if the add-on

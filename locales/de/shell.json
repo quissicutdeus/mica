@@ -70,5 +70,22 @@
   "noArchiveHint": "Gelöschte Mitteilungen erscheinen hier",
   "noNewNotifications": "Keine neuen Mitteilungen",
   "notificationCountOne": "{count} Mitteilung",
-  "notificationCountOther": "{count} Mitteilungen"
+  "notificationCountOther": "{count} Mitteilungen",
+  "widget.status": "Akku und Signal",
+  "widget.battery": "Akku {percent} %",
+  "widget.signal": "Signal {bars} von 4 Balken",
+  "widget.noSignal": "Kein Signal",
+  "widget.airplane": "Flugmodus",
+  "widgetClock": "Uhr",
+  "widgetStatus": "Status",
+  "addWidget": "Widget hinzufügen",
+  "editDone": "Fertig",
+  "removeWidget": "Widget {name} entfernen",
+  "noWidgets": "Keine Widgets verfügbar",
+  "widgetSizeWide": "Breit",
+  "widgetSizeLarge": "Groß",
+  "noRoomForWidget": "Kein Platz für dieses Widget",
+  "openWidget": "{name} öffnen",
+  "widgetPaused": "Widget pausiert",
+  "widgetUnavailable": "Widget nicht verfügbar"
 }

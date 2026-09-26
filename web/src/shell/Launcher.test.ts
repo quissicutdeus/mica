@@ -15,7 +15,7 @@ import { render, fireEvent } from '@testing-library/svelte';
 import { get } from 'svelte/store';
 import Home from './Launcher.svelte';
 import { isAdmin } from '../services/admin';
-import { homeGridItems, openFolderId } from './state/homeGrid';
+import { homeEditMode, homeGridItems, openFolderId } from './state/homeGrid';
 import { homeGridColumns, homeGridRows } from './state/homeGridSettings';
 
 /**
@@ -92,5 +92,42 @@ describe('home launcher (grid)', () => {
     homeGridRows.set(4);
     const { container } = render(Home, { props: { openApp: () => {} } });
     expect(container.querySelectorAll('[data-position]')).toHaveLength(12);
+  });
+});
+
+describe('home launcher widgets (MICA-245)', () => {
+  it('draws a widget over its footprint and not the cells beneath it', () => {
+    homeGridItems.set([{ position: 1, kind: 'widget', widgetId: 'shell.clock', size: '2x2' }]);
+    const { container } = render(Home, { props: { openApp: () => {} } });
+    for (const p of [2, 5, 6]) expect(container.querySelector(`[data-position="${p}"]`)).toBeNull();
+    expect(container.querySelector('[data-position="1"]')).not.toBeNull();
+    expect(container.querySelectorAll('[data-position]')).toHaveLength(20 - 3);
+  });
+
+  it('an unknown widget draws nothing but stays in the layout', () => {
+    const item = { position: 0, kind: 'widget', widgetId: 'gone-app', size: '2x1' } as const;
+    homeGridItems.set([item]);
+    const { container } = render(Home, { props: { openApp: () => {} } });
+    expect(container.querySelector('[data-testid="home-widget"]')).toBeNull();
+    expect(get(homeGridItems)).toEqual([item]);
+  });
+
+  it('a long press on an empty cell enters edit mode, which offers Add widget and Done', async () => {
+    vi.useFakeTimers();
+    try {
+      homeEditMode.set(false);
+      const { container, queryByText } = render(Home, { props: { openApp: () => {} } });
+      const cell = container.querySelector('[data-position="7"]') as HTMLElement;
+      await fireEvent.pointerDown(cell, { pointerId: 1, clientX: 5, clientY: 5 });
+      vi.advanceTimersByTime(600);
+      await Promise.resolve();
+      expect(get(homeEditMode)).toBe(true);
+      await fireEvent.pointerUp(window, { pointerId: 1 });
+      expect(queryByText('Add widget')).not.toBeNull();
+      expect(queryByText('Done')).not.toBeNull();
+    } finally {
+      homeEditMode.set(false);
+      vi.useRealTimers();
+    }
   });
 });

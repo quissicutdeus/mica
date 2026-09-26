@@ -16,7 +16,22 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { abandonSheetDrag, DRAWER_OPEN_COMMIT } from '../lib/phone/sheetDrag';
   import { appRegistryStore } from './state/registry';
   import { homeGridColumns, homeGridRows } from './state/homeGridSettings';
-  import { homeGridItems, openFolderId, type HomeGridItem } from './state/homeGrid';
+  import {
+    layoutCells,
+    homeEditMode,
+    homeGridItems,
+    openFolderId,
+    placeWidgetOnGrid,
+    removeFromGrid,
+    widgetDimensions,
+    type HomeGridItem,
+    type WidgetSize
+  } from './state/homeGrid';
+  import { availableWidgets } from './state/widgets';
+  import { toast } from './state/toast';
+  import WidgetHost from './WidgetHost.svelte';
+  import { pausedWidgets, resumeWidget } from './addon/widgetPause';
+  import TrashIcon from '../../../sdk/ui/icons/TrashIcon.svelte';
   import { wallpaperNeedsContrast } from './state/wallpaper';
   import { descriptor } from './state/device';
   import {
@@ -33,24 +48,102 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   let { openApp } = $props<{ openApp: (id: string) => void }>();
 
-  interface Cell {
-    position: number;
-    item: HomeGridItem | null;
+  /**
+   * Row-major: `position` 0 is top-left, increasing left-to-right then top-to-bottom.
+   * Every cell is placed explicitly (`gridArea`) rather than left to auto-placement, since a
+   * widget spans several and the cells under it are not drawn at all. Widgets claim their
+   * footprint first, so data that overlaps (a column change not yet reflowed) draws the
+   * widget and hides what it sits on rather than stacking two things in one place.
+   */
+  let cells = $derived(layoutCells($homeGridItems, $homeGridColumns, $homeGridRows));
+
+  const areaOf = (position: number, item: HomeGridItem | null): string => {
+    const row = Math.floor(position / $homeGridColumns) + 1;
+    const col = (position % $homeGridColumns) + 1;
+    if (item?.kind !== 'widget') return `grid-area: ${row} / ${col};`;
+    const { cols, rows } = widgetDimensions(item.size);
+    return `grid-area: ${row} / ${col} / span ${rows} / span ${cols};`;
+  };
+
+  const widgetEntry = (widgetId: string) => $availableWidgets.find((w) => w.widgetId === widgetId);
+
+  // An add-on's widget opens that app when tapped: its frame is display-only, so the cell
+  // takes the tap. A shell built-in has no app behind it, and a core app's widget is a
+  // component that owns its own taps and controls (Music's transport) — wrapping that in a
+  // button nests one interactive element inside another. In edit mode the cell is a plain
+  // element, so a tap opens nothing.
+  const openable = (widgetId: string) =>
+    $availableWidgets.find((w) => w.widgetId === widgetId)?.render.kind === 'addon';
+
+  let addSheetOpen = $state(false);
+  let unplacedWidgets = $derived(
+    $availableWidgets.filter(
+      (w) => !$homeGridItems.some((i) => i.kind === 'widget' && i.widgetId === w.widgetId)
+    )
+  );
+  const sizeLabel = (size: WidgetSize) =>
+    size === '2x1' ? $t('shell.widgetSizeWide') : $t('shell.widgetSizeLarge');
+
+  function addWidget(widgetId: string, size: WidgetSize) {
+    if (placeWidgetOnGrid(widgetId, size) === 'rejected') {
+      toast.show({ type: 'warning', message: $t('shell.noRoomForWidget') });
+      return;
+    }
+    addSheetOpen = false;
+  }
+
+  function leaveEditMode() {
+    addSheetOpen = false;
+    homeEditMode.set(false);
   }
 
   /**
-   * Row-major: `position` 0 is top-left, increasing left-to-right then top-to-bottom —
-   * matching a plain CSS grid's default auto-placement, so no explicit row/column math is
-   * needed beyond `grid-template-columns`.
+   * A held press on an empty cell enters edit mode; icons and widgets keep their own
+   * long-press, which is a drag. Cells are keyed by position, so the same node goes from
+   * empty to occupied (and back) without remounting — hence `update`, which attaches or
+   * detaches the listener as the cell fills or empties.
    */
-  let cells = $derived.by((): Cell[] => {
-    const capacity = $homeGridColumns * $homeGridRows;
-    const byPosition = new Map($homeGridItems.map((item) => [item.position, item]));
-    return Array.from({ length: capacity }, (_, position) => ({
-      position,
-      item: byPosition.get(position) ?? null
-    }));
-  });
+  function attachEmptyCell(node: HTMLElement, empty: boolean) {
+    let detach: (() => void) | null = null;
+    const sync = (isEmpty: boolean) => {
+      if (isEmpty && !detach) {
+        detach = attachLongPressDrag(node, {
+          onLongPress: () => homeEditMode.set(true),
+          onDragMove: () => {},
+          onDragEnd: () => {},
+          onDragCancel: () => {}
+        });
+      } else if (!isEmpty && detach) {
+        detach();
+        detach = null;
+      }
+    };
+    sync(empty);
+    return { update: sync, destroy: () => sync(false) };
+  }
+
+  /** Removing a widget also lifts a crash-loop pause on it, so adding it again boots it. */
+  function removeWidgetAt(position: number, widgetId: string) {
+    removeFromGrid(position);
+    resumeWidget(widgetId);
+  }
+
+  /** Widgets move with the icons' own gesture (`iconDrag.ts`); with no manifest the ghost is blank, as for a folder. */
+  function attachWidget(node: HTMLElement, position: number) {
+    const detach = attachLongPressDrag(node, {
+      onLongPress: (e) => {
+        const cell = cells.find((c) => c.position === position);
+        if (cell?.item?.kind !== 'widget') return;
+        startIconDrag(cell.item.widgetId, { kind: 'grid', position }, e.clientX, e.clientY, null);
+      },
+      onDragMove: (x, y) => moveIconDrag(x, y),
+      onDragEnd: (x, y) => {
+        resolveIconDrop(get(iconDragState), resolveDropAtPoint(x, y));
+      },
+      onDragCancel: () => {}
+    });
+    return { destroy: detach };
+  }
 
   /**
    * `appRegistryStore.getManifest` reads the registry with a one-shot `get()`, which is
@@ -216,7 +309,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   bind:this={homeScreenRef}
   role="region"
   aria-label={$t('shell.homeScreen')}
-  class="pt-safe-top text-on-surface flex h-full flex-col bg-transparent px-4 select-none"
+  class="pt-safe-top text-on-surface relative flex h-full flex-col bg-transparent px-4 select-none"
 >
   <!-- The "we are home" signal a large number of e2e specs already key off — kept as a
        real heading rather than folded into an aria-label, since dropping it would cascade
@@ -245,13 +338,107 @@ SPDX-License-Identifier: AGPL-3.0-or-later
        actual screen area and there is nothing there for a drag-drop (or a tap) to land on.
        A brand-new player's home grid starts entirely empty (MICA-5), so this was not an
        edge case — it was the very first row anyone would ever try to drop an app onto. -->
+  {#if $homeEditMode}
+    <div class="mb-2 flex items-center justify-center gap-3" data-testid="home-edit-bar">
+      <button
+        type="button"
+        class="bg-surface-container-high text-on-surface text-label-large cursor-pointer rounded-box px-4 py-2"
+        onclick={() => (addSheetOpen = true)}>{$t('shell.addWidget')}</button
+      >
+      <button
+        type="button"
+        class="bg-primary text-on-primary text-label-large cursor-pointer rounded-box px-4 py-2"
+        onclick={leaveEditMode}>{$t('shell.editDone')}</button
+      >
+    </div>
+  {/if}
   <div
     class="grid flex-1 content-start gap-y-6"
     style="grid-template-columns: repeat({$homeGridColumns}, 1fr); grid-auto-rows: minmax(5.5rem, auto);"
   >
     {#each cells as cell (cell.position)}
-      <div data-position={cell.position} class="flex items-center justify-center">
-        {#if cell.item?.kind === 'app' && visible(cell.item.appId)}
+      <div
+        data-position={cell.position}
+        class="items-center justify-center"
+        class:flex={cell.item?.kind !== 'widget'}
+        class:grid={cell.item?.kind === 'widget'}
+        style={areaOf(cell.position, cell.item)}
+        use:attachEmptyCell={!cell.item}
+      >
+        {#if cell.item?.kind === 'widget'}
+          {@const widget = cell.item}
+          {@const entry = widgetEntry(widget.widgetId)}
+          <!-- An entry that is gone (the app was uninstalled) draws nothing and the item
+               stays in `homeGridItems`, so reinstalling puts it back where it was. -->
+          {#if entry && !$pausedWidgets.has(widget.widgetId)}
+            {@const dragging =
+              $iconDragState.origin?.kind === 'grid' &&
+              $iconDragState.origin.position === cell.position &&
+              $iconDragState.appId === widget.widgetId}
+            {#if openable(widget.widgetId) && !$homeEditMode}
+              <!-- The frame of an add-on's widget is display-only, so the cell takes the tap. -->
+              <button
+                type="button"
+                data-testid="home-widget"
+                data-widget-id={widget.widgetId}
+                aria-label={$t('shell.openWidget', { name: entry.label })}
+                onclick={() => openApp(widget.widgetId)}
+                use:attachWidget={cell.position}
+                class="relative min-h-0 min-w-0 cursor-pointer overflow-hidden rounded-box text-left"
+                class:opacity-50={dragging}
+              >
+                <WidgetHost {entry} size={widget.size} />
+              </button>
+            {:else}
+              <div
+                data-testid="home-widget"
+                data-widget-id={widget.widgetId}
+                use:attachWidget={cell.position}
+                class="relative min-h-0 min-w-0 overflow-hidden rounded-box"
+                class:opacity-50={dragging}
+              >
+                <!-- Inert while editing: a widget's own buttons must not fire under a drag. -->
+                <div class="h-full w-full" inert={$homeEditMode}>
+                  <WidgetHost {entry} size={widget.size} />
+                </div>
+                {#if $homeEditMode}
+                  <button
+                    type="button"
+                    aria-label={$t('shell.removeWidget', { name: entry.label })}
+                    class="bg-surface-container-highest text-on-surface absolute top-1 right-1 z-10 flex h-7 w-7 cursor-pointer items-center justify-center rounded-full"
+                    onclick={() => removeWidgetAt(cell.position, widget.widgetId)}
+                  >
+                    <TrashIcon class="size-icon-sm" />
+                  </button>
+                {/if}
+              </div>
+            {/if}
+          {:else if $homeEditMode || $pausedWidgets.has(widget.widgetId)}
+            <!-- A widget with no entry (its app is uninstalled, disabled or unsupported) keeps
+                 its footprint but draws nothing to the player; while editing it shows what it
+                 is so it can be removed. A paused one (crash loop) is labelled outside edit
+                 mode too, so the player knows why it is blank. -->
+            {@const paused = $pausedWidgets.has(widget.widgetId)}
+            <div
+              data-testid="home-widget-placeholder"
+              data-widget-id={widget.widgetId}
+              use:attachWidget={cell.position}
+              class="bg-surface-container text-on-surface-variant text-body-small relative flex min-h-0 min-w-0 items-center justify-center overflow-hidden rounded-box p-2 text-center"
+            >
+              {paused ? $t('shell.widgetPaused') : $t('shell.widgetUnavailable')}
+              {#if $homeEditMode}
+                <button
+                  type="button"
+                  aria-label={$t('shell.removeWidget', { name: entry?.label ?? widget.widgetId })}
+                  class="bg-surface-container-highest text-on-surface absolute top-1 right-1 z-10 flex h-7 w-7 cursor-pointer items-center justify-center rounded-full"
+                  onclick={() => removeWidgetAt(cell.position, widget.widgetId)}
+                >
+                  <TrashIcon class="size-icon-sm" />
+                </button>
+              {/if}
+            </div>
+          {/if}
+        {:else if cell.item?.kind === 'app' && visible(cell.item.appId)}
           {@const appId = cell.item.appId}
           {@const manifest = manifestById.get(appId)}
           {#if manifest}
@@ -304,5 +491,42 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     {/each}
   </div>
 </div>
+
+{#if addSheetOpen}
+  <div
+    class="bg-scrim absolute inset-0 z-56 flex items-end"
+    role="dialog"
+    aria-modal="true"
+    aria-label={$t('shell.addWidget')}
+  >
+    <div
+      class="bg-surface-container shadow-elevation-5 pb-home-indicator flex w-full flex-col gap-3 rounded-box p-5"
+    >
+      <h2 class="text-on-surface text-title-medium">{$t('shell.addWidget')}</h2>
+      {#each unplacedWidgets as widget (widget.widgetId)}
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-on-surface text-body-medium min-w-0 truncate">{widget.label}</span>
+          <div class="flex gap-2">
+            {#each widget.sizes as size (size)}
+              <button
+                type="button"
+                aria-label="{widget.label}, {sizeLabel(size)}"
+                class="bg-surface-container-high text-on-surface text-label-large cursor-pointer rounded-box px-3 py-1.5"
+                onclick={() => addWidget(widget.widgetId, size)}>{sizeLabel(size)}</button
+              >
+            {/each}
+          </div>
+        </div>
+      {:else}
+        <p class="text-on-surface-variant text-body-medium">{$t('shell.noWidgets')}</p>
+      {/each}
+      <button
+        type="button"
+        class="text-on-surface text-label-large cursor-pointer py-2"
+        onclick={() => (addSheetOpen = false)}>{$t('shell.editDone')}</button
+      >
+    </div>
+  </div>
+{/if}
 
 <FolderPopup {openApp} />

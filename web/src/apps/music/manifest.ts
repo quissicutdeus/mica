@@ -15,7 +15,7 @@ export default defineApp({
    * seed, and which of the two generated schemes it resolves to depends on whether the
    * phone is in light or dark mode. The app reads the mode and hands it to the card.
    */
-  permissions: ['music', 'theme'],
+  permissions: ['music', 'navigation', 'theme'],
   /**
    * `core: true`, and not for the usual "ships in the box" reason alone.
    *
@@ -30,5 +30,6 @@ export default defineApp({
    * comments are stripped, so a comment mentioning it reclassifies the app and every core
    * file that names `music` becomes a boundary violation.)
    */
-  core: true
+  core: true,
+  widget: { sizes: ['2x1', '2x2'], load: () => import('./widget.svelte') }
 });

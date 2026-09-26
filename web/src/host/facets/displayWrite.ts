@@ -37,7 +37,7 @@ export function displayWrite() {
      * the toast tells them why the stepper in Settings > Display didn't move.
      */
     setHomeGridSize: (columns: number, rows: number) => {
-      const blocked = itemsBeyondCapacity(columns * rows);
+      const blocked = itemsBeyondCapacity(columns * rows, columns);
       if (blocked > 0) {
         toast.show({
           type: 'warning',

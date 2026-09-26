@@ -70,5 +70,22 @@
   "noArchiveHint": "Cleared notifications will appear here",
   "noNewNotifications": "No New Notifications",
   "notificationCountOne": "{count} notification",
-  "notificationCountOther": "{count} notifications"
+  "notificationCountOther": "{count} notifications",
+  "widget.status": "Battery and signal",
+  "widget.battery": "Battery {percent}%",
+  "widget.signal": "Signal {bars} of 4 bars",
+  "widget.noSignal": "No signal",
+  "widget.airplane": "Airplane mode",
+  "widgetClock": "Clock",
+  "widgetStatus": "Status",
+  "addWidget": "Add widget",
+  "editDone": "Done",
+  "removeWidget": "Remove widget {name}",
+  "noWidgets": "No widgets are available",
+  "widgetSizeWide": "Wide",
+  "widgetSizeLarge": "Large",
+  "noRoomForWidget": "No room for that widget",
+  "openWidget": "Open {name}",
+  "widgetPaused": "Widget paused",
+  "widgetUnavailable": "Widget unavailable"
 }

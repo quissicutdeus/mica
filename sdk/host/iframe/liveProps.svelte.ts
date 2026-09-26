@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import type { AppProps } from '../../manifest';
+import type { AppProps, WidgetSize } from '../../manifest';
 
 /**
  * The reactive object `boot.ts` mounts the app with — see MICA-25.
@@ -47,4 +47,17 @@ export function setLiveAddOnProps(next: Record<string, unknown>): void {
   }
   Object.assign(liveAddOnProps, next);
   previousKeys = Object.keys(next);
+}
+
+/**
+ * MICA-245: the widget root's reactive props, for the same reason `liveAddOnProps` is one —
+ * the shell resizing a placed widget pushes a new `size` rather than rebuilding the frame.
+ * Separate from `liveAddOnProps` because a frame is one or the other, never both, and a
+ * widget has no `onback`: there is nowhere for it to go back from.
+ */
+export const liveWidgetProps: { size: WidgetSize } = $state({ size: '2x1' });
+
+/** Takes `size` from a hydrate payload or a props push, ignoring anything else in it. */
+export function setLiveWidgetProps(next: Record<string, unknown>): void {
+  if (next.size === '2x1' || next.size === '2x2') liveWidgetProps.size = next.size;
 }

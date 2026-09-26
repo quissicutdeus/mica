@@ -315,6 +315,89 @@ test('Music has no accessibility violations with a track loaded, in the app and 
 });
 
 /**
+ * The three built-in home-screen widgets, placed (MICA-245), at both sizes.
+ *
+ * A widget is text on a card the home grid draws, which the home scan above never sees
+ * because nothing is placed by default. Music is scanned twice: empty (its own state, the
+ * whole card a button) and with a track (artwork, title, transport). Seeded into the layout
+ * rather than added through edit mode, which `home-widgets.spec.ts` owns.
+ */
+for (const size of ['2x1', '2x2'] as const) {
+  test(`placed widgets at ${size} have no accessibility violations`, async ({ page }) => {
+    await page.route(/https:\/\/www\.youtube(-nocookie)?\.com\//, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'text/html',
+        body: '<!doctype html><title>s</title>'
+      })
+    );
+    await page.route(/https:\/\/img\.youtube\.com\//, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'image/png',
+        headers: { 'access-control-allow-origin': '*' },
+        body: Buffer.from(
+          'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGM4oaGBFTEMLQkAgl1GAWqNFmsAAAAASUVORK5CYII=',
+          'base64'
+        )
+      })
+    );
+    // Four columns; each footprint is two cells wide, so anchors 0 and 2 share a row band
+    // and 8 starts the next one at a 2x2.
+    const anchors = size === '2x1' ? [0, 2, 4] : [0, 2, 8];
+    await page.addInitScript(
+      ({ size, anchors }: { size: string; anchors: number[] }) => {
+        if (window !== window.top) return;
+        if (window.localStorage.getItem('mica:settings:homeGridItems') !== null) return;
+        const ids = ['shell.clock', 'shell.status', 'music'];
+        window.localStorage.setItem(
+          'mica:settings:homeGridItems',
+          JSON.stringify(
+            ids.map((widgetId, i) => ({
+              position: anchors[i],
+              kind: 'widget',
+              widgetId,
+              size
+            }))
+          )
+        );
+        window.localStorage.setItem('mica:settings:homeGridColumns', '4');
+      },
+      { size, anchors }
+    );
+    await page.goto('/');
+    await settlePhoneOpen(page);
+    for (const id of ['widget-clock', 'widget-status', 'widget-music-empty']) {
+      await expect(page.getByTestId(id)).toBeVisible();
+    }
+    const frame = page.getByTestId('phone-frame');
+    const settled = async () =>
+      expect
+        .poll(async () => frame.evaluate((el) => el.getAnimations({ subtree: true }).length), {
+          timeout: 5000
+        })
+        .toBe(0);
+    await settled();
+    const empty = await scan(page, 'home');
+    expect(summarise(empty), `widgets (empty):\n  ${summarise(empty).join('\n  ')}`).toEqual([]);
+
+    // Start a track from the Music app and come back: the widget now shows the player.
+    await page.getByTestId('widget-music-empty').click();
+    const field = page.getByLabel('YouTube link');
+    await field.fill('dQw4w9WgXcQ');
+    await field.press('Enter');
+    await expect(page.locator('button[aria-label="Stop music"]')).toBeVisible();
+    await page.locator("button[aria-label='Return to home screen']").click();
+    await expect(page.getByTestId('widget-music')).toBeVisible();
+    await settled();
+    const playing = await scan(page, 'home');
+    expect(summarise(playing), `widgets (playing):\n  ${summarise(playing).join('\n  ')}`).toEqual(
+      []
+    );
+  });
+}
+
+/**
  * The focus ring, measured rather than assumed (MICA-109 item 2).
  *
  * There is no axe rule for this: a focusable element with an invisible ring is perfectly

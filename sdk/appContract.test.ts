@@ -116,6 +116,28 @@ describe('app component contract', () => {
     expect(unlisted, "declare devices: ['phone', 'tablet'] in the manifest").toEqual([]);
   });
 
+  it("boots an add-on's widget only when the manifest and the bundle both have one", () => {
+    // MICA-245. For a `core: false` add-on the two halves live apart: `widget.sizes` on the
+    // manifest is what makes the shell boot a widget frame, and `widget.svelte` is what
+    // `vite.addon.config.ts` hands `bootAddOn` as the widget root. Either one alone is a
+    // widget that never appears — declared but rootless errors in its frame, and a root
+    // nothing declares is bundled and never booted.
+    const withRoot = new Set(
+      bundledAddOns
+        .filter((app) => existsSync(join(APPS_DIR, app.id, 'widget.svelte')))
+        .map((app) => app.id)
+    );
+    const declared = new Set(bundledAddOns.filter((app) => app.widget).map((app) => app.id));
+    expect(
+      [...declared].filter((id) => !withRoot.has(id)),
+      'add widget.svelte'
+    ).toEqual([]);
+    expect(
+      [...withRoot].filter((id) => !declared.has(id)),
+      'declare widget: { sizes } in the manifest'
+    ).toEqual([]);
+  });
+
   it('preloads every badge it draws', () => {
     // The badge-staleness rule, made mechanical. `bootstrap.ts` used to name each store by
     // hand with nothing tying that list to the apps it loaded for, so an app shipping a

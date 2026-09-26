@@ -24,5 +24,13 @@
   "muted": "Stumm",
   "volume": "Lautstärke",
   "volumeLabel": "Musiklautstärke",
-  "nearbyWarning": "Leute in der Nähe können das hören, während es läuft."
+  "nearbyWarning": "Leute in der Nähe können das hören, während es läuft.",
+  "widgetLabel": "Aktuelle Wiedergabe",
+  "widgetOpen": "Musik öffnen: {title}",
+  "widgetPlay": "Wiedergabe",
+  "widgetPause": "Pause",
+  "widgetNext": "Nächster Titel",
+  "widgetEmptyTitle": "Nichts wird gespielt",
+  "widgetEmptyHint": "Zum Öffnen von Musik tippen",
+  "widgetOpenEmpty": "Musik öffnen"
 }

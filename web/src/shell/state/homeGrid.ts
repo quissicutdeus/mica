@@ -3,11 +3,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { get, writable } from 'svelte/store';
+import type { WidgetSize } from '../../../../sdk/manifest';
 import { perDevice } from './device';
 import { homeGridColumns, homeGridRows } from './homeGridSettings';
 
 /** Which folder's popup is open, if any — shell-owned UI state, not persisted. */
 export const openFolderId = writable<string | null>(null);
+
+/** Whether the home screen is in edit mode (MICA-245) — shell-owned UI state, not persisted. */
+export const homeEditMode = writable(false);
 
 export interface HomeGridApp {
   position: number;
@@ -23,7 +27,31 @@ export interface HomeGridFolder {
   appIds: string[];
 }
 
-export type HomeGridItem = HomeGridApp | HomeGridFolder;
+export type { WidgetSize };
+
+const WIDGET_DIMENSIONS: Record<WidgetSize, { cols: number; rows: number }> = {
+  '2x1': { cols: 2, rows: 1 },
+  '2x2': { cols: 2, rows: 2 }
+};
+
+export const isWidgetSize = (value: unknown): value is WidgetSize =>
+  value === '2x1' || value === '2x2';
+
+/**
+ * A widget. `position` is its **top-left** cell, as a flat row-major index at the current
+ * column count — the same coordinate an icon uses — and the other cells it covers are
+ * derived (`cellsOf`), never stored, so a layout written before widgets existed loads
+ * unchanged. An unknown `widgetId` (the app was uninstalled) stays in the array, hidden:
+ * the placement is the player's and survives an uninstall/reinstall round trip.
+ */
+export interface HomeGridWidget {
+  position: number;
+  kind: 'widget';
+  widgetId: string;
+  size: WidgetSize;
+}
+
+export type HomeGridItem = HomeGridApp | HomeGridFolder | HomeGridWidget;
 
 export type PlacementResult = 'placed' | 'folder-created' | 'added-to-folder' | 'rejected';
 
@@ -35,6 +63,9 @@ const isValidItem = (value: unknown): value is HomeGridItem => {
   if (typeof v.position !== 'number' || !Number.isInteger(v.position) || v.position < 0)
     return false;
   if (v.kind === 'app') return typeof v.appId === 'string' && v.appId.length > 0;
+  if (v.kind === 'widget') {
+    return typeof v.widgetId === 'string' && v.widgetId.length > 0 && isWidgetSize(v.size);
+  }
   if (v.kind === 'folder') {
     return (
       typeof v.folderId === 'string' &&
@@ -63,7 +94,13 @@ export function sanitizeHomeGridItems(value: unknown): HomeGridItem[] {
   // Dedupe by id first (last wins), preserving original order otherwise.
   const dedupedById: HomeGridItem[] = [];
   for (const item of valid) {
-    const id = item.kind === 'app' ? item.appId : item.folderId;
+    // Widgets are keyed apart so a widget and an app sharing an id never collide.
+    const id =
+      item.kind === 'app'
+        ? item.appId
+        : item.kind === 'folder'
+          ? item.folderId
+          : `widget:${item.widgetId}`;
     const existingIndex = seenIds.get(id);
     if (existingIndex !== undefined) {
       dedupedById[existingIndex] = item;
@@ -95,11 +132,49 @@ export const homeGridItems = perDevice<HomeGridItem[]>(
   sanitizeHomeGridItems
 );
 
-export const isGridCellOccupied = (position: number, items: HomeGridItem[]): boolean =>
-  items.some((item) => item.position === position);
+/** Every cell index `item` covers at `columns` columns — one for an icon, up to four for a widget. */
+export function cellsOf(item: HomeGridItem, columns: number): number[] {
+  if (item.kind !== 'widget') return [item.position];
+  const { cols, rows } = WIDGET_DIMENSIONS[item.size];
+  const cells: number[] = [];
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) cells.push(item.position + r * columns + c);
+  }
+  return cells;
+}
 
+/** Whether a widget of `size` anchored at `position` sits wholly inside the grid, never straddling a row end. */
+export function widgetFitsAt(
+  position: number,
+  size: WidgetSize,
+  columns: number,
+  rows: number
+): boolean {
+  const { cols, rows: h } = WIDGET_DIMENSIONS[size];
+  return (
+    position >= 0 &&
+    (position % columns) + cols <= columns &&
+    Math.floor(position / columns) + h <= rows
+  );
+}
+
+export const widgetDimensions = (size: WidgetSize) => WIDGET_DIMENSIONS[size];
+
+/** Whether any item covers the cell — a widget occupies every cell of its footprint. */
+export const isGridCellOccupied = (position: number, items: HomeGridItem[]): boolean => {
+  const columns = get(homeGridColumns);
+  return items.some((item) => cellsOf(item, columns).includes(position));
+};
+
+/** The item anchored exactly at `position` — the cell an icon or a widget's top-left sits on. */
 const itemAt = (position: number, items: HomeGridItem[]): HomeGridItem | undefined =>
   items.find((item) => item.position === position);
+
+/** The item covering `position`, whichever of its cells that is. */
+const coveringItem = (position: number, items: HomeGridItem[]): HomeGridItem | undefined => {
+  const columns = get(homeGridColumns);
+  return items.find((item) => cellsOf(item, columns).includes(position));
+};
 
 const generateFolderId = (): string =>
   typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -117,7 +192,10 @@ function resolveDrop(
   targetPosition: number,
   items: HomeGridItem[]
 ): { result: PlacementResult; next: HomeGridItem[] } {
-  const target = itemAt(targetPosition, items);
+  const target = coveringItem(targetPosition, items);
+
+  // An icon dropped on a widget is refused: it neither merges into a folder nor displaces it.
+  if (target?.kind === 'widget') return { result: 'rejected', next: items };
 
   if (!target) {
     return {
@@ -137,7 +215,7 @@ function resolveDrop(
     };
     return {
       result: 'folder-created',
-      next: [...items.filter((item) => item.position !== targetPosition), folder]
+      next: [...items.filter((item) => item !== target), folder]
     };
   }
 
@@ -147,7 +225,7 @@ function resolveDrop(
   const updatedFolder: HomeGridFolder = { ...target, appIds: [...target.appIds, draggedAppId] };
   return {
     result: 'added-to-folder',
-    next: items.map((item) => (item.position === targetPosition ? updatedFolder : item))
+    next: items.map((item) => (item === target ? updatedFolder : item))
   };
 }
 
@@ -191,6 +269,8 @@ export function moveGridItem(fromPosition: number, toPosition: number): Placemen
   const source = itemAt(fromPosition, current);
   if (!source) return 'rejected';
 
+  if (source.kind === 'widget') return moveWidget(source, toPosition, current);
+
   if (source.kind === 'folder') {
     // Folders only move onto empty cells — merging a folder into another folder or app is
     // out of scope (unbounded-recursion edge case the ticket never asked for).
@@ -209,6 +289,106 @@ export function moveGridItem(fromPosition: number, toPosition: number): Placemen
 }
 
 /**
+ * Moves a widget so its top-left lands on `toPosition`, nudged inward if that would run
+ * off the right or bottom edge (the player drops wherever the pointer is, which is rarely
+ * the widget's own corner). Refused if any covered cell is held by something else.
+ */
+function moveWidget(
+  source: HomeGridWidget,
+  toPosition: number,
+  current: HomeGridItem[]
+): PlacementResult {
+  const columns = get(homeGridColumns);
+  const rows = get(homeGridRows);
+  const { cols, rows: h } = WIDGET_DIMENSIONS[source.size];
+  const col = Math.min(toPosition % columns, columns - cols);
+  const row = Math.min(Math.floor(toPosition / columns), rows - h);
+  const position = row * columns + col;
+  if (position === source.position) return 'rejected';
+  if (!widgetFitsAt(position, source.size, columns, rows)) return 'rejected';
+  const others = current.filter((item) => item !== source);
+  const moved: HomeGridWidget = { ...source, position };
+  if (cellsOf(moved, columns).some((cell) => isGridCellOccupied(cell, others))) return 'rejected';
+  homeGridItems.set([...others, moved]);
+  return 'placed';
+}
+
+/**
+ * Places a widget from the Add-widget sheet at the first free rectangle that holds it.
+ * Refused if that widget is already on the grid (one instance each) or nothing fits.
+ */
+export function placeWidgetOnGrid(widgetId: string, size: WidgetSize): PlacementResult {
+  const current = get(homeGridItems);
+  if (current.some((item) => item.kind === 'widget' && item.widgetId === widgetId)) {
+    return 'rejected';
+  }
+  const columns = get(homeGridColumns);
+  const rows = get(homeGridRows);
+  for (let position = 0; position < columns * rows; position++) {
+    if (!widgetFitsAt(position, size, columns, rows)) continue;
+    const widget: HomeGridWidget = { position, kind: 'widget', widgetId, size };
+    if (cellsOf(widget, columns).some((cell) => isGridCellOccupied(cell, current))) continue;
+    homeGridItems.set([...current, widget]);
+    return 'placed';
+  }
+  return 'rejected';
+}
+
+/**
+ * Lays `items` out on a `columns × rows` grid, moving as little as possible: whatever
+ * already sits validly stays, widgets claiming their cells before icons do; the rest land
+ * in the first free rectangle (widgets first) or cell. Pure. `unplaced` counts what had
+ * nowhere to go — `items` is then only a partial answer and callers must not apply it.
+ */
+export function reflowItems(
+  items: HomeGridItem[],
+  columns: number,
+  rows: number
+): { items: HomeGridItem[]; unplaced: number } {
+  const capacity = columns * rows;
+  const taken = new Set<number>();
+  const result: HomeGridItem[] = [];
+  const displaced: HomeGridItem[] = [];
+
+  const claim = (item: HomeGridItem) => {
+    for (const cell of cellsOf(item, columns)) taken.add(cell);
+    result.push(item);
+  };
+  const free = (item: HomeGridItem) => cellsOf(item, columns).every((cell) => !taken.has(cell));
+
+  for (const item of items) {
+    if (item.kind !== 'widget') continue;
+    if (widgetFitsAt(item.position, item.size, columns, rows) && free(item)) claim(item);
+    else displaced.push(item);
+  }
+  for (const item of items) {
+    if (item.kind === 'widget') continue;
+    if (item.position < capacity && free(item)) claim(item);
+    else displaced.push(item);
+  }
+
+  let unplaced = 0;
+  const order = [
+    ...displaced.filter((i) => i.kind === 'widget'),
+    ...displaced.filter((i) => i.kind !== 'widget')
+  ];
+  for (const item of order) {
+    let placed = false;
+    for (let position = 0; position < capacity && !placed; position++) {
+      const candidate = { ...item, position };
+      if (candidate.kind === 'widget' && !widgetFitsAt(position, candidate.size, columns, rows)) {
+        continue;
+      }
+      if (!free(candidate)) continue;
+      claim(candidate);
+      placed = true;
+    }
+    if (!placed) unplaced++;
+  }
+  return { items: result, unplaced };
+}
+
+/**
  * How many currently-placed items would have nowhere to go at `capacity` cells.
  *
  * Pure — reads `homeGridItems` but touches nothing — so `setHomeGridSize` (MICA-121) can
@@ -217,8 +397,22 @@ export function moveGridItem(fromPosition: number, toPosition: number): Placemen
  * (an app, or a folder — a folder's contents never claim a grid cell of their own) needs
  * exactly one cell, so this is just item count against capacity.
  */
-export function itemsBeyondCapacity(capacity: number): number {
-  return Math.max(0, get(homeGridItems).length - capacity);
+export function itemsBeyondCapacity(capacity: number, columns?: number): number {
+  const items = get(homeGridItems);
+  // With the column count in hand this is the real answer — a 2x2 widget can fail to pack
+  // into a grid whose cell count is enough. Without it, the area alone is a lower bound.
+  if (columns !== undefined && columns > 0) {
+    return reflowItems(items, columns, Math.floor(capacity / columns)).unplaced;
+  }
+  const area = items.reduce(
+    (sum, item) =>
+      sum +
+      (item.kind === 'widget'
+        ? WIDGET_DIMENSIONS[item.size].cols * WIDGET_DIMENSIONS[item.size].rows
+        : 1),
+    0
+  );
+  return Math.max(0, area - capacity);
 }
 
 /**
@@ -238,29 +432,13 @@ export function itemsBeyondCapacity(capacity: number): number {
  * whether or not anything actually moved.
  */
 export function compactGridToCurrentCapacity(): number {
-  const capacity = gridCapacity();
   const current = get(homeGridItems);
-  const outOfBounds = current.filter((item) => item.position >= capacity);
-  if (outOfBounds.length === 0) return 0;
-  if (current.length > capacity) return outOfBounds.length; // would still lose items — change nothing
-
-  const inBounds = current.filter((item) => item.position < capacity);
-  const occupied = new Set(inBounds.map((item) => item.position));
-  const result = [...inBounds];
-  for (const item of outOfBounds) {
-    let free = -1;
-    for (let p = 0; p < capacity; p++) {
-      if (!occupied.has(p)) {
-        free = p;
-        break;
-      }
-    }
-    // `current.length <= capacity` above guarantees a free cell exists for every item
-    // still to place, so `free` is never -1 here.
-    occupied.add(free);
-    result.push({ ...item, position: free });
-  }
-  homeGridItems.set(result);
+  const { items, unplaced } = reflowItems(current, get(homeGridColumns), get(homeGridRows));
+  if (unplaced > 0) return unplaced; // would still lose items — change nothing
+  // Widgets are reflowed too (MICA-245): a shrink from 5 to 3 columns can leave one
+  // straddling a row end or under an icon, and it moves rather than being destroyed.
+  const moved = items.length !== current.length || items.some((item) => !current.includes(item));
+  if (moved) homeGridItems.set(items);
   return 0;
 }
 
@@ -328,4 +506,35 @@ export function removeAppFromFolder(folderId: string, appId: string): boolean {
     { position: freePosition, kind: 'app', appId }
   ]);
   return true;
+}
+
+/**
+ * What the launcher draws, cell by cell. Widgets claim their footprint first, so data that
+ * overlaps (a column change not yet reflowed) draws the widget and hides what it sits on
+ * rather than stacking two things in one place; the cells under a widget are omitted.
+ */
+export function layoutCells(
+  items: HomeGridItem[],
+  columns: number,
+  rows: number
+): { position: number; item: HomeGridItem | null }[] {
+  const covered = new Set<number>();
+  const anchors = new Map<number, HomeGridItem>();
+  for (const item of items) {
+    if (item.kind !== 'widget' || !widgetFitsAt(item.position, item.size, columns, rows)) continue;
+    const footprint = cellsOf(item, columns);
+    if (footprint.some((cell) => covered.has(cell))) continue;
+    for (const cell of footprint) covered.add(cell);
+    anchors.set(item.position, item);
+  }
+  for (const item of items) {
+    if (item.kind !== 'widget' && !covered.has(item.position)) anchors.set(item.position, item);
+  }
+  const result: { position: number; item: HomeGridItem | null }[] = [];
+  for (let position = 0; position < columns * rows; position++) {
+    const item = anchors.get(position) ?? null;
+    if (covered.has(position) && item?.kind !== 'widget') continue;
+    result.push({ position, item });
+  }
+  return result;
 }
