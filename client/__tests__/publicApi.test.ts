@@ -9,19 +9,23 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
  * pins the server's: the names are a contract, every one answers an outcome rather than
  * throwing, and the ones that share a name with a server export share its meaning.
  */
-const { animation, camera, freelook, battery, itemCheck, bridge } = vi.hoisted(() => ({
+const { animation, camera, freelook, battery, itemCheck, bridge, callState } = vi.hoisted(() => ({
   animation: { playIdle: vi.fn(), spawnProp: vi.fn(), removeProp: vi.fn(), stopAll: vi.fn() },
   camera: { disable: vi.fn(), enable: vi.fn() },
   freelook: { resetFreelook: vi.fn() },
   battery: { sendChargeToNui: vi.fn() },
   itemCheck: { requestDeviceItemCheck: vi.fn() },
-  bridge: { number: null as string | null }
+  bridge: { number: null as string | null },
+  callState: { connected: false }
 }));
 vi.mock('../game/DeviceAnimation', () => ({ DeviceAnimation: animation }));
 vi.mock('../game/PhoneCamera', () => ({ PhoneCamera: camera }));
 vi.mock('../game/Freelook', () => ({ Freelook: freelook }));
 vi.mock('../services/Battery', () => battery);
 vi.mock('../services/DeviceItem', () => itemCheck);
+// `Call.ts` registers NUI callbacks at import; its own suite drives the flag from the
+// server's events, so here it is the accessor alone.
+vi.mock('../services/Call', () => ({ isInCall: () => callState.connected }));
 vi.mock('../lib/FrameworkBridge', () => ({
   FrameworkBridge: { getPhoneNumber: () => bridge.number }
 }));
@@ -50,6 +54,7 @@ beforeEach(() => {
   sent = [];
   vi.clearAllMocks();
   bridge.number = '555-0100';
+  callState.connected = false;
   DeviceState.__reset();
   registerClientApi();
 });
@@ -61,6 +66,8 @@ describe('the client export surface', () => {
       'ClosePhone',
       'GetApiVersion',
       'GetPhoneNumber',
+      'IsInCall',
+      'IsPhoneEnabled',
       'IsPhoneOpen',
       'Notify',
       'OpenApp',
@@ -89,6 +96,23 @@ describe('the client export surface', () => {
     expect(result.reason).toBe('invalid_args');
     // And omitting it is the phone.
     expect(call('IsPhoneOpen')).toEqual({ ok: true, value: false });
+  });
+});
+
+describe('the NPWD-shaped reads (MICA-232)', () => {
+  it('IsPhoneEnabled follows the same flag SetPhoneEnabled sets', () => {
+    expect(call('IsPhoneEnabled')).toEqual({ ok: true, value: true });
+    call('SetPhoneEnabled', false);
+    expect(call('IsPhoneEnabled')).toEqual({ ok: true, value: false });
+    // Per device: the tablet is not the phone.
+    expect(call('IsPhoneEnabled', 'tablet').ok).toBe(true);
+    expect(call('IsPhoneEnabled', 'fridge').reason).toBe('invalid_args');
+  });
+
+  it('IsInCall answers the call service, not a copy of its own', () => {
+    expect(call('IsInCall')).toEqual({ ok: true, value: false });
+    callState.connected = true;
+    expect(call('IsInCall')).toEqual({ ok: true, value: true });
   });
 });
 

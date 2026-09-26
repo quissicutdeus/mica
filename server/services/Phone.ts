@@ -74,6 +74,13 @@ export const __resetCalls = (): void => {
 };
 
 /**
+ * Whether `src` holds a call: ringing, connected, or a line call still waiting on its
+ * handler. The same truthiness test `placeCall`'s busy check uses, so the `IsInCall` export
+ * and a refused dial can never disagree about one player. Read-only.
+ */
+export const isInCall = (src: number): boolean => Boolean(playerCalls[src]);
+
+/**
  * Calls are a service with no endpoint and no table: pure signalling, hand-written
  * handlers below. Declared so the `<service>` segment resolves like any other.
  */
@@ -153,16 +160,22 @@ const notifyParty = (event: string, src: number, payload?: unknown): void => {
 };
 
 /**
- * Notify whoever's still owed one, log it, and clear both maps. `endedBy` is whichever
- * side already knows — the real `end` handler's own caller, or `CONSOLE_CALLER_SOURCE`
- * for a console-driven teardown, which is nobody, so both real parties get notified.
+ * Tell both real parties, log it, and clear both maps.
+ *
+ * **Both, including whoever ended it** (MICA-232). The side that ends a call is not always a
+ * client that has already torn itself down: a battery dying sends `phone:end` from
+ * `client/services/Battery.ts` with the call UI and the voice channel still up, and an
+ * answer racing a hang-up can leave the ender's client believing it connected. Skipping the
+ * ender left its call flag and its pma-voice channel on in both cases. The client's `ended`
+ * handler is idempotent, so a second teardown costs nothing; `notifyParty` still skips the
+ * console's and a line's negative sources, which are nobody.
  */
-function endActiveCall(callId: number, endedBy: number): void {
+function endActiveCall(callId: number): void {
   const call = activeCalls[callId];
   if (!call) return;
 
-  if (call.caller !== endedBy) notifyParty('mica:client:phone:ended', call.caller);
-  if (call.target !== endedBy) notifyParty('mica:client:phone:ended', call.target);
+  notifyParty('mica:client:phone:ended', call.caller);
+  notifyParty('mica:client:phone:ended', call.target);
 
   logCallEnd(call);
 
@@ -235,7 +248,7 @@ export function injectIncomingCall(targetSrc: number, callerPhone: string): numb
  *
  * Returns whether anything was held.
  */
-function releaseCallFor(src: number, endedBy: number): boolean {
+function releaseCallFor(src: number): boolean {
   const callId = playerCalls[src];
   if (!callId) return false;
 
@@ -244,13 +257,13 @@ function releaseCallFor(src: number, endedBy: number): boolean {
     return true;
   }
 
-  endActiveCall(callId, endedBy);
+  endActiveCall(callId);
   return true;
 }
 
 /** Force-end whatever call `targetSrc` is on, without going through their client at all. */
 export function endActiveCallFor(targetSrc: number): boolean {
-  return releaseCallFor(targetSrc, CONSOLE_CALLER_SOURCE);
+  return releaseCallFor(targetSrc);
 }
 
 /**
@@ -533,7 +546,7 @@ onLineReleased((number: string) => {
     // would see that call torn down too. Only a line call has a line pseudo-source on the
     // far end, and `FIRST_LINE_SOURCE` is the highest of those.
     if (call.targetPhone === number && call.target <= FIRST_LINE_SOURCE) {
-      endActiveCall(call.id, CONSOLE_CALLER_SOURCE);
+      endActiveCall(call.id);
     }
   }
 });
@@ -571,12 +584,12 @@ onNet('mica:server:phone:answer', (...args: unknown[]) => {
 onNet('mica:server:phone:end', (...args: unknown[]) => {
   if (!guardNetEvent('phone', 'end', noInput, args)) return;
 
-  releaseCallFor(source, source);
+  releaseCallFor(source);
 });
 
 // Clean up on drop
 on('playerDropped', () => {
-  releaseCallFor(source, source);
+  releaseCallFor(source);
 });
 
 /**

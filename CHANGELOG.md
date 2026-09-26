@@ -472,6 +472,23 @@ with `internal_error` and the rest of Messages is unaffected.
 
 ### Added
 
+**Bridges for scripts written against lb-phone or NPWD (MICA-232).** The release
+now carries `bridges/lb-phone/` and `bridges/npwd/` inside the `mica` directory.
+Each is a small optional resource that answers the original phone's export names
+by forwarding to micaOS, so dispatch, MDT, garage and housing scripts that call
+`exports['lb-phone']` or `exports.npwd` keep working. Nothing ensures them and
+nothing changes until you act: copy the one you need into `resources/`, remove
+the real phone of that name, and `ensure` it after `mica`. A name with no micaOS
+equivalent logs once, saying what to use instead, and answers `nil` or `false`
+rather than throwing into your script. README's "Coming from lb-phone or NPWD"
+section has the full mapping, generated from the bridges' own source.
+
+**Four server exports and two client exports.** Server: `IsInCall(source)`,
+`HasPhoneItem(source)`, `GetSourceFromNumber(number)` and
+`GetCitizenIdFromSource(source)`. Client: `IsInCall()` and
+`IsPhoneEnabled(device?)`. Additions only; `GetApiVersion` stays at 1 on both
+sides.
+
 **Disable apps, set the dock and seed contacts from `server.cfg` (MICA-234).**
 Three new convars, all off by default, so an update changes nothing until you
 set one. `mica_disabled_apps` takes a comma list of app ids and hides them from
@@ -809,6 +826,12 @@ somehow emitted it should call the `AddBatteryCharge` or `SetBatteryLevel`
 export instead, which authenticates its caller.
 
 ### Fixed
+
+**Hanging up now leaves the voice call on the side that hung up.** The server
+only tells the other party a call has ended, and only that message took a player
+out of the pma-voice call channel, so the player who pressed end stayed in it.
+The server now tells both parties, however the call ended — hanging up, a flat
+battery, or a disconnect. No owner action.
 
 **A character switch no longer carries the last character's phone settings over
 (MICA-287).** The phone caches settings in the client's browser storage, and a

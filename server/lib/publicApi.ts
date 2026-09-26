@@ -22,7 +22,8 @@ import { isAppDisabled } from './ownerConfig';
 import * as PlayerDirectory from './PlayerDirectory';
 import { isPhoneOpen } from './PhoneOpenState';
 import { isPhoneLocked, setPhoneLocked } from './LockState';
-import { currentEmergencyNumber, placeCall } from '../services/Phone';
+import { currentEmergencyNumber, isInCall, placeCall } from '../services/Phone';
+import { holdsPhoneItem } from './phoneItem';
 import { registerNumber, unregisterNumber, type LineOptions } from './numberRegistry';
 import {
   MICA_API_VERSION,
@@ -689,6 +690,19 @@ export function registerPublicApi(): void {
   );
 
   /**
+   * The citizenid of the character loaded on a source (MICA-232), through `citizenOf` — the
+   * same resolution every source-keyed export here uses. Live only: a source is a session.
+   */
+  publish(
+    'GetCitizenIdFromSource',
+    guarded('GetCitizenIdFromSource', (source: unknown) => {
+      const resolved = citizenOf(source);
+      if (isFailure(resolved)) return resolved as ExportOutcome<string>;
+      return ok(resolved.citizenid);
+    })
+  );
+
+  /**
    * Whether a player's phone is open right now.
    *
    * Mirrored from the client rather than asked live — see `PhoneOpenState.ts` for why
@@ -765,6 +779,66 @@ export function registerPublicApi(): void {
         return fail<boolean>('unknown_player', 'That player is not connected.');
       }
       return ok(isPhoneLocked(source));
+    })
+  );
+
+  /**
+   * Whether this player holds a phone call (MICA-232): ringing either way, connected, or a
+   * call to a scripted line still waiting on that line's handler. It is the same test the
+   * busy check in `placeCall` uses, so `true` here is exactly when `CreateCall` would answer
+   * `not_ready` for this player.
+   */
+  publish(
+    'IsInCall',
+    guarded('IsInCall', (source: unknown) => {
+      if (typeof source !== 'number' || !isConnected(source)) {
+        return fail<boolean>('unknown_player', 'That player is not connected.');
+      }
+      return ok(isInCall(source));
+    })
+  );
+
+  /**
+   * Whether this player holds a phone item (MICA-232), counted through the inventory now.
+   *
+   * `true` when the server requires no item — `mica_phone_item` empty or not a valid item
+   * name, or `mica_standalone` — because on such a server every player has a phone. Also
+   * `true` when an item is set but no inventory here can count it, the same fail-open the
+   * gate itself takes (`lib/phoneItem.ts`). `false` only for a counted zero.
+   */
+  publish(
+    'HasPhoneItem',
+    guarded('HasPhoneItem', (source: unknown) => {
+      if (typeof source !== 'number' || !Number.isInteger(source) || source <= 0) {
+        return fail<boolean>('invalid_args', 'A player source is required.');
+      }
+      const player = FrameworkBridge.getPlayer(source);
+      if (!player) return fail<boolean>('unknown_player', 'That player is not connected.');
+      return ok(holdsPhoneItem(player));
+    })
+  );
+
+  /**
+   * The source of the connected player on this number (MICA-232) — the phone they are
+   * using now, through the same lookup a call to the number rings (`getPlayerByPhone`).
+   *
+   * `offline` when a character holds the number but is not connected, `unknown_player` when
+   * no character does. A number owned by `RegisterNumber` has no player behind it and answers
+   * `unknown_player` too.
+   */
+  publish(
+    'GetSourceFromNumber',
+    guardedAsync('GetSourceFromNumber', async (number: unknown) => {
+      const phone = phoneNumberFrom(number);
+      if (!phone || !phone.trim()) {
+        return fail<number>('invalid_args', 'A phone number is required.');
+      }
+      const online = FrameworkBridge.getPlayerByPhone(phone);
+      if (online) return ok(online.source);
+      const holder =
+        (await PlayerDirectory.resolveByPhone(phone)) ?? (await readCitizenIdByNumber(phone));
+      if (holder) return fail<number>('offline', 'The player on that number is not connected.');
+      return fail<number>('unknown_player', 'No character with that phone number.');
     })
   );
 

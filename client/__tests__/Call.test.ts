@@ -218,3 +218,64 @@ describe('failed', () => {
     expect(sentNuiMessages).toEqual([{ action: 'callStatus', data: { status: 'idle' } }]);
   });
 });
+
+describe('isInCall (MICA-232)', () => {
+  const inCall = async () => (await import('../services/Call')).isInCall();
+
+  it('is true only from accepted until ended -- ringing is not a call', async () => {
+    expect(await inCall()).toBe(false);
+    serverEvent('mica:client:phone:incoming', { from: '555-0101', callId: 4 });
+    expect(await inCall()).toBe(false);
+    serverEvent('mica:client:phone:accepted', { callId: 4 });
+    expect(await inCall()).toBe(true);
+    serverEvent('mica:client:phone:ended');
+    expect(await inCall()).toBe(false);
+  });
+
+  it('is true even when pma-voice throws on join, since the server did connect it', async () => {
+    pmaVoice.addPlayerToCall.mockImplementation(() => {
+      throw new Error('renamed export');
+    });
+    serverEvent('mica:client:phone:accepted', { callId: 4 });
+    expect(await inCall()).toBe(true);
+  });
+
+  it('is cleared by hanging up locally -- the server never sends ended to the side that ended', async () => {
+    serverEvent('mica:client:phone:accepted', { callId: 4 });
+    await nuiCall('endCall');
+    expect(await inCall()).toBe(false);
+  });
+
+  it('hanging up locally leaves the pma-voice channel, once', async () => {
+    serverEvent('mica:client:phone:accepted', { callId: 4 });
+    await nuiCall('endCall');
+    expect(pmaVoice.removePlayerFromCall).toHaveBeenCalledTimes(1);
+  });
+
+  it('hanging up still reaches the server and answers when pma-voice throws', async () => {
+    pmaVoice.removePlayerFromCall.mockImplementation(() => {
+      throw new Error('renamed export');
+    });
+    serverEvent('mica:client:phone:accepted', { callId: 4 });
+    expect(await nuiCall('endCall')).toEqual({ status: 'idle' });
+    expect(triggeredServerEvents).toContainEqual(['mica:server:phone:end']);
+    expect(await inCall()).toBe(false);
+  });
+
+  it('rejecting a ringing call does not touch pma-voice -- it was never joined', async () => {
+    serverEvent('mica:client:phone:incoming', { from: '555-0101', callId: 4 });
+    await nuiCall('rejectCall');
+    expect(pmaVoice.removePlayerFromCall).not.toHaveBeenCalled();
+  });
+
+  it('is cleared by failed', async () => {
+    serverEvent('mica:client:phone:accepted', { callId: 4 });
+    serverEvent('mica:client:phone:failed');
+    expect(await inCall()).toBe(false);
+  });
+
+  it('ignores the page: answerCall alone does not put the player in a call', async () => {
+    await nuiCall('answerCall');
+    expect(await inCall()).toBe(false);
+  });
+});

@@ -169,8 +169,13 @@ describe('playerDropped teardown', () => {
     await fire(START, 1, '555-0002');
     await drop(1);
 
+    // The dropped source is told too (MICA-232): harmless to a gone client, and it keeps
+    // teardown one rule — both real parties, always.
     const ended = emitCalls().filter(([event]) => event === 'mica:client:phone:ended');
-    expect(ended).toEqual([['mica:client:phone:ended', 2]]);
+    expect(ended).toEqual([
+      ['mica:client:phone:ended', 1],
+      ['mica:client:phone:ended', 2]
+    ]);
 
     const inserts = createCalls();
     expect(inserts[0][1]).toEqual(expect.arrayContaining(['CID_CALLER', 'outgoing', 0]));
@@ -187,7 +192,10 @@ describe('playerDropped teardown', () => {
     await drop(2);
 
     const ended = emitCalls().filter(([event]) => event === 'mica:client:phone:ended');
-    expect(ended).toEqual([['mica:client:phone:ended', 1]]);
+    expect(ended).toEqual([
+      ['mica:client:phone:ended', 1],
+      ['mica:client:phone:ended', 2]
+    ]);
 
     const inserts = createCalls();
     expect(inserts[1][1]).toEqual(expect.arrayContaining(['CID_TARGET', 'missed', 0]));
@@ -479,14 +487,13 @@ describe('injectIncomingCall / endActiveCallFor — micacall support', () => {
     await fire(ANSWER, 2);
     (globalThis as any).emitNet.mockClear();
 
-    // The target hangs up through the real handler, so `endedBy` is the target and the
-    // side "still owed" a notification is the console's sentinel.
+    // The target hangs up through the real handler; the other side is the console's sentinel.
     await fire(END, 2);
 
     const toNobody = emitCalls().filter(([, src]) => !Number.isInteger(src) || src <= 0);
     expect(toNobody).toEqual([]);
-    // And nothing to the target either — they are the one who ended it.
-    expect(endedCalls()).toEqual([]);
+    // The target is told, as whoever ends a call always is (MICA-232) — and only the target.
+    expect(endedCalls()).toEqual([['mica:client:phone:ended', 2]]);
   });
 
   it('notifies only the real party and logs on their side alone', async () => {
@@ -935,5 +942,68 @@ describe('start: the emergency number is exempt without needing a line (MICA-226
     await fire(START, 1, '911');
 
     expect(dbMock.scalar).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * MICA-232. `endActiveCall` used to skip whichever side ended the call, on the theory that it
+ * already knew. It does not always: a dying battery sends `phone:end` from
+ * `client/services/Battery.ts` with the call UI and the voice channel still up, and an answer
+ * racing a hang-up can leave the ender's client believing it connected. Both real parties are
+ * told now, every time; the client's `ended` handler is idempotent.
+ */
+describe('the side that ends a call is told it ended', () => {
+  it('on a hang-up through phone:end, by the caller', async () => {
+    await fire(START, 1, '555-0002');
+    await fire(ANSWER, 2);
+    (globalThis as any).emitNet.mockClear();
+
+    await fire(END, 1);
+
+    expect(endedCalls()).toEqual([
+      ['mica:client:phone:ended', 1],
+      ['mica:client:phone:ended', 2]
+    ]);
+  });
+
+  it('on a battery-drain end, which reaches the server as phone:end from a live call', async () => {
+    // The client's drain path has no event of its own; it is `phone:end` from the target
+    // whose phone just died, mid-call, before its own UI has torn anything down.
+    await fire(START, 1, '555-0002');
+    await fire(ANSWER, 2);
+    (globalThis as any).emitNet.mockClear();
+
+    await fire(END, 2);
+
+    expect(endedCalls()).toContainEqual(['mica:client:phone:ended', 2]);
+    expect(endedCalls()).toContainEqual(['mica:client:phone:ended', 1]);
+  });
+
+  it('when the ender hangs up while a call is still ringing (the answer race)', async () => {
+    await fire(START, 1, '555-0002');
+    (globalThis as any).emitNet.mockClear();
+
+    await fire(END, 1);
+    // The target's answer lands after the call is gone and connects nothing.
+    await fire(ANSWER, 2);
+
+    expect(endedCalls()).toEqual([
+      ['mica:client:phone:ended', 1],
+      ['mica:client:phone:ended', 2]
+    ]);
+    expect(emitCalls().filter(([event]) => event === 'mica:client:phone:accepted')).toEqual([]);
+  });
+
+  it('on playerDropped, where the dropped source is emitted to as well', async () => {
+    await fire(START, 1, '555-0002');
+    await fire(ANSWER, 2);
+    (globalThis as any).emitNet.mockClear();
+
+    await drop(2);
+
+    expect(endedCalls()).toEqual([
+      ['mica:client:phone:ended', 1],
+      ['mica:client:phone:ended', 2]
+    ]);
   });
 });

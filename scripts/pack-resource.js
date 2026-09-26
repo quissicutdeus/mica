@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSy
 import { join, posix, relative } from 'node:path';
 
 import {
+  BRIDGES_DIR,
   DIST_DIRS,
   RESOURCE_NAME,
   TOP_LEVEL_FILES,
@@ -115,8 +116,14 @@ if (!repository) {
   process.exit(1);
 }
 
+/** The bridges, which the manifest does not declare and so are not in `relPaths`. */
+const bridgePaths = walk(BRIDGES_DIR).map((file) =>
+  relative('.', file).split('\\').join(posix.sep)
+);
+
 const entries = [
   ...relPaths.map((path) => ({ path, data: readFileSync(path) })),
+  ...bridgePaths.map((path) => ({ path, data: readFileSync(path) })),
   ...TOP_LEVEL_FILES.map((path) => ({
     path,
     data: path === 'fxmanifest.lua' ? stampManifestVersion(manifest, version) : readFileSync(path)

@@ -105,6 +105,17 @@ const heldBy = (player: FrameworkPlayer, item: string): boolean => {
 };
 
 /**
+ * Whether this player holds a phone item, counted now, with nothing pushed and nobody
+ * notified — the read-only half of `evaluatePhoneItem`, for the `HasPhoneItem` export.
+ * `true` whenever there is no gate (convar empty or invalid, or standalone), and `true` when
+ * no inventory can count, for the fail-open reason in this file's preamble.
+ */
+export const holdsPhoneItem = (player: FrameworkPlayer): boolean => {
+  const item = phoneItemName();
+  return item ? heldBy(player, item) : true;
+};
+
+/**
  * Whoever needs to know that a player's phone situation may have changed (MICA-284).
  *
  * Three things can change which phone a player is on, and this file is where all three are

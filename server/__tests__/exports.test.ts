@@ -21,11 +21,17 @@ const { dbMock, bridgeMock } = vi.hoisted(() => ({
     // them in `users(identifier)`. Nobody is offline-resolvable unless a case says so.
     findOfflineByCitizenId: vi.fn(async () => null),
     findOfflineByPhone: vi.fn(async () => null),
-    registerUsableItem: vi.fn()
+    registerUsableItem: vi.fn(),
+    // `HasPhoneItem` counts through this; `null` is "no inventory can count".
+    countItem: vi.fn(() => 0)
   }
 }));
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
-vi.mock('../lib/FrameworkBridge', () => ({ FrameworkBridge: bridgeMock }));
+// `detectFramework` is read by `phoneItemName` only while `mica_phone_item` is set.
+vi.mock('../lib/FrameworkBridge', () => ({
+  FrameworkBridge: bridgeMock,
+  detectFramework: () => 'qb'
+}));
 // The Messages service does the writing; what is under test here is the boundary in front
 // of it -- argument checks, the refusals, the rate limit. `sendFromLine.test.ts` has the rest.
 const sendFromLine = vi.hoisted(() =>
@@ -44,7 +50,7 @@ import {
   __resetExportRateLimits
 } from '../lib/exports';
 import { lookupLine, releaseResource } from '../lib/numberRegistry';
-import { __resetCalls } from '../services/Phone';
+import { __resetCalls, endActiveCallFor } from '../services/Phone';
 
 const SRC = 7;
 const CID = 'ABC12345';
@@ -96,9 +102,13 @@ describe('the public export surface', () => {
       'GetApiVersion',
       'GetBatteryLevel',
       'GetCitizenId',
+      'GetCitizenIdFromSource',
       'GetEmergencyNumber',
       'GetPhoneNumber',
       'GetSignal',
+      'GetSourceFromNumber',
+      'HasPhoneItem',
+      'IsInCall',
       'IsPhoneLocked',
       'IsPhoneOpen',
       'LockPhone',
@@ -650,6 +660,164 @@ describe('line exports (MICA-226)', () => {
     await expect(createCall(9, '555-0100')).resolves.toMatchObject({
       ok: false,
       reason: 'not_ready'
+    });
+  });
+});
+
+describe('bridge-compat exports (MICA-232)', () => {
+  const withPhoneItem = async (item: string, run: () => unknown): Promise<void> => {
+    const original = (globalThis as any).GetConvar;
+    (globalThis as any).GetConvar = (name: string, fallback: string) =>
+      name === 'mica_phone_item' ? item : original(name, fallback);
+    try {
+      await run();
+    } finally {
+      (globalThis as any).GetConvar = original;
+    }
+  };
+
+  it('IsInCall is false for a connected player on no call', () => {
+    expect(publishedExport('IsInCall')!(SRC)).toEqual({ ok: true, value: false });
+  });
+
+  it('IsInCall is true for both parties while a placed call is ringing', async () => {
+    bridgeMock.getPlayerByPhone.mockReturnValue({ citizenid: 'TARGET01', source: 8 } as any);
+    await expect(publishedExport('CreateCall')!(SRC, '5550200')).resolves.toMatchObject({
+      ok: true
+    });
+
+    expect(publishedExport('IsInCall')!(SRC)).toEqual({ ok: true, value: true });
+    expect(publishedExport('IsInCall')!(8)).toEqual({ ok: true, value: true });
+  });
+
+  it('IsInCall is false again once the call is released', async () => {
+    bridgeMock.getPlayerByPhone.mockReturnValue({ citizenid: 'TARGET01', source: 8 } as any);
+    await publishedExport('CreateCall')!(SRC, '5550200');
+    endActiveCallFor(SRC);
+
+    expect(publishedExport('IsInCall')!(SRC)).toEqual({ ok: true, value: false });
+    expect(publishedExport('IsInCall')!(8)).toEqual({ ok: true, value: false });
+  });
+
+  it('IsInCall refuses a source that is not connected', () => {
+    bridgeMock.getPlayer.mockReturnValue(null);
+    expect(publishedExport('IsInCall')!(SRC)).toMatchObject({
+      ok: false,
+      reason: 'unknown_player'
+    });
+  });
+
+  it('HasPhoneItem is true on a server that requires no item, without counting', () => {
+    expect(publishedExport('HasPhoneItem')!(SRC)).toEqual({ ok: true, value: true });
+    expect(bridgeMock.countItem).not.toHaveBeenCalled();
+  });
+
+  it('HasPhoneItem is true for a player holding the configured item', async () => {
+    bridgeMock.countItem.mockReturnValue(1);
+    await withPhoneItem('phone', () => {
+      expect(publishedExport('HasPhoneItem')!(SRC)).toEqual({ ok: true, value: true });
+    });
+    expect(bridgeMock.countItem).toHaveBeenCalledWith(
+      expect.objectContaining({ citizenid: CID }),
+      'phone'
+    );
+  });
+
+  it('HasPhoneItem is false for a player holding none, and pushes nothing', async () => {
+    bridgeMock.countItem.mockReturnValue(0);
+    await withPhoneItem('phone', () => {
+      expect(publishedExport('HasPhoneItem')!(SRC)).toEqual({ ok: true, value: false });
+    });
+    // A read, not `evaluatePhoneItem`: the client is told nothing.
+    expect((globalThis as any).emitNet).not.toHaveBeenCalled();
+  });
+
+  it('HasPhoneItem fails open when no inventory can count', async () => {
+    bridgeMock.countItem.mockReturnValue(null as any);
+    await withPhoneItem('phone', () => {
+      expect(publishedExport('HasPhoneItem')!(SRC)).toEqual({ ok: true, value: true });
+    });
+  });
+
+  it('HasPhoneItem refuses a bad source and one with no character', () => {
+    expect(publishedExport('HasPhoneItem')!('7')).toMatchObject({
+      ok: false,
+      reason: 'invalid_args'
+    });
+    bridgeMock.getPlayer.mockReturnValue(null);
+    expect(publishedExport('HasPhoneItem')!(SRC)).toMatchObject({
+      ok: false,
+      reason: 'unknown_player'
+    });
+  });
+
+  it('GetSourceFromNumber answers the source of the connected player on the number', async () => {
+    bridgeMock.getPlayerByPhone.mockReturnValue({ citizenid: 'TARGET01', source: 8 } as any);
+    await expect(publishedExport('GetSourceFromNumber')!('5550200')).resolves.toEqual({
+      ok: true,
+      value: 8
+    });
+    expect(bridgeMock.getPlayerByPhone).toHaveBeenCalledWith('5550200');
+  });
+
+  it('GetSourceFromNumber is offline for a number a disconnected character holds', async () => {
+    bridgeMock.findOfflineByPhone.mockResolvedValue({
+      citizenid: 'TARGET01',
+      firstname: null,
+      lastname: null,
+      phone: '5550200'
+    } as any);
+    await expect(publishedExport('GetSourceFromNumber')!('5550200')).resolves.toMatchObject({
+      ok: false,
+      reason: 'offline'
+    });
+  });
+
+  it("GetSourceFromNumber is offline when only micaOS's own number table knows the holder", async () => {
+    dbMock.single.mockResolvedValue({ citizenid: 'TARGET01' });
+    await expect(publishedExport('GetSourceFromNumber')!('5550200')).resolves.toMatchObject({
+      ok: false,
+      reason: 'offline'
+    });
+  });
+
+  it('GetSourceFromNumber is unknown_player for a number nobody holds', async () => {
+    // `vi.clearAllMocks` keeps the offline holder an earlier case set.
+    bridgeMock.findOfflineByPhone.mockResolvedValue(null);
+    await expect(publishedExport('GetSourceFromNumber')!('5550000')).resolves.toMatchObject({
+      ok: false,
+      reason: 'unknown_player'
+    });
+  });
+
+  it('GetSourceFromNumber refuses something that is not a number string', async () => {
+    for (const bad of [undefined, 5550200, '', { number: '5550200' }]) {
+      await expect(publishedExport('GetSourceFromNumber')!(bad)).resolves.toMatchObject({
+        ok: false,
+        reason: 'invalid_args'
+      });
+    }
+  });
+
+  it('GetCitizenIdFromSource answers the citizenid loaded on a source', () => {
+    expect(publishedExport('GetCitizenIdFromSource')!(SRC)).toEqual({ ok: true, value: CID });
+    expect(bridgeMock.getPlayer).toHaveBeenCalledWith(SRC);
+  });
+
+  it('GetCitizenIdFromSource refuses a source that is not a positive integer', () => {
+    for (const bad of [undefined, 0, -1, 1.5, '7']) {
+      expect(publishedExport('GetCitizenIdFromSource')!(bad)).toMatchObject({
+        ok: false,
+        reason: 'invalid_args'
+      });
+    }
+  });
+
+  it('GetCitizenIdFromSource is unknown_player when no character is loaded', () => {
+    bridgeMock.getPlayer.mockReturnValue(null);
+    expect(publishedExport('GetCitizenIdFromSource')!(SRC)).toMatchObject({
+      ok: false,
+      reason: 'unknown_player'
     });
   });
 });

@@ -529,6 +529,113 @@ What is deliberately different from qb-phone:
   qb-phone's QBCore callbacks (`qb-phone:server:GetCallState` and its kind)
   needs the corresponding export from the table above instead.
 
+### Coming from lb-phone or NPWD
+
+Scripts written for lb-phone or NPWD call exports on a resource of that exact
+name — `exports['lb-phone']:SendMessage(...)`,
+`exports.npwd:createNotification(...)` — and FiveM finds an export by the
+resource's name, so a phone called anything else cannot answer them. micaOS
+ships two small bridge resources that take those names and forward each call to
+micaOS's own exports. They are optional and nothing ensures them: copy the one
+you need out of the release and ensure it after micaOS.
+
+```sh
+cp -r resources/mica/bridges/lb-phone resources/   # or bridges/npwd
+```
+
+```text
+ensure mica
+ensure lb-phone
+```
+
+A bridge cannot run beside the phone it imitates, since the two would claim the
+same resource name, so remove the real one first. Each bridge answers with the
+shapes the original's documentation gives — plain values and `nil`/`false`
+rather than micaOS's outcome objects — and never throws into your script. A name
+with no micaOS equivalent is still registered: it logs once, naming what to use
+instead, and answers what the original would answer when it has nothing. The
+tables below are generated from the bridges' own source by
+`pnpm generate:bridge-table`, and `pnpm lint:md` fails if they drift.
+
+Two limits apply to every entry. The bridges are JavaScript, so a Lua caller
+that reads two return values (`local a, b = ...`) gets the first and `nil`. And
+an export that has to ask the server is asynchronous: call it from a thread (an
+event handler or `CreateThread`), as with micaOS's own asynchronous exports.
+
+**Every script behind a bridge shares one rate limit.** micaOS limits
+`SendMessage` per calling resource, and through a bridge the caller is always
+`lb-phone` or `npwd`, so all the scripts using that bridge share one budget of
+120 texts a minute. One script stuck in a loop spends it for all of them. A
+script that texts in volume should call `exports['mica']:SendMessage` directly,
+where it gets its own.
+
+#### lb-phone
+
+<!-- bridge:lb-phone:start -->
+
+| lb-phone export          | Side   | micaOS                                                       | Notes                                                                                                                                                                                                                 |
+| ------------------------ | ------ | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SendMessage`            | server | `GetCitizenId`, `SendMessage`                                | `from` must be a line, not a number a character holds -- micaOS refuses to speak for a player. Attachment URLs are appended to the body; `channelId` is ignored. `cb` gets `true`/`false` (best reading of the docs). |
+| `SendNotification`       | server | `GetCitizenIdFromSource`, `GetCitizenId`, `SendNotification` | Grouped under the calling resource (`ext_<resource>`), labelled with lb-phone's `app`. Answers `true` rather than a notification id, which micaOS does not expose; `customData` buttons are dropped.                  |
+| `SendMail`               | server | `GetCitizenId`, `GetPhoneNumber`, `SendSystemEmail`          | micaOS mail has no addresses: `to` must be a phone number or a citizenid, and an lb-phone address answers `false`. Answers `success` only, not `success, id`; `attachments` and `actions` are dropped.                |
+| `AddContact`             | server | `GetCitizenId`, `AddContact`                                 | `avatar` and `address` have no micaOS column and are dropped.                                                                                                                                                         |
+| `GetEquippedPhoneNumber` | server | `GetCitizenIdFromSource`, `GetPhoneNumber`                   | A source, or a citizenid as the identifier.                                                                                                                                                                           |
+| `GetSourceFromNumber`    | server | `GetSourceFromNumber`                                        | nil when nobody connected holds the number.                                                                                                                                                                           |
+| `CreateCall`             | server | `CreateCall`                                                 | Calls from `caller.source`'s own number; `caller.phoneNumber` and `options` are ignored. Answers `true` rather than a call id, which micaOS does not expose.                                                          |
+| `IsInCall`               | server | `IsInCall`                                                   | Answers `inCall` only; no call id or call table.                                                                                                                                                                      |
+| `HasPhoneItem`           | server | `HasPhoneItem`                                               | `phoneNumber` is ignored: micaOS asks whether the player holds any phone.                                                                                                                                             |
+| `EndCall`                | server | none -- logs once                                            | No equivalent: a call ends from the phone.                                                                                                                                                                            |
+| `GetCall`                | server | none -- logs once                                            | No equivalent. `IsInCall(source)` answers whether there is one.                                                                                                                                                       |
+| `NotifyEveryone`         | server | none -- logs once                                            | No equivalent; call micaOS's `SendNotification` per citizenid.                                                                                                                                                        |
+| `SendCoords`             | server | none -- logs once                                            | No equivalent.                                                                                                                                                                                                        |
+| `IsOpen`                 | client | `IsPhoneOpen`                                                |                                                                                                                                                                                                                       |
+| `ToggleOpen`             | client | `OpenPhone`, `ClosePhone`, `TogglePhone`                     | `noFocus` is ignored.                                                                                                                                                                                                 |
+| `IsDisabled`             | client | `IsPhoneEnabled`                                             |                                                                                                                                                                                                                       |
+| `ToggleDisabled`         | client | `SetPhoneEnabled`                                            |                                                                                                                                                                                                                       |
+| `OpenApp`                | client | `OpenApp`                                                    | lb-phone's app identifier is lowercased; micaOS's own ids differ for most apps.                                                                                                                                       |
+| `SendNotification`       | client | `Notify`                                                     | A toast only, as in lb-phone; `thumbnail` and `avatar` are dropped.                                                                                                                                                   |
+| `GetEquippedPhoneNumber` | client | `GetPhoneNumber`                                             |                                                                                                                                                                                                                       |
+| `CreateCall`             | client | `server:CreateCall`                                          | Places the call through this bridge's server half, at most one every two seconds; `company`, `videoCall` and `hideNumber` are ignored.                                                                                |
+| `IsInCall`               | client | `IsInCall`                                                   |                                                                                                                                                                                                                       |
+| `AddContact`             | client | none -- logs once                                            | Server-side only in micaOS: `AddContact(citizenid, contact)`.                                                                                                                                                         |
+| `HasPhoneItem`           | client | none -- logs once                                            | Server-side only in micaOS: `HasPhoneItem(source)`. The client `IsPhoneEnabled` is also false while the phone is confiscated.                                                                                         |
+| `GetBattery`             | client | none -- logs once                                            | Server-side only in micaOS: `GetBatteryLevel(source)`.                                                                                                                                                                |
+| `CloseApp`               | client | none -- logs once                                            | No equivalent.                                                                                                                                                                                                        |
+
+<!-- bridge:lb-phone:end -->
+
+#### NPWD
+
+<!-- bridge:npwd:start -->
+
+| NPWD export                | Side   | micaOS                                                     | Notes                                                                                                                                                              |
+| -------------------------- | ------ | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `getPlayerData`            | server | `GetCitizenIdFromSource`, `GetCitizenId`, `GetPhoneNumber` | `identifier` is the citizenid. `firstName`, `lastName` and `name` are nil: micaOS exports no character names.                                                      |
+| `emitMessage`              | server | `GetCitizenId`, `SendMessage`                              | `senderNumber` must be a line, not a number a character holds -- micaOS refuses to speak for a player. `embed` is dropped.                                         |
+| `isPlayerBusy`             | server | `IsInCall`                                                 |                                                                                                                                                                    |
+| `isPhoneNumberBusy`        | server | `GetSourceFromNumber`, `IsInCall`                          | false when nobody connected holds the number.                                                                                                                      |
+| `onCall`                   | server | none -- logs once                                          | No drop-in equivalent: micaOS's `RegisterNumber(number, { onCall })` answers `{ action = 'accept' \| 'reject' \| 'forward' }` rather than NPWD's middleware `ctx`. |
+| `onMessage`                | server | none -- logs once                                          | No equivalent: a text to a registered line is not delivered to a script.                                                                                           |
+| `generatePhoneNumber`      | server | none -- logs once                                          | No equivalent: numbers come from the framework.                                                                                                                    |
+| `newPlayer`                | server | none -- logs once                                          | No equivalent: micaOS loads players from the framework.                                                                                                            |
+| `unloadPlayer`             | server | none -- logs once                                          | No equivalent: micaOS loads players from the framework.                                                                                                            |
+| `openApp`                  | client | `OpenApp`                                                  | NPWD's app id is lowercased (`CONTACTS` becomes `contacts`).                                                                                                       |
+| `setPhoneVisible`          | client | `OpenPhone`, `ClosePhone`                                  | Refused while the phone is disabled, as in NPWD.                                                                                                                   |
+| `isPhoneVisible`           | client | `IsPhoneOpen`                                              |                                                                                                                                                                    |
+| `setPhoneDisabled`         | client | `SetPhoneEnabled`                                          |                                                                                                                                                                    |
+| `isPhoneDisabled`          | client | `IsPhoneEnabled`                                           |                                                                                                                                                                    |
+| `getPhoneNumber`           | client | `GetPhoneNumber`                                           |                                                                                                                                                                    |
+| `createNotification`       | client | `Notify`                                                   | A toast: `secondaryTitle` is the title. `path`, `duration` and `keepOpen` are dropped.                                                                             |
+| `createSystemNotification` | client | `Notify`                                                   | A toast with no controls: `onConfirm` and `onCancel` are never called, so do not gate anything on them.                                                            |
+| `startPhoneCall`           | client | `server:CreateCall`                                        | Places the call through this bridge's server half, at most one every two seconds.                                                                                  |
+| `isInCall`                 | client | `IsInCall`                                                 |                                                                                                                                                                    |
+| `endCall`                  | client | none -- logs once                                          | No equivalent: a call ends from the phone.                                                                                                                         |
+| `fillNewContact`           | client | none -- logs once                                          | No equivalent. The server's `AddContact(citizenid, contact)` saves one outright.                                                                                   |
+| `fillNewNote`              | client | none -- logs once                                          | No equivalent.                                                                                                                                                     |
+| `sendUIMessage`            | client | none -- logs once                                          | No equivalent: a micaOS add-on talks to its own iframe through the SDK.                                                                                            |
+
+<!-- bridge:npwd:end -->
+
 ## Configuration
 
 Everything a server owner can tune is a convar, set in `server.cfg` above
@@ -1301,34 +1408,38 @@ number), `not_owner` (that number belongs to a different resource),
 it allows; the call was dropped) or `disabled` (the device will not open for
 this player right now: confiscated, switched off, or an item they do not hold).
 
-| Export                              | Identifies a player by | Does                                                                                              |
-| ----------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------- |
-| `GetApiVersion()`                   | —                      | The API version. Bumped when an existing export changes shape, not when one is added              |
-| `SendSystemEmail(...)`              | citizenid              | Sends mail. Predates this API and keeps its original signature                                    |
-| `SendMessage(citizenid, message)`   | citizenid              | Puts a text in Messages from a business or a line, never a player. Works offline; see below       |
-| `SendNotification(citizenid, opts)` | citizenid              | Raises a notification. Works offline — the row is written and shown next time they open the phone |
-| `SendInvoice(citizenid, invoice)`   | citizenid              | Bills a player; they pay or decline from the Bank app. Works offline; see below                   |
-| `BuildDeepLink(app, props)`         | —                      | Builds a `app?key=value` link without needing to know the format                                  |
-| `AddMedia(citizenid, media)`        | citizenid              | Puts a GIF, a video poster, a voice clip or a file in a player's gallery                          |
-| `AddContact(citizenid, contact)`    | citizenid              | Adds a contact to a player's address book. Works offline, same as `AddMedia`                      |
-| `GetPhoneNumber(citizenid)`         | citizenid              | The phone number for a citizenid, online or off                                                   |
-| `GetCitizenId(phone)`               | —                      | The reverse lookup: whose phone number is this                                                    |
-| `IsPhoneOpen(source)`               | source                 | Whether that player's phone is open right now                                                     |
-| `SetPhoneEnabled(source, enabled)`  | source                 | Confiscates or returns a player's phone; disabling while open force-closes it                     |
-| `OpenApp(source, appId, props)`     | source                 | Force-opens the phone on a named app; `props` becomes that app's `useDeepLink` payload            |
-| `GetBatteryLevel(source)`           | source                 | The saved charge, 0-100                                                                           |
-| `SetBatteryLevel(source, level)`    | source                 | Sets the charge. Clamped rather than refused                                                      |
-| `AddBatteryCharge(source, delta)`   | source                 | Adds or, with a negative delta, drains — an EMP, a taser                                          |
-| `SetCharging(source, isCharging)`   | source                 | Puts the phone on or off charge. A state, not a top-up: it reverses the drain loop                |
-| `SetGlobalSignal(level)`            | —                      | City-wide reception, 0-4. `0` is a blackout                                                       |
-| `ClearGlobalSignal()`               | —                      | Back to full bars                                                                                 |
-| `AddDeadZone({x,y,z,radius,level})` | —                      | A jammer, a tunnel, a basement. Returns an id                                                     |
-| `RemoveDeadZone(id)`                | —                      | Removes one by the id `AddDeadZone` gave you                                                      |
-| `SetSignal(source, level)`          | source                 | One player, overriding the zones. `null` hands them back to the world                             |
-| `GetSignal(source)`                 | source                 | The rules they are subject to — not their bars, which depend on where they stand                  |
-| `RegisterNumber(number, options)`   | —                      | Owns a phone number, so a call placed to it reaches your handler instead of failing               |
-| `UnregisterNumber(number)`          | —                      | Gives a number back. Only the resource that registered it may                                     |
-| `CreateCall(source, number)`        | source                 | Places a call for a player, the way a payphone or a dispatch pick-up would. Async                 |
+| Export                              | Identifies a player by | Does                                                                                                                      |
+| ----------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `GetApiVersion()`                   | —                      | The API version. Bumped when an existing export changes shape, not when one is added                                      |
+| `SendSystemEmail(...)`              | citizenid              | Sends mail. Predates this API and keeps its original signature                                                            |
+| `SendMessage(citizenid, message)`   | citizenid              | Puts a text in Messages from a business or a line, never a player. Works offline; see below                               |
+| `SendNotification(citizenid, opts)` | citizenid              | Raises a notification. Works offline — the row is written and shown next time they open the phone                         |
+| `SendInvoice(citizenid, invoice)`   | citizenid              | Bills a player; they pay or decline from the Bank app. Works offline; see below                                           |
+| `BuildDeepLink(app, props)`         | —                      | Builds a `app?key=value` link without needing to know the format                                                          |
+| `AddMedia(citizenid, media)`        | citizenid              | Puts a GIF, a video poster, a voice clip or a file in a player's gallery                                                  |
+| `AddContact(citizenid, contact)`    | citizenid              | Adds a contact to a player's address book. Works offline, same as `AddMedia`                                              |
+| `GetPhoneNumber(citizenid)`         | citizenid              | The phone number for a citizenid, online or off                                                                           |
+| `GetCitizenId(phone)`               | —                      | The reverse lookup: whose phone number is this                                                                            |
+| `IsPhoneOpen(source)`               | source                 | Whether that player's phone is open right now                                                                             |
+| `SetPhoneEnabled(source, enabled)`  | source                 | Confiscates or returns a player's phone; disabling while open force-closes it                                             |
+| `OpenApp(source, appId, props)`     | source                 | Force-opens the phone on a named app; `props` becomes that app's `useDeepLink` payload                                    |
+| `GetBatteryLevel(source)`           | source                 | The saved charge, 0-100                                                                                                   |
+| `SetBatteryLevel(source, level)`    | source                 | Sets the charge. Clamped rather than refused                                                                              |
+| `AddBatteryCharge(source, delta)`   | source                 | Adds or, with a negative delta, drains — an EMP, a taser                                                                  |
+| `SetCharging(source, isCharging)`   | source                 | Puts the phone on or off charge. A state, not a top-up: it reverses the drain loop                                        |
+| `SetGlobalSignal(level)`            | —                      | City-wide reception, 0-4. `0` is a blackout                                                                               |
+| `ClearGlobalSignal()`               | —                      | Back to full bars                                                                                                         |
+| `AddDeadZone({x,y,z,radius,level})` | —                      | A jammer, a tunnel, a basement. Returns an id                                                                             |
+| `RemoveDeadZone(id)`                | —                      | Removes one by the id `AddDeadZone` gave you                                                                              |
+| `SetSignal(source, level)`          | source                 | One player, overriding the zones. `null` hands them back to the world                                                     |
+| `GetSignal(source)`                 | source                 | The rules they are subject to — not their bars, which depend on where they stand                                          |
+| `RegisterNumber(number, options)`   | —                      | Owns a phone number, so a call placed to it reaches your handler instead of failing                                       |
+| `UnregisterNumber(number)`          | —                      | Gives a number back. Only the resource that registered it may                                                             |
+| `CreateCall(source, number)`        | source                 | Places a call for a player, the way a payphone or a dispatch pick-up would. Async                                         |
+| `IsInCall(source)`                  | source                 | Whether that player is ringing, connected, or waiting on a line's handler — when `true`, `CreateCall` answers `not_ready` |
+| `HasPhoneItem(source)`              | source                 | Whether they hold a phone item right now. `true` when no item is required, or when no inventory can count it              |
+| `GetSourceFromNumber(number)`       | —                      | The online player holding that number. `offline` when a character holds it but is not connected. Async                    |
+| `GetCitizenIdFromSource(source)`    | source                 | The citizenid of the character loaded on that source. `unknown_player` before one loads                                   |
 
 **citizenid or source, and it matters which.** Anything that must work while the
 player is offline takes a citizenid; anything inherently live takes a source. No
@@ -1505,17 +1616,19 @@ exports['mica']:Notify({ type = 'success', title = 'Lockpick', message = 'Door o
 exports['mica']:OpenApp('contacts')               -- optional props table as the second argument
 ```
 
-| Client export                       | Server counterpart                  | Does                                                                                      |
-| ----------------------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------- |
-| `GetApiVersion()`                   | `GetApiVersion()`                   | The client API version, numbered separately from the server's                             |
-| `IsPhoneOpen(device?)`              | `IsPhoneOpen(source)`               | Whether this player's device is open. The client is the truth; the server mirrors it      |
-| `OpenPhone(device?)`                | —                                   | Opens it as the key would. `disabled` while confiscated, switched off or the item is gone |
-| `ClosePhone(device?)`               | —                                   | Puts it down. Always allowed                                                              |
-| `TogglePhone(device?)`              | —                                   | Exactly what the key does, refusals included; answers `{ open }` afterwards               |
-| `SetPhoneEnabled(enabled, device?)` | `SetPhoneEnabled(source, enabled)`  | Confiscates or returns it. One flag, set from either side; the last word wins             |
-| `GetPhoneNumber()`                  | `GetPhoneNumber(citizenid)`         | This player's number, as the framework reports it. `not_ready` before a character loads   |
-| `OpenApp(appId, props?, device?)`   | `OpenApp(source, appId, props)`     | Force-opens the device on an app. Only the server can check the app exists                |
-| `Notify(opts)`                      | `SendNotification(citizenid, opts)` | A toast and nothing else. The server's writes a row the player finds in the shade later   |
+| Client export                       | Server counterpart                  | Does                                                                                                       |
+| ----------------------------------- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `GetApiVersion()`                   | `GetApiVersion()`                   | The client API version, numbered separately from the server's                                              |
+| `IsPhoneOpen(device?)`              | `IsPhoneOpen(source)`               | Whether this player's device is open. The client is the truth; the server mirrors it                       |
+| `OpenPhone(device?)`                | —                                   | Opens it as the key would. `disabled` while confiscated, switched off or the item is gone                  |
+| `ClosePhone(device?)`               | —                                   | Puts it down. Always allowed                                                                               |
+| `TogglePhone(device?)`              | —                                   | Exactly what the key does, refusals included; answers `{ open }` afterwards                                |
+| `SetPhoneEnabled(enabled, device?)` | `SetPhoneEnabled(source, enabled)`  | Confiscates or returns it. One flag, set from either side; the last word wins                              |
+| `GetPhoneNumber()`                  | `GetPhoneNumber(citizenid)`         | This player's number, as the framework reports it. `not_ready` before a character loads                    |
+| `OpenApp(appId, props?, device?)`   | `OpenApp(source, appId, props)`     | Force-opens the device on an app. Only the server can check the app exists                                 |
+| `Notify(opts)`                      | `SendNotification(citizenid, opts)` | A toast and nothing else. The server's writes a row the player finds in the shade later                    |
+| `IsPhoneEnabled(device?)`           | —                                   | Whether the device is enabled — not confiscated or switched off from either side                           |
+| `IsInCall()`                        | `IsInCall(source)`                  | Whether this player is connected in a call. Dialing and ringing are `false` here; the server's counts them |
 
 `device` is optional everywhere it appears: omit it for the phone, pass
 `'tablet'` for the tablet. Anything else is refused with `invalid_args` rather

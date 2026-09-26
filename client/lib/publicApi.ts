@@ -27,6 +27,7 @@ import { openDevice, closeDevice, setDeviceEnabled, toggleDevice } from './Devic
 import { sendNuiMessage } from './nui';
 import { FrameworkBridge } from './FrameworkBridge';
 import { isAppDisabled } from './ownerConfig';
+import { isInCall } from '../services/Call';
 
 /** Bumped when an existing export changes shape, not when one is added -- the server's rule. */
 export const MICA_CLIENT_API_VERSION = 1;
@@ -84,6 +85,30 @@ export const registerClientApi = (): void => {
       if (!device) return badDevice<boolean>(rawDevice);
       return ok(DeviceState.isOpen(device));
     })
+  );
+
+  /**
+   * Whether the device can be raised right now: not confiscated, not switched off by the
+   * server, and an item the player holds. `false` is what makes `OpenPhone` answer
+   * `disabled`. Client-local, the same flag `SetPhoneEnabled` sets (MICA-232).
+   */
+  publish(
+    'IsPhoneEnabled',
+    guarded('IsPhoneEnabled', (rawDevice?: unknown) => {
+      const device = deviceFrom(rawDevice);
+      if (!device) return badDevice<boolean>(rawDevice);
+      return ok(DeviceState.isEnabled(device));
+    })
+  );
+
+  /**
+   * Whether this player is connected in a phone call -- from the server's `accepted` until
+   * its `ended`; dialing and ringing answer `false`. A mirror of what the server last told
+   * this client, for a script deciding whether to interrupt (MICA-232).
+   */
+  publish(
+    'IsInCall',
+    guarded('IsInCall', () => ok(isInCall()))
   );
 
   /**

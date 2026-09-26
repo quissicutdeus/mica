@@ -336,6 +336,19 @@ say so.
 It is guarded, not eliminated, so the census below still counts it — ten in
 total, nine mica-named and this one.
 
+#### Bridge-named — one per optional bridge, outside this resource
+
+The lb-phone and NPWD bridges (MICA-232, `bridges/`) are separate resources an
+owner may copy out and ensure, and each registers one net event of its own:
+`lb-phone:bridge:createCall` or `npwd:bridge:createCall`, which their client
+halves fire so a client script's `CreateCall` / `startPhoneCall` can reach the
+server-only `CreateCall` export. The handler dials as `source` and nobody else,
+takes a string of at most 20 characters, and drops a second call inside two
+seconds. It grants nothing new: `CreateCall` runs the same `placeCall` as
+`mica:server:phone:start`, which every client can already fire. Neither name
+starts with `mica:`, so `eventNames.test.ts` does not see them;
+`server/__tests__/bridges.test.ts` covers the handler instead.
+
 ### 3. Exports
 
 **A different trust boundary.** Exports are called by other _resources_, not by

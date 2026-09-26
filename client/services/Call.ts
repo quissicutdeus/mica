@@ -20,6 +20,16 @@ import { openDevice } from '../lib/DeviceVisibility';
 const pmaVoice = (): any =>
   (globalThis as any).exports?.['pma-voice'] ?? (exports as any)['pma-voice'];
 
+/**
+ * Whether the server has connected this player into a call and not yet torn it down --
+ * set by `accepted`, cleared by `ended` and `failed`, never by anything the page says.
+ * A mirror of the server's call state for the `IsInCall` export (MICA-232), not a second
+ * source of truth: nothing on the server reads it. Dialing and ringing are not "in call".
+ */
+let connected = false;
+
+export const isInCall = (): boolean => connected;
+
 // NUI Callbacks
 RegisterNuiCallbackType('startCall');
 on('__cfx_nui:startCall', (data: { number: string }, cb: Function) => {
@@ -35,6 +45,17 @@ on('__cfx_nui:answerCall', (_: any, cb: Function) => {
 
 RegisterNuiCallbackType('endCall');
 on('__cfx_nui:endCall', (_: any, cb: Function) => {
+  // The server's teardown sends `ended` to both parties, this one included, and that is
+  // what reliably clears the flag and leaves pma-voice. Doing both here as well means a
+  // hang-up takes effect at once rather than a round trip later, and costs nothing when
+  // `ended` repeats it. Only ever to false: the page can end a call, never start one.
+  connected = false;
+  // Guarded like `ended` -- a throw here must not stop the server hearing the hang-up.
+  try {
+    pmaVoice()?.removePlayerFromCall?.();
+  } catch {
+    // pma-voice absent or a different version; the call still ends server-side.
+  }
   TriggerServerEvent('mica:server:phone:end');
   cb({ status: 'idle' });
 });
@@ -105,6 +126,8 @@ onNet('mica:client:phone:incoming', (data: { from: string; callId: number }) => 
 });
 
 onNet('mica:client:phone:accepted', (data: { callId: number }) => {
+  connected = true;
+
   // Connect to PMA Voice Channel. Guarded the same way `toggleMute` is: without pma-voice
   // present, or a version that renamed this export, an unguarded call threw inside this
   // handler and the UI update below never ran — the phone showed "dialing" forever on a
@@ -125,6 +148,8 @@ onNet('mica:client:phone:accepted', (data: { callId: number }) => {
 });
 
 onNet('mica:client:phone:ended', () => {
+  connected = false;
+
   // Disconnect from PMA Voice. Same guard as `accepted` above — a throw here must not
   // stop the phone from returning to idle.
   try {
@@ -146,6 +171,8 @@ onNet('mica:client:phone:ended', () => {
 // `accepted` event has ever been sent for this call — so no pma-voice channel was joined
 // and there is deliberately no `removePlayerFromCall()` here to undo.
 onNet('mica:client:phone:failed', () => {
+  connected = false;
+
   SendNuiMessage(
     JSON.stringify({
       action: 'callStatus',

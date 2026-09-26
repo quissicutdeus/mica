@@ -29,6 +29,17 @@ export const TOP_LEVEL_FILES = ['fxmanifest.lua', 'mica.sql', 'mica.esx.sql', 'L
 /** The build output the manifest declares, whole. `dist/release` is where the zip lands. */
 export const DIST_DIRS = ['dist/client', 'dist/server', 'dist/web'];
 
+/**
+ * The compatibility bridges (MICA-232), shipped verbatim at `mica/bridges/<name>/` -- inside
+ * the resource rather than beside it, on purpose. FiveM only discovers a resource at the top
+ * of `resources/` or inside a `[category]`, so a bridge in there is inert until the owner
+ * copies it out, which is what "optional, ensured by nobody" needs. As siblings they would
+ * also land on top of a real `lb-phone` or `npwd` directory the moment the zip was unpacked,
+ * overwriting its manifest. The resource's own manifest lists nothing under `bridges/`, so
+ * FiveM does not serve them from `mica` either.
+ */
+export const BRIDGES_DIR = 'bridges';
+
 /** `v2026.09.02.3` -> `2026.09.02.3`, the version the About screen shows. */
 export function calVerOf(tag) {
   const match = TAG_PATTERN.exec(tag ?? '');
