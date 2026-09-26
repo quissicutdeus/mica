@@ -480,6 +480,15 @@ with `internal_error` and the rest of Messages is unaffected.
 
 ### Added
 
+**A registered line can hang up, and `blockable = false` works (MICA-278).** The
+new `EndLineCall(callId)` export ends a call your line answered, with the
+`callId` `onCall` received, and refuses one on another resource's line. A player
+who blocks a line's number already got no notification from its texts; what
+changes is `blockable = false` on `RegisterNumber`, which now actually delivers
+regardless -- and only for texts the owning resource sends, so another script
+cannot borrow it by putting the number in `from`. Calls to a line are never
+refused by a blocklist. No schema change.
+
 **Brand the phone: theme colour, wallpapers, boot logo and frame (MICA-236).**
 Four new convars, all off by default, so an update changes nothing until you set
 one. `mica_theme_seed` (`#rrggbb`) is the colour a phone's theme is generated

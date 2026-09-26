@@ -142,6 +142,46 @@ describe('sendFromLine', () => {
     );
   });
 
+  describe('a recipient who blocked the number (MICA-278)', () => {
+    const blockedByRecipient = () =>
+      dbMock.query.mockImplementation((async (sql: string) =>
+        String(sql).includes('`mica_blocklist`') ? [{ citizenid: CID }] : []) as any);
+    const blocklistAsked = () =>
+      dbMock.query.mock.calls.some(([sql]) => String(sql).includes('`mica_blocklist`'));
+
+    beforeEach(() => {
+      convRepo.findParticipants.mockResolvedValue([{ citizenid: CID, status: 'active' }]);
+      sources.set(CID, 5);
+      blockedByRecipient();
+    });
+
+    it('writes the row but pushes nothing from a blockable line', async () => {
+      const result = await sendFromLine(CID, CAB, 'Rides half off!', undefined);
+
+      expect(blocklistAsked()).toBe(true);
+      expect(messageInsert()).toBeDefined();
+      expect(result.delivered).toBe(false);
+      expect(globalThis.emitNet).not.toHaveBeenCalled();
+    });
+
+    it('pushes from a line registered blockable: false, without asking', async () => {
+      const result = await sendFromLine(
+        CID,
+        { ...CAB, blockable: false },
+        'Your ride is outside.',
+        undefined
+      );
+
+      expect(blocklistAsked()).toBe(false);
+      expect(result.delivered).toBe(true);
+      expect(globalThis.emitNet).toHaveBeenCalledWith(
+        'mica:client:messages:received',
+        5,
+        expect.objectContaining({ phone: '5550199' })
+      );
+    });
+  });
+
   it('writes the row and pushes nothing when the recipient is offline', async () => {
     convRepo.findParticipants.mockResolvedValue([{ citizenid: CID, status: 'active' }]);
 

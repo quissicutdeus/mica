@@ -71,6 +71,7 @@ import {
 import { registerPublicApi } from '../lib/publicApi';
 import { publishedExport, __resetExportRateLimits } from '../lib/exports';
 import { __resetRateLimits } from '../lib/rateLimit';
+import { callAsResource } from './invokingResource';
 import type { Invoice } from '@mica/shared/types';
 
 /**
@@ -399,6 +400,17 @@ describe('creation, through SendInvoice', () => {
     const result = await send('CID_PAYER', opts);
     expect(result).toMatchObject({ ok: false, reason: 'invalid_args' });
     expect(dbMock.insert).not.toHaveBeenCalled();
+  });
+
+  it('attributes the row to the resource that called, read before the first await', async () => {
+    // FiveM answers `GetInvokingResource` only while the call is on the stack; SendInvoice
+    // awaits the directory before it writes, so it has to have read the name first.
+    const result = await callAsResource('lsc-garage', () =>
+      send('CID_OFFLINE', { from: 'LSC', amount: 10, society: 'mechanic' })
+    );
+
+    expect(result).toEqual({ ok: true, value: { id: 7 } });
+    expect(dbMock.insert.mock.calls[0][1]).toContain('lsc-garage');
   });
 
   it('refuses a citizenid the framework has no record of', async () => {

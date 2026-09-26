@@ -38,7 +38,11 @@ export interface IncomingLineCall {
 
 export interface LineOptions {
   onCall: (call: IncomingLineCall) => CallVerdict | Promise<CallVerdict>;
-  /** Defaults to true. A blockable line can be blocked like any other number. */
+  /**
+   * Defaults to true. A player who blocks a blockable line's number gets no live push from its
+   * texts, as for any other number (MICA-278). `false` delivers regardless, and only for texts
+   * the owning resource sends: calls to a line are never subject to the caller's blocklist.
+   */
   blockable?: boolean;
   /** Shown as the contact's name: 'LSPD Dispatch'. At most 40 characters after trimming. */
   label?: string;

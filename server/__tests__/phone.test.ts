@@ -63,7 +63,13 @@ vi.mock('../lib/FrameworkBridge', () => ({
 }));
 
 import '../services/Phone';
-import { __resetCalls, injectIncomingCall, endActiveCallFor, placeCall } from '../services/Phone';
+import {
+  __resetCalls,
+  injectIncomingCall,
+  endActiveCallFor,
+  endLineCall,
+  placeCall
+} from '../services/Phone';
 import { __resetRateLimits, allow } from '../lib/rateLimit';
 import { registerNumber, releaseResource, type CallVerdict } from '../lib/numberRegistry';
 
@@ -712,32 +718,36 @@ describe('start: registered lines (MICA-226)', () => {
     expect(inserts[0][1]).toEqual(expect.arrayContaining(['CID_CALLER', 'outgoing', LINE, 0]));
   });
 
-  it('still pays for the blocklist lookup on a blockable line, so the timing is flat', async () => {
+  it('still pays for the blocklist lookup on a line, so the timing is flat', async () => {
     const onCall = vi.fn(() => ({ action: 'accept' }) as const);
     registerNumber(LINE, { onCall }, 'taxi');
 
     await fire(START, 1, LINE);
 
-    // Asserted on the citizenid deliberately: a blocklist row is keyed by the *blocking*
-    // character's id and a line has none, so this asks about `''` and can never come back
-    // true. The query is not the block — it is the MICA-64 timing channel being held shut,
-    // and a line that skipped it would be measurably faster to dial than a made-up number.
+    // Asserted on the citizenid deliberately: the question is whether the *target* blocked
+    // the caller, and a line blocks nobody, so this asks about `''`. The query is the MICA-64
+    // timing channel being held shut, not a block.
     expect(dbMock.scalar).toHaveBeenCalledWith(expect.any(String), ['', '555-0001']);
     expect(onCall).toHaveBeenCalled();
     expect(failedTo(1)).toHaveLength(0);
   });
 
-  it('never asks the blocklist at all for an unblockable line', async () => {
-    dbMock.scalar.mockResolvedValue(1); // would refuse any blockable number
-    const onCall = vi.fn(() => ({ action: 'accept' }) as const);
-    registerNumber(LINE, { onCall, blockable: false }, 'taxi');
+  it.each([true, false])(
+    'rings a line (blockable: %s) whatever the blocklist answers (MICA-278)',
+    async (blockable) => {
+      // `blockable` is about the line's texts reaching a player who blocked it; a call *to*
+      // a line is the caller's own choice and nothing on a blocklist refuses it.
+      dbMock.scalar.mockResolvedValue(1);
+      const onCall = vi.fn(() => ({ action: 'accept' }) as const);
+      registerNumber(LINE, { onCall, blockable }, 'taxi');
 
-    await fire(START, 1, LINE);
+      await fire(START, 1, LINE);
 
-    expect(dbMock.scalar).not.toHaveBeenCalled();
-    expect(onCall).toHaveBeenCalled();
-    expect(failedTo(1)).toHaveLength(0);
-  });
+      expect(dbMock.scalar).toHaveBeenCalledTimes(1);
+      expect(onCall).toHaveBeenCalled();
+      expect(failedTo(1)).toHaveLength(0);
+    }
+  );
 
   it('leaves a player-to-player call on the same number alone when the line is released', async () => {
     registerNumber(LINE, { onCall: () => ({ action: 'accept' }) as const }, 'taxi');
@@ -925,13 +935,14 @@ describe('start: the emergency number is exempt without needing a line (MICA-226
     expect(dbMock.scalar).not.toHaveBeenCalled();
   });
 
-  it('still blocks an ordinary registered line', async () => {
+  it('still asks the blocklist about an ordinary registered line', async () => {
+    // Only the emergency number skips the query. A line pays for it like any other number
+    // (the timing half of MICA-64) — it is never refused by it (MICA-278).
     registerNumber('5559999', { onCall: () => ({ action: 'accept' }) as const }, 'taxi');
-    dbMock.scalar.mockResolvedValue(1);
 
     await fire(START, 1, '5559999');
 
-    expect(failedTo(1)).toHaveLength(1);
+    expect(dbMock.scalar).toHaveBeenCalledTimes(1);
   });
 
   it('still exempts the emergency number when a real dispatcher holds it', async () => {
@@ -1005,5 +1016,88 @@ describe('the side that ends a call is told it ended', () => {
       ['mica:client:phone:ended', 1],
       ['mica:client:phone:ended', 2]
     ]);
+  });
+});
+
+/**
+ * MICA-278. A line that accepted a call can hang it up, and only the resource that owns the
+ * line can. Keyed by the `callId` the handler was given.
+ */
+describe('endLineCall: a line hangs up', () => {
+  const LINE = '5559999';
+  afterEach(() => {
+    releaseResource('taxi');
+    releaseResource('mechanic');
+  });
+
+  const acceptedCallId = (src: number): number => {
+    const accepted = emitCalls().find(
+      ([event, dest]) => event === 'mica:client:phone:accepted' && dest === src
+    );
+    if (!accepted) throw new Error(`no accepted call for ${src}`);
+    return (accepted[2] as { callId: number }).callId;
+  };
+
+  it('ends the call for its owner, tells the caller, and logs it as answered', async () => {
+    const onCall = vi.fn(() => ({ action: 'accept' }) as const);
+    registerNumber(LINE, { onCall }, 'taxi');
+    await placeCall(1, LINE);
+    const callId = acceptedCallId(1);
+    expect(onCall).toHaveBeenCalledWith(expect.objectContaining({ callId }));
+
+    expect(endLineCall(callId, 'taxi')).toBe('ended');
+
+    expect(endedCalls()).toEqual([['mica:client:phone:ended', 1]]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // The caller's outgoing row; the line has no citizenid and gets none.
+    const inserts = createCalls();
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0][1]).toEqual(expect.arrayContaining(['CID_CALLER', 'outgoing', LINE]));
+
+    // The caller is free again, and the id is spent.
+    await fire(START, 1, '555-0002');
+    expect(emitCalls().filter(([event]) => event === 'mica:client:phone:incoming')).toHaveLength(1);
+    expect(endLineCall(callId, 'taxi')).toBe('no_such_call');
+  });
+
+  it('refuses a resource that does not own the line, and leaves the call up', async () => {
+    registerNumber(LINE, { onCall: () => ({ action: 'accept' }) as const }, 'taxi');
+    registerNumber('5558888', { onCall: () => ({ action: 'accept' }) as const }, 'mechanic');
+    await placeCall(1, LINE);
+    const callId = acceptedCallId(1);
+
+    expect(endLineCall(callId, 'mechanic')).toBe('not_owner');
+
+    expect(endedCalls()).toHaveLength(0);
+    // Still on the call: a second dial from the same caller is refused as busy.
+    await expect(placeCall(1, '555-0002')).resolves.toBe('busy');
+  });
+
+  it('refuses a player-to-player call, whoever asks', async () => {
+    await placeCall(1, '555-0002');
+    const callId = (
+      emitCalls().find(([event]) => event === 'mica:client:phone:incoming')![2] as {
+        callId: number;
+      }
+    ).callId;
+
+    expect(endLineCall(callId, 'taxi')).toBe('no_such_call');
+    expect(endedCalls()).toHaveLength(0);
+  });
+
+  it('refuses a call the line forwarded — that is a call between two players', async () => {
+    registerNumber(LINE, { onCall: () => ({ action: 'forward', source: 2 }) as const }, 'taxi');
+    await placeCall(1, LINE);
+    const incoming = emitCalls().find(([event]) => event === 'mica:client:phone:incoming')!;
+    const callId = (incoming[2] as { callId: number }).callId;
+
+    expect(endLineCall(callId, 'taxi')).toBe('no_such_call');
+    expect(endedCalls()).toHaveLength(0);
+  });
+
+  it('refuses an id that is not an integer or names no call', () => {
+    expect(endLineCall('123456', 'taxi')).toBe('no_such_call');
+    expect(endLineCall(1.5, 'taxi')).toBe('no_such_call');
+    expect(endLineCall(123456, 'taxi')).toBe('no_such_call');
   });
 });

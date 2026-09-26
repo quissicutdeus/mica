@@ -49,8 +49,9 @@ import {
   MICA_API_VERSION,
   __resetExportRateLimits
 } from '../lib/exports';
-import { lookupLine, releaseResource } from '../lib/numberRegistry';
+import { lookupLine, registerNumber, releaseResource } from '../lib/numberRegistry';
 import { __resetCalls, endActiveCallFor } from '../services/Phone';
+import { callAsResource } from './invokingResource';
 
 const SRC = 7;
 const CID = 'ABC12345';
@@ -99,6 +100,7 @@ describe('the public export surface', () => {
       'BuildDeepLink',
       'ClearGlobalSignal',
       'CreateCall',
+      'EndLineCall',
       'GetApiVersion',
       'GetBatteryLevel',
       'GetCitizenId',
@@ -170,10 +172,48 @@ describe('SendMessage', () => {
     });
     expect(sendFromLine).toHaveBeenCalledWith(
       CID,
-      { name: 'Downtown Cab', number: '5550199' },
+      { name: 'Downtown Cab', number: '5550199', blockable: true },
       'Your ride is here.',
       undefined
     );
+  });
+
+  /**
+   * MICA-278. A player who blocked the sending number gets no push, unless the number is a
+   * line registered `blockable: false` — by the resource sending now. `Messages` acts on the
+   * flag (`sendFromLine.test.ts`); deciding it is this boundary's job.
+   */
+  describe('blockable (MICA-278)', () => {
+    const LINE = '5550199';
+    const sentBlockable = () =>
+      (sendFromLine.mock.calls.at(-1) as unknown as [string, { blockable?: boolean }])[1].blockable;
+    const onCall = () => ({ action: 'reject' }) as const;
+
+    it('passes blockable: false for a line the sending resource registered that way', async () => {
+      registerNumber(LINE, { onCall, blockable: false }, 'test-resource');
+      // Asked only during the synchronous part of the call, as FiveM does: SendMessage awaits
+      // twice before it needs the answer, so it has to have read it first.
+      expect((await callAsResource('test-resource', () => text(cab))).ok).toBe(true);
+      expect(sentBlockable()).toBe(false);
+    });
+
+    it("never borrows another resource's blockable: false", async () => {
+      registerNumber(LINE, { onCall, blockable: false }, 'dispatch');
+      try {
+        expect((await callAsResource('spammer', () => text(cab))).ok).toBe(true);
+        expect(sentBlockable()).toBe(true);
+      } finally {
+        releaseResource('dispatch');
+      }
+    });
+
+    it('keeps a blockable line, and an unregistered number, blockable', async () => {
+      expect((await text(cab)).ok).toBe(true);
+      expect(sentBlockable()).toBe(true);
+      registerNumber(LINE, { onCall }, 'test-resource');
+      expect((await text(cab)).ok).toBe(true);
+      expect(sentBlockable()).toBe(true);
+    });
   });
 
   it('requires a citizenid, a sender and a body', async () => {
@@ -515,6 +555,46 @@ describe('phone-state exports', () => {
 });
 
 describe('line exports (MICA-226)', () => {
+  it("EndLineCall hangs up a call the calling resource's line answered (MICA-278)", async () => {
+    const register = publishedExport('RegisterNumber')! as Function;
+    register('5559999', { onCall: () => ({ action: 'accept' }) });
+    await publishedExport('CreateCall')!(SRC, '5559999');
+    const accepted = (globalThis as any).emitNet.mock.calls.find(
+      ([event]: [string]) => event === 'mica:client:phone:accepted'
+    );
+    const callId = accepted[2].callId as number;
+
+    expect(publishedExport('EndLineCall')!(callId)).toEqual({ ok: true, value: undefined });
+    expect((globalThis as any).emitNet).toHaveBeenCalledWith('mica:client:phone:ended', SRC);
+  });
+
+  it('EndLineCall refuses a call on a line another resource owns (MICA-278)', async () => {
+    registerNumber('5559998', { onCall: () => ({ action: 'accept' }) }, 'dispatch');
+    try {
+      await publishedExport('CreateCall')!(SRC, '5559998');
+      const accepted = (globalThis as any).emitNet.mock.calls.find(
+        ([event]: [string]) => event === 'mica:client:phone:accepted'
+      );
+      const callId = accepted[2].callId as number;
+
+      // Invoked as `test-resource`, which does not own the number.
+      expect(publishedExport('EndLineCall')!(callId)).toMatchObject({
+        ok: false,
+        reason: 'not_owner'
+      });
+      expect((globalThis as any).emitNet).not.toHaveBeenCalledWith('mica:client:phone:ended', SRC);
+    } finally {
+      releaseResource('dispatch');
+    }
+  });
+
+  it('EndLineCall refuses an id no line answered, never throwing', () => {
+    const end = publishedExport('EndLineCall')!;
+    expect(end(123456)).toMatchObject({ ok: false, reason: 'invalid_args' });
+    expect(end('not a call')).toMatchObject({ ok: false, reason: 'invalid_args' });
+    expect(end(undefined)).toMatchObject({ ok: false, reason: 'invalid_args' });
+  });
+
   it('RegisterNumber attributes the line to the calling resource', () => {
     const register = publishedExport('RegisterNumber')!;
     const result = register('5551234', { onCall: () => ({ action: 'reject' }) });

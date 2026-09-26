@@ -22,9 +22,9 @@ import { isAppDisabled } from './ownerConfig';
 import * as PlayerDirectory from './PlayerDirectory';
 import { isPhoneOpen } from './PhoneOpenState';
 import { isPhoneLocked, setPhoneLocked } from './LockState';
-import { currentEmergencyNumber, isInCall, placeCall } from '../services/Phone';
+import { currentEmergencyNumber, endLineCall, isInCall, placeCall } from '../services/Phone';
 import { holdsPhoneItem } from './phoneItem';
-import { registerNumber, unregisterNumber, type LineOptions } from './numberRegistry';
+import { lookupLine, registerNumber, unregisterNumber, type LineOptions } from './numberRegistry';
 import {
   MICA_API_VERSION,
   ExportOutcome,
@@ -321,6 +321,9 @@ const SendMessage = async (
   citizenid: unknown,
   message: unknown
 ): Promise<ExportOutcome<{ conversationId: number; messageId: number; delivered: boolean }>> => {
+  // Read first, before any await: FiveM answers the invoking resource only during the
+  // synchronous part of the export call, and '' (or null) once it has yielded.
+  const invoker = GetInvokingResource();
   type Result = { conversationId: number; messageId: number; delivered: boolean };
   if (typeof citizenid !== 'string' || !citizenid.trim()) {
     return fail<Result>('invalid_args', 'A citizenid is required.');
@@ -364,7 +367,14 @@ const SendMessage = async (
     );
   }
 
-  const from: LineSender = { name: name || null, number };
+  // A player who blocked `number` gets no live push from it, unless it is a line registered
+  // `blockable: false` (MICA-278) — and only by the resource sending now. Anybody may text
+  // as any number no character holds, so honouring another resource's opt-out here would let
+  // a script borrow a dispatch line's number to text past every player's blocklist.
+  const line = number ? lookupLine(number) : undefined;
+  const blockable = !(line && !line.blockable && line.owner === invoker);
+
+  const from: LineSender = { name: name || null, number, blockable };
   return ok(await sendFromLine(citizenid, from, opts.body, opts.attachments));
 };
 
@@ -400,6 +410,9 @@ const SendInvoice = async (
   citizenid: unknown,
   options: unknown
 ): Promise<ExportOutcome<{ id: number }>> => {
+  // Read first, before any await: FiveM answers the invoking resource only during the
+  // synchronous part of the export call, and '' (or null) once it has yielded.
+  const invoker = GetInvokingResource();
   type Result = { id: number };
   if (typeof citizenid !== 'string' || !citizenid.trim()) {
     return fail<Result>('invalid_args', 'A citizenid is required.');
@@ -456,7 +469,7 @@ const SendInvoice = async (
       memo: memo || null,
       society: society || null,
       payee: payee || null,
-      resource: GetInvokingResource()
+      resource: invoker
     },
     callbacks
   );
@@ -894,6 +907,29 @@ export function registerPublicApi(): void {
     guarded('UnregisterNumber', (number: unknown) =>
       unregisterNumber(number, GetInvokingResource())
     )
+  );
+
+  /**
+   * Hang up a call your line answered (MICA-278). `callId` is the one `onCall` was given.
+   *
+   * Refuses with `not_owner` when the call is on a line another resource owns, and with
+   * `invalid_args` when no call with that id is one a line answered — a player-to-player call,
+   * a forwarded call (the forward is a new call between two players), or a call the handler
+   * has not accepted yet, which it ends by answering `reject`. Both parties get the ordinary
+   * `ended`, and the caller's Recents row is written as for any other hang-up.
+   */
+  publish(
+    'EndLineCall',
+    guarded('EndLineCall', (callId: unknown) => {
+      switch (endLineCall(callId, GetInvokingResource())) {
+        case 'ended':
+          return ok();
+        case 'not_owner':
+          return fail('not_owner', 'That call is on a line another resource owns.');
+        case 'no_such_call':
+          return fail('invalid_args', 'No call your line answered has that id.');
+      }
+    })
   );
 
   /**

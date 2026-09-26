@@ -55,6 +55,11 @@ interface ActiveCall {
   startTime: number;
   /** Set by the `answer` handler. Null means the call never connected. */
   answeredAt: number | null;
+  /**
+   * The resource whose line answered this call, and so the one `endLineCall` lets end it
+   * (MICA-278). Absent on every call a line did not answer, including one it forwarded.
+   */
+  lineOwner?: string;
 }
 
 const activeCalls: Record<number, ActiveCall> = {};
@@ -266,6 +271,33 @@ export function endActiveCallFor(targetSrc: number): boolean {
   return releaseCallFor(targetSrc);
 }
 
+/** What `endLineCall` did. `no_such_call` covers a call that is not a line's at all. */
+export type EndLineCallResult = 'ended' | 'no_such_call' | 'not_owner';
+
+/**
+ * Hang up a call a line answered, for the resource that owns the line (MICA-278).
+ *
+ * Keyed by the `callId` the line's `onCall` handler was given, which is the id the call
+ * keeps once accepted. Owned by the resource recorded on the call when it was accepted, not
+ * by whoever holds the number now — a released line has already taken its calls down with it
+ * (`onLineReleased`), so the two agree today, but the recorded owner cannot drift.
+ *
+ * A player-to-player call, the console's test call, a forwarded call (a new call between two
+ * players, not the line's) and a line call still waiting on its handler are all
+ * `no_such_call`: none of them is a call a line answered. Another resource's line call is
+ * `not_owner`. Both parties are told `ended` through `endActiveCall`, which skips the line's
+ * pseudo-source.
+ */
+export function endLineCall(callId: unknown, owner: string): EndLineCallResult {
+  if (typeof callId !== 'number' || !Number.isInteger(callId)) return 'no_such_call';
+  const call = activeCalls[callId];
+  if (!call || call.lineOwner === undefined) return 'no_such_call';
+  if (call.lineOwner !== owner) return 'not_owner';
+
+  endActiveCallFor(call.target);
+  return 'ended';
+}
+
 /**
  * The one failure shape a blocked call and a genuinely unreachable number must share
  * (MICA-64) — a blocked caller must not be able to tell the two apart, including by
@@ -350,36 +382,30 @@ export async function placeCall(src: number, rawTarget: unknown): Promise<PlaceC
    * row (`''` when there's no target) keeps the query's cost identical either way while
    * still always resolving to `false` for an unreachable number.
    *
-   * An **unblockable** target skips the check entirely, rather than calling `isBlocked` and
-   * having the answer not matter: it is decided before the (async) lookup, so a blocked
-   * emergency number — however that arose — is never even asked about. Two things make a
-   * target unblockable, and they are independent:
+   * The one **unblockable** target is the configured emergency number, whoever is answering
+   * it — normally a *player* (a dispatcher on 911), which is why this is a number test and not
+   * a line test. It skips the check entirely rather than calling `isBlocked` and having the
+   * answer not matter, so a blocked emergency number, however that arose, is never asked about.
    *
-   * - The configured emergency number, whoever is answering it. This term must not be
-   *   folded into the line term below: the emergency number is normally held by a *player*
-   *   (a dispatcher on 911), and `line` is only ever looked up when no player holds the
-   *   number, so a line-only condition would quietly make a staffed 911 blockable again.
-   * - A line registered with `blockable: false` (MICA-226), which is how a script says its
-   *   number is infrastructure rather than a person.
-   *
-   * The `true` half of that second term is a timing guarantee and nothing more, which is
-   * worth saying plainly because the code reads as though it does more. A blocklist row is
-   * keyed by the *blocking* character's citizenid, and a line has none — so a blockable
-   * line asks about `''`, matches no row, and can never actually be blocked. The `await`
-   * still has to happen: skip it and a registered number becomes measurably faster to dial
-   * than a made-up one, which is the side channel the paragraph above exists to close.
-   * Blocking a line by number is a separate ticket, not something this branch does today.
+   * A line's `blockable` does not enter into it (MICA-278). The question asked here is
+   * whether the *target* blocked the *caller*, and a line blocks nobody: blocking a line means
+   * a player blocking the line's number, which refuses what the line sends *them* — its texts,
+   * in `Messages.deliverToParticipants`. A line never places a call, so that has no call half.
+   * A line target therefore asks about `''` and matches nothing, and asks anyway, because the
+   * query is what keeps a registered number costing the same to dial as a made-up one before
+   * the line's handler runs. (The handler's own latency still shows — see `connectLineCall`.)
    *
    * There is nothing to bypass for DND or signal — neither has ever gated a call here; DND
    * only suppresses a *notification* (`web/src/shell/state/notificationPolicy.ts`) and
    * signal has never refused one on this file's own evidence — so "connects regardless of
    * them" already holds for every call, unblockable or not.
    */
-  const unblockable = targetPhone === emergencyNumber() || (line ? !line.blockable : false);
+  const unblockable = targetPhone === emergencyNumber();
 
   const blocked = !unblockable && (await isBlocked(targetPlayer?.citizenid ?? '', callerPhone));
 
-  if (!targetSrc && line && !blocked) {
+  // A line is never refused by that answer, only timed by it — see above.
+  if (!targetSrc && line) {
     return connectLineCall(src, callerPhone, targetPhone, line);
   }
 
@@ -505,8 +531,7 @@ async function connectLineCall(
   // same call-log row, same client event (MICA-64's shape). Not the same timing, though — a
   // number nobody holds fails on the spot, while a line's rejection waits on somebody else's
   // handler and can take up to `HANDLER_TIMEOUT_MS`. So a line's existence stays detectable
-  // by a caller with a stopwatch whatever `blockable` says; only the content half of that
-  // guarantee holds here.
+  // by a caller with a stopwatch; only the content half of that guarantee holds here.
   if (verdict.action !== 'accept') {
     delete playerCalls[src];
     failUnreachable(src, targetPhone);
@@ -523,7 +548,8 @@ async function connectLineCall(
     startTime: Date.now(),
     // Answered on the spot: the handler already said yes, so there is no ringing state a
     // second client would otherwise have to leave.
-    answeredAt: Date.now()
+    answeredAt: Date.now(),
+    lineOwner: line.owner
   };
   // `playerCalls[src]` is already this call — claimed before the await above.
   playerCalls[lineSource] = callId;

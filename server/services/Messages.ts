@@ -524,7 +524,7 @@ app.registerEvent('reactionsFor', async (source, cbId, data, citizenid) => {
 export const deliverToParticipants = async (
   conversationId: number,
   senderCitizenId: string,
-  sender: { name?: string | null; phone?: string | null },
+  sender: { name?: string | null; phone?: string | null; blockable?: boolean },
   message: Message & { id: number }
 ): Promise<boolean> => {
   const participants = await conversationRepo.findParticipants(conversationId);
@@ -559,11 +559,14 @@ export const deliverToParticipants = async (
    * position on.
    *
    * Asked only about the people actually about to be pushed to, and only when the sender has
-   * a number to be blocked by — an unblockable send costs no query at all.
+   * a number to be blocked by — an unblockable send costs no query at all. `blockable: false`
+   * is a line whose owner registered it that way (MICA-278); every player's number, and every
+   * other line's, is blockable.
    */
-  const blocked = sender.phone
-    ? await blockedBy([...sources.keys()], sender.phone)
-    : new Set<string>();
+  const blocked =
+    sender.phone && sender.blockable !== false
+      ? await blockedBy([...sources.keys()], sender.phone)
+      : new Set<string>();
 
   let pushed = false;
   for (const [citizenid, target] of sources) {
@@ -590,6 +593,12 @@ export const deliverToParticipants = async (
 export interface LineSender {
   name: string | null;
   number: string | null;
+  /**
+   * False only for a line registered with `blockable: false` by the resource sending as it
+   * (MICA-278) — `publicApi.ts` decides that, since only it knows the invoking resource.
+   * Absent means blockable: a player who blocked `number` gets no live push from it.
+   */
+  blockable?: boolean;
 }
 
 /**
@@ -685,7 +694,7 @@ export const sendFromLine = async (
     delivered = await deliverToParticipants(
       conversationId,
       key,
-      { name: label, phone: from.number },
+      { name: label, phone: from.number, blockable: from.blockable },
       stored
     );
   } catch (error) {

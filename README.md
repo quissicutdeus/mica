@@ -1499,6 +1499,7 @@ this player right now: confiscated, switched off, or an item they do not hold).
 | `RegisterNumber(number, options)`   | —                      | Owns a phone number, so a call placed to it reaches your handler instead of failing                                       |
 | `UnregisterNumber(number)`          | —                      | Gives a number back. Only the resource that registered it may                                                             |
 | `CreateCall(source, number)`        | source                 | Places a call for a player, the way a payphone or a dispatch pick-up would. Async                                         |
+| `EndLineCall(callId)`               | —                      | Hangs up a call a line your resource registered has answered. See below                                                   |
 | `IsInCall(source)`                  | source                 | Whether that player is ringing, connected, or waiting on a line's handler — when `true`, `CreateCall` answers `not_ready` |
 | `HasPhoneItem(source)`              | source                 | Whether they hold a phone item right now. `true` when no item is required, or when no inventory can count it              |
 | `GetSourceFromNumber(number)`       | —                      | The online player holding that number. `offline` when a character holds it but is not connected. Async                    |
@@ -1598,13 +1599,19 @@ exports['mica']:UnregisterNumber('5559999')     -- when you are done with it
   is later issued that number wins from that call onwards. Everything your
   resource holds is released when it stops, and any live call on one of those
   numbers is ended — so a crashed script leaves no number swallowing calls.
-- **`blockable: true` (the default) currently buys the timing shape only, not an
-  actual block.** A blocklist row is keyed by the blocking character's citizenid
-  and a line has none, so a line cannot be blocked by a player today. What the
-  flag does do is decide whether micaOS pays for the blocklist lookup at all:
-  `false` skips it, which is right for infrastructure like a dispatch desk.
-  Leave it at the default unless your number is one nobody should be able to
-  block. Blocking a line by its number is a separate piece of work.
+- **`blockable: true` (the default) means a player can block your line's
+  texts.** A player who has blocked the number gets no notification from a text
+  it sends -- the text is still stored, exactly as a blocked player's is.
+  `false` delivers regardless, which is right for infrastructure like a dispatch
+  desk; it holds only for texts your own resource sends from the line, so
+  another script putting your number in `from` cannot use it to text past
+  anyone's blocklist. Calls are unaffected either way: a line never places a
+  call to a player, and a call to a line is never refused by a blocklist.
+- **`EndLineCall(callId)` hangs up a call your line answered.** `callId` is the
+  one `onCall` received. It answers `ok` when both parties have been told,
+  `not_owner` for a call on another resource's line, and `invalid_args` for an
+  id no line of yours answered -- a call between players, a forwarded call, or
+  one your handler has not accepted yet (answer `reject` instead).
 - **`label` and `job` put the line in the Jobs app (MICA-227).** A line
   registered with `job = 'taxi'` is listed, under that job, on the phone of
   every player who holds it, with `label` as its name and a call button beside
