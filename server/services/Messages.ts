@@ -5,7 +5,7 @@
 import { PlayerFacingError } from '../lib/errors';
 import { MessageRepository } from '../repositories/MessageRepository';
 import { phoneForRequest } from '../lib/phoneIdentity';
-import { conversations, type ConversationRepo } from './Conversations';
+import { conversations, PARTICIPANT_KEY_MAX_LENGTH, type ConversationRepo } from './Conversations';
 // Media is a declared app; reuse its derived repository rather than a second
 // instance, so the attachment-ownership check runs against the same allowlist.
 import { media } from './Media';
@@ -19,7 +19,6 @@ import { AuditLogger } from '../lib/AuditLogger';
 import { Database } from '../lib/Database';
 import { blockedBy } from './Blocklist';
 import { phoneForCitizen } from './Phones';
-import { CITIZENID_MAX_LENGTH } from '@mica/shared/framework';
 
 /**
  * Messages: membership on both axes.
@@ -104,7 +103,7 @@ export const messages = defineService<Message, typeof messagesContract>({
         },
         citizenid: {
           type: 'string',
-          length: 50,
+          citizenId: true,
           notNull: true,
           references: { table: 'players', column: 'citizenid' }
         },
@@ -138,7 +137,7 @@ export const messages = defineService<Message, typeof messagesContract>({
         },
         citizenid: {
           type: 'string',
-          length: 50,
+          citizenId: true,
           notNull: true,
           references: { table: 'players', column: 'citizenid' }
         },
@@ -612,7 +611,10 @@ export interface LineSender {
  * the thread name as well.
  */
 export const lineKey = (from: LineSender): string =>
-  `ext:${(from.number ?? from.name ?? '').trim().toLowerCase()}`.slice(0, CITIZENID_MAX_LENGTH);
+  `ext:${(from.number ?? from.name ?? '').trim().toLowerCase()}`.slice(
+    0,
+    PARTICIPANT_KEY_MAX_LENGTH
+  );
 
 /** What the thread and every message in it are labelled with. `name` wins when both exist. */
 export const lineLabel = (from: LineSender): string =>

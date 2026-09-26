@@ -42,7 +42,11 @@ vi.mock('../lib/FrameworkBridge', () => ({
     }
   }
 }));
-vi.mock('../services/Conversations', () => ({ conversations: { repo: convRepo } }));
+// The pair columns' width is the real one's (Conversations.ts), restated because the module is mocked.
+vi.mock('../services/Conversations', () => ({
+  conversations: { repo: convRepo },
+  PARTICIPANT_KEY_MAX_LENGTH: 50
+}));
 vi.mock('../services/Phones', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../services/Phones')>()),
   phoneForCitizen: (citizenid: string) => phones.forCitizen(citizenid)

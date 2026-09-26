@@ -47,6 +47,18 @@ Entries are hand-written. See MICA-72 for why a generated one was rejected.
 
 ### Action required
 
+**On ESX or standalone, run `micaschema apply` after updating: migration
+`0004_citizenid_widens_on_esx` widens every citizenid column to 60 characters
+(MICA-289).** es_extended's multicharacter identifiers (`char1:license:<hash>`)
+are 54 characters, and micaOS refused anything over 50, so those players had no
+phone at all. The migration changes 32 columns from `varchar(50)` to
+`varchar(60)`, keeping each one's nullability and collation, and a second run
+changes nothing. **On qb it does nothing**: qb's own `players.citizenid` is 50
+characters, so no qb identifier can be longer, and the migration leaves a qb
+database alone even if its foreign keys are gone. It decides from the detected
+framework, so it refuses to run until micaOS has started. A fresh install
+imports the regenerated `mica.esx.sql`, which already has the wider columns.
+
 **The resource is renamed from `gPhone` to `mica`, and everything keyed on the
 old name moves with it (MICA-269, MICA-274).** Rename the resource folder to
 `mica`, change your `ensure` line to match, and rename any `gphone_*` convar,

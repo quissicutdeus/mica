@@ -445,11 +445,12 @@ describe('FrameworkBridge on ESX — identity', () => {
      * `users.identifier` — at which point the orphan sweep reads their rows as unowned and
      * deletes them.
      *
-     * A raw `license:` identifier is 48 characters and fits with two to spare. A
-     * multicharacter addon prefixing it does not, which is the reported trigger.
+     * A raw `license:` identifier is 48 characters, and a multicharacter addon's
+     * `char1:license:<hash>` is 54 — which the column holds since MICA-289, at 60, the width
+     * of `users.identifier` itself. Anything longer than that is not an ESX identifier.
      */
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const tooLong = `char1:${LICENSE}`;
+    const tooLong = `char1:${LICENSE}`.padEnd(CITIZENID_MAX_LENGTH + 1, 'x');
     expect(tooLong.length).toBeGreaterThan(CITIZENID_MAX_LENGTH);
 
     useResources(esx({ 1: xPlayer(tooLong) }));
@@ -462,6 +463,15 @@ describe('FrameworkBridge on ESX — identity', () => {
     expect(logged).toContain('es_extended');
     expect(logged).toContain(`${tooLong.length} characters`);
     expect(logged).toContain(String(CITIZENID_MAX_LENGTH));
+  });
+
+  it('serves an es_extended multicharacter identifier, which is 54 characters (MICA-289)', () => {
+    const multicharacter = `char1:${LICENSE}`;
+    expect(multicharacter).toHaveLength(54);
+
+    useResources(esx({ 1: xPlayer(multicharacter) }));
+
+    expect(FrameworkBridge.getCitizenId(1)).toBe(multicharacter);
   });
 
   it('serves an identifier of exactly the column width', () => {

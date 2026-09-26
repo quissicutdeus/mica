@@ -4,6 +4,7 @@
 
 import { Database } from './Database';
 import { PlayerFacingError } from './errors';
+import { citizenIdColumnWidth } from './ownerWidth';
 import type { ColumnRule, ResolvedMembership } from './defineService';
 
 /**
@@ -136,10 +137,13 @@ export abstract class Repository<T> {
       });
     }
 
-    if (rule.maxLength !== null && typeof value === 'string' && value.length > rule.maxLength) {
-      throw new PlayerFacingError(`'${column}' is limited to ${rule.maxLength} characters.`, {
+    // A citizenid column is as wide as this server's owner key (MICA-289), which the
+    // declaration could not know when it was resolved.
+    const maxLength = rule.citizenId ? citizenIdColumnWidth() : rule.maxLength;
+    if (maxLength !== null && typeof value === 'string' && value.length > maxLength) {
+      throw new PlayerFacingError(`'${column}' is limited to ${maxLength} characters.`, {
         key: 'server.repository.maxLength',
-        params: { column, max: rule.maxLength }
+        params: { column, max: maxLength }
       });
     }
 

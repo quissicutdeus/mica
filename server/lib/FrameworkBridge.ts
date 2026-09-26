@@ -20,6 +20,7 @@ import {
 } from './framework/runtime';
 import { readItemSlots, writeItemMetadata, type ItemSlot } from './framework/itemMetadata';
 import { citizenIdForNumber } from './phoneNumbers';
+import { setOwnerTableResolver } from './ownerWidth';
 
 /**
  * The one door every framework question goes through.
@@ -137,6 +138,17 @@ const activeAdapter = (): FrameworkAdapter | null => {
  * framework, this still answers `unknown`, and `usesEsx`'s truth table is untouched.
  */
 export const detectFramework = (): FrameworkKind => activeAdapter()?.kind ?? 'unknown';
+
+/**
+ * Which schema the citizenid columns were sized for (MICA-289): `players(citizenid)` on qb,
+ * none on ESX or standalone, not yet known during the boot window. Installed at import so
+ * `Repository`'s write guard and the `micaschema` planner read it without importing this
+ * file — see `ownerWidth.ts`.
+ */
+setOwnerTableResolver(() => {
+  const kind = detectFramework();
+  return kind === 'unknown' ? null : kind === 'qb';
+});
 
 /**
  * The adapter an **offline read** should use.

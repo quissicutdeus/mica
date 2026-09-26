@@ -7,6 +7,7 @@ import { registerReportable, type ReportableDefinition } from './moderation';
 import { registerReactable, type ReactableDefinition } from './reactions';
 import { ServiceEndpoint, ServiceOptions } from './ServiceEndpoint';
 import type { ServiceContract } from '@mica/shared/contract';
+import { CITIZENID_MAX_LENGTH } from '@mica/shared/framework';
 
 /**
  * One declaration per app, replacing the hand-written repository + controller pair.
@@ -89,8 +90,14 @@ const INT_MAX = 2147483647;
 /** What the generic write path checks a value against, derived from one column's declaration. */
 export interface ColumnRule {
   type: ColumnType;
-  /** Characters, for the text-ish types. Null when length is not the constraint. */
+  /**
+   * Characters, for the text-ish types. Null when length is not the constraint. For a
+   * `citizenId` column this is the widest width, for reading only: `Repository` asks
+   * `ownerWidth.ts` for this server's — the framework is not known when a service is declared.
+   */
   maxLength: number | null;
+  /** The column holds a citizenid (MICA-289); its width is the owner table's. */
+  citizenId: boolean;
   /** Permitted values, for `enum`. Null otherwise. */
   values: readonly string[] | null;
   /** Inclusive bounds for `int`. Null otherwise. */
@@ -195,7 +202,31 @@ export interface ColumnDef {
    * index on a VIRTUAL column.
    */
   generatedAs?: string;
+  /**
+   * This column holds a citizenid, so it is as wide as the owner key rather than `length`
+   * (MICA-289): 50 where rows hang off qb's `players(citizenid)`, 60 where they hang off
+   * ESX's `users(identifier)` or nothing. `schemaSql.ts` renders the width for the file it is
+   * writing, and the write guard and the planner read the server's own (`ownerWidth.ts`).
+   *
+   * `type: 'string'` and no `length` — a length beside this would be a second answer to the
+   * same question, and `resolveAppSchema` refuses the pair rather than pick one.
+   */
+  citizenId?: boolean;
 }
+
+/**
+ * Refuse a `citizenId` column that also states a width or is not a string (MICA-289).
+ * `where` names it for the message: a field, or a child table's column.
+ */
+const assertCitizenIdColumn = (id: string, where: string, def: ColumnDef): void => {
+  if (!def.citizenId) return;
+  if (def.type !== 'string' || def.length !== undefined) {
+    throw new Error(
+      `defineService('${id}'): ${where} is 'citizenId', which sets its type and width. ` +
+        "Declare it as { type: 'string', citizenId: true } with no 'length'."
+    );
+  }
+};
 
 /**
  * A table an app owns besides its primary one — a join table, an attachment table.
@@ -774,6 +805,7 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
           'generated column takes its value from the expression alone.'
       );
     }
+    assertCitizenIdColumn(id, `'${name}'`, def);
     fields.push({ name, def });
   }
 
@@ -831,13 +863,18 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
         `defineService('${id}'): child table '${child.name}' must declare at least one column.`
       );
     }
-    for (const column of Object.keys(child.columns)) {
+    for (const [column, spec] of Object.entries(child.columns)) {
       if (!/^[a-z][a-z0-9_]*$/.test(column)) {
         throw new Error(
           `defineService('${id}'): child table '${child.name}' column '${column}' must be ` +
             'lower_snake_case — it becomes a SQL identifier.'
         );
       }
+      assertCitizenIdColumn(
+        id,
+        `child table '${child.name}' column '${column}'`,
+        normalizeColumn(spec)
+      );
     }
     const childIndexNames = (child.indexes ?? []).map((i) => normalizeIndex(i).name);
     const duplicateChildIndex = childIndexNames.find(
@@ -866,7 +903,12 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
   for (const { name, def } of fields) {
     columnRules[name] = {
       type: def.type,
-      maxLength: def.type === 'string' ? (def.length ?? 255) : MAX_LENGTH_BY_TYPE[def.type],
+      maxLength: def.citizenId
+        ? CITIZENID_MAX_LENGTH
+        : def.type === 'string'
+          ? (def.length ?? 255)
+          : MAX_LENGTH_BY_TYPE[def.type],
+      citizenId: def.citizenId === true,
       values: def.type === 'enum' ? (def.values ?? null) : null,
       min: def.type === 'int' ? INT_MIN : null,
       max: def.type === 'int' ? INT_MAX : null

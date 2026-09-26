@@ -20,7 +20,11 @@ vi.mock('../lib/Database', () => ({ Database: dbMock }));
 vi.mock('../lib/FrameworkBridge', () => bridgeMock);
 vi.mock('../lib/AuditLogger', () => auditMock);
 
-import { CITIZENID_MAX_LENGTH, citizenIdFromIdentifier } from '@mica/shared/framework';
+import {
+  CITIZENID_MAX_LENGTH,
+  citizenIdFromIdentifier,
+  citizenIdWidth
+} from '@mica/shared/framework';
 
 import {
   resolveAppSchema,
@@ -624,6 +628,7 @@ describe('float columns (MICA-65)', () => {
     });
     expect(resolved.columnRules.x).toEqual({
       type: 'float',
+      citizenId: false,
       maxLength: null,
       values: null,
       min: null,
@@ -765,7 +770,8 @@ describe('toCreateTableSql', () => {
   it('reproduces the shape of the hand-written mica_notes table', () => {
     expect(sql).toContain('CREATE TABLE IF NOT EXISTS `mica_notes`');
     expect(sql).toContain('`id` int(11) NOT NULL AUTO_INCREMENT');
-    expect(sql).toContain(`\`citizenid\` varchar(${CITIZENID_MAX_LENGTH}) NOT NULL`);
+    // qb's width by default: `mica.sql` must not move (MICA-289).
+    expect(sql).toContain('`citizenid` varchar(50) NOT NULL');
     expect(sql).toContain('`title` varchar(255) DEFAULT NULL');
     expect(sql).toContain('`content` text DEFAULT NULL');
     expect(sql).toContain("ENUM('active', 'archived', 'deleted', 'moderated')");
@@ -968,12 +974,19 @@ describe('the citizenid column and the guard that fills it', () => {
    * a guard that is looser than its column silently truncates in non-strict mode, and a guard
    * that is tighter refuses players the column could have held.
    */
-  it('derives the column width from the same constant that bounds the identifier', () => {
-    const sql = toCreateTableSql(resolveAppSchema(notesDefinition));
-    const declared = /`citizenid` varchar\((\d+)\)/.exec(sql);
+  it('sizes the column by the owner key, and bounds the identifier by the widest', () => {
+    // MICA-289: 50 where rows hang off qb's `players.citizenid`, 60 where they hang off ESX's
+    // `users.identifier`. The identifier guard is only reached on ESX and standalone, whose
+    // file is the wide one, so it is bounded by exactly that column.
+    const width = (ownerTable: boolean) => {
+      const sql = toCreateTableSql(resolveAppSchema(notesDefinition), { ownerTable });
+      return Number(/`citizenid` varchar\((\d+)\)/.exec(sql)?.[1]);
+    };
 
-    expect(declared).not.toBeNull();
-    expect(Number(declared?.[1])).toBe(CITIZENID_MAX_LENGTH);
+    expect(width(true)).toBe(citizenIdWidth(true));
+    expect(width(false)).toBe(citizenIdWidth(false));
+    expect(width(false)).toBe(CITIZENID_MAX_LENGTH);
+    expect(width(true)).toBeLessThan(width(false));
   });
 
   it('accepts an identifier of exactly the column width and refuses one character more', () => {

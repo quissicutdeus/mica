@@ -10,7 +10,7 @@ import {
   type ResolvedService,
   type ResolvedIndex
 } from './defineService';
-import { CITIZENID_MAX_LENGTH } from '@mica/shared/framework';
+import { citizenIdWidth } from '@mica/shared/framework';
 
 /**
  * Emit MySQL DDL from a resolved app schema.
@@ -60,7 +60,15 @@ const sqlLiteral = (value: string | number | boolean | null): string => {
 const normalize = (spec: ColumnType | ColumnDef): ColumnDef =>
   typeof spec === 'string' ? { type: spec } : spec;
 
-const columnSql = (name: string, def: ColumnDef): string => {
+/**
+ * A `citizenId` column's width for the file being written (MICA-289): qb's `players` key when
+ * the owner table is there, `users.identifier`'s when it is not. Every other column as declared.
+ */
+const withOwnerWidth = (def: ColumnDef, options: SchemaSqlOptions): ColumnDef =>
+  def.citizenId ? { ...def, length: citizenIdWidth(options.ownerTable !== false) } : def;
+
+const columnSql = (name: string, declared: ColumnDef, options: SchemaSqlOptions = {}): string => {
+  const def = withOwnerWidth(declared, options);
   const type = SQL_TYPES[def.type];
   if (!type) {
     throw new Error(`schemaSql: unknown column type '${def.type}' on '${name}'.`);
@@ -212,13 +220,10 @@ export function expectedShape(resolved: ResolvedService): ExpectedShape {
     table,
     columns: [
       { name: 'id', def: { type: 'int', notNull: true }, autoIncrement: true },
-      // Width from `@mica/shared/framework`, not a literal: the same constant bounds the
-      // identifier that lands here, so the column and its guard cannot drift apart
-      // (MICA-158).
-      {
-        name: 'citizenid',
-        def: { type: 'string', length: CITIZENID_MAX_LENGTH, notNull: true }
-      },
+      // `citizenId` rather than a length: its width is the owner key's, 50 on qb and 60 on
+      // ESX, and the same `@mica/shared/framework` function sizes the column and bounds the
+      // identifier that lands in it, so the two cannot drift apart (MICA-158, MICA-289).
+      { name: 'citizenid', def: { type: 'string', citizenId: true, notNull: true } },
       ...fields.map(({ name, def }) => ({ name, def })),
       {
         name: 'status',
@@ -240,8 +245,11 @@ export function expectedShape(resolved: ResolvedService): ExpectedShape {
 }
 
 /** A single `ADD COLUMN` / column-definition fragment, without the CREATE TABLE indent. */
-export const columnDefinitionSql = (name: string, def: ColumnDef): string =>
-  columnSql(name, def).trim();
+export const columnDefinitionSql = (
+  name: string,
+  def: ColumnDef,
+  options: SchemaSqlOptions = {}
+): string => columnSql(name, def, options).trim();
 
 /** A single `ADD [UNIQUE] KEY` fragment. */
 export const indexDefinitionSql = (index: ResolvedIndex): string =>
@@ -276,7 +284,7 @@ export function toCreateTableSql(
     '    `id` int(11) NOT NULL AUTO_INCREMENT,',
     ...shape.columns
       .filter((c) => !c.autoIncrement)
-      .map(({ name, def }) => `${columnSql(name, def)},`),
+      .map(({ name, def }) => `${columnSql(name, def, options)},`),
     '    PRIMARY KEY (`id`),',
     ...shape.indexes.map(indexSql),
     ...declaredForeignKeys
@@ -313,7 +321,7 @@ export function toChildTableSql(
 
   const body = [
     ...(child.autoIncrementId === false ? [] : ['    `id` int(11) NOT NULL AUTO_INCREMENT,']),
-    ...entries.map(([name, def]) => `${columnSql(name, def)},`),
+    ...entries.map(([name, def]) => `${columnSql(name, def, options)},`),
     ...(child.autoIncrementId === false ? [] : ['    PRIMARY KEY (`id`),']),
     ...(child.indexes ?? []).map((i) => indexSql(normalizeIndex(i))),
     ...foreignKeys

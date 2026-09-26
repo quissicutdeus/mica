@@ -66,14 +66,15 @@ const EXTERNAL_DB = Boolean(DB_HOST || DB_PORT || DB_USER || DB_PASSWORD);
  * configured": a harness that returns early — a fixture that silently seeded nothing, a loop
  * over an empty list — would otherwise print a pass having checked almost nothing.
  *
- * The run currently makes **209** checks — the two `runVariant`s (17 each), the two
+ * The run currently makes **258** checks — the two `runVariant`s (17 each), the two
  * `runSweepFixtures` (17 each), the two `runNumberMigration`s (MICA-284; 21 on qb, 16 on
  * ESX), the two `runDataMigration`s (MICA-282; 38 each) and the two `runBatteryMigration`s
- * (MICA-283; 9 each) — so the margin here is eight. That is deliberately tight: losing any
+ * (MICA-283; 9 each), and MICA-289's `runWidenMigration` (14 on qb, 15 on ESX) with its
+ * `runWidenResume` (4) and `runWidenQbWithoutKeys` (9), `runWidenUnknownFramework` (5) and `runWidenEsxWithPlayersKeys` (4) — so the margin here is eight. That is deliberately tight: losing any
  * one fixture drops below it and fails, which is the whole point. Raise the floor when you
  * add checks, rather than letting the gap widen until it stops catching anything.
  */
-const MINIMUM_CHECKS = 201;
+const MINIMUM_CHECKS = 250;
 let checksRun = 0;
 
 const check = (label, actual, expected) => {
@@ -235,7 +236,10 @@ const loadServerModule = async () => {
     `export { __setResourceLookup, detectFramework, FrameworkBridge } from '${root}/server/lib/FrameworkBridge.ts';`,
     // MICA-284. The additive planner, so a migration can be held to "leaves the table in the
     // declared shape": a fresh install and an upgraded one must not be able to disagree.
-    `export { SchemaMigrator } from '${root}/server/lib/SchemaMigrator.ts';`
+    `export { SchemaMigrator } from '${root}/server/lib/SchemaMigrator.ts';`,
+    // MICA-289. 0004 and the planner decide the width from the running framework, so the
+    // harness has to say which one it is standing in for, and can say "not known yet".
+    `export { setOwnerTableResolver } from '${root}/server/lib/ownerWidth.ts';`
   ].join('\n');
 
   const outfile = path.join(root, 'node_modules', '.cache', 'mica-migration-harness.mjs');
@@ -1397,6 +1401,404 @@ const runBatteryMigration = async ({ connection, schemaFile, hasPlayers, server 
   );
 };
 
+const WIDEN_MIGRATION = '0004_citizenid_widens_on_esx';
+
+/**
+ * Every column that held a citizenid before 0004, retyped here on purpose and not imported
+ * from the migration: a list read from the code under test agrees with it by construction.
+ * The migration freezes the same 32; a column dropped from one list and not the other fails
+ * the "was 50 before" or the "is 60 after" check below.
+ */
+const WIDEN_COLUMNS = [
+  ...[
+    'audit_logs',
+    'accounts',
+    'battery',
+    'blabber_dms',
+    'blocklist',
+    'contacts',
+    'messages_conversations',
+    'messages_participants',
+    'highscores',
+    'hodlr',
+    'import_ledger',
+    'invoices',
+    'lockscreen',
+    'mail',
+    'media',
+    'blabber',
+    'blabber_attachments',
+    'marketplace',
+    'marketplace_attachments',
+    'messages',
+    'messages_attachments',
+    'messages_reactions',
+    'notes',
+    'notifications',
+    'phone_call_log',
+    'phone_numbers',
+    'phones',
+    'places',
+    'reports',
+    'settings'
+  ].map((name) => [`mica_${name}`, 'citizenid']),
+  ['mica_invoices', 'payee'],
+  ['mica_reports', 'target_author']
+];
+
+/** A 54-character es_extended multicharacter identifier: `char1:license:` plus 40 hex. */
+const LONG_IDENTIFIER = `char1:license:${'a1b2c3d4e5'.repeat(4)}`;
+
+/**
+ * The schema as it stood *before* 0004, frozen under `scripts/fixtures/pre-0004/`.
+ *
+ * Frozen and not `git show <sha>:mica.sql` at test time: this repo's history has been purged
+ * and recreated once already, and a sha that stops resolving (or a shallow CI clone) would
+ * turn this scenario into an error nobody trusts, or worse a skip. A frozen file cannot rot
+ * silently — it only ever means "the world 0004 was written for", which is the point. The
+ * live `mica.sql` cannot serve: it ships already widened and seeds 0004 as applied.
+ */
+const preWidenSchema = (schemaFile) =>
+  fs.readFileSync(path.join(root, 'scripts', 'fixtures', 'pre-0004', schemaFile), 'utf8');
+
+const signatureOf = async (connection, columns) => {
+  const out = {};
+  for (const [table, column] of columns) {
+    const [rows] = await connection.query(
+      `SELECT column_type AS type, is_nullable AS nullable, collation_name AS collation
+         FROM information_schema.COLUMNS
+        WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?`,
+      [table, column]
+    );
+    out[`${table}.${column}`] = rows[0] ?? null;
+  }
+  return out;
+};
+
+/** Every column of every micaOS table — what "ends identical" means for the resume check. */
+const wholeSchema = async (connection) => {
+  const [rows] = await connection.query(
+    `SELECT table_name AS t, column_name AS c, column_type AS type, is_nullable AS n,
+            collation_name AS coll
+       FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE() AND table_name LIKE 'mica|_%' ESCAPE '|'
+      ORDER BY table_name, ordinal_position`
+  );
+  return rows.map((r) => `${r.t}.${r.c} ${r.type} ${r.n} ${r.coll}`);
+};
+
+const ownerForeignKeys = async (connection) =>
+  Number(
+    await scalar(
+      connection,
+      `SELECT COUNT(*) FROM information_schema.REFERENTIAL_CONSTRAINTS
+        WHERE constraint_schema = DATABASE() AND referenced_table_name = 'players'
+          AND table_name LIKE 'mica|_%' ESCAPE '|'`
+    )
+  );
+
+/** Which framework the bundle believes is running: true = qb, false = ESX/standalone, null = unknown. */
+const runningFramework = (server, ownerTable) => server.setOwnerTableResolver(() => ownerTable);
+
+const freshPreWidenDatabase = async ({ connection, schemaFile, hasPlayers, name, extra = '' }) => {
+  const database = `mica_widen_${name}`;
+  await connection.query(`DROP DATABASE IF EXISTS \`${database}\``);
+  await connection.query(`CREATE DATABASE \`${database}\``);
+  await connection.changeUser({ database });
+  if (hasPlayers) await connection.query(PLAYERS_TABLE);
+  if (extra) await connection.query(extra);
+  await connection.query(preWidenSchema(schemaFile));
+};
+
+/**
+ * 0004, executed rather than read — and *run*, which the rest of this harness never does for
+ * it: every other scenario imports the current schema, which seeds 0004 as already applied.
+ * This one imports the frozen pre-0004 schema, whose ledger does not know 0004, and hands the
+ * real runner the work.
+ */
+const runWidenMigration = async ({ connection, schemaFile, hasPlayers, server }) => {
+  const variant = hasPlayers ? 'qb' : 'esx';
+  const label = `${schemaFile} widen`;
+  step(`${schemaFile} — MICA-289 ${WIDEN_MIGRATION}, on a ${variant} database`);
+
+  await freshPreWidenDatabase({ connection, schemaFile, hasPlayers, name: variant });
+
+  check(`${label}: ${WIDEN_COLUMNS.length} columns are under test`, WIDEN_COLUMNS.length, 32);
+  const before = await signatureOf(connection, WIDEN_COLUMNS);
+  check(
+    `${label}: every column starts as varchar(50)`,
+    Object.values(before).every((c) => c && c.type === 'varchar(50)'),
+    true
+  );
+  check(
+    `${label}: the fixture's ledger does not know 0004`,
+    await scalar(connection, 'SELECT COUNT(*) FROM mica_schema_migrations WHERE id = ?', [
+      WIDEN_MIGRATION
+    ]),
+    0
+  );
+  check(
+    `${label}: the runner does know 0004`,
+    server.migrations.some((m) => m.id === WIDEN_MIGRATION),
+    true
+  );
+  const keysBefore = await ownerForeignKeys(connection);
+  check(`${label}: foreign keys onto players before`, keysBefore > 0, hasPlayers);
+
+  if (!hasPlayers) {
+    // The bug, reproduced: the identifier that motivated the migration is refused today.
+    const code = await rejects(() =>
+      connection.query('INSERT INTO mica_battery (citizenid, level) VALUES (?, 1)', [
+        LONG_IDENTIFIER
+      ])
+    );
+    check(
+      `${label}: a ${LONG_IDENTIFIER.length}-char identifier is refused before (ER 1406)`,
+      code,
+      'ER_DATA_TOO_LONG'
+    );
+  }
+
+  runningFramework(server, hasPlayers);
+  const run = await server.runPendingMigrations();
+  check(`${label}: 0004 applied`, run.applied.includes(WIDEN_MIGRATION), true);
+  check(`${label}: and failed nothing`, run.failed, null);
+  check(`${label}: and left nothing pending`, run.remaining, []);
+
+  const after = await signatureOf(connection, WIDEN_COLUMNS);
+  const keysAfter = await ownerForeignKeys(connection);
+  const plans = await server.SchemaMigrator.plan();
+  const drift = plans.flatMap((p) => [...p.additive, ...p.drift]);
+
+  if (hasPlayers) {
+    check(`${label}: every column is still varchar(50)`, after, before);
+    check(`${label}: no foreign key onto players was lost`, keysAfter, keysBefore);
+  } else {
+    const expected = Object.fromEntries(
+      Object.entries(before).map(([key, c]) => [key, { ...c, type: 'varchar(60)' }])
+    );
+    check(
+      `${label}: every column is varchar(60), nullability and collation unchanged`,
+      after,
+      expected
+    );
+    await connection.query('INSERT INTO mica_battery (citizenid, level) VALUES (?, 1)', [
+      LONG_IDENTIFIER
+    ]);
+    check(
+      `${label}: the ${LONG_IDENTIFIER.length}-char identifier now fits`,
+      await scalar(connection, 'SELECT citizenid FROM mica_battery WHERE citizenid = ?', [
+        LONG_IDENTIFIER
+      ]),
+      LONG_IDENTIFIER
+    );
+    await connection.query('DELETE FROM mica_battery WHERE citizenid = ?', [LONG_IDENTIFIER]);
+  }
+  check(`${label}: the planner finds nothing to add and no drift`, drift, []);
+
+  const second = await server.runPendingMigrations();
+  check(`${label}: a second run applies nothing`, second.applied, []);
+  check(`${label}: and reports no failure`, second.failed, null);
+  check(
+    `${label}: and the schema did not move`,
+    await signatureOf(connection, WIDEN_COLUMNS),
+    after
+  );
+
+  return { schema: await wholeSchema(connection), ledger: after };
+};
+
+/**
+ * A crash part-way through the list. `up()` is not one transaction — each `ALTER` commits — so
+ * a server that died after some columns leaves exactly this: some 60, the rest 50, and a ledger
+ * that does not yet name 0004. Reproduced by widening a spread of columns by hand (first, a
+ * middle one, the second column of a table, the last) and running the real runner.
+ */
+const runWidenResume = async ({ connection, server, complete }) => {
+  const label = 'mica.esx.sql widen resume';
+  step('mica.esx.sql — MICA-289 0004 resumes after a crash part-way through its list');
+
+  await freshPreWidenDatabase({
+    connection,
+    schemaFile: 'mica.esx.sql',
+    hasPlayers: false,
+    name: 'resume'
+  });
+  const done = [0, 1, 2, 11, 12, 15, 30, 31].map((i) => WIDEN_COLUMNS[i]);
+  for (const [table, column] of done) {
+    const [[row]] = await connection.query(
+      `SELECT is_nullable AS n FROM information_schema.COLUMNS
+        WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?`,
+      [table, column]
+    );
+    await connection.query(
+      `ALTER TABLE \`${table}\` MODIFY \`${column}\` varchar(60) ${
+        row.n === 'YES' ? 'DEFAULT NULL' : 'NOT NULL'
+      }`
+    );
+  }
+  const half = await signatureOf(connection, WIDEN_COLUMNS);
+  const widthsHalf = Object.values(half).map((c) => c.type);
+  check(
+    `${label}: the crash left ${done.length} columns at 60 and the rest at 50`,
+    [
+      widthsHalf.filter((t) => t === 'varchar(60)').length,
+      widthsHalf.filter((t) => t === 'varchar(50)').length
+    ],
+    [done.length, WIDEN_COLUMNS.length - done.length]
+  );
+
+  runningFramework(server, false);
+  const run = await server.runPendingMigrations();
+  check(
+    `${label}: the run completes`,
+    [run.applied.includes(WIDEN_MIGRATION), run.failed],
+    [true, null]
+  );
+  check(
+    `${label}: and ends identical to an uninterrupted run`,
+    await wholeSchema(connection),
+    complete.schema
+  );
+  const second = await server.runPendingMigrations();
+  check(`${label}: a second run applies nothing`, second.applied, []);
+};
+
+/**
+ * qb with its foreign keys gone. A qb server is recognised by its `players` table, not by the
+ * keys micaOS put on it: an owner who dropped them (a restore, a hand-run cleanup) is still on
+ * a 50-wide `players.citizenid`, and widening there would let an identifier in that the framework
+ * cannot hold. Built from the pre-0004 qb schema with every key onto `players` dropped.
+ */
+const runWidenQbWithoutKeys = async ({ connection, server }) => {
+  const label = 'mica.sql widen (qb, no foreign keys)';
+  step('mica.sql — MICA-289 0004 on a qb database whose foreign keys were dropped');
+
+  await freshPreWidenDatabase({
+    connection,
+    schemaFile: 'mica.sql',
+    hasPlayers: true,
+    name: 'qb_nofk'
+  });
+  const [keys] = await connection.query(
+    `SELECT table_name AS t, constraint_name AS c FROM information_schema.REFERENTIAL_CONSTRAINTS
+      WHERE constraint_schema = DATABASE() AND referenced_table_name = 'players'
+        AND table_name LIKE 'mica|_%' ESCAPE '|'`
+  );
+  for (const { t, c } of keys) {
+    await connection.query(`ALTER TABLE \`${t}\` DROP FOREIGN KEY \`${c}\``);
+  }
+  check(`${label}: the fixture really had keys to drop`, keys.length > 0, true);
+  check(`${label}: and none is left`, await ownerForeignKeys(connection), 0);
+  check(
+    `${label}: the players table is still there`,
+    await scalar(
+      connection,
+      "SELECT COUNT(*) FROM information_schema.TABLES WHERE table_schema = DATABASE() AND table_name = 'players'"
+    ),
+    1
+  );
+  const before = await signatureOf(connection, WIDEN_COLUMNS);
+
+  runningFramework(server, true);
+  const run = await server.runPendingMigrations();
+  check(
+    `${label}: 0004 applied and nothing failed`,
+    [run.applied.includes(WIDEN_MIGRATION), run.failed],
+    [true, null]
+  );
+  check(
+    `${label}: every column is still varchar(50)`,
+    await signatureOf(connection, WIDEN_COLUMNS),
+    before
+  );
+
+  const plans = await server.SchemaMigrator.plan();
+  check(
+    `${label}: the planner finds nothing to add and no drift`,
+    plans.flatMap((p) => [...p.additive, ...p.drift]),
+    []
+  );
+  const second = await server.runPendingMigrations();
+  check(`${label}: a second run applies nothing`, second.applied, []);
+};
+
+/**
+ * The framework is not known yet — `micaschema apply` before es_extended has answered. 0004
+ * must refuse and stay pending rather than guess a width, then finish once it is known.
+ */
+const runWidenUnknownFramework = async ({ connection, server }) => {
+  const label = 'mica.esx.sql widen (framework unknown)';
+  step('mica.esx.sql — MICA-289 0004 refuses to guess while the framework is unknown');
+
+  await freshPreWidenDatabase({
+    connection,
+    schemaFile: 'mica.esx.sql',
+    hasPlayers: false,
+    name: 'unknown',
+    extra: USERS_TABLE
+  });
+  const before = await signatureOf(connection, WIDEN_COLUMNS);
+
+  runningFramework(server, null);
+  const refused = await server.runPendingMigrations();
+  check(`${label}: 0004 did not apply`, refused.applied.includes(WIDEN_MIGRATION), false);
+  check(
+    `${label}: it failed loudly, naming the migration`,
+    refused.failed !== null && JSON.stringify(refused.failed).includes(WIDEN_MIGRATION),
+    true
+  );
+  check(`${label}: no column moved`, await signatureOf(connection, WIDEN_COLUMNS), before);
+
+  runningFramework(server, false);
+  const run = await server.runPendingMigrations();
+  check(
+    `${label}: once known (ESX, with a users table) it applies`,
+    [run.applied.includes(WIDEN_MIGRATION), run.failed],
+    [true, null]
+  );
+  const widths = Object.values(await signatureOf(connection, WIDEN_COLUMNS)).map((c) => c.type);
+  check(
+    `${label}: and widens all of them`,
+    widths.every((t) => t === 'varchar(60)'),
+    true
+  );
+};
+
+/**
+ * ESX running over a database that was given `mica.sql` by mistake: the foreign keys onto
+ * `players` are there, MariaDB refuses to MODIFY a column one uses, so 0004 warns and leaves
+ * every column alone instead of failing half-way.
+ */
+const runWidenEsxWithPlayersKeys = async ({ connection, server }) => {
+  const label = 'mica.sql widen (ESX running, players keys present)';
+  step('mica.sql — MICA-289 0004 on an ESX server whose tables carry players foreign keys');
+
+  await freshPreWidenDatabase({
+    connection,
+    schemaFile: 'mica.sql',
+    hasPlayers: true,
+    name: 'esx_fk'
+  });
+  const before = await signatureOf(connection, WIDEN_COLUMNS);
+  const keys = await ownerForeignKeys(connection);
+  check(`${label}: the keys are there`, keys > 0, true);
+
+  runningFramework(server, false);
+  const run = await server.runPendingMigrations();
+  check(
+    `${label}: 0004 applied and nothing failed`,
+    [run.applied.includes(WIDEN_MIGRATION), run.failed],
+    [true, null]
+  );
+  check(
+    `${label}: every column is untouched`,
+    await signatureOf(connection, WIDEN_COLUMNS),
+    before
+  );
+  check(`${label}: and no key was lost`, await ownerForeignKeys(connection), keys);
+};
+
 const main = async () => {
   let container;
   let connection;
@@ -1482,6 +1884,20 @@ const main = async () => {
       hasPlayers: false,
       server
     });
+
+    // MICA-289. 0004 is the one migration the scenarios above never run: they import the
+    // current schema, which seeds it as applied. These import the frozen pre-0004 one.
+    await runWidenMigration({ connection, schemaFile: 'mica.sql', hasPlayers: true, server });
+    const widenedEsx = await runWidenMigration({
+      connection,
+      schemaFile: 'mica.esx.sql',
+      hasPlayers: false,
+      server
+    });
+    await runWidenResume({ connection, server, complete: widenedEsx });
+    await runWidenQbWithoutKeys({ connection, server });
+    await runWidenUnknownFramework({ connection, server });
+    await runWidenEsxWithPlayersKeys({ connection, server });
 
     if (checksRun < MINIMUM_CHECKS) {
       throw new Error(

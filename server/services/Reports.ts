@@ -108,7 +108,7 @@ export const reports = defineService<Report, typeof reportsContract>({
     // Captured when the report is filed so the queue still says what was reported after
     // the content has gone.
     target_preview: { type: 'string', length: 300 },
-    target_author: { type: 'string', length: 50 }
+    target_author: { type: 'string', citizenId: true }
   },
   indexes: [
     { name: 'resolution_created', columns: ['resolution', 'created_at'] },

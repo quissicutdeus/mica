@@ -74,7 +74,7 @@ export const marketplace = defineService<Listing, typeof marketplaceContract>({
         },
         citizenid: {
           type: 'string',
-          length: 50,
+          citizenId: true,
           notNull: true,
           references: { table: 'players', column: 'citizenid' }
         },

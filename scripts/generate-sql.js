@@ -56,6 +56,7 @@ const entry = `
 import '${path.join(root, 'server/services/index.ts').split(path.sep).join('/')}';
 export { declaredServices } from '${path.join(root, 'server/lib/defineService.ts').split(path.sep).join('/')}';
 export { toSqlFile, schemaMigrationsLedgerDdl, schemaMigrationsSeedSql } from '${path.join(root, 'server/lib/schemaSql.ts').split(path.sep).join('/')}';
+export { citizenIdWidth } from '${path.join(root, 'shared/framework.ts').split(path.sep).join('/')}';
 `;
 
 const bundlePath = path.join(root, 'node_modules', '.cache', 'mica-sqlgen.mjs');
@@ -213,6 +214,29 @@ function withoutOwnerForeignKeys(sql, label) {
   return stripped;
 }
 
+/**
+ * Size hand-written SQL's `citizenid` columns for a schema with no `players` table, or throw.
+ *
+ * The declared tables get their width from `citizenIdWidth` (MICA-289): 50 where the rows
+ * hang off qb's `players.citizenid`, 60 where they hang off ESX's `users.identifier`.
+ * `scripts/framework-schema.sql` has no declaration behind it and is written at the qb width,
+ * so the ESX copy is widened here, the same way `withoutOwnerForeignKeys` strips its key —
+ * and it throws on no match for the same reason: a silent no-match would ship an ESX audit
+ * ledger that cannot hold the identifiers the rest of the file can.
+ */
+function withIdentifierWidth(sql, label, citizenIdWidth) {
+  const column = new RegExp(`\`citizenid\` varchar\\(${citizenIdWidth(true)}\\)`, 'g');
+  const widened = sql.replace(column, `\`citizenid\` varchar(${citizenIdWidth(false)})`);
+  if (widened === sql) {
+    throw new Error(
+      `generate-sql: found no \`citizenid\` varchar(${citizenIdWidth(true)}) to widen in ${label}. ` +
+        'The ESX schema sizes it by rewriting that column, so a silent no-match would ship an ' +
+        'audit ledger narrower than every other table. Update `withIdentifierWidth`.'
+    );
+  }
+  return widened;
+}
+
 /** Wipe-and-rebuild in one file: drop everything, then the framework and app schemas. */
 function buildResetSql(appFiles, migrationsBlock) {
   const frameworkSql = fs
@@ -255,8 +279,13 @@ async function main() {
     logLevel: 'warning'
   });
 
-  const { declaredServices, toSqlFile, schemaMigrationsLedgerDdl, schemaMigrationsSeedSql } =
-    await import(`file://${bundlePath}?t=${Date.now()}`);
+  const {
+    declaredServices,
+    toSqlFile,
+    schemaMigrationsLedgerDdl,
+    schemaMigrationsSeedSql,
+    citizenIdWidth
+  } = await import(`file://${bundlePath}?t=${Date.now()}`);
 
   if (declaredServices.length === 0) {
     console.log('No defineService declarations found; nothing to generate.');
@@ -363,7 +392,11 @@ async function main() {
     esxOutFile,
     [
       esxBanner,
-      withoutOwnerForeignKeys(frameworkSql.trimEnd(), 'scripts/framework-schema.sql'),
+      withIdentifierWidth(
+        withoutOwnerForeignKeys(frameworkSql.trimEnd(), 'scripts/framework-schema.sql'),
+        'scripts/framework-schema.sql',
+        citizenIdWidth
+      ),
       '',
       ...esxAppFiles.map((f) => f.sql.trimEnd()),
       migrationsBlock

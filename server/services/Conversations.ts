@@ -8,7 +8,6 @@ import { defineService } from '../lib/defineService';
 import { Conversation, Participant } from '@mica/shared/types';
 import { AuditLogger } from '../lib/AuditLogger';
 import { resolveByPhone, resolveMany } from '../lib/PlayerDirectory';
-import { CITIZENID_MAX_LENGTH } from '@mica/shared/framework';
 import { conversationIdFrom, pageBounds, recencyCursor } from '../lib/payload';
 import { conversationsContract } from '@mica/shared/contracts/conversations';
 import { phoneForCitizen, phoneForRequest } from '../lib/phoneIdentity';
@@ -16,14 +15,23 @@ import { readPhoneIdByNumber } from '../lib/phoneNumbers';
 import { onPhoneHandover } from './Phones';
 
 /**
- * The pair-key generated column's own width (MICA-161): two sides at `CITIZENID_MAX_LENGTH`
- * each, joined by one separator byte that cannot appear in either — `'|'` is not a character
+ * The width of one side of a 1:1 thread: a phone id, or a line's `ext:` key (MICA-223).
+ *
+ * Its own constant since MICA-289, when a citizenid's width started to depend on the
+ * framework: these columns have held phone ids since MICA-282, not citizenids, so they keep
+ * the 50 they always had rather than widening with the owner key on ESX for nothing.
+ */
+export const PARTICIPANT_KEY_MAX_LENGTH = 50;
+
+/**
+ * The pair-key generated column's own width (MICA-161): two sides at
+ * `PARTICIPANT_KEY_MAX_LENGTH` each, joined by one separator byte that cannot appear in either — `'|'` is not a character
  * the framework bridge or `randomBytes(...).toString('hex')` ever hands back, so it cannot be
  * produced by one side alone and mistaken for the boundary between two. The sides are phone
  * ids since MICA-282 (32 hex characters), which fit the width a citizenid needed with room to
  * spare; the column is not narrowed, because a retype is a migration for nothing.
  */
-const PAIR_KEY_MAX_LENGTH = CITIZENID_MAX_LENGTH * 2 + 1;
+const PAIR_KEY_MAX_LENGTH = PARTICIPANT_KEY_MAX_LENGTH * 2 + 1;
 
 /**
  * Conversations: owner on both axes, with membership declared alongside.
@@ -79,8 +87,8 @@ export const conversations = defineService<Conversation, typeof conversationsCon
      */
     // The two phones of a 1:1 thread since MICA-282 (citizenids before it; the migration
     // rewrites them). Width kept, because narrowing a column is a migration for nothing.
-    participant_a: { type: 'string', length: CITIZENID_MAX_LENGTH, clientWritable: false },
-    participant_b: { type: 'string', length: CITIZENID_MAX_LENGTH, clientWritable: false },
+    participant_a: { type: 'string', length: PARTICIPANT_KEY_MAX_LENGTH, clientWritable: false },
+    participant_b: { type: 'string', length: PARTICIPANT_KEY_MAX_LENGTH, clientWritable: false },
     /**
      * The normalised pair key `pair_key_unique` constrains. `LEAST`/`GREATEST` over the
      * columns above so the two racers in a 1:1 create — who each know "me" and "the other
@@ -166,7 +174,7 @@ export const conversations = defineService<Conversation, typeof conversationsCon
         },
         citizenid: {
           type: 'string',
-          length: 50,
+          citizenId: true,
           notNull: true,
           references: { table: 'players', column: 'citizenid' }
         },

@@ -166,6 +166,18 @@ DDL.
 
 - `id, citizenid, status, created_at, updated_at` are **supplied by the
   framework**. Declaring any of them in `schema` is an error.
+- **A citizenid is 50 characters on qb and 60 on ESX and standalone
+  (MICA-289).** qb's own `players.citizenid` is `varchar(50)` and every `mica_`
+  table carries a foreign key onto it, so a wider column would buy nothing;
+  ESX's `users.identifier` is `varchar(60)` and a multicharacter identifier
+  (`char1:license:<hash>`) is 54. A column that holds a citizenid but is not the
+  implicit one declares `citizenId: true` instead of a `length` (declaring both
+  throws), and `schemaSql` renders it at the owner table's width: 50 in
+  `mica.sql`, 60 in `mica.esx.sql`. The write guard and the schema planner read
+  the width from the detected framework (`server/lib/ownerWidth.ts`) and accept
+  either while it is unknown. Participant keys on conversations hold phone ids
+  and line keys, not citizenids, and keep their own 50
+  (`PARTICIPANT_KEY_MAX_LENGTH`).
 - **`app` names the one app this service belongs to (MICA-234), when no other
   app reaches it.** An owner who disables that app with `mica_disabled_apps`
   then has every event here refused too, custom and generic — not just hidden

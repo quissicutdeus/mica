@@ -43,7 +43,7 @@ export const invoices = defineService<Invoice, typeof invoicesContract>({
     amount: { type: 'int', notNull: true, clientWritable: false },
     memo: { type: 'string', length: 140, clientWritable: false },
     society: { type: 'string', length: 64, clientWritable: false },
-    payee: { type: 'string', length: 50, clientWritable: false },
+    payee: { type: 'string', citizenId: true, clientWritable: false },
     resource: { type: 'string', length: 64, notNull: true, clientWritable: false },
     // Epoch seconds rather than `timestamp`, so `expires_at <= ?` compares against a number
     // this process produced and a nullable `paid_at` needs no per-server default rule.

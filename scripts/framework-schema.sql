@@ -18,6 +18,9 @@
 -- `target_table` + `target_id` point at the affected row rather than using a foreign
 -- key, on purpose: the log must survive the row it describes, and it spans every app
 -- table. That is also why there is no FK on those columns.
+--
+-- `citizenid` is written at qb's width, `players.citizenid`'s 50. `pnpm generate:sql` widens
+-- it to 60, `users.identifier`'s, in mica.esx.sql (MICA-289), as it does every declared table.
 CREATE TABLE IF NOT EXISTS `mica_audit_logs` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
     `citizenid` varchar(50) NOT NULL,

@@ -342,7 +342,7 @@ export const blabber = defineService<Blab, typeof blabberContract>({
         },
         citizenid: {
           type: 'string',
-          length: 50,
+          citizenId: true,
           notNull: true,
           references: { table: 'players', column: 'citizenid' }
         },

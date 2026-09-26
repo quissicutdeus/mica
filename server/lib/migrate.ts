@@ -12,6 +12,18 @@ import {
 import type { ResolvedService } from './defineService';
 
 /**
+ * Which schema the live database is meant to have, for sizing `citizenId` columns (MICA-289).
+ * `true` for qb's `players(citizenid)`, `false` for ESX and standalone, `null` while the
+ * framework is not known — when either width is accepted rather than reported as drift, since
+ * the planner cannot tell which one is right, and a column added then takes the wider one.
+ */
+export interface PlanOptions {
+  ownerTable: boolean | null;
+}
+
+const UNKNOWN_OWNER: PlanOptions = { ownerTable: null };
+
+/**
  * Bring a live table up to the shape its declaration describes.
  *
  * `generate:sql` only ever emitted `CREATE TABLE IF NOT EXISTS`, so a column added to
@@ -90,8 +102,8 @@ const typesAgree = (expected: string, live: string): boolean => {
  * Derived from the same `columnDefinitionSql` the creator uses, so a new column type
  * cannot be understood by one and not the other.
  */
-const declaredType = (name: string, def: ColumnDef): string => {
-  const sql = columnDefinitionSql(name, def);
+const declaredType = (name: string, def: ColumnDef, ownerTable: boolean): string => {
+  const sql = columnDefinitionSql(name, def, { ownerTable });
   // `` `name` type rest... `` — take everything between the backticked name and the
   // first modifier keyword.
   const afterName = sql.slice(sql.indexOf('`', 1) + 1).trim();
@@ -102,8 +114,12 @@ const planFor = (
   table: string,
   columns: { name: string; def: ColumnDef; autoIncrement?: boolean }[],
   indexes: { name: string; columns: readonly string[]; unique: boolean }[],
-  live: LiveTable
+  live: LiveTable,
+  { ownerTable }: PlanOptions
 ): MigrationPlan => {
+  // Unknown owner: a column added now takes the ESX width, the wider one, which holds either
+  // key. `citizenIdWidth(false)` is that width; `migrate.test.ts` pins that it is the wider.
+  const renderAs = ownerTable ?? false;
   const plan: MigrationPlan = { table, additive: [], drift: [], missingTable: !live.exists };
   if (!live.exists) return plan;
 
@@ -122,7 +138,9 @@ const planFor = (
       }
       plan.additive.push({
         description: `add column ${table}.${column.name}`,
-        sql: `ALTER TABLE \`${table}\` ADD COLUMN ${columnDefinitionSql(column.name, column.def)}`
+        sql: `ALTER TABLE \`${table}\` ADD COLUMN ${columnDefinitionSql(column.name, column.def, {
+          ownerTable: renderAs
+        })}`
       });
       continue;
     }
@@ -138,8 +156,14 @@ const planFor = (
      */
     if (column.def.generatedAs) continue;
 
-    const expectedType = declaredType(column.name, column.def);
-    if (!typesAgree(expectedType, existing.type)) {
+    const expectedType = declaredType(column.name, column.def, renderAs);
+    const agrees =
+      column.def.citizenId && ownerTable === null
+        ? [true, false].some((owner) =>
+            typesAgree(declaredType(column.name, column.def, owner), existing.type)
+          )
+        : typesAgree(expectedType, existing.type);
+    if (!agrees) {
       plan.drift.push(
         `${table}.${column.name} is \`${existing.type}\` but declared \`${expectedType}\``
       );
@@ -167,12 +191,20 @@ const planFor = (
   return plan;
 };
 
-export const planAppMigration = (resolved: ResolvedService, live: LiveTable): MigrationPlan => {
+export const planAppMigration = (
+  resolved: ResolvedService,
+  live: LiveTable,
+  options: PlanOptions = UNKNOWN_OWNER
+): MigrationPlan => {
   const shape: ExpectedShape = expectedShape(resolved);
-  return planFor(shape.table, shape.columns, [...shape.indexes], live);
+  return planFor(shape.table, shape.columns, [...shape.indexes], live, options);
 };
 
-export const planChildMigration = (child: ChildTableDefinition, live: LiveTable): MigrationPlan => {
+export const planChildMigration = (
+  child: ChildTableDefinition,
+  live: LiveTable,
+  options: PlanOptions = UNKNOWN_OWNER
+): MigrationPlan => {
   const columns = Object.entries(child.columns).map(([name, spec]) => ({
     name,
     def: typeof spec === 'string' ? ({ type: spec } as ColumnDef) : spec
@@ -187,7 +219,7 @@ export const planChildMigration = (child: ChildTableDefinition, live: LiveTable)
           ...columns
         ];
 
-  return planFor(child.name, all, (child.indexes ?? []).map(normalizeIndex), live);
+  return planFor(child.name, all, (child.indexes ?? []).map(normalizeIndex), live, options);
 };
 
 /** Nothing to do — used to keep the startup log quiet when a schema is already current. */

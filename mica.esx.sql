@@ -36,9 +36,12 @@
 -- `target_table` + `target_id` point at the affected row rather than using a foreign
 -- key, on purpose: the log must survive the row it describes, and it spans every app
 -- table. That is also why there is no FK on those columns.
+--
+-- `citizenid` is written at qb's width, `players.citizenid`'s 50. `pnpm generate:sql` widens
+-- it to 60, `users.identifier`'s, in mica.esx.sql (MICA-289), as it does every declared table.
 CREATE TABLE IF NOT EXISTS `mica_audit_logs` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
-    `citizenid` varchar(50) NOT NULL,
+    `citizenid` varchar(60) NOT NULL,
     `action` ENUM(
         'archived',
         'unarchived',
@@ -71,7 +74,7 @@ CREATE TABLE IF NOT EXISTS `mica_audit_logs` (
 
 CREATE TABLE IF NOT EXISTS `mica_accounts` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
-    `citizenid` varchar(50) NOT NULL,
+    `citizenid` varchar(60) NOT NULL,
     `app` varchar(32) NOT NULL,
     `handle` varchar(32) NOT NULL,
     `display_name` varchar(50) DEFAULT NULL,
@@ -135,7 +138,7 @@ CREATE TABLE IF NOT EXISTS `mica_account_reactions` (
 
 CREATE TABLE IF NOT EXISTS `mica_battery` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
-    `citizenid` varchar(50) NOT NULL,
+    `citizenid` varchar(60) NOT NULL,
     `phone_id` varchar(32) DEFAULT NULL,
     `level` int(11) NOT NULL DEFAULT 100,
     `status` ENUM('active', 'deleted') NOT NULL DEFAULT 'active',
@@ -153,7 +156,7 @@ CREATE TABLE IF NOT EXISTS `mica_battery` (
 
 CREATE TABLE IF NOT EXISTS `mica_blabber_dms` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
-    `citizenid` varchar(50) NOT NULL,
+    `citizenid` varchar(60) NOT NULL,
     `from_account` int(11) NOT NULL,
     `to_account` int(11) NOT NULL,
     `body` varchar(500) NOT NULL,
@@ -178,7 +181,7 @@ CREATE TABLE IF NOT EXISTS `mica_blabber_dms` (
 
 CREATE TABLE IF NOT EXISTS `mica_blocklist` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
-    `citizenid` varchar(50) NOT NULL,
+    `citizenid` varchar(60) NOT NULL,
     `phone_id` varchar(32) DEFAULT NULL,
     `number` varchar(32) NOT NULL,
     `status` ENUM('active', 'deleted') NOT NULL DEFAULT 'active',
@@ -196,7 +199,7 @@ CREATE TABLE IF NOT EXISTS `mica_blocklist` (
 
 CREATE TABLE IF NOT EXISTS `mica_contacts` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
-    `citizenid` varchar(50) NOT NULL,
+    `citizenid` varchar(60) NOT NULL,
     `phone_id` varchar(32) DEFAULT NULL,
     `firstname` varchar(50) NOT NULL,
     `lastname` varchar(50) DEFAULT NULL,
@@ -222,7 +225,7 @@ CREATE TABLE IF NOT EXISTS `mica_contacts` (
 
 CREATE TABLE IF NOT EXISTS `mica_messages_conversations` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
-    `citizenid` varchar(50) NOT NULL,
+    `citizenid` varchar(60) NOT NULL,
     `is_group` tinyint(1) NOT NULL DEFAULT 0,
     `name` varchar(50) DEFAULT NULL,
     `participant_a` varchar(50) DEFAULT NULL,
@@ -242,7 +245,7 @@ CREATE TABLE IF NOT EXISTS `mica_messages_conversations` (
 CREATE TABLE IF NOT EXISTS `mica_messages_participants` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
     `conversation_id` int(11) NOT NULL,
-    `citizenid` varchar(50) NOT NULL,
+    `citizenid` varchar(60) NOT NULL,
     `phone_id` varchar(32) DEFAULT NULL,
     `role` varchar(20) NOT NULL DEFAULT 'member',
     `status` ENUM('active', 'left', 'removed', 'moderated') NOT NULL DEFAULT 'active',
@@ -267,7 +270,7 @@ CREATE TABLE IF NOT EXISTS `mica_messages_participants` (
 
 CREATE TABLE IF NOT EXISTS `mica_highscores` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
-    `citizenid` varchar(50) NOT NULL,
+    `citizenid` varchar(60) NOT NULL,
     `app` varchar(32) NOT NULL,
     `score` int(11) NOT NULL,
     `status` ENUM('active', 'deleted') NOT NULL DEFAULT 'active',
@@ -284,7 +287,7 @@ CREATE TABLE IF NOT EXISTS `mica_highscores` (
 
 CREATE TABLE IF NOT EXISTS `mica_hodlr` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
-    `citizenid` varchar(50) NOT NULL,
+    `citizenid` varchar(60) NOT NULL,
     `quantity` int(11) NOT NULL DEFAULT 0,
     `status` ENUM('active', 'deleted') NOT NULL DEFAULT 'active',
     `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -308,7 +311,7 @@ CREATE TABLE IF NOT EXISTS `mica_hodlr_price_history` (
 
 CREATE TABLE IF NOT EXISTS `mica_import_ledger` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
-    `citizenid` varchar(50) NOT NULL,
+    `citizenid` varchar(60) NOT NULL,
     `source` varchar(16) NOT NULL,
     `source_table` varchar(64) NOT NULL,
     `source_key` varchar(64) NOT NULL,
@@ -328,12 +331,12 @@ CREATE TABLE IF NOT EXISTS `mica_import_ledger` (
 
 CREATE TABLE IF NOT EXISTS `mica_invoices` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
-    `citizenid` varchar(50) NOT NULL,
+    `citizenid` varchar(60) NOT NULL,
     `from_label` varchar(64) NOT NULL,
     `amount` int(11) NOT NULL,
     `memo` varchar(140) DEFAULT NULL,
     `society` varchar(64) DEFAULT NULL,
-    `payee` varchar(50) DEFAULT NULL,
+    `payee` varchar(60) DEFAULT NULL,
     `resource` varchar(64) NOT NULL,
     `expires_at` int(11) NOT NULL,
     `paid_at` int(11) DEFAULT NULL,
@@ -352,7 +355,7 @@ CREATE TABLE IF NOT EXISTS `mica_invoices` (
 
 CREATE TABLE IF NOT EXISTS `mica_lockscreen` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
-    `citizenid` varchar(50) NOT NULL,
+    `citizenid` varchar(60) NOT NULL,
     `phone_id` varchar(32) DEFAULT NULL,
     `passcode_hash` varchar(64) DEFAULT NULL,
     `passcode_salt` varchar(32) DEFAULT NULL,
@@ -371,7 +374,7 @@ CREATE TABLE IF NOT EXISTS `mica_lockscreen` (
 
 CREATE TABLE IF NOT EXISTS `mica_mail` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
-    `citizenid` varchar(50) NOT NULL,
+    `citizenid` varchar(60) NOT NULL,
     `sender` varchar(100) NOT NULL,
     `sender_address` varchar(100) DEFAULT NULL,
     `subject` varchar(255) NOT NULL,
@@ -392,7 +395,7 @@ CREATE TABLE IF NOT EXISTS `mica_mail` (
 
 CREATE TABLE IF NOT EXISTS `mica_media` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
-    `citizenid` varchar(50) NOT NULL,
+    `citizenid` varchar(60) NOT NULL,
     `phone_id` varchar(32) DEFAULT NULL,
     `kind` ENUM('photo', 'video', 'audio', 'gif', 'sticker', 'file', 'link', 'location') NOT NULL DEFAULT 'photo',
     `data` mediumtext DEFAULT NULL,
@@ -419,7 +422,7 @@ CREATE TABLE IF NOT EXISTS `mica_media` (
 
 CREATE TABLE IF NOT EXISTS `mica_blabber` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
-    `citizenid` varchar(50) NOT NULL,
+    `citizenid` varchar(60) NOT NULL,
     `account_id` int(11) NOT NULL,
     `body` varchar(280) DEFAULT NULL,
     `reply_to` int(11) DEFAULT NULL,
@@ -473,7 +476,7 @@ CREATE TABLE IF NOT EXISTS `mica_blabber_tags` (
 CREATE TABLE IF NOT EXISTS `mica_blabber_attachments` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
     `blab_id` int(11) NOT NULL,
-    `citizenid` varchar(50) NOT NULL,
+    `citizenid` varchar(60) NOT NULL,
     `media_id` int(11) NOT NULL,
     PRIMARY KEY (`id`),
     KEY `blab_id` (`blab_id`),
@@ -490,7 +493,7 @@ CREATE TABLE IF NOT EXISTS `mica_blabber_attachments` (
 
 CREATE TABLE IF NOT EXISTS `mica_marketplace` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
-    `citizenid` varchar(50) NOT NULL,
+    `citizenid` varchar(60) NOT NULL,
     `title` varchar(100) NOT NULL,
     `price` int(11) NOT NULL,
     `description` text NOT NULL,
@@ -505,7 +508,7 @@ CREATE TABLE IF NOT EXISTS `mica_marketplace` (
 CREATE TABLE IF NOT EXISTS `mica_marketplace_attachments` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
     `listing_id` int(11) NOT NULL,
-    `citizenid` varchar(50) NOT NULL,
+    `citizenid` varchar(60) NOT NULL,
     `media_id` int(11) NOT NULL,
     PRIMARY KEY (`id`),
     KEY `listing_id` (`listing_id`),
@@ -522,7 +525,7 @@ CREATE TABLE IF NOT EXISTS `mica_marketplace_attachments` (
 
 CREATE TABLE IF NOT EXISTS `mica_messages` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
-    `citizenid` varchar(50) NOT NULL,
+    `citizenid` varchar(60) NOT NULL,
     `conversation_id` int(11) NOT NULL,
     `message` text NOT NULL,
     `reply_to_id` int(11) DEFAULT NULL,
@@ -544,7 +547,7 @@ CREATE TABLE IF NOT EXISTS `mica_messages` (
 CREATE TABLE IF NOT EXISTS `mica_messages_attachments` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
     `message_id` int(11) NOT NULL,
-    `citizenid` varchar(50) NOT NULL,
+    `citizenid` varchar(60) NOT NULL,
     `photo_id` int(11) NOT NULL,
     PRIMARY KEY (`id`),
     KEY `message_id` (`message_id`),
@@ -559,7 +562,7 @@ CREATE TABLE IF NOT EXISTS `mica_messages_attachments` (
 CREATE TABLE IF NOT EXISTS `mica_messages_reactions` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
     `message_id` int(11) NOT NULL,
-    `citizenid` varchar(50) NOT NULL,
+    `citizenid` varchar(60) NOT NULL,
     `emoji` varchar(32) NOT NULL,
     `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
@@ -574,7 +577,7 @@ CREATE TABLE IF NOT EXISTS `mica_messages_reactions` (
 
 CREATE TABLE IF NOT EXISTS `mica_notes` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
-    `citizenid` varchar(50) NOT NULL,
+    `citizenid` varchar(60) NOT NULL,
     `phone_id` varchar(32) DEFAULT NULL,
     `title` varchar(255) DEFAULT NULL,
     `content` text DEFAULT NULL,
@@ -593,7 +596,7 @@ CREATE TABLE IF NOT EXISTS `mica_notes` (
 
 CREATE TABLE IF NOT EXISTS `mica_notifications` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
-    `citizenid` varchar(50) NOT NULL,
+    `citizenid` varchar(60) NOT NULL,
     `phone_id` varchar(32) DEFAULT NULL,
     `app` varchar(32) NOT NULL,
     `kind` varchar(32) NOT NULL,
@@ -620,7 +623,7 @@ CREATE TABLE IF NOT EXISTS `mica_notifications` (
 
 CREATE TABLE IF NOT EXISTS `mica_phone_call_log` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
-    `citizenid` varchar(50) NOT NULL,
+    `citizenid` varchar(60) NOT NULL,
     `phone_id` varchar(32) DEFAULT NULL,
     `kind` ENUM('incoming', 'outgoing', 'missed') NOT NULL,
     `number` varchar(20) NOT NULL,
@@ -640,7 +643,7 @@ CREATE TABLE IF NOT EXISTS `mica_phone_call_log` (
 
 CREATE TABLE IF NOT EXISTS `mica_phone_numbers` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
-    `citizenid` varchar(50) NOT NULL,
+    `citizenid` varchar(60) NOT NULL,
     `number` varchar(16) NOT NULL,
     `phone_id` varchar(32) DEFAULT NULL,
     `status` ENUM('active', 'deleted') NOT NULL DEFAULT 'active',
@@ -658,7 +661,7 @@ CREATE TABLE IF NOT EXISTS `mica_phone_numbers` (
 
 CREATE TABLE IF NOT EXISTS `mica_phones` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
-    `citizenid` varchar(50) NOT NULL,
+    `citizenid` varchar(60) NOT NULL,
     `phone_id` varchar(32) NOT NULL,
     `claimed` tinyint(1) NOT NULL DEFAULT 0,
     `status` ENUM('active', 'deleted') NOT NULL DEFAULT 'active',
@@ -675,7 +678,7 @@ CREATE TABLE IF NOT EXISTS `mica_phones` (
 
 CREATE TABLE IF NOT EXISTS `mica_places` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
-    `citizenid` varchar(50) NOT NULL,
+    `citizenid` varchar(60) NOT NULL,
     `phone_id` varchar(32) DEFAULT NULL,
     `name` varchar(100) NOT NULL,
     `street_label` varchar(255) DEFAULT NULL,
@@ -696,14 +699,14 @@ CREATE TABLE IF NOT EXISTS `mica_places` (
 
 CREATE TABLE IF NOT EXISTS `mica_reports` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
-    `citizenid` varchar(50) NOT NULL,
+    `citizenid` varchar(60) NOT NULL,
     `target_table` varchar(64) NOT NULL,
     `target_id` int(11) NOT NULL,
     `category` ENUM('spam', 'harassment', 'threats', 'sexual', 'impersonation', 'other') NOT NULL DEFAULT 'other',
     `note` varchar(500) DEFAULT NULL,
     `resolution` ENUM('pending', 'actioned', 'dismissed') NOT NULL DEFAULT 'pending',
     `target_preview` varchar(300) DEFAULT NULL,
-    `target_author` varchar(50) DEFAULT NULL,
+    `target_author` varchar(60) DEFAULT NULL,
     `status` ENUM('active', 'deleted') NOT NULL DEFAULT 'active',
     `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -719,7 +722,7 @@ CREATE TABLE IF NOT EXISTS `mica_reports` (
 
 CREATE TABLE IF NOT EXISTS `mica_settings` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
-    `citizenid` varchar(50) NOT NULL,
+    `citizenid` varchar(60) NOT NULL,
     `phone_id` varchar(32) DEFAULT NULL,
     `app` varchar(32) NOT NULL,
     `setting_key` varchar(64) NOT NULL,
@@ -744,4 +747,5 @@ CREATE TABLE IF NOT EXISTS `mica_schema_migrations` (
 INSERT IGNORE INTO `mica_schema_migrations` (`id`) VALUES
   ('0001_phone_numbers_follow_the_phone'),
   ('0002_phone_data_follows_the_phone'),
-  ('0003_battery_follows_the_phone');
+  ('0003_battery_follows_the_phone'),
+  ('0004_citizenid_widens_on_esx');

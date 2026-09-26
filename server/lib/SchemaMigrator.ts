@@ -4,6 +4,7 @@
 
 import { Database } from './Database';
 import { declaredServices } from './defineService';
+import { ownerTableKnown } from './ownerWidth';
 import {
   isNoop,
   planAppMigration,
@@ -73,11 +74,14 @@ const readLiveTable = async (schema: string, table: string): Promise<LiveTable> 
 const collectPlans = async (schema: string): Promise<MigrationPlan[]> => {
   const plans: MigrationPlan[] = [];
 
+  // Which width a citizenid column should have here (MICA-289); null in the boot window.
+  const options = { ownerTable: ownerTableKnown() };
+
   for (const resolved of declaredServices) {
-    plans.push(planAppMigration(resolved, await readLiveTable(schema, resolved.table)));
+    plans.push(planAppMigration(resolved, await readLiveTable(schema, resolved.table), options));
 
     for (const child of resolved.childTables) {
-      plans.push(planChildMigration(child, await readLiveTable(schema, child.name)));
+      plans.push(planChildMigration(child, await readLiveTable(schema, child.name), options));
     }
   }
 

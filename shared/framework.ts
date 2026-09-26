@@ -14,16 +14,33 @@
  */
 
 /**
- * The widest `citizenid` the schema can hold, in characters.
+ * How wide a citizenid column is, which depends on what the rows hang off (MICA-289).
  *
- * **This is the same number the DDL emits, not a copy of it.** `server/lib/schemaSql.ts`
- * imports this constant for the implicit `citizenid` column on every table, so widening the
- * column and widening the guard are one edit. A second literal here would be a guard that
- * agrees with the schema only until somebody changes one of them, and the symptom of that
- * drift — a value the guard passes and the column cannot hold — is precisely the bug this
- * exists to prevent (MICA-158).
+ * A citizenid column is as wide as the owner key it holds. On qb that is
+ * `players.citizenid`, a `varchar(50)` that micaOS's foreign keys point at: nothing wider can
+ * exist there, so the column stays 50 and `mica.sql` does not move. On ESX it is
+ * `users.identifier`, a `varchar(60)`, and a multicharacter `char1:license:<40 hex>` is 54 —
+ * a column of 50 cost that player their phone. Standalone mints `license:<hash>` identifiers
+ * and ships `mica.esx.sql`, so it takes the ESX width too.
+ *
+ * `ownerTable` is `schemaSql.ts`'s own axis: does a `players(citizenid)` table exist for the
+ * rows to reference? The DDL, the planner and the write guard all ask through this function,
+ * so the three cannot disagree about one server.
  */
-export const CITIZENID_MAX_LENGTH = 50;
+export const QB_CITIZENID_WIDTH = 50;
+export const IDENTIFIER_CITIZENID_WIDTH = 60;
+export const citizenIdWidth = (ownerTable: boolean): number =>
+  ownerTable ? QB_CITIZENID_WIDTH : IDENTIFIER_CITIZENID_WIDTH;
+
+/**
+ * The widest `citizenid` any schema can hold, in characters: the ESX width.
+ *
+ * **Derived from the widths above, not a copy of them**, so widening a column and widening
+ * the guard stay one edit (MICA-158). It bounds `citizenIdFromIdentifier`, which only ESX and
+ * standalone derive a citizenid through — qb's comes from `players`, which cannot hold more
+ * than 50 — so the widest width is the right bound on every framework that asks.
+ */
+export const CITIZENID_MAX_LENGTH = Math.max(QB_CITIZENID_WIDTH, IDENTIFIER_CITIZENID_WIDTH);
 
 /** Why an identifier could not become a citizenid. Null when it can. */
 type IdentifierRejection = 'not-a-string' | 'empty' | 'too-long';
