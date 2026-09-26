@@ -111,6 +111,8 @@ export const NEVER_REFUSED_SERVICES: readonly string[] = [
   'blocklist',
   'contacts',
   'conversations',
+  // `micaimport`'s ledger (MICA-233): a table with no actions, and no app's.
+  'importledger',
   'lockscreen',
   'media',
   'messages',

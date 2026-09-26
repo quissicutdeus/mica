@@ -300,7 +300,7 @@ if (!paging) {
 }
 
 /** 3–32 characters, lowercase, alphanumeric and underscore. No leading `@`; that is display. */
-const HANDLE_PATTERN = /^[a-z0-9_]{3,32}$/;
+export const HANDLE_PATTERN = /^[a-z0-9_]{3,32}$/;
 
 const MAX_PER_APP_CONVAR = 'mica_max_accounts_per_app';
 const DEFAULT_MAX_PER_APP = 3;
@@ -311,7 +311,7 @@ const DEFAULT_MAX_PER_APP = 3;
  * Capped because the handle namespace is public and finite: without a limit, one player can
  * claim every good name in an afternoon. Three is enough for a main and a couple of alts.
  */
-const maxPerApp = (): number => {
+export const maxPerApp = (): number => {
   const raw = Number.parseInt(GetConvar(MAX_PER_APP_CONVAR, String(DEFAULT_MAX_PER_APP)), 10);
   return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_MAX_PER_APP;
 };

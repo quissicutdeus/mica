@@ -4,7 +4,14 @@
 
 import { PlayerFacingError } from '../lib/errors';
 import { defineService } from '../lib/defineService';
-import { ownedAccount, accountHasBlocked, accountsByHandle, accountsOwnedBy } from './Accounts';
+import {
+  ownedAccount,
+  accountHasBlocked,
+  accountsByHandle,
+  accountsOwnedBy,
+  HANDLE_PATTERN,
+  maxPerApp
+} from './Accounts';
 // Media is a declared app; reuse its derived repository rather than a second instance, so
 // the attachment-ownership check runs against the same allowlist Messages already uses.
 import { media } from './Media';
@@ -14,6 +21,12 @@ import { defineContract } from '@mica/shared/contract';
 import { s } from '@mica/shared/schema';
 import { resolveOwnedAttachments } from '../lib/attachments';
 import { Database } from '../lib/Database';
+import {
+  registerImportTarget,
+  type AccountPlan,
+  type ImportedAccount,
+  type PostWrite
+} from '../lib/import/targets';
 import { appEventChannel } from '../lib/appEvents';
 import { mentionedHandles, taggedTopics } from '@mica/shared/richText';
 import { BlabberRepository } from '../repositories/BlabberRepository';
@@ -1070,4 +1083,138 @@ app.registerEvent('following', async (source, cbId, data, citizenid) => {
     rows: await repo.hydrate(page),
     nextCursor: hasMore ? page[page.length - 1].id : null
   };
+});
+
+// ─── micaimport (MICA-233) ───────────────────────────────────────────────────
+
+const HANDLE_MAX = 32;
+
+/**
+ * A source username folded into `Accounts.ts`'s handle pattern. An old phone's usernames allow
+ * capitals, dots and dashes; a Blabber handle does not, and refusing the account over it would
+ * lose every post it wrote.
+ */
+export const normaliseImportedHandle = (raw: string): string => {
+  let handle = raw
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '')
+    .slice(0, HANDLE_MAX);
+  if (handle.length < 3) handle = `${handle || 'user'}_imp`.slice(0, HANDLE_MAX);
+  return HANDLE_PATTERN.test(handle) ? handle : 'user_imp';
+};
+
+/** The handle, then `_2` … `_20`, trimmed to fit. */
+const handleCandidates = (base: string): string[] => {
+  const out = [base];
+  for (let n = 2; n <= 20; n++) {
+    const suffix = `_${n}`;
+    out.push(`${base.slice(0, HANDLE_MAX - suffix.length)}${suffix}`);
+  }
+  return out;
+};
+
+/**
+ * What a source account becomes on Blabber: the account of the same handle this character
+ * already holds; else, at `maxPerApp` accounts, their oldest (folded, so the cap holds); else a
+ * new account under the first free handle. Reads only — `micaimport`'s dry run plans the same.
+ *
+ * A free handle is asked for rather than learned from `app_handle`'s duplicate-key failure,
+ * because inside the importer's transaction that failure is only a rollback. The key is still
+ * unique underneath: a player claiming the same handle in between is a rollback, reported.
+ */
+const planImportedAccount = async (
+  citizenid: string,
+  account: ImportedAccount
+): Promise<AccountPlan> => {
+  const candidates = handleCandidates(normaliseImportedHandle(account.handle));
+
+  const same = await Database.single<{ id: number } | null>(
+    "SELECT `id` FROM `mica_accounts` WHERE `app` = ? AND `handle` = ? AND `citizenid` = ? AND `status` = 'active' LIMIT 1",
+    [APP, candidates[0], citizenid]
+  );
+  if (same) return { link: same.id, folded: false };
+
+  const held = Number(
+    (await Database.scalar<number | null>(
+      "SELECT COUNT(*) FROM `mica_accounts` WHERE `citizenid` = ? AND `app` = ? AND `status` = 'active'",
+      [citizenid, APP]
+    )) ?? 0
+  );
+  if (held >= maxPerApp()) {
+    const oldest = await Database.single<{ id: number } | null>(
+      "SELECT `id` FROM `mica_accounts` WHERE `citizenid` = ? AND `app` = ? AND `status` = 'active' ORDER BY `id` ASC LIMIT 1",
+      [citizenid, APP]
+    );
+    if (oldest) return { link: oldest.id, folded: true };
+  }
+
+  for (const handle of candidates) {
+    const taken = await Database.scalar<number | null>(
+      'SELECT 1 FROM `mica_accounts` WHERE `app` = ? AND `handle` = ? LIMIT 1',
+      [APP, handle]
+    );
+    if (taken) continue;
+    return {
+      create: {
+        query: `INSERT INTO \`mica_accounts\`
+           (\`citizenid\`, \`app\`, \`handle\`, \`display_name\`, \`avatar\`, \`bio\`)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        params: [
+          citizenid,
+          APP,
+          handle,
+          account.displayName ? account.displayName.slice(0, 50) : null,
+          account.avatar && /^https?:/i.test(account.avatar) ? account.avatar.slice(0, 255) : null,
+          account.bio ? account.bio.slice(0, 160) : null
+        ]
+      }
+    };
+  }
+  return 'none';
+};
+
+/**
+ * Blabber takes `micaimport`'s posts (MICA-233). Registered here, in Blabber's own service, so
+ * core never names this app: without this file the importer counts every tweet as having no app
+ * to go to, and an owner who switches Blabber off gets the same with its own reason.
+ */
+registerImportTarget('posts', {
+  app: APP,
+  accountTable: 'mica_accounts',
+  postTable: 'mica_blabber',
+  maxBody: 280,
+  planAccount: planImportedAccount,
+  insertPost: (post: PostWrite) => ({
+    query: `INSERT INTO \`mica_blabber\`
+       (\`citizenid\`, \`account_id\`, \`body\`, \`reply_to\`, \`root_id\`, \`mouth_of\`, \`created_at\`)
+     VALUES (?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP))`,
+    params: [
+      post.citizenid,
+      post.accountId,
+      post.body,
+      post.replyTo,
+      post.rootId,
+      post.mouthOf,
+      post.at
+    ]
+  }),
+  ownerOf: async (accountId) =>
+    (await Database.scalar<string | null>(
+      'SELECT `citizenid` FROM `mica_accounts` WHERE `id` = ? LIMIT 1',
+      [accountId]
+    )) ?? null,
+  rootOf: async (postId) =>
+    (await Database.scalar<number | null>(
+      'SELECT `root_id` FROM `mica_blabber` WHERE `id` = ? LIMIT 1',
+      [postId]
+    )) ?? null,
+  repeats: async (accountId, postId) =>
+    Boolean(
+      await Database.scalar<number | null>(
+        'SELECT 1 FROM `mica_blabber` WHERE `account_id` = ? AND `mouth_of` = ? LIMIT 1',
+        [accountId, postId]
+      )
+    )
 });

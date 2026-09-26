@@ -39,7 +39,12 @@ const DB_PASSWORD = process.env.MICA_DB_PASSWORD;
 const EXTERNAL_DB = Boolean(DB_HOST || DB_PORT || DB_USER || DB_PASSWORD);
 
 let checksRun = 0;
-const MINIMUM_CHECKS = 48;
+/**
+ * The repository checks (48), plus MICA-233's: for each of three import sources on each of
+ * two framework shapes, fourteen checks and the seeded schema's one.
+ */
+const IMPORT_CHECKS = 15;
+const MINIMUM_CHECKS = 48 + IMPORT_CHECKS * 3 * 2;
 
 const check = (label, actual, expected) => {
   checksRun += 1;
@@ -145,32 +150,73 @@ const connectWhenReady = async (port) => {
  */
 let pagedThreadStatement = { sql: '', params: [] };
 
+/** Batches the shim committed, so the import checks can prove the ledger path ran. */
+let transactionsCommitted = 0;
+
+/**
+ * oxmysql's surface over the harness's one connection.
+ *
+ * Every call takes `serial` first, so a statement never runs between another call's
+ * statements. That matters for `transaction_async` (MICA-233): real oxmysql runs a batch on
+ * one connection inside BEGIN/COMMIT, and the importer's ledger write depends on it --
+ * `SET @mica_import_id = LAST_INSERT_ID()` and the rows that read the variable must share
+ * a session with nothing interleaved. One connection gives the session; the lock keeps a
+ * concurrent query out of the middle of the batch, which is what makes this a transaction
+ * rather than one by accident. Like oxmysql it answers `true`, or `false` after rolling back,
+ * rather than throwing.
+ */
 const installOxmysql = (connection) => {
+  let tail = Promise.resolve();
+  const serial = (work) => {
+    const run = tail.then(work, work);
+    tail = run.catch(() => {});
+    return run;
+  };
+
   const oxmysql = {
-    query_async: async (sql, params = []) => {
-      if (/FROM mica_messages m/.test(sql) && /AND m\.id < \?/.test(sql)) {
-        pagedThreadStatement = { sql, params };
-      }
-      const [rows] = await connection.query(sql, params);
-      return rows;
-    },
-    insert_async: async (sql, params = []) => {
-      const [result] = await connection.query(sql, params);
-      return result.insertId;
-    },
-    update_async: async (sql, params = []) => {
-      const [result] = await connection.query(sql, params);
-      return result.affectedRows;
-    },
-    scalar_async: async (sql, params = []) => {
-      const [rows] = await connection.query(sql, params);
-      if (!Array.isArray(rows) || rows.length === 0) return null;
-      return Object.values(rows[0])[0];
-    },
-    single_async: async (sql, params = []) => {
-      const [rows] = await connection.query(sql, params);
-      return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
-    }
+    query_async: (sql, params = []) =>
+      serial(async () => {
+        if (/FROM mica_messages m/.test(sql) && /AND m\.id < \?/.test(sql)) {
+          pagedThreadStatement = { sql, params };
+        }
+        const [rows] = await connection.query(sql, params);
+        return rows;
+      }),
+    insert_async: (sql, params = []) =>
+      serial(async () => {
+        const [result] = await connection.query(sql, params);
+        return result.insertId;
+      }),
+    update_async: (sql, params = []) =>
+      serial(async () => {
+        const [result] = await connection.query(sql, params);
+        return result.affectedRows;
+      }),
+    scalar_async: (sql, params = []) =>
+      serial(async () => {
+        const [rows] = await connection.query(sql, params);
+        if (!Array.isArray(rows) || rows.length === 0) return null;
+        return Object.values(rows[0])[0];
+      }),
+    single_async: (sql, params = []) =>
+      serial(async () => {
+        const [rows] = await connection.query(sql, params);
+        return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+      }),
+    transaction_async: (queries) =>
+      serial(async () => {
+        await connection.query('START TRANSACTION');
+        try {
+          for (const { query, values } of queries) await connection.query(query, values ?? []);
+          await connection.query('COMMIT');
+          transactionsCommitted += 1;
+          return true;
+        } catch (error) {
+          await connection.query('ROLLBACK');
+          console.log(`    transaction rolled back: ${error.message}`);
+          return false;
+        }
+      })
   };
 
   const exportsFn = function () {};
@@ -178,13 +224,27 @@ const installOxmysql = (connection) => {
   globalThis.exports = exportsFn;
 };
 
+const IMPORTER = path.join(root, 'server/lib/import/index.ts');
+
 const loadServerModule = async () => {
   const entry = [
     `export { ConversationRepository } from '${root}/server/repositories/ConversationRepository.ts';`,
     `export { MessageRepository } from '${root}/server/repositories/MessageRepository.ts';`,
     `export { Database } from '${root}/server/lib/Database.ts';`,
     `export { FrameworkBridge, __setResourceLookup } from '${root}/server/lib/FrameworkBridge.ts';`,
-    `export { resolveByPhone, resolveByPhoneMany } from '${root}/server/lib/PlayerDirectory.ts';`
+    `export { resolveByPhone, resolveByPhoneMany } from '${root}/server/lib/PlayerDirectory.ts';`,
+    // MICA-233. In the same bundle as the repositories on purpose: the importer has to see
+    // the same `Database` and the same `FrameworkBridge` lookup the harness sets. Left out
+    // only while the file does not exist, so the rest of the harness still reports -- and
+    // the import phase then fails loudly rather than being skipped.
+    ...(fs.existsSync(IMPORTER) ? [`export { runImport } from '${IMPORTER}';`] : []),
+    // The real phone resolver, installed when this module loads, as in game: an import writes
+    // device-owned rows, and which phone they land on is `services/Phones.ts`'s answer.
+    `export { phones } from '${root}/server/services/Phones.ts';`,
+    // Blabber registers itself as the app that takes imported posts when it loads (core may
+    // not name the add-on, so the importer asks a registry). Without it every tweet would be
+    // skipped as 'no installed app takes imported posts', and the post checks would fail.
+    `import '${root}/server/services/Blabber.ts';`
   ].join('\n');
 
   const outfile = path.join(root, 'node_modules', '.cache', 'mica-schema-harness.mjs');
@@ -233,13 +293,26 @@ CREATE TABLE IF NOT EXISTS users (
     PRIMARY KEY (identifier)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;`;
 
+/**
+ * The ESX characters' `users.identifier`, in es_extended multicharacter's real shape:
+ * `char<N>:` and a 40-hex license, 46 characters. Stored and resolved verbatim, so an
+ * import from NPWD on ESX (MICA-233) finds its owner only by this exact string.
+ */
+const ESX_OWNER_A = 'char1:3f9a2c7e5b1d4f60a8c2e9b7d1f3a5c7e9b1d3f5';
+const ESX_OWNER_B = 'char1:8e0b4d6f2a9c1e3b5d7f9a0c2e4b6d8f0a1c3e5b';
+
 const FRAMEWORK = {
   qb: (name) => (name === 'qbx_core' ? { GetPlayer: () => null } : undefined),
   esx: (name) => (name === 'es_extended' ? { getSharedObject: () => ({}) } : undefined)
 };
 
-const seedFrameworkAndGPhone = async ({ connection, schemaFile, hasPlayers }) => {
-  const database = `mica_${path.basename(schemaFile, '.sql').replace(/\./g, '_')}_schema`;
+const seedFrameworkAndGPhone = async ({
+  connection,
+  schemaFile,
+  hasPlayers,
+  suffix = 'schema'
+}) => {
+  const database = `mica_${path.basename(schemaFile, '.sql').replace(/\./g, '_')}_${suffix}`;
   step(`${schemaFile}: importing into \`${database}\``);
 
   await connection.query(`DROP DATABASE IF EXISTS \`${database}\``);
@@ -261,16 +334,7 @@ const seedFrameworkAndGPhone = async ({ connection, schemaFile, hasPlayers }) =>
       // `phone_number` is one of the three spellings the ESX adapter probes for (MICA-225);
       // core es_extended has no such column and a community resource adds it.
       'INSERT INTO users (identifier, firstname, lastname, phone_number) VALUES (?, ?, ?, ?), (?, ?, ?, ?)',
-      [
-        'char1:license:aaaaaaaaaaaaaaaaaaa',
-        'Alice',
-        'Test',
-        '555-0001',
-        'char1:license:bbbbbbbbbbbbbbbbbbb',
-        'Bob',
-        'Test',
-        '555-0002'
-      ]
+      [ESX_OWNER_A, 'Alice', 'Test', '555-0001', ESX_OWNER_B, 'Bob', 'Test', '555-0002']
     );
   }
 
@@ -286,8 +350,8 @@ const seedFrameworkAndGPhone = async ({ connection, schemaFile, hasPlayers }) =>
 const runVariant = async ({ connection, schemaFile, hasPlayers, modules }) => {
   const database = await seedFrameworkAndGPhone({ connection, schemaFile, hasPlayers });
   const framework = hasPlayers ? 'qb' : 'esx';
-  const ownerA = hasPlayers ? 'CIT_A' : 'char1:license:aaaaaaaaaaaaaaaaaaa';
-  const ownerB = hasPlayers ? 'CIT_B' : 'char1:license:bbbbbbbbbbbbbbbbbbb';
+  const ownerA = hasPlayers ? 'CIT_A' : ESX_OWNER_A;
+  const ownerB = hasPlayers ? 'CIT_B' : ESX_OWNER_B;
 
   step(`${schemaFile} — exercising repositories on ${framework}`);
 
@@ -480,6 +544,238 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, modules }) => {
   console.log(`    schema test passed for ${framework}`);
 };
 
+/* ------------------------------------------------------------ imports (MICA-233) */
+
+/**
+ * What `micaimport` must make of each fixture in `scripts/fixtures/import/`.
+ *
+ * `tables` is each source table the importer has to report, and how many rows the fixture
+ * puts in it. `read` counts what the importer reads a row as: qb-phone's `phone_messages` is
+ * the eight messages inside four rows' JSON (each A<->B text is stored once per side). Every one of those tables holds a row whose owner no
+ * character has, which has to come back under `skipped` as `UNRESOLVED`.
+ *
+ * `rows` is what the first `--apply` adds to micaOS's own tables. Exact duplicates collapse
+ * (qb and NPWD each carry a doubled contact and a doubled gallery row); lb-phone's
+ * `5550002` beside `555-0002` is two numbers, not one, because nothing here normalises
+ * a number. Messages are held by the spot check below rather than by a count, because
+ * whether a text from a number nobody holds becomes a line thread is the importer's call.
+ */
+const IMPORT_EXPECTED = {
+  'qb-phone': {
+    tables: { player_contacts: 5, phone_messages: 8, phone_gallery: 4, phone_tweets: 3 },
+    rows: { mica_contacts: 3, mica_media: 2, mica_blabber: 2 }
+  },
+  npwd: {
+    tables: {
+      npwd_phone_contacts: 5,
+      npwd_messages: 4,
+      npwd_phone_gallery: 4,
+      npwd_twitter_tweets: 3
+    },
+    rows: { mica_contacts: 3, mica_media: 2, mica_blabber: 2 }
+  },
+  'lb-phone': {
+    tables: {
+      phone_phone_contacts: 5,
+      phone_message_messages: 4,
+      phone_photos: 4,
+      phone_twitter_tweets: 3
+    },
+    rows: { mica_contacts: 4, mica_media: 3, mica_blabber: 2 }
+  }
+};
+
+/**
+ * How the importer names a row it could not give an owner: `SKIP.unresolvedOwner`,
+ * `SKIP.unresolvedSender`, or -- for a message whose thread loses its unresolvable side --
+ * `SKIP.thinThread` (server/lib/import/report.ts).
+ */
+const UNRESOLVED = /could not be resolved to a character|fewer than two resolvable members/;
+
+/** micaOS's tables an import can write to. Counted before and after every run. */
+const IMPORT_TARGETS = [
+  'mica_contacts',
+  'mica_media',
+  'mica_blabber',
+  'mica_messages',
+  'mica_messages_conversations',
+  'mica_messages_participants'
+];
+
+const countTargets = async (connection) => {
+  const counts = {};
+  for (const table of IMPORT_TARGETS) {
+    const [[row]] = await connection.query(`SELECT COUNT(*) AS n FROM \`${table}\``);
+    counts[table] = Number(row.n);
+  }
+  return counts;
+};
+
+/** The report's rows for the tables this source must report, in a comparable shape. */
+const reported = (report, expected) =>
+  Object.keys(expected.tables).map((table) => {
+    const row = report.tables.find((t) => t.table === table);
+    return row
+      ? { table, present: row.present, read: row.read, written: row.written }
+      : { table, missing: true };
+  });
+
+/** The expected tables whose report does not name the unresolvable owner. */
+const unresolvedMissing = (report, expected) =>
+  Object.keys(expected.tables).filter((table) => {
+    const row = report.tables.find((t) => t.table === table);
+    return !row?.skipped?.some((s) => UNRESOLVED.test(s.reason) && s.count >= 1);
+  });
+
+const runImportVariant = async ({ connection, schemaFile, hasPlayers, modules, source }) => {
+  const framework = hasPlayers ? 'qb' : 'esx';
+  const ownerA = hasPlayers ? 'CIT_A' : ESX_OWNER_A;
+  const ownerB = hasPlayers ? 'CIT_B' : ESX_OWNER_B;
+  const expected = IMPORT_EXPECTED[source];
+  const label = `${source} on ${framework}`;
+
+  await seedFrameworkAndGPhone({
+    connection,
+    schemaFile,
+    hasPlayers,
+    suffix: `import_${source.replace(/-/g, '_')}`
+  });
+  modules.__setResourceLookup(FRAMEWORK[framework]);
+
+  step(`${label} — loading scripts/fixtures/import/${source}.sql`);
+  const fixture = fs
+    .readFileSync(path.join(root, 'scripts/fixtures/import', `${source}.sql`), 'utf8')
+    .replaceAll('{{OWNER_A}}', ownerA)
+    .replaceAll('{{OWNER_B}}', ownerB);
+  await connection.query(fixture);
+
+  if (typeof modules.runImport !== 'function') {
+    throw new Error(
+      `${path.relative(root, IMPORTER)} does not exist or does not export runImport, so ` +
+        'no import was tested. This is a failure, not a skip.'
+    );
+  }
+
+  const before = await countTargets(connection);
+  const tableSummary = (report) =>
+    reported(report, expected).map(({ table, present, read }) => ({ table, present, read }));
+  const wantedSummary = Object.entries(expected.tables).map(([table, read]) => ({
+    table,
+    present: true,
+    read
+  }));
+
+  const show = (report) => {
+    for (const t of report.tables) {
+      const skipped = t.skipped.map((k) => `${k.count} ${k.reason}`).join('; ');
+      console.log(
+        `    ${t.table}: read ${t.read}, written ${t.written}${skipped ? ` (${skipped})` : ''}`
+      );
+    }
+  };
+
+  step(`${label} — dry run`);
+  const dry = await modules.runImport(source, { apply: false });
+  show(dry);
+  check(
+    `${label}: the dry run names its source and mode`,
+    [dry.source, dry.apply],
+    [source, false]
+  );
+  check(`${label}: the dry run reads every source row`, tableSummary(dry), wantedSummary);
+  check(`${label}: the dry run writes nothing`, await countTargets(connection), before);
+  check(`${label}: the dry run reports the unowned rows`, unresolvedMissing(dry, expected), []);
+
+  step(`${label} — --apply`);
+  const committedBefore = transactionsCommitted;
+  const applied = await modules.runImport(source, { apply: true });
+  show(applied);
+  // Each new row and its ledger row are one oxmysql transaction; none means that path never ran.
+  check(
+    `${label}: --apply writes through transactions`,
+    transactionsCommitted > committedBefore,
+    true
+  );
+  check(
+    `${label}: --apply writes what the dry run said it would`,
+    reported(applied, expected).map((r) => r.written),
+    reported(dry, expected).map((r) => r.written)
+  );
+  const after = await countTargets(connection);
+  check(
+    `${label}: --apply adds the expected contacts, media and posts`,
+    Object.fromEntries(Object.keys(expected.rows).map((t) => [t, after[t] - before[t]])),
+    expected.rows
+  );
+  check(`${label}: --apply reports the unowned rows`, unresolvedMissing(applied, expected), []);
+
+  const [contacts] = await connection.query(
+    "SELECT firstname, lastname FROM mica_contacts WHERE citizenid = ? AND phone = '555-0002'",
+    [ownerA]
+  );
+  check(
+    `${label}: Alice has Bob as a contact, once`,
+    contacts.map((c) => `${c.firstname} ${c.lastname ?? ''}`.trim()),
+    ['Bob Test']
+  );
+
+  const [threads] = await connection.query(
+    `SELECT conversation_id FROM mica_messages_participants WHERE citizenid IN (?, ?)
+     GROUP BY conversation_id HAVING COUNT(DISTINCT citizenid) = 2`,
+    [ownerA, ownerB]
+  );
+  const [messages] = threads.length
+    ? await connection.query(
+        'SELECT message, citizenid FROM mica_messages WHERE conversation_id = ? ORDER BY id',
+        [threads[0].conversation_id]
+      )
+    : [[]];
+  check(
+    `${label}: Alice and Bob share one thread holding their three texts, in order`,
+    { threads: threads.length, messages: messages.map((m) => [m.message, m.citizenid]) },
+    {
+      threads: 1,
+      messages: [
+        ['You up?', ownerA],
+        ["Yeah, what's up", ownerB],
+        ['Meet at Legion', ownerA]
+      ]
+    }
+  );
+
+  const [posts] = await connection.query(
+    "SELECT COUNT(*) AS n FROM mica_blabber WHERE citizenid = ? AND body = 'First day in Los Santos'",
+    [ownerA]
+  );
+  check(`${label}: Alice's post is on Blabber`, Number(posts[0].n), 1);
+
+  const [[ghost]] = await connection.query(
+    `SELECT
+       (SELECT COUNT(*) FROM mica_contacts WHERE phone = '555-0003') AS contacts,
+       (SELECT COUNT(*) FROM mica_media WHERE url LIKE '%ghost%') AS media,
+       (SELECT COUNT(*) FROM mica_blabber WHERE body = 'boo') AS posts`
+  );
+  check(
+    `${label}: nothing owned by nobody was written`,
+    [Number(ghost.contacts), Number(ghost.media), Number(ghost.posts)],
+    [0, 0, 0]
+  );
+
+  step(`${label} — a second --apply`);
+  const again = await modules.runImport(source, { apply: true });
+  show(again);
+  check(
+    `${label}: a second --apply writes nothing`,
+    again.tables.filter((t) => t.written !== 0).map((t) => t.table),
+    []
+  );
+  check(
+    `${label}: a second --apply leaves every table as it was`,
+    await countTargets(connection),
+    after
+  );
+};
+
 const main = async () => {
   let container;
   let connection;
@@ -512,6 +808,16 @@ const main = async () => {
     // Test both schemas and both framework shapes
     await runVariant({ connection, schemaFile: 'mica.sql', hasPlayers: true, modules });
     await runVariant({ connection, schemaFile: 'mica.esx.sql', hasPlayers: false, modules });
+
+    // MICA-233: every source phone's tables, on both shapes, each in a fresh database.
+    for (const source of Object.keys(IMPORT_EXPECTED)) {
+      for (const [schemaFile, hasPlayers] of [
+        ['mica.sql', true],
+        ['mica.esx.sql', false]
+      ]) {
+        await runImportVariant({ connection, schemaFile, hasPlayers, modules, source });
+      }
+    }
 
     if (checksRun < MINIMUM_CHECKS) {
       throw new Error(

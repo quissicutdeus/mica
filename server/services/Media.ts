@@ -191,7 +191,7 @@ const STORED_BYTES_SQL = 'IFNULL(LENGTH(data), 0) + IFNULL(LENGTH(thumbnail), 0)
  * resolved value at resource start, so "off" is something an owner reads rather than
  * discovers.
  */
-const quotaBytes = (): number => {
+export const quotaBytes = (): number => {
   const raw =
     typeof GetConvarInt === 'function'
       ? GetConvarInt('mica_media_quota_mb', DEFAULT_QUOTA_MB)
@@ -201,7 +201,7 @@ const quotaBytes = (): number => {
 };
 
 /** What a row about to be written will cost, measured the same way SQL measures it. */
-const storedBytesOf = (item: Partial<MediaItem>): number =>
+export const storedBytesOf = (item: Partial<MediaItem>): number =>
   (typeof item.data === 'string' ? item.data.length : 0) +
   (typeof item.thumbnail === 'string' ? item.thumbnail.length : 0);
 
@@ -224,7 +224,7 @@ const storedBytesOf = (item: Partial<MediaItem>): number =>
  * that photo is built on (`reportable.previewColumn`) — or a second grace-window knob, and
  * both are bigger decisions than this ticket.
  */
-const USED_BYTES_SQL =
+export const USED_BYTES_SQL =
   `SELECT COALESCE(SUM(${STORED_BYTES_SQL}), 0) AS used ` +
   `FROM \`mica_media\` WHERE \`citizenid\` = ? AND \`status\` = 'active'`;
 

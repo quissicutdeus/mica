@@ -37,21 +37,23 @@ principals to check.
 
 ## The commands
 
-| Command                               | Does                                                                 |
-| ------------------------------------- | -------------------------------------------------------------------- |
-| `micaschema`                          | Reports where the database differs from the code. Changes nothing    |
-| `micaschema apply`                    | **Console only.** Runs pending migrations, then the additive pass    |
-| `micamedia`                           | Reports `mica_media`'s size and its top ten holders. Changes nothing |
-| `micamedia prune`                     | **Console only.** Runs the expiry and orphan sweeps now              |
-| `micacharge [playerId] <0-100>`       | Sets a player's battery level; omit the id for yourself              |
-| `micaseed` / `micaseed add`           | Creates test characters, contacts and threads for the caller         |
-| `micaseed text <firstname> <message>` | Has a seeded character text you — exercises inbound delivery         |
-| `micaseed clear`                      | Removes everything `micaseed` created                                |
-| `micacall [number \| firstname]`      | Rings yourself — a real call, peer faked. See `docs/testing-voip.md` |
-| `micacall end`                        | Force-ends your own active call                                      |
+| Command                                 | Does                                                                                  |
+| --------------------------------------- | ------------------------------------------------------------------------------------- |
+| `micaschema`                            | Reports where the database differs from the code. Changes nothing                     |
+| `micaschema apply`                      | **Console only.** Runs pending migrations, then the additive pass                     |
+| `micamedia`                             | Reports `mica_media`'s size and its top ten holders. Changes nothing                  |
+| `micamedia prune`                       | **Console only.** Runs the expiry and orphan sweeps now                               |
+| `micacharge [playerId] <0-100>`         | Sets a player's battery level; omit the id for yourself                               |
+| `micaseed` / `micaseed add`             | Creates test characters, contacts and threads for the caller                          |
+| `micaseed text <firstname> <message>`   | Has a seeded character text you — exercises inbound delivery                          |
+| `micaseed clear`                        | Removes everything `micaseed` created                                                 |
+| `micacall [number \| firstname]`        | Rings yourself — a real call, peer faked. See `docs/testing-voip.md`                  |
+| `micacall end`                          | Force-ends your own active call                                                       |
+| `micaimport <qb-phone\|lb-phone\|npwd>` | **Console only.** Reports what it would bring across from that phone. Changes nothing |
+| `micaimport <source> --apply`           | **Console only.** Brings it across. A second run brings nothing new                   |
 
-Source: `server/services/Schema.ts`, `Media.ts`, `Battery.ts`, `Seed.ts` and
-`Phone.ts` respectively — one `RegisterCommand` each.
+Source: `server/services/Schema.ts`, `Media.ts`, `Battery.ts`, `Seed.ts`,
+`Phone.ts` and `Import.ts` respectively — one `RegisterCommand` each.
 
 ## The two that are gated harder than the rest
 
@@ -70,6 +72,24 @@ setting `mica_media_retention`, since a retention window nobody measured against
 the real table is how a sweep removes more than anyone expected. If
 `mica_media_retention` is unset, `prune` says so and still runs the orphan
 sweep.
+
+## `micaimport` takes the console for its dry run too
+
+`micaimport` (MICA-233) reads another phone's tables — qb-phone's, lb-phone's or
+NPWD's, in the same database — and brings contacts, threads, gallery images and
+posts across. Unlike the two above, even the bare form is console-only: its
+report names every table and counts every player's rows, which is more of the
+database than an in-game admin needs to see, and there is no in-game reason to
+run it. Anyone else is refused with the same message as `micaschema apply`.
+
+The bare command is the dry run and writes nothing, not even a phone for a
+player who has none yet. `--apply` writes, and records each source row it
+brought across in `mica_import_ledger`, so a second `--apply` reports zero new
+rows and an interrupted run can simply be repeated. The source tables are only
+read. Every row it does not bring across is counted under a reason — an owner it
+cannot match to a character, an attachment, a post over 280 characters, a
+duplicate — so the report adds up to what the source held. Source:
+`server/lib/import/`.
 
 ## `micacall` runs in game, not from the console
 

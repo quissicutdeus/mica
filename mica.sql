@@ -315,6 +315,28 @@ CREATE TABLE IF NOT EXISTS `mica_hodlr_price_history` (
     KEY `recorded_at` (`recorded_at`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
+-- Generated from the 'importledger' defineService declaration.
+-- Do not edit by hand; change the declaration and regenerate.
+
+CREATE TABLE IF NOT EXISTS `mica_import_ledger` (
+    `id` int(11) NOT NULL AUTO_INCREMENT,
+    `citizenid` varchar(50) NOT NULL,
+    `source` varchar(16) NOT NULL,
+    `source_table` varchar(64) NOT NULL,
+    `source_key` varchar(64) NOT NULL,
+    `target_table` varchar(64) NOT NULL,
+    `target_id` int(11) NOT NULL,
+    `status` ENUM('active', 'deleted') NOT NULL DEFAULT 'active',
+    `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `status` (`status`),
+    KEY `citizenid_status` (`citizenid`, `status`),
+    UNIQUE KEY `source_row_unique` (`source`, `source_table`, `source_key`),
+    CONSTRAINT `fk_importledger_citizenid` FOREIGN KEY (`citizenid`)
+        REFERENCES `players` (`citizenid`) ON DELETE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
 -- Generated from the 'invoices' defineService declaration.
 -- Do not edit by hand; change the declaration and regenerate.
 

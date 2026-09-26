@@ -529,6 +529,26 @@ What is deliberately different from qb-phone:
   qb-phone's QBCore callbacks (`qb-phone:server:GetCallState` and its kind)
   needs the corresponding export from the table above instead.
 
+To bring players' qb-phone contacts, threads, gallery and posts across as well,
+see [Bringing players' data across](#bringing-players-data-across).
+
+### Bringing players' data across
+
+Contacts, message threads, gallery images and posts from qb-phone, lb-phone or
+NPWD come across with one console command, reading the old phone's tables where
+they sit. Back the database up, run `micaschema apply`, then read the dry run
+before writing anything:
+
+```text
+micaimport qb-phone            # or lb-phone, npwd — reports, writes nothing
+micaimport qb-phone --apply    # brings it across; a second run brings nothing new
+```
+
+The report counts every row it will not bring across under a reason, and the old
+tables are never changed.
+[`docs/in-game-commands.md`](docs/in-game-commands.md#micaimport-takes-the-console-for-its-dry-run-too)
+has the detail.
+
 ### Coming from lb-phone or NPWD
 
 Scripts written for lb-phone or NPWD call exports on a resource of that exact
@@ -561,6 +581,10 @@ Two limits apply to every entry. The bridges are JavaScript, so a Lua caller
 that reads two return values (`local a, b = ...`) gets the first and `nil`. And
 an export that has to ask the server is asynchronous: call it from a thread (an
 event handler or `CreateThread`), as with micaOS's own asynchronous exports.
+
+The bridges answer scripts; they bring no data across. For players' contacts,
+threads, gallery and posts, see
+[Bringing players' data across](#bringing-players-data-across).
 
 **Every script behind a bridge shares one rate limit.** micaOS limits
 `SendMessage` per calling resource, and through a bridge the caller is always

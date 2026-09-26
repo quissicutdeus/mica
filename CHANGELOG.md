@@ -79,6 +79,14 @@ hand. What changed is the name of the software it runs: a gPhone and a gTablet
 both run micaOS. This release is **Seraphim**, the first of the nine choirs the
 codenames now follow.
 
+**`mica_import_ledger` is a new table — run `micaschema apply` from your server
+console after updating, or import the regenerated `mica.sql` / `mica.esx.sql` on
+a fresh install (MICA-233).** It carries `id`, `citizenid`, `source`,
+`source_table`, `source_key`, `target_table`, `target_id`, `status`,
+`created_at` and `updated_at`, with a `status` key, a `citizenid_status` key and
+a `source_row_unique` key. It is the importer's record of which rows it has
+already brought across, and nothing else reads it; see `micaimport` under Added.
+
 **`mica_invoices` is a new table — run `micaschema apply` from your server
 console after updating, or import the regenerated `mica.sql` / `mica.esx.sql` on
 a fresh install (MICA-240).** It carries `id`, `citizenid`, `from_label`,
@@ -471,6 +479,24 @@ than left. Run `micaschema apply` after updating; until you do, the export fails
 with `internal_error` and the rest of Messages is unaffected.
 
 ### Added
+
+**Bring players' data across from qb-phone, lb-phone or NPWD (MICA-233).**
+`micaimport <qb-phone|lb-phone|npwd>` in the server console reads the old
+phone's tables where they sit, in the same database, and reports what it would
+bring across — contacts, message threads, gallery images and posts, which land
+in Blabber (or are counted as skipped if Blabber is not installed or is in
+`mica_disabled_apps`) — table by table, with every row it would skip counted
+under a reason. It writes nothing until you add `--apply`, and a second
+`--apply` brings nothing new, so an interrupted run is safe to repeat. Run it
+from the console only; nobody in game can, admins included. A row whose owner
+micaOS cannot match to a character is reported, not dropped silently.
+Attachments, embeds, qb locations, texts to a number no player holds (a business
+line), and posts over Blabber's 280 characters are not brought across, and the
+report says how many. Gallery images that are links arrive as links and do not
+count against the media quota; an image stored inline in the old phone counts,
+and one past a player's quota is reported, not written. Take a database backup
+first, and run `micaschema apply` before it, since it needs the new ledger table
+above. The old phone's tables are only read, never changed.
 
 **Bridges for scripts written against lb-phone or NPWD (MICA-232).** The release
 now carries `bridges/lb-phone/` and `bridges/npwd/` inside the `mica` directory.

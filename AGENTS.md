@@ -76,8 +76,9 @@ Run `pnpm format` to format code across the workspace.
 
 `micaschema`, `micamedia`, `micacharge`, `micaseed` and `micacall`, all
 admin-gated by `isAdmin` in `server/services/Admin.ts`. **`micaschema apply`
-(changes a live schema, §8) and `micamedia prune` (deletes rows) take the server
-console and nobody else.** Every command, its gating, arguments and dry run:
+(changes a live schema, §8), `micamedia prune` (deletes rows) and `micaimport`
+(reads and writes every player's rows, MICA-233) take the server console and
+nobody else.** Every command, its gating, arguments and dry run:
 [`docs/in-game-commands.md`](docs/in-game-commands.md).
 
 ### The two Vitest projects
