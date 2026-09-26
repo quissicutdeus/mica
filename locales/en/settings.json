@@ -224,5 +224,17 @@
   "devtools.simulatedToastMessage": "This is a test push notification from Developer Tools.",
   "devtools.testSmsMessage": "Hey! This is a test SMS from Developer Tools.",
   "devtools.testMailSubject": "Quarterly Review Notice",
-  "devtools.testMailContent": "Please review your upcoming schedule and metrics."
+  "devtools.testMailContent": "Please review your upcoming schedule and metrics.",
+  "theme.serverWallpapers": "Server wallpapers",
+  "frame.section": "Phone body",
+  "frame.footer": "Only how the phone looks; apps are laid out the same in every frame.",
+  "frame.label": "Camera style",
+  "frame.colorLabel": "Frame colour",
+  "frame.default": "Server default",
+  "frame.classic": "Classic",
+  "frame.notch": "Notch",
+  "frame.punch": "Punch-hole",
+  "frame.color.black": "Black",
+  "frame.color.graphite": "Graphite",
+  "frame.color.silver": "Silver"
 }

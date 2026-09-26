@@ -9,6 +9,7 @@ import { homeGridColumns, homeGridRows } from '../../shell/state/homeGridSetting
 import { compactGridToCurrentCapacity, itemsBeyondCapacity } from '../../shell/state/homeGrid';
 import { setMotionPreference } from '../../shell/state/motion';
 import { toast } from '../../shell/state/toast';
+import { setFrame, setFrameColor } from '../../shell/state/phoneFrame';
 
 /**
  * Implementation of the `useDisplayWrite` facet — see the `useDisplayWrite` hook doc for
@@ -20,6 +21,9 @@ export function displayWrite() {
   return {
     setDisplaySize,
     setMotionPreference,
+    // MICA-236. Validated in `phoneFrame.ts`; refused to add-ons by `FACET_MEMBERS`.
+    setFrame,
+    setFrameColor,
     /**
      * Applies a new grid size and reflows anything the shrink pushed out of bounds. The
      * setter alone would leave those items structurally valid but unreachable — a shrink

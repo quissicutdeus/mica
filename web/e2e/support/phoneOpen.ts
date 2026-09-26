@@ -14,6 +14,8 @@ import { expect, type Page } from '@playwright/test';
  * the fly-in made the same two reads land 36px apart and the assertion fail, on a layout
  * that had not changed at all.
  *
+ * Also waits out the boot screen, below.
+ *
  * Polls `getAnimations()` rather than sleeping, so it costs whatever the animation actually
  * costs and does not go stale if the duration is ever retuned.
  */
@@ -23,4 +25,8 @@ export const settlePhoneOpen = async (page: Page): Promise<void> => {
   await expect
     .poll(async () => frame.evaluate((el) => el.getAnimations().length), { timeout: 5000 })
     .toBe(0);
+  // The boot screen (MICA-236) plays over the first open and is opaque black: axe would
+  // read the status bar against it, and a geometry read would sample a covered screen. It
+  // unmounts when done (not merely transparent), so the wait is for its removal.
+  await expect(page.getByTestId('boot-screen')).toHaveCount(0, { timeout: 5000 });
 };

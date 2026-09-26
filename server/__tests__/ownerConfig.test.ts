@@ -12,10 +12,19 @@ const { dbMock } = vi.hoisted(() => ({
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
 
 import {
+  FRAME_IDS,
+  MAX_WALLPAPERS,
+  brandingPath,
+  parseBrandLogo,
   parseDefaultContacts,
   parseDefaultDock,
-  parseDisabledApps
+  parseDefaultFrame,
+  parseDisabledApps,
+  parseThemeSeed,
+  parseWallpapersFolder
 } from '@mica/shared/ownerConfig';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import {
   MAX_DEFAULT_CONTACTS,
   NEVER_REFUSED_SERVICES,
@@ -23,8 +32,10 @@ import {
   defaultContacts,
   disabledAppFor,
   disabledApps,
+  brandLogo,
   ownerConfig,
-  resolveDefaultContacts
+  resolveDefaultContacts,
+  wallpapers
 } from '../lib/ownerConfig';
 // Loading every service is what fills the registry the classification check reads.
 import '../services';
@@ -340,7 +351,11 @@ describe('the disabled list and the dock, as the server reads them', () => {
 
     expect(ownerConfig()).toEqual({
       disabledApps: ['hodlr', 'snek'],
-      defaultDock: ['phone', '', 'camera', '']
+      defaultDock: ['phone', '', 'camera', ''],
+      themeSeed: null,
+      defaultFrame: 'classic',
+      wallpapers: [],
+      brandLogo: null
     });
   });
 });
@@ -422,5 +437,196 @@ describe('which services a disabled app takes down', () => {
     (globalThis as any).GetConvar = read;
     disabledAppFor('contacts');
     expect(read).not.toHaveBeenCalled();
+  });
+});
+
+describe('branding convars, parsed (MICA-236)', () => {
+  it('takes a #rrggbb seed, lowercased, and refuses anything else', () => {
+    expect(parseThemeSeed(' #1A73E8 ')).toEqual({ value: '#1a73e8', rejected: [] });
+    expect(parseThemeSeed('')).toEqual({ value: null, rejected: [] });
+    for (const bad of ['1a73e8', '#1a73e', '#1a73e8ff', 'blue', '#gggggg']) {
+      expect(parseThemeSeed(bad)).toEqual({ value: null, rejected: [bad] });
+    }
+  });
+
+  it('takes one of the frame ids, any case, and falls back to classic', () => {
+    expect(FRAME_IDS).toEqual(['classic', 'notch', 'punch']);
+    expect(parseDefaultFrame('Notch')).toEqual({ value: 'notch', rejected: [] });
+    expect(parseDefaultFrame('')).toEqual({ value: 'classic', rejected: [] });
+    expect(parseDefaultFrame('dynamic-island')).toEqual({
+      value: 'classic',
+      rejected: ['dynamic-island']
+    });
+  });
+
+  it.each([
+    ['../server.cfg', 'a parent'],
+    ['branding/../server.cfg', 'a climb out of branding'],
+    ['branding/./x', 'a dot segment'],
+    ['branding\\wallpapers', 'a backslash'],
+    ['/branding/wallpapers', 'an absolute path'],
+    ['C:/branding', 'a drive'],
+    ['https://evil.example/x', 'a URL'],
+    ['wallpapers', 'a folder outside branding'],
+    ['branding//x', 'an empty segment'],
+    ['branding/my wallpapers', 'a space'],
+    ['branding/.hidden', 'a hidden segment']
+  ])('refuses %s (%s) as a branding path', (raw) => {
+    expect(brandingPath(raw)).toBeNull();
+    expect(parseWallpapersFolder(raw)).toEqual({ value: 'branding/wallpapers', rejected: [raw] });
+  });
+
+  it('accepts a folder under branding/, dropping a trailing slash', () => {
+    expect(parseWallpapersFolder('branding/city/')).toEqual({
+      value: 'branding/city',
+      rejected: []
+    });
+    expect(parseWallpapersFolder('')).toEqual({ value: 'branding/wallpapers', rejected: [] });
+  });
+
+  it('takes a logo file under branding/ with an image extension, and nothing else', () => {
+    expect(parseBrandLogo('branding/logo.SVG')).toEqual({
+      value: 'branding/logo.SVG',
+      rejected: []
+    });
+    expect(parseBrandLogo('')).toEqual({ value: null, rejected: [] });
+    for (const bad of ['branding/logo.gif', 'branding', 'logo.png', 'branding/../logo.png']) {
+      expect(parseBrandLogo(bad)).toEqual({ value: null, rejected: [bad] });
+    }
+  });
+});
+
+describe('branding, read by the server (MICA-236)', () => {
+  let root: string;
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'mica-branding-'));
+    (globalThis as any).GetResourcePath = () => root;
+    (globalThis as any).GetCurrentResourceName = () => 'mica';
+  });
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+    delete (globalThis as any).GetResourcePath;
+    vi.restoreAllMocks();
+  });
+
+  const touch = (path: string): void => {
+    mkdirSync(join(root, path, '..'), { recursive: true });
+    writeFileSync(join(root, path), 'x');
+  };
+
+  it('lists the wallpaper folder as cfx-nui URLs, images only, sorted by name', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    for (const f of [
+      'b.jpg',
+      'a.PNG',
+      'c.webp',
+      'notes.txt',
+      'd.gif',
+      'bad name.png',
+      '.hidden.png'
+    ]) {
+      touch(`branding/wallpapers/${f}`);
+    }
+    mkdirSync(join(root, 'branding/wallpapers/sub.png'));
+
+    expect(wallpapers()).toEqual([
+      'https://cfx-nui-mica/branding/wallpapers/a.PNG',
+      'https://cfx-nui-mica/branding/wallpapers/b.jpg',
+      'https://cfx-nui-mica/branding/wallpapers/c.webp'
+    ]);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("'bad name.png'"));
+    expect(warn.mock.calls.some(([m]) => String(m).includes('notes.txt'))).toBe(false);
+  });
+
+  it('lists the folder once and keeps it', () => {
+    touch('branding/wallpapers/a.png');
+    expect(wallpapers()).toHaveLength(1);
+    touch('branding/wallpapers/b.png');
+    expect(wallpapers()).toHaveLength(1);
+  });
+
+  it('reads the folder the convar names', () => {
+    touch('branding/city/night.jpg');
+    withConvars({ mica_wallpapers: 'branding/city' });
+    expect(wallpapers()).toEqual(['https://cfx-nui-mica/branding/city/night.jpg']);
+  });
+
+  it('caps the list and names what it left out', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    for (let i = 0; i < MAX_WALLPAPERS + 3; i++) {
+      touch(`branding/wallpapers/w${String(i).padStart(3, '0')}.png`);
+    }
+    const urls = wallpapers();
+    expect(urls).toHaveLength(MAX_WALLPAPERS);
+    expect(urls.at(-1)).toContain(`w${String(MAX_WALLPAPERS - 1).padStart(3, '0')}.png`);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('w050.png, w051.png, w052.png'));
+  });
+
+  it('is [] with nothing said when the folder is not there', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(wallpapers()).toEqual([]);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('answers the logo as a URL when the file exists', () => {
+    touch('branding/logo.svg');
+    withConvars({ mica_brand_logo: 'branding/logo.svg' });
+    expect(brandLogo()).toBe('https://cfx-nui-mica/branding/logo.svg');
+  });
+
+  it('warns once and answers null for a logo path with no file behind it', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    withConvars({ mica_brand_logo: 'branding/missing.png' });
+    expect(brandLogo()).toBeNull();
+    expect(brandLogo()).toBeNull();
+    const about = warn.mock.calls.filter(([m]) => String(m).includes('branding/missing.png'));
+    expect(about).toHaveLength(1);
+  });
+
+  it('names every refused branding value in one warning each, once', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    withConvars({
+      mica_theme_seed: 'blue',
+      mica_default_frame: 'round',
+      mica_wallpapers: '../outside',
+      mica_brand_logo: 'C:/logo.png'
+    });
+
+    const config = ownerConfig();
+    ownerConfig();
+
+    expect(config).toMatchObject({
+      themeSeed: null,
+      defaultFrame: 'classic',
+      wallpapers: [],
+      brandLogo: null
+    });
+    const said = warn.mock.calls.map(([m]) => String(m));
+    for (const [convar, value] of [
+      ['mica_theme_seed', 'blue'],
+      ['mica_default_frame', 'round'],
+      ['mica_wallpapers', '../outside'],
+      ['mica_brand_logo', 'C:/logo.png']
+    ]) {
+      expect(said.filter((m) => m.includes(convar) && m.includes(`'${value}'`))).toHaveLength(1);
+    }
+  });
+
+  it('carries all four over shell:ownerConfig', () => {
+    touch('branding/wallpapers/a.png');
+    touch('branding/logo.png');
+    withConvars({
+      mica_theme_seed: '#FF8800',
+      mica_default_frame: 'punch',
+      mica_brand_logo: 'branding/logo.png'
+    });
+    expect(ownerConfig()).toMatchObject({
+      themeSeed: '#ff8800',
+      defaultFrame: 'punch',
+      wallpapers: ['https://cfx-nui-mica/branding/wallpapers/a.png'],
+      brandLogo: 'https://cfx-nui-mica/branding/logo.png'
+    });
   });
 });

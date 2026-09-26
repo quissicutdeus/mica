@@ -36,7 +36,14 @@ describe('ownerConfig store', () => {
   it('starts with nothing disabled and the built-in dock', async () => {
     const { ownerConfig, disabledAppIds } = await loadOwnerConfig(async () => ({}));
 
-    expect(get(ownerConfig)).toEqual({ disabledApps: [], defaultDock: [] });
+    expect(get(ownerConfig)).toEqual({
+      disabledApps: [],
+      defaultDock: [],
+      themeSeed: null,
+      defaultFrame: 'classic',
+      wallpapers: [],
+      brandLogo: null
+    });
     expect(get(disabledAppIds)).toEqual(new Set());
   });
 
@@ -64,6 +71,13 @@ describe('ownerConfig store', () => {
     });
     await refreshOwnerConfig();
 
-    expect(get(ownerConfig)).toEqual({ disabledApps: [], defaultDock: [] });
+    expect(get(ownerConfig)).toEqual({
+      disabledApps: [],
+      defaultDock: [],
+      themeSeed: null,
+      defaultFrame: 'classic',
+      wallpapers: [],
+      brandLogo: null
+    });
   });
 });

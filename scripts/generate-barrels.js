@@ -149,6 +149,10 @@ files {
   -- are not part of the hashed \`assets/\` graph, so \`assets/**/*\` never covered them. FiveM
   -- serves only what is declared here, so every add-on 404'd — blabber, hodlr, notes, snek.
   'dist/web/addons/**/*',
+  -- The owner's own images (MICA-236): wallpapers under branding/wallpapers/ and the boot
+  -- logo \`mica_brand_logo\` names, loaded by the NUI over https://cfx-nui-mica/branding/.
+  -- FiveM serves only what is declared here, so an image outside this glob is a 404.
+  'branding/**/*',
 }
 `;
 

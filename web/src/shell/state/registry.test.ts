@@ -27,7 +27,7 @@ import { hydrateSettings, useStorage } from '../../../../sdk/host/useStorage';
 import { setTrustedRemoteAppHosts, sha256Hex } from '../../../../sdk/remoteAppSecurity';
 import { SDK_CONTRACT_VERSION } from '../../../../sdk/version';
 import { capabilities, capabilitiesKnown } from '../../services/capabilities';
-import { ownerConfig } from './ownerConfig';
+import { ownerConfig, DEFAULT_OWNER_CONFIG } from './ownerConfig';
 import type { CatalogEntry } from '../../../../sdk/catalog';
 
 const fetchResponse = (text: string, ok = true, status = 200): Response =>
@@ -440,7 +440,8 @@ describe('App Registry Store', () => {
 });
 
 describe('an app the owner has disabled (MICA-234)', () => {
-  const disable = (...ids: string[]) => ownerConfig.set({ disabledApps: ids, defaultDock: [] });
+  const disable = (...ids: string[]) =>
+    ownerConfig.set({ ...DEFAULT_OWNER_CONFIG, disabledApps: ids, defaultDock: [] });
 
   afterEach(() => disable());
 
@@ -697,7 +698,11 @@ describe('installFromCatalog', () => {
 
   it('refuses a catalog id the owner disabled, before ever fetching it (MICA-234)', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
-    ownerConfig.set({ disabledApps: ['remote_catalog_app'], defaultDock: [] });
+    ownerConfig.set({
+      ...DEFAULT_OWNER_CONFIG,
+      disabledApps: ['remote_catalog_app'],
+      defaultDock: []
+    });
 
     try {
       await expect(appRegistryStore.installFromCatalog(catalogEntry)).rejects.toThrow(
@@ -705,7 +710,7 @@ describe('installFromCatalog', () => {
       );
       expect(fetchSpy).not.toHaveBeenCalled();
     } finally {
-      ownerConfig.set({ disabledApps: [], defaultDock: [] });
+      ownerConfig.set({ ...DEFAULT_OWNER_CONFIG, disabledApps: [], defaultDock: [] });
     }
   });
 });

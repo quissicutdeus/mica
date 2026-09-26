@@ -199,7 +199,11 @@ describe('the owner config a server reports', () => {
 
     expect((globalThis.emitNet as any).mock.calls.at(-1)?.[3]).toEqual({
       disabledApps: ['hodlr'],
-      defaultDock: ['phone', '', 'camera', '']
+      defaultDock: ['phone', '', 'camera', ''],
+      themeSeed: null,
+      defaultFrame: 'classic',
+      wallpapers: [],
+      brandLogo: null
     });
   });
 
@@ -211,7 +215,11 @@ describe('the owner config a server reports', () => {
 
     expect((globalThis.emitNet as any).mock.calls.at(-1)?.[3]).toEqual({
       disabledApps: [],
-      defaultDock: []
+      defaultDock: [],
+      themeSeed: null,
+      defaultFrame: 'classic',
+      wallpapers: [],
+      brandLogo: null
     });
   });
 });

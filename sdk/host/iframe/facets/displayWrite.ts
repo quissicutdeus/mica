@@ -12,6 +12,9 @@ type Twin = AsTwin<ReturnType<Facets['displayWrite']>>;
 export function displayWrite(): Twin {
   return {
     setDisplaySize: fn('displayWrite', [], 'setDisplaySize'),
+    // Wired for shape only: `FACET_MEMBERS` does not name them, so the shell refuses them.
+    setFrame: fn('displayWrite', [], 'setFrame'),
+    setFrameColor: fn('displayWrite', [], 'setFrameColor'),
     setMotionPreference: fn('displayWrite', [], 'setMotionPreference'),
     setHomeGridSize: fn('displayWrite', [], 'setHomeGridSize')
   };

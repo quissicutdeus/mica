@@ -18,7 +18,7 @@ import { media } from '../../services/media';
 import { mailStore } from '../../services/mail';
 import { notes } from '../../apps/notes/store';
 import * as accountModule from '../../services/account';
-import { ownerConfig } from './ownerConfig';
+import { ownerConfig, DEFAULT_OWNER_CONFIG } from './ownerConfig';
 
 vi.mock('../../nui/fetchNui', () => ({
   fetchNui: vi.fn(() => Promise.resolve([]))
@@ -51,14 +51,14 @@ describe('bootstrapStores', () => {
 
   describe('MICA-234: an app the owner already disabled', () => {
     afterEach(() => {
-      ownerConfig.set({ disabledApps: [], defaultDock: [] });
+      ownerConfig.set(DEFAULT_OWNER_CONFIG);
     });
 
     it('is skipped, while an app still enabled preloads as usual', async () => {
       // Read with `get`, not awaited (`bootstrap.ts`'s own doc) — so this only reflects an
       // answer already in hand, the way a character switch's `bootstrapStores(true)` finds
       // one from the previous run. Setting it directly stands in for that.
-      ownerConfig.set({ disabledApps: ['notes'], defaultDock: [] });
+      ownerConfig.set({ ...DEFAULT_OWNER_CONFIG, disabledApps: ['notes'] });
 
       const spyCitizenId = vi.spyOn(accountModule, 'fetchCitizenId').mockResolvedValue('CIT-101');
       vi.spyOn(accountModule, 'fetchBalance').mockResolvedValue();

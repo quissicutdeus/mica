@@ -28,7 +28,7 @@ import {
   MAX_RESIDENT_APPS
 } from './navigation';
 import { setActiveDevice } from './device';
-import { ownerConfig } from './ownerConfig';
+import { ownerConfig, DEFAULT_OWNER_CONFIG } from './ownerConfig';
 import * as fetchNuiModule from '../../nui/fetchNui';
 
 const names = () => get(runningApps).map((a) => a.id);
@@ -236,13 +236,13 @@ describe('closing an app', () => {
 
 describe('an app the owner disables while it is resident (MICA-234)', () => {
   afterEach(() => {
-    ownerConfig.set({ disabledApps: [], defaultDock: [] });
+    ownerConfig.set({ ...DEFAULT_OWNER_CONFIG, disabledApps: [], defaultDock: [] });
     setActiveDevice('phone');
   });
 
   it('closes it and returns home when it was on screen', () => {
     openApp('notes');
-    ownerConfig.set({ disabledApps: ['notes'], defaultDock: [] });
+    ownerConfig.set({ ...DEFAULT_OWNER_CONFIG, disabledApps: ['notes'], defaultDock: [] });
     expect(names()).toEqual([]);
     expect(get(currentApp).id).toBe('home');
   });
@@ -250,21 +250,21 @@ describe('an app the owner disables while it is resident (MICA-234)', () => {
   it('closes it in the background and leaves the foreground app alone', () => {
     openApp('notes');
     openApp('mail');
-    ownerConfig.set({ disabledApps: ['notes'], defaultDock: [] });
+    ownerConfig.set({ ...DEFAULT_OWNER_CONFIG, disabledApps: ['notes'], defaultDock: [] });
     expect(names()).toEqual(['mail']);
     expect(get(currentApp).id).toBe('mail');
   });
 
   it('leaves a different, still-enabled app untouched', () => {
     openApp('mail');
-    ownerConfig.set({ disabledApps: ['notes'], defaultDock: [] });
+    ownerConfig.set({ ...DEFAULT_OWNER_CONFIG, disabledApps: ['notes'], defaultDock: [] });
     expect(names()).toEqual(['mail']);
     expect(get(currentApp).id).toBe('mail');
   });
 
   it('is a no-op with nothing disabled', () => {
     openApp('notes');
-    ownerConfig.set({ disabledApps: [], defaultDock: [] });
+    ownerConfig.set({ ...DEFAULT_OWNER_CONFIG, disabledApps: [], defaultDock: [] });
     expect(names()).toEqual(['notes']);
   });
 
@@ -276,7 +276,7 @@ describe('an app the owner disables while it is resident (MICA-234)', () => {
     setActiveDevice('tablet');
     expect(names()).toEqual([]);
 
-    ownerConfig.set({ disabledApps: ['notes'], defaultDock: [] });
+    ownerConfig.set({ ...DEFAULT_OWNER_CONFIG, disabledApps: ['notes'], defaultDock: [] });
 
     setActiveDevice('phone');
     expect(names()).toEqual([]);

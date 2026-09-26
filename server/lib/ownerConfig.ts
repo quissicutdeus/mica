@@ -2,11 +2,22 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { existsSync, readdirSync, statSync } from 'node:fs';
 import {
+  brandingUrl,
+  hasExtension,
+  isSafeFileName,
+  MAX_WALLPAPERS,
+  parseBrandLogo,
   parseDefaultContacts,
   parseDefaultDock,
+  parseDefaultFrame,
   parseDisabledApps,
+  parseThemeSeed,
+  parseWallpapersFolder,
+  WALLPAPER_EXTENSIONS,
   type DefaultContact,
+  type FrameId,
   type OwnerConfig
 } from '@mica/shared/ownerConfig';
 import { PlayerFacingError } from './errors';
@@ -63,10 +74,173 @@ export const defaultDock = (): string[] => {
   return parsed.value;
 };
 
+// ─── branding (MICA-236) ─────────────────────────────────────────────────────
+
+/** `#rrggbb` the theme is generated from, or null for the built-in theme. */
+export const themeSeed = (): string | null => {
+  const raw = GetConvar('mica_theme_seed', '');
+  const parsed = parseThemeSeed(raw);
+  warnRejected('mica_theme_seed', raw, parsed.rejected, "The seed is one colour, '#rrggbb'.");
+  return parsed.value;
+};
+
+/** The frame a new player starts with. */
+export const defaultFrame = (): FrameId => {
+  const raw = GetConvar('mica_default_frame', '');
+  const parsed = parseDefaultFrame(raw);
+  warnRejected(
+    'mica_default_frame',
+    raw,
+    parsed.rejected,
+    "The frame is one of 'classic', 'notch' or 'punch'; using 'classic'."
+  );
+  return parsed.value;
+};
+
+/** `<resource>` on disk, or null outside FXServer. */
+const resourceRoot = (): string | null => {
+  if (typeof GetResourcePath !== 'function') return null;
+  const path = GetResourcePath(GetCurrentResourceName());
+  return path || null;
+};
+
+/** Each message said once per process, so a per-request read never grows the log. */
+const said = new Set<string>();
+const sayOnce = (message: string): void => {
+  if (said.has(message)) return;
+  said.add(message);
+  console.warn(`[micaOS] ${message}`);
+};
+
+/**
+ * The wallpaper folder's images, listed once per folder value and kept: the phone asks on
+ * every open, and an owner adding a wallpaper restarts the resource anyway.
+ *
+ * Image files only, with a name the phone can put in a URL unescaped ([A-Za-z0-9._-], no
+ * leading dot), sorted by name and capped at `MAX_WALLPAPERS`. Anything left out is named in
+ * one warning. A folder that is not there is `[]` with nothing said — no wallpapers is the
+ * ordinary state of a server that has not branded anything.
+ */
+const listed = new Map<string, string[]>();
+
+const listWallpapers = (folder: string): string[] => {
+  const root = resourceRoot();
+  if (!root) return [];
+  const dir = `${root}/${folder}`;
+  let entries: string[];
+  try {
+    if (!existsSync(dir)) return [];
+    if (!statSync(dir).isDirectory()) {
+      sayOnce(`mica_wallpapers: '${folder}' is a file, not a folder; no wallpapers offered.`);
+      return [];
+    }
+    entries = readdirSync(dir);
+  } catch (error) {
+    sayOnce(`mica_wallpapers: '${folder}' could not be listed (${String(error)}).`);
+    return [];
+  }
+
+  const skipped: string[] = [];
+  const images: string[] = [];
+  for (const name of entries.slice().sort()) {
+    let isFile = false;
+    try {
+      isFile = statSync(`${dir}/${name}`).isFile();
+    } catch {
+      isFile = false;
+    }
+    if (!isFile) continue;
+    if (!hasExtension(name, WALLPAPER_EXTENSIONS)) continue;
+    if (!isSafeFileName(name)) {
+      skipped.push(name);
+      continue;
+    }
+    images.push(name);
+  }
+  if (skipped.length > 0) {
+    sayOnce(
+      `mica_wallpapers: skipping ${skipped.map((n) => `'${n}'`).join(', ')} in '${folder}'. ` +
+        'A wallpaper file name is letters, digits, dot, underscore and hyphen.'
+    );
+  }
+  if (images.length > MAX_WALLPAPERS) {
+    sayOnce(
+      `mica_wallpapers: '${folder}' has ${images.length} images; offering the first ` +
+        `${MAX_WALLPAPERS} by name and leaving out ${images.slice(MAX_WALLPAPERS).join(', ')}.`
+    );
+  }
+  const resource = GetCurrentResourceName();
+  return images.slice(0, MAX_WALLPAPERS).map((name) => brandingUrl(resource, `${folder}/${name}`));
+};
+
+/** The owner's wallpapers as URLs the phone loads, or `[]`. */
+export const wallpapers = (): string[] => {
+  const raw = GetConvar('mica_wallpapers', '');
+  const parsed = parseWallpapersFolder(raw);
+  warnRejected(
+    'mica_wallpapers',
+    raw,
+    parsed.rejected,
+    "The folder must be under 'branding/' (for example 'branding/wallpapers'); '..', " +
+      'backslashes and absolute paths are refused.'
+  );
+  let urls = listed.get(parsed.value);
+  if (!urls) {
+    urls = listWallpapers(parsed.value);
+    listed.set(parsed.value, urls);
+  }
+  return urls;
+};
+
+/**
+ * The owner's logo as a URL the phone loads, or null for the micaOS mark. A path the parser
+ * accepts but that names no file warns once and answers null, so the phone shows its own mark
+ * rather than a broken image.
+ */
+export const brandLogo = (): string | null => {
+  const raw = GetConvar('mica_brand_logo', '');
+  const parsed = parseBrandLogo(raw);
+  warnRejected(
+    'mica_brand_logo',
+    raw,
+    parsed.rejected,
+    "The logo is one file under 'branding/' ending in .png, .jpg, .jpeg, .webp or .svg."
+  );
+  if (!parsed.value) return null;
+  const root = resourceRoot();
+  let found = false;
+  try {
+    found = root !== null && existsSync(`${root}/${parsed.value}`);
+  } catch {
+    found = false;
+  }
+  if (!found) {
+    sayOnce(
+      `mica_brand_logo: '${parsed.value}' is not a file in this resource; showing the micaOS mark.`
+    );
+    return null;
+  }
+  return brandingUrl(GetCurrentResourceName(), parsed.value);
+};
+
 /** What `shell:ownerConfig` answers. */
 export const ownerConfig = (): OwnerConfig => ({
   disabledApps: disabledApps(),
-  defaultDock: defaultDock()
+  defaultDock: defaultDock(),
+  themeSeed: themeSeed(),
+  defaultFrame: defaultFrame(),
+  wallpapers: wallpapers(),
+  brandLogo: brandLogo()
+});
+
+/**
+ * Read everything once at resource start, so a refused value is warned about when the owner is
+ * watching the console rather than on some player's first open, and the wallpaper folder is
+ * listed before anyone asks.
+ */
+on('onResourceStart', (resourceName: string) => {
+  if (resourceName !== GetCurrentResourceName()) return;
+  ownerConfig();
 });
 
 export const isAppDisabled = (appId: string): boolean => disabledApps().includes(appId);
@@ -263,4 +437,6 @@ export const defaultContacts = (limits: { name: number; number: number }): Defau
 export const __resetOwnerConfig = (): void => {
   checked.clear();
   contactsMemo = null;
+  listed.clear();
+  said.clear();
 };

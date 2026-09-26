@@ -351,6 +351,12 @@ describe('every reachable facet declares its members (MICA-196)', () => {
     ).toEqual([]);
   });
 
+  it('keeps the frame setters (MICA-236) off the add-on allowlist, as setLocale is', () => {
+    const members = membersOfFacet('displayWrite') ?? [];
+    expect(members).not.toContain('setFrame');
+    expect(members).not.toContain('setFrameColor');
+  });
+
   it('has no row for a facet that is denied outright, or that is not a facet at all', () => {
     // A row for a denied facet reads as "these members are reachable" and is never true —
     // `requireMember` refuses the facet before it ever looks at the row.

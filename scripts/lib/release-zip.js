@@ -48,6 +48,17 @@ export const BRIDGES_DIR = 'bridges';
  */
 export const LOCALES_DIR = 'locales';
 
+/**
+ * The owner's image folder (MICA-236), shipped at `mica/branding/` -- and shipped as exactly
+ * these files, never an image. Unpacking an update over an install overwrites what the zip
+ * holds, so a sample wallpaper here would sooner or later replace an owner's own file of the
+ * same name. The packer refuses a `branding/` holding anything else.
+ */
+export const BRANDING_FILES = ['branding/README.md', 'branding/wallpapers/.gitkeep'];
+
+/** The `branding/` paths that are not in `BRANDING_FILES`. Empty means the folder may ship. */
+export const unexpectedBranding = (paths) => paths.filter((p) => !BRANDING_FILES.includes(p));
+
 /** `v2026.09.02.3` -> `2026.09.02.3`, the version the About screen shows. */
 export function calVerOf(tag) {
   const match = TAG_PATTERN.exec(tag ?? '');

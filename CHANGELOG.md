@@ -480,6 +480,25 @@ with `internal_error` and the rest of Messages is unaffected.
 
 ### Added
 
+**Brand the phone: theme colour, wallpapers, boot logo and frame (MICA-236).**
+Four new convars, all off by default, so an update changes nothing until you set
+one. `mica_theme_seed` (`#rrggbb`) is the colour a phone's theme is generated
+from until its player picks their own; their choice then wins, even if you
+change the seed later. Images go in the new `branding/` folder in the resource,
+which is served to the phone and which an update never overwrites — the release
+ships only its README. The png, jpg and webp files in `branding/wallpapers/` (or
+the folder `mica_wallpapers` names, under `branding/`) appear in Settings >
+Display beside the built-in wallpapers, up to 50, read at resource start.
+`mica_brand_logo` names an image under `branding/` for the new boot and
+power-off screens, which show the micaOS mark without it; the boot screen plays
+on the first open of a session and when a dead battery comes back, is skipped
+under reduced motion, and gives way to an incoming call. Players can now choose
+a notch or punch-hole frame, and a black, graphite or silver bezel, in
+Settings > Display; `mica_default_frame` (`classic`, `notch` or `punch`) is the
+one a player starts with. The screen stays the same size in every frame, so no
+app changes. Paths outside `branding/` are refused with a warning at start. No
+schema change. The convar table in README has all four.
+
 **Add a language by dropping files in, with no rebuild (MICA-235).** The release
 now carries `locales/en/` and `locales/de/` — every string the phone shows, one
 JSON file per app — and the server reads the whole `locales/` folder at start.

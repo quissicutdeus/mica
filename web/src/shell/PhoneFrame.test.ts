@@ -80,12 +80,16 @@ describe('PhoneFrame transparency', () => {
     // The border is the phone body, not the display — dropping it with the fill would
     // leave the UI floating with no visible edge.
     const { getByTestId } = renderFrame(true);
-    expect(getByTestId('phone-frame').className).toMatch(/border-gray-950/);
+    expect(getByTestId('phone-frame').getAttribute('style')).toMatch(
+      /border-color: rgb\(3, 7, 18\)/
+    );
   });
 
   it('is opaque as normal when not transparent', () => {
     const { getByTestId } = renderFrame(false);
-    expect(getByTestId('phone-frame').className).toMatch(/bg-gray-950/);
+    expect(getByTestId('phone-frame').getAttribute('style')).toMatch(
+      /background-color: rgb\(3, 7, 18\)/
+    );
 
     // The screen's fill is the wallpaper, and it is always one inline `background` — a
     // generated gradient for a color, a `url()` for a photo. It used to be a Tailwind
@@ -139,7 +143,9 @@ describe('PhoneFrame transparency', () => {
     // read as the phone still being on.
     charge.set(0);
     const { getByTestId } = renderFrame(true);
-    expect(getByTestId('phone-frame').className).toMatch(/bg-gray-950/);
+    expect(getByTestId('phone-frame').getAttribute('style')).toMatch(
+      /background-color: rgb\(3, 7, 18\)/
+    );
     expect(getByTestId('phone-screen').className).toMatch(/bg-black/);
   });
 

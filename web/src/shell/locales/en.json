@@ -1,5 +1,6 @@
 {
   "openDevice": "Open {brand}",
+  "bootLogoAlt": "{brand} logo",
   "previewNav": "{os} preview",
   "homeScreen": "Home Screen",
   "dock": "Dock",

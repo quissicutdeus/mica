@@ -5,8 +5,9 @@
 /**
  * What a server owner configures about the phone without editing TypeScript (MICA-234).
  *
- * Three convars, parsed here once so the server, the client and the mock transport cannot
- * disagree about what a value means. Each parser is total: a malformed value yields the
+ * The owner convars — three from MICA-234 and four branding ones from MICA-236 — parsed here
+ * once so the server, the client and the mock transport cannot disagree about what a value
+ * means. Each parser is total: a malformed value yields the
  * unconfigured answer plus the pieces it refused, never a throw, because a convar is a
  * free-form string and a typo in `server.cfg` must not stop the resource.
  *
@@ -18,6 +19,10 @@
 export const DISABLED_APPS_CONVAR = 'mica_disabled_apps';
 export const DEFAULT_DOCK_CONVAR = 'mica_default_dock';
 export const DEFAULT_CONTACTS_CONVAR = 'mica_default_contacts';
+export const THEME_SEED_CONVAR = 'mica_theme_seed';
+export const WALLPAPERS_CONVAR = 'mica_wallpapers';
+export const BRAND_LOGO_CONVAR = 'mica_brand_logo';
+export const DEFAULT_FRAME_CONVAR = 'mica_default_frame';
 
 /** The same shape `shared/deepLink.ts` and both `publicApi.ts` files accept. */
 const APP_ID = /^[a-z][a-z0-9_]*$/;
@@ -110,9 +115,112 @@ export const parseDefaultContacts = (raw: unknown): Parsed<DefaultContact[]> => 
   return { value, rejected };
 };
 
+// ─── branding (MICA-236) ─────────────────────────────────────────────────────
+
+/** The phone frames an owner may pick as the default. The player can still change theirs. */
+export const FRAME_IDS = ['classic', 'notch', 'punch'] as const;
+export type FrameId = (typeof FRAME_IDS)[number];
+export const DEFAULT_FRAME: FrameId = 'classic';
+
+/**
+ * The one folder owner images may come from. FiveM serves it from the resource, and nothing
+ * outside it is ever named in a URL the phone loads — a path that climbs out, is absolute, uses
+ * a backslash or names a drive is refused rather than normalised.
+ */
+export const BRANDING_ROOT = 'branding';
+export const DEFAULT_WALLPAPERS_FOLDER = 'branding/wallpapers';
+
+/** Formats a wallpaper may be. The logo may also be an SVG. */
+export const WALLPAPER_EXTENSIONS: readonly string[] = ['png', 'jpg', 'jpeg', 'webp'];
+export const LOGO_EXTENSIONS: readonly string[] = [...WALLPAPER_EXTENSIONS, 'svg'];
+
+/** Most wallpapers the phone offers from the folder; the rest are left out and named. */
+export const MAX_WALLPAPERS = 50;
+
+/** One path segment or file name: letters, digits, dot, underscore, hyphen; no leading dot. */
+const SAFE_SEGMENT = /^[A-Za-z0-9_-][A-Za-z0-9._-]*$/;
+
+export const isSafeFileName = (name: string): boolean => SAFE_SEGMENT.test(name);
+
+const extensionOf = (name: string): string => {
+  const dot = name.lastIndexOf('.');
+  return dot < 0 ? '' : name.slice(dot + 1).toLowerCase();
+};
+
+export const hasExtension = (name: string, allowed: readonly string[]): boolean =>
+  allowed.includes(extensionOf(name));
+
+/**
+ * A resource-relative path under `branding/`, or null. Every segment must be a safe name, so
+ * `..`, `.`, empty segments, backslashes, a leading slash, a drive (`C:`) and a scheme are all
+ * refused by the same rule. A trailing slash is dropped.
+ */
+export const brandingPath = (raw: string): string | null => {
+  const text = raw.trim().replace(/\/+$/, '');
+  if (!text || text.includes('\\')) return null;
+  const segments = text.split('/');
+  if (segments[0] !== BRANDING_ROOT) return null;
+  if (!segments.every((segment) => SAFE_SEGMENT.test(segment))) return null;
+  return segments.join('/');
+};
+
+/** `https://cfx-nui-<resource>/<path>`: how CEF loads a file the resource serves. */
+export const brandingUrl = (resource: string, path: string): string =>
+  `https://cfx-nui-${resource}/${path}`;
+
+/** `#rrggbb`, answered lowercase. Unset or blank is null: the built-in theme. */
+export const parseThemeSeed = (raw: unknown): Parsed<string | null> => {
+  const text = String(raw ?? '').trim();
+  if (!text) return { value: null, rejected: [] };
+  return /^#[0-9a-fA-F]{6}$/.test(text)
+    ? { value: text.toLowerCase(), rejected: [] }
+    : { value: null, rejected: [text] };
+};
+
+/** One of `FRAME_IDS`, any case. Unset, blank or unknown is `classic`. */
+export const parseDefaultFrame = (raw: unknown): Parsed<FrameId> => {
+  const text = String(raw ?? '').trim();
+  if (!text) return { value: DEFAULT_FRAME, rejected: [] };
+  const id = text.toLowerCase();
+  return (FRAME_IDS as readonly string[]).includes(id)
+    ? { value: id as FrameId, rejected: [] }
+    : { value: DEFAULT_FRAME, rejected: [text] };
+};
+
+/** A folder under `branding/`. Unset, blank or refused is `branding/wallpapers`. */
+export const parseWallpapersFolder = (raw: unknown): Parsed<string> => {
+  const text = String(raw ?? '').trim();
+  if (!text) return { value: DEFAULT_WALLPAPERS_FOLDER, rejected: [] };
+  const path = brandingPath(text);
+  return path
+    ? { value: path, rejected: [] }
+    : { value: DEFAULT_WALLPAPERS_FOLDER, rejected: [text] };
+};
+
+/**
+ * A file under `branding/` ending in one of `LOGO_EXTENSIONS`. Unset or blank is null, the
+ * micaOS mark. Whether the file exists is the server's question, not this parser's.
+ */
+export const parseBrandLogo = (raw: unknown): Parsed<string | null> => {
+  const text = String(raw ?? '').trim();
+  if (!text) return { value: null, rejected: [] };
+  const path = brandingPath(text);
+  return path && path !== BRANDING_ROOT && hasExtension(path, LOGO_EXTENSIONS)
+    ? { value: path, rejected: [] }
+    : { value: null, rejected: [text] };
+};
+
 /** What `shell:ownerConfig` answers. Contacts are absent: the server seeds them into rows. */
 export interface OwnerConfig {
   disabledApps: string[];
   /** `[]` means the built-in dock; otherwise exactly four entries, '' for an empty slot. */
   defaultDock: string[];
+  /** `#rrggbb` the theme is generated from, or null for the built-in theme (MICA-236). */
+  themeSeed: string | null;
+  /** The frame a new player starts with (MICA-236). */
+  defaultFrame: FrameId;
+  /** Absolute `https://cfx-nui-<resource>/branding/…` URLs, sorted by file name (MICA-236). */
+  wallpapers: string[];
+  /** The same URL form, or null for the micaOS mark (MICA-236). */
+  brandLogo: string | null;
 }

@@ -56,6 +56,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { openDevice } from './state/phoneOpen';
   import { isLightMode } from './state/theme';
   import { observeReducedMotion } from './state/motion';
+  import { observePower } from './state/power';
+  import BootScreen from './BootScreen.svelte';
   import AddOnFrame from './addon/AddOnFrame.svelte';
   import MusicPlayer from './MusicPlayer.svelte';
   import NearbyMusicPlayer from './NearbyMusicPlayer.svelte';
@@ -549,6 +551,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     // both read. Not guarded by `isBrowser()`: the whole point is that it applies in game,
     // where the player's own setting is the only reliable answer (`state/motion.ts`).
     const stopObservingMotion = observeReducedMotion();
+    // Boot and power-off screens (MICA-236): decides when, `BootScreen` below draws it.
+    const stopObservingPower = observePower();
 
     seedBrowserPhone(new Date(), get(activeDevice));
     installDevHarness();
@@ -560,6 +564,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       window.removeEventListener('focusout', handleFocusOut);
       stopObservingViewport();
       stopObservingMotion();
+      stopObservingPower();
     };
   });
 
@@ -694,6 +699,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             children={screen}
           />
         {/if}
+        <!-- After the frame, so it paints over it; inset by the bezel so it is the screen
+             and never the player's game. `BootScreen.svelte` has the rest. -->
+        <BootScreen />
       </div>
     </div>
   </main>

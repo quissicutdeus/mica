@@ -17,9 +17,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     MediaThumb,
     SegmentedControl,
     useLocale,
-    usePhoneNotification
+    usePhoneNotification,
+    onAppForeground
   } from '@mica/sdk';
   import ColorWheelPicker from './ColorWheelPicker.svelte';
+  import { loadOwnerWallpapers, ownerWallpapers } from '../ownerWallpapers';
 
   const { t } = useLocale();
 
@@ -42,7 +44,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   // The preview is the device on screen (MICA-261): its ratio, and wider when landscape.
   const landscape = $derived($frame.width > $frame.height);
 
+  // The owner's own images (MICA-236): re-read whenever the app comes forward, since the
+  // owner can add a file and restart the resource while a player has the phone open.
+  onAppForeground('settings', () => void loadOwnerWallpapers());
+
   const wallpaper = $derived($wallpaperStore);
+  const isOwnerWallpaperActive = (url: string) =>
+    wallpaper.type === 'image' && wallpaper.image === `url('${url}')`;
   const seed = $derived($activeSeed);
   const scheme = $derived($schemeStore);
   const mode = $derived($themeStore.mode);
@@ -260,6 +268,35 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       {/each}
     </div>
   </div>
+
+  <!-- The owner's wallpapers (MICA-236): only when the server has any. -->
+  {#if $ownerWallpapers.length > 0}
+    <div>
+      <h2 class="text-on-surface-variant text-body-medium mb-2 px-2 tracking-wider uppercase">
+        {$t('settings.theme.serverWallpapers')}
+      </h2>
+      <div class="grid grid-cols-3 gap-3" data-testid="owner-wallpapers">
+        {#each $ownerWallpapers as url (url)}
+          <button
+            type="button"
+            onclick={() => setWallpaperImage(`url('${url}')`)}
+            aria-pressed={isOwnerWallpaperActive(url)}
+            aria-label={$t('settings.theme.useAsWallpaper')}
+            class={`flex cursor-pointer overflow-hidden rounded-box border p-1 ${
+              isOwnerWallpaperActive(url)
+                ? 'border-primary ring-primary ring-2'
+                : 'border-outline-variant bg-surface-container hover:border-outline'
+            }`}
+          >
+            <div
+              class="h-24 w-full rounded-box"
+              style={`background: url('${url}') center/cover no-repeat;`}
+            ></div>
+          </button>
+        {/each}
+      </div>
+    </div>
+  {/if}
 
   <!-- Photos -->
   <div>

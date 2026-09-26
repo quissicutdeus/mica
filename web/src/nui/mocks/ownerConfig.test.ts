@@ -16,9 +16,20 @@ afterEach(() => {
 describe('the shell:ownerConfig mock (MICA-234)', () => {
   it('answers nothing disabled and the built-in dock with no convar configured', async () => {
     const { MockRegistry } = await import('./registry');
-    expect(await MockRegistry.handle('shell:ownerConfig')).toEqual({
+    expect(await MockRegistry.handle('shell:ownerConfig')).toMatchObject({
       disabledApps: [],
       defaultDock: []
+    });
+  });
+
+  it('offers a sample wallpaper and reads the seed and frame from the query (MICA-236)', async () => {
+    window.history.pushState({}, '', '/?mica_theme_seed=%230e9f6e&mica_default_frame=notch');
+    const { MockRegistry } = await import('./registry');
+    expect(await MockRegistry.handle('shell:ownerConfig')).toMatchObject({
+      themeSeed: '#0e9f6e',
+      defaultFrame: 'notch',
+      wallpapers: ['/mock-branding/aurora.svg'],
+      brandLogo: '/mock-branding/logo.svg'
     });
   });
 
@@ -30,7 +41,7 @@ describe('the shell:ownerConfig mock (MICA-234)', () => {
     );
     const { MockRegistry } = await import('./registry');
 
-    expect(await MockRegistry.handle('shell:ownerConfig')).toEqual({
+    expect(await MockRegistry.handle('shell:ownerConfig')).toMatchObject({
       disabledApps: ['bank', 'hodlr'],
       defaultDock: ['notes', '', 'camera', '']
     });
@@ -41,7 +52,7 @@ describe('the shell:ownerConfig mock (MICA-234)', () => {
     vi.stubEnv('VITE_MICA_DEFAULT_DOCK', 'phone,,,');
     const { MockRegistry } = await import('./registry');
 
-    expect(await MockRegistry.handle('shell:ownerConfig')).toEqual({
+    expect(await MockRegistry.handle('shell:ownerConfig')).toMatchObject({
       disabledApps: ['marketplace'],
       defaultDock: ['phone', '', '', '']
     });

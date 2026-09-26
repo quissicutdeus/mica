@@ -7,7 +7,9 @@ import { GENERIC_SERVICE_ACTION } from '@mica/shared/rpc';
 import {
   parseDefaultContacts,
   parseDefaultDock,
-  parseDisabledApps
+  parseDefaultFrame,
+  parseDisabledApps,
+  parseThemeSeed
 } from '@mica/shared/ownerConfig';
 // Type-only: `services/bank.ts` imports `fetchNui`, which imports this file's own
 // transport — a value import here would be a real import cycle, a type-only one is
@@ -88,6 +90,16 @@ const mockDisabledApps = parseDisabledApps(
 ).value;
 const mockDefaultDock = parseDefaultDock(
   ownerConfigRaw('mica_default_dock', String(import.meta.env.VITE_MICA_DEFAULT_DOCK ?? ''))
+).value;
+
+// MICA-236: branding, by the same two routes. The wallpaper is always offered — it only
+// adds a tile to Settings > Display — while a seed and a frame stay unset so an ordinary
+// run looks as it always did (`?mica_theme_seed=%230e9f6e&mica_default_frame=notch`).
+const mockThemeSeed = parseThemeSeed(
+  ownerConfigRaw('mica_theme_seed', String(import.meta.env.VITE_MICA_THEME_SEED ?? ''))
+).value;
+const mockDefaultFrame = parseDefaultFrame(
+  ownerConfigRaw('mica_default_frame', String(import.meta.env.VITE_MICA_DEFAULT_FRAME ?? ''))
 ).value;
 
 /**
@@ -2490,7 +2502,14 @@ const mockRegistry: Record<string, MockHandler> = {
    * `mica_disabled_apps` / `mica_default_dock` (MICA-234), parsed once above so this and
    * the appended `mockContacts` rows read from the same answer.
    */
-  'shell:ownerConfig': () => ({ disabledApps: mockDisabledApps, defaultDock: mockDefaultDock }),
+  'shell:ownerConfig': () => ({
+    disabledApps: mockDisabledApps,
+    defaultDock: mockDefaultDock,
+    themeSeed: mockThemeSeed,
+    defaultFrame: mockDefaultFrame,
+    wallpapers: ['/mock-branding/aurora.svg'],
+    brandLogo: '/mock-branding/logo.svg'
+  }),
 
   /**
    * Broadcasting to people nearby (MICA-111 phase 2), which in a browser means nobody.

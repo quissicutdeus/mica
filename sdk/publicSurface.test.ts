@@ -1688,7 +1688,13 @@ const BASELINE_HOOK_RETURNS: Record<string, string[]> = {
     'phoneScale',
     'reducedMotion'
   ],
-  useDisplayWrite: ['setDisplaySize', 'setHomeGridSize', 'setMotionPreference'],
+  useDisplayWrite: [
+    'setDisplaySize',
+    'setFrame',
+    'setFrameColor',
+    'setHomeGridSize',
+    'setMotionPreference'
+  ],
   useHighscores: ['getLeaderboard', 'submitScore'],
   useJobs: ['fetchJobs', 'jobs', 'jobsLoaded', 'setActiveJob', 'setDuty'],
   useKeybinds: ['bindings', 'findConflict', 'groups', 'onKeybind'],

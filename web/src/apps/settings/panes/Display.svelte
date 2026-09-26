@@ -17,6 +17,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   } from '@mica/sdk';
   import { DEVICES } from '@mica/shared/devices';
   import ThemeAndWallpaper from '../components/ThemeAndWallpaper.svelte';
+  import FramePicker from '../components/FramePicker.svelte';
 
   const { t } = useLocale();
 
@@ -78,6 +79,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <div class="space-y-6 p-4">
   <ThemeAndWallpaper />
+
+  {#if $device === 'phone'}
+    <FramePicker />
+  {/if}
 
   <SettingsSection title={$t('settings.display.size')} footer={$t('settings.display.sizeFooter')}>
     <div class="flex flex-col gap-3 p-4">

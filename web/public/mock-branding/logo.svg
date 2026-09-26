@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+SPDX-FileCopyrightText: 2026 quissicutdeus
+
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160">
+  <circle cx="80" cy="80" r="72" fill="#0f766e"/>
+  <path d="M48 108V52l32 36 32-36v56" fill="none" stroke="#ffffff" stroke-width="12" stroke-linejoin="round"/>
+</svg>

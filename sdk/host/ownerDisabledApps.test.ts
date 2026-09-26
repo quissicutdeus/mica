@@ -32,7 +32,7 @@ import { get } from 'svelte/store';
 const nui = vi.hoisted(() => ({ fetchNui: vi.fn() }));
 vi.mock('../../web/src/nui/fetchNui', () => nui);
 
-import { ownerConfig } from '../../web/src/shell/state/ownerConfig';
+import { ownerConfig, DEFAULT_OWNER_CONFIG } from '../../web/src/shell/state/ownerConfig';
 import { appRegistryStore } from '../../web/src/shell/state/registry';
 import { currentApp, goHome } from '../../web/src/shell/state/navigation';
 import { recordConsent, resetGrantsForTest } from '../../web/src/shell/state/addOnGrants';
@@ -54,7 +54,8 @@ const ADDON_ID = 'notes';
 /** A catalog add-on, which no build ships. */
 const REMOTE_ID = 'remote_weather';
 
-const disable = (...ids: string[]) => ownerConfig.set({ disabledApps: ids, defaultDock: [] });
+const disable = (...ids: string[]) =>
+  ownerConfig.set({ ...DEFAULT_OWNER_CONFIG, disabledApps: ids });
 
 const ids = (apps: readonly AppManifest[]) => apps.map((a) => a.id);
 

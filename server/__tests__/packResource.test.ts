@@ -3,11 +3,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { crc32, inflateRawSync } from 'node:zlib';
 
 import {
+  BRANDING_FILES,
   LOCALES_DIR,
   README_END,
   README_START,
@@ -18,6 +19,7 @@ import {
   releaseDate,
   stampManifestVersion,
   uncoveredGlobs,
+  unexpectedBranding,
   zipName
   // @ts-expect-error -- a plain .js build script with no types; this suite is not typechecked.
 } from '../../scripts/lib/release-zip.js';
@@ -60,6 +62,8 @@ files {
   'dist/web/*.svg',
   -- a comment with an apostrophe, as the real one has: every add-on 404'd
   'dist/web/addons/**/*',
+  -- the owner's images: wallpapers and the boot logo
+  'branding/**/*',
 }
 `;
 
@@ -108,7 +112,8 @@ describe('the manifest globs the packer checks the zip against', () => {
       'dist/web/index.html',
       'dist/web/assets/**/*',
       'dist/web/*.svg',
-      'dist/web/addons/**/*'
+      'dist/web/addons/**/*',
+      'branding/**/*'
     ]);
   });
 
@@ -130,7 +135,8 @@ describe('the manifest globs the packer checks the zip against', () => {
       'dist/client/client.js',
       'dist/web/index.html',
       'dist/web/assets/index-abc.js',
-      'dist/web/mica.svg'
+      'dist/web/mica.svg',
+      'branding/README.md'
     ];
 
     expect(uncoveredGlobs(MANIFEST, packed)).toEqual(['dist/web/addons/**/*']);
@@ -243,6 +249,37 @@ describe('the language files the zip carries (MICA-235)', () => {
       for (const glob of globs)
         expect(globToRegExp(glob).test(path), `${glob} ${path}`).toBe(false);
     }
+  });
+});
+
+describe('the branding folder the zip carries (MICA-236)', () => {
+  it('ships the README and the empty wallpapers folder, and no image', () => {
+    expect(BRANDING_FILES).toEqual(['branding/README.md', 'branding/wallpapers/.gitkeep']);
+    for (const path of BRANDING_FILES) expect(existsSync(join(ROOT, path)), path).toBe(true);
+    expect(BRANDING_FILES.some((p: string) => /\.(png|jpe?g|webp|svg)$/i.test(p))).toBe(false);
+  });
+
+  it("refuses any other file, which an update would unpack over an owner's own", () => {
+    expect(unexpectedBranding(BRANDING_FILES)).toEqual([]);
+    expect(
+      unexpectedBranding([...BRANDING_FILES, 'branding/wallpapers/sample.png', 'branding/logo.svg'])
+    ).toEqual(['branding/wallpapers/sample.png', 'branding/logo.svg']);
+    const packer = readFileSync(join(ROOT, 'scripts/pack-resource.js'), 'utf8');
+    expect(packer).toContain('unexpectedBranding(brandingPaths)');
+  });
+
+  it('is served: the manifest declares it, so the NUI can load an owner image', () => {
+    const generator = readFileSync(join(ROOT, 'scripts/generate-barrels.js'), 'utf8');
+    const template = /const manifest = `([\s\S]*?)`;/.exec(generator)?.[1] ?? '';
+    const globs = manifestGlobs(template);
+    for (const path of ['branding/wallpapers/beach.webp', 'branding/logo.svg']) {
+      expect(
+        globs.some((g: string) => globToRegExp(g).test(path)),
+        path
+      ).toBe(true);
+    }
+    // And the packed README satisfies the glob, so the packer's coverage check passes.
+    expect(uncoveredGlobs(template, [...BRANDING_FILES])).not.toContain('branding/**/*');
   });
 });
 

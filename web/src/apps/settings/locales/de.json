@@ -239,5 +239,18 @@
   "devtools.simulatedToastMessage": "Dies ist eine Test-Push-Mitteilung aus den Entwicklerwerkzeugen.",
   "devtools.testSmsMessage": "Hey! Das ist eine Test-SMS aus den Entwicklerwerkzeugen.",
   "devtools.testMailSubject": "Hinweis zur Quartalsbeurteilung",
-  "devtools.testMailContent": "Bitte sieh dir deinen kommenden Zeitplan und deine Kennzahlen an."
+  "devtools.testMailContent": "Bitte sieh dir deinen kommenden Zeitplan und deine Kennzahlen an.",
+
+  "theme.serverWallpapers": "Server-Hintergründe",
+  "frame.section": "Gehäuse",
+  "frame.footer": "Nur das Aussehen des Telefons; Apps sehen in jedem Gehäuse gleich aus.",
+  "frame.label": "Kamerastil",
+  "frame.colorLabel": "Gehäusefarbe",
+  "frame.default": "Server-Standard",
+  "frame.classic": "Klassisch",
+  "frame.notch": "Notch",
+  "frame.punch": "Punch-Hole",
+  "frame.color.black": "Schwarz",
+  "frame.color.graphite": "Graphit",
+  "frame.color.silver": "Silber"
 }

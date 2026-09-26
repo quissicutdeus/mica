@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSy
 import { join, posix, relative } from 'node:path';
 
 import {
+  BRANDING_FILES,
   BRIDGES_DIR,
   DIST_DIRS,
   LOCALES_DIR,
@@ -17,6 +18,7 @@ import {
   releaseDate,
   stampManifestVersion,
   uncoveredGlobs,
+  unexpectedBranding,
   zipName
 } from './lib/release-zip.js';
 import { createZip } from './lib/zip.js';
@@ -99,9 +101,28 @@ const walk = (dir) => {
 const relPaths = DIST_DIRS.flatMap((dir) => walk(dir)).map((file) =>
   relative('.', file).split('\\').join(posix.sep)
 );
+
+/** `branding/`, which must be the README and the placeholder alone (MICA-236). */
+const brandingPaths = walk('branding').map((file) =>
+  relative('.', file).split('\\').join(posix.sep)
+);
+const strayBranding = unexpectedBranding(brandingPaths);
+const missingBranding = BRANDING_FILES.filter((path) => !brandingPaths.includes(path));
+if (strayBranding.length > 0 || missingBranding.length > 0) {
+  console.error(
+    'pack-resource: branding/ must hold exactly ' +
+      `${BRANDING_FILES.join(', ')} -- an update unpacked over an install would overwrite ` +
+      "an owner's image of the same name. " +
+      (strayBranding.length ? `Not packable: ${strayBranding.join(', ')}. ` : '') +
+      (missingBranding.length ? `Missing: ${missingBranding.join(', ')}.` : '')
+  );
+  process.exit(1);
+}
+
 const manifest = readFileSync('fxmanifest.lua', 'utf8');
 
-const uncovered = uncoveredGlobs(manifest, relPaths);
+// `branding/**/*` is declared for the owner's images; the README is what the zip holds for it.
+const uncovered = uncoveredGlobs(manifest, [...relPaths, ...brandingPaths]);
 if (uncovered.length > 0) {
   console.error(
     'pack-resource: fxmanifest.lua declares paths the build did not produce, so the zip ' +
@@ -129,6 +150,7 @@ const extraPaths = [...walk(BRIDGES_DIR), ...walk(LOCALES_DIR)].map((file) =>
 const entries = [
   ...relPaths.map((path) => ({ path, data: readFileSync(path) })),
   ...extraPaths.map((path) => ({ path, data: readFileSync(path) })),
+  ...brandingPaths.map((path) => ({ path, data: readFileSync(path) })),
   ...TOP_LEVEL_FILES.map((path) => ({
     path,
     data: path === 'fxmanifest.lua' ? stampManifestVersion(manifest, version) : readFileSync(path)

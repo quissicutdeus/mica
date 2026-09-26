@@ -536,6 +536,14 @@ export interface Facets {
   };
   displayWrite: () => {
     setDisplaySize: (size: number) => void;
+    /**
+     * MICA-236: the phone body's camera style, one of `FRAME_IDS`, or '' to follow the
+     * owner's `mica_default_frame`. Anything else is ignored. Settings only: not in the
+     * add-on member allowlist, so a sandboxed frame cannot restyle the player's phone.
+     */
+    setFrame: (id: string) => void;
+    /** MICA-236: the bezel colour (`black`, `graphite`, `silver`) or ''. Settings only, as above. */
+    setFrameColor: (id: string) => void;
     setMotionPreference: (preference: MotionPreference) => void;
     /**
      * Applies a new grid size and reflows anything the shrink pushed out of bounds. The

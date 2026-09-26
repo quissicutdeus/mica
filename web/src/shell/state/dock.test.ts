@@ -18,7 +18,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { get } from 'svelte/store';
 import { DEVICES } from '@mica/shared/devices';
 import { setActiveDevice } from './device';
-import { ownerConfig } from './ownerConfig';
+import { ownerConfig, DEFAULT_OWNER_CONFIG } from './ownerConfig';
 import { DEFAULT_DOCK_APP_IDS, dockAppIds, sanitizeDockAppIds, setDockSlot } from './dock';
 import { storage } from '../../host/facets/storage';
 import { persistedRehydratorsAll } from '../../../../sdk/host/seam/persistedRegistry';
@@ -110,7 +110,7 @@ describe('Dock state', () => {
     const settingsStorage = storage('settings');
 
     afterEach(() => {
-      ownerConfig.set({ disabledApps: [], defaultDock: [] });
+      ownerConfig.set({ ...DEFAULT_OWNER_CONFIG, disabledApps: [], defaultDock: [] });
       setActiveDevice('phone');
     });
 
@@ -121,27 +121,39 @@ describe('Dock state', () => {
       // storage key, not that in-memory value, says whether the player has one of their
       // own. Clearing it here stands in for a player who never has.
       settingsStorage.removeItem('dockAppIds');
-      ownerConfig.set({ disabledApps: [], defaultDock: ['bank', '', 'notes', ''] });
+      ownerConfig.set({
+        ...DEFAULT_OWNER_CONFIG,
+        disabledApps: [],
+        defaultDock: ['bank', '', 'notes', '']
+      });
       expect(get(dockAppIds)).toEqual(['bank', '', 'notes', '']);
     });
 
     it('never overwrites a dock the player has already saved', () => {
       setDockSlot(1, 'notes');
-      ownerConfig.set({ disabledApps: [], defaultDock: ['bank', 'camera', 'weather', 'mail'] });
+      ownerConfig.set({
+        ...DEFAULT_OWNER_CONFIG,
+        disabledApps: [],
+        defaultDock: ['bank', 'camera', 'weather', 'mail']
+      });
       expect(get(dockAppIds)).toEqual(['phone', 'notes', 'media', 'camera']);
     });
 
     it('applies only to the phone, which the convar configures — never the tablet', () => {
       setActiveDevice('tablet');
       const before = get(dockAppIds);
-      ownerConfig.set({ disabledApps: [], defaultDock: ['bank', '', '', ''] });
+      ownerConfig.set({
+        ...DEFAULT_OWNER_CONFIG,
+        disabledApps: [],
+        defaultDock: ['bank', '', '', '']
+      });
       expect(get(dockAppIds)).toEqual(before);
     });
 
     it('is a no-op with an unset convar', () => {
       settingsStorage.removeItem('dockAppIds');
       const before = get(dockAppIds);
-      ownerConfig.set({ disabledApps: [], defaultDock: [] });
+      ownerConfig.set({ ...DEFAULT_OWNER_CONFIG, disabledApps: [], defaultDock: [] });
       expect(get(dockAppIds)).toEqual(before);
     });
 
@@ -154,7 +166,11 @@ describe('Dock state', () => {
      */
     it('shows the owner default without writing it — there is nothing for a later rehydrate to race', () => {
       settingsStorage.removeItem('dockAppIds');
-      ownerConfig.set({ disabledApps: [], defaultDock: ['bank', '', 'notes', ''] });
+      ownerConfig.set({
+        ...DEFAULT_OWNER_CONFIG,
+        disabledApps: [],
+        defaultDock: ['bank', '', 'notes', '']
+      });
       expect(get(dockAppIds)).toEqual(['bank', '', 'notes', '']);
       expect(settingsStorage.getItem('dockAppIds')).toBeNull();
 
@@ -171,7 +187,11 @@ describe('Dock state', () => {
       for (const rehydrate of persistedRehydratorsAll()) rehydrate();
       expect(get(dockAppIds)).toEqual(['weather', '', '', '']);
 
-      ownerConfig.set({ disabledApps: [], defaultDock: ['bank', '', 'notes', ''] });
+      ownerConfig.set({
+        ...DEFAULT_OWNER_CONFIG,
+        disabledApps: [],
+        defaultDock: ['bank', '', 'notes', '']
+      });
       expect(get(dockAppIds)).toEqual(['weather', '', '', '']);
     });
 
@@ -201,7 +221,11 @@ describe('Dock state', () => {
       await hydrateSettingsOnCharacterLoad();
       expect(get(dockAppIds)).toEqual(['weather', '', '', '']);
 
-      ownerConfig.set({ disabledApps: [], defaultDock: ['bank', '', 'notes', ''] });
+      ownerConfig.set({
+        ...DEFAULT_OWNER_CONFIG,
+        disabledApps: [],
+        defaultDock: ['bank', '', 'notes', '']
+      });
 
       // Character B has no dock row at all — a genuinely successful, empty answer, not a
       // failed fetch. Without the sweep, `weather` would still be sitting under the

@@ -23,6 +23,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { wallpaperBackground } from './state/wallpaper';
   import { themeStyleStore } from './state/theme';
   import { isLocked } from './state/lockScreen';
+  import { activeFrame, activeFrameColor, FRAME_COLOR_HEX } from './state/phoneFrame';
   import LockScreen from './LockScreen.svelte';
 
   /**
@@ -41,6 +42,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   let screenElement = $state<HTMLElement | null>(null);
   const wallpaper = $derived($wallpaperBackground);
   const themeStyle = $derived($themeStyleStore);
+  // The body's colour (MICA-236). The fill only when the screen is opaque, as before.
+  const bodyColor = $derived(FRAME_COLOR_HEX[$activeFrameColor]);
+  const bodyStyle = $derived(
+    `border-color: ${bodyColor};${!transparent || $isBatteryDead ? ` background-color: ${bodyColor};` : ''}`
+  );
 
   onMount(() => {
     if (screenElement) {
@@ -77,9 +83,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   transition:fly|global={{ y: $frame.height + 150, duration: 500 }}
   data-testid="phone-frame"
   data-device-frame="phone"
-  style="width: {$frame.width}px; height: {$frame.height}px;"
-  class="shadow-elevation-5 duration-medium ease-emphasized rounded-frame-outer relative border-[8px] border-gray-950 ring-1 ring-gray-600 transition-colors"
-  class:bg-gray-950={!transparent || $isBatteryDead}
+  data-frame-variant={$activeFrame}
+  style="width: {$frame.width}px; height: {$frame.height}px; {bodyStyle}"
+  class="shadow-elevation-5 duration-medium ease-emphasized rounded-frame-outer relative border-[8px] ring-1 ring-gray-600 transition-colors"
 >
   <!-- Hardware Side Buttons -->
   <!-- Power / Screen Off Button -->
@@ -185,10 +191,29 @@ SPDX-License-Identifier: AGPL-3.0-or-later
          that button (rather than below it, as `z-30` left it) a plain `<div>` there
          would otherwise silently absorb the touch instead of letting it reach the
          button underneath. -->
-    <div
-      data-testid="camera-cutout"
-      class="size-icon-lg pointer-events-none absolute top-2 left-1/2 z-80 -translate-x-1/2 rounded-full bg-black ring-1 ring-gray-800"
-    ></div>
+    <!-- The three variants (MICA-236) differ only in this element. All sit inside the
+         status bar's 32px (`safe-top`) and centred, where the bar has no content — its
+         clock and icons are pinned to the two sides — so none of them moves an app. The
+         notch is a 44px waterdrop hanging from the top edge — as wide as it can be and still
+         start after the notification tray's cap ends (~174px, `notifications.spec.ts`). -->
+    {#if $activeFrame === 'notch'}
+      <div
+        data-testid="camera-cutout"
+        class="pointer-events-none absolute top-0 left-1/2 z-80 -translate-x-1/2 bg-black"
+        style="width: 44px; height: 24px; border-radius: 0 0 14px 14px;"
+      ></div>
+    {:else if $activeFrame === 'punch'}
+      <div
+        data-testid="camera-cutout"
+        class="pointer-events-none absolute left-1/2 z-80 -translate-x-1/2 rounded-full bg-black"
+        style="top: 10px; width: 12px; height: 12px;"
+      ></div>
+    {:else}
+      <div
+        data-testid="camera-cutout"
+        class="size-icon-lg pointer-events-none absolute top-2 left-1/2 z-80 -translate-x-1/2 rounded-full bg-black ring-1 ring-gray-800"
+      ></div>
+    {/if}
 
     <!-- Content Area -->
     {#if !$isBatteryDead && !$isLocked}

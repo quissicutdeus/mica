@@ -25,3 +25,9 @@ sql/dev-reset.sql
 
 # pnpm store, when a CI runner keeps it inside the workspace. See .prettierignore.
 .pnpm-store
+
+# MICA-236: owner branding images are the owner's, never the repo's; only these ship.
+branding/**
+!branding/README.md
+!branding/wallpapers/
+!branding/wallpapers/.gitkeep
