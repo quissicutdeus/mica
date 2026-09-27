@@ -15,6 +15,12 @@ import { sweepOrphanedRows } from '../lib/orphanSweep';
 import { isAdmin } from './Admin';
 import { notifyPlayer } from '../lib/shell';
 import { restoreWindowDays } from '../lib/retention';
+import {
+  isRetentionRunning,
+  parseRetentionDays,
+  pruneTable,
+  registerRetention
+} from '../lib/contentRetention';
 
 /**
  * The media table: owner-scoped, create/read/delete only.
@@ -360,7 +366,11 @@ export const media = defineService<MediaItem, typeof mediaContract>({
     /** Accessibility, and what RCS carries alongside an attachment. */
     alt_text: { type: 'string', length: 255, clientWritable: false }
   },
-  indexes: [{ name: 'citizenid_status_created', columns: ['citizenid', 'status', 'created_at'] }],
+  indexes: [
+    { name: 'citizenid_status_created', columns: ['citizenid', 'status', 'created_at'] },
+    // The retention prune's walk (MICA-167): oldest first across every owner. Additive.
+    { name: 'created_at', columns: ['created_at'] }
+  ],
   /**
    * Keyset on `id DESC`, like every other paged read here (§10).
    *
@@ -950,47 +960,50 @@ const affectedRows = (result: unknown): number => {
 };
 
 /**
- * How many days of media are kept, or `0` for forever.
+ * How many days of media are kept, or `0` for forever: `mica_media_retention`, **365 by
+ * default** since MICA-167.
  *
- * **Off by default, and that is the conservative answer rather than a placeholder.** This
- * is the only thing in this file that destroys a photo a player still expects to have, so
- * an update that sets nothing must not start deleting anybody's gallery. An owner who
- * wants the reclaim opts into it, having read what it does.
+ * This was off by default until then, on the argument that it is the one thing here that
+ * destroys a photo a player still expects to have. MICA-167 decided that no player content is
+ * kept forever by default, and a year is the answer to both concerns: long enough that no
+ * active player loses a photo they are still using — a gallery a year old is an archive — and
+ * finite, so the heaviest table micaOS has (base64 in `mediumtext`) stops growing on a server
+ * whose players left. Longer than messages because a photo is the thing a player kept on
+ * purpose. `0` (or `off`) restores the old keep-forever behaviour; a typo lands on the default
+ * and is logged, never on forever — which is why this reads `GetConvar` and not
+ * `GetConvarInt`, which answers `0` for anything it cannot parse.
  *
- * The quota above is what bounds ordinary growth without deleting anything; retention is
- * for the owner who has looked at `micamedia` and decided the table is still too big.
+ * The quota above is what bounds ordinary growth without deleting anything; retention is what
+ * bounds the rest.
  */
-const retentionDays = (): number => {
-  const raw = typeof GetConvarInt === 'function' ? GetConvarInt('mica_media_retention', 0) : 0;
-  return Number.isFinite(raw) && raw > 0 ? Math.trunc(raw) : 0;
+const retentionDays = (): number =>
+  parseRetentionDays(GetConvar('mica_media_retention', ''), 365, 'mica_media_retention');
+
+const mediaRetention = {
+  label: 'micamedia',
+  table: media.resolved.table,
+  convar: 'mica_media_retention',
+  days: retentionDays
 };
+registerRetention(mediaRetention);
 
 /**
- * Delete every media row older than the retention window. **A hard delete.**
+ * Delete every media row older than the retention window. **A hard delete of the bytes**:
+ * media is stored in-row (`data`, `thumbnail`), so removing the row is removing the photo —
+ * there is no file or bucket behind it to leave behind.
  *
  * Worth being exact about, because the word means two different things in this schema
  * (MICA-75): a player deleting a photo writes `status = 'deleted'` and the row keeps
  * every byte it had, which is why a soft delete reclaims nothing and why this exists. This
  * removes the row.
  *
- * `created_at` rather than `updated_at`, and every status rather than a subset, so the
- * sentence an owner is agreeing to has no exceptions in it: *media older than N days is
- * removed*. A window that covered only some rows would be a window nobody could reason
- * about, and the rule for a prune is that it never reaches a row the stated window does
- * not clearly cover.
- *
- * Nothing is written unless the convar is set, so the default path here is a no-op that
- * touches the database not at all.
+ * `created_at` rather than `updated_at`, and every status, with two holds: media is never
+ * removed while an open report names it, or while a live message, blab or listing still has it
+ * attached — a year-old photo on this morning's message stays as long as the message does.
+ * The batching, the report hold and the attachment rows are `lib/contentRetention.ts`'s; this
+ * is the same prune the six-hourly schedule runs, reachable on its own for `micamedia prune`.
  */
-export const pruneExpiredMedia = async (): Promise<number> => {
-  const days = retentionDays();
-  if (days <= 0) return 0;
-
-  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-  return affectedRows(
-    await Database.query('DELETE FROM mica_media WHERE created_at < ?', [cutoff])
-  );
-};
+export const pruneExpiredMedia = async (): Promise<number> => await pruneTable(mediaRetention);
 
 /**
  * Delete media whose owner no longer exists. **A hard delete, and the character-deletion
@@ -1099,7 +1112,8 @@ const logMediaLimits = (): void => {
 };
 
 /**
- * The prune, as it runs on its own: at resource start, and again on `micamedia prune`.
+ * Both sweeps together, as `micamedia prune` runs them. (At resource start the orphan sweep
+ * runs on its own and retention runs on its schedule — see the `onResourceStart` below.)
  *
  * The orphan sweep runs whether or not retention is configured, because it only ever
  * reaches rows whose owner does not exist — data nothing in the phone can read, since
@@ -1165,10 +1179,18 @@ export const runMediaPruneCommand = async (source: number): Promise<void> => {
     return;
   }
 
+  if (isRetentionRunning(mediaRetention.table)) {
+    console.log(
+      '[micamedia] a retention prune of mica_media is already running; ' +
+        'run micamedia prune again when it has finished.'
+    );
+    return;
+  }
+
   const days = retentionDays();
   if (days <= 0) {
     console.log(
-      '[micamedia] mica_media_retention is not set, so nothing is expired by age. ' +
+      '[micamedia] mica_media_retention is 0, so nothing is expired by age. ' +
         'The orphan sweep still runs.'
     );
   }
@@ -1257,7 +1279,15 @@ on('onResourceStart', (resourceName: string) => {
   if (resourceName !== GetCurrentResourceName()) return;
 
   logMediaLimits();
-  void runMediaMaintenance().catch((error) => {
-    console.error('[micamedia] start-up maintenance failed:', error);
-  });
+  // Only the orphan sweep here: the retention half runs on `lib/contentRetention.ts`'s
+  // schedule, which starts on this same event, and running it twice at boot buys nothing.
+  void pruneOrphanedMedia()
+    .then((orphaned) => {
+      if (orphaned > 0) {
+        console.log(`[micamedia] removed ${orphaned} row(s) whose character no longer exists.`);
+      }
+    })
+    .catch((error) => {
+      console.error('[micamedia] start-up maintenance failed:', error);
+    });
 });

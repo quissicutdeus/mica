@@ -170,6 +170,7 @@ CREATE TABLE IF NOT EXISTS `mica_blabber_dms` (
     KEY `from_to` (`from_account`, `to_account`),
     KEY `to_from` (`to_account`, `from_account`),
     KEY `to_unread` (`to_account`, `read_at`),
+    KEY `created_at` (`created_at`),
     CONSTRAINT `fk_mica_blabber_dms_from_account` FOREIGN KEY (`from_account`)
         REFERENCES `mica_accounts` (`id`) ON DELETE CASCADE,
     CONSTRAINT `fk_mica_blabber_dms_to_account` FOREIGN KEY (`to_account`)
@@ -414,6 +415,7 @@ CREATE TABLE IF NOT EXISTS `mica_media` (
     KEY `status` (`status`),
     KEY `citizenid_status` (`citizenid`, `status`),
     KEY `citizenid_status_created` (`citizenid`, `status`, `created_at`),
+    KEY `created_at` (`created_at`),
     KEY `phone_id` (`phone_id`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
@@ -540,6 +542,7 @@ CREATE TABLE IF NOT EXISTS `mica_messages` (
     KEY `conversation_status_created` (`conversation_id`, `status`, `created_at`),
     KEY `conversation_id_id` (`conversation_id`, `id`),
     KEY `reply_to_id` (`reply_to_id`),
+    KEY `created_at` (`created_at`),
     CONSTRAINT `fk_mica_messages_conversation_id` FOREIGN KEY (`conversation_id`)
         REFERENCES `mica_messages_conversations` (`id`) ON DELETE CASCADE
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;

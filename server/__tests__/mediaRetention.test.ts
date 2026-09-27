@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { RETENTION_BATCH, resetRetentionForTests } from '../lib/contentRetention';
 
 /**
  * MICA-71: the per-player quota, the retention prune, and the cleanup that runs when a
@@ -91,10 +92,58 @@ const call = async (event: string, data: unknown) => {
   return (globalThis.emitNet as any).mock.calls.at(-1)?.[3];
 };
 
-/** Neither convar set: both fall back to their compiled-in defaults. */
-const withConvars = (values: Record<string, number> = {}) => {
+/**
+ * Neither convar set: both fall back to their compiled-in defaults.
+ *
+ * Both readers are stubbed: the quota reads `GetConvarInt`, and retention reads `GetConvar`
+ * since MICA-167, so that a typo lands on the default instead of on `0`.
+ */
+const withConvars = (values: Record<string, number | string> = {}) => {
   (globalThis as any).GetConvarInt = (name: string, fallback: number) =>
-    name in values ? values[name] : fallback;
+    name in values ? Number(values[name]) || 0 : fallback;
+  (globalThis as any).GetConvar = (name: string, fallback: string) =>
+    name in values ? String(values[name]) : fallback;
+};
+
+/**
+ * A database with `expired` media rows past the window: the retention select answers their
+ * ids once, the delete removes them, and every later select finds nothing.
+ */
+/**
+ * Retention's bookkeeping (MICA-167), answered as a server that has run `micaschema apply` and
+ * is long past its first-run grace. `contentRetention.test.ts` covers the grace and the gates.
+ */
+const retentionBookkeeping = (text: string): unknown => {
+  if (text.includes('information_schema.')) return [{ n: 1 }];
+  if (text.startsWith('SELECT `id`, TIMESTAMPDIFF')) {
+    return [{ id: 'retention:mica_media:1d', age: 2 * 24 * 60 * 60 }];
+  }
+  return undefined;
+};
+
+const expiredRows = (expired: number) => {
+  let served = false;
+  dbMock.query.mockImplementation(async (sql: string) => {
+    const text = String(sql);
+    // The first-run grace (MICA-167) is long over: `contentRetention.test.ts` covers it.
+    const bookkeeping = retentionBookkeeping(text);
+    if (bookkeeping !== undefined) return bookkeeping;
+    if (text.startsWith('SELECT t.`id` FROM `mica_media`')) {
+      if (served) return [];
+      served = true;
+      return Array.from({ length: expired }, (_, i) => ({ id: i + 1 }));
+    }
+    if (text.startsWith('DELETE FROM `mica_media` WHERE `id` IN')) return { affectedRows: expired };
+    if (text.startsWith('SELECT DISTINCT')) return [{ owner: 'CID_A' }];
+    return { affectedRows: 0 };
+  });
+};
+
+const retentionSelect = (): { sql: string; params: unknown[] } | undefined => {
+  const found = dbMock.query.mock.calls.find((c) =>
+    String(c[0]).startsWith('SELECT t.`id` FROM `mica_media`')
+  );
+  return found ? { sql: String(found[0]), params: found[1] as unknown[] } : undefined;
 };
 
 const photoOf = (bytes: number) => `data:image/webp;base64,${'A'.repeat(bytes)}`;
@@ -352,36 +401,71 @@ describe('a proximity drop respects the recipient\u2019s quota', () => {
 });
 
 describe('the retention prune', () => {
-  it('does nothing at all while the convar is unset', async () => {
+  it('keeps a year of media while the convar is unset (MICA-167: never forever by default)', async () => {
+    expiredRows(0);
+
     expect(await pruneExpiredMedia()).toBe(0);
-    expect(dbMock.query).not.toHaveBeenCalled();
+
+    const select = retentionSelect();
+    expect(select).toBeDefined();
+    // The window is bound as days and applied on the database clock.
+    expect(select!.sql).toContain('t.`created_at` < NOW() - INTERVAL ? DAY');
+    expect(select!.params[0]).toBe(365);
+  });
+
+  it('keeps media forever at 0 or off: no media row is selected or deleted', async () => {
+    expiredRows(5);
+    for (const value of ['0', 'off']) {
+      withConvars({ mica_media_retention: value });
+      expect(await pruneExpiredMedia()).toBe(0);
+    }
+    const statements = dbMock.query.mock.calls.map((c) => String(c[0]));
+    expect(retentionSelect()).toBeUndefined();
+    expect(statements.some((sql) => sql.startsWith('DELETE FROM `mica_media`'))).toBe(false);
+  });
+
+  it('falls back to the year, not to forever, for a value it cannot parse', async () => {
+    withConvars({ mica_media_retention: '30days' });
+    expiredRows(0);
+
+    await pruneExpiredMedia();
+
+    expect(retentionSelect()!.params[0]).toBe(365);
   });
 
   it('hard-deletes rows older than the window, bounding the cutoff as a parameter', async () => {
     withConvars({ mica_media_retention: 30 });
-    dbMock.query.mockResolvedValue({ affectedRows: 7 });
+    expiredRows(7);
 
     expect(await pruneExpiredMedia()).toBe(7);
 
-    expect(lastQuery()).toBe('DELETE FROM mica_media WHERE created_at < ?');
-    const [cutoff] = dbMock.query.mock.calls.at(-1)![1] as string[];
-    const days = (Date.now() - Date.parse(cutoff)) / (24 * 60 * 60 * 1000);
-    expect(days).toBeGreaterThan(29.9);
-    expect(days).toBeLessThan(30.1);
+    const select = retentionSelect()!;
+    expect(select.sql).toContain('t.`created_at` < NOW() - INTERVAL ? DAY');
+    expect(select.params[0]).toBe(30);
+    const remove = dbMock.query.mock.calls.find((c) =>
+      String(c[0]).startsWith('DELETE FROM `mica_media` WHERE `id` IN')
+    )!;
+    expect((remove[1] as unknown[]).slice(0, 7)).toEqual([1, 2, 3, 4, 5, 6, 7]);
   });
 
-  it('covers every status, so the window an owner is told about has no exceptions', async () => {
+  it('covers every status, so the window an owner is told about has one exception only', async () => {
     withConvars({ mica_media_retention: 30 });
-    dbMock.query.mockResolvedValue({ affectedRows: 0 });
+    expiredRows(0);
 
     await pruneExpiredMedia();
 
-    expect(lastQuery()).not.toContain('status');
+    // The only status in the statement is the report's, never the photo's.
+    expect(retentionSelect()!.sql).not.toContain('t.`status`');
+    expect(retentionSelect()!.sql).toContain('`mica_reports`');
   });
 
   it('reports zero rather than NaN when the driver answers something else', async () => {
     withConvars({ mica_media_retention: 30 });
-    dbMock.query.mockResolvedValue(undefined);
+    expiredRows(3);
+    const answer = dbMock.query.getMockImplementation()!;
+    dbMock.query.mockImplementation(async (sql: string, params: unknown[]) =>
+      String(sql).startsWith('DELETE FROM `mica_media`') ? undefined : answer(sql, params)
+    );
 
     expect(await pruneExpiredMedia()).toBe(0);
   });
@@ -403,11 +487,15 @@ const sweepableServer = (removedPerStatement: number) => {
   dbMock.single.mockImplementation(async (sql: string) =>
     String(sql).includes('AS matched') ? { matched: 2 } : { total: 120 }
   );
-  dbMock.query.mockImplementation(async (sql: string) =>
-    String(sql).startsWith('SELECT DISTINCT')
-      ? [{ owner: 'CID_A' }]
-      : { affectedRows: removedPerStatement }
-  );
+  dbMock.query.mockImplementation(async (sql: string) => {
+    const text = String(sql);
+    if (text.startsWith('SELECT DISTINCT')) return [{ owner: 'CID_A' }];
+    // Retention's first-run grace (MICA-167) is over, and nothing is old enough to expire.
+    const bookkeeping = retentionBookkeeping(text);
+    if (bookkeeping !== undefined) return bookkeeping;
+    if (text.startsWith('SELECT t.`id`')) return [];
+    return { affectedRows: removedPerStatement };
+  });
 };
 
 describe('the orphan sweep — cleanup after a character is deleted', () => {
@@ -479,6 +567,7 @@ describe('purging one character', () => {
 
 describe('runMediaMaintenance', () => {
   it('sweeps orphans even when retention is off', async () => {
+    withConvars({ mica_media_retention: 0 });
     sweepableServer(2);
 
     expect(await runMediaMaintenance()).toEqual({ expired: 0, orphaned: 2 });
@@ -487,7 +576,7 @@ describe('runMediaMaintenance', () => {
   it('still runs retention when the orphan sweep throws', async () => {
     withConvars({ mica_media_retention: 10 });
     dbMock.single.mockRejectedValue(new Error('no players table'));
-    dbMock.query.mockResolvedValue({ affectedRows: 6 });
+    expiredRows(6);
 
     expect(await runMediaMaintenance()).toEqual({ expired: 6, orphaned: 0 });
   });
@@ -529,6 +618,34 @@ describe('micamedia prune', () => {
 
     await runMediaPruneCommand(0);
 
-    expect(lastQuery()).toContain('DELETE FROM mica_media WHERE NOT EXISTS');
+    const statements = dbMock.query.mock.calls.map((c) => String(c[0]).replace(/\s+/g, ' '));
+    expect(statements.some((sql) => sql.includes('DELETE FROM mica_media WHERE NOT EXISTS'))).toBe(
+      true
+    );
+    // …and the retention half, at the default year, in the same run.
+    expect(retentionSelect()).toBeDefined();
+  });
+
+  it('says a prune is already running, rather than reporting nothing expired', async () => {
+    vi.useFakeTimers();
+    try {
+      resetRetentionForTests();
+      expiredRows(RETENTION_BATCH + 1);
+      const scheduled = pruneExpiredMedia();
+      for (let i = 0; i < 40; i += 1) await Promise.resolve();
+      const log = vi.mocked(console.log);
+      log.mockClear();
+
+      await runMediaPruneCommand(0);
+
+      const lines = log.mock.calls.map((c) => String(c[0]));
+      expect(lines.some((l) => l.includes('already running'))).toBe(true);
+      expect(lines.some((l) => l.includes('prune finished'))).toBe(false);
+      await vi.runAllTimersAsync();
+      await scheduled;
+    } finally {
+      vi.useRealTimers();
+      resetRetentionForTests();
+    }
   });
 });

@@ -47,6 +47,21 @@ Entries are hand-written. See MICA-72 for why a generated one was rejected.
 
 ### Action required
 
+**Old messages, direct messages and photos are now deleted after a window --
+read this before updating, and run `micaschema apply` (MICA-167).** Three
+convars set how long content is kept: `mica_message_retention` (default 180
+days), `mica_dm_retention` (90) and `mica_media_retention` (365; it used to be
+off by default). Set any of them to `0` or `off` to keep that content forever.
+Deletion is permanent, and a photo's data goes with its row. **Nothing is
+deleted on the first start after updating**: the console says, per table, how
+many rows would go and at what time, 24 hours later, so you have a day to set a
+convar to `0`. Never deleted: content under an open report -- the whole
+conversation of a reported message, the whole thread of a reported DM, every DM
+of a reported account -- until the report is resolved, and any photo still
+attached to a message, blab or listing. `micaschema apply` adds a `created_at`
+key to `mica_messages`, `mica_blabber_dms` and `mica_media`; until you run it
+those tables are not pruned at all, and the console says so.
+
 **On ESX or standalone, run `micaschema apply` after updating: migration
 `0004_citizenid_widens_on_esx` widens every citizenid column to 60 characters
 (MICA-289).** es_extended's multicharacter identifiers (`char1:license:<hash>`)

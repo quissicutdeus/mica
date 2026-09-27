@@ -19,6 +19,7 @@ import { AuditLogger } from '../lib/AuditLogger';
 import { Database } from '../lib/Database';
 import { blockedBy } from './Blocklist';
 import { phoneForCitizen } from './Phones';
+import { OPEN_REPORT, parseRetentionDays, registerRetention } from '../lib/contentRetention';
 
 /**
  * Messages: membership on both axes.
@@ -90,7 +91,10 @@ export const messages = defineService<Message, typeof messagesContract>({
      * `micaschema apply` picks it up with no versioned migration.
      */
     { name: 'conversation_id_id', columns: ['conversation_id', 'id'] },
-    { name: 'reply_to_id', columns: ['reply_to_id'] }
+    { name: 'reply_to_id', columns: ['reply_to_id'] },
+    // The retention prune's walk (MICA-167): oldest first, `created_at < ?`, one batch at a
+    // time. Without it every batch scans the table from the start. Additive.
+    { name: 'created_at', columns: ['created_at'] }
   ],
   childTables: [
     {
@@ -178,6 +182,44 @@ export const messages = defineService<Message, typeof messagesContract>({
   paging: { pageSize: 50, maxPageSize: 100 },
   options: { disableGet: true },
   repositoryFactory: (resolved) => new MessageRepository(resolved)
+});
+
+/**
+ * Message retention (MICA-167): `mica_message_retention`, in days, **180 by default**.
+ *
+ * Six months is long enough that a thread is still there for any storyline a player is
+ * actually in, and short enough that a server's history stops growing without bound; a
+ * message body is small, so the default leans long. `0` keeps messages forever.
+ *
+ * What pruning a message does to its conversation, since nothing is stored about it
+ * elsewhere: the list's last message and unread count are computed from `mica_messages` on
+ * every read (`ConversationRepository`), so they follow; the keyset is `id < cursor`, which a
+ * missing row cannot break; a reply quoting a pruned message keeps its pointer and the app
+ * shows nothing for a target it cannot find, as it already does for an unsent one; the
+ * attachment and reaction rows go with the message; an open report on any message in a
+ * conversation holds the whole conversation. **The conversation itself stays**, even
+ * with no messages left: it is the membership and the group name, it is what a new message
+ * lands in, and its row is small. It sorts by `updated_at` when it has no last message.
+ */
+registerRetention({
+  label: 'micamessages',
+  table: messages.resolved.table,
+  convar: 'mica_message_retention',
+  days: () =>
+    parseRetentionDays(GetConvar('mica_message_retention', ''), 180, 'mica_message_retention'),
+  holds: [
+    {
+      // An open report on any message holds its whole conversation: a moderator reading a
+      // report needs the thread around it, not one line. Read through a DISTINCT derived table
+      // because it reads this table, which the prune's DELETE targets (MySQL error 1093).
+      sql: (row) =>
+        'EXISTS (SELECT 1 FROM (SELECT DISTINCT m.`conversation_id` AS `k` ' +
+        'FROM `mica_reports` r JOIN `mica_messages` m ON m.`id` = r.`target_id` ' +
+        `WHERE r.\`target_table\` = ? AND ${OPEN_REPORT}) held ` +
+        `WHERE held.\`k\` = ${row}.\`conversation_id\`)`,
+      params: [messages.resolved.table]
+    }
+  ]
 });
 
 const app = messages.app;

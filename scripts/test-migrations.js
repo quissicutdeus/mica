@@ -1567,6 +1567,13 @@ const runWidenMigration = async ({ connection, schemaFile, hasPlayers, server })
 
   const after = await signatureOf(connection, WIDEN_COLUMNS);
   const keysAfter = await ownerForeignKeys(connection);
+  // `micaschema apply` runs the additive pass after the migrations, and so does this: the
+  // fixture is frozen before 0004, so any key or column a later ticket declared (MICA-167's
+  // created_at keys, say) is still to add here, and that is the additive pass's job, not
+  // drift. What must be empty afterwards is everything -- a width the migration missed
+  // shows up as drift, which the additive pass never touches.
+  const additive = await server.SchemaMigrator.apply();
+  check(`${label}: the additive pass fails nothing`, additive.failed, null);
   const plans = await server.SchemaMigrator.plan();
   const drift = plans.flatMap((p) => [...p.additive, ...p.drift]);
 
@@ -1713,6 +1720,9 @@ const runWidenQbWithoutKeys = async ({ connection, server }) => {
     before
   );
 
+  // As above: the additive pass follows the migrations in `micaschema apply`.
+  const additive = await server.SchemaMigrator.apply();
+  check(`${label}: the additive pass fails nothing`, additive.failed, null);
   const plans = await server.SchemaMigrator.plan();
   check(
     `${label}: the planner finds nothing to add and no drift`,

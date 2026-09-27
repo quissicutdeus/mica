@@ -41,10 +41,12 @@ const EXTERNAL_DB = Boolean(DB_HOST || DB_PORT || DB_USER || DB_PASSWORD);
 let checksRun = 0;
 /**
  * The repository checks (48), plus MICA-233's: for each of three import sources on each of
- * two framework shapes, fourteen checks and the seeded schema's one.
+ * two framework shapes, fourteen checks and the seeded schema's one. Plus MICA-167's
+ * retention scenario on each shape: sixteen checks and the seeded schema's one.
  */
 const IMPORT_CHECKS = 15;
-const MINIMUM_CHECKS = 48 + IMPORT_CHECKS * 3 * 2;
+const RETENTION_CHECKS = 17;
+const MINIMUM_CHECKS = 48 + IMPORT_CHECKS * 3 * 2 + RETENTION_CHECKS * 2;
 
 const check = (label, actual, expected) => {
   checksRun += 1;
@@ -244,7 +246,14 @@ const loadServerModule = async () => {
     // Blabber registers itself as the app that takes imported posts when it loads (core may
     // not name the add-on, so the importer asks a registry). Without it every tweet would be
     // skipped as 'no installed app takes imported posts', and the post checks would fail.
-    `import '${root}/server/services/Blabber.ts';`
+    `import '${root}/server/services/Blabber.ts';`,
+    // MICA-167: the real retention prune, with every service that registers a policy or
+    // declares a table that attaches media, so the holds are derived exactly as in game.
+    `export { pruneTable, retentionPolicies, resetRetentionForTests } from '${root}/server/lib/contentRetention.ts';`,
+    `import '${root}/server/services/Media.ts';`,
+    `import '${root}/server/services/Messages.ts';`,
+    `import '${root}/server/services/BlabberDms.ts';`,
+    `import '${root}/server/services/Marketplace.ts';`
   ].join('\n');
 
   const outfile = path.join(root, 'node_modules', '.cache', 'mica-schema-harness.mjs');
@@ -776,6 +785,206 @@ const runImportVariant = async ({ connection, schemaFile, hasPlayers, modules, s
   );
 };
 
+/* --------------------------------------------------------- retention (MICA-167) */
+
+/**
+ * The real retention prune against a real engine, on each framework shape.
+ *
+ * What the unit suite cannot show: that MariaDB accepts the holds *inside the DELETE* — the
+ * conversation and thread holds read the table being deleted from through a DISTINCT derived
+ * table, which is MySQL's error 1093 if it is ever merged — and that each hold keeps exactly
+ * the rows it should. Run under `NO_BACKSLASH_ESCAPES`, the sql_mode that once made the grace
+ * markers invisible to their own `LIKE`.
+ *
+ * Everything is seeded as of 2020 unless it says NOW(), so every row is past every default
+ * window and only a hold keeps it.
+ */
+const runRetentionVariant = async ({ connection, schemaFile, hasPlayers, modules }) => {
+  const framework = hasPlayers ? 'qb' : 'esx';
+  const A = hasPlayers ? 'CIT_A' : ESX_OWNER_A;
+  const B = hasPlayers ? 'CIT_B' : ESX_OWNER_B;
+  const OLD = '2020-01-01 00:00:00';
+  const label = `retention on ${framework}`;
+
+  await seedFrameworkAndGPhone({ connection, schemaFile, hasPlayers, suffix: 'retention' });
+  modules.__setResourceLookup(FRAMEWORK[framework]);
+  await connection.query('SET @mica_saved_sql_mode = @@SESSION.sql_mode');
+  await connection.query(
+    "SET SESSION sql_mode = CONCAT_WS(',', NULLIF(@@SESSION.sql_mode, ''), 'NO_BACKSLASH_ESCAPES')"
+  );
+
+  const q = async (sql, params = []) => (await connection.query(sql, params))[0];
+  const ids = async (table) => (await q(`SELECT id FROM ${table} ORDER BY id`)).map((r) => r.id);
+  const policy = (table) => modules.retentionPolicies().find((p) => p.table === table);
+  const prune = async (table) => {
+    try {
+      return await modules.pruneTable(policy(table));
+    } finally {
+      // A grace arms a 24-hour timer; this process must not wait on it.
+      modules.resetRetentionForTests();
+    }
+  };
+
+  step(`${label} — seeding content past every window, and the holds on it`);
+  try {
+    await q('INSERT INTO mica_messages_conversations (id, citizenid) VALUES (1, ?), (2, ?)', [
+      A,
+      A
+    ]);
+    // Conversation 1: 1, 2 (reported, open) and 3, all old. Conversation 2: 5 old, 6 new.
+    await q(
+      `INSERT INTO mica_messages (id, citizenid, conversation_id, message, created_at) VALUES
+       (1, ?, 1, 'a', ?), (2, ?, 1, 'b', ?), (3, ?, 1, 'c', ?), (5, ?, 2, 'd', ?), (6, ?, 2, 'e', NOW())`,
+      [A, OLD, A, OLD, A, OLD, A, OLD, A]
+    );
+    await q(
+      "INSERT INTO mica_reports (citizenid, target_table, target_id) VALUES (?, 'mica_messages', 2)",
+      [B]
+    );
+    await q(
+      "INSERT INTO mica_messages_reactions (message_id, citizenid, emoji) VALUES (5, ?, 'x')",
+      [B]
+    );
+    // Media, all old: 10 on message 5, 11 on message 6, 12 reported, 14 on a listing,
+    // 15 on a blab, 16 attached to nothing.
+    await q(
+      `INSERT INTO mica_media (id, citizenid, data, created_at) VALUES
+       (10, ?, 'x', ?), (11, ?, 'x', ?), (12, ?, 'x', ?), (14, ?, 'x', ?), (15, ?, 'x', ?), (16, ?, 'x', ?)`,
+      [A, OLD, A, OLD, A, OLD, A, OLD, A, OLD, A, OLD]
+    );
+    await q(
+      'INSERT INTO mica_messages_attachments (message_id, citizenid, photo_id) VALUES (5, ?, 10), (6, ?, 11)',
+      [A, A]
+    );
+    await q(
+      "INSERT INTO mica_reports (citizenid, target_table, target_id) VALUES (?, 'mica_media', 12)",
+      [B]
+    );
+    await q(
+      "INSERT INTO mica_marketplace (id, citizenid, title, price, description) VALUES (1, ?, 't', 1, 'd')",
+      [A]
+    );
+    await q(
+      'INSERT INTO mica_marketplace_attachments (listing_id, citizenid, media_id) VALUES (1, ?, 14)',
+      [A]
+    );
+    await q(
+      `INSERT INTO mica_accounts (id, citizenid, app, handle) VALUES
+       (1, ?, 'blabber', 'a'), (2, ?, 'blabber', 'b'), (3, ?, 'blabber', 'c'),
+       (4, ?, 'blabber', 'd'), (5, ?, 'blabber', 'e')`,
+      [A, B, B, A, B]
+    );
+    await q('INSERT INTO mica_blabber (id, citizenid, account_id) VALUES (1, ?, 1)', [A]);
+    await q(
+      'INSERT INTO mica_blabber_attachments (blab_id, citizenid, media_id) VALUES (1, ?, 15)',
+      [A]
+    );
+    // DMs, all old but 5: 1 (1->2) reported, 2 (2->1) the same thread, 3 (1->3) to a
+    // reported account, 4 (4->5) held by nothing.
+    await q(
+      `INSERT INTO mica_blabber_dms (id, citizenid, from_account, to_account, body, created_at) VALUES
+       (1, ?, 1, 2, 'x', ?), (2, ?, 2, 1, 'x', ?), (3, ?, 1, 3, 'x', ?), (4, ?, 4, 5, 'x', ?),
+       (5, ?, 4, 5, 'x', NOW())`,
+      [A, OLD, B, OLD, A, OLD, A, OLD, A]
+    );
+    await q(
+      `INSERT INTO mica_reports (citizenid, target_table, target_id) VALUES
+       (?, 'mica_blabber_dms', 1), (?, 'mica_accounts', 3)`,
+      [B, A]
+    );
+    await q(
+      "INSERT INTO mica_account_reactions (account_id, target_table, target_id, emoji) VALUES (5, 'mica_blabber_dms', 4, 'x')"
+    );
+
+    check(
+      `${label}: the session really is under NO_BACKSLASH_ESCAPES`,
+      String((await q('SELECT @@SESSION.sql_mode AS m'))[0].m).includes('NO_BACKSLASH_ESCAPES'),
+      true
+    );
+
+    step(`${label} — first start: the grace announces and deletes nothing`);
+    const firstRun = [];
+    for (const table of ['mica_media', 'mica_messages', 'mica_blabber_dms']) {
+      firstRun.push(await prune(table));
+    }
+    check(`${label}: the first start deletes nothing`, firstRun, [0, 0, 0]);
+    check(`${label}: every message is still there`, await ids('mica_messages'), [1, 2, 3, 5, 6]);
+    check(
+      `${label}: every photo is still there`,
+      await ids('mica_media'),
+      [10, 11, 12, 14, 15, 16]
+    );
+    check(`${label}: every DM is still there`, await ids('mica_blabber_dms'), [1, 2, 3, 4, 5]);
+    check(
+      `${label}: one marker per table, named for its window`,
+      (
+        await q("SELECT id FROM mica_schema_migrations WHERE id LIKE 'retention:%' ORDER BY id")
+      ).map((r) => r.id),
+      [
+        'retention:mica_blabber_dms:90d',
+        'retention:mica_media:365d',
+        'retention:mica_messages:180d'
+      ]
+    );
+    check(
+      `${label}: a restart inside the grace still deletes nothing`,
+      await prune('mica_messages'),
+      0
+    );
+
+    step(`${label} — 25 hours later: exactly the unheld rows go`);
+    await q(
+      "UPDATE mica_schema_migrations SET applied_at = NOW() - INTERVAL 25 HOUR WHERE id LIKE 'retention:%'"
+    );
+    check(
+      `${label}: messages: only the one outside a reported conversation`,
+      await prune('mica_messages'),
+      1
+    );
+    check(
+      `${label}: a reported message holds its whole conversation`,
+      await ids('mica_messages'),
+      [1, 2, 3, 6]
+    );
+    check(
+      `${label}: a pruned message takes its reactions`,
+      await q('SELECT id FROM mica_messages_reactions'),
+      []
+    );
+    check(
+      `${label}: media: the unattached photo and the one on the pruned message`,
+      await prune('mica_media'),
+      2
+    );
+    check(
+      `${label}: a photo on a live message, listing or blab, or under a report, stays`,
+      await ids('mica_media'),
+      [11, 12, 14, 15]
+    );
+    check(`${label}: DMs: only the thread nobody reported`, await prune('mica_blabber_dms'), 1);
+    check(
+      `${label}: a reported DM holds its thread, a reported account holds its DMs`,
+      await ids('mica_blabber_dms'),
+      [1, 2, 3, 5]
+    );
+    check(
+      `${label}: a pruned DM takes its reactions`,
+      await q('SELECT id FROM mica_account_reactions'),
+      []
+    );
+    await q(
+      "UPDATE mica_reports SET resolution = 'dismissed' WHERE target_table = 'mica_messages'"
+    );
+    check(
+      `${label}: resolving the report releases the conversation`,
+      await prune('mica_messages'),
+      3
+    );
+  } finally {
+    await connection.query('SET SESSION sql_mode = @mica_saved_sql_mode');
+  }
+};
+
 const main = async () => {
   let container;
   let connection;
@@ -818,6 +1027,15 @@ const main = async () => {
         await runImportVariant({ connection, schemaFile, hasPlayers, modules, source });
       }
     }
+
+    // MICA-167: the retention prune, on both shapes.
+    await runRetentionVariant({ connection, schemaFile: 'mica.sql', hasPlayers: true, modules });
+    await runRetentionVariant({
+      connection,
+      schemaFile: 'mica.esx.sql',
+      hasPlayers: false,
+      modules
+    });
 
     if (checksRun < MINIMUM_CHECKS) {
       throw new Error(

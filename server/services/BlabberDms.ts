@@ -11,11 +11,13 @@ import {
   accountHasBlocked,
   accountsByIds,
   accountsOwnedBy,
-  activeAccount
+  activeAccount,
+  accounts as accountsService
 } from './Accounts';
 import { BlabberDm } from '@mica/shared/types';
 import { blabberDmsContract } from '@mica/shared/contracts/blabber_dms';
 import { buildDeepLink } from '@mica/shared/deepLink';
+import { OPEN_REPORT, parseRetentionDays, registerRetention } from '../lib/contentRetention';
 
 const APP = 'blabber';
 
@@ -68,7 +70,9 @@ export const blabberDms = defineService<BlabberDm, typeof blabberDmsContract>({
     { name: 'from_to', columns: ['from_account', 'to_account'] },
     { name: 'to_from', columns: ['to_account', 'from_account'] },
     // Unread counts per sender, for the inbox.
-    { name: 'to_unread', columns: ['to_account', 'read_at'] }
+    { name: 'to_unread', columns: ['to_account', 'read_at'] },
+    // The retention prune's walk (MICA-167). Additive.
+    { name: 'created_at', columns: ['created_at'] }
   ],
   options: {
     disableGet: true, // Custom: a thread is the union of both directions.
@@ -78,6 +82,55 @@ export const blabberDms = defineService<BlabberDm, typeof blabberDmsContract>({
     // reachable whether or not a route points at it.
     disableDelete: true
   }
+});
+
+/**
+ * DM retention (MICA-167): `mica_dm_retention`, in days, **90 by default**.
+ *
+ * Shorter than Messages' 180: a DM is a social-media aside between accounts rather than a
+ * character's phone history, and three months keeps any live conversation while letting
+ * abandoned alt-account chatter go. `0` keeps DMs forever.
+ *
+ * A thread here is not a row — it is every DM between two accounts — so a thread whose DMs
+ * have all been pruned simply stops appearing in the inbox, with nothing left behind. Its
+ * reactions live in `mica_account_reactions`, keyed by table name rather than a foreign key,
+ * which is why they are named here and not found from a declaration. An open report on a DM
+ * holds its whole thread, and one on an account holds every DM that account sent or received.
+ */
+registerRetention({
+  label: 'micadms',
+  table: blabberDms.resolved.table,
+  convar: 'mica_dm_retention',
+  days: () => parseRetentionDays(GetConvar('mica_dm_retention', ''), 90, 'mica_dm_retention'),
+  dependents: [
+    {
+      table: 'mica_account_reactions',
+      column: 'target_id',
+      scope: { column: 'target_table', value: blabberDms.resolved.table }
+    }
+  ],
+  holds: [
+    {
+      // An open report on an account holds every DM it sent or received.
+      sql: (row) =>
+        'EXISTS (SELECT 1 FROM `mica_reports` r WHERE r.`target_table` = ? ' +
+        `AND r.\`target_id\` IN (${row}.\`from_account\`, ${row}.\`to_account\`) ` +
+        `AND ${OPEN_REPORT})`,
+      params: [accountsService.resolved.table]
+    },
+    {
+      // An open report on one DM holds the whole thread between those two accounts, either
+      // direction. Through a DISTINCT derived table because it reads this table, which the
+      // prune's DELETE targets (MySQL error 1093).
+      sql: (row) =>
+        'EXISTS (SELECT 1 FROM (SELECT DISTINCT d.`from_account` AS `a`, d.`to_account` AS `b` ' +
+        'FROM `mica_reports` r JOIN `mica_blabber_dms` d ON d.`id` = r.`target_id` ' +
+        `WHERE r.\`target_table\` = ? AND ${OPEN_REPORT}) held ` +
+        `WHERE (held.\`a\` = ${row}.\`from_account\` AND held.\`b\` = ${row}.\`to_account\`) ` +
+        `OR (held.\`a\` = ${row}.\`to_account\` AND held.\`b\` = ${row}.\`from_account\`))`,
+      params: [blabberDms.resolved.table]
+    }
+  ]
 });
 
 const app = blabberDms.app;

@@ -718,7 +718,9 @@ set mica_blabber_edit_window 900
 set mica_notification_retention 30
 set mica_restore_window_days 30
 set mica_media_quota_mb 64
-set mica_media_retention 0
+set mica_media_retention 365
+set mica_message_retention 180
+set mica_dm_retention 90
 set mica_orphan_owner_table ""
 setr mica_addon_hosts ""
 setr mica_addon_catalog ""
@@ -761,7 +763,9 @@ set mica_default_contacts ""
 | `mica_restore_window_days`         | integer, days                                           | `30`                   | How long a deleted Contact/Note/Media stays restorable                                                                                |
 | `mica_camera_quality`              | integer, 1-100                                          | `95`                   | Encode quality of a stored photo (needs `setr`)                                                                                       |
 | `mica_media_quota_mb`              | integer, MiB                                            | `64`                   | Storage one player's photo library may occupy                                                                                         |
-| `mica_media_retention`             | integer, days                                           | `0` (off)              | How long stored media is kept, if you want a limit                                                                                    |
+| `mica_media_retention`             | integer, days, or `off`                                 | `365`                  | How long stored media is kept; a photo still attached to a message, blab or listing is never removed                                  |
+| `mica_message_retention`           | integer, days, or `off`                                 | `180`                  | How long text messages are kept                                                                                                       |
+| `mica_dm_retention`                | integer, days, or `off`                                 | `90`                   | How long Blabber direct messages are kept                                                                                             |
 | `mica_orphan_owner_table`          | `table.column`                                          | empty (off)            | Overrides which table the orphan sweep checks against                                                                                 |
 | `mica_addon_hosts`                 | hostname list                                           | empty (off)            | Hosts a Store add-on may be fetched from                                                                                              |
 | `mica_addon_catalog`               | https URL                                               | empty (off)            | The add-on catalog the Store lists                                                                                                    |
@@ -772,14 +776,15 @@ set mica_default_contacts ""
 | `mica_default_dock`                | comma-separated app ids, positional                     | empty (built-in dock)  | Dock a phone starts with, until its player rearranges it                                                                              |
 | `mica_default_contacts`            | JSON array, or a path to one                            | empty (off)            | Contacts seeded once into every new phone                                                                                             |
 
-Twenty of the twenty-four are read on every use rather than cached, so changing
-one with `set` from the live console takes effect on the next request and needs
-no restart. `mica_blabber_edit_window` and `mica_notification_retention` are
-read once at resource start, so a change to either needs a restart, for the
-reasons given under them below. `mica_media_retention` and
-`mica_orphan_owner_table` are the third and fourth exceptions and the mildest:
-both are read whenever the orphan sweep runs, which is at resource start and
-again on `micamedia prune`, so a change to either takes effect on the next sweep
+Most are read on every use rather than cached, so changing one with `set` from
+the live console takes effect on the next request and needs no restart.
+`mica_blabber_edit_window` and `mica_notification_retention` are read once at
+resource start, so a change to either needs a restart, for the reasons given
+under them below. The three content-retention convars (`mica_media_retention`,
+`mica_message_retention`, `mica_dm_retention`) are read whenever a prune runs,
+which is at resource start, every six hours and on `micamedia prune`, and
+`mica_orphan_owner_table` whenever the orphan sweep runs, at resource start and
+on `micamedia prune`, so a change to any of them takes effect on the next run
 rather than needing a restart. `mica_camera_quality` is read on every use as
 well, but the phone only asks for it when the Camera app comes to the
 foreground, so a change reaches a player the next time they open the camera
@@ -993,19 +998,27 @@ the convar is invisible until the resource restarts.
   for something in the write path; the resolved value is printed at resource
   start so "off" is something you read rather than discover. Set it to 0 for no
   ceiling.
-- **`mica_media_retention`** — how many days of stored media to keep. **Off by
-  default, and it deletes rows permanently when you turn it on**, so read this
-  before setting it. With a value, micaOS deletes every `mica_media` row older
-  than that many days — at resource start, and again whenever you run
-  `micamedia prune` from the console. It covers every row, including ones a
-  player still has in their gallery, so the sentence to hold in mind is exactly
-  "photos older than N days are removed" with no exceptions in it. It is a
-  different thing from a player deleting a photo, which marks the row deleted
-  and keeps every byte it had — which is why a busy server can still grow past
-  the sum of every player's quota, and why this knob exists at all. Run
-  `micamedia` first: it reports the table's size and its biggest holders,
-  changes nothing, and is how you decide whether you need this. A non-numeric or
-  non-positive value means off.
+- **Content retention: `mica_message_retention` (180 days), `mica_dm_retention`
+  (90) and `mica_media_retention` (365) (MICA-167).** Text messages, Blabber
+  direct messages and stored media older than the window are deleted permanently
+  -- media is stored in the row, so the photo is gone with it. `0` or `off`
+  keeps that content forever; a value micaOS cannot read falls back to the
+  default with a warning. The prune runs at resource start and every six hours,
+  500 rows at a time and at most 100,000 rows per table per run, and
+  `micamedia prune` runs it on demand. What is never deleted: anything under an
+  open report -- the reported message's whole conversation, the reported DM's
+  whole thread, and every DM of a reported account -- until the report is
+  resolved; and any photo still attached to a message, blab or listing that
+  exists. A conversation itself is never removed, only its old messages.
+  **Nothing is deleted on the first start with a window on.** The console says
+  how many rows would go and at what time, 24 hours later, and names the convar
+  that stops it; setting it to `0` before then keeps everything. Shortening a
+  window later gets its own 24-hour notice, and so does turning retention off
+  and back on. A table is not pruned at all until `micaschema apply` has added
+  its `created_at` index, and the console says so. The notices are recorded as
+  `retention:<table>:<days>d` rows in `mica_schema_migrations`; deleting one
+  restarts that table's notice. Run `micamedia` first to see how large the media
+  table is.
 
 Two things about media storage that are not convars, since this is where you
 will be looking if the table is bigger than you expected. micaOS removes a
