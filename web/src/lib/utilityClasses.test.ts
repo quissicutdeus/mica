@@ -99,48 +99,142 @@ function lineOf(source: string, index: number): number {
   return source.slice(0, index).split('\n').length;
 }
 
-/** Every statically-known class token referenced from `.svelte` markup. */
-function findClassUsages(files: string[]): ClassUsage[] {
-  const usages: ClassUsage[] = [];
+interface ComputedClass {
+  file: string;
+  line: number;
+  expr: string;
+}
 
-  // `class="..."` (may embed `{expr}`) and `class={\`...\`}` (may embed `${expr}`).
-  const classAttrRe = /\bclass="((?:[^"\\]|\\.)*)"/g;
-  const classTemplateRe = /\bclass=\{`((?:[^`\\]|\\.)*)`\}/g;
-  // `class:token` / `class:token={cond}` — Svelte's boolean class directive.
-  const classDirectiveRe = /\bclass:([a-zA-Z][\w-]*)/g;
+/** Index of the `}` closing the `{` at `open`, skipping string literals; -1 if unbalanced. */
+function closeBrace(text: string, open: number): number {
+  let depth = 0;
+  for (let i = open; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === "'" || ch === '"' || ch === '`') {
+      for (i++; i < text.length && text[i] !== ch; i++) if (text[i] === '\\') i++;
+    } else if (ch === '{') depth++;
+    else if (ch === '}' && --depth === 0) return i;
+  }
+  return -1;
+}
 
-  for (const file of files) {
-    // Strip HTML/Svelte template comments and JS/TS block comments before scanning —
-    // otherwise a doc comment that *mentions* `class="..."` (this file has one) reads
-    // as a real usage. Replaced with a matching run of newlines, not deleted outright,
-    // so every later line number is still accurate against the original file.
-    const blankComment = (match: string) => '\n'.repeat((match.match(/\n/g) ?? []).length);
-    const source = fs
-      .readFileSync(file, 'utf8')
-      .replace(/<!--[\s\S]*?-->/g, blankComment)
-      .replace(/\/\*[\s\S]*?\*\//g, blankComment);
-    const rel = path.relative(WEB_SRC, file);
-
-    for (const re of [classAttrRe, classTemplateRe]) {
-      re.lastIndex = 0;
-      for (const match of source.matchAll(re)) {
-        // Template literals use `${expr}`; dropping the `$` before stripping lets the
-        // same brace-depth walk handle both that and Svelte's plain `{expr}`.
-        const staticText = stripInterpolations(match[1].replace(/\$\{/g, '{'));
-        const line = lineOf(source, match.index ?? 0);
-        for (const token of staticText.split(/\s+/).filter(Boolean)) {
-          usages.push({ file: rel, line, token });
-        }
-      }
+/**
+ * Class tokens a JS expression can produce, and whether part of it is computed.
+ *
+ * Every string literal is read as a class list (`'h-24 w-24'`), a template literal
+ * included, and so is a literal nested in a template's `${}`. A literal on either side of
+ * a comparison operator (`x === 'settling'`) or inside an array tested with `.includes()`
+ * is a value being compared, not a class, and is skipped. An expression is *computed*
+ * when a token is glued to an interpolation (`p-${n}`) or it has no literal at all
+ * (`class={cls}`, `{fn(x)}`): those tokens are invisible here, so the caller counts them.
+ */
+function readExpression(source: string): { tokens: string[]; computed: boolean } {
+  const expr = source.replace(/\[[^[\]]*\]\s*\.(?:includes|indexOf|some|every)\(/g, (m) =>
+    ' '.repeat(m.length)
+  );
+  const tokens: string[] = [];
+  let computed = false;
+  let literals = 0;
+  for (let i = 0; i < expr.length; i++) {
+    const quote = expr[i];
+    if (quote !== "'" && quote !== '"' && quote !== '`') continue;
+    const start = i;
+    let body = '';
+    for (i++; i < expr.length && expr[i] !== quote; i++) {
+      if (expr[i] === '\\') {
+        body += expr[++i] ?? '';
+      } else if (quote === '`' && expr[i] === '$' && expr[i + 1] === '{') {
+        const end = closeBrace(expr, i + 1);
+        const inner = readExpression(expr.slice(i + 2, end === -1 ? expr.length : end));
+        tokens.push(...inner.tokens);
+        if (inner.computed) computed = true;
+        body += '\0';
+        i = end === -1 ? expr.length : end;
+      } else body += expr[i];
     }
+    literals++;
+    const before = expr.slice(0, start).trimEnd();
+    const after = expr.slice(i + 1).trimStart();
+    if (/[=!]=$/.test(before) || /^[=!]==?/.test(after)) continue;
+    for (const token of body.split(/\s+/).filter(Boolean)) {
+      if (token === '\0') continue;
+      if (token.includes('\0')) computed = true;
+      else tokens.push(token);
+    }
+  }
+  if (literals === 0) computed = true;
+  return { tokens, computed };
+}
 
-    classDirectiveRe.lastIndex = 0;
-    for (const match of source.matchAll(classDirectiveRe)) {
-      usages.push({ file: rel, line: lineOf(source, match.index ?? 0), token: match[1] });
+/** Class tokens and computed expressions from one `.svelte` source (comments blanked). */
+function scanClasses(
+  source: string,
+  rel: string
+): { usages: ClassUsage[]; computed: ComputedClass[] } {
+  const usages: ClassUsage[] = [];
+  const computed: ComputedClass[] = [];
+  const add = (index: number, expr: string) => {
+    const line = lineOf(source, index);
+    const read = readExpression(expr);
+    for (const token of read.tokens) usages.push({ file: rel, line, token });
+    if (read.computed) computed.push({ file: rel, line, expr: expr.trim().slice(0, 70) });
+  };
+
+  // `class="..."`: static text plus any number of `{expr}` spans.
+  for (const match of source.matchAll(/\bclass="((?:[^"\\]|\\.)*)"/g)) {
+    const text = match[1];
+    const base = (match.index ?? 0) + match[0].indexOf('"') + 1;
+    let plain = '';
+    for (let i = 0; i < text.length; i++) {
+      if (text[i] !== '{') {
+        plain += text[i];
+        continue;
+      }
+      const end = closeBrace(text, i);
+      if (end === -1) break;
+      add(base + i, text.slice(i + 1, end));
+      plain += ' ';
+      i = end;
+    }
+    for (const token of plain.split(/\s+/).filter(Boolean)) {
+      usages.push({ file: rel, line: lineOf(source, match.index ?? 0), token });
     }
   }
 
-  return usages;
+  // `class={expr}`: the whole attribute is an expression (a template literal included).
+  for (const match of source.matchAll(/\bclass=\{/g)) {
+    const open = (match.index ?? 0) + match[0].length - 1;
+    const end = closeBrace(source, open);
+    if (end !== -1) add(open, source.slice(open + 1, end));
+  }
+
+  // `class:token` / `class:token={cond}` — Svelte's boolean class directive.
+  for (const match of source.matchAll(/\bclass:([a-zA-Z][\w-]*)/g)) {
+    usages.push({ file: rel, line: lineOf(source, match.index ?? 0), token: match[1] });
+  }
+
+  return { usages, computed };
+}
+
+/** Strips HTML/Svelte and JS block comments, keeping newlines so line numbers hold. */
+function blankComments(text: string): string {
+  const blank = (match: string) => '\n'.repeat((match.match(/\n/g) ?? []).length);
+  return text.replace(/<!--[\s\S]*?-->/g, blank).replace(/\/\*[\s\S]*?\*\//g, blank);
+}
+
+/** Every class token referenced from `.svelte` markup, plus the expressions we cannot read. */
+function findClassUsages(files: string[]): { usages: ClassUsage[]; computed: ComputedClass[] } {
+  const usages: ClassUsage[] = [];
+  const computed: ComputedClass[] = [];
+  for (const file of files) {
+    const found = scanClasses(
+      blankComments(fs.readFileSync(file, 'utf8')),
+      path.relative(WEB_SRC, file)
+    );
+    usages.push(...found.usages);
+    computed.push(...found.computed);
+  }
+  return { usages, computed };
 }
 
 /** `tile: { bg: 'bg-x', fg: 'text-y' }` in a manifest, as the two classes it names. */
@@ -187,7 +281,10 @@ describe('app-utilities.css coverage', () => {
     const manifestFiles = walk(path.join(WEB_SRC, 'apps'), ['.ts']).filter((f) =>
       f.endsWith('manifest.ts')
     );
-    const usages = [...findClassUsages(svelteFiles), ...findManifestTileUsages(manifestFiles)];
+    const usages = [
+      ...findClassUsages(svelteFiles).usages,
+      ...findManifestTileUsages(manifestFiles)
+    ];
 
     const missing = usages.filter((u) => !defined.has(u.token));
 
@@ -197,6 +294,60 @@ describe('app-utilities.css coverage', () => {
         `${missing.length} class token(s) with no matching rule in app.css / ` +
           `app-utilities.css / app-reset.css — this repo has no Tailwind build, so an ` +
           `unmatched class silently renders as nothing:\n${report}`
+      );
+    }
+  });
+});
+
+/**
+ * Computed class expressions (`class={cls}`, `{fn(x)}`, a template with `${}`) cannot be
+ * read by a scan, so their tokens go unchecked. A check that is silent about what it
+ * cannot see reads as a pass, so the count is pinned: it may fall, and a rise fails with
+ * the new sites listed. Lower this number when you remove one; never raise it to silence
+ * the test without looking at the sites it prints.
+ */
+const COMPUTED_CLASS_RATCHET = 35;
+
+describe('class expressions inside markup', () => {
+  const defined = loadDefinedClasses();
+  const missingIn = (source: string) =>
+    scanClasses(source, 'fixture.svelte')
+      .usages.filter((u) => !defined.has(u.token))
+      .map((u) => u.token);
+
+  it('checks string literals inside a ternary (the MICA-245 `w-24` case)', () => {
+    const bad = `<div class="rounded {size === '2x2' ? 'h-12 w-24' : 'h-12 w-12'}"></div>`;
+    expect(missingIn(bad)).toEqual(['w-24']);
+    const fixed = `<div class="rounded {size === '2x2' ? 'h-12 w-full' : 'h-12 w-12'}"></div>`;
+    expect(missingIn(fixed)).toEqual([]);
+  });
+
+  it('reads "", template literals without interpolation, and class={...}', () => {
+    const src = '<i class={on ? "no-such-a" : `no-such-b`}></i>';
+    expect(missingIn(src)).toEqual(['no-such-a', 'no-such-b']);
+  });
+
+  it('skips a literal that is only compared, not applied', () => {
+    expect(missingIn(`<i class="flex {state === 'settling' ? 'flex' : ''}"></i>`)).toEqual([]);
+  });
+
+  it('reports a genuinely computed class instead of skipping it silently', () => {
+    const src = '<i class={cls}></i><i class="flex {fn(x)}"></i><i class={`p-${n} flex`}></i>';
+    const { computed, usages } = scanClasses(src, 'fixture.svelte');
+    expect(computed).toHaveLength(3);
+    expect(usages.map((u) => u.token)).toContain('flex');
+  });
+
+  it(`leaves at most ${COMPUTED_CLASS_RATCHET} computed class expressions unchecked`, () => {
+    const { computed } = findClassUsages(walk(WEB_SRC, ['.svelte']));
+    if (computed.length > COMPUTED_CLASS_RATCHET) {
+      const report = computed.map((c) => `  ${c.file}:${c.line} — ${c.expr}`).join('\n');
+      expect.fail(
+        `${computed.length} computed class expression(s), ratchet is ` +
+          `${COMPUTED_CLASS_RATCHET}. Their tokens are invisible to this scan, so a ` +
+          `nonexistent class inside one renders as nothing. Use string literals in the ` +
+          `expression so they can be checked, or (if genuinely dynamic) raise the ratchet ` +
+          `deliberately:\n${report}`
       );
     }
   });

@@ -500,7 +500,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             mode
               ? 'shadow-elevation-1 scale-105 border border-yellow-400/40 bg-black/60 text-yellow-300'
               : mode === 'VIDEO'
-                ? 'text-on-surface-variant cursor-not-allowed opacity-40'
+                ? 'text-on-surface-variant disabled:cursor-not-allowed opacity-40'
                 : 'text-on-surface hover:text-on-surface cursor-pointer'}"
           >
             {mode}

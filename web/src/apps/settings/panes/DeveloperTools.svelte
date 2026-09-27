@@ -234,7 +234,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             onclick={() => setSignal(level)}
             class="text-label-small cursor-pointer rounded-chip border py-1.5 transition-all {$signalLevel ===
             level
-              ? 'border-emerald-500 bg-emerald-600 text-white'
+              ? 'border-emerald-800 bg-emerald-600 text-white'
               : 'border-outline-variant bg-surface text-on-surface-variant hover:bg-surface-container-high'} duration-short ease-standard"
           >
             {plural('settings.devtools.bars', level)}

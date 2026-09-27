@@ -107,7 +107,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             alt={$t('media.captureAlt', { id: photo.id })}
             class="transition-opacity {isSelectionMode && selectedIds.has(photo.id)
               ? 'opacity-50'
-              : 'group-hover:opacity-80'} duration-short ease-standard"
+              : 'group-hover:opacity-90'} duration-short ease-standard"
           />
           {#if isSelectionMode}
             <div
