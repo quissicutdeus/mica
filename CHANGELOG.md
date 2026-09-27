@@ -62,6 +62,11 @@ attached to a message, blab or listing. `micaschema apply` adds a `created_at`
 key to `mica_messages`, `mica_blabber_dms` and `mica_media`; until you run it
 those tables are not pruned at all, and the console says so.
 
+**A contact can ring with one of your own sounds; run `micaschema apply`
+(migration `0005_contact_ringtone_holds_owner_sounds`, MICA-256).** It changes
+`mica_contacts.ringtone` from a list of the five built-in tones to a
+`varchar(54)`, keeping every existing value, and a second run changes nothing.
+
 **On ESX or standalone, run `micaschema apply` after updating: migration
 `0004_citizenid_widens_on_esx` widens every citizenid column to 60 characters
 (MICA-289).** es_extended's multicharacter identifiers (`char1:license:<hash>`)
@@ -506,6 +511,20 @@ than left. Run `micaschema apply` after updating; until you do, the export fails
 with `internal_error` and the rest of Messages is unaffected.
 
 ### Added
+
+**A control center of its own (MICA-247).** Pull down from the right side of the
+status bar, or tap Open Control Center in the notification shade: cellular,
+Bluetooth, airplane mode, flashlight and do not disturb, plus brightness, volume
+and what is playing. Players reorder and hide the toggles, per character. Store
+add-ons can add up to three toggles of their own, shown in a section under the
+add-on's name, never mixed in with the built-in ones. No owner action.
+
+**Your own ringtones and notification sounds (MICA-256).** Put audio files in
+`branding/sounds/` and restart: they appear beside the built-in tones in
+Settings > Sound, which now also has a separate notification tone, and in a new
+ringtone picker on each contact. A call from a contact rings with that contact's
+tone. See README's "Your own images and sounds" for formats and limits; the
+contact ringtone needs the migration above.
 
 **Home-screen widgets (MICA-245).** Long-press an empty spot on the home screen
 to enter edit mode, then Add widget: a clock and date, battery and signal, or
@@ -1070,6 +1089,22 @@ Everything above is written for a server owner. This part is not. It is for
 somebody maintaining a `core: false` add-on outside this repo, and it answers
 one question: does that bundle still compile against this release, and does its
 manifest still ask for the right things.
+
+**`useControlCenter(appId)` is new, behind the new `control-center` permission
+(MICA-247).** Put up to three switches of your own in the control center, each
+with an `id`, a `label`, an `icon` named from `@mica/sdk`'s icons, a starting
+`active` state and an `onToggle`. A tap runs your handler; report the new state
+with `setToggleActive`. They show under your app's name, and come down when the
+component unmounts or your frame goes away.
+
+**Tones are strings now (MICA-256).** `useSystemHardware` gains
+`notificationTone` and `notificationToneChoices`, and `useSystemHardwareWrite`
+gains `previewNotificationTone` (under `system-hardware` /
+`system-hardware-write`). A ringtone id is any string -- a built-in id or
+`owner:<name>` for a server owner's own sound -- so read the choices from
+`ringtoneChoices` / `notificationToneChoices` rather than matching names.
+`'default'` is always a valid notification tone and is not listed. Setting
+either tone stays with built-in apps.
 
 **An add-on can ship a home-screen widget (MICA-245).** Declare
 `widget: { sizes: ['2x1'] }` (or `'2x2'`, or both) in the manifest and add

@@ -207,7 +207,7 @@ CREATE TABLE IF NOT EXISTS `mica_contacts` (
     `phone` varchar(20) NOT NULL,
     `email` varchar(100) DEFAULT NULL,
     `avatar` mediumblob DEFAULT NULL,
-    `ringtone` ENUM('classic', 'chime', 'beacon', 'pulse', 'ascent') DEFAULT NULL,
+    `ringtone` varchar(54) DEFAULT NULL,
     `favorite` tinyint(1) DEFAULT 0,
     `status` ENUM('active', 'deleted', 'moderated') NOT NULL DEFAULT 'active',
     `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -751,4 +751,5 @@ INSERT IGNORE INTO `mica_schema_migrations` (`id`) VALUES
   ('0001_phone_numbers_follow_the_phone'),
   ('0002_phone_data_follows_the_phone'),
   ('0003_battery_follows_the_phone'),
-  ('0004_citizenid_widens_on_esx');
+  ('0004_citizenid_widens_on_esx'),
+  ('0005_contact_ringtone_holds_owner_sounds');

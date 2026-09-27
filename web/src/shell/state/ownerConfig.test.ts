@@ -42,7 +42,8 @@ describe('ownerConfig store', () => {
       themeSeed: null,
       defaultFrame: 'classic',
       wallpapers: [],
-      brandLogo: null
+      brandLogo: null,
+      sounds: []
     });
     expect(get(disabledAppIds)).toEqual(new Set());
   });
@@ -77,7 +78,8 @@ describe('ownerConfig store', () => {
       themeSeed: null,
       defaultFrame: 'classic',
       wallpapers: [],
-      brandLogo: null
+      brandLogo: null,
+      sounds: []
     });
   });
 });

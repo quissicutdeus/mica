@@ -17,11 +17,25 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     TrashIcon,
     formatRelativeTime,
     useLocale,
+    useSystemHardware,
+    useSystemHardwareWrite,
     type Contact,
     type UIMessage
   } from '@mica/sdk';
 
   const { t } = useLocale();
+  const { ringtoneChoices } = useSystemHardware();
+  const { previewRingtone } = useSystemHardwareWrite();
+
+  /**
+   * Picking a tone plays it, as in Settings > Sound. `null` is "System default": the
+   * contact rings with whatever the player chose there. A stored id whose owner sound has
+   * since been removed shows no row selected and rings the default.
+   */
+  const chooseRingtone = (id: string | null) => {
+    contact.ringtone = id;
+    if (id) previewRingtone(id);
+  };
 
   /**
    * One contact: the header, the action row, and either the details or the edit form.
@@ -184,6 +198,25 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <input type="checkbox" bind:checked={contact.favorite} />
           <span>{$t('contacts.favorite')}</span>
         </label>
+        <div class="flex flex-col gap-1.5" role="group" aria-label={$t('contacts.ringtone')}>
+          <span class="text-on-surface-variant text-body-small tracking-wider uppercase"
+            >{$t('contacts.ringtone')}</span
+          >
+          {#each [{ id: null, label: $t('contacts.ringtoneDefault') }, ...$ringtoneChoices] as choice (choice.id ?? 'default')}
+            <button
+              type="button"
+              data-testid="contact-ringtone-option"
+              onclick={() => chooseRingtone(choice.id)}
+              aria-pressed={(contact.ringtone ?? null) === choice.id}
+              class="text-body-small w-full cursor-pointer rounded-chip border px-3 py-1.5 text-left transition-all {(contact.ringtone ??
+                null) === choice.id
+                ? 'border-primary bg-primary-container text-on-primary-container'
+                : 'border-outline-variant bg-surface text-on-surface-variant hover:bg-surface-container-high'} duration-short ease-standard"
+            >
+              {choice.label}
+            </button>
+          {/each}
+        </div>
         <Button
           class="w-full"
           onclick={onsave}

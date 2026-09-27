@@ -147,6 +147,13 @@ export abstract class Repository<T> {
       });
     }
 
+    if (rule.accepts && !rule.accepts(String(value))) {
+      throw new PlayerFacingError(`'${column}' is not a value this server accepts.`, {
+        key: 'server.repository.notAccepted',
+        params: { column }
+      });
+    }
+
     if (rule.type === 'int' && typeof value === 'number' && !Number.isInteger(value)) {
       throw new PlayerFacingError(`'${column}' must be a whole number.`, {
         key: 'server.repository.mustBeInteger',

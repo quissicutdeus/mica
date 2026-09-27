@@ -6,6 +6,8 @@ import { writable, derived, get } from 'svelte/store';
 import { usePersisted } from '../../../../sdk/host/usePersisted';
 import { isBatteryDead } from './charge';
 import { isBrowser } from '@mica/sdk';
+import { isOwnerSoundId, isRingtoneValue } from '@mica/shared/ownerConfig';
+import { ownerConfig } from './ownerConfig';
 import type {
   RingMode,
   RingModeChoice,
@@ -207,8 +209,16 @@ const RINGTONE_BY_ID = new Map<RingtoneId, RingtoneChoice>(
   RINGTONE_CHOICES.map((choice) => [choice.id, choice])
 );
 
+/**
+ * A stored choice is sanitized when it is read, which can be before `shell:ownerConfig` has
+ * answered — so an `owner:` id is kept on shape alone (`shared/ownerConfig.ts`'s
+ * `isRingtoneValue`, the same check the server holds a contact's column to) and resolved
+ * when it plays. Checking it against the live list here would wipe the player's pick on
+ * every cold start, and again whenever the owner briefly removes a file — a missing sound
+ * plays the built-in default instead.
+ */
 const sanitizeRingtone = (value: unknown): RingtoneId =>
-  RINGTONE_BY_ID.has(value as RingtoneId) ? (value as RingtoneId) : 'classic';
+  isRingtoneValue(value) ? value : 'classic';
 
 export const ringtone = usePersisted<RingtoneId>('settings', 'ringtone', 'classic', {
   sanitize: sanitizeRingtone
@@ -226,6 +236,74 @@ export const setRingtone = (id: RingtoneId) => ringtone.set(sanitizeRingtone(id)
 export const RINGTONE_OPTIONS: readonly RingtoneOption[] = RINGTONE_CHOICES.map(
   ({ id, label }) => ({ id, label })
 );
+
+/** The notification chime the phone has always played; the one a notification tone falls back to. */
+export const NOTIFICATION_TONE_DEFAULT = 'default';
+
+const sanitizeNotificationTone = (value: unknown): string =>
+  isOwnerSoundId(value) ? value : NOTIFICATION_TONE_DEFAULT;
+
+/**
+ * The chime for a notification, chosen apart from the ring. MICA-256.
+ *
+ * Built-in there is only the one chime, so the list is that plus whatever the owner ships.
+ */
+export const notificationTone = usePersisted<string>(
+  'settings',
+  'notificationTone',
+  NOTIFICATION_TONE_DEFAULT,
+  { sanitize: sanitizeNotificationTone }
+);
+
+export const setNotificationTone = (id: string) =>
+  notificationTone.set(sanitizeNotificationTone(id));
+
+const ownerOptions = (config: { sounds?: readonly { id: string; label: string }[] }) =>
+  (config.sounds ?? []).map(({ id, label }) => ({ id, label }));
+
+/** Built-in ringtones followed by the owner's sounds. Ids and labels only. */
+export const ringtoneChoices = derived(ownerConfig, ($config): readonly RingtoneOption[] => [
+  ...RINGTONE_OPTIONS,
+  ...(ownerOptions($config) as unknown as RingtoneOption[])
+]);
+
+/**
+ * The owner's notification sounds only — never a synthetic "Default" row. That entry is
+ * a real UI string, not a shape this store owns; `Sound.svelte` prepends its own,
+ * translated one, the same way `ContactDetails.svelte`'s ringtone picker prepends
+ * "System default" rather than asking a shell-state module to carry `useLocale`.
+ */
+export const notificationToneChoices = derived(
+  ownerConfig,
+  ($config): readonly { readonly id: string; readonly label: string }[] => ownerOptions($config)
+);
+
+/**
+ * `GetParentResourceName()`, the same lookup `nui/transport.ts` makes, with the same
+ * `'mica'` fallback for a plain browser. Read fresh rather than cached at module load,
+ * so a test can stub `window.GetParentResourceName` per call.
+ */
+const currentResourceName = (): string =>
+  typeof window !== 'undefined' && window.GetParentResourceName
+    ? window.GetParentResourceName()
+    : 'mica';
+
+/**
+ * The URL an owner sound may be played from, or null. Only *this resource's* `cfx-nui`
+ * origin is ever fetched — not merely something shaped like one, which would let a sound
+ * id name any other resource on the same server and have this file `fetch` it — and a
+ * root-relative path is the plain-browser mock's equivalent. A protocol-relative
+ * `//host` or any other scheme is refused.
+ */
+export const ownerSoundUrl = (id: string): string | null => {
+  const sound = get(ownerConfig).sounds?.find((entry) => entry.id === id);
+  if (!sound) return null;
+  const url = sound.url;
+  if (url.startsWith(`https://cfx-nui-${currentResourceName()}/`)) return url;
+  if (url.startsWith('/') && !url.startsWith('//') && !url.includes('\\')) return url;
+  console.warn(`Owner sound ${id} refused: not this resource's cfx-nui URL`);
+  return null;
+};
 
 export const volumeHudVisible = writable<boolean>(false);
 
@@ -313,9 +391,70 @@ const showVolumeHud = () => {
   }, 1500);
 };
 
+type OwnerKind = 'ring' | 'notify';
+
+/** How long a fetch or decode failure is remembered before the next attempt may retry it. */
+const OWNER_SOUND_RETRY_MS = 30_000;
+
 class SoundService {
   private audioCtx: AudioContext | null = null;
+  private readonly buffers = new Map<string, AudioBuffer>();
+  private readonly pending = new Map<string, Promise<AudioBuffer | null>>();
+  /** URL → the `Date.now()` a fetch or decode last failed at, so a retry is timed, not never. */
+  private readonly failed = new Map<string, number>();
+  private readonly playing = new Map<OwnerKind, AudioBufferSourceNode>();
   private warmingListenersAttached = false;
+  /**
+   * The most recently auditioned owner sound that is not also the selected ring or
+   * notification tone — the one buffer `trimBuffers` keeps beyond those two, so tapping
+   * through a whole list of choices does not cache every one of them at full PCM size.
+   */
+  private previewUrl: string | null = null;
+  /**
+   * Bumped by `stopRing`. A ring's cold-load `.then` captures the generation it started
+   * under and checks it again before ever calling `start` — if the call has since ended,
+   * the generation has moved and the tone must not begin at all, not even to fall back to
+   * the built-in default (MICA-256 review: a decode that outlives the call must play
+   * nothing, because "nothing" is the only state a call that already ended can be in).
+   */
+  private ringGeneration = 0;
+
+  constructor() {
+    // A stale failure must not survive an owner replacing the very file that failed;
+    // trimBuffers' own picture of what merits keeping changes with it too.
+    ownerConfig.subscribe(() => {
+      this.failed.clear();
+      this.trimBuffers();
+    });
+    ringtone.subscribe(() => this.trimBuffers());
+    notificationTone.subscribe(() => this.trimBuffers());
+  }
+
+  /**
+   * Every owner-sound buffer this session has any reason to hold: the selected ring and
+   * notification tones, plus at most one more for whatever was last previewed. A decoded
+   * buffer is the whole file in PCM — tens of MB is ordinary for a few seconds of audio —
+   * so a cache keyed only by "have we ever fetched this" grows without bound across a
+   * session that pages through Settings' picker or an add-on auditioning every choice
+   * through `previewRingtone`.
+   */
+  private keepUrls(): ReadonlySet<string> {
+    const keep = new Set<string>();
+    for (const id of [get(ringtone), get(notificationTone)]) {
+      if (!isOwnerSoundId(id)) continue;
+      const url = ownerSoundUrl(id);
+      if (url) keep.add(url);
+    }
+    if (this.previewUrl) keep.add(this.previewUrl);
+    return keep;
+  }
+
+  private trimBuffers(): void {
+    const keep = this.keepUrls();
+    for (const url of this.buffers.keys()) {
+      if (!keep.has(url)) this.buffers.delete(url);
+    }
+  }
 
   private getAudioContext(): AudioContext | null {
     if (typeof window === 'undefined') return null;
@@ -354,6 +493,8 @@ class SoundService {
     if (this.warmingListenersAttached) return;
     this.warmingListenersAttached = true;
 
+    void this.prefetch();
+
     const unlock = () => {
       const activeCtx = this.getAudioContext();
       if (activeCtx && activeCtx.state === 'suspended') {
@@ -369,7 +510,126 @@ class SoundService {
     window.addEventListener('touchstart', unlock, { once: true });
   }
 
-  public play(effect: SoundEffect): void {
+  /** Decode the chosen owner sounds ahead of the first ring, so it is not late. */
+  public async prefetch(): Promise<void> {
+    const ctx = this.getAudioContext();
+    if (!ctx) return;
+    for (const id of [get(ringtone), get(notificationTone)]) {
+      if (!isOwnerSoundId(id)) continue;
+      const url = ownerSoundUrl(id);
+      if (url) await this.loadBuffer(ctx, url);
+    }
+  }
+
+  /**
+   * Fetch and decode an owner sound once. Null means it cannot be played, and stays null:
+   * a bad file warns the first time and is not retried on every notification.
+   */
+  private loadBuffer(ctx: AudioContext, url: string): Promise<AudioBuffer | null> {
+    const cached = this.buffers.get(url);
+    if (cached) return Promise.resolve(cached);
+    const failedAt = this.failed.get(url);
+    if (failedAt !== undefined && Date.now() - failedAt < OWNER_SOUND_RETRY_MS) {
+      return Promise.resolve(null);
+    }
+    const inflight = this.pending.get(url);
+    if (inflight) return inflight;
+    const job = (async () => {
+      try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const buffer = await ctx.decodeAudioData(await response.arrayBuffer());
+        this.buffers.set(url, buffer);
+        this.failed.delete(url);
+        this.trimBuffers();
+        return buffer;
+      } catch (e) {
+        console.warn(`Owner sound ${url} could not be played; using the built-in tone.`, e);
+        this.failed.set(url, Date.now());
+        return null;
+      } finally {
+        this.pending.delete(url);
+      }
+    })();
+    this.pending.set(url, job);
+    return job;
+  }
+
+  /**
+   * Play an owner sound, or `fallback` — never nothing. An unknown id, a refused URL, a
+   * failed fetch and an undecodable file all end in the built-in tone.
+   */
+  private playOwner(
+    ctx: AudioContext,
+    volume: number,
+    id: string,
+    kind: OwnerKind,
+    fallback: () => void
+  ): void {
+    const url = ownerSoundUrl(id);
+    if (!url) return fallback();
+    // Only 'ring' needs to outlive the call it started for — a notification chime is
+    // seconds long and never straddles an end-of-call race.
+    const generation = this.ringGeneration;
+    const start = (buffer: AudioBuffer) => {
+      this.playing.get(kind)?.stop();
+      const source = ctx.createBufferSource();
+      const gain = ctx.createGain();
+      source.buffer = buffer;
+      gain.gain.setValueAtTime(volume, ctx.currentTime);
+      source.connect(gain);
+      gain.connect(ctx.destination);
+      source.onended = () => {
+        if (this.playing.get(kind) === source) this.playing.delete(kind);
+      };
+      this.playing.set(kind, source);
+      source.start();
+    };
+    const cached = this.buffers.get(url);
+    if (cached) {
+      try {
+        start(cached);
+      } catch (e) {
+        console.warn('Owner sound failed to start; using the built-in tone.', e);
+        fallback();
+      }
+      return;
+    }
+    void this.loadBuffer(ctx, url).then((buffer) => {
+      if (get(soundMuted)) return;
+      // The call this ring was for has already ended (`stopRing` bumped the generation)
+      // — starting now, built-in fallback included, would ring a call nobody is on.
+      if (kind === 'ring' && generation !== this.ringGeneration) return;
+      try {
+        if (buffer) start(buffer);
+        else fallback();
+      } catch (e) {
+        console.warn('Owner sound failed to start; using the built-in tone.', e);
+        fallback();
+      }
+    });
+  }
+
+  /**
+   * Stop whatever owner sound is ringing right now, and disarm any cold-load still in
+   * flight for an earlier ring. Every call-toast end path calls this — accept, decline,
+   * expire and a plain dismiss (`shell/state/toast.ts`) — because nothing else does: an
+   * owner ringtone runs to the end of its own buffer otherwise, which for a multi-minute
+   * file means a call answered thirty seconds ago is still audibly ringing.
+   */
+  public stopRing(): void {
+    this.ringGeneration++;
+    const source = this.playing.get('ring');
+    if (!source) return;
+    this.playing.delete('ring');
+    try {
+      source.stop();
+    } catch {
+      // Already stopped or already finished; either way there is nothing left to stop.
+    }
+  }
+
+  public play(effect: SoundEffect, options?: { tone?: string | null }): void {
     if (get(soundMuted)) return;
     // The one gate. Every alerting sound in the phone reaches the speaker through here —
     // `toast.ts`'s four call sites and the `useSound` facet alike — so silencing it here
@@ -390,11 +650,19 @@ class SoundService {
         case 'camera':
           this.playCameraSound(ctx, volume);
           break;
-        case 'notification':
-          this.playNotificationSound(ctx, volume);
+        case 'notification': {
+          const tone = get(notificationTone);
+          if (isOwnerSoundId(tone)) {
+            this.playOwner(ctx, volume, tone, 'notify', () =>
+              this.playNotificationSound(ctx, volume)
+            );
+          } else {
+            this.playNotificationSound(ctx, volume);
+          }
           break;
+        }
         case 'ringtone':
-          this.playRingtone(ctx, volume, get(ringtone));
+          this.playRingtoneId(ctx, volume, options?.tone || get(ringtone));
           break;
       }
     } catch (e) {
@@ -460,14 +728,50 @@ class SoundService {
    */
   public preview(id: RingtoneId): void {
     if (get(soundMuted)) return;
+    this.trackPreview(id);
     const ctx = this.getAudioContext();
     if (!ctx) return;
 
     try {
-      this.playRingtone(ctx, get(soundVolume), id);
+      this.playRingtoneId(ctx, get(soundVolume), id);
     } catch (e) {
       console.error('Audio playback error:', e);
     }
+  }
+
+  /** Audition a notification tone from Settings; answers to mute and volume, not the ringer. */
+  public previewNotification(id: string): void {
+    if (get(soundMuted)) return;
+    this.trackPreview(id);
+    const ctx = this.getAudioContext();
+    if (!ctx) return;
+    try {
+      const fallback = () => this.playNotificationSound(ctx, get(soundVolume));
+      if (isOwnerSoundId(id)) this.playOwner(ctx, get(soundVolume), id, 'notify', fallback);
+      else fallback();
+    } catch (e) {
+      console.error('Audio playback error:', e);
+    }
+  }
+
+  /**
+   * Remember the one owner sound this session most recently auditioned, so its buffer is
+   * the one `trimBuffers` keeps beyond the selected ring and notification tones — and evict
+   * before the new one even starts loading, rather than waiting for it to land, so paging
+   * through a whole list of choices never holds two previewed buffers at once.
+   */
+  private trackPreview(id: string): void {
+    this.previewUrl = isOwnerSoundId(id) ? ownerSoundUrl(id) : null;
+    this.trimBuffers();
+  }
+
+  /** A built-in pattern or an owner sound; an owner id that cannot play rings the default. */
+  private playRingtoneId(ctx: AudioContext, volume: number, id: string) {
+    if (isOwnerSoundId(id)) {
+      this.playOwner(ctx, volume, id, 'ring', () => this.playRingtone(ctx, volume, 'classic'));
+      return;
+    }
+    this.playRingtone(ctx, volume, id);
   }
 
   /**

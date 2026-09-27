@@ -13,7 +13,8 @@ export const DEFAULT_OWNER_CONFIG: OwnerConfig = {
   themeSeed: null,
   defaultFrame: 'classic',
   wallpapers: [],
-  brandLogo: null
+  brandLogo: null,
+  sounds: []
 };
 
 /**

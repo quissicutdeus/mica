@@ -18,16 +18,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     type NotificationConversationGroup
   } from './lib/notificationGrouping';
   import Avatar from '../../../sdk/ui/Avatar.svelte';
-  import AirplaneIcon from '../../../sdk/ui/icons/AirplaneIcon.svelte';
   import ArchiveIcon from '../../../sdk/ui/icons/ArchiveIcon.svelte';
-  import BluetoothIcon from '../../../sdk/ui/icons/BluetoothIcon.svelte';
   import CheckIcon from '../../../sdk/ui/icons/CheckIcon.svelte';
   import ChevronDownIcon from '../../../sdk/ui/icons/ChevronDownIcon.svelte';
   import CloseIcon from '../../../sdk/ui/icons/CloseIcon.svelte';
   import SettingsIcon from '../../../sdk/ui/icons/SettingsIcon.svelte';
-  import FlashlightIcon from '../../../sdk/ui/icons/FlashlightIcon.svelte';
-  import MoonIcon from '../../../sdk/ui/icons/MoonIcon.svelte';
-  import SignalIcon from '../../../sdk/ui/icons/SignalIcon.svelte';
   import TrashIcon from '../../../sdk/ui/icons/TrashIcon.svelte';
   import {
     clearAllNotifications,
@@ -39,67 +34,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     restoreNotifications,
     shadeNotifications
   } from '../services/notifications';
-  import { airplaneModeEnabled, toggleAirplaneMode } from './state/airplane';
-  import { bluetoothEnabled, toggleBluetooth } from './state/bluetooth';
   import { shadeDragRevealDistance } from './state/display';
-  import { flashlightEnabled, toggleFlashlight } from './state/flashlight';
-  import { dndEnabled } from './state/notificationPolicy';
   import { openApp } from './state/navigation';
-  import { cellServiceEnabled, toggleCellService } from './state/signal';
+  import { openControlCenter } from './state/controlCenter';
   import { closeShade, isShadeOpen, shadeDragPhase, shadeDragProgress } from './state/shade';
   import SwipeableRow from './SwipeableRow.svelte';
   import NowPlaying from './NowPlaying.svelte';
   import NearbyMusic from './NearbyMusic.svelte';
-
-  interface QuickToggle {
-    label: string;
-    /** Spelled out for the tooltip and the accessible name, when `label` is an abbreviation. */
-    name?: string;
-    icon: typeof SignalIcon;
-    enabled: boolean;
-    disabled?: boolean;
-    onToggle: () => void;
-  }
-
-  let quickToggles = $derived<QuickToggle[]>([
-    {
-      label: $t('shell.toggleNetwork'),
-      icon: SignalIcon,
-      enabled: $cellServiceEnabled,
-      disabled: $airplaneModeEnabled,
-      onToggle: toggleCellService
-    },
-    {
-      label: $t('shell.toggleBluetooth'),
-      icon: BluetoothIcon,
-      enabled: $bluetoothEnabled,
-      disabled: $airplaneModeEnabled,
-      onToggle: toggleBluetooth
-    },
-    {
-      label: $t('shell.toggleAirplane'),
-      icon: AirplaneIcon,
-      enabled: $airplaneModeEnabled,
-      onToggle: toggleAirplaneMode
-    },
-    {
-      // Beside airplane mode because that is where people reach for it, and deliberately
-      // not the same thing: airplane mode takes the phone off the network so nothing
-      // arrives, while this delivers everything and interrupts about none of it
-      // (`state/notificationPolicy.ts`). Abbreviated because five tiles share one row.
-      label: $t('shell.toggleDnd'),
-      name: $t('shell.toggleDndName'),
-      icon: MoonIcon,
-      enabled: $dndEnabled,
-      onToggle: () => dndEnabled.update((on) => !on)
-    },
-    {
-      label: $t('shell.toggleFlashlight'),
-      icon: FlashlightIcon,
-      enabled: $flashlightEnabled,
-      onToggle: toggleFlashlight
-    }
-  ]);
 
   let notifications = $derived($shadeNotifications);
 
@@ -271,6 +212,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   const openSettings = () => {
     openApp('settings');
     closeShade();
+  };
+
+  /** The switches moved to the control center (MICA-247); one step from here to there. */
+  const openControlCenterFromShade = () => {
+    closeShade();
+    openControlCenter();
   };
 
   const clearSingle = async (id: number) => {
@@ -476,6 +423,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <button
           type="button"
           class="bg-surface text-on-surface-variant hover:bg-surface-container hover:text-primary duration-short ease-standard rounded-full p-2 transition-colors"
+          onclick={openControlCenterFromShade}
+          title={$t('shell.controlCenter')}
+          aria-label={$t('shell.openControlCenter')}
+        >
+          <ChevronDownIcon class="size-icon-sm" />
+        </button>
+
+        <button
+          type="button"
+          class="bg-surface text-on-surface-variant hover:bg-surface-container hover:text-primary duration-short ease-standard rounded-full p-2 transition-colors"
           onclick={openSettings}
           title={$t('shell.settings')}
           aria-label={$t('shell.openSettings')}
@@ -493,26 +450,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <CloseIcon class="size-icon-sm" />
         </button>
       </div>
-    </div>
-
-    <!-- Quick Settings Tiles -->
-    <div class="mb-4 flex items-center justify-between gap-2 px-6">
-      {#each quickToggles as toggle (toggle.label)}
-        <button
-          type="button"
-          class="duration-short ease-standard flex flex-1 flex-col items-center gap-1 rounded-box p-2 transition-colors disabled:cursor-not-allowed disabled:opacity-40 {toggle.enabled
-            ? 'bg-primary-container text-on-primary-container'
-            : 'bg-surface text-on-surface-variant hover:bg-surface-container'}"
-          onclick={toggle.onToggle}
-          disabled={toggle.disabled}
-          title={toggle.name ?? toggle.label}
-          aria-label={toggle.name ?? toggle.label}
-          aria-pressed={toggle.enabled}
-        >
-          <toggle.icon class="size-icon-sm" />
-          <span class="text-label-small truncate">{toggle.label}</span>
-        </button>
-      {/each}
     </div>
 
     <!-- Now Playing.

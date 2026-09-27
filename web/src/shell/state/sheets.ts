@@ -3,8 +3,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { derived, get, type Readable } from 'svelte/store';
-import { isShadeOpen } from './shade';
-import { isDrawerOpen } from './appDrawer';
+import { closeShade, isShadeOpen } from './shade';
+import { closeDrawer, isDrawerOpen } from './appDrawer';
+import { closeControlCenter, isControlCenterOpen } from './controlCenter';
 
 /**
  * True while either full-screen sheet is open — the notification shade or the app drawer.
@@ -26,8 +27,8 @@ import { isDrawerOpen } from './appDrawer';
  * working while that sheet is open, which is precisely when this is true.
  */
 export const isAnySheetOpen: Readable<boolean> = derived(
-  [isShadeOpen, isDrawerOpen],
-  ([shade, drawer]) => shade || drawer
+  [isShadeOpen, isDrawerOpen, isControlCenterOpen],
+  ([shade, drawer, controlCenter]) => shade || drawer || controlCenter
 );
 
 /**
@@ -37,3 +38,19 @@ export const isAnySheetOpen: Readable<boolean> = derived(
  * `get` — this keeps the invariant one import instead of two at every call site.
  */
 export const anySheetOpen = (): boolean => get(isAnySheetOpen);
+
+/**
+ * Close whichever one of the three sheets is actually open, if any (MICA-247).
+ *
+ * `NowPlaying`/`NearbyMusic` live in both the shade and the control center and used to
+ * call `closeShade()` unconditionally before opening the Music app — right when they sit
+ * in the shade, wrong when they sit in the control center, whose `z-55` sheet would then
+ * stay up over the app it just opened. The app drawer cannot host either component, but
+ * is included anyway: this is "leave no sheet behind", not "close the shade specifically",
+ * and a future caller from the drawer should not have to rediscover that.
+ */
+export function closeAnyOpenSheet(): void {
+  if (get(isShadeOpen)) closeShade();
+  if (get(isDrawerOpen)) closeDrawer();
+  if (get(isControlCenterOpen)) closeControlCenter();
+}

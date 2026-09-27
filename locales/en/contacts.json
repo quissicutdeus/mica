@@ -43,5 +43,7 @@
   "viewAll": "View All ({count})",
   "you": "You",
   "noRecentMessages": "No recent messages with {name}.",
-  "sendTextMessage": "Send Text Message"
+  "sendTextMessage": "Send Text Message",
+  "ringtone": "Ringtone",
+  "ringtoneDefault": "System default"
 }

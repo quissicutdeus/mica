@@ -2519,7 +2519,14 @@ const mockRegistry: Record<string, MockHandler> = {
     themeSeed: mockThemeSeed,
     defaultFrame: mockDefaultFrame,
     wallpapers: ['/mock-branding/aurora.svg'],
-    brandLogo: '/mock-branding/logo.svg'
+    brandLogo: '/mock-branding/logo.svg',
+    sounds: [
+      {
+        id: 'owner:Sample-Tone',
+        label: 'Sample Tone',
+        url: '/mock-branding/sounds/Sample-Tone.wav'
+      }
+    ]
   }),
 
   /**

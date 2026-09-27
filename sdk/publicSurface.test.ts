@@ -988,7 +988,9 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     // MICA-249: streamer mode, a read-only flag every add-on that draws a picture may honour.
     'useStreamerMode',
     // MICA-286: an app answers the home search for its own rows.
-    'useSearchProvider'
+    'useSearchProvider',
+    // MICA-247: an app puts up to three switches of its own in the control center.
+    'useControlCenter'
   ],
   '@mica/sdk (add-on bundle)': [
     'ALL_PERMISSIONS',
@@ -1204,7 +1206,9 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     // MICA-249: streamer mode, a read-only flag every add-on that draws a picture may honour.
     'useStreamerMode',
     // MICA-286: an app answers the home search for its own rows.
-    'useSearchProvider'
+    'useSearchProvider',
+    // MICA-247: an app puts up to three switches of its own in the control center.
+    'useControlCenter'
   ],
   '@mica/sdk/app': ['defineApp', 'lazyBadge'],
   '@mica/sdk/core': [
@@ -1263,6 +1267,9 @@ const BASELINE_TYPE_EXPORTS: Record<string, string[]> = {
     'Catalog',
     'CatalogEntry',
     'Contact',
+    // MICA-247: `useControlCenter`'s return and the switch it takes.
+    'ControlCenter',
+    'ControlCenterToggle',
     'CreateListingInput',
     'CrudEvents',
     'CrudOptions',
@@ -1343,6 +1350,9 @@ const BASELINE_TYPE_EXPORTS: Record<string, string[]> = {
     'CancelTimer',
     'Catalog',
     'Contact',
+    // MICA-247: `useControlCenter`'s return and the switch it takes.
+    'ControlCenter',
+    'ControlCenterToggle',
     'CreateListingInput',
     'CrudEvents',
     'CrudOptions',
@@ -1540,6 +1550,8 @@ const BASELINE_VOCABULARIES: Record<string, string[]> = {
     'camera',
     'clock',
     'contacts',
+    // MICA-247.
+    'control-center',
     'devtools',
     'display',
     'highscores',
@@ -1663,6 +1675,8 @@ const BASELINE_HOOK_RETURNS: Record<string, string[]> = {
   useCamera: ['isPreviewingPhoto', 'isTakingPhoto'],
   useClock: ['formattedTime', 'is24Hour', 'time'],
   useClockWrite: ['setIs24Hour'],
+  // MICA-247.
+  useControlCenter: ['registerToggle', 'setToggleActive'],
   useContacts: [
     'addContact',
     'contactsStore',
@@ -1842,6 +1856,9 @@ const BASELINE_HOOK_RETURNS: Record<string, string[]> = {
     'cellServiceEnabled',
     'charge',
     'isBluetoothDiscoverable',
+    // MICA-256.
+    'notificationTone',
+    'notificationToneChoices',
     'ringMode',
     'ringModeChoices',
     'ringtone',
@@ -1853,8 +1870,11 @@ const BASELINE_HOOK_RETURNS: Record<string, string[]> = {
     'volumeStepChoices'
   ],
   useSystemHardwareWrite: [
+    // MICA-256.
+    'previewNotificationTone',
     'previewRingtone',
     'setCharge',
+    'setNotificationTone',
     'setRingMode',
     'setRingtone',
     'setSignal',

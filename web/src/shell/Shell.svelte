@@ -11,6 +11,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { migrateAppDrawerHintForExistingSaves } from './state/onboarding';
   import { appRegistryStore } from './state/registry';
   import { loadRemoteAppConfig } from './state/remoteAppConfig';
+  import { markControlCenterRegistryReady } from './state/controlCenter';
   import { refreshCapabilities } from '../services/capabilities';
   import { createNuiMessageRouter } from './nuiMessages';
   import { installDevHarness, seedBrowserPhone } from './devHarness';
@@ -371,7 +372,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * case and is fully usable, so nothing here is worth blocking first paint on.
    */
   onMount(() => {
-    void loadRemoteAppConfig();
+    // MICA-247: the control center's pruning must not treat a remote add-on as
+    // uninstalled before this settles — see `controlCenterRegistryReady`'s own doc.
+    void loadRemoteAppConfig().finally(markControlCenterRegistryReady);
   });
 
   /**

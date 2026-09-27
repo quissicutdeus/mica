@@ -4,5 +4,6 @@ import { migration as m0 } from './0001_phone_numbers_follow_the_phone';
 import { migration as m1 } from './0002_phone_data_follows_the_phone';
 import { migration as m2 } from './0003_battery_follows_the_phone';
 import { migration as m3 } from './0004_citizenid_widens_on_esx';
+import { migration as m4 } from './0005_contact_ringtone_holds_owner_sounds';
 
-export const migrations = [m0, m1, m2, m3];
+export const migrations = [m0, m1, m2, m3, m4];

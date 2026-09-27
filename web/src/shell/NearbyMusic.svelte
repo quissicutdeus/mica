@@ -51,7 +51,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     toggleMuteAllNearby
   } from './state/nearbyMusic';
   import { openApp } from './state/navigation';
-  import { closeShade } from './state/shade';
+  import { closeAnyOpenSheet } from './state/sheets';
   import SpeakerIcon from '../../../sdk/ui/icons/SpeakerIcon.svelte';
   import SpeakerOffIcon from '../../../sdk/ui/icons/SpeakerOffIcon.svelte';
   import UsersIcon from '../../../sdk/ui/icons/UsersIcon.svelte';
@@ -76,9 +76,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   });
 
   const openMusicApp = () => {
-    // Close first: the shade is `inset-0` over the whole screen, so leaving it open would
-    // land the person on the app they asked for with the shade still covering it.
-    closeShade();
+    // Close first: whichever sheet is showing this row is `inset-0` over the whole
+    // screen (the shade or the control center, MICA-247), so leaving it open would land
+    // the person on the app they asked for with that sheet still covering it.
+    closeAnyOpenSheet();
     openApp('music');
   };
 </script>

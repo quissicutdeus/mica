@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { isRingtoneValue } from '@mica/shared/ownerConfig';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const { dbMock, handlers } = vi.hoisted(() => {
@@ -226,14 +227,16 @@ describe('contacts:ringtone (MICA-142)', () => {
     return call?.[3];
   };
 
-  it('declares the value domain as the client RingtoneId union, nullable with no default', () => {
+  it('declares a varchar held to isRingtoneValue, nullable with no default (MICA-256)', () => {
     // `contacts.repo` rather than only `contacts.resolved` — the allowlist §2.9 actually
     // checks a payload key against is the repository's, and the two must agree.
     expect(contacts.repo.tableColumns).toContain('ringtone');
     expect(contacts.resolved.columnRules.ringtone).toMatchObject({
-      type: 'enum',
-      values: ['classic', 'chime', 'beacon', 'pulse', 'ascent']
+      type: 'string',
+      maxLength: 54,
+      values: null
     });
+    expect(contacts.resolved.columnRules.ringtone.accepts).toBe(isRingtoneValue);
   });
 
   it('is client-writable on create', async () => {
@@ -254,12 +257,36 @@ describe('contacts:ringtone (MICA-142)', () => {
     expect(dbMock.update.mock.calls[0][1]).toContain(null);
   });
 
-  it('rejects a value outside the union rather than forwarding it to SQL', async () => {
-    await genericCall('update', { id: 3, ringtone: 'airhorn' });
+  it('writes an owner sound id (MICA-256)', async () => {
+    dbMock.update.mockResolvedValue(true);
+
+    await genericCall('update', { id: 3, ringtone: 'owner:old_phone-ring' });
+
+    expect(dbMock.update.mock.calls[0][1]).toContain('owner:old_phone-ring');
+  });
+
+  it.each([
+    'airhorn',
+    'owner:',
+    'owner:.hidden',
+    'owner:has space',
+    'owner:../x',
+    '<img src=x onerror=alert(1)>',
+    'CLASSIC'
+  ])('refuses %j rather than forwarding it to SQL', async (ringtone) => {
+    await genericCall('update', { id: 3, ringtone });
 
     expect(dbMock.update).not.toHaveBeenCalled();
     const reply = lastReplyTo('mica:client:contacts:updated');
-    expect(reply.error).toMatch(/'ringtone' must be one of/);
+    expect(reply.error).toBe("'ringtone' is not a value this server accepts.");
+  });
+
+  it('refuses an owner id past the column width with the length message', async () => {
+    await genericCall('update', { id: 3, ringtone: `owner:${'a'.repeat(49)}` });
+
+    expect(dbMock.update).not.toHaveBeenCalled();
+    const reply = lastReplyTo('mica:client:contacts:updated');
+    expect(reply.error).toMatch(/'ringtone' is limited to 54 characters/);
   });
 
   it('comes back on a read, so a saved override is not silently dropped', async () => {

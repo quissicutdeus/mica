@@ -21,7 +21,8 @@ export default defineApp({
     'messages',
     'navigation',
     'notifications',
-    'system-hardware'
+    'system-hardware',
+    'system-hardware-write'
   ],
   core: true
 });

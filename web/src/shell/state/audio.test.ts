@@ -29,9 +29,14 @@ import {
   RING_MODE_CHOICES,
   ringtone,
   setRingtone,
-  RINGTONE_OPTIONS
+  RINGTONE_OPTIONS,
+  ringtoneChoices,
+  notificationTone,
+  setNotificationTone,
+  notificationToneChoices
 } from './audio';
-import type { RingMode, RingtoneId } from '../../../../sdk/vocabulary/audio';
+import { ownerConfig, DEFAULT_OWNER_CONFIG } from './ownerConfig';
+import type { RingMode } from '../../../../sdk/vocabulary/audio';
 import { get } from 'svelte/store';
 import { useStorage } from '../../../../sdk/host/useStorage';
 import { charge } from './charge';
@@ -407,7 +412,7 @@ describe('ringtones', () => {
       expect(get(ringtone)).toBe(option.id);
     }
 
-    setRingtone('foghorn' as RingtoneId);
+    setRingtone('foghorn');
     expect(get(ringtone)).toBe('classic');
   });
 
@@ -430,5 +435,281 @@ describe('ringtones', () => {
     soundMuted.set(true);
     audio.preview('chime');
     expect(ctx.createOscillator).not.toHaveBeenCalled();
+  });
+});
+
+describe('owner sounds (MICA-256)', () => {
+  const URL_A = 'https://cfx-nui-mica/branding/sounds/Bell.ogg';
+  let ctx: ReturnType<typeof fakeAudioContext> & { decodeAudioData: ReturnType<typeof vi.fn> };
+  let sources: Array<{ start: ReturnType<typeof vi.fn>; stop: ReturnType<typeof vi.fn> }>;
+
+  const setSounds = (sounds: Array<{ id: string; label: string; url: string }>) =>
+    ownerConfig.set({ ...DEFAULT_OWNER_CONFIG, sounds });
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  beforeEach(() => {
+    soundMuted.set(false);
+    soundVolume.set(0.5);
+    setRingMode('normal');
+    setRingtone('classic');
+    setNotificationTone('default');
+    setSounds([{ id: 'owner:Bell', label: 'Bell', url: URL_A }]);
+    sources = [];
+    const base = fakeAudioContext();
+    ctx = {
+      ...base,
+      decodeAudioData: vi.fn(async () => ({ duration: 1 }) as AudioBuffer),
+      createBufferSource: vi.fn(() => {
+        const source = { buffer: null, connect: vi.fn(), start: vi.fn(), stop: vi.fn() };
+        sources.push(source);
+        return source;
+      })
+    };
+    (audio as unknown as { audioCtx: unknown }).audioCtx = ctx;
+    const svc = audio as unknown as Record<string, Map<string, unknown> | Set<string>>;
+    svc.buffers.clear();
+    svc.pending.clear();
+    svc.failed.clear();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: true, arrayBuffer: async () => new ArrayBuffer(8) }))
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    setRingtone('classic');
+    setNotificationTone('default');
+    ownerConfig.set(DEFAULT_OWNER_CONFIG);
+    (audio as unknown as { audioCtx: unknown }).audioCtx = null;
+  });
+
+  it('lists owner sounds after the built-ins, in both pickers', () => {
+    expect(get(ringtoneChoices).map((o) => o.id)).toEqual([
+      ...RINGTONE_OPTIONS.map((o) => o.id),
+      'owner:Bell'
+    ]);
+    // No synthetic "Default" row here — that label belongs to a component with
+    // `useLocale`, not this store. `Sound.test.ts` covers the merged, translated list.
+    expect(get(notificationToneChoices).map((o) => o.id)).toEqual(['owner:Bell']);
+  });
+
+  it('keeps an owner id chosen before the config loaded, and refuses a malformed one', () => {
+    ownerConfig.set(DEFAULT_OWNER_CONFIG);
+    setRingtone('owner:Bell');
+    expect(get(ringtone)).toBe('owner:Bell');
+    setRingtone('owner:');
+    expect(get(ringtone)).toBe('classic');
+    setNotificationTone('foghorn');
+    expect(get(notificationTone)).toBe('default');
+  });
+
+  it('plays a chosen owner sound from its cfx-nui URL, decoded once and cached', async () => {
+    setRingtone('owner:Bell');
+    audio.play('ringtone');
+    await flush();
+    expect(fetch).toHaveBeenCalledWith(URL_A);
+    expect(sources).toHaveLength(1);
+    expect(sources[0]?.start).toHaveBeenCalled();
+    expect(ctx.createOscillator).not.toHaveBeenCalled();
+
+    audio.play('ringtone');
+    await flush();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(ctx.decodeAudioData).toHaveBeenCalledTimes(1);
+    expect(sources).toHaveLength(2);
+    expect(sources[0]?.stop).toHaveBeenCalled();
+  });
+
+  it('a contact override wins over the system ringtone', async () => {
+    audio.play('ringtone', { tone: 'owner:Bell' });
+    await flush();
+    expect(sources).toHaveLength(1);
+  });
+
+  it('the notification tone is separate from the ring', async () => {
+    setNotificationTone('owner:Bell');
+    audio.play('ringtone');
+    expect(ctx.createOscillator).toHaveBeenCalled();
+    expect(sources).toHaveLength(0);
+    ctx.createOscillator.mockClear();
+    audio.play('notification');
+    await flush();
+    expect(sources).toHaveLength(1);
+    expect(ctx.createOscillator).not.toHaveBeenCalled();
+  });
+
+  it('an unknown id falls back to the built-in default, never silence', () => {
+    setRingtone('owner:Gone');
+    audio.play('ringtone');
+    expect(ctx.createOscillator).toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('a file that will not decode warns once and plays the built-in tone', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    ctx.decodeAudioData.mockRejectedValue(new Error('bad data'));
+    setRingtone('owner:Bell');
+    audio.play('ringtone');
+    await flush();
+    expect(ctx.createOscillator).toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledTimes(1);
+
+    ctx.createOscillator.mockClear();
+    audio.play('ringtone');
+    await flush();
+    expect(ctx.createOscillator).toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('a failed fetch falls back to the default notification chime', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: false, status: 404 }))
+    );
+    setNotificationTone('owner:Bell');
+    audio.play('notification');
+    await flush();
+    expect(ctx.createOscillator).toHaveBeenCalledTimes(2);
+  });
+
+  it('never fetches a URL outside the resource, including one shaped like a valid host', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const urls = [
+      'https://evil.example/a.ogg',
+      '//evil.example/a.ogg',
+      'http://x/a.ogg',
+      // Shaped exactly like the real thing, for a resource that is not this one — the
+      // bare `https://cfx-nui-` prefix used to accept this (MICA-256 review).
+      'https://cfx-nui-otherresource/branding/sounds/a.ogg'
+    ];
+    for (const url of urls) {
+      setSounds([{ id: 'owner:Bell', label: 'Bell', url }]);
+      setRingtone('owner:Bell');
+      audio.play('ringtone');
+    }
+    expect(fetch).not.toHaveBeenCalled();
+    expect(ctx.createOscillator).toHaveBeenCalled();
+  });
+
+  it('previews an owner sound and answers to mute', async () => {
+    audio.preview('owner:Bell');
+    await flush();
+    expect(sources).toHaveLength(1);
+    soundMuted.set(true);
+    audio.previewNotification('owner:Bell');
+    await flush();
+    expect(sources).toHaveLength(1);
+  });
+
+  it('stopRing silences a playing owner ring, and disarms a cold load already in flight — even the fallback', async () => {
+    let resolveDecode!: (buffer: AudioBuffer) => void;
+    ctx.decodeAudioData.mockImplementation(
+      () => new Promise<AudioBuffer>((resolve) => (resolveDecode = resolve))
+    );
+    setRingtone('owner:Bell');
+    audio.play('ringtone');
+    await flush(); // fetch + arrayBuffer settle; decodeAudioData is now pending
+
+    audio.stopRing(); // the call ended before the file finished decoding
+    resolveDecode({ duration: 1 } as AudioBuffer);
+    await flush();
+
+    expect(sources).toHaveLength(0); // the owner buffer never started
+    expect(ctx.createOscillator).not.toHaveBeenCalled(); // nor the built-in fallback
+  });
+
+  it('stopRing stops an already-playing owner ring outright', async () => {
+    setRingtone('owner:Bell');
+    audio.play('ringtone');
+    await flush();
+    expect(sources).toHaveLength(1);
+
+    audio.stopRing();
+    expect(sources[0]?.stop).toHaveBeenCalled();
+  });
+
+  it('a failed fetch is retried after the cooldown, not on every attempt', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_000_000);
+    const fetchMock = vi.fn<
+      () => Promise<{ ok: boolean; status?: number; arrayBuffer?: () => Promise<ArrayBuffer> }>
+    >(async () => ({ ok: false, status: 500 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    setRingtone('owner:Bell');
+    audio.play('ringtone');
+    await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    now.mockReturnValue(1_000_000 + 10_000); // still inside the 30s cooldown
+    audio.play('ringtone');
+    await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    now.mockReturnValue(1_000_000 + 30_001); // past it
+    fetchMock.mockImplementation(async () => ({
+      ok: true,
+      arrayBuffer: async () => new ArrayBuffer(8)
+    }));
+    audio.play('ringtone');
+    await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(sources).toHaveLength(1);
+  });
+
+  it('forgets a failure the moment the owner config changes, rather than waiting out the cooldown', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: false, status: 500 }))
+    );
+    setRingtone('owner:Bell');
+    audio.play('ringtone');
+    await flush();
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    setSounds([{ id: 'owner:Bell', label: 'Bell', url: URL_A }]);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: true, arrayBuffer: async () => new ArrayBuffer(8) }))
+    );
+    audio.play('ringtone');
+    await flush();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(sources).toHaveLength(1);
+  });
+
+  it('keeps only the selected ring and notification buffers plus one previewed extra', async () => {
+    const urlB = 'https://cfx-nui-mica/branding/sounds/Chime2.ogg';
+    const urlC = 'https://cfx-nui-mica/branding/sounds/Gong.ogg';
+    const urlD = 'https://cfx-nui-mica/branding/sounds/Extra.ogg';
+    setSounds([
+      { id: 'owner:Bell', label: 'Bell', url: URL_A },
+      { id: 'owner:Chime2', label: 'Chime2', url: urlB },
+      { id: 'owner:Gong', label: 'Gong', url: urlC },
+      { id: 'owner:Extra', label: 'Extra', url: urlD }
+    ]);
+    const buffers = (audio as unknown as { buffers: Map<string, unknown> }).buffers;
+
+    setRingtone('owner:Bell');
+    audio.play('ringtone');
+    await flush();
+    setNotificationTone('owner:Chime2');
+    audio.play('notification');
+    await flush();
+    audio.preview('owner:Gong');
+    await flush();
+    expect([...buffers.keys()].sort()).toEqual([URL_A, urlB, urlC].sort());
+
+    // A second preview evicts the first preview's buffer immediately — before its own
+    // fetch even resolves — because it is no longer anything `keepUrls` retains.
+    audio.preview('owner:Extra');
+    expect(buffers.has(urlC)).toBe(false);
+    await flush();
+    expect([...buffers.keys()].sort()).toEqual([URL_A, urlB, urlD].sort());
   });
 });

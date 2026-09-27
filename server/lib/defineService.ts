@@ -103,6 +103,8 @@ export interface ColumnRule {
   /** Inclusive bounds for `int`. Null otherwise. */
   min: number | null;
   max: number | null;
+  /** The column's own value check (`ColumnDef.accepts`), or null. */
+  accepts: ((value: string) => boolean) | null;
 }
 
 /** A foreign key onto another table. `players` is implied for `citizenid`. */
@@ -212,6 +214,14 @@ export interface ColumnDef {
    * same question, and `resolveAppSchema` refuses the pair rather than pick one.
    */
   citizenId?: boolean;
+  /**
+   * The values a client payload may write, when neither `enum` nor a length can say it — a
+   * column whose domain is open-ended but still shaped, such as a ringtone that is a built-in
+   * id or an owner sound's `owner:<stem>` (MICA-256). Checked by the generic write path after
+   * the length, against the value as a string; a refusal is a player-facing error naming the
+   * column. Null is not passed to it: a nullable column clears the same way as any other.
+   */
+  accepts?: (value: string) => boolean;
 }
 
 /**
@@ -911,7 +921,8 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
       citizenId: def.citizenId === true,
       values: def.type === 'enum' ? (def.values ?? null) : null,
       min: def.type === 'int' ? INT_MIN : null,
-      max: def.type === 'int' ? INT_MAX : null
+      max: def.type === 'int' ? INT_MAX : null,
+      accepts: def.accepts ?? null
     };
   }
 

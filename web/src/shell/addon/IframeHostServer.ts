@@ -263,6 +263,7 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
     // MICA-286. A provider publishes hits under a heading the drawer labels with the app's
     // own name, so an unpinned id would let one add-on put rows under another's name.
     'searchProvider',
+    'controlCenter', // MICA-247: a switch shows under its app's name, and only that app's.
     'persisted',
     'deepLink',
     'lifecycle',

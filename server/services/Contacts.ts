@@ -13,6 +13,7 @@ import { resolve as resolvePlayer } from '../lib/PlayerDirectory';
 import { restoreWindowDays } from '../lib/retention';
 import { phoneForCitizen } from '../lib/phoneIdentity';
 import { defaultContacts } from '../lib/ownerConfig';
+import { isRingtoneValue, MAX_OWNER_SOUND_ID } from '@mica/shared/ownerConfig';
 import { onPhoneCreated } from './Phones';
 
 /**
@@ -36,14 +37,16 @@ export const contacts = defineService<Contact, typeof contactsContract>({
     // Base64 image data. Blob rather than text to match the existing table.
     avatar: 'blob',
     /**
-     * Per-contact ringtone override (MICA-142). The value domain is the client's
-     * existing `RingtoneId` union (`web/src/shell/state/audio.ts`), mirrored in
-     * `shared/types.ts` rather than invented again here. Nullable, and no `default` —
-     * null means "use the system ringtone" and must stay the default rather than being
-     * backfilled to `classic`; a client clears the override by writing `null`, which
-     * `assertWritableValue` always accepts ahead of the enum check.
+     * Per-contact ringtone override (MICA-142): a built-in id or, since MICA-256, an owner
+     * sound's `owner:<stem>`. A varchar as wide as the longest owner id rather than the enum
+     * it was (`0005` retyped it), held to that shape by `isRingtoneValue` so a payload cannot
+     * park arbitrary text here. Nullable, and no `default` — null means "use the system
+     * ringtone" and must stay the default rather than being backfilled to `classic`; a
+     * client clears the override by writing `null`, which `assertWritableValue` always
+     * accepts ahead of the value check. Whether the owner's file still exists is the phone's
+     * question: a removed sound falls back to the system ringtone when it plays.
      */
-    ringtone: { type: 'enum', values: ['classic', 'chime', 'beacon', 'pulse', 'ascent'] },
+    ringtone: { type: 'string', length: MAX_OWNER_SOUND_ID, accepts: isRingtoneValue },
     favorite: { type: 'bool', default: 0, clientFilterable: true }
   },
   indexes: [

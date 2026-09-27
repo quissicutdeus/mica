@@ -3,13 +3,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 /**
- * The client's ringtone choices (`web/src/shell/state/audio.ts`'s `RingtoneId`),
- * mirrored here rather than imported — `shared/` is read by `server/`, which must not
- * depend on `web/`. Keep the two lists in sync by hand; a mismatch fails loudly, since
- * the server-side `enum` column (`mica_contacts.ringtone`) rejects anything not in
- * this list.
+ * What a ringtone may store: one of the phone's built-in ids or an owner sound's
+ * `owner:<stem>` (MICA-256). A string rather than a union because the owner's half is open;
+ * `isRingtoneValue` in `shared/ownerConfig.ts` is the shape check, and the server holds
+ * `mica_contacts.ringtone` to it.
  */
-export type RingtoneId = 'classic' | 'chime' | 'beacon' | 'pulse' | 'ascent';
+export type RingtoneId = string;
 
 export interface Contact {
   id: number;

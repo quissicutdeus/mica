@@ -20,7 +20,9 @@ export function systemHardwareWrite(): Twin {
     setVolumeStep: fn('systemHardwareWrite', [], 'setVolumeStep'),
     setRingMode: fn('systemHardwareWrite', [], 'setRingMode'),
     setRingtone: fn('systemHardwareWrite', [], 'setRingtone'),
-    previewRingtone: fn('systemHardwareWrite', [], 'previewRingtone')
+    previewRingtone: fn('systemHardwareWrite', [], 'previewRingtone'),
+    setNotificationTone: fn('systemHardwareWrite', [], 'setNotificationTone'),
+    previewNotificationTone: fn('systemHardwareWrite', [], 'previewNotificationTone')
   };
 }
 

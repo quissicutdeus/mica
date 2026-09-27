@@ -92,5 +92,6 @@
   "permission.wallpaper": "Wallpaper (Read)",
   "permission.wallpaper-write": "Change the Wallpaper",
   "needs.money": "Needs a server with money",
-  "needs.jobs": "Needs a server with jobs"
+  "needs.jobs": "Needs a server with jobs",
+  "permission.control-center": "Add Control Center Toggles"
 }

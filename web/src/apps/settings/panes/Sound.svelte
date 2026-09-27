@@ -45,10 +45,20 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     ringMode,
     ringModeChoices,
     ringtone,
-    ringtoneChoices
+    ringtoneChoices,
+    notificationTone,
+    notificationToneChoices
   } = useSystemHardware();
-  const { setVolume, toggleMute, setVolumeStep, setRingMode, setRingtone, previewRingtone } =
-    useSystemHardwareWrite();
+  const {
+    setVolume,
+    toggleMute,
+    setVolumeStep,
+    setRingMode,
+    setRingtone,
+    previewRingtone,
+    setNotificationTone,
+    previewNotificationTone
+  } = useSystemHardwareWrite();
 
   /**
    * Choosing a tone plays it, rather than putting a second speaker button beside every
@@ -60,6 +70,23 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     setRingtone(id);
     previewRingtone(id);
   };
+
+  /** The same rule for the notification chime, which is chosen apart from the ring. */
+  const chooseNotificationTone = (id: string) => {
+    setNotificationTone(id);
+    previewNotificationTone(id);
+  };
+
+  /**
+   * `notificationToneChoices` is the owner's sounds only — `shell/state/audio.ts` does not
+   * carry `useLocale`, so it cannot own the "Default" row's label, the same reasoning
+   * `ContactDetails.svelte`'s ringtone picker gives for prepending its own "System default"
+   * rather than asking a store to. `'default'` is the literal `NOTIFICATION_TONE_DEFAULT`.
+   */
+  const notificationChoices = $derived([
+    { id: 'default', label: $t('settings.sound.notificationDefault') },
+    ...$notificationToneChoices
+  ]);
 
   const { musicVolume, musicMuted, setMusicVolume, toggleMusicMute } = useMusic();
 </script>
@@ -90,14 +117,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     </div>
   </SettingsSection>
 
-  <!-- Every tone is synthesized in `shell/state/audio.ts`, so the list costs the resource
-       nothing to download and choosing one is instant. -->
+  <!-- The five built-ins are synthesized in `shell/state/audio.ts`; any after them are files
+       the server owner put in `branding/sounds/`, played from the resource and falling back
+       to the default tone if one will not play. -->
   <SettingsSection title={$t('settings.sound.ringtone')}>
     <div class="p-4">
       <div class="flex flex-col gap-1.5">
         {#each $ringtoneChoices as choice (choice.id)}
           <button
             type="button"
+            data-testid="ringtone-option"
             onclick={() => chooseRingtone(choice.id)}
             aria-pressed={$ringtone === choice.id}
             class="text-body-small w-full cursor-pointer rounded-chip border px-3 py-1.5 text-left transition-all {$ringtone ===
@@ -111,6 +140,30 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </div>
       <p class="text-on-surface-variant text-body-small mt-3">
         {$t('settings.sound.ringtoneHint')}
+      </p>
+    </div>
+  </SettingsSection>
+
+  <SettingsSection title={$t('settings.sound.notificationTone')}>
+    <div class="p-4">
+      <div class="flex flex-col gap-1.5">
+        {#each notificationChoices as choice (choice.id)}
+          <button
+            type="button"
+            data-testid="notification-tone-option"
+            onclick={() => chooseNotificationTone(choice.id)}
+            aria-pressed={$notificationTone === choice.id}
+            class="text-body-small w-full cursor-pointer rounded-chip border px-3 py-1.5 text-left transition-all {$notificationTone ===
+            choice.id
+              ? 'border-primary bg-primary-container text-on-primary-container'
+              : 'border-outline-variant bg-surface text-on-surface-variant hover:bg-surface-container-high'} duration-short ease-standard"
+          >
+            {choice.label}
+          </button>
+        {/each}
+      </div>
+      <p class="text-on-surface-variant text-body-small mt-3">
+        {$t('settings.sound.notificationToneHint')}
       </p>
     </div>
   </SettingsSection>

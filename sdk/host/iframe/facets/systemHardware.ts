@@ -28,6 +28,8 @@ export function systemHardware(): Twin {
     ringModeChoices: store('systemHardware', [], 'ringModeChoices', []),
     ringtone: store('systemHardware', [], 'ringtone', 'classic'),
     ringtoneChoices: store('systemHardware', [], 'ringtoneChoices', []),
+    notificationTone: store('systemHardware', [], 'notificationTone', 'default'),
+    notificationToneChoices: store('systemHardware', [], 'notificationToneChoices', []),
     // Carried over the wire as `unknown` (`AddOnConstants`) — the shell can only promise
     // it hydrated whatever the inProcess side actually sent, not its literal shape.
     volumeStepChoices: c.volumeStepChoices as Twin['volumeStepChoices']

@@ -1172,6 +1172,22 @@ whether today is the day, so schema changes are applied deliberately, by
 `micaschema apply` from the console. If the line is in your `server.cfg` it is
 inert, and can be deleted.
 
+### Your own images and sounds
+
+Wallpapers, the boot logo and sounds live in the resource's `branding/` folder,
+which FiveM serves to the phone and a micaOS update never overwrites (the
+release ships only its README). Wallpapers go in `branding/wallpapers/` and the
+logo anywhere under `branding/` (see `mica_wallpapers` and `mica_brand_logo`
+above). **Ringtones and notification sounds (MICA-256)** go in
+`branding/sounds/`: `.ogg`, `.oga`, `.opus`, `.mp3` or `.wav`, up to 1 MiB each
+and 30 in all, named with letters, digits, `.`, `_` and `-` (up to 48 characters
+before the extension). They appear after the built-in tones in Settings > Sound,
+as a separate notification tone, and in each contact's ringtone picker, labelled
+with the file name. A file that is skipped -- wrong format, too big, unsafe name
+-- is named once in the console. Restart the resource after adding one: the
+folder is read at start. `branding/README.md` has the same rules beside the
+files.
+
 ### Adding a language
 
 The phone ships in English and German. A language is a folder of JSON files in

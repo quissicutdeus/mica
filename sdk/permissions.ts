@@ -126,6 +126,8 @@ export const PERMISSION_OF: Record<string, AppPermission | readonly AppPermissio
   useNavigation: 'navigation',
   useNotificationSettings: 'notification-settings',
   useNotificationSettingsWrite: 'notification-settings-write',
+  // MICA-247. Puts a switch on the phone's own control center under this app's name.
+  useControlCenter: 'control-center',
   useSystemHardware: 'system-hardware',
   useSystemHardwareWrite: 'system-hardware-write',
   useTheme: 'theme',
@@ -192,6 +194,7 @@ export const HOOK_OF_FACET = {
   wallpaper: 'useWallpaper',
   wallpaperWrite: 'useWallpaperWrite',
   searchProvider: 'useSearchProvider',
+  controlCenter: 'useControlCenter',
   storage: 'useStorage',
   appStorageBytes: 'appStorageBytes',
   clearAppStorage: 'clearAppStorage',
@@ -547,6 +550,12 @@ export const FACET_MEMBERS: Readonly<Record<string, readonly string[]>> = {
    * app id they act under is pinned rather than named on the wire.
    */
   searchProvider: ['query', 'publish'],
+  /**
+   * MICA-247. All four: hold the lease, put up a switch, take one down, report its state.
+   * The app id they act under is pinned (`APP_SCOPED_FACETS`), so none of them can reach
+   * another app's switches, and the shell checks every field of a toggle itself.
+   */
+  controlCenter: ['lease', 'registerToggle', 'unregisterToggle', 'setToggleActive'],
   service: ['call'],
   sound: ['play'],
   sourceUrl: ['sourceUrl', 'refreshSourceUrl'],
@@ -566,9 +575,16 @@ export const FACET_MEMBERS: Readonly<Record<string, readonly string[]>> = {
     'ringMode',
     'ringModeChoices',
     'ringtone',
-    'ringtoneChoices'
+    'ringtoneChoices',
+    // MICA-256. Reading the owner's sound names and the chosen tone discloses nothing an
+    // add-on holding `system-hardware` could not already read about the ringtone.
+    'notificationTone',
+    'notificationToneChoices'
   ],
-  systemHardwareWrite: ['setVolume', 'setRingMode', 'previewRingtone'],
+  // MICA-256: `previewNotificationTone` is reachable like `previewRingtone`, and
+  // `setNotificationTone` is not, like `setRingtone`: changing a tone changes it for the
+  // whole phone, which stays the player's own decision in Settings.
+  systemHardwareWrite: ['setVolume', 'setRingMode', 'previewRingtone', 'previewNotificationTone'],
   theme: ['themeStore', 'schemeStore', 'isLightMode'],
   themeWrite: ['setThemeSeed', 'setThemeMode', 'resetTheme'],
   timer: [],

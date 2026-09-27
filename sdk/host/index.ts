@@ -16,6 +16,7 @@ export * from './useCamera';
 export * from './useClock';
 export * from './useClockWrite';
 export * from './useContacts';
+export * from './useControlCenter';
 export * from './useDeepLink.svelte';
 export * from './useDevTools';
 export * from './useDisplay';

@@ -254,9 +254,15 @@ describe('the language files the zip carries (MICA-235)', () => {
 
 describe('the branding folder the zip carries (MICA-236)', () => {
   it('ships the README and the empty wallpapers folder, and no image', () => {
-    expect(BRANDING_FILES).toEqual(['branding/README.md', 'branding/wallpapers/.gitkeep']);
+    expect(BRANDING_FILES).toEqual([
+      'branding/README.md',
+      'branding/wallpapers/.gitkeep',
+      'branding/sounds/.gitkeep'
+    ]);
     for (const path of BRANDING_FILES) expect(existsSync(join(ROOT, path)), path).toBe(true);
-    expect(BRANDING_FILES.some((p: string) => /\.(png|jpe?g|webp|svg)$/i.test(p))).toBe(false);
+    expect(
+      BRANDING_FILES.some((p: string) => /\.(png|jpe?g|webp|svg|ogg|opus|mp3|wav)$/i.test(p))
+    ).toBe(false);
   });
 
   it("refuses any other file, which an update would unpack over an owner's own", () => {

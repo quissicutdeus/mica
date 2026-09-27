@@ -92,5 +92,6 @@
   "permission.wallpaper": "Hintergrundbild (Lesen)",
   "permission.wallpaper-write": "Hintergrundbild ändern",
   "needs.money": "Benötigt einen Server mit Geldsystem",
-  "needs.jobs": "Benötigt einen Server mit Job-System"
+  "needs.jobs": "Benötigt einen Server mit Job-System",
+  "permission.control-center": "Schalter im Kontrollzentrum hinzufügen"
 }

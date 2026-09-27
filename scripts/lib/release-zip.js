@@ -54,7 +54,11 @@ export const LOCALES_DIR = 'locales';
  * holds, so a sample wallpaper here would sooner or later replace an owner's own file of the
  * same name. The packer refuses a `branding/` holding anything else.
  */
-export const BRANDING_FILES = ['branding/README.md', 'branding/wallpapers/.gitkeep'];
+export const BRANDING_FILES = [
+  'branding/README.md',
+  'branding/wallpapers/.gitkeep',
+  'branding/sounds/.gitkeep'
+];
 
 /** The `branding/` paths that are not in `BRANDING_FILES`. Empty means the folder may ship. */
 export const unexpectedBranding = (paths) => paths.filter((p) => !BRANDING_FILES.includes(p));

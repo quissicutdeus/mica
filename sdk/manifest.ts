@@ -28,6 +28,8 @@ export const ALL_PERMISSIONS = [
   'call',
   'camera',
   'contacts',
+  // MICA-247: put up to three switches of the app's own in the control center.
+  'control-center',
   'highscores',
   // MICA-228. Reads the jobs a player holds *and switches between them*. Not bundled into
   // `account` on purpose: a switch changes what every other resource on the server thinks

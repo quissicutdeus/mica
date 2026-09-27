@@ -43,6 +43,7 @@ import './facets/camera';
 import './facets/clock';
 import './facets/clockWrite';
 import './facets/contacts';
+import './facets/controlCenter';
 import './facets/deepLink.svelte';
 import './facets/devTools';
 import './facets/display';

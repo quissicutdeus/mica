@@ -72,6 +72,7 @@
   "payload.required.mouthTarget": "Ein gültiges Weitersagen-Ziel ist erforderlich.",
   "repository.mustBeOneOf": "„{column}“ muss einer der folgenden Werte sein: {values}.",
   "repository.maxLength": "„{column}“ ist auf {max} Zeichen begrenzt.",
+  "repository.notAccepted": "„{column}“ ist kein Wert, den dieser Server annimmt.",
   "repository.mustBeInteger": "„{column}“ muss eine ganze Zahl sein.",
   "repository.outOfRange": "„{column}“ muss zwischen {min} und {max} liegen.",
   "settings.notSaved": "Diese Einstellung konnte nicht gespeichert werden.",

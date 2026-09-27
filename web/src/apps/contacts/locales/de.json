@@ -43,5 +43,7 @@
   "viewAll": "Alle anzeigen ({count})",
   "you": "Du",
   "noRecentMessages": "Keine kürzlichen Nachrichten mit {name}.",
-  "sendTextMessage": "Textnachricht senden"
+  "sendTextMessage": "Textnachricht senden",
+  "ringtone": "Klingelton",
+  "ringtoneDefault": "Systemstandard"
 }

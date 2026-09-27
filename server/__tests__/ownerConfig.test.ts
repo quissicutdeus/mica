@@ -12,9 +12,16 @@ const { dbMock } = vi.hoisted(() => ({
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
 
 import {
+  BUILT_IN_RINGTONE_IDS,
   FRAME_IDS,
+  MAX_OWNER_SOUND_ID,
+  MAX_SOUND_BYTES,
+  MAX_SOUND_STEM,
+  MAX_SOUNDS,
   MAX_WALLPAPERS,
   brandingPath,
+  isOwnerSoundId,
+  isRingtoneValue,
   parseBrandLogo,
   parseDefaultContacts,
   parseDefaultDock,
@@ -35,6 +42,7 @@ import {
   brandLogo,
   ownerConfig,
   resolveDefaultContacts,
+  sounds,
   wallpapers
 } from '../lib/ownerConfig';
 // Loading every service is what fills the registry the classification check reads.
@@ -355,7 +363,8 @@ describe('the disabled list and the dock, as the server reads them', () => {
       themeSeed: null,
       defaultFrame: 'classic',
       wallpapers: [],
-      brandLogo: null
+      brandLogo: null,
+      sounds: []
     });
   });
 });
@@ -601,7 +610,8 @@ describe('branding, read by the server (MICA-236)', () => {
       themeSeed: null,
       defaultFrame: 'classic',
       wallpapers: [],
-      brandLogo: null
+      brandLogo: null,
+      sounds: []
     });
     const said = warn.mock.calls.map(([m]) => String(m));
     for (const [convar, value] of [
@@ -628,5 +638,141 @@ describe('branding, read by the server (MICA-236)', () => {
       wallpapers: ['https://cfx-nui-mica/branding/wallpapers/a.png'],
       brandLogo: 'https://cfx-nui-mica/branding/logo.png'
     });
+  });
+});
+
+describe('owner sounds, read by the server (MICA-256)', () => {
+  let root: string;
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'mica-sounds-'));
+    (globalThis as any).GetResourcePath = () => root;
+    (globalThis as any).GetCurrentResourceName = () => 'mica';
+  });
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+    delete (globalThis as any).GetResourcePath;
+    vi.restoreAllMocks();
+  });
+
+  const sound = (name: string, bytes = 1): void => {
+    mkdirSync(join(root, 'branding/sounds'), { recursive: true });
+    writeFileSync(join(root, 'branding/sounds', name), Buffer.alloc(bytes));
+  };
+  const warnings = (warn: { mock: { calls: unknown[][] } }): string[] =>
+    warn.mock.calls.map(([m]) => String(m));
+
+  it('lists the folder sorted by file name, with an owner: id and a readable label', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    for (const f of ['z.wav', 'old_phone-ring.mp3', 'Bell.OGG', 'a.oga', 'b.opus']) sound(f);
+
+    expect(sounds()).toEqual([
+      { id: 'owner:Bell', label: 'Bell', url: 'https://cfx-nui-mica/branding/sounds/Bell.OGG' },
+      { id: 'owner:a', label: 'a', url: 'https://cfx-nui-mica/branding/sounds/a.oga' },
+      { id: 'owner:b', label: 'b', url: 'https://cfx-nui-mica/branding/sounds/b.opus' },
+      {
+        id: 'owner:old_phone-ring',
+        label: 'old phone ring',
+        url: 'https://cfx-nui-mica/branding/sounds/old_phone-ring.mp3'
+      },
+      { id: 'owner:z', label: 'z', url: 'https://cfx-nui-mica/branding/sounds/z.wav' }
+    ]);
+  });
+
+  it('skips a bad extension, an unsafe name, a folder and a repeated stem, one warning each', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    for (const f of ['ring.ogg', 'ring.wav', 'song.m4a', 'notes.txt', 'my ring.ogg']) sound(f);
+    mkdirSync(join(root, 'branding/sounds/sub.ogg'));
+    sound('.gitkeep');
+
+    expect(sounds().map((s) => s.id)).toEqual(['owner:ring']);
+    sounds();
+    const said = warnings(warn);
+    for (const name of ['ring.wav', 'song.m4a', 'notes.txt', 'my ring.ogg', 'sub.ogg']) {
+      expect(said.filter((m) => m.includes(`branding/sounds/${name}'`))).toHaveLength(1);
+    }
+    expect(said.some((m) => m.includes('.gitkeep'))).toBe(false);
+    expect(said).toHaveLength(5);
+  });
+
+  it('skips a file over the size cap and names it', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    sound('small.ogg', MAX_SOUND_BYTES);
+    sound('huge.ogg', MAX_SOUND_BYTES + 1);
+
+    expect(sounds().map((s) => s.id)).toEqual(['owner:small']);
+    expect(warnings(warn)).toEqual([expect.stringContaining("'branding/sounds/huge.ogg'")]);
+  });
+
+  it('holds the stem to MAX_SOUND_STEM so owner:<stem> fits where it is stored', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const fits = 'a'.repeat(MAX_SOUND_STEM);
+    const over = 'b'.repeat(MAX_SOUND_STEM + 1);
+    sound(`${fits}.ogg`);
+    sound(`${over}.ogg`);
+
+    const ids = sounds().map((s) => s.id);
+    expect(ids).toEqual([`owner:${fits}`]);
+    expect(ids[0].length).toBeLessThanOrEqual(54);
+    expect(warnings(warn)).toEqual([expect.stringContaining(`${over}.ogg`)]);
+  });
+
+  it('caps the list and names what it left out', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    for (let i = 0; i < MAX_SOUNDS + 2; i++) sound(`s${String(i).padStart(2, '0')}.ogg`);
+
+    const listed = sounds();
+    expect(listed).toHaveLength(MAX_SOUNDS);
+    expect(listed.at(-1)?.id).toBe(`owner:s${MAX_SOUNDS - 1}`);
+    expect(warnings(warn)).toEqual([expect.stringContaining('s30.ogg, s31.ogg')]);
+  });
+
+  it('is [] with nothing said when the folder is not there', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(sounds()).toEqual([]);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('lists once and keeps it, and rides along on shell:ownerConfig', () => {
+    sound('a.ogg');
+    expect(sounds()).toHaveLength(1);
+    sound('b.ogg');
+    expect(ownerConfig().sounds.map((s) => s.id)).toEqual(['owner:a']);
+  });
+});
+
+describe('ringtone values (MICA-256)', () => {
+  it('accepts the built-ins and owner ids in the listed shape', () => {
+    for (const id of BUILT_IN_RINGTONE_IDS) expect(isRingtoneValue(id)).toBe(true);
+    for (const id of ['owner:a', 'owner:Bell', 'owner:old_phone-ring', 'owner:v1.2']) {
+      expect(isOwnerSoundId(id)).toBe(true);
+      expect(isRingtoneValue(id)).toBe(true);
+    }
+    expect(isRingtoneValue(`owner:${'a'.repeat(MAX_SOUND_STEM)}`)).toBe(true);
+    expect(MAX_OWNER_SOUND_ID).toBe('owner:'.length + MAX_SOUND_STEM);
+  });
+
+  it.each([
+    'airhorn',
+    'Classic',
+    '',
+    'owner:',
+    'owner:.gitkeep',
+    'owner:a b',
+    'owner:a/b',
+    'owner:a\\b',
+    'owner:é',
+    ' owner:a',
+    'owner:a\n',
+    `owner:${'a'.repeat(MAX_SOUND_STEM + 1)}`
+  ])('refuses %j', (value) => {
+    expect(isRingtoneValue(value)).toBe(false);
+  });
+
+  it('refuses a non-string', () => {
+    for (const value of [null, undefined, 1, {}, ['classic']]) {
+      expect(isRingtoneValue(value)).toBe(false);
+    }
   });
 });

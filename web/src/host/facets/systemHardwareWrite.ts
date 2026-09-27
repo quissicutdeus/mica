@@ -12,6 +12,7 @@ import {
   setVolumeStep,
   setRingMode,
   setRingtone,
+  setNotificationTone,
   audio
 } from '../../shell/state/audio';
 import type { RingtoneId } from '../../../../sdk/vocabulary/audio';
@@ -40,11 +41,14 @@ export function systemHardwareWrite() {
     setVolumeStep,
     setRingMode,
     setRingtone,
+    setNotificationTone,
     /**
      * Audition a tone from the settings pane. Ignores the ring mode (that is the control
      * being configured) but not the mute or the volume — see `SoundService.preview`.
      */
-    previewRingtone: (id: RingtoneId) => audio.preview(id)
+    previewRingtone: (id: RingtoneId) => audio.preview(id),
+    /** Audition a notification tone; see `SoundService.previewNotification`. */
+    previewNotificationTone: (id: string) => audio.previewNotification(id)
   };
 }
 

@@ -244,6 +244,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       phone: selectedContact.phone.trim(),
       favorite: selectedContact.favorite,
       avatar: selectedContact.avatar,
+      // Null clears the override: the contact rings with the system ringtone.
+      ringtone: selectedContact.ringtone ?? null,
       citizenid: selectedContact.citizenid, // Required for type safety
       created_at: selectedContact.created_at,
       updated_at: new Date().toISOString()

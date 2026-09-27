@@ -17,6 +17,8 @@ import { shadeNotifications } from '../../services/notifications';
 import { appNotificationPolicies, dndEnabled } from './notificationPolicy';
 import { toastsEnabled } from './notificationSettings';
 import { audio } from './audio';
+import { contacts } from '../../services/contacts';
+import type { Contact } from '@mica/shared/types';
 import { openDevice } from './phoneOpen';
 
 describe('toast store interactive notifications', () => {
@@ -384,6 +386,68 @@ describe('toast policy enforcement (MICA-63)', () => {
     expect(play).not.toHaveBeenCalled();
     expect(get(toast)).toHaveLength(1);
     play.mockRestore();
+  });
+
+  it('rings a known caller with their contact ringtone, and an unknown one with the system tone (MICA-256)', () => {
+    contacts.set([
+      { id: 1, firstname: 'A', phone: '555-0199', ringtone: 'owner:Bell' },
+      { id: 2, firstname: 'B', phone: '555-0200', ringtone: null }
+    ] as unknown as Contact[]);
+    const play = vi.spyOn(audio, 'play').mockImplementation(() => {});
+
+    toast.showCall({ number: '5550199', onAccept: () => {} });
+    expect(play).toHaveBeenLastCalledWith('ringtone', { tone: 'owner:Bell' });
+    toast.showCall({ number: '5550200', onAccept: () => {} });
+    expect(play).toHaveBeenLastCalledWith('ringtone', { tone: null });
+    toast.showCall({ number: '5559999', onAccept: () => {} });
+    expect(play).toHaveBeenLastCalledWith('ringtone', { tone: null });
+
+    play.mockRestore();
+    contacts.set([]);
+  });
+
+  it('stops a playing owner ring on accept, decline, a plain dismiss, and expiry (MICA-256)', () => {
+    const stopRing = vi.spyOn(audio, 'stopRing').mockImplementation(() => {});
+    vi.spyOn(audio, 'play').mockImplementation(() => {});
+
+    const accepted = toast.showCall({ number: '555', onAccept: () => {} });
+    get(toast)[0]
+      .actions?.find((a) => a.label === 'Accept')
+      ?.onClick();
+    // `ToastHost.svelte` dismisses the toast itself, after the action's own onClick.
+    toast.dismiss(accepted);
+    expect(stopRing).toHaveBeenCalledTimes(1);
+
+    const declined = toast.showCall({ number: '555', onAccept: () => {}, onDecline: () => {} });
+    get(toast)[0]
+      .actions?.find((a) => a.label === 'Decline')
+      ?.onClick();
+    toast.dismiss(declined);
+    expect(stopRing).toHaveBeenCalledTimes(2);
+
+    // A call ended remotely: `Shell.svelte` dismisses the same id directly, with no
+    // action ever clicked.
+    const endedRemotely = toast.showCall({ number: '555', onAccept: () => {} });
+    toast.dismiss(endedRemotely);
+    expect(stopRing).toHaveBeenCalledTimes(3);
+
+    // Expiry never goes through `dismiss` — it is `scheduleToastTimer`'s own path.
+    const onExpire = vi.fn();
+    toast.showCall({ number: '555', onAccept: () => {}, onExpire });
+    vi.advanceTimersByTime(12000);
+    expect(stopRing).toHaveBeenCalledTimes(4);
+    expect(onExpire).toHaveBeenCalled();
+
+    stopRing.mockRestore();
+  });
+
+  it('does not stop the ring for a non-call toast', () => {
+    const stopRing = vi.spyOn(audio, 'stopRing').mockImplementation(() => {});
+    const id = toast.show({ message: 'hi', duration: 1000 });
+    toast.dismiss(id);
+    vi.advanceTimersByTime(1000);
+    expect(stopRing).not.toHaveBeenCalled();
+    stopRing.mockRestore();
   });
 });
 

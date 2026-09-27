@@ -173,6 +173,7 @@ const ICONS: Record<AppPermission, string> = {
   call: '\u{1F4DE}',
   camera: '\u{1F4F7}',
   contacts: '\u{1F4C7}',
+  'control-center': '\u{1F39B}\u{FE0F}',
   highscores: '\u{1F3C6}',
   jobs: '\u{1F4BC}',
   location: '\u{1F4CD}',

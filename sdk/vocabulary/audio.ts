@@ -30,10 +30,30 @@ export interface RingModeChoice {
   readonly description: string;
 }
 
-export type RingtoneId = 'classic' | 'chime' | 'beacon' | 'pulse' | 'ascent';
+/**
+ * A ringtone: one of the five built-in ids (`'classic' | 'chime' | 'beacon' | 'pulse' |
+ * 'ascent'`) or `'owner:<stem>'`, a sound the server owner shipped (MICA-256). A stem is 1-48
+ * of `A-Z a-z 0-9 . _ -`, not starting with a dot, so an id is at most 54 characters; both
+ * halves are case-sensitive. The one statement of that grammar is `isRingtoneValue` in
+ * `shared/ownerConfig.ts`, which the shell and the server both check against.
+ *
+ * `string` rather than that union because the owner's half is only known at runtime — it is
+ * whatever files the owner put in `branding/sounds/` — so no type written here could list
+ * it. The shell checks an id against what it actually has, and one it does not recognise is
+ * refused rather than stored; read the live list from `ringtoneChoices` rather than
+ * matching on names.
+ */
+export type RingtoneId = string;
 
-/** What a chooser needs, and nothing behind it. */
+/**
+ * A notification tone: `'default'` (the built-in chirp) or `'owner:<stem>'` (MICA-256).
+ * `string` for the same reason as `RingtoneId`; the live list is `notificationToneChoices`.
+ */
+export type NotificationToneId = string;
+
+/** What a chooser needs, and nothing behind it. Used for both tone lists. */
 export interface RingtoneOption {
   readonly id: RingtoneId;
+  /** Shown as-is: a built-in's translated name, or the owner's own name for a sound. */
   readonly label: string;
 }

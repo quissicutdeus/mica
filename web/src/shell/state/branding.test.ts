@@ -21,6 +21,7 @@ const owner = (over: Partial<OwnerConfig> = {}) =>
     defaultFrame: 'classic',
     wallpapers: [],
     brandLogo: null,
+    sounds: [],
     ...over
   });
 

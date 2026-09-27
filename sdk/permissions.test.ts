@@ -419,8 +419,13 @@ describe('every reachable facet declares its members (MICA-196)', () => {
     expect(membersOfFacet('systemHardwareWrite')).toEqual([
       'setVolume',
       'setRingMode',
-      'previewRingtone'
+      'previewRingtone',
+      // MICA-256: auditioning a tone, never choosing one for the whole phone.
+      'previewNotificationTone'
     ]);
+    for (const member of ['setRingtone', 'setNotificationTone']) {
+      expect(membersOfFacet('systemHardwareWrite')).not.toContain(member);
+    }
     for (const member of ['installFromCatalog', 'registerAddOn', 'unregisterApp']) {
       expect(membersOfFacet('appRegistry')).not.toContain(member);
     }

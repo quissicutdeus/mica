@@ -54,6 +54,7 @@ import type {
 import type {
   RingMode,
   RingModeChoice,
+  NotificationToneId,
   RingtoneId,
   RingtoneOption,
   SoundEffect
@@ -205,6 +206,23 @@ export interface ProvidedHit {
   subtitle?: string;
   /** Deep-link props for this app, exactly as `useDeepLink` will read them back. */
   props?: Record<string, unknown>;
+}
+
+/**
+ * One switch an app contributes to the control center (MICA-247). See `useControlCenter`
+ * for the rules the shell holds it to.
+ *
+ * `icon` is the export name of an icon in `@mica/sdk` (`'MoonIcon'`), not a component and
+ * not a path: it has to cross the add-on seam as data, and the shell draws it from its own
+ * copy of the set. `onToggle` is called with nothing when the player taps the switch; the
+ * app decides what that means and reports the result back with `setToggleActive`.
+ */
+export interface ControlCenterToggle {
+  id: string;
+  label: string;
+  icon: string;
+  active: boolean;
+  onToggle: () => void;
 }
 
 /** One key per facet. The runtime object behind this shape is the `facets` Proxy in `current.ts`. */
@@ -1081,6 +1099,21 @@ export interface Facets {
     query: Readable<string>;
     publish: (needle: string, hits: readonly ProvidedHit[]) => void;
   };
+  /**
+   * MICA-247: an app's own switches in the control center.
+   *
+   * `lease` is held for as long as a caller wants its switches listed: the shell releases
+   * every switch an instance registered when the last subscriber to that instance's lease
+   * goes, and refuses a registration made without one. For a sandboxed frame the lease is a
+   * subscription the shell holds on the frame's behalf, so the frame's teardown drops it
+   * whether or not the frame's own code gets to run first.
+   */
+  controlCenter: (appId: string) => {
+    lease: Readable<boolean>;
+    registerToggle: (toggle: ControlCenterToggle) => void;
+    unregisterToggle: (id: string) => void;
+    setToggleActive: (id: string, active: boolean) => void;
+  };
   service: (serviceId: string) => {
     id: string;
     /**
@@ -1138,7 +1171,16 @@ export interface Facets {
      */
     ringModeChoices: Readable<readonly RingModeChoice[]>;
     ringtone: Writable<RingtoneId>;
+    /** The built-in tones, then the owner's sounds (MICA-256). */
     ringtoneChoices: Readable<readonly RingtoneOption[]>;
+    /** MICA-256: the tone a notification plays. */
+    notificationTone: Writable<NotificationToneId>;
+    /**
+     * The owner's sounds only. `'default'` (the phone's own notification tone) is always a
+     * valid `notificationTone` and is deliberately not listed, so a caller renders it in
+     * its own language (Settings prepends a translated "Default" row).
+     */
+    notificationToneChoices: Readable<readonly RingtoneOption[]>;
   };
   systemHardwareWrite: () => {
     /**
@@ -1160,6 +1202,10 @@ export interface Facets {
      * being configured) but not the mute or the volume — see `SoundService.preview`.
      */
     previewRingtone: (id: RingtoneId) => void;
+    /** MICA-256. Set the tone every notification plays, for the whole phone. */
+    setNotificationTone: (id: NotificationToneId) => void;
+    /** MICA-256. Audition a notification tone; the same rules as `previewRingtone`. */
+    previewNotificationTone: (id: NotificationToneId) => void;
   };
   theme: () => {
     themeStore: Writable<ThemeState>;

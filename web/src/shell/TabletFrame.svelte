@@ -14,6 +14,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { frame } from './state/device';
   import VolumeHud from './VolumeHud.svelte';
   import NotificationShade from './NotificationShade.svelte';
+  import ControlCenter from './ControlCenter.svelte';
   import BatteryWarning from './BatteryWarning.svelte';
   import DragGhost from './DragGhost.svelte';
   import RemoveTarget from './RemoveTarget.svelte';
@@ -106,6 +107,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   >
     <VolumeHud />
     <NotificationShade />
+    <ControlCenter />
 
     <!-- Low-battery warning (MICA-193): no markup, only the effect that shows the toast. -->
     <BatteryWarning />

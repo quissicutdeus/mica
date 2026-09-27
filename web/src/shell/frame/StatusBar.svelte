@@ -6,6 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script lang="ts">
   import { fade } from '@mica/sdk';
+  import { t } from '../messages';
   import { formattedTime, formattedDate } from '../state/time';
   import { currentApp } from '../state/navigation';
   import { displayCharge } from '../state/charge';
@@ -30,7 +31,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { badgeAllowed } from '../state/notificationPolicy';
   import { appRegistryStore } from '../state/registry';
   import { wallpaperNeedsContrast } from '../state/wallpaper';
-  import { attachStatusBarDrag } from './frameGestures';
+  import { attachStatusBarDrag, CONTROL_CENTER_ZONE_START } from './frameGestures';
+  import {
+    closeControlCenter,
+    isControlCenterOpen,
+    openControlCenter
+  } from '../state/controlCenter';
 
   /**
    * The status bar, out of `PhoneFrame.svelte` so the tablet's frame draws the same one
@@ -149,17 +155,31 @@ SPDX-License-Identifier: AGPL-3.0-or-later
      signal, bluetooth and battery glyphs as well as on the clock. Those are the one
      part of this bar the stroke technique cannot help; they stay `on-surface` over
      an unknown photo, and that is recorded in MICA-109 rather than papered over. -->
-<button
-  bind:this={statusBarRef}
-  type="button"
-  class="text-on-surface duration-short ease-standard text-body-medium absolute top-0 z-60 flex w-full cursor-pointer items-center justify-between px-8 pt-3 transition-opacity hover:opacity-90 active:opacity-75"
-  onclick={() => ($isShadeOpen ? closeShade() : openShade())}
-  aria-label={$isShadeOpen ? 'Close notification shade' : 'Open notification shade'}
->
-  <div class="flex items-center gap-2">
-    <span class:text-on-wallpaper={onWallpaper}>{$formattedTime}</span>
-    {#if $isShadeOpen}
-      <!-- Only once fully open, not mid-drag — a half-open bar reading "1:12 AM
+<!-- Split in two (MICA-247): the left ~60% is the shade's own long-standing hit
+     target, unchanged in content and accessible name (`PhoneFrame.test.ts` pins both,
+     including that its text still carries the clock's digits). The right ~40% is a
+     second, focusable button layered on top of the same visual row rather than a
+     visually distinct one — it shares `CONTROL_CENTER_ZONE_START` with the drag
+     gesture below, so the tap boundary and the drag boundary are the same line, and
+     gives that zone its own accessible name and a keyboard route, neither of which a
+     single button could have expressed for two different actions. -->
+<div bind:this={statusBarRef} class="absolute top-0 z-60 w-full">
+  <button
+    type="button"
+    class="text-on-surface duration-short ease-standard text-body-medium flex w-full cursor-pointer items-center justify-between px-8 pt-3 transition-opacity hover:opacity-90 active:opacity-75"
+    onclick={() => {
+      // The bar sits above every sheet, so a tap on one zone while the other sheet is
+      // up closes that sheet rather than stacking one on top of the other (MICA-247).
+      if ($isShadeOpen) closeShade();
+      else if ($isControlCenterOpen) closeControlCenter();
+      else openShade();
+    }}
+    aria-label={$isShadeOpen ? 'Close notification shade' : 'Open notification shade'}
+  >
+    <div class="flex items-center gap-2">
+      <span class:text-on-wallpaper={onWallpaper}>{$formattedTime}</span>
+      {#if $isShadeOpen}
+        <!-- Only once fully open, not mid-drag — a half-open bar reading "1:12 AM
            Thu, Aug 20" while the icons are also mid-fade would be two things
            changing size and content at once.
 
@@ -170,14 +190,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
            role for exactly this job — "the same text, quieter" — and it is 8.06:1
            there. Same rule as the ban on opacity modifiers for role *backgrounds* in
            app.css, one utility further along. -->
-      <span
-        class="text-body-small text-on-surface-variant"
-        class:text-on-wallpaper={onWallpaper}
-        transition:fade={{ duration: 150 }}>{$formattedDate}</span
-      >
-    {/if}
-    {#if pendingNotificationApps.length > 0 || $musicSource}
-      <!-- Monochrome, matching the status bar's own `text-on-surface` — an app's
+        <span
+          class="text-body-small text-on-surface-variant"
+          class:text-on-wallpaper={onWallpaper}
+          transition:fade={{ duration: 150 }}>{$formattedDate}</span
+        >
+      {/if}
+      {#if pendingNotificationApps.length > 0 || $musicSource}
+        <!-- Monochrome, matching the status bar's own `text-on-surface` — an app's
            own tile color (`AppIcon`'s `bg-*` background) would be too busy at this
            size and would drift from the rest of the bar the moment a wallpaper
            forced light-on-dark text. Icons using `currentColor` (most of them)
@@ -198,12 +218,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
            the shade is open, so they fade out across the first half of the pull,
            clear of the way by the point the real notifications start being
            legible underneath. -->
-      <div
-        data-testid="status-notification-icons"
-        class="flex items-center gap-1"
-        style="opacity: {pendingIconsOpacity}"
-      >
-        <!-- Music, and it is deliberately first (MICA-111).
+        <div
+          data-testid="status-notification-icons"
+          class="flex items-center gap-1"
+          style="opacity: {pendingIconsOpacity}"
+        >
+          <!-- Music, and it is deliberately first (MICA-111).
 
              The icons after it are newest-first, which is an ordering music has no
              place in: it is ongoing rather than unread, so it has no arrival time to
@@ -233,56 +253,70 @@ SPDX-License-Identifier: AGPL-3.0-or-later
              pause leaves somebody waiting for audio that is never coming. The charge
              percentage across the bar already turns `text-error` at 20%, so that is
              the bar's existing idiom for "something is wrong" and not a new one. -->
-        {#if $musicSource}
-          <span
-            data-testid="status-music-indicator"
-            class="flex items-center"
-            class:text-on-surface-variant={$musicStatus === 'paused'}
-            class:text-error={$musicStatus === 'error'}
-          >
-            {#if typeof musicIcon === 'string'}
-              <img src={musicIcon} alt="" class="h-3.5 w-3.5 object-contain" />
-            {:else if musicIcon}
-              {@const MusicAppIcon = musicIcon}
-              <MusicAppIcon class="h-3.5 w-3.5" />
-            {:else}
-              <MusicNoteIcon class="h-3.5 w-3.5" />
-            {/if}
-          </span>
-        {/if}
-        {#each visibleNotificationApps as app (app.id)}
-          {#if typeof app.icon === 'string'}
-            <img src={app.icon} alt="" class="h-3.5 w-3.5 object-contain" />
-          {:else if app.icon}
-            {@const Icon = app.icon}
-            <Icon class="h-3.5 w-3.5" />
+          {#if $musicSource}
+            <span
+              data-testid="status-music-indicator"
+              class="flex items-center"
+              class:text-on-surface-variant={$musicStatus === 'paused'}
+              class:text-error={$musicStatus === 'error'}
+            >
+              {#if typeof musicIcon === 'string'}
+                <img src={musicIcon} alt="" class="h-3.5 w-3.5 object-contain" />
+              {:else if musicIcon}
+                {@const MusicAppIcon = musicIcon}
+                <MusicAppIcon class="h-3.5 w-3.5" />
+              {:else}
+                <MusicNoteIcon class="h-3.5 w-3.5" />
+              {/if}
+            </span>
           {/if}
-        {/each}
-        {#if hiddenNotificationCount > 0}
-          <!-- Counted, not drawn. `text-label-small` (11px) is the smallest step on
+          {#each visibleNotificationApps as app (app.id)}
+            {#if typeof app.icon === 'string'}
+              <img src={app.icon} alt="" class="h-3.5 w-3.5 object-contain" />
+            {:else if app.icon}
+              {@const Icon = app.icon}
+              <Icon class="h-3.5 w-3.5" />
+            {/if}
+          {/each}
+          {#if hiddenNotificationCount > 0}
+            <!-- Counted, not drawn. `text-label-small` (11px) is the smallest step on
                the type scale and the only one that fits the remaining run before the
                cutout; it inherits the bar's own `text-on-surface` like the icons do,
                so it reads as one row rather than as a badge stuck on the end. -->
-          <span class="text-label-small" class:text-on-wallpaper={onWallpaper}
-            >+{hiddenNotificationCount}</span
-          >
-        {/if}
-      </div>
-    {/if}
-  </div>
-  <div class="flex items-center gap-2">
-    {#if $bluetoothEnabled}
-      <BluetoothIcon class="h-3.5 w-3.5 opacity-90" />
-    {/if}
-    <SignalIcon level={$clampedSignalLevel} />
-
-    <div class="flex items-center gap-1.5">
-      <span
-        class="text-body-small"
-        class:text-error={$displayCharge <= 20}
-        class:text-on-wallpaper={onWallpaper}>{$displayCharge}%</span
-      >
-      <BatteryIcon class="h-3 w-6" charge={$displayCharge} />
+            <span class="text-label-small" class:text-on-wallpaper={onWallpaper}
+              >+{hiddenNotificationCount}</span
+            >
+          {/if}
+        </div>
+      {/if}
     </div>
-  </div>
-</button>
+    <div class="flex items-center gap-2">
+      {#if $bluetoothEnabled}
+        <BluetoothIcon class="h-3.5 w-3.5 opacity-90" />
+      {/if}
+      <SignalIcon level={$clampedSignalLevel} />
+
+      <div class="flex items-center gap-1.5">
+        <span
+          class="text-body-small"
+          class:text-error={$displayCharge <= 20}
+          class:text-on-wallpaper={onWallpaper}>{$displayCharge}%</span
+        >
+        <BatteryIcon class="h-3 w-6" charge={$displayCharge} />
+      </div>
+    </div>
+  </button>
+  <button
+    type="button"
+    class="focus-visible:ring-focus-ring absolute top-0 right-0 bottom-0 z-10 cursor-pointer focus-visible:ring-2 focus-visible:outline-none"
+    style="width: {(1 - CONTROL_CENTER_ZONE_START) * 100}%"
+    onclick={() => {
+      if ($isControlCenterOpen) closeControlCenter();
+      else if ($isShadeOpen) closeShade();
+      else openControlCenter();
+    }}
+    aria-label={$isControlCenterOpen
+      ? $t('shell.controlCenterZoneOpen')
+      : $t('shell.controlCenterZone')}
+  ></button>
+</div>

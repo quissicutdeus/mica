@@ -1615,6 +1615,79 @@ const runWidenMigration = async ({ connection, schemaFile, hasPlayers, server })
   return { schema: await wholeSchema(connection), ledger: after };
 };
 
+const RINGTONE_MIGRATION = '0005_contact_ringtone_holds_owner_sounds';
+
+/**
+ * MICA-256: `mica_contacts.ringtone` from the five-value enum to `varchar(54)`, run for real
+ * on a database that holds every built-in value and a NULL. The pre-0004 fixture carries the
+ * enum and a ledger that knows neither 0004 nor 0005, so both run, in order, as they would on
+ * a server that skipped an update.
+ */
+const runRingtoneMigration = async ({ connection, schemaFile, hasPlayers, server }) => {
+  const variant = hasPlayers ? 'qb' : 'esx';
+  const label = `${schemaFile} ringtone`;
+  step(`${schemaFile} — MICA-256 ${RINGTONE_MIGRATION}, on a ${variant} database`);
+
+  await freshPreWidenDatabase({ connection, schemaFile, hasPlayers, name: `ringtone_${variant}` });
+  if (hasPlayers) {
+    await connection.query('INSERT INTO players (citizenid, charinfo) VALUES (?, ?)', [
+      'CIT_RING',
+      JSON.stringify({ firstname: 'Ring', lastname: 'Test' })
+    ]);
+  }
+  const kept = ['classic', 'chime', 'beacon', 'pulse', 'ascent', null];
+  for (const [i, ringtone] of kept.entries()) {
+    await connection.query(
+      'INSERT INTO mica_contacts (citizenid, firstname, phone, ringtone) VALUES (?, ?, ?, ?)',
+      ['CIT_RING', `c${i}`, `555-01${i}`, ringtone]
+    );
+  }
+  const typeOf = async () =>
+    await scalar(
+      connection,
+      `SELECT column_type FROM information_schema.COLUMNS
+        WHERE table_schema = DATABASE() AND table_name = 'mica_contacts'
+          AND column_name = 'ringtone'`
+    );
+  check(`${label}: starts as the enum`, String(await typeOf()).startsWith('enum('), true);
+  const refused = await rejects(() =>
+    connection.query(
+      "INSERT INTO mica_contacts (citizenid, firstname, phone, ringtone) VALUES ('CIT_RING', 'o', '555-0199', 'owner:Bell')"
+    )
+  );
+  check(`${label}: an owner id is refused before`, refused !== null, true);
+
+  runningFramework(server, hasPlayers);
+  const run = await server.runPendingMigrations();
+  check(`${label}: 0005 applied`, run.applied.includes(RINGTONE_MIGRATION), true);
+  check(`${label}: and failed nothing`, run.failed, null);
+  check(`${label}: and left nothing pending`, run.remaining, []);
+
+  check(`${label}: is varchar(54) after`, await typeOf(), 'varchar(54)');
+  const [rows] = await connection.query(
+    "SELECT ringtone FROM mica_contacts WHERE citizenid = 'CIT_RING' ORDER BY id"
+  );
+  check(
+    `${label}: every stored value and the NULL survive`,
+    rows.map((r) => r.ringtone),
+    kept
+  );
+  const longest = `owner:${'a'.repeat(48)}`;
+  await connection.query(
+    'INSERT INTO mica_contacts (citizenid, firstname, phone, ringtone) VALUES (?, ?, ?, ?)',
+    ['CIT_RING', 'o', '555-0199', longest]
+  );
+  check(
+    `${label}: the longest owner id fits`,
+    await scalar(connection, 'SELECT ringtone FROM mica_contacts WHERE phone = ?', ['555-0199']),
+    longest
+  );
+
+  const second = await server.runPendingMigrations();
+  check(`${label}: a second run applies nothing`, second.applied, []);
+  check(`${label}: and the column did not move`, await typeOf(), 'varchar(54)');
+};
+
 /**
  * A crash part-way through the list. `up()` is not one transaction — each `ALTER` commits — so
  * a server that died after some columns leaves exactly this: some 60, the rest 50, and a ledger
@@ -1908,6 +1981,15 @@ const main = async () => {
     await runWidenQbWithoutKeys({ connection, server });
     await runWidenUnknownFramework({ connection, server });
     await runWidenEsxWithPlayersKeys({ connection, server });
+
+    // MICA-256. Also from the frozen pre-0004 schema, the last one that still has the enum.
+    await runRingtoneMigration({ connection, schemaFile: 'mica.sql', hasPlayers: true, server });
+    await runRingtoneMigration({
+      connection,
+      schemaFile: 'mica.esx.sql',
+      hasPlayers: false,
+      server
+    });
 
     if (checksRun < MINIMUM_CHECKS) {
       throw new Error(

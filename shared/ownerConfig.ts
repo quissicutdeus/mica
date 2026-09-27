@@ -168,6 +168,88 @@ export const brandingPath = (raw: string): string | null => {
 export const brandingUrl = (resource: string, path: string): string =>
   `https://cfx-nui-${resource}/${path}`;
 
+// ─── sounds (MICA-256) ───────────────────────────────────────────────────────
+
+/**
+ * The one folder owner ringtones and notification tones come from. Fixed, with no convar: the
+ * packer ships nothing under it, so an update never overwrites an owner's file.
+ */
+export const SOUNDS_FOLDER = 'branding/sounds';
+
+/**
+ * Formats Chromium 103 decodes without proprietary codecs: Ogg Vorbis/Opus, MP3 and WAV. That
+ * FiveM's CEF build decodes each of them is unverified — AAC (`.m4a`) is left out because it
+ * needs the proprietary codecs a CEF build may not carry.
+ */
+export const SOUND_EXTENSIONS: readonly string[] = ['ogg', 'oga', 'opus', 'mp3', 'wav'];
+
+/** Most sounds the phone offers from the folder; the rest are left out and named. */
+export const MAX_SOUNDS = 30;
+
+/** Largest sound file offered, in bytes (1 MiB). A tone is seconds long; more is a song. */
+export const MAX_SOUND_BYTES = 1024 * 1024;
+
+/** What an owner sound's id starts with, so it can never collide with a built-in tone id. */
+export const OWNER_SOUND_PREFIX = 'owner:';
+
+/**
+ * Longest file stem an owner sound may have. The id `owner:<stem>` is what the player's
+ * ringtone and notification tone store (`mica_settings.setting_value`, text) and what a
+ * per-contact ringtone stores in `mica_contacts.ringtone`, whose width is `MAX_OWNER_SOUND_ID`.
+ */
+export const MAX_SOUND_STEM = 48;
+
+/** The longest owner sound id: `owner:` and a stem at the cap. The column width that stores one. */
+export const MAX_OWNER_SOUND_ID = OWNER_SOUND_PREFIX.length + MAX_SOUND_STEM;
+
+/** A stem the server would have listed: the file-name charset, no leading dot, within the cap. */
+const OWNER_STEM = new RegExp(`^[A-Za-z0-9_-][A-Za-z0-9._-]{0,${MAX_SOUND_STEM - 1}}$`);
+
+/** `owner:<stem>` in the shape the server lists. Says nothing about whether the file exists. */
+export const isOwnerSoundId = (value: unknown): value is string =>
+  typeof value === 'string' &&
+  value.startsWith(OWNER_SOUND_PREFIX) &&
+  OWNER_STEM.test(value.slice(OWNER_SOUND_PREFIX.length));
+
+/**
+ * The phone's five synthesised ringtones. Mirrors `RingtoneId` in `sdk/vocabulary/audio.ts`;
+ * `shared/` cannot import from the SDK, so the two are kept in step by hand.
+ */
+export const BUILT_IN_RINGTONE_IDS: readonly string[] = [
+  'classic',
+  'chime',
+  'beacon',
+  'pulse',
+  'ascent'
+];
+
+/**
+ * A value a ringtone may store: a built-in id or an owner sound id. The server holds a
+ * contact's `ringtone` column to it (`services/Contacts.ts`), so a payload cannot park
+ * arbitrary text there; the phone uses it before playing one.
+ */
+export const isRingtoneValue = (value: unknown): value is string =>
+  (typeof value === 'string' && BUILT_IN_RINGTONE_IDS.includes(value)) || isOwnerSoundId(value);
+
+/** One owner sound, as `shell:ownerConfig` answers it. */
+export interface OwnerSound {
+  /** `owner:<file stem>`. */
+  id: string;
+  /** The stem with `-` and `_` read as spaces. */
+  label: string;
+  /** `https://cfx-nui-<resource>/branding/sounds/<file>`. */
+  url: string;
+}
+
+/** A file name's stem: everything before the last dot. */
+export const soundStem = (name: string): string => {
+  const dot = name.lastIndexOf('.');
+  return dot < 0 ? name : name.slice(0, dot);
+};
+
+/** How a stem reads in a picker: `-` and `_` become spaces. */
+export const soundLabel = (stem: string): string => stem.replace(/[-_]/g, ' ');
+
 /** `#rrggbb`, answered lowercase. Unset or blank is null: the built-in theme. */
 export const parseThemeSeed = (raw: unknown): Parsed<string | null> => {
   const text = String(raw ?? '').trim();
@@ -223,4 +305,6 @@ export interface OwnerConfig {
   wallpapers: string[];
   /** The same URL form, or null for the micaOS mark (MICA-236). */
   brandLogo: string | null;
+  /** Owner ringtones and notification tones from `branding/sounds/`, sorted by file name (MICA-256). */
+  sounds: OwnerSound[];
 }

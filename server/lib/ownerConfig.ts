@@ -7,7 +7,11 @@ import {
   brandingUrl,
   hasExtension,
   isSafeFileName,
+  MAX_SOUND_BYTES,
+  MAX_SOUND_STEM,
+  MAX_SOUNDS,
   MAX_WALLPAPERS,
+  OWNER_SOUND_PREFIX,
   parseBrandLogo,
   parseDefaultContacts,
   parseDefaultDock,
@@ -15,10 +19,15 @@ import {
   parseDisabledApps,
   parseThemeSeed,
   parseWallpapersFolder,
+  SOUND_EXTENSIONS,
+  soundLabel,
+  soundStem,
+  SOUNDS_FOLDER,
   WALLPAPER_EXTENSIONS,
   type DefaultContact,
   type FrameId,
-  type OwnerConfig
+  type OwnerConfig,
+  type OwnerSound
 } from '@mica/shared/ownerConfig';
 import { PlayerFacingError } from './errors';
 import { appOfService } from './services';
@@ -223,6 +232,89 @@ export const brandLogo = (): string | null => {
   return brandingUrl(GetCurrentResourceName(), parsed.value);
 };
 
+// ─── sounds (MICA-256) ───────────────────────────────────────────────────────
+
+/** The sound folder as listed, once per process: adding a sound restarts the resource. */
+let soundsListed: OwnerSound[] | null = null;
+
+/**
+ * `branding/sounds/`, listed once. A file is offered when its name is safe to put in a URL
+ * unescaped (the wallpaper rule), it ends in one of `SOUND_EXTENSIONS`, its stem is at most
+ * `MAX_SOUND_STEM` characters and it is at most `MAX_SOUND_BYTES`, and no earlier file has its stem; the first `MAX_SOUNDS` of
+ * those by name are offered. Unlike a wallpaper folder, where a stray file is ignored, every
+ * file dropped here is named in a warning — anything an owner puts in this folder is meant as
+ * a sound. The exception is a hidden file (`.gitkeep`, `.DS_Store`), which is never one. A
+ * folder that is not there is `[]` with nothing said.
+ */
+const listSounds = (): OwnerSound[] => {
+  const root = resourceRoot();
+  if (!root) return [];
+  const dir = `${root}/${SOUNDS_FOLDER}`;
+  let entries: string[];
+  try {
+    if (!existsSync(dir)) return [];
+    if (!statSync(dir).isDirectory()) {
+      sayOnce(`sounds: '${SOUNDS_FOLDER}' is a file, not a folder; no owner sounds offered.`);
+      return [];
+    }
+    entries = readdirSync(dir);
+  } catch (error) {
+    sayOnce(`sounds: '${SOUNDS_FOLDER}' could not be listed (${String(error)}).`);
+    return [];
+  }
+
+  const skip = (name: string, why: string): void =>
+    sayOnce(`sounds: skipping '${SOUNDS_FOLDER}/${name}': ${why}.`);
+  const accepted: string[] = [];
+  const stems = new Map<string, string>();
+  for (const name of entries.slice().sort()) {
+    if (name.startsWith('.')) continue;
+    let stats: { isFile(): boolean; size: number } | null = null;
+    try {
+      stats = statSync(`${dir}/${name}`);
+    } catch {
+      stats = null;
+    }
+    if (!stats?.isFile()) {
+      skip(name, 'not a file');
+    } else if (!hasExtension(name, SOUND_EXTENSIONS)) {
+      skip(name, `a sound is ${SOUND_EXTENSIONS.map((e) => `.${e}`).join(', ')}`);
+    } else if (!isSafeFileName(name)) {
+      skip(name, 'a sound file name is letters, digits, dot, underscore and hyphen');
+    } else if (soundStem(name).length > MAX_SOUND_STEM) {
+      skip(name, `the name before the extension is longer than ${MAX_SOUND_STEM} characters`);
+    } else if (stats.size > MAX_SOUND_BYTES) {
+      skip(name, `it is ${stats.size} bytes, over the ${MAX_SOUND_BYTES}-byte limit`);
+    } else if (stems.has(soundStem(name))) {
+      skip(name, `'${stems.get(soundStem(name))}' already has that name, and ids come from it`);
+    } else {
+      stems.set(soundStem(name), name);
+      accepted.push(name);
+    }
+  }
+  if (accepted.length > MAX_SOUNDS) {
+    sayOnce(
+      `sounds: '${SOUNDS_FOLDER}' has ${accepted.length} sounds; offering the first ` +
+        `${MAX_SOUNDS} by name and leaving out ${accepted.slice(MAX_SOUNDS).join(', ')}.`
+    );
+  }
+  const resource = GetCurrentResourceName();
+  return accepted.slice(0, MAX_SOUNDS).map((name) => {
+    const stem = soundStem(name);
+    return {
+      id: `${OWNER_SOUND_PREFIX}${stem}`,
+      label: soundLabel(stem),
+      url: brandingUrl(resource, `${SOUNDS_FOLDER}/${name}`)
+    };
+  });
+};
+
+/** The owner's ringtones and notification tones, or `[]`. */
+export const sounds = (): OwnerSound[] => {
+  soundsListed ??= listSounds();
+  return soundsListed;
+};
+
 /** What `shell:ownerConfig` answers. */
 export const ownerConfig = (): OwnerConfig => ({
   disabledApps: disabledApps(),
@@ -230,13 +322,14 @@ export const ownerConfig = (): OwnerConfig => ({
   themeSeed: themeSeed(),
   defaultFrame: defaultFrame(),
   wallpapers: wallpapers(),
-  brandLogo: brandLogo()
+  brandLogo: brandLogo(),
+  sounds: sounds()
 });
 
 /**
  * Read everything once at resource start, so a refused value is warned about when the owner is
  * watching the console rather than on some player's first open, and the wallpaper folder is
- * listed before anyone asks.
+ * listed before anyone asks, and the sound folder with it.
  */
 on('onResourceStart', (resourceName: string) => {
   if (resourceName !== GetCurrentResourceName()) return;
@@ -438,5 +531,6 @@ export const __resetOwnerConfig = (): void => {
   checked.clear();
   contactsMemo = null;
   listed.clear();
+  soundsListed = null;
   said.clear();
 };

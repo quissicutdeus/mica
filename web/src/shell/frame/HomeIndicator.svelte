@@ -9,6 +9,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { shadeDragRevealDistance } from '../state/display';
   import { isShadeOpen, closeShade } from '../state/shade';
   import { closeDrawer, isDrawerOpen } from '../state/appDrawer';
+  import { closeControlCenter, isControlCenterOpen } from '../state/controlCenter';
   import { attachHomeBarDrag } from './frameGestures';
 
   /**
@@ -56,6 +57,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       // the no-op goHome() branch and left the drawer open.
       closeDrawer();
     } else {
+      // MICA-247, review round 2: the control center is not a third full-screen sheet
+      // in the same sense as the shade/drawer above — it is a quick-settings overlay,
+      // and "go home" is a fine thing to do while it happens to be up. So this is not a
+      // third dismiss-only branch (which would also have needed a third accessible
+      // name, and the first two attempts at one collided with an existing "Open/Close
+      // Control Center" label elsewhere in the phone). It is the ordinary "go home"
+      // tap, with closing the control center folded in as a side effect so home
+      // doesn't render behind its `z-55` sheet.
+      if ($isControlCenterOpen) closeControlCenter();
       goHome();
     }
   }}
@@ -72,11 +82,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
        on a themed role token, because those are written as inline custom properties at
        runtime and `app-utilities.css` generates no class for the modified form — the
        pill would simply render with no background. The variant role is the
-       pre-resolved, dimmer counterpart and needs no modifier. -->
+       pre-resolved, dimmer counterpart and needs no modifier. The control center is the
+       same near-white sheet as the shade and drawer, so it takes the same branch
+       (MICA-247) rather than staying invisible over it too. -->
   <div
     class="duration-medium ease-emphasized h-1 w-1/3 rounded-full transition-colors {$isShadeOpen ||
-    $isDrawerOpen
-      ? 'bg-on-surface-variant hover:bg-on-surface'
+    $isDrawerOpen ||
+    $isControlCenterOpen
+      ? 'bg-on-surface-variant'
       : 'bg-white/80 hover:bg-white'}"
   ></div>
 </button>

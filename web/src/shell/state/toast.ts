@@ -6,6 +6,7 @@ import { get, writable } from 'svelte/store';
 import { audio } from './audio';
 import { isBatteryDead } from './charge';
 import { isPhoneOpen } from './phoneOpen';
+import { contacts } from '../../services/contacts';
 import { addNotificationItem, clearNotifications } from '../../services/notifications';
 import { notificationAllows } from './notificationPolicy';
 import type { ToastMessage } from '../../../../sdk/vocabulary/shell';
@@ -85,6 +86,9 @@ function createToastStore() {
           return toasts.filter((t) => t.id !== id);
         });
         timers.delete(id);
+        // An expired call is a missed call — nobody accepted or declined, so `dismiss`
+        // never ran and never will for this id.
+        if (expiring?.type === 'call') audio.stopRing();
         void expiring?.onExpire?.();
         advanceQueue();
       }, duration);
@@ -225,10 +229,15 @@ function createToastStore() {
 
   const dismiss = (id: string) => {
     clearToastTimer(id);
-    const wasVisible = get(store).some((t) => t.id === id);
+    const dismissed = get(store).find((t) => t.id === id);
+    // Accept and decline both end here (`ToastHost.svelte` calls `dismiss` after either
+    // action's own `onClick`), and so does a call ended remotely (`Shell.svelte` dismisses
+    // the same id directly) — one check here, rather than one at each call site, is what
+    // keeps a multi-minute owner ringtone from outliving every one of them.
+    if (dismissed?.type === 'call') audio.stopRing();
     update((toasts) => toasts.filter((t) => t.id !== id));
     queue = queue.filter((t) => t.id !== id);
-    if (wasVisible) advanceQueue();
+    if (dismissed) advanceQueue();
   };
 
   /** Dismiss the toast and, if it created one, clear its notification from the drawer too. */
@@ -365,7 +374,7 @@ function createToastStore() {
           breakThrough: options.breakThrough
         })
       ) {
-        audio.play('ringtone');
+        audio.play('ringtone', { tone: contactRingtone(options.number) });
       }
       return show({
         source: 'call',
@@ -412,5 +421,18 @@ function createToastStore() {
     }
   };
 }
+
+/**
+ * The ringtone a contact has been given (MICA-142/256), or null for the system one. The
+ * number is compared as digits, since a caller arrives as `5550199` and a contact is
+ * saved as `555-0199`. An unknown caller, an unloaded list and a contact with no override
+ * all answer null — the phone rings with the ringtone chosen in Settings.
+ */
+const contactRingtone = (number: string): string | null => {
+  const digits = number.replace(/\D/g, '');
+  if (!digits) return null;
+  const match = get(contacts).find((c) => c.phone.replace(/\D/g, '') === digits);
+  return match?.ringtone ?? null;
+};
 
 export const toast = createToastStore();

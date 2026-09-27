@@ -15,7 +15,9 @@ import {
   ringMode,
   RING_MODE_CHOICES,
   ringtone,
-  RINGTONE_OPTIONS
+  ringtoneChoices,
+  notificationTone,
+  notificationToneChoices
 } from '../../shell/state/audio';
 
 /**
@@ -48,7 +50,10 @@ export function systemHardware() {
      */
     ringModeChoices: readable(RING_MODE_CHOICES),
     ringtone,
-    ringtoneChoices: readable(RINGTONE_OPTIONS)
+    /** Built-in tones followed by the owner's sounds (MICA-256). */
+    ringtoneChoices,
+    notificationTone,
+    notificationToneChoices
   };
 }
 

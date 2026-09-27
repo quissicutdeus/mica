@@ -29,7 +29,8 @@ describe('the shell:ownerConfig mock (MICA-234)', () => {
       themeSeed: '#0e9f6e',
       defaultFrame: 'notch',
       wallpapers: ['/mock-branding/aurora.svg'],
-      brandLogo: '/mock-branding/logo.svg'
+      brandLogo: '/mock-branding/logo.svg',
+      sounds: [{ id: 'owner:Sample-Tone', url: '/mock-branding/sounds/Sample-Tone.wav' }]
     });
   });
 

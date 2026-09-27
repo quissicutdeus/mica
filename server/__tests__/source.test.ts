@@ -203,7 +203,8 @@ describe('the owner config a server reports', () => {
       themeSeed: null,
       defaultFrame: 'classic',
       wallpapers: [],
-      brandLogo: null
+      brandLogo: null,
+      sounds: []
     });
   });
 
@@ -219,7 +220,8 @@ describe('the owner config a server reports', () => {
       themeSeed: null,
       defaultFrame: 'classic',
       wallpapers: [],
-      brandLogo: null
+      brandLogo: null,
+      sounds: []
     });
   });
 });

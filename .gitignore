@@ -31,3 +31,6 @@ branding/**
 !branding/README.md
 !branding/wallpapers/
 !branding/wallpapers/.gitkeep
+!branding/sounds/
+branding/sounds/*
+!branding/sounds/.gitkeep
