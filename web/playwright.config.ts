@@ -35,7 +35,11 @@ const THEME_SPECS = [
   '**/music-artwork.spec.ts',
   // The greyed Store row (MICA-169): its reason text and disabled button are scanned by axe in
   // both schemes, since a disabled control is the classic place a contrast rule gets skipped.
-  '**/store-unavailable.spec.ts'
+  '**/store-unavailable.spec.ts',
+  // MICA-295: the tablet focus-ring check, the same colour- and scheme-sensitive
+  // measurement a11y.spec.ts makes for the phone. Run a second time by tablet-light below,
+  // rather than by this project, since it needs the wider frame to fit unzoomed.
+  '**/accessibility.spec.ts'
 ];
 
 export default defineConfig({
@@ -106,14 +110,34 @@ export default defineConfig({
      *
      *   export CEF_FLOOR_CHROMIUM=/path/to/chrome-linux/chrome
      *   pnpm test:e2e
+     *
+     * MICA-295: split in two, exactly the way `chromium`/`tablet` are, because one
+     * viewport cannot fit both. `cef-floor` keeps the suites 1280x960 and now ignores
+     * `tablet/`; `cef-floor-tablet` runs only `tablet/`, at the same 1440x1000 the
+     * `tablet` project below uses — 1312x832 is the floor for the 1280x800 frame and its
+     * margins, and this real Chromium 103 binary has no zoom-only fallback the way a
+     * modern one does. Both stay behind the same env var and the same loud skip/CI throw:
+     * neither is optional once the other is not.
      */
     ...(process.env.CEF_FLOOR_CHROMIUM
       ? [
           {
             name: 'cef-floor',
+            testIgnore: /tablet\//,
             use: {
               ...devices['Desktop Chrome'],
               viewport: { width: 1280, height: 960 },
+              launchOptions: {
+                executablePath: process.env.CEF_FLOOR_CHROMIUM
+              }
+            }
+          },
+          {
+            name: 'cef-floor-tablet',
+            testMatch: /tablet\//,
+            use: {
+              ...devices['Desktop Chrome'],
+              viewport: { width: 1440, height: 1000 },
               launchOptions: {
                 executablePath: process.env.CEF_FLOOR_CHROMIUM
               }
@@ -124,7 +148,7 @@ export default defineConfig({
           if (process.env.CI) {
             throw new Error(
               'CEF_FLOOR_CHROMIUM is not set. CI must provide the Chromium 103 binary path. ' +
-                'The cef-floor project is not optional in CI.'
+                'The cef-floor and cef-floor-tablet projects are not optional in CI.'
             );
           }
           // In local runs, print a message that this project is being skipped, never silent.
@@ -177,9 +201,41 @@ export default defineConfig({
     {
       name: 'chromium-light',
       testMatch: THEME_SPECS,
+      // Same reason as `chromium` above: a tablet spec here would run at a size that
+      // does not fit the frame. `tablet-light` below is where a THEME_SPECS entry under
+      // `tablet/` actually runs a second time.
+      testIgnore: /tablet\//,
       use: {
         ...devices['Desktop Chrome'],
         viewport: { width: 1280, height: 960 },
+        storageState: {
+          cookies: [],
+          origins: [
+            {
+              origin: `http://127.0.0.1:${PORT}`,
+              localStorage: [
+                {
+                  name: 'mica:settings:theme',
+                  value: JSON.stringify({ seed: '#155dfc', mode: 'light' })
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    /**
+     * The tablet's THEME_SPECS entries, in light (MICA-295) — `tablet/accessibility.spec.ts`
+     * today. Its own viewport, for the same reason `tablet` above has one: the frame does
+     * not fit at `chromium-light`'s 1280x960.
+     */
+    {
+      name: 'tablet-light',
+      testMatch: THEME_SPECS,
+      testIgnore: /^(?!.*tablet\/).*$/,
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1440, height: 1000 },
         storageState: {
           cookies: [],
           origins: [
