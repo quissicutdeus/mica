@@ -21,7 +21,7 @@ const { dbMock, convRepo, sources, phones } = vi.hoisted(() => ({
     findParticipants: vi.fn(async () => [] as any[]),
     findExternalThread: vi.fn(async () => null as any),
     createConversation: vi.fn(async () => 7),
-    addParticipant: vi.fn(async () => true)
+    ensureLineParticipant: vi.fn(async () => undefined)
   },
   sources: new Map<string, number>(),
   phones: { forCitizen: vi.fn(async () => 'PHONE_A') }
@@ -101,7 +101,7 @@ describe('sendFromLine', () => {
       participant_b: 'ext:5550199'
     });
     // The recipient is the thread's only participant; a line has no players row to name.
-    expect(convRepo.addParticipant).toHaveBeenCalledWith(7, CID, 'PHONE_A', 'member');
+    expect(convRepo.ensureLineParticipant).toHaveBeenCalledWith(7, CID, 'PHONE_A');
     expect(result).toEqual({ conversationId: 7, messageId: 99, delivered: false });
   });
 
@@ -111,7 +111,8 @@ describe('sendFromLine', () => {
     const result = await sendFromLine(CID, CAB, 'Still outside.', undefined);
 
     expect(convRepo.createConversation).not.toHaveBeenCalled();
-    expect(convRepo.addParticipant).not.toHaveBeenCalled();
+    // Its membership is still made sure of: a phone that left the thread is restored (MICA-275).
+    expect(convRepo.ensureLineParticipant).toHaveBeenCalledWith(3, CID, 'PHONE_A');
     expect(result.conversationId).toBe(3);
   });
 
@@ -203,7 +204,7 @@ describe('sendFromLine', () => {
     const result = await sendFromLine(CID, CAB, 'Your ride is outside.', undefined);
 
     expect(result.conversationId).toBe(11);
-    expect(convRepo.addParticipant).toHaveBeenCalledWith(11, CID, 'PHONE_A', 'member');
+    expect(convRepo.ensureLineParticipant).toHaveBeenCalledWith(11, CID, 'PHONE_A');
   });
 
   it('lets any other failure to create the thread propagate', async () => {

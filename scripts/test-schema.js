@@ -44,12 +44,15 @@ let checksRun = 0;
  * two framework shapes, fourteen checks and the seeded schema's one. Plus MICA-167's
  * retention scenario on each shape: sixteen checks and the seeded schema's one. Plus
  * MICA-292's evidence hold on the purges and the sweep, ten checks and the seeded schema's one,
- * on qb and on ESX with `users` on each of two collations (MICA-299).
+ * on qb and on ESX with `users` on each of two collations (MICA-299). Plus MICA-275's line
+ * membership, eleven checks on each shape.
  */
 const IMPORT_CHECKS = 15;
 const RETENTION_CHECKS = 17;
 const EVIDENCE_CHECKS = 11;
-const MINIMUM_CHECKS = 48 + IMPORT_CHECKS * 3 * 2 + RETENTION_CHECKS * 2 + EVIDENCE_CHECKS * 3;
+const LINE_CHECKS = 11;
+const MINIMUM_CHECKS =
+  48 + LINE_CHECKS * 2 + IMPORT_CHECKS * 3 * 2 + RETENTION_CHECKS * 2 + EVIDENCE_CHECKS * 3;
 
 const check = (label, actual, expected) => {
   checksRun += 1;
@@ -233,7 +236,10 @@ const IMPORTER = path.join(root, 'server/lib/import/index.ts');
 
 const loadServerModule = async () => {
   const entry = [
-    `export { ConversationRepository } from '${root}/server/repositories/ConversationRepository.ts';`,
+    `export { ConversationRepository, openLineThread } from '${root}/server/repositories/ConversationRepository.ts';`,
+    // MICA-275: the declared repository, whose `create` is the one a line thread is opened
+    // with in game. Already in the bundle through Messages.ts; exported to reach it.
+    `export { conversations } from '${root}/server/services/Conversations.ts';`,
     `export { MessageRepository } from '${root}/server/repositories/MessageRepository.ts';`,
     `export { Database } from '${root}/server/lib/Database.ts';`,
     `export { FrameworkBridge, __setResourceLookup } from '${root}/server/lib/FrameworkBridge.ts';`,
@@ -567,7 +573,117 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, modules }) => {
     'Downtown Cab'
   );
 
+  await runLineMembership({
+    connection,
+    framework,
+    repo,
+    lineThreadId,
+    conversationId,
+    ownerB,
+    phoneB,
+    modules
+  });
+
   console.log(`    schema test passed for ${framework}`);
+};
+
+/**
+ * MICA-275: a phone's membership of a thread with a line, on a real engine.
+ *
+ * `conversation_phone_unique` is on `(conversation_id, phone_id)` and still holds a row
+ * after the player leaves, so rejoining by inserting a second row is a duplicate-key error
+ * no mock can show. `ensureLineParticipant` reopens the left row instead; these checks hold
+ * it to that, and to never reopening a moderated one. The declared repository opens the
+ * thread, so the `create` is the one the game runs.
+ */
+const runLineMembership = async ({
+  connection,
+  framework,
+  repo,
+  lineThreadId,
+  conversationId,
+  ownerB,
+  phoneB,
+  modules
+}) => {
+  step(`a phone's membership of a thread with a line on ${framework} (MICA-275)`);
+  const declared = modules.conversations.repo;
+  const line = { name: 'Downtown Cab', number: '5550123' };
+  const key = 'ext:5550123';
+  const membership = async (id) => {
+    const [rows] = await connection.query(
+      'SELECT id, status, left_at FROM mica_messages_participants WHERE conversation_id = ? AND phone_id = ?',
+      [id, phoneB]
+    );
+    return rows;
+  };
+  const attempt = async () => {
+    try {
+      return { thread: await modules.openLineThread(declared, ownerB, phoneB, line) };
+    } catch (error) {
+      return { error: String(error?.message ?? error) };
+    }
+  };
+
+  const opened = await attempt();
+  check(`${framework}: openLineThread opens a thread`, opened.error ?? null, null);
+  const threadId = opened.thread?.id;
+  const [[row]] = await connection.query(
+    'SELECT participant_a, participant_b, is_group, status FROM mica_messages_conversations WHERE id = ?',
+    [threadId]
+  );
+  check(
+    `${framework}: the thread is keyed on the line`,
+    [row?.participant_a, row?.participant_b],
+    [phoneB, key]
+  );
+  const first = await membership(threadId);
+  check(
+    `${framework}: with the phone its one live member`,
+    first.map((m) => m.status),
+    ['active']
+  );
+
+  await repo.removeParticipant(threadId, ownerB, phoneB, 'left');
+  check(
+    `${framework}: the player leaves`,
+    (await membership(threadId)).map((m) => m.status),
+    ['left']
+  );
+
+  const again = await attempt();
+  check(`${framework}: opening it again raises no duplicate key`, again.error ?? null, null);
+  check(`${framework}: and finds the same thread`, again.thread?.id, threadId);
+  const reopened = await membership(threadId);
+  check(
+    `${framework}: the same row is reopened, active, not a second one`,
+    reopened.map((m) => [m.id, m.status, m.left_at]),
+    [[first[0]?.id, 'active', null]]
+  );
+
+  check(`${framework}: lineKeyOf answers the line's key`, await declared.lineKeyOf(threadId), key);
+  check(
+    `${framework}: and null for a thread between two phones`,
+    await declared.lineKeyOf(conversationId),
+    null
+  );
+  check(
+    `${framework}: and the key of the MICA-223 thread`,
+    await declared.lineKeyOf(lineThreadId),
+    'ext:5550199'
+  );
+
+  await connection.query(
+    `UPDATE mica_messages_participants SET status = 'moderated', left_at = NOW()
+      WHERE conversation_id = ? AND phone_id = ?`,
+    [threadId, phoneB]
+  );
+  await attempt();
+  check(
+    `${framework}: a moderated membership stays shut`,
+    (await membership(threadId)).map((m) => m.status),
+    ['moderated']
+  );
 };
 
 /* ------------------------------------------------------------ imports (MICA-233) */

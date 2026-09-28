@@ -894,6 +894,12 @@ export function registerPublicApi(): void {
    * `job` ('police', lower_snake_case) files it under a framework job for the Jobs app
    * (MICA-227). Both are optional and both are refused with `invalid_args` when malformed,
    * rather than trimmed or dropped. Still two arguments — both ride in the options table.
+   *
+   * `onMessage` (MICA-275, optional) is told when a player texts the number: `{ to, from,
+   * source, citizenid, body, conversationId, messageId }`, after the text is written into the
+   * thread between the player's phone and the line. Its return value is ignored and a throw
+   * never fails the player's send. The reply is `SendMessage(citizenid, { from: { number },
+   * body })` with this line's number, which lands in that same thread and pushes live.
    */
   publish(
     'RegisterNumber',

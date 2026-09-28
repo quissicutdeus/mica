@@ -36,8 +36,38 @@ export interface IncomingLineCall {
   callId: number;
 }
 
+/**
+ * What reaches a line's `onMessage` when a player texts it (MICA-275).
+ *
+ * The text is already written by the time this is called: it sits in the thread between the
+ * player's phone and the line, the same thread `SendMessage` from this number writes into. To
+ * answer, call `SendMessage(citizenid, { from: { number }, body })` with the line's number.
+ * `citizenid` is here so that reply still lands when the player has gone offline.
+ */
+export interface IncomingLineMessage {
+  /** The line's own number, the one that was texted. */
+  to: string;
+  /** The sender's phone number, or null when the framework has none for them. */
+  from: string | null;
+  /** The sender's server id. */
+  source: number;
+  /** The sender's citizenid, which `SendMessage` takes to reply. */
+  citizenid: string;
+  /** The text. Empty when the player sent only an attachment. */
+  body: string;
+  /** The thread the text is in, the same one a reply lands in. */
+  conversationId: number;
+  messageId: number;
+}
+
 export interface LineOptions {
   onCall: (call: IncomingLineCall) => CallVerdict | Promise<CallVerdict>;
+  /**
+   * Called when a player texts the number (MICA-275). Optional: a line without it still
+   * receives texts into its thread, and nothing is told. Its return value is ignored, and a
+   * throw or a rejection is logged: the player's send has already succeeded by then.
+   */
+  onMessage?: (message: IncomingLineMessage) => unknown;
   /**
    * Defaults to true. A player who blocks a blockable line's number gets no live push from its
    * texts, as for any other number (MICA-278). `false` delivers regardless, and only for texts
@@ -62,9 +92,22 @@ export interface RegisteredLine {
   label: string | null;
   job: string | null;
   onCall: LineOptions['onCall'];
+  onMessage: LineOptions['onMessage'] | null;
 }
 
 export const LABEL_MAX = 40;
+
+/**
+ * What a line's number may look like (MICA-275): digits, optionally led by `+`, with the
+ * separators people dial through — space, `-`, `.`, `(` and `)` — and at least one digit.
+ *
+ * Stricter than `phoneNumberFrom`, which only trims and caps the length, because a line's
+ * number is also the key of its thread (`ext:<number>`, lowercased). Letters are what let a
+ * line registered as "Downtown Cab" match another resource's name-only `SendMessage` thread,
+ * and two case-variants of one name match each other. Nothing in this shape has a case, and
+ * nothing a name-only sender produces fits it unless the name is itself a number.
+ */
+const LINE_NUMBER = /^\+?[\d ().-]*\d[\d ().-]*$/;
 const JOB_KEY = /^[a-z][a-z0-9_]*$/;
 
 const lines = new Map<string, RegisteredLine>();
@@ -76,6 +119,9 @@ export const __resetRegistry = (): void => {
 };
 
 export const lookupLine = (number: string): RegisteredLine | undefined => lines.get(number);
+
+/** Every line registered right now, by anyone. */
+export const allLines = (): RegisteredLine[] => [...lines.values()];
 
 /** Every line a resource owns. Used by the resource-stop sweep. */
 export const linesOwnedBy = (owner: string): RegisteredLine[] =>
@@ -94,8 +140,17 @@ export function registerNumber(
   if (!number) {
     return fail('invalid_args', 'A phone number is required.');
   }
+  if (!LINE_NUMBER.test(number)) {
+    return fail(
+      'invalid_args',
+      "A line's number is digits, with an optional leading '+' and spaces, '-', '.', '(' or ')'."
+    );
+  }
   if (typeof options?.onCall !== 'function') {
     return fail('invalid_args', 'onCall must be a function.');
+  }
+  if (options.onMessage !== undefined && typeof options.onMessage !== 'function') {
+    return fail('invalid_args', 'onMessage must be a function.');
   }
 
   // Refused rather than truncated or dropped: a label cut short reads as a different name,
@@ -134,7 +189,8 @@ export function registerNumber(
     blockable: options.blockable !== false,
     label,
     job,
-    onCall: options.onCall
+    onCall: options.onCall,
+    onMessage: options.onMessage ?? null
   });
   return ok();
 }
@@ -207,6 +263,27 @@ export async function askLine(line: RegisteredLine, call: IncomingLineCall): Pro
   } finally {
     if (timer) clearTimeout(timer);
   }
+}
+
+/**
+ * Tell a line a player texted it (MICA-275). Never throws, never waits.
+ *
+ * Fire-and-forget rather than awaited, unlike `askLine`: a call needs the handler's verdict
+ * before anything can happen, but a text is already written and delivered to the thread, so
+ * there is nothing for the player's send to wait on. A handler that throws, rejects or never
+ * returns is somebody else's bug and is logged. Returns whether a handler was there to tell.
+ */
+export function tellLine(line: RegisteredLine, message: IncomingLineMessage): boolean {
+  const handler = line.onMessage;
+  if (!handler) return false;
+  const report = (error: unknown) =>
+    console.error(`[mica] line ${line.number} (${line.owner}) onMessage threw:`, error);
+  try {
+    Promise.resolve(handler(message)).catch(report);
+  } catch (error) {
+    report(error);
+  }
+  return true;
 }
 
 /**

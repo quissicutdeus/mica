@@ -512,6 +512,17 @@ with `internal_error` and the rest of Messages is unaffected.
 
 ### Added
 
+**A script's phone number can receive texts and reply to them (MICA-275).**
+`RegisterNumber` takes an optional `onMessage` handler, called after a player's
+text to that number is saved; the script replies with `SendMessage`, and both
+directions land in the one thread the player sees. A player's reply to a
+`SendMessage` text from a registered line used to be stored and reach nobody.
+Leaving a thread with a line now deletes it for that player, so the line's next
+text opens a fresh thread rather than one they can no longer see. **For script
+authors:** `RegisterNumber` now refuses a number with letters in it, with
+`invalid_args`. No owner action; the details are in the README's
+[Exports for other resources](README.md#exports-for-other-resources).
+
 **Places has a map, and friends can share their live location (MICA-244).** The
 map pans and zooms and shows saved places, shared pins and your own position.
 **No map image ships**: GTA's map art is Rockstar's, so set `mica_map_image` to

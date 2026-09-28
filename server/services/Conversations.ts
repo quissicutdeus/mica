@@ -3,7 +3,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { PlayerFacingError } from '../lib/errors';
-import { ConversationRepository } from '../repositories/ConversationRepository';
+import {
+  ConversationRepository,
+  openLineThread,
+  PARTICIPANT_KEY_MAX_LENGTH
+} from '../repositories/ConversationRepository';
+import { lookupLine } from '../lib/numberRegistry';
 import { defineService } from '../lib/defineService';
 import { Conversation, Participant } from '@mica/shared/types';
 import { AuditLogger } from '../lib/AuditLogger';
@@ -14,14 +19,8 @@ import { phoneForCitizen, phoneForRequest } from '../lib/phoneIdentity';
 import { readPhoneIdByNumber } from '../lib/phoneNumbers';
 import { onPhoneHandover } from './Phones';
 
-/**
- * The width of one side of a 1:1 thread: a phone id, or a line's `ext:` key (MICA-223).
- *
- * Its own constant since MICA-289, when a citizenid's width started to depend on the
- * framework: these columns have held phone ids since MICA-282, not citizenids, so they keep
- * the 50 they always had rather than widening with the owner key on ESX for nothing.
- */
-export const PARTICIPANT_KEY_MAX_LENGTH = 50;
+// Re-exported: the constant moved beside the line helpers in the repository (MICA-275).
+export { PARTICIPANT_KEY_MAX_LENGTH };
 
 /**
  * The pair-key generated column's own width (MICA-161): two sides at
@@ -439,6 +438,21 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
   if (phone) {
     const target = await resolveByPhone(phone);
     if (!target) {
+      /**
+       * No character holds it; a script's line may (MICA-275). A player always wins, which
+       * is why this is asked second — the same order a call to the number takes. One-to-one
+       * only: a line holds no participant row, so it cannot be one member of a group, and a
+       * group naming it is refused below as any unknown number is.
+       */
+      if ((data.participants ?? []).length === 0) {
+        const line = lookupLine(phone);
+        if (line) {
+          return await openLineThread(conversationRepo, citizenid, ownPhoneId, {
+            name: line.label,
+            number: line.number
+          });
+        }
+      }
       console.log(`[Conversation] No player holds phone ${phone}; refusing to start a thread.`);
       return null;
     }
@@ -644,7 +658,16 @@ app.registerEvent('delete', async (source, cbId, data, citizenid) => {
     });
   }
 
-  if (self.role === 'admin') {
+  /**
+   * A thread with a line (MICA-223, MICA-275) has one person in it, so leaving it is deleting
+   * it. Leaving the ordinary way stranded it: the line kept writing into the thread
+   * (`findExternalThread` finds it by the pair columns, not by membership) and the player,
+   * no longer a member, never saw another text from that number. Deleted, it frees the pair
+   * key, and the line's next text opens a fresh thread the player can see.
+   */
+  const isLineThread = self.role !== 'admin' && (await conversationRepo.lineKeyOf(id)) !== null;
+
+  if (self.role === 'admin' || isLineThread) {
     // Admin deletes (soft delete) on behalf of the whole thread, so this is a
     // privileged write: the actor is not necessarily the row's citizenid.
     const success = await conversationRepo.markDeletedByAdmin(id);

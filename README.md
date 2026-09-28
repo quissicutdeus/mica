@@ -1708,7 +1708,10 @@ exports['mica']:UnregisterNumber('5559999')     -- when you are done with it
 - **The number must be a string.** `'911'`, not `911`. A number literal is
   refused with `invalid_args`, because the same parser that validates a dialled
   number rejects anything that is not a string — and from Lua that mistake is
-  easy to make and silent to read.
+  easy to make and silent to read. It must also look like a number: digits, with
+  an optional leading `+` and spaces, `-`, `.`, `(` or `)`. Letters are refused
+  with `invalid_args`, so a line can never be a name, or differ from another
+  only by case.
 - **`onCall` is required**, and answers one of `{ action = 'accept' }`,
   `{ action = 'reject' }` or `{ action = 'forward', source = <server id> }`.
   `accept` connects the caller to your script — no second player joins voice, so
@@ -1735,6 +1738,30 @@ exports['mica']:UnregisterNumber('5559999')     -- when you are done with it
   another script putting your number in `from` cannot use it to text past
   anyone's blocklist. Calls are unaffected either way: a line never places a
   call to a player, and a call to a line is never refused by a blocklist.
+- **`onMessage` is optional, and receives the texts players send your line
+  (MICA-275).** It is called after the player's text is saved and delivered,
+  with `{ to, from, source, citizenid, body, conversationId, messageId }`. Its
+  return value is ignored, and a throw or a rejected promise is logged and never
+  fails the player's send. Reply with `SendMessage`:
+
+  ```lua
+  onMessage = function(msg)
+      exports['mica']:SendMessage(msg.citizenid, {
+          from = { number = msg.to },
+          body = 'A cab is on its way.'
+      })
+  end,
+  ```
+
+  A player's thread with your line and the thread your line's `SendMessage`
+  writes into are the same thread, so both directions read as one conversation.
+  A character who holds the number is reached instead of the line, exactly as
+  for calls, and a line is never added to a group. After `UnregisterNumber` or a
+  resource stop the thread stays readable and new texts are stored but reach no
+  script; registering the number again reconnects it. A player who leaves a
+  thread with a line deletes it for themselves, and the next text either side
+  sends opens a fresh one.
+
 - **`EndLineCall(callId)` hangs up a call your line answered.** `callId` is the
   one `onCall` received. It answers `ok` when both parties have been told,
   `not_owner` for a call on another resource's line, and `invalid_args` for an

@@ -5,7 +5,14 @@
 import { PlayerFacingError } from '../lib/errors';
 import { MessageRepository } from '../repositories/MessageRepository';
 import { phoneForRequest } from '../lib/phoneIdentity';
-import { conversations, PARTICIPANT_KEY_MAX_LENGTH, type ConversationRepo } from './Conversations';
+import { conversations, type ConversationRepo } from './Conversations';
+import {
+  lineKey,
+  lineLabel,
+  openLineThread,
+  type LineSender
+} from '../repositories/ConversationRepository';
+import { allLines, tellLine, type RegisteredLine } from '../lib/numberRegistry';
 // Media is a declared app; reuse its derived repository rather than a second
 // instance, so the attachment-ownership check runs against the same allowlist.
 import { media } from './Media';
@@ -627,40 +634,19 @@ export const deliverToParticipants = async (
   return pushed;
 };
 
-/**
- * A sender that is not a player (MICA-223): a business name, a registered line, or both.
- * At least one is present; `publicApi.ts` has refused the call otherwise.
- */
-export interface LineSender {
-  name: string | null;
-  number: string | null;
-  /**
-   * False only for a line registered with `blockable: false` by the resource sending as it
-   * (MICA-278) — `publicApi.ts` decides that, since only it knows the invoking resource.
-   * Absent means blockable: a player who blocked `number` gets no live push from it.
-   */
-  blockable?: boolean;
-}
+// The line's side of a thread (MICA-223) lives beside the queries that read it; re-exported
+// here, where `SendMessage` and its tests have always found it.
+export { lineKey, lineLabel, type LineSender } from '../repositories/ConversationRepository';
 
 /**
- * The far side of a thread with a line, in the pair columns' own terms.
+ * The line a thread's `ext:` key belongs to, if one is registered now (MICA-275).
  *
- * A 1:1 thread is keyed on two phone ids. A line has no phone, so it gets a key that cannot
- * collide with one -- phone ids are bare hex, this carries a prefix -- built from the number
- * when there is one, else the name. Two resources texting from the same number therefore
- * share a thread, which is what a player expects of a number, and the same name with no
- * number is one thread too. Cut to the pair column's width; a label that long is truncated in
- * the thread name as well.
+ * Matched through `lineKey` rather than by stripping the prefix, so this can never disagree
+ * with how the key was built (it lowercases and truncates). A key built from a name, as a
+ * name-only `SendMessage` makes, matches no line: there is nobody to tell.
  */
-export const lineKey = (from: LineSender): string =>
-  `ext:${(from.number ?? from.name ?? '').trim().toLowerCase()}`.slice(
-    0,
-    PARTICIPANT_KEY_MAX_LENGTH
-  );
-
-/** What the thread and every message in it are labelled with. `name` wins when both exist. */
-export const lineLabel = (from: LineSender): string =>
-  (from.name ?? from.number ?? '').trim().slice(0, 50);
+export const lineForKey = (key: string): RegisteredLine | undefined =>
+  allLines().find((line) => lineKey({ name: null, number: line.number }) === key);
 
 /**
  * Put a text from a line into a player's Messages, online or not (MICA-223).
@@ -688,31 +674,7 @@ export const sendFromLine = async (
   const phoneId = await phoneForCitizen(citizenid);
   const key = lineKey(from);
   const label = lineLabel(from);
-
-  let conversationId: number;
-  const existing = await conversationRepo.findExternalThread(phoneId, key);
-  if (existing) {
-    conversationId = existing.id;
-  } else {
-    try {
-      conversationId = await conversationRepo.createConversation({
-        citizenid,
-        is_group: false,
-        name: label,
-        participant_a: phoneId,
-        participant_b: key
-      });
-    } catch (error) {
-      // Two texts from the same line in the same instant: `pair_key_unique` refused the
-      // second. The first one's thread is the answer.
-      const winner = /duplicate/i.test(error instanceof Error ? error.message : '')
-        ? await conversationRepo.findExternalThread(phoneId, key)
-        : null;
-      if (!winner) throw error;
-      conversationId = winner.id;
-    }
-    await conversationRepo.addParticipant(conversationId, citizenid, phoneId, 'member');
-  }
+  const conversationId = (await openLineThread(conversationRepo, citizenid, phoneId, from)).id;
 
   const resolvedAttachments = await resolveOwnedAttachments(attachments, citizenid, mediaRepo);
   const now = new Date().toISOString();
@@ -783,22 +745,65 @@ app.registerEvent('send', async (source, cbId, data, citizenid) => {
 
   const id = await messageRepo.create(newMessage);
   const stored = { ...newMessage, id } as Message & { id: number };
+  /** The sender's number, kept for the line below. Read inside the guard, as it always was. */
+  let senderPhone: string | null = null;
 
   // Delivery must not fail the send: the row is committed either way, and the sender
   // should not see an error for something that already happened.
   try {
     const senderPlayer = FrameworkBridge.getPlayer(source);
+    senderPhone = senderPlayer?.phone ?? null;
     const charinfo = senderPlayer?.rawPlayer?.PlayerData?.charinfo;
     const name = charinfo ? `${charinfo.firstname ?? ''} ${charinfo.lastname ?? ''}`.trim() : '';
     await deliverToParticipants(
       conversationId,
       citizenid,
-      { name: name || null, phone: senderPlayer?.phone ?? null },
+      { name: name || null, phone: senderPhone },
       stored
     );
   } catch (error) {
     console.error('[Messages] Delivery failed for conversation', conversationId, error);
   }
 
+  // A thread with a line: tell its handler (MICA-275). After the write and the push, and
+  // never able to fail the send, for the same reason delivery cannot.
+  try {
+    await tellLineAbout(conversationId, stored, source, citizenid, senderPhone);
+  } catch (error) {
+    console.error('[Messages] Telling a line failed for conversation', conversationId, error);
+  }
+
   return stored;
 });
+
+/**
+ * If this thread is one with a registered line, hand the text to its `onMessage`.
+ *
+ * No line registered at all is the common server, and it costs no query: the registry is in
+ * memory. Otherwise one indexed read of the thread's pair columns. A thread whose line is not
+ * registered right now (unregistered, or its resource stopped) keeps the text and tells
+ * nobody, the same as a text to a player who is offline; the line sees the thread again when
+ * its number is registered again, because the key is built from the number.
+ */
+const tellLineAbout = async (
+  conversationId: number,
+  stored: Message & { id: number },
+  source: number,
+  citizenid: string,
+  from: string | null
+): Promise<void> => {
+  if (allLines().length === 0) return;
+  const key = await conversationRepo.lineKeyOf(conversationId);
+  if (!key) return;
+  const line = lineForKey(key);
+  if (!line) return;
+  tellLine(line, {
+    to: line.number,
+    from,
+    source,
+    citizenid,
+    body: stored.message,
+    conversationId,
+    messageId: stored.id
+  });
+};

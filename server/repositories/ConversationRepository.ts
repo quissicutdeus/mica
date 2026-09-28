@@ -8,6 +8,112 @@ import { Database } from '../lib/Database';
 import { toSqlDateTime, type RecencyCursor } from '../lib/payload';
 
 /**
+ * The width of one side of a 1:1 thread: a phone id, or a line's `ext:` key (MICA-223).
+ *
+ * Its own constant since MICA-289, when a citizenid's width started to depend on the
+ * framework: these columns have held phone ids since MICA-282, not citizenids, so they keep
+ * the 50 they always had rather than widening with the owner key on ESX for nothing. Here
+ * rather than in `Conversations.ts` since MICA-275, so the line helpers below can use it;
+ * that module re-exports it.
+ */
+export const PARTICIPANT_KEY_MAX_LENGTH = 50;
+
+/**
+ * What marks the far side of a thread as a line rather than a phone (MICA-223). Phone ids
+ * are bare hex, so no phone id can start with it.
+ */
+export const LINE_KEY_PREFIX = 'ext:';
+
+/**
+ * A sender that is not a player (MICA-223): a business name, a registered line, or both.
+ * At least one is present; `publicApi.ts` has refused the call otherwise.
+ */
+export interface LineSender {
+  name: string | null;
+  number: string | null;
+  /**
+   * False only for a line registered with `blockable: false` by the resource sending as it
+   * (MICA-278) — `publicApi.ts` decides that, since only it knows the invoking resource.
+   * Absent means blockable: a player who blocked `number` gets no live push from it.
+   */
+  blockable?: boolean;
+}
+
+/**
+ * The far side of a thread with a line, in the pair columns' own terms.
+ *
+ * A 1:1 thread is keyed on two phone ids. A line has no phone, so it gets a key that cannot
+ * collide with one -- phone ids are bare hex, this carries a prefix -- built from the number
+ * when there is one, else the name. Two resources texting from the same number therefore
+ * share a thread, which is what a player expects of a number, and the same name with no
+ * number is one thread too. Cut to the pair column's width; a label that long is truncated in
+ * the thread name as well.
+ */
+export const lineKey = (from: LineSender): string =>
+  `${LINE_KEY_PREFIX}${(from.number ?? from.name ?? '').trim().toLowerCase()}`.slice(
+    0,
+    PARTICIPANT_KEY_MAX_LENGTH
+  );
+
+/** What the thread and every message in it are labelled with. `name` wins when both exist. */
+export const lineLabel = (from: LineSender): string =>
+  (from.name ?? from.number ?? '').trim().slice(0, 50);
+
+/**
+ * The thread between a phone and a line, created if it does not exist yet (MICA-223).
+ *
+ * One path for both directions (MICA-275): `Messages.sendFromLine` when the line texts first,
+ * and `conversations:create` when the player does, so a player who texts a line and the line
+ * texting back land in the same thread. The player is its only participant — a line has no
+ * `players` row — and the pair columns carry the line.
+ */
+export const openLineThread = async (
+  repo: Pick<
+    ConversationRepository,
+    'findExternalThread' | 'createConversation' | 'ensureLineParticipant'
+  >,
+  citizenid: string,
+  phoneId: string,
+  from: LineSender
+): Promise<Conversation> => {
+  const key = lineKey(from);
+  const label = lineLabel(from);
+
+  const existing = await repo.findExternalThread(phoneId, key);
+  if (existing) {
+    // A player who left this thread before leaving deleted it (MICA-275) would otherwise
+    // get it back with no membership, and every send into it would be refused.
+    await repo.ensureLineParticipant(existing.id, citizenid, phoneId);
+    return existing;
+  }
+
+  const created: Partial<Conversation> = {
+    citizenid,
+    is_group: false,
+    name: label,
+    participant_a: phoneId,
+    participant_b: key
+  };
+  let conversationId: number;
+  try {
+    conversationId = await repo.createConversation(created);
+  } catch (error) {
+    // Two texts from the same line in the same instant: `pair_key_unique` refused the
+    // second. The first one's thread is the answer.
+    const winner = /duplicate/i.test(error instanceof Error ? error.message : '')
+      ? await repo.findExternalThread(phoneId, key)
+      : null;
+    if (!winner) throw error;
+    // Still added: the winner may not have written its participant row yet, and
+    // `ensureLineParticipant` is a no-op when it already has.
+    await repo.ensureLineParticipant(winner.id, citizenid, phoneId);
+    return winner;
+  }
+  await repo.ensureLineParticipant(conversationId, citizenid, phoneId);
+  return { ...created, id: conversationId } as Conversation;
+};
+
+/**
  * Bespoke queries for conversations. The schema and both allowlists come from the
  * declaration in `services/Conversations.ts` via `defineService`.
  *
@@ -94,6 +200,35 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
     ]);
     // A conditional insert that matched nothing reports an insert id of 0.
     return Boolean(insertId);
+  }
+
+  /**
+   * The phone's live membership of a thread with a line, restored if it had left (MICA-275).
+   *
+   * Not `addParticipant` alone: `conversation_phone_unique` is on `(conversation_id,
+   * phone_id)` and holds a left row too, so inserting a second row for a phone that left is
+   * a duplicate-key error rather than a rejoin. A `left` row is reopened and re-pointed at
+   * the phone's current holder; a phone with no row at all gets one; a live row is left
+   * alone. `removed` and `moderated` are never reopened.
+   *
+   * Reached only from `openLineThread`, after `findExternalThread` matched this phone as one
+   * side of the thread's pair columns, so it can only ever restore the phone the thread is
+   * with. Named and privileged for the reason `transferParticipants` is: the row's citizenid
+   * may be exactly what changes.
+   */
+  async ensureLineParticipant(
+    conversationId: number,
+    citizenid: string,
+    phoneId: string
+  ): Promise<void> {
+    const restored = await Database.update(
+      `UPDATE mica_messages_participants
+          SET left_at = NULL, status = 'active', citizenid = ?
+        WHERE conversation_id = ? AND phone_id = ? AND status = 'left' AND left_at IS NOT NULL`,
+      [citizenid, conversationId, phoneId]
+    );
+    if (restored) return;
+    await this.addParticipant(conversationId, citizenid, phoneId, 'member');
   }
 
   async removeParticipant(
@@ -455,6 +590,30 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
       [phoneId, externalKey, externalKey, phoneId]
     );
     return rows.length > 0 ? rows[0] : null;
+  }
+
+  /**
+   * The line side of a thread, or null when the thread is not one with a line (MICA-275).
+   *
+   * A line's side of the pair carries the `ext:` prefix `Messages.lineKey` gives it, and a
+   * phone id never does (bare hex), so the prefix alone says which side it is. Filtered on
+   * `active` for the same reason `findExternalThread` is: a deleted thread is no longer the
+   * line's thread.
+   */
+  async lineKeyOf(conversationId: number): Promise<string | null> {
+    const rows = await Database.query<Pick<Conversation, 'participant_a' | 'participant_b'>[]>(
+      `SELECT c.participant_a, c.participant_b
+         FROM mica_messages_conversations c
+        WHERE c.id = ? AND c.is_group = 0 AND c.status = 'active'
+        LIMIT 1`,
+      [conversationId]
+    );
+    const row = rows[0];
+    if (!row) return null;
+    for (const side of [row.participant_a, row.participant_b]) {
+      if (typeof side === 'string' && side.startsWith(LINE_KEY_PREFIX)) return side;
+    }
+    return null;
   }
 
   async findOneToOne(phone1: string, phone2: string): Promise<Conversation | null> {
