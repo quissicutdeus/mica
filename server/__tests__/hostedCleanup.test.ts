@@ -118,6 +118,10 @@ const mediaRows = (input: (string | Row)[], options: { collectFails?: boolean } 
   dbMock.single.mockImplementation(async (sql: string) => {
     if (sql.includes('AS total')) return { total: 120 };
     if (sql.includes('AS matched')) return { matched: 3 };
+    // The owner column's live collation (MICA-299); orphanSweep.test.ts covers the rest.
+    if (sql.includes('AS collation')) {
+      return { collation: 'utf8mb4_unicode_ci', charset: 'utf8mb4' };
+    }
     throw new Error(`unexpected single(): ${sql}`);
   });
   dbMock.scalar.mockResolvedValue(null);
@@ -227,7 +231,8 @@ describe('the orphan sweep releases what the swept rows named', () => {
     expect(collect).toBeGreaterThanOrEqual(0);
     expect(collect).toBeLessThan(remove);
     expect(all[collect]).toContain(
-      'NOT EXISTS (SELECT 1 FROM players p WHERE p.citizenid = t.citizenid)'
+      'NOT EXISTS (SELECT 1 FROM players p WHERE p.citizenid = ' +
+        'CONVERT(t.citizenid USING utf8mb4) COLLATE utf8mb4_unicode_ci)'
     );
     // Only the file nothing else names.
     expect(requested()).toEqual(['https://api.example.test/files/mine.webp']);

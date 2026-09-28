@@ -991,6 +991,16 @@ export instead, which authenticates its caller.
 
 ### Fixed
 
+**On ESX with MariaDB 11.4 or later, the orphan sweep works again, and
+`micaschema apply` no longer refuses over the `users` collation (MICA-299).** A
+`users` table on MariaDB 11.4's default collation (`utf8mb4_uca1400_ai_ci`) made
+every orphan-sweep statement fail with "Illegal mix of collations", so nothing a
+deleted character left behind was cleaned up, hosted photos included. The sweep
+now matches whatever collation `users` is on, and `micaschema apply` no longer
+refuses an ESX server over it; the check on qb's `players` is unchanged. A table
+the sweep cannot clean is now logged as a failure at start and by
+`micamedia prune`, which used to report zero instead. No owner action.
+
 **Hanging up now leaves the voice call on the side that hung up.** The server
 only tells the other party a call has ended, and only that message took a player
 out of the pma-voice call channel, so the player who pressed end stayed in it.

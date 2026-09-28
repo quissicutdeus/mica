@@ -30,9 +30,9 @@ const currentSchema = async (): Promise<string | null> =>
 
 /**
  * The framework-owned column micaOS compares its own `citizenid` against, and what the
- * comparison is: a foreign key on qb, a join on ESX. The two fail differently on a collation
- * mismatch — errno 150 at DDL time versus errno 1267 at query time — so the message names
- * the one that applies rather than describing a foreign key to an ESX operator who has none.
+ * comparison is: a foreign key, or a column-to-column join. The two fail differently on a
+ * collation mismatch — errno 150 at DDL time versus errno 1267 at query time — so the message
+ * names the one that applies. Only `players` is checked today (`OWNER_COLUMNS`).
  */
 export type OwnerConstraint = 'foreign-key' | 'join';
 
@@ -43,23 +43,28 @@ interface OwnerColumn {
 }
 
 /**
- * MICA-200. Probed in this order, first hit wins. qb owns `players(citizenid)`, and every
- * micaOS foreign key points at it. ESX has no `players` — it has `users(identifier)`, which
- * `mica.esx.sql` puts no foreign key on, so for a while this check exempted ESX outright on
- * the grounds that nothing joined the two. That was a rule nobody enforced. es_extended creates
- * `users.identifier` with no explicit collation, so it takes the server default — from MariaDB
- * 11.4, `utf8mb4_uca1400_ai_ci` — while micaOS pins `TABLE_COLLATION`. A comparison against a
- * bound parameter still settles (the parameter is coerced), but a column-to-column join,
- * `LEFT JOIN users ON users.identifier = p.citizenid`, is errno 1267 "Illegal mix of
- * collations" in whichever query first writes one. Checking `users.identifier` here means the
- * mismatch is reported once, at apply time, by name, instead of by the first query to join —
- * the same place and shape the qb report already has. (Chosen over a test that greps `server/`
- * for join strings: a grep cannot see a join built at runtime, and it reports to a developer
- * rather than the operator whose database actually has the mismatch.)
+ * MICA-200, then MICA-299. Probed in this order, first hit wins — and today there is one entry.
+ *
+ * qb owns `players(citizenid)`, and every micaOS foreign key points at it, so a mismatch there
+ * is errno 150 on the DDL `micaschema apply` is about to run: a refusal is the right answer.
+ *
+ * ESX has `users(identifier)`, which `mica.esx.sql` puts no foreign key on. MICA-200 added it
+ * here anyway, on the grounds that a column-to-column **join** onto it would be errno 1267 on
+ * the stock ESX setup (es_extended leaves the collation to the server default, from MariaDB
+ * 11.4 `utf8mb4_uca1400_ai_ci`). The orphan sweep turned out to be that join, and MICA-299
+ * fixed it in the statement (`orphanSweep.ownerComparison`, which compares in the owner's own
+ * collation); every other read of `users` compares against a bound parameter, which is
+ * collation-coercible (`FrameworkBridge`, MICA-197). So nothing a mismatch on `users` breaks
+ * remains, and refusing on it would refuse `micaschema apply` — the only way an ESX server
+ * gets its versioned migrations — on every stock ESX install on a current MariaDB, over
+ * nothing, with a remedy (ALTER a table es_extended owns) that is not micaOS's to ask for.
+ *
+ * `OwnerConstraint` keeps its `'join'` member so that a future owner column which genuinely
+ * is joined can be added back here with a message that names the right errno — and the new
+ * join should reach for `ownerComparison`'s approach first.
  */
 const OWNER_COLUMNS: readonly OwnerColumn[] = [
-  { table: OWNER_TABLE, column: 'citizenid', constraint: 'foreign-key' },
-  { table: 'users', column: 'identifier', constraint: 'join' }
+  { table: OWNER_TABLE, column: 'citizenid', constraint: 'foreign-key' }
 ];
 
 const columnCollation = async (
@@ -118,11 +123,11 @@ export interface CollationMismatch {
 }
 
 /**
- * Compare the framework's owner column (`players.citizenid` on qb, `users.identifier` on ESX)
- * against what micaOS's own tables use, before any DDL runs. Returns `null` when there is
- * nothing to check (neither column exists, or the current schema could not be determined) or
- * when the collations agree; a `CollationMismatch` otherwise, naming both sides so the caller
- * can fail loud instead of letting MySQL's own errno 150 or 1267 surface unexplained.
+ * Compare the framework's owner column (`players.citizenid`; see `OWNER_COLUMNS` for why not
+ * ESX's `users.identifier`) against what micaOS's own tables use, before any DDL runs. Returns
+ * `null` when there is nothing to check (no such column, or the current schema could not be
+ * determined) or when the collations agree; a `CollationMismatch` otherwise, naming both sides
+ * so the caller can fail loud instead of letting MySQL's own errno surface unexplained.
  */
 export const checkOwnerCollation = async (): Promise<CollationMismatch | null> => {
   const schema = await currentSchema();

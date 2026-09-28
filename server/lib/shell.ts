@@ -483,8 +483,12 @@ on(`mica:server:${SHELL_SERVICE}:characterDeleted`, (rawCitizenid: unknown) => {
       // outcome logged only when there was something to say cannot be told apart from one
       // that never returned. An operator triggering this deliberately needs the difference.
       console.log(`[mica] purged ${removed} row(s) for deleted character ${citizenid}.`);
-      for (const { table, error } of failures) {
-        console.error(`[mica] could not purge ${table} for ${citizenid}:`, error);
+      // Each failure is logged where it happened, in `purgeOwnedRows`; this is the count.
+      if (failures.length > 0) {
+        console.error(
+          `[mica] purge for ${citizenid} failed on ${failures.length} table(s): ` +
+            failures.map(({ table }) => table).join(', ')
+        );
       }
     })
     .catch((error) => {
@@ -543,8 +547,12 @@ on('onResourceStart', (resourceName: string) => {
       console.log(
         `[mica] orphan sweep finished: removed ${removed} row(s)${detail ? ` (${detail})` : ''}.`
       );
-      for (const { table, error } of failures) {
-        console.error(`[mica] orphan sweep could not read ${table}:`, error);
+      // Each failure is logged where it happened, in `sweepOrphanedRows`; this is the count.
+      if (failures.length > 0) {
+        console.error(
+          `[mica] orphan sweep failed on ${failures.length} table(s): ` +
+            failures.map(({ table }) => table).join(', ')
+        );
       }
     })
     .catch((error) => {

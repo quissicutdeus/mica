@@ -162,9 +162,11 @@ export const resolveOwnerOverride = async (): Promise<OwnerOverride> => {
       [schema, table, column]
     );
     if (!found) return { owner: null, invalid: true, raw };
-  } catch {
+  } catch (error) {
     // Could not verify the convar names a real table — never trust an unverified name to
-    // decide which rows this sweep is allowed to delete.
+    // decide which rows this sweep is allowed to delete. The refusal is announced by the
+    // caller; why it could not be verified is only known here (MICA-299).
+    console.error(`[mica] could not verify ${OWNER_OVERRIDE_CONVAR} '${raw}':`, error);
     return { owner: null, invalid: true, raw };
   }
 
@@ -389,7 +391,8 @@ const announceSkip = (
     case 'owner-unreadable':
       console.warn(
         `[${label}] ${table} is empty or unreadable — the orphan sweep was skipped rather ` +
-          'than treating every row as an orphan.'
+          'than treating every row as an orphan.' +
+          (detail ? ` ${detail}` : '')
       );
       return;
     case 'identity-mismatch':
@@ -450,8 +453,52 @@ const announceSkip = (
  *    leaving orphans costs disk, and the other way costs the database.
  */
 type OwnerVerdict =
-  | { owner: OwnerTable; skipped: null }
+  | { owner: OwnerTable; match: OwnerMatch | null; skipped: null }
   | { owner: OwnerTable | null; skipped: SkipReason; detail?: string };
+
+/**
+ * The owner column's character set and collation, read live, so the sweep compares in the
+ * owner's terms rather than assuming the two sides agree. MICA-299.
+ *
+ * `null` for an owner column that has no collation at all — a numeric id — where there is
+ * nothing to reconcile and the comparison is left as it is.
+ */
+export interface OwnerMatch {
+  charset: string;
+  collation: string;
+}
+
+/** Why a caught error is worth a line: the message, never the whole driver object. */
+const describeError = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
+/**
+ * Read the owner column's collation from `information_schema`, or throw.
+ *
+ * Every way this can come back unusable throws rather than answering `null`, because `null`
+ * means "no collation to reconcile" and an unreadable answer must not become that: a sweep
+ * that then compared without `COLLATE` would be back to MICA-299's errno 1267 on every table.
+ * A name that is not a plain identifier throws too — it is interpolated after `COLLATE`,
+ * where MySQL cannot bind it.
+ */
+const readOwnerMatch = async (owner: OwnerTable): Promise<OwnerMatch | null> => {
+  const row = await Database.single<{ collation?: unknown; charset?: unknown }>(
+    `SELECT COLLATION_NAME AS collation, CHARACTER_SET_NAME AS charset
+     FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ? LIMIT 1`,
+    [owner.table, owner.column]
+  );
+  if (!row) {
+    throw new Error(
+      `information_schema has no ${owner.table}.${owner.column} in the current database.`
+    );
+  }
+  if (row.collation == null && row.charset == null) return null;
+  return {
+    charset: identifier(row.charset, "the owner column's character set"),
+    collation: identifier(row.collation, "the owner column's collation")
+  };
+};
 
 const resolveOwner = async (tables: readonly OwnedTable[]): Promise<OwnerVerdict> => {
   // MICA-159, checked before the framework verdict: an invalid override must never fall
@@ -473,16 +520,29 @@ const resolveOwner = async (tables: readonly OwnedTable[]): Promise<OwnerVerdict
       `SELECT COUNT(*) AS total FROM ${ownerTable}`
     );
     population = Number(row?.total ?? 0);
-  } catch {
-    return { owner, skipped: 'owner-unreadable' };
+  } catch (error) {
+    return { owner, skipped: 'owner-unreadable', detail: describeError(error) };
   }
   if (!Number.isFinite(population) || population <= 0) return { owner, skipped: 'owner-empty' };
+
+  // MICA-299. Which collation to compare in, before anything is compared. Unreadable is a
+  // refusal like any other unreadable answer here, never a guess at "the same as ours".
+  let match: OwnerMatch | null;
+  try {
+    match = await readOwnerMatch(owner);
+  } catch (error) {
+    return {
+      owner,
+      skipped: 'owner-unreadable',
+      detail: `Its collation could not be read: ${describeError(error)}`
+    };
+  }
 
   let sample: string[];
   try {
     sample = await sampleOwners(tables);
-  } catch {
-    return { owner, skipped: 'owner-unreadable' };
+  } catch (error) {
+    return { owner, skipped: 'owner-unreadable', detail: describeError(error) };
   }
   // No micaOS rows at all: there is nothing to sweep, and nothing to check an identity
   // against either. Refusing rather than proceeding costs nothing — a sweep of an empty
@@ -497,17 +557,49 @@ const resolveOwner = async (tables: readonly OwnedTable[]): Promise<OwnerVerdict
       [...sample]
     );
     matched = Number(row?.matched ?? 0);
-  } catch {
-    return { owner, skipped: 'owner-unreadable' };
+  } catch (error) {
+    return { owner, skipped: 'owner-unreadable', detail: describeError(error) };
   }
   if (!Number.isFinite(matched) || matched <= 0) return { owner, skipped: 'identity-mismatch' };
 
-  return { owner, skipped: null };
+  return { owner, match, skipped: null };
 };
 
 const affectedRows = (result: unknown): number => {
   const rows = (result as { affectedRows?: unknown })?.affectedRows;
   return typeof rows === 'number' && Number.isFinite(rows) ? rows : 0;
+};
+
+/**
+ * `p.<owner column> = <micaOS column>`, in the owner column's collation. MICA-299.
+ *
+ * micaOS pins every column to `TABLE_COLLATION`; es_extended creates `users.identifier` with
+ * none, so from MariaDB 11.4 it is `utf8mb4_uca1400_ai_ci`. A column-to-column comparison
+ * across two implicit collations has no coercible side, and every sweep statement failed with
+ * errno 1267 "Illegal mix of collations" — deleting nothing, rows or hosted files, on exactly
+ * the framework where this sweep is the only cleanup there is.
+ *
+ * Fixed in the statement rather than detected and refused, because refusing would leave that
+ * whole class of server — stock ESX on a current MariaDB — with no cleanup at all, and the
+ * only remedy would be to ALTER a table es_extended owns. And fixed on **micaOS's** side,
+ * never the owner's: an explicit `COLLATE` outranks an implicit one, so the comparison runs in
+ * the owner's collation and the owner column is left bare, which is what keeps its primary key
+ * usable. Collating `p.<column>` instead would make the statement legal and turn every
+ * correlated probe into a full scan of the framework's character table (see
+ * `FrameworkBridge`'s note on MICA-197). `CONVERT … USING` first, because `COLLATE` alone is
+ * an error when the two character sets differ — an older `utf8mb3` `users`, say.
+ *
+ * On qb the foreign key already forces the two to agree, so this is a no-op there.
+ *
+ * Without `match` the comparison is left bare — the shape a caller with no live collation to
+ * hand gets, and an owner column with no collation at all.
+ */
+const ownerComparison = (owner: OwnerTable, micaColumn: string, match: OwnerMatch | null) => {
+  const ownerColumn = identifier(owner.column, 'the owner column');
+  if (!match) return `p.${ownerColumn} = ${micaColumn}`;
+  const charset = identifier(match.charset, "the owner column's character set");
+  const collation = identifier(match.collation, "the owner column's collation");
+  return `p.${ownerColumn} = CONVERT(${micaColumn} USING ${charset}) COLLATE ${collation}`;
 };
 
 /**
@@ -527,21 +619,24 @@ const affectedRows = (result: unknown): number => {
  *
  * A reportable table's rows carry retention's open-report hold as well (`evidenceHold`,
  * MICA-292), so a row somebody reported is not swept while the report is open.
+ *
+ * With `match` (the owner column's live collation, `resolveOwner`), micaOS's side of the
+ * comparison is converted into it — see `ownerComparison`.
  */
 export const orphanDeleteSql = (
   owned: OwnedTable,
-  owner: OwnerTable
+  owner: OwnerTable,
+  match: OwnerMatch | null = null
 ): { sql: string; params: unknown[] } => {
   const table = identifier(owned.table, 'a swept table');
   const column = identifier(owned.column, 'an owner column');
   const ownerTable = identifier(owner.table, 'the owner table');
-  const ownerColumn = identifier(owner.column, 'the owner column');
   const hold = evidenceHold(table, table);
 
   return {
     sql:
       `DELETE FROM ${table} WHERE NOT EXISTS ` +
-      `(SELECT 1 FROM ${ownerTable} p WHERE p.${ownerColumn} = ${table}.${column}) ` +
+      `(SELECT 1 FROM ${ownerTable} p WHERE ${ownerComparison(owner, `${table}.${column}`, match)}) ` +
       (hold ? `AND ${hold.sql} ` : '') +
       `LIMIT ${DELETE_CHUNK}`,
     params: hold ? hold.params : []
@@ -555,15 +650,15 @@ export const orphanDeleteSql = (
  */
 export const orphanWhere = (
   owned: OwnedTable,
-  owner: OwnerTable
+  owner: OwnerTable,
+  match: OwnerMatch | null = null
 ): { sql: string; params: unknown[] } => {
   const column = identifier(owned.column, 'an owner column');
   const ownerTable = identifier(owner.table, 'the owner table');
-  const ownerColumn = identifier(owner.column, 'the owner column');
   const hold = evidenceHold(owned.table, 't');
   return {
     sql:
-      `NOT EXISTS (SELECT 1 FROM ${ownerTable} p WHERE p.${ownerColumn} = t.${column})` +
+      `NOT EXISTS (SELECT 1 FROM ${ownerTable} p WHERE ${ownerComparison(owner, `t.${column}`, match)})` +
       (hold ? ` AND ${hold.sql}` : ''),
     params: hold ? hold.params : []
   };
@@ -572,8 +667,12 @@ export const orphanWhere = (
 /** Let the server breathe between batches. Nothing is waiting on this. */
 const yieldToServer = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
-const sweepOneTable = async (owned: OwnedTable, owner: OwnerTable): Promise<number> => {
-  const { sql, params } = orphanDeleteSql(owned, owner);
+const sweepOneTable = async (
+  owned: OwnedTable,
+  owner: OwnerTable,
+  match: OwnerMatch | null
+): Promise<number> => {
+  const { sql, params } = orphanDeleteSql(owned, owner, match);
   let removed = 0;
 
   for (let chunk = 0; chunk < MAX_CHUNKS; chunk += 1) {
@@ -620,7 +719,7 @@ export const sweepOrphanedRows = async (options: SweepOptions = {}): Promise<Swe
     announceSkip(label, reason, verdict.owner, 'detail' in verdict ? verdict.detail : undefined);
     return skip(reason);
   }
-  const owner = verdict.owner;
+  const { owner, match } = verdict;
 
   const result: SweepResult = { removed: 0, byTable: {}, skipped: null, failures: [] };
   for (const owned of tables) {
@@ -629,14 +728,17 @@ export const sweepOrphanedRows = async (options: SweepOptions = {}): Promise<Swe
     try {
       // Before the delete, and a throw here skips the table: see `OwnedExternal`.
       if (external) {
-        refs = await external.collect(orphanWhere(owned, owner), COLLECT_LIMIT);
+        refs = await external.collect(orphanWhere(owned, owner, match), COLLECT_LIMIT);
       }
-      const removed = await sweepOneTable(owned, owner);
+      const removed = await sweepOneTable(owned, owner, match);
       if (removed > 0) {
         result.removed += removed;
         result.byTable[owned.table] = removed;
       }
     } catch (error) {
+      // Logged here as well as returned (MICA-299): `micamedia prune` reads only `removed`,
+      // so a failure left for the caller to report would be a zero that looks like a result.
+      console.error(`[${label}] orphan sweep of ${owned.table} failed:`, error);
       result.failures.push({ table: owned.table, error });
     }
     // Even after a delete that failed part-way: the release re-checks what is still named.
@@ -698,6 +800,7 @@ export const purgeOwnedRows = async (
         )
       );
     } catch (error) {
+      console.error(`[mica] purging ${table} for a deleted character failed:`, error);
       failures.push({ table, error });
     }
     if (external) await releaseCollected('mica', table, external, refs);

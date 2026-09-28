@@ -658,16 +658,26 @@ errno 1267 "Illegal mix of collations" instead. A comparison against a **bound
 parameter** is safe on either: the parameter has no collation of its own and is
 coerced to the column's. That is why `PlayerDirectory` looks names up by
 parameter and `ConversationRepository.findParticipantsForConversations`
-deliberately does not join the character table. The rule holds only while
-nothing joins the two, which nothing in the suites can prove.
+deliberately does not join the character table.
 
-So `micaschema apply` checks first (`server/lib/collationCheck.ts`, MICA-157 and
-MICA-200): it probes `players.citizenid`, then `users.identifier`, and refuses
-to apply on the first it finds whose live collation disagrees with micaOS's —
-naming the table, both collations, and the errno the operator would otherwise
-meet. It compares against a live micaOS `citizenid` column where one exists and
-`TABLE_COLLATION` otherwise. Neither column present is not a mismatch; it is a
-database no framework has populated yet.
+The one column-to-column comparison against the owner table is the orphan sweep
+(`server/lib/orphanSweep.ts`), and it does not depend on the collations matching
+(MICA-299): it reads the owner column's charset and collation from
+`information_schema` once per sweep and converts micaOS's side to them —
+`p.identifier = CONVERT(t.citizenid USING <cs>) COLLATE <coll>` — leaving the
+owner column bare so its primary key still serves each lookup. A collation it
+cannot read, or a name that is not a plain identifier, refuses the sweep as
+`owner-unreadable` rather than guessing.
+
+So `micaschema apply` checks first (`server/lib/collationCheck.ts`, MICA-157)
+only where a mismatch breaks DDL: it probes `players.citizenid` and refuses to
+apply if its live collation disagrees with micaOS's — naming the table, both
+collations, and errno 150. It compares against a live micaOS `citizenid` column
+where one exists and `TABLE_COLLATION` otherwise. `users.identifier` is no
+longer probed (MICA-299 retired MICA-200's check): nothing joins it except the
+collation-independent sweep, so a stock ESX server on MariaDB 11.4's default
+collation is not refused. A new column-to-column join against `users` must
+either collate the same way or restore that probe.
 
 ### Never read another resource's tables
 

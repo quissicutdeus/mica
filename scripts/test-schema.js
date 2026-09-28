@@ -43,13 +43,13 @@ let checksRun = 0;
  * The repository checks (48), plus MICA-233's: for each of three import sources on each of
  * two framework shapes, fourteen checks and the seeded schema's one. Plus MICA-167's
  * retention scenario on each shape: sixteen checks and the seeded schema's one. Plus
- * MICA-292's evidence hold on the purges and the sweep, on each shape: seven checks and the
- * seeded schema's one.
+ * MICA-292's evidence hold on the purges and the sweep, ten checks and the seeded schema's one,
+ * on qb and on ESX with `users` on each of two collations (MICA-299).
  */
 const IMPORT_CHECKS = 15;
 const RETENTION_CHECKS = 17;
-const EVIDENCE_CHECKS = 8;
-const MINIMUM_CHECKS = 48 + IMPORT_CHECKS * 3 * 2 + RETENTION_CHECKS * 2 + EVIDENCE_CHECKS * 2;
+const EVIDENCE_CHECKS = 11;
+const MINIMUM_CHECKS = 48 + IMPORT_CHECKS * 3 * 2 + RETENTION_CHECKS * 2 + EVIDENCE_CHECKS * 3;
 
 const check = (label, actual, expected) => {
   checksRun += 1;
@@ -257,7 +257,7 @@ const loadServerModule = async () => {
     // MICA-292: the character purges and the orphan sweep, which keep a reported row by
     // retention's own open-report hold. Same bundle, so the same declarations register.
     `export { purgeMediaForCitizen } from '${root}/server/services/Media.ts';`,
-    `export { purgeOwnedRows, sweepOrphanedRows } from '${root}/server/lib/orphanSweep.ts';`,
+    `export { orphanWhere, purgeOwnedRows, sweepOrphanedRows } from '${root}/server/lib/orphanSweep.ts';`,
     `import '${root}/server/services/Messages.ts';`,
     `import '${root}/server/services/BlabberDms.ts';`,
     `import '${root}/server/services/Marketplace.ts';`
@@ -300,14 +300,23 @@ CREATE TABLE IF NOT EXISTS players (
     PRIMARY KEY (citizenid)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;`;
 
-const USERS_TABLE = `
+/**
+ * MICA-299. es_extended creates `users` with no collation, so it takes the server default —
+ * from MariaDB 11.4 `utf8mb4_uca1400_ai_ci`, not micaOS's `utf8mb4_unicode_ci`. Pinning the
+ * fixture to micaOS's collation is what hid the sweep failing on every table there; the
+ * evidence variant runs ESX on both.
+ */
+const UNICODE_CI = 'utf8mb4_unicode_ci';
+const UCA1400 = 'utf8mb4_uca1400_ai_ci';
+
+const usersTable = (collation) => `
 CREATE TABLE IF NOT EXISTS users (
     identifier varchar(60) NOT NULL,
     firstname varchar(50) DEFAULT NULL,
     lastname varchar(50) DEFAULT NULL,
     phone_number varchar(20) DEFAULT NULL,
     PRIMARY KEY (identifier)
-) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;`;
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = ${collation};`;
 
 /**
  * The ESX characters' `users.identifier`, in es_extended multicharacter's real shape:
@@ -326,7 +335,8 @@ const seedFrameworkAndGPhone = async ({
   connection,
   schemaFile,
   hasPlayers,
-  suffix = 'schema'
+  suffix = 'schema',
+  usersCollation = UNICODE_CI
 }) => {
   const database = `mica_${path.basename(schemaFile, '.sql').replace(/\./g, '_')}_${suffix}`;
   step(`${schemaFile}: importing into \`${database}\``);
@@ -345,7 +355,7 @@ const seedFrameworkAndGPhone = async ({
       JSON.stringify({ firstname: 'Bob', lastname: 'Test', phone: '555-0002' })
     ]);
   } else {
-    await connection.query(USERS_TABLE);
+    await connection.query(usersTable(usersCollation));
     await connection.query(
       // `phone_number` is one of the three spellings the ESX adapter probes for (MICA-225);
       // core es_extended has no such column and a community resource adds it.
@@ -1008,13 +1018,25 @@ const runRetentionVariant = async ({ connection, schemaFile, hasPlayers, modules
  * for: with the cascade in place, deleting the character would take the reported photo inside
  * MariaDB, hold or no hold — the accepted risk `docs/security.md` records.
  */
-const runEvidenceVariant = async ({ connection, schemaFile, hasPlayers, modules }) => {
+const runEvidenceVariant = async ({
+  connection,
+  schemaFile,
+  hasPlayers,
+  modules,
+  usersCollation = UNICODE_CI
+}) => {
   const framework = hasPlayers ? 'qb' : 'esx';
   const A = hasPlayers ? 'CIT_A' : ESX_OWNER_A;
   const B = hasPlayers ? 'CIT_B' : ESX_OWNER_B;
-  const label = `evidence hold on ${framework}`;
+  const label = `evidence hold on ${framework}${hasPlayers ? '' : ` (users ${usersCollation})`}`;
 
-  await seedFrameworkAndGPhone({ connection, schemaFile, hasPlayers, suffix: 'evidence' });
+  await seedFrameworkAndGPhone({
+    connection,
+    schemaFile,
+    hasPlayers,
+    suffix: `evidence_${hasPlayers ? 'qb' : usersCollation}`,
+    usersCollation
+  });
   modules.__setResourceLookup(FRAMEWORK[framework]);
 
   const q = async (sql, params = []) => (await connection.query(sql, params))[0];
@@ -1067,7 +1089,36 @@ const runEvidenceVariant = async ({ connection, schemaFile, hasPlayers, modules 
   await q("UPDATE mica_reports SET resolution = 'dismissed' WHERE target_table = 'mica_media'");
   const resolved = await modules.sweepOrphanedRows();
   check(`${label}: the sweep after the report resolves ran`, resolved.skipped, null);
+  check(
+    `${label}: and no table failed either time`,
+    resolved.failures.map((f) => `${f.table}: ${f.error?.message ?? f.error}`),
+    []
+  );
   check(`${label}: and takes the photo the report held`, await media(), [22]);
+
+  // MICA-299. The comparison is collated on micaOS's side so the owner's primary key still
+  // answers each probe; collating the owner's side would scan the character table per row.
+  const owner = hasPlayers
+    ? { table: 'players', column: 'citizenid' }
+    : { table: 'users', column: 'identifier' };
+  const [live] = await q(
+    `SELECT COLLATION_NAME AS collation, CHARACTER_SET_NAME AS charset
+     FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
+    [owner.table, owner.column]
+  );
+  check(
+    `${label}: the owner column is on the collation under test`,
+    live.collation,
+    hasPlayers ? UNICODE_CI : usersCollation
+  );
+  const where = modules.orphanWhere({ table: 'mica_media', column: 'citizenid' }, owner, live);
+  const plan = await q(`EXPLAIN SELECT t.id FROM mica_media t WHERE ${where.sql}`, where.params);
+  check(
+    `${label}: the owner probe uses ${owner.table}'s primary key`,
+    plan.find((row) => row.table === 'p')?.key ?? plan,
+    'PRIMARY'
+  );
 };
 
 const main = async () => {
@@ -1124,12 +1175,16 @@ const main = async () => {
 
     // MICA-292: a reported photo outlives the purges and the sweep until its report resolves.
     await runEvidenceVariant({ connection, schemaFile: 'mica.sql', hasPlayers: true, modules });
-    await runEvidenceVariant({
-      connection,
-      schemaFile: 'mica.esx.sql',
-      hasPlayers: false,
-      modules
-    });
+    // MICA-299: and on ESX with `users` on both micaOS's collation and MariaDB 11's default.
+    for (const usersCollation of [UNICODE_CI, UCA1400]) {
+      await runEvidenceVariant({
+        connection,
+        schemaFile: 'mica.esx.sql',
+        hasPlayers: false,
+        modules,
+        usersCollation
+      });
+    }
 
     if (checksRun < MINIMUM_CHECKS) {
       throw new Error(

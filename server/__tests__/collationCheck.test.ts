@@ -54,7 +54,6 @@ describe('checkOwnerCollation', () => {
     expect(message).toContain('utf8mb4_unicode_ci');
     expect(message).toContain('errno 150');
     expect(message).not.toContain('errno 1267');
-    // `players` was found, so `users` is never asked about — the qb path is unchanged.
     expect(dbMock.scalar).toHaveBeenCalledTimes(3);
     expect(dbMock.scalar.mock.calls[1][1]).toEqual(['mica_db', 'players', 'citizenid']);
   });
@@ -81,68 +80,34 @@ describe('checkOwnerCollation', () => {
   });
 
   /**
-   * MICA-200. ESX has no `players`, and this check used to stop there: no foreign key, nothing
-   * to compare. But `users.identifier` takes the server default collation, and a
-   * column-to-column join onto it from a micaOS `citizenid` is errno 1267 — so the same
-   * mismatch is now caught here, once, by name, instead of by whichever query first joins.
+   * MICA-200 checked `users.identifier` on ESX, because a column-to-column join onto it is
+   * errno 1267 when its collation differs. MICA-299 made the one such join, the orphan sweep,
+   * compare in the owner's own collation, so nothing a mismatch there breaks remains — and
+   * refusing on it refused `micaschema apply` on every stock ESX install on MariaDB 11.4+.
    */
   describe('on ESX, where the owner column is users.identifier', () => {
-    const mockNoPlayers = () => dbMock.scalar.mockResolvedValueOnce(null);
-
-    it('fails loud on a users.identifier mismatch, naming the join rather than a foreign key', async () => {
+    it('does not refuse apply over a users.identifier collation, and never asks about it', async () => {
       mockSchema('mica_db');
-      mockNoPlayers();
-      dbMock.scalar.mockResolvedValueOnce('utf8mb4_uca1400_ai_ci'); // users.identifier
-      dbMock.scalar.mockResolvedValueOnce(null); // no micaOS table yet
-
-      const mismatch = await checkOwnerCollation();
-
-      expect(mismatch).toEqual({
-        ownerTable: 'users',
-        ownerColumn: 'identifier',
-        ownerCollation: 'utf8mb4_uca1400_ai_ci',
-        expectedCollation: 'utf8mb4_unicode_ci',
-        constraint: 'join'
-      });
-      expect(dbMock.scalar.mock.calls[2][1]).toEqual(['mica_db', 'users', 'identifier']);
-
-      const message = collationMismatchMessage(mismatch!);
-      expect(message).toContain('`users`.`identifier`');
-      expect(message).toContain('utf8mb4_uca1400_ai_ci');
-      expect(message).toContain('utf8mb4_unicode_ci');
-      expect(message).toContain('errno 1267');
-      expect(message).not.toContain('errno 150');
-      expect(message).toContain('ALTER `users`');
-    });
-
-    it('reports no mismatch when users.identifier already agrees', async () => {
-      mockSchema('mica_db');
-      mockNoPlayers();
-      dbMock.scalar.mockResolvedValueOnce('utf8mb4_unicode_ci'); // users.identifier
-      dbMock.scalar.mockResolvedValueOnce(null);
+      dbMock.scalar.mockResolvedValueOnce(null); // no players.citizenid
+      // What `users.identifier` would answer on stock ESX + MariaDB 11.4, if it were asked.
+      dbMock.scalar.mockResolvedValue('utf8mb4_uca1400_ai_ci');
 
       expect(await checkOwnerCollation()).toBeNull();
-    });
-
-    it("prefers an already-created micaOS table's live collation, as on qb", async () => {
-      mockSchema('mica_db');
-      mockNoPlayers();
-      dbMock.scalar.mockResolvedValueOnce('utf8mb4_uca1400_ai_ci'); // users.identifier
-      dbMock.scalar.mockResolvedValueOnce('utf8mb4_uca1400_ai_ci'); // a live micaOS table, same
-
-      expect(await checkOwnerCollation()).toBeNull();
+      expect(dbMock.scalar).toHaveBeenCalledTimes(2);
+      for (const call of dbMock.scalar.mock.calls) {
+        expect(call[1] ?? []).not.toContain('users');
+      }
     });
   });
 
-  it('has nothing to check when neither players.citizenid nor users.identifier exists', async () => {
+  it('has nothing to check when players.citizenid does not exist', async () => {
     mockSchema('mica_db');
     dbMock.scalar.mockResolvedValueOnce(null); // no players.citizenid
-    dbMock.scalar.mockResolvedValueOnce(null); // no users.identifier either
 
     expect(await checkOwnerCollation()).toBeNull();
-    // Both owner probes, and nothing after — no micaOS collation is worth reading when there
+    // The owner probe, and nothing after — no micaOS collation is worth reading when there
     // is nothing to compare it against.
-    expect(dbMock.scalar).toHaveBeenCalledTimes(3);
+    expect(dbMock.scalar).toHaveBeenCalledTimes(2);
   });
 
   it('has nothing to check when the current schema cannot be determined', async () => {

@@ -123,11 +123,21 @@ const deletes = (): string[] =>
  * sampled identities are found on the other side. Every fail-closed test below breaks
  * exactly one of those and asserts nothing is deleted.
  */
-const healthyServer = (options: { matched?: number; removedPerTable?: number } = {}) => {
-  const { matched = 3, removedPerTable = 0 } = options;
+/** The owner column's live collation as `information_schema` answers it (MICA-299). */
+const UNICODE_CI = { collation: 'utf8mb4_unicode_ci', charset: 'utf8mb4' };
+const UCA1400 = { collation: 'utf8mb4_uca1400_ai_ci', charset: 'utf8mb4' };
+
+const healthyServer = (
+  options: { matched?: number; removedPerTable?: number; collation?: unknown } = {}
+) => {
+  const { matched = 3, removedPerTable = 0, collation = UNICODE_CI } = options;
   dbMock.single.mockImplementation(async (sql: string) => {
     if (sql.includes('AS total')) return { total: 120 };
     if (sql.includes('AS matched')) return { matched };
+    if (sql.includes('AS collation')) {
+      if (collation instanceof Error) throw collation;
+      return collation;
+    }
     throw new Error(`unexpected single(): ${sql}`);
   });
   dbMock.query.mockImplementation(async (sql: string) => {
@@ -571,6 +581,173 @@ describe('the statement itself', () => {
     expect(() =>
       orphanDeleteSql({ table: 'mica_notes', column: 'citizenid' }, { table: 'a b', column: 'c' })
     ).toThrow(/plain identifier/);
+  });
+});
+
+/**
+ * MICA-299. On ESX with a MariaDB 11.4+ `users` left on the server default collation, every
+ * sweep statement was errno 1267 "Illegal mix of collations" against micaOS's pinned
+ * `utf8mb4_unicode_ci`, and the sweep deleted nothing. The comparison now runs in the owner
+ * column's live collation, applied to micaOS's side so the owner's key stays usable.
+ */
+describe('comparing across collations (MICA-299)', () => {
+  const COLLATED = (column: string) =>
+    `p.identifier = CONVERT(${column} USING utf8mb4) COLLATE utf8mb4_uca1400_ai_ci`;
+
+  let errors: ReturnType<typeof vi.spyOn>;
+  let warnings: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    asEsx();
+    errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    warnings = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+  afterEach(() => {
+    errors.mockRestore();
+    warnings.mockRestore();
+  });
+
+  it("converts micaOS's side into the owner's collation and leaves the owner column bare", () => {
+    const { sql } = orphanDeleteSql({ table: 'mica_notes', column: 'citizenid' }, ESX, UCA1400);
+
+    expect(sql).toContain(`(SELECT 1 FROM users p WHERE ${COLLATED('mica_notes.citizenid')})`);
+    // Collating `p.identifier` would be legal and would scan all of `users` per row.
+    expect(sql).not.toMatch(/p\.identifier COLLATE/);
+    expect(sql).not.toMatch(/CONVERT\(p\./);
+  });
+
+  it('converts the character set as well, for an owner column that is not utf8mb4', () => {
+    const { sql } = orphanDeleteSql({ table: 'mica_notes', column: 'citizenid' }, ESX, {
+      charset: 'utf8mb3',
+      collation: 'utf8mb3_general_ci'
+    });
+
+    expect(sql).toContain(
+      'p.identifier = CONVERT(mica_notes.citizenid USING utf8mb3) COLLATE utf8mb3_general_ci'
+    );
+  });
+
+  it('refuses to interpolate a collation that is not a plain identifier', () => {
+    expect(() =>
+      orphanDeleteSql({ table: 'mica_notes', column: 'citizenid' }, ESX, {
+        charset: 'utf8mb4',
+        collation: 'x; DROP TABLE users'
+      })
+    ).toThrow(/plain identifier/);
+  });
+
+  it('reads the owner column’s collation once, and every DELETE and collect compares in it', async () => {
+    healthyServer({ matched: 1, removedPerTable: 2, collation: UCA1400 });
+
+    const result = await sweepOrphanedRows();
+
+    expect(result.skipped).toBeNull();
+    expect(result.failures).toEqual([]);
+    const reads = dbMock.single.mock.calls.filter((call: any[]) =>
+      String(call[0]).includes('AS collation')
+    );
+    expect(reads).toHaveLength(1);
+    expect(reads[0][1]).toEqual(['users', 'identifier']);
+    expect(deletes()).toHaveLength(ownedTables().length);
+    for (const sql of deletes()) expect(sql).toContain('COLLATE utf8mb4_uca1400_ai_ci');
+    // The hosted-photo collect (MICA-292) reads the rows the DELETE is about to take, so it
+    // has to ask the same question in the same collation or it errors first.
+    const collects = dbMock.query.mock.calls
+      .map((call: any[]) => String(call[0]))
+      .filter((sql) => sql.startsWith('SELECT') && sql.includes('FROM users p'));
+    expect(collects.length).toBeGreaterThan(0);
+    for (const sql of collects) expect(sql).toContain(COLLATED('t.citizenid'));
+  });
+
+  it('refuses, loudly and with the reason, when the collation cannot be read', async () => {
+    healthyServer({ removedPerTable: 5, collation: new Error('SELECT command denied') });
+
+    const result = await sweepOrphanedRows();
+
+    expect(result.skipped).toBe('owner-unreadable');
+    expect(deletes()).toEqual([]);
+    expect(String(warnings.mock.calls.at(-1)?.[0])).toContain('SELECT command denied');
+  });
+
+  it('refuses when information_schema does not know the owner column', async () => {
+    healthyServer({ removedPerTable: 5, collation: null });
+
+    const result = await sweepOrphanedRows();
+
+    expect(result.skipped).toBe('owner-unreadable');
+    expect(deletes()).toEqual([]);
+  });
+
+  it('refuses a collation name it could not safely interpolate', async () => {
+    healthyServer({ removedPerTable: 5, collation: { collation: 'a b', charset: 'utf8mb4' } });
+
+    const result = await sweepOrphanedRows();
+
+    expect(result.skipped).toBe('owner-unreadable');
+    expect(deletes()).toEqual([]);
+  });
+
+  it('compares bare against an owner column with no collation at all', async () => {
+    healthyServer({ removedPerTable: 1, collation: { collation: null, charset: null } });
+
+    const result = await sweepOrphanedRows();
+
+    expect(result.skipped).toBeNull();
+    for (const sql of deletes()) {
+      expect(sql).not.toContain('COLLATE');
+      expect(sql).toMatch(/p\.identifier = \w+\.citizenid\)/);
+    }
+  });
+});
+
+/** MICA-299: a statement that errors is a logged failure, whoever called. */
+describe('a failing statement is logged where it fails', () => {
+  let errors: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+  afterEach(() => errors.mockRestore());
+
+  it('logs a table whose sweep errors, not only returns it', async () => {
+    healthyServer({ removedPerTable: 0 });
+    dbMock.query.mockImplementation(async (sql: string) => {
+      if (sql.startsWith('SELECT DISTINCT') && sql.includes('AS owner')) {
+        return [{ owner: 'CID_A' }];
+      }
+      if (sql.includes(' mica_notes ')) throw new Error('Illegal mix of collations');
+      return sql.startsWith('SELECT') ? [] : { affectedRows: 0 };
+    });
+
+    const result = await sweepOrphanedRows({ label: 'micamedia' });
+
+    expect(result.failures.map((f) => f.table)).toEqual(['mica_notes']);
+    const logged = errors.mock.calls.find((call) => String(call[0]).includes('mica_notes'));
+    expect(String(logged?.[0])).toContain('[micamedia]');
+    expect(logged?.[1]).toBeInstanceOf(Error);
+  });
+
+  it('logs a table whose purge errors', async () => {
+    dbMock.query.mockImplementation(async (sql: string) => {
+      if (sql.includes(' mica_notes ')) throw new Error('lock wait timeout');
+      return sql.startsWith('SELECT') ? [] : { affectedRows: 0 };
+    });
+
+    const result = await purgeOwnedRows('CID_A');
+
+    expect(result.failures.map((f) => f.table)).toEqual(['mica_notes']);
+    expect(errors.mock.calls.some((call) => String(call[0]).includes('mica_notes'))).toBe(true);
+  });
+
+  it('logs why an owner override could not be verified', async () => {
+    (globalThis as any).GetConvar = (name: string, fallback: string) =>
+      name === OWNER_OVERRIDE_CONVAR ? 'custom_characters.character_id' : fallback;
+    dbMock.scalar.mockRejectedValue(new Error('connection lost'));
+    try {
+      const result = await sweepOrphanedRows();
+      expect(result.skipped).toBe('owner-override-invalid');
+      expect(errors.mock.calls.some((call) => call[1] instanceof Error)).toBe(true);
+    } finally {
+      (globalThis as any).GetConvar = (_name: string, fallback: string) => fallback;
+    }
   });
 });
 
