@@ -204,7 +204,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     }
 
     if (action === 'callStatus') {
-      const call = data as { status: CallStatus; number: string; name?: string };
+      const call = data as {
+        status: CallStatus;
+        number: string;
+        name?: string;
+        speakerAvailable?: boolean;
+      };
       if (call.status === 'incoming') {
         // The client has no address book to check — that lives in the web layer's own
         // contacts store — so it sends 'Unknown' and this is the one place that can
@@ -252,7 +257,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           toast.dismiss(incomingToastId);
           incomingToastId = null;
         }
-        callStore.setStatus(call.status);
+        callStore.setStatus(call.status, call.speakerAvailable === true);
       }
       return;
     }

@@ -357,7 +357,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       {/if}
 
       <!-- Controls -->
-      <div class="mt-auto grid w-full max-w-[300px] grid-cols-3 gap-8">
+      <div
+        class="mt-auto grid w-full max-w-[300px] {$callStore.speakerAvailable
+          ? 'grid-cols-3'
+          : 'grid-cols-2'} gap-8"
+      >
         <!-- Mute. Both this and Keypad were decorative: styled, labeled, no onclick. -->
         <button
           onclick={() => callStore.toggleMute()}
@@ -398,23 +402,27 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <span class="text-body-small">{$t('phone.keypad')}</span>
         </button>
 
-        <!-- Speaker -->
-        <button
-          class="flex flex-col items-center space-y-2 transition-colors {$callStore.speaker
-            ? 'text-on-surface'
-            : 'text-on-surface-variant'} duration-short ease-standard"
-          onclick={callStore.toggleSpeaker}
-          aria-label={$t('phone.speaker')}
-        >
-          <div
-            class="bg-surface-container rounded-full p-4 {$callStore.speaker
-              ? 'bg-white text-gray-900'
-              : ''}"
+        <!-- Speaker (MICA-246). Only where the server said this call can carry one: a
+             server whose voice setup cannot gets no control, not a dead one. -->
+        {#if $callStore.speakerAvailable}
+          <button
+            class="flex flex-col items-center space-y-2 transition-colors {$callStore.speaker
+              ? 'text-on-surface'
+              : 'text-on-surface-variant'} duration-short ease-standard"
+            onclick={() => callStore.toggleSpeaker()}
+            aria-pressed={$callStore.speaker}
+            aria-label={$t('phone.speaker')}
           >
-            <SpeakerIcon />
-          </div>
-          <span class="text-body-small">{$t('phone.speaker')}</span>
-        </button>
+            <div
+              class="bg-surface-container rounded-full p-4 {$callStore.speaker
+                ? 'bg-white text-gray-900'
+                : ''}"
+            >
+              <SpeakerIcon />
+            </div>
+            <span class="text-body-small">{$t('phone.speaker')}</span>
+          </button>
+        {/if}
       </div>
 
       <!-- End Call -->

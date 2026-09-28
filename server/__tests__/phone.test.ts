@@ -53,6 +53,11 @@ vi.mock('../lib/FrameworkBridge', () => ({
       bridge.players.has(src) ? { citizenid: bridge.players.get(src), source: src } : null,
     getCitizenId: (src: number) => bridge.players.get(src) ?? null,
     getPlayerPhone: (src: number) => bridge.phones.get(src) ?? null,
+    // Speakerphone's bystander scan (MICA-246).
+    getAllPlayers: () =>
+      Object.fromEntries(
+        [...bridge.players].map(([src, citizenid]) => [src, { PlayerData: { citizenid } }])
+      ),
     getPlayerByPhone: (phone: string) => {
       for (const [src, p] of bridge.phones) {
         if (p === phone) return { source: src, citizenid: bridge.players.get(src) };
@@ -72,6 +77,7 @@ import {
 } from '../services/Phone';
 import { __resetRateLimits, allow } from '../lib/rateLimit';
 import { registerNumber, releaseResource, type CallVerdict } from '../lib/numberRegistry';
+import { __setVoiceBackend } from '../lib/speakerphone';
 
 const START = 'mica:server:phone:start';
 const ANSWER = 'mica:server:phone:answer';
@@ -477,7 +483,8 @@ describe('injectIncomingCall / endActiveCallFor — micacall support', () => {
     // Only the real party. `emitNet(event, -1)` is a broadcast in FiveM, so an `accepted`
     // addressed to the fake caller used to put every connected client into the voice call
     // (MICA-277). Exact equality, not `arrayContaining`: the whole point is what is absent.
-    expect(emitCalls()).toEqual([['mica:client:phone:accepted', 2, { callId }]]);
+    // `speaker: false` because this suite runs with no pma-voice (MICA-246).
+    expect(emitCalls()).toEqual([['mica:client:phone:accepted', 2, { callId, speaker: false }]]);
   });
 
   /**
@@ -619,7 +626,10 @@ describe('start: registered lines (MICA-226)', () => {
 
     expect(onCall).toHaveBeenCalledWith(expect.objectContaining({ from: '555-0001', source: 1 }));
     expect(emitCalls()).toEqual(
-      expect.arrayContaining([['mica:client:phone:accepted', 1, { callId: expect.any(Number) }]])
+      expect.arrayContaining([
+        // A line's far end has no voice, so its call is never offered a speaker (MICA-246).
+        ['mica:client:phone:accepted', 1, { callId: expect.any(Number), speaker: false }]
+      ])
     );
   });
 
@@ -1099,5 +1109,156 @@ describe('endLineCall: a line hangs up', () => {
     expect(endLineCall('123456', 'taxi')).toBe('no_such_call');
     expect(endLineCall(1.5, 'taxi')).toBe('no_such_call');
     expect(endLineCall(123456, 'taxi')).toBe('no_such_call');
+  });
+});
+
+/**
+ * MICA-246. The wiring between the call state machine and `../lib/speakerphone.ts`: who may
+ * switch a speaker on, what the phones are told, and that ending the call lets go of every
+ * bystander. The scan itself — range, cap, exclusions — is `speakerphone.test.ts`.
+ */
+describe('speakerphone', () => {
+  const SPEAKER = 'mica:server:phone:speaker';
+  const channels = new Map<number, number>();
+  const coords: Record<string, [number, number, number]> = {};
+  let ready = true;
+  const setCall = vi.fn((src: number, channel: number) => {
+    if (channel === 0) channels.delete(src);
+    else channels.set(src, channel);
+  });
+
+  beforeEach(() => {
+    channels.clear();
+    setCall.mockClear();
+    ready = true;
+    __setVoiceBackend({
+      ready: () => ready,
+      setCall,
+      channelOf: (src) => channels.get(src) ?? 0
+    });
+    for (const key of Object.keys(coords)) delete coords[key];
+    coords['1'] = [0, 0, 0];
+    coords['2'] = [500, 0, 0];
+    coords['3'] = [1, 1, 0];
+    (globalThis as any).GetPlayerPed = (src: string) => (coords[src] ? `ped-${src}` : 0);
+    (globalThis as any).DoesEntityExist = (ped: string) => Boolean(coords[String(ped).slice(4)]);
+    (globalThis as any).GetEntityCoords = (ped: string) => coords[String(ped).slice(4)];
+  });
+
+  afterEach(() => {
+    __setVoiceBackend();
+    delete (globalThis as any).GetPlayerPed;
+    delete (globalThis as any).DoesEntityExist;
+    delete (globalThis as any).GetEntityCoords;
+  });
+
+  const speaker = async (src: number, enabled: unknown) => {
+    (globalThis as any).source = src;
+    const handler = handlers.get(SPEAKER);
+    if (!handler) throw new Error(`no handler for ${SPEAKER}`);
+    await handler(7, { enabled });
+    return emitCalls()
+      .filter(([event, dest]) => event === 'mica:client:phone:speaker' && dest === src)
+      .at(-1)?.[3];
+  };
+
+  const connect = async () => {
+    await fire(START, 1, '555-0002');
+    await fire(ANSWER, 2);
+    const accepted = emitCalls().find(([event]) => event === 'mica:client:phone:accepted')!;
+    return accepted[2] as { callId: number; speaker: boolean };
+  };
+
+  const listenPushes = (src: number) =>
+    emitCalls()
+      .filter(([event, dest]) => event === 'mica:client:phone:speakerListen' && dest === src)
+      .map(([, , payload]) => payload);
+
+  it('offers the speaker to both parties when the voice setup can carry one', async () => {
+    await connect();
+    const accepted = emitCalls().filter(([event]) => event === 'mica:client:phone:accepted');
+    expect(accepted.map(([, dest, payload]) => [dest, (payload as any).speaker])).toEqual([
+      [1, true],
+      [2, true]
+    ]);
+  });
+
+  it('hides it when the voice setup cannot -- and refuses the request anyway', async () => {
+    ready = false;
+    const { speaker: offered } = await connect();
+
+    expect(offered).toBe(false);
+    expect(await speaker(1, true)).toEqual({ ok: false, enabled: false });
+    expect(setCall).not.toHaveBeenCalled();
+  });
+
+  it('puts a bystander in the call channel, and tells them only how loud', async () => {
+    const { callId } = await connect();
+
+    expect(await speaker(1, true)).toEqual({ ok: true, enabled: true });
+    expect(setCall).toHaveBeenCalledWith(3, callId);
+    expect(listenPushes(3)).toEqual([{ listening: true, volume: 30 }]);
+  });
+
+  it('refuses a ringing call -- nothing is connected to hear', async () => {
+    await fire(START, 1, '555-0002');
+
+    expect(await speaker(1, true)).toEqual({ ok: false, enabled: false });
+    expect(setCall).not.toHaveBeenCalled();
+  });
+
+  it('refuses a player who is not a party to any call', async () => {
+    await connect();
+
+    expect(await speaker(3, true)).toEqual({ ok: false, enabled: false });
+    expect(setCall).not.toHaveBeenCalled();
+  });
+
+  it('refuses a payload that is not a boolean, before any of it runs', async () => {
+    await connect();
+    const reply = await speaker(1, 'yes');
+
+    expect(reply).toEqual(expect.objectContaining({ error: expect.any(String) }));
+    expect(setCall).not.toHaveBeenCalled();
+  });
+
+  it('lets every bystander go when the call ends, whoever ends it', async () => {
+    const { callId } = await connect();
+    await speaker(1, true);
+    expect(channels.get(3)).toBe(callId);
+
+    await fire(END, 2);
+
+    expect(setCall).toHaveBeenLastCalledWith(3, 0);
+    expect(channels.has(3)).toBe(false);
+    expect(listenPushes(3).at(-1)).toEqual({ listening: false });
+  });
+
+  it('lets them go when the speaker is switched off', async () => {
+    await connect();
+    await speaker(1, true);
+
+    expect(await speaker(1, false)).toEqual({ ok: true, enabled: false });
+    expect(channels.has(3)).toBe(false);
+    expect(listenPushes(3).at(-1)).toEqual({ listening: false });
+  });
+
+  it('lets them go when the speaker holder drops', async () => {
+    await connect();
+    await speaker(1, true);
+
+    await drop(1);
+
+    expect(channels.has(3)).toBe(false);
+  });
+
+  it('never offers a speaker on a call a line answered', async () => {
+    registerNumber('555-7777', { onCall: () => ({ action: 'accept' }) as const }, 'taxi');
+    await fire(START, 1, '555-7777');
+
+    const accepted = emitCalls().find(([event]) => event === 'mica:client:phone:accepted')!;
+    expect((accepted[2] as { speaker: boolean }).speaker).toBe(false);
+    expect(await speaker(1, true)).toEqual({ ok: false, enabled: false });
+    releaseResource('taxi');
   });
 });

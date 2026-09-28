@@ -24,6 +24,8 @@ let pmaVoice: {
   setPlayerTalkingOverride: ReturnType<typeof vi.fn>;
   addPlayerToCall: ReturnType<typeof vi.fn>;
   removePlayerFromCall: ReturnType<typeof vi.fn>;
+  getCallVolume: ReturnType<typeof vi.fn>;
+  setCallVolume: ReturnType<typeof vi.fn>;
 };
 
 // The incoming-call path raises the phone through `DeviceVisibility` (MICA-262), the
@@ -51,7 +53,9 @@ beforeEach(async () => {
   pmaVoice = {
     setPlayerTalkingOverride: vi.fn(),
     addPlayerToCall: vi.fn(),
-    removePlayerFromCall: vi.fn()
+    removePlayerFromCall: vi.fn(),
+    getCallVolume: vi.fn(() => 60),
+    setCallVolume: vi.fn()
   };
 
   const g = globalThis as Record<string, unknown>;
@@ -59,6 +63,7 @@ beforeEach(async () => {
   g.on = (event: string, handler: any) => {
     nuiCallbacks.set(event.replace('__cfx_nui:', ''), handler);
   };
+  g.GetCurrentResourceName = () => 'mica';
   g.onNet = (event: string, handler: any) => netSubscriptions.set(event, handler);
   g.TriggerServerEvent = (...args: unknown[]) => triggeredServerEvents.push(args);
   g.SendNuiMessage = (payload: unknown) => sentNuiMessages.push(JSON.parse(payload as string));
@@ -89,10 +94,13 @@ describe('NUI callbacks', () => {
         'rejectCall',
         'simulateIncomingCall',
         'startCall',
-        'toggleMute',
-        'toggleSpeaker'
+        'toggleMute'
       ].toSorted()
     );
+  });
+
+  it('registers no speaker callback -- the speaker is the contracted phone:speaker (MICA-246)', () => {
+    expect(registeredNuiTypes).not.toContain('toggleSpeaker');
   });
 
   it('startCall relays the number and answers dialing', async () => {
@@ -144,11 +152,68 @@ describe('NUI callbacks', () => {
 
     expect(result).toEqual({ muted: false });
   });
+});
 
-  it('toggleSpeaker is UI state only and always reports success', async () => {
-    const result = await nuiCall('toggleSpeaker', { enabled: true });
+describe('listening to a nearby speaker (MICA-246)', () => {
+  const listen = (data: unknown) => serverEvent('mica:client:phone:speakerListen', data);
 
-    expect(result).toEqual({ success: true });
+  it('lowers the call volume while listening and puts it back after', () => {
+    listen({ listening: true, volume: 30 });
+    expect(pmaVoice.setCallVolume).toHaveBeenLastCalledWith(30);
+
+    listen({ listening: false });
+    expect(pmaVoice.setCallVolume).toHaveBeenLastCalledWith(60);
+  });
+
+  it('saves the volume once, so a second push does not save the lowered one', () => {
+    listen({ listening: true, volume: 30 });
+    pmaVoice.getCallVolume.mockReturnValue(30);
+    listen({ listening: true, volume: 20 });
+    listen({ listening: false });
+
+    expect(pmaVoice.setCallVolume).toHaveBeenLastCalledWith(60);
+  });
+
+  it('restores exactly once', () => {
+    listen({ listening: true, volume: 30 });
+    listen({ listening: false });
+    listen({ listening: false });
+
+    expect(pmaVoice.setCallVolume).toHaveBeenCalledTimes(2);
+  });
+
+  it('leaves the volume alone when it cannot read what to put back', () => {
+    pmaVoice.getCallVolume.mockReturnValue(undefined as unknown as number);
+    listen({ listening: true, volume: 30 });
+
+    expect(pmaVoice.setCallVolume).not.toHaveBeenCalled();
+  });
+
+  it('ignores a volume that is not a number', () => {
+    listen({ listening: true, volume: 'loud' });
+    expect(pmaVoice.setCallVolume).not.toHaveBeenCalled();
+  });
+
+  it("puts the volume back when this player's own call connects", () => {
+    listen({ listening: true, volume: 30 });
+    serverEvent('mica:client:phone:accepted', { callId: 9, speaker: true });
+
+    expect(pmaVoice.setCallVolume).toHaveBeenLastCalledWith(60);
+  });
+
+  it('puts the volume back when this resource stops, and only for this resource', () => {
+    listen({ listening: true, volume: 30 });
+    nuiCallbacks.get('onResourceStop')!('some-other-resource', () => {});
+    expect(pmaVoice.setCallVolume).toHaveBeenCalledTimes(1);
+
+    nuiCallbacks.get('onResourceStop')!('mica', () => {});
+    expect(pmaVoice.setCallVolume).toHaveBeenLastCalledWith(60);
+  });
+
+  it('does not throw without pma-voice', () => {
+    (globalThis as any).exports['pma-voice'] = undefined;
+    expect(() => listen({ listening: true, volume: 30 })).not.toThrow();
+    expect(() => listen({ listening: false })).not.toThrow();
   });
 });
 
@@ -179,17 +244,31 @@ describe('incoming call', () => {
 
 describe('accepted', () => {
   it('joins the pma-voice channel with the call id and shows connected', () => {
-    serverEvent('mica:client:phone:accepted', { callId: 42 });
+    serverEvent('mica:client:phone:accepted', { callId: 42, speaker: true });
 
     expect(pmaVoice.addPlayerToCall).toHaveBeenCalledWith(42);
-    expect(sentNuiMessages).toEqual([{ action: 'callStatus', data: { status: 'connected' } }]);
+    expect(sentNuiMessages).toEqual([
+      { action: 'callStatus', data: { status: 'connected', speakerAvailable: true } }
+    ]);
+  });
+
+  it('hides the speaker unless the server offered it, whatever else it said (MICA-246)', () => {
+    serverEvent('mica:client:phone:accepted', { callId: 42 });
+    serverEvent('mica:client:phone:accepted', { callId: 42, speaker: 'yes' });
+
+    expect(sentNuiMessages).toEqual([
+      { action: 'callStatus', data: { status: 'connected', speakerAvailable: false } },
+      { action: 'callStatus', data: { status: 'connected', speakerAvailable: false } }
+    ]);
   });
 
   it('still shows connected when pma-voice is absent, rather than throwing', () => {
     (globalThis as any).exports['pma-voice'] = undefined;
 
     expect(() => serverEvent('mica:client:phone:accepted', { callId: 42 })).not.toThrow();
-    expect(sentNuiMessages).toEqual([{ action: 'callStatus', data: { status: 'connected' } }]);
+    expect(sentNuiMessages).toEqual([
+      { action: 'callStatus', data: { status: 'connected', speakerAvailable: false } }
+    ]);
   });
 });
 

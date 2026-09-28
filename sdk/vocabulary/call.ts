@@ -18,5 +18,10 @@ export interface CallState {
   name?: string;
   duration: number; // in seconds
   speaker: boolean;
+  /**
+   * Whether this call can go on speaker at all — the server's word, sent when the call
+   * connects (MICA-246). Absent or false hides the control rather than showing a dead one.
+   */
+  speakerAvailable?: boolean;
   muted: boolean;
 }

@@ -2,8 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { writable } from 'svelte/store';
+import { get, writable } from 'svelte/store';
 import { fetchNui } from '../nui/fetchNui';
+import { call } from '../nui/call';
+import { phoneContract } from '@mica/shared/contracts/phone';
 import type { CallState, CallStatus } from '../../../sdk/vocabulary/call';
 
 const initialState: CallState = {
@@ -11,11 +13,13 @@ const initialState: CallState = {
   number: '',
   duration: 0,
   speaker: false,
+  speakerAvailable: false,
   muted: false
 };
 
 function createCallStore() {
-  const { subscribe, set, update } = writable<CallState>(initialState);
+  const store = writable<CallState>(initialState);
+  const { subscribe, set, update } = store;
 
   let durationInterval: NodeJS.Timeout | null = null;
 
@@ -64,12 +68,23 @@ function createCallStore() {
         return { ...s, muted };
       });
     },
+    /**
+     * Ask the server (MICA-246). Shown at once, then corrected to what the server answered:
+     * it refuses a call that is not connected, and who hears it is its decision, not the
+     * phone's. A failed round trip puts the control back where it was.
+     */
     toggleSpeaker: async () => {
-      update((s) => {
-        const newSpeaker = !s.speaker;
-        fetchNui('toggleSpeaker', { enabled: newSpeaker }).catch((e) => console.error(e));
-        return { ...s, speaker: newSpeaker };
-      });
+      const before = get(store);
+      if (!before.speakerAvailable) return;
+      const enabled = !before.speaker;
+      update((s) => ({ ...s, speaker: enabled }));
+      try {
+        const reply = await call(phoneContract, 'speaker', { enabled });
+        update((s) => (s.status === 'connected' ? { ...s, speaker: reply?.enabled === true } : s));
+      } catch (e) {
+        console.error('Failed to toggle speaker', e);
+        update((s) => (s.status === 'connected' ? { ...s, speaker: before.speaker } : s));
+      }
     },
     // NUI Event handlers
     setIncoming: (number: string, name?: string) => {
@@ -81,13 +96,20 @@ function createCallStore() {
         duration: 0
       }));
     },
-    setStatus: (status: CallStatus) => {
+    /**
+     * `speakerAvailable` is read only with `connected`, the one status the server sends it
+     * with; any other status leaves what the call already knows alone.
+     */
+    setStatus: (status: CallStatus, speakerAvailable?: boolean) => {
       update((s) => {
         if (status === 'connected' && s.status !== 'connected') {
           startTimer();
         } else if (status === 'idle') {
           stopTimer();
           return initialState;
+        }
+        if (status === 'connected' && speakerAvailable !== undefined) {
+          return { ...s, status, speakerAvailable };
         }
         return { ...s, status };
       });

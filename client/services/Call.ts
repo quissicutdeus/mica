@@ -94,11 +94,62 @@ on('__cfx_nui:toggleMute', (data: { muted: boolean }, cb: Function) => {
   cb({ muted: Boolean(data?.muted) });
 });
 
-RegisterNuiCallbackType('toggleSpeaker');
-on('__cfx_nui:toggleSpeaker', (data: { enabled: boolean }, cb: Function) => {
-  // pma-voice exposes no speakerphone/submix control, so this is UI state only — the
-  // icon already toggles client-side. Revisit if pma-voice adds a routing export.
-  cb({ success: true });
+// The speaker toggle itself is not here: it is the contracted `phone:speaker` action
+// (`shared/contracts/phone.ts`), relayed like any other service call, because the server
+// decides who hears the call and the phone shows its answer (MICA-246). What lives here is
+// the other end of it — this player standing near somebody else's phone.
+
+/**
+ * The call volume this player had before a nearby speaker lowered it, or null while not
+ * listening. Restored exactly once, by whichever of `speakerListen: false`, this player's
+ * own call connecting, or this resource stopping comes first.
+ */
+let savedCallVolume: number | null = null;
+
+const stopListening = (): void => {
+  if (savedCallVolume === null) return;
+  const restore = savedCallVolume;
+  savedCallVolume = null;
+  try {
+    pmaVoice()?.setCallVolume?.(restore);
+  } catch {
+    // pma-voice gone; there is no volume left to restore.
+  }
+};
+
+/**
+ * A bystander's half of speakerphone (MICA-246). The server has already put this player in
+ * the call's pma-voice channel, or taken them out; this only sets how loud the call is while
+ * they are in it. pma-voice has one call volume per client, so it is saved and put back
+ * rather than set per talker. When the current volume cannot be read it is left alone: the
+ * call is then heard at the player's own call volume, which is louder than asked but never
+ * a volume that cannot be undone.
+ *
+ * Carries no number and no name — a bystander is not told whose call they are hearing.
+ */
+onNet('mica:client:phone:speakerListen', (data: { listening?: boolean; volume?: number }) => {
+  if (!data?.listening) {
+    stopListening();
+    return;
+  }
+
+  const volume = Number(data.volume);
+  if (!Number.isFinite(volume)) return;
+  try {
+    const voice = pmaVoice();
+    if (savedCallVolume === null) {
+      const current = Number(voice?.getCallVolume?.());
+      if (!Number.isFinite(current)) return;
+      savedCallVolume = current;
+    }
+    voice?.setCallVolume?.(Math.min(100, Math.max(0, Math.round(volume))));
+  } catch {
+    // pma-voice absent or a different version; heard at the default call volume instead.
+  }
+});
+
+on('onResourceStop', (resource: string) => {
+  if (resource === GetCurrentResourceName()) stopListening();
 });
 
 // Server Events
@@ -125,8 +176,11 @@ onNet('mica:client:phone:incoming', (data: { from: string; callId: number }) => 
   );
 });
 
-onNet('mica:client:phone:accepted', (data: { callId: number }) => {
+onNet('mica:client:phone:accepted', (data: { callId: number; speaker?: boolean }) => {
   connected = true;
+  // A call of this player's own replaces any speaker they were listening to; the server
+  // lets go of them too, and this puts their own call back at their own volume first.
+  stopListening();
 
   // Connect to PMA Voice Channel. Guarded the same way `toggleMute` is: without pma-voice
   // present, or a version that renamed this export, an unguarded call threw inside this
@@ -138,11 +192,12 @@ onNet('mica:client:phone:accepted', (data: { callId: number }) => {
     // pma-voice absent or a different version; the UI still reflects the connected call.
   }
 
-  // Update UI
+  // Update UI. `speakerAvailable` is the server's word on whether this call can go on
+  // speaker at all; the phone hides the control when it is false (MICA-246).
   SendNuiMessage(
     JSON.stringify({
       action: 'callStatus',
-      data: { status: 'connected' }
+      data: { status: 'connected', speakerAvailable: data?.speaker === true }
     })
   );
 });

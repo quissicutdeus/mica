@@ -128,7 +128,6 @@ export const CLIENT_ONLY_ACTIONS: readonly string[] = [
   'answerCall',
   'endCall',
   'rejectCall',
-  'toggleSpeaker',
   'toggleMute',
   // DevTools' in-game "Simulate Incoming Call" — same fire-and-forget shape.
   'simulateIncomingCall',

@@ -7,3 +7,7 @@ file and gets a line here.
 
 - [Break-proof via Edit, not shell](break-proof-via-edit-not-shell.md) — the
   worktree guard refuses a one-liner that rewrites a file through variables
+- [Scratchpad shared across lanes](scratchpad-shared-across-lanes.md) — name
+  gate logs by callsign; a sibling lane can overwrite `unit.log` mid-run
+- [pma-voice call channel API](pma-voice-call-channel-api.md) — one call volume
+  per client, server `setPlayerCall` syncs the state bag, no positional native

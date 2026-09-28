@@ -4,7 +4,7 @@
 
 import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { notifyPlayer } from '../lib/shell';
-import { registerService } from '../lib/services';
+import { ServiceEndpoint } from '../lib/ServiceEndpoint';
 import { guardNetEvent, noInput, phoneNumber, phoneNumberFrom } from '../lib/netGuard';
 import { s } from '@mica/shared/schema';
 import { phoneCallLog } from './PhoneCallLog';
@@ -14,6 +14,17 @@ import { isAdmin } from './Admin';
 import { SEED_CHARACTERS } from '../lib/seed';
 import { isBlocked } from './Blocklist';
 import { lookupLine, askLine, onLineReleased, type RegisteredLine } from '../lib/numberRegistry';
+import { phoneContract } from '@mica/shared/contracts/phone';
+import {
+  setSpeaker,
+  speakerAvailable,
+  speakerDropped,
+  speakerOff,
+  speakerReleaseAll,
+  tickSpeakers,
+  __resetSpeakerphone,
+  type SpeakerCalls
+} from '../lib/speakerphone';
 
 const EMERGENCY_NUMBER_CONVAR = 'mica_emergency_number';
 const DEFAULT_EMERGENCY_NUMBER = '911';
@@ -76,6 +87,7 @@ export const __resetCalls = (): void => {
   for (const key of Object.keys(activeCalls)) delete activeCalls[Number(key)];
   for (const key of Object.keys(playerCalls)) delete playerCalls[Number(key)];
   nextLineSource = FIRST_LINE_SOURCE;
+  __resetSpeakerphone();
 };
 
 /**
@@ -86,11 +98,53 @@ export const __resetCalls = (): void => {
 export const isInCall = (src: number): boolean => Boolean(playerCalls[src]);
 
 /**
- * Calls are a service with no endpoint and no table: pure signalling, hand-written
- * handlers below. Declared so the `<service>` segment resolves like any other.
+ * Calls are a service with no table: pure signalling, hand-written `onNet` handlers below.
+ * The endpoint carries the one contracted action, `speaker` (MICA-246), and every generic
+ * CRUD action is off because there is nothing for one to act on.
  */
-const PHONE_SERVICE = registerService('phone');
-void PHONE_SERVICE;
+const phoneEndpoint = new ServiceEndpoint<never, typeof phoneContract>('phone', null, {
+  contract: phoneContract,
+  disableGet: true,
+  disableCreate: true,
+  disableUpdate: true,
+  disableDelete: true
+});
+
+/**
+ * What speakerphone may know about calls (`../lib/speakerphone.ts`).
+ *
+ * Only an answered call counts, and only one with a player on both ends or the console's test
+ * caller: a line's far end is a script with no voice, so a bystander would join a channel
+ * with nobody in it to hear. The requester must be a party — `playerCalls` already says so,
+ * since it is keyed by the parties' own sources.
+ */
+const speakerCalls: SpeakerCalls = {
+  callOf: (src) => {
+    const call = activeCalls[playerCalls[src]];
+    if (!call || call.answeredAt === null || call.lineOwner !== undefined) return null;
+    return call.caller === src || call.target === src ? call.id : null;
+  },
+  onCall: (src) => Boolean(playerCalls[src])
+};
+
+/** Whether the phones on this call are offered a speaker. Never on a line's call. */
+const speakerOffered = (call: ActiveCall): boolean =>
+  call.lineOwner === undefined && speakerAvailable();
+
+phoneEndpoint.registerEvent('speaker', async (src, _cbId, data) =>
+  setSpeaker(src, data.enabled, speakerCalls)
+);
+
+/** Once a second, like `Signal.ts`: who is in earshot changes without anybody tapping. */
+const SPEAKER_TICK_MS = 1000;
+if (typeof setInterval === 'function') {
+  setInterval(() => tickSpeakers(speakerCalls), SPEAKER_TICK_MS);
+}
+
+/** Bystanders are in a pma-voice channel micaOS put them in; stopping takes them out. */
+on('onResourceStop', (resource: string) => {
+  if (resource === GetCurrentResourceName()) speakerReleaseAll();
+});
 
 /**
  * Writes one call-log row per participant. Called from every path a call can end
@@ -181,6 +235,10 @@ function endActiveCall(callId: number): void {
 
   notifyParty('mica:client:phone:ended', call.caller);
   notifyParty('mica:client:phone:ended', call.target);
+
+  // Before the maps are cleared, so nobody is left in a channel the call has already left.
+  speakerOff(call.caller);
+  speakerOff(call.target);
 
   logCallEnd(call);
 
@@ -554,7 +612,7 @@ async function connectLineCall(
   // `playerCalls[src]` is already this call — claimed before the await above.
   playerCalls[lineSource] = callId;
 
-  emitNet('mica:client:phone:accepted', src, { callId });
+  emitNet('mica:client:phone:accepted', src, { callId, speaker: false });
   return 'placed';
 }
 
@@ -603,8 +661,11 @@ onNet('mica:server:phone:answer', (...args: unknown[]) => {
 
   call.answeredAt = Date.now();
 
-  notifyParty('mica:client:phone:accepted', call.caller, { callId });
-  notifyParty('mica:client:phone:accepted', call.target, { callId });
+  // `speaker` is whether the phone shows the control at all (MICA-246): hidden, not dead,
+  // on a server whose voice setup cannot carry one.
+  const speaker = speakerOffered(call);
+  notifyParty('mica:client:phone:accepted', call.caller, { callId, speaker });
+  notifyParty('mica:client:phone:accepted', call.target, { callId, speaker });
 });
 
 onNet('mica:server:phone:end', (...args: unknown[]) => {
@@ -615,7 +676,9 @@ onNet('mica:server:phone:end', (...args: unknown[]) => {
 
 // Clean up on drop
 on('playerDropped', () => {
-  releaseCallFor(source);
+  const src = source;
+  releaseCallFor(src);
+  speakerDropped(src);
 });
 
 /**

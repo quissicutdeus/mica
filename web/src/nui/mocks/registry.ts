@@ -676,8 +676,14 @@ const logCall = (kind: PhoneCallLogEntry['kind'], number: string, duration: numb
   });
 };
 
+/**
+ * `speakerAvailable` rides `connected` exactly as the real client forwards it from the
+ * server's `phone:accepted` (MICA-246). The mock always offers the speaker, so the control
+ * the browser shows is the one a server with pma-voice shows.
+ */
 const postCallStatus = (status: 'connected' | 'idle'): void => {
-  window.postMessage({ action: 'callStatus', data: { status } }, '*');
+  const data = status === 'connected' ? { status, speakerAvailable: true } : { status };
+  window.postMessage({ action: 'callStatus', data }, '*');
 };
 
 const mockCallLog: PhoneCallLogEntry[] = [
@@ -2088,9 +2094,6 @@ const mockRegistry: Record<string, MockHandler> = {
   toggleMute: async () => {
     return true;
   },
-  toggleSpeaker: async () => {
-    return true;
-  },
 
   // Camera & Media
   takePhoto: () => {
@@ -2548,7 +2551,10 @@ const mockRegistry: Record<string, MockHandler> = {
    */
   'music:broadcastStart': () => ({ ok: true }),
   'music:broadcastUpdate': () => ({ ok: true }),
-  'music:broadcastStop': () => ({ ok: true })
+  'music:broadcastStop': () => ({ ok: true }),
+
+  /** The server's answer is what the phone shows; the mock grants whatever is asked. */
+  'phone:speaker': (data?: { enabled?: boolean }) => ({ ok: true, enabled: data?.enabled === true })
 };
 
 /**

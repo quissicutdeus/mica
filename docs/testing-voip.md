@@ -84,8 +84,90 @@ one by far.
 
 ## What none of the four cover
 
-Speakerphone and mute are UI state only — `client/services/Call.ts:73`:
-pma-voice exposes no speakerphone/submix control, so `toggleSpeaker` never
-reaches it at all, and `toggleMute` only ever calls `setPlayerTalkingOverride`.
-No layer above tests actual audio routing for either, because there is nothing
-on the pma-voice side for them to route.
+Mute is `setPlayerTalkingOverride` and nothing more (`client/services/Call.ts`),
+so no layer above tests what it does to audio. Speakerphone has its own section
+below, because it does route audio and so has a manual test of its own.
+
+## Speakerphone: what pma-voice allows
+
+MICA-246. Read from pma-voice 7.0.1's own source (`server/module/phone.lua`,
+`client/module/phone.lua`, `client/init/main.lua`, `client/init/proximity.lua`,
+`client/init/submix.lua`) and from the natives `@citizenfx/client` 2.0.34410-1
+declares, not from its docs.
+
+**What a call is in pma-voice.** A call channel is a set of server ids. The
+server export `setPlayerCall(source, channel)` adds a player to one (`0` removes
+them); called from another resource it also tells that player's pma-voice client
+its channel and writes `Player(source).state.callChannel`. Every member targets
+every other member's voice (`MumbleAddVoiceTargetChannel`), and plays theirs
+with `MumbleSetVolumeOverrideByServerId` at the listener's own call volume (one
+number per client, `setCallVolume`/`getCallVolume`, default
+`voice_defaultCallVolume` 60) through the `Call` submix. With
+`voice_enableCalls` off, `setPlayerCall` returns without doing anything.
+
+**Viable today: nearby players join the call channel.** The server adds anyone
+within `mica_speaker_range` of a phone on speaker to that call's channel, and
+takes them out when they walk away (past 1.25x the range), start a call of their
+own, the speaker goes off, or the call ends. Joining is two-way by construction,
+so the far side hears them. Each bystander's own client lowers its call volume
+to `mica_speaker_volume` while it listens and restores it after — "reduced
+volume" is per listener, not per talker, because pma-voice has one call volume
+per client. `server/lib/speakerphone.ts` is the implementation.
+
+**What this is not.** The far side is heard in the bystander's ear through the
+`Call` submix, not from where the phone is. Bystanders also hear the phone's
+holder and each other through the call, at that same volume, on top of plain
+proximity. And a bystander is a transmitter: while they are in range, anything
+they say reaches the far side, which is what a speakerphone is.
+
+**Not possible with the release client: a true positional speaker.** That needs
+the far side's voice to come _out of the phone_ for everyone near it, and the
+far side to hear the room through the phone's microphone. No native does either.
+`MumbleSetSubmixForServerId` only filters a talker,
+`MumbleSetVolumeOverrideByServerId` only sets their level, and the submix
+natives (`CreateAudioSubmix`, `SetAudioSubmixEffect*`,
+`SetAudioSubmixOutputVolumes`) shape output channels — nothing sets a remote
+Mumble talker's 3D position to another entity, and nothing mixes game audio into
+the outgoing voice stream. It would need a native like "play server id X's voice
+at entity Y" that FiveM does not ship.
+
+**Honest toggle.** The server offers the speaker with each call's `accepted`
+push (`speaker: true|false`), and the phone shows the control only when it was
+offered: pma-voice started, `voice_enableCalls` on, `mica_speaker_range` above
+`0`, and the call is between players (a line's far end has no voice). The toggle
+is the contracted `phone:speaker` action, and the phone shows the server's
+answer rather than its own guess.
+
+**A pma-voice hole this does not open, and does not close.** pma-voice's
+`pma-voice:setPlayerCall` net event takes any channel from any client with no
+check (`server/module/phone.lua`), so a modified client can already join any
+call it can guess the id of. Speakerphone adds no way to do that; closing it is
+pma-voice's business (its `addChannelCheck` covers radio channels only).
+
+### Manual test — three people, in game
+
+Needs the real pma-voice, not `tools/pma-voice-stub/`: the stub has no server
+half, so it has no `setPlayerCall` and nobody is ever added. Three players A, B
+and C on the same server; `voice_debugMode 4` on the server prints pma-voice's
+`[call] Added`/`Removed` lines.
+
+1. A calls B; B answers. **Both** phones show Speaker. On a server without
+   pma-voice, or with `set mica_speaker_range 0`, neither does — the row shows
+   Mute and Keypad only.
+2. C stands within 4 m of A, well away from B. A taps Speaker; it lights. Within
+   a second the server console logs C added to the call. C hears B, B hears C,
+   and C's call volume is quieter than a normal call.
+3. C walks 6 m away: removed within a second, B stops hearing C. C walks back:
+   added again.
+4. A taps Speaker off: C removed. On again: C added.
+5. B hangs up: C removed along with the call. C then makes an ordinary call of
+   their own and hears it at their usual volume — the saved volume came back.
+6. With C listening, ring C (`micacall` from an admin C works): C drops out of
+   A's call as soon as their own phone rings, without their own call being
+   touched when it connects.
+7. With C listening, `restart mica`: C removed, volume restored.
+
+What to watch for that no suite catches: C still hearing B after any of steps
+3-7, C's call volume staying low after step 5, or B hearing C at step 2 not at
+all (the join is two-way; one-way audio means pma-voice's targets did not
+update).

@@ -16,6 +16,7 @@ export * from './media';
 export * from './messages';
 export * from './music';
 export * from './notifications';
+export * from './phone';
 export * from './places';
 export * from './reports';
 export * from './settings';

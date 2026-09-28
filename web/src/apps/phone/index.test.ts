@@ -126,3 +126,30 @@ describe('Phone Recents refresh', () => {
     expect(loadCallLogSpy).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('Phone speaker control (MICA-246)', () => {
+  beforeEach(() => {
+    callLog.set([]);
+    contacts.set([]);
+    callStore.setStatus('idle');
+  });
+
+  it('is hidden on a call the server did not offer a speaker for', async () => {
+    const { queryByLabelText, getByLabelText } = render(Phone, { props: { onback: () => {} } });
+    callStore.setIncoming('555-0100');
+    callStore.setStatus('connected', false);
+    await tick();
+
+    expect(getByLabelText('Mute')).toBeTruthy();
+    expect(queryByLabelText('Speaker')).toBeNull();
+  });
+
+  it('is shown once the server offers one', async () => {
+    const { getByLabelText } = render(Phone, { props: { onback: () => {} } });
+    callStore.setIncoming('555-0100');
+    callStore.setStatus('connected', true);
+    await tick();
+
+    expect(getByLabelText('Speaker').getAttribute('aria-pressed')).toBe('false');
+  });
+});

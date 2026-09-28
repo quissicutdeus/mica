@@ -713,6 +713,8 @@ set mica_bluetooth_range 15
 set mica_bluetooth_max_nearby 5
 setr mica_music_range 30
 set mica_music_max_nearby 8
+set mica_speaker_range 4
+set mica_speaker_volume 30
 setr mica_camera_quality 95
 set mica_blabber_edit_window 900
 set mica_notification_retention 30
@@ -764,6 +766,8 @@ set mica_default_contacts ""
 | `mica_bluetooth_max_nearby`        | integer                                                 | `5`                    | How many phones one proximity share reaches                                                                                           |
 | `mica_music_range`                 | integer, meters                                         | `30`                   | How far music from a phone is heard (needs `setr`)                                                                                    |
 | `mica_music_max_nearby`            | integer                                                 | `8`                    | Broadcasters one listener is told about at once                                                                                       |
+| `mica_speaker_range`               | integer, meters                                         | `4`                    | How far a call on speaker is heard; `0` hides the Speaker control                                                                     |
+| `mica_speaker_volume`              | integer, 1-100                                          | `30`                   | pma-voice call volume a bystander hears a speakerphone call at                                                                        |
 | `mica_blabber_edit_window`         | integer, seconds                                        | `900`                  | How long a Blab stays editable by its author                                                                                          |
 | `mica_notification_retention`      | integer, days                                           | `30`                   | How long notification rows are kept                                                                                                   |
 | `mica_restore_window_days`         | integer, days                                           | `30`                   | How long a deleted Contact/Note/Media stays restorable                                                                                |
@@ -949,6 +953,19 @@ the convar is invisible until the resource restarts.
   behind a running game, and a busy street corner is otherwise however many
   people are standing in it. Raising it past 16 gets 16 — the ceiling is in the
   code — and a non-numeric or non-positive value falls back to 8.
+- **`mica_speaker_range`** — how far from a phone on speaker other players are
+  put into the call, in meters. They hear the far side and the far side hears
+  them, through pma-voice's call channel rather than from the phone's position —
+  [`docs/testing-voip.md`](docs/testing-voip.md#speakerphone-what-pma-voice-allows)
+  says why that is the only mechanism available. The Speaker control appears
+  only when pma-voice is started with `voice_enableCalls` on and this is above
+  `0`; `0` turns speakerphone off rather than leaving a button that does
+  nothing. At most six bystanders are added per phone, nearest first, and nobody
+  already on a call of their own.
+- **`mica_speaker_volume`** — the pma-voice call volume (its own 0-100 scale,
+  where its default call volume is 60) a bystander hears a speakerphone call at.
+  Their own call volume is saved and put back when they walk away or the call
+  ends.
 - **`mica_blabber_edit_window`** — how long after posting a Blab its author may
   still fix a typo; after it the post freezes and only deleting is left, since
   withdrawing your own words stays possible forever. One number does both jobs:

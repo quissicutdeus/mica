@@ -53,11 +53,68 @@ describe('callStore', () => {
     expect(state.duration).toBe(0);
   });
 
-  it('toggles speaker mode', async () => {
-    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(true);
+  describe('speaker (MICA-246)', () => {
+    beforeEach(() => {
+      callStore.setStatus('idle');
+    });
 
-    const initialSpeaker = get(callStore).speaker;
-    await callStore.toggleSpeaker();
-    expect(get(callStore).speaker).toBe(!initialSpeaker);
+    it('is unavailable until a connected call says otherwise', () => {
+      expect(get(callStore).speakerAvailable).toBe(false);
+      callStore.setStatus('connected', false);
+      expect(get(callStore).speakerAvailable).toBe(false);
+      callStore.setStatus('connected', true);
+      expect(get(callStore).speakerAvailable).toBe(true);
+    });
+
+    it('asks the server through the phone contract and shows its answer', async () => {
+      callStore.setStatus('connected', true);
+      const nui = vi
+        .spyOn(fetchNuiModule, 'fetchNui')
+        .mockResolvedValue({ ok: true, enabled: true });
+
+      await callStore.toggleSpeaker();
+
+      expect(nui).toHaveBeenCalledWith('svc', {
+        service: 'phone',
+        action: 'speaker',
+        data: { enabled: true }
+      });
+      expect(get(callStore).speaker).toBe(true);
+    });
+
+    it('shows a refusal as off, whatever it asked for', async () => {
+      callStore.setStatus('connected', true);
+      vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue({ ok: false, enabled: false });
+
+      await callStore.toggleSpeaker();
+
+      expect(get(callStore).speaker).toBe(false);
+    });
+
+    it('puts the control back when the round trip fails', async () => {
+      callStore.setStatus('connected', true);
+      vi.spyOn(fetchNuiModule, 'fetchNui').mockRejectedValue(new Error('timeout'));
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      await callStore.toggleSpeaker();
+
+      expect(get(callStore).speaker).toBe(false);
+    });
+
+    it('does nothing where the speaker was never offered', async () => {
+      callStore.setStatus('connected', false);
+      const nui = vi.spyOn(fetchNuiModule, 'fetchNui');
+
+      await callStore.toggleSpeaker();
+
+      expect(nui).not.toHaveBeenCalled();
+      expect(get(callStore).speaker).toBe(false);
+    });
+
+    it('forgets availability when the call ends', () => {
+      callStore.setStatus('connected', true);
+      callStore.setStatus('idle');
+      expect(get(callStore).speakerAvailable).toBe(false);
+    });
   });
 });
