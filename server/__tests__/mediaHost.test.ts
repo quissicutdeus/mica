@@ -436,7 +436,7 @@ describe('releaseHostedImages', () => {
 
     const outcome = await releaseHostedImages(['https://giphy.test/a.gif']);
 
-    expect(outcome).toEqual({ deleted: 0, failed: 0, unconfigured: 0 });
+    expect(outcome).toEqual({ deleted: 0, failed: 0, unconfigured: 0, formerHost: {} });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -482,7 +482,8 @@ describe('releaseHostedImages', () => {
     expect(await releaseHostedImages([OTHER])).toEqual({
       deleted: 0,
       failed: 0,
-      unconfigured: 1
+      unconfigured: 1,
+      formerHost: {}
     });
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -500,7 +501,7 @@ describe('releaseHostedImages', () => {
       'https://img.example.test/p/c.webp'
     ]);
 
-    expect(outcome).toEqual({ deleted: 1, failed: 2, unconfigured: 0 });
+    expect(outcome).toEqual({ deleted: 1, failed: 2, unconfigured: 0, formerHost: {} });
   });
 
   it('deletes nothing when it cannot tell what is still referenced', async () => {
@@ -529,7 +530,11 @@ describe('the retention prune releases hosted photos', () => {
         served = true;
         return [{ id: 1 }, { id: 2 }];
       }
-      if (text.startsWith('SELECT DISTINCT `url` FROM `mica_media` WHERE `id` IN')) {
+      if (
+        text.startsWith(
+          'SELECT DISTINCT t.`url` FROM `mica_media` t WHERE t.`url` IS NOT NULL AND t.`id` IN'
+        )
+      ) {
         return [{ url: HOSTED }, { url: 'https://giphy.test/a.gif' }];
       }
       // After the delete, nothing names the hosted URL any more.
@@ -552,7 +557,7 @@ describe('the retention prune releases hosted photos', () => {
     expect(await pruneExpiredMedia()).toBe(2);
 
     const all = statements();
-    const collect = all.findIndex((s) => s.includes('WHERE `id` IN') && s.includes('`url`'));
+    const collect = all.findIndex((s) => s.includes('t.`id` IN') && s.includes('t.`url`'));
     const remove = all.findIndex((s) => s.startsWith('DELETE FROM `mica_media` WHERE `id` IN'));
     expect(collect).toBeGreaterThanOrEqual(0);
     expect(collect).toBeLessThan(remove);
@@ -591,7 +596,10 @@ describe('purging a deleted character releases their hosted photos', () => {
     hosting({ mica_media_delete_url: 'https://api.example.test/files/{name}' });
     dbMock.query.mockImplementation(async (sql: string) => {
       const text = String(sql);
-      if (text.startsWith('SELECT DISTINCT `url` FROM `mica_media` WHERE `citizenid`')) {
+      if (
+        text.startsWith('SELECT DISTINCT t.`url` FROM `mica_media` t') &&
+        text.includes('t.`citizenid` = ?')
+      ) {
         return [{ url: HOSTED }];
       }
       if (text.startsWith('DELETE FROM mica_media')) return { affectedRows: 3 };

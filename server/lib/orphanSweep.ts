@@ -222,6 +222,69 @@ export const ownedTables = (): OwnedTable[] => {
   return out;
 };
 
+/**
+ * Something an owned table's rows name outside the database — a photo on an image host
+ * (MICA-243) — which must be released when the rows go, or it outlives them. MICA-292.
+ *
+ * The same two halves as retention's `RetentionExternal`, for the same reasons: `collect`
+ * runs **before** the delete, since afterwards the rows and the reference are gone, and if it
+ * throws that table is not deleted from at all — deleting the rows would strand whatever they
+ * named. `release` runs after, with what `collect` answered, and decides for itself what is
+ * still referenced, so collecting more than was deleted is safe and collecting less is the
+ * only failure. It is caught and logged: the rows are already gone.
+ *
+ * `where` is SQL that is true for exactly the rows about to be deleted, qualifying the row
+ * as `t`, with its parameters in order. It is built here from declared identifiers only.
+ */
+export interface OwnedExternal {
+  collect: (
+    where: { sql: string; params: readonly unknown[] },
+    limit: number
+  ) => Promise<readonly string[]>;
+  release: (refs: readonly string[]) => Promise<void>;
+}
+
+const externals = new Map<string, OwnedExternal>();
+
+/**
+ * Register what an owned table's rows name outside the database. Called by the owning service,
+ * once — `server/lib` names no service's table itself (`sdk/coreBoundary.test.ts`).
+ */
+export const registerOwnedExternal = (table: string, external: OwnedExternal): void => {
+  identifier(table, 'an owned table');
+  if (externals.has(table)) {
+    throw new Error(`registerOwnedExternal: '${table}' is already registered.`);
+  }
+  externals.set(table, external);
+};
+
+/**
+ * The most references collected per table per sweep: every row one sweep may delete from it.
+ * `collect` sees the rows before `DELETE … LIMIT` picks which of them go, so it has to be able
+ * to see as many as can go.
+ */
+const COLLECT_LIMIT = MAX_CHUNKS * DELETE_CHUNK;
+
+const releaseCollected = async (
+  label: string,
+  table: string,
+  external: OwnedExternal,
+  refs: readonly string[]
+): Promise<void> => {
+  if (refs.length === 0) return;
+  if (refs.length >= COLLECT_LIMIT) {
+    console.warn(
+      `[${label}] ${table}: ${COLLECT_LIMIT} or more references were collected in one pass; ` +
+        'some of what the deleted rows named may not have been released.'
+    );
+  }
+  try {
+    await external.release(refs);
+  } catch (error) {
+    console.error(`[${label}] releasing what the deleted ${table} rows named failed:`, error);
+  }
+};
+
 /** Why a sweep deleted nothing. Every one of these is a refusal, not a result. */
 export type SkipReason =
   | 'unknown-framework'
@@ -457,6 +520,17 @@ export const orphanDeleteSql = (owned: OwnedTable, owner: OwnerTable): string =>
   );
 };
 
+/**
+ * The orphan predicate `orphanDeleteSql` deletes by, for the row alias `t`, so an external's
+ * `collect` reads exactly the rows the sweep is about to remove.
+ */
+export const orphanWhereSql = (owned: OwnedTable, owner: OwnerTable): string => {
+  const column = identifier(owned.column, 'an owner column');
+  const ownerTable = identifier(owner.table, 'the owner table');
+  const ownerColumn = identifier(owner.column, 'the owner column');
+  return `NOT EXISTS (SELECT 1 FROM ${ownerTable} p WHERE p.${ownerColumn} = t.${column})`;
+};
+
 /** Let the server breathe between batches. Nothing is waiting on this. */
 const yieldToServer = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -512,7 +586,16 @@ export const sweepOrphanedRows = async (options: SweepOptions = {}): Promise<Swe
 
   const result: SweepResult = { removed: 0, byTable: {}, skipped: null, failures: [] };
   for (const owned of tables) {
+    const external = externals.get(owned.table);
+    let refs: readonly string[] = [];
     try {
+      // Before the delete, and a throw here skips the table: see `OwnedExternal`.
+      if (external) {
+        refs = await external.collect(
+          { sql: orphanWhereSql(owned, owner), params: [] },
+          COLLECT_LIMIT
+        );
+      }
       const removed = await sweepOneTable(owned, owner);
       if (removed > 0) {
         result.removed += removed;
@@ -521,6 +604,8 @@ export const sweepOrphanedRows = async (options: SweepOptions = {}): Promise<Swe
     } catch (error) {
       result.failures.push({ table: owned.table, error });
     }
+    // Even after a delete that failed part-way: the release re-checks what is still named.
+    if (external) await releaseCollected(label, owned.table, external, refs);
   }
 
   return result;
@@ -537,6 +622,10 @@ export const sweepOrphanedRows = async (options: SweepOptions = {}): Promise<Swe
  * character's row is already gone.
  *
  * Bounded by a citizenid, so no chunking: one character's rows are not a full-schema scan.
+ *
+ * A table with a registered `OwnedExternal` has what its rows name collected first and
+ * released after (MICA-292) — a deleted character's hosted photos are deleted from the host,
+ * unless another player's copy still names them.
  */
 export const purgeOwnedRows = async (
   citizenid: string
@@ -550,13 +639,19 @@ export const purgeOwnedRows = async (
   for (const { table, column } of ownedTables()) {
     const name = identifier(table, 'a swept table');
     const col = identifier(column, 'an owner column');
+    const external = externals.get(table);
+    let refs: readonly string[] = [];
     try {
+      if (external) {
+        refs = await external.collect({ sql: `t.${col} = ?`, params: [owner] }, COLLECT_LIMIT);
+      }
       removed += affectedRows(
         await Database.query(`DELETE FROM ${name} WHERE ${col} = ?`, [owner])
       );
     } catch (error) {
       failures.push({ table, error });
     }
+    if (external) await releaseCollected('mica', table, external, refs);
   }
 
   return { removed, failures };

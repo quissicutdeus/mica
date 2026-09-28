@@ -11,7 +11,7 @@ import { appEventChannel } from '../lib/appEvents';
 import { mediaContract } from '@mica/shared/contracts/media';
 import { playerCoords } from '../lib/playerCoords';
 import { Database } from '../lib/Database';
-import { sweepOrphanedRows } from '../lib/orphanSweep';
+import { registerOwnedExternal, sweepOrphanedRows } from '../lib/orphanSweep';
 import { isAdmin } from './Admin';
 import { notifyPlayer } from '../lib/shell';
 import { restoreWindowDays } from '../lib/retention';
@@ -23,11 +23,12 @@ import {
 } from '../lib/contentRetention';
 import {
   imageHost,
-  isHostedUrl,
   releaseHostedImages,
+  rememberImageHost,
   reportRelease,
   uploadConfig,
-  uploadImage
+  uploadImage,
+  warnIfCascadeHidesHostedPhotos
 } from '../lib/mediaHost';
 
 /**
@@ -1066,23 +1067,58 @@ const retentionDays = (): number =>
   parseRetentionDays(GetConvar('mica_media_retention', ''), 365, 'mica_media_retention');
 
 /**
- * The hosted URLs among `ids`, read before their rows are deleted (MICA-243). Only URLs that
- * pass `isHostedUrl`: a hotlinked GIF from somebody else's CDN is not ours to delete.
+ * The URLs on the `mica_media` rows `where` selects (row alias `t`), read **before** those rows
+ * are deleted, for `releaseHosted` after. MICA-243, and the one collector every hard-delete
+ * path shares since MICA-292: retention, both character purges and the orphan sweep.
+ *
+ * Every URL, not only the current host's. `releaseHostedImages` is what decides which are
+ * ours — the current host's to delete, a former host's to count — and a hotlink it ignores.
+ * Filtering here with `isHostedUrl` is what made an old host's photos vanish from the count
+ * once an owner changed `mica_media_image_host`.
+ *
+ * `where` is SQL this file or `lib/orphanSweep.ts` built from declared identifiers; every
+ * value in it is bound.
  */
-const hostedUrlsOf = async (ids: readonly number[]): Promise<string[]> => {
-  if (ids.length === 0) return [];
+const collectMediaUrls = async (
+  where: { sql: string; params: readonly unknown[] },
+  limit: number
+): Promise<string[]> => {
   const rows = await Database.query<{ url: unknown }[]>(
-    `SELECT DISTINCT \`url\` FROM \`mica_media\` ` +
-      `WHERE \`id\` IN (${ids.map(() => '?').join(', ')}) AND \`url\` IS NOT NULL`,
-    [...ids]
+    `SELECT DISTINCT t.\`url\` FROM \`${media.resolved.table}\` t ` +
+      `WHERE t.\`url\` IS NOT NULL AND ${where.sql} LIMIT ${Math.max(1, Math.floor(limit))}`,
+    [...where.params]
   );
-  return (Array.isArray(rows) ? rows : []).map((row) => row.url).filter(isHostedUrl);
+  return (Array.isArray(rows) ? rows : [])
+    .map((row) => row.url)
+    .filter((url): url is string => typeof url === 'string' && url !== '');
 };
+
+/**
+ * The most URLs one character's purge reads: one character's rows, bounded like one orphan
+ * sweep of a table, never a page that would leave the rest of their files behind.
+ */
+const PURGE_COLLECT_LIMIT = 100_000;
+
+/** What retention collects for a batch of ids. */
+const urlsOfIds = async (ids: readonly number[]): Promise<string[]> =>
+  ids.length === 0
+    ? []
+    : await collectMediaUrls(
+        { sql: `t.\`id\` IN (${ids.map(() => '?').join(', ')})`, params: ids },
+        ids.length
+      );
 
 /** Ask the host to delete what the deleted rows named, and say what happened. */
 const releaseHosted = async (urls: readonly string[]): Promise<void> => {
   reportRelease('micamedia', await releaseHostedImages(urls));
 };
+
+/**
+ * The orphan sweep and the whole-phone purge (`lib/orphanSweep.ts`) delete media rows too,
+ * and without this they deleted the rows and left the files: a deleted character's photos
+ * stayed publicly reachable at their URLs. MICA-292.
+ */
+registerOwnedExternal(media.resolved.table, { collect: collectMediaUrls, release: releaseHosted });
 
 const mediaRetention = {
   label: 'micamedia',
@@ -1090,7 +1126,7 @@ const mediaRetention = {
   convar: 'mica_media_retention',
   days: retentionDays,
   // A hosted photo's file goes with its row, or is reported as left behind (MICA-243).
-  external: { collect: hostedUrlsOf, release: releaseHosted }
+  external: { collect: urlsOfIds, release: releaseHosted }
 };
 registerRetention(mediaRetention);
 
@@ -1166,16 +1202,15 @@ export const purgeMediaForCitizen = async (citizenid: string): Promise<number> =
   if (owner.length === 0) return 0;
 
   // Read before the delete, released after it — the same order retention uses (MICA-243).
-  const rows = await Database.query<{ url: unknown }[]>(
-    'SELECT DISTINCT `url` FROM `mica_media` WHERE `citizenid` = ? AND `url` IS NOT NULL',
-    [owner]
+  const urls = await collectMediaUrls(
+    { sql: 't.`citizenid` = ?', params: [owner] },
+    PURGE_COLLECT_LIMIT
   );
-  const hosted = (Array.isArray(rows) ? rows : []).map((row) => row.url).filter(isHostedUrl);
 
   const removed = affectedRows(
     await Database.query('DELETE FROM mica_media WHERE citizenid = ?', [owner])
   );
-  if (hosted.length > 0) await releaseHosted(hosted);
+  if (urls.length > 0) await releaseHosted(urls);
   return removed;
 };
 
@@ -1407,6 +1442,11 @@ on('onResourceStart', (resourceName: string) => {
   if (resourceName !== GetCurrentResourceName()) return;
 
   logMediaLimits();
+  // Record the host in use now, so its photos are still counted after it changes, and say
+  // whether a cascade can delete rows before their files are released (MICA-292). Both
+  // never throw.
+  void rememberImageHost(imageHost());
+  void warnIfCascadeHidesHostedPhotos(media.resolved.table);
   // Only the orphan sweep here: the retention half runs on `lib/contentRetention.ts`'s
   // schedule, which starts on this same event, and running it twice at boot buys nothing.
   void pruneOrphanedMedia()

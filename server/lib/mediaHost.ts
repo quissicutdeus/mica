@@ -28,7 +28,10 @@
  * - **A hosted file outlives no row that names it.** Deletion (`releaseHostedImages`) is
  *   asked only for a URL no remaining row references — a proximity drop copies the URL onto
  *   each recipient's row, so the sender's row expiring must not pull the picture out from
- *   under theirs.
+ *   under theirs. Every path that hard-deletes `mica_media` rows reads their URLs first and
+ *   hands them here after (MICA-292): retention, both character purges and the orphan sweep.
+ *   The one it cannot is a database-level `ON DELETE CASCADE` from the owner table, which
+ *   `warnIfCascadeHidesHostedPhotos` says out loud at start.
  *
  * `server/tsconfig.json` has neither `dom` nor `@types/node` in scope (see
  * `DiscordWebhook.ts`), so the few runtime globals used here are declared below at the
@@ -37,6 +40,7 @@
  */
 
 import { Database } from './Database';
+import { SCHEMA_MIGRATIONS_TABLE } from './schemaSql';
 
 export const UPLOAD_URL_CONVAR = 'mica_media_upload_url';
 export const UPLOAD_HEADER_CONVAR = 'mica_media_upload_header';
@@ -106,8 +110,20 @@ const warnOnce = (key: string, line: string): void => {
   console.warn(line);
 };
 
-/** Tests only: forget what has been said. */
-export const resetMediaHostForTests = (): void => said.clear();
+/** Image hosts this process has recorded, or read back from the ledger. See `rememberImageHost`. */
+const knownHosts = new Set<string>();
+/** Hosts whose ledger write has been attempted this process, so it is one statement per host. */
+const persisted = new Set<string>();
+/** Whether the ledger's hosts have been read into `knownHosts` yet. */
+let ledgerRead = false;
+
+/** Tests only: forget what has been said, and every host remembered. */
+export const resetMediaHostForTests = (): void => {
+  said.clear();
+  knownHosts.clear();
+  persisted.clear();
+  ledgerRead = false;
+};
 
 /**
  * A convar's value, trimmed. Each call site reads its own convar by its named constant,
@@ -205,6 +221,85 @@ export const validateHostedUrl = (
 
 /** Whether a stored URL is one of ours to delete: it passes the same check it was stored under. */
 export const isHostedUrl = (raw: unknown): raw is string => validateHostedUrl(raw) !== null;
+
+/**
+ * The ledger id recording that photos were once uploaded to, or served from, `host`. MICA-292.
+ *
+ * `isHostedUrl` asks about the host configured **now**, so once an owner points
+ * `mica_media_image_host` somewhere else every row still naming the old host stops counting
+ * as hosted: never released, never even counted in the line that says files were left. A
+ * row's URL is "ours" if its host was an image host when it was written, and the only
+ * durable record of that is one written at the time. `mica_media.url` cannot carry it —
+ * `AddMedia` and the importer write arbitrary `http(s)` hotlinks there too, so "any https
+ * URL" would count a Tenor GIF as a photo of ours — and a column would be a schema change.
+ *
+ * So the host is recorded in `mica_schema_migrations`, the server-owned `id → timestamp`
+ * table `contentRetention.ts` already keeps its grace markers in, for the reason given there:
+ * the migration runner only asks which on-disk ids are missing from it, so an id no file
+ * carries is never read as a migration, and `mediahost:` cannot collide with `NNNN_name`.
+ */
+const HOST_MARKER_PREFIX = 'mediahost:';
+/** The ledger's `id` is `varchar(255)`; a host that would not fit is not recorded. */
+const MAX_MARKER_LENGTH = 255;
+
+/**
+ * Record that `host` is an image host micaOS has used. Once per host per process; never
+ * throws, because it runs beside an upload and at resource start and neither may fail on it.
+ *
+ * Remembered in memory before the write, so this process counts the host even when the
+ * ledger cannot be written (`micaschema apply` not yet run), and says so once.
+ */
+export const rememberImageHost = async (host: string | null): Promise<void> => {
+  if (!host || !HOSTNAME.test(host)) return;
+  knownHosts.add(host);
+  if (persisted.has(host)) return;
+  persisted.add(host);
+  const id = `${HOST_MARKER_PREFIX}${host}`;
+  if (id.length > MAX_MARKER_LENGTH) return;
+  try {
+    await Database.query(`INSERT IGNORE INTO \`${SCHEMA_MIGRATIONS_TABLE}\` (\`id\`) VALUES (?)`, [
+      id
+    ]);
+  } catch (error) {
+    warnOnce(
+      'ledger-write',
+      `[micamedia] could not record ${host} as an image host in ${SCHEMA_MIGRATIONS_TABLE} ` +
+        `(${reasonOf(error)}); run micaschema apply. Until it is recorded, photos on it are ` +
+        `not counted once ${IMAGE_HOST_CONVAR} points elsewhere.`
+    );
+  }
+};
+
+/**
+ * Every image host micaOS has recorded, lower-cased: the ledger's, read once per process, plus
+ * any this process remembered since. Answers what it has when the ledger cannot be read, and
+ * tries the read again next time.
+ */
+export const recordedImageHosts = async (): Promise<ReadonlySet<string>> => {
+  if (!ledgerRead) {
+    try {
+      const rows = await Database.query<{ id: unknown }[]>(
+        `SELECT \`id\` FROM \`${SCHEMA_MIGRATIONS_TABLE}\` WHERE \`id\` LIKE ?`,
+        [`${HOST_MARKER_PREFIX}%`]
+      );
+      if (!Array.isArray(rows)) throw new Error('not a result set');
+      for (const row of rows) {
+        const id = String(row.id);
+        if (!id.startsWith(HOST_MARKER_PREFIX)) continue;
+        const host = id.slice(HOST_MARKER_PREFIX.length);
+        if (HOSTNAME.test(host)) knownHosts.add(host);
+      }
+      ledgerRead = true;
+    } catch (error) {
+      warnOnce(
+        'ledger-read',
+        `[micamedia] could not read former image hosts from ${SCHEMA_MIGRATIONS_TABLE} ` +
+          `(${reasonOf(error)}); photos left on one are not counted until it can be read.`
+      );
+    }
+  }
+  return knownHosts;
+};
 
 /** `Name: value` from `mica_media_upload_header`, or `undefined` when unset, or `null` when bad. */
 const parseHeader = (): { name: string; value: string } | null | undefined => {
@@ -386,6 +481,8 @@ export const uploadImage = async (dataUri: unknown): Promise<HostedImage | null>
     if (!url) {
       return fail(`the returned URL is not an https address on ${config.host} that fits`);
     }
+    // So this file is still counted as ours after the host changes (MICA-292).
+    void rememberImageHost(config.host);
     return { url, mimeType };
   } catch (error) {
     return fail(reasonOf(error));
@@ -408,16 +505,30 @@ export interface ReleaseOutcome {
   failed: number;
   /** No delete endpoint configured. Left on the host. */
   unconfigured: number;
+  /**
+   * On an image host micaOS used before the current one, keyed by host. Left there: the
+   * delete URL configured now is the current host's, and handing it another host's file
+   * would at best do nothing and at worst delete an unrelated file of the same name.
+   */
+  formerHost: Record<string, number>;
 }
+
+/** URLs per reference check, so a large release is several bounded statements, not one. */
+export const RELEASE_CHECK_BATCH = 500;
 
 /**
  * Ask the host to delete files no row references any more. MICA-243's half of retention.
  *
- * Only URLs that pass `isHostedUrl` are considered — a hotlinked GIF `AddMedia` stored from
+ * Only URLs that pass `isHostedUrl` are deleted — a hotlinked GIF `AddMedia` stored from
  * somebody else's CDN is not ours to delete. Of those, only URLs no remaining `mica_media`
  * row names: a proximity drop copies a URL onto every recipient's row, and the sender's copy
  * aging out first must not take the picture from theirs. Callers call this **after** their
  * delete, so the rows that went are already gone from that check.
+ *
+ * An `https:` URL on a host micaOS recorded as an image host earlier (`rememberImageHost`),
+ * but that is not the current one, goes through the same check and, unreferenced, is counted
+ * under `formerHost` and never requested (MICA-292): the delete URL configured now belongs to
+ * the current host, and guessing one for the old host is how an unrelated file gets deleted.
  *
  * With no `mica_media_delete_url` the files are counted and left, and the caller says so —
  * a host with no delete API is a real configuration, and silence would read as a clean-up.
@@ -427,26 +538,51 @@ export interface ReleaseOutcome {
 export const releaseHostedImages = async (
   candidates: readonly unknown[]
 ): Promise<ReleaseOutcome> => {
-  const outcome: ReleaseOutcome = { deleted: 0, failed: 0, unconfigured: 0 };
-  const hosted = [...new Set(candidates.filter(isHostedUrl))];
-  if (hosted.length === 0) return outcome;
+  const outcome: ReleaseOutcome = { deleted: 0, failed: 0, unconfigured: 0, formerHost: {} };
+  const distinct = [
+    ...new Set(candidates.filter((c): c is string => typeof c === 'string' && c !== ''))
+  ];
+  const current = imageHost();
+  const hosted = distinct.filter((url) => validateHostedUrl(url, current) !== null);
 
-  let unreferenced: string[];
+  // The ledger is asked only when some https URL is not the current host's, so a release of
+  // nothing but current-host photos costs no extra statement.
+  const former = new Map<string, string>();
+  const onCurrentHost = new Set(hosted);
+  const others = distinct.filter((url) => !onCurrentHost.has(url));
+  if (others.some((url) => parseHttps(url) !== null)) {
+    const recorded = await recordedImageHosts();
+    for (const url of others) {
+      const host = parseHttps(url)?.hostname.toLowerCase();
+      if (host && host !== current && recorded.has(host)) former.set(url, host);
+    }
+  }
+  const considered = [...hosted, ...former.keys()];
+  if (considered.length === 0) return outcome;
+
+  const still = new Set<string>();
   try {
-    const marks = hosted.map(() => '?').join(', ');
-    const rows = await Database.query<{ url: string }[]>(
-      `SELECT DISTINCT \`url\` FROM \`mica_media\` WHERE \`url\` IN (${marks})`,
-      hosted
-    );
-    const still = new Set((Array.isArray(rows) ? rows : []).map((row) => String(row.url)));
-    unreferenced = hosted.filter((url) => !still.has(url));
+    for (let i = 0; i < considered.length; i += RELEASE_CHECK_BATCH) {
+      const batch = considered.slice(i, i + RELEASE_CHECK_BATCH);
+      const rows = await Database.query<{ url: string }[]>(
+        `SELECT DISTINCT \`url\` FROM \`mica_media\` ` +
+          `WHERE \`url\` IN (${batch.map(() => '?').join(', ')})`,
+        batch
+      );
+      for (const row of Array.isArray(rows) ? rows : []) still.add(String(row.url));
+    }
   } catch (error) {
     // Unsure what is still referenced, so nothing is deleted: a file left behind costs
     // storage, a file deleted under a live row costs somebody a photo.
     console.error('[micamedia] could not check which hosted photos are still in use:', error);
-    outcome.failed = hosted.length;
+    outcome.failed = considered.length;
     return outcome;
   }
+
+  for (const [url, host] of former) {
+    if (!still.has(url)) outcome.formerHost[host] = (outcome.formerHost[host] ?? 0) + 1;
+  }
+  const unreferenced = hosted.filter((url) => !still.has(url));
   if (unreferenced.length === 0) return outcome;
 
   const template = clean(GetConvar(DELETE_URL_CONVAR, ''));
@@ -518,4 +654,61 @@ export const reportRelease = (label: string, outcome: ReleaseOutcome): void => {
         `${DELETE_URL_CONVAR} is not set, so they are left on the image host.`
     );
   }
+  for (const [host, count] of Object.entries(outcome.formerHost)) {
+    // Host and count only, never the URLs: they are the addresses of a deleted character's
+    // photos, and a console is often piped somewhere more public than the database.
+    console.warn(
+      `[${label}] ${count} hosted photo(s) on ${host}, a former image host, no longer belong ` +
+        `to any row. micaOS only deletes from the current one (${IMAGE_HOST_CONVAR}), so ` +
+        `they are left on ${host}; remove them there if they should not stay reachable.`
+    );
+  }
+};
+
+/**
+ * Say at start, once, when `mica_media` rows can vanish inside the database. MICA-292.
+ *
+ * On qb, `mica.sql` gives `mica_media.citizenid` a `FOREIGN KEY … ON DELETE CASCADE` onto
+ * `players`, so a framework deleting a character takes their photo rows in the same
+ * statement, without micaOS running a line. For a photo in the database that is the cleanup
+ * working. For a hosted photo it is a leak: the row that named the file is gone before
+ * anything could read its URL, nothing is left for the orphan sweep to find, and the file
+ * stays publicly reachable at an address nobody will ever look up again. Without a listing
+ * API on the host — which `mica_media_upload_url` does not promise — micaOS cannot find it.
+ *
+ * What an owner can do is order their deletion: trigger `mica:server:shell:characterDeleted`
+ * (or the media-only one) **before** the framework deletes the character, and the purge
+ * reads the URLs, deletes the rows and releases the files; the cascade then has nothing
+ * left to take. This says so when there is an image host and the table carries a cascading
+ * constraint, and answers whether it did. Never throws; a check it cannot run is said too,
+ * rather than read as "no cascade".
+ */
+export const warnIfCascadeHidesHostedPhotos = async (table: string): Promise<boolean> => {
+  const host = imageHost();
+  if (!host) return false;
+  let cascades: number;
+  try {
+    const rows = await Database.query<{ n: number | string }[]>(
+      'SELECT COUNT(*) AS `n` FROM information_schema.REFERENTIAL_CONSTRAINTS ' +
+        "WHERE `CONSTRAINT_SCHEMA` = DATABASE() AND `TABLE_NAME` = ? AND `DELETE_RULE` = 'CASCADE'",
+      [table]
+    );
+    cascades = Number(Array.isArray(rows) && rows.length > 0 ? rows[0].n : Number.NaN);
+    if (!Number.isFinite(cascades)) throw new Error('not a count');
+  } catch (error) {
+    console.warn(
+      `[micamedia] could not check whether ${table} cascades from the owner table ` +
+        `(${reasonOf(error)}). If it does, a character your framework deletes leaves their ` +
+        `hosted photos on ${host}; see the README's image host section.`
+    );
+    return false;
+  }
+  if (cascades === 0) return false;
+  console.warn(
+    `[micamedia] ${table} is deleted by ON DELETE CASCADE when your framework deletes a ` +
+      `character, inside the database, so micaOS never sees those rows' URLs and their ` +
+      `hosted photos stay on ${host}. Trigger mica:server:shell:characterDeleted before the ` +
+      'character is deleted to release them; see the README.'
+  );
+  return true;
 };

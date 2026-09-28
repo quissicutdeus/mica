@@ -492,8 +492,10 @@ describe('the owner verdict is resolved once, not per table', () => {
 
     await sweepOrphanedRows();
 
-    const samples = dbMock.query.mock.calls.filter((call: any[]) =>
-      String(call[0]).startsWith('SELECT DISTINCT')
+    // The media collect (MICA-292) is a `SELECT DISTINCT` too, of URLs rather than owners.
+    const samples = dbMock.query.mock.calls.filter(
+      (call: any[]) =>
+        String(call[0]).startsWith('SELECT DISTINCT') && String(call[0]).includes('AS owner')
     );
     expect(samples).toHaveLength(1);
   });
@@ -612,7 +614,20 @@ describe('purging one named character', () => {
     const statements = deletes();
     expect(statements).toHaveLength(ownedTables().length);
     expect(removed).toBe(ownedTables().length);
+    const selects = dbMock.query.mock.calls.filter((call: any[]) =>
+      String(call[0]).startsWith('SELECT')
+    );
+    // The one read is the media collect (MICA-292), bound by the same citizenid.
+    expect(selects.map((call: any[]) => String(call[0]))).toEqual([
+      expect.stringMatching(
+        /^SELECT DISTINCT t\.`url` FROM `mica_media` t WHERE .*t\.citizenid = \?/
+      )
+    ]);
     for (const call of dbMock.query.mock.calls) {
+      if (String(call[0]).startsWith('SELECT')) {
+        expect(call[1]).toEqual(['CID_Z']);
+        continue;
+      }
       expect(String(call[0])).toMatch(/^DELETE FROM mica_[a-z_]+ WHERE citizenid = \?$/);
       expect(call[1]).toEqual(['CID_Z']);
     }

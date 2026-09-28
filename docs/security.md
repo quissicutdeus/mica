@@ -651,6 +651,29 @@ by this list until someone re-weighs it.
   messages are kept indefinitely by default, and no player-facing export or
   delete of their own message history. Those are deferred as separate follow-up
   work.
+- **A hosted photo can outlive its character when the database deletes the rows
+  (MICA-292).** With an image host configured (MICA-243), a photo is a public
+  URL, so a file left behind is a privacy leak and not just a storage bill.
+  Every delete micaOS itself runs — retention, both character-deleted events and
+  the orphan sweep — reads the rows' URLs before the `DELETE` and asks the host
+  to delete each file no remaining row names (`lib/mediaHost.ts`
+  `releaseHostedImages`); if it cannot read them it does not delete the rows.
+  Two cases are accepted rather than closed. **The `ON DELETE CASCADE` from
+  `players`** on qb removes a character's `mica_media` rows inside MariaDB when
+  the framework deletes the character; micaOS runs no code and sees no URL, and
+  afterwards nothing names the file, so finding it would take a listing API on
+  the host, which `mica_media_upload_url` does not promise, or a separate record
+  of every uploaded URL, which would be a schema change. The mitigation is
+  ordering, the owner's to choose: trigger `mica:server:shell:characterDeleted`
+  before the framework deletes the character. A resource-start warning says so
+  whenever an image host is set and `mica_media` carries a cascading constraint
+  (`warnIfCascadeHidesHostedPhotos`). **A former image host's files** are
+  recognised by a host record micaOS writes to `mica_schema_migrations` when it
+  uploads and at start, counted and logged by host when their last row goes, and
+  never deleted: the configured delete URL is the current host's, and guessing
+  another host's is how an unrelated file gets deleted. A host that was replaced
+  before that record existed is not recognised at all. The log gives a host and
+  a count, never the URLs.
 
 ---
 

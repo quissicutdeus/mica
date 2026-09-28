@@ -782,7 +782,7 @@ set mica_location_interval 5
 | `mica_media_upload_field`          | form field name                                         | `file`                 | Multipart field the photo is posted in                                                                                                |
 | `mica_media_upload_response_path`  | dot path                                                | `url`                  | Where the photo's URL is in the host's JSON reply, e.g. `data.link`                                                                   |
 | `mica_media_image_host`            | host name                                               | the upload URL's host  | The only host a returned photo URL may be on                                                                                          |
-| `mica_media_delete_url`            | https URL with `{url}` or `{name}`                      | empty (off)            | Endpoint a retention prune sends `DELETE` to for a hosted photo                                                                       |
+| `mica_media_delete_url`            | https URL with `{url}` or `{name}`                      | empty (off)            | Endpoint sent `DELETE` for a hosted photo once no row names it                                                                        |
 | `mica_message_retention`           | integer, days, or `off`                                 | `180`                  | How long text messages are kept                                                                                                       |
 | `mica_dm_retention`                | integer, days, or `off`                                 | `90`                   | How long Blabber direct messages are kept                                                                                             |
 | `mica_orphan_owner_table`          | `table.column`                                          | empty (off)            | Overrides which table the orphan sweep checks against                                                                                 |
@@ -1073,11 +1073,29 @@ the convar is invisible until the resource restarts.
   the console says why. Old base64 photos keep working, and the phone draws
   either kind; Store add-ons may load images from the image host and from
   nowhere else new. Thumbnails stay in the database — they are small. When
-  retention deletes a hosted photo's last row, micaOS sends `DELETE` to
+  micaOS deletes a hosted photo's last row — by retention, by either
+  character-deleted event, or by the orphan sweep — it sends `DELETE` to
   `mica_media_delete_url` with `{url}` replaced by the photo's URL and `{name}`
-  by its file name, both URL-encoded, and the same header. Without that convar
-  the files are left on the host and the console counts them after every prune.
-  A hosted photo is still a row, so the quota counts only its thumbnail.
+  by its file name, both URL-encoded, and the same header. A file another
+  player's copy still names is never deleted. Without that convar the files are
+  left on the host and the console counts them every time. A hosted photo is
+  still a row, so the quota counts only its thumbnail.
+
+  **Changing `mica_media_image_host` does not move old photos.** micaOS records
+  each host it has uploaded to, and a photo on an earlier one is still drawn and
+  still counted when its last row goes. It is never deleted, though: the delete
+  URL you have now is for the new host, so the console names the old host and
+  how many of its files no longer belong to any row, and removing them there is
+  up to you.
+
+  **A character your framework deletes on qb takes their photo rows with it
+  before micaOS can see them.** The `ON DELETE CASCADE` below runs inside the
+  database, so the files those rows named stay on the host, publicly reachable
+  at their URLs, and nothing is left for micaOS to find them by. If your
+  deletion flow triggers `mica:server:shell:characterDeleted` **before** it
+  deletes the character, micaOS deletes the rows and releases the files itself,
+  and the cascade then has nothing left to take. With an image host set, the
+  console warns about this at every start while the cascade exists.
 
 Two things about media storage that are not convars, since this is where you
 will be looking if the table is bigger than you expected. micaOS removes a
