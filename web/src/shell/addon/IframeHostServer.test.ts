@@ -882,7 +882,9 @@ describe('IframeHostServer', () => {
           goHome: () => {},
           consumeDeepLink: () => {
             consumeDeepLinkCalls.push(appId);
-          }
+          },
+          // Visible only for the frame's own id, so the pin shows in the value pushed.
+          visible: writable(appId === 'probe')
         })) as any
       );
       registerFacet('keybinds' as any, (() => ({ onKeybind: () => () => {} })) as any);
@@ -919,6 +921,19 @@ describe('IframeHostServer', () => {
       const { posted, from } = server([]);
       from({ kind: 'subscribe', id: 1, facet: 'lifecycle', factoryArgs: [], member: 'currentApp' });
       expect(posted[0]).toEqual({ kind: 'push', id: 1, value: { id: 'probe' } });
+    });
+
+    it("subscribes visible (useAppVisible, MICA-294) with no permission, for the frame's own id only", () => {
+      const { posted, from } = server([]);
+      // Naming another app does not get the frame that app's answer.
+      from({
+        kind: 'subscribe',
+        id: 1,
+        facet: 'lifecycle',
+        factoryArgs: ['mail'],
+        member: 'visible'
+      });
+      expect(posted[0]).toEqual({ kind: 'push', id: 1, value: true });
     });
 
     it('calls goHome and consumeDeepLink with no permission', async () => {

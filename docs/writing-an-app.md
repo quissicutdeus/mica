@@ -189,6 +189,29 @@ fetched there would show whatever was true when it was first opened. If a badge
 has to be right _before_ the launcher draws, declare `preload` in the manifest —
 `onAppForeground` is too late by definition.
 
+Anything that keeps running — a poll, a ticking display — should stop when
+nobody can see it, and `onAppForeground` cannot tell you that. It fires when the
+app comes to the front; putting the phone away does not send the app anywhere,
+so nothing fires when the phone goes down. `useAppVisible(appId)` is the other
+half: a store that is `true` only while a device is open, its screen is showing
+apps (no lock screen or dead battery over it), and your app is the one in front
+— phone and tablet alike. Load with `onAppForeground`; start and stop with this.
+
+```ts
+const visible = useAppVisible('places');
+const { every } = useTimer();
+
+$effect(() => {
+  if (!$visible) return;
+  void refresh();
+  return every(5000, () => void refresh());
+});
+```
+
+It is implicit — no permission to declare — and an app can only ask about
+itself. In a `core: false` add-on it reads `false` until the shell's first
+answer arrives, so work gated on it starts a moment late rather than early.
+
 ## Strings
 
 Every label, placeholder, toast and empty state an app shows goes through the
@@ -511,6 +534,14 @@ the `__MICA_*__` substitutions).
   player home from a detail view. `appId` is required because the claim outlives
   the app being on screen (AGENTS.md §2); without it Back reaches whichever app
   registered last.
+- Drag with `use:pointerDrag={{ onstart, onmove, onend }}`. The phone is drawn
+  through a `transform: scale()`, so client-pixel deltas applied 1:1 slide out
+  from under the pointer at any Phone Size but 100%; `pointerDrag` hands you
+  travel since the press already in the element's own pixels, and captures the
+  pointer so the drag survives leaving the element. `measureDragRatio(element)`
+  is the correction on its own, for input it does not cover (a wheel zoom around
+  the cursor). Put `touch-none select-none` on the element yourself. Places' map
+  is the worked example.
 - Filter a list with `filterByQuery`, and use the shared primitives —
   `SegmentedControl` for tabs, `ToggleSwitch` for a setting, `Skeleton` while a
   fetch is in flight.

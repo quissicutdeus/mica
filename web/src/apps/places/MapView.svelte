@@ -16,7 +16,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script lang="ts">
   import type { Snippet } from 'svelte';
-  import { LocationIcon, useLocale } from '@mica/sdk';
+  import { LocationIcon, measureDragRatio, pointerDrag, useLocale } from '@mica/sdk';
   import type { MapBounds } from '@mica/shared/contracts/places';
   import {
     FOCUS_ZOOM_FACTOR,
@@ -25,7 +25,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     clampView,
     fitView,
     minZoom,
-    renderScale,
     toScreen,
     worldToMap,
     zoomAround,
@@ -55,7 +54,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   const { t } = useLocale();
 
-  let element: HTMLDivElement | undefined = $state();
   let width = $state(0);
   let height = $state(0);
   /** Null until the player moves the map; until then the view follows `initialView`. */
@@ -79,37 +77,26 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     })
   );
 
-  let drag: { id: number; x: number; y: number; from: MapView; scale: number } | null = null;
-
-  const onpointerdown = (event: PointerEvent) => {
-    if (!element || event.button !== 0) return;
-    element.setPointerCapture(event.pointerId);
-    drag = {
-      id: event.pointerId,
-      x: event.clientX,
-      y: event.clientY,
-      from: view,
-      scale: renderScale(element)
-    };
-  };
-
-  const onpointermove = (event: PointerEvent) => {
-    if (!drag || event.pointerId !== drag.id) return;
-    moved = clampView(
-      {
-        k: drag.from.k,
-        tx: drag.from.tx + (event.clientX - drag.x) / drag.scale,
-        ty: drag.from.ty + (event.clientY - drag.y) / drag.scale
-      },
-      width,
-      height
-    );
-  };
-
-  const endDrag = (event: PointerEvent) => {
-    if (!drag || event.pointerId !== drag.id) return;
-    drag = null;
-    if (element?.hasPointerCapture(event.pointerId)) element.releasePointerCapture(event.pointerId);
+  /**
+   * Panning. `pointerDrag` (MICA-294) owns the capture and hands over travel already in the
+   * element's own pixels, so the phone's zoom needs no correcting here.
+   */
+  let dragFrom: MapView | null = null;
+  const pan = {
+    onstart: () => {
+      dragFrom = view;
+    },
+    onmove: (dx: number, dy: number) => {
+      if (!dragFrom) return;
+      moved = clampView(
+        { k: dragFrom.k, tx: dragFrom.tx + dx, ty: dragFrom.ty + dy },
+        width,
+        height
+      );
+    },
+    onend: () => {
+      dragFrom = null;
+    }
   };
 
   const zoomBy = (factor: number) => {
@@ -128,7 +115,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     const handle = (event: WheelEvent) => {
       event.preventDefault();
       const rect = node.getBoundingClientRect();
-      const scale = renderScale(node);
+      const scale = measureDragRatio(node);
       const px = (event.clientX - rect.left) / scale;
       const py = (event.clientY - rect.top) / scale;
       moved = zoomAround(view, event.deltaY < 0 ? 1.25 : 0.8, px, py, width, height);
@@ -140,18 +127,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <div class="relative flex min-h-0 flex-1 flex-col">
   <div
-    bind:this={element}
     bind:clientWidth={width}
     bind:clientHeight={height}
     use:wheelZoom
+    use:pointerDrag={pan}
     class="bg-surface-container-high relative min-h-0 flex-1 touch-none overflow-hidden select-none"
     role="application"
     aria-label={$t('places.mapLabel')}
     data-testid="places-map"
-    {onpointerdown}
-    {onpointermove}
-    onpointerup={endDrag}
-    onpointercancel={endDrag}
   >
     {#if ready}
       <svg class="absolute inset-0" {width} {height} aria-hidden="true">

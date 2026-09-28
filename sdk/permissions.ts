@@ -50,6 +50,10 @@ export const PERMISSION_OF: Record<string, AppPermission | readonly AppPermissio
   useTimer: null,
   onAppForeground: null,
   onAppUnmount: null,
+  // MICA-294: whether this app is the one on an open screen. `onAppForeground`'s other half —
+  // the stop to its start — built on the same pinned `lifecycle` facet, and asks only about
+  // the caller itself, so it discloses no more than `onAppForeground` already does.
+  useAppVisible: null,
   useService: null,
   // MICA-27: no public hook of its own — the wall-crossing plumbing `onAppForeground`,
   // `useDeepLink`, the `onback` prop, and `useAppLevels`'s physical Back binding are built
@@ -487,7 +491,8 @@ export const FACET_MEMBERS: Readonly<Record<string, readonly string[]>> = {
   displayWrite: ['setDisplaySize', 'setMotionPreference', 'setHomeGridSize'],
   keybinds: ['onKeybind', 'bindings', 'groups', 'findConflict'],
   keybindsWrite: [],
-  lifecycle: ['currentApp', 'onBack', 'goHome', 'consumeDeepLink'],
+  // MICA-294: `visible` is `useAppVisible`, scoped by the same pin as the rest of the row.
+  lifecycle: ['currentApp', 'onBack', 'goHome', 'consumeDeepLink', 'visible'],
   lockScreen: ['hasPasscode', 'autoLockPolicy', 'autoLockPolicyChoices'],
   lockScreenWrite: ['setAutoLockPolicy', 'setPasscode', 'clearPasscode'],
   music: [

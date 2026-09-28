@@ -1124,6 +1124,16 @@ somebody maintaining a `core: false` add-on outside this repo, and it answers
 one question: does that bundle still compile against this release, and does its
 manifest still ask for the right things.
 
+**`useAppVisible(appId)` is new, and needs no permission (MICA-294).** A store
+that is `true` only while a device is open, its screen is showing apps, and your
+app is the one in front. `onAppForeground` cannot tell you when the phone goes
+down, so stop polling on this. In a frame it reads `false` until the shell's
+first answer. Also new, with no permission because they touch no host:
+`pointerDrag`, a Svelte action that reports drag travel since the press in the
+element's own pixels with the pointer captured (options typed
+`PointerDragOptions`), and `measureDragRatio(element)`, the Phone Size
+correction on its own. Nothing was removed; `SDK_CONTRACT_VERSION` stays `1`.
+
 **`useControlCenter(appId)` is new, behind the new `control-center` permission
 (MICA-247).** Put up to three switches of your own in the control center, each
 with an `id`, a `label`, an `icon` named from `@mica/sdk`'s icons, a starting

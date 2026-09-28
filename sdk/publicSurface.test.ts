@@ -990,7 +990,12 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     // MICA-286: an app answers the home search for its own rows.
     'useSearchProvider',
     // MICA-247: an app puts up to three switches of its own in the control center.
-    'useControlCenter'
+    'useControlCenter',
+    // MICA-294: a scale-corrected pointer drag (DOM only, no facet), and whether this app is
+    // on an open screen — the stop to `onAppForeground`'s start.
+    'measureDragRatio',
+    'pointerDrag',
+    'useAppVisible'
   ],
   '@mica/sdk (add-on bundle)': [
     'ALL_PERMISSIONS',
@@ -1208,7 +1213,12 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     // MICA-286: an app answers the home search for its own rows.
     'useSearchProvider',
     // MICA-247: an app puts up to three switches of its own in the control center.
-    'useControlCenter'
+    'useControlCenter',
+    // MICA-294: a scale-corrected pointer drag (DOM only, no facet), and whether this app is
+    // on an open screen — the stop to `onAppForeground`'s start.
+    'measureDragRatio',
+    'pointerDrag',
+    'useAppVisible'
   ],
   '@mica/sdk/app': ['defineApp', 'lazyBadge'],
   '@mica/sdk/core': [
@@ -1327,7 +1337,9 @@ const BASELINE_TYPE_EXPORTS: Record<string, string[]> = {
     'UIMessage',
     'WallpaperPreset',
     'WallpaperState',
-    'WidgetSize'
+    'WidgetSize',
+    // MICA-294: `pointerDrag`'s handlers, nameable so an add-on can pass them through.
+    'PointerDragOptions'
   ],
   '@mica/sdk (add-on bundle)': [
     'AccountSearchQuery',
@@ -1410,7 +1422,9 @@ const BASELINE_TYPE_EXPORTS: Record<string, string[]> = {
     'UIMessage',
     'WallpaperPreset',
     'WallpaperState',
-    'WidgetSize'
+    'WidgetSize',
+    // MICA-294: `pointerDrag`'s handlers, nameable so an add-on can pass them through.
+    'PointerDragOptions'
   ],
   '@mica/sdk/app': [],
   '@mica/sdk/core': []
@@ -1655,6 +1669,8 @@ const BASELINE_HOOK_RETURNS: Record<string, string[]> = {
     'unregisterApp',
     'updateApp'
   ],
+  // MICA-294: a store, so its one member.
+  useAppVisible: ['subscribe'],
   useBank: [
     'declineInvoice',
     'fetchInvoices',
@@ -2225,6 +2241,8 @@ const BASELINE_TYPE_SHAPES: Record<string, string[]> = {
     'subscribe'
   ],
   PersistedOptions: ['sanitize?', 'sync?'],
+  // MICA-294: what `pointerDrag` calls into.
+  PointerDragOptions: ['onend?', 'onmove', 'onstart?'],
   QueueEntry: ['error?', 'key', 'playlistId', 'title', 'videoId'],
   ReactionStore: ['load', 'subscribe', 'toggle'],
   ReactionTarget: ['app', 'target_ids', 'target_table'],

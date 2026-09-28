@@ -240,3 +240,26 @@ describe('onAppForeground — transition-only, over the lifecycle twin store', (
     expect(handler).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('lifecycle.visible — the twin behind useAppVisible (MICA-294)', () => {
+  it('reads false until the shell answers, then follows every push', () => {
+    const f = fakeTransport();
+    const seen: boolean[] = [];
+    const off = lifecycle('probe').visible.subscribe((v) => seen.push(v));
+
+    const sub = f.sent.find(
+      (m) => m.kind === 'subscribe' && m.facet === 'lifecycle' && m.member === 'visible'
+    ) as Extract<ToShell, { kind: 'subscribe' }>;
+    expect(sub).toBeDefined();
+    const push = f.pushes.get(sub.id)!;
+
+    push(true);
+    push(false);
+    push(true);
+    off();
+
+    // The leading `false` is the point: an add-on that waits for `true` before polling does
+    // nothing until the shell has actually said the phone is open.
+    expect(seen).toEqual([false, true, false, true]);
+  });
+});

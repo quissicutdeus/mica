@@ -24,7 +24,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     useLocation,
     useMedia,
     useContacts,
-    useNavigation,
+    useAppVisible,
     useTimer,
     onAppForeground,
     registerMessages,
@@ -63,7 +63,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   const { shareLocation, setWaypoint } = useLocation();
   const { busy, run } = useAppAction('places');
   const { contactsStore } = useContacts();
-  const { currentApp } = useNavigation();
   const { every } = useTimer();
 
   /** The map is the app's front page since MICA-244; the lists are one tap away. */
@@ -265,23 +264,32 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   };
 
   /**
-   * Poll only while Places is the app on screen and the map is showing: every answer is read
+   * Live positions, read only while somebody can see them: every answer is sampled
    * server-side from the game, so a poll nobody is looking at is load for nothing.
+   *
+   * Keyed on `useAppVisible` (MICA-294) rather than on being the current app, because
+   * putting the phone away leaves Places current — it used to poll a closed phone for as
+   * long as the player left it closed. One read each time Places comes into view (first
+   * open, back from another app, the phone brought back up) keeps the share indicator
+   * current on either tab; the interval runs only while the map is the tab showing. An
+   * effect, so the timer is torn down with the component rather than outliving it.
    */
-  let cancelPoll: (() => void) | null = null;
-  const startPolling = (seconds: number) => {
-    cancelPoll?.();
-    cancelPoll = every(seconds * 1000, () => {
-      if ($currentApp.id === 'places' && tab === 'map') void refreshLive();
-    });
-  };
+  const visible = useAppVisible('places');
+
+  $effect(() => {
+    if ($visible) void refreshLive();
+  });
+
+  $effect(() => {
+    if (!$visible || tab !== 'map') return;
+    return every($mapConfig.intervalSeconds * 1000, () => void refreshLive());
+  });
 
   onAppForeground('places', () => {
     void media.load();
     void places.load();
     void contactsStore.load();
-    void refreshLive();
-    void loadMapConfig().then((config) => startPolling(config.intervalSeconds));
+    void loadMapConfig();
   });
 </script>
 

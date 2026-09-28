@@ -13,10 +13,10 @@ export default defineApp({
   description: 'A map of your saved places and friends, live location sharing, and waypoints.',
   // `useLocation` (share-my-position / set-waypoint), `useMedia` (reading the
   // recently-shared-locations list, which is `kind: 'location'` rows in the media
-  // service), `useContacts` (choosing who sees a live share, and naming a friend's pin)
-  // and `useNavigation` (polling only while Places is on screen) — see `permissions.ts`'s
-  // `PERMISSION_OF` table.
-  permissions: ['location', 'media', 'contacts', 'navigation'],
+  // service) and `useContacts` (choosing who sees a live share, and naming a friend's pin)
+  // — see `permissions.ts`'s `PERMISSION_OF` table. Polling only while Places is on screen
+  // is `useAppVisible` since MICA-294, which is implicit, so `navigation` went with it.
+  permissions: ['location', 'media', 'contacts'],
   author: 'micaOS',
   // MICA-65: recent shared locations, share/waypoint actions, and saved places. MICA-244:
   // the map canvas and live location sharing. No job-resource exports (deferred).

@@ -62,6 +62,34 @@ test.describe('Places map', () => {
     await expect.poll(() => pinX(page, 'places-pin-self')).toBeLessThan(before - 20);
   });
 
+  /**
+   * MICA-294. Putting the phone away leaves Places the current app, and in a browser the
+   * frame's outro never completes (`keybinds.spec.ts`), so Places stays mounted too — before
+   * `useAppVisible` it kept reading `places:live` every interval with nobody looking. The mock
+   * interval is 2s, so the wait below spans two and a half of them.
+   */
+  test('stops reading live positions while the phone is away, and reads again on reopen', async ({
+    page
+  }) => {
+    const liveReads = () =>
+      page.evaluate(
+        () => (window.mockCalls ?? []).filter((call) => call.event === 'places:live').length
+      );
+    await openPlaces(page);
+    const opened = await liveReads();
+    await expect.poll(liveReads, { timeout: 5_000 }).toBeGreaterThan(opened);
+
+    await page.evaluate(() => window.postMessage({ action: 'setVisible', data: false }, '*'));
+    await expect(page.getByRole('button', { name: /Open micaOS/i })).toBeVisible();
+    const closed = await liveReads();
+    await page.waitForTimeout(5_000);
+    expect(await liveReads()).toBe(closed);
+
+    // Reopened, it reads at once rather than waiting out an interval.
+    await page.evaluate(() => window.postMessage({ action: 'setVisible', data: true }, '*'));
+    await expect.poll(liveReads, { timeout: 1_500 }).toBeGreaterThan(closed);
+  });
+
   test('zooms with the buttons', async ({ page }) => {
     await openPlaces(page);
     await expect(page.getByTestId('places-pin-place')).toHaveCount(2);

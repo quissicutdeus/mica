@@ -637,6 +637,11 @@ export interface Facets {
      * `useDeepLink`'s doc for the usage contract.
      */
     consumeDeepLink: () => void;
+    /**
+     * MICA-294. True while a device is open, its screen is showing apps (no lock screen or
+     * dead battery over it), and this app is the one in front. See `useAppVisible`.
+     */
+    visible: Readable<boolean>;
   };
   location: () => {
     shareLocation: () => Promise<{

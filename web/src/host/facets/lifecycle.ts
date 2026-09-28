@@ -4,7 +4,9 @@
 
 import { registerFacet } from '../../../../sdk/host/current';
 import { onDestroy } from 'svelte';
+import { derived } from 'svelte/store';
 import { currentApp, goHome, consumeAppProps } from '../../shell/state/navigation';
+import { appsOnScreen } from '../../shell/state/appsOnScreen';
 import { registerHandler } from '../../shell/state/keybinds';
 
 /**
@@ -85,7 +87,13 @@ export function lifecycle(appId: string) {
      * Mark this app's deep-link props as handled, so they do not fire again. See
      * `useDeepLink`'s doc for the usage contract.
      */
-    consumeDeepLink: () => consumeAppProps(appId)
+    consumeDeepLink: () => consumeAppProps(appId),
+    /**
+     * MICA-294: this app is the one in front *and* the screen is showing apps at all — see
+     * `appsOnScreen` for what that second half means, and `useAppVisible` for the contract.
+     * Scoped to `id` like everything here, so an add-on learns about itself and no one else.
+     */
+    visible: derived([appsOnScreen, currentApp], ([$onScreen, $app]) => $onScreen && $app.id === id)
   };
 }
 

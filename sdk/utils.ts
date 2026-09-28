@@ -111,3 +111,16 @@ export type { FocusTrapOptions } from './lib/focusTrap';
  * add-on that forgot to think about it.
  */
 export { messageOf } from './lib/errors';
+
+/**
+ * A scale-corrected pointer drag, and the measurement under it (MICA-294).
+ *
+ * The phone is drawn through a `transform: scale()`, so a drag that applies client-pixel
+ * deltas 1:1 slides out from under the pointer at any size but 100%. The shell has always
+ * corrected for that; an app could not, because the shell's gestures are not the SDK's, and
+ * Places carried a private copy of the measurement to pan its map. Same kind of thing as
+ * `focusTrap` above — DOM behaviour, no host, no permission — so it lives here and reaches
+ * both barrels. `sdk/lib/pointerDrag.ts` has why it is deliberately not a facet.
+ */
+export { measureDragRatio, pointerDrag } from './lib/pointerDrag';
+export type { PointerDragOptions } from './lib/pointerDrag';

@@ -61,7 +61,11 @@ export function lifecycle(appId: string): Twin {
     onBack: (handler: () => void) =>
       fn('lifecycle', [appId], 'onBack')(handler) as unknown as ReturnType<Twin['onBack']>,
     goHome: () => fn('lifecycle', [appId], 'goHome')(),
-    consumeDeepLink: () => fn('lifecycle', [appId], 'consumeDeepLink')()
+    consumeDeepLink: () => fn('lifecycle', [appId], 'consumeDeepLink')(),
+    // MICA-294. `false` until the shell's first push, which arrives on subscribe: an add-on
+    // that waits for `true` before starting work does nothing wrong in the gap, and one that
+    // assumed `true` would poll a phone it had never been told was open.
+    visible: store('lifecycle', [appId], 'visible', false)
   };
 }
 

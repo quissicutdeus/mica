@@ -89,17 +89,3 @@ export const toScreen = (mx: number, my: number, view: MapView): { sx: number; s
   sx: view.tx + mx * view.k,
   sy: view.ty + my * view.k
 });
-
-/**
- * How many layout pixels one client pixel is on this element.
- *
- * The shell answers the same question for its own gestures (`measureDragRatio`,
- * `web/src/lib/phone/dragRatio.ts`), but that module is the shell's and an app may reach only
- * `@mica/sdk` (AGENTS.md §2.7). Same measurement, same fallback: zero on either side means
- * nothing is laid out yet, so no correction.
- */
-export const renderScale = (element: HTMLElement): number => {
-  const rendered = element.getBoundingClientRect().width;
-  const layout = element.offsetWidth;
-  return rendered > 0 && layout > 0 ? rendered / layout : 1;
-};
