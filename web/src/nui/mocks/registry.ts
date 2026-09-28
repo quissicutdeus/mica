@@ -381,6 +381,15 @@ const bluetoothNearbyCount =
 /** The player's own live share, while one runs (MICA-244). */
 let mockLiveShare: PlacesLiveState['outgoing'] = null;
 
+/** The server's `places:live_share` push, which the status bar's indicator follows. */
+const announceLiveShare = (payload: Record<string, unknown>): void => {
+  if (typeof window === 'undefined') return;
+  window.postMessage(
+    { action: 'appEvent', data: { app: 'places', event: 'live_share', payload, at: Date.now() } },
+    '*'
+  );
+};
+
 const mockBlabs: Blab[] = [
   {
     id: 3,
@@ -2278,6 +2287,7 @@ const mockRegistry: Record<string, MockHandler> = {
       outgoing: mockLiveShare,
       incoming: [
         {
+          id: 1,
           number: '555-0199',
           x: 300 + Math.cos(angle) * 350,
           y: -600 + Math.sin(angle) * 350,
@@ -2295,10 +2305,12 @@ const mockRegistry: Record<string, MockHandler> = {
       LIVE_SHARE_DURATIONS.find((d) => d >= Number(data?.minutes ?? 0)) ??
       LIVE_SHARE_DURATIONS[LIVE_SHARE_DURATIONS.length - 1];
     mockLiveShare = { recipients, expires_at: Date.now() + minutes * 60_000 };
+    announceLiveShare({ active: true, expires_at: mockLiveShare.expires_at });
     return mockLiveShare;
   },
   'places:stopSharing': async () => {
     mockLiveShare = null;
+    announceLiveShare({ active: false });
     return { ok: true };
   },
 

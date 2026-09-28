@@ -6,9 +6,11 @@ import { PlayerFacingError } from '../lib/errors';
 import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { playerCoords } from '../lib/playerCoords';
 import { resolveByPhone } from '../lib/PlayerDirectory';
+import { appEventChannel } from '../lib/appEvents';
 import { brandingPath, brandingUrl } from '@mica/shared/ownerConfig';
 import {
   LIVE_SHARE_DURATIONS,
+  LIVE_SHARE_EVENT,
   type IncomingLiveShare,
   type LivePosition,
   type MapBounds,
@@ -139,9 +141,12 @@ export const mapConfig = (): PlacesMapConfig => {
 // ─── live shares ─────────────────────────────────────────────────────────────
 
 interface LiveShare {
+  /** Opaque and unique per share, so a phone can key a pin by it without a citizenid. */
+  id: number;
   /** The sharer's number, which is how a recipient's phone names them. */
   number: string;
-  recipients: Set<string>;
+  /** Recipient citizenid → the number that resolved to them when the share started. */
+  recipients: Map<string, string>;
   expiresAt: number;
   position: LivePosition | null;
   sampledAt: number;
@@ -150,6 +155,7 @@ interface LiveShare {
 /** Keyed by the sharer's citizenid. One share each, so the map is bounded by the player count. */
 const shares = new Map<string, LiveShare>();
 
+let nextShareId = 1;
 let now: () => number = () => Date.now();
 let timer: ReturnType<typeof setTimeout> | null = null;
 
@@ -159,6 +165,7 @@ export const __setLiveClock = (fn?: () => number): void => {
 
 export const __resetLiveShares = (): void => {
   shares.clear();
+  nextShareId = 1;
   if (timer !== null) clearTimeout(timer);
   timer = null;
 };
@@ -168,10 +175,38 @@ export const snapDuration = (minutes: number): number =>
   LIVE_SHARE_DURATIONS.find((allowed) => allowed >= minutes) ??
   LIVE_SHARE_DURATIONS[LIVE_SHARE_DURATIONS.length - 1];
 
+const channel = appEventChannel('places');
+
+/**
+ * Tell the sharer's own phone whether it is sharing, for the status-bar indicator the shell
+ * draws (`web/src/shell/state/liveLocation.ts`). Best-effort: a push must never fail the
+ * start or stop that occasioned it, so a refusal is logged rather than thrown.
+ */
+const announce = (citizenid: string, share: LiveShare | null): void => {
+  try {
+    channel.push(
+      citizenid,
+      LIVE_SHARE_EVENT,
+      share ? { active: true, expires_at: share.expiresAt } : { active: false }
+    );
+  } catch (error) {
+    console.error('[micaOS] places: could not announce a live share change', error);
+  }
+};
+
+const endShare = (citizenid: string): void => {
+  if (shares.delete(citizenid)) announce(citizenid, null);
+};
+
+/**
+ * Re-read where the sharer is. `false` ends the share: the sharer left, or the source now
+ * carries a different character — the window a multicharacter switch opens, in which
+ * `getSourceByCitizenId` can still name a source that is no longer this citizen.
+ */
 const sample = (citizenid: string, share: LiveShare): boolean => {
   const src = FrameworkBridge.getSourceByCitizenId(citizenid);
-  // The sharer left, or switched character: the share ends with them.
   if (src === null || src === undefined) return false;
+  if (FrameworkBridge.getPlayer(src)?.citizenid !== citizenid) return false;
   const coords = playerCoords(src);
   if (coords) {
     share.position = { x: coords[0], y: coords[1] };
@@ -181,14 +216,35 @@ const sample = (citizenid: string, share: LiveShare): boolean => {
 };
 
 /**
- * One pass: drop what expired or lost its sharer, re-sample the rest. Exported for tests;
- * the loop calls it every `mica_location_interval` seconds while any share is live, and not
- * at all otherwise, so an idle server runs no timer for this.
+ * Drop a recipient whose number no longer belongs to them. Online lookups only, so a tick
+ * costs no query: a number held by someone else now is dropped, and so is a recipient who is
+ * online while their old number resolves to nobody. An offline recipient cannot read the share
+ * anyway, and is checked again the tick they are back.
+ */
+const pruneRecipients = (share: LiveShare): void => {
+  for (const [recipient, number] of share.recipients) {
+    const holder = FrameworkBridge.getPlayerByPhone(number);
+    const stillTheirs = holder
+      ? holder.citizenid === recipient
+      : FrameworkBridge.getSourceByCitizenId(recipient) == null;
+    if (!stillTheirs) share.recipients.delete(recipient);
+  }
+};
+
+/**
+ * One pass: drop what expired, lost its sharer or has nobody left to reach, and re-sample the
+ * rest. Exported for tests; the loop calls it every `mica_location_interval` seconds while any
+ * share is live, and not at all otherwise, so an idle server runs no timer for this.
  */
 export const tickLiveShares = (): void => {
   const at = now();
   for (const [citizenid, share] of shares) {
-    if (at >= share.expiresAt || !sample(citizenid, share)) shares.delete(citizenid);
+    if (at >= share.expiresAt || !sample(citizenid, share)) {
+      endShare(citizenid);
+      continue;
+    }
+    pruneRecipients(share);
+    if (share.recipients.size === 0) endShare(citizenid);
   }
 };
 
@@ -208,14 +264,15 @@ const schedule = (): void => {
 
 /**
  * Who a share may reach: the caller's own, active contacts, resolved to characters, minus
- * the caller and anyone who has blocked the caller's number.
+ * the caller and anyone who has blocked the caller's number. Keyed by citizenid, carrying the
+ * number each resolved from, which the tick re-checks.
  */
 const resolveRecipients = async (
   citizenid: string,
   phoneId: string | undefined,
   contactIds: readonly number[],
   sharerNumber: string
-): Promise<string[]> => {
+): Promise<Map<string, string>> => {
   const rows = await Promise.all(
     [...new Set(contactIds)].map((id) => contacts.repo.findById(id, citizenid, phoneId))
   );
@@ -225,13 +282,16 @@ const resolveRecipients = async (
       numbers.add(row.phone);
     }
   }
-  const resolved = await Promise.all([...numbers].map((number) => resolveByPhone(number)));
-  const recipients = new Set<string>();
-  for (const entry of resolved) {
-    if (entry?.citizenid && entry.citizenid !== citizenid) recipients.add(entry.citizenid);
+  const resolved = await Promise.all(
+    [...numbers].map(async (number) => ({ number, entry: await resolveByPhone(number) }))
+  );
+  const recipients = new Map<string, string>();
+  for (const { number, entry } of resolved) {
+    if (entry?.citizenid && entry.citizenid !== citizenid) recipients.set(entry.citizenid, number);
   }
-  const blocked = await blockedBy([...recipients], sharerNumber);
-  return [...recipients].filter((cid) => !blocked.has(cid));
+  const blocked = await blockedBy([...recipients.keys()], sharerNumber);
+  for (const cid of blocked) recipients.delete(cid);
+  return recipients;
 };
 
 export const liveStateFor = (source: number, citizenid: string): PlacesLiveState => {
@@ -243,6 +303,7 @@ export const liveStateFor = (source: number, citizenid: string): PlacesLiveState
     if (incoming.length >= MAX_INCOMING_SHARES) break;
     if (share.expiresAt <= at || !share.position || !share.recipients.has(citizenid)) continue;
     incoming.push({
+      id: share.id,
       number: share.number,
       x: share.position.x,
       y: share.position.y,
@@ -276,14 +337,15 @@ app.registerEvent('startSharing', async (source, _cbId, data, citizenid, _player
     });
   }
   const recipients = await resolveRecipients(citizenid, phoneId, data.contact_ids, number);
-  if (recipients.length === 0) {
+  if (recipients.size === 0) {
     throw new PlayerFacingError('None of those contacts can receive your location.', {
       key: 'server.places.noRecipients'
     });
   }
   const share: LiveShare = {
+    id: nextShareId++,
     number,
-    recipients: new Set(recipients),
+    recipients,
     expiresAt: now() + snapDuration(data.minutes) * 60_000,
     position: null,
     sampledAt: 0
@@ -294,11 +356,12 @@ app.registerEvent('startSharing', async (source, _cbId, data, citizenid, _player
     share.sampledAt = now();
   }
   shares.set(citizenid, share);
+  announce(citizenid, share);
   schedule();
-  return { recipients: recipients.length, expires_at: share.expiresAt };
+  return { recipients: recipients.size, expires_at: share.expiresAt };
 });
 
 app.registerEvent('stopSharing', async (_source, _cbId, _data, citizenid) => {
-  shares.delete(citizenid);
+  endShare(citizenid);
   return { ok: true as const };
 });

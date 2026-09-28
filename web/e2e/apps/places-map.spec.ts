@@ -87,9 +87,12 @@ test.describe('Places map', () => {
     const indicator = page.getByTestId('places-sharing-indicator');
     await expect(indicator).toBeVisible();
     await expect(indicator).toContainText('Sharing live location with 1');
+    // And in the status bar, where it is visible from every app (the server's push).
+    await expect(page.getByTestId('status-live-location')).toBeVisible();
 
     await indicator.getByRole('button', { name: 'Stop' }).click();
     await expect(indicator).toHaveCount(0);
+    await expect(page.getByTestId('status-live-location')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Share Live Location' })).toBeVisible();
   });
 });

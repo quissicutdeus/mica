@@ -36,8 +36,16 @@ export interface LivePosition {
   y: number;
 }
 
+/**
+ * The app event the server pushes to a sharer's own phone when their share starts or ends:
+ * `{ active: true, expires_at }` or `{ active: false }`. The shell's status bar reads it.
+ */
+export const LIVE_SHARE_EVENT = 'live_share';
+
 /** A share naming the caller. `number` is the sharer's phone number, for a contact lookup. */
 export interface IncomingLiveShare extends LivePosition {
+  /** Unique per share; what a pin is keyed by. Never an identity. */
+  id: number;
   number: string;
   /** Epoch ms of the sample. */
   updated_at: number;

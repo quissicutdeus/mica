@@ -512,6 +512,17 @@ with `internal_error` and the rest of Messages is unaffected.
 
 ### Added
 
+**Places has a map, and friends can share their live location (MICA-244).** The
+map pans and zooms and shows saved places, shared pins and your own position.
+**No map image ships**: GTA's map art is Rockstar's, so set `mica_map_image` to
+an https URL or a file under `branding/`, and `mica_map_bounds` if your image
+does not use the common 8192px atlas; without one a neutral grid is drawn. A
+player can share their location with up to 10 contacts for 15, 60 or 240
+minutes. The server reads the sharer's position itself every
+`mica_location_interval` seconds (default 5), so no client can report someone
+else's. Recipients who blocked the sharer are skipped, and a status-bar icon
+shows while a share is live. Shares live in memory, so a restart ends them.
+
 **Speakerphone that nearby players actually hear (MICA-246).** On speaker, the
 server adds players within `mica_speaker_range` meters (default 4, at most 10,
 up to six players) to the call's pma-voice channel at `mica_speaker_volume`

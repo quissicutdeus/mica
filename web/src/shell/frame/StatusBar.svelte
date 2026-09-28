@@ -18,6 +18,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { descriptor, frame } from '../state/device';
   import SignalIcon from '../../../../sdk/ui/icons/SignalIcon.svelte';
   import BluetoothIcon from '../../../../sdk/ui/icons/BluetoothIcon.svelte';
+  import LocationIcon from '../../../../sdk/ui/icons/LocationIcon.svelte';
+  import { liveLocationSharing } from '../state/liveLocation';
   import MusicNoteIcon from '../../../../sdk/ui/icons/MusicNoteIcon.svelte';
   import BatteryIcon from '../../../../sdk/ui/icons/BatteryIcon.svelte';
   import {
@@ -291,6 +293,19 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       {/if}
     </div>
     <div class="flex items-center gap-2">
+      {#if $liveLocationSharing}
+        <!-- MICA-244: the player is sharing their live location. Beside the radios, so it
+             is visible from every app and not only from inside Places; the server's own
+             push drives it (`state/liveLocation.ts`). -->
+        <span
+          data-testid="status-live-location"
+          class="flex items-center"
+          role="img"
+          aria-label={$t('shell.liveLocationSharing')}
+        >
+          <LocationIcon class="h-3.5 w-3.5" />
+        </span>
+      {/if}
       {#if $bluetoothEnabled}
         <BluetoothIcon class="h-3.5 w-3.5 opacity-90" />
       {/if}

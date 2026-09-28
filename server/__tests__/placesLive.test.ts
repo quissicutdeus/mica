@@ -29,6 +29,8 @@ const world = vi.hoisted(() => ({
     7: { citizenid: 'CIT_C', phone: '555-0003' }
   } as Record<number, { citizenid: string; phone: string }>,
   online: new Set([5, 6, 7]),
+  /** A source the bridge's reverse index still names for a citizen it no longer carries. */
+  stale: {} as Record<string, number>,
   coords: {
     5: [100, 200, 30],
     6: [-50, -60, 10],
@@ -44,13 +46,19 @@ vi.mock('../lib/FrameworkBridge', () => ({
         : undefined,
     getPlayerPhone: (src: number) => world.players[src]?.phone ?? null,
     getSourceByCitizenId: (cid: string) => {
+      if (world.stale[cid] !== undefined) return world.stale[cid];
       for (const [src, p] of Object.entries(world.players)) {
         if (p.citizenid === cid && world.online.has(Number(src))) return Number(src);
       }
       return null;
     },
     getAllPlayers: () => ({}),
-    getPlayerByPhone: () => undefined
+    getPlayerByPhone: (phone: string) => {
+      for (const [src, p] of Object.entries(world.players)) {
+        if (p.phone === phone && world.online.has(Number(src))) return { citizenid: p.citizenid };
+      }
+      return undefined;
+    }
   }
 }));
 
@@ -100,6 +108,10 @@ beforeEach(() => {
   clock = 1_000_000;
   __setLiveClock(() => clock);
   world.online = new Set([5, 6, 7]);
+  world.stale = {};
+  world.players[5] = { citizenid: 'CIT_A', phone: '555-0001' };
+  world.players[6] = { citizenid: 'CIT_B', phone: '555-0002' };
+  world.players[7] = { citizenid: 'CIT_C', phone: '555-0003' };
   dbMock.query.mockResolvedValue([]);
   dbMock.single.mockImplementation(async (sql: string, params: unknown[]) =>
     String(sql).includes('`mica_contacts`') && params[1] === 'CIT_A'
@@ -158,7 +170,14 @@ describe('places:live (MICA-244)', () => {
     const forB = await call(6, 'live', {});
     expect(forB.self).toEqual({ x: -50, y: -60 });
     expect(forB.incoming).toEqual([
-      { number: '555-0001', x: 100, y: 200, updated_at: clock, expires_at: clock + 3_600_000 }
+      {
+        id: expect.any(Number),
+        number: '555-0001',
+        x: 100,
+        y: 200,
+        updated_at: clock,
+        expires_at: clock + 3_600_000
+      }
     ]);
     expect((await call(7, 'live', {})).incoming).toEqual([]);
 
@@ -204,6 +223,72 @@ describe('ending a share (MICA-244)', () => {
     tickLiveShares();
     world.online.add(5);
     expect((await call(6, 'live', {})).incoming).toEqual([]);
+  });
+});
+
+describe('the tick re-checks who is who (MICA-244 review)', () => {
+  it('ends the share when the sharer’s source now carries another character', async () => {
+    await call(5, 'startSharing', { contact_ids: [1], minutes: 15 });
+    // Mid-switch: the reverse index still says CIT_A is on source 5, but source 5 is CIT_A2.
+    world.players[5] = { citizenid: 'CIT_A2', phone: '555-0009' };
+    world.stale.CIT_A = 5;
+    world.coords[5] = [7777, 7777, 0];
+    tickLiveShares();
+    expect((await call(6, 'live', {})).incoming).toEqual([]);
+    world.coords[5] = [100, 200, 30];
+  });
+
+  it('drops a recipient whose number now resolves to someone else', async () => {
+    await call(5, 'startSharing', { contact_ids: [1], minutes: 15 });
+    // B's number is now C's; B has a new one.
+    world.players[6] = { citizenid: 'CIT_B', phone: '555-0100' };
+    world.players[7] = { citizenid: 'CIT_C', phone: '555-0002' };
+    tickLiveShares();
+    expect((await call(6, 'live', {})).incoming).toEqual([]);
+    expect((await call(7, 'live', {})).incoming).toEqual([]);
+    // Nobody left to reach, so the share itself ended.
+    expect((await call(5, 'live', {})).outgoing).toBeNull();
+  });
+
+  it('keeps an offline recipient, who is checked again once back', async () => {
+    await call(5, 'startSharing', { contact_ids: [1], minutes: 15 });
+    world.online.delete(6);
+    tickLiveShares();
+    world.online.add(6);
+    expect((await call(6, 'live', {})).incoming).toHaveLength(1);
+  });
+
+  it('keys each share uniquely', async () => {
+    await call(5, 'startSharing', { contact_ids: [1], minutes: 15 });
+    const first = (await call(6, 'live', {})).incoming[0].id;
+    await call(5, 'startSharing', { contact_ids: [1], minutes: 15 });
+    expect((await call(6, 'live', {})).incoming[0].id).not.toBe(first);
+  });
+});
+
+describe('the sharer’s own phone is told (MICA-244 status-bar indicator)', () => {
+  const pushes = () =>
+    ((globalThis as any).emitNet as any).mock.calls.filter(
+      (c: unknown[]) => c[0] === 'mica:client:shell:appEvent'
+    );
+
+  it('pushes places:live_share on start and on stop, to the sharer only', async () => {
+    (globalThis as any).source = 5;
+    const emit = vi.fn();
+    const handler = handlers.get('mica:server:places:startSharing')!;
+    (globalThis as any).emitNet = emit;
+    await handler('cb-1', { contact_ids: [1], minutes: 15 });
+    const started = emit.mock.calls.filter((c) => c[0] === 'mica:client:shell:appEvent');
+    expect(started).toHaveLength(1);
+    expect(started[0][1]).toBe(5);
+    expect(started[0][2]).toMatchObject({
+      app: 'places',
+      event: 'live_share',
+      payload: { active: true, expires_at: clock + 15 * 60_000 }
+    });
+
+    await call(5, 'stopSharing', {});
+    expect(pushes()[0][2]).toMatchObject({ event: 'live_share', payload: { active: false } });
   });
 });
 

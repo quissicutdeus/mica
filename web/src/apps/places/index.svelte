@@ -239,7 +239,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     }));
     for (const share of $liveState.incoming) {
       out.push({
-        id: `friend-${share.number}`,
+        id: `friend-${share.id}`,
         kind: 'friend',
         x: share.x,
         y: share.y,
