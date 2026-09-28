@@ -32,7 +32,7 @@ test.describe('Keyboard Shortcuts E2E', () => {
     await page.keyboard.press('Backspace');
     await expect(display).toHaveText('0');
     await page.keyboard.press('Backspace');
-    await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
+    await expect(page.locator('h1', { hasText: 'micaOS' })).toBeVisible();
   });
 
   test('Escape puts the phone away rather than navigating', async ({ page }) => {
@@ -47,7 +47,7 @@ test.describe('Keyboard Shortcuts E2E', () => {
     // DOM. That is a pre-existing bug on the close path — the hardware power button
     // does it too — and not what this test is about.
     await page.keyboard.press('Escape');
-    await expect(page.getByRole('button', { name: /Open gPhone/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Open micaOS/i })).toBeVisible();
   });
 
   test('the Open Phone key reopens a collapsed phone in the browser', async ({ page }) => {
@@ -63,7 +63,7 @@ test.describe('Keyboard Shortcuts E2E', () => {
     // closed the phone in that first second had it reopened underneath it. Fixed at the
     // source — the seed now lands immediately — so pressing Escape straight after `goto`
     // is safe.
-    const openPhone = page.getByRole('button', { name: /Open gPhone/i });
+    const openPhone = page.getByRole('button', { name: /Open micaOS/i });
 
     // And wait for the shell to be listening before pressing anything. The `keydown`
     // handler attaches in `onMount`, so a key sent between first paint and mount is
@@ -78,7 +78,7 @@ test.describe('Keyboard Shortcuts E2E', () => {
 
     await page.keyboard.press('m');
     await expect(openPhone).toBeHidden();
-    await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
+    await expect(page.locator('h1', { hasText: 'micaOS' })).toBeVisible();
   });
 
   test('a bound key typed into the message composer is text, not a shortcut', async ({ page }) => {
@@ -106,7 +106,7 @@ test.describe('Keyboard Shortcuts E2E', () => {
 
     // Both characters landed, and the shell did not navigate away.
     await expect(composerAfter).toHaveValue('qq');
-    await expect(page.locator('h1', { hasText: 'gPhone' })).toHaveCount(0);
+    await expect(page.locator('h1', { hasText: 'micaOS' })).toHaveCount(0);
   });
 
   test('a rebind set in Settings survives a UI reload', async ({ page }) => {
@@ -135,6 +135,6 @@ test.describe('Keyboard Shortcuts E2E', () => {
     await page.keyboard.press('q');
     await expect(page.locator('h1', { hasText: 'Settings' })).toBeVisible();
     await page.keyboard.press('q');
-    await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
+    await expect(page.locator('h1', { hasText: 'micaOS' })).toBeVisible();
   });
 });

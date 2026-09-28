@@ -127,7 +127,7 @@ test.describe('Settings App E2E', () => {
 
     // A second back leaves the app entirely.
     await page.locator("button[aria-label='Go back']").click();
-    await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
+    await expect(page.locator('h1', { hasText: 'micaOS' })).toBeVisible();
   });
 
   test('Backspace steps up one pane before leaving the app', async ({ page }) => {
@@ -138,13 +138,13 @@ test.describe('Settings App E2E', () => {
     await expect(page.locator('h1', { hasText: 'Settings' })).toBeVisible();
 
     await page.keyboard.press('Backspace');
-    await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
+    await expect(page.locator('h1', { hasText: 'micaOS' })).toBeVisible();
 
     // And the shell's own handler is back: Backspace still works after Settings unmounts.
     await page.locator('button', { hasText: 'Calculator' }).first().click();
     await expect(page.locator('h1', { hasText: 'Calculator' })).toBeVisible();
     await page.keyboard.press('Backspace');
-    await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
+    await expect(page.locator('h1', { hasText: 'micaOS' })).toBeVisible();
   });
 
   test('Developer Tools stays hidden until ten taps on OS Version', async ({ page }) => {

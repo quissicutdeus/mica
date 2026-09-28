@@ -25,7 +25,7 @@ test.describe('The first-run hint does not overlap the Dock', () => {
   // nothing is drawn there and the hint is `pointer-events-none`.
   test('the hint sits above the Dock icons, not over them', async ({ page }) => {
     await page.goto('/');
-    await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
+    await expect(page.locator('h1', { hasText: 'micaOS' })).toBeVisible();
 
     // Both boxes below are read while the phone is on screen, and the phone flies in over
     // 500ms — without this the two reads sample the element at two different points in

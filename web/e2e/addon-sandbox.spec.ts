@@ -129,7 +129,7 @@ const registerAddOn = (page: Page, id: string, name: string, bundle: string) =>
 test.describe('the add-on sandbox', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
+    await expect(page.locator('h1', { hasText: 'micaOS' })).toBeVisible();
   });
 
   test('refuses an image beacon over http and https and a nested remote frame, and survives all three', async ({

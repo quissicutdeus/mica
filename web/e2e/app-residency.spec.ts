@@ -33,7 +33,7 @@ const openApp = async (page: import('@playwright/test').Page, name: string) => {
 /** The home-indicator bar at the bottom of the frame; always present, app-independent. */
 const goHome = async (page: import('@playwright/test').Page) => {
   await page.locator("button[aria-label='Return to home screen']").click();
-  await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
+  await expect(page.locator('h1', { hasText: 'micaOS' })).toBeVisible();
 };
 
 test.describe('App residency', () => {
@@ -201,7 +201,7 @@ test.describe('Not Network gate', () => {
     await page.evaluate(() => window.setSignalLevel(0));
 
     // Home is untouched by signal loss.
-    await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
+    await expect(page.locator('h1', { hasText: 'micaOS' })).toBeVisible();
 
     // A purely local app (no `network` permission) is unaffected.
     await openApp(page, 'Calculator');

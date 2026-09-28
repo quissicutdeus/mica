@@ -27,7 +27,7 @@ const openApp = async (page: import('@playwright/test').Page, name: string | Reg
 
 const goHome = async (page: import('@playwright/test').Page) => {
   await page.locator("button[aria-label='Return to home screen']").click();
-  await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
+  await expect(page.locator('h1', { hasText: 'micaOS' })).toBeVisible();
 };
 
 test.beforeEach(async ({ page }) => {
@@ -52,7 +52,7 @@ test.describe('Backspace closes the open item before leaving the app', () => {
     await page.keyboard.press('Backspace');
 
     await expect(page.locator('h1', { hasText: 'Contacts' })).toBeVisible();
-    await expect(page.locator('h1', { hasText: 'gPhone' })).toHaveCount(0);
+    await expect(page.locator('h1', { hasText: 'micaOS' })).toHaveCount(0);
   });
 });
 
@@ -190,7 +190,7 @@ test.describe('Backgrounded apps are hidden without breaking focus', () => {
     await openApp(page, 'Mail');
     await page.locator("button[aria-label='Go back']").focus();
     await page.keyboard.press('Backspace');
-    await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
+    await expect(page.locator('h1', { hasText: 'micaOS' })).toBeVisible();
 
     expect(complaints).toEqual([]);
   });

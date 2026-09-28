@@ -459,7 +459,7 @@ test('the wallpaper treatment reaches every run of text drawn on a photo', async
   await settlePhoneOpen(page);
 
   const stroked = [
-    { what: 'the launcher heading', locator: page.getByRole('heading', { name: 'gPhone' }) },
+    { what: 'the launcher heading', locator: page.getByRole('heading', { name: 'micaOS' }) },
     { what: 'an app label', locator: page.getByText('Settings', { exact: true }).first() },
     {
       what: 'the status bar clock',

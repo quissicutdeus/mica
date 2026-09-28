@@ -7,7 +7,7 @@ import { test, expect } from './support/test';
 
 const openSearch = async (page: import('@playwright/test').Page) => {
   await page.goto('/');
-  await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
+  await expect(page.locator('h1', { hasText: 'micaOS' })).toBeVisible();
   await page.getByRole('button', { name: 'Search', exact: true }).click();
   await expect(page.getByRole('dialog', { name: 'App Drawer' })).toBeVisible();
 };
@@ -19,7 +19,7 @@ const type = async (page: import('@playwright/test').Page, text: string) => {
 test.describe('Home screen search', () => {
   test('the collapsed bar lines up with the outermost Dock icons', async ({ page }) => {
     await page.goto('/');
-    await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
+    await expect(page.locator('h1', { hasText: 'micaOS' })).toBeVisible();
 
     const bar = await page.getByRole('button', { name: 'Search', exact: true }).boundingBox();
     const icons = page.getByRole('toolbar', { name: 'Dock' }).getByRole('button');
@@ -40,7 +40,7 @@ test.describe('Home screen search', () => {
     page
   }) => {
     await page.goto('/');
-    await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
+    await expect(page.locator('h1', { hasText: 'micaOS' })).toBeVisible();
 
     // The input grabs focus while still off-screen, mid-`transition:fly` — without
     // `preventScroll`, the browser's default focus-follows-scroll yanked the phone
@@ -122,6 +122,6 @@ test.describe('Home screen search', () => {
     await page.getByTestId('drawer-top-handle').click();
 
     await expect(page.getByRole('dialog', { name: 'App Drawer' })).toBeHidden();
-    await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
+    await expect(page.locator('h1', { hasText: 'micaOS' })).toBeVisible();
   });
 });

@@ -56,7 +56,7 @@ test.describe('fresh character boot', () => {
     // Switch straight back home and reopen the drawer while that refill may still be
     // in flight, rather than waiting it out.
     await page.keyboard.press('Backspace');
-    await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
+    await expect(page.locator('h1', { hasText: 'micaOS' })).toBeVisible();
     await page.getByRole('button', { name: 'Search', exact: true }).click();
     await expect(page.getByRole('dialog', { name: 'App Drawer' })).toBeVisible();
     await page.getByTestId('drawer-top-handle').click();

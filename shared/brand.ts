@@ -5,10 +5,12 @@
 /**
  * What the software calls itself, as distinct from what the hardware is called.
  *
- * The device names live on the device table (`DeviceDescriptor.brand` in `devices.ts`):
- * a gPhone and a gTablet are two devices. This is the one name above them both -- the
- * operating system they each run -- and it is what belongs anywhere the subject is the
- * software rather than the thing in the player's hand.
+ * The device names live on the device table (`DeviceDescriptor.brand` in `devices.ts`) --
+ * the phone and the tablet are two devices, each with its own descriptor. This is the one
+ * name above them both -- the operating system they each run -- and it is what belongs
+ * anywhere the subject is the software rather than the thing in the player's hand. The two
+ * axes can diverge (a `brand` could name the physical device instead), but today both
+ * devices paint this same name as their launcher wordmark too.
  *
  * A constant rather than a locale key, for the reason `brand` is one: it is a product
  * name, not prose, and a catalog entry per language would be the same few characters

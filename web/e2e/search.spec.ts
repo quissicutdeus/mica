@@ -41,7 +41,7 @@ const expectOneHit = async (page: Page, section: string, row: RegExp) => {
 test.describe('Home search reaches every source (MICA-248)', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
+    await expect(page.locator('h1', { hasText: 'micaOS' })).toBeVisible();
     await openSearch(page);
   });
 

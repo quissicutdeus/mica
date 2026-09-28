@@ -42,7 +42,7 @@ const seedInstalledAddOns = async (page: Page, ids: string[]): Promise<void> => 
 
 const gotoHome = async (page: Page, query = ''): Promise<void> => {
   await page.goto(`/${query}`);
-  await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
+  await expect(page.locator('h1', { hasText: 'micaOS' })).toBeVisible();
 };
 
 test.describe('An owner-disabled app', () => {

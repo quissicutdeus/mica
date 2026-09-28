@@ -42,7 +42,7 @@ const SAFE_APP = `
 test.describe('App Isolation & Error Boundaries', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
+    await expect(page.locator('h1', { hasText: 'micaOS' })).toBeVisible();
   });
 
   test('shows the crash fallback and returns home', async ({ page }) => {
@@ -58,7 +58,7 @@ test.describe('App Isolation & Error Boundaries', () => {
 
     await page.getByRole('button', { name: 'Return to Home Screen', exact: true }).click();
 
-    await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
+    await expect(page.locator('h1', { hasText: 'micaOS' })).toBeVisible();
     await expect(page.getByText('App Stopped Working')).toBeHidden();
   });
 
@@ -73,7 +73,7 @@ test.describe('App Isolation & Error Boundaries', () => {
     // handler — which is exactly the path a player would hit.
     await page.keyboard.press('Backspace');
 
-    await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
+    await expect(page.locator('h1', { hasText: 'micaOS' })).toBeVisible();
   });
 
   test('the rest of the phone still works after an app crashes', async ({ page }) => {

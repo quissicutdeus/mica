@@ -107,6 +107,13 @@ const mockDefaultFrame = parseDefaultFrame(
   ownerConfigRaw('mica_default_frame', String(import.meta.env.VITE_MICA_DEFAULT_FRAME ?? ''))
 ).value;
 
+// The owner logo, by the same query route. Unset is null -- the micaOS mark `BootScreen`
+// falls back to, matching `parseBrandLogo`'s real-client semantics -- rather than always
+// pointing at a fixture file, so an ordinary run boots with the same mark the game shows
+// with no owner logo configured. A spec that needs the fixture path asks for it explicitly
+// (`?mica_brand_logo=%2Fmock-branding%2Faurora.svg`).
+const mockBrandLogo = ownerConfigRaw('mica_brand_logo', '').trim() || null;
+
 /**
  * Default contacts an owner seeds (MICA-234). The real server seeds rows into the
  * `mica_contacts` table; this mock has no server to seed, so the entries are appended to
@@ -2594,7 +2601,7 @@ const mockRegistry: Record<string, MockHandler> = {
     themeSeed: mockThemeSeed,
     defaultFrame: mockDefaultFrame,
     wallpapers: ['/mock-branding/aurora.svg'],
-    brandLogo: '/mock-branding/logo.svg',
+    brandLogo: mockBrandLogo,
     sounds: [
       {
         id: 'owner:Sample-Tone',

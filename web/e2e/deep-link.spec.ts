@@ -38,13 +38,13 @@ test.describe('?app= deep link', () => {
 
     await page.goto('/?app=nosuchapp');
 
-    await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
+    await expect(page.locator('h1', { hasText: 'micaOS' })).toBeVisible();
     expect(warnings.some((w) => w.includes('nosuchapp'))).toBe(true);
   });
 
   test('leaves the phone on the home screen when the param is absent', async ({ page }) => {
     await page.goto('/');
 
-    await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
+    await expect(page.locator('h1', { hasText: 'micaOS' })).toBeVisible();
   });
 });

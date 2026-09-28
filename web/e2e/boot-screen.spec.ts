@@ -18,8 +18,10 @@ test.describe('boot and power-off screens', () => {
   }) => {
     await page.goto('/');
     await expect(bootScreen(page)).toHaveAttribute('data-phase', 'boot');
-    await expect(bootScreen(page).locator('img')).toHaveAttribute('src', '/mock-branding/logo.svg');
-    await expect(page.getByTestId('boot-mark')).toHaveCount(0);
+    // No owner logo configured: the mock answers `brandLogo: null` by default (MICA-236),
+    // so this is the micaOS mark, not an image.
+    await expect(page.getByTestId('boot-mark')).toBeAttached();
+    await expect(bootScreen(page).locator('img')).toHaveCount(0);
 
     // Exactly the screen box: the frame's bezel inside, nothing over the player's game.
     const screen = await page.getByTestId('phone-screen').boundingBox();
@@ -36,9 +38,22 @@ test.describe('boot and power-off screens', () => {
     await expect(bootScreen(page)).toHaveCount(0, { timeout: 3000 });
   });
 
+  test('shows the owner logo when one is configured', async ({ page }) => {
+    // `?mica_brand_logo=` is the mock's own override for this (`nui/mocks/registry.ts`);
+    // `/mock-branding/aurora.svg` is a fixture that already exists for the wallpaper tests,
+    // reused here since which image loads is not what this test is about.
+    await page.goto(`/?mica_brand_logo=${encodeURIComponent('/mock-branding/aurora.svg')}`);
+    await expect(bootScreen(page)).toHaveAttribute('data-phase', 'boot');
+    await expect(bootScreen(page).locator('img')).toHaveAttribute(
+      'src',
+      '/mock-branding/aurora.svg'
+    );
+    await expect(page.getByTestId('boot-mark')).toHaveCount(0);
+  });
+
   test('falls back to the micaOS mark when the owner logo fails to load', async ({ page }) => {
-    await page.route('**/mock-branding/logo.svg', (route) => route.fulfill({ status: 404 }));
-    await page.goto('/');
+    const missing = '/mock-branding/does-not-exist.svg';
+    await page.goto(`/?mica_brand_logo=${encodeURIComponent(missing)}`);
     await expect(bootScreen(page)).toHaveAttribute('data-phase', 'boot');
     await expect(page.getByTestId('boot-mark')).toBeAttached();
     await expect(bootScreen(page).locator('img')).toHaveCount(0);

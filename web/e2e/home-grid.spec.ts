@@ -17,7 +17,7 @@ import {
 test.describe('Home Grid drag-and-drop', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
+    await expect(page.locator('h1', { hasText: 'micaOS' })).toBeVisible();
   });
 
   test('dragging an app from the drawer onto an empty cell places it on the home screen', async ({

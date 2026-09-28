@@ -47,7 +47,7 @@ const openControlCenter = async (page: Page) => {
 test.describe('Control center', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
+    await expect(page.locator('h1', { hasText: 'micaOS' })).toBeVisible();
   });
 
   test('a pull from the right of the status bar opens it, and the left still opens the shade', async ({
@@ -114,7 +114,7 @@ test.describe('Control center', () => {
       )
       .toMatch(/"bluetooth"/);
     await page.reload();
-    await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
+    await expect(page.locator('h1', { hasText: 'micaOS' })).toBeVisible();
     cc = await openControlCenter(page);
     await expect(cc.getByTestId('cc-toggle-bluetooth')).toHaveCount(0);
     expect(await order()).toEqual(before);

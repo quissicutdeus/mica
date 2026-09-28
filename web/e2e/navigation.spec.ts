@@ -10,7 +10,7 @@ test.describe('Phone Navigation & Home Screen', () => {
   });
 
   test('displays micaOS header and app icons grid on home screen', async ({ page }) => {
-    await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
+    await expect(page.locator('h1', { hasText: 'micaOS' })).toBeVisible();
     // Scoped to the home screen region, not a bare `.grid` — `Dock.svelte`'s own icon
     // row is a CSS grid too now (aligned to the home grid's own columns), so an
     // unscoped `.grid` match is ambiguous between the two.
@@ -24,7 +24,7 @@ test.describe('Phone Navigation & Home Screen', () => {
 
     // Press Escape to return Home
     await page.keyboard.press('Backspace');
-    await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
+    await expect(page.locator('h1', { hasText: 'micaOS' })).toBeVisible();
   });
 
   /**

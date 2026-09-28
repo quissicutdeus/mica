@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { OS_NAME } from './brand';
+
 /**
  * Every device the shell can be, declared once (MICA-258, the first slice of MICA-252).
  *
@@ -51,11 +53,16 @@ export interface DeviceDescriptor {
    * The wordmark the launcher paints over the wallpaper.
    *
    * Here rather than in `shell/locales/*.json`, where it used to be one `shell.brand`
-   * key: it is a product name, not prose -- `en` and `de` both said `gPhone`, which is
-   * what a string that is never actually translated looks like -- and it is a fact
-   * about the device, so it belongs beside the other facts about the device. A third
-   * entry in this table names itself; it does not also need a locale key adding to
-   * every language file.
+   * key: it is a product name, not prose -- `en` and `de` both said the same literal
+   * device name, which is what a string that is never actually translated looks like --
+   * and it is a fact about the device, so it belongs beside the other facts about the
+   * device. A third entry in this table names itself; it does not also need a locale key
+   * adding to every language file.
+   *
+   * Every device currently takes `OS_NAME` (`shared/brand.ts`) here -- the launcher reads
+   * as "micaOS" whichever device it is on -- but the field stays a per-device string
+   * rather than a shared import, since a `brand` naming the physical device instead is a
+   * legitimate future value and would not want every device changed at once.
    */
   brand: string;
   frame: DeviceFrame;
@@ -107,7 +114,7 @@ export const DEVICES: Readonly<Record<DeviceId, DeviceDescriptor>> = {
   phone: {
     id: 'phone',
     label: 'Phone',
-    brand: 'gPhone',
+    brand: OS_NAME,
     // 17:8 exactly; the screen inside the 8px bezel is 384x834, within a hair of the 19.5:9
     // every phone since the iPhone X has used. `display.ts` has the longer reasoning.
     frame: { width: 400, height: 850 },
@@ -131,7 +138,7 @@ export const DEVICES: Readonly<Record<DeviceId, DeviceDescriptor>> = {
   tablet: {
     id: 'tablet',
     label: 'Tablet',
-    brand: 'gTablet',
+    brand: OS_NAME,
     // 16:10, the owner's call (MICA-252): wide enough for a two-pane MDT layout, and it
     // fits a 1080p screen at design size with the frame margin to spare.
     frame: { width: 1280, height: 800 },

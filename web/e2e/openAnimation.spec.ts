@@ -69,7 +69,7 @@ test.describe('the phone slides up when it opens', () => {
     // affordance is what to assert on: `<main>` waits out the 500ms outro before it
     // leaves the DOM, while this button has no transition and flips immediately.
     await page.keyboard.press('Escape');
-    const openPhone = page.getByRole('button', { name: /Open gPhone/i });
+    const openPhone = page.getByRole('button', { name: /Open micaOS/i });
     await expect(openPhone).toBeVisible();
 
     await openPhone.click();

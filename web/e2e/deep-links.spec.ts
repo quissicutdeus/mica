@@ -175,5 +175,5 @@ test('a link to an app that is not installed leaves the phone where it was', asy
   });
 
   await page.getByText('Gone app').click();
-  await expect(page.getByRole('heading', { name: 'gPhone' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'micaOS' })).toBeVisible();
 });

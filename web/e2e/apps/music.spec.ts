@@ -624,7 +624,7 @@ test.describe('Music', () => {
     await page.evaluate(() => {
       window.postMessage({ action: 'setVisible', data: false }, '*');
     });
-    await expect(page.getByRole('button', { name: /Open gPhone/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Open micaOS/i })).toBeVisible();
 
     await expect(page.locator(PLAYER)).toHaveCount(1);
     expect(await page.locator(PLAYER).getAttribute('src')).toBe(src);

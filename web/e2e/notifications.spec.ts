@@ -64,7 +64,7 @@ const dragHorizontal = async (page: Page, startX: number, y: number, onScreenDel
 test.describe('Interactive Toast Notifications E2E', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
+    await expect(page.locator('h1', { hasText: 'micaOS' })).toBeVisible();
   });
 
   test('handles incoming message toast with interactive inline reply input box', async ({
@@ -400,7 +400,7 @@ test.describe('Notification shade gestures', () => {
     // pass at the default 1280x960 viewport and still be wrong.
     await page.setViewportSize({ width: 390, height: 664 });
     await page.goto('/');
-    await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
+    await expect(page.locator('h1', { hasText: 'micaOS' })).toBeVisible();
   });
 
   test('dragging down from the status bar past the threshold opens the shade', async ({ page }) => {
@@ -573,7 +573,7 @@ test.describe('Notification shade gestures', () => {
 test.describe('Tapping a notification is what handles it', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
+    await expect(page.locator('h1', { hasText: 'micaOS' })).toBeVisible();
   });
 
   const openShade = async (page: Page) => {
@@ -694,7 +694,7 @@ test.describe('Status bar notification icons', () => {
     // first — the real home screen starts empty.
     await seedHomeGrid(page, ['store']);
     await page.goto('/');
-    await expect(page.locator('h1', { hasText: 'gPhone' })).toBeVisible();
+    await expect(page.locator('h1', { hasText: 'micaOS' })).toBeVisible();
     await installAddOn(page, 'Blabber');
 
     const tray = page.getByTestId('status-notification-icons');

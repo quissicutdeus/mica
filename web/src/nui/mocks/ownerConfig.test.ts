@@ -29,8 +29,21 @@ describe('the shell:ownerConfig mock (MICA-234)', () => {
       themeSeed: '#0e9f6e',
       defaultFrame: 'notch',
       wallpapers: ['/mock-branding/aurora.svg'],
-      brandLogo: '/mock-branding/logo.svg',
+      brandLogo: null,
       sounds: [{ id: 'owner:Sample-Tone', url: '/mock-branding/sounds/Sample-Tone.wav' }]
+    });
+  });
+
+  it('answers no owner logo with no query set, the micaOS mark BootScreen falls back to', async () => {
+    const { MockRegistry } = await import('./registry');
+    expect(await MockRegistry.handle('shell:ownerConfig')).toMatchObject({ brandLogo: null });
+  });
+
+  it('reads mica_brand_logo from the query when a spec needs an owner logo fixture', async () => {
+    window.history.pushState({}, '', '/?mica_brand_logo=%2Fmock-branding%2Faurora.svg');
+    const { MockRegistry } = await import('./registry');
+    expect(await MockRegistry.handle('shell:ownerConfig')).toMatchObject({
+      brandLogo: '/mock-branding/aurora.svg'
     });
   });
 
