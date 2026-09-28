@@ -43,6 +43,8 @@
   "phone.notHeld": "Du hältst kein Telefon.",
   "places.nameRequired": "Ein Name ist erforderlich.",
   "places.noLocation": "Dein Standort konnte nicht ermittelt werden.",
+  "places.noNumber": "Dein Telefon hat keine Nummer, von der aus geteilt werden kann.",
+  "places.noRecipients": "Keiner dieser Kontakte kann deinen Standort empfangen.",
   "schema.noPermission": "Du hast keine Berechtigung, das zu benutzen.",
   "accounts.handleFormat": "Ein Handle besteht aus 3–32 Zeichen: Kleinbuchstaben, Ziffern und _.",
   "accounts.accountCap": "Du hast hier bereits {limit} Konten. Lösche eines, um Platz zu schaffen.",

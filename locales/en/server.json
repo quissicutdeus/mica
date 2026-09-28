@@ -43,6 +43,8 @@
   "phone.notHeld": "You are not holding a phone.",
   "places.nameRequired": "A name is required.",
   "places.noLocation": "Could not determine your location.",
+  "places.noNumber": "Your phone has no number to share from.",
+  "places.noRecipients": "None of those contacts can receive your location.",
   "schema.noPermission": "You do not have permission to use that.",
   "accounts.handleFormat": "A handle is 3–32 characters, using lowercase letters, numbers and _.",
   "accounts.accountCap": "You already hold {limit} accounts here. Delete one to make room.",

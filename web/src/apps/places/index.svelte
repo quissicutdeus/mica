@@ -12,15 +12,20 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     Button,
     ConfirmDialog,
     FloatingActionButton,
+    SegmentedControl,
     LocationIcon,
     AddIcon,
     EditIcon,
     TrashIcon,
     formatDate,
+    formatTime,
     useAppLevels,
     useAppAction,
     useLocation,
     useMedia,
+    useContacts,
+    useNavigation,
+    useTimer,
     onAppForeground,
     registerMessages,
     useLocale,
@@ -28,6 +33,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   } from '@mica/sdk';
   import type { SavedPlace, MediaPreview } from '@mica/shared/types';
   import { useSavedPlaces } from './store';
+  import MapView, { type MapPin } from './MapView.svelte';
+  import ShareLiveSheet from './ShareLiveSheet.svelte';
+  import {
+    liveState,
+    loadMapConfig,
+    mapConfig,
+    refreshLive,
+    startSharing,
+    stopSharing
+  } from './live';
   import en from './locales/en.json';
   import de from './locales/de.json';
 
@@ -47,6 +62,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   const { media } = useMedia();
   const { shareLocation, setWaypoint } = useLocation();
   const { busy, run } = useAppAction('places');
+  const { contactsStore } = useContacts();
+  const { currentApp } = useNavigation();
+  const { every } = useTimer();
+
+  /** The map is the app's front page since MICA-244; the lists are one tap away. */
+  let tab = $state<'map' | 'list'>('map');
+  let isChoosingRecipients = $state(false);
 
   let isAdding = $state(false);
   let renamingPlace: SavedPlace | null = $state(null);
@@ -79,6 +101,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         open: () => isAdding,
         close: () => (isAdding = false),
         title: () => $t('places.saveThisPlace')
+      },
+      {
+        open: () => isChoosingRecipients,
+        close: () => (isChoosingRecipients = false),
+        title: () => $t('places.shareLive')
       }
     ]
   });
@@ -196,9 +223,65 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     deletingPlace = null;
   };
 
+  /** A friend's pin is labelled with your own name for their number, when you have one. */
+  const nameForNumber = (number: string): string => {
+    const contact = $contactsStore.find((c) => c.phone === number);
+    return contact ? [contact.firstname, contact.lastname].filter(Boolean).join(' ') : number;
+  };
+
+  let pins = $derived.by((): MapPin[] => {
+    const out: MapPin[] = $places.map((place) => ({
+      id: `place-${place.id}`,
+      kind: 'place',
+      x: place.x,
+      y: place.y,
+      label: place.name
+    }));
+    for (const share of $liveState.incoming) {
+      out.push({
+        id: `friend-${share.number}`,
+        kind: 'friend',
+        x: share.x,
+        y: share.y,
+        label: nameForNumber(share.number)
+      });
+    }
+    if ($liveState.self) {
+      out.push({ id: 'self', kind: 'self', ...$liveState.self, label: $t('places.you') });
+    }
+    return out;
+  });
+
+  const handleStartSharing = async (contactIds: number[], minutes: number) => {
+    const ok = await run(() => startSharing(contactIds, minutes), {
+      success: $t('places.sharingStarted'),
+      error: $t('places.sharingFailed')
+    });
+    if (ok) isChoosingRecipients = false;
+  };
+
+  const handleStopSharing = async () => {
+    await run(() => stopSharing(), { success: $t('places.sharingStopped') });
+  };
+
+  /**
+   * Poll only while Places is the app on screen and the map is showing: every answer is read
+   * server-side from the game, so a poll nobody is looking at is load for nothing.
+   */
+  let cancelPoll: (() => void) | null = null;
+  const startPolling = (seconds: number) => {
+    cancelPoll?.();
+    cancelPoll = every(seconds * 1000, () => {
+      if ($currentApp.id === 'places' && tab === 'map') void refreshLive();
+    });
+  };
+
   onAppForeground('places', () => {
     void media.load();
     void places.load();
+    void contactsStore.load();
+    void refreshLive();
+    void loadMapConfig().then((config) => startPolling(config.intervalSeconds));
   });
 </script>
 
@@ -216,7 +299,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 {/snippet}
 
 {#snippet fabOverlay()}
-  {#if !isAdding && !renamingPlace && !deletingPlace}
+  {#if !isAdding && !renamingPlace && !deletingPlace && !isChoosingRecipients}
     <FloatingActionButton label={$t('places.savePlace')} onclick={openAddPlace}>
       {#snippet icon()}
         <AddIcon class="text-on-surface size-icon-sm shrink-0" />
@@ -226,7 +309,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 {/snippet}
 
 <Screen title={app.title} onback={app.back} actions={headerActions} overlay={fabOverlay}>
-  {#if isAdding}
+  {#if isChoosingRecipients}
+    <ShareLiveSheet
+      contacts={$contactsStore}
+      durations={$mapConfig.durations}
+      busy={$busy}
+      onstart={handleStartSharing}
+      oncancel={() => (isChoosingRecipients = false)}
+    />
+  {:else if isAdding}
     <div
       class="animate-in fade-in slide-in-from-right bg-surface-container m-2 flex flex-col space-y-3 rounded-box p-4"
     >
@@ -287,6 +378,53 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </div>
     </div>
   {:else}
+    <div class="px-3 pt-2">
+      <SegmentedControl
+        options={[
+          { id: 'map', label: $t('places.tabMap') },
+          { id: 'list', label: $t('places.tabList') }
+        ]}
+        selected={tab}
+        onchange={(id) => (tab = id === 'list' ? 'list' : 'map')}
+        aria-label={$t('places.title')}
+      />
+    </div>
+    {#if $liveState.outgoing}
+      <div class="px-3 pt-2">
+        <div
+          class="bg-primary-container text-on-primary-container flex items-center gap-2 rounded-box px-3 py-2"
+          role="status"
+          data-testid="places-sharing-indicator"
+        >
+          <LocationIcon class="size-icon-sm shrink-0" />
+          <span class="text-body-small min-w-0 flex-1">
+            {$t('places.sharingWith', {
+              count: $liveState.outgoing.recipients,
+              time: formatTime($liveState.outgoing.expires_at)
+            })}
+          </span>
+          <Button variant="secondary" onclick={handleStopSharing} disabled={$busy}>
+            {$t('places.stopSharing')}
+          </Button>
+        </div>
+      </div>
+    {/if}
+  {/if}
+  {#if !isChoosingRecipients && !isAdding && !renamingPlace && tab === 'map'}
+    <div class="flex min-h-0 flex-1 flex-col p-3">
+      <div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-box">
+        <MapView image={$mapConfig.image} bounds={$mapConfig.bounds} {pins}>
+          {#snippet actions()}
+            {#if !$liveState.outgoing}
+              <Button onclick={() => (isChoosingRecipients = true)} disabled={$busy}>
+                {$t('places.shareLive')}
+              </Button>
+            {/if}
+          {/snippet}
+        </MapView>
+      </div>
+    </div>
+  {:else if !isChoosingRecipients && !isAdding && !renamingPlace}
     <div class="no-scrollbar flex min-h-0 flex-1 flex-col space-y-4 overflow-y-auto p-3">
       <section>
         <h2 class="text-on-surface-variant text-body-small mb-1.5 px-1 tracking-wide uppercase">

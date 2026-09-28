@@ -30,6 +30,7 @@ import './PhoneCallLog';
 import './PhoneNumbers';
 import './Phones';
 import './Places';
+import './PlacesLive';
 import './Reports';
 import './Schema';
 import './Seed';

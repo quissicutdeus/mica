@@ -10,14 +10,15 @@ export default defineApp({
   // The launcher tile.
   tile: { bg: 'bg-emerald-600', fg: 'text-white' },
   icon: Icon,
-  description: 'Recently shared locations, saved places, and a waypoint in one tap.',
-  // `useLocation` (share-my-position / set-waypoint) and `useMedia` (reading the
+  description: 'A map of your saved places and friends, live location sharing, and waypoints.',
+  // `useLocation` (share-my-position / set-waypoint), `useMedia` (reading the
   // recently-shared-locations list, which is `kind: 'location'` rows in the media
-  // service) — see `permissions.ts`'s `PERMISSION_OF` table.
-  permissions: ['location', 'media'],
+  // service), `useContacts` (choosing who sees a live share, and naming a friend's pin)
+  // and `useNavigation` (polling only while Places is on screen) — see `permissions.ts`'s
+  // `PERMISSION_OF` table.
+  permissions: ['location', 'media', 'contacts', 'navigation'],
   author: 'micaOS',
-  // MICA-65: ships in the box, scoped to the "Places" reading of the ticket — recent
-  // shared locations, share/waypoint actions, and saved places. No map canvas (deferred),
-  // no live location sharing window (deferred), no job-resource exports (deferred).
+  // MICA-65: recent shared locations, share/waypoint actions, and saved places. MICA-244:
+  // the map canvas and live location sharing. No job-resource exports (deferred).
   core: true
 });

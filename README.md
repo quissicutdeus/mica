@@ -738,6 +738,9 @@ set mica_discord_webhook_content ""
 setr mica_disabled_apps ""
 set mica_default_dock ""
 set mica_default_contacts ""
+set mica_map_image ""
+set mica_map_bounds ""
+set mica_location_interval 5
 ```
 
 | Convar                             | Type                                                    | Default                | Controls                                                                                                                              |
@@ -791,6 +794,9 @@ set mica_default_contacts ""
 | `mica_disabled_apps`               | comma-separated app ids                                 | empty (off)            | Hide apps everywhere in the UI; blocks a handful server-side too                                                                      |
 | `mica_default_dock`                | comma-separated app ids, positional                     | empty (built-in dock)  | Dock a phone starts with, until its player rearranges it                                                                              |
 | `mica_default_contacts`            | JSON array, or a path to one                            | empty (off)            | Contacts seeded once into every new phone                                                                                             |
+| `mica_map_image`                   | https URL, or a file under `branding/`                  | empty (grid)           | Picture the Places map draws; micaOS ships none                                                                                       |
+| `mica_map_bounds`                  | `minX,minY,maxX,maxY`, world units                      | the 8192px atlas       | Which part of the world that picture covers                                                                                           |
+| `mica_location_interval`           | integer, seconds, 2-60                                  | `5`                    | How often a live location share is sampled                                                                                            |
 
 Most are read on every use rather than cached, so changing one with `set` from
 the live console takes effect on the next request and needs no restart.
@@ -1216,6 +1222,28 @@ anywhere.
   number, or the document itself not being valid JSON or not an array — is
   skipped, with a warning naming what was skipped, rather than failing the rest
   of the seed.
+- **`mica_map_image`** — the picture the Places map draws (MICA-244). micaOS is
+  AGPL and ships no map image, because the game's own map art is not ours to
+  license; with this unset the map is a neutral grid, and pins, pan, zoom and
+  live sharing all work the same over it. Either an `https://` URL or a file
+  under `branding/` (served as `https://cfx-nui-<resource>/branding/...`). The
+  picture is stretched to a square, so give it one. Anything else is refused
+  with one warning and the grid is drawn instead.
+- **`mica_map_bounds`** — which world rectangle that picture covers, as
+  `minX,minY,maxX,maxY` in GTA world units (x east, y north). Unset means the
+  edges of the common 8192px atlas, `-5661,-4058,6694,8429`; a cropped or
+  differently framed picture needs its own. An inverted or partial box is
+  refused with a warning and the default is used.
+- **`mica_location_interval`** — how often, in seconds, the server samples a
+  player who is sharing their live location, and how often the map asks for it.
+  Positions always come from the server's own view of the sharer's ped, never
+  from a client. Clamped to 2-60; the floor keeps the map's polling well under
+  `mica_rate_limit`. Read on every sample, so `set` from the console takes
+  effect on the next one; the phone picks up a new value when Places next comes
+  to the foreground. A share reaches only contacts the sharer picked from their
+  own address book (at most 10, minus anyone who has blocked them), lasts 15
+  minutes, an hour or four hours, and ends early on Stop or when the sharer
+  leaves. Nothing about it is stored, so a restart ends every share.
 
 One convar you may still find in an old config: `mica_auto_migrate`. An earlier
 build added missing columns and indexes at start when it was set, and that
