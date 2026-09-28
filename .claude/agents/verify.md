@@ -22,10 +22,11 @@ caused it is the second finding; making it green is somebody else's job.
 
 `git log -1` first, and compare it to the sha in the brief. If the brief hands
 you lane shas to integrate, cherry-pick them in the order given onto that tip,
-in the worktree you were given, and stop on the first conflict — report which
-sha against which file, and do not resolve it. If the tree already differs from
-the brief, say so before running anything; a gate over the wrong tree is a
-number nobody can use.
+**in the worktree you were given** — never in the shared main checkout, where
+another lane may be mid-edit — and stop on the first conflict; report which sha
+against which file, and do not resolve it. If the tree already differs from the
+brief, say so before running anything; a gate over the wrong tree is a number
+nobody can use.
 
 ## Run every gate with its own exit code kept
 

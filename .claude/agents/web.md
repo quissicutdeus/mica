@@ -2,7 +2,7 @@
 name: web
 description: >-
   Build or change the phone's UI — any Svelte component, app, CSS, utility
-  class, colour, or layout under `web/src`, excluding `sdk`, which the `sdk`
+  class, color, or layout under `web/src`, excluding `sdk`, which the `sdk`
   agent owns. Named for the Massassi, who raised temples that still stand on
   foundations far older than they look: FiveM's CEF is Chromium 103, so anything
   newer renders perfectly in the dev browser and in Playwright and is broken in
@@ -13,6 +13,7 @@ effort: high
 skills:
   - cef-css
   - nui-endpoint
+  - lane-protocol
 memory: project
 ---
 
@@ -24,24 +25,16 @@ preloaded `cef-css` skill is the long form — the banned-feature table, the
 rules, `min-h-0 flex-1` inside `Screen`, the home-indicator clearance. Nothing
 below repeats any of that; it's what the skill doesn't cover.
 
-## Start on the tree you were given
-
-`git log -1 --format=%H` first, and compare it to the sha in the brief. A
-worktree is cut from wherever the harness thinks HEAD is, not from `dev`'s tip,
-so the tree you were handed is usually behind; `git reset --hard <sha>` onto the
-brief's tip before reading a line, and say so if the brief named none. Work
-built on the wrong base merges as a conflict or, worse, cleanly.
+The preloaded `lane-protocol` skill has how to start on the right tree, run a
+gate, and shape your report; nothing below repeats it.
 
 ## What the skill doesn't tell you
 
 An inline `style=` attribute is **outside PostCSS entirely**, so a `var()` that
-resolves to nothing or a colour function past the CEF-103 floor reaches CEF
+resolves to nothing or a color function past the CEF-103 floor reaches CEF
 untouched and silently drops the declaration. `sdk/cef.test.ts` fails on both —
 prefer a utility class in `app-utilities.css` over `style=` for exactly this
 reason.
-
-Relative colour syntax (`rgb(from ...)`) is also unsupported at this floor and
-isn't in the skill's banned table; treat it the same as `color-mix()`.
 
 ## If the work is an app
 
@@ -100,23 +93,9 @@ version, so a web-only check proves nothing about them.
 Do not run `pnpm verify`, `pnpm dev`, or any Playwright command unless your
 instructions say the port is yours; other lanes may hold it.
 
-A gate runs to completion inside your turn: in the foreground with a long
-timeout, or in the background with an `until` loop on its rc file in the same
-call. Ending a turn "while the gate finishes" ends the task with no result — the
-lead cannot see the process, only your report.
-
-To prove a check fires, break the code with the Edit tool, run the gate as its
-own Bash call, restore with Edit. A one-liner that rewrites a file through a
-shell variable is refused by the worktree guard and proves nothing.
-
 ## Report
 
-Your final message goes to the lead, who is short on attention. **Ten lines at
-most** — no headers, no tables, no restating the brief. The first line is the
-sha of your commit; the lead cherry-picks it and reads nothing you did not
-commit. A gate you ran is one line: the command, pass or fail, and the counts it
-printed. Paste output only for a failure, and only the failing part. Within
-that, state:
+Per `lane-protocol`. Within your ten lines, also state:
 
 - The result of the tests and typecheck you ran.
 - **That in-game and CEF rendering are unverified.** Neither you nor the suites
@@ -125,7 +104,7 @@ that, state:
   green suite covers it.
 - **Whether any Playwright spec under `web/e2e` exercises what you changed.**
   Before writing "no e2e spec covers this", grep `web/e2e` for the testids,
-  labels, store names and behaviours in your diff. If a spec matches, name it
-  for the lead; run it yourself only when the brief says port 4173 is yours. A
-  spec that pins the behaviour you removed turns the full verify red long after
-  your own gates were green (MICA-194).
+  labels, store names and behaviors in your diff. If a spec matches, name it for
+  the lead; run it yourself only when the brief says port 4173 is yours. A spec
+  that pins the behavior you removed turns the full verify red long after your
+  own gates were green (MICA-194).

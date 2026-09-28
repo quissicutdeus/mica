@@ -13,6 +13,7 @@ model: opus
 effort: high
 skills:
   - nui-endpoint
+  - lane-protocol
 memory: project
 ---
 
@@ -23,33 +24,25 @@ of a service and speaks NUI and net events; `client/game/` speaks to GTA — pro
 animation, camera, freelook, proximity — and knows nothing about the phone's
 data; `client/lib/` holds what both need: `DeviceState`, `DeviceVisibility`,
 `ServiceProxy`, `FrameworkBridge`, `nui`, `publicApi`. The preloaded
-`nui-endpoint` skill has the four-layer round trip, and `docs/architecture.md`
-has why the split looks this way.
-
-## Start on the tree you were given
-
-`git log -1 --format=%H` first, and compare it to the sha in the brief. A
-worktree is cut from wherever the harness thinks HEAD is, not from `dev`'s tip,
-so the tree you were handed is usually behind; `git reset --hard <sha>` onto the
-brief's tip before reading a line, and say so if the brief named none. Work
-built on the wrong base merges as a conflict or, worse, cleanly.
+`nui-endpoint` skill has the four-layer round trip and `docs/architecture.md`
+has why the split looks this way; the preloaded `lane-protocol` skill has how to
+start on the right tree, run a gate, and shape your report.
 
 ## Nothing here is authority
 
-Every byte of this directory runs on hardware nobody in this repo owns, and a
-modified client already controls all of it. So the server believes none of it:
-`server/lib/FrameworkBridge.ts` resolves the player again from the connection
-for every request, and the client bridge is **display only** — a wrong answer
-here is a wrong number on a screen, never a wrong row in a table. Keep it that
-way. If a value matters to another player, to money, or to what the server does
-next, the server decides it and the client is told; the client never reports it.
+A modified client already controls every byte of this directory, so the server
+believes none of it: `server/lib/FrameworkBridge.ts` resolves the player again
+from the connection every request, and the client bridge is **display only** — a
+wrong answer here is a wrong number on a screen, never a wrong row in a table.
+If a value matters to another player, to money, or to what the server does next,
+the server decides it and the client is told, never the reverse.
 
 `docs/security.md` § "Client-authoritative values" is the whole list of what the
-client legitimately owns, and it is one item long: `DeviceState.isTyping`,
-because the server cannot see DOM focus. Battery charge and signal bars were
-both on that list once and were both moved, each after a client that decided its
-own number turned out to be a client that decided whether it was exploitable.
-**Adding to that list is a stop-and-report finding, not a judgment call.**
+client legitimately owns, one item long: `DeviceState.isTyping`, because the
+server cannot see DOM focus. Battery charge and signal bars were both on that
+list once, each moved after deciding its own number turned out to mean deciding
+whether it was exploitable. **Adding to that list is a stop-and-report finding,
+not a judgment call.**
 
 ## Two kinds of reachable
 
@@ -62,30 +55,35 @@ never let it choose what the server is told beyond what the server re-checks.
 ## Focus is process-global, and a device left up traps the player
 
 There is one NUI page. `SetNuiFocus(true, true)` hands it every input, so no key
-mapping can fire while a device is open — which is why `client.ts` registers
-only game-scope actions from `shared/keybinds.ts` and the web dispatches
-in-phone keys. Raising one device lowers the other first (`DeviceVisibility.ts`,
-since MICA-262), and `Freelook.ts` is the one place that flips
-`SetNuiFocusKeepInput`. Every path that opens a device — the command, an
-incoming call, `OpenApp`, `SetPhoneEnabled` — must have a path that closes it,
-including the error path. A focus nobody releases is a player who cannot move
-and cannot close the phone, and no suite will tell you.
+mapping can fire while a device is open — `client.ts` registers only game-scope
+actions from `shared/keybinds.ts`, and the web dispatches in-phone keys. Raising
+one device lowers the other first (`DeviceVisibility.ts`, since MICA-262), and
+`Freelook.ts` is the one place that flips `SetNuiFocusKeepInput`. Every path
+that opens a device — the command, an incoming call, `OpenApp`,
+`SetPhoneEnabled` — needs a path that closes it, including the error path, or a
+focus nobody releases traps the player, and no suite will tell you.
 
 ## Natives fail in the game, not in the compiler
 
 `@citizenfx/client` types every native and `client/tsconfig.json` is strict
 under TS 7, but a native called with a wrong argument, a wrong hash, or at the
 wrong moment does nothing in game and says nothing about it. Natives are
-globals, so a test stubs them on `globalThis` the way `client/__tests__/`
-already does — keep each `client/game/` module narrow enough that a test can
-stub the two or three it uses. Do not add a native whose effect reaches past the
-phone's own prop, animation, camera and audio: player state, inventory, money
-and vehicles belong to the framework, reached through the bridge, and a client
-native there is an authority leak by another name.
+globals, stubbed on `globalThis` the way `client/__tests__/` already does — keep
+each `client/game/` module narrow enough that a test can stub the two or three
+it uses. Never add a native whose effect reaches past the phone's own prop,
+animation, camera and audio: player state, inventory, money and vehicles belong
+to the framework, reached through the bridge, and a client native there is an
+authority leak by another name.
 
 `shared/devices.ts` describes each device once — frame size, prop, animation,
 keybind — and the client reads the phone from it (MICA-258). A hardcoded `phone`
 where a `DeviceId` belongs is what that ticket removed; do not put one back.
+
+## A new convar needs a README row
+
+`server/__tests__/convars.test.ts` scans `client/` too — a `GetConvar*` call
+with no matching entry in `README.md`'s convar table fails it. Add the row in
+the same commit.
 
 ## The surfaces other resources call are published
 
@@ -94,7 +92,10 @@ same discriminated outcome the server's exports do and never throws into a
 caller's resource. Adding an export is ordinary work; changing an existing one's
 shape bumps `MICA_CLIENT_API_VERSION`. `shared/qbPhoneEvents.ts` and
 `client/services/QbPhoneCompat.ts` are a second published surface: a qb script
-that works today must still work after your change, unmodified.
+that works today must still work after your change, unmodified. If an export
+reads `GetInvokingResource()`, read it into a `const` on the first synchronous
+line, before any `await` — FiveM only answers it correctly during the
+synchronous part of the call.
 
 ## Keep what you learn
 
@@ -110,32 +111,18 @@ heading, and did so twice on MICA-234.
 ## Verifying
 
 `pnpm typecheck:client` for the compiler, and
-`pnpm exec vitest run client/__tests__/<file>` for behaviour — the root Vitest
+`pnpm exec vitest run client/__tests__/<file>` for behavior — the root Vitest
 config, node environment, with `server/__tests__/setup.ts`'s FiveM global stubs.
 New or changed logic gets a test, because `tsc` proves types and the game-facing
-half is all behaviour.
+half is all behavior.
 
 What no suite proves: anything that needs the game. A prop that attaches to the
 wrong bone, an animation that never plays, focus that never releases, a native
 that silently does nothing — all of it passes `pnpm verify`.
 
-A gate runs to completion inside your turn: in the foreground with a long
-timeout, or in the background with an `until` loop on its rc file in the same
-call. Ending a turn "while the gate finishes" ends the task with no result — the
-lead cannot see the process, only your report.
-
-To prove a check fires, break the code with the Edit tool, run the gate as its
-own Bash call, restore with Edit. A one-liner that rewrites a file through a
-shell variable is refused by the worktree guard and proves nothing.
-
 ## Report
 
-Your final message goes to the lead, who is short on attention. **Ten lines at
-most** — no headers, no tables, no restating the brief. The first line is the
-sha of your commit; the lead cherry-picks it and reads nothing you did not
-commit. A gate you ran is one line: the command, pass or fail, and the counts it
-printed. Paste output only for a failure, and only the failing part. Within
-that, state:
+Per `lane-protocol`. Within your ten lines, also state:
 
 - The result of `pnpm typecheck:client` and of the client tests you ran.
 - **What is unverified in the game**, by name — the natives, the focus

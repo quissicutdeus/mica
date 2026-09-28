@@ -1,7 +1,7 @@
 ---
 name: cef-css
 description:
-  Write CSS, colour, or layout for the phone UI. Use before adding any style,
+  Write CSS, color, or layout for the phone UI. Use before adding any style,
   utility class, token, or sizing rule under web/src — FiveM's CEF is Chromium
   103, so modern CSS renders perfectly in the dev browser and in Playwright and
   is broken in game.
@@ -29,12 +29,13 @@ harmless; leave it. (AGENTS.md §2.3 — a hard constraint.)
 
 ## Banned outright — no fallback exists
 
-| Feature           | Needs      | Instead                                                                       |
-| ----------------- | ---------- | ----------------------------------------------------------------------------- |
-| `:has()`          | Chrome 105 | Svelte state                                                                  |
-| Container queries | Chrome 105 | Svelte state                                                                  |
-| `dvh` / `svh`     | Chrome 108 | a measured pixel value — `shell/state/display.ts` tracks `window.innerHeight` |
-| `color-mix()`     | Chrome 111 | a literal `rgba()`                                                            |
+| Feature                                 | Needs      | Instead                                                                       |
+| --------------------------------------- | ---------- | ----------------------------------------------------------------------------- |
+| `:has()`                                | Chrome 105 | Svelte state                                                                  |
+| Container queries                       | Chrome 105 | Svelte state                                                                  |
+| `dvh` / `svh`                           | Chrome 108 | a measured pixel value — `shell/state/display.ts` tracks `window.innerHeight` |
+| `color-mix()`                           | Chrome 111 | a literal `rgba()`                                                            |
+| `rgb(from ...)` (relative color syntax) | Chrome 111 | a literal `rgba()`                                                            |
 
 **Opacity is a literal `rgba()`, never `color-mix()`.** The opacity classes in
 `app-utilities.css` (`bg-black/40`, …) and the translucent tokens in `app.css`

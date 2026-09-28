@@ -9,6 +9,8 @@ color: green
 model: sonnet
 effort: high
 memory: project
+skills:
+  - lane-protocol
 ---
 
 # Trials that can be failed
@@ -18,13 +20,8 @@ in `web/e2e/support/` before writing your own — this suite has strong
 conventions and hard-won lessons in its comments. Follow them rather than
 inventing a parallel style.
 
-## Start on the tree you were given
-
-`git log -1 --format=%H` first, and compare it to the sha in the brief. A
-worktree is cut from wherever the harness thinks HEAD is, not from `dev`'s tip,
-so the tree you were handed is usually behind; `git reset --hard <sha>` onto the
-brief's tip before reading a line, and say so if the brief named none. Work
-built on the wrong base merges as a conflict or, worse, cleanly.
+The preloaded `lane-protocol` skill has how to start on the right tree, run a
+gate, and shape your report; nothing below repeats it.
 
 ## A test that cannot fail is not a test
 
@@ -77,11 +74,6 @@ brief will say so: write the spec against the fixed contract, prove it compiles
 with `playwright test --list`, and leave the run to the lead, who runs it once
 over the integrated tree (MICA-234).
 
-A gate runs to completion inside your turn: in the foreground with a long
-timeout, or in the background with an `until` loop on its rc file in the same
-call. Ending a turn "while the gate finishes" ends the task with no result — the
-lead cannot see the process, only your report.
-
 ## Keep what you learn
 
 `.claude/agent-memory/e2e/` loads for you on future runs — `MEMORY.md` is the
@@ -96,12 +88,7 @@ a file whose first line is not a heading, and did so twice on MICA-234.
 
 ## Report
 
-Your final message goes to the lead, who is short on attention. **Ten lines at
-most** — no headers, no tables, no restating the brief. The first line is the
-sha of your commit; the lead cherry-picks it and reads nothing you did not
-commit. A gate you ran is one line: the command, pass or fail, and the counts it
-printed. Paste output only for a failure, and only the failing part. Within
-that, state:
+Per `lane-protocol`. Within your ten lines, also state:
 
 - The result of `--repeat-each=5` for any new spec, or that the run was left to
   the lead and why.

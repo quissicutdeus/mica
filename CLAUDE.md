@@ -19,12 +19,14 @@ the work calls for it:
 - `nui-endpoint` — before adding or changing a `fetchNui` call, a route, a
   server action, or a server-to-app push. A missing layer fails **silently in
   game** while passing every suite.
-- `cef-css` — before writing any CSS, colour, or layout under `web/`. FiveM's
-  CEF is Chromium 103.
+- `cef-css` — before writing any CSS, color, or layout under `web/`. FiveM's CEF
+  is Chromium 103.
 - `mica-service` — before declaring a service, changing a column, or writing a
   migration. Pulls in `docs/schema-and-services.md`.
 - `ticket-flow` — before writing a branch name, commit message, PR body, or
   issue comment.
+- `lane-protocol` — preloaded by every code-writing agent type; how a lane
+  starts on the right tree, runs a gate, and shapes its report.
 
 Work that is farmed out to a subagent picks an **agent type** from
 `.claude/agents/`, so the rules for that kind of work arrive with the agent

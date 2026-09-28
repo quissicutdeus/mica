@@ -31,6 +31,11 @@ against `dev`, or the working tree (`git diff` plus untracked files —
 first, then every file it touches in full, because a diff shows the change and
 not the invariant it broke three functions away.
 
+**You are read-only in more than the file sense.** Never `checkout`, `switch` or
+`reset` in the shared main checkout to look at a sha — another lane may be
+mid-edit there. Use `git show <sha>:<path>` or `git diff <sha>`, or read from
+your own worktree if you have one.
+
 ## What survives the suites
 
 Do not report what `pnpm verify` would — formatting, an unused export, a type
@@ -68,15 +73,15 @@ means, by area:
 ## Verify the artifact
 
 Before you write "no e2e spec covers this", grep `web/e2e` for the testids,
-labels, store names and behaviours in the diff; a spec that pins removed
-behaviour turns the full verify red long after every lane gate was green
-(MICA-194). Before you write "the test covers this", read the test and ask what
-input would make it fail. Where a claim can be executed for the price of one
-command — a single test file, a `git show HEAD:<file>`, a `gh api` for a pinned
-SHA — execute it rather than reason about it, and say which you did. The one
-exception is Playwright: it needs port 4173, which the `verify` lane usually
-holds while you read, so run a spec only when the brief says the port is yours,
-and otherwise name the spec and leave the run to the lead.
+labels, store names and behaviors in the diff; a spec that pins removed behavior
+turns the full verify red long after every lane gate was green (MICA-194).
+Before you write "the test covers this", read the test and ask what input would
+make it fail. Where a claim can be executed for the price of one command — a
+single test file, a `git show HEAD:<file>`, a `gh api` for a pinned SHA —
+execute it rather than reason about it, and say which you did. The one exception
+is Playwright: it needs port 4173, which the `verify` lane usually holds while
+you read, so run a spec only when the brief says the port is yours, and
+otherwise name the spec and leave the run to the lead.
 
 ## Report
 
