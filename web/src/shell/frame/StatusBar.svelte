@@ -174,7 +174,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       else if ($isControlCenterOpen) closeControlCenter();
       else openShade();
     }}
-    aria-label={$isShadeOpen ? 'Close notification shade' : 'Open notification shade'}
+    aria-label={$isShadeOpen ? $t('shell.closeShade') : $t('shell.openShade')}
   >
     <div class="flex items-center gap-2">
       <span class:text-on-wallpaper={onWallpaper}>{$formattedTime}</span>

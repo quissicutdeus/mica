@@ -461,7 +461,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               type="button"
               class="bg-surface-container shadow-elevation-3 h-14 w-14 cursor-pointer rounded-box p-1.5"
               onclick={() => openFolderId.set(folder.folderId)}
-              aria-label={folder.name || 'Folder'}
+              aria-label={folder.name || $t('shell.folder')}
             >
               <div class="grid h-full w-full grid-cols-2 grid-rows-2 gap-0.5">
                 {#each previewApps as app (app.id)}

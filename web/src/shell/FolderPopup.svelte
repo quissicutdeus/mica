@@ -103,7 +103,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       use:focusTrap
       role="dialog"
       aria-modal="true"
-      aria-label={folder.name || 'Folder'}
+      aria-label={folder.name || $t('shell.folder')}
       tabindex="-1"
       class="bg-surface-container shadow-elevation-5 w-full rounded-box p-5 outline-none"
     >

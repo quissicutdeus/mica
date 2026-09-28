@@ -5,6 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
+  import { t } from '../messages';
   import { goHome } from '../state/navigation';
   import { shadeDragRevealDistance } from '../state/display';
   import { isShadeOpen, closeShade } from '../state/shade';
@@ -70,10 +71,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     }
   }}
   aria-label={$isShadeOpen
-    ? 'Collapse notifications'
+    ? $t('shell.collapseNotifications')
     : $isDrawerOpen
-      ? 'Close app drawer'
-      : 'Return to home screen'}
+      ? $t('shell.closeAppDrawer')
+      : $t('shell.goHome')}
 >
   <!-- White over an app, but the sheets it now sits above are
        `bg-surface-container-high` — near-white in the light scheme, where a white pill

@@ -607,8 +607,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                               type="button"
                               class="text-error hover:bg-surface-container hover:text-on-surface duration-short ease-standard rounded-full p-1 transition-colors"
                               onclick={(e) => handleRestoreGroup(e, group.app)}
-                              title={`Restore all ${group.app} notifications`}
-                              aria-label={`Restore all ${group.app} notifications`}
+                              title={$t('shell.restoreAllGroupNotifications', {
+                                app: group.app
+                              })}
+                              aria-label={$t('shell.restoreAllGroupNotifications', {
+                                app: group.app
+                              })}
                             >
                               <TrashIcon class="h-3.5 w-3.5" />
                             </button>
@@ -832,8 +836,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                               type="button"
                               class="text-on-surface-variant hover:bg-surface-container hover:text-error duration-short ease-standard rounded-full p-1 transition-colors"
                               onclick={(e) => handleClearGroup(e, group.app)}
-                              title={`Clear all ${group.app} notifications`}
-                              aria-label={`Clear all ${group.app} notifications`}
+                              title={$t('shell.clearAllGroupNotifications', {
+                                app: group.app
+                              })}
+                              aria-label={$t('shell.clearAllGroupNotifications', {
+                                app: group.app
+                              })}
                             >
                               <TrashIcon class="h-3.5 w-3.5" />
                             </button>

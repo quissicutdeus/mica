@@ -124,8 +124,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         class="bg-surface-container text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface duration-short ease-standard shrink-0 rounded-full p-2 transition-colors"
         onclick={toggleMuteAllNearby}
         aria-pressed={$muteAllNearby}
-        title={$muteAllNearby ? 'Unmute nearby music' : 'Mute all nearby music'}
-        aria-label={$muteAllNearby ? 'Unmute nearby music' : 'Mute all nearby music'}
+        title={$muteAllNearby ? $t('shell.unmuteAllNearby') : $t('shell.muteAllNearby')}
+        aria-label={$muteAllNearby ? $t('shell.unmuteAllNearby') : $t('shell.muteAllNearby')}
       >
         {#if $muteAllNearby}
           <SpeakerOffIcon class="size-icon-sm" />
