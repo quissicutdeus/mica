@@ -65,6 +65,7 @@ import {
   type OwnedTable
 } from '../lib/orphanSweep';
 import { FrameworkBridge, __setResourceLookup, detectFramework } from '../lib/FrameworkBridge';
+import { REPORTABLE } from '../lib/moderation';
 // Populates `declaredServices` — the registry is filled as a side effect of each
 // `defineService`, so without this the derivation below has nothing to derive from.
 import '../services/index';
@@ -75,6 +76,25 @@ const CHARACTER_DELETED_EVENT = 'mica:server:shell:characterDeleted';
 const MICA_71_MEDIA_DELETE =
   'DELETE FROM mica_media WHERE NOT EXISTS ' +
   '(SELECT 1 FROM players p WHERE p.citizenid = mica_media.citizenid)';
+
+/**
+ * Retention's open-report hold on a row of `table` (MICA-167), spelled out rather than built
+ * with `openReportHold`, so a change to that predicate shows here instead of agreeing with
+ * itself. MICA-292 put it on the purge and the sweep.
+ */
+const REPORT_HOLD = (table: string) =>
+  'NOT EXISTS (SELECT 1 FROM `mica_reports` r WHERE r.`target_table` = ? ' +
+  `AND r.\`target_id\` = ${table}.\`id\` AND r.\`status\` = 'active' AND r.\`resolution\` = 'pending')`;
+
+/** The tables a player can report, so the ones the purge and the sweep hold rows in. */
+const REPORTABLE_TABLES = [
+  'mica_accounts',
+  'mica_blabber',
+  'mica_blabber_dms',
+  'mica_marketplace',
+  'mica_media',
+  'mica_messages'
+];
 
 const QB = { table: 'players', column: 'citizenid' };
 const ESX = { table: 'users', column: 'identifier' };
@@ -503,14 +523,28 @@ describe('the owner verdict is resolved once, not per table', () => {
 
 describe('the statement itself', () => {
   it('is the statement MICA-71 shipped, on qb, plus a bound on how much it may lock', () => {
-    const sql = orphanDeleteSql({ table: 'mica_media', column: 'citizenid' }, QB);
+    const { sql } = orphanDeleteSql({ table: 'mica_media', column: 'citizenid' }, QB);
 
     expect(sql.startsWith(MICA_71_MEDIA_DELETE)).toBe(true);
     expect(sql).toMatch(/ LIMIT \d+$/);
   });
 
+  it('keeps a reported row out of a reportable table’s sweep (MICA-292)', () => {
+    const { sql, params } = orphanDeleteSql({ table: 'mica_media', column: 'citizenid' }, QB);
+
+    expect(sql).toContain(REPORT_HOLD('mica_media'));
+    expect(params).toEqual(['mica_media']);
+  });
+
+  it('holds nothing on a table no report can name', () => {
+    const { sql, params } = orphanDeleteSql({ table: 'mica_notes', column: 'citizenid' }, QB);
+
+    expect(sql).not.toContain('mica_reports');
+    expect(params).toEqual([]);
+  });
+
   it('asks the ESX question of the ESX table', () => {
-    const sql = orphanDeleteSql({ table: 'mica_notes', column: 'citizenid' }, ESX);
+    const { sql } = orphanDeleteSql({ table: 'mica_notes', column: 'citizenid' }, ESX);
 
     expect(sql).toContain('FROM users p');
     expect(sql).toContain('p.identifier = mica_notes.citizenid');
@@ -520,7 +554,7 @@ describe('the statement itself', () => {
     // `NOT IN` against a subquery holding a single NULL is unknown for every row and
     // deletes nothing at all — a prune that quietly does nothing reads exactly like one
     // that had nothing to do.
-    expect(orphanDeleteSql({ table: 'mica_notes', column: 'citizenid' }, QB)).not.toContain(
+    expect(orphanDeleteSql({ table: 'mica_notes', column: 'citizenid' }, QB).sql).not.toContain(
       'NOT IN'
     );
   });
@@ -555,7 +589,7 @@ describe('deleting in chunks rather than in one long lock', () => {
   });
 
   it('keeps going while every batch comes back full', async () => {
-    const chunk = chunkOf(orphanDeleteSql(oneTable[0], QB));
+    const chunk = chunkOf(orphanDeleteSql(oneTable[0], QB).sql);
     let issued = 0;
     dbMock.single.mockImplementation(async (sql: string) =>
       sql.includes('AS total') ? { total: 9 } : { matched: 9 }
@@ -623,14 +657,27 @@ describe('purging one named character', () => {
         /^SELECT DISTINCT t\.`url` FROM `mica_media` t WHERE .*t\.citizenid = \?/
       )
     ]);
+    expect(
+      dbMock.query.mock.calls.find((c: any[]) => String(c[0]).startsWith('SELECT'))![1]
+    ).toEqual(['CID_Z', 'mica_media']);
     for (const call of dbMock.query.mock.calls) {
-      if (String(call[0]).startsWith('SELECT')) {
+      const sql = String(call[0]);
+      if (sql.startsWith('SELECT')) continue;
+      const table = /^DELETE FROM (mica_[a-z_]+) WHERE citizenid = \?/.exec(sql)?.[1];
+      expect(table, sql).toBeDefined();
+      // A reportable table keeps a reported row (MICA-292); every other one is plain.
+      if (REPORTABLE_TABLES.includes(table!)) {
+        expect(sql).toBe(`DELETE FROM ${table} WHERE citizenid = ? AND ${REPORT_HOLD(table!)}`);
+        expect(call[1]).toEqual(['CID_Z', table]);
+      } else {
+        expect(sql).toBe(`DELETE FROM ${table} WHERE citizenid = ?`);
         expect(call[1]).toEqual(['CID_Z']);
-        continue;
       }
-      expect(String(call[0])).toMatch(/^DELETE FROM mica_[a-z_]+ WHERE citizenid = \?$/);
-      expect(call[1]).toEqual(['CID_Z']);
     }
+  });
+
+  it('holds reported rows in exactly the tables a player can report', () => {
+    expect(Object.keys(REPORTABLE()).toSorted()).toEqual(REPORTABLE_TABLES);
   });
 
   it('does nothing for an empty or non-string citizenid', async () => {
@@ -729,6 +776,8 @@ describe('the character-deleted hook', () => {
     localHandlers.get('mica:server:media:characterDeleted')![0]('CID_Z');
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(deletes()).toEqual(['DELETE FROM mica_media WHERE citizenid = ?']);
+    expect(deletes()).toEqual([
+      `DELETE FROM mica_media WHERE citizenid = ? AND ${REPORT_HOLD('mica_media')}`
+    ]);
   });
 });

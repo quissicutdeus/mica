@@ -7,6 +7,8 @@ import { AUDIT_LOG_TABLE } from './AuditLogger';
 import { declaredServices, type ColumnDef, type ColumnType } from './defineService';
 import { FrameworkBridge, type OwnerTable } from './FrameworkBridge';
 import { OWNER_TABLE } from './schemaSql';
+import { openReportHold } from './contentRetention';
+import { isReportableTable } from './moderation';
 
 /**
  * Delete the rows a character left behind, on a schema where nothing else will.
@@ -259,6 +261,22 @@ export const registerOwnedExternal = (table: string, external: OwnedExternal): v
 };
 
 /**
+ * Retention's open-report hold (`openReportHold`, MICA-167) for a table a player can report,
+ * or `null` for one they cannot. MICA-292.
+ *
+ * The purge and the sweep used to take every row a character owned, reported or not, and
+ * once they also delete the hosted file a player under an open report could delete their
+ * character and destroy the photo that was reported. Retention never could, so neither can
+ * these: a reported row, and whatever it names, stays until the report resolves, and the
+ * next sweep takes it then. The predicate is retention's own, not a copy of it.
+ *
+ * Only reportable tables, because only those have rows a report can name — and the hold
+ * reads the row's `id`, which not every owned table has.
+ */
+const evidenceHold = (table: string, row: string): { sql: string; params: unknown[] } | null =>
+  isReportableTable(table) ? openReportHold(table, row) : null;
+
+/**
  * The most references collected per table per sweep: every row one sweep may delete from it.
  * `collect` sees the rows before `DELETE … LIMIT` picks which of them go, so it has to be able
  * to see as many as can go.
@@ -506,40 +524,60 @@ const affectedRows = (result: unknown): number => {
  *
  * On qb this is the statement MICA-71 shipped for `mica_media`, with a `LIMIT` on the
  * end; the alias stays `p` so that remains visibly true.
+ *
+ * A reportable table's rows carry retention's open-report hold as well (`evidenceHold`,
+ * MICA-292), so a row somebody reported is not swept while the report is open.
  */
-export const orphanDeleteSql = (owned: OwnedTable, owner: OwnerTable): string => {
+export const orphanDeleteSql = (
+  owned: OwnedTable,
+  owner: OwnerTable
+): { sql: string; params: unknown[] } => {
   const table = identifier(owned.table, 'a swept table');
   const column = identifier(owned.column, 'an owner column');
   const ownerTable = identifier(owner.table, 'the owner table');
   const ownerColumn = identifier(owner.column, 'the owner column');
+  const hold = evidenceHold(table, table);
 
-  return (
-    `DELETE FROM ${table} WHERE NOT EXISTS ` +
-    `(SELECT 1 FROM ${ownerTable} p WHERE p.${ownerColumn} = ${table}.${column}) ` +
-    `LIMIT ${DELETE_CHUNK}`
-  );
+  return {
+    sql:
+      `DELETE FROM ${table} WHERE NOT EXISTS ` +
+      `(SELECT 1 FROM ${ownerTable} p WHERE p.${ownerColumn} = ${table}.${column}) ` +
+      (hold ? `AND ${hold.sql} ` : '') +
+      `LIMIT ${DELETE_CHUNK}`,
+    params: hold ? hold.params : []
+  };
 };
 
 /**
- * The orphan predicate `orphanDeleteSql` deletes by, for the row alias `t`, so an external's
- * `collect` reads exactly the rows the sweep is about to remove.
+ * The predicate `orphanDeleteSql` deletes by, hold included, for the row alias `t`, so an
+ * external's `collect` reads exactly the rows the sweep is about to remove — and not the
+ * reported ones it will keep.
  */
-export const orphanWhereSql = (owned: OwnedTable, owner: OwnerTable): string => {
+export const orphanWhere = (
+  owned: OwnedTable,
+  owner: OwnerTable
+): { sql: string; params: unknown[] } => {
   const column = identifier(owned.column, 'an owner column');
   const ownerTable = identifier(owner.table, 'the owner table');
   const ownerColumn = identifier(owner.column, 'the owner column');
-  return `NOT EXISTS (SELECT 1 FROM ${ownerTable} p WHERE p.${ownerColumn} = t.${column})`;
+  const hold = evidenceHold(owned.table, 't');
+  return {
+    sql:
+      `NOT EXISTS (SELECT 1 FROM ${ownerTable} p WHERE p.${ownerColumn} = t.${column})` +
+      (hold ? ` AND ${hold.sql}` : ''),
+    params: hold ? hold.params : []
+  };
 };
 
 /** Let the server breathe between batches. Nothing is waiting on this. */
 const yieldToServer = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
 const sweepOneTable = async (owned: OwnedTable, owner: OwnerTable): Promise<number> => {
-  const sql = orphanDeleteSql(owned, owner);
+  const { sql, params } = orphanDeleteSql(owned, owner);
   let removed = 0;
 
   for (let chunk = 0; chunk < MAX_CHUNKS; chunk += 1) {
-    const batch = affectedRows(await Database.query(sql));
+    const batch = affectedRows(await Database.query(sql, params));
     removed += batch;
     if (batch < DELETE_CHUNK) return removed;
     await yieldToServer();
@@ -591,10 +629,7 @@ export const sweepOrphanedRows = async (options: SweepOptions = {}): Promise<Swe
     try {
       // Before the delete, and a throw here skips the table: see `OwnedExternal`.
       if (external) {
-        refs = await external.collect(
-          { sql: orphanWhereSql(owned, owner), params: [] },
-          COLLECT_LIMIT
-        );
+        refs = await external.collect(orphanWhere(owned, owner), COLLECT_LIMIT);
       }
       const removed = await sweepOneTable(owned, owner);
       if (removed > 0) {
@@ -625,7 +660,9 @@ export const sweepOrphanedRows = async (options: SweepOptions = {}): Promise<Swe
  *
  * A table with a registered `OwnedExternal` has what its rows name collected first and
  * released after (MICA-292) — a deleted character's hosted photos are deleted from the host,
- * unless another player's copy still names them.
+ * unless another player's copy still names them. A row under an open report is not purged at
+ * all (`evidenceHold`); the orphan sweep takes it, and releases its file, once the report
+ * resolves.
  */
 export const purgeOwnedRows = async (
   citizenid: string
@@ -641,12 +678,24 @@ export const purgeOwnedRows = async (
     const col = identifier(column, 'an owner column');
     const external = externals.get(table);
     let refs: readonly string[] = [];
+    // A reported row stays, and so does its file, until the report resolves (MICA-292).
+    const heldRow = evidenceHold(name, name);
+    const heldCollect = evidenceHold(name, 't');
     try {
       if (external) {
-        refs = await external.collect({ sql: `t.${col} = ?`, params: [owner] }, COLLECT_LIMIT);
+        refs = await external.collect(
+          {
+            sql: `t.${col} = ?${heldCollect ? ` AND ${heldCollect.sql}` : ''}`,
+            params: [owner, ...(heldCollect?.params ?? [])]
+          },
+          COLLECT_LIMIT
+        );
       }
       removed += affectedRows(
-        await Database.query(`DELETE FROM ${name} WHERE ${col} = ?`, [owner])
+        await Database.query(
+          `DELETE FROM ${name} WHERE ${col} = ?${heldRow ? ` AND ${heldRow.sql}` : ''}`,
+          [owner, ...(heldRow?.params ?? [])]
+        )
       );
     } catch (error) {
       failures.push({ table, error });

@@ -17,6 +17,7 @@ import { notifyPlayer } from '../lib/shell';
 import { restoreWindowDays } from '../lib/retention';
 import {
   isRetentionRunning,
+  openReportHold,
   parseRetentionDays,
   pruneTable,
   registerRetention
@@ -1202,13 +1203,26 @@ export const purgeMediaForCitizen = async (citizenid: string): Promise<number> =
   if (owner.length === 0) return 0;
 
   // Read before the delete, released after it — the same order retention uses (MICA-243).
+  // A photo under an open report is neither read nor deleted: it and its file stay as
+  // evidence until the report resolves, and the orphan sweep takes them then (MICA-292).
+  const heldCollect = openReportHold(media.resolved.table, 't');
   const urls = await collectMediaUrls(
-    { sql: 't.`citizenid` = ?', params: [owner] },
+    { sql: `t.\`citizenid\` = ? AND ${heldCollect.sql}`, params: [owner, ...heldCollect.params] },
     PURGE_COLLECT_LIMIT
   );
+  if (urls.length >= PURGE_COLLECT_LIMIT) {
+    console.warn(
+      `[micamedia] ${PURGE_COLLECT_LIMIT} or more photo URLs were collected for ${owner}; ` +
+        'some of what the deleted rows named may not have been released from the image host.'
+    );
+  }
 
+  const heldRow = openReportHold(media.resolved.table, 'mica_media');
   const removed = affectedRows(
-    await Database.query('DELETE FROM mica_media WHERE citizenid = ?', [owner])
+    await Database.query(`DELETE FROM mica_media WHERE citizenid = ? AND ${heldRow.sql}`, [
+      owner,
+      ...heldRow.params
+    ])
   );
   if (urls.length > 0) await releaseHosted(urls);
   return removed;

@@ -164,6 +164,15 @@ const OWNED_ROW = {
   status: 'active'
 };
 
+/**
+ * The purge's delete: the citizen's rows except any under an open report, which stay as
+ * evidence until the report resolves (MICA-292, retention's MICA-167 hold).
+ */
+const MEDIA_PURGE =
+  'DELETE FROM mica_media WHERE citizenid = ? AND NOT EXISTS (SELECT 1 FROM `mica_reports` r ' +
+  "WHERE r.`target_table` = ? AND r.`target_id` = mica_media.`id` AND r.`status` = 'active' " +
+  "AND r.`resolution` = 'pending')";
+
 /** The last SQL string handed to `Database.query`, whitespace flattened. */
 const lastQuery = (): string =>
   String(dbMock.query.mock.calls.at(-1)?.[0] ?? '').replace(/\s+/g, ' ');
@@ -531,8 +540,8 @@ describe('purging one character', () => {
     dbMock.query.mockResolvedValue({ affectedRows: 12 });
 
     expect(await purgeMediaForCitizen('CID_Z')).toBe(12);
-    expect(lastQuery()).toBe('DELETE FROM mica_media WHERE citizenid = ?');
-    expect(dbMock.query.mock.calls.at(-1)![1]).toEqual(['CID_Z']);
+    expect(lastQuery()).toBe(MEDIA_PURGE);
+    expect(dbMock.query.mock.calls.at(-1)![1]).toEqual(['CID_Z', 'mica_media']);
   });
 
   it('does nothing for an empty or non-string citizenid', async () => {
@@ -553,8 +562,8 @@ describe('purging one character', () => {
     localHandlers.get(CHARACTER_DELETED_EVENT)!('CID_Z');
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(lastQuery()).toBe('DELETE FROM mica_media WHERE citizenid = ?');
-    expect(dbMock.query.mock.calls.at(-1)![1]).toEqual(['CID_Z']);
+    expect(lastQuery()).toBe(MEDIA_PURGE);
+    expect(dbMock.query.mock.calls.at(-1)![1]).toEqual(['CID_Z', 'mica_media']);
   });
 
   it('ignores a payload that does not name a character', async () => {

@@ -243,6 +243,19 @@ export const liveReferences = (table: string): LiveReference[] => {
 };
 
 /**
+ * The open-report hold alone: true while no pending report names the row `row` qualifies in
+ * `table`. The first part of every `holdClause`, and exported so the other deletes of player
+ * content — the character purge and the orphan sweep (`lib/orphanSweep.ts`, MICA-292) — keep
+ * reported evidence by the same predicate retention does rather than a second copy of it.
+ */
+export const openReportHold = (table: string, row: string): { sql: string; params: unknown[] } => ({
+  sql:
+    `NOT EXISTS (SELECT 1 FROM \`${REPORTS_TABLE}\` r WHERE r.\`target_table\` = ? ` +
+    `AND r.\`target_id\` = ${row}.\`id\` AND ${OPEN_REPORT})`,
+  params: [identifier(table, 'a held table')]
+});
+
+/**
  * Every hold on `policy.table`, for the row qualifier `row`, with its parameters in order.
  * See the file header for what each one is.
  */
@@ -250,11 +263,9 @@ export const holdClause = (
   policy: RetentionPolicy,
   row: string
 ): { sql: string; params: unknown[] } => {
-  const parts = [
-    `NOT EXISTS (SELECT 1 FROM \`${REPORTS_TABLE}\` r WHERE r.\`target_table\` = ? ` +
-      `AND r.\`target_id\` = ${row}.\`id\` AND ${OPEN_REPORT})`
-  ];
-  const params: unknown[] = [policy.table];
+  const report = openReportHold(policy.table, row);
+  const parts = [report.sql];
+  const params: unknown[] = [...report.params];
   for (const ref of liveReferences(policy.table)) {
     parts.push(
       `NOT EXISTS (SELECT 1 FROM \`${ref.child}\` a JOIN \`${ref.parentTable}\` p ` +

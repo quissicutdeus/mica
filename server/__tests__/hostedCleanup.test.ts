@@ -94,11 +94,27 @@ const logged = (): string =>
     .map(String)
     .join('\n');
 
+/** One of the deleted character's media rows; `reported` is an open report naming it. */
+interface Row {
+  url: string;
+  reported?: boolean;
+}
+
+/** Whether a statement carries retention's open-report hold on the row (MICA-167). */
+const holdsReports = (sql: string) =>
+  sql.includes('FROM `mica_reports` r WHERE r.`target_table` = ?') &&
+  sql.includes("r.`status` = 'active' AND r.`resolution` = 'pending'");
+
 /**
- * A database whose media rows name `urls`, where `SHARED` is still on another player's row
- * after the delete, and whose ledger has recorded `old.example.test` as an image host.
+ * A database holding the deleted character's media `rows`, which the collect and the delete
+ * act on as MariaDB would: a statement carrying the open-report hold skips a reported row,
+ * one without it takes every row. The delete removes what it matched, so the reference check
+ * afterwards sees what survived. `SHARED` is also on another player's row throughout, and the
+ * ledger has recorded `old.example.test` as an image host. Answers the live rows.
  */
-const mediaRows = (urls: string[], options: { collectFails?: boolean } = {}) => {
+const mediaRows = (input: (string | Row)[], options: { collectFails?: boolean } = {}) => {
+  const rows: Row[] = input.map((r) => (typeof r === 'string' ? { url: r } : r));
+  const matched = (sql: string) => rows.filter((r) => !(r.reported && holdsReports(sql)));
   dbMock.single.mockImplementation(async (sql: string) => {
     if (sql.includes('AS total')) return { total: 120 };
     if (sql.includes('AS matched')) return { matched: 3 };
@@ -108,17 +124,26 @@ const mediaRows = (urls: string[], options: { collectFails?: boolean } = {}) => 
   dbMock.query.mockImplementation(async (sql: string, params: unknown[] = []) => {
     if (isCollect(sql)) {
       if (options.collectFails) throw new Error('collect failed');
-      return urls.map((url) => ({ url }));
+      return matched(sql).map(({ url }) => ({ url }));
     }
     if (isReferenceCheck(sql)) {
-      return params.filter((url) => url === SHARED).map((url) => ({ url }));
+      const live = new Set([SHARED, ...rows.map((r) => r.url)]);
+      return params.filter((url) => live.has(url as string)).map((url) => ({ url }));
     }
     if (isLedgerRead(sql)) return [{ id: 'mediahost:old.example.test' }];
     if (sql.startsWith('SELECT DISTINCT')) return [{ owner: 'CID_A' }];
+    if (sql.startsWith('DELETE FROM mica_media')) {
+      const gone = matched(sql);
+      for (const row of gone) rows.splice(rows.indexOf(row), 1);
+      return { affectedRows: gone.length };
+    }
     if (sql.trimStart().startsWith('DELETE')) return { affectedRows: 1 };
     return [];
   });
+  return rows;
 };
+
+const isMediaPurge = (sql: string) => sql.startsWith('DELETE FROM mica_media WHERE citizenid = ?');
 
 const requested = (): string[] => fetchMock.mock.calls.map((call: any[]) => String(call[0]));
 
@@ -150,12 +175,12 @@ describe('shell:characterDeleted releases the character’s hosted photos', () =
 
     const all = statements();
     const collect = all.findIndex(isCollect);
-    const remove = all.indexOf('DELETE FROM mica_media WHERE citizenid = ?');
+    const remove = all.findIndex(isMediaPurge);
     const check = all.findIndex(isReferenceCheck);
     expect(collect).toBeGreaterThanOrEqual(0);
     expect(collect).toBeLessThan(remove);
     expect(remove).toBeLessThan(check);
-    expect(dbMock.query.mock.calls[collect][1]).toEqual(['CID_Z']);
+    expect(dbMock.query.mock.calls[collect][1]).toEqual(['CID_Z', 'mica_media']);
     expect(requested()).toEqual(['https://api.example.test/files/mine.webp']);
   });
 
@@ -182,7 +207,7 @@ describe('shell:characterDeleted releases the character’s hosted photos', () =
     const { failures } = await purgeOwnedRows('CID_Z');
 
     expect(failures.map((f) => f.table)).toContain('mica_media');
-    expect(statements()).not.toContain('DELETE FROM mica_media WHERE citizenid = ?');
+    expect(statements().some(isMediaPurge)).toBe(false);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
@@ -225,6 +250,56 @@ describe('the orphan sweep releases what the swept rows named', () => {
     expect(result.failures.map((f) => f.table)).toContain('mica_media');
     expect(statements().some((sql) => sql.startsWith('DELETE FROM mica_media'))).toBe(false);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Review of MICA-292: once the purge and the sweep delete the hosted file, a player under an
+ * open report could delete their character and destroy the reported photo. Retention never
+ * could (MICA-167); these now hold the same rows by the same predicate.
+ */
+describe('a photo under an open report is kept as evidence', () => {
+  const EVIDENCE = 'https://img.example.test/p/evidence.webp';
+  const EVIDENCE_DELETE = 'https://api.example.test/files/evidence.webp';
+
+  it('survives shell:characterDeleted, row and file, while the rest go', async () => {
+    const rows = mediaRows([MINE, { url: EVIDENCE, reported: true }]);
+
+    await purgeOwnedRows('CID_Z');
+
+    expect(rows.map((r) => r.url)).toEqual([EVIDENCE]);
+    expect(requested()).toEqual(['https://api.example.test/files/mine.webp']);
+  });
+
+  it('survives the media-only purge too', async () => {
+    const rows = mediaRows([MINE, { url: EVIDENCE, reported: true }]);
+
+    await purgeMediaForCitizen('CID_Z');
+
+    expect(rows.map((r) => r.url)).toEqual([EVIDENCE]);
+    expect(requested()).not.toContain(EVIDENCE_DELETE);
+  });
+
+  it('survives the orphan sweep', async () => {
+    const rows = mediaRows([MINE, { url: EVIDENCE, reported: true }]);
+
+    await sweepOrphanedRows();
+
+    expect(rows.map((r) => r.url)).toEqual([EVIDENCE]);
+    expect(requested()).toEqual(['https://api.example.test/files/mine.webp']);
+  });
+
+  it('is released by the next orphan sweep once the report resolves', async () => {
+    const rows = mediaRows([{ url: EVIDENCE, reported: true }]);
+    await purgeOwnedRows('CID_Z');
+    expect(requested()).toEqual([]);
+
+    // The report is resolved. The character is already gone, so the row is an orphan now.
+    rows[0].reported = false;
+    await sweepOrphanedRows();
+
+    expect(rows).toEqual([]);
+    expect(requested()).toEqual([EVIDENCE_DELETE]);
   });
 });
 

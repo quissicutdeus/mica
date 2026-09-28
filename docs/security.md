@@ -658,15 +658,19 @@ by this list until someone re-weighs it.
   the orphan sweep — reads the rows' URLs before the `DELETE` and asks the host
   to delete each file no remaining row names (`lib/mediaHost.ts`
   `releaseHostedImages`); if it cannot read them it does not delete the rows.
-  Two cases are accepted rather than closed. **The `ON DELETE CASCADE` from
-  `players`** on qb removes a character's `mica_media` rows inside MariaDB when
-  the framework deletes the character; micaOS runs no code and sees no URL, and
-  afterwards nothing names the file, so finding it would take a listing API on
-  the host, which `mica_media_upload_url` does not promise, or a separate record
-  of every uploaded URL, which would be a schema change. The mitigation is
-  ordering, the owner's to choose: trigger `mica:server:shell:characterDeleted`
-  before the framework deletes the character. A resource-start warning says so
-  whenever an image host is set and `mica_media` carries a cascading constraint
+  The purges and the sweep also keep any row under an open report, and its file,
+  by retention's own predicate (`openReportHold`), so deleting a character
+  cannot destroy reported evidence; the next orphan sweep takes it once the
+  report resolves. Two cases are accepted rather than closed. **The
+  `ON DELETE CASCADE` from `players`** on qb removes a character's `mica_media`
+  rows inside MariaDB when the framework deletes the character; micaOS runs no
+  code and sees no URL, and afterwards nothing names the file, so finding it
+  would take a listing API on the host, which `mica_media_upload_url` does not
+  promise, or a separate record of every uploaded URL, which would be a schema
+  change. The mitigation is ordering, the owner's to choose: trigger
+  `mica:server:shell:characterDeleted` before the framework deletes the
+  character. A resource-start warning says so whenever an image host is set and
+  `mica_media` carries a cascading constraint
   (`warnIfCascadeHidesHostedPhotos`). **A former image host's files** are
   recognised by a host record micaOS writes to `mica_schema_migrations` when it
   uploads and at start, counted and logged by host when their last row goes, and
