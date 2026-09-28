@@ -26,6 +26,8 @@
   "profileUpdated": "Profile updated",
   "followingEmpty": "Nothing from anyone yet",
   "followingEmptyHint": "Follow somebody from their profile and their Blabs turn up here.",
+  "noFollowersYet": "No followers yet",
+  "notFollowingAnyone": "Not following anyone",
   "feedEmpty": "Nothing here yet",
   "feedEmptyHint": "Be the first to say something.",
   "closeMenu": "Close menu",

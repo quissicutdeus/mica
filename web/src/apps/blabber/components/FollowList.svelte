@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { Avatar, EmptyState, ListItem, Skeleton, usePagedList } from '@mica/sdk';
+  import { Avatar, EmptyState, ListItem, Skeleton, useLocale, usePagedList } from '@mica/sdk';
   import { useBlabber } from '../store';
   import type { Account } from '@mica/shared/types';
 
@@ -35,6 +35,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   } = $props();
 
   const { followers, following, loadFollowers, loadFollowingList } = useBlabber();
+  const { t } = useLocale();
 
   const store = $derived(kind === 'followers' ? followers : following);
 
@@ -89,7 +90,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   {:else if rows.length === 0}
     <!-- Two different sentences, because they are two different facts about the same empty list. -->
     <EmptyState
-      title={kind === 'followers' ? 'No followers yet' : 'Not following anyone'}
+      title={kind === 'followers' ? $t('blabber.noFollowersYet') : $t('blabber.notFollowingAnyone')}
       description={kind === 'followers'
         ? `Nobody follows @${handle} yet.`
         : `@${handle} has not followed anybody yet.`}
