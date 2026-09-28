@@ -92,6 +92,32 @@ describe('MediaThumb', () => {
       );
     });
 
+    /**
+     * A photo on an image host (MICA-243) has a `url` and a `thumbnail` and no `data`. The
+     * grid wants the thumbnail; the full view wants the hosted original, not the thumbnail
+     * upscaled — the same trap as the bytes case above, one column over.
+     */
+    describe('a hosted photo', () => {
+      const hosted = item({
+        thumbnail: 'data:image/webp;base64,SMALL',
+        url: 'https://img.example.test/p/abc.webp'
+      });
+
+      it('draws the thumbnail in a tile', () => {
+        const { container } = render(MediaThumb, { item: hosted });
+        expect(container.querySelector('img')?.getAttribute('src')).toBe(
+          'data:image/webp;base64,SMALL'
+        );
+      });
+
+      it('draws the hosted original when the caller asks for it', () => {
+        const { container } = render(MediaThumb, { item: hosted, prefer: 'original' });
+        expect(container.querySelector('img')?.getAttribute('src')).toBe(
+          'https://img.example.test/p/abc.webp'
+        );
+      });
+    });
+
     it('does not promote a url that is not an image, even asked for the original', () => {
       // A video's `url` is an .mp4 and passes a scheme check happily. Which kinds have an
       // image behind a URL is a fact about the row, not a preference of the caller.

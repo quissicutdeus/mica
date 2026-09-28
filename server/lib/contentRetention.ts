@@ -135,6 +135,23 @@ export interface RetentionPolicy {
   dependents?: readonly RetentionDependent[];
   /** Holds only the owning service can express. See `RetentionHold`. */
   holds?: readonly RetentionHold[];
+  /** What the rows point at outside the database, released once they are gone. */
+  external?: RetentionExternal;
+}
+
+/**
+ * Something a pruned row names outside the database — a photo on an image host (MICA-243).
+ *
+ * `collect` runs before each batch's delete, because afterwards the rows are gone and so is
+ * the reference; it is a query like the select, and if it throws the batch is not deleted,
+ * since deleting the rows would strand whatever they named. `release` runs after, with what
+ * `collect` answered, and decides for itself what nothing references any more — a row the
+ * delete's re-check spared still does. A failed release is logged and the prune carries on:
+ * the rows are already deleted, and a host outage must not stop the next batch.
+ */
+export interface RetentionExternal {
+  collect: (ids: readonly number[]) => Promise<readonly string[]>;
+  release: (refs: readonly string[]) => Promise<void>;
 }
 
 const policies = new Map<string, RetentionPolicy>();
@@ -527,6 +544,7 @@ export const pruneTable = async (policy: RetentionPolicy): Promise<number> => {
       if (ids.length === 0) return removed;
 
       const marks = ids.map(() => '?').join(', ');
+      const refs = policy.external ? await policy.external.collect(ids) : [];
       // Every hold and the window are asked again, so a report filed since the select wins.
       removed += affectedRows(
         await Database.query(
@@ -550,6 +568,14 @@ export const pruneTable = async (policy: RetentionPolicy): Promise<number> => {
             `AND NOT EXISTS (SELECT 1 FROM \`${table}\` p WHERE p.\`id\` = \`${depTable}\`.\`${depColumn}\`)`,
           dep.scope ? [...ids, dep.scope.value] : ids
         );
+      }
+
+      if (policy.external && refs.length > 0) {
+        try {
+          await policy.external.release(refs);
+        } catch (error) {
+          console.error(`[${policy.label}] releasing what the pruned rows named failed:`, error);
+        }
       }
 
       if (ids.length < RETENTION_BATCH) return removed;

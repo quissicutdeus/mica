@@ -87,17 +87,19 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * at all, and for a heavy GIF it is the cheaper frame. `data` next, because that is where
    * a local capture puts its bytes. `url` last, and only where it is an image.
    *
-   * At `prefer: 'original'` the first two swap, and only those two: `url` stays last and
-   * stays gated the same way, because which kinds have an image behind a URL is a fact
-   * about the row rather than a preference of the caller. A video asked for its original
-   * still resolves to its poster, since `data` is empty and its `url` is an `.mp4`.
+   * At `prefer: 'original'` the original comes first wherever it lives — `data` for a
+   * local capture, `url` for a photo on an image host (MICA-243), which has no `data` at all
+   * and would otherwise open as its own thumbnail upscaled — and `thumbnail` last. `url`
+   * stays gated the same way at both, because which kinds have an image behind a URL is a
+   * fact about the row rather than a preference of the caller. A video asked for its
+   * original still resolves to its poster, since `data` is empty and its `url` is an `.mp4`.
    */
   const bytes = $derived(safe(item.data));
   const poster = $derived(safe(item.thumbnail));
   const linked = $derived(URL_IS_AN_IMAGE.has(item.kind) ? safe(item.url) : undefined);
 
   let still = $derived(
-    prefer === 'original' ? (bytes ?? poster ?? linked) : (poster ?? bytes ?? linked)
+    prefer === 'original' ? (bytes ?? linked ?? poster) : (poster ?? bytes ?? linked)
   );
 
   let label = $derived(alt ?? item.alt_text ?? `${item.kind} ${item.id}`);

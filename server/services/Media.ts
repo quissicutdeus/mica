@@ -21,6 +21,14 @@ import {
   pruneTable,
   registerRetention
 } from '../lib/contentRetention';
+import {
+  imageHost,
+  isHostedUrl,
+  releaseHostedImages,
+  reportRelease,
+  uploadConfig,
+  uploadImage
+} from '../lib/mediaHost';
 
 /**
  * The media table: owner-scoped, create/read/delete only.
@@ -132,7 +140,45 @@ const assertStorableData = (value: unknown): void => {
  * hotlinked `url`, none of the above holds — a `mediumtext` cannot take a clip, and the
  * `url` column is already the seam that lets a future storage backend arrive without
  * touching the reads. That is a ticket of its own, not a side effect of this one.
+ *
+ * **MICA-243 made the other answer available without making it the default.** An owner who
+ * sets `mica_media_upload_url` has chosen the credential, the dependency and the bill above,
+ * so for them a photo's bytes go to that host and the row keeps the URL — through that same
+ * `url` seam, so every read already draws it. Unset, everything above still holds and
+ * nothing changes. `hostPhoto` below is the one place the choice is made, and
+ * `lib/mediaHost.ts` carries the rules: server-side upload, the URL checked before it is
+ * stored, and a failed upload falling back to exactly this database path.
  */
+
+/**
+ * Kinds whose `data` is an image, and so the only kinds that are ever sent to a host.
+ *
+ * The same set `MediaThumb` draws a `url` for (`URL_IS_AN_IMAGE`): a hosted row keeps only
+ * its URL, so hosting a kind whose URL is not drawn as an image would turn a photo into a
+ * placeholder. A location's `data` is JSON and a voice note's is a clip — neither is posted.
+ */
+const HOSTABLE_KINDS = new Set(['photo', 'gif', 'sticker']);
+
+/**
+ * `item` with its bytes moved to the image host, or `item` unchanged. MICA-243.
+ *
+ * Unchanged when no host is configured, when the row is not an image kind, and — the rule
+ * that matters — **when the upload fails for any reason**: `uploadImage` logs and answers
+ * `null`, and the caller writes the bytes to the database as it always did. A host outage
+ * is a slower, fatter row, never a lost photo.
+ *
+ * On success `data` is left out rather than nulled, so the insert names no column it does
+ * not write, and `mime_type` records what the host was sent. `url` is `clientWritable:
+ * false` and stays so: the value here came from the host through `validateHostedUrl`, never
+ * from a payload, and this runs after `ServiceEndpoint` has already reduced the payload.
+ */
+const hostPhoto = async (item: Partial<MediaItem>): Promise<Partial<MediaItem>> => {
+  if (!HOSTABLE_KINDS.has(item.kind ?? 'photo') || typeof item.data !== 'string') return item;
+  const hosted = await uploadImage(item.data);
+  if (!hosted) return item;
+  const { data: _bytes, ...rest } = item;
+  return { ...rest, url: hosted.url, mime_type: hosted.mimeType };
+};
 
 /**
  * The default ceiling on one player's live media, in mebibytes.
@@ -417,7 +463,10 @@ export const media = defineService<MediaItem, typeof mediaContract>({
         // `shareLocation` does, from the request; `AddMedia` does not, and a row on no phone
         // is one no phone ever shows.
         const phone_id = item.phone_id ?? (await phoneForCitizen(citizenid));
-        return await super.create({ ...item, citizenid, phone_id } as Partial<MediaItem>);
+        // An `AddMedia` photo goes to the host too, when there is one (MICA-243); a
+        // location's JSON never does, by kind.
+        const stored = await hostPhoto(item);
+        return await super.create({ ...stored, citizenid, phone_id } as Partial<MediaItem>);
       }
 
       /**
@@ -435,8 +484,11 @@ export const media = defineService<MediaItem, typeof mediaContract>({
        * check it — a resource a server owner installed is not a client payload, and the
        * argument `super.create` already carries for the per-row cap applies unchanged.
        */
-      async create(item: Partial<MediaItem>): Promise<number> {
-        assertStorableData(item.data);
+      async create(payload: Partial<MediaItem>): Promise<number> {
+        // Bounded before anything else, so an oversized payload is refused rather than
+        // posted to a host (MICA-243) and then refused.
+        assertStorableData(payload.data);
+        const item = await hostPhoto(payload);
 
         const limit = quotaBytes();
         const citizenid = item.citizenid;
@@ -979,18 +1031,41 @@ const affectedRows = (result: unknown): number => {
 const retentionDays = (): number =>
   parseRetentionDays(GetConvar('mica_media_retention', ''), 365, 'mica_media_retention');
 
+/**
+ * The hosted URLs among `ids`, read before their rows are deleted (MICA-243). Only URLs that
+ * pass `isHostedUrl`: a hotlinked GIF from somebody else's CDN is not ours to delete.
+ */
+const hostedUrlsOf = async (ids: readonly number[]): Promise<string[]> => {
+  if (ids.length === 0) return [];
+  const rows = await Database.query<{ url: unknown }[]>(
+    `SELECT DISTINCT \`url\` FROM \`mica_media\` ` +
+      `WHERE \`id\` IN (${ids.map(() => '?').join(', ')}) AND \`url\` IS NOT NULL`,
+    [...ids]
+  );
+  return (Array.isArray(rows) ? rows : []).map((row) => row.url).filter(isHostedUrl);
+};
+
+/** Ask the host to delete what the deleted rows named, and say what happened. */
+const releaseHosted = async (urls: readonly string[]): Promise<void> => {
+  reportRelease('micamedia', await releaseHostedImages(urls));
+};
+
 const mediaRetention = {
   label: 'micamedia',
   table: media.resolved.table,
   convar: 'mica_media_retention',
-  days: retentionDays
+  days: retentionDays,
+  // A hosted photo's file goes with its row, or is reported as left behind (MICA-243).
+  external: { collect: hostedUrlsOf, release: releaseHosted }
 };
 registerRetention(mediaRetention);
 
 /**
  * Delete every media row older than the retention window. **A hard delete of the bytes**:
- * media is stored in-row (`data`, `thumbnail`), so removing the row is removing the photo —
- * there is no file or bucket behind it to leave behind.
+ * media is stored in-row (`data`, `thumbnail`), so removing the row is removing the photo.
+ * The exception is a photo on an image host (MICA-243): its file is deleted through
+ * `mica_media_delete_url` once no row names it, or counted and reported as left there when
+ * that is not set.
  *
  * Worth being exact about, because the word means two different things in this schema
  * (MICA-75): a player deleting a photo writes `status = 'deleted'` and the row keeps
@@ -1056,7 +1131,18 @@ export const purgeMediaForCitizen = async (citizenid: string): Promise<number> =
   const owner = typeof citizenid === 'string' ? citizenid.trim() : '';
   if (owner.length === 0) return 0;
 
-  return affectedRows(await Database.query('DELETE FROM mica_media WHERE citizenid = ?', [owner]));
+  // Read before the delete, released after it — the same order retention uses (MICA-243).
+  const rows = await Database.query<{ url: unknown }[]>(
+    'SELECT DISTINCT `url` FROM `mica_media` WHERE `citizenid` = ? AND `url` IS NOT NULL',
+    [owner]
+  );
+  const hosted = (Array.isArray(rows) ? rows : []).map((row) => row.url).filter(isHostedUrl);
+
+  const removed = affectedRows(
+    await Database.query('DELETE FROM mica_media WHERE citizenid = ?', [owner])
+  );
+  if (hosted.length > 0) await releaseHosted(hosted);
+  return removed;
 };
 
 /**
@@ -1105,9 +1191,17 @@ on('mica:server:media:characterDeleted', (rawCitizenid: unknown) => {
 const logMediaLimits = (): void => {
   const limit = quotaBytes();
   const days = retentionDays();
+  // Where a new photo goes (MICA-243). Only the host name: the upload header is a secret.
+  const upload = uploadConfig();
+  const host = imageHost();
+  const storage = upload
+    ? `photos uploaded to ${upload.host}`
+    : host
+      ? `photos in the database, earlier hosted photos drawn from ${host}`
+      : 'photos in the database';
   console.log(
     `[micamedia] per-player quota ${limit > 0 ? formatBytes(limit) : 'off'}, ` +
-      `retention ${days > 0 ? `${days} day(s)` : 'off'}.`
+      `retention ${days > 0 ? `${days} day(s)` : 'off'}, ${storage}.`
   );
 };
 

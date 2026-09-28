@@ -49,6 +49,16 @@
  *   small font face as a `data:` URI, which `default-src 'none'` would otherwise refuse.
  *   `'self'` is deliberately not here: the frame is `sandbox="allow-scripts"` with no
  *   `allow-same-origin`, so its origin is opaque and `'self'` matches nothing.
+ * - `img-src` alone also carries the server's **image host**, when it has one (MICA-243).
+ *   An owner who sets `mica_media_upload_url` makes the media service deliver `https:`
+ *   URLs on that one origin instead of `data:` URIs, so the MICA-202 finding above stops
+ *   being true for them — and a gallery add-on would draw every photo broken. The origin
+ *   goes into `img-src` and nowhere else: not `connect-src`, so an add-on still cannot
+ *   `fetch` it, and not `media-src`/`font-src`, which it has no reason to serve. It is one
+ *   exact `https://<host>` the owner configured, checked twice on the way here
+ *   (`server/lib/mediaHost.ts`, `services/imageHost.ts`), never a wildcard. What it opens
+ *   is stated plainly: an add-on can beacon to the image host with an `<img>`, exactly as
+ *   it can to its own `networkHosts`. An owner who hosts images has chosen that host.
  * - `script-src` / `style-src` — **exactly as before this existed**. Unset with no
  *   `default-src` meant unrestricted; under a `default-src 'none'` floor, "unrestricted"
  *   has to be written out, which is what the scheme list and the two `'unsafe-'` keywords
@@ -81,7 +91,7 @@
  * remains is the sandbox's own self-navigation, which no directive Chromium ships can
  * stop and which the host counts documents to catch (`IframeHostServer.ts`).
  */
-function cspFor(networkHosts: readonly string[]): string {
+function cspFor(networkHosts: readonly string[], imageHosts: readonly string[]): string {
   /**
    * An empty list is `'none'`, not an omitted directive — CSP has no bare "block
    * everything" keyword for one directive alone, and omitting `connect-src` entirely would
@@ -95,10 +105,12 @@ function cspFor(networkHosts: readonly string[]): string {
    * again, which is what MICA-202 closed.
    */
   const loads = ['data:', 'blob:', ...networkHosts].join(' ');
+  /** Images alone may also come from the server's image host (MICA-243). */
+  const images = [...new Set(['data:', 'blob:', ...networkHosts, ...imageHosts])].join(' ');
   const policy = [
     "default-src 'none'",
     `connect-src ${connect}`,
-    `img-src ${loads}`,
+    `img-src ${images}`,
     `media-src ${loads}`,
     `font-src ${loads}`,
     "script-src 'unsafe-inline' 'unsafe-eval' https: http: data: blob:",
@@ -121,11 +133,15 @@ function cspFor(networkHosts: readonly string[]): string {
  * fallback listener below is added first, in a plain (non-module) script, so it is live
  * before the module script is even parsed.
  */
-export function srcdocFor(code: string, networkHosts: readonly string[] = []): string {
+export function srcdocFor(
+  code: string,
+  networkHosts: readonly string[] = [],
+  imageHosts: readonly string[] = []
+): string {
   const escaped = code.replace(/<\/script/gi, '<\\/script').replace(/<!--/g, '<\\!--');
   return [
     '<!doctype html><html><head><meta charset="utf-8">',
-    cspFor(networkHosts),
+    cspFor(networkHosts, imageHosts),
     '<style>html,body{margin:0;height:100%;background:transparent;overflow:hidden}#app{height:100%}</style>',
     `<script>window.addEventListener('error', (e) => parent.postMessage({ kind: 'error', message: String((e.error && e.error.message) || e.message), stack: e.error instanceof Error ? (e.error.stack ?? null) : null }, '*'));</script>`,
     '</head><body><div id="app"></div>',

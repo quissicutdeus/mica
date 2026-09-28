@@ -20,6 +20,7 @@ import './Lockscreen';
 import './Mail';
 import './Marketplace';
 import './Media';
+import './MediaHost';
 import './Messages';
 import './Music';
 import './Notes';

@@ -2487,6 +2487,13 @@ const mockRegistry: Record<string, MockHandler> = {
    * stands in for a server running an unmodified copy — which is what a browser session is.
    */
   'shell:sourceUrl': () => ({ url: 'https://github.com/quissicutdeus/mica' }),
+
+  /**
+   * MICA-243: no image host. The browser mock stores every photo as a `data:` URI, which is
+   * what a server without `mica_media_upload_url` does, so the add-on CSP stays as narrow as
+   * it was.
+   */
+  'shell:imageHost': () => ({ origin: null }),
   // MICA-61: no owner default in the browser, so the player's own language decides.
   'shell:locale': () => ({ locale: '' }),
   // MICA-235: a language only the "server" knows, so Settings > Language and the e2e suite

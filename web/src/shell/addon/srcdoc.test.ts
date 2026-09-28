@@ -141,6 +141,30 @@ describe('srcdocFor', () => {
       }
     });
 
+    /**
+     * MICA-243: a server that hosts its photos hands add-ons `https:` URLs on one origin.
+     * That origin reaches `img-src` and nothing else — an add-on may draw a hosted photo,
+     * and may not `fetch` the host, play media from it or load a font from it.
+     */
+    it('adds the image host to img-src and to no other directive', () => {
+      const directives = policy(
+        srcdocFor('x', ['https://api.example.com'], ['https://img.example.test'])
+      );
+      expect(directives).toContain(
+        'img-src data: blob: https://api.example.com https://img.example.test'
+      );
+      expect(directives).toContain('connect-src https://api.example.com');
+      expect(directives).toContain('media-src data: blob: https://api.example.com');
+      expect(directives).toContain('font-src data: blob: https://api.example.com');
+    });
+
+    it('keeps connect-src shut when the image host is the only host', () => {
+      const directives = policy(srcdocFor('x', [], ['https://img.example.test']));
+      expect(directives).toContain("connect-src 'none'");
+      expect(directives).toContain('img-src data: blob: https://img.example.test');
+      expect(directives).toContain('media-src data: blob:');
+    });
+
     it('emits exactly one CSP meta, so no directive is silently duplicated', () => {
       const html = srcdocFor('x', ['https://api.example.com']);
       expect(html.match(/http-equiv="Content-Security-Policy"/g)).toHaveLength(1);

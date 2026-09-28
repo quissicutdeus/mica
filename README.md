@@ -719,6 +719,12 @@ set mica_notification_retention 30
 set mica_restore_window_days 30
 set mica_media_quota_mb 64
 set mica_media_retention 365
+set mica_media_upload_url ""
+set mica_media_upload_header ""
+set mica_media_upload_field "file"
+set mica_media_upload_response_path "url"
+set mica_media_image_host ""
+set mica_media_delete_url ""
 set mica_message_retention 180
 set mica_dm_retention 90
 set mica_orphan_owner_table ""
@@ -764,6 +770,12 @@ set mica_default_contacts ""
 | `mica_camera_quality`              | integer, 1-100                                          | `95`                   | Encode quality of a stored photo (needs `setr`)                                                                                       |
 | `mica_media_quota_mb`              | integer, MiB                                            | `64`                   | Storage one player's photo library may occupy                                                                                         |
 | `mica_media_retention`             | integer, days, or `off`                                 | `365`                  | How long stored media is kept; a photo still attached to a message, blab or listing is never removed                                  |
+| `mica_media_upload_url`            | https URL                                               | empty (off)            | Image host photos are posted to instead of stored in the database                                                                     |
+| `mica_media_upload_header`         | `Name: value`                                           | empty (none)           | One header sent with every upload and delete, usually the API key (`set`, never `setr`)                                               |
+| `mica_media_upload_field`          | form field name                                         | `file`                 | Multipart field the photo is posted in                                                                                                |
+| `mica_media_upload_response_path`  | dot path                                                | `url`                  | Where the photo's URL is in the host's JSON reply, e.g. `data.link`                                                                   |
+| `mica_media_image_host`            | host name                                               | the upload URL's host  | The only host a returned photo URL may be on                                                                                          |
+| `mica_media_delete_url`            | https URL with `{url}` or `{name}`                      | empty (off)            | Endpoint a retention prune sends `DELETE` to for a hosted photo                                                                       |
 | `mica_message_retention`           | integer, days, or `off`                                 | `180`                  | How long text messages are kept                                                                                                       |
 | `mica_dm_retention`                | integer, days, or `off`                                 | `90`                   | How long Blabber direct messages are kept                                                                                             |
 | `mica_orphan_owner_table`          | `table.column`                                          | empty (off)            | Overrides which table the orphan sweep checks against                                                                                 |
@@ -1019,6 +1031,29 @@ the convar is invisible until the resource restarts.
   `retention:<table>:<days>d` rows in `mica_schema_migrations`; deleting one
   restarts that table's notice. Run `micamedia` first to see how large the media
   table is.
+- **Image hosting: `mica_media_upload_url` and its five companions (MICA-243).**
+  Off by default, and off means photos are base64 in `mica_media` exactly as
+  above. Set `mica_media_upload_url` to an https upload endpoint and the server
+  posts each new photo there as `multipart/form-data`, in the field
+  `mica_media_upload_field` names, reads the URL from the JSON reply at
+  `mica_media_upload_response_path` (`url`, or `data.link`, or `files.0.url`),
+  and stores that URL instead of the bytes. `mica_media_upload_header` is one
+  `Name: value` header sent with it — `Authorization: Bearer <key>`, say. It is
+  read only on the server and never sent to a player, **so set it with `set`,
+  never `setr`**, which would replicate your key to every client. A returned URL
+  is stored only if it is `https://` on exactly `mica_media_image_host` (by
+  default the upload URL's own host), on the default port, with no credentials
+  or quotes in it, and fits the 512-character column. **A failed upload never
+  loses a photo**: refused, timed out, unreadable or a URL that fails that
+  check, the photo is stored in the database as if no host were configured, and
+  the console says why. Old base64 photos keep working, and the phone draws
+  either kind; Store add-ons may load images from the image host and from
+  nowhere else new. Thumbnails stay in the database — they are small. When
+  retention deletes a hosted photo's last row, micaOS sends `DELETE` to
+  `mica_media_delete_url` with `{url}` replaced by the photo's URL and `{name}`
+  by its file name, both URL-encoded, and the same header. Without that convar
+  the files are left on the host and the console counts them after every prune.
+  A hosted photo is still a row, so the quota counts only its thumbnail.
 
 Two things about media storage that are not convars, since this is where you
 will be looking if the table is bigger than you expected. micaOS removes a

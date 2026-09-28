@@ -38,6 +38,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { appRegistryStore } from '../state/registry';
   import { createIframeHostServer } from './IframeHostServer';
   import { srcdocFor } from './srcdoc';
+  import { get } from 'svelte/store';
+  import { imageHostOrigin } from '../../services/imageHost';
   import { markWidgetBooting, markWidgetSettled, pausedWidgets } from './widgetPause';
 
   let { appId, size }: { appId: string; size: WidgetSize } = $props();
@@ -57,6 +59,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       manifest.core === false &&
       (manifest.widget?.sizes.includes(size) ?? false)
   );
+
+  /**
+   * The server's image host for this frame's `img-src` (MICA-243), read once when the
+   * document is built and deliberately not subscribed: a changed `srcdoc` is a second
+   * document load, which the host treats as a navigation and tears the frame down for.
+   * The answer lands at boot, well before any add-on is opened.
+   */
+  const imageHosts = (): string[] => {
+    const origin = untrack(() => get(imageHostOrigin));
+    return origin ? [origin] : [];
+  };
 
   let source = $state<string | undefined>();
   let stopped = $state(false);
@@ -141,7 +154,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     data-widget={appId}
     data-size={size}
     sandbox="allow-scripts"
-    srcdoc={srcdocFor(source, manifest.networkHosts)}
+    srcdoc={srcdocFor(source, manifest.networkHosts, imageHosts())}
     onload={handleLoad}
     tabindex="-1"
     inert

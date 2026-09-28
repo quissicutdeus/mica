@@ -8,13 +8,14 @@ import { s } from '../schema';
 
 /**
  * The phone itself — `shell` is one of the two non-app service scopes, and the only contract
- * split across two endpoints.
+ * split across several endpoints.
  *
- * `server/services/Capabilities.ts` and `server/services/Source.ts` each construct their own
- * `ServiceEndpoint('shell', …)` and register one action, so both pass this same contract and
- * each is checked against its own half of it. That is why the contract is keyed on the service
- * id rather than on an endpoint: the id is what the `<service>` segment of an event carries,
- * and nothing on the wire knows which file registered a handler.
+ * `server/services/Capabilities.ts`, `server/services/Source.ts` and
+ * `server/services/MediaHost.ts` each construct their own `ServiceEndpoint('shell', …)` and
+ * register their actions, so all pass this same contract and each is checked against its own
+ * part of it. That is why the contract is keyed on the service id rather than on an endpoint:
+ * the id is what the `<service>` segment of an event carries, and nothing on the wire knows
+ * which file registered a handler.
  *
  * Neither action reads a payload. The answer is a property of the server, identical for every
  * caller, so `s.none()` is the honest declaration — and it also means growing one is a decision
@@ -33,6 +34,11 @@ export const shellContract = defineContract({
       output: responseType<{ money: boolean; jobs: boolean }>()
     },
     sourceUrl: { input: s.none(), output: responseType<{ url: string }>() },
+    /**
+     * MICA-243: the origin hosted photos are served from, `https://<host>`, or `null` when
+     * photos stay in the database. The add-on CSP adds it to `img-src` and nowhere else.
+     */
+    imageHost: { input: s.none(), output: responseType<{ origin: string | null }>() },
     /** MICA-61: the owner's default language (`mica_locale`), or '' when unset. */
     locale: { input: s.none(), output: responseType<{ locale: string }>() },
     /**

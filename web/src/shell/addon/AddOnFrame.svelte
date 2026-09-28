@@ -12,6 +12,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { appRegistryStore } from '../state/registry';
   import { createIframeHostServer } from './IframeHostServer';
   import { srcdocFor } from './srcdoc';
+  import { get } from 'svelte/store';
+  import { imageHostOrigin } from '../../services/imageHost';
   import { goHome } from '../state/navigation';
   import AppCrashed from '../AppCrashed.svelte';
 
@@ -41,6 +43,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     }) => void;
     onTyping: (typing: boolean) => void;
   } = $props();
+
+  /**
+   * The server's image host for this frame's `img-src` (MICA-243), read once when the
+   * document is built and deliberately not subscribed: a changed `srcdoc` is a second
+   * document load, which the host treats as a navigation and tears the frame down for.
+   * The answer lands at boot, well before any add-on is opened.
+   */
+  const imageHosts = (): string[] => {
+    const origin = untrack(() => get(imageHostOrigin));
+    return origin ? [origin] : [];
+  };
 
   let source = $state<string | undefined>();
   let crashed = $state<{ message: string; stack: string | null } | null>(null);
@@ -239,7 +252,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       title={manifest.name}
       data-app={appId}
       sandbox="allow-scripts"
-      srcdoc={srcdocFor(source, manifest.networkHosts)}
+      srcdoc={srcdocFor(source, manifest.networkHosts, imageHosts())}
       onload={handleLoad}
       class="h-full w-full border-0 bg-transparent"
     ></iframe>

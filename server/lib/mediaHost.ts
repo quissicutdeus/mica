@@ -1,0 +1,510 @@
+// SPDX-FileCopyrightText: 2026 quissicutdeus
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+/**
+ * An external image host for photos, as an option. MICA-243.
+ *
+ * MICA-71 kept the bytes in MySQL and said what would change the answer; an owner whose
+ * `mica_media` has grown past what they want to back up is that answer, so this is the
+ * opt-in half: with `mica_media_upload_url` set, the server posts a photo's bytes to the
+ * host and stores the URL it answers with, and `data` stays empty. Unset, nothing here runs
+ * and the database path is byte for byte what it was.
+ *
+ * Four rules hold the design, and each is a place it could have gone wrong:
+ *
+ * - **The upload is server-side.** `mica_media_upload_header` usually carries an API key,
+ *   and the only way it never reaches a client is that no client is ever handed it. Nothing
+ *   in this file sends a convar anywhere but the host, and no log line prints the header's
+ *   value. (It is read with `GetConvar`, so an owner who writes `setr` instead of `set`
+ *   replicates it to every client themselves — the README says so.)
+ * - **A host outage never costs a photo.** Every failure — refused, timed out, not JSON, a
+ *   URL that fails the check below — answers `null`, and the caller stores the bytes in the
+ *   database exactly as it would have without a host. Logged, never thrown.
+ * - **A returned URL is not trusted into an `<img src>`.** It must be `https:`, on the
+ *   configured host exactly, on the default port, with no credentials, no whitespace and
+ *   nothing that could close a CSS `url('…')` — and it must fit `mica_media.url`. A host
+ *   that answers anything else is treated as a failed upload.
+ * - **A hosted file outlives no row that names it.** Deletion (`releaseHostedImages`) is
+ *   asked only for a URL no remaining row references — a proximity drop copies the URL onto
+ *   each recipient's row, so the sender's row expiring must not pull the picture out from
+ *   under theirs.
+ *
+ * `server/tsconfig.json` has neither `dom` nor `@types/node` in scope (see
+ * `DiscordWebhook.ts`), so the few runtime globals used here are declared below at the
+ * narrowest shape this file needs. FXServer runs Node 22 (`node_version '22'`), which has
+ * all of them.
+ */
+
+import { Database } from './Database';
+
+export const UPLOAD_URL_CONVAR = 'mica_media_upload_url';
+export const UPLOAD_HEADER_CONVAR = 'mica_media_upload_header';
+export const UPLOAD_FIELD_CONVAR = 'mica_media_upload_field';
+export const UPLOAD_RESPONSE_PATH_CONVAR = 'mica_media_upload_response_path';
+export const IMAGE_HOST_CONVAR = 'mica_media_image_host';
+export const DELETE_URL_CONVAR = 'mica_media_delete_url';
+
+/** The multipart field the file travels in when `mica_media_upload_field` is unset. */
+export const DEFAULT_UPLOAD_FIELD = 'file';
+/** Where the URL is in the host's JSON reply when `mica_media_upload_response_path` is unset. */
+export const DEFAULT_RESPONSE_PATH = 'url';
+
+/**
+ * How long one upload may take before the photo goes to the database instead.
+ *
+ * Well inside the NUI callback's own fifteen seconds, so a slow host costs the player a
+ * slower shutter rather than a capture that times out and is lost on the client.
+ */
+export const UPLOAD_TIMEOUT_MS = 8_000;
+/** Delete requests are background work, but one hung request must not hold a prune forever. */
+export const DELETE_TIMEOUT_MS = 8_000;
+/** Delete requests in flight at once during a prune. */
+export const DELETE_CONCURRENCY = 8;
+/** `mica_media.url` is `varchar(512)`; a longer URL would be truncated into a broken one. */
+export const MAX_HOSTED_URL_LENGTH = 512;
+
+interface HostResponse {
+  ok: boolean;
+  status: number;
+  json(): Promise<unknown>;
+}
+type HostFetch = (
+  url: string,
+  init: { method: string; headers: Record<string, string>; body?: unknown; signal?: unknown }
+) => Promise<HostResponse>;
+
+declare const fetch: HostFetch;
+declare const FormData: new () => {
+  append(name: string, value: unknown, filename?: string): void;
+};
+declare const Blob: new (parts: unknown[], options?: { type?: string }) => unknown;
+declare const AbortSignal: { timeout(ms: number): unknown };
+declare const atob: (data: string) => string;
+interface ParsedUrl {
+  protocol: string;
+  username: string;
+  password: string;
+  hostname: string;
+  port: string;
+  pathname: string;
+  href: string;
+}
+declare const URL: new (input: string) => ParsedUrl;
+
+const said = new Set<string>();
+/** A misconfiguration is said once per distinct problem, not once per photo. */
+const warnOnce = (key: string, line: string): void => {
+  if (said.has(key)) return;
+  said.add(key);
+  console.warn(line);
+};
+
+/** Tests only: forget what has been said. */
+export const resetMediaHostForTests = (): void => said.clear();
+
+/**
+ * A convar's value, trimmed. Each call site reads its own convar by its named constant,
+ * never through a helper taking the name, because `convars.test.ts` reads the name at the
+ * call site to hold the README to it.
+ */
+const clean = (raw: unknown): string => (typeof raw === 'string' ? raw.trim() : '');
+
+/** A plain DNS name, lower-cased. No port, no path, no wildcard. */
+const HOSTNAME =
+  /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/;
+
+/** An RFC 7230 header name. */
+const HEADER_NAME = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+
+/** A multipart field name an owner might plausibly configure. */
+const FIELD_NAME = /^[A-Za-z0-9_.[\]-]{1,64}$/;
+
+/** One segment of the response path: an object key or an array index. */
+const PATH_SEGMENT = /^[A-Za-z0-9_-]{1,64}$/;
+
+/**
+ * Printable ASCII with nothing that could end an attribute or a CSS `url('…')`. A hosted
+ * URL goes into `<img src>` and, via Settings, into a wallpaper's `url('…')`; a quote, a
+ * paren or a backslash in it is never part of an honest image address.
+ */
+const SAFE_URL_CHARS = /^[\x21-\x7e]+$/;
+const UNSAFE_URL_CHARS = /["'()<>\\`]/;
+
+/** An `https:` URL with no credentials, or `null`. */
+const parseHttps = (raw: string): ParsedUrl | null => {
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== 'https:' || url.username !== '' || url.password !== '') return null;
+    return url;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * The host every hosted photo must come from, lower-cased: `mica_media_image_host`, or the
+ * upload URL's own host when that is unset. `null` when neither names one.
+ *
+ * Separate from the upload URL on purpose, because the two are often different machines — an
+ * API at `api.example.com` handing back files on `cdn.example.com` — and the one that matters
+ * for rendering is where the files are. It stays meaningful with uploads turned off, so an
+ * owner who stops uploading still gets the check and the CSP entry for the photos already
+ * hosted.
+ */
+export const imageHost = (): string | null => {
+  const configured = clean(GetConvar(IMAGE_HOST_CONVAR, '')).toLowerCase();
+  if (configured) {
+    if (HOSTNAME.test(configured)) return configured;
+    warnOnce(
+      `host:${configured}`,
+      `[micamedia] ${IMAGE_HOST_CONVAR} is '${configured}', which is not a plain host name ` +
+        '(no scheme, port or path). Hosted photos are refused until it is fixed.'
+    );
+    return null;
+  }
+  const upload = parseHttps(clean(GetConvar(UPLOAD_URL_CONVAR, '')));
+  return upload && HOSTNAME.test(upload.hostname) ? upload.hostname : null;
+};
+
+/**
+ * The origin the phone may draw hosted photos from, for the add-on CSP's `img-src`. `null`
+ * when there is no image host. Only ever `https://<host>` — never a path, never a wildcard.
+ */
+export const imageHostOrigin = (): string | null => {
+  const host = imageHost();
+  return host ? `https://${host}` : null;
+};
+
+/**
+ * `raw` as a URL safe to store and render, or `null`.
+ *
+ * `https:` on exactly the configured host, default port, no credentials, nothing but
+ * printable ASCII that cannot close an attribute or a CSS `url()`, and short enough for the
+ * column. Normalised through `URL` so what is stored is what was checked.
+ */
+export const validateHostedUrl = (
+  raw: unknown,
+  host: string | null = imageHost()
+): string | null => {
+  if (!host || typeof raw !== 'string') return null;
+  if (raw.length > MAX_HOSTED_URL_LENGTH) return null;
+  if (!SAFE_URL_CHARS.test(raw) || UNSAFE_URL_CHARS.test(raw)) return null;
+  const url = parseHttps(raw);
+  if (!url || url.hostname !== host || url.port !== '') return null;
+  const href = url.href;
+  if (href.length > MAX_HOSTED_URL_LENGTH || UNSAFE_URL_CHARS.test(href)) return null;
+  return href;
+};
+
+/** Whether a stored URL is one of ours to delete: it passes the same check it was stored under. */
+export const isHostedUrl = (raw: unknown): raw is string => validateHostedUrl(raw) !== null;
+
+/** `Name: value` from `mica_media_upload_header`, or `undefined` when unset, or `null` when bad. */
+const parseHeader = (): { name: string; value: string } | null | undefined => {
+  const raw = clean(GetConvar(UPLOAD_HEADER_CONVAR, ''));
+  if (!raw) return undefined;
+  const colon = raw.indexOf(':');
+  const name = colon > 0 ? raw.slice(0, colon).trim() : '';
+  const value = colon > 0 ? raw.slice(colon + 1).trim() : '';
+  if (!HEADER_NAME.test(name) || value.length === 0 || /[\r\n]/.test(value)) {
+    // The value is the secret, so it is never echoed — not even to say what was wrong with it.
+    warnOnce(
+      'header',
+      `[micamedia] ${UPLOAD_HEADER_CONVAR} is not 'Name: value'. Uploads are off until it is ` +
+        'fixed, so photos stay in the database.'
+    );
+    return null;
+  }
+  return { name, value };
+};
+
+interface UploadConfig {
+  url: string;
+  host: string;
+  header?: { name: string; value: string };
+  field: string;
+  path: string[];
+}
+
+/**
+ * Everything an upload needs, read fresh on every photo so a `set` from the live console takes
+ * effect on the next capture. `null` when uploads are off — unset, or configured in a way
+ * this refuses to guess about, which is said once.
+ */
+export const uploadConfig = (): UploadConfig | null => {
+  const rawUrl = clean(GetConvar(UPLOAD_URL_CONVAR, ''));
+  if (!rawUrl) return null;
+
+  const upload = parseHttps(rawUrl);
+  if (!upload) {
+    warnOnce(
+      `url:${rawUrl}`,
+      `[micamedia] ${UPLOAD_URL_CONVAR} must be an https:// address with no credentials in ` +
+        'it. Uploads are off until it is fixed, so photos stay in the database.'
+    );
+    return null;
+  }
+
+  const host = imageHost();
+  if (!host) {
+    warnOnce(
+      'nohost',
+      `[micamedia] no image host could be worked out; set ${IMAGE_HOST_CONVAR}. Uploads are ` +
+        'off until it is, so photos stay in the database.'
+    );
+    return null;
+  }
+
+  const header = parseHeader();
+  if (header === null) return null;
+
+  let field = clean(GetConvar(UPLOAD_FIELD_CONVAR, '')) || DEFAULT_UPLOAD_FIELD;
+  if (!FIELD_NAME.test(field)) {
+    warnOnce(
+      `field:${field}`,
+      `[micamedia] ${UPLOAD_FIELD_CONVAR} '${field}' is not a usable field name; ` +
+        `using '${DEFAULT_UPLOAD_FIELD}'.`
+    );
+    field = DEFAULT_UPLOAD_FIELD;
+  }
+
+  const rawPath = clean(GetConvar(UPLOAD_RESPONSE_PATH_CONVAR, '')) || DEFAULT_RESPONSE_PATH;
+  const path = rawPath.split('.');
+  if (!path.every((segment) => PATH_SEGMENT.test(segment))) {
+    warnOnce(
+      `path:${rawPath}`,
+      `[micamedia] ${UPLOAD_RESPONSE_PATH_CONVAR} '${rawPath}' is not a dot path like ` +
+        "'data.url'. Uploads are off until it is fixed, so photos stay in the database."
+    );
+    return null;
+  }
+
+  return { url: upload.href, host, header, field, path };
+};
+
+/** Follow `path` into a parsed JSON reply. Own properties only, so `__proto__` finds nothing. */
+export const valueAtPath = (root: unknown, path: readonly string[]): unknown => {
+  let node: unknown = root;
+  for (const segment of path) {
+    if (node === null || typeof node !== 'object') return undefined;
+    if (!Object.prototype.hasOwnProperty.call(node, segment)) return undefined;
+    node = (node as Record<string, unknown>)[segment];
+  }
+  return node;
+};
+
+/** The image types the camera and `AddMedia` produce, and the extension each is filed under. */
+const EXTENSION_OF: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'image/gif': 'gif'
+};
+
+const DATA_URI = /^data:(image\/(?:jpeg|png|webp|gif));base64,([A-Za-z0-9+/]+={0,2})$/;
+
+/** What an upload answers with. */
+export interface HostedImage {
+  url: string;
+  mimeType: string;
+}
+
+/** Why an upload was not used, for the one log line that says so. */
+const reasonOf = (error: unknown): string =>
+  error instanceof Error ? error.message || error.name : String(error);
+
+/**
+ * Post one photo to the host and answer with the URL to store, or `null` to store the bytes.
+ *
+ * `null` without a word when uploads are off or `dataUri` is not an image data URI — both are
+ * the ordinary database path. `null` with one log line for every failure once an upload was
+ * attempted, and the caller writes the bytes to the database as it always did: **a host
+ * outage is never a lost photo.**
+ */
+export const uploadImage = async (dataUri: unknown): Promise<HostedImage | null> => {
+  if (typeof dataUri !== 'string') return null;
+  const config = uploadConfig();
+  if (!config) return null;
+
+  const match = DATA_URI.exec(dataUri);
+  if (!match) return null;
+  const [, mimeType, base64] = match;
+
+  const fail = (why: string): null => {
+    console.warn(
+      `[micamedia] upload to ${config.host} failed (${why}); the photo was stored in the ` +
+        'database instead.'
+    );
+    return null;
+  };
+
+  try {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+
+    const form = new FormData();
+    form.append(
+      config.field,
+      new Blob([bytes], { type: mimeType }),
+      `mica-${Date.now()}.${EXTENSION_OF[mimeType]}`
+    );
+
+    const headers: Record<string, string> = {};
+    if (config.header) headers[config.header.name] = config.header.value;
+
+    const response = await fetch(config.url, {
+      method: 'POST',
+      headers,
+      body: form,
+      signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS)
+    });
+    if (!response.ok) return fail(`the host answered ${response.status}`);
+
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch {
+      return fail('the reply was not JSON');
+    }
+
+    const returned = valueAtPath(body, config.path);
+    if (typeof returned !== 'string') {
+      return fail(`no URL at '${config.path.join('.')}' in the reply`);
+    }
+    const url = validateHostedUrl(returned, config.host);
+    if (!url) {
+      return fail(`the returned URL is not an https address on ${config.host} that fits`);
+    }
+    return { url, mimeType };
+  } catch (error) {
+    return fail(reasonOf(error));
+  }
+};
+
+/** The delete request for one hosted URL, or `null` when the template cannot produce one. */
+const deleteRequestUrl = (template: string, url: string): string | null => {
+  const name = new URL(url).pathname.split('/').filter(Boolean).at(-1) ?? '';
+  const built = template
+    .replaceAll('{url}', encodeURIComponent(url))
+    .replaceAll('{name}', encodeURIComponent(name));
+  return parseHttps(built) ? built : null;
+};
+
+export interface ReleaseOutcome {
+  /** Deleted on the host. */
+  deleted: number;
+  /** The host refused, or the request failed. Left on the host. */
+  failed: number;
+  /** No delete endpoint configured. Left on the host. */
+  unconfigured: number;
+}
+
+/**
+ * Ask the host to delete files no row references any more. MICA-243's half of retention.
+ *
+ * Only URLs that pass `isHostedUrl` are considered — a hotlinked GIF `AddMedia` stored from
+ * somebody else's CDN is not ours to delete. Of those, only URLs no remaining `mica_media`
+ * row names: a proximity drop copies a URL onto every recipient's row, and the sender's copy
+ * aging out first must not take the picture from theirs. Callers call this **after** their
+ * delete, so the rows that went are already gone from that check.
+ *
+ * With no `mica_media_delete_url` the files are counted and left, and the caller says so —
+ * a host with no delete API is a real configuration, and silence would read as a clean-up.
+ *
+ * Never throws: a host outage must not fail the prune whose rows are already deleted.
+ */
+export const releaseHostedImages = async (
+  candidates: readonly unknown[]
+): Promise<ReleaseOutcome> => {
+  const outcome: ReleaseOutcome = { deleted: 0, failed: 0, unconfigured: 0 };
+  const hosted = [...new Set(candidates.filter(isHostedUrl))];
+  if (hosted.length === 0) return outcome;
+
+  let unreferenced: string[];
+  try {
+    const marks = hosted.map(() => '?').join(', ');
+    const rows = await Database.query<{ url: string }[]>(
+      `SELECT DISTINCT \`url\` FROM \`mica_media\` WHERE \`url\` IN (${marks})`,
+      hosted
+    );
+    const still = new Set((Array.isArray(rows) ? rows : []).map((row) => String(row.url)));
+    unreferenced = hosted.filter((url) => !still.has(url));
+  } catch (error) {
+    // Unsure what is still referenced, so nothing is deleted: a file left behind costs
+    // storage, a file deleted under a live row costs somebody a photo.
+    console.error('[micamedia] could not check which hosted photos are still in use:', error);
+    outcome.failed = hosted.length;
+    return outcome;
+  }
+  if (unreferenced.length === 0) return outcome;
+
+  const template = clean(GetConvar(DELETE_URL_CONVAR, ''));
+  if (!template) {
+    outcome.unconfigured = unreferenced.length;
+    return outcome;
+  }
+  if (!parseHttps(template.replaceAll('{url}', 'x').replaceAll('{name}', 'x'))) {
+    warnOnce(
+      `delete:${template}`,
+      `[micamedia] ${DELETE_URL_CONVAR} must be an https:// address; hosted photos are left ` +
+        'on the host until it is fixed.'
+    );
+    outcome.unconfigured = unreferenced.length;
+    return outcome;
+  }
+
+  const header = parseHeader();
+  const headers: Record<string, string> = {};
+  if (header) headers[header.name] = header.value;
+
+  const deleteOne = async (url: string): Promise<void> => {
+    const target = deleteRequestUrl(template, url);
+    if (!target) {
+      outcome.failed += 1;
+      return;
+    }
+    try {
+      const response = await fetch(target, {
+        method: 'DELETE',
+        headers,
+        signal: AbortSignal.timeout(DELETE_TIMEOUT_MS)
+      });
+      // 404 is success here: the file is already gone, which is the state asked for.
+      if (response.ok || response.status === 404) outcome.deleted += 1;
+      else outcome.failed += 1;
+    } catch {
+      outcome.failed += 1;
+    }
+  };
+
+  for (let i = 0; i < unreferenced.length; i += DELETE_CONCURRENCY) {
+    await Promise.all(unreferenced.slice(i, i + DELETE_CONCURRENCY).map(deleteOne));
+  }
+  return outcome;
+};
+
+/**
+ * Say what a release did, in the one line an owner reads. Silent when nothing was hosted.
+ *
+ * `unconfigured` is a warning rather than a note: those files are on somebody's bill and
+ * nothing will ever remove them unless an owner acts.
+ */
+export const reportRelease = (label: string, outcome: ReleaseOutcome): void => {
+  if (outcome.deleted > 0) {
+    console.log(`[${label}] deleted ${outcome.deleted} hosted photo(s) from the image host.`);
+  }
+  if (outcome.failed > 0) {
+    console.warn(
+      `[${label}] ${outcome.failed} hosted photo(s) could not be deleted from the image host ` +
+        'and are left there; their rows are already gone.'
+    );
+  }
+  if (outcome.unconfigured > 0) {
+    console.warn(
+      `[${label}] ${outcome.unconfigured} hosted photo(s) no longer belong to any row but ` +
+        `${DELETE_URL_CONVAR} is not set, so they are left on the image host.`
+    );
+  }
+};

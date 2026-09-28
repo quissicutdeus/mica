@@ -6,6 +6,7 @@ import { get } from 'svelte/store';
 import { fetchCitizenId, fetchBalance } from '../../services/account';
 import { refreshAdmin } from '../../services/admin';
 import { refreshCapabilities } from '../../services/capabilities';
+import { refreshImageHost } from '../../services/imageHost';
 import { refreshLocale, refreshServerLanguages } from './locale';
 import { disabledAppIds, refreshOwnerConfig } from './ownerConfig';
 import { loadUnreadCounts } from '../../services/notifications';
@@ -61,6 +62,9 @@ export async function bootstrapStores(force: boolean = false): Promise<void> {
         // MICA-234: which apps the owner disabled, and the default dock, before the
         // launcher and dock draw a slot they should be hiding or filling.
         refreshOwnerConfig(),
+        // MICA-243: where hosted photos live, before an add-on frame is built with a CSP
+        // that has to let them in.
+        refreshImageHost(),
         fetchCitizenId(),
         fetchBalance(),
         loadUnreadCounts(),
