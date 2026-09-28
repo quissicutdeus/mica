@@ -219,13 +219,10 @@ export const validateHostedUrl = (
   return href;
 };
 
-/** Whether a stored URL is one of ours to delete: it passes the same check it was stored under. */
-export const isHostedUrl = (raw: unknown): raw is string => validateHostedUrl(raw) !== null;
-
 /**
  * The ledger id recording that photos were once uploaded to, or served from, `host`. MICA-292.
  *
- * `isHostedUrl` asks about the host configured **now**, so once an owner points
+ * `validateHostedUrl` asks about the host configured **now**, so once an owner points
  * `mica_media_image_host` somewhere else every row still naming the old host stops counting
  * as hosted: never released, never even counted in the line that says files were left. A
  * row's URL is "ours" if its host was an image host when it was written, and the only
@@ -519,7 +516,7 @@ export const RELEASE_CHECK_BATCH = 500;
 /**
  * Ask the host to delete files no row references any more. MICA-243's half of retention.
  *
- * Only URLs that pass `isHostedUrl` are deleted — a hotlinked GIF `AddMedia` stored from
+ * Only URLs that pass `validateHostedUrl` are deleted — a hotlinked GIF `AddMedia` stored from
  * somebody else's CDN is not ours to delete. Of those, only URLs no remaining `mica_media`
  * row names: a proximity drop copies a URL onto every recipient's row, and the sender's copy
  * aging out first must not take the picture from theirs. Callers call this **after** their

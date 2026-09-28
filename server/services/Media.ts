@@ -1074,7 +1074,7 @@ const retentionDays = (): number =>
  *
  * Every URL, not only the current host's. `releaseHostedImages` is what decides which are
  * ours — the current host's to delete, a former host's to count — and a hotlink it ignores.
- * Filtering here with `isHostedUrl` is what made an old host's photos vanish from the count
+ * Filtering here with `validateHostedUrl` is what made an old host's photos vanish from the count
  * once an owner changed `mica_media_image_host`.
  *
  * `where` is SQL this file or `lib/orphanSweep.ts` built from declared identifiers; every

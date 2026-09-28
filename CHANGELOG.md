@@ -540,11 +540,18 @@ stores the link found at `mica_media_upload_response_path`. Set
 `mica_media_image_host` to the host the links point at: a link on any other host
 is refused. The API key never reaches a player. An upload that fails for any
 reason stores the photo in the database as before, so a host outage loses
-nothing, and existing photos keep working. Set `mica_media_delete_url` and the
-retention sweep deletes a hosted file once no photo uses it; without it the
-console counts the files left behind. Changing `mica_media_image_host` later
-stops old-host files from being cleaned up (MICA-292). README's "Configuration"
-has the details.
+nothing, and existing photos keep working. Set `mica_media_delete_url` and a
+hosted file is deleted once no photo uses it. That happens on the retention
+sweep, on `mica:server:shell:characterDeleted`, and on the start-up orphan sweep
+(MICA-292). Without the delete URL, the console counts the files left behind. A
+photo under an open report keeps its row and its file through all of these until
+the report is resolved. If you change `mica_media_image_host` later, files left
+on the old host are counted in the console by host, and never deleted there.
+**On qb, fire `mica:server:shell:characterDeleted` before your framework deletes
+a character.** The `players` cascade removes the photo rows before micaOS can
+see them, so those files would stay reachable on the host. micaOS warns about
+this at every start while an image host is set. README's "Configuration" has the
+details.
 
 **A control center of its own (MICA-247).** Pull down from the right side of the
 status bar, or tap Open Control Center in the notification shade: cellular,

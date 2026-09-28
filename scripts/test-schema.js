@@ -42,11 +42,14 @@ let checksRun = 0;
 /**
  * The repository checks (48), plus MICA-233's: for each of three import sources on each of
  * two framework shapes, fourteen checks and the seeded schema's one. Plus MICA-167's
- * retention scenario on each shape: sixteen checks and the seeded schema's one.
+ * retention scenario on each shape: sixteen checks and the seeded schema's one. Plus
+ * MICA-292's evidence hold on the purges and the sweep, on each shape: seven checks and the
+ * seeded schema's one.
  */
 const IMPORT_CHECKS = 15;
 const RETENTION_CHECKS = 17;
-const MINIMUM_CHECKS = 48 + IMPORT_CHECKS * 3 * 2 + RETENTION_CHECKS * 2;
+const EVIDENCE_CHECKS = 8;
+const MINIMUM_CHECKS = 48 + IMPORT_CHECKS * 3 * 2 + RETENTION_CHECKS * 2 + EVIDENCE_CHECKS * 2;
 
 const check = (label, actual, expected) => {
   checksRun += 1;
@@ -251,6 +254,10 @@ const loadServerModule = async () => {
     // declares a table that attaches media, so the holds are derived exactly as in game.
     `export { pruneTable, retentionPolicies, resetRetentionForTests } from '${root}/server/lib/contentRetention.ts';`,
     `import '${root}/server/services/Media.ts';`,
+    // MICA-292: the character purges and the orphan sweep, which keep a reported row by
+    // retention's own open-report hold. Same bundle, so the same declarations register.
+    `export { purgeMediaForCitizen } from '${root}/server/services/Media.ts';`,
+    `export { purgeOwnedRows, sweepOrphanedRows } from '${root}/server/lib/orphanSweep.ts';`,
     `import '${root}/server/services/Messages.ts';`,
     `import '${root}/server/services/BlabberDms.ts';`,
     `import '${root}/server/services/Marketplace.ts';`
@@ -300,7 +307,7 @@ CREATE TABLE IF NOT EXISTS users (
     lastname varchar(50) DEFAULT NULL,
     phone_number varchar(20) DEFAULT NULL,
     PRIMARY KEY (identifier)
-) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;`;
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;`;
 
 /**
  * The ESX characters' `users.identifier`, in es_extended multicharacter's real shape:
@@ -985,6 +992,84 @@ const runRetentionVariant = async ({ connection, schemaFile, hasPlayers, modules
   }
 };
 
+/* ------------------------------------------------ evidence hold (MICA-292) */
+
+/**
+ * The character purges and the orphan sweep against a real engine, on each framework shape:
+ * a photo under an open report outlives its character until the report resolves.
+ *
+ * Seeded the way the retention variant seeds its reported photo, but for a character who is
+ * then purged and then deleted. What the unit suite cannot show is that MariaDB evaluates
+ * retention's `openReportHold` inside these statements — the purge's plain
+ * `DELETE … WHERE citizenid = ?` and the sweep's `DELETE … WHERE NOT EXISTS … LIMIT` — and
+ * that it keeps exactly the reported row.
+ *
+ * On qb the sweep needs an install without `fk_media_citizenid`, the case it is the backstop
+ * for: with the cascade in place, deleting the character would take the reported photo inside
+ * MariaDB, hold or no hold — the accepted risk `docs/security.md` records.
+ */
+const runEvidenceVariant = async ({ connection, schemaFile, hasPlayers, modules }) => {
+  const framework = hasPlayers ? 'qb' : 'esx';
+  const A = hasPlayers ? 'CIT_A' : ESX_OWNER_A;
+  const B = hasPlayers ? 'CIT_B' : ESX_OWNER_B;
+  const label = `evidence hold on ${framework}`;
+
+  await seedFrameworkAndGPhone({ connection, schemaFile, hasPlayers, suffix: 'evidence' });
+  modules.__setResourceLookup(FRAMEWORK[framework]);
+
+  const q = async (sql, params = []) => (await connection.query(sql, params))[0];
+  const media = async () => (await q('SELECT id FROM mica_media ORDER BY id')).map((row) => row.id);
+  const photo = (id, owner) =>
+    q('INSERT INTO mica_media (id, citizenid, url) VALUES (?, ?, ?)', [
+      id,
+      owner,
+      `https://img.example.test/p/${id}.webp`
+    ]);
+
+  step(`${label} — A's photo 20 is reported, 21 is not; 22 is B's`);
+  if (hasPlayers) await q('ALTER TABLE mica_media DROP FOREIGN KEY fk_media_citizenid');
+  await photo(20, A);
+  await photo(21, A);
+  await photo(22, B);
+  await q(
+    "INSERT INTO mica_reports (citizenid, target_table, target_id) VALUES (?, 'mica_media', 20)",
+    [B]
+  );
+
+  await modules.purgeMediaForCitizen(A);
+  check(`${label}: the media purge keeps the reported photo only`, await media(), [20, 22]);
+
+  await photo(21, A);
+  await modules.purgeOwnedRows(A);
+  check(`${label}: the whole-phone purge keeps the reported photo only`, await media(), [20, 22]);
+
+  // The character is deleted; 24 is a row the purge never saw, an ordinary orphan.
+  await photo(24, A);
+  await q(
+    hasPlayers
+      ? 'DELETE FROM players WHERE citizenid = ?'
+      : 'DELETE FROM users WHERE identifier = ?',
+    [A]
+  );
+  const swept = await modules.sweepOrphanedRows();
+  check(`${label}: the sweep ran rather than refusing`, swept.skipped, null);
+  check(
+    `${label}: and no table failed`,
+    swept.failures.map((f) => `${f.table}: ${f.error?.message ?? f.error}`),
+    []
+  );
+  check(
+    `${label}: the sweep keeps the reported orphan and takes the other`,
+    await media(),
+    [20, 22]
+  );
+
+  await q("UPDATE mica_reports SET resolution = 'dismissed' WHERE target_table = 'mica_media'");
+  const resolved = await modules.sweepOrphanedRows();
+  check(`${label}: the sweep after the report resolves ran`, resolved.skipped, null);
+  check(`${label}: and takes the photo the report held`, await media(), [22]);
+};
+
 const main = async () => {
   let container;
   let connection;
@@ -1031,6 +1116,15 @@ const main = async () => {
     // MICA-167: the retention prune, on both shapes.
     await runRetentionVariant({ connection, schemaFile: 'mica.sql', hasPlayers: true, modules });
     await runRetentionVariant({
+      connection,
+      schemaFile: 'mica.esx.sql',
+      hasPlayers: false,
+      modules
+    });
+
+    // MICA-292: a reported photo outlives the purges and the sweep until its report resolves.
+    await runEvidenceVariant({ connection, schemaFile: 'mica.sql', hasPlayers: true, modules });
+    await runEvidenceVariant({
       connection,
       schemaFile: 'mica.esx.sql',
       hasPlayers: false,
