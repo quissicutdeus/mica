@@ -1012,6 +1012,20 @@ export instead, which authenticates its caller.
 
 ### Fixed
 
+**With an external image host, hosted photos count against the media quota, and
+are no longer offered as wallpapers (MICA-293).** A hosted photo used to cost
+only its thumbnail, so `mica_media_quota_mb` stopped bounding uploads to your
+host. Each now counts at the size it was uploaded at, or 320KiB for photos
+hosted before this release, and `micamedia` reports the same figure. **A player
+who already holds more hosted photos than their quota allows cannot take new
+ones until they delete some**, and is told so before anything is uploaded;
+`micaimport` likewise charges a photo link on your image host 320KiB, so an
+import can now stop at the quota where it used to bring every link over.
+Settings no longer lists hosted photos as wallpaper choices, which used to fail
+with "That photo has no image data", and an add-on setting one as a wallpaper
+gets an error rather than nothing. A proximity share can no longer give
+recipients a photo whose file retention had just deleted. No owner action.
+
 **On ESX with MariaDB 11.4 or later, the orphan sweep works again, and
 `micaschema apply` no longer refuses over the `users` collation (MICA-299).** A
 `users` table on MariaDB 11.4's default collation (`utf8mb4_uca1400_ai_ci`) made

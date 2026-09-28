@@ -373,10 +373,14 @@ describe('a proximity drop respects the recipient\u2019s quota', () => {
     expect(dbMock.insert).toHaveBeenCalledTimes(2);
     for (const [sql, params] of dbMock.insert.mock.calls) {
       const flat = String(sql).replace(/\s+/g, ' ');
-      expect(flat).toContain('WHERE quota.used + ? <= ?');
+      expect(flat).toMatch(/AND quota\.used \+ .* <= \?$/);
       // The recipient is measured, not the sender: the citizenid bound into the subquery is
-      // the same one the row is written for.
-      expect((params as unknown[])[0]).toBe((params as unknown[]).at(-3));
+      // the same one the row is written for. No image host here, so the subquery's owner is
+      // the third value, after the recipient and their phone.
+      const bound = params as unknown[];
+      expect(bound[2]).toBe(bound[0]);
+      // And the sender is who the source row is looked up by (MICA-293).
+      expect(bound.at(-2)).toBe('CID_A');
     }
   });
 

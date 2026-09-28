@@ -199,8 +199,12 @@ describe('media:drop', () => {
     for (const [sql, params] of dbMock.insert.mock.calls) {
       // A stub cannot enforce a predicate, so what is asserted is that the statement
       // carries one — the decision is in the write rather than in front of it.
-      expect(String(sql)).toContain('SUM(');
-      expect(String(sql).replace(/\s+/g, ' ')).toContain('WHERE quota.used + ? <= ?');
+      const flat = String(sql).replace(/\s+/g, ' ');
+      expect(flat).toContain('SUM(');
+      // Charged what the source row costs as it stands, in the same statement (MICA-293).
+      expect(flat).toMatch(/AND quota\.used \+ IFNULL\(LENGTH\(src\.`data`\), 0\).* <= \?$/);
+      // And copied from the source row only while it still exists (MICA-293).
+      expect(flat).toContain("src.`id` = ? AND src.`citizenid` = ? AND src.`status` = 'active'");
       // Every placeholder is bound, which is what keeps the statement parameterized.
       expect(String(sql).split('?').length - 1).toBe((params as unknown[]).length);
     }
@@ -245,7 +249,13 @@ describe('media:drop', () => {
     for (const column of ['`id`', '`status`', '`created_at`', '`updated_at`']) {
       expect(columnList, column).not.toContain(column);
     }
-    expect(params as unknown[]).not.toContain(42);
+    // Since MICA-293 the values are selected from the source row, so the sender's id is bound
+    // — once, to find that row — and the selection itself must not read any of the four.
+    const selection = String(sql).slice(String(sql).indexOf('SELECT'), String(sql).indexOf('FROM'));
+    for (const column of ['`id`', '`status`', '`created_at`', '`updated_at`']) {
+      expect(selection, column).not.toContain(`src.${column}`);
+    }
+    expect((params as unknown[]).filter((value) => value === 42)).toHaveLength(1);
   });
 
   it('writes one copy and sends one notification when two sources share a character', async () => {

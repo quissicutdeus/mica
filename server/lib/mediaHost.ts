@@ -406,6 +406,12 @@ const DATA_URI = /^data:(image\/(?:jpeg|png|webp|gif));base64,([A-Za-z0-9+/]+={0
 export interface HostedImage {
   url: string;
   mimeType: string;
+  /**
+   * The size of the file that was posted, in bytes (MICA-293). Counted here from what was
+   * sent rather than read from the host's reply: every host reports it differently or not at
+   * all, and this is the number the owner's storage actually received.
+   */
+  bytes: number;
 }
 
 /** Why an upload was not used, for the one log line that says so. */
@@ -480,7 +486,7 @@ export const uploadImage = async (dataUri: unknown): Promise<HostedImage | null>
     }
     // So this file is still counted as ours after the host changes (MICA-292).
     void rememberImageHost(config.host);
-    return { url, mimeType };
+    return { url, mimeType, bytes: bytes.length };
   } catch (error) {
     return fail(reasonOf(error));
   }

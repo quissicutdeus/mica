@@ -45,14 +45,21 @@ let checksRun = 0;
  * retention scenario on each shape: sixteen checks and the seeded schema's one. Plus
  * MICA-292's evidence hold on the purges and the sweep, ten checks and the seeded schema's one,
  * on qb and on ESX with `users` on each of two collations (MICA-299). Plus MICA-275's line
- * membership, eleven checks on each shape.
+ * membership, eleven checks on each shape. Plus MICA-293's hosted quota and drop race,
+ * sixteen checks and the seeded schema's one on each shape.
  */
 const IMPORT_CHECKS = 15;
 const RETENTION_CHECKS = 17;
 const EVIDENCE_CHECKS = 11;
 const LINE_CHECKS = 11;
+const HOSTED_CHECKS = 17;
 const MINIMUM_CHECKS =
-  48 + LINE_CHECKS * 2 + IMPORT_CHECKS * 3 * 2 + RETENTION_CHECKS * 2 + EVIDENCE_CHECKS * 3;
+  48 +
+  LINE_CHECKS * 2 +
+  IMPORT_CHECKS * 3 * 2 +
+  RETENTION_CHECKS * 2 +
+  EVIDENCE_CHECKS * 3 +
+  HOSTED_CHECKS * 2;
 
 const check = (label, actual, expected) => {
   checksRun += 1;
@@ -263,6 +270,9 @@ const loadServerModule = async () => {
     // MICA-292: the character purges and the orphan sweep, which keep a reported row by
     // retention's own open-report hold. Same bundle, so the same declarations register.
     `export { purgeMediaForCitizen } from '${root}/server/services/Media.ts';`,
+    // MICA-293: the hosted-row quota and the drop's copy, from the same declaration.
+    `export { hostedUrlPrefixes, media, NOMINAL_HOSTED_BYTES, storedBytesOf, usedBytesQuery } from '${root}/server/services/Media.ts';`,
+    `export { releaseHostedImages, resetMediaHostForTests } from '${root}/server/lib/mediaHost.ts';`,
     `export { orphanWhere, purgeOwnedRows, sweepOrphanedRows } from '${root}/server/lib/orphanSweep.ts';`,
     `import '${root}/server/services/Messages.ts';`,
     `import '${root}/server/services/BlabberDms.ts';`,
@@ -1237,6 +1247,166 @@ const runEvidenceVariant = async ({
   );
 };
 
+/**
+ * MICA-293, on each shape: a hosted photo counts against the quota, and a proximity drop
+ * cannot hand a recipient a file retention already released.
+ *
+ * The quota half proves what no unit suite can: that `usedBytesQuery`'s SQL and
+ * `storedBytesOf` agree to the byte over every kind of row — inline, hosted with and without
+ * a recorded size, on a former host, a hotlink elsewhere, a deleted row — and that the insert
+ * predicate refuses a capture the hosted rows leave no room for.
+ *
+ * The race half runs both orders of the drop's copy and retention's delete-then-release,
+ * statement by statement, on the harness's one connection. That is the interleaving the fix
+ * is about — whether the copy selects its source in the same statement — and not a test of
+ * InnoDB's locking between two connections, which the harness cannot drive.
+ */
+const runHostedVariant = async ({ connection, schemaFile, hasPlayers, modules }) => {
+  const framework = hasPlayers ? 'qb' : 'esx';
+  const A = hasPlayers ? 'CIT_A' : ESX_OWNER_A;
+  const B = hasPlayers ? 'CIT_B' : ESX_OWNER_B;
+  const label = `hosted media on ${framework}`;
+
+  await seedFrameworkAndGPhone({ connection, schemaFile, hasPlayers, suffix: 'hosted' });
+  modules.__setResourceLookup(FRAMEWORK[framework]);
+  modules.resetMediaHostForTests();
+
+  const q = async (sql, params = []) => (await connection.query(sql, params))[0];
+  const previousConvar = globalThis.GetConvar;
+  const previousConvarInt = globalThis.GetConvarInt;
+  // An image host, no upload URL (so nothing is posted) and no delete URL (so a release
+  // counts what it would delete as `unconfigured` rather than requesting it).
+  globalThis.GetConvar = (name, fallback) =>
+    name === 'mica_media_image_host' ? 'img.example.test' : fallback;
+  let quotaMb = 1;
+  globalThis.GetConvarInt = (name, fallback) =>
+    name === 'mica_media_quota_mb' ? quotaMb : fallback;
+
+  try {
+    await q("INSERT INTO mica_schema_migrations (id) VALUES ('mediahost:old.example.test')");
+    const prefixes = await modules.hostedUrlPrefixes();
+    check(`${label}: the current and the recorded host are both hosted`, prefixes, [
+      'https://img.example.test/',
+      'https://old.example.test/'
+    ]);
+
+    step(`${label} — one of every kind of row, measured by SQL and by storedBytesOf`);
+    const insert = (row) =>
+      q(
+        `INSERT INTO mica_media (citizenid, data, url, thumbnail, byte_size, status)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [
+          A,
+          row.data ?? null,
+          row.url ?? null,
+          row.thumbnail ?? null,
+          row.byte_size ?? null,
+          row.status ?? 'active'
+        ]
+      );
+    await insert({ data: 'abc', thumbnail: 'de' });
+    await insert({ url: 'https://img.example.test/p/sized.webp', byte_size: 5000 });
+    await insert({ url: 'https://img.example.test/p/legacy.webp' });
+    await insert({ url: 'https://old.example.test/p/former.webp' });
+    await insert({ url: 'https://giphy.test/a.gif' });
+    await insert({ url: 'https://img.example.test.evil.test/p/lookalike.webp' });
+    await insert({ url: 'https://img.example.test/p/gone.webp', status: 'deleted' });
+
+    const used = async (citizenid) => {
+      const query = modules.usedBytesQuery(citizenid, prefixes);
+      return Number(await modules.Database.scalar(query.sql, query.params));
+    };
+    const live = await q(
+      "SELECT data, url, thumbnail, byte_size FROM mica_media WHERE citizenid = ? AND status = 'active'",
+      [A]
+    );
+    const measured = live.reduce((sum, row) => sum + modules.storedBytesOf(row, prefixes), 0);
+    const nominal = modules.NOMINAL_HOSTED_BYTES;
+    const expected = 5 + 5000 + nominal * 2;
+    check(`${label}: the SQL and storedBytesOf agree to the byte`, await used(A), measured);
+    check(`${label}: and both charge the hosted rows, nominal where unsized`, measured, expected);
+
+    step(`${label} — the insert predicate counts the hosted rows`);
+    const room = 1024 * 1024 - expected;
+    const capture = (length) =>
+      modules.media.repo.create({ citizenid: A, kind: 'photo', data: 'x'.repeat(length) });
+    let refused = null;
+    try {
+      await capture(room + 1);
+    } catch (error) {
+      refused = error?.key ?? error?.message;
+    }
+    check(
+      `${label}: a capture one byte past the room is refused`,
+      refused,
+      'server.media.quotaFull'
+    );
+    check(`${label}: a capture that fits is written`, (await capture(room)) > 0, true);
+
+    // Auto ids, so a copy written between two sources never collides with the next one.
+    const source = async (url) => {
+      const { insertId } = await q(
+        'INSERT INTO mica_media (citizenid, url, byte_size) VALUES (?, ?, 1000)',
+        [A, url]
+      );
+      return (await q('SELECT * FROM mica_media WHERE id = ?', [insertId]))[0];
+    };
+    const retention = async (id, url) => {
+      await q('DELETE FROM mica_media WHERE id = ?', [id]);
+      return await modules.releaseHostedImages([url]);
+    };
+    const copy = (row) => modules.media.repo.copyToPlayers([B], row);
+    const naming = async (url) =>
+      (await q('SELECT citizenid FROM mica_media WHERE url = ?', [url])).map(
+        (row) => row.citizenid
+      );
+
+    for (const quota of ['on', 'off']) {
+      quotaMb = quota === 'on' ? 64 : 0;
+      const first = `https://img.example.test/p/copied-${quota}.webp`;
+      const second = `https://img.example.test/p/raced-${quota}.webp`;
+
+      step(`${label}, quota ${quota} — the copy lands, then retention deletes and releases`);
+      const kept = await source(first);
+      check(`${label} (quota ${quota}): the copy is written`, await copy(kept), [B]);
+      check(
+        `${label} (quota ${quota}): the release keeps the file B's copy names`,
+        await retention(kept.id, first),
+        { deleted: 0, failed: 0, unconfigured: 0, formerHost: {} }
+      );
+
+      step(`${label}, quota ${quota} — retention deletes and releases, then the copy runs`);
+      const read = await source(second);
+      check(
+        `${label} (quota ${quota}): the release finds the file unreferenced`,
+        await retention(read.id, second),
+        { deleted: 0, failed: 0, unconfigured: 1, formerHost: {} }
+      );
+      check(
+        `${label} (quota ${quota}): the copy from the stale read writes nothing`,
+        await copy(read),
+        []
+      );
+      check(
+        `${label} (quota ${quota}): and no row names the released file`,
+        await naming(second),
+        []
+      );
+    }
+
+    quotaMb = 64;
+    check(
+      `${label}: B is charged what the copies cost, the recorded size each`,
+      await used(B),
+      2000
+    );
+  } finally {
+    globalThis.GetConvar = previousConvar;
+    globalThis.GetConvarInt = previousConvarInt;
+    modules.resetMediaHostForTests();
+  }
+};
+
 const main = async () => {
   let container;
   let connection;
@@ -1301,6 +1471,10 @@ const main = async () => {
         usersCollation
       });
     }
+
+    // MICA-293: a hosted photo counts against the quota, and a drop cannot outlive a release.
+    await runHostedVariant({ connection, schemaFile: 'mica.sql', hasPlayers: true, modules });
+    await runHostedVariant({ connection, schemaFile: 'mica.esx.sql', hasPlayers: false, modules });
 
     if (checksRun < MINIMUM_CHECKS) {
       throw new Error(

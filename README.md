@@ -1025,19 +1025,21 @@ the convar is invisible until the resource restarts.
   the everyday one. It counts the rows a player can actually see — a photo they
   delete frees their allowance immediately — and it is measured the same way
   `micamedia` reports sizes, so the number a player is held to and the number
-  you read in the console are the same number. 64MiB is roughly 150 to 200
-  captures at the default quality, which is a library a player has to work at to
-  fill; a hundred players at the ceiling is 6.4GB. It works with the 4MB
-  per-photo cap rather than replacing it: that bounds one write, this bounds the
-  sum. The check runs before the write, so a player just under the line can
-  still add one more photo — the true worst case is your value plus one capped
-  photo. A proximity share checks each recipient too, and quietly skips anyone
-  with no room, since a bystander should not be pushed over their ceiling by
-  somebody else's gesture. **A value micaOS cannot parse turns the quota off
-  rather than refusing every photo on the server**, which is the safer direction
-  for something in the write path; the resolved value is printed at resource
-  start so "off" is something you read rather than discover. Set it to 0 for no
-  ceiling.
+  you read in the console are the same number. With an external image host
+  (`mica_media_upload_url`), a hosted photo counts at the size it was uploaded
+  at, or 320KiB for one hosted before that size was recorded, so a host does not
+  turn the quota off (MICA-293). 64MiB is roughly 150 to 200 captures at the
+  default quality, which is a library a player has to work at to fill; a hundred
+  players at the ceiling is 6.4GB. It works with the 4MB per-photo cap rather
+  than replacing it: that bounds one write, this bounds the sum. The check runs
+  before the write, so a player just under the line can still add one more photo
+  — the true worst case is your value plus one capped photo. A proximity share
+  checks each recipient too, and quietly skips anyone with no room, since a
+  bystander should not be pushed over their ceiling by somebody else's gesture.
+  **A value micaOS cannot parse turns the quota off rather than refusing every
+  photo on the server**, which is the safer direction for something in the write
+  path; the resolved value is printed at resource start so "off" is something
+  you read rather than discover. Set it to 0 for no ceiling.
 - **Content retention: `mica_message_retention` (180 days), `mica_dm_retention`
   (90) and `mica_media_retention` (365) (MICA-167).** Text messages, Blabber
   direct messages and stored media older than the window are deleted permanently

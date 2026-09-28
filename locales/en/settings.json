@@ -114,6 +114,7 @@
   "theme.fromPhoto": "From a Photo",
   "theme.noPhotos": "No photos in Gallery",
   "theme.noPhotosDescription": "Photos taken with the Camera app can be used as a wallpaper, and the device takes its colors from them.",
+  "theme.noPhotosHosted": "Photos stored on the image host cannot be used as a wallpaper. Take a photo without one, or pick a color instead.",
   "theme.useAsWallpaper": "Use as wallpaper",
   "theme.photoFailed": "That photo could not be loaded. Try another.",
   "colorPicker.lightness": "Lightness",

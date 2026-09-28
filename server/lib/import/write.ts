@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { Database, type TransactionQuery } from '../Database';
-import { quotaBytes, storedBytesOf, USED_BYTES_SQL } from '../../services/Media';
+import { hostedUrlPrefixes, quotaBytes, storedBytesOf, usedBytesQuery } from '../../services/Media';
 import { isAppDisabled } from '../ownerConfig';
 import { type ImportContext } from './context';
 import { SKIP, type Tally } from './report';
@@ -146,9 +146,9 @@ export interface MediaIn {
 const SAFE_URL = /^(https?:|data:image\/)/i;
 
 /*
- * The quota is Media's own — `quotaBytes`, `storedBytesOf` and `USED_BYTES_SQL` are imported
+ * The quota is Media's own — `quotaBytes`, `storedBytesOf` and `usedBytesQuery` are imported
  * from `services/Media.ts`, so the ceiling an import is held to cannot drift from the one the
- * camera is.
+ * camera is. Both are measured against the same `hostedUrlPrefixes`, read once per run.
  */
 
 export const importMedia = async (
@@ -157,6 +157,7 @@ export const importMedia = async (
   source: Pages<MediaIn>
 ): Promise<void> => {
   const limit = quotaBytes();
+  const prefixes = limit > 0 ? await hostedUrlPrefixes() : [];
   const used = new Map<string, number>();
   const counted = new Set<string>();
 
@@ -204,15 +205,15 @@ export const importMedia = async (
         continue;
       }
 
-      // A hotlink costs nothing against the quota, exactly as it does in Media; only inline
-      // bytes do. Measured on a dry run too, so the dry run reports the same refusals.
-      const cost = isData ? storedBytesOf({ data: link }) : 0;
+      // Inline bytes cost their length. A hotlink costs nothing, exactly as it does in Media —
+      // unless it is on an image host micaOS uploads to, where it costs what a hosted photo
+      // does (MICA-293). Measured on a dry run too, so the dry run reports the same refusals.
+      const cost = storedBytesOf(isData ? { data: link } : { url: link }, prefixes);
       if (limit > 0 && cost > 0) {
         let current = used.get(citizenid);
         if (current === undefined) {
-          current = Number(
-            (await Database.scalar<number | null>(USED_BYTES_SQL, [citizenid])) ?? 0
-          );
+          const query = usedBytesQuery(citizenid, prefixes);
+          current = Number((await Database.scalar<number | null>(query.sql, query.params)) ?? 0);
         }
         if (current + cost > limit) {
           used.set(citizenid, current);

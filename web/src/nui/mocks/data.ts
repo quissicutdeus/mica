@@ -203,7 +203,29 @@ const deletedMedia: MediaItem = {
   ...ts(2 * 24 * 3600_000)
 };
 
+/**
+ * A photo on the external image host (MICA-243): a `url` and a `thumbnail` and no `data`.
+ * At the head of the list so the first page — and the wallpaper picker's first six — hold
+ * one; nothing may offer it as a wallpaper (MICA-293).
+ */
+/** Carries the `hosted-marker` text so a spec can tell this tile from every other. */
+const HOSTED_THUMBNAIL = `data:image/svg+xml,${encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" width="${THUMBNAIL_SIZE}" height="${THUMBNAIL_SIZE}" viewBox="0 0 96 96"><title>hosted-marker</title><rect width="96" height="96" fill="#556677"/></svg>`
+)}`;
+
+export const mockHostedPhoto: MediaItem = {
+  id: 952,
+  citizenid: 'mock-id',
+  kind: 'photo',
+  thumbnail: HOSTED_THUMBNAIL,
+  url: 'https://img.example.test/p/952.webp',
+  alt_text: 'On the image host',
+  status: 'active',
+  ...ts()
+};
+
 export const mockMedia: MediaItem[] = [
+  mockHostedPhoto,
   ...mockThumbnaillessCaptures,
   ...mockOtherMedia,
   ...mockCaptures,

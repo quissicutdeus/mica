@@ -316,3 +316,27 @@ test.describe('Settings App E2E', () => {
     });
   });
 });
+
+test.describe('Settings wallpaper picker (MICA-293)', () => {
+  test('a photo on the image host is not offered as a wallpaper', async ({ page }) => {
+    await seedHomeGrid(page, ['settings']);
+    await page.goto('/');
+    await page.locator('button', { hasText: 'Settings' }).first().click();
+    await page.getByRole('button', { name: new RegExp('^Display\\b') }).click();
+
+    // The mock's first photo (id 952) is on the image host; the six tiles are the others.
+    // The owner's server wallpapers share the label but draw a background, not an <img>.
+    const tiles = page
+      .getByRole('button', { name: 'Use as wallpaper' })
+      .filter({ has: page.locator('img') });
+    await expect(tiles.first()).toBeVisible();
+    await expect(tiles).toHaveCount(6);
+    // The hosted row's thumbnail carries `hosted-marker` (mocks/data.ts); a leaked tile
+    // would draw it, and it would take one of the six slots from a local photo.
+    const srcs = await tiles
+      .locator('img')
+      .evaluateAll((els) => els.map((el) => el.getAttribute('src') ?? ''));
+    expect(srcs).toHaveLength(6);
+    expect(srcs.filter((src) => src.includes('hosted-marker'))).toEqual([]);
+  });
+});

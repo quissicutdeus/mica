@@ -114,6 +114,7 @@
   "theme.fromPhoto": "Aus einem Foto",
   "theme.noPhotos": "Keine Fotos in der Galerie",
   "theme.noPhotosDescription": "Fotos aus der Kamera-App können als Hintergrund verwendet werden, und das Gerät nimmt seine Farben von ihnen.",
+  "theme.noPhotosHosted": "Auf dem Bilderserver gespeicherte Fotos können nicht als Hintergrund verwendet werden. Mach ein Foto ohne einen solchen oder wähle stattdessen eine Farbe.",
   "theme.useAsWallpaper": "Als Hintergrund verwenden",
   "theme.photoFailed": "Dieses Foto konnte nicht geladen werden. Versuch ein anderes.",
   "colorPicker.lightness": "Helligkeit",

@@ -216,7 +216,12 @@ describe('uploadImage', () => {
     hosting({ mica_media_upload_field: 'image' });
     replyWith(200, { url: HOSTED });
 
-    expect(await uploadImage(PHOTO)).toEqual({ url: HOSTED, mimeType: 'image/webp' });
+    // `bytes` is the decoded file's size, the number the quota charges (MICA-293).
+    expect(await uploadImage(PHOTO)).toEqual({
+      url: HOSTED,
+      mimeType: 'image/webp',
+      bytes: 'not really a webp'.length
+    });
 
     const [url, init] = fetchMock.mock.calls[0] as FetchCall;
     expect(url).toBe('https://api.example.test/upload');

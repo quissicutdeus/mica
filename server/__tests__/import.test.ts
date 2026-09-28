@@ -187,8 +187,9 @@ const dbMock = vi.hoisted(() => {
     }
     if (sql.startsWith('SELECT COALESCE(SUM(')) {
       return {
+        // The owner is the last value: any hosted-URL patterns come first (MICA-293).
         scalar: db.media
-          .filter((m) => m.citizenid === params[0])
+          .filter((m) => m.citizenid === params.at(-1))
           .reduce((sum, m) => sum + (m.data?.length ?? 0), 0)
       };
     }
@@ -685,6 +686,34 @@ describe('media quota', () => {
     expect(skipped(report, 'npwd_phone_gallery')).toEqual({ [SKIP.overQuota]: 1 });
     expect(db.media.map((m) => (m.data ? 'inline' : m.url))).toEqual([
       'inline',
+      'https://cdn.example.com/x.png'
+    ]);
+  });
+
+  it('charges a link on the image host what a hosted photo costs, not nothing', async () => {
+    // MICA-293: a hotlink elsewhere is still free, but one on the owner's image host is a file
+    // on their storage. 1MiB holds three at the nominal 320KiB; the fourth is refused.
+    (globalThis as any).GetConvarInt = (name: string, fallback: number) =>
+      name === 'mica_media_quota_mb' ? 1 : fallback;
+    (globalThis as any).GetConvar = (name: string, fallback: string) =>
+      name === 'mica_media_image_host' ? 'img.example.test' : fallback;
+    db.source.set('npwd_phone_gallery', [
+      ...[1, 2, 3, 4].map((id) => ({
+        id,
+        identifier: 'CIT_A',
+        image: `https://img.example.test/p/${id}.webp`
+      })),
+      { id: 5, identifier: 'CIT_A', image: 'https://cdn.example.com/x.png' }
+    ]);
+
+    const report = await runImport('npwd', { apply: true });
+
+    expect(table(report, 'npwd_phone_gallery')).toMatchObject({ read: 5, written: 4 });
+    expect(skipped(report, 'npwd_phone_gallery')).toEqual({ [SKIP.overQuota]: 1 });
+    expect(db.media.map((m) => m.url)).toEqual([
+      'https://img.example.test/p/1.webp',
+      'https://img.example.test/p/2.webp',
+      'https://img.example.test/p/3.webp',
       'https://cdn.example.com/x.png'
     ]);
   });

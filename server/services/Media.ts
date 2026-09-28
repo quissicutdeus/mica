@@ -25,6 +25,7 @@ import {
 import {
   imageHost,
   releaseHostedImages,
+  recordedImageHosts,
   rememberImageHost,
   reportRelease,
   uploadConfig,
@@ -170,7 +171,8 @@ const HOSTABLE_KINDS = new Set(['photo', 'gif', 'sticker']);
  * is a slower, fatter row, never a lost photo.
  *
  * On success `data` is left out rather than nulled, so the insert names no column it does
- * not write, and `mime_type` records what the host was sent. `url` is `clientWritable:
+ * not write, `mime_type` records what the host was sent, and `byte_size` how big it was —
+ * the size the quota charges for a row whose bytes are no longer in it (MICA-293). `url` is `clientWritable:
  * false` and stays so: the value here came from the host through `validateHostedUrl`, never
  * from a payload, and this runs after `ServiceEndpoint` has already reduced the payload.
  */
@@ -179,7 +181,7 @@ const hostPhoto = async (item: Partial<MediaItem>): Promise<Partial<MediaItem>> 
   const hosted = await uploadImage(item.data);
   if (!hosted) return item;
   const { data: _bytes, ...rest } = item;
-  return { ...rest, url: hosted.url, mime_type: hosted.mimeType };
+  return { ...rest, url: hosted.url, mime_type: hosted.mimeType, byte_size: hosted.bytes };
 };
 
 /**
@@ -246,18 +248,81 @@ const DEFAULT_QUOTA_MB = 64;
 const BYTES_PER_MB = 1024 * 1024;
 
 /**
- * What one row costs, as SQL.
+ * What a hosted photo costs when nothing recorded its size. MICA-293.
+ *
+ * A hosted row keeps only its URL, so `data` is empty and measuring the row alone charged
+ * nothing but the thumbnail — the rate limiter was the only cap left on a player's uploads to
+ * the owner's host. A row `hostPhoto` wrote from now on carries its real size in `byte_size`;
+ * this is the charge for one that does not: every hosted row written before MICA-293, and an
+ * `AddMedia` hotlink onto the image host that named no size.
+ *
+ * 320KiB because it is the size `DEFAULT_QUOTA_MB` was reasoned from: 64MiB was sized as
+ * "roughly 150-200 photos", and 64MiB / 320KiB is 204. A library of hosted photos with no
+ * recorded size therefore fills at about the count the ceiling was written for — neither
+ * a free pass nor a player locked out of a camera they had used a normal amount. It is at
+ * the top of MICA-110's measured "few hundred kilobytes" rather than the middle, so the
+ * error, where there is one, is on the side of counting a photo as larger than it was.
+ */
+export const NOMINAL_HOSTED_BYTES = 320 * 1024;
+
+/**
+ * The URL prefixes that make a row **hosted**: `https://<host>/` for the image host
+ * configured now and every one micaOS recorded using before (MICA-292's ledger), sorted so
+ * the statement text is stable. Empty when there has never been a host.
+ *
+ * A former host counts, the same way `releaseHostedImages` treats it: an owner who moves
+ * hosts, or turns uploads off, still has every photo already on the old one in someone's
+ * library. A URL on any other host is a hotlink — `AddMedia` and the importer write those —
+ * and costs nothing, as it always has: it is not on the owner's storage.
+ *
+ * Every entry is a `HOSTNAME`-checked name, so a prefix holds no `%`, `_` or backslash that
+ * `LIKE` would read as anything but itself — and it is still bound, never interpolated.
+ */
+export const hostedUrlPrefixes = async (): Promise<string[]> => {
+  const hosts = new Set(await recordedImageHosts());
+  const current = imageHost();
+  if (current) hosts.add(current);
+  return [...hosts].sort().map((host) => `https://${host}/`);
+};
+
+/**
+ * What one row costs, as SQL, for `prefixCount` hosted-URL prefixes bound in order.
  *
  * One expression, used by the quota checks *and* by `mediaStorageStats`, so the number
  * `micamedia` reports and the number a player is measured against cannot drift apart —
  * a quota that disagrees with the report an owner uses to reason about it is worse than
- * no quota. `byte_size` (the column) is still not the answer: nothing writes it.
+ * no quota.
  *
  * `LENGTH` is bytes, not characters, which is the honest unit here — `data` is base64 and
  * therefore ASCII, so bytes and string length agree, and the same expression stays correct
  * if a future column is not.
+ *
+ * **A hosted row adds its file's size** (MICA-293): `byte_size` where the upload recorded it,
+ * `NOMINAL_HOSTED_BYTES` where nothing did, never below zero. "Hosted" is a byte-exact prefix
+ * match — `CAST … AS BINARY` — so it cannot depend on the column's collation and says exactly
+ * what `String.startsWith` says in `storedBytesOf`. The stored URL went through
+ * `validateHostedUrl`, whose `URL` parse lower-cases the host, so a real hosted row always
+ * matches its lower-case prefix.
+ *
+ * No hosts, no term: an install that never configured one runs the expression it always did.
  */
-const STORED_BYTES_SQL = 'IFNULL(LENGTH(data), 0) + IFNULL(LENGTH(thumbnail), 0)';
+const storedBytesSql = (prefixCount: number, alias = ''): string => {
+  const column = (name: string): string => (alias ? `${alias}.\`${name}\`` : name);
+  const inline = `IFNULL(LENGTH(${column('data')}), 0) + IFNULL(LENGTH(${column('thumbnail')}), 0)`;
+  if (prefixCount === 0) return inline;
+  const hosted = Array.from(
+    { length: prefixCount },
+    () => `CAST(${column('url')} AS BINARY) LIKE ?`
+  ).join(' OR ');
+  return (
+    `${inline} + CASE WHEN ${hosted} ` +
+    `THEN GREATEST(IFNULL(${column('byte_size')}, ${NOMINAL_HOSTED_BYTES}), 0) ELSE 0 END`
+  );
+};
+
+/** `prefixes` as the `LIKE` patterns `storedBytesSql` binds, one per prefix. */
+const prefixPatterns = (prefixes: readonly string[]): string[] =>
+  prefixes.map((prefix) => `${prefix}%`);
 
 /**
  * The per-player ceiling in bytes, or `0` for no ceiling.
@@ -279,15 +344,28 @@ export const quotaBytes = (): number => {
   return Math.trunc(raw) * BYTES_PER_MB;
 };
 
-/** What a row about to be written will cost, measured the same way SQL measures it. */
-export const storedBytesOf = (item: Partial<MediaItem>): number =>
-  (typeof item.data === 'string' ? item.data.length : 0) +
-  (typeof item.thumbnail === 'string' ? item.thumbnail.length : 0);
+/**
+ * What a row costs, measured exactly the way `storedBytesSql` measures it, given the same
+ * `prefixes` (`hostedUrlPrefixes`). The importer holds a row to the quota with this before it
+ * writes one, so the two must agree to the byte.
+ */
+export const storedBytesOf = (item: Partial<MediaItem>, prefixes: readonly string[]): number => {
+  const inline =
+    (typeof item.data === 'string' ? item.data.length : 0) +
+    (typeof item.thumbnail === 'string' ? item.thumbnail.length : 0);
+  const url = item.url;
+  if (typeof url !== 'string' || !prefixes.some((prefix) => url.startsWith(prefix))) {
+    return inline;
+  }
+  const size = item.byte_size;
+  return inline + Math.max(typeof size === 'number' ? size : NOMINAL_HOSTED_BYTES, 0);
+};
 
 /**
  * How much of their ceiling one player is already using, as a subquery rather than as an
  * answer — it is only ever embedded in the statement that acts on it, never awaited on its
- * own, which is the whole of the MICA-131 fix.
+ * own, which is the whole of the MICA-131 fix. (The importer is the one exception: it runs
+ * offline, from the console, and holds its own running total.)
  *
  * `status = 'active'` on purpose, and it is the one judgement call in the quota. Counting
  * every status would make the table's total size the bound — tidier arithmetic — but it
@@ -303,9 +381,15 @@ export const storedBytesOf = (item: Partial<MediaItem>): number =>
  * that photo is built on (`reportable.previewColumn`) — or a second grace-window knob, and
  * both are bigger decisions than this ticket.
  */
-export const USED_BYTES_SQL =
-  `SELECT COALESCE(SUM(${STORED_BYTES_SQL}), 0) AS used ` +
-  `FROM \`mica_media\` WHERE \`citizenid\` = ? AND \`status\` = 'active'`;
+export const usedBytesQuery = (
+  citizenid: string,
+  prefixes: readonly string[]
+): { sql: string; params: unknown[] } => ({
+  sql:
+    `SELECT COALESCE(SUM(${storedBytesSql(prefixes.length)}), 0) AS used ` +
+    `FROM \`mica_media\` WHERE \`citizenid\` = ? AND \`status\` = 'active'`,
+  params: [...prefixPatterns(prefixes), citizenid]
+});
 
 /**
  * The quota as a **predicate on the insert**, not a question asked before it. MICA-131.
@@ -340,19 +424,65 @@ const insertWithinQuota = async (
   columns: readonly string[],
   values: readonly unknown[],
   citizenid: string,
+  prefixes: readonly string[],
   incoming: number,
   limit: number
 ): Promise<number> => {
   const columnList = columns.map((column) => `\`${column}\``).join(', ');
   const selection = columns.map(() => '?').join(', ');
+  const used = usedBytesQuery(citizenid, prefixes);
 
   return await Database.insert(
     `INSERT INTO \`mica_media\` (${columnList})
      SELECT ${selection}
-     FROM (${USED_BYTES_SQL}) AS quota
+     FROM (${used.sql}) AS quota
      WHERE quota.used + ? <= ?`,
-    [...values, citizenid, incoming, limit]
+    [...values, ...used.params, incoming, limit]
   );
+};
+
+/**
+ * The least a capture can cost once hosted: its decoded file size, which is exactly the
+ * `byte_size` `hostPhoto` records. `null` for anything `uploadImage` would not post.
+ */
+const hostedBytesAtLeast = (data: string): number | null => {
+  const match = /^data:image\/(?:jpeg|png|webp|gif);base64,([A-Za-z0-9+/]+)(={0,2})$/.exec(data);
+  if (!match) return null;
+  return ((match[1].length + match[2].length) / 4) * 3 - match[2].length;
+};
+
+/**
+ * Refuse a capture before it is posted to the image host when the player's library cannot
+ * take it even at its smallest. MICA-293.
+ *
+ * Without this, a player already at their ceiling uploads every capture to the owner's host,
+ * is refused by `insertWithinQuota`, and `releaseOnFailure` deletes the file again: two
+ * requests to somebody else's host per retry, for a photo that was never going to be kept.
+ *
+ * **A pre-check, never the authority.** It reads the library in a statement of its own, so
+ * it has exactly the MICA-131 gap `insertWithinQuota` exists to close — two captures in
+ * flight can both pass it. That is fine here because passing it decides nothing: the insert
+ * still carries the predicate, and this only ever says no. It measures the smallest the row
+ * can be (the decoded file; a failed upload stores the larger base64 instead), so it refuses
+ * only what the insert would certainly refuse too.
+ *
+ * Only on the path that would upload — a host configured, an image kind, a data URI — so an
+ * install without a host pays no extra statement per capture.
+ */
+const refuseUploadWithoutRoom = async (item: Partial<MediaItem>): Promise<void> => {
+  const limit = quotaBytes();
+  const citizenid = item.citizenid;
+  if (limit <= 0 || typeof citizenid !== 'string' || citizenid.length === 0) return;
+  if (!HOSTABLE_KINDS.has(item.kind ?? 'photo') || typeof item.data !== 'string') return;
+  if (!uploadConfig()) return;
+  const smallest = hostedBytesAtLeast(item.data);
+  if (smallest === null) return;
+
+  const used = usedBytesQuery(citizenid, await hostedUrlPrefixes());
+  const current = Number((await Database.scalar<number | null>(used.sql, used.params)) ?? 0);
+  if (current + smallest > limit) {
+    throw new PlayerFacingError(QUOTA_FULL_MESSAGE, { key: 'server.media.quotaFull' });
+  }
 };
 
 /**
@@ -517,6 +647,7 @@ export const media = defineService<MediaItem, typeof mediaContract>({
         // Bounded before anything else, so an oversized payload is refused rather than
         // posted to a host (MICA-243) and then refused.
         assertStorableData(payload.data);
+        await refuseUploadWithoutRoom(payload);
         const item = await hostPhoto(payload);
         return await releaseOnFailure(item, payload, () => this.insertOwned(item));
       }
@@ -546,11 +677,13 @@ export const media = defineService<MediaItem, typeof mediaContract>({
           }
         }
 
+        const prefixes = await hostedUrlPrefixes();
         const id = await insertWithinQuota(
           columns,
           columns.map((column) => (item as Record<string, unknown>)[column]),
           citizenid,
-          storedBytesOf(item),
+          prefixes,
+          storedBytesOf(item, prefixes),
           limit
         );
 
@@ -562,7 +695,7 @@ export const media = defineService<MediaItem, typeof mediaContract>({
 
       /**
        * Write one already-authorized row to each nearby player who has room for it.
-       * MICA-115, reworked by MICA-131.
+       * MICA-115, reworked by MICA-131 and MICA-293.
        *
        * A **named** method rather than a loop of `create` calls in the service, for the
        * reason §2.9 gives named methods generally: the row being copied has already passed
@@ -584,6 +717,26 @@ export const media = defineService<MediaItem, typeof mediaContract>({
        * recipient, and the count comes back from what the database did rather than from the
        * length of the list handed in.
        *
+       * **Each copy is selected from the sender's row as it stands, not from `source` as
+       * `drop` read it** (MICA-293). `drop` reads the row, then looks for who is nearby, then
+       * writes; retention, a character purge or the orphan sweep can hard-delete that row in
+       * between and — seeing no other row naming its URL yet — ask the image host to delete
+       * the file. A copy written from the values read earlier would then land after the check
+       * and point every recipient at a deleted file. Selecting from the row in the insert
+       * itself means a copy exists only if its source still does, in the same statement:
+       *
+       * - the copy commits first → the release's reference check, which runs after the
+       *   delete, sees the recipient's row and keeps the file;
+       * - the delete commits first → the insert selects nothing, that recipient gets no row
+       *   and no toast, and the file goes as it should.
+       *
+       * The seam is here rather than in `releaseHostedImages` because the release already
+       * asks the right question — is any row still naming this URL — and cannot be asked it
+       * about a row that does not exist yet. It holds on InnoDB's default isolation for the
+       * same reason `insertWithinQuota` does: an `INSERT … SELECT` takes a shared lock on the
+       * source row it reads, so the delete and the copy serialize. The quota is charged from
+       * the same row, so a thumbnail stored on it in the meantime is charged as it is copied.
+       *
        * **Concurrent, not sequential**, which is what makes that affordable: the objection
        * the batch was written against was thirty *sequential* awaits on a busy corner, and
        * these are one round trip in wall clock. The fan-out is bounded well below that
@@ -600,7 +753,7 @@ export const media = defineService<MediaItem, typeof mediaContract>({
        * every other recipient's notification because one statement failed is the worse
        * outcome. Same reasoning `drop` gives for logging a refused push.
        */
-      async copyToPlayers(citizenids: readonly string[], item: MediaItem): Promise<string[]> {
+      async copyToPlayers(citizenids: readonly string[], source: MediaItem): Promise<string[]> {
         if (citizenids.length === 0) return [];
 
         const columns = ['citizenid', 'phone_id', ...COPIED_COLUMNS];
@@ -613,10 +766,11 @@ export const media = defineService<MediaItem, typeof mediaContract>({
         }
 
         const columnList = columns.map((column) => `\`${column}\``).join(', ');
-        const placeholders = columns.map(() => '?').join(', ');
-        const copied = COPIED_COLUMNS.map((column) => item[column] ?? null);
+        const copied = COPIED_COLUMNS.map((column) => `src.\`${column}\``).join(', ');
+        // The source by id **and** owner and still active, the three things `drop` checked.
+        const stillThere = "src.`id` = ? AND src.`citizenid` = ? AND src.`status` = 'active'";
         const limit = quotaBytes();
-        const incoming = storedBytesOf(item);
+        const prefixes = limit > 0 ? await hostedUrlPrefixes() : [];
 
         const written = await Promise.all(
           citizenids.map(async (citizenid) => {
@@ -624,19 +778,34 @@ export const media = defineService<MediaItem, typeof mediaContract>({
               // Each copy lands on the phone its recipient is on (MICA-282) — they are nearby,
               // so almost always the one in their hand.
               const phoneId = await phoneForCitizen(citizenid);
-              const id =
-                limit <= 0
-                  ? await Database.insert(
-                      `INSERT INTO \`${this.tableName}\` (${columnList}) VALUES (${placeholders})`,
-                      [citizenid, phoneId, ...copied]
-                    )
-                  : await insertWithinQuota(
-                      columns,
-                      [citizenid, phoneId, ...copied],
-                      citizenid,
-                      incoming,
-                      limit
-                    );
+              let id: number;
+              if (limit <= 0) {
+                id = await Database.insert(
+                  `INSERT INTO \`${this.tableName}\` (${columnList})
+                   SELECT ?, ?, ${copied}
+                   FROM \`${this.tableName}\` AS src
+                   WHERE ${stillThere}`,
+                  [citizenid, phoneId, source.id, source.citizenid]
+                );
+              } else {
+                const used = usedBytesQuery(citizenid, prefixes);
+                id = await Database.insert(
+                  `INSERT INTO \`${this.tableName}\` (${columnList})
+                   SELECT ?, ?, ${copied}
+                   FROM \`${this.tableName}\` AS src, (${used.sql}) AS quota
+                   WHERE ${stillThere}
+                   AND quota.used + ${storedBytesSql(prefixes.length, 'src')} <= ?`,
+                  [
+                    citizenid,
+                    phoneId,
+                    ...used.params,
+                    source.id,
+                    source.citizenid,
+                    ...prefixPatterns(prefixes),
+                    limit
+                  ]
+                );
+              }
               return id ? citizenid : null;
             } catch (error) {
               console.error(`[media] copy to ${citizenid} failed:`, error);
@@ -885,9 +1054,13 @@ app.registerEvent('drop', async (source, _cbId, data, citizenid, _player, phoneI
    * and this handler has no second opinion to disagree with it. That is also why the push
    * below fans out to what came back rather than to `nearbyCitizenids`: a bystander with
    * no room gets neither a row nor a toast about one.
+   *
+   * `owned` is only what this handler read before it looked for anyone nearby; the copy is
+   * selected from the sender's row as it stands then (MICA-293), so a row retention deleted
+   * in the meantime — and whose file it released — is copied to nobody.
    */
   const privileged = repo as unknown as {
-    copyToPlayers(citizenids: readonly string[], item: MediaItem): Promise<string[]>;
+    copyToPlayers(citizenids: readonly string[], source: MediaItem): Promise<string[]>;
   };
   const recipients = await privileged.copyToPlayers(nearbyCitizenids, owned);
   if (recipients.length === 0) return { count: 0 };
@@ -986,27 +1159,35 @@ export interface MediaStorageStats {
 const TOP_HOLDER_COUNT = 10;
 
 /**
- * MICA-71 step 1: measure before anything else. `byte_size` (the column) is never
- * written by anything today, so it cannot answer this — the real size lives in `data` and
- * `thumbnail` themselves, measured directly. Every row counts, not just `status = 'active'`
- * ones: a soft delete leaves the payload columns in place, so a deleted or moderated row
- * still costs exactly as many bytes as a live one until something actually purges it.
+ * MICA-71 step 1: measure before anything else. The size lives in `data` and `thumbnail`
+ * themselves, measured directly — and, for a hosted row, in `byte_size` or the nominal size
+ * (MICA-293), since its bytes are on the image host rather than in the row. The same
+ * expression the quota charges, so the report and the ceiling agree. Every row counts, not
+ * just `status = 'active'` ones: a soft delete leaves the payload columns in place, so a
+ * deleted or moderated row still costs exactly as many bytes as a live one until something
+ * actually purges it.
  */
 export const mediaStorageStats = async (): Promise<MediaStorageStats> => {
+  const prefixes = await hostedUrlPrefixes();
+  const cost = storedBytesSql(prefixes.length);
+  const patterns = prefixPatterns(prefixes);
+
   const totals = await Database.single<MediaTotalsRow>(
     `SELECT COUNT(*) AS rowCount,
-            SUM(${STORED_BYTES_SQL}) AS totalBytes
-     FROM mica_media`
+            SUM(${cost}) AS totalBytes
+     FROM mica_media`,
+    patterns
   );
 
   const holders = await Database.query<MediaHolderRow[]>(
     `SELECT citizenid,
             COUNT(*) AS rowCount,
-            SUM(${STORED_BYTES_SQL}) AS bytes
+            SUM(${cost}) AS bytes
      FROM mica_media
      GROUP BY citizenid
      ORDER BY bytes DESC
-     LIMIT ${TOP_HOLDER_COUNT}`
+     LIMIT ${TOP_HOLDER_COUNT}`,
+    patterns
   );
 
   return {

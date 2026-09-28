@@ -21,6 +21,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     onAppForeground
   } from '@mica/sdk';
   import ColorWheelPicker from './ColorWheelPicker.svelte';
+  import { canBeWallpaper, isHostedPhoto } from '@mica/shared/hostedPhoto';
   import { loadOwnerWallpapers, ownerWallpapers } from '../ownerWallpapers';
 
   const { t } = useLocale();
@@ -110,9 +111,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * not a wallpaper. `thumbnail` because that is what the grid below draws — the list read
    * no longer carries `data` (MICA-110), so keying the filter off bytes selected nothing
    * at all and reported an empty gallery to a player with a full one.
+   *
+   * A photo on the image host is left out (MICA-293): it has no bytes to read a scheme
+   * from, and drawing its URL would taint the canvas.
    */
-  const wallpaperPhotos = $derived(
-    $media.filter((photo) => photo.kind === 'photo' && photo.thumbnail).slice(0, 6)
+  const wallpaperPhotos = $derived($media.filter(canBeWallpaper).slice(0, 6));
+  const onlyHostedPhotos = $derived(
+    wallpaperPhotos.length === 0 &&
+      $media.some((photo) => photo.kind === 'photo' && photo.thumbnail && isHostedPhoto(photo))
   );
 
   /**
@@ -307,7 +313,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       {#if wallpaperPhotos.length === 0}
         <EmptyState
           title={$t('settings.theme.noPhotos')}
-          description={$t('settings.theme.noPhotosDescription')}
+          description={$t(
+            onlyHostedPhotos
+              ? 'settings.theme.noPhotosHosted'
+              : 'settings.theme.noPhotosDescription'
+          )}
         />
       {:else}
         <div class="grid grid-cols-3 gap-2">
