@@ -286,6 +286,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           placeholder={$t('settings.devtools.callerName')}
           class="border-outline-variant bg-surface text-on-surface placeholder-on-surface-variant w-1/2 rounded-chip border px-2.5 py-1.5 focus:border-emerald-500 focus:outline-none"
         />
+        <!-- "Phone Number" stays: this is the simulated caller's own number, the same field
+             `about.phoneNumber` names for the player's real one, and the tablet has none of
+             its own until MICA-264 gives it a separate identity (MICA-267). -->
         <input
           type="text"
           bind:value={callNumber}

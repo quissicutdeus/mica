@@ -41,7 +41,10 @@ const frameBox = async (page: Page) => {
 
 const openDisplayPane = async (page: Page) => {
   await page.locator('button', { hasText: 'Settings' }).first().click();
-  await page.locator('button', { hasText: 'Phone size' }).first().click();
+  // By title, not the row's subtitle: MICA-267 dropped "phone" from the subtitle text
+  // entirely (it now reads "Theme, wallpaper, size and clock" on every device) rather than
+  // leaving a device-specific word for this locator to key off.
+  await page.locator('button', { hasText: 'Display' }).first().click();
   await expect(page.locator('h1', { hasText: 'Display' })).toBeVisible();
 };
 
@@ -71,7 +74,7 @@ test('every slider position changes the size, even when the window caps the rang
   await openDisplayPane(page);
 
   // By label: the Display pane has three range inputs and a bare selector matches all of them.
-  const slider = page.getByLabel('Phone size');
+  const slider = page.getByLabel('Device size');
   const heights: number[] = [];
   for (const value of ['50', '75', '100']) {
     await slider.fill(value);
@@ -127,7 +130,7 @@ test('the Display setting resizes the phone, keeps its shape, and survives a rel
   await page.goto('/');
   await openDisplayPane(page);
 
-  const slider = page.getByLabel('Phone size');
+  const slider = page.getByLabel('Device size');
   await expect(slider).toHaveValue('50');
   const atDefault = await frameBox(page);
 
@@ -145,7 +148,7 @@ test('the Display setting resizes the phone, keeps its shape, and survives a rel
   // decide, and Settings says so. The slider itself is not dead — the assertion above
   // that 100 draws larger than 0 is what proves that, and it used to be the whole story:
   // every position from the fit upward rendered identically.
-  await expect(page.locator('text=This window sets how large the phone can go')).toBeVisible();
+  await expect(page.locator('text=This window sets how large the device can go')).toBeVisible();
 
   await slider.fill('20');
   const chosen = await frameBox(page);

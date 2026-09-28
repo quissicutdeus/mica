@@ -40,6 +40,11 @@ test.describe('Settings on the tablet', () => {
     // The frame picker is a phone-only decision — every tablet ships one body — so the
     // tablet root never renders it, on Display or anywhere else.
     await expect(page.getByTestId('frame-picker')).toHaveCount(0);
+
+    // MICA-267: the Display subtitle used to read "...phone size and clock" on every
+    // device. It is device-neutral now — a tablet reader should never see the word.
+    const subtitle = await sidebar.getByRole('button', { name: /^Display/ }).innerText();
+    expect(subtitle.toLowerCase()).not.toContain('phone');
   });
 
   test('the home grid stepper is bounded by the tablet launcher range, not the phone', async ({
@@ -85,5 +90,22 @@ test.describe('Settings on the tablet', () => {
     // whatever it opened.
     await expect(sidebar).toBeVisible();
     await expect(sidebar.getByRole('button', { name: /^Display/ })).toBeVisible();
+
+    // Side volume buttons are phone hardware (MICA-267) — the tablet has none, so the
+    // whole "Volume Buttons" section is absent rather than a hint about a control that
+    // isn't there, the same choice already made for the phone-only frame picker above.
+    await expect(page.getByText('Volume Buttons')).toHaveCount(0);
+  });
+
+  test("the Shortcuts footer names this device's own open/close key, not the phone's", async ({
+    page
+  }) => {
+    // MICA-267: the footer used to hard-code "Open Phone" regardless of which device it
+    // was read on. It now reads off `DEVICES[device].keybind`, so on the tablet it should
+    // name `openTablet`'s label and never the phone's.
+    const sidebar = page.getByRole('navigation', { name: 'Settings sections' });
+    await sidebar.getByRole('button', { name: /^Shortcuts/ }).click();
+    await expect(page.getByText('Open Tablet is bound')).toBeVisible();
+    await expect(page.getByText('Open Phone is bound')).toHaveCount(0);
   });
 });

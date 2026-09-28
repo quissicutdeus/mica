@@ -76,6 +76,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <div class="p-4">
   <SettingsSection title={$t('settings.about.title')}>
     <div class="divide-outline-variant text-body-medium divide-y">
+      <!-- "Phone Number" stays even on the tablet root: `myPhoneNumber` is the player's one
+           real number, not a per-device fact, and the tablet has none of its own until
+           MICA-264 gives it a separate identity (MICA-267). -->
       <button
         type="button"
         onclick={copyPhoneNumber}

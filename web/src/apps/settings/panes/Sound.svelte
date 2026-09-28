@@ -30,6 +30,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import {
     SettingsSection,
     ToggleSwitch,
+    useDisplay,
     useLocale,
     useSystemHardware,
     useSystemHardwareWrite,
@@ -37,6 +38,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   } from '@mica/sdk';
 
   const { t } = useLocale();
+  const { device } = useDisplay();
   const {
     soundVolume,
     soundMuted,
@@ -226,31 +228,36 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     </div>
   </SettingsSection>
 
-  <!-- How far the physical buttons on the side of the phone move the volume per press. -->
-  <SettingsSection title={$t('settings.sound.volumeButtons')}>
-    <div class="px-4 pb-4">
-      <div class="text-body-medium mb-3 flex items-center justify-between">
-        <span class="text-on-surface font-medium">{$t('settings.sound.stepSize')}</span>
-        <span class="text-on-surface font-mono">{$volumeStep}%</span>
+  {#if $device === 'phone'}
+    <!-- How far the physical buttons on the side of the phone move the volume per press.
+         Phone hardware only (MICA-267): the tablet has no side volume buttons, so the whole
+         section is absent on it rather than a hint describing a control that isn't there —
+         the same choice `Display.svelte` already makes for the phone-only `FramePicker`. -->
+    <SettingsSection title={$t('settings.sound.volumeButtons')}>
+      <div class="px-4 pb-4">
+        <div class="text-body-medium mb-3 flex items-center justify-between">
+          <span class="text-on-surface font-medium">{$t('settings.sound.stepSize')}</span>
+          <span class="text-on-surface font-mono">{$volumeStep}%</span>
+        </div>
+        <div class="grid grid-cols-5 gap-1.5">
+          {#each volumeStepChoices as choice (choice)}
+            <button
+              type="button"
+              onclick={() => setVolumeStep(choice)}
+              aria-pressed={$volumeStep === choice}
+              class="text-body-small cursor-pointer rounded-chip border py-1.5 transition-all {$volumeStep ===
+              choice
+                ? 'border-primary bg-primary-container text-on-primary-container'
+                : 'border-outline-variant bg-surface text-on-surface-variant hover:bg-surface-container-high'} duration-short ease-standard"
+            >
+              {choice}%
+            </button>
+          {/each}
+        </div>
+        <p class="text-on-surface-variant text-body-small mt-3">
+          {$t('settings.sound.stepHint')}
+        </p>
       </div>
-      <div class="grid grid-cols-5 gap-1.5">
-        {#each volumeStepChoices as choice (choice)}
-          <button
-            type="button"
-            onclick={() => setVolumeStep(choice)}
-            aria-pressed={$volumeStep === choice}
-            class="text-body-small cursor-pointer rounded-chip border py-1.5 transition-all {$volumeStep ===
-            choice
-              ? 'border-primary bg-primary-container text-on-primary-container'
-              : 'border-outline-variant bg-surface text-on-surface-variant hover:bg-surface-container-high'} duration-short ease-standard"
-          >
-            {choice}%
-          </button>
-        {/each}
-      </div>
-      <p class="text-on-surface-variant text-body-small mt-3">
-        {$t('settings.sound.stepHint')}
-      </p>
-    </div>
-  </SettingsSection>
+    </SettingsSection>
+  {/if}
 </div>

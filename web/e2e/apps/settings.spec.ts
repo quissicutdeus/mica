@@ -224,7 +224,7 @@ test.describe('Settings App E2E', () => {
       await page.locator('button', { hasText: 'Contacts' }).first().click();
 
       await expect(page.locator('h1', { hasText: 'Contacts' })).toBeVisible();
-      await expect(page.locator('text=System apps ship with the phone')).toBeVisible();
+      await expect(page.locator('text=System apps ship with the device')).toBeVisible();
       // No Uninstall for a core app rather than one that could only fail — `unregisterApp`
       // throws for a core id.
       await expect(page.getByRole('button', { name: 'Uninstall' })).toHaveCount(0);

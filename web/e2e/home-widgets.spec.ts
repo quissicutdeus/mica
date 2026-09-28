@@ -74,7 +74,7 @@ test.describe('Home widgets', () => {
 
     // Shrinking 5 -> 3 columns in Settings keeps it, reflowed to fit.
     await page.locator('button', { hasText: 'Settings' }).first().click();
-    await page.locator('button', { hasText: 'Phone size' }).first().click();
+    await page.locator('button', { hasText: 'Display' }).first().click();
     await page.getByRole('button', { name: 'Fewer columns' }).click();
     await page.getByRole('button', { name: 'Fewer columns' }).click();
     await page.locator("button[aria-label='Return to home screen']").click();

@@ -201,9 +201,9 @@ test('Settings > Display has no accessibility violations', async ({ page }) => {
   await page.goto('/');
   await settlePhoneOpen(page);
   await page.locator('button', { hasText: 'Settings' }).first().click();
-  // Substring match against the row's subtitle ("Theme, wallpaper, phone size and clock"),
-  // the same way `display.spec.ts`'s `openDisplayPane` reaches this pane.
-  await page.locator('button', { hasText: 'Phone size' }).first().click();
+  // By title, the same way `display.spec.ts`'s `openDisplayPane` reaches this pane —
+  // MICA-267 dropped the device-specific word from the row's subtitle.
+  await page.locator('button', { hasText: 'Display' }).first().click();
   await expect(page.locator('h1', { hasText: 'Display' })).toBeVisible();
 
   const frame = page.getByTestId('phone-frame');

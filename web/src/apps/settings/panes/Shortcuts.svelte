@@ -7,16 +7,32 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script lang="ts">
   import {
     SettingsSection,
+    useDisplay,
     useKeybinds,
     useKeybindsWrite,
     useLocale,
     usePhoneNotification
   } from '@mica/sdk';
+  import { DEVICES } from '@mica/shared/devices';
+  import { KEYBIND_ACTIONS } from '@mica/shared/keybinds';
 
   const { t } = useLocale();
   const { bindings, groups, findConflict } = useKeybinds();
   const { setBinding, resetBindings } = useKeybindsWrite();
   const { toast } = usePhoneNotification();
+  const { device } = useDisplay();
+
+  /**
+   * The label FiveM's own Key Bindings menu shows for *this* device's open/close mapping
+   * (MICA-267) — `openPhone`/`Open Phone` on the phone, `openTablet`/`Open Tablet` on the
+   * tablet. Those actions are `scope: 'game'` (see `shared/keybinds.ts`), so they never
+   * appear in `groups` below and the footer is the only place this pane says anything
+   * about them.
+   */
+  const deviceKeybindLabel = $derived(
+    KEYBIND_ACTIONS.find((action) => action.id === DEVICES[$device].keybind.id)?.label ??
+      DEVICES[$device].keybind.command
+  );
 
   /** The action currently waiting for a key, if any. */
   let capturingId = $state<string | null>(null);
@@ -92,7 +108,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   <SettingsSection
     title={$t('settings.shortcuts.title')}
     headerAction={resetAction}
-    footer={$t('settings.shortcuts.footer')}
+    footer={$t('settings.shortcuts.footer', { label: deviceKeybindLabel })}
   >
     {#each $groups as group (group.ownerId)}
       {#if group.ownerId !== 'core'}
