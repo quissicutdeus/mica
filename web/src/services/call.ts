@@ -109,7 +109,13 @@ function createCallStore() {
           return initialState;
         }
         if (status === 'connected' && speakerAvailable !== undefined) {
-          return { ...s, status, speakerAvailable };
+          // Withdrawn mid-call means the server switched it off too, so it cannot stay "on".
+          return {
+            ...s,
+            status,
+            speakerAvailable,
+            speaker: speakerAvailable ? s.speaker : false
+          };
         }
         return { ...s, status };
       });

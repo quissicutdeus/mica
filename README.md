@@ -766,7 +766,7 @@ set mica_default_contacts ""
 | `mica_bluetooth_max_nearby`        | integer                                                 | `5`                    | How many phones one proximity share reaches                                                                                           |
 | `mica_music_range`                 | integer, meters                                         | `30`                   | How far music from a phone is heard (needs `setr`)                                                                                    |
 | `mica_music_max_nearby`            | integer                                                 | `8`                    | Broadcasters one listener is told about at once                                                                                       |
-| `mica_speaker_range`               | integer, meters                                         | `4`                    | How far a call on speaker is heard; `0` hides the Speaker control                                                                     |
+| `mica_speaker_range`               | integer, meters, at most 10                             | `4`                    | How far a call on speaker is heard; `0` hides the Speaker control                                                                     |
 | `mica_speaker_volume`              | integer, 1-100                                          | `30`                   | pma-voice call volume a bystander hears a speakerphone call at                                                                        |
 | `mica_blabber_edit_window`         | integer, seconds                                        | `900`                  | How long a Blab stays editable by its author                                                                                          |
 | `mica_notification_retention`      | integer, days                                           | `30`                   | How long notification rows are kept                                                                                                   |
@@ -960,8 +960,9 @@ the convar is invisible until the resource restarts.
   says why that is the only mechanism available. The Speaker control appears
   only when pma-voice is started with `voice_enableCalls` on and this is above
   `0`; `0` turns speakerphone off rather than leaving a button that does
-  nothing. At most six bystanders are added per phone, nearest first, and nobody
-  already on a call of their own.
+  nothing. Raising it past 10 gets 10 — the ceiling is in the code. At most six
+  bystanders are added per phone, nearest first, and nobody dead or already on a
+  call of their own.
 - **`mica_speaker_volume`** — the pma-voice call volume (its own 0-100 scale,
   where its default call volume is 60) a bystander hears a speakerphone call at.
   Their own call volume is saved and put back when they walk away or the call

@@ -581,6 +581,11 @@ by this list until someone re-weighs it.
   context; the shell hash-verifies the bundle text it was handed before booting
   it. §2.9 is what stands behind server-side actions either way — the server
   does not care which app is asking.
+- **The `call` facet's `toggleSpeaker` reaches other players** (MICA-246): an
+  app holding it can put a connected call on speaker, which moves up to six
+  nearby players into that call's voice channel. Same class as `answerCall` —
+  the server decides who, from its own positions, and only for a party to an
+  answered call.
 - **Where the bytes are fetched from is checked, and checked again on update.**
   `isTrustedRemoteUrl` (`web/src/shell/state/remoteAppSecurity.ts`) requires
   HTTPS plus a hostname on an operator-configured allowlist, empty by default —

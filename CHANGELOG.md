@@ -512,6 +512,15 @@ with `internal_error` and the rest of Messages is unaffected.
 
 ### Added
 
+**Speakerphone that nearby players actually hear (MICA-246).** On speaker, the
+server adds players within `mica_speaker_range` meters (default 4, at most 10,
+up to six players) to the call's pma-voice channel at `mica_speaker_volume`
+(default 30), and the far side hears them. The sound is in their ear, not played
+from the phone's position: the release client has no native for that. Set
+`mica_speaker_range 0`, or run without pma-voice, and the Speaker button is
+hidden rather than doing nothing. `docs/testing-voip.md` has a three-player
+manual test.
+
 **Photos can live on an external image host instead of the database
 (MICA-243).** Off by default; nothing changes until you set
 `mica_media_upload_url`. The server posts each JPEG there, with the header in

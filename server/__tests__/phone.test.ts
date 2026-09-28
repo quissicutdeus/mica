@@ -1134,7 +1134,8 @@ describe('speakerphone', () => {
     __setVoiceBackend({
       ready: () => ready,
       setCall,
-      channelOf: (src) => channels.get(src) ?? 0
+      channelOf: (src) => channels.get(src) ?? 0,
+      clearChannel: (src) => channels.delete(src)
     });
     for (const key of Object.keys(coords)) delete coords[key];
     coords['1'] = [0, 0, 0];

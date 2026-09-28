@@ -50,6 +50,8 @@ on('__cfx_nui:endCall', (_: any, cb: Function) => {
   // hang-up takes effect at once rather than a round trip later, and costs nothing when
   // `ended` repeats it. Only ever to false: the page can end a call, never start one.
   connected = false;
+  // Leaving pma-voice below leaves a nearby speaker's channel too, as in `ended`.
+  stopListening();
   // Guarded like `ended` -- a throw here must not stop the server hearing the hang-up.
   try {
     pmaVoice()?.removePlayerFromCall?.();
@@ -152,6 +154,22 @@ on('onResourceStop', (resource: string) => {
   if (resource === GetCurrentResourceName()) stopListening();
 });
 
+/**
+ * The server switched this phone's speaker off mid-call because it can no longer carry one
+ * (pma-voice stopped, the range set to 0). Re-sent as `connected` with the speaker withdrawn,
+ * which the shell reads as "hide the control and show it off" — and only while this player
+ * really is on a call, so a late push can never turn an idle phone back into a call screen.
+ */
+onNet('mica:client:phone:speakerState', (data: { available?: boolean }) => {
+  if (!connected || data?.available !== false) return;
+  SendNuiMessage(
+    JSON.stringify({
+      action: 'callStatus',
+      data: { status: 'connected', speakerAvailable: false }
+    })
+  );
+});
+
 // Server Events
 onNet('mica:client:phone:incoming', (data: { from: string; callId: number }) => {
   // The phone is now open whether or not the player asked for it, through the same
@@ -204,6 +222,11 @@ onNet('mica:client:phone:accepted', (data: { callId: number; speaker?: boolean }
 
 onNet('mica:client:phone:ended', () => {
   connected = false;
+  // `removePlayerFromCall` below leaves whatever pma-voice channel this player is in, a
+  // nearby speaker's included — a bystander whose own dial was refused lands here without
+  // ever connecting. The server drops them from that speaker on its next tick; the volume
+  // comes back now (MICA-246).
+  stopListening();
 
   // Disconnect from PMA Voice. Same guard as `accepted` above — a throw here must not
   // stop the phone from returning to idle.

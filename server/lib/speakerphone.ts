@@ -66,11 +66,35 @@ const LEAVE_FACTOR = 1.25;
 /** The event a bystander's client is told it is listening, or no longer is, on. */
 export const SPEAKER_LISTEN_EVENT = 'mica:client:phone:speakerListen';
 
-/** Range in meters. `0` or less turns speakerphone off, and the control with it. */
+/**
+ * The ceiling `mica_speaker_range` cannot be raised past. A phone on speaker is heard across
+ * a room, not a street; past this, "nearby" becomes a way to put strangers into a call.
+ */
+export const MAX_SPEAKER_RANGE = 10;
+
+/** The event a phone holder is told its speaker was switched off by the server on. */
+export const SPEAKER_STATE_EVENT = 'mica:client:phone:speakerState';
+
+/**
+ * Range in meters, at most `MAX_SPEAKER_RANGE`. `0` or less turns speakerphone off, and the
+ * control with it.
+ */
 export const speakerRange = (): number => {
   const raw =
     typeof GetConvarInt === 'function' ? GetConvarInt(RANGE_CONVAR, DEFAULT_RANGE) : DEFAULT_RANGE;
-  return Number.isFinite(raw) && raw > 0 ? raw : 0;
+  return Number.isFinite(raw) && raw > 0 ? Math.min(raw, MAX_SPEAKER_RANGE) : 0;
+};
+
+/**
+ * Whether `src`'s ped is dead, from the server's synced health. GTA's player peds die at 100
+ * and below (a HUD shows health minus 100), so that is the line. Unknown reads as alive: a
+ * missing native or ped is `playerCoords`'s business, which already skips them.
+ */
+const isDead = (src: number): boolean => {
+  if (typeof GetPlayerPed !== 'function' || typeof GetEntityHealth !== 'function') return false;
+  const ped = GetPlayerPed(String(src));
+  if (!ped) return false;
+  return GetEntityHealth(ped) <= 100;
 };
 
 /** What a bystander hears the call at, clamped to pma-voice's scale. */
@@ -83,7 +107,7 @@ export const speakerVolume = (): number => {
   return Math.min(100, Math.max(1, Math.trunc(raw)));
 };
 
-/** The voice resource, reduced to the three things speakerphone asks of it. */
+/** The voice resource, reduced to the four things speakerphone asks of it. */
 export interface VoiceBackend {
   /** Whether call channels exist at all on this server right now. */
   ready(): boolean;
@@ -91,6 +115,11 @@ export interface VoiceBackend {
   setCall(src: number, channel: number): void;
   /** The call channel `src` is in, `0` for none. */
   channelOf(src: number): number;
+  /**
+   * Forget `src`'s channel without the voice resource's help — for when `setCall` cannot run
+   * because it has stopped. pma-voice rejoins whatever this says when it starts again.
+   */
+  clearChannel(src: number): void;
 }
 
 const PMA_VOICE = 'pma-voice';
@@ -115,6 +144,12 @@ const pmaVoice: VoiceBackend = {
     if (typeof Player !== 'function') return 0;
     const channel = Number(Player(src)?.state?.callChannel);
     return Number.isFinite(channel) ? channel : 0;
+  },
+  // pma-voice's client re-reads `LocalPlayer.state.callChannel` on its own resource start
+  // (`client/init/init.lua`) and rejoins it, so a stale value outlives the stop.
+  clearChannel: (src) => {
+    if (typeof Player !== 'function') return;
+    Player(src)?.state?.set('callChannel', 0, true);
   }
 };
 
@@ -172,10 +207,21 @@ function release(src: number, notify = true): void {
   if (!entry) return;
   listeners.delete(src);
 
-  try {
-    if (backend.channelOf(src) === entry.callId) backend.setCall(src, 0);
-  } catch (error) {
-    console.error(`[mica] speakerphone could not take ${src} out of call ${entry.callId}.`, error);
+  if (backend.channelOf(src) === entry.callId) {
+    try {
+      backend.setCall(src, 0);
+    } catch (error) {
+      console.error(
+        `[mica] speakerphone could not take ${src} out of call ${entry.callId}.`,
+        error
+      );
+      // pma-voice has stopped: clear the state bag it would rejoin from on restart.
+      try {
+        backend.clearChannel(src);
+      } catch {
+        // No state bag either; nothing left that could rejoin them.
+      }
+    }
   }
   if (notify) emitNet(SPEAKER_LISTEN_EVENT, src, { listening: false });
 }
@@ -242,8 +288,8 @@ export function setSpeaker(
 /**
  * One pass: drop what no longer holds, then fill each speaker up to its cap, nearest first.
  *
- * A candidate is anybody in the speaker's routing bucket, in range, holding no call of their
- * own, in no pma-voice call channel (another resource's call included), and not already
+ * A candidate is anybody alive in the speaker's routing bucket, in range, holding no call of
+ * their own, in no pma-voice call channel (another resource's call included), and not already
  * listening to a speaker.
  */
 export function tickSpeakers(calls: SpeakerCalls): void {
@@ -251,7 +297,15 @@ export function tickSpeakers(calls: SpeakerCalls): void {
 
   const available = speakerAvailable();
   for (const [owner, callId] of speakers) {
-    if (!available || calls.callOf(owner) !== callId) speakerOff(owner);
+    if (calls.callOf(owner) !== callId) {
+      // The call ended or changed; its own `ended` already put the phone back to idle.
+      speakerOff(owner);
+    } else if (!available) {
+      // Still on the call, but the server can no longer carry a speaker (pma-voice stopped,
+      // range set to 0). The phone is told, or it would keep showing "on" over nothing.
+      speakerOff(owner);
+      emitNet(SPEAKER_STATE_EVENT, owner, { available: false });
+    }
   }
 
   const range = speakerRange();
@@ -259,9 +313,13 @@ export function tickSpeakers(calls: SpeakerCalls): void {
   for (const [src, entry] of listeners) {
     const ownerCoords = playerCoords(entry.owner);
     const coords = playerCoords(src);
+    // Still in the channel this speaker put them in: a bystander whose own dial was refused
+    // inside one tick left it through their own client, and must be free to be added again.
     const stays =
       speakers.get(entry.owner) === entry.callId &&
+      backend.channelOf(src) === entry.callId &&
       !calls.onCall(src) &&
+      !isDead(src) &&
       ownerCoords !== null &&
       coords !== null &&
       bucketOf(src) === bucketOf(entry.owner) &&
@@ -292,7 +350,7 @@ export function tickSpeakers(calls: SpeakerCalls): void {
       if (!coords) continue;
       const d = distanceSquared(origin, coords);
       if (d > rangeSquared || bucketOf(src) !== bucket) continue;
-      if (backend.channelOf(src) !== 0) continue;
+      if (backend.channelOf(src) !== 0 || isDead(src)) continue;
       nearby.push({ src, distanceSquared: d });
     }
 

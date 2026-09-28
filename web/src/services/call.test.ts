@@ -111,6 +111,19 @@ describe('callStore', () => {
       expect(get(callStore).speaker).toBe(false);
     });
 
+    it('shows it off when the server withdraws it mid-call', async () => {
+      callStore.setStatus('connected', true);
+      vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue({ ok: true, enabled: true });
+      await callStore.toggleSpeaker();
+      expect(get(callStore).speaker).toBe(true);
+
+      callStore.setStatus('connected', false);
+
+      expect(get(callStore)).toEqual(
+        expect.objectContaining({ status: 'connected', speaker: false, speakerAvailable: false })
+      );
+    });
+
     it('forgets availability when the call ends', () => {
       callStore.setStatus('connected', true);
       callStore.setStatus('idle');

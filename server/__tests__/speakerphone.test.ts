@@ -13,7 +13,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 const world = vi.hoisted(() => ({
   players: new Set<number>(),
   coords: {} as Record<string, [number, number, number]>,
-  buckets: {} as Record<string, number>
+  buckets: {} as Record<string, number>,
+  health: {} as Record<string, number>
 }));
 
 vi.mock('../lib/FrameworkBridge', () => ({
@@ -26,6 +27,8 @@ vi.mock('../lib/FrameworkBridge', () => ({
 import {
   MAX_SPEAKER_LISTENERS,
   SPEAKER_LISTEN_EVENT,
+  SPEAKER_STATE_EVENT,
+  speakerRange,
   __resetSpeakerphone,
   __setVoiceBackend,
   isSpeakerOn,
@@ -47,6 +50,9 @@ let ready = true;
 const setCall = vi.fn((src: number, channel: number) => {
   if (channel === 0) channels.delete(src);
   else channels.set(src, channel);
+});
+const clearChannel = vi.fn((src: number) => {
+  channels.delete(src);
 });
 
 /** Who is on a call, and which answered call each party holds. */
@@ -78,14 +84,22 @@ beforeEach(() => {
     if (channel === 0) channels.delete(src);
     else channels.set(src, channel);
   });
+  clearChannel.mockClear();
   ready = true;
-  __setVoiceBackend({ ready: () => ready, setCall, channelOf: (src) => channels.get(src) ?? 0 });
+  __setVoiceBackend({
+    ready: () => ready,
+    setCall,
+    channelOf: (src) => channels.get(src) ?? 0,
+    clearChannel
+  });
   onCall.clear();
   answered.clear();
   world.players.clear();
   for (const key of Object.keys(world.coords)) delete world.coords[key];
   for (const key of Object.keys(world.buckets)) delete world.buckets[key];
+  for (const key of Object.keys(world.health)) delete world.health[key];
   convars = {};
+  (globalThis as any).GetEntityHealth = (ped: string) => world.health[String(ped).slice(4)] ?? 200;
 
   (globalThis as any).emitNet = vi.fn();
   (globalThis as any).GetConvarInt = (name: string, fallback: number) => convars[name] ?? fallback;
@@ -108,6 +122,109 @@ afterEach(() => {
   delete (globalThis as any).DoesEntityExist;
   delete (globalThis as any).GetEntityCoords;
   delete (globalThis as any).GetPlayerRoutingBucket;
+  delete (globalThis as any).GetEntityHealth;
+  delete (globalThis as any).GetResourceState;
+  delete (globalThis as any).Player;
+});
+
+describe('review fixes (MICA-246)', () => {
+  const statePushes = (src: number) =>
+    (globalThis.emitNet as any).mock.calls
+      .filter((c: unknown[]) => c[0] === SPEAKER_STATE_EVENT && c[1] === src)
+      .map((c: unknown[]) => c[2]);
+
+  it('clears the state bag pma-voice would rejoin from when it cannot be asked', () => {
+    place(3, [1, 0, 0]);
+    setSpeaker(OWNER, true, calls);
+    expect(speakerListeners()).toEqual([3]);
+
+    // pma-voice stopped: the export is gone, but its state bag still names the call.
+    setCall.mockImplementation(() => {
+      throw new Error('No such export setPlayerCall in resource pma-voice');
+    });
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    speakerOff(OWNER);
+    error.mockRestore();
+
+    expect(clearChannel).toHaveBeenCalledWith(3);
+    expect(channels.has(3)).toBe(false);
+  });
+
+  it('pma-voice itself: a failed setPlayerCall zeroes Player(src).state.callChannel', () => {
+    place(3, [1, 0, 0]);
+    setSpeaker(OWNER, true, calls);
+
+    const set = vi.fn();
+    (globalThis as any).Player = () => ({ state: { callChannel: CALL, set } });
+    // The real backend, with no `pma-voice` export behind it.
+    __setVoiceBackend();
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    speakerOff(OWNER);
+    error.mockRestore();
+
+    expect(set).toHaveBeenCalledWith('callChannel', 0, true);
+  });
+
+  it('frees a bystander who left the channel through their own client, and re-adds them', () => {
+    place(3, [1, 0, 0]);
+    setSpeaker(OWNER, true, calls);
+
+    // Dialled, refused inside one tick: their client left pma-voice, and they hold no call.
+    channels.delete(3);
+    tickSpeakers(calls);
+
+    // Freed and told (so the volume comes back), then admitted again on the same pass.
+    expect(pushes(3)).toEqual([
+      { listening: true, volume: 30 },
+      { listening: false },
+      { listening: true, volume: 30 }
+    ]);
+    expect(setCall).not.toHaveBeenCalledWith(3, 0);
+    expect(channels.get(3)).toBe(CALL);
+    expect(speakerListeners()).toEqual([3]);
+  });
+
+  it('tells the phone when the server switches its speaker off mid-call', () => {
+    setSpeaker(OWNER, true, calls);
+    ready = false;
+    tickSpeakers(calls);
+
+    expect(isSpeakerOn(OWNER)).toBe(false);
+    expect(statePushes(OWNER)).toEqual([{ available: false }]);
+  });
+
+  it('does not, when the call itself ended -- `ended` already said so', () => {
+    setSpeaker(OWNER, true, calls);
+    answered.clear();
+    tickSpeakers(calls);
+
+    expect(statePushes(OWNER)).toEqual([]);
+  });
+
+  it('clamps mica_speaker_range to 10 m', () => {
+    convars.mica_speaker_range = 50;
+    expect(speakerRange()).toBe(10);
+    place(3, [9, 0, 0]);
+    place(4, [12, 0, 0]);
+
+    setSpeaker(OWNER, true, calls);
+
+    expect(speakerListeners()).toEqual([3]);
+  });
+
+  it('never adds a dead bystander, and lets one go who dies listening', () => {
+    place(3, [1, 0, 0]);
+    place(4, [1.5, 0, 0]);
+    world.health['4'] = 100;
+
+    setSpeaker(OWNER, true, calls);
+    expect(speakerListeners()).toEqual([3]);
+
+    world.health['3'] = 0;
+    tickSpeakers(calls);
+    expect(speakerListeners()).toEqual([]);
+    expect(channels.has(3)).toBe(false);
+  });
 });
 
 describe('switching it on', () => {

@@ -154,6 +154,30 @@ describe('NUI callbacks', () => {
   });
 });
 
+describe('the server withdrawing the speaker mid-call (MICA-246)', () => {
+  const withdraw = () => serverEvent('mica:client:phone:speakerState', { available: false });
+
+  it('re-sends connected with the speaker withdrawn', () => {
+    serverEvent('mica:client:phone:accepted', { callId: 4, speaker: true });
+    sentNuiMessages.length = 0;
+    withdraw();
+
+    expect(sentNuiMessages).toEqual([
+      { action: 'callStatus', data: { status: 'connected', speakerAvailable: false } }
+    ]);
+  });
+
+  it('never turns an idle phone into a call screen', () => {
+    withdraw();
+    serverEvent('mica:client:phone:accepted', { callId: 4, speaker: true });
+    serverEvent('mica:client:phone:ended');
+    sentNuiMessages.length = 0;
+    withdraw();
+
+    expect(sentNuiMessages).toEqual([]);
+  });
+});
+
 describe('listening to a nearby speaker (MICA-246)', () => {
   const listen = (data: unknown) => serverEvent('mica:client:phone:speakerListen', data);
 
@@ -207,6 +231,20 @@ describe('listening to a nearby speaker (MICA-246)', () => {
     expect(pmaVoice.setCallVolume).toHaveBeenCalledTimes(1);
 
     nuiCallbacks.get('onResourceStop')!('mica', () => {});
+    expect(pmaVoice.setCallVolume).toHaveBeenLastCalledWith(60);
+  });
+
+  it("puts the volume back when this player's own refused dial ends -- it left the channel", () => {
+    listen({ listening: true, volume: 30 });
+    serverEvent('mica:client:phone:ended');
+
+    expect(pmaVoice.setCallVolume).toHaveBeenLastCalledWith(60);
+  });
+
+  it('puts the volume back when this player hangs up their own dial', async () => {
+    listen({ listening: true, volume: 30 });
+    await nuiCall('endCall');
+
     expect(pmaVoice.setCallVolume).toHaveBeenLastCalledWith(60);
   });
 
