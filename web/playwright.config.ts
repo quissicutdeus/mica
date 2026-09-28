@@ -216,8 +216,19 @@ export default defineConfig({
      * and `keybinds.spec.ts` and `error_boundary.spec.ts` drive both. A production bundle
      * drops them and those specs fail on a global that is simply not there. Mode keeps the
      * semantics identical to the dev server while still producing static output.
+     *
+     * `exec node_modules/.bin/vite`, not `pnpm preview` (MICA-296): `pnpm preview` is a
+     * run-script wrapper that *spawns* vite as a child rather than exec'ing into it, and
+     * does not forward the SIGTERM Playwright sends on teardown to that child. Playwright's
+     * own process exits, the wrapper dies with it, and the vite grandchild survives —
+     * reparented to init, still holding the port and still holding the stdout/stderr pipe
+     * open, so Playwright's next run binds `4173` already in use, and *this* run hangs
+     * forever waiting for that pipe's EOF after its tests are done. The pnpm-generated
+     * `node_modules/.bin/vite` shim already `exec`s into `node vite.js`; prefixing our own
+     * `exec` makes the shell replace itself too, so the process Playwright spawned and the
+     * process holding the port are the same pid and a signal to one reaches the other.
      */
-    command: `pnpm build:e2e && pnpm preview --port ${PORT} --strictPort`,
+    command: `pnpm build:e2e && exec node_modules/.bin/vite preview --port ${PORT} --strictPort`,
     url: `http://127.0.0.1:${PORT}`,
     /**
      * Never reuse. The command below *builds* before it serves, and reuse skips the whole

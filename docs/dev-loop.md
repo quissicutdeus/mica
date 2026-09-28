@@ -47,9 +47,20 @@ or `pnpm verify`, which build and serve their own copy independently of this por
 Vite's usual silent fallback to 4174, which is what you want: a suite quietly
 testing a stale build on another port is worse than one that refuses to start.
 
-If it is genuinely stuck, the holder may be a **Windows-side** process — under
-WSL2, `ss` and `netstat` inside the guest do not see those, so the port looks
-free from every tool you would reach for first:
+Before MICA-296, the holder could be a `vite preview` orphaned by the run before
+it: `webServer.command` ran preview through `pnpm preview`, a run-script wrapper
+that spawns vite as a child instead of exec'ing into it, so Playwright's SIGTERM
+to the process it spawned never reached that child — it survived, reparented to
+init, still bound to 4173, and the _next_ run's strictPort bind failed here. The
+command now `exec`s the vite binary directly so the pid Playwright signals is
+the pid holding the port; a stale holder from this cause should not recur. If
+one is still there from a run predating the fix, find it with
+`ss -ltnp | grep 4173` (confirm its `cwd` is your worktree before killing it —
+never a bare `pkill -f`, which can match its own shell) and kill it by pid.
+
+If it is genuinely stuck after that, the holder may be a **Windows-side**
+process — under WSL2, `ss` and `netstat` inside the guest do not see those, so
+the port looks free from every tool you would reach for first:
 
 ```sh
 netstat.exe -ano | grep 4173
