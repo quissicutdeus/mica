@@ -89,7 +89,10 @@ const hosting = (extra: Record<string, string> = {}) =>
     ...extra
   });
 
-type FetchCall = [string, { method: string; headers: Record<string, string>; body?: unknown }];
+type FetchCall = [
+  string,
+  { method: string; headers: Record<string, string>; body?: unknown; redirect?: string }
+];
 let fetchMock: ReturnType<typeof vi.fn>;
 const replyWith = (status: number, body: unknown) =>
   fetchMock.mockResolvedValue({
@@ -226,6 +229,24 @@ describe('uploadImage', () => {
     expect(file.type).toBe('image/webp');
   });
 
+  it('refuses to follow a redirect, which would carry the key off the host', async () => {
+    hosting();
+    replyWith(200, { url: HOSTED });
+
+    await uploadImage(PHOTO);
+
+    expect((fetchMock.mock.calls[0] as FetchCall)[1].redirect).toBe('error');
+  });
+
+  it('falls back to the database when the host answers with a redirect', async () => {
+    hosting();
+    // What undici does under `redirect: 'error'`.
+    fetchMock.mockRejectedValue(new TypeError('fetch failed: unexpected redirect'));
+
+    expect(await uploadImage(PHOTO)).toBeNull();
+    expect(logged()).toMatch(/stored in the database instead/);
+  });
+
   it('reads the URL from the configured response path', async () => {
     hosting({ mica_media_upload_response_path: 'data.link' });
     replyWith(200, { data: { link: HOSTED } });
@@ -356,6 +377,50 @@ describe('the create path', () => {
     expect(dbMock.insert).not.toHaveBeenCalled();
   });
 
+  /**
+   * The upload has to precede the insert (the quota is a predicate in it), so an insert that
+   * refuses or throws after a successful upload would strand the file with no row naming it.
+   */
+  const hostedThenDeleted = () => {
+    hosting({ mica_media_delete_url: 'https://api.example.test/files/{name}' });
+    fetchMock
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ url: HOSTED }) })
+      .mockResolvedValueOnce({ ok: true, status: 204, json: async () => ({}) });
+  };
+
+  it('deletes the uploaded file when the quota refuses the row', async () => {
+    hostedThenDeleted();
+    dbMock.insert.mockResolvedValue(0);
+
+    const reply = await call(CREATE_EVENT, { kind: 'photo', data: PHOTO });
+
+    expect(reply.error).toMatch(/full/i);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const [url, init] = fetchMock.mock.calls[1] as FetchCall;
+    expect(url).toBe('https://api.example.test/files/abc.webp');
+    expect(init.method).toBe('DELETE');
+  });
+
+  it('deletes the uploaded file when the insert throws, and still reports the failure', async () => {
+    hostedThenDeleted();
+    dbMock.insert.mockRejectedValue(new Error('deadlock'));
+
+    const reply = await call(CREATE_EVENT, { kind: 'photo', data: PHOTO });
+
+    expect(reply.error).toBeDefined();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect((fetchMock.mock.calls[1] as FetchCall)[1].method).toBe('DELETE');
+  });
+
+  it('asks the host for nothing when a refused row was never hosted', async () => {
+    dbMock.insert.mockResolvedValue(0);
+
+    const reply = await call(CREATE_EVENT, { kind: 'photo', data: PHOTO });
+
+    expect(reply.error).toMatch(/full/i);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('never lets a client set url itself', async () => {
     await call(CREATE_EVENT, { kind: 'photo', data: PHOTO, url: 'https://evil.test/x.png' });
 
@@ -389,6 +454,15 @@ describe('releaseHostedImages', () => {
     expect(url).toBe('https://api.example.test/files/other.webp');
     expect(init.method).toBe('DELETE');
     expect(init.headers).toEqual({ Authorization: SECRET });
+  });
+
+  it('refuses to follow a redirect on a delete, too', async () => {
+    hosting({ mica_media_delete_url: 'https://api.example.test/files/{name}' });
+    replyWith(200, {});
+
+    await releaseHostedImages([OTHER]);
+
+    expect((fetchMock.mock.calls[0] as FetchCall)[1].redirect).toBe('error');
   });
 
   it('fills {url} URL-encoded', async () => {

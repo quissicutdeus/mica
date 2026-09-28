@@ -512,6 +512,20 @@ with `internal_error` and the rest of Messages is unaffected.
 
 ### Added
 
+**Photos can live on an external image host instead of the database
+(MICA-243).** Off by default; nothing changes until you set
+`mica_media_upload_url`. The server posts each JPEG there, with the header in
+`mica_media_upload_header` and the form field in `mica_media_upload_field`, and
+stores the link found at `mica_media_upload_response_path`. Set
+`mica_media_image_host` to the host the links point at: a link on any other host
+is refused. The API key never reaches a player. An upload that fails for any
+reason stores the photo in the database as before, so a host outage loses
+nothing, and existing photos keep working. Set `mica_media_delete_url` and the
+retention sweep deletes a hosted file once no photo uses it; without it the
+console counts the files left behind. Changing `mica_media_image_host` later
+stops old-host files from being cleaned up (MICA-292). README's "Configuration"
+has the details.
+
 **A control center of its own (MICA-247).** Pull down from the right side of the
 status bar, or tap Open Control Center in the notification shade: cellular,
 Bluetooth, airplane mode, flashlight and do not disturb, plus brightness, volume

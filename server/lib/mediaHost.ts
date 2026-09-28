@@ -71,7 +71,13 @@ interface HostResponse {
 }
 type HostFetch = (
   url: string,
-  init: { method: string; headers: Record<string, string>; body?: unknown; signal?: unknown }
+  init: {
+    method: string;
+    headers: Record<string, string>;
+    body?: unknown;
+    signal?: unknown;
+    redirect?: 'error';
+  }
 ) => Promise<HostResponse>;
 
 declare const fetch: HostFetch;
@@ -358,7 +364,10 @@ export const uploadImage = async (dataUri: unknown): Promise<HostedImage | null>
       method: 'POST',
       headers,
       body: form,
-      signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS)
+      signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
+      // A redirect would carry the API-key header to wherever it points. Refuse it: the
+      // upload fails and the photo goes to the database.
+      redirect: 'error'
     });
     if (!response.ok) return fail(`the host answered ${response.status}`);
 
@@ -469,7 +478,9 @@ export const releaseHostedImages = async (
       const response = await fetch(target, {
         method: 'DELETE',
         headers,
-        signal: AbortSignal.timeout(DELETE_TIMEOUT_MS)
+        signal: AbortSignal.timeout(DELETE_TIMEOUT_MS),
+        // Same reason as the upload: the header must not follow a redirect off the host.
+        redirect: 'error'
       });
       // 404 is success here: the file is already gone, which is the state asked for.
       if (response.ok || response.status === 404) outcome.deleted += 1;

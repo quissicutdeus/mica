@@ -181,6 +181,31 @@ const hostPhoto = async (item: Partial<MediaItem>): Promise<Partial<MediaItem>> 
 };
 
 /**
+ * Run `insert`, and if it refuses or throws after `hostPhoto` moved the bytes to the host,
+ * ask the host to delete the file before rethrowing. MICA-243.
+ *
+ * The upload has to happen before the insert — the quota is a predicate *in* the insert
+ * (MICA-131), so there is no earlier moment at which "will this row be written" is known.
+ * Without this, a player at their ceiling, or any failed insert, leaves a file on the host
+ * that no row names and no prune will ever find. `releaseHostedImages` never throws and
+ * checks no row names the URL first, so the caller's own error is the one that surfaces.
+ */
+const releaseOnFailure = async (
+  stored: Partial<MediaItem>,
+  original: Partial<MediaItem>,
+  insert: () => Promise<number>
+): Promise<number> => {
+  try {
+    return await insert();
+  } catch (error) {
+    if (stored !== original && typeof stored.url === 'string') {
+      reportRelease('micamedia', await releaseHostedImages([stored.url]));
+    }
+    throw error;
+  }
+};
+
+/**
  * The default ceiling on one player's live media, in mebibytes.
  *
  * Sized from what a real gallery weighs rather than from what the table could survive.
@@ -466,7 +491,9 @@ export const media = defineService<MediaItem, typeof mediaContract>({
         // An `AddMedia` photo goes to the host too, when there is one (MICA-243); a
         // location's JSON never does, by kind.
         const stored = await hostPhoto(item);
-        return await super.create({ ...stored, citizenid, phone_id } as Partial<MediaItem>);
+        return await releaseOnFailure(stored, item, () =>
+          super.create({ ...stored, citizenid, phone_id } as Partial<MediaItem>)
+        );
       }
 
       /**
@@ -489,7 +516,14 @@ export const media = defineService<MediaItem, typeof mediaContract>({
         // posted to a host (MICA-243) and then refused.
         assertStorableData(payload.data);
         const item = await hostPhoto(payload);
+        return await releaseOnFailure(item, payload, () => this.insertOwned(item));
+      }
 
+      /**
+       * The insert half of `create`, quota-gated when a ceiling is set. Split out only so
+       * `create` can release a hosted file when this refuses or throws (MICA-243).
+       */
+      async insertOwned(item: Partial<MediaItem>): Promise<number> {
         const limit = quotaBytes();
         const citizenid = item.citizenid;
 
