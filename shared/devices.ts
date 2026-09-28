@@ -9,7 +9,7 @@ import { OS_NAME } from './brand';
  *
  * The phone used to state its own facts wherever it needed them: its size in
  * `web/src/shell/state/display.ts`, its keybind in `shared/keybinds.ts`, its prop and
- * animation in `client/game/PhoneAnimation.ts`, its item convar in `server/lib/phoneItem.ts`.
+ * animation in `client/game/PhoneAnimation.ts`, its item convar in `server/lib/deviceItem.ts`.
  * A tablet is a second device rather than a responsive phone -- the CEF floor is Chromium
  * 103, with no container queries and no viewport units, so every screen is laid out against
  * one fixed frame and drawn at a zoom -- and a second device means every one of those facts

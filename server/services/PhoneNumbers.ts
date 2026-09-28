@@ -4,7 +4,7 @@
 
 import { defineService } from '../lib/defineService';
 import { detectFramework, FrameworkBridge, type FrameworkPlayer } from '../lib/FrameworkBridge';
-import { onPhoneStateChanged } from '../lib/phoneItem';
+import { onPhoneStateChanged } from '../lib/deviceItem';
 import {
   ACTIVE_STATUS,
   generatePhoneNumber,
@@ -490,7 +490,7 @@ export const syncNumber = (src: number): Promise<string | null> => {
  * Subscribed to the phone-item registry rather than to `onPlayerLoaded` directly, because the
  * registry is fired from every place the active phone can change — the load, the usable-item
  * callback, the inventory relay — and a subscriber of `onPlayerLoaded` alone would be right at
- * connect and stale the moment a player picked up a second phone. `lib/phoneItem.ts` has why
+ * connect and stale the moment a player picked up a second phone. `lib/deviceItem.ts` has why
  * the source it hands over is one already established (MICA-136).
  */
 onPhoneStateChanged('phonenumbers', (src) => syncNumber(src));

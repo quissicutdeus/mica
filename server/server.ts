@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import './services';
-import './lib/phoneItem';
+import './lib/deviceItem';
 import './lib/qbPhoneCompat';
 // Local framework listeners that push `jobs:changed` (MICA-227). Side-effect import, like
 // the two above: registering the listeners is the whole effect.

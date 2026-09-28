@@ -21,7 +21,7 @@ const { bridgeMock, netHandlers, dropHandlers } = vi.hoisted(() => {
 });
 vi.mock('../lib/FrameworkBridge', () => ({ FrameworkBridge: bridgeMock }));
 
-import { isPhoneOpen } from '../lib/PhoneOpenState';
+import { __resetOpenState, isDeviceOpen } from '../lib/PhoneOpenState';
 
 const SRC = 11;
 
@@ -33,44 +33,62 @@ const SRC = 11;
 describe('PhoneOpenState', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    __resetOpenState();
     (globalThis as any).source = SRC;
     bridgeMock.getPlayer.mockReturnValue({ citizenid: 'ABC12345' });
   });
 
   it('defaults to closed for a source never heard from', () => {
-    expect(isPhoneOpen(999)).toBe(false);
+    expect(isDeviceOpen(999, 'phone')).toBe(false);
   });
 
   it('remembers what the client last pushed', () => {
     netHandlers['mica:server:shell:setOpen'](true);
-    expect(isPhoneOpen(SRC)).toBe(true);
+    expect(isDeviceOpen(SRC, 'phone')).toBe(true);
 
     netHandlers['mica:server:shell:setOpen'](false);
-    expect(isPhoneOpen(SRC)).toBe(false);
+    expect(isDeviceOpen(SRC, 'phone')).toBe(false);
   });
 
-  it('reads the device-shaped push the client sends since MICA-262', () => {
+  it('reads the device-shaped push the client sends since MICA-262, per device (MICA-263)', () => {
     netHandlers['mica:server:shell:setOpen']({ device: 'tablet', open: true });
-    expect(isPhoneOpen(SRC)).toBe(true);
+    expect(isDeviceOpen(SRC, 'tablet')).toBe(true);
+    expect(isDeviceOpen(SRC, 'phone')).toBe(false);
+
+    netHandlers['mica:server:shell:setOpen']({ device: 'phone', open: true });
+    expect(isDeviceOpen(SRC, 'phone')).toBe(true);
 
     netHandlers['mica:server:shell:setOpen']({ device: 'tablet', open: false });
-    expect(isPhoneOpen(SRC)).toBe(false);
+    expect(isDeviceOpen(SRC, 'tablet')).toBe(false);
+    expect(isDeviceOpen(SRC, 'phone')).toBe(true);
 
     netHandlers['mica:server:shell:setOpen']({ device: 'phone' });
-    expect(isPhoneOpen(SRC)).toBe(false);
+    expect(isDeviceOpen(SRC, 'phone')).toBe(false);
+  });
+
+  it('drops a device that is not one, never recording it as the phone', () => {
+    netHandlers['mica:server:shell:setOpen']({ device: 'watch', open: true });
+    expect(isDeviceOpen(SRC, 'phone')).toBe(false);
   });
 
   it('ignores a push from a source with no loaded character', () => {
     bridgeMock.getPlayer.mockReturnValue(undefined);
     netHandlers['mica:server:shell:setOpen'](true);
-    expect(isPhoneOpen(SRC)).toBe(false);
+    expect(isDeviceOpen(SRC, 'phone')).toBe(false);
   });
 
   it('forgets a source when it drops, so the next player does not inherit it', () => {
     netHandlers['mica:server:shell:setOpen'](true);
-    expect(isPhoneOpen(SRC)).toBe(true);
+    netHandlers['mica:server:shell:setOpen']({ device: 'tablet', open: true });
+    (globalThis as any).source = SRC + 1;
+    netHandlers['mica:server:shell:setOpen'](true);
+    expect(isDeviceOpen(SRC, 'phone')).toBe(true);
 
+    (globalThis as any).source = SRC;
     for (const handler of dropHandlers) handler();
-    expect(isPhoneOpen(SRC)).toBe(false);
+    expect(isDeviceOpen(SRC, 'phone')).toBe(false);
+    expect(isDeviceOpen(SRC, 'tablet')).toBe(false);
+    // Another source whose id starts with the same digits is untouched.
+    expect(isDeviceOpen(SRC + 1, 'phone')).toBe(true);
   });
 });

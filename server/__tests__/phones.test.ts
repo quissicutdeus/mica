@@ -7,7 +7,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const { dbMock, bridgeMock, handlers } = vi.hoisted(() => {
   (globalThis as any).GetConvar = (name: string, fallback: string) =>
     name === 'mica_phone_item' ? 'phone' : fallback;
-  // Every handler per event, not the last: `phoneItem.ts` and `Phones.ts` both listen for
+  // Every handler per event, not the last: `deviceItem.ts` and `Phones.ts` both listen for
   // `playerDropped`, and a Map that kept one would test whichever registered second.
   const captured = new Map<string, Function[]>();
   const capture = (event: string, handler: Function) => {
@@ -54,10 +54,10 @@ import {
   resolvePhone,
   __resetPhoneState
 } from '../services/Phones';
-import { __resetLastUsedPhone, __resetPhoneItemWarnings } from '../lib/phoneItem';
+import { __resetLastUsedPhone, __resetPhoneItemWarnings } from '../lib/deviceItem';
 
 /**
- * `phoneItem.ts` registers its usable-item callback at import time, and `clearAllMocks`
+ * `deviceItem.ts` registers its usable-item callback at import time, and `clearAllMocks`
  * wipes the call that recorded it — so it is taken here, once, while it is still there.
  */
 const usePhoneItem: (src: number, used?: { slot?: unknown }) => void =

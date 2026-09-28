@@ -159,7 +159,7 @@ async function hydrateSettingsInProcess(): Promise<void> {
  * — see `hydrateSettingsInProcess` above for why the page-load path must stay additive.
  * `web/src/shell/nuiMessages.ts` calls this directly, from the `rehydrateSettings` route
  * and from `rehydrateShell`. Both are real character-load signals from the server: a phone
- * switch (`server/lib/phoneItem.ts`) sends only `rehydrateShell`, and settings are stored
+ * switch (`server/lib/deviceItem.ts`) sends only `rehydrateShell`, and settings are stored
  * per phone id, so it needs the sweep too, or the previous phone's values stay on screen.
  * A double run of either is harmless — this function is idempotent against the server's
  * current answer and cancels no writes (see the pending-write check below), so two firings

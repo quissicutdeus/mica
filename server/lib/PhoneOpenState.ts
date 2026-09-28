@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { DEFAULT_DEVICE, isDeviceId, type DeviceId } from '@mica/shared/devices';
 import { s } from '@mica/shared/schema';
 import { guardNetEvent } from './netGuard';
 
@@ -19,16 +20,26 @@ import { guardNetEvent } from './netGuard';
  * asks reads one state behind for a moment — which is the same trade-off `describeSignalFor`
  * already makes and the right one here too.
  */
-const open = new Map<number, boolean>();
+const open = new Map<string, boolean>();
 
-/** For the `IsPhoneOpen` export. Defaults to closed for a source never heard from. */
-export const isPhoneOpen = (source: number): boolean => open.get(source) ?? false;
+/** One entry per device per source (MICA-263): the tablet being up says nothing about the phone. */
+const keyOf = (source: number, device: DeviceId): string => `${source}:${device}`;
+
+/** Whether this device is open. Defaults to closed for a source, or a device, never heard from. */
+export const isDeviceOpen = (source: number, device: DeviceId): boolean =>
+  open.get(keyOf(source, device)) ?? false;
+
+/** Test seam: the map is module state that would otherwise leak between cases. */
+export const __resetOpenState = (): void => {
+  open.clear();
+};
 
 /**
- * The client pushes `{ device, open }` since MICA-262 and pushed a bare boolean before
- * it. Both are read; keying by device is MICA-263's, so until then any device's open
- * state is "the phone's" here — one frame is ever up at a time, so this is at worst the
- * tablet answering for the phone, never two answers.
+ * The client pushes `{ device, open }` since MICA-262 and pushed a bare boolean before it,
+ * which still means the phone, as does an object with no `device`. A `device` that is not
+ * one of `shared/devices.ts`'s is dropped rather than read as the phone: a client naming a
+ * device this server does not know is not describing the phone, and recording it there
+ * would let one frame answer for another.
  */
 const SET_OPEN_INPUT = s.tuple([
   s.union([
@@ -38,15 +49,22 @@ const SET_OPEN_INPUT = s.tuple([
 ]);
 
 onNet('mica:server:shell:setOpen', (...args: unknown[]) => {
+  const src = source;
   const guarded = guardNetEvent('shell', 'setOpen', SET_OPEN_INPUT, args);
   if (!guarded) return;
   const [payload] = guarded.input;
-  const isOpen = typeof payload === 'boolean' ? payload : payload.open === true;
-  open.set(source, isOpen);
+  if (typeof payload === 'boolean') {
+    open.set(keyOf(src, DEFAULT_DEVICE), payload);
+    return;
+  }
+  const device = payload.device === undefined ? DEFAULT_DEVICE : payload.device;
+  if (!isDeviceId(device)) return;
+  open.set(keyOf(src, device), payload.open === true);
 });
 
 on('playerDropped', () => {
   // FiveM reuses server ids, so a stale `true` left behind would tell the next player's
-  // caller their phone is open before they have ever pressed a key.
-  open.delete(source);
+  // caller their device is open before they have ever pressed a key. Every device's.
+  const prefix = `${source}:`;
+  for (const key of open.keys()) if (key.startsWith(prefix)) open.delete(key);
 });

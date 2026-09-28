@@ -10,7 +10,11 @@ import { isAdmin } from './Admin';
 import { onPlayerLoaded, notifyPlayer } from '../lib/shell';
 import { batteryLevel, guardNetEvent, noInput } from '../lib/netGuard';
 import { s } from '@mica/shared/schema';
-import { onPhoneStateChanged } from '../lib/phoneItem';
+import {
+  __resetBatteryItemWarnings,
+  batteryItemName,
+  onPhoneStateChanged
+} from '../lib/deviceItem';
 import { phoneForCitizen, phoneForRequest } from '../lib/phoneIdentity';
 import { PlayerFacingError } from '../lib/errors';
 
@@ -191,46 +195,25 @@ export const applyCharge = (src: number, level: number): number => {
  *
  * `mica_battery_item` names the item that recharges a phone and `mica_battery_item_charge`
  * says how many percent it adds, so an owner picks both without editing TypeScript — the
- * same shape as `mica_phone_item` in `lib/phoneItem.ts`, and the other half of MICA-219's
+ * same shape as `mica_phone_item` in `lib/deviceItem.ts`, and the other half of MICA-219's
  * "the phone is a thing you carry". Empty turns the item off entirely, for a server that
  * would rather recharge through a charger prop or `SetBatteryLevel`.
  *
  * The default is on. Unlike the phone item, which locks the phone for everyone when it is
  * set to an item no server defines, an item nobody has is simply an item nobody uses.
  */
-export const BATTERY_ITEM_CONVAR = 'mica_battery_item';
+/**
+ * The item's name is read in `lib/deviceItem.ts` since MICA-263, beside the phone and tablet
+ * items: that file refuses a tablet item equal to this one, because a framework keeps one
+ * usable-item callback per name and the later registration would silently replace the
+ * other. It cannot import this file for the answer — this file imports it — so the reader
+ * moved rather than being copied. Re-exported so every existing import keeps working.
+ */
+export { batteryItemName, __resetBatteryItemWarnings };
+
 export const BATTERY_ITEM_CHARGE_CONVAR = 'mica_battery_item_charge';
 
-const DEFAULT_BATTERY_ITEM = 'battery_bank';
 const DEFAULT_BATTERY_ITEM_CHARGE = 100;
-
-/** An inventory item name: what qb, ox_inventory and ESX all accept, and nothing else. */
-const ITEM_NAME = /^[A-Za-z0-9_-]{1,64}$/;
-
-let reportedBadName = false;
-
-/** Test seam, like `__resetPhoneItemWarnings`. */
-export const __resetBatteryItemWarnings = (): void => {
-  reportedBadName = false;
-};
-
-/** The item that recharges a phone, or `null` when this server has turned it off. */
-export const batteryItemName = (): string | null => {
-  const raw = String(GetConvar(BATTERY_ITEM_CONVAR, DEFAULT_BATTERY_ITEM)).trim();
-  if (!raw) return null;
-  if (!ITEM_NAME.test(raw)) {
-    if (!reportedBadName) {
-      reportedBadName = true;
-      console.warn(
-        `[mica] ${BATTERY_ITEM_CONVAR} is set to '${raw}', which is not an item name any ` +
-          `inventory here would accept (letters, digits, '_' and '-', up to 64). No item ` +
-          `recharges the phone. Reported once per resource start.`
-      );
-    }
-    return null;
-  }
-  return raw;
-};
 
 /**
  * Percent added by one use, 1-100.
@@ -251,7 +234,7 @@ export const batteryItemCharge = (): number => {
  *
  * **Fails closed**, which is the reverse of what this did. A source with no loaded character
  * used to answer `true` — "removed" — so anything that could reach the use path got the
- * charge without ever holding the item. `phoneItem.ts` fails *open* for the opposite reason:
+ * charge without ever holding the item. `deviceItem.ts` fails *open* for the opposite reason:
  * it gates access, so an inventory it cannot read must not lock everybody out. This grants
  * something, so an inventory it cannot read must not hand it over.
  */

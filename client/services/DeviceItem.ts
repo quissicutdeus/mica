@@ -7,7 +7,7 @@ import { DeviceState } from '../lib/DeviceState';
 /**
  * Relays an inventory change to the server as "look again" (MICA-229).
  *
- * The server counts the device items and pushes the answer (`server/lib/phoneItem.ts`);
+ * The server counts the device items and pushes the answer (`server/lib/deviceItem.ts`);
  * nothing here says what the player holds. What this knows is *when* to ask: each
  * inventory raises an event on the client when its contents move, and `onNet` catches a
  * local `TriggerEvent` as well as a networked one, so one registration serves
@@ -19,9 +19,8 @@ import { DeviceState } from '../lib/DeviceState';
  * Nothing is sent while the server has said there is no gate on any device.
  *
  * The request names no device (MICA-262): the server re-evaluates every device it gates
- * in one pass and pushes each. The event keeps its `checkPhoneItem` name until
- * MICA-263 registers the server half under the device-neutral one; renaming the sender
- * first would leave the gate silently unanswered in between.
+ * in one pass and pushes each. `checkDeviceItem` since MICA-263, renamed on both sides
+ * in one change: a sender renamed alone would leave the gate silently unanswered.
  */
 const INVENTORY_EVENTS = [
   'ox_inventory:itemCount',
@@ -38,7 +37,7 @@ export const requestDeviceItemCheck = (): void => {
   if (!DeviceState.isAnyItemGated() || pending) return;
   pending = setTimeout(() => {
     pending = null;
-    TriggerServerEvent('mica:server:shell:checkPhoneItem');
+    TriggerServerEvent('mica:server:shell:checkDeviceItem');
   }, COALESCE_MS);
 };
 

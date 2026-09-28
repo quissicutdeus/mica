@@ -17,7 +17,7 @@ import { disabledAppFor } from './ownerConfig';
  * unauthenticated source, with whatever positional arguments it liked.
  *
  * Nine are mica-named, across `Phone.ts`, `Battery.ts`, `Contacts.ts`, `PhoneOpenState.ts`
- * and `phoneItem.ts`. The other two are framework-named. `QBCore:Server:OnPlayerLoaded` in
+ * and `deviceItem.ts`. The other two are framework-named. `QBCore:Server:OnPlayerLoaded` in
  * `shell.ts` reaches this preamble through `loadedPlayerSource`. `qb-phone:server:sendNewMail`
  * in `qbPhoneCompat.ts` (MICA-222) is answered on purpose so qb scripts work unmodified, and
  * applies the same checks inline -- `allow`, then `getPlayer`, then its own `qbMailFrom` --

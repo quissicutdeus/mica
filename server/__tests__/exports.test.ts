@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const { dbMock, bridgeMock } = vi.hoisted(() => ({
   dbMock: { query: vi.fn(), insert: vi.fn(), update: vi.fn(), scalar: vi.fn(), single: vi.fn() },
@@ -52,6 +52,8 @@ import {
 import { lookupLine, registerNumber, releaseResource } from '../lib/numberRegistry';
 import { __resetCalls, endActiveCallFor } from '../services/Phone';
 import { callAsResource } from './invokingResource';
+import { __resetLockState, isDeviceLocked } from '../lib/LockState';
+import { __resetOpenState } from '../lib/PhoneOpenState';
 
 const SRC = 7;
 const CID = 'ABC12345';
@@ -554,6 +556,141 @@ describe('phone-state exports', () => {
   });
 });
 
+/**
+ * MICA-263: the phone-state exports take an optional trailing device. Absent is the phone,
+ * which the block above pins unchanged; a named device is answered for that device alone;
+ * anything else is refused, never read as the phone.
+ */
+describe('the device argument (MICA-263)', () => {
+  const BAD = ['watch', 'PHONE', '', 0, true, {}, ['tablet']];
+  const EXPORTS = [
+    ['IsPhoneOpen', (d: unknown) => [SRC, d]],
+    ['SetPhoneEnabled', (d: unknown) => [SRC, false, d]],
+    ['LockPhone', (d: unknown) => [SRC, d]],
+    ['UnlockPhone', (d: unknown) => [SRC, d]],
+    ['IsPhoneLocked', (d: unknown) => [SRC, d]],
+    ['OpenApp', (d: unknown) => [SRC, 'mail', {}, d]]
+  ] as const;
+  const LOCK_EXPORTS = EXPORTS.filter(([name]) => /lock/i.test(name));
+  const OTHER_EXPORTS = EXPORTS.filter(([name]) => !/lock/i.test(name));
+
+  let previousConvar: unknown;
+  const tablet = { on: false };
+
+  beforeEach(() => {
+    __resetLockState();
+    __resetOpenState();
+    tablet.on = false;
+    previousConvar = (globalThis as any).GetConvar;
+    (globalThis as any).GetConvar = (name: string, fallback: string) =>
+      name === 'mica_tablet' ? (tablet.on ? 'true' : 'false') : fallback;
+  });
+
+  afterEach(() => {
+    (globalThis as any).GetConvar = previousConvar;
+  });
+
+  it.each(EXPORTS)('%s refuses a device that is not one, and pushes nothing', (name, args) => {
+    tablet.on = true;
+    for (const bad of BAD) {
+      const result = publishedExport(name)!(...args(bad)) as any;
+      expect(result, `${name}(${JSON.stringify(bad)})`).toMatchObject({
+        ok: false,
+        reason: 'invalid_args'
+      });
+    }
+    expect(globalThis.emitNet).not.toHaveBeenCalled();
+    // Nothing was recorded against the phone on the way to the refusal.
+    expect(isDeviceLocked(SRC, 'phone')).toBe(false);
+  });
+
+  it.each(EXPORTS)(
+    '%s accepts the phone, named or not, whether or not the tablet is on',
+    (name, args) => {
+      for (const on of [false, true]) {
+        tablet.on = on;
+        for (const device of ['phone', null, undefined]) {
+          expect(
+            (publishedExport(name)!(...args(device)) as any).ok,
+            `${device}, tablet ${on}`
+          ).toBe(true);
+        }
+      }
+    }
+  );
+
+  it.each(EXPORTS)('%s refuses the tablet as disabled while mica_tablet is off', (name, args) => {
+    const result = publishedExport(name)!(...args('tablet')) as any;
+    expect(result).toMatchObject({ ok: false, reason: 'disabled' });
+    expect(result.message).toContain('mica_tablet');
+    expect(globalThis.emitNet).not.toHaveBeenCalled();
+  });
+
+  it.each(OTHER_EXPORTS)('%s answers for the tablet once mica_tablet is on', (name, args) => {
+    tablet.on = true;
+    expect((publishedExport(name)!(...args('tablet')) as any).ok).toBe(true);
+  });
+
+  it.each(LOCK_EXPORTS)(
+    '%s refuses the tablet as unsupported: it has no lock screen until MICA-264',
+    (name, args) => {
+      tablet.on = true;
+      expect(publishedExport(name)!(...args('tablet'))).toMatchObject({
+        ok: false,
+        reason: 'unsupported'
+      });
+      expect(globalThis.emitNet).not.toHaveBeenCalled();
+    }
+  );
+
+  it('a refused tablet lock leaves the phone lock exactly as it was', () => {
+    tablet.on = true;
+    publishedExport('LockPhone')!(SRC);
+    publishedExport('UnlockPhone')!(SRC, 'tablet');
+
+    expect(publishedExport('IsPhoneLocked')!(SRC)).toMatchObject({ ok: true, value: true });
+  });
+
+  it('SetPhoneEnabled sends the phone its bare boolean and the tablet { device, enabled }', () => {
+    tablet.on = true;
+    publishedExport('SetPhoneEnabled')!(SRC, true, 'phone');
+    publishedExport('SetPhoneEnabled')!(SRC, false, 'tablet');
+
+    expect(globalThis.emitNet).toHaveBeenNthCalledWith(
+      1,
+      'mica:client:shell:setEnabled',
+      SRC,
+      true
+    );
+    expect(globalThis.emitNet).toHaveBeenNthCalledWith(2, 'mica:client:shell:setEnabled', SRC, {
+      device: 'tablet',
+      enabled: false
+    });
+  });
+
+  it('OpenApp carries a named device, and sends none when the caller names none', () => {
+    tablet.on = true;
+    publishedExport('OpenApp')!(SRC, 'mail', { mailId: 1 }, 'tablet');
+    publishedExport('OpenApp')!(SRC, 'mail', { mailId: 1 });
+
+    expect(globalThis.emitNet).toHaveBeenNthCalledWith(1, 'mica:client:shell:openApp', SRC, {
+      appId: 'mail',
+      props: { mailId: 1 },
+      device: 'tablet'
+    });
+    expect(globalThis.emitNet).toHaveBeenNthCalledWith(2, 'mica:client:shell:openApp', SRC, {
+      appId: 'mail',
+      props: { mailId: 1 }
+    });
+  });
+
+  it('checks the device before the player, so a bad one is refused even offline', () => {
+    bridgeMock.getPlayer.mockReturnValue(undefined);
+    expect(publishedExport('LockPhone')!(SRC, 'watch')).toMatchObject({ reason: 'invalid_args' });
+    expect(publishedExport('IsPhoneOpen')!(SRC, 'tablet')).toMatchObject({ reason: 'disabled' });
+  });
+});
+
 describe('line exports (MICA-226)', () => {
   it("EndLineCall hangs up a call the calling resource's line answered (MICA-278)", async () => {
     const register = publishedExport('RegisterNumber')! as Function;
@@ -808,7 +945,7 @@ describe('bridge-compat exports (MICA-232)', () => {
     await withPhoneItem('phone', () => {
       expect(publishedExport('HasPhoneItem')!(SRC)).toEqual({ ok: true, value: false });
     });
-    // A read, not `evaluatePhoneItem`: the client is told nothing.
+    // A read, not `evaluateDeviceItems`: the client is told nothing.
     expect((globalThis as any).emitNet).not.toHaveBeenCalled();
   });
 

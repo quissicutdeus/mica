@@ -512,6 +512,16 @@ with `internal_error` and the rest of Messages is unaffected.
 
 ### Added
 
+**The tablet can be turned on, and gated on an item of its own (MICA-263).** Two
+new convars: `mica_tablet` (default `false`) turns the tablet on, and
+`mica_tablet_item` gates it on an inventory item independently of
+`mica_phone_item`. **Leave `mica_tablet` off unless you are testing:** the
+tablet has no identity of its own until MICA-264, so what it stores may move
+when that lands. `IsPhoneOpen`, `SetPhoneEnabled`, `LockPhone`, `UnlockPhone`,
+`IsPhoneLocked` and `OpenApp` take an optional trailing `device`, defaulting to
+the phone, so existing scripts are unchanged. No owner action; see the README's
+[The tablet](README.md#the-tablet).
+
 **A script's phone number can receive texts and reply to them (MICA-275).**
 `RegisterNumber` takes an optional `onMessage` handler, called after a player's
 text to that number is saved; the script replies with `SendMessage`, and both

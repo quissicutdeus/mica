@@ -20,10 +20,11 @@ import { buildDeepLink, parseDeepLink } from '@mica/shared/deepLink';
 import { knownServices } from './services';
 import { isAppDisabled } from './ownerConfig';
 import * as PlayerDirectory from './PlayerDirectory';
-import { isPhoneOpen } from './PhoneOpenState';
-import { isPhoneLocked, setPhoneLocked } from './LockState';
+import { isDeviceOpen } from './PhoneOpenState';
+import { isDeviceLocked, setDeviceLocked } from './LockState';
+import { DEFAULT_DEVICE, DEVICES, isDeviceId, type DeviceId } from '@mica/shared/devices';
 import { currentEmergencyNumber, endLineCall, isInCall, placeCall } from '../services/Phone';
-import { holdsPhoneItem } from './phoneItem';
+import { DEVICE_CONVARS, holdsPhoneItem, isDeviceEnabled } from './deviceItem';
 import { lookupLine, registerNumber, unregisterNumber, type LineOptions } from './numberRegistry';
 import {
   MICA_API_VERSION,
@@ -162,6 +163,21 @@ const SendNotification = (
   return ok({ delivered: outcome.delivered });
 };
 
+/**
+ * The trailing `device` the device-aware exports take (MICA-263). Absent means the phone, so
+ * every caller written before the tablet keeps working unchanged; anything else must name a
+ * device in `shared/devices.ts`, and is refused rather than coerced — a caller who meant the
+ * tablet and misspelt it must not confiscate the phone instead. The client's own exports
+ * refuse the same way (`client/lib/publicApi.ts`).
+ */
+const deviceFrom = (raw: unknown): DeviceId | null => {
+  if (raw === undefined || raw === null) return DEFAULT_DEVICE;
+  return isDeviceId(raw) ? raw : null;
+};
+
+const badDevice = <T>(raw: unknown): ExportOutcome<T> =>
+  fail<T>('invalid_args', `'${String(raw)}' is not a device; use 'phone' or 'tablet', or omit it.`);
+
 /** Resolve a source to a loaded character, or say which way it failed. */
 const citizenOf = (source: unknown): { citizenid: string } | ExportOutcome<never> => {
   if (typeof source !== 'number' || !Number.isInteger(source) || source <= 0) {
@@ -176,6 +192,34 @@ const citizenOf = (source: unknown): { citizenid: string } | ExportOutcome<never
 
 const isFailure = <T>(value: unknown): value is ExportOutcome<T> =>
   typeof value === 'object' && value !== null && 'ok' in value;
+
+/**
+ * The device an export acts on, or why it cannot (MICA-263). A device-aware export must never
+ * answer `ok` for something that had no effect, so beyond the shape check in `deviceFrom`:
+ *
+ * - a device this server has not switched on (`mica_tablet` off) is `disabled` — the same
+ *   reason the client's exports give for a device that will not open, and one a caller can
+ *   act on by telling the owner, not by retrying;
+ * - a device without the feature the export drives is `unsupported`. The tablet has no lock
+ *   screen until MICA-264 (`chrome.lockScreen` in `shared/devices.ts`), so locking one would
+ *   record a state nothing on screen shows. That flips by itself when the descriptor does.
+ *
+ * The phone passes both checks by construction: it has no enable convar and has a lock screen.
+ */
+const resolveDevice = <T>(raw: unknown, feature?: 'lockScreen'): DeviceId | ExportOutcome<T> => {
+  const device = deviceFrom(raw);
+  if (!device) return badDevice<T>(raw);
+  if (!isDeviceEnabled(device)) {
+    return fail<T>(
+      'disabled',
+      `The ${device} is not switched on on this server (${DEVICE_CONVARS[device].enable}).`
+    );
+  }
+  if (feature && !DEVICES[device].chrome[feature]) {
+    return fail<T>('unsupported', `The ${device} has no lock screen yet.`);
+  }
+  return device;
+};
 
 const MEDIA_KINDS: readonly MediaKind[] = [
   'photo',
@@ -716,33 +760,43 @@ export function registerPublicApi(): void {
   );
 
   /**
-   * Whether a player's phone is open right now.
+   * Whether a player's device is open right now — the phone, unless `device` names another.
    *
    * Mirrored from the client rather than asked live — see `PhoneOpenState.ts` for why
    * there is no synchronous way to ask one. `false` for a source never heard from, which
-   * is also correct: a player who has never opened the phone this session has it closed.
+   * is also correct: a player who has never opened the device this session has it closed.
    */
   publish(
     'IsPhoneOpen',
-    guarded('IsPhoneOpen', (source: unknown) => {
+    guarded('IsPhoneOpen', (source: unknown, rawDevice?: unknown) => {
+      const device = resolveDevice<boolean>(rawDevice);
+      if (isFailure<boolean>(device)) return device;
       if (typeof source !== 'number' || !isConnected(source)) {
         return fail<boolean>('unknown_player', 'That player is not connected.');
       }
-      return ok(isPhoneOpen(source));
+      return ok(isDeviceOpen(source, device));
     })
   );
 
   /**
-   * Confiscate or return a player's phone. Disabling while it is open force-closes it —
-   * see `client/services/Shell.ts`'s `setEnabled` handler.
+   * Confiscate or return a player's device — the phone, unless `device` names another.
+   * Disabling while it is open force-closes it — see `client/services/Shell.ts`'s
+   * `setEnabled` handler, which reads a bare boolean as the phone and `{ device, enabled }`
+   * as the device named. The phone keeps the bare boolean it has always been sent.
    */
   publish(
     'SetPhoneEnabled',
-    guarded('SetPhoneEnabled', (source: unknown, enabled: unknown) => {
+    guarded('SetPhoneEnabled', (source: unknown, enabled: unknown, rawDevice?: unknown) => {
+      const device = resolveDevice<undefined>(rawDevice);
+      if (isFailure<undefined>(device)) return device;
       if (typeof source !== 'number' || !isConnected(source)) {
         return fail('unknown_player', 'That player is not connected.');
       }
-      emitNet('mica:client:shell:setEnabled', source, enabled === true);
+      emitNet(
+        'mica:client:shell:setEnabled',
+        source,
+        device === DEFAULT_DEVICE ? enabled === true : { device, enabled: enabled === true }
+      );
       return ok();
     })
   );
@@ -754,44 +808,44 @@ export function registerPublicApi(): void {
    * nothing behind it is authority-bearing, so locking a phone with no client listener for
    * it yet (as of this ticket) is a no-op the caller cannot tell from a real one — the same
    * as calling `SetPhoneEnabled` before `client/services/Shell.ts` existed would have been.
+   *
+   * The phone unless `device` names another (MICA-263). The phone's push is unchanged; any
+   * other device's carries its id as a trailing argument. A device without a lock screen is
+   * refused with `unsupported` (`resolveDevice`), which today is the tablet until MICA-264.
    */
-  publish(
-    'LockPhone',
-    guarded('LockPhone', (source: unknown) => {
+  const setLockedExport = (name: string, value: boolean) =>
+    guarded(name, (source: unknown, rawDevice?: unknown) => {
+      const device = resolveDevice<undefined>(rawDevice, 'lockScreen');
+      if (isFailure<undefined>(device)) return device;
       if (typeof source !== 'number' || !isConnected(source)) {
         return fail('unknown_player', 'That player is not connected.');
       }
-      setPhoneLocked(source, true);
-      emitNet('mica:client:lockscreen:setLocked', source, true);
+      setDeviceLocked(source, device, value);
+      if (device === DEFAULT_DEVICE) emitNet('mica:client:lockscreen:setLocked', source, value);
+      else emitNet('mica:client:lockscreen:setLocked', source, value, device);
       return ok();
-    })
-  );
+    });
+
+  publish('LockPhone', setLockedExport('LockPhone', true));
 
   /** The other half of `LockPhone`. */
-  publish(
-    'UnlockPhone',
-    guarded('UnlockPhone', (source: unknown) => {
-      if (typeof source !== 'number' || !isConnected(source)) {
-        return fail('unknown_player', 'That player is not connected.');
-      }
-      setPhoneLocked(source, false);
-      emitNet('mica:client:lockscreen:setLocked', source, false);
-      return ok();
-    })
-  );
+  publish('UnlockPhone', setLockedExport('UnlockPhone', false));
 
   /**
-   * Whether a caller of `LockPhone`/`UnlockPhone` last locked this player, defaulting to
-   * unlocked. Eventually-consistent in the same sense `IsPhoneOpen` is, except the only
-   * writer is this export pair itself — there is no client push to race against.
+   * Whether a caller of `LockPhone`/`UnlockPhone` last locked this player's device — the
+   * phone unless `device` names another — defaulting to unlocked. Eventually-consistent in
+   * the same sense `IsPhoneOpen` is, except the only writer is this export pair itself —
+   * there is no client push to race against.
    */
   publish(
     'IsPhoneLocked',
-    guarded('IsPhoneLocked', (source: unknown) => {
+    guarded('IsPhoneLocked', (source: unknown, rawDevice?: unknown) => {
+      const device = resolveDevice<boolean>(rawDevice, 'lockScreen');
+      if (isFailure<boolean>(device)) return device;
       if (typeof source !== 'number' || !isConnected(source)) {
         return fail<boolean>('unknown_player', 'That player is not connected.');
       }
-      return ok(isPhoneLocked(source));
+      return ok(isDeviceLocked(source, device));
     })
   );
 
@@ -817,7 +871,7 @@ export function registerPublicApi(): void {
    * `true` when the server requires no item — `mica_phone_item` empty or not a valid item
    * name, or `mica_standalone` — because on such a server every player has a phone. Also
    * `true` when an item is set but no inventory here can count it, the same fail-open the
-   * gate itself takes (`lib/phoneItem.ts`). `false` only for a counted zero.
+   * gate itself takes (`lib/deviceItem.ts`). `false` only for a counted zero.
    */
   publish(
     'HasPhoneItem',
@@ -856,12 +910,19 @@ export function registerPublicApi(): void {
   );
 
   /**
-   * Force-open the phone on a named app, the same destination shape a notification's own
+   * Force-open a device on a named app, the same destination shape a notification's own
    * deep link uses. `props` becomes that app's `useDeepLink` payload.
+   *
+   * `device` is optional (MICA-263) and, unlike the exports above, absent is not rewritten
+   * to the phone here: the push goes without one and the receiving side picks, which is
+   * where the phone default has always lived. A device that is not one is still refused.
    */
   publish(
     'OpenApp',
-    guarded('OpenApp', (source: unknown, appId: unknown, props: unknown) => {
+    guarded('OpenApp', (source: unknown, appId: unknown, props: unknown, rawDevice?: unknown) => {
+      const named = rawDevice !== undefined && rawDevice !== null;
+      const device = named ? resolveDevice<undefined>(rawDevice) : undefined;
+      if (isFailure<undefined>(device)) return device;
       if (typeof source !== 'number' || !isConnected(source)) {
         return fail('unknown_player', 'That player is not connected.');
       }
@@ -876,7 +937,8 @@ export function registerPublicApi(): void {
       }
       emitNet('mica:client:shell:openApp', source, {
         appId: id,
-        props: props && typeof props === 'object' ? props : {}
+        props: props && typeof props === 'object' ? props : {},
+        ...(device === undefined ? {} : { device })
       });
       return ok();
     })

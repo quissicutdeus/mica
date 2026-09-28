@@ -4,6 +4,7 @@
 
 import { defineContract, responseType } from '../contract';
 import type { OwnerConfig } from '../ownerConfig';
+import type { ShellCapabilities } from '../types';
 import { s } from '../schema';
 
 /**
@@ -24,14 +25,10 @@ import { s } from '../schema';
 export const shellContract = defineContract({
   id: 'shell',
   actions: {
-    /**
-     * The shape is spelled out rather than imported: `Capabilities` is declared in
-     * `server/services/Capabilities.ts`, and `shared/` cannot reach into `server/`. Two
-     * booleans are not worth moving a type for, but the authority is there and not here.
-     */
+    /** `ShellCapabilities` in `shared/types.ts` is the shape, and says what each field means. */
     capabilities: {
       input: s.none(),
-      output: responseType<{ money: boolean; jobs: boolean }>()
+      output: responseType<ShellCapabilities>()
     },
     sourceUrl: { input: s.none(), output: responseType<{ url: string }>() },
     /**

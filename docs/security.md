@@ -183,7 +183,7 @@ back in with a new row.
 | `mica:server:battery:load`           | `server/services/Battery.ts`   |
 | `mica:server:contacts:share`         | `server/services/Contacts.ts`  |
 | `mica:server:shell:setOpen`          | `server/lib/PhoneOpenState.ts` |
-| `mica:server:shell:checkPhoneItem`   | `server/lib/phoneItem.ts`      |
+| `mica:server:shell:checkDeviceItem`  | `server/lib/deviceItem.ts`     |
 
 `guardNetEvent` in `server/lib/netGuard.ts` is the preamble for all nine,
 applying the same three checks in the same order the endpoint uses: rate limit
@@ -199,14 +199,17 @@ every `registerEvent` action; these events carry positional scalars rather than
 a keyed payload, so each one declares its arguments with `s.tuple([...])` from
 `shared/schema.ts` — `[phoneNumber]` for `phone:start`, `[batteryLevel]` for
 `admin:setBattery`, a stripped-down `Contact` card for `contacts:share`, a
-boolean-or-`{ device, open }` union for `shell:setOpen`, and `noInput` for the
-four that take nothing — and passes it to `guardNetEvent`, which will not
-compile without one. The schema is the only place a handler's shape is written:
-`phoneNumber` and `batteryLevel` are the shared elements and the rest sit beside
-their handler, so the hand-rolled parsers each one used to keep are gone. The
-second is still worth naming: `Number(null)` is `0` and `Number('')` is `0`, so
-a client sending nothing at all used to produce a valid "0% battery" rather than
-a refusal, and `s.number()` refuses both before the clamp runs.
+boolean-or-`{ device, open }` union for `shell:setOpen` (whose `device` is
+client-asserted display state exactly as the open flag already is: it names
+which screen the player says is up, and moves no lock, item or identity), and
+`noInput` for the four that take nothing — and passes it to `guardNetEvent`,
+which will not compile without one. The schema is the only place a handler's
+shape is written: `phoneNumber` and `batteryLevel` are the shared elements and
+the rest sit beside their handler, so the hand-rolled parsers each one used to
+keep are gone. The second is still worth naming: `Number(null)` is `0` and
+`Number('')` is `0`, so a client sending nothing at all used to produce a valid
+"0% battery" rather than a refusal, and `s.number()` refuses both before the
+clamp runs.
 
 `netGuardCensus.test.ts` holds this the same way it holds the counts: from the
 tree, it refuses any raw handler whose body never calls `guardNetEvent` (or

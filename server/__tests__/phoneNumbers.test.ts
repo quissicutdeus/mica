@@ -23,7 +23,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
  */
 const { dbMock, framework, subscribers, bridgeMock, player } = vi.hoisted(() => {
   // The gate is read at import, so the convar has to exist before the modules load. `qb` at
-  // import so `phoneItem.ts` registers its usable-item callback; each case sets its own kind.
+  // import so `deviceItem.ts` registers its usable-item callback; each case sets its own kind.
   (globalThis as any).GetConvar = (name: string, fallback: string) =>
     name === 'mica_phone_item' ? 'phone' : fallback;
   (globalThis as any).emitNet = vi.fn();
@@ -101,11 +101,11 @@ import {
   __resetPhoneNumberState
 } from '../services/PhoneNumbers';
 import { __resetPhoneState } from '../services/Phones';
-import { __resetLastUsedPhone, __resetPhoneItemWarnings } from '../lib/phoneItem';
+import { __resetLastUsedPhone, __resetPhoneItemWarnings } from '../lib/deviceItem';
 import { PhoneNumberRepository } from '../repositories/PhoneNumberRepository';
 
 /**
- * `phoneItem.ts` registers its usable-item callback at import time, and `clearAllMocks` wipes
+ * `deviceItem.ts` registers its usable-item callback at import time, and `clearAllMocks` wipes
  * the call that recorded it — so it is taken here, once, while it is still there.
  */
 const usePhoneItem: ((src: number, used?: { slot?: unknown }) => void) | undefined =

@@ -8,7 +8,7 @@ import { defineService, phoneKeyedRepositories } from '../lib/defineService';
 import { PlayerFacingError } from '../lib/errors';
 import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { installPhoneResolvers } from '../lib/phoneIdentity';
-import { lastUsedPhoneSlot, phoneItemName } from '../lib/phoneItem';
+import { lastUsedPhoneSlot, phoneItemName } from '../lib/deviceItem';
 
 /**
  * The phone as a thing with an identity of its own (MICA-280, on MICA-279's seam), and the
@@ -171,7 +171,7 @@ export const __resetPhoneState = (): void => {
  *
  * Synchronous by design and therefore a cache, not a lookup: it answers what the last
  * `resolvePhone`/`phoneForRequest` for this source found. Every device-owned request
- * refreshes it, and so does the sync `phoneItem.ts` fires on load, use and inventory change,
+ * refreshes it, and so does the sync `deviceItem.ts` fires on load, use and inventory change,
  * so it is stale for at most the gap between using a phone and the server hearing about it.
  */
 export const activePhoneIdOf = (src: number): string | null => activeBySource.get(src) ?? null;
@@ -405,7 +405,7 @@ export const activePhone = async (src: number): Promise<ActivePhone | null> => {
  *
  * Holding no phone on a gated server is a refusal the player can read, not a fallthrough: they
  * have no phone for rows to belong to, and the phone is closed for them anyway
- * (`phoneItem.ts`), so the only way this is reached is a client that opened it regardless.
+ * (`deviceItem.ts`), so the only way this is reached is a client that opened it regardless.
  * Everything else that is not an item in hand degrades to the identity phone.
  */
 export const phoneForRequest = async (src: number, citizenid: string): Promise<string> => {

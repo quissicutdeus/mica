@@ -692,6 +692,8 @@ you intend to change something.
 ```cfg
 set mica_standalone ""
 set mica_phone_item ""
+set mica_tablet "false"
+set mica_tablet_item ""
 set mica_battery_item "battery_bank"
 set mica_battery_item_charge 100
 set mica_admin_aces "mica.admin,command"
@@ -747,6 +749,8 @@ set mica_location_interval 5
 | ---------------------------------- | ------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
 | `mica_standalone`                  | boolean                                                 | empty (off)            | Run with no framework resource at all                                                                                                 |
 | `mica_phone_item`                  | item name                                               | empty (off)            | Gate the phone on holding this inventory item                                                                                         |
+| `mica_tablet`                      | boolean                                                 | `false` (off)          | Turn the tablet on; the phone is always on. Off until the tablet has an identity of its own (MICA-264)                                |
+| `mica_tablet_item`                 | item name                                               | empty (off)            | Gate the tablet on holding this inventory item; independent of `mica_phone_item`                                                      |
 | `mica_battery_item`                | item name                                               | `battery_bank`         | Item that recharges the phone; empty turns it off                                                                                     |
 | `mica_battery_item_charge`         | integer, 1-100                                          | `100`                  | Percent one use of that item adds                                                                                                     |
 | `mica_admin_aces`                  | comma-separated aces                                    | `mica.admin,command`   | Who counts as a micaOS admin                                                                                                          |
@@ -1420,6 +1424,32 @@ cannot count through (none of ox_inventory's `GetItemCount`, a qb player's
 `GetItemByName`, or an ESX xPlayer's `getInventoryItem`) is reported the same
 way, and the phone is left open rather than locked for everyone.
 
+### The tablet
+
+micaOS can also be a tablet: a second device, opened with `F2` by default, laid
+out for a 1280x800 frame, shipping Admin, Settings and Notes. Set
+`mica_tablet "true"` to turn it on. It is **off by default**, and will stay off
+until the tablet has an identity of its own (MICA-264): until then it has no
+phone number, and whatever it stores belongs to the character, so an owner who
+turns it on now accepts that its data may move when that ticket lands.
+
+`mica_tablet_item` gates it on an inventory item exactly as `mica_phone_item`
+gates the phone (above), and the two are independent: holding a phone does not
+unlock the tablet, and confiscating one leaves the other alone. Give them
+different item names; if both name the same item, the phone keeps it and the
+console says so once. Standalone ignores both item gates but still honours
+`mica_tablet`, because that switch turns the tablet on rather than gating it.
+
+`IsPhoneOpen`, `SetPhoneEnabled`, `LockPhone`, `UnlockPhone`, `IsPhoneLocked`
+and `OpenApp` take an optional trailing `device` (`'phone'` or `'tablet'`),
+defaulting to the phone, so every existing caller is unchanged. A device that is
+not one of those is refused with `invalid_args`, never read as the phone.
+`OpenApp` with no device opens the phone. With a `device` of `'tablet'`, every
+one of these exports fails with `disabled` while `mica_tablet` is off, and
+`LockPhone`, `UnlockPhone` and `IsPhoneLocked` fail with `unsupported` even when
+it is on, because the tablet has no lock screen until it gets its own identity;
+the phone is unaffected by either.
+
 ### The battery bank
 
 The phone's charge drains while a player carries it, and `mica_battery_item`
@@ -1596,42 +1626,44 @@ end
 number), `not_owner` (that number belongs to a different resource),
 `number_in_use` (a character holds it, and a character always wins),
 `rate_limited` (your resource has called that export more times this minute than
-it allows; the call was dropped) or `disabled` (the device will not open for
-this player right now: confiscated, switched off, or an item they do not hold).
+it allows; the call was dropped), `disabled` (the device will not open for this
+player right now: confiscated, switched off, or an item they do not hold) or
+`unsupported` (the device has no such feature yet: the tablet's lock, until
+MICA-264).
 
-| Export                              | Identifies a player by | Does                                                                                                                      |
-| ----------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `GetApiVersion()`                   | —                      | The API version. Bumped when an existing export changes shape, not when one is added                                      |
-| `SendSystemEmail(...)`              | citizenid              | Sends mail. Predates this API and keeps its original signature                                                            |
-| `SendMessage(citizenid, message)`   | citizenid              | Puts a text in Messages from a business or a line, never a player. Works offline; see below                               |
-| `SendNotification(citizenid, opts)` | citizenid              | Raises a notification. Works offline — the row is written and shown next time they open the phone                         |
-| `SendInvoice(citizenid, invoice)`   | citizenid              | Bills a player; they pay or decline from the Bank app. Works offline; see below                                           |
-| `BuildDeepLink(app, props)`         | —                      | Builds a `app?key=value` link without needing to know the format                                                          |
-| `AddMedia(citizenid, media)`        | citizenid              | Puts a GIF, a video poster, a voice clip or a file in a player's gallery                                                  |
-| `AddContact(citizenid, contact)`    | citizenid              | Adds a contact to a player's address book. Works offline, same as `AddMedia`                                              |
-| `GetPhoneNumber(citizenid)`         | citizenid              | The phone number for a citizenid, online or off                                                                           |
-| `GetCitizenId(phone)`               | —                      | The reverse lookup: whose phone number is this                                                                            |
-| `IsPhoneOpen(source)`               | source                 | Whether that player's phone is open right now                                                                             |
-| `SetPhoneEnabled(source, enabled)`  | source                 | Confiscates or returns a player's phone; disabling while open force-closes it                                             |
-| `OpenApp(source, appId, props)`     | source                 | Force-opens the phone on a named app; `props` becomes that app's `useDeepLink` payload                                    |
-| `GetBatteryLevel(source)`           | source                 | The saved charge, 0-100                                                                                                   |
-| `SetBatteryLevel(source, level)`    | source                 | Sets the charge. Clamped rather than refused                                                                              |
-| `AddBatteryCharge(source, delta)`   | source                 | Adds or, with a negative delta, drains — an EMP, a taser                                                                  |
-| `SetCharging(source, isCharging)`   | source                 | Puts the phone on or off charge. A state, not a top-up: it reverses the drain loop                                        |
-| `SetGlobalSignal(level)`            | —                      | City-wide reception, 0-4. `0` is a blackout                                                                               |
-| `ClearGlobalSignal()`               | —                      | Back to full bars                                                                                                         |
-| `AddDeadZone({x,y,z,radius,level})` | —                      | A jammer, a tunnel, a basement. Returns an id                                                                             |
-| `RemoveDeadZone(id)`                | —                      | Removes one by the id `AddDeadZone` gave you                                                                              |
-| `SetSignal(source, level)`          | source                 | One player, overriding the zones. `null` hands them back to the world                                                     |
-| `GetSignal(source)`                 | source                 | The rules they are subject to — not their bars, which depend on where they stand                                          |
-| `RegisterNumber(number, options)`   | —                      | Owns a phone number, so a call placed to it reaches your handler instead of failing                                       |
-| `UnregisterNumber(number)`          | —                      | Gives a number back. Only the resource that registered it may                                                             |
-| `CreateCall(source, number)`        | source                 | Places a call for a player, the way a payphone or a dispatch pick-up would. Async                                         |
-| `EndLineCall(callId)`               | —                      | Hangs up a call a line your resource registered has answered. See below                                                   |
-| `IsInCall(source)`                  | source                 | Whether that player is ringing, connected, or waiting on a line's handler — when `true`, `CreateCall` answers `not_ready` |
-| `HasPhoneItem(source)`              | source                 | Whether they hold a phone item right now. `true` when no item is required, or when no inventory can count it              |
-| `GetSourceFromNumber(number)`       | —                      | The online player holding that number. `offline` when a character holds it but is not connected. Async                    |
-| `GetCitizenIdFromSource(source)`    | source                 | The citizenid of the character loaded on that source. `unknown_player` before one loads                                   |
+| Export                                      | Identifies a player by | Does                                                                                                                      |
+| ------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `GetApiVersion()`                           | —                      | The API version. Bumped when an existing export changes shape, not when one is added                                      |
+| `SendSystemEmail(...)`                      | citizenid              | Sends mail. Predates this API and keeps its original signature                                                            |
+| `SendMessage(citizenid, message)`           | citizenid              | Puts a text in Messages from a business or a line, never a player. Works offline; see below                               |
+| `SendNotification(citizenid, opts)`         | citizenid              | Raises a notification. Works offline — the row is written and shown next time they open the phone                         |
+| `SendInvoice(citizenid, invoice)`           | citizenid              | Bills a player; they pay or decline from the Bank app. Works offline; see below                                           |
+| `BuildDeepLink(app, props)`                 | —                      | Builds a `app?key=value` link without needing to know the format                                                          |
+| `AddMedia(citizenid, media)`                | citizenid              | Puts a GIF, a video poster, a voice clip or a file in a player's gallery                                                  |
+| `AddContact(citizenid, contact)`            | citizenid              | Adds a contact to a player's address book. Works offline, same as `AddMedia`                                              |
+| `GetPhoneNumber(citizenid)`                 | citizenid              | The phone number for a citizenid, online or off                                                                           |
+| `GetCitizenId(phone)`                       | —                      | The reverse lookup: whose phone number is this                                                                            |
+| `IsPhoneOpen(source, device?)`              | source                 | Whether that player's phone, or `device`, is open right now                                                               |
+| `SetPhoneEnabled(source, enabled, device?)` | source                 | Confiscates or returns a player's phone, or `device`; disabling while open force-closes it                                |
+| `OpenApp(source, appId, props, device?)`    | source                 | Force-opens the phone, or `device`, on a named app; `props` becomes that app's `useDeepLink` payload                      |
+| `GetBatteryLevel(source)`                   | source                 | The saved charge, 0-100                                                                                                   |
+| `SetBatteryLevel(source, level)`            | source                 | Sets the charge. Clamped rather than refused                                                                              |
+| `AddBatteryCharge(source, delta)`           | source                 | Adds or, with a negative delta, drains — an EMP, a taser                                                                  |
+| `SetCharging(source, isCharging)`           | source                 | Puts the phone on or off charge. A state, not a top-up: it reverses the drain loop                                        |
+| `SetGlobalSignal(level)`                    | —                      | City-wide reception, 0-4. `0` is a blackout                                                                               |
+| `ClearGlobalSignal()`                       | —                      | Back to full bars                                                                                                         |
+| `AddDeadZone({x,y,z,radius,level})`         | —                      | A jammer, a tunnel, a basement. Returns an id                                                                             |
+| `RemoveDeadZone(id)`                        | —                      | Removes one by the id `AddDeadZone` gave you                                                                              |
+| `SetSignal(source, level)`                  | source                 | One player, overriding the zones. `null` hands them back to the world                                                     |
+| `GetSignal(source)`                         | source                 | The rules they are subject to — not their bars, which depend on where they stand                                          |
+| `RegisterNumber(number, options)`           | —                      | Owns a phone number, so a call placed to it reaches your handler instead of failing                                       |
+| `UnregisterNumber(number)`                  | —                      | Gives a number back. Only the resource that registered it may                                                             |
+| `CreateCall(source, number)`                | source                 | Places a call for a player, the way a payphone or a dispatch pick-up would. Async                                         |
+| `EndLineCall(callId)`                       | —                      | Hangs up a call a line your resource registered has answered. See below                                                   |
+| `IsInCall(source)`                          | source                 | Whether that player is ringing, connected, or waiting on a line's handler — when `true`, `CreateCall` answers `not_ready` |
+| `HasPhoneItem(source)`                      | source                 | Whether they hold a phone item right now. `true` when no item is required, or when no inventory can count it              |
+| `GetSourceFromNumber(number)`               | —                      | The online player holding that number. `offline` when a character holds it but is not connected. Async                    |
+| `GetCitizenIdFromSource(source)`            | source                 | The citizenid of the character loaded on that source. `unknown_player` before one loads                                   |
 
 **citizenid or source, and it matters which.** Anything that must work while the
 player is offline takes a citizenid; anything inherently live takes a source. No

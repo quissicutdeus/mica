@@ -40,7 +40,13 @@ export type ExportFailure =
    * from `disabled`, which is this player's device: nothing this player does brings the app
    * back, so a caller should not retry or offer to.
    */
-  | 'app_disabled';
+  | 'app_disabled'
+  /**
+   * That device has no such feature (MICA-263): locking a tablet, which has no lock screen
+   * until MICA-264. Refused rather than answered `ok`, because nothing would have happened.
+   * Not a retry: it changes only with a micaOS version.
+   */
+  | 'unsupported';
 
 export type ExportOutcome<T = undefined> =
   | ({ ok: true } & (T extends undefined ? { value?: undefined } : { value: T }))

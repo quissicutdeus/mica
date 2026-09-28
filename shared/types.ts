@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import type { DeviceId } from './devices';
+
 /**
  * What a ringtone may store: one of the phone's built-in ids or an owner sound's
  * `owner:<stem>` (MICA-256). A string rather than a union because the owner's half is open;
@@ -9,6 +11,40 @@
  * `mica_contacts.ringtone` to it.
  */
 export type RingtoneId = string;
+
+/**
+ * What a server behind the shell can do, answered by `shell:capabilities`
+ * (`server/services/Capabilities.ts`) so the UI can hide what it cannot. Never a boundary: a
+ * modified client can answer its own. Moved here from that file by MICA-263 so the contract,
+ * the handler and the browser mock share one shape.
+ */
+export interface ShellCapabilities {
+  /**
+   * Can money move on this server at all?
+   *
+   * False only in standalone, where `FrameworkBridge` has no framework to ask: `getMoney`
+   * answers the `-Infinity` sentinel and both `removeMoney` and `addMoney` answer `false`.
+   * Bank and Hodlr exist to move money, so on such a server they are not broken apps to be
+   * error-handled — they are apps with nothing behind them, and hiding them is the honest
+   * rendering. (Marketplace moves none; it is a noticeboard.)
+   */
+  money: boolean;
+  /**
+   * Does anyone here know what a player does for a living? (MICA-228)
+   *
+   * False only in standalone, by the same reasoning as `money`: `FrameworkPlayer.getJobs`
+   * there answers `[]` and both setters refuse, so a Jobs app would be a screen with nothing
+   * behind it. `unknown` answers `true` for the reason `services/Capabilities.ts` gives — a qb
+   * server passes through `unknown`, and hiding the app for a session is the silent failure.
+   */
+  jobs: boolean;
+  /**
+   * Which devices this server has on (MICA-263): the phone always and first, the tablet only
+   * while `mica_tablet` is. A client asking to raise a device not in this list gets nothing,
+   * because the server never registers its item and the client keeps it shut.
+   */
+  devices: DeviceId[];
+}
 
 export interface Contact {
   id: number;

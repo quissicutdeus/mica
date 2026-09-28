@@ -55,8 +55,8 @@ vi.mock('../lib/proximity', () => ({
 import '../services/Phone';
 import '../services/Battery';
 import '../services/Contacts';
-import '../lib/phoneItem';
-import { isPhoneOpen } from '../lib/PhoneOpenState';
+import '../lib/deviceItem';
+import { __resetOpenState, isDeviceOpen } from '../lib/PhoneOpenState';
 import { batteryLevel, guardNetEvent, noInput, phoneNumber } from '../lib/netGuard';
 import { __resetRateLimits } from '../lib/rateLimit';
 import { s } from '@mica/shared/schema';
@@ -168,7 +168,7 @@ describe('phone:simulateIncoming — an optional phone number', () => {
   });
 });
 
-describe('phone:answer, phone:end, battery:load, shell:checkPhoneItem — no input', () => {
+describe('phone:answer, phone:end, battery:load, shell:checkDeviceItem — no input', () => {
   it('battery:load answers an empty emit, and one relayed as a bare undefined', async () => {
     await fire('mica:server:battery:load');
     await fire('mica:server:battery:load', undefined);
@@ -182,12 +182,13 @@ describe('phone:answer, phone:end, battery:load, shell:checkPhoneItem — no inp
     expect(bridge.getPlayer).not.toHaveBeenCalled();
   });
 
-  it('shell:checkPhoneItem counts on an empty emit and not on one carrying a value', async () => {
-    await fire('mica:server:shell:checkPhoneItem', 'again');
+  it('shell:checkDeviceItem counts on an empty emit and not on one carrying a value', async () => {
+    await fire('mica:server:shell:checkDeviceItem', 'again');
     expect(emitted('mica:client:shell:phoneItem')).toHaveLength(0);
 
-    await fire('mica:server:shell:checkPhoneItem');
-    expect(emitted('mica:client:shell:phoneItem')).toHaveLength(1);
+    // One push per device in `shared/devices.ts` (MICA-263).
+    await fire('mica:server:shell:checkDeviceItem');
+    expect(emitted('mica:client:shell:phoneItem')).toHaveLength(2);
   });
 
   it('phone:answer and phone:end drop an emit carrying a value before the player lookup', async () => {
@@ -265,25 +266,50 @@ describe('contacts:share — a card', () => {
 describe('shell:setOpen — a boolean, or { device, open }', () => {
   const EVENT = 'mica:server:shell:setOpen';
 
+  beforeEach(() => {
+    __resetOpenState();
+  });
+
   it('reads both shapes the client has ever sent', async () => {
     await fire(EVENT, true);
-    expect(isPhoneOpen(SRC)).toBe(true);
+    expect(isDeviceOpen(SRC, 'phone')).toBe(true);
     await fire(EVENT, false);
-    expect(isPhoneOpen(SRC)).toBe(false);
+    expect(isDeviceOpen(SRC, 'phone')).toBe(false);
 
-    await fire(EVENT, { device: 'tablet', open: true });
-    expect(isPhoneOpen(SRC)).toBe(true);
+    await fire(EVENT, { device: 'phone', open: true });
+    expect(isDeviceOpen(SRC, 'phone')).toBe(true);
     await fire(EVENT, { device: 'phone' });
-    expect(isPhoneOpen(SRC)).toBe(false);
+    expect(isDeviceOpen(SRC, 'phone')).toBe(false);
+    await fire(EVENT, { open: true });
+    expect(isDeviceOpen(SRC, 'phone')).toBe(true);
+  });
+
+  it('keys by device (MICA-263): the tablet opening says nothing about the phone', async () => {
+    await fire(EVENT, { device: 'tablet', open: true });
+    expect(isDeviceOpen(SRC, 'tablet')).toBe(true);
+    expect(isDeviceOpen(SRC, 'phone')).toBe(false);
+
+    await fire(EVENT, true);
+    await fire(EVENT, { device: 'tablet', open: false });
+    expect(isDeviceOpen(SRC, 'phone')).toBe(true);
+    expect(isDeviceOpen(SRC, 'tablet')).toBe(false);
+  });
+
+  it('drops a device it does not know rather than reading it as the phone', async () => {
+    for (const device of ['watch', 'PHONE', '', 'tablet ']) {
+      await fire(EVENT, { device, open: true });
+    }
+    expect(isDeviceOpen(SRC, 'phone')).toBe(false);
+    expect(isDeviceOpen(SRC, 'tablet')).toBe(false);
   });
 
   it('drops anything else, so a malformed push cannot flip the state', async () => {
     await fire(EVENT, true);
-    expect(isPhoneOpen(SRC)).toBe(true);
+    expect(isDeviceOpen(SRC, 'phone')).toBe(true);
 
     for (const bad of ['false', 0, null, { open: 'no' }, { open: false, extra: 1 }, [false]]) {
       await fire(EVENT, bad);
     }
-    expect(isPhoneOpen(SRC)).toBe(true);
+    expect(isDeviceOpen(SRC, 'phone')).toBe(true);
   });
 });

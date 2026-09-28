@@ -40,6 +40,7 @@ import type {
   PhoneCallLogEntry,
   Report,
   SavedPlace,
+  ShellCapabilities,
   Transaction
 } from '@mica/shared/types';
 import {
@@ -325,7 +326,20 @@ const mockNoMoney =
   (typeof window === 'undefined'
     ? null
     : new URLSearchParams(window.location.search).get('mica_no_money')) === '1';
-const mockCapabilities = () => ({ money: !mockNoMoney, jobs: true });
+/**
+ * `?mica_tablet=0` answers the way a server with `mica_tablet` off does (MICA-263): the phone
+ * alone. The default lists both, because the browser has a tablet frame to show and the dev
+ * launcher describes a server with everything on, for the same reason `money` is `true`.
+ */
+const mockNoTablet =
+  (typeof window === 'undefined'
+    ? null
+    : new URLSearchParams(window.location.search).get('mica_tablet')) === '0';
+const mockCapabilities = (): ShellCapabilities => ({
+  money: !mockNoMoney,
+  jobs: true,
+  devices: mockNoTablet ? ['phone'] : ['phone', 'tablet']
+});
 
 /**
  * `?mica_boot=unauthenticated` presents the mock the way a fresh server presents the

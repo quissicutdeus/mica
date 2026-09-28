@@ -50,7 +50,7 @@ import {
 /**
  * The usable-item registration runs at import time, and `beforeEach`'s `clearAllMocks` wipes
  * the record of it — so the callback is taken here, once, while the call is still there.
- * Matched by item name rather than by position, because `phoneItem.ts` registers through the
+ * Matched by item name rather than by position, because `deviceItem.ts` registers through the
  * same mock when `mica_phone_item` is set.
  */
 const batteryItemHandler: (src: number) => void = bridgeMock.registerUsableItem.mock.calls.find(
@@ -585,7 +585,7 @@ describe('the charge follows the phone', () => {
   const PHONE_B = 'b'.repeat(32);
   /** The phone-state subscriber Battery registered at import, run for one source. */
   const phoneStateChanged = async (src: number) => {
-    const { __phoneStateSubscribers } = await import('../lib/phoneItem');
+    const { __phoneStateSubscribers } = await import('../lib/deviceItem');
     for (const subscriber of __phoneStateSubscribers()) {
       if (subscriber.name === 'battery') await subscriber.run(src);
     }

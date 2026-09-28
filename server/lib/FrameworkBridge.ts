@@ -549,7 +549,7 @@ export class FrameworkBridge {
 
   /**
    * How many of an item a loaded player holds, or `null` when no inventory here can say
-   * (MICA-229). `lib/phoneItem.ts` is the caller; `countInventoryItem` has the order it
+   * (MICA-229). `lib/deviceItem.ts` is the caller; `countInventoryItem` has the order it
    * asks in and why `null` is not `0`.
    */
   public static countItem(player: FrameworkPlayer, item: string): number | null {

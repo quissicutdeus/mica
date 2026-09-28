@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import type { ShellCapabilities } from '@mica/shared/types';
+import { enabledDevices } from '../lib/deviceItem';
 import { detectFramework } from '../lib/FrameworkBridge';
 import { ServiceEndpoint } from '../lib/ServiceEndpoint';
 import { shellContract } from '@mica/shared/contracts/shell';
@@ -26,28 +28,11 @@ import { shellContract } from '@mica/shared/contracts/shell';
  * is in it.
  */
 
-/** Everything the phone asks about. Two fields today; the shape is the extension point. */
-export interface Capabilities {
-  /**
-   * Can money move on this server at all?
-   *
-   * False only in standalone, where `FrameworkBridge` has no framework to ask: `getMoney`
-   * answers the `-Infinity` sentinel and both `removeMoney` and `addMoney` answer `false`.
-   * Bank and Hodlr exist to move money, so on such a server they are not broken apps to be
-   * error-handled — they are apps with nothing behind them, and hiding them is the honest
-   * rendering. (Marketplace moves none; it is a noticeboard.)
-   */
-  money: boolean;
-  /**
-   * Does anyone here know what a player does for a living? (MICA-228)
-   *
-   * False only in standalone, by the same reasoning as `money`: `FrameworkPlayer.getJobs`
-   * there answers `[]` and both setters refuse, so a Jobs app would be a screen with nothing
-   * behind it. `unknown` answers `true` for the reason spelled out below — a booting qb
-   * server passes through `unknown`, and hiding the app for a session is the silent failure.
-   */
-  jobs: boolean;
-}
+/**
+ * Everything the phone asks about. Declared in `shared/types.ts` since MICA-263, so the
+ * contract and the web read the one shape this answers; the reasoning for each field is there.
+ */
+export type Capabilities = ShellCapabilities;
 
 /**
  * `unknown` answers `money: true`, deliberately, and this is the whole of the reasoning.
@@ -78,7 +63,8 @@ export const capabilities = (): Capabilities => {
   const framework = detectFramework();
   return {
     money: framework !== 'standalone',
-    jobs: framework !== 'standalone'
+    jobs: framework !== 'standalone',
+    devices: enabledDevices()
   };
 };
 

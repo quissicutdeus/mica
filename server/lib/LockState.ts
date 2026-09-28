@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import type { DeviceId } from '@mica/shared/devices';
 import { activePhoneIdOf } from '../services/Phones';
 
 /**
@@ -34,15 +35,25 @@ const locked = new Map<string, boolean>();
  * not resolved a phone yet — a resource locking a player before their first device-owned
  * request — is keyed on the source itself, the pre-283 behaviour, and `playerDropped` clears
  * exactly those entries: a phone's own lock is meant to outlive a session.
+ *
+ * **The tablet is keyed on the source, always, until MICA-264** (MICA-263). It has no identity
+ * yet — no id to follow from hand to hand — so the only honest key is the session holding it,
+ * which is the phone's own pre-283 behaviour, and it is cleared on `playerDropped` for the
+ * same reason. Never `activePhoneIdOf`: that is the phone's resolver, and a tablet lock
+ * stored under a phone id would lock the phone. MICA-264 moves this to the tablet's own id.
  */
-const keyFor = (source: number): string => activePhoneIdOf(source) ?? `source:${source}`;
+const keyFor = (source: number, device: DeviceId): string =>
+  device === 'phone'
+    ? (activePhoneIdOf(source) ?? `source:${source}`)
+    : `source:${source}:${device}`;
 
-/** For `IsPhoneLocked`. Defaults to unlocked for a phone, or a source, never heard from. */
-export const isPhoneLocked = (source: number): boolean => locked.get(keyFor(source)) ?? false;
+/** Whether a device is locked. Defaults to unlocked for one, or a source, never heard from. */
+export const isDeviceLocked = (source: number, device: DeviceId): boolean =>
+  locked.get(keyFor(source, device)) ?? false;
 
 /** For `LockPhone`/`UnlockPhone`. Not exported as a net-reachable action — only `publicApi.ts` calls this. */
-export const setPhoneLocked = (source: number, value: boolean): void => {
-  locked.set(keyFor(source), value);
+export const setDeviceLocked = (source: number, device: DeviceId, value: boolean): void => {
+  locked.set(keyFor(source, device), value);
 };
 
 /** Test seam: the map is module state that would otherwise leak between cases. */
@@ -54,5 +65,9 @@ on('playerDropped', () => {
   // FiveM reuses server ids, so a stale `true` left behind under a *source* key would greet
   // the next player to take this slot with a forced lock screen nobody told their session to
   // have. A phone-keyed lock is the phone's and stays.
-  locked.delete(`source:${source}`);
+  // Every source-keyed entry goes: the phone's pre-resolution one and each tablet's.
+  const prefix = `source:${source}`;
+  for (const key of locked.keys()) {
+    if (key === prefix || key.startsWith(`${prefix}:`)) locked.delete(key);
+  }
 });

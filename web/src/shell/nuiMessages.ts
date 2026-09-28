@@ -299,7 +299,7 @@ export function createNuiMessageRouter(bridge: NotificationBridge) {
     rehydrateShell: () => {
       resetBootstrapState();
       void bootstrapStores(true);
-      // A phone switch (`server/lib/phoneItem.ts`) sends only this route, never
+      // A phone switch (`server/lib/deviceItem.ts`) sends only this route, never
       // `rehydrateSettings` — and settings are stored per phone id, so the previous
       // phone's values need the same sweep or they stay on screen under the new one.
       void hydrateSettingsOnCharacterLoad();

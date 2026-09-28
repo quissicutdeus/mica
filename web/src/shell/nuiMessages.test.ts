@@ -434,7 +434,7 @@ describe('nearby music', () => {
  * character-load signals — the only routes that may reach the sweeping
  * `hydrateSettingsOnCharacterLoad`, as opposed to the sdk seam's page-load-only
  * `hydrateSettings()`. `rehydrateShell` needs it too: a phone switch
- * (`server/lib/phoneItem.ts`) sends only this route, never `rehydrateSettings`, and
+ * (`server/lib/deviceItem.ts`) sends only this route, never `rehydrateSettings`, and
  * settings are stored per phone id.
  */
 describe('rehydrateSettings and rehydrateShell sweep settings (MICA-287 round 3)', () => {
