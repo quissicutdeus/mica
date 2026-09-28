@@ -284,6 +284,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         max="90"
         bind:value={lightness}
         oninput={() => emit(hue, saturation, lightness, alpha)}
+        aria-label={$t('settings.colorPicker.lightnessLabel')}
         class="bg-surface h-1.5 w-full cursor-pointer appearance-none rounded-box accent-blue-500"
       />
     </div>
@@ -299,6 +300,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         max="100"
         bind:value={alpha}
         oninput={() => emit(hue, saturation, lightness, alpha)}
+        aria-label={$t('settings.colorPicker.opacityLabel')}
         class="bg-surface h-1.5 w-full cursor-pointer appearance-none rounded-box accent-blue-500"
       />
     </div>

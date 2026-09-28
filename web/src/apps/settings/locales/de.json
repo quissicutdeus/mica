@@ -124,7 +124,9 @@
   "theme.photoFailed": "Dieses Foto konnte nicht geladen werden. Versuch ein anderes.",
 
   "colorPicker.lightness": "Helligkeit",
+  "colorPicker.lightnessLabel": "Helligkeit",
   "colorPicker.opacity": "Deckkraft / Alpha",
+  "colorPicker.opacityLabel": "Deckkraft",
 
   "sound.title": "Ton",
   "sound.subtitle": "Lautstärke, Stummschaltung und Schrittweite der Tasten",

@@ -124,7 +124,9 @@
   "theme.photoFailed": "That photo could not be loaded. Try another.",
 
   "colorPicker.lightness": "Lightness",
+  "colorPicker.lightnessLabel": "Lightness",
   "colorPicker.opacity": "Opacity / Alpha",
+  "colorPicker.opacityLabel": "Opacity",
 
   "sound.title": "Sound",
   "sound.subtitle": "Volume, mute, and button step size",

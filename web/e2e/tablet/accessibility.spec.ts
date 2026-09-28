@@ -47,18 +47,14 @@ const NOT_APPLICABLE = ['region', 'landmark-one-main'];
  * in `../support/device.ts`'s `settledFrameBox`, the same wait `../support/phoneOpen.ts`'s
  * `settlePhoneOpen` has always had for the phone.
  *
- * - **settings / `label`** — `ColorWheelPicker.svelte:284`'s lightness slider (and its
- *   sibling opacity slider just below) is a bare `<input type="range">` with no accessible
- *   name. It sits on `settings/panes/Display.svelte`, which the tablet root opens *by
- *   default* (`settings/tablet.svelte`'s `pane = $state<Pane>('display')`) — the phone
- *   only reaches it by drilling in, and nothing drills in during `../a11y.spec.ts`'s sweep,
- *   so this is a pre-existing defect the phone sweep never had a path to.
+ * MICA-298 closed the `settings` / `label` entry: the color wheel's two sliders on the
+ * Display pane, which the tablet's Settings root opens by default, now carry an
+ * `aria-label`, and `../a11y.spec.ts` sweeps the same pane on the phone.
  */
 const KNOWN_OPEN: Record<string, string[]> = {
   // The shade is the same component the phone renders; the nested-interactive row is
   // `../a11y.spec.ts`'s open defect, not a new one found here.
-  shade: ['nested-interactive'],
-  settings: ['label']
+  shade: ['nested-interactive']
 };
 
 const summarise = (results: AxeResults): string[] =>

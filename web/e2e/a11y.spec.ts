@@ -187,6 +187,36 @@ for (const app of APPS) {
   });
 }
 
+/**
+ * Settings > Display (MICA-298).
+ *
+ * The loop above only ever opens the Settings app to its default screen — a list of rows,
+ * `Display` among them. `ThemeAndWallpaper`, and with it `ColorWheelPicker`'s lightness and
+ * opacity sliders, renders only once that row is tapped, so the sweep above never reached
+ * it and shipped two unlabeled `<input type="range">`s (a screen reader announced only
+ * "slider") until MICA-295's tablet sweep found them. This is the phone side of that fix.
+ */
+test('Settings > Display has no accessibility violations', async ({ page }) => {
+  await seedHomeGrid(page, ['settings']);
+  await page.goto('/');
+  await settlePhoneOpen(page);
+  await page.locator('button', { hasText: 'Settings' }).first().click();
+  // Substring match against the row's subtitle ("Theme, wallpaper, phone size and clock"),
+  // the same way `display.spec.ts`'s `openDisplayPane` reaches this pane.
+  await page.locator('button', { hasText: 'Phone size' }).first().click();
+  await expect(page.locator('h1', { hasText: 'Display' })).toBeVisible();
+
+  const frame = page.getByTestId('phone-frame');
+  await expect
+    .poll(async () => frame.evaluate((el) => el.getAnimations({ subtree: true }).length), {
+      timeout: 5000
+    })
+    .toBe(0);
+
+  const results = await scan(page, 'settings-display');
+  expect(summarise(results), `settings-display:\n  ${summarise(results).join('\n  ')}`).toEqual([]);
+});
+
 test('the home screen, the drawer and the shade have no accessibility violations', async ({
   page
 }) => {
