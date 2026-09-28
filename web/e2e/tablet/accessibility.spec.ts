@@ -35,17 +35,18 @@ const NOT_APPLICABLE = ['region', 'landmark-one-main'];
  * and somebody else's to fix: an e2e lane reports a product bug it finds, it does not
  * patch `web/src/shell` or `web/src/apps` to make its own gate green (MICA-295's brief).
  *
- * - **every tablet surface / `color-contrast`** — the status bar clock and battery-percent
- *   spans (`web/src/shell/frame/StatusBar.svelte:182`, `:318`) measure ~1.2:1 in light mode
- *   on the tablet: foreground `#191b25` (the light scheme's `on-surface`, correctly
- *   following the theme) against a background axe reads as flat `#000000`/`#040404` —
- *   not the wallpaper gradient `TabletFrame.svelte`'s `tablet-screen` div paints behind
- *   everything else (`web/src/shell/TabletFrame.svelte:105`). Present on the launcher and
- *   on every tablet-capable app root (the status bar is always mounted, not just on home),
- *   absent on the phone and absent on the tablet in dark mode — where the same background
- *   is dark enough that light text over it still passes. Nobody scanned the tablet in
- *   light before this ticket, which is exactly the gap `tablet-light` (`playwright.config.ts`)
- *   exists to close, and this is the first thing it found.
+ * MICA-297 closed the `color-contrast` entry this used to carry on every tablet surface.
+ * It was never a `StatusBar`/`TabletFrame` colour defect: `BootScreen.svelte` mounts as a
+ * sibling of the frame in `Shell.svelte`, not inside it, so `settledFrameBox`'s own
+ * `getAnimations()` wait never saw it, and a scan could run while the boot overlay's opaque
+ * `bg-black` was still mounted over the whole screen. axe does not discount the overlay's
+ * own opacity animation, so it read the status bar's `#191b25` (light scheme `on-surface`)
+ * against that literal black — 1.22:1 — rather than against the wallpaper gradient
+ * `TabletFrame.svelte:105` actually paints there once the overlay is gone. Dark mode never
+ * showed it because dark `on-surface` is light, and light-on-black passes regardless. Fixed
+ * in `../support/device.ts`'s `settledFrameBox`, the same wait `../support/phoneOpen.ts`'s
+ * `settlePhoneOpen` has always had for the phone.
+ *
  * - **settings / `label`** — `ColorWheelPicker.svelte:284`'s lightness slider (and its
  *   sibling opacity slider just below) is a bare `<input type="range">` with no accessible
  *   name. It sits on `settings/panes/Display.svelte`, which the tablet root opens *by
@@ -57,10 +58,7 @@ const KNOWN_OPEN: Record<string, string[]> = {
   // The shade is the same component the phone renders; the nested-interactive row is
   // `../a11y.spec.ts`'s open defect, not a new one found here.
   shade: ['nested-interactive'],
-  launcher: ['color-contrast'],
-  notes: ['color-contrast'],
-  admin: ['color-contrast'],
-  settings: ['color-contrast', 'label']
+  settings: ['label']
 };
 
 const summarise = (results: AxeResults): string[] =>

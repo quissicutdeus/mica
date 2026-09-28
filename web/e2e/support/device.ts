@@ -22,6 +22,16 @@ export const frameTestId = (device: DeviceId): string => `${device}-frame`;
  * The frame's rendered rectangle, after the fly-in has landed — `support/phoneOpen.ts`'s
  * wait, for either device. `boundingBox()` waits for visibility, not for a transform to
  * settle, and a frame arrives on a 500ms `transition:fly`.
+ *
+ * Also waits out the boot screen (MICA-236, MICA-297), the same wait
+ * `support/phoneOpen.ts`'s `settlePhoneOpen` has always had. `BootScreen.svelte` is mounted
+ * by `Shell.svelte` *beside* the frame, not inside it, so it is not in this element's own
+ * `getAnimations()` subtree above and the poll above resolves while the overlay is still
+ * mounted — opaque `bg-black`, absolutely positioned over the whole screen box. A caller
+ * that then reads geometry samples a covered screen, and axe (color-contrast) reads
+ * whatever text sits under it against that literal black rather than the real background
+ * underneath, since it does not account for the overlay's own opacity animation. It
+ * unmounts when done, not merely fades, so the wait is for its removal.
  */
 export const settledFrameBox = async (page: Page, device: DeviceId) => {
   const frame = page.getByTestId(frameTestId(device));
@@ -29,6 +39,7 @@ export const settledFrameBox = async (page: Page, device: DeviceId) => {
   await expect
     .poll(async () => frame.evaluate((el) => el.getAnimations().length), { timeout: 5000 })
     .toBe(0);
+  await expect(page.getByTestId('boot-screen')).toHaveCount(0, { timeout: 5000 });
   const box = await frame.boundingBox();
   if (!box) throw new Error(`the ${device} frame is not on screen`);
   return box;
