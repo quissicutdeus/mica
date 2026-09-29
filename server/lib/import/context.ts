@@ -7,6 +7,7 @@ import { Database, type TransactionQuery } from '../Database';
 import * as PlayerDirectory from '../PlayerDirectory';
 import { readCitizenIdByNumber, readPhoneIdByNumber } from '../phoneNumbers';
 import { phoneForCitizen } from '../phoneIdentity';
+import { cutText } from './cutText';
 import { SKIP, type ImportSource } from './report';
 
 /**
@@ -390,14 +391,10 @@ export const text = (value: unknown): string =>
 export const splitName = (display: string): { firstname: string; lastname: string | null } => {
   const trimmed = display.trim();
   const space = trimmed.indexOf(' ');
-  if (space < 0) return { firstname: trimmed.slice(0, 50), lastname: null };
+  if (space < 0) return { firstname: cutText(trimmed, 50), lastname: null };
   return {
-    firstname: trimmed.slice(0, space).slice(0, 50),
-    lastname:
-      trimmed
-        .slice(space + 1)
-        .trim()
-        .slice(0, 50) || null
+    firstname: cutText(trimmed.slice(0, space), 50),
+    lastname: cutText(trimmed.slice(space + 1).trim(), 50) || null
   };
 };
 

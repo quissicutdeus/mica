@@ -6,6 +6,7 @@ import { PlayerFacingError } from '../lib/errors';
 import { defineService } from '../lib/defineService';
 import { Database } from '../lib/Database';
 import { appEventChannel } from '../lib/appEvents';
+import { openRows } from '../lib/contentCipher';
 import {
   ownedAccount,
   accountHasBlocked,
@@ -46,6 +47,8 @@ export const blabberDms = defineService<BlabberDm, typeof blabberDmsContract>({
   table: 'mica_blabber_dms',
   access: { read: 'owner', write: 'owner' },
   statuses: ['active', 'deleted', 'moderated'],
+  /** A body is bound to the two accounts it passed between (MICA-165). */
+  encryptionScope: ['from_account', 'to_account'],
   schema: {
     from_account: {
       type: 'int',
@@ -59,8 +62,11 @@ export const blabberDms = defineService<BlabberDm, typeof blabberDmsContract>({
       clientWritable: false,
       references: { table: 'mica_accounts', column: 'id' }
     },
-    /** Longer than a Blab: a DM is a conversation, not a broadcast. */
-    body: { type: 'string', length: 500, notNull: true },
+    /**
+     * Longer than a Blab: a DM is a conversation, not a broadcast. 500 characters of plaintext,
+     * sealed at rest (MICA-165), so the column is as wide as their sealed form (migration 0007).
+     */
+    body: { type: 'string', length: 500, notNull: true, encrypted: true },
     /** Null until the recipient opens the thread. Server-set; never a client's to claim. */
     read_at: { type: 'timestamp', clientWritable: false }
   },
@@ -172,14 +178,18 @@ app.registerEvent('get', async (source, cbId, data, citizenid) => {
   if (cursor !== null) params.push(cursor);
   params.push(limit + 1);
 
-  const rows = await Database.query<BlabberDm[]>(
-    `SELECT * FROM \`mica_blabber_dms\`
-     WHERE ((\`from_account\` = ? AND \`to_account\` = ?)
-        OR (\`from_account\` = ? AND \`to_account\` = ?))
-       AND \`status\` = 'active'${cursorClause}
-     ORDER BY \`id\` DESC
-     LIMIT ?`,
-    params
+  // Bodies are sealed at rest (MICA-165); `*` carries each row's context, so they open here.
+  const rows = openRows(
+    blabberDms.resolved.table,
+    await Database.query<BlabberDm[]>(
+      `SELECT * FROM \`mica_blabber_dms\`
+       WHERE ((\`from_account\` = ? AND \`to_account\` = ?)
+          OR (\`from_account\` = ? AND \`to_account\` = ?))
+         AND \`status\` = 'active'${cursorClause}
+       ORDER BY \`id\` DESC
+       LIMIT ?`,
+      params
+    )
   );
 
   const hasMore = rows.length > limit;
@@ -218,9 +228,12 @@ app.registerEvent('threads', async (source, cbId, data, citizenid) => {
   if (heads.length === 0) return [];
 
   const lastIds = heads.map((row) => Number(row.last_id));
-  const messages = await Database.query<BlabberDm[]>(
-    `SELECT * FROM \`mica_blabber_dms\` WHERE \`id\` IN (${lastIds.map(() => '?').join(', ')})`,
-    lastIds
+  const messages = openRows(
+    blabberDms.resolved.table,
+    await Database.query<BlabberDm[]>(
+      `SELECT * FROM \`mica_blabber_dms\` WHERE \`id\` IN (${lastIds.map(() => '?').join(', ')})`,
+      lastIds
+    )
   );
 
   const peerIds = heads.map((row) => Number(row.peer));
@@ -305,6 +318,10 @@ app.registerEvent('send', async (source, cbId, data, citizenid) => {
    *
    * The row is committed either way, so the recipient gets it from the ordinary thread fetch
    * even when offline — which is why nothing is queued. Same rule as `deliverToParticipants`.
+   *
+   * The toast shows the text; the notification row it leaves behind does not (MICA-165). The
+   * body is sealed in `mica_blabber_dms`, and a plaintext copy in `mica_notifications` would be
+   * the same words in the same dump, so the persisted row keeps the sender and an empty body.
    */
   const outcome = channel.push(
     peer.citizenid,
@@ -317,6 +334,7 @@ app.registerEvent('send', async (source, cbId, data, citizenid) => {
         message: text.slice(0, 120)
       } as never,
       kind: 'dm',
+      body: '',
       // A DM notification had no destination at all, so tapping it did nothing whichever
       // route it came through. The thread is keyed on the peer's handle.
       deepLink: buildDeepLink('blabber', { dmHandle: mine.handle })

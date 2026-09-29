@@ -4,6 +4,7 @@
 
 import { Database } from './Database';
 import { AuditLogger } from './AuditLogger';
+import { contentContext, encryptedColumn, isSealed, openContent } from './contentCipher';
 import type { ReportCategory } from '@mica/shared/types';
 
 /**
@@ -110,9 +111,17 @@ export const summariseTarget = async (
   const definition = reportable.get(table);
   if (!definition) return { exists: false };
   const { previewColumn } = definition;
-  // `table` and `previewColumn` come from the allowlist above, never from the payload.
+  /**
+   * A preview column sealed at rest (MICA-165) opens here, in the application, off the row's
+   * own context — so its scope columns are selected too, under their own names, beside the
+   * `citizenid` already here. The snapshot the report keeps is then sealed again, bound to the
+   * report rather than to the content.
+   */
+  const sealed = encryptedColumn(table, previewColumn);
+  const scope = (sealed?.scope ?? []).map((column) => `, \`${column}\``).join('');
+  // `table`, `previewColumn` and the scope come from declarations, never from the payload.
   const row = await Database.single<Record<string, unknown>>(
-    `SELECT \`citizenid\`, \`status\`, \`${previewColumn}\` AS preview
+    `SELECT \`citizenid\`, \`status\`, \`${previewColumn}\` AS preview${scope}
      FROM \`${table}\` WHERE \`id\` = ?`,
     [id]
   );
@@ -120,7 +129,9 @@ export const summariseTarget = async (
   if (!row) return { exists: false };
 
   const raw = row.preview;
-  const preview = typeof raw === 'string' ? raw : raw == null ? '' : String(raw);
+  const text = typeof raw === 'string' ? raw : raw == null ? '' : String(raw);
+  const preview =
+    sealed && isSealed(text) ? openContent(contentContext(sealed, row), text, id) : text;
 
   return {
     exists: true,

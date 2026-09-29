@@ -199,6 +199,21 @@ DDL.
   to keep in sync.
 - Declared fields are client-writable by default; opt out with
   `clientWritable: false`. Filtering is opt-in via `clientFilterable: true`.
+- **`encrypted: true` seals a text column at rest (MICA-165)**, and the service
+  must then declare `encryptionScope`: its own columns that say which thread a
+  row belongs to, bound with the table, the column and `citizenid` into every
+  sealed value, so a ciphertext copied into another thread does not open. `[]`
+  is a real answer (a mail row is its own thread). A scope column may never be
+  client-writable, or rewritten by anything once the row exists: the value bound
+  to it would no longer open. `Repository` seals on every generic write and
+  opens on every generic read; SQL written by hand calls `lib/contentCipher.ts`
+  itself, and `server/__tests__/encryptedColumns.test.ts` fails on a file that
+  names an encrypted column in SQL without being on its list. For a `string`,
+  `length` stays the **plaintext** bound and the column is emitted wide enough
+  for its sealed form; a `text` keeps its width and its plaintext bound drops
+  instead (`MESSAGE_BODY_MAX`). An encrypted column cannot also be
+  `clientFilterable`, indexed, defaulted or generated: none of those means
+  anything over ciphertext. `docs/security.md` has what this defends.
 - **`access` is two axes, not one.** It replaced a single `scope`, which
   conflated them — the thing Conversations' own header had been complaining
   about: the row genuinely has an owner, and what is shared is _visibility_. A

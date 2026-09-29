@@ -66,7 +66,7 @@ const EXTERNAL_DB = Boolean(DB_HOST || DB_PORT || DB_USER || DB_PASSWORD);
  * configured": a harness that returns early — a fixture that silently seeded nothing, a loop
  * over an empty list — would otherwise print a pass having checked almost nothing.
  *
- * The run currently makes **334** checks. The last census, at 258, named each fixture: the two
+ * The run currently makes **366** checks. The last census, at 258, named each fixture: the two
  * `runVariant`s (17 each), the two `runSweepFixtures` (17 each), the two `runNumberMigration`s
  * (MICA-284; 21 on qb, 16 on ESX), the two `runDataMigration`s (MICA-282; 38 each), the two
  * `runBatteryMigration`s (MICA-283; 9 each), and MICA-289's `runWidenMigration` (14 on qb, 15 on
@@ -76,12 +76,13 @@ const EXTERNAL_DB = Boolean(DB_HOST || DB_PORT || DB_USER || DB_PASSWORD);
  * `runPlayersKeysMigration`s (13 on qb, 11 on ESX), `runReimportOverOldSchema` (8) and
  * `runApplyWidensEsxWithPlayersKeys` (2) to 315, and MICA-301's `runReimportRunsMigrations`
  * (5 on each shape), `runReimportWithoutLedger` (5) and `runFreshImportSeeds` (2 on each) to
- * 334 — so the margin here is eight again.
+ * 334, and MICA-165's `runSealedWidthMigration`s (11 on each shape) and
+ * `runSealedWidthRefusesCopy`s (5 on each) to 366 — so the margin here is eight again.
  * That is deliberately tight: losing any one fixture drops below it and fails, which is the
  * whole point. Raise the floor when you add checks, rather than letting the gap widen until it
  * stops catching anything.
  */
-const MINIMUM_CHECKS = 326;
+const MINIMUM_CHECKS = 358;
 let checksRun = 0;
 
 const check = (label, actual, expected) => {
@@ -1682,6 +1683,201 @@ const runRingtoneMigration = async ({ connection, schemaFile, hasPlayers, server
   check(`${label}: and the column did not move`, await typeOf(), 'varchar(54)');
 };
 
+const SEALED_MIGRATION = '0007_sealed_bodies_widen_their_columns';
+
+/**
+ * MICA-165: `mica_blabber_dms.body` and `mica_reports.target_preview` widen to hold their sealed
+ * form, run for real on the frozen pre-0004 schema, where they are still `varchar(500)` and
+ * `varchar(300)` and the ledger knows no migration from 0004 on. Every stored value, a NULL
+ * preview included, has to survive; the longest sealed value has to fit afterwards.
+ */
+/** `<charset>/<collation>` of one column, as information_schema reports it. */
+const collationOf = async (connection, table, column) => {
+  const [rows] = await connection.query(
+    `SELECT CHARACTER_SET_NAME AS cs, COLLATION_NAME AS co FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?`,
+    [table, column]
+  );
+  return rows[0] ? `${rows[0].cs}/${rows[0].co}` : null;
+};
+
+/**
+ * MICA-165: 0007 widens **in place or not at all**. A `mica_reports` an owner moved to MyISAM
+ * cannot be altered without a lock, so `ALGORITHM=INPLACE, LOCK=NONE` has to refuse it loudly
+ * rather than copy the table under one. The body before it still widens in place, and the
+ * preview is left exactly as it was.
+ *
+ * Not a narrow single-byte column, which was the first idea: MariaDB 11 widens a `latin1`
+ * `varchar(60)` past a one-byte length prefix in place (a rebuild without a copy), so that
+ * fixture could not fail and proved nothing.
+ */
+const runSealedWidthRefusesCopy = async ({ connection, schemaFile, hasPlayers, server }) => {
+  const variant = hasPlayers ? 'qb' : 'esx';
+  const label = `${schemaFile} sealed widths, no copy`;
+  step(`${schemaFile} — MICA-165 ${SEALED_MIGRATION} refuses a copy, on a ${variant} database`);
+
+  await freshPreWidenDatabase({ connection, schemaFile, hasPlayers, name: `nocopy_${variant}` });
+  // MyISAM takes no foreign key, so any the fixture's reports table has go first.
+  const [keys] = await connection.query(
+    `SELECT CONSTRAINT_NAME AS name FROM information_schema.TABLE_CONSTRAINTS
+      WHERE table_schema = DATABASE() AND table_name = 'mica_reports'
+        AND constraint_type = 'FOREIGN KEY'`
+  );
+  for (const { name } of keys) {
+    await connection.query(`ALTER TABLE mica_reports DROP FOREIGN KEY \`${name}\``);
+  }
+  await connection.query('ALTER TABLE mica_reports ENGINE = MyISAM');
+  const typeOf = async (table, column) =>
+    await scalar(
+      connection,
+      `SELECT column_type FROM information_schema.COLUMNS
+        WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?`,
+      [table, column]
+    );
+
+  runningFramework(server, hasPlayers);
+  const run = await server.runPendingMigrations();
+  check(`${label}: 0007 is the migration that failed`, run.failed?.id, SEALED_MIGRATION);
+  check(
+    `${label}: and it says the widening could not be done in place`,
+    /ALGORITHM|INPLACE|LOCK/i.test(String(run.failed?.error)),
+    true
+  );
+  check(`${label}: and is not recorded as applied`, run.applied.includes(SEALED_MIGRATION), false);
+  check(
+    `${label}: the body before it widened in place`,
+    await typeOf('mica_blabber_dms', 'body'),
+    'varchar(2726)'
+  );
+  check(
+    `${label}: the preview was not copied or changed`,
+    [
+      await typeOf('mica_reports', 'target_preview'),
+      await scalar(
+        connection,
+        `SELECT ENGINE FROM information_schema.TABLES
+          WHERE table_schema = DATABASE() AND table_name = 'mica_reports'`
+      )
+    ],
+    ['varchar(300)', 'MyISAM']
+  );
+};
+
+const runSealedWidthMigration = async ({ connection, schemaFile, hasPlayers, server }) => {
+  const variant = hasPlayers ? 'qb' : 'esx';
+  const label = `${schemaFile} sealed widths`;
+  step(`${schemaFile} — MICA-165 ${SEALED_MIGRATION}, on a ${variant} database`);
+
+  await freshPreWidenDatabase({ connection, schemaFile, hasPlayers, name: `sealed_${variant}` });
+  if (hasPlayers) {
+    await connection.query('INSERT INTO players (citizenid, charinfo) VALUES (?, ?)', [
+      'CIT_SEAL',
+      JSON.stringify({ firstname: 'Seal', lastname: 'Test' })
+    ]);
+  }
+  for (const handle of ['ada', 'bo']) {
+    await connection.query(
+      "INSERT INTO mica_accounts (citizenid, app, handle) VALUES ('CIT_SEAL', 'blabber', ?)",
+      [handle]
+    );
+  }
+  const longest = 'd'.repeat(500);
+  await connection.query(
+    'INSERT INTO mica_blabber_dms (citizenid, from_account, to_account, body) VALUES (?, 1, 2, ?)',
+    ['CIT_SEAL', longest]
+  );
+  const previews = ['p'.repeat(300), null];
+  for (const preview of previews) {
+    await connection.query(
+      `INSERT INTO mica_reports (citizenid, target_table, target_id, target_preview)
+       VALUES ('CIT_SEAL', 'mica_blabber_dms', 1, ?)`,
+      [preview]
+    );
+  }
+  const typeOf = async (table, column) =>
+    await scalar(
+      connection,
+      `SELECT column_type FROM information_schema.COLUMNS
+        WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?`,
+      [table, column]
+    );
+  // A body collation that is not the table's default: the widening has to keep it.
+  await connection.query(
+    `ALTER TABLE mica_blabber_dms MODIFY COLUMN body varchar(500)
+       CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL`
+  );
+  check(
+    `${label}: starts at varchar(500) and varchar(300)`,
+    [await typeOf('mica_blabber_dms', 'body'), await typeOf('mica_reports', 'target_preview')],
+    ['varchar(500)', 'varchar(300)']
+  );
+
+  runningFramework(server, hasPlayers);
+  const run = await server.runPendingMigrations();
+  check(`${label}: 0007 applied`, run.applied.includes(SEALED_MIGRATION), true);
+  check(`${label}: and failed nothing`, run.failed, null);
+  check(
+    `${label}: both are as wide as their sealed form after`,
+    [await typeOf('mica_blabber_dms', 'body'), await typeOf('mica_reports', 'target_preview')],
+    ['varchar(2726)', 'varchar(1662)']
+  );
+  check(
+    `${label}: each keeps its own character set and collation`,
+    [
+      await collationOf(connection, 'mica_blabber_dms', 'body'),
+      await collationOf(connection, 'mica_reports', 'target_preview')
+    ],
+    ['utf8mb4/utf8mb4_general_ci', 'utf8mb4/utf8mb4_unicode_ci']
+  );
+  check(
+    `${label}: the body keeps NOT NULL and the preview its NULL`,
+    [
+      await scalar(
+        connection,
+        `SELECT is_nullable FROM information_schema.COLUMNS
+          WHERE table_schema = DATABASE() AND table_name = 'mica_blabber_dms'
+            AND column_name = 'body'`
+      ),
+      await scalar(
+        connection,
+        `SELECT is_nullable FROM information_schema.COLUMNS
+          WHERE table_schema = DATABASE() AND table_name = 'mica_reports'
+            AND column_name = 'target_preview'`
+      )
+    ],
+    ['NO', 'YES']
+  );
+  check(
+    `${label}: every stored body survives`,
+    await scalar(connection, 'SELECT body FROM mica_blabber_dms WHERE id = 1'),
+    longest
+  );
+  const [rows] = await connection.query('SELECT target_preview FROM mica_reports ORDER BY id');
+  check(
+    `${label}: every stored preview and the NULL survive`,
+    rows.map((r) => r.target_preview),
+    previews
+  );
+  const sealedBody = `$mc1$${'k'.repeat(16)}$${'A'.repeat(2726 - 22)}`;
+  await connection.query(
+    'INSERT INTO mica_blabber_dms (citizenid, from_account, to_account, body) VALUES (?, 2, 1, ?)',
+    ['CIT_SEAL', sealedBody]
+  );
+  check(
+    `${label}: the longest sealed body fits, uncut`,
+    await scalar(connection, 'SELECT LENGTH(body) FROM mica_blabber_dms WHERE id = 2'),
+    2726
+  );
+
+  const second = await server.runPendingMigrations();
+  check(`${label}: a second run applies nothing`, second.applied, []);
+  check(
+    `${label}: and the columns did not move`,
+    [await typeOf('mica_blabber_dms', 'body'), await typeOf('mica_reports', 'target_preview')],
+    ['varchar(2726)', 'varchar(1662)']
+  );
+};
+
 /**
  * A crash part-way through the list. `up()` is not one transaction — each `ALTER` commits — so
  * a server that died after some columns leaves exactly this: some 60, the rest 50, and a ledger
@@ -2382,6 +2578,32 @@ const main = async () => {
     // MICA-256. Also from the frozen pre-0004 schema, the last one that still has the enum.
     await runRingtoneMigration({ connection, schemaFile: 'mica.sql', hasPlayers: true, server });
     await runRingtoneMigration({
+      connection,
+      schemaFile: 'mica.esx.sql',
+      hasPlayers: false,
+      server
+    });
+
+    // MICA-165. From the frozen pre-0004 schema, whose DM body and report preview are narrow.
+    await runSealedWidthMigration({
+      connection,
+      schemaFile: 'mica.sql',
+      hasPlayers: true,
+      server
+    });
+    await runSealedWidthMigration({
+      connection,
+      schemaFile: 'mica.esx.sql',
+      hasPlayers: false,
+      server
+    });
+    await runSealedWidthRefusesCopy({
+      connection,
+      schemaFile: 'mica.sql',
+      hasPlayers: true,
+      server
+    });
+    await runSealedWidthRefusesCopy({
       connection,
       schemaFile: 'mica.esx.sql',
       hasPlayers: false,

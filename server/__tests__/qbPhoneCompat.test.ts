@@ -38,6 +38,8 @@ vi.mock('../lib/FrameworkBridge', () => ({
 import '../lib/qbPhoneCompat';
 import { qbMailFrom } from '../lib/qbPhoneCompat';
 import { __resetRateLimits } from '../lib/rateLimit';
+import { sealedLengthForChars } from '../lib/contentCipher';
+import { MAIL_CONTENT_MAX } from '@mica/shared/contracts/mail';
 import { QB_PHONE_SERVER_EVENTS } from '@mica/shared/qbPhoneEvents';
 
 const qbMail = { sender: 'Los Santos Customs', subject: 'Your car', message: 'It is ready.' };
@@ -79,6 +81,28 @@ describe('qbMailFrom', () => {
     const mapped = qbMailFrom({ sender: 's'.repeat(300), subject: 'x', content: 'body' });
     expect(mapped?.sender).toHaveLength(100);
     expect(mapped?.content).toBe('body');
+  });
+
+  it('cuts the body to what mica_mail.content still holds once sealed (MICA-165)', () => {
+    const mapped = qbMailFrom({ sender: 's', subject: 'x', message: 'm'.repeat(70_000) });
+    expect(mapped?.content).toBe('m'.repeat(MAIL_CONTENT_MAX));
+    expect(sealedLengthForChars(mapped!.content.length)).toBeLessThanOrEqual(65_535);
+  });
+
+  it('never cuts through an emoji, and never past a column', () => {
+    // The emoji's two UTF-16 halves straddle each bound; a plain slice would keep the first.
+    const mapped = qbMailFrom({
+      sender: 's'.repeat(99) + '😀',
+      subject: 'x'.repeat(254) + '😀',
+      message: 'm'.repeat(MAIL_CONTENT_MAX - 1) + '😀'
+    })!;
+    expect(mapped.sender).toBe('s'.repeat(99));
+    expect(mapped.subject).toBe('x'.repeat(254));
+    expect(mapped.content).toBe('m'.repeat(MAIL_CONTENT_MAX - 1));
+    const lone = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+    for (const field of Object.values(mapped)) expect(field).not.toMatch(lone);
+    // An emoji that fits whole is kept whole.
+    expect(qbMailFrom({ sender: 'a😀', subject: 'b', message: 'c' })?.sender).toBe('a😀');
   });
 
   it('refuses anything that is not a mail', () => {

@@ -166,7 +166,7 @@ CREATE TABLE IF NOT EXISTS `mica_blabber_dms` (
     `citizenid` varchar(50) NOT NULL,
     `from_account` int(11) NOT NULL,
     `to_account` int(11) NOT NULL,
-    `body` varchar(500) NOT NULL,
+    `body` varchar(2726) NOT NULL,
     `read_at` timestamp DEFAULT NULL,
     `status` ENUM('active', 'deleted', 'moderated') NOT NULL DEFAULT 'active',
     `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -716,7 +716,7 @@ CREATE TABLE IF NOT EXISTS `mica_reports` (
     `category` ENUM('spam', 'harassment', 'threats', 'sexual', 'impersonation', 'other') NOT NULL DEFAULT 'other',
     `note` varchar(500) DEFAULT NULL,
     `resolution` ENUM('pending', 'actioned', 'dismissed') NOT NULL DEFAULT 'pending',
-    `target_preview` varchar(300) DEFAULT NULL,
+    `target_preview` varchar(1662) DEFAULT NULL,
     `target_author` varchar(50) DEFAULT NULL,
     `status` ENUM('active', 'deleted') NOT NULL DEFAULT 'active',
     `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -763,4 +763,5 @@ SELECT `id` FROM (
     UNION ALL SELECT '0004_citizenid_widens_on_esx'
     UNION ALL SELECT '0005_contact_ringtone_holds_owner_sounds'
     UNION ALL SELECT '0006_players_foreign_keys_dropped'
+    UNION ALL SELECT '0007_sealed_bodies_widen_their_columns'
 ) AS `seed` WHERE @mica_fresh_import = 1;

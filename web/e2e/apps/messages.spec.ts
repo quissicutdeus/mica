@@ -1,4 +1,5 @@
 import { test, expect } from '../support/test';
+import { MESSAGE_BODY_MAX } from '@mica/shared/contracts/messages';
 
 test.describe('Messages App E2E', () => {
   test.beforeEach(async ({ page }) => {
@@ -286,6 +287,49 @@ test.describe('Messages App E2E', () => {
     await expect(
       messagesContainer.locator('button', { hasText: 'Meet me at the docks' })
     ).toHaveCount(0);
+  });
+
+  /**
+   * A body is sealed at rest, so the contract bounds it (MICA-165) and the composer stops the
+   * paste where the server would refuse it. The one field serves a new message and an edit,
+   * so the edit path is held to the same number.
+   */
+  test('the composer stops a paste at the contract bound, for a send and for an edit', async ({
+    page
+  }) => {
+    await page
+      .locator('[role="button"]')
+      .filter({ hasText: 'Trevor' })
+      .first()
+      .click({ force: true });
+    await expect(page.locator('#messages-container')).toBeVisible();
+
+    const box = page.getByRole('textbox').last();
+    await expect(box).toHaveAttribute('maxlength', String(MESSAGE_BODY_MAX));
+
+    await box.fill('x'.repeat(MESSAGE_BODY_MAX));
+    await expect(box).toHaveValue('x'.repeat(MESSAGE_BODY_MAX));
+    await box.press('End');
+    await page.keyboard.type('y');
+    await expect(box, 'a character past the bound is not accepted').toHaveValue(
+      'x'.repeat(MESSAGE_BODY_MAX)
+    );
+
+    // Send something short, then edit it: the composer is the same row, so the same bound.
+    await box.fill('Meet me at the docs');
+    await page.getByRole('button', { name: 'Send' }).click();
+    const bubble = page
+      .locator('#messages-container')
+      .locator('button', { hasText: 'Meet me at the docs' })
+      .last();
+    await expect(bubble).toBeVisible();
+    await bubble.click();
+    await page.getByRole('button', { name: 'Edit message' }).click();
+    await expect(page.locator('text=Editing message')).toBeVisible();
+    await expect(page.getByRole('textbox').last()).toHaveAttribute(
+      'maxlength',
+      String(MESSAGE_BODY_MAX)
+    );
   });
 
   /**

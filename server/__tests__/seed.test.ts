@@ -2,7 +2,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { randomBytes } from 'node:crypto';
 
 const { dbMock } = vi.hoisted(() => ({
   dbMock: {
@@ -16,6 +20,15 @@ const { dbMock } = vi.hoisted(() => ({
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
 
 import { SEED_CHARACTERS, clearSeed, seedFor } from '../lib/seed';
+import {
+  contentContext,
+  encryptedColumn,
+  openContent,
+  registerEncryptedColumn,
+  resetContentCipherForTests,
+  sealedKeyId,
+  unregisterEncryptedColumnForTests
+} from '../lib/contentCipher';
 
 /**
  * `micaseed` writes and deletes rows in tables the framework owns, on a live server,
@@ -144,3 +157,63 @@ describe('seedFor', () => {
     ).toBe(false);
   });
 });
+
+describe('MICA-165: seeded messages are sealed', () => {
+  let dir = '';
+  let registered = false;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'mica-seed-key-'));
+    const path = join(dir, 'content.key');
+    writeFileSync(path, `seed ${randomBytes(32).toString('base64')}\n`);
+    chmodSync(path, 0o600);
+    (globalThis as any).GetConvar = (name: string, fallback: string) =>
+      name === 'mica_content_key_file' ? path : fallback;
+    resetContentCipherForTests();
+    registered = !encryptedColumn('mica_messages', 'message');
+    if (registered) {
+      registerEncryptedColumn({
+        table: 'mica_messages',
+        column: 'message',
+        scope: ['conversation_id'],
+        hasUpdatedAt: true
+      });
+    }
+  });
+
+  afterEach(() => {
+    if (registered) unregisterEncryptedColumnForTests('mica_messages', 'message');
+    (globalThis as any).GetConvar = (_name: string, fallback: string) => fallback;
+    resetContentCipherForTests();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('inserts each opener sealed for its thread and sender', async () => {
+    dbMock.query.mockImplementation(async (sql: string) =>
+      String(sql).includes('INSERT INTO mica_messages_conversations') ? { insertId: 41 } : []
+    );
+
+    await seedFor('REAL_PLAYER');
+
+    const inserts = dbMock.query.mock.calls.filter((c) =>
+      String(c[0]).includes('INSERT INTO mica_messages (')
+    );
+    expect(inserts.length).toBeGreaterThan(0);
+    const entry = encryptedColumn('mica_messages', 'message')!;
+    for (const [, [conversation_id, citizenid, message]] of inserts) {
+      expect(conversation_id).toBe(41);
+      expect(sealedKeyId(message)).toBe('seed');
+      const plain = openContent(contentContext(entry, { conversation_id, citizenid }), message);
+      expect(Object.values(SEED_OPENERS).flat()).toContain(plain);
+    }
+    expect(inserts[0][1][1]).toBe('SEED0001');
+  });
+});
+
+/** `lib/seed.ts`'s openers, as the seeded characters send them. */
+const SEED_OPENERS: Record<string, string[]> = {
+  SEED0001: ['hey, you around?', 'got that thing sorted or not'],
+  SEED0002: ['yo', 'meet me at the docks in 10'],
+  SEED0003: ['wrong number sorry'],
+  SEED0004: ['did you see what happened on vinewood?', 'wild']
+};

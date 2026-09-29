@@ -73,9 +73,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         {#if t.title}
           <h4 class="text-on-surface text-body-medium mb-0.5 truncate">{t.title}</h4>
         {/if}
-        <p class="text-on-surface text-body-small line-clamp-2 leading-relaxed">
-          {t.message}
-        </p>
+        {#if t.message}
+          <p class="text-on-surface text-body-small line-clamp-2 leading-relaxed">
+            {t.message}
+          </p>
+        {/if}
       </div>
     </div>
   </div>

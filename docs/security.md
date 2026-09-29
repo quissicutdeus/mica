@@ -445,6 +445,81 @@ Done **before** any app reads the level, which was the point: the alternative
 was shipping the first version of dead-zone degradation exploitable and fixing
 it afterwards.
 
+## Message bodies at rest
+
+**This protects a stolen database dump. It does not protect anyone from the
+server's operator, and it is not end-to-end encryption.** The operator holds the
+key and runs the code that uses it; a server that wants to read its players'
+messages can. What it stops is the far commoner leak: a FiveM database backup
+left on a share, pasted into a support thread, or sold, read by someone who
+never had the server (MICA-165).
+
+With `mica_content_key_file` set, four columns are sealed with AES-256-GCM in
+`server/lib/contentCipher.ts` before they reach SQL, and opened after every
+read:
+
+| Column                        | What it holds                            | Bound to, besides the table, column and `citizenid` |
+| ----------------------------- | ---------------------------------------- | --------------------------------------------------- |
+| `mica_messages.message`       | A text message                           | `conversation_id`                                   |
+| `mica_blabber_dms.body`       | A Blabber direct message                 | `from_account`, `to_account`                        |
+| `mica_mail.content`           | An email's body                          | nothing more; a mailbox is its own thread           |
+| `mica_reports.target_preview` | The snapshot of a reported message or DM | `target_table`, `target_id`                         |
+
+Encrypting inside the application, not with MySQL's `AES_ENCRYPT`, is the whole
+point: that would put the key in every statement, so in the query log and the
+process list, beside the data it protects. For the same reason the key is never
+a convar. `mica_content_key_file` names a **file**, and `server.cfg` is the file
+most often pasted, shared and committed next to the dump. The server warns at
+boot when the key file sits inside the resource or `server-data`, or is readable
+by anyone but its owner. It cannot know where your backups go; keeping the key
+out of them is the one step only you can take.
+
+**The binding is not the row id, on purpose.** The ticket asked for it, but a
+row's id does not exist until the insert that stores the ciphertext, so binding
+it would mean insert-then-update on every write, an empty row left behind when
+the second statement fails, and no way to seal inside the importer's batched
+transactions. The binding still refuses a ciphertext copied to another player,
+another conversation or another column. What it gives up is swapping two of one
+player's messages inside one thread, which someone holding a read-only dump
+cannot do. `defineService` refuses an `encryptionScope` column that is
+client-writable, because a scope column rewritten after the fact would strand
+the ciphertext bound to it.
+
+What stays readable in a dump, deliberately: who talked to whom and when, mail
+subjects and senders (system-written, and what a notification shows), Blabs
+(public posts), attachments and photos, notification titles, and every other
+table. Nothing in micaOS searches these bodies in SQL, so none of that had to
+change: Home search (MICA-248) filters what the phone already has, and retention
+(MICA-167) and the purges delete by age and status without reading a body.
+
+Four edges, each chosen rather than overlooked:
+
+- **No key is legal**, and stores plaintext as micaOS always did, with a warning
+  every boot. But the first successful seal writes a marker into
+  `mica_schema_migrations`, and from then on a missing key **refuses** writes to
+  these columns rather than quietly storing plaintext beside ciphertext. A key
+  file that is set but unusable is refused the same way, never read as "no key".
+- **A body that will not open reads as 🔒**, logged once per row, instead of an
+  error. One row sealed under a lost key must not take its thread down with it.
+- **Rows written before the key are not sealed until
+  `micacrypt backfill --apply` runs** (`docs/in-game-commands.md`). Readers
+  accept both forms in the meantime. Dumps, binlogs and backups taken before the
+  backfill are plaintext and stay that way; encrypting the live table does
+  nothing for a copy that already left. A persisted DM notification no longer
+  keeps the first 120 characters of the message; the backfill blanks the ones
+  written before.
+- **Text that begins with the sealed form's own prefix, `$mc1$`.** With a key it
+  is sealed like any other text and reads back exactly. Without one it would be
+  stored bare and then read as a sealed value, so a player's own message or DM
+  is refused with a message saying why, while a report's snapshot, a text sent
+  through `SendMessage` and mail sent through `SendSystemEmail` get a zero-width
+  space in front instead, so filing a report or relaying another resource's text
+  never fails on it. A row stored bare with that prefix before micaOS encrypted
+  anything reads as 🔒, and `micacrypt status` counts it as unreadable.
+
+**Lose the key and every body sealed with it is gone.** Back the key file up
+somewhere that is not the database backup.
+
 ## Accepted risks
 
 Accepted against the feature set at `0922a9b` (2026-08-29) — a risk below was
@@ -649,10 +724,11 @@ by this list until someone re-weighs it.
   the record, even though the underlying database access it is auditing never
   was and structurally cannot be prevented from the resource side. Three things
   this round explicitly does **not** do, so nobody mistakes this slice for the
-  whole of MICA-70: no encryption at rest — a server owner with database access
-  still reads plaintext regardless of the audit log (MICA-165, unbuilt). The
-  other two follow-ups have since landed: retention windows (MICA-167) and a
-  player-facing export and delete (MICA-168, below).
+  whole of MICA-70: no encryption at rest, a retention window, or a player's own
+  export and delete. All three have since landed: encryption at rest (MICA-165,
+  [Message bodies at rest](#message-bodies-at-rest)), which protects a stolen
+  dump but still not against the operator, who holds the key; retention windows
+  (MICA-167); and a player-facing export and delete (MICA-168, below).
 - **A player's own delete keeps moderation records and never takes another
   player's rows, and their export withholds what is not theirs (MICA-168).**
   Settings > Privacy > Your data exports every owned table for the session's

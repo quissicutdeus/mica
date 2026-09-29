@@ -7,6 +7,13 @@ import { s } from '../schema';
 import type { Mail } from '../types';
 
 /**
+ * The longest mail body, in characters (MICA-165): `mica_mail.content` is a `text` holding the
+ * body's sealed form, and 12,276 characters is the most whose sealed form fits. No action here
+ * writes mail; `SendSystemEmail` and anything that feeds it hold a body to this.
+ */
+export const MAIL_CONTENT_MAX = 12276;
+
+/**
  * Mail is receive-only, and this contract is the shape of that decision.
  *
  * `access: { write: 'server' }` closes the generic create and update; `disableGet` and

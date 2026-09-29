@@ -112,7 +112,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           class="bg-surface-container-high text-on-surface shadow-elevation-2 rounded-box p-2.5 backdrop-blur-md"
         >
           <p class="text-body-small font-bold">{item.title}</p>
-          <p class="text-on-surface-variant text-body-small line-clamp-1">{item.body}</p>
+          {#if item.body}
+            <p class="text-on-surface-variant text-body-small line-clamp-1">{item.body}</p>
+          {/if}
         </div>
       {/each}
     </div>

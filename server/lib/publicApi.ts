@@ -17,6 +17,11 @@
 import { FrameworkBridge } from './FrameworkBridge';
 import { appEventChannel } from './appEvents';
 import { buildDeepLink, parseDeepLink } from '@mica/shared/deepLink';
+/**
+ * The player-facing contract's bound, and the one this export holds a body to: what fits
+ * `mica_messages.message` once sealed (MICA-165).
+ */
+import { MESSAGE_BODY_MAX } from '@mica/shared/contracts/messages';
 import { knownServices } from './services';
 import { isAppDisabled } from './ownerConfig';
 import * as PlayerDirectory from './PlayerDirectory';
@@ -355,9 +360,6 @@ export interface ExternalMessage {
 
 /** Per calling resource. A dispatch script texting a whole department fits; a stuck loop does not. */
 const SEND_MESSAGE_PER_MINUTE = 120;
-
-/** `mica_messages.message` is `text`; the same bound the player-facing contract enforces. */
-const MESSAGE_BODY_MAX = 65535;
 
 const LABEL_MAX = 50;
 

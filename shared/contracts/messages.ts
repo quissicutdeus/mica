@@ -7,6 +7,16 @@ import { s } from '../schema';
 import type { Message, ReactionSummary } from '../types';
 
 /**
+ * The longest message body, in characters (MICA-165).
+ *
+ * `mica_messages.message` is a `text` — 65,535 bytes — and holds the body's sealed form, which
+ * is longer than the body: 12,276 characters at four bytes each is the most whose sealed form
+ * still fits. `server/__tests__/encryptedColumns.test.ts` holds this number to the column's
+ * rule, so the contract and the write path cannot disagree.
+ */
+export const MESSAGE_BODY_MAX = 12276;
+
+/**
  * Messages writes as `members`, so every generic action is closed and all seven here are
  * custom — `get` and `delete` included, despite their names.
  *
@@ -46,12 +56,12 @@ export const messagesContract = defineContract({
       input: s.object({
         conversation_id: s.positiveInt(),
         /**
-         * `mica_messages.message` is `text`, and the handler still calls
-         * `assertWritableValue`-equivalent bounds through the repository. A message with no
-         * text is legal here and refused there, because it is only legal alongside an
-         * attachment — a rule about the payload as a whole rather than about this field.
+         * At most `MESSAGE_BODY_MAX`, the bound the repository holds the column to as well. A
+         * message with no text is legal here and refused there, because it is only legal
+         * alongside an attachment — a rule about the payload as a whole rather than about
+         * this field.
          */
-        message: s.string({ max: 65535 }),
+        message: s.string({ max: MESSAGE_BODY_MAX }),
         /**
          * Up to `MAX_ATTACHMENTS` photos. `attachment` rides along from the composer's
          * optimistic render and is read by nothing on the server; it is declared so the
@@ -80,7 +90,7 @@ export const messagesContract = defineContract({
     },
 
     edit: {
-      input: s.object({ id: s.positiveInt(), message: s.string({ max: 65535 }) }),
+      input: s.object({ id: s.positiveInt(), message: s.string({ max: MESSAGE_BODY_MAX }) }),
       output: responseType<{ ok: boolean }>()
     },
 

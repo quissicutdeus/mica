@@ -733,6 +733,7 @@ set mica_media_image_host ""
 set mica_media_delete_url ""
 set mica_message_retention 180
 set mica_dm_retention 90
+set mica_content_key_file ""
 set mica_orphan_owner_table ""
 setr mica_addon_hosts ""
 setr mica_addon_catalog ""
@@ -791,6 +792,7 @@ set mica_location_interval 5
 | `mica_media_delete_url`            | https URL with `{url}` or `{name}`                      | empty (off)            | Endpoint sent `DELETE` for a hosted photo once no row names it                                                                        |
 | `mica_message_retention`           | integer, days, or `off`                                 | `180`                  | How long text messages are kept                                                                                                       |
 | `mica_dm_retention`                | integer, days, or `off`                                 | `90`                   | How long Blabber direct messages are kept                                                                                             |
+| `mica_content_key_file`            | absolute file path                                      | empty (off)            | Key file that seals message, DM and mail bodies at rest (`set`, never `setr`); see below                                              |
 | `mica_orphan_owner_table`          | `table.column`                                          | empty (off)            | Overrides which table the orphan sweep checks against                                                                                 |
 | `mica_addon_hosts`                 | hostname list                                           | empty (off)            | Hosts a Store add-on may be fetched from                                                                                              |
 | `mica_addon_catalog`               | https URL                                               | empty (off)            | The add-on catalog the Store lists                                                                                                    |
@@ -1063,6 +1065,24 @@ the convar is invisible until the resource restarts.
   `retention:<table>:<days>d` rows in `mica_schema_migrations`; deleting one
   restarts that table's notice. Run `micamedia` first to see how large the media
   table is.
+- **`mica_content_key_file` — message, DM and mail bodies encrypted at rest
+  (MICA-165).** The absolute path of a key file, never a key: `server.cfg` is
+  the file that travels with a database dump. `micacrypt keygen <path>` from the
+  console writes one, mode 600, and prints the line to add. Set it with `set`,
+  never `setr`. With it set, text messages, Blabber DMs, mail bodies and report
+  snapshots are sealed with AES-256-GCM before they reach the database; run
+  `micacrypt backfill --apply` once to seal what was already there. **This
+  defends a leaked dump, not a curious operator** — whoever runs the server has
+  the key — and a backup taken before the backfill stays readable.
+  [`docs/security.md`](docs/security.md#message-bodies-at-rest) has what stays
+  readable and why. Keep the file outside `server-data`, outside the database
+  backup and out of git (the server warns at start when it is not), and back it
+  up somewhere else: **a lost key is every body sealed with it gone**, shown as
+  🔒. Once anything has been sealed, a missing or unreadable key file refuses
+  new messages rather than storing them in plaintext. Read once at resource
+  start. Rotating it is in
+  [`docs/in-game-commands.md`](docs/in-game-commands.md). A text message is at
+  most 12,276 characters, so its sealed form still fits the column.
 - **Image hosting: `mica_media_upload_url` and its five companions (MICA-243).**
   Off by default, and off means photos are base64 in `mica_media` exactly as
   above. Set `mica_media_upload_url` to an https upload endpoint and the server

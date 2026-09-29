@@ -18,7 +18,8 @@ import { allLines, tellLine, type RegisteredLine } from '../lib/numberRegistry';
 import { media } from './Media';
 import { defineService } from '../lib/defineService';
 import { conversationIdFrom, pageBounds } from '../lib/payload';
-import { messagesContract } from '@mica/shared/contracts/messages';
+import { MESSAGE_BODY_MAX, messagesContract } from '@mica/shared/contracts/messages';
+import { storablePlaintext } from '../lib/contentCipher';
 import { resolveOwnedAttachments } from '../lib/attachments';
 import { Message } from '@mica/shared/types';
 import { FrameworkBridge } from '../lib/FrameworkBridge';
@@ -64,13 +65,22 @@ export const messages = defineService<Message, typeof messagesContract>({
     }
   },
   statuses: ['active', 'deleted', 'moderated'],
+  /**
+   * A message's body is bound to its sender's citizenid and its conversation (MICA-165). On a
+   * text from a line, `citizenid` is the recipient's — still the row's own, and never moved.
+   */
+  encryptionScope: ['conversation_id'],
   schema: {
     conversation_id: {
       type: 'int',
       notNull: true,
       references: { table: 'mica_messages_conversations', column: 'id' }
     },
-    message: { type: 'text', notNull: true },
+    /**
+     * Sealed at rest (MICA-165), bound to its conversation: a `text` holds 65,535 bytes, so a
+     * body is at most `MESSAGE_BODY_MAX` characters, the most whose sealed form still fits.
+     */
+    message: { type: 'text', notNull: true, encrypted: true },
     /**
      * The message this one quotes, or NULL (MICA-209). Nullable and unreferenced on
      * purpose: a quoted message can be unsent (soft-deleted, never removed), and a foreign
@@ -680,10 +690,13 @@ export const sendFromLine = async (
 
   const resolvedAttachments = await resolveOwnedAttachments(attachments, citizenid, mediaRepo);
   const now = new Date().toISOString();
+  // A script's words, often relaying a player's: never refused for starting like a sealed value
+  // (MICA-165). The player's own send keeps its refusal; this one stores the text as it is.
+  const text = await storablePlaintext(body, MESSAGE_BODY_MAX);
   const row: Partial<Message> = {
     conversation_id: conversationId,
     citizenid,
-    message: body,
+    message: text,
     external_sender: label,
     reply_to_id: null,
     attachments: resolvedAttachments,

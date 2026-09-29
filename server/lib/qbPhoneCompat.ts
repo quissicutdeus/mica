@@ -26,12 +26,18 @@
 import { QB_PHONE_ANSWERED, QB_PHONE_SERVER_EVENTS } from '@mica/shared/qbPhoneEvents';
 import { FrameworkBridge } from './FrameworkBridge';
 import { allow } from './rateLimit';
+import { MAIL_CONTENT_MAX } from '@mica/shared/contracts/mail';
 import { SendSystemEmail } from '../services/Mail';
+import { cutText } from './import/cutText';
 
-/** The `mica_mail` column widths, so a qb payload cannot fail the insert. */
+/**
+ * The `mica_mail` column widths, so a qb payload cannot fail the insert. `content` is a `text`
+ * that holds ciphertext when a content key is set (MICA-165), so the body is cut to what still
+ * fits once sealed, key or not.
+ */
 const SENDER_MAX = 100;
 const SUBJECT_MAX = 255;
-const CONTENT_MAX = 65535;
+const CONTENT_MAX = MAIL_CONTENT_MAX;
 
 export interface QbMail {
   sender: string;
@@ -57,9 +63,9 @@ export const qbMailFrom = (raw: unknown): QbMail | null => {
         : '';
   if (!sender || !subject || !body.trim()) return null;
   return {
-    sender: sender.slice(0, SENDER_MAX),
-    subject: subject.slice(0, SUBJECT_MAX),
-    content: body.slice(0, CONTENT_MAX)
+    sender: cutText(sender, SENDER_MAX),
+    subject: cutText(subject, SUBJECT_MAX),
+    content: cutText(body, CONTENT_MAX)
   };
 };
 

@@ -4,6 +4,7 @@
 
 import { SchemaRepository } from '../lib/defineService';
 import { Database } from '../lib/Database';
+import { openRows } from '../lib/contentCipher';
 import { Message } from '@mica/shared/types';
 
 /**
@@ -105,14 +106,19 @@ export class MessageRepository extends SchemaRepository<Message> {
     if (page.cursor !== null) params.push(page.cursor);
     params.push(page.limit + 1);
 
-    const fetched = await Database.query<Message[]>(
-      `SELECT m.*, (m.updated_at > m.created_at) AS edited
-         FROM mica_messages m
-        WHERE m.conversation_id = ? AND m.status != 'deleted'
-          ${cursorClause}
-        ORDER BY m.id DESC
-        LIMIT ?`,
-      params
+    // Opened here, off each row's own citizenid and conversation (MICA-165): `m.*` is the
+    // context, so nothing else needs selecting.
+    const fetched = openRows(
+      'mica_messages',
+      await Database.query<Message[]>(
+        `SELECT m.*, (m.updated_at > m.created_at) AS edited
+           FROM mica_messages m
+          WHERE m.conversation_id = ? AND m.status != 'deleted'
+            ${cursorClause}
+          ORDER BY m.id DESC
+          LIMIT ?`,
+        params
+      )
     );
 
     const hasMore = fetched.length > page.limit;

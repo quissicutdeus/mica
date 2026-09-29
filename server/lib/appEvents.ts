@@ -27,6 +27,12 @@ export interface PushOptions {
   kind?: string;
   /** Title for persistent storage. Defaults to notification title or app name. */
   title?: string;
+  /**
+   * Body for persistent storage. Defaults to the notification's message, else the payload's
+   * `message`, else the event name. `''` keeps the toast's text out of the stored row — for a
+   * body sealed at rest elsewhere, whose plaintext copy here would undo the seal (MICA-165).
+   */
+  body?: string;
   /** Deep link route for persistent storage. */
   deepLink?: string;
   /** Whether to persist the notification row. Defaults to true if notify is provided. */
@@ -90,7 +96,9 @@ function persistNotificationsAsync(
   const notifyObj = options.notify;
   const title = options.title ?? notifyObj?.title ?? app;
   const body =
-    notifyObj?.message ?? (typeof payload.message === 'string' ? payload.message : event);
+    options.body ??
+    notifyObj?.message ??
+    (typeof payload.message === 'string' ? payload.message : event);
   const avatar = notifyObj?.avatar;
   const kind = options.kind ?? event;
   const deepLink = options.deepLink;

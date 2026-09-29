@@ -2,7 +2,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { randomBytes } from 'node:crypto';
 
 /**
  * `micaimport` (MICA-233) against an in-memory stand-in for the database.
@@ -228,9 +232,9 @@ const dbMock = vi.hoisted(() => {
       return { id };
     }
     if (sql.startsWith('INSERT INTO `mica_messages`')) {
-      const [conversation_id, citizenid, message, created_at] = params;
+      const [conversation_id, citizenid, message, created_at, updated_at] = params;
       const id = db.nextId++;
-      db.messages.push({ id, conversation_id, citizenid, message, created_at });
+      db.messages.push({ id, conversation_id, citizenid, message, created_at, updated_at });
       return { id };
     }
 
@@ -282,7 +286,8 @@ const dbMock = vi.hoisted(() => {
       return { scalar: db.blabs.find((b) => b.id === params[0])?.root_id ?? null };
     }
     if (sql.startsWith('INSERT INTO `mica_blabber`')) {
-      const [citizenid, account_id, body, reply_to, root_id, mouth_of, created_at] = params;
+      const [citizenid, account_id, body, reply_to, root_id, mouth_of, created_at, updated_at] =
+        params;
       if (
         mouth_of !== null &&
         db.blabs.some((b) => b.account_id === account_id && b.mouth_of === mouth_of)
@@ -290,9 +295,22 @@ const dbMock = vi.hoisted(() => {
         throw new Error('Duplicate entry for mouth');
       }
       const id = db.nextId++;
-      db.blabs.push({ id, citizenid, account_id, body, reply_to, root_id, mouth_of, created_at });
+      db.blabs.push({
+        id,
+        citizenid,
+        account_id,
+        body,
+        reply_to,
+        root_id,
+        mouth_of,
+        created_at,
+        updated_at
+      });
       return { id };
     }
+
+    // MICA-165: the content cipher records that this database holds ciphertext.
+    if (sql.startsWith('INSERT IGNORE INTO `mica_schema_migrations`')) return {};
 
     throw new Error(`import.test: no stand-in answer for: ${sql}`);
   };
@@ -370,6 +388,16 @@ const phoneForCitizen = vi.hoisted(() => vi.fn(async (cid: string) => `phone-${c
 vi.mock('../lib/phoneIdentity', () => ({ phoneForCitizen }));
 
 import { runImport, type ImportReport } from '../lib/import';
+import { MESSAGE_BODY_MAX } from '@mica/shared/contracts/messages';
+import {
+  contentContext,
+  encryptedColumn,
+  openContent,
+  registerEncryptedColumn,
+  resetContentCipherForTests,
+  sealedKeyId,
+  unregisterEncryptedColumnForTests
+} from '../lib/contentCipher';
 import { __resetLbPrefix } from '../lib/import/lbPhone';
 import { SKIP, threadTableUnusable } from '../lib/import/report';
 import { __resetImportTargets, postsTarget, registerImportTarget } from '../lib/import/targets';
@@ -599,6 +627,35 @@ describe('micaimport qb-phone', () => {
 
     // Every written row is in the ledger, against the character it was written for.
     expect(db.ledger.every((r) => r.source === 'qb-phone' && r.target_id > 0)).toBe(true);
+  });
+
+  it('stamps a message or post updated when it was written, so none reads as edited', async () => {
+    seedQb();
+    await runImport('qb-phone', { apply: true });
+    expect(db.messages).toHaveLength(3);
+    for (const m of db.messages) expect(m.updated_at).toBe(m.created_at);
+    expect(db.blabs).toHaveLength(2);
+    for (const b of db.blabs) expect(b.updated_at).toBe(b.created_at);
+  });
+
+  it('splits a display name without cutting either half through an emoji', async () => {
+    seedQb();
+    db.source.set('player_contacts', [
+      {
+        id: 1,
+        citizenid: 'CIT_A',
+        name: `${'x'.repeat(49)}😀 ${'y'.repeat(49)}😀`,
+        number: '555-0002'
+      },
+      { id: 2, citizenid: 'CIT_A', name: '😀'.repeat(30), number: '555-0199' }
+    ]);
+
+    await runImport('qb-phone', { apply: true });
+
+    expect(db.contacts.map((c) => [c.firstname, c.lastname])).toEqual([
+      ['x'.repeat(49), 'y'.repeat(49)],
+      ['😀'.repeat(25), null]
+    ]);
   });
 
   it('a second apply writes nothing and says every row was already imported', async () => {
@@ -850,6 +907,24 @@ describe('micaimport lb-phone', () => {
       [SKIP.thinThread]: 1
     });
     expect(db.media[0]).toMatchObject({ citizenid: 'CIT_A', kind: 'video' });
+  });
+
+  it('never cuts a contact or thread name through an emoji', async () => {
+    seedLb();
+    // Each name's emoji straddles the 50-unit column bound; a plain slice keeps its first half.
+    const [bob] = db.source.get('phone_phone_contacts')!;
+    bob.firstname = 'f'.repeat(49) + '😀';
+    bob.lastname = 'l'.repeat(49) + '😀';
+    db.source.get('phone_message_channels')![0].is_group = 1;
+    db.source.get('phone_message_channels')![0].name = 'c'.repeat(49) + '😀';
+
+    await runImport('lb-phone', { apply: true });
+
+    expect(db.contacts.map((c) => [c.firstname, c.lastname])).toContainEqual([
+      'f'.repeat(49),
+      'l'.repeat(49)
+    ]);
+    expect(db.conversations.map((c) => c.name)).toContain('c'.repeat(49));
   });
 
   it('keeps an lb-phone username as the handle and threads a reply under its parent', async () => {
@@ -1453,5 +1528,157 @@ describe('where imported posts go (the posts target registry)', () => {
     const report = await runImport('npwd', { apply: true });
     expect(skipped(report, 'npwd_twitter_tweets')).toEqual({ [SKIP.postsAppDisabled]: 1 });
     expect(db.blabs).toHaveLength(0);
+  });
+});
+
+describe('MICA-165: an imported message is sealed like a sent one', () => {
+  let dir = '';
+  let registered = false;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'mica-import-key-'));
+    const path = join(dir, 'content.key');
+    writeFileSync(path, `k1 ${randomBytes(32).toString('base64')}\n`);
+    chmodSync(path, 0o600);
+    (globalThis as any).GetConvar = (name: string, fallback: string) =>
+      name === 'mica_content_key_file' ? path : fallback;
+    resetContentCipherForTests();
+    // Messages declares the column in game; registered here only if this bundle has not.
+    registered = !encryptedColumn('mica_messages', 'message');
+    if (registered) {
+      registerEncryptedColumn({
+        table: 'mica_messages',
+        column: 'message',
+        scope: ['conversation_id'],
+        hasUpdatedAt: true
+      });
+    }
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    if (registered) unregisterEncryptedColumnForTests('mica_messages', 'message');
+    resetContentCipherForTests();
+    rmSync(dir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  const opened = (m: Row): string =>
+    openContent(contentContext(encryptedColumn('mica_messages', 'message')!, m), m.message, m.id);
+
+  it('seals each body with its thread and sender, and it opens as the text it was', async () => {
+    seedQb();
+    const report = await runImport('qb-phone', { apply: true });
+
+    expect(table(report, 'phone_messages').written).toBe(3);
+    expect(db.messages.map((m) => sealedKeyId(m.message))).toEqual(['k1', 'k1', 'k1']);
+    expect(db.messages.map((m) => [m.citizenid, opened(m)])).toEqual([
+      ['CIT_A', 'You up?'],
+      ['CIT_B', "Yeah, what's up"],
+      ['CIT_A', 'Meet at Legion']
+    ]);
+    // Bound to the row it was written for: another sender, or another thread, cannot open it.
+    const first = db.messages[0];
+    expect(opened({ ...first, citizenid: 'CIT_B' })).not.toBe('You up?');
+    expect(opened({ ...first, conversation_id: first.conversation_id + 1 })).not.toBe('You up?');
+  });
+
+  it('cuts a body to what still fits the column once sealed', async () => {
+    seedQb();
+    const long = 'é'.repeat(70_000);
+    db.source.set('phone_messages', [
+      {
+        id: 1,
+        citizenid: 'CIT_A',
+        number: '555-0002',
+        messages: qbHistory([['24-9-2026', '21:04', 'CIT_A', long]])
+      },
+      {
+        id: 2,
+        citizenid: 'CIT_B',
+        number: '555-0001',
+        messages: qbHistory([['24-9-2026', '21:05', 'CIT_B', 'ok']])
+      }
+    ]);
+
+    await runImport('qb-phone', { apply: true });
+
+    const written = db.messages.find((m) => m.citizenid === 'CIT_A')!;
+    expect(written.message.length).toBeLessThanOrEqual(65_535);
+    expect(opened(written)).toBe('é'.repeat(MESSAGE_BODY_MAX));
+  });
+
+  const PLANTED = '$mc1$k1$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+  const seedPlanted = (text = PLANTED): void => {
+    seedQb();
+    const thread = qbHistory([
+      ['24-9-2026', '21:04', 'CIT_A', 'You up?'],
+      ['24-9-2026', '21:06', 'CIT_A', text]
+    ]);
+    db.source.set('phone_messages', [
+      { id: 1, citizenid: 'CIT_A', number: '555-0002', messages: thread },
+      { id: 2, citizenid: 'CIT_B', number: '555-0001', messages: thread }
+    ]);
+  };
+
+  it('imports a source text that starts like a sealed value, and it reads back exactly', async () => {
+    seedPlanted();
+    const dry = await runImport('qb-phone', { apply: false });
+    const applied = await runImport('qb-phone', { apply: true });
+
+    for (const report of [dry, applied]) {
+      expect(table(report, 'phone_messages').written).toBe(2);
+    }
+    expect(db.messages.map((m) => sealedKeyId(m.message))).toEqual(['k1', 'k1']);
+    expect(db.messages.map(opened)).toEqual(['You up?', PLANTED]);
+    expect(table(applied, 'phone_tweets').written).toBe(2);
+  });
+
+  it('with no key, stores it behind a zero-width space, cut to the bound after the prefix', async () => {
+    (globalThis as any).GetConvar = (_name: string, fallback: string) => fallback;
+    resetContentCipherForTests();
+    const long = PLANTED + 'x'.repeat(MESSAGE_BODY_MAX);
+    seedPlanted(long);
+
+    const applied = await runImport('qb-phone', { apply: true });
+
+    expect(table(applied, 'phone_messages').written).toBe(2);
+    const stored = db.messages.map((m) => m.message);
+    expect(stored[0]).toBe('You up?');
+    expect(stored[1]).toBe(`\u200B${long}`.slice(0, MESSAGE_BODY_MAX));
+    expect(stored[1]).toHaveLength(MESSAGE_BODY_MAX);
+    expect(sealedKeyId(stored[1])).toBeNull();
+  });
+
+  it('never cuts a body through an emoji', async () => {
+    seedQb();
+    const body = 'a'.repeat(MESSAGE_BODY_MAX - 1) + '😀';
+    db.source.set('phone_messages', [
+      {
+        id: 1,
+        citizenid: 'CIT_A',
+        number: '555-0002',
+        messages: qbHistory([['24-9-2026', '21:04', 'CIT_A', body]])
+      },
+      {
+        id: 2,
+        citizenid: 'CIT_B',
+        number: '555-0001',
+        messages: qbHistory([['24-9-2026', '21:05', 'CIT_B', 'ok']])
+      }
+    ]);
+
+    await runImport('qb-phone', { apply: true });
+
+    const written = opened(db.messages.find((m) => m.citizenid === 'CIT_A')!);
+    expect(written).toBe('a'.repeat(MESSAGE_BODY_MAX - 1));
+    expect(written.length).toBeLessThanOrEqual(MESSAGE_BODY_MAX);
+  });
+
+  it('writes nothing sealed on a dry run', async () => {
+    seedQb();
+    await runImport('qb-phone', { apply: false });
+    expect(db.messages).toHaveLength(0);
+    expect(db.inserts).toBe(0);
   });
 });

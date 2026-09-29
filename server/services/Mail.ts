@@ -9,7 +9,8 @@ import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { Database } from '../lib/Database';
 import { appEventChannel } from '../lib/appEvents';
 import { flagUnlessFalse } from '../lib/payload';
-import { mailContract } from '@mica/shared/contracts/mail';
+import { MAIL_CONTENT_MAX, mailContract } from '@mica/shared/contracts/mail';
+import { openRows, storablePlaintext } from '../lib/contentCipher';
 import { buildDeepLink } from '@mica/shared/deepLink';
 
 /**
@@ -35,14 +36,17 @@ import { buildDeepLink } from '@mica/shared/deepLink';
  * is backtick-quoted, which is what makes the column usable at all.
  */
 class MailRepository extends SchemaRepository<Mail> {
-  /** Everything not deleted, newest first — archived mail still shows in the UI. */
+  /**
+   * Everything not deleted, newest first — archived mail still shows in the UI. Bodies are
+   * sealed at rest (MICA-165) and opened here; `*` carries the owner they are bound to.
+   */
   async findAllByCitizenId(citizenid: string): Promise<Mail[]> {
     const query = `
             SELECT * FROM \`mica_mail\`
             WHERE \`citizenid\` = ? AND \`status\` != 'deleted'
             ORDER BY \`created_at\` DESC
         `;
-    return await Database.query<Mail[]>(query, [citizenid]);
+    return openRows(this.tableName, await Database.query<Mail[]>(query, [citizenid]));
   }
 
   async markAsRead(id: number, citizenid: string): Promise<boolean> {
@@ -69,11 +73,14 @@ export const mail = defineService<Mail, typeof mailContract>({
   app: 'mail',
   access: { read: 'owner', write: 'server' },
   statuses: ['active', 'archived', 'deleted', 'moderated'],
+  /** A mail row is its own thread: the body is bound to its table, column and owner alone. */
+  encryptionScope: [],
   schema: {
     sender: { type: 'string', length: 100, notNull: true },
     sender_address: { type: 'string', length: 100 },
     subject: { type: 'string', length: 255, notNull: true },
-    content: { type: 'text', notNull: true },
+    /** Sealed at rest (MICA-165); at most `MAIL_CONTENT_MAX` characters, so the seal fits. */
+    content: { type: 'text', notNull: true, encrypted: true },
     read: { type: 'bool', notNull: true, default: 0 }
   },
   indexes: [
@@ -147,12 +154,26 @@ export const SendSystemEmail = async (
   }
 ): Promise<Mail | null> => {
   try {
+    /**
+     * Refused past `MAIL_CONTENT_MAX`, which is what fits the column once sealed (MICA-165).
+     * The null this has always answered for a mail it could not deliver, said in the console
+     * rather than left for the insert to fail on.
+     */
+    if (typeof emailData?.content === 'string' && emailData.content.length > MAIL_CONTENT_MAX) {
+      console.error(
+        `SendSystemEmail: a mail body is at most ${MAIL_CONTENT_MAX} characters; this one is ` +
+          `${emailData.content.length}. Not delivered.`
+      );
+      return null;
+    }
     const mailItem: Partial<Mail> = {
       citizenid: targetCitizenId,
       sender: emailData.sender,
       sender_address: emailData.sender_address || 'system@mica.local',
       subject: emailData.subject,
-      content: emailData.content,
+      // A script's words, often a player's relayed: never refused for starting like a sealed
+      // value (MICA-165), and never lost to a null the caller cannot tell from a failure.
+      content: await storablePlaintext(emailData.content, MAIL_CONTENT_MAX),
       status: 'active',
       read: false
     };

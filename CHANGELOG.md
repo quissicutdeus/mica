@@ -47,6 +47,24 @@ Entries are hand-written. See MICA-72 for why a generated one was rejected.
 
 ### Action required
 
+**Run `micaschema apply` from the server console, then decide whether to turn on
+encryption at rest (MICA-165).** Migration
+`0007_sealed_bodies_widen_their_columns` widens `mica_blabber_dms.body` and
+`mica_reports.target_preview` in place, so their encrypted form fits; nothing
+stored changes. Encryption itself is off until you set it up: run
+`micacrypt keygen /absolute/path/outside/server-data/mica.key` from the console,
+add the `set mica_content_key_file "..."` line it prints to `server.cfg`,
+restart the resource, then run `micacrypt backfill --apply` to seal the
+messages, DMs and mail already stored. **Back the key file up, and keep it out
+of your database backups and out of git**: a dump and its key together protect
+nothing, and a lost key is every sealed message gone. Once anything has been
+sealed, starting without the key refuses new messages instead of storing them in
+plaintext. Until you set a key, every start logs that bodies are stored in
+plaintext. **A text message is now at most 12,276 characters** (was 65,535), and
+a mail body the same, so the sealed form still fits its column; a longer
+`SendSystemEmail` is refused. A persisted Blabber DM notification no longer
+keeps the first 120 characters of the message; the live toast still shows them.
+
 **On qb, run `micaschema apply` from the server console: migration
 `0006_players_foreign_keys_dropped` removes every foreign key from micaOS's
 tables onto `players` (MICA-300).** Until it has run, your framework deleting a
@@ -534,6 +552,23 @@ than left. Run `micaschema apply` after updating; until you do, the export fails
 with `internal_error` and the rest of Messages is unaffected.
 
 ### Added
+
+**Message, DM and mail bodies can be encrypted at rest (MICA-165).** With
+`mica_content_key_file` set, text messages, Blabber direct messages, mail bodies
+and the snapshot a report keeps of what was reported are sealed with AES-256-GCM
+in the server before they reach the database, and opened on every read: threads,
+inbox previews, the moderation queue, a player's own export, and the exports
+other resources call. Each value is bound to its table, column, owner and
+thread, so one copied into another player's or another conversation's row does
+not open. This defends a leaked database dump, not the server's operator, and is
+not end-to-end encryption; `docs/security.md` says what stays readable. The
+console-only `micacrypt` reports how much is sealed, seals what was stored
+before the key (`backfill --apply`, 500 rows at a time, safe to repeat, never
+marking a message edited), rotates to a new key the same way, and writes a key
+file (`keygen`). A body that will not open, because its key is no longer in the
+file, reads as 🔒 instead of breaking its thread. On a server with no key, a
+message or DM a player types that begins with `$mc1$`, the encrypted form's own
+prefix, is refused with a message saying why.
 
 **A player can see, copy and delete everything micaOS holds for their character
 (MICA-168).** Settings > Privacy > Your data lists it by category and copies it
@@ -1046,6 +1081,12 @@ somehow emitted it should call the `AddBatteryCharge` or `SetBatteryLevel`
 export instead, which authenticates its caller.
 
 ### Fixed
+
+**Messages and Blabber posts brought across by `micaimport` no longer read as
+edited.** The import kept each row's original time as `created_at` but let
+`updated_at` default to the moment of the import, and the app marks anything
+whose `updated_at` is later than its `created_at` as edited. Both now carry the
+source's time. Rows imported before this fix still show the mark.
 
 **Re-importing `mica.sql` or `mica.esx.sql` over an existing database no longer
 marks every migration done without running it (MICA-301).** The file now records

@@ -5,6 +5,15 @@
 import { Database } from './Database';
 import { PlayerFacingError } from './errors';
 import { citizenIdColumnWidth } from './ownerWidth';
+import {
+  contentContext,
+  contextColumns,
+  encryptedColumnsOf,
+  openRow,
+  openRows,
+  sealContentWith,
+  sealRow
+} from './contentCipher';
 import type { ColumnRule, ResolvedMembership } from './defineService';
 
 /**
@@ -370,8 +379,117 @@ export abstract class Repository<T> {
     return { keys, values: keys.map((key) => data[key]) };
   }
 
+  // ─── encrypted columns (MICA-165) ────────────────────────────────────────────────────────
+
+  /**
+   * Hold each encrypted column's plaintext to its rule before it is sealed.
+   *
+   * On every write path, not only the generic one `ServiceEndpoint` already checks: a sealed
+   * value is longer than its plaintext, and the rule's bound is what guarantees the sealed form
+   * fits the column. A privileged insert that skipped it would hand MySQL ciphertext to
+   * truncate, and a truncated ciphertext is a padlock forever.
+   */
+  private assertSealablePlaintext(data: Record<string, unknown>, columns: readonly string[]) {
+    for (const column of columns) {
+      const value = data[column];
+      if (value !== undefined && value !== null) this.assertWritableValue(column, value);
+    }
+  }
+
+  /** A copy of an insert's row with its encrypted columns sealed, context off the row itself. */
+  private async sealForInsert(data: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const entries = encryptedColumnsOf(this.tableName);
+    if (entries.length === 0) return data;
+    this.assertSealablePlaintext(
+      data,
+      entries.map((entry) => entry.column)
+    );
+    return await sealRow(this.tableName, data);
+  }
+
+  /**
+   * A copy of an update's values with its encrypted columns sealed, or null when the row is
+   * not there to seal against.
+   *
+   * An update carries the new text and not the row's context, so the context — `citizenid`
+   * and the scope columns — is read by id, and only when there is a key to seal with. By id
+   * alone deliberately: the columns read are the ones the value is bound to, not the value,
+   * and the `UPDATE` below still carries every ownership predicate; a row the caller does not
+   * own is sealed against and then matched by nothing. The scope columns never change on a row
+   * that holds ciphertext (`encryptionScope`), so the read cannot go stale before the write.
+   */
+  private async sealForUpdate(
+    id: number | string,
+    data: Record<string, unknown>
+  ): Promise<Record<string, unknown> | null> {
+    const entries = encryptedColumnsOf(this.tableName).filter(
+      (entry) => data[entry.column] !== undefined && data[entry.column] !== null
+    );
+    if (entries.length === 0) return data;
+    this.assertSealablePlaintext(
+      data,
+      entries.map((entry) => entry.column)
+    );
+
+    let context: Record<string, unknown> | null | undefined;
+    const contextRow = async (): Promise<Record<string, unknown> | null> => {
+      if (context !== undefined) return context;
+      const needed = [...new Set(entries.flatMap(contextColumns))];
+      this.assertColumns(needed, 'update context');
+      context =
+        (await Database.single<Record<string, unknown>>(
+          `SELECT ${needed.map((column) => `\`${column}\``).join(', ')} ` +
+            `FROM \`${this.tableName}\` WHERE \`id\` = ?`,
+          [id]
+        )) ?? null;
+      return context;
+    };
+
+    const out = { ...data };
+    for (const entry of entries) {
+      const value = data[entry.column];
+      if (typeof value !== 'string') {
+        throw new TypeError(`[Repository] ${this.tableName}.${entry.column} holds text only.`);
+      }
+      const sealed = await sealContentWith(value, async () => {
+        const row = await contextRow();
+        return row ? contentContext(entry, row) : null;
+      });
+      if (sealed === null) return null;
+      out[entry.column] = sealed;
+    }
+    return out;
+  }
+
+  /**
+   * The columns a read must select for the encrypted ones in `projection` to open, and which
+   * of them the caller did not ask for — those are dropped again after opening, so a public
+   * read that withholds `citizenid` still withholds it.
+   */
+  private projectionFor(projection: readonly string[]): { columns: string[]; added: string[] } {
+    const entries = encryptedColumnsOf(this.tableName).filter((entry) =>
+      projection.includes(entry.column)
+    );
+    const added = [...new Set(entries.flatMap(contextColumns))].filter(
+      (column) => !projection.includes(column)
+    );
+    return { columns: [...projection, ...added], added };
+  }
+
+  /** Open a result set, then drop what `projectionFor` added. */
+  private openProjected(rows: T[], added: readonly string[]): T[] {
+    const opened = openRows(this.tableName, rows as unknown as object[]) as unknown as T[];
+    if (added.length === 0 || !Array.isArray(opened)) return opened;
+    return opened.map((row) => {
+      const copy = { ...(row as Record<string, unknown>) };
+      for (const column of added) delete copy[column];
+      return copy as T;
+    });
+  }
+
   async create(data: Partial<T>): Promise<number> {
-    const { keys, values } = this.prepareColumns(data as Record<string, unknown>, 'create');
+    const sealed = await this.sealForInsert(data as Record<string, unknown>);
+    const { keys, values } = this.prepareColumns(sealed, 'create');
     const columnList = keys.map((key) => `\`${key}\``).join(', ');
     const placeholders = keys.map(() => '?').join(', ');
     const query = `INSERT INTO \`${this.tableName}\` (${columnList}) VALUES (${placeholders})`;
@@ -410,7 +528,8 @@ export abstract class Repository<T> {
       );
     }
 
-    return await Database.single<T>(query, params);
+    const row = await Database.single<T>(query, params);
+    return row ? (openRow(this.tableName, row as unknown as object) as unknown as T) : row;
   }
 
   /**
@@ -477,9 +596,12 @@ export abstract class Repository<T> {
     }
 
     let selection = '*';
+    let added: string[] = [];
     if (projection && projection.length > 0) {
       this.assertColumns([...projection], 'findAll projection');
-      selection = projection.map((column) => `\`${column}\``).join(', ');
+      const widened = this.projectionFor(projection);
+      added = widened.added;
+      selection = widened.columns.map((column) => `\`${column}\``).join(', ');
     }
 
     let query = `SELECT ${selection} FROM \`${this.tableName}\``;
@@ -495,7 +617,7 @@ export abstract class Repository<T> {
       }
     }
 
-    return await Database.query<T[]>(query, bound);
+    return this.openProjected(await Database.query<T[]>(query, bound), added);
   }
 
   /**
@@ -561,7 +683,11 @@ export abstract class Repository<T> {
     enforceEditWindow = false,
     phoneId?: string
   ): Promise<boolean> {
-    const { keys, values } = this.prepareColumns(data, 'update');
+    // Before the SQL is built, so an unknown key is still refused by `prepareColumns` below —
+    // `sealForUpdate` names no identifier from `data` in its own read.
+    const sealed = await this.sealForUpdate(id, data);
+    if (sealed === null) return false;
+    const { keys, values } = this.prepareColumns(sealed, 'update');
     const setClause = keys.map((key) => `\`${key}\` = ?`).join(', ');
 
     let query = `UPDATE \`${this.tableName}\` SET ${setClause} WHERE \`id\` = ?`;
@@ -720,21 +846,25 @@ export abstract class Repository<T> {
     }
 
     let selection = '*';
+    let added: string[] = [];
     if (projection && projection.length > 0) {
       this.assertColumns([...projection], 'findDeleted projection');
-      selection = projection.map((column) => `\`${column}\``).join(', ');
+      const widened = this.projectionFor(projection);
+      added = widened.added;
+      selection = widened.columns.map((column) => `\`${column}\``).join(', ');
     }
 
     const phone = this.phonePredicate('findDeleted', phoneId);
     const params: unknown[] = [citizenid];
     if (phone.param !== undefined) params.push(phone.param);
     params.push(windowDays);
-    return await Database.query<T[]>(
+    const rows = await Database.query<T[]>(
       `SELECT ${selection} FROM \`${this.tableName}\`
        WHERE \`citizenid\` = ?${phone.sql} AND \`status\` = 'deleted'
          AND \`updated_at\` >= NOW() - INTERVAL ? DAY
        ORDER BY \`updated_at\` DESC`,
       params
     );
+    return this.openProjected(rows, added);
   }
 }

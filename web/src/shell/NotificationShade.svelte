@@ -548,9 +548,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                         {item.title}
                       </h3>
 
-                      <p class="text-on-surface text-body-small line-clamp-2 leading-relaxed">
-                        {item.body}
-                      </p>
+                      {#if item.body}
+                        <p class="text-on-surface text-body-small line-clamp-2 leading-relaxed">
+                          {item.body}
+                        </p>
+                      {/if}
                     </div>
                   </div>
                 </SwipeableRow>
@@ -629,9 +631,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                         <h3 class="text-on-surface text-body-medium truncate">
                           {group.latest.title}
                         </h3>
-                        <p class="text-on-surface-variant text-body-small line-clamp-1">
-                          {group.latest.body}
-                        </p>
+                        {#if group.latest.body}
+                          <p class="text-on-surface-variant text-body-small line-clamp-1">
+                            {group.latest.body}
+                          </p>
+                        {/if}
                       </div>
                     </div>
                   </SwipeableRow>
@@ -689,11 +693,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                                   </button>
                                 </div>
                               </div>
-                              <p
-                                class="text-on-surface text-body-small line-clamp-2 leading-relaxed"
-                              >
-                                {convo.latest.body}
-                              </p>
+                              {#if convo.latest.body}
+                                <p
+                                  class="text-on-surface text-body-small line-clamp-2 leading-relaxed"
+                                >
+                                  {convo.latest.body}
+                                </p>
+                              {/if}
                             </div>
                           </div>
                         </SwipeableRow>
@@ -777,9 +783,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                         {item.title}
                       </h3>
 
-                      <p class="text-on-surface text-body-small line-clamp-2 leading-relaxed">
-                        {item.body}
-                      </p>
+                      {#if item.body}
+                        <p class="text-on-surface text-body-small line-clamp-2 leading-relaxed">
+                          {item.body}
+                        </p>
+                      {/if}
                     </div>
                   </div>
                 </SwipeableRow>
@@ -858,9 +866,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                         <h3 class="text-on-surface text-body-medium truncate">
                           {group.latest.title}
                         </h3>
-                        <p class="text-on-surface-variant text-body-small line-clamp-1">
-                          {group.latest.body}
-                        </p>
+                        {#if group.latest.body}
+                          <p class="text-on-surface-variant text-body-small line-clamp-1">
+                            {group.latest.body}
+                          </p>
+                        {/if}
                       </div>
                     </div>
                   </SwipeableRow>
@@ -916,11 +926,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                                   </button>
                                 </div>
                               </div>
-                              <p
-                                class="text-on-surface text-body-small line-clamp-2 leading-relaxed"
-                              >
-                                {convo.latest.body}
-                              </p>
+                              {#if convo.latest.body}
+                                <p
+                                  class="text-on-surface text-body-small line-clamp-2 leading-relaxed"
+                                >
+                                  {convo.latest.body}
+                                </p>
+                              {/if}
                             </div>
                           </div>
                         </SwipeableRow>

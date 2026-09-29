@@ -7,6 +7,7 @@ import { PlayerFacingError } from '../lib/errors';
 import { Database } from '../lib/Database';
 import { AUDIT_LOG_TABLE, AuditLogger } from '../lib/AuditLogger';
 import { declaredServices, type ColumnDef, type ColumnType } from '../lib/defineService';
+import { contextColumns, encryptedColumnsOf, openRow } from '../lib/contentCipher';
 import {
   ownedTables,
   purgeOwnedRows,
@@ -281,6 +282,13 @@ export interface ExportPlan {
   sized: string[];
   withheld: string[];
   ordered: boolean;
+  /** The `plain` columns sealed at rest (MICA-165), opened before the row is handed back. */
+  sealed: string[];
+  /**
+   * Selected only so the `sealed` ones can be opened — their citizenid and scope — and
+   * dropped from the row afterwards, so opening changes nothing else about the export.
+   */
+  context: string[];
 }
 
 /**
@@ -300,7 +308,9 @@ export const planFor = ({ table, column }: OwnedTable): ExportPlan | null => {
     plain: [],
     sized: [],
     withheld: [],
-    ordered: columns.some(({ name }) => name === 'id')
+    ordered: columns.some(({ name }) => name === 'id'),
+    sealed: [],
+    context: []
   };
   for (const { name, type, citizenId } of columns) {
     if (name === column) continue;
@@ -308,6 +318,13 @@ export const planFor = ({ table, column }: OwnedTable): ExportPlan | null => {
     else if (BYTE_TYPES.has(type)) plan.sized.push(name);
     else plan.plain.push(name);
   }
+  // A player's export is their words, not ciphertext: every sealed column it returns is opened,
+  // and whatever opening needs that the export does not show is selected beside it.
+  const sealed = encryptedColumnsOf(table).filter((entry) => plan.plain.includes(entry.column));
+  plan.sealed = sealed.map((entry) => entry.column);
+  plan.context = [...new Set(sealed.flatMap(contextColumns))].filter(
+    (name) => !plan.plain.includes(name)
+  );
   return plan;
 };
 
@@ -322,6 +339,7 @@ const ident = (name: string): string => {
 export const exportSql = (plan: ExportPlan): string => {
   const select = [
     ...plan.plain.map(ident),
+    ...plan.context.map(ident),
     ...plan.sized.map((name) => `LENGTH(${ident(name)}) AS ${ident(`${name}_bytes`)}`)
   ];
   return (
@@ -341,6 +359,13 @@ export const exportCategories = (): string[] =>
   ownedTables()
     .filter(({ table }) => !EXPORT_EXCLUDED.has(table))
     .map(({ table }) => categoryOf(table));
+
+/** One exported row with its sealed columns opened and the context selected for them dropped. */
+const openForExport = (plan: ExportPlan, row: Record<string, unknown>): Record<string, unknown> => {
+  const opened = { ...openRow(plan.table, row) };
+  for (const name of plan.context) delete opened[name];
+  return opened;
+};
 
 /** Build the export for one citizenid. Exported for the suite; the handler is a thin wrapper. */
 export const buildExport = async (citizenid: string): Promise<PrivacyExport> => {
@@ -382,7 +407,8 @@ export const buildExport = async (citizenid: string): Promise<PrivacyExport> => 
     ]);
     if (!Array.isArray(rows)) throw new Error(`privacy: ${owned.table} answered no rows array`);
 
-    for (const row of rows.slice(0, ROW_CAP)) {
+    for (const selected of rows.slice(0, ROW_CAP)) {
+      const row = plan.sealed.length > 0 ? openForExport(plan, selected) : selected;
       const size = JSON.stringify(row).length;
       if (spent + size > EXPORT_LIMIT_CHARS) {
         entry.truncated = 'size';

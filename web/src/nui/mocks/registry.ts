@@ -4,6 +4,7 @@
 
 import { taggedTopics } from '@mica/shared/richText';
 import { GENERIC_SERVICE_ACTION } from '@mica/shared/rpc';
+import { MESSAGE_BODY_MAX } from '@mica/shared/contracts/messages';
 import { PRIVACY_DELETE_CONFIRMATION } from '@mica/shared/contracts/privacy';
 import {
   parseDefaultContacts,
@@ -1798,6 +1799,10 @@ const mockRegistry: Record<string, MockHandler> = {
     reply_to_id?: number | null;
   }) => {
     await delay(200);
+    // The contract's bound (MICA-165): the server refuses a longer body outright rather than
+    // truncating it, and a mock that took one would let a composer with no `maxlength` pass.
+    if (payload.message.length > MESSAGE_BODY_MAX)
+      throw new Error(`message must be ${MESSAGE_BODY_MAX} characters or fewer.`);
     const convId = payload.conversation_id;
     const msg: Message = {
       id: Math.floor(Math.random() * 1000000),
@@ -1848,6 +1853,8 @@ const mockRegistry: Record<string, MockHandler> = {
     await delay(150);
     const text = (data?.message ?? '').trim();
     if (!text) throw new Error('A message needs some text. Unsend it instead of emptying it.');
+    if ((data?.message ?? '').length > MESSAGE_BODY_MAX)
+      throw new Error(`message must be ${MESSAGE_BODY_MAX} characters or fewer.`);
     for (const list of Object.values(mockMessages)) {
       const msg = list.find((m) => m.id === data?.id);
       if (!msg) continue;

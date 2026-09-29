@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { Repository } from './Repository';
+import { maxPlaintextChars, registerEncryptedColumn, sealedLengthForChars } from './contentCipher';
 import { registerReportable, type ReportableDefinition } from './moderation';
 import { registerReactable, type ReactableDefinition } from './reactions';
 import { ServiceEndpoint, ServiceOptions } from './ServiceEndpoint';
@@ -222,6 +223,21 @@ export interface ColumnDef {
    * column. Null is not passed to it: a nullable column clears the same way as any other.
    */
   accepts?: (value: string) => boolean;
+  /**
+   * Sealed at rest with the content key (MICA-165): the stored value is `$mc1$…` ciphertext
+   * whenever a key is configured, and `lib/contentCipher.ts` opens it on every read path.
+   *
+   * `string` or `text` only. For a `string`, `length` keeps meaning what it always did — the
+   * most **plaintext** characters a write may carry — and the table is emitted wide enough for
+   * that plaintext's worst-case sealed form (`sealedLengthForChars`), which is what the DDL and
+   * the planner see. A `text` has a fixed width, so its plaintext bound drops instead, to the
+   * most characters whose sealed form still fits (`maxPlaintextChars`).
+   *
+   * Requires the service to declare `encryptionScope`. Refused beside `clientFilterable`,
+   * `index`, `default`, `generatedAs` and `citizenId`: none of them means anything over
+   * ciphertext, and each would read as working.
+   */
+  encrypted?: boolean;
 }
 
 /**
@@ -489,6 +505,19 @@ export interface ServiceDefinition<C extends ServiceContract = ServiceContract> 
    * has the split, table by table.
    */
   deviceOwned?: boolean;
+  /**
+   * The thread an encrypted column's value belongs to (MICA-165): this table's own columns,
+   * bound after `citizenid` into the authenticated data of every `encrypted: true` column, so a
+   * value copied into another conversation — or between another pair of DM accounts — does
+   * not open.
+   *
+   * **Required** when any column is `encrypted`, and `[]` is a real answer (a mail row is its
+   * own scope). A column named here must never change once the row is written: rewriting one
+   * would leave the ciphertext bound to a thread the row is no longer in, so a client-writable
+   * column is refused. Not the row id, which does not exist until the insert that stores the
+   * ciphertext.
+   */
+  encryptionScope?: readonly string[];
   /** Defaults to `{ read: 'owner', write: 'owner' }`. */
   access?: AccessDefinition;
   /** Keyset paging on the generic read. **Required** when `access.read` is `public`. */
@@ -608,7 +637,100 @@ export interface ResolvedService {
   clientFilterable: string[];
   indexes: readonly ResolvedIndex[];
   childTables: readonly ChildTableDefinition[];
+  /** The `encrypted: true` columns, in declaration order (MICA-165). */
+  encryptedColumns: string[];
+  /** `ServiceDefinition.encryptionScope`; `[]` when nothing is encrypted. */
+  encryptionScope: string[];
 }
+
+/**
+ * The widest a `varchar` of utf8mb4 may be: 65,535 bytes a row, four a character. An encrypted
+ * `string` whose sealed form would pass it has to be a `text` instead.
+ */
+const MAX_VARCHAR_CHARS = 16383;
+
+/** What an `encrypted: true` column may not also be (MICA-165). */
+const assertEncryptedColumn = (id: string, name: string, def: ColumnDef): void => {
+  if (!def.encrypted) return;
+  const where = `defineService('${id}'): '${name}' is 'encrypted'`;
+  if (def.type !== 'string' && def.type !== 'text' && def.type !== 'mediumtext') {
+    throw new Error(`${where} but is a '${def.type}'. Only text is sealed.`);
+  }
+  const conflict = (
+    [
+      ['clientFilterable', def.clientFilterable === true],
+      ['index', def.index === true],
+      ['default', def.default !== undefined || def.defaultNow === true],
+      ['generatedAs', Boolean(def.generatedAs)],
+      ['citizenId', def.citizenId === true]
+    ] as const
+  ).find(([, present]) => present);
+  if (conflict) {
+    throw new Error(
+      `${where} and '${conflict[0]}', which means nothing over ciphertext: every sealed ` +
+        'value is different bytes, even for the same text.'
+    );
+  }
+  if (def.type === 'string' && sealedLengthForChars(def.length ?? 255) > MAX_VARCHAR_CHARS) {
+    throw new Error(
+      `${where}, and ${def.length ?? 255} characters seal to more than a varchar holds. ` +
+        "Declare it 'text'."
+    );
+  }
+};
+
+/** Check `encryptionScope` against the resolved columns. `[]` when nothing is encrypted. */
+const resolveEncryptionScope = (
+  definition: ServiceDefinition,
+  columns: readonly string[],
+  fields: readonly { name: string; def: ColumnDef }[],
+  encryptedColumns: readonly string[]
+): string[] => {
+  const { id } = definition;
+  const scope = definition.encryptionScope;
+  if (encryptedColumns.length === 0) {
+    if (scope !== undefined) {
+      throw new Error(
+        `defineService('${id}'): 'encryptionScope' is declared but no column is 'encrypted'.`
+      );
+    }
+    return [];
+  }
+  if (scope === undefined) {
+    throw new Error(
+      `defineService('${id}'): '${encryptedColumns[0]}' is 'encrypted' but the service ` +
+        "declares no 'encryptionScope'. Name the columns that say which thread a row is in, " +
+        'or [] when the row alone is the scope.'
+    );
+  }
+  const write = definition.access?.write ?? 'owner';
+  for (const column of scope) {
+    if (!columns.includes(column) || column === 'citizenid' || column === 'id') {
+      throw new Error(
+        `defineService('${id}'): encryptionScope names '${column}', which it cannot bind: ` +
+          "'citizenid' always is, 'id' does not exist before the insert, and anything else " +
+          'has to be a column of this table.'
+      );
+    }
+    if (encryptedColumns.includes(column)) {
+      throw new Error(
+        `defineService('${id}'): encryptionScope names '${column}', an encrypted column.`
+      );
+    }
+    const def = fields.find((f) => f.name === column)?.def;
+    if (def && isClientWritable(def, write)) {
+      throw new Error(
+        `defineService('${id}'): encryptionScope names '${column}', which a client may ` +
+          "rewrite, and a sealed value bound to it would stop opening. Mark it 'clientWritable: " +
+          "false'."
+      );
+    }
+  }
+  if (new Set(scope).size !== scope.length) {
+    throw new Error(`defineService('${id}'): encryptionScope repeats a column.`);
+  }
+  return [...scope];
+};
 
 /**
  * Expand a declaration into the concrete lists the runtime needs. Pure — no
@@ -816,6 +938,7 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
       );
     }
     assertCitizenIdColumn(id, `'${name}'`, def);
+    assertEncryptedColumn(id, name, def);
     fields.push({ name, def });
   }
 
@@ -885,6 +1008,13 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
         `child table '${child.name}' column '${column}'`,
         normalizeColumn(spec)
       );
+      if (normalizeColumn(spec).encrypted) {
+        throw new Error(
+          `defineService('${id}'): child table '${child.name}' column '${column}' is ` +
+            "'encrypted'. Only a primary table's columns can be: a child table has no " +
+            'repository to open them.'
+        );
+      }
     }
     const childIndexNames = (child.indexes ?? []).map((i) => normalizeIndex(i).name);
     const duplicateChildIndex = childIndexNames.find(
@@ -917,7 +1047,9 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
         ? CITIZENID_MAX_LENGTH
         : def.type === 'string'
           ? (def.length ?? 255)
-          : MAX_LENGTH_BY_TYPE[def.type],
+          : def.encrypted
+            ? maxPlaintextChars(MAX_LENGTH_BY_TYPE[def.type] ?? 0)
+            : MAX_LENGTH_BY_TYPE[def.type],
       citizenId: def.citizenId === true,
       values: def.type === 'enum' ? (def.values ?? null) : null,
       min: def.type === 'int' ? INT_MIN : null,
@@ -925,6 +1057,23 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
       accepts: def.accepts ?? null
     };
   }
+
+  const encryptedColumns = fields.filter((f) => f.def.encrypted === true).map((f) => f.name);
+  const encryptionScope = resolveEncryptionScope(definition, columns, fields, encryptedColumns);
+
+  /**
+   * An encrypted `string` is stored in its sealed form, so the table is emitted as wide as that
+   * form needs: the DDL, the planner and `mica.sql` read these widened fields. The rule above
+   * has already taken `length` as the plaintext bound, which is what a write is held to.
+   */
+  const storedFields = fields.map((field) =>
+    field.def.encrypted && field.def.type === 'string'
+      ? {
+          name: field.name,
+          def: { ...field.def, length: sealedLengthForChars(field.def.length ?? 255) }
+        }
+      : field
+  );
 
   return {
     id,
@@ -938,9 +1087,11 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
     publicColumns,
     listColumns,
     statuses,
-    fields,
+    fields: storedFields,
     indexes,
     childTables,
+    encryptedColumns,
+    encryptionScope,
     columns,
     clientWritable: fields.filter((f) => isClientWritable(f.def, access.write)).map((f) => f.name),
     clientFilterable: fields.filter((f) => isClientFilterable(f.def)).map((f) => f.name)
@@ -1041,6 +1192,19 @@ export function defineService<T, C extends ServiceContract = ServiceContract>(
   }
   declaredServices.push(resolved);
   if (resolved.columns.includes('phone_id')) phoneKeyedRepositories.push(repo);
+
+  /**
+   * Every encrypted column joins the registry `lib/contentCipher.ts` keeps, which the generic
+   * repository path, the hand-written readers and the backfill all walk (MICA-165).
+   */
+  for (const column of resolved.encryptedColumns) {
+    registerEncryptedColumn({
+      table: resolved.table,
+      column,
+      scope: resolved.encryptionScope,
+      hasUpdatedAt: resolved.columns.includes('updated_at')
+    });
+  }
 
   /**
    * Opt in to moderation, if the declaration asked for it.

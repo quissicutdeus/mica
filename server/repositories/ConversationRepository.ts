@@ -5,6 +5,13 @@
 import { SchemaRepository } from '../lib/defineService';
 import { Conversation, Participant } from '@mica/shared/types';
 import { Database } from '../lib/Database';
+import {
+  contentContext,
+  encryptedColumn,
+  isSealed,
+  openContent,
+  UNREADABLE_CONTENT
+} from '../lib/contentCipher';
 import { toSqlDateTime, type RecencyCursor } from '../lib/payload';
 
 /**
@@ -447,20 +454,42 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
     const hasMore = results.length > page.limit;
     const kept = hasMore ? results.slice(0, page.limit) : results;
 
-    // Map flat results to Conversation objects with nested last_message
-    const rows = kept.map((row) => ({
-      ...row,
-      last_message: row.last_message_text
-        ? {
-            message: row.last_message_text,
-            created_at: row.last_message_time,
-            citizenid: row.last_message_sender,
-            // A text from a line (MICA-223) is owned by the recipient's row but was not
-            // written by them; the inbox reads this before it draws a "sent" tick.
-            external_sender: row.last_message_external ?? null
-          }
-        : undefined
-    }));
+    // Map flat results to Conversation objects with nested last_message. The last message's
+    // text is sealed at rest (MICA-165): opened here off the context the join already carries,
+    // its sender's citizenid and this conversation's id.
+    // Declared by `services/Messages.ts`, which every server that reads this has loaded; a
+    // sealed value with no declaration to open it by reads as the padlock, never as ciphertext.
+    const sealedMessage = encryptedColumn('mica_messages', 'message');
+    const rows = kept.map((row) => {
+      const raw = row.last_message_text;
+      const text =
+        typeof raw !== 'string' || !isSealed(raw)
+          ? raw
+          : sealedMessage
+            ? openContent(
+                contentContext(sealedMessage, {
+                  citizenid: row.last_message_sender,
+                  conversation_id: row.id
+                }),
+                raw,
+                `last of conversation ${row.id}`
+              )
+            : UNREADABLE_CONTENT;
+      return {
+        ...row,
+        last_message_text: text,
+        last_message: text
+          ? {
+              message: text,
+              created_at: row.last_message_time,
+              citizenid: row.last_message_sender,
+              // A text from a line (MICA-223) is owned by the recipient's row but was not
+              // written by them; the inbox reads this before it draws a "sent" tick.
+              external_sender: row.last_message_external ?? null
+            }
+          : undefined
+      };
+    });
 
     /**
      * The last kept row's own position, which is where the next page starts.

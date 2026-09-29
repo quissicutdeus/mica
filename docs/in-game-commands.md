@@ -11,8 +11,9 @@ something rather than being swallowed by the client.
 
 ## Who may run them
 
-**All of them are admin-gated by `isAdmin` in `server/services/Admin.ts`.** That
-reads the `mica_admin_aces` convar, which defaults to `mica.admin` and
+**All of them but `micaimport` and `micacrypt` are admin-gated by `isAdmin` in
+`server/services/Admin.ts`**; those two take the server console and nobody else.
+That reads the `mica_admin_aces` convar, which defaults to `mica.admin` and
 `command`:
 
 ```cfg
@@ -51,9 +52,14 @@ principals to check.
 | `micacall end`                          | Force-ends your own active call                                                       |
 | `micaimport <qb-phone\|lb-phone\|npwd>` | **Console only.** Reports what it would bring across from that phone. Changes nothing |
 | `micaimport <source> --apply`           | **Console only.** Brings it across. A second run brings nothing new                   |
+| `micacrypt status`                      | **Console only.** Counts sealed, plaintext and unreadable bodies. Changes nothing     |
+| `micacrypt backfill`                    | **Console only.** Reports what `--apply` would seal. Changes nothing                  |
+| `micacrypt backfill --apply`            | **Console only.** Seals plaintext bodies and re-seals old keys'. Safe to repeat       |
+| `micacrypt keygen <absolute path>`      | **Console only.** Writes a new key file, mode 600. Never overwrites one               |
 
 Source: `server/services/Schema.ts`, `Media.ts`, `Battery.ts`, `Seed.ts`,
-`Phone.ts` and `Import.ts` respectively — one `RegisterCommand` each.
+`Phone.ts`, `Import.ts` and `ContentKeys.ts` respectively — one
+`RegisterCommand` each.
 
 ## The two that are gated harder than the rest
 
@@ -88,8 +94,45 @@ brought across in `mica_import_ledger`, so a second `--apply` reports zero new
 rows and an interrupted run can simply be repeated. The source tables are only
 read. Every row it does not bring across is counted under a reason — an owner it
 cannot match to a character, an attachment, a post over 280 characters, a
-duplicate — so the report adds up to what the source held. Source:
-`server/lib/import/`.
+duplicate — so the report adds up to what the source held. A text message longer
+than 12,276 characters is cut to that length, never through the middle of an
+emoji, and with a content key set every imported message is sealed on the way
+in. Source: `server/lib/import/`.
+
+## `micacrypt` is console only, all of it
+
+`micacrypt` (MICA-165) manages the key that seals message, DM and mail bodies at
+rest; [`docs/security.md`](security.md) has what that does and does not protect.
+Every subcommand refuses any `source` but the console, `status` included: its
+counts describe every player's content, and `backfill --apply` rewrites it. Only
+one `status` or `backfill` runs at a time.
+
+- **`keygen <absolute path> [kid]`** writes a keyring file holding one new key,
+  mode 600, and prints the `set mica_content_key_file "<path>"` line for
+  `server.cfg`. The key id defaults to `k`, the UTC date and the time
+  (`k20260929-1824`), and an id the running keyring already holds is refused,
+  since a key file with one id twice is refused whole. It refuses a relative
+  path and an existing file, since a key overwritten is every body sealed with
+  it gone, and it repeats the boot warning when the path is inside the resource
+  or `server-data`. Use `set`, never `setr`, which would send the path to every
+  client.
+- **`status`** counts, per sealed column, the rows under the active key, under
+  each older key, still plaintext, sealed but unreadable, and plaintext too long
+  to seal, plus persisted DM notifications that still carry message text.
+- **`backfill`** is the dry run of the same walk. **`backfill --apply`** seals
+  every plaintext body, re-seals every body under an older key, and blanks the
+  old DM notifications. It walks each table by id, `--batch N` rows at a time
+  (default 500, at most 5000), one compare-and-set `UPDATE` per row, so no
+  statement locks or rewrites a table, and a body a player edits mid-run is left
+  for the next run rather than overwritten. `updated_at` is pinned, so nothing
+  reads as edited. A second run changes nothing. It refuses to start without a
+  usable key.
+
+**Rotating the key** is the same command. Run `keygen` to a scratch path, put
+its key line **first** in the live key file with the old lines after it, restart
+the resource, run `backfill --apply`, and remove an old line only once `status`
+shows nothing left under it. A body under a key that is no longer in the file
+reads as 🔒.
 
 ## `micacall` runs in game, not from the console
 

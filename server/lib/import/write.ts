@@ -2,10 +2,13 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { MESSAGE_BODY_MAX } from '@mica/shared/contracts/messages';
+import { sealRow, storablePlaintext } from '../contentCipher';
 import { Database, type TransactionQuery } from '../Database';
 import { hostedUrlPrefixes, quotaBytes, storedBytesOf, usedBytesQuery } from '../../services/Media';
 import { isAppDisabled } from '../ownerConfig';
 import { type ImportContext } from './context';
+import { cutText } from './cutText';
 import { SKIP, type Tally } from './report';
 import { postsTarget, type ImportedAccount, type PostWrite, type PostsTarget } from './targets';
 
@@ -111,8 +114,8 @@ export const importContacts = async (
             params: [
               citizenid,
               await phoneIdFor(ctx, citizenid, row.owner.number),
-              (row.firstname.trim() || phone).slice(0, 50),
-              row.lastname ? row.lastname.slice(0, 50) : null,
+              cutText(row.firstname.trim() || phone, 50),
+              row.lastname ? cutText(row.lastname, 50) : null,
               phone,
               row.favorite ? 1 : 0
             ]
@@ -422,7 +425,7 @@ export class Threads {
           params: [
             members[0].citizenid,
             pair ? 0 : 1,
-            thread.name ? thread.name.slice(0, 50) : null,
+            thread.name ? cutText(thread.name, 50) : null,
             pair ? members[0].phoneId : null,
             pair ? members[1].phoneId : null
           ]
@@ -532,14 +535,31 @@ export class Threads {
           message.key,
           'mica_messages',
           sender,
-          async () => [
-            {
-              query: `INSERT INTO \`mica_messages\`
-                 (\`conversation_id\`, \`citizenid\`, \`message\`, \`created_at\`)
-               VALUES (?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP))`,
-              params: [conversationId, sender, body.slice(0, 65535), message.at]
-            }
-          ],
+          async () => {
+            // Sealed as Messages seals a sent one (MICA-165): the thread and the sender are
+            // known before the insert, and they are all the value's context binds.
+            // Cut to Messages' own bound, what fits the column once sealed, key or not, so a
+            // body written as plaintext here can always be sealed by a later backfill. A text
+            // that starts like a sealed value seals like any other with a key; with none it
+            // would be stored bare and refused, so `storablePlaintext` puts a zero-width space
+            // in front, making room for it within the same bound.
+            const row = await sealRow('mica_messages', {
+              conversation_id: conversationId,
+              citizenid: sender,
+              message: await storablePlaintext(cutText(body, MESSAGE_BODY_MAX), MESSAGE_BODY_MAX)
+            });
+            // `updated_at` is the source's time too. Left to its default it is the moment of
+            // the import, and a message whose `updated_at` is later than its `created_at`
+            // reads as edited (`MessageRepository`), so every imported text would.
+            return [
+              {
+                query: `INSERT INTO \`mica_messages\`
+                   (\`conversation_id\`, \`citizenid\`, \`message\`, \`created_at\`, \`updated_at\`)
+                 VALUES (?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP), COALESCE(?, CURRENT_TIMESTAMP))`,
+                params: [row.conversation_id, row.citizenid, row.message, message.at, message.at]
+              }
+            ];
+          },
           (id, reason) => {
             if (id !== null) tally.written++;
             else tally.skip(reason ?? SKIP.writeFailed);

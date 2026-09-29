@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { sealRow } from './contentCipher';
 import { Database } from './Database';
 
 /**
@@ -155,10 +156,17 @@ const createConversations = async (owner: string): Promise<number> => {
     }
 
     for (const body of openers) {
+      // Sealed like any other message (MICA-165), so a seeded thread reads back through the
+      // same path, and a dev server with a key holds no plaintext beside ciphertext.
+      const row = await sealRow('mica_messages', {
+        conversation_id: conversationId,
+        citizenid: character.citizenid,
+        message: body
+      });
       await Database.query(
         `INSERT INTO mica_messages (conversation_id, citizenid, message, status)
          VALUES (?, ?, ?, 'active')`,
-        [conversationId, character.citizenid, body]
+        [row.conversation_id, row.citizenid, row.message]
       );
     }
 

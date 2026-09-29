@@ -3,7 +3,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { execFileSync } from 'child_process';
+import crypto from 'crypto';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import esbuild from 'esbuild';
@@ -41,7 +43,7 @@ const EXTERNAL_DB = Boolean(DB_HOST || DB_PORT || DB_USER || DB_PASSWORD);
 let checksRun = 0;
 /**
  * The repository checks (48), plus MICA-233's: for each of three import sources on each of
- * two framework shapes, fourteen checks and the seeded schema's one. Plus MICA-167's
+ * two framework shapes, fifteen checks and the seeded schema's one. Plus MICA-167's
  * retention scenario on each shape: sixteen checks and the seeded schema's one. Plus
  * MICA-292's evidence hold on the purges and the sweep, ten checks and the seeded schema's one,
  * on qb and on ESX with `users` on each of two collations (MICA-299). Plus MICA-275's line
@@ -50,9 +52,11 @@ let checksRun = 0;
  * delete, twelve checks and the seeded schema's one on each shape, and its cascade guard, ten
  * and the seeded schema's one on each shape. Plus MICA-300's deleted character, cleaned up by
  * the hook (thirteen and the seeded schema's one) and by the sweep (seventeen and the seeded
- * schema's one), on each shape, and two that `mica.sql` refuses an es_extended database.
+ * schema's one), on each shape, and two that `mica.sql` refuses an es_extended database. Plus
+ * MICA-165's keyed import and content backfill, eleven and the seeded schema's one on each
+ * shape, and a keyed micaseed on qb.
  */
-const IMPORT_CHECKS = 15;
+const IMPORT_CHECKS = 16;
 const RETENTION_CHECKS = 17;
 const EVIDENCE_CHECKS = 11;
 const LINE_CHECKS = 11;
@@ -64,8 +68,16 @@ const HOOK_CHECKS = 14;
 const SWEEP_CHECKS = 18;
 /** MICA-300: the media-only hook, the seeded schema's one and five, on each shape. */
 const MEDIA_HOOK_CHECKS = 6;
+/** MICA-165: the content backfill and a keyed import, the seeded schema's one and ten. */
+const CRYPT_CHECKS = 13;
+/** MICA-165: a qb-phone import with no key stores a sealed-looking text behind U+200B. */
+const IMPORT_QB_CHECKS = 1;
+/** MICA-165: `micaseed` writes qb's `players`, so its sealed round trip runs on qb only. */
+const CRYPT_SEED_CHECKS = 1;
 const MINIMUM_CHECKS =
   48 +
+  CRYPT_CHECKS * 2 +
+  CRYPT_SEED_CHECKS +
   MEDIA_HOOK_CHECKS * 2 +
   2 +
   HOOK_CHECKS * 2 +
@@ -74,6 +86,7 @@ const MINIMUM_CHECKS =
   CASCADE_CHECKS * 2 +
   LINE_CHECKS * 2 +
   IMPORT_CHECKS * 3 * 2 +
+  IMPORT_QB_CHECKS * 2 +
   RETENTION_CHECKS * 2 +
   EVIDENCE_CHECKS * 3 +
   HOSTED_CHECKS * 2;
@@ -186,6 +199,14 @@ let pagedThreadStatement = { sql: '', params: [] };
 let transactionsCommitted = 0;
 
 /**
+ * MICA-165: writes another session makes between the backfill's read and its write. The first
+ * `update_async` a hook's `match(sql, params)` accepts runs that hook's `run` on the connection,
+ * then the statement itself — the order a player's edit landing mid-run would have. Each hook
+ * fires once.
+ */
+let beforeUpdates = [];
+
+/**
  * oxmysql's surface over the harness's one connection.
  *
  * Every call takes `serial` first, so a statement never runs between another call's
@@ -221,6 +242,11 @@ const installOxmysql = (connection) => {
       }),
     update_async: (sql, params = []) =>
       serial(async () => {
+        const hook = beforeUpdates.find((h) => h.match(sql, params));
+        if (hook) {
+          beforeUpdates = beforeUpdates.filter((h) => h !== hook);
+          await hook.run(connection);
+        }
         const [result] = await connection.query(sql, params);
         return result.affectedRows;
       }),
@@ -307,7 +333,12 @@ const loadServerModule = async () => {
     `export { orphanScope, purgeOwnedRows, sweepOrphanedRows } from '${root}/server/lib/orphanSweep.ts';`,
     `import '${root}/server/services/Messages.ts';`,
     `import '${root}/server/services/BlabberDms.ts';`,
-    `import '${root}/server/services/Marketplace.ts';`
+    `import '${root}/server/services/Marketplace.ts';`,
+    // MICA-165: the cipher and the backfill, in the same bundle as the importer, so an import
+    // seals through the same registry and keyring the backfill reads.
+    `export { walkContent } from '${root}/server/lib/contentBackfill.ts';`,
+    `export { seedFor } from '${root}/server/lib/seed.ts';`,
+    `export { contentContext, encryptedColumn, openContent, registerEncryptedColumn, resetContentCipherForTests, sealContent, sealedKeyId, unregisterEncryptedColumnForTests } from '${root}/server/lib/contentCipher.ts';`
   ].join('\n');
 
   const outfile = path.join(root, 'node_modules', '.cache', 'mica-schema-harness.mjs');
@@ -948,6 +979,18 @@ const runImportVariant = async ({ connection, schemaFile, hasPlayers, modules, s
     }
   );
 
+  // `edited` is `updated_at > created_at` (MessageRepository, BlabRow): a text or a post keeps
+  // the source's time in both, rather than reading as edited at the moment of the import.
+  const [[editedCount]] = await connection.query(
+    `SELECT (SELECT COUNT(*) FROM mica_messages WHERE updated_at > created_at) AS messages,
+            (SELECT COUNT(*) FROM mica_blabber WHERE updated_at > created_at) AS posts`
+  );
+  check(
+    `${label}: no imported message or post reads as edited`,
+    [Number(editedCount.messages), Number(editedCount.posts)],
+    [0, 0]
+  );
+
   const [posts] = await connection.query(
     "SELECT COUNT(*) AS n FROM mica_blabber WHERE citizenid = ? AND body = 'First day in Los Santos'",
     [ownerA]
@@ -979,6 +1022,23 @@ const runImportVariant = async ({ connection, schemaFile, hasPlayers, modules, s
     await countTargets(connection),
     after
   );
+
+  if (source === 'qb-phone') {
+    // MICA-165: with no key, a text that starts like a sealed value cannot be stored bare — it
+    // would read as a padlock — so it goes in behind a zero-width space, and the run completes.
+    step(`${label} — a text that starts like a sealed value, with no key`);
+    await plantSealedLookingText(connection.query.bind(connection), ownerA);
+    const planted = await modules.runImport(source, { apply: true });
+    const [[row]] = await connection.query(
+      'SELECT message FROM mica_messages WHERE message LIKE ? ORDER BY id DESC LIMIT 1',
+      [`%${PLANTED_TEXT.slice(1)}`]
+    );
+    check(
+      `${label}: with no key, a sealed-looking text is stored behind a zero-width space`,
+      [planted.tables.find((t) => t.table === 'phone_messages')?.written, row?.message],
+      [1, `\u200B${PLANTED_TEXT}`]
+    );
+  }
 };
 
 /* --------------------------------------------------------- retention (MICA-167) */
@@ -2301,6 +2361,482 @@ const runMediaHookVariant = async ({ connection, schemaFile, hasPlayers, hooks }
   }
 };
 
+/* ---------------------------------------------------- content cipher (MICA-165) */
+
+/**
+ * The columns MICA-165 encrypts, with the scope each service binds. Registered here only where
+ * the bundle's own declarations have not already, so the harness walks the list the game does
+ * and never registers one twice.
+ */
+const CIPHER_COLUMNS = [
+  { table: 'mica_messages', column: 'message', scope: ['conversation_id'], hasUpdatedAt: true },
+  {
+    table: 'mica_blabber_dms',
+    column: 'body',
+    scope: ['from_account', 'to_account'],
+    hasUpdatedAt: true
+  },
+  { table: 'mica_mail', column: 'content', scope: [], hasUpdatedAt: true },
+  {
+    table: 'mica_reports',
+    column: 'target_preview',
+    scope: ['target_table', 'target_id'],
+    hasUpdatedAt: true
+  }
+];
+
+const DM_NOTIFICATIONS = { app: 'blabber', kind: 'dm' };
+
+/** A text a qb-phone player typed that happens to start like micaOS's sealed form. */
+const PLANTED_TEXT = '$mc1$k1$AAAAAAAAAAAAAAAA';
+
+/** Add it to Alice's side of her thread with Bob, after the fixture's three texts. */
+const plantSealedLookingText = (q, owner) =>
+  q('INSERT INTO phone_messages (citizenid, number, messages) VALUES (?, ?, ?)', [
+    owner,
+    '555-0002',
+    JSON.stringify([
+      {
+        date: '26-9-2026',
+        messages: [{ message: PLANTED_TEXT, time: '08:00', sender: owner, type: 'message' }]
+      }
+    ])
+  ]);
+
+const keyLine = (kid) => `${kid} ${crypto.randomBytes(32).toString('base64')}`;
+
+/**
+ * `micacrypt backfill` against a real engine, on each framework shape, after a keyed import.
+ *
+ * What the unit suite cannot show: that MariaDB accepts the keyset page and the
+ * compare-and-set `UPDATE`; that `updated_at = updated_at` really stops `ON UPDATE
+ * CURRENT_TIMESTAMP`, so no message starts reading as edited; that the byte-wise compare misses
+ * an edit that only changed case, which `utf8mb4_unicode_ci` would call equal; and that the
+ * column capacities come back from `information_schema` as the walk expects.
+ */
+const runContentCipherVariant = async ({ connection, schemaFile, hasPlayers, modules }) => {
+  const framework = hasPlayers ? 'qb' : 'esx';
+  const A = hasPlayers ? 'CIT_A' : ESX_OWNER_A;
+  const B = hasPlayers ? 'CIT_B' : ESX_OWNER_B;
+  const label = `content cipher on ${framework}`;
+
+  const database = await seedFrameworkAndGPhone({
+    connection,
+    schemaFile,
+    hasPlayers,
+    suffix: 'crypt'
+  });
+  modules.__setResourceLookup(FRAMEWORK[framework]);
+  const q = async (sql, params = []) => (await connection.query(sql, params))[0];
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mica-crypt-'));
+  const writeKeys = (name, lines) => {
+    const file = path.join(dir, name);
+    fs.writeFileSync(file, `${lines.join('\n')}\n`, { mode: 0o600 });
+    return file;
+  };
+  const oldLine = keyLine('old');
+  const oldOnly = writeKeys('old.key', [oldLine]);
+  const lostOnly = writeKeys('lost.key', [keyLine('lost')]);
+  const rotated = writeKeys('rotated.key', [keyLine('new'), oldLine]);
+
+  const previousConvar = globalThis.GetConvar;
+  const useKeys = (file) => {
+    globalThis.GetConvar = (name, fallback) => (name === 'mica_content_key_file' ? file : fallback);
+    modules.resetContentCipherForTests();
+  };
+  const registered = [];
+  for (const entry of CIPHER_COLUMNS) {
+    if (!modules.encryptedColumn(entry.table, entry.column)) {
+      modules.registerEncryptedColumn(entry);
+      registered.push(entry);
+    }
+  }
+  const context = (table, column, row) =>
+    modules.contentContext(modules.encryptedColumn(table, column), row);
+  const seal = (table, column, row, text) => modules.sealContent(context(table, column, row), text);
+  const open = (table, column, row) =>
+    modules.openContent(context(table, column, row), row[column], row.id);
+
+  const walk = (apply) => modules.walkContent({ apply, notifications: DM_NOTIFICATIONS });
+  const counts = (report, fields) =>
+    Object.fromEntries(
+      CIPHER_COLUMNS.map(({ table, column }) => {
+        const c = report.columns.find((r) => r.table === table && r.column === column);
+        return [
+          `${table}.${column}`,
+          c ? Object.fromEntries(fields.map((f) => [f, c[f]])) : 'missing'
+        ];
+      })
+    );
+  const TABLES = [
+    ...CIPHER_COLUMNS.map((c) => [c.table, c.column]),
+    ['mica_notifications', 'body']
+  ];
+  const snapshot = async () => {
+    const out = {};
+    for (const [table, column] of TABLES) {
+      out[table] = await q(
+        `SELECT id, \`${column}\` AS v, CAST(created_at AS CHAR) AS c, CAST(updated_at AS CHAR) AS u
+         FROM \`${table}\` ORDER BY id`
+      );
+    }
+    return out;
+  };
+
+  try {
+    useKeys(rotated);
+    step(`${label} — a qb-phone import with a key loaded`);
+    const fixture = fs
+      .readFileSync(path.join(root, 'scripts/fixtures/import', 'qb-phone.sql'), 'utf8')
+      .replaceAll('{{OWNER_A}}', A)
+      .replaceAll('{{OWNER_B}}', B);
+    await connection.query(fixture);
+    // A source text that starts like a sealed value: with a key it seals like any other.
+    await plantSealedLookingText(q, A);
+    const importReport = await modules.runImport('qb-phone', { apply: true });
+    const importedMessages = importReport.tables.find((t) => t.table === 'phone_messages');
+    check(
+      `${label}: an import holding a sealed-looking text writes it, and every table after it`,
+      [
+        importedMessages?.written,
+        importReport.tables.find((t) => t.table === 'phone_tweets')?.written
+      ],
+      [4, 2]
+    );
+    const imported = await q(
+      `SELECT m.id, m.conversation_id, m.citizenid, m.message FROM mica_messages m
+       WHERE m.conversation_id = (
+         SELECT conversation_id FROM mica_messages_participants WHERE citizenid IN (?, ?)
+         GROUP BY conversation_id HAVING COUNT(DISTINCT citizenid) = 2 LIMIT 1)
+       ORDER BY m.id`,
+      [A, B]
+    );
+    check(
+      `${label}: an imported message is stored sealed and opens as its text`,
+      imported.map((m) => [
+        modules.sealedKeyId(m.message),
+        open('mica_messages', 'message', m),
+        m.citizenid
+      ]),
+      [
+        ['new', 'You up?', A],
+        ['new', "Yeah, what's up", B],
+        ['new', 'Meet at Legion', A],
+        ['new', PLANTED_TEXT, A]
+      ]
+    );
+    // And through the reader the thread view uses, which opens what it selects.
+    const messageRepo = new modules.MessageRepository(database);
+    const thread = await messageRepo.findByConversation(imported[0].conversation_id, {
+      limit: 20,
+      cursor: null
+    });
+    check(
+      `${label}: the thread reader returns the imported texts, opened`,
+      thread.rows.toSorted((a, b) => a.id - b.id).map((m) => m.message),
+      ['You up?', "Yeah, what's up", 'Meet at Legion', PLANTED_TEXT]
+    );
+
+    step(`${label} — plaintext, an older key, the active key, a lost key, a too-long DM`);
+    const OLD = '2020-01-01 00:00:00';
+    const EDITED = '2020-06-01 00:00:00';
+    const conversation = await q(
+      "INSERT INTO mica_messages_conversations (citizenid, is_group, status) VALUES (?, 0, 'active')",
+      [A]
+    );
+    const conv = conversation.insertId;
+    const message = async (citizenid, text, updated = OLD) =>
+      (
+        await q(
+          `INSERT INTO mica_messages (conversation_id, citizenid, message, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?)`,
+          [conv, citizenid, text, OLD, updated]
+        )
+      ).insertId;
+    const sealedFor = (citizenid, text) =>
+      seal('mica_messages', 'message', { citizenid, conversation_id: conv }, text);
+
+    const plain = await message(A, 'plain hello');
+    const edited = await message(B, 'plain reply, edited', EDITED);
+    useKeys(oldOnly);
+    const older = await message(A, await sealedFor(A, 'sealed with old'));
+    useKeys(lostOnly);
+    const lost = await message(B, await sealedFor(B, 'nobody holds this key'));
+    useKeys(rotated);
+    const current = await message(A, await sealedFor(A, 'already new'));
+    const race = await message(B, 'race me');
+    const caseRace = await message(A, 'whose is this');
+    // The citizenid changed only in case: equal under the column's collation, another context
+    // to the cipher, so a value sealed for the old one would never open.
+    const flipped = A === A.toUpperCase() ? A.toLowerCase() : A.toUpperCase();
+
+    await q(
+      `INSERT INTO mica_accounts (id, citizenid, app, handle) VALUES
+       (901, ?, 'blabber', 'crypt_a'), (902, ?, 'blabber', 'crypt_b')`,
+      [A, B]
+    );
+    const [dmCapacity] = await q(
+      `SELECT CHARACTER_MAXIMUM_LENGTH AS n FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'mica_blabber_dms' AND COLUMN_NAME = 'body'`
+    );
+    // As long as the column allows, so no sealed form of it can fit, however wide the column is.
+    const tooLong = 'd'.repeat(Number(dmCapacity.n));
+    const dm = (
+      await q(
+        `INSERT INTO mica_blabber_dms (citizenid, from_account, to_account, body, created_at, updated_at)
+         VALUES (?, 901, 902, 'see you at 10', ?, ?)`,
+        [A, OLD, OLD]
+      )
+    ).insertId;
+    await q(
+      `INSERT INTO mica_blabber_dms (citizenid, from_account, to_account, body, created_at, updated_at)
+       VALUES (?, 902, 901, ?, ?, ?)`,
+      [B, tooLong, OLD, OLD]
+    );
+    await q(
+      `INSERT INTO mica_mail (citizenid, sender, subject, content, created_at, updated_at)
+       VALUES (?, 'Maze Bank', 'Statement', 'Your balance is $12', ?, ?)`,
+      [A, OLD, OLD]
+    );
+    await q(
+      `INSERT INTO mica_reports (citizenid, target_table, target_id, target_preview, created_at, updated_at)
+       VALUES (?, 'mica_blabber_dms', ?, 'see you at 10', ?, ?)`,
+      [B, dm, OLD, OLD]
+    );
+    await q(
+      `INSERT INTO mica_notifications (citizenid, app, kind, title, body, created_at, updated_at) VALUES
+       (?, 'blabber', 'dm', 'New message', 'see you at 10', ?, ?),
+       (?, 'blabber', 'dm', 'New message', '', ?, ?),
+       (?, 'blabber', 'mention', 'Mention', '@crypt_a hi', ?, ?)`,
+      [A, OLD, OLD, A, OLD, OLD, A, OLD, OLD]
+    );
+
+    step(`${label} — status and the dry run`);
+    const before = await snapshot();
+    const dry = await walk(false);
+    check(
+      `${label}: the dry run counts each kind of value per column`,
+      {
+        ...counts(dry, ['active', 'older', 'legacy', 'unreadable', 'tooLong']),
+        notifications: dry.notifications
+      },
+      {
+        'mica_messages.message': {
+          active: 5,
+          older: { old: 1 },
+          legacy: 4,
+          unreadable: 1,
+          tooLong: 0
+        },
+        'mica_blabber_dms.body': { active: 0, older: {}, legacy: 1, unreadable: 0, tooLong: 1 },
+        'mica_mail.content': { active: 0, older: {}, legacy: 1, unreadable: 0, tooLong: 0 },
+        'mica_reports.target_preview': {
+          active: 0,
+          older: {},
+          legacy: 1,
+          unreadable: 0,
+          tooLong: 0
+        },
+        notifications: { pending: 1, blanked: 0 }
+      }
+    );
+    check(`${label}: the dry run writes nothing`, await snapshot(), before);
+
+    step(`${label} — --apply, with the race row edited (case only) between read and write`);
+    beforeUpdates = [
+      {
+        match: (sql, params) => sql.startsWith('UPDATE `mica_messages`') && params[1] === race,
+        run: (conn) =>
+          conn.query("UPDATE mica_messages SET message = 'RACE ME' WHERE id = ?", [race])
+      },
+      {
+        match: (sql, params) => sql.startsWith('UPDATE `mica_messages`') && params[1] === caseRace,
+        run: (conn) =>
+          conn.query('UPDATE mica_messages SET citizenid = ? WHERE id = ?', [flipped, caseRace])
+      }
+    ];
+    const applied = await walk(true);
+    check(
+      `${label}: --apply seals what the dry run counted, and misses the edited row`,
+      {
+        ...counts(applied, ['sealed', 'raced']),
+        notifications: applied.notifications,
+        hooksFired: beforeUpdates.length === 0
+      },
+      {
+        'mica_messages.message': { sealed: 3, raced: 2 },
+        'mica_blabber_dms.body': { sealed: 1, raced: 0 },
+        'mica_mail.content': { sealed: 1, raced: 0 },
+        'mica_reports.target_preview': { sealed: 1, raced: 0 },
+        notifications: { pending: 0, blanked: 1 },
+        hooksFired: true
+      }
+    );
+
+    const messages = new Map(
+      (
+        await q(
+          'SELECT id, conversation_id, citizenid, message FROM mica_messages WHERE conversation_id = ?',
+          [conv]
+        )
+      ).map((m) => [m.id, m])
+    );
+    const lostBefore = before.mica_messages.find((r) => r.id === lost).v;
+    check(
+      `${label}: every message opens as its text under the new key; the lost and raced are as they were`,
+      [plain, edited, older, current, lost, race, caseRace].map((id) => {
+        const m = messages.get(id);
+        return id === lost
+          ? ['lost', m.message === lostBefore]
+          : [modules.sealedKeyId(m.message), open('mica_messages', 'message', m)];
+      }),
+      [
+        ['new', 'plain hello'],
+        ['new', 'plain reply, edited'],
+        ['new', 'sealed with old'],
+        ['new', 'already new'],
+        ['lost', true],
+        [null, 'RACE ME'],
+        [null, 'whose is this']
+      ]
+    );
+
+    const [dmRow] = await q(
+      'SELECT id, citizenid, from_account, to_account, body FROM mica_blabber_dms WHERE id = ?',
+      [dm]
+    );
+    const [longRow] = await q(
+      'SELECT body FROM mica_blabber_dms WHERE id <> ? ORDER BY id DESC LIMIT 1',
+      [dm]
+    );
+    const [mailRow] = await q(
+      'SELECT id, citizenid, content FROM mica_mail ORDER BY id DESC LIMIT 1'
+    );
+    const [reportRow] = await q(
+      'SELECT id, citizenid, target_table, target_id, target_preview FROM mica_reports ORDER BY id DESC LIMIT 1'
+    );
+    check(
+      `${label}: a DM, a mail and a report preview open; the too-long DM stays as it was`,
+      [
+        open('mica_blabber_dms', 'body', dmRow),
+        open('mica_mail', 'content', mailRow),
+        open('mica_reports', 'target_preview', reportRow),
+        longRow.body === tooLong,
+        [dmRow.body, mailRow.content, reportRow.target_preview].every((v) =>
+          v.startsWith('$mc1$new$')
+        )
+      ],
+      ['see you at 10', 'Your balance is $12', 'see you at 10', true, true]
+    );
+
+    const after = await snapshot();
+    const stamps = (snap) =>
+      Object.fromEntries(
+        Object.entries(snap).map(([table, rows]) => [
+          table,
+          rows
+            .filter((r) => !(table === 'mica_messages' && [race, caseRace].includes(r.id)))
+            .map((r) => [r.id, r.c, r.u, r.u > r.c])
+        ])
+      );
+    check(
+      `${label}: no created_at or updated_at moved, so nothing reads as newly edited`,
+      stamps(after),
+      stamps(before)
+    );
+    check(
+      `${label}: the DM notification bodies are blanked, the mention's is kept`,
+      after.mica_notifications.slice(-3).map((r) => r.v),
+      ['', '', '@crypt_a hi']
+    );
+
+    step(`${label} — a second --apply takes the edited row, and a third changes nothing`);
+    const second = await walk(true);
+    const raced = await q(
+      'SELECT id, conversation_id, citizenid, message FROM mica_messages WHERE id IN (?, ?) ORDER BY id',
+      [race, caseRace]
+    );
+    check(
+      `${label}: the next run seals the two edited rows, for who they now belong to, and nothing else`,
+      [
+        counts(second, ['sealed', 'raced']),
+        raced.map((m) => [modules.sealedKeyId(m.message), open('mica_messages', 'message', m)]),
+        raced[1].citizenid
+      ],
+      [
+        {
+          'mica_messages.message': { sealed: 2, raced: 0 },
+          'mica_blabber_dms.body': { sealed: 0, raced: 0 },
+          'mica_mail.content': { sealed: 0, raced: 0 },
+          'mica_reports.target_preview': { sealed: 0, raced: 0 }
+        },
+        [
+          ['new', 'RACE ME'],
+          ['new', 'whose is this']
+        ],
+        flipped
+      ]
+    );
+    const settled = await snapshot();
+    const third = await walk(true);
+    check(
+      `${label}: a third --apply writes nothing`,
+      [Object.values(counts(third, ['sealed', 'raced'])), third.notifications, await snapshot()],
+      [CIPHER_COLUMNS.map(() => ({ sealed: 0, raced: 0 })), { pending: 0, blanked: 0 }, settled]
+    );
+
+    if (hasPlayers) {
+      step(`${label} — micaseed with a key loaded`);
+      // `micaseed` writes qb's own `players` row for each seeded character, which the fixture
+      // table is too narrow for; widened here, in this variant's database only.
+      await q(
+        `ALTER TABLE players ADD COLUMN id int NOT NULL AUTO_INCREMENT UNIQUE,
+           ADD COLUMN license varchar(60), ADD COLUMN name varchar(255), ADD COLUMN money text,
+           ADD COLUMN job text, ADD COLUMN position text, ADD COLUMN metadata text,
+           ADD COLUMN phone_number varchar(20)`
+      );
+      await modules.seedFor(A);
+      const seeded = await q(
+        `SELECT m.id, m.conversation_id, m.citizenid, m.message FROM mica_messages m
+         WHERE m.citizenid LIKE 'SEED%' ORDER BY m.id`
+      );
+      const read = [];
+      for (const conversationId of new Set(seeded.map((m) => m.conversation_id))) {
+        const page = await messageRepo.findByConversation(conversationId, {
+          limit: 20,
+          cursor: null
+        });
+        read.push(...page.rows.toSorted((a, b) => a.id - b.id).map((m) => m.message));
+      }
+      check(
+        `${label}: seeded openers are stored sealed and read back as their text`,
+        [seeded.map((m) => modules.sealedKeyId(m.message)), read],
+        [
+          seeded.map(() => 'new'),
+          [
+            'hey, you around?',
+            'got that thing sorted or not',
+            'yo',
+            'meet me at the docks in 10',
+            'wrong number sorry',
+            'did you see what happened on vinewood?',
+            'wild'
+          ]
+        ]
+      );
+    }
+  } finally {
+    beforeUpdates = [];
+    globalThis.GetConvar = previousConvar;
+    for (const entry of registered) {
+      modules.unregisterEncryptedColumnForTests(entry.table, entry.column);
+    }
+    modules.resetContentCipherForTests();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+};
+
 const main = async () => {
   let container;
   let connection;
@@ -2412,6 +2948,14 @@ const main = async () => {
           via
         });
       }
+    }
+
+    // MICA-165: last, because it loads a key and records the enabled marker; it puts both back.
+    for (const [schemaFile, hasPlayers] of [
+      ['mica.sql', true],
+      ['mica.esx.sql', false]
+    ]) {
+      await runContentCipherVariant({ connection, schemaFile, hasPlayers, modules });
     }
 
     if (checksRun < MINIMUM_CHECKS) {

@@ -28,10 +28,48 @@
  * than growing this file into a second `@types/node`.
  */
 declare module 'node:crypto' {
+  import type { Bytes } from 'node:buffer';
+
   interface Digest {
     toString(encoding: 'hex'): string;
     readonly length: number;
   }
+
+  /**
+   * AES-256-GCM, for `lib/contentCipher.ts` (MICA-165) — the third file the note above
+   * anticipated. Typed only as far as that file uses it: one algorithm, bytes in and out.
+   */
+  interface CipherGCM {
+    setAAD(data: Uint8Array): CipherGCM;
+    update(data: Uint8Array): Bytes;
+    final(): Bytes;
+    getAuthTag(): Bytes;
+  }
+
+  interface DecipherGCM {
+    setAAD(data: Uint8Array): DecipherGCM;
+    setAuthTag(tag: Uint8Array): DecipherGCM;
+    update(data: Uint8Array): Bytes;
+    /** Throws when the tag does not authenticate the ciphertext and the AAD. */
+    final(): Bytes;
+  }
+
+  interface GcmOptions {
+    authTagLength: number;
+  }
+
+  export function createCipheriv(
+    algorithm: 'aes-256-gcm',
+    key: Uint8Array,
+    iv: Uint8Array,
+    options: GcmOptions
+  ): CipherGCM;
+  export function createDecipheriv(
+    algorithm: 'aes-256-gcm',
+    key: Uint8Array,
+    iv: Uint8Array,
+    options: GcmOptions
+  ): DecipherGCM;
 
   interface Hash {
     update(data: string): Hash;
@@ -52,7 +90,8 @@ declare module 'node:crypto' {
   }
 
   export function createHash(algorithm: string): Hash;
-  export function randomBytes(size: number): Digest;
+  /** Real bytes (`Bytes` is a `Digest` too, so `.toString('hex')` callers are unchanged). */
+  export function randomBytes(size: number): Bytes;
 
   /**
    * The callback form, deliberately, and never `scryptSync`.
@@ -69,4 +108,23 @@ declare module 'node:crypto' {
     options: ScryptOptions,
     callback: (err: Error | null, derivedKey: Digest) => void
   ): void;
+}
+
+/**
+ * The byte type `node:crypto` above hands back, and the three `Buffer` statics
+ * `lib/contentCipher.ts` needs to move between it, base64 and UTF-8 (MICA-165).
+ *
+ * A module declaration for the same reason as the rest of this file: the global `Buffer` lives
+ * in `@types/node`'s ambient set, which this program cannot load. `Bytes` is a `Uint8Array`
+ * with the string conversions actually called; nothing here pretends to be the whole `Buffer`.
+ */
+declare module 'node:buffer' {
+  export interface Bytes extends Uint8Array {
+    toString(encoding?: 'hex' | 'base64' | 'utf8'): string;
+  }
+
+  export const Buffer: {
+    from(text: string, encoding: 'base64' | 'utf8'): Bytes;
+    concat(list: readonly Uint8Array[]): Bytes;
+  };
 }

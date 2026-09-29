@@ -17,6 +17,10 @@ import {
   type ReportableTable
 } from '../lib/moderation';
 import { AuditLogger } from '../lib/AuditLogger';
+import { openRows, storablePlaintext } from '../lib/contentCipher';
+
+/** `target_preview`'s plaintext bound, which the snapshot is held to. */
+const MAX_PREVIEW_CHARS = 300;
 import { forwardReportFiled } from '../lib/DiscordWebhook';
 import { isAdmin } from './Admin';
 import type { Report, ReportResolution } from '@mica/shared/types';
@@ -62,13 +66,17 @@ class ReportRepository extends SchemaRepository<Report> {
    * Everything already decided.
    *
    * A cross-owner read like the queue, so it is only reachable behind the `isAdmin`
-   * check in the handler. `findAll` cannot express "not pending".
+   * check in the handler. `findAll` cannot express "not pending". The preview is sealed at
+   * rest (MICA-165) and opens here, as `findAll` opens it for the queue.
    */
   async findAllResolved(): Promise<Report[]> {
-    return await Database.query<Report[]>(
-      `SELECT * FROM \`${this.tableName}\`
-       WHERE \`status\` = 'active' AND \`resolution\` <> 'pending'`,
-      []
+    return openRows(
+      this.tableName,
+      await Database.query<Report[]>(
+        `SELECT * FROM \`${this.tableName}\`
+         WHERE \`status\` = 'active' AND \`resolution\` <> 'pending'`,
+        []
+      )
     );
   }
 }
@@ -85,6 +93,7 @@ export const reports = defineService<Report, typeof reportsContract>({
   contract: reportsContract,
   id: 'reports',
   access: { read: 'owner', write: 'server' },
+  encryptionScope: ['target_table', 'target_id'],
   schema: {
     // Not a foreign key, matching mica_audit_logs: a report has to outlive the
     // content it describes, which is the entire point once that content is moderated.
@@ -106,8 +115,9 @@ export const reports = defineService<Report, typeof reportsContract>({
       default: 'pending'
     },
     // Captured when the report is filed so the queue still says what was reported after
-    // the content has gone.
-    target_preview: { type: 'string', length: 300 },
+    // the content has gone. A copy of a message or a DM, so sealed like them (MICA-165), bound
+    // to the reporter and the target; the column is as wide as 300 characters' sealed form.
+    target_preview: { type: 'string', length: 300, encrypted: true },
     target_author: { type: 'string', citizenId: true }
   },
   indexes: [
@@ -165,7 +175,12 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
     category,
     note,
     resolution: 'pending',
-    target_preview: target.preview,
+    // The reported player's words, which must never be what refuses the report (MICA-165): a
+    // post that happens to start like a sealed value is stored so it reads as the text it is.
+    target_preview:
+      target.preview === undefined
+        ? undefined
+        : await storablePlaintext(target.preview, MAX_PREVIEW_CHARS),
     target_author: target.citizenid
   } as Partial<Report>);
 

@@ -6,6 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script lang="ts">
   import { MAX_ATTACHMENTS } from '@mica/shared/attachments';
+  import { MESSAGE_BODY_MAX } from '@mica/shared/contracts/messages';
   import { MediaThumb, useLocation, useAppAction, useContacts, useLocale, fly } from '@mica/sdk';
   import type { MediaPreview } from '@mica/shared/types';
   import {
@@ -100,9 +101,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <!-- The row itself is `MessageBar` (sdk/ui): shared with Blabber's DM composer, which had
      drifted away from it on every visible detail. What stays here is what is genuinely
      Messages' own — the reply preview and attachment tray above the row, the attach button
-     before the field, and a send that an attachment alone can enable. -->
+     before the field, and a send that an attachment alone can enable. `maxlength` is the
+     contract's own bound (MICA-165), so a paste stops at what the server would accept — a
+     new message and an edit share this one field, so both are held to it. -->
 <MessageBar
   bind:value={text}
+  maxlength={MESSAGE_BODY_MAX}
   {busy}
   placeholder={editing ? $t('messages.editMessage') : $t('messages.messagePlaceholder')}
   canSend={!busy && (editing ? !!text.trim() : !!text.trim() || attachments.length > 0)}

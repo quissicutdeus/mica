@@ -1185,10 +1185,12 @@ registerImportTarget('posts', {
   postTable: 'mica_blabber',
   maxBody: 280,
   planAccount: planImportedAccount,
+  // `updated_at` is the source's time too: left to its default it is the moment of the import,
+  // and a post whose `updated_at` is later than its `created_at` reads as edited (`BlabRow`).
   insertPost: (post: PostWrite) => ({
     query: `INSERT INTO \`mica_blabber\`
-       (\`citizenid\`, \`account_id\`, \`body\`, \`reply_to\`, \`root_id\`, \`mouth_of\`, \`created_at\`)
-     VALUES (?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP))`,
+       (\`citizenid\`, \`account_id\`, \`body\`, \`reply_to\`, \`root_id\`, \`mouth_of\`, \`created_at\`, \`updated_at\`)
+     VALUES (?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP), COALESCE(?, CURRENT_TIMESTAMP))`,
     params: [
       post.citizenid,
       post.accountId,
@@ -1196,6 +1198,7 @@ registerImportTarget('posts', {
       post.replyTo,
       post.rootId,
       post.mouthOf,
+      post.at,
       post.at
     ]
   }),

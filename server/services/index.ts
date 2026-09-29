@@ -9,6 +9,7 @@ import './BlabberDms';
 import './Blocklist';
 import './Capabilities';
 import './Contacts';
+import './ContentKeys';
 import './Conversations';
 import './Highscores';
 import './Hodlr';

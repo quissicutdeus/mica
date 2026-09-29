@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { sealRow } from '../lib/contentCipher';
 import { Database } from '../lib/Database';
 import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { SEED_CHARACTERS, clearSeed, seedFor } from '../lib/seed';
@@ -61,10 +62,17 @@ const runText = async (source: number, owner: string, args: string[]): Promise<v
     return;
   }
 
+  // Sealed before the insert (MICA-165); the push below still carries the plaintext, as a
+  // sent message's does.
+  const row = await sealRow('mica_messages', {
+    conversation_id: conversationId,
+    citizenid: character.citizenid,
+    message: body
+  });
   const result = await Database.query<any>(
     `INSERT INTO mica_messages (conversation_id, citizenid, message, status)
      VALUES (?, ?, ?, 'active')`,
-    [conversationId, character.citizenid, body]
+    [row.conversation_id, row.citizenid, row.message]
   );
 
   // Goes out over the same path a real player's message does, which is the point: this
