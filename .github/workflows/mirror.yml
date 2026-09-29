@@ -1,0 +1,61 @@
+name: Mirror to Forgejo
+
+# GitHub is the primary remote; the self-hosted Forgejo on hoth is kept as an exact copy of
+# it. Every push to a branch or tag here, and every branch or tag deleted here, is replayed
+# onto Forgejo within a minute, whichever way it reached GitHub -- a local push, a merge in
+# the web UI, a tag cut by release.yml. A laptop remote with two push URLs would only catch
+# the first of those.
+#
+# `--prune` and the `+` refspecs make this a mirror rather than a sync: a branch deleted or
+# force-pushed here is deleted or rewritten there too. Nothing should be pushed to Forgejo
+# directly any more; if it is, the next run here overwrites it.
+#
+# The key is a Forgejo deploy key with write access to this one repository and nothing
+# else. A run with either secret missing fails rather than skipping: a mirror that quietly
+# stops mirroring reads as in sync for exactly as long as nobody looks.
+#
+# GitHub only. Forgejo runs these same workflow files, and a copy there would push the
+# repository back into itself.
+on:
+  push:
+    branches: ['**']
+    tags: ['**']
+  delete:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Queued, never cancelled: two pushes in quick succession must both land, in order, and a
+# cancelled run is a Forgejo left one push behind until the next one.
+concurrency:
+  group: mirror-forgejo
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    name: Push every branch and tag to Forgejo
+    if: github.server_url == 'https://github.com'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mirror
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MIRROR_KEY: ${{ secrets.FORGEJO_MIRROR_KEY }}
+          MIRROR_KNOWN_HOSTS: ${{ secrets.FORGEJO_KNOWN_HOSTS }}
+          FORGEJO_URL: ssh://git@git.quissicutdeus.com:222/quissicutdeus/mica.git
+        run: |
+          set -eu
+          if [ -z "$MIRROR_KEY" ] || [ -z "$MIRROR_KNOWN_HOSTS" ]; then
+            echo "::error::FORGEJO_MIRROR_KEY or FORGEJO_KNOWN_HOSTS is not set. Forgejo is NOT in sync."
+            exit 1
+          fi
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$MIRROR_KEY" > "$HOME/.ssh/mirror_key"
+          chmod 600 "$HOME/.ssh/mirror_key"
+          printf '%s\n' "$MIRROR_KNOWN_HOSTS" > "$HOME/.ssh/mirror_known_hosts"
+          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/mirror_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/mirror_known_hosts"
+          # A bare clone holds exactly GitHub's branches under refs/heads and its tags under
+          # refs/tags, and none of GitHub's refs/pull/*, which Forgejo would refuse.
+          git clone --bare --quiet "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" repo.git
+          git -C repo.git push --prune "$FORGEJO_URL" '+refs/heads/*:refs/heads/*' '+refs/tags/*:refs/tags/*'
