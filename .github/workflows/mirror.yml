@@ -57,7 +57,9 @@ jobs:
           printf '%s\n' "$MIRROR_KEY" > "$HOME/.ssh/mirror_key"
           chmod 600 "$HOME/.ssh/mirror_key"
           printf '%s\n' "$MIRROR_KNOWN_HOSTS" > "$HOME/.ssh/mirror_known_hosts"
-          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/mirror_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/mirror_known_hosts"
+          # IPv4 only: mica.gg publishes an AAAA record and a GitHub-hosted runner has no
+          # IPv6 route, so an unpinned ssh can fail with "Network is unreachable".
+          export GIT_SSH_COMMAND="ssh -4 -o ConnectTimeout=20 -i $HOME/.ssh/mirror_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/mirror_known_hosts"
           # A bare clone holds exactly GitHub's branches under refs/heads and its tags under
           # refs/tags, and none of GitHub's refs/pull/*, which Forgejo would refuse.
           git clone --bare --quiet "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" repo.git
