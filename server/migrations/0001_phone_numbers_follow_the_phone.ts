@@ -58,9 +58,12 @@ const rowCount = async (): Promise<number> =>
  * standalone before installing qb, or a retry after the ledger write failed. That is what
  * makes re-running the seed after `citizenid_unique` is gone a no-op rather than a second
  * row. The `NOT EXISTS` compares `players.citizenid` to micaOS's own column, which is the
- * column-to-column comparison `FrameworkBridge` avoids everywhere else over collations; it is
- * safe here and only here, because the foreign key from this table onto `players` already
- * requires the two to agree, or the schema would not have imported.
+ * column-to-column comparison `FrameworkBridge` avoids everywhere else over collations. It is
+ * safe here and only here because this runs before 0006: a database this still has to run on
+ * was imported from a `mica.sql` whose foreign key from this table onto `players` required the
+ * two to agree, or it would not have imported, and 0006 has not dropped that key yet. (The
+ * standing drop in `micaschema apply` runs first since MICA-300, but it removes the key, not
+ * the matching collations the key forced at import.)
  */
 const CHARINFO_NUMBERS = `
   SELECT \`citizenid\`, \`phone\` FROM (

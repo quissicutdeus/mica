@@ -8,9 +8,10 @@ import { citizenIdWidth } from '@mica/shared/framework';
  * Which schema this server runs, for the two runtime readers of a citizenid column's width
  * (MICA-289): the write guard in `Repository` and the planner behind `micaschema`.
  *
- * `true` when rows hang off `players(citizenid)` (qb, `mica.sql`), `false` when they do not
+ * `true` when the owner is qb's `players(citizenid)` (`mica.sql`), `false` when it is not
  * (ESX and standalone, `mica.esx.sql`), `null` while the framework is not known yet — the
- * same third state `FrameworkBridge.detectFramework` keeps as `unknown`.
+ * same third state `FrameworkBridge.detectFramework` keeps as `unknown`. Only the width
+ * follows from it: no micaOS table has a foreign key onto `players` since MICA-300.
  *
  * A seam rather than an import of `FrameworkBridge`, because `Repository` sits under every
  * service and most suites mock the bridge with only the methods they use: `FrameworkBridge`

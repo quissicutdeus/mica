@@ -11,13 +11,12 @@ import { appEventChannel } from '../lib/appEvents';
 import { mediaContract } from '@mica/shared/contracts/media';
 import { playerCoords } from '../lib/playerCoords';
 import { Database } from '../lib/Database';
-import { registerOwnedExternal, sweepOrphanedRows } from '../lib/orphanSweep';
+import { purgeOwnedRows, registerOwnedExternal, sweepOrphanedRows } from '../lib/orphanSweep';
 import { isAdmin } from './Admin';
 import { notifyPlayer } from '../lib/shell';
 import { restoreWindowDays } from '../lib/retention';
 import {
   isRetentionRunning,
-  openReportHold,
   parseRetentionDays,
   pruneTable,
   registerRetention
@@ -29,8 +28,7 @@ import {
   rememberImageHost,
   reportRelease,
   uploadConfig,
-  uploadImage,
-  warnIfCascadeHidesHostedPhotos
+  uploadImage
 } from '../lib/mediaHost';
 
 /**
@@ -1213,22 +1211,6 @@ const formatBytes = (bytes: number): string => {
 };
 
 /**
- * How many rows a `DELETE` actually removed.
- *
- * `Database.query` hands back whatever the driver returned, and oxmysql's shape for a
- * write is an object carrying `affectedRows`. Anything else counts as zero rather than
- * `NaN` — a maintenance routine that reports nonsense is worse than one that reports
- * nothing, because the number is the only evidence an owner has that it ran.
- */
-const affectedRows = (result: unknown): number => {
-  if (result && typeof result === 'object' && 'affectedRows' in result) {
-    const value = Number((result as { affectedRows?: unknown }).affectedRows);
-    return Number.isFinite(value) ? value : 0;
-  }
-  return 0;
-};
-
-/**
  * How many days of media are kept, or `0` for forever: `mica_media_retention`, **365 by
  * default** since MICA-167.
  *
@@ -1274,12 +1256,6 @@ const collectMediaUrls = async (
     .map((row) => row.url)
     .filter((url): url is string => typeof url === 'string' && url !== '');
 };
-
-/**
- * The most URLs one character's purge reads: one character's rows, bounded like one orphan
- * sweep of a table, never a page that would leave the rest of their files behind.
- */
-const PURGE_COLLECT_LIMIT = 100_000;
 
 /** What retention collects for a batch of ids. */
 const urlsOfIds = async (ids: readonly number[]): Promise<string[]> =>
@@ -1336,24 +1312,12 @@ export const pruneExpiredMedia = async (): Promise<number> => await pruneTable(m
  * Delete media whose owner no longer exists. **A hard delete, and the character-deletion
  * cleanup.**
  *
- * The first line of defence is not this: on qb every micaOS table is generated with
- * `FOREIGN KEY (citizenid) REFERENCES players (citizenid) ON DELETE CASCADE`
- * (`lib/schemaSql.ts`), so on a table created from `mica.sql` a deleted character takes
- * its photos with it inside the same statement, with no resource involvement at all. That
- * is the mechanism, and it is already correct.
- *
- * This is the backstop for the four ways that guarantee does not hold, none of which the
- * database will tell you about:
- *
- * - **ESX**, which has no `players` table to point a constraint at, so `mica.esx.sql`
- *   carries no cascade to drop the rows (MICA-150). That is the case this sweep could
- *   not cover until MICA-152 taught it to ask `users(identifier)` the same question, and
- *   it is why this function no longer names a table itself.
- * - A table created before the constraint existed. `SchemaMigrator` adds columns and keys
- *   and deliberately never adds a foreign key, so an older install keeps the shape it was
- *   created with.
- * - A framework that retires a character without removing the `players` row.
- * - A `players` table on an engine that accepts a foreign key and does not enforce one.
+ * Since MICA-300 this, with the whole-phone sweep at every start, *is* the cleanup: no
+ * framework's schema cascades into `mica_media` any more. On qb it used to — every table
+ * carried `FOREIGN KEY (citizenid) REFERENCES players (citizenid) ON DELETE CASCADE`, and a
+ * deleted character's photos went inside MariaDB before a report hold could keep one or a
+ * hosted file could be released. Migration 0006 dropped that key, so the rows stay until
+ * this decides, keeping a photo under an open report and one an attachment still names.
  *
  * **The safety argument now lives in `lib/orphanSweep.ts`** — the framework verdict, the
  * owner-table count, the sampled identity check, and the rule that anything unconfirmed
@@ -1373,39 +1337,33 @@ export const pruneOrphanedMedia = async (): Promise<number> => {
 };
 
 /**
- * Remove one character's media outright. **A hard delete.**
+ * Remove one character's media. **A hard delete**, by the plan the other deletes use.
  *
  * The immediate half of the cleanup above: a deletion flow that calls this reclaims the
- * bytes at once instead of waiting for the next restart's sweep, and it works on an
- * install whose `players` row survives the character.
+ * bytes at once instead of waiting for the next restart's sweep.
+ *
+ * It used to be a bare `DELETE FROM mica_media WHERE citizenid = ?`, and every attachment row
+ * naming one of those photos went with it by `ON DELETE CASCADE` — the photo on a reported
+ * message took the attachment with it, hold or no hold (MICA-300). It is `purgeOwnedRows` now,
+ * restricted to `mica_media`: a photo under an open report stays, and so does a photo any
+ * attachment still names, since this purge never deletes from another table and the plan will
+ * not cascade into one. Those go with the character-deleted purge or the orphan sweep. What the
+ * deleted rows named on an image host is released as they go (MICA-292).
+ *
+ * Rejects when the purge could not finish, so the caller says so; each failure is logged
+ * where it happened.
  */
 export const purgeMediaForCitizen = async (citizenid: string): Promise<number> => {
   const owner = typeof citizenid === 'string' ? citizenid.trim() : '';
   if (owner.length === 0) return 0;
 
-  // Read before the delete, released after it — the same order retention uses (MICA-243).
-  // A photo under an open report is neither read nor deleted: it and its file stay as
-  // evidence until the report resolves, and the orphan sweep takes them then (MICA-292).
-  const heldCollect = openReportHold(media.resolved.table, 't');
-  const urls = await collectMediaUrls(
-    { sql: `t.\`citizenid\` = ? AND ${heldCollect.sql}`, params: [owner, ...heldCollect.params] },
-    PURGE_COLLECT_LIMIT
-  );
-  if (urls.length >= PURGE_COLLECT_LIMIT) {
-    console.warn(
-      `[micamedia] ${PURGE_COLLECT_LIMIT} or more photo URLs were collected for ${owner}; ` +
-        'some of what the deleted rows named may not have been released from the image host.'
-    );
+  const { removed, failures } = await purgeOwnedRows(owner, {
+    only: [{ table: media.resolved.table, column: 'citizenid' }],
+    purpose: 'for the media-only purge'
+  });
+  if (failures.length > 0) {
+    throw new Error(`removed ${removed} row(s), then failed on ${media.resolved.table}.`);
   }
-
-  const heldRow = openReportHold(media.resolved.table, 'mica_media');
-  const removed = affectedRows(
-    await Database.query(`DELETE FROM mica_media WHERE citizenid = ? AND ${heldRow.sql}`, [
-      owner,
-      ...heldRow.params
-    ])
-  );
-  if (urls.length > 0) await releaseHosted(urls);
   return removed;
 };
 
@@ -1422,8 +1380,9 @@ export const purgeMediaForCitizen = async (citizenid: string): Promise<number> =
  * qbx_core do not agree on what they emit when a character is deleted, and several
  * multicharacter resources emit nothing at all — registering a handler for a guessed name
  * would be cleanup that silently never runs, which reads exactly like cleanup that works.
- * A name a server owner wires up on purpose either fires or visibly does not, and the FK
- * cascade plus `pruneOrphanedMedia` cover the owner who wires up nothing.
+ * A name a server owner wires up on purpose either fires or visibly does not, and the orphan
+ * sweep at every start (`pruneOrphanedMedia` for media alone) covers the owner who wires up
+ * nothing.
  */
 on('mica:server:media:characterDeleted', (rawCitizenid: unknown) => {
   const citizenid = typeof rawCitizenid === 'string' ? rawCitizenid.trim() : '';
@@ -1431,9 +1390,8 @@ on('mica:server:media:characterDeleted', (rawCitizenid: unknown) => {
 
   void purgeMediaForCitizen(citizenid)
     .then((removed) => {
-      if (removed > 0) {
-        console.log(`[micamedia] purged ${removed} row(s) for deleted character ${citizenid}.`);
-      }
+      // Unconditionally, including zero: the reason `lib/shell.ts` gives for its own hook.
+      console.log(`[micamedia] purged ${removed} row(s) for deleted character ${citizenid}.`);
     })
     .catch((error) => {
       console.error('[micamedia] purge for a deleted character failed:', error);
@@ -1637,11 +1595,10 @@ on('onResourceStart', (resourceName: string) => {
   if (resourceName !== GetCurrentResourceName()) return;
 
   logMediaLimits();
-  // Record the host in use now, so its photos are still counted after it changes, and say
-  // whether a cascade can delete rows before their files are released (MICA-292). Both
-  // never throw.
+  // Record the host in use now, so its photos are still counted after it changes. Never
+  // throws. Whether a cascade can delete rows before their files are released is said by
+  // `Schema.ts`'s start report of keys onto players (MICA-292, MICA-300).
   void rememberImageHost(imageHost());
-  void warnIfCascadeHidesHostedPhotos(media.resolved.table);
   // Only the orphan sweep here: the retention half runs on `lib/contentRetention.ts`'s
   // schedule, which starts on this same event, and running it twice at boot buys nothing.
   void pruneOrphanedMedia()

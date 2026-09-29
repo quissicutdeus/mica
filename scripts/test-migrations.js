@@ -66,15 +66,20 @@ const EXTERNAL_DB = Boolean(DB_HOST || DB_PORT || DB_USER || DB_PASSWORD);
  * configured": a harness that returns early — a fixture that silently seeded nothing, a loop
  * over an empty list — would otherwise print a pass having checked almost nothing.
  *
- * The run currently makes **258** checks — the two `runVariant`s (17 each), the two
- * `runSweepFixtures` (17 each), the two `runNumberMigration`s (MICA-284; 21 on qb, 16 on
- * ESX), the two `runDataMigration`s (MICA-282; 38 each) and the two `runBatteryMigration`s
- * (MICA-283; 9 each), and MICA-289's `runWidenMigration` (14 on qb, 15 on ESX) with its
- * `runWidenResume` (4) and `runWidenQbWithoutKeys` (9), `runWidenUnknownFramework` (5) and `runWidenEsxWithPlayersKeys` (4) — so the margin here is eight. That is deliberately tight: losing any
- * one fixture drops below it and fails, which is the whole point. Raise the floor when you
- * add checks, rather than letting the gap widen until it stops catching anything.
+ * The run currently makes **315** checks. The last census, at 258, named each fixture: the two
+ * `runVariant`s (17 each), the two `runSweepFixtures` (17 each), the two `runNumberMigration`s
+ * (MICA-284; 21 on qb, 16 on ESX), the two `runDataMigration`s (MICA-282; 38 each), the two
+ * `runBatteryMigration`s (MICA-283; 9 each), and MICA-289's `runWidenMigration` (14 on qb, 15 on
+ * ESX) with its `runWidenResume` (4), `runWidenQbWithoutKeys` (9), `runWidenUnknownFramework`
+ * (5) and `runWidenEsxWithPlayersKeys` (4). Since then MICA-256's `runRingtoneMigration`s and
+ * others brought it to 281 while the floor stayed at 250, and MICA-300's
+ * `runPlayersKeysMigration`s (13 on qb, 11 on ESX), `runReimportOverOldSchema` (8) and
+ * `runApplyWidensEsxWithPlayersKeys` (2) to 315 — so the margin here is eight again.
+ * That is deliberately tight: losing any one fixture drops below it and fails, which is the
+ * whole point. Raise the floor when you add checks, rather than letting the gap widen until it
+ * stops catching anything.
  */
-const MINIMUM_CHECKS = 250;
+const MINIMUM_CHECKS = 307;
 let checksRun = 0;
 
 const check = (label, actual, expected) => {
@@ -239,7 +244,10 @@ const loadServerModule = async () => {
     `export { SchemaMigrator } from '${root}/server/lib/SchemaMigrator.ts';`,
     // MICA-289. 0004 and the planner decide the width from the running framework, so the
     // harness has to say which one it is standing in for, and can say "not known yet".
-    `export { setOwnerTableResolver } from '${root}/server/lib/ownerWidth.ts';`
+    `export { setOwnerTableResolver } from '${root}/server/lib/ownerWidth.ts';`,
+    // MICA-300. What `micaschema apply` runs, and the start-up report of keys onto players.
+    `export { runApply } from '${root}/server/services/Schema.ts';`,
+    `export { reportOwnerForeignKeys } from '${root}/server/lib/ownerForeignKeys.ts';`
   ].join('\n');
 
   const outfile = path.join(root, 'node_modules', '.cache', 'mica-migration-harness.mjs');
@@ -660,41 +668,24 @@ const runSweepFixtures = async ({ connection, schemaFile, hasPlayers, server }) 
 
   if (hasPlayers) {
     /**
-     * qb first, because "qb behaviour is unchanged" is the claim most worth executing.
-     *
-     * With the cascade intact there is nothing for the sweep to find — an orphan cannot even
-     * be *inserted*, since the foreign key rejects a citizenid with no `players` row. So the
-     * order here is: prove the sweep is a no-op, prove the cascade still does the work, and
-     * only then reach the state the sweep exists for.
+     * qb first, because what changed there is the claim most worth executing (MICA-300). The
+     * foreign keys onto `players` are gone, so a deleted character's rows stay where they are
+     * until the sweep decides — and an orphan can be inserted at all, which the key used to
+     * refuse.
      */
     await addOwner(gone);
     await seedSweepRows(connection, live, gone);
 
     const intact = await server.sweepOrphanedRows();
-    check(`${label}: with the cascade intact the sweep removes nothing`, intact.removed, 0);
+    check(`${label}: with both characters alive the sweep removes nothing`, intact.removed, 0);
     check(`${label}: and leaves every row where it was`, await rowsIn(connection, 'mica_notes'), 3);
 
     await connection.query(`DELETE FROM ${ownerTable} WHERE ${ownerColumn} = ?`, [gone]);
     check(
-      `${label}: the cascade still takes a deleted character's rows, unchanged`,
+      `${label}: deleting a character takes no micaOS row any more`,
       await rowsIn(connection, 'mica_notes'),
-      1
+      3
     );
-
-    /**
-     * Now the case the sweep is the backstop for on qb: an install whose tables were created
-     * before the constraint existed. `SchemaMigrator` adds columns and indexes and
-     * deliberately never adds a foreign key, so such a server keeps the shape it was made
-     * with and nothing cleans up after a deleted character — the ESX condition, arrived at
-     * from a different direction.
-     */
-    for (const [table, key] of [
-      ['mica_notes', 'fk_notes_citizenid'],
-      ['mica_contacts', 'fk_contacts_citizenid'],
-      ['mica_audit_logs', 'fk_audit_logs_citizenid']
-    ]) {
-      await connection.query(`ALTER TABLE ${table} DROP FOREIGN KEY ${key}`);
-    }
   }
 
   await seedSweepRows(connection, live, gone);
@@ -1579,7 +1570,8 @@ const runWidenMigration = async ({ connection, schemaFile, hasPlayers, server })
 
   if (hasPlayers) {
     check(`${label}: every column is still varchar(50)`, after, before);
-    check(`${label}: no foreign key onto players was lost`, keysAfter, keysBefore);
+    // 0006 runs in the same apply, after 0004 (MICA-300).
+    check(`${label}: and 0006 after it dropped every key onto players`, keysAfter, 0);
   } else {
     const expected = Object.fromEntries(
       Object.entries(before).map(([key, c]) => [key, { ...c, type: 'varchar(60)' }])
@@ -1879,7 +1871,254 @@ const runWidenEsxWithPlayersKeys = async ({ connection, server }) => {
     await signatureOf(connection, WIDEN_COLUMNS),
     before
   );
-  check(`${label}: and no key was lost`, await ownerForeignKeys(connection), keys);
+  // MICA-300: 0006 runs after 0004 in the same apply and drops the keys, but 0004 has already
+  // been recorded, so these columns stay 50 wide. A known gap, reported with the ticket.
+  check(`${label}: and 0006 then dropped the keys`, await ownerForeignKeys(connection), 0);
+};
+
+/* ----------------------------- MICA-300: the players cascade is dropped */
+
+const KEYS_MIGRATION = '0006_players_foreign_keys_dropped';
+
+/** Every foreign key between two micaOS tables: what 0006 must leave exactly as it was. */
+const ownForeignKeys = async (connection) => {
+  const [rows] = await connection.query(
+    `SELECT table_name AS t, constraint_name AS c, referenced_table_name AS r
+       FROM information_schema.REFERENTIAL_CONSTRAINTS
+      WHERE constraint_schema = DATABASE() AND referenced_table_name <> 'players'
+      ORDER BY table_name, constraint_name`
+  );
+  return rows.map((row) => `${row.t}.${row.c} -> ${row.r}`);
+};
+
+/**
+ * 0006, run for real on a database created before it: the frozen pre-0004 schema, whose qb file
+ * carries `REFERENCES players(citizenid) ON DELETE CASCADE` on every table and whose ledger knows
+ * neither 0004, 0005 nor 0006. One key is renamed first, as a restore or a hand-made table
+ * might have it, so the migration is shown to find keys by what they reference.
+ *
+ * On qb: every key onto `players` goes, every key between micaOS tables stays, deleting a
+ * `players` row then leaves micaOS's rows in place, and a second apply changes nothing. On
+ * ESX: nothing to drop, and nothing moves.
+ */
+const runPlayersKeysMigration = async ({ connection, schemaFile, hasPlayers, server }) => {
+  const variant = hasPlayers ? 'qb' : 'esx';
+  const label = `${schemaFile} players keys`;
+  step(`${schemaFile} — MICA-300 ${KEYS_MIGRATION}, on a pre-0006 ${variant} database`);
+
+  await freshPreWidenDatabase({
+    connection,
+    schemaFile,
+    hasPlayers,
+    name: `keys_${variant}`,
+    extra: hasPlayers ? '' : USERS_TABLE
+  });
+  check(
+    `${label}: the fixture's ledger does not know 0006`,
+    await scalar(connection, 'SELECT COUNT(*) FROM mica_schema_migrations WHERE id = ?', [
+      KEYS_MIGRATION
+    ]),
+    0
+  );
+  const own = await ownForeignKeys(connection);
+  check(`${label}: micaOS's own keys are there to keep`, own.length > 10, true);
+  const before = await ownerForeignKeys(connection);
+  if (hasPlayers) {
+    check(`${label}: the fixture has keys onto players`, before > 20, true);
+    await connection.query(
+      'ALTER TABLE mica_notes DROP FOREIGN KEY fk_notes_citizenid, ' +
+        'ADD CONSTRAINT restored_by_hand FOREIGN KEY (citizenid) ' +
+        'REFERENCES players (citizenid) ON DELETE CASCADE'
+    );
+    check(
+      `${label}: one renamed by hand, as a restore might`,
+      await ownerForeignKeys(connection),
+      before
+    );
+    await connection.query('INSERT INTO players (citizenid) VALUES (?)', ['CIT_KEYS']);
+    await connection.query('INSERT INTO mica_notes (citizenid, title) VALUES (?, ?)', [
+      'CIT_KEYS',
+      'kept'
+    ]);
+  } else {
+    check(`${label}: the fixture has no key onto players`, before, 0);
+  }
+
+  runningFramework(server, hasPlayers);
+  const run = await server.runPendingMigrations();
+  check(
+    `${label}: 0006 applied and nothing failed`,
+    [run.applied.includes(KEYS_MIGRATION), run.failed, run.remaining],
+    [true, null, []]
+  );
+  check(`${label}: no key onto players is left`, await ownerForeignKeys(connection), 0);
+  check(`${label}: every key between micaOS tables is kept`, await ownForeignKeys(connection), own);
+
+  const additive = await server.SchemaMigrator.apply();
+  check(`${label}: the additive pass after it fails nothing`, additive.failed, null);
+  const plans = await server.SchemaMigrator.plan();
+  check(
+    `${label}: and the planner finds nothing to add and no drift`,
+    plans.flatMap((p) => [...p.additive, ...p.drift]),
+    []
+  );
+
+  if (hasPlayers) {
+    await connection.query('DELETE FROM players WHERE citizenid = ?', ['CIT_KEYS']);
+    check(
+      `${label}: deleting the players row now takes no micaOS row`,
+      await rowsIn(connection, 'mica_notes'),
+      1
+    );
+  }
+
+  const second = await server.runPendingMigrations();
+  check(
+    `${label}: a second apply changes nothing`,
+    [second.applied, second.failed, await ownerForeignKeys(connection)],
+    [[], null, 0]
+  );
+  check(`${label}: and keeps micaOS's own keys`, await ownForeignKeys(connection), own);
+
+  // Run it once more by hand, as a retry after a failed ledger write would.
+  const zeroSix = server.migrations.find((m) => m.id === KEYS_MIGRATION);
+  await zeroSix.up();
+  check(
+    `${label}: and its up() on a database it already ran on is a no-op`,
+    [await ownerForeignKeys(connection), await ownForeignKeys(connection)],
+    [0, own]
+  );
+};
+
+/**
+ * Run `fn` with the console captured, answering its lines alongside its result.
+ */
+const captured = async (fn) => {
+  const lines = [];
+  const { log, warn, error } = console;
+  const keep =
+    (sink) =>
+    (...parts) => {
+      lines.push(parts.map((p) => (p instanceof Error ? p.message : String(p))).join(' '));
+      sink(...parts);
+    };
+  console.log = keep(log);
+  console.warn = keep(warn);
+  console.error = keep(error);
+  try {
+    return { result: await fn(), lines };
+  } finally {
+    console.log = log;
+    console.warn = warn;
+    console.error = error;
+  }
+};
+
+/**
+ * MICA-300's must-fix, from review: the migrations ledger is not evidence the keys are gone. An
+ * owner re-imports the current `mica.sql` over an existing qb database: every `CREATE TABLE IF
+ * NOT EXISTS` keeps the old table, keys onto `players` and all, while the ledger seed records
+ * 0006 as applied. So start reports the keys whatever the ledger says, and `micaschema apply`
+ * drops them whatever the ledger says; a second apply and the next start are then quiet.
+ */
+const runReimportOverOldSchema = async ({ connection, server }) => {
+  const label = 'mica.sql re-imported over a pre-0006 qb database';
+  step(label);
+
+  const database = 'mica_reimport';
+  await connection.query(`DROP DATABASE IF EXISTS \`${database}\``);
+  await connection.query(`CREATE DATABASE \`${database}\``);
+  await connection.changeUser({ database });
+  await connection.query(PLAYERS_TABLE);
+  await connection.query(
+    fs.readFileSync(path.join(root, 'scripts', 'fixtures', 'pre-0006', 'mica.sql'), 'utf8')
+  );
+  await connection.query(fs.readFileSync(path.join(root, 'mica.sql'), 'utf8'));
+  await connection.query('INSERT INTO players (citizenid) VALUES (?)', ['CIT_RE']);
+  await connection.query('INSERT INTO mica_notes (citizenid, title) VALUES (?, ?)', [
+    'CIT_RE',
+    'kept'
+  ]);
+  const own = await ownForeignKeys(connection);
+
+  const keys = await ownerForeignKeys(connection);
+  check(`${label}: the keys onto players survive the re-import`, keys > 20, true);
+  check(
+    `${label}: while the ledger says 0006 is done`,
+    await scalar(connection, 'SELECT COUNT(*) FROM mica_schema_migrations WHERE id = ?', [
+      KEYS_MIGRATION
+    ]),
+    1
+  );
+
+  const start = await captured(() => server.reportOwnerForeignKeys());
+  const loud = start.lines.find((line) => line.includes('foreign key(s)'));
+  check(
+    `${label}: start says so, with the count and the remedy`,
+    [
+      start.result,
+      Boolean(loud?.includes(`${keys} foreign key(s)`)),
+      Boolean(loud?.includes('micaschema apply'))
+    ],
+    [keys, true, true]
+  );
+
+  runningFramework(server, true);
+  const apply = await captured(() => server.runApply(0));
+  check(
+    `${label}: apply drops them anyway, and fails nothing`,
+    [await ownerForeignKeys(connection), apply.lines.filter((line) => /failed/.test(line))],
+    [0, []]
+  );
+  check(
+    `${label}: and keeps every key between micaOS tables`,
+    await ownForeignKeys(connection),
+    own
+  );
+
+  await connection.query('DELETE FROM players WHERE citizenid = ?', ['CIT_RE']);
+  check(
+    `${label}: deleting the players row then takes no micaOS row`,
+    await rowsIn(connection, 'mica_notes'),
+    1
+  );
+
+  const again = await captured(() => server.runApply(0));
+  check(
+    `${label}: a second apply is a no-op`,
+    [
+      again.lines.some((line) => line.includes('schema is already up to date')),
+      await ownerForeignKeys(connection)
+    ],
+    [true, 0]
+  );
+  const quiet = await captured(() => server.reportOwnerForeignKeys());
+  check(`${label}: and start is quiet`, [quiet.result, quiet.lines], [0, []]);
+};
+
+/**
+ * MICA-300: `micaschema apply` drops the keys onto `players` before any migration, so on an ESX
+ * server whose tables came from `mica.sql` by mistake, 0004 finds none and widens — where run
+ * through the migrations alone (`runWidenEsxWithPlayersKeys`) it has to leave every column 50.
+ */
+const runApplyWidensEsxWithPlayersKeys = async ({ connection, server }) => {
+  const label = 'micaschema apply on an ESX server whose tables carry players keys';
+  step(label);
+  await freshPreWidenDatabase({
+    connection,
+    schemaFile: 'mica.sql',
+    hasPlayers: true,
+    name: 'esx_fk_apply'
+  });
+  check(`${label}: the keys are there`, (await ownerForeignKeys(connection)) > 0, true);
+  runningFramework(server, false);
+  await captured(() => server.runApply(0));
+  const widths = Object.values(await signatureOf(connection, WIDEN_COLUMNS)).map((c) => c.type);
+  check(
+    `${label}: the keys are gone, and 0004 widened every column`,
+    [await ownerForeignKeys(connection), widths.every((t) => t === 'varchar(60)')],
+    [0, true]
+  );
 };
 
 const main = async () => {
@@ -1990,6 +2229,17 @@ const main = async () => {
       hasPlayers: false,
       server
     });
+
+    // MICA-300. From the frozen pre-0004 schema too: the qb file there still has the keys.
+    await runPlayersKeysMigration({ connection, schemaFile: 'mica.sql', hasPlayers: true, server });
+    await runPlayersKeysMigration({
+      connection,
+      schemaFile: 'mica.esx.sql',
+      hasPlayers: false,
+      server
+    });
+    await runReimportOverOldSchema({ connection, server });
+    await runApplyWidensEsxWithPlayersKeys({ connection, server });
 
     if (checksRun < MINIMUM_CHECKS) {
       throw new Error(

@@ -196,10 +196,10 @@ const serving = (can: (adapter: FrameworkAdapter) => boolean): FrameworkAdapter 
  * `utf8mb4_uca1400_ai_ci` — and a **column-to-column** comparison, unlike one against a bound
  * parameter, has no coercible side to settle on.
  *
- * That is exactly the hazard `collationCheck.ts` was written for in MICA-157, and its
- * reasoning explicitly exempts ESX: no `players` table, no foreign key, nothing to check. A
- * join would have quietly reintroduced the requirement on the one install path nothing
- * verifies it on.
+ * Nothing requires the two collations to agree any more: MICA-157's check that they did
+ * existed for qb's foreign keys onto `players`, and MICA-300 removed both the keys and the
+ * check. A join would have quietly reintroduced the requirement, on every framework, with
+ * nothing to verify it.
  *
  * `COLLATE` in the join condition makes the statement legal and stops the index on
  * `users.identifier` being usable, which trades a correctness bug for a full scan of the
@@ -320,9 +320,9 @@ export class FrameworkBridge {
    * which from MariaDB 11.4 is `utf8mb4_uca1400_ai_ci`. A column-to-column comparison
    * across two collations is MySQL errno 1267 — verified against a throwaway MariaDB 11.8
    * loaded with `mica.esx.sql` — where a comparison against a parameter has a coercible
-   * side and settles. `collationCheck.ts` (MICA-157) exists for that hazard and
-   * explicitly exempts ESX on the grounds that nothing there joins to `users`. This is what
-   * keeps that true.
+   * side and settles. The one column-to-column comparison micaOS does make, the orphan
+   * sweep's, collates micaOS's side into the owner's (MICA-299); nothing else joins to the
+   * character table, and this is what keeps that true.
    */
   public static async findOfflineByCitizenIds(
     citizenids: readonly string[]

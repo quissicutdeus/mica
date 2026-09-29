@@ -9,9 +9,9 @@ import { Database } from './Database';
  *
  * The problem this solves: with one character on a dev server there is nobody to text.
  * `conversations:create` resolves a phone number to a `citizenid` and gives up
- * when it cannot, and `mica_messages_participants.citizenid` is a foreign key onto
- * `players` — so a conversation counterpart has to be a real row in `players`, not a
- * made-up string.
+ * when it cannot — so a conversation counterpart has to be a real row in `players`, not a
+ * made-up string, or the lookup finds nobody and the start-up sweep would take its rows as
+ * an orphan's.
  *
  * So the seed creates characters. They are marked by their license (`SEED_LICENSE`) and
  * by a `citizenid` prefix, which is what lets `clearSeed` find and remove exactly its own
@@ -60,7 +60,7 @@ const findByCitizenId = async (citizenid: string): Promise<number | null> => {
  * Create the seed characters in `players`.
  *
  * Only the NOT NULL columns are populated. These are not playable characters — they exist
- * so the foreign keys hold and so phone lookups resolve.
+ * so phone lookups resolve and the orphan sweep sees an owner.
  */
 const createCharacters = async (): Promise<void> => {
   for (const character of SEED_CHARACTERS) {

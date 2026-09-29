@@ -640,44 +640,49 @@ Every micaOS-owned table is now declared. `server/repositories/` holds
 declaration owns the schema, the subclass owns the joins the single-table
 generic path cannot express.
 
-### The owner column must share micaOS's collation
+### The owner column need not share micaOS's collation
 
 Every micaOS table is created `COLLATE = utf8mb4_unicode_ci` (`TABLE_COLLATION`
 in `server/lib/schemaSql.ts`). The framework's owner column —
-`players.citizenid` on qb, `users.identifier` on ESX — must carry the same one,
-and neither framework guarantees it: both create the column with no explicit
-collation, so it takes the server default, which MariaDB 11.4 moved to
-`utf8mb4_uca1400_ai_ci`.
+`players.citizenid` on qb, `users.identifier` on ESX — often does not carry the
+same one: both frameworks create it with no explicit collation, so it takes the
+server default, which MariaDB 11.4 moved to `utf8mb4_uca1400_ai_ci`.
 
-What breaks differs by framework, which is why the exemption ESX used to have
-was wrong. On qb the foreign keys onto `players(citizenid)` fail at DDL time
-with errno 150. On ESX nothing points a foreign key at `users`, so the import
-succeeds — and a **column-to-column join**
-(`LEFT JOIN users ON users.identifier = p.citizenid`) fails at query time with
-errno 1267 "Illegal mix of collations" instead. A comparison against a **bound
-parameter** is safe on either: the parameter has no collation of its own and is
-coerced to the column's. That is why `PlayerDirectory` looks names up by
-parameter and `ConversationRepository.findParticipantsForConversations`
-deliberately does not join the character table.
+Nothing depends on them matching any more. micaOS declares **no foreign key onto
+the framework's table** on either framework (MICA-300): on qb the `players`
+cascades used to fail at DDL time with errno 150 on a mismatch, and worse, took
+a deleted character's rows inside the database before any evidence hold could
+apply; migration `0006_players_foreign_keys_dropped` removes them from existing
+installs. Every comparison against the owner table is either against a **bound
+parameter**, which has no collation of its own and is coerced to the column's
+(`PlayerDirectory` looks names up that way, and
+`ConversationRepository.findParticipantsForConversations` deliberately does not
+join the character table), or the orphan sweep's, which reads the owner column's
+charset and collation from `information_schema` once per sweep and converts
+micaOS's side to them —
+`ow.<column> = CONVERT(t.citizenid USING <cs>) COLLATE <coll>` — leaving the
+owner column bare so its primary key still serves each lookup (MICA-299). A
+collation it cannot read, or a name that is not a plain identifier, refuses the
+sweep as `owner-unreadable` rather than guessing. So there is no collation check
+before `micaschema apply` any more. **A new column-to-column join against
+`players` or `users` must collate the same way**, or it fails with errno 1267
+"Illegal mix of collations" on exactly the servers that have been fine so far.
 
-The one column-to-column comparison against the owner table is the orphan sweep
-(`server/lib/orphanSweep.ts`), and it does not depend on the collations matching
-(MICA-299): it reads the owner column's charset and collation from
-`information_schema` once per sweep and converts micaOS's side to them —
-`p.identifier = CONVERT(t.citizenid USING <cs>) COLLATE <coll>` — leaving the
-owner column bare so its primary key still serves each lookup. A collation it
-cannot read, or a name that is not a plain identifier, refuses the sweep as
-`owner-unreadable` rather than guessing.
+### Who cleans up after a deleted character
 
-So `micaschema apply` checks first (`server/lib/collationCheck.ts`, MICA-157)
-only where a mismatch breaks DDL: it probes `players.citizenid` and refuses to
-apply if its live collation disagrees with micaOS's — naming the table, both
-collations, and errno 150. It compares against a live micaOS `citizenid` column
-where one exists and `TABLE_COLLATION` otherwise. `users.identifier` is no
-longer probed (MICA-299 retired MICA-200's check): nothing joins it except the
-collation-independent sweep, so a stock ESX server on MariaDB 11.4's default
-collation is not refused. A new column-to-column join against `users` must
-either collate the same way or restore that probe.
+With no foreign key onto the framework's table, micaOS removes a deleted
+character's rows itself, in two places: the local server event
+`mica:server:shell:characterDeleted` (fired by an owner's deletion flow), and
+the orphan sweep at every resource start, which removes rows whose owner no
+longer exists. Both go through the cascade-safe plan in
+`server/lib/orphanSweep.ts` (MICA-168, MICA-300): the character's own rows go,
+but anything under an open report and what hangs off it (attachments, replies,
+photos), and any row another player's rows still reference, survive — the
+foreign keys _between_ micaOS's own tables still cascade, so a parent is only
+deleted when nothing it would take with it has to stay. Two accountability
+records outlive the character: reports they filed that staff have not resolved
+(which go on holding what they reported, and go on the next sweep once resolved)
+and their rows in the audit ledger, which are never swept.
 
 ### Never read another resource's tables
 

@@ -68,8 +68,9 @@ const nameFromCharinfo = (charinfo: unknown): string | null => {
  * Returns null rather than guessing. The code this replaces had a real defect worth naming: on
  * a framework object with no `PlayerData` it did `targetCitizenId = targetPlayer.phone_number`
  * — assigning a **phone number to a citizenid**. That value then went into
- * `mica_messages_participants.citizenid`, which is a foreign key onto `players`, so the
- * write either failed or created a participant keyed to something that is not a person.
+ * `mica_messages_participants.citizenid`, and created a participant keyed to something that
+ * is not a person — or, while that column had a foreign key onto `players` (before
+ * MICA-300), failed outright.
  */
 export async function resolveByPhone(phone: string): Promise<DirectoryEntry | null> {
   if (!phone) return null;

@@ -296,32 +296,17 @@ source" below, which is for changing the phone rather than running it.
    fix and costs nothing — every statement is `CREATE TABLE IF NOT EXISTS`. The
    error is easy to misread as a broken file; it is a missing prerequisite.
 
-   **The framework's `players` table also has to share micaOS's collation.**
-   `mica.sql` creates every table `COLLATE = utf8mb4_unicode_ci`, and a foreign
-   key requires both sides of the relationship to collate the same way. MariaDB
-   11.4 and newer changed its own default `utf8mb4` collation to
-   `utf8mb4_uca1400_ai_ci`, so a `players` table created without an explicit
-   collation on a recent MariaDB mismatches micaOS's, and the import fails
-   partway through — some tables created, then a hard stop — with:
+   **micaOS declares no foreign key onto `players`** (MICA-300), so the
+   framework's table does not have to share micaOS's collation, and a `players`
+   table on MariaDB 11.4's default `utf8mb4_uca1400_ai_ci` installs and applies
+   fine. `mica.sql` still checks that `players` exists before it creates
+   anything, so importing it into an ESX database fails at once rather than
+   quietly creating columns too narrow for ESX identifiers.
 
-   ```text
-   errno: 150 "Foreign key constraint is incorrectly formed"
-   ```
-
-   That message names neither collation nor `players`, which is what makes it
-   worth searching for. The fix is to recreate (or
-   `ALTER ... CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`) the
-   framework's `players` table so it collates `utf8mb4_unicode_ci` before
-   re-running `mica.sql`. `micaschema apply` checks for this same mismatch
-   itself before touching the database, and refuses with a message naming the
-   actual table and both actual collations rather than letting this error
-   surface unexplained a second time.
-
-   **`mica.esx.sql` carries none of those foreign keys**, because ESX has no
-   `players` table to point them at — it identifies players in `users`, by
-   `identifier`. It therefore has no prerequisite beyond an empty database, and
-   no cascade either. What that costs you is under **Housekeeping on ESX**
-   below, and it is the one thing on this page an ESX operator should not skip.
+   **`mica.esx.sql` is for ESX**, which identifies players in `users`, by
+   `identifier`, rather than in `players`. It has no prerequisite beyond an
+   empty database. Cleanup after a deleted character works the same on both; see
+   **Housekeeping on ESX** below.
 
    It is **generated** by `pnpm generate:sql` from each app's `defineService`
    declaration, which is the single source of truth: the same declaration drives
@@ -329,14 +314,19 @@ source" below, which is for changing the phone rather than running it.
    hand-maintained copy of the DDL would not just drift, it would quietly weaken
    that guard.
 
-   Every statement is `CREATE TABLE IF NOT EXISTS`, so re-importing is harmless
-   — and does nothing to a table that already exists. micaOS applies no schema
-   changes automatically: `micaschema` in the server console reports any
-   difference between the database and what the code expects, and
-   `micaschema apply` — console-only — applies the safe, additive half of that
-   difference plus any pending versioned migration. A rename, a retype or a drop
-   still needs its migration written and reviewed first; `apply` only ever runs
-   migrations that already exist in `server/migrations/`.
+   Every statement is `CREATE TABLE IF NOT EXISTS`, so re-importing creates any
+   missing table and does nothing to one that already exists — which also means
+   it does not upgrade one. **Re-importing is not a substitute for
+   `micaschema apply`:** it records the shipped migrations as done without
+   running them against your existing tables. `apply` removes the old foreign
+   keys onto `players` whatever that record says (MICA-300), and the console
+   warns at every start while any remain. micaOS applies no schema changes
+   automatically: `micaschema` in the server console reports any difference
+   between the database and what the code expects, and `micaschema apply` —
+   console-only — applies the safe, additive half of that difference plus any
+   pending versioned migration. A rename, a retype or a drop still needs its
+   migration written and reviewed first; `apply` only ever runs migrations that
+   already exist in `server/migrations/`.
 
    **Resetting the schema during development:** `pnpm generate:sql:reset`
    additionally writes `sql/dev-reset.sql`, which **drops every `mica_`-prefixed
@@ -388,12 +378,16 @@ filled.
 one per character, so every character a player has shares one phone: one contact
 list, one inbox, one gallery. This is intended.
 
-**Cleanup after a deleted character is an orphan sweep here, not a cascade.** On
-a qb core the `ON DELETE CASCADE` above clears twenty-two tables for free.
-`mica.esx.sql` has no cascade — there is no `players` table to point one at — so
-on ESX the sweep at every resource start is the whole mechanism rather than a
-backstop. It asks `users(identifier)` who exists and deletes the rows belonging
-to characters who do not.
+**Cleanup after a deleted character is micaOS's job, on every framework.**
+Nothing in the database removes micaOS's rows when a character is deleted —
+there is no foreign key onto `players` or `users` (MICA-300). Two things do: the
+server event `mica:server:shell:characterDeleted`, if your deletion flow fires
+it, and the sweep at every resource start, which asks the framework's table
+(`users(identifier)` on ESX, `players(citizenid)` on qb) who exists and deletes
+the rows belonging to characters who do not. Both keep anything under an open
+report, what hangs off it (attachments, replies, photos), and anything another
+player's rows still reference; a deleted character's reports that staff have not
+resolved, and their audit-log entries, are kept too.
 
 **It refuses to run rather than guess, and you will see it say so.** Treating an
 owner table it cannot read as "everybody is an orphan" would delete your
@@ -1100,33 +1094,24 @@ the convar is invisible until the resource restarts.
   how many of its files no longer belong to any row, and removing them there is
   up to you.
 
-  **A character your framework deletes on qb takes their photo rows with it
-  before micaOS can see them.** The `ON DELETE CASCADE` below runs inside the
-  database, so the files those rows named stay on the host, publicly reachable
-  at their URLs, and nothing is left for micaOS to find them by. If your
-  deletion flow triggers `mica:server:shell:characterDeleted` **before** it
-  deletes the character, micaOS deletes the rows and releases the files itself,
-  and the cascade then has nothing left to take. With an image host set, the
-  console warns about this at every start while the cascade exists.
+  **Run `micaschema apply` on qb if you have not since MICA-300.** Until
+  migration 0006 has run, the old `ON DELETE CASCADE` onto `players` removes a
+  deleted character's photo rows inside the database, so the files they named
+  stay on the host and nothing is left for micaOS to find them by. With an image
+  host set, the console warns about this at every start while that constraint
+  exists.
 
 Two things about media storage that are not convars, since this is where you
 will be looking if the table is bigger than you expected. micaOS removes a
-deleted character's photos in three ways, in this order: on a qb core the table
-is created with `ON DELETE CASCADE` onto `players`, so a framework that removes
-the character's row takes the photos with it; a sweep at every resource start
-deletes rows whose owner no longer exists, which covers an install whose table
-predates that constraint; and a deletion script of your own can trigger the
-server event `mica:server:shell:characterDeleted` with a citizenid to reclaim
-the space immediately, across every table rather than photos alone.
-`mica:server:media:characterDeleted` does the same for media only and is
-unchanged. Both are local events — another server resource can fire them, a game
-client cannot.
-
-**On ESX the first of those does not exist and the other two do.**
-`mica.esx.sql` has no cascade to carry the photos out, because there is no
-`players` table to point one at, so the start-up sweep is the mechanism rather
-than a backstop: it asks `users(identifier)` who exists and removes the rows of
-characters who do not.
+deleted character's photos in two ways: a sweep at every resource start deletes
+rows whose owner no longer exists, and a deletion script of your own can trigger
+the server event `mica:server:shell:characterDeleted` with a citizenid to
+reclaim the space immediately, across every table rather than photos alone.
+`mica:server:media:characterDeleted` does the same for photos only, and removes
+only photos that are neither under an open report nor attached to a message,
+post or listing; attached ones go with the full purge. Both are local events —
+another server resource can fire them, a game client cannot. Neither ever takes
+a photo under an open report, or one another player's rows still use.
 
 **The sweep refuses rather than guesses.** It skips, and logs which of these it
 hit, whenever it cannot prove what it is about to delete: no framework has

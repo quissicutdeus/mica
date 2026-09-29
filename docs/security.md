@@ -672,17 +672,18 @@ by this list until someone re-weighs it.
   someone else issued, and the import ledger (without it a re-run of
   `micaimport` restores what was deleted); nor the device's own phone, number,
   battery and lock, which a delete while the player is online would desync. The
-  reply counts what was kept. Deleting the character still removes everything;
-  that path does not yet follow the cascades (MICA-300). The export withholds
-  credential columns (the lock-screen passcode hash and salt), columns naming
-  another player (a report's target and preview, an invoice's payee, a
-  conversation's other party), and the audit ledger, whose rows carry what
-  admins read of other players; media bytes become their size. Each owned
-  table's exported columns are pinned by a test, so exposing a new column is a
-  decision, not a default. Both actions are audit-logged with counts and no
-  content, and an export is never posted to the staff Discord. The rate limits
-  (a few exports a minute, one completed delete an hour) are in memory, so a
-  resource restart resets them.
+  reply counts what was kept. Deleting the character removes the rest of those
+  too, through the same cascade-safe plan since MICA-300, but keeps the
+  character's pending reports and audit rows. The export withholds credential
+  columns (the lock-screen passcode hash and salt), columns naming another
+  player (a report's target and preview, an invoice's payee, a conversation's
+  other party), and the audit ledger, whose rows carry what admins read of other
+  players; media bytes become their size. Each owned table's exported columns
+  are pinned by a test, so exposing a new column is a decision, not a default.
+  Both actions are audit-logged with counts and no content, and an export is
+  never posted to the staff Discord. The rate limits (a few exports a minute,
+  one completed delete an hour) are in memory, so a resource restart resets
+  them.
 - **A hosted photo can outlive its character when the database deletes the rows
   (MICA-292).** With an image host configured (MICA-243), a photo is a public
   URL, so a file left behind is a privacy leak and not just a storage bill.
@@ -693,23 +694,24 @@ by this list until someone re-weighs it.
   The purges and the sweep also keep any row under an open report, and its file,
   by retention's own predicate (`openReportHold`), so deleting a character
   cannot destroy reported evidence; the next orphan sweep takes it once the
-  report resolves. Two cases are accepted rather than closed. **The
-  `ON DELETE CASCADE` from `players`** on qb removes a character's `mica_media`
-  rows inside MariaDB when the framework deletes the character; micaOS runs no
-  code and sees no URL, and afterwards nothing names the file, so finding it
-  would take a listing API on the host, which `mica_media_upload_url` does not
-  promise, or a separate record of every uploaded URL, which would be a schema
-  change. The mitigation is ordering, the owner's to choose: trigger
-  `mica:server:shell:characterDeleted` before the framework deletes the
-  character. A resource-start warning says so whenever an image host is set and
-  `mica_media` carries a cascading constraint
-  (`warnIfCascadeHidesHostedPhotos`). **A former image host's files** are
-  recognised by a host record micaOS writes to `mica_schema_migrations` when it
-  uploads and at start, counted and logged by host when their last row goes, and
-  never deleted: the configured delete URL is the current host's, and guessing
-  another host's is how an unrelated file gets deleted. A host that was replaced
-  before that record existed is not recognised at all. The log gives a host and
-  a count, never the URLs.
+  report resolves. All three go through the cascade-safe plan (MICA-300), so a
+  photo an attachment of a held post or message still names is kept with it.
+  **The `ON DELETE CASCADE` from `players` on qb is gone** (migration 0006,
+  MICA-300): it removed a character's rows inside MariaDB when the framework
+  deleted the character, with no hold and no URL for micaOS to release. The
+  property is checked against `information_schema`, never the migration ledger
+  (`server/lib/ownerForeignKeys.ts`): re-importing `mica.sql` records 0006 as
+  applied while every `CREATE TABLE IF NOT EXISTS` keeps the old keys, so
+  `micaschema apply` drops any it finds as its first step whatever the ledger
+  says, and every resource start logs an error naming the tables while any
+  remain, or a warning when it cannot tell. One case is accepted rather than
+  closed. **A former image host's files** are recognised by a host record micaOS
+  writes to `mica_schema_migrations` when it uploads and at start, counted and
+  logged by host when their last row goes, and never deleted: the configured
+  delete URL is the current host's, and guessing another host's is how an
+  unrelated file gets deleted. A host that was replaced before that record
+  existed is not recognised at all. The log gives a host and a count, never the
+  URLs.
 
 ---
 

@@ -45,8 +45,7 @@ import {
   rememberImageHost,
   reportRelease,
   resetMediaHostForTests,
-  uploadImage,
-  warnIfCascadeHidesHostedPhotos
+  uploadImage
 } from '../lib/mediaHost';
 import { purgeOwnedRows, sweepOrphanedRows } from '../lib/orphanSweep';
 import { resetRetentionForTests } from '../lib/contentRetention';
@@ -98,6 +97,7 @@ const logged = (): string =>
 interface Row {
   url: string;
   reported?: boolean;
+  id?: number;
 }
 
 /** Whether a statement carries retention's open-report hold on the row (MICA-167). */
@@ -113,8 +113,18 @@ const holdsReports = (sql: string) =>
  * ledger has recorded `old.example.test` as an image host. Answers the live rows.
  */
 const mediaRows = (input: (string | Row)[], options: { collectFails?: boolean } = {}) => {
-  const rows: Row[] = input.map((r) => (typeof r === 'string' ? { url: r } : r));
-  const matched = (sql: string) => rows.filter((r) => !(r.reported && holdsReports(sql)));
+  const rows: Row[] = input.map((r, i) => ({
+    id: i + 1,
+    ...(typeof r === 'string' ? { url: r } : r)
+  }));
+  // The purge and the sweep plan by id and then name those ids (MICA-168, MICA-300); the
+  // media-only purge names none and takes every row it matches.
+  const matched = (sql: string, params: unknown[] = []) => {
+    const ids = new Set(params.filter((p) => typeof p === 'number'));
+    return rows.filter(
+      (r) => (ids.size === 0 || ids.has(r.id!)) && !(r.reported && holdsReports(sql))
+    );
+  };
   dbMock.single.mockImplementation(async (sql: string) => {
     if (sql.includes('AS total')) return { total: 120 };
     if (sql.includes('AS matched')) return { matched: 3 };
@@ -126,9 +136,17 @@ const mediaRows = (input: (string | Row)[], options: { collectFails?: boolean } 
   });
   dbMock.scalar.mockResolvedValue(null);
   dbMock.query.mockImplementation(async (sql: string, params: unknown[] = []) => {
+    if (sql.includes('AS `go`') && sql.includes('FROM mica_media t')) {
+      return rows.map((r) => ({
+        id: r.id,
+        go: r.reported ? 0 : 1,
+        held: r.reported ? 1 : 0,
+        ex: 0
+      }));
+    }
     if (isCollect(sql)) {
       if (options.collectFails) throw new Error('collect failed');
-      return matched(sql).map(({ url }) => ({ url }));
+      return matched(sql, params).map(({ url }) => ({ url }));
     }
     if (isReferenceCheck(sql)) {
       const live = new Set([SHARED, ...rows.map((r) => r.url)]);
@@ -137,7 +155,7 @@ const mediaRows = (input: (string | Row)[], options: { collectFails?: boolean } 
     if (isLedgerRead(sql)) return [{ id: 'mediahost:old.example.test' }];
     if (sql.startsWith('SELECT DISTINCT')) return [{ owner: 'CID_A' }];
     if (sql.startsWith('DELETE FROM mica_media')) {
-      const gone = matched(sql);
+      const gone = matched(sql, params);
       for (const row of gone) rows.splice(rows.indexOf(row), 1);
       return { affectedRows: gone.length };
     }
@@ -147,7 +165,8 @@ const mediaRows = (input: (string | Row)[], options: { collectFails?: boolean } 
   return rows;
 };
 
-const isMediaPurge = (sql: string) => sql.startsWith('DELETE FROM mica_media WHERE citizenid = ?');
+const isMediaPurge = (sql: string) =>
+  sql.startsWith('DELETE FROM mica_media WHERE mica_media.`citizenid` = ?');
 
 const requested = (): string[] => fetchMock.mock.calls.map((call: any[]) => String(call[0]));
 
@@ -184,7 +203,8 @@ describe('shell:characterDeleted releases the character’s hosted photos', () =
     expect(collect).toBeGreaterThanOrEqual(0);
     expect(collect).toBeLessThan(remove);
     expect(remove).toBeLessThan(check);
-    expect(dbMock.query.mock.calls[collect][1]).toEqual(['CID_Z', 'mica_media']);
+    // Bound by the character, then by the planned id, then the report hold's table.
+    expect(dbMock.query.mock.calls[collect][1]).toEqual(['CID_Z', 1, 'mica_media']);
     expect(requested()).toEqual(['https://api.example.test/files/mine.webp']);
   });
 
@@ -231,8 +251,8 @@ describe('the orphan sweep releases what the swept rows named', () => {
     expect(collect).toBeGreaterThanOrEqual(0);
     expect(collect).toBeLessThan(remove);
     expect(all[collect]).toContain(
-      'NOT EXISTS (SELECT 1 FROM players p WHERE p.citizenid = ' +
-        'CONVERT(t.citizenid USING utf8mb4) COLLATE utf8mb4_unicode_ci)'
+      'NOT EXISTS (SELECT 1 FROM players ow WHERE ow.citizenid = ' +
+        'CONVERT(t.`citizenid` USING utf8mb4) COLLATE utf8mb4_unicode_ci)'
     );
     // Only the file nothing else names.
     expect(requested()).toEqual(['https://api.example.test/files/mine.webp']);
@@ -441,41 +461,5 @@ describe('recording which hosts were image hosts', () => {
     await rememberImageHost(null);
 
     expect(dbMock.query).not.toHaveBeenCalled();
-  });
-});
-
-describe('the cascade micaOS cannot see', () => {
-  it('warns at start when mica_media cascades and there is an image host', async () => {
-    dbMock.query.mockResolvedValue([{ n: 1 }]);
-
-    expect(await warnIfCascadeHidesHostedPhotos('mica_media')).toBe(true);
-
-    const [sql, params] = dbMock.query.mock.calls[0];
-    expect(String(sql)).toContain('information_schema.REFERENTIAL_CONSTRAINTS');
-    expect(String(sql)).toContain("`DELETE_RULE` = 'CASCADE'");
-    expect(params).toEqual(['mica_media']);
-    expect(logged()).toMatch(/ON DELETE CASCADE/);
-    expect(logged()).toContain(SHELL_CHARACTER_DELETED);
-  });
-
-  it('is quiet without a cascade', async () => {
-    dbMock.query.mockResolvedValue([{ n: 0 }]);
-
-    expect(await warnIfCascadeHidesHostedPhotos('mica_media')).toBe(false);
-    expect(logged()).toBe('');
-  });
-
-  it('asks nothing when no image host is configured', async () => {
-    withConvars({});
-
-    expect(await warnIfCascadeHidesHostedPhotos('mica_media')).toBe(false);
-    expect(dbMock.query).not.toHaveBeenCalled();
-  });
-
-  it('says it could not check, rather than reading a failure as no cascade', async () => {
-    dbMock.query.mockRejectedValue(new Error('denied'));
-
-    expect(await warnIfCascadeHidesHostedPhotos('mica_media')).toBe(false);
-    expect(logged()).toMatch(/could not check whether mica_media cascades/);
   });
 });

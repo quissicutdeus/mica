@@ -30,45 +30,45 @@ import { isReportableTable } from './moderation';
  *
  * ## Why this exists at all
  *
- * On qb the cleanup mechanism is the schema, not this file: 22 tables carry
- * `REFERENCES players(citizenid) ON DELETE CASCADE`, so a deleted character takes its
- * messages, contacts, notes, mail, Blabs, holdings, settings, call log, notifications and
- * reports with it inside the same statement, with no resource involvement.
+ * **This file is the only cleanup after a deleted character, on every framework** (MICA-300).
  *
- * ESX has `users(identifier)` and no `players`, so `mica.esx.sql` drops that constraint —
- * it has to, or the schema will not import at all (MICA-150). **Dropping it drops the
- * cascade with it, and nothing replaced it** (MICA-152). This is the replacement, and its
- * job is to reproduce what the cascade does on qb: exactly the rows the cascade would have
- * taken, and not one row more.
+ * ESX has `users(identifier)` and no `players`, so `mica.esx.sql` never carried a foreign key
+ * onto the owner (MICA-150), and this sweep was written to replace the cascade it lacked
+ * (MICA-152). qb did carry one — `REFERENCES players(citizenid) ON DELETE CASCADE` on every
+ * table with an owner column — and that cascade was the problem MICA-300 fixed: the framework deleting a
+ * `players` row took every micaOS row with it inside MariaDB, before any hold could apply.
+ * A post under an open report, the photo attached to it, and — through the cascades between
+ * micaOS's own tables — another player's replies under the character's posts all went with
+ * it. The constraint is gone from both files, and migration 0006 drops it from existing qb
+ * databases, so the character-deleted purge and this sweep decide on both frameworks, by the
+ * same plan a player's own delete uses (MICA-168): the character's own unheld rows go, and
+ * nothing they would take by cascade does.
  *
- * That framing settles two questions that would otherwise be judgement calls. It is why the
- * swept set is *derived* from what carries the owner foreign key rather than from what looks
- * like it holds a citizenid — `mica_reports.target_author` is a `varchar(50)` citizenid
- * with no FK, deliberately, because evidence has to outlive the character it names. And it
- * is why this stays a **backstop on qb**: the cascade still does the work there, this finds
- * nothing, and if it ever finds something that is an install whose table predates the
- * constraint.
+ * Which rows are a character's is still *derived*, and still keyed on the column called
+ * `citizenid` rather than on anything that looks like one — `mica_reports.target_author` is a
+ * citizenid too, deliberately never swept, because evidence has to outlive the character it
+ * names.
  */
 
 /** The column every micaOS table names its owner in. */
 const OWNER_COLUMN = 'citizenid';
 
 /**
- * How many rows one statement may remove.
+ * How many rows one statement may name.
  *
- * An unbounded `DELETE … WHERE NOT EXISTS` across 22 tables at boot is a full scan of the
- * whole schema holding row locks, and every phone write on a busy server queues behind it.
- * Chunking bounds one statement's lock footprint and lets the loop yield between batches.
+ * An unbounded `DELETE` across 22 tables at boot holds row locks over the whole schema, and
+ * every phone write on a busy server queues behind it. Deleting planned ids a chunk at a time
+ * bounds one statement's lock footprint and lets the loop yield between batches.
  */
 const DELETE_CHUNK = 500;
 
 /**
- * How many chunks one table gets per sweep — a stop, not a target.
+ * How many passes a table that references itself gets — a stop, not a target.
  *
- * A loop whose exit condition is "the database stopped giving me rows" has no exit condition
- * if the database keeps giving them, and a boot-time task that never finishes is its own
- * outage. Hitting this leaves the remainder for the next restart and says so; it does not
- * escalate to something less careful.
+ * Such a table (a reply under a post) goes leaves first, one level per pass. A loop whose exit
+ * condition is "the database stopped giving me rows" has no exit condition if the database
+ * keeps giving them, and a boot-time task that never finishes is its own outage. Hitting this
+ * is a failure for that table, said as one, never a silent keep.
  */
 const MAX_CHUNKS = 200;
 
@@ -185,19 +185,22 @@ const asColumnDef = (spec: ColumnType | ColumnDef): ColumnDef =>
  *
  * - **Every declared service's primary table.** `citizenid` is one of the five columns
  *   `defineService` supplies, so every one of them has an owner.
- * - **Every child table that declares a column referencing the owner table.** Child tables
- *   are DDL-only — no repository, no events — and four of them
- *   (`mica_messages_participants`, and the three attachment tables) carry their own
- *   `citizenid` with its own foreign key. A derivation that walked only `declaredServices`
- *   would miss all four; `SchemaMigrator` already walks both levels for the same reason.
+ * - **Every child table that declares a `citizenid` column of its own** — the owner column's
+ *   name, with the `citizenId` flag that sizes it. Child tables are DDL-only — no repository,
+ *   no events — and five of them (`mica_messages_participants`, the reactions on a message,
+ *   and the three attachment tables) carry their own owner. A derivation that walked only
+ *   `declaredServices` would miss all five; `SchemaMigrator` walks both levels for the same
+ *   reason. Until MICA-300 these were found by their foreign key onto `players`; that key is
+ *   gone, and the column name is the same test the primary tables have always passed.
  * - **`mica_audit_logs`**, which has no declaration behind it — see `AUDIT_LOG_TABLE`.
  *
- * Six further child tables cascade off micaOS's *own* tables rather than off the owner
+ * Six further child tables hang off micaOS's *own* tables rather than off the owner
  * (`mica_account_follows` → `mica_accounts(id)`, and friends). They are deliberately not
- * here: those foreign keys survive on ESX, so deleting the parent row takes them, and they
- * carry no citizenid for this to key on in any case. That is also why this must issue real
- * per-table `DELETE`s and never a `TRUNCATE` or anything under `FOREIGN_KEY_CHECKS = 0` —
- * either would orphan those six permanently, with nothing left to find them by.
+ * here: they carry no citizenid to key on, and their rows go with the parent by its foreign
+ * key — when the plan lets the parent go (`CascadeOptions.dependents`). That is also why this
+ * must issue real per-table `DELETE`s and never a `TRUNCATE` or anything under
+ * `FOREIGN_KEY_CHECKS = 0` — either would orphan those six permanently, with nothing left to
+ * find them by.
  *
  * Computed on call, never at module scope: `declaredServices` is filled as a side effect of
  * each `defineService`, so a value captured at import time holds only the services that
@@ -215,8 +218,9 @@ export const ownedTables = (): OwnedTable[] => {
   for (const service of declaredServices) {
     add(service.table, OWNER_COLUMN);
     for (const child of service.childTables) {
-      for (const [name, spec] of Object.entries(child.columns)) {
-        if (asColumnDef(spec).references?.table === OWNER_TABLE) add(child.name, name);
+      const owner = child.columns[OWNER_COLUMN];
+      if (owner !== undefined && asColumnDef(owner).citizenId === true) {
+        add(child.name, OWNER_COLUMN);
       }
     }
   }
@@ -269,8 +273,8 @@ export const registerOwnedExternal = (table: string, external: OwnedExternal): v
  * The purge and the sweep used to take every row a character owned, reported or not, and
  * once they also delete the hosted file a player under an open report could delete their
  * character and destroy the photo that was reported. Retention never could, so neither can
- * these: a reported row, and whatever it names, stays until the report resolves, and the
- * next sweep takes it then. The predicate is retention's own, not a copy of it.
+ * these: a reported row, what hangs off it, and whatever those name, stay until the report
+ * resolves, and the next sweep takes them then. The predicate is retention's own, not a copy.
  *
  * Only reportable tables, because only those have rows a report can name — and the hold
  * reads the row's `id`, which not every owned table has.
@@ -279,9 +283,8 @@ const evidenceHold = (table: string, row: string): { sql: string; params: unknow
   isReportableTable(table) ? openReportHold(table, row) : null;
 
 /**
- * The most references collected per table per sweep: every row one sweep may delete from it.
- * `collect` sees the rows before `DELETE … LIMIT` picks which of them go, so it has to be able
- * to see as many as can go.
+ * The most references collected per chunk: far more than one chunk's rows can name, so a
+ * collect that fills it is worth a warning rather than routine.
  */
 const COLLECT_LIMIT = MAX_CHUNKS * DELETE_CHUNK;
 
@@ -322,16 +325,26 @@ export interface SweepFailure {
 export interface SweepResult {
   /** Rows removed across every table swept. */
   removed: number;
+  /**
+   * Orphaned rows left on purpose: under an open report, hanging off one that is, or the
+   * parent of a row that stays. The next sweep takes what is no longer held.
+   */
+  kept: number;
   /** Per-table counts, for the tables that gave up rows. */
   byTable: Record<string, number>;
   /** Set when nothing was attempted. `null` means the sweep ran. */
   skipped: SkipReason | null;
-  /** Tables whose own `DELETE` failed. One failing must not stop the other twenty-one. */
+  /**
+   * Tables that could not be planned or deleted from, or kept whole because a table their rows
+   * hang off could not be planned; `*` when no plan could be made at all. One failing must not
+   * stop the others.
+   */
   failures: SweepFailure[];
 }
 
 const skip = (reason: SkipReason): SweepResult => ({
   removed: 0,
+  kept: 0,
   byTable: {},
   skipped: reason,
   failures: []
@@ -571,39 +584,73 @@ const affectedRows = (result: unknown): number => {
 };
 
 /**
- * `p.<owner column> = <micaOS column>`, in the owner column's collation. MICA-299.
+ * `ow.<owner column> = <micaOS column>`, in the owner column's collation. MICA-299.
  *
  * micaOS pins every column to `TABLE_COLLATION`; es_extended creates `users.identifier` with
  * none, so from MariaDB 11.4 it is `utf8mb4_uca1400_ai_ci`. A column-to-column comparison
  * across two implicit collations has no coercible side, and every sweep statement failed with
  * errno 1267 "Illegal mix of collations" — deleting nothing, rows or hosted files, on exactly
- * the framework where this sweep is the only cleanup there is.
+ * the framework where this sweep was the only cleanup there was.
  *
  * Fixed in the statement rather than detected and refused, because refusing would leave that
  * whole class of server — stock ESX on a current MariaDB — with no cleanup at all, and the
  * only remedy would be to ALTER a table es_extended owns. And fixed on **micaOS's** side,
  * never the owner's: an explicit `COLLATE` outranks an implicit one, so the comparison runs in
  * the owner's collation and the owner column is left bare, which is what keeps its primary key
- * usable. Collating `p.<column>` instead would make the statement legal and turn every
+ * usable. Collating `ow.<column>` instead would make the statement legal and turn every
  * correlated probe into a full scan of the framework's character table (see
  * `FrameworkBridge`'s note on MICA-197). `CONVERT … USING` first, because `COLLATE` alone is
  * an error when the two character sets differ — an older `utf8mb3` `users`, say.
  *
- * On qb the foreign key already forces the two to agree, so this is a no-op there.
+ * The same holds on qb since MICA-300: with the foreign key onto `players` gone, nothing
+ * forces `players.citizenid` to share micaOS's collation any more either.
  *
- * Without `match` the comparison is left bare — the shape a caller with no live collation to
- * hand gets, and an owner column with no collation at all.
+ * Without `match` the comparison is left bare — an owner column with no collation at all.
  */
 const ownerComparison = (owner: OwnerTable, micaColumn: string, match: OwnerMatch | null) => {
   const ownerColumn = identifier(owner.column, 'the owner column');
-  if (!match) return `p.${ownerColumn} = ${micaColumn}`;
+  if (!match) return `ow.${ownerColumn} = ${micaColumn}`;
   const charset = identifier(match.charset, "the owner column's character set");
   const collation = identifier(match.collation, "the owner column's collation");
-  return `p.${ownerColumn} = CONVERT(${micaColumn} USING ${charset}) COLLATE ${collation}`;
+  return `ow.${ownerColumn} = CONVERT(${micaColumn} USING ${charset}) COLLATE ${collation}`;
 };
 
+/** SQL with its parameters in order. */
+interface Clause {
+  sql: string;
+  params: unknown[];
+}
+
 /**
- * The statement, in one place so every table and both frameworks get the same one.
+ * Whose rows a planned delete is for: SQL true for a row, given its qualifier and its owner
+ * column. The one thing the three deletes differ in.
+ *
+ * A player's own delete and the character-deleted purge are *told* a citizenid. The sweep
+ * *infers* its owners — every row whose owner is no longer in the owner table — and so it is
+ * the one that must prove it can see that table first (`resolveOwner`). Everything after the
+ * scope — the plan, the holds, the cascade guard — is the same code for all three, so a guard
+ * added for one cannot be missing from another.
+ */
+interface OwnerScope {
+  owns: (row: string, column: string) => Clause;
+  /** Console prefix. */
+  label: string;
+  /** What a failure is logged as being for. */
+  purpose: string;
+}
+
+const citizenScope = (citizenid: string, purpose: string): OwnerScope => ({
+  owns: (row, column) => ({
+    sql: `${row}.\`${identifier(column, 'an owner column')}\` = ?`,
+    params: [citizenid]
+  }),
+  label: 'mica',
+  purpose
+});
+
+/**
+ * The sweep's scope: a row whose owner the owner table does not hold, compared in the owner
+ * column's collation (`ownerComparison`).
  *
  * `NOT EXISTS` rather than `NOT IN`, because `NOT IN` against a subquery containing a single
  * NULL is unknown for every row and would silently delete nothing at all — a sweep that
@@ -614,99 +661,65 @@ const ownerComparison = (owner: OwnerTable, micaColumn: string, match: OwnerMatc
  * makes everything outside the fetched page an orphan. `NOT EXISTS` against the live table
  * has no such failure mode. This is the "optimisation" to refuse.
  *
- * On qb this is the statement MICA-71 shipped for `mica_media`, with a `LIMIT` on the
- * end; the alias stays `p` so that remains visibly true.
- *
- * A reportable table's rows carry retention's open-report hold as well (`evidenceHold`,
- * MICA-292), so a row somebody reported is not swept while the report is open.
- *
- * With `match` (the owner column's live collation, `resolveOwner`), micaOS's side of the
- * comparison is converted into it — see `ownerComparison`.
+ * It is in the `DELETE` as well as the plan, so a row whose owner reappeared between the two
+ * is not deleted. The owner table is aliased `ow` because the plan's own statements already
+ * use `p` for a parent row.
  */
-export const orphanDeleteSql = (
-  owned: OwnedTable,
+export const orphanScope = (
   owner: OwnerTable,
-  match: OwnerMatch | null = null
-): { sql: string; params: unknown[] } => {
-  const table = identifier(owned.table, 'a swept table');
-  const column = identifier(owned.column, 'an owner column');
+  match: OwnerMatch | null,
+  label = 'mica'
+): OwnerScope => {
   const ownerTable = identifier(owner.table, 'the owner table');
-  const hold = evidenceHold(table, table);
-
   return {
-    sql:
-      `DELETE FROM ${table} WHERE NOT EXISTS ` +
-      `(SELECT 1 FROM ${ownerTable} p WHERE ${ownerComparison(owner, `${table}.${column}`, match)}) ` +
-      (hold ? `AND ${hold.sql} ` : '') +
-      `LIMIT ${DELETE_CHUNK}`,
-    params: hold ? hold.params : []
-  };
-};
-
-/**
- * The predicate `orphanDeleteSql` deletes by, hold included, for the row alias `t`, so an
- * external's `collect` reads exactly the rows the sweep is about to remove — and not the
- * reported ones it will keep.
- */
-export const orphanWhere = (
-  owned: OwnedTable,
-  owner: OwnerTable,
-  match: OwnerMatch | null = null
-): { sql: string; params: unknown[] } => {
-  const column = identifier(owned.column, 'an owner column');
-  const ownerTable = identifier(owner.table, 'the owner table');
-  const hold = evidenceHold(owned.table, 't');
-  return {
-    sql:
-      `NOT EXISTS (SELECT 1 FROM ${ownerTable} p WHERE ${ownerComparison(owner, `t.${column}`, match)})` +
-      (hold ? ` AND ${hold.sql}` : ''),
-    params: hold ? hold.params : []
+    owns: (row, column) => ({
+      sql:
+        `NOT EXISTS (SELECT 1 FROM ${ownerTable} ow WHERE ` +
+        `${ownerComparison(owner, `${row}.\`${identifier(column, 'an owner column')}\``, match)})`,
+      params: []
+    }),
+    label,
+    purpose: 'in the orphan sweep'
   };
 };
 
 /** Let the server breathe between batches. Nothing is waiting on this. */
 const yieldToServer = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
-const sweepOneTable = async (
-  owned: OwnedTable,
-  owner: OwnerTable,
-  match: OwnerMatch | null
-): Promise<number> => {
-  const { sql, params } = orphanDeleteSql(owned, owner, match);
-  let removed = 0;
-
-  for (let chunk = 0; chunk < MAX_CHUNKS; chunk += 1) {
-    const batch = affectedRows(await Database.query(sql, params));
-    removed += batch;
-    if (batch < DELETE_CHUNK) return removed;
-    await yieldToServer();
-  }
-
-  console.warn(
-    `[mica] ${owned.table} still had orphans after ${MAX_CHUNKS * DELETE_CHUNK} rows; the ` +
-      'rest are left for the next sweep rather than held in one long transaction.'
-  );
-  return removed;
-};
-
 export interface SweepOptions {
   /** Sweep only these. Defaults to every owned table. */
   only?: readonly OwnedTable[];
   /** Console prefix, so `micamedia prune` still sounds like itself. */
   label?: string;
+  /**
+   * Which child tables go with their parent (`CascadeOptions`). Absent, none do, which keeps
+   * any parent a child row still references: the safe answer for a caller that has not said.
+   */
+  cascade?: CascadeOptions;
+  /**
+   * What the sweep keeps though its owner is gone (`PurgeException`). It has to be the same
+   * list the character-deleted purge keeps: with no foreign key onto the owner any more, the
+   * sweep is what would otherwise take those rows as orphans at the next start (MICA-300).
+   */
+  except?: readonly PurgeException[];
 }
 
 /**
  * Delete every row whose owner no longer exists. **A hard delete.**
  *
+ * Since MICA-300 the same plan as the character-deleted purge and a player's own delete
+ * (`purgePlanned`), for every orphaned owner at once: an orphan under an open report stays,
+ * and so does what hangs off it and the parents of anything that stays — a live player's
+ * reply keeps the dead player's post it answers. The next sweep takes what is no longer held.
+ *
  * Never rejects. Every refusal is a `skipped` reason and every per-table failure is a
  * `failures` entry, because this runs at resource start where a rejection is a stack trace
  * on a server that is otherwise fine — and because a table that does not exist on one
- * install must not stop the other twenty-one from being swept.
+ * install must not stop the others from being swept.
  *
- * Tables are swept **sequentially**. They are independent, and issuing twenty-two
- * concurrent full-table deletes at boot is the availability problem the chunking above
- * exists to avoid, arrived at from the other direction.
+ * Tables are swept **sequentially**, children first. Issuing twenty-two concurrent deletes at
+ * boot is the availability problem the chunking exists to avoid, arrived at from the other
+ * direction.
  */
 export const sweepOrphanedRows = async (options: SweepOptions = {}): Promise<SweepResult> => {
   const label = options.label ?? 'mica';
@@ -721,113 +734,54 @@ export const sweepOrphanedRows = async (options: SweepOptions = {}): Promise<Swe
   }
   const { owner, match } = verdict;
 
-  const result: SweepResult = { removed: 0, byTable: {}, skipped: null, failures: [] };
-  for (const owned of tables) {
-    const external = externals.get(owned.table);
-    let refs: readonly string[] = [];
-    try {
-      // Before the delete, and a throw here skips the table: see `OwnedExternal`.
-      if (external) {
-        refs = await external.collect(orphanWhere(owned, owner, match), COLLECT_LIMIT);
-      }
-      const removed = await sweepOneTable(owned, owner, match);
-      if (removed > 0) {
-        result.removed += removed;
-        result.byTable[owned.table] = removed;
-      }
-    } catch (error) {
-      // Logged here as well as returned (MICA-299): `micamedia prune` reads only `removed`,
-      // so a failure left for the caller to report would be a zero that looks like a result.
-      console.error(`[${label}] orphan sweep of ${owned.table} failed:`, error);
-      result.failures.push({ table: owned.table, error });
-    }
-    // Even after a delete that failed part-way: the release re-checks what is still named.
-    if (external) await releaseCollected(label, owned.table, external, refs);
+  try {
+    const done = await purgePlanned(orphanScope(owner, match, label), tables, {
+      cascade: options.cascade,
+      except: options.except
+    });
+    return { ...done, skipped: null };
+  } catch (error) {
+    // A plan that cannot be made at all — a cycle, a key not on `id` — before any DELETE.
+    console.error(`[${label}] orphan sweep could not plan, and deleted nothing:`, error);
+    return { removed: 0, kept: 0, byTable: {}, skipped: null, failures: [{ table: '*', error }] };
   }
-
-  return result;
 };
 
 /**
- * Remove one named character's rows from every owned table. **A hard delete.**
+ * Remove one named character's rows. **A hard delete.** Three callers, one plan
+ * (`purgePlanned`), each keeping what an open report holds, what hangs off that, and anything
+ * whose deletion would cascade into a row that stays:
  *
- * No owner-table guard here, and the asymmetry is the point rather than an oversight. The
- * sweep above *infers* which rows are unowned and so must prove it can see the owners; this
- * is *told* which character is gone by a server resource that just deleted it. There is no
- * absence of evidence to misread, and requiring a readable owner table would make the
- * immediate cleanup fail on exactly the servers that need it most — the ones where the
- * character's row is already gone.
+ * - **The character-deleted purge** (`lib/shell.ts`, MICA-300): the framework has deleted the
+ *   character, so everything they owned goes, the device rows included — except the pending
+ *   reports they filed and their rows in the moderation ledger (`CHARACTER_EXCEPT`).
+ * - **A player's own delete** (MICA-168, `services/Privacy.ts`), keeping more by `except`.
+ * - **The media-only purge** (`services/Media.ts`), restricted to `mica_media` by `only`.
  *
- * Bounded by a citizenid, so no chunking: one character's rows are not a full-schema scan.
+ * No owner-table guard, and the asymmetry with the sweep is the point rather than an
+ * oversight. The sweep *infers* which rows are unowned and so must prove it can see the
+ * owners; this is *told* which character it is for. There is no absence of evidence to
+ * misread, and requiring a readable owner table would make the immediate cleanup fail on
+ * exactly the servers that need it most — the ones where the character's row is already gone.
  *
- * A table with a registered `OwnedExternal` has what its rows name collected first and
- * released after (MICA-292) — a deleted character's hosted photos are deleted from the host,
- * unless another player's copy still names them. A row under an open report is not purged at
- * all (`evidenceHold`); the orphan sweep takes it, and releases its file, once the report
- * resolves.
- *
- * With `options` this is a player deleting their own data instead (MICA-168), and a different
- * path entirely: `purgeCascadeSafe`. Without them it is exactly the character purge above,
- * cascades included — MICA-300 is that path's version of the cascade and held-parent gaps.
+ * A table with a registered `OwnedExternal` has what its deleted rows name released after
+ * (MICA-292) — a deleted character's hosted photos go from the host, unless another row still
+ * names them.
  */
-export function purgeOwnedRows(
-  citizenid: string
-): Promise<{ removed: number; failures: SweepFailure[] }>;
-export function purgeOwnedRows(citizenid: string, options: PurgeOptions): Promise<PurgeResult>;
 export async function purgeOwnedRows(
   citizenid: string,
-  options?: PurgeOptions
-): Promise<PurgeResult | { removed: number; failures: SweepFailure[] }> {
-  if (options) {
-    const owner = typeof citizenid === 'string' ? citizenid.trim() : '';
-    if (owner.length === 0) return { removed: 0, kept: 0, failures: [] };
-    return await purgeCascadeSafe(owner, options);
-  }
-  return await purgeCharacter(citizenid);
-}
-
-const purgeCharacter = async (
-  citizenid: string
-): Promise<{ removed: number; failures: SweepFailure[] }> => {
+  options: PurgeOptions = {}
+): Promise<PurgeResult> {
   const owner = typeof citizenid === 'string' ? citizenid.trim() : '';
-  if (owner.length === 0) return { removed: 0, failures: [] };
-
-  let removed = 0;
-  const failures: SweepFailure[] = [];
-
-  for (const { table, column } of ownedTables()) {
-    const name = identifier(table, 'a swept table');
-    const col = identifier(column, 'an owner column');
-    const external = externals.get(table);
-    let refs: readonly string[] = [];
-    // A reported row stays, and so does its file, until the report resolves (MICA-292).
-    const heldRow = evidenceHold(name, name);
-    const heldCollect = evidenceHold(name, 't');
-    try {
-      if (external) {
-        refs = await external.collect(
-          {
-            sql: `t.${col} = ?${heldCollect ? ` AND ${heldCollect.sql}` : ''}`,
-            params: [owner, ...(heldCollect?.params ?? [])]
-          },
-          COLLECT_LIMIT
-        );
-      }
-      removed += affectedRows(
-        await Database.query(
-          `DELETE FROM ${name} WHERE ${col} = ?${heldRow ? ` AND ${heldRow.sql}` : ''}`,
-          [owner, ...(heldRow?.params ?? [])]
-        )
-      );
-    } catch (error) {
-      console.error(`[mica] purging ${table} for a deleted character failed:`, error);
-      failures.push({ table, error });
-    }
-    if (external) await releaseCollected('mica', table, external, refs);
-  }
-
-  return { removed, failures };
-};
+  if (owner.length === 0) return { removed: 0, kept: 0, failures: [] };
+  const purpose = options.purpose ?? "for a player's own delete";
+  const { removed, kept, failures } = await purgePlanned(
+    citizenScope(owner, purpose),
+    options.only ?? ownedTables(),
+    options
+  );
+  return { removed, kept, failures };
+}
 
 export interface PurgeException {
   table: string;
@@ -839,13 +793,20 @@ export interface PurgeException {
 }
 
 /**
- * A player's own delete (MICA-168). Passing options at all selects `purgeCascadeSafe`; the
- * character-deleted purge passes none and runs the code it always ran.
+ * What a purge keeps beyond the report hold, and which child tables go with their parent.
+ * The character-deleted purge passes no `except`; a player's own delete does (MICA-168).
  */
 export interface PurgeOptions {
   except?: readonly PurgeException[];
   /** Never let a `DELETE` cascade into a row this purge would not delete itself. */
-  cascade: CascadeOptions;
+  cascade?: CascadeOptions;
+  /**
+   * Purge only these. Defaults to every owned table. A table left out is never deleted from,
+   * so a row in it that references a purged table keeps what it references.
+   */
+  only?: readonly OwnedTable[];
+  /** What a failure is logged as being for. Defaults to a player's own delete. */
+  purpose?: string;
 }
 
 export interface CascadeOptions {
@@ -870,9 +831,10 @@ export interface CascadeEdge {
 
 /**
  * Every foreign key from one micaOS table to another, derived from the declarations — the same
- * walk `ownedTables` makes, keeping the references that are not the owner cascade. `SET NULL`
- * and `RESTRICT` are kept too: the first rewrites another player's row, the second would fail
- * the delete, and neither is something a purge should reach into blind.
+ * walk `ownedTables` makes. `SET NULL` and `RESTRICT` are kept too: the first rewrites another
+ * player's row, the second would fail the delete, and neither is something a purge should
+ * reach into blind. A reference to the framework's owner table is not one of these; micaOS
+ * declares none since MICA-300, and `schemaSql` refuses to emit one.
  */
 export const cascadeEdges = (): CascadeEdge[] => {
   const out: CascadeEdge[] = [];
@@ -897,10 +859,10 @@ export const cascadeEdges = (): CascadeEdge[] => {
 };
 
 const withKept = (
-  hold: { sql: string; params: unknown[] } | null,
+  hold: Clause | null,
   exception: PurgeException | undefined,
   row: string
-): { sql: string; params: unknown[] } | null => {
+): Clause | null => {
   const keep = exception?.keep?.(row);
   if (!keep) return hold;
   const sql = `NOT (${keep.sql})`;
@@ -912,12 +874,16 @@ const withKept = (
 export interface PurgeResult {
   removed: number;
   /**
-   * The player's rows this purge left behind on purpose (MICA-168): what the report hold keeps,
-   * what hangs off a held row, and what a cascade from it would have reached. Excepted rows
-   * are not counted, nor is a table that failed.
+   * The rows this purge left behind on purpose: what the report hold keeps, what hangs off a
+   * held row, and what a cascade from it would have reached. Excepted rows are not counted,
+   * nor is a table that failed.
    */
   kept: number;
   failures: SweepFailure[];
+}
+
+interface PlannedResult extends PurgeResult {
+  byTable: Record<string, number>;
 }
 
 /**
@@ -955,16 +921,16 @@ const childrenFirst = (
  * children it will delete. Children go first, so what remains is exactly what the purge is not
  * deleting — another player's, held, excepted, or kept for a child of its own — and deleting
  * the parent would take it by cascade. A self-reference reads through a `DISTINCT` derived
- * table, restricted to this owner's rows, because the `DELETE` targets that table (MySQL error
+ * table, restricted to this purge's rows, because the `DELETE` targets that table (MySQL error
  * 1093; `RetentionHold` has the same rule).
  */
 const cascadeGuard = (
   owned: OwnedTable,
   edges: readonly CascadeEdge[],
   dependents: ReadonlySet<string>,
-  owner: string,
+  scope: OwnerScope,
   row: string
-): { sql: string; params: unknown[] } | null => {
+): Clause | null => {
   const parts: string[] = [];
   const params: unknown[] = [];
   const hasChildren = (table: string): boolean => edges.some((e) => e.parent === table);
@@ -975,13 +941,13 @@ const cascadeGuard = (
     const col = identifier(edge.column, 'a reference column');
     const parentCol = identifier(edge.parentColumn, 'a referenced column');
     if (edge.child === owned.table) {
-      const ownerCol = identifier(owned.column, 'an owner column');
+      const bound = scope.owns('p', owned.column);
       parts.push(
         `NOT EXISTS (SELECT 1 FROM (SELECT DISTINCT c.\`${col}\` AS \`k\` FROM \`${child}\` c ` +
-          `JOIN \`${child}\` p ON p.\`${parentCol}\` = c.\`${col}\` WHERE p.\`${ownerCol}\` = ?) g ` +
+          `JOIN \`${child}\` p ON p.\`${parentCol}\` = c.\`${col}\` WHERE ${bound.sql}) g ` +
           `WHERE g.\`k\` = ${row}.\`${parentCol}\`)`
       );
-      params.push(owner);
+      params.push(...bound.params);
     } else {
       parts.push(
         `NOT EXISTS (SELECT 1 FROM \`${child}\` c WHERE c.\`${col}\` = ${row}.\`${parentCol}\`)`
@@ -996,45 +962,43 @@ const cascadeGuard = (
  * held parent's children, but a report filed between the plan and the `DELETE` would not: the
  * child goes first, checking only its own row's hold. So each child's statement also asks
  * whether any reportable parent it references is held, with retention's own `openReportHold`
- * over the parent. Read through a `DISTINCT` derived table bounded to this owner's rows, which
+ * over the parent. Read through a `DISTINCT` derived table bounded to this purge's rows, which
  * is also what makes a self-reference (a reply under a post) legal on MySQL (error 1093).
  */
 const parentHold = (
   owned: OwnedTable,
   edges: readonly CascadeEdge[],
-  owner: string,
+  scope: OwnerScope,
   row: string
-): { sql: string; params: unknown[] } | null => {
+): Clause | null => {
   const parts: string[] = [];
   const params: unknown[] = [];
   const child = identifier(owned.table, 'a child table');
-  const ownerCol = identifier(owned.column, 'an owner column');
   for (const edge of edges) {
     if (edge.child !== owned.table || !isReportableTable(edge.parent)) continue;
     const parent = identifier(edge.parent, 'a parent table');
     const col = identifier(edge.column, 'a reference column');
+    const bound = scope.owns('cc', owned.column);
     const hold = openReportHold(parent, 'pp');
     parts.push(
       `NOT EXISTS (SELECT 1 FROM (SELECT DISTINCT pp.\`id\` AS \`k\` FROM \`${parent}\` pp ` +
-        `JOIN \`${child}\` cc ON cc.\`${col}\` = pp.\`id\` WHERE cc.\`${ownerCol}\` = ? ` +
+        `JOIN \`${child}\` cc ON cc.\`${col}\` = pp.\`id\` WHERE ${bound.sql} ` +
         `AND NOT (${hold.sql})) h WHERE h.\`k\` = ${row}.\`${col}\`)`
     );
-    params.push(owner, ...hold.params);
+    params.push(...bound.params, ...hold.params);
   }
   return parts.length > 0 ? { sql: parts.join(' AND '), params } : null;
 };
 
-const joined = (
-  ...clauses: ({ sql: string; params: unknown[] } | null)[]
-): { sql: string; params: unknown[] } | null => {
-  const present = clauses.filter((c): c is { sql: string; params: unknown[] } => c !== null);
+const joined = (...clauses: (Clause | null)[]): Clause | null => {
+  const present = clauses.filter((c): c is Clause => c !== null);
   if (present.length === 0) return null;
   return { sql: present.map((c) => c.sql).join(' AND '), params: present.flatMap((c) => c.params) };
 };
 
 /**
- * Test seam: runs once a self-service purge has planned and before it deletes anything, so a
- * suite can file a report in exactly the window a real one could land in.
+ * Test seam: runs once a purge has planned and before it deletes anything, so a suite can file
+ * a report in exactly the window a real one could land in.
  */
 let beforeDelete: (() => Promise<void>) | undefined;
 export const __setPurgeHookForTests = (fn?: () => Promise<void>): void => {
@@ -1049,18 +1013,19 @@ const selectRows = async <T>(sql: string, params: unknown[]): Promise<T[]> => {
 
 /** Which of `ids` are still there, read back rather than inferred from a row count. */
 const survivors = async (
-  name: string,
-  col: string,
-  owner: string,
+  owned: OwnedTable,
+  scope: OwnerScope,
   ids: readonly number[]
 ): Promise<number[]> => {
+  const name = identifier(owned.table, 'a swept table');
   const left: number[] = [];
   for (let i = 0; i < ids.length; i += DELETE_CHUNK) {
     const chunk = ids.slice(i, i + DELETE_CHUNK);
+    const bound = scope.owns('t', owned.column);
     const rows = await selectRows<{ id: unknown }>(
-      `SELECT t.\`id\` AS \`id\` FROM ${name} t WHERE t.${col} = ? ` +
+      `SELECT t.\`id\` AS \`id\` FROM ${name} t WHERE ${bound.sql} ` +
         `AND t.\`id\` IN (${chunk.map(() => '?').join(', ')})`,
-      [owner, ...chunk]
+      [...bound.params, ...chunk]
     );
     left.push(...rows.map((r) => Number(r.id)));
   }
@@ -1072,43 +1037,49 @@ interface RowPlan {
   go: Set<number>;
   /** Ids kept as evidence: held, or hanging off a held row. Only ever grows. */
   evidence: Set<number>;
-  /** The owner's rows that are not excepted, for `kept`. */
+  /** The scope's rows that are not excepted, for `kept`. */
   counted: number;
 }
 
 interface Link {
   edge: CascadeEdge;
-  /** Rows referencing the owner's rows in `edge.parent`; `id` null for an untracked table. */
+  /** Rows referencing the scope's rows in `edge.parent`; `id` null for an untracked table. */
   rows: { id: number | null; ref: number }[];
 }
 
 /**
- * `purgeOwnedRows` for a player deleting their own data (MICA-168): every row it removes is
- * one it chose, never one a cascade chose for it, and nothing it removes is evidence.
+ * The one delete behind all three callers (MICA-168, MICA-300): every row it removes is one it
+ * chose, never one a cascade chose for it, and nothing it removes is evidence. `scope` says
+ * whose rows these are (`OwnerScope`).
  *
- * The character purge deletes in declaration order and lets `ON DELETE CASCADE` take what
- * hangs off each row. Here the rows are decided first, by id, and then deleted:
- *
- * 1. **Plan.** Each table's candidates are the owner's rows, less what the report hold and
+ * 1. **Plan.** Each table's candidates are the scope's rows, less what the report hold and
  *    the caller's exceptions keep. A held row seeds the evidence set.
- * 2. **Links.** Every row referencing one of the owner's rows, through every foreign key but a
+ * 2. **Links.** Every row referencing one of the scope's rows, through every foreign key but a
  *    named dependent's (`CascadeOptions.dependents`).
  * 3. **Settle**, until nothing changes. A row that stays keeps every row it references, since
  *    deleting that would cascade into it. A row hanging off evidence is evidence: the photo on
  *    a reported post, the attachment on a reported message, a reply under a reported post —
  *    retention's `liveReferences`, over the whole graph. The two rules only ever remove
  *    candidates, so this terminates.
- * 4. **Delete**, children first, by id and owner, with the hold and `cascadeGuard` still in the
- *    statement: a reply or a report that arrived after the plan keeps its row regardless. A
- *    table referencing itself goes in passes from the leaves up; running out of passes with
+ * 4. **Delete**, children first, by id and scope, with the hold and `cascadeGuard` still in
+ *    the statement: a reply or a report that arrived after the plan keeps its row regardless.
+ *    A table referencing itself goes in passes from the leaves up; running out of passes with
  *    rows left is a failure, never a silent keep.
  *
- * A plan that cannot be made — a query failing, a key not on `id`, a cycle — throws before
- * any `DELETE`, and the caller reports nothing deleted.
+ * **A table that cannot be planned deletes nothing, and neither does anything under it.** Its
+ * held rows are unknown, so the rows hanging off it might be evidence; a link that cannot be
+ * read leaves both ends where they are. Each is a failure for its table, logged where it
+ * happened, and every other table still goes — the character purge and the sweep always
+ * worked table by table, and one missing table must not stop the rest. A plan that cannot be
+ * made at all — a cycle, a key not on `id` — throws before any statement runs.
  */
-const purgeCascadeSafe = async (owner: string, options: PurgeOptions): Promise<PurgeResult> => {
+const purgePlanned = async (
+  scope: OwnerScope,
+  candidates: readonly OwnedTable[],
+  options: PurgeOptions
+): Promise<PlannedResult> => {
   const except = new Map((options.except ?? []).map((entry) => [entry.table, entry]));
-  const dependents = new Set(options.cascade.dependents);
+  const dependents = new Set(options.cascade?.dependents ?? []);
   const edges = cascadeEdges();
   for (const edge of edges) {
     if (edge.parentColumn !== 'id') {
@@ -1118,7 +1089,7 @@ const purgeCascadeSafe = async (owner: string, options: PurgeOptions): Promise<P
       );
     }
   }
-  const tables = ownedTables().filter(({ table }) => {
+  const tables = candidates.filter(({ table }) => {
     const exception = except.get(table);
     return !exception || exception.keep !== undefined;
   });
@@ -1127,49 +1098,96 @@ const purgeCascadeSafe = async (owner: string, options: PurgeOptions): Promise<P
   const exempt = (child: string): boolean =>
     dependents.has(child) && !edges.some((e) => e.parent === child);
 
+  const failed = new Map<string, unknown>();
+  const fail = (table: string, error: unknown): void => {
+    if (failed.has(table)) return;
+    console.error(`[${scope.label}] purging ${table} ${scope.purpose} failed:`, error);
+    failed.set(table, error);
+  };
+  /** Tables whose held rows, or whose rows' parents, are not known. */
+  const unknown = new Set<string>();
+
   // 1. Plan.
   const plans = new Map<string, RowPlan>();
   for (const owned of order) {
-    const name = identifier(owned.table, 'a swept table');
-    const col = identifier(owned.column, 'an owner column');
-    const exception = except.get(owned.table);
-    const hold = evidenceHold(name, 't');
-    const go = withKept(hold, exception, 't');
-    const keep = exception?.keep?.('t');
-    const rows = await selectRows<{ id: unknown; go: unknown; held: unknown; ex: unknown }>(
-      `SELECT t.\`id\` AS \`id\`, ` +
-        `${go ? `CASE WHEN ${go.sql} THEN 1 ELSE 0 END` : '1'} AS \`go\`, ` +
-        `${hold ? `CASE WHEN ${hold.sql} THEN 0 ELSE 1 END` : '0'} AS \`held\`, ` +
-        `${keep ? `CASE WHEN ${keep.sql} THEN 1 ELSE 0 END` : '0'} AS \`ex\` ` +
-        `FROM ${name} t WHERE t.${col} = ?`,
-      [...(go?.params ?? []), ...(hold?.params ?? []), ...(keep?.params ?? []), owner]
-    );
-    plans.set(owned.table, {
-      go: new Set(rows.filter((r) => Number(r.go) === 1).map((r) => Number(r.id))),
-      evidence: new Set(rows.filter((r) => Number(r.held) === 1).map((r) => Number(r.id))),
-      counted: rows.filter((r) => Number(r.ex) !== 1).length
-    });
+    const plan: RowPlan = { go: new Set(), evidence: new Set(), counted: 0 };
+    plans.set(owned.table, plan);
+    try {
+      const name = identifier(owned.table, 'a swept table');
+      const exception = except.get(owned.table);
+      const hold = evidenceHold(name, 't');
+      const go = withKept(hold, exception, 't');
+      const keep = exception?.keep?.('t');
+      const bound = scope.owns('t', owned.column);
+      const rows = await selectRows<{ id: unknown; go: unknown; held: unknown; ex: unknown }>(
+        `SELECT t.\`id\` AS \`id\`, ` +
+          `${go ? `CASE WHEN ${go.sql} THEN 1 ELSE 0 END` : '1'} AS \`go\`, ` +
+          `${hold ? `CASE WHEN ${hold.sql} THEN 0 ELSE 1 END` : '0'} AS \`held\`, ` +
+          `${keep ? `CASE WHEN ${keep.sql} THEN 1 ELSE 0 END` : '0'} AS \`ex\` ` +
+          `FROM ${name} t WHERE ${bound.sql}`,
+        [...(go?.params ?? []), ...(hold?.params ?? []), ...(keep?.params ?? []), ...bound.params]
+      );
+      for (const r of rows) {
+        const id = Number(r.id);
+        if (Number(r.go) === 1) plan.go.add(id);
+        if (Number(r.held) === 1) plan.evidence.add(id);
+        if (Number(r.ex) !== 1) plan.counted += 1;
+      }
+    } catch (error) {
+      fail(owned.table, error);
+      unknown.add(owned.table);
+    }
   }
 
   // 2. Links.
   const links: Link[] = [];
+  const frozen = new Set<string>();
   for (const edge of edges) {
     const parent = byTable.get(edge.parent);
     if (!parent || exempt(edge.child)) continue;
     const tracked = byTable.has(edge.child);
-    const child = identifier(edge.child, 'a child table');
-    const col = identifier(edge.column, 'a reference column');
-    const parentName = identifier(edge.parent, 'a parent table');
-    const parentOwner = identifier(parent.column, 'an owner column');
-    const rows = await selectRows<{ id?: unknown; ref: unknown }>(
-      `SELECT ${tracked ? 'c.`id` AS `id`, ' : ''}c.\`${col}\` AS \`ref\` FROM \`${child}\` c ` +
-        `JOIN \`${parentName}\` p ON p.\`id\` = c.\`${col}\` WHERE p.\`${parentOwner}\` = ?`,
-      [owner]
-    );
-    links.push({
-      edge,
-      rows: rows.map((r) => ({ id: tracked ? Number(r.id) : null, ref: Number(r.ref) }))
-    });
+    try {
+      const child = identifier(edge.child, 'a child table');
+      const col = identifier(edge.column, 'a reference column');
+      const parentName = identifier(edge.parent, 'a parent table');
+      const bound = scope.owns('p', parent.column);
+      const rows = await selectRows<{ id?: unknown; ref: unknown }>(
+        `SELECT ${tracked ? 'c.`id` AS `id`, ' : ''}c.\`${col}\` AS \`ref\` FROM \`${child}\` c ` +
+          `JOIN \`${parentName}\` p ON p.\`id\` = c.\`${col}\` WHERE ${bound.sql}`,
+        bound.params
+      );
+      links.push({
+        edge,
+        rows: rows.map((r) => ({ id: tracked ? Number(r.id) : null, ref: Number(r.ref) }))
+      });
+    } catch (error) {
+      // Which parents the child keeps, and which child rows hang off evidence, are unknown.
+      fail(tracked ? edge.child : edge.parent, error);
+      if (tracked) unknown.add(edge.child);
+      frozen.add(edge.parent);
+    }
+  }
+
+  // Everything under an unknown table stays: any of it might hang off a held row.
+  for (const table of unknown) frozen.add(table);
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const edge of edges) {
+      if (unknown.has(edge.parent) && byTable.has(edge.child) && !unknown.has(edge.child)) {
+        unknown.add(edge.child);
+        frozen.add(edge.child);
+        grew = true;
+      }
+    }
+  }
+  for (const table of frozen) {
+    plans.get(table)?.go.clear();
+    if (!failed.has(table) && unknown.has(table)) {
+      fail(
+        table,
+        new Error('not purged: a table its rows hang off could not be planned, so any may be held')
+      );
+    }
   }
 
   // 3. Settle.
@@ -1196,25 +1214,24 @@ const purgeCascadeSafe = async (owner: string, options: PurgeOptions): Promise<P
   // 4. Delete.
   let removed = 0;
   let kept = 0;
-  const failures: SweepFailure[] = [];
+  const counts: Record<string, number> = {};
   for (const owned of order) {
     const plan = plans.get(owned.table)!;
     const ids = [...plan.go].sort((a, b) => a - b);
     const external = externals.get(owned.table);
     const refs: string[] = [];
     let deleted = 0;
-    let failed = false;
     try {
       if (ids.length > 0) {
         const name = identifier(owned.table, 'a swept table');
-        const col = identifier(owned.column, 'an owner column');
         const exception = except.get(owned.table);
         const where = (row: string, chunk: readonly number[]) =>
           joined(
+            scope.owns(row, owned.column),
             { sql: `${row}.\`id\` IN (${chunk.map(() => '?').join(', ')})`, params: [...chunk] },
             withKept(evidenceHold(name, row), exception, row),
-            parentHold(owned, edges, owner, row),
-            cascadeGuard(owned, edges, dependents, owner, row)
+            parentHold(owned, edges, scope, row),
+            cascadeGuard(owned, edges, dependents, scope, row)
           )!;
         const selfReferencing = edges.some(
           (e) => e.parent === owned.table && e.child === owned.table
@@ -1229,45 +1246,34 @@ const purgeCascadeSafe = async (owner: string, options: PurgeOptions): Promise<P
           for (let i = 0; i < pending.length; i += DELETE_CHUNK) {
             const chunk = pending.slice(i, i + DELETE_CHUNK);
             if (external) {
-              const collectWhere = where('t', chunk);
-              refs.push(
-                ...(await external.collect(
-                  {
-                    sql: `t.${col} = ? AND ${collectWhere.sql}`,
-                    params: [owner, ...collectWhere.params]
-                  },
-                  COLLECT_LIMIT
-                ))
-              );
+              refs.push(...(await external.collect(where('t', chunk), COLLECT_LIMIT)));
             }
-            const deleteWhere = where(name, chunk);
+            const statement = where(name, chunk);
             round += affectedRows(
-              await Database.query(`DELETE FROM ${name} WHERE ${col} = ? AND ${deleteWhere.sql}`, [
-                owner,
-                ...deleteWhere.params
-              ])
+              await Database.query(`DELETE FROM ${name} WHERE ${statement.sql}`, statement.params)
             );
+            await yieldToServer();
           }
           deleted += round;
           settled = !selfReferencing || round === 0 || deleted >= ids.length;
-          if (!settled) pending = await survivors(name, col, owner, pending);
+          if (!settled) pending = await survivors(owned, scope, pending);
         }
         if (!settled) {
           throw new Error(
             `stopped after ${MAX_CHUNKS} passes with ${pending.length} row(s) still to ` +
-              'delete; the rest are left for another request, not counted as kept.'
+              'delete; the rest are left for another run, not counted as kept.'
           );
         }
       }
     } catch (error) {
-      console.error(`[mica] purging ${owned.table} for a player's own delete failed:`, error);
-      failures.push({ table: owned.table, error });
-      failed = true;
+      fail(owned.table, error);
     }
     removed += deleted;
-    if (!failed) kept += plan.counted - deleted;
-    if (external) await releaseCollected('mica', owned.table, external, refs);
+    if (deleted > 0) counts[owned.table] = deleted;
+    if (!failed.has(owned.table)) kept += plan.counted - deleted;
+    if (external) await releaseCollected(scope.label, owned.table, external, refs);
   }
 
-  return { removed, kept, failures };
+  const failures = [...failed].map(([table, error]) => ({ table, error }));
+  return { removed, kept, failures, byTable: counts };
 };

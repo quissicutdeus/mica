@@ -47,6 +47,29 @@ Entries are hand-written. See MICA-72 for why a generated one was rejected.
 
 ### Action required
 
+**On qb, run `micaschema apply` from the server console: migration
+`0006_players_foreign_keys_dropped` removes every foreign key from micaOS's
+tables onto `players` (MICA-300).** Until it has run, your framework deleting a
+character deletes that character's micaOS rows inside the database, reported
+evidence and hosted photos included, and other players' replies with them.
+Afterwards nothing in the database deletes micaOS rows by itself: the
+`mica:server:shell:characterDeleted` event and the orphan sweep at every start
+do, keeping anything under an open report and what hangs off it, anything
+another player's rows still use, and the deleted character's unresolved reports
+and audit-log entries. A `players` table on a different collation no longer
+blocks installing or `micaschema apply`. `apply` removes those keys even on a
+database where re-importing `mica.sql` has already marked 0006 done, and the
+console logs an error at every start while any remain. `apply` also adds a
+`citizenid` index to `mica_messages_reactions`, which the dropped key used to
+provide. `mica.sql` now refuses to import where there is no `players` table, so
+it cannot be mistaken for `mica.esx.sql`. `mica:server:media:characterDeleted`
+no longer removes photos attached to a message, post or listing; the full purge
+does. **If your deletion flow does not fire
+`mica:server:shell:characterDeleted`, a deleted character's rows, their phone
+number included, now stay until the next resource start** rather than going with
+the character at once; fire the event to have them go immediately. On ESX and
+standalone there is nothing to apply.
+
 **Old messages, direct messages and photos are now deleted after a window --
 read this before updating, and run `micaschema apply` (MICA-167).** Three
 convars set how long content is kept: `mica_message_retention` (default 180

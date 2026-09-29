@@ -115,8 +115,7 @@ export const messages = defineService<Message, typeof messagesContract>({
         citizenid: {
           type: 'string',
           citizenId: true,
-          notNull: true,
-          references: { table: 'players', column: 'citizenid' }
+          notNull: true
         },
         photo_id: {
           type: 'int',
@@ -149,8 +148,7 @@ export const messages = defineService<Message, typeof messagesContract>({
         citizenid: {
           type: 'string',
           citizenId: true,
-          notNull: true,
-          references: { table: 'players', column: 'citizenid' }
+          notNull: true
         },
         // Free text, matching `mica_account_reactions.emoji`: the picker offers a fixed
         // palette plus a "+" for any other emoji, so the column has to accept anything the
@@ -168,7 +166,11 @@ export const messages = defineService<Message, typeof messagesContract>({
           unique: true
         },
         // The batched read's own lookup: every reaction on a page of messages, one query.
-        { name: 'message_id', columns: ['message_id'] }
+        { name: 'message_id', columns: ['message_id'] },
+        // A character's reactions, which the purge and the sweep plan by (MICA-300). The foreign
+        // key onto `players` gave this table the only index starting with `citizenid`; without
+        // it every plan of this table would be a full scan.
+        { name: 'citizenid', columns: ['citizenid'] }
       ]
     }
   ],

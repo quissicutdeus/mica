@@ -19,6 +19,10 @@
 -- key, on purpose: the log must survive the row it describes, and it spans every app
 -- table. That is also why there is no FK on those columns.
 --
+-- Nor on `citizenid` (MICA-300). It used to reference qb's `players` with ON DELETE CASCADE,
+-- which deleted a character's rows inside MariaDB before any report hold could apply; the
+-- character-deleted purge and the orphan sweep (`server/lib/orphanSweep.ts`) clean up now.
+--
 -- `citizenid` is written at qb's width, `players.citizenid`'s 50. `pnpm generate:sql` widens
 -- it to 60, `users.identifier`'s, in mica.esx.sql (MICA-289), as it does every declared table.
 CREATE TABLE IF NOT EXISTS `mica_audit_logs` (
@@ -46,6 +50,5 @@ CREATE TABLE IF NOT EXISTS `mica_audit_logs` (
     KEY `service_method` (`service`, `method`),
     KEY `target` (`target_table`, `target_id`),
     -- Moderation review reads newest-first for one player.
-    KEY `citizenid_created` (`citizenid`, `created_at`),
-    CONSTRAINT `fk_audit_logs_citizenid` FOREIGN KEY (`citizenid`) REFERENCES `players` (`citizenid`) ON DELETE CASCADE
+    KEY `citizenid_created` (`citizenid`, `created_at`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;

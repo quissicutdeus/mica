@@ -17,15 +17,16 @@
  * How wide a citizenid column is, which depends on what the rows hang off (MICA-289).
  *
  * A citizenid column is as wide as the owner key it holds. On qb that is
- * `players.citizenid`, a `varchar(50)` that micaOS's foreign keys point at: nothing wider can
- * exist there, so the column stays 50 and `mica.sql` does not move. On ESX it is
+ * `players.citizenid`, a `varchar(50)`: nothing wider can exist there, so the column stays 50
+ * and `mica.sql` does not move. On ESX it is
  * `users.identifier`, a `varchar(60)`, and a multicharacter `char1:license:<40 hex>` is 54 —
  * a column of 50 cost that player their phone. Standalone mints `license:<hash>` identifiers
  * and ships `mica.esx.sql`, so it takes the ESX width too.
  *
- * `ownerTable` is `schemaSql.ts`'s own axis: does a `players(citizenid)` table exist for the
- * rows to reference? The DDL, the planner and the write guard all ask through this function,
- * so the three cannot disagree about one server.
+ * `ownerTable` is `schemaSql.ts`'s own axis: is qb's `players(citizenid)` the owner? (Nothing
+ * references it with a foreign key since MICA-300; only the width follows from the answer.)
+ * The DDL, the planner and the write guard all ask through this function, so the three cannot
+ * disagree about one server.
  */
 export const QB_CITIZENID_WIDTH = 50;
 export const IDENTIFIER_CITIZENID_WIDTH = 60;

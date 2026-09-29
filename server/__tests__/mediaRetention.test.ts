@@ -168,14 +168,41 @@ const OWNED_ROW = {
  * The purge's delete: the citizen's rows except any under an open report, which stay as
  * evidence until the report resolves (MICA-292, retention's MICA-167 hold).
  */
-const MEDIA_PURGE =
-  'DELETE FROM mica_media WHERE citizenid = ? AND NOT EXISTS (SELECT 1 FROM `mica_reports` r ' +
+/** The media-only purge's report hold (MICA-292), spelled out rather than built. */
+const MEDIA_HOLD =
+  'NOT EXISTS (SELECT 1 FROM `mica_reports` r ' +
   "WHERE r.`target_table` = ? AND r.`target_id` = mica_media.`id` AND r.`status` = 'active' " +
   "AND r.`resolution` = 'pending')";
 
-/** The last SQL string handed to `Database.query`, whitespace flattened. */
-const lastQuery = (): string =>
-  String(dbMock.query.mock.calls.at(-1)?.[0] ?? '').replace(/\s+/g, ' ');
+/**
+ * A database holding `count` of the character's media rows, none held and nothing naming
+ * them, answering the plan the media-only purge makes since MICA-300.
+ */
+const plannedMedia = (count: number) => {
+  dbMock.query.mockImplementation(async (sql: string, params: unknown[] = []) => {
+    const text = String(sql);
+    if (text.includes('AS `go`') && text.includes('FROM mica_media t')) {
+      return Array.from({ length: count }, (_, i) => ({ id: i + 1, go: 1, held: 0, ex: 0 }));
+    }
+    if (text.startsWith('SELECT')) return [];
+    return { affectedRows: params.filter((p) => typeof p === 'number').length };
+  });
+};
+
+/** The media-only purge's statements: by planned id, never cascading into an attachment. */
+const expectMediaPurge = () => {
+  const writes = dbMock.query.mock.calls.filter((c) => !String(c[0]).startsWith('SELECT'));
+  expect(writes.map((c) => /^DELETE FROM (\w+) /.exec(String(c[0]))?.[1])).toEqual(['mica_media']);
+  const [sql, params] = writes[0];
+  expect(String(sql)).toMatch(
+    /^DELETE FROM mica_media WHERE mica_media\.`citizenid` = \? AND mica_media\.`id` IN \(/
+  );
+  expect(String(sql)).toContain(MEDIA_HOLD);
+  // The guard that keeps a photo an attachment still names needs the attachment tables
+  // declared; this suite loads Media alone, so `orphanSweep.test.ts` asserts that half.
+  expect((params as unknown[])[0]).toBe('CID_Z');
+  expect(params).toContain('mica_media');
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -496,18 +523,30 @@ describe('the retention prune', () => {
  * So a bare `mockResolvedValue` no longer describes a sweepable server. This does, and each
  * test below states which of the two it is breaking.
  */
-const sweepableServer = (removedPerStatement: number) => {
+/**
+ * A server whose owner table answers, with `orphans` of `mica_media`'s rows planned to go by
+ * the sweep (MICA-300: it plans by id, then deletes what it planned) and none of them held.
+ */
+const sweepableServer = (orphans: number) => {
   dbMock.single.mockImplementation(async (sql: string) =>
     String(sql).includes('AS matched') ? { matched: 2 } : { total: 120 }
   );
-  dbMock.query.mockImplementation(async (sql: string) => {
+  dbMock.query.mockImplementation(async (sql: string, params: unknown[] = []) => {
     const text = String(sql);
-    if (text.startsWith('SELECT DISTINCT')) return [{ owner: 'CID_A' }];
+    if (text.startsWith('SELECT DISTINCT') && text.includes('AS owner')) {
+      return [{ owner: 'CID_A' }];
+    }
     // Retention's first-run grace (MICA-167) is over, and nothing is old enough to expire.
     const bookkeeping = retentionBookkeeping(text);
     if (bookkeeping !== undefined) return bookkeeping;
-    if (text.startsWith('SELECT t.`id`')) return [];
-    return { affectedRows: removedPerStatement };
+    if (text.includes('AS `go`') && text.includes('FROM mica_media t')) {
+      return Array.from({ length: orphans }, (_, i) => ({ id: i + 1, go: 1, held: 0, ex: 0 }));
+    }
+    if (text.startsWith('SELECT')) return [];
+    if (text.startsWith('DELETE FROM mica_media ')) {
+      return { affectedRows: params.filter((p) => typeof p === 'number').length };
+    }
+    return { affectedRows: 0 };
   });
 };
 
@@ -531,21 +570,25 @@ describe('the orphan sweep — cleanup after a character is deleted', () => {
 
     expect(await pruneOrphanedMedia()).toBe(3);
 
-    const sql = lastQuery();
-    expect(sql).toContain('DELETE FROM mica_media WHERE NOT EXISTS');
-    expect(sql).toContain('p.citizenid = mica_media.citizenid');
+    const statements = dbMock.query.mock.calls.map((c) => String(c[0]).replace(/\s+/g, ' '));
+    const del = statements.find((q) => q.startsWith('DELETE FROM mica_media '))!;
+    // The planned ids, and the owner re-checked in the statement itself (MICA-300).
+    expect(del).toContain(
+      'DELETE FROM mica_media WHERE NOT EXISTS ' +
+        '(SELECT 1 FROM players ow WHERE ow.citizenid = mica_media.`citizenid`)'
+    );
+    expect(del).toContain('mica_media.`id` IN (?, ?, ?)');
     // NOT IN against a subquery holding a NULL is unknown for every row and deletes none.
-    expect(sql).not.toContain('NOT IN');
+    for (const q of statements) expect(q).not.toContain('NOT IN');
   });
 });
 
 describe('purging one character', () => {
   it('deletes that citizenid’s rows, bound as a parameter', async () => {
-    dbMock.query.mockResolvedValue({ affectedRows: 12 });
+    plannedMedia(12);
 
     expect(await purgeMediaForCitizen('CID_Z')).toBe(12);
-    expect(lastQuery()).toBe(MEDIA_PURGE);
-    expect(dbMock.query.mock.calls.at(-1)![1]).toEqual(['CID_Z', 'mica_media']);
+    expectMediaPurge();
   });
 
   it('does nothing for an empty or non-string citizenid', async () => {
@@ -561,13 +604,15 @@ describe('purging one character', () => {
   });
 
   it('purges when told a character is gone', async () => {
-    dbMock.query.mockResolvedValue({ affectedRows: 4 });
+    plannedMedia(4);
 
     localHandlers.get(CHARACTER_DELETED_EVENT)!('CID_Z');
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    expect(lastQuery()).toBe(MEDIA_PURGE);
-    expect(dbMock.query.mock.calls.at(-1)![1]).toEqual(['CID_Z', 'mica_media']);
+    await vi.waitFor(() =>
+      expect(vi.mocked(console.log)).toHaveBeenCalledWith(
+        '[micamedia] purged 4 row(s) for deleted character CID_Z.'
+      )
+    );
+    expectMediaPurge();
   });
 
   it('ignores a payload that does not name a character', async () => {
@@ -632,9 +677,11 @@ describe('micamedia prune', () => {
     await runMediaPruneCommand(0);
 
     const statements = dbMock.query.mock.calls.map((c) => String(c[0]).replace(/\s+/g, ' '));
-    expect(statements.some((sql) => sql.includes('DELETE FROM mica_media WHERE NOT EXISTS'))).toBe(
-      true
-    );
+    expect(
+      statements.some((sql) =>
+        sql.startsWith('DELETE FROM mica_media WHERE NOT EXISTS (SELECT 1 FROM players ow')
+      )
+    ).toBe(true);
     // …and the retention half, at the default year, in the same run.
     expect(retentionSelect()).toBeDefined();
   });

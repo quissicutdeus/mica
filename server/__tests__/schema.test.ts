@@ -12,9 +12,17 @@ const {
   runPendingMigrationsMock,
   reportPendingMigrationsMock,
   notifyPlayerMock,
-  registeredCommands
+  registeredCommands,
+  startHandlers
 } = vi.hoisted(() => {
   const commands = new Map<string, (source: number, args?: string[]) => void>();
+  const starts: ((resource: string) => void)[] = [];
+  const previousOn = (globalThis as Record<string, unknown>).on as
+    ((event: string, handler: unknown) => void) | undefined;
+  (globalThis as Record<string, unknown>).on = (event: string, handler: unknown) => {
+    if (event === 'onResourceStart') starts.push(handler as (resource: string) => void);
+    previousOn?.(event, handler);
+  };
   (globalThis as Record<string, unknown>).RegisterCommand = (
     name: string,
     handler: (source: number, args?: string[]) => void
@@ -31,7 +39,8 @@ const {
     runPendingMigrationsMock: vi.fn(),
     reportPendingMigrationsMock: vi.fn(),
     notifyPlayerMock: vi.fn(),
-    registeredCommands: commands
+    registeredCommands: commands,
+    startHandlers: starts
   };
 });
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
@@ -43,7 +52,6 @@ vi.mock('../lib/shell', () => ({ notifyPlayer: notifyPlayerMock }));
 
 import { runApply } from '../services/Schema';
 import { SchemaMigrator, type AdditiveApplyResult } from '../lib/SchemaMigrator';
-import * as collationCheck from '../lib/collationCheck';
 
 /** `apply()` finding nothing to do. */
 const noAdditive = (): AdditiveApplyResult => ({ applied: [], failed: null, remaining: [] });
@@ -52,50 +60,93 @@ describe('runApply', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     runPendingMigrationsMock.mockResolvedValue({ applied: [], failed: null, remaining: [] });
-    // The collation check runs before anything else in `runApply`; default it to "no
-    // mismatch" so the tests below that are not about it exercise the rest of the function
-    // exactly as before MICA-157.
-    vi.spyOn(collationCheck, 'checkOwnerCollation').mockResolvedValue(null);
+    // No foreign keys onto players: the standing drop's lookup answers an empty list.
+    dbMock.query.mockResolvedValue([]);
   });
 
+  const isKeyLookup = (sql: unknown) =>
+    String(sql).includes('information_schema.REFERENTIAL_CONSTRAINTS');
+
   /**
-   * MICA-157. A `players.citizenid` collated differently from micaOS's own tables cannot
-   * host the foreign keys the additive pass (or a versioned migration) may need to add, and
-   * would otherwise fail deep inside `SchemaMigrator.apply()` with MySQL's own opaque errno
-   * 150. This is the fail-loud path instead: named collations, named table, and — the actual
-   * point of checking first — neither migrations nor the additive pass ever run.
+   * MICA-300, from review. The ledger is not evidence the keys onto `players` are gone: a
+   * re-imported `mica.sql` records 0006 as applied over tables that keep them. So apply drops
+   * what `information_schema` still shows, first, whatever the migrations say.
    */
-  it('refuses to apply, before any DDL, when the players collation mismatches', async () => {
-    const mismatch: collationCheck.CollationMismatch = {
-      ownerTable: 'players',
-      ownerColumn: 'citizenid',
-      ownerCollation: 'utf8mb4_uca1400_ai_ci',
-      expectedCollation: 'utf8mb4_unicode_ci'
-    };
-    vi.spyOn(collationCheck, 'checkOwnerCollation').mockResolvedValueOnce(mismatch);
+  it('drops the keys onto players first, before the migrations, whatever the ledger says', async () => {
+    const order: string[] = [];
+    dbMock.query.mockImplementation(async (sql: string) => {
+      if (isKeyLookup(sql)) {
+        order.push('lookup');
+        return [{ table: 'mica_notes', name: 'fk_notes_citizenid' }];
+      }
+      order.push(String(sql));
+      return [];
+    });
+    runPendingMigrationsMock.mockImplementation(async () => {
+      order.push('migrations');
+      return { applied: [], failed: null, remaining: [] };
+    });
+    vi.spyOn(SchemaMigrator, 'apply').mockResolvedValueOnce(noAdditive());
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await runApply(0);
+
+    expect(order).toEqual([
+      'lookup',
+      'ALTER TABLE `mica_notes` DROP FOREIGN KEY `fk_notes_citizenid`',
+      'migrations'
+    ]);
+    expect(logSpy).toHaveBeenCalledWith('[mica] dropped 1 foreign key(s) onto players.');
+    // Something changed, so it does not claim the schema was already up to date.
+    expect(logSpy).not.toHaveBeenCalledWith('[mica] schema is already up to date.');
+  });
+
+  it('stops, and applies nothing else, when the keys cannot be checked or dropped', async () => {
+    dbMock.query.mockRejectedValue(new Error('denied'));
     const applySpy = vi.spyOn(SchemaMigrator, 'apply');
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     await runApply(0);
 
-    expect(errorSpy).toHaveBeenCalledWith(collationCheck.collationMismatchMessage(mismatch));
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[mica] could not drop the foreign keys onto players; nothing else was applied:',
+      expect.any(Error)
+    );
     expect(runPendingMigrationsMock).not.toHaveBeenCalled();
     expect(applySpy).not.toHaveBeenCalled();
   });
 
-  it('logs and proceeds when the collation check itself cannot run, rather than blocking apply', async () => {
-    vi.spyOn(collationCheck, 'checkOwnerCollation').mockRejectedValueOnce(new Error('no db'));
-    vi.spyOn(SchemaMigrator, 'apply').mockResolvedValueOnce(noAdditive());
+  it('reports keys onto players at every start, from information_schema', async () => {
+    dbMock.query.mockResolvedValue([{ table: 'mica_notes', name: 'fk_notes_citizenid' }]);
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(SchemaMigrator, 'report').mockResolvedValue(undefined);
+    reportPendingMigrationsMock.mockResolvedValue(undefined);
+
+    for (const start of startHandlers) start('mica');
+    await vi.waitFor(() =>
+      expect(errorSpy.mock.calls.some((c) => /1 foreign key\(s\)/.test(String(c[0])))).toBe(true)
+    );
+    expect(dbMock.query.mock.calls.some((c) => isKeyLookup(c[0]))).toBe(true);
+  });
+
+  /**
+   * MICA-300. `runApply` used to refuse before any DDL when `players.citizenid` was collated
+   * differently from micaOS's tables (MICA-157), because the foreign keys onto `players` could
+   * not be created across the mismatch. There are no such keys any more — and migration 0006,
+   * which drops them, runs inside this very command — so a qb server whose `players` takes
+   * MariaDB 11's default collation is applied like any other, with nothing read first.
+   */
+  it('goes straight to the migrations, asking nothing about players first', async () => {
+    vi.spyOn(SchemaMigrator, 'apply').mockResolvedValueOnce(noAdditive());
     vi.spyOn(console, 'log').mockImplementation(() => {});
 
     await runApply(0);
 
-    expect(errorSpy).toHaveBeenCalledWith(
-      '[micaschema] could not check the players collation before applying:',
-      expect.any(Error)
-    );
-    expect(runPendingMigrationsMock).toHaveBeenCalled();
+    expect(runPendingMigrationsMock).toHaveBeenCalledTimes(1);
+    // The one read is the standing lookup of keys onto players, above; no collation is asked.
+    const reads = dbMock.query.mock.calls.map((c) => String(c[0]));
+    expect(reads.every(isKeyLookup)).toBe(true);
+    for (const fn of [dbMock.scalar, dbMock.single]) expect(fn).not.toHaveBeenCalled();
   });
 
   it('refuses to run from anywhere but the server console', async () => {

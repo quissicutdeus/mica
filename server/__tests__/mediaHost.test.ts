@@ -601,6 +601,10 @@ describe('purging a deleted character releases their hosted photos', () => {
     hosting({ mica_media_delete_url: 'https://api.example.test/files/{name}' });
     dbMock.query.mockImplementation(async (sql: string) => {
       const text = String(sql);
+      // The plan (MICA-300): three of the character's photos, none held, nothing naming them.
+      if (text.includes('AS `go`') && text.includes('FROM mica_media t')) {
+        return [1, 2, 3].map((id) => ({ id, go: 1, held: 0, ex: 0 }));
+      }
       if (
         text.startsWith('SELECT DISTINCT t.`url` FROM `mica_media` t') &&
         text.includes('t.`citizenid` = ?')

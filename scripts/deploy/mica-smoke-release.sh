@@ -132,8 +132,8 @@ for _ in $(seq 1 90); do
 done
 ready || die "$DB_IMAGE did not accept a root login within 90s"
 # The import is itself half the test: the file an owner is told to import has to
-# import. Standalone mode wants the ESX file, which carries no foreign key onto a
-# framework table that this database does not have.
+# import. Standalone mode wants the ESX file: mica.sql reads qb's players table
+# first and fails without it, and this database has none.
 docker exec -i "$db" mariadb -uroot -psmoke mica <"$resource/mica.esx.sql" ||
     die "mica.esx.sql from the zip failed to import"
 tables=$(docker exec "$db" mariadb -uroot -psmoke -N -e "select count(*) from information_schema.tables where table_schema='mica'")

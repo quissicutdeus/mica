@@ -576,14 +576,34 @@ describe('child tables', () => {
     const sql = toChildTableSql({
       name: 'soft',
       columns: {
-        owner: {
-          type: 'string' as const,
-          references: { table: 'players', column: 'citizenid', onDelete: 'SET NULL' as const }
+        post_id: {
+          type: 'int' as const,
+          references: { table: 'mica_posts', column: 'id', onDelete: 'SET NULL' as const }
         }
       }
     });
 
     expect(sql).toContain('ON DELETE SET NULL');
+  });
+
+  /**
+   * MICA-300. The cascade from qb's `players` deleted a character's micaOS rows inside MariaDB
+   * before any report hold or cascade guard could apply. A declaration that asks for one again
+   * fails generation rather than quietly bringing it back.
+   */
+  it('refuses a foreign key onto the framework owner table', () => {
+    expect(() =>
+      toChildTableSql({
+        name: 'owned',
+        columns: {
+          citizenid: {
+            type: 'string' as const,
+            citizenId: true,
+            references: { table: 'players', column: 'citizenid' }
+          }
+        }
+      })
+    ).toThrow(/MICA-300/);
   });
 
   it('closes the statement without a trailing comma', () => {
@@ -780,8 +800,9 @@ describe('toCreateTableSql', () => {
     expect(sql).toContain('ON UPDATE CURRENT_TIMESTAMP');
     expect(sql).toContain('PRIMARY KEY (`id`)');
     expect(sql).toContain('KEY `citizenid_status` (`citizenid`, `status`)');
-    expect(sql).toContain('FOREIGN KEY (`citizenid`)');
-    expect(sql).toContain('ON DELETE CASCADE');
+    // No foreign key onto `players` since MICA-300, and the body still closes cleanly.
+    expect(sql).not.toContain('FOREIGN KEY');
+    expect(sql).not.toMatch(/,\s*\)\s*ENGINE/);
     expect(sql).toContain('ENGINE = InnoDB');
   });
 

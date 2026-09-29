@@ -24,13 +24,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
 const outFile = path.join(root, 'mica.sql');
 /**
- * The same schema without the qb `players` foreign keys — see `esxBanner` in `main`.
+ * The same schema sized for `users.identifier` — see `esxBanner` in `main`.
  *
  * **Two audiences, one file, and the name stays `mica.esx.sql`.** It was written for ESX
  * (MICA-150) and standalone (MICA-151) needs exactly the same artifact for exactly the
- * same reason: neither has a `players` table for the constraints to point at. Renaming it to
- * something framework-neutral would break the link every ESX server owner already has, for a
- * filename. The banner says who it is for; the filename stays put.
+ * same reason: neither has qb's `players` table. Renaming it to something framework-neutral
+ * would break the link every ESX server owner already has, for a filename. The banner says who
+ * it is for; the filename stays put.
  */
 const esxOutFile = path.join(root, 'mica.esx.sql');
 
@@ -184,35 +184,20 @@ function migrationIds() {
 }
 
 /**
- * Remove every `players` foreign key from hand-written SQL, or throw.
+ * The first statement of `mica.sql`: fail the import on a server with no qb `players` table.
  *
- * `scripts/framework-schema.sql` is hand-written and has no `defineService` behind it, so
- * `schemaSql.ts`'s `ownerTable` option cannot reach its one constraint. Keeping a second,
- * hand-written ESX copy of the file is the drift `generatedSchema.test.ts` exists to catch
- * everywhere else, so the constraint is removed by transformation instead.
- *
- * **It throws when it matches nothing**, and that is the point. A regex that quietly matched
- * nothing after somebody reformatted the file would emit an ESX artifact still carrying the
- * one constraint that cannot import, and the first person to find out would be a server owner
- * on a fresh install — a check that stays silent when it cannot run reads as a pass.
- *
- * The preceding line's trailing comma goes with it: MySQL rejects a table body ending in one,
- * and that failure would likewise only ever surface on ESX.
+ * The two files used to tell themselves apart for free — `mica.sql`'s foreign keys onto
+ * `players` failed at the first `CREATE TABLE` on ESX. MICA-300 removed those keys, and
+ * without this a wrong import would succeed quietly with every `citizenid` 50 wide, four short
+ * of an es_extended multicharacter identifier (MICA-289), and the planner would only call it
+ * drift. A read of `players` that returns nothing on qb and errors everywhere else keeps the
+ * failure loud and first, naming the table. `mica.esx.sql` carries no such line.
  */
-function withoutOwnerForeignKeys(sql, label) {
-  const constraint =
-    /,(\r?\n)\s*CONSTRAINT `[^`]+` FOREIGN KEY \(`citizenid`\)\s*(\r?\n\s*)?REFERENCES `players` \(`citizenid`\) ON DELETE CASCADE/g;
-
-  const stripped = sql.replace(constraint, '');
-  if (stripped === sql) {
-    throw new Error(
-      `generate-sql: found no \`players\` foreign key to strip from ${label}. The ESX schema ` +
-        'is built by removing them, so a silent no-match would ship a file that cannot be ' +
-        'imported on es_extended. Update the pattern in `withoutOwnerForeignKeys`.'
-    );
-  }
-  return stripped;
-}
+const QB_ONLY_GUARD = [
+  '-- qb only: this fails with "Table ... players doesn\'t exist" on a server without qb.',
+  '-- Import mica.esx.sql on es_extended or standalone instead.',
+  'SELECT 1 FROM `players` LIMIT 0;'
+].join('\n');
 
 /**
  * Size hand-written SQL's `citizenid` columns for a schema with no `players` table, or throw.
@@ -220,9 +205,9 @@ function withoutOwnerForeignKeys(sql, label) {
  * The declared tables get their width from `citizenIdWidth` (MICA-289): 50 where the rows
  * hang off qb's `players.citizenid`, 60 where they hang off ESX's `users.identifier`.
  * `scripts/framework-schema.sql` has no declaration behind it and is written at the qb width,
- * so the ESX copy is widened here, the same way `withoutOwnerForeignKeys` strips its key —
- * and it throws on no match for the same reason: a silent no-match would ship an ESX audit
- * ledger that cannot hold the identifiers the rest of the file can.
+ * so the ESX copy is widened here — and it throws on no match: a silent no-match would ship an
+ * ESX audit ledger that cannot hold the identifiers the rest of the file can, and a check that
+ * stays silent when it cannot run reads as a pass.
  */
 function withIdentifierWidth(sql, label, citizenIdWidth) {
   const column = new RegExp(`\`citizenid\` varchar\\(${citizenIdWidth(true)}\\)`, 'g');
@@ -320,29 +305,24 @@ async function main() {
     '-- hand-maintained copy drifts, and the column allowlist that guards SQL identifier',
     '-- interpolation is only safe while it matches the real table.',
     '--',
-    '-- Import this one file. The order inside it matters — foreign keys cross app',
-    '-- boundaries — and it is already correct.',
+    '-- Import this one file, on qbx_core or qb-core; es_extended and standalone take',
+    '-- mica.esx.sql. The order inside it matters — foreign keys cross app boundaries —',
+    '-- and it is already correct.',
     ''
   ].join('\n');
 
   /**
    * The ESX artifact (MICA-150).
    *
-   * micaOS's tables all hang off `players(citizenid)`, which **qb creates and micaOS does
-   * not**. ESX has no such table — it has `users(identifier)` — so 22 of these CREATE
-   * statements fail at import on a pure `es_extended` server, and micaOS simply cannot be
-   * installed there.
+   * A second file rather than one conditional file, because the two differ in the width of
+   * every `citizenid` column (MICA-289): qb's `players.citizenid` is 50, ESX's
+   * `users.identifier` 60. Both come out of the same declarations in the same pass, so
+   * neither can drift from the code or from each other.
    *
-   * A second file rather than one conditional file, because MySQL has no conditional DDL
-   * short of a prepared statement built from `information_schema`, and expressing it that way
-   * would rewrite every table in the qb file to gain a trailing ALTER block. The requirement
-   * was that qb's artifact not move, so that the ESX support is provably additive: one file
-   * regenerates byte-for-byte identical, the other is new. Both come out of the same
-   * declarations in the same pass, so neither can drift from the code or from each other.
-   *
-   * What ESX gives up with the constraint is the `ON DELETE CASCADE` — deleting a character
-   * on qb clears their rows from 22 tables for free, and nothing replaces that here. That gap
-   * has its own ticket. It is not a reason to keep a constraint that will not import.
+   * They used to differ in foreign keys as well: `mica.sql` hung every table off
+   * `players(citizenid)` with `ON DELETE CASCADE`, which cannot import where qb is absent.
+   * MICA-300 removed those keys from both — the cascade deleted held evidence before any hold
+   * could apply — and `QB_ONLY_GUARD` keeps a wrong import failing at its first statement.
    */
   const esxAppFiles = ordered.map((resolved) => ({
     id: resolved.id,
@@ -354,18 +334,16 @@ async function main() {
     '-- dependency order.',
     '--',
     '-- GENERATED by `pnpm generate:sql`. Do not edit by hand. Same declarations as',
-    '-- mica.sql, with one difference: every foreign key onto `players` is omitted,',
-    '-- because that table belongs to qb and exists on neither an ESX server nor a',
-    '-- server running micaOS with no framework at all (`mica_standalone`).',
+    '-- mica.sql, with one difference: every citizenid column is 60 wide, the width of',
+    "-- ESX's users.identifier, where mica.sql's are qb's 50.",
     '--',
     '-- Import THIS file on es_extended or standalone, and mica.sql on qbx_core or',
-    '-- qb-core. Importing the wrong one fails at the first constraint rather than',
-    '-- silently.',
+    '-- qb-core. mica.sql refuses to import where there is no qb `players` table.',
     '--',
-    '-- The constraint carried ON DELETE CASCADE, so here a deleted character leaves its',
-    '-- rows behind. On ESX nothing cleans them up. On standalone nothing needs to: there',
-    '-- is no character table to be deleted from, and micaOS is the only record a player',
-    '-- has — which is also why the orphan sweep skips there rather than guessing.',
+    '-- A deleted character leaves its rows behind until the character-deleted purge or the',
+    '-- orphan sweep at resource start removes them, keeping what an open report holds. On',
+    '-- standalone there is no character table to be deleted from, and micaOS is the only',
+    '-- record a player has — which is also why the orphan sweep skips there.',
     ''
   ].join('\n');
 
@@ -381,6 +359,7 @@ async function main() {
     outFile,
     [
       banner,
+      QB_ONLY_GUARD,
       frameworkSql.trimEnd(),
       '',
       ...appFiles.map((f) => f.sql.trimEnd()),
@@ -392,11 +371,7 @@ async function main() {
     esxOutFile,
     [
       esxBanner,
-      withIdentifierWidth(
-        withoutOwnerForeignKeys(frameworkSql.trimEnd(), 'scripts/framework-schema.sql'),
-        'scripts/framework-schema.sql',
-        citizenIdWidth
-      ),
+      withIdentifierWidth(frameworkSql.trimEnd(), 'scripts/framework-schema.sql', citizenIdWidth),
       '',
       ...esxAppFiles.map((f) => f.sql.trimEnd()),
       migrationsBlock

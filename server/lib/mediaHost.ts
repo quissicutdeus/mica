@@ -30,8 +30,9 @@
  *   each recipient's row, so the sender's row expiring must not pull the picture out from
  *   under theirs. Every path that hard-deletes `mica_media` rows reads their URLs first and
  *   hands them here after (MICA-292): retention, both character purges and the orphan sweep.
- *   The one it cannot is a database-level `ON DELETE CASCADE` from the owner table, which
- *   `warnIfCascadeHidesHostedPhotos` says out loud at start.
+ *   The one it cannot is a database-level `ON DELETE CASCADE` from the owner table — gone
+ *   since MICA-300, but still on a qb database that has not run `micaschema apply` since —
+ *   which `ownerForeignKeys.ts` says out loud at every start, hosted photos included.
  *
  * `server/tsconfig.json` has neither `dom` nor `@types/node` in scope (see
  * `DiscordWebhook.ts`), so the few runtime globals used here are declared below at the
@@ -666,52 +667,4 @@ export const reportRelease = (label: string, outcome: ReleaseOutcome): void => {
         `they are left on ${host}; remove them there if they should not stay reachable.`
     );
   }
-};
-
-/**
- * Say at start, once, when `mica_media` rows can vanish inside the database. MICA-292.
- *
- * On qb, `mica.sql` gives `mica_media.citizenid` a `FOREIGN KEY … ON DELETE CASCADE` onto
- * `players`, so a framework deleting a character takes their photo rows in the same
- * statement, without micaOS running a line. For a photo in the database that is the cleanup
- * working. For a hosted photo it is a leak: the row that named the file is gone before
- * anything could read its URL, nothing is left for the orphan sweep to find, and the file
- * stays publicly reachable at an address nobody will ever look up again. Without a listing
- * API on the host — which `mica_media_upload_url` does not promise — micaOS cannot find it.
- *
- * What an owner can do is order their deletion: trigger `mica:server:shell:characterDeleted`
- * (or the media-only one) **before** the framework deletes the character, and the purge
- * reads the URLs, deletes the rows and releases the files; the cascade then has nothing
- * left to take. This says so when there is an image host and the table carries a cascading
- * constraint, and answers whether it did. Never throws; a check it cannot run is said too,
- * rather than read as "no cascade".
- */
-export const warnIfCascadeHidesHostedPhotos = async (table: string): Promise<boolean> => {
-  const host = imageHost();
-  if (!host) return false;
-  let cascades: number;
-  try {
-    const rows = await Database.query<{ n: number | string }[]>(
-      'SELECT COUNT(*) AS `n` FROM information_schema.REFERENTIAL_CONSTRAINTS ' +
-        "WHERE `CONSTRAINT_SCHEMA` = DATABASE() AND `TABLE_NAME` = ? AND `DELETE_RULE` = 'CASCADE'",
-      [table]
-    );
-    cascades = Number(Array.isArray(rows) && rows.length > 0 ? rows[0].n : Number.NaN);
-    if (!Number.isFinite(cascades)) throw new Error('not a count');
-  } catch (error) {
-    console.warn(
-      `[micamedia] could not check whether ${table} cascades from the owner table ` +
-        `(${reasonOf(error)}). If it does, a character your framework deletes leaves their ` +
-        `hosted photos on ${host}; see the README's image host section.`
-    );
-    return false;
-  }
-  if (cascades === 0) return false;
-  console.warn(
-    `[micamedia] ${table} is deleted by ON DELETE CASCADE when your framework deletes a ` +
-      `character, inside the database, so micaOS never sees those rows' URLs and their ` +
-      `hosted photos stay on ${host}. Trigger mica:server:shell:characterDeleted before the ` +
-      'character is deleted to release them; see the README.'
-  );
-  return true;
 };

@@ -61,8 +61,8 @@ const normalize = (spec: ColumnType | ColumnDef): ColumnDef =>
   typeof spec === 'string' ? { type: spec } : spec;
 
 /**
- * A `citizenId` column's width for the file being written (MICA-289): qb's `players` key when
- * the owner table is there, `users.identifier`'s when it is not. Every other column as declared.
+ * A `citizenId` column's width for the file being written (MICA-289): qb's `players` key on qb,
+ * `users.identifier`'s otherwise. Every other column as declared.
  */
 const withOwnerWidth = (def: ColumnDef, options: SchemaSqlOptions): ColumnDef =>
   def.citizenId ? { ...def, length: citizenIdWidth(options.ownerTable !== false) } : def;
@@ -106,60 +106,57 @@ const indexSql = ({ name, columns, unique }: ResolvedIndex): string => {
 };
 
 /**
- * The framework's own player table, which micaOS references but does not create.
+ * qb's player table, which micaOS reads but does not create — and, since MICA-300, never
+ * references with a foreign key.
  *
- * qb owns `players(citizenid)`. ESX has no such table — it has `users(identifier)` — so on a
- * pure `es_extended` server every constraint pointing here fails at import.
+ * Every micaOS table used to carry `REFERENCES players(citizenid) ON DELETE CASCADE`, so qb
+ * deleting a character deleted their micaOS rows inside MariaDB, before any report hold or
+ * cascade guard could apply: a reported post and its photo, and — through micaOS's own
+ * cascades — another player's replies under it. `foreignKeySql` refuses such a reference now,
+ * and the character-deleted purge and the orphan sweep decide instead (`orphanSweep.ts`).
+ * Migration 0006 drops the constraints from an existing qb database.
  */
 export const OWNER_TABLE = 'players';
 
 /**
  * The collation every micaOS-owned table is created with, on both generated files.
  *
- * A single named constant rather than the literal repeated at each `CREATE TABLE`'s closing
- * line, because `collationCheck.ts` (MICA-157) needs the exact same value a live
- * `players.citizenid` is compared against: a foreign key requires both sides of the
- * relationship to share a collation, and MariaDB 11.4+ changed its own `utf8mb4` default away
- * from this one, which is what makes the comparison worth having at all.
+ * One named constant rather than the literal repeated at each `CREATE TABLE`'s closing line.
+ * Nothing outside micaOS has to agree with it any more: the one comparison against a framework
+ * column, the orphan sweep's, runs in that column's own collation (MICA-299), and the foreign
+ * key onto `players` that once required a match is gone (MICA-300).
  */
 export const TABLE_COLLATION = 'utf8mb4_unicode_ci';
 
 /**
- * How much of the schema the framework underneath can support.
+ * Which framework the file being written is for.
  *
- * The only axis so far is whether `players(citizenid)` exists, and it is expressed as an
+ * The only axis is whether qb's `players(citizenid)` is the owner, and it is expressed as an
  * option rather than read from `FrameworkBridge` because this module runs in two places:
  * inside the resource, and inside `scripts/generate-sql.js` under node, where there is no
  * framework to ask. The generator decides; this only renders what it is told.
- *
- * **Defaults to the qb answer**, so every existing call site emits exactly the bytes it
- * emitted before ESX was a thing. That is deliberate: the committed `mica.sql` is the
- * artifact server owners import by hand, and the ESX support is provably additive only if
- * that file does not move.
  */
 export interface SchemaSqlOptions {
   /**
-   * Does this server have a `players(citizenid)` table for micaOS's rows to hang off?
+   * Is qb's `players(citizenid)` the owner? Defaults to yes, the `mica.sql` answer.
    *
-   * `false` omits every foreign key targeting it — the implicit `citizenid` one on each app
-   * table, and the three child tables that declare it explicitly (`Marketplace`, `Messages`,
-   * `Conversations`). **It omits the `ON DELETE CASCADE` with them**, which is the real cost
-   * of the option and not a detail: on qb, deleting a character removes their rows from 22
-   * tables for free, and on ESX nothing does. That gap is its own ticket, and the constraint
-   * cannot simply be kept — a schema that will not import is not a safer one.
+   * It sizes every `citizenId` column (MICA-289) and nothing else. It used to decide whether
+   * each table carried a foreign key onto `players` too; no table does since MICA-300.
    */
   ownerTable?: boolean;
 }
 
-const foreignKeySql = (
-  table: string,
-  column: string,
-  def: ColumnDef,
-  options: SchemaSqlOptions = {}
-): string | null => {
+const foreignKeySql = (table: string, column: string, def: ColumnDef): string | null => {
   if (!def.references) return null;
   const { table: refTable, column: refColumn, onDelete = 'CASCADE' } = def.references;
-  if (refTable === OWNER_TABLE && options.ownerTable === false) return null;
+  if (refTable === OWNER_TABLE) {
+    throw new Error(
+      `schemaSql: ${table}.${column} references \`${OWNER_TABLE}\`. micaOS tables carry no ` +
+        'foreign key onto the framework (MICA-300): its cascade deleted held evidence before ' +
+        'any hold applied. Drop the reference; a `citizenid` column with `citizenId: true` is ' +
+        "already how the purge and the sweep find a table's owner."
+    );
+  }
   return (
     `    CONSTRAINT \`fk_${table}_${column}\` FOREIGN KEY (\`${column}\`)\n` +
     `        REFERENCES \`${refTable}\` (\`${refColumn}\`) ON DELETE ${onDelete},`
@@ -169,10 +166,8 @@ const foreignKeySql = (
 /**
  * Strip the trailing comma a `CREATE TABLE` body's last line always carries.
  *
- * Every line emitter above ends its line with `,` because something normally follows.
- * Dropping the owner foreign key can leave nothing following, and MySQL rejects a body that
- * ends in a comma — a failure that only ever appears on a fresh ESX install, which is exactly
- * the audience this branch exists for.
+ * Every line emitter above ends its line with `,` because something normally follows, and
+ * MySQL rejects a body that ends in one.
  */
 const closeBody = (body: readonly string[]): string[] => {
   if (body.length === 0) return [];
@@ -257,28 +252,19 @@ export const indexDefinitionSql = (index: ResolvedIndex): string =>
 
 /**
  * The full `CREATE TABLE` for an app's primary table, matching the conventions
- * already in mica.sql: soft-delete `status` enum, citizenid FK onto `players` with
- * cascade, and a `(citizenid, status)` index because every generic read filters on
- * both.
+ * already in mica.sql: soft-delete `status` enum, and a `(citizenid, status)` index
+ * because every generic read filters on both. No foreign key on `citizenid` (MICA-300).
  */
 export function toCreateTableSql(
   resolved: ResolvedService,
   options: SchemaSqlOptions = {}
 ): string {
-  const { table, id, fields } = resolved;
+  const { table, fields } = resolved;
   const shape = expectedShape(resolved);
 
   const declaredForeignKeys = fields
-    .map(({ name, def }) => foreignKeySql(table, name, def, options))
+    .map(({ name, def }) => foreignKeySql(table, name, def))
     .filter((line): line is string => line !== null);
-
-  const ownerForeignKey =
-    options.ownerTable === false
-      ? []
-      : [
-          `    CONSTRAINT \`fk_${id}_citizenid\` FOREIGN KEY (\`citizenid\`)`,
-          `        REFERENCES \`${OWNER_TABLE}\` (\`citizenid\`) ON DELETE CASCADE`
-        ];
 
   const body = [
     '    `id` int(11) NOT NULL AUTO_INCREMENT,',
@@ -292,10 +278,7 @@ export function toCreateTableSql(
 
   const lines = [
     `CREATE TABLE IF NOT EXISTS \`${table}\` (`,
-    // Only closed when the owner key is not following it. With the key present the body is
-    // emitted exactly as it always was, comma and all, so the qb file does not move a byte.
-    ...(ownerForeignKey.length > 0 ? body : closeBody(body)),
-    ...ownerForeignKey,
+    ...closeBody(body),
     `) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = ${TABLE_COLLATION};`
   ];
 
@@ -316,7 +299,7 @@ export function toChildTableSql(
   );
 
   const foreignKeys = entries
-    .map(([name, def]) => foreignKeySql(child.name, name, def, options))
+    .map(([name, def]) => foreignKeySql(child.name, name, def))
     .filter((line): line is string => line !== null);
 
   const body = [

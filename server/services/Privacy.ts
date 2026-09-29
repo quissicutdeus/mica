@@ -171,7 +171,9 @@ export const EXPORT_EXCLUDED: ReadonlySet<string> = new Set([AUDIT_LOG_TABLE]);
 /**
  * What a player's own delete keeps (MICA-168). The test for each: is this a moderation or
  * accountability record, rather than content the player made? The character-deleted purge
- * passes none of these; only a self-service delete does.
+ * and the orphan sweep pass two of these -- the audit ledger and pending reports, which
+ * outlive the character (MICA-300, `CHARACTER_EXCEPT` in `lib/shell.ts`); the rest only a
+ * self-service delete keeps.
  *
  * - `mica_audit_logs`, whole: the moderation ledger. A staff member must not be able to
  *   erase the record of their own moderation and admin reads (MICA-70).

@@ -60,7 +60,7 @@ import {
   __setPurgeHookForTests,
   cascadeEdges,
   ownedTables,
-  orphanDeleteSql,
+  orphanScope,
   sweepOrphanedRows,
   purgeOwnedRows,
   OWNER_OVERRIDE_CONVAR,
@@ -68,6 +68,8 @@ import {
 } from '../lib/orphanSweep';
 import { FrameworkBridge, __setResourceLookup, detectFramework } from '../lib/FrameworkBridge';
 import { REPORTABLE } from '../lib/moderation';
+import { CHARACTER_EXCEPT } from '../lib/shell';
+import { SELF_SERVICE_EXCEPT } from '../services/Privacy';
 import { declaredServices } from '../lib/defineService';
 // Populates `declaredServices` — the registry is filled as a side effect of each
 // `defineService`, so without this the derivation below has nothing to derive from.
@@ -75,10 +77,13 @@ import '../services/index';
 
 const CHARACTER_DELETED_EVENT = 'mica:server:shell:characterDeleted';
 
-/** The historical qb statement, from `pruneOrphanedMedia` as MICA-71 shipped it. */
-const MICA_71_MEDIA_DELETE =
-  'DELETE FROM mica_media WHERE NOT EXISTS ' +
-  '(SELECT 1 FROM players p WHERE p.citizenid = mica_media.citizenid)';
+/**
+ * The question MICA-71 first asked of `mica_media`, now asked of every row the sweep plans and
+ * again in its `DELETE`: is this row's owner gone? The owner table is aliased `ow`, because the
+ * plan's own statements use `p` for a parent row (MICA-300).
+ */
+const OWNER_GONE = (row: string) =>
+  `NOT EXISTS (SELECT 1 FROM players ow WHERE ow.citizenid = ${row}.\`citizenid\`)`;
 
 /**
  * Retention's open-report hold on a row of `table` (MICA-167), spelled out rather than built
@@ -116,6 +121,12 @@ const asEsx = () =>
 /** No framework has answered yet — the boot-order window, and the dangerous one. */
 const asUnknown = () => __setResourceLookup(() => undefined);
 
+const escape = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** The planned delete's first read of a table: its rows, and whether each may go. */
+const isPlan = (sql: string): boolean =>
+  sql.startsWith('SELECT t.`id` AS `id`, ') && sql.includes(' AS `go`, ');
+
 const deletes = (): string[] =>
   dbMock.query.mock.calls
     .map((call: any[]) => String(call[0]))
@@ -144,7 +155,12 @@ const healthyServer = (
     throw new Error(`unexpected single(): ${sql}`);
   });
   dbMock.query.mockImplementation(async (sql: string) => {
-    if (sql.startsWith('SELECT DISTINCT')) return [{ owner: 'CID_A' }, { owner: 'CID_B' }];
+    if (sql.startsWith('SELECT DISTINCT') && sql.includes('AS owner')) {
+      return [{ owner: 'CID_A' }, { owner: 'CID_B' }];
+    }
+    // The plan (MICA-300): one orphaned row in every table, none held, nothing referencing it.
+    if (isPlan(sql)) return [{ id: 1, go: 1, held: 0, ex: 0 }];
+    if (sql.startsWith('SELECT')) return [];
     if (sql.trimStart().startsWith('DELETE')) return { affectedRows: removedPerTable };
     throw new Error(`unexpected query(): ${sql}`);
   });
@@ -190,6 +206,26 @@ describe('which tables the sweep covers, and how that set is derived', () => {
         .map((t) => t.table)
         .toSorted()
     ).toEqual([...withOwner].toSorted());
+  });
+
+  /**
+   * MICA-300, from review. The foreign keys onto `players` gave every table an index on
+   * `citizenid` whether one was declared or not; `mica_messages_reactions` had no other. Without
+   * one, each plan of that table — by a citizenid, or by an owner being gone — is a full scan.
+   */
+  it('finds an index starting with the owner column on every owned table in mica.sql', () => {
+    const sql = readFileSync(join(__dirname, '..', '..', 'mica.sql'), 'utf8');
+    const bodies = new Map(
+      [...sql.matchAll(/CREATE TABLE IF NOT EXISTS `(\w+)` \(([\s\S]*?)\n\) ENGINE/g)].map((m) => [
+        m[1],
+        m[2]
+      ])
+    );
+    const unindexed = ownedTables().filter(({ table, column }) => {
+      const body = bodies.get(table) ?? '';
+      return !new RegExp(`KEY \`\\w+\` \\(\`${column}\``).test(body);
+    });
+    expect(unindexed).toEqual([]);
   });
 
   it('reaches the four child tables that carry their own owner key', () => {
@@ -443,8 +479,8 @@ describe('the owner-table override convar (MICA-159)', () => {
     expect(deletes().length).toBeGreaterThan(0);
     // Every DELETE checks existence against the overridden table, not `players`.
     for (const sql of deletes()) {
-      expect(sql).toContain('FROM custom_characters p');
-      expect(sql).toContain('p.character_id');
+      expect(sql).toContain('FROM custom_characters ow');
+      expect(sql).toContain('ow.character_id');
     }
   });
 
@@ -498,7 +534,7 @@ describe('the owner-table override convar (MICA-159)', () => {
 
     expect(result.skipped).toBeNull();
     for (const sql of deletes()) {
-      expect(sql).toContain('FROM players p');
+      expect(sql).toContain('FROM players ow');
     }
   });
 });
@@ -535,55 +571,68 @@ describe('the owner verdict is resolved once, not per table', () => {
 });
 
 describe('the statement itself', () => {
-  it('is the statement MICA-71 shipped, on qb, plus a bound on how much it may lock', () => {
-    const { sql } = orphanDeleteSql({ table: 'mica_media', column: 'citizenid' }, QB);
+  const statementFor = async (table: string): Promise<[string, unknown[]]> => {
+    healthyServer({
+      matched: 1,
+      removedPerTable: 1,
+      collation: { collation: null, charset: null }
+    });
+    await sweepOrphanedRows();
+    const call = dbMock.query.mock.calls.find((c: any[]) =>
+      String(c[0]).startsWith(`DELETE FROM ${table} `)
+    )!;
+    return [String(call[0]), call[1]];
+  };
 
-    expect(sql.startsWith(MICA_71_MEDIA_DELETE)).toBe(true);
-    expect(sql).toMatch(/ LIMIT \d+$/);
+  it('asks MICA-71’s question of every row it deletes, in the DELETE itself, by planned id', async () => {
+    const [sql, params] = await statementFor('mica_media');
+
+    expect(sql.startsWith(`DELETE FROM mica_media WHERE ${OWNER_GONE('mica_media')} AND `)).toBe(
+      true
+    );
+    expect(sql).toContain('mica_media.`id` IN (?)');
+    expect(params[0]).toBe(1);
   });
 
-  it('keeps a reported row out of a reportable table’s sweep (MICA-292)', () => {
-    const { sql, params } = orphanDeleteSql({ table: 'mica_media', column: 'citizenid' }, QB);
+  it('keeps a reported row out of a reportable table’s sweep (MICA-292)', async () => {
+    const [sql, params] = await statementFor('mica_media');
 
     expect(sql).toContain(REPORT_HOLD('mica_media'));
-    expect(params).toEqual(['mica_media']);
+    expect(params).toContain('mica_media');
   });
 
-  it('holds nothing on a table no report can name', () => {
-    const { sql, params } = orphanDeleteSql({ table: 'mica_notes', column: 'citizenid' }, QB);
+  it('holds nothing on a table no report can name', async () => {
+    const [sql] = await statementFor('mica_notes');
 
     expect(sql).not.toContain('mica_reports');
-    expect(params).toEqual([]);
   });
 
   it('asks the ESX question of the ESX table', () => {
-    const { sql } = orphanDeleteSql({ table: 'mica_notes', column: 'citizenid' }, ESX);
+    const { sql } = orphanScope(ESX, null).owns('mica_notes', 'citizenid');
 
-    expect(sql).toContain('FROM users p');
-    expect(sql).toContain('p.identifier = mica_notes.citizenid');
+    expect(sql).toBe(
+      'NOT EXISTS (SELECT 1 FROM users ow WHERE ow.identifier = mica_notes.`citizenid`)'
+    );
   });
 
-  it('never uses NOT IN', () => {
+  it('never uses NOT IN', async () => {
     // `NOT IN` against a subquery holding a single NULL is unknown for every row and
     // deletes nothing at all — a prune that quietly does nothing reads exactly like one
     // that had nothing to do.
-    expect(orphanDeleteSql({ table: 'mica_notes', column: 'citizenid' }, QB).sql).not.toContain(
-      'NOT IN'
-    );
+    await statementFor('mica_notes');
+    for (const call of dbMock.query.mock.calls) expect(String(call[0])).not.toContain('NOT IN');
   });
 
   it('refuses to build SQL from anything that is not a plain identifier', () => {
     // Nothing off the wire can reach here today. The guard is at the point of
     // concatenation because that is the line the next person to add a parameter reads.
-    expect(() =>
-      orphanDeleteSql({ table: 'mica_notes; DROP TABLE players; --', column: 'citizenid' }, QB)
-    ).toThrow(/plain identifier/);
-    expect(() => orphanDeleteSql({ table: 'mica_notes', column: '*' }, QB)).toThrow(
+    expect(() => orphanScope({ table: 'players; DROP TABLE x', column: 'c' }, null)).toThrow(
       /plain identifier/
     );
-    expect(() =>
-      orphanDeleteSql({ table: 'mica_notes', column: 'citizenid' }, { table: 'a b', column: 'c' })
-    ).toThrow(/plain identifier/);
+    expect(() => orphanScope(QB, null).owns('t', '*')).toThrow(/plain identifier/);
+    expect(() => orphanScope({ table: 'players', column: 'a b' }, null).owns('t', 'c')).toThrow(
+      /plain identifier/
+    );
   });
 });
 
@@ -595,7 +644,7 @@ describe('the statement itself', () => {
  */
 describe('comparing across collations (MICA-299)', () => {
   const COLLATED = (column: string) =>
-    `p.identifier = CONVERT(${column} USING utf8mb4) COLLATE utf8mb4_uca1400_ai_ci`;
+    `ow.identifier = CONVERT(${column} USING utf8mb4) COLLATE utf8mb4_uca1400_ai_ci`;
 
   let errors: ReturnType<typeof vi.spyOn>;
   let warnings: ReturnType<typeof vi.spyOn>;
@@ -610,31 +659,33 @@ describe('comparing across collations (MICA-299)', () => {
   });
 
   it("converts micaOS's side into the owner's collation and leaves the owner column bare", () => {
-    const { sql } = orphanDeleteSql({ table: 'mica_notes', column: 'citizenid' }, ESX, UCA1400);
+    const { sql } = orphanScope(ESX, UCA1400).owns('mica_notes', 'citizenid');
 
-    expect(sql).toContain(`(SELECT 1 FROM users p WHERE ${COLLATED('mica_notes.citizenid')})`);
-    // Collating `p.identifier` would be legal and would scan all of `users` per row.
-    expect(sql).not.toMatch(/p\.identifier COLLATE/);
-    expect(sql).not.toMatch(/CONVERT\(p\./);
+    expect(sql).toBe(
+      `NOT EXISTS (SELECT 1 FROM users ow WHERE ${COLLATED('mica_notes.`citizenid`')})`
+    );
+    // Collating `ow.identifier` would be legal and would scan all of `users` per row.
+    expect(sql).not.toMatch(/ow\.identifier COLLATE/);
+    expect(sql).not.toMatch(/CONVERT\(ow\./);
   });
 
   it('converts the character set as well, for an owner column that is not utf8mb4', () => {
-    const { sql } = orphanDeleteSql({ table: 'mica_notes', column: 'citizenid' }, ESX, {
+    const { sql } = orphanScope(ESX, {
       charset: 'utf8mb3',
       collation: 'utf8mb3_general_ci'
-    });
+    }).owns('mica_notes', 'citizenid');
 
     expect(sql).toContain(
-      'p.identifier = CONVERT(mica_notes.citizenid USING utf8mb3) COLLATE utf8mb3_general_ci'
+      'ow.identifier = CONVERT(mica_notes.`citizenid` USING utf8mb3) COLLATE utf8mb3_general_ci'
     );
   });
 
   it('refuses to interpolate a collation that is not a plain identifier', () => {
     expect(() =>
-      orphanDeleteSql({ table: 'mica_notes', column: 'citizenid' }, ESX, {
-        charset: 'utf8mb4',
-        collation: 'x; DROP TABLE users'
-      })
+      orphanScope(ESX, { charset: 'utf8mb4', collation: 'x; DROP TABLE users' }).owns(
+        'mica_notes',
+        'citizenid'
+      )
     ).toThrow(/plain identifier/);
   });
 
@@ -652,13 +703,16 @@ describe('comparing across collations (MICA-299)', () => {
     expect(reads[0][1]).toEqual(['users', 'identifier']);
     expect(deletes()).toHaveLength(ownedTables().length);
     for (const sql of deletes()) expect(sql).toContain('COLLATE utf8mb4_uca1400_ai_ci');
-    // The hosted-photo collect (MICA-292) reads the rows the DELETE is about to take, so it
-    // has to ask the same question in the same collation or it errors first.
-    const collects = dbMock.query.mock.calls
+    // The plan, its links and the hosted-photo collect (MICA-292) read the rows the DELETE is
+    // about to take, so each has to ask the same question in the same collation or it errors
+    // first.
+    const owned = dbMock.query.mock.calls
       .map((call: any[]) => String(call[0]))
-      .filter((sql) => sql.startsWith('SELECT') && sql.includes('FROM users p'));
-    expect(collects.length).toBeGreaterThan(0);
-    for (const sql of collects) expect(sql).toContain(COLLATED('t.citizenid'));
+      .filter((sql) => sql.startsWith('SELECT') && sql.includes('FROM users ow'));
+    expect(owned.filter(isPlan).length).toBe(ownedTables().length);
+    for (const sql of owned) expect(sql).toMatch(/COLLATE utf8mb4_uca1400_ai_ci\)/);
+    const collect = owned.find((sql) => sql.startsWith('SELECT DISTINCT t.`url`'));
+    expect(collect).toContain(COLLATED('t.`citizenid`'));
   });
 
   it('refuses, loudly and with the reason, when the collation cannot be read', async () => {
@@ -697,7 +751,7 @@ describe('comparing across collations (MICA-299)', () => {
     expect(result.skipped).toBeNull();
     for (const sql of deletes()) {
       expect(sql).not.toContain('COLLATE');
-      expect(sql).toMatch(/p\.identifier = \w+\.citizenid\)/);
+      expect(sql).toMatch(/ow\.identifier = \w+\.`citizenid`\)/);
     }
   });
 });
@@ -757,50 +811,72 @@ describe('a failing statement is logged where it fails', () => {
 describe('deleting in chunks rather than in one long lock', () => {
   const oneTable: OwnedTable[] = [{ table: 'mica_media', column: 'citizenid' }];
 
-  const chunkOf = (sql: string): number => Number(sql.match(/LIMIT (\d+)$/)?.[1] ?? 0);
-
-  it('stops as soon as a batch comes back short', async () => {
-    healthyServer({ removedPerTable: 1 });
-
-    const result = await sweepOrphanedRows({ only: oneTable });
-
-    expect(result.removed).toBe(1);
-    expect(deletes()).toHaveLength(1);
-  });
-
-  it('keeps going while every batch comes back full', async () => {
-    const chunk = chunkOf(orphanDeleteSql(oneTable[0], QB).sql);
-    let issued = 0;
-    dbMock.single.mockImplementation(async (sql: string) =>
-      sql.includes('AS total') ? { total: 9 } : { matched: 9 }
-    );
-    dbMock.query.mockImplementation(async (sql: string) => {
-      if (sql.startsWith('SELECT DISTINCT')) return [{ owner: 'CID_A' }];
-      issued += 1;
-      return { affectedRows: issued < 3 ? chunk : 4 };
+  it('names at most five hundred planned ids per statement', async () => {
+    healthyServer({ matched: 1 });
+    dbMock.query.mockImplementation(async (sql: string, params: unknown[] = []) => {
+      if (sql.startsWith('SELECT DISTINCT') && sql.includes('AS owner')) return [{ owner: 'A' }];
+      if (isPlan(sql)) {
+        return Array.from({ length: 1200 }, (_, i) => ({ id: i + 1, go: 1, held: 0, ex: 0 }));
+      }
+      if (sql.startsWith('SELECT')) return [];
+      return { affectedRows: params.filter((p) => typeof p === 'number').length };
     });
 
     const result = await sweepOrphanedRows({ only: oneTable });
 
-    expect(issued).toBe(3);
-    expect(result.removed).toBe(chunk * 2 + 4);
+    expect(result.removed).toBe(1200);
+    expect(deletes().map((sql) => sql.match(/`id` IN \(([?, ]+)\)/)![1].split(',').length)).toEqual(
+      [500, 500, 200]
+    );
   });
 });
 
-describe('one table failing does not stop the other twenty-one', () => {
+describe('one table failing does not stop the others', () => {
   it('records the failure and sweeps the rest', async () => {
     healthyServer({ removedPerTable: 2 });
-    const failing = ownedTables()[1].table;
+    const failing = 'mica_notes';
     dbMock.query.mockImplementation(async (sql: string) => {
-      if (sql.startsWith('SELECT DISTINCT')) return [{ owner: 'CID_A' }];
+      if (sql.startsWith('SELECT DISTINCT') && sql.includes('AS owner')) return [{ owner: 'A' }];
       if (sql.includes(` ${failing} `)) throw new Error(`Table '${failing}' doesn't exist`);
+      if (isPlan(sql)) return [{ id: 1, go: 1, held: 0, ex: 0 }];
+      if (sql.startsWith('SELECT')) return [];
       return { affectedRows: 2 };
     });
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     const result = await sweepOrphanedRows();
+    errors.mockRestore();
 
     expect(result.failures.map((f) => f.table)).toEqual([failing]);
     expect(result.removed).toBe((ownedTables().length - 1) * 2);
+  });
+
+  /**
+   * MICA-300. A table that cannot be planned has unknown held rows, so anything hanging off it
+   * might be evidence: it and everything under it stay, each said as a failure, and the rest
+   * still goes.
+   */
+  it('keeps everything under a table it could not plan, and says so', async () => {
+    healthyServer({ removedPerTable: 1 });
+    dbMock.query.mockImplementation(async (sql: string) => {
+      if (sql.startsWith('SELECT DISTINCT') && sql.includes('AS owner')) return [{ owner: 'A' }];
+      if (isPlan(sql) && sql.includes('FROM mica_blabber t')) throw new Error('lock wait');
+      if (isPlan(sql)) return [{ id: 1, go: 1, held: 0, ex: 0 }];
+      if (sql.startsWith('SELECT')) return [];
+      return { affectedRows: 1 };
+    });
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const result = await sweepOrphanedRows();
+    errors.mockRestore();
+
+    const failed = result.failures.map((f) => f.table);
+    expect(failed).toContain('mica_blabber');
+    expect(failed).toContain('mica_blabber_attachments');
+    const deleted = deletes().map((sql) => /^DELETE FROM (\w+)/.exec(sql)![1]);
+    expect(deleted).not.toContain('mica_blabber');
+    expect(deleted).not.toContain('mica_blabber_attachments');
+    expect(deleted).toContain('mica_notes');
   });
 
   it('never rejects, so resource start cannot be taken down by maintenance', async () => {
@@ -820,40 +896,30 @@ describe('purging one named character', () => {
    * immediate cleanup on exactly the servers that need it — the ones where the character's
    * row is already gone.
    */
-  it('deletes that citizenid’s rows from every owned table, bound as a parameter', async () => {
-    dbMock.query.mockResolvedValue({ affectedRows: 1 });
+  it('plans and deletes that citizenid’s rows in every owned table, bound as a parameter', async () => {
+    dbMock.query.mockImplementation(async (sql: string) => {
+      if (isPlan(sql)) return [{ id: 1, go: 1, held: 0, ex: 0 }];
+      if (sql.startsWith('SELECT')) return [];
+      return { affectedRows: 1 };
+    });
 
     const { removed } = await purgeOwnedRows('CID_Z');
 
-    const statements = deletes();
-    expect(statements).toHaveLength(ownedTables().length);
     expect(removed).toBe(ownedTables().length);
-    const selects = dbMock.query.mock.calls.filter((call: any[]) =>
-      String(call[0]).startsWith('SELECT')
-    );
-    // The one read is the media collect (MICA-292), bound by the same citizenid.
-    expect(selects.map((call: any[]) => String(call[0]))).toEqual([
-      expect.stringMatching(
-        /^SELECT DISTINCT t\.`url` FROM `mica_media` t WHERE .*t\.citizenid = \?/
-      )
-    ]);
-    expect(
-      dbMock.query.mock.calls.find((c: any[]) => String(c[0]).startsWith('SELECT'))![1]
-    ).toEqual(['CID_Z', 'mica_media']);
+    expect(dbMock.single).not.toHaveBeenCalled();
     for (const call of dbMock.query.mock.calls) {
       const sql = String(call[0]);
-      if (sql.startsWith('SELECT')) continue;
-      const table = /^DELETE FROM (mica_[a-z_]+) WHERE citizenid = \?/.exec(sql)?.[1];
-      expect(table, sql).toBeDefined();
-      // A reportable table keeps a reported row (MICA-292); every other one is plain.
-      if (REPORTABLE_TABLES.includes(table!)) {
-        expect(sql).toBe(`DELETE FROM ${table} WHERE citizenid = ? AND ${REPORT_HOLD(table!)}`);
-        expect(call[1]).toEqual(['CID_Z', table]);
-      } else {
-        expect(sql).toBe(`DELETE FROM ${table} WHERE citizenid = ?`);
-        expect(call[1]).toEqual(['CID_Z']);
-      }
+      const table = /^(?:DELETE FROM|SELECT t\.`id` AS `id`, .* FROM) (mica_[a-z_]+)/.exec(
+        sql
+      )?.[1];
+      if (!table) continue;
+      const row = sql.startsWith('DELETE') ? table : 't';
+      expect(sql, sql).toContain(`${row}.\`citizenid\` = ?`);
+      expect(call[1], sql).toContain('CID_Z');
+      // A reportable table keeps a reported row (MICA-292); no other one is held.
+      expect(sql.includes(REPORT_HOLD(row)), sql).toBe(REPORTABLE_TABLES.includes(table));
     }
+    expect(deletes()).toHaveLength(ownedTables().length);
   });
 
   it('holds reported rows in exactly the tables a player can report', () => {
@@ -861,22 +927,27 @@ describe('purging one named character', () => {
   });
 
   it('does nothing for an empty or non-string citizenid', async () => {
-    expect(await purgeOwnedRows('   ')).toEqual({ removed: 0, failures: [] });
+    expect(await purgeOwnedRows('   ')).toEqual({ removed: 0, kept: 0, failures: [] });
     expect(await purgeOwnedRows(undefined as unknown as string)).toEqual({
       removed: 0,
+      kept: 0,
       failures: []
     });
     expect(dbMock.query).not.toHaveBeenCalled();
   });
 
   it('reports a failing table rather than abandoning the purge', async () => {
-    const failing = ownedTables()[0].table;
+    const failing = 'mica_notes';
     dbMock.query.mockImplementation(async (sql: string) => {
-      if (sql.includes(failing)) throw new Error('gone');
+      if (sql.startsWith(`DELETE FROM ${failing} `)) throw new Error('gone');
+      if (isPlan(sql)) return [{ id: 1, go: 1, held: 0, ex: 0 }];
+      if (sql.startsWith('SELECT')) return [];
       return { affectedRows: 1 };
     });
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     const { removed, failures } = await purgeOwnedRows('CID_Z');
+    errors.mockRestore();
 
     expect(failures.map((f) => f.table)).toEqual([failing]);
     expect(removed).toBe(ownedTables().length - 1);
@@ -889,18 +960,6 @@ describe('purging one named character', () => {
  * is untouched, and the first test here pins that.
  */
 describe("a player's own delete", () => {
-  it('leaves the character purge exactly as it was: declaration order, no reads but the collect', async () => {
-    dbMock.query.mockResolvedValue({ affectedRows: 1 });
-    await purgeOwnedRows('CID_Z');
-    expect(deletes().map((sql) => /^DELETE FROM (\w+)/.exec(sql)![1])).toEqual(
-      ownedTables().map(({ table }) => table)
-    );
-    const reads = dbMock.query.mock.calls
-      .map((c: any[]) => String(c[0]))
-      .filter((sql) => sql.startsWith('SELECT'));
-    expect(reads).toEqual([expect.stringMatching(/^SELECT DISTINCT t\.`url` FROM `mica_media`/)]);
-  });
-
   /**
    * A database that answers the plan: `plan[table]` for the owner's rows (none by default),
    * `links['child.column']` for the rows referencing them, and a `DELETE` removes every id it
@@ -922,11 +981,14 @@ describe("a player's own delete", () => {
     const alive = new Map(
       Object.entries(plan).map(([table, rows]) => [table, new Set(rows.map((r) => r.id))])
     );
-    const idsIn = (sql: string, params: unknown[]): number[] => {
-      const marks = sql.match(/`id` IN \(([?, ]+)\)/)?.[1].match(/\?/g)?.length ?? 0;
-      return params.slice(1, 1 + marks) as number[];
-    };
+    // Ids are the only numbers a statement binds: the owner and every table name are strings.
+    const idsIn = (_sql: string, params: unknown[]): number[] =>
+      params.filter((p): p is number => typeof p === 'number');
     dbMock.query.mockImplementation(async (sql: string, params: unknown[] = []) => {
+      // The sweep's identity sample, for the orphaned-owner case (MICA-300).
+      if (sql.startsWith('SELECT DISTINCT') && sql.includes('AS owner')) {
+        return [{ owner: 'CID_GONE' }];
+      }
       const planned = /^SELECT t\.`id` AS `id`, .* FROM (\w+) t WHERE/.exec(sql)?.[1];
       if (planned) return plan[planned] ?? [];
       const survivors = /^SELECT t\.`id` AS `id` FROM (\w+) t WHERE/.exec(sql)?.[1];
@@ -958,14 +1020,7 @@ describe("a player's own delete", () => {
   const deletedIds = (table: string): number[] =>
     dbMock.query.mock.calls
       .filter((c: any[]) => String(c[0]).startsWith(`DELETE FROM ${table} `))
-      .flatMap((c: any[]) => {
-        const n = (
-          String(c[0])
-            .match(/`id` IN \(([?, ]+)\)/)![1]
-            .match(/\?/g) ?? []
-        ).length;
-        return c[1].slice(1, 1 + n) as number[];
-      });
+      .flatMap((c: any[]) => (c[1] as unknown[]).filter((p): p is number => typeof p === 'number'));
   const row = (id: number, over: Partial<{ go: number; held: number; ex: number }> = {}) => ({
     id,
     go: 1,
@@ -992,7 +1047,7 @@ describe("a player's own delete", () => {
       String(c[0]).startsWith('DELETE FROM mica_messages_conversations ')
     )!;
     expect(String(parent[0])).toMatch(
-      /^DELETE FROM mica_messages_conversations WHERE citizenid = \? AND mica_messages_conversations\.`id` IN \(\?\)/
+      /^DELETE FROM mica_messages_conversations WHERE mica_messages_conversations\.`citizenid` = \? AND mica_messages_conversations\.`id` IN \(\?\)/
     );
     expect(String(parent[0])).toContain(
       'NOT EXISTS (SELECT 1 FROM `mica_messages` c WHERE c.`conversation_id` = mica_messages_conversations.`id`)'
@@ -1189,7 +1244,7 @@ describe("a player's own delete", () => {
         {
           name: 'mica_cycle_b',
           columns: {
-            citizenid: { type: 'string', references: { table: 'players', column: 'citizenid' } },
+            citizenid: { type: 'string', citizenId: true },
             a_id: { type: 'int', references: { table: 'mica_cycle_a', column: 'id' } }
           }
         }
@@ -1225,6 +1280,112 @@ describe("a player's own delete", () => {
     expect(String(plan[0])).toContain('CASE WHEN t.`title` = ? THEN 1 ELSE 0 END AS `ex`');
     expect(result.kept).toBe(0);
   });
+
+  /**
+   * MICA-300: the character-deleted purge and the sweep plan the same way. The scenario is
+   * MICA-168's: A's post 701 has B's reply 710 under it, A's post 700 is reported and carries
+   * A's attachment 9 of A's photo 30, and A's post 702 is unanswered.
+   */
+  const scenario = () =>
+    fakeDb({
+      plan: {
+        mica_blabber: [row(700, { go: 0, held: 1 }), row(701), row(702)],
+        mica_blabber_attachments: [row(9)],
+        mica_media: [row(30), row(31)]
+      },
+      links: {
+        // 710 is B's: not in the plan, so it stays and keeps what it references.
+        'mica_blabber.reply_to': [{ id: 710, ref: 701 }],
+        'mica_blabber_attachments.blab_id': [{ id: 9, ref: 700 }],
+        'mica_blabber_attachments.media_id': [{ id: 9, ref: 30 }]
+      }
+    });
+  const expectCascadeSafe = () => {
+    // The unanswered post and the unattached photo go; the rest is kept.
+    expect(deletedIds('mica_blabber')).toEqual([702]);
+    expect(deletedIds('mica_blabber_attachments')).toEqual([]);
+    expect(deletedIds('mica_media')).toEqual([31]);
+  };
+
+  it("keeps another player's reply, a held post and its attachment when a character is deleted", async () => {
+    scenario();
+
+    const result = await purgeOwnedRows('CID_Z');
+
+    expectCascadeSafe();
+    // The held post, the one answered, the attachment and its photo.
+    expect(result).toEqual({ removed: 2, kept: 4, failures: [] });
+  });
+
+  // No collation to reconcile, so the owner comparison reads bare (MICA-299 is covered above).
+  const bare = { collation: null, charset: null };
+
+  it('keeps the same rows when the sweep finds the owner gone', async () => {
+    healthyServer({ matched: 1, collation: bare });
+    scenario();
+
+    const result = await sweepOrphanedRows();
+
+    expect(result.skipped).toBeNull();
+    expectCascadeSafe();
+    expect(result).toMatchObject({ removed: 2, kept: 4, failures: [] });
+    expect(result.byTable).toEqual({ mica_blabber: 1, mica_media: 1 });
+    // By the owner being gone, never by a citizenid, and asked again in every DELETE.
+    for (const sql of deletes()) {
+      const table = /^DELETE FROM (\w+)/.exec(sql)![1];
+      expect(sql).toContain(`WHERE ${OWNER_GONE(table)} AND `);
+    }
+    const plans = dbMock.query.mock.calls.map((c: any[]) => String(c[0])).filter(isPlan);
+    expect(plans).toHaveLength(ownedTables().length);
+    for (const sql of plans)
+      expect(sql).toMatch(new RegExp(` t WHERE ${escape(OWNER_GONE('t'))}$`));
+  });
+
+  it('keeps the attachment of a post reported mid-sweep, in its own DELETE', async () => {
+    healthyServer({ matched: 1, collation: bare });
+    const reported = new Map<string, Set<number>>();
+    fakeDb({
+      plan: { mica_blabber: [row(706)], mica_blabber_attachments: [row(9)] },
+      links: { 'mica_blabber_attachments.blab_id': [{ id: 9, ref: 706 }] },
+      reported
+    });
+    __setPurgeHookForTests(async () => {
+      reported.set('mica_blabber', new Set([706]));
+    });
+    try {
+      await sweepOrphanedRows();
+    } finally {
+      __setPurgeHookForTests();
+    }
+
+    const attachment = dbMock.query.mock.calls.find((c: any[]) =>
+      String(c[0]).startsWith('DELETE FROM mica_blabber_attachments ')
+    )!;
+    expect(String(attachment[0])).toContain(
+      'FROM `mica_blabber` pp JOIN `mica_blabber_attachments` cc ON cc.`blab_id` = pp.`id` ' +
+        `WHERE ${OWNER_GONE('cc')} AND NOT (`
+    );
+  });
+
+  it('passes the dependents it is given to the sweep, so a like does not keep a post', async () => {
+    healthyServer({ matched: 1 });
+    fakeDb({ plan: { mica_blabber: [row(702)] } });
+
+    await sweepOrphanedRows({ cascade: { dependents: ['mica_blabber_ears'] } });
+    const withDependents = dbMock.query.mock.calls
+      .map((c: any[]) => String(c[0]))
+      .find((sql) => sql.startsWith('DELETE FROM mica_blabber '))!;
+    dbMock.query.mockClear();
+    healthyServer({ matched: 1 });
+    fakeDb({ plan: { mica_blabber: [row(702)] } });
+    await sweepOrphanedRows();
+    const without = dbMock.query.mock.calls
+      .map((c: any[]) => String(c[0]))
+      .find((sql) => sql.startsWith('DELETE FROM mica_blabber '))!;
+
+    expect(withDependents).not.toContain('FROM `mica_blabber_ears` c');
+    expect(without).toContain('FROM `mica_blabber_ears` c');
+  });
 });
 
 describe('the character-deleted hook', () => {
@@ -1235,19 +1396,100 @@ describe('the character-deleted hook', () => {
     expect(netHandlers.has(CHARACTER_DELETED_EVENT)).toBe(false);
   });
 
-  it('purges when told a character is gone', async () => {
-    dbMock.query.mockResolvedValue({ affectedRows: 1 });
+  /** Every owned table but the moderation ledger, which a deleted character keeps. */
+  const purgedTables = () => ownedTables().length - 1;
+  const PENDING = "mica_reports.`status` = 'active' AND mica_reports.`resolution` = 'pending'";
+
+  it('purges when told a character is gone, the device included', async () => {
+    dbMock.query.mockImplementation(async (sql: string) => {
+      if (isPlan(sql)) return [{ id: 1, go: 1, held: 0, ex: 0 }];
+      if (sql.startsWith('SELECT')) return [];
+      return { affectedRows: 1 };
+    });
 
     localHandlers.get(CHARACTER_DELETED_EVENT)![0]('CID_Z');
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await vi.waitFor(() => expect(deletes().length).toBe(purgedTables()));
 
-    expect(deletes().length).toBe(ownedTables().length);
-    expect(dbMock.query.mock.calls.at(-1)![1]).toEqual(['CID_Z']);
-    // MICA-168: a player's own delete keeps these; a deleted character does not.
-    expect(deletes()).toContain('DELETE FROM mica_audit_logs WHERE citizenid = ?');
-    expect(deletes()).toContain('DELETE FROM mica_import_ledger WHERE citizenid = ?');
-    expect(deletes()).toContain('DELETE FROM mica_reports WHERE citizenid = ?');
-    expect(deletes()).toContain('DELETE FROM mica_invoices WHERE citizenid = ?');
+    // MICA-168: a player's own delete keeps these; a deleted character does not (MICA-300).
+    const tables = deletes().map((sql) => /^DELETE FROM (\w+)/.exec(sql)![1]);
+    for (const table of [
+      'mica_import_ledger',
+      'mica_invoices',
+      'mica_phones',
+      'mica_phone_numbers',
+      'mica_battery',
+      'mica_lockscreen'
+    ]) {
+      expect(tables, table).toContain(table);
+    }
+    for (const call of dbMock.query.mock.calls) {
+      if (String(call[0]).startsWith('DELETE')) expect(call[1][0]).toBe('CID_Z');
+    }
+  });
+
+  /**
+   * MICA-300, the owner's decision: a deleted character's pending reports keep holding what
+   * they name until staff resolve them, and their moderation ledger rows are kept for good.
+   */
+  it('keeps their pending reports and every ledger row, by the same predicate Privacy uses', async () => {
+    dbMock.query.mockImplementation(async (sql: string) => {
+      if (isPlan(sql)) return [{ id: 1, go: 1, held: 0, ex: 0 }];
+      if (sql.startsWith('SELECT')) return [];
+      return { affectedRows: 1 };
+    });
+
+    localHandlers.get(CHARACTER_DELETED_EVENT)![0]('CID_Z');
+    await vi.waitFor(() => expect(deletes().length).toBe(purgedTables()));
+
+    const statements = dbMock.query.mock.calls.map((c: any[]) => String(c[0]));
+    expect(statements.some((sql) => sql.includes('mica_audit_logs'))).toBe(false);
+    const reports = deletes().find((sql) => sql.startsWith('DELETE FROM mica_reports '))!;
+    expect(reports).toContain(`NOT (${PENDING})`);
+    expect(CHARACTER_EXCEPT.map(({ table }) => table).toSorted()).toEqual([
+      'mica_audit_logs',
+      'mica_reports'
+    ]);
+    // Taken from Privacy's list, not restated, so the two predicates cannot drift.
+    for (const entry of CHARACTER_EXCEPT) expect(SELF_SERVICE_EXCEPT).toContain(entry);
+  });
+
+  it('keeps the same rows in the start-up sweep, so they are not swept as orphans', async () => {
+    healthyServer({ matched: 1, removedPerTable: 1 });
+
+    const handlers = localHandlers.get('onResourceStart') ?? [];
+    const sweepStart = handlers.find((fn) => /orphan sweep starting/.test(String(fn)))!;
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      sweepStart('mica');
+      await vi.waitFor(() =>
+        expect(log.mock.calls.some((c) => /orphan sweep finished/.test(String(c[0])))).toBe(true)
+      );
+    } finally {
+      log.mockRestore();
+    }
+
+    const statements = dbMock.query.mock.calls.map((c: any[]) => String(c[0]));
+    expect(statements.some((sql) => sql.includes('mica_audit_logs'))).toBe(false);
+    const reports = deletes().find((sql) => sql.startsWith('DELETE FROM mica_reports '))!;
+    expect(reports).toContain(`NOT (${PENDING})`);
+    expect(reports).toContain('NOT EXISTS (SELECT 1 FROM players ow');
+  });
+
+  it('runs the plan with the dependents Privacy names, so a like goes with its post', async () => {
+    dbMock.query.mockImplementation(async (sql: string) => {
+      if (isPlan(sql)) return [{ id: 1, go: 1, held: 0, ex: 0 }];
+      if (sql.startsWith('SELECT')) return [];
+      return { affectedRows: 1 };
+    });
+
+    localHandlers.get(CHARACTER_DELETED_EVENT)![0]('CID_Z');
+    await vi.waitFor(() => expect(deletes().length).toBe(purgedTables()));
+
+    const post = deletes().find((sql) => sql.startsWith('DELETE FROM mica_blabber '))!;
+    expect(post).not.toContain('FROM `mica_blabber_ears` c');
+    expect(post).not.toContain('FROM `mica_blabber_tags` c');
+    // A reply keeps its post, whoever wrote it.
+    expect(post).toContain('JOIN `mica_blabber` p ON p.`id` = c.`reply_to`');
   });
 
   it('ignores a payload that does not name a character', async () => {
@@ -1283,13 +1525,15 @@ describe('the character-deleted hook', () => {
       const sweepStart = handlers.find((fn) => /orphan sweep starting/.test(String(fn)));
       expect(sweepStart, 'no onResourceStart handler runs the orphan sweep').toBeDefined();
       sweepStart!('mica');
-      await new Promise((resolve) => setTimeout(resolve, 0));
-
+      // Starting is said synchronously, before the first query.
       expect(logged.some((line) => /orphan sweep starting over \d+ table\(s\)/.test(line))).toBe(
         true
       );
-      expect(logged.some((line) => /orphan sweep finished: removed 0 row\(s\)/.test(line))).toBe(
-        true
+      // Finishing, after a sweep that yields between its statements.
+      await vi.waitFor(() =>
+        expect(logged.some((line) => /orphan sweep finished: removed 0 row\(s\)/.test(line))).toBe(
+          true
+        )
       );
     } finally {
       spy.mockRestore();
@@ -1301,12 +1545,26 @@ describe('the character-deleted hook', () => {
     // and widening it would delete more than the caller asked for. It stays as documented.
     expect(localHandlers.has('mica:server:media:characterDeleted')).toBe(true);
 
-    dbMock.query.mockResolvedValue({ affectedRows: 1 });
+    dbMock.query.mockImplementation(async (sql: string) => {
+      if (isPlan(sql)) return [{ id: 1, go: 1, held: 0, ex: 0 }];
+      if (sql.startsWith('SELECT')) return [];
+      return { affectedRows: 1 };
+    });
     localHandlers.get('mica:server:media:characterDeleted')![0]('CID_Z');
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await vi.waitFor(() => expect(deletes()).toHaveLength(1));
 
-    expect(deletes()).toEqual([
-      `DELETE FROM mica_media WHERE citizenid = ? AND ${REPORT_HOLD('mica_media')}`
-    ]);
+    // MICA-300: planned like the others, so it holds a reported photo and never cascades into
+    // an attachment that still names one.
+    const [sql] = deletes();
+    expect(sql.startsWith('DELETE FROM mica_media WHERE mica_media.`citizenid` = ? AND ')).toBe(
+      true
+    );
+    expect(sql).toContain(REPORT_HOLD('mica_media'));
+    expect(sql).toContain(
+      'NOT EXISTS (SELECT 1 FROM `mica_blabber_attachments` c WHERE c.`media_id` = mica_media.`id`)'
+    );
+    // Only mica_media is planned at all.
+    const plans = dbMock.query.mock.calls.map((c: any[]) => String(c[0])).filter(isPlan);
+    expect(plans.map((q) => /FROM (\w+) t WHERE/.exec(q)![1])).toEqual(['mica_media']);
   });
 });

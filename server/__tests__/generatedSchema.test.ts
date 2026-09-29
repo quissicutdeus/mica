@@ -226,3 +226,32 @@ describe('mica.esx.sql', () => {
     expect(esxSql).not.toMatch(/,\s*\n\s*\) ENGINE/);
   });
 });
+
+/**
+ * MICA-300: no micaOS table carries a foreign key onto the framework's `players` in either
+ * file. Its `ON DELETE CASCADE` deleted a character's rows inside MariaDB before any report
+ * hold or cascade guard could apply; the character-deleted purge and the orphan sweep decide
+ * instead, and migration 0006 drops the constraint from an existing database.
+ */
+describe('no foreign key onto players (MICA-300)', () => {
+  it.each([
+    ['mica.sql', sql],
+    ['mica.esx.sql', esxSql]
+  ])('%s references players nowhere', (_file, text) => {
+    expect(text).not.toContain(`REFERENCES \`${OWNER_TABLE}\``);
+    expect(text).not.toContain('FOREIGN KEY (`citizenid`)');
+  });
+
+  /**
+   * Those keys were also what made the wrong file fail loudly: `mica.sql` on es_extended
+   * stopped at its first constraint. Without them it would import quietly at qb's width, four
+   * characters short of an es_extended identifier (MICA-289). So `mica.sql` reads `players`
+   * before it creates anything, and `mica.esx.sql` does not.
+   */
+  it('makes mica.sql fail on a server without players before it creates anything', () => {
+    const guard = sql.indexOf('SELECT 1 FROM `players` LIMIT 0;');
+    expect(guard).toBeGreaterThan(-1);
+    expect(guard).toBeLessThan(sql.indexOf('CREATE TABLE'));
+    expect(esxSql).not.toMatch(/FROM `players`/);
+  });
+});

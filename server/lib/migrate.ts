@@ -13,8 +13,8 @@ import type { ResolvedService } from './defineService';
 
 /**
  * Which schema the live database is meant to have, for sizing `citizenId` columns (MICA-289).
- * `true` for qb's `players(citizenid)`, `false` for ESX and standalone, `null` while the
- * framework is not known — when either width is accepted rather than reported as drift, since
+ * `true` where qb's `players(citizenid)` is the owner, `false` for ESX and standalone, `null`
+ * while the framework is not known — when either width is accepted rather than reported as drift, since
  * the planner cannot tell which one is right, and a column added then takes the wider one.
  */
 export interface PlanOptions {

@@ -80,9 +80,8 @@ export const conversations = defineService<Conversation, typeof conversationsCon
      * normalise — and never client-writable: the `create` handler is the only writer,
      * the same way `is_group` is. Deliberately not a foreign key onto `players`: that
      * would cascade-delete the whole thread, history included, the moment *either*
-     * party's character is removed, where today only the creator's own FK does that.
-     * Changing that blast radius is a decision for its own ticket, not a side effect of
-     * closing this race.
+     * party's character is removed. Since MICA-300 no micaOS table has one: the purge keeps a
+     * thread while another player's message is still in it.
      */
     // The two phones of a 1:1 thread since MICA-282 (citizenids before it; the migration
     // rewrites them). Width kept, because narrowing a column is a migration for nothing.
@@ -174,8 +173,7 @@ export const conversations = defineService<Conversation, typeof conversationsCon
         citizenid: {
           type: 'string',
           citizenId: true,
-          notNull: true,
-          references: { table: 'players', column: 'citizenid' }
+          notNull: true
         },
         /**
          * The phone this membership is on (MICA-282). A thread lives on the device: the

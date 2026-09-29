@@ -6,7 +6,7 @@ import { SchemaMigrator } from '../lib/SchemaMigrator';
 import { runPendingMigrations, reportPendingMigrations } from '../lib/migrations';
 import { isAdmin } from './Admin';
 import { notifyPlayer } from '../lib/shell';
-import { checkOwnerCollation, collationMismatchMessage } from '../lib/collationCheck';
+import { dropOwnerForeignKeys, reportOwnerForeignKeys } from '../lib/ownerForeignKeys';
 
 /**
  * Schema reconciliation at resource start, plus a dry run and an explicit apply on demand.
@@ -35,6 +35,23 @@ import { checkOwnerCollation, collationMismatchMessage } from '../lib/collationC
  * A failed migration stops the whole command. A half-migrated table is exactly the state
  * the additive planner cannot reason about, so patching it further is the one thing not to
  * do next.
+ *
+ * **Before either, a standing step: drop every foreign key onto `players` (MICA-300)**, found
+ * in `information_schema` whatever the ledger says. The ledger is not evidence here: an owner
+ * who re-imports the current `mica.sql` over an existing qb database gets 0006 recorded as
+ * applied while every `CREATE TABLE IF NOT EXISTS` keeps the old keys, and the cascade they
+ * carry deletes reported evidence before any hold applies — silently, for good, if this trusted
+ * the ledger. First rather than after the migrations, for three reasons:
+ *
+ * - The property must not depend on every migration succeeding. A failed migration stops the
+ *   command, and nothing about it makes the cascade safer to keep.
+ * - No migration needs the keys. 0001 was written while they stood, but only relied on the
+ *   collations they forced to match, which dropping them leaves as they are.
+ * - One migration is blocked by them: 0004 cannot widen a column a foreign key uses, and
+ *   refuses on an ESX server whose tables carry keys onto `players` (imported from `mica.sql`
+ *   by mistake). With them gone first, it widens.
+ *
+ * Migration 0006 is the same drop, recorded in the ledger; after this step it finds nothing.
  */
 export const runApply = async (source: number): Promise<void> => {
   if (source !== 0) {
@@ -42,21 +59,18 @@ export const runApply = async (source: number): Promise<void> => {
     return;
   }
 
-  // MICA-157. Before any DDL: a `players` table whose `citizenid` collation disagrees with
-  // micaOS's own tables cannot host the foreign keys this pass's `ADD KEY` statements (and
-  // the versioned migrations before them) may need to create, and would otherwise fail with
-  // MySQL's own opaque errno 150. A failure to determine collations at all (no database, no
-  // `information_schema` access) is not itself grounds to refuse — that surfaces soon enough,
-  // and loudly, from the real DDL below — so it is logged and apply proceeds.
+  // MICA-300. Stops the command when it cannot finish, like a failed migration.
+  let dropped: number;
   try {
-    const mismatch = await checkOwnerCollation();
-    if (mismatch) {
-      console.error(collationMismatchMessage(mismatch));
-      return;
-    }
+    dropped = await dropOwnerForeignKeys();
   } catch (error) {
-    console.error('[micaschema] could not check the players collation before applying:', error);
+    console.error(
+      '[mica] could not drop the foreign keys onto players; nothing else was applied:',
+      error
+    );
+    return;
   }
+  if (dropped > 0) console.log(`[mica] dropped ${dropped} foreign key(s) onto players.`);
 
   const result = await runPendingMigrations();
   for (const id of result.applied) console.log(`[mica] applied migration ${id}`);
@@ -79,7 +93,7 @@ export const runApply = async (source: number): Promise<void> => {
     return;
   }
 
-  if (additive.applied.length === 0 && result.applied.length === 0) {
+  if (additive.applied.length === 0 && result.applied.length === 0 && dropped === 0) {
     console.log('[mica] schema is already up to date.');
   }
 };
@@ -130,10 +144,11 @@ RegisterCommand(
  * Applying is a deliberate `micaschema apply` from the console — see `runApply` above —
  * never this hook.
  *
- * Both reports are `.catch()`ed rather than left as bare `void` promises. This runs before
- * anything is guaranteed to be up: oxmysql may not have started, the database user may lack
- * a privilege, and an unhandled rejection at boot is a stack trace in the operator's console
- * on a resource that is otherwise fine.
+ * None of the reports may reject: each is `.catch()`ed or catches for itself
+ * (`reportOwnerForeignKeys` says it could not check, rather than staying silent). This runs
+ * before anything is guaranteed to be up: oxmysql may not have started, the database user may
+ * lack a privilege, and an unhandled rejection at boot is a stack trace in the operator's
+ * console on a resource that is otherwise fine.
  *
  * `onResourceStart` rather than a deferred timer for two reasons. It fires after the
  * whole controller graph has imported, so `declaredServices` is complete — reading it at
@@ -145,6 +160,8 @@ RegisterCommand(
 on('onResourceStart', (resourceName: string) => {
   if (resourceName !== GetCurrentResourceName()) return;
   void SchemaMigrator.report();
+  // MICA-300: keys onto players are asked of the database, never inferred from the ledger.
+  void reportOwnerForeignKeys();
   void reportPendingMigrations().catch((error) => {
     console.error('[mica] could not report pending schema migrations:', error);
   });
