@@ -34,13 +34,6 @@ Ready to install it on your own server? Jump to
 | Tablet              | Yes — a second, independently sized device | Yes — sold as LB Tablet, standalone or bundled with the phone | ?                                                         |
 | Still maintained    | Yes — commits and tagged builds this week  | Yes — support repos updated within the last month             | Yes — commits ongoing; last tagged release March 2025     |
 
-Checked 2026-09-23. The micaOS column comes from this repository's own code and
-licence file. The others come from their own public pages: lb-phone from
-[its store listing](https://lbscripts.com/), [docs](https://docs.lbscripts.com/)
-and [GitHub organisation](https://github.com/lbphone); NPWD from
-[its repository](https://github.com/project-error/npwd) and its licence and
-release list. A cell reads "?" where nothing public confirmed it.
-
 ---
 
 ## Overview
