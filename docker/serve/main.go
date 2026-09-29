@@ -3,7 +3,7 @@
 //
 // The web root is /www, assembled by the Dockerfile's `dist/site` step: the
 // hand-written landing page at the top (index.html, style.css, one
-// screenshot), and the demo -- dist/web as Vite emits it, a non-hashed
+// screenshots), and the demo -- dist/web as Vite emits it, a non-hashed
 // index.html, a non-hashed mica.svg and add-on catalog from web/public/, and
 // content-hashed everything else under assets/ -- under demo/. That hashed
 // split is the only reason there are two cache policies here -- assets under

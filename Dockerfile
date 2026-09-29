@@ -72,7 +72,7 @@ COPY web/ ./web/
 # in this image and it must not need them.
 COPY scripts/ ./scripts/
 
-# The landing page: plain hand-written HTML/CSS with one screenshot copied in
+# The landing page: plain hand-written HTML/CSS with two screenshots copied in
 # (never hotlinked), no build step of its own -- these bytes are copied
 # straight into the served tree below, unmodified. Kept out of `web/` because
 # it is not part of the Vite bundle and Vite must not process it.

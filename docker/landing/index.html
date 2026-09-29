@@ -7,9 +7,10 @@
   Plain hand-written HTML and CSS, no framework, no build step -- these bytes
   are what `docker/serve/main.go` serves at `/`, byte for byte. Deliberately
   self-contained: no Google Fonts, no CDN script, no analytics, no remote
-  image. The one screenshot is copied into this directory rather than
-  hotlinked to docs/screenshots/, so this page has no dependency on anything
-  outside `docker/landing/`.
+  image. The phone and tablet screenshots are copies of docs/screenshots/home.png
+  and tablet-settings.png (regenerate those with web/e2e/screenshots.spec.ts,
+  then copy them here), not hotlinks, so this page has no dependency on
+  anything outside `docker/landing/`.
 
   This is a real page for real browsers (mica.gg visitors), not FiveM's CEF --
   the Chromium-103 floor in AGENTS.md §6 and the `cef-css` skill do not apply
@@ -48,14 +49,76 @@
         </nav>
       </header>
 
-      <figure class="screenshot">
-        <img
-          src="./screenshot.png"
-          width="646"
-          height="1374"
-          alt="The micaOS home screen: a launcher grid of apps including Messages, Contacts, Bank, and Media, framed as an in-game phone."
-        />
-      </figure>
+      <!--
+        Two slides in a CSS scroll-snap track: it swipes on touch and scrolls with a
+        trackpad or the arrow keys with no script at all. The script below only makes
+        the Phone/Tablet tabs move the track and follow it.
+      -->
+      <section class="gallery" aria-label="Screenshots">
+        <div class="gallery-tabs" role="tablist" aria-label="Device">
+          <button
+            type="button"
+            role="tab"
+            id="tab-phone"
+            aria-controls="shot-phone"
+            aria-selected="true"
+          >
+            Phone
+          </button>
+          <button
+            type="button"
+            role="tab"
+            id="tab-tablet"
+            aria-controls="shot-tablet"
+            aria-selected="false"
+          >
+            Tablet
+          </button>
+        </div>
+        <div class="gallery-track" tabindex="0" aria-label="Screenshots, scroll sideways for more">
+          <figure class="slide" id="shot-phone" role="tabpanel" aria-labelledby="tab-phone">
+            <img
+              src="./screenshot-phone.png"
+              width="646"
+              height="1374"
+              alt="The micaOS phone home screen: a launcher grid of apps including Phone, Messages, Contacts, Camera, Media and Bank, framed as an in-game phone."
+            />
+          </figure>
+          <figure class="slide" id="shot-tablet" role="tabpanel" aria-labelledby="tab-tablet">
+            <img
+              src="./screenshot-tablet.png"
+              width="2112"
+              height="1320"
+              loading="lazy"
+              alt="The micaOS tablet showing Settings in two panes: a list of sections on the left and the Display section, with its theme preview and colour picker, on the right."
+            />
+          </figure>
+        </div>
+      </section>
+      <script>
+        (() => {
+          const track = document.querySelector('.gallery-track');
+          const tabs = [...document.querySelectorAll('.gallery-tabs [role="tab"]')];
+          const slides = tabs.map((tab) =>
+            document.getElementById(tab.getAttribute('aria-controls'))
+          );
+          const select = (index) =>
+            tabs.forEach((tab, i) => tab.setAttribute('aria-selected', String(i === index)));
+          tabs.forEach((tab, i) =>
+            tab.addEventListener('click', () => {
+              track.scrollTo({ left: slides[i].offsetLeft - track.offsetLeft, behavior: 'smooth' });
+              select(i);
+            })
+          );
+          track.addEventListener(
+            'scroll',
+            () => select(Math.round(track.scrollLeft / track.clientWidth)),
+            {
+              passive: true
+            }
+          );
+        })();
+      </script>
     </main>
   </body>
 </html>

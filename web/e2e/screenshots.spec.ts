@@ -5,6 +5,7 @@ import { test, expect, type Page } from './support/test';
 import { seedHomeGrid } from './support/homeGrid';
 import { addOnFrame } from './support/addon';
 import { settlePhoneOpen } from './support/phoneOpen';
+import { frameTestId, gotoDevice, settledFrameBox } from './support/device';
 
 /**
  * The README's screenshots, produced from the phone rather than pasted in (MICA-221).
@@ -43,6 +44,29 @@ const capture = async (page: Page, name: string): Promise<void> => {
   if (!clip) throw new Error('the phone frame is not on screen');
   // Fonts and the wallpaper's gradient are already painted by the time the fly-in has
   // settled; one animation frame more lets a just-mounted app's icons finish rasterising.
+  await page.evaluate(() => new Promise(requestAnimationFrame));
+  await page.screenshot({ path: path.join(OUT, `${name}.png`), clip, animations: 'disabled' });
+};
+
+/**
+ * The tablet, for the landing page's slider. Its own viewport, because the 1280x800 frame
+ * and its margins need 1312x832 and this file runs in the phone-sized `chromium` project;
+ * 1440x1000 is what the `tablet` project uses. Only Admin, Settings and Notes run on the
+ * tablet (MICA-260), and Notes has to be installed first, so its grid gets the two that
+ * ship with it.
+ */
+const captureTablet = async (
+  page: Page,
+  name: string,
+  open?: () => Promise<void>
+): Promise<void> => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await seedHomeGrid(page, ['admin', 'settings'], 'tablet');
+  await gotoDevice(page, 'tablet');
+  await settledFrameBox(page, 'tablet');
+  if (open) await open();
+  const clip = await page.getByTestId(frameTestId('tablet')).boundingBox();
+  if (!clip) throw new Error('the tablet frame is not on screen');
   await page.evaluate(() => new Promise(requestAnimationFrame));
   await page.screenshot({ path: path.join(OUT, `${name}.png`), clip, animations: 'disabled' });
 };
@@ -101,6 +125,21 @@ test.describe('README screenshots', () => {
     await page.goto('/?app=settings');
     await expect(page.locator('h1', { hasText: 'Settings' })).toBeVisible();
     await capture(page, 'settings');
+  });
+
+  test('tablet home screen', async ({ page }) => {
+    await captureTablet(page, 'tablet-home');
+  });
+
+  test('tablet settings', async ({ page }) => {
+    await captureTablet(page, 'tablet-settings', async () => {
+      await page
+        .getByRole('button', { name: /Settings/i })
+        .first()
+        .click();
+      await expect(page.getByRole('navigation', { name: 'Settings sections' })).toBeVisible();
+      await expect(page.getByText('Home Screen Grid')).toBeVisible();
+    });
   });
 
   test('blabber add-on', async ({ page }) => {
