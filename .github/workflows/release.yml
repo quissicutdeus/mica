@@ -7,6 +7,15 @@ name: Release
 on:
   push:
     branches: [main]
+  # Release a tag an earlier run pushed but never released (a smoke test that failed,
+  # before DEPLOY_KEY_SMOKE existed). Builds and smoke-tests that tag's own commit, and
+  # never creates a tag: `gh workflow run release.yml -f tag=v2026.09.29.3`.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: An existing tag with no release yet (vYYYY.MM.DD.N)
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -18,8 +27,27 @@ jobs:
     name: Tag and release
     runs-on: ubuntu-latest
     steps:
+      # A dispatched tag reaches `ref:` below, so it is held to the CalVer shape first and
+      # through env, never interpolated into the script.
+      - name: Resolve what to release
+        id: target
+        env:
+          EVENT: ${{ github.event_name }}
+          WANTED: ${{ inputs.tag }}
+        run: |
+          if [ "$EVENT" != "workflow_dispatch" ]; then
+            echo "ref=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! printf '%s' "$WANTED" | grep -Eq '^v[0-9]{4}\.[0-9]{2}\.[0-9]{2}\.[0-9]+$'; then
+            echo "::error::'$WANTED' is not a release tag (vYYYY.MM.DD.N)."
+            exit 1
+          fi
+          echo "ref=refs/tags/$WANTED" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          ref: ${{ steps.target.outputs.ref }}
           # Full history, not the default shallow clone: the CalVer below
           # counts every commit on HEAD's date across the whole log, and
           # must match web/vite.config.ts's getCalVer() exactly (same git
@@ -36,6 +64,8 @@ jobs:
         id: tag
         env:
           GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          WANTED: ${{ inputs.tag }}
         run: |
           dates=$(git log --format=%cd --date=format:%Y.%m.%d)
           date=$(echo "$dates" | head -1)
@@ -44,7 +74,16 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "calver=${date}.${count}" >> "$GITHUB_OUTPUT"
 
+          if [ "$EVENT" = "workflow_dispatch" ] && [ "$tag" != "$WANTED" ]; then
+            echo "::error::$WANTED's commit computes as $tag; the CalVer and the tag disagree, so it is not released under either."
+            exit 1
+          fi
+
           if ! git rev-parse "$tag" >/dev/null 2>&1; then
+            if [ "$EVENT" = "workflow_dispatch" ]; then
+              echo "::error::$tag does not exist; a dispatched run releases an existing tag and never creates one."
+              exit 1
+            fi
             git tag "$tag"
             git push origin "$tag"
             echo "skip=" >> "$GITHUB_OUTPUT"
