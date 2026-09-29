@@ -14,6 +14,11 @@
 -- record a player has — which is also why the orphan sweep skips there.
 
 
+-- Is this import creating micaOS from nothing? Asked before the first CREATE TABLE: the
+-- migrations ledger below is seeded only then (MICA-301).
+SET @mica_fresh_import = (SELECT COUNT(*) = 0 FROM information_schema.TABLES
+    WHERE table_schema = DATABASE() AND table_name LIKE 'mica|_%' ESCAPE '|');
+
 -- SPDX-FileCopyrightText: 2025 quissicutdeus
 --
 -- SPDX-License-Identifier: AGPL-3.0-or-later
@@ -750,10 +755,12 @@ CREATE TABLE IF NOT EXISTS `mica_schema_migrations` (
     PRIMARY KEY (`id`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
-INSERT IGNORE INTO `mica_schema_migrations` (`id`) VALUES
-  ('0001_phone_numbers_follow_the_phone'),
-  ('0002_phone_data_follows_the_phone'),
-  ('0003_battery_follows_the_phone'),
-  ('0004_citizenid_widens_on_esx'),
-  ('0005_contact_ringtone_holds_owner_sounds'),
-  ('0006_players_foreign_keys_dropped');
+INSERT IGNORE INTO `mica_schema_migrations` (`id`)
+SELECT `id` FROM (
+    SELECT '0001_phone_numbers_follow_the_phone' AS `id`
+    UNION ALL SELECT '0002_phone_data_follows_the_phone'
+    UNION ALL SELECT '0003_battery_follows_the_phone'
+    UNION ALL SELECT '0004_citizenid_widens_on_esx'
+    UNION ALL SELECT '0005_contact_ringtone_holds_owner_sounds'
+    UNION ALL SELECT '0006_players_foreign_keys_dropped'
+) AS `seed` WHERE @mica_fresh_import = 1;

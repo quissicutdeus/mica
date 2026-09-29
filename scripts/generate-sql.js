@@ -55,7 +55,7 @@ globalThis.GetConvar = globalThis.GetConvar ?? ((_n, fallback) => fallback);
 const entry = `
 import '${path.join(root, 'server/services/index.ts').split(path.sep).join('/')}';
 export { declaredServices } from '${path.join(root, 'server/lib/defineService.ts').split(path.sep).join('/')}';
-export { toSqlFile, schemaMigrationsLedgerDdl, schemaMigrationsSeedSql } from '${path.join(root, 'server/lib/schemaSql.ts').split(path.sep).join('/')}';
+export { toSqlFile, schemaMigrationsLedgerDdl, schemaMigrationsSeedSql, freshImportProbeSql } from '${path.join(root, 'server/lib/schemaSql.ts').split(path.sep).join('/')}';
 export { citizenIdWidth } from '${path.join(root, 'shared/framework.ts').split(path.sep).join('/')}';
 `;
 
@@ -223,7 +223,7 @@ function withIdentifierWidth(sql, label, citizenIdWidth) {
 }
 
 /** Wipe-and-rebuild in one file: drop everything, then the framework and app schemas. */
-function buildResetSql(appFiles, migrationsBlock) {
+function buildResetSql(appFiles, migrationsBlock, freshImportProbe) {
   const frameworkSql = fs
     .readFileSync(path.join(__dirname, 'framework-schema.sql'), 'utf8')
     .trimEnd();
@@ -241,6 +241,9 @@ function buildResetSql(appFiles, migrationsBlock) {
     '-- ============================================================================',
     '',
     DROP_ALL_MICA_TABLES,
+    '',
+    // After the drop, so the probe finds nothing and the seed below records every migration.
+    freshImportProbe,
     '',
     '-- Framework schema (mica.sql)',
     frameworkSql,
@@ -269,6 +272,7 @@ async function main() {
     toSqlFile,
     schemaMigrationsLedgerDdl,
     schemaMigrationsSeedSql,
+    freshImportProbeSql,
     citizenIdWidth
   } = await import(`file://${bundlePath}?t=${Date.now()}`);
 
@@ -360,6 +364,7 @@ async function main() {
     [
       banner,
       QB_ONLY_GUARD,
+      freshImportProbeSql(),
       frameworkSql.trimEnd(),
       '',
       ...appFiles.map((f) => f.sql.trimEnd()),
@@ -371,6 +376,7 @@ async function main() {
     esxOutFile,
     [
       esxBanner,
+      freshImportProbeSql(),
       withIdentifierWidth(frameworkSql.trimEnd(), 'scripts/framework-schema.sql', citizenIdWidth),
       '',
       ...esxAppFiles.map((f) => f.sql.trimEnd()),
@@ -389,7 +395,7 @@ async function main() {
 
   if (withReset) {
     const resetPath = path.join(root, 'sql', 'dev-reset.sql');
-    fs.writeFileSync(resetPath, buildResetSql(appFiles, migrationsBlock));
+    fs.writeFileSync(resetPath, buildResetSql(appFiles, migrationsBlock, freshImportProbeSql()));
     console.log('');
     console.log('Also wrote sql/dev-reset.sql — DESTRUCTIVE.');
     console.log('  It drops every mica_ table in the schema you connect it to,');

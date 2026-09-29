@@ -1047,6 +1047,16 @@ export instead, which authenticates its caller.
 
 ### Fixed
 
+**Re-importing `mica.sql` or `mica.esx.sql` over an existing database no longer
+marks every migration done without running it (MICA-301).** The file now records
+the migrations only when it created micaOS from nothing; over an existing
+database it records none, and the next `micaschema apply` runs the ones your
+database has not had, each doing nothing where its change is already in place. A
+database re-imported before this fix may carry records for migrations that never
+ran: 0006 is caught regardless (`apply` and the start-up warning check for its
+keys directly), and for 0004 and 0005 `micaschema` reports the missing change as
+drift. No owner action unless it does.
+
 **With an external image host, hosted photos count against the media quota, and
 are no longer offered as wallpapers (MICA-293).** A hosted photo used to cost
 only its thumbnail, so `mica_media_quota_mb` stopped bounding uploads to your

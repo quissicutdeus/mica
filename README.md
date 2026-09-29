@@ -315,18 +315,20 @@ source" below, which is for changing the phone rather than running it.
    that guard.
 
    Every statement is `CREATE TABLE IF NOT EXISTS`, so re-importing creates any
-   missing table and does nothing to one that already exists — which also means
-   it does not upgrade one. **Re-importing is not a substitute for
-   `micaschema apply`:** it records the shipped migrations as done without
-   running them against your existing tables. `apply` removes the old foreign
-   keys onto `players` whatever that record says (MICA-300), and the console
-   warns at every start while any remain. micaOS applies no schema changes
-   automatically: `micaschema` in the server console reports any difference
-   between the database and what the code expects, and `micaschema apply` —
-   console-only — applies the safe, additive half of that difference plus any
-   pending versioned migration. A rename, a retype or a drop still needs its
-   migration written and reviewed first; `apply` only ever runs migrations that
-   already exist in `server/migrations/`.
+   missing table and leaves an existing one as it is. **Re-importing is not a
+   substitute for `micaschema apply`:** the file records the shipped migrations
+   as done only when the import found no micaOS table at all — a fresh install.
+   Over an existing database it records nothing, and the next `micaschema apply`
+   runs every migration that database has not had, each of which does nothing
+   where its change is already in place (MICA-301). `apply` also removes the old
+   foreign keys onto `players` whatever any record says (MICA-300), and the
+   console warns at every start while any remain. micaOS applies no schema
+   changes automatically: `micaschema` in the server console reports any
+   difference between the database and what the code expects, and
+   `micaschema apply` — console-only — applies the safe, additive half of that
+   difference plus any pending versioned migration. A rename, a retype or a drop
+   still needs its migration written and reviewed first; `apply` only ever runs
+   migrations that already exist in `server/migrations/`.
 
    **Resetting the schema during development:** `pnpm generate:sql:reset`
    additionally writes `sql/dev-reset.sql`, which **drops every `mica_`-prefixed

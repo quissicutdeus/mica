@@ -66,7 +66,7 @@ const EXTERNAL_DB = Boolean(DB_HOST || DB_PORT || DB_USER || DB_PASSWORD);
  * configured": a harness that returns early — a fixture that silently seeded nothing, a loop
  * over an empty list — would otherwise print a pass having checked almost nothing.
  *
- * The run currently makes **315** checks. The last census, at 258, named each fixture: the two
+ * The run currently makes **334** checks. The last census, at 258, named each fixture: the two
  * `runVariant`s (17 each), the two `runSweepFixtures` (17 each), the two `runNumberMigration`s
  * (MICA-284; 21 on qb, 16 on ESX), the two `runDataMigration`s (MICA-282; 38 each), the two
  * `runBatteryMigration`s (MICA-283; 9 each), and MICA-289's `runWidenMigration` (14 on qb, 15 on
@@ -74,12 +74,14 @@ const EXTERNAL_DB = Boolean(DB_HOST || DB_PORT || DB_USER || DB_PASSWORD);
  * (5) and `runWidenEsxWithPlayersKeys` (4). Since then MICA-256's `runRingtoneMigration`s and
  * others brought it to 281 while the floor stayed at 250, and MICA-300's
  * `runPlayersKeysMigration`s (13 on qb, 11 on ESX), `runReimportOverOldSchema` (8) and
- * `runApplyWidensEsxWithPlayersKeys` (2) to 315 — so the margin here is eight again.
+ * `runApplyWidensEsxWithPlayersKeys` (2) to 315, and MICA-301's `runReimportRunsMigrations`
+ * (5 on each shape), `runReimportWithoutLedger` (5) and `runFreshImportSeeds` (2 on each) to
+ * 334 — so the margin here is eight again.
  * That is deliberately tight: losing any one fixture drops below it and fails, which is the
  * whole point. Raise the floor when you add checks, rather than letting the gap widen until it
  * stops catching anything.
  */
-const MINIMUM_CHECKS = 307;
+const MINIMUM_CHECKS = 326;
 let checksRun = 0;
 
 const check = (label, actual, expected) => {
@@ -2034,6 +2036,12 @@ const runReimportOverOldSchema = async ({ connection, server }) => {
     fs.readFileSync(path.join(root, 'scripts', 'fixtures', 'pre-0006', 'mica.sql'), 'utf8')
   );
   await connection.query(fs.readFileSync(path.join(root, 'mica.sql'), 'utf8'));
+  // MICA-301: the current file no longer records 0006 over tables it did not create. A
+  // `mica.sql` from before that did, and a ledger that says so is what this proves apply
+  // ignores — so it is written here the way that file would have written it.
+  await connection.query('INSERT IGNORE INTO mica_schema_migrations (id) VALUES (?)', [
+    KEYS_MIGRATION
+  ]);
   await connection.query('INSERT INTO players (citizenid) VALUES (?)', ['CIT_RE']);
   await connection.query('INSERT INTO mica_notes (citizenid, title) VALUES (?, ?)', [
     'CIT_RE',
@@ -2044,7 +2052,7 @@ const runReimportOverOldSchema = async ({ connection, server }) => {
   const keys = await ownerForeignKeys(connection);
   check(`${label}: the keys onto players survive the re-import`, keys > 20, true);
   check(
-    `${label}: while the ledger says 0006 is done`,
+    `${label}: while the ledger says 0006 is done (as a pre-MICA-301 file recorded it)`,
     await scalar(connection, 'SELECT COUNT(*) FROM mica_schema_migrations WHERE id = ?', [
       KEYS_MIGRATION
     ]),
@@ -2119,6 +2127,156 @@ const runApplyWidensEsxWithPlayersKeys = async ({ connection, server }) => {
     [await ownerForeignKeys(connection), widths.every((t) => t === 'varchar(60)')],
     [0, true]
   );
+};
+
+/* ------------------------ MICA-301: a re-import cannot mark a migration run */
+
+const ALL_MIGRATIONS = () =>
+  fs
+    .readdirSync(path.join(root, 'server', 'migrations'))
+    .filter((f) => f.endsWith('.ts') && f !== 'index.ts')
+    .map((f) => f.replace(/\.ts$/, ''))
+    .sort();
+
+const ledgerIds = async (connection) => {
+  const [rows] = await connection.query('SELECT id FROM mica_schema_migrations ORDER BY id');
+  return rows.map((row) => row.id);
+};
+
+const ringtoneType = async (connection) =>
+  await scalar(
+    connection,
+    `SELECT column_type FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE() AND table_name = 'mica_contacts' AND column_name = 'ringtone'`
+  );
+
+/**
+ * MICA-301. `mica.sql` seeds the ledger with every migration id, and every table in it is
+ * `CREATE TABLE IF NOT EXISTS`. Re-imported over an existing database it used to mark 0004 to
+ * 0006 applied without running them against the tables that were already there, and apply then
+ * skipped them for good. It seeds only when the import found no micaOS table at all now, so on
+ * each shape: re-import the current file over the frozen pre-0004 schema, run apply's two
+ * halves, and the migrations the ledger did not know actually take effect.
+ */
+const runReimportRunsMigrations = async ({ connection, schemaFile, hasPlayers, server }) => {
+  const variant = hasPlayers ? 'qb' : 'esx';
+  const label = `${schemaFile} re-imported over a pre-0004 ${variant} database`;
+  step(label);
+
+  await freshPreWidenDatabase({
+    connection,
+    schemaFile,
+    hasPlayers,
+    name: `reimport_${variant}`,
+    extra: hasPlayers ? '' : USERS_TABLE
+  });
+  const before = await ledgerIds(connection);
+  check(`${label}: the old ledger does not know 0004`, before.includes(WIDEN_MIGRATION), false);
+  await connection.query(fs.readFileSync(path.join(root, schemaFile), 'utf8'));
+  check(
+    `${label}: the re-import records nothing it did not run`,
+    await ledgerIds(connection),
+    before
+  );
+
+  runningFramework(server, hasPlayers);
+  const run = await server.runPendingMigrations();
+  check(
+    `${label}: apply runs every migration the old database had not`,
+    [run.applied, run.failed],
+    [ALL_MIGRATIONS().filter((id) => !before.includes(id)), null]
+  );
+  const widths = Object.values(await signatureOf(connection, WIDEN_COLUMNS)).map((c) => c.type);
+  check(
+    `${label}: and they take effect`,
+    [
+      widths.every((t) => t === (hasPlayers ? 'varchar(50)' : 'varchar(60)')),
+      await ringtoneType(connection)
+    ],
+    [true, 'varchar(54)']
+  );
+  const additive = await server.SchemaMigrator.apply();
+  const plans = await server.SchemaMigrator.plan();
+  check(
+    `${label}: and the additive pass after them leaves no drift`,
+    [additive.failed, plans.flatMap((p) => [...p.additive, ...p.drift])],
+    [null, []]
+  );
+};
+
+/**
+ * MICA-301. A database with micaOS tables and no ledger — one that predates it, or whose first
+ * import stopped before reaching it — is not a fresh install, so nothing is seeded and apply
+ * runs every migration. Two ways in: the frozen pre-0004 schema with its ledger removed, and the
+ * current schema with its ledger removed, where every migration must find nothing to do.
+ */
+const runReimportWithoutLedger = async ({ connection, server }) => {
+  const label = 'mica.esx.sql re-imported over micaOS tables with no ledger';
+  step(label);
+
+  await freshPreWidenDatabase({
+    connection,
+    schemaFile: 'mica.esx.sql',
+    hasPlayers: false,
+    name: 'noledger_old',
+    extra: USERS_TABLE
+  });
+  await connection.query('DROP TABLE mica_schema_migrations');
+  await connection.query(fs.readFileSync(path.join(root, 'mica.esx.sql'), 'utf8'));
+  check(`${label} (pre-0004): the ledger comes back empty`, await ledgerIds(connection), []);
+  runningFramework(server, false);
+  const old = await server.runPendingMigrations();
+  const widths = Object.values(await signatureOf(connection, WIDEN_COLUMNS)).map((c) => c.type);
+  check(
+    `${label} (pre-0004): apply runs all of them, and 0004 and 0005 take effect`,
+    [
+      old.applied,
+      old.failed,
+      widths.every((t) => t === 'varchar(60)'),
+      await ringtoneType(connection)
+    ],
+    [ALL_MIGRATIONS(), null, true, 'varchar(54)']
+  );
+
+  const database = 'mica_noledger_current';
+  await connection.query(`DROP DATABASE IF EXISTS \`${database}\``);
+  await connection.query(`CREATE DATABASE \`${database}\``);
+  await connection.changeUser({ database });
+  await connection.query(USERS_TABLE);
+  const file = fs.readFileSync(path.join(root, 'mica.esx.sql'), 'utf8');
+  await connection.query(file);
+  const shape = await wholeSchema(connection);
+  await connection.query('DROP TABLE mica_schema_migrations');
+  await connection.query(file);
+  check(`${label} (current): the ledger comes back empty`, await ledgerIds(connection), []);
+  const current = await server.runPendingMigrations();
+  check(
+    `${label} (current): every migration runs over tables already in shape, and moves nothing`,
+    [current.applied, current.failed, await wholeSchema(connection)],
+    [ALL_MIGRATIONS(), null, shape]
+  );
+  const again = await server.runPendingMigrations();
+  check(`${label} (current): a second apply runs nothing`, again.applied, []);
+};
+
+/** MICA-301. A fresh import still records every migration, so none of them ever runs there. */
+const runFreshImportSeeds = async ({ connection, schemaFile, hasPlayers, server }) => {
+  const label = `${schemaFile} imported fresh`;
+  step(label);
+  const database = `mica_fresh_${hasPlayers ? 'qb' : 'esx'}`;
+  await connection.query(`DROP DATABASE IF EXISTS \`${database}\``);
+  await connection.query(`CREATE DATABASE \`${database}\``);
+  await connection.changeUser({ database });
+  await connection.query(hasPlayers ? PLAYERS_TABLE : USERS_TABLE);
+  await connection.query(fs.readFileSync(path.join(root, schemaFile), 'utf8'));
+  check(
+    `${label}: the ledger knows every migration`,
+    await ledgerIds(connection),
+    ALL_MIGRATIONS()
+  );
+  runningFramework(server, hasPlayers);
+  const run = await server.runPendingMigrations();
+  check(`${label}: and apply runs none of them`, [run.applied, run.failed], [[], null]);
 };
 
 const main = async () => {
@@ -2240,6 +2398,28 @@ const main = async () => {
     });
     await runReimportOverOldSchema({ connection, server });
     await runApplyWidensEsxWithPlayersKeys({ connection, server });
+
+    // MICA-301. A re-import records only what an import created; apply runs the rest.
+    await runReimportRunsMigrations({
+      connection,
+      schemaFile: 'mica.sql',
+      hasPlayers: true,
+      server
+    });
+    await runReimportRunsMigrations({
+      connection,
+      schemaFile: 'mica.esx.sql',
+      hasPlayers: false,
+      server
+    });
+    await runReimportWithoutLedger({ connection, server });
+    await runFreshImportSeeds({ connection, schemaFile: 'mica.sql', hasPlayers: true, server });
+    await runFreshImportSeeds({
+      connection,
+      schemaFile: 'mica.esx.sql',
+      hasPlayers: false,
+      server
+    });
 
     if (checksRun < MINIMUM_CHECKS) {
       throw new Error(

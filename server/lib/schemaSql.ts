@@ -355,17 +355,56 @@ export const schemaMigrationsLedgerDdl = (): string =>
   ].join('\n');
 
 /**
- * `INSERT IGNORE` seeding every migration id that exists as of generation time.
+ * The session variable a generated file records "this import found no micaOS table" in.
+ * `freshImportProbeSql` sets it before the first `CREATE TABLE`; the seed reads it at the end.
+ */
+const FRESH_IMPORT = '@mica_fresh_import';
+
+/**
+ * The first statement of a generated file's schema (MICA-301): does this database hold any
+ * micaOS table yet?
  *
- * A fresh install imports every table already in its final shape, so its migrations must
- * never actually run — each would find a table that was never in the shape it expects to
- * find it in. Seeding the ledger marks them applied without running `up()`. `INSERT IGNORE`
- * rather than `INSERT`: re-running `pnpm generate:sql` against a database that already has
- * some of these rows (e.g. a dev database that both imported an older `mica.sql` and later
- * ran `micaschema apply`) must not error.
+ * Asked before anything is created, because afterwards every table exists whichever way the
+ * import went — every `CREATE` is `IF NOT EXISTS`, the ledger's own included, so no later
+ * statement can tell a fresh install from a re-import. Any `mica_` table at all counts, not
+ * just the ledger: an install older than the ledger has tables and no ledger, and is exactly
+ * the database whose migrations must run.
+ */
+export const freshImportProbeSql = (): string =>
+  [
+    '-- Is this import creating micaOS from nothing? Asked before the first CREATE TABLE: the',
+    '-- migrations ledger below is seeded only then (MICA-301).',
+    `SET ${FRESH_IMPORT} = (SELECT COUNT(*) = 0 FROM information_schema.TABLES`,
+    "    WHERE table_schema = DATABASE() AND table_name LIKE 'mica|_%' ESCAPE '|');"
+  ].join('\n');
+
+/**
+ * Seed every migration id that exists as of generation time — **only into a database this same
+ * import created** (`freshImportProbeSql`).
+ *
+ * A fresh install imports every table already in its final shape, so its migrations must never
+ * run; seeding the ledger marks them applied without running `up()`.
+ *
+ * Re-imported over an existing database it used to seed them all the same (MICA-301): every
+ * table there is left as it was by `CREATE TABLE IF NOT EXISTS`, the ledger said the migrations
+ * were done, and `micaschema apply` never ran them. So the seed reads what the probe found, and
+ * an import over any existing micaOS table records nothing; apply then runs what that database
+ * has not had, and every migration is written to find nothing to do where it already has.
+ *
+ * Fails toward running: a probe that did not run in the same session — statements pasted one by
+ * one into different connections — leaves the variable NULL, and NULL seeds nothing.
+ * `INSERT IGNORE` still, so a fresh database that already has some of these rows does not error.
  */
 export const schemaMigrationsSeedSql = (ids: readonly string[]): string | null => {
   if (ids.length === 0) return null;
-  const values = ids.map((id) => `('${id.replace(/'/g, "''")}')`).join(',\n  ');
-  return `INSERT IGNORE INTO \`${SCHEMA_MIGRATIONS_TABLE}\` (\`id\`) VALUES\n  ${values};`;
+  const rows = ids.map((id, i) => {
+    const literal = `'${id.replace(/'/g, "''")}'`;
+    return i === 0 ? `    SELECT ${literal} AS \`id\`` : `    UNION ALL SELECT ${literal}`;
+  });
+  return [
+    `INSERT IGNORE INTO \`${SCHEMA_MIGRATIONS_TABLE}\` (\`id\`)`,
+    'SELECT `id` FROM (',
+    ...rows,
+    `) AS \`seed\` WHERE ${FRESH_IMPORT} = 1;`
+  ].join('\n');
 };
