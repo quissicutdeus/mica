@@ -43,7 +43,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           MIRROR_KEY: ${{ secrets.FORGEJO_MIRROR_KEY }}
           MIRROR_KNOWN_HOSTS: ${{ secrets.FORGEJO_KNOWN_HOSTS }}
-          FORGEJO_URL: ssh://git@git.quissicutdeus.com:222/quissicutdeus/mica.git
+          # mica.gg, not git.quissicutdeus.com: that name resolves only inside the network
+          # hoth sits on, and a GitHub runner is outside it. Same box, same port 222, same
+          # host key, which FORGEJO_KNOWN_HOSTS pins under this name.
+          FORGEJO_URL: ssh://git@mica.gg:222/quissicutdeus/mica.git
         run: |
           set -eu
           if [ -z "$MIRROR_KEY" ] || [ -z "$MIRROR_KNOWN_HOSTS" ]; then
