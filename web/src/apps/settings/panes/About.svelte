@@ -16,6 +16,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     formatDate
   } from '@mica/sdk';
   import { OS_CODENAME } from '@mica/shared/brand';
+  import { copyText } from '../clipboard';
 
   let { ontapbuild, onprivacy, onlicense } = $props<{
     ontapbuild: () => void;
@@ -28,38 +29,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   const { getFirstBootTime } = useAppRegistry();
   const { toast } = usePhoneNotification();
 
-  /**
-   * Copy the player's number so it can be pasted into a message.
-   *
-   * `navigator.clipboard` needs a secure context. NUI is served over
-   * `https://cfx-nui-<resource>/` so it qualifies, but CEF can still refuse the
-   * permission — hence the execCommand fallback, which is deprecated on the open web
-   * and entirely reliable here.
-   */
+  /** Copy the player's number so it can be pasted into a message. */
   const copyPhoneNumber = async () => {
     const number = $myPhoneNumber;
-    let copied = false;
-
-    try {
-      await navigator.clipboard.writeText(number);
-      copied = true;
-    } catch {
-      try {
-        const scratch = document.createElement('textarea');
-        scratch.value = number;
-        // Keep it off-screen and unfocusable so the phone UI does not visibly shift.
-        scratch.setAttribute('readonly', '');
-        scratch.style.position = 'fixed';
-        scratch.style.opacity = '0';
-        scratch.style.pointerEvents = 'none';
-        document.body.appendChild(scratch);
-        scratch.select();
-        copied = document.execCommand('copy');
-        document.body.removeChild(scratch);
-      } catch {
-        copied = false;
-      }
-    }
+    const copied = await copyText(number);
 
     toast.show(
       copied

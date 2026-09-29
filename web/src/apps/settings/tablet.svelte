@@ -28,6 +28,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import Notifications from './panes/Notifications.svelte';
   import License from './panes/License.svelte';
   import Privacy from './panes/Privacy.svelte';
+  import YourData from './panes/YourData.svelte';
   import DeveloperTools from './panes/DeveloperTools.svelte';
   import Shortcuts from './panes/Shortcuts.svelte';
   import Sound from './panes/Sound.svelte';
@@ -73,6 +74,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     | 'devtools'
     | 'about'
     | 'privacy'
+    | 'yourdata'
     | 'license';
 
   // Display rather than the first row: it is what a player opens Settings for most often,
@@ -96,6 +98,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     devtools: 'settings.devtools.title',
     about: 'settings.about.title',
     privacy: 'settings.privacy.title',
+    yourdata: 'settings.yourData.title',
     license: 'settings.license.title'
   };
   const paneTitle = (which: Pane): string => $t(PANE_TITLE_KEYS[which]);
@@ -134,6 +137,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     levels: [
       // Deepest first. Privacy and License are both reached from inside About, so Back
       // returns there rather than to whatever was selected before.
+      // Your data is reached from Privacy, so Back returns there, not to About.
+      {
+        open: () => pane === 'yourdata',
+        close: () => (pane = 'privacy'),
+        title: () => paneTitle('yourdata')
+      },
       {
         open: () => pane === 'privacy',
         close: () => (pane = 'about'),
@@ -246,7 +255,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           onlicense={() => (pane = 'license')}
         />
       {:else if pane === 'privacy'}
-        <Privacy />
+        <Privacy onyourdata={() => (pane = 'yourdata')} />
+      {:else if pane === 'yourdata'}
+        <YourData />
       {:else if pane === 'license'}
         <License />
       {/if}

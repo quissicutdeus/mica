@@ -57,6 +57,8 @@ const { dbMock, localHandlers, netHandlers } = vi.hoisted(() => {
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
 
 import {
+  __setPurgeHookForTests,
+  cascadeEdges,
   ownedTables,
   orphanDeleteSql,
   sweepOrphanedRows,
@@ -66,6 +68,7 @@ import {
 } from '../lib/orphanSweep';
 import { FrameworkBridge, __setResourceLookup, detectFramework } from '../lib/FrameworkBridge';
 import { REPORTABLE } from '../lib/moderation';
+import { declaredServices } from '../lib/defineService';
 // Populates `declaredServices` — the registry is filled as a side effect of each
 // `defineService`, so without this the derivation below has nothing to derive from.
 import '../services/index';
@@ -880,6 +883,350 @@ describe('purging one named character', () => {
   });
 });
 
+/**
+ * MICA-168: a player deleting their own data. `purgeOwnedRows` with options is a different path
+ * (`purgeCascadeSafe`): it plans by id, then deletes children first. The character purge above
+ * is untouched, and the first test here pins that.
+ */
+describe("a player's own delete", () => {
+  it('leaves the character purge exactly as it was: declaration order, no reads but the collect', async () => {
+    dbMock.query.mockResolvedValue({ affectedRows: 1 });
+    await purgeOwnedRows('CID_Z');
+    expect(deletes().map((sql) => /^DELETE FROM (\w+)/.exec(sql)![1])).toEqual(
+      ownedTables().map(({ table }) => table)
+    );
+    const reads = dbMock.query.mock.calls
+      .map((c: any[]) => String(c[0]))
+      .filter((sql) => sql.startsWith('SELECT'));
+    expect(reads).toEqual([expect.stringMatching(/^SELECT DISTINCT t\.`url` FROM `mica_media`/)]);
+  });
+
+  /**
+   * A database that answers the plan: `plan[table]` for the owner's rows (none by default),
+   * `links['child.column']` for the rows referencing them, and a `DELETE` removes every id it
+   * names unless `deleteResult` says otherwise.
+   */
+  const fakeDb = ({
+    plan = {},
+    links = {},
+    deleteResult,
+    reported = new Map<string, Set<number>>()
+  }: {
+    plan?: Record<string, { id: number; go: number; held: number; ex: number }[]>;
+    links?: Record<string, { id?: number; ref: number }[]>;
+    deleteResult?: (table: string, ids: number[]) => number;
+    /** Rows under an open report by table; the parent-hold clause is honoured against it. */
+    reported?: Map<string, Set<number>>;
+  }) => {
+    // What is still in each table, so a pass's read-back answers what the DELETEs left.
+    const alive = new Map(
+      Object.entries(plan).map(([table, rows]) => [table, new Set(rows.map((r) => r.id))])
+    );
+    const idsIn = (sql: string, params: unknown[]): number[] => {
+      const marks = sql.match(/`id` IN \(([?, ]+)\)/)?.[1].match(/\?/g)?.length ?? 0;
+      return params.slice(1, 1 + marks) as number[];
+    };
+    dbMock.query.mockImplementation(async (sql: string, params: unknown[] = []) => {
+      const planned = /^SELECT t\.`id` AS `id`, .* FROM (\w+) t WHERE/.exec(sql)?.[1];
+      if (planned) return plan[planned] ?? [];
+      const survivors = /^SELECT t\.`id` AS `id` FROM (\w+) t WHERE/.exec(sql)?.[1];
+      if (survivors) {
+        return idsIn(sql, params)
+          .filter((id) => alive.get(survivors)?.has(id))
+          .map((id) => ({ id }));
+      }
+      const link = /c\.`(\w+)` AS `ref` FROM `(\w+)` c/.exec(sql);
+      if (link) return links[`${link[2]}.${link[1]}`] ?? [];
+      if (sql.startsWith('SELECT')) return [];
+      const table = /^DELETE FROM (\w+)/.exec(sql)![1];
+      // `parentHold`: a row whose reportable parent is reported stays, when the statement asks.
+      const heldByParent = (id: number): boolean =>
+        [...sql.matchAll(/FROM `(\w+)` pp JOIN `\w+` cc ON cc\.`(\w+)` = pp\.`id`/g)].some(
+          ([, parent, col]) =>
+            (links[`${table}.${col}`] ?? []).some(
+              (link) => link.id === id && reported.get(parent)?.has(link.ref)
+            )
+        );
+      const named = idsIn(sql, params).filter(
+        (id) => alive.get(table)?.has(id) && !heldByParent(id)
+      );
+      const n = deleteResult ? deleteResult(table, named) : named.length;
+      for (const id of named.slice(0, n)) alive.get(table)?.delete(id);
+      return { affectedRows: n };
+    });
+  };
+  const deletedIds = (table: string): number[] =>
+    dbMock.query.mock.calls
+      .filter((c: any[]) => String(c[0]).startsWith(`DELETE FROM ${table} `))
+      .flatMap((c: any[]) => {
+        const n = (
+          String(c[0])
+            .match(/`id` IN \(([?, ]+)\)/)![1]
+            .match(/\?/g) ?? []
+        ).length;
+        return c[1].slice(1, 1 + n) as number[];
+      });
+  const row = (id: number, over: Partial<{ go: number; held: number; ex: number }> = {}) => ({
+    id,
+    go: 1,
+    held: 0,
+    ex: 0,
+    ...over
+  });
+  const cascade = { cascade: { dependents: [] as string[] } };
+
+  it('deletes by id and owner, children before parents, with the guard still in the statement', async () => {
+    fakeDb({
+      plan: { mica_messages_conversations: [row(50)], mica_messages: [row(501)] },
+      links: { 'mica_messages.conversation_id': [{ id: 501, ref: 50 }] }
+    });
+
+    const result = await purgeOwnedRows('CID_Z', cascade);
+
+    expect(result).toEqual({ removed: 2, kept: 0, failures: [] });
+    const order = deletes().map((sql) => /^DELETE FROM (\w+)/.exec(sql)![1]);
+    expect(order.indexOf('mica_messages')).toBeLessThan(
+      order.indexOf('mica_messages_conversations')
+    );
+    const parent = dbMock.query.mock.calls.find((c: any[]) =>
+      String(c[0]).startsWith('DELETE FROM mica_messages_conversations ')
+    )!;
+    expect(String(parent[0])).toMatch(
+      /^DELETE FROM mica_messages_conversations WHERE citizenid = \? AND mica_messages_conversations\.`id` IN \(\?\)/
+    );
+    expect(String(parent[0])).toContain(
+      'NOT EXISTS (SELECT 1 FROM `mica_messages` c WHERE c.`conversation_id` = mica_messages_conversations.`id`)'
+    );
+    expect(parent[1][0]).toBe('CID_Z');
+  });
+
+  it("keeps a parent another player's row references, and counts it as kept", async () => {
+    fakeDb({
+      plan: { mica_messages_conversations: [row(50)], mica_messages: [row(501)] },
+      // 500 is somebody else's message: not in this owner's plan, so it stays.
+      links: {
+        'mica_messages.conversation_id': [
+          { id: 501, ref: 50 },
+          { id: 500, ref: 50 }
+        ]
+      }
+    });
+
+    const result = await purgeOwnedRows('CID_Z', cascade);
+
+    expect(deletedIds('mica_messages')).toEqual([501]);
+    expect(deletedIds('mica_messages_conversations')).toEqual([]);
+    expect(result.kept).toBe(1);
+  });
+
+  /**
+   * The round-3 must-fix. The attachment is owned and not reportable, so it was deleted before
+   * its held post; then nothing referenced the photo and it went, file and all.
+   */
+  it('keeps what hangs off a held row, and what that references: the photo on a reported post', async () => {
+    fakeDb({
+      plan: {
+        mica_blabber: [row(700, { go: 0, held: 1 })],
+        mica_blabber_attachments: [row(9)],
+        mica_media: [row(30), row(32)]
+      },
+      links: {
+        'mica_blabber_attachments.blab_id': [{ id: 9, ref: 700 }],
+        'mica_blabber_attachments.media_id': [{ id: 9, ref: 30 }]
+      }
+    });
+
+    const result = await purgeOwnedRows('CID_Z', cascade);
+
+    expect(deletedIds('mica_blabber_attachments')).toEqual([]);
+    expect(deletedIds('mica_media')).toEqual([32]);
+    expect(deletedIds('mica_blabber')).toEqual([]);
+    expect(result).toEqual({ removed: 1, kept: 3, failures: [] });
+  });
+
+  it("does not spread evidence upward: a held row's parent stays, its siblings still go", async () => {
+    fakeDb({
+      plan: {
+        mica_messages_conversations: [row(50)],
+        mica_messages: [row(501), row(503, { go: 0, held: 1 })]
+      },
+      links: {
+        'mica_messages.conversation_id': [
+          { id: 501, ref: 50 },
+          { id: 503, ref: 50 }
+        ]
+      }
+    });
+
+    await purgeOwnedRows('CID_Z', cascade);
+
+    expect(deletedIds('mica_messages')).toEqual([501]);
+    expect(deletedIds('mica_messages_conversations')).toEqual([]);
+  });
+
+  /**
+   * Round 4: a report filed between the plan and the delete. The child goes first and its own
+   * hold says nothing about its parent, so each child's DELETE also checks every reportable
+   * parent it references.
+   */
+  it("keeps a child whose reportable parent is reported after the plan, in the child's own DELETE", async () => {
+    fakeDb({
+      plan: {
+        mica_blabber_attachments: [row(9)],
+        mica_messages_attachments: [row(8)],
+        mica_messages_participants: [row(7)]
+      }
+    });
+
+    await purgeOwnedRows('CID_Z', cascade);
+
+    const statement = (table: string) =>
+      dbMock.query.mock.calls.find((c: any[]) => String(c[0]).startsWith(`DELETE FROM ${table} `))!;
+    const blab = statement('mica_blabber_attachments');
+    expect(String(blab[0])).toContain(
+      'NOT EXISTS (SELECT 1 FROM (SELECT DISTINCT pp.`id` AS `k` FROM `mica_blabber` pp ' +
+        'JOIN `mica_blabber_attachments` cc ON cc.`blab_id` = pp.`id` WHERE cc.`citizenid` = ? ' +
+        `AND NOT (${REPORT_HOLD('pp')})) h WHERE h.\`k\` = mica_blabber_attachments.\`blab_id\`)`
+    );
+    expect(blab[1]).toEqual(expect.arrayContaining(['CID_Z', 'mica_blabber']));
+    // Its media parent is reportable too, so that reference is held the same way.
+    expect(String(blab[0])).toContain('FROM `mica_media` pp JOIN `mica_blabber_attachments` cc');
+    expect(String(statement('mica_messages_attachments')[0])).toContain(
+      'FROM `mica_messages` pp JOIN `mica_messages_attachments` cc ON cc.`message_id` = pp.`id`'
+    );
+    // A conversation cannot be reported, so its participants carry no such clause.
+    expect(String(statement('mica_messages_participants')[0])).not.toContain('pp.`id` AS `k`');
+  });
+
+  it('keeps the attachment of a post reported between the plan and the delete', async () => {
+    const reported = new Map<string, Set<number>>();
+    fakeDb({
+      plan: { mica_blabber: [row(706)], mica_blabber_attachments: [row(9)] },
+      links: { 'mica_blabber_attachments.blab_id': [{ id: 9, ref: 706 }] },
+      reported
+    });
+    // Nothing was reported when the purge planned; a report lands before it deletes.
+    __setPurgeHookForTests(async () => {
+      reported.set('mica_blabber', new Set([706]));
+    });
+
+    try {
+      await purgeOwnedRows('CID_Z', cascade);
+    } finally {
+      __setPurgeHookForTests();
+    }
+
+    // The plan meant to delete the attachment; its own DELETE kept it through `parentHold`.
+    const attachment = dbMock.query.mock.calls.find((c: any[]) =>
+      String(c[0]).startsWith('DELETE FROM mica_blabber_attachments ')
+    )!;
+    expect(attachment[1]).toContain(9);
+    expect(
+      await dbMock.query(
+        'SELECT t.`id` AS `id` FROM mica_blabber_attachments t WHERE t.citizenid = ? AND t.`id` IN (?)',
+        ['CID_Z', 9]
+      )
+    ).toEqual([{ id: 9 }]);
+  });
+
+  it('holds a reply whose reportable parent is in its own table the same way', async () => {
+    fakeDb({ plan: { mica_blabber: [row(705)] } });
+
+    await purgeOwnedRows('CID_Z', cascade);
+
+    const reply = dbMock.query.mock.calls.find((c: any[]) =>
+      String(c[0]).startsWith('DELETE FROM mica_blabber ')
+    )!;
+    expect(String(reply[0])).toContain(
+      'FROM `mica_blabber` pp JOIN `mica_blabber` cc ON cc.`reply_to` = pp.`id`'
+    );
+  });
+
+  it('deletes a self-referencing table in passes, and a pass cap reached is a failure', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    fakeDb({
+      // Three hundred planned rows, and each pass removes one: still removing when the passes
+      // run out, so the cap is what stops it.
+      plan: { mica_blabber: Array.from({ length: 300 }, (_, i) => row(1000 + i)) },
+      deleteResult: (table) => (table === 'mica_blabber' ? 1 : 0)
+    });
+
+    const result = await purgeOwnedRows('CID_Z', cascade);
+    errors.mockRestore();
+
+    expect(result.failures.map((f) => f.table)).toEqual(['mica_blabber']);
+    expect(String((result.failures[0].error as Error).message)).toContain('passes');
+    // A failed table's leftovers are not reported as kept.
+    expect(result.kept).toBe(0);
+    expect(deletes().filter((sql) => sql.startsWith('DELETE FROM mica_blabber '))).toHaveLength(
+      200
+    );
+  });
+
+  it('settles a self-referencing table once every planned row is gone', async () => {
+    let pass = 0;
+    fakeDb({
+      plan: { mica_blabber: [row(704), row(705)] },
+      // The reply goes first, then the post it was keeping.
+      deleteResult: (table) => (table === 'mica_blabber' ? (++pass <= 2 ? 1 : 0) : 0)
+    });
+
+    const result = await purgeOwnedRows('CID_Z', cascade);
+
+    expect(pass).toBe(2);
+    expect(result).toEqual({ removed: 2, kept: 0, failures: [] });
+    // The second pass names only what the first left, read back rather than re-sent whole.
+    expect(deletedIds('mica_blabber')).toEqual([704, 705, 705]);
+  });
+
+  it('throws on a cycle in the foreign keys before any statement runs', async () => {
+    const fake = {
+      table: 'mica_cycle_a',
+      fields: [
+        { name: 'b_id', def: { type: 'int', references: { table: 'mica_cycle_b', column: 'id' } } }
+      ],
+      childTables: [
+        {
+          name: 'mica_cycle_b',
+          columns: {
+            citizenid: { type: 'string', references: { table: 'players', column: 'citizenid' } },
+            a_id: { type: 'int', references: { table: 'mica_cycle_a', column: 'id' } }
+          }
+        }
+      ]
+    } as unknown as (typeof declaredServices)[number];
+    declaredServices.push(fake);
+    try {
+      expect(cascadeEdges().some((e) => e.child === 'mica_cycle_b')).toBe(true);
+      await expect(purgeOwnedRows('CID_Z', cascade)).rejects.toThrow(/cycle/);
+      expect(dbMock.query).not.toHaveBeenCalled();
+    } finally {
+      declaredServices.splice(declaredServices.indexOf(fake), 1);
+    }
+  });
+
+  it('skips a whole excepted table, and plans an excepted row as neither going nor kept', async () => {
+    fakeDb({ plan: { mica_notes: [row(1), row(2, { go: 0, ex: 1 })] } });
+
+    const result = await purgeOwnedRows('CID_Z', {
+      except: [
+        { table: 'mica_audit_logs' },
+        { table: 'mica_notes', keep: (r) => ({ sql: `${r}.\`title\` = ?`, params: ['k'] }) }
+      ],
+      cascade: { dependents: [] }
+    });
+
+    const statements = dbMock.query.mock.calls.map((c: any[]) => String(c[0]));
+    expect(statements.some((sql) => sql.includes('mica_audit_logs'))).toBe(false);
+    expect(deletedIds('mica_notes')).toEqual([1]);
+    const plan = dbMock.query.mock.calls.find((c: any[]) =>
+      String(c[0]).includes('FROM mica_notes t WHERE')
+    )!;
+    expect(String(plan[0])).toContain('CASE WHEN t.`title` = ? THEN 1 ELSE 0 END AS `ex`');
+    expect(result.kept).toBe(0);
+  });
+});
+
 describe('the character-deleted hook', () => {
   it('is a local handler, never a net event a modified client could reach', () => {
     // §2.9. `onNet` would hand any player a one-argument purge of anybody else's phone
@@ -896,6 +1243,11 @@ describe('the character-deleted hook', () => {
 
     expect(deletes().length).toBe(ownedTables().length);
     expect(dbMock.query.mock.calls.at(-1)![1]).toEqual(['CID_Z']);
+    // MICA-168: a player's own delete keeps these; a deleted character does not.
+    expect(deletes()).toContain('DELETE FROM mica_audit_logs WHERE citizenid = ?');
+    expect(deletes()).toContain('DELETE FROM mica_import_ledger WHERE citizenid = ?');
+    expect(deletes()).toContain('DELETE FROM mica_reports WHERE citizenid = ?');
+    expect(deletes()).toContain('DELETE FROM mica_invoices WHERE citizenid = ?');
   });
 
   it('ignores a payload that does not name a character', async () => {

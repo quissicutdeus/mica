@@ -754,3 +754,46 @@ export interface NotificationItem {
   created_at: Date | string;
   updated_at: Date | string;
 }
+
+/**
+ * One category of a player's data export (MICA-168): the rows of one owned table.
+ *
+ * A column whose value is media bytes appears as `<column>_bytes` (its size) instead of the
+ * bytes. A column that is a credential or another player's identity is absent, and named in
+ * `withheld`. `truncated` says why the rows stop short, when they do: `'rows'` for the
+ * per-category row cap, `'size'` for the whole export's size budget.
+ */
+export interface PrivacyExportCategory {
+  /**
+   * The category's id: the table without its `mica_` prefix — `notes`,
+   * `messages_participants`. The UI labels it from its own catalog.
+   */
+  category: string;
+  rows: Record<string, unknown>[];
+  truncated: false | 'rows' | 'size';
+  withheld: string[];
+}
+
+export interface PrivacyExport {
+  generatedAt: string;
+  /** The size budget the rows were cut to, in JSON characters. */
+  limitChars: number;
+  /** True when any category was cut short. */
+  truncated: boolean;
+  categories: PrivacyExportCategory[];
+}
+
+/**
+ * What deleting a player's data did (MICA-168). `complete` is false when any category failed
+ * to delete, and `failed` names them; a partial delete is never reported as a whole one.
+ * `kept` counts rows held back because an open report names them, or because deleting them
+ * would take another player's rows with them by cascade (a thread with someone else's
+ * messages in it, a post with someone else's reply under it); `null` when that count could not
+ * be taken. Moderation, accountability and device records are kept by design and not counted.
+ */
+export interface PrivacyDeleteResult {
+  complete: boolean;
+  removed: number;
+  kept: number | null;
+  failed: string[];
+}

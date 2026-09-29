@@ -41,14 +41,14 @@ describe('Privacy pane', () => {
   beforeEach(() => setStreamerMode(false));
 
   it('still shows the notice, and a Streamer Mode switch that starts off', () => {
-    const { getByText, getByRole } = render(Privacy);
+    const { getByText, getByRole } = render(Privacy, { onyourdata: () => {} });
     expect(getByText(/can be read by its administrators/)).toBeTruthy();
     const toggle = getByRole('switch', { name: 'Streamer Mode' });
     expect(toggle.getAttribute('aria-checked')).toBe('false');
   });
 
   it('flips the shell store and persists it under settings', async () => {
-    const { getByRole } = render(Privacy);
+    const { getByRole } = render(Privacy, { onyourdata: () => {} });
     const toggle = getByRole('switch', { name: 'Streamer Mode' });
     await fireEvent.click(toggle);
     expect(get(streamerMode)).toBe(true);
@@ -61,7 +61,7 @@ describe('Privacy pane', () => {
   });
 
   it('reflects a change made elsewhere', async () => {
-    const { getByRole } = render(Privacy);
+    const { getByRole } = render(Privacy, { onyourdata: () => {} });
     setStreamerMode(true);
     await Promise.resolve();
     expect(getByRole('switch', { name: 'Streamer Mode' }).getAttribute('aria-checked')).toBe(

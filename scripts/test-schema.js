@@ -46,15 +46,21 @@ let checksRun = 0;
  * MICA-292's evidence hold on the purges and the sweep, ten checks and the seeded schema's one,
  * on qb and on ESX with `users` on each of two collations (MICA-299). Plus MICA-275's line
  * membership, eleven checks on each shape. Plus MICA-293's hosted quota and drop race,
- * sixteen checks and the seeded schema's one on each shape.
+ * sixteen checks and the seeded schema's one on each shape. Plus MICA-168's player export and
+ * delete, twelve checks and the seeded schema's one on each shape, and its cascade guard, ten
+ * and the seeded schema's one on each shape.
  */
 const IMPORT_CHECKS = 15;
 const RETENTION_CHECKS = 17;
 const EVIDENCE_CHECKS = 11;
 const LINE_CHECKS = 11;
 const HOSTED_CHECKS = 17;
+const PRIVACY_CHECKS = 13;
+const CASCADE_CHECKS = 11;
 const MINIMUM_CHECKS =
   48 +
+  PRIVACY_CHECKS * 2 +
+  CASCADE_CHECKS * 2 +
   LINE_CHECKS * 2 +
   IMPORT_CHECKS * 3 * 2 +
   RETENTION_CHECKS * 2 +
@@ -241,6 +247,20 @@ const installOxmysql = (connection) => {
 
 const IMPORTER = path.join(root, 'server/lib/import/index.ts');
 
+const HARNESS_BANNER = [
+  'globalThis.exports = globalThis.exports ?? function () {};',
+  'globalThis.onNet = globalThis.onNet ?? (() => {});',
+  'globalThis.emitNet = globalThis.emitNet ?? (() => {});',
+  'globalThis.on = globalThis.on ?? (() => {});',
+  'globalThis.source = globalThis.source ?? 0;',
+  "globalThis.GetCurrentResourceName = globalThis.GetCurrentResourceName ?? (() => 'mica');",
+  'globalThis.RegisterCommand = globalThis.RegisterCommand ?? (() => {});',
+  'globalThis.IsPlayerAceAllowed = globalThis.IsPlayerAceAllowed ?? (() => false);',
+  'globalThis.GetConvar = globalThis.GetConvar ?? ((_n, fallback) => fallback);',
+  'globalThis.GetConvarInt = globalThis.GetConvarInt ?? ((_n, fallback) => fallback);',
+  'const setInterval = () => 0;'
+];
+
 const loadServerModule = async () => {
   const entry = [
     `export { ConversationRepository, openLineThread } from '${root}/server/repositories/ConversationRepository.ts';`,
@@ -285,19 +305,37 @@ const loadServerModule = async () => {
     bundle: true,
     platform: 'node',
     format: 'esm',
+    banner: { js: HARNESS_BANNER.join('\n') },
+    outfile,
+    logLevel: 'warning'
+  });
+
+  return await import(`file://${outfile}?t=${Date.now()}`);
+};
+
+/**
+ * MICA-168's export walks every owned table, so it needs every declaration: the whole service
+ * barrel, as in game. A bundle of its own, so the extra declarations — retention policies, owned
+ * externals — cannot change what the other variants' bundle derives.
+ */
+const loadPrivacyModule = async () => {
+  const entry = [
+    `import '${root}/server/services/index.ts';`,
+    `export { buildExport, EXPORT_EXCLUDED, ROW_CAP, SELF_SERVICE_EXCEPT, selfServicePurge } from '${root}/server/services/Privacy.ts';`,
+    `export { __setPurgeHookForTests, ownedTables, purgeOwnedRows } from '${root}/server/lib/orphanSweep.ts';`
+  ].join('\n');
+
+  const outfile = path.join(root, 'node_modules', '.cache', 'mica-schema-privacy.mjs');
+  await esbuild.build({
+    stdin: { contents: entry, resolveDir: root, loader: 'ts' },
+    bundle: true,
+    platform: 'node',
+    format: 'esm',
     banner: {
       js: [
-        'globalThis.exports = globalThis.exports ?? function () {};',
-        'globalThis.onNet = globalThis.onNet ?? (() => {});',
-        'globalThis.emitNet = globalThis.emitNet ?? (() => {});',
-        'globalThis.on = globalThis.on ?? (() => {});',
-        'globalThis.source = globalThis.source ?? 0;',
-        "globalThis.GetCurrentResourceName = globalThis.GetCurrentResourceName ?? (() => 'mica');",
-        'globalThis.RegisterCommand = globalThis.RegisterCommand ?? (() => {});',
-        'globalThis.IsPlayerAceAllowed = globalThis.IsPlayerAceAllowed ?? (() => false);',
-        'globalThis.GetConvar = globalThis.GetConvar ?? ((_n, fallback) => fallback);',
-        'globalThis.GetConvarInt = globalThis.GetConvarInt ?? ((_n, fallback) => fallback);',
-        'const setInterval = () => 0;'
+        ...HARNESS_BANNER,
+        "globalThis.GetInvokingResource = globalThis.GetInvokingResource ?? (() => '');",
+        'globalThis.onNetSafe = globalThis.onNetSafe ?? (() => {});'
       ].join('\n')
     },
     outfile,
@@ -1407,6 +1445,374 @@ const runHostedVariant = async ({ connection, schemaFile, hasPlayers, modules })
   }
 };
 
+/* ------------------------------------------------ export and delete (MICA-168) */
+
+/**
+ * A player's export and delete against a real engine, on each framework shape.
+ *
+ * The unit suite asserts the export's SQL as text. What only MariaDB can say is that every
+ * owned table's derived column list names columns that exist in the committed DDL, that
+ * `LENGTH(col) AS col_bytes` sizes a blob and a base64 column, and that the delete keeps a
+ * reported row and counts it as kept.
+ */
+const runPrivacyVariant = async ({ connection, schemaFile, hasPlayers, privacy }) => {
+  const framework = hasPlayers ? 'qb' : 'esx';
+  const A = hasPlayers ? 'CIT_A' : ESX_OWNER_A;
+  const B = hasPlayers ? 'CIT_B' : ESX_OWNER_B;
+  const label = `privacy on ${framework}`;
+
+  await seedFrameworkAndGPhone({ connection, schemaFile, hasPlayers, suffix: 'privacy' });
+  const q = async (sql, params = []) => (await connection.query(sql, params))[0];
+
+  step(`${label} — A has a note, two photos, a passcode, a contact and a report; B a note`);
+  await q("INSERT INTO mica_notes (citizenid, title, content) VALUES (?, 'a note', 'x')", [A]);
+  await q("INSERT INTO mica_notes (citizenid, title, content) VALUES (?, 'b note', 'y')", [B]);
+  await q("INSERT INTO mica_media (id, citizenid, data, thumbnail) VALUES (20, ?, 'AAAA', 'BB')", [
+    A
+  ]);
+  await q('INSERT INTO mica_media (id, citizenid, url) VALUES (21, ?, ?)', [
+    A,
+    'https://img.example.test/p/21.webp'
+  ]);
+  await q(
+    "INSERT INTO mica_lockscreen (citizenid, phone_id, passcode_hash, passcode_salt) VALUES (?, 'p1', ?, ?)",
+    [A, 'f'.repeat(64), 'e'.repeat(32)]
+  );
+  await q(
+    "INSERT INTO mica_contacts (citizenid, firstname, phone, avatar) VALUES (?, 'Bob', '555-0002', ?)",
+    [A, Buffer.from([1, 2, 3])]
+  );
+  await q(
+    "INSERT INTO mica_reports (citizenid, target_table, target_id, target_author) VALUES (?, 'mica_blabber', 9, ?)",
+    [A, B]
+  );
+
+  const exported = await privacy.buildExport(A);
+  const rowsOf = (category) => exported.categories.find((c) => c.category === category).rows;
+
+  check(
+    `${label}: every owned table but the moderation ledger exported, none cut short`,
+    [
+      exported.categories.length,
+      exported.categories.some((c) => c.category === 'audit_logs'),
+      exported.truncated
+    ],
+    [privacy.ownedTables().length - privacy.EXPORT_EXCLUDED.size, false, false]
+  );
+  check(
+    `${label}: A's notes only`,
+    rowsOf('notes').map((r) => r.title),
+    ['a note']
+  );
+  check(
+    `${label}: media bytes are sizes`,
+    rowsOf('media').map((r) => [r.id, r.data_bytes, r.thumbnail_bytes, 'data' in r]),
+    [
+      [20, 4, 2, false],
+      [21, null, null, false]
+    ]
+  );
+  check(
+    `${label}: a hosted photo keeps its url`,
+    rowsOf('media').map((r) => r.url),
+    [null, 'https://img.example.test/p/21.webp']
+  );
+  check(
+    `${label}: no passcode hash or salt`,
+    Object.keys(rowsOf('lockscreen')[0]).filter((k) => /hash|salt/.test(k)),
+    []
+  );
+  check(
+    `${label}: a contact's avatar is its size`,
+    rowsOf('contacts').map((r) => [r.avatar_bytes, 'avatar' in r]),
+    [[3, false]]
+  );
+  check(
+    `${label}: a report does not name the reported player`,
+    rowsOf('reports').map((r) => ['target_author' in r, r.target_id]),
+    [[false, 9]]
+  );
+
+  const cap = privacy.ROW_CAP;
+  const values = Array.from({ length: cap }, () => '(?, ?, ?)').join(', ');
+  await q(
+    `INSERT INTO mica_notes (citizenid, title, content) VALUES ${values}`,
+    Array.from({ length: cap }, (_, i) => [A, `n${i}`, 'z']).flat()
+  );
+  const capped = (await privacy.buildExport(A)).categories.find((c) => c.category === 'notes');
+  check(
+    `${label}: past the row cap, cut and marked`,
+    [capped.rows.length, capped.truncated],
+    [cap, 'rows']
+  );
+
+  step(`${label} — B reports A's photo 20; A has ledger, report, invoice and import records`);
+  await q(
+    "INSERT INTO mica_audit_logs (citizenid, action, service, method, target_id) VALUES (?, 'viewed', 'reports', 'view', 1)",
+    [A]
+  );
+  await q(
+    "INSERT INTO mica_reports (citizenid, target_table, target_id, resolution) VALUES (?, 'mica_blabber', 10, 'dismissed')",
+    [A]
+  );
+  await q(
+    "INSERT INTO mica_invoices (citizenid, from_label, amount, resource, expires_at, status) VALUES (?, 'open', 5, 'r', 1, 'active'), (?, 'paid', 5, 'r', 1, 'paid')",
+    [A, A]
+  );
+  await q(
+    "INSERT INTO mica_import_ledger (citizenid, source, source_table, source_key, target_table, target_id) VALUES (?, 'npwd', 'npwd_notes', '1', 'mica_notes', 1)",
+    [A]
+  );
+  const records = async () => [
+    (await q('SELECT COUNT(*) AS n FROM mica_audit_logs WHERE citizenid = ?', [A]))[0].n,
+    (await q('SELECT target_id FROM mica_reports WHERE citizenid = ? ORDER BY id', [A])).map(
+      (r) => r.target_id
+    ),
+    (await q('SELECT from_label FROM mica_invoices WHERE citizenid = ?', [A])).map(
+      (r) => r.from_label
+    ),
+    (await q('SELECT COUNT(*) AS n FROM mica_import_ledger WHERE citizenid = ?', [A]))[0].n,
+    (await q('SELECT COUNT(*) AS n FROM mica_lockscreen WHERE citizenid = ?', [A]))[0].n
+  ];
+
+  step(`${label} — A deletes everything they may`);
+  await q(
+    "INSERT INTO mica_reports (citizenid, target_table, target_id) VALUES (?, 'mica_media', 20)",
+    [B]
+  );
+  const purged = await privacy.selfServicePurge(A);
+  check(
+    `${label}: the delete ran everywhere and counted the held photo`,
+    [purged.failures.map((f) => `${f.table}: ${f.error?.message ?? f.error}`), purged.kept],
+    [[], 1]
+  );
+  check(
+    `${label}: only the reported photo and B's rows remain`,
+    [
+      (await q('SELECT id FROM mica_media WHERE citizenid = ?', [A])).map((r) => r.id),
+      (await q('SELECT COUNT(*) AS n FROM mica_notes WHERE citizenid = ?', [A]))[0].n,
+      (await q('SELECT title FROM mica_notes WHERE citizenid = ?', [B])).map((r) => r.title)
+    ],
+    [[20], 0, ['b note']]
+  );
+  check(
+    `${label}: the ledger, pending report, open invoice, import ledger and device lock stay`,
+    await records(),
+    [1, [9], ['open'], 1, 1]
+  );
+
+  step(`${label} — the character itself is deleted`);
+  const characterPurge = await privacy.purgeOwnedRows(A);
+  check(
+    `${label}: the character-deleted purge still takes every record, the held photo aside`,
+    [
+      characterPurge.failures.length,
+      await records(),
+      (await q('SELECT id FROM mica_media WHERE citizenid = ?', [A])).map((r) => r.id)
+    ],
+    [0, [0, [], [], 0, 0], [20]]
+  );
+};
+
+/**
+ * MICA-168's cascade guard: a player's own delete must not follow `ON DELETE CASCADE` into rows
+ * it would never delete itself — another player's messages in a thread the player created, a
+ * reply under the player's post, a post the report hold is keeping.
+ *
+ * A thread A created holds B's message and A's two (one with B's reaction). A's account has a
+ * reported post, a post with B's replies under it (one of them reported), an unanswered post,
+ * and a post with A's own reply under it.
+ */
+const runCascadeVariant = async ({ connection, schemaFile, hasPlayers, privacy }) => {
+  const framework = hasPlayers ? 'qb' : 'esx';
+  const A = hasPlayers ? 'CIT_A' : ESX_OWNER_A;
+  const B = hasPlayers ? 'CIT_B' : ESX_OWNER_B;
+  const label = `privacy cascade guard on ${framework}`;
+
+  await seedFrameworkAndGPhone({ connection, schemaFile, hasPlayers, suffix: 'cascade' });
+  const q = async (sql, params = []) => (await connection.query(sql, params))[0];
+  const ids = async (sql, params = []) => (await q(sql, params)).map((r) => r.id);
+
+  step(`${label} — A's thread with B, and A's posts with B's replies`);
+  await q(
+    "INSERT INTO mica_messages_conversations (id, citizenid, is_group, participant_a, participant_b) VALUES (50, ?, 0, 'pa', 'pb')",
+    [A]
+  );
+  await q(
+    'INSERT INTO mica_messages_participants (id, conversation_id, citizenid) VALUES (60, 50, ?), (61, 50, ?)',
+    [A, B]
+  );
+  await q(
+    "INSERT INTO mica_messages (id, citizenid, conversation_id, message) VALUES (500, ?, 50, 'from B'), (501, ?, 50, 'from A'), (502, ?, 50, 'A, reacted to')",
+    [B, A, A]
+  );
+  await q(
+    "INSERT INTO mica_messages_reactions (message_id, citizenid, emoji) VALUES (502, ?, 'x')",
+    [B]
+  );
+  await q(
+    "INSERT INTO mica_accounts (id, citizenid, app, handle) VALUES (70, ?, 'blabber', 'alice'), (71, ?, 'blabber', 'bob')",
+    [A, B]
+  );
+  await q(
+    `INSERT INTO mica_blabber (id, citizenid, account_id, body, reply_to, root_id) VALUES
+       (700, ?, 70, 'reported', NULL, NULL),
+       (701, ?, 70, 'answered', NULL, NULL),
+       (702, ?, 70, 'alone', NULL, NULL),
+       (704, ?, 70, 'thread', NULL, NULL),
+       (705, ?, 70, 'own reply', 704, 704),
+       (710, ?, 71, 'B reported reply', 701, 701),
+       (711, ?, 71, 'B reply', 701, 701)`,
+    [A, A, A, A, A, B, B]
+  );
+  await q(
+    "INSERT INTO mica_reports (citizenid, target_table, target_id) VALUES (?, 'mica_blabber', 700), (?, 'mica_blabber', 710)",
+    [B, B]
+  );
+
+  // MICA-168 round 3: the reported post and a reported message each carry a hosted photo, and
+  // one more of A's hosted photos is attached to nothing — the control that a release happens.
+  const hosted = (id) => `https://img.example.test/p/${id}.webp`;
+  await q(
+    'INSERT INTO mica_media (id, citizenid, url) VALUES (30, ?, ?), (31, ?, ?), (32, ?, ?), (33, ?, ?)',
+    [A, hosted(30), A, hosted(31), A, hosted(32), A, hosted(33)]
+  );
+  // Round 4: post 706 is unreported when the purge plans, and reported before it deletes.
+  await q(
+    "INSERT INTO mica_blabber (id, citizenid, account_id, body) VALUES (706, ?, 70, 'late')",
+    [A]
+  );
+  await q(
+    'INSERT INTO mica_blabber_attachments (blab_id, citizenid, media_id) VALUES (706, ?, 33)',
+    [A]
+  );
+  await q(
+    'INSERT INTO mica_blabber_attachments (blab_id, citizenid, media_id) VALUES (700, ?, 30)',
+    [A]
+  );
+  await q(
+    "INSERT INTO mica_messages (id, citizenid, conversation_id, message) VALUES (503, ?, 50, 'A, reported')",
+    [A]
+  );
+  await q(
+    'INSERT INTO mica_messages_attachments (message_id, citizenid, photo_id) VALUES (503, ?, 31)',
+    [A]
+  );
+  await q(
+    "INSERT INTO mica_reports (citizenid, target_table, target_id) VALUES (?, 'mica_messages', 503)",
+    [B]
+  );
+
+  step(`${label} — A deletes everything they may`);
+  // An image host with a delete URL, and a fetch that records instead of requesting, so a
+  // released file is a request seen here.
+  const previousConvar = globalThis.GetConvar;
+  const previousFetch = globalThis.fetch;
+  const released = [];
+  globalThis.GetConvar = (name, fallback) =>
+    name === 'mica_media_image_host'
+      ? 'img.example.test'
+      : name === 'mica_media_delete_url'
+        ? 'https://img.example.test/delete?u={url}'
+        : fallback;
+  globalThis.fetch = async (target) => {
+    released.push(decodeURIComponent(String(target)));
+    return { ok: true, status: 200 };
+  };
+  privacy.__setPurgeHookForTests(async () => {
+    await q(
+      "INSERT INTO mica_reports (citizenid, target_table, target_id) VALUES (?, 'mica_blabber', 706)",
+      [B]
+    );
+  });
+  let purged;
+  try {
+    purged = await privacy.selfServicePurge(A);
+  } finally {
+    privacy.__setPurgeHookForTests();
+    globalThis.GetConvar = previousConvar;
+    globalThis.fetch = previousFetch;
+  }
+  check(
+    `${label}: the delete ran everywhere`,
+    purged.failures.map((f) => `${f.table}: ${f.error?.message ?? f.error}`),
+    []
+  );
+  check(
+    `${label}: every row of B's survives`,
+    [
+      await ids('SELECT id FROM mica_messages_conversations'),
+      await ids('SELECT id FROM mica_messages_participants WHERE citizenid = ?', [B]),
+      await ids('SELECT id FROM mica_messages WHERE citizenid = ?', [B]),
+      (await q('SELECT message_id FROM mica_messages_reactions WHERE citizenid = ?', [B])).map(
+        (r) => r.message_id
+      ),
+      await ids('SELECT id FROM mica_accounts WHERE citizenid = ?', [B]),
+      await ids('SELECT id FROM mica_blabber WHERE citizenid = ? ORDER BY id', [B])
+    ],
+    [[50], [61], [500], [502], [71], [710, 711]]
+  );
+  check(
+    `${label}: A's held post survives`,
+    await ids('SELECT id FROM mica_blabber WHERE id = 700'),
+    [700]
+  );
+  check(
+    `${label}: the held post's and the held message's attachments survive`,
+    [
+      (await q('SELECT media_id FROM mica_blabber_attachments WHERE blab_id = 700')).map(
+        (r) => r.media_id
+      ),
+      (await q('SELECT photo_id FROM mica_messages_attachments WHERE message_id = 503')).map(
+        (r) => r.photo_id
+      )
+    ],
+    [[30], [31]]
+  );
+  check(
+    `${label}: a post reported after the plan keeps its attachment`,
+    (await q('SELECT media_id FROM mica_blabber_attachments WHERE blab_id = 706')).map(
+      (r) => r.media_id
+    ),
+    [33]
+  );
+  check(
+    `${label}: and so do their photos, while the unattached one goes`,
+    await ids('SELECT id FROM mica_media WHERE citizenid = ? ORDER BY id', [A]),
+    [30, 31, 33]
+  );
+  check(
+    `${label}: only the unattached photo's file is released`,
+    [30, 31, 32, 33].map((id) => released.some((url) => url.includes(hosted(id)))),
+    [false, false, true, false]
+  );
+  check(
+    `${label}: the post reported mid-purge survives`,
+    await ids('SELECT id FROM mica_blabber WHERE id = 706'),
+    [706]
+  );
+  check(
+    `${label}: A's own unheld, unanswered rows are gone`,
+    [
+      await ids('SELECT id FROM mica_messages_participants WHERE citizenid = ?', [A]),
+      await ids('SELECT id FROM mica_messages WHERE id = 501'),
+      await ids('SELECT id FROM mica_blabber WHERE id IN (702, 704, 705)')
+    ],
+    [[], [], []]
+  );
+  check(
+    `${label}: the parents kept for B's sake stay, and are counted as kept`,
+    [
+      await ids('SELECT id FROM mica_messages WHERE citizenid = ?', [A]),
+      await ids('SELECT id FROM mica_blabber WHERE citizenid = ? ORDER BY id', [A]),
+      await ids('SELECT id FROM mica_accounts WHERE citizenid = ?', [A]),
+      await ids('SELECT id FROM mica_messages_conversations WHERE citizenid = ?', [A]),
+      purged.kept
+    ],
+    [[502, 503], [700, 701, 706], [70], [50], 13]
+  );
+};
+
 const main = async () => {
   let container;
   let connection;
@@ -1475,6 +1881,13 @@ const main = async () => {
     // MICA-293: a hosted photo counts against the quota, and a drop cannot outlive a release.
     await runHostedVariant({ connection, schemaFile: 'mica.sql', hasPlayers: true, modules });
     await runHostedVariant({ connection, schemaFile: 'mica.esx.sql', hasPlayers: false, modules });
+
+    // MICA-168: a player's export and delete, on both shapes, with every service declared.
+    const privacy = await loadPrivacyModule();
+    await runPrivacyVariant({ connection, schemaFile: 'mica.sql', hasPlayers: true, privacy });
+    await runPrivacyVariant({ connection, schemaFile: 'mica.esx.sql', hasPlayers: false, privacy });
+    await runCascadeVariant({ connection, schemaFile: 'mica.sql', hasPlayers: true, privacy });
+    await runCascadeVariant({ connection, schemaFile: 'mica.esx.sql', hasPlayers: false, privacy });
 
     if (checksRun < MINIMUM_CHECKS) {
       throw new Error(

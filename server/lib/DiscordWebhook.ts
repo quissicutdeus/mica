@@ -113,8 +113,11 @@ export const isStaffRelevant = (entry: AuditLogOptions): boolean => {
   switch (entry.action) {
     case 'moderated':
     case 'unmoderated':
-    case 'viewed':
       return true;
+    case 'viewed':
+      // A player reading their own data out (MICA-168) is the one `viewed` that is nobody's
+      // business: the actor is the subject, so there is no admin read to account for.
+      return entry.service !== 'privacy';
     case 'deleted':
       return entry.service === 'conversations';
     default:

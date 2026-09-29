@@ -18,6 +18,7 @@ export * from './music';
 export * from './notifications';
 export * from './phone';
 export * from './places';
+export * from './privacy';
 export * from './reports';
 export * from './settings';
 export * from './shell';

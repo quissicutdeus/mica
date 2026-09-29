@@ -89,6 +89,22 @@ describe('which ledger entries are forwarded', () => {
     ).toBe(true);
   });
 
+  /** MICA-168: the actor is the subject, so neither is an admin read or a moderation act. */
+  it('not a player exporting or deleting their own data', () => {
+    expect(
+      isStaffRelevant(moderation({ action: 'viewed', service: 'privacy', method: 'export' }))
+    ).toBe(false);
+    expect(
+      isStaffRelevant(moderation({ action: 'deleted', service: 'privacy', method: 'delete' }))
+    ).toBe(false);
+  });
+
+  it('and posts nothing for one, with the webhook configured', async () => {
+    forwardAudit(moderation({ action: 'viewed', service: 'privacy', method: 'export' }));
+    await vi.advanceTimersByTimeAsync(RATE_WINDOW_MS);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("not a player's own deletes, archives or leaves", () => {
     for (const [action, service] of [
       ['deleted', 'contacts'],

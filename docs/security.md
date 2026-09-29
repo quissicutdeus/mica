@@ -650,10 +650,39 @@ by this list until someone re-weighs it.
   was and structurally cannot be prevented from the resource side. Three things
   this round explicitly does **not** do, so nobody mistakes this slice for the
   whole of MICA-70: no encryption at rest — a server owner with database access
-  still reads plaintext regardless of the audit log — no retention limit, so
-  messages are kept indefinitely by default, and no player-facing export or
-  delete of their own message history. Those are deferred as separate follow-up
-  work.
+  still reads plaintext regardless of the audit log (MICA-165, unbuilt). The
+  other two follow-ups have since landed: retention windows (MICA-167) and a
+  player-facing export and delete (MICA-168, below).
+- **A player's own delete keeps moderation records and never takes another
+  player's rows, and their export withholds what is not theirs (MICA-168).**
+  Settings > Privacy > Your data exports every owned table for the session's
+  character — never a payload's — and deletes it behind a typed `DELETE`,
+  through `purgeOwnedRows` with the open-report hold, so content under an open
+  report is kept until the report resolves. The self-service delete also follows
+  the schema's `ON DELETE CASCADE` foreign keys, which a delete by owner column
+  alone does not: it deletes children before parents and keeps any parent that
+  still has a row this request is not deleting — another player's message in a
+  thread the player started, a reply under their post, a reaction to their
+  message — so it can never cascade into someone else's data or held evidence.
+  The graph is read from the service declarations and held equal to `mica.sql`
+  by a test, so a new foreign key fails a suite until it is placed. It never
+  removes accountability records either: the audit ledger (a staff member could
+  otherwise erase their own moderation record), reports still pending review
+  (deleting one would release the hold on what it names), unpaid invoices
+  someone else issued, and the import ledger (without it a re-run of
+  `micaimport` restores what was deleted); nor the device's own phone, number,
+  battery and lock, which a delete while the player is online would desync. The
+  reply counts what was kept. Deleting the character still removes everything;
+  that path does not yet follow the cascades (MICA-300). The export withholds
+  credential columns (the lock-screen passcode hash and salt), columns naming
+  another player (a report's target and preview, an invoice's payee, a
+  conversation's other party), and the audit ledger, whose rows carry what
+  admins read of other players; media bytes become their size. Each owned
+  table's exported columns are pinned by a test, so exposing a new column is a
+  decision, not a default. Both actions are audit-logged with counts and no
+  content, and an export is never posted to the staff Discord. The rate limits
+  (a few exports a minute, one completed delete an hour) are in memory, so a
+  resource restart resets them.
 - **A hosted photo can outlive its character when the database deletes the rows
   (MICA-292).** With an image host configured (MICA-243), a photo is a public
   URL, so a file left behind is a privacy leak and not just a storage bill.

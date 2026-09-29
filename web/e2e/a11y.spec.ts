@@ -217,6 +217,40 @@ test('Settings > Display has no accessibility violations', async ({ page }) => {
   expect(summarise(results), `settings-display:\n  ${summarise(results).join('\n  ')}`).toEqual([]);
 });
 
+/**
+ * Settings > Privacy > Your data (MICA-168).
+ *
+ * Two levels below the Settings list, so the sweep above never opens it. Scanned with a
+ * category expanded, because the read-only textarea that holds the rows is a scrollable region and
+ * axe has a rule for those (`scrollable-region-focusable`).
+ */
+test('Settings > Privacy > Your data has no accessibility violations', async ({ page }) => {
+  await seedHomeGrid(page, ['settings']);
+  await page.goto('/');
+  await settlePhoneOpen(page);
+  await page.locator('button', { hasText: 'Settings' }).first().click();
+  await page.locator('button', { hasText: 'About' }).first().click();
+  await page.locator('button', { hasText: 'Privacy' }).first().click();
+  await page.locator('button', { hasText: 'Your data' }).first().click();
+  await expect(page.locator('h1', { hasText: 'Your data' })).toBeVisible();
+
+  const categories = page.getByTestId('your-data-categories');
+  await expect(categories).toBeVisible();
+  await categories.getByRole('button').first().click();
+
+  const frame = page.getByTestId('phone-frame');
+  await expect
+    .poll(async () => frame.evaluate((el) => el.getAnimations({ subtree: true }).length), {
+      timeout: 5000
+    })
+    .toBe(0);
+
+  const results = await scan(page, 'settings-your-data');
+  expect(summarise(results), `settings-your-data:\n  ${summarise(results).join('\n  ')}`).toEqual(
+    []
+  );
+});
+
 test('the home screen, the drawer and the shade have no accessibility violations', async ({
   page
 }) => {

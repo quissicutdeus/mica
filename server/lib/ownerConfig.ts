@@ -389,6 +389,8 @@ export const NEVER_REFUSED_SERVICES: readonly string[] = [
   'phone_call_log',
   'phonenumbers',
   'phones',
+  // A player's own data (MICA-168): export and delete are never switched off.
+  'privacy',
   'reports',
   'settings',
   'shell',

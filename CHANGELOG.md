@@ -512,6 +512,18 @@ with `internal_error` and the rest of Messages is unaffected.
 
 ### Added
 
+**A player can see, copy and delete everything micaOS holds for their character
+(MICA-168).** Settings > Privacy > Your data lists it by category and copies it
+as JSON; credentials, other players' details and the audit ledger are left out,
+and photo bytes are shown as sizes. Deleting it takes typing `DELETE`, runs at
+most once an hour, and never takes another player's rows: a thread with someone
+else's messages in it, a post with someone else's reply, and anything under an
+open report are kept, and the reply says how many. A player's own delete also
+keeps the audit ledger, reports still pending review, unpaid invoices, the
+import ledger and the phone itself (its number, battery and lock); deleting the
+character still removes those. Both requests are audit-logged, and an export is
+never posted to your staff Discord. No owner action.
+
 **The tablet can be turned on, and gated on an item of its own (MICA-263).** Two
 new convars: `mica_tablet` (default `false`) turns the tablet on, and
 `mica_tablet_item` gates it on an inventory item independently of

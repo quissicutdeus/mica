@@ -28,6 +28,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import Notifications from './panes/Notifications.svelte';
   import License from './panes/License.svelte';
   import Privacy from './panes/Privacy.svelte';
+  import YourData from './panes/YourData.svelte';
   import DeveloperTools from './panes/DeveloperTools.svelte';
   import Shortcuts from './panes/Shortcuts.svelte';
   import Sound from './panes/Sound.svelte';
@@ -69,6 +70,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     | 'devtools'
     | 'about'
     | 'privacy'
+    | 'yourdata'
     | 'license';
   let pane = $state<Pane>('root');
 
@@ -90,6 +92,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     devtools: 'settings.devtools.title',
     about: 'settings.about.title',
     privacy: 'settings.privacy.title',
+    yourdata: 'settings.yourData.title',
     license: 'settings.license.title'
   };
   const paneTitle = (which: Pane): string => $t(PANE_TITLE_KEYS[which]);
@@ -117,6 +120,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       // Privacy is the one pane reached from inside another, so Back returns to About
       // rather than to the root list. Without its own level the generic one below would
       // match -- `pane !== 'root'` is true here too -- and drop the player two screens.
+      // Your data is reached from Privacy, so Back returns there, not to About.
+      {
+        open: () => pane === 'yourdata',
+        close: () => (pane = 'privacy'),
+        title: () => paneTitle('yourdata')
+      },
       {
         open: () => pane === 'privacy',
         close: () => (pane = 'about'),
@@ -204,7 +213,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       onlicense={() => (pane = 'license')}
     />
   {:else if pane === 'privacy'}
-    <Privacy />
+    <Privacy onyourdata={() => (pane = 'yourdata')} />
+  {:else if pane === 'yourdata'}
+    <YourData />
   {:else if pane === 'license'}
     <License />
   {:else}

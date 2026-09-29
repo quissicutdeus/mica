@@ -31,6 +31,7 @@ import './PhoneNumbers';
 import './Phones';
 import './Places';
 import './PlacesLive';
+import './Privacy';
 import './Reports';
 import './Schema';
 import './Seed';

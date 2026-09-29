@@ -126,6 +126,12 @@ for players and seamless framework integration for server developers.
   default) home screen.
 - **Search**: One live search from the home screen across apps, contacts and
   messages.
+- **Your data**: Settings > Privacy > Your data shows a player everything micaOS
+  holds for their character, by category, and copies it as JSON; or deletes it
+  after they type `DELETE`. It never takes another player's rows or content
+  under an open report, and keeps moderation records and the phone itself; both
+  requests are audit-logged. Details in [`docs/security.md`](docs/security.md)
+  (MICA-168).
 
 ### 🛠️ Backend & Core Architecture
 

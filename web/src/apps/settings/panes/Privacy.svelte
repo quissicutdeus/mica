@@ -7,11 +7,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script lang="ts">
   import {
     PRIVACY_NOTICE_TEXT,
+    ChevronRightIcon,
     SettingsSection,
     ToggleSwitch,
     useLocale,
     useStreamerMode
   } from '@mica/sdk';
+
+  let { onyourdata } = $props<{ onyourdata: () => void }>();
 
   const { t } = useLocale();
   const { streamerMode, setStreamerMode } = useStreamerMode();
@@ -53,5 +56,23 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       checked={$streamerMode}
       onchange={setStreamerMode}
     />
+  </SettingsSection>
+
+  <!-- MICA-168. A row into its own pane for the reason Privacy is a row on About: the
+       export view and the delete flow are long, and this page is a notice and a switch. -->
+  <SettingsSection title={$t('settings.yourData.title')}>
+    <button
+      type="button"
+      onclick={onyourdata}
+      class="hover:bg-surface-container-high active:bg-surface-container-high duration-short ease-standard flex w-full cursor-pointer items-center justify-between p-4 text-left transition-colors"
+    >
+      <span class="flex flex-col">
+        <span class="text-on-surface font-medium">{$t('settings.yourData.title')}</span>
+        <span class="text-on-surface-variant text-body-small"
+          >{$t('settings.yourData.subtitle')}</span
+        >
+      </span>
+      <ChevronRightIcon class="text-on-surface-variant size-icon-sm" />
+    </button>
   </SettingsSection>
 </div>
