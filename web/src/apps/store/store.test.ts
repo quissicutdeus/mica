@@ -12,12 +12,7 @@
 import '../../host/registerFacets';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import manifest from './manifest';
-import {
-  useAppRegistry,
-  useAppRegistryWrite,
-  setTrustedRemoteAppHosts,
-  setRemoteCatalogUrl
-} from '@mica/sdk';
+import { useAppRegistry, useAppRegistryWrite, setTrustedRemoteAppHosts } from '@mica/sdk';
 import type { AppManifest } from '@mica/sdk';
 import { renderApp } from '@mica/sdk/testing';
 import { catalogApps, remoteCatalogApps, mergedCatalogApps } from './appInfo';
@@ -34,8 +29,17 @@ vi.mock('@mica/sdk/core', async (importOriginal) => ({
   }
 }));
 
+/**
+ * MICA-237: the Store no longer fetches the catalog, the server does, so a test stands in
+ * for the server by setting what `store:catalog` answers. `null` is a transport that
+ * returned nothing, which the shell reads as `unavailable` — what every test that is not
+ * about the catalog wants, and what it saw before when no catalog URL was configured.
+ * Not a `vi.fn`, so `restoreAllMocks` cannot reset it out from under a test.
+ */
+const server = vi.hoisted((): { catalog: unknown } => ({ catalog: null }));
 vi.mock('../../nui/fetchNui', () => ({
-  fetchNui: vi.fn(async () => null),
+  fetchNui: async (_event: string, data?: { service?: string; action?: string }) =>
+    data?.service === 'store' && data.action === 'catalog' ? server.catalog : null,
   isBrowser: () => true
 }));
 
@@ -60,7 +64,7 @@ if (!Element.prototype.animate) {
 }
 
 const { registryStore: appRegistryStore } = useAppRegistry();
-const { refreshUpdates } = useAppRegistryWrite();
+const { refreshUpdates, fetchRemoteCatalog } = useAppRegistryWrite();
 
 // The registry insists on a component now. These three cases are about bookkeeping —
 // registration, lookup, and the system-app guard — and never mount anything.
@@ -142,9 +146,9 @@ describe('handleInstall routing', () => {
   /**
    * `handleInstall` in `index.svelte` branches on `app.isRemote && app.bundleUrl` to pick
    * `installFromCatalog` over the bundled-add-on `registerAddOn` path. This block covers
-   * the bundled branch; `setRemoteCatalogUrl` (MICA-74 moved the URL out of a `const` in
-   * `index.svelte` and into `shell/state/catalog.ts`, because the update check needs the
-   * same answer at phone-open) is the seam the remote branch was previously missing.
+   * the bundled branch; the remote branch is reached by setting what the server's
+   * `store:catalog` answers (MICA-237), the one seam both the listing and the update check
+   * read.
    */
   afterEach(() => {
     if (get(appRegistryStore).some((a) => a.id === 'notes')) {
@@ -187,20 +191,20 @@ describe('remote catalog', () => {
   beforeEach(() => {
     setTrustedRemoteAppHosts(['store.example.com']);
     vi.restoreAllMocks();
+    server.catalog = { status: 'ok', entries: [remoteEntry] };
   });
 
-  it('fetches nothing and returns an empty list when no catalog URL is configured', async () => {
-    expect(await remoteCatalogApps(undefined)).toEqual([]);
+  afterEach(() => {
+    server.catalog = null;
   });
 
-  it('maps a fetched catalog entry onto the same shape CatalogList already renders', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve([remoteEntry])
-    } as Response);
+  it('lists no remote apps when the operator has turned the catalog off', async () => {
+    server.catalog = { status: 'off' };
+    expect(await remoteCatalogApps(fetchRemoteCatalog)).toEqual([]);
+  });
 
-    const apps = await remoteCatalogApps('https://store.example.com/catalog.json');
+  it('maps a relayed catalog entry onto the same shape CatalogList already renders', async () => {
+    const apps = await remoteCatalogApps(fetchRemoteCatalog);
 
     expect(apps).toEqual([
       {
@@ -224,13 +228,7 @@ describe('remote catalog', () => {
   });
 
   it('merges bundled and remote apps, bundled first', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve([remoteEntry])
-    } as Response);
-
-    const merged = await mergedCatalogApps('https://store.example.com/catalog.json');
+    const merged = await mergedCatalogApps(fetchRemoteCatalog);
 
     expect(merged.some((a) => a.id === 'remote_weather')).toBe(true);
     expect(merged.find((a) => a.id === 'remote_weather')?.isRemote).toBe(true);
@@ -248,14 +246,10 @@ describe('remote catalog', () => {
       name: 'Notes',
       bundleUrl: 'https://store.example.com/apps/notes.js'
     };
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve([shadowing])
-    } as Response);
+    server.catalog = { status: 'ok', entries: [shadowing] };
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-    const merged = await mergedCatalogApps('https://store.example.com/catalog.json');
+    const merged = await mergedCatalogApps(fetchRemoteCatalog);
 
     expect(merged.filter((a) => a.id === 'notes')).toHaveLength(1);
     // The catalog's copy, not the bundled one: it is what the operator configured, and the
@@ -264,29 +258,51 @@ describe('remote catalog', () => {
     expect(warn).toHaveBeenCalled();
   });
 
-  it('falls back to an empty list, not a rejection, when the remote catalog fetch fails', async () => {
-    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('network down'));
+  it('drops an invalid row and lists the valid ones', async () => {
+    server.catalog = { status: 'ok', entries: [{ id: 'broken' }, remoteEntry] };
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-    await expect(remoteCatalogApps('https://store.example.com/catalog.json')).resolves.toEqual([]);
+    const apps = await remoteCatalogApps(fetchRemoteCatalog);
+
+    expect(apps.map((a) => a.id)).toEqual(['remote_weather']);
     expect(warn).toHaveBeenCalled();
   });
 
-  it('still returns the bundled add-ons when the remote catalog fetch fails', async () => {
-    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('network down'));
-    vi.spyOn(console, 'warn').mockImplementation(() => {});
+  it('falls back to an empty list, not a rejection, when the server has no catalog to give', async () => {
+    server.catalog = { status: 'unavailable' };
 
-    const merged = await mergedCatalogApps('https://store.example.com/catalog.json');
+    await expect(remoteCatalogApps(fetchRemoteCatalog)).resolves.toEqual([]);
+  });
+
+  it('still returns the bundled add-ons when the server has no catalog to give', async () => {
+    server.catalog = { status: 'unavailable' };
+
+    const merged = await mergedCatalogApps(fetchRemoteCatalog);
 
     expect(merged.length).toBeGreaterThan(0);
     expect(merged.some((a) => a.id === 'notes')).toBe(true);
     expect(merged.some((a) => a.id === 'remote_weather')).toBe(false);
   });
+
+  it('installs a listed remote add-on from the relayed entry, not from a fetch of its own', async () => {
+    // The install re-reads the catalog for the entry (so it installs what the catalog says
+    // now, hash included) and hands it to the one verified install path.
+    const installFromCatalog = vi
+      .spyOn(appRegistryStore, 'installFromCatalog')
+      .mockResolvedValue({ manifest: {} as AppManifest });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+
+    const { findByText } = renderApp(Store, { id: 'store' });
+    const row = (await findByText('Weather')).closest('.justify-between') as HTMLElement;
+    row.querySelectorAll('button')[1].click();
+
+    await vi.waitFor(() => expect(installFromCatalog).toHaveBeenCalledWith(remoteEntry));
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
 });
 
 describe('add-on updates (MICA-74)', () => {
   const BUNDLE_URL = 'https://store.example.com/apps/weather.js';
-  const CATALOG_URL = 'https://store.example.com/catalog.json';
 
   const catalogEntry = {
     id: 'remote_weather',
@@ -314,18 +330,15 @@ describe('add-on updates (MICA-74)', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     setTrustedRemoteAppHosts(['store.example.com']);
-    setRemoteCatalogUrl(CATALOG_URL);
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve([catalogEntry])
-    } as Response);
+    server.catalog = { status: 'ok', entries: [catalogEntry] };
     appRegistryStore.registerAddOn(installedManifest, 'v1 bundle');
   });
 
   afterEach(async () => {
-    setRemoteCatalogUrl(undefined);
+    // `off` empties the update snapshot, which a bare `unavailable` would keep.
+    server.catalog = { status: 'off' };
     await refreshUpdates();
+    server.catalog = null;
     if (get(appRegistryStore).some((a) => a.id === 'remote_weather')) {
       appRegistryStore.unregisterApp('remote_weather');
     }
@@ -372,12 +385,12 @@ describe('add-on updates (MICA-74)', () => {
    * that in one tap — the disclosure the player agreed to at install was simply replaced.
    */
   describe('an update that wants more than the installed version was granted', () => {
-    const grabbier = () =>
-      vi.spyOn(globalThis, 'fetch').mockResolvedValue({
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve([{ ...catalogEntry, permissions: ['contacts'] }])
-      } as Response);
+    const grabbier = () => {
+      server.catalog = {
+        status: 'ok',
+        entries: [{ ...catalogEntry, permissions: ['contacts'] }]
+      };
+    };
 
     /** Through the banner, to the Installed tab, to the row's Update button. */
     const reachUpdateButton = async () => {

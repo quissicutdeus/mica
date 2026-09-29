@@ -119,7 +119,11 @@ const NULL_DEVICE = process.platform === 'win32' ? 'NUL' : '/dev/null';
 const GO_CHECKS = [
   { name: 'gofmt', argv: ['gofmt', '-l', '.'], failOnStdout: true },
   { name: 'go vet', argv: ['go', 'vet', './...'] },
-  { name: 'go build', argv: ['go', 'build', '-o', NULL_DEVICE, './...'] }
+  { name: 'go build', argv: ['go', 'build', '-o', NULL_DEVICE, './...'] },
+  // Nothing else runs `main_test.go`: the server's routing rules (a miss under /addons/ is a
+  // 404, the CORS header, the demo's fallback) are behaviour no suite in this repo reads, so
+  // without this line those tests exist and gate nothing.
+  { name: 'go test', argv: ['go', 'test', './...'] }
 ];
 
 if (has('go', GO_PROBE)) {

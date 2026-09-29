@@ -422,7 +422,8 @@ describe('which services a disabled app takes down', () => {
       mail: 'mail',
       marketplace: 'marketplace',
       notes: 'notes',
-      places: 'places'
+      places: 'places',
+      store: 'store'
     });
   });
 

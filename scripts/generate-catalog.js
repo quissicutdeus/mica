@@ -10,6 +10,7 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { renderAppIcons } from './lib/app-icons.js';
+import { writePublicCatalog } from './lib/public-catalog.js';
 
 /**
  * Emit a `catalog.json` describing the add-on bundles that were just built.
@@ -48,10 +49,38 @@ import { renderAppIcons } from './lib/app-icons.js';
  * `sha256` is computed over the exact bytes on disk. That is the whole point of the field:
  * the shell re-hashes what it fetched and refuses a mismatch, so a catalog whose hash was
  * copied rather than computed turns every install into a failure.
+ *
+ * ## Two catalogs, two audiences (MICA-237)
+ *
+ * The demo's catalog above lists every in-tree add-on and is served under `/demo/addons/`
+ * for the demo's own Store. The *public* catalog is a different file for a different
+ * reader: a stock server's Store points at `https://mica.gg/addons/sdk-<contract>/catalog.json`
+ * and lists only add-ons the resource does not already ship (`lib/public-catalog.js`).
+ * `--public <siteDir>` writes it under the site root. It is independent of the demo's
+ * origin and build stamp -- every image serves it, including the ones that skip the demo
+ * catalog -- so it can be given alone, with no origin.
+ *
+ *   node scripts/generate-catalog.js <origin> [outDir] [root] [--public <siteDir>]
+ *   node scripts/generate-catalog.js --public <siteDir> [outDir] [root]
  */
 
-const origin = process.argv[2];
-const outDir = process.argv[3] ?? 'dist/web/addons';
+const cliArgs = process.argv.slice(2);
+let publicDir;
+const publicFlag = cliArgs.indexOf('--public');
+if (publicFlag !== -1) {
+  publicDir = cliArgs[publicFlag + 1];
+  if (!publicDir || publicDir.startsWith('--')) {
+    console.error('generate-catalog: --public needs the site directory to write under.');
+    process.exit(1);
+  }
+  cliArgs.splice(publicFlag, 2);
+}
+// The origin is the first positional when there is one. Without `--public` it is required,
+// so a bare run keeps failing loudly below rather than quietly writing nothing.
+const origin =
+  /^https?:\/\//.test(cliArgs[0] ?? '') || publicDir === undefined ? cliArgs.shift() : undefined;
+const outDir = cliArgs[0] ?? 'dist/web/addons';
+const rootArg = cliArgs[1] ?? '.';
 
 /**
  * Where the bundles this catalog describes are actually served, relative to `origin`.
@@ -66,16 +95,18 @@ const outDir = process.argv[3] ?? 'dist/web/addons';
  */
 const BUNDLE_PATH_PREFIX = '/demo/addons';
 
-if (!origin || !/^https?:\/\/[^/]+$/.test(origin)) {
-  console.error(
-    `generate-catalog: expected an origin like https://dev.mica.gg, got ${origin ?? '(nothing)'}.\n` +
-      '`bundleUrl` has to be absolute — the shell matches its host against the allowlist, so a\n' +
-      'relative URL cannot be checked and is refused.'
-  );
-  process.exit(1);
+if (publicDir === undefined || origin !== undefined) {
+  if (!origin || !/^https?:\/\/[^/]+$/.test(origin)) {
+    console.error(
+      `generate-catalog: expected an origin like https://dev.mica.gg, got ${origin ?? '(nothing)'}.\n` +
+        '`bundleUrl` has to be absolute — the shell matches its host against the allowlist, so a\n' +
+        'relative URL cannot be checked and is refused.'
+    );
+    process.exit(1);
+  }
 }
 
-const root = resolve(process.argv[4] ?? '.');
+const root = resolve(rootArg);
 const appsDir = join(root, 'web/src/apps');
 const bundleDir = join(root, outDir);
 
@@ -132,15 +163,14 @@ if (ids.length === 0) {
  * only way to reach that copy from this directory is to ask for it from over there.
  */
 const { build } = await import(
-  pathToFileURL(
-    createRequire(join(resolve(process.argv[4] ?? '.'), 'web/package.json')).resolve('esbuild')
-  ).href
+  pathToFileURL(createRequire(join(root, 'web/package.json')).resolve('esbuild')).href
 );
 
 const work = mkdtempSync(join(tmpdir(), 'mica-catalog-'));
 let manifests;
 let isCatalogEntry;
 let tileFromColorClasses;
+let publicCatalogUrl;
 try {
   const entry = join(work, 'entry.js');
   // `isCatalogEntry` comes out of the same bundle as the manifests, so what validates the
@@ -150,6 +180,8 @@ try {
     `${ids.map((id, i) => `import m${i} from ${JSON.stringify(join(appsDir, id, 'manifest.ts'))};`).join('\n')}
 export { isCatalogEntry } from ${JSON.stringify(join(root, 'sdk/catalog.ts'))};
 export { tileFromColorClasses } from ${JSON.stringify(join(root, 'sdk/manifest.ts'))};
+export { publicAddonCatalogUrl } from ${JSON.stringify(join(root, 'shared/addonConfig.ts'))};
+export { SDK_CONTRACT_VERSION } from ${JSON.stringify(join(root, 'sdk/version.ts'))};
 export default [${ids.map((_, i) => `m${i}`).join(', ')}];`
   );
 
@@ -188,6 +220,9 @@ export default [${ids.map((_, i) => `m${i}`).join(', ')}];`
   // The tile's two roles, split by the same function `defineApp` splits them with, rather
   // than by a regex here that would drift from it.
   tileFromColorClasses = loaded.tileFromColorClasses;
+  // The public catalog's URL is computed by the same function the server's default reads,
+  // from the contract the phone enforces at install, so the file lands where that URL says.
+  publicCatalogUrl = loaded.publicAddonCatalogUrl(loaded.SDK_CONTRACT_VERSION);
 
   // `render` is bundled alongside the components rather than imported separately: a server
   // component and the runtime that renders it have to be the same copy of Svelte's
@@ -213,95 +248,121 @@ const REQUIRED = ['id', 'name', 'description', 'color'];
 const fallbackVersion = process.env.MICA_CALVER?.trim();
 
 /**
- * Every icon, rendered before the rows are built.
- *
- * One esbuild pass for all of them, so the map below stays synchronous. The tile's two
- * roles are split by the SDK's own `tileFromColorClasses` rather than by a regex here that
- * would drift from `defineApp`.
+ * The demo's own catalog: every in-tree add-on, served under `/demo/addons/`. Skipped when
+ * there is no origin -- an image built without a branch or a stamp still gets the public
+ * catalog below, which needs neither.
  */
-const icons = await renderAppIcons({
-  root,
-  appsDir,
-  apps: manifests.map((manifest, i) => ({
-    id: manifest.id ?? ids[i],
-    fg: manifest.color ? tileFromColorClasses(manifest.color)?.fg : undefined
-  }))
-}).catch((error) => {
-  console.error(`generate-catalog: ${error.message}`);
-  process.exit(1);
-});
-
-const entries = manifests.map((manifest, i) => {
-  const id = manifest.id ?? ids[i];
-  const bundle = join(bundleDir, `${id}.js`);
-  if (!existsSync(bundle)) {
-    console.error(
-      `generate-catalog: ${id} has no bundle at ${bundle}. Build the add-ons first — a ` +
-        'catalog entry whose bundle is missing is a Store listing that fails on install.'
-    );
+if (origin) {
+  /**
+   * Every icon, rendered before the rows are built.
+   *
+   * One esbuild pass for all of them, so the map below stays synchronous. The tile's two
+   * roles are split by the SDK's own `tileFromColorClasses` rather than by a regex here that
+   * would drift from `defineApp`.
+   */
+  const icons = await renderAppIcons({
+    root,
+    appsDir,
+    apps: manifests.map((manifest, i) => ({
+      id: manifest.id ?? ids[i],
+      fg: manifest.color ? tileFromColorClasses(manifest.color)?.fg : undefined
+    }))
+  }).catch((error) => {
+    console.error(`generate-catalog: ${error.message}`);
     process.exit(1);
-  }
-
-  const missing = REQUIRED.filter((field) => {
-    const value = manifest[field];
-    return typeof value !== 'string' || value.length === 0;
   });
-  if (missing.length > 0) {
+
+  const entries = manifests.map((manifest, i) => {
+    const id = manifest.id ?? ids[i];
+    const bundle = join(bundleDir, `${id}.js`);
+    if (!existsSync(bundle)) {
+      console.error(
+        `generate-catalog: ${id} has no bundle at ${bundle}. Build the add-ons first — a ` +
+          'catalog entry whose bundle is missing is a Store listing that fails on install.'
+      );
+      process.exit(1);
+    }
+
+    const missing = REQUIRED.filter((field) => {
+      const value = manifest[field];
+      return typeof value !== 'string' || value.length === 0;
+    });
+    if (missing.length > 0) {
+      console.error(
+        `generate-catalog: ${id}'s manifest yielded no ${missing.join(', ')}. isCatalogEntry ` +
+          'would drop this row at runtime and the app would be missing from the Store with ' +
+          'nothing said, so this fails here instead.'
+      );
+      process.exit(1);
+    }
+
+    const version = manifest.version ?? fallbackVersion;
+    if (!version) {
+      console.error(
+        `generate-catalog: ${id} states no version and MICA_CALVER is unset, so there is ` +
+          'nothing honest to put in the entry. Set MICA_CALVER to the build stamp, or give ' +
+          'the manifest a version of its own.'
+      );
+      process.exit(1);
+    }
+
+    return {
+      id,
+      name: manifest.name,
+      version,
+      description: manifest.description,
+      bundleUrl: `${origin}${BUNDLE_PATH_PREFIX}/${id}.js`,
+      sha256: createHash('sha256').update(readFileSync(bundle)).digest('hex'),
+      color: manifest.color,
+      icon: icons[i],
+      permissions: manifest.permissions ?? [],
+      ...(manifest.requires ? { requires: manifest.requires } : {}),
+      ...(manifest.devices ? { devices: manifest.devices } : {}),
+      ...(manifest.requiresNetwork === undefined
+        ? {}
+        : { requiresNetwork: manifest.requiresNetwork }),
+      ...(manifest.networkHosts ? { networkHosts: manifest.networkHosts } : {})
+    };
+  });
+
+  /**
+   * The shell's own validator, run over what is about to be written.
+   *
+   * `fetchCatalog` drops any row `isCatalogEntry` rejects and logs it, which is right at
+   * runtime and useless here: the symptom is an app quietly missing from the Store. Every
+   * field above is derived rather than typed, so the way to be sure the derivation is right
+   * is to ask the thing that will judge it.
+   */
+  const rejected = entries.filter((entry) => !isCatalogEntry(entry)).map((entry) => entry.id);
+  if (rejected.length > 0) {
     console.error(
-      `generate-catalog: ${id}'s manifest yielded no ${missing.join(', ')}. isCatalogEntry ` +
-        'would drop this row at runtime and the app would be missing from the Store with ' +
-        'nothing said, so this fails here instead.'
+      `generate-catalog: the shell's own isCatalogEntry rejects ${rejected.join(', ')}. ` +
+        'Written out, those rows would be dropped on fetch and the apps would be absent from ' +
+        'the Store with nothing said, so nothing is written.'
     );
     process.exit(1);
   }
 
-  const version = manifest.version ?? fallbackVersion;
-  if (!version) {
-    console.error(
-      `generate-catalog: ${id} states no version and MICA_CALVER is unset, so there is ` +
-        'nothing honest to put in the entry. Set MICA_CALVER to the build stamp, or give ' +
-        'the manifest a version of its own.'
-    );
-    process.exit(1);
-  }
-
-  return {
-    id,
-    name: manifest.name,
-    version,
-    description: manifest.description,
-    bundleUrl: `${origin}${BUNDLE_PATH_PREFIX}/${id}.js`,
-    sha256: createHash('sha256').update(readFileSync(bundle)).digest('hex'),
-    color: manifest.color,
-    icon: icons[i],
-    permissions: manifest.permissions ?? [],
-    ...(manifest.requires ? { requires: manifest.requires } : {}),
-    ...(manifest.devices ? { devices: manifest.devices } : {}),
-    ...(manifest.requiresNetwork === undefined
-      ? {}
-      : { requiresNetwork: manifest.requiresNetwork }),
-    ...(manifest.networkHosts ? { networkHosts: manifest.networkHosts } : {})
-  };
-});
-
-/**
- * The shell's own validator, run over what is about to be written.
- *
- * `fetchCatalog` drops any row `isCatalogEntry` rejects and logs it, which is right at
- * runtime and useless here: the symptom is an app quietly missing from the Store. Every
- * field above is derived rather than typed, so the way to be sure the derivation is right
- * is to ask the thing that will judge it.
- */
-const rejected = entries.filter((entry) => !isCatalogEntry(entry)).map((entry) => entry.id);
-if (rejected.length > 0) {
-  console.error(
-    `generate-catalog: the shell's own isCatalogEntry rejects ${rejected.join(', ')}. ` +
-      'Written out, those rows would be dropped on fetch and the apps would be absent from ' +
-      'the Store with nothing said, so nothing is written.'
-  );
-  process.exit(1);
+  const path = join(bundleDir, 'catalog.json');
+  writeFileSync(path, `${JSON.stringify(entries, null, 2)}\n`);
+  console.log(`generate-catalog: ${entries.length} entries -> ${path} (origin ${origin})`);
 }
 
-const path = join(bundleDir, 'catalog.json');
-writeFileSync(path, `${JSON.stringify(entries, null, 2)}\n`);
-console.log(`generate-catalog: ${entries.length} entries -> ${path} (origin ${origin})`);
+/**
+ * The public catalog, for a stock server's Store (MICA-237). See `lib/public-catalog.js` for
+ * what it lists and why, and for the refusal when it would have to list something.
+ */
+if (publicDir !== undefined) {
+  try {
+    const written = writePublicCatalog({
+      siteDir: resolve(root, publicDir),
+      catalogUrl: publicCatalogUrl,
+      ids,
+      bundleDir
+    });
+    console.log(`generate-catalog: public catalog -> ${written} (${publicCatalogUrl})`);
+  } catch (error) {
+    console.error(`generate-catalog: ${error.message}`);
+    process.exit(1);
+  }
+}

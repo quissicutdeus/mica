@@ -21,6 +21,12 @@
  *    root, so `/`, `/demo` and `/demo/` are three different documents with three
  *    different fallback rules -- a bundle-only check would not have caught any of them
  *    disagreeing about where the other's files live.
+ *  - MICA-237: a stock server's Store fetches the public add-on catalog from
+ *    `/addons/sdk-<contract>/catalog.json`, and a phone loads its bundles from the same
+ *    tree cross-origin. An image that lacks the file, serves it as HTML, or omits the CORS
+ *    header is an empty Store on every stock server with nothing said. Hence: assert 200,
+ *    JSON, an empty array, the wildcard header, and that a miss there is a 404 rather
+ *    than the demo's HTML fallback.
  *
  * Node's `fetch` transparently decodes `Content-Encoding`, which would make that last
  * check assert nothing, so this uses `node:http` and decompresses by hand.
@@ -30,8 +36,23 @@
 import { request as httpRequest } from 'node:http';
 import { brotliDecompressSync, gunzipSync } from 'node:zlib';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 
 const BASE = new URL(process.argv[2] ?? 'http://127.0.0.1:8080');
+
+/**
+ * The SDK contract the public catalog is keyed by, read out of `sdk/version.ts` rather than
+ * typed here, so the smoke asks for the URL a stock server's default actually names.
+ */
+const SDK_CONTRACT = readFileSync(new URL('../sdk/version.ts', import.meta.url), 'utf8').match(
+  /export const SDK_CONTRACT_VERSION: string = '([^']+)'/
+)?.[1];
+if (!SDK_CONTRACT) {
+  process.stdout.write(
+    '\x1b[31msmoke: could not read SDK_CONTRACT_VERSION from sdk/version.ts\x1b[0m\n'
+  );
+  process.exit(1);
+}
 
 /** Raw HTTP: status, headers, and undecoded bytes. Never follows a redirect itself --
  * the one redirect this server issues (`/demo` -> `/demo/`) is asserted on directly. */
@@ -148,6 +169,32 @@ const main = async () => {
     const fr = await get(resolveRef(dir, font[1]));
     eq('woff2 content-type', 'font/woff2', fr.headers['content-type']);
   }
+
+  // --- the public add-on catalog, which every stock server's Store fetches ---
+  const catalogPath = `/addons/sdk-${SDK_CONTRACT}/catalog.json`;
+  const catalog = await get(catalogPath);
+  eq('public catalog 200', 200, catalog.status);
+  eq(
+    'public catalog content-type',
+    'application/json; charset=utf-8',
+    catalog.headers['content-type']
+  );
+  eq('public catalog CORS', '*', catalog.headers['access-control-allow-origin']);
+  let parsed;
+  try {
+    parsed = JSON.parse(catalog.body.toString('utf8'));
+  } catch (e) {
+    bad('public catalog parses as JSON', e.message);
+  }
+  eq('public catalog is an empty array', '[]', JSON.stringify(parsed));
+  const missedBundle = await get(`/addons/sdk-${SDK_CONTRACT}/not-a-bundle.js`);
+  eq('public bundle miss 404', 404, missedBundle.status);
+  eq('public bundle miss CORS', '*', missedBundle.headers['access-control-allow-origin']);
+  eq(
+    'demo assets stay without CORS',
+    undefined,
+    (await get(`/demo/addons/catalog.json`)).headers['access-control-allow-origin']
+  );
 
   // --- the three encodings must decode to the same bytes ---
   const identity = await get(js, { 'Accept-Encoding': 'identity' });

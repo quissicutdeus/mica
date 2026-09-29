@@ -5,6 +5,7 @@
 import { registerFacet } from '../../../../sdk/host/current';
 import { appRegistryStore } from '../../shell/state/registry';
 import { refreshAppUpdates, updateApp } from '../../shell/state/appUpdates';
+import { fetchRemoteCatalog } from '../../shell/state/remoteCatalog';
 import type { AppComponent, AppManifest, AppPermission } from '../../../../sdk/manifest';
 import { grantedPermissions, recordConsent } from '../../shell/state/addOnGrants';
 import type { CatalogEntry } from '../../../../sdk/catalog';
@@ -20,6 +21,8 @@ export function appRegistryWrite() {
   return {
     /** Re-check the configured catalog. Safe with none configured: the list empties. */
     refreshUpdates: () => refreshAppUpdates(),
+    /** The catalog as the server fetched it (MICA-237): validated entries, `off`, or `unavailable`. */
+    fetchRemoteCatalog: () => fetchRemoteCatalog(),
     /** Install the catalog's copy of a pending update, through the ordinary verified install path. */
     updateApp: (appId: string) => updateApp(appId),
     installFromCatalog: (entry: CatalogEntry) => appRegistryStore.installFromCatalog(entry),

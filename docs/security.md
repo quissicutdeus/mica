@@ -666,17 +666,31 @@ by this list until someone re-weighs it.
   answered call.
 - **Where the bytes are fetched from is checked, and checked again on update.**
   `isTrustedRemoteUrl` (`web/src/shell/state/remoteAppSecurity.ts`) requires
-  HTTPS plus a hostname on an operator-configured allowlist, empty by default —
-  nothing installs from anywhere until an operator opts a catalog host in. It
-  exempts `data:` URLs, because `installFromCatalog` only ever builds one
-  internally from bytes it has already hash-verified; that exemption is not safe
-  to hand untrusted input directly, so the caller is responsible for rejecting a
-  `data:` URL first — `nuiMessages.ts`'s `installApp` handler does exactly that,
-  refusing a `data:` `bundleUrl` at the NUI boundary before `isTrustedRemoteUrl`
-  ever sees it. An update is not exempt from any of this either: `appUpdates.ts`
+  HTTPS plus a hostname on an operator-configured allowlist. It exempts `data:`
+  URLs, because `installFromCatalog` only ever builds one internally from bytes
+  it has already hash-verified; that exemption is not safe to hand untrusted
+  input directly, so the caller is responsible for rejecting a `data:` URL first
+  — `nuiMessages.ts`'s `installApp` handler does exactly that, refusing a
+  `data:` `bundleUrl` at the NUI boundary before `isTrustedRemoteUrl` ever sees
+  it. An update is not exempt from any of this either: `appUpdates.ts`
   re-fetches the bundle and re-verifies it against the catalog entry's **fresh**
   `sha256`, the same check a first install runs, rather than trusting a
   previously-verified hash to still apply.
+- **A stock server offers the project's public catalog, and its host is the
+  residual risk (MICA-237).** With `mica_addon_catalog` never set, the Store
+  lists `https://mica.gg/addons/sdk-<n>/catalog.json` and `mica.gg` is on the
+  allowlist; `off` removes both. Accepted because nothing a catalog says can
+  reach a player unasked: every bundle is pinned to the SHA-256 in its entry and
+  re-hashed on every fetch, runs in the sandbox above under the permissions the
+  player agreed to, and an update that asks for more permissions prompts again.
+  What is trusted is the host itself — whoever controls `mica.gg` chooses what a
+  new entry, or a new version of one, contains, and a player who installs it
+  gets that code inside the sandbox. The catalog lists only add-ons the resource
+  does not ship, so it cannot replace a built-in app. **The server fetches the
+  catalog, not the phone**, so the host learns the server's address and never a
+  player's; a player's phone contacts a bundle's host to download an add-on the
+  player chose to install, and again at each phone boot for add-ons already
+  installed, since rehydration re-fetches and re-verifies every one.
 - **An add-on's outbound network is a declared per-app allowlist, not "any host"
   (MICA-24).** Before this, the sandboxed frame had no Content-Security-Policy
   at all: an opaque origin with `allow-scripts` can still `fetch()` any URL, so

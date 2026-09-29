@@ -119,9 +119,9 @@ export interface CallStatusPayload {
  * anyway: this is the file that narrows what crosses the bridge, and a second convention
  * for one payload would be worse than one slightly broad file.
  *
- * Empty is the meaningful, expected answer in both fields — a stock server configures
- * neither — so `parseRemoteAppConfig` never returns `null` for an absent value. `null` is
- * reserved for a reply that was not this payload at all.
+ * Empty is a meaningful answer in both fields — a server with `mica_addon_catalog off` has
+ * no hosts and no catalog (MICA-237) — so `parseRemoteAppConfig` never returns `null` for an
+ * absent value. `null` is reserved for a reply that was not this payload at all.
  */
 export interface RemoteAppConfigPayload {
   /** Hostnames a bundle or catalog may be fetched from. Empty means nothing installs. */

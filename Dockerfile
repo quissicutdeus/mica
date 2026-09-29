@@ -167,7 +167,19 @@ RUN set -eu; \
       echo "catalog: skipped -- MICA_CALVER is empty, so there is no version to publish."; \
       echo "catalog: the Store will list only bundled apps in this image. A stamped build"; \
       echo "catalog: (compose passes MICA_CALVER through when it is set) produces one."; \
-    fi
+    fi; \
+    node scripts/generate-catalog.js --public dist/public dist/web/addons
+
+# MICA-237: the *public* catalog, the one a stock server's Store points at, is the last
+# line of that RUN and is deliberately not inside the `if` above. That `if` is about the
+# demo -- it needs an origin the demo will be served from and a build stamp to version its
+# entries -- and the public catalog needs neither: it lives at
+# https://mica.gg/addons/sdk-<contract>/catalog.json whatever branch built the image, and
+# it lists only add-ons the resource does not already ship, which today is none. Emitting
+# it on every build, unstamped ones included, is what lets `pnpm demo:smoke` and the CI
+# container job assert it on any branch instead of on the two that happen to have an
+# origin. It is written to `dist/public`, not into `dist/web`, so it never rides into the
+# `demo/` copy below; the assembly step puts it at the site root.
 
 # The catalog is generated against `dist/web/addons`, after the build rather than
 # before it: `web/scripts/build-addons.mjs` empties `web/public/addons` on every
@@ -178,16 +190,17 @@ RUN set -eu; \
 # whose sha256 came from the wrong one fails every install with a hash mismatch.
 
 # Assemble the tree mica-serve actually ships: the phone bundle under `demo/`,
-# the landing page at the root. `dist/web` stays exactly where
-# `web/vite.config.ts`'s `build.outDir` puts it (AGENTS.md §2.6 -- that path is
-# not this Dockerfile's to move); this only rearranges *this image's own copy*
-# of it afterward; a `pnpm build` run outside Docker, and everything
+# the landing page at the root, and the public add-on catalog under `addons/`.
+# `dist/web` stays exactly where `web/vite.config.ts`'s `build.outDir` puts it
+# (AGENTS.md §2.6 -- that path is not this Dockerfile's to move); this only
+# rearranges *this image's own copy* of it afterward; a `pnpm build` run outside Docker, and everything
 # `scripts/pack-resource.js` and `scripts/generate-barrels.js` read, never see
 # `dist/site` at all. `docker/serve/main.go` routes on this same `demo/` prefix.
 RUN set -eu; \
     mkdir -p dist/site; \
     cp -r dist/web dist/site/demo; \
-    cp -r landing/. dist/site/
+    cp -r landing/. dist/site/; \
+    cp -r dist/public/. dist/site/
 
 # Sidecars for the server's precompressed negotiation. Deliberately not the
 # .woff2 or the images -- they are already compressed, and a .br of them comes

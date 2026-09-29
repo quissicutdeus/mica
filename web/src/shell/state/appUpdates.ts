@@ -4,11 +4,11 @@
 
 import { derived, get, writable, type Readable } from 'svelte/store';
 import { compareVersions } from '../../lib/phone/semver';
-import { fetchCatalog, getRemoteCatalogUrl, type CatalogEntry } from '../../../../sdk/catalog';
+import type { CatalogEntry } from '../../../../sdk/catalog';
+import { fetchRemoteCatalog } from './remoteCatalog';
 import { appRegistryStore } from './registry';
 import type { AppManifest } from '../../../../sdk/manifest';
 import type { AppUpdate } from '@mica/sdk';
-import { messageOf } from '@mica/sdk';
 
 /**
  * Whether an installed add-on has fallen behind the catalog.
@@ -95,27 +95,23 @@ export const appUpdates: Readable<AppUpdate[]> = derived(
 export const appUpdateCount: Readable<number> = derived(appUpdates, ($updates) => $updates.length);
 
 /**
- * Re-check the configured catalog.
+ * Re-check the catalog the server relays (MICA-237).
  *
- * A failed fetch **keeps the previous answer** rather than clearing it. A catalog server
+ * `unavailable` **keeps the previous answer** rather than clearing it. A catalog server
  * that is down is not evidence that anybody is up to date, and dropping a known-pending
- * update on a network blip is the same silent "you're fine" this exists to prevent. With no
- * catalog configured there is nothing to compare against and the list is emptied honestly.
+ * update on a network blip is the same silent "you're fine" this exists to prevent. `off`
+ * is different: the operator has turned remote add-ons off, there is nothing to compare
+ * against, and the list is emptied honestly.
  */
 export async function refreshAppUpdates(): Promise<AppUpdate[]> {
-  const catalogUrl = getRemoteCatalogUrl();
-  if (!catalogUrl) {
-    catalogSnapshot.set([]);
-    return [];
-  }
+  const catalog = await fetchRemoteCatalog();
 
-  try {
-    catalogSnapshot.set(await fetchCatalog(catalogUrl));
-  } catch (error) {
-    console.warn(
-      `micaOS Store: could not check '${catalogUrl}' for add-on updates:`,
-      messageOf(error, 'unknown error')
-    );
+  if (catalog.status === 'off') {
+    catalogSnapshot.set([]);
+  } else if (catalog.status === 'ok') {
+    catalogSnapshot.set(catalog.entries);
+  } else {
+    console.warn('micaOS Store: could not check the add-on catalog for updates.');
   }
 
   return get(appUpdates);

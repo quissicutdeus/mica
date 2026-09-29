@@ -24,6 +24,7 @@ const refused = () => {
 export function appRegistryWrite(): Twin {
   return {
     refreshUpdates: refused,
+    fetchRemoteCatalog: refused,
     updateApp: refused,
     installFromCatalog: refused,
     registerApp: refused,

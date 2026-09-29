@@ -21,6 +21,18 @@ const serviceMock = vi.hoisted(() => ({
 }));
 vi.mock('../../services/settings', () => serviceMock);
 
+/**
+ * MICA-237: the update check asks the server for the catalog, so the test stands in for the
+ * server by setting what `store:catalog` answers. Not a `vi.fn`, so `restoreAllMocks`
+ * cannot reset it out from under a test.
+ */
+const server = vi.hoisted((): { catalog: unknown } => ({ catalog: { status: 'off' } }));
+vi.mock('../../nui/fetchNui', () => ({
+  fetchNui: async (_event: string, data?: { service?: string; action?: string }) =>
+    data?.service === 'store' && data.action === 'catalog' ? server.catalog : null,
+  isBrowser: () => true
+}));
+
 import {
   appUpdateCount,
   appUpdates,
@@ -29,11 +41,10 @@ import {
   updateApp
 } from './appUpdates';
 import { appRegistryStore } from './registry';
-import { setRemoteCatalogUrl, type CatalogEntry } from '../../../../sdk/catalog';
+import type { CatalogEntry } from '../../../../sdk/catalog';
 import { setTrustedRemoteAppHosts, sha256Hex } from '../../../../sdk/remoteAppSecurity';
 import type { AppManifest } from '../../../../sdk/manifest';
 
-const CATALOG_URL = 'https://store.example.com/catalog.json';
 const BUNDLE_URL = 'https://store.example.com/apps/weather.js';
 
 const entry = (over: Partial<CatalogEntry> = {}): CatalogEntry => ({
@@ -60,9 +71,6 @@ const installed = (over: Partial<AppManifest> = {}): AppManifest => ({
   version: '1.0.0',
   ...over
 });
-
-const jsonResponse = (body: unknown): Response =>
-  ({ ok: true, status: 200, json: () => Promise.resolve(body) }) as Response;
 
 const textResponse = (text: string): Response =>
   ({ ok: true, status: 200, statusText: '', text: () => Promise.resolve(text) }) as Response;
@@ -132,18 +140,18 @@ describe('refreshAppUpdates', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     setTrustedRemoteAppHosts(['store.example.com']);
-    setRemoteCatalogUrl(undefined);
+    server.catalog = { status: 'off' };
   });
 
   afterEach(async () => {
-    setRemoteCatalogUrl(undefined);
+    server.catalog = { status: 'off' };
     await refreshAppUpdates();
     if (get(appRegistryStore).some((a) => a.id === 'remote_weather')) {
       appRegistryStore.unregisterApp('remote_weather');
     }
   });
 
-  it('fetches nothing and reports nothing with no catalog configured', async () => {
+  it('reports nothing, and never fetches the catalog itself, when the catalog is off', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
 
     await expect(refreshAppUpdates()).resolves.toEqual([]);
@@ -152,41 +160,64 @@ describe('refreshAppUpdates', () => {
     expect(get(appUpdateCount)).toBe(0);
   });
 
+  it('empties a known update when the operator turns the catalog off', async () => {
+    appRegistryStore.registerAddOn(installed(), 'export default {};');
+    server.catalog = { status: 'ok', entries: [entry()] };
+    await refreshAppUpdates();
+    expect(get(appUpdateCount)).toBe(1);
+
+    server.catalog = { status: 'off' };
+    await refreshAppUpdates();
+
+    expect(get(appUpdateCount)).toBe(0);
+  });
+
   it('finds an installed add-on the catalog has moved past', async () => {
     appRegistryStore.registerAddOn(installed(), 'export default {};');
-    setRemoteCatalogUrl(CATALOG_URL);
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse([entry()]));
+    server.catalog = { status: 'ok', entries: [entry()] };
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
 
     const updates = await refreshAppUpdates();
 
     expect(updates.map((u) => u.appId)).toEqual(['remote_weather']);
     expect(get(appUpdates)).toEqual(updates);
     expect(get(appUpdateCount)).toBe(1);
+    // The phone asked the server, not the catalog's host.
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it('keeps the last known answer when the catalog cannot be reached', async () => {
-    // A catalog server that is down is not evidence anybody is up to date. Dropping the
-    // pending update on a blip is the same silent reassurance this exists to prevent.
+  it('drops a malformed entry and still finds the update in the valid ones', async () => {
     appRegistryStore.registerAddOn(installed(), 'export default {};');
-    setRemoteCatalogUrl(CATALOG_URL);
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse([entry()]));
-    await refreshAppUpdates();
-
-    fetchSpy.mockRejectedValue(new Error('network down'));
+    server.catalog = { status: 'ok', entries: [{ id: 'broken' }, entry()] };
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
     const updates = await refreshAppUpdates();
 
     expect(updates.map((u) => u.appId)).toEqual(['remote_weather']);
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining(CATALOG_URL), 'network down');
+    expect(warn).toHaveBeenCalled();
+  });
+
+  it('keeps the last known answer when the server cannot reach the catalog', async () => {
+    // A catalog server that is down is not evidence anybody is up to date. Dropping the
+    // pending update on a blip is the same silent reassurance this exists to prevent.
+    appRegistryStore.registerAddOn(installed(), 'export default {};');
+    server.catalog = { status: 'ok', entries: [entry()] };
+    await refreshAppUpdates();
+
+    server.catalog = { status: 'unavailable' };
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const updates = await refreshAppUpdates();
+
+    expect(updates.map((u) => u.appId)).toEqual(['remote_weather']);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('could not check'));
   });
 
   it('drops the row when the app is uninstalled, without another fetch', async () => {
     // The list is derived from the registry rather than assembled once, so nothing has to
     // remember to prune it.
     appRegistryStore.registerAddOn(installed(), 'export default {};');
-    setRemoteCatalogUrl(CATALOG_URL);
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse([entry()]));
+    server.catalog = { status: 'ok', entries: [entry()] };
     await refreshAppUpdates();
     expect(get(appUpdateCount)).toBe(1);
 
@@ -202,11 +233,11 @@ describe('updateApp', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     setTrustedRemoteAppHosts(['store.example.com']);
-    setRemoteCatalogUrl(CATALOG_URL);
+    server.catalog = { status: 'off' };
   });
 
   afterEach(async () => {
-    setRemoteCatalogUrl(undefined);
+    server.catalog = { status: 'off' };
     await refreshAppUpdates();
     if (get(appRegistryStore).some((a) => a.id === 'remote_weather')) {
       appRegistryStore.unregisterApp('remote_weather');
@@ -226,11 +257,12 @@ describe('updateApp', () => {
     const sha256 = await sha256Hex(bundle);
     const fresh = entry({ version: '2.0.0', sha256 });
 
-    const fetchSpy = vi.spyOn(globalThis, 'fetch');
-    fetchSpy.mockResolvedValueOnce(jsonResponse([fresh]));
+    server.catalog = { status: 'ok', entries: [fresh] };
     await refreshAppUpdates();
     expect(get(appUpdateCount)).toBe(1);
 
+    // The only fetch left is the bundle's own, which the phone still makes.
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
     const installSpy = vi.spyOn(appRegistryStore, 'installFromCatalog');
     fetchSpy.mockResolvedValueOnce(textResponse(bundle));
 
@@ -247,11 +279,10 @@ describe('updateApp', () => {
     appRegistryStore.registerAddOn(installed(), 'stale bundle');
     const fresh = entry({ version: '2.0.0', sha256: await sha256Hex(bundle) });
 
-    const fetchSpy = vi.spyOn(globalThis, 'fetch');
-    fetchSpy.mockResolvedValueOnce(jsonResponse([fresh]));
+    server.catalog = { status: 'ok', entries: [fresh] };
     await refreshAppUpdates();
 
-    fetchSpy.mockResolvedValueOnce(textResponse(bundle + '// tampered'));
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(textResponse(bundle + '// tampered'));
 
     await expect(updateApp('remote_weather')).rejects.toThrow('published checksum');
     expect(get(appUpdateCount)).toBe(1);

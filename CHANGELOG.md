@@ -47,6 +47,18 @@ Entries are hand-written. See MICA-72 for why a generated one was rejected.
 
 ### Action required
 
+**The Store now offers the project's public add-on catalog unless you turn it
+off (MICA-237).** A server that sets neither `mica_addon_catalog` nor
+`mica_addon_hosts` now lists `https://mica.gg/addons/sdk-<n>/catalog.json` and
+allows `mica.gg` as a bundle host. Your server fetches that catalog when a phone
+asks and caches it for ten minutes; players' phones never fetch it. A phone
+contacts a bundle's host to download an add-on its player chose to install, and
+again at each boot for add-ons already installed. The catalog lists only add-ons
+micaOS does not already ship, so no built-in app is replaced, and today it is
+empty. **To keep the old behaviour, add `setr mica_addon_catalog off`** —
+`setr`, not `set`, because the phones read it too; an explicitly empty value
+does the same. A server with its own catalog configured is unaffected.
+
 **Run `micaschema apply` from the server console, then decide whether to turn on
 encryption at rest (MICA-165).** Migration
 `0007_sealed_bodies_widen_their_columns` widens `mica_blabber_dms.body` and
@@ -1261,6 +1273,15 @@ Everything above is written for a server owner. This part is not. It is for
 somebody maintaining a `core: false` add-on outside this repo, and it answers
 one question: does that bundle still compile against this release, and does its
 manifest still ask for the right things.
+
+**`useAppRegistryWrite()` gains `fetchRemoteCatalog()`, for core apps only
+(MICA-237).** It returns the catalog the server fetched on the phone's behalf,
+as `ok` with validated entries, `off` when the server has remote add-ons turned
+off, or `unavailable`. A sandboxed add-on cannot call it. Nothing was removed:
+`fetchCatalog`, `getRemoteCatalogUrl` and `setRemoteCatalogUrl` stay exported,
+though the Store no longer uses the first two. `SDK_CONTRACT_VERSION` stays `1`,
+and the public catalog a stock server offers is keyed on it:
+`https://mica.gg/addons/sdk-1/catalog.json`.
 
 **`useAppVisible(appId)` is new, and needs no permission (MICA-294).** A store
 that is `true` only while a device is open, its screen is showing apps, and your

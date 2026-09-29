@@ -601,6 +601,33 @@ describe('IframeHostServer', () => {
       expect(unregisterApp).not.toHaveBeenCalled();
     });
 
+    /**
+     * MICA-237. The relayed catalog makes the server fetch a URL for whoever asks, so an
+     * add-on able to name it could make the shell's server spend that on its behalf. Core only,
+     * like every other member of this facet.
+     */
+    it('refuses fetchRemoteCatalog to an add-on, even with app-registry-write granted', async () => {
+      const fetchRemoteCatalog = vi.fn();
+      registerFacet('appRegistryWrite' as any, (() => ({ fetchRemoteCatalog })) as any);
+      const { posted, from } = server(['app-registry-write'] as AppPermission[]);
+      from({
+        kind: 'call',
+        id: 1,
+        facet: 'appRegistryWrite',
+        factoryArgs: [],
+        member: 'fetchRemoteCatalog',
+        args: []
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(posted[0]).toMatchObject({
+        ok: false,
+        error: { message: expect.stringContaining('core only') }
+      });
+      expect(fetchRemoteCatalog).not.toHaveBeenCalled();
+    });
+
     it('hard-blocks notificationSettingsWrite entirely, even with notification-settings-write granted', async () => {
       const setDndEnabled = vi.fn();
       registerFacet('notificationSettingsWrite' as any, (() => ({ setDndEnabled })) as any);

@@ -17,11 +17,12 @@ import { setTrustedRemoteAppHosts } from '../../../../sdk/remoteAppSecurity';
  * catalog path ended at its first check on every build anybody has ever run. This asks the
  * game client for the operator's two convars and applies them.
  *
- * **Empty is the expected answer.** A server that configures neither convar gets exactly
- * the behaviour it had before this file existed: the Store lists bundled add-ons only, and
- * nothing remote installs. That is not a degraded mode to apologise for — turning it on
- * means telling a host it may ship JavaScript into your players' phones, and nobody should
- * be opted into that by a default.
+ * **Empty means `off`.** A server that sets `mica_addon_catalog off` gets exactly the
+ * behaviour it had before this file existed: the Store lists bundled add-ons only, and
+ * nothing remote installs or rehydrates. A server that sets neither convar gets the
+ * project's public catalog and `mica.gg` on the allowlist (MICA-237): an allowed host may
+ * ship JavaScript into your players' phones, which is why every bundle is hash-pinned in
+ * its catalog entry and runs in the sandbox, and why `off` exists.
  */
 const NO_CONFIG: RemoteAppConfigPayload = { hosts: [], catalogUrl: '' };
 

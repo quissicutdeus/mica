@@ -5,7 +5,7 @@
 import {
   appStorageBytes,
   useAppRegistry,
-  fetchCatalog,
+  useAppRegistryWrite,
   tileFromColorClasses,
   type AppCapability,
   type AppManifest,
@@ -73,27 +73,28 @@ export const toAppManifest = (entry: CatalogEntry): AppManifest => ({
   requiresNetwork: entry.requiresNetwork ?? false
 });
 
+/** The relayed catalog, as `useAppRegistryWrite().fetchRemoteCatalog` answers it. */
+export type FetchRemoteCatalog = ReturnType<typeof useAppRegistryWrite>['fetchRemoteCatalog'];
+
 /**
- * Every app a configured remote catalog offers, or an empty list with no catalog
- * configured — a server that hasn't set one up yet sees exactly what it saw before this
- * shipped.
+ * Every app the server's catalog offers, or an empty list when it is `off` or
+ * `unavailable` — a server with remote add-ons disabled sees exactly what it saw before
+ * any of this shipped.
+ *
+ * The phone does not fetch the catalog; the server does, and the shell validates what it
+ * relays (MICA-237), so this only shapes entries for the list. `fetchRemote` is the
+ * facet's `fetchRemoteCatalog`, handed in by the caller so it resolves against the
+ * caller's own host. The remote catalog is additive — the bundled add-ons have nothing to
+ * do with it — so `unavailable` degrades to "no remote apps this visit", never to a Store
+ * without its bundled list.
  */
-export async function remoteCatalogApps(catalogUrl: string | undefined): Promise<AppManifest[]> {
-  if (!catalogUrl) return [];
-  try {
-    const entries = await fetchCatalog(catalogUrl);
-    return entries.map(toAppManifest);
-  } catch (err) {
-    // The remote catalog is additive — the bundled add-ons above have nothing to do with
-    // it. A down server, a bad host, or malformed JSON here must degrade to "no remote
-    // apps this boot," not take the Store's own bundled list down with it.
-    console.warn(`micaOS Store: failed to fetch remote catalog from '${catalogUrl}':`, err);
-    return [];
-  }
+export async function remoteCatalogApps(fetchRemote: FetchRemoteCatalog): Promise<AppManifest[]> {
+  const catalog = await fetchRemote();
+  return catalog.status === 'ok' ? catalog.entries.map(toAppManifest) : [];
 }
 
 /**
- * Bundled add-ons, then whatever a configured remote catalog offers — **one row per id**.
+ * Bundled add-ons, then whatever the server's remote catalog offers — **one row per id**.
  *
  * This concatenated the two lists, which is fine until an operator's catalog offers an id
  * this build also ships. `CatalogList` keys its `{#each}` on `id`, and Svelte 5 throws
@@ -112,8 +113,8 @@ export async function remoteCatalogApps(catalogUrl: string | undefined): Promise
  * this whole ticket is about. It is logged rather than done quietly — a shadowed id is
  * worth knowing about even when it is what you meant.
  */
-export async function mergedCatalogApps(catalogUrl: string | undefined): Promise<AppManifest[]> {
-  const remote = await remoteCatalogApps(catalogUrl);
+export async function mergedCatalogApps(fetchRemote: FetchRemoteCatalog): Promise<AppManifest[]> {
+  const remote = await remoteCatalogApps(fetchRemote);
   const remoteIds = new Set(remote.map((app) => app.id));
 
   const bundled = catalogApps().filter((app) => {

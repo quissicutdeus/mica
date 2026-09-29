@@ -10,6 +10,15 @@
 // demo/assets/ can be cached for a year, everything else cannot be cached at
 // all, landing page included, since none of it is named by a content hash.
 //
+// A third tree sits beside them: /addons/sdk-<contract>/, the project's public add-on
+// catalog and its bundles (MICA-237). A stock server's Store fetches
+// https://mica.gg/addons/sdk-<contract>/catalog.json, so this is what turns "no add-ons"
+// into the project's own list. It is read-only public data, so it alone answers with
+// Access-Control-Allow-Origin: * -- a phone in CEF loads a bundle from here
+// cross-origin and nothing else does -- and a miss under it is a real 404, never the
+// demo's HTML fallback, because a catalog that parses as HTML is an empty Store with no
+// message.
+//
 // The whole tree is read into memory at startup. It is a few megabytes, and it
 // buys three things: an ETag per encoding for free, no per-request stat, and no
 // path traversal to reason about -- every lookup hits a map built by walking
@@ -122,6 +131,9 @@ func main() {
 	}
 	if _, ok := assets["/demo/index.html"]; !ok {
 		log.Fatalf("%s/demo/index.html is missing; the web stage produced no build", root)
+	}
+	if !hasPublicCatalog(assets) {
+		log.Fatalf("%s/addons/sdk-<contract>/catalog.json is missing; every stock server's Store would fetch a 404", root)
 	}
 	log.Printf("mica-serve: %d files from %s on :%d, TZ=%s (%s)",
 		len(assets), root, port, zone, time.Now().In(zone).Format("2006-01-02 15:04:05 MST"))
@@ -265,6 +277,22 @@ func gunzip(b []byte) ([]byte, error) {
 	return io.ReadAll(zr)
 }
 
+// Whether the tree carries at least one public catalog. Checked at startup so an image
+// built without one fails to come up, rather than serving 404 to every Store that asks.
+func hasPublicCatalog(assets map[string]*asset) bool {
+	for p := range assets {
+		if strings.HasPrefix(p, "/addons/sdk-") && strings.HasSuffix(p, "/catalog.json") {
+			return true
+		}
+	}
+	return false
+}
+
+// Whether p (already cleaned) is the public add-on tree, or a path inside it.
+func inPublicAddons(p string) bool {
+	return p == "/addons" || strings.HasPrefix(p, "/addons/")
+}
+
 func handler(assets map[string]*asset) http.Handler {
 	demoIndex := assets["/demo/index.html"]
 
@@ -305,6 +333,14 @@ func handler(assets map[string]*asset) http.Handler {
 			p = path.Join(p, "index.html")
 		}
 
+		// Read-only public files, no credentials, so the wildcard is the whole of it: no
+		// Allow-Credentials, no Allow-Methods, no Allow-Headers. Set before the lookup so
+		// a 404 carries it too -- a cross-origin fetch that missed should read as a 404,
+		// not as an opaque network error.
+		if inPublicAddons(p) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+		}
+
 		a, ok := assets[p]
 		if !ok {
 			switch {
@@ -324,6 +360,12 @@ func handler(assets map[string]*asset) http.Handler {
 				// than an empty 404, and it is safe only because the case above
 				// already caught a missing hashed chunk.
 				a = demoIndex
+			case inPublicAddons(p):
+				// Never the demo's HTML fallback. A phone that asks for a bundle this
+				// image does not carry must be told so; an HTML 200 fails its SHA-256
+				// check with a message about the hash instead of about the missing file.
+				http.NotFound(w, r)
+				return
 			default:
 				// The landing page is a handful of static files with no
 				// client-side router of its own -- unlike the demo bundle,

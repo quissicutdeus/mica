@@ -5,21 +5,24 @@
 // The client half of remote add-on configuration.
 
 import type { RemoteAppConfigPayload } from '@mica/shared/nui';
+import {
+  CONVAR_UNSET,
+  hostnameOf,
+  resolveAddonConfig,
+  type AddonCatalogSetting
+} from '@mica/shared/addonConfig';
+import { SDK_CONTRACT_VERSION } from '../../sdk/version';
 
 /**
- * The two convars that decide whether the Store can install anything at all.
+ * The two convars that decide where the Store finds add-ons and whose code it may run.
  *
  * `web/src/shell/state/remoteAppSecurity.ts` holds a host allowlist and
- * `web/src/shell/state/catalog.ts` holds a catalog URL, and until MICA-126 nothing in a
- * shipped build ever set either: the whole remote add-on path — fetch, host check, pinned
- * SHA-256, sandboxed frame — was complete, tested, and unreachable, because
- * `isTrustedRemoteUrl` answers `false` for every URL while the allowlist is empty.
- *
- * **Both are empty by default and that is the feature, not an oversight.** Filling either
- * one is an operator saying "this host may ship JavaScript that runs inside my players'
- * phones". A server that sets neither behaves exactly as it did before this file existed,
- * which is why the defaults below are `''` rather than a micaOS-operated catalog: there is
- * no such thing as a sensible default for whose code you trust.
+ * `web/src/shell/state/catalog.ts` holds a catalog URL; this file is where the phone gets
+ * both. What the two strings mean — the public catalog when the catalog convar was never
+ * set, the operator's own when it names one, nothing at all when it is `off` or set to empty
+ * — is decided in `shared/addonConfig.ts`, once, because the server reads the same two
+ * convars to fetch the catalog on the phones' behalf and must reach the same answer
+ * (MICA-237). This file only reads them.
  *
  * Both need `setr`. The values are consumed by the phone's own UI, which cannot read a
  * convar at all, and a plain `set` never leaves the server — the same reason
@@ -29,6 +32,9 @@ import type { RemoteAppConfigPayload } from '@mica/shared/nui';
  * constants beside them. `server/__tests__/convars.test.ts` scans this source for the
  * literal a convar is read by, and holds the README to it; a name reached through a
  * variable is a name that scan cannot resolve, which is the one thing it fails on.
+ *
+ * `CONVAR_UNSET` is the default at both calls so "never set" and "set to empty" stay
+ * distinguishable: the first is the public catalog, the second is an operator opting out.
  */
 const HOSTS_CONVAR = 'mica_addon_hosts';
 const CATALOG_CONVAR = 'mica_addon_catalog';
@@ -36,65 +42,35 @@ const CATALOG_CONVAR = 'mica_addon_catalog';
 const hasConvars = (): boolean => typeof GetConvar === 'function';
 
 /**
- * Split an operator's allowlist into hostnames.
- *
- * Commas *and* whitespace, because a convar is a free-form string and both spellings turn
- * up in a `server.cfg`; a value that reads as a list to a human should read as one here.
- *
- * A bare hostname is what this wants (`store.example.com`), and a full URL is accepted and
- * reduced to its hostname rather than rejected. That leniency is not politeness: the value
- * an operator has in front of them while writing this line is their catalog URL, so pasting
- * it is the obvious mistake, and the failure it would otherwise cause — an allowlist entry
- * that can never match a hostname — is invisible until an install is refused with a message
- * about a host that looks, to them, like it is right there in the config.
- *
- * Lowercased and de-duplicated, since `isTrustedRemoteUrl` compares against a lowercased
- * `URL.hostname`. Reduced by hand rather than by `new URL()`, which the client's TypeScript
- * lib does not have and which the FiveM client runtime is not guaranteed to expose either —
- * the web half is the side with a real URL parser, and it is the side that matters, since
- * `isTrustedRemoteUrl` is what actually decides.
- */
-export const hostnameOf = (value: string): string =>
-  value
-    // Scheme, if the operator pasted a whole URL.
-    .replace(/^[a-z][a-z0-9+.-]*:\/\//i, '')
-    // Path, query or fragment.
-    .split(/[/?#]/, 1)[0]
-    // `user:pass@` — never useful here, and it would otherwise become the "hostname".
-    .replace(/^[^@]*@/, '')
-    // Port. Bracketed IPv6 keeps its brackets, matching what `URL.hostname` reports.
-    .replace(/:\d+$/, '')
-    .toLowerCase();
-
-export const parseTrustedHosts = (raw: string): string[] => {
-  const out: string[] = [];
-  for (const token of raw.split(/[\s,]+/)) {
-    const host = hostnameOf(token.trim());
-    if (host && !out.includes(host)) out.push(host);
-  }
-  return out;
-};
-
-/** The catalog URL as the operator wrote it, or `''` for "no catalog configured". */
-export const parseCatalogUrl = (raw: string): string => raw.trim();
-
-/**
- * Both values, resolved from the convars.
+ * The resolved setting, state included.
  *
  * Read on every call rather than cached at resource start, so an operator who fixes a typo
  * with `setr` from the live console reaches a player the next time their phone boots the
  * NUI page — the same "read on every use" property most of the convars in the README have.
+ *
+ * With no `GetConvar` at all the answer is `off`, not the default: a runtime that cannot
+ * say what the operator configured must not assume they wanted the public catalog.
  */
+export const addonSetting = (): AddonCatalogSetting => {
+  if (!hasConvars()) return { state: 'off', catalogUrl: '', hosts: [] };
+  return resolveAddonConfig(
+    GetConvar('mica_addon_catalog', CONVAR_UNSET) ?? CONVAR_UNSET,
+    GetConvar('mica_addon_hosts', CONVAR_UNSET) ?? CONVAR_UNSET,
+    SDK_CONTRACT_VERSION
+  );
+};
+
+/** What the phone is handed: the allowlist and the catalog, `''` when the Store is off. */
 export const remoteAppConfig = (): RemoteAppConfigPayload => {
-  if (!hasConvars()) return { hosts: [], catalogUrl: '' };
-  return {
-    hosts: parseTrustedHosts(GetConvar('mica_addon_hosts', '') ?? ''),
-    catalogUrl: parseCatalogUrl(GetConvar('mica_addon_catalog', '') ?? '')
-  };
+  const { hosts, catalogUrl } = addonSetting();
+  return { hosts, catalogUrl };
 };
 
 /**
- * Say so, loudly, when the catalog host is not allowlisted.
+ * Say so, loudly, when an operator's own catalog cannot load.
+ *
+ * Only a `custom` catalog can be wrong this way. The default's host is put on the allowlist
+ * by construction, and `off` has nothing to load.
  *
  * `fetchCatalog` holds the catalog URL to the same allowlist as every `bundleUrl`, so an
  * operator configures one list rather than two. The failure mode that costs an evening is
@@ -102,21 +78,21 @@ export const remoteAppConfig = (): RemoteAppConfigPayload => {
  * nothing, with the explanation buried in a CEF console the operator has no reason to open.
  * A check that stays silent when it cannot pass reads as a pass, so this one prints.
  */
-export const catalogWarning = (config: RemoteAppConfigPayload): string | null => {
-  if (!config.catalogUrl) return null;
+export const catalogWarning = (setting: AddonCatalogSetting): string | null => {
+  if (setting.state !== 'custom') return null;
 
-  if (!/^https:\/\//i.test(config.catalogUrl)) {
+  if (!/^https:\/\//i.test(setting.catalogUrl)) {
     return (
-      `${CATALOG_CONVAR} must be an https:// URL ('${config.catalogUrl}'); ` +
+      `${CATALOG_CONVAR} must be an https:// URL ('${setting.catalogUrl}'); ` +
       'no add-on catalog will load.'
     );
   }
 
-  const host = hostnameOf(config.catalogUrl);
+  const host = hostnameOf(setting.catalogUrl);
   if (!host) {
-    return `${CATALOG_CONVAR} has no hostname ('${config.catalogUrl}'); no add-on catalog will load.`;
+    return `${CATALOG_CONVAR} has no hostname ('${setting.catalogUrl}'); no add-on catalog will load.`;
   }
-  if (!config.hosts.includes(host)) {
+  if (!setting.hosts.includes(host)) {
     return (
       `${CATALOG_CONVAR} points at '${host}', which is not in ${HOSTS_CONVAR}. ` +
       'Add it there, or the catalog and every bundle on it will be refused.'
@@ -125,6 +101,15 @@ export const catalogWarning = (config: RemoteAppConfigPayload): string | null =>
 
   return null;
 };
+
+/**
+ * The one line an operator reads to learn which catalog is in force, rather than finding
+ * out from an empty or unexpectedly full Store.
+ */
+export const catalogStateLine = (setting: AddonCatalogSetting): string =>
+  setting.state === 'off'
+    ? `add-on catalog (${CATALOG_CONVAR}) off`
+    : `add-on catalog (${CATALOG_CONVAR}) ${setting.state}: ${setting.catalogUrl}`;
 
 /**
  * A pull, not a push, and the difference matters here.
@@ -147,5 +132,7 @@ on('__cfx_nui:remoteAppConfig', (_: any, cb: Function) => {
   cb(remoteAppConfig());
 });
 
-const startupWarning = catalogWarning(remoteAppConfig());
+const startupSetting = addonSetting();
+console.log(`[micaOS] ${catalogStateLine(startupSetting)}`);
+const startupWarning = catalogWarning(startupSetting);
 if (startupWarning) console.warn(`[micaOS] ${startupWarning}`);

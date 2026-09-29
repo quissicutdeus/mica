@@ -400,6 +400,16 @@ export interface Facets {
     /** Re-check the configured catalog. Safe with none configured: the list empties. */
     refreshUpdates: () => Promise<AppUpdate[]>;
     /**
+     * The add-on catalog as the **server** fetched it on the phone's behalf (MICA-237), every
+     * entry already checked with `isCatalogEntry` (a malformed row is dropped and logged).
+     * The phone never asks the catalog's host itself, so the host sees the server and not
+     * the player. `off`: the operator disabled remote add-ons. `unavailable`: the server
+     * could not fetch a catalog, or the reply was not one — list bundled add-ons only.
+     */
+    fetchRemoteCatalog: () => Promise<
+      { status: 'ok'; entries: CatalogEntry[] } | { status: 'off' } | { status: 'unavailable' }
+    >;
+    /**
      * Record the permission set a player just accepted for an add-on (MICA-201).
      *
      * The shell's own consent record, written here and nowhere else. The Store calls it

@@ -16,8 +16,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     useAppAction,
     type AppProps,
     type AppUpdate,
-    fetchCatalog,
-    getRemoteCatalogUrl,
     onAppForeground,
     useLocale,
     registerMessages,
@@ -56,7 +54,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     refreshUpdates,
     updateApp,
     recordConsent,
-    grantedPermissions
+    grantedPermissions,
+    fetchRemoteCatalog
   } = useAppRegistryWrite();
 
   const { openApp: openPhoneApp } = useNavigation();
@@ -75,7 +74,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * that the catalog moves underneath you. Re-asked on every visit.
    */
   onAppForeground('store', () => {
-    void mergedCatalogApps(getRemoteCatalogUrl()).then((apps) => (catalogAppsList = apps));
+    void mergedCatalogApps(fetchRemoteCatalog).then((apps) => (catalogAppsList = apps));
     void refreshUpdates();
   });
 
@@ -129,10 +128,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       const target = app;
       void run(
         async () => {
-          const catalogUrl = getRemoteCatalogUrl();
-          if (!catalogUrl) throw new Error($t('store.noCatalog'));
-          const entries = await fetchCatalog(catalogUrl);
-          const entry = entries.find((e) => e.id === target.id);
+          const catalog = await fetchRemoteCatalog();
+          if (catalog.status === 'off') throw new Error($t('store.noCatalog'));
+          if (catalog.status === 'unavailable') throw new Error($t('store.catalogUnavailable'));
+          const entry = catalog.entries.find((e) => e.id === target.id);
           if (!entry) throw new Error($t('store.notInCatalog', { name: target.name }));
           await installFromCatalog(entry);
           // MICA-201: the player tapped Install on a screen listing exactly this set, so

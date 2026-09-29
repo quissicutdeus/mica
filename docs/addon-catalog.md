@@ -29,25 +29,52 @@ interface CatalogEntry {
 `isCatalogEntry` (same file) validates a value has every field with the right
 primitive type before anything downstream trusts it.
 
-## Turning it on
+## Which catalog a server uses
 
-**Nothing below happens on a server that has not configured two convars, and
-that is deliberate.** Both are empty by default, and both need `setr`, because
-the whole install path lives in the phone's own UI and a plain `set` never
-leaves the server:
+**A server that sets neither convar offers the project's public catalog**
+(MICA-237), `https://mica.gg/addons/sdk-<SDK_CONTRACT_VERSION>/catalog.json`,
+with `mica.gg` allowed as a host. It is keyed by the SDK contract rather than by
+release: a remote add-on has no server half, so the contract the shell checks at
+install is the one thing it must match. It lists only add-ons this resource does
+not already ship (below: a catalog entry replaces the bundled app of the same
+id), so it never swaps a built-in for a remote copy — and while every in-tree
+add-on ships in the resource, it is an empty array.
+
+`shared/addonConfig.ts` resolves the two convars into one of three states, the
+same way on the client and the server:
+
+| `mica_addon_catalog`             | State   | Catalog            | Allowed hosts                     |
+| -------------------------------- | ------- | ------------------ | --------------------------------- |
+| never set                        | default | the public catalog | `mica.gg` plus `mica_addon_hosts` |
+| an `https://` URL                | custom  | that URL           | exactly `mica_addon_hosts`        |
+| `off`, or set to an empty string | off     | none               | none                              |
+
+Both need `setr`, for a custom catalog and for `off` alike, because the
+allowlist lives in the phone's own UI and a plain `set` never leaves the server.
+With `set mica_addon_catalog off`, the server stops listing the catalog, but
+every phone still resolves the default, keeps `mica.gg` allowed and keeps
+rehydrating add-ons installed from it:
 
 ```cfg
 setr mica_addon_hosts "store.example.com"
 setr mica_addon_catalog "https://store.example.com/catalog.json"
 ```
 
-`mica_addon_hosts` is the allowlist step 2 below checks, and
-`mica_addon_catalog` is the URL the Store and the update check both fetch. **The
-catalog's own host must appear in the allowlist too** — micaOS holds the catalog
-to the same list as the bundles on it, so there is one list rather than two, and
-setting the catalog while forgetting the allowlist is the mistake that makes the
-Store list nothing. The client prints a line about that pairing at resource
-start rather than leaving it to be discovered.
+**The catalog's own host must appear in the allowlist too** — micaOS holds the
+catalog to the same list as the bundles on it, so there is one list rather than
+two, and setting the catalog while forgetting the allowlist is the mistake that
+makes the Store list nothing. The client prints the state in force at resource
+start, and a line about that pairing when a custom catalog's host is missing.
+
+**The server fetches the catalog, not the phone.** A phone used to fetch it at
+boot and on every update check, which told the catalog's host the IP address of
+every player on the server — acceptable for an operator's own host, not for a
+default pointed at the project's. `server/services/Store.ts` answers
+`store:catalog` from a cache (ten minutes, sixty seconds after a failure),
+fetching over `https` only, from an allowed host, refusing redirects and bodies
+over 1 MiB. The phone still downloads a bundle itself when a player installs it,
+and again at every boot to rehydrate what is installed, and it checks that
+bundle's host and hash exactly as before.
 
 `client/services/RemoteApps.ts` reads both and answers a `remoteAppConfig` NUI
 call with them; `web/src/shell/state/remoteAppConfig.ts` applies them at page
@@ -57,10 +84,13 @@ MICA-126 nothing in a shipped build called either, so every claim in this file
 was true of the code and false of any build you could run. The README's
 Configuration section carries what to weigh before allowlisting a host.
 
-In a browser — `pnpm dev`, or the built preview — there are no convars, so the
-mock in `web/src/nui/mocks/registry.ts` answers with the same empty config a
-stock server does. Two env vars stand in for the convars when you want to walk
-the loop without a game running:
+In a browser — `pnpm dev`, or the built preview — there are no convars and no
+server, so the mocks in `web/src/nui/mocks/registry.ts` stand in for both:
+`remoteAppConfig` answers from two env vars, and `store:catalog` fetches the
+catalog the way the server would. **Unset means `off` here**, not the public
+catalog, so a dev or e2e run never touches a real host; the demo image sets
+both. A `?mica_addon_catalog=` query parameter overrides it for one page load.
+To walk the loop without a game running:
 
 ```sh
 VITE_MICA_ADDON_HOSTS=store.example.com \
@@ -160,12 +190,14 @@ and `installVerified` copies that string onto the installed manifest — and
 nothing put them together, so an install could sit behind a published fix
 indefinitely (MICA-74). `web/src/shell/state/appUpdates.ts` is the join:
 
-- **`getRemoteCatalogUrl()`/`setRemoteCatalogUrl()`** (`catalog.ts`) hold the
-  operator's catalog URL, unset until `mica_addon_catalog` fills it, exactly
-  like `setTrustedRemoteAppHosts`. It moved out of a `const` inside the Store
-  app because the update check runs at phone-open, before the Store has ever
-  been opened.
-- **`refreshAppUpdates()`** fetches that catalog and compares. It runs from the
+- **`fetchRemoteCatalog()`** (`web/src/shell/state/remoteCatalog.ts`, reached by
+  core apps through `useAppRegistryWrite()`) asks the server for the catalog
+  (`store:catalog`) and validates every entry with `isCatalogEntry`, dropping a
+  bad row with a warning. The Store's listing, its install lookup and the update
+  check all read it, so no phone fetches the catalog itself (MICA-237).
+  `getRemoteCatalogUrl()`/`setRemoteCatalogUrl()` and `fetchCatalog()` stay
+  exported in `catalog.ts` for add-on tooling.
+- **`refreshAppUpdates()`** reads that catalog and compares. It runs from the
   Store's manifest `preload` (so the launcher badge is right before first paint)
   and again from its `onAppForeground`. A failed fetch **keeps the previous
   answer**: a catalog server that is down is not evidence anyone is up to date.

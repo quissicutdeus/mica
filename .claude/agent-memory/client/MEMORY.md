@@ -11,3 +11,5 @@ file and gets a line here.
   gate logs by callsign; a sibling lane can overwrite `unit.log` mid-run
 - [pma-voice call channel API](pma-voice-call-channel-api.md) — one call volume
   per client, server `setPlayerCall` syncs the state bag, no positional native
+- [TS 7 incremental misses a global .d.ts](tsc7-incremental-misses-global-dts.md)
+  — a warm `typecheck:client` can be falsely green; delete the tsbuildinfo

@@ -9,6 +9,7 @@
   "updatedToast": "{name} auf v{version} aktualisiert",
   "uninstalledToast": "{name} deinstalliert",
   "noCatalog": "Auf diesem Server ist kein Add-on-Katalog eingerichtet.",
+  "catalogUnavailable": "Der Add-on-Katalog ist nicht erreichbar. Bitte später erneut versuchen.",
   "notInCatalog": "„{name}“ ist nicht mehr im Katalog.",
   "moreAccessTitle": "{name} möchte mehr Zugriff",
   "moreAccessMessage": "Version {version} fügt hinzu: {added}.",

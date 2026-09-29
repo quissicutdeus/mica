@@ -123,6 +123,16 @@ the same binary:
   `VITE_MICA_ADDON_CATALOG` the same way. `VITE_MICA_ADDON_HOSTS` is unaffected:
   the shell checks a fetched bundle's URL by **host**, never by path
   (`docs/addon-catalog.md`), so the path move needed no change there.
+- `/addons/sdk-<n>/` is the **public** catalog a stock server's Store offers
+  (MICA-237), separate from the demo's own: `catalog.json` plus the bundles it
+  lists, for SDK contract `<n>`. `scripts/generate-catalog.js --public` writes
+  it, listing only add-ons the resource does not already ship, so today it is
+  `[]`. Every response under `/addons/` carries
+  `Access-Control-Allow-Origin: *`, because a phone downloads a bundle from its
+  `https://cfx-nui-<resource>` origin, and a miss there is a real 404, never the
+  HTML fallback. `mica-serve` refuses to start without an
+  `/addons/sdk-*/catalog.json` in the image, and `demo:smoke` checks the status,
+  the JSON type and the CORS header.
 
 ## It binds to loopback
 

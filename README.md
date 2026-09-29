@@ -677,9 +677,11 @@ server — though for one of them, `mica_disabled_apps`, only the client's own
 - **`mica_camera_quality`** — the photo is encoded in the phone's own UI, which
   cannot read a convar at all, so the client reads it and hands it over. A plain
   `set` leaves every photo at the default.
-- **`mica_addon_hosts`** and **`mica_addon_catalog`** — the Store's install path
-  lives entirely in the phone's UI, for the same reason. A plain `set` leaves
-  every phone with an empty allowlist, which means every install is refused.
+- **`mica_addon_hosts`** and **`mica_addon_catalog`** — the server fetches the
+  catalog, but the phone checks every bundle it downloads against the allowlist
+  the client hands it, and the client resolves both convars to build that list.
+  A plain `set` leaves every phone on the default: your own catalog lists, and
+  every install from it is refused, because only `mica.gg` is allowed.
 - **`mica_disabled_apps`** — the client's own `OpenApp` export checks the convar
   locally, ahead of the round trip that would otherwise refuse it. With a plain
   `set` it cannot read the list, so it answers `ok()` for an app the shell still
@@ -736,7 +738,8 @@ set mica_dm_retention 90
 set mica_content_key_file ""
 set mica_orphan_owner_table ""
 setr mica_addon_hosts ""
-setr mica_addon_catalog ""
+# unset: the public catalog for this phone's SDK; "off" disables remote add-ons
+# setr mica_addon_catalog "off"
 set mica_discord_webhook ""
 set mica_discord_webhook_payment_min 10000
 set mica_discord_webhook_content ""
@@ -748,63 +751,63 @@ set mica_map_bounds ""
 set mica_location_interval 5
 ```
 
-| Convar                             | Type                                                    | Default                | Controls                                                                                                                              |
-| ---------------------------------- | ------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `mica_standalone`                  | boolean                                                 | empty (off)            | Run with no framework resource at all                                                                                                 |
-| `mica_phone_item`                  | item name                                               | empty (off)            | Gate the phone on holding this inventory item                                                                                         |
-| `mica_tablet`                      | boolean                                                 | `false` (off)          | Turn the tablet on; the phone is always on. Off until the tablet has an identity of its own (MICA-264)                                |
-| `mica_tablet_item`                 | item name                                               | empty (off)            | Gate the tablet on holding this inventory item; independent of `mica_phone_item`                                                      |
-| `mica_battery_item`                | item name                                               | `battery_bank`         | Item that recharges the phone; empty turns it off                                                                                     |
-| `mica_battery_item_charge`         | integer, 1-100                                          | `100`                  | Percent one use of that item adds                                                                                                     |
-| `mica_admin_aces`                  | comma-separated aces                                    | `mica.admin,command`   | Who counts as a micaOS admin                                                                                                          |
-| `mica_rate_limit`                  | integer                                                 | `60`                   | Requests per player, per action, per minute                                                                                           |
-| `mica_lockscreen_scrypt_cost`      | power of two                                            | `16384`                | Lock screen passcode hashing cost — lower on weak hardware                                                                            |
-| `mica_lockscreen_max_attempts`     | integer                                                 | `5`                    | Wrong passcodes before a one-minute lockout                                                                                           |
-| `mica_source_url`                  | https:// URL                                            | this repository        | Where Settings > About > License says your source lives                                                                               |
-| `mica_locale`                      | BCP 47 language tag                                     | unset                  | The phone's default language; players can override it. Must be a language in `locales/` — see [Adding a language](#adding-a-language) |
-| `mica_theme_seed`                  | `#rrggbb` colour                                        | empty (built-in theme) | Colour a new phone's theme is generated from; a player's own choice wins                                                              |
-| `mica_wallpapers`                  | folder under `branding/`                                | `branding/wallpapers`  | Wallpapers offered in Settings > Display: the folder's png/jpg/jpeg/webp files, up to 50                                              |
-| `mica_brand_logo`                  | file under `branding/` (.png, .jpg, .jpeg, .webp, .svg) | empty (micaOS mark)    | Logo on the boot and power-off screens                                                                                                |
-| `mica_default_frame`               | `classic`, `notch` or `punch`                           | `classic`              | Phone frame a player starts with until they choose one                                                                                |
-| `mica_bank_transfer_max`           | integer                                                 | `50000`                | Ceiling on one player-to-player send                                                                                                  |
-| `mica_invoice_expiry_days`         | integer                                                 | `7`                    | Days an unpaid invoice stays payable before it lapses                                                                                 |
-| `mica_hodlr_trade_max`             | integer                                                 | `50000`                | Ceiling on what one Hodlr buy or sell is worth                                                                                        |
-| `mica_hodlr_spread_pct`            | number, percent                                         | `2`                    | Gap between Hodlr's buy and sell quotes, around mid                                                                                   |
-| `mica_emergency_number`            | phone number                                            | `911`                  | Always connects, regardless of any block                                                                                              |
-| `mica_max_accounts_per_app`        | integer                                                 | `3`                    | Identities one player may hold in one social app                                                                                      |
-| `mica_bluetooth_range`             | integer, meters                                         | `15`                   | How far a proximity share reaches                                                                                                     |
-| `mica_bluetooth_max_nearby`        | integer                                                 | `5`                    | How many phones one proximity share reaches                                                                                           |
-| `mica_music_range`                 | integer, meters                                         | `30`                   | How far music from a phone is heard (needs `setr`)                                                                                    |
-| `mica_music_max_nearby`            | integer                                                 | `8`                    | Broadcasters one listener is told about at once                                                                                       |
-| `mica_speaker_range`               | integer, meters, at most 10                             | `4`                    | How far a call on speaker is heard; `0` hides the Speaker control                                                                     |
-| `mica_speaker_volume`              | integer, 1-100                                          | `30`                   | pma-voice call volume a bystander hears a speakerphone call at                                                                        |
-| `mica_blabber_edit_window`         | integer, seconds                                        | `900`                  | How long a Blab stays editable by its author                                                                                          |
-| `mica_notification_retention`      | integer, days                                           | `30`                   | How long notification rows are kept                                                                                                   |
-| `mica_restore_window_days`         | integer, days                                           | `30`                   | How long a deleted Contact/Note/Media stays restorable                                                                                |
-| `mica_camera_quality`              | integer, 1-100                                          | `95`                   | Encode quality of a stored photo (needs `setr`)                                                                                       |
-| `mica_media_quota_mb`              | integer, MiB                                            | `64`                   | Storage one player's photo library may occupy                                                                                         |
-| `mica_media_retention`             | integer, days, or `off`                                 | `365`                  | How long stored media is kept; a photo still attached to a message, blab or listing is never removed                                  |
-| `mica_media_upload_url`            | https URL                                               | empty (off)            | Image host photos are posted to instead of stored in the database                                                                     |
-| `mica_media_upload_header`         | `Name: value`                                           | empty (none)           | One header sent with every upload and delete, usually the API key (`set`, never `setr`)                                               |
-| `mica_media_upload_field`          | form field name                                         | `file`                 | Multipart field the photo is posted in                                                                                                |
-| `mica_media_upload_response_path`  | dot path                                                | `url`                  | Where the photo's URL is in the host's JSON reply, e.g. `data.link`                                                                   |
-| `mica_media_image_host`            | host name                                               | the upload URL's host  | The only host a returned photo URL may be on                                                                                          |
-| `mica_media_delete_url`            | https URL with `{url}` or `{name}`                      | empty (off)            | Endpoint sent `DELETE` for a hosted photo once no row names it                                                                        |
-| `mica_message_retention`           | integer, days, or `off`                                 | `180`                  | How long text messages are kept                                                                                                       |
-| `mica_dm_retention`                | integer, days, or `off`                                 | `90`                   | How long Blabber direct messages are kept                                                                                             |
-| `mica_content_key_file`            | absolute file path                                      | empty (off)            | Key file that seals message, DM and mail bodies at rest (`set`, never `setr`); see below                                              |
-| `mica_orphan_owner_table`          | `table.column`                                          | empty (off)            | Overrides which table the orphan sweep checks against                                                                                 |
-| `mica_addon_hosts`                 | hostname list                                           | empty (off)            | Hosts a Store add-on may be fetched from                                                                                              |
-| `mica_addon_catalog`               | https URL                                               | empty (off)            | The add-on catalog the Store lists                                                                                                    |
-| `mica_discord_webhook`             | https URL                                               | empty (off)            | Discord webhook that receives moderation events                                                                                       |
-| `mica_discord_webhook_payment_min` | integer                                                 | `10000`                | Smallest payment the webhook is told about                                                                                            |
-| `mica_discord_webhook_content`     | boolean                                                 | empty (off)            | Let moderation reasons and report notes reach Discord                                                                                 |
-| `mica_disabled_apps`               | comma-separated app ids                                 | empty (off)            | Hide apps everywhere in the UI; blocks a handful server-side too                                                                      |
-| `mica_default_dock`                | comma-separated app ids, positional                     | empty (built-in dock)  | Dock a phone starts with, until its player rearranges it                                                                              |
-| `mica_default_contacts`            | JSON array, or a path to one                            | empty (off)            | Contacts seeded once into every new phone                                                                                             |
-| `mica_map_image`                   | https URL, or a file under `branding/`                  | empty (grid)           | Picture the Places map draws; micaOS ships none                                                                                       |
-| `mica_map_bounds`                  | `minX,minY,maxX,maxY`, world units                      | the 8192px atlas       | Which part of the world that picture covers                                                                                           |
-| `mica_location_interval`           | integer, seconds, 2-60                                  | `5`                    | How often a live location share is sampled                                                                                            |
+| Convar                             | Type                                                    | Default                             | Controls                                                                                                                              |
+| ---------------------------------- | ------------------------------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `mica_standalone`                  | boolean                                                 | empty (off)                         | Run with no framework resource at all                                                                                                 |
+| `mica_phone_item`                  | item name                                               | empty (off)                         | Gate the phone on holding this inventory item                                                                                         |
+| `mica_tablet`                      | boolean                                                 | `false` (off)                       | Turn the tablet on; the phone is always on. Off until the tablet has an identity of its own (MICA-264)                                |
+| `mica_tablet_item`                 | item name                                               | empty (off)                         | Gate the tablet on holding this inventory item; independent of `mica_phone_item`                                                      |
+| `mica_battery_item`                | item name                                               | `battery_bank`                      | Item that recharges the phone; empty turns it off                                                                                     |
+| `mica_battery_item_charge`         | integer, 1-100                                          | `100`                               | Percent one use of that item adds                                                                                                     |
+| `mica_admin_aces`                  | comma-separated aces                                    | `mica.admin,command`                | Who counts as a micaOS admin                                                                                                          |
+| `mica_rate_limit`                  | integer                                                 | `60`                                | Requests per player, per action, per minute                                                                                           |
+| `mica_lockscreen_scrypt_cost`      | power of two                                            | `16384`                             | Lock screen passcode hashing cost — lower on weak hardware                                                                            |
+| `mica_lockscreen_max_attempts`     | integer                                                 | `5`                                 | Wrong passcodes before a one-minute lockout                                                                                           |
+| `mica_source_url`                  | https:// URL                                            | this repository                     | Where Settings > About > License says your source lives                                                                               |
+| `mica_locale`                      | BCP 47 language tag                                     | unset                               | The phone's default language; players can override it. Must be a language in `locales/` — see [Adding a language](#adding-a-language) |
+| `mica_theme_seed`                  | `#rrggbb` colour                                        | empty (built-in theme)              | Colour a new phone's theme is generated from; a player's own choice wins                                                              |
+| `mica_wallpapers`                  | folder under `branding/`                                | `branding/wallpapers`               | Wallpapers offered in Settings > Display: the folder's png/jpg/jpeg/webp files, up to 50                                              |
+| `mica_brand_logo`                  | file under `branding/` (.png, .jpg, .jpeg, .webp, .svg) | empty (micaOS mark)                 | Logo on the boot and power-off screens                                                                                                |
+| `mica_default_frame`               | `classic`, `notch` or `punch`                           | `classic`                           | Phone frame a player starts with until they choose one                                                                                |
+| `mica_bank_transfer_max`           | integer                                                 | `50000`                             | Ceiling on one player-to-player send                                                                                                  |
+| `mica_invoice_expiry_days`         | integer                                                 | `7`                                 | Days an unpaid invoice stays payable before it lapses                                                                                 |
+| `mica_hodlr_trade_max`             | integer                                                 | `50000`                             | Ceiling on what one Hodlr buy or sell is worth                                                                                        |
+| `mica_hodlr_spread_pct`            | number, percent                                         | `2`                                 | Gap between Hodlr's buy and sell quotes, around mid                                                                                   |
+| `mica_emergency_number`            | phone number                                            | `911`                               | Always connects, regardless of any block                                                                                              |
+| `mica_max_accounts_per_app`        | integer                                                 | `3`                                 | Identities one player may hold in one social app                                                                                      |
+| `mica_bluetooth_range`             | integer, meters                                         | `15`                                | How far a proximity share reaches                                                                                                     |
+| `mica_bluetooth_max_nearby`        | integer                                                 | `5`                                 | How many phones one proximity share reaches                                                                                           |
+| `mica_music_range`                 | integer, meters                                         | `30`                                | How far music from a phone is heard (needs `setr`)                                                                                    |
+| `mica_music_max_nearby`            | integer                                                 | `8`                                 | Broadcasters one listener is told about at once                                                                                       |
+| `mica_speaker_range`               | integer, meters, at most 10                             | `4`                                 | How far a call on speaker is heard; `0` hides the Speaker control                                                                     |
+| `mica_speaker_volume`              | integer, 1-100                                          | `30`                                | pma-voice call volume a bystander hears a speakerphone call at                                                                        |
+| `mica_blabber_edit_window`         | integer, seconds                                        | `900`                               | How long a Blab stays editable by its author                                                                                          |
+| `mica_notification_retention`      | integer, days                                           | `30`                                | How long notification rows are kept                                                                                                   |
+| `mica_restore_window_days`         | integer, days                                           | `30`                                | How long a deleted Contact/Note/Media stays restorable                                                                                |
+| `mica_camera_quality`              | integer, 1-100                                          | `95`                                | Encode quality of a stored photo (needs `setr`)                                                                                       |
+| `mica_media_quota_mb`              | integer, MiB                                            | `64`                                | Storage one player's photo library may occupy                                                                                         |
+| `mica_media_retention`             | integer, days, or `off`                                 | `365`                               | How long stored media is kept; a photo still attached to a message, blab or listing is never removed                                  |
+| `mica_media_upload_url`            | https URL                                               | empty (off)                         | Image host photos are posted to instead of stored in the database                                                                     |
+| `mica_media_upload_header`         | `Name: value`                                           | empty (none)                        | One header sent with every upload and delete, usually the API key (`set`, never `setr`)                                               |
+| `mica_media_upload_field`          | form field name                                         | `file`                              | Multipart field the photo is posted in                                                                                                |
+| `mica_media_upload_response_path`  | dot path                                                | `url`                               | Where the photo's URL is in the host's JSON reply, e.g. `data.link`                                                                   |
+| `mica_media_image_host`            | host name                                               | the upload URL's host               | The only host a returned photo URL may be on                                                                                          |
+| `mica_media_delete_url`            | https URL with `{url}` or `{name}`                      | empty (off)                         | Endpoint sent `DELETE` for a hosted photo once no row names it                                                                        |
+| `mica_message_retention`           | integer, days, or `off`                                 | `180`                               | How long text messages are kept                                                                                                       |
+| `mica_dm_retention`                | integer, days, or `off`                                 | `90`                                | How long Blabber direct messages are kept                                                                                             |
+| `mica_content_key_file`            | absolute file path                                      | empty (off)                         | Key file that seals message, DM and mail bodies at rest (`set`, never `setr`); see below                                              |
+| `mica_orphan_owner_table`          | `table.column`                                          | empty (off)                         | Overrides which table the orphan sweep checks against                                                                                 |
+| `mica_addon_hosts`                 | hostname list                                           | `mica.gg` when the catalog is unset | Hosts a Store add-on may be fetched from; the catalog's host is always among them                                                     |
+| `mica_addon_catalog`               | https URL, or `off`                                     | the public catalog                  | The add-on catalog the Store lists; the server fetches it, never a phone                                                              |
+| `mica_discord_webhook`             | https URL                                               | empty (off)                         | Discord webhook that receives moderation events                                                                                       |
+| `mica_discord_webhook_payment_min` | integer                                                 | `10000`                             | Smallest payment the webhook is told about                                                                                            |
+| `mica_discord_webhook_content`     | boolean                                                 | empty (off)                         | Let moderation reasons and report notes reach Discord                                                                                 |
+| `mica_disabled_apps`               | comma-separated app ids                                 | empty (off)                         | Hide apps everywhere in the UI; blocks a handful server-side too                                                                      |
+| `mica_default_dock`                | comma-separated app ids, positional                     | empty (built-in dock)               | Dock a phone starts with, until its player rearranges it                                                                              |
+| `mica_default_contacts`            | JSON array, or a path to one                            | empty (off)                         | Contacts seeded once into every new phone                                                                                             |
+| `mica_map_image`                   | https URL, or a file under `branding/`                  | empty (grid)                        | Picture the Places map draws; micaOS ships none                                                                                       |
+| `mica_map_bounds`                  | `minX,minY,maxX,maxY`, world units                      | the 8192px atlas                    | Which part of the world that picture covers                                                                                           |
+| `mica_location_interval`           | integer, seconds, 2-60                                  | `5`                                 | How often a live location share is sampled                                                                                            |
 
 Most are read on every use rather than cached, so changing one with `set` from
 the live console takes effect on the next request and needs no restart.
@@ -819,17 +822,20 @@ rather than needing a restart. `mica_camera_quality` is read on every use as
 well, but the phone only asks for it when the Camera app comes to the
 foreground, so a change reaches a player the next time they open the camera
 rather than the next time they take a photo. `mica_addon_hosts` and
-`mica_addon_catalog` are the same shape: read whenever asked for, and asked for
-once, when a player's phone UI loads — so a change reaches them when they next
-reconnect. `mica_disabled_apps` and `mica_default_dock` are the same shape
-again: both are answered once, together, by `shell:ownerConfig` when a phone
-loads, so a change to either reaches a player on their next reconnect too.
-`mica_default_contacts` is read only when seeding a brand-new phone, so a change
-to it affects phones created after the change, never one already seeded — but
-that is only true of the convar's own value. When it points at a file, the
-resolved contacts are memoized against that value (`contactsMemo` in
-`server/lib/ownerConfig.ts`), so editing the file's contents without changing
-the convar is invisible until the resource restarts.
+`mica_addon_catalog` are the same shape for the allowlist: read whenever asked
+for, and asked for once, when a player's phone UI loads — so a change reaches
+them when they next reconnect. The catalog the server fetches is cached for ten
+minutes (sixty seconds after a failed fetch), so a new catalog URL, or a new
+entry in the one you have, shows in the Store within that window.
+`mica_disabled_apps` and `mica_default_dock` are the same shape again: both are
+answered once, together, by `shell:ownerConfig` when a phone loads, so a change
+to either reaches a player on their next reconnect too. `mica_default_contacts`
+is read only when seeding a brand-new phone, so a change to it affects phones
+created after the change, never one already seeded — but that is only true of
+the convar's own value. When it points at a file, the resolved contacts are
+memoized against that value (`contactsMemo` in `server/lib/ownerConfig.ts`), so
+editing the file's contents without changing the convar is invisible until the
+resource restarts.
 
 - **`mica_standalone`** — run micaOS with no framework resource at all. Off by
   default, and the only convar here that changes where micaOS's _identity_ comes
@@ -1157,11 +1163,20 @@ distinguishable from one that never reached the database at all.
   table does, rather than silently falling back to the framework's own answer or
   running with an unverified name.
 
-The last two are the Store's, and they are the only pair here that turns
-something **on** rather than tuning something already running. Both are empty by
-default, and a server that leaves them empty behaves exactly as it always has:
-the Store lists the add-ons that ship inside micaOS, and nothing is fetched from
-anywhere.
+The last two are the Store's. **Left unset, the Store offers the project's
+public catalog** (MICA-237): `https://mica.gg/addons/sdk-<n>/catalog.json`,
+keyed to the add-on contract this phone speaks, with `mica.gg` allowed as a
+bundle host. It lists only add-ons micaOS does not already ship, so it never
+replaces a built-in app with a remote copy, and today it is empty. **The server
+fetches the catalog and hands it to phones**, caching it for ten minutes, so the
+catalog's host sees your server's address and never a player's; a phone fetches
+a bundle itself when a player installs it, and again at each boot for add-ons
+already installed. **`off` needs `setr` too**: with a plain `set`, the server
+stops listing the catalog but every phone keeps `mica.gg` on its allowlist and
+keeps loading add-ons already installed from it.
+**`setr mica_addon_catalog off`** (or setting it to an empty string) turns
+remote add-ons off entirely: no catalog, no hosts, and the Store lists only what
+ships with micaOS, as it did before.
 
 - **`mica_addon_hosts`** — the hostnames a Store add-on's bundle, and the
   catalog listing it, may be fetched from. Separated by commas or spaces
@@ -1174,17 +1189,18 @@ anywhere.
   the permissions a player agreed to allow, and its bytes are checked against
   the SHA-256 the catalog published before they run at all — but the host is
   still choosing what code that is, on every fetch, forever. Allowlist a host
-  you would give a database password to, and nobody else. Empty means no host,
-  which is why nothing installs on a stock build.
+  you would give a database password to, and nobody else. With the catalog
+  unset, `mica.gg` is added to whatever you list; with your own catalog, the
+  list is exactly what you wrote.
 - **`mica_addon_catalog`** — the `https://` URL of the JSON listing your Store
   offers, and the update check reads the same one. Its host has to appear in
   `mica_addon_hosts` too: micaOS holds the catalog to the same allowlist as the
   bundles on it, so there is one list to keep right rather than two. Setting
   this and forgetting that is the mistake worth knowing about — the Store then
   lists nothing at all — so the client says so in the console at resource start
-  rather than leaving you to find it. Empty means the Store shows only what
-  ships with micaOS. The entry format, the hash pinning and what the phone does
-  with a published update are in
+  rather than leaving you to find it. Unset means the public catalog, and `off`
+  means none; the console says which at resource start. The entry format, the
+  hash pinning and what the phone does with a published update are in
   [`docs/addon-catalog.md`](docs/addon-catalog.md).
 - **`mica_discord_webhook`** — a Discord webhook URL, and the one way anything
   in the moderation ledger leaves the server. Off by default; empty means

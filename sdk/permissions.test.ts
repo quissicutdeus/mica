@@ -429,6 +429,10 @@ describe('every reachable facet declares its members (MICA-196)', () => {
     for (const member of ['installFromCatalog', 'registerAddOn', 'unregisterApp']) {
       expect(membersOfFacet('appRegistry')).not.toContain(member);
     }
+    // MICA-237: the server-relayed catalog is the Store's, not an add-on's to trigger.
+    for (const facet of ['appRegistry', 'appRegistryWrite']) {
+      expect(membersOfFacet(facet) ?? []).not.toContain('fetchRemoteCatalog');
+    }
     for (const member of ['setDndEnabled', 'setAppNotificationPolicy', 'setToastsEnabled']) {
       expect(membersOfFacet('notificationSettings')).not.toContain(member);
     }
