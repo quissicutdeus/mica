@@ -26,8 +26,16 @@ jobs:
           # log, same field order) or the tag and the About screen disagree.
           fetch-depth: 0
 
+      # Skip only when this tag already has a published release. The tag is pushed here,
+      # before the smoke test, so a run that fails later leaves a tag with no release; a
+      # re-run must carry on from that tag, not read it as "already released" and skip
+      # every step behind a green tick (which is what it did until 2026-09-29, while
+      # scripts/deploy/README.md promised the re-run would release it). A tag on some
+      # other commit, or a leftover draft, fails loudly rather than being guessed at.
       - name: Compute CalVer and tag
         id: tag
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           dates=$(git log --format=%cd --date=format:%Y.%m.%d)
           date=$(echo "$dates" | head -1)
@@ -36,11 +44,27 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "calver=${date}.${count}" >> "$GITHUB_OUTPUT"
 
-          if git rev-parse "$tag" >/dev/null 2>&1; then
-            echo "skip=1" >> "$GITHUB_OUTPUT"
-          else
+          if ! git rev-parse "$tag" >/dev/null 2>&1; then
             git tag "$tag"
             git push origin "$tag"
+            echo "skip=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "$(git rev-parse "$tag^{commit}")" != "$(git rev-parse HEAD)" ]; then
+            echo "::error::$tag already exists on $(git rev-parse --short "$tag^{commit}"), not on HEAD $(git rev-parse --short HEAD). Not releasing over it."
+            exit 1
+          fi
+
+          if draft=$(gh release view "$tag" --json isDraft --jq .isDraft 2>/dev/null); then
+            if [ "$draft" = "true" ]; then
+              echo "::error::$tag has a leftover draft release from an earlier run. Delete it (gh release delete $tag) and re-run."
+              exit 1
+            fi
+            echo "$tag is already released; nothing to do."
+            echo "skip=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "$tag exists on HEAD with no release (an earlier run stopped after tagging); releasing it now."
             echo "skip=" >> "$GITHUB_OUTPUT"
           fi
 
