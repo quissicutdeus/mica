@@ -1,7 +1,8 @@
 # micaOS
 
 **A modern, open-source custom phone resource for FiveM** —
-[micaOS](https://mica.gg/) · [Live Demo](https://mica.gg/demo/) ·
+[micaOS](https://mica.gg/) · [Phone Demo](https://mica.gg/demo/?device=phone) ·
+[Tablet Demo](https://mica.gg/demo/?device=tablet) ·
 [SDK Docs](https://docs.mica.gg/)
 
 Powered by TypeScript, Svelte 5, Vite, and esbuild.
