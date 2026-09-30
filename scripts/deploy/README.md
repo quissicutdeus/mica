@@ -167,7 +167,15 @@ The wrapper reads that file one named key at a time rather than sourcing it.
 `FX_IMAGE` is the stack's own FXServer image (`docker images | grep server`; the
 compose project `fivem` builds `fivem-server`), so the smoke test runs the
 artifact the live servers run. Both images have to exist already; nothing here
-pulls or builds one.
+pulls or builds one. On hoth the stacks are `fivem-main` and `fivem-dev`, so the
+image is `fivem-main-server:latest` and the script's default of
+`fivem-server:latest` does not exist there; `/etc/mica-smoke.env` sets it.
+
+**The key has to be active, not just valid.** A key Cfx has not activated for
+this box starts every resource and then fails with "Could not authenticate
+server license key. Your key is inactive.", which the wrapper reports as mica
+never starting. Check the key on portal.cfx.re before reading that as a broken
+zip.
 
 Then a key for the workflow, as `gphone`:
 
@@ -183,7 +191,19 @@ cat ~/.ssh/gphone-ci-smoke-release    # -> the DEPLOY_KEY_SMOKE secret, then shr
 `DEPLOY_HOST` and `DEPLOY_KNOWN_HOSTS` are the ones the deploy already uses. A
 release with `DEPLOY_KEY_SMOKE` unset fails at the smoke step, by design: the
 zip is not attached untested, and the tag it already pushed gets its release
-when the run is re-run with the secret in place.
+when the run is re-run with the secret in place. (Until 2026-09-29 that sentence
+was false: the re-run found its own tag, took it for "already released" and
+skipped every step behind a green tick. The tag step now skips only a tag with a
+published release.) A tag left behind by an older commit is released by naming
+it:
+
+```sh
+gh workflow run release.yml --ref dev -f tag=v2026.09.29.3
+```
+
+which builds and smoke-tests that tag's own commit and never creates a tag.
+Release several oldest first, so each release's generated notes diff against the
+one before it.
 
 ### Trying it by hand
 

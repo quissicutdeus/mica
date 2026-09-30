@@ -75,6 +75,14 @@ animation, camera and audio: player state, inventory, money and vehicles belong
 to the framework, reached through the bridge, and a client native there is an
 authority leak by another name.
 
+**A native takes its strings as C strings**, so anything after a NUL byte never
+arrives. A `GetConvar` default of `'\u0000unset'` reaches the native as `''`,
+which is indistinguishable from an owner who set the convar empty — MICA-237's
+first sentinel did exactly that and would have turned every stock server's
+add-on catalog off, while every suite (stubbing `GetConvar` in JavaScript)
+stayed green. Keep every string a native sees printable;
+`shared/addonConfig.ts`'s `CONVAR_UNSET` and its test are the pattern.
+
 `shared/devices.ts` describes each device once — frame size, prop, animation,
 keybind — and the client reads the phone from it (MICA-258). A hardcoded `phone`
 where a `DeviceId` belongs is what that ticket removed; do not put one back.

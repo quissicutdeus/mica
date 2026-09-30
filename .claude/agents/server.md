@@ -69,6 +69,11 @@ MICA-234 the `app:` field — is declared on the service in its own file under
 `GetConvar*` calls and fails one with no matching entry in `README.md`. Add the
 row in the same commit.
 
+A `GetConvar` default must be printable: natives take C strings, so a default
+beginning with a NUL byte arrives as `''` and reads as "set to empty". The
+client agent's "Natives fail in the game" section has the MICA-237 case; no
+suite can see it, because every suite stubs `GetConvar` in JavaScript.
+
 ## Schema changes
 
 The migration convention and the `pnpm generate:sql` mechanics are in

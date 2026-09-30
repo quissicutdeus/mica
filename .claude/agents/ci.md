@@ -76,6 +76,29 @@ yourself — `gh api repos/<o>/<r>/git/ref/tags/<tag>`, then
 `gh api repos/<o>/<r>/commits/<sha>` — and when the lint cannot reach GitHub,
 say so in the report rather than reading its silence as a pass.
 
+## Where CI runs, and what a green tick can hide
+
+**GitHub is the primary remote** and runs the deploys and releases, with the
+secrets. The self-hosted Forgejo on hoth is a mirror that `mirror.yml` keeps in
+sync on every push, and it runs these same workflow files with no secrets. A
+step that must differ between them splits on `github.server_url`, as several
+already do.
+
+- **GitHub resolves every `uses:` in a job before it reads any `if:`.** An
+  action GitHub refuses (the v3 artifact actions, since 2026) fails the whole
+  job at "Set up job" even in a step its condition would skip, so a per-host
+  pair of versions cannot work; gate the step or the job instead.
+- **The E2E jobs run only on `main`, pull requests and `workflow_dispatch`**, so
+  a push to `dev` never exercises them. Prove a change to them with
+  `gh workflow run build-test.yml --ref dev` before `main` moves.
+- **A green run can be all skips.** A re-run of `release.yml` once reported
+  success after skipping every step past tagging. Read the step conclusions, not
+  the run's.
+- **A `compose.yaml` change needs the box's root scripts reinstalled.** The
+  `/usr/local/sbin/mica-deploy-*-compose.sh` wrappers pin its hash and never
+  update themselves (`scripts/deploy/README.md`); a missed reinstall after
+  MICA-234 stopped every deploy until 2026-09-29.
+
 ## Verifying
 
 Run `pnpm lint:actions` for workflow changes, `pnpm format:check` and

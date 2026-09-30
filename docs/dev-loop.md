@@ -297,6 +297,21 @@ that plainly has it.
 Run **Svelte: Restart Language Server** for a `.svelte` file, or **TypeScript:
 Restart TS Server** for a `.ts` one, before believing it.
 
+### When the CLI itself is stale
+
+`client/` and `server/` typecheck incrementally, with TS 7's build info in
+`node_modules/.tmp/<target>.tsbuildinfo`. After a global declaration file is
+added or edited (MICA-237 added `client/buildDefines.d.ts` and
+`server/buildDefines.d.ts`), a warm run has been seen both to keep reporting
+errors the new file fixed and to pass with a declaration deleted. Delete the
+build info before a typecheck you are going to report on:
+
+```sh
+rm -f node_modules/.tmp/*.tsbuildinfo && pnpm typecheck
+```
+
+CI checks out fresh, so it never sees this; only a local run can.
+
 ## Playwright's per-test timeout, and its escape hatch
 
 `web/playwright.config.ts` sets Playwright's own 30-second default
