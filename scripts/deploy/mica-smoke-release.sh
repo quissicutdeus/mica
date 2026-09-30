@@ -163,7 +163,11 @@ echo "smoke: starting $FX_IMAGE with the zip's mica and $OXMYSQL_DIR"
 # exists in its working directory, then execs run.sh there. `+exec` is what the
 # stack's own compose deliberately never passes (it would skip txAdmin's wizard);
 # here there is no txAdmin and skipping it is the point.
-docker run -d --name "$fx" --network "$net" --user "$owner" \
+# `-i`: FXServer reads its console from stdin and treats end-of-file as Ctrl-C,
+# so a detached container with stdin closed prints `mica started!` and then
+# "Quitting: Ctrl-C pressed in server console." The live stacks run with stdin
+# open too. Invisible until a real key let the run get past startup.
+docker run -d -i --name "$fx" --network "$net" --user "$owner" \
     -w /opt/fivem/server-data \
     -v "$sd:/opt/fivem/server-data" \
     -v "$OXMYSQL_DIR:/opt/fivem/server-data/resources/oxmysql:ro" \
@@ -212,7 +216,7 @@ sleep "$SETTLE_SECONDS"
 logs=$(docker logs "$fx" 2>&1 | plain || true)
 report
 if [[ $(docker inspect -f '{{.State.Running}}' "$fx" 2>/dev/null) != true ]]; then
-    die "FXServer exited after mica started; with a key it should stay up (a key already in use elsewhere does this)"
+    die "FXServer exited after mica started; with a key it should stay up. Its last console lines above say why: 'Quitting: Ctrl-C' is stdin closing, a licence error is the key, and a key already in use on another server also ends it"
 fi
 if grep -iE 'script:mica' <<<"$logs" | grep -qiE 'error|exception|unhandled'; then
     die "mica logged an error after starting"
