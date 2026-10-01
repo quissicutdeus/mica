@@ -1094,6 +1094,12 @@ export instead, which authenticates its caller.
 
 ### Fixed
 
+**On standalone, looking up a player who is not connected no longer logs an
+error.** A lookup for a server id nobody holds printed a console error claiming
+the framework "returned a player" for it, once per check, and some exports check
+more than once. It is now a quiet "no such player", as on qb and ESX; a player
+who is connected but cannot be identified is still reported.
+
 **Messages and Blabber posts brought across by `micaimport` no longer read as
 edited.** The import kept each row's original time as `created_at` but let
 `updated_at` default to the moment of the import, and the app marks anything

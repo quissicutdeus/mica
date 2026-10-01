@@ -283,11 +283,47 @@ const standaloneSetMeta = (src: number, key: string): void => {
   );
 };
 
-/** A standalone player as a `FrameworkPlayer`, or null when they cannot be identified. */
+/**
+ * Whether anybody is connected on this source at all — asked before an identity is refused, so
+ * that "nobody is here" stays a quiet null and only "somebody is here and cannot be named" is
+ * reported (MICA-302).
+ *
+ * The two are different answers, and before this they shared one: every source-keyed export,
+ * `isConnected` and every net event from a player who has just dropped walked `getPlayer`, and on
+ * standalone each printed an error claiming the framework had *returned* a player with no usable
+ * citizenid. With no framework there is nothing to return a player; an empty source is simply
+ * nobody, the same `null` the qb and ESX adapters give when their core has no such player.
+ *
+ * `DoesPlayerExist` is the direct question and every current FXServer has it. Without it, a
+ * connected client always has a name or at least one identifier, so their absence is read as
+ * nobody — a build with none of these natives can name no player either way.
+ */
+const isConnectedSource = (src: number): boolean => {
+  const player = String(src);
+  try {
+    // Truthy, as every boolean native here is read: a bridge may hand back 1/0, not true/false.
+    if (typeof DoesPlayerExist === 'function') return Boolean(DoesPlayerExist(player));
+  } catch {
+    return false;
+  }
+  try {
+    const name = typeof GetPlayerName === 'function' ? GetPlayerName(player) : null;
+    if (typeof name === 'string' && name.trim().length > 0) return true;
+    return typeof GetNumPlayerIdentifiers === 'function' && GetNumPlayerIdentifiers(player) > 0;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * A standalone player as a `FrameworkPlayer`, or null when nobody is on that source (quietly) or
+ * the player on it cannot be identified (reported, through `unidentified`).
+ */
 const standaloneFrameworkPlayer = (src: number): FrameworkPlayer | null => {
   const identifier = standaloneIdentifier(src);
   const citizenid = citizenIdFromIdentifier(identifier);
   if (!citizenid) {
+    if (!isConnectedSource(src)) return null;
     return unidentified(src, 'standalone', describeIdentifierRejection(identifier));
   }
 

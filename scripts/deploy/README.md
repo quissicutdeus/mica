@@ -225,6 +225,38 @@ On the box itself, the whole path as CI drives it:
 ssh -i ~/.ssh/gphone-ci-smoke-release gphone@localhost < dist/release/mica-*.zip
 ```
 
+### The integration suite (MICA-302)
+
+The same key and the same wrapper also run an in-server test suite. CI sends
+`pnpm pack:integration`'s zip, which holds `mica/` exactly as released plus a
+test resource, `mica-integration/` (built from `integration/`), and the wrapper
+switches to integration mode when that directory is present. It generates a
+throwaway content keyring in a small `mica-keys` resource, starts `mica` and
+then `mica-integration` against the freshly imported database, and reads the
+suite's verdict from the console: one `integration: PASS|FAIL <id>` line per
+scenario and a final `integration: done <P> passed <F> failed`. The run passes
+only when the PASS ids equal `mica-integration/expected-scenarios.txt` exactly,
+which `pack:integration` writes, so a scenario that silently stops running fails
+it. `release.yml` runs it before the smoke test and will not release on a
+failure; `integration.yml` runs it alone on any ref by `workflow_dispatch`.
+
+**Root never touches a path `gphone` can change.** The wrapper takes its lock at
+`/run/mica-smoke.lock` first, pins the run directory, copies its `resources/`
+into a root-owned staging directory under `/var/lib/mica-smoke/`, refuses
+symlinks, hardlinks and special files, and builds, mounts and later deletes
+everything from that copy. The run directory itself is only read. Reinstall both
+halves after any change to either:
+
+```sh
+install -m 755 scripts/deploy/smoke-release.sh ~gphone/bin/smoke-release.sh
+sudo install -m 700 -o root -g root scripts/deploy/mica-smoke-release.sh /usr/local/sbin/
+```
+
+**A key file has to sit inside a resource folder.** FXServer refuses a
+resource's reads outside resource folders, with no grant to lift it, so the
+suite's keyring lives in its own tiny resource. The same holds for an owner's
+real key (MICA-165).
+
 ## Never invoke two at once
 
 A second deploy waits up to thirty minutes for the first, then gives up rather

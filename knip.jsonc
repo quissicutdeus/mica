@@ -34,10 +34,25 @@
   "ignoreDependencies": ["lint-staged", "jsdom"],
   "workspaces": {
     ".": {
-      // esbuild builds these two directly (`build/build-bundle.js`), so nothing in the
+      // esbuild builds the first two directly (`build/build-bundle.js`), so nothing in the
       // repo imports them and knip cannot infer that they are roots.
-      "entry": ["client/client.ts", "server/server.ts", "scripts/*.js", "build/*.js"],
-      "project": ["client/**/*.ts", "server/**/*.ts", "scripts/**/*.js", "build/**/*.js"]
+      // `integration/server.ts` (MICA-302) is esbuild's entry for the in-server suite
+      // (`build/build-integration.js`): nothing imports it, so without this every scenario
+      // under it would be reported as an unused file.
+      "entry": [
+        "client/client.ts",
+        "server/server.ts",
+        "integration/server.ts",
+        "scripts/*.js",
+        "build/*.js"
+      ],
+      "project": [
+        "client/**/*.ts",
+        "server/**/*.ts",
+        "integration/**/*.ts",
+        "scripts/**/*.js",
+        "build/**/*.js"
+      ]
     },
     // MICA-186: its own workspace now that `shared/` is a root-level package, for the
     // same reason `sdk` below is. `shared/**/*.ts` stayed listed under `.` for one run

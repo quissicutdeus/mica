@@ -1,0 +1,74 @@
+name: Integration
+
+# MICA-302: the in-server integration suite, on demand. `release.yml` runs the same suite
+# before a release, on main; this exists so a change can be proven on dev, or on any other
+# ref, before main moves:
+#
+#   gh workflow run integration.yml --ref dev
+#
+# By hand only. The suite takes a real FXServer and a real MariaDB on the game server for
+# several minutes and shares that box's one licence key with the release smoke test, so it
+# does not run on every push. It builds the ref it is dispatched on and nothing else.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  integration:
+    name: Integration suite on the FiveM box
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        name: Install pnpm 11
+        with:
+          version: 11
+
+      - name: Install Node.js 26
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 26
+          cache: 'pnpm'
+
+      # --ignore-scripts: the root "prepare" script installs dev git hooks, which a CI job
+      # has no use for.
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      # `build:nocheck`: this job answers whether the suite passes, not whether the tree
+      # typechecks, which Verify already says on the same push. It builds the resource,
+      # and the suite with it.
+      - name: Build the resource and the suite
+        run: pnpm build:nocheck
+
+      - name: Pack the resource and the suite into one zip
+        run: pnpm pack:integration
+
+      # A missing secret is a failure, not a skip: a run that quietly stood down because it
+      # was not configured would read as a pass. The pipe is unbroken -- ssh's own exit is
+      # the step's, and it is the wrapper's, which fails on any FAIL, on a missing done line
+      # and on a suite that ran nothing. scripts/deploy/README.md has the server side.
+      - name: Run the integration suite on the FiveM box
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          SMOKE_KEY: ${{ secrets.DEPLOY_KEY_SMOKE }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          for name in DEPLOY_HOST SMOKE_KEY KNOWN_HOSTS; do
+            if [ -z "${!name}" ]; then
+              echo "::error title=Integration not run::${name} is not set (secret DEPLOY_KEY_SMOKE, DEPLOY_HOST or DEPLOY_KNOWN_HOSTS), so the suite could not run. scripts/deploy/README.md has the setup."
+              exit 1
+            fi
+          done
+          mkdir -p ~/.ssh
+          echo "$SMOKE_KEY" > ~/.ssh/smoke_key
+          chmod 600 ~/.ssh/smoke_key
+          echo "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          echo "running the integration suite on the FiveM box"
+          ssh -i ~/.ssh/smoke_key -o UserKnownHostsFile=~/.ssh/known_hosts -o BatchMode=yes \
+            -o ServerAliveInterval=30 \
+            gphone@"$DEPLOY_HOST" < dist/integration/mica-integration-run.zip

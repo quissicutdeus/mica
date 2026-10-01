@@ -1,0 +1,11 @@
+{
+  // MICA-302: the server's strictness and target (FXServer's Node 22), for the integration
+  // resource. Its own build-info file, so a check of this never clobbers the server's.
+  "extends": "../server/tsconfig.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "../node_modules/.tmp/integration.tsbuildinfo",
+    "paths": {}
+  },
+  "include": ["./**/*"],
+  "exclude": ["**/node_modules"]
+}

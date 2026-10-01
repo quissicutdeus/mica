@@ -262,6 +262,10 @@ export const balanceOf = (result: unknown, call: string, src: number): number =>
  * Module scope rather than a private static, because the ESX branches below are module-scope
  * functions and all three frameworks have to refuse an unnameable player the same way. A
  * second copy of this rule is a second place for it to stop being true.
+ *
+ * Only for a player who is **there**. A source nobody holds is not a malformed player, and its
+ * adapter answers a quiet null without calling this (MICA-302: standalone's `isConnectedSource`),
+ * or every lookup of a dropped source would print an error about a player that does not exist.
  */
 export const unidentified = (src: number, framework: string, why?: string): null => {
   console.error(

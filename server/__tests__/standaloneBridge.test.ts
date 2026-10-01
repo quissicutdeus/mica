@@ -81,6 +81,7 @@ const connect = (players: Record<number, FakePlayer>) => {
   (globalThis as any).GetPlayerName = (src: string) => players[Number(src)]?.name ?? '';
   (globalThis as any).GetNumPlayerIndices = () => sources.length;
   (globalThis as any).GetPlayerFromIndex = (index: number) => String(sources[index]);
+  (globalThis as any).DoesPlayerExist = (src: string) => Number(src) in players;
 };
 
 /** No identity natives at all — an FXServer build older than any of them. */
@@ -91,7 +92,8 @@ const noNatives = () => {
     'GetPlayerIdentifier',
     'GetPlayerName',
     'GetNumPlayerIndices',
-    'GetPlayerFromIndex'
+    'GetPlayerFromIndex',
+    'DoesPlayerExist'
   ]) {
     delete (globalThis as any)[native];
   }
@@ -232,6 +234,57 @@ describe('the standalone player', () => {
 
   it('is null when nobody is connected on that source', () => {
     expect(FrameworkBridge.getPlayer(999)).toBeNull();
+  });
+
+  it('says nothing about a source nobody holds — it is nobody, not a malformed player', () => {
+    // MICA-302: every source-keyed export and every dropped player's late event walks this,
+    // and each used to print an error claiming the framework returned a player for it.
+    expect(FrameworkBridge.getPlayer(999)).toBeNull();
+    expect(FrameworkBridge.getCitizenId(999)).toBeNull();
+    expect(console.error).not.toHaveBeenCalled();
+    expect(console.warn).not.toHaveBeenCalled();
+  });
+
+  it('still reports a connected player it cannot name, beside an absent one it ignores', () => {
+    connect({ 5: { name: 'Ada' } });
+
+    expect(FrameworkBridge.getPlayer(999)).toBeNull();
+    expect(errors()).toEqual([]);
+
+    expect(FrameworkBridge.getPlayer(5)).toBeNull();
+    expect(errors()).toHaveLength(1);
+    expect(errors()[0]).toContain('source 5');
+    expect(errors()[0]).toContain('standalone');
+  });
+
+  it.each([
+    ['true/false', true, false],
+    ['1/0', 1, 0]
+  ])('reads DoesPlayerExist answering %s as truthy', (_label, yes, no) => {
+    // A native's boolean may cross as a number; a strict `=== true` would misread 1 as absent
+    // and stop reporting a connected player it cannot name.
+    connect({ 5: { name: 'Ada' } });
+    (globalThis as any).DoesPlayerExist = (src: string) => (Number(src) === 5 ? yes : no);
+
+    expect(FrameworkBridge.getPlayer(999)).toBeNull();
+    expect(errors()).toEqual([]);
+
+    expect(FrameworkBridge.getPlayer(5)).toBeNull();
+    expect(errors()).toHaveLength(1);
+    expect(errors()[0]).toContain('source 5');
+  });
+
+  it('tells absent from connected without DoesPlayerExist, by the name and identifiers', () => {
+    // An FXServer build without the native: a connected client always has a name or an
+    // identifier, so their absence is nobody, and a named player with no license is reported.
+    connect({ 5: { name: 'Ada' } });
+    delete (globalThis as any).DoesPlayerExist;
+
+    expect(FrameworkBridge.getPlayer(999)).toBeNull();
+    expect(errors()).toEqual([]);
+
+    expect(FrameworkBridge.getPlayer(5)).toBeNull();
+    expect(errors()).toHaveLength(1);
   });
 
   it('survives an FXServer build with none of the identity natives', () => {

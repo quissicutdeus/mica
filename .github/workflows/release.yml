@@ -180,6 +180,45 @@ jobs:
           pnpm dlx publint dist/release/mica-sdk-*.tgz
           pnpm dlx publint dist/release/mica-shared-*.tgz
 
+      # MICA-302: the in-server integration suite, run before the smoke test and blocking the
+      # release. `pnpm build` above already built it (it is part of `build:nocheck`); this
+      # packs it beside the resource into a zip of its own -- `dist/integration/`, never
+      # `dist/release/`, whose zips are attached to the release -- and pipes that over the
+      # same forced command the smoke test uses. The wrapper sees `mica-integration/` in it
+      # and runs a real FXServer against a real MariaDB with the suite ensured after mica;
+      # it fails on any `integration: FAIL`, on no `integration: done` line, and on a suite
+      # that ran nothing. Its console, PASS lines included, is this step's log.
+      #
+      # It runs for a dispatched tag too: a tag left behind by an earlier failure is exactly
+      # the one that must not be released without it. A tag cut before this suite existed
+      # has no `integration/` and fails at `pnpm pack:integration`, loudly, rather than
+      # being released unchecked.
+      #
+      # A missing secret is a failure, not a skip, for the reason given on the smoke step.
+      - name: Run the integration suite on the FiveM box
+        if: steps.tag.outputs.skip == ''
+        timeout-minutes: 45
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          SMOKE_KEY: ${{ secrets.DEPLOY_KEY_SMOKE }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          for name in DEPLOY_HOST SMOKE_KEY KNOWN_HOSTS; do
+            if [ -z "${!name}" ]; then
+              echo "::error title=Release blocked::${name} is not set (secret DEPLOY_KEY_SMOKE, DEPLOY_HOST or DEPLOY_KNOWN_HOSTS), so the integration suite could not run and the zip was not released. scripts/deploy/README.md has the setup."
+              exit 1
+            fi
+          done
+          pnpm pack:integration "${{ steps.tag.outputs.tag }}"
+          mkdir -p ~/.ssh
+          echo "$SMOKE_KEY" > ~/.ssh/smoke_key
+          chmod 600 ~/.ssh/smoke_key
+          echo "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          echo "running the integration suite on the FiveM box"
+          ssh -i ~/.ssh/smoke_key -o UserKnownHostsFile=~/.ssh/known_hosts -o BatchMode=yes \
+            -o ServerAliveInterval=30 \
+            gphone@"$DEPLOY_HOST" < dist/integration/mica-integration-run.zip
+
       # The zip has to start as a resource before it is released as one. It is piped over
       # SSH to the game server deploy.yml already reaches, where a forced command unpacks
       # it and a root-owned wrapper starts a throwaway FXServer with it, against a throwaway

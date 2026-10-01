@@ -158,6 +158,23 @@ const entries = [
   { path: 'README.md', data: readmeExcerpt(readFileSync('README.md', 'utf8'), { tag, repository }) }
 ].map(({ path, data }) => ({ path: `${RESOURCE_NAME}/${path}`, data }));
 
+// The integration suite (MICA-302) is a second resource that lives in `dist/integration/` and
+// is packed by `pack-integration.js` into a zip of its own. Its presence in this one is not
+// cosmetic: the box's wrapper switches to integration mode on that directory alone, so a
+// release zip carrying it would turn the release smoke test into a suite run, and an owner
+// who unpacked it would have a test harness in `resources/`. Refused by name, wherever in
+// the tree it turns up.
+const leaked = entries.filter(({ path }) => path.split('/').includes('mica-integration'));
+if (leaked.length > 0) {
+  console.error(
+    'pack-resource: the release zip must never contain mica-integration -- the integration ' +
+      `suite ships only in the zip scripts/pack-integration.js writes. Found: ${leaked
+        .map(({ path }) => path)
+        .join(', ')}`
+  );
+  process.exit(1);
+}
+
 const zip = createZip(entries, { mtime: releaseDate(tag) });
 
 mkdirSync(OUT, { recursive: true });

@@ -31,8 +31,7 @@ die() {
 
 mkdir -p "$SMOKE_ROOT"
 run=$(mktemp -d "$SMOKE_ROOT/XXXXXXXX")
-cleanup() { rm -rf "$run"; }
-trap cleanup EXIT
+trap 'rm -rf "$run"' EXIT
 
 # One byte past the cap, so an oversize stream is detected rather than silently
 # truncated into something unzip then rejects for the wrong reason.
@@ -48,9 +47,29 @@ mkdir "$run/resources"
 unzip -q "$run/mica.zip" -d "$run/resources" || die "stdin is not a zip unzip can read"
 [ -f "$run/resources/mica/fxmanifest.lua" ] ||
     die "the zip does not unpack to mica/fxmanifest.lua; that is the layout the release ships"
+# The integration run's zip (MICA-302) is that layout plus a second resource beside it, and
+# the wrapper reads the presence of the directory as the choice of mode. So a directory
+# that is there without its manifest is refused here, loudly, rather than being run as a
+# plain release smoke test that never looks at the suite.
+if [ -e "$run/resources/mica-integration" ]; then
+    [ -f "$run/resources/mica-integration/fxmanifest.lua" ] ||
+        die "the zip holds mica-integration/ but not mica-integration/fxmanifest.lua"
+fi
 
 # The privileged half: gphone is not in the docker group (see README.md here),
 # so the containers are started by a root-owned wrapper that sudoers lets this
 # account invoke by exact path, with a run directory under $SMOKE_ROOT as its
 # one argument.
-exec sudo /usr/local/sbin/mica-smoke-release.sh "$run"
+#
+# Not `exec`: that replaces this shell, and the EXIT trap above goes with it, which left
+# every run directory -- the zip, and what was unpacked from it -- in $SMOKE_ROOT for good.
+# Root builds everything of its own in a staging directory it removes itself; this half
+# removes only what this account made. A dropped connection (CI cancelling the run) is a
+# signal rather than an exit, so those are turned into one.
+trap 'exit 1' HUP INT TERM
+if sudo /usr/local/sbin/mica-smoke-release.sh "$run"; then
+    rc=0
+else
+    rc=$?
+fi
+exit "$rc"
