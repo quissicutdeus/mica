@@ -278,9 +278,9 @@ export const cryptoScenarios: Scenario[] = [
     //
     // The old form, a path, is tried in every directory keygen used to be pointed at — beside
     // the live key, micaOS's own folder, the temp directory — and must be refused with nothing
-    // appearing there. What this resource can see is limited by the same sandbox: a file in the
-    // temp directory would read as absent whether or not it exists, so that check is only as
-    // strong as FXServer lets it be; the two resource folders are checked for real.
+    // appearing there. What this resource can see is limited by the same sandbox, so a path it
+    // may not look at is reported as not observable rather than counted either way; the paths
+    // inside resource folders are the ones checked for real.
     id: 'crypto-micacrypt-keygen-prints-steps-and-writes-nothing',
     tickets: ['MICA-165', 'MICA-303'],
     run: async (signal) => {
@@ -340,10 +340,29 @@ export const cryptoScenarios: Scenario[] = [
       const leaked = tap.since(first).find((line) => /[A-Za-z0-9+/]{43}=/.test(line));
       assert(leaked === undefined, `keygen printed something shaped like a key: ${leaked}`);
 
-      // And no file: not where a path was given, not where the steps say the key goes.
+      // And no file: not where a path was given, not where the steps say the key goes. The
+      // sandbox decides which of those this resource may look at — the first hoth run of this
+      // scenario had `existsSync` throw "Access to this API has been restricted" for the
+      // suggested `[local]/mica-keys` path, a folder that is no resource there. A refused look
+      // is neither a pass nor a fail: it is said, and only the paths seen count. At least one
+      // must be seen, or the check never ran.
+      const seen: string[] = [];
+      const hidden: string[] = [];
       for (const path of [...tried, suggested]) {
-        assert(!existsSync(path), `keygen left a file at ${path}`);
+        let there: boolean;
+        try {
+          there = existsSync(path);
+        } catch {
+          hidden.push(path);
+          continue;
+        }
+        assert(!there, `keygen left a file at ${path}`);
+        seen.push(path);
       }
+      assert(
+        seen.length > 0,
+        `no path keygen could have written is visible to this resource: ${hidden.join(', ')}`
+      );
 
       // The refusal of an id the loaded keyring already holds stays, with no steps after it.
       const dup = tap.mark();
@@ -363,6 +382,10 @@ export const cryptoScenarios: Scenario[] = [
 
       // For MICA-303's docs: what keygen prints on a real FXServer, paths resolved.
       console.log(`[mica-integration] keygen said: ${said.split('\n').length} lines; ${setLine}`);
+      console.log(
+        `[mica-integration] keygen wrote nothing at ${seen.join(', ')}` +
+          (hidden.length > 0 ? `; not observable here (sandbox): ${hidden.join(', ')}` : '')
+      );
     }
   }
 ];
