@@ -67,7 +67,10 @@ import os, socket, sys
 
 pw = os.environ["RCON_PASSWORD"]
 port = int(os.environ["FIVEM_PORT"])
-msg = b"\xff\xff\xff\xffrcon " + pw.encode() + b" restart micaOS"
+# The resource is `mica` (MICA-274). This line said `micaOS` from the rename until
+# 2026-10-01, FXServer answered "Couldn't find resource micaOS.", and since only a
+# wrong password failed, every deploy reported a reload that never happened.
+msg = b"\xff\xff\xff\xffrcon " + pw.encode() + b" restart mica"
 
 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 s.settimeout(5)
@@ -81,6 +84,11 @@ except socket.timeout:
 print(reply.strip())
 if "Invalid password" in reply:
     sys.exit("rcon: server rejected the password -- micaOS NOT reloaded")
+# Success has to be shown, not assumed: FXServer answers a restart it performed with
+# "Stopping resource mica", and anything else (an unknown resource, a refused
+# command) is a reload that did not happen.
+if "Stopping resource mica" not in reply:
+    sys.exit("rcon: the server did not restart mica -- micaOS NOT reloaded")
 PYEOF
 
 echo "reloaded micaOS on 127.0.0.1:$FIVEM_PORT"
