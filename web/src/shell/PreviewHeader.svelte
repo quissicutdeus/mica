@@ -69,13 +69,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     class="bg-surface-container shadow-elevation-3 pointer-events-auto flex items-center gap-1 rounded-box p-1.5 backdrop-blur-md"
   >
     <!-- The mark. A rounded tile with the family letter, the same shape an app icon
-         takes, so it reads as this product rather than as browser furniture. Deliberately
-         not an `<h1>`: the launcher's wordmark is the page's heading, and two specs assert
-         there is no `h1` on the page once the device is down. -->
+         takes, so it reads as this product rather than as browser furniture. The letter
+         is OS_NAME's first, not typed here: it read "g" for weeks after the micaOS rename.
+         Deliberately not an `<h1>`: the launcher's wordmark is the page's heading, and two
+         specs assert there is no `h1` on the page once the device is down. -->
     <span class="flex items-center gap-2 px-2">
       <span
         class="bg-primary text-on-primary text-label-small flex h-6 w-6 items-center justify-center rounded-chip font-bold"
-        aria-hidden="true">g</span
+        aria-hidden="true">{OS_NAME.charAt(0)}</span
       >
       <span class="text-on-surface text-body-small font-semibold tracking-tight">{OS_NAME}</span>
     </span>

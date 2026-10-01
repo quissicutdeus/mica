@@ -8,6 +8,7 @@ import { render } from '@testing-library/svelte';
 import PreviewHeader from './PreviewHeader.svelte';
 import { setActiveDevice } from './state/device';
 import { ALL_DEVICES, DEVICES } from '@mica/shared/devices';
+import { OS_NAME } from '@mica/shared/brand';
 
 /**
  * The preview's own chrome. Everything asserted here is about not disturbing what is
@@ -71,5 +72,12 @@ describe('PreviewHeader', () => {
     // `defects.spec.ts` and `keybinds.spec.ts` both assert no `h1` once the device is
     // down; the launcher's wordmark is the page's heading and this mark is not.
     expect(queryByRole('heading')).toBeNull();
+  });
+
+  it("badges the mark with the OS name's first letter, so a rename cannot strand it", () => {
+    const { getByRole } = render(PreviewHeader, { props: { onopen: () => {} } });
+    // It read "g" for weeks after the micaOS rename, typed into the markup.
+    const nav = getByRole('navigation');
+    expect(nav.querySelector('[aria-hidden="true"]')?.textContent).toBe(OS_NAME.charAt(0));
   });
 });
