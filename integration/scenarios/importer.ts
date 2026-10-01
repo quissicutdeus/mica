@@ -8,6 +8,7 @@ import { db } from '../lib/db';
 import { HARNESS_KID, assert, harnessKeys, runCommand, seedCitizen } from '../lib/mica';
 import { openSealed, sealedKid } from '../lib/sealed';
 import { sleep } from '../lib/wait';
+import { REPORT_END, tableLines, type TableLine } from '../lib/importReport';
 
 /**
  * `micaimport qb-phone` (MICA-233) against a minimal qb-phone schema created for the purpose:
@@ -20,21 +21,11 @@ import { sleep } from '../lib/wait';
  */
 const SOURCE_TABLES = ['player_contacts', 'phone_messages', 'phone_gallery'];
 
-interface TableLine {
-  table: string;
-  read: number;
-  written: number;
-  skipped: number;
-}
-
-const TABLE_LINE =
-  /^\[micaimport\] {3}([a-z_#]+): read (\d+), (?:written|would write) (\d+), skipped (\d+)$/;
-
 /**
- * How long a run may take to report. Past micaOS's own 60 s `Database` timeout on purpose: the
- * first hoth run (MICA-302) waited 30 s, saw nothing after the dry run, and stopped before the
- * one line that would have said why — a write that never answered is reported by micaOS only
- * when its 60 s are up.
+ * How long a run may take to report. Past micaOS's own 60 s `Database` timeout, so a write that
+ * never answers is reported by micaOS inside the wait rather than after it. (The first two hoth
+ * runs' "no report" was this scenario's own pattern missing the dry run's last line — see
+ * `lib/importReport.ts` — not micaOS being silent.)
  */
 const REPORT_WAIT_MS = 75_000;
 
@@ -46,13 +37,7 @@ const runImport = async (apply: boolean, signal: RunSignal): Promise<TableLine[]
   const mark = tap.mark();
   await runCommand(`micaimport qb-phone${apply ? ' --apply' : ''}`);
   // phone_tweets is the last table the qb-phone importer reports, present or not.
-  const last = await tap.waitFor(
-    mark,
-    /^\[micaimport\] ( {3}phone_tweets: |qb-phone failed part-way|an import is already running)/,
-    REPORT_WAIT_MS,
-    signal,
-    "micaimport's report"
-  );
+  const last = await tap.waitFor(mark, REPORT_END, REPORT_WAIT_MS, signal, "micaimport's report");
   assert(last.includes('phone_tweets'), last);
   // The `running` flag clears just after the report; never start the next run inside it.
   await sleep(500);
@@ -63,12 +48,7 @@ const runImport = async (apply: boolean, signal: RunSignal): Promise<TableLine[]
     lines.some((line) => line.startsWith(header)),
     `no '${header}' header in micaimport's report`
   );
-  return lines.flatMap((line) => {
-    const m = TABLE_LINE.exec(line);
-    return m
-      ? [{ table: m[1], read: Number(m[2]), written: Number(m[3]), skipped: Number(m[4]) }]
-      : [];
-  });
+  return tableLines(lines);
 };
 
 const tableLine = (lines: TableLine[], table: string): TableLine => {
