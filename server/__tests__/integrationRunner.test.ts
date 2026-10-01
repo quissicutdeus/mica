@@ -224,6 +224,39 @@ describe('the console tap', () => {
     );
     await expect(
       tap.waitFor(mark, /^\[mica\] before$/, 50, signal, 'the old line')
-    ).rejects.toThrow(/no the old line within 50 ms; micaOS said: \[mica\] after/);
+    ).rejects.toThrow(/no the old line within 50 ms; said: \[mica\] after/);
+  });
+
+  it("reads FXServer's console.error and console.warn lines as micaOS wrote them", () => {
+    // MICA-302's first hoth run: keygen's refusal arrived as `Error: [micacrypt] …`, and a match
+    // anchored on `[micacrypt]` waited out its whole timeout beside it.
+    expect(
+      consoleLines(
+        'Error: [micacrypt] keygen refused: /k could not be written (Error: Access denied).'
+      )
+    ).toEqual(['[micacrypt] keygen refused: /k could not be written (Error: Access denied).']);
+    expect(consoleLines('Warning: [micaOS] the key file is inside server-data.')).toEqual([
+      '[micaOS] the key file is inside server-data.'
+    ]);
+    // Only before a tag: a line that merely says "Error:" keeps it.
+    expect(consoleLines('Error: something without a tag')).toEqual([
+      'Error: something without a tag'
+    ]);
+  });
+
+  it("names oxmysql's and the runtime's lines about micaOS when the expected line never comes", async () => {
+    const tap = new ConsoleTap('script:mica-integration');
+    const mark = tap.mark();
+    tap.push('script:oxmysql', 'mica was unable to complete a transaction!\n');
+    tap.push(
+      'citizen-scripting-node',
+      "Filesystem write permission check from 'mica' for permission fs.write - write not allowed\n"
+    );
+    tap.push('script:other', 'unrelated chatter\n');
+    await expect(
+      tap.waitFor(mark, /^\[micaimport\] done$/, 30, { aborted: false }, 'the report')
+    ).rejects.toThrow(
+      /said: mica was unable to complete a transaction! \| Filesystem write permission check from 'mica'/
+    );
   });
 });

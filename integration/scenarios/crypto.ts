@@ -274,8 +274,11 @@ export const cryptoScenarios: Scenario[] = [
     // overwrite one, and refuses an id the loaded keyring already has.
     //
     // FXServer's filesystem sandbox decides where micaOS may write, so the directory is found by
-    // asking keygen itself: the key file's own directory first, then the temp directory, and the
-    // first where it reports a write is used. Every path tried and keygen's answer for it is
+    // asking keygen itself: the key file's own directory first, then micaOS's own resource
+    // folder, then the temp directory, and the first where it reports a write is used. The first
+    // hoth run (MICA-302) found the first refused — FXServer's Node permission model allows a
+    // resource no `fs.write` into another resource's folder — so the order is also the record of
+    // where it does allow one. Every path tried and keygen's answer for it is
     // printed as one `[mica-integration] keygen:` line, pass or fail, because where FXServer
     // lets a resource write a key file is what MICA-165's docs have to say.
     //
@@ -288,7 +291,10 @@ export const cryptoScenarios: Scenario[] = [
       const tap = requireTap();
       const keyFile = GetConvar('mica_content_key_file', '').trim();
       const cut = keyFile.lastIndexOf('/');
-      const dirs = [...new Set([cut > 0 ? keyFile.slice(0, cut) : '', tmpdir()])].filter(Boolean);
+      const micaRoot = (GetResourcePath('mica') || '').replace(/\/+$/, '');
+      const dirs = [...new Set([cut > 0 ? keyFile.slice(0, cut) : '', micaRoot, tmpdir()])].filter(
+        Boolean
+      );
       const kid = `itg-${Date.now().toString(36).slice(-8)}`;
       const answer = (path: string): RegExp =>
         new RegExp(

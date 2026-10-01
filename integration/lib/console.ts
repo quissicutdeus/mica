@@ -26,11 +26,20 @@ export interface ConsoleLine {
 const ESC = String.fromCharCode(27);
 const COLOUR = new RegExp(`\\^\\d|${ESC}\\[[0-9;]*m`, 'g');
 
+/**
+ * FXServer's Node runtime prints `console.error` as `Error: <text>` and `console.warn` as
+ * `Warning: <text>`. Seen on hoth (MICA-302's first real run): keygen's refusal arrived as
+ * `Error: [micacrypt] keygen refused: …`, and a match anchored on `[micacrypt]` waited out its
+ * whole timeout beside it. Stripped only before a `[tag]`, so text that merely says "Error:"
+ * keeps it.
+ */
+const LEVEL_PREFIX = /^(?:Error|Warning): (?=\[)/;
+
 /** One print as the lines it holds, cleaned. Empty lines are dropped. */
 export const consoleLines = (message: unknown): string[] =>
   String(message ?? '')
     .split(/\r?\n/)
-    .map((line) => line.replace(COLOUR, '').trimEnd())
+    .map((line) => line.replace(COLOUR, '').trimEnd().replace(LEVEL_PREFIX, ''))
     .filter((line) => line.trim() !== '');
 
 /** The most lines kept: far more than a run prints, and a bound on a chatty server. */
@@ -79,12 +88,21 @@ export class ConsoleTap {
       if (found) return found.text;
       if (signal.aborted) throw new Error(`gave up waiting for ${what}`);
       if (Date.now() >= deadline) {
-        const said = this.since(mark)
-          .filter((line) => /^\s*\[(mica|micaOS|micacrypt|micaimport|micamedia)\]/.test(line))
+        // micaOS's tagged lines, and anything oxmysql or the Node runtime said about micaOS
+        // (a transaction it could not complete, a filesystem write it refused).
+        const said = this.lines
+          .filter(
+            (line) =>
+              line.seq >= mark &&
+              (/^\s*\[(mica|micaOS|micacrypt|micaimport|micamedia)\]/.test(line.text) ||
+                line.channel === 'script:oxmysql' ||
+                (line.channel.includes('scripting') && line.text.includes('mica')))
+          )
           .slice(-4)
+          .map((line) => line.text)
           .join(' | ');
         throw new Error(
-          `no ${what} within ${timeoutMs} ms` + (said ? `; micaOS said: ${said}` : '; nothing said')
+          `no ${what} within ${timeoutMs} ms` + (said ? `; said: ${said}` : '; nothing said')
         );
       }
       await sleep(100);

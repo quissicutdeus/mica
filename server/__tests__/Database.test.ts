@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { Database } from '../lib/Database';
+import { crossable, Database, sqlDateTime } from '../lib/Database';
 
 /**
  * MICA-160. `oxmysql` rejects correctly once a query reaches a connection and fails, but a
@@ -101,5 +101,69 @@ describe('Database — an unanswered call times out rather than hanging', () => 
     await assertion;
 
     expect(() => resolve([{ late: true }])).not.toThrow();
+  });
+});
+
+/**
+ * MICA-302. Every `Database` call crosses into oxmysql through FiveM's msgpack, which has no
+ * extension for a `Date` (`createCodec({ preset: false })`): one arrives as `{}` and mysql2 writes
+ * it as `'[object Object]'`. Run against real oxmysql across that codec, `micaimport --apply`
+ * had every message and photo refused. A `Date` must leave here as the string mysql2 itself
+ * would have written from it, so the in-process path test:schema uses and the game agree.
+ */
+describe('Database — a Date crosses to oxmysql as the string mysql2 would write', () => {
+  const oxmysql = (globalThis as any).exports.oxmysql;
+  const original = { ...oxmysql };
+
+  afterEach(() => {
+    Object.assign(oxmysql, original);
+  });
+
+  const at = new Date(2026, 8, 30, 7, 5, 3, 9);
+
+  it("formats exactly as mysql2 does under oxmysql's default local timezone", async () => {
+    const { format } = await import('mysql2');
+    expect(`'${sqlDateTime(at)}'`).toBe(format('?', [at]));
+    expect(sqlDateTime(new Date(Number.NaN))).toBeNull();
+  });
+
+  it('converts every Date in every call, and leaves every other value alone', async () => {
+    const seen: unknown[][] = [];
+    const record = (_sql: string, params: unknown[]) => {
+      seen.push(params);
+      return Promise.resolve([]);
+    };
+    oxmysql.query_async = vi.fn(record);
+    oxmysql.insert_async = vi.fn((sql: string, params: unknown[]) =>
+      record(sql, params).then(() => 1)
+    );
+    oxmysql.update_async = vi.fn((sql: string, params: unknown[]) =>
+      record(sql, params).then(() => 1)
+    );
+    oxmysql.scalar_async = vi.fn(record);
+    oxmysql.single_async = vi.fn(record);
+    oxmysql.transaction_async = vi.fn((queries: { values: unknown[] }[]) => {
+      for (const q of queries) seen.push(q.values);
+      return Promise.resolve(true);
+    });
+
+    const params = [at, 'text', 7, null, true];
+    await Database.query('q', params);
+    await Database.insert('i', params);
+    await Database.update('u', params);
+    await Database.scalar('s', params);
+    await Database.single('o', params);
+    await Database.transaction([{ query: 't', params }, { query: 'SET @x = 1' }]);
+
+    const expected = [sqlDateTime(at), 'text', 7, null, true];
+    expect(seen).toEqual([expected, expected, expected, expected, expected, expected, []]);
+    expect(seen.flat().some((value) => value instanceof Date)).toBe(false);
+    // The caller's own array is not rewritten in place.
+    expect(params[0]).toBe(at);
+  });
+
+  it('passes a non-array through untouched', () => {
+    expect(crossable(undefined)).toBeUndefined();
+    expect(crossable({ a: 1 })).toEqual({ a: 1 });
   });
 });

@@ -56,38 +56,75 @@ const withTimeout = <T>(label: string, promise: Promise<T>): Promise<T> => {
   return Promise.race([promise, timedOut]).finally(() => clearTimeout(timer));
 };
 
+const pad = (n: number, width = 2): string => String(n).padStart(width, '0');
+
+/**
+ * A `Date` as mysql2 writes one itself under oxmysql's default `timezone: 'local'`:
+ * `YYYY-MM-DD HH:MM:SS.mmm` in this process's local time. Null for an invalid date, which no
+ * column can hold.
+ */
+export const sqlDateTime = (date: Date): string | null =>
+  Number.isNaN(date.getTime())
+    ? null
+    : `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ` +
+      `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}.` +
+      pad(date.getMilliseconds(), 3);
+
+/**
+ * Bound values as they must be to survive the trip to oxmysql (MICA-302).
+ *
+ * Every call here crosses a resource boundary, and FiveM carries the arguments in msgpack with no
+ * extension for a `Date` (`createCodec({ preset: false })` in the runtime's `main.js`): a `Date`
+ * arrives in oxmysql as `{}`, and mysql2 writes that as `'[object Object]'`. Found by running
+ * `micaimport qb-phone --apply` against real oxmysql across that codec — every imported message
+ * and photo was refused with "Incorrect datetime value: '[object Object]'", rolled back, and
+ * reported skipped. test:schema calls mysql2 in-process, where the `Date` survives, so it never
+ * saw it. Converted here, once, so no caller has to know the boundary exists; the string is the
+ * one mysql2 would have written from the `Date`, so in-process and in-game agree.
+ */
+export const crossable = <P>(params: P): P =>
+  (Array.isArray(params)
+    ? params.map((value: unknown) => (value instanceof Date ? sqlDateTime(value) : value))
+    : params) as P;
+
 export class Database {
   private static get oxmysql() {
     return (globalThis as any).exports?.oxmysql ?? (exports as any)?.oxmysql;
   }
 
   static async query<T = any>(query: string, params: any[] = []): Promise<T> {
-    return await withTimeout<T>('query', Database.oxmysql.query_async(query, params));
+    return await withTimeout<T>('query', Database.oxmysql.query_async(query, crossable(params)));
   }
 
   static async insert(query: string, params: any[] = []): Promise<number> {
-    return await withTimeout<number>('insert', Database.oxmysql.insert_async(query, params));
+    return await withTimeout<number>(
+      'insert',
+      Database.oxmysql.insert_async(query, crossable(params))
+    );
   }
 
   static async update(query: string, params: any[] = []): Promise<boolean> {
     const result = await withTimeout<number>(
       'update',
-      Database.oxmysql.update_async(query, params)
+      Database.oxmysql.update_async(query, crossable(params))
     );
     return result > 0;
   }
 
   static async scalar<T = any>(query: string, params: any[] = []): Promise<T> {
-    return await withTimeout<T>('scalar', Database.oxmysql.scalar_async(query, params));
+    return await withTimeout<T>('scalar', Database.oxmysql.scalar_async(query, crossable(params)));
   }
 
   static async single<T = any>(query: string, params: any[] = []): Promise<T> {
-    return await withTimeout<T>('single', Database.oxmysql.single_async(query, params));
+    return await withTimeout<T>('single', Database.oxmysql.single_async(query, crossable(params)));
   }
 
   static async transaction(queries: TransactionQuery[]): Promise<boolean> {
     if (!queries || queries.length === 0) return true;
-    const formatted = queries.map(({ query, params }) => ({ query, values: params ?? [] }));
+    const formatted = queries.map(({ query, params }) => ({
+      query,
+      values: crossable(params ?? [])
+    }));
     const result = await withTimeout<unknown>(
       'transaction',
       Database.oxmysql.transaction_async(formatted)

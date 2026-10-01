@@ -7,6 +7,7 @@ import { commandScenarios } from './commands';
 import { cryptoScenarios } from './crypto';
 import { exportScenarios } from './exports';
 import { importerScenarios } from './importer';
+import { oxmysqlScenarios } from './oxmysql';
 import { retentionScenarios } from './retention';
 import { schemaScenarios } from './schema';
 
@@ -22,5 +23,6 @@ export const scenarios: readonly Scenario[] = [
   ...cryptoScenarios,
   ...exportScenarios,
   ...retentionScenarios,
+  ...oxmysqlScenarios,
   ...importerScenarios
 ];

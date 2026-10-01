@@ -30,6 +30,17 @@ interface TableLine {
 const TABLE_LINE =
   /^\[micaimport\] {3}([a-z_#]+): read (\d+), (?:written|would write) (\d+), skipped (\d+)$/;
 
+/**
+ * How long a run may take to report. Past micaOS's own 60 s `Database` timeout on purpose: the
+ * first hoth run (MICA-302) waited 30 s, saw nothing after the dry run, and stopped before the
+ * one line that would have said why — a write that never answered is reported by micaOS only
+ * when its 60 s are up.
+ */
+const REPORT_WAIT_MS = 75_000;
+
+/** Every `[micaimport]` line of the last report, for a reason that says what was skipped. */
+let lastReport: string[] = [];
+
 const runImport = async (apply: boolean, signal: RunSignal): Promise<TableLine[]> => {
   const tap = requireTap();
   const mark = tap.mark();
@@ -38,7 +49,7 @@ const runImport = async (apply: boolean, signal: RunSignal): Promise<TableLine[]
   const last = await tap.waitFor(
     mark,
     /^\[micaimport\] ( {3}phone_tweets: |qb-phone failed part-way|an import is already running)/,
-    30_000,
+    REPORT_WAIT_MS,
     signal,
     "micaimport's report"
   );
@@ -46,6 +57,7 @@ const runImport = async (apply: boolean, signal: RunSignal): Promise<TableLine[]
   // The `running` flag clears just after the report; never start the next run inside it.
   await sleep(500);
   const lines = tap.since(mark);
+  lastReport = lines.filter((line) => line.startsWith('[micaimport]'));
   const header = apply ? '[micaimport] qb-phone — APPLIED' : '[micaimport] qb-phone — dry run';
   assert(
     lines.some((line) => line.startsWith(header)),
@@ -75,7 +87,7 @@ export const importerScenarios: Scenario[] = [
   {
     id: 'import-qbphone-apply-seals-and-rerun-writes-nothing',
     tickets: ['MICA-233', 'MICA-165'],
-    timeoutMs: 90_000,
+    timeoutMs: 200_000,
     run: async (signal) => {
       const alice = await seedCitizen('qb_alice');
       const bob = await seedCitizen('qb_bob');
@@ -147,7 +159,7 @@ export const importerScenarios: Scenario[] = [
           const line = tableLine(applied, table);
           assert(
             line.written >= 1 && line.skipped === 0,
-            `--apply on ${table}: ${JSON.stringify(line)}`
+            `--apply on ${table}: ${JSON.stringify(line)}; micaimport said: ${lastReport.join(' | ')}`
           );
         }
 
