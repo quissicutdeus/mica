@@ -11,17 +11,22 @@ import {
   walkContent,
   type NotificationScope
 } from '../lib/contentBackfill';
-import { KeyringError, loadedKeyIds, writeNewKeyFile } from '../lib/contentCipher';
+import {
+  KEY_RESOURCE,
+  isKeyId,
+  loadedKeyIds,
+  serverDataDir,
+  suggestedKeyFile
+} from '../lib/contentCipher';
 import { notifyPlayer } from '../lib/shell';
 
 /**
  * `micacrypt` (MICA-165): the console's view of content encryption, the backfill that seals
- * what was stored before a key existed, and the command that writes a first key.
+ * what was stored before a key existed, and the steps that set a key up.
  *
  * **Console only, the gate `micaimport` carries.** `backfill --apply` rewrites every player's
- * message, DM and mail bodies, and `keygen` writes a file on the server's disk; `status` is
- * gated with them so the command has one rule and an admin cannot read the shape of other
- * players' content through its counts.
+ * message, DM and mail bodies; `status` and `keygen` are gated with it so the command has one
+ * rule and an admin cannot read the shape of other players' content through its counts.
  */
 
 /**
@@ -35,7 +40,7 @@ export const USAGE = [
   '[micacrypt] usage:',
   '[micacrypt]   micacrypt status',
   `[micacrypt]   micacrypt backfill [--apply] [--batch N]   (N from 1 to ${MAX_BATCH}, default ${DEFAULT_BATCH})`,
-  '[micacrypt]   micacrypt keygen <absolute path> [kid]'
+  '[micacrypt]   micacrypt keygen [kid]'
 ];
 
 let running = false;
@@ -72,13 +77,66 @@ const parseBackfill = (args: string[]): { apply: boolean; batch: number } | null
   return { apply, batch };
 };
 
+/** Two lines are a whole resource: FXServer needs only to see a manifest to call it one. */
+const KEY_MANIFEST = ["fx_version 'cerulean'", "game 'common'"];
+
+/**
+ * What `micacrypt keygen` prints: the steps that set a content key up (MICA-303).
+ *
+ * **It writes nothing and prints no key.** FXServer lets a resource write only into its own
+ * folder — never into another resource's, never outside resources — and micaOS's own folder is
+ * the one place a key must not live, because an update replaces it. And the console is logged,
+ * so a key printed there would sit in every log beside the database it protects. So the key is
+ * made by the owner's shell, straight into a file only they can read, and this says how.
+ *
+ * `set -C` makes the shell refuse to overwrite a file that is already there: a key overwritten
+ * is every body sealed with it gone, and that promise was keygen's before it stopped writing.
+ */
+export const keygenSteps = (kid: string, serverData: string | null): string[] => {
+  const root = serverData ?? '<server-data>';
+  const file = suggestedKeyFile(root);
+  const dir = file.slice(0, file.lastIndexOf('/'));
+  return [
+    '[micacrypt] keygen writes no file and prints no key: FXServer lets micaOS write nowhere a ' +
+      'key belongs, and this console is logged.',
+    `[micacrypt] to turn content encryption on with a new key '${kid}', from a shell on the server:`,
+    `[micacrypt] 1. make a resource of its own for the key, ${KEY_RESOURCE} (never inside mica, ` +
+      'which an update replaces):',
+    `[micacrypt]      mkdir -p "${dir}"`,
+    '[micacrypt]    and in it an fxmanifest.lua of these two lines:',
+    ...KEY_MANIFEST.map((line) => `[micacrypt]      ${line}`),
+    '[micacrypt] 2. write the key there, readable only by you (it refuses to overwrite a file):',
+    `[micacrypt]      (umask 077; set -C; printf '%s %s\\n' "${kid}" "$(openssl rand -base64 32)" ` +
+      `> "${file}")`,
+    '[micacrypt]    better: write it outside server-data instead and put a symlink to it at that ' +
+      'path, so a backup of server-data does not carry it.',
+    '[micacrypt] 3. add this to server.cfg (set, never setr: setr would send the path to every ' +
+      'client):',
+    `[micacrypt]      set mica_content_key_file "${file}"`,
+    `[micacrypt]    those paths take server-data to be ${root}; adjust if your resources live ` +
+      'elsewhere.',
+    '[micacrypt] 4. restart the server, then run: micacrypt backfill --apply',
+    '[micacrypt] back the key up away from the database: losing it loses every body sealed ' +
+      'with it.',
+    "[micacrypt] to rotate instead, make the new key's line with step 2 in another file, put it " +
+      'first in the live key file with the old lines after it, restart, then run micacrypt ' +
+      'backfill --apply.'
+  ];
+};
+
 const runKeygen = (args: string[]): void => {
-  const path = args[0];
-  if (!path || args.length > 2) {
+  if (args.length > 1) {
     for (const line of USAGE) say(line);
     return;
   }
-  const kid = args[1] ?? defaultKid(new Date());
+  const kid = args[0] ?? defaultKid(new Date());
+  if (!isKeyId(kid)) {
+    console.error(
+      `[micacrypt] keygen refused: the key id '${kid}' is not 1-16 of a-z, 0-9 and '-'.` +
+        (/[/\\]/.test(kid) ? ' keygen takes no path: it writes nothing, and prints the steps.' : '')
+    );
+    return;
+  }
   // The new line goes into the live key file beside these, and a keyring that names one id
   // twice is refused whole — every body sealed with any of its keys would stop opening.
   if (loadedKeyIds().includes(kid)) {
@@ -88,34 +146,11 @@ const runKeygen = (args: string[]): void => {
     );
     return;
   }
-  try {
-    const written = writeNewKeyFile(path, kid);
-    say(`[micacrypt] wrote a new key '${kid}' to ${written.path} (mode 600).`);
-    say('[micacrypt] to turn encryption on, add this to server.cfg and restart the resource:');
-    say(`[micacrypt]   set mica_content_key_file "${written.path}"`);
-    say('[micacrypt] use set, never setr: setr would send the path to every client.');
-    say(
-      '[micacrypt] keep the file outside server-data, outside the database backup and out of ' +
-        'git, and back it up somewhere else: losing it loses every body sealed with it.'
-    );
-    say(
-      '[micacrypt] to rotate instead, put its key line first in the live key file, keep the ' +
-        'old lines after it, restart, then run micacrypt backfill --apply.'
-    );
-    if (written.warnings.length > 0) {
-      say(`[micacrypt] ${written.warnings.length} warning(s) about where the file is, above.`);
-    }
-  } catch (error) {
-    if (error instanceof KeyringError) {
-      console.error(`[micacrypt] keygen refused: ${error.message}`);
-      return;
-    }
-    throw error;
-  }
+  for (const line of keygenSteps(kid, serverDataDir())) say(line);
 };
 
 /**
- * `micacrypt <status | backfill [--apply] [--batch N] | keygen <absolute path> [kid]>`.
+ * `micacrypt <status | backfill [--apply] [--batch N] | keygen [kid]>`.
  * One run at a time: two backfills racing would each count the other's writes as misses.
  */
 export const runContentKeysCommand = async (source: number, args: string[]): Promise<void> => {

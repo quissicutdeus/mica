@@ -1066,21 +1066,31 @@ resource restarts.
   restarts that table's notice. Run `micamedia` first to see how large the media
   table is.
 - **`mica_content_key_file` — message, DM and mail bodies encrypted at rest
-  (MICA-165).** The absolute path of a key file, never a key: `server.cfg` is
-  the file that travels with a database dump. `micacrypt keygen <path>` from the
-  console writes one, mode 600, and prints the line to add. Set it with `set`,
-  never `setr`. With it set, text messages, Blabber DMs, mail bodies and report
-  snapshots are sealed with AES-256-GCM before they reach the database; run
-  `micacrypt backfill --apply` once to seal what was already there. **This
+  (MICA-165).** The path of a key file, never a key: `server.cfg` is the file
+  that travels with a database dump. **The file has to sit inside a resource
+  folder** — FXServer lets a resource read nothing outside one, with no setting
+  to lift it (MICA-303) — so it goes in a resource of its own, `mica-keys`,
+  never inside `mica` (an update replaces that folder). Best of all, keep the
+  real file outside `server-data` and put a symlink to it in `mica-keys`, so a
+  backup of `server-data` does not carry it. `micacrypt keygen` from the console
+  prints the exact steps; it writes nothing and never prints a key, because
+  FXServer lets micaOS write nowhere a key belongs and the console is logged. On
+  Windows, write the key line with PowerShell's cryptographic generator instead
+  of `openssl` (never `Get-Random`, which is not one): `$b = [byte[]]::new(32)`,
+  then `[Security.Cryptography.RandomNumberGenerator]::Fill($b)`, then
+  `"<kid> " + [Convert]::ToBase64String($b)` gives the line to save. Set it with
+  `set`, never `setr`. With it set, text messages, Blabber DMs, mail bodies and
+  report snapshots are sealed with AES-256-GCM before they reach the database;
+  run `micacrypt backfill --apply` once to seal what was already there. **This
   defends a leaked dump, not a curious operator** — whoever runs the server has
   the key — and a backup taken before the backfill stays readable.
   [`docs/security.md`](docs/security.md#message-bodies-at-rest) has what stays
-  readable and why. Keep the file outside `server-data`, outside the database
-  backup and out of git (the server warns at start when it is not), and back it
-  up somewhere else: **a lost key is every body sealed with it gone**, shown as
-  🔒. Once anything has been sealed, a missing or unreadable key file refuses
-  new messages rather than storing them in plaintext. Read once at resource
-  start. Rotating it is in
+  readable and why. Keep the real file out of the database backup and out of git
+  (the server warns at start when it sits inside `mica` or inside
+  `server-data`), and back it up somewhere else: **a lost key is every body
+  sealed with it gone**, shown as 🔒. Once anything has been sealed, a missing
+  or unreadable key file refuses new messages rather than storing them in
+  plaintext. Read once at resource start. Rotating it is in
   [`docs/in-game-commands.md`](docs/in-game-commands.md). A text message is at
   most 12,276 characters, so its sealed form still fits the column.
 - **Image hosting: `mica_media_upload_url` and its five companions (MICA-243).**

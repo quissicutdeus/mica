@@ -64,18 +64,23 @@ encryption at rest (MICA-165).** Migration
 `0007_sealed_bodies_widen_their_columns` widens `mica_blabber_dms.body` and
 `mica_reports.target_preview` in place, so their encrypted form fits; nothing
 stored changes. Encryption itself is off until you set it up: run
-`micacrypt keygen /absolute/path/outside/server-data/mica.key` from the console,
-add the `set mica_content_key_file "..."` line it prints to `server.cfg`,
-restart the resource, then run `micacrypt backfill --apply` to seal the
-messages, DMs and mail already stored. **Back the key file up, and keep it out
-of your database backups and out of git**: a dump and its key together protect
-nothing, and a lost key is every sealed message gone. Once anything has been
-sealed, starting without the key refuses new messages instead of storing them in
-plaintext. Until you set a key, every start logs that bodies are stored in
-plaintext. **A text message is now at most 12,276 characters** (was 65,535), and
-a mail body the same, so the sealed form still fits its column; a longer
-`SendSystemEmail` is refused. A persisted Blabber DM notification no longer
-keeps the first 120 characters of the message; the live toast still shows them.
+`micacrypt keygen` from the console and follow the steps it prints — a small
+`mica-keys` resource holding the key file (or a symlink to it), a
+`set mica_content_key_file "..."` line in `server.cfg`, a restart, then
+`micacrypt backfill --apply` to seal the messages, DMs and mail already stored.
+**The key file has to sit inside a resource folder** (MICA-303): FXServer lets a
+resource read nothing outside one, so a key kept anywhere else was never loaded
+and encryption stayed off. If you set one up outside a resource folder, move it
+(or symlink it) into `mica-keys` and restart; the console says when the key
+cannot be read. **Back the key file up, and keep it out of your database backups
+and out of git**: a dump and its key together protect nothing, and a lost key is
+every sealed message gone. Once anything has been sealed, starting without the
+key refuses new messages instead of storing them in plaintext. Until you set a
+key, every start logs that bodies are stored in plaintext. **A text message is
+now at most 12,276 characters** (was 65,535), and a mail body the same, so the
+sealed form still fits its column; a longer `SendSystemEmail` is refused. A
+persisted Blabber DM notification no longer keeps the first 120 characters of
+the message; the live toast still shows them.
 
 **On qb, run `micaschema apply` from the server console: migration
 `0006_players_foreign_keys_dropped` removes every foreign key from micaOS's

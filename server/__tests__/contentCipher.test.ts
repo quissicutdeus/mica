@@ -3,7 +3,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
-import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -54,8 +62,8 @@ import {
   sealRow,
   tryOpenContent,
   storablePlaintext,
+  serverDataOf,
   unregisterEncryptedColumnForTests,
-  writeNewKeyFile,
   type ContentContext
 } from '../lib/contentCipher';
 import { PlayerFacingError } from '../lib/errors';
@@ -469,28 +477,91 @@ describe('an unusable key file is never "no key"', () => {
   });
 });
 
-describe('where the key file lives', () => {
-  it('warns when it is inside the resource, or inside server-data', () => {
-    expect(
-      keyFileWarnings('/srv/fx/server-data/resources/mica/key', {
-        resourceRoot: '/srv/fx/server-data/resources/mica',
-        serverData: '/srv/fx/server-data',
-        mode: 0o100600
-      })
-    ).toEqual([expect.stringContaining('inside the resource folder')]);
-    expect(
-      keyFileWarnings('/srv/fx/server-data/mica.key', {
-        resourceRoot: '/srv/fx/server-data/resources/mica',
-        serverData: '/srv/fx/server-data',
-        mode: 0o100600
-      })
-    ).toEqual([expect.stringContaining('inside server-data')]);
+describe('where the key file lives (MICA-303)', () => {
+  /**
+   * A server-data on disk: micaOS at `resources/[local]/mica`, the key's own resource beside
+   * it, and a directory outside server-data altogether. Real files and real symlinks, because
+   * the warnings are about where the bytes are once every link is followed.
+   */
+  const layout = () => {
+    const base = mkdtempSync(join(dir, 'layout-'));
+    const serverData = join(base, 'server-data');
+    const local = join(serverData, 'resources', '[local]');
+    const mica = join(local, 'mica');
+    const keys = join(local, 'mica-keys');
+    const outside = join(base, 'outside');
+    for (const path of [mica, keys, outside, join(serverData, 'secrets')]) {
+      mkdirSync(path, { recursive: true });
+    }
+    const keyAt = (path: string): string => {
+      writeFileSync(path, `k1 ${b64()}\n`);
+      chmodSync(path, 0o600);
+      return path;
+    };
+    const linkAt = (path: string, target: string): string => {
+      symlinkSync(target, path);
+      return path;
+    };
+    const where = { micaRoot: mica, serverData, mode: 0o100600 };
+    return { base, serverData, mica, keys, outside, keyAt, linkAt, where };
+  };
+
+  it('says nothing for a symlink in mica-keys to a key outside server-data, the best layout', () => {
+    const l = layout();
+    const path = l.linkAt(join(l.keys, 'mica-content.key'), l.keyAt(join(l.outside, 'k')));
+    expect(keyFileWarnings(path, l.where)).toEqual([]);
   });
 
-  it('does not mistake a sibling directory with a shared prefix for the inside', () => {
+  it('warns that a key really inside server-data travels with its backups', () => {
+    const l = layout();
+    const plain = l.keyAt(join(l.keys, 'mica-content.key'));
+    expect(keyFileWarnings(plain, l.where)).toEqual([
+      expect.stringMatching(/is inside server-data, so every backup of server-data carries it/)
+    ]);
+    // A symlink that only leads back into server-data is no better, and the warning says where.
+    const secret = l.keyAt(join(l.serverData, 'secrets', 'k'));
+    const linked = l.linkAt(join(l.keys, 'linked.key'), secret);
+    const [warning, ...rest] = keyFileWarnings(linked, l.where);
+    expect(rest).toEqual([]);
+    expect(warning).toContain(`leads to ${secret}, which is inside server-data`);
+  });
+
+  it("warns that a key in micaOS's own folder goes with the next update, and only that", () => {
+    const l = layout();
+    const inMica = l.keyAt(join(l.mica, 'mica-content.key'));
+    expect(keyFileWarnings(inMica, l.where)).toEqual([
+      expect.stringContaining("inside micaOS's own resource folder, which an update replaces")
+    ]);
+    // A link there to a key kept outside: the update deletes the link, so it warns too.
+    const link = l.linkAt(join(l.mica, 'linked.key'), l.keyAt(join(l.outside, 'k')));
+    expect(keyFileWarnings(link, l.where)).toEqual([
+      expect.stringContaining("micaOS's own resource folder")
+    ]);
+    // And a link in mica-keys to a key that really sits in micaOS's folder: the update
+    // deletes the key itself.
+    const intoMica = l.linkAt(join(l.keys, 'into-mica.key'), inMica);
+    expect(keyFileWarnings(intoMica, l.where)).toEqual([
+      expect.stringContaining("micaOS's own resource folder")
+    ]);
+  });
+
+  it("knows micaOS's folder when FXServer reaches it through a symlink", () => {
+    const l = layout();
+    const real = join(l.base, 'checkout', 'mica');
+    mkdirSync(real, { recursive: true });
+    const viaLink = l.linkAt(join(l.serverData, 'resources', 'mica-linked'), real);
+    const key = l.keyAt(join(viaLink, 'mica-content.key'));
+    expect(keyFileWarnings(key, { ...l.where, micaRoot: viaLink })).toEqual([
+      expect.stringContaining("micaOS's own resource folder")
+    ]);
+  });
+
+  it('says nothing about a key outside server-data, or in a sibling sharing its prefix', () => {
+    const l = layout();
+    expect(keyFileWarnings(l.keyAt(join(l.outside, 'k')), l.where)).toEqual([]);
     expect(
       keyFileWarnings('/srv/fx/server-data-keys/mica.key', {
-        resourceRoot: null,
+        micaRoot: '/srv/fx/server-data/resources/mica',
         serverData: '/srv/fx/server-data',
         mode: 0o100600
       })
@@ -499,10 +570,10 @@ describe('where the key file lives', () => {
 
   it('warns when group or world can read it, and says nothing about a 0600 file', () => {
     expect(
-      keyFileWarnings('/etc/mica/key', { resourceRoot: null, serverData: null, mode: 0o100640 })
+      keyFileWarnings('/etc/mica/key', { micaRoot: null, serverData: null, mode: 0o100640 })
     ).toEqual([expect.stringContaining('chmod 600')]);
     expect(
-      keyFileWarnings('/etc/mica/key', { resourceRoot: null, serverData: null, mode: 0o100600 })
+      keyFileWarnings('/etc/mica/key', { micaRoot: null, serverData: null, mode: 0o100600 })
     ).toEqual([]);
   });
 
@@ -511,36 +582,60 @@ describe('where the key file lives', () => {
     expect(activeKeyId()).toBe('k1');
     expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('chmod 600'));
   });
+
+  it("warns at load, from FXServer's own paths, for a key in micaOS's folder and not in mica-keys", () => {
+    const l = layout();
+    (globalThis as any).GetResourcePath = (name: string) => (name === 'mica' ? l.mica : '');
+    try {
+      useKeyFile(l.keyAt(join(l.mica, 'mica-content.key')));
+      expect(activeKeyId()).toBe('k1');
+      expect(console.warn).toHaveBeenCalledWith(
+        expect.stringContaining("micaOS's own resource folder")
+      );
+
+      vi.mocked(console.warn).mockClear();
+      resetContentCipherForTests();
+      useKeyFile(l.linkAt(join(l.keys, 'mica-content.key'), l.keyAt(join(l.outside, 'k'))));
+      expect(activeKeyId()).toBe('k1');
+      expect(console.warn).not.toHaveBeenCalled();
+
+      // server-data comes from micaOS's resource path, not from where the suite started.
+      resetContentCipherForTests();
+      useKeyFile(l.keyAt(join(l.keys, 'plain.key')));
+      expect(activeKeyId()).toBe('k1');
+      expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('inside server-data'));
+    } finally {
+      delete (globalThis as any).GetResourcePath;
+    }
+  });
+
+  it("a key file that is not there or will not read names FXServer's rule and keygen", async () => {
+    for (const path of [join(dir, 'nowhere.key'), mkdtempSync(join(dir, 'a-directory-'))]) {
+      resetContentCipherForTests();
+      vi.mocked(console.error).mockClear();
+      useKeyFile(path);
+      await announceContentCipher();
+      const said = String(vi.mocked(console.error).mock.calls[0]?.[0]);
+      expect(said).toContain('unusable');
+      expect(said).toContain('FXServer will not let micaOS read it');
+      expect(said).toContain('a resource may read only files inside a resource folder');
+      expect(said).toContain('mica-keys; micacrypt keygen prints the layout');
+    }
+  });
 });
 
-describe('writeNewKeyFile', () => {
-  it('writes one fresh key, mode 0600, that the keyring reads back', () => {
-    const path = join(dir, 'fresh.key');
-    const result = writeNewKeyFile(path, 'k-2026');
-    expect(result.path).toBe(path);
-    expect(statSync(path).mode & 0o777).toBe(0o600);
-    const keys = parseKeyring(readFileSync(path, 'utf8'));
-    expect(keys.map((k) => k.kid)).toEqual(['k-2026']);
-  });
-
-  it('never overwrites, and refuses a relative path and a bad id', () => {
-    const path = join(dir, 'kept.key');
-    writeNewKeyFile(path, 'k1');
-    const before = readFileSync(path, 'utf8');
-    expect(() => writeNewKeyFile(path, 'k2')).toThrow(/already exists/);
-    expect(readFileSync(path, 'utf8')).toBe(before);
-    expect(() => writeNewKeyFile('relative.key', 'k1')).toThrow(/absolute/);
-    expect(() => writeNewKeyFile(join(dir, 'x.key'), 'Bad Id')).toThrow(KeyringError);
-  });
-
-  it('warns when written inside server-data', () => {
-    const inside = join(process.cwd(), `.mica-key-test-${process.pid}`);
-    try {
-      const { warnings } = writeNewKeyFile(inside, 'k1');
-      expect(warnings).toEqual([expect.stringContaining('inside server-data')]);
-    } finally {
-      rmSync(inside, { force: true });
-    }
+describe('serverDataOf: server-data from where FXServer says micaOS is', () => {
+  it.each([
+    ['/srv/fx/server-data/resources/[local]/mica', '/srv/fx/server-data'],
+    ['/srv/fx/server-data/resources/mica/', '/srv/fx/server-data'],
+    ['/srv/fx/server-data/resources//[local]/mica', '/srv/fx/server-data'],
+    ['/home/resources/fx/server-data/resources/mica', '/home/resources/fx/server-data'],
+    ['C:\\FXServer\\server-data\\resources\\[local]\\mica', 'C:/FXServer/server-data'],
+    ['/opt/mica', null],
+    ['', null],
+    [null, null]
+  ])('%j → %j', (micaRoot, expected) => {
+    expect(serverDataOf(micaRoot)).toBe(expected);
   });
 });
 

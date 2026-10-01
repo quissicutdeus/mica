@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { existsSync, readFileSync, statSync, unlinkSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import type { Scenario } from '../runner';
 import { requireTap } from '../lib/console';
@@ -17,13 +17,14 @@ import {
   seedCitizen,
   unique
 } from '../lib/mica';
-import { openSealed, parseKeyFile, sealedKid } from '../lib/sealed';
+import { openSealed, sealedKid } from '../lib/sealed';
 import { eventually, sleep } from '../lib/wait';
 
 /**
  * Content encryption at rest, end to end (MICA-165): bodies that arrive through micaOS's public
  * surfaces land sealed with the harness's key, open again to what was sent, and the console's
- * `micacrypt` seals what was stored before and writes new keys without ever overwriting one.
+ * `micacrypt` seals what was stored before and prints the steps for a new key without writing
+ * one or showing it.
  */
 
 const escape = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -270,122 +271,98 @@ export const cryptoScenarios: Scenario[] = [
     }
   },
   {
-    // MICA-165: `micacrypt keygen` writes a key file only its owner can read, refuses to
-    // overwrite one, and refuses an id the loaded keyring already has.
+    // MICA-303: `micacrypt keygen` writes nothing and prints no key. FXServer lets a resource
+    // write only into its own folder (MICA-302 measured it here), and micaOS's own folder is the
+    // one place a key must not live, so keygen prints the steps for the owner's shell instead:
+    // the openssl line and the `mica-keys` resource the key belongs in.
     //
-    // FXServer's filesystem sandbox decides where micaOS may write, so the directory is found by
-    // asking keygen itself: the key file's own directory first, then micaOS's own resource
-    // folder, then the temp directory, and the first where it reports a write is used. The first
-    // hoth run (MICA-302) found the first refused — FXServer's Node permission model allows a
-    // resource no `fs.write` into another resource's folder — so the order is also the record of
-    // where it does allow one. Every path tried and keygen's answer for it is
-    // printed as one `[mica-integration] keygen:` line, pass or fail, because where FXServer
-    // lets a resource write a key file is what MICA-165's docs have to say.
-    //
-    // The mode is checked here, with this resource's own stat, and nowhere else: keygen's
-    // "(mode 600)" is fixed text, and micaOS's exposure warning is silent when its own stat
-    // fails. A file this resource cannot stat is a FAIL that says so, never a pass.
-    id: 'crypto-micacrypt-keygen-writes-0600-and-never-overwrites',
-    tickets: ['MICA-165'],
+    // The old form, a path, is tried in every directory keygen used to be pointed at — beside
+    // the live key, micaOS's own folder, the temp directory — and must be refused with nothing
+    // appearing there. What this resource can see is limited by the same sandbox: a file in the
+    // temp directory would read as absent whether or not it exists, so that check is only as
+    // strong as FXServer lets it be; the two resource folders are checked for real.
+    id: 'crypto-micacrypt-keygen-prints-steps-and-writes-nothing',
+    tickets: ['MICA-165', 'MICA-303'],
     run: async (signal) => {
       const tap = requireTap();
+      const first = tap.mark();
       const keyFile = GetConvar('mica_content_key_file', '').trim();
       const cut = keyFile.lastIndexOf('/');
       const micaRoot = (GetResourcePath('mica') || '').replace(/\/+$/, '');
       const dirs = [...new Set([cut > 0 ? keyFile.slice(0, cut) : '', micaRoot, tmpdir()])].filter(
         Boolean
       );
-      const kid = `itg-${Date.now().toString(36).slice(-8)}`;
-      const answer = (path: string): RegExp =>
-        new RegExp(
-          `^\\[micacrypt\\] (wrote a new key '${escape(kid)}' to ${escape(path)} |keygen refused: )`
-        );
-      const written: string[] = [];
-      // `<path>: <what keygen said>` per attempt, then what this resource's own stat found.
-      const trail: string[] = [];
-      const report = (): string => trail.join('; ');
-      try {
-        let path: string | null = null;
-        let dir = '';
-        for (const candidateDir of dirs) {
-          const candidate = `${candidateDir}/${unique('keygen')}.key`;
-          const mark = tap.mark();
-          await runCommand(`micacrypt keygen ${candidate} ${kid}`);
-          let said: string;
-          try {
-            said = await tap.waitFor(mark, answer(candidate), 10_000, signal, "keygen's answer");
-          } catch (error) {
-            trail.push(`${candidate}: ${error instanceof Error ? error.message : String(error)}`);
-            throw new Error(`keygen did not answer: ${report()}`, { cause: error });
-          }
-          if (!said.includes('wrote a new key')) {
-            trail.push(`${candidate}: ${said.replace(/^\[micacrypt\] /, '')}`);
-            continue;
-          }
-          trail.push(`${candidate}: wrote`);
-          path = candidate;
-          dir = candidateDir;
-          written.push(candidate);
-          break;
-        }
-        if (path === null) throw new Error(`keygen wrote nowhere: ${report()}`);
+      const tried = dirs.map((dir) => `${dir}/${unique('keygen')}.key`);
 
-        // The real check, with this resource's own eyes. Unverifiable is a failure.
-        let mode: number;
-        let before: string;
-        try {
-          mode = statSync(path).mode & 0o777;
-          before = readFileSync(path, 'utf8');
-        } catch (error) {
-          trail.push(
-            `this resource could not read it back (${error instanceof Error ? error.message : String(error)})`
-          );
-          throw new Error(`the key file's mode is unverified: ${report()}`, { cause: error });
-        }
-        trail.push(`mode ${mode.toString(8)}`);
-        assert(mode === 0o600, `the key file is not mode 600: ${report()}`);
-        assert(
-          parseKeyFile(before).has(kid),
-          `the key file does not hold the new key: ${report()}`
-        );
-
-        let mark = tap.mark();
-        await runCommand(`micacrypt keygen ${path} ${kid}`);
+      for (const path of tried) {
+        const mark = tap.mark();
+        await runCommand(`micacrypt keygen ${path}`);
         await tap.waitFor(
           mark,
-          new RegExp(`^\\[micacrypt\\] keygen refused: ${escape(path)} already exists`),
+          /^\[micacrypt\] keygen refused: .*keygen takes no path: it writes nothing/,
           10_000,
           signal,
-          'the refusal to overwrite'
+          `keygen's refusal of the path ${path}`
         );
-        assert(readFileSync(path, 'utf8') === before, 'keygen overwrote an existing key file');
-
-        const other = `${dir}/${unique('keygen_dup')}.key`;
-        mark = tap.mark();
-        await runCommand(`micacrypt keygen ${other} ${HARNESS_KID}`);
-        await tap.waitFor(
-          mark,
-          new RegExp(`^\\[micacrypt\\] keygen refused: the key id '${HARNESS_KID}' is already`),
-          10_000,
-          signal,
-          'the refusal of a loaded key id'
-        );
-        await sleep(300);
-        assert(
-          !tap.since(mark).some((line) => line.includes('wrote a new key')),
-          'keygen wrote a file for a key id the keyring already has'
-        );
-      } finally {
-        // Pass or fail: where FXServer let micaOS write a key file, for MICA-165's docs.
-        console.log(`[mica-integration] keygen: ${report() || 'nothing tried'}`);
-        for (const file of written) {
-          try {
-            if (existsSync(file)) unlinkSync(file);
-          } catch {
-            // Left behind in a throwaway server; not this scenario's verdict.
-          }
-        }
       }
+
+      const kid = `itg-${Date.now().toString(36).slice(-8)}`;
+      const mark = tap.mark();
+      await runCommand(`micacrypt keygen ${kid}`);
+      await tap.waitFor(mark, /^\[micacrypt\] to rotate instead/, 10_000, signal, "keygen's steps");
+      await sleep(300);
+      const lines = tap.since(mark).filter((line) => line.startsWith('[micacrypt]'));
+      const said = lines.join('\n');
+      const step = (pattern: RegExp, what: string): string => {
+        const found = lines.find((line) => pattern.test(line));
+        if (!found) throw new Error(`keygen printed no ${what}: ${lines.join(' | ')}`);
+        return found;
+      };
+      step(
+        new RegExp(
+          `\\(umask 077; set -C; printf '%s %s\\\\n' "${escape(kid)}" ` +
+            `"\\$\\(openssl rand -base64 32\\)" > ".*/mica-keys/mica-content\\.key"\\)$`
+        ),
+        'openssl line for the new key'
+      );
+      step(/^\[micacrypt\] {6}mkdir -p ".*\/resources\/\[local\]\/mica-keys"$/, 'mica-keys folder');
+      step(/^\[micacrypt\] {6}fx_version 'cerulean'$/, 'fxmanifest fx_version line');
+      step(/^\[micacrypt\] {6}game 'common'$/, 'fxmanifest game line');
+      const setLine = step(
+        /^\[micacrypt\] {6}set mica_content_key_file ".*\/mica-keys\/mica-content\.key"$/,
+        'server.cfg line'
+      );
+      step(/micacrypt backfill --apply/, 'backfill step');
+      const suggested = /"(.*)"$/.exec(setLine)?.[1] ?? '';
+
+      // Nothing key-shaped anywhere on the console since the first command: base64 of 32 bytes
+      // is 43 characters and a '='.
+      const leaked = tap.since(first).find((line) => /[A-Za-z0-9+/]{43}=/.test(line));
+      assert(leaked === undefined, `keygen printed something shaped like a key: ${leaked}`);
+
+      // And no file: not where a path was given, not where the steps say the key goes.
+      for (const path of [...tried, suggested]) {
+        assert(!existsSync(path), `keygen left a file at ${path}`);
+      }
+
+      // The refusal of an id the loaded keyring already holds stays, with no steps after it.
+      const dup = tap.mark();
+      await runCommand(`micacrypt keygen ${HARNESS_KID}`);
+      await tap.waitFor(
+        dup,
+        new RegExp(`^\\[micacrypt\\] keygen refused: the key id '${HARNESS_KID}' is already`),
+        10_000,
+        signal,
+        'the refusal of a loaded key id'
+      );
+      await sleep(300);
+      assert(
+        !tap.since(dup).some((line) => line.includes('openssl')),
+        'keygen printed steps for a key id the keyring already has'
+      );
+
+      // For MICA-303's docs: what keygen prints on a real FXServer, paths resolved.
+      console.log(`[mica-integration] keygen said: ${said.split('\n').length} lines; ${setLine}`);
     }
   }
 ];

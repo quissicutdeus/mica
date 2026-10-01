@@ -55,7 +55,7 @@ principals to check.
 | `micacrypt status`                      | **Console only.** Counts sealed, plaintext and unreadable bodies. Changes nothing     |
 | `micacrypt backfill`                    | **Console only.** Reports what `--apply` would seal. Changes nothing                  |
 | `micacrypt backfill --apply`            | **Console only.** Seals plaintext bodies and re-seals old keys'. Safe to repeat       |
-| `micacrypt keygen <absolute path>`      | **Console only.** Writes a new key file, mode 600. Never overwrites one               |
+| `micacrypt keygen [kid]`                | **Console only.** Prints the steps that set a content key up. Writes nothing          |
 
 Source: `server/services/Schema.ts`, `Media.ts`, `Battery.ts`, `Seed.ts`,
 `Phone.ts`, `Import.ts` and `ContentKeys.ts` respectively — one
@@ -107,15 +107,19 @@ Every subcommand refuses any `source` but the console, `status` included: its
 counts describe every player's content, and `backfill --apply` rewrites it. Only
 one `status` or `backfill` runs at a time.
 
-- **`keygen <absolute path> [kid]`** writes a keyring file holding one new key,
-  mode 600, and prints the `set mica_content_key_file "<path>"` line for
-  `server.cfg`. The key id defaults to `k`, the UTC date and the time
-  (`k20260929-1824`), and an id the running keyring already holds is refused,
-  since a key file with one id twice is refused whole. It refuses a relative
-  path and an existing file, since a key overwritten is every body sealed with
-  it gone, and it repeats the boot warning when the path is inside the resource
-  or `server-data`. Use `set`, never `setr`, which would send the path to every
-  client.
+- **`keygen [kid]`** writes nothing and prints no key (MICA-303). FXServer lets
+  micaOS write nowhere a key belongs, and this console is logged, so it prints
+  the steps instead: make a resource of its own, `mica-keys`, with a two-line
+  `fxmanifest.lua` (`fx_version 'cerulean'`, `game 'common'`); write the key
+  there from a shell with
+  `(umask 077; set -C; printf '%s %s\n' "<kid>" "$(openssl rand -base64 32)" > ".../mica-keys/mica-content.key")`,
+  which refuses to overwrite a file, or better, write it outside `server-data`
+  and symlink it there; add the `set mica_content_key_file` line it prints; then
+  restart and run `backfill --apply`. The key id defaults to `k`, the UTC date
+  and the time (`k20260929-1824`), and an id the running keyring already holds
+  is refused, since a key file with one id twice is refused whole. A path is
+  refused: "keygen takes no path". Use `set`, never `setr`, which would send the
+  path to every client.
 - **`status`** counts, per sealed column, the rows under the active key, under
   each older key, still plaintext, sealed but unreadable, and plaintext too long
   to seal, plus persisted DM notifications that still carry message text.
@@ -128,11 +132,11 @@ one `status` or `backfill` runs at a time.
   reads as edited. A second run changes nothing. It refuses to start without a
   usable key.
 
-**Rotating the key** is the same command. Run `keygen` to a scratch path, put
-its key line **first** in the live key file with the old lines after it, restart
-the resource, run `backfill --apply`, and remove an old line only once `status`
-shows nothing left under it. A body under a key that is no longer in the file
-reads as 🔒.
+**Rotating the key** starts from the same steps. Write the new key's line with
+step 2 into a scratch file, put it **first** in the live key file with the old
+lines after it, restart the resource, run `backfill --apply`, and remove an old
+line only once `status` shows nothing left under it. A body under a key that is
+no longer in the file reads as 🔒.
 
 ## `micacall` runs in game, not from the console
 

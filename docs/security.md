@@ -469,10 +469,16 @@ Encrypting inside the application, not with MySQL's `AES_ENCRYPT`, is the whole
 point: that would put the key in every statement, so in the query log and the
 process list, beside the data it protects. For the same reason the key is never
 a convar. `mica_content_key_file` names a **file**, and `server.cfg` is the file
-most often pasted, shared and committed next to the dump. The server warns at
-boot when the key file sits inside the resource or `server-data`, or is readable
-by anyone but its owner. It cannot know where your backups go; keeping the key
-out of them is the one step only you can take.
+most often pasted, shared and committed next to the dump. **FXServer decides
+where that file can be:** a resource may read only files inside a resource
+folder, so the key lives in a resource of its own, `mica-keys` — ideally as a
+symlink there to a file kept outside `server-data`, which FXServer does follow
+(MICA-303). The server warns at boot when the key sits inside `mica`'s own
+folder (an update deletes it), when its real path is inside `server-data` (a
+backup of `server-data` carries it), or when it is readable by anyone but its
+owner, and it refuses a key it cannot read with the rule spelled out. It cannot
+know where your backups go; keeping the key out of them is the one step only you
+can take.
 
 **The binding is not the row id, on purpose.** The ticket asked for it, but a
 row's id does not exist until the insert that stores the ciphertext, so binding

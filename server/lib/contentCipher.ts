@@ -4,7 +4,7 @@
 
 import { Buffer, type Bytes } from 'node:buffer';
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
-import { existsSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { cwd, platform } from 'node:process';
 import { Database } from './Database';
 import { PlayerFacingError } from './errors';
@@ -25,6 +25,11 @@ import { PlayerFacingError } from './errors';
  *   committed. One key per line, `<kid> <base64 of 32 bytes>`; `#` comments and blank lines are
  *   ignored; the **first** key seals, every key opens. Read once, at first use or resource
  *   start, whichever comes first.
+ * - **Where it lives** is decided by FXServer, not by micaOS (MICA-303): a resource's Node code
+ *   may read files only inside a resource folder, its own or another's. So the key goes in a
+ *   resource of its own, `mica-keys`, never in micaOS's folder, which an update replaces — best
+ *   as a symlink there to a key kept outside server-data. `micacrypt keygen` prints the steps;
+ *   it cannot do them, because a resource may write into no folder but its own.
  * - **No key configured** is legal and stores plaintext, as micaOS always has, with a warning
  *   every boot. But once anything has been sealed — an "enabled" marker in the migrations
  *   ledger records the first successful seal — a missing key refuses every write rather than
@@ -56,6 +61,9 @@ export const SEALED_PREFIX = '$mc1$';
 /** A key id: short, lower-case, and safe inside the dollar-delimited form. */
 const KID_PATTERN = /^[a-z0-9-]{1,16}$/;
 const MAX_KID_LENGTH = 16;
+
+/** Whether `kid` may name a key: what `micacrypt keygen` checks before printing it. */
+export const isKeyId = (kid: string): boolean => KID_PATTERN.test(kid);
 
 const ALGORITHM = 'aes-256-gcm';
 const KEY_BYTES = 32;
@@ -304,44 +312,78 @@ const isWindows = (): boolean => platform === 'win32';
 const isAbsolutePath = (path: string): boolean =>
   path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(path) || path.startsWith('\\\\');
 
-/** Symlinks and `..` resolved where the path exists; its directory's, where only that does. */
-const canonical = (path: string): string => {
-  const normalise = (p: string): string => {
-    const slashed = p.replace(/\\/g, '/').replace(/\/+$/, '');
-    return isWindows() ? slashed.toLowerCase() : slashed;
-  };
+/** Forward slashes, no repeats, no trailing one; lower-cased on Windows, which ignores case. */
+const normalise = (path: string): string => {
+  const slashed = path
+    .replace(/\\/g, '/')
+    .replace(/(.)\/{2,}/g, '$1/')
+    .replace(/\/+$/, '');
+  return isWindows() ? slashed.toLowerCase() : slashed;
+};
+
+/** `path` with its directory's symlinks and `..` resolved, and its last part left as written. */
+const linkPathOf = (path: string): string => {
+  const slashed = path.replace(/\\/g, '/');
+  const cut = slashed.lastIndexOf('/');
+  if (cut > 0) {
+    try {
+      return normalise(`${realpathSync(slashed.slice(0, cut))}/${slashed.slice(cut + 1)}`);
+    } catch {
+      // The directory does not exist; compare what was written.
+    }
+  }
+  return normalise(path);
+};
+
+/** Every symlink and `..` resolved where the path exists — where the bytes really are. */
+const realPathOf = (path: string): string => {
   try {
     return normalise(realpathSync(path));
   } catch {
-    const slashed = path.replace(/\\/g, '/');
-    const cut = slashed.lastIndexOf('/');
-    if (cut > 0) {
-      try {
-        return normalise(`${realpathSync(slashed.slice(0, cut))}/${slashed.slice(cut + 1)}`);
-      } catch {
-        // Neither exists; compare what was written.
-      }
-    }
-    return normalise(path);
+    return linkPathOf(path);
   }
 };
 
 const isInside = (child: string, parent: string): boolean =>
   parent !== '' && (child === parent || child.startsWith(`${parent}/`));
 
-/** `<resource>` on disk, or null outside FXServer. */
+/** micaOS's own resource folder on disk, or null outside FXServer. */
 const resourceRoot = (): string | null => {
   if (typeof GetResourcePath !== 'function') return null;
   return GetResourcePath(GetCurrentResourceName()) || null;
 };
 
+/** The resource that holds the content key: one of its own, never micaOS's (MICA-303). */
+export const KEY_RESOURCE = 'mica-keys';
+export const KEY_FILE_NAME = 'mica-content.key';
+
+/**
+ * server-data as FXServer reports it: the folder holding the `resources/` that micaOS's own
+ * folder sits in, or null when micaOS's path has no `resources/` in it.
+ */
+export const serverDataOf = (micaRoot: string | null): string | null => {
+  if (!micaRoot) return null;
+  const slashed = micaRoot
+    .replace(/\\/g, '/')
+    .replace(/(.)\/{2,}/g, '$1/')
+    .replace(/\/+$/, '');
+  const cut = slashed.lastIndexOf('/resources/');
+  return cut > 0 ? slashed.slice(0, cut) : null;
+};
+
+/** Where `micacrypt keygen` suggests the key file goes, under `serverData`. */
+export const suggestedKeyFile = (serverData: string): string =>
+  `${serverData}/resources/[local]/${KEY_RESOURCE}/${KEY_FILE_NAME}`;
+
 /**
  * What is wrong with where a key file lives, each as a sentence for the console.
  *
- * - **Inside the resource**: it ships with the resource, and resources get zipped, uploaded,
- *   and committed.
- * - **Inside server-data** (the directory the server was started from): that directory is what
- *   gets backed up, usually beside the database dump this key exists to make useless.
+ * - **Inside micaOS's own folder** — the file, or a symlink to it: an update replaces that
+ *   folder, and the key or the link with it. A resource of its own (`mica-keys`) is the
+ *   expected home and says nothing.
+ * - **Really inside server-data**, once every symlink is followed: that directory is what gets
+ *   backed up, usually beside the database dump this key exists to make useless. A symlink in
+ *   `mica-keys` to a key kept outside is the best layout there is, and says nothing.
  * - **Readable by group or world**: any other account on the box can copy it.
  *
  * Warnings rather than refusals: a key in a poor place still beats plaintext, and an owner
@@ -349,19 +391,24 @@ const resourceRoot = (): string | null => {
  */
 export const keyFileWarnings = (
   path: string,
-  where: { resourceRoot: string | null; serverData: string | null; mode: number | null }
+  where: { micaRoot: string | null; serverData: string | null; mode: number | null }
 ): string[] => {
   const out: string[] = [];
-  const file = canonical(path);
-  if (where.resourceRoot && isInside(file, canonical(where.resourceRoot))) {
+  const link = linkPathOf(path);
+  const real = realPathOf(path);
+  const mica = where.micaRoot ? realPathOf(where.micaRoot) : '';
+  const serverData = where.serverData ? realPathOf(where.serverData) : '';
+  if (isInside(link, mica) || isInside(real, mica)) {
     out.push(
-      `the content key file ${path} is inside the resource folder, which is zipped, uploaded ` +
-        'and committed with it. Move it outside, and outside server-data.'
+      `the content key file ${path} is inside micaOS's own resource folder, which an update ` +
+        `replaces, and the key with it. Move it into a resource of its own, ${KEY_RESOURCE} ` +
+        '(micacrypt keygen prints the layout).'
     );
-  } else if (where.serverData && isInside(file, canonical(where.serverData))) {
+  } else if (isInside(real, serverData)) {
     out.push(
-      `the content key file ${path} is inside server-data, which is backed up beside the ` +
-        'database it protects. Move it somewhere the backup does not reach.'
+      `the content key file ${path} ${real === link ? 'is' : `leads to ${real}, which is`} ` +
+        'inside server-data, so every backup of server-data carries it beside the database it ' +
+        'protects. Keep the key outside server-data and leave a symlink to it in its place.'
     );
   }
   if (where.mode !== null && (where.mode & 0o077) !== 0) {
@@ -373,7 +420,13 @@ export const keyFileWarnings = (
   return out;
 };
 
-const serverDataDir = (): string | null => {
+/**
+ * server-data: worked out from micaOS's own resource path where it runs inside `resources/`,
+ * which is what FXServer itself reports, and the directory the server started in otherwise.
+ */
+export const serverDataDir = (): string | null => {
+  const fromResource = serverDataOf(resourceRoot());
+  if (fromResource !== null) return fromResource;
   try {
     return cwd();
   } catch {
@@ -392,6 +445,15 @@ const modeOf = (path: string): number | null => {
 
 let keyring: Keyring | null = null;
 
+/**
+ * Why a key file that is there can still be unreadable, for the refusal: FXServer's own
+ * sandbox, which no `server.cfg` line lifts (measured on a real FXServer, MICA-302).
+ */
+const SANDBOX_RULE =
+  'or FXServer will not let micaOS read it: a resource may read only files inside a resource ' +
+  `folder. Put the key in a resource of its own, ${KEY_RESOURCE}; micacrypt keygen prints the ` +
+  'layout.';
+
 /** Read the convar, then the file, once. Never throws: a refusal is a state, not an error. */
 const loadKeyring = (): Keyring => {
   const path = GetConvar('mica_content_key_file', '').trim();
@@ -401,10 +463,16 @@ const loadKeyring = (): Keyring => {
   }
   let text: string;
   try {
-    if (!existsSync(path)) return { kind: 'refused', path, reason: 'the file does not exist.' };
+    if (!existsSync(path)) {
+      return { kind: 'refused', path, reason: `the file does not exist, ${SANDBOX_RULE}` };
+    }
     text = readFileSync(path, 'utf8');
   } catch (error) {
-    return { kind: 'refused', path, reason: `the file could not be read (${String(error)}).` };
+    return {
+      kind: 'refused',
+      path,
+      reason: `the file could not be read (${String(error)}), ${SANDBOX_RULE}`
+    };
   }
   let keys: { kid: string; key: Bytes }[];
   try {
@@ -417,7 +485,7 @@ const loadKeyring = (): Keyring => {
     };
   }
   for (const warning of keyFileWarnings(path, {
-    resourceRoot: resourceRoot(),
+    micaRoot: resourceRoot(),
     serverData: serverDataDir(),
     mode: modeOf(path)
   })) {
@@ -847,47 +915,6 @@ export const openRow = <R extends object>(table: string, row: R): R => {
 export const openRows = <R extends object>(table: string, rows: R[]): R[] =>
   Array.isArray(rows) ? rows.map((row) => openRow(table, row)) : rows;
 
-// ─── keygen ──────────────────────────────────────────────────────────────────────────────────
-
-/**
- * Write a fresh keyring file holding one new key, for `micacrypt keygen`.
- *
- * Mode 0600, and never over an existing file — a key overwritten is every value sealed with it
- * gone. Refuses a relative path and a bad id. The location warnings `keyFileWarnings` gives at
- * boot are printed here too, and returned, so the owner hears them before the key is in use.
- * Rotation is by hand: put the new line first in the live file, keep the old ones after it.
- */
-export const writeNewKeyFile = (
-  path: string,
-  kid: string
-): { path: string; warnings: string[] } => {
-  if (!KID_PATTERN.test(kid)) {
-    throw new KeyringError(`the key id '${kid}' is not 1-16 of a-z, 0-9 and '-'.`);
-  }
-  if (!isAbsolutePath(path)) {
-    throw new KeyringError(`${path} is not an absolute path.`);
-  }
-  if (existsSync(path)) {
-    throw new KeyringError(`${path} already exists; a key file is never overwritten.`);
-  }
-  const text =
-    '# micaOS content key (MICA-165). One key per line, the first seals, every one opens.\n' +
-    '# Losing this file loses every message, DM and mail body sealed with it.\n' +
-    `${kid} ${randomBytes(KEY_BYTES).toString('base64')}\n`;
-  try {
-    writeFileSync(path, text, { mode: 0o600, flag: 'wx' });
-  } catch (error) {
-    throw new KeyringError(`${path} could not be written (${String(error)}).`);
-  }
-  const warnings = keyFileWarnings(path, {
-    resourceRoot: resourceRoot(),
-    serverData: serverDataDir(),
-    mode: modeOf(path)
-  });
-  for (const warning of warnings) console.warn(`[micaOS] ${warning}`);
-  return { path, warnings };
-};
-
 // ─── boot ────────────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -929,7 +956,7 @@ export const announceContentCipher = async (): Promise<void> => {
   }
   console.warn(
     '[micaOS] content encryption off: message, DM and mail bodies are stored in plaintext. ' +
-      'Set mica_content_key_file to a key file outside server-data (micacrypt keygen writes one).'
+      'Run micacrypt keygen for the steps that set a content key up.'
   );
 };
 
