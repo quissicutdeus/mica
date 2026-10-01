@@ -142,6 +142,36 @@ export default defineConfig({
                 executablePath: process.env.CEF_FLOOR_CHROMIUM
               }
             }
+          },
+          {
+            // `tablet-light` below, on Chromium 103 (MICA-297): the tablet's colours resolve
+            // at runtime, and its status-bar contrast in light mode is exactly the kind of
+            // thing a newer engine can pass while CEF fails. Same specs, same seeded light
+            // theme, the floor's binary.
+            name: 'cef-floor-tablet-light',
+            testMatch: THEME_SPECS,
+            testIgnore: /^(?!.*tablet\/).*$/,
+            use: {
+              ...devices['Desktop Chrome'],
+              viewport: { width: 1440, height: 1000 },
+              launchOptions: {
+                executablePath: process.env.CEF_FLOOR_CHROMIUM
+              },
+              storageState: {
+                cookies: [],
+                origins: [
+                  {
+                    origin: `http://127.0.0.1:${PORT}`,
+                    localStorage: [
+                      {
+                        name: 'mica:settings:theme',
+                        value: JSON.stringify({ seed: '#155dfc', mode: 'light' })
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
           }
         ]
       : (() => {

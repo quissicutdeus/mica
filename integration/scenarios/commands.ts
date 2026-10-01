@@ -40,5 +40,51 @@ export const commandScenarios: Scenario[] = [
         throw new Error(`the probe got args ${JSON.stringify(args)}`);
       }
     }
+  },
+  {
+    /**
+     * Every console command micaOS documents is registered by the `mica` resource
+     * (docs/in-game-commands.md; MICA-274 renamed the first five). Read from FXServer's own
+     * command table, so a command lost in a rename, or registered under the old prefix, fails
+     * here rather than surfacing as "unknown command" on somebody's server.
+     */
+    id: 'commands-every-documented-command-is-registered-by-mica',
+    tickets: ['MICA-274'],
+    timeoutMs: 10_000,
+    run: async () => {
+      const expected = [
+        'micaschema',
+        'micamedia',
+        'micacharge',
+        'micacall',
+        'micaseed',
+        'micaimport',
+        'micacrypt'
+      ];
+      const table = GetRegisteredCommands() as { name?: unknown; resource?: unknown }[];
+      if (!Array.isArray(table) || table.length === 0) {
+        throw new Error('GetRegisteredCommands returned no command table');
+      }
+      const ours = new Map<string, unknown>();
+      for (const row of table) {
+        if (typeof row?.name === 'string') ours.set(row.name.toLowerCase(), row.resource);
+      }
+      const missing = expected.filter((name) => !ours.has(name));
+      if (missing.length > 0) throw new Error(`not registered: ${missing.join(', ')}`);
+      const elsewhere = expected.filter((name) => ours.get(name) !== 'mica');
+      if (elsewhere.length > 0) {
+        throw new Error(
+          `registered, but not by mica: ${elsewhere.map((n) => `${n} (${String(ours.get(n))})`).join(', ')}`
+        );
+      }
+      // Everything mica registers carries its prefix, so a command left under a pre-rename
+      // name fails here without this file having to spell any old name out.
+      const unprefixed = [...ours.entries()]
+        .filter(([name, resource]) => resource === 'mica' && !name.startsWith('mica'))
+        .map(([name]) => name);
+      if (unprefixed.length > 0) {
+        throw new Error(`mica registers commands without its prefix: ${unprefixed.join(', ')}`);
+      }
+    }
   }
 ];
