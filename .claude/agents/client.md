@@ -135,7 +135,11 @@ Per `lane-protocol`. Within your ten lines, also state:
 - The result of `pnpm typecheck:client` and of the client tests you ran.
 - **What is unverified in the game**, by name — the natives, the focus
   transitions, the animations — rather than implying the green suite covers
-  them. Say what a person should do in the game to confirm each.
+  them. Do not propose manual in-game testing as the next step — the owner
+  cannot run the game client, so an in-game check is a coverage gap to state,
+  not a task to hand back. Where a server-observable half exists (an export's
+  answer, a net event's effect on a row), name the `integration/` scenario that
+  would prove it.
 - Whether you changed the shape of a client export or a qb-phone event.
 - If the task seemed to need a new client-authoritative value, a native with
   effects outside the phone, or a change to what the server trusts from the

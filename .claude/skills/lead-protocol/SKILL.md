@@ -31,13 +31,24 @@ The lane count is the parallelism the work actually has, not the ticket count,
 and a blocked-then-unblocked chain is sequential work for one lane.
 
 Pick each lane's agent type from the directory its files live in (`CLAUDE.md`
-has the list); use `review` and `verify` after the lanes report. **Resume a lane
-with `SendMessage`** when follow-up work lands in its files — it keeps its
-context, and a fresh `Agent` call starts from nothing.
+has the list); use `review` and `verify` after the lanes report.
 
-Callsigns come from a pool and fit the work. Never reuse one within a session,
-and never give a lane the lead's name; either makes the transcript ambiguous
-about who decided what.
+**Land the contract before fanning out.** Most tickets here are one NUI round
+trip — `shared/contracts/`, a `server/` handler, a `web/` call and mock, often a
+`client/` relay — and every directory lane depends on the contract's shape. Left
+to whichever lane owns the handler, the others either wait on it or guess it,
+and a guessed shape fails `routes.test.ts` only after integration. So the
+contract, its `shared/routes.ts` row and the mock in
+`web/src/nui/mocks/registry.ts` go first: written by the lead or a single lane,
+gated (`pnpm typecheck` plus `routes.test.ts`), committed. Only then do the
+lanes spawn, each briefed with that sha and the contract as read-only. A change
+to it mid-wave stops the wave: the lead amends it and re-briefs every lane that
+reads it. **Resume a lane with `SendMessage`** when follow-up work lands in its
+files — it keeps its context, and a fresh `Agent` call starts from nothing.
+
+Callsigns come from a pool and fit the work (`lead.md` has it). Never reuse one
+within a session, and never give a lane the lead's name; either makes the
+transcript ambiguous about who decided what.
 
 ## Spawn mode decides what can collide
 
@@ -57,8 +68,11 @@ run web commands with `pnpm --filter ./web` or in a subshell.
 
 ## Brief a lane
 
-Every brief opens with the exact tip sha and "if `git log -1` is not this,
-`git reset --hard` to it first" — worktrees are cut stale. Then:
+Every brief opens with the exact tip sha and the spawn mode. A worktree lane
+resets onto that sha, since worktrees are cut stale; a teammate in the shared
+checkout must never reset there, and stops and reports a mismatch instead —
+`lane-protocol` carries both, so name which one this lane is. A teammate's
+report opens with `uncommitted:` and its paths rather than a sha. Then:
 
 - the file fence, the sibling lanes' files as off-limits, and "stop and report
   rather than edit outside it";
@@ -67,8 +81,8 @@ Every brief opens with the exact tip sha and "if `git log -1` is not this,
   target, `vitest run` on its own test files **and every suite that mocks a
   module it changes**, `pnpm lint:ts`, plus `pnpm lint:web` or `pnpm lint:sdk`
   for those directories. Never `pnpm verify` in a lane;
-- for `web` and `sdk` lanes: grep `web/e2e` for the testids, labels and stores
-  the change touches, and hand any matching spec to the `verify` lane;
+- the lane's callsign, which `lane-protocol` uses to name its scratchpad logs;
+- any e2e spec a lane names in its report goes to the `verify` lane;
 - for a lane writing a FiveM export: read `GetInvokingResource()` into a const
   on the first synchronous line, since after an `await` it is null and no stub
   shows it;
@@ -132,6 +146,7 @@ message reads as something to answer instead of something to execute.
 ## If the lead's session dies
 
 A dead lead is respawned blank by the next idle notice. Grep the project's
-transcripts for a lane's callsign to find the old session, read its `Agent`
+transcripts for a lane's callsign to find the old session — names recur across
+sessions, so take the newest transcript that spawned it — read its `Agent`
 spawns for the roster and briefs and its turns for lane reports, then land from
 what is on disk.

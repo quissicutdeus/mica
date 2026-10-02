@@ -30,36 +30,36 @@ pointer left here.
 `pnpm` only — never `npm`, `npx`, `bun`, or `yarn`; use `pnpm dlx` for `npx`.
 Run from the **repo root** unless noted.
 
-| Task                                              | Command                                               | Pre-approved?            |
-| ------------------------------------------------- | ----------------------------------------------------- | ------------------------ |
-| **Every gate, in order**                          | **`pnpm verify`**                                     | Yes                      |
-| Every gate except e2e                             | `pnpm verify --quick`                                 | Yes                      |
-| Fast loop: format + typecheck + changed unit only | `pnpm check:fast`                                     | Yes                      |
-| Fail fast if no dev server is warm                | `pnpm dev:check`                                      | Yes                      |
-| Lint the Go server and the Dockerfile             | `pnpm lint:container`                                 | Yes                      |
-| Actions SHA-pinned and no major behind            | `pnpm lint:actions`                                   | Yes                      |
-| Run the demo image locally                        | `pnpm demo` / `demo:up` / `demo:down`                 | Yes                      |
-| Smoke-test a running demo image                   | `pnpm demo:smoke`                                     | Yes                      |
-| Scaffold an app                                   | `pnpm new:app <id> [--service]`                       | Yes                      |
-| Install                                           | `pnpm install --frozen-lockfile`                      | Yes                      |
-| Format (write)                                    | `pnpm format`                                         | Yes                      |
-| Format (check)                                    | `pnpm format:check`                                   | Yes                      |
-| Dead code scan                                    | `pnpm deadcode`                                       | Yes                      |
-| Typecheck **everything**                          | `pnpm typecheck`                                      | Yes                      |
-| Typecheck one target                              | `pnpm typecheck:client` · `:server` · `:web` · `:sdk` | Yes                      |
-| Unit tests **everything**                         | `pnpm test:unit`                                      | Yes                      |
-| Unit tests one project                            | `pnpm test:unit:web` · `:server`                      | Yes                      |
-| E2E tests                                         | `pnpm test:e2e`                                       | Yes                      |
-| Install browsers (first run)                      | `pnpm test:e2e:install`                               | Yes                      |
-| Generate per-app SQL                              | `pnpm generate:sql`                                   | Yes                      |
-| Generate + dev reset SQL                          | `pnpm generate:sql:reset`                             | Ask first — destructive  |
-| Regenerate locale catalogs                        | `pnpm generate:locales`                               | Yes                      |
-| Full build                                        | `pnpm build`                                          | Yes                      |
-| Dev (both watchers)                               | `pnpm dev`                                            | Ask first — long-running |
-| Commit / push on `dev` or a ticket branch         | —                                                     | Yes — see §2.1           |
-| Force-push, move `main`, change protection        | —                                                     | **Ask first. See §2.1.** |
+| Task                                              | Command                                                                | Pre-approved?            |
+| ------------------------------------------------- | ---------------------------------------------------------------------- | ------------------------ |
+| **Every gate, in order**                          | **`pnpm verify`**                                                      | Yes                      |
+| Every gate except e2e                             | `pnpm verify --quick`                                                  | Yes                      |
+| Fast loop: format + typecheck + changed unit only | `pnpm check:fast`                                                      | Yes                      |
+| Fail fast if no dev server is warm                | `pnpm dev:check`                                                       | Yes                      |
+| Lint the Go server and the Dockerfile             | `pnpm lint:container`                                                  | Yes                      |
+| Actions SHA-pinned and no major behind            | `pnpm lint:actions`                                                    | Yes                      |
+| Run the demo image locally                        | `pnpm demo` / `demo:up` / `demo:down`                                  | Yes                      |
+| Smoke-test a running demo image                   | `pnpm demo:smoke`                                                      | Yes                      |
+| Scaffold an app                                   | `pnpm new:app <id> [--service]`                                        | Yes                      |
+| Install                                           | `pnpm install --frozen-lockfile`                                       | Yes                      |
+| Format (write)                                    | `pnpm format`                                                          | Yes                      |
+| Format (check)                                    | `pnpm format:check`                                                    | Yes                      |
+| Dead code scan                                    | `pnpm deadcode`                                                        | Yes                      |
+| Typecheck **everything**                          | `pnpm typecheck`                                                       | Yes                      |
+| Typecheck one target                              | `pnpm typecheck:client` · `:server` · `:integration` · `:web` · `:sdk` | Yes                      |
+| Unit tests **everything**                         | `pnpm test:unit`                                                       | Yes                      |
+| Unit tests one project                            | `pnpm test:unit:web` · `:server`                                       | Yes                      |
+| E2E tests                                         | `pnpm test:e2e`                                                        | Yes                      |
+| Install browsers (first run)                      | `pnpm test:e2e:install`                                                | Yes                      |
+| Generate per-app SQL                              | `pnpm generate:sql`                                                    | Yes                      |
+| Generate + dev reset SQL                          | `pnpm generate:sql:reset`                                              | Ask first — destructive  |
+| Regenerate locale catalogs                        | `pnpm generate:locales`                                                | Yes                      |
+| Full build                                        | `pnpm build`                                                           | Yes                      |
+| Dev (both watchers)                               | `pnpm dev`                                                             | Ask first — long-running |
+| Commit / push on `dev` or a ticket branch         | —                                                                      | Yes — see §2.1           |
+| Force-push, move `main`, change protection        | —                                                                      | **Ask first. See §2.1.** |
 
-`pnpm typecheck` fans out to all four targets via `concurrently`. **Use it, not
+`pnpm typecheck` fans out to all five targets via `concurrently`. **Use it, not
 `pnpm typecheck:web`** — the targets run different TypeScript versions; §3 has
 why.
 
@@ -527,7 +527,7 @@ does not need the e2e suite:
 | `web/`                                   | `typecheck` + `test:unit` + `test:e2e`      |
 | Anything you cannot confidently bound    | `pnpm verify`                               |
 
-`pnpm typecheck` above always means all four targets (§3). `check:fast`'s
+`pnpm typecheck` above always means all five targets (§3). `check:fast`'s
 `--changed` selection reads your _uncommitted_ diff, so it selects nothing on a
 clean tree and is not evidence on its own.
 

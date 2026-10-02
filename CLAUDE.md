@@ -37,8 +37,9 @@ work lives in** — or, for the two that own no directory, for the verb the lead
 already uses — so routing needs no translation step and a pane title says what
 is running:
 
-- `server` — `server/`: a service, table, column, index, migration or net event.
-  Carries §2.9 and the `defineService` rules.
+- `server` — `server/` and `integration/`: a service, table, column, index,
+  migration, net event, or an in-server scenario. Carries §2.9 and the
+  `defineService` rules.
 - `client` — `client/`: the client half of a service, a NUI callback, the prop
   and camera, device state, the framework bridge, a client export. Carries
   "nothing here is authority" and "no suite can start the game".
@@ -62,11 +63,13 @@ is running:
   loads `lead-protocol` and `ticket-flow` itself — `skills:` preloads only into
   a spawned subagent, never the main session.
 
-Pick the one whose directory the work lives in. `shared/` travels with the lane
-that owns the handler or the consumer driving the change, and `general-purpose`
-is the right answer when a task genuinely spans several. The first seven write
-code; `review` and `verify` are the two the lead spawns after the lanes report
-and before it commits.
+Pick the one whose directory the work lives in. A contract in
+`shared/contracts/` lands first, before the lanes fan out, so they build against
+a committed shape (`lead-protocol` has why); the rest of `shared/` travels with
+the lane that owns the handler or the consumer driving the change, and
+`general-purpose` is the right answer when a task genuinely spans several. The
+first seven write code; `review` and `verify` are the two the lead spawns after
+the lanes report and before it commits.
 
 The name is the routing key and stays boring. Each agent's `description:` keeps
 the reason it works the way it does — that is where a name from the setting

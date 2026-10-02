@@ -30,12 +30,18 @@ nobody can use.
 
 ## Run every gate with its own exit code kept
 
-Every gate goes to a file, and its exit code is read before anything else runs:
+Every gate goes to a file in the session scratchpad named for your callsign —
+the scratchpad is shared with every lane, and a bare `verify.log` can be
+overwritten by a sibling's run — and its exit code is read before anything else
+runs:
 
 ```sh
-pnpm verify > /tmp/verify.log 2>&1
-echo $? > /tmp/verify.rc
+pnpm verify > "$SCRATCH/<callsign>-verify.log" 2>&1
+echo $? > "$SCRATCH/<callsign>-verify.rc"
 ```
+
+`$SCRATCH` stands for the scratchpad directory your environment names — it is
+not set in the shell, so write the literal path.
 
 And the exit code is read **in the same turn**: run the gate in the foreground
 with a timeout long enough for a cold `pnpm verify`, or start it in the

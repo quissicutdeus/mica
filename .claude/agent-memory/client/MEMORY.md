@@ -3,13 +3,8 @@
 One file per finding; this index is what loads. Read the file before relying on
 its one-line summary. A native that wanted an argument order its types did not
 say, or a framework whose client object differed from its docs, goes in its own
-file and gets a line here.
+file and gets a line here. A lesson every lane needs goes to `lane-protocol`
+instead — the break-proof, scratchpad and warm-`.d.ts` notes moved there.
 
-- [Break-proof via Edit, not shell](break-proof-via-edit-not-shell.md) — the
-  worktree guard refuses a one-liner that rewrites a file through variables
-- [Scratchpad shared across lanes](scratchpad-shared-across-lanes.md) — name
-  gate logs by callsign; a sibling lane can overwrite `unit.log` mid-run
 - [pma-voice call channel API](pma-voice-call-channel-api.md) — one call volume
   per client, server `setPlayerCall` syncs the state bag, no positional native
-- [TS 7 incremental misses a global .d.ts](tsc7-incremental-misses-global-dts.md)
-  — a warm `typecheck:client` can be falsely green; delete the tsbuildinfo

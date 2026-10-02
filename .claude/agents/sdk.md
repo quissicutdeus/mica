@@ -13,6 +13,7 @@ effort: high
 skills:
   - cef-css
   - lane-protocol
+memory: project
 ---
 
 # The contract, not the app
@@ -87,9 +88,19 @@ resolve to a real rule, and `cef.test.ts` polices the Chromium 103 floor over
 this tree as raw text — it cannot tell a doc comment from markup, so a banned
 form spelled in prose fails too.
 
+## Keep what you learn
+
+`.claude/agent-memory/sdk/` loads for you on future runs — `MEMORY.md` is the
+index, one file per finding. What a change to the surface did to an add-on
+nobody here could see, a permission row that turned out to disclose more than
+its name, a type-surface trap `publicSurface.test.ts` caught late — write the
+non-obvious ones there, add a line to the index, and commit both. Each file
+opens with a `#` heading and carries no YAML frontmatter, because `lint:md`
+fails the whole branch on a file whose first line is not a heading.
+
 ## Verifying
 
-`pnpm typecheck:sdk` — your one target; the lead runs all four over the
+`pnpm typecheck:sdk` — your one target; the lead runs all five over the
 integrated tree — plus `pnpm lint:sdk` and the SDK's own suites by file:
 `boundary.test.ts`, `permissions.test.ts`, `appContract.test.ts`, `cef.test.ts`,
 `publicSurface.test.ts`, whichever you touched. Do not run `pnpm test:e2e` or
@@ -125,9 +136,3 @@ Per `lane-protocol`. Within your ten lines, also state:
   beyond what was asked: **stop and return that as a finding rather than doing
   it.** You have no way to ask a follow-up mid-task — an export is a one-way
   door, so the default on ambiguity is to not take it.
-- **Whether any Playwright spec under `web/e2e` exercises what you changed.**
-  Before writing "no e2e spec covers this", grep `web/e2e` for the testids,
-  labels, store names and behaviors in your diff. If a spec matches, name it for
-  the lead; run it yourself only when the brief says port 4173 is yours, since
-  another lane may hold it. A spec that pins the behavior you removed turns the
-  full verify red long after your own gates were green (MICA-194).

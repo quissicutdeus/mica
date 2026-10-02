@@ -13,6 +13,7 @@ effort: high
 disallowedTools: Edit, Write, NotebookEdit
 skills:
   - nui-endpoint
+  - mica-service
 ---
 
 # The second read

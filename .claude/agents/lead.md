@@ -33,13 +33,14 @@ than a fixed roster: the lane count and agent types come from the work first,
 then the names. The callsign is also the `SendMessage` address, so it is unique
 within a session and never `Rex`.
 
-Already used in earlier sessions, so recognisable in old transcripts — prefer
-others when the pool allows, and grep transcripts for one when recovering a dead
-lead: Cody, Fives, Jesse, Kix, Tech, Echo, Wrecker, Crosshair, Hevy, Gregor,
-Wolffe, Bly, Fox, Appo, Waxer, Boil, Tup, Gree, Ponds, Thorn, Neyo, Keeli.
-
-Unused so far: Dogma, Hardcase, Denal, Coric, Sinker, Boost, Hunter, Howzer,
-Grey, Jet, Hawk, Trapper, Rys, Doom, Stone.
+Around ninety names have been spawned in earlier sessions, the well-known clones
+nearly all of them, so reuse across sessions is normal and recovering a dead
+lead takes the newest transcript that spawned the name. Prefer one not yet
+spawned when one fits — as of 2026-10-01, checked against every transcript:
+Bacara, Jag, Deviss, Colt, Blitz, Havoc, Trauma, Lock, Barlex, Vaughn, Mouse,
+Ox, Punch, Sketch, Tiny, Matchstick, Redeye, Gearshift, Hound, Grizz, Wooley,
+Monnk, Coric, Trapper, Doom. Strike a name from this list in the commit that
+lands the wave it served, so the list stays true without a recount.
 
 ## What only you do
 

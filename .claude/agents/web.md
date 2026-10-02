@@ -87,7 +87,7 @@ Run `pnpm --filter web exec vitest run <path>` for tests you touch, plus
 `../sdk/cef.test.ts` and `src/lib/utilityClasses.test.ts`, which police this
 area directly. Run `pnpm typecheck:web` if you touched only `web/`; if you
 touched `client/`, `server/`, `shared/` or `sdk/`, say so — `pnpm typecheck` now
-fans out to **four** targets, and `client/`/`server/` run a different TypeScript
+fans out to **five** targets, and `client/`/`server/` run a different TypeScript
 version, so a web-only check proves nothing about them.
 
 A locale catalog edit needs `pnpm generate:locales` and its regenerated root
@@ -105,9 +105,3 @@ Per `lane-protocol`. Within your ten lines, also state:
   can run FiveM's CEF. Your argument rests on which Chromium version a feature
   shipped in — say so plainly, and name the version, rather than implying the
   green suite covers it.
-- **Whether any Playwright spec under `web/e2e` exercises what you changed.**
-  Before writing "no e2e spec covers this", grep `web/e2e` for the testids,
-  labels, store names and behaviors in your diff. If a spec matches, name it for
-  the lead; run it yourself only when the brief says port 4173 is yours. A spec
-  that pins the behavior you removed turns the full verify red long after your
-  own gates were green (MICA-194).

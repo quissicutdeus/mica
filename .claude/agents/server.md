@@ -13,6 +13,7 @@ skills:
   - mica-service
   - nui-endpoint
   - lane-protocol
+memory: project
 ---
 
 # The server half
@@ -25,12 +26,20 @@ to start on the right tree, run a gate, and shape your report. Nothing below
 repeats what those already say in full; it's what they don't.
 
 The other end of every net event is `client/`, which the `client` agent owns. A
-contract in `shared/contracts/` and its row in `shared/routes.ts` travel with
-the lane that owns the handler — usually you — and the `web` side's call and
-mock are the other two of the four layers.
+contract in `shared/contracts/`, its row in `shared/routes.ts` and its mock land
+**before** the wave fans out, so in a wave with sibling lanes they are read-only
+to you — a handler that needs a different shape is a stop-and-report, not an
+edit, because every sibling built against the committed one. When you are the
+lane briefed to write the contract, it is your first commit, alone.
 
-Two more files are yours despite their path:
-`web/src/shell/locales/server.en.json` and `server.de.json`, the catalog a
+Two more trees are yours despite their path. `integration/` is the in-server
+suite (MICA-302): scenarios run inside a real FXServer against a real database
+on every release, the one place server behavior that needs the game's runtime —
+exports, console commands, oxmysql, the schema — is proven rather than stubbed.
+When a change's load-bearing claim is something only a live server can show, say
+so and propose the scenario; add it when the brief says to.
+
+And `web/src/shell/locales/server.en.json` and `server.de.json`, the catalog a
 `PlayerFacingError` key is read from. Only server code writes a key there, and
 `server/__tests__/serverMessages.test.ts` fails a key the English catalog lacks
 — add the entry in both languages rather than leaving it for someone else to
@@ -86,6 +95,16 @@ to a `defineService` declaration counts too, because the additive half of
 that entry; the lead owns `CHANGELOG.md`. Report that one is needed and expect
 the gate to stay red until it exists.
 
+## Keep what you learn
+
+`.claude/agent-memory/server/` loads for you on future runs — `MEMORY.md` is the
+index, one file per finding. This is the half where review rounds keep finding a
+real must-fix after every suite was green, and where a stubbed `Database` hides
+what oxmysql actually returns — write down the non-obvious ones, the trap and
+the test that would have caught it, add a line to the index, and commit both.
+Each file opens with a `#` heading and carries no YAML frontmatter, because
+`lint:md` fails the whole branch on a file whose first line is not a heading.
+
 ## Verifying
 
 Server code is typechecked strictly under TS 7 (§3), but **server tests are
@@ -98,7 +117,7 @@ must never reach a real connection.
 
 Run `pnpm exec vitest run <path>` (root config, not the web project) and
 `pnpm typecheck:server` — your one target, under the stricter TS 7. The lead
-runs all four targets and the full suite once, over the integrated tree; a lane
+runs all five targets and the full suite once, over the integrated tree; a lane
 running them proves the same thing five times over unmerged code.
 
 ## Report
@@ -113,9 +132,3 @@ Per `lane-protocol`. Within your ten lines, also state:
   return that as a finding rather than writing the migration.** You have no way
   to ask a follow-up mid-task — a migration is forward-only and hits a live
   database, so the default on ambiguity is to not write one.
-- **Whether any Playwright spec under `web/e2e` exercises what you changed.**
-  Before writing "no e2e spec covers this", grep `web/e2e` for the testids,
-  labels, store names and behaviors in your diff. If a spec matches, name it for
-  the lead; run it yourself only when the brief says port 4173 is yours, since
-  another lane may hold it. A spec that pins the behavior you removed turns the
-  full verify red long after your own gates were green (MICA-194).
