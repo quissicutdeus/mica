@@ -12,6 +12,12 @@ name: Action drift
 #
 # GitHub disables a `schedule` trigger after 60 days without repository activity, and says
 # so by email. If this stops reporting, check that before trusting its silence.
+#
+# GitHub also only learns a workflow exists from a push that changes its file. When the
+# repository was recreated on 2026-09-04 the whole history arrived in one push, nothing
+# touched this file afterwards, and it was never registered: no scheduled run, no
+# workflow_dispatch, no error, for four weeks. `gh workflow list` is the check -- a
+# workflow missing from it has never run, however correct the YAML is.
 on:
   schedule:
     - cron: '17 9 * * 1'
