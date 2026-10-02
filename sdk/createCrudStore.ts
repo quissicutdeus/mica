@@ -57,11 +57,70 @@ const timeOf = (value: unknown): number => {
   return Number.isNaN(parsed) ? 0 : parsed;
 };
 
+/**
+ * Each row's parsed time, per field, remembered across sorts.
+ *
+ * A sort calls its comparator ~n·log n times, and parsing both sides on every call made a
+ * full sort of the inbox cost twice that many `Date.parse`s. Keyed by the row object, so
+ * a row that is replaced (every store here spreads a new object on change) is parsed once
+ * and then free on every later sort — `conversations.ts` re-sorts its whole window on each
+ * live arrival, and only the arrival is new. The raw value is kept beside the time and
+ * compared on every hit, so a row mutated in place re-parses instead of answering stale:
+ * correctness does not depend on callers never mutating. A `Date` is not memoised at all,
+ * since `getTime()` is already cheap and `setTime()` would mutate it under an unchanged key.
+ */
+type ParsedTime = { raw: unknown; time: number };
+const parsedTimes = new WeakMap<object, Map<PropertyKey, ParsedTime>>();
+
+const rowTimeOf = <T>(row: T, field: keyof T): number => {
+  const raw = row[field];
+  if (typeof row !== 'object' || row === null || raw instanceof Date) return timeOf(raw);
+  let byField = parsedTimes.get(row);
+  if (!byField) parsedTimes.set(row, (byField = new Map<PropertyKey, ParsedTime>()));
+  const hit = byField.get(field);
+  if (hit && Object.is(hit.raw, raw)) return hit.time;
+  const time = timeOf(raw);
+  byField.set(field, { raw, time });
+  return time;
+};
+
 /** Newest first, by a date field, tolerating rows that have not got one. */
 export const byNewest =
   <T>(field: keyof T) =>
   (a: T, b: T): number =>
-    timeOf(b[field]) - timeOf(a[field]);
+    rowTimeOf(b, field) - rowTimeOf(a, field);
+
+/**
+ * Where `row` goes in `rows` — already ordered by `compare`, and not holding `row` — so the
+ * result is exactly what a stable full sort would give.
+ *
+ * `from` is the index `row` held in the list being sorted. A stable sort keeps rows that
+ * compare equal in their input order, so among `row`'s ties the ones that came before it stay
+ * before it and the rest after: the answer is `from`, clamped into the run of ties. An append
+ * passes `rows.length`, which lands after every tie — what `[...rows, row].sort()` does.
+ */
+const positionFor = <T>(
+  rows: readonly T[],
+  row: T,
+  from: number,
+  compare: (a: T, b: T) => number
+): number => {
+  let lo = 0;
+  let hi = rows.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (compare(rows[mid], row) < 0) lo = mid + 1;
+    else hi = mid;
+  }
+  const firstTie = lo;
+  hi = rows.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (compare(rows[mid], row) <= 0) lo = mid + 1;
+    else hi = mid;
+  }
+  return Math.min(Math.max(from, firstTie), lo);
+};
 
 /**
  * A store over a list of rows the server owns.
@@ -127,6 +186,47 @@ export function createCrudStore<T extends { id: number }, TDraft = Omit<T, 'id'>
 
   const ordered = (rows: T[]): T[] => (options.sort ? [...rows].sort(options.sort) : rows);
 
+  /**
+   * The list after one row changed, in the order a full sort would give — without one.
+   *
+   * Every write used to re-sort the whole list, which is n·log n comparator calls to move at
+   * most one row. The list is always held in order (`load` and `set` sort it, and every write
+   * comes through here), so a single replaced row either still sits between its neighbours —
+   * nothing moves — or is lifted out and dropped back in by binary search. That matches a
+   * stable sort exactly for any consistent comparator, ties included; see `positionFor`.
+   *
+   * An id held twice is the one shape this does not reason about (`map` replaced every copy
+   * and then sorted), so it keeps the full sort rather than guess.
+   */
+  const replaced = (rows: T[], id: number, next: (row: T) => T): T[] => {
+    const compare = options.sort;
+    const index = rows.findIndex((r) => r.id === id);
+    const heldTwice = index !== -1 && rows.some((r, i) => i > index && r.id === id);
+    if (!compare || heldTwice) return ordered(rows.map((r) => (r.id === id ? next(r) : r)));
+    if (index === -1) return [...rows];
+
+    const row = next(rows[index]);
+    const result = [...rows];
+    const fits =
+      (index === 0 || compare(rows[index - 1], row) <= 0) &&
+      (index === rows.length - 1 || compare(row, rows[index + 1]) <= 0);
+    if (fits) {
+      result[index] = row;
+      return result;
+    }
+    result.splice(index, 1);
+    result.splice(positionFor(result, row, index, compare), 0, row);
+    return result;
+  };
+
+  /** `row` appended, then ordered — by one binary search rather than a sort. */
+  const appended = (rows: T[], row: T): T[] => {
+    if (!options.sort) return [...rows, row];
+    const result = [...rows];
+    result.splice(positionFor(result, row, result.length, options.sort), 0, row);
+    return result;
+  };
+
   const required = (event: string | undefined, action: string): string => {
     if (!event) throw new Error(`The ${name} store has no ${action} event.`);
     return event;
@@ -159,11 +259,9 @@ export function createCrudStore<T extends { id: number }, TDraft = Omit<T, 'id'>
       // server — appending it again would show the row twice. Replace in place if it's
       // already there, append only if it isn't (MICA-119).
       mutate((rows) =>
-        ordered(
-          rows.some((r) => r.id === created.id)
-            ? rows.map((r) => (r.id === created.id ? created : r))
-            : [...rows, created]
-        )
+        rows.some((r) => r.id === created.id)
+          ? replaced(rows, created.id, () => created)
+          : appended(rows, created)
       );
       return created;
     },
@@ -171,7 +269,7 @@ export function createCrudStore<T extends { id: number }, TDraft = Omit<T, 'id'>
     update: async (row: T): Promise<void> => {
       options.validate?.(row);
       await request(required(events.update, 'update'), row);
-      mutate((rows) => ordered(rows.map((r) => (r.id === row.id ? row : r))));
+      mutate((rows) => replaced(rows, row.id, () => row));
     },
 
     delete: async (id: number): Promise<void> => {
@@ -182,6 +280,6 @@ export function createCrudStore<T extends { id: number }, TDraft = Omit<T, 'id'>
     /** For the paths a list alone cannot express — an incoming message, a local patch. */
     set: (rows: T[]) => set(ordered(rows)),
     patch: (id: number, changes: Partial<T>) =>
-      mutate((rows) => ordered(rows.map((r) => (r.id === id ? { ...r, ...changes } : r))))
+      mutate((rows) => replaced(rows, id, (r) => ({ ...r, ...changes })))
   };
 }
