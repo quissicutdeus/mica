@@ -71,6 +71,13 @@ lane shas, which sha touched the code under test —
 `git log --oneline <tip>..HEAD -- <path>` is usually enough. Do not chase the
 cause further than that; the lead decides who fixes it.
 
+Never call a failure a flake until it has been rerun **alone** and passed. A
+spec once labelled "likely flake" failed on every rerun and was a real
+regression. Playwright runs in every project, never `--project=chromium` alone:
+a shell overlay once broke nineteen cases in `chromium-light` only. From the
+root, `pnpm test:e2e -- <files>` does not filter; for a subset run
+`pnpm exec playwright test <files>` from `web/` in a subshell.
+
 ## Report
 
 Your final message goes to the lead, who is short on attention. **Ten lines at

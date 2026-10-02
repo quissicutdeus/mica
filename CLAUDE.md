@@ -27,6 +27,8 @@ the work calls for it:
   issue comment.
 - `lane-protocol` — preloaded by every code-writing agent type; how a lane
   starts on the right tree, runs a gate, and shapes its report.
+- `lead-protocol` — before spawning a lane or integrating one; the lead's half:
+  splitting work, spawn mode, briefs, checking reports, closing lanes down.
 
 Work that is farmed out to a subagent picks an **agent type** from
 `.claude/agents/`, so the rules for that kind of work arrive with the agent

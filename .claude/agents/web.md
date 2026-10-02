@@ -90,6 +90,9 @@ touched `client/`, `server/`, `shared/` or `sdk/`, say so — `pnpm typecheck` n
 fans out to **four** targets, and `client/`/`server/` run a different TypeScript
 version, so a web-only check proves nothing about them.
 
+A locale catalog edit needs `pnpm generate:locales` and its regenerated root
+`locales/` files in your commit; the `locales` gate fails without them.
+
 Do not run `pnpm verify`, `pnpm dev`, or any Playwright command unless your
 instructions say the port is yours; other lanes may hold it.
 
