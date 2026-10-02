@@ -6,7 +6,12 @@ import { derived, writable } from 'svelte/store';
 import { usePersisted } from '@mica/sdk';
 import { callOr } from '../../nui/call';
 import { shellContract } from '@mica/shared/contracts/shell';
-import { FALLBACK_LOCALE, locale, registerMessages } from '../../../../sdk/i18n';
+import {
+  FALLBACK_LOCALE,
+  locale,
+  registerMessages,
+  registerMessagesMany
+} from '../../../../sdk/i18n';
 
 /**
  * Which language the phone is in (MICA-61), resolved from three sources in order:
@@ -83,14 +88,13 @@ export async function loadCatalog(language: string): Promise<void> {
     requested.delete(language);
     return;
   }
-  for (const [namespace, messages] of Object.entries(catalogs)) {
-    try {
-      if (messages && typeof messages === 'object')
-        registerMessages(namespace, { [language]: messages });
-    } catch {
-      // A namespace name `registerMessages` refuses is skipped, not fatal.
-    }
-  }
+  // One registration for the whole language, so `t` re-derives once per load rather than
+  // once per namespace. A namespace name `registerMessages` refuses is skipped, not fatal.
+  registerMessagesMany(
+    Object.entries(catalogs)
+      .filter(([, messages]) => messages && typeof messages === 'object')
+      .map(([namespace, messages]) => [namespace, { [language]: messages }] as const)
+  );
 }
 
 /** Ask the server which languages it has on disk. Quiet, like `refreshLocale`. */

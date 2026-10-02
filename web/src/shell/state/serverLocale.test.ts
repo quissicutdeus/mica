@@ -73,6 +73,32 @@ describe('server-provided languages (MICA-235)', () => {
     expect(m.fetchNui.mock.calls.length).toBe(calls + 1);
   });
 
+  it('one language load re-derives t once, however many namespaces it carries', async () => {
+    const m = await load({
+      'catalog:de': {
+        catalogs: {
+          notes: { title: 'Notizen' },
+          bank: { sent: 'Gesendet' },
+          mail: { inbox: 'Posteingang' },
+          shell: { home: 'Start' },
+          'Not An Id': { title: 'never' },
+          clock: { alarm: 'Wecker' }
+        }
+      }
+    });
+    let emissions = -1;
+    const stop = m.t.subscribe(() => emissions++);
+    await m.loadCatalog('de');
+    stop();
+    expect(emissions).toBe(1);
+    // The refused namespace was skipped; every other one landed.
+    m.locale.set('de');
+    const tr = get(m.t);
+    expect(tr('notes.title')).toBe('Notizen');
+    expect(tr('clock.alarm')).toBe('Wecker');
+    expect(m.catalogFor('shell', 'de')).toEqual({ home: 'Start' });
+  });
+
   it('a failed language list leaves the list empty', async () => {
     const m = await load({});
     await m.refreshServerLanguages();
