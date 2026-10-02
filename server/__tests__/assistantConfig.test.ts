@@ -40,6 +40,16 @@ import { parse } from 'yaml';
 const ROOT = join(__dirname, '..', '..');
 const AGENTS_DIR = join(ROOT, '.claude', 'agents');
 const SKILLS_DIR = join(ROOT, '.claude', 'skills');
+const MEMORY_DIR = join(ROOT, '.claude', 'agent-memory');
+
+/**
+ * The agent types that write no code, and so are the only ones allowed to go without
+ * `lane-protocol`: `lead` is the main session, where `skills:` preloads nothing; `review`
+ * reads a diff and changes nothing; `verify` runs the gates and changes nothing. Every other
+ * agent is a lane by default, so a new agent type is held to the rule unless it is added
+ * here on purpose.
+ */
+const NON_CODE_AGENTS = ['lead', 'review', 'verify'];
 
 /**
  * The colours Claude Code's agent frontmatter accepts. A value outside this set is not an
@@ -68,6 +78,13 @@ const frontmatterOf = (text: string): string | null => {
   if (end === -1) return null;
   return text.slice(text.indexOf('\n', 3) + 1, end);
 };
+
+/**
+ * The parsed frontmatter, or `{}` when there is none. Only for checks layered on top of
+ * the parse test below — that one reports a missing or malformed block as what it is.
+ */
+const frontOf = (path: string): Record<string, unknown> =>
+  (parse(frontmatterOf(readFileSync(path, 'utf8')) ?? '') ?? {}) as Record<string, unknown>;
 
 /** The prose after the frontmatter — what the agent is actually told. */
 const bodyOf = (text: string): string => {
@@ -206,16 +223,90 @@ describe('assistant config', () => {
       'no agent body mentions agent-memory — has the wording moved out from under this?'
     ).toBeGreaterThan(0);
     for (const { label, path } of reliant) {
-      const front = (parse(frontmatterOf(readFileSync(path, 'utf8')) ?? '') ?? {}) as Record<
-        string,
-        unknown
-      >;
       expect(
-        front.memory,
+        frontOf(path).memory,
         `${label}: the body says .claude/agent-memory/ loads for this agent, but the ` +
           'frontmatter declares no `memory:` scope, so nothing loads and its notes are ' +
           'read by nobody'
       ).toBeDefined();
+    }
+  });
+
+  /**
+   * `lane-protocol` is how a lane starts on the tree it was given, never resets the shared
+   * checkout under its siblings, names its logs so a sibling cannot overwrite them, and
+   * shapes the report the lead reads. It reaches an agent only through that agent's
+   * `skills:` list. An agent type that leaves it out gets none of it, and nothing fails —
+   * the lane just runs without the rules, on whatever tree it happens to be on.
+   *
+   * The exemptions are held by name, and each must exist on disk: a renamed `review` would
+   * otherwise leave an exemption for nobody, and the stale name would read as coverage.
+   */
+  it('every code-writing agent preloads lane-protocol', () => {
+    const agents = agentDefinitions();
+    const names = agents.map(({ expectedName }) => expectedName);
+    for (const exempt of NON_CODE_AGENTS) {
+      expect(
+        names,
+        `NON_CODE_AGENTS exempts "${exempt}" from lane-protocol, but there is no ` +
+          `.claude/agents/${exempt}.md — the exemption covers nobody; update the list`
+      ).toContain(exempt);
+    }
+
+    const lanes = agents.filter(({ expectedName }) => !NON_CODE_AGENTS.includes(expectedName));
+    // Every agent exempted, or none on disk, would pass the loop below for free.
+    expect(lanes.length, 'no code-writing agent found to check').toBeGreaterThan(0);
+    for (const { label, path } of lanes) {
+      const skills = frontOf(path).skills;
+      expect(
+        Array.isArray(skills) ? skills : [],
+        `${label}: writes code but does not preload \`lane-protocol\` in \`skills:\`, so it ` +
+          'starts on whatever tree it lands on, can reset the shared checkout, and reports ' +
+          'in no shape the lead expects. Add it, or add the agent to NON_CODE_AGENTS if it ' +
+          'genuinely writes nothing'
+      ).toContain('lane-protocol');
+    }
+  });
+
+  /**
+   * `.claude/agent-memory/<name>/` is read only for an agent named `<name>` that declares
+   * `memory: project` — `user` reads `~/.claude/agent-memory/` and `local` reads
+   * `.claude/agent-memory-local/`, so neither one loads this directory either. A directory
+   * with no such agent behind it is notes nobody reads, which is how two agents' real
+   * findings sat unread (see the test above). The reverse fails as quietly: an agent that
+   * declares the scope but has no `MEMORY.md` loads nothing, because the index is the file
+   * that loads, not the directory.
+   */
+  it('agent-memory directories and memory: project declarations match', () => {
+    const dirs = readdirSync(MEMORY_DIR, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name);
+    // An empty or missing tree would pass both loops below for free.
+    expect(dirs.length, '.claude/agent-memory/ holds no agent directories').toBeGreaterThan(0);
+
+    const agents = new Map(agentDefinitions().map((agent) => [agent.expectedName, agent]));
+    for (const dir of dirs) {
+      const agent = agents.get(dir);
+      expect(
+        agent,
+        `.claude/agent-memory/${dir}/ exists, but there is no .claude/agents/${dir}.md — ` +
+          'notes for an agent that does not exist are read by nobody'
+      ).toBeDefined();
+      expect(
+        agent && frontOf(agent.path).memory,
+        `.claude/agent-memory/${dir}/ exists, but .claude/agents/${dir}.md does not declare ` +
+          '`memory: project`, so the directory never loads and its notes are read by nobody'
+      ).toBe('project');
+    }
+
+    for (const { label, expectedName, path } of agents.values()) {
+      if (frontOf(path).memory !== 'project') continue;
+      expect(
+        existsSync(join(MEMORY_DIR, expectedName, 'MEMORY.md')),
+        `${label}: declares \`memory: project\`, but .claude/agent-memory/${expectedName}/` +
+          'MEMORY.md does not exist — the index is the file that loads, so this agent ' +
+          'starts every run with no memory'
+      ).toBe(true);
     }
   });
 

@@ -18,10 +18,14 @@ else is the **shared main checkout**, where sibling lanes are editing too.
 
 - **Your own worktree:** it is cut from wherever the harness thinks HEAD is, not
   from `dev`'s tip, so it is usually behind. `git reset --hard <sha>` onto the
-  brief's tip before reading a line.
+  brief's tip before reading a line — from a working directory already inside
+  the worktree, or as `git -C <worktree> reset --hard <sha>`. The Bash guard
+  refuses one behind a `cd` in the same command, since it cannot tell which tree
+  that resets.
 - **The shared main checkout:** never `reset`, `checkout`, `switch`, `stash` or
   `commit` there. A `reset --hard` in it erases every sibling lane's unsaved
-  work with no way back. If the sha does not match, stop and report the
+  work with no way back, and the Bash guard refuses one over a dirty tree
+  outside `.claude/worktrees/`. If the sha does not match, stop and report the
   mismatch; the lead moves HEAD, not you.
 
 Say so if the brief named no sha. Work built on the wrong base merges as a

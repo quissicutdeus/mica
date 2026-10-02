@@ -1,16 +1,21 @@
 #!/bin/sh
 # PreToolUse guard for the Bash tool.
 #
-# AGENTS.md §2.1 lists five things that need the user's explicit confirmation
+# AGENTS.md §2.1 lists six things that need the user's explicit confirmation
 # before they happen: a force-push, moving main, changing branch protection or
-# repository settings, and --no-verify. That list only works if it is actually
-# enforced rather than just written down -- this blocks those specific shapes
-# at the tool boundary instead of relying on every agent remembering to ask.
+# repository settings, --no-verify, and a hard reset over uncommitted work. That
+# list only works if it is actually enforced rather than just written down --
+# this blocks those specific shapes at the tool boundary instead of relying on
+# every agent remembering to ask.
 #
-# Reads the hook's stdin JSON (the tool_input.command field), checks it against
-# each guarded shape, and exits 2 with a reason on stderr on a match. Anything
-# else passes through untouched. Exit 2 is what actually blocks the tool call
-# and returns stderr to the calling agent; exit 1 would not.
+# Reads the hook's stdin JSON (the tool_input.command and cwd fields), checks it
+# against each guarded shape, and exits 2 with a reason on stderr on a match.
+# Anything else passes through untouched. Exit 2 is what actually blocks the
+# tool call and returns stderr to the calling agent; exit 1 would not.
+#
+# The hard reset is the one shape that needs the filesystem, not just the text:
+# it is only dangerous when the tree it acts on has something uncommitted, so
+# the guard asks git. See the section below the push and gh checks.
 
 # Parsed with node, not jq: jq is not installed on these machines, and the
 # original `cmd=$(jq -r ...)` therefore returned the empty string on every
@@ -32,7 +37,13 @@ if ! command -v node >/dev/null 2>&1; then
     exit 2
 fi
 
-if ! cmd=$(node -e '
+# One node call yields both fields: the working directory on the first line, then
+# "=" and the command. The "=" is what keeps the split safe when the command is
+# empty -- $(...) strips trailing newlines, and without a marker an empty command
+# would leave no newline to split on and the cwd would be read back as the
+# command. A cwd that is absent, not a string, or holds a line break is emitted
+# as empty, which the hard-reset check treats as "tree unknown" and refuses.
+if ! parsed=$(node -e '
 let s = "";
 process.stdin.on("data", (d) => (s += d)).on("end", () => {
   let j;
@@ -41,13 +52,23 @@ process.stdin.on("data", (d) => (s += d)).on("end", () => {
   } catch {
     process.exit(1);
   }
-  process.stdout.write(String((j && j.tool_input && j.tool_input.command) || ""));
+  const cmd = String((j && j.tool_input && j.tool_input.command) || "");
+  let cwd = j && typeof j.cwd === "string" ? j.cwd : "";
+  if (/[\r\n]/.test(cwd)) {
+    cwd = "";
+  }
+  process.stdout.write(cwd + "\n=" + cmd);
 });
 '); then
     printf 'blocked: the Bash guard could not parse its input as JSON.\n' >&2
     printf 'this guard fails closed on purpose -- it will not allow a command it was unable to read.\n' >&2
     exit 2
 fi
+
+nl='
+'
+cwd=${parsed%%"$nl"*}
+cmd=${parsed#*"$nl="}
 
 block() {
     printf 'blocked by AGENTS.md §2.1: %s\n' "$1" >&2
@@ -95,6 +116,268 @@ case "$cmd" in
 esac
 
 # --------------------------------------------------------------------------
+# A hard reset over uncommitted work.
+#
+# AGENTS.md §2.1 says to stop and ask before one, and for a long time nothing
+# checked. It matters most in the shared main checkout: every lane there edits
+# the same working tree, so one lane's hard reset erases every sibling's unsaved
+# work with no way back. A lane in its own worktree (.claude/worktrees/...) is
+# the opposite case -- it is told to hard-reset onto its brief's tip, on a tree
+# nobody else touches, so that stays free.
+#
+# Unlike the shapes above, this one is only dangerous depending on the tree, so
+# the guard asks git rather than reading text: it blocks a hard reset when the
+# tree it acts on has anything in `git status --porcelain` (untracked included)
+# and that tree's toplevel is not under /.claude/worktrees/. A clean tree passes.
+#
+# "The tree it acts on" is the hook input's cwd, moved by any `git -C <dir>` in
+# the command. Where that cannot be known with confidence the guard refuses
+# rather than guesses: no cwd in the input, a `cd` earlier in the command, a -C
+# path that is a variable, a glob or holds a space, GIT_DIR / --git-dir /
+# --work-tree, or git itself failing on the directory. A reset it cannot place is
+# a reset it cannot call safe.
+#
+# What it does not see: a reset reached through a git alias or a script, a
+# substitution inside the git invocation that itself holds a ; & or | (the
+# segment is cut there), and other ways to discard work (`checkout -f`, `clean`,
+# `restore`). Those are not in AGENTS.md §2.1's list. The text match is flat,
+# like the rest of this file, so prose in a heredoc that starts a line with
+# `git reset --hard` is read as the command -- write prose with the Write tool,
+# as the pipe rule already asks.
+
+# Sets $w to the word $1 with any command-substitution, subshell or brace-group
+# wrapper taken off it -- `(git`, `$(git`, `--hard)`, `}` -- so those read as the
+# word inside. Parentheses are not segment separators for exactly this reason:
+# splitting on them cut a `-C $(pwd)` in half, and the reset behind it was then
+# nowhere to be found.
+bare() {
+    w=$1
+    while :; do
+        case $w in
+            \$\(*) w=${w#??} ;;
+            '('* | '{'* | '`'*) w=${w#?} ;;
+            *) break ;;
+        esac
+    done
+    while :; do
+        case $w in
+            *')' | *'}' | *'`') w=${w%?} ;;
+            *) break ;;
+        esac
+    done
+}
+
+# Returns 0 when the segment, read as plain words, has `reset` followed by a
+# spelling of --hard. The fallback for a segment whose words did not line up.
+reset_somewhere() {
+    seen_reset=
+    set -f
+    # shellcheck disable=SC2086
+    set -- $stripped
+    set +f
+    for word in "$@"; do
+        case $word in
+            reset)
+                seen_reset=1
+                ;;
+            --h | --ha | --har | --hard)
+                [ -z "$seen_reset" ] || return 0
+                ;;
+        esac
+    done
+    return 1
+}
+
+# Reads one command segment (a simple command, split from its neighbours on
+# ; & | and newlines). Returns 0 when it is a `git [options] reset ... --hard`,
+# leaving the directory that reset acts on in $target and anything it could not
+# resolve in $seg_unsure; returns 1 for everything else.
+#
+# Quotes are dropped before the segment is split into words. That is crude, and
+# deliberately so: it is what lets `sh -c 'git reset --hard'` read as a reset,
+# and what keeps `git commit -m "undo a reset --hard"` from reading as one,
+# because the subcommand is then `commit`. The one thing it would hide is a
+# quoted -C path with a space in it, so that is checked first on the raw text.
+segment_is_hard_reset() {
+    seg_unsure=
+    q="[\"']"
+    nq="[^\"']"
+    if printf '%s\n' "$1" | grep -qE -- "-C[[:space:]]+($q$q|$q$nq*[[:space:]]$nq*$q)"; then
+        seg_unsure='a quoted -C path with a space in it, or an empty one, cannot be resolved'
+    fi
+
+    stripped=$(printf '%s' "$1" | tr -d '\047\042')
+    set -f
+    # shellcheck disable=SC2086
+    set -- $stripped
+    set +f
+
+    # Find the git word. Anything that only prints or searches text is inert,
+    # so `grep 'git reset --hard' docs/` is not a reset -- unless the segment
+    # holds a substitution, since `echo $(git reset --hard)` runs it. Anything
+    # unrecognised in front of git (sudo, xargs, sh -c, env) is treated as
+    # running it.
+    while [ $# -gt 0 ]; do
+        bare "$1"
+        case $w in
+            echo | printf | grep | egrep | fgrep | rg | cat | head | tail | less | man | wc | sed | awk | diff)
+                case $stripped in
+                    *\$\(* | *'`'*) ;;
+                    *) return 1 ;;
+                esac
+                ;;
+            cd | pushd | popd)
+                moved=1
+                ;;
+            GIT_DIR=* | GIT_WORK_TREE=*)
+                unsure='GIT_DIR or GIT_WORK_TREE points git somewhere other than the working directory'
+                ;;
+            git | */git)
+                break
+                ;;
+        esac
+        shift
+    done
+    [ $# -gt 0 ] || return 1
+    shift
+
+    # git's own options come before the subcommand; only -C moves the tree.
+    target=$cwd
+    while [ $# -gt 0 ]; do
+        case $1 in
+            -C)
+                [ $# -ge 2 ] || break
+                case $2 in
+                    *'$'* | *'`'* | '~'* | *'*'* | *'?'* | *'['* | *'{'*)
+                        seg_unsure="the -C path '$2' is a variable, a substitution, a glob or a tilde, so it cannot be resolved"
+                        ;;
+                    /*) target=$2 ;;
+                    *) target=$target/$2 ;;
+                esac
+                shift 2
+                ;;
+            -c | --config-env | --namespace | --super-prefix | --attr-source)
+                [ $# -ge 2 ] || break
+                shift 2
+                ;;
+            --git-dir | --git-dir=* | --work-tree | --work-tree=* | --bare)
+                seg_unsure='--git-dir, --work-tree and --bare point git somewhere other than the working directory'
+                shift
+                ;;
+            -*)
+                shift
+                ;;
+            *)
+                break
+                ;;
+        esac
+    done
+    subcommand=
+    if [ $# -gt 0 ]; then
+        bare "$1"
+        subcommand=$w
+    fi
+    if [ "$subcommand" != reset ]; then
+        # Not a reset, as far as the words line up. But an empty -C path or one
+        # with a space in it shifts every word after it, so the subcommand read
+        # here can be a fragment of the path. Once something in the segment is
+        # already known to be unresolvable, look for a reset anywhere in it
+        # rather than conclude there is none.
+        [ -n "$seg_unsure" ] && reset_somewhere
+        return
+    fi
+    shift
+
+    # git accepts any unambiguous prefix of a long option, and --h is one: it
+    # resets hard (checked against git 2.56), so every prefix has to count.
+    while [ $# -gt 0 ]; do
+        bare "$1"
+        case $w in
+            --)
+                return 1
+                ;;
+            --h | --ha | --har | --hard)
+                return 0
+                ;;
+        esac
+        shift
+    done
+    return 1
+}
+
+check_hard_reset() {
+    case "$cmd" in
+        *reset*--h*) ;;
+        *) return 0 ;;
+    esac
+
+    moved=
+    unsure=
+    # Backslash-newline is a continuation, so those lines are joined first;
+    # without that, `git reset \` then `--hard` on the next line would read as
+    # two commands. Then each ; & and | becomes a line break. Parentheses and
+    # backticks are left inside their words, so a substitution stays whole.
+    segments=$(printf '%s\n' "$cmd" | awk '
+        {
+            line = line $0
+            if (sub(/\\$/, "", line)) {
+                line = line " "
+                next
+            }
+            gsub(/[;&|]/, "\n", line)
+            print line
+            line = ""
+        }
+        END { if (line != "") print line }
+    ')
+    if [ -z "$segments" ]; then
+        block "a hard reset was named but the guard could not split the command to find out which tree it acts on"
+    fi
+
+    # The loop reads a here-document, not a pipe: a pipe would run it in a
+    # subshell, where block's `exit 2` would end only the subshell and the
+    # command would sail through.
+    while IFS= read -r seg; do
+        segment_is_hard_reset "$seg" || continue
+
+        if [ -n "$moved" ]; then
+            block "a hard reset after a cd/pushd/popd in the same command -- the tree it acts on cannot be known; run it as git -C <dir> reset ... instead"
+        fi
+        if [ -n "$unsure" ]; then
+            block "a hard reset whose tree cannot be determined: $unsure"
+        fi
+        if [ -n "$seg_unsure" ]; then
+            block "a hard reset whose tree cannot be determined: $seg_unsure"
+        fi
+        if [ -z "$cwd" ]; then
+            block "a hard reset, but the hook input carried no cwd, so the tree it acts on cannot be known"
+        fi
+        if ! top=$(git -C "$target" rev-parse --show-toplevel 2>/dev/null) || [ -z "$top" ]; then
+            block "a hard reset in '$target', which git cannot resolve to a working tree (missing directory, not a repository, or a bare one)"
+        fi
+        case "$top" in
+            */.claude/worktrees/*)
+                continue
+                ;;
+        esac
+        # --no-optional-locks: a status refreshes the index, and doing that under
+        # a sibling lane's `git add` makes theirs fail on index.lock.
+        # --untracked-files=normal: a user's status.showUntrackedFiles=no must
+        # not be able to hide new files from this check.
+        if ! changes=$(git --no-optional-locks -C "$top" status --porcelain --untracked-files=normal 2>/dev/null); then
+            block "a hard reset in '$top', whose state git status could not report"
+        fi
+        if [ -n "$changes" ]; then
+            block "a hard reset over uncommitted changes in $top -- in the shared checkout it erases every sibling lane's unsaved work; a lane's own .claude/worktrees/ tree is exempt"
+        fi
+    done <<EOF
+$segments
+EOF
+}
+
+check_hard_reset
+
+# --------------------------------------------------------------------------
 # A gate piped into a filter reports the filter's exit code, not the gate's.
 #
 # AGENTS.md §9 already says this ("a pipeline like `pnpm test:e2e | tail -5`
@@ -119,8 +402,9 @@ esac
 pipe_block() {
     printf 'blocked: %s\n' "$1" >&2
     printf 'a gate must not be piped -- $? would belong to the last command in the pipeline, not to the gate.\n' >&2
-    printf 'run it as:  <gate> > /tmp/gate.log 2>&1; rc=$?; echo "exit=$rc"; tail -20 /tmp/gate.log\n' >&2
+    printf 'run it as:  <gate> > <scratchpad>/<callsign>-<gate>.log 2>&1; rc=$?; echo "exit=$rc"; tail -20 <scratchpad>/<callsign>-<gate>.log\n' >&2
     printf 'that keeps the real exit code and the whole log. (zsh has no $PIPESTATUS; the array is ${pipestatus[1]}.)\n' >&2
+    printf '<scratchpad> is the session scratchpad directory and <callsign> is yours: every lane shares that directory, and a bare or /tmp log is overwritten by a sibling mid-run.\n' >&2
     exit 2
 }
 

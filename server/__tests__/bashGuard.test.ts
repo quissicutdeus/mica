@@ -3,7 +3,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { execFileSync } from 'node:child_process';
-import { describe, expect, it } from 'vitest';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 /**
  * The Bash guard has to actually fire.
@@ -21,6 +24,11 @@ import { describe, expect, it } from 'vitest';
  * silent again. A guard nobody has watched block something is a guard nobody
  * knows works.
  *
+ * The hard-reset rule is the one shape that depends on the filesystem, not just
+ * the text: it blocks only over a dirty tree outside `.claude/worktrees/`. Its
+ * cases therefore run against real throwaway git repos, with the hook's `cwd`
+ * field in the input exactly as Claude Code sends it.
+ *
  * Every guarded shape below is assembled from parts on purpose, identifiers
  * included. Spelled out, it would be caught by the live guard the moment an
  * assistant tried to write or edit this file -- which is itself a small proof
@@ -30,16 +38,37 @@ import { describe, expect, it } from 'vitest';
 const HOOK = '.claude/hooks/block-dangerous-bash.sh';
 const BLOCKED = 2;
 
-/** Runs the hook exactly as Claude Code does and returns its exit code. */
-const run = (command: string, raw?: string): number => {
-  const input = raw ?? JSON.stringify({ tool_input: { command } });
+/**
+ * The fixture repos and the hook both run without the user's git config: a
+ * global `commit.gpgsign` would stall the fixture commits, and a global
+ * `status.showUntrackedFiles` is what one of the cases below sets on purpose.
+ */
+const HERMETIC: Record<string, string | undefined> = {
+  ...process.env,
+  GIT_CONFIG_GLOBAL: '/dev/null',
+  GIT_CONFIG_NOSYSTEM: '1'
+};
+
+type Outcome = { status: number; stderr: string };
+
+/** Feeds the hook raw stdin exactly as Claude Code does. */
+const feed = (input: string, env = HERMETIC): Outcome => {
   try {
-    execFileSync('sh', [HOOK], { input, stdio: ['pipe', 'pipe', 'pipe'] });
-    return 0;
+    execFileSync('sh', [HOOK], { input, env, stdio: ['pipe', 'pipe', 'pipe'] });
+    return { status: 0, stderr: '' };
   } catch (error) {
-    return (error as { status: number }).status;
+    const { status, stderr } = error as { status: number; stderr: Buffer };
+    return { status, stderr: String(stderr) };
   }
 };
+
+/** Runs the hook and returns its exit code. */
+const run = (command: string, raw?: string): number =>
+  feed(raw ?? JSON.stringify({ tool_input: { command } })).status;
+
+/** Runs the hook with a `cwd` in the input, as Claude Code always sends one. */
+const runAt = (command: string, cwd: string, env?: typeof HERMETIC): Outcome =>
+  feed(JSON.stringify({ cwd, tool_input: { command } }), env);
 
 /*
  * eslint-disable no-useless-concat --
@@ -56,6 +85,9 @@ const PROTECTION = 'gh api repos/o/r/bran' + 'ches/main/protection -X PUT';
 const PM = 'pn' + 'pm';
 const RUNNER = 'vit' + 'est';
 const VERIFY_SCRIPT = 'node scripts/veri' + 'fy.js';
+const SUBCOMMAND = 're' + 'set';
+const HARD = '--ha' + 'rd';
+const HARD_RESET = `git ${SUBCOMMAND} ${HARD}`;
 
 describe('the Bash guard blocks what AGENTS.md §2.1 says it blocks', () => {
   it.each([
@@ -114,5 +146,232 @@ describe('the Bash guard fails closed when it cannot read its input', () => {
 
   it('allows a well-formed payload that simply carries no command', () => {
     expect(run('', JSON.stringify({ tool_input: {} }))).toBe(0);
+  });
+});
+
+describe('the Bash guard tells a blocked pipe where to put its log', () => {
+  const { status, stderr } = feed(
+    JSON.stringify({ tool_input: { command: `${PM} verify 2>&1 | tail -16` } })
+  );
+
+  it('suggests a per-lane log in the scratchpad, never a shared one in /tmp', () => {
+    expect(status).toBe(BLOCKED);
+    expect(stderr).toContain('<scratchpad>/<callsign>-<gate>.log');
+    expect(stderr).not.toContain('/tmp/gate.log');
+  });
+
+  it('keeps the advice about reading the real exit code', () => {
+    expect(stderr).toContain('rc=$?');
+    expect(stderr).toContain('${pipestatus[1]}');
+  });
+});
+
+/*
+ * The hard reset. Everything below runs against real git repos, because the
+ * rule's whole point is what `git status` says about the tree: a text-only
+ * stub would pass whether or not the guard ever asked git anything.
+ */
+const ROOT = realpathSync(mkdtempSync(join(tmpdir(), 'bash-guard-')));
+const CLEAN = join(ROOT, 'clean');
+const DIRTY_TRACKED = join(ROOT, 'dirty-tracked');
+const DIRTY_UNTRACKED = join(ROOT, 'dirty-untracked');
+const DIRTY_STAGED = join(ROOT, 'dirty-staged');
+const WORKTREE = join(ROOT, '.claude', 'worktrees', 'dirty-lane');
+const SUBDIR = join(DIRTY_TRACKED, 'sub');
+const MISSING = join(ROOT, 'does-not-exist');
+
+/** Git for the fixtures: no user config, and no global hook dispatcher. */
+const git = (dir: string, ...args: string[]): void => {
+  execFileSync('git', ['-C', dir, '-c', 'core.hooksPath=/dev/null', ...args], {
+    env: HERMETIC,
+    stdio: 'pipe'
+  });
+};
+
+/** One tracked file, one commit. */
+const makeRepo = (dir: string): void => {
+  mkdirSync(dir, { recursive: true });
+  git(dir, 'init', '-q');
+  writeFileSync(join(dir, 'tracked.txt'), 'one\n');
+  git(dir, 'add', 'tracked.txt');
+  git(dir, '-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-q', '-m', 'init');
+};
+
+const modifyTracked = (dir: string): void => writeFileSync(join(dir, 'tracked.txt'), 'two\n');
+
+/** Asserts the hook refused, and refused for the reset rule rather than any other. */
+const expectResetBlocked = (command: string, cwd: string, env?: typeof HERMETIC): void => {
+  const { status, stderr } = runAt(command, cwd, env);
+  expect(status).toBe(BLOCKED);
+  expect(stderr).toContain('hard reset');
+};
+
+describe('the Bash guard and a hard reset over uncommitted work', () => {
+  beforeAll(() => {
+    for (const dir of [CLEAN, DIRTY_TRACKED, DIRTY_UNTRACKED, DIRTY_STAGED, WORKTREE]) {
+      makeRepo(dir);
+    }
+    modifyTracked(DIRTY_TRACKED);
+    mkdirSync(SUBDIR);
+    writeFileSync(join(DIRTY_UNTRACKED, 'new.txt'), 'new\n');
+    writeFileSync(join(DIRTY_STAGED, 'staged.txt'), 'staged\n');
+    git(DIRTY_STAGED, 'add', 'staged.txt');
+    modifyTracked(WORKTREE);
+  });
+
+  afterAll(() => {
+    rmSync(ROOT, { recursive: true, force: true });
+  });
+
+  describe('blocks it when the tree it acts on has uncommitted changes', () => {
+    it.each([
+      ['a modified tracked file', DIRTY_TRACKED],
+      ['an untracked file and nothing else', DIRTY_UNTRACKED],
+      ['a staged new file and nothing else', DIRTY_STAGED],
+      ['a subdirectory of a dirty repo, found through its toplevel', SUBDIR]
+    ])('with %s', (_label, cwd) => {
+      expectResetBlocked(HARD_RESET, cwd);
+    });
+
+    it('sees an untracked file even when the user config hides untracked files', () => {
+      // The check passes --untracked-files=normal; without it, a
+      // status.showUntrackedFiles=no in the user's config would blind the guard.
+      const config = join(ROOT, 'hide-untracked.gitconfig');
+      writeFileSync(config, '[status]\n\tshowUntrackedFiles = no\n');
+      expectResetBlocked(HARD_RESET, DIRTY_UNTRACKED, { ...HERMETIC, GIT_CONFIG_GLOBAL: config });
+    });
+
+    it.each([
+      ['the commit before the flag', `git ${SUBCOMMAND} HEAD ${HARD}`],
+      ['the flag after another flag', `git ${SUBCOMMAND} -q ${HARD}`],
+      ['the flag before a commit', `${HARD_RESET} HEAD`],
+      [
+        'a git option in front of the subcommand',
+        `git -c core.quotepath=off ${SUBCOMMAND} ${HARD}`
+      ],
+      ['the --no-pager option', `git --no-pager ${SUBCOMMAND} ${HARD}`],
+      ['an absolute path to git', `/usr/bin/git ${SUBCOMMAND} ${HARD}`],
+      ['an abbreviation git accepts as hard', `git ${SUBCOMMAND} --har`],
+      ['the shortest abbreviation git accepts as hard', `git ${SUBCOMMAND} --h`],
+      ['a command chained after another', `true && ${HARD_RESET}`],
+      ['a command after a semicolon', `echo go; ${HARD_RESET}`],
+      ['a command inside a subshell', `(${HARD_RESET})`],
+      ['a command substitution', `echo $(${HARD_RESET})`],
+      ['a backtick substitution', `echo \`${HARD_RESET}\``],
+      ['a brace group', `{ ${HARD_RESET}; }`],
+      ['a command inside sh -c', `sh -c '${HARD_RESET}'`],
+      ['a command run through xargs', `echo HEAD | xargs git ${SUBCOMMAND} ${HARD}`],
+      ['a line continuation between the words', `git ${SUBCOMMAND} \\\n  ${HARD}`]
+    ])('whatever the spelling: %s', (_label, command) => {
+      expectResetBlocked(command, DIRTY_TRACKED);
+    });
+
+    it('follows -C to the tree it names, not the working directory', () => {
+      expectResetBlocked(`git -C ${DIRTY_TRACKED} ${SUBCOMMAND} ${HARD}`, CLEAN);
+    });
+
+    it('resolves a relative -C against the hook input cwd', () => {
+      expectResetBlocked(`git -C dirty-tracked ${SUBCOMMAND} ${HARD}`, ROOT);
+    });
+
+    it('follows -C through a second -C and a dot-dot', () => {
+      expectResetBlocked(`git -C ${ROOT} -C dirty-tracked/sub -C .. ${SUBCOMMAND} ${HARD}`, CLEAN);
+    });
+  });
+
+  describe('lets it through when nothing is at risk', () => {
+    it('on a clean tree', () => {
+      expect(runAt(HARD_RESET, CLEAN).status).toBe(0);
+    });
+
+    it('on a clean tree named by -C, whatever state the working directory is in', () => {
+      expect(runAt(`git -C ${CLEAN} ${SUBCOMMAND} ${HARD}`, DIRTY_TRACKED).status).toBe(0);
+    });
+
+    it('in a dirty tree under .claude/worktrees/, which a lane owns outright', () => {
+      expect(runAt(HARD_RESET, WORKTREE).status).toBe(0);
+    });
+
+    it('in a dirty worktree named by -C, even from a dirty checkout', () => {
+      expect(runAt(`git -C ${WORKTREE} ${SUBCOMMAND} ${HARD} HEAD`, DIRTY_TRACKED).status).toBe(0);
+    });
+
+    it.each([
+      ['a soft reset', `git ${SUBCOMMAND} --soft HEAD`],
+      ['a mixed reset', `git ${SUBCOMMAND} --mixed HEAD`],
+      ['a reset with no mode', `git ${SUBCOMMAND}`],
+      ['unstaging a path', `git ${SUBCOMMAND} HEAD tracked.txt`],
+      ['a path that is literally named like the flag', `git ${SUBCOMMAND} -- ${HARD}`],
+      ['a commit message that mentions the flag', `git commit -m "undo a ${SUBCOMMAND} ${HARD}"`],
+      ['a search for the words', `grep -rn "git ${SUBCOMMAND} ${HARD}" AGENTS.md`],
+      ['echoing the words', `echo "run git ${SUBCOMMAND} ${HARD} to start over"`]
+    ])('in a dirty tree for %s', (_label, command) => {
+      expect(runAt(command, DIRTY_TRACKED).status).toBe(0);
+    });
+  });
+
+  describe('refuses when it cannot tell which tree the reset acts on', () => {
+    it('with no cwd in the hook input', () => {
+      const { status, stderr } = feed(JSON.stringify({ tool_input: { command: HARD_RESET } }));
+      expect(status).toBe(BLOCKED);
+      expect(stderr).toContain('no cwd');
+    });
+
+    it('with a cwd that is not a string', () => {
+      const { status, stderr } = feed(
+        JSON.stringify({ cwd: 42, tool_input: { command: HARD_RESET } })
+      );
+      expect(status).toBe(BLOCKED);
+      expect(stderr).toContain('no cwd');
+    });
+
+    it('with a cwd that does not exist', () => {
+      expectResetBlocked(HARD_RESET, MISSING);
+    });
+
+    it('with a cwd that is a plain directory, not a repository', () => {
+      expectResetBlocked(HARD_RESET, ROOT);
+    });
+
+    it('with a cwd holding a line break, which cannot be handed on safely', () => {
+      expectResetBlocked(HARD_RESET, `${CLEAN}\n`);
+    });
+
+    it('after a cd earlier in the same command', () => {
+      expectResetBlocked(`cd x && ${HARD_RESET}`, CLEAN);
+    });
+
+    it('after a cd into the very tree that is clean', () => {
+      expectResetBlocked(`cd ${CLEAN} && ${HARD_RESET}`, WORKTREE);
+    });
+
+    it('after a pushd', () => {
+      expectResetBlocked(`pushd ${CLEAN}; ${HARD_RESET}`, CLEAN);
+    });
+
+    it('with a -C path that does not exist', () => {
+      expectResetBlocked(`git -C ${MISSING} ${SUBCOMMAND} ${HARD}`, CLEAN);
+    });
+
+    it.each([
+      ['a variable', 'git -C $WT ' + SUBCOMMAND + ' ' + HARD],
+      ['a variable in quotes', 'git -C "$WT" ' + SUBCOMMAND + ' ' + HARD],
+      ['a command substitution', 'git -C $(pwd) ' + SUBCOMMAND + ' ' + HARD],
+      ['a tilde', 'git -C ~/work ' + SUBCOMMAND + ' ' + HARD],
+      ['a glob', 'git -C /tmp/lane-* ' + SUBCOMMAND + ' ' + HARD],
+      ['a quoted path with a space in it', `git -C "${CLEAN} x" ${SUBCOMMAND} ${HARD}`],
+      ['an empty path', `git -C "" ${SUBCOMMAND} ${HARD}`]
+    ])('with a -C path that is %s', (_label, command) => {
+      expectResetBlocked(command, CLEAN);
+    });
+
+    it.each([
+      ['--git-dir', `git --git-dir=${CLEAN}/.git ${SUBCOMMAND} ${HARD}`],
+      ['--work-tree', `git --work-tree=${CLEAN} ${SUBCOMMAND} ${HARD}`],
+      ['GIT_DIR in the environment', `GIT_DIR=${CLEAN}/.git ${HARD_RESET}`],
+      ['GIT_WORK_TREE exported earlier', `export GIT_WORK_TREE=${CLEAN}; ${HARD_RESET}`]
+    ])('with git pointed elsewhere by %s', (_label, command) => {
+      expectResetBlocked(command, CLEAN);
+    });
   });
 });

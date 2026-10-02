@@ -8,7 +8,7 @@ description: >-
   newer renders perfectly in the dev browser and in Playwright and is broken in
   game.
 color: blue
-model: sonnet
+model: opus
 effort: high
 skills:
   - cef-css
