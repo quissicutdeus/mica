@@ -96,6 +96,11 @@ const PLAYWRIGHT = 'play' + 'wright';
 const PRETTIER = 'pret' + 'tier';
 const ESLINT = 'es' + 'lint';
 const KNIP = 'kn' + 'ip';
+const GH = 'gh ' + 'api';
+const REPO = 'repos/o/r';
+const RULES = 'rule' + 'sets';
+const RULESETS = `${REPO}/${RULES}`;
+const BRANCHES = `${REPO}/bran` + 'ches';
 
 describe('the Bash guard blocks what AGENTS.md §2.1 says it blocks', () => {
   it.each([
@@ -179,6 +184,9 @@ describe('the Bash guard refuses a gate in command position, however it is reach
     ['through env', `env FOO=1 ${RUNNER} run | tail`],
     ['through nice and its option', `nice -n 5 ${TSC} | tail`],
     ['through exec', `exec ${RUNNER} run | tail`],
+    ['through the zsh modifier noglob', `noglob ${RUNNER} run | tail`],
+    ['through the zsh modifier nocorrect', `nocorrect ${TSC} -p . | tail`],
+    ['through zsh |&, which pipes stderr too', `${RUNNER} run |& tail`],
     ['through xargs', `ls | xargs ${PRETTIER} --check | tail`],
     ['through eval', `eval "${RUNNER} run | tail"`],
     ['with stderr merged into the pipe', `${RUNNER} run 2>&1 | tail`],
@@ -242,25 +250,234 @@ describe('the Bash guard leaves a gate named in argument position alone', () => 
   });
 });
 
-describe('the Bash guard fails closed when its own pipe check cannot run', () => {
+/*
+ * `gh api` is how an assistant would change branch protection or the repository
+ * itself without ever typing `git push`. The method can be spelled several ways
+ * and `gh` decides the verb, not the spelling, so each way gets its own case --
+ * and a read of the same path has to stay allowed, or the rule is switched off
+ * the first time someone needs to list the rulesets.
+ */
+describe('the Bash guard refuses a gh api call that writes to the repository or its rulesets', () => {
+  it.each([
+    ['-X PATCH', `${GH} ${REPO} -X PATCH`],
+    ['--method PATCH', `${GH} ${REPO} --method PATCH`],
+    ['--method=PATCH', `${GH} ${REPO} --method=PATCH`],
+    ['-XPATCH with the value glued on', `${GH} ${REPO} -XPATCH`],
+    ['-X=PATCH', `${GH} ${REPO} -X=PATCH`],
+    ['a lower-case method', `${GH} ${REPO} -X patch`],
+    ['a mixed-case method after an =', `${GH} ${REPO} --method=Delete`],
+    ['a quoted method', `${GH} ${REPO} -X "PATCH"`],
+    ['a single-quoted method after an =', `${GH} ${REPO} --method='PUT'`],
+    ['a method flag before the path', `${GH} -X PATCH ${REPO}`],
+    ['PUT', `${GH} ${REPO} -X PUT`],
+    ['DELETE', `${GH} ${REPO} -X DELETE`],
+    ['a method held in a variable, which is not known to be a read', `${GH} ${REPO} -X "$M"`],
+    ['a quoted path', `${GH} "${REPO}" -X PATCH`],
+    ['a path with a leading slash', `${GH} /${REPO} -X PATCH`],
+    ['a path with a trailing slash', `${GH} ${REPO}/ -X PATCH`],
+    ['a path with a query string', `${GH} ${REPO}?x=1 -X PATCH`],
+    ['a full URL', `${GH} https://api.github.com/${REPO} -X PATCH`],
+    ['gh placeholders for the owner and repo', `${GH} repos/{owner}/{repo} --method PATCH`],
+    ['two spaces between gh and api', `${GH.replace(' ', '  ')} ${REPO} -X PATCH`],
+    ['a tab between gh and api', `${GH.replace(' ', '\t')} ${REPO} -X PATCH`],
+    ['a ; inside a quoted argument in front of the method', `${GH} -H 'a;b' ${REPO} -X PATCH`],
+    ['a POST that creates a ruleset', `${GH} ${RULESETS} -X POST`],
+    ['a ruleset updated by id', `${GH} ${RULESETS}/123 --method=PUT`],
+    ['a ruleset deleted by id', `${GH} ${RULESETS}/123 -X DELETE`],
+    ['an organization ruleset', `${GH} orgs/o/${RULES} -X POST`],
+    ['a ruleset with a lower-case method', `${GH} ${RULESETS} --method=post`],
+    [
+      'a ruleset created with fields and no method, which gh sends as a POST',
+      `${GH} ${RULESETS} -f name=x`
+    ],
+    ['a ruleset with -F', `${GH} ${RULESETS} -F enforcement=active`],
+    ['a ruleset with a flag glued to its value', `${GH} ${RULESETS} -fname=x`],
+    ['a ruleset with --field', `${GH} ${RULESETS} --field name=x`],
+    ['a ruleset with --raw-field', `${GH} ${RULESETS} --raw-field name=x`],
+    ['a ruleset with --input', `${GH} ${RULESETS} --input rule.json`],
+    ['a field after a --jq filter that holds a pipe', `${GH} ${RULESETS} --jq '.a | .b' -f name=x`],
+    ['a field after a quoted ; in the same call', `${GH} ${RULESETS} -H 'a;b' -f name=x`]
+  ])('blocks %s', (_label, command) => {
+    expect(run(command)).toBe(BLOCKED);
+  });
+
+  // The verb is decided per call. A GET on one `gh api` must never make a
+  // field-only write in another call read as a GET too: the whole-command
+  // version of this check did exactly that.
+  it.each([
+    [
+      'a GET, then a field-only write on the repository',
+      `${GH} user --method GET && ${GH} ${REPO} -f private=true`
+    ],
+    [
+      'a GET with fields, then a field-only ruleset write',
+      `${GH} ${RULESETS} -X GET -f per_page=5; ${GH} ${RULESETS} -f name=x`
+    ],
+    [
+      'a GET right before a ;, then a field-only write to protection',
+      `${GH} user -X GET; ${GH} ${BRANCHES}/main/protection -f x=y`
+    ],
+    ['a GET, then a write after ||', `${GH} user -X GET || ${GH} ${REPO} -f a=b`],
+    ['a GET, then a write on the next line', `${GH} user -X GET\n${GH} ${RULESETS} -f name=x`],
+    ['a GET piped into an --input write', `${GH} user -X GET | ${GH} ${RULESETS} --input -`],
+    [
+      'a GET, then a write behind a continuation line',
+      `${GH} user -X GET; ${GH} ${RULESETS} \\\n -X POST`
+    ],
+    [
+      'two calls in one quoted command, which cannot be told apart',
+      `sh -c '${GH} user -X GET; ${GH} ${RULESETS} -f name=x'`
+    ],
+    ['two calls in one substitution', `echo $(${GH} user -X GET; ${GH} ${RULESETS} -f name=x)`],
+    ['a method flag after a 2>&1 redirect', `${GH} ${REPO} 2>&1 -X PATCH`],
+    ['a write inside a substitution', `x=$(${GH} ${RULESETS} -X POST)`],
+    ['a field after a quote that never closes', `${GH} ${RULESETS} -f name='x`]
+  ])('blocks, deciding per call: %s', (_label, command) => {
+    expect(run(command)).toBe(BLOCKED);
+  });
+
+  it.each([
+    ['protection updated with PUT', PROTECTION],
+    ['protection with --method=PUT', `${GH} ${BRANCHES}/main/protection --method=PUT`],
+    ['protection with -XPUT glued on', `${GH} ${BRANCHES}/main/protection -XPUT`],
+    ['protection with a lower-case method after -X=', `${GH} ${BRANCHES}/main/protection -X=put`],
+    ['protection removed with DELETE', `${GH} ${BRANCHES}/main/protection -X DELETE`],
+    ['one protection setting patched', `${GH} ${BRANCHES}/main/protection/enforce_admins -X POST`],
+    ['protection set with fields and no method', `${GH} ${BRANCHES}/main/protection -f x=y`],
+    [
+      'protection set with --input and no method',
+      `${GH} ${BRANCHES}/main/protection --input p.json`
+    ],
+    ['protection with a method held in a variable', `${GH} ${BRANCHES}/main/protection -X "$M"`],
+    [
+      'protection with a variable method after a GET',
+      `${GH} ${BRANCHES}/main/protection -X GET -X "$M"`
+    ],
+    ['a branch rename', `${GH} ${BRANCHES}/main/rename -X POST -f new_name=x`],
+    ['a quoted path with a query string and a write method', `${GH} '${BRANCHES}?x=1' -X DELETE`],
+    ['a write under settings', `${GH} ${REPO}/settings -X PATCH`],
+    ['fields under settings and no method', `${GH} ${REPO}/settings -f x=y`]
+  ])('blocks a write to branches or settings: %s', (_label, command) => {
+    expect(run(command)).toBe(BLOCKED);
+  });
+});
+
+describe('the Bash guard leaves a gh api read alone', () => {
+  it.each([
+    ['reading the repository', `${GH} ${REPO}`],
+    ['reading the repository through a jq filter', `${GH} ${REPO} --jq .default_branch`],
+    ['reading the repository with a header', `${GH} ${REPO} -H "Accept: application/json"`],
+    ['an explicit GET', `${GH} ${REPO} -X GET`],
+    ['an explicit lower-case get after an =', `${GH} ${REPO} --method=get`],
+    ['an explicit HEAD', `${GH} ${REPO} -XHEAD`],
+    ['listing the rulesets', `${GH} ${RULESETS}`],
+    ['listing the rulesets with --paginate', `${GH} --paginate ${RULESETS}`],
+    ['reading one ruleset', `${GH} ${RULESETS}/123`],
+    ['reading the rulesets through a jq filter with a pipe', `${GH} ${RULESETS} --jq '.[] | .id'`],
+    ['reading an organization ruleset', `${GH} orgs/o/${RULES}`],
+    ['a GET whose fields are query parameters', `${GH} ${RULESETS} -X GET -f per_page=5`],
+
+    // The branches and settings paths used to be refused whatever the method, so
+    // `gh api 'repos/o/r/branches?protected=true' --jq ...` -- how a lane asks
+    // which branches are protected -- was blocked as if it were a write.
+    ['listing branches', `${GH} ${BRANCHES}`],
+    [
+      'listing the protected branches through a quoted query and jq',
+      `${GH} '${BRANCHES}?protected=true' --jq '.[].name'`
+    ],
+    ['reading one branch', `${GH} ${BRANCHES}/main`],
+    ['reading branch protection', `${GH} ${BRANCHES}/main/protection`],
+    [
+      'reading branch protection through a jq filter that holds a pipe',
+      `${GH} ${BRANCHES}/main/protection --jq '.a | .b'`
+    ],
+    ['branches with --paginate', `${GH} --paginate ${BRANCHES}`],
+    ['branches with an explicit GET', `${GH} ${BRANCHES} -X GET`],
+    [
+      'branches with --method GET and fields as query parameters',
+      `${GH} ${BRANCHES} --method GET -f per_page=100`
+    ],
+    [
+      'branches with -X GET and fields as query parameters',
+      `${GH} ${BRANCHES} -X GET -f per_page=100`
+    ],
+    ['branches with --method=get', `${GH} ${BRANCHES} --method=get`],
+    ['branch protection with -XHEAD glued on', `${GH} ${BRANCHES}/main/protection -XHEAD`],
+    ['reading under settings', `${GH} ${REPO}/settings`],
+    [
+      'reading branch protection, then an unrelated rm -f',
+      `${GH} ${BRANCHES}/main/protection > x.json; rm -f x.json`
+    ],
+    ['reading the rulesets, then an unrelated rm -f', `${GH} ${RULESETS} > x.json; rm -f x.json`],
+    ['reading the rulesets, then an unrelated force flag', `${GH} ${RULESETS} && ls -f`],
+    [
+      'writing to a sub-resource, which is not the repository',
+      `${GH} ${REPO}/issues -X POST -f title=x`
+    ],
+    ['deleting a sub-resource', `${GH} ${REPO}/issues/1/comments/2 -X DELETE`],
+    ['a gh command that is not api', 'gh pr list --state open'],
+
+    // Each call is judged by its own flags, so a neighbour's do not count.
+    [
+      'a GET on one call, then a plain read of the rulesets',
+      `${GH} user -X GET; ${GH} ${RULESETS}`
+    ],
+    [
+      'a POST on one call, then a plain read of the rulesets',
+      `${GH} user -X POST; ${GH} ${RULESETS}`
+    ],
+    [
+      'a read of the rulesets, then fields on a call elsewhere',
+      `${GH} ${RULESETS}; ${GH} user -f x=y`
+    ],
+    ['a ruleset read with stderr merged and piped on', `${GH} ${RULESETS} 2>&1 | head`],
+    ['a ruleset read inside a subshell', `(${GH} ${RULESETS} -X GET)`],
+    ['a ruleset read inside a substitution', `x=$(${GH} ${RULESETS} -X GET)`],
+    ['a GET followed directly by a ;', `${GH} ${RULESETS} -X GET; rm -f x`]
+  ])('allows %s', (_label, command) => {
+    expect(run(command)).toBe(0);
+  });
+});
+
+describe('the Bash guard fails closed when its own checks cannot run', () => {
+  // Two PATH directories holding almost nothing: node alone, so neither grep nor
+  // awk can start, and node plus awk, so only grep cannot.
   const BIN = mkdtempSync(join(tmpdir(), 'bash-guard-bin-'));
+  const BIN_AWK = mkdtempSync(join(tmpdir(), 'bash-guard-bin-awk-'));
 
   beforeAll(() => {
-    // node, and nothing else: no grep, so the pipe check's grep cannot start.
-    symlinkSync(process.execPath, join(BIN, 'node'));
+    const awk = execFileSync('sh', ['-c', 'command -v awk'], { encoding: 'utf8' }).trim();
+    for (const dir of [BIN, BIN_AWK]) {
+      symlinkSync(process.execPath, join(dir, 'node'));
+    }
+    symlinkSync(awk, join(BIN_AWK, 'awk'));
   });
 
   afterAll(() => {
     rmSync(BIN, { recursive: true, force: true });
+    rmSync(BIN_AWK, { recursive: true, force: true });
   });
 
+  const withPath = (command: string, path: string): Outcome =>
+    feed(JSON.stringify({ tool_input: { command } }), { ...HERMETIC, PATH: path });
+
   it('refuses an ordinary command rather than letting it through unchecked', () => {
-    const { status, stderr } = feed(JSON.stringify({ tool_input: { command: 'ls' } }), {
-      ...HERMETIC,
-      PATH: BIN
-    });
+    const { status, stderr } = withPath('ls', BIN);
     expect(status).toBe(BLOCKED);
     expect(stderr).toContain('pipe check');
+  });
+
+  it('refuses a gh api call rather than reading it as not a write, with no grep', () => {
+    // A read: with grep gone, the only honest answer is "cannot tell", never "fine".
+    const { status, stderr } = withPath(`${GH} ${REPO}`, BIN_AWK);
+    expect(status).toBe(BLOCKED);
+    expect(stderr).toContain('gh api check');
+  });
+
+  it('refuses a gh api call it cannot split into calls, with no awk', () => {
+    const { status, stderr } = withPath(`${GH} ${REPO}`, BIN);
+    expect(status).toBe(BLOCKED);
+    expect(stderr).toContain('could not split');
   });
 });
 

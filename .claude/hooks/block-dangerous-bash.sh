@@ -76,6 +76,33 @@ block() {
     exit 2
 }
 
+# Asks grep one question about a piece of text. Returns 0 when the text $2
+# matches the extended regex $3 (ignoring case when $4 is set), 1 when it does
+# not, and refuses when grep itself could not run; $1 names the check, for the
+# message.
+#
+# Every grep the guard runs goes through here, and that is the point of it. The
+# usual `if printf ... | grep -q ...` cannot tell "no match" (exit 1) from "could
+# not run" (exit 2 for a regex grep cannot compile, 127 for no grep at all), and
+# reads both as no match -- so the check goes quiet while looking installed,
+# which is exactly what this file exists to stop. Here anything but 0 or 1
+# refuses.
+cmd_grep() {
+    if [ -n "$4" ]; then
+        printf '%s\n' "$2" | grep -iqE -- "$3"
+    else
+        printf '%s\n' "$2" | grep -qE -- "$3"
+    fi
+    grep_rc=$?
+    case $grep_rc in
+        0) return 0 ;;
+        1) return 1 ;;
+    esac
+    printf 'blocked: the Bash guard could not run its %s check (grep exited %s).\n' "$1" "$grep_rc" >&2
+    printf 'this guard fails closed on purpose -- a check that cannot run must refuse, not read as a pass.\n' >&2
+    exit 2
+}
+
 case "$cmd" in
     *--no-verify*)
         block "--no-verify bypasses a quality gate"
@@ -97,23 +124,217 @@ case "$cmd" in
         ;;
 esac
 
-case "$cmd" in
-    *'gh api'*/branches* | *'gh api'*/settings*)
-        block "gh api against /branches or /settings changes branch protection or repository settings"
-        ;;
-esac
-
-# GitHub's actual repo-settings endpoint has no /settings segment -- it's a
+# --------------------------------------------------------------------------
+# gh api against branch protection or repository settings.
+#
+# Three kinds of path are refused, and only when the call writes. Anything under
+# /branches or /settings is where the classic branch-protection endpoint lives.
+# GitHub's actual repo-settings endpoint has no /settings segment -- it is a
 # mutating method straight on repos/<owner>/<repo>, with nothing after it
-# (repos/<owner>/<repo>/anything-else is a sub-resource, not settings).
-case "$cmd" in
-    *'gh api'*)
-        if echo "$cmd" | grep -qE -- '(^|[[:space:]])(-X|--method)[[:space:]]+(PATCH|PUT|DELETE|patch|put|delete)([[:space:]]|$)' &&
-            echo "$cmd" | grep -qE -- '(^|[[:space:]])repos/[^/[:space:]]+/[^/[:space:]]+($|[[:space:]])'; then
-            block "gh api PATCH/PUT/DELETE on repos/<owner>/<repo> changes or deletes the repository"
-        fi
-        ;;
-esac
+# (repos/<owner>/<repo>/anything-else is a sub-resource, not settings). And
+# /rulesets, repository, organization or enterprise, is branch protection by
+# another name (AGENTS.md §2.1).
+#
+# Reading any of them is ordinary work -- `gh api 'repos/o/r/branches?protected=
+# true'` is how a lane finds out what is protected -- and an earlier version of
+# this check refused those reads too: a guard that cried wolf on the one question
+# the rule exists to let people ask, which is how a guard gets switched off.
+#
+# "Writes" is how gh decides the verb, not the spelling a person happened to
+# use. -X and --method take the value after a space, glued on (-XPATCH), after an
+# = (-X=PATCH, --method=PATCH), quoted, in any case. A method flag whose value is
+# anything but GET or HEAD is a write: PATCH, PUT, DELETE, POST, and also a value
+# this cannot read (-X "$METHOD"), which is not known to be a read. Without a
+# method flag the call is a GET -- unless it carries -f, -F, --field, --raw-field
+# or --input, which make it a POST, so `gh api repos/o/r/rulesets -f name=x`
+# creates a ruleset with no method on it at all. An explicit GET or HEAD stays a
+# read, whatever fields ride along as query parameters (`-X GET -f per_page=100`).
+#
+# The verb is decided per `gh api` call, never for the command as a whole. The
+# command is first split into its simple commands, on ; & | and newlines outside
+# quotes and $( ) -- so a ; or | inside a --jq filter or a substitution does not
+# cut a call in two -- and each is judged by its own path and its own method
+# flag, else its own body flags. Reading the method over the whole command was
+# the first version, and it failed both ways: `gh api user --method GET && gh api
+# repos/o/r -f private=true` read the GET as the method of both calls and hid
+# the field-only write behind it, and `gh api user -X POST; gh api
+# repos/o/r/rulesets` blamed a harmless read for a POST aimed at another path.
+# It also keeps -f from meaning `rm -f`, `ls -f` or a force flag in a neighbour:
+# `gh api repos/o/r/rulesets > x; rm -f x` is not a write.
+#
+# Where a method cannot be tied to one call with confidence, the call is a write:
+# a segment holding more than one `gh api` (sh -c 'a; b', a substitution), a
+# method it cannot read, and a command it could not split at all.
+#
+# Each segment is read with every run of whitespace squeezed to one space, so
+# `gh  api` and a tab read as `gh api`.
+
+q="[\"']"
+qc="\"'"
+bt='`'
+vend="${qc})${bt}"
+has_method='(^|[[:space:]])(-[A-Za-z]*X|--method)'
+nonread_method="${has_method}(=|[[:space:]]+)?${q}?([^GgHh${qc}[:space:]=]|[Gg]([^Ee]|\$)|[Gg][Ee]([^Tt]|\$)|[Gg][Ee][Tt][^${vend}[:space:]]|[Hh]([^Ee]|\$)|[Hh][Ee]([^Aa]|\$)|[Hh][Ee][Aa]([^Dd]|\$)|[Hh][Ee][Aa][Dd][^${vend}[:space:]])"
+simple_command="(\"[^\"]*\"|'[^']*'|[^;|&\"']|&[^&])*"
+body_flag="gh[[:space:]]+api${simple_command}[[:space:]](-[A-Za-z]*[fF]|--field|--raw-field|--input)"
+repo_root="(^|[[:space:]${qc}/])repos/[^/[:space:]${qc}]+/[^/[:space:]${qc}?#]+/?([[:space:]${qc}?#]|\$)"
+rulesets="/rulesets([/?#[:space:]${qc}]|\$)"
+
+# Splits $cmd into its simple commands, one per line, on ; & | and newlines that
+# are not inside quotes, backticks or $( ). A backslash at the end of a line joins
+# it to the next, >& and &> are redirects rather than separators, and a quote
+# that never closes carries on to the end of the command, so what follows it is
+# read as part of the same call rather than dropped.
+split_commands() {
+    # LC_ALL=C: every character that matters here is ASCII, and in a multibyte
+    # locale awk's substr walks the line from its start on every call, which made
+    # a long one-line command quadratic.
+    printf '%s\n' "$cmd" | LC_ALL=C awk '
+        BEGIN { sq = "\047"; dq = "\""; bt = "`"; q = ""; depth = 0; seg = ""; cont = 0 }
+        function flush() {
+            if (seg ~ /[^ \t]/) print seg
+            seg = ""
+        }
+        {
+            n = length($0)
+            prev = ""
+            for (i = 1; i <= n; i++) {
+                c = substr($0, i, 1)
+                nxt = substr($0, i + 1, 1)
+                if (q == sq || q == bt) {
+                    seg = seg c
+                    if (c == q) q = ""
+                } else if (q == dq) {
+                    if (c == "\\" && i < n) {
+                        seg = seg c nxt
+                        i++
+                    } else {
+                        seg = seg c
+                        if (c == dq) q = ""
+                    }
+                } else if (c == "\\") {
+                    if (i == n) {
+                        cont = 1
+                    } else {
+                        seg = seg c nxt
+                        i++
+                    }
+                } else if (c == sq || c == dq || c == bt) {
+                    q = c
+                    seg = seg c
+                } else if (c == "$" && nxt == "(") {
+                    depth++
+                    seg = seg c nxt
+                    i++
+                } else if (c == ")" && depth > 0) {
+                    depth--
+                    seg = seg c
+                } else if (depth == 0 && (c == ";" || c == "|" || (c == "&" && prev != ">" && prev != "<" && nxt != ">"))) {
+                    flush()
+                } else {
+                    seg = seg c
+                }
+                prev = c
+            }
+            if (q != "" || cont || depth > 0) {
+                seg = seg " "
+                cont = 0
+            } else {
+                flush()
+            }
+        }
+        END { flush() }
+    '
+}
+
+# Returns 0 when the call in $seg writes, 1 when it only reads. A segment is one
+# simple command, so its method flag is the call's own.
+gh_call_writes() {
+    # More than one `gh api` in one segment (sh -c 'a; b', a substitution): which
+    # flag belongs to which call cannot be told, so it is not known to be a read.
+    calls=0
+    rest=$seg
+    while :; do
+        case $rest in
+            *'gh api'*)
+                calls=$((calls + 1))
+                rest=${rest#*'gh api'}
+                ;;
+            *) break ;;
+        esac
+    done
+    [ "$calls" -le 1 ] || return 0
+
+    # A method flag whose value is anything but GET or HEAD, spelled out or not.
+    cmd_grep 'gh api' "$seg" "$nonread_method" && return 0
+    # A method flag that did not match that is a GET or HEAD, whatever fields
+    # ride along.
+    cmd_grep 'gh api' "$seg" "$has_method" && return 1
+    cmd_grep 'gh api' "$seg" "$body_flag"
+}
+
+# Judges one segment: refuses it when it is a `gh api` call that writes to a
+# guarded path.
+check_gh_call() {
+    set -f
+    # shellcheck disable=SC2086
+    set -- $seg
+    set +f
+    seg=$*
+
+    case "$seg" in
+        *'gh api'*) ;;
+        *) return 0 ;;
+    esac
+
+    on_protection=
+    on_root=
+    on_rulesets=
+    case "$seg" in
+        *'gh api'*/branches* | *'gh api'*/settings*)
+            on_protection=1
+            ;;
+    esac
+    cmd_grep 'gh api' "$seg" "$repo_root" i && on_root=1
+    cmd_grep 'gh api' "$seg" "$rulesets" i && on_rulesets=1
+    [ -n "$on_protection$on_root$on_rulesets" ] || return 0
+    gh_call_writes || return 0
+
+    if [ -n "$on_protection" ]; then
+        block "a gh api call that writes to /branches or /settings changes branch protection or repository settings"
+    fi
+    if [ -n "$on_rulesets" ]; then
+        block "a gh api call that writes to /rulesets creates, changes or deletes branch protection"
+    fi
+    block "a gh api call that writes (PATCH/PUT/DELETE/POST, or a body flag) on repos/<owner>/<repo> changes or deletes the repository"
+}
+
+check_gh_api() {
+    set -f
+    # shellcheck disable=SC2086
+    set -- $cmd
+    set +f
+    norm=$*
+
+    case "$norm" in
+        *'gh api'*) ;;
+        *) return 0 ;;
+    esac
+
+    if ! segments=$(split_commands) || [ -z "$segments" ]; then
+        block "a gh api call was named but the guard could not split the command to tell which call each flag belongs to"
+    fi
+
+    # The loop reads a here-document, not a pipe, for the same reason the hard
+    # reset's does: block's `exit 2` must end the guard, not a subshell.
+    while IFS= read -r seg; do
+        check_gh_call
+    done <<EOF
+$segments
+EOF
+}
+
+check_gh_api
 
 # --------------------------------------------------------------------------
 # A hard reset over uncommitted work.
@@ -447,8 +668,10 @@ esac
 #
 # Between that and the gate may stand only what leaves the gate as the command
 # being run: `VAR=value` assignments, if/then/do/else/while/until/!, a launcher
-# (time, env, nice, xargs, npx, `pnpm exec`, `pnpm --filter x exec`, `sh -c '`
-# and so on, with their options) and a path (`./node_modules/.bin/tsc`). For the
+# (time, env, nice, xargs, npx, zsh's noglob and nocorrect, `pnpm exec`, `pnpm
+# --filter x exec`, `sh -c '` and so on, with their options) and a path
+# (`./node_modules/.bin/tsc`). The commands this guard reads are typed into zsh,
+# which is also why `|&` needs nothing: it is a pipe like any other. For the
 # pnpm family the gate is the script name itself -- `pnpm test`, `pnpm run
 # test`, `pnpm --filter web test`, and the npm and yarn spellings.
 #
@@ -460,8 +683,9 @@ esac
 #
 # The check must not be able to fail open itself. A regex grep cannot compile
 # makes grep exit 2, and an `if` reads that exactly like "no match" -- the whole
-# pipe rule would go quiet while looking installed. So grep's status is read
-# here, and anything but 0 or 1 refuses.
+# pipe rule would go quiet while looking installed. So the question goes through
+# cmd_grep, defined near the top, which reads grep's status and refuses on
+# anything but 0 or 1.
 
 dirp='([-A-Za-z0-9_./~@+{}$]*/)?'
 cp='(^|[;&|(`{])[[:space:]]*'
@@ -469,7 +693,7 @@ tail='([^;|&]|&[^&])*\|[^|]'
 
 assign="[A-Za-z_][A-Za-z0-9_]*=(\"[^\"]*\"|'[^']*'|[^[:space:]\"'])*[[:space:]]+"
 keyword='(if|then|do|else|elif|while|until|!)[[:space:]]+'
-launcher="${dirp}(exec|time|env|nice|nohup|command|timeout|stdbuf|xargs|corepack|npx|pnpx|bunx)[[:space:]]+"'((-[^[:space:]]*|[0-9][0-9a-z.]*|\{\})[[:space:]]+)*'
+launcher="${dirp}(exec|time|env|nice|nohup|command|builtin|noglob|nocorrect|timeout|stdbuf|xargs|corepack|npx|pnpx|bunx)[[:space:]]+"'((-[^[:space:]]*|[0-9][0-9a-z.]*|\{\})[[:space:]]+)*'
 evalq="eval[[:space:]]+[\"']?"
 shellc="${dirp}(sh|bash|zsh|dash|ash|ksh)[[:space:]]+(-[A-Za-z]+[[:space:]]+)*-[A-Za-z]*c[[:space:]]+[\"']"
 
@@ -486,17 +710,10 @@ script_gate="${dirp}node[[:space:]]+"'(-[^[:space:]]*[[:space:]]+)*(\./)?scripts
 checker_gate="${dirp}(vitest|playwright|tsc|svelte-check|eslint|knip|prettier|shellcheck|hadolint)"
 
 # Returns 0 when $cmd runs $2 as a command (after any of the prefix words in $1)
-# and pipes it; 1 when it does not; and refuses when grep itself failed.
+# and pipes it; 1 when it does not; and refuses when grep itself failed, which
+# is cmd_grep's job.
 pipe_check() {
-    printf '%s\n' "$cmd" | grep -qE -- "${cp}${1}${2}${tail}"
-    grep_rc=$?
-    case $grep_rc in
-        0) return 0 ;;
-        1) return 1 ;;
-    esac
-    printf 'blocked: the Bash guard could not run its pipe check (grep exited %s).\n' "$grep_rc" >&2
-    printf 'this guard fails closed on purpose -- a check that cannot run must refuse, not read as a pass.\n' >&2
-    exit 2
+    cmd_grep pipe "$cmd" "${cp}${1}${2}${tail}"
 }
 
 if pipe_check "$prefix" "$pm_gate"; then
