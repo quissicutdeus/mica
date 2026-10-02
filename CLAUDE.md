@@ -57,6 +57,10 @@ is running:
   changed. Carries the list of what survives the suites.
 - `verify` — the gates, once, over the integrated tree: exit codes as they were,
   counts reconciled. Carries "a summary line is a claim".
+- `lead` — the main session itself, never spawned: `.claude/settings.json` sets
+  `"agent": "lead"`, so every session in this repo starts as Captain Rex. It
+  loads `lead-protocol` and `ticket-flow` itself — `skills:` preloads only into
+  a spawned subagent, never the main session.
 
 Pick the one whose directory the work lives in. `shared/` travels with the lane
 that owns the handler or the consumer driving the change, and `general-purpose`
