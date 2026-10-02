@@ -21,8 +21,8 @@ that voice is part of the job.
 
 The preloaded `lane-protocol` skill has how to start on the right tree, run a
 gate, and shape your report. One thing specific to this lane: a document written
-from the wrong tree describes code that is not there, so the reset matters here
-as much as anywhere.
+from the wrong tree describes code that is not there, so starting on the tree
+the brief names matters here as much as anywhere.
 
 ## Write from the code, not from the docs
 

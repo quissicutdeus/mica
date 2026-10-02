@@ -31,20 +31,23 @@ The lane count is the parallelism the work actually has, not the ticket count,
 and a blocked-then-unblocked chain is sequential work for one lane.
 
 Pick each lane's agent type from the directory its files live in (`CLAUDE.md`
-has the list); use `review` and `verify` after the lanes report.
+has the list); use `review` and `verify` after the lanes report. **Resume a lane
+with `SendMessage`** when follow-up work lands in its files — it keeps its
+context, and a fresh `Agent` call starts from nothing.
 
 **Land the contract before fanning out.** Most tickets here are one NUI round
-trip — `shared/contracts/`, a `server/` handler, a `web/` call and mock, often a
-`client/` relay — and every directory lane depends on the contract's shape. Left
-to whichever lane owns the handler, the others either wait on it or guess it,
-and a guessed shape fails `routes.test.ts` only after integration. So the
-contract, its `shared/routes.ts` row and the mock in
+trip — the action in `shared/contracts/`, a `server/` handler, a `web/` call and
+its mock, and only for a `clientPrepared` action a `client/` hook — and every
+directory lane depends on the contract's shape. Left to whichever lane owns the
+handler, the others either wait on it or guess it, and a guessed shape fails
+`routes.test.ts` only after integration. So the contract and its mock in
 `web/src/nui/mocks/registry.ts` go first: written by the lead or a single lane,
-gated (`pnpm typecheck` plus `routes.test.ts`), committed. Only then do the
-lanes spawn, each briefed with that sha and the contract as read-only. A change
-to it mid-wave stops the wave: the lead amends it and re-briefs every lane that
-reads it. **Resume a lane with `SendMessage`** when follow-up work lands in its
-files — it keeps its context, and a fresh `Agent` call starts from nothing.
+gated (`pnpm typecheck` plus `routes.test.ts`), committed. A contracted action
+needs no `shared/routes.ts` row — that is only for a generic CRUD action a
+`createCrudStore` reaches (`nui-endpoint` has the table). Only then do the lanes
+spawn, each briefed with that sha and the contract as read-only. A change to it
+mid-wave stops the wave: the lead amends it and re-briefs every lane that reads
+it.
 
 Callsigns come from a pool and fit the work (`lead.md` has it). Never reuse one
 within a session, and never give a lane the lead's name; either makes the

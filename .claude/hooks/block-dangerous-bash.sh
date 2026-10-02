@@ -414,8 +414,8 @@ case "$cmd" in
         ;;
 esac
 
-# The pipe has to be attached to the gate, not merely present somewhere in the
-# same command.
+# The pipe has to be attached to the gate, and the gate has to be the command
+# being run -- not merely present somewhere in the same command.
 #
 # `grep` tests each line on its own, so a first attempt that asked "is there a
 # gate?" and "is there a pipe?" as two separate greps matched any multi-line
@@ -436,15 +436,78 @@ esac
 #
 # `||` is excluded by the trailing `[^|]`, since it is control flow and the
 # left-hand side keeps its own exit status.
-if echo "$cmd" | grep -qE '(^|[[:space:]`(])(p?npm|yarn)[[:space:]]+((run|dlx)[[:space:]]+)?(verify|test|typecheck|lint|build|check|format|deadcode|docs)(:[a-z:-]+)?([^;|&]|&[^&])*\|[^|]'; then
+#
+# The same cry of wolf came back through the gate word itself, which was matched
+# anywhere after whitespace. `pgrep -fa playwright | head`, `ps aux | grep
+# vitest | wc -l` and `grep -rn tsc docs | head` look for a checker, or for its
+# name, and run none -- and were refused like the real thing. A word in argument
+# position is not the thing being run, so each regex now opens with command
+# position: the start of a line, or right after one of ; & | ( ` or { -- which
+# is also what `&&`, `||`, `$(`, a pipeline stage and a brace group look like.
+#
+# Between that and the gate may stand only what leaves the gate as the command
+# being run: `VAR=value` assignments, if/then/do/else/while/until/!, a launcher
+# (time, env, nice, xargs, npx, `pnpm exec`, `pnpm --filter x exec`, `sh -c '`
+# and so on, with their options) and a path (`./node_modules/.bin/tsc`). For the
+# pnpm family the gate is the script name itself -- `pnpm test`, `pnpm run
+# test`, `pnpm --filter web test`, and the npm and yarn spellings.
+#
+# That gives up, on purpose, only a gate that is genuinely an argument to
+# something this list does not know is a launcher (`ssh host tsc | tail`,
+# `docker run img vitest | tail`, `node node_modules/vitest/vitest.mjs | tail`).
+# The text is still read flat, as everywhere in this file, so a quoted
+# 'a;tsc | b' is read as a command.
+#
+# The check must not be able to fail open itself. A regex grep cannot compile
+# makes grep exit 2, and an `if` reads that exactly like "no match" -- the whole
+# pipe rule would go quiet while looking installed. So grep's status is read
+# here, and anything but 0 or 1 refuses.
+
+dirp='([-A-Za-z0-9_./~@+{}$]*/)?'
+cp='(^|[;&|(`{])[[:space:]]*'
+tail='([^;|&]|&[^&])*\|[^|]'
+
+assign="[A-Za-z_][A-Za-z0-9_]*=(\"[^\"]*\"|'[^']*'|[^[:space:]\"'])*[[:space:]]+"
+keyword='(if|then|do|else|elif|while|until|!)[[:space:]]+'
+launcher="${dirp}(exec|time|env|nice|nohup|command|timeout|stdbuf|xargs|corepack|npx|pnpx|bunx)[[:space:]]+"'((-[^[:space:]]*|[0-9][0-9a-z.]*|\{\})[[:space:]]+)*'
+evalq="eval[[:space:]]+[\"']?"
+shellc="${dirp}(sh|bash|zsh|dash|ash|ksh)[[:space:]]+(-[A-Za-z]+[[:space:]]+)*-[A-Za-z]*c[[:space:]]+[\"']"
+
+# What may follow `pnpm`, `npm` or `yarn` before the subcommand: an option, or
+# one of the options that takes a value (a directory, a package filter).
+pmopts='((--filter|-F|--dir|-C|--filter-prod|--workspace|-w|--prefix)[[:space:]]+[^[:space:]]+[[:space:]]+|-{1,2}[A-Za-z][^[:space:]]*[[:space:]]+)*(workspace[[:space:]]+[^[:space:]]+[[:space:]]+)?'
+pmrun="${dirp}(p?npm|yarn)[[:space:]]+${pmopts}"'((exec|dlx|x|run|run-script)[[:space:]]+)?(--[[:space:]]+)?'
+
+prefix="($assign|$keyword|$launcher|$evalq|$shellc)*"
+prefix_pm="($assign|$keyword|$launcher|$evalq|$shellc|$pmrun)*"
+
+pm_gate="${dirp}(p?npm|yarn)[[:space:]]+${pmopts}"'((run|run-script|dlx)[[:space:]]+)?(--[[:space:]]+)?(verify|test|typecheck|lint|build|check|format|deadcode|docs)'
+script_gate="${dirp}node[[:space:]]+"'(-[^[:space:]]*[[:space:]]+)*(\./)?scripts/(verify|check-[a-z-]+|lint-[a-z-]+)\.js'
+checker_gate="${dirp}(vitest|playwright|tsc|svelte-check|eslint|knip|prettier|shellcheck|hadolint)"
+
+# Returns 0 when $cmd runs $2 as a command (after any of the prefix words in $1)
+# and pipes it; 1 when it does not; and refuses when grep itself failed.
+pipe_check() {
+    printf '%s\n' "$cmd" | grep -qE -- "${cp}${1}${2}${tail}"
+    grep_rc=$?
+    case $grep_rc in
+        0) return 0 ;;
+        1) return 1 ;;
+    esac
+    printf 'blocked: the Bash guard could not run its pipe check (grep exited %s).\n' "$grep_rc" >&2
+    printf 'this guard fails closed on purpose -- a check that cannot run must refuse, not read as a pass.\n' >&2
+    exit 2
+}
+
+if pipe_check "$prefix" "$pm_gate"; then
     pipe_block "a pnpm gate is piped into another command"
 fi
 
-if echo "$cmd" | grep -qE '(^|[[:space:]`(])node[[:space:]]+scripts/(verify|check-[a-z-]+|lint-[a-z-]+)\.js([^;|&]|&[^&])*\|[^|]'; then
+if pipe_check "$prefix" "$script_gate"; then
     pipe_block "a verification script is piped into another command"
 fi
 
-if echo "$cmd" | grep -qE '(^|[[:space:]`(])(vitest|playwright|tsc|svelte-check|eslint|knip|prettier|shellcheck|hadolint)([^;|&]|&[^&])*\|[^|]'; then
+if pipe_check "$prefix_pm" "$checker_gate"; then
     pipe_block "a checker is piped into another command"
 fi
 

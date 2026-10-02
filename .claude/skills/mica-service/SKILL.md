@@ -148,5 +148,21 @@ disagrees with production and hides the bug.
 
 New or changed server logic **gets a test** in `server/__tests__/` — server code
 is checked strictly under TS 7, but its tests are excluded from `tsc` and `tsc`
-cannot prove behaviour. Then `pnpm verify` (AGENTS.md §9). Nothing here is
-exercised against a real database by any suite; say so.
+cannot prove behaviour.
+
+Those tests mock `Database`, so they assert SQL text, never what MariaDB does
+with it. Two opt-in suites run the real thing in a throwaway Docker container,
+and CI runs both on every push (`build-test.yml`): **`pnpm test:migrations`**
+applies the versioned migrations through the real `runPendingMigrations`, and
+**`pnpm test:schema`** drives the real repositories against both framework
+shapes. A migration, a new column or index, or a changed repository query runs
+the one that covers it before it is called done — MICA-153 passed every mocked
+assertion and aborted half-way through `ADD UNIQUE KEY` on the first real
+database. Neither is a `pnpm verify` gate, and neither skips quietly: no Docker
+is a failure, and the report says it could not run. What only a live FXServer
+shows — oxmysql's actual answer, `micaschema apply` from the console — is the
+in-server suite under `integration/` (MICA-302).
+
+**In a lane, run the gates the brief names and never `pnpm verify`** — two
+verify runs collide on port 4173 and `web/dist`, and the lead runs it once over
+the integrated tree. Outside a lane, `pnpm verify` (AGENTS.md §9).

@@ -38,7 +38,7 @@ nearly all of them, so reuse across sessions is normal and recovering a dead
 lead takes the newest transcript that spawned the name. Prefer one not yet
 spawned when one fits — as of 2026-10-01, checked against every transcript:
 Bacara, Jag, Deviss, Colt, Blitz, Havoc, Trauma, Barlex, Vaughn, Mouse, Ox,
-Punch, Sketch, Tiny, Matchstick, Redeye, Gearshift, Grizz, Wooley, Monnk, Coric,
+Punch, Sketch, Tiny, Matchstick, Gearshift, Grizz, Wooley, Monnk, Coric,
 Trapper, Doom. Strike a name from this list in the commit that lands the wave it
 served, so the list stays true without a recount.
 

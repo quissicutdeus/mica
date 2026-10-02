@@ -16,9 +16,9 @@ drift apart.
 Conditional detail is packaged as skills in `.claude/skills/`, loaded only when
 the work calls for it:
 
-- `nui-endpoint` — before adding or changing a `fetchNui` call, a route, a
-  server action, or a server-to-app push. A missing layer fails **silently in
-  game** while passing every suite.
+- `nui-endpoint` — before adding or changing a contract, a typed `call()`, a
+  `fetchNui` call, a route, a server action, or a server-to-app push. A missing
+  layer fails **silently in game** while passing every suite.
 - `cef-css` — before writing any CSS, color, or layout under `web/`. FiveM's CEF
   is Chromium 103.
 - `mica-service` — before declaring a service, changing a column, or writing a

@@ -26,11 +26,12 @@ to start on the right tree, run a gate, and shape your report. Nothing below
 repeats what those already say in full; it's what they don't.
 
 The other end of every net event is `client/`, which the `client` agent owns. A
-contract in `shared/contracts/`, its row in `shared/routes.ts` and its mock land
-**before** the wave fans out, so in a wave with sibling lanes they are read-only
-to you — a handler that needs a different shape is a stop-and-report, not an
-edit, because every sibling built against the committed one. When you are the
-lane briefed to write the contract, it is your first commit, alone.
+contract in `shared/contracts/` and its mock land **before** the wave fans out,
+so in a wave with sibling lanes they are read-only to you. A handler that needs
+a different shape is a stop-and-report, not an edit, because every sibling built
+against the committed one. When you are the lane briefed to write the contract,
+it is your first commit, alone. A contracted action needs no `shared/routes.ts`
+row; that is only for a generic CRUD action a `createCrudStore` reaches.
 
 Two more trees are yours despite their path. `integration/` is the in-server
 suite (MICA-302): scenarios run inside a real FXServer against a real database

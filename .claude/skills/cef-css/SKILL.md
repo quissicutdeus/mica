@@ -100,7 +100,20 @@ number; `MessageBar` (`sdk/ui`) already pads by it.
 
 ## Verifying
 
-Manual, and there is no substitute: `nui_devTools` in the F8 console (developer
-mode on), or `http://localhost:13172/` while the game runs. Inspect the element
-and confirm the **computed** value resolved — not just that the declaration is
-present. If you did not do this, say the change is unverified in CEF.
+Three layers, and each proves less than it looks like it does:
+
+1. **`pnpm lint:css` and `sdk/cef.test.ts`** read the source as text and refuse
+   the banned forms. They cannot see a declaration that is legal and still
+   resolves to nothing.
+2. **The `cef-floor` Playwright projects** run the e2e specs in a real Chromium
+   103 binary (`CEF_FLOOR_CHROMIUM`; always on in CI, and on this machine). That
+   is the automated check for the floor, but only for what a spec asserts on: a
+   dropped declaration no spec reads still passes. When a change could fail
+   there, assert the **computed** value in a spec and name it in your report —
+   in a lane, the lead's `verify` run is where it executes, since port 4173 is
+   not yours.
+3. **In game**: `nui_devTools` in the F8 console (developer mode on), or
+   `http://localhost:13172/` while the game runs, confirming the computed value
+   resolved. This repo's owner cannot run the game client, so do not hand this
+   back as a next step: say plainly that the change is unverified in FiveM's
+   CEF, and which of the two layers above does cover it.

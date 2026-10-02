@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -51,10 +51,13 @@ const HERMETIC: Record<string, string | undefined> = {
 
 type Outcome = { status: number; stderr: string };
 
-/** Feeds the hook raw stdin exactly as Claude Code does. */
+/**
+ * Feeds the hook raw stdin exactly as Claude Code does. The shell is found by
+ * absolute path, because one case runs it with a PATH that holds no shell.
+ */
 const feed = (input: string, env = HERMETIC): Outcome => {
   try {
-    execFileSync('sh', [HOOK], { input, env, stdio: ['pipe', 'pipe', 'pipe'] });
+    execFileSync('/bin/sh', [HOOK], { input, env, stdio: ['pipe', 'pipe', 'pipe'] });
     return { status: 0, stderr: '' };
   } catch (error) {
     const { status, stderr } = error as { status: number; stderr: Buffer };
@@ -88,6 +91,11 @@ const VERIFY_SCRIPT = 'node scripts/veri' + 'fy.js';
 const SUBCOMMAND = 're' + 'set';
 const HARD = '--ha' + 'rd';
 const HARD_RESET = `git ${SUBCOMMAND} ${HARD}`;
+const TSC = 'ts' + 'c';
+const PLAYWRIGHT = 'play' + 'wright';
+const PRETTIER = 'pret' + 'tier';
+const ESLINT = 'es' + 'lint';
+const KNIP = 'kn' + 'ip';
 
 describe('the Bash guard blocks what AGENTS.md §2.1 says it blocks', () => {
   it.each([
@@ -136,6 +144,123 @@ describe('the Bash guard leaves ordinary work alone', () => {
     ['&& after a gate, which keeps its status', `${PM} verify && ls sdk/ | head -3`]
   ])('allows %s', (_label, command) => {
     expect(run(command)).toBe(0);
+  });
+});
+
+/*
+ * The pipe rule asks whether the gate is the command being run, not whether its
+ * name appears somewhere in the command. Both halves are pinned: it cried wolf
+ * on `pgrep -fa <checker> | head` and friends, and a guard that does that gets
+ * switched off -- but every way of actually running a gate must stay refused,
+ * because loosening the rule to quiet the false alarm would reopen the real
+ * hole it exists for.
+ */
+describe('the Bash guard refuses a gate in command position, however it is reached', () => {
+  it.each([
+    ['a launcher', `${PM} exec ${RUNNER} run x.test.ts | tail`],
+    ['npx', `npx ${TSC} --noEmit | tail`],
+    ['pnpm dlx', `${PM} dlx ${PRETTIER} --check . | tail`],
+    ['pnpm running the binary directly', `${PM} ${RUNNER} run | tail`],
+    ['after a cd', `cd web && ${RUNNER} run | tail`],
+    ['after an assignment', `FOO=1 ${RUNNER} run | tail`],
+    ['after an assignment with a quoted value', `FOO="a b" ${RUNNER} run | tail`],
+    ['after two assignments', `A=1 B=2 ${TSC} -p . | tail`],
+    ['inside a subshell', `(${RUNNER} run | tail)`],
+    ['inside a command substitution', `echo $(${PLAYWRIGHT} test | tail)`],
+    ['inside a backtick substitution', `echo \`${TSC} | tail\``],
+    ['inside a brace group', `{ ${TSC} -p .; ${ESLINT} . | tail; }`],
+    ['through a package filter', `${PM} --filter web exec ${RUNNER} run | tail`],
+    ['through a short package filter', `${PM} -F web exec ${RUNNER} run | tail`],
+    ['through a directory option', `${PM} -C web exec ${RUNNER} run | tail`],
+    ['through a long directory option', `${PM} --dir web exec ${RUNNER} run | tail`],
+    ['through a relative path to the binary', `./node_modules/.bin/${TSC} | tail`],
+    ['through a workspace path to the binary', `web/node_modules/.bin/${RUNNER} run | tail`],
+    ['through time', `time ${TSC} -p . | tail`],
+    ['through env', `env FOO=1 ${RUNNER} run | tail`],
+    ['through nice and its option', `nice -n 5 ${TSC} | tail`],
+    ['through exec', `exec ${RUNNER} run | tail`],
+    ['through xargs', `ls | xargs ${PRETTIER} --check | tail`],
+    ['through eval', `eval "${RUNNER} run | tail"`],
+    ['with stderr merged into the pipe', `${RUNNER} run 2>&1 | tail`],
+    ['after a semicolon', `true; ${TSC} | tail`],
+    ['after ||', `false || ${TSC} | tail`],
+    ['as a later stage of a pipeline', `cat x.ts | ${PRETTIER} --stdin-filepath x.ts | head`],
+    ['as an if condition', `if ${RUNNER} run | tail; then :; fi`],
+    ['in a loop body', `for f in a b; do ${RUNNER} run $f | tail; done`],
+    ['on a later line of a script', ['set -e', `${TSC} | tail`].join('\n')],
+    ['inside sh -c', `sh -c '${PM} test | tail'`],
+    ['inside bash -lc', `bash -lc "${RUNNER} run | tail"`]
+  ])('blocks %s', (_label, command) => {
+    expect(run(command)).toBe(BLOCKED);
+  });
+
+  it.each([
+    ['pnpm behind a package filter', `${PM} --filter web test | tail`],
+    ['pnpm run', `${PM} run test:unit | tail`],
+    ['pnpm -C and run', `${PM} -C web run lint | tail`],
+    ['pnpm with -r', `${PM} -r test | tail`],
+    ['npm test', 'npm test | tail'],
+    ['npm run', 'npm run build | tail'],
+    ['npm with a workspace', 'npm -w web run test | tail'],
+    ['yarn test', 'yarn test | tail'],
+    ['yarn in a workspace', 'yarn workspace web test | tail'],
+    ['a gate after a cd', `cd web && ${PM} test:unit | tail`],
+    ['a gate under time', `time ${PM} verify | tail`],
+    ['a gate after an assignment', `CI=1 ${PM} verify | tail`],
+    ['a script gate after a cd', `cd .. && ${VERIFY_SCRIPT} | tail`],
+    ['a script gate with ./', `${VERIFY_SCRIPT.replace('scripts/', './scripts/')} | tail`]
+  ])('blocks the pnpm family too: %s', (_label, command) => {
+    expect(run(command)).toBe(BLOCKED);
+  });
+
+  it('still lets || through after a gate, which keeps its status', () => {
+    expect(run(`${RUNNER} run || echo failed`)).toBe(0);
+  });
+
+  it('still lets && through after a gate, which keeps its status', () => {
+    expect(run(`${RUNNER} run && ls | head -3`)).toBe(0);
+  });
+});
+
+describe('the Bash guard leaves a gate named in argument position alone', () => {
+  it.each([
+    ['looking for a process by name', `pgrep -fa ${PLAYWRIGHT} | head`],
+    ['filtering a process list for the name', `ps aux | grep ${RUNNER} | wc -l`],
+    ['searching a tree for the name', `grep -rn ${TSC} docs | head`],
+    ['searching the log for the name', `git log --grep=${PRETTIER} | head`],
+    ['echoing the name', `echo ${ESLINT} | cat`],
+    ['reading a config file named after it', `cat ${KNIP}.json | head`],
+    ['filtering a listing for the name', `ls node_modules/.bin | grep ${TSC}`],
+    ['xargs handing the name to grep', `ls | xargs grep -l ${TSC} | head`],
+    ['asking pnpm why it is installed', `${PM} why ${RUNNER} | head`],
+    ['listing what pnpm installed', `${PM} list | grep ${PRETTIER}`],
+    ['searching for the name of a pnpm gate', `grep -rn "${PM} test" docs | head`],
+    ['searching the log for a pnpm gate', `git log --grep="${PM} verify" | head`],
+    ['a comment that shows a piped gate', [`# ${RUNNER} run | tail is wrong`, 'ls'].join('\n')]
+  ])('allows %s', (_label, command) => {
+    expect(run(command)).toBe(0);
+  });
+});
+
+describe('the Bash guard fails closed when its own pipe check cannot run', () => {
+  const BIN = mkdtempSync(join(tmpdir(), 'bash-guard-bin-'));
+
+  beforeAll(() => {
+    // node, and nothing else: no grep, so the pipe check's grep cannot start.
+    symlinkSync(process.execPath, join(BIN, 'node'));
+  });
+
+  afterAll(() => {
+    rmSync(BIN, { recursive: true, force: true });
+  });
+
+  it('refuses an ordinary command rather than letting it through unchecked', () => {
+    const { status, stderr } = feed(JSON.stringify({ tool_input: { command: 'ls' } }), {
+      ...HERMETIC,
+      PATH: BIN
+    });
+    expect(status).toBe(BLOCKED);
+    expect(stderr).toContain('pipe check');
   });
 });
 

@@ -1,9 +1,10 @@
 ---
 name: nui-endpoint
-description:
+description: >-
   Wire a call from the phone UI to the FiveM server, or a push from the server
-  to an app. Use whenever adding or changing a fetchNui call, a route, a
-  registerEvent handler, a custom service action, or a server-to-app
+  to an app. Use whenever adding or changing a contract in shared/contracts/, a
+  typed `call(contract, action, input)`, a fetchNui call, a route, a
+  registerEvent handler, a mock, a custom service action, or a server-to-app
   notification. A layer left out fails silently in game while passing every
   suite.
 ---
@@ -97,6 +98,8 @@ The app subscribes with `useAppEvents(appId)`.
 
 ## Done
 
-`pnpm check:fast` while iterating; `pnpm verify` before reporting complete
-(AGENTS.md §9). A green suite is **not** evidence the feature works in game —
-say so.
+`pnpm check:fast` while iterating. **In a lane, run the gates the brief names
+and never `pnpm verify`** — two verify runs collide on port 4173 and `web/dist`,
+and the lead runs it once over the integrated tree. Outside a lane,
+`pnpm verify` before reporting complete (AGENTS.md §9). A green suite is **not**
+evidence the feature works in game — say so.
