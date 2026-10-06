@@ -742,7 +742,14 @@ describe('the out-of-tree add-on template', () => {
 
     it('passes the template as shipped, svelte-check and the SDK checker both', () => {
       expect(checks.clean.code, checks.clean.output).toBe(0);
-      expect(checks.clean.output).toMatch(/COMPLETED \d+ FILES 0 ERRORS 0 WARNINGS/);
+      // svelte-check picks its summary format from the environment when `--output` is unset:
+      // `machine` (`COMPLETED …`) under `CLAUDECODE=1`, which every Claude Code shell sets, and
+      // `human-verbose` (`svelte-check found 0 errors and 0 warnings`) everywhere else, CI and
+      // an IDE included. The exit code above is the verdict; this only confirms svelte-check
+      // ran and said clean, in either form.
+      expect(checks.clean.output).toMatch(
+        /COMPLETED \d+ FILES 0 ERRORS 0 WARNINGS|found 0 errors and 0 warnings/
+      );
       expect(checks.clean.output).toMatch(/mica check: OK — 2 \.svelte, \d+ \.ts/);
     });
 
