@@ -15,3 +15,7 @@ line here.
   — server, client and shared tests are never typechecked; `integration/` is
 - [serverMessages.test counts a constant key as keyless](server-messages-ratchet-needs-a-literal-key.md)
   — write `key: 'server.…'` literally
+- [oxmysql errors carry no errno](oxmysql-errors-carry-no-errno.md) — text only,
+  query embedded; classify on the last line
+- [A start-up gate must not import schemaSql](start-gate-import-cycle.md) —
+  Repository reaches contentCipher; the cycle breaks collection, not tsc

@@ -86,10 +86,13 @@ Full model: `docs/security.md`. Constraints: AGENTS.md §2.9.
 
 **Write the change once, in the declaration**, then `pnpm generate:sql`.
 
-`mica.sql` is generated in full, committed, and **imported by hand**. Never
-hand-edit it — a stale copy silently breaks the `columns` allowlist, whose
-safety property holds only while it matches the real table. No app table is ever
-created at runtime.
+`mica.sql` is generated in full and committed. Never hand-edit it — a stale copy
+silently breaks the `columns` allowlist, whose safety property holds only while
+it matches the real table. The same declarations drive the first-start create on
+an **empty** database (MICA-306, `server/lib/schemaBootstrap.ts`), and
+`generatedSchema.test.ts` holds the two to each other. That create is the only
+runtime DDL: it never runs against a database holding any micaOS table, so a
+schema change to a live install still needs `micaschema apply`.
 
 A live install is brought up to date by **`micaschema apply`** from the server
 console (console-only, `source === 0`). It runs versioned migrations

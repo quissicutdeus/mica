@@ -52,6 +52,7 @@ vi.mock('../lib/shell', () => ({ notifyPlayer: notifyPlayerMock }));
 
 import { runApply } from '../services/Schema';
 import { SchemaMigrator, type AdditiveApplyResult } from '../lib/SchemaMigrator';
+import { __setSchemaReadyForTests } from '../lib/schemaReady';
 
 /** `apply()` finding nothing to do. */
 const noAdditive = (): AdditiveApplyResult => ({ applied: [], failed: null, remaining: [] });
@@ -121,6 +122,8 @@ describe('runApply', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.spyOn(SchemaMigrator, 'report').mockResolvedValue(undefined);
     reportPendingMigrationsMock.mockResolvedValue(undefined);
+    // The reports wait for the first-start schema check (MICA-306): an existing database.
+    __setSchemaReadyForTests({ kind: 'existing' });
 
     for (const start of startHandlers) start('mica');
     await vi.waitFor(() =>

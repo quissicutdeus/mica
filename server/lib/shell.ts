@@ -9,6 +9,7 @@ import { guardNetEvent } from './netGuard';
 import { registerService } from './services';
 import { ownedTables, purgeOwnedRows, sweepOrphanedRows } from './orphanSweep';
 import { AUDIT_LOG_TABLE } from './AuditLogger';
+import { whenSchemaReady } from './schemaReady';
 import { CASCADE_DEPENDENTS, SELF_SERVICE_EXCEPT } from '../services/Privacy';
 
 /**
@@ -569,8 +570,9 @@ on(`mica:server:${SHELL_SERVICE}:characterDeleted`, (rawCitizenid: unknown) => {
  * Failure is logged, never thrown. Maintenance must not be able to stop the resource
  * starting, and nothing is waiting on this: no player is connected yet.
  *
- * **It says it is starting before it asks the database anything, and says it finished even
- * when it removed nothing.** Both halves are load-bearing, and the reason is specific rather
+ * **It says it is starting before its own first query, and says it finished even when it
+ * removed nothing.** (The first-start schema check, which it waits for, asks first and logs for
+ * itself.) Both halves are load-bearing, and the reason is specific rather
  * than tidiness. oxmysql's `rawQuery` does `await using connection = await getConnection();
  * if (!connection) return;` without ever invoking the callback, so a query issued before the
  * pool is up **neither resolves nor rejects** — it hangs, and `lib/Database.ts` has no
@@ -591,28 +593,32 @@ on(`mica:server:${SHELL_SERVICE}:characterDeleted`, (rawCitizenid: unknown) => {
  */
 on('onResourceStart', (resourceName: string) => {
   if (resourceName !== GetCurrentResourceName()) return;
+  // After the schema has settled (MICA-306): a fresh install's tables may still be being
+  // created, and there is nothing to sweep on a database whose create was refused. The
+  // `starting` line is still said before the sweep's first query.
+  whenSchemaReady(() => {
+    const tables = ownedTables().length;
+    console.log(`[mica] orphan sweep starting over ${tables} table(s).`);
 
-  const tables = ownedTables().length;
-  console.log(`[mica] orphan sweep starting over ${tables} table(s).`);
-
-  void sweepDeletedCharacters()
-    .then(({ removed, kept, byTable, failures }) => {
-      const detail = Object.entries(byTable)
-        .map(([table, count]) => `${table} ${count}`)
-        .join(', ');
-      console.log(
-        `[mica] orphan sweep finished: removed ${removed} row(s)${detail ? ` (${detail})` : ''}` +
-          (kept > 0 ? `, kept ${kept} held or still referenced.` : '.')
-      );
-      // Each failure is logged where it happened, in `sweepOrphanedRows`; this is the count.
-      if (failures.length > 0) {
-        console.error(
-          `[mica] orphan sweep failed on ${failures.length} table(s): ` +
-            failures.map(({ table }) => table).join(', ')
+    void sweepDeletedCharacters()
+      .then(({ removed, kept, byTable, failures }) => {
+        const detail = Object.entries(byTable)
+          .map(([table, count]) => `${table} ${count}`)
+          .join(', ');
+        console.log(
+          `[mica] orphan sweep finished: removed ${removed} row(s)${detail ? ` (${detail})` : ''}` +
+            (kept > 0 ? `, kept ${kept} held or still referenced.` : '.')
         );
-      }
-    })
-    .catch((error) => {
-      console.error('[mica] orphan sweep failed:', error);
-    });
+        // Each failure is logged where it happened, in `sweepOrphanedRows`; this is the count.
+        if (failures.length > 0) {
+          console.error(
+            `[mica] orphan sweep failed on ${failures.length} table(s): ` +
+              failures.map(({ table }) => table).join(', ')
+          );
+        }
+      })
+      .catch((error) => {
+        console.error('[mica] orphan sweep failed:', error);
+      });
+  });
 });

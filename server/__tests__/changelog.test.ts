@@ -71,8 +71,8 @@ import '../services/index';
  *
  * ## What this cannot see, said plainly
  *
- * - **`scripts/framework-schema.sql`**, which is hand-written and has no
- *   declaration behind it, so nothing here derives its shape.
+ * - **The audit ledger** (`auditLogDdl` in `server/lib/schemaSql.ts`), which has
+ *   no declaration behind it, so nothing here derives its shape.
  * - **A drop of a column added *after* this baseline was frozen.** Removals are
  *   detected against the baseline, and a post-baseline column was never in it. It
  *   is already named in the CHANGELOG from the entry that introduced it, so the

@@ -25,6 +25,7 @@ import {
   __restorePrice,
   __resetMarketState
 } from '../services/HodlrMarket';
+import { __setSchemaReadyForTests } from '../lib/schemaReady';
 
 const STARTING_PRICE = 500;
 const FLOOR = 50;
@@ -70,10 +71,51 @@ beforeEach(() => {
   vi.restoreAllMocks();
   vi.clearAllMocks();
   __resetMarketState();
+  // The tick's restore retry consults the first-start schema check (MICA-306): settled, existing.
+  __setSchemaReadyForTests({ kind: 'existing' });
   dbMock.query.mockResolvedValue([]);
   dbMock.insert.mockResolvedValue(1);
   dbMock.update.mockResolvedValue(1);
   dbMock.scalar.mockResolvedValue(null);
+});
+
+/**
+ * MICA-306. The restore retry runs on the market's own 30s tick, not once at start, so it asks
+ * the schema gate's settled outcome itself: a refused database never gets the price table, and
+ * a retry there would log a failed restore every tick for good.
+ */
+describe('HodlrMarket restore retry and the schema gate', () => {
+  it('makes no restore attempt and logs nothing while the check is refused or pending', () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    for (const outcome of [
+      { kind: 'refused', reason: 'framework-unknown', message: 'x' } as const,
+      null
+    ]) {
+      __resetMarketState({ restored: false });
+      __setSchemaReadyForTests(outcome);
+      for (let i = 0; i < 5; i++) __tickMarket();
+    }
+
+    expect(dbMock.scalar).not.toHaveBeenCalled();
+    expect(error).not.toHaveBeenCalled();
+    expect(isMarketReady()).toBe(false);
+  });
+
+  it.each([
+    { kind: 'existing' },
+    { kind: 'created', shape: 'qb', tables: 37 },
+    { kind: 'created-elsewhere' },
+    { kind: 'unknown', error: 'x' }
+  ] as const)('restores as before once the check settled as $kind', async (outcome) => {
+    __resetMarketState({ restored: false });
+    __setSchemaReadyForTests(outcome);
+    dbMock.scalar.mockResolvedValue(172);
+
+    __tickMarket();
+
+    await vi.waitFor(() => expect(isMarketReady()).toBe(true));
+    expect(getCurrentPrice()).toBe(172);
+  });
 });
 
 describe('HodlrMarket price', () => {

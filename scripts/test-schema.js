@@ -54,7 +54,7 @@ let checksRun = 0;
  * the hook (thirteen and the seeded schema's one) and by the sweep (seventeen and the seeded
  * schema's one), on each shape, and two that `mica.sql` refuses an es_extended database. Plus
  * MICA-165's keyed import and content backfill, eleven and the seeded schema's one on each
- * shape, and a keyed micaseed on qb.
+ * shape, and a keyed micaseed on qb. Plus MICA-306's first-start schema, below.
  */
 const IMPORT_CHECKS = 16;
 const RETENTION_CHECKS = 17;
@@ -74,8 +74,15 @@ const CRYPT_CHECKS = 13;
 const IMPORT_QB_CHECKS = 1;
 /** MICA-165: `micaseed` writes qb's `players`, so its sealed round trip runs on qb only. */
 const CRYPT_SEED_CHECKS = 1;
+/**
+ * MICA-306: a fresh database created by the first-start bootstrap against one built by importing
+ * the shipped file (the import's one check and twelve), the bootstrap leaving non-fresh databases
+ * alone (six), and refusing with no DDL rights (four), on each shape.
+ */
+const BOOTSTRAP_CHECKS = 23;
 const MINIMUM_CHECKS =
   48 +
+  BOOTSTRAP_CHECKS * 2 +
   CRYPT_CHECKS * 2 +
   CRYPT_SEED_CHECKS +
   MEDIA_HOOK_CHECKS * 2 +
@@ -160,19 +167,22 @@ const stopContainer = (id) => {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/**
+ * Where the database is, so a variant can open connections of its own: MICA-306's must have
+ * no `multipleStatements`, and one of them is a different user. Set where the harness connects.
+ */
+let dbConfig = null;
+
 const connectWhenReady = async (port) => {
   step('waiting for the server to accept connections');
   const deadline = Date.now() + READY_TIMEOUT;
   let lastError;
   while (Date.now() < deadline) {
     try {
-      return await mysql.createConnection({
-        host: '127.0.0.1',
-        port,
-        user: 'root',
-        password: ROOT_PASSWORD,
-        multipleStatements: true
-      });
+      const config = { host: '127.0.0.1', port, user: 'root', password: ROOT_PASSWORD };
+      const connected = await mysql.createConnection({ ...config, multipleStatements: true });
+      dbConfig = config;
+      return connected;
     } catch (error) {
       lastError = error;
       await sleep(500);
@@ -367,7 +377,11 @@ const loadPrivacyModule = async () => {
     `export { __setPurgeHookForTests, ownedTables, purgeOwnedRows } from '${root}/server/lib/orphanSweep.ts';`,
     // MICA-300: the character-deleted hook and the start-up sweep are driven through the
     // handlers `lib/shell.ts` registers, so the sweep needs the framework stand-in.
-    `export { __setResourceLookup } from '${root}/server/lib/FrameworkBridge.ts';`
+    `export { __setResourceLookup } from '${root}/server/lib/FrameworkBridge.ts';`,
+    // MICA-306: the real first-start bootstrap, with every service declared, so the statements it
+    // runs are the ones a server's own declarations produce.
+    `export { runSchemaBootstrap } from '${root}/server/lib/schemaBootstrap.ts';`,
+    `export { bootstrapTables, shippedMigrationIds } from '${root}/server/lib/schemaSql.ts';`
   ].join('\n');
 
   const outfile = path.join(root, 'node_modules', '.cache', 'mica-schema-privacy.mjs');
@@ -2837,6 +2851,349 @@ const runContentCipherVariant = async ({ connection, schemaFile, hasPlayers, mod
   }
 };
 
+/* ------------------------------------------------ MICA-306: the first-start bootstrap */
+
+/**
+ * oxmysql's surface over a connection of the variant's own, for the real `schemaBootstrap`.
+ *
+ * Unlike the shim above this one is faithful where the bootstrap reads it: a failed query
+ * rejects the way oxmysql's `*_async` exports do — `new Error(output)`, where `output` is
+ * "<resource> was unable to execute a query!", the query, and the driver's message last, with
+ * **no `errno` and no `code`** (the Error mysql2 threw is not carried across the resource
+ * boundary). The bootstrap classifies a failure from that text, so a shim that handed it
+ * mysql2's own error would prove a path the game never takes.
+ *
+ * `sent` collects every statement, so a variant can say what was and was not run.
+ */
+const installBootstrapOxmysql = (connection, sent) => {
+  const run = async (sql, params = []) => {
+    sent.push(sql);
+    try {
+      const [rows] = await connection.query(sql, params);
+      return rows;
+    } catch (error) {
+      // `cause` is not what the bootstrap reads: oxmysql carries no errno across, only text.
+      throw new Error(`mica was unable to execute a query!\nQuery: ${sql}\n[]\n${error.message}`, {
+        cause: error
+      });
+    }
+  };
+  const oxmysql = {
+    query_async: run,
+    scalar_async: async (sql, params) => {
+      const rows = await run(sql, params);
+      return Array.isArray(rows) && rows.length > 0 ? Object.values(rows[0])[0] : null;
+    }
+  };
+  const exportsFn = function () {};
+  exportsFn.oxmysql = oxmysql;
+  globalThis.exports = exportsFn;
+};
+
+/** A database holding only the framework's owner table, which is all a fresh install has. */
+const createFrameworkOnlyDatabase = async ({ connection, database, hasPlayers }) => {
+  await connection.query(`DROP DATABASE IF EXISTS \`${database}\``);
+  await connection.query(`CREATE DATABASE \`${database}\``);
+  await connection.changeUser({ database });
+  await connection.query(hasPlayers ? PLAYERS_TABLE : usersTable(UNICODE_CI));
+};
+
+/** One connection with no `multipleStatements`, as oxmysql's pool hands out. */
+const connectSingleStatement = (database, credentials = {}) =>
+  mysql.createConnection({ ...dbConfig, ...credentials, database, multipleStatements: false });
+
+const micaTables = async (connection, database) =>
+  (
+    await connection.query(
+      "SELECT table_name AS name FROM information_schema.TABLES WHERE table_schema = ? AND table_name LIKE 'mica|_%' ESCAPE '|' ORDER BY table_name",
+      [database]
+    )
+  )[0].map((row) => row.name);
+
+/**
+ * What a schema is, read back from the engine: one string per column, index column, foreign key
+ * column and table, sorted, for two databases to be held against each other. Only `mica_`
+ * tables, so the framework's own table beside them cannot differ the answer.
+ */
+const READ_BACK = {
+  tables: `SELECT CONCAT_WS('|', table_name, engine, table_collation, row_format) AS line
+             FROM information_schema.TABLES
+            WHERE table_schema = ? AND table_name LIKE 'mica|_%' ESCAPE '|'`,
+  columns: `SELECT CONCAT_WS('|', table_name, ordinal_position, column_name, column_type,
+                   is_nullable, IFNULL(column_default, '<none>'), IFNULL(character_set_name, ''),
+                   IFNULL(collation_name, ''), column_key, extra,
+                   IFNULL(generation_expression, '')) AS line
+              FROM information_schema.COLUMNS
+             WHERE table_schema = ? AND table_name LIKE 'mica|_%' ESCAPE '|'`,
+  indexes: `SELECT CONCAT_WS('|', table_name, index_name, seq_in_index, column_name, non_unique,
+                   index_type) AS line
+              FROM information_schema.STATISTICS
+             WHERE table_schema = ? AND table_name LIKE 'mica|_%' ESCAPE '|'`,
+  foreignKeys: `SELECT CONCAT_WS('|', k.table_name, k.constraint_name, k.column_name,
+                      k.referenced_table_name, k.referenced_column_name, r.delete_rule,
+                      r.update_rule) AS line
+                 FROM information_schema.KEY_COLUMN_USAGE k
+                 JOIN information_schema.REFERENTIAL_CONSTRAINTS r
+                   ON r.constraint_schema = k.constraint_schema
+                  AND r.constraint_name = k.constraint_name
+                  AND r.table_name = k.table_name
+                WHERE k.table_schema = ? AND k.referenced_table_name IS NOT NULL
+                  AND k.table_name LIKE 'mica|_%' ESCAPE '|'`
+};
+
+const readBack = async (connection, database, what) =>
+  (await connection.query(READ_BACK[what], [database]))[0].map((row) => row.line).sort();
+
+/** The first few lines present in one list and not the other, so a mismatch names itself. */
+const differences = (built, imported) => {
+  const have = new Set(imported);
+  const builtSet = new Set(built);
+  return [
+    ...built.filter((line) => !have.has(line)).map((line) => `bootstrap only: ${line}`),
+    ...imported.filter((line) => !builtSet.has(line)).map((line) => `import only: ${line}`)
+  ].slice(0, 5);
+};
+
+/** What `console.error` and `console.warn` were given while `work` ran, and `work`'s answer. */
+const capturingConsole = async (work) => {
+  const lines = [];
+  const original = { error: console.error, warn: console.warn };
+  console.error = (...args) => lines.push(args.join(' '));
+  console.warn = (...args) => lines.push(args.join(' '));
+  try {
+    return { result: await work(), lines };
+  } finally {
+    console.error = original.error;
+    console.warn = original.warn;
+  }
+};
+
+/**
+ * MICA-306 (a): a fresh database, with nothing but the framework's table in it, bootstrapped by
+ * the real `schemaBootstrap` through an oxmysql whose connection has **no `multipleStatements`**,
+ * so every statement goes one at a time exactly as it does in game — then held against a database
+ * built by importing the matching file: same tables, columns, types, indexes, foreign keys, and
+ * ledger rows. The two paths read one declaration, and this is the engine saying they agree.
+ */
+const runBootstrapFreshVariant = async ({ connection, schemaFile, hasPlayers, privacy }) => {
+  const framework = hasPlayers ? 'qb' : 'esx';
+  const label = `first-start bootstrap on ${framework}`;
+  const database = `mica_bootstrap_${framework}`;
+  const reference = await seedFrameworkAndGPhone({
+    connection,
+    schemaFile,
+    hasPlayers,
+    suffix: 'bootstrap_reference'
+  });
+
+  step(`${label} — a fresh database, one statement at a time`);
+  await createFrameworkOnlyDatabase({ connection, database, hasPlayers });
+  const single = await connectSingleStatement(database);
+  const sent = [];
+  try {
+    installBootstrapOxmysql(single, sent);
+    privacy.__setResourceLookup(FRAMEWORK[framework]);
+    const expectedTables = privacy.bootstrapTables();
+
+    const { result: outcome } = await capturingConsole(() => privacy.runSchemaBootstrap());
+    check(
+      `${label}: creates the schema`,
+      [outcome.kind, outcome.shape, outcome.tables],
+      ['created', framework, expectedTables.length]
+    );
+    check(
+      `${label}: over a connection that cannot run two statements at once`,
+      Boolean(single.config.multipleStatements),
+      false
+    );
+
+    const compared = {};
+    for (const what of ['tables', 'columns', 'indexes', 'foreignKeys']) {
+      compared[what] = {
+        built: await readBack(connection, database, what),
+        imported: await readBack(connection, reference, what)
+      };
+    }
+    check(
+      `${label}: the same tables, engine and collation as ${schemaFile}`,
+      differences(compared.tables.built, compared.tables.imported),
+      []
+    );
+    check(
+      `${label}: the same columns and types as ${schemaFile}`,
+      differences(compared.columns.built, compared.columns.imported),
+      []
+    );
+    check(
+      `${label}: and that comparison read a real schema`,
+      compared.columns.built.length > 150,
+      true
+    );
+    check(
+      `${label}: the same indexes as ${schemaFile}`,
+      differences(compared.indexes.built, compared.indexes.imported),
+      []
+    );
+    check(
+      `${label}: and that comparison read a real set`,
+      compared.indexes.built.length > 50,
+      true
+    );
+    check(
+      `${label}: the same foreign keys as ${schemaFile}`,
+      differences(compared.foreignKeys.built, compared.foreignKeys.imported),
+      []
+    );
+    check(
+      `${label}: and that comparison read a real set of keys`,
+      compared.foreignKeys.built.length > 0,
+      true
+    );
+
+    const ledger = async (name) =>
+      (
+        await connection.query(`SELECT id FROM \`${name}\`.mica_schema_migrations ORDER BY id`)
+      )[0].map((row) => row.id);
+    const ids = await ledger(database);
+    check(`${label}: the ledger holds the rows ${schemaFile} seeds`, ids, await ledger(reference));
+    check(
+      `${label}: which are every migration this build ships, and not none`,
+      [ids.length > 0, ids],
+      [true, privacy.shippedMigrationIds()]
+    );
+
+    // The next start finds micaOS tables, so it is not fresh: nothing is sent but the read.
+    const before = sent.length;
+    const { result: again } = await capturingConsole(() => privacy.runSchemaBootstrap());
+    const writes = sent.slice(before).filter((sql) => !/^\s*SELECT\b/i.test(sql));
+    check(`${label}: a second start creates nothing`, [again.kind, writes], ['existing', []]);
+  } finally {
+    await single.end().catch(() => {});
+    privacy.__setResourceLookup();
+    installOxmysql(connection);
+  }
+};
+
+/**
+ * MICA-306 (b): a database that is not fresh is never touched. One micaOS table is enough, and a
+ * half-created one — a ledger holding no migration, beside a table micaOS needs that is missing —
+ * is said out loud and left exactly as it was: the one thing worse than no schema is a guessed one.
+ */
+const runBootstrapExistingVariant = async ({ connection, hasPlayers, privacy }) => {
+  const framework = hasPlayers ? 'qb' : 'esx';
+  const label = `first-start bootstrap on ${framework}`;
+  const database = `mica_bootstrap_existing_${framework}`;
+  const probeTable = 'mica_preexisting';
+
+  step(`${label} — a database that already holds a micaOS table`);
+  await createFrameworkOnlyDatabase({ connection, database, hasPlayers });
+  await connection.query(`CREATE TABLE \`${probeTable}\` (id int NOT NULL, note varchar(10))`);
+  const [[definition]] = await connection.query(`SHOW CREATE TABLE \`${probeTable}\``);
+  const single = await connectSingleStatement(database);
+  const sent = [];
+  try {
+    installBootstrapOxmysql(single, sent);
+    privacy.__setResourceLookup(FRAMEWORK[framework]);
+
+    const { result: outcome } = await capturingConsole(() => privacy.runSchemaBootstrap());
+    const writes = sent.filter((sql) => !/^\s*SELECT\b/i.test(sql));
+    check(
+      `${label}: one micaOS table is enough to leave it alone`,
+      [outcome.kind, writes],
+      ['existing', []]
+    );
+    check(`${label}: no table was created beside it`, await micaTables(connection, database), [
+      probeTable
+    ]);
+    const [[after]] = await connection.query(`SHOW CREATE TABLE \`${probeTable}\``);
+    check(`${label}: and it is as it was`, after['Create Table'], definition['Create Table']);
+
+    // Half-created: the ledger is there and empty, and most of what micaOS needs is not.
+    step(`${label} — a database that may be half-created`);
+    await connection.query(
+      'CREATE TABLE `mica_schema_migrations` (id varchar(255) NOT NULL, PRIMARY KEY (id))'
+    );
+    const present = await micaTables(connection, database);
+    sent.length = 0;
+    const { result: halfway, lines } = await capturingConsole(() => privacy.runSchemaBootstrap());
+    check(`${label}: a half-created database is left as it is`, halfway.kind, 'existing');
+    check(
+      `${label}: and said so on the console, with the way to finish it`,
+      lines.some((line) => /may be half-created/.test(line) && /micaschema apply/.test(line)),
+      true
+    );
+    check(
+      `${label}: with nothing written to it`,
+      [sent.filter((sql) => !/^\s*SELECT\b/i.test(sql)), await micaTables(connection, database)],
+      [[], present]
+    );
+  } finally {
+    await single.end().catch(() => {});
+    privacy.__setResourceLookup();
+    installOxmysql(connection);
+  }
+};
+
+/**
+ * MICA-306 (c): a database user that may read and write but not create. The refusal is loud and
+ * the database is exactly as empty as it was — never half a schema, which is the failure this
+ * guards: a first statement denied after others had run would leave tables the next start
+ * takes for an existing install.
+ */
+const runBootstrapNoDdlVariant = async ({ connection, hasPlayers, privacy }) => {
+  const framework = hasPlayers ? 'qb' : 'esx';
+  const label = `first-start bootstrap on ${framework}, without DDL rights`;
+  const database = `mica_bootstrap_noddl_${framework}`;
+  const user = 'mica_dml_only';
+  const password = 'mica-throwaway-dml';
+
+  step(`${label} — SELECT, INSERT, UPDATE and DELETE only`);
+  await createFrameworkOnlyDatabase({ connection, database, hasPlayers });
+  await connection.query(`DROP USER IF EXISTS '${user}'@'%'`);
+  await connection.query(`CREATE USER '${user}'@'%' IDENTIFIED BY '${password}'`);
+  await connection.query(
+    `GRANT SELECT, INSERT, UPDATE, DELETE ON \`${database}\`.* TO '${user}'@'%'`
+  );
+  const single = await connectSingleStatement(database, { user, password });
+  const sent = [];
+  try {
+    // The premise, so the refusal below cannot be a database that would have allowed it.
+    let denied = null;
+    try {
+      await single.query('CREATE TABLE `mica_ddl_probe` (id int)');
+    } catch (error) {
+      denied = error.errno;
+    }
+    check(`${label}: the user really cannot create a table`, denied, 1142);
+
+    installBootstrapOxmysql(single, sent);
+    privacy.__setResourceLookup(FRAMEWORK[framework]);
+    const { result: outcome, lines } = await capturingConsole(() => privacy.runSchemaBootstrap());
+
+    check(
+      `${label}: refused, for want of rights, and not as a generic failure`,
+      [outcome.kind, outcome.reason],
+      ['refused', 'no-ddl-rights']
+    );
+    check(`${label}: and no table was created`, await micaTables(connection, database), []);
+    check(
+      `${label}: said loudly, with the way out`,
+      lines.some(
+        (line) =>
+          /may not create micaOS's tables/.test(line) &&
+          /mica_auto_schema 0/.test(line) &&
+          /Nothing was created/.test(line)
+      ),
+      true
+    );
+  } finally {
+    await single.end().catch(() => {});
+    privacy.__setResourceLookup();
+    installOxmysql(connection);
+    await connection.query(`DROP USER IF EXISTS '${user}'@'%'`);
+  }
+};
+
 const main = async () => {
   let container;
   let connection;
@@ -2850,13 +3207,13 @@ const main = async () => {
         );
       }
       step('connecting to provided database');
-      connection = await mysql.createConnection({
+      dbConfig = {
         host: DB_HOST,
         port: Number(DB_PORT),
         user: DB_USER,
-        password: DB_PASSWORD,
-        multipleStatements: true
-      });
+        password: DB_PASSWORD
+      };
+      connection = await mysql.createConnection({ ...dbConfig, multipleStatements: true });
       console.log(`    connected to ${DB_HOST}:${DB_PORT}`);
     } else {
       assertDockerUsable();
@@ -2948,6 +3305,17 @@ const main = async () => {
           via
         });
       }
+    }
+
+    // MICA-306: the schema a fresh install creates for itself, against the engine, one statement
+    // at a time, on both shapes — and what it leaves alone.
+    for (const [schemaFile, hasPlayers] of [
+      ['mica.sql', true],
+      ['mica.esx.sql', false]
+    ]) {
+      await runBootstrapFreshVariant({ connection, schemaFile, hasPlayers, privacy });
+      await runBootstrapExistingVariant({ connection, hasPlayers, privacy });
+      await runBootstrapNoDdlVariant({ connection, hasPlayers, privacy });
     }
 
     // MICA-165: last, because it loads a key and records the enabled marker; it puts both back.

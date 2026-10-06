@@ -113,12 +113,13 @@ command here, and the zip is released only if it starts.
 unpacks it into a directory of its own under `~gphone/smoke/`, checks it
 unpacked to `mica/fxmanifest.lua`, and hands that directory to the root wrapper.
 `mica-smoke-release.sh` then starts a throwaway MariaDB, imports the zip's own
-`mica.esx.sql` into it, and starts a throwaway FXServer from the stack's own
-image with the zip's `mica` mounted read-only beside the main checkout's
-`oxmysql`, in `mica_standalone` mode. The console has to print `mica started!`
-within three minutes, and then, for twenty seconds more, nothing from mica or
-oxmysql that reads as an error. Both containers and their network are removed on
-exit, whichever way it exits, and nothing here touches either live stack: the
+`mica.esx.sql` into it (the release smoke only; the integration run below
+imports nothing), and starts a throwaway FXServer from the stack's own image
+with the zip's `mica` mounted read-only beside the main checkout's `oxmysql`, in
+`mica_standalone` mode. The console has to print `mica started!` within three
+minutes, and then, for twenty seconds more, nothing from mica or oxmysql that
+reads as an error. Both containers and their network are removed on exit,
+whichever way it exits, and nothing here touches either live stack: the
 containers are on a network of their own and publish no port.
 
 **Why a third key, not one of the two deploy keys.** Each deploy key is pinned
@@ -232,13 +233,15 @@ The same key and the same wrapper also run an in-server test suite. CI sends
 test resource, `mica-integration/` (built from `integration/`), and the wrapper
 switches to integration mode when that directory is present. It generates a
 throwaway content keyring in a small `mica-keys` resource, starts `mica` and
-then `mica-integration` against the freshly imported database, and reads the
-suite's verdict from the console: one `integration: PASS|FAIL <id>` line per
-scenario and a final `integration: done <P> passed <F> failed`. The run passes
-only when the PASS ids equal `mica-integration/expected-scenarios.txt` exactly,
-which `pack:integration` writes, so a scenario that silently stops running fails
-it. `release.yml` runs it before the smoke test and will not release on a
-failure; `integration.yml` runs it alone on any ref by `workflow_dispatch`.
+then `mica-integration` against an **empty** database, which `mica` must create
+itself on first start (MICA-306: the run fails unless the console says
+`created micaOS's schema for`), and reads the suite's verdict from the console:
+one `integration: PASS|FAIL <id>` line per scenario and a final
+`integration: done <P> passed <F> failed`. The run passes only when the PASS ids
+equal `mica-integration/expected-scenarios.txt` exactly, which
+`pack:integration` writes, so a scenario that silently stops running fails it.
+`release.yml` runs it before the smoke test and will not release on a failure;
+`integration.yml` runs it alone on any ref by `workflow_dispatch`.
 
 **Root never touches a path `gphone` can change.** The wrapper takes its lock at
 `/run/mica-smoke.lock` first, pins the run directory, copies its `resources/`

@@ -7,6 +7,7 @@ import { runPendingMigrations, reportPendingMigrations } from '../lib/migrations
 import { isAdmin } from './Admin';
 import { notifyPlayer } from '../lib/shell';
 import { dropOwnerForeignKeys, reportOwnerForeignKeys } from '../lib/ownerForeignKeys';
+import { whenSchemaReady } from '../lib/schemaBootstrap';
 
 /**
  * Schema reconciliation at resource start, plus a dry run and an explicit apply on demand.
@@ -135,14 +136,20 @@ RegisterCommand(
 );
 
 /**
- * Report on resource start. Reports only — nothing here changes the database, including the
- * migrations ledger, which only `micaschema apply` ever creates.
+ * Report on resource start. Reports only — nothing here changes the database.
+ *
+ * **One thing at start can write, and only to a database with no micaOS table at all**: the
+ * first-start bootstrap (`lib/schemaBootstrap.ts`, MICA-306) creates a fresh install's schema
+ * and seeds its ledger, so no owner imports SQL by hand. These reports wait for it
+ * (`whenSchemaReady`) so they read the schema it settled on, and do not run when it refused.
+ * Against a database that already has even one micaOS table, start changes nothing, as before.
  *
  * There was an auto-apply behind a `mica_auto_migrate` convar, adding missing columns
- * and indexes at start. It is gone: a boot that changes the schema by itself gives an
+ * and indexes at start. It is gone: a boot that changes an existing schema by itself gives an
  * operator no moment at which to take a backup, and no say in whether today is the day.
- * Applying is a deliberate `micaschema apply` from the console — see `runApply` above —
- * never this hook.
+ * Applying to existing data is a deliberate `micaschema apply` from the console — see
+ * `runApply` above — never this hook. A fresh database has no data to back up, which is why
+ * the bootstrap is the one exception.
  *
  * None of the reports may reject: each is `.catch()`ed or catches for itself
  * (`reportOwnerForeignKeys` says it could not check, rather than staying silent). This runs
@@ -159,10 +166,12 @@ RegisterCommand(
  */
 on('onResourceStart', (resourceName: string) => {
   if (resourceName !== GetCurrentResourceName()) return;
-  void SchemaMigrator.report();
-  // MICA-300: keys onto players are asked of the database, never inferred from the ledger.
-  void reportOwnerForeignKeys();
-  void reportPendingMigrations().catch((error) => {
-    console.error('[mica] could not report pending schema migrations:', error);
+  whenSchemaReady(() => {
+    void SchemaMigrator.report();
+    // MICA-300: keys onto players are asked of the database, never inferred from the ledger.
+    void reportOwnerForeignKeys();
+    void reportPendingMigrations().catch((error) => {
+      console.error('[mica] could not report pending schema migrations:', error);
+    });
   });
 });

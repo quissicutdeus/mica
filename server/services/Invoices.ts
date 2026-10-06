@@ -10,6 +10,7 @@ import type { Invoice, InvoiceActionOutcome } from '@mica/shared/types';
 import { appEventChannel } from '../lib/appEvents';
 import { payToSociety, transfer, type PaymentOutcome } from '../lib/Payments';
 import { onResourceReleased } from '../lib/resourceStop';
+import { startupJobsMayRunNow, whenSchemaReady } from '../lib/schemaReady';
 
 /**
  * Invoices (MICA-240): a resource bills a player, and the player pays or declines from the
@@ -91,10 +92,16 @@ export const expireDueInvoices = async (): Promise<void> => {
   }
 };
 
-if (typeof setInterval === 'function') setInterval(() => void expireDueInvoices(), SWEEP_MS);
+// The hourly run skips while the first-start schema check (MICA-306) is pending or refused, so a
+// refused database does not log a failed sweep every hour; the start-up run waits for it.
+if (typeof setInterval === 'function') {
+  setInterval(() => {
+    if (startupJobsMayRunNow()) void expireDueInvoices();
+  }, SWEEP_MS);
+}
 
 on('onResourceStart', (resource: string) => {
-  if (resource === GetCurrentResourceName()) void expireDueInvoices();
+  if (resource === GetCurrentResourceName()) whenSchemaReady(() => expireDueInvoices());
 });
 
 /* --------------------------------------------------------------- callbacks */

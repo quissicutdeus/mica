@@ -71,6 +71,7 @@ import {
 import { registerPublicApi } from '../lib/publicApi';
 import { publishedExport, __resetExportRateLimits } from '../lib/exports';
 import { __resetRateLimits } from '../lib/rateLimit';
+import { __setSchemaReadyForTests } from '../lib/schemaReady';
 import { callAsResource } from './invokingResource';
 import type { Invoice } from '@mica/shared/types';
 
@@ -120,6 +121,8 @@ beforeEach(() => {
   __resetRateLimits();
   __resetExportRateLimits();
   __resetInvoiceCallbacks();
+  // The start-up sweep waits for the first-start schema check (MICA-306): an existing database.
+  __setSchemaReadyForTests({ kind: 'existing' });
   dbMock.single.mockResolvedValue({ ...OPEN });
   dbMock.query.mockResolvedValue([]);
   dbMock.update.mockResolvedValue(true);

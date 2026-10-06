@@ -11,6 +11,7 @@ import { appEventChannel } from '../lib/appEvents';
 import { mediaContract } from '@mica/shared/contracts/media';
 import { playerCoords } from '../lib/playerCoords';
 import { Database } from '../lib/Database';
+import { whenSchemaReady } from '../lib/schemaReady';
 import { purgeOwnedRows, registerOwnedExternal, sweepOrphanedRows } from '../lib/orphanSweep';
 import { isAdmin } from './Admin';
 import { notifyPlayer } from '../lib/shell';
@@ -1595,19 +1596,22 @@ on('onResourceStart', (resourceName: string) => {
   if (resourceName !== GetCurrentResourceName()) return;
 
   logMediaLimits();
-  // Record the host in use now, so its photos are still counted after it changes. Never
-  // throws. Whether a cascade can delete rows before their files are released is said by
-  // `Schema.ts`'s start report of keys onto players (MICA-292, MICA-300).
-  void rememberImageHost(imageHost());
-  // Only the orphan sweep here: the retention half runs on `lib/contentRetention.ts`'s
-  // schedule, which starts on this same event, and running it twice at boot buys nothing.
-  void pruneOrphanedMedia()
-    .then((orphaned) => {
-      if (orphaned > 0) {
-        console.log(`[micamedia] removed ${orphaned} row(s) whose character no longer exists.`);
-      }
-    })
-    .catch((error) => {
-      console.error('[micamedia] start-up maintenance failed:', error);
-    });
+  // Both of these read the database, so they wait for the first-start schema check (MICA-306).
+  whenSchemaReady(() => {
+    // Record the host in use now, so its photos are still counted after it changes. Never
+    // throws. Whether a cascade can delete rows before their files are released is said by
+    // `Schema.ts`'s start report of keys onto players (MICA-292, MICA-300).
+    void rememberImageHost(imageHost());
+    // Only the orphan sweep here: the retention half runs on `lib/contentRetention.ts`'s
+    // schedule, which starts on this same event, and running it twice at boot buys nothing.
+    void pruneOrphanedMedia()
+      .then((orphaned) => {
+        if (orphaned > 0) {
+          console.log(`[micamedia] removed ${orphaned} row(s) whose character no longer exists.`);
+        }
+      })
+      .catch((error) => {
+        console.error('[micamedia] start-up maintenance failed:', error);
+      });
+  });
 });

@@ -455,11 +455,14 @@ carries the wiring tables, payload shapes, and push deduplication rules.
 ### Schema changes
 
 **A schema change is written once, in the declaration**, then
-`pnpm generate:sql` regenerates `mica.sql` — committed, imported by hand,
-**never hand-edited**. A rename, retype, widened enum or drop additionally needs
-a **versioned migration** in `server/migrations/`, forward-only, after which
-**re-run `pnpm generate:sql`**. `scripts/framework-schema.sql` is a hand-written
-audit ledger with no `defineService` behind it.
+`pnpm generate:sql` regenerates `mica.sql` — committed, **never hand-edited**. A
+rename, retype, widened enum or drop additionally needs a **versioned
+migration** in `server/migrations/`, forward-only, after which **re-run
+`pnpm generate:sql`**. The same declarations create the schema at first start on
+an empty database (MICA-306, `server/lib/schemaBootstrap.ts`), which is the
+**only** runtime DDL: an existing database changes only through
+`micaschema apply`. The audit ledger has no `defineService` behind it; its DDL
+is `auditLogDdl` in `server/lib/schemaSql.ts`.
 
 **Load the `mica-service` skill before any of this.** It and
 [`docs/schema-and-services.md`](docs/schema-and-services.md) carry the migration

@@ -12,6 +12,7 @@ import { BankingBridge } from './lib/BankingBridge';
 import { FrameworkBridge } from './lib/FrameworkBridge';
 import { registerPublicApi } from './lib/publicApi';
 import { startJobLines } from './lib/jobLines';
+import { whenSchemaReady } from './lib/schemaBootstrap';
 
 /**
  * After `./services`, so every service has loaded before anything it exposes can be
@@ -41,6 +42,8 @@ on('onResourceStart', (resName: string) => {
 
     // Job lines from `mica_job_lines` (MICA-307), registered here and re-synced whenever the
     // convar changes. Said once at start with the numbers, so an owner sees 911 is answering.
-    startJobLines();
+    // After the first-start schema check (MICA-306): registering reads nothing, but a line then
+    // answers calls and texts that reach tables a fresh install may still be creating.
+    whenSchemaReady(startJobLines);
   }
 });

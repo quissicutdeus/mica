@@ -93,8 +93,9 @@ export async function runMigrations(
 }
 
 /**
- * The one piece of DDL this resource runs on its own account, and it is reached from the
- * apply path only. `IF NOT EXISTS` is safe here in a way it is not for an app table (§10):
+ * The apply path's own copy of the ledger's DDL. (The other DDL this resource runs is the
+ * first-start bootstrap's, MICA-306, only ever against a database with no micaOS table.)
+ * `IF NOT EXISTS` is safe here in a way it is not for an app table (§10):
  * this table has exactly one shape and never gains a column, so "already there" really is
  * nothing to do rather than a change silently skipped.
  */

@@ -575,6 +575,16 @@ with `internal_error` and the rest of Messages is unaffected.
 
 ### Added
 
+**A fresh install no longer imports any SQL (MICA-306).** Start micaOS against
+an empty database and it creates its own schema for your framework, records the
+shipped migrations as applied, and says so in the console. It needs CREATE,
+INDEX and REFERENCES on that first start, and your framework started before it.
+It acts only on a database holding no micaOS table at all: **an existing install
+is never changed automatically**, and keeps updating through `micaschema apply`.
+To keep importing by hand, `set mica_auto_schema 0`. If an earlier re-import
+left your migration record empty and a table is missing, the console now says so
+at start, with the steps to fix it; nothing stops.
+
 **A Store add-on can come with a server half of its own (MICA-308).** Its author
 ships a small FiveM resource beside the add-on's bundle; you install it like any
 other resource, `ensure`d after `mica`, and it registers with micaOS through the

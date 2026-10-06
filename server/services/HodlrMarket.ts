@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { Database } from '../lib/Database';
+import { startupJobsMayRunNow, whenSchemaReady } from '../lib/schemaReady';
 import type { PricePoint } from '@mica/shared/types';
 
 /**
@@ -246,6 +247,9 @@ const tickMarket = (): void => {
   // newest row — overwriting the very value being restored. Retrying here rather than on a
   // timer of its own is what heals a start that raced a database still coming up.
   if (!restored) {
+    // Not while the first-start schema check is pending or refused (MICA-306): a refused
+    // database never gets this table, and retrying would log a failure every tick for good.
+    if (!startupJobsMayRunNow()) return;
     if (restoreInFlight) {
       // A read that never settles, rather than one that failed — see MAX_RESTORE_TICKS.
       if (++restoreTicksWaited < MAX_RESTORE_TICKS) return;
@@ -295,17 +299,23 @@ const pruneHistory = async (): Promise<void> => {
 
 if (typeof setInterval === 'function') {
   setInterval(tickMarket, TICK_MS);
-  setInterval(pruneHistory, PRUNE_INTERVAL_MS);
+  // Same gate as the restore retry: nothing to prune in a database whose create was refused.
+  setInterval(() => {
+    if (startupJobsMayRunNow()) void pruneHistory();
+  }, PRUNE_INTERVAL_MS);
 }
 
 /**
  * `onResourceStart` rather than module scope, for the reason `Media.ts` gives: module
  * evaluation is the earliest possible moment to ask oxmysql for anything, and a read that
  * ran on import would run inside every server suite that loads this file.
+ *
+ * After the first-start schema check (MICA-306), so a fresh install's price table exists
+ * before it is read. A tick that comes first retries the restore itself, as it always has.
  */
 on('onResourceStart', (resourceName: string) => {
   if (resourceName !== GetCurrentResourceName()) return;
-  void restorePrice();
+  whenSchemaReady(() => restorePrice());
 });
 
 /** Test seams: deterministic tick/prune/restore instead of waiting on wall clock or timers. */

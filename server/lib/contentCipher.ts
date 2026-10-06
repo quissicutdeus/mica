@@ -8,6 +8,7 @@ import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { cwd, platform } from 'node:process';
 import { Database } from './Database';
 import { PlayerFacingError } from './errors';
+import { whenSchemaReady } from './schemaReady';
 
 /**
  * Message, DM and mail bodies encrypted at rest (MICA-165).
@@ -963,7 +964,8 @@ export const announceContentCipher = async (): Promise<void> => {
 /** The resource-start hook, exported so a test can prove it is the one registered. */
 export const onContentCipherResourceStart = (resourceName: string): void => {
   if (resourceName !== GetCurrentResourceName()) return;
-  void announceContentCipher();
+  // It reads the ledger, so after the first-start schema check (MICA-306).
+  whenSchemaReady(announceContentCipher);
 };
 
 on('onResourceStart', onContentCipherResourceStart);

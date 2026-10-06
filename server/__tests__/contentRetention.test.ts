@@ -57,6 +57,7 @@ import {
   runRetention,
   type RetentionPolicy
 } from '../lib/contentRetention';
+import { __setSchemaReadyForTests } from '../lib/schemaReady';
 import '../services/Media';
 import '../services/Messages';
 import '../services/BlabberDms';
@@ -161,6 +162,9 @@ const deletesFrom = (table: string) =>
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // The start hook waits for the first-start schema check (MICA-306); settle it as an
+  // existing database, so the schedule starts without the check's own queries.
+  __setSchemaReadyForTests({ kind: 'existing' });
   dbMock.query.mockReset();
   db.ledger = true;
   db.unindexed.clear();

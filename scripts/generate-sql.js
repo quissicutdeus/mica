@@ -55,8 +55,7 @@ globalThis.GetConvar = globalThis.GetConvar ?? ((_n, fallback) => fallback);
 const entry = `
 import '${path.join(root, 'server/services/index.ts').split(path.sep).join('/')}';
 export { declaredServices } from '${path.join(root, 'server/lib/defineService.ts').split(path.sep).join('/')}';
-export { toSqlFile, schemaMigrationsLedgerDdl, schemaMigrationsSeedSql, freshImportProbeSql } from '${path.join(root, 'server/lib/schemaSql.ts').split(path.sep).join('/')}';
-export { citizenIdWidth } from '${path.join(root, 'shared/framework.ts').split(path.sep).join('/')}';
+export { toSqlFile, auditLogDdl, orderAppsByDependency, schemaMigrationsLedgerDdl, schemaMigrationsSeedSql, freshImportProbeSql } from '${path.join(root, 'server/lib/schemaSql.ts').split(path.sep).join('/')}';
 `;
 
 const bundlePath = path.join(root, 'node_modules', '.cache', 'mica-sqlgen.mjs');
@@ -105,69 +104,6 @@ const DROP_ALL_MICA_TABLES = [
 ].join('\n');
 
 /**
- * Order apps so every table's foreign-key targets already exist when it is applied.
- *
- * Cross-app foreign keys make this necessary: nothing guarantees a table's dependencies
- * sort earlier than it does alphabetically, and a clean database fails with errno 150 the
- * moment one doesn't. Files are emitted with a numeric prefix so that globbing or
- * importing in name order is correct by default — the failure mode this replaces was
- * silent until a fresh install.
- *
- * Kahn's algorithm, alphabetical within a dependency level so output is stable.
- */
-const referencedTables = (app) => {
-  const refs = [];
-  for (const { def } of app.fields) {
-    if (def.references) refs.push(def.references.table);
-  }
-  for (const child of app.childTables) {
-    for (const spec of Object.values(child.columns)) {
-      const ref = typeof spec === 'string' ? undefined : spec.references;
-      if (ref) refs.push(ref.table);
-    }
-  }
-  return refs;
-};
-
-function orderAppsByDependency(apps) {
-  const ownerOf = new Map();
-  for (const app of apps) {
-    ownerOf.set(app.table, app.id);
-    for (const child of app.childTables) ownerOf.set(child.name, app.id);
-  }
-
-  // dependsOn: app id -> set of app ids that must be applied first.
-  const dependsOn = new Map(apps.map((a) => [a.id, new Set()]));
-  for (const app of apps) {
-    for (const table of referencedTables(app)) {
-      const owner = ownerOf.get(table);
-      // Unowned targets are external (e.g. `players`) — not our problem to order.
-      if (owner && owner !== app.id) dependsOn.get(app.id).add(owner);
-    }
-  }
-
-  const ordered = [];
-  const remaining = apps.toSorted((a, b) => a.id.localeCompare(b.id));
-
-  while (remaining.length > 0) {
-    const readyIndex = remaining.findIndex((app) =>
-      [...dependsOn.get(app.id)].every((dep) => ordered.some((done) => done.id === dep))
-    );
-
-    if (readyIndex === -1) {
-      const stuck = remaining.map((a) => a.id).join(', ');
-      throw new Error(
-        `generate-sql: circular foreign-key dependency between apps: ${stuck}. ` +
-          'No apply order can satisfy these constraints.'
-      );
-    }
-    ordered.push(...remaining.splice(readyIndex, 1));
-  }
-
-  return ordered;
-}
-
-/**
  * Same directory `generateMigrationsIndex` in generate-barrels.js reads — kept as an
  * independent scan rather than importing that barrel, so a stale generated barrel can't
  * hide a migration from the seed. server/__tests__/migrationsSeed.test.ts is the check that
@@ -200,34 +136,50 @@ const QB_ONLY_GUARD = [
 ].join('\n');
 
 /**
- * Size hand-written SQL's `citizenid` columns for a schema with no `players` table, or throw.
+ * The comment block that leads the audit log's table in both generated files.
  *
- * The declared tables get their width from `citizenIdWidth` (MICA-289): 50 where the rows
- * hang off qb's `players.citizenid`, 60 where they hang off ESX's `users.identifier`.
- * `scripts/framework-schema.sql` has no declaration behind it and is written at the qb width,
- * so the ESX copy is widened here — and it throws on no match: a silent no-match would ship an
- * ESX audit ledger that cannot hold the identifiers the rest of the file can, and a check that
- * stays silent when it cannot run reads as a pass.
+ * The statement itself is `auditLogDdl` in server/lib/schemaSql.ts, which the first-start
+ * bootstrap runs too (MICA-306), so the two cannot describe different tables; a statement
+ * carries no prose, and the prose an owner reading `mica.sql` sees lives here. It is the
+ * comment block the hand-written `framework-schema.sql` carried until MICA-306 retired that
+ * file, word for word, so the generated files did not change when it moved; the SPDX lines in
+ * it are the ones they always carried.
  */
-function withIdentifierWidth(sql, label, citizenIdWidth) {
-  const column = new RegExp(`\`citizenid\` varchar\\(${citizenIdWidth(true)}\\)`, 'g');
-  const widened = sql.replace(column, `\`citizenid\` varchar(${citizenIdWidth(false)})`);
-  if (widened === sql) {
-    throw new Error(
-      `generate-sql: found no \`citizenid\` varchar(${citizenIdWidth(true)}) to widen in ${label}. ` +
-        'The ESX schema sizes it by rewriting that column, so a silent no-match would ship an ' +
-        'audit ledger narrower than every other table. Update `withIdentifierWidth`.'
-    );
-  }
-  return widened;
-}
+const AUDIT_LOG_HEADER = [
+  '-- SPDX-FileCopyrightText: 2025 quissicutdeus',
+  '--',
+  '-- SPDX-License-Identifier: AGPL-3.0-or-later',
+  '',
+  '-- Central moderation and accountability ledger.',
+  '--',
+  '-- Every destructive or state-changing action a player takes on their own content is',
+  '-- recorded here by `server/lib/AuditLogger.ts`: deletions, archives, leaving or being',
+  '-- removed from a conversation, and moderation. It is append-only — nothing in micaOS',
+  '-- updates or deletes a row in this table — so it stays a trustworthy record after the',
+  '-- content it refers to has been soft-deleted.',
+  '--',
+  '-- One action, `viewed`, is not a player acting on their own content at all: it is an',
+  '-- admin reading content somebody else reported (MICA-70). It is the one exception to',
+  '-- "state-changing" above, and it exists for the same reason the rest of this table',
+  '-- does — a read otherwise leaves nothing behind for anyone to be held accountable to.',
+  '--',
+  '-- `target_table` + `target_id` point at the affected row rather than using a foreign',
+  '-- key, on purpose: the log must survive the row it describes, and it spans every app',
+  '-- table. That is also why there is no FK on those columns.',
+  '--',
+  "-- Nor on `citizenid` (MICA-300). It used to reference qb's `players` with ON DELETE CASCADE,",
+  "-- which deleted a character's rows inside MariaDB before any report hold could apply; the",
+  '-- character-deleted purge and the orphan sweep (`server/lib/orphanSweep.ts`) clean up now.',
+  '--',
+  "-- `citizenid` is written at qb's width, `players.citizenid`'s 50. `pnpm generate:sql` widens",
+  "-- it to 60, `users.identifier`'s, in mica.esx.sql (MICA-289), as it does every declared table."
+].join('\n');
+
+/** The audit log as a generated file carries it: its comment block, then the statement. */
+const withAuditLogHeader = (ddl) => `${AUDIT_LOG_HEADER}\n${ddl}`;
 
 /** Wipe-and-rebuild in one file: drop everything, then the framework and app schemas. */
-function buildResetSql(appFiles, migrationsBlock, freshImportProbe) {
-  const frameworkSql = fs
-    .readFileSync(path.join(__dirname, 'framework-schema.sql'), 'utf8')
-    .trimEnd();
-
+function buildResetSql(frameworkSql, appFiles, migrationsBlock, freshImportProbe) {
   return [
     '-- ============================================================================',
     '-- DEVELOPMENT RESET — THIS DESTROYS ALL MICA DATA.',
@@ -270,10 +222,11 @@ async function main() {
   const {
     declaredServices,
     toSqlFile,
+    auditLogDdl,
+    orderAppsByDependency,
     schemaMigrationsLedgerDdl,
     schemaMigrationsSeedSql,
-    freshImportProbeSql,
-    citizenIdWidth
+    freshImportProbeSql
   } = await import(`file://${bundlePath}?t=${Date.now()}`);
 
   if (declaredServices.length === 0) {
@@ -293,11 +246,13 @@ async function main() {
    * one schema. Concatenating in the same order it already computed removes all three:
    * the install is "import mica.sql".
    *
-   * The framework half — the moderation audit ledger — leads, and lives in
-   * `scripts/framework-schema.sql` because it has no `defineService` behind it: no owning
-   * module, and it does not fit the app-table shape (no `status`, no `updated_at`).
+   * The framework half — the moderation audit ledger — leads. It has no `defineService`
+   * behind it (no owning module, and it does not fit the app-table shape: no `status`, no
+   * `updated_at`), so it is `auditLogDdl` in server/lib/schemaSql.ts, which the first-start
+   * bootstrap runs as well (MICA-306).
    */
-  const frameworkSql = fs.readFileSync(path.join(__dirname, 'framework-schema.sql'), 'utf8');
+  const frameworkSql = withAuditLogHeader(auditLogDdl({ ownerTable: true }));
+  const esxFrameworkSql = withAuditLogHeader(auditLogDdl({ ownerTable: false }));
 
   const appFiles = ordered.map((resolved) => ({ id: resolved.id, sql: toSqlFile(resolved) }));
 
@@ -377,7 +332,7 @@ async function main() {
     [
       esxBanner,
       freshImportProbeSql(),
-      withIdentifierWidth(frameworkSql.trimEnd(), 'scripts/framework-schema.sql', citizenIdWidth),
+      esxFrameworkSql,
       '',
       ...esxAppFiles.map((f) => f.sql.trimEnd()),
       migrationsBlock
@@ -385,7 +340,7 @@ async function main() {
   );
 
   // The two tables no declaration owns, both emitted above: the moderation audit ledger
-  // from framework-schema.sql, and the schema-migrations ledger.
+  // from `auditLogDdl`, and the schema-migrations ledger.
   const UNDECLARED_TABLES = 2;
   const tableCount =
     declaredServices.reduce((n, a) => n + 1 + a.childTables.length, 0) + UNDECLARED_TABLES;
@@ -395,7 +350,11 @@ async function main() {
 
   if (withReset) {
     const resetPath = path.join(root, 'sql', 'dev-reset.sql');
-    fs.writeFileSync(resetPath, buildResetSql(appFiles, migrationsBlock, freshImportProbeSql()));
+    fs.mkdirSync(path.dirname(resetPath), { recursive: true });
+    fs.writeFileSync(
+      resetPath,
+      buildResetSql(frameworkSql, appFiles, migrationsBlock, freshImportProbeSql())
+    );
     console.log('');
     console.log('Also wrote sql/dev-reset.sql — DESTRUCTIVE.');
     console.log('  It drops every mica_ table in the schema you connect it to,');

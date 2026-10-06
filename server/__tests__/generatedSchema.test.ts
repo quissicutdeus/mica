@@ -12,7 +12,14 @@ const { dbMock } = vi.hoisted(() => ({
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
 
 import { declaredServices } from '../lib/defineService';
-import { toSqlFile, SCHEMA_MIGRATIONS_TABLE, OWNER_TABLE } from '../lib/schemaSql';
+import {
+  auditLogDdl,
+  createStatements,
+  FRESH_DATABASE_PREDICATE,
+  toSqlFile,
+  SCHEMA_MIGRATIONS_TABLE,
+  OWNER_TABLE
+} from '../lib/schemaSql';
 import '../services/index';
 
 /**
@@ -98,7 +105,7 @@ describe('mica.sql matches the declarations it was generated from', () => {
     }
 
     // The two the generator emits with no `defineService` behind them: the moderation
-    // audit ledger from `scripts/framework-schema.sql`, and the migrations ledger.
+    // audit ledger (`auditLogDdl` in `server/lib/schemaSql.ts`), and the migrations ledger.
     const undeclared = new Set(['mica_audit_logs', SCHEMA_MIGRATIONS_TABLE]);
 
     const created = [...sql.matchAll(/CREATE TABLE IF NOT EXISTS `([^`]+)`/g)].map((m) => m[1]);
@@ -224,6 +231,51 @@ describe('mica.esx.sql', () => {
     // Removing the last constraint in a body leaves the line before it with a trailing
     // comma, which MySQL rejects. Only ever visible on a fresh ESX install.
     expect(esxSql).not.toMatch(/,\s*\n\s*\) ENGINE/);
+  });
+});
+
+/**
+ * MICA-306: the first-start bootstrap creates a fresh database from `createStatements`, not
+ * from these files. The two are one schema only while every runtime `CREATE` is the file's,
+ * byte for byte but for `IF NOT EXISTS` — the audit log and the ledger included, which no
+ * declaration describes. A fresh install that skipped the import must not end up with a
+ * different schema from one that imported.
+ */
+describe('the first-start statements match the generated files (MICA-306)', () => {
+  /** Every `CREATE TABLE` in a file, as one statement each, `IF NOT EXISTS` removed. */
+  const createsIn = (text: string): string[] =>
+    [...text.matchAll(/^CREATE TABLE IF NOT EXISTS `[^`]+` \([\s\S]*?\n\) ENGINE = [^;]+;/gm)].map(
+      (m) => m[0].replace('CREATE TABLE IF NOT EXISTS ', 'CREATE TABLE ')
+    );
+
+  it.each([
+    ['mica.sql', sql, true],
+    ['mica.esx.sql', esxSql, false]
+  ] as const)('%s creates exactly what the bootstrap does, in the same order', (_f, text, qb) => {
+    const runtime = createStatements(qb).filter((s) => s.startsWith('CREATE TABLE'));
+    const fromFile = createsIn(text);
+
+    // The files create the ledger last, beside their seed; the bootstrap creates it first,
+    // as its claim on the database. Everything else is in the same order.
+    const [ledger, ...rest] = runtime;
+    expect(ledger.startsWith(`CREATE TABLE \`${SCHEMA_MIGRATIONS_TABLE}\``)).toBe(true);
+    expect(fromFile).toEqual([...rest, ledger]);
+    expect(fromFile.length).toBeGreaterThan(declaredServices.length);
+  });
+
+  it('includes the audit log, at the width each file gives it', () => {
+    const audit = (text: string) =>
+      createsIn(text).find((s) => s.startsWith('CREATE TABLE `mica_audit_logs`'));
+    expect(audit(sql)).toBe(auditLogDdl({ ownerTable: true, plainCreate: true }));
+    expect(audit(esxSql)).toBe(auditLogDdl({ ownerTable: false, plainCreate: true }));
+    expect(audit(sql)).toContain('`citizenid` varchar(50) NOT NULL');
+    expect(audit(esxSql)).toContain('`citizenid` varchar(60) NOT NULL');
+  });
+
+  it('asks the same freshness question the files seed by', () => {
+    for (const text of [sql, esxSql]) {
+      expect(text).toContain(`SET @mica_fresh_import = ${FRESH_DATABASE_PREDICATE};`);
+    }
   });
 });
 

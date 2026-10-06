@@ -91,7 +91,7 @@ case "$1" in
     inspect) echo "$FAKE_RUNNING" ;;
     exec)
         case "$*" in
-            *"count(*)"*) echo 7 ;;
+            *"count(*)"*) echo "$FAKE_TABLES" ;;
             *"-i "*) cat >/dev/null ;;
         esac
         ;;
@@ -100,6 +100,13 @@ exit 0
 `;
 
 const STARTED = 'Started resource mica\nmica started!';
+
+/**
+ * What micaOS prints when it created the schema itself on an empty database (MICA-306), which
+ * is the only thing an integration run is held to say about it: the run imports nothing.
+ */
+const CREATED =
+  "[mica] created micaOS's schema for ESX or standalone (citizenid 60 wide): 38 tables, 10 migration(s) recorded as applied.";
 
 let dir: string;
 let root: string;
@@ -174,12 +181,14 @@ interface WrapOptions {
   expected?: string[] | 'none';
   /** Swap names in the run directory for symlinks to the victim once the wrapper is under way. */
   swap?: boolean;
+  /** Tables the stand-in database holds when the wrapper counts them. Default: what the mode leaves. */
+  tables?: number;
 }
 
 const wrap = (
   run: string,
   logs: string,
-  { running = 'false', expected, swap = false }: WrapOptions = {}
+  { running = 'false', expected, swap = false, tables }: WrapOptions = {}
 ) => {
   const logFile = `${run}.log`;
   const calls = `${run}.calls`;
@@ -188,6 +197,8 @@ const wrap = (
   writeFileSync(calls, '');
   mkdirSync(sdCopy);
   const integ = join(run, 'resources/mica-integration');
+  // An integration run starts on an empty database; a release run has just imported the file.
+  const tableCount = tables ?? (existsSync(integ) ? 0 : 7);
   if (existsSync(join(integ, 'fxmanifest.lua')) && expected !== 'none') {
     writeFileSync(
       join(integ, 'expected-scenarios.txt'),
@@ -208,6 +219,7 @@ const wrap = (
       FAKE_CALLS: calls,
       FAKE_SD: sdCopy,
       FAKE_RUNNING: running,
+      FAKE_TABLES: String(tableCount),
       FAKE_SWAP_RUN: swap ? run : '',
       FAKE_VICTIM: victim,
       FAKE_VICTIM_DIR: victimDir
@@ -226,7 +238,8 @@ const wrap = (
   };
 };
 
-const suite = (lines: string[]) => [STARTED, ...lines].join('\n') + '\n';
+const suite = (lines: string[], { created = true }: { created?: boolean } = {}) =>
+  [STARTED, ...(created ? [CREATED] : []), ...lines].join('\n') + '\n';
 const PASS_A = ['integration: PASS a', 'integration: done 1 passed 0 failed'];
 
 const victimUntouched = () => {
@@ -274,6 +287,31 @@ describe.skipIf(!trial)('mica-smoke-release.sh', () => {
           `${stageRoot}/run\\.[A-Za-z0-9]+/src/mica-integration:/opt/fivem/server-data/resources/mica-integration:ro`
         )
       );
+    });
+
+    it('starts micaOS on an empty database: nothing is imported, and the config says why', () => {
+      const run = makeRun('manifest');
+      const r = wrap(run, suite(PASS_A));
+
+      expect(r.status, r.out).toBe(0);
+      expect(r.calls).not.toMatch(/^exec -i /m);
+      expect(r.out).toContain('nothing imported');
+      expect(r.cfg).toContain('set mica_integration_schema "bootstrap"');
+    });
+
+    it('fails when the console never says micaOS created the schema, though every scenario passed', () => {
+      const r = wrap(makeRun('manifest'), suite(PASS_A, { created: false }));
+
+      expect(r.status).not.toBe(0);
+      expect(r.out).toContain('the first-start schema is unproven');
+    });
+
+    it('refuses to start on a database that already holds tables, which would prove nothing', () => {
+      const r = wrap(makeRun('manifest'), suite(PASS_A), { tables: 7 });
+
+      expect(r.status).not.toBe(0);
+      expect(r.out).toContain('is not empty before micaOS starts');
+      expect(r.calls).not.toContain('run -d -i');
     });
 
     it('mounts only from its own staging copy, never from the run directory', () => {
@@ -554,6 +592,10 @@ describe.skipIf(!trial)('mica-smoke-release.sh', () => {
       expect(existsSync(r.keyPath)).toBe(false);
       expect(r.calls).not.toContain('mica-integration');
       expect(r.out).toContain('stayed clean');
+      // The release smoke test still imports the zip's own file, and says nothing of a bootstrap.
+      expect(r.calls).toMatch(/^exec -i /m);
+      expect(r.cfg).not.toContain('mica_integration_schema');
+      expect(r.out).toContain('imported mica.esx.sql');
       expect(r.staged).toEqual([]);
     });
 

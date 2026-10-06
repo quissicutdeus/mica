@@ -5,6 +5,7 @@
 import { Database } from './Database';
 import { declaredServices, type ColumnDef, type ColumnType } from './defineService';
 import { SCHEMA_MIGRATIONS_TABLE } from './schemaSql';
+import { whenSchemaReady } from './schemaReady';
 
 /**
  * Age-based retention for player content (MICA-167): messages, DMs and media.
@@ -663,7 +664,8 @@ export const resetRetentionForTests = (): void => {
 /** The resource-start hook, exported so a test can prove it is the one registered. */
 export const onRetentionResourceStart = (resourceName: string): void => {
   if (resourceName !== GetCurrentResourceName()) return;
-  startRetentionSchedule();
+  // After the first-start schema check (MICA-306), and not at all if it refused.
+  whenSchemaReady(startRetentionSchedule);
 };
 
 on('onResourceStart', onRetentionResourceStart);

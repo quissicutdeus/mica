@@ -69,6 +69,7 @@ import {
 import { FrameworkBridge, __setResourceLookup, detectFramework } from '../lib/FrameworkBridge';
 import { REPORTABLE } from '../lib/moderation';
 import { CHARACTER_EXCEPT } from '../lib/shell';
+import { __setSchemaReadyForTests } from '../lib/schemaReady';
 import { SELF_SERVICE_EXCEPT } from '../services/Privacy';
 import { declaredServices } from '../lib/defineService';
 // Populates `declaredServices` — the registry is filled as a side effect of each
@@ -169,6 +170,9 @@ const healthyServer = (
 beforeEach(() => {
   vi.clearAllMocks();
   asQb();
+  // The start-up sweep waits for the first-start schema check (MICA-306); settle it as an
+  // existing database, so driving the hook issues none of the check's queries.
+  __setSchemaReadyForTests({ kind: 'existing' });
 });
 
 afterEach(() => {
@@ -1512,8 +1516,11 @@ describe('the character-deleted hook', () => {
    */
   it('says it started before it asks anything, and says it finished even at zero', async () => {
     const logged: string[] = [];
+    // How many queries had been issued when each line was said.
+    const queriesAt: number[] = [];
     const spy = vi.spyOn(console, 'log').mockImplementation((...args) => {
       logged.push(args.join(' '));
+      queriesAt.push(dbMock.query.mock.calls.length);
     });
     try {
       healthyServer({ removedPerTable: 0 });
@@ -1525,10 +1532,14 @@ describe('the character-deleted hook', () => {
       const sweepStart = handlers.find((fn) => /orphan sweep starting/.test(String(fn)));
       expect(sweepStart, 'no onResourceStart handler runs the orphan sweep').toBeDefined();
       sweepStart!('mica');
-      // Starting is said synchronously, before the first query.
-      expect(logged.some((line) => /orphan sweep starting over \d+ table\(s\)/.test(line))).toBe(
-        true
+      // Starting is said once the schema check settles (MICA-306), before the first query.
+      await vi.waitFor(() =>
+        expect(logged.some((line) => /orphan sweep starting over \d+ table\(s\)/.test(line))).toBe(
+          true
+        )
       );
+      const starting = logged.findIndex((line) => /orphan sweep starting/.test(line));
+      expect(queriesAt[starting]).toBe(0);
       // Finishing, after a sweep that yields between its statements.
       await vi.waitFor(() =>
         expect(logged.some((line) => /orphan sweep finished: removed 0 row\(s\)/.test(line))).toBe(

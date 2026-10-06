@@ -596,11 +596,11 @@ render as nothing.
 
 **`mica.sql` is generated in full and must not be hand-edited.** It holds the
 framework half — the audit ledger, which has no owning module and does not fit
-the app-table shape, and which lives in `scripts/framework-schema.sql` —
-followed by every app table in dependency order. Editing the output reintroduces
-exactly the drift the generator removes, and a stale copy silently breaks the
-`columns` allowlist's safety property (AGENTS.md §2.9): that allowlist is only
-sound while it matches the real table.
+the app-table shape, and whose DDL is `auditLogDdl` in `server/lib/schemaSql.ts`
+— followed by every app table in dependency order. Editing the output
+reintroduces exactly the drift the generator removes, and a stale copy silently
+breaks the `columns` allowlist's safety property (AGENTS.md §2.9): that
+allowlist is only sound while it matches the real table.
 
 It used to be `mica.sql` plus one numbered file per service in `sql/apps/`,
 imported in filename order because foreign keys cross app boundaries. That
@@ -626,11 +626,15 @@ audit ledger included — then recreates the whole schema. Development only.
 - Nothing in this repo connects to a database. Apply the file yourself in a DB
   client; it uses `PREPARE`/`EXECUTE`, so it will not run through oxmysql.
 
-`pnpm generate:sql` writes `mica.sql`, which is **committed and imported by
-hand**. No app table is ever created at runtime: `CREATE TABLE IF NOT EXISTS`
-silently does nothing against an existing table, so a schema change applied that
-way would be a no-op with no error — the same silent-failure shape as a missing
-NUI layer. Regenerate and review the diff.
+`pnpm generate:sql` writes `mica.sql`, which is **committed**. On an **empty**
+database micaOS creates the same schema itself at first start (MICA-306,
+`server/lib/schemaBootstrap.ts`), from the same declarations, with plain
+`CREATE TABLE` so nothing can silently no-op; `generatedSchema.test.ts` holds
+the runtime statements to the generated files. That is the only runtime DDL. It
+never runs against a database holding any micaOS table, because
+`CREATE TABLE IF NOT EXISTS` silently does nothing against an existing table, so
+a schema change applied that way would be a no-op with no error — the same
+silent-failure shape as a missing NUI layer. Regenerate and review the diff.
 
 What a running server _can_ do is bring an existing table up to date, and only
 when an operator asks it to by name: `micaschema apply` runs the versioned

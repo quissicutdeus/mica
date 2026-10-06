@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import {
+  declaredServices,
   normalizeIndex,
   type ChildTableDefinition,
   type ColumnDef,
@@ -11,22 +12,28 @@ import {
   type ResolvedIndex
 } from './defineService';
 import { citizenIdWidth } from '@mica/shared/framework';
+import { AUDIT_LOG_TABLE } from './AuditLogger';
+import { migrations as shippedMigrations } from '../migrations';
 
 /**
  * Emit MySQL DDL from a resolved app schema.
  *
- * No app table's `CREATE TABLE` is ever executed at runtime. `CREATE TABLE IF NOT EXISTS`
- * silently does nothing when the table already exists, so a schema change applied that way
- * would be a no-op with no error — the same silent-failure shape that produced the dead NUI
- * endpoints. Output goes to a reviewable file instead, and a live table is brought up to date
- * by `micaschema apply` (AGENTS.md §8) rather than by re-running this.
+ * Two readers, one source. `scripts/generate-sql.js` writes `mica.sql` and `mica.esx.sql` from
+ * it, for an owner who imports by hand; and `schemaBootstrap.ts` runs it once, on the first
+ * start of a database that holds no micaOS table at all (MICA-306), so a fresh install needs
+ * no import. Both go through `createStatements` below, so the two cannot describe different
+ * schemas, and `generatedSchema.test.ts` holds the committed files to it.
  *
- * `schemaMigrationsLedgerDdl` below is the one exception, and `server/lib/migrations.ts` does
- * run it: that table has a single fixed shape and never gains a column, so `IF NOT EXISTS`
- * cannot hide a change there.
+ * **Nothing here ever runs against a database that already has a micaOS table.** The files
+ * use `CREATE TABLE IF NOT EXISTS`, which silently does nothing to a table that is there, so a
+ * schema change applied that way would be a no-op with no error — the same silent-failure
+ * shape that produced the dead NUI endpoints. A live table is brought up to date by
+ * `micaschema apply` (AGENTS.md §8), never by re-running this. The first-start path uses plain
+ * `CREATE TABLE` instead (`plainCreate`), so a table that unexpectedly exists is an error that
+ * stops it rather than a statement that quietly skipped.
  *
- * Kept separate from `defineService` so the FiveM server bundle does not carry
- * DDL-generation code it never calls — except that one function.
+ * `schemaMigrationsLedgerDdl` is also run by `server/lib/migrations.ts` with `IF NOT EXISTS`:
+ * that table has a single fixed shape and never gains a column, so it cannot hide a change.
  */
 
 const SQL_TYPES: Record<ColumnType, (def: ColumnDef) => string> = {
@@ -144,7 +151,17 @@ export interface SchemaSqlOptions {
    * each table carried a foreign key onto `players` too; no table does since MICA-300.
    */
   ownerTable?: boolean;
+  /**
+   * Plain `CREATE TABLE`, without `IF NOT EXISTS` (MICA-306). The first-start bootstrap's
+   * form: a table that already exists there is a fault to stop on, never a statement to skip.
+   * Off by default, which is the generated files' form.
+   */
+  plainCreate?: boolean;
 }
+
+/** `CREATE TABLE [IF NOT EXISTS] \`table\` (`, the first line of every table here. */
+const createTableHead = (table: string, options: Pick<SchemaSqlOptions, 'plainCreate'>): string =>
+  `CREATE TABLE ${options.plainCreate ? '' : 'IF NOT EXISTS '}\`${table}\` (`;
 
 const foreignKeySql = (table: string, column: string, def: ColumnDef): string | null => {
   if (!def.references) return null;
@@ -277,7 +294,7 @@ export function toCreateTableSql(
   ];
 
   const lines = [
-    `CREATE TABLE IF NOT EXISTS \`${table}\` (`,
+    createTableHead(table, options),
     ...closeBody(body),
     `) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = ${TABLE_COLLATION};`
   ];
@@ -311,7 +328,7 @@ export function toChildTableSql(
   ];
 
   return [
-    `CREATE TABLE IF NOT EXISTS \`${child.name}\` (`,
+    createTableHead(child.name, options),
     // The last body line carries a trailing comma; strip it.
     ...closeBody(body),
     `) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = ${TABLE_COLLATION};`
@@ -339,15 +356,17 @@ export function toSqlFile(resolved: ResolvedService, options: SchemaSqlOptions =
 
 /**
  * The ledger table versioned migrations record themselves into. No `defineService` behind
- * it — like the framework audit ledger in `scripts/framework-schema.sql`, it is
+ * it — like the moderation audit ledger (`auditLogDdl`), it is
  * infrastructure rather than an app table, so it does not fit the app-table shape
  * `expectedShape` produces.
  */
 export const SCHEMA_MIGRATIONS_TABLE = 'mica_schema_migrations';
 
-export const schemaMigrationsLedgerDdl = (): string =>
+export const schemaMigrationsLedgerDdl = (
+  options: Pick<SchemaSqlOptions, 'plainCreate'> = {}
+): string =>
   [
-    `CREATE TABLE IF NOT EXISTS \`${SCHEMA_MIGRATIONS_TABLE}\` (`,
+    createTableHead(SCHEMA_MIGRATIONS_TABLE, options),
     '    `id` varchar(255) NOT NULL,',
     '    `applied_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,',
     '    PRIMARY KEY (`id`)',
@@ -361,22 +380,41 @@ export const schemaMigrationsLedgerDdl = (): string =>
 const FRESH_IMPORT = '@mica_fresh_import';
 
 /**
+ * **Does this database hold no micaOS table at all?** One SQL expression, 1 or 0, and the one
+ * definition of "fresh" both paths share (MICA-306): the generated files' seed (MICA-301) and
+ * the first-start bootstrap (`schemaBootstrap.ts`). Two predicates that could disagree would
+ * let the import and the runtime path seed the ledger under different conditions.
+ *
+ * Any `mica_` table at all counts, not just the ledger: an install older than the ledger has
+ * tables and no ledger, and is exactly the database whose migrations must run. `ESCAPE '|'`
+ * makes the underscore literal; unescaped it is a single-character wildcard.
+ */
+export const FRESH_DATABASE_PREDICATE =
+  '(SELECT COUNT(*) = 0 FROM information_schema.TABLES\n' +
+  "    WHERE table_schema = DATABASE() AND table_name LIKE 'mica|_%' ESCAPE '|')";
+
+/**
  * The first statement of a generated file's schema (MICA-301): does this database hold any
  * micaOS table yet?
  *
  * Asked before anything is created, because afterwards every table exists whichever way the
  * import went — every `CREATE` is `IF NOT EXISTS`, the ledger's own included, so no later
- * statement can tell a fresh install from a re-import. Any `mica_` table at all counts, not
- * just the ledger: an install older than the ledger has tables and no ledger, and is exactly
- * the database whose migrations must run.
+ * statement can tell a fresh install from a re-import.
  */
 export const freshImportProbeSql = (): string =>
   [
     '-- Is this import creating micaOS from nothing? Asked before the first CREATE TABLE: the',
     '-- migrations ledger below is seeded only then (MICA-301).',
-    `SET ${FRESH_IMPORT} = (SELECT COUNT(*) = 0 FROM information_schema.TABLES`,
-    "    WHERE table_schema = DATABASE() AND table_name LIKE 'mica|_%' ESCAPE '|');"
+    `SET ${FRESH_IMPORT} = ${FRESH_DATABASE_PREDICATE};`
   ].join('\n');
+
+/**
+ * The same question at run time, as a single-value read (MICA-306). Not the session variable:
+ * oxmysql hands each query whichever pooled connection is free, so a `SET @…` in one statement
+ * is not visible to the next, and the bootstrap carries the answer in TypeScript instead.
+ */
+export const freshDatabaseProbeSql = (): string =>
+  `SELECT ${FRESH_DATABASE_PREDICATE} AS \`fresh\``;
 
 /**
  * Seed every migration id that exists as of generation time — **only into a database this same
@@ -408,3 +446,198 @@ export const schemaMigrationsSeedSql = (ids: readonly string[]): string | null =
     `) AS \`seed\` WHERE ${FRESH_IMPORT} = 1;`
   ].join('\n');
 };
+
+/**
+ * The first-start seed (MICA-306): every shipped migration id, recorded as applied without
+ * running `up()`, because every table was just created in its final shape.
+ *
+ * Unconditional, unlike `schemaMigrationsSeedSql`: the bootstrap runs it only after creating
+ * every table itself, so the freshness question was answered in TypeScript before the first
+ * `CREATE`. `INSERT IGNORE` all the same, so it can never fail on an id already present.
+ */
+export const schemaMigrationsRuntimeSeedSql = (ids: readonly string[]): string | null => {
+  if (ids.length === 0) return null;
+  const rows = ids.map((id) => `    ('${id.replace(/'/g, "''")}')`);
+  return [
+    `INSERT IGNORE INTO \`${SCHEMA_MIGRATIONS_TABLE}\` (\`id\`) VALUES`,
+    `${rows.join(',\n')};`
+  ].join('\n');
+};
+
+/**
+ * The values `mica_audit_logs.action` accepts. An ENUM, so **adding one is a schema change**:
+ * a versioned migration that widens it, the matching member of `AuditAction` in
+ * `AuditLogger.ts`, and a CHANGELOG "Action required" entry. `test:schema` is the only suite
+ * that would see an insert outside it; the `Database` stub accepts any string.
+ */
+export const AUDIT_LOG_ACTIONS = [
+  'archived',
+  'unarchived',
+  'deleted',
+  'left',
+  'removed',
+  'moderated',
+  'unmoderated',
+  'viewed'
+] as const;
+
+/**
+ * The central moderation and accountability ledger, `mica_audit_logs` — a code constant since
+ * MICA-306 retired `scripts/framework-schema.sql`, the last hand-written table definition.
+ *
+ * Every destructive or state-changing action a player takes on their own content is recorded
+ * here by `AuditLogger.ts`: deletions, archives, leaving or being removed from a conversation,
+ * and moderation. It is append-only — nothing in micaOS updates or deletes a row in it — so it
+ * stays a trustworthy record after the content it refers to has been soft-deleted.
+ *
+ * One action, `viewed`, is not a player acting on their own content at all: it is an admin
+ * reading content somebody else reported (MICA-70). It is the one exception to
+ * "state-changing" above, and it exists for the same reason the rest of the table does — a read
+ * otherwise leaves nothing behind for anyone to be held accountable to.
+ *
+ * `target_table` + `target_id` point at the affected row rather than using a foreign key, on
+ * purpose: the log must survive the row it describes, and it spans every app table. Nor is
+ * there one on `citizenid` (MICA-300): it used to reference qb's `players` with ON DELETE
+ * CASCADE, which deleted a character's rows inside MariaDB before any report hold could apply;
+ * the character-deleted purge and the orphan sweep (`orphanSweep.ts`) clean up now.
+ *
+ * No `defineService` behind it: no owning service, and it does not fit the app-table shape (no
+ * `status`, no `updated_at`). `citizenid` is sized like every declared table's, by
+ * `citizenIdWidth` — 50 on qb, 60 on ESX and standalone (MICA-289) — where the hand-written
+ * file was written at 50 and widened for ESX by a text substitution in the generator.
+ */
+export const auditLogDdl = (options: SchemaSqlOptions = {}): string =>
+  [
+    createTableHead(AUDIT_LOG_TABLE, options),
+    '    `id` int(11) NOT NULL AUTO_INCREMENT,',
+    `    \`citizenid\` varchar(${citizenIdWidth(options.ownerTable !== false)}) NOT NULL,`,
+    '    `action` ENUM(',
+    AUDIT_LOG_ACTIONS.map((action) => `        '${action}'`).join(',\n'),
+    '    ) NOT NULL,',
+    '    `service` varchar(100) NOT NULL,',
+    '    `method` varchar(100) NOT NULL,',
+    '    `target_id` int(11) NOT NULL,',
+    '    `target_table` varchar(100) DEFAULT NULL,',
+    '    `details` text DEFAULT NULL,',
+    '    `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,',
+    '    PRIMARY KEY (`id`),',
+    '    KEY `citizenid` (`citizenid`),',
+    '    KEY `action` (`action`),',
+    '    KEY `service_method` (`service`, `method`),',
+    '    KEY `target` (`target_table`, `target_id`),',
+    '    -- Moderation review reads newest-first for one player.',
+    '    KEY `citizenid_created` (`citizenid`, `created_at`)',
+    `) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = ${TABLE_COLLATION};`
+  ].join('\n');
+
+/** Every table a service references by foreign key. */
+const referencedTables = (app: ResolvedService): string[] => {
+  const refs: string[] = [];
+  for (const { def } of app.fields) {
+    if (def.references) refs.push(def.references.table);
+  }
+  for (const child of app.childTables) {
+    for (const spec of Object.values(child.columns)) {
+      const ref = typeof spec === 'string' ? undefined : spec.references;
+      if (ref) refs.push(ref.table);
+    }
+  }
+  return refs;
+};
+
+/**
+ * Order apps so every table's foreign-key targets already exist when it is created.
+ *
+ * Cross-app foreign keys make this necessary: nothing guarantees a table's dependencies sort
+ * earlier than it does alphabetically, and a clean database fails with errno 150 the moment
+ * one doesn't. The generated files and the first-start bootstrap both create in this order.
+ *
+ * Kahn's algorithm, alphabetical within a dependency level so output is stable. Throws on a
+ * cycle, which no order can satisfy.
+ */
+export function orderAppsByDependency(apps: readonly ResolvedService[]): ResolvedService[] {
+  const ownerOf = new Map<string, string>();
+  for (const app of apps) {
+    ownerOf.set(app.table, app.id);
+    for (const child of app.childTables) ownerOf.set(child.name, app.id);
+  }
+
+  // dependsOn: app id -> the app ids that must be created first.
+  const dependsOn = new Map<string, Set<string>>(apps.map((a) => [a.id, new Set<string>()]));
+  for (const app of apps) {
+    for (const table of referencedTables(app)) {
+      const owner = ownerOf.get(table);
+      // Unowned targets are external (e.g. `players`) — not this ordering's problem.
+      if (owner && owner !== app.id) dependsOn.get(app.id)?.add(owner);
+    }
+  }
+
+  const ordered: ResolvedService[] = [];
+  const remaining = [...apps].sort((a, b) => a.id.localeCompare(b.id));
+
+  while (remaining.length > 0) {
+    const readyIndex = remaining.findIndex((app) =>
+      [...(dependsOn.get(app.id) ?? [])].every((dep) => ordered.some((done) => done.id === dep))
+    );
+
+    if (readyIndex === -1) {
+      const stuck = remaining.map((a) => a.id).join(', ');
+      throw new Error(
+        `generate-sql: circular foreign-key dependency between apps: ${stuck}. ` +
+          'No apply order can satisfy these constraints.'
+      );
+    }
+    ordered.push(...remaining.splice(readyIndex, 1));
+  }
+
+  return ordered;
+}
+
+/** The migration ids this build ships, from the generated barrel, in apply order. */
+export const shippedMigrationIds = (): string[] =>
+  shippedMigrations.map((m) => m.id).sort((a, b) => a.localeCompare(b));
+
+/**
+ * Every table the first-start bootstrap creates, in the order it creates them — the order
+ * `createStatements` runs them in.
+ */
+export const bootstrapTables = (): string[] => [
+  SCHEMA_MIGRATIONS_TABLE,
+  AUDIT_LOG_TABLE,
+  ...orderAppsByDependency(declaredServices).flatMap((app) => [
+    app.table,
+    ...app.childTables.map((child) => child.name)
+  ])
+];
+
+/**
+ * The whole schema as statements to run one at a time, for a database that holds no micaOS
+ * table (MICA-306). Plain `CREATE TABLE` throughout, never `IF NOT EXISTS`.
+ *
+ * The order is load-bearing:
+ *
+ * 1. **The migrations ledger first, because creating it is the claim.** Two servers starting
+ *    on one fresh database both see it fresh; the plain `CREATE` lets exactly one of them
+ *    create the ledger, and the other gets errno 1050 before it has created anything.
+ * 2. The audit log, which nothing references.
+ * 3. Each app's table, then its child tables in declaration order, apps in dependency order so
+ *    every foreign key's target exists first (`orderAppsByDependency`).
+ * 4. **The seed last**, so a create that stops part-way leaves an empty ledger beside missing
+ *    tables — the half-created state the bootstrap reports and never resumes — and never a
+ *    ledger saying the migrations ran over a schema that is not there.
+ *
+ * `ownerTable` sizes every `citizenid` column, as it does for the generated files.
+ */
+export function createStatements(ownerTable: boolean): string[] {
+  const options: SchemaSqlOptions = { ownerTable, plainCreate: true };
+  const seed = schemaMigrationsRuntimeSeedSql(shippedMigrationIds());
+  return [
+    schemaMigrationsLedgerDdl(options),
+    auditLogDdl(options),
+    ...orderAppsByDependency(declaredServices).flatMap((app) => [
+      toCreateTableSql(app, options),
+      ...app.childTables.map((child) => toChildTableSql(child, options))
+    ]),
+    ...(seed ? [seed] : [])
+  ];
+}

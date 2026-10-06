@@ -13,6 +13,15 @@
 # the console has to say `mica started!` with no error from mica or oxmysql
 # after it. Everything it starts is torn down on exit, whichever way it exits.
 #
+# Which run imports and which does not (MICA-306). micaOS creates its own schema on the first
+# start of a database that holds no micaOS table, so the two modes below prove different halves
+# of the install. The release smoke test imports the zip's mica.esx.sql first and keeps doing
+# so: the file an owner may still import by hand has to import, and micaOS has to start on what
+# it made. The integration suite does NOT import: it starts micaOS on an empty database, and
+# the run is only a pass if the console says micaOS created the schema itself. There is no
+# setting that makes the integration run import; a run that did would prove nothing about the
+# first start, and the suite fails when `mica_integration_schema` is not `bootstrap`.
+#
 # What it trusts and what it does not. The run directory has to be under
 # SMOKE_ROOT after realpath, be a directory, and contain no symlink -- and it is
 # mounted read-only into a container running as the directory's owner, never as
@@ -224,7 +233,11 @@ plain() { sed 's/\x1b\[[0-9;]*m//g'; }
 
 docker network create "$net" >/dev/null
 
-echo "smoke: starting $DB_IMAGE and importing the zip's mica.esx.sql"
+if [[ $integration == 1 ]]; then
+    echo "smoke: starting $DB_IMAGE, EMPTY: micaOS creates the schema itself on its first start"
+else
+    echo "smoke: starting $DB_IMAGE and importing the zip's mica.esx.sql"
+fi
 docker run -d --name "$db" --network "$net" \
     -e MARIADB_ROOT_PASSWORD=smoke -e MARIADB_DATABASE=mica \
     "$DB_IMAGE" >/dev/null
@@ -237,13 +250,20 @@ for _ in $(seq 1 90); do
     sleep 1
 done
 ready || die "$DB_IMAGE did not accept a root login within 90s"
-# The import is itself half the test: the file an owner is told to import has to
-# import. Standalone mode wants the ESX file: mica.sql reads qb's players table
-# first and fails without it, and this database has none.
-docker exec -i "$db" mariadb -uroot -psmoke mica <"$resource/mica.esx.sql" ||
-    die "mica.esx.sql from the zip failed to import"
-tables=$(docker exec "$db" mariadb -uroot -psmoke -N -e "select count(*) from information_schema.tables where table_schema='mica'")
-echo "smoke: imported mica.esx.sql -- $tables tables"
+# The release smoke test's import is itself half the test: the file an owner may import by hand
+# has to import. Standalone mode wants the ESX file: mica.sql reads qb's players table first and
+# fails without it, and this database has none. The integration run leaves the database empty,
+# for micaOS to create (MICA-306): importing here would make the first start a no-op.
+if [[ $integration == 1 ]]; then
+    tables=$(docker exec "$db" mariadb -uroot -psmoke -N -e "select count(*) from information_schema.tables where table_schema='mica'")
+    [[ $tables == 0 ]] || die "the database is not empty before micaOS starts ($tables tables), so the first-start schema would prove nothing"
+    echo "smoke: the database holds no table; nothing imported"
+else
+    docker exec -i "$db" mariadb -uroot -psmoke mica <"$resource/mica.esx.sql" ||
+        die "mica.esx.sql from the zip failed to import"
+    tables=$(docker exec "$db" mariadb -uroot -psmoke -N -e "select count(*) from information_schema.tables where table_schema='mica'")
+    echo "smoke: imported mica.esx.sql -- $tables tables"
+fi
 
 # A server-data of its own: the config below, and whatever FXServer writes beside it (its
 # cache). Everything in it is made here, by root, in a directory nothing else can write, and
@@ -282,6 +302,9 @@ fi
     if [[ $integration == 1 ]]; then
         echo "set mica_content_key_file \"/opt/fivem/server-data/resources/$KEY_DIR/$KEY_NAME\""
         echo 'set mica_integration "1"'
+        # What the suite reads to know micaOS, not an import, made the schema it is run
+        # against. A wrapper that predates MICA-306 sets nothing, and the suite fails on that.
+        echo 'set mica_integration_schema "bootstrap"'
     fi
     echo 'ensure oxmysql'
     echo 'ensure mica'
@@ -407,6 +430,17 @@ if [[ $integration == 1 ]]; then
         diff <(echo "$want") <(echo "$got") >&2 || true
         die "the PASS lines are not the scenarios this zip was packed with"
     fi
+    # MICA-306: the database was empty, so every table the suite ran against was made by
+    # micaOS's own first start, and the console says so exactly once, from micaOS. The suite
+    # reads the tables and the ledger back; only the whole console holds this line, since the
+    # suite's own listener starts after micaOS has begun talking. A refusal prints the reason
+    # instead, and the lines that say why are shown.
+    created_re="created micaOS's schema for"
+    if ! grep -qF "$created_re" <<<"$logs"; then
+        echo "---- micaOS's schema lines ----" >&2
+        grep -iE "\[mica\].*(schema|half-created|database)" <<<"$logs" >&2 || true
+        die "the console never said micaOS created its schema (\"$created_re ...\") on an empty database; the first-start schema is unproven"
+    fi
     # The verdict lines are the suite's own and can say anything; what follows is for what
     # the console says about everything else.
     logs=$(grep -vE 'integration: (PASS|FAIL|done) ' <<<"$logs" || true)
@@ -429,7 +463,7 @@ elif grep -iE 'script:mica' <<<"$logs" | grep -qiE 'error|exception|unhandled'; 
     die "mica logged an error after starting"
 fi
 if grep -iE 'oxmysql' <<<"$logs" | grep -qiE 'error|refused|denied|unable to (connect|establish)'; then
-    die "oxmysql could not reach the database mica.esx.sql was imported into"
+    die "oxmysql could not reach the database it was started against"
 fi
 if [[ $integration == 1 ]]; then
     [[ $keyless != 1 ]] || echo "smoke: KEYLESS -- the console above is all this run could prove"
