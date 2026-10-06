@@ -24,4 +24,9 @@ export interface CallState {
    */
   speakerAvailable?: boolean;
   muted: boolean;
+  /**
+   * The job line a call came in through (MICA-307), so the ring can say "via Emergency".
+   * Set only on a call that came in through a job line, and gone once the call ends.
+   */
+  line?: { number: string; label: string };
 }

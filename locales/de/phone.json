@@ -17,5 +17,6 @@
   "justNow": "Gerade eben",
   "minutesAgo": "vor {minutes} Min.",
   "hoursAgo": "vor {hours} Std.",
-  "daysAgo": "vor {days} T."
+  "daysAgo": "vor {days} T.",
+  "viaLine": "über {label}"
 }

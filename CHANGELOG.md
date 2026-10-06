@@ -47,6 +47,11 @@ Entries are hand-written. See MICA-72 for why a generated one was rejected.
 
 ### Action required
 
+**Run `micaschema apply` from the server console: `mica_messages_conversations`
+gains an index, `participant_b_status` (MICA-307).** It is additive and changes
+no data. It serves the job-line inbox below, which still works without it, but
+reads every active thread on the server instead of only the line's.
+
 **The Store now offers the project's public add-on catalog unless you turn it
 off (MICA-237).** A server that sets neither `mica_addon_catalog` nor
 `mica_addon_hosts` now lists `https://mica.gg/addons/sdk-<n>/catalog.json` and
@@ -577,10 +582,13 @@ number rings every connected player whose active job is one of `jobs` and who is
 on duty, all at once; the first to answer takes the call. Off until you set it,
 so nothing changes on a server that does not. `RegisterNumber`'s `onCall` can do
 the same from a script by answering `{ action = 'ring', sources = { ... } }`. A
-text to a job line is stored, but no player can read it yet; a shared inbox for
-staff follows. If a dispatch script of yours already registers the same number,
-whichever starts first keeps it and the console names the other; drop one of the
-two.
+text to a job line lands in a shared inbox in the Jobs app, where everyone on
+duty for the line sees every caller's thread and replies as the line, under its
+label; a thread that starts waiting for an answer notifies them once, with the
+line and the sender's number, never the text. A call through a job line shows
+"via" and the line's label on the ringing phone. If a dispatch script of yours
+already registers the same number, whichever starts first keeps it and the
+console names the other; drop one of the two.
 
 **Message, DM and mail bodies can be encrypted at rest (MICA-165).** With
 `mica_content_key_file` set, text messages, Blabber direct messages, mail bodies
@@ -1296,6 +1304,11 @@ Everything above is written for a server owner. This part is not. It is for
 somebody maintaining a `core: false` add-on outside this repo, and it answers
 one question: does that bundle still compile against this release, and does its
 manifest still ask for the right things.
+
+**The call state an add-on with the `call` permission reads gains an optional
+`line: { number, label }` (MICA-307).** It is set only while a call that came in
+through a job line is ringing or connected, and absent otherwise. Nothing was
+removed or renamed; `SDK_CONTRACT_VERSION` is unchanged.
 
 **`useAppRegistryWrite()` gains `fetchRemoteCatalog()`, for core apps only
 (MICA-237).** It returns the catalog the server fetched on the phone's behalf,

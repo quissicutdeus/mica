@@ -10,9 +10,27 @@ import {
   encryptedColumn,
   isSealed,
   openContent,
+  openRows,
   UNREADABLE_CONTENT
 } from '../lib/contentCipher';
 import { toSqlDateTime, type RecencyCursor } from '../lib/payload';
+import { PHONE_NUMBERS_TABLE } from '../lib/phoneNumbers';
+
+/**
+ * One player's thread with a line, as a job line's inbox reads it (MICA-307): the thread, the
+ * number on the player's phone, and its newest live message, opened.
+ */
+export interface LineThreadRow {
+  conversation_id: number;
+  /** The number on the thread's phone, or null when micaOS holds none for it (ESX). */
+  from_number: string | null;
+  /** The newest live message's own columns. */
+  id: number;
+  citizenid: string;
+  message: string;
+  external_sender: string | null;
+  created_at: unknown;
+}
 
 /**
  * The width of one side of a 1:1 thread: a phone id, or a line's `ext:` key (MICA-223).
@@ -643,6 +661,60 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
       if (typeof side === 'string' && side.startsWith(LINE_KEY_PREFIX)) return side;
     }
     return null;
+  }
+
+  /**
+   * Every thread between a phone and the line `externalKey` names, newest activity first, at
+   * most `limit` of them (MICA-307: a job line's shared inbox). One statement.
+   *
+   * **`participant_b` alone.** `openLineThread` is the only writer of a line thread and always
+   * puts the line's key in `participant_b` and the phone in `participant_a`; `findExternalThread`
+   * checks both orders only defensively. One column is what an index can serve — an `OR` over
+   * both would not — and `participant_b_status` serves it, so this reads the line's own threads
+   * rather than every active thread on the server. `pair_key_unique` cannot: `LEAST`/`GREATEST`
+   * puts the key first or second depending on the phone id.
+   *
+   * The newest message per thread is a correlated subquery that reads one entry of
+   * `conversation_status_created` backward, with no sort: ordered by `created_at` (with the
+   * implicit `id` as the tiebreak) because an `id` order cannot ride that key and filesorts
+   * every thread's messages. A thread nobody has written a live message in is not in the inbox,
+   * and a deleted or moderated message is never the one shown to staff. The player's number
+   * joins `mica_phone_numbers` on `phone_id_unique`. The text is opened off the row's own
+   * citizenid and conversation (MICA-165), as `findByConversation` opens a page. Checked by
+   * EXPLAIN against MariaDB 11 with 5,200 threads and 104,000 messages.
+   */
+  async findLineThreads(externalKey: string, limit: number): Promise<LineThreadRow[]> {
+    const rows = await Database.query<LineThreadRow[]>(
+      `SELECT m.conversation_id, n.number AS from_number,
+              m.id, m.citizenid, m.message, m.external_sender, m.created_at
+         FROM mica_messages_conversations c
+         JOIN mica_messages m ON m.id = (
+              SELECT x.id FROM mica_messages x
+               WHERE x.conversation_id = c.id AND x.status = 'active'
+               ORDER BY x.created_at DESC, x.id DESC LIMIT 1)
+         LEFT JOIN \`${PHONE_NUMBERS_TABLE}\` n ON n.phone_id = c.participant_a
+        WHERE c.participant_b = ? AND c.is_group = 0 AND c.status = 'active'
+        ORDER BY m.created_at DESC, m.id DESC
+        LIMIT ?`,
+      [externalKey, limit]
+    );
+    return openRows('mica_messages', rows);
+  }
+
+  /**
+   * The player a line thread is with: its participant, preferring one still in it (MICA-307).
+   * A player who left keeps their row, and `openLineThread` puts them back when the line
+   * texts, which is what a reply to them does. Null for a thread with no participant at all.
+   */
+  async lineThreadPlayer(conversationId: number): Promise<string | null> {
+    const row = await Database.single<{ citizenid: string } | null>(
+      `SELECT p.citizenid FROM mica_messages_participants p
+        WHERE p.conversation_id = ?
+        ORDER BY (p.left_at IS NULL) DESC, p.id DESC
+        LIMIT 1`,
+      [conversationId]
+    );
+    return row?.citizenid ?? null;
   }
 
   async findOneToOne(phone1: string, phone2: string): Promise<Conversation | null> {

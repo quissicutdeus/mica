@@ -153,3 +153,33 @@ describe('Phone speaker control (MICA-246)', () => {
     expect(getByLabelText('Speaker').getAttribute('aria-pressed')).toBe('false');
   });
 });
+
+describe('Phone ringing through a job line (MICA-307)', () => {
+  beforeEach(() => {
+    callLog.set([]);
+    contacts.set([]);
+    callStore.setStatus('idle');
+  });
+
+  it('says which line the call came in through', async () => {
+    const { getByTestId } = render(Phone, { props: { onback: () => {} } });
+    callStore.setIncoming('555-0188', undefined, { number: '911', label: 'Emergency' });
+    await tick();
+
+    expect(getByTestId('call-via-line').textContent?.trim()).toBe('via Emergency');
+  });
+
+  it('says nothing on an ordinary call, and drops it when the call ends', async () => {
+    const { queryByTestId } = render(Phone, { props: { onback: () => {} } });
+    callStore.setIncoming('555-0100');
+    await tick();
+    expect(queryByTestId('call-via-line')).toBeNull();
+
+    callStore.setIncoming('555-0188', undefined, { number: '911', label: 'Emergency' });
+    await tick();
+    expect(queryByTestId('call-via-line')).not.toBeNull();
+    callStore.setStatus('idle');
+    await tick();
+    expect(queryByTestId('call-via-line')).toBeNull();
+  });
+});

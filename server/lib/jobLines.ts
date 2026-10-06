@@ -3,9 +3,18 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import type { JobLine } from '@mica/shared/ownerConfig';
+import { buildDeepLink } from '@mica/shared/deepLink';
+import type { FrameworkJob } from './framework/runtime';
 import { FrameworkBridge } from './FrameworkBridge';
+import { appEventChannel } from './appEvents';
 import { jobLinesConvar, readJobLines } from './ownerConfig';
-import { registerNumber, unregisterNumber, type CallVerdict } from './numberRegistry';
+import {
+  lookupLine,
+  registerNumber,
+  unregisterNumber,
+  type CallVerdict,
+  type IncomingLineMessage
+} from './numberRegistry';
 
 /**
  * Job lines from `mica_job_lines` (MICA-307): numbers micaOS answers itself by ringing every
@@ -47,12 +56,37 @@ export const __resetJobLines = (): void => {
 /** The numbers this module holds right now, in the order they were registered. */
 export const jobLineNumbers = (): string[] => [...held.keys()];
 
-const holdsJob = (line: JobLine, job: { name: string; active: boolean; onDuty: boolean | null }) =>
+/**
+ * The `mica_job_lines` entry registered under this number right now, or undefined (MICA-307).
+ *
+ * Held here *and* still this resource's in the registry: a number micaOS let go of, or one a
+ * script holds, is not a config line whatever this map last said. The Jobs app's inbox asks
+ * this before anything else, so a script's own line is never opened as a shared inbox.
+ */
+export const configLine = (number: string): JobLine | undefined => {
+  const line = held.get(number);
+  return line && lookupLine(number)?.owner === owner() ? line : undefined;
+};
+
+type JobState = Pick<FrameworkJob, 'name' | 'active' | 'onDuty'>;
+
+const holdsJob = (line: JobLine, job: JobState) =>
   line.jobs.includes(job.name) &&
   job.active === true &&
   // `null` is a framework that cannot say (ESX without a boolean `job.onDuty`): holding the
   // active job counts, rather than nobody ever ringing on that server.
   (!line.requireDuty || job.onDuty !== false);
+
+/**
+ * Whether a player holding `jobs` is this line's staff: one of its jobs is their active job,
+ * and, when the line requires duty, the framework does not say they are off it.
+ *
+ * The one definition. `staffFor` rings by it and the Jobs app's inbox opens by it (MICA-307),
+ * so who a 911 call rings and who may read 911's texts can never disagree. `jobs` is the
+ * framework's list, never a payload's.
+ */
+export const isLineStaff = (line: JobLine, jobs: readonly JobState[]): boolean =>
+  jobs.some((job) => holdsJob(line, job));
 
 /**
  * The connected players a line rings: holding one of its jobs as the active job, on duty when
@@ -74,9 +108,102 @@ export function staffFor(line: JobLine, caller: number): number[] {
       console.error(`[micaOS] mica_job_lines: could not read jobs for player ${src}:`, error);
       continue;
     }
-    if (jobs.some((job) => holdsJob(line, job))) staff.push(src);
+    if (isLineStaff(line, jobs)) staff.push(src);
   }
   return staff.sort((a, b) => a - b);
+}
+
+/** The citizenids of a line's staff right now, but for the player on `except`. */
+const staffCitizenIds = (line: JobLine, except: number): string[] =>
+  staffFor(line, except)
+    .map((src) => FrameworkBridge.getCitizenId(src))
+    .filter((citizenid): citizenid is string => Boolean(citizenid));
+
+/**
+ * Tell a line's staff a thread moved (MICA-307), so every open inbox refetches: `line_message`
+ * on the Jobs app, carrying references only. With `notify`, it also toasts and saves a
+ * notification naming the line and the sender's number but never the text: the body is sealed
+ * at rest (MICA-165), and a persisted notification holding it would undo that. Without it, the
+ * push is silent: a staff reply to the other staff, or a player's further text in a thread
+ * already waiting on an answer (`notifyIncoming`).
+ *
+ * Never throws: it runs after the write, and a push must never fail the write it follows.
+ */
+export function pushLineMessage(
+  line: JobLine,
+  conversationId: number,
+  except: number,
+  notify?: { from: string | null }
+): void {
+  try {
+    const citizenids = staffCitizenIds(line, except);
+    if (citizenids.length === 0) return;
+    const name = line.label ?? line.number;
+    const payload = { number: line.number, conversation_id: conversationId };
+    appEventChannel('jobs').pushMany(
+      citizenids,
+      'line_message',
+      payload,
+      notify === undefined
+        ? undefined
+        : {
+            notify: {
+              type: 'info',
+              title: `Text to ${name}`,
+              message: `From ${notify.from ?? 'an unknown number'}`
+            },
+            kind: 'line_message',
+            title: `Text to ${name}`,
+            deepLink: buildDeepLink('jobs')
+          }
+    );
+  } catch (error) {
+    console.error(`[micaOS] mica_job_lines: could not tell ${line.number}'s staff:`, error);
+  }
+}
+
+/**
+ * Whether a thread was already waiting on an answer before this message: its newest live row
+ * before `messageId` is the player's own. Read from the rows, never remembered, so a restart
+ * cannot lose it.
+ *
+ * A slot rather than an import, for the reason `onLineReleased` gives in `numberRegistry.ts`:
+ * the read needs the messages repository, which a service owns, and `lib/` must not import
+ * `services/`. `services/Jobs.ts` fills it at import. Until it is filled every text notifies,
+ * so a server that never loaded the reader errs towards staff hearing of a text.
+ */
+let wasAwaiting: (conversationId: number, messageId: number) => Promise<boolean> = async () =>
+  false;
+
+export const onLineThreadState = (
+  read: (conversationId: number, messageId: number) => Promise<boolean>
+): void => {
+  wasAwaiting = read;
+};
+
+/**
+ * A player texted a config line. Every staff member's inbox refetches; the toast and the saved
+ * notification go out only when this text is what makes the thread wait on an answer — the
+ * first text, or the first after a staff reply — so one player sending twenty texts to 911
+ * notifies each officer once, not twenty times. A read that fails notifies, for the same reason
+ * an unfilled slot does.
+ */
+export async function notifyIncoming(line: JobLine, message: IncomingLineMessage): Promise<void> {
+  let quiet = false;
+  try {
+    quiet = await wasAwaiting(message.conversationId, message.messageId);
+  } catch (error) {
+    console.error(
+      `[micaOS] mica_job_lines: could not read thread ${message.conversationId} on ${line.number}:`,
+      error
+    );
+  }
+  pushLineMessage(
+    line,
+    message.conversationId,
+    message.source,
+    quiet ? undefined : { from: message.from }
+  );
 }
 
 const sameLine = (a: JobLine, b: JobLine): boolean =>
@@ -102,7 +229,9 @@ function register(line: JobLine): boolean {
         return sources.length > 0
           ? { action: 'ring', sources, max: line.maxRing }
           : { action: 'reject' };
-      }
+      },
+      // The text is already in the player's thread; the staff hear of it here (MICA-307).
+      onMessage: (message: IncomingLineMessage) => notifyIncoming(line, message)
     },
     owner(),
     { jobs: line.jobs }

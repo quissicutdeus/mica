@@ -29,6 +29,9 @@ its one-line summary.
 - [`derived_inert` only fires for a rune](derived-inert-mechanism.md) — needs
   dirty+INERT/DESTROYED at once; store-backed deriveds sever on unmount before
   they can be dirtied; two real hits fixed (Trade.svelte, License.svelte)
+- [Mocking `nui/fetchNui` misses CRUD stores](fetchnui-mock-misses-crud-stores.md)
+  — `createCrudStore` uses the SDK transport; `.set()` it in the test. `svc`
+  calls carry a 3rd arg, so `toHaveBeenCalledWith` fails on arity
 - [Lazy shell import kills boot](lazy-import-chunk-cycle-persisted-facet.md) —
   chunk cycle evaluates state modules before facets register; import statically
   or eager; worktree+symlink trap

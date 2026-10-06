@@ -170,8 +170,15 @@ onNet('mica:client:phone:speakerState', (data: { available?: boolean }) => {
   );
 });
 
+/** `line` names the job line a call came in through (MICA-307); absent on an ordinary call. */
+interface IncomingCall {
+  from: string;
+  callId: number;
+  line?: { number: string; label: string };
+}
+
 // Server Events
-onNet('mica:client:phone:incoming', (data: { from: string; callId: number }) => {
+onNet('mica:client:phone:incoming', (data: IncomingCall) => {
   // The phone is now open whether or not the player asked for it, through the same
   // sequence the key uses: focus, the frame, the prop in hand. It used to set the flag
   // and push `setVisible` by hand, which left no prop and — before the flag was shared —
@@ -188,7 +195,11 @@ onNet('mica:client:phone:incoming', (data: { from: string; callId: number }) => 
         number: data.from,
         // The client has no address book. The shell resolves a display name from its
         // own contacts store when the number matches a saved contact.
-        name: 'Unknown'
+        name: 'Unknown',
+        // So the ring can say "via 911". Passed on only when whole, and absent otherwise.
+        ...(typeof data.line?.number === 'string' && typeof data.line.label === 'string'
+          ? { line: { number: data.line.number, label: data.line.label } }
+          : {})
       }
     })
   );

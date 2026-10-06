@@ -7,6 +7,18 @@ import { Database } from '../lib/Database';
 import { openRows } from '../lib/contentCipher';
 import { Message } from '@mica/shared/types';
 
+/** A line thread's message as `findLinePage` reads it (MICA-307). */
+export interface LineMessageRow {
+  id: number;
+  conversation_id: number;
+  citizenid: string;
+  message: string;
+  external_sender: string | null;
+  created_at: unknown;
+  /** MySQL answers `EXISTS` with 1 or 0. */
+  has_attachments: number | boolean;
+}
+
 /**
  * Bespoke queries for the messages table. The schema, the `columns` allowlist and
  * the empty `clientWritable` set all come from the declaration in `services/Messages.ts`
@@ -57,6 +69,64 @@ export class MessageRepository extends SchemaRepository<Message> {
       [messageId, conversationId]
     );
     return found !== null && found !== undefined;
+  }
+
+  /**
+   * The newest live row of a thread before `messageId`, by who wrote it, or null when there is
+   * none (MICA-307). A job line's staff are notified only when a player's text is what makes a
+   * thread wait on an answer, and this is the row that says whether it already was. Only
+   * `external_sender` is read, never the sealed body. One read of `conversation_id_id`.
+   */
+  async newestLiveBefore(
+    conversationId: number,
+    messageId: number
+  ): Promise<{ external_sender: string | null } | null> {
+    return await Database.single<{ external_sender: string | null } | null>(
+      `SELECT m.external_sender FROM mica_messages m
+        WHERE m.conversation_id = ? AND m.status = 'active' AND m.id < ?
+        ORDER BY m.id DESC
+        LIMIT 1`,
+      [conversationId, messageId]
+    );
+  }
+
+  /**
+   * One page of a line thread as its staff read it (MICA-307): newest first, live rows only,
+   * and whether each carried an attachment rather than the attachment, which is the player's
+   * own media. One statement on `conversation_id_id`, plus an `EXISTS` per row on the
+   * attachments' `message_id` key.
+   *
+   * Keyset on `id DESC` with an exclusive cursor, exactly as `findByConversation` pages, and
+   * selected by `conversation_id` first, so a cursor lifted from another thread reads nothing
+   * across. Unlike it, `moderated` rows are left out as well as `deleted` ones: staff are
+   * strangers to the thread, and an admin hid that text. The caller has already proved the
+   * thread is the line's.
+   */
+  async findLinePage(
+    conversationId: number,
+    page: { limit: number; cursor: number | null }
+  ): Promise<{ rows: LineMessageRow[]; nextCursor: number | null }> {
+    const params: unknown[] = [conversationId];
+    if (page.cursor !== null) params.push(page.cursor);
+    params.push(page.limit + 1);
+    const fetched = openRows(
+      'mica_messages',
+      await Database.query<LineMessageRow[]>(
+        `SELECT m.id, m.conversation_id, m.citizenid, m.message, m.external_sender, m.created_at,
+                EXISTS (SELECT 1 FROM mica_messages_attachments a WHERE a.message_id = m.id)
+                  AS has_attachments
+           FROM mica_messages m
+          WHERE m.conversation_id = ? AND m.status = 'active'
+            ${page.cursor === null ? '' : 'AND m.id < ?'}
+          ORDER BY m.id DESC
+          LIMIT ?`,
+        params
+      )
+    );
+    const hasMore = fetched.length > page.limit;
+    const rows = hasMore ? fetched.slice(0, page.limit) : fetched;
+    const oldest = rows[rows.length - 1];
+    return { rows, nextCursor: hasMore && oldest ? oldest.id : null };
   }
 
   /**

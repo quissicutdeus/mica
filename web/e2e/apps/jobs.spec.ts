@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '../support/test';
+import { test, expect, type Locator, type Page } from '../support/test';
 import { seedHomeGrid } from '../support/homeGrid';
 
 /**
@@ -14,6 +14,13 @@ const card = (page: Page, label: string) => page.getByTestId('job-card').filter(
  * makes "active" mean what the app means by it.
  */
 const head = (page: Page, label: string) => card(page, label).getByRole('button', { name: label });
+
+/**
+ * The button that opens a line's shared inbox (MICA-307), found by the name a screen reader
+ * announces — the line's label and "911 · Inbox" — not by the row's test id, so the click
+ * lands on the control and not on whatever sits at the row's centre.
+ */
+const inboxButton = (scope: Locator) => scope.getByRole('button', { name: /911 · Inbox/ });
 
 test.describe('Jobs App E2E', () => {
   test.beforeEach(async ({ page }) => {
@@ -115,7 +122,97 @@ test.describe('Jobs App E2E', () => {
     await expect(lsc.getByText('LSC Front Desk')).toBeVisible();
     await expect(lsc.getByText('555-0142')).toBeVisible();
     await expect(lsc.getByText('Call', { exact: true })).toBeVisible();
-    // The fixture registers exactly one line, on this job and no other.
-    await expect(page.getByText('Call', { exact: true })).toHaveCount(1);
+    // Exactly one line on this card, and a plain one: no inbox behind its row. (A page-wide
+    // count of Call buttons says nothing about this card — LSPD's 911 line has its own.)
+    await expect(lsc.getByTestId('job-line')).toHaveCount(1);
+    await expect(lsc.getByTestId('job-line')).toHaveAttribute('data-inbox', 'false');
+    await expect(lsc.getByText('Call', { exact: true })).toHaveCount(1);
+  });
+
+  /**
+   * A line with `inbox: true` is the only kind that opens a shared inbox (MICA-307). The
+   * fixture gives LSPD one (911) and LSC a plain one; the 911 row names its inbox in place
+   * of the bare number and keeps a Call button of its own.
+   */
+  test('only the 911 line offers an inbox, and it keeps its own Call button', async ({ page }) => {
+    // Two lines across the three cards, of two kinds.
+    await expect(page.getByTestId('job-line')).toHaveCount(2);
+    await expect(page.locator('[data-testid="job-line"][data-inbox="true"]')).toHaveCount(1);
+
+    const lspd = card(page, 'LSPD');
+    await expect(lspd.getByTestId('job-line')).toHaveAttribute('data-inbox', 'true');
+    await expect(lspd.getByText('Emergency')).toBeVisible();
+
+    // Two controls, not one holding the other: the inbox button and the Call button are
+    // siblings, and the inbox button contains no button of its own (axe's `nested-interactive`
+    // is what a button inside a button costs a screen reader).
+    const open = inboxButton(lspd);
+    const call = lspd.getByRole('button', { name: 'Call', exact: true });
+    await expect(open).toBeVisible();
+    await expect(call).toBeVisible();
+    await expect(open).not.toContainText('Call');
+    await expect(open.getByRole('button')).toHaveCount(0);
+    await expect(
+      open.locator('xpath=following-sibling::button[normalize-space()="Call"]')
+    ).toHaveCount(1);
+  });
+
+  /**
+   * The staff side of a job line, end to end against the mock: open the inbox, see which
+   * thread nobody has answered, read it, answer as the line, and see the list agree. The
+   * mock's `lineReply` appends to its fixture the way the server's answer reads back, so
+   * the last step is a real state change — the marker leaving 9101 — not a re-render.
+   */
+  test('911 inbox: read an unanswered thread, reply as the line, and it stops awaiting', async ({
+    page
+  }) => {
+    const caller = 'Shots fired near the pier, two people running north';
+    const answered = 'Units are on the way. Stay where you are.';
+
+    await inboxButton(card(page, 'LSPD')).click();
+
+    // The inbox is the 911 line's, titled with its label. Rows are told apart by their last
+    // message, not by a caller name that waits on the contacts load.
+    await expect(page.locator('h1', { hasText: 'Emergency' })).toBeVisible();
+    const rows = page.getByTestId('line-thread-row');
+    await expect(rows).toHaveCount(2);
+    const unanswered = rows.filter({ hasText: caller });
+    const done = rows.filter({ hasText: answered });
+    await expect(unanswered).toHaveAttribute('data-awaiting', 'true');
+    await expect(unanswered).toContainText('Awaiting reply');
+    await expect(done).toHaveAttribute('data-awaiting', 'false');
+    await expect(done).not.toContainText('Awaiting reply');
+    await expect(page.getByText('Awaiting reply')).toHaveCount(1);
+
+    // Open the unanswered one: the caller's message, on the caller's side, with the marker
+    // that a photo came with it. The photo is named, never shown.
+    await unanswered.click();
+    const messages = page.getByTestId('line-message');
+    await expect(messages).toHaveCount(1);
+    await expect(messages.first()).toHaveAttribute('data-side', 'caller');
+    await expect(messages.first()).toContainText(caller);
+    await expect(messages.first()).toContainText('Photo sent');
+
+    // Answer as the line; the composer names whose voice this is.
+    const reply = 'Units dispatched to the pier. Are you safe?';
+    const box = page.getByPlaceholder('Reply as Emergency');
+    await box.fill(reply);
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
+
+    const sent = messages.filter({ hasText: reply });
+    await expect(sent).toHaveCount(1);
+    await expect(sent).toHaveAttribute('data-side', 'line');
+    await expect(messages).toHaveCount(2);
+    // A sent draft is cleared, so a second tap cannot send it twice.
+    await expect(box).toHaveValue('');
+
+    // Back to the inbox: nobody is awaited any more, and the row reads the answer.
+    await page.locator("button[aria-label='Go back']").click();
+    await expect(rows).toHaveCount(2);
+    await expect(page.getByText('Awaiting reply')).toHaveCount(0);
+    const answeredNow = rows.filter({ hasText: reply });
+    await expect(answeredNow).toHaveCount(1);
+    await expect(answeredNow).toHaveAttribute('data-awaiting', 'false');
+    await expect(rows.filter({ hasText: caller })).toHaveCount(0);
   });
 });

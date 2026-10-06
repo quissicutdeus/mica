@@ -130,4 +130,50 @@ describe('callStore', () => {
       expect(get(callStore).speakerAvailable).toBe(false);
     });
   });
+
+  /**
+   * A ring that came in through a job line names the line (MICA-307) for as long as the call
+   * lasts, and every way a call ends drops it — a "via Emergency" left over from the last
+   * call would put a dispatcher on the wrong footing for the next one.
+   */
+  describe('job line', () => {
+    const line = { number: '911', label: 'Emergency' };
+
+    it('carries the line an incoming ring came in through, into the answered call', async () => {
+      vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(true);
+      callStore.setIncoming('555-0188', 'Lamar Davis', line);
+      expect(get(callStore).line).toEqual(line);
+
+      await callStore.answerCall();
+      expect(get(callStore).line).toEqual(line);
+      callStore.setStatus('idle');
+    });
+
+    it('has none on an ordinary ring, even straight after a line call', () => {
+      callStore.setIncoming('555-0188', undefined, line);
+      callStore.setIncoming('555-0123', 'Jane Smith');
+      expect(get(callStore).line).toBeUndefined();
+    });
+
+    it('clears when the server ends the call', () => {
+      callStore.setIncoming('555-0188', undefined, line);
+      callStore.setStatus('idle');
+      expect(get(callStore).line).toBeUndefined();
+    });
+
+    it('clears when this player hangs up', async () => {
+      vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(true);
+      callStore.setIncoming('555-0188', undefined, line);
+      await callStore.endCall();
+      expect(get(callStore).line).toBeUndefined();
+    });
+
+    it('is not carried into a call this player dials', async () => {
+      vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(true);
+      callStore.setIncoming('555-0188', undefined, line);
+      await callStore.startCall('555-0142');
+      expect(get(callStore).line).toBeUndefined();
+      callStore.setStatus('idle');
+    });
+  });
 });

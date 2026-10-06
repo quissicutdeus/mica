@@ -280,6 +280,36 @@ export interface JobLine {
   number: string;
   /** The script's `label`, or the number itself when it gave none. */
   label: string;
+  /**
+   * Whether this player may open the line's shared inbox right now (MICA-307): a line
+   * `mica_job_lines` declares, and the player is its staff. Presentation only; every inbox
+   * action re-checks it on the server.
+   */
+  inbox: boolean;
+}
+
+/** One player's thread with a job line, as its staff see it in the inbox (MICA-307). */
+export interface JobLineThread {
+  conversation_id: number;
+  /** The player's phone number, or null when the framework has none for them. */
+  from: string | null;
+  /** The newest message's text, opened if sealed; empty for an attachment alone. */
+  last_message: string;
+  last_at: string;
+  /** True when the newest message is the player's, so nobody has answered it yet. */
+  awaiting_reply: boolean;
+}
+
+/** One message in a job line's thread, from the staff side (MICA-307). */
+export interface JobLineMessage {
+  id: number;
+  conversation_id: number;
+  /** `caller` for the player's own text, `line` for a reply sent as the line. */
+  side: 'caller' | 'line';
+  message: string;
+  /** The player attached a photo. Staff see that one was sent, not the photo itself. */
+  has_attachments: boolean;
+  created_at: string;
 }
 
 /**

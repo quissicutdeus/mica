@@ -115,5 +115,6 @@
   "hideToggle": "Hide {name}",
   "showToggle": "Show {name}",
   "hideToggleShort": "Hide",
-  "showToggleShort": "Show"
+  "showToggleShort": "Show",
+  "callViaLine": "{name} · via {label}"
 }

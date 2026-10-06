@@ -13,5 +13,21 @@
   "refusalUnknownJob": "You do not hold that job.",
   "refusalNotActive": "Switch to that job before changing duty.",
   "refusalRefused": "The server refused the change.",
-  "refusalUnsupported": "That job has no duty to toggle."
+  "refusalUnsupported": "That job has no duty to toggle.",
+  "lineInbox": "{number} · Inbox",
+  "inboxEmpty": "No messages yet",
+  "inboxEmptyHint": "When someone texts this line, their thread appears here.",
+  "inboxFailed": "Inbox unavailable",
+  "inboxFailedHint": "Only on-duty staff of this line can read its messages.",
+  "unknownCaller": "Unknown caller",
+  "awaitingReply": "Awaiting reply",
+  "photoSent": "Photo sent",
+  "threadEmpty": "No messages in this thread",
+  "loadOlder": "Load older messages",
+  "loadingOlder": "Loading…",
+  "replyPlaceholder": "Reply as {label}",
+  "justNow": "Just now",
+  "minutesAgo": "{minutes}m ago",
+  "hoursAgo": "{hours}h ago",
+  "daysAgo": "{days}d ago"
 }

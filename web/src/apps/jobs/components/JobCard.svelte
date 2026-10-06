@@ -5,8 +5,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { ListItem, ToggleSwitch, formatCurrency, useLocale } from '@mica/sdk';
+  import { ChevronRightIcon, ListItem, ToggleSwitch, formatCurrency, useLocale } from '@mica/sdk';
   import type { JobView } from '@mica/sdk';
+  import type { JobLine } from '@mica/shared/types';
 
   /**
    * One held job.
@@ -25,7 +26,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     busy = false,
     onswitch,
     onduty,
-    oncall
+    oncall,
+    oninbox
   }: {
     job: JobView;
     /** True while any change is in flight, so a second tap cannot race the first. */
@@ -33,6 +35,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     onswitch: (name: string) => void;
     onduty: (name: string, onDuty: boolean) => void;
     oncall: (number: string, label: string) => void;
+    /** Open a line's shared inbox — offered only on a line whose `inbox` is true. */
+    oninbox: (line: JobLine) => void;
   } = $props();
 
   const { t } = useLocale();
@@ -96,13 +100,42 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   {#if job.lines.length > 0}
     <div class="border-outline-variant divide-outline-variant divide-y border-t">
       {#each job.lines as line (line.number)}
-        <ListItem onclick={() => oncall(line.number, line.label)}>
-          <div class="min-w-0 flex-1">
-            <div class="font-medium truncate">{line.label}</div>
-            <div class="text-on-surface-variant text-body-small">{line.number}</div>
+        {#if line.inbox}
+          <!-- A line this player answers for (MICA-307): two sibling controls in a plain row,
+               one opening the line's shared inbox and one calling it. Not a `ListItem`: that is
+               `role="button"`, and a button holding the Call button is `nested-interactive`
+               (axe) — a screen reader announces one control and swallows the other. -->
+          <div class="flex items-center" data-testid="job-line" data-inbox="true">
+            <button
+              type="button"
+              class="hover:bg-surface-hover active:bg-surface-pressed duration-short ease-standard flex min-w-0 flex-1 items-center p-4 text-left transition-colors"
+              onclick={() => oninbox(line)}
+            >
+              <div class="min-w-0 flex-1">
+                <div class="font-medium truncate">{line.label}</div>
+                <div class="text-on-surface-variant text-body-small">
+                  {$t('jobs.lineInbox', { number: line.number })}
+                </div>
+              </div>
+              <ChevronRightIcon class="text-on-surface-variant size-icon-sm ml-1 shrink-0" />
+            </button>
+            <button
+              type="button"
+              class="text-primary text-label-large hover:bg-surface-container-high mr-3 shrink-0 rounded-full px-3 py-1 transition-colors"
+              onclick={() => oncall(line.number, line.label)}
+            >
+              {$t('jobs.call')}
+            </button>
           </div>
-          <span class="text-primary text-label-large ml-2 shrink-0">{$t('jobs.call')}</span>
-        </ListItem>
+        {:else}
+          <ListItem onclick={() => oncall(line.number, line.label)}>
+            <div class="min-w-0 flex-1" data-testid="job-line" data-inbox="false">
+              <div class="font-medium truncate">{line.label}</div>
+              <div class="text-on-surface-variant text-body-small">{line.number}</div>
+            </div>
+            <span class="text-primary text-label-large ml-2 shrink-0">{$t('jobs.call')}</span>
+          </ListItem>
+        {/if}
       {/each}
     </div>
   {/if}

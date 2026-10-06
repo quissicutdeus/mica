@@ -58,7 +58,7 @@ const three = (): JobView[] => [
     gradeLabel: 'Owner',
     isBoss: true,
     societyBalance: 48200,
-    lines: [{ number: '555-0142', label: 'LSC Front Desk' }]
+    lines: [{ number: '555-0142', label: 'LSC Front Desk', inbox: false }]
   }),
   job({ name: 'taxi', label: 'Downtown Cab Co.', gradeLabel: 'Driver', onDuty: null })
 ];

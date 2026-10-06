@@ -37,6 +37,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   let { onback }: AppProps = $props();
 
+  /** The job line a call came in through (MICA-307), absent on an ordinary call. */
+  const viaLine = $derived($callStore.line?.label ?? null);
+
   let activeTab = $state<'keypad' | 'recents'>('keypad');
 
   let enteredNumber = $state('');
@@ -326,6 +329,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <h2 class="mb-2 px-4 text-center text-3xl font-semibold">
         {$callStore.name || $callStore.number}
       </h2>
+      {#if viaLine}
+        <!-- A call that came in through a job line (MICA-307): the caller dialled 911, not
+             this player, and whoever answers is answering for the line. -->
+        <p class="text-primary text-body-large mb-2 px-4 text-center" data-testid="call-via-line">
+          {$t('phone.viaLine', { label: viaLine })}
+        </p>
+      {/if}
       <p class="text-on-surface-variant mb-12 text-lg">
         {#if $callStore.status === 'dialing'}
           {$t('phone.dialing')}

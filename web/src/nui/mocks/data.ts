@@ -5,6 +5,8 @@
 import type {
   Contact,
   Conversation,
+  JobLineMessage,
+  JobLineThread,
   JobView,
   Listing,
   Mail,
@@ -360,7 +362,7 @@ export const mockJobs: JobView[] = [
     onDuty: true,
     isBoss: false,
     active: true,
-    lines: [],
+    lines: [{ number: '911', label: 'Emergency', inbox: true }],
     societyBalance: null
   },
   {
@@ -372,7 +374,7 @@ export const mockJobs: JobView[] = [
     onDuty: false,
     isBoss: true,
     active: false,
-    lines: [{ number: '555-0142', label: 'LSC Front Desk' }],
+    lines: [{ number: '555-0142', label: 'LSC Front Desk', inbox: false }],
     societyBalance: 48200
   },
   {
@@ -388,6 +390,61 @@ export const mockJobs: JobView[] = [
     societyBalance: null
   }
 ];
+
+/**
+ * A job line's shared inbox (MICA-307), for `'jobs:lineInbox'`, `'jobs:lineThread'` and
+ * `'jobs:lineReply'` in `registry.ts`. Keyed by the line's number; `lineReply` appends to
+ * the thread and clears `awaiting_reply`, the way the server's answer would read back.
+ */
+export const mockJobLineThreads: Record<string, JobLineThread[]> = {
+  '911': [
+    {
+      conversation_id: 9101,
+      from: '555-0188',
+      last_message: 'Shots fired near the pier, two people running north',
+      last_at: '2026-10-05T21:58:00.000Z',
+      awaiting_reply: true
+    },
+    {
+      conversation_id: 9102,
+      from: '555-0123',
+      last_message: 'Units are on the way. Stay where you are.',
+      last_at: '2026-10-05T21:40:00.000Z',
+      awaiting_reply: false
+    }
+  ]
+};
+
+export const mockJobLineMessages: Record<number, JobLineMessage[]> = {
+  9101: [
+    {
+      id: 91012,
+      conversation_id: 9101,
+      side: 'caller',
+      message: 'Shots fired near the pier, two people running north',
+      has_attachments: true,
+      created_at: '2026-10-05T21:58:00.000Z'
+    }
+  ],
+  9102: [
+    {
+      id: 91022,
+      conversation_id: 9102,
+      side: 'line',
+      message: 'Units are on the way. Stay where you are.',
+      has_attachments: false,
+      created_at: '2026-10-05T21:40:00.000Z'
+    },
+    {
+      id: 91021,
+      conversation_id: 9102,
+      side: 'caller',
+      message: 'Someone broke into my car on Vinewood Blvd',
+      has_attachments: false,
+      created_at: '2026-10-05T21:38:00.000Z'
+    }
+  ]
+};
 
 // GTA V / FiveM Core Characters
 const gtaCoreContacts: Contact[] = [

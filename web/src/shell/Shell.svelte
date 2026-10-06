@@ -209,6 +209,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         number: string;
         name?: string;
         speakerAvailable?: boolean;
+        /** The job line this ring came in through (MICA-307), absent on an ordinary call. */
+        line?: { number?: unknown; label?: unknown };
       };
       if (call.status === 'incoming') {
         // The client has no address book to check — that lives in the web layer's own
@@ -216,13 +218,21 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         // still resolve a name from the caller's number before the toast renders.
         const known = get(contacts).find((c) => c.phone === call.number);
         const displayName = known ? `${known.firstname} ${known.lastname || ''}`.trim() : call.name;
-        callStore.setIncoming(call.number, displayName);
+        const line =
+          typeof call.line?.number === 'string' && typeof call.line.label === 'string'
+            ? { number: call.line.number, label: call.line.label }
+            : undefined;
+        callStore.setIncoming(call.number, displayName, line);
         // Called exactly once per ring, and it records as well as reports — a second call
         // for the same ring would read back the timestamp this one wrote and count itself
         // as the repeat (`state/notificationPolicy.ts`).
         const breakThrough = callBreaksThrough(call.number);
         incomingToastId = toast.showCall({
-          name: displayName,
+          // A ring through a job line says so on the banner too, which is where most
+          // players meet it (MICA-307). The store keeps the plain name for the call screen.
+          name: line
+            ? $t('shell.callViaLine', { name: displayName ?? call.number, label: line.label })
+            : displayName,
           number: call.number,
           breakThrough,
           onAccept: () => {

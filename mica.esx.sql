@@ -247,7 +247,8 @@ CREATE TABLE IF NOT EXISTS `mica_messages_conversations` (
     KEY `citizenid_status` (`citizenid`, `status`),
     KEY `citizenid_status_updated` (`citizenid`, `status`, `updated_at`),
     KEY `updated_at` (`updated_at`),
-    UNIQUE KEY `pair_key_unique` (`pair_key`)
+    UNIQUE KEY `pair_key_unique` (`pair_key`),
+    KEY `participant_b_status` (`participant_b`, `status`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `mica_messages_participants` (

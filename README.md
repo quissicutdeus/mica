@@ -1326,9 +1326,23 @@ ships with micaOS, as it did before.
   nobody answers for, so a `set` on a running server applies without a restart.
   Lines it no longer lists are released, and new ones registered. When the value
   is a path, editing the file without changing the value goes unnoticed until
-  the resource restarts. A text to a job line is stored in the thread between
-  the sender and the line, but no player can read or answer it yet: a shared
-  inbox for staff is the next part of MICA-307.
+  the resource restarts.
+
+  **Texts go to a shared inbox.** A player who texts a job line gets a thread
+  with it in Messages, the same as with any other number. Everyone who is staff
+  of that line right now sees all of those threads in one inbox in the Jobs app,
+  newest first, with the ones nobody has answered yet marked, and replies to
+  them **as the line**: the player sees the answer from the line, under its
+  label, in the same thread, never from a staff member's own number. A thread
+  that starts waiting for an answer notifies staff once, naming the line and the
+  sender's number, never the text; further texts in a thread nobody has answered
+  yet update the inbox without notifying again, so one player cannot flood every
+  officer's phone. Staff see that a photo was attached, but not the photo. Who
+  may open the inbox is checked on the server at every read and every reply, the
+  same way as for ringing; a script's own `RegisterNumber` line has no inbox,
+  since its texts go to its `onMessage`. A call that comes in through a job line
+  shows "via" and the line's label on the ringing phone, so staff know it is a
+  911 call and not a personal one.
 
 - **`mica_map_image`** — the picture the Places map draws (MICA-244). micaOS is
   AGPL and ships no map image, because the game's own map art is not ours to

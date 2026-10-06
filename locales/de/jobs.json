@@ -13,5 +13,21 @@
   "refusalUnknownJob": "Diesen Job hast du nicht.",
   "refusalNotActive": "Wechsle zuerst zu diesem Job, bevor du den Dienst änderst.",
   "refusalRefused": "Der Server hat die Änderung abgelehnt.",
-  "refusalUnsupported": "Dieser Job kennt keinen Dienst."
+  "refusalUnsupported": "Dieser Job kennt keinen Dienst.",
+  "lineInbox": "{number} · Posteingang",
+  "inboxEmpty": "Noch keine Nachrichten",
+  "inboxEmptyHint": "Sobald jemand dieser Nummer schreibt, erscheint der Verlauf hier.",
+  "inboxFailed": "Posteingang nicht verfügbar",
+  "inboxFailedHint": "Nur Mitarbeiter dieser Nummer im Dienst können ihre Nachrichten lesen.",
+  "unknownCaller": "Unbekannter Anrufer",
+  "awaitingReply": "Wartet auf Antwort",
+  "photoSent": "Foto gesendet",
+  "threadEmpty": "Keine Nachrichten in diesem Verlauf",
+  "loadOlder": "Ältere Nachrichten laden",
+  "loadingOlder": "Wird geladen…",
+  "replyPlaceholder": "Als {label} antworten",
+  "justNow": "Gerade eben",
+  "minutesAgo": "vor {minutes} Min.",
+  "hoursAgo": "vor {hours} Std.",
+  "daysAgo": "vor {days} T."
 }

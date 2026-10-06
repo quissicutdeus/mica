@@ -16,6 +16,7 @@
   "blabberDms.notYours": "That account is not yours.",
   "blabberDms.notYoursToSend": "That account is not yours to send from.",
   "blabberDms.selfMessage": "You cannot message yourself.",
+  "jobs.lineUnavailable": "That line is not available to you.",
   "marketplace.descriptionRequired": "A listing needs a description.",
   "marketplace.listingGone": "That listing is no longer available.",
   "marketplace.notActive": "Only an active listing can change status.",

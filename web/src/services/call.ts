@@ -8,6 +8,9 @@ import { call } from '../nui/call';
 import { phoneContract } from '@mica/shared/contracts/phone';
 import type { CallState, CallStatus } from '../../../sdk/vocabulary/call';
 
+/** `CallState['line']`: only the shell sets it, only on a ring; idle drops it (MICA-307). */
+type CallLine = NonNullable<CallState['line']>;
+
 const initialState: CallState = {
   status: 'idle',
   number: '',
@@ -31,6 +34,7 @@ function createCallStore() {
         status: 'dialing',
         number,
         name,
+        line: undefined,
         duration: 0
       }));
 
@@ -87,12 +91,13 @@ function createCallStore() {
       }
     },
     // NUI Event handlers
-    setIncoming: (number: string, name?: string) => {
+    setIncoming: (number: string, name?: string, line?: CallLine) => {
       update((s) => ({
         ...s,
         status: 'incoming',
         number,
         name,
+        line,
         duration: 0
       }));
     },

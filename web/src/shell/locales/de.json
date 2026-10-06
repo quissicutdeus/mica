@@ -115,5 +115,6 @@
   "hideToggle": "{name} ausblenden",
   "showToggle": "{name} einblenden",
   "hideToggleShort": "Aus",
-  "showToggleShort": "Ein"
+  "showToggleShort": "Ein",
+  "callViaLine": "{name} · über {label}"
 }

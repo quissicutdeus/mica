@@ -116,12 +116,15 @@ beforeEach(() => {
 });
 
 describe('jobs: what is registered', () => {
-  it('registers the three contracted actions and no generic CRUD', () => {
+  it('registers the six contracted actions and no generic CRUD', () => {
     // §2.9: a registered net event is reachable whether or not the app calls it, and there
     // is no table for a generic action to act on.
     const registered = [...handlers.keys()].filter((e) => e.startsWith('mica:server:jobs:'));
     expect(registered.toSorted()).toEqual([
       EVENT('getJobs'),
+      EVENT('lineInbox'),
+      EVENT('lineReply'),
+      EVENT('lineThread'),
       EVENT('setActiveJob'),
       EVENT('setDuty')
     ]);
@@ -141,13 +144,19 @@ describe('jobs: getJobs', () => {
     expect(reply).toEqual([
       {
         ...police,
+        // A script's line is never a shared inbox (MICA-307); `jobLineInbox.test.ts` holds
+        // the flag for config lines against the real registry.
         lines: [
-          { number: '555-0100', label: 'Dispatch' },
-          { number: '555-0101', label: '555-0101' }
+          { number: '555-0100', label: 'Dispatch', inbox: false },
+          { number: '555-0101', label: '555-0101', inbox: false }
         ],
         societyBalance: null
       },
-      { ...taxi, lines: [{ number: '555-0200', label: 'Rank' }], societyBalance: null }
+      {
+        ...taxi,
+        lines: [{ number: '555-0200', label: 'Rank', inbox: false }],
+        societyBalance: null
+      }
     ]);
     expect(banking.getSocietyBalance).not.toHaveBeenCalled();
   });

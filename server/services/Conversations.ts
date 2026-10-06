@@ -159,7 +159,15 @@ export const conversations = defineService<Conversation, typeof conversationsCon
   indexes: [
     { name: 'citizenid_status_updated', columns: ['citizenid', 'status', 'updated_at'] },
     { name: 'updated_at', columns: ['updated_at'] },
-    { name: 'pair_key_unique', columns: ['pair_key'], unique: true }
+    { name: 'pair_key_unique', columns: ['pair_key'], unique: true },
+    /**
+     * A job line's shared inbox (MICA-307): every thread with one line, by its `ext:` key,
+     * which `openLineThread` always writes into `participant_b`. `pair_key_unique` cannot serve
+     * it — `LEAST`/`GREATEST` puts the key first or second depending on the phone id — and
+     * without this the read scanned every active thread on the server through `status`
+     * (5,205 rows against 203 for the line's own, measured on MariaDB 11).
+     */
+    { name: 'participant_b_status', columns: ['participant_b', 'status'] }
   ],
   childTables: [
     {
