@@ -9,8 +9,8 @@ line here.
   `mica_audit_logs.action` is an ENUM; the stub hides it
 - [EXPLAIN a new read on a throwaway MariaDB](explain-new-reads-on-throwaway-mariadb.md)
   — recipe, and the two plan traps MICA-307 hit
-- [changelog.test is blind to a new index](changelog-test-blind-to-new-index.md)
-  — green on a known table; report the entry anyway
+- [changelog.test wants an index by its own name](changelog-test-blind-to-new-index.md)
+  — since MICA-309; still blind on post-baseline tables
 - [A type-level test only runs where a tsconfig reads it](type-tests-belong-in-integration.md)
   — server, client and shared tests are never typechecked; `integration/` is
 - [serverMessages.test counts a constant key as keyless](server-messages-ratchet-needs-a-literal-key.md)

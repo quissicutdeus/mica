@@ -46,6 +46,29 @@ import '../services/index';
  * Both halves now scan for the real thing and hold the prose to it, the same
  * shape as `convars.test.ts` and `eventNames.test.ts`.
  *
+ * ## Where an announcement has to be, and why there (MICA-309)
+ *
+ * The additive half used to accept a column when its table and its name were
+ * each written *anywhere* in the file, and an index when only its **table** was.
+ * Most tables are named in some older entry, so an index on any of them could
+ * never turn this red: MICA-307's `participant_b_status` on
+ * `mica_messages_conversations` passed before its entry existed. The column half
+ * had the same hole one size smaller — a generic name (`title`, `status`) on a
+ * table the file already names was satisfied by two unrelated lines.
+ *
+ * So a change on a table the baseline knows is announced only by **one entry —
+ * a blank-line-separated block — that names both the table and the change's own
+ * name** in code spans (`table.name` in a single span counts), and only inside
+ * `## Unreleased` or a section dated on or after the baseline. A table that is
+ * itself new since the baseline is announced by its own name in that window: its
+ * entry says "new table", and `micaschema apply` creates every column and key of
+ * it at once. Nothing here knows the day a given change landed (that would mean
+ * reading git, which the comment in the suite below rules out), so the baseline's
+ * date is the floor: an entry older than the baseline cannot be about a change
+ * made after it. A changelog whose `## ` headings this cannot read — no
+ * `Unreleased`, two of them, or a heading that is not a date — fails the suite
+ * rather than shrinking the window to nothing.
+ *
  * ## What this cannot see, said plainly
  *
  * - **`scripts/framework-schema.sql`**, which is hand-written and has no
@@ -54,6 +77,13 @@ import '../services/index';
  *   detected against the baseline, and a post-baseline column was never in it. It
  *   is already named in the CHANGELOG from the entry that introduced it, so the
  *   matcher would accept it regardless.
+ * - **A column or key added later to a table that is itself new since the
+ *   baseline.** Such a table is announced by its name, so a second change to it
+ *   is accepted on the first change's entry. The same table-name-only hole as
+ *   MICA-309, confined to post-baseline tables; closing it means knowing the
+ *   table's shape at the day it was announced, which is git again.
+ * - **Two changes in one entry.** An entry naming the table and both columns
+ *   announces both, whether or not the sentence around them is about either.
  * - **A type or length change in place** — `varchar(64)` widened to
  *   `varchar(255)`. That is neither a new name nor a lost one; it needs a
  *   versioned migration, which rule 1 covers, but nothing here notices if the
@@ -348,6 +378,13 @@ const BASELINE: Record<string, { columns: string[]; indexes: string[] }> = {
 };
 
 /**
+ * The day `BASELINE` was frozen, and so the oldest a section can be and still
+ * announce a change past it. A dated section older than this was written about
+ * a schema the baseline already holds.
+ */
+const BASELINE_DATE = '2026-08-29';
+
+/**
  * The id of each versioned migration — the filename stem, which is what the
  * runner uses and what `migrationsSeed.test.ts` already pins the filename to.
  * `index.ts` is the generated ordered array, not a migration.
@@ -371,6 +408,66 @@ const changelogText = (): string => readFileSync(join(ROOT, CHANGELOG), 'utf8');
 /** `## YYYY-MM-DD` section headings, in the order they appear in the file. */
 const datedSections = (changelog: string): string[] =>
   [...changelog.matchAll(/^## (\d{4}-\d{2}-\d{2})\s*$/gm)].map((m) => m[1]);
+
+/** A real calendar day written `YYYY-MM-DD` — `2026-13-40` has the shape and is not one. */
+const isIsoDate = (text: string): boolean =>
+  /^\d{4}-\d{2}-\d{2}$/.test(text) &&
+  !Number.isNaN(Date.parse(`${text}T00:00:00Z`)) &&
+  new Date(`${text}T00:00:00Z`).toISOString().startsWith(text);
+
+/** One `## ` section: its heading text and everything up to the next `## `. */
+interface Section {
+  heading: string;
+  body: string;
+}
+
+/** The `## ` sections in file order. The preamble above the first is not one. */
+const sections = (markdown: string): Section[] => {
+  const out: Section[] = [];
+  for (const line of markdown.split('\n')) {
+    const heading = /^## (.*?)\s*$/.exec(line);
+    if (heading) out.push({ heading: heading[1], body: '' });
+    else if (out.length > 0) out[out.length - 1].body += `${line}\n`;
+  }
+  return out;
+};
+
+/**
+ * The part of the changelog that can announce a change made after `since`:
+ * `## Unreleased`, plus every section dated on or after `since`.
+ *
+ * Throws rather than returning less when it cannot read the headings. A window
+ * that silently came back empty would report every change as missing, which is
+ * loud — but one that silently came back as the whole file would accept a stale
+ * entry, which is the defect this exists to close (MICA-309). Neither is a
+ * judgement this function is entitled to make, so a heading it does not
+ * understand stops the suite.
+ */
+const announcementWindow = (changelog: string, since: string): string => {
+  const all = sections(changelog);
+  const unreleased = all.filter((s) => s.heading === 'Unreleased').length;
+  if (unreleased !== 1) {
+    throw new Error(
+      `${CHANGELOG} has ${unreleased} "## Unreleased" sections, not one — the schema ` +
+        `check cannot tell which entries are new enough to announce a change`
+    );
+  }
+  const kept: string[] = [];
+  for (const { heading, body } of all) {
+    if (heading !== 'Unreleased' && !isIsoDate(heading)) {
+      throw new Error(
+        `"## ${heading}" in ${CHANGELOG} is neither "Unreleased" nor a YYYY-MM-DD date — ` +
+          `the schema check cannot place it before or after ${since}`
+      );
+    }
+    if (heading === 'Unreleased' || heading >= since) kept.push(body);
+  }
+  return kept.join('\n');
+};
+
+/** Blank-line-separated blocks: a paragraph, or a list written without gaps. */
+const entries = (markdown: string): string[] =>
+  markdown.split(/\n[ \t]*\n/).filter((block) => block.trim() !== '');
 
 /** A table's shape, reduced to the two things `micaschema apply` can add. */
 interface TableShape {
@@ -415,6 +512,8 @@ interface SchemaChange {
   name: string;
   kind: 'column' | 'index';
   direction: 'added' | 'removed';
+  /** The whole table is absent from the baseline, so its own entry announces it. */
+  newTable: boolean;
 }
 
 /** Every table/column/index difference between the declarations and the baseline. */
@@ -428,14 +527,19 @@ const schemaDrift = (
   for (const table of tables) {
     const now = live[table] ?? { columns: [], indexes: [] };
     const then = baseline[table] ?? { columns: [], indexes: [] };
+    const newTable = !(table in baseline);
 
     for (const kind of ['column', 'index'] as const) {
       const key = kind === 'column' ? 'columns' : 'indexes';
       for (const name of now[key]) {
-        if (!then[key].includes(name)) changes.push({ table, name, kind, direction: 'added' });
+        if (!then[key].includes(name)) {
+          changes.push({ table, name, kind, direction: 'added', newTable });
+        }
       }
       for (const name of then[key]) {
-        if (!now[key].includes(name)) changes.push({ table, name, kind, direction: 'removed' });
+        if (!now[key].includes(name)) {
+          changes.push({ table, name, kind, direction: 'removed', newTable });
+        }
       }
     }
   }
@@ -467,20 +571,32 @@ const isNamed = (name: string, spans: string): boolean =>
 /**
  * The schema changes an owner would not learn about by reading the CHANGELOG.
  *
- * A change is announced when both its table and — for a column — the column
- * itself are named. Requiring the table as well is what keeps a generic column
- * name (`title`, `url`) from being satisfied by an unrelated line. An index is
- * held to the table only: index names are derived (`citizenid_status_updated`)
- * and reciting one at a server owner is noise, but "this table gained a key, so
- * run `micaschema apply`" is exactly what they need.
+ * Only `announcementWindow` counts — `## Unreleased` and sections dated on or
+ * after `since`. Inside it, a change on a table the baseline knows is announced
+ * by one entry naming both the table and the column or index itself; a change on
+ * a table new since the baseline, by the table's name alone. The header of this
+ * file has why each half of that is there.
+ *
+ * An index is held to its own name, the same as a column. It used to be held to
+ * its table only, on the reasoning that a derived name is noise to an owner —
+ * and since nearly every table is named somewhere, that made the index half a
+ * check that could not fail (MICA-309). One backticked name in the sentence that
+ * already says "gains an index" costs the author nothing.
  *
  * Pure, so the probes below can drive it with input this repo does not have.
  */
-const unannouncedSchemaChanges = (changes: SchemaChange[], changelog: string): string[] => {
-  const spans = codeSpans(changelog);
+const unannouncedSchemaChanges = (
+  changes: SchemaChange[],
+  changelog: string,
+  since: string = BASELINE_DATE
+): string[] => {
+  const window = entries(announcementWindow(changelog, since)).map(codeSpans);
+  const anywhere = window.join('   ');
   return changes
-    .filter(({ table, name, kind }) =>
-      kind === 'column' ? !(isNamed(table, spans) && isNamed(name, spans)) : !isNamed(table, spans)
+    .filter(({ table, name, newTable }) =>
+      newTable
+        ? !isNamed(table, anywhere)
+        : !window.some((spans) => isNamed(table, spans) && isNamed(name, spans))
     )
     .map(({ table, name, kind, direction }) => `${table}.${name} (${kind} ${direction})`);
 };
@@ -535,10 +651,47 @@ describe('changelog (MICA-72)', () => {
       expect(
         missing,
         `a new column or key makes an update need \`micaschema apply\` on every existing ` +
-          `install — name the table and the column in backticks in ${CHANGELOG}, under ` +
-          `"Action required", so an owner reads it before pulling. A removal needs a ` +
-          `versioned migration as well (AGENTS.md §8).`
+          `install — name the table and the column or key's own name in backticks, in one ` +
+          `entry under "## Unreleased" > "Action required" in ${CHANGELOG}, so an owner ` +
+          `reads it before pulling. A removal needs a versioned migration as well ` +
+          `(AGENTS.md §8).`
       ).toEqual([]);
+    });
+
+    // The two cases below run the real declarations and the real CHANGELOG, so the
+    // proof that the check fires does not rest on synthetic input alone.
+    it('reports a key added to a real table the changelog already names (MICA-309)', () => {
+      const table = 'mica_messages_conversations';
+      const grown = { ...live, [table]: { ...live[table], indexes: [...live[table].indexes] } };
+      grown[table].indexes.push('mica309_probe_key');
+      const window = codeSpans(announcementWindow(changelogText(), BASELINE_DATE));
+
+      expect(isNamed(table, window), `${table} is no longer named — pick a table that is`).toBe(
+        true
+      );
+      expect(
+        unannouncedSchemaChanges(schemaDrift(grown, BASELINE), changelogText()).filter((line) =>
+          line.includes('mica309_probe_key')
+        )
+      ).toEqual([`${table}.mica309_probe_key (index added)`]);
+    });
+
+    it('reports MICA-307 again once its own entry is taken out', () => {
+      // The case that surfaced the defect, replayed: the index is still declared,
+      // the table is still named by other entries, and only its own entry is gone.
+      const without = entries(changelogText())
+        .filter((entry) => !entry.includes('participant_b_status'))
+        .join('\n\n');
+      const drift = schemaDrift(live, BASELINE).filter((c) => c.name === 'participant_b_status');
+
+      expect(drift, 'the MICA-307 index is no longer declared — retire this case').toHaveLength(1);
+      expect(
+        isNamed(drift[0].table, codeSpans(announcementWindow(without, BASELINE_DATE))),
+        'the table is no longer named elsewhere, so this no longer replays MICA-309'
+      ).toBe(true);
+      expect(unannouncedSchemaChanges(drift, without)).toEqual([
+        'mica_messages_conversations.participant_b_status (index added)'
+      ]);
     });
   });
 
@@ -559,73 +712,188 @@ describe('changelog (MICA-72)', () => {
 
     it('sees a column the declarations grew', () => {
       expect(schemaDrift(shapes(['id', 'label']), shapes(['id']))).toEqual([
-        { table: 'mica_widgets', name: 'label', kind: 'column', direction: 'added' }
+        {
+          table: 'mica_widgets',
+          name: 'label',
+          kind: 'column',
+          direction: 'added',
+          newTable: false
+        }
       ]);
     });
 
     it('sees a column they lost, and a key either way', () => {
       expect(schemaDrift(shapes(['id'], ['a']), shapes(['id', 'label'], ['b']))).toEqual([
-        { table: 'mica_widgets', name: 'label', kind: 'column', direction: 'removed' },
-        { table: 'mica_widgets', name: 'a', kind: 'index', direction: 'added' },
-        { table: 'mica_widgets', name: 'b', kind: 'index', direction: 'removed' }
+        {
+          table: 'mica_widgets',
+          name: 'label',
+          kind: 'column',
+          direction: 'removed',
+          newTable: false
+        },
+        { table: 'mica_widgets', name: 'a', kind: 'index', direction: 'added', newTable: false },
+        { table: 'mica_widgets', name: 'b', kind: 'index', direction: 'removed', newTable: false }
       ]);
     });
+
+    it('marks every change on a table the baseline lacks as part of a new table', () => {
+      expect(schemaDrift(shapes(['id'], ['a']), {})).toEqual([
+        { table: 'mica_widgets', name: 'id', kind: 'column', direction: 'added', newTable: true },
+        { table: 'mica_widgets', name: 'a', kind: 'index', direction: 'added', newTable: true }
+      ]);
+    });
+
+    /**
+     * A changelog of this file's shape: an `Unreleased` section, then dated ones.
+     * `older` is a section from before the baseline — where MICA-307's table was
+     * already named, and from where it must no longer count.
+     */
+    const changelogOf = (unreleased: string, dated: Record<string, string> = {}): string =>
+      [
+        '# Changelog\n\nPreamble naming `mica_widgets` and `label`, which is not a section.\n',
+        `## Unreleased\n\n${unreleased}\n`,
+        ...Object.entries(dated).map(([date, body]) => `## ${date}\n\n${body}\n`)
+      ].join('\n');
+    const older = { '2026-08-27': '- `mica_widgets` gains `label` and `citizenid_updated`.' };
 
     const added: SchemaChange = {
       table: 'mica_widgets',
       name: 'label',
       kind: 'column',
-      direction: 'added'
+      direction: 'added',
+      newTable: false
     };
+    const index: SchemaChange = { ...added, name: 'citizenid_updated', kind: 'index' };
 
     it('reports a column the changelog does not name', () => {
-      expect(unannouncedSchemaChanges([added], '# Changelog\n\nNothing here.\n')).toEqual([
+      expect(unannouncedSchemaChanges([added], changelogOf('Nothing here.'))).toEqual([
         'mica_widgets.label (column added)'
       ]);
     });
 
     it('accepts one written down as prose plus identifiers', () => {
-      const entry = '# Changelog\n\n- `mica_widgets` gains a `label`; run `micaschema apply`.\n';
+      const entry = '- `mica_widgets` gains a `label`; run `micaschema apply`.';
 
-      expect(unannouncedSchemaChanges([added], entry)).toEqual([]);
+      expect(unannouncedSchemaChanges([added], changelogOf(entry))).toEqual([]);
     });
 
     it('is not satisfied by the words appearing outside a code span', () => {
       // The failure this prevents: an entry about something else that happens to
       // use the word, read as an announcement of this column.
-      const prose = '# Changelog\n\nThe widgets table now shows a label on each row.\n';
+      const prose = 'The widgets table now shows a label on each row.';
 
-      expect(unannouncedSchemaChanges([added], prose)).toEqual([
+      expect(unannouncedSchemaChanges([added], changelogOf(prose))).toEqual([
         'mica_widgets.label (column added)'
       ]);
     });
 
-    it('holds an index to its table rather than to its derived name', () => {
-      const index: SchemaChange = {
-        table: 'mica_widgets',
-        name: 'citizenid_status_updated',
-        kind: 'index',
-        direction: 'added'
-      };
+    it('holds an index to its own name, not to its table (MICA-309)', () => {
+      // The defect: `mica_widgets` named in any entry used to announce every key
+      // the table would ever grow.
+      const tableOnly = '- `mica_widgets` gains a key; run `micaschema apply`.';
 
-      expect(unannouncedSchemaChanges([index], '# Changelog\n\nNothing.\n')).toEqual([
-        'mica_widgets.citizenid_status_updated (index added)'
+      expect(unannouncedSchemaChanges([index], changelogOf(tableOnly))).toEqual([
+        'mica_widgets.citizenid_updated (index added)'
       ]);
       expect(
-        unannouncedSchemaChanges([index], '# Changelog\n\n- `mica_widgets` gains a key.\n')
+        unannouncedSchemaChanges(
+          [index],
+          changelogOf('- `mica_widgets` gains an index, `citizenid_updated`.')
+        )
       ).toEqual([]);
     });
 
-    it('lets a migration id announce the column it drops', () => {
-      const dropped: SchemaChange = {
-        table: 'mica_widgets',
-        name: 'best_streak',
-        kind: 'column',
-        direction: 'removed'
-      };
-      const entry = '# Changelog\n\n- `0001_drop_mica_widgets_best_streak` — run it.\n';
+    it('accepts `table.index` written as one span', () => {
+      expect(
+        unannouncedSchemaChanges(
+          [index],
+          changelogOf('- New key `mica_widgets.citizenid_updated`.')
+        )
+      ).toEqual([]);
+    });
 
-      expect(unannouncedSchemaChanges([dropped], entry)).toEqual([]);
+    it('needs the table and the name in one entry, not two unrelated ones', () => {
+      // The column half's version of MICA-309: a generic name (`label`, `status`)
+      // on a table some other entry names, satisfied by the two lines together.
+      const apart =
+        '- `mica_widgets` is faster to open.\n\n- Mail shows a `label` beside each sender.';
+
+      expect(unannouncedSchemaChanges([added, index], changelogOf(apart))).toEqual([
+        'mica_widgets.label (column added)',
+        'mica_widgets.citizenid_updated (index added)'
+      ]);
+    });
+
+    it('does not count a section dated before the baseline', () => {
+      expect(unannouncedSchemaChanges([added, index], changelogOf('Nothing.', older))).toEqual([
+        'mica_widgets.label (column added)',
+        'mica_widgets.citizenid_updated (index added)'
+      ]);
+    });
+
+    it('counts a section dated on or after the baseline, as a cut release is', () => {
+      const released = { '2026-09-14': older['2026-08-27'], ...older };
+
+      expect(unannouncedSchemaChanges([added, index], changelogOf('', released))).toEqual([]);
+      expect(
+        unannouncedSchemaChanges(
+          [added],
+          changelogOf('', { [BASELINE_DATE]: '`mica_widgets.label`' })
+        )
+      ).toEqual([]);
+    });
+
+    it('lets a new table be announced by its own name', () => {
+      // `micaschema apply` creates the table whole, so the entry that says "new
+      // table" covers every column and key in it.
+      const fresh = [added, index].map((change) => ({ ...change, newTable: true }));
+
+      expect(
+        unannouncedSchemaChanges(fresh, changelogOf('- `mica_widgets` is a new table.'))
+      ).toEqual([]);
+      expect(unannouncedSchemaChanges(fresh, changelogOf('Nothing.', older))).toEqual([
+        'mica_widgets.label (column added)',
+        'mica_widgets.citizenid_updated (index added)'
+      ]);
+    });
+
+    it('lets a migration id announce the column it drops', () => {
+      const dropped: SchemaChange = { ...added, name: 'best_streak', direction: 'removed' };
+      const entry = '- `0001_drop_mica_widgets_best_streak` — run it.';
+
+      expect(unannouncedSchemaChanges([dropped], changelogOf(entry))).toEqual([]);
+    });
+
+    describe('fails, rather than passes, on a changelog it cannot read', () => {
+      it('with no Unreleased section', () => {
+        expect(() => unannouncedSchemaChanges([], '# Changelog\n\n## 2026-09-14\n\nx\n')).toThrow(
+          /0 "## Unreleased" sections/
+        );
+      });
+
+      it('with two', () => {
+        expect(() =>
+          unannouncedSchemaChanges([], `${changelogOf('a')}\n## Unreleased\n\nb\n`)
+        ).toThrow(/2 "## Unreleased" sections/);
+      });
+
+      it('with a heading that is not a date', () => {
+        expect(() =>
+          unannouncedSchemaChanges([], changelogOf('a', { 'v2026.09.14.3': 'b' }))
+        ).toThrow(/"## v2026\.09\.14\.3" .* neither/);
+      });
+
+      it('with a date that is not a day', () => {
+        expect(() => unannouncedSchemaChanges([], changelogOf('a', { '2026-13-40': 'b' }))).toThrow(
+          /"## 2026-13-40"/
+        );
+      });
+
+      it('even when there are no changes to judge', () => {
+        // A tree whose schema matches the baseline must still prove the window can
+        // be read, or the day it next changes is the first day this is tested.
+        expect(() => unannouncedSchemaChanges([], '# Changelog\n')).toThrow(/Unreleased/);
+      });
     });
 
     it('reads the real changelog, so a missing or empty file is a failure', () => {
@@ -637,6 +905,12 @@ describe('changelog (MICA-72)', () => {
       // would read as "every identifier is missing" rather than as a pass — but
       // only if the extractor works at all.
       expect(codeSpans(changelogText()).length).toBeGreaterThan(100);
+      // The same for the part of it that can announce a schema change: a window
+      // that parsed to nothing would report every change, and one that was
+      // nothing because every entry moved under an old date would too.
+      expect(codeSpans(announcementWindow(changelogText(), BASELINE_DATE)).length).toBeGreaterThan(
+        100
+      );
     });
   });
 

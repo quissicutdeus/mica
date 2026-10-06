@@ -364,13 +364,13 @@ generated `pair_key` column, plus a migration (`0003_conversations_pair_key`) �
 run `micaschema apply` from your server console after updating, or import the
 regenerated `mica.sql` / `mica.esx.sql` on a fresh install.** A 1:1 thread's two
 participants are now snapshotted onto the conversation row itself and normalised
-into `pair_key`, which a unique index constrains — closing the race where two
-people opening a chat at the same moment could end up with two threads for the
-same pair. The migration backfills the new columns for existing one-to-one
-threads and adds the index; if your server already has more than one active
-thread for the same pair (a residue of that race before this fix), the index is
-added as a plain, non-unique key instead — nothing is merged or deleted, and no
-message history is touched.
+into `pair_key`, which a unique index (`pair_key_unique`) constrains — closing
+the race where two people opening a chat at the same moment could end up with
+two threads for the same pair. The migration backfills the new columns for
+existing one-to-one threads and adds the index; if your server already has more
+than one active thread for the same pair (a residue of that race before this
+fix), the index is added as a plain, non-unique key instead — nothing is merged
+or deleted, and no message history is touched.
 
 **`mica_lockscreen` is a new table — run `micaschema apply` from your server
 console after updating, or import the regenerated `mica.sql` / `mica.esx.sql` on
