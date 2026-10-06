@@ -33,6 +33,7 @@ import { createIframeHostServer } from '../../../web/src/shell/addon/IframeHostS
 import { resetGrantsForTest } from '../../../web/src/shell/state/addOnGrants';
 import { service as shellService } from '../../../web/src/host/facets/service';
 import { setTransport } from '../../../web/src/nui/transport';
+import { isRefusal, ServiceRefusal } from '../../lib/errors';
 
 interface Note {
   id: number;
@@ -218,10 +219,17 @@ describe('installAddonMock: refusing', () => {
 
   it('answers the generic failure for a throw, a malformed error and an undeclared action', async () => {
     installAddonMock(mock, PROBE);
-    const generic = { name: 'Error', message: 'Something went wrong. Try again in a moment.' };
+    // A `ServiceRefusal` keyed `server.generic`, as the real generic failure is (MICA-310).
+    const generic = {
+      name: 'ServiceRefusal',
+      message: 'Something went wrong. Try again in a moment.'
+    };
     expect(await rejection(useService(notes).call('boom'))).toEqual(generic);
     expect(await rejection(useService(notes).call('bad'))).toEqual(generic);
     expect(await rejection(useService('probe').call('nope', {}))).toEqual(generic);
+    await expect(useService(notes).call('boom')).rejects.toSatisfy((error) =>
+      isRefusal(error, 'server.generic')
+    );
     // The cause goes to the console, where the server log would have had it.
     expect(console.error).toHaveBeenCalledWith(
       expect.stringContaining('probe:boom threw'),
@@ -253,17 +261,26 @@ describe('installAddonMock: refusing', () => {
  * shell's answer is fed back into the frame. The mock must settle exactly as that does.
  */
 describe('installAddonMock: { error } matches the real path', () => {
-  const realPath = async (
+  type Settled = { ok: true; value: unknown } | { ok: false; error: unknown };
+  type Seen = { ok: true; value: unknown } | { ok: false; name: string; message: string };
+  const seenAs = (settled: Settled): Seen => {
+    if (settled.ok) return settled;
+    const error = settled.error as Error;
+    return { ok: false, name: error.name, message: error.message };
+  };
+
+  /** The frame's raw settlement, and the one reply the shell posted to get it there. */
+  const crossWall = async (
     endpointReply: unknown,
     callArgs: [string, unknown?, unknown?]
-  ): Promise<{ ok: true; value: unknown } | { ok: false; name: string; message: string }> => {
+  ): Promise<{ settled: Settled; posted: ToFrame }> => {
     registerFacet('service', service);
     const frame = fakeTransport();
     const pending = service('probe')
       .call(...callArgs)
       .then(
-        (value) => ({ ok: true as const, value }),
-        (error: Error) => ({ ok: false as const, name: error.name, message: error.message })
+        (value): Settled => ({ ok: true, value }),
+        (error: unknown): Settled => ({ ok: false, error })
       );
     const message = frame.sent[0] as Extract<ToShell, { kind: 'call' }>;
 
@@ -294,22 +311,28 @@ describe('installAddonMock: { error } matches the real path', () => {
     frame.replies.get(message.id)?.(posted[0] as Extract<ToFrame, { kind: 'reply' }>);
     setTransport(null);
     registerFacet('service', service);
-    return pending;
+    return { settled: await pending, posted: posted[0] };
   };
 
-  const mockPath = async (
+  const realPath = async (
+    endpointReply: unknown,
     callArgs: [string, unknown?, unknown?]
-  ): Promise<{ ok: true; value: unknown } | { ok: false; name: string; message: string }> => {
+  ): Promise<Seen> => seenAs((await crossWall(endpointReply, callArgs)).settled);
+
+  const mockSettled = async (callArgs: [string, unknown?, unknown?]): Promise<Settled> => {
     resetAddonMocksForTest();
     registerFacet('service', service);
     installAddonMock(mock, PROBE);
     return useService('probe')
       .call(...callArgs)
       .then(
-        (value) => ({ ok: true as const, value }),
-        (error: Error) => ({ ok: false as const, name: error.name, message: error.message })
+        (value): Settled => ({ ok: true, value }),
+        (error: unknown): Settled => ({ ok: false, error })
       );
   };
+
+  const mockPath = async (callArgs: [string, unknown?, unknown?]): Promise<Seen> =>
+    seenAs(await mockSettled(callArgs));
 
   // What `ServiceEndpoint` emits for the `PlayerFacingError` `answerFor` throws on
   // `addonError('That note is not yours.')`: the text, no key.
@@ -334,6 +357,49 @@ describe('installAddonMock: { error } matches the real path', () => {
     expect(mocked.ok).toBe(false);
     expect(real.ok).toBe(false);
     if (!mocked.ok && !real.ok) expect(mocked.name).toBe(real.name);
+  });
+
+  /**
+   * MICA-310. A keyed reply reaches the shell's `fetchNui` as a `ServiceRefusal`; the shell
+   * posts its name, message and key and nothing else, and the frame rebuilds it — so an
+   * add-on's `isRefusal(error, key)` answers exactly as a core app's does.
+   */
+  it('carries a refusal’s key across the wall, and nothing else of the error', async () => {
+    const { settled, posted } = await crossWall(
+      { error: 'Too many probe add requests. Slow down and try again.', key: 'server.rateLimited' },
+      ['add', { text: 'x' }]
+    );
+    expect(settled.ok).toBe(false);
+    const error = (settled as { ok: false; error: unknown }).error;
+    expect(error).toBeInstanceOf(ServiceRefusal);
+    expect(isRefusal(error, 'server.rateLimited')).toBe(true);
+    expect(isRefusal(error, 'server.generic')).toBe(false);
+
+    const reply = posted as Extract<ToFrame, { kind: 'reply'; ok: false }>;
+    expect(Object.keys(reply.error).sort()).toEqual(['key', 'message', 'name']);
+    expect(reply.error).toMatchObject({ name: 'ServiceRefusal', key: 'server.rateLimited' });
+  });
+
+  it('posts no key for a keyless refusal, so the frame sees a plain Error', async () => {
+    const { settled, posted } = await crossWall(refusal, ['remove', { id: 1 }]);
+    const error = (settled as { ok: false; error: unknown }).error;
+    expect(isRefusal(error)).toBe(false);
+    const reply = posted as Extract<ToFrame, { kind: 'reply'; ok: false }>;
+    expect(Object.keys(reply.error).sort()).toEqual(['message', 'name']);
+  });
+
+  it('answers the generic failure as the same keyed refusal in both', async () => {
+    const { settled: real } = await crossWall(
+      { error: 'Something went wrong. Try again in a moment.', key: 'server.generic' },
+      ['boom']
+    );
+    const mocked = await mockSettled(['boom']);
+    for (const settled of [real, mocked]) {
+      expect(settled.ok).toBe(false);
+      expect(isRefusal((settled as { ok: false; error: unknown }).error, 'server.generic')).toBe(
+        true
+      );
+    }
   });
 });
 

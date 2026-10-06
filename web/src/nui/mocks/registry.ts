@@ -2833,7 +2833,11 @@ function resolveGeneric(data?: unknown): { key: string; payload: unknown } | nul
 
 async function getMockData(eventName: string, data?: unknown): Promise<unknown> {
   if (eventName === GENERIC_SERVICE_ACTION) {
-    if (!mockAuthenticated) return { error: 'Player not authenticated' };
+    // Keyed as `ServiceEndpoint` keys it, so `fetchNui` hands back the same `ServiceRefusal`
+    // the game would and a key check (`host/facets/storage.ts`) is exercised here (MICA-310).
+    if (!mockAuthenticated) {
+      return { error: 'Player not authenticated', key: 'server.notAuthenticated' };
+    }
 
     const resolved = resolveGeneric(data);
     // Malformed shape (not even `{ service, action }`) is a caller bug, not a missing

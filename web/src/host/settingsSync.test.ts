@@ -25,6 +25,7 @@ import { usePersisted } from '../../../sdk/host/usePersisted';
 import { clearAppStorage, hydrateSettings, useStorage } from '../../../sdk/host/useStorage';
 import { hydrateSettingsOnCharacterLoad } from './facets/storage';
 import { __resetSettingsSync } from './settingsSync';
+import { ServiceRefusal } from '@mica/sdk';
 
 /**
  * The contract that lets every existing `useStorage` call site keep working.
@@ -299,18 +300,46 @@ describe('server-backed storage', () => {
       expect(get(store)).toBe('chosen mid-drag');
     });
 
-    it('treats "Player not authenticated" as the expected pre-character reply, without logging', async () => {
-      const store = usePersisted<string>('settings', 'greeting', 'default');
-      store.set('chosen by the player');
+    /**
+     * MICA-310: recognised by the key `fetchNui` keeps, not by the message, which arrives
+     * translated. Matching the English used to log a spurious error on every boot of a phone
+     * set to German, where the same refusal reads "Spieler nicht angemeldet".
+     */
+    it.each([
+      ['in English', 'Player not authenticated'],
+      ['in German', 'Spieler nicht angemeldet'],
+      ['reworded', 'Sign in to a character first.']
+    ])(
+      'treats the not-authenticated refusal %s as the expected pre-character reply, without logging',
+      async (_, message) => {
+        const store = usePersisted<string>('settings', 'greeting', 'default');
+        store.set('chosen by the player');
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+        serviceMock.fetchSettings.mockRejectedValueOnce(
+          new ServiceRefusal('server.notAuthenticated', message)
+        );
+        await hydrateSettingsOnCharacterLoad();
+
+        // A failure, even the routine boot-time one, may never clear what was already there.
+        expect(get(store)).toBe('chosen by the player');
+        expect(errorSpy).not.toHaveBeenCalled();
+
+        errorSpy.mockRestore();
+      }
+    );
+
+    it.each([
+      ['the English text with no key', new Error('Player not authenticated')],
+      ['another keyed refusal', new ServiceRefusal('server.generic', 'Player not authenticated')]
+    ])('still logs %s, which is not that reply', async (_, failure) => {
+      usePersisted<string>('settings', 'greeting', 'default');
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-      serviceMock.fetchSettings.mockRejectedValueOnce(new Error('Player not authenticated'));
+      serviceMock.fetchSettings.mockRejectedValueOnce(failure);
       await hydrateSettingsOnCharacterLoad();
 
-      // A failure, even the routine boot-time one, may never clear what was already there.
-      expect(get(store)).toBe('chosen by the player');
-      expect(errorSpy).not.toHaveBeenCalled();
-
+      expect(errorSpy).toHaveBeenCalled();
       errorSpy.mockRestore();
     });
 

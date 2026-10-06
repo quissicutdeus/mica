@@ -8,6 +8,7 @@ const { transport } = vi.hoisted(() => ({ transport: { send: vi.fn(), on: vi.fn(
 vi.mock('./transport', () => ({ getTransport: () => transport }));
 
 import { fetchNui } from './fetchNui';
+import { isRefusal, ServiceRefusal } from '@mica/sdk';
 
 /**
  * The contract is decided by `defaultValue`: supplied means "never throw, give me this
@@ -129,5 +130,93 @@ describe('a keyed error reply', () => {
   it('falls back to the English text for a key the catalog does not know', async () => {
     transport.send.mockResolvedValueOnce({ error: 'Plain English', key: 'server.nowhere' });
     await expect(fetchNui('x')).rejects.toThrow('Plain English');
+  });
+});
+
+/**
+ * MICA-310: the key is kept on what is thrown, so an app tells one refusal from another by
+ * the key rather than by text a translator is free to reword.
+ */
+describe('a refusal keeps its key', () => {
+  const caught = async (promise: Promise<unknown>): Promise<unknown> =>
+    promise.then(
+      () => expect.unreachable('expected a rejection'),
+      (error: unknown) => error
+    );
+
+  it('throws a ServiceRefusal carrying the key beside the translated message', async () => {
+    const { registerMessages, locale } = await import('../../../sdk/i18n');
+    registerMessages('server', {
+      en: { 'probe.keyed': 'Not for you, {name}.' },
+      de: { 'probe.keyed': 'Nicht für dich, {name}.' }
+    });
+    locale.set('de');
+    transport.send.mockResolvedValueOnce({
+      error: 'Not for you, Trevor.',
+      key: 'server.probe.keyed',
+      params: { name: 'Trevor' }
+    });
+    const error = await caught(fetchNui('x'));
+    locale.set('en');
+
+    expect(error).toBeInstanceOf(ServiceRefusal);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as ServiceRefusal).key).toBe('server.probe.keyed');
+    expect((error as ServiceRefusal).message).toBe('Nicht für dich, Trevor.');
+    expect(isRefusal(error, 'server.probe.keyed')).toBe(true);
+    expect(isRefusal(error, 'server.probe.other')).toBe(false);
+  });
+
+  it('still matches after the catalog rewords the entry', async () => {
+    const { registerMessages } = await import('../../../sdk/i18n');
+    registerMessages('server', { en: { 'probe.reworded': 'The first wording.' } });
+    transport.send.mockResolvedValueOnce({ error: 'English', key: 'server.probe.reworded' });
+    const before = await caught(fetchNui('x'));
+
+    registerMessages('server', { en: { 'probe.reworded': 'Something else entirely.' } });
+    transport.send.mockResolvedValueOnce({ error: 'English', key: 'server.probe.reworded' });
+    const after = await caught(fetchNui('x'));
+
+    expect((before as Error).message).toBe('The first wording.');
+    expect((after as Error).message).toBe('Something else entirely.');
+    expect(isRefusal(before, 'server.probe.reworded')).toBe(true);
+    expect(isRefusal(after, 'server.probe.reworded')).toBe(true);
+  });
+
+  it('keeps the key the catalog does not know, with the English as the message', async () => {
+    transport.send.mockResolvedValueOnce({ error: 'Plain English', key: 'server.nowhere' });
+    const error = await caught(fetchNui('x'));
+    expect(isRefusal(error, 'server.nowhere')).toBe(true);
+    expect((error as Error).message).toBe('Plain English');
+  });
+
+  it('is not a refusal when the reply named no key, whatever its text', async () => {
+    transport.send.mockResolvedValueOnce({ error: 'Request timed out' });
+    const timeout = await caught(fetchNui('x'));
+    expect(timeout).toBeInstanceOf(Error);
+    expect(isRefusal(timeout)).toBe(false);
+
+    // The exact English a keyed refusal would have carried, but no key: still not one.
+    transport.send.mockResolvedValueOnce({ error: 'That line is not available to you.' });
+    const unkeyed = await caught(fetchNui('x'));
+    expect(isRefusal(unkeyed)).toBe(false);
+    expect(isRefusal(unkeyed, 'server.jobs.lineUnavailable')).toBe(false);
+  });
+
+  it('is not a refusal for an error somebody hung a key property on', () => {
+    const forged = Object.assign(new Error('x'), { key: 'server.jobs.lineUnavailable' });
+    expect(isRefusal(forged)).toBe(false);
+    expect(isRefusal(forged, 'server.jobs.lineUnavailable')).toBe(false);
+    expect(isRefusal({ name: 'ServiceRefusal', key: 'server.generic', message: 'x' })).toBe(false);
+    expect(isRefusal(null)).toBe(false);
+  });
+
+  it('a read with a default still resolves to the default on a refusal', async () => {
+    transport.send.mockResolvedValueOnce({ error: 'English', key: 'server.probe.uncatalogued' });
+    await expect(fetchNui('x', null, { defaultValue: [] })).resolves.toEqual([]);
+    expect(console.warn).toHaveBeenCalledWith(
+      "fetchNui('x') returned an error; using the default.",
+      'English'
+    );
   });
 });

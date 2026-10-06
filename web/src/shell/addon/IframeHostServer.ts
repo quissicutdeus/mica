@@ -19,7 +19,7 @@ import { isCallbackRef } from '../../../../sdk/host/iframe/messages';
 import { grantFor } from '../state/registry';
 import { themeStyleStore } from '../state/theme';
 import { is24Hour } from '../state/time';
-import { messageOf } from '@mica/sdk';
+import { isRefusal, messageOf } from '@mica/sdk';
 import { registerAddOnStoragePush } from '../../host/settingsSync';
 
 /** The guest end of the channel: the window a frame is currently running. */
@@ -430,6 +430,16 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
     return v;
   };
 
+  /**
+   * A failed call, as the frame will see it: a name and a message, built field by field so
+   * nothing else on the error — its stack, its `cause`, a property a facet hung on it — can
+   * cross. Two kinds carry one thing more, each read off a class the shell constructed and
+   * never off whatever a thrown object happens to have: an `AppPermissionError` its permission
+   * and hook, and a `ServiceRefusal` the catalog key the server named (MICA-310), so the frame
+   * rebuilds one and an add-on's `isRefusal(error, key)` answers as a core app's does. The key
+   * is the server's, from a reply to a call this frame was only ever allowed to make in its
+   * own namespace; the frame has no way to send the shell one.
+   */
   const fail = (id: number, e: unknown) =>
     post({
       kind: 'reply',
@@ -438,7 +448,12 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
       error:
         e instanceof AppPermissionError
           ? { name: e.name, message: e.message, permission: e.permission, hookName: e.hookName }
-          : { name: e instanceof Error ? e.name : 'Error', message: messageOf(e, 'unknown error') }
+          : isRefusal(e)
+            ? { name: e.name, message: messageOf(e, 'unknown error'), key: e.key }
+            : {
+                name: e instanceof Error ? e.name : 'Error',
+                message: messageOf(e, 'unknown error')
+              }
     });
 
   async function call(msg: Extract<ToShell, { kind: 'call' }>) {

@@ -113,6 +113,16 @@ export type { FocusTrapOptions } from './lib/focusTrap';
 export { messageOf } from './lib/errors';
 
 /**
+ * Which refusal it was (MICA-310), for the same caller `messageOf` serves: an app or add-on
+ * holding a rejected `call`. `messageOf` says what to show; `isRefusal(error, key)` says what
+ * happened, by the catalog key the server named rather than by text a translator can reword.
+ * Both barrels, because a sandboxed add-on's rejection is rebuilt as a `ServiceRefusal` on its
+ * side of the wall (`host/iframe/remote.ts`). The class is exported beside the guard so an
+ * add-on's own tests can make one; `sdk/lib/errors.ts` says what it is and is not.
+ */
+export { ServiceRefusal, isRefusal } from './lib/errors';
+
+/**
  * A scale-corrected pointer drag, and the measurement under it (MICA-294).
  *
  * The phone is drawn through a `transform: scale()`, so a drag that applies client-pixel

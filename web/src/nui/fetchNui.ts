@@ -5,6 +5,7 @@
 import { get } from 'svelte/store';
 import { t, type TranslateParams } from '../../../sdk/i18n';
 import { registerNuiTransport } from '../../../sdk/nui/transport';
+import { ServiceRefusal } from '@mica/sdk';
 import { getTransport } from './transport';
 
 /**
@@ -16,22 +17,28 @@ import { getTransport } from './transport';
  * the shape of data.
  */
 /**
- * The message an error reply carries, in the player's language where possible (MICA-216).
+ * The error an error reply becomes, in the player's language where possible (MICA-216).
  *
  * The server sends `{ error, key?, params? }`: `error` is English, `key` names an entry in
  * the shell's `server` catalog. The key wins when the catalog knows it, so a refusal reads
  * in the phone's language; an unknown key — an add-on's own server half, say — falls back
  * to the English it sent, which is exactly what it showed before.
+ *
+ * **A keyed reply keeps its key** (MICA-310), as a `ServiceRefusal`, whether or not the
+ * catalog knew it. This used to translate the key into the message and drop it, so the only
+ * way an app could tell one refusal from another was to compare the translated text — which
+ * the Jobs inbox did, and which a reworded catalog would have broken without a sound. A reply
+ * with no key — the client's own timeout, a malformed request — stays a plain `Error`.
  */
-const errorFrom = (reply: unknown): string | null => {
+const errorFrom = (reply: unknown): Error | null => {
   if (!reply || typeof reply !== 'object') return null;
   const { error, key, params } = reply as { error?: unknown; key?: unknown; params?: unknown };
   if (typeof error !== 'string' || !error) return null;
   if (typeof key === 'string' && key) {
     const translated = get(t)(key, (params ?? undefined) as TranslateParams | undefined);
-    if (translated !== key) return translated;
+    return new ServiceRefusal(key, translated !== key ? translated : error);
   }
-  return error;
+  return new Error(error);
 };
 
 /**
@@ -74,11 +81,14 @@ export async function fetchNui<T = unknown>(
   if (error) {
     if (hasDefault) {
       if (!options.quiet) {
-        console.warn(`fetchNui('${eventName}') returned an error; using the default.`, error);
+        console.warn(
+          `fetchNui('${eventName}') returned an error; using the default.`,
+          error.message
+        );
       }
       return options.defaultValue as T;
     }
-    throw new Error(error);
+    throw error;
   }
 
   if (hasDefault) {

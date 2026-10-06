@@ -858,6 +858,8 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'SearchIcon',
     'SegmentedControl',
     'SendIcon',
+    // MICA-310: a refusal keeps the catalog key the server named; `isRefusal` reads it.
+    'ServiceRefusal',
     'SettingsSection',
     'ShareIcon',
     'ShareSquareIcon',
@@ -904,6 +906,8 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'hydrateSettings',
     'hostRuntime',
     'isBrowser',
+    // MICA-310
+    'isRefusal',
     'loadImage',
     'makeThumbnail',
     'messageOf',
@@ -1089,6 +1093,8 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'SearchIcon',
     'SegmentedControl',
     'SendIcon',
+    // MICA-310: a refusal keeps the catalog key the server named; `isRefusal` reads it.
+    'ServiceRefusal',
     'SettingsSection',
     'ShareIcon',
     'ShareSquareIcon',
@@ -1133,6 +1139,8 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'hydrateSettings',
     'hostRuntime',
     'isBrowser',
+    // MICA-310
+    'isRefusal',
     'loadImage',
     'makeThumbnail',
     'messageOf',

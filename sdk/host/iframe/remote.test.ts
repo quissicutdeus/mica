@@ -6,6 +6,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { get } from 'svelte/store';
 import { remoteCall, remoteStore, remoteFn, encodeArgs } from './remote';
 import { AppPermissionError } from '../protocol';
+import { isRefusal, ServiceRefusal } from '../../lib/errors';
 import type { ToShell } from './messages';
 import { fakeTransport } from './__fixtures__/fakeTransport';
 
@@ -40,6 +41,43 @@ describe('remoteCall', () => {
       }
     });
     await expect(p).rejects.toBeInstanceOf(AppPermissionError);
+  });
+
+  /** MICA-310: the key the shell sent beside a `ServiceRefusal`, rebuilt on this side. */
+  const rejectWith = async (error: Record<string, unknown>): Promise<unknown> => {
+    const f = fakeTransport();
+    const p = remoteCall('service', ['probe'], 'call', 'add', {});
+    const { id } = f.sent[0] as Extract<ToShell, { kind: 'call' }>;
+    f.replies.get(id)!({ kind: 'reply', id, ok: false, error } as never);
+    return p.then(
+      () => expect.unreachable('expected a rejection'),
+      (e: unknown) => e
+    );
+  };
+
+  it('rethrows a keyed refusal as a ServiceRefusal carrying the key', async () => {
+    const error = await rejectWith({
+      name: 'ServiceRefusal',
+      message: 'Slow down.',
+      key: 'server.rateLimited'
+    });
+    expect(error).toBeInstanceOf(ServiceRefusal);
+    expect(isRefusal(error, 'server.rateLimited')).toBe(true);
+    expect((error as Error).message).toBe('Slow down.');
+  });
+
+  it('rebuilds nothing from a reply that is not a whole refusal', async () => {
+    // A key beside any other name, or the name with no usable key, is an ordinary Error.
+    for (const error of [
+      { name: 'Error', message: 'x', key: 'server.rateLimited' },
+      { name: 'ServiceRefusal', message: 'x' },
+      { name: 'ServiceRefusal', message: 'x', key: '' },
+      { name: 'ServiceRefusal', message: 'x', key: 7 }
+    ]) {
+      const rejected = await rejectWith(error);
+      expect(rejected).toBeInstanceOf(Error);
+      expect(isRefusal(rejected)).toBe(false);
+    }
   });
 
   it('encodes function args as callback refs and fires them on callback messages', () => {

@@ -14,6 +14,7 @@ import {
 import { APP_EVENT_NAME_PATTERN } from '@mica/shared/appEvents';
 import { facets, registerFacet } from '../current';
 import type { Facets } from '../facets';
+import { ServiceRefusal } from '../../lib/errors';
 import type { AppEvent } from '../../vocabulary/shell';
 import type { AppManifest } from '../../manifest';
 
@@ -45,6 +46,8 @@ import type { AppManifest } from '../../manifest';
  * - **A failure** rejects with a plain `Error` carrying that message — or, when the caller
  *   passed a `defaultValue`, resolves to it, as `fetchNui` does. A `null` answer to a call with
  *   a default, or a non-array answer where the default is an array, resolves to the default.
+ *   The generic failure rejects with a `ServiceRefusal` keyed `server.generic` instead, as the
+ *   real one does (MICA-310); `addonError` and schema refusals carry no key on either path.
  *
  * Answers and inputs make the JSON round trip the real ones make, so a `Date` arrives as a
  * string and `undefined` drops out here exactly as it would in game.
@@ -60,6 +63,8 @@ const DEV_SOURCE = 1;
 
 /** `server/lib/errors.ts`'s `GENERIC_ERROR_MESSAGE`, in English: the frame has no server catalog. */
 const GENERIC_FAILURE = 'Something went wrong. Try again in a moment.';
+/** `server/lib/errors.ts`'s `GENERIC_ERROR_KEY`, which the real generic failure carries. */
+const GENERIC_FAILURE_KEY = 'server.generic';
 /** `@mica/shared/schema`'s `SchemaError` fallback, for a refusal with no issue message. */
 const SHAPE_FAILURE = 'That request was not in the expected shape.';
 /** `server/lib/addonServices.ts`'s `ADDON_ANSWER_MAX_BYTES`. */
@@ -72,7 +77,8 @@ const MAX_BUFFERED = 25;
 type ServiceFacet = Facets['service'];
 type AppEventsFacet = Facets['appEvents'];
 type AppEventHandler = (event: AppEvent) => void;
-type Outcome = { ok: true; value: unknown } | { ok: false; message: string; cause?: unknown };
+type Outcome =
+  { ok: true; value: unknown } | { ok: false; message: string; key?: string; cause?: unknown };
 
 /** One installed mock: the declaration's validators, its handlers, and its own event bus. */
 interface Installed {
@@ -112,7 +118,7 @@ const generic = (id: string, action: string, why: string, cause?: unknown): Outc
   const where = `[${MICA_ADDON_MOCK_MARKER}] ${id}:${action}`;
   if (cause === undefined) console.error(`${where} ${why}`);
   else console.error(`${where} ${why}:`, cause);
-  return { ok: false, message: GENERIC_FAILURE };
+  return { ok: false, message: GENERIC_FAILURE, key: GENERIC_FAILURE_KEY };
 };
 
 /** Answer one call the way the server would: parse, run, and shape the answer. */
@@ -190,7 +196,9 @@ function mockedService(mock: Installed): ReturnType<ServiceFacet> {
           );
           return defaultValue;
         }
-        throw new Error(outcome.message);
+        throw outcome.key
+          ? new ServiceRefusal(outcome.key, outcome.message)
+          : new Error(outcome.message);
       }
       const value = outcome.value;
       if (hasDefault) {

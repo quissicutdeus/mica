@@ -93,7 +93,19 @@ export type ToFrame =
       kind: 'reply';
       id: number;
       ok: false;
-      error: { name: string; message: string; permission?: string; hookName?: string };
+      /**
+       * Name and message, and nothing else of the shell's error — never a stack. `permission`
+       * and `hookName` ride only on an `AppPermissionError`; `key` only on a `ServiceRefusal`
+       * (MICA-310), the catalog key the server named, so the frame can rebuild one and an
+       * add-on's `isRefusal(error, key)` answers as a core app's does.
+       */
+      error: {
+        name: string;
+        message: string;
+        permission?: string;
+        hookName?: string;
+        key?: string;
+      };
     }
   | { kind: 'push'; id: number; value: unknown }
   | { kind: 'callback'; cb: number; args: unknown[] }

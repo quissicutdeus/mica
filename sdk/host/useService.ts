@@ -111,6 +111,16 @@ interface DeclaredService<D extends AddonServiceDeclaration> {
  * the missing-layer bug that silently does nothing in game, and it is worth keeping for
  * in-tree apps. This is the path for apps the table cannot cover.
  *
+ * ## When the server says no
+ *
+ * A call with no `defaultValue` rejects. A refusal the server keyed — a rate limit, an
+ * unauthenticated caller, an app the owner switched off, the generic failure — rejects with a `ServiceRefusal` whose
+ * `message` is ready to show and whose `key` is the catalog key it named, so ask
+ * `isRefusal(error, 'server.rateLimited')` rather than comparing the message, which is
+ * translated and may be reworded (MICA-310). Your own handler's `addonError(...)` carries no
+ * key and rejects with a plain `Error`. All of this holds in a sandboxed frame too: the key
+ * crosses `postMessage` beside the message, and nothing else of the error does.
+ *
  * ## What you still have to do yourself
  *
  * There is no store here, and that is deliberate rather than unfinished. `createCrudStore`

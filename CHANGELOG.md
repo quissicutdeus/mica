@@ -1334,6 +1334,15 @@ somebody maintaining a `core: false` add-on outside this repo, and it answers
 one question: does that bundle still compile against this release, and does its
 manifest still ask for the right things.
 
+**A server refusal now keeps its key (MICA-310).** When the server refuses
+`useService(...).call(...)` with a catalog key (`server.rateLimited`,
+`server.notAuthenticated`, `server.endpoint.appDisabled`, `server.generic`), the
+promise rejects with a `ServiceRefusal` carrying that `key`. The message is
+translated exactly as before. Test it with `isRefusal(error, key)`, new on
+`@mica/sdk`, rather than comparing the translated message, which differs by
+language. Your own `addonError(...)` refusals are still a plain `Error`.
+Additive only; `SDK_CONTRACT_VERSION` does not move.
+
 **`createCrudStore` and `createPagedStore` take your service declaration
 (MICA-313).** `createCrudStore(notes, { list: 'list', create: 'add' })` and
 `createPagedStore(notes, 'page')` check every action name against your

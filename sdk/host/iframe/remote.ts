@@ -6,6 +6,7 @@ import { readable, type Readable } from 'svelte/store';
 import { clientTransport, type ClientTransport } from './transport';
 import { isFnRef, type FnRef } from './messages';
 import { AppPermissionError } from '../protocol';
+import { ServiceRefusal } from '../../lib/errors';
 import type { AppPermission } from '../../manifest';
 
 // MICA-16 step 4: the three primitives every iframe facet is built from — remoteCall for
@@ -69,6 +70,12 @@ export function remoteCall<T = unknown>(
       const e = msg.error;
       if (e.name === 'AppPermissionError' && e.permission && e.hookName) {
         return reject(new AppPermissionError(facet, e.permission as AppPermission, e.hookName));
+      }
+      // MICA-310: the shell sends `key` only beside a `ServiceRefusal`, so the add-on's
+      // `isRefusal(error, key)` sees the class a core app's would. Rebuilt from the two
+      // strings and nothing else; a reply missing either is an ordinary `Error`.
+      if (e.name === 'ServiceRefusal' && typeof e.key === 'string' && e.key) {
+        return reject(new ServiceRefusal(e.key, e.message));
       }
       const err = new Error(e.message);
       err.name = e.name;

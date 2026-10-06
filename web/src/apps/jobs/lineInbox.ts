@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { get, writable } from 'svelte/store';
-import { t, useAppEvents, useService } from '@mica/sdk';
+import { isRefusal, useAppEvents, useService } from '@mica/sdk';
 import type { ActionInput, ActionOutput, ContractAction } from '@mica/shared/contract';
 import type { jobsContract } from '@mica/shared/contracts/jobs';
 import type { JobLine, JobLineMessage, JobLineThread } from '@mica/shared/types';
@@ -59,19 +59,14 @@ const lineNumber = (): string | null => get(openLine)?.number ?? null;
  *
  * The server answers every inbox action with one refusal — not this line's staff right now, no
  * such line, not this line's thread all read the same (`lineRefused` in
- * `server/services/Jobs.ts`), so a client cannot probe which is which. `call` hands that back
- * as a plain `Error` whose message `fetchNui` has already translated from the reply's key
- * (`server.jobs.lineUnavailable`) and dropped the key itself, so the message is the one thing
- * there is to compare. Against the translation the phone would have produced, and the English
- * the server sends beside it for a catalog that lacks the key. A timeout, a missing server half
- * or the generic "something went wrong" matches neither, and keeps the cached rows.
+ * `server/services/Jobs.ts`), so a client cannot probe which is which. It arrives as a
+ * `ServiceRefusal` carrying the reply's key, so this asks for that key and never reads the
+ * message, which is translated and free to be reworded (MICA-310). A timeout, a missing server
+ * half or the generic "something went wrong" (`server.generic`) is not this refusal, and keeps
+ * the cached rows.
  */
-const LINE_REFUSED_KEY = 'server.jobs.lineUnavailable';
-const LINE_REFUSED_ENGLISH = 'That line is not available to you.';
-export const isLineRefusal = (error: unknown): boolean => {
-  if (!(error instanceof Error)) return false;
-  return error.message === get(t)(LINE_REFUSED_KEY) || error.message === LINE_REFUSED_ENGLISH;
-};
+export const isLineRefusal = (error: unknown): boolean =>
+  isRefusal(error, 'server.jobs.lineUnavailable');
 
 /**
  * The server says this player may not use the line any more — off duty, a job changed. Every

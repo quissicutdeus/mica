@@ -7,6 +7,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/svelte';
 import { get } from 'svelte/store';
 import { renderApp } from '@mica/sdk/testing';
+import { ServiceRefusal } from '@mica/sdk';
 import type { JobLineMessage, JobLineThread, JobView } from '@mica/shared/types';
 
 /**
@@ -385,8 +386,14 @@ const deferred = <T>() => {
   return { promise, resolve, reject };
 };
 
-/** The server's one refusal for every inbox action, as `fetchNui` hands it back. */
-const refused = () => new Error('That line is not available to you.');
+/**
+ * The server's one refusal for every inbox action, as `fetchNui` hands it back: a
+ * `ServiceRefusal` keyed `server.jobs.lineUnavailable` (MICA-310). The message is deliberately
+ * not the catalog's wording, so nothing here passes by matching text — a reworded or
+ * translated catalog is exactly this.
+ */
+const REFUSAL_TEXT = 'Reworded: you cannot use this line.';
+const refused = () => new ServiceRefusal('server.jobs.lineUnavailable', REFUSAL_TEXT);
 
 describe('a refusal (review fix 2)', () => {
   it('clears cached rows and shows the inbox unavailable when a refresh is refused', async () => {
@@ -421,6 +428,29 @@ describe('a refusal (review fix 2)', () => {
     expect(screen.queryByText('Inbox unavailable')).toBeNull();
   });
 
+  it.each([
+    [
+      'the refusal’s exact English with no key',
+      () => new Error('That line is not available to you.')
+    ],
+    ['a different keyed refusal', () => new ServiceRefusal('server.generic', REFUSAL_TEXT)]
+  ])('keeps cached rows for %s (MICA-310)', async (_, failure) => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await openEmergency();
+    expect(await screen.findAllByTestId('line-thread-row')).toHaveLength(2);
+    const reads = calls('lineInbox').length;
+
+    answers.set('lineInbox', () => {
+      throw failure();
+    });
+    lineEvent({ number: '911', conversation_id: 9101 });
+
+    await waitFor(() => expect(calls('lineInbox').length).toBe(reads + 1));
+    await Promise.resolve();
+    expect(screen.getAllByTestId('line-thread-row')).toHaveLength(2);
+    expect(screen.queryByText('Inbox unavailable')).toBeNull();
+  });
+
   it('closes the thread and empties the line when a reply is refused, and toasts why', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const show = vi.spyOn(toast, 'show');
@@ -439,7 +469,7 @@ describe('a refusal (review fix 2)', () => {
     expect(get(thread)).toEqual([]);
     expect(get(inbox)).toEqual([]);
     expect(show).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'error', message: 'That line is not available to you.' })
+      expect.objectContaining({ type: 'error', message: REFUSAL_TEXT })
     );
     show.mockRestore();
   });

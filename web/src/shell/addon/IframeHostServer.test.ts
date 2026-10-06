@@ -10,7 +10,7 @@
  * which side it is standing in for. In-process, because a unit test stands in for the shell.
  */
 import '../../host/registerFacets';
-import type { AppPermission } from '@mica/sdk';
+import { ServiceRefusal, type AppPermission } from '@mica/sdk';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { get, writable } from 'svelte/store';
 import { createInProcessHost } from '../../../../sdk/host/inProcess/createInProcessHost';
@@ -824,6 +824,56 @@ describe('IframeHostServer', () => {
     await Promise.resolve();
     expect((posted[0] as any).ok).toBe(true);
     expect(posted[1]).toMatchObject({ ok: false, error: { name: 'Error' } });
+  });
+
+  /**
+   * MICA-310. A `ServiceRefusal` crosses with its key, so the frame can rebuild one; any
+   * other error crosses as a name and a message, whatever else is hanging off it.
+   */
+  it('posts a refusal’s key and nothing else of any error', async () => {
+    const leaky = Object.assign(new Error('plain'), {
+      key: 'server.jobs.lineUnavailable',
+      cause: new Error('SELECT * FROM phone_secrets'),
+      sql: 'SELECT 1'
+    });
+    const failures: Record<string, Error> = {
+      refused: new ServiceRefusal('server.rateLimited', 'Slow down.'),
+      leaky
+    };
+    registerFacet(
+      'service' as any,
+      ((id: string) => ({
+        id,
+        call: (action: string) => Promise.reject(failures[action])
+      })) as any
+    );
+    const { posted, from } = server([]);
+    for (const [id, action] of [
+      [1, 'refused'],
+      [2, 'leaky']
+    ] as const) {
+      from({
+        kind: 'call',
+        id,
+        facet: 'service',
+        factoryArgs: ['probe'],
+        member: 'call',
+        args: [action]
+      });
+    }
+    for (let i = 0; i < 10 && posted.length < 2; i++) await Promise.resolve();
+
+    const byId = (id: number) =>
+      posted.find((m) => m.kind === 'reply' && m.id === id) as Extract<
+        ToFrame,
+        { kind: 'reply'; ok: false }
+      >;
+    expect(byId(1).error).toEqual({
+      name: 'ServiceRefusal',
+      message: 'Slow down.',
+      key: 'server.rateLimited'
+    });
+    expect(byId(2).error).toEqual({ name: 'Error', message: 'plain' });
   });
 
   /**

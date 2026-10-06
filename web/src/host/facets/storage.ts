@@ -21,6 +21,7 @@ import {
   registerPersistedReset
 } from '../../../../sdk/host/seam/persistedRegistry';
 import { registerSettingsHydrator } from '../../../../sdk/host/seam/settingsHydration';
+import { isRefusal } from '@mica/sdk';
 
 const memoryStore = new Map<string, string>();
 
@@ -37,11 +38,12 @@ function getStorageBackend() {
 
 const namespaceOf = (appId: string) => `mica:${appId}:`;
 
-/** The literal reply `ServiceEndpoint` sends for an unauthenticated caller (`shared/…` has
- * no exported constant for it — every existing call site, client and server, matches this
- * same string literally). The CEF page hydrates at resource start, before a character is
- * selected, so this is the *expected* first answer, not a failure worth logging. */
-const NOT_AUTHENTICATED = 'Player not authenticated';
+/** The key `ServiceEndpoint` names for an unauthenticated caller. The CEF page hydrates at
+ * resource start, before a character is selected, so this is the *expected* first answer,
+ * not a failure worth logging. Matched by key, never by text (MICA-310): `fetchNui` hands
+ * back the message translated, so comparing it against the English logged a spurious
+ * error on every boot of a phone in any other language. */
+const NOT_AUTHENTICATED = 'server.notAuthenticated';
 
 /** Splits a `mica:<app>:<key>` storage key back into its two parts, or `null` for a key
  * outside this facet's namespace — `mica_first_boot_time` and friends use an underscore
@@ -105,7 +107,7 @@ async function fetchRowsOrNull(context: string): Promise<PhoneSetting[] | null> 
   try {
     return await fetchSettings();
   } catch (error) {
-    const expected = error instanceof Error && error.message === NOT_AUTHENTICATED;
+    const expected = isRefusal(error, NOT_AUTHENTICATED);
     if (!expected) {
       console.error(
         `[settings] ${context} failed; keeping the values already on the phone.`,

@@ -16,3 +16,6 @@ in its own file and gets a line here.
   add-on input
 - [Tooling an add-on runs](tooling-an-addon-runs.md) — `checks/` is JS (no type
   stripping in node_modules); spread, not extend; stylelint misses `color-mix()`
+- [Errors across the iframe wall](errors-across-the-iframe-wall.md) — encode in
+  `fail`, rebuild in `remoteCall`, mirror in devMock; `crossWall` is the e2e
+  test
