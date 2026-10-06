@@ -35,3 +35,6 @@ its one-line summary.
 - [Lazy shell import kills boot](lazy-import-chunk-cycle-persisted-facet.md) —
   chunk cycle evaluates state modules before facets register; import statically
   or eager; worktree+symlink trap
+- [A build-flag gate folds](build-flag-gate-and-persist-proof.md) —
+  `DEV || VITE_X` dynamic import emits no chunk; prove it on a scratch outDir;
+  "persists nothing" needs both a storage snapshot and `saveSetting` unspied

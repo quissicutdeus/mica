@@ -19,6 +19,7 @@ import * as sdkIndex from './index';
 import * as sdkAddon from './addon';
 import * as sdkApp from './app';
 import * as sdkCore from './core';
+import * as sdkDev from './dev';
 import { SDK_CONTRACT_VERSION } from './version';
 
 /**
@@ -177,20 +178,27 @@ const ENTRY_POINTS: Record<string, Record<string, unknown>> = {
   '@mica/sdk': sdkIndex,
   '@mica/sdk (add-on bundle)': sdkAddon,
   '@mica/sdk/app': sdkApp,
-  '@mica/sdk/core': sdkCore
+  '@mica/sdk/core': sdkCore,
+  /**
+   * MICA-311: the add-on dev loop's in-frame service mock. Published so the template's dev
+   * entry can reach it, and kept off every barrel so a shipped bundle cannot — the template's
+   * build refuses this subpath outside development.
+   */
+  '@mica/sdk/dev': sdkDev
 };
 
 /**
- * The same four entry points as files on disk, for the arm that asks the compiler rather
+ * The same entry points as files on disk, for the arm that asks the compiler rather
  * than the module loader. Kept beside `ENTRY_POINTS` rather than folded into it because the
  * two are read by different machinery; `asked the typechecker about every entry point`
- * below asserts they name the same four, so one cannot quietly lose an entry the other has.
+ * below asserts they name the same ones, so one cannot quietly lose an entry the other has.
  */
 const ENTRY_FILES: Record<string, string> = {
   '@mica/sdk': 'index.ts',
   '@mica/sdk (add-on bundle)': 'addon.ts',
   '@mica/sdk/app': 'app.ts',
-  '@mica/sdk/core': 'core.ts'
+  '@mica/sdk/core': 'core.ts',
+  '@mica/sdk/dev': 'dev.ts'
 };
 
 /** Barrels that re-export a `.svelte` default, and so decide which components are public. */
@@ -444,7 +452,7 @@ const liveExports = (): Record<string, string[]> =>
  * the published contract to find out.
  *
  * So this arm asks the compiler the question the module loader cannot answer, over the same
- * four entry points, and freezes the answer in `BASELINE_TYPE_EXPORTS`. It is **additional**
+ * entry points, and freezes the answer in `BASELINE_TYPE_EXPORTS`. It is **additional**
  * to the runtime arm rather than a replacement for it — see the header for why neither
  * subsumes the other.
  */
@@ -1241,7 +1249,9 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'useCapabilities',
     'useCaptureZoomBoost',
     'useNuiBridge'
-  ]
+  ],
+  // MICA-311: the in-frame service mock for `pnpm dev` in the add-on template.
+  '@mica/sdk/dev': ['defineAddonMock', 'installAddonMock']
 };
 
 /**
@@ -1256,7 +1266,7 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
  *
  * `@mica/sdk/app` and `@mica/sdk/core` export no types at all today. They are written
  * down as empty rather than omitted, so `has a baseline to compare against` can assert all
- * four entry points are present and a list that goes missing cannot read as "nothing to
+ * entry points are present and a list that goes missing cannot read as "nothing to
  * check here".
  *
  * The single divergence between the two big lists is `CatalogEntry`, which is on `index.ts`
@@ -1449,7 +1459,8 @@ const BASELINE_TYPE_EXPORTS: Record<string, string[]> = {
     'PointerDragOptions'
   ],
   '@mica/sdk/app': [],
-  '@mica/sdk/core': []
+  '@mica/sdk/core': [],
+  '@mica/sdk/dev': ['AddonMockDefinition', 'AddonMockTools']
 };
 
 /**
@@ -2794,7 +2805,8 @@ const packageExports = (): Record<string, unknown> => {
 const SUBPATH_OF_ENTRY: Record<string, string> = {
   '@mica/sdk (add-on bundle)': '.',
   '@mica/sdk/app': './app',
-  '@mica/sdk/core': './core'
+  '@mica/sdk/core': './core',
+  '@mica/sdk/dev': './dev'
 };
 
 /**
@@ -2885,7 +2897,7 @@ describe('the SDK public surface (MICA-125)', () => {
   const typesNow = Object.fromEntries(
     Object.entries(typedNow).map(([id, entry]) => [id, entry.types])
   );
-  // Read off `@mica/sdk` alone, and not off all four entry points merged. See
+  // Read off `@mica/sdk` alone, and not off every entry point merged. See
   // `freezes what every published hook returns` below for why that is the whole scope.
   const hooksNow = typedNow['@mica/sdk'].hooks;
   // MICA-185. Scoped to `@mica/sdk` on the same terms as `hooksNow`; see `reads the shape
@@ -2945,7 +2957,7 @@ describe('the SDK public surface (MICA-125)', () => {
 
     it('classifies value against type the way the module loader does', () => {
       // The load-bearing cross-check, and the reason the runtime arm is kept rather than
-      // replaced. Two independent readings of the same four modules — one by importing
+      // replaced. Two independent readings of the same modules — one by importing
       // them, one by resolving them — must agree exactly on which names survive
       // compilation. If they ever disagree, the classifier is wrong and the type list it
       // produced is not trustworthy, so this fails rather than under-reporting in silence.

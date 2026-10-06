@@ -131,6 +131,16 @@ ARG VITE_MICA_DEFAULT_CONTACTS=
 # would therefore stop both deploys until someone edited EXPECTED_SHA as root.
 # This keeps compose.yaml byte-identical.
 #
+# MICA-311: this is the one web build that switches the dev add-on path on
+# (`?addonDev=<loopback URL>` loads an add-on from the author's own machine), so that
+# someone can try an add-on against the public demo without a checkout. It is set as a
+# prefix on the `pnpm --filter web build` below and nowhere else -- not an ARG, so no
+# `docker build --build-arg` can change it, and not an ENV, so it reaches no other command.
+# The game resource is never built in this image, and `scripts/check-no-dev-addon.js`
+# fails `pnpm build` if the path appears in the output a player's game loads. The opposite
+# direction is asserted by `pnpm demo:smoke`: this image's bundle must contain the path,
+# or the flag silently stopped taking effect.
+#
 # An unstamped build gets no catalog rather than a failed build. A catalog entry
 # needs a version and the phone's own apps do not state one, so the build stamp
 # is the only honest answer -- and `pnpm demo`, or any `docker compose up --build`
@@ -159,6 +169,7 @@ RUN set -eu; \
     export VITE_MICA_DISABLED_APPS VITE_MICA_DEFAULT_DOCK VITE_MICA_DEFAULT_CONTACTS; \
     node scripts/warn-owner-config.js; \
     GITHUB_REF_NAME="$GIT_BRANCH" GITHUB_SHA="$GIT_SHA" MICA_CALVER="$MICA_CALVER" \
+      VITE_MICA_ADDON_DEV=1 \
       pnpm --filter web build; \
     if [ -n "$ADDON_ORIGIN" ] && [ -n "$MICA_CALVER" ]; then \
       MICA_CALVER="$MICA_CALVER" \

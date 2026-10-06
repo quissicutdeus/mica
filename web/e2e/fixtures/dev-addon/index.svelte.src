@@ -1,0 +1,44 @@
+<script lang="ts">
+  import { onDestroy } from 'svelte';
+  import { Screen, useService, useAppEvents, onAppForeground, type AppProps } from '@mica/sdk';
+  import { probe, ROW_ADDED, type Row } from './service';
+
+  let { onback }: AppProps = $props();
+
+  let rows: Row[] = $state([]);
+  let pushed: string[] = $state([]);
+  const server = useService(probe);
+
+  onAppForeground('devprobe', () => {
+    void server.call('list', {}, []).then((list) => (rows = list));
+  });
+
+  onDestroy(
+    useAppEvents('devprobe').on<Row>(ROW_ADDED, (event) => {
+      pushed = [...pushed, event.payload.text];
+    })
+  );
+</script>
+
+<Screen title="Dev Probe" {onback}>
+  <div class="min-h-0 flex-1 overflow-y-auto p-4">
+    <ul data-testid="rows">
+      {#each rows as row (row.id)}
+        <li class="text-body-large text-on-surface">{row.text}</li>
+      {/each}
+    </ul>
+    <button
+      type="button"
+      data-testid="add"
+      class="bg-primary text-on-primary rounded-full px-4 py-2"
+      onclick={() => void server.call('add', { text: 'added by a click' }, null)}
+    >
+      Add a row
+    </button>
+    <ul data-testid="pushed">
+      {#each pushed as text, i (i)}
+        <li class="text-body-medium text-on-surface">pushed: {text}</li>
+      {/each}
+    </ul>
+  </div>
+</Screen>

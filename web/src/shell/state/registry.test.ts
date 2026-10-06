@@ -29,6 +29,7 @@ import { SDK_CONTRACT_VERSION } from '../../../../sdk/version';
 import { capabilities, capabilitiesKnown } from '../../services/capabilities';
 import { ownerConfig, DEFAULT_OWNER_CONFIG } from './ownerConfig';
 import type { CatalogEntry } from '../../../../sdk/catalog';
+import { MICA_ADDON_MOCK_MARKER } from '@mica/shared/addonDev';
 
 const fetchResponse = (text: string, ok = true, status = 200): Response =>
   ({ ok, status, statusText: '', text: () => Promise.resolve(text) }) as Response;
@@ -712,6 +713,16 @@ describe('installFromCatalog', () => {
     } finally {
       ownerConfig.set({ ...DEFAULT_OWNER_CONFIG, disabledApps: [], defaultDock: [] });
     }
+  });
+
+  it('refuses a development build — one carrying the dev service mock — even with a matching hash (MICA-311)', async () => {
+    const devBuild = `${bundleCode}\nconst marker = '${MICA_ADDON_MOCK_MARKER}';`;
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(fetchResponse(devBuild));
+
+    await expect(
+      appRegistryStore.installFromCatalog({ ...catalogEntry, sha256: await sha256Hex(devBuild) })
+    ).rejects.toThrow('a development build cannot be installed');
+    expect(get(appRegistryStore).some((a) => a.id === 'remote_catalog_app')).toBe(false);
   });
 });
 

@@ -134,6 +134,66 @@ const checkCssRefs = async (label, htmlRefs) => {
   ok(`${label} css refs resolve (${cssRefs} checked)`);
 };
 
+/**
+ * Kept in step with `MICA_DEV_ADDON_MARKER` in `shared/addonDev.ts` and with the marker in
+ * `scripts/check-no-dev-addon.js`, which polices the other direction.
+ */
+const DEV_ADDON_MARKER = 'mica-dev-addon';
+
+/**
+ * Crawl the demo's scripts for `DEV_ADDON_MARKER`, and fail -- loudly -- if it is not found
+ * or if there was nothing to crawl.
+ *
+ * The dev path is imported behind a build flag, so it lands in a chunk of its own that the
+ * HTML never names: only the entry's string literals do (`import("./x.js")`, the preload
+ * dependency list). Scanning just the entry would report a bundle that has the path as one
+ * that lacks it. So this follows every `.js` literal it finds, trying it both relative to
+ * the script that named it and to the document, since Vite's preload list is written
+ * relative to the base rather than to the chunk. A miss on the server is a 404 (asserted
+ * below), never the HTML fallback, so a wrong guess costs a request and proves nothing.
+ */
+const checkDevAddonPresent = async (entryPaths) => {
+  const label = `demo bundle contains "${DEV_ADDON_MARKER}"`;
+  if (entryPaths.length === 0) {
+    bad(label, 'the demo page references no scripts, so there was nothing to search');
+    return;
+  }
+  const seen = new Set();
+  const queue = [...entryPaths];
+  let hit;
+  while (queue.length > 0 && !hit && seen.size < 1000) {
+    const path = queue.shift();
+    if (seen.has(path)) continue;
+    seen.add(path);
+    const res = await get(path, { 'Accept-Encoding': 'identity' });
+    if (res.status !== 200 || !String(res.headers['content-type']).includes('javascript')) {
+      seen.delete(path);
+      continue;
+    }
+    const code = res.body.toString('utf8');
+    if (code.includes(DEV_ADDON_MARKER)) {
+      hit = path;
+      break;
+    }
+    const dir = path.slice(0, path.lastIndexOf('/') + 1);
+    for (const m of code.matchAll(/["'`(]((?:\.{1,2}\/)?[\w@.\-/]+\.js)["'`)]/g)) {
+      const literal = m[1];
+      for (const base of [dir, '/demo/']) {
+        const resolved = new URL(literal, `http://x${base}`).pathname;
+        if (resolved.startsWith('/demo/') && !seen.has(resolved)) queue.push(resolved);
+      }
+    }
+  }
+  if (hit) ok(`${label} (in ${hit})`);
+  else
+    bad(
+      label,
+      `searched ${seen.size} script(s) and found none carrying it. The demo image is built ` +
+        'with VITE_MICA_ADDON_DEV=1 (Dockerfile); either that stopped taking effect or the ' +
+        'dev path is no longer emitted for it'
+    );
+};
+
 const main = async () => {
   // --- the landing page, at / ---
   // Hand-written HTML/CSS with no build step (docker/landing/), so there is no JS bundle
@@ -169,6 +229,13 @@ const main = async () => {
     const fr = await get(resolveRef(dir, font[1]));
     eq('woff2 content-type', 'font/woff2', fr.headers['content-type']);
   }
+
+  // --- the dev add-on path is in this bundle (MICA-311) ---
+  // The opposite of `scripts/check-no-dev-addon.js`, which fails the game build if the path
+  // is there. The demo is the one web build that turns it on (`VITE_MICA_ADDON_DEV=1` in the
+  // Dockerfile), so a bundle without it means the flag stopped taking effect and nobody can
+  // try an add-on against the demo -- with every other check here green.
+  await checkDevAddonPresent(demoRefs.filter((r) => r.endsWith('.js')));
 
   // --- the public add-on catalog, which every stock server's Store fetches ---
   const catalogPath = `/addons/sdk-${SDK_CONTRACT}/catalog.json`;

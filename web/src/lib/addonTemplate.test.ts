@@ -2,11 +2,21 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
+import { execFile } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { checkAddonService } from '@mica/shared/addonService';
+import {
+  ADDON_DEV_ENTRY,
+  MICA_ADDON_MOCK_MARKER,
+  parseLoopbackBase,
+  sameOriginAs
+} from '@mica/shared/addonDev';
+import { isCatalogEntry } from '../../../sdk/catalog';
 import { NOTE_ADDED, notes } from '../../../tools/addon-template/src/service';
 
 /**
@@ -54,6 +64,9 @@ const TEMPLATE_DIR = path.join(ROOT, 'tools/addon-template');
 const TEMPLATE_CONFIG = path.join(TEMPLATE_DIR, 'vite.config.ts');
 
 const read = (file: string): string => fs.readFileSync(file, 'utf8');
+
+/** A pattern matching `text` exactly, for a decision both files spell the same way. */
+const literal = (text: string): RegExp => new RegExp(text.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&'));
 
 /**
  * Every decision that changes what a bundle *is* rather than how it was produced.
@@ -113,7 +126,23 @@ const SHARED_DECISIONS: [name: string, pattern: RegExp][] = [
    * shares). Either spelling here means the text was cleaned before a property was read;
    * neither means it was not.
    */
-  ['a manifest property is read from comment-stripped text', /withoutComments|addon-ids\.js/]
+  ['a manifest property is read from comment-stripped text', /withoutComments|addon-ids\.js/],
+  /**
+   * MICA-311. The in-frame service mock never ships. The template allows it in development
+   * mode only and the phone's build never, but both refuse it the same three ways: the
+   * specifier, the files behind it however reached, and the mock's runtime marker in the
+   * finished chunk — the last being the only one that catches a mock pasted into source.
+   */
+  ['@mica/sdk/dev is refused by a build plugin', literal("name: 'mica-refuse-dev-entry'")],
+  ['the @mica/sdk/dev specifier is refused', literal(String.raw`/^@mica\/sdk\/dev(\/.*)?$/`)],
+  [
+    'the files behind @mica/sdk/dev are refused however reached',
+    literal(String.raw`/\/sdk\/(dev\.ts|host\/iframe\/devMock\.ts)$/`)
+  ],
+  [
+    "the mock's runtime marker is refused in the finished chunk",
+    literal(`const MOCK_MARKER = '${MICA_ADDON_MOCK_MARKER}';`)
+  ]
 ];
 
 describe('the out-of-tree add-on template', () => {
@@ -133,6 +162,9 @@ describe('the out-of-tree add-on template', () => {
       'src/Icon.svelte',
       // MICA-308: the example server half.
       'src/service.ts',
+      // MICA-311: its in-frame mock, and the dev loop that serves it.
+      'src/mock.ts',
+      'scripts/dev.mjs',
       'my_addon_server/fxmanifest.lua',
       'my_addon_server/server.lua',
       'my_addon_server/service.json'
@@ -292,6 +324,229 @@ describe('the out-of-tree add-on template', () => {
       expect(read(path.join(TEMPLATE_DIR, 'src/manifest.ts'))).toMatch(
         /permissions:\s*\[[^\]]*'app-events'/
       );
+    });
+  });
+
+  /**
+   * MICA-311. `pnpm dev`: a watch build in development mode, served on loopback, opened by the
+   * demo phone through `?addonDev=`. Read as text: the script starts servers, and what it must
+   * get right is a handful of literals the phone and the README both depend on.
+   */
+  describe('the dev loop', () => {
+    const script = read(path.join(TEMPLATE_DIR, 'scripts/dev.mjs'));
+
+    it('is what `pnpm dev` runs', () => {
+      const pkg = JSON.parse(read(path.join(TEMPLATE_DIR, 'package.json'))) as {
+        scripts: Record<string, string>;
+      };
+      expect(pkg.scripts.dev).toBe('node scripts/dev.mjs');
+    });
+
+    it('serves on a loopback base the phone accepts, on a port that fails loudly when taken', () => {
+      const host = /const HOST = '([^']+)';/.exec(script)?.[1];
+      const port = /const PORT = (\d+);/.exec(script)?.[1];
+      expect([host, port]).toEqual(['127.0.0.1', '5174']);
+      expect(parseLoopbackBase(`http://${host}:${port}/`)).toMatchObject({ ok: true });
+      expect(script).toMatch(/strictPort:\s*true/);
+      expect(script).toMatch(/mode:\s*'development'/);
+    });
+
+    it('lets the public demo reach it, Private Network Access included', () => {
+      expect(script).toContain("'https://mica.gg'");
+      expect(script).toContain("'Access-Control-Allow-Private-Network', 'true'");
+      expect(script).toContain("const DEMO = 'https://mica.gg/demo/';");
+      expect(script).toContain('?addonDev=${BASE}');
+    });
+
+    it('imports nothing an author would have to install', () => {
+      const specifiers = [...script.matchAll(/from '([^']+)'/g)].map((m) => m[1]);
+      expect(specifiers.sort()).toEqual(['node:path', 'vite']);
+    });
+  });
+
+  /**
+   * MICA-311. The template, built for real in both modes, against this checkout.
+   *
+   * Offline: the template is copied out and its `node_modules` is links — `@mica/sdk` and
+   * `@mica/shared` to this tree, the toolchain to `web/`'s copies — so the build reads exactly
+   * the SDK this commit holds and fetches nothing. Each build is a child Node running Vite's own
+   * CLI, as an author's `pnpm build` would, rather than Vite inside this Vitest process.
+   *
+   * What it proves that nothing else does: a production bundle carries no trace of the mock,
+   * a development bundle does, `mica-dev.json` is an entry the phone keeps for the bytes beside
+   * it, and each route by which a production build could pull the mock in is refused.
+   */
+  describe('built offline, in production and in development', () => {
+    const VITE_BIN = path.join(ROOT, 'web/node_modules/vite/bin/vite.js');
+    const TOOLCHAIN = [
+      'vite',
+      'svelte',
+      'postcss',
+      'postcss-preset-env',
+      'autoprefixer',
+      '@sveltejs/vite-plugin-svelte',
+      '@tsconfig/svelte'
+    ];
+    const made: string[] = [];
+
+    const copyTemplate = (extra: Record<string, string> = {}): string => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mica-addon-template-'));
+      made.push(dir);
+      fs.cpSync(TEMPLATE_DIR, dir, {
+        recursive: true,
+        filter: (src) =>
+          !/^(node_modules|dist|dist-dev)(\/|\\|$)/.test(path.relative(TEMPLATE_DIR, src))
+      });
+      const link = (name: string, target: string) => {
+        const at = path.join(dir, 'node_modules', name);
+        fs.mkdirSync(path.dirname(at), { recursive: true });
+        fs.symlinkSync(target, at, 'dir');
+      };
+      link('@mica/sdk', path.join(ROOT, 'sdk'));
+      link('@mica/shared', path.join(ROOT, 'shared'));
+      for (const name of TOOLCHAIN) {
+        link(name, fs.realpathSync(path.join(ROOT, 'web/node_modules', name)));
+      }
+      for (const [file, text] of Object.entries(extra)) {
+        fs.mkdirSync(path.dirname(path.join(dir, file)), { recursive: true });
+        fs.writeFileSync(path.join(dir, file), text);
+      }
+      return dir;
+    };
+
+    /** A Vite build as its own process, without this runner's `NODE_ENV=test`. */
+    const viteBuild = (dir: string, mode: 'production' | 'development', args: string[] = []) =>
+      new Promise<{ code: number; output: string }>((resolve) => {
+        const env = Object.fromEntries(
+          Object.entries(process.env).filter(([k]) => k !== 'NODE_ENV' && !k.startsWith('VITEST'))
+        );
+        execFile(
+          process.execPath,
+          [VITE_BIN, 'build', '--mode', mode, ...args],
+          { cwd: dir, env, timeout: 120_000, maxBuffer: 16 * 1024 * 1024 },
+          (error, stdout, stderr) => {
+            const code = error ? (typeof error.code === 'number' ? error.code : 1) : 0;
+            resolve({ code, output: `${stdout}\n${stderr}` });
+          }
+        );
+      });
+
+    /** A source file of the author's that pulls something in, wired from the component. */
+    const sneaking = (body: string) => {
+      const component = read(path.join(TEMPLATE_DIR, 'src/index.svelte'));
+      return {
+        'src/sneak.ts': body,
+        'src/index.svelte': component.replace(
+          '<script lang="ts">',
+          `<script lang="ts">\n  import './sneak';`
+        )
+      };
+    };
+
+    const builds: Record<string, { dir: string; code: number; output: string }> = {};
+
+    beforeAll(async () => {
+      const cases: [string, Record<string, string>, 'production' | 'development', string[]?][] = [
+        ['production', {}, 'production'],
+        ['development', {}, 'development'],
+        // A dev session's leftovers in `dist/`, as an older template wrote them there.
+        [
+          'stale',
+          {
+            [`dist/${notes.id}.js`]: `console.log('${MICA_ADDON_MOCK_MARKER}');\n`,
+            [`dist/${ADDON_DEV_ENTRY}`]: '{}\n'
+          },
+          'production'
+        ],
+        // Pointed back at `dist/` by hand: the dev output still goes to `dist-dev/`.
+        ['dev into dist', {}, 'development', ['--outDir', 'dist']],
+        [
+          'specifier',
+          sneaking(
+            `import { installAddonMock } from '@mica/sdk/dev';\nconsole.log(installAddonMock);\n`
+          ),
+          'production'
+        ],
+        [
+          'deep path',
+          sneaking(
+            `import { installAddonMock } from '../node_modules/@mica/sdk/host/iframe/devMock';\n` +
+              `console.log(installAddonMock);\n`
+          ),
+          'production'
+        ],
+        ['marker', sneaking(`console.log('${MICA_ADDON_MOCK_MARKER}');\n`), 'production']
+      ];
+      await Promise.all(
+        cases.map(async ([name, extra, mode, args]) => {
+          const dir = copyTemplate(extra);
+          builds[name] = { dir, ...(await viteBuild(dir, mode, args)) };
+        })
+      );
+    }, 180_000);
+
+    afterAll(() => {
+      for (const dir of made) fs.rmSync(dir, { recursive: true, force: true });
+    });
+
+    const bundleOf = (name: string, folder: 'dist' | 'dist-dev' = 'dist'): string =>
+      read(path.join(builds[name].dir, folder, `${notes.id}.js`));
+    const devEntryOf = (name: string): string =>
+      path.join(builds[name].dir, 'dist-dev', ADDON_DEV_ENTRY);
+
+    it('builds for production with no trace of the mock and no dev catalog entry', () => {
+      expect(builds.production.code, builds.production.output).toBe(0);
+      expect(bundleOf('production').length).toBeGreaterThan(10_000);
+      expect(bundleOf('production')).not.toContain(MICA_ADDON_MOCK_MARKER);
+      expect(fs.existsSync(path.join(builds.production.dir, 'dist', ADDON_DEV_ENTRY))).toBe(false);
+    });
+
+    it('builds for development into dist-dev/, with the mock in the bundle', () => {
+      expect(builds.development.code, builds.development.output).toBe(0);
+      expect(bundleOf('development', 'dist-dev')).toContain(MICA_ADDON_MOCK_MARKER);
+      expect(fs.existsSync(devEntryOf('development'))).toBe(true);
+    });
+
+    it.each(['development', 'dev into dist'])(
+      'never writes development output into dist/, the folder an author publishes (%s)',
+      (name) => {
+        expect(builds[name].code, builds[name].output).toBe(0);
+        expect(fs.existsSync(path.join(builds[name].dir, 'dist'))).toBe(false);
+        expect(bundleOf(name, 'dist-dev')).toContain(MICA_ADDON_MOCK_MARKER);
+      }
+    );
+
+    it("clears a dev session's leftovers out of dist/ in a production build", () => {
+      expect(builds.stale.code, builds.stale.output).toBe(0);
+      expect(fs.existsSync(path.join(builds.stale.dir, 'dist', ADDON_DEV_ENTRY))).toBe(false);
+      expect(bundleOf('stale')).not.toContain(MICA_ADDON_MOCK_MARKER);
+      expect(bundleOf('stale').length).toBeGreaterThan(10_000);
+    });
+
+    it('writes a dev catalog entry the phone keeps, for the exact bytes beside it', () => {
+      const raw: unknown = JSON.parse(read(devEntryOf('development')));
+      expect(isCatalogEntry(raw), JSON.stringify(raw)).toBe(true);
+      const entry = raw as { id: string; sha256: string; bundleUrl: string; permissions: string[] };
+      expect(entry.id).toBe(notes.id);
+      expect(entry.permissions).toEqual(['app-events']);
+      const bytes = fs.readFileSync(
+        path.join(builds.development.dir, 'dist-dev', `${notes.id}.js`)
+      );
+      expect(entry.sha256).toBe(createHash('sha256').update(bytes).digest('hex'));
+      // Relative, so it resolves against whichever loopback address served the entry.
+      const base = parseLoopbackBase('http://127.0.0.1:5174/');
+      if (!base.ok) throw new Error(base.reason);
+      expect(entry.bundleUrl).toMatch(new RegExp(`^${notes.id}\\.js\\?v=[0-9a-f]{16}$`));
+      expect(sameOriginAs(base.base, entry.bundleUrl)).toBe(true);
+    });
+
+    it.each([
+      ['the @mica/sdk/dev specifier', 'specifier', /'@mica\/sdk\/dev' is imported/],
+      ['a deep relative path to the mock', 'deep path', /devMock\.ts is in the module graph/],
+      ['the mock marker pasted into source', 'marker', /carries the mock's marker/]
+    ])('refuses a production build that reaches %s', (_label, name, reason) => {
+      expect(builds[name].code, builds[name].output).not.toBe(0);
+      expect(builds[name].output).toMatch(reason);
     });
   });
 });

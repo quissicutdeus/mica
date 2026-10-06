@@ -14,6 +14,16 @@ declare module '*.svelte' {
   export default component;
 }
 
+interface ImportMetaEnv {
+  /**
+   * `'1'` builds the dev add-on loader into a non-DEV build (MICA-311) — the public demo
+   * image sets it. Unset in every game build, where `scripts/check-no-dev-addon.js` proves
+   * the loader's chunk was not emitted. Replaced at build time, so a comparison against it
+   * folds away.
+   */
+  readonly VITE_MICA_ADDON_DEV?: string;
+}
+
 declare const __MICA_VERSION__: string;
 declare const __MICA_BUILD_INFO__: string;
 declare const __MICA_BRANCH__: string;

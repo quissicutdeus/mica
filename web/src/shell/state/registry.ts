@@ -12,6 +12,7 @@ import { DEFAULT_DEVICE, type DeviceId } from '@mica/shared/devices';
 import {
   type AppComponent,
   type AppManifest,
+  type AppManifestInput,
   type AppPermission,
   defineApp
 } from '../../../../sdk/manifest';
@@ -28,6 +29,7 @@ import {
 } from '../../../../sdk/remoteAppSecurity';
 import { isCatalogEntry, type CatalogEntry } from '../../../../sdk/catalog';
 import { SDK_CONTRACT_VERSION } from '../../../../sdk/version';
+import { MICA_ADDON_MOCK_MARKER } from '@mica/shared/addonDev';
 import { toast } from './toast';
 import { disabledAppIds } from './ownerConfig';
 
@@ -490,6 +492,15 @@ function removeSavedRemoteApp(url: string) {
 const addOnIds = new Set(addOns.map((a) => a.id));
 
 /**
+ * Dev add-ons loaded from loopback this session (MICA-311), keyed by id, holding the grant
+ * each runs under: its own entry's `permissions`, standing in for the consent sheet the dev
+ * path waives. A `Map` in this module and nowhere else — never `recordConsent`, never
+ * `saveRemoteApp`, never `installedAddOnIds` — so a page loaded without `?addonDev=` has no
+ * trace of one to rehydrate.
+ */
+const devAddOnGrants = new Map<string, readonly AppPermission[]>();
+
+/**
  * What an add-on may actually exercise: the player's recorded grant, or — for an add-on
  * this repository ships — the build's own vouching (MICA-201).
  *
@@ -512,6 +523,11 @@ const addOnIds = new Set(addOns.map((a) => a.id));
  * and keeps the strict rule: no recorded grant, no permissioned call.
  */
 export function grantFor(appId: string): readonly AppPermission[] {
+  // MICA-311: a dev add-on's grant is its own entry's `permissions`, in memory only. Asked
+  // first so no recorded grant under the same id — there should be none, since an installed
+  // id is refused — can stand in for it.
+  const dev = devAddOnGrants.get(appId);
+  if (dev) return dev;
   const recorded = grantedPermissions(appId);
   if (recorded) return recorded;
   const bundled = addOns.find((a) => a.id === appId);
@@ -659,6 +675,71 @@ function assertCapabilitiesAvailable(manifest: AppManifest): void {
   );
 }
 
+/**
+ * The manifest a catalog entry stands for — built from `entry` and nothing else, never from
+ * anything the fetched bundle claims to be. Shared by `installVerified` and the dev add-on
+ * loader (MICA-311), so the two cannot disagree on what an entry means.
+ *
+ * `core: false` for both, and not a default a field could override: nothing reached through
+ * a catalog entry runs in-process. `'dev'` differs only in being neither `isRemote` nor
+ * carrying a `bundleUrl`: it is not a catalog install, so `appUpdates.ts` must not offer it
+ * an update, and `unregisterApp` must not go looking for a saved row under its URL.
+ */
+export function manifestFromEntry(
+  entry: CatalogEntry,
+  origin: 'catalog' | 'dev'
+): AppManifestInput {
+  return {
+    id: entry.id,
+    name: entry.name,
+    version: entry.version,
+    description: entry.description,
+    color: entry.color,
+    icon: entry.icon ?? null,
+    permissions: entry.permissions,
+    // The manifest is built from `entry` and nothing else, so a capability the catalog
+    // does not carry is one the installed app can never declare — it would install
+    // ungated on a server that cannot run it. `isCatalogEntry` has already refused any
+    // row naming a capability `ALL_CAPABILITIES` does not know.
+    ...(entry.requires ? { requires: entry.requires } : {}),
+    // MICA-260, and conditional for the reason `requires` is: absent means the phone.
+    ...(entry.devices ? { devices: entry.devices } : {}),
+    // Conditional for the reason `requires` is: absent and `[]` are different claims
+    // here. `[]` says "owns no service", which stops the app calling its own; absent
+    // says "did not state one", which is what a catalog written before MICA-196 means
+    // and what the prefix rule still answers for.
+    ...(entry.services ? { services: entry.services } : {}),
+    // Same conditional, same reason: absent is "did not say", which every catalog
+    // written before MICA-196 says and which `assertContractSupported` never refuses.
+    ...(entry.sdkContract ? { sdkContract: entry.sdkContract } : {}),
+    requiresNetwork: entry.requiresNetwork ?? false,
+    networkHosts: entry.networkHosts ?? [],
+    ...(origin === 'catalog' ? { isRemote: true, bundleUrl: entry.bundleUrl } : {}),
+    core: false
+  };
+}
+
+/**
+ * Whether this build carries the dev add-on path at all (MICA-311). Both halves are
+ * replaced at build time, so in a game build this is the literal `false` and every branch
+ * behind it folds away — the same condition `Shell.svelte` gates the loader's import on.
+ */
+const DEV_ADDONS_ALLOWED = import.meta.env.DEV || import.meta.env.VITE_MICA_ADDON_DEV === '1';
+
+/**
+ * MICA-311: a catalog install or a boot rehydration never lands on an id that is running as
+ * a dev add-on this session — it would swap the published bundle in under the dev grant and
+ * the dev strip. Rehydration catches and logs this like any other refusal, so the saved row
+ * stays and installs normally on the next load without `?addonDev=`.
+ */
+function assertNotDevAddOn(appId: string): void {
+  if (!devAddOnGrants.has(appId)) return;
+  throw new Error(
+    `'${appId}' is loaded as a dev add-on this session. Reload without ?addonDev= to ` +
+      'install or run the published copy.'
+  );
+}
+
 // Reactive App Registry Store for Dynamic Community App Installation
 function createAppRegistry() {
   const installed = writable<AppManifest[]>(loadedApps);
@@ -754,7 +835,10 @@ function createAppRegistry() {
      * or deliberately removed — must not move it, and `placeOnHomeGridIfAbsent` is
      * itself the guard against placing an app that already has a cell.
      */
-    if (!validatedManifest.core && isNewRegistration) {
+    // Never for a dev add-on (MICA-311): the home grid is persisted, and a cell written for
+    // an app that exists only while `?addonDev=` is in the URL would outlive it. The loader
+    // opens the app itself, and the drawer and search still find it.
+    if (!validatedManifest.core && isNewRegistration && !devAddOnGrants.has(validatedManifest.id)) {
       placeOnHomeGridIfAbsent(validatedManifest.id);
     }
   }
@@ -817,6 +901,13 @@ function createAppRegistry() {
       record(validatedManifest);
     },
     unregisterApp: (appId: string) => {
+      // A dev add-on has none of the persisted state below — no saved row, no install list,
+      // no recorded consent — and its own storage outlives a reload on purpose, so the
+      // Store's Uninstall on one takes the in-memory path rather than writing any of it.
+      if (devAddOnGrants.has(appId)) {
+        store.unregisterDevAddOn(appId);
+        return;
+      }
       let currentApps: AppManifest[] = [];
       subscribe((apps) => (currentApps = apps))();
       const targetApp = currentApps.find((a) => a.id === appId);
@@ -858,6 +949,71 @@ function createAppRegistry() {
       revokeConsent(appId);
       update((apps) => apps.filter((a) => a.id !== appId));
     },
+    /**
+     * Register a dev add-on loaded from loopback (MICA-311) — `shell/addon/devAddOn.ts` is
+     * the only caller, and only in a build that carries the dev path at all.
+     *
+     * The real add-on path with exactly two things waived: the sha256 compare (the bundle is
+     * rebuilt on every save) and the consent sheet (the grant is the entry's own
+     * `permissions`, held in `devAddOnGrants` and nowhere persisted). Everything else is
+     * `registerAddOn`'s, unchanged: `defineApp`, the owner's disabled list,
+     * `assertContractSupported`, `assertCapabilitiesAvailable`, `assertServicesUnclaimed`.
+     * The frame it runs in is the ordinary `AddOnFrame` — `srcdoc`, the sandbox, the CSP and
+     * `networkHosts`, `requireGranted`, `serviceAllowed`, the `null`-origin check and the
+     * second-load teardown all apply as they do to any install.
+     *
+     * Refuses an id this phone already has — installed, bundled, or core — so a dev add-on
+     * can never shadow a real one or inherit its storage, grant or home-grid cell. Re-
+     * registering the same dev id is the caller's to do, by unregistering it first.
+     */
+    registerDevAddOn: (entry: CatalogEntry, source: string): AppManifest => {
+      if (!DEV_ADDONS_ALLOWED) {
+        throw new Error('micaOS App Registry error: this build does not load dev add-ons.');
+      }
+      const id = entry.id;
+      if (
+        devAddOnGrants.has(id) ||
+        CORE_APP_IDS.has(id) ||
+        addOnIds.has(id) ||
+        get(installed).some((a) => a.id === id) ||
+        // A catalog install saved under this id may not have rehydrated yet — rehydration
+        // waits for the operator's host allowlist — and once it does it would register the
+        // published bundle under the dev grant and the dev strip.
+        getSavedRemoteApps().some((saved) => saved.entry.id === id)
+      ) {
+        throw new Error(
+          `'${id}' is already an app on this phone. A dev add-on takes an id nothing ` +
+            `else here uses.`
+        );
+      }
+      const manifest = defineApp(manifestFromEntry(entry, 'dev'));
+      devAddOnGrants.set(manifest.id, [...(manifest.permissions ?? [])]);
+      try {
+        store.registerAddOn(manifest, source);
+      } catch (err) {
+        // Nothing half-registers: `registerAddOn` throws before `record`, so the grant is
+        // the only thing written so far.
+        devAddOnGrants.delete(manifest.id);
+        addOnSources.delete(manifest.id);
+        throw err;
+      }
+      return manifest;
+    },
+    /**
+     * Withdraw a dev add-on: the manifest, its source text and its in-memory grant. Writes
+     * nothing persisted, and leaves the app's own storage namespace alone, so an author's
+     * test data survives a Reload. A no-op for an id that is not a dev add-on. Closing a
+     * running instance is the caller's — this module cannot import navigation.
+     */
+    unregisterDevAddOn: (appId: string): void => {
+      if (!devAddOnGrants.has(appId)) return;
+      devAddOnGrants.delete(appId);
+      addOnSources.delete(appId);
+      sourceLoads.delete(appId);
+      update((apps) => apps.filter((a) => a.id !== appId));
+    },
+    /** Whether `appId` is a dev add-on loaded from loopback this session. */
+    isDevAddOn: (appId: string): boolean => devAddOnGrants.has(appId),
     /** The root for a device: `tablet.svelte` when asked for and shipped, else `index.svelte`. */
     getComponent: (appId: string, device: DeviceId = DEFAULT_DEVICE): AppComponent | undefined =>
       resolveComponent(appId, device),
@@ -958,6 +1114,7 @@ function createAppRegistry() {
         `'${entry.id}' has been disabled by this server's owner and cannot be installed.`
       );
     }
+    assertNotDevAddOn(entry.id);
     // `isTrustedRemoteUrl` exempts `data:` URLs — safe for its other callers, which only
     // ever build one internally from bytes already hash-verified, never from anything an
     // operator's catalog (or a saved/rehydrated row derived from one) supplied. A catalog
@@ -991,36 +1148,20 @@ function createAppRegistry() {
           'Refusing to run it.'
       );
     }
+    // MICA-311: a bundle carrying `@mica/sdk/dev`'s in-frame service mock is a development
+    // build. Its hash can match perfectly — the author published the wrong file — and it
+    // would then answer its own service calls from fixtures in front of real players.
+    if (code.includes(MICA_ADDON_MOCK_MARKER)) {
+      throw new Error(
+        `micaOS App Loader error: '${entry.bundleUrl}' is a development build of ` +
+          `${entry.name} (it carries the dev service mock), and a development build cannot ` +
+          'be installed.'
+      );
+    }
+    // Again after the fetch: a dev add-on can be loaded under this id while it was in flight.
+    assertNotDevAddOn(entry.id);
 
-    const validatedManifest = defineApp({
-      id: entry.id,
-      name: entry.name,
-      version: entry.version,
-      description: entry.description,
-      color: entry.color,
-      icon: entry.icon ?? null,
-      permissions: entry.permissions,
-      // The manifest is built from `entry` and nothing else, so a capability the catalog
-      // does not carry is one the installed app can never declare — it would install
-      // ungated on a server that cannot run it. `isCatalogEntry` has already refused any
-      // row naming a capability `ALL_CAPABILITIES` does not know.
-      ...(entry.requires ? { requires: entry.requires } : {}),
-      // MICA-260, and conditional for the reason `requires` is: absent means the phone.
-      ...(entry.devices ? { devices: entry.devices } : {}),
-      // Conditional for the reason `requires` is: absent and `[]` are different claims
-      // here. `[]` says "owns no service", which stops the app calling its own; absent
-      // says "did not state one", which is what a catalog written before MICA-196 means
-      // and what the prefix rule still answers for.
-      ...(entry.services ? { services: entry.services } : {}),
-      // Same conditional, same reason: absent is "did not say", which every catalog
-      // written before MICA-196 says and which `assertContractSupported` never refuses.
-      ...(entry.sdkContract ? { sdkContract: entry.sdkContract } : {}),
-      requiresNetwork: entry.requiresNetwork ?? false,
-      networkHosts: entry.networkHosts ?? [],
-      isRemote: true,
-      bundleUrl: entry.bundleUrl,
-      core: false
-    });
+    const validatedManifest = defineApp(manifestFromEntry(entry, 'catalog'));
 
     // MICA-201, the remote half of the migration, and **only** on the rehydrate path.
     // A fresh install must not seed its own grant: that is precisely the hole this ticket

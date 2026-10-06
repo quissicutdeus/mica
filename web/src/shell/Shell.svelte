@@ -15,8 +15,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { refreshCapabilities } from '../services/capabilities';
   import { createNuiMessageRouter } from './nuiMessages';
   import { installDevHarness, seedBrowserPhone } from './devHarness';
-  import { isBrowser } from '@mica/sdk';
-  import { currentApp, runningApps, openApp, goHome, closePhone } from './state/navigation';
+  import { hostRuntime, isBrowser } from '@mica/sdk';
+  import { isCatalogEntry } from '../../../sdk/catalog';
+  import {
+    currentApp,
+    runningApps,
+    openApp,
+    closeApp,
+    goHome,
+    closePhone
+  } from './state/navigation';
   import { dispatchKey, isTypingTarget, registerHandler } from './state/keybinds';
   import { findAction } from '@mica/shared/keybinds';
   import { ALL_DEVICES, DEVICES, isDeviceId, type DeviceId } from '@mica/shared/devices';
@@ -433,6 +441,46 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   });
 
   /**
+   * The dev add-on loader (MICA-311): `?addonDev=<loopback base>`, and only in a build that
+   * allows it. Both halves of the condition are replaced at build time, so a game build has
+   * the literal `false` here and emits no chunk for the import at all —
+   * `scripts/check-no-dev-addon.js` reads the build output to prove it. The module refuses
+   * any runtime but a browser tab as well. `devAddOnModule` stays null without the
+   * parameter's module having loaded, and every use of it below is behind that null.
+   *
+   * The loader is handed the shell's pieces here rather than importing them: a value
+   * import from the dynamic chunk into this graph split the shared modules into their own
+   * chunk, which evaluated before `host/registerFacets` and killed every DEV page load
+   * (`devAddOn.ts`'s `DevAddOnDeps` has the detail).
+   */
+  let devAddOnModule = $state<typeof import('./addon/devAddOn') | null>(null);
+  onMount(() => {
+    if (import.meta.env.DEV || import.meta.env.VITE_MICA_ADDON_DEV === '1') {
+      void import('./addon/devAddOn').then((module) => {
+        devAddOnModule = module;
+        void module.startDevAddOn({
+          registerDevAddOn: appRegistryStore.registerDevAddOn,
+          unregisterDevAddOn: appRegistryStore.unregisterDevAddOn,
+          isCatalogEntry,
+          hostRuntime,
+          openApp,
+          closeApp,
+          showError: (message) =>
+            toast.show({
+              app: 'system',
+              source: 'feedback',
+              type: 'error',
+              title: get(t)('shell.devAddOnFailed'),
+              message,
+              duration: 0,
+              persist: false
+            })
+        });
+      });
+    }
+  });
+
+  /**
    * The keydown body, shared by the real `window` listener and `handleFrameKey` below.
    *
    * `typing` is passed through explicitly rather than re-derived from `event.target`:
@@ -804,16 +852,26 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                        A `core:false` app that *has* a component is a DEV-only runtime
                        registration (see `registry.ts` and `error_boundary.spec.ts`) and
                        stays on the in-process path below. -->
-          <div class="h-full w-full" inert={isNetworkBlocked}>
-            <AddOnFrame
-              appId={instance.id}
-              {manifest}
-              host={hostForApp(instance.id, manifest)}
-              props={instance.props}
-              active={isActive}
-              onKey={handleFrameKey}
-              onTyping={(t: boolean) => reportTyping(t)}
-            />
+          <!-- `DevStrip` exists only once the dev add-on loader has been imported, and draws
+                       nothing for any app but the dev add-on (MICA-311). In the shell's own
+                       document, above the frame rather than over it, so the add-on can
+                       neither cover nor restyle it. -->
+          {@const DevStrip = devAddOnModule?.DevAddOnStrip}
+          <div class="flex h-full w-full flex-col">
+            {#if DevStrip}
+              <DevStrip appId={instance.id} t={$t} />
+            {/if}
+            <div class="min-h-0 w-full flex-1" inert={isNetworkBlocked}>
+              <AddOnFrame
+                appId={instance.id}
+                {manifest}
+                host={hostForApp(instance.id, manifest)}
+                props={instance.props}
+                active={isActive}
+                onKey={handleFrameKey}
+                onTyping={(t: boolean) => reportTyping(t)}
+              />
+            </div>
           </div>
           {#if isNetworkBlocked}
             <div class="absolute inset-0 z-30">

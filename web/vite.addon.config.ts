@@ -104,6 +104,63 @@ function refuseCoreEntry(): Plugin {
   };
 }
 
+// MICA-311: the dev entry point and any subpath, for the same reason as `CORE_ENTRY_RE`.
+const DEV_ENTRY_RE = /^@mica\/sdk\/dev(\/.*)?$/;
+/** The files behind it, however a specifier reached them — a relative path included. */
+const DEV_FILE_RE = /\/sdk\/(dev\.ts|host\/iframe\/devMock\.ts)$/;
+/** `MICA_ADDON_MOCK_MARKER` in `@mica/shared/addonDev`, which `addonTemplate.test.ts` pins. */
+const MOCK_MARKER = 'mica-addon-mock';
+
+/**
+ * MICA-311. `@mica/sdk/dev` never enters a bundle built here.
+ *
+ * It is the in-frame mock of an add-on's server half, for the out-of-tree template's
+ * `pnpm dev`: it answers the add-on's own service id as a fake citizen. A bundle carrying it
+ * would answer itself in game — every write lost, every read invented. The template refuses it
+ * outside development mode; this build has no development mode for an add-on (the in-tree
+ * ones run against the phone's own mock transport), so it refuses it always, the same three
+ * ways: the specifier, the files behind it however reached, and the mock's runtime marker in
+ * the finished chunk. `web/src/lib/addonTemplate.test.ts` holds the two configs to it.
+ */
+function refuseDevEntry(): Plugin {
+  const refuse = (what: string): string =>
+    `[micaOS] ${what}. @mica/sdk/dev is the add-on template's in-frame service mock for ` +
+    `\`pnpm dev\`; an add-on bundle that carried it would answer its own service in game.`;
+  return {
+    name: 'mica-refuse-dev-entry',
+    resolveId: {
+      order: 'pre',
+      handler(id) {
+        if (!DEV_ENTRY_RE.test(id)) return null;
+        this.error(refuse(`'${id}' is imported`));
+      }
+    },
+    transform: {
+      order: 'pre',
+      handler(_code, id) {
+        if (!DEV_FILE_RE.test(id.split('?')[0].replaceAll('\\', '/'))) return null;
+        this.error(refuse(`${id} is in the module graph`));
+      }
+    },
+    generateBundle: {
+      order: 'post',
+      handler(_options, bundle) {
+        for (const [file, chunk] of Object.entries(bundle)) {
+          const text =
+            chunk.type === 'chunk'
+              ? chunk.code
+              : typeof chunk.source === 'string'
+                ? chunk.source
+                : new TextDecoder().decode(chunk.source);
+          if (text.includes(MOCK_MARKER)) {
+            this.error(refuse(`${file} carries the mock's marker '${MOCK_MARKER}'`));
+          }
+        }
+      }
+    }
+  };
+}
+
 /**
  * MICA-205. A bundle may not claim less than it reaches for.
  *
@@ -374,6 +431,7 @@ export default defineConfig({
   plugins: [
     addOnEntries(),
     refuseCoreEntry(),
+    refuseDevEntry(),
     svelte(),
     // Its own hook orders decide when it runs, not this position: `transform` at `pre` to
     // read each module's source before the Svelte compiler, `generateBundle` at `post` to

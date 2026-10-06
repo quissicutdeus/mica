@@ -116,6 +116,15 @@ exactly the thing a catalog is supposed to prevent. That loader is gone. A saved
 remote install from before this change is dropped on rehydration with a console
 warning, since there is no path left to recover a manifest from it.
 
+## Previewing an add-on without a catalog
+
+An author does not need a catalog, a host or a server to see their add-on.
+`pnpm dev` in `tools/addon-template/` serves the bundle and a `mica-dev.json`
+entry from `127.0.0.1:5174`, and the demo phone loads it with
+`?addonDev=http://127.0.0.1:5174/` (MICA-311). That path skips this page's hash
+check and consent sheet and nothing else, exists only in the dev and demo
+builds, and is described with its limits in `docs/security.md`.
+
 ## Fetch and verify
 
 `installVerified` in `web/src/shell/state/registry.ts` is the one path both

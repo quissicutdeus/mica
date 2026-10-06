@@ -1324,6 +1324,19 @@ somebody maintaining a `core: false` add-on outside this repo, and it answers
 one question: does that bundle still compile against this release, and does its
 manifest still ask for the right things.
 
+**See your add-on running without a server: `pnpm dev` in the template
+(MICA-311).** It rebuilds on save and serves the bundle on `127.0.0.1:5174`;
+open the link it prints and the demo phone loads your add-on in the usual
+sandboxed frame, under a strip saying where it came from, with a Reload button.
+Your own service answers from `src/mock.ts`, a `defineAddonMock` over your
+declaration that runs inside your frame and can simulate pushes. New on
+`@mica/sdk/dev`: `defineAddonMock`, `installAddonMock` and the types
+`AddonMockDefinition` and `AddonMockTools`. A production build refuses that
+import, so the mock can never ship. Additive only: nothing you compile against
+changes, and `SDK_CONTRACT_VERSION` does not move. Your browser may ask to allow
+the demo to reach your machine, and some browsers refuse it; the template README
+says what to expect.
+
 **Your add-on can have a server half in your own resource (MICA-308).** Declare
 the service once with `defineAddonService` (exported from `@mica/sdk`, and from
 `@mica/shared/addonService` for build-time code that cannot load Svelte), as

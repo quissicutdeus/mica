@@ -104,6 +104,19 @@ describe('home launcher widgets (MICA-245)', () => {
     expect(container.querySelectorAll('[data-position]')).toHaveLength(20 - 3);
   });
 
+  it('an app id that no longer exists draws nothing: no icon, no button, no empty tile', () => {
+    // MICA-311: a dev add-on loaded with `?addonDev=` is gone after a reload without it.
+    // The loader never places one on the grid, but an author can drag one there by hand,
+    // and the cell must not survive as a broken icon.
+    const item = { position: 2, kind: 'app', appId: 'gone-dev-addon' } as const;
+    homeGridItems.set([item]);
+    const { container } = render(Home, { props: { openApp: () => {} } });
+    const cell = container.querySelector('[data-position="2"]');
+    expect(cell).not.toBeNull();
+    expect(cell?.children).toHaveLength(0);
+    expect(names(container)).toEqual([]);
+  });
+
   it('an unknown widget draws nothing but stays in the layout', () => {
     const item = { position: 0, kind: 'widget', widgetId: 'gone-app', size: '2x1' } as const;
     homeGridItems.set([item]);

@@ -231,6 +231,52 @@ export type AddonHandlers<D extends AddonServiceDeclaration> = {
   [A in AddonActionName<D>]: AddonHandler<D, A>;
 };
 
+// --- An in-frame mock of the server half (MICA-311) ----------------------------------------
+
+/** What a mock's handlers are handed, to act as the server half's other abilities. */
+export interface AddonMockTools {
+  /**
+   * Simulate the resource's `exports.mica:PushToApp`: deliver `event` to this add-on's
+   * `useAppEvents(id)` listeners, in the envelope a real push arrives in. `event` follows the
+   * same name rule (lower_snake_case) and `payload` is a plain object, as on the real path.
+   */
+  push(event: string, payload?: Record<string, unknown>): void;
+}
+
+/**
+ * A mock of one declared service, made by `defineAddonMock` and handed to `installAddonMock`
+ * from `@mica/sdk/dev`. `handlers` is called once, at install, with the tools.
+ */
+export interface AddonMockDefinition<D extends AddonServiceDeclaration> {
+  readonly declaration: D;
+  readonly handlers: (tools: AddonMockTools) => AddonHandlers<D>;
+}
+
+/**
+ * Mock an add-on's server half for the dev loop, inside the add-on's own frame.
+ *
+ * The handlers have exactly the type the real ones registered through
+ * `exports.mica:RegisterService` have — `(citizenid, input, source)`, answering the declared
+ * output or `addonError(...)` — so a mock and a handler can be written once and moved between
+ * the two. Checked like `defineAddonService`: a declaration micaOS would refuse throws here.
+ */
+export function defineAddonMock<const D extends AddonServiceDeclaration>(
+  declaration: D,
+  handlers: (tools: AddonMockTools) => AddonHandlers<D>
+): AddonMockDefinition<D> {
+  const checked = checkAddonService(declaration);
+  if (!checked.ok) {
+    throw new Error(`defineAddonMock('${String(declaration?.id)}'): ${checked.reason}`);
+  }
+  if (typeof handlers !== 'function') {
+    throw new Error(
+      `defineAddonMock('${declaration.id}'): the second argument is a function of the tools ` +
+        `({ push }) returning one handler per action.`
+    );
+  }
+  return Object.freeze({ declaration, handlers });
+}
+
 // --- Validation -----------------------------------------------------------------------------
 
 export type AddonServiceCheck =

@@ -7,3 +7,7 @@ in its own file and gets a line here.
 
 - [Overloads and generic types](overloads-and-generic-types.md) — put the
   general overload last; a type-argument type has no shape (MICA-308)
+- [Adding a published subpath](adding-an-sdk-subpath.md) — five places in
+  publicSurface; in-tree aliases bypass `exports`; test via offline build
+- [shared/ compiles under client and server](shared-compiles-under-client-and-server.md)
+  — no `URL` there; `../sdk` filter runs shared tests twice

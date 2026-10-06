@@ -18,6 +18,7 @@
     ".": "./addon.ts",
     "./app": "./app.ts",
     "./core": "./core.ts",
+    "./dev": "./dev.ts",
     "./app.css": "./app.css",
     "./app-utilities.css": "./app-utilities.css",
     "./app-reset.css": "./app-reset.css"

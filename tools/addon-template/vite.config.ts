@@ -2,6 +2,7 @@ import { defineConfig, runnerImport, type Plugin } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import path from 'node:path';
 import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 /**
@@ -51,6 +52,8 @@ const SERVICE = path.join(here, 'src/service.ts');
 const SERVER_RESOURCE = path.join(here, 'my_addon_server');
 const COMPONENT = path.join(here, 'src/index.svelte');
 const WIDGET = path.join(here, 'src/widget.svelte');
+/** Your server half, mocked for `pnpm dev`. Reached only by the development entry below. */
+const MOCK = path.join(here, 'src/mock.ts');
 
 /**
  * Comments out, before anything below reads a property out of the manifest.
@@ -127,6 +130,7 @@ function readManifest(): { id: string } {
 }
 
 const VIRTUAL = '\0mica-addon-entry';
+const DEV_MOCK = '\0mica-addon-dev-mock';
 
 /**
  * The entry point, synthesised rather than written into `src/`.
@@ -135,21 +139,54 @@ const VIRTUAL = '\0mica-addon-entry';
  * subtly wrong by hand — the stylesheet import (the iframe has no `<link>` to load one
  * from), and `bootAddOn`, which installs the `postMessage` transport and the iframe facet
  * set before it mounts. Generating it keeps those out of the part of the project you edit.
+ *
+ * **In development mode only** (`pnpm dev`), one more import comes first: a module that
+ * installs `src/mock.ts` as your service, inside the frame. First, so the mock is in place
+ * before any of your own modules run — a store that calls `useService` at module scope gets
+ * the mock too. A production build never generates that import, and `refuseDevEntry()` below
+ * refuses `@mica/sdk/dev` there however it is reached.
  */
 function addonEntry(): Plugin {
+  let development = false;
   return {
     name: 'mica-addon-entry',
+    configResolved(config) {
+      development = config.mode === 'development';
+    },
     resolveId(source) {
+      if (source.includes('mica-addon-dev-mock')) return DEV_MOCK;
       const i = source.indexOf('mica-addon-entry');
       return i === -1 ? null : VIRTUAL;
     },
     load(source) {
+      if (source === DEV_MOCK) {
+        // `@mica/sdk` first: `bootAddOn`'s module registers the iframe facet set, and the mock
+        // wraps that set rather than replacing it, so any id but yours still reaches the phone.
+        // The manifest goes with it: the mock answers only an id the phone would let this app
+        // call, and throws on any other rather than working here and failing in game.
+        return [
+          `import '@mica/sdk';`,
+          `import { installAddonMock } from '@mica/sdk/dev';`,
+          `import manifest from ${JSON.stringify(MANIFEST)};`,
+          `import mock from ${JSON.stringify(MOCK)};`,
+          `installAddonMock(mock, manifest);`
+        ].join('\n');
+      }
       if (source !== VIRTUAL) return null;
       // A `src/widget.svelte` is the add-on's home-screen widget, handed to `bootAddOn` as
       // a second root. Declare `widget: { sizes: ['2x1'] }` in the manifest as well: that is
       // what tells the phone to boot it.
       const hasWidget = fs.existsSync(WIDGET);
+      const mocked = development && fs.existsSync(MOCK);
+      if (development && !mocked && fs.existsSync(SERVICE)) {
+        this.warn(
+          `[mica-addon] ${path.relative(here, SERVICE)} declares a server half and there is no ` +
+            `${path.relative(here, MOCK)}, so in the demo phone every call to it fails: there is ` +
+            `no FiveM server behind it. Write a mock with defineAddonMock from @mica/sdk/dev.`
+        );
+      }
       return [
+        ...(mocked ? [`import 'mica-addon-dev-mock';`] : []),
         `import '@mica/sdk/app.css';`,
         `import manifest from ${JSON.stringify(MANIFEST)};`,
         `import App from ${JSON.stringify(COMPONENT)};`,
@@ -194,6 +231,77 @@ function refuseCoreEntry(): Plugin {
             `sandboxed iframe with no NUI at all, so this import cannot work at runtime even if the ` +
             `build let it through. Reach your own server actions through useService(id) instead.`
         );
+      }
+    }
+  };
+}
+
+// The dev entry point and any subpath, for the same reason as `CORE_ENTRY_RE`.
+const DEV_ENTRY_RE = /^@mica\/sdk\/dev(\/.*)?$/;
+/** The files behind it, however a specifier reached them — a relative path included. */
+const DEV_FILE_RE = /\/sdk\/(dev\.ts|host\/iframe\/devMock\.ts)$/;
+/**
+ * The in-frame mock's runtime marker, `MICA_ADDON_MOCK_MARKER` in `@mica/shared/addonDev`.
+ * Written out rather than imported: this file is read by Node before anything can compile one.
+ */
+const MOCK_MARKER = 'mica-addon-mock';
+
+/**
+ * `@mica/sdk/dev` is refused in every build but `pnpm dev`'s.
+ *
+ * It is the in-frame mock of your server half: it answers `useService` for your own id from
+ * `src/mock.ts`, as a fake citizen, with whatever your mock decides. In a bundle a player
+ * installs that would be a phone app quietly talking to itself instead of to your server —
+ * every write lost, every read invented. So outside development mode it fails the build three
+ * ways, each catching what the one before cannot:
+ *
+ * - the **specifier** `@mica/sdk/dev`, from any file of yours or of a dependency's;
+ * - the **files** behind it, however they were reached, a deep relative path included;
+ * - the **marker** the mock carries at run time, in the finished chunk — so a copy of the
+ *   mock pasted into your own source, which neither check above can see, still fails.
+ *
+ * `pnpm build` is production mode; `pnpm dev` passes `--mode development`.
+ */
+function refuseDevEntry(): Plugin {
+  let development = false;
+  const refuse = (what: string): string =>
+    `[mica-addon] ${what}, outside development mode. @mica/sdk/dev is the in-frame mock of your ` +
+    `server half for \`pnpm dev\`; in a bundle a player installs it would answer your service ` +
+    `itself instead of your server. Import it only from the dev entry this config generates.`;
+  return {
+    name: 'mica-refuse-dev-entry',
+    configResolved(config) {
+      development = config.mode === 'development';
+    },
+    resolveId: {
+      order: 'pre',
+      handler(source) {
+        if (development || !DEV_ENTRY_RE.test(source)) return null;
+        this.error(refuse(`'${source}' is imported`));
+      }
+    },
+    transform: {
+      order: 'pre',
+      handler(_code, id) {
+        if (development || !DEV_FILE_RE.test(id.split('?')[0].replaceAll('\\', '/'))) return null;
+        this.error(refuse(`${id} is in the module graph`));
+      }
+    },
+    generateBundle: {
+      order: 'post',
+      handler(_options, bundle) {
+        if (development) return;
+        for (const [file, chunk] of Object.entries(bundle)) {
+          const text =
+            chunk.type === 'chunk'
+              ? chunk.code
+              : typeof chunk.source === 'string'
+                ? chunk.source
+                : new TextDecoder().decode(chunk.source);
+          if (text.includes(MOCK_MARKER)) {
+            this.error(refuse(`${file} carries the mock's marker '${MOCK_MARKER}'`));
+          }
+        }
       }
     }
   };
@@ -517,6 +625,137 @@ function emitServiceDeclaration(appId: string): Plugin {
   };
 }
 
+/** Where `pnpm build` writes: the bundle you publish, and nothing else. */
+const DIST = path.join(here, 'dist');
+/** Where `pnpm dev` writes: the mock-carrying bundle and its catalog entry. Never published. */
+const DIST_DEV = path.join(here, 'dist-dev');
+/** `pnpm dev`'s catalog entry's name, `ADDON_DEV_ENTRY` in `@mica/shared/addonDev`. */
+const DEV_ENTRY_FILE = 'mica-dev.json';
+
+/**
+ * A development build never writes into `dist/`.
+ *
+ * `pnpm dev`'s bundle carries the in-frame mock of your server half. Written to the same
+ * `dist/<id>.js` that `pnpm build` writes, it would be one `cp dist/*` away from being
+ * published: an add-on that answers its own service with invented data, in game. So
+ * development mode builds into `dist-dev/` — this sets it, and refuses a run that pointed it
+ * back at `dist/` — and a production build deletes any dev catalog entry it finds in `dist/`
+ * before writing (`emptyOutDir` already empties the folder; this does not depend on it).
+ */
+function separateDevOutput(): Plugin {
+  let development = false;
+  let outDir = DIST;
+  return {
+    name: 'mica-addon-dev-out-dir',
+    config: (_config, env) =>
+      env.mode === 'development' ? { build: { outDir: path.relative(here, DIST_DEV) } } : null,
+    configResolved(config) {
+      development = config.mode === 'development';
+      outDir = path.resolve(config.root, config.build.outDir);
+      if (development && outDir === DIST) {
+        throw new Error(
+          `[mica-addon] a development build may not write to ${path.relative(here, DIST)}/: its ` +
+            `bundle carries the in-frame mock and that folder is what you publish. It writes ` +
+            `to ${path.relative(here, DIST_DEV)}/.`
+        );
+      }
+    },
+    buildStart() {
+      if (development) return;
+      for (const stale of [DEV_ENTRY_FILE, `${DEV_ENTRY_FILE}.tmp`]) {
+        fs.rmSync(path.join(outDir, stale), { force: true });
+      }
+    }
+  };
+}
+
+/**
+ * `pnpm dev`'s catalog entry: `dist-dev/mica-dev.json`, beside the bundle it describes.
+ *
+ * The demo phone, opened with `?addonDev=<this server>`, reads this file to install your
+ * add-on — the same `CatalogEntry` an operator's catalog lists, built the way micaOS builds its
+ * own: your manifest is evaluated (with every Svelte component stubbed, since a manifest is
+ * data), `version` falls back to `package.json`'s, and `sha256` is of the exact bytes written.
+ * `bundleUrl` is relative, so it resolves against whichever loopback address served this file,
+ * and carries the hash as a query so a rebuild is never answered from a browser's cache.
+ *
+ * The entry is checked with the SDK's own `isCatalogEntry` before it is written: one the phone
+ * would drop is a build failure here, not an add-on that silently never appears.
+ *
+ * Development mode only. A production build writes no such file.
+ */
+function emitDevCatalogEntry(appId: string): Plugin {
+  return {
+    name: 'mica-addon-dev-catalog-entry',
+    apply: (_config, env) => env.mode === 'development',
+    async writeBundle(options) {
+      const dir = options.dir ?? DIST_DEV;
+      const bundleFile = `${appId}.js`;
+      const bytes = fs.readFileSync(path.join(dir, bundleFile));
+      const sha256 = createHash('sha256').update(bytes).digest('hex');
+
+      const stubSvelte: Plugin = {
+        name: 'mica-addon-stub-svelte',
+        enforce: 'pre',
+        resolveId: (source) => (source.endsWith('.svelte') ? `\0stub:${source}` : null),
+        load: (id) => (id.startsWith('\0stub:') ? 'export default function Stub() {}' : null)
+      };
+      const { module: manifestModule } = await runnerImport<{ default: Record<string, unknown> }>(
+        MANIFEST,
+        { configFile: false, logLevel: 'error', root: here, plugins: [stubSvelte] }
+      );
+      const manifest = manifestModule.default;
+
+      const sdkRoot = path.dirname(
+        fileURLToPath(await Promise.resolve(import.meta.resolve('@mica/sdk')))
+      );
+      const { module: catalog } = await runnerImport<{ isCatalogEntry?: (v: unknown) => boolean }>(
+        path.join(sdkRoot, 'catalog.ts'),
+        { configFile: false, logLevel: 'error', root: here }
+      );
+      if (typeof catalog.isCatalogEntry !== 'function') {
+        this.error(
+          `[mica-addon] @mica/sdk's catalog.ts does not export isCatalogEntry, so this build ` +
+            `cannot check the dev catalog entry it writes. Take the current template.`
+        );
+      }
+
+      const pkg = JSON.parse(fs.readFileSync(path.join(here, 'package.json'), 'utf8')) as {
+        version?: string;
+      };
+      const optional = (key: string) =>
+        manifest[key] === undefined ? {} : { [key]: manifest[key] };
+      const entry = {
+        id: manifest.id,
+        name: manifest.name,
+        version: manifest.version ?? pkg.version,
+        description: manifest.description,
+        bundleUrl: `${bundleFile}?v=${sha256.slice(0, 16)}`,
+        sha256,
+        color: manifest.color,
+        permissions: manifest.permissions ?? [],
+        ...optional('requires'),
+        ...optional('devices'),
+        ...optional('requiresNetwork'),
+        ...optional('networkHosts'),
+        ...optional('services'),
+        ...optional('sdkContract')
+      };
+      if (!catalog.isCatalogEntry(entry)) {
+        this.error(
+          `[mica-addon] the dev catalog entry built from ${path.relative(here, MANIFEST)} is one ` +
+            `the phone would drop: ${JSON.stringify(entry)}. Every field is read from the ` +
+            `manifest; the phone needs an id, a name, a description, a version and a tile.`
+        );
+      }
+      // Written aside and renamed, so the dev server never serves half a file.
+      const target = path.join(dir, DEV_ENTRY_FILE);
+      fs.writeFileSync(`${target}.tmp`, `${JSON.stringify(entry, null, 2)}\n`);
+      fs.renameSync(`${target}.tmp`, target);
+    }
+  };
+}
+
 /**
  * Inline the CSS into the entry chunk.
  *
@@ -596,6 +835,9 @@ export default defineConfig({
   plugins: [
     addonEntry(),
     refuseCoreEntry(),
+    refuseDevEntry(),
+    // `pnpm dev` builds into `dist-dev/`, never `dist/`; `pnpm build` clears dev leftovers.
+    separateDevOutput(),
     svelte(),
     requireIframeFacets(),
     // Its hook orders place it, not this line: `transform` at `pre` to read your source
@@ -603,6 +845,8 @@ export default defineConfig({
     requireDeclaredPermissions(),
     // Writes `my_addon_server/service.json` from `src/service.ts`; nothing in the bundle.
     emitServiceDeclaration(id),
+    // `pnpm dev` only: `dist-dev/mica-dev.json`, the catalog entry the demo phone installs from.
+    emitDevCatalogEntry(id),
     inlineCss(),
     // Last, deliberately — it reads the finished chunk text, including what `inlineCss()`
     // has prepended by then.

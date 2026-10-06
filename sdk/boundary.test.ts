@@ -265,3 +265,27 @@ describe('only core apps may import @mica/sdk/core', () => {
     expect(sdk).not.toHaveProperty('useNuiBridge');
   }, 30_000);
 });
+
+describe('no app imports @mica/sdk/dev', () => {
+  /**
+   * MICA-311. The in-frame service mock answers an add-on's own service as a fake citizen,
+   * for the out-of-tree template's `pnpm dev`. An in-tree app has the phone's own mock
+   * transport and a real server half; it has no dev loop this belongs to, and a bundle that
+   * carried it would answer itself in game. Core or not, so nothing here depends on reading
+   * a manifest right.
+   */
+  const DEV_ENTRY = new RegExp(String.raw`${IMPORT_PREFIX}['"]@mica/sdk/dev(/[^'"]*)?['"]`);
+
+  it('in any app directory', () => {
+    const offenders = FILES.filter((file) => DEV_ENTRY.test(readFileSync(file, 'utf8')));
+    expect(offenders.map((file) => relative(ROOT, file)).sort()).toEqual([]);
+  });
+
+  it('nor does either barrel an app reaches export the mock', async () => {
+    const [index, addon] = await Promise.all([import('./index'), import('./addon')]);
+    for (const sdk of [index, addon]) {
+      expect(sdk).not.toHaveProperty('installAddonMock');
+      expect(sdk).not.toHaveProperty('defineAddonMock');
+    }
+  }, 30_000);
+});

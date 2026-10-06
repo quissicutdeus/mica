@@ -29,6 +29,75 @@ pnpm build     # -> dist/<your app id>.js, and my_addon_server/service.json
 well; the build does not run it, deliberately, so a type error never silently
 costs you a bundle.
 
+## See it
+
+```sh
+pnpm dev
+```
+
+That runs a watch build, which rewrites `dist-dev/` every time you save, serves
+`dist-dev/` from `http://127.0.0.1:5174/`, and prints a link:
+
+```text
+https://mica.gg/demo/?addonDev=http://127.0.0.1:5174/
+```
+
+Open it and the demo phone loads your add-on from your machine and opens it by
+itself. It is not placed on the home screen. A strip above it reads "Dev add-on
+from 127.0.0.1:5174, not verified". No FiveM server, nothing to host, nothing
+else to install.
+
+**The phone does not reload on save.** Save, wait for the build to finish, then
+press **Reload** on that strip to load the new bundle. Your app's own storage
+survives a reload.
+
+**It runs the way it will in game, with two steps skipped.** The bundle goes
+into the same sandboxed frame, under the same content security policy and the
+same permission checks, as an add-on installed from a catalog. What is skipped
+is the SHA-256 check and the install prompt. The permissions your app is held to
+are the ones in `dist-dev/mica-dev.json`, which come from your manifest; they
+are kept in memory for that page and nothing is saved as an install. This works
+only from a loopback address (`localhost`, `127.0.0.1`, `[::1]`): the phone
+refuses a dev add-on from anywhere else, and a game build has no dev path at
+all.
+
+**Your server half is `src/mock.ts`.** There is no FiveM server behind the demo,
+so `useService(notes)` is answered by a mock running inside your add-on's own
+frame. Its handlers have exactly the type `exports.mica:RegisterService` takes —
+`(citizenid, input, source)`, answering the declared output or `addonError(…)` —
+and each call's input is parsed against `src/service.ts` before a handler runs,
+so a refusal reaches your UI the way it would in game. Every call is made as one
+fixed dev citizen. `push(event, payload)` stands in for `exports.mica:PushToApp`
+and reaches `useAppEvents`. The mock answers only a service id the phone lets
+your app call — your manifest's `services`, if it lists them, or else your app
+id and ids starting `<app id>_` — and refuses to start for any other, since the
+phone would refuse every call to it in game. A call to any other id goes to the
+phone, which refuses it, as it does in game.
+
+**The mock never ships.** Only `pnpm dev`'s development build imports it, and
+that build writes to `dist-dev/`, never to `dist/` — publish `dist/` and you
+publish what `pnpm build` made. `pnpm build` refuses `@mica/sdk/dev` from
+anywhere, refuses the files behind it however they are reached, refuses a bundle
+that still carries the mock's marker string, and deletes any dev catalog entry
+it finds in `dist/`.
+
+What this cannot show you: FiveM's CEF is Chromium 103 and the browser you open
+the demo in is newer (see below); the mock answers instantly, with none of the
+server's rate limits or timeouts; and nothing here touches a real database.
+
+Two things your browser may do, since a page on `https://mica.gg` is reaching a
+server on your own machine:
+
+- **Chrome** may ask whether `mica.gg` may access devices on your local network.
+  Allow it. The dev server answers the preflight Chrome sends for this
+  (`Access-Control-Allow-Private-Network`).
+- **Safari** may treat a fetch from an `https` page to `http://127.0.0.1` as
+  mixed content and block it. If the phone says it cannot reach your dev server,
+  try Chrome or Firefox.
+
+Port 5174 is fixed: if something else holds it, `pnpm dev` stops and says so
+rather than moving to a port the link does not name.
+
 ## Two packages, neither published
 
 This is the part worth reading before you start, because every awkward line in
@@ -182,6 +251,8 @@ line is the thing standing in the way, it opens.
 | `src/index.svelte`    | Your app                                                                                                                 |
 | `src/Icon.svelte`     | Your launcher glyph                                                                                                      |
 | `src/service.ts`      | Your server half's declaration, read by the UI and by `my_addon_server/` — see "Your server half"                        |
+| `src/mock.ts`         | Your server half, mocked inside the frame for `pnpm dev` only — see "See it"                                             |
+| `scripts/dev.mjs`     | `pnpm dev`: a watch build into `dist-dev/` and a loopback server for the demo phone                                      |
 | `my_addon_server/`    | Your server half: a FiveM resource of its own, which registers with micaOS                                               |
 
 ## Two things that will bite you, and no test can catch either

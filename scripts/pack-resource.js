@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join, posix, relative } from 'node:path';
 
@@ -84,6 +85,22 @@ if (missing.length > 0) {
       '(or `pnpm build:nocheck`) first; this archives what the build produced and never ' +
       'builds on its own, so a broken build fails at the build gate rather than here.'
   );
+  process.exit(1);
+}
+
+/**
+ * A tree is packed only after the game-build check has passed it (MICA-311): the dev add-on
+ * path must be absent from `dist/web`. `build:nocheck` runs the same script, but a build made
+ * some other way -- `vite build` with the demo's flag set, say -- reaches here without it, and
+ * a zip is what ships to players. Run as a child so its exit code is the gate and its own
+ * message, naming the file, is what the person reads.
+ */
+try {
+  execFileSync(process.execPath, [join(import.meta.dirname, 'check-no-dev-addon.js')], {
+    stdio: 'inherit'
+  });
+} catch {
+  console.error('pack-resource: refusing to pack a tree that failed check-no-dev-addon.');
   process.exit(1);
 }
 

@@ -390,6 +390,21 @@ this boundary is limited, deliberately: a hostile resource is out of scope, and
 a bug that calls `SendNotification` in a loop costs a notification row per call
 where a text costs a thread, a participant and a push.
 
+**`RegisterService` makes another resource answer player calls (MICA-308)**, and
+that resource is trusted the same way as any other here. What micaOS still
+guarantees is the shape of what reaches it. Each add-on id gets a real
+`ServiceEndpoint`, so a player's call passes the same limiter, app switch,
+player resolution and strict parse against the declared fields as a core action
+does. The handler receives `(citizenid, input, source)` with `citizenid`
+resolved on the server. Whose rows those are is the resource's job, as the
+README says. A resource holds only ids it registered, never a built-in service
+or app id. **A resource's holdings are released only when it is actually
+stopping** (`server/lib/resourceStop.ts`): `onResourceStop` is an ordinary event
+any script can fire, and before this, firing it in another resource's name
+released that resource's add-on services, `RegisterNumber` lines and invoice
+callbacks for the caller to take. That is the buggy-or-careless neighbour this
+section exists for, not the hostile one it cannot stop.
+
 ---
 
 ## Client-authoritative values
@@ -697,6 +712,31 @@ by this list until someone re-weighs it.
   player's; a player's phone contacts a bundle's host to download an add-on the
   player chose to install, and again at each phone boot for add-ons already
   installed, since rehydration re-fetches and re-verifies every one.
+- **A dev add-on skips the hash and the consent sheet, and exists only where a
+  build flag allows it (MICA-311).** `?addonDev=<base>` loads an author's add-on
+  from their own machine so they can see it without a server. The loader
+  (`web/src/shell/addon/devAddOn.ts`) is imported only behind
+  `import.meta.env.DEV || VITE_MICA_ADDON_DEV === '1'`, both replaced at build
+  time: `pnpm dev`, the e2e build and the public demo container have it, and the
+  game build does not contain it. `scripts/check-no-dev-addon.js` fails the game
+  build, and refuses to pack the resource, if its marker string appears anywhere
+  in `dist/web`, and `demo:smoke` asserts the opposite of the demo image. At run
+  time it also refuses outside a plain browser tab. The base must be
+  `localhost`, `127.0.0.1` or `[::1]` after WHATWG parsing, with no credentials,
+  query or hash. Both fetches refuse redirects and send no credentials, and the
+  bundle must share the base's origin. **Waived: the SHA-256 compare and the
+  consent sheet**, since the bytes are the author's own. The grant is the
+  entry's declared permissions, held in memory and never saved. **Not waived:**
+  the add-on registers through the same `registerAddOn` checks and runs in the
+  same sandboxed `srcdoc` frame, under the same CSP and `networkHosts`, with
+  every call re-checked against its grant and its own service namespace. A strip
+  the shell draws, which the add-on cannot draw over, names the source. A link
+  to the demo with `?addonDev=` pointing at a visitor's own machine can only
+  send two GETs to fixed paths there, which any web page can already send.
+  Reading the answer needs that machine to allow `mica.gg` by CORS, and what
+  runs is that machine's own code, inside the sandbox. The author's service is
+  mocked **inside the add-on's frame** (`@mica/sdk/dev`), never in the shell,
+  and a production add-on build refuses to import it.
 - **An add-on's outbound network is a declared per-app allowlist, not "any host"
   (MICA-24).** Before this, the sandboxed frame had no Content-Security-Policy
   at all: an opaque origin with `allow-scripts` can still `fetch()` any URL, so

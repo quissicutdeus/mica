@@ -37,9 +37,9 @@ Around ninety names have been spawned in earlier sessions, the well-known clones
 nearly all of them, so reuse across sessions is normal and recovering a dead
 lead takes the newest transcript that spawned the name. Prefer one not yet
 spawned when one fits — as of 2026-10-01, checked against every transcript:
-Bacara, Colt, Blitz, Trauma, Barlex, Vaughn, Mouse, Ox, Punch, Tiny, Matchstick,
-Gearshift, Monnk, Doom. Strike a name from this list in the commit that lands
-the wave it served, so the list stays true without a recount.
+Trauma, Ox, Punch, Tiny, Matchstick, Gearshift, Monnk, Doom. Strike a name from
+this list in the commit that lands the wave it served, so the list stays true
+without a recount.
 
 ## What only you do
 

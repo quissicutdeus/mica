@@ -5,6 +5,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "dev": "node scripts/dev.mjs",
     "build": "vite build",
     "watch": "vite build --watch",
     "check": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings"
