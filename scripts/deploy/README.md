@@ -325,12 +325,12 @@ equal `mica-integration/expected-scenarios.txt` exactly, which
 `release.yml` runs it before the smoke test and will not release on a failure;
 `integration.yml` runs it alone on any ref by `workflow_dispatch`.
 
-**Root never touches a path `gphone` can change.** The wrapper takes its lock at
-`/run/mica-smoke.lock` first, pins the run directory, copies its `resources/`
-into a root-owned staging directory under `/var/lib/mica-smoke/`, refuses
-symlinks, hardlinks and special files, and builds, mounts and later deletes
-everything from that copy. The run directory itself is only read. Reinstall both
-halves after any change to either:
+**Root never touches a path `gphone` can change.** The wrapper takes hoth's lock
+(`/run/mica-hoth.lock`, below) once the run directory's path is checked, pins
+the run directory, copies its `resources/` into a root-owned staging directory
+under `/var/lib/mica-smoke/`, refuses symlinks, hardlinks and special files, and
+builds, mounts and later deletes everything from that copy. The run directory
+itself is only read. Reinstall both halves after any change to either:
 
 ```sh
 install -m 755 scripts/deploy/smoke-release.sh ~gphone/bin/smoke-release.sh
@@ -341,6 +341,143 @@ sudo install -m 700 -o root -g root scripts/deploy/mica-smoke-release.sh /usr/lo
 resource's reads outside resource folders, with no grant to lift it, so the
 suite's keyring lives in its own tiny resource. The same holds for an owner's
 real key (MICA-165).
+
+## One job at a time on hoth, and a failure that says what failed (MICA-315)
+
+On 2026-10-06 an integration run dispatched while a dev deploy was rebuilding
+the stack's image failed: the smoke wrapper printed
+`smoke: starting mariadb:noble, EMPTY: ...` and then the SSH session exited 1,
+with no line saying why. `set -e` had ended it at a failing docker call. A rerun
+after the deploy finished passed 23/23. Two defects, two fixes, both in the same
+block of text at the top of all three root wrappers (`# BEGIN wrapper-common`),
+repeated in each file rather than sourced because each wrapper is one
+hand-installed file. `server/__tests__/deployWrapper.test.ts` fails when the
+three copies differ.
+
+### The lock
+
+The two deploys and the smoke and integration runs share the box's docker
+daemon, its images, its networks and the smoke licence key, so they take **one
+lock** and run one at a time:
+
+| Path                  | Owner and mode      | Created by                        |
+| --------------------- | ------------------- | --------------------------------- |
+| `/run/mica-hoth.lock` | `root:root`, `0644` | the first wrapper to run, as root |
+
+It is in `/run`, which only root can write, so `gphone` can neither create,
+replace nor hold it. The wrapper also judges the **open file**, not the path,
+and refuses (`REFUSED: ...`) a lock that is a symlink, owned by another user, or
+writable by group or others. Nothing about sudoers, the forced commands or
+`gphone`'s write paths changed; the file appears the first time a wrapper runs.
+The old `/run/mica-smoke.lock` is no longer used and can be deleted.
+
+It is a `flock` on a file descriptor the wrapper opens and keeps, so it is
+released when the wrapper exits, on any exit, including one by signal, and it is
+held **to the end of the run, cleanup included**: the smoke wrapper removes its
+containers, network and staging before the next job can start. While it holds
+the lock the wrapper writes one line into the file naming itself, for whoever
+has to wait: `<wrapper> pid <pid> (<note>) since <UTC time>`. The note is the
+run directory's name for a smoke run and `<branch>@<12 hex of the sha>` for a
+deploy. The line is cleared on exit.
+
+A job that finds the lock held says so, and on whom, and waits:
+
+```text
+mica-wrapper: mica-deploy-main-compose.sh is waiting for hoth's lock /run/mica-hoth.lock, held by: mica-smoke-release.sh pid 4242 (run7) since 2026-10-06T22:01:09Z
+mica-wrapper: deploys and smoke and integration runs share this box's images, networks and licence key, so they run one at a time; waiting up to 1500s
+mica-wrapper: mica-deploy-main-compose.sh got hoth's lock after 212s
+```
+
+and past the timeout it fails, loudly, having started nothing:
+
+```text
+REFUSED: gave up after 1500s waiting for hoth's lock /run/mica-hoth.lock, still held by: mica-smoke-release.sh pid 4242 (run7) since 2026-10-06T22:01:09Z. Nothing was started. If that run is stuck, find and stop it on hoth.
+mica-wrapper: mica-deploy-main-compose.sh FAILED: exit status 1; the line above says why
+```
+
+**Why 1500 seconds.** A deploy holds the box for one to three minutes and an
+integration run for five to ten (at most 90s for the database, 180s for FXServer
+to start and 300s for the suite), and a release makes two runs back to back.
+1500s (25 minutes) outlasts two of the longest, so a job queued behind a run and
+another job still goes; and it is far short of hanging a CI job on a holder that
+is stuck. It is below the thirty minutes `deploy-<target>.sh` waits on its own
+per-stack lock, so a deploy never gives up on the box before it gives up on
+itself. The wait is only for jobs that reach the lock: a misuse (an unset
+variable, a run directory outside the root) is refused at once, before it.
+
+Each wrapper takes the lock before it does any work the others could disturb:
+both deploys before they check or rebuild anything, the smoke wrapper before it
+looks for its image (which a deploy may be rebuilding at that moment).
+`deploy.yml` has a `concurrency` group of its own; it serialises deploys against
+each other and nothing else, which is why the lock is on hoth and not in a
+workflow: it also covers a manual run, a re-run, and any other repository using
+this box.
+
+A lock held by something that is not a wrapper, or a holder that died without
+releasing (it cannot: the kernel drops a `flock` with its file descriptor),
+would show as `held by: an unidentified run`. Find the process on hoth with
+`sudo fuser -v /run/mica-hoth.lock`.
+
+### A failing step names itself
+
+Every run of every root wrapper ends with a status line, and every exit that is
+not a success says what it was:
+
+| What ended the run                            | What is printed                                                                                              |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| a command failed under `set -e`               | `mica-wrapper: <name> FAILED at line <n>: <the command, as written> (exit status <s>)`, then the status line |
+| a deliberate refusal                          | `REFUSED: <reason>`, then the status line                                                                    |
+| bash's own error, such as an unset `${VAR:?}` | bash's message, then a status line saying no step named a reason                                             |
+| a signal, or an `exit 0` before the end       | `... FAILED: the run ended before it finished, so it is not a pass`                                          |
+| success                                       | `mica-wrapper: <name> finished ok`                                                                           |
+
+For example, the failure that started this, now:
+
+```text
+mica-wrapper: mica-smoke-release.sh sha256 <64 hex>
+smoke: starting mariadb:noble, EMPTY: micaOS creates the schema itself on its first start
+Error response from daemon: ...
+mica-wrapper: mica-smoke-release.sh FAILED at line <n>: docker run -d --name "$db" --network "$net" -e MARIADB_ROOT_PASSWORD=smoke -e MARIADB_DATABASE=mica "$DB_IMAGE" > /dev/null (exit status 1)
+mica-wrapper: mica-smoke-release.sh FAILED: exit status 1; the line above says why
+```
+
+The command is shown as written, with its variables unexpanded, so nothing a
+variable holds (a licence key, a password) can reach the log. Only a failure in
+the wrapper's own shell is reported: a failing `$(...)` is reported once, as the
+assignment that ran it. The identity line is still the very first output; the
+status line is the last. `finished ok` is printed only by a run that reached its
+final statement: bash runs the exit trap with the status of the last command,
+not the signal's, so a killed run would otherwise report itself a pass (the test
+that sends it a `SIGTERM` found that).
+
+A trial by an ordinary user can point the lock at another file and shorten the
+wait with `MICA_HOTH_LOCK` and `MICA_HOTH_LOCK_TIMEOUT`, and run a compose
+wrapper against a stand-in docker with `MICA_DEPLOY_COMPOSE_FILE`,
+`MICA_DEPLOY_EXPECTED_SHA`, `MICA_DEPLOY_ENV_FILE` and `MICA_DEPLOY_RCON_PORT`.
+**As root every one of them is ignored.** Who is root is decided on bash's own
+`$EUID`, never on `id -u`: `id` is found through `PATH`, and the deploy wrappers
+are reached through a `SETENV` sudoers rule, so a caller may be able to hand
+over a `PATH`. As root the wrapper also resets `PATH` to
+`/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin` before its first
+command, so the identity line's `sha256sum` and everything after it resolve from
+a known path. A trial keeps the caller's `PATH`, since that is how its stand-in
+docker is found. `deployWrapper.test.ts` runs each wrapper as uid 0 in a user
+namespace (`unshare -Ur`) with a hostile `id` and `sha256sum` first on `PATH`
+and every override set, and holds all of them ignored.
+
+### Reinstalling after this change
+
+The wrappers' bytes changed, so every hash changed: install all three, and
+`compose.yaml`'s pinned `EXPECTED_SHA` is untouched. The unprivileged halves did
+not change.
+
+```sh
+sudo install -m 700 -o root -g root \
+  scripts/deploy/mica-smoke-release.sh \
+  scripts/deploy/mica-deploy-dev-compose.sh \
+  scripts/deploy/mica-deploy-main-compose.sh /usr/local/sbin/
+sha256sum /usr/local/sbin/mica-*.sh scripts/deploy/mica-*.sh    # each pair must agree
+```
 
 ## Never invoke two at once
 

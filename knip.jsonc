@@ -32,6 +32,13 @@
   // Named rather than switching the check off, matching `lint-staged` above: a devDependency
   // that really is unused still gets reported.
   "ignoreDependencies": ["lint-staged", "jsdom"],
+  // `flock` and `unshare` are system tools (util-linux), not packages: the wrapper tests in
+  // `server/__tests__/` (`deployWrapper.test.ts`, `wrapperHarness.ts`) spawn them to hold hoth's
+  // lock from outside a wrapper and to run a wrapper as uid 0 in a user namespace. knip reads
+  // a `spawn('flock', ...)` as a binary this repo should list, and there is nowhere to list one.
+  // Those tests check for them at run time and fail on GitHub's CI when they are missing, so
+  // naming them here hides nothing.
+  "ignoreBinaries": ["flock", "unshare"],
   "workspaces": {
     ".": {
       // esbuild builds the first two directly (`build/build-bundle.js`), so nothing in the

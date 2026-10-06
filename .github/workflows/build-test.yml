@@ -133,6 +133,31 @@ jobs:
       # runs properly with `--require`. Without the flag this job would find the runner's
       # Docker, pull two images and spend ~30s reaching a verdict that job has already
       # reached -- and would newly depend on Docker Hub to do it.
+      # `server/__tests__/deployWrapper.test.ts` runs each root wrapper as uid 0 in a user
+      # namespace (`unshare -Ur`) to hold its root branch to what it promises (MICA-315). GitHub's
+      # Ubuntu 24.04 runner images set `kernel.apparmor_restrict_unprivileged_userns=1`, which
+      # refuses that, and the test then cannot run -- and a skipped test reads as a pass. So the
+      # test fails on GitHub when it cannot run, and this step makes it able to: it logs the
+      # sysctl, lifts the restriction where it is set, and then tries the exact command, so a
+      # runner that still refuses fails here with the reason instead of in a test summary.
+      # GitHub only: the Forgejo mirror's job containers have no sudo to ask, and run the tests
+      # as root, where they are skipped by name.
+      - name: Allow unprivileged user namespaces for the wrapper tests
+        if: github.server_url == 'https://github.com'
+        run: |
+          restrict=$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null || echo absent)
+          echo "kernel.apparmor_restrict_unprivileged_userns: $restrict"
+          if [ "$restrict" = 1 ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+            echo "kernel.apparmor_restrict_unprivileged_userns now: $(sysctl -n kernel.apparmor_restrict_unprivileged_userns)"
+          fi
+          uid=$(unshare -Ur id -u) || {
+            echo "::error::unshare -Ur is still refused: server/__tests__/deployWrapper.test.ts cannot run its root-branch tests here"
+            exit 1
+          }
+          echo "unshare -Ur reports uid $uid"
+          [ "$uid" = 0 ] || exit 1
+
       - name: Verify
         run: pnpm verify --quick --no-container
 

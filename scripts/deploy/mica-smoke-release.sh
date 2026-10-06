@@ -56,6 +56,136 @@
 # root-owned parent, checks the copy, and builds, mounts and chowns only there.
 set -euo pipefail
 
+# BEGIN wrapper-common
+# This block is the same text in all three root wrappers, and server/__tests__/wrapperCommon.test.ts
+# fails when the copies differ. It is repeated rather than sourced because each wrapper is one
+# root-owned file installed by hand: a fourth file would be a fourth thing to reinstall, and the
+# identity line below would not cover it.
+#
+# Nothing here prints before the run's last line unless something is wrong or the box is busy, so
+# the identity line stays the first output.
+#
+# 1. No silent exit (MICA-315). `set -e` ends a run at a failing command and says nothing, and on
+#    2026-10-06 an integration run's CI log stopped at "smoke: starting mariadb:noble" with exit 1
+#    and no reason. So the ERR trap names a failing command (set -E carries it into functions),
+#    every deliberate exit goes through die() or prints its own reason, and the EXIT trap ends
+#    every run with one status line. Only a failure in the main shell is reported: the shell that
+#    ran a failing `$(...)` reports the assignment itself, once.
+# 2. One job at a time on hoth. The two deploys and the smoke and integration runs share the box's
+#    images, networks and licence key, and a deploy rebuilding an image under a run that is about
+#    to start a container from it is how the run above died. They take one lock, on a file only
+#    root can write, and hold it to the end of the run, cleanup included.
+set -E
+wrapper_name=${0##*/}
+explained=0
+hoth_locked=0
+# Set as the last act of a run that got to its end. An exit status of 0 without it is a run that
+# was cut short, which is how a signal looks to the EXIT trap: bash runs it with the status of the
+# last command, not the signal's, and a trap that believed that would report a killed run as a pass.
+completed=0
+
+# Every command below resolves from a known path when this runs as root. The deploy wrappers are
+# reached through a sudoers rule tagged SETENV, so a caller may be able to hand over a PATH, and
+# hoth's secure_path should stop that but nothing here may depend on it. $EUID is bash's own: it
+# is set by the shell and nothing in the environment can change it, which is why every decision
+# about who is running is made on it and none on `id -u`, a program found through PATH. A trial
+# by an ordinary user keeps the caller's PATH, since that is how its stand-in docker is found.
+if ((EUID == 0)); then
+    PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    export PATH
+fi
+
+HOTH_LOCK_FILE=/run/mica-hoth.lock
+# How long a job waits for the box. A deploy holds it for 1 to 3 minutes and an integration run for
+# 5 to 10 (90s for the database, 180s to start and 300s for the suite, at most), and a release
+# makes two runs back to back. 1500s outlasts two of the longest, so a job queued behind a run and
+# another job still goes, and it is far short of hanging a CI job on a holder that is stuck.
+HOTH_LOCK_TIMEOUT=1500
+# A trial by an ordinary user may point the lock elsewhere and shorten the wait. Root ignores both:
+# a lock is only worth something if its callers cannot choose it.
+if [[ $EUID -ne 0 ]]; then
+    HOTH_LOCK_FILE=${MICA_HOTH_LOCK:-${TMPDIR:-/tmp}/mica-hoth-$EUID.lock}
+    HOTH_LOCK_TIMEOUT=${MICA_HOTH_LOCK_TIMEOUT:-$HOTH_LOCK_TIMEOUT}
+fi
+
+die() {
+    explained=1
+    echo "REFUSED: $*" >&2
+    exit 1
+}
+
+on_err() {
+    local status=$1 line=$2 command=$3
+    [[ $BASHPID == "$$" ]] || return 0
+    explained=1
+    echo "mica-wrapper: $wrapper_name FAILED at line $line: $command (exit status $status)" >&2
+}
+trap 'on_err "$?" "$LINENO" "$BASH_COMMAND"' ERR
+
+hoth_lock_holder() {
+    local holder
+    holder=$(head -n 1 -- "$HOTH_LOCK_FILE" 2>/dev/null || true)
+    echo "${holder:-an unidentified run (the lock file names no holder)}"
+}
+
+# Take the box. $1 is a note for whoever has to wait behind this run.
+hoth_lock() {
+    local note=${1:-} started=$SECONDS old_umask info owner mode
+    # The note comes from the deploy account's environment and lands in other jobs' logs.
+    note=${note//[^[:print:]]/?}
+    [[ $HOTH_LOCK_TIMEOUT =~ ^[0-9]+$ ]] || die "the lock timeout '$HOTH_LOCK_TIMEOUT' is not a number of seconds"
+    command -v flock >/dev/null || die "flock is not installed; hoth's jobs cannot be serialised, so none may run"
+    [[ ! -L $HOTH_LOCK_FILE ]] || die "$HOTH_LOCK_FILE is a symlink; it must be a plain file this user owns"
+    old_umask=$(umask)
+    umask 022
+    exec 9>>"$HOTH_LOCK_FILE" || die "cannot open the lock file $HOTH_LOCK_FILE"
+    umask "$old_umask"
+    # Judged on the open file, not the path, so nothing can be swapped in between. A lock the
+    # deploy account could write is one it could fill with a false holder or replace.
+    info=$(stat -L -c '%u %a' "/proc/$$/fd/9") || die "cannot stat the lock file $HOTH_LOCK_FILE"
+    owner=${info% *}
+    mode=${info#* }
+    [[ $owner == "$EUID" ]] || die "$HOTH_LOCK_FILE is owned by uid $owner, not by this user; refusing a lock someone else made"
+    (((8#$mode & 022) == 0)) || die "$HOTH_LOCK_FILE is writable by group or others (mode $mode); refusing a lock the deploy account could tamper with"
+    if ! flock -n 9; then
+        echo "mica-wrapper: $wrapper_name is waiting for hoth's lock $HOTH_LOCK_FILE, held by: $(hoth_lock_holder)"
+        echo "mica-wrapper: deploys and smoke and integration runs share this box's images, networks and licence key, so they run one at a time; waiting up to ${HOTH_LOCK_TIMEOUT}s"
+        flock -w "$HOTH_LOCK_TIMEOUT" 9 ||
+            die "gave up after ${HOTH_LOCK_TIMEOUT}s waiting for hoth's lock $HOTH_LOCK_FILE, still held by: $(hoth_lock_holder). Nothing was started. If that run is stuck, find and stop it on hoth."
+        echo "mica-wrapper: $wrapper_name got hoth's lock after $((SECONDS - started))s"
+    fi
+    hoth_locked=1
+    printf '%s\n' "$wrapper_name pid $$ ${note:+($note) }since $(date -u +%Y-%m-%dT%H:%M:%SZ)" >|"/proc/$$/fd/9"
+}
+
+on_exit() {
+    local rc=$?
+    set +e
+    trap - ERR
+    if declare -F wrapper_cleanup >/dev/null; then
+        wrapper_cleanup || echo "mica-wrapper: $wrapper_name: cleanup failed; a container, network or directory of this run may be left behind" >&2
+    fi
+    # Still holding the lock here: the next job starts only after this run has cleaned up.
+    if [[ $hoth_locked == 1 ]]; then
+        : >|"/proc/$$/fd/9"
+    fi
+    if ((rc == 0 && completed == 1)); then
+        echo "mica-wrapper: $wrapper_name finished ok"
+    elif ((rc == 0)); then
+        echo "mica-wrapper: $wrapper_name FAILED: the run ended before it finished, so it is not a pass: a signal (the session was cut, or the job was cancelled) or an exit that said 0 too early" >&2
+        rc=1
+    elif ((rc > 128)); then
+        echo "mica-wrapper: $wrapper_name FAILED: exit status $rc, which is signal $((rc - 128)) (the session was cut or the run was killed)" >&2
+    elif [[ $explained == 1 ]]; then
+        echo "mica-wrapper: $wrapper_name FAILED: exit status $rc; the line above says why" >&2
+    else
+        echo "mica-wrapper: $wrapper_name FAILED: exit status $rc, and no step named a reason; bash's own message above, if any, is all there is (an unset variable ends a run this way)" >&2
+    fi
+    exit "$rc"
+}
+trap on_exit EXIT
+# END wrapper-common
+
 # Identity line, first thing, so CI can tell which copy of this script hoth is really running.
 # This file is root-owned and installed by hand (scripts/deploy/README.md), which means a change
 # to the repo's copy reaches the box only when a person reinstalls it, and nothing says so when
@@ -82,33 +212,25 @@ LICENSE_KEY=
 # the schema report, the orphan sweep's refusal on standalone -- to say anything.
 START_TIMEOUT=180
 SETTLE_SECONDS=20
-# Integration mode only: how long after `mica started!` the suite has to finish. And, in
-# either mode, how long a run waits for another to release the box before giving up.
+# Integration mode only: how long after `mica started!` the suite has to finish.
 INTEGRATION_TIMEOUT=300
-LOCK_TIMEOUT=1500
-# Root-owned places only: the lock, and the staging directories each run is built in. Neither
-# is under the deploy account's home, which is the point of both.
-LOCK_FILE=/run/mica-smoke.lock
+# Root-owned place only: the staging directories each run is built in, not under the deploy
+# account's home, which is the point. The lock is hoth's, shared with both deploys, and is
+# taken below (hoth_lock, in the common block at the top).
 STAGE_ROOT=/var/lib/mica-smoke
 KEY_DIR=mica-keys
 KEY_NAME=mica-content.key
 
-die() {
-    echo "REFUSED: $*" >&2
-    exit 1
-}
-
 # A trial by an ordinary user may point SMOKE_ROOT and ENV_FILE elsewhere. Under
 # sudo this runs as root, and root ignores both: sudoers does not pass them and
 # the trust root of a privileged script is not something its caller chooses.
-if [[ $(id -u) -ne 0 ]]; then
+if [[ $EUID -ne 0 ]]; then
     SMOKE_ROOT=${MICA_SMOKE_ROOT:-$SMOKE_ROOT}
     ENV_FILE=${MICA_SMOKE_ENV:-$ENV_FILE}
     # So server/__tests__/smokeWrapper.test.ts can reach the timeout paths in seconds.
     SETTLE_SECONDS=${MICA_SMOKE_SETTLE:-$SETTLE_SECONDS}
     INTEGRATION_TIMEOUT=${MICA_SMOKE_INTEGRATION_TIMEOUT:-$INTEGRATION_TIMEOUT}
-    LOCK_FILE=${MICA_SMOKE_LOCK:-${TMPDIR:-/tmp}/mica-smoke-$(id -u).lock}
-    STAGE_ROOT=${MICA_SMOKE_STAGE:-${TMPDIR:-/tmp}/mica-smoke-stage-$(id -u)}
+    STAGE_ROOT=${MICA_SMOKE_STAGE:-${TMPDIR:-/tmp}/mica-smoke-stage-$EUID}
 fi
 
 run=${1:?usage: $0 <run directory under $SMOKE_ROOT>}
@@ -142,20 +264,20 @@ if [[ -z $LICENSE_KEY ]]; then
     fi
 fi
 
+# One job at a time on hoth, and the lock is taken before anything the box's other jobs can
+# change. The key below is registered for one server, so a second run starting while the first
+# is up would fail on the licence rather than on its own merits; and a dev deploy rebuilds the
+# image this run starts a container from, so an image checked or used while one runs is a
+# coin toss (MICA-315). Nothing the deploy account writes is read or trusted before this,
+# because waiting here can take as long as another job does. The lock file is in a directory
+# only root can write, shared with both deploys (see the common block at the top); a file in
+# the deploy account's own tree is one it could hold forever or move.
+hoth_lock "${real##*/}"
+
 docker image inspect "$FX_IMAGE" >/dev/null 2>&1 ||
     die "no docker image $FX_IMAGE; set FX_IMAGE in $ENV_FILE to the stack's FXServer image (docker images | grep server)"
 [[ -f $OXMYSQL_DIR/fxmanifest.lua ]] ||
     die "$OXMYSQL_DIR is not an oxmysql checkout; set OXMYSQL_DIR in $ENV_FILE"
-
-# One run at a time, and the lock is the first thing taken. The key below is registered for
-# one server, so a second run starting while the first is up would fail on the licence
-# rather than on its own merits -- and nothing the deploy account writes may be read or
-# trusted before this, because waiting here can take as long as another run does. The lock
-# file is in a directory only root can write; a file in the deploy account's own tree is
-# one it could hold forever or move.
-command -v flock >/dev/null || die "flock is not installed; runs cannot be serialised"
-exec 9>>"$LOCK_FILE"
-flock -w "$LOCK_TIMEOUT" 9 || die "another smoke run held the box for ${LOCK_TIMEOUT}s"
 
 # What the deploy account controls, and what root does with it.
 #
@@ -178,19 +300,21 @@ owner=$(stat -L -c '%u:%g' "/proc/$$/fd/8")
 [[ ${owner%%:*} -ne 0 ]] || die "$real is owned by root; the container must not run as root"
 
 umask 022
-if [[ $(id -u) -eq 0 ]]; then
+if [[ $EUID -eq 0 ]]; then
     install -d -m 755 -o root -g root "$STAGE_ROOT"
 else
     install -d -m 755 "$STAGE_ROOT"
 fi
-[[ -d $STAGE_ROOT && ! -L $STAGE_ROOT && $(stat -c %u "$STAGE_ROOT") -eq $(id -u) ]] ||
+[[ -d $STAGE_ROOT && ! -L $STAGE_ROOT && $(stat -c %u "$STAGE_ROOT") -eq $EUID ]] ||
     die "$STAGE_ROOT is not a directory of this user's own"
 
 stage=
 net=
 db=
 fx=
-teardown() {
+# Run by the common block's EXIT trap, while the lock is still held and before the final status
+# line, whichever way the run ends.
+wrapper_cleanup() {
     if [[ -n $fx ]]; then
         docker rm -f "$fx" "$db" >/dev/null 2>&1 || true
         docker network rm "$net" >/dev/null 2>&1 || true
@@ -199,7 +323,6 @@ teardown() {
     # outlives it.
     [[ -z $stage ]] || rm -rf -- "$stage"
 }
-trap teardown EXIT
 
 stage=$(mktemp -d "$STAGE_ROOT/run.XXXXXXXX")
 chmod 755 "$stage"
@@ -378,6 +501,7 @@ fi
 if [[ $keyless == 1 && $integration != 1 ]]; then
     report
     echo "smoke: KEYLESS -- mica started; FXServer quits without a key, so its database start is NOT proven"
+    completed=1
     exit 0
 fi
 
@@ -481,3 +605,4 @@ if [[ $integration == 1 ]]; then
 else
     echo "smoke: mica started against mica.esx.sql and stayed clean for ${SETTLE_SECONDS}s"
 fi
+completed=1
