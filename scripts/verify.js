@@ -6,6 +6,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { gateEnv, gateEnvNotice } from './lib/gate-env.js';
 
 /**
  * Every gate, one command, cheapest first.
@@ -175,9 +176,25 @@ const saveCache = () => {
   }
 };
 
+/**
+ * What every gate runs under: this process's environment minus the agent markers, so an
+ * agent's `pnpm verify` is the run CI does (see `scripts/lib/gate-env.js` for why).
+ *
+ * It is passed to `spawn` rather than written back to `process.env`, and it reaches the
+ * grandchildren on its own: `pnpm`, `concurrently` and the tools under them inherit their
+ * parent's environment, and nothing between here and svelte-check, Vitest or Playwright
+ * sets it back. `run` is the only place a gate is spawned, so none can bypass it.
+ */
+const { env: GATE_ENV, removed: REMOVED_ENV } = gateEnv(process.env);
+
 const run = (command, args, options = {}) =>
   new Promise((resolve) => {
-    const child = spawn(command, args, { stdio: 'inherit', shell: true, ...options });
+    const child = spawn(command, args, {
+      stdio: 'inherit',
+      shell: true,
+      env: GATE_ENV,
+      ...options
+    });
     child.on('close', (code) => resolve(code ?? 1));
   });
 
@@ -255,6 +272,12 @@ const report = ({ bailed = false, skipped = [] } = {}) => {
 
 /** Cheapest first, so a missing semicolon does not cost a full e2e run to discover. */
 const main = async () => {
+  // Once, up front, and only when something was removed: a run that changes its own
+  // environment should say so, or a result that differs from a bare `pnpm typecheck` is a
+  // mystery.
+  const notice = gateEnvNotice(REMOVED_ENV);
+  if (notice) process.stdout.write(`${notice}\n`);
+
   // The generated barrels, before anything reads them.
   //
   // `pnpm new:app <id> --service` writes `sdk/host/use<Name>.ts`, and that

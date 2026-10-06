@@ -283,6 +283,31 @@ The fixtures live in `seedFixtures` and are the regression set for `0001`. A new
 migration wants its own fixtures and its own assertions; raise `MINIMUM_CHECKS`
 when you add them, or the new checks are not actually required to run.
 
+## `pnpm verify` runs its gates without `CLAUDECODE`
+
+Some tools change behaviour when they detect an AI agent. svelte-check, with
+`--output` unset, prints its `machine` format
+(`COMPLETED n FILES 0 ERRORS 0 WARNINGS`) under `CLAUDECODE=1`, which every
+Claude Code shell sets, and `human-verbose`
+(`svelte-check found 0 errors and 0 warnings`) everywhere else. `std-env`, which
+Vitest uses and Vite's toolchain reaches through `jiti`, checks `CLAUDECODE` and
+`CLAUDE_CODE` too. So a `pnpm verify` an agent ran was not the run CI does:
+`ac815c3d` passed locally on a test that matched the machine summary and failed
+on CI.
+
+`scripts/verify.js` therefore removes `CLAUDECODE` and `CLAUDE_CODE` from the
+environment of every gate it starts (`scripts/lib/gate-env.js`), grandchildren
+included, and says so once when it did:
+
+```text
+verify: removed CLAUDECODE, CLAUDE_CODE from the gates' environment, so the gates see what CI sees.
+```
+
+`--quick` takes the same path. `pnpm check:fast`, and so the pre-push hook, does
+not: it is a plain `&&` chain and still runs with whatever the shell has. A test
+should never assert on a tool's output format in any case; assert the exit code
+or the result.
+
 ## Editor errors that disagree with the CLI
 
 **The CLI is authoritative.** If `pnpm typecheck` is clean, the code is clean
