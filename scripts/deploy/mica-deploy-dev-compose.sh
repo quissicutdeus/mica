@@ -18,6 +18,16 @@
 # printed was the only symptom, and it looked like a network hiccup.
 set -euo pipefail
 
+# Identity line, first thing, so CI can tell which copy of this script hoth is really running.
+# This file is root-owned and installed by hand (scripts/deploy/README.md), which means a change
+# to the repo's copy reaches the box only when a person reinstalls it, and nothing says so when
+# they do not. scripts/deploy/check-wrapper-identity.sh, called by every CI job that reaches
+# this script, compares this hash with the checked-out copy's and fails the job on a difference
+# or on no line at all. The name is $0's, and the line precedes every guard below, so a run
+# that is refused further down still says what ran. Keep the format: that script parses it.
+self_sha=$(sha256sum -- "$0" | cut -d' ' -f1)
+echo "mica-wrapper: ${0##*/} sha256 $self_sha"
+
 COMPOSE_FILE="/opt/fivem-dev/server-data/vendor/mica/compose.yaml"
 # Re-pinned for MICA-234: three new pass-through build args (VITE_MICA_DISABLED_APPS,
 # VITE_MICA_DEFAULT_DOCK, VITE_MICA_DEFAULT_CONTACTS), same empty-unless-set form as

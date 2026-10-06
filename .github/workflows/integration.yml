@@ -49,9 +49,12 @@ jobs:
         run: pnpm pack:integration
 
       # A missing secret is a failure, not a skip: a run that quietly stood down because it
-      # was not configured would read as a pass. The pipe is unbroken -- ssh's own exit is
-      # the step's, and it is the wrapper's, which fails on any FAIL, on a missing done line
-      # and on a suite that ran nothing. scripts/deploy/README.md has the server side.
+      # was not configured would read as a pass. The step fails on ssh's own exit, which is
+      # the wrapper's, which fails on any FAIL, on a missing done line and on a suite that
+      # ran nothing -- and also when the wrapper hoth ran is not this checkout's copy:
+      # `run-checked.sh` holds the session's output to the wrapper's identity line, so a
+      # reinstall nobody did is a red step naming the command to run, not an old suite
+      # quietly judging a new tree. scripts/deploy/README.md has the server side.
       - name: Run the integration suite on the FiveM box
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
@@ -69,6 +72,7 @@ jobs:
           chmod 600 ~/.ssh/smoke_key
           echo "$KNOWN_HOSTS" > ~/.ssh/known_hosts
           echo "running the integration suite on the FiveM box"
-          ssh -i ~/.ssh/smoke_key -o UserKnownHostsFile=~/.ssh/known_hosts -o BatchMode=yes \
+          sh scripts/deploy/run-checked.sh mica-smoke-release.sh \
+            ssh -i ~/.ssh/smoke_key -o UserKnownHostsFile=~/.ssh/known_hosts -o BatchMode=yes \
             -o ServerAliveInterval=30 \
             gphone@"$DEPLOY_HOST" < dist/integration/mica-integration-run.zip

@@ -180,6 +180,24 @@ jobs:
           pnpm dlx publint dist/release/mica-sdk-*.tgz
           pnpm dlx publint dist/release/mica-shared-*.tgz
 
+      # The root wrapper on hoth is installed by hand, so it can be a version behind the repo
+      # with nothing to say so (scripts/deploy/README.md), and the two steps below that reach it
+      # fail when the line it prints is not the hash of the copy this run expects. Which copy:
+      # the one at the commit the WORKFLOW runs from (`github.sha`), not the one in the tag
+      # being released. For a push to main they are the same. For a dispatched older tag they
+      # are not, and the tag's own `scripts/deploy` is older than the wrapper hoth now runs (and
+      # may predate the check altogether), so comparing against it would fail a release that
+      # is fine, or have no script to run. A separate directory, sparse, so the tag's tree --
+      # what is built and released -- is untouched.
+      - name: Check out the wrapper this workflow expects
+        if: steps.tag.outputs.skip == ''
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          path: .wrapper-check
+          sparse-checkout: scripts/deploy
+          persist-credentials: false
+
       # MICA-302: the in-server integration suite, run before the smoke test and blocking the
       # release. `pnpm build` above already built it (it is part of `build:nocheck`); this
       # packs it beside the resource into a zip of its own -- `dist/integration/`, never
@@ -215,7 +233,8 @@ jobs:
           chmod 600 ~/.ssh/smoke_key
           echo "$KNOWN_HOSTS" > ~/.ssh/known_hosts
           echo "running the integration suite on the FiveM box"
-          ssh -i ~/.ssh/smoke_key -o UserKnownHostsFile=~/.ssh/known_hosts -o BatchMode=yes \
+          sh .wrapper-check/scripts/deploy/run-checked.sh mica-smoke-release.sh \
+            ssh -i ~/.ssh/smoke_key -o UserKnownHostsFile=~/.ssh/known_hosts -o BatchMode=yes \
             -o ServerAliveInterval=30 \
             gphone@"$DEPLOY_HOST" < dist/integration/mica-integration-run.zip
 
@@ -251,7 +270,8 @@ jobs:
           chmod 600 ~/.ssh/smoke_key
           echo "$KNOWN_HOSTS" > ~/.ssh/known_hosts
           echo "smoke-testing $zip on the FiveM box"
-          ssh -i ~/.ssh/smoke_key -o UserKnownHostsFile=~/.ssh/known_hosts -o BatchMode=yes \
+          sh .wrapper-check/scripts/deploy/run-checked.sh mica-smoke-release.sh \
+            ssh -i ~/.ssh/smoke_key -o UserKnownHostsFile=~/.ssh/known_hosts -o BatchMode=yes \
             gphone@"$DEPLOY_HOST" < "$zip"
 
       # A checksum file beside the assets, and a signed provenance attestation over them

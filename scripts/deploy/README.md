@@ -13,6 +13,8 @@ command, and the server decides what runs.
 | `mica-deploy-main-compose.sh` | `/usr/local/sbin/`                  | `root`, via `sudoers`        |
 | `smoke-release.sh`            | `/home/gphone/bin/smoke-release.sh` | `gphone`, via forced command |
 | `mica-smoke-release.sh`       | `/usr/local/sbin/`                  | `root`, via `sudoers`        |
+| `check-wrapper-identity.sh`   | not installed                       | CI, on the runner            |
+| `run-checked.sh`              | not installed                       | CI, on the runner            |
 
 ## The unprivileged half self-installs; the privileged half does not
 
@@ -45,6 +47,86 @@ That asymmetry is the point: a deploy account that could rewrite the script it
 invokes as root would not be an unprivileged account. The unprivileged pair has
 no such problem — it already runs as `gphone` and already resets the checkout it
 copies from, so self-installing grants it nothing it did not have.
+
+### Is hoth running the copy in the repo? The identity line
+
+The price of that asymmetry is that **when a root wrapper changes in the repo
+and nobody reinstalls it, hoth silently runs the old one.** On 2026-10-06
+(MICA-306) the smoke wrapper changed and the box kept the old one; the only
+reason anyone knew was that the new scenario happened to fail loudly. So the
+wrappers now report on themselves, and CI refuses to pass without the report.
+
+Each of the three root wrappers prints, as its first output line, before any
+guard that could refuse the run:
+
+```text
+mica-wrapper: mica-smoke-release.sh sha256 <64 hex digits of the file's own bytes>
+```
+
+`check-wrapper-identity.sh <wrapper> <ssh output>` hashes the **checked-out**
+copy of that wrapper and holds the SSH session's output to it. Every CI step
+that reaches a wrapper calls it through `run-checked.sh <wrapper> ssh ...`,
+which is the SSH session plus the check, with the session's own exit status kept
+(a bare `ssh | tee` would report `tee`'s). The step fails when:
+
+- no identity line for that wrapper is in the output, which is a wrapper too old
+  to print one, and so the very thing this exists to catch;
+- any identity line carries a hash other than the checkout's, or something that
+  is not a hash; or
+- the checked-out wrapper cannot be read or hashed.
+
+It never passes silently, and nothing in a workflow turns it off. The message
+is:
+
+```text
+hoth's `mica-smoke-release.sh` is stale or missing: reinstall it.
+  expected sha256 (scripts/deploy/mica-smoke-release.sh in this checkout): <hash>
+  hoth reported:                                          <hash(es), or "no ... line">
+Reinstall it on hoth, from a checkout of this commit:
+  sudo install -m 700 -o root -g root scripts/deploy/mica-smoke-release.sh /usr/local/sbin/
+```
+
+| Job                                      | Wrapper checked               | Expected hash comes from     |
+| ---------------------------------------- | ----------------------------- | ---------------------------- |
+| `deploy.yml` `deploy-dev`                | `mica-deploy-dev-compose.sh`  | the commit being deployed    |
+| `deploy.yml` `deploy-main`               | `mica-deploy-main-compose.sh` | the commit being deployed    |
+| `release.yml` integration step and smoke | `mica-smoke-release.sh`       | the commit it runs from      |
+| `integration.yml`                        | `mica-smoke-release.sh`       | the ref it was dispatched on |
+
+`release.yml` compares against `github.sha`, not the tag it releases: for a push
+to `main` they are one commit, and for `gh workflow run release.yml -f tag=...`
+the older tag's own wrapper predates whatever hoth now runs, and the check
+itself.
+
+**On a deploy it fails after the deploy ran, and says so.** The wrapper is
+reached at the end of the deploy, behind a forced command that takes no
+arguments, so there is no way to ask hoth for its hash first without a new key
+and a new forced command. The deploy of a stale wrapper therefore has already
+happened by the time it is found; the step goes red anyway, which reddens the
+run and the commit and mails whoever pushed, and the next deploy fails the same
+way until the wrapper is reinstalled. Treat the red as the instruction. For the
+release and integration runs the wrapper prints its line before it does
+anything, so the verdict arrives with the suite's own, and a stale wrapper's run
+is red even if its suite passed.
+
+**What to do when it fails.** On hoth, as a user with `sudo`, from a checkout of
+the commit CI names:
+
+```sh
+sudo install -m 700 -o root -g root scripts/deploy/<wrapper> /usr/local/sbin/
+sha256sum /usr/local/sbin/<wrapper> scripts/deploy/<wrapper>   # the two must agree
+```
+
+and re-run the failed job. Changing a compose wrapper's pinned `EXPECTED_SHA`
+(below) is the same reinstall. If a job reports `no ... line` and the wrapper
+was just reinstalled, the run died before it reached the wrapper: read the
+step's own error above the message first.
+
+This grants `gphone` and CI nothing: the check only reads what the wrapper
+prints. The wrappers stay root-owned, the sudoers rules are unchanged, and the
+only way to a current wrapper is still a person running `sudo install`. It is a
+staleness check, not tamper-proofing: a wrapper edited on the box to print the
+right line would pass it.
 
 Bootstrapping is still manual, once, before the first deploy of these:
 
