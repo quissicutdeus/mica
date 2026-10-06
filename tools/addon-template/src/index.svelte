@@ -1,12 +1,18 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import {
     Screen,
-    Button,
     EmptyState,
+    ListItem,
+    MessageBar,
+    useAppAction,
+    useAppEvents,
     useAppLevels,
+    useService,
     onAppForeground,
     type AppProps
   } from '@mica/sdk';
+  import { notes as notesService, NOTE_ADDED, type Note } from './service';
 
   /**
    * The annotation form, not `$props<AppProps>()` — the generic form only accepts an inline
@@ -14,8 +20,27 @@
    */
   let { onback }: AppProps = $props();
 
-  let detail: string | null = $state(null);
-  let taps = $state(0);
+  let notes: Note[] = $state([]);
+  let draft = $state('');
+  let open: Note | null = $state(null);
+
+  /**
+   * Your server half, typed from its declaration in `service.ts`.
+   *
+   * `server.call('add', { text })` is checked against that file: a misspelt action or field,
+   * or a number where `text` wants a string, fails `pnpm check`. The answer is typed too —
+   * `Note` here, from `addonOutput<Note>()`. None of that is enforcement: micaOS parses every
+   * payload against the same declaration on the server, whatever this side believed.
+   */
+  const server = useService(notesService);
+
+  /** Busy flag and error toast around a write: a refusal from `add` is shown, not swallowed. */
+  const { busy, run } = useAppAction('my_addon');
+
+  /** One note in the list, once — the answer to `add` and its push can both bring it. */
+  const keep = (note: Note) => {
+    if (!notes.some((n) => n.id === note.id)) notes = [...notes, note];
+  };
 
   /**
    * The back ladder, and the keyboard claim, in one call.
@@ -38,9 +63,9 @@
     onback: () => onback(),
     levels: [
       {
-        open: () => detail !== null,
-        close: () => (detail = null),
-        title: () => detail ?? ''
+        open: () => open !== null,
+        close: () => (open = null),
+        title: () => 'Note'
       }
     ]
   });
@@ -52,10 +77,27 @@
    * apps, so anything fetched in `onMount` is fetched once and is stale the moment your app
    * goes to the background. The first argument is the app id, for the same residency reason
    * `useAppLevels` needs one.
+   *
+   * The third argument is the default a failed round trip resolves to — here, the list
+   * already on screen — so a server half that is not running leaves the app usable. A
+   * snapshot, because it crosses `postMessage` to the shell and a `$state` proxy cannot.
    */
   onAppForeground('my_addon', () => {
-    taps = 0;
+    void server.call('list', {}, $state.snapshot(notes)).then((list) => (notes = list));
   });
+
+  /**
+   * What the server half pushes with `exports.mica:PushToApp`. Needs `app-events` in the
+   * manifest. A push is at most once and never queued, so it is a nudge: `list` on the next
+   * foreground is what catches a phone up on anything it missed.
+   */
+  onDestroy(useAppEvents('my_addon').on<Note>(NOTE_ADDED, (event) => keep(event.payload)));
+
+  const add = async () => {
+    const text = draft.trim();
+    if (text === '') return;
+    if (await run(async () => keep(await server.call('add', { text })))) draft = '';
+  };
 </script>
 
 <!--
@@ -71,16 +113,25 @@
   (`vh`, `vw`, `dvh`) answer to the browser window, which is not the phone.
 -->
 <Screen title={app.title} onback={app.back}>
-  {#if detail !== null}
+  {#if open !== null}
     <div class="min-h-0 flex-1 overflow-y-auto p-4">
-      <p class="text-body-large text-on-surface">A second level. Back closes it.</p>
+      <p class="text-body-large text-on-surface">{open.text}</p>
     </div>
   {:else}
-    <div class="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 p-4">
-      <EmptyState title="Hello from an add-on" description="Built outside the micaOS repo." />
-      <p class="text-body-large text-on-surface">Tapped {taps} times</p>
-      <Button onclick={() => (taps += 1)}>Tap me</Button>
-      <Button variant="secondary" onclick={() => (detail = 'Detail')}>Open a level</Button>
+    <div class="min-h-0 flex-1 overflow-y-auto">
+      {#if notes.length === 0}
+        <EmptyState
+          title="No notes yet"
+          description="Write one below. This add-on's own server resource keeps it."
+        />
+      {:else}
+        {#each notes as note (note.id)}
+          <ListItem onclick={() => (open = note)}>
+            <p class="text-body-large text-on-surface">{note.text}</p>
+          </ListItem>
+        {/each}
+      {/if}
     </div>
+    <MessageBar bind:value={draft} placeholder="A note" maxlength={200} busy={$busy} onsend={add} />
   {/if}
 </Screen>

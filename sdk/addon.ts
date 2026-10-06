@@ -58,6 +58,24 @@ export type { AppUpdate, AppUpdateKind } from './vocabulary/shell';
  * I/O-free by definition (AGENTS.md §8), so this bundles into a sandboxed add-on unchanged.
  */
 export { placeholderAvatar, placeholderPhoto, placeholderPhotos } from './lib/placeholderImage';
+/**
+ * MICA-308: an add-on's server half, declared once. `defineAddonService` is the object an
+ * add-on's own FiveM resource hands `exports.mica:RegisterService`, and the one
+ * `useService(declaration)` types its calls from; `addonOutput<T>()` attaches an action's
+ * answer type and `addonError(message)` is the refusal a handler answers with. All three
+ * are plain functions over plain data out of `@mica/shared/addonService`, with no state and
+ * no I/O, so they bundle into a sandboxed add-on unchanged.
+ */
+export { defineAddonService, addonOutput, addonError } from '@mica/shared/addonService';
+/** @public */
+export type {
+  AddonServiceDeclaration,
+  AddonActionName,
+  AddonActionInput,
+  AddonActionOutput,
+  AddonHandlers,
+  AddonErrorAnswer
+} from '@mica/shared/addonService';
 export * from './types';
 export * from './version';
 export { registerMessages, t, plural, availableLocales, FALLBACK_LOCALE } from './i18n';

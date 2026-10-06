@@ -9,6 +9,7 @@ import { buildDeepLink } from '@mica/shared/deepLink';
 import type { Invoice, InvoiceActionOutcome } from '@mica/shared/types';
 import { appEventChannel } from '../lib/appEvents';
 import { payToSociety, transfer, type PaymentOutcome } from '../lib/Payments';
+import { onResourceReleased } from '../lib/resourceStop';
 
 /**
  * Invoices (MICA-240): a resource bills a player, and the player pays or declines from the
@@ -142,7 +143,9 @@ const notifyBiller = (invoice: Invoice, event: 'onPaid' | 'onDeclined'): void =>
   }
 };
 
-on('onResourceStop', (resource: string) => {
+// A forged stop would only drop a biller's callbacks, not hand them to anyone, but it is the
+// same event keyed on another resource's name, so it takes the same check.
+onResourceReleased((resource) => {
   let dropped = 0;
   for (const [id, entry] of callbacks) {
     if (entry.owner === resource) {

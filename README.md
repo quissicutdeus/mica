@@ -1731,39 +1731,42 @@ player right now: confiscated, switched off, or an item they do not hold) or
 `unsupported` (the device has no such feature yet: the tablet's lock, until
 MICA-264).
 
-| Export                                      | Identifies a player by | Does                                                                                                                      |
-| ------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `GetApiVersion()`                           | —                      | The API version. Bumped when an existing export changes shape, not when one is added                                      |
-| `SendSystemEmail(...)`                      | citizenid              | Sends mail. Predates this API and keeps its original signature                                                            |
-| `SendMessage(citizenid, message)`           | citizenid              | Puts a text in Messages from a business or a line, never a player. Works offline; see below                               |
-| `SendNotification(citizenid, opts)`         | citizenid              | Raises a notification. Works offline — the row is written and shown next time they open the phone                         |
-| `SendInvoice(citizenid, invoice)`           | citizenid              | Bills a player; they pay or decline from the Bank app. Works offline; see below                                           |
-| `BuildDeepLink(app, props)`                 | —                      | Builds a `app?key=value` link without needing to know the format                                                          |
-| `AddMedia(citizenid, media)`                | citizenid              | Puts a GIF, a video poster, a voice clip or a file in a player's gallery                                                  |
-| `AddContact(citizenid, contact)`            | citizenid              | Adds a contact to a player's address book. Works offline, same as `AddMedia`                                              |
-| `GetPhoneNumber(citizenid)`                 | citizenid              | The phone number for a citizenid, online or off                                                                           |
-| `GetCitizenId(phone)`                       | —                      | The reverse lookup: whose phone number is this                                                                            |
-| `IsPhoneOpen(source, device?)`              | source                 | Whether that player's phone, or `device`, is open right now                                                               |
-| `SetPhoneEnabled(source, enabled, device?)` | source                 | Confiscates or returns a player's phone, or `device`; disabling while open force-closes it                                |
-| `OpenApp(source, appId, props, device?)`    | source                 | Force-opens the phone, or `device`, on a named app; `props` becomes that app's `useDeepLink` payload                      |
-| `GetBatteryLevel(source)`                   | source                 | The saved charge, 0-100                                                                                                   |
-| `SetBatteryLevel(source, level)`            | source                 | Sets the charge. Clamped rather than refused                                                                              |
-| `AddBatteryCharge(source, delta)`           | source                 | Adds or, with a negative delta, drains — an EMP, a taser                                                                  |
-| `SetCharging(source, isCharging)`           | source                 | Puts the phone on or off charge. A state, not a top-up: it reverses the drain loop                                        |
-| `SetGlobalSignal(level)`                    | —                      | City-wide reception, 0-4. `0` is a blackout                                                                               |
-| `ClearGlobalSignal()`                       | —                      | Back to full bars                                                                                                         |
-| `AddDeadZone({x,y,z,radius,level})`         | —                      | A jammer, a tunnel, a basement. Returns an id                                                                             |
-| `RemoveDeadZone(id)`                        | —                      | Removes one by the id `AddDeadZone` gave you                                                                              |
-| `SetSignal(source, level)`                  | source                 | One player, overriding the zones. `null` hands them back to the world                                                     |
-| `GetSignal(source)`                         | source                 | The rules they are subject to — not their bars, which depend on where they stand                                          |
-| `RegisterNumber(number, options)`           | —                      | Owns a phone number, so a call placed to it reaches your handler instead of failing                                       |
-| `UnregisterNumber(number)`                  | —                      | Gives a number back. Only the resource that registered it may                                                             |
-| `CreateCall(source, number)`                | source                 | Places a call for a player, the way a payphone or a dispatch pick-up would. Async                                         |
-| `EndLineCall(callId)`                       | —                      | Hangs up a call a line your resource registered has answered. See below                                                   |
-| `IsInCall(source)`                          | source                 | Whether that player is ringing, connected, or waiting on a line's handler — when `true`, `CreateCall` answers `not_ready` |
-| `HasPhoneItem(source)`                      | source                 | Whether they hold a phone item right now. `true` when no item is required, or when no inventory can count it              |
-| `GetSourceFromNumber(number)`               | —                      | The online player holding that number. `offline` when a character holds it but is not connected. Async                    |
-| `GetCitizenIdFromSource(source)`            | source                 | The citizenid of the character loaded on that source. `unknown_player` before one loads                                   |
+| Export                                             | Identifies a player by | Does                                                                                                                      |
+| -------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `GetApiVersion()`                                  | —                      | The API version. Bumped when an existing export changes shape, not when one is added                                      |
+| `SendSystemEmail(...)`                             | citizenid              | Sends mail. Predates this API and keeps its original signature                                                            |
+| `SendMessage(citizenid, message)`                  | citizenid              | Puts a text in Messages from a business or a line, never a player. Works offline; see below                               |
+| `SendNotification(citizenid, opts)`                | citizenid              | Raises a notification. Works offline — the row is written and shown next time they open the phone                         |
+| `SendInvoice(citizenid, invoice)`                  | citizenid              | Bills a player; they pay or decline from the Bank app. Works offline; see below                                           |
+| `BuildDeepLink(app, props)`                        | —                      | Builds a `app?key=value` link without needing to know the format                                                          |
+| `AddMedia(citizenid, media)`                       | citizenid              | Puts a GIF, a video poster, a voice clip or a file in a player's gallery                                                  |
+| `AddContact(citizenid, contact)`                   | citizenid              | Adds a contact to a player's address book. Works offline, same as `AddMedia`                                              |
+| `GetPhoneNumber(citizenid)`                        | citizenid              | The phone number for a citizenid, online or off                                                                           |
+| `GetCitizenId(phone)`                              | —                      | The reverse lookup: whose phone number is this                                                                            |
+| `IsPhoneOpen(source, device?)`                     | source                 | Whether that player's phone, or `device`, is open right now                                                               |
+| `SetPhoneEnabled(source, enabled, device?)`        | source                 | Confiscates or returns a player's phone, or `device`; disabling while open force-closes it                                |
+| `OpenApp(source, appId, props, device?)`           | source                 | Force-opens the phone, or `device`, on a named app; `props` becomes that app's `useDeepLink` payload                      |
+| `GetBatteryLevel(source)`                          | source                 | The saved charge, 0-100                                                                                                   |
+| `SetBatteryLevel(source, level)`                   | source                 | Sets the charge. Clamped rather than refused                                                                              |
+| `AddBatteryCharge(source, delta)`                  | source                 | Adds or, with a negative delta, drains — an EMP, a taser                                                                  |
+| `SetCharging(source, isCharging)`                  | source                 | Puts the phone on or off charge. A state, not a top-up: it reverses the drain loop                                        |
+| `SetGlobalSignal(level)`                           | —                      | City-wide reception, 0-4. `0` is a blackout                                                                               |
+| `ClearGlobalSignal()`                              | —                      | Back to full bars                                                                                                         |
+| `AddDeadZone({x,y,z,radius,level})`                | —                      | A jammer, a tunnel, a basement. Returns an id                                                                             |
+| `RemoveDeadZone(id)`                               | —                      | Removes one by the id `AddDeadZone` gave you                                                                              |
+| `SetSignal(source, level)`                         | source                 | One player, overriding the zones. `null` hands them back to the world                                                     |
+| `GetSignal(source)`                                | source                 | The rules they are subject to — not their bars, which depend on where they stand                                          |
+| `RegisterNumber(number, options)`                  | —                      | Owns a phone number, so a call placed to it reaches your handler instead of failing                                       |
+| `UnregisterNumber(number)`                         | —                      | Gives a number back. Only the resource that registered it may                                                             |
+| `CreateCall(source, number)`                       | source                 | Places a call for a player, the way a payphone or a dispatch pick-up would. Async                                         |
+| `EndLineCall(callId)`                              | —                      | Hangs up a call a line your resource registered has answered. See below                                                   |
+| `IsInCall(source)`                                 | source                 | Whether that player is ringing, connected, or waiting on a line's handler — when `true`, `CreateCall` answers `not_ready` |
+| `HasPhoneItem(source)`                             | source                 | Whether they hold a phone item right now. `true` when no item is required, or when no inventory can count it              |
+| `GetSourceFromNumber(number)`                      | —                      | The online player holding that number. `offline` when a character holds it but is not connected. Async                    |
+| `GetCitizenIdFromSource(source)`                   | source                 | The citizenid of the character loaded on that source. `unknown_player` before one loads                                   |
+| `RegisterService(declaration, handlers)`           | —                      | Gives your Store add-on a server half: micaOS answers its `useService` calls with your handlers. See below                |
+| `UnregisterService(id)`                            | —                      | Takes it down. Only the resource that registered it may                                                                   |
+| `PushToApp(id, citizenid, event, payload, notify)` | citizenid              | Pushes to your add-on on those players' phones; `citizenid` may be a list                                                 |
 
 **citizenid or source, and it matters which.** Anything that must work while the
 player is offline takes a citizenid; anything inherently live takes a source. No
@@ -1960,6 +1963,82 @@ local result = exports['mica']:SendInvoice(citizenid, {
   not survive either resource restarting and are released when yours stops. The
   invoice row itself says `paid` or `declined` and when, so a script that must
   not miss a payment reads that rather than relying on the callback.
+
+**A Store add-on can have a server half, in its own resource (MICA-308).** A
+`core: false` add-on runs in a sandboxed frame on the phone and reaches the
+server only through `useService(id).call(action, input)`. Until now only a
+service compiled into micaOS could answer that. `RegisterService` lets your own
+resource answer it instead, with micaOS still standing in front of every call.
+
+Declare the service once, as plain data, and use the same declaration on both
+sides: your add-on's UI passes it to `useService` and gets every action and
+input type-checked, and your resource hands it to `RegisterService`. In
+TypeScript, `defineAddonService` from `@mica/sdk` checks it as you write it; a
+Lua resource writes the same table, or reads the JSON the add-on template's
+build emits next to the bundle.
+
+```lua
+local declaration = json.decode(LoadResourceFile(GetCurrentResourceName(), 'service.json'))
+-- { id = 'journal', actions = { add = { input = { title = { type = 'string', max = 80 } } }, list = { input = {} } } }
+
+local result = exports['mica']:RegisterService(declaration, {
+    add = function(citizenid, input, source)
+        -- input.title is already a string of at most 80 characters
+        return { id = saveEntry(citizenid, input.title) }
+    end,
+    list = function(citizenid, input, source)
+        return entriesOf(citizenid)
+    end
+})
+```
+
+- **micaOS guards every call the way it guards its own services.** The same rate
+  and value limits apply, the payload is parsed against your declaration before
+  your handler runs (and refused if it does not fit), and the player is resolved
+  on the server. Your handler gets `(citizenid, input, source)`, and `citizenid`
+  is the only identity micaOS vouches for. **Whose row is whose is yours to
+  check:** micaOS has never seen your tables, so a handler that takes an id from
+  `input` must confirm it belongs to that `citizenid` itself.
+- **Field kinds:** `string` (`max` required, up to 65,535; optional `min`),
+  `integer` and `number` (`min`, `max`), `boolean`, `enum` (`values`), and
+  `array` (`of` a primitive field, `max` required, up to 1,000). Any of them
+  takes `optional` and `nullable`. There are no nested objects yet. An unknown
+  key or kind is refused, not ignored. At most 64 actions and 64 fields per
+  action.
+- **Answering.** Return any JSON value, or a promise of one, within five
+  seconds. To refuse with a message the player sees, return
+  `{ error = { message = '...' } }`; it is shown as written (collapsed and cut
+  at 160 characters), since micaOS cannot translate your words. Anything else
+  that goes wrong (a throw, a rejection, no answer in time, something that is
+  not JSON, or more than 256 KB) is logged with your resource's name and gives
+  the player a generic failure, never a stuck phone.
+- **Ownership.** The id is your add-on's app id (lower_snake_case, at most 32
+  characters). A built-in service or app id is refused, as is an id another
+  resource holds (`already_registered`). Registering again from the same
+  resource replaces your handlers. Everything you hold is released when your
+  resource stops (genuinely stops: an `onResourceStop` another script fires in
+  your name while you are running is ignored), and a call that arrives then
+  answers at once with the generic failure. A second service of the same app is
+  named `<app>_<anything>`. `mica_disabled_apps` naming the app switches off its
+  server half too, every `<app>_…` id included, for calls and for `PushToApp`.
+- **Limits per server start:** at most 16 service ids per resource, 128 add-on
+  service ids in all, and 4,096 bound actions across them. Re-registering
+  actions you already registered costs nothing. Past a limit, `RegisterService`
+  answers `invalid_args` naming it, and a restart resets the count.
+- **`PushToApp`** delivers an app event your add-on receives with
+  `useAppEvents(id)`, to at most 256 citizens at once, with an event name of at
+  most 32 characters and a payload of at most 16 KB. It answers which of them
+  were online. With a `notify` (`{ message, title?, type?, avatar? }`) it also
+  raises a notification, which is also kept in the shade, so an offline player
+  sees it later. Only the resource holding the id may push to it.
+- All three answer an outcome and never throw: `RegisterService` answers `ok`,
+  `invalid_args` with the reason, or `already_registered`. `UnregisterService`
+  answers `ok`, `not_owner` or `invalid_args`. `PushToApp` answers
+  `ok { delivered, offline }`, `not_owner`, `app_disabled` or `invalid_args`.
+
+Your resource keeps its own data, in its own tables, through oxmysql. Nothing of
+yours enters micaOS's schema. `ensure mica` before your resource. The add-on
+template in `tools/addon-template/` has a working example of both halves.
 
 **`ext_<resource>` is reserved for you.** Notifications raised under it get
 their own group in the shade, labelled with your `sourceLabel`. micaOS apps are

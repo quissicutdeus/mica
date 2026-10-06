@@ -6,6 +6,8 @@ import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { checkAddonService } from '@mica/shared/addonService';
+import { NOTE_ADDED, notes } from '../../../tools/addon-template/src/service';
 
 /**
  * The out-of-tree add-on template must keep saying what this repo's add-on build says.
@@ -128,7 +130,12 @@ describe('the out-of-tree add-on template', () => {
       'vite.config.ts',
       'src/manifest.ts',
       'src/index.svelte',
-      'src/Icon.svelte'
+      'src/Icon.svelte',
+      // MICA-308: the example server half.
+      'src/service.ts',
+      'my_addon_server/fxmanifest.lua',
+      'my_addon_server/server.lua',
+      'my_addon_server/service.json'
     ]) {
       expect(fs.existsSync(path.join(TEMPLATE_DIR, file)), `${file} is missing`).toBe(true);
     }
@@ -212,5 +219,79 @@ describe('the out-of-tree add-on template', () => {
      */
     expect(workspace).toContain('blockExoticSubdeps: false');
     expect(pkg).not.toHaveProperty('pnpm');
+  });
+
+  /**
+   * MICA-308. The template's server half reads its declaration as JSON, because it is Lua and
+   * cannot read `src/service.ts`; the template's build writes that JSON from the `.ts`. Both
+   * files are committed so the folder works the moment it is copied, which makes the JSON a
+   * second copy in this repo — and a second copy is the shape that drifts. Each test below is
+   * one way the example would stop working for whoever copies it, with nothing in their own
+   * build to say so.
+   */
+  describe('the example server half', () => {
+    const serverDir = path.join(TEMPLATE_DIR, 'my_addon_server');
+    const committed = read(path.join(serverDir, 'service.json'));
+    const lua = read(path.join(serverDir, 'server.lua'));
+
+    it('ships the JSON the build would write from src/service.ts', () => {
+      // The plugin's own encoding, so a rebuild of the template is a no-op here. A mismatch
+      // means `service.ts` was edited and `pnpm build` not run in the template.
+      expect(
+        committed,
+        'tools/addon-template/my_addon_server/service.json is not what src/service.ts declares — ' +
+          'build the template, or regenerate it with the same JSON.stringify(declaration, null, 2)'
+      ).toBe(`${JSON.stringify(notes, null, 2)}\n`);
+    });
+
+    it('is a declaration micaOS accepts, under the manifest id', () => {
+      const parsed: unknown = JSON.parse(committed);
+      const checked = checkAddonService(parsed);
+      expect(checked, checked.ok ? '' : checked.reason).toMatchObject({ ok: true });
+      const manifestId = /^\s*id:\s*'([a-z][a-z0-9_]*)'/m.exec(
+        read(path.join(TEMPLATE_DIR, 'src/manifest.ts'))
+      )?.[1];
+      expect(manifestId).toBeDefined();
+      expect(notes.id).toBe(manifestId);
+    });
+
+    it('declares the service from a module the build can evaluate without Svelte', () => {
+      // The plugin runs `src/service.ts` through Vite's module runner, which has no Svelte
+      // plugin: an import of `@mica/sdk` there reaches the component barrel and the build
+      // fails. `@mica/shared/addonService` imports nothing but `@mica/shared/schema`.
+      const source = read(path.join(TEMPLATE_DIR, 'src/service.ts'));
+      expect(source).toMatch(/from '@mica\/shared\/addonService';/);
+      expect(source).not.toMatch(/from '@mica\/sdk/);
+    });
+
+    it('writes the JSON into the folder the Lua resource loads it from', () => {
+      const config = read(TEMPLATE_CONFIG);
+      expect(config).toContain("name: 'mica-addon-service-json'");
+      expect(config).toContain("path.join(here, 'my_addon_server')");
+      expect(config).toContain("path.join(SERVER_RESOURCE, 'service.json')");
+      expect(lua).toMatch(/LoadResourceFile\(RESOURCE, 'service\.json'\)/);
+    });
+
+    it("registers and pushes through the exports micaOS publishes, with the UI's event name", () => {
+      // Names micaOS actually publishes, read from where it publishes them.
+      const api = read(path.join(ROOT, 'server/lib/publicApi.ts'));
+      for (const name of ['RegisterService', 'PushToApp']) {
+        expect(api, `micaOS no longer publishes ${name}`).toContain(`'${name}',`);
+      }
+      expect(lua).toMatch(/exports\.mica:RegisterService\(declaration, handlers\)/);
+      expect(lua).toContain(
+        `exports.mica:PushToApp(declaration.id, citizenid, '${NOTE_ADDED}', note)`
+      );
+      // Every declared action has a handler, and nothing else does — `RegisterService`
+      // refuses either mismatch, and only on a running server.
+      const handlers = [...lua.matchAll(/^ {2}([a-zA-Z_]+) = function\(citizenid/gm)].map(
+        (m) => m[1]
+      );
+      expect(handlers.sort()).toEqual(Object.keys(notes.actions).sort());
+      // The add-on hears its pushes through `useAppEvents`, which the manifest must declare.
+      expect(read(path.join(TEMPLATE_DIR, 'src/manifest.ts'))).toMatch(
+        /permissions:\s*\[[^\]]*'app-events'/
+      );
+    });
   });
 });

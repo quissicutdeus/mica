@@ -1,0 +1,17 @@
+{
+  "id": "my_addon",
+  "actions": {
+    "list": {
+      "input": {}
+    },
+    "add": {
+      "input": {
+        "text": {
+          "type": "string",
+          "min": 1,
+          "max": 200
+        }
+      }
+    }
+  }
+}

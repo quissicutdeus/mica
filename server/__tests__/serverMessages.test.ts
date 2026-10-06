@@ -78,7 +78,10 @@ const KEYLESS_BASELINE: Record<string, number> = {
   'server/services/Battery.ts': 1,
   'server/services/Phone.ts': 1,
 
-  'server/services/Seed.ts': 1
+  'server/services/Seed.ts': 1,
+  // MICA-308, and not a slip: an add-on handler's `{ error = { message } }` is the add-on's
+  // own text, which micaOS's catalog has no entry for and could not translate if it did.
+  'server/lib/addonServices.ts': 1
 };
 
 describe('server messages carry a key the client can resolve (MICA-216)', () => {

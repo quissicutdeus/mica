@@ -773,6 +773,9 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
   '@mica/sdk': [
     'ALL_PERMISSIONS',
     'AddIcon',
+    // MICA-308: an add-on's server half, declared once for its resource and its UI.
+    'addonError',
+    'addonOutput',
     'AirplaneIcon',
     'AppIconTile',
     'AppPermissionError',
@@ -874,6 +877,7 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'createCrudStore',
     'createPagedStore',
     'createReactionStore',
+    'defineAddonService',
     'defineApp',
     'encodeCanvas',
     'fade',
@@ -1000,6 +1004,9 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
   '@mica/sdk (add-on bundle)': [
     'ALL_PERMISSIONS',
     'AddIcon',
+    // MICA-308: an add-on's server half, declared once for its resource and its UI.
+    'addonError',
+    'addonOutput',
     'AirplaneIcon',
     'AppIconTile',
     'AppPermissionError',
@@ -1102,6 +1109,7 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'createCrudStore',
     'createPagedStore',
     'createReactionStore',
+    'defineAddonService',
     'defineApp',
     'encodeCanvas',
     'fade',
@@ -1257,6 +1265,13 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
 const BASELINE_TYPE_EXPORTS: Record<string, string[]> = {
   '@mica/sdk': [
     'AccountSearchQuery',
+    // MICA-308
+    'AddonActionInput',
+    'AddonActionName',
+    'AddonActionOutput',
+    'AddonErrorAnswer',
+    'AddonHandlers',
+    'AddonServiceDeclaration',
     'AppActionOptions',
     'AppCapability',
     'AppComponent',
@@ -1343,6 +1358,13 @@ const BASELINE_TYPE_EXPORTS: Record<string, string[]> = {
   ],
   '@mica/sdk (add-on bundle)': [
     'AccountSearchQuery',
+    // MICA-308
+    'AddonActionInput',
+    'AddonActionName',
+    'AddonActionOutput',
+    'AddonErrorAnswer',
+    'AddonHandlers',
+    'AddonServiceDeclaration',
     'AppActionOptions',
     'AppCapability',
     'AppComponent',
@@ -1951,6 +1973,10 @@ const BASELINE_HOOK_RETURNS: Record<string, string[]> = {
  */
 const BASELINE_TYPE_SHAPES: Record<string, string[]> = {
   AccountSearchQuery: ['app', 'cursor?', 'limit?', 'q'],
+  // MICA-308. `AddonActionName` is left out on purpose: it is `keyof D['actions'] & string`,
+  // which this reader resolves to `string`'s own methods — a shape nobody declared.
+  AddonErrorAnswer: ['error'],
+  AddonServiceDeclaration: ['actions', 'format?', 'id'],
   AppActionOptions: ['error?', 'success?', 'title?'],
   AppCapability: ['|jobs', '|money'],
   AppDevice: ['|phone', '|tablet'],
@@ -3717,6 +3743,13 @@ describe('the SDK public surface (MICA-125)', () => {
       // Every type with no shape is one `shapeMembers` documents as unreadable by rule, so
       // a type that silently drops out of the arm has to be added to this list on purpose.
       const NO_SHAPE_BY_RULE = [
+        // MICA-308: computed from a declaration type argument (a conditional over
+        // `D['actions'][A]`, a mapped type over its action names), so there is nothing to
+        // read until an add-on supplies `D` — the `Translate` case, generic rather than a
+        // function. `AddonServiceDeclaration`, which they are computed from, is frozen.
+        'AddonActionInput',
+        'AddonActionOutput',
+        'AddonHandlers',
         'AppComponent',
         'CancelTimer',
         'Catalog',

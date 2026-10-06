@@ -22,7 +22,7 @@ lifting the same folder out by hand does exactly as well.
 
 ```sh
 pnpm install
-pnpm build     # -> dist/<your app id>.js
+pnpm build     # -> dist/<your app id>.js, and my_addon_server/service.json
 ```
 
 `pnpm check` runs `svelte-check` over your source if you want the typechecker as
@@ -181,6 +181,8 @@ line is the thing standing in the way, it opens.
 | `src/manifest.ts`     | Your app's identity, tile, permissions and `core: false`                                                                 |
 | `src/index.svelte`    | Your app                                                                                                                 |
 | `src/Icon.svelte`     | Your launcher glyph                                                                                                      |
+| `src/service.ts`      | Your server half's declaration, read by the UI and by `my_addon_server/` — see "Your server half"                        |
+| `my_addon_server/`    | Your server half: a FiveM resource of its own, which registers with micaOS                                               |
 
 ## Two things that will bite you, and no test can catch either
 
@@ -249,7 +251,114 @@ sandbox, which gives an add-on no NUI at all. Editing the refusals out of this
 file buys nothing except a bundle that fails later and less clearly — and, for
 the third, a permission sheet nothing checks.
 
-Reach your own server through `useService(id).call(...)`.
+Reach your own server through `useService(...)` — next section.
+
+## Your server half
+
+An add-on that stores anything, or involves another player, needs code on the
+server. Yours is a FiveM resource of its own, beside micaOS rather than inside
+it: `my_addon_server/` here, in Lua. It calls
+`exports.mica:RegisterService(declaration, handlers)`, and from then on micaOS
+answers your app's calls by handing them to your handlers.
+
+### One declaration, read at both ends
+
+`src/service.ts` declares the service once, with `defineAddonService`:
+
+- **The UI** types its calls from it. `useService(notes).call('add', { text })`
+  knows the action names, each one's fields and what each answers, so a typo is
+  a `pnpm check` error rather than a failed tap.
+- **The server** gets the same object as `my_addon_server/service.json`, which
+  `pnpm build` writes from the `.ts` (Lua cannot read TypeScript), and
+  `server.lua` registers. Edit the `.ts` and rebuild; never edit the JSON.
+
+`src/service.ts` imports `defineAddonService` and `addonOutput` from
+`@mica/shared/addonService`, not from `@mica/sdk`: the build evaluates that file
+on its own, and the SDK barrel would drag every Svelte component in with it.
+Your UI code imports the same names from `@mica/sdk` as usual.
+
+`id` is your manifest's `id`, or `<id>_<something>` for a second service. The
+phone refuses any other id before a request is sent, and the build refuses it
+first.
+
+Each action has an `input`, a table of fields (`{}` for one that takes nothing):
+
+| `type`    | Options            | Notes                                    |
+| --------- | ------------------ | ---------------------------------------- |
+| `string`  | `min`, `max`       | `max` is required                        |
+| `integer` | `min`, `max`       | Whole numbers only                       |
+| `number`  | `min`, `max`       |                                          |
+| `boolean` |                    |                                          |
+| `enum`    | `values`           | A non-empty list of strings              |
+| `array`   | `of`, `min`, `max` | `of` is one of the above; `max` required |
+
+Any field may also be `optional` (the key may be absent) or `nullable` (`null`
+is a value). There are no nested objects: take several fields instead. An
+unknown key or kind is refused with the reason, never ignored.
+
+`output: addonOutput<T>()` is the answer's type, for the UI only. It is
+`undefined` at run time, and micaOS does not check what your handler answers.
+
+### What micaOS guards, and what it does not
+
+Before a handler runs, micaOS has rate-limited the call, checked that the server
+owner has not switched your app off, resolved the player on the server, and
+parsed `input` against your declaration — the same guard every built-in service
+sits behind. Your handler is called as `handler(citizenid, input, source)`, with
+the parsed input and nothing the client could forge. Your resource owns the id
+while it runs: another resource asking for it is refused (`already_registered`),
+a micaOS service or app id can never be taken, and everything is released when
+your resource stops.
+
+What it does **not** do is decide who may touch what. `citizenid` is the one
+identity micaOS vouches for; whether that citizen may read or change the row an
+input names is your check to write, in every handler. Your data is yours too:
+keep your own tables through oxmysql in your own resource, with the citizenid in
+every `WHERE`. micaOS's schema is not yours to add to. The template keeps its
+notes in a Lua table, which is gone on restart, to keep the example short.
+
+### Answering
+
+A handler answers a value, or a promise of one, **within five seconds**. To
+refuse with a message the player should read, answer
+`{ error = { message = 'You already have 50 notes.' } }` (`addonError(message)`
+from JavaScript): the UI's call rejects with that message, at most 160
+characters, and `useAppAction`'s `run` shows it as the toast, as the template
+does. Anything else — an error thrown, no answer in time, an answer that is not
+JSON — rejects with micaOS's generic failure instead, and only your server
+console says why. While your resource is not running every call fails, which is
+why the template gives `list` a default to fall back on.
+
+### Pushing to the app
+
+`exports.mica:PushToApp(id, citizenid, event, payload)` reaches every online
+phone of that citizen (or of a list of up to 256 of them), where the app hears
+it with `useAppEvents(id).on(event, ...)` — which needs `app-events` in your
+manifest. `event` is lower_snake_case and `payload` a plain table. A push is at
+most once and never queued, so treat it as a nudge: the template re-reads `list`
+whenever the app comes to the foreground, which is what catches up a phone that
+was offline. It only works for an id your resource registered, and it can never
+fail the call that sent it.
+
+### Installing it
+
+1. `pnpm build`, which writes `dist/<id>.js` and `my_addon_server/service.json`.
+2. Copy `my_addon_server/` into your server's `resources/`. Rename it if you
+   like; the resource name is not your app id.
+3. Start it after micaOS, in `server.cfg`:
+
+   ```cfg
+   ensure mica
+   ensure my_addon_server
+   ```
+
+   `fxmanifest.lua` declares `dependency 'mica'` as well, and `server.lua`
+   registers again whenever micaOS restarts, since micaOS forgets every
+   registration when it stops.
+
+4. Publish the bundle as below. The resource and the bundle are one add-on: the
+   resource without the bundle has no UI, and the bundle without the resource
+   fails every call.
 
 ## Publishing it
 

@@ -260,6 +260,40 @@ the extracted example to copy from.
 
 ## If your app has a server half
 
+**An add-on outside this repo** (`core: false`, from the Store) puts its server
+half in its own FiveM resource, registered with `exports.mica:RegisterService`
+(MICA-308). Declare the service once with `defineAddonService`, as plain data
+with typed fields, and use the same declaration on both sides:
+
+```ts
+// src/service.ts
+import { defineAddonService, addonOutput } from '@mica/shared/addonService';
+
+export const journal = defineAddonService({
+  id: 'journal',
+  actions: {
+    add: {
+      input: { title: { type: 'string', max: 80 } },
+      output: addonOutput<{ id: number }>()
+    },
+    list: { input: {}, output: addonOutput<Entry[]>() }
+  }
+});
+
+// in the app
+const service = useService(journal);
+const entries = await service.call('list'); // Entry[], type-checked
+await service.call('add', { title }); // a wrong action, field or type fails to compile
+```
+
+micaOS parses every payload against the declaration and resolves the player
+before your resource's handler runs. Push back with `PushToApp` and listen with
+`useAppEvents`. The README's "Exports for other resources" has the export
+signatures, the field kinds and the limits, and `tools/addon-template/` ships a
+working Lua server half that reads the declaration as the JSON its build emits.
+
+**An app in this repo** keeps its server half in `server/services/`, as below.
+
 The hooks above — `useNotes`, `useContacts` — are core code, and so are the rows
 in `shared/routes.ts` behind them. You cannot add to either: they ship inside
 micaOS, and your app does not. `useService` is the door that does not require

@@ -27,8 +27,11 @@ export default defineApp({
    * `vite.config.ts` derives this from your `@mica/sdk` imports and refuses to build a
    * list that is short, naming the import and the permission it needs. It is read from this
    * file as **text**, so keep it a literal array of quoted names.
+   *
+   * `app-events` is for `useAppEvents`, which hears what your server half pushes with
+   * `exports.mica:PushToApp`. Calling your own service through `useService` needs nothing.
    */
-  permissions: [],
+  permissions: ['app-events'],
   author: 'you',
   /**
    * Always `false` here, and `vite.config.ts` refuses to build anything else.

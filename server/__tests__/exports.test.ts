@@ -117,7 +117,9 @@ describe('the public export surface', () => {
       'IsPhoneOpen',
       'LockPhone',
       'OpenApp',
+      'PushToApp',
       'RegisterNumber',
+      'RegisterService',
       'RemoveDeadZone',
       'SendInvoice',
       'SendMessage',
@@ -129,7 +131,8 @@ describe('the public export surface', () => {
       'SetPhoneEnabled',
       'SetSignal',
       'UnlockPhone',
-      'UnregisterNumber'
+      'UnregisterNumber',
+      'UnregisterService'
     ]);
   });
 

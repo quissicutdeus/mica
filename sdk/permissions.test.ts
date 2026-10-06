@@ -14,9 +14,20 @@
  * which side it is standing in for. In-process, because a unit test stands in for the shell.
  */
 import '../web/src/host/registerFacets';
-import { describe, it, expect, vi, afterEach } from 'vitest';
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { describe, it, expect, vi, afterEach, afterAll, beforeAll } from 'vitest';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync
+} from 'node:fs';
+import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
+import { dirname, join, sep } from 'node:path';
 import { ALL_PERMISSIONS, defineApp } from './manifest';
 import {
   HOOK_OF_FACET,
@@ -182,9 +193,13 @@ describe('the permission table is total', () => {
    * it is not.
    */
   const findDefinition = (name: string): { file: string; body: string } | undefined => {
-    const re = new RegExp(String.raw`export (?:function|const) ${name}\b`);
+    // The **last** declaration in the file: an overloaded hook (`useService`, MICA-308)
+    // writes its signatures first and its implementation — the body with the `guarded()`
+    // call in it — after them. A hook with one declaration is unaffected.
+    const re = new RegExp(String.raw`export (?:function|const) ${name}\b`, 'g');
     for (const { file, text } of hostSources) {
-      const match = re.exec(text);
+      const matches = [...text.matchAll(re)];
+      const match = matches[matches.length - 1];
       if (!match) continue;
       const afterStart = match.index + match[0].length;
       const nextExport = text.slice(afterStart).search(/\n\s*export /);
@@ -460,27 +475,414 @@ describe("useService stays in the app's own namespace", () => {
    * to choose — which made it the second hatch: nothing stopped `useService('contacts')`.
    * An app's services are its own id and anything under `<id>_` (Blabber's `blabber_dms`).
    * Enforced by reading the source, because the hook is called from stores outside
-   * component init where there is no context to read the app id from; the runtime half of
-   * this rule arrives with the host protocol (MICA-16, step 3). A non-literal argument is
-   * refused too — a computed id is an id this test cannot see.
+   * component init where there is no context to read the app id from. For a sandboxed
+   * add-on the shell's `serviceAllowed` refuses a foreign id at run time as well; for a
+   * `core: true` app, which runs in-process, **this test is the only check there is**.
+   *
+   * So it reads the syntax tree, not the text: a comment, a string or a doc example that
+   * mentions `useService` proves nothing either way. Every reference to `useService` in an
+   * app must be a call with one argument, and that argument must be one of:
+   *
+   * - **A string literal** in the app's namespace. Anything computed is an id this test
+   *   cannot see, and is refused.
+   * - **An identifier naming a declaration** (MICA-308), traced to
+   *   `const <name> = defineAddonService({ id: '<literal>', ... })`: a top-level `const`,
+   *   the only binding of that name anywhere in its module, so nothing can shadow it; and
+   *   `defineAddonService` itself the module's only binding of that name, imported from the
+   *   package that defines it. The object is a literal with exactly one `id`, a string, and
+   *   no spread or computed key — either of which could put a different `id` there at run
+   *   time. The declaration may sit in the calling module or be a named import, one hop,
+   *   from a `.ts` module inside the app's own directory that `export const`s it.
+   *
+   * Anything else is refused rather than guessed at: a hook aliased on import, passed
+   * around, or called with an expression; a declaration re-exported, rebuilt, wrapped, or
+   * declared twice. In component markup, where nothing can be traced, only a literal is
+   * accepted.
    */
-  const CALL = /useService\(\s*([^)]*?)\s*\)/g;
-  const LITERAL = /^['"]([a-z0-9_]+)['"]$/;
+  const ts = createRequire(join(__dirname, '..', 'package.json'))('typescript-ast-parser');
+  /** The modules `defineAddonService` may come from: the SDK, and the package it re-exports. */
+  const DEFINERS = new Set(['@mica/sdk', '@mica/shared/addonService']);
+  const ID = /^[a-z0-9_]+$/;
+  const SCRIPT = /<script\b[^>]*>([\s\S]*?)<\/script>/g;
 
-  it('every app calls useService with a literal id in its own namespace', () => {
+  /** A file's TypeScript and, for a component, the markup around it with comments removed. */
+  const partsOf = (file: string): { script: string; markup: string } => {
+    const text = readFileSync(file, 'utf8');
+    if (!file.endsWith('.svelte')) return { script: text, markup: '' };
+    return {
+      script: [...text.matchAll(SCRIPT)].map((m) => m[1]).join('\n;\n'),
+      markup: text
+        .replace(SCRIPT, '')
+        .replace(/<style\b[^>]*>[\s\S]*?<\/style>/g, '')
+        .replace(/<!--[\s\S]*?-->/g, '')
+    };
+  };
+
+  /** Every node of a module's syntax tree, depth first. Comments are not nodes. */
+  const nodesOf = (file: string, script: string): any[] => {
+    const nodes: any[] = [];
+    const visit = (node: any) => {
+      nodes.push(node);
+      ts.forEachChild(node, visit);
+    };
+    visit(ts.createSourceFile(file, script, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS));
+    return nodes;
+  };
+
+  /** Every declaration binding `name` as a value, at any depth: shadowing counts. */
+  const bindingsOf = (nodes: any[], name: string): any[] =>
+    nodes.filter(
+      (n) =>
+        (ts.isVariableDeclaration(n) ||
+          ts.isParameter(n) ||
+          ts.isBindingElement(n) ||
+          ts.isFunctionDeclaration(n) ||
+          ts.isFunctionExpression(n) ||
+          ts.isClassDeclaration(n) ||
+          ts.isClassExpression(n) ||
+          ts.isImportSpecifier(n) ||
+          ts.isImportClause(n) ||
+          ts.isNamespaceImport(n) ||
+          ts.isImportEqualsDeclaration(n) ||
+          ts.isEnumDeclaration(n) ||
+          ts.isModuleDeclaration(n)) &&
+        n.name !== undefined &&
+        ts.isIdentifier(n.name) &&
+        n.name.text === name
+    );
+
+  /** The `ImportDeclaration` an `ImportSpecifier` belongs to. */
+  const importOf = (specifier: any): any => specifier.parent.parent.parent;
+
+  /** `name`'s one binding in the module, if it is a top-level `const` (and exported, if asked). */
+  const soleTopLevelConst = (nodes: any[], name: string, exported: boolean): any => {
+    const bound = bindingsOf(nodes, name);
+    if (bound.length !== 1 || !ts.isVariableDeclaration(bound[0])) return undefined;
+    const [decl] = bound;
+    const statement = decl.parent?.parent;
+    if (
+      !(decl.parent.flags & ts.NodeFlags.Const) ||
+      !ts.isVariableStatement(statement) ||
+      !ts.isSourceFile(statement.parent)
+    ) {
+      return undefined;
+    }
+    const isExported = (statement.modifiers ?? []).some(
+      (m: any) => m.kind === ts.SyntaxKind.ExportKeyword
+    );
+    return exported && !isExported ? undefined : decl;
+  };
+
+  /** The id of `defineAddonService({ id: '<literal>', ... })`, when it can be read exactly. */
+  const declaredId = (init: any, nodes: any[]): string | undefined => {
+    if (!init || !ts.isCallExpression(init) || init.arguments.length !== 1) return undefined;
+    if (!ts.isIdentifier(init.expression) || init.expression.text !== 'defineAddonService') {
+      return undefined;
+    }
+    const definers = bindingsOf(nodes, 'defineAddonService');
+    if (
+      definers.length !== 1 ||
+      !ts.isImportSpecifier(definers[0]) ||
+      definers[0].propertyName !== undefined ||
+      !DEFINERS.has(importOf(definers[0]).moduleSpecifier.text)
+    ) {
+      return undefined;
+    }
+    const object = init.arguments[0];
+    if (!ts.isObjectLiteralExpression(object)) return undefined;
+    const ids: any[] = [];
+    for (const property of object.properties) {
+      if (ts.isSpreadAssignment(property)) return undefined;
+      if (property.name === undefined || ts.isComputedPropertyName(property.name)) return undefined;
+      if (property.name.text === 'id') ids.push(property);
+    }
+    if (ids.length !== 1) return undefined;
+    const [id] = ids;
+    return ts.isPropertyAssignment(id) && ts.isStringLiteral(id.initializer)
+      ? id.initializer.text
+      : undefined;
+  };
+
+  /** A relative import's `.ts` file, if it resolves to one inside `appDir`. */
+  const resolveInApp = (from: string, specifier: string, appDir: string): string | undefined => {
+    const base = join(dirname(from), specifier);
+    const file = [base, `${base}.ts`, join(base, 'index.ts')].find(
+      (candidate) =>
+        candidate.endsWith('.ts') && existsSync(candidate) && statSync(candidate).isFile()
+    );
+    return file !== undefined && file.startsWith(`${appDir}${sep}`) ? file : undefined;
+  };
+
+  /** The service id the identifier `name` names in the module, or `undefined` if unprovable. */
+  const tracedId = (name: string, file: string, nodes: any[], appDir: string) => {
+    const local = soleTopLevelConst(nodes, name, false);
+    if (local) return declaredId(local.initializer, nodes);
+
+    const bound = bindingsOf(nodes, name);
+    if (bound.length !== 1 || !ts.isImportSpecifier(bound[0]) || bound[0].isTypeOnly) {
+      return undefined;
+    }
+    const declaration = importOf(bound[0]);
+    if (declaration.importClause?.isTypeOnly) return undefined;
+    const target = resolveInApp(file, declaration.moduleSpecifier.text, appDir);
+    if (target === undefined) return undefined;
+
+    const imported = (bound[0].propertyName ?? bound[0].name).text;
+    const targetNodes = nodesOf(target, readFileSync(target, 'utf8'));
+    // An `export { other as journal }` beside the const would be the binding actually imported.
+    if (targetNodes.some((n) => ts.isExportSpecifier(n) && n.name.text === imported)) {
+      return undefined;
+    }
+    const remote = soleTopLevelConst(targetNodes, imported, true);
+    return remote ? declaredId(remote.initializer, targetNodes) : undefined;
+  };
+
+  /**
+   * Every reference to `useService` under `appDir` whose id is not provably `appId`'s own,
+   * and how many calls were read — so a scan that goes blind cannot pass as a clean one.
+   */
+  const scan = (appId: string, appDir: string): { offenders: string[]; calls: number } => {
+    let calls = 0;
+    const own = (id: string | undefined) =>
+      id !== undefined && ID.test(id) && (id === appId || id.startsWith(`${appId}_`));
     const offenders: string[] = [];
-    for (const app of APPS) {
-      for (const file of walk(join(APPS_DIR, app.id))) {
-        const source = readFileSync(file, 'utf8');
-        for (const [, arg] of source.matchAll(CALL)) {
-          const literal = arg.match(LITERAL)?.[1];
-          const ok =
-            literal !== undefined && (literal === app.id || literal.startsWith(`${app.id}_`));
-          if (!ok) offenders.push(`${app.id}: useService(${arg}) in ${file.replace(APPS_DIR, '')}`);
+    for (const file of walk(appDir)) {
+      const at = file.replace(appDir, '');
+      const { script, markup } = partsOf(file);
+      const nodes = nodesOf(file, script);
+
+      for (const node of nodes) {
+        if (!ts.isIdentifier(node) || node.text !== 'useService') continue;
+        const parent = node.parent;
+        // The import of the hook itself, unaliased. An alias is a name this test would lose.
+        if (ts.isImportSpecifier(parent) && parent.name === node && !parent.propertyName) continue;
+        const callee =
+          ts.isPropertyAccessExpression(parent) && parent.name === node ? parent : node;
+        const call = callee.parent;
+        if (!ts.isCallExpression(call) || call.expression !== callee) {
+          offenders.push(`${appId}: useService referenced as \`${parent.getText()}\` in ${at}`);
+          continue;
         }
+        calls++;
+        const args = call.arguments.map((a: any) => a.getText()).join(', ');
+        const [arg] = call.arguments;
+        const id =
+          call.arguments.length !== 1
+            ? undefined
+            : ts.isStringLiteral(arg)
+              ? arg.text
+              : ts.isIdentifier(arg)
+                ? tracedId(arg.text, file, nodes, appDir)
+                : undefined;
+        if (!own(id)) offenders.push(`${appId}: useService(${args}) in ${at}`);
+      }
+
+      // Markup: nothing to trace, so a literal or nothing.
+      for (const match of markup.matchAll(/\buseService\b/g)) {
+        const literal = /^useService\(\s*['"]([^'"]*)['"]\s*\)/.exec(
+          markup.slice(match.index)
+        )?.[1];
+        calls++;
+        if (!own(literal)) offenders.push(`${appId}: useService in the markup of ${at}`);
       }
     }
-    expect(offenders.sort()).toEqual([]);
+    return { offenders, calls };
+  };
+  const offendersIn = (appId: string, appDir: string): string[] => scan(appId, appDir).offenders;
+
+  it('every app calls useService with a literal id in its own namespace', () => {
+    const scans = APPS.map((app) => scan(app.id, join(APPS_DIR, app.id)));
+    // Notes, Hodlr, Places, Jobs and Blabber all call it; a parse that found none would
+    // report every app clean.
+    expect(scans.reduce((sum, { calls }) => sum + calls, 0)).toBeGreaterThanOrEqual(5);
+    expect(scans.flatMap(({ offenders }) => offenders).sort()).toEqual([]);
+  });
+
+  describe('a declaration is read as its id, and held to the same rule', () => {
+    let root: string;
+    const app = (files: Record<string, string>): string => {
+      const dir = join(root, 'journal');
+      rmSync(dir, { recursive: true, force: true });
+      for (const [name, body] of Object.entries(files)) {
+        mkdirSync(dirname(join(dir, name)), { recursive: true });
+        writeFileSync(join(dir, name), body);
+      }
+      return dir;
+    };
+    const IMPORTS = `import { defineAddonService, useService } from '@mica/sdk';\n`;
+    const declaration = (id: string) =>
+      `${IMPORTS}export const journal = defineAddonService({ id: '${id}', actions: { list: { input: {} } } });\n`;
+    /** One module calling `useService(journal)` on `journal` as `body` declares it. */
+    const caller = (body: string) => `${IMPORTS}${body}\nuseService(journal);\n`;
+
+    beforeAll(() => {
+      root = mkdtempSync(join(tmpdir(), 'mica-useservice-'));
+    });
+    afterAll(() => {
+      rmSync(root, { recursive: true, force: true });
+    });
+
+    it('accepts a declaration of its own id, imported, aliased, local, or in a component', () => {
+      const dir = app({
+        'service.ts': declaration('journal'),
+        'index.svelte':
+          `<script lang="ts">\n  import { useService } from '@mica/sdk';\n` +
+          `  import { journal } from './service';\n  useService(journal).call('list');\n` +
+          `</script>\n\n<!-- useService(somethingElse) in a comment is not a call -->\n` +
+          `<p>{useService('journal').id}</p>\n`,
+        'store.ts': `${IMPORTS}import { journal as j } from './service';\nuseService(j);\n`,
+        'local.ts': `${IMPORTS}const own = defineAddonService({ id: 'journal_extra', actions: {} });\nuseService(own);\n`,
+        'shared.ts': `import { defineAddonService } from '@mica/shared/addonService';\nimport { useService } from '@mica/sdk';\nconst own = defineAddonService({ 'id': 'journal', actions: {} });\nuseService(own);\n`,
+        'literal.ts': `${IMPORTS}// useService(anything) in a comment is not a call\nuseService('journal_dms');\n`
+      });
+      expect(offendersIn('journal', dir)).toEqual([]);
+    });
+
+    it("refuses a declaration whose id is not the app's own, as it refuses the string", () => {
+      const dir = app({
+        'service.ts': declaration('contacts'),
+        'a.ts': `${IMPORTS}import { journal } from './service';\nuseService(journal);\n`,
+        'b.ts': `${IMPORTS}useService('contacts');\n`
+      });
+      expect(offendersIn('journal', dir).sort()).toEqual([
+        "journal: useService('contacts') in /b.ts",
+        'journal: useService(journal) in /a.ts'
+      ]);
+    });
+
+    /**
+     * Each of these has a literal `id: 'journal'` somewhere in its text, so a pattern match
+     * over the source would accept it — and each one's run-time id can be another app's.
+     */
+    it.each([
+      [
+        'a spread after the id',
+        `const journal = defineAddonService({ id: 'journal', ...foreign });`
+      ],
+      [
+        'a spread before the id',
+        `const journal = defineAddonService({ ...foreign, id: 'journal' });`
+      ],
+      [
+        'a second id',
+        `const journal = defineAddonService({ id: 'journal', actions: {}, id: 'contacts' });`
+      ],
+      [
+        'a computed key',
+        `const journal = defineAddonService({ id: 'journal', [key]: 'contacts', actions: {} });`
+      ],
+      [
+        'an id that is not a string literal',
+        `const journal = defineAddonService({ id: \`journal\`, actions: {} });`
+      ],
+      [
+        'an id behind a getter',
+        `const journal = defineAddonService({ get id() { return 'journal'; }, actions: {} });`
+      ],
+      [
+        'the declaration only in a comment',
+        `// const journal = defineAddonService({ id: 'journal', actions: {} });\nconst journal = foreign;`
+      ],
+      [
+        'the declaration only in a block comment',
+        `/* const journal = defineAddonService({ id: 'journal', actions: {} }); */\nconst journal = make();`
+      ],
+      [
+        'a shadowing local',
+        `const journal = defineAddonService({ id: 'journal', actions: {} });\nfunction f() { const journal = foreign; return journal; }`
+      ],
+      [
+        'a shadowing parameter',
+        `const journal = defineAddonService({ id: 'journal', actions: {} });\nconst f = (journal: unknown) => journal;`
+      ],
+      [
+        'a let rather than a const',
+        `let journal = defineAddonService({ id: 'journal', actions: {} });`
+      ],
+      [
+        'a declaration inside a block',
+        `if (true) { const journal = defineAddonService({ id: 'journal', actions: {} }); }`
+      ],
+      [
+        'a wrapped declaration',
+        `const journal = defineAddonService({ id: 'journal', actions: {} }) as never;`
+      ]
+    ])('refuses %s', (_case, body) => {
+      const dir = app({ 'a.ts': caller(body) });
+      expect(offendersIn('journal', dir)).toEqual(['journal: useService(journal) in /a.ts']);
+    });
+
+    it('refuses a defineAddonService that is not the real one', () => {
+      const dir = app({
+        'local.ts':
+          `import { useService } from '@mica/sdk';\n` +
+          `const defineAddonService = (o: object) => ({ ...o, id: 'contacts' });\n` +
+          `const journal = defineAddonService({ id: 'journal', actions: {} });\nuseService(journal);\n`,
+        'aliased.ts':
+          `import { useService, addonOutput as defineAddonService } from '@mica/sdk';\n` +
+          `const journal = defineAddonService({ id: 'journal', actions: {} });\nuseService(journal);\n`,
+        'elsewhere.ts':
+          `import { useService } from '@mica/sdk';\nimport { defineAddonService } from './fake';\n` +
+          `const journal = defineAddonService({ id: 'journal', actions: {} });\nuseService(journal);\n`
+      });
+      expect(offendersIn('journal', dir)).toHaveLength(3);
+    });
+
+    it('refuses an import it cannot follow to exactly one exported const', () => {
+      const dir = app({
+        'service.ts': declaration('journal'),
+        'unexported.ts': `${IMPORTS}const journal = defineAddonService({ id: 'journal', actions: {} });\n`,
+        'renamed.ts': `${declaration('journal')}const other = foreign;\nexport { other as journal2 };\nexport { journal as journal3 };\n`,
+        'reexport.ts': `export { journal } from './service';\n`,
+        'twice.ts': `${declaration('journal')}function g(journal: unknown) { return journal; }\n`,
+        'a.ts': `${IMPORTS}import { journal } from './unexported';\nuseService(journal);\n`,
+        'b.ts': `${IMPORTS}import { journal3 as journal } from './renamed';\nuseService(journal);\n`,
+        'c.ts': `${IMPORTS}import { journal } from './reexport';\nuseService(journal);\n`,
+        'd.ts': `${IMPORTS}import { journal } from './twice';\nuseService(journal);\n`,
+        'e.ts': `${IMPORTS}import { journal } from './service';\nconst g = (journal: string) => journal;\nuseService(journal);\n`,
+        'f.ts': `${IMPORTS}import * as svc from './service';\nuseService(svc.journal);\n`
+      });
+      expect(offendersIn('journal', dir).sort()).toEqual(
+        ['a', 'b', 'c', 'd', 'e']
+          .map((f) => `journal: useService(journal) in /${f}.ts`)
+          .concat('journal: useService(svc.journal) in /f.ts')
+          .sort()
+      );
+    });
+
+    it('refuses an id it cannot trace: undeclared, out of the app, inline, or computed', () => {
+      const dir = app({
+        'a.ts': `${IMPORTS}useService(nowhere);\n`,
+        'b.ts': `${IMPORTS}import { journal } from '../elsewhere/service';\nuseService(journal);\n`,
+        'c.ts': `${IMPORTS}useService(defineAddonService({ id: 'journal', actions: {} }));\n`,
+        'd.ts': `${IMPORTS}useService(decl.id);\n`
+      });
+      // A real declaration of the right id, so the refusal is about where it lives.
+      mkdirSync(join(root, 'elsewhere'), { recursive: true });
+      writeFileSync(join(root, 'elsewhere', 'service.ts'), declaration('journal'));
+      expect(offendersIn('journal', dir)).toHaveLength(4);
+    });
+
+    it('refuses the hook itself escaping: aliased, passed around, or traced only in markup', () => {
+      const dir = app({
+        'service.ts': declaration('journal'),
+        'a.ts': `import { useService as svc } from '@mica/sdk';\nsvc('contacts');\n`,
+        'b.ts': `${IMPORTS}const door = useService;\ndoor('contacts');\n`,
+        'c.ts': `import * as sdk from '@mica/sdk';\nsdk.useService(foreign);\n`,
+        'd.svelte':
+          `<script lang="ts">\n  import { useService } from '@mica/sdk';\n  import { journal } from './service';\n</script>\n` +
+          `<p>{useService(journal).id}</p>\n`
+      });
+      const found = offendersIn('journal', dir).sort();
+      expect(found).toEqual(
+        [
+          'journal: useService in the markup of /d.svelte',
+          'journal: useService referenced as `door = useService` in /b.ts',
+          'journal: useService referenced as `useService as svc` in /a.ts',
+          'journal: useService(foreign) in /c.ts'
+        ].sort()
+      );
+    });
   });
 });
 

@@ -1,4 +1,4 @@
-import { defineConfig, type Plugin } from 'vite';
+import { defineConfig, runnerImport, type Plugin } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -42,6 +42,13 @@ const here = import.meta.dirname;
  * set, whatever resolution happened to produce it.
  */
 const MANIFEST = path.join(here, 'src/manifest.ts');
+/** Your server half's declaration, when the add-on has one. See `emitServiceDeclaration()`. */
+const SERVICE = path.join(here, 'src/service.ts');
+/**
+ * The resource folder your server half lives in, which `service.json` is written into. Rename
+ * the folder and this line together.
+ */
+const SERVER_RESOURCE = path.join(here, 'my_addon_server');
 const COMPONENT = path.join(here, 'src/index.svelte');
 const WIDGET = path.join(here, 'src/widget.svelte');
 
@@ -441,6 +448,76 @@ function requireDeclaredPermissions(): Plugin {
 }
 
 /**
+ * Write your server half's declaration out as JSON, for the resource that registers it.
+ *
+ * `src/service.ts` is the one place a service is declared (MICA-308). The UI types its calls
+ * from it, and your FiveM resource hands the same object to `exports.mica:RegisterService` —
+ * but a Lua resource cannot read TypeScript, so this evaluates the file at build time and
+ * writes what it exports as `<SERVER_RESOURCE>/service.json`, which `server.lua` loads. Edit
+ * the `.ts`, rebuild, and both halves move together; there is no second copy to keep in step.
+ *
+ * Evaluated with Vite's own module runner, so it resolves exactly as your bundle does. That
+ * is why `service.ts` imports from `@mica/shared/addonService` and nothing heavier: the
+ * runner has no Svelte plugin, and that module imports nothing but `@mica/shared/schema`.
+ *
+ * Every failure stops the build. An invalid declaration throws inside `defineAddonService`
+ * with the reason; an id outside your app's namespace would be refused by the phone and by
+ * micaOS alike, so it is refused here first, where the fix is. An add-on with no
+ * `src/service.ts` has no server half, and this does nothing.
+ */
+function emitServiceDeclaration(appId: string): Plugin {
+  return {
+    name: 'mica-addon-service-json',
+    async buildStart() {
+      if (!fs.existsSync(SERVICE)) return;
+      this.addWatchFile(SERVICE);
+
+      const { module } = await runnerImport<Record<string, unknown>>(SERVICE, {
+        configFile: false,
+        logLevel: 'error',
+        root: here
+      });
+      const declarations = Object.values(module).filter(
+        (value): value is { id: string; actions: unknown } =>
+          typeof value === 'object' &&
+          value !== null &&
+          typeof (value as { id?: unknown }).id === 'string' &&
+          'actions' in value
+      );
+      if (declarations.length !== 1) {
+        this.error(
+          `[mica-addon] ${path.relative(here, SERVICE)} exports ${declarations.length} service ` +
+            `declarations; it must export exactly one, made with defineAddonService. A second ` +
+            `service wants its own file and its own resource folder.`
+        );
+      }
+      const [declaration] = declarations;
+      if (declaration.id !== appId && !declaration.id.startsWith(`${appId}_`)) {
+        this.error(
+          `[mica-addon] the service id '${declaration.id}' is not this add-on's. It must be ` +
+            `'${appId}' (the manifest id) or start with '${appId}_': the phone refuses any ` +
+            `other before a request is sent.`
+        );
+      }
+
+      if (!fs.existsSync(SERVER_RESOURCE)) {
+        this.error(
+          `[mica-addon] ${path.relative(here, SERVICE)} declares a server half and there is no ` +
+            `${path.relative(here, SERVER_RESOURCE)}/ to write its service.json into.`
+        );
+      }
+      // `addonOutput<T>()` is `undefined` at run time, so `output` drops out here: the server
+      // is handed the inputs it validates and nothing it would only have to ignore.
+      const json = `${JSON.stringify(declaration, null, 2)}\n`;
+      const target = path.join(SERVER_RESOURCE, 'service.json');
+      if (!fs.existsSync(target) || fs.readFileSync(target, 'utf8') !== json) {
+        fs.writeFileSync(target, json);
+      }
+    }
+  };
+}
+
+/**
  * Inline the CSS into the entry chunk.
  *
  * The Store hands the bundle to a sandboxed iframe as a `data:` module URL. There is no
@@ -524,6 +601,8 @@ export default defineConfig({
     // Its hook orders place it, not this line: `transform` at `pre` to read your source
     // before the Svelte compiler, `generateBundle` at `post` to judge a finished graph.
     requireDeclaredPermissions(),
+    // Writes `my_addon_server/service.json` from `src/service.ts`; nothing in the bundle.
+    emitServiceDeclaration(id),
     inlineCss(),
     // Last, deliberately — it reads the finished chunk text, including what `inlineCss()`
     // has prepended by then.

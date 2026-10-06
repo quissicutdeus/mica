@@ -575,6 +575,17 @@ with `internal_error` and the rest of Messages is unaffected.
 
 ### Added
 
+**A Store add-on can come with a server half of its own (MICA-308).** Its author
+ships a small FiveM resource beside the add-on's bundle; you install it like any
+other resource, `ensure`d after `mica`, and it registers with micaOS through the
+new `RegisterService` export. micaOS still stands in front of every call from a
+phone: the same rate limits, the payload checked against the add-on's declared
+fields before the resource sees it, and the player resolved on the server. The
+resource keeps its own data in its own tables; nothing enters micaOS's schema.
+An add-on whose resource is not installed opens as before, and its server calls
+fail. `mica_disabled_apps` switches an add-on's server half off along with its
+app. Nothing changes on a server that installs no such resource.
+
 **Job lines: a number like 911 that rings everyone on duty, with no script
 (MICA-307).** Set `mica_job_lines` to a JSON array (or a path to a JSON file in
 the resource) of `{ "number", "label", "jobs" }` entries, and a call to that
@@ -1119,6 +1130,14 @@ export instead, which authenticates its caller.
 
 ### Fixed
 
+**Another script could take a resource's phone numbers or invoice callbacks by
+faking its stop (MICA-308).** micaOS released everything a resource held through
+`RegisterNumber`, and the `onPaid`/`onDeclined` callbacks it gave `SendInvoice`,
+whenever `onResourceStop` named that resource. Any server script can fire that
+event, so one could release a dispatch script's 911 line and register the number
+itself. micaOS now honours a stop only when the resource is actually stopping.
+Nothing to do.
+
 **On standalone, looking up a player who is not connected no longer logs an
 error.** A lookup for a server id nobody holds printed a console error claiming
 the framework "returned a player" for it, once per check, and some exports check
@@ -1304,6 +1323,23 @@ Everything above is written for a server owner. This part is not. It is for
 somebody maintaining a `core: false` add-on outside this repo, and it answers
 one question: does that bundle still compile against this release, and does its
 manifest still ask for the right things.
+
+**Your add-on can have a server half in your own resource (MICA-308).** Declare
+the service once with `defineAddonService` (exported from `@mica/sdk`, and from
+`@mica/shared/addonService` for build-time code that cannot load Svelte), as
+plain data with typed fields. Your UI passes the declaration to
+`useService(declaration)`, which type-checks every action name, input field and
+output. Your resource passes the same declaration to
+`exports.mica:RegisterService(declaration, handlers)`; Lua reads it as the JSON
+the add-on template's build now emits. Push to your app with
+`exports.mica:PushToApp`, and listen with `useAppEvents`. Also new on
+`@mica/sdk`: `addonOutput`, `addonError`, and the types
+`AddonServiceDeclaration`, `AddonActionName`, `AddonActionInput`,
+`AddonActionOutput`, `AddonHandlers` and `AddonErrorAnswer`. `useService('id')`
+is unchanged, nothing is required of an existing add-on, and
+`SDK_CONTRACT_VERSION` does not move. The README's "Exports for other resources"
+has the field kinds, limits and error shape, and `tools/addon-template/` has a
+working example of both halves.
 
 **The call state an add-on with the `call` permission reads gains an optional
 `line: { number, label }` (MICA-307).** It is set only while a call that came in

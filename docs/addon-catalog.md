@@ -34,11 +34,18 @@ primitive type before anything downstream trusts it.
 **A server that sets neither convar offers the project's public catalog**
 (MICA-237), `https://mica.gg/addons/sdk-<SDK_CONTRACT_VERSION>/catalog.json`,
 with `mica.gg` allowed as a host. It is keyed by the SDK contract rather than by
-release: a remote add-on has no server half, so the contract the shell checks at
-install is the one thing it must match. It lists only add-ons this resource does
-not already ship (below: a catalog entry replaces the bundled app of the same
-id), so it never swaps a built-in for a remote copy — and while every in-tree
-add-on ships in the resource, it is an empty array.
+release: the contract the shell checks at install is the one thing a remote
+add-on's bundle must match. A remote add-on may have a server half (MICA-308),
+but that half is the author's own FiveM resource, registered through
+`RegisterService` and installed by the server owner beside micaOS. It is not in
+the catalog and not fetched from it, so it changes nothing about what the
+catalog is keyed on. An add-on whose service is not registered on a server
+installs and opens, and each of its service calls fails: at once when the
+service was registered and has since gone away, and after the phone's 15-second
+request timeout when nothing ever registered it. It lists only add-ons this
+resource does not already ship (below: a catalog entry replaces the bundled app
+of the same id), so it never swaps a built-in for a remote copy — and while
+every in-tree add-on ships in the resource, it is an empty array.
 
 `shared/addonConfig.ts` resolves the two convars into one of three states, the
 same way on the client and the server:

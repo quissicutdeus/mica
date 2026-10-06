@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import type { Scenario } from '../runner';
+import { addonServiceScenarios } from './addonService';
 import { commandScenarios } from './commands';
 import { cryptoScenarios } from './crypto';
 import { exportScenarios } from './exports';
@@ -22,6 +23,7 @@ export const scenarios: readonly Scenario[] = [
   ...schemaScenarios,
   ...cryptoScenarios,
   ...exportScenarios,
+  ...addonServiceScenarios,
   ...retentionScenarios,
   ...oxmysqlScenarios,
   ...importerScenarios

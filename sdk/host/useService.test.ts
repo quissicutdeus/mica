@@ -10,13 +10,16 @@
  * which side it is standing in for. In-process, because a unit test stands in for the shell.
  */
 import '../../web/src/host/registerFacets';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, expectTypeOf, vi, beforeEach } from 'vitest';
 import { GENERIC_SERVICE_ACTION, parseGenericRequest } from '@mica/shared/rpc';
 
 const nui = vi.hoisted(() => ({ fetchNui: vi.fn() }));
 vi.mock('../../web/src/nui/fetchNui', () => nui);
 
 import { useService } from './useService';
+import { addonOutput, defineAddonService } from '@mica/shared/addonService';
+import { service } from '../../web/src/host/facets/service';
+import { registerFacet } from './current';
 
 /**
  * The door an add-on can actually walk through.
@@ -58,6 +61,120 @@ describe('useService', () => {
     // by whether the key is present, so passing it always would silence every write.
     await useService('journal').call('create', { title: 'x' });
     expect(nui.fetchNui.mock.calls[0][2]).toBeUndefined();
+  });
+});
+
+/**
+ * MICA-308: the declaration form. The object an add-on's resource hands
+ * `exports.mica:RegisterService` is the one its UI types its calls from, so a renamed action
+ * or a misspelt field is a compile error in the add-on rather than an `invalid_args` toast.
+ */
+interface Entry {
+  id: number;
+  title: string;
+}
+
+const journal = defineAddonService({
+  id: 'journal',
+  actions: {
+    list: { input: {}, output: addonOutput<Entry[]>() },
+    create: {
+      input: {
+        title: { type: 'string', max: 80 },
+        mood: { type: 'enum', values: ['good', 'bad'], optional: true }
+      },
+      output: addonOutput<Entry>()
+    },
+    remove: { input: { id: { type: 'integer', min: 1 } } }
+  }
+});
+
+describe('useService(declaration)', () => {
+  it('sends exactly what the string form sends, under the declaration id', async () => {
+    // The declaration is a type-level convenience, not a second door: the wire request
+    // is byte-for-byte the one `useService('journal')` produces.
+    await useService(journal).call('create', { title: 'x' });
+    await useService('journal').call('create', { title: 'x' });
+
+    expect(nui.fetchNui).toHaveBeenCalledTimes(2);
+    expect(nui.fetchNui.mock.calls[0]).toEqual(nui.fetchNui.mock.calls[1]);
+    expect(nui.fetchNui.mock.calls[0]).toEqual([
+      GENERIC_SERVICE_ACTION,
+      { service: 'journal', action: 'create', data: { title: 'x' } },
+      undefined
+    ]);
+  });
+
+  it('asks the same service facet for declaration.id', () => {
+    // Same facet, same argument: whatever the shell checks about `service('journal')` —
+    // `serviceAllowed`, the permission row — it checks here, with nothing to tell the two
+    // forms apart. Swapped through the registry rather than spied on the module, because a
+    // hook reaches a facet by name through `current.ts`, never by import.
+    const asked: unknown[][] = [];
+    registerFacet('service', (...args: Parameters<typeof service>) => {
+      asked.push(args);
+      return service(...args);
+    });
+    try {
+      useService(journal);
+      useService('journal');
+      useService(defineAddonService({ id: 'journal_extra', actions: { a: { input: {} } } }));
+    } finally {
+      registerFacet('service', service);
+    }
+    expect(asked).toEqual([['journal'], ['journal'], ['journal_extra']]);
+  });
+
+  it('passes a default through, as the string form does', async () => {
+    nui.fetchNui.mockResolvedValue([]);
+    await useService(journal).call('list', {}, []);
+    expect(nui.fetchNui).toHaveBeenCalledWith(
+      GENERIC_SERVICE_ACTION,
+      { service: 'journal', action: 'list', data: {} },
+      { defaultValue: [] }
+    );
+  });
+
+  it('types the call from the declaration', async () => {
+    const svc = useService(journal);
+
+    // The answer flows from `addonOutput<T>()`; an action that declared none is `unknown`.
+    expectTypeOf(svc.call('list')).toEqualTypeOf<Promise<Entry[]>>();
+    expectTypeOf(svc.call('create', { title: 't' })).toEqualTypeOf<Promise<Entry>>();
+    expectTypeOf(svc.call('remove', { id: 1 })).toEqualTypeOf<Promise<unknown>>();
+    expectTypeOf(svc.id).toEqualTypeOf<'journal'>();
+
+    // `list` takes nothing, so its input may be left out; `create` requires `title`.
+    // (Called rather than `toBeCallableWith`, which cannot see through a generic method.)
+    await svc.call('list');
+    await svc.call('create', { title: 't', mood: 'good' });
+
+    // Each of these is a compile error, which `pnpm typecheck:sdk` holds: an unused
+    // `@ts-expect-error` is itself an error, so a type that went loose fails there.
+    // @ts-expect-error -- not an action the declaration names
+    await svc.call('lst');
+    // @ts-expect-error -- `titel` is not a field of `create`
+    await svc.call('create', { titel: 't' });
+    // @ts-expect-error -- an undeclared field beside a valid one, which the server would refuse
+    await svc.call('create', { title: 't', extra: 1 });
+    // @ts-expect-error -- `title` is a string field
+    await svc.call('create', { title: 3 });
+    // @ts-expect-error -- `mood` is an enum of 'good' | 'bad'
+    await svc.call('create', { title: 't', mood: 'meh' });
+    // @ts-expect-error -- `create` has a required field, so its input cannot be left out
+    await svc.call('create');
+    // @ts-expect-error -- a default must be the declared answer type
+    await svc.call('list', {}, 'not a list');
+  });
+
+  it('leaves the string form untyped, exactly as before', () => {
+    // Every existing caller passes a string and names its own answer type; the overload
+    // must not have narrowed that to a declaration's names.
+    const svc = useService('journal');
+    expectTypeOf(svc.id).toEqualTypeOf<string>();
+    expectTypeOf(svc.call<Entry[]>('anything', { free: 'form' }, [])).toEqualTypeOf<
+      Promise<Entry[]>
+    >();
   });
 });
 

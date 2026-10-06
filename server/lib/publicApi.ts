@@ -61,6 +61,7 @@ import {
   FULL_SIGNAL
 } from '../services/Signal';
 import type { Contact, MediaItem, MediaKind } from '@mica/shared/types';
+import { pushToAddonApp, registerAddonService, unregisterAddonService } from './addonServices';
 
 /**
  * How an external resource names itself in the notification shade.
@@ -979,6 +980,57 @@ export function registerPublicApi(): void {
     'UnregisterNumber',
     guarded('UnregisterNumber', (number: unknown) =>
       unregisterNumber(number, GetInvokingResource())
+    )
+  );
+
+  /**
+   * Serve an add-on's server half from this resource (MICA-308): `declaration` is the table
+   * `defineAddonService` checks (`shared/addonService.ts`), `handlers` one function per declared
+   * action and nothing else. micaOS then answers `mica:server:<id>:<action>` through the same
+   * guard as a core service — rate limit, the owner's app switch, the player, the declared
+   * input — and calls `handler(citizenid, input, source)` with the parsed input only. A handler
+   * answers synchronously or with a promise, within five seconds; `{ error = { message = … } }`
+   * is a refusal the player reads, and a throw, a hang or an answer that is not JSON reaches the
+   * player as the generic failure. `lib/addonServices.ts` has the rules.
+   *
+   * The id is the add-on's app id: never a micaOS service or app (`invalid_args`), and held by
+   * one resource at a time (`already_registered`). Registering again from the same resource
+   * replaces its registration. Released when the resource stops.
+   *
+   * The invoker is read before anything else runs: FiveM answers it only during the export's
+   * synchronous part, and this one is synchronous throughout, as `RegisterNumber` is.
+   */
+  publish(
+    'RegisterService',
+    guarded('RegisterService', (declaration: unknown, handlers: unknown) => {
+      const invoker = GetInvokingResource();
+      return registerAddonService(declaration, handlers, invoker);
+    })
+  );
+
+  publish(
+    'UnregisterService',
+    guarded('UnregisterService', (id: unknown) => {
+      const invoker = GetInvokingResource();
+      return unregisterAddonService(id, invoker);
+    })
+  );
+
+  /**
+   * Push to your add-on's app (MICA-308) — `useAppEvents(id)` on each online citizen's phone,
+   * at most once and never queued. `citizenid` is one, or a list of at most 256. `event` is
+   * lower_snake_case. `notify` (`{ message, title?, type?, avatar? }`) raises a toast if the app
+   * declared `notifications`, and is kept in the shade. Only for an id this resource registered
+   * (`not_owner`); answers `{ delivered, offline }`, the citizenids each way.
+   */
+  publish(
+    'PushToApp',
+    guarded(
+      'PushToApp',
+      (id: unknown, citizenid: unknown, event: unknown, payload: unknown, notify?: unknown) => {
+        const invoker = GetInvokingResource();
+        return pushToAddonApp(id, citizenid, event, payload, notify, invoker);
+      }
     )
   );
 

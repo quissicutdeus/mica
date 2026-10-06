@@ -16,7 +16,7 @@ type PushOutcome =
   | { delivered: false; reason: 'offline' | 'oversize' | 'unserializable' };
 
 /** ~16 KB. A push is not a transport for a base64 photo. */
-const MAX_PAYLOAD_BYTES = 16_384;
+export const MAX_PAYLOAD_BYTES = 16_384;
 
 export interface PushOptions {
   /**

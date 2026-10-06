@@ -6,6 +6,7 @@ import { FrameworkBridge } from './FrameworkBridge';
 import { phoneNumberFrom } from './netGuard';
 import { ok, fail, type ExportOutcome } from './exports';
 import { LINE_LABEL_MAX, RING_MAX } from '@mica/shared/ownerConfig';
+import { onResourceReleased } from './resourceStop';
 
 /**
  * Numbers owned by a script rather than by a character.
@@ -378,7 +379,9 @@ export function releaseResource(owner: string): string[] {
   return dropped;
 }
 
-on('onResourceStop', (resource: string) => {
+// Through `onResourceReleased`, so a forged `onResourceStop` cannot free another resource's
+// number — or micaOS's own job lines, which `mica` owns — for the forger to take.
+onResourceReleased((resource) => {
   const dropped = releaseResource(resource);
   if (dropped.length > 0) {
     console.log(`[mica] released ${dropped.length} number(s) held by ${resource}.`);
