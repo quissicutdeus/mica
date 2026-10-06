@@ -33,12 +33,10 @@ than a fixed roster: the lane count and agent types come from the work first,
 then the names. The callsign is also the `SendMessage` address, so it is unique
 within a session and never `Rex`.
 
-Around ninety names have been spawned in earlier sessions, the well-known clones
-nearly all of them, so reuse across sessions is normal and recovering a dead
-lead takes the newest transcript that spawned the name. Prefer one not yet
-spawned when one fits — as of 2026-10-01, checked against every transcript:
-Matchstick. Strike a name from this list in the commit that lands the wave it
-served, so the list stays true without a recount.
+Over a hundred names have been spawned in earlier sessions, and the list of
+never-spawned clones kept here since 2026-10-01 ran out on 2026-10-06. Reuse
+across sessions is normal: pick any clone name not yet used **in this session**,
+and recover a dead lead from the newest transcript that spawned the name.
 
 ## What only you do
 

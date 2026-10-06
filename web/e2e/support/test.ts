@@ -1,4 +1,5 @@
 import { test as base, expect, type ConsoleMessage } from '@playwright/test';
+import { survivesNetworkChange } from './networkChange';
 
 export type { FrameLocator, Locator, Page } from '@playwright/test';
 export { expect };
@@ -46,6 +47,12 @@ export { expect };
  * escapes to the page is now what it always should have been: a failed test with the
  * message in it. In game the same throw is swallowed silently.
  *
+ * It also makes `page.goto` and `page.reload` re-navigate when Chromium dropped the page's
+ * own requests because the host's network changed (MICA-314, `networkChange.ts`), and
+ * records each repeat as a `network-changed` annotation. That is not an opt-in: a page whose
+ * entry module never loaded fails whatever the spec asserts first, which is the failure of
+ * nothing the spec is about.
+ *
  * `allowNuiFailures` is the opt-out, for a spec that provokes one on purpose and asserts on
  * it. It is a `test.use` option so the exemption sits in the spec, in the open, scoped to a
  * file or a `describe` block, rather than in a list somewhere else that drifts.
@@ -70,7 +77,15 @@ const readsAsNuiFailure = (text: string): boolean =>
 export const test = base.extend<NuiFixtureOptions>({
   allowNuiFailures: [false, { option: true }],
 
-  page: async ({ page, allowNuiFailures }, use) => {
+  page: async ({ page, allowNuiFailures }, use, testInfo) => {
+    survivesNetworkChange(page, {
+      onRetry: (urls) =>
+        testInfo.annotations.push({
+          type: 'network-changed',
+          description: `navigated again after ERR_NETWORK_CHANGED dropped: ${urls.join(', ')}`
+        })
+    });
+
     const failures: string[] = [];
     page.on('console', (message: ConsoleMessage) => {
       const text = message.text();

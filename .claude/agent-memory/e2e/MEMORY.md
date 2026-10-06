@@ -13,3 +13,6 @@ its one-line summary.
 - [MICA-311 dev add-on spec](mica-311-dev-addon-spec.md) — fixture built by the
   template's own vite config; `.svelte.src` for lint:web; boot refusals show
   only a toast; shared dist/web can be clobbered mid-run
+- [MICA-314 network-changed flake](mica-314-network-changed.md) — a blank page
+  after goto was Chromium's ERR_NETWORK_CHANGED (Docker veth on the host), not
+  load; read the trace console first; `support/networkChange.ts` re-navigates
