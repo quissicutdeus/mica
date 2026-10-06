@@ -11,5 +11,8 @@ in its own file and gets a line here.
   publicSurface; in-tree aliases bypass `exports`; test via offline build
 - [shared/ compiles under client and server](shared-compiles-under-client-and-server.md)
   — no `URL` there; `../sdk` filter runs shared tests twice
+- [Typed store front doors](typed-store-front-doors.md) — loosest impl
+  signature, conditional params still infer, TS 6/7 overload errors, strict
+  add-on input
 - [Tooling an add-on runs](tooling-an-addon-runs.md) — `checks/` is JS (no type
   stripping in node_modules); spread, not extend; stylelint misses `color-mix()`

@@ -11,9 +11,10 @@ export interface Note {
 /**
  * Your server half, declared once.
  *
- * This object is read at both ends. The UI types its calls from it — `useService(notes)`
- * knows `list` and `add`, what each takes and what each answers, so a misspelt action or
- * field fails `pnpm check` rather than the player's tap. And `pnpm build` writes it out as
+ * This object is read at both ends. The UI types its calls from it — the note list's
+ * `createCrudStore(notes, …)` and `useService(notes)` both know `list` and `add`, what each
+ * takes and what each answers, so a misspelt action or field fails `pnpm check` rather than
+ * the player's tap. And `pnpm build` writes it out as
  * `my_addon_server/service.json`, which the Lua resource hands to
  * `exports.mica:RegisterService` — so micaOS parses every payload against exactly what you
  * wrote here before your handler sees it. Edit this file, never the JSON.

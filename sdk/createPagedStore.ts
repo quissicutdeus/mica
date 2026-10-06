@@ -5,6 +5,12 @@
 import { writable, type Readable } from 'svelte/store';
 import { fetchNui } from './nui/transport';
 import { GENERIC_SERVICE_ACTION } from '@mica/shared/rpc';
+import type {
+  AddonActionInput,
+  AddonActionName,
+  AddonActionOutput,
+  AddonServiceDeclaration
+} from '@mica/shared/addonService';
 
 /**
  * A store over a server-paged list.
@@ -64,27 +70,26 @@ interface PagedReply<T> {
  */
 export type PageReader<T> = (payload: Record<string, unknown>) => Promise<PagedReply<T> | T[]>;
 
-export function createPagedStore<T extends { id: number }>(
+/** `createPagedStore`'s options, in the string and reader forms. */
+interface PagedOptions {
+  pageSize?: number;
   /**
-   * The NUI action, the server action (with `service:` set), or the reader itself. A
-   * function is also what keeps `server/__tests__/routes.test.ts`'s scanner from reading
-   * the name as a route nobody declared — there is no name to read.
+   * Reach the server through the generic service route rather than a named NUI action.
+   *
+   * Set it and `action` becomes a **server** action name — `get`, `following` — instead
+   * of a row in `shared/routes.ts`. That table and `web/src/services/` both ship inside
+   * micaOS, so an app installed from the Store can add to neither; this is the only path
+   * open to it. Mirrors `CrudOptions.service`, deliberately: an app should not have to
+   * learn two different ways to say the same thing depending on whether its list is
+   * paged.
    */
+  service?: string;
+}
+
+/** The one implementation behind both of `createPagedStore`'s front doors. */
+function pagedStore<T extends { id: number }>(
   action: string | PageReader<T>,
-  options: {
-    pageSize?: number;
-    /**
-     * Reach the server through the generic service route rather than a named NUI action.
-     *
-     * Set it and `action` becomes a **server** action name — `get`, `following` — instead
-     * of a row in `shared/routes.ts`. That table and `web/src/services/` both ship inside
-     * micaOS, so an app installed from the Store can add to neither; this is the only path
-     * open to it. Mirrors `CrudOptions.service`, deliberately: an app should not have to
-     * learn two different ways to say the same thing depending on whether its list is
-     * paged.
-     */
-    service?: string;
-  } = {}
+  options: PagedOptions
 ): PagedStore<T> {
   const rows = writable<T[]>([]);
   const loaded = writable(false);
@@ -207,4 +212,107 @@ export function createPagedStore<T extends { id: number }>(
       ),
     remove: (id: number) => rows.update((current) => current.filter((row) => row.id !== id))
   };
+}
+
+// --- The declaration form (MICA-313) ---------------------------------------------------------
+//
+// As `createCrudStore`'s: the action is checked against the declaration by a conditional type
+// that answers the name when it fits and a sentence when it does not. What it checks is what
+// this store sends — `{ ...filter, cursor, limit }`, with `cursor` absent on the first page and
+// `limit` absent without a `pageSize` — and what it reads back, since the server parses every
+// payload strictly against the same declaration and refuses a key it does not declare.
+
+type Out<D extends AddonServiceDeclaration, A extends AddonActionName<D>> = AddonActionOutput<D, A>;
+type In<D extends AddonServiceDeclaration, A extends AddonActionName<D>> = AddonActionInput<D, A>;
+
+/** `true` for one action name, `false` for the union an unknown name falls back to. */
+type IsOne<A, All = A> = A extends unknown ? ([All] extends [A] ? true : false) : never;
+
+/** A page's row: from `{ rows: Row[], nextCursor }`, or from a bare `Row[]` (one page). */
+type PageRow<O> = O extends readonly (infer R)[]
+  ? R
+  : O extends { rows: readonly (infer R)[] }
+    ? R
+    : never;
+
+/** The paged read: answers rows with an id, and takes back the cursor it hands out. */
+type PageEvent<D extends AddonServiceDeclaration, A extends AddonActionName<D>> =
+  IsOne<A> extends false
+    ? AddonActionName<D>
+    : [PageRow<Out<D, A>>] extends [never]
+      ? `'${A}' must answer a page: declare output: addonOutput<{ rows: Row[]; nextCursor: number | null }>()`
+      : PageRow<Out<D, A>> extends { id: number }
+        ? Out<D, A> extends { nextCursor: infer N }
+          ? 'cursor' extends keyof In<D, A>
+            ? NonNullable<N> extends NonNullable<In<D, A>['cursor']>
+              ? object extends Pick<In<D, A>, 'cursor'>
+                ? A
+                : `'${A}' must declare 'cursor' optional: the first page is asked for without one`
+              : `'${A}' must accept its own nextCursor as 'cursor'`
+            : `'${A}' must declare an optional 'cursor' field: the store sends back nextCursor`
+          : A
+        : `'${A}' must answer rows with an id: number`;
+
+/**
+ * A server-paged list over an add-on's own service, typed from its declaration (MICA-313).
+ *
+ * The declaration your server half registers, and the action that reads one page. Its output
+ * is `addonOutput<{ rows: Row[]; nextCursor: … | null }>()` — or `addonOutput<Row[]>()` for a
+ * list that is always one page — and `Row`, which needs an `id: number`, is the store's row
+ * type. The action is sent `{ ...filter, cursor, limit }`, so it declares an optional `cursor`
+ * of the type `nextCursor` hands out, and a `limit` field if you set `pageSize`; whatever
+ * `load(filter)` adds must be declared too, or the server refuses it.
+ *
+ * ```ts
+ * const feed = createPagedStore(journal, 'page', { pageSize: 20 });
+ * ```
+ *
+ * At run time it is `createPagedStore(action, { ...options, service: declaration.id })`: the
+ * same store, through the same generic service route, refused by the shell for any id but your
+ * own.
+ */
+export function createPagedStore<
+  const D extends AddonServiceDeclaration,
+  A extends AddonActionName<D>
+>(
+  declaration: D,
+  action: PageEvent<D, A>,
+  options?: {
+    /** Sent as `limit`, so the action must declare a `limit` field to take it. */
+    pageSize?: 'limit' extends keyof In<D, A>
+      ? number
+      : `'${A}' must declare a 'limit' field to take a pageSize`;
+  }
+): PagedStore<PageRow<Out<D, A>>>;
+/**
+ * A server-paged list: by NUI action name, by server action name with `service:` set, or
+ * through a reader function. See the module comment above.
+ */
+// Last on purpose: the general form, and the one a reader of the type sees (`createCrudStore`
+// and `useService` order theirs the same way).
+export function createPagedStore<T extends { id: number }>(
+  /**
+   * The NUI action, the server action (with `service:` set), or the reader itself. A
+   * function is also what keeps `server/__tests__/routes.test.ts`'s scanner from reading
+   * the name as a route nobody declared — there is no name to read.
+   */
+  action: string | PageReader<T>,
+  options?: PagedOptions
+): PagedStore<T>;
+export function createPagedStore(
+  target: string | PageReader<{ id: number }> | AddonServiceDeclaration,
+  actionOrOptions?: string | PagedOptions,
+  declaredOptions: { pageSize?: number } = {}
+): PagedStore<{ id: number }> {
+  if (typeof target === 'object') {
+    // Refused rather than coerced: `String({ pageSize })` would page an action named
+    // '[object Object]', and the server's refusal would not say which call sent it.
+    if (typeof actionOrOptions !== 'string') {
+      throw new Error(
+        `createPagedStore('${target.id}'): the declaration form takes the action name second.`
+      );
+    }
+    return pagedStore(actionOrOptions, { ...declaredOptions, service: target.id });
+  }
+  return pagedStore(target, typeof actionOrOptions === 'object' ? actionOrOptions : {});
 }

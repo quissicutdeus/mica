@@ -286,6 +286,14 @@ const entries = await service.call('list'); // Entry[], type-checked
 await service.call('add', { title }); // a wrong action, field or type fails to compile
 ```
 
+For a list, `createCrudStore(journal, { list: 'list', create: 'add' })` takes
+the same declaration and types its rows from `list`'s output (MICA-313). It asks
+a little more of the declaration than `useService` does, because the store keeps
+the list in step with the server: `create` must answer the new row (not just its
+id, as `add` above does), `update` must take every field of the row, and
+`remove` takes `{ id }` alone. Each is a compile error with a message saying
+what to declare.
+
 micaOS parses every payload against the declaration and resolves the player
 before your resource's handler runs. Push back with `PushToApp` and listen with
 `useAppEvents`. The README's "Exports for other resources" has the export

@@ -502,6 +502,8 @@ describe("useService stays in the app's own namespace", () => {
   const ts = createRequire(join(__dirname, '..', 'package.json'))('typescript-ast-parser');
   /** The modules `defineAddonService` may come from: the SDK, and the package it re-exports. */
   const DEFINERS = new Set(['@mica/sdk', '@mica/shared/addonService']);
+  /** The store factories that reach a service by the same generic route (MICA-313). */
+  const STORES = new Set(['createCrudStore', 'createPagedStore']);
   const ID = /^[a-z0-9_]+$/;
   const SCRIPT = /<script\b[^>]*>([\s\S]*?)<\/script>/g;
 
@@ -638,11 +640,70 @@ describe("useService stays in the app's own namespace", () => {
   };
 
   /**
+   * MICA-313: the two store factories are the same door as `useService`. Each reaches a
+   * service by the generic route — named by a `service:` option, or, in the declaration form,
+   * by the declaration's `id` — so each is held to the same rule. Which argument is which
+   * depends on the form, read the way the factory itself reads it at run time:
+   *
+   * - `createCrudStore(name, events, options?)` takes a string literal first. Anything else
+   *   is the declaration form, and the first argument must trace to an own declaration.
+   * - `createPagedStore(action, options?)` takes a string literal or a reader first. With a
+   *   second argument that is not an options literal it is the declaration form,
+   *   `(declaration, action, options?)`, and the first must trace as above.
+   *
+   * The options argument must be an object literal with no spread and no computed key — the
+   * only shape in which a `service:` is visible at all — and a `service:` in it must be a
+   * string literal in the app's namespace. A first argument that traces to a declaration of
+   * another app is refused in any form.
+   */
+  const storeReachesOwn = (
+    name: string,
+    call: any,
+    file: string,
+    nodes: any[],
+    appDir: string,
+    own: (id: string | undefined) => boolean
+  ): boolean => {
+    const args: any[] = [...call.arguments];
+    const [first, second] = args;
+    if (first === undefined) return false;
+    const traced = ts.isIdentifier(first) ? tracedId(first.text, file, nodes, appDir) : undefined;
+    if (traced !== undefined && !own(traced)) return false;
+
+    const declarationForm =
+      name === 'createCrudStore'
+        ? !ts.isStringLiteral(first)
+        : !ts.isStringLiteral(first) &&
+          second !== undefined &&
+          !ts.isObjectLiteralExpression(second);
+    if (declarationForm && !own(traced)) return false;
+
+    const optionsAt = name === 'createCrudStore' || declarationForm ? 2 : 1;
+    const options = args[optionsAt];
+    if (options === undefined) return true;
+    if (!ts.isObjectLiteralExpression(options)) return false;
+    for (const property of options.properties) {
+      if (ts.isSpreadAssignment(property)) return false;
+      if (property.name === undefined || ts.isComputedPropertyName(property.name)) return false;
+      if (property.name.text !== 'service') continue;
+      if (!ts.isPropertyAssignment(property) || !ts.isStringLiteral(property.initializer)) {
+        return false;
+      }
+      if (!own(property.initializer.text)) return false;
+    }
+    return true;
+  };
+
+  /**
    * Every reference to `useService` under `appDir` whose id is not provably `appId`'s own,
    * and how many calls were read — so a scan that goes blind cannot pass as a clean one.
    */
-  const scan = (appId: string, appDir: string): { offenders: string[]; calls: number } => {
+  const scan = (
+    appId: string,
+    appDir: string
+  ): { offenders: string[]; calls: number; storeCalls: number } => {
     let calls = 0;
+    let storeCalls = 0;
     const own = (id: string | undefined) =>
       id !== undefined && ID.test(id) && (id === appId || id.startsWith(`${appId}_`));
     const offenders: string[] = [];
@@ -677,6 +738,27 @@ describe("useService stays in the app's own namespace", () => {
         if (!own(id)) offenders.push(`${appId}: useService(${args}) in ${at}`);
       }
 
+      for (const node of nodes) {
+        if (!ts.isIdentifier(node) || !STORES.has(node.text)) continue;
+        const parent = node.parent;
+        if (ts.isImportSpecifier(parent) && parent.name === node && !parent.propertyName) continue;
+        const callee =
+          ts.isPropertyAccessExpression(parent) && parent.name === node ? parent : node;
+        const call = callee.parent;
+        if (!ts.isCallExpression(call) || call.expression !== callee) {
+          offenders.push(`${appId}: ${node.text} referenced as \`${parent.getText()}\` in ${at}`);
+          continue;
+        }
+        storeCalls++;
+        if (!storeReachesOwn(node.text, call, file, nodes, appDir, own)) {
+          const args = call.arguments.map((a: any) => a.getText()).join(', ');
+          offenders.push(`${appId}: ${node.text}(${args.replace(/\s+/g, ' ')}) in ${at}`);
+        }
+      }
+      for (const match of markup.matchAll(/\b(createCrudStore|createPagedStore)\b/g)) {
+        offenders.push(`${appId}: ${match[1]} in the markup of ${at}`);
+      }
+
       // Markup: nothing to trace, so a literal or nothing.
       for (const match of markup.matchAll(/\buseService\b/g)) {
         const literal = /^useService\(\s*['"]([^'"]*)['"]\s*\)/.exec(
@@ -686,7 +768,7 @@ describe("useService stays in the app's own namespace", () => {
         if (!own(literal)) offenders.push(`${appId}: useService in the markup of ${at}`);
       }
     }
-    return { offenders, calls };
+    return { offenders, calls, storeCalls };
   };
   const offendersIn = (appId: string, appDir: string): string[] => scan(appId, appDir).offenders;
 
@@ -695,6 +777,9 @@ describe("useService stays in the app's own namespace", () => {
     // Notes, Hodlr, Places, Jobs and Blabber all call it; a parse that found none would
     // report every app clean.
     expect(scans.reduce((sum, { calls }) => sum + calls, 0)).toBeGreaterThanOrEqual(5);
+    // Notes and Places build a CRUD store and Blabber seven paged ones, `service:` and reader
+    // forms both: a scan that lost the factories would otherwise read as clean.
+    expect(scans.reduce((sum, { storeCalls }) => sum + storeCalls, 0)).toBeGreaterThanOrEqual(9);
     expect(scans.flatMap(({ offenders }) => offenders).sort()).toEqual([]);
   });
 
@@ -861,6 +946,63 @@ describe("useService stays in the app's own namespace", () => {
       mkdirSync(join(root, 'elsewhere'), { recursive: true });
       writeFileSync(join(root, 'elsewhere', 'service.ts'), declaration('journal'));
       expect(offendersIn('journal', dir)).toHaveLength(4);
+    });
+
+    describe('the store factories, which reach a service by the same door (MICA-313)', () => {
+      const STORE_IMPORTS = `import { createCrudStore, createPagedStore } from '@mica/sdk';\n`;
+
+      it('accepts every form that stays in its own namespace', () => {
+        const dir = app({
+          'service.ts': declaration('journal'),
+          'stores.ts':
+            `${STORE_IMPORTS}import { journal } from './service';\n` +
+            `const reader = async () => [];\n` +
+            `createCrudStore(journal, { list: 'list' });\n` +
+            `createCrudStore(journal, { list: 'list' }, { sort: (a, b) => a.id - b.id });\n` +
+            `createCrudStore('Journal', { list: 'get' }, { service: 'journal' });\n` +
+            `createCrudStore('Journal', { list: 'get' });\n` +
+            `createPagedStore(journal, 'list', { pageSize: 5 });\n` +
+            `createPagedStore(journal, 'list');\n` +
+            `createPagedStore('feed', { service: 'journal_feed', pageSize: 5 });\n` +
+            `createPagedStore(reader, { pageSize: 5 });\n` +
+            `createPagedStore(reader);\n`
+        });
+        const { offenders, storeCalls } = scan('journal', dir);
+        expect(offenders).toEqual([]);
+        expect(storeCalls).toBe(9);
+      });
+
+      it('refuses another id, by declaration or by option, and anything it cannot read', () => {
+        const FOREIGN = `${STORE_IMPORTS}import { journal as other } from './foreign';\n`;
+        const dir = app({
+          'foreign.ts': declaration('contacts'),
+          'a.ts': `${FOREIGN}createCrudStore(other, { list: 'list' });\n`,
+          'b.ts': `${FOREIGN}createPagedStore(other, 'list');\n`,
+          'c.ts': `${STORE_IMPORTS}createCrudStore('J', { list: 'get' }, { service: 'contacts' });\n`,
+          'd.ts': `${STORE_IMPORTS}createPagedStore('feed', { service: 'contacts' });\n`,
+          'e.ts': `${STORE_IMPORTS}createCrudStore('J', { list: 'get' }, opts);\n`,
+          'f.ts': `${STORE_IMPORTS}createCrudStore('J', { list: 'get' }, { ...opts });\n`,
+          'g.ts': `${STORE_IMPORTS}createCrudStore(nowhere, { list: 'get' });\n`,
+          'h.ts': `${STORE_IMPORTS}createPagedStore(nowhere, 'list');\n`,
+          // A foreign declaration where a reader goes: a type error, and at run time still
+          // the declaration form, so it is refused whatever position it is in.
+          'i.ts': `${FOREIGN}createPagedStore(other, { pageSize: 1 });\n`,
+          'j.ts': `${STORE_IMPORTS}const make = createCrudStore;\n`,
+          'k.ts': `${STORE_IMPORTS}createCrudStore('J', { list: 'get' }, { service: \`journal\` });\n`,
+          'l.ts': `${STORE_IMPORTS}createPagedStore('feed', { ['service']: 'journal' });\n`,
+          'm.svelte': `<p>{createCrudStore('J', { list: 'get' }).subscribe}</p>\n`
+        });
+        const found = offendersIn('journal', dir);
+        expect(found.map((line) => line.replace(/.* (in|of) \//, '')).sort()).toEqual(
+          ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l']
+            .map((f) => `${f}.ts`)
+            .concat('m.svelte')
+        );
+        expect(found).toContain("journal: createCrudStore(other, { list: 'list' }) in /a.ts");
+        expect(found).toContain(
+          'journal: createCrudStore referenced as `make = createCrudStore` in /j.ts'
+        );
+      });
     });
 
     it('refuses the hook itself escaping: aliased, passed around, or traced only in markup', () => {

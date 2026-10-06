@@ -6,7 +6,7 @@ import { NOTE_ADDED, notes, type Note } from './service';
  * Your server half, mocked for `pnpm dev` — **never in the bundle you ship.**
  *
  * `pnpm dev` runs your add-on in the demo phone, where there is no FiveM server and so no
- * `my_addon_server/` to answer `useService(notes)`. This answers instead, inside your add-on's
+ * `my_addon_server/` to answer the note list's store. This answers instead, inside your add-on's
  * own sandboxed frame: the phone never sees it, and only your own service id is mocked — a call
  * to any other is refused by the phone exactly as it is in game.
  *

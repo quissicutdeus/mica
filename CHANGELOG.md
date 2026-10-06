@@ -1324,6 +1324,14 @@ somebody maintaining a `core: false` add-on outside this repo, and it answers
 one question: does that bundle still compile against this release, and does its
 manifest still ask for the right things.
 
+**`createCrudStore` and `createPagedStore` take your service declaration
+(MICA-313).** `createCrudStore(notes, { list: 'list', create: 'add' })` and
+`createPagedStore(notes, 'page')` check every action name against your
+`defineAddonService` declaration and type the rows from the list action's
+`addonOutput<Row[]>()` and the draft from `create`'s input, with no type
+argument to assert. The forms that take a `service` string are unchanged, and
+nothing you compile against today changes.
+
 **`pnpm check` in the add-on template now fails on what breaks only in game
 (MICA-312).** That covers CSS past Chromium 103 (`:has()`, container queries,
 `dvh`/`svh`, `color-mix()`), a utility class `@mica/sdk` does not define, an

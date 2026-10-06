@@ -5,6 +5,12 @@
 import { writable } from 'svelte/store';
 import { fetchNui } from './nui/transport';
 import { GENERIC_SERVICE_ACTION } from '@mica/shared/rpc';
+import type {
+  AddonActionInput,
+  AddonActionName,
+  AddonActionOutput,
+  AddonServiceDeclaration
+} from '@mica/shared/addonService';
 
 /** The NUI action names a `createCrudStore` reads and writes through. */
 export interface CrudEvents {
@@ -122,32 +128,11 @@ const positionFor = <T>(
   return Math.min(Math.max(from, firstTie), lo);
 };
 
-/**
- * A store over a list of rows the server owns.
- *
- * Four stores had written the same load/add/update/delete by hand, and every difference
- * between them was an accident rather than a decision:
- *
- * - **Order** — see `sort` above.
- * - **Optimism** — Mail wrote to the list first and then told the server; everyone else
- *   waited. Optimism was load-bearing when `fetchNui` swallowed failures, because there
- *   was no other way to feel responsive. It now throws, so the list follows the server
- *   and a refused write no longer leaves the UI asserting something untrue.
- * - **Validation** — Contacts checked its required fields, in the store and again in the
- *   component; nobody else checked anything.
- * - **Bad data** — three stores logged and emptied the list on a non-array reply, one
- *   let it through.
- *
- * Neither reads nor writes pass a `defaultValue`, so `fetchNui` throws on failure instead
- * of masking it. Writes propagate the throw to the caller, which already had a value to
- * fall back to. `load` catches it itself and keeps the store's last known list — the
- * store has nothing better to show, and a background refresh that failed should not wipe
- * out what the player was already looking at.
- */
-export function createCrudStore<T extends { id: number }, TDraft = Omit<T, 'id'>>(
+/** The one implementation behind both of `createCrudStore`'s front doors. */
+function crudStore<T extends { id: number }, TDraft>(
   name: string,
   events: CrudEvents,
-  options: CrudOptions<T, TDraft> = {}
+  options: CrudOptions<T, TDraft>
 ) {
   const { subscribe, set, update: mutate } = writable<T[]>([]);
 
@@ -282,4 +267,160 @@ export function createCrudStore<T extends { id: number }, TDraft = Omit<T, 'id'>
     patch: (id: number, changes: Partial<T>) =>
       mutate((rows) => replaced(rows, id, (r) => ({ ...r, ...changes })))
   };
+}
+
+/** What `createCrudStore` returns, whichever door it was called through. */
+type CrudStore<T extends { id: number }, TDraft> = ReturnType<typeof crudStore<T, TDraft>>;
+
+// --- The declaration form (MICA-313) ---------------------------------------------------------
+//
+// Each event is checked against the declaration by a conditional type that answers the event
+// name itself when it fits, and a sentence when it does not — so a mismatch reads as
+// `'"add"' is not assignable to '"'add' must answer …"'` rather than as a wall of mapped
+// types. The checks mirror what the store actually sends, because the server parses every
+// payload strictly against the same declaration (`addonInputSchema`): an unknown key is
+// refused there, so a store that sent one would fail on every call.
+
+type Out<D extends AddonServiceDeclaration, A extends AddonActionName<D>> = AddonActionOutput<D, A>;
+type In<D extends AddonServiceDeclaration, A extends AddonActionName<D>> = AddonActionInput<D, A>;
+
+/**
+ * `true` for one action name, `false` for a union of them — which is what an event's type
+ * parameter falls back to when the name written is not an action at all. Each check below
+ * answers the declaration's names in that case, so the error reads "'lst' is not assignable
+ * to 'list' | 'add'" instead of one sentence per action.
+ */
+type IsOne<A, All = A> = A extends unknown ? ([All] extends [A] ? true : false) : never;
+
+/** The row type: the element of the `list` action's declared output. */
+type ListedRow<D extends AddonServiceDeclaration, L extends AddonActionName<D>> =
+  Out<D, L> extends readonly (infer R extends { id: number })[] ? R : never;
+
+/** The draft type: the `create` action's input, or `never` when there is no `create`. */
+type DraftOf<D extends AddonServiceDeclaration, C extends AddonActionName<D>> = [C] extends [never]
+  ? never
+  : In<D, C>;
+
+/** `list` answers `Row[]`, rows carry `id: number`, and it takes no required input. */
+type ListEvent<D extends AddonServiceDeclaration, L extends AddonActionName<D>> =
+  IsOne<L> extends false
+    ? AddonActionName<D>
+    : Out<D, L> extends readonly unknown[]
+      ? Out<D, L> extends readonly { id: number }[]
+        ? object extends In<D, L>
+          ? L
+          : `'${L}' has a required input field, and the store lists with none`
+        : `'${L}' must answer rows with an id: number`
+      : `'${L}' must answer a list: declare output: addonOutput<Row[]>()`;
+
+/** `create` answers the row it created, which the store adds to the list. */
+type CreateEvent<D extends AddonServiceDeclaration, C extends AddonActionName<D>, Row> =
+  IsOne<C> extends false
+    ? AddonActionName<D>
+    : unknown extends Out<D, C>
+      ? `'${C}' must answer the row it created: declare output: addonOutput<Row>()`
+      : Out<D, C> extends Row
+        ? C
+        : `'${C}' must answer the row it created: declare output: addonOutput<Row>()`;
+
+/** `update` is sent the whole row, so its input must declare every field of it. */
+type UpdateEvent<D extends AddonServiceDeclaration, U extends AddonActionName<D>, Row> =
+  IsOne<U> extends false
+    ? AddonActionName<D>
+    : [Exclude<keyof Row, keyof In<D, U>>] extends [never]
+      ? Row extends In<D, U>
+        ? U
+        : `'${U}' must accept the whole row: the store sends it as the input`
+      : `'${U}' must declare every field of the row, id included: the store sends the whole row`;
+
+/** `remove` is sent `{ id }` and nothing else. */
+type RemoveEvent<D extends AddonServiceDeclaration, R extends AddonActionName<D>> =
+  IsOne<R> extends false
+    ? AddonActionName<D>
+    : 'id' extends keyof In<D, R>
+      ? { id: number } extends In<D, R>
+        ? R
+        : `'${R}' must take { id } alone: the store sends nothing else`
+      : `'${R}' must declare an integer 'id' field: the store sends { id }`;
+
+/**
+ * A list over an add-on's own service, typed from its declaration (MICA-313).
+ *
+ * The declaration your server half registers, and the actions to use from it. Every name is
+ * one of the declaration's, and the store's types follow from the declaration rather than from
+ * a type argument you assert:
+ *
+ * - **`list`** answers `addonOutput<Row[]>()`, and `Row` — which needs an `id: number` — is
+ *   the store's row type. It is called with no input.
+ * - **`create`** takes the draft, so `add(draft)` is typed as its input, and answers the
+ *   created row (`addonOutput<Row>()`).
+ * - **`update`** is sent the whole row, so its input declares every field of `Row`.
+ * - **`remove`** is sent `{ id }`.
+ *
+ * ```ts
+ * const notes = createCrudStore(notesService, { list: 'list', create: 'add' });
+ * await notes.add({ text }); // a typo in a field, or in an action name, fails to compile
+ * ```
+ *
+ * At run time it is `createCrudStore(declaration.id, events, { ...options, service:
+ * declaration.id })`: the same store, through the same generic service route. The types are a
+ * convenience and a promise about nothing — the server parses every payload against the
+ * declaration it was handed, and the shell refuses any id but your own, whatever this side
+ * believed.
+ */
+export function createCrudStore<
+  const D extends AddonServiceDeclaration,
+  L extends AddonActionName<D>,
+  C extends AddonActionName<D> = never,
+  U extends AddonActionName<D> = never,
+  R extends AddonActionName<D> = never
+>(
+  declaration: D,
+  events: {
+    list: ListEvent<D, L>;
+    create?: CreateEvent<D, C, ListedRow<D, L>>;
+    update?: UpdateEvent<D, U, ListedRow<D, L>>;
+    remove?: RemoveEvent<D, R>;
+  },
+  options?: Omit<CrudOptions<ListedRow<D, L>, DraftOf<D, C>>, 'service'>
+): CrudStore<ListedRow<D, L>, DraftOf<D, C>>;
+/**
+ * A store over a list of rows the server owns.
+ *
+ * Four stores had written the same load/add/update/delete by hand, and every difference
+ * between them was an accident rather than a decision:
+ *
+ * - **Order** — see `sort` above.
+ * - **Optimism** — Mail wrote to the list first and then told the server; everyone else
+ *   waited. Optimism was load-bearing when `fetchNui` swallowed failures, because there
+ *   was no other way to feel responsive. It now throws, so the list follows the server
+ *   and a refused write no longer leaves the UI asserting something untrue.
+ * - **Validation** — Contacts checked its required fields, in the store and again in the
+ *   component; nobody else checked anything.
+ * - **Bad data** — three stores logged and emptied the list on a non-array reply, one
+ *   let it through.
+ *
+ * Neither reads nor writes pass a `defaultValue`, so `fetchNui` throws on failure instead
+ * of masking it. Writes propagate the throw to the caller, which already had a value to
+ * fall back to. `load` catches it itself and keeps the store's last known list — the
+ * store has nothing better to show, and a background refresh that failed should not wipe
+ * out what the player was already looking at.
+ */
+// Last on purpose: the string form is the general one, and the overload a reader of the type
+// (`ReturnType`, `publicSurface.test.ts`) sees — as `useService` orders its two.
+export function createCrudStore<T extends { id: number }, TDraft = Omit<T, 'id'>>(
+  name: string,
+  events: CrudEvents,
+  options?: CrudOptions<T, TDraft>
+): CrudStore<T, TDraft>;
+// The implementation's own types are the loosest both doors meet at — each overload above is
+// what a caller sees, and both lead straight to `crudStore`.
+export function createCrudStore(
+  target: string | AddonServiceDeclaration,
+  events: CrudEvents,
+  options: CrudOptions<never, never> = {}
+): unknown {
+  return typeof target === 'string'
+    ? crudStore(target, events, options)
+    : crudStore(target.id, events, { ...options, service: target.id });
 }

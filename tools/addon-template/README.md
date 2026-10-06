@@ -62,7 +62,7 @@ refuses a dev add-on from anywhere else, and a game build has no dev path at
 all.
 
 **Your server half is `src/mock.ts`.** There is no FiveM server behind the demo,
-so `useService(notes)` is answered by a mock running inside your add-on's own
+so your app's calls to `notes` are answered by a mock running inside its own
 frame. Its handlers have exactly the type `exports.mica:RegisterService` takes —
 `(citizenid, input, source)`, answering the declared output or `addonError(…)` —
 and each call's input is parsed against `src/service.ts` before a handler runs,
@@ -372,9 +372,13 @@ answers your app's calls by handing them to your handlers.
 
 `src/service.ts` declares the service once, with `defineAddonService`:
 
-- **The UI** types its calls from it. `useService(notes).call('add', { text })`
-  knows the action names, each one's fields and what each answers, so a typo is
-  a `pnpm check` error rather than a failed tap.
+- **The UI** types its calls from it. `src/index.svelte` holds its note list in
+  `createCrudStore(notes, { list: 'list', create: 'add' })`: the action names
+  are the declaration's, a row is what `list` answers (`addonOutput<Note[]>()`),
+  and `notes.add(...)` takes what `add` declares, so a typo is a `pnpm check`
+  error rather than a failed tap. `createPagedStore(declaration, action)` does
+  the same for a paged read, and `useService(notes).call('add', { text })` for a
+  single call.
 - **The server** gets the same object as `my_addon_server/service.json`, which
   `pnpm build` writes from the `.ts` (Lua cannot read TypeScript), and
   `server.lua` registers. Edit the `.ts` and rebuild; never edit the JSON.

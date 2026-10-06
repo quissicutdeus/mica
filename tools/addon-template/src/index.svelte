@@ -8,7 +8,7 @@
     useAppAction,
     useAppEvents,
     useAppLevels,
-    useService,
+    createCrudStore,
     onAppForeground,
     type AppProps
   } from '@mica/sdk';
@@ -20,26 +20,32 @@
    */
   let { onback }: AppProps = $props();
 
-  let notes: Note[] = $state([]);
   let draft = $state('');
   let open: Note | null = $state(null);
 
   /**
-   * Your server half, typed from its declaration in `service.ts`.
+   * Your notes, as a store over your server half — typed from its declaration in `service.ts`.
    *
-   * `server.call('add', { text })` is checked against that file: a misspelt action or field,
-   * or a number where `text` wants a string, fails `pnpm check`. The answer is typed too —
-   * `Note` here, from `addonOutput<Note>()`. None of that is enforcement: micaOS parses every
+   * `list` and `add` are action names from that file, and the store's types follow from it:
+   * a row is a `Note`, because `list` answers `addonOutput<Note[]>()`, and `notes.add(...)`
+   * takes what `add`'s input declares. A misspelt action or field, or a number where `text`
+   * wants a string, fails `pnpm check`. None of that is enforcement: micaOS parses every
    * payload against the same declaration on the server, whatever this side believed.
+   *
+   * The store holds the list for you: `load()` keeps what is on screen if a round trip fails,
+   * `notes.loaded` tells "still fetching" from "nothing yet", and `add` puts the created row
+   * in the list only once the server has taken it. Add `update` and `remove` actions to the
+   * declaration to edit and delete the same way.
    */
-  const server = useService(notesService);
+  const notes = createCrudStore(notesService, { list: 'list', create: 'add' });
+  const loaded = notes.loaded;
 
   /** Busy flag and error toast around a write: a refusal from `add` is shown, not swallowed. */
   const { busy, run } = useAppAction('my_addon');
 
   /** One note in the list, once — the answer to `add` and its push can both bring it. */
   const keep = (note: Note) => {
-    if (!notes.some((n) => n.id === note.id)) notes = [...notes, note];
+    if (!$notes.some((n) => n.id === note.id)) notes.set([...$notes, note]);
   };
 
   /**
@@ -78,13 +84,10 @@
    * goes to the background. The first argument is the app id, for the same residency reason
    * `useAppLevels` needs one.
    *
-   * The third argument is the default a failed round trip resolves to — here, the list
-   * already on screen — so a server half that is not running leaves the app usable. A
-   * snapshot, because it crosses `postMessage` to the shell and a `$state` proxy cannot.
+   * A failed `load()` keeps the list already on screen, so a server half that is not running
+   * leaves the app usable.
    */
-  onAppForeground('my_addon', () => {
-    void server.call('list', {}, $state.snapshot(notes)).then((list) => (notes = list));
-  });
+  onAppForeground('my_addon', () => void notes.load());
 
   /**
    * What the server half pushes with `exports.mica:PushToApp`. Needs `app-events` in the
@@ -96,7 +99,7 @@
   const add = async () => {
     const text = draft.trim();
     if (text === '') return;
-    if (await run(async () => keep(await server.call('add', { text })))) draft = '';
+    if (await run(() => notes.add({ text }))) draft = '';
   };
 </script>
 
@@ -119,13 +122,13 @@
     </div>
   {:else}
     <div class="min-h-0 flex-1 overflow-y-auto">
-      {#if notes.length === 0}
+      {#if $loaded && $notes.length === 0}
         <EmptyState
           title="No notes yet"
           description="Write one below. This add-on's own server resource keeps it."
         />
       {:else}
-        {#each notes as note (note.id)}
+        {#each $notes as note (note.id)}
           <ListItem onclick={() => (open = note)}>
             <p class="text-body-large text-on-surface">{note.text}</p>
           </ListItem>
