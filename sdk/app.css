@@ -335,6 +335,7 @@ a {
 *,
 *::before,
 *::after {
+  /* stylelint-disable-next-line plugin/no-unsupported-browser-features -- scrollbar-width is Chromium 121, so CEF 103 ignores it; the `*::-webkit-scrollbar` rule in app.css is what hides scrollbars there */
   scrollbar-width: none !important;
   -ms-overflow-style: none !important;
 }
@@ -351,6 +352,7 @@ a {
 
 .no-scrollbar {
   -ms-overflow-style: none;
+  /* stylelint-disable-next-line plugin/no-unsupported-browser-features -- scrollbar-width is Chromium 121, so CEF 103 ignores it; the `*::-webkit-scrollbar` rule in app.css is what hides scrollbars there */
   scrollbar-width: none;
 }
 

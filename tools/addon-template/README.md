@@ -25,9 +25,9 @@ pnpm install
 pnpm build     # -> dist/<your app id>.js, and my_addon_server/service.json
 ```
 
-`pnpm check` runs `svelte-check` over your source if you want the typechecker as
-well; the build does not run it, deliberately, so a type error never silently
-costs you a bundle.
+`pnpm check` runs `svelte-check` over your source, then the checks micaOS holds
+its own apps to (below). The build does not run it, deliberately, so a type
+error never silently costs you a bundle; run it before you publish.
 
 ## See it
 
@@ -255,7 +255,29 @@ line is the thing standing in the way, it opens.
 | `scripts/dev.mjs`     | `pnpm dev`: a watch build into `dist-dev/` and a loopback server for the demo phone                                      |
 | `my_addon_server/`    | Your server half: a FiveM resource of its own, which registers with micaOS                                               |
 
-## Two things that will bite you, and no test can catch either
+## Two things that will bite you, checked by `pnpm check`
+
+Both fail silently in every browser you can test in, which is why they are
+checked rather than left to you. After `svelte-check`, `pnpm check` runs
+`node node_modules/@mica/sdk/checks/cli.js src` — the same code micaOS runs over
+its own apps, from the SDK you installed — and fails on any violation with one
+line per problem:
+
+```text
+src/index.svelte:117 mica/screen-h-full a direct child of Screen fills with h-full, ...
+src/index.svelte:140 plugin/no-unsupported-browser-features Unexpected browser feature "css-has" ...
+```
+
+It reads every `.svelte`, `.ts` and `.css` file under `src/`, and it fails
+rather than passing when it finds no component there or cannot load stylelint. A
+class built at run time (`class={cls}`, `` `p-${n}` ``) cannot be read, so it is
+listed as unchecked rather than passed over. The stylelint half is
+`@mica/sdk/stylelint`; to use it in your own `stylelint.config.js`, spread it
+(`export default { ...cefFloor }` after
+`import cefFloor from '@mica/sdk/stylelint'`) rather than `extends` it, so its
+plugin resolves from your `node_modules`.
+
+What it cannot do is prove anything renders in game. Only FiveM's CEF can.
 
 ### FiveM's CEF is Chromium 103
 
@@ -263,6 +285,8 @@ Your dev browser is current; the game's embedded browser is not. Anything newer
 than Chromium 103 renders perfectly everywhere you can look and is broken in
 game. `:has()` (105), container queries (105), `dvh`/`svh` (108) and
 `color-mix()` (111) have no fallback and must not appear in your CSS at all.
+`pnpm check` refuses each of them in a `.css` file, a `<style>` block or an
+inline `style=`, with stylelint pinned to Chromium 103.
 
 Native CSS **nesting** (112) is the exception, and it is why `postcss.config.js`
 is not optional: the SDK's own `app-utilities.css` — which your bundle inlines —
@@ -270,9 +294,19 @@ nests in about thirty places. Delete that config and every one of those blocks
 is dropped by CEF's parser, in game only.
 
 Note what this means for an **inline `style=` attribute**: it never reaches
-PostCSS, so a colour function past the 103 floor in one is not lowered, not
-warned about, and silently dropped. Prefer a utility class from the SDK's
-stylesheet.
+PostCSS, so a colour function past the 103 floor in one is not lowered, and CEF
+silently drops it. `pnpm check` refuses one, but prefer a utility class from the
+SDK's stylesheet.
+
+**A utility class that does not exist renders as nothing.** There is no Tailwind
+build behind `@mica/sdk/app-utilities.css`: it is a fixed, hand-written set of
+classes, and a misspelt or invented one (`text-body-lagre`, `pt-13`) is no error
+anywhere — the element just goes unstyled. `pnpm check` fails on every class in
+your markup, and in your manifest's `tile`, that neither the SDK's stylesheets
+nor your own CSS define. So does an opacity modifier on a themed colour
+(`bg-surface/50`): the theme follows the player's wallpaper, so no stylesheet
+can hold a right answer for it. Use the state-layer tokens
+(`hover:bg-surface-container-hover`) instead.
 
 ### The phone is 400x850, the tablet is 1280x800, and neither is anything else
 
@@ -287,8 +321,10 @@ reading `useDisplay().device` to lay itself out for it. Size against the frame:
 
 Inside `Screen`, fill with **`min-h-0 flex-1`** — never `h-full`, never a bare
 `flex-1`. Both fail silently and only once there is enough content to overflow.
-A box that declares `overflow-y-auto` scrolls itself and is exempt. Anything
-anchored to the bottom of your app must clear the home indicator
+A box that declares `overflow-y-auto` scrolls itself and is exempt from the
+`flex-1` rule. `pnpm check` refuses both on the root of anything placed directly
+inside `Screen`, following a component of yours to the element it opens with.
+Anything anchored to the bottom of your app must clear the home indicator
 (`--spacing-home-indicator`), or its lower third sits inside a gesture bar that
 sends the player home.
 

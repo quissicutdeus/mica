@@ -8,12 +8,14 @@
     "**/*.svelte",
     "**/*.css",
     "ui/locales/*.json",
+    "checks/*.js",
     "!**/*.test.ts"
   ],
   "license": "AGPL-3.0-or-later",
   "type": "module",
   "//": "MICA-172. Consumed as source: the phone and every add-on bundle build this package through their own Vite pipeline, so there is no build step and no `main`. `@mica/sdk/testing` is deliberately absent, because it resolves to `web/src/testing.ts` — a phone helper, not published contract (see `publicSurface.test.ts`). It stays an alias on the web side.",
   "//exports": "MICA-125: `.` is `addon.ts`, the add-on barrel, not `index.ts`. The bare specifier is inherently target-dependent — in this repo the shell build and the add-on build alias it to different files — so the map can only be right for one audience, and the audience that reads the map is the one outside this repo, which is add-on authors. `index.ts` is the shell's barrel and is published under no subpath at all: the shell always has a Vite config to alias in, and an outside consumer resolving it would get six names it cannot call and no `bootAddOn`. Nothing in this repo resolves through this map — every in-tree consumer aliases past it — which is what made the switch safe to make. `publicSurface.test.ts` holds the map and the frozen surfaces against each other in both directions.",
+  "//stylelint": "MICA-312. `./stylelint` is the Chromium 103 floor as stylelint config, the one this repo's `stylelint.config.js` spreads. Build tooling rather than contract, like the stylesheets beside it: it never reaches a bundle, so it is outside `SDK_CONTRACT_VERSION`, and `publicSurface.test.ts` pins its path in `TOOLING_SUBPATHS` rather than freezing a surface. `checks/cli.js` is run by path (`node node_modules/@mica/sdk/checks/cli.js`), not imported, so it needs no entry here — only the `files` line that ships `checks/*.js`.",
   "exports": {
     ".": "./addon.ts",
     "./app": "./app.ts",
@@ -21,7 +23,8 @@
     "./dev": "./dev.ts",
     "./app.css": "./app.css",
     "./app-utilities.css": "./app-utilities.css",
-    "./app-reset.css": "./app-reset.css"
+    "./app-reset.css": "./app-reset.css",
+    "./stylelint": "./checks/stylelint.config.js"
   },
   "scripts": {
     "check": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",

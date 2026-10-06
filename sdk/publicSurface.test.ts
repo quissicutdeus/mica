@@ -2830,6 +2830,21 @@ const UNPUBLISHED_BY_DESIGN = ['@mica/sdk'];
 const isStylesheet = (subpath: string): boolean => subpath.endsWith('.css');
 
 /**
+ * MICA-312. Subpaths publishing build tooling, each pinned to the file it names.
+ *
+ * Out of contract on the stylesheets' reasoning, one step further: an author's tooling
+ * imports these and no bundle ever does, so no installed add-on can have compiled against
+ * one and run against another, and `SDK_CONTRACT_VERSION` does not move for them. But
+ * unlike a stylesheet, the *path* is what an author's own config writes —
+ * `import cefFloor from '@mica/sdk/stylelint'` — so a rename or a retarget fails here rather
+ * than at their desk. What the config says is not frozen: that is the floor, and the floor
+ * tightening is the point of it.
+ */
+const TOOLING_SUBPATHS: Record<string, string> = {
+  './stylelint': './checks/stylelint.config.js'
+};
+
+/**
  * Every way the map and the frozen surface can disagree, as one list of readable lines.
  *
  * Pure, and takes its declarations as arguments, so the block at the bottom of this file
@@ -2840,9 +2855,24 @@ const exportsMapProblems = (
   map: Record<string, unknown>,
   subpathOf: Record<string, string>,
   files: Record<string, string>,
-  unpublished: string[]
+  unpublished: string[],
+  tooling: Record<string, string> = {}
 ): string[] => {
   const problems: string[] = [];
+
+  for (const [subpath, expected] of Object.entries(tooling)) {
+    if (!(subpath in map)) {
+      problems.push(
+        `${subpath}: not in the exports map, so \`@mica/sdk${subpath.slice(1)}\` no longer ` +
+          "resolves for the author's tooling that imports it"
+      );
+    } else if (map[subpath] !== expected) {
+      problems.push(
+        `${subpath}: names ${JSON.stringify(map[subpath])}, but the tooling it publishes is ` +
+          `${expected}`
+      );
+    }
+  }
   const published = new Set(Object.values(subpathOf));
   const unpublishedFiles = new Map(unpublished.map((entry) => [`./${files[entry]}`, entry]));
 
@@ -2869,7 +2899,7 @@ const exportsMapProblems = (
   }
 
   for (const [subpath, target] of Object.entries(map)) {
-    if (published.has(subpath) || isStylesheet(subpath)) continue;
+    if (published.has(subpath) || isStylesheet(subpath) || subpath in tooling) continue;
     const entry = typeof target === 'string' ? unpublishedFiles.get(target) : undefined;
     problems.push(
       entry === undefined
@@ -3284,7 +3314,13 @@ describe('the SDK public surface (MICA-125)', () => {
 
     it('publishes every entry point whose surface is frozen above', () => {
       expect(
-        exportsMapProblems(map, SUBPATH_OF_ENTRY, ENTRY_FILES, UNPUBLISHED_BY_DESIGN),
+        exportsMapProblems(
+          map,
+          SUBPATH_OF_ENTRY,
+          ENTRY_FILES,
+          UNPUBLISHED_BY_DESIGN,
+          TOOLING_SUBPATHS
+        ),
         "`sdk/package.json`'s `exports` map and the surface frozen in this file disagree. " +
           'Nothing in this repo resolves through that map — every consumer in-tree goes ' +
           'through a Vite alias or a tsconfig path — so a rename or a retarget here is ' +
@@ -3918,6 +3954,31 @@ describe('the SDK public surface (MICA-125)', () => {
           []
         )
       ).toEqual([]);
+    });
+
+    it('pins a tooling subpath to its file, without freezing what the file says', () => {
+      // MICA-312. Present and pointing where it should: nothing to say, whatever the config
+      // inside it holds. Gone, or pointed elsewhere: named, because an author's own
+      // `stylelint.config.js` imports it by that specifier.
+      const tooling = { './stylelint': './checks/stylelint.config.js' };
+      const base = { '.': './index.ts', './app': './app.ts' };
+      expect(
+        exportsMapProblems(
+          { ...base, './stylelint': './checks/stylelint.config.js' },
+          subpaths,
+          files,
+          [],
+          tooling
+        )
+      ).toEqual([]);
+      expect(exportsMapProblems(base, subpaths, files, [], tooling)).toEqual([
+        "./stylelint: not in the exports map, so `@mica/sdk/stylelint` no longer resolves for the author's tooling that imports it"
+      ]);
+      expect(
+        exportsMapProblems({ ...base, './stylelint': './lint.js' }, subpaths, files, [], tooling)
+      ).toEqual([
+        './stylelint: names "./lint.js", but the tooling it publishes is ./checks/stylelint.config.js'
+      ]);
     });
   });
 });

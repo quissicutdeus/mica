@@ -528,12 +528,19 @@ enforcing boundary is still the sandbox and the shell's own permission re-check
 (§7) — but without them the template would be handing out a route to
 `useNuiBridge`.
 
-**What it does _not_ carry, and cannot.** `utilityClasses.test.ts` scans
-`web/src` only, so an out-of-tree app gets no check that a class it writes
-exists in `app-utilities.css` — a token with no rule behind it renders as
-nothing, with no error. Neither does anything out there run `cef.test.ts` or
-`lint:css`. The template's README states the Chromium 103 rules; enforcing them
-is on the author.
+**The checks this repo runs travel with it too (MICA-312).** A utility class
+with no rule behind it renders as nothing, with no error, and CSS past Chromium
+103 renders in every browser an author can test in and breaks only in game. The
+checks that catch both live in `sdk/checks/`, and this repo's
+`utilityClasses.test.ts`, `cef.test.ts` and `lint:css` run the same code. The
+template's `pnpm check` runs them over the add-on's `src/` after `svelte-check`:
+unknown classes, `h-full` or bare `flex-1` inside `Screen`, an opacity modifier
+on a themed role token, CSS past the floor (including `color-mix()`, which the
+stylelint plugin alone does not flag) and inline styles past it. It prints
+`file:line rule message` and exits 1 on any of them, and exits 2, never 0, when
+it finds nothing to check or cannot run stylelint. The stylelint half is
+published as `@mica/sdk/stylelint`. What it cannot check is a class built at run
+time; it lists those as unchecked.
 
 **`postcss.config.js` is the one file people will delete.** This repo's add-on
 build inherits `web/postcss.config.js` by accident of Vite's config discovery.

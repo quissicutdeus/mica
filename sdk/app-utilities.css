@@ -1768,6 +1768,7 @@
   transform: scale(1.1);
 }
 .scrollbar-none {
+  /* stylelint-disable-next-line plugin/no-unsupported-browser-features -- scrollbar-width is Chromium 121, so CEF 103 ignores it; the `*::-webkit-scrollbar` rule in app.css is what hides scrollbars there */
   scrollbar-width: none;
 }
 .selection\:bg-secondary::selection {

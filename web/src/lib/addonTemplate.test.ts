@@ -65,6 +65,11 @@ const TEMPLATE_CONFIG = path.join(TEMPLATE_DIR, 'vite.config.ts');
 
 const read = (file: string): string => fs.readFileSync(file, 'utf8');
 
+/** MICA-312. The SDK's checker, by its path inside the package. */
+const CHECK_CLI = 'checks/cli.js';
+/** What the checker needs installed beside it, all three resolved from the add-on's project. */
+const CHECK_TOOLING = ['stylelint', 'stylelint-no-unsupported-browser-features', 'postcss-html'];
+
 /** A pattern matching `text` exactly, for a decision both files spell the same way. */
 const literal = (text: string): RegExp => new RegExp(text.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&'));
 
@@ -365,6 +370,105 @@ describe('the out-of-tree add-on template', () => {
   });
 
   /**
+   * MICA-312. `pnpm check` is where the CEF floor and the utility-class scan reach an author:
+   * `svelte-check`, then `@mica/sdk`'s own checker, which runs the same code this repo's
+   * `utilityClasses.test.ts` and `sdk/cef.test.ts` call, and stylelint with the same config
+   * this repo's `stylelint.config.js` spreads. What is pinned here is the wiring an author
+   * cannot see break: the script, and the tooling it needs at the versions this repo runs.
+   */
+  describe('pnpm check', () => {
+    const pkg = JSON.parse(read(path.join(TEMPLATE_DIR, 'package.json'))) as {
+      scripts: Record<string, string>;
+      devDependencies: Record<string, string>;
+    };
+    const rootPkg = JSON.parse(read(path.join(ROOT, 'package.json'))) as {
+      devDependencies: Record<string, string>;
+    };
+
+    it('runs svelte-check and the SDK checker, and fails if either does', () => {
+      expect(pkg.scripts.check).toBe(
+        'svelte-check --tsconfig ./tsconfig.json --fail-on-warnings && ' +
+          `node node_modules/@mica/sdk/${CHECK_CLI} src`
+      );
+      expect(fs.existsSync(path.join(ROOT, 'sdk', CHECK_CLI))).toBe(true);
+      // Published, or `node_modules/@mica/sdk/checks/cli.js` is not there to run.
+      const sdkPkg = JSON.parse(read(path.join(ROOT, 'sdk/package.json'))) as {
+        files: string[];
+        exports: Record<string, string>;
+      };
+      expect(sdkPkg.files).toContain('checks/*.js');
+      expect(sdkPkg.exports['./stylelint']).toBe('./checks/stylelint.config.js');
+    });
+
+    it('installs the stylelint toolchain at the versions this repo lints with', () => {
+      for (const name of CHECK_TOOLING) {
+        expect(pkg.devDependencies[name], `${name} in the template`).toBeDefined();
+        expect(pkg.devDependencies[name], `${name} has drifted from this repo's`).toBe(
+          rootPkg.devDependencies[name]
+        );
+      }
+    });
+
+    it("lints with the SDK's config, as this repo does", () => {
+      expect(read(path.join(ROOT, 'stylelint.config.js'))).toContain(
+        "import cefFloor from './sdk/checks/stylelint.config.js';"
+      );
+    });
+  });
+
+  /**
+   * The template copied out of this tree with its `node_modules` as links — `@mica/sdk` and
+   * `@mica/shared` to this tree, the toolchain to `web/`'s copies — so it reads exactly the SDK
+   * this commit holds and fetches nothing. `more` links further packages by absolute path, and
+   * `bin` puts a package's executable on the copy's `node_modules/.bin`, as an install would.
+   */
+  const TOOLCHAIN = [
+    'vite',
+    'svelte',
+    'postcss',
+    'postcss-preset-env',
+    'autoprefixer',
+    '@sveltejs/vite-plugin-svelte',
+    '@tsconfig/svelte'
+  ];
+  const made: string[] = [];
+
+  const copyTemplate = (
+    extra: Record<string, string> = {},
+    more: Record<string, string> = {},
+    bin: Record<string, string> = {}
+  ): string => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mica-addon-template-'));
+    made.push(dir);
+    fs.cpSync(TEMPLATE_DIR, dir, {
+      recursive: true,
+      filter: (src) =>
+        !/^(node_modules|dist|dist-dev)(\/|\\|$)/.test(path.relative(TEMPLATE_DIR, src))
+    });
+    const link = (name: string, target: string) => {
+      const at = path.join(dir, 'node_modules', name);
+      fs.mkdirSync(path.dirname(at), { recursive: true });
+      fs.symlinkSync(target, at, fs.statSync(target).isDirectory() ? 'dir' : 'file');
+    };
+    link('@mica/sdk', path.join(ROOT, 'sdk'));
+    link('@mica/shared', path.join(ROOT, 'shared'));
+    for (const name of TOOLCHAIN) {
+      link(name, fs.realpathSync(path.join(ROOT, 'web/node_modules', name)));
+    }
+    for (const [name, target] of Object.entries(more)) link(name, fs.realpathSync(target));
+    for (const [name, target] of Object.entries(bin)) link(`.bin/${name}`, fs.realpathSync(target));
+    for (const [file, text] of Object.entries(extra)) {
+      fs.mkdirSync(path.dirname(path.join(dir, file)), { recursive: true });
+      fs.writeFileSync(path.join(dir, file), text);
+    }
+    return dir;
+  };
+
+  afterAll(() => {
+    for (const dir of made) fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  /**
    * MICA-311. The template, built for real in both modes, against this checkout.
    *
    * Offline: the template is copied out and its `node_modules` is links — `@mica/sdk` and
@@ -378,42 +482,6 @@ describe('the out-of-tree add-on template', () => {
    */
   describe('built offline, in production and in development', () => {
     const VITE_BIN = path.join(ROOT, 'web/node_modules/vite/bin/vite.js');
-    const TOOLCHAIN = [
-      'vite',
-      'svelte',
-      'postcss',
-      'postcss-preset-env',
-      'autoprefixer',
-      '@sveltejs/vite-plugin-svelte',
-      '@tsconfig/svelte'
-    ];
-    const made: string[] = [];
-
-    const copyTemplate = (extra: Record<string, string> = {}): string => {
-      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mica-addon-template-'));
-      made.push(dir);
-      fs.cpSync(TEMPLATE_DIR, dir, {
-        recursive: true,
-        filter: (src) =>
-          !/^(node_modules|dist|dist-dev)(\/|\\|$)/.test(path.relative(TEMPLATE_DIR, src))
-      });
-      const link = (name: string, target: string) => {
-        const at = path.join(dir, 'node_modules', name);
-        fs.mkdirSync(path.dirname(at), { recursive: true });
-        fs.symlinkSync(target, at, 'dir');
-      };
-      link('@mica/sdk', path.join(ROOT, 'sdk'));
-      link('@mica/shared', path.join(ROOT, 'shared'));
-      for (const name of TOOLCHAIN) {
-        link(name, fs.realpathSync(path.join(ROOT, 'web/node_modules', name)));
-      }
-      for (const [file, text] of Object.entries(extra)) {
-        fs.mkdirSync(path.dirname(path.join(dir, file)), { recursive: true });
-        fs.writeFileSync(path.join(dir, file), text);
-      }
-      return dir;
-    };
-
     /** A Vite build as its own process, without this runner's `NODE_ENV=test`. */
     const viteBuild = (dir: string, mode: 'production' | 'development', args: string[] = []) =>
       new Promise<{ code: number; output: string }>((resolve) => {
@@ -485,10 +553,6 @@ describe('the out-of-tree add-on template', () => {
       );
     }, 180_000);
 
-    afterAll(() => {
-      for (const dir of made) fs.rmSync(dir, { recursive: true, force: true });
-    });
-
     const bundleOf = (name: string, folder: 'dist' | 'dist-dev' = 'dist'): string =>
       read(path.join(builds[name].dir, folder, `${notes.id}.js`));
     const devEntryOf = (name: string): string =>
@@ -547,6 +611,203 @@ describe('the out-of-tree add-on template', () => {
     ])('refuses a production build that reaches %s', (_label, name, reason) => {
       expect(builds[name].code, builds[name].output).not.toBe(0);
       expect(builds[name].output).toMatch(reason);
+    });
+  });
+
+  /**
+   * MICA-312. `pnpm check`, run for real over copies of the template, offline.
+   *
+   * The script is read out of the template's `package.json` and run by a shell with the
+   * copy's `node_modules/.bin` first on `PATH`, as `pnpm check` would — so a script that names
+   * a missing binary or a wrong path fails here. The toolchain is this repo's: `svelte-check`
+   * and TypeScript from `web/`, stylelint and its two companions from the root.
+   *
+   * The ticket's own acceptance: a planted `:has()`, a `dvh`, a misspelt utility class and an
+   * `h-full` inside `Screen` each fail it by name, and the same file with each fixed passes —
+   * in a component, and (`:has()`, `svh`, a container query, `rgb(from …)`) in a plain `.css`.
+   */
+  describe('pnpm check, run offline over a clean, a planted and a fixed copy', () => {
+    const CHECK_TOOLCHAIN = Object.fromEntries([
+      ...['svelte-check', 'typescript', '@types/node'].map((name) => [
+        name,
+        path.join(ROOT, 'web/node_modules', name)
+      ]),
+      ...CHECK_TOOLING.map((name) => [name, path.join(ROOT, 'node_modules', name)])
+    ]) as Record<string, string>;
+    const CHECK_BIN = {
+      'svelte-check': path.join(ROOT, 'web/node_modules/svelte-check/bin/svelte-check')
+    };
+
+    const component = read(path.join(TEMPLATE_DIR, 'src/index.svelte'));
+    /**
+     * `:has()` at 1, `svh` at 5, a container query at 7, relative colour at 13, and at 16 a
+     * `scrollbar-width`, which leaves scrollbars visible in Chromium 103 on its own.
+     */
+    const PLANTED_CSS = [
+      '.sheet:has(p) {',
+      '  color: red;',
+      '}',
+      '.sheet {',
+      '  min-height: 100svh;',
+      '}',
+      '@container (min-width: 10px) {',
+      '  .sheet {',
+      '    color: red;',
+      '  }',
+      '}',
+      '.sheet-tint {',
+      '  color: rgb(from red r g b);',
+      '}',
+      '.sheet-list {',
+      '  scrollbar-width: none;',
+      '}',
+      ''
+    ].join('\n');
+    const FIXED_CSS =
+      '.sheet p {\n  color: red;\n}\n.sheet-tint {\n  color: rgba(255, 0, 0, 0.5);\n}\n';
+    /** The template's own component with each of the four planted, or each fixed. */
+    const variant = (planted: boolean): Record<string, string> => {
+      const scroller = 'class="min-h-0 flex-1 overflow-y-auto p-4"';
+      const body = 'class="text-body-large text-on-surface"';
+      expect(component, 'the template no longer has the markup this plants into').toContain(
+        scroller
+      );
+      expect(component).toContain(body);
+      const text = component
+        .replace(
+          scroller,
+          planted
+            ? 'class="planted h-full overflow-y-auto p-4"'
+            : 'class="planted min-h-0 flex-1 overflow-y-auto p-4"'
+        )
+        .replace(body, planted ? 'class="text-body-lagre text-on-surface"' : body);
+      const style = planted
+        ? '.planted:has(p) {\n    min-height: 100dvh;\n  }'
+        : '.planted p {\n    margin: 0;\n  }';
+      return {
+        'src/index.svelte': `${text}\n<style>\n  ${style}\n</style>\n`,
+        // A plain stylesheet beside it: until MICA-312, `postcss-html` was applied to `.css`
+        // too, parsed it as HTML, found no `<style>`, and checked nothing in it.
+        'src/theme.css': planted ? PLANTED_CSS : FIXED_CSS
+      };
+    };
+
+    /** A command as its own process, in `dir`, with the copy's `.bin` first on `PATH`. */
+    const run = (dir: string, command: string) =>
+      new Promise<{ code: number; output: string }>((resolve) => {
+        const env = Object.fromEntries(
+          Object.entries(process.env).filter(([k]) => k !== 'NODE_ENV' && !k.startsWith('VITEST'))
+        );
+        env.PATH = `${path.join(dir, 'node_modules/.bin')}${path.delimiter}${env.PATH ?? ''}`;
+        execFile(
+          '/bin/sh',
+          ['-c', command],
+          { cwd: dir, env, timeout: 120_000, maxBuffer: 16 * 1024 * 1024 },
+          (error, stdout, stderr) => {
+            const code = error ? (typeof error.code === 'number' ? error.code : 1) : 0;
+            resolve({ code, output: `${stdout}\n${stderr}` });
+          }
+        );
+      });
+
+    const script = (
+      JSON.parse(read(path.join(TEMPLATE_DIR, 'package.json'))) as {
+        scripts: Record<string, string>;
+      }
+    ).scripts.check;
+    const checks: Record<string, { code: number; output: string }> = {};
+
+    beforeAll(async () => {
+      const cases: [string, Record<string, string>, Record<string, string>, string][] = [
+        ['clean', {}, CHECK_TOOLCHAIN, script],
+        ['planted', variant(true), CHECK_TOOLCHAIN, script],
+        ['fixed', variant(false), CHECK_TOOLCHAIN, script],
+        // Nothing to read: a directory with no component in it.
+        [
+          'empty',
+          { 'empty/.keep': '' },
+          CHECK_TOOLCHAIN,
+          `node node_modules/@mica/sdk/${CHECK_CLI} empty`
+        ],
+        // Installed without the stylelint half: the floor cannot be checked.
+        ['no stylelint', {}, {}, `node node_modules/@mica/sdk/${CHECK_CLI} src`]
+      ];
+      await Promise.all(
+        cases.map(async ([name, extra, links, command]) => {
+          const dir = copyTemplate(extra, links, links === CHECK_TOOLCHAIN ? CHECK_BIN : {});
+          checks[name] = await run(dir, command);
+        })
+      );
+    }, 180_000);
+
+    it('passes the template as shipped, svelte-check and the SDK checker both', () => {
+      expect(checks.clean.code, checks.clean.output).toBe(0);
+      expect(checks.clean.output).toMatch(/COMPLETED \d+ FILES 0 ERRORS 0 WARNINGS/);
+      expect(checks.clean.output).toMatch(/mica check: OK — 2 \.svelte, \d+ \.ts/);
+    });
+
+    it.each([
+      ['an h-full inside Screen', /^src\/index\.svelte:\d+ mica\/screen-h-full /m],
+      [
+        'a misspelt utility class',
+        /^src\/index\.svelte:\d+ mica\/unknown-class "text-body-lagre" /m
+      ],
+      [':has()', /^src\/index\.svelte:\d+ plugin\/no-unsupported-browser-features .*"css-has"/m],
+      [
+        'dvh',
+        /^src\/index\.svelte:\d+ plugin\/no-unsupported-browser-features .*"viewport-unit-variants"/m
+      ],
+      [
+        ':has() in a .css file',
+        /^src\/theme\.css:1 plugin\/no-unsupported-browser-features .*"css-has"/m
+      ],
+      [
+        'svh in a .css file',
+        /^src\/theme\.css:5 plugin\/no-unsupported-browser-features .*"viewport-unit-variants"/m
+      ],
+      [
+        'container query in a .css file',
+        /^src\/theme\.css:7 plugin\/no-unsupported-browser-features .*"css-container-queries"/m
+      ],
+      [
+        'rgb(from …) in a .css file, by stylelint',
+        /^src\/theme\.css:13 plugin\/no-unsupported-browser-features .*"css-relative-colors"/m
+      ],
+      [
+        'rgb(from …) in a .css file, by the SDK checker',
+        /^src\/theme\.css:13 mica\/css-color-floor rgb\(from/m
+      ],
+      [
+        'scrollbar-width in a .css file',
+        /^src\/theme\.css:16 plugin\/no-unsupported-browser-features .*"css-scrollbar"/m
+      ]
+    ])('fails a planted %s, naming the file, the line and the rule', (_label, line) => {
+      expect(checks.planted.code, checks.planted.output).toBe(1);
+      expect(checks.planted.output).toMatch(line);
+    });
+
+    it('reports exactly the ten it was planted with', () => {
+      // Four in the component, and six in the stylesheet: relative colour is named twice.
+      expect(checks.planted.output).toMatch(
+        /mica check: 10 violation\(s\) in 2 \.svelte, \d+ \.ts, 1 \.css/
+      );
+    });
+
+    it('passes the same file once each is fixed', () => {
+      expect(checks.fixed.code, checks.fixed.output).toBe(0);
+      expect(checks.fixed.output).toMatch(/mica check: OK/);
+    });
+
+    it.each([
+      ['finds nothing to check', 'empty', /found no \.svelte file under empty/],
+      [
+        'cannot load stylelint',
+        'no stylelint',
+        /stylelint, stylelint-no-unsupported-browser-features, postcss-html not installed/
+      ]
+    ])('fails loudly, rather than passing, when it %s', (_label, name, reason) => {
+      expect(checks[name].code, checks[name].output).toBe(2);
+      expect(checks[name].output).toMatch(reason);
     });
   });
 });

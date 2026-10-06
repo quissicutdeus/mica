@@ -104,7 +104,9 @@ Three layers, and each proves less than it looks like it does:
 
 1. **`pnpm lint:css` and `sdk/cef.test.ts`** read the source as text and refuse
    the banned forms. They cannot see a declaration that is legal and still
-   resolves to nothing.
+   resolves to nothing. `lint:css`'s browser-features plugin does **not** flag
+   `color-mix()`; `sdk/checks/cef.js`, which `cef.test.ts` and the add-on
+   template's `pnpm check` both run, does (MICA-312).
 2. **The `cef-floor` Playwright projects** run the e2e specs in a real Chromium
    103 binary (`CEF_FLOOR_CHROMIUM`; always on in CI, and on this machine). That
    is the automated check for the floor, but only for what a spec asserts on: a

@@ -51,7 +51,7 @@
     "lint:agents": "node scripts/check-agents-size.js",
     "lint:actions": "node scripts/check-action-versions.js",
     "lint:ts": "oxlint .",
-    "lint:css": "stylelint \"**/*.{css,svelte}\" --custom-syntax postcss-html",
+    "lint:css": "stylelint \"**/*.{css,svelte}\"",
     "lint:web": "pnpm --filter web lint",
     "lint:sdk": "pnpm --filter @mica/sdk lint",
     "lint": "concurrently -c \"cyan,magenta,blue,green\" -n \"ts,web,sdk,css\" \"pnpm:lint:ts\" \"pnpm:lint:web\" \"pnpm:lint:sdk\" \"pnpm:lint:css\"",

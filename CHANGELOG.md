@@ -1324,6 +1324,16 @@ somebody maintaining a `core: false` add-on outside this repo, and it answers
 one question: does that bundle still compile against this release, and does its
 manifest still ask for the right things.
 
+**`pnpm check` in the add-on template now fails on what breaks only in game
+(MICA-312).** That covers CSS past Chromium 103 (`:has()`, container queries,
+`dvh`/`svh`, `color-mix()`), a utility class `@mica/sdk` does not define, an
+opacity modifier on a themed colour, and `h-full` or bare `flex-1` inside
+`Screen`. Each is printed as `file:line rule message`. To use it in an existing
+add-on, add `stylelint`, `stylelint-no-unsupported-browser-features` and
+`postcss-html` to devDependencies and set `check` as the template does. The
+stylelint half is also published as `@mica/sdk/stylelint`. Nothing you compile
+against changes.
+
 **See your add-on running without a server: `pnpm dev` in the template
 (MICA-311).** It rebuilds on save and serves the bundle on `127.0.0.1:5174`;
 open the link it prints and the demo phone loads your add-on in the usual

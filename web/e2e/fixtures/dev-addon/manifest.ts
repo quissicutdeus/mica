@@ -5,7 +5,7 @@ import { defineApp } from '@mica/sdk/app';
 export default defineApp({
   id: 'devprobe',
   name: 'Dev Probe',
-  tile: { bg: 'bg-slate-500', fg: 'text-gray-900' },
+  tile: { bg: 'bg-yellow-400', fg: 'text-gray-900' },
   icon: Icon,
   description: 'Fixture for web/e2e/dev-addon.spec.ts.',
   permissions: ['app-events'],

@@ -6,6 +6,22 @@ import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  componentClasses,
+  definedClasses,
+  readTile,
+  scanClasses,
+  tileClasses,
+  type ClassUsage,
+  type ComputedClass
+} from '../../../sdk/checks/classes.js';
+import { screenFillViolations, screenHeightViolations } from '../../../sdk/checks/screen.js';
+import {
+  blankComments,
+  lineOf,
+  listFiles,
+  stripInterpolations
+} from '../../../sdk/checks/source.js';
 
 /**
  * This repo has no Tailwind build (AGENTS.md §5): `app-utilities.css` is a flat,
@@ -38,188 +54,21 @@ import { fileURLToPath } from 'node:url';
 
 const WEB_SRC = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
-function walk(dir: string, exts: string[], out: string[] = []): string[] {
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      walk(full, exts, out);
-    } else if (exts.some((ext) => entry.name.endsWith(ext))) {
-      out.push(full);
-    }
-  }
-  return out;
-}
-
-/** Removes any `{...}`/`${...}` span, leaving only the statically-known text around it. */
-function stripInterpolations(text: string): string {
-  let depth = 0;
-  let out = '';
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (ch === '{') {
-      depth++;
-      continue;
-    }
-    if (ch === '}') {
-      depth = Math.max(0, depth - 1);
-      continue;
-    }
-    if (depth === 0) out += ch;
-  }
-  return out;
-}
+/**
+ * MICA-312: the scan itself lives in `sdk/checks/`, where an add-on's `pnpm check` runs the
+ * same code over the add-on's own tree. What stays here is this repo's policy around it —
+ * which files, the ratchets, and the checks no add-on needs.
+ */
+const walk = (dir: string, exts: string[]): string[] => listFiles(dir, exts);
 
 /** Every class-selector name defined across the hand-written CSS layer, unescaped. */
 function loadDefinedClasses(): Set<string> {
-  const cssFiles = ['app.css', 'app-utilities.css', 'app-reset.css'];
-  const defined = new Set<string>();
-  // A leading `.` followed by a run of either an escaped pair (`\X`) or any char that
-  // isn't a selector delimiter — stops at the first unescaped `.`, `:`, `,`, whitespace,
-  // combinator, or `{`, which is exactly where a Tailwind-style hand-written class
-  // selector (`.hover\:opacity-100:hover`, `.text-\[11px\]`) ends.
-  const classSelectorRe = /\.((?:\\.|[^\s.{:,>+~[])+)/g;
-  for (const name of cssFiles) {
-    const filePath = path.join(WEB_SRC, '..', '..', 'sdk', name);
-    if (!fs.existsSync(filePath)) continue;
-    const css = fs.readFileSync(filePath, 'utf8');
-    for (const match of css.matchAll(classSelectorRe)) {
-      defined.add(match[1].replace(/\\(.)/g, '$1'));
-    }
-  }
-  return defined;
-}
-
-interface ClassUsage {
-  file: string;
-  line: number;
-  token: string;
-}
-
-function lineOf(source: string, index: number): number {
-  return source.slice(0, index).split('\n').length;
-}
-
-interface ComputedClass {
-  file: string;
-  line: number;
-  expr: string;
-}
-
-/** Index of the `}` closing the `{` at `open`, skipping string literals; -1 if unbalanced. */
-function closeBrace(text: string, open: number): number {
-  let depth = 0;
-  for (let i = open; i < text.length; i++) {
-    const ch = text[i];
-    if (ch === "'" || ch === '"' || ch === '`') {
-      for (i++; i < text.length && text[i] !== ch; i++) if (text[i] === '\\') i++;
-    } else if (ch === '{') depth++;
-    else if (ch === '}' && --depth === 0) return i;
-  }
-  return -1;
-}
-
-/**
- * Class tokens a JS expression can produce, and whether part of it is computed.
- *
- * Every string literal is read as a class list (`'h-24 w-24'`), a template literal
- * included, and so is a literal nested in a template's `${}`. A literal on either side of
- * a comparison operator (`x === 'settling'`) or inside an array tested with `.includes()`
- * is a value being compared, not a class, and is skipped. An expression is *computed*
- * when a token is glued to an interpolation (`p-${n}`) or it has no literal at all
- * (`class={cls}`, `{fn(x)}`): those tokens are invisible here, so the caller counts them.
- */
-function readExpression(source: string): { tokens: string[]; computed: boolean } {
-  const expr = source.replace(/\[[^[\]]*\]\s*\.(?:includes|indexOf|some|every)\(/g, (m) =>
-    ' '.repeat(m.length)
+  return definedClasses(
+    ['app.css', 'app-utilities.css', 'app-reset.css']
+      .map((name) => path.join(WEB_SRC, '..', '..', 'sdk', name))
+      .filter((file) => fs.existsSync(file))
+      .map((file) => fs.readFileSync(file, 'utf8'))
   );
-  const tokens: string[] = [];
-  let computed = false;
-  let literals = 0;
-  for (let i = 0; i < expr.length; i++) {
-    const quote = expr[i];
-    if (quote !== "'" && quote !== '"' && quote !== '`') continue;
-    const start = i;
-    let body = '';
-    for (i++; i < expr.length && expr[i] !== quote; i++) {
-      if (expr[i] === '\\') {
-        body += expr[++i] ?? '';
-      } else if (quote === '`' && expr[i] === '$' && expr[i + 1] === '{') {
-        const end = closeBrace(expr, i + 1);
-        const inner = readExpression(expr.slice(i + 2, end === -1 ? expr.length : end));
-        tokens.push(...inner.tokens);
-        if (inner.computed) computed = true;
-        body += '\0';
-        i = end === -1 ? expr.length : end;
-      } else body += expr[i];
-    }
-    literals++;
-    const before = expr.slice(0, start).trimEnd();
-    const after = expr.slice(i + 1).trimStart();
-    if (/[=!]=$/.test(before) || /^[=!]==?/.test(after)) continue;
-    for (const token of body.split(/\s+/).filter(Boolean)) {
-      if (token === '\0') continue;
-      if (token.includes('\0')) computed = true;
-      else tokens.push(token);
-    }
-  }
-  if (literals === 0) computed = true;
-  return { tokens, computed };
-}
-
-/** Class tokens and computed expressions from one `.svelte` source (comments blanked). */
-function scanClasses(
-  source: string,
-  rel: string
-): { usages: ClassUsage[]; computed: ComputedClass[] } {
-  const usages: ClassUsage[] = [];
-  const computed: ComputedClass[] = [];
-  const add = (index: number, expr: string) => {
-    const line = lineOf(source, index);
-    const read = readExpression(expr);
-    for (const token of read.tokens) usages.push({ file: rel, line, token });
-    if (read.computed) computed.push({ file: rel, line, expr: expr.trim().slice(0, 70) });
-  };
-
-  // `class="..."`: static text plus any number of `{expr}` spans.
-  for (const match of source.matchAll(/\bclass="((?:[^"\\]|\\.)*)"/g)) {
-    const text = match[1];
-    const base = (match.index ?? 0) + match[0].indexOf('"') + 1;
-    let plain = '';
-    for (let i = 0; i < text.length; i++) {
-      if (text[i] !== '{') {
-        plain += text[i];
-        continue;
-      }
-      const end = closeBrace(text, i);
-      if (end === -1) break;
-      add(base + i, text.slice(i + 1, end));
-      plain += ' ';
-      i = end;
-    }
-    for (const token of plain.split(/\s+/).filter(Boolean)) {
-      usages.push({ file: rel, line: lineOf(source, match.index ?? 0), token });
-    }
-  }
-
-  // `class={expr}`: the whole attribute is an expression (a template literal included).
-  for (const match of source.matchAll(/\bclass=\{/g)) {
-    const open = (match.index ?? 0) + match[0].length - 1;
-    const end = closeBrace(source, open);
-    if (end !== -1) add(open, source.slice(open + 1, end));
-  }
-
-  // `class:token` / `class:token={cond}` — Svelte's boolean class directive.
-  for (const match of source.matchAll(/\bclass:([a-zA-Z][\w-]*)/g)) {
-    usages.push({ file: rel, line: lineOf(source, match.index ?? 0), token: match[1] });
-  }
-
-  return { usages, computed };
-}
-
-/** Strips HTML/Svelte and JS block comments, keeping newlines so line numbers hold. */
-function blankComments(text: string): string {
-  const blank = (match: string) => '\n'.repeat((match.match(/\n/g) ?? []).length);
-  return text.replace(/<!--[\s\S]*?-->/g, blank).replace(/\/\*[\s\S]*?\*\//g, blank);
 }
 
 /** Every class token referenced from `.svelte` markup, plus the expressions we cannot read. */
@@ -227,25 +76,11 @@ function findClassUsages(files: string[]): { usages: ClassUsage[]; computed: Com
   const usages: ClassUsage[] = [];
   const computed: ComputedClass[] = [];
   for (const file of files) {
-    const found = scanClasses(
-      blankComments(fs.readFileSync(file, 'utf8')),
-      path.relative(WEB_SRC, file)
-    );
+    const found = componentClasses(fs.readFileSync(file, 'utf8'), path.relative(WEB_SRC, file));
     usages.push(...found.usages);
     computed.push(...found.computed);
   }
   return { usages, computed };
-}
-
-/** `tile: { bg: 'bg-x', fg: 'text-y' }` in a manifest, as the two classes it names. */
-function readTile(source: string): { bg?: string; fg?: string; index: number } | null {
-  const match = /\btile:\s*\{([^}]*)\}/.exec(source);
-  if (!match) return null;
-  return {
-    bg: /\bbg:\s*'([^']*)'/.exec(match[1])?.[1],
-    fg: /\bfg:\s*'([^']*)'/.exec(match[1])?.[1],
-    index: match.index
-  };
 }
 
 /**
@@ -253,25 +88,12 @@ function readTile(source: string): { bg?: string; fg?: string; index: number } |
  *
  * `AppIcon` interpolates the tile straight into a `class` (see `sdk/manifest.ts`), so a
  * stale or typo'd token there is exactly the same silent-no-op failure a `.svelte`
- * `class="..."` typo is — it just lives one file away from where it renders. Narrow and
- * literal on purpose: only plain single-quoted string literals inside a `tile: { … }`
- * object are read. Anything computed is skipped rather than guessed at, the same reasoning
- * `stripInterpolations` applies to a Svelte `{expr}`.
+ * `class="..."` typo is — it just lives one file away from where it renders.
  */
 function findManifestTileUsages(files: string[]): ClassUsage[] {
-  const usages: ClassUsage[] = [];
-
-  for (const file of files) {
-    const source = fs.readFileSync(file, 'utf8');
-    const tile = readTile(source);
-    if (!tile) continue;
-    const line = lineOf(source, tile.index);
-    for (const token of [tile.bg, tile.fg].filter((t): t is string => !!t)) {
-      usages.push({ file: path.relative(WEB_SRC, file), line, token });
-    }
-  }
-
-  return usages;
+  return files.flatMap((file) =>
+    tileClasses(fs.readFileSync(file, 'utf8'), path.relative(WEB_SRC, file))
+  );
 }
 
 describe('app-utilities.css coverage', () => {
@@ -378,11 +200,7 @@ function findShadowPairings(files: string[]): ClassUsage[] {
   const classAttrRe = /\bclass="((?:[^"\\]|\\.)*)"/g;
 
   for (const file of files) {
-    const blankComment = (match: string) => '\n'.repeat((match.match(/\n/g) ?? []).length);
-    const source = fs
-      .readFileSync(file, 'utf8')
-      .replace(/<!--[\s\S]*?-->/g, blankComment)
-      .replace(/\/\*[\s\S]*?\*\//g, blankComment);
+    const source = blankComments(fs.readFileSync(file, 'utf8'));
     const rel = path.relative(WEB_SRC, file);
 
     classAttrRe.lastIndex = 0;
@@ -632,138 +450,6 @@ describe('an app icon owns its shape, not its color', () => {
   });
 });
 
-/** A tag as it appears in Svelte markup, with its attribute text and where it starts. */
-interface MarkupTag {
-  name: string;
-  kind: 'open' | 'close' | 'self';
-  attrs: string;
-  index: number;
-}
-
-/** HTML elements that close themselves whether or not the author wrote the slash. */
-const VOID_ELEMENTS = new Set([
-  'area',
-  'base',
-  'br',
-  'col',
-  'embed',
-  'hr',
-  'img',
-  'input',
-  'link',
-  'meta',
-  'source',
-  'track',
-  'wbr'
-]);
-
-/**
- * Every tag in a chunk of Svelte markup, in source order.
- *
- * A regex cannot do this: an attribute value holds `>` routinely — every arrow function in
- * an `onclick={() => …}` has one — so a scan that stops at the first `>` splits tags in half
- * and mis-reads the nesting. This walks the text instead, holding quote state and `{}` depth,
- * and only treats a `>` outside both as the end of a tag.
- */
-function scanTags(source: string): MarkupTag[] {
-  const tags: MarkupTag[] = [];
-  const nameRe = /^<(\/?)([A-Za-z][\w.:-]*)/;
-
-  for (let i = 0; i < source.length;) {
-    const lt = source.indexOf('<', i);
-    if (lt === -1) break;
-    const name = nameRe.exec(source.slice(lt, lt + 64));
-    if (!name) {
-      i = lt + 1;
-      continue;
-    }
-
-    let end = lt + name[0].length;
-    let quote = '';
-    let depth = 0;
-    for (; end < source.length; end++) {
-      const ch = source[end];
-      if (quote) {
-        if (ch === quote) quote = '';
-      } else if (ch === '"' || ch === "'") {
-        quote = ch;
-      } else if (ch === '{') {
-        depth++;
-      } else if (ch === '}') {
-        depth = Math.max(0, depth - 1);
-      } else if (ch === '>' && depth === 0) {
-        break;
-      }
-    }
-
-    const selfClosing = source[end - 1] === '/' || VOID_ELEMENTS.has(name[2]);
-    tags.push({
-      name: name[2],
-      kind: name[1] ? 'close' : selfClosing ? 'self' : 'open',
-      attrs: source.slice(lt + name[0].length, source[end - 1] === '/' ? end - 1 : end),
-      index: lt
-    });
-    i = end + 1;
-  }
-
-  return tags;
-}
-
-/** `[start, end)` of every `{#snippet …}` … `{/snippet}` region, so its tags can be skipped. */
-function snippetRegions(source: string): Array<[number, number]> {
-  const regions: Array<[number, number]> = [];
-  const openings = [...source.matchAll(/\{#snippet\b/g)];
-  for (const open of openings) {
-    const close = source.indexOf('{/snippet}', open.index ?? 0);
-    if (close !== -1) regions.push([open.index ?? 0, close + '{/snippet}'.length]);
-  }
-  return regions;
-}
-
-/** The statically-known class tokens on a tag, with `{expr}` spans dropped as elsewhere here. */
-function classTokensOf(tag: MarkupTag): string[] {
-  const literal = /\bclass="((?:[^"\\]|\\.)*)"/.exec(tag.attrs)?.[1];
-  const template = /\bclass=\{`((?:[^`\\]|\\.)*)`\}/.exec(tag.attrs)?.[1];
-  const text = literal ?? template ?? '';
-  return stripInterpolations(text.replace(/\$\{/g, '{')).split(/\s+/).filter(Boolean);
-}
-
-/** Markup only — `<script>` and `<style>` stripped, comments blanked, line numbers preserved. */
-function markupOf(source: string): string {
-  const blank = (match: string) => '\n'.repeat((match.match(/\n/g) ?? []).length);
-  return source
-    .replace(/<script[\s\S]*?<\/script>/g, blank)
-    .replace(/<style[\s\S]*?<\/style>/g, blank)
-    .replace(/<!--[\s\S]*?-->/g, blank);
-}
-
-/** The elements a component opens with — its depth-0 tags, `{#if}` branches included. */
-function rootTags(markup: string): MarkupTag[] {
-  const skip = snippetRegions(markup);
-  const roots: MarkupTag[] = [];
-  let depth = 0;
-  for (const tag of scanTags(markup)) {
-    if (skip.some(([from, to]) => tag.index >= from && tag.index < to)) continue;
-    if (tag.kind === 'close') {
-      depth = Math.max(0, depth - 1);
-      continue;
-    }
-    if (depth === 0) roots.push(tag);
-    if (tag.kind === 'open') depth++;
-  }
-  return roots;
-}
-
-/** `import Foo from './components/Foo.svelte'` → `{ Foo: '/abs/path/Foo.svelte' }`. */
-function svelteImports(file: string, source: string): Map<string, string> {
-  const imports = new Map<string, string>();
-  for (const match of source.matchAll(/\bimport\s+(\w+)\s+from\s+'([^']+\.svelte)'/g)) {
-    if (!match[2].startsWith('.')) continue;
-    imports.set(match[1], path.resolve(path.dirname(file), match[2]));
-  }
-  return imports;
-}
-
 /**
  * `Screen`'s content box is two boxes, and the inner one — the app's parent — is
  * `flex min-h-full flex-col` with a `height` of `auto` (see `sdk/ui/Screen.svelte`, whose
@@ -781,69 +467,11 @@ function svelteImports(file: string, source: string): Map<string, string> {
  */
 describe("Screen's height contract", () => {
   it('has no direct child of the content box filling with a percentage height', () => {
-    const files = walk(WEB_SRC, ['.svelte']);
-    const offenders: string[] = [];
-
-    /**
-     * The root tags of `<Foo />`, each carried with the file and markup it was read from so
-     * it can be reported at its own line. Followed through a component whose own root is
-     * another component, since that one inherits the contract in turn.
-     */
-    interface Root {
-      tag: MarkupTag;
-      file: string;
-      markup: string;
-    }
-
-    const rootsOf = (file: string, seen = new Set<string>()): Root[] => {
-      if (seen.has(file) || !fs.existsSync(file)) return [];
-      seen.add(file);
-      const source = fs.readFileSync(file, 'utf8');
-      const markup = markupOf(source);
-      const imports = svelteImports(file, source);
-      return rootTags(markup).flatMap((tag) => {
-        const nested = imports.get(tag.name);
-        return nested ? rootsOf(nested, seen) : [{ tag, file, markup }];
-      });
-    };
-
-    for (const file of files) {
-      const source = fs.readFileSync(file, 'utf8');
-      const markup = markupOf(source);
-      const rel = path.relative(WEB_SRC, file);
-      const imports = svelteImports(file, source);
-      const skip = snippetRegions(markup);
-      const tags = scanTags(markup);
-
-      for (let i = 0; i < tags.length; i++) {
-        if (tags[i].name !== 'Screen' || tags[i].kind !== 'open') continue;
-
-        // Walk this `<Screen>`'s span, collecting the tags that sit at its own depth.
-        let depth = 0;
-        for (let j = i + 1; j < tags.length; j++) {
-          const tag = tags[j];
-          if (tag.kind === 'close') {
-            if (depth === 0) break;
-            depth--;
-            continue;
-          }
-          const inSnippet = skip.some(([from, to]) => tag.index >= from && tag.index < to);
-          if (depth === 0 && !inSnippet) {
-            // A component child hands the contract to whatever *it* opens with.
-            const child = imports.get(tag.name);
-            const roots = child ? rootsOf(child) : [{ tag, file, markup }];
-            for (const root of roots) {
-              if (!classTokensOf(root.tag).includes('h-full')) continue;
-              offenders.push(
-                `  ${path.relative(WEB_SRC, root.file)}:${lineOf(root.markup, root.tag.index)}` +
-                  `${child ? ` — <${tag.name}> in ${rel}` : ''}`
-              );
-            }
-          }
-          if (tag.kind === 'open') depth++;
-        }
-      }
-    }
+    const offenders = screenHeightViolations(walk(WEB_SRC, ['.svelte'])).map(
+      (v) =>
+        `  ${path.relative(WEB_SRC, v.file)}:${v.line}` +
+        `${v.via ? ` — <${v.via.tag}> in ${path.relative(WEB_SRC, v.via.file)}` : ''}`
+    );
 
     if (offenders.length > 0) {
       expect.fail(
@@ -879,109 +507,9 @@ describe("Screen's height contract", () => {
  */
 describe("Screen's fill contract", () => {
   it('has no filling child that would still be sized by its content', () => {
-    const files = walk(WEB_SRC, ['.svelte']);
-    const offenders: string[] = [];
-
-    const scrolls = (tag: MarkupTag) =>
-      classTokensOf(tag).some((t) => t === 'overflow-y-auto' || t === 'overflow-auto');
-
-    /** Every tag in a component, scroll regions inside the components *it* renders included. */
-    const scrollsAnywhere = (file: string, seen: Set<string>): boolean => {
-      if (seen.has(file) || !fs.existsSync(file)) return false;
-      seen.add(file);
-      const source = fs.readFileSync(file, 'utf8');
-      const imports = svelteImports(file, source);
-      return scanTags(markupOf(source)).some(
-        (tag) =>
-          scrolls(tag) || (imports.has(tag.name) && scrollsAnywhere(imports.get(tag.name)!, seen))
-      );
-    };
-
-    /**
-     * Does the subtree this tag opens contain a box that scrolls itself?
-     *
-     * Follows component tags as well as elements: the core Messages thread keeps its
-     * scroller inside `MessageThread`, one file away from the root that has to shrink for
-     * it — which is exactly the case this check exists for, and exactly the one a
-     * same-file scan misses.
-     */
-    const wrapsAScroller = (
-      tags: MarkupTag[],
-      from: number,
-      imports: Map<string, string>
-    ): boolean => {
-      let depth = 0;
-      for (let i = from; i < tags.length; i++) {
-        const tag = tags[i];
-        if (tag.kind === 'close') {
-          if (--depth <= 0) break;
-          continue;
-        }
-        if (i > from) {
-          const child = imports.get(tag.name);
-          if (scrolls(tag) || (child && scrollsAnywhere(child, new Set()))) return true;
-        }
-        if (tag.kind === 'open') depth++;
-      }
-      return false;
-    };
-
-    /** The root tags of a component, paired with the file and markup they came from. */
-    const rootsOf = (file: string): Array<{ tag: MarkupTag; file: string; markup: string }> => {
-      if (!fs.existsSync(file)) return [];
-      const markup = markupOf(fs.readFileSync(file, 'utf8'));
-      return rootTags(markup).map((tag) => ({ tag, file, markup }));
-    };
-
-    const flag = (
-      root: { tag: MarkupTag; file: string; markup: string },
-      tags: MarkupTag[],
-      imports: Map<string, string>
-    ) => {
-      const tokens = classTokensOf(root.tag);
-      if (!tokens.includes('flex-1') || tokens.includes('min-h-0')) return;
-      const at = tags.findIndex((t) => t.index === root.tag.index);
-      if (at < 0 || !wrapsAScroller(tags, at, imports)) return;
-      offenders.push(
-        `  ${path.relative(WEB_SRC, root.file)}:${lineOf(root.markup, root.tag.index)} — ` +
-          `"${tokens.join(' ')}"`
-      );
-    };
-
-    for (const file of files) {
-      const source = fs.readFileSync(file, 'utf8');
-      const markup = markupOf(source);
-      const imports = svelteImports(file, source);
-      const skip = snippetRegions(markup);
-      const tags = scanTags(markup);
-
-      for (let i = 0; i < tags.length; i++) {
-        if (tags[i].name !== 'Screen' || tags[i].kind !== 'open') continue;
-
-        let depth = 0;
-        for (let j = i + 1; j < tags.length; j++) {
-          const tag = tags[j];
-          if (tag.kind === 'close') {
-            if (depth === 0) break;
-            depth--;
-            continue;
-          }
-          const inSnippet = skip.some(([from, to]) => tag.index >= from && tag.index < to);
-          if (depth === 0 && !inSnippet) {
-            const child = imports.get(tag.name);
-            if (child) {
-              const childSource = fs.readFileSync(child, 'utf8');
-              const childTags = scanTags(markupOf(childSource));
-              const childImports = svelteImports(child, childSource);
-              for (const root of rootsOf(child)) flag(root, childTags, childImports);
-            } else {
-              flag({ tag, file, markup }, tags, imports);
-            }
-          }
-          if (tag.kind === 'open') depth++;
-        }
-      }
-    }
+    const offenders = screenFillViolations(walk(WEB_SRC, ['.svelte'])).map(
+      (v) => `  ${path.relative(WEB_SRC, v.file)}:${v.line} — "${v.tokens.join(' ')}"`
+    );
 
     if (offenders.length > 0) {
       expect.fail(
@@ -992,5 +520,48 @@ describe("Screen's fill contract", () => {
           `bottom of the screen. Add \`min-h-0\`:\n${offenders.join('\n')}`
       );
     }
+  });
+});
+
+/**
+ * MICA-312. The two checks above are silent on a clean tree, so on their own they are a
+ * verified silence only if they can be seen to fire. These drive the shared implementation
+ * — the one an add-on's `pnpm check` runs — with text this repo does not have, including a
+ * violation one component away from the `<Screen>` that owns the contract.
+ */
+describe("Screen's contract, on planted markup", () => {
+  const files: Record<string, string> = {
+    '/fixture/App.svelte': [
+      '<script lang="ts">',
+      "  import Thread from './Thread.svelte';",
+      '</script>',
+      '<Screen title="x">',
+      '  <div class="h-full">a</div>',
+      '  <div class="flex-1"><div class="overflow-y-auto">b</div></div>',
+      '  <div class="min-h-0 flex-1"><div class="overflow-y-auto">c</div></div>',
+      '  <div class="h-full overflow-y-auto">d</div>',
+      '  <Thread />',
+      '</Screen>'
+    ].join('\n'),
+    '/fixture/Thread.svelte': '<div class="flex-1">\n  <div class="overflow-y-auto">e</div>\n</div>'
+  };
+  const read = (file: string) => files[file];
+
+  it('names each h-full root, at its own line', () => {
+    expect(
+      screenHeightViolations(['/fixture/App.svelte'], read).map((v) => [v.file, v.line])
+    ).toEqual([
+      ['/fixture/App.svelte', 5],
+      ['/fixture/App.svelte', 8]
+    ]);
+  });
+
+  it('names each flex-1 root wrapping a scroller without min-h-0, through a component', () => {
+    expect(
+      screenFillViolations(['/fixture/App.svelte'], read).map((v) => [v.file, v.line, v.via?.tag])
+    ).toEqual([
+      ['/fixture/App.svelte', 6, undefined],
+      ['/fixture/Thread.svelte', 1, 'Thread']
+    ]);
   });
 });

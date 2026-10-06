@@ -61,6 +61,11 @@
  * number that moved for every colour tweak would stop meaning anything for the case it
  * exists to serve, which is the one thing it must not do.
  *
+ * **So is the tooling in `checks/`** (MICA-312): `@mica/sdk/stylelint` and the `pnpm check`
+ * script an add-on runs. No bundle imports either, so a stricter check can fail an author's
+ * lint and cannot change what an installed add-on does. `publicSurface.test.ts` pins the
+ * subpath, not what the config says.
+ *
  * Note what it does *not* do: nothing consults it at install or boot time. There is no
  * runtime compatibility gate anywhere in the phone (MICA-173), and adding one is new
  * manifest surface that needs deciding on its own. This is a number an add-on author can

@@ -15,7 +15,7 @@ export default defineApp({
    * string paints nothing and `defineApp` throws on one. Omit `fg` on a dark background;
    * state it on a light one, or the glyph inherits a near-white default and is illegible.
    */
-  tile: { bg: 'bg-slate-500', fg: 'text-gray-900' },
+  tile: { bg: 'bg-yellow-400', fg: 'text-gray-900' },
   icon: Icon,
   description: 'One line, shown on the Store listing.',
   /**

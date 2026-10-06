@@ -46,5 +46,5 @@
    * So: the SDK's **source** has no edge into `web/`, but its **suite** does, and this
    * line is where that shows up in configuration rather than being hidden.
    */
-  "include": ["**/*.ts", "**/*.svelte", "../web/src/vite-env.d.ts"]
+  "include": ["**/*.ts", "**/*.svelte", "checks/*.js", "../web/src/vite-env.d.ts"]
 }

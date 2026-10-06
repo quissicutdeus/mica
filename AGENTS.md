@@ -337,10 +337,11 @@ it before writing CSS.
 Every line of `web/` code must run in a plain browser with mock data **and** in
 FiveM's CEF — the two are not equivalent. **FiveM's release CEF is Chromium
 103**; your dev browser is newer, so anything past that floor renders fine in
-`pnpm dev` and breaks in game. `pnpm lint:css` and Playwright's `cef-floor`
-project (real Chromium 103, always on in CI via `CEF_FLOOR_CHROMIUM`) hold the
-floor for CSS. **A Web API used from script is unchecked unless a spec exercises
-it.**
+`pnpm dev` and breaks in game. `pnpm lint:css`, the source checks in
+`sdk/checks/` (which catch `color-mix()`, a form `lint:css` alone passes) and
+Playwright's `cef-floor` project (real Chromium 103, always on in CI via
+`CEF_FLOOR_CHROMIUM`) hold the floor for CSS. **A Web API used from script is
+unchecked unless a spec exercises it.**
 
 Banned outright, no fallback exists: **`:has()`** and **container queries**
 (Chrome 105, use Svelte state), **`dvh`/`svh`** (108, a measured pixel value

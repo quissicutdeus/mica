@@ -66,8 +66,12 @@
    * `web/src` on purpose (the documented exception to the boundary), which would pull the
    * phone's own source into a TS 7 program and fail on errors `web/`'s own gate does not
    * raise. Measured: 10 such errors, 7 of them in files this package does not own.
+   *
+   * `checks/*.js` is the package's one plain-JavaScript directory (MICA-312: an add-on runs
+   * it with Node from `node_modules`, where Node strips no types), typed in JSDoc and held
+   * to TS 7 here like the rest of the pure core. It reaches no `.svelte`.
    */
-  "include": ["**/*.ts"],
+  "include": ["**/*.ts", "checks/*.js"],
   "exclude": [
     "node_modules",
     "**/*.test.ts",

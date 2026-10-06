@@ -3,9 +3,19 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect } from 'vitest';
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { ROLE_NAMES, TOKEN_NAMES } from './lib/m3';
+import {
+  colorTokensDeclared,
+  cssColorHits,
+  declaredProperties as declaredIn,
+  inlineStyles as inlineStylesOf,
+  opacityModifierPattern,
+  POST_103_COLOR,
+  roleOpacityPattern
+} from './checks/cef.js';
+import { listFiles, styleBlocks } from './checks/source.js';
 
 /**
  * The CEF capability baseline, enforced.
@@ -31,19 +41,11 @@ const ROOT = join(__dirname, '..');
 const SCAN = ['web/src/apps', 'sdk', 'web/src/shell'];
 
 /**
- * Utilities that take a color. The prefix list is what separates an opacity modifier
- * from a fraction: `bg-gray-800/50` is `color-mix()`, `h-2/3` is a height, and a regex
- * that only looked for `<something>/<number>` would condemn `Avatar.svelte` for a
- * perfectly ordinary two-thirds.
+ * `bg-gray-800/50`, `hover:bg-white/10`, `shadow-blue-600/30`. MICA-312: the pattern, and the
+ * prefix list that tells an opacity modifier from a fraction (`h-2/3`), live in
+ * `checks/cef.js`, where an add-on's `pnpm check` reads them too.
  */
-const COLOR_PROPS =
-  'bg|text|border|ring|shadow|from|via|to|divide|outline|decoration|placeholder|accent|fill|stroke|caret';
-
-/** `bg-gray-800/50`, `hover:bg-white/10`, `shadow-blue-600/30`. */
-const OPACITY_MODIFIER = new RegExp(
-  String.raw`\b(?:[a-z-]+:)*(?:${COLOR_PROPS})-[a-zA-Z0-9\[\]#().,%_-]+\/\d{1,3}\b`,
-  'g'
-);
+const OPACITY_MODIFIER = opacityModifierPattern();
 
 /**
  * Pattern `has-[...]:`, `group-has-checked:` is now caught by stylelint.
@@ -86,18 +88,11 @@ const GRANDFATHERED: Record<string, number> = {
   'web/src/shell/VolumeHud.svelte': 5
 };
 
-const walk = (dir: string): string[] => {
-  const out: string[] = [];
-  for (const entry of readdirSync(dir)) {
-    // MICA-172: `sdk/` is a workspace package now and has its own `node_modules`.
-    // Without this the walk reads TypeScript's own `lib.dom.d.ts` and reports it.
-    if (entry === 'node_modules') continue;
-    const full = join(dir, entry);
-    if (statSync(full).isDirectory()) out.push(...walk(full));
-    else if (/\.(svelte|ts)$/.test(entry) && !entry.endsWith('.test.ts')) out.push(full);
-  }
-  return out;
-};
+// MICA-172: `sdk/` is a workspace package now and has its own `node_modules`, which
+// `listFiles` never descends into — without that the walk reads TypeScript's own
+// `lib.dom.d.ts` and reports it.
+const walk = (dir: string): string[] =>
+  listFiles(dir, ['.svelte', '.ts']).filter((file) => !file.endsWith('.test.ts'));
 
 const FILES = SCAN.flatMap((dir) => walk(join(ROOT, dir))).map((f) => ({
   path: relative(ROOT, f).replace(/\\/g, '/'),
@@ -106,16 +101,14 @@ const FILES = SCAN.flatMap((dir) => walk(join(ROOT, dir))).map((f) => ({
 
 const countOf = (text: string, rx: RegExp) => (text.match(rx) ?? []).length;
 
+/** The hand-written CSS layer, as text. */
+const SDK_CSS = ['app.css', 'app-utilities.css', 'app-reset.css']
+  .map((file) => join(ROOT, 'sdk', file))
+  .filter((full) => existsSync(full))
+  .map((full) => readFileSync(full, 'utf8'));
+
 /** Every `--name` declared across the hand-written CSS layer. */
-const declaredProperties = (): Set<string> => {
-  const names = new Set<string>();
-  for (const file of ['app.css', 'app-utilities.css', 'app-reset.css']) {
-    const full = join(ROOT, 'sdk', file);
-    if (!existsSync(full)) continue;
-    for (const m of readFileSync(full, 'utf8').matchAll(/(--[a-zA-Z0-9-]+)\s*:/g)) names.add(m[1]);
-  }
-  return names;
-};
+const declaredProperties = (): Set<string> => declaredIn(SDK_CSS);
 
 /**
  * What a `var()` in markup may resolve to: the declared layer above, plus every
@@ -126,24 +119,8 @@ const RESOLVABLE_PROPERTIES = new Set([
   ...TOKEN_NAMES.map((name) => `--color-${name}`)
 ]);
 
-/** Colour syntax newer than Chromium 103, with no fallback once it is past PostCSS. */
-const POST_103_COLOR = /\b(?:color-mix|oklab|oklch)\(|\b(?:rgba?|hsla?|hwb|lab|lch)\(\s*from\b/g;
-
-/** Drops any `{...}` span, leaving only the statically-known text around it. */
-const stripInterpolations = (text: string): string => {
-  let depth = 0;
-  let out = '';
-  for (const ch of text) {
-    if (ch === '{') depth++;
-    else if (ch === '}') depth = Math.max(0, depth - 1);
-    else if (depth === 0) out += ch;
-  }
-  return out;
-};
-
 /** The statically-known text of every `style="..."` attribute in a component. */
-const inlineStyles = (text: string): string[] =>
-  [...text.matchAll(/\bstyle="([^"]*)"/g)].map((m) => stripInterpolations(m[1]));
+const inlineStyles = (text: string): string[] => inlineStylesOf(text).map(({ style }) => style);
 
 describe('CEF capability baseline (AGENTS.md §6)', () => {
   it('finds files to check', () => {
@@ -199,11 +176,7 @@ describe('CEF capability baseline (AGENTS.md §6)', () => {
     // State layers are the sanctioned alternative and are already flattened to opaque
     // values by `lib/m3.ts`: write `hover:bg-surface-container-hover`, not
     // `hover:bg-surface-container/8`.
-    const roles = [...ROLE_NAMES].sort((a, b) => b.length - a.length).join('|');
-    const themedOpacity = new RegExp(
-      String.raw`\b(?:[a-z-]+:)*(?:${COLOR_PROPS})-(?:${roles})\/\d{1,3}\b`,
-      'g'
-    );
+    const themedOpacity = roleOpacityPattern(ROLE_NAMES);
 
     const offenders = FILES.flatMap(({ path, text }) =>
       (text.match(themedOpacity) ?? []).map((hit) => `${path}: ${hit}`)
@@ -249,5 +222,37 @@ describe('CEF capability baseline (AGENTS.md §6)', () => {
     );
 
     expect(offenders, 'an inline style bypasses PostCSS — write rgb()/rgba()').toEqual([]);
+  });
+
+  it('derives every themed role from app.css, for a checker that has no ROLE_NAMES', () => {
+    // MICA-312. An add-on's `pnpm check` runs the role-token opacity ban from
+    // `node_modules/@mica/sdk/`, in plain Node, where `lib/m3.ts` is TypeScript it cannot
+    // load. It reads the roles off the shipped `app.css` instead, and this is what keeps
+    // that answer from falling behind the canonical list.
+    const derived = new Set(
+      colorTokensDeclared(readFileSync(join(ROOT, 'sdk', 'app.css'), 'utf8'))
+    );
+    expect(ROLE_NAMES.filter((role) => !derived.has(role))).toEqual([]);
+  });
+
+  it('keeps every stylesheet and <style> block clear of color-mix() and relative colour', () => {
+    // MICA-312. stylelint's browser-support plugin has no entry for `color-mix()` (8.1.1
+    // flags `rgb(from …)` and not this), and PostCSS does not lower either, so `pnpm
+    // lint:css` passes both. The same check an add-on's `pnpm check` runs, over this tree.
+    const sheets = [
+      ...listFiles(join(ROOT, 'sdk'), ['.css']),
+      ...listFiles(join(ROOT, 'web/src'), ['.css'])
+    ].map((full) => ({ path: relative(ROOT, full), css: readFileSync(full, 'utf8'), line: 1 }));
+    const blocks = FILES.flatMap(({ path, text }) =>
+      styleBlocks(text).map(({ css, line }) => ({ path, css, line }))
+    );
+    expect(sheets.length, 'found no stylesheet to check').toBeGreaterThanOrEqual(3);
+    // Few on purpose — a utility class is the first answer here (AGENTS.md §5) — but not none.
+    expect(blocks.length, 'found no <style> block to check').toBeGreaterThan(0);
+
+    const offenders = [...sheets, ...blocks].flatMap(({ path, css, line }) =>
+      cssColorHits(css).map((hit) => `${path}:${line + hit.line - 1}: ${hit.hit}`)
+    );
+    expect(offenders, 'past Chromium 103 with no fallback — write a literal rgba()').toEqual([]);
   });
 });

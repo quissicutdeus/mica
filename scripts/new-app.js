@@ -95,9 +95,10 @@ import { defineApp } from '@mica/sdk/app';
 
 export default defineApp({
   id: '${id}',
-  // The launcher tile. Add \`fg: 'text-gray-900'\` if you pick a light background —
+  // The launcher tile: utility classes from \`sdk/app-utilities.css\`, which has no rule for
+  // a class it does not list. Add \`fg: 'text-gray-900'\` if you pick a light background —
   // the glyph inherits a near-white default that is unreadable on one.
-  tile: { bg: 'bg-slate-500' },
+  tile: { bg: 'bg-gray-600' },
   icon: Icon,
   description: 'TODO: one line, shown in the Store.',
   permissions: [],${
@@ -179,7 +180,7 @@ ${
       <EmptyState title="Nothing here yet" description="TODO: say what will appear." />
     {:else}
       {#each $${id} as row (row.id)}
-        <p class="text-sm text-gray-300">{row.id}</p>
+        <p class="text-on-surface-variant text-sm">{row.id}</p>
       {/each}
     {/if}`
     : `    <EmptyState title="${title}" description="TODO: build the app." />`
