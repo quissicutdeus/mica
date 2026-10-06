@@ -18,7 +18,7 @@ import {
 } from '../lib/numberRegistry';
 import { askLine, HANDLER_TIMEOUT_MS } from '../lib/numberRegistry';
 import { releaseResource, onLineReleased } from '../lib/numberRegistry';
-import { linesForJob, LABEL_MAX } from '../lib/numberRegistry';
+import { linesForJob, LABEL_MAX, RING_LIST_MAX, RING_MAX } from '../lib/numberRegistry';
 
 const onCall = () => ({ action: 'reject' }) as const;
 
@@ -138,6 +138,24 @@ describe('numberRegistry storage', () => {
     expect(linesForJob('taxi')).toEqual([]);
   });
 
+  it('lists a micaOS job line under every job it names, and keeps job for a script (MICA-307)', () => {
+    registerNumber('911', { onCall }, 'mica', { jobs: ['police', 'sheriff'] });
+    registerNumber('5551111', { onCall, job: 'police' }, 'dispatch');
+
+    expect(linesForJob('police').map((line) => line.number)).toEqual(['911', '5551111']);
+    expect(linesForJob('sheriff').map((line) => line.number)).toEqual(['911']);
+    expect(lookupLine('5551111')).toMatchObject({ job: 'police', jobs: ['police'] });
+    expect(lookupLine('911')).toMatchObject({ job: null, jobs: ['police', 'sheriff'] });
+  });
+
+  it('ignores a fourth argument the export never passes, so scripts keep job alone', () => {
+    // The export calls `registerNumber(number, options, invoker)`; an options table naming
+    // `jobs` is not read, so a script cannot list one line under several jobs.
+    registerNumber('5551111', { onCall, jobs: ['police', 'ems'] } as never, 'dispatch');
+    expect(linesForJob('police')).toEqual([]);
+    expect(lookupLine('5551111')?.jobs).toEqual([]);
+  });
+
   it('refuses a registration with no callable onCall', () => {
     expect(registerNumber('5551234', {} as never, 'taxi')).toMatchObject({
       ok: false,
@@ -224,6 +242,67 @@ describe('numberRegistry handler invocation', () => {
       action: 'reject'
     });
   });
+
+  it.each([
+    ['a missing list', { action: 'ring' }],
+    ['an empty list', { action: 'ring', sources: [] }],
+    ['a list that is not an array', { action: 'ring', sources: { 1: 5 } }],
+    ['a string source', { action: 'ring', sources: [5, '6'] }],
+    ['a fractional source', { action: 'ring', sources: [5, 6.5] }],
+    ['a zero source', { action: 'ring', sources: [0, 5] }],
+    ['a negative source', { action: 'ring', sources: [5, -1] }],
+    ['a NaN source', { action: 'ring', sources: [Number.NaN] }]
+  ])('rejects a ring verdict with %s (MICA-307)', async (_label, verdict) => {
+    await expect(
+      askLine(
+        lineWith(() => verdict as never),
+        incoming
+      )
+    ).resolves.toEqual({
+      action: 'reject'
+    });
+  });
+
+  it('dedupes a ring list in first-seen order', async () => {
+    const handler = () => ({ action: 'ring', sources: [7, 5, 7, 6, 5] }) as const;
+    await expect(askLine(lineWith(handler), incoming)).resolves.toEqual({
+      action: 'ring',
+      sources: [7, 5, 6]
+    });
+  });
+
+  it('passes a list longer than RING_MAX through whole: the cap is applied after the busy filter', async () => {
+    const many = Array.from({ length: RING_LIST_MAX }, (_, i) => i + 1);
+    const handler = () => ({ action: 'ring', sources: [1, 1, ...many] }) as const;
+    await expect(askLine(lineWith(handler), incoming)).resolves.toEqual({
+      action: 'ring',
+      sources: many
+    });
+    expect([RING_MAX, RING_LIST_MAX]).toEqual([32, 256]);
+  });
+
+  it('refuses a list of more than RING_LIST_MAX distinct sources whole', async () => {
+    const tooMany = Array.from({ length: RING_LIST_MAX + 1 }, (_, i) => i + 1);
+    const handler = () => ({ action: 'ring', sources: tooMany }) as const;
+    await expect(askLine(lineWith(handler), incoming)).resolves.toEqual({ action: 'reject' });
+  });
+
+  it('carries a positive integer max', async () => {
+    const handler = () => ({ action: 'ring', sources: [5, 6], max: 1 }) as const;
+    await expect(askLine(lineWith(handler), incoming)).resolves.toEqual({
+      action: 'ring',
+      sources: [5, 6],
+      max: 1
+    });
+  });
+
+  it.each([0, -1, 1.5, '3', Number.NaN, null])(
+    'refuses a ring verdict whose max is %s',
+    async (max) => {
+      const handler = () => ({ action: 'ring', sources: [5], max }) as never;
+      await expect(askLine(lineWith(handler), incoming)).resolves.toEqual({ action: 'reject' });
+    }
+  );
 
   it('gives up on a handler that never returns', async () => {
     vi.useFakeTimers();

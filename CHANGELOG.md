@@ -570,6 +570,18 @@ with `internal_error` and the rest of Messages is unaffected.
 
 ### Added
 
+**Job lines: a number like 911 that rings everyone on duty, with no script
+(MICA-307).** Set `mica_job_lines` to a JSON array (or a path to a JSON file in
+the resource) of `{ "number", "label", "jobs" }` entries, and a call to that
+number rings every connected player whose active job is one of `jobs` and who is
+on duty, all at once; the first to answer takes the call. Off until you set it,
+so nothing changes on a server that does not. `RegisterNumber`'s `onCall` can do
+the same from a script by answering `{ action = 'ring', sources = { ... } }`. A
+text to a job line is stored, but no player can read it yet; a shared inbox for
+staff follows. If a dispatch script of yours already registers the same number,
+whichever starts first keeps it and the console names the other; drop one of the
+two.
+
 **Message, DM and mail bodies can be encrypted at rest (MICA-165).** With
 `mica_content_key_file` set, text messages, Blabber direct messages, mail bodies
 and the snapshot a report keeps of what was reported are sealed with AES-256-GCM

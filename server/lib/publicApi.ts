@@ -951,8 +951,11 @@ export function registerPublicApi(): void {
    *
    * The line belongs to the calling resource and is released when that resource stops, so a
    * script that crashes does not leave a number swallowing calls. `onCall` is a function ref
-   * across the resource boundary: it may return `{ action: 'accept' | 'reject' }` or
-   * `{ action: 'forward', source }`, synchronously or as a promise, and has five seconds.
+   * across the resource boundary: it may return `{ action: 'accept' | 'reject' }`,
+   * `{ action: 'forward', source }`, or `{ action: 'ring', sources }` (MICA-307) — a Lua list
+   * of server ids rung at once, the first to answer taking the call; deduped, at most 32, and
+   * refused whole when any entry is not a positive integer — synchronously or as a promise,
+   * and has five seconds.
    *
    * `label` (at most 40 characters) names the line where a contact's name would show, and
    * `job` ('police', lower_snake_case) files it under a framework job for the Jobs app

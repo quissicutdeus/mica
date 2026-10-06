@@ -69,10 +69,12 @@ vi.mock('../lib/FrameworkBridge', () => ({
 
 import '../services/Phone';
 import {
+  __callById,
   __resetCalls,
   injectIncomingCall,
   endActiveCallFor,
   endLineCall,
+  isInCall,
   placeCall
 } from '../services/Phone';
 import { __resetRateLimits, allow } from '../lib/rateLimit';
@@ -1261,5 +1263,390 @@ describe('speakerphone', () => {
     expect((accepted[2] as { speaker: boolean }).speaker).toBe(false);
     expect(await speaker(1, true)).toEqual({ ok: false, enabled: false });
     releaseResource('taxi');
+  });
+});
+
+/**
+ * MICA-307. A line that answers `ring` rings several players at once and the first to answer
+ * takes the call. What is under test is the call state: who is rung, who is let go and told,
+ * who writes a call-log row, and that the answered call is an ordinary player-to-player one.
+ */
+describe('group ring (MICA-307)', () => {
+  const LINE = '911';
+  const OWNER = 'dispatch';
+  const INCOMING = 'mica:client:phone:incoming';
+  const ENDED = 'mica:client:phone:ended';
+  const ACCEPTED = 'mica:client:phone:accepted';
+
+  beforeEach(() => {
+    bridge.players.set(5, 'CID_FIVE');
+    bridge.phones.set(5, '555-0005');
+    bridge.players.set(6, 'CID_SIX');
+    bridge.phones.set(6, '555-0006');
+    // Connected, but the framework has no number for them: an ordinary ESX shape.
+    bridge.players.set(7, 'CID_NOPHONE');
+  });
+
+  afterEach(() => {
+    releaseResource(OWNER);
+    for (const src of [5, 6, 7]) {
+      bridge.players.delete(src);
+      bridge.phones.delete(src);
+    }
+  });
+
+  const ringLine = (sources: unknown) =>
+    registerNumber(
+      LINE,
+      { label: 'Emergency', onCall: () => ({ action: 'ring', sources }) as CallVerdict },
+      OWNER
+    );
+
+  const sent = (event: string) =>
+    emitCalls()
+      .filter(([name]) => name === event)
+      .map(([, dest]) => dest);
+
+  const incomingPayloads = () =>
+    emitCalls()
+      .filter(([name]) => name === INCOMING)
+      .map(([, dest, payload]) => [dest, payload]);
+
+  it('rings every candidate with the line it came in on, and tells the caller nothing yet', async () => {
+    ringLine([5, 6]);
+    expect(await placeCall(1, LINE)).toBe('placed');
+
+    const callId = (incomingPayloads()[0][1] as { callId: number }).callId;
+    expect(incomingPayloads()).toEqual([
+      [5, { from: '555-0001', callId, line: { number: LINE, label: 'Emergency' } }],
+      [6, { from: '555-0001', callId, line: { number: LINE, label: 'Emergency' } }]
+    ]);
+    expect(sent(ACCEPTED)).toEqual([]);
+    // Every candidate holds the call while it rings, so the busy checks hold for them.
+    expect([isInCall(1), isInCall(5), isInCall(6)]).toEqual([true, true, true]);
+  });
+
+  it('labels the line with its number when it has no label', async () => {
+    registerNumber(LINE, { onCall: () => ({ action: 'ring', sources: [5] }) }, OWNER);
+    await placeCall(1, LINE);
+    expect(incomingPayloads()[0][1]).toMatchObject({ line: { number: LINE, label: LINE } });
+  });
+
+  it('gives the call to the first to answer, ends it for the rest, and logs no row for them', async () => {
+    ringLine([5, 6]);
+    await placeCall(1, LINE);
+
+    await fire(ANSWER, 6);
+
+    expect(sent(ACCEPTED)).toEqual([1, 6]);
+    expect(sent(ENDED)).toEqual([5]);
+    expect([isInCall(1), isInCall(5), isInCall(6)]).toEqual([true, false, true]);
+
+    // A late answer from the loser finds nothing: they were let go.
+    await fire(ANSWER, 5);
+    expect(sent(ACCEPTED)).toEqual([1, 6]);
+
+    await fire(END, 1);
+    const rows = createCalls().map(([, params]) => params);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toEqual(expect.arrayContaining(['CID_CALLER', 'outgoing', LINE]));
+    expect(rows[1]).toEqual(expect.arrayContaining(['CID_SIX', 'incoming', '555-0001']));
+    expect(rows.some((params) => params.includes('CID_FIVE'))).toBe(false);
+  });
+
+  it("writes the winner's row on the phone that rang, found by their own number", async () => {
+    // `readPhoneIdByNumber` answers only for the winner's own number. Looked up by the line's
+    // number instead, the row would fall back to `phoneForCitizen` and land on TEST_PHONE_ID.
+    dbMock.single.mockImplementation(async (_sql: string, params: unknown[]) =>
+      params[0] === '555-0006' ? { phone_id: 'PHONE_OF_SIX' } : null
+    );
+    try {
+      ringLine([5, 6]);
+      await placeCall(1, LINE);
+      await fire(ANSWER, 6);
+      await fire(END, 6);
+
+      const incoming = createCalls()
+        .map(([, params]) => params)
+        .find((params) => params.includes('CID_SIX'));
+      expect(incoming).toEqual(expect.arrayContaining(['CID_SIX', 'PHONE_OF_SIX', 'incoming']));
+    } finally {
+      dbMock.single.mockReset();
+    }
+  });
+
+  it('answers under a fresh call id, so a loser holds an id that names nothing', async () => {
+    ringLine([5, 6]);
+    await placeCall(1, LINE);
+    const rungId = (incomingPayloads()[0][1] as { callId: number }).callId;
+
+    await fire(ANSWER, 6);
+
+    const accepted = emitCalls().filter(([event]) => event === ACCEPTED);
+    const ids = accepted.map(([, , payload]) => (payload as { callId: number }).callId);
+    expect(new Set(ids).size).toBe(1);
+    const [answeredId] = ids;
+    expect(answeredId).not.toBe(rungId);
+
+    // The old id names nothing; the call lives on under the new one.
+    expect(__callById(rungId)).toBeUndefined();
+    expect(__callById(answeredId)).toMatchObject({ caller: 1, target: 6 });
+
+    // And ending works under the new id, from either side, with the rows a call writes.
+    await fire(END, 6);
+    expect(__callById(answeredId)).toBeUndefined();
+    expect(sent(ENDED)).toEqual([5, 1, 6]);
+    expect([isInCall(1), isInCall(6)]).toEqual([false, false]);
+    const rows = createCalls().map(([, params]) => params);
+    expect(rows).toEqual([
+      expect.arrayContaining(['CID_CALLER', 'outgoing', LINE]),
+      expect.arrayContaining(['CID_SIX', 'incoming', '555-0001'])
+    ]);
+  });
+
+  it('applies max after the busy filter, so busy staff with low ids do not hide free ones', async () => {
+    const staff = Array.from({ length: 12 }, (_, i) => 10 + i);
+    for (const src of staff) {
+      bridge.players.set(src, `CID_${src}`);
+      bridge.phones.set(src, `555-00${src}`);
+    }
+    try {
+      for (const src of staff.slice(0, 10)) injectIncomingCall(src, '5550100');
+      (globalThis as any).emitNet.mockClear();
+      registerNumber(
+        LINE,
+        { onCall: () => ({ action: 'ring', sources: staff, max: 10 }) as CallVerdict },
+        OWNER
+      );
+
+      expect(await placeCall(1, LINE)).toBe('placed');
+
+      expect(incomingPayloads().map(([dest]) => dest)).toEqual([20, 21]);
+    } finally {
+      for (const src of staff) {
+        endActiveCallFor(src);
+        bridge.players.delete(src);
+        bridge.phones.delete(src);
+      }
+    }
+  });
+
+  it('rings at most max of those left, in the order given', async () => {
+    registerNumber(
+      LINE,
+      { onCall: () => ({ action: 'ring', sources: [6, 5, 3], max: 2 }) as CallVerdict },
+      OWNER
+    );
+    await placeCall(1, LINE);
+    expect(incomingPayloads().map(([dest]) => dest)).toEqual([6, 5]);
+    expect(isInCall(3)).toBe(false);
+  });
+
+  it('never rings more than RING_MAX, whatever max says', async () => {
+    const many = Array.from({ length: 40 }, (_, i) => 100 + i);
+    for (const src of many) {
+      bridge.players.set(src, `CID_${src}`);
+      bridge.phones.set(src, `555-1${src}`);
+    }
+    try {
+      registerNumber(
+        LINE,
+        { onCall: () => ({ action: 'ring', sources: many, max: 200 }) as CallVerdict },
+        OWNER
+      );
+      await placeCall(1, LINE);
+      expect(incomingPayloads()).toHaveLength(32);
+    } finally {
+      for (const src of many) {
+        bridge.players.delete(src);
+        bridge.phones.delete(src);
+      }
+    }
+  });
+
+  it('lets a second answer arriving after the first change nothing', async () => {
+    ringLine([5, 6]);
+    await placeCall(1, LINE);
+    await fire(ANSWER, 5);
+    await fire(ANSWER, 6);
+    expect(sent(ACCEPTED)).toEqual([1, 5]);
+  });
+
+  it('ends it for every candidate when the caller hangs up mid-ring', async () => {
+    ringLine([5, 6]);
+    await placeCall(1, LINE);
+
+    await fire(END, 1);
+
+    expect(sent(ENDED).sort()).toEqual([1, 5, 6]);
+    expect([isInCall(1), isInCall(5), isInCall(6)]).toEqual([false, false, false]);
+    const rows = createCalls().map(([, params]) => params);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toEqual(expect.arrayContaining(['CID_CALLER', 'outgoing', LINE, 0]));
+  });
+
+  it('ends it for every candidate when the caller drops mid-ring', async () => {
+    ringLine([5, 6]);
+    await placeCall(1, LINE);
+
+    await drop(1);
+
+    expect(sent(ENDED).sort()).toEqual([1, 5, 6]);
+    expect([isInCall(5), isInCall(6)]).toEqual([false, false]);
+  });
+
+  it('releases one candidate per decline, and the last decline ends the call', async () => {
+    ringLine([5, 6]);
+    await placeCall(1, LINE);
+
+    await fire(END, 5);
+    expect(sent(ENDED)).toEqual([5]);
+    expect([isInCall(1), isInCall(5), isInCall(6)]).toEqual([true, false, true]);
+    expect(createCalls()).toHaveLength(0);
+
+    await fire(END, 6);
+    expect(sent(ENDED)).toEqual([5, 6, 1]);
+    expect(isInCall(1)).toBe(false);
+    const rows = createCalls().map(([, params]) => params);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toEqual(expect.arrayContaining(['CID_CALLER', 'outgoing', LINE, 0]));
+  });
+
+  it('releases a candidate who drops, and keeps ringing the rest', async () => {
+    ringLine([5, 6]);
+    await placeCall(1, LINE);
+
+    await drop(5);
+
+    expect(sent(ENDED)).toEqual([5]);
+    expect([isInCall(1), isInCall(5), isInCall(6)]).toEqual([true, false, true]);
+
+    await fire(ANSWER, 6);
+    expect(sent(ACCEPTED)).toEqual([1, 6]);
+  });
+
+  it('skips a candidate already on a call, the caller, and anyone with no number', async () => {
+    await fire(START, 3, '555-0006'); // 6 is now busy, ringing from 3
+    (globalThis as any).emitNet.mockClear();
+    ringLine([1, 5, 6, 7, 99]);
+
+    await placeCall(1, LINE);
+
+    expect(incomingPayloads().map(([dest]) => dest)).toEqual([5]);
+  });
+
+  it('fails as unreachable, in MICA-64 shape, when nobody is left to ring', async () => {
+    await fire(START, 3, '555-0005'); // 5 busy
+    (globalThis as any).emitNet.mockClear();
+    ringLine([1, 5, 7]);
+
+    expect(await placeCall(1, LINE)).toBe('unreachable');
+    // `logCall` is fire-and-forget; let its insert land.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(failedTo(1)).toHaveLength(1);
+    expect(isInCall(1)).toBe(false);
+    const rows = createCalls().map(([, params]) => params);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toEqual(expect.arrayContaining(['CID_CALLER', 'outgoing', LINE, 0]));
+  });
+
+  it('fails a malformed ring list as unreachable, like any other bad verdict', async () => {
+    ringLine([5, 'six']);
+    expect(await placeCall(1, LINE)).toBe('unreachable');
+    expect(incomingPayloads()).toEqual([]);
+  });
+
+  it('skips a candidate who started a call of their own while the handler was thinking', async () => {
+    let answer!: (verdict: CallVerdict) => void;
+    registerNumber(
+      LINE,
+      { onCall: () => new Promise<CallVerdict>((resolve) => (answer = resolve)) },
+      OWNER
+    );
+    const pending = placeCall(1, LINE);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    await fire(START, 5, '555-0003'); // 5 rings 3 inside the window
+    answer({ action: 'ring', sources: [5, 6] });
+    await pending;
+
+    expect(incomingPayloads().map(([dest]) => dest)).toEqual([3, 6]);
+    // 5's own call is untouched by the group: still ringing 3.
+    expect(isInCall(5)).toBe(true);
+    await fire(END, 6);
+    expect(isInCall(5)).toBe(true);
+  });
+
+  it('does not ring anyone for a caller who hung up while the handler was thinking', async () => {
+    let answer!: (verdict: CallVerdict) => void;
+    registerNumber(
+      LINE,
+      { onCall: () => new Promise<CallVerdict>((resolve) => (answer = resolve)) },
+      OWNER
+    );
+    const pending = placeCall(1, LINE);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    await fire(END, 1);
+    answer({ action: 'ring', sources: [5, 6] });
+    await pending;
+
+    expect(incomingPayloads()).toEqual([]);
+    expect([isInCall(5), isInCall(6)]).toEqual([false, false]);
+  });
+
+  it('ends a group call still ringing when its line is released', async () => {
+    ringLine([5, 6]);
+    await placeCall(1, LINE);
+
+    releaseResource(OWNER);
+
+    expect(sent(ENDED).sort()).toEqual([1, 5, 6]);
+    expect([isInCall(1), isInCall(5), isInCall(6)]).toEqual([false, false, false]);
+  });
+
+  it('leaves an answered group call up when its line is released', async () => {
+    ringLine([5, 6]);
+    await placeCall(1, LINE);
+    await fire(ANSWER, 5);
+    (globalThis as any).emitNet.mockClear();
+
+    releaseResource(OWNER);
+
+    expect(sent(ENDED)).toEqual([]);
+    expect([isInCall(1), isInCall(5)]).toEqual([true, true]);
+  });
+
+  it('makes the answered call an ordinary one: speaker offered, not endLineCall-able', async () => {
+    __setVoiceBackend({
+      ready: () => true,
+      setCall: vi.fn(),
+      channelOf: () => 0,
+      clearChannel: () => {}
+    });
+    try {
+      ringLine([5, 6]);
+      await placeCall(1, LINE);
+      await fire(ANSWER, 5);
+
+      const accepted = emitCalls().filter(([event]) => event === ACCEPTED);
+      expect(accepted.map(([, dest, payload]) => [dest, (payload as any).speaker])).toEqual([
+        [1, true],
+        [5, true]
+      ]);
+      const { callId } = accepted[0][2] as { callId: number };
+      expect(endLineCall(callId, OWNER)).toBe('no_such_call');
+      expect(isInCall(5)).toBe(true);
+    } finally {
+      __setVoiceBackend();
+    }
+  });
+
+  it('refuses endLineCall for a group call that is still ringing', async () => {
+    ringLine([5, 6]);
+    await placeCall(1, LINE);
+    const { callId } = incomingPayloads()[0][1] as { callId: number };
+    expect(endLineCall(callId, OWNER)).toBe('no_such_call');
   });
 });

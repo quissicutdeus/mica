@@ -17,6 +17,7 @@ import {
   parseDefaultDock,
   parseDefaultFrame,
   parseDisabledApps,
+  parseJobLines,
   parseThemeSeed,
   parseWallpapersFolder,
   SOUND_EXTENSIONS,
@@ -26,8 +27,10 @@ import {
   WALLPAPER_EXTENSIONS,
   type DefaultContact,
   type FrameId,
+  type JobLine,
   type OwnerConfig,
-  type OwnerSound
+  type OwnerSound,
+  type RefusedEntry
 } from '@mica/shared/ownerConfig';
 import { PlayerFacingError } from './errors';
 import { appOfService } from './services';
@@ -437,15 +440,55 @@ export const resolveDefaultContacts = (
   raw: string,
   load: (path: string) => string | null | undefined
 ): ResolvedContacts => {
+  const source = readJsonSource(raw, load);
+  if (source.problem) return { value: [], rejected: [], problem: source.problem };
+  if (!source.text) return { value: [], rejected: [], problem: null };
+  if (source.path === null) return { ...parseDefaultContacts(source.text), problem: null };
+
+  const parsed = parseDefaultContacts(source.text);
+  // The parser refuses a whole document as one entry; reciting a file into the log is noise.
+  if (parsed.value.length === 0 && parsed.rejected[0] === source.text.trim()) {
+    return {
+      value: [],
+      rejected: [],
+      problem: `'${source.path}' is not a JSON array of { "name", "number" }`
+    };
+  }
+  return { ...parsed, problem: null };
+};
+
+/**
+ * An owner convar that holds a JSON array inline (it starts with `[`) or a path to a JSON file
+ * inside this resource, read through `load` — `mica_default_contacts` and `mica_job_lines`.
+ *
+ * A path is refused before it is read when it is absolute or climbs out with `..`.
+ * `LoadResourceFile` is resource-relative already, and this is not a sandbox against the
+ * owner who wrote `server.cfg`; it is so a value that plainly means a file somewhere else says
+ * so, rather than quietly reading nothing. A missing, empty or unreadable file is a problem
+ * reported to the caller, never a throw, and so is a value starting with `{`, which is inline
+ * JSON missing its array. `path` is null for inline JSON and for a blank value.
+ */
+const readJsonSource = (
+  raw: string,
+  load: (path: string) => string | null | undefined
+): { text: string; path: string | null; problem: string | null } => {
   const text = raw.trim();
-  if (!text) return { value: [], rejected: [], problem: null };
-  if (text.startsWith('[')) return { ...parseDefaultContacts(text), problem: null };
+  if (!text || text.startsWith('[')) return { text, path: null, problem: null };
+  // Plainly JSON, not a path: one entry written without its brackets. Said as that, rather
+  // than as a file named `{"number": …}` that could not be read.
+  if (text.startsWith('{')) {
+    return {
+      text: '',
+      path: null,
+      problem: 'inline JSON must be an array; wrap the entry in [ ]'
+    };
+  }
 
   const path = text.replace(/\\/g, '/');
   if (path.startsWith('/') || /^[A-Za-z]:/.test(path) || path.split('/').includes('..')) {
     return {
-      value: [],
-      rejected: [],
+      text: '',
+      path,
       problem: `'${text}' is not a path inside this resource; absolute paths and '..' are refused`
     };
   }
@@ -457,20 +500,48 @@ export const resolveDefaultContacts = (
     content = null;
   }
   if (typeof content !== 'string' || !content.trim()) {
-    return { value: [], rejected: [], problem: `could not read '${path}' from this resource` };
+    return { text: '', path, problem: `could not read '${path}' from this resource` };
   }
+  return { text: content, path, problem: null };
+};
 
-  const parsed = parseDefaultContacts(content);
-  // The parser refuses a whole document as one entry; reciting a file into the log is noise.
-  if (parsed.value.length === 0 && parsed.rejected[0] === content.trim()) {
-    return {
-      value: [],
-      rejected: [],
-      problem: `'${path}' is not a JSON array of { "name", "number" }`
-    };
+export interface ResolvedJobLines {
+  value: JobLine[];
+  rejected: RefusedEntry[];
+  /** Why nothing could be read at all, or null. */
+  problem: string | null;
+}
+
+/**
+ * `mica_job_lines` (MICA-307) as inline JSON or a path to a JSON file inside this resource,
+ * the same two forms `mica_default_contacts` takes. Never throws: a document that cannot be
+ * read at all is a `problem`, and each entry the parser refused is named with its reason.
+ */
+export const resolveJobLines = (
+  raw: string,
+  load: (path: string) => string | null | undefined
+): ResolvedJobLines => {
+  const source = readJsonSource(raw, load);
+  if (source.problem) return { value: [], rejected: [], problem: source.problem };
+  const parsed = parseJobLines(source.text);
+  // A whole document refused is one problem, not an entry: name the file, not its contents.
+  const whole = parsed.rejected.length === 1 && parsed.rejected[0].entry === source.text.trim();
+  if (parsed.value.length === 0 && whole) {
+    const where = source.path === null ? 'the value' : `'${source.path}'`;
+    return { value: [], rejected: [], problem: `${where} is ${parsed.rejected[0].reason}` };
   }
   return { ...parsed, problem: null };
 };
+
+/**
+ * The raw `mica_job_lines` value. Read per call, never cached: `lib/jobLines.ts` compares it
+ * against the last value it synced, so a `set` on a live server applies without a restart.
+ */
+export const jobLinesConvar = (): string => GetConvar('mica_job_lines', '');
+
+/** `mica_job_lines`, resolved, with a path read from this resource. */
+export const readJobLines = (raw: string): ResolvedJobLines =>
+  resolveJobLines(raw, (path) => LoadResourceFile(GetCurrentResourceName(), path));
 
 /**
  * The most default contacts a new phone is seeded with.

@@ -740,6 +740,7 @@ set mica_discord_webhook_content ""
 setr mica_disabled_apps ""
 set mica_default_dock ""
 set mica_default_contacts ""
+set mica_job_lines ""
 set mica_map_image ""
 set mica_map_bounds ""
 set mica_location_interval 5
@@ -799,6 +800,7 @@ set mica_location_interval 5
 | `mica_disabled_apps`               | comma-separated app ids                                 | empty (off)                         | Hide apps everywhere in the UI; blocks a handful server-side too                                                                      |
 | `mica_default_dock`                | comma-separated app ids, positional                     | empty (built-in dock)               | Dock a phone starts with, until its player rearranges it                                                                              |
 | `mica_default_contacts`            | JSON array, or a path to one                            | empty (off)                         | Contacts seeded once into every new phone                                                                                             |
+| `mica_job_lines`                   | JSON array, or a path to one                            | empty (off)                         | Phone numbers micaOS answers for a job: a call rings everyone on duty                                                                 |
 | `mica_map_image`                   | https URL, or a file under `branding/`                  | empty (grid)                        | Picture the Places map draws; micaOS ships none                                                                                       |
 | `mica_map_bounds`                  | `minX,minY,maxX,maxY`, world units                      | the 8192px atlas                    | Which part of the world that picture covers                                                                                           |
 | `mica_location_interval`           | integer, seconds, 2-60                                  | `5`                                 | How often a live location share is sampled                                                                                            |
@@ -1279,6 +1281,55 @@ ships with micaOS, as it did before.
   number, or the document itself not being valid JSON or not an array — is
   skipped, with a warning naming what was skipped, rather than failing the rest
   of the seed.
+- **`mica_job_lines`** — phone numbers micaOS answers on behalf of a job, so
+  calling 911 rings the police with no script to write (MICA-307). Inline JSON
+  (the value starts with `[`) or a path to a JSON file inside this resource,
+  under the same rules as `mica_default_contacts`:
+
+  ```json
+  [
+    {
+      "number": "911",
+      "label": "Emergency",
+      "jobs": ["police", "sheriff"],
+      "blockable": false
+    },
+    { "number": "5550199", "label": "Mechanic", "jobs": ["mechanic"] }
+  ]
+  ```
+
+  A call to a line rings every player who counts as **staff**, all at once, and
+  the first to answer takes the call; the other phones stop ringing. Staff are
+  connected players whose **active** job is one of the line's `jobs` and who are
+  not off duty. Where the framework cannot say whether a job is on duty (ESX
+  without a boolean `job.onDuty`), holding it as the active job is enough, or
+  the line would never ring. With nobody available, the caller sees "Number
+  unavailable", the same as for a number nobody holds, and also when every staff
+  member is already on a call or ringing for another one: a "busy" answer would
+  tell anyone whether the job has anyone on duty. A call that rings still says
+  that much, which no phone line can avoid. Who counts is read from the
+  framework on every call, never from anything a phone sends.
+
+  `number` and `jobs` (lower_snake_case job names) are required. `label` (at
+  most 40 characters) is what a phone shows for the line. `requireDuty` (default
+  `true`) set to `false` rings players with the job active whether or not they
+  are on duty. `maxRing` (default `10`, at most `32`) caps how many phones one
+  call rings. `blockable` (default `true`) is the same option `RegisterNumber`
+  takes. An unknown key, or a bad value, refuses that entry with a console error
+  naming it, and the rest still register. A number another resource already
+  holds through `RegisterNumber`, or a character holds, is skipped with a
+  console error naming the holder: whichever registers first keeps it. Lines
+  appear in the Jobs app under each job that staffs them. The start-up line
+  lists them: `mica: job lines -> 1 registered (911)`.
+
+  The value is checked every five seconds, and before any call to a number
+  nobody answers for, so a `set` on a running server applies without a restart.
+  Lines it no longer lists are released, and new ones registered. When the value
+  is a path, editing the file without changing the value goes unnoticed until
+  the resource restarts. A text to a job line is stored in the thread between
+  the sender and the line, but no player can read or answer it yet: a shared
+  inbox for staff is the next part of MICA-307.
+
 - **`mica_map_image`** — the picture the Places map draws (MICA-244). micaOS is
   AGPL and ships no map image, because the game's own map art is not ours to
   license; with this unset the map is a neutral grid, and pins, pan, zoom and
@@ -1780,13 +1831,24 @@ exports['mica']:UnregisterNumber('5559999')     -- when you are done with it
   with `invalid_args`, so a line can never be a name, or differ from another
   only by case.
 - **`onCall` is required**, and answers one of `{ action = 'accept' }`,
-  `{ action = 'reject' }` or `{ action = 'forward', source = <server id> }`.
-  `accept` connects the caller to your script — no second player joins voice, so
-  you are expected to be doing the talking some other way. `reject` fails the
-  call exactly like a number nobody holds. `forward` re-dials the call at that
-  player's own number, so voice, blocking and call logging behave as if the
-  caller had dialled them directly; a source nobody is connected on, or one with
-  no phone number, fails the call rather than dropping it.
+  `{ action = 'reject' }`, `{ action = 'forward', source = <server id> }` or
+  `{ action = 'ring', sources = { <server id>, ... } }`. `accept` connects the
+  caller to your script — no second player joins voice, so you are expected to
+  be doing the talking some other way. `reject` fails the call exactly like a
+  number nobody holds. `forward` re-dials the call at that player's own number,
+  so voice, blocking and call logging behave as if the caller had dialled them
+  directly; a source nobody is connected on, or one with no phone number, fails
+  the call rather than dropping it. `ring` rings every listed player at once and
+  the first to answer takes the call, as `mica_job_lines` does (MICA-307). List
+  everyone who could take it, up to 256 server ids, duplicates ignored; a list
+  with anything but positive whole numbers in it is treated as `reject`. The
+  caller, anyone already on a call and anyone with no phone number are skipped
+  first, and then at most `max` of the rest are rung (`max` is optional, and
+  never more than 32). With nobody left the call fails as unreachable. The
+  phones ringing are told which line it is (`line = { number, label }` on the
+  incoming call). Once answered it is an ordinary call between two players, so
+  `EndLineCall` on your line does not end it, and the other phones get no
+  call-log row.
 - **It may answer synchronously or return a promise, and it has five seconds.**
   A handler that throws, hangs, overruns or answers nonsense is treated as
   `reject`, so a bug in your script strands nobody's phone.

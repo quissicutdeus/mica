@@ -115,6 +115,151 @@ export const parseDefaultContacts = (raw: unknown): Parsed<DefaultContact[]> => 
   return { value, rejected };
 };
 
+// ─── job lines (MICA-307) ────────────────────────────────────────────────────
+
+export const JOB_LINES_CONVAR = 'mica_job_lines';
+
+/** The most players one call may ring at once, whoever asks: a script's verdict or a job line. */
+export const RING_MAX = 32;
+
+/** How many staff a job line rings when the owner does not say. */
+export const DEFAULT_MAX_RING = 10;
+
+/** The longest label a line may carry, for the parser and the registry alike. */
+export const LINE_LABEL_MAX = 40;
+
+/** A framework job key, as the registry's `job` option takes it: `'police'`. */
+const JOB_KEY = /^[a-z][a-z0-9_]*$/;
+
+/** One phone number micaOS answers for a set of framework jobs (MICA-307). */
+export interface JobLine {
+  number: string;
+  /** Null when the owner gave none; the phone then shows the number. */
+  label: string | null;
+  /** Lower_snake_case framework job names, at least one, each once. */
+  jobs: string[];
+  /** Ring only staff the framework does not say are off duty. Defaults to true. */
+  requireDuty: boolean;
+  /** At most this many staff ring, a whole number 1..`RING_MAX`. Defaults to `DEFAULT_MAX_RING`. */
+  maxRing: number;
+  /** Whether a player may block the line's texts. Defaults to true. */
+  blockable: boolean;
+}
+
+/** An entry the parser refused, verbatim, with why — so the warning can say both. */
+export interface RefusedEntry {
+  entry: string;
+  reason: string;
+}
+
+const JOB_LINE_KEYS: readonly string[] = [
+  'number',
+  'label',
+  'jobs',
+  'requireDuty',
+  'maxRing',
+  'blockable'
+];
+
+/** One entry, or the reason it is refused. Never throws. */
+const jobLineFrom = (entry: unknown): JobLine | string => {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return 'not an object';
+  const raw = entry as Record<string, unknown>;
+
+  // Refused rather than ignored: `"requireduty": false` read as the default would ring off-duty
+  // staff's phones with nothing in the console to say why.
+  const unknown = Object.keys(raw).filter((key) => !JOB_LINE_KEYS.includes(key));
+  if (unknown.length > 0) return `unknown key ${unknown.map((k) => `"${k}"`).join(', ')}`;
+
+  const number = typeof raw.number === 'string' ? raw.number.trim() : '';
+  if (!number) return '"number" is required and must be a string';
+
+  let label: string | null = null;
+  if (raw.label !== undefined) {
+    if (typeof raw.label !== 'string') return '"label" must be a string';
+    label = raw.label.trim() || null;
+    if (label && label.length > LINE_LABEL_MAX) {
+      return `"label" must be at most ${LINE_LABEL_MAX} characters`;
+    }
+  }
+
+  if (!Array.isArray(raw.jobs) || raw.jobs.length === 0) {
+    return '"jobs" is required: a non-empty array of job names';
+  }
+  const jobs: string[] = [];
+  for (const job of raw.jobs) {
+    if (typeof job !== 'string' || !JOB_KEY.test(job)) {
+      return `"jobs" holds ${JSON.stringify(job)}; a job name is lower_snake_case, like "police"`;
+    }
+    if (!jobs.includes(job)) jobs.push(job);
+  }
+
+  if (raw.requireDuty !== undefined && typeof raw.requireDuty !== 'boolean') {
+    return '"requireDuty" must be true or false';
+  }
+  if (raw.blockable !== undefined && typeof raw.blockable !== 'boolean') {
+    return '"blockable" must be true or false';
+  }
+
+  // Refused, not clamped, like every other bad value: a `maxRing` of 50 quietly ringing 32
+  // is a number the owner wrote and the server did not do, with nothing to say so.
+  let maxRing = DEFAULT_MAX_RING;
+  if (raw.maxRing !== undefined) {
+    const n = raw.maxRing;
+    if (typeof n !== 'number' || !Number.isInteger(n) || n < 1 || n > RING_MAX) {
+      return `"maxRing" must be a whole number from 1 to ${RING_MAX}`;
+    }
+    maxRing = n;
+  }
+
+  return {
+    number,
+    label,
+    jobs,
+    requireDuty: raw.requireDuty !== false,
+    maxRing,
+    blockable: raw.blockable !== false
+  };
+};
+
+/**
+ * Inline JSON only: an array of job line entries (MICA-307). A path to a file is resolved by the
+ * server, which hands the file's text here, as for `parseDefaultContacts`.
+ *
+ * Each entry stands alone: one that is malformed is refused with its reason and the rest are
+ * kept, and a second entry for a number already taken is refused as a duplicate. A document
+ * that is not an array is refused whole. Unset or blank is `[]`: no job lines.
+ */
+export const parseJobLines = (raw: unknown): { value: JobLine[]; rejected: RefusedEntry[] } => {
+  const text = String(raw ?? '').trim();
+  if (!text) return { value: [], rejected: [] };
+  let doc: unknown;
+  try {
+    doc = JSON.parse(text);
+  } catch {
+    return { value: [], rejected: [{ entry: text, reason: 'not valid JSON' }] };
+  }
+  if (!Array.isArray(doc)) {
+    return { value: [], rejected: [{ entry: text, reason: 'not a JSON array' }] };
+  }
+  const value: JobLine[] = [];
+  const rejected: RefusedEntry[] = [];
+  for (const entry of doc) {
+    const line = jobLineFrom(entry);
+    if (typeof line === 'string') {
+      rejected.push({ entry: JSON.stringify(entry) ?? String(entry), reason: line });
+    } else if (value.some((held) => held.number === line.number)) {
+      rejected.push({
+        entry: JSON.stringify(entry),
+        reason: `an earlier entry already has "${line.number}"`
+      });
+    } else {
+      value.push(line);
+    }
+  }
+  return { value, rejected };
+};
+
 // ─── branding (MICA-236) ─────────────────────────────────────────────────────
 
 /** The phone frames an owner may pick as the default. The player can still change theirs. */

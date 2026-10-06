@@ -11,6 +11,7 @@ import './lib/jobEvents';
 import { BankingBridge } from './lib/BankingBridge';
 import { FrameworkBridge } from './lib/FrameworkBridge';
 import { registerPublicApi } from './lib/publicApi';
+import { startJobLines } from './lib/jobLines';
 
 /**
  * After `./services`, so every service has loaded before anything it exposes can be
@@ -37,5 +38,9 @@ on('onResourceStart', (resName: string) => {
     // holds one job. Said once at start so an owner can tell the two apart.
     const jobs = FrameworkBridge.jobSupport();
     console.log(`mica: jobs -> ${jobs.via}`);
+
+    // Job lines from `mica_job_lines` (MICA-307), registered here and re-synced whenever the
+    // convar changes. Said once at start with the numbers, so an owner sees 911 is answering.
+    startJobLines();
   }
 });

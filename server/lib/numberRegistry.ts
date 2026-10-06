@@ -5,6 +5,7 @@
 import { FrameworkBridge } from './FrameworkBridge';
 import { phoneNumberFrom } from './netGuard';
 import { ok, fail, type ExportOutcome } from './exports';
+import { LINE_LABEL_MAX, RING_MAX } from '@mica/shared/ownerConfig';
 
 /**
  * Numbers owned by a script rather than by a character.
@@ -22,9 +23,26 @@ import { ok, fail, type ExportOutcome } from './exports';
  * any time.
  */
 
-/** What a handler may answer. `forward` re-enters the ordinary player call path. */
+/**
+ * What a handler may answer. `forward` re-enters the ordinary player call path. `ring` rings
+ * every listed player at once and the first to answer takes the call (MICA-307). The list is
+ * deduped and holds at most `RING_LIST_MAX`; `Phone.ts` drops the caller, the busy and anyone
+ * with no number, then rings the first `max` of the rest, never more than `RING_MAX`.
+ */
 export type CallVerdict =
-  { action: 'accept' } | { action: 'reject' } | { action: 'forward'; source: number };
+  | { action: 'accept' }
+  | { action: 'reject' }
+  | { action: 'forward'; source: number }
+  | { action: 'ring'; sources: number[]; max?: number };
+
+export { RING_MAX };
+
+/**
+ * The longest `ring` list taken. Far above `RING_MAX` on purpose: the list is every candidate,
+ * and who is actually rung is decided after the busy filter, so a list cut to 32 before it
+ * would hide the free staff behind busy ones. A longer list is refused whole, not cut.
+ */
+export const RING_LIST_MAX = 256;
 
 /** What reaches a line's handler when somebody calls it. */
 export interface IncomingLineCall {
@@ -91,11 +109,16 @@ export interface RegisteredLine {
   blockable: boolean;
   label: string | null;
   job: string | null;
+  /**
+   * Every job the line lists under in the Jobs app: `[job]` for a script's line, or the jobs a
+   * `mica_job_lines` entry names, which may be several (MICA-307). `[]` for neither.
+   */
+  jobs: string[];
   onCall: LineOptions['onCall'];
   onMessage: LineOptions['onMessage'] | null;
 }
 
-export const LABEL_MAX = 40;
+export const LABEL_MAX = LINE_LABEL_MAX;
 
 /**
  * What a line's number may look like (MICA-275): digits, optionally led by `+`, with the
@@ -129,12 +152,23 @@ export const linesOwnedBy = (owner: string): RegisteredLine[] =>
 
 /** Every line registered under a job, for the Jobs app. `[]` for a job nobody claimed. */
 export const linesForJob = (job: string): RegisteredLine[] =>
-  [...lines.values()].filter((line) => line.job === job);
+  [...lines.values()].filter((line) => line.jobs.includes(job));
+
+/**
+ * What only micaOS itself may set on a line: the job lines from `mica_job_lines` (MICA-307).
+ * A fourth argument rather than a field on `LineOptions`, so the `RegisterNumber` export, which
+ * passes three, cannot reach it.
+ */
+export interface InternalLineOptions {
+  /** Lower_snake_case, already checked by the config parser. Replaces `[job]`. */
+  jobs?: readonly string[];
+}
 
 export function registerNumber(
   rawNumber: unknown,
   options: LineOptions,
-  owner: string
+  owner: string,
+  internal: InternalLineOptions = {}
 ): ExportOutcome {
   const number = phoneNumberFrom(rawNumber);
   if (!number) {
@@ -189,6 +223,7 @@ export function registerNumber(
     blockable: options.blockable !== false,
     label,
     job,
+    jobs: internal.jobs ? [...internal.jobs] : job ? [job] : [],
     onCall: options.onCall,
     onMessage: options.onMessage ?? null
   });
@@ -219,6 +254,26 @@ export const HANDLER_TIMEOUT_MS = 5000;
 
 const REJECT: CallVerdict = { action: 'reject' };
 
+const isPositiveInteger = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isInteger(value) && value > 0;
+
+/**
+ * `ring`'s list, or null. A Lua sequence table crosses the export boundary as a JS array, so
+ * an array is the one shape taken; anything else, an empty list, or a single entry that is not
+ * a positive integer refuses the whole verdict — a list with a stray value in it is a bug in
+ * the script, and ringing the rest would hide it. Deduped in first-seen order, and refused
+ * whole when more than `RING_LIST_MAX` distinct sources remain.
+ */
+const ringSourcesFrom = (raw: unknown): number[] | null => {
+  if (!Array.isArray(raw) || raw.length === 0) return null;
+  const sources = new Set<number>();
+  for (const source of raw) {
+    if (!isPositiveInteger(source)) return null;
+    sources.add(source);
+  }
+  return sources.size <= RING_LIST_MAX ? [...sources] : null;
+};
+
 /** A verdict shaped the way this module promised, or null. */
 const verdictFrom = (raw: unknown): CallVerdict | null => {
   if (!raw || typeof raw !== 'object') return null;
@@ -229,6 +284,14 @@ const verdictFrom = (raw: unknown): CallVerdict | null => {
     return typeof source === 'number' && Number.isInteger(source)
       ? { action: 'forward', source }
       : null;
+  }
+  if (action === 'ring') {
+    const sources = ringSourcesFrom((raw as { sources?: unknown }).sources);
+    if (!sources) return null;
+    // Optional; when given, a positive integer. `Phone.ts` holds it to `RING_MAX`.
+    const max = (raw as { max?: unknown }).max;
+    if (max === undefined) return { action: 'ring', sources };
+    return isPositiveInteger(max) ? { action: 'ring', sources, max } : null;
   }
   return null;
 };

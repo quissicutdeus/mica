@@ -13,7 +13,14 @@ import { readPhoneIdByNumber } from '../lib/phoneNumbers';
 import { isAdmin } from './Admin';
 import { SEED_CHARACTERS } from '../lib/seed';
 import { isBlocked } from './Blocklist';
-import { lookupLine, askLine, onLineReleased, type RegisteredLine } from '../lib/numberRegistry';
+import {
+  lookupLine,
+  askLine,
+  onLineReleased,
+  RING_MAX,
+  type RegisteredLine
+} from '../lib/numberRegistry';
+import { refreshJobLines } from '../lib/jobLines';
 import { phoneContract } from '@mica/shared/contracts/phone';
 import {
   setSpeaker,
@@ -56,12 +63,34 @@ export const currentEmergencyNumber = (): string => emergencyNumber();
  * number at all.
  */
 
+/**
+ * A call a line answered with `ring` (MICA-307), while nobody has picked it up.
+ *
+ * `ringing` maps each candidate still ringing to their own number, captured when the ring went
+ * out: the winner's call-log row belongs on the phone that rang, and a candidate who drops is
+ * no longer someone the framework can answer for. Every candidate's `playerCalls` entry points
+ * at the call, so `isInCall` and every busy check hold for them, and the first `answer` from
+ * any of them sets `target` and empties this map. After that the call is an ordinary
+ * player-to-player call; `group` stays only so the winner's row is written on their own phone.
+ */
+interface RingGroup {
+  line: { number: string; label: string };
+  ringing: Map<number, string>;
+  /** The winner's own number, set by the answer. */
+  answererPhone?: string;
+}
+
 // Dictionary to track active calls: CallID -> { caller: source, target: source }
 interface ActiveCall {
   id: number;
   caller: number; // Source ID
-  target: number; // Source ID
+  /**
+   * Source ID. Null only on a ringing group call (`group`), which has candidates rather than a
+   * target until one of them answers.
+   */
+  target: number | null;
   callerPhone: string;
+  /** The number the caller dialled: for a group call, the line's own number. */
   targetPhone: string;
   startTime: number;
   /** Set by the `answer` handler. Null means the call never connected. */
@@ -71,12 +100,30 @@ interface ActiveCall {
    * (MICA-278). Absent on every call a line did not answer, including one it forwarded.
    */
   lineOwner?: string;
+  /** Present on a call a line answered with `ring` (MICA-307). */
+  group?: RingGroup;
 }
+
+/** A group call nobody has answered yet: the only kind with candidates and no target. */
+const isRinging = (call: ActiveCall): call is ActiveCall & { group: RingGroup } =>
+  call.group !== undefined && call.target === null;
 
 const activeCalls: Record<number, ActiveCall> = {};
 const playerCalls: Record<number, number> = {}; // Source -> CallID (Fast lookup)
 
 const generateCallId = () => Math.floor(Math.random() * 900000) + 100000;
+
+/**
+ * An id no live call and no reservation holds. Only the group re-key needs the guarantee: a
+ * fresh id there is a security property (see `takeGroupCall`), not just a likely-unique key.
+ */
+const freshCallId = (): number => {
+  const held = new Set(Object.values(playerCalls));
+  for (;;) {
+    const id = generateCallId();
+    if (!activeCalls[id] && !held.has(id)) return id;
+  }
+};
 
 /**
  * Test seam, matching `__resetRateLimits`/`__resetBatteryState`. Both maps are module-scoped
@@ -89,6 +136,15 @@ export const __resetCalls = (): void => {
   nextLineSource = FIRST_LINE_SOURCE;
   __resetSpeakerphone();
 };
+
+/**
+ * Test seam, read-only: the call held under an id, or undefined. Lets a suite see that a group
+ * call answered under a fresh id left nothing under the id its losers were rung with
+ * (MICA-307), which no handler can show: every one of them finds a call by its source.
+ */
+export const __callById = (
+  callId: number
+): Readonly<{ caller: number; target: number | null }> | undefined => activeCalls[callId];
 
 /**
  * Whether `src` holds a call: ringing, connected, or a line call still waiting on its
@@ -157,7 +213,9 @@ function logCallEnd(call: ActiveCall): void {
   const durationSec = answered ? Math.round((Date.now() - call.answeredAt!) / 1000) : 0;
 
   const callerCitizenid = FrameworkBridge.getCitizenId(call.caller);
-  const targetCitizenid = FrameworkBridge.getCitizenId(call.target);
+  // A group call nobody answered has no target, and its candidates get no row: it was the
+  // line's call, not theirs (MICA-307). Only the caller's outgoing row is written.
+  const targetCitizenid = call.target === null ? null : FrameworkBridge.getCitizenId(call.target);
 
   if (callerCitizenid) {
     void logCall(callerCitizenid, call.callerPhone, 'outgoing', call.targetPhone, durationSec);
@@ -165,7 +223,8 @@ function logCallEnd(call: ActiveCall): void {
   if (targetCitizenid) {
     void logCall(
       targetCitizenid,
-      call.targetPhone,
+      // The winner of a group ring was rung on their own number, not the line's.
+      call.group?.answererPhone ?? call.targetPhone,
       answered ? 'incoming' : 'missed',
       call.callerPhone,
       durationSec
@@ -233,18 +292,45 @@ function endActiveCall(callId: number): void {
   const call = activeCalls[callId];
   if (!call) return;
 
+  // Every candidate still ringing is told and let go too (MICA-307). Empty once answered.
+  const ringing = call.group ? [...call.group.ringing.keys()] : [];
+  for (const candidate of ringing) notifyParty('mica:client:phone:ended', candidate);
+
   notifyParty('mica:client:phone:ended', call.caller);
-  notifyParty('mica:client:phone:ended', call.target);
+  if (call.target !== null) notifyParty('mica:client:phone:ended', call.target);
 
   // Before the maps are cleared, so nobody is left in a channel the call has already left.
   speakerOff(call.caller);
-  speakerOff(call.target);
+  if (call.target !== null) speakerOff(call.target);
 
   logCallEnd(call);
 
+  for (const candidate of ringing) releaseCandidateKey(candidate, callId);
   delete playerCalls[call.caller];
-  delete playerCalls[call.target];
+  if (call.target !== null) delete playerCalls[call.target];
   delete activeCalls[callId];
+}
+
+/**
+ * Clear a candidate's key, but only while it still points at this call. A candidate's key is
+ * set when the ring goes out and nothing else can claim it while they ring, so the guard is
+ * belt and braces against a key that a future path reassigns.
+ */
+function releaseCandidateKey(candidate: number, callId: number): void {
+  if (playerCalls[candidate] === callId) delete playerCalls[candidate];
+}
+
+/**
+ * One candidate leaves a ringing group call: declined, timed out on their phone, or dropped —
+ * all three arrive as `phone:end` or `playerDropped` from that source (MICA-307). Only they are
+ * let go and told `ended`. The last to leave ends the call as a single target declining does:
+ * the caller is told, and logs the outgoing row to the line's number.
+ */
+function releaseCandidate(call: ActiveCall & { group: RingGroup }, candidate: number): void {
+  call.group.ringing.delete(candidate);
+  releaseCandidateKey(candidate, call.id);
+  notifyParty('mica:client:phone:ended', candidate);
+  if (call.group.ringing.size === 0) endActiveCall(call.id);
 }
 
 /**
@@ -315,8 +401,15 @@ function releaseCallFor(src: number): boolean {
   const callId = playerCalls[src];
   if (!callId) return false;
 
-  if (!activeCalls[callId]) {
+  const call = activeCalls[callId];
+  if (!call) {
     delete playerCalls[src];
+    return true;
+  }
+
+  // A candidate on a ringing group call takes only themselves out; the caller ends it all.
+  if (isRinging(call) && call.group.ringing.has(src)) {
+    releaseCandidate(call, src);
     return true;
   }
 
@@ -352,7 +445,7 @@ export function endLineCall(callId: unknown, owner: string): EndLineCallResult {
   if (!call || call.lineOwner === undefined) return 'no_such_call';
   if (call.lineOwner !== owner) return 'not_owner';
 
-  endActiveCallFor(call.target);
+  endActiveCall(call.id);
   return 'ended';
 }
 
@@ -426,6 +519,9 @@ export async function placeCall(src: number, rawTarget: unknown): Promise<PlaceC
   // issues to a real player stops reaching the script rather than intercepting them.
   const targetPlayer = FrameworkBridge.getPlayerByPhone(targetPhone);
   const targetSrc = targetPlayer?.source || null;
+  // A number nobody answers for may be a job line the owner has just `set` (MICA-307): look
+  // at the convar once more before the lookup, so the first call after the change reaches it.
+  if (!targetSrc && !lookupLine(targetPhone)) refreshJobLines();
   const line = targetSrc ? undefined : lookupLine(targetPhone);
 
   /**
@@ -584,6 +680,10 @@ async function connectLineCall(
     return redial;
   }
 
+  if (verdict.action === 'ring') {
+    return ringGroup(src, callerPhone, targetPhone, line, callId, verdict.sources, verdict.max);
+  }
+
   // `askLine` answers `reject` for a handler that throws, hangs or returns nonsense, so a
   // broken integration produces the same *content* as a number nobody holds: same message,
   // same call-log row, same client event (MICA-64's shape). Not the same timing, though — a
@@ -617,6 +717,71 @@ async function connectLineCall(
 }
 
 /**
+ * Ring every player a line named, and let the first to answer take the call (MICA-307).
+ *
+ * Runs after `askLine`'s await and the two re-checks after it, so the caller's reservation is
+ * still `callId`. Candidates are judged here, after the await, rather than by the handler: one
+ * who started a call of their own inside the handler's window is already in `playerCalls` and
+ * is skipped like any other busy player. The caller is never their own candidate, and a source
+ * with no phone number cannot be rung. Only then is the list cut to `max` (never more than
+ * `RING_MAX`), in the order given, so free staff are never hidden behind busy ones. Nobody left
+ * fails exactly like an unreachable number (MICA-64's shape), with no new word for "everybody
+ * was busy" — a "Line busy" here would tell any caller whether staff are on duty.
+ *
+ * The caller is told nothing until somebody answers, as when ringing one player.
+ */
+function ringGroup(
+  src: number,
+  callerPhone: string,
+  targetPhone: string,
+  line: RegisteredLine,
+  callId: number,
+  sources: readonly number[],
+  max: number | undefined
+): PlaceCallResult {
+  const limit = Math.min(max ?? RING_MAX, RING_MAX);
+  const ringing = new Map<number, string>();
+  for (const candidate of sources) {
+    if (ringing.size >= limit) break;
+    if (candidate === src || playerCalls[candidate]) continue;
+    const phone = FrameworkBridge.getPlayerPhone(candidate);
+    if (!phone) continue;
+    ringing.set(candidate, phone);
+  }
+
+  if (ringing.size === 0) {
+    delete playerCalls[src];
+    failUnreachable(src, targetPhone);
+    return 'unreachable';
+  }
+
+  const lineInfo = { number: line.number, label: line.label ?? line.number };
+  activeCalls[callId] = {
+    id: callId,
+    caller: src,
+    target: null,
+    callerPhone,
+    targetPhone,
+    startTime: Date.now(),
+    answeredAt: null,
+    // No `lineOwner`: once answered this is a call between two players, so it is offered a
+    // speaker and `endLineCall` answers `no_such_call` for it, as for a forwarded call.
+    group: { line: lineInfo, ringing }
+  };
+  // `playerCalls[src]` is already this call — claimed before the await in `connectLineCall`.
+  for (const candidate of ringing.keys()) {
+    playerCalls[candidate] = callId;
+    // `line` is new and optional: a client that does not read it shows an ordinary call.
+    notifyParty('mica:client:phone:incoming', candidate, {
+      from: callerPhone,
+      callId,
+      line: lineInfo
+    });
+  }
+  return 'placed';
+}
+
+/**
  * A line that goes away takes its live calls with it.
  *
  * Registered from here rather than called from `numberRegistry.ts` because `lib/` must not
@@ -629,7 +794,12 @@ onLineReleased((number: string) => {
     // the same field, so a number the framework has since reassigned to a real character
     // would see that call torn down too. Only a line call has a line pseudo-source on the
     // far end, and `FIRST_LINE_SOURCE` is the highest of those.
-    if (call.targetPhone === number && call.target <= FIRST_LINE_SOURCE) {
+    if (call.targetPhone === number && call.target !== null && call.target <= FIRST_LINE_SOURCE) {
+      endActiveCall(call.id);
+    }
+    // A group call still ringing is the line's too, and goes with it (MICA-307). Once answered
+    // it is a call between two players and stays up, as a forwarded call does.
+    if (isRinging(call) && call.group.line.number === number) {
       endActiveCall(call.id);
     }
   }
@@ -654,19 +824,58 @@ onNet('mica:server:phone:answer', (...args: unknown[]) => {
   if (!guardNetEvent('phone', 'answer', noInput, args)) return;
 
   const src = source;
-  const callId = playerCalls[src];
-  const call = activeCalls[callId];
+  const call = activeCalls[playerCalls[src]];
+  if (!call) return;
 
-  if (!call || call.target !== src) return;
+  if (isRinging(call)) {
+    if (!call.group.ringing.has(src)) return;
+    takeGroupCall(call, src);
+  } else if (call.target !== src) {
+    return;
+  }
 
   call.answeredAt = Date.now();
 
   // `speaker` is whether the phone shows the control at all (MICA-246): hidden, not dead,
-  // on a server whose voice setup cannot carry one.
+  // on a server whose voice setup cannot carry one. `call.id`, not the id looked up above:
+  // a group call has just been re-keyed by `takeGroupCall`.
   const speaker = speakerOffered(call);
+  const { id: callId } = call;
   notifyParty('mica:client:phone:accepted', call.caller, { callId, speaker });
-  notifyParty('mica:client:phone:accepted', call.target, { callId, speaker });
+  // `src` is the target on both paths above: a player's own call, or the group call they won.
+  notifyParty('mica:client:phone:accepted', src, { callId, speaker });
 });
+
+/**
+ * The first candidate to answer a group call takes it (MICA-307).
+ *
+ * Synchronous from the `answer` handler's own lookup to here, so two answers cannot both win:
+ * the second finds `target` set and `isRinging` false, and is not the target. Everyone else is
+ * told `ended` and let go, with no call-log row — it was never their call. Not audit-logged:
+ * the moderation ledger is no place for routine line traffic, and the winner's row says who.
+ */
+function takeGroupCall(call: ActiveCall & { group: RingGroup }, winner: number): void {
+  const { ringing } = call.group;
+  const oldId = call.id;
+  call.target = winner;
+  call.group.answererPhone = ringing.get(winner);
+  const losers = [...ringing.keys()].filter((candidate) => candidate !== winner);
+  ringing.clear();
+  for (const loser of losers) {
+    releaseCandidateKey(loser, oldId);
+    notifyParty('mica:client:phone:ended', loser);
+  }
+
+  // Re-keyed, because the id is the voice channel: the client joins pma-voice on the id in
+  // `accepted`, pma-voice lets any client join any channel, and every loser was sent the old
+  // id in `incoming`. Answered under a fresh id, the losers hold one that names nothing.
+  const newId = freshCallId();
+  delete activeCalls[oldId];
+  call.id = newId;
+  activeCalls[newId] = call;
+  playerCalls[call.caller] = newId;
+  playerCalls[winner] = newId;
+}
 
 onNet('mica:server:phone:end', (...args: unknown[]) => {
   if (!guardNetEvent('phone', 'end', noInput, args)) return;
