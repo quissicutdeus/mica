@@ -13,6 +13,7 @@ command, and the server decides what runs.
 | `mica-deploy-main-compose.sh` | `/usr/local/sbin/`                  | `root`, via `sudoers`        |
 | `smoke-release.sh`            | `/home/gphone/bin/smoke-release.sh` | `gphone`, via forced command |
 | `mica-smoke-release.sh`       | `/usr/local/sbin/`                  | `root`, via `sudoers`        |
+| `gphone-deploy.sudoers`       | `/etc/sudoers.d/gphone-deploy`      | read by `sudo`, mode 440     |
 | `check-wrapper-identity.sh`   | not installed                       | CI, on the runner            |
 | `run-checked.sh`              | not installed                       | CI, on the runner            |
 
@@ -147,28 +148,179 @@ both; the lock is the only guard that sees every caller.
 ## The sudoers rules, in full
 
 Neither wrapper can be invoked without these, and they are not derivable from
-anything in this repo, so they are written out here rather than described:
+anything else on the box, so they are committed as `gphone-deploy.sudoers` and
+shown here word for word. `server/__tests__/deployWrapper.test.ts` fails when
+this block and the file differ, when the file carries `SETENV`, when its list of
+variables is not the list `deploy-<target>.sh` sends and the wrapper requires,
+and when `visudo -cf` does not parse it.
 
 ```sh
-# /etc/sudoers.d/gphone-deploy, mode 440, root:root
-gphone ALL=(root) NOPASSWD:SETENV: /usr/local/sbin/mica-deploy-dev-compose.sh
-gphone ALL=(root) NOPASSWD:SETENV: /usr/local/sbin/mica-deploy-main-compose.sh
+# /etc/sudoers.d/gphone-deploy on hoth, mode 440, root:root. Not installed by CI: a person
+# installs it, after `visudo -cf`, as scripts/deploy/README.md says. server/__tests__/
+# deployWrapper.test.ts holds this file to what deploy-<target>.sh sends and to "no SETENV".
+#
+# gphone may run the two root deploy wrappers by exact path, and set exactly the six variables
+# deploy-<target>.sh sets on the sudo command line, and nothing else. There is no SETENV: with
+# it, `sudo BASH_ENV=... <wrapper>` is allowed, bash sources BASH_ENV as root before the first
+# line of the script, and that is root code execution for anyone holding a shell as gphone
+# (MICA-316). Without it, a variable set on the command line is held to the same rules as one in
+# the caller's environment (sudo(8)): env_reset drops it unless env_keep names it, so the six
+# names below pass and every other name is refused with "sorry, you are not allowed to set the
+# following environment variables". NOSETENV is spelled out so that a later
+# `Defaults:gphone setenv` cannot quietly bring the hole back for these two commands.
+#
+# What the wrapper does with the six values is its own job: it holds each to the one value or
+# shape it accepts (mica-deploy-<target>-compose.sh, require_value).
+#
+# The release smoke wrapper has its own file, /etc/sudoers.d/mica-smoke, and takes no variable.
+Cmnd_Alias MICA_DEPLOY_COMPOSE = /usr/local/sbin/mica-deploy-dev-compose.sh, \
+                                 /usr/local/sbin/mica-deploy-main-compose.sh
+Defaults!MICA_DEPLOY_COMPOSE env_keep += "MICA_PORT GIT_BRANCH GIT_SHA MICA_CALVER MICA_CONTAINER_NAME MICA_IMAGE_TAG"
+gphone ALL=(root) NOPASSWD:NOSETENV: MICA_DEPLOY_COMPOSE
 ```
 
-**`SETENV:` is load-bearing and easy to drop.** `deploy-<target>.sh` passes the
-compose variables inline --
-`sudo MICA_PORT=8676 GIT_BRANCH=dev ... /usr/local/ sbin/mica-deploy-dev-compose.sh`
--- and setting a variable on a `sudo` command line requires that tag. Without it
-sudo refuses the whole invocation with
-`sorry, you are not allowed to set the following environment variables`, after
-the deploy has already spent two minutes installing dependencies and building.
-It is tagged per command rather than granted to the user with
-`Defaults:gphone setenv`, so it reaches only these two root-owned scripts and
-nothing else the account may later be allowed to run.
+### No `SETENV`, six named variables (MICA-316)
 
-Rename the wrappers and this file has to move with them: the rules name the
-commands by **exact path**, and a stale path fails as a permission error that
-says nothing about renaming.
+Until 2026-10-06 both rules read `NOPASSWD:SETENV:`. `SETENV` exists so that
+`deploy-<target>.sh` can write
+`sudo MICA_PORT=8676 GIT_BRANCH=dev ... mica-deploy-dev-compose.sh`, but it does
+far more than that: sudo(8) says that with it, variables set on the command line
+"are not subject to the restrictions imposed by `env_check`, `env_delete`, or
+`env_keep`". So
+`sudo BASH_ENV=/home/gphone/x /usr/local/sbin/mica-deploy-dev-compose.sh` was
+allowed, bash sources `$BASH_ENV` before a non-interactive script's first line,
+and that is code execution as root for anyone holding a shell as `gphone`. The
+CI key is pinned to a forced command, so nobody without that shell could reach
+it; the exposure was never a remote one, and it was still a root script run with
+a caller-chosen environment. `secure_path` covers `PATH` only.
+
+What the deploy sends, why, and how the wrapper holds each value (these are
+every variable `deploy-dev.sh` and `deploy-main.sh` set on the `sudo` line, and
+`compose.yaml` reads each one from the environment):
+
+| Variable              | Why                                | dev / main wrapper accepts                   |
+| --------------------- | ---------------------------------- | -------------------------------------------- |
+| `MICA_PORT`           | host port compose publishes        | exactly `8676` / `8675`                      |
+| `GIT_BRANCH`          | build arg, stamped into About      | exactly `dev` / `main`                       |
+| `MICA_CONTAINER_NAME` | compose `container_name`           | exactly `mica-dev` / `mica-main`             |
+| `MICA_IMAGE_TAG`      | compose `image`, the tag it builds | exactly `mica-dev:local` / `mica-main:local` |
+| `GIT_SHA`             | build arg, stamped into About      | a full commit hash, 40 or 64 hex             |
+| `MICA_CALVER`         | build arg, the release's version   | `YYYY.MM.DD.N`                               |
+
+The smoke pair sends no variable and its rule (`/etc/sudoers.d/mica-smoke`,
+above) has never carried `SETENV`, so `sudo` discards the caller's environment
+for it.
+
+**Why `env_keep` and not arguments.** Passing the values as positional arguments
+would also work, and would let sudoers pin them, but it changes
+`deploy-<target>.sh`, which reaches the box only through a self-install that
+takes effect one deploy late (above). `env_keep` changes nothing the deploy
+sends, so the unprivileged half needs no reinstall and no deploy breaks in
+between. The cost of `env_keep` is that sudoers cannot constrain the _values_,
+only the names, which is why the wrapper does: four of the six are constants of
+the target it deploys, and it refuses anything else before it takes the lock.
+
+**What `man sudoers` and `man sudo` confirm, and what they do not.** Confirmed
+from the sudo 1.9.17 pages: `env_reset` is on by default and drops every
+variable not in `env_keep` or `env_check`; `sudo(8)` says `VAR=value` on the
+command line is held to "the same restrictions as existing environment
+variables" and is exempted only by the `setenv` flag, the `SETENV` tag or a
+command matched as `ALL`; `Defaults!<command or Cmnd_Alias>` is a documented
+per-command default; `NOSETENV` is a documented tag that overrides the flag. Not
+confirmed: that sudo really lets a command-line variable through on a
+per-command `env_keep`, which needs a real sudo on a box where you may become
+root. The pages imply it, and nothing in this repo can run it: it needs the real
+setuid `sudo` and a user the box lets become root. The procedure below proves it
+on hoth, with probes that start nothing, before the first real deploy depends on
+it.
+
+**Install it in this order, so that nothing breaks between the steps.** No
+deploy script changes, so there is no `gphone` side to reinstall.
+
+1. Push the commit. The deploy it triggers runs the old wrappers with the old
+   rule and then goes red at the identity check, because the wrappers are stale.
+   That is the check working; it is the instruction for the next step.
+2. Reinstall **all three** root wrappers (every hash changed), from a checkout
+   of that commit, as a user with `sudo`. **This must come before the probes:**
+   an old wrapper would start a real deploy on a probe.
+
+   ```sh
+   sudo install -m 700 -o root -g root \
+     scripts/deploy/mica-deploy-dev-compose.sh \
+     scripts/deploy/mica-deploy-main-compose.sh \
+     scripts/deploy/mica-smoke-release.sh /usr/local/sbin/
+   sha256sum /usr/local/sbin/mica-*.sh scripts/deploy/mica-*.sh   # each pair must agree
+   ```
+
+   The new wrappers work under the old `SETENV` rule, and the old deploy scripts
+   send values they accept.
+
+3. Replace the sudoers file, validated first, keeping the old one:
+
+   ```sh
+   sudo cp -p /etc/sudoers.d/gphone-deploy ~/gphone-deploy.sudoers.old
+   sudo visudo -cf scripts/deploy/gphone-deploy.sudoers      # must say: parsed OK
+   sudo install -m 440 -o root -g root \
+     scripts/deploy/gphone-deploy.sudoers /etc/sudoers.d/gphone-deploy
+   sudo visudo -c                                            # every file, after
+   sudo -l -U gphone                                         # what sudo believes
+   ```
+
+   Read the old file in full before replacing it (below); nothing in it but the
+   two `SETENV` rules should be lost. `sudo -l -U gphone` should show
+   `NOPASSWD: NOSETENV:` and, under the command-specific defaults, the six names
+   in `env_keep`.
+
+4. Prove it, as `gphone` (`sudo -u gphone -i`). The first two must be refused by
+   **sudo**, before the wrapper prints anything; the third must get past sudo
+   and be refused by the **wrapper**:
+
+   ```sh
+   sudo -n BASH_ENV=/home/gphone/x /usr/local/sbin/mica-deploy-dev-compose.sh
+   # sorry, you are not allowed to set the following environment variables: BASH_ENV
+   sudo -n MICA_PORT=8676 FOO=1 /usr/local/sbin/mica-deploy-dev-compose.sh
+   # sorry, you are not allowed to set the following environment variables: FOO
+   sudo -n MICA_PORT=9 GIT_BRANCH=dev GIT_SHA=x MICA_CALVER=x \
+     MICA_CONTAINER_NAME=x MICA_IMAGE_TAG=x /usr/local/sbin/mica-deploy-dev-compose.sh
+   # mica-wrapper: ... sha256 ...
+   # REFUSED: MICA_PORT is '9', and this wrapper deploys dev with MICA_PORT=8676, nothing else
+   ```
+
+   If the first one prints the wrapper's identity line, sudo let `BASH_ENV`
+   through: `SETENV` is still in force somewhere
+   (`sudo grep -rn -i setenv /etc/sudoers /etc/sudoers.d`). If the third one is
+   refused by **sudo**, a per-command `env_keep` does not apply the way the
+   pages say: restore `~/gphone-deploy.sudoers.old` at once and see the fallback
+   below.
+
+5. Re-run the failed deploy job. It goes green only when the wrappers are
+   current, and its `sudo` line is the real proof that the six names get
+   through.
+
+**The fallback**, if probe three is refused by sudo: replace the one
+`Defaults!MICA_DEPLOY_COMPOSE` line with
+`Defaults:gphone env_keep += "<the same six names>"`. That keeps the same six
+names for every command `gphone` may run, which is wider than the command-scoped
+form and still without `SETENV`; the test above will need its `Defaults!` prefix
+relaxed to match.
+
+**What the wrapper does as a second line.** Each root wrapper refuses to run,
+right after its identity line, when `BASH_ENV`, `ENV`, `BASH_LOADABLES_PATH`,
+`CDPATH` or `GLOBIGNORE` is set and non-empty, when `SHELLOPTS` or `BASHOPTS`
+came in exported, or when an exported function (`BASH_FUNC_*%%`) was imported.
+That is a detector, not a defence: **bash reads `$BASH_ENV` before it runs the
+first line of the script**, so a payload has already run by the time the check
+does, and the check can only stop the rest of the run and make a sudoers
+regression loud. The wrappers' interpreter line is `#!/bin/bash -p`, which does
+stop it: in privileged mode bash does not read `$BASH_ENV` or `$ENV`, imports no
+functions and ignores `SHELLOPTS`, `BASHOPTS`, `CDPATH` and `GLOBIGNORE`. That
+holds when sudo runs the file through its interpreter line (it does), and not
+for `bash <file>`; the tests hold both facts. The sudoers rule is still the real
+fix.
+
+Rename the wrappers and the sudoers file has to move with them: the rules name
+the commands by **exact path**, and a stale path fails as a permission error
+that says nothing about renaming.
 
 **Validate before installing, always.** A malformed file under `/etc/sudoers.d/`
 takes out `sudo` itself, and you may not have another way back in:
@@ -182,8 +334,11 @@ sudo visudo -c                           # every file, after
 Read the file you are replacing in full first. `grep`-ing it for the command
 paths and rewriting from what matched is how the `SETENV` tag got dropped on
 2026-09-04 -- a `Defaults:` line contains no command path, so it does not appear
-in that grep and vanishes silently. `sudo -l -U gphone` prints what sudo
-actually believes, which is the thing to check afterwards.
+in that grep and vanishes silently. (That was a tag that had to be there. This
+is the same mistake in the other direction: a `Defaults!` line that is dropped
+turns the six names into a refusal, which is loud, at the end of a build.)
+`sudo -l -U gphone` prints what sudo actually believes, which is the thing to
+check afterwards.
 
 ## The release smoke test
 
@@ -455,9 +610,10 @@ wait with `MICA_HOTH_LOCK` and `MICA_HOTH_LOCK_TIMEOUT`, and run a compose
 wrapper against a stand-in docker with `MICA_DEPLOY_COMPOSE_FILE`,
 `MICA_DEPLOY_EXPECTED_SHA`, `MICA_DEPLOY_ENV_FILE` and `MICA_DEPLOY_RCON_PORT`.
 **As root every one of them is ignored.** Who is root is decided on bash's own
-`$EUID`, never on `id -u`: `id` is found through `PATH`, and the deploy wrappers
-are reached through a `SETENV` sudoers rule, so a caller may be able to hand
-over a `PATH`. As root the wrapper also resets `PATH` to
+`$EUID`, never on `id -u`: `id` is found through `PATH`, and nothing here may
+depend on a caller not having chosen it (the sudoers rules carry no `SETENV`
+since MICA-316, but this check was written when they did). As root the wrapper
+also resets `PATH` to
 `/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin` before its first
 command, so the identity line's `sha256sum` and everything after it resolve from
 a known path. A trial keeps the caller's `PATH`, since that is how its stand-in

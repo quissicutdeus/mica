@@ -1,0 +1,26 @@
+# SPDX-FileCopyrightText: 2026 quissicutdeus
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# /etc/sudoers.d/gphone-deploy on hoth, mode 440, root:root. Not installed by CI: a person
+# installs it, after `visudo -cf`, as scripts/deploy/README.md says. server/__tests__/
+# deployWrapper.test.ts holds this file to what deploy-<target>.sh sends and to "no SETENV".
+#
+# gphone may run the two root deploy wrappers by exact path, and set exactly the six variables
+# deploy-<target>.sh sets on the sudo command line, and nothing else. There is no SETENV: with
+# it, `sudo BASH_ENV=... <wrapper>` is allowed, bash sources BASH_ENV as root before the first
+# line of the script, and that is root code execution for anyone holding a shell as gphone
+# (MICA-316). Without it, a variable set on the command line is held to the same rules as one in
+# the caller's environment (sudo(8)): env_reset drops it unless env_keep names it, so the six
+# names below pass and every other name is refused with "sorry, you are not allowed to set the
+# following environment variables". NOSETENV is spelled out so that a later
+# `Defaults:gphone setenv` cannot quietly bring the hole back for these two commands.
+#
+# What the wrapper does with the six values is its own job: it holds each to the one value or
+# shape it accepts (mica-deploy-<target>-compose.sh, require_value).
+#
+# The release smoke wrapper has its own file, /etc/sudoers.d/mica-smoke, and takes no variable.
+Cmnd_Alias MICA_DEPLOY_COMPOSE = /usr/local/sbin/mica-deploy-dev-compose.sh, \
+                                 /usr/local/sbin/mica-deploy-main-compose.sh
+Defaults!MICA_DEPLOY_COMPOSE env_keep += "MICA_PORT GIT_BRANCH GIT_SHA MICA_CALVER MICA_CONTAINER_NAME MICA_IMAGE_TAG"
+gphone ALL=(root) NOPASSWD:NOSETENV: MICA_DEPLOY_COMPOSE

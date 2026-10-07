@@ -11,6 +11,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
@@ -139,9 +140,32 @@ interface Options {
   branch?: string;
   gitSha?: string;
   omit?: string;
+  /** Set on top of what the wrapper being run is sent, or replace it. */
+  vars?: Record<string, string>;
 }
 
-const prepare = (options: Options = {}) => {
+/** What each deploy wrapper holds its six variables to (MICA-316): the one target it deploys. */
+const TARGET = {
+  'mica-deploy-dev-compose.sh': {
+    MICA_PORT: '8676',
+    GIT_BRANCH: 'dev',
+    MICA_CONTAINER_NAME: 'mica-dev',
+    MICA_IMAGE_TAG: 'mica-dev:local'
+  },
+  'mica-deploy-main-compose.sh': {
+    MICA_PORT: '8675',
+    GIT_BRANCH: 'main',
+    MICA_CONTAINER_NAME: 'mica-main',
+    MICA_IMAGE_TAG: 'mica-main:local'
+  }
+} as const;
+
+const GOOD_SHA = '0123456789abcdef0123456789abcdef01234567';
+
+const prepare = (
+  options: Options = {},
+  name: keyof typeof TARGET = 'mica-deploy-dev-compose.sh'
+) => {
   const n = ++counter;
   const lock = options.lock ?? join(dir, `lock${n}`);
   const calls = join(dir, `calls${n}`);
@@ -150,12 +174,11 @@ const prepare = (options: Options = {}) => {
   writeFileSync(probe, '');
   const env: Record<string, string> = {
     PATH: `${bin}:${process.env.PATH}`,
-    MICA_PORT: '8676',
-    GIT_BRANCH: options.branch ?? 'dev',
-    GIT_SHA: options.gitSha ?? '0123456789abcdef0123456789abcdef01234567',
+    ...TARGET[name],
+    GIT_BRANCH: options.branch ?? TARGET[name].GIT_BRANCH,
+    GIT_SHA: options.gitSha ?? GOOD_SHA,
     MICA_CALVER: '2026.10.06.1',
-    MICA_CONTAINER_NAME: 'mica-test',
-    MICA_IMAGE_TAG: 'mica-test:local',
+    ...options.vars,
     MICA_DEPLOY_COMPOSE_FILE: composeFile,
     MICA_DEPLOY_EXPECTED_SHA: options.sha ?? composeSha,
     MICA_DEPLOY_ENV_FILE: options.envFile ?? envFile,
@@ -181,8 +204,8 @@ const result = (r: ReturnType<typeof spawnSync>, p: ReturnType<typeof prepare>) 
   lock: p.lock
 });
 
-const run = (name: string, options: Options = {}) => {
-  const p = prepare(options);
+const run = (name: keyof typeof TARGET, options: Options = {}) => {
+  const p = prepare(options, name);
   return result(
     spawnSync('bash', [join(DEPLOY, name)], { encoding: 'utf8', env: p.env, timeout: 60_000 }),
     p
@@ -290,6 +313,44 @@ describe.skipIf(!canTrial)('the compose wrappers', () => {
       expect(lastLine(r.out)).toContain('and no step named a reason');
     });
 
+    // MICA-316: sudoers lets the six names through but not what they hold, so the wrapper does.
+    it.each([
+      ['MICA_PORT', '8080'],
+      ['MICA_PORT', '8676 '],
+      ['GIT_BRANCH', 'feature'],
+      ['MICA_CONTAINER_NAME', 'mica-demo'],
+      ['MICA_IMAGE_TAG', 'fivem-main-server:latest'],
+      ['GIT_SHA', 'abc123'],
+      ['GIT_SHA', 'A'.repeat(40)],
+      ['GIT_SHA', `${GOOD_SHA}\nINJECTED`],
+      ['GIT_SHA', `${GOOD_SHA}\n`],
+      ['MICA_CALVER', '2026.10.06'],
+      ['MICA_CALVER', '2026.10.06.1; id']
+    ])('refuses %s=%j before any lock, and starts nothing', (variable, value) => {
+      const r = run(name, { vars: { [variable]: value } });
+
+      expect(r.status).toBe(1);
+      expect(r.out).toContain(`REFUSED: ${variable} is '`);
+      expect(r.calls).toBe('');
+      expect(existsSync(join(dir, `lock${counter}`))).toBe(false);
+      expect(lastLine(r.out)).toBe(
+        `mica-wrapper: ${name} FAILED: exit status 1; the line above says why`
+      );
+      // The value a refusal prints is one line, so it cannot forge a line of the log.
+      expect(r.out.match(/^REFUSED: /gm)).toHaveLength(1);
+    });
+
+    it('refuses the other target’s values: a dev deploy cannot be a main deploy', () => {
+      const other = name.includes('-dev-')
+        ? TARGET['mica-deploy-main-compose.sh']
+        : TARGET['mica-deploy-dev-compose.sh'];
+      const r = run(name, { vars: { ...other } });
+
+      expect(r.status).toBe(1);
+      expect(r.out).toContain('REFUSED: MICA_PORT is');
+      expect(r.calls).toBe('');
+    });
+
     it('waits when the box is held, says why and on whom, then fails loudly and starts nothing', () => {
       const lock = join(dir, `held${++counter}`);
       const holder = holdLock(lock, 30, 'mica-smoke-release.sh pid 4242 (run7) since now');
@@ -391,7 +452,7 @@ describe.skipIf(!canTrial)('the compose wrappers', () => {
         sleep: '4',
         port: first.port,
         branch: 'dev',
-        gitSha: 'abcdef0123456789'
+        gitSha: 'abcdef0123456789abcdef0123456789abcdef01'
       });
       const outFile = join(dir, `holder-out${counter}`);
       const holder = spawn(
@@ -433,8 +494,9 @@ describe.skipIf(!canTrial)('the compose wrappers', () => {
 
   /**
    * Who is running decides whether the trial overrides are honoured, and that decision is made
-   * on bash's own $EUID, never on `id -u`: `id` is found through PATH, and the deploy wrappers
-   * are reached by a sudoers rule tagged SETENV, so a caller may be able to hand over a PATH.
+   * on bash's own $EUID, never on `id -u`: `id` is found through PATH, which nothing here may
+   * trust a caller not to have chosen (the sudoers rules carry no SETENV, but this must not
+   * depend on that).
    * The test runs each wrapper as uid 0 in a user namespace (`unshare -Ur`), where $EUID is 0,
    * with an `id` first on PATH that says "uid 1000, exit 1", and every override set. If the
    * wrapper believed `id` it would use them.
@@ -452,7 +514,7 @@ describe.skipIf(!canTrial)('the compose wrappers', () => {
     it.each(WRAPPERS)(
       '%s ignores every MICA_DEPLOY_* and lock override, and never runs id',
       (name) => {
-        const p = prepare({ envFile: noPasswordFile });
+        const p = prepare({ envFile: noPasswordFile }, name);
         const r = asRoot(name, p.env);
 
         expect(r.status).not.toBe(0);
@@ -485,6 +547,25 @@ describe.skipIf(!canTrial)('the compose wrappers', () => {
       expect(r.stdout.split('\n')[0]).toBe(`mica-wrapper: mica-smoke-release.sh sha256 ${real}`);
       expect(readFileSync(join(dir, 'fake-sha256sum-ran'), 'utf8')).toBe('');
     });
+
+    it.each(ALL)(
+      '%s refuses BASH_ENV as root too, naming it, before it reads anything else',
+      (name) => {
+        const payload = join(dir, 'root-payload.sh');
+        writeFileSync(payload, ':\n');
+        const r = asRoot(name, { PATH: process.env.PATH ?? '', BASH_ENV: payload });
+
+        expect(r.status).toBe(1);
+        expect(r.stdout.split('\n')[0]).toMatch(
+          new RegExp(`^mica-wrapper: ${name} sha256 [0-9a-f]{64}$`)
+        );
+        expect(r.out).toContain(
+          'REFUSED: the environment carries a variable that changes how bash'
+        );
+        expect(r.out).toContain('starts: BASH_ENV.');
+        expect(r.out).not.toContain('not set');
+      }
+    );
   });
 
   it('decides who is running on $EUID alone, in every wrapper, and calls id nowhere', () => {
@@ -498,5 +579,283 @@ describe.skipIf(!canTrial)('the compose wrappers', () => {
       expect(code, name).toMatch(/if \(\(EUID == 0\)\); then\n\s+PATH=\/usr\/local\/sbin:/);
       expect(code, name).toMatch(/if \[\[ \$EUID -ne 0 \]\]; then/);
     }
+  });
+
+  /**
+   * MICA-316. `SETENV` on the sudoers rules let gphone pass any variable to a root script,
+   * BASH_ENV included, and bash sources that before the script's first line. The rules now carry
+   * none, so sudo itself is the first line of defence; this is the second, and it has a limit:
+   * bash reads BASH_ENV before this script runs a line, so a refusal cannot undo a payload. What
+   * can is `-p` on the interpreter line, held below.
+   */
+  describe('bash start-up hooks', () => {
+    const HOOKS: Record<string, [Record<string, string>, string]> = {
+      BASH_ENV: [{ BASH_ENV: '<payload>' }, 'BASH_ENV'],
+      ENV: [{ ENV: '<payload>' }, 'ENV'],
+      BASH_LOADABLES_PATH: [{ BASH_LOADABLES_PATH: '/nowhere' }, 'BASH_LOADABLES_PATH'],
+      CDPATH: [{ CDPATH: '/nowhere' }, 'CDPATH'],
+      GLOBIGNORE: [{ GLOBIGNORE: '*' }, 'GLOBIGNORE'],
+      SHELLOPTS: [{ SHELLOPTS: 'noglob' }, 'SHELLOPTS'],
+      BASHOPTS: [{ BASHOPTS: 'nullglob' }, 'BASHOPTS'],
+      'an exported function': [
+        { 'BASH_FUNC_hook%%': '() { :; }' },
+        'BASH_FUNC_*%%(exported functions)'
+      ]
+    };
+    const IDENTITY = (name: string) => new RegExp(`^mica-wrapper: ${name} sha256 [0-9a-f]{64}$`);
+
+    /** The payload a BASH_ENV would run: it leaves a file, so whether it ran can be asked. */
+    const payload = () => {
+      const n = ++counter;
+      const file = join(dir, `payload${n}.sh`);
+      const ran = join(dir, `payload-ran${n}`);
+      writeFileSync(file, `: >"${ran}"\n`);
+      return { file, ran };
+    };
+
+    /** Run a wrapper with hook variables and nothing else the wrapper needs. */
+    const hooked = (
+      name: string,
+      hook: Record<string, string>,
+      how: 'bash' | 'interpreter-line' = 'bash'
+    ) => {
+      const tmp = mkdtempSync(join(dir, 'hook-'));
+      const env = { PATH: `${bin}:${process.env.PATH}`, TMPDIR: tmp, ...hook };
+      const file = join(DEPLOY, name);
+      const r =
+        how === 'bash'
+          ? spawnSync('bash', [file], { encoding: 'utf8', env, timeout: 60_000 })
+          : spawnSync(file, [], { encoding: 'utf8', env, timeout: 60_000 });
+      return {
+        status: r.status,
+        stdout: String(r.stdout),
+        out: `${r.stdout}${r.stderr}`,
+        // A refused run takes no lock, so nothing is left in the directory TMPDIR names.
+        left: readdirSync(tmp)
+      };
+    };
+
+    describe.each(ALL)('%s', (name) => {
+      it.each(Object.keys(HOOKS))(
+        'refuses %s, right after the identity line, naming it and taking no lock',
+        (label) => {
+          const [vars, shown] = HOOKS[label] as [Record<string, string>, string];
+          const p = payload();
+          const hook = Object.fromEntries(
+            Object.entries(vars).map(([k, v]) => [k, v === '<payload>' ? p.file : v])
+          );
+          const r = hooked(name, hook);
+
+          expect(r.status).toBe(1);
+          expect(r.stdout.split('\n')[0]).toMatch(IDENTITY(name));
+          expect(r.out).toContain(
+            `REFUSED: the environment carries a variable that changes how bash starts: ${shown}.`
+          );
+          // Before the guards that follow it: no MICA_PORT complaint, no run directory complaint.
+          expect(r.out).not.toContain('not set');
+          expect(r.out).not.toContain('is not under');
+          expect(r.left).toEqual([]);
+          expect(lastLine(r.out)).toBe(
+            `mica-wrapper: ${name} FAILED: exit status 1; the line above says why`
+          );
+        }
+      );
+
+      it('does not refuse a hook variable that is empty', () => {
+        const r = hooked(name, { BASH_ENV: '', ENV: '', CDPATH: '', GLOBIGNORE: '' });
+
+        expect(r.out).not.toContain('changes how bash starts');
+      });
+
+      it('has a payload that bash runs before line one under `bash <file>`, which this cannot stop', () => {
+        const p = payload();
+        const r = hooked(name, { BASH_ENV: p.file }, 'bash');
+
+        expect(r.out).toContain('REFUSED: the environment carries');
+        // The limit, as a fact: the refusal came after the payload had run.
+        expect(existsSync(p.ran)).toBe(true);
+      });
+
+      it.skipIf(!existsSync('/bin/bash'))(
+        'runs no payload at all when sudo runs it by its interpreter line, because of -p',
+        () => {
+          const p = payload();
+          const r = hooked(name, { BASH_ENV: p.file }, 'interpreter-line');
+
+          // Still refused: -p stops bash reading the file, not the variable being in the environment.
+          expect(r.status).toBe(1);
+          expect(r.out).toContain('starts: BASH_ENV.');
+          expect(existsSync(p.ran)).toBe(false);
+        }
+      );
+
+      it('is a privileged-mode interpreter line, and the refusal is the first code after the identity line', () => {
+        const text = readFileSync(join(DEPLOY, name), 'utf8');
+        const lines = text.split('\n');
+        const identity = lines.findIndex((l) =>
+          l.startsWith('echo "mica-wrapper: ${0##*/} sha256')
+        );
+        const next = lines
+          .slice(identity + 1)
+          .find((l) => l.trim() !== '' && !l.trim().startsWith('#'));
+
+        expect(lines[0]).toBe('#!/bin/bash -p');
+        expect(identity).toBeGreaterThan(-1);
+        expect(next).toBe('refuse_bash_hooks');
+        // Nothing at the top level prints before the identity line (the functions above it
+        // only print when called, and nothing calls one before the identity line).
+        const before = lines.slice(0, identity).filter((l) => /^(echo|printf)\b/.test(l));
+        expect(before).toEqual([]);
+      });
+    });
+  });
+
+  /**
+   * MICA-316, the other half: what gphone's `deploy-<target>.sh` sends through sudo, what the
+   * sudoers file lets through, and what the wrapper accepts are three statements of one list, and
+   * a mismatch between any two is a deploy that fails after it has spent its two minutes building.
+   */
+  describe('the calling convention, and the sudoers rule that carries it', () => {
+    const PAIRS = [
+      ['deploy-dev.sh', 'mica-deploy-dev-compose.sh'],
+      ['deploy-main.sh', 'mica-deploy-main-compose.sh']
+    ] as const;
+    const SUDOERS = join(DEPLOY, 'gphone-deploy.sudoers');
+
+    /** The one `sudo` statement in a deploy script: its NAME=value words, its command, anything after. */
+    const sent = (script: string) => {
+      const text = readFileSync(join(DEPLOY, script), 'utf8').replace(/\\\n\s*/g, ' ');
+      const statements = text.split('\n').filter((l) => /^sudo\s/.test(l));
+      expect(statements, `${script} has exactly one sudo statement`).toHaveLength(1);
+      const words = (statements[0] ?? '').trim().split(/\s+/).slice(1);
+      const assignments: Record<string, string> = {};
+      let i = 0;
+      for (; i < words.length && /^[A-Z_][A-Z0-9_]*=/.test(words[i] ?? ''); i++) {
+        const [k, ...v] = (words[i] ?? '').split('=');
+        assignments[k as string] = v.join('=');
+      }
+      return { assignments, command: words[i], rest: words.slice(i + 1) };
+    };
+
+    const sudoersCode = () => {
+      const text = readFileSync(SUDOERS, 'utf8').replace(/\\\n\s*/g, ' ');
+      return text
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => l !== '' && !l.startsWith('#'));
+    };
+
+    const kept = () => {
+      const line = sudoersCode().find((l) => l.startsWith('Defaults!'));
+      const names = /env_keep \+= "([^"]*)"/.exec(line ?? '')?.[1];
+      expect(names, 'a Defaults! env_keep += "..." line').toBeDefined();
+      return (names ?? '').split(' ').sort();
+    };
+
+    const required = (wrapper: string) =>
+      [...readFileSync(join(DEPLOY, wrapper), 'utf8').matchAll(/^: "\$\{([A-Z_]+):\?/gm)]
+        .map((m) => m[1] as string)
+        .sort();
+
+    describe.each(PAIRS)('%s -> %s', (script, wrapper) => {
+      it('sends exactly the names sudoers keeps and the wrapper requires, and no flag or argument', () => {
+        const s = sent(script);
+
+        expect(Object.keys(s.assignments).sort()).toEqual(kept());
+        expect(required(wrapper)).toEqual(kept());
+        expect(s.command).toBe(`/usr/local/sbin/${wrapper}`);
+        expect(s.rest).toEqual([]);
+      });
+
+      it('sends values the wrapper accepts, so the deploy reaches docker compose', () => {
+        const s = sent(script);
+        const calver = `${String(spawnSync('date', ['+%Y.%m.%d'], { encoding: 'utf8' }).stdout).trim()}.1`;
+        // The two that are the deploy's own: a commit and a date, assigned in the script.
+        const text = readFileSync(join(DEPLOY, script), 'utf8');
+        expect(text).toMatch(/^GIT_SHA=\$\(git rev-parse HEAD\)$/m);
+        expect(text).toMatch(/^MICA_CALVER=\$\(date \+%Y\.%m\.%d\)\.1$/m);
+        expect(s.assignments.GIT_SHA).toBe('"$GIT_SHA"');
+        expect(s.assignments.MICA_CALVER).toBe('"$MICA_CALVER"');
+
+        const vars = Object.fromEntries(
+          Object.entries(s.assignments).map(([k, v]) => [
+            k,
+            k === 'GIT_SHA' ? GOOD_SHA : k === 'MICA_CALVER' ? calver : v
+          ])
+        );
+        const r = run(wrapper, { vars, fail: 'compose' });
+
+        expect(r.out).not.toContain('REFUSED');
+        expect(r.calls).toContain('compose -p mica-');
+      });
+    });
+
+    it('has no SETENV anywhere in code, and says NOSETENV on the rule', () => {
+      const code = sudoersCode().join('\n');
+
+      expect(code).not.toMatch(/(?<!NO)SETENV/);
+      expect(code.replaceAll('NOSETENV', '')).not.toMatch(/setenv/i);
+      expect(code).toContain('NOPASSWD:NOSETENV:');
+      // Nor does the README carry it as a rule to install.
+      const readme = readFileSync(join(DEPLOY, 'README.md'), 'utf8');
+      expect(readme).not.toMatch(/^gphone ALL=\(root\) NOPASSWD:SETENV:/m);
+    });
+
+    it('keeps exact names only, never a pattern, and leaves env_reset on', () => {
+      const code = sudoersCode().join('\n');
+
+      for (const name of kept()) expect(name).toMatch(/^[A-Z][A-Z0-9_]*$/);
+      expect(code).not.toMatch(/env_reset|env_delete|env_check|env_file|!env/);
+      expect(code.match(/env_keep/g)).toHaveLength(1);
+    });
+
+    it('grants the two wrappers by exact path and nothing else', () => {
+      const code = sudoersCode();
+      const alias = code.find((l) => l.startsWith('Cmnd_Alias '));
+      const members = (alias?.split('=').slice(1).join('=') ?? '').split(',').map((s) => s.trim());
+      const rules = code.filter((l) => l.startsWith('gphone '));
+
+      expect(members.sort()).toEqual(PAIRS.map(([, w]) => `/usr/local/sbin/${w}`).sort());
+      for (const m of members)
+        expect(existsSync(join(DEPLOY, m.split('/').pop() as string))).toBe(true);
+      expect(rules).toEqual(['gphone ALL=(root) NOPASSWD:NOSETENV: MICA_DEPLOY_COMPOSE']);
+      expect(code.filter((l) => !/^(Cmnd_Alias |Defaults!|gphone )/.test(l))).toEqual([]);
+    });
+
+    it('is the file the README shows, word for word', () => {
+      const body = readFileSync(SUDOERS, 'utf8').split('\n').slice(4).join('\n').trimEnd();
+      const readme = readFileSync(join(DEPLOY, 'README.md'), 'utf8');
+
+      expect(body.length).toBeGreaterThan(100);
+      expect(readme).toContain(body);
+    });
+
+    // The sudoers syntax check is sudo's own, `visudo -cf`, which is what the install runs first.
+    // Named in a constant because knip reads a literal `spawnSync('visudo', ...)` as an unlisted
+    // binary and its config (outside this lane) has nowhere to list one but `ignoreBinaries`.
+    const VISUDO = 'visudo';
+    const hasVisudo = canRun(
+      spawnSync('sh', ['-c', `command -v ${VISUDO}`]).status === 0
+        ? null
+        : '`visudo` is not installed',
+      'the sudoers syntax check'
+    );
+    it.skipIf(!hasVisudo)('parses under visudo -cf, which is what the install runs first', () => {
+      const r = spawnSync(VISUDO, ['-cf', SUDOERS], { encoding: 'utf8' });
+
+      expect(`${r.stdout}${r.stderr}`).toContain('parsed OK');
+      expect(r.status).toBe(0);
+    });
+
+    it.skipIf(!hasVisudo)(
+      'is refused by visudo -cf when it is broken, so the check above can fail',
+      () => {
+        const broken = join(dir, 'broken.sudoers');
+        writeFileSync(broken, 'gphone ALL=(root) NOPASSWD:NOSETENV /usr/local/sbin/x.sh\n');
+        const r = spawnSync(VISUDO, ['-cf', broken], { encoding: 'utf8' });
+
+        expect(r.status).not.toBe(0);
+      }
+    );
   });
 });

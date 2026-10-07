@@ -1,4 +1,9 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
+
+# `-p` (MICA-316): privileged mode, so that when sudo runs this file bash neither sources
+# $BASH_ENV nor $ENV, imports no exported function and ignores SHELLOPTS. refuse_bash_hooks below
+# is the detector behind it. The path is fixed because an interpreter line cannot search PATH, and
+# a hoth without /bin/bash fails at exec, before the identity line, which CI reports as no line.
 
 # SPDX-FileCopyrightText: 2026 quissicutdeus
 #
@@ -46,9 +51,9 @@ hoth_locked=0
 # last command, not the signal's, and a trap that believed that would report a killed run as a pass.
 completed=0
 
-# Every command below resolves from a known path when this runs as root. The deploy wrappers are
-# reached through a sudoers rule tagged SETENV, so a caller may be able to hand over a PATH, and
-# hoth's secure_path should stop that but nothing here may depend on it. $EUID is bash's own: it
+# Every command below resolves from a known path when this runs as root. sudo's own env_reset and
+# secure_path should already hand over a clean PATH (the sudoers rules carry no SETENV, so a caller
+# cannot set one), but nothing here may depend on it. $EUID is bash's own: it
 # is set by the shell and nothing in the environment can change it, which is why every decision
 # about who is running is made on it and none on `id -u`, a program found through PATH. A trial
 # by an ordinary user keeps the caller's PATH, since that is how its stand-in docker is found.
@@ -146,6 +151,39 @@ on_exit() {
     exit "$rc"
 }
 trap on_exit EXIT
+
+# 3. A second line against bash's own start-up hooks (MICA-316). The first line is sudoers: the
+#    rules for the deploy wrappers carry no SETENV, so sudo drops BASH_ENV and its kin before this
+#    runs. This refuses the run when one is present anyway, and it is called right after the
+#    identity line, before anything else.
+#
+#    What that can and cannot do. bash reads $BASH_ENV, imports exported functions and applies
+#    SHELLOPTS before it executes the first line of this file, so by the time this runs a BASH_ENV
+#    payload has already run, as this user. This is a detector, so a regression in sudoers fails
+#    loudly instead of silently, and it stops the rest of the run from going on with whatever the
+#    hook did. It cannot stop the payload. What does is `-p` on the interpreter line: in privileged
+#    mode bash reads neither $BASH_ENV nor $ENV, imports no functions and ignores SHELLOPTS,
+#    BASHOPTS, CDPATH and GLOBIGNORE. That holds when sudo runs the file by its interpreter line,
+#    and not when somebody runs `bash <file>`. The dynamic loader's LD_* variables are not listed
+#    because sudo itself, being setuid, loses them before it can pass them on.
+#
+#    SHELLOPTS, BASHOPTS and BASH_LOADABLES_PATH are always set, by bash, so being set says
+#    nothing: what matters is that they are exported, which is how they came in on the environment.
+refuse_bash_hooks() {
+    local name decl flags found=''
+    for name in BASH_ENV ENV CDPATH GLOBIGNORE; do
+        [[ -z ${!name:-} ]] || found+=" $name"
+    done
+    for name in SHELLOPTS BASHOPTS BASH_LOADABLES_PATH; do
+        decl=$(builtin declare -p "$name" 2>/dev/null) || continue
+        flags=${decl#declare -}
+        flags=${flags%% *}
+        [[ $flags != *x* ]] || found+=" $name"
+    done
+    [[ -z $(builtin declare -Fx) ]] || found+=" BASH_FUNC_*%%(exported functions)"
+    [[ -z $found ]] ||
+        die "the environment carries a variable that changes how bash starts:$found. This wrapper runs as root and takes none of them. If BASH_ENV is one of them it has already run, because bash reads it before this script's first line: this refuses the run, and cannot undo that. The sudoers rule for this wrapper must not carry SETENV (scripts/deploy/README.md)."
+}
 # END wrapper-common
 
 # Identity line, first thing, so CI can tell which copy of this script hoth is really running.
@@ -157,6 +195,9 @@ trap on_exit EXIT
 # that is refused further down still says what ran. Keep the format: that script parses it.
 self_sha=$(sha256sum -- "$0" | cut -d' ' -f1)
 echo "mica-wrapper: ${0##*/} sha256 $self_sha"
+
+# Second, and nothing before it but the identity line (MICA-316): the common block has why.
+refuse_bash_hooks
 
 COMPOSE_FILE="/opt/fivem-dev/server-data/vendor/mica/compose.yaml"
 # Re-pinned for MICA-234: three new pass-through build args (VITE_MICA_DISABLED_APPS,
@@ -192,6 +233,27 @@ fi
 : "${MICA_CALVER:?not set -- invoke ~gphone/bin/deploy-<target>.sh, not this directly}"
 : "${MICA_CONTAINER_NAME:?not set -- invoke ~gphone/bin/deploy-<target>.sh, not this directly}"
 : "${MICA_IMAGE_TAG:?not set -- invoke ~gphone/bin/deploy-<target>.sh, not this directly}"
+
+# The values, not just their presence (MICA-316). sudoers lets exactly these six names through
+# (Defaults! env_keep, no SETENV), but not what they hold: gphone chooses that, so a caller that
+# is not deploy-dev.sh could set a different container name, port or image tag, and an image tag
+# is a name docker will happily move to a new image. Four of the six are constants of this
+# target, so they are held to them; the other two are a commit and a date, held to their shapes.
+# The tests read deploy-dev.sh's sudo line and fail when it sends something this refuses.
+# Taken before the lock, so a misuse is refused at once and does not queue behind a run.
+require_value() {
+    local name=$1 want=$2 got=${!1}
+    [[ $got == "$want" ]] ||
+        die "$name is '${got//[^[:print:]]/?}', and this wrapper deploys dev with $name=$want, nothing else"
+}
+require_value MICA_PORT 8676
+require_value GIT_BRANCH dev
+require_value MICA_CONTAINER_NAME mica-dev
+require_value MICA_IMAGE_TAG mica-dev:local
+[[ $GIT_SHA =~ ^([0-9a-f]{40}|[0-9a-f]{64})$ ]] ||
+    die "GIT_SHA is '${GIT_SHA//[^[:print:]]/?}', which is not a full commit hash"
+[[ $MICA_CALVER =~ ^[0-9]{4}\.[0-9]{2}\.[0-9]{2}\.[0-9]+$ ]] ||
+    die "MICA_CALVER is '${MICA_CALVER//[^[:print:]]/?}', which is not YYYY.MM.DD.N"
 
 # One job at a time on hoth, shared with the other deploy and the smoke and integration runs
 # (MICA-315): the stacks share the docker daemon, its image store and the box, and an
