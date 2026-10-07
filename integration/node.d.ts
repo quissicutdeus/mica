@@ -14,10 +14,13 @@ declare module 'node:buffer' {
   export interface Bytes extends Uint8Array {
     toString(encoding?: 'hex' | 'base64' | 'utf8'): string;
     subarray(start?: number, end?: number): Bytes;
+    indexOf(value: number | string | Uint8Array, byteOffset?: number): number;
+    equals(other: Uint8Array): boolean;
   }
 
   export const Buffer: {
     from(text: string, encoding: 'base64' | 'utf8'): Bytes;
+    from(data: Uint8Array | readonly number[]): Bytes;
     concat(list: readonly Uint8Array[]): Bytes;
   };
 }
@@ -40,6 +43,55 @@ declare module 'node:crypto' {
     options: { authTagLength: number }
   ): DecipherGCM;
   export function randomBytes(size: number): Bytes;
+
+  export interface KeyObject {
+    export(options: { type: 'spki'; format: 'der' }): Bytes;
+    export(options: { type: 'pkcs8'; format: 'pem' }): string;
+  }
+
+  export function generateKeyPairSync(
+    type: 'ec',
+    options: { namedCurve: 'prime256v1' }
+  ): { publicKey: KeyObject; privateKey: KeyObject };
+  /** ECDSA answers a DER `ECDSA-Sig-Value`, which is what an X.509 signature holds. */
+  export function sign(algorithm: 'sha256', data: Uint8Array, key: KeyObject): Bytes;
+}
+
+declare module 'node:https' {
+  import type { Bytes } from 'node:buffer';
+
+  interface Socket {
+    destroy(): void;
+  }
+
+  export interface IncomingMessage {
+    readonly method?: string;
+    readonly url?: string;
+    readonly headers: Record<string, string | string[] | undefined>;
+    readonly socket: Socket;
+    on(event: 'data', listener: (chunk: Bytes) => void): IncomingMessage;
+    on(event: 'end', listener: () => void): IncomingMessage;
+    on(event: 'error', listener: (error: Error) => void): IncomingMessage;
+  }
+
+  export interface ServerResponse {
+    writeHead(status: number, headers?: Record<string, string>): ServerResponse;
+    end(body?: string): void;
+  }
+
+  export interface Server {
+    listen(port: number, host: string, listening: () => void): Server;
+    address(): { port: number } | string | null;
+    close(closed?: (error?: Error) => void): Server;
+    closeAllConnections(): void;
+    on(event: 'error' | 'tlsClientError' | 'clientError', listener: (error: Error) => void): Server;
+    once(event: 'error', listener: (error: Error) => void): Server;
+  }
+
+  export function createServer(
+    options: { key: string; cert: string },
+    listener: (request: IncomingMessage, response: ServerResponse) => void
+  ): Server;
 }
 
 declare module 'node:fs' {

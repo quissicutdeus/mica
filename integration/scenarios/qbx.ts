@@ -70,7 +70,7 @@ const phoneItem = (): string => {
  * `mica_` table (or calls an export that does) starts with this. The runner does not gate for
  * them, so a scenario that touches no micaOS table is not held up by a schema it does not use.
  */
-const schemaCreated = (signal: { readonly aborted: boolean }): Promise<number> =>
+export const schemaCreated = (signal: { readonly aborted: boolean }): Promise<number> =>
   eventually(
     async () => {
       try {

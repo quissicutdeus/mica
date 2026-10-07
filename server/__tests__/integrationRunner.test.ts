@@ -295,8 +295,8 @@ describe('the two runs', () => {
  * nobody had to decide the mode of.
  */
 describe('the registered suite', () => {
-  const STANDALONE = 23;
-  const QBX = 6;
+  const STANDALONE = 27;
+  const QBX = 7;
 
   const printed = async (mode: Mode) => {
     const lines: string[] = [];

@@ -7,6 +7,7 @@ import { addonServiceScenarios } from './addonService';
 import { commandScenarios } from './commands';
 import { cryptoScenarios } from './crypto';
 import { exportScenarios } from './exports';
+import { httpScenarios } from './http';
 import { importerScenarios } from './importer';
 import { oxmysqlScenarios } from './oxmysql';
 import { qbxScenarios } from './qbx';
@@ -32,5 +33,6 @@ export const scenarios: readonly Scenario[] = [
   ...retentionScenarios,
   ...oxmysqlScenarios,
   ...importerScenarios,
+  ...httpScenarios,
   ...qbxScenarios
 ];

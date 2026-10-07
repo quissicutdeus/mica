@@ -27,3 +27,5 @@ line here.
   — `messages:get` rows are reversed; not newest first
 - [Break-to-prove needs the file in your fence](break-to-prove-needs-the-file-in-fence.md)
   — a harness lane cannot run against edited `server/`; report the gap
+- [Outbound HTTP: https only, two of three need a player](outbound-http-needs-a-player-or-tls.md)
+  — the sink needs TLS; webhook and catalog are unreachable in-server
