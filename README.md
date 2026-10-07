@@ -5,6 +5,12 @@
 [Tablet Demo](https://mica.gg/demo/?device=tablet) ·
 [SDK Docs](https://docs.mica.gg/)
 
+**Try it in game:** two public servers run micaOS, open to anyone.
+[`micaOS - #main`](https://cfx.re/join/qqqg956) runs the `main` branch, and
+[`micaOS - #dev`](https://cfx.re/join/zjjevrd) runs `dev` and updates on every
+push. Neither is a roleplay community: they are there so you can pick up the
+phone before you install it.
+
 Powered by TypeScript, Svelte 5, Vite, and esbuild.
 
 | Home                                      | Messages                                            | Contacts                                   | Media                                            | Bank                               | Settings                                   | Blabber                                                  |
@@ -18,7 +24,8 @@ runs on, so it cannot drift from the build. Regenerate them with
 the normal suite never writes them.
 
 Ready to install it on your own server? Jump to
-[Installation & Setup](#installation--setup).
+[Installation & Setup](#installation--setup). Want to see it running first? Join
+[`#main`](https://cfx.re/join/qqqg956) or [`#dev`](https://cfx.re/join/zjjevrd).
 
 ---
 
