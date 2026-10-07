@@ -40,7 +40,14 @@ import { connectAsOxmysql, createOxmysql } from './lib/oxmysql-shim.js';
  * the sender; settings that survive a reconnect on a new server id; an invoice billed by
  * another resource's export, paid (money moving on qb, refused on standalone) and declined;
  * an unauthenticated source refused, a client unable to raise a runtime event, and the rate
- * limit tripping.
+ * limit tripping. Then the export and line surface: `CreateCall` answering ok only for a call
+ * that rang, and busy, unreachable, blocked and rejected each as such (MICA-276); `micacall`'s
+ * console caller, source -1, never addressed (MICA-277); a line hanging up the call it
+ * answered, and blocked like a number unless its owner says otherwise (MICA-278); a line told
+ * of a player's text and replying into the same thread (MICA-275); `SendMessage` to a player
+ * online and offline (MICA-223); qb-phone's mail events (MICA-222); and a player's own data
+ * exported and deleted with another's untouched (MICA-168). qb-phone's `CustomNotification` is
+ * a client event with no server half, so it is not here.
  *
  * **What this does not prove, and nothing in this repo can:** the client relay (`client/`)
  * and whether a phone acts on what it is sent; CEF and NUI; voice; a real `GetPlayerIdentifiers`
@@ -71,7 +78,14 @@ const FLOW_CHECKS = {
   text: { standalone: 15, qb: 15 },
   invoice: { standalone: 14, qb: 14 },
   refusals: { standalone: 9, qb: 9 },
-  reconnect: { standalone: 8, qb: 8 }
+  reconnect: { standalone: 8, qb: 8 },
+  createCall: { standalone: 25, qb: 25 },
+  micacall: { standalone: 15, qb: 15 },
+  lineCall: { standalone: 23, qb: 23 },
+  lineText: { standalone: 13, qb: 13 },
+  sendMessage: { standalone: 12, qb: 12 },
+  qbMail: { standalone: 10, qb: 10 },
+  privacy: { standalone: 13, qb: 13 }
 };
 const MINIMUM_CHECKS = Object.values(FLOW_CHECKS).reduce(
   (sum, perShape) => sum + perShape.standalone + perShape.qb,
@@ -261,6 +275,9 @@ const startShape = async ({ db, kind }) => {
       oxmysql: shim.oxmysql,
       fake_dispatch: {},
       fake_billing: {},
+      fake_cab: {},
+      fake_bank: {},
+      fake_other: {},
       ...(qb ? { 'qb-core': qb.resource } : {})
     }
   });
@@ -322,6 +339,14 @@ const startShape = async ({ db, kind }) => {
     return runtime.since(mark);
   };
 
+  /** Another resource calling one of micaOS's exports: its answer, and what it sent. */
+  const invoke = async (invoker, name, ...args) => {
+    const mark = runtime.sent.length;
+    const result = await runtime.callExport(invoker, name, ...args);
+    await settle();
+    return { result, sent: runtime.since(mark) };
+  };
+
   const connect = (src, person) =>
     raise(async () => {
       if (kind === 'standalone') {
@@ -366,6 +391,7 @@ const startShape = async ({ db, kind }) => {
     call,
     fire,
     raise,
+    invoke,
     connect,
     disconnect,
     citizenOf,
@@ -1035,6 +1061,758 @@ const runReconnect = async (shape, numbers) => {
   await shape.fire(2, 'mica:server:phone:end');
 };
 
+/* ------------------------------------------------------- the export and line flows */
+
+/**
+ * Every flow below runs after the reconnect, so 1's person (Alice) is source 5 from here on.
+ * `live` names who is on which source now; the sendMessage flow moves Dana to source 6.
+ */
+const outcome = (result) => (result?.ok === true ? 'ok' : result?.reason);
+/** Every message addressed to something that is not a player: -1 is FiveM's broadcast. */
+const toNobody = (sent) => sent.filter((m) => !(m.target > 0)).map((m) => `${m.target} ${m.event}`);
+const lastCallRow = async (shape, person) =>
+  (
+    await shape.rows(
+      'SELECT `kind`, `number` FROM `mica_phone_call_log` WHERE `citizenid` = ? ORDER BY `id` DESC LIMIT 1',
+      [shape.citizenOf(person)]
+    )
+  )[0];
+const isInCall = async (shape, src) =>
+  (await shape.runtime.callExport('fake_dispatch', 'IsInCall', src))?.value;
+
+/**
+ * MICA-276: `CreateCall` answers ok only for a call that rang or connected. Busy is
+ * `not_ready`; a number nobody holds, a blocked caller and a line that rejects are each
+ * `unknown_player` — one word on purpose (MICA-64), after the same toast the caller's phone
+ * shows. A source with no character and a value that is no number are refused before anything.
+ */
+const runCreateCall = async (shape, numbers, live) => {
+  const { kind } = shape;
+  const { A, B, D } = live;
+  const create = (src, number) => shape.invoke('fake_dispatch', 'CreateCall', src, number);
+
+  step(`${kind}: a resource places a call from 2 to 1`);
+  const placed = await create(B, numbers[1]);
+  check(`${kind}: CreateCall answers ok for a call that rang`, placed.result, { ok: true });
+  check(
+    `${kind}: and 1 is rung, from 2's number`,
+    to(placed.sent, INCOMING, A).map((m) => m.args[0].from),
+    [numbers[2]]
+  );
+  check(
+    `${kind}: IsInCall agrees for both`,
+    [await isInCall(shape, A), await isInCall(shape, B)],
+    [true, true]
+  );
+
+  step(`${kind}: while it rings, a resource places a call from 4 to 1`);
+  const busy = await create(D, numbers[1]);
+  check(`${kind}: CreateCall answers not_ready`, outcome(busy.result), 'not_ready');
+  check(
+    `${kind}: after 4's phone is told 'Line busy'`,
+    to(busy.sent, NOTIFY, D).map((m) => m.args[0].key),
+    ['server.phone.lineBusy']
+  );
+  check(`${kind}: and 1 is not rung again`, to(busy.sent, INCOMING, A).length, 0);
+  const hangup = await shape.fire(B, 'mica:server:phone:end');
+  check(`${kind}: the rung call ends like any other`, to(hangup.sent, ENDED, A).length, 1);
+
+  step(`${kind}: a resource places a call to a number nobody holds`);
+  const nowhere = await create(B, '5559998');
+  check(`${kind}: CreateCall answers unknown_player`, outcome(nowhere.result), 'unknown_player');
+  check(
+    `${kind}: after 2's phone is told 'Number unavailable'`,
+    to(nowhere.sent, NOTIFY, B).map((m) => m.args[0].key),
+    ['server.phone.numberUnavailable']
+  );
+  check(`${kind}: and that it failed`, to(nowhere.sent, FAILED, B).length, 1);
+
+  step(`${kind}: 2 blocks 4, and a resource places a call from 4 to 2`);
+  const block = await shape.call(B, 'blocklist', 'create', { number: numbers[4] });
+  check(`${kind}: 2's block is written`, typeof block?.id, 'number');
+  const blocked = await create(D, numbers[2]);
+  check(
+    `${kind}: CreateCall answers unknown_player, as for nobody`,
+    outcome(blocked.result),
+    'unknown_player'
+  );
+  check(
+    `${kind}: after the same messages a number nobody holds sends`,
+    blocked.sent.map((m) => m.event),
+    nowhere.sent.map((m) => m.event)
+  );
+  check(`${kind}: and 2 is not rung`, to(blocked.sent, INCOMING, B).length, 0);
+  check(
+    `${kind}: 2 lifts the block`,
+    await shape.call(B, 'blocklist', 'delete', { id: block.id }),
+    true
+  );
+
+  step(`${kind}: a resource places a call to a line that rejects it`);
+  check(
+    `${kind}: the line is registered`,
+    await shape.runtime.callExport('fake_dispatch', 'RegisterNumber', '5550601', {
+      onCall: () => ({ action: 'reject' })
+    }),
+    { ok: true }
+  );
+  const rejected = await create(B, '5550601');
+  check(`${kind}: CreateCall answers unknown_player`, outcome(rejected.result), 'unknown_player');
+  check(
+    `${kind}: after 2's phone is told 'Number unavailable'`,
+    to(rejected.sent, NOTIFY, B).map((m) => m.args[0].key),
+    ['server.phone.numberUnavailable']
+  );
+
+  step(`${kind}: a resource places a call to a line that accepts it`);
+  check(
+    `${kind}: the line is registered`,
+    await shape.runtime.callExport('fake_dispatch', 'RegisterNumber', '5550602', {
+      onCall: () => ({ action: 'accept' })
+    }),
+    { ok: true }
+  );
+  const accepted = await create(B, '5550602');
+  check(`${kind}: CreateCall answers ok`, accepted.result, { ok: true });
+  check(`${kind}: and 2 is told it connected`, to(accepted.sent, ACCEPTED, B).length, 1);
+  await shape.fire(B, 'mica:server:phone:end');
+  for (const number of ['5550601', '5550602']) {
+    await shape.runtime.callExport('fake_dispatch', 'UnregisterNumber', number);
+  }
+
+  step(`${kind}: a source nobody can name, and a number that is not one`);
+  const nobody = await create(NOBODY, numbers[1]);
+  check(`${kind}: no character is unknown_player`, outcome(nobody.result), 'unknown_player');
+  check(`${kind}: and nothing is sent`, events(nobody.sent), []);
+  const bad = await create(B, { not: 'a number' });
+  check(`${kind}: no number is invalid_args`, outcome(bad.result), 'invalid_args');
+  check(`${kind}: and nothing is sent`, events(bad.sent), []);
+};
+
+/**
+ * MICA-277: `micacall`'s caller is source -1, which FiveM's `emitNet` broadcasts to every
+ * client. Nothing about that call may be addressed to it — not `accepted`, not `ended` —
+ * while the admin's own phone is told everything (the positive twin of each).
+ */
+const runMicacall = async (shape, live) => {
+  const { kind } = shape;
+  const { B, D } = live;
+  const run = (src, args) => shape.raise(() => shape.runtime.command(src, 'micacall', args));
+  shape.runtime.grantAce(B, 'command');
+
+  step(`${kind}: 4, not an admin, runs micacall`);
+  const refused = await run(D, []);
+  check(
+    `${kind}: is refused`,
+    to(refused, NOTIFY, D).map((m) => m.args[0].type),
+    ['error']
+  );
+  check(
+    `${kind}: and nobody is rung`,
+    refused.filter((m) => m.event === INCOMING),
+    []
+  );
+
+  step(`${kind}: 2, an admin, rings themselves from 5550123, answers, and hangs up`);
+  const ring = await run(B, ['5550123']);
+  const incoming = to(ring, INCOMING, B).map((m) => m.args[0]);
+  check(
+    `${kind}: 2 is rung from that number`,
+    incoming.map((m) => m.from),
+    ['5550123']
+  );
+  check(`${kind}: and nothing is addressed to the console's caller`, toNobody(ring), []);
+  const answer = await shape.fire(B, 'mica:server:phone:answer');
+  check(
+    `${kind}: 2 is told it connected, under the ringing id`,
+    to(answer.sent, ACCEPTED, B).map((m) => m.args[0].callId),
+    [incoming[0]?.callId]
+  );
+  check(
+    `${kind}: and accepted goes to nobody else, -1 included`,
+    answer.sent.filter((m) => m.event === ACCEPTED).map((m) => m.target),
+    [B]
+  );
+  const end = await shape.fire(B, 'mica:server:phone:end');
+  check(
+    `${kind}: ended goes to 2 and to nobody else, -1 included`,
+    end.sent.filter((m) => m.event === ENDED).map((m) => m.target),
+    [B]
+  );
+  check(`${kind}: nothing at all is addressed to -1`, toNobody(end.sent), []);
+  check(
+    `${kind}: 2 logs an incoming row from the test number`,
+    await lastCallRow(shape, PEOPLE[2]),
+    {
+      kind: 'incoming',
+      number: '5550123'
+    }
+  );
+
+  step(`${kind}: 2 is rung again, and ends it with micacall end`);
+  const again = await run(B, []);
+  check(
+    `${kind}: rung from the default test number`,
+    to(again, INCOMING, B).map((m) => m.args[0].from),
+    ['5550100']
+  );
+  const forced = await run(B, ['end']);
+  check(
+    `${kind}: ended goes to 2 and to nobody else, -1 included`,
+    forced.filter((m) => m.event === ENDED).map((m) => m.target),
+    [B]
+  );
+  check(`${kind}: nothing at all is addressed to -1`, toNobody(forced), []);
+  check(
+    `${kind}: and 2 is told it ended`,
+    to(forced, NOTIFY, B).map((m) => m.args[0].type),
+    ['success']
+  );
+  check(`${kind}: 2 logs it as missed`, await lastCallRow(shape, PEOPLE[2]), {
+    kind: 'missed',
+    number: '5550100'
+  });
+  const idle = await run(B, ['end']);
+  check(
+    `${kind}: micacall end with no call says so, and ends nothing`,
+    [to(idle, NOTIFY, B).map((m) => m.args[0].type), idle.filter((m) => m.event === ENDED)],
+    [['error'], []]
+  );
+};
+
+const CAB = { number: '5550777', label: 'Downtown Cab' };
+const CAB_UNBLOCKABLE = '5550778';
+
+/**
+ * MICA-278: a line that answered a call can hang it up (`EndLineCall`), and only its owner
+ * can; a call that is not a line's is refused. A player can block a line's number like any
+ * other — its texts arrive unpushed — unless its owner registered it `blockable: false`, and
+ * then only for texts the owner itself sends.
+ */
+const runLineCall = async (shape, numbers, live) => {
+  const { kind } = shape;
+  const { A, B, D } = live;
+  const asked = [];
+  check(
+    `${kind}: a cab company registers its line`,
+    await shape.runtime.callExport('fake_cab', 'RegisterNumber', CAB.number, {
+      label: CAB.label,
+      onCall: (call) => {
+        asked.push(call);
+        return { action: 'accept' };
+      }
+    }),
+    { ok: true }
+  );
+  const endLine = (invoker, callId) => shape.invoke(invoker, 'EndLineCall', callId);
+
+  step(`${kind}: 1 calls the cab, and the line answers`);
+  const dial = await shape.fire(A, 'mica:server:phone:start', CAB.number);
+  const callId = to(dial.sent, ACCEPTED, A)[0]?.args[0]?.callId;
+  check(
+    `${kind}: 1 is connected under the id the line was asked with`,
+    [callId],
+    asked.map((c) => c.callId)
+  );
+
+  step(`${kind}: another resource tries to hang it up`);
+  const stolen = await endLine('fake_other', callId);
+  check(`${kind}: refused as not_owner`, outcome(stolen.result), 'not_owner');
+  check(`${kind}: and the call is still up`, await isInCall(shape, A), true);
+
+  step(`${kind}: the cab names calls that are not its line's`);
+  const ring = await shape.fire(B, 'mica:server:phone:start', numbers[4]);
+  const playerCallId = to(ring.sent, INCOMING, D)[0]?.args[0]?.callId;
+  const notLine = await endLine('fake_cab', playerCallId);
+  check(
+    `${kind}: a call between two players is invalid_args`,
+    outcome(notLine.result),
+    'invalid_args'
+  );
+  check(`${kind}: and keeps ringing`, await isInCall(shape, D), true);
+  await shape.fire(B, 'mica:server:phone:end');
+  check(
+    `${kind}: an id nothing holds is invalid_args`,
+    outcome((await endLine('fake_cab', 42)).result),
+    'invalid_args'
+  );
+
+  step(`${kind}: the cab hangs up`);
+  const hangup = await endLine('fake_cab', callId);
+  check(`${kind}: EndLineCall answers ok`, hangup.result, { ok: true });
+  check(
+    `${kind}: 1 is told it ended, and nobody else`,
+    hangup.sent.filter((m) => m.event === ENDED).map((m) => m.target),
+    [A]
+  );
+  check(`${kind}: nothing is addressed to the line's side`, toNobody(hangup.sent), []);
+  check(`${kind}: 1 is free`, await isInCall(shape, A), false);
+  check(`${kind}: and logs an outgoing row to the line`, await lastCallRow(shape, PEOPLE[1]), {
+    kind: 'outgoing',
+    number: CAB.number
+  });
+  check(
+    `${kind}: hanging up twice is invalid_args`,
+    outcome((await endLine('fake_cab', callId)).result),
+    'invalid_args'
+  );
+
+  const text = (invoker, number, body) =>
+    shape.invoke(invoker, 'SendMessage', shape.citizenOf(PEOPLE[1]), { from: { number }, body });
+  const pushedTo = (sent, src) =>
+    sent.filter((m) => m.event === RECEIVED && m.target === src).map((m) => m.args[0].message);
+
+  step(`${kind}: the cab texts 1, then 1 blocks the cab`);
+  const before = await text('fake_cab', CAB.number, 'Your cab is outside');
+  check(
+    `${kind}: before the block it is delivered and pushed`,
+    [before.result.value?.delivered, pushedTo(before.sent, A)],
+    [true, ['Your cab is outside']]
+  );
+  const block = await shape.call(A, 'blocklist', 'create', { number: CAB.number });
+  check(`${kind}: 1 blocks the line's number`, typeof block?.id, 'number');
+  const after = await text('fake_cab', CAB.number, 'Still outside');
+  check(
+    `${kind}: after it the text is written but not delivered`,
+    [outcome(after.result), after.result.value?.delivered],
+    ['ok', false]
+  );
+  check(
+    `${kind}: and nothing is pushed to anyone`,
+    after.sent.filter((m) => m.event === RECEIVED),
+    []
+  );
+  check(
+    `${kind}: the row is in the thread`,
+    (
+      await shape.rows('SELECT `conversation_id` FROM `mica_messages` WHERE `id` = ?', [
+        after.result.value?.messageId
+      ])
+    )[0]?.conversation_id,
+    before.result.value?.conversationId
+  );
+  const redial = await shape.fire(A, 'mica:server:phone:start', CAB.number);
+  check(`${kind}: 1 can still call the line it blocked`, to(redial.sent, ACCEPTED, A).length, 1);
+  await endLine('fake_cab', to(redial.sent, ACCEPTED, A)[0]?.args[0]?.callId);
+
+  step(`${kind}: a line registered blockable: false`);
+  check(
+    `${kind}: the cab registers it`,
+    await shape.runtime.callExport('fake_cab', 'RegisterNumber', CAB_UNBLOCKABLE, {
+      blockable: false,
+      onCall: () => ({ action: 'reject' })
+    }),
+    { ok: true }
+  );
+  check(
+    `${kind}: 1 blocks it`,
+    typeof (await shape.call(A, 'blocklist', 'create', { number: CAB_UNBLOCKABLE }))?.id,
+    'number'
+  );
+  const owner = await text('fake_cab', CAB_UNBLOCKABLE, 'Fare receipt');
+  check(
+    `${kind}: the owner's text is delivered and pushed anyway`,
+    [owner.result.value?.delivered, pushedTo(owner.sent, A)],
+    [true, ['Fare receipt']]
+  );
+  const borrowed = await text('fake_other', CAB_UNBLOCKABLE, 'Borrowed number');
+  check(
+    `${kind}: another resource sending as that number is still withheld`,
+    [outcome(borrowed.result), borrowed.result.value?.delivered, pushedTo(borrowed.sent, A)],
+    ['ok', false, []]
+  );
+};
+
+const TOW = { number: '5550333', label: 'Tow Desk' };
+
+/**
+ * MICA-275: a player texts a line, its `onMessage` is told who, what and where, and its
+ * `SendMessage` reply lands in the same thread and is pushed. A text in a thread with no line
+ * tells it nothing; an unregistered line keeps the text and tells nobody.
+ */
+const runLineText = async (shape, numbers, live) => {
+  const { kind } = shape;
+  const { A, B } = live;
+  const told = [];
+  check(
+    `${kind}: a tow company registers a line that reads texts`,
+    await shape.runtime.callExport('fake_cab', 'RegisterNumber', TOW.number, {
+      label: TOW.label,
+      onCall: () => ({ action: 'reject' }),
+      onMessage: (message) => told.push(message)
+    }),
+    { ok: true }
+  );
+
+  step(`${kind}: 2 texts the line`);
+  const thread = await shape.call(B, 'conversations', 'create', { phone: TOW.number });
+  check(`${kind}: the thread is created`, typeof thread?.id, 'number');
+  const mark = shape.runtime.sent.length;
+  const sent = await shape.call(B, 'messages', 'send', {
+    conversation_id: thread.id,
+    message: 'Flat tyre on Route 68'
+  });
+  check(`${kind}: the send answers the stored row`, typeof sent?.id, 'number');
+  check(`${kind}: onMessage is told once, with who, what and where`, told, [
+    {
+      to: TOW.number,
+      from: numbers[2],
+      source: B,
+      citizenid: shape.citizenOf(PEOPLE[2]),
+      body: 'Flat tyre on Route 68',
+      conversationId: thread.id,
+      messageId: sent.id
+    }
+  ]);
+  check(
+    `${kind}: and the player's own text is pushed to nobody`,
+    shape.runtime.since(mark, (m) => m.event === RECEIVED),
+    []
+  );
+
+  step(`${kind}: the line replies`);
+  const reply = await shape.invoke('fake_cab', 'SendMessage', told[0]?.citizenid, {
+    from: { number: TOW.number },
+    body: 'A truck is on its way'
+  });
+  check(
+    `${kind}: SendMessage lands in the same thread, delivered`,
+    [outcome(reply.result), reply.result.value?.conversationId, reply.result.value?.delivered],
+    ['ok', thread.id, true]
+  );
+  check(
+    `${kind}: pushed to 2 alone, in that thread`,
+    reply.sent
+      .filter((m) => m.event === RECEIVED)
+      .map((m) => [m.target, m.args[0].conversation_id, m.args[0].message]),
+    [[B, thread.id, 'A truck is on its way']]
+  );
+  const page = await shape.call(B, 'messages', 'get', { conversation_id: thread.id });
+  check(
+    `${kind}: 2 reads both in the thread, in the order sent`,
+    page?.rows?.map((m) => m.message),
+    ['Flat tyre on Route 68', 'A truck is on its way']
+  );
+
+  step(`${kind}: 2 texts 1 in their own thread`);
+  const players = await shape.call(B, 'conversations', 'create', { phone: numbers[1] });
+  const mark2 = shape.runtime.sent.length;
+  await shape.call(B, 'messages', 'send', {
+    conversation_id: players.id,
+    message: 'tow is coming'
+  });
+  check(
+    `${kind}: 1 is pushed it`,
+    shape.runtime.since(mark2, (m) => m.event === RECEIVED).map((m) => m.target),
+    [A]
+  );
+  check(`${kind}: and the line is told nothing`, told.length, 1);
+
+  step(`${kind}: the line goes away, and 2 texts it again`);
+  check(
+    `${kind}: the line is unregistered`,
+    await shape.runtime.callExport('fake_cab', 'UnregisterNumber', TOW.number),
+    { ok: true }
+  );
+  const orphan = await shape.call(B, 'messages', 'send', {
+    conversation_id: thread.id,
+    message: 'hello?'
+  });
+  check(`${kind}: the text is still written`, typeof orphan?.id, 'number');
+  check(`${kind}: and nobody is told`, told.length, 1);
+};
+
+/**
+ * MICA-223: `SendMessage` from a business to a player online (a row, and a push to that
+ * source alone) and offline (a row and no push). Nothing is queued: the player who comes back
+ * is pushed nothing for it and reads it from the thread, as the code says.
+ */
+const runSendMessage = async (shape, numbers, live) => {
+  const { kind } = shape;
+  const { A, B } = live;
+  const send = (citizenid, from, body) =>
+    shape.invoke('fake_bank', 'SendMessage', citizenid, { from, body });
+  const BANK = { name: 'Maze Bank' };
+
+  step(`${kind}: a bank texts 2, who is online`);
+  const online = await send(shape.citizenOf(PEOPLE[2]), BANK, 'Your statement is ready');
+  const value = online.result.value;
+  check(
+    `${kind}: SendMessage answers ok, delivered`,
+    [
+      outcome(online.result),
+      typeof value?.conversationId,
+      typeof value?.messageId,
+      value?.delivered
+    ],
+    ['ok', 'number', 'number', true]
+  );
+  check(
+    `${kind}: the row is 2's, marked as from the bank`,
+    (
+      await shape.rows(
+        'SELECT `citizenid`, `conversation_id`, `external_sender` FROM `mica_messages` WHERE `id` = ?',
+        [value?.messageId]
+      )
+    )[0],
+    {
+      citizenid: shape.citizenOf(PEOPLE[2]),
+      conversation_id: value?.conversationId,
+      external_sender: BANK.name
+    }
+  );
+  check(
+    `${kind}: pushed to 2 alone, named as the bank`,
+    online.sent
+      .filter((m) => m.event === RECEIVED)
+      .map((m) => [m.target, m.args[0].senderName, m.args[0].message]),
+    [[B, BANK.name, 'Your statement is ready']]
+  );
+  const second = await send(shape.citizenOf(PEOPLE[2]), BANK, 'Payment received');
+  check(
+    `${kind}: a second text from the bank is in the same thread`,
+    second.result.value?.conversationId,
+    value?.conversationId
+  );
+  const outsider = await shape.call(A, 'messages', 'get', {
+    conversation_id: value?.conversationId
+  });
+  check(`${kind}: 1 cannot read 2's thread with the bank`, outsider?.rows, undefined);
+
+  step(`${kind}: SendMessage refuses what it must`);
+  check(
+    `${kind}: a number a character holds is number_in_use`,
+    outcome((await send(shape.citizenOf(PEOPLE[2]), { number: numbers[1] }, 'hi')).result),
+    'number_in_use'
+  );
+  check(
+    `${kind}: a citizenid nobody has is unknown_player`,
+    outcome((await send('NOT_A_CITIZEN', BANK, 'hi')).result),
+    'unknown_player'
+  );
+
+  step(`${kind}: 4 disconnects, and the bank texts them`);
+  await shape.disconnect(live.D);
+  const before = shape.runtime.sent.length;
+  const offline = await send(
+    shape.citizenOf(PEOPLE[4]),
+    { name: 'Maze Bank', number: '5550800' },
+    'Overdraft notice'
+  );
+  check(
+    `${kind}: SendMessage answers ok, not delivered`,
+    [outcome(offline.result), offline.result.value?.delivered],
+    ['ok', false]
+  );
+  check(
+    `${kind}: the row is written, 4's`,
+    (
+      await shape.rows('SELECT `citizenid` FROM `mica_messages` WHERE `id` = ?', [
+        offline.result.value?.messageId
+      ])
+    )[0]?.citizenid,
+    shape.citizenOf(PEOPLE[4])
+  );
+  check(
+    `${kind}: and nothing is pushed to anyone`,
+    shape.runtime.since(before, (m) => m.event === RECEIVED),
+    []
+  );
+
+  step(`${kind}: 4 comes back as source 6`);
+  const back = await shape.connect(6, PEOPLE[4]);
+  live.D = 6;
+  check(`${kind}: nothing queued is pushed on connect`, to(back, RECEIVED, 6), []);
+  const page = await shape.call(6, 'messages', 'get', {
+    conversation_id: offline.result.value?.conversationId
+  });
+  check(
+    `${kind}: 4 reads it in the thread`,
+    page?.rows?.map((m) => m.message),
+    ['Overdraft notice']
+  );
+};
+
+const QB_MAIL = {
+  sender: 'Los Santos Customs',
+  subject: 'Your car is ready',
+  message: 'Pick it up at the garage.'
+};
+
+/**
+ * MICA-222: qb-phone's mail events, answered unmodified. `sendNewMail` is a net event and
+ * mails only its own source; `sendNewMailToOffline` names a citizenid, so a client cannot
+ * raise it and a server script can. Registered whatever the framework, so it runs on both
+ * shapes. qb-phone's `CustomNotification` is a client event and has no server half here.
+ */
+const runQbMail = async (shape, live) => {
+  const { kind } = shape;
+  const { A, B } = live;
+  const D = live.D;
+  const mailOf = async (person) =>
+    await shape.rows(
+      'SELECT `sender`, `subject` FROM `mica_mail` WHERE `citizenid` = ? ORDER BY `id`',
+      [shape.citizenOf(person)]
+    );
+  const total = async () => (await shape.rows('SELECT COUNT(*) AS n FROM `mica_mail`'))[0].n;
+
+  step(`${kind}: a qb script fires sendNewMail as 2`);
+  const sent = await shape.fire(B, 'qb-phone:server:sendNewMail', QB_MAIL);
+  check(`${kind}: micaOS answers it`, sent.ran, 1);
+  check(`${kind}: the mail is 2's`, await mailOf(PEOPLE[2]), [
+    { sender: QB_MAIL.sender, subject: QB_MAIL.subject }
+  ]);
+  check(
+    `${kind}: 2 reads the body qb called message`,
+    (await shape.call(B, 'mail', 'getMail')).map((m) => m.content),
+    [QB_MAIL.message]
+  );
+  check(`${kind}: 1 has none of it`, await shape.call(A, 'mail', 'getMail'), []);
+  check(
+    `${kind}: 2's phone is told, and nobody else's`,
+    sent.sent.map((m) => [m.target, m.event, m.args[0]?.app ?? null]),
+    [
+      [B, 'mica:client:mail:receive', null],
+      [B, APP_EVENT, 'mail']
+    ]
+  );
+
+  step(`${kind}: payloads it must not deliver`);
+  const count = await total();
+  const noSubject = await shape.fire(B, 'qb-phone:server:sendNewMail', {
+    sender: 'x',
+    message: 'y'
+  });
+  check(
+    `${kind}: one with no subject writes nothing and sends nothing`,
+    [await total(), events(noSubject.sent)],
+    [count, []]
+  );
+  const nobody = await shape.fire(NOBODY, 'qb-phone:server:sendNewMail', QB_MAIL);
+  check(
+    `${kind}: one from a source nobody can name writes nothing`,
+    [await total(), events(nobody.sent)],
+    [count, []]
+  );
+  const forged = await shape.fire(
+    B,
+    'qb-phone:server:sendNewMailToOffline',
+    shape.citizenOf(PEOPLE[1]),
+    QB_MAIL
+  );
+  check(
+    `${kind}: a client cannot raise sendNewMailToOffline`,
+    [forged.ran, await total()],
+    [0, count]
+  );
+
+  step(`${kind}: a server script raises sendNewMailToOffline for 4`);
+  const local = await shape.raise(() =>
+    shape.runtime.local('qb-phone:server:sendNewMailToOffline', shape.citizenOf(PEOPLE[4]), {
+      ...QB_MAIL,
+      subject: 'Invoice overdue'
+    })
+  );
+  check(`${kind}: the mail is 4's`, await mailOf(PEOPLE[4]), [
+    { sender: QB_MAIL.sender, subject: 'Invoice overdue' }
+  ]);
+  check(`${kind}: and 4, online, is told`, to(local, 'mica:client:mail:receive', D).length, 1);
+};
+
+/**
+ * MICA-168: a player's export is their own rows, and their delete removes them while another
+ * player's — including their messages in a thread the deleter started — stay as they were.
+ * Last, because it deletes 1's data.
+ */
+const runPrivacy = async (shape, live) => {
+  const { kind } = shape;
+  const { A, B } = live;
+  const OWNED = ['mica_settings', 'mica_contacts', 'mica_phone_call_log', 'mica_messages'];
+  const counts = async (person) => {
+    const out = {};
+    for (const table of OWNED) {
+      out[table] = (
+        await shape.rows(`SELECT COUNT(*) AS n FROM \`${table}\` WHERE \`citizenid\` = ?`, [
+          shape.citizenOf(person)
+        ])
+      )[0].n;
+    }
+    return out;
+  };
+  const exported = (result) =>
+    Object.fromEntries(
+      OWNED.map((table) => [
+        table,
+        result?.categories?.find((c) => c.category === table.replace(/^mica_/, ''))?.rows?.length
+      ])
+    );
+  const clock = (result) =>
+    result?.categories
+      ?.find((c) => c.category === 'settings')
+      ?.rows?.filter((row) => row.app === 'clock' && row.setting_key === 'format')
+      .map((row) => row.setting_value);
+
+  step(`${kind}: 1 and 2 export their data`);
+  const aRows = await counts(PEOPLE[1]);
+  const bRows = await counts(PEOPLE[2]);
+  check(
+    `${kind}: 1 has rows in every table checked`,
+    Object.values(aRows).every((n) => n > 0),
+    true
+  );
+  const aExport = await shape.call(A, 'privacy', 'export');
+  const bExport = await shape.call(B, 'privacy', 'export');
+  check(`${kind}: 1's export holds exactly 1's rows`, exported(aExport), aRows);
+  check(`${kind}: 2's export holds exactly 2's rows`, exported(bExport), bRows);
+  check(`${kind}: 1's export has 1's clock setting`, clock(aExport), ['"24h"']);
+  check(`${kind}: 2's export does not`, clock(bExport), []);
+
+  step(`${kind}: 1 deletes their data`);
+  const typo = await shape.call(A, 'privacy', 'delete', { confirm: 'delete' });
+  check(
+    `${kind}: the wrong word is refused, and deletes nothing`,
+    [typo?.key, await counts(PEOPLE[1])],
+    ['server.privacy.confirmRequired', aRows]
+  );
+  const numberBefore = await shape.numberOf(PEOPLE[1]);
+  const deleted = await shape.call(A, 'privacy', 'delete', { confirm: 'DELETE' });
+  check(`${kind}: the delete completes`, [deleted?.complete, deleted?.failed], [true, []]);
+  const aAfter = await counts(PEOPLE[1]);
+  check(
+    `${kind}: 1's settings, contacts and call log are gone`,
+    [aAfter.mica_settings, aAfter.mica_contacts, aAfter.mica_phone_call_log],
+    [0, 0, 0]
+  );
+  check(
+    `${kind}: 1 keeps the phone number, which is the device's`,
+    await shape.numberOf(PEOPLE[1]),
+    numberBefore
+  );
+  check(`${kind}: 2's rows are untouched`, await counts(PEOPLE[2]), bRows);
+  const shared = (
+    await shape.rows(
+      'SELECT `conversation_id` FROM `mica_messages` WHERE `citizenid` = ? AND `message` IS NOT NULL AND `external_sender` IS NULL ORDER BY `id` LIMIT 1',
+      [shape.citizenOf(PEOPLE[2])]
+    )
+  )[0]?.conversation_id;
+  const page = await shape.call(B, 'messages', 'get', { conversation_id: shared });
+  check(
+    `${kind}: 2 still reads their own texts in the thread 1 started`,
+    page?.rows?.map((m) => m.message).filter((m) => m === 'are you there'),
+    ['are you there']
+  );
+  check(
+    `${kind}: 1's export now has no clock setting`,
+    clock(await shape.call(A, 'privacy', 'export')),
+    []
+  );
+  check(
+    `${kind}: a second delete within the hour is refused`,
+    (await shape.call(A, 'privacy', 'delete', { confirm: 'DELETE' }))?.key,
+    'server.privacy.deleteTooSoon'
+  );
+};
+
 /* ------------------------------------------------------------------ main */
 
 /** One flow, held to its own floor. */
@@ -1064,6 +1842,15 @@ const runShape = async (db, kind) => {
     await flow(shape, 'invoice', () => runInvoice(shape));
     await flow(shape, 'refusals', () => runRefusals(shape, numbers));
     await flow(shape, 'reconnect', () => runReconnect(shape, numbers));
+    // 1's person is source 5 from the reconnect on.
+    const live = { A: 5, B: 2, D: 4 };
+    await flow(shape, 'createCall', () => runCreateCall(shape, numbers, live));
+    await flow(shape, 'micacall', () => runMicacall(shape, live));
+    await flow(shape, 'lineCall', () => runLineCall(shape, numbers, live));
+    await flow(shape, 'lineText', () => runLineText(shape, numbers, live));
+    await flow(shape, 'sendMessage', () => runSendMessage(shape, numbers, live));
+    await flow(shape, 'qbMail', () => runQbMail(shape, live));
+    await flow(shape, 'privacy', () => runPrivacy(shape, live));
   } finally {
     await shape.stop();
   }

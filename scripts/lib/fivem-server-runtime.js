@@ -29,6 +29,9 @@ import path from 'path';
  * - Players are a table of sources, each with a name and a list of identifiers, read through
  *   the natives the standalone bridge uses (`GetPlayerIdentifierByType`, the numbered
  *   identifiers, `DoesPlayerExist`, `GetNumPlayerIndices`/`GetPlayerFromIndex`).
+ * - Aces: nobody holds one until `grantAce` gives it to a source, so an admin-gated command
+ *   (`micacall`) is refused to everyone else. `command` runs a `RegisterCommand` handler as a
+ *   player typing it in game would.
  *
  * **What is not:** the event loop's scheduling, msgpack's exact encoding, cross-resource
  * function references (an export handed a function gets the function), voice, entities and
@@ -55,6 +58,8 @@ export const createRuntime = ({ root, resourceName = 'mica', convars = {}, resou
   const intervals = new Set();
   const timeouts = new Map();
   const convarValues = { ...convars };
+  /** src -> the aces granted to that player. Nobody holds any until `grantAce`. */
+  const aces = new Map();
   let invoking = null;
 
   const register = (event, fn) => {
@@ -131,7 +136,7 @@ export const createRuntime = ({ root, resourceName = 'mica', convars = {}, resou
       const parsed = Number.parseInt(convarValues[name], 10);
       return Number.isFinite(parsed) ? parsed : fallback;
     },
-    IsPlayerAceAllowed: () => false,
+    IsPlayerAceAllowed: (src, ace) => aces.get(Number(src))?.has(ace) ?? false,
     GetPlayerName: (src) => players.get(Number(src))?.name ?? null,
     DoesPlayerExist: (src) => players.has(Number(src)),
     GetPlayerIdentifierByType: (src, type) =>
@@ -233,6 +238,23 @@ export const createRuntime = ({ root, resourceName = 'mica', convars = {}, resou
 
     removePlayer(src) {
       players.delete(src);
+      aces.delete(src);
+    },
+
+    /** `add_ace` for one player: `IsPlayerAceAllowed(src, ace)` answers true from now on. */
+    grantAce(src, ace) {
+      if (!aces.has(src)) aces.set(src, new Set());
+      aces.get(src).add(ace);
+    },
+
+    /**
+     * A player typing a console command in game: FXServer calls the `RegisterCommand`
+     * handler with their server id and the space-split arguments. Answers what it returned.
+     */
+    command: async (src, name, args = []) => {
+      const fn = commands.get(name);
+      if (!fn) throw new Error(`command '${name}' was never registered`);
+      return await fn(src, wire(args), [name, ...args].join(' '));
     },
 
     /**

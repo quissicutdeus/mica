@@ -23,3 +23,7 @@ line here.
   — re-blocking an unblocked number fails; `test:endpoints` found it
 - [A "does not see it" check passes on a wrong filter](negative-check-needs-a-positive-twin.md)
   — pair every negative row or push assertion with a positive one
+- [A thread page is the newest window, in send order](thread-page-is-newest-window-in-send-order.md)
+  — `messages:get` rows are reversed; not newest first
+- [Break-to-prove needs the file in your fence](break-to-prove-needs-the-file-in-fence.md)
+  — a harness lane cannot run against edited `server/`; report the gap
