@@ -34,6 +34,7 @@ export const exportScenarios: Scenario[] = [
     // own number table, both ways, and say `offline` rather than `unknown_player` for a number a
     // character holds while away.
     id: 'exports-directory-lookups-for-an-offline-character',
+    mode: 'standalone',
     tickets: ['MICA-223', 'MICA-232'],
     run: async () => {
       const who = await seedCitizen('dir');
@@ -60,6 +61,7 @@ export const exportScenarios: Scenario[] = [
     // name nor number, an empty body, and above all a `from.number` a character holds, which
     // would put words in a player's mouth.
     id: 'exports-send-message-refusals',
+    mode: 'standalone',
     tickets: ['MICA-223'],
     run: async () => {
       const to = await seedCitizen('refuse_to');
@@ -87,6 +89,7 @@ export const exportScenarios: Scenario[] = [
     // MICA-226, MICA-275 (server half): a resource owns a line, texts from it into a thread that
     // is sealed like any other, and releases it; the registry refuses what it must.
     id: 'exports-registered-line-sends-and-releases',
+    mode: 'standalone',
     tickets: ['MICA-226', 'MICA-275', 'MICA-223'],
     run: async () => {
       const to = await seedCitizen('line_to');
@@ -135,6 +138,7 @@ export const exportScenarios: Scenario[] = [
     // resource as read before the export's first await, sets an expiry, and persists the
     // notification; the bill list (the bank's read) is that row. Refusals are refused unwritten.
     id: 'exports-send-invoice-creates-a-listed-bill',
+    mode: 'standalone',
     tickets: ['MICA-240'],
     run: async (signal) => {
       const payer = await seedCitizen('bill_to');
@@ -203,6 +207,7 @@ export const exportScenarios: Scenario[] = [
     // writes — a contact, a media item, a notification under an `ext_` group — land as rows for
     // an offline character, and unsafe input is refused.
     id: 'exports-offline-writes-land-for-an-offline-character',
+    mode: 'standalone',
     tickets: [],
     run: async (signal) => {
       const who = await seedCitizen('writes');
@@ -260,6 +265,7 @@ export const exportScenarios: Scenario[] = [
     // No ticket: the signal exports predate the MICA project. The global level and dead zones
     // are server state an export sets and clears with no player present.
     id: 'exports-signal-levels-and-dead-zones',
+    mode: 'standalone',
     tickets: [],
     run: async () => {
       await expectOk('SetGlobalSignal', 1);
@@ -275,6 +281,7 @@ export const exportScenarios: Scenario[] = [
     // MICA-224, MICA-232, MICA-263: every source-keyed export refuses a source nobody holds
     // with a reason a caller can branch on — never `ok`, never `internal_error`, never a throw.
     id: 'exports-source-keyed-refuse-an-absent-player',
+    mode: 'standalone',
     tickets: ['MICA-224', 'MICA-232', 'MICA-263'],
     run: async () => {
       const calls: [string, unknown[]][] = [

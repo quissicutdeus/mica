@@ -211,6 +211,51 @@ describe.skipIf(!usable)('run-checked.sh', () => {
     expect(r.stdout).toContain('zip bytes here');
   });
 
+  /**
+   * MICA-304. A wrapper edited to leave a run out and then reinstalled has a current hash and
+   * exits 0. The workflow names the lines a full run prints, and a run without one is red.
+   */
+  describe('RUN_CHECKED_REQUIRE', () => {
+    const REQUIRE =
+      '[standalone mode] integration suite passed\n[qbx mode] integration suite passed';
+    const both = `echo '${line(GOOD)}'; echo 'smoke: [standalone mode] integration suite passed -- 3'; echo 'smoke: [qbx mode] integration suite passed -- 6'`;
+    const withRequire = (command: string[], required: string) =>
+      spawnSync('sh', [RUN, NAME, ...command], {
+        encoding: 'utf8',
+        env: { ...process.env, RUN_CHECKED_REQUIRE: required }
+      });
+
+    it('passes when every required line is in the output, and is no check when unset', () => {
+      expect(withRequire(session(both), REQUIRE).status).toBe(0);
+      expect(withRequire(session(both), '').status).toBe(0);
+      expect(run(NAME, session(`echo '${line(GOOD)}'`)).status).toBe(0);
+    });
+
+    it('fails a run that exited 0 and the identity check passed, when one required line is missing', () => {
+      const r = withRequire(
+        session(
+          `echo '${line(GOOD)}'; echo 'smoke: [standalone mode] integration suite passed -- 3'`
+        ),
+        REQUIRE
+      );
+      expect(r.status).toBe(1);
+      expect(`${r.stdout}${r.stderr}`).toContain(
+        'the output never said `[qbx mode] integration suite passed`'
+      );
+      expect(`${r.stdout}${r.stderr}`).not.toContain('never said `[standalone mode]');
+    });
+
+    it('fails when none of the required lines is there', () => {
+      const r = withRequire(session(`echo '${line(GOOD)}'`), REQUIRE);
+      expect(r.status).toBe(1);
+    });
+
+    it('keeps the command failure and the stale line ahead of it', () => {
+      expect(withRequire(session(`echo '${line(GOOD)}'; exit 7`), REQUIRE).status).toBe(7);
+      expect(withRequire(session(`echo '${line(STALE)}'`), REQUIRE).status).toBe(1);
+    });
+  });
+
   it('refuses without a wrapper and a command, and for a wrapper it cannot hash', () => {
     expect(spawnSync('sh', [RUN, NAME], { encoding: 'utf8' }).status).toBe(2);
     expect(spawnSync('sh', [RUN], { encoding: 'utf8' }).status).toBe(2);

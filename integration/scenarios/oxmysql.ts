@@ -43,6 +43,7 @@ const until = async (state: { done: boolean }, ms: number): Promise<void> => {
 export const oxmysqlScenarios: Scenario[] = [
   {
     id: 'oxmysql-transaction-async-answers-on-an-idle-server',
+    mode: 'standalone',
     tickets: ['MICA-233'],
     timeoutMs: FIRST_WAIT_MS + NUDGED_WAIT_MS + 10_000,
     run: async () => {

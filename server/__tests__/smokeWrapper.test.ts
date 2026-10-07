@@ -22,6 +22,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { QBX_SEED } from '../../integration/lib/qbxSeed';
 import { PROBE, canRun, holdLock, holderLine, lockHeld, trialMissing } from './wrapperHarness';
 
 /**
@@ -53,10 +54,13 @@ const WRAPPER = join(ROOT, 'scripts/deploy/mica-smoke-release.sh');
 const trial = canRun(trialMissing(), 'the smoke wrapper tests');
 
 /**
- * Records every call, and answers the few the wrapper makes. FAKE_LOGS is the console. When
- * the FXServer container is started it copies what is mounted as server-data to FAKE_SD, since
- * the wrapper removes its staging directory on the way out and the test must still see the
- * config and the keyring it built.
+ * Records every call, and answers the few the wrapper makes. FAKE_LOGS is the console of the
+ * standalone or release run's FXServer and FAKE_LOGS_QBX the qbx run's (told apart by the
+ * container's name, which carries the run). When an FXServer container is started it copies what
+ * is mounted as server-data to FAKE_SD (FAKE_SD_QBX for the qbx run), since the wrapper removes
+ * its staging directory on the way out and the test must still see the config and the keyring it
+ * built. Everything sent to a database on stdin (the import, the seed) is kept, in order, in
+ * $FAKE_CALLS.stdin.
  */
 const FAKE_DOCKER = `#!/bin/sh
 echo "$*" >>"$FAKE_CALLS"
@@ -97,21 +101,33 @@ case "$1" in
     run)
         case "$*" in
             *" -d -i "*)
+                dest=$FAKE_SD
+                case "$*" in
+                    *"--name mica-smoke-fx-qbx-"*) dest=$FAKE_SD_QBX ;;
+                esac
                 for a in "$@"; do
                     case "$a" in
-                        *:/opt/fivem/server-data) cp -a "\${a%%:*}/." "$FAKE_SD/" ;;
+                        *:/opt/fivem/server-data) cp -a "\${a%%:*}/." "$dest/" ;;
                     esac
                 done
                 ;;
         esac
         exit 0
         ;;
-    logs) cat "$FAKE_LOGS" ;;
+    logs)
+        case "$2" in
+            mica-smoke-fx-qbx-*) cat "$FAKE_LOGS_QBX" ;;
+            *) cat "$FAKE_LOGS" ;;
+        esac
+        ;;
     inspect) echo "$FAKE_RUNNING" ;;
     exec)
         case "$*" in
+            *"table_name='players'"*) echo 1 ;;
+            *"from players"*) echo "$FAKE_SEEDED" ;;
+            *"like 'mica"*) echo "$FAKE_QBX_TABLES" ;;
             *"count(*)"*) echo "$FAKE_TABLES" ;;
-            *"-i "*) cat >/dev/null ;;
+            *"-i "*) cat >>"$FAKE_CALLS.stdin" ;;
         esac
         ;;
 esac
@@ -127,10 +143,29 @@ const STARTED = 'Started resource mica\nmica started!';
 const CREATED =
   "[mica] created micaOS's schema for ESX or standalone (citizenid 60 wide): 38 tables, 10 migration(s) recorded as applied.";
 
+/** The same, on a qbx server (MICA-304), and the bridge line micaOS prints beside qbx_core. */
+const CREATED_QBX =
+  "[mica] created micaOS's schema for qbx/qb (citizenid 50 wide): 38 tables, 10 migration(s) recorded as applied.";
+const BRIDGE_QBX = 'mica: jobs -> qbx_core PlayerData.jobs + GetJob';
+
+/**
+ * The scenarios that belong to the qbx run, which the standalone run must print a SKIP line for.
+ * The ids a standalone console passes are the ones each case writes, and are skipped by qbx.
+ */
+const QBX_IDS = ['qbx-one', 'qbx-two'];
+
+const SQL_MARKER = '-- qbx_core.sql stand-in';
+
+/** Directories of the host the wrapper mounts as they are, read-only; every other mount is staged. */
+let hostResources: string[] = [];
+
 let dir: string;
 let root: string;
 let stageRoot: string;
 let oxmysql: string;
+let oxLib: string;
+let qbxCore: string;
+let oxInventory: string;
 let envFile: string;
 let bin: string;
 let victim: string;
@@ -143,14 +178,22 @@ beforeAll(() => {
   root = join(dir, 'root');
   stageRoot = join(dir, 'stage');
   oxmysql = join(dir, 'oxmysql');
+  // Beside oxmysql, as on hoth: the wrapper looks for them there unless its env file says not.
+  oxLib = join(dir, 'ox_lib');
+  qbxCore = join(dir, 'qbx_core');
+  oxInventory = join(dir, 'ox_inventory');
   envFile = join(dir, 'settings');
   bin = join(dir, 'bin');
   victim = join(dir, 'victim');
   victimDir = join(dir, 'victim-dir');
   mkdirSync(root);
-  mkdirSync(oxmysql);
   mkdirSync(bin);
-  writeFileSync(join(oxmysql, 'fxmanifest.lua'), '');
+  for (const resource of [oxmysql, oxLib, qbxCore, oxInventory]) {
+    mkdirSync(resource);
+    writeFileSync(join(resource, 'fxmanifest.lua'), '');
+  }
+  writeFileSync(join(qbxCore, 'qbx_core.sql'), `${SQL_MARKER}\n`);
+  hostResources = [oxmysql, oxLib, qbxCore, oxInventory];
   writeFileSync(envFile, `LICENSE_KEY=not-a-real-key\nOXMYSQL_DIR=${oxmysql}\n`);
   writeFileSync(join(bin, 'docker'), FAKE_DOCKER);
   chmodSync(join(bin, 'docker'), 0o755);
@@ -191,17 +234,40 @@ const tree = (path: string): string =>
     .sort()
     .join('\n');
 
-const idsIn = (logs: string): string[] =>
-  [...logs.matchAll(/integration: PASS (\S+)/g)].map((m) => m[1]);
+/** The scenarios a standalone console ran, from its PASS and FAIL lines; one if it names none. */
+const idsIn = (logs: string): string[] => {
+  const ids = [...logs.matchAll(/integration: (?:PASS|FAIL) ([a-z0-9-]+)/g)].map((m) => m[1]);
+  return ids.length > 0 ? ids : ['a'];
+};
+
+/** The format of `expected-scenarios.txt` (scripts/pack-integration.js): every scenario, in both runs. */
+const expectedText = (standalone: string[], qbx: string[] = QBX_IDS) =>
+  [
+    ...standalone.map((id) => `standalone pass ${id}`),
+    ...qbx.map((id) => `standalone skip ${id}`),
+    ...qbx.map((id) => `qbx pass ${id}`),
+    ...standalone.map((id) => `qbx skip ${id}`)
+  ].join('\n') + '\n';
 
 interface WrapOptions {
   running?: string;
-  /** The scenario ids the zip was packed with. Default: the ones the console passes. */
-  expected?: string[] | 'none';
+  /**
+   * The standalone scenario ids the zip was packed with (the qbx ones are QBX_IDS), or the whole
+   * text of the list, or none at all. Default: the ids the standalone console runs.
+   */
+  expected?: string[] | 'none' | { text: string };
+  /** The qbx run's console. Default: a passing one that skips what the standalone console ran. */
+  qbxLogs?: string;
   /** Swap names in the run directory for symlinks to the victim once the wrapper is under way. */
   swap?: boolean;
   /** Tables the stand-in database holds when the wrapper counts them. Default: what the mode leaves. */
   tables?: number;
+  /** micaOS tables the stand-in qbx database holds when the wrapper counts them. Default: none. */
+  qbxTables?: number;
+  /** What the stand-in answers when asked whether the qbx character is in `players`. Default: 1. */
+  seeded?: number;
+  /** The settings file. Default: one naming the stand-in oxmysql, with the rest beside it. */
+  env?: string;
   /** A docker call to fail: any call whose arguments contain this text. */
   fail?: string;
   /** A docker call to hang on for thirty seconds, so a signal can reach the wrapper mid-run. */
@@ -219,67 +285,133 @@ const prepare = (run: string, logs: string, options: WrapOptions) => {
   const { running = 'false', expected, swap = false, tables, fail = '', hang = '' } = options;
   const lock = options.lock ?? join(dir, `lock${++lockCounter}`);
   const logFile = `${run}.log`;
+  const qbxLogFile = `${run}.qbx.log`;
   const calls = `${run}.calls`;
   const probe = `${run}.probe`;
   const sdCopy = `${run}.sd`;
+  const sdQbx = `${run}.sd-qbx`;
   writeFileSync(logFile, logs);
+  writeFileSync(qbxLogFile, options.qbxLogs ?? qbxSuite(idsIn(logs)));
   writeFileSync(calls, '');
   writeFileSync(probe, '');
   mkdirSync(sdCopy);
+  mkdirSync(sdQbx);
   const integ = join(run, 'resources/mica-integration');
   // An integration run starts on an empty database; a release run has just imported the file.
   const tableCount = tables ?? (existsSync(integ) ? 0 : 7);
   if (existsSync(join(integ, 'fxmanifest.lua')) && expected !== 'none') {
-    writeFileSync(
-      join(integ, 'expected-scenarios.txt'),
-      `${(expected ?? idsIn(logs)).join('\n')}\n`
-    );
+    const text =
+      typeof expected === 'object' && !Array.isArray(expected)
+        ? expected.text
+        : expectedText(expected ?? idsIn(logs));
+    writeFileSync(join(integ, 'expected-scenarios.txt'), text);
   }
   const env = {
     PATH: `${bin}:${process.env.PATH}`,
     MICA_SMOKE_ROOT: root,
-    MICA_SMOKE_ENV: envFile,
+    MICA_SMOKE_ENV: options.env ?? envFile,
     MICA_SMOKE_STAGE: stageRoot,
     MICA_HOTH_LOCK: lock,
     MICA_HOTH_LOCK_TIMEOUT: String(options.lockTimeout ?? 600),
     MICA_SMOKE_SETTLE: '0',
     MICA_SMOKE_INTEGRATION_TIMEOUT: '3',
     FAKE_LOGS: logFile,
+    FAKE_LOGS_QBX: qbxLogFile,
     FAKE_CALLS: calls,
     FAKE_PROBE: probe,
     FAKE_LOCK: lock,
     FAKE_FAIL: fail,
     FAKE_HANG: hang,
     FAKE_SD: sdCopy,
+    FAKE_SD_QBX: sdQbx,
     FAKE_RUNNING: running,
     FAKE_TABLES: String(tableCount),
+    FAKE_QBX_TABLES: String(options.qbxTables ?? 0),
+    FAKE_SEEDED: String(options.seeded ?? 1),
     FAKE_SWAP_RUN: swap ? run : '',
     FAKE_VICTIM: victim,
     FAKE_VICTIM_DIR: victimDir
   };
-  return { env, calls, probe, sdCopy, lock };
+  return { env, calls, probe, sdCopy, sdQbx, lock };
 };
 
 const wrap = (run: string, logs: string, options: WrapOptions = {}) => {
-  const { env, calls, probe, sdCopy, lock } = prepare(run, logs, options);
+  const { env, calls, probe, sdCopy, sdQbx, lock } = prepare(run, logs, options);
   const result = spawnSync('bash', [WRAPPER, run], { encoding: 'utf8', env, timeout: 60_000 });
   const cfgPath = join(sdCopy, 'server.cfg');
+  const qbxCfgPath = join(sdQbx, 'server.cfg');
+  const stdinPath = `${calls}.stdin`;
   return {
     status: result.status,
     stdout: result.stdout,
     out: `${result.stdout}${result.stderr}`,
     calls: readFileSync(calls, 'utf8'),
+    /** What was sent to a database on stdin, in order: the imports, then the seed. */
+    stdin: existsSync(stdinPath) ? readFileSync(stdinPath, 'utf8') : '',
     probes: readFileSync(probe, 'utf8').split('\n').filter(Boolean),
     lock,
     sd: sdCopy,
     cfg: existsSync(cfgPath) ? readFileSync(cfgPath, 'utf8') : '',
+    qbxCfg: existsSync(qbxCfgPath) ? readFileSync(qbxCfgPath, 'utf8') : '',
     keyPath: join(sdCopy, 'resources/mica-keys/mica-content.key'),
+    qbxKeyPath: join(sdQbx, 'resources/mica-keys/mica-content.key'),
     staged: existsSync(stageRoot) ? readdirSync(stageRoot) : []
   };
 };
 
-const suite = (lines: string[], { created = true }: { created?: boolean } = {}) =>
-  [STARTED, ...(created ? [CREATED] : []), ...lines].join('\n') + '\n';
+/** The SKIP line the suite prints for a scenario that is the other run's. */
+const skipLine = (id: string, run: 'standalone' | 'qbx') =>
+  `integration: SKIP ${id}: needs a ${run === 'qbx' ? 'standalone' : 'qbx'} run, and this is the ${run} run`;
+
+/**
+ * The standalone run's console, or a release run's. The suite's own lines are as the suite prints
+ * them: its mode, a SKIP for every qbx scenario, then `lines`.
+ */
+const suite = (
+  lines: string[],
+  { created = true, mode = true }: { created?: boolean; mode?: boolean } = {}
+) =>
+  [
+    STARTED,
+    ...(created ? [CREATED] : []),
+    ...(mode ? ['integration: mode standalone'] : []),
+    ...QBX_IDS.map((id) => skipLine(id, 'standalone')),
+    ...lines
+  ].join('\n') + '\n';
+
+/**
+ * The qbx run's console: micaOS's two lines, the suite's mode, every standalone scenario
+ * skipped, the qbx ones passed. Each part can be taken out to show the wrapper noticing.
+ */
+const qbxSuite = (
+  standalone: string[],
+  {
+    created = true,
+    bridge = true,
+    mode = true,
+    skips = standalone,
+    passes = QBX_IDS,
+    extra = []
+  }: {
+    created?: boolean;
+    bridge?: boolean;
+    mode?: boolean;
+    skips?: string[];
+    passes?: string[];
+    extra?: string[];
+  } = {}
+) =>
+  [
+    STARTED,
+    ...(bridge ? [BRIDGE_QBX] : []),
+    ...(created ? [CREATED_QBX] : []),
+    ...(mode ? ['integration: mode qbx'] : []),
+    ...skips.map((id) => skipLine(id, 'qbx')),
+    ...passes.map((id) => `integration: PASS ${id}`),
+    ...extra,
+    `integration: done ${passes.length} passed 0 failed`
+  ].join('\n') + '\n';
+
 const PASS_A = ['integration: PASS a', 'integration: done 1 passed 0 failed'];
 
 const victimUntouched = () => {
@@ -334,9 +466,11 @@ describe.skipIf(!trial)('mica-smoke-release.sh', () => {
       const r = wrap(run, suite(PASS_A));
 
       expect(r.status, r.out).toBe(0);
-      expect(r.calls).not.toMatch(/^exec -i /m);
+      // Nothing goes into the standalone run's database: not the zip's file, not qbx's.
+      expect(r.calls).not.toMatch(/^exec -i mica-smoke-db-standalone-/m);
       expect(r.out).toContain('nothing imported');
       expect(r.cfg).toContain('set mica_integration_schema "bootstrap"');
+      expect(r.cfg).toContain('set mica_integration_mode "standalone"');
     });
 
     it('fails when the console never says micaOS created the schema, though every scenario passed', () => {
@@ -363,7 +497,7 @@ describe.skipIf(!trial)('mica-smoke-release.sh', () => {
       const mounts = [...r.calls.matchAll(/-v (\S+?):\/opt\/fivem\/server-data/g)].map((m) => m[1]);
       expect(mounts.length).toBeGreaterThan(0);
       for (const source of mounts) {
-        if (source === oxmysql) continue;
+        if (hostResources.includes(source)) continue;
         expect(source.startsWith(`${stageRoot}/`), source).toBe(true);
       }
     });
@@ -543,6 +677,354 @@ describe.skipIf(!trial)('mica-smoke-release.sh', () => {
     });
   });
 
+  /**
+   * MICA-304. An integration zip is run twice by one invocation, standalone and then qbx, and
+   * there is nothing to choose between them: a qbx pass that could quietly not happen would be
+   * the whole of what this adds, undone. Each case below is a way it could, or a way the stack
+   * could be set up wrong, and the wrapper has to say which run it was and fail.
+   */
+  describe('qbx mode', () => {
+    const oneLine = (r: { calls: string }, start: RegExp) =>
+      r.calls.split('\n').findIndex((line) => start.test(line));
+
+    it('runs standalone and then qbx, each on a network, database and server of its own', () => {
+      const r = wrap(makeRun('manifest'), suite(PASS_A));
+
+      expect(r.status, r.out).toBe(0);
+      const order = [
+        /^network create mica-smoke-standalone-/,
+        /^run -d --name mica-smoke-db-standalone-/,
+        /^run -d -i --name mica-smoke-fx-standalone-/,
+        /^rm -f mica-smoke-fx-standalone-\S+ mica-smoke-db-standalone-/,
+        /^network rm mica-smoke-standalone-/,
+        /^network create mica-smoke-qbx-/,
+        /^run -d --name mica-smoke-db-qbx-/,
+        /^run -d -i --name mica-smoke-fx-qbx-/,
+        /^rm -f mica-smoke-fx-qbx-\S+ mica-smoke-db-qbx-/,
+        /^network rm mica-smoke-qbx-/
+      ].map((pattern) => oneLine(r, pattern));
+      expect(
+        order.every((at) => at >= 0),
+        order.join(',')
+      ).toBe(true);
+      expect(order).toEqual([...order].sort((a, b) => a - b));
+      expect(r.out).toContain('[standalone mode] integration suite passed');
+      expect(r.out).toContain('[qbx mode] integration suite passed');
+      expect(r.out).toContain('integration passed in every run -- standalone: 1 passed, 2 skipped');
+      expect(r.out).toContain('qbx: 2 passed, 1 skipped');
+      expect(r.stdout.trimEnd().split('\n').pop()).toBe(
+        'mica-wrapper: mica-smoke-release.sh finished ok'
+      );
+      // Each run's keyring is its own.
+      expect(readFileSync(r.qbxKeyPath, 'utf8')).toMatch(/^it1 [A-Za-z0-9+/]{43}=\n$/);
+      expect(readFileSync(r.qbxKeyPath, 'utf8')).not.toBe(readFileSync(r.keyPath, 'utf8'));
+      expect(r.staged).toEqual([]);
+    });
+
+    it('starts qbx_core on what it needs: the stack in order, onesync, the inventory on qbx, no mica_standalone', () => {
+      const r = wrap(makeRun('manifest'), suite(PASS_A));
+
+      expect(r.status, r.out).toBe(0);
+      const ensured = (cfg: string) => cfg.split('\n').filter((line) => line.startsWith('ensure '));
+      expect(ensured(r.qbxCfg)).toEqual([
+        'ensure oxmysql',
+        'ensure ox_lib',
+        'ensure qbx_core',
+        'ensure ox_inventory',
+        'ensure mica',
+        'ensure mica-integration'
+      ]);
+      expect(r.qbxCfg).toContain('set onesync on\n');
+      expect(r.qbxCfg).toContain('setr inventory:framework "qbx"\n');
+      expect(r.qbxCfg).toContain('set mica_phone_item "phone"\n');
+      expect(r.qbxCfg).toContain('set mica_integration "1"\n');
+      expect(r.qbxCfg).toContain('set mica_integration_mode "qbx"\n');
+      expect(r.qbxCfg).toContain('set mica_integration_schema "bootstrap"\n');
+      expect(r.qbxCfg).toContain('set mica_content_key_file ');
+      // Beside a framework the convar is a conflict, not a mode; the bridge would report it.
+      expect(r.qbxCfg).not.toContain('mica_standalone');
+      // And the standalone run is what it was: no framework, none of the stack.
+      expect(ensured(r.cfg)).toEqual(['ensure oxmysql', 'ensure mica', 'ensure mica-integration']);
+      expect(r.cfg).toContain('set mica_standalone 1\n');
+      for (const absent of ['onesync', 'inventory:framework', 'mica_phone_item']) {
+        expect(r.cfg).not.toContain(absent);
+      }
+    });
+
+    it('mounts ox_lib, qbx_core and ox_inventory read-only from the host, into the qbx server only', () => {
+      const r = wrap(makeRun('manifest'), suite(PASS_A));
+
+      expect(r.status, r.out).toBe(0);
+      const servers = r.calls.split('\n').filter((line) => line.startsWith('run -d -i '));
+      expect(servers).toHaveLength(2);
+      const [standalone, qbx] = servers;
+      for (const [name, source] of [
+        ['ox_lib', oxLib],
+        ['qbx_core', qbxCore],
+        ['ox_inventory', oxInventory]
+      ]) {
+        const mount = `-v ${source}:/opt/fivem/server-data/resources/${name}:ro`;
+        expect(qbx, name).toContain(mount);
+        expect(standalone, name).not.toContain(name);
+      }
+      expect(qbx).toContain(`-v ${oxmysql}:/opt/fivem/server-data/resources/oxmysql:ro`);
+    });
+
+    it("imports qbx_core.sql, then seeds the suite's character, into the qbx database before FXServer starts", () => {
+      const r = wrap(makeRun('manifest'), suite(PASS_A));
+
+      expect(r.status, r.out).toBe(0);
+      // The import, and the seed after it, in the qbx database only, and the zip's own file
+      // (the release smoke test's) is not imported into either run.
+      const imported = r.stdin.indexOf(SQL_MARKER);
+      const seeded = r.stdin.indexOf('INSERT INTO players');
+      expect(imported).toBeGreaterThanOrEqual(0);
+      expect(seeded).toBeGreaterThan(imported);
+      expect(r.stdin).not.toContain('-- sql');
+      expect([...r.calls.matchAll(/^exec -i (mica-smoke-db-\S+) /gm)].map((m) => m[1])).toEqual([
+        expect.stringMatching(/^mica-smoke-db-qbx-/),
+        expect.stringMatching(/^mica-smoke-db-qbx-/)
+      ]);
+      expect(oneLine(r, /^exec -i mica-smoke-db-qbx-/)).toBeLessThan(
+        oneLine(r, /^run -d -i --name mica-smoke-fx-qbx-/)
+      );
+      // The character is the one the suite looks up (integration/lib/qbxSeed.ts), field for field.
+      const insert = r.stdin.slice(seeded);
+      expect(insert).toContain(`'${QBX_SEED.citizenid}'`);
+      expect(insert).toContain(`"firstname":"${QBX_SEED.firstname}"`);
+      expect(insert).toContain(`"lastname":"${QBX_SEED.lastname}"`);
+      expect(insert).toContain(`"phone":"${QBX_SEED.phone}"`);
+      // And it is read back, with the check that no micaOS table is there to be found.
+      expect(r.calls).toContain("from players where citizenid='ITXQBX01'");
+      expect(r.calls).toContain("like 'mica");
+    });
+
+    it('runs the qbx run last, so a standalone failure is reported without waiting on it', () => {
+      const r = wrap(makeRun('manifest'), suite(['integration: FAIL a: no row']));
+
+      expect(r.status).not.toBe(0);
+      expect(r.out).toContain('[standalone mode]');
+      expect(r.out).toContain('1 integration scenario(s) FAILED');
+      expect(r.calls).not.toContain('mica-smoke-db-qbx');
+      expect(r.out).not.toContain('[qbx mode] starting');
+    });
+
+    it.each([
+      [
+        'the console never says micaOS created its schema for qbx/qb',
+        { created: false },
+        'the first-start schema is unproven'
+      ],
+      [
+        "the console never says micaOS's bridge took qbx_core",
+        { bridge: false },
+        'micaOS did not detect the framework it was started beside'
+      ],
+      [
+        'the schema line is the standalone shape, not the qbx one',
+        {
+          created: false,
+          extra: [CREATED]
+        },
+        'the first-start schema is unproven'
+      ],
+      [
+        'the suite never says which run it is',
+        { mode: false },
+        "did not say 'integration: mode qbx' exactly once"
+      ],
+      [
+        'a standalone scenario is not skipped in the qbx run',
+        { skips: [] },
+        'the SKIP lines are not the scenarios this zip was packed to skip in the qbx run'
+      ],
+      [
+        'a qbx scenario never ran',
+        { passes: ['qbx-one'] },
+        'the PASS lines are not the scenarios this zip was packed with for the qbx run'
+      ],
+      [
+        'a scenario passes that the zip was not packed to run in qbx',
+        { passes: [...QBX_IDS, 'a'], skips: [] },
+        'the PASS lines are not the scenarios'
+      ],
+      [
+        'a qbx scenario fails',
+        { extra: ['integration: FAIL qbx-one: no row'] },
+        '1 integration scenario(s) FAILED'
+      ],
+      [
+        'micaOS reports mica_standalone set beside qbx_core',
+        {
+          extra: [
+            '[FrameworkBridge] mica_standalone is set, but a qb core is running on this server.'
+          ]
+        },
+        'micaOS reported mica_standalone set beside the framework'
+      ],
+      [
+        'qbx_core raises a script error',
+        { extra: ['[script:qbx_core] SCRIPT ERROR: @qbx_core/server/main.lua:12: boom'] },
+        'a resource failed or raised a script error'
+      ]
+    ])('fails the job, naming the qbx run, when %s', (_what, console, reason) => {
+      const r = wrap(makeRun('manifest'), suite(PASS_A), { qbxLogs: qbxSuite(['a'], console) });
+
+      expect(r.status).toBe(1);
+      expect(r.out).toContain('[standalone mode] integration suite passed');
+      expect(r.out).toContain('REFUSED: [qbx mode] ');
+      expect(r.out).toContain(reason);
+      expect(r.out).not.toContain('integration passed in every run');
+      expect(r.out.trimEnd().split('\n').pop()).toBe(
+        'mica-wrapper: mica-smoke-release.sh FAILED: exit status 1; the line above says why'
+      );
+      expect(r.staged).toEqual([]);
+    });
+
+    it('fails when the qbx server stops before the suite is done, and when it hangs', () => {
+      const stopped = wrap(makeRun('manifest'), suite(PASS_A), {
+        qbxLogs: [STARTED, BRIDGE_QBX, CREATED_QBX, 'integration: mode qbx'].join('\n') + '\n'
+      });
+
+      expect(stopped.status).toBe(1);
+      expect(stopped.out).toContain('[qbx mode] FXServer stopped before');
+
+      const hung = wrap(makeRun('manifest'), suite(PASS_A), {
+        running: 'true',
+        qbxLogs: [STARTED, 'integration: mode qbx'].join('\n') + '\n'
+      });
+
+      // `running` is one answer for both servers: the standalone console is complete, so it is
+      // the qbx run that never reaches its done line, and the hang is a failure naming its run.
+      expect(hung.status).toBe(1);
+      expect(hung.out).toContain("[qbx mode] no 'integration: done' line within 3s");
+    });
+
+    it('fails when qbx_core never prints mica started, naming the run and what the console said', () => {
+      const r = wrap(makeRun('manifest'), suite(PASS_A), {
+        qbxLogs:
+          'Started resource qbx_core\n[script:qbx_core] OneSync Infinity is not enabled.\nQuitting: quit immediately\n'
+      });
+
+      expect(r.status).toBe(1);
+      expect(r.out).toContain("[qbx mode] FXServer never printed 'mica started!'");
+      expect(r.out).toContain('OneSync Infinity is not enabled');
+    });
+
+    it('refuses an empty seed and a database that already holds micaOS tables, before the server starts', () => {
+      const unseeded = wrap(makeRun('manifest'), suite(PASS_A), { seeded: 0 });
+
+      expect(unseeded.status).toBe(1);
+      expect(unseeded.out).toContain('[qbx mode] the suite');
+      expect(unseeded.out).toContain('is not in the players table after seeding it');
+      expect(unseeded.calls).not.toContain('run -d -i --name mica-smoke-fx-qbx-');
+
+      const dirty = wrap(makeRun('manifest'), suite(PASS_A), { qbxTables: 3 });
+
+      expect(dirty.status).toBe(1);
+      expect(dirty.out).toContain('[qbx mode] the database holds 3 micaOS table(s)');
+      expect(dirty.calls).not.toContain('run -d -i --name mica-smoke-fx-qbx-');
+    });
+
+    it('refuses a missing resource or a missing qbx_core.sql before starting anything at all', () => {
+      const settings = (lines: string[]) => {
+        const file = join(dir, `settings-${++counter}`);
+        writeFileSync(
+          file,
+          [`LICENSE_KEY=not-a-real-key`, `OXMYSQL_DIR=${oxmysql}`, ...lines].join('\n')
+        );
+        return file;
+      };
+      const noOxLib = wrap(makeRun('manifest'), suite(PASS_A), {
+        env: settings([`OX_LIB_DIR=${join(dir, 'not-there')}`])
+      });
+
+      expect(noOxLib.status).toBe(1);
+      expect(noOxLib.out).toContain('REFUSED: ');
+      expect(noOxLib.out).toContain('not-there is not a resource checkout');
+      expect(noOxLib.calls).not.toContain('network create');
+
+      const bare = join(dir, `bare${++counter}`);
+      mkdirSync(bare);
+      writeFileSync(join(bare, 'fxmanifest.lua'), '');
+      const noSql = wrap(makeRun('manifest'), suite(PASS_A), {
+        env: settings([`QBX_CORE_DIR=${bare}`])
+      });
+
+      expect(noSql.status).toBe(1);
+      expect(noSql.out).toContain('qbx_core.sql is missing');
+      expect(noSql.calls).not.toContain('network create');
+    });
+
+    it.each([
+      [
+        'a list in the format before the modes',
+        { text: 'a\n' },
+        "is not '<standalone|qbx> <pass|skip> <scenario id>'"
+      ],
+      [
+        'a list where qbx runs nothing',
+        { text: 'standalone pass a\nqbx skip a\n' },
+        'lists no scenario to pass in the qbx run'
+      ],
+      [
+        'a list where the two runs disagree on what exists',
+        { text: 'standalone pass a\nstandalone skip q\nqbx pass q\n' },
+        'lists different scenarios for the two runs'
+      ],
+      [
+        'a list that names a scenario twice',
+        {
+          text: 'standalone pass a\nstandalone pass a\nstandalone skip q\nqbx pass q\nqbx skip a\nqbx skip a\n'
+        },
+        'lists a scenario twice in the standalone run'
+      ]
+    ])('refuses %s, before starting anything', (_what, expected, reason) => {
+      const r = wrap(makeRun('manifest'), suite(PASS_A), { expected });
+
+      expect(r.status).toBe(1);
+      expect(r.out).toContain(reason);
+      expect(r.calls).not.toContain('network create');
+    });
+
+    it('prints every line the two workflows require of a passing run, and only a full run prints them all', () => {
+      const required = ['integration.yml', 'release.yml'].map((name) => {
+        const text = readFileSync(join(ROOT, '.github/workflows', name), 'utf8');
+        const block = text.match(/RUN_CHECKED_REQUIRE: \|\n((?: {12}\S.*\n)+)/);
+        expect(block, `${name} sets no RUN_CHECKED_REQUIRE`).not.toBeNull();
+        return (block?.[1] ?? '')
+          .split('\n')
+          .map((line) => line.trim())
+          .filter(Boolean);
+      });
+      expect(required[1]).toEqual(required[0]);
+      expect(required[0].length).toBeGreaterThanOrEqual(3);
+
+      const good = wrap(makeRun('manifest'), suite(PASS_A));
+      expect(good.status, good.out).toBe(0);
+      for (const line of required[0]) expect(good.out, line).toContain(line);
+
+      // A run that fails in either mode prints no "passed in every run" line, and the one for
+      // the mode that failed is missing too.
+      const bad = wrap(makeRun('manifest'), suite(PASS_A), {
+        qbxLogs: qbxSuite(['a'], { created: false })
+      });
+      expect(bad.out).not.toContain('integration passed in every run');
+      expect(bad.out).not.toContain('[qbx mode] integration suite passed');
+    });
+
+    it('leaves the plain release smoke test as one run, with none of the qbx stack', () => {
+      const r = wrap(makeRun('none'), suite([]), { running: 'true' });
+
+      expect(r.status, r.out).toBe(0);
+      expect(r.calls).not.toContain('qbx');
+      expect(r.calls).not.toContain('mica-smoke-db-standalone');
+      expect(r.calls.match(/^run -d -i /gm)).toHaveLength(1);
+      expect(r.cfg).not.toContain('onesync');
+      expect(r.cfg).not.toContain('ox_lib');
+    });
+  });
+
   describe('a run directory the deploy account has booby-trapped', () => {
     const refused = (r: ReturnType<typeof wrap>) => {
       expect(r.status).not.toBe(0);
@@ -601,7 +1083,9 @@ describe.skipIf(!trial)('mica-smoke-release.sh', () => {
       victimUntouched();
       expect(readdirSync(victimDir)).toEqual([]);
       for (const source of [...r.calls.matchAll(/-v (\S+?):\/opt\/fivem/g)].map((m) => m[1])) {
-        expect(source === oxmysql || source.startsWith(`${stageRoot}/`), source).toBe(true);
+        expect(hostResources.includes(source) || source.startsWith(`${stageRoot}/`), source).toBe(
+          true
+        );
       }
     });
 
@@ -729,7 +1213,7 @@ describe.skipIf(!trial)('mica-smoke-release.sh', () => {
       const r = wrap(makeRun('manifest'), suite(PASS_A), { tables: 7 });
 
       expect(r.status).toBe(1);
-      expect(r.out).toContain('REFUSED: the database is not empty');
+      expect(r.out).toContain('REFUSED: [standalone mode] the database is not empty');
       expect(r.out).not.toContain('FAILED at line');
       expect(r.out.trimEnd().split('\n').pop()).toBe(
         `mica-wrapper: ${NAME} FAILED: exit status 1; the line above says why`

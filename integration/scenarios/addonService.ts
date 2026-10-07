@@ -115,6 +115,7 @@ void ({
 export const addonServiceScenarios: Scenario[] = [
   {
     id: 'addon-service-registers-pushes-and-releases',
+    mode: 'standalone',
     tickets: ['MICA-308'],
     run: async (signal) => {
       const who = await seedCitizen('addon_push');

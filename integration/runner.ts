@@ -17,9 +17,25 @@ export interface RunSignal {
   readonly aborted: boolean;
 }
 
+/**
+ * The two runs the box makes of one zip (MICA-304). `standalone` is micaOS with no framework and
+ * no inventory; `qbx` is micaOS beside qbx_core and ox_inventory. A scenario belongs to exactly
+ * one: what it arranges and asserts is true of that stack and not the other.
+ */
+export type Mode = 'standalone' | 'qbx';
+
+export const MODES: readonly Mode[] = ['standalone', 'qbx'];
+
 export interface Scenario {
   /** What it proves, in lower-kebab-case. Printed as is, so it never contains a space. */
   id: string;
+  /**
+   * The run it belongs to. Written on the line after `id:`, which is how `pack-integration.js`
+   * reads it without importing TypeScript. In the other run it is not silently absent: the
+   * runner prints a SKIP line for it, and the box's wrapper holds the SKIP lines to the list the
+   * zip was packed with.
+   */
+  mode: Mode;
   /** The tickets this scenario is evidence for. */
   tickets: readonly string[];
   /** Its own limit, when the default is wrong for it. Never more than the budget left. */
@@ -29,6 +45,8 @@ export interface Scenario {
 
 export interface RunnerOptions {
   print: (line: string) => void;
+  /** Which of the box's two runs this is. A scenario of the other mode is skipped, loudly. */
+  mode: Mode;
   /** Per scenario, unless it names its own. */
   defaultTimeoutMs: number;
   /**
@@ -42,6 +60,8 @@ export interface RunnerOptions {
 export interface RunResult {
   passed: number;
   failed: number;
+  /** Scenarios of the other mode. Not in the done line: the wrapper counts SKIP lines itself. */
+  skipped: number;
 }
 
 const ID = /^[a-z0-9][a-z0-9-]*$/;
@@ -56,6 +76,15 @@ export const oneLine = (text: string): string => {
 };
 
 export const passLine = (id: string): string => `integration: PASS ${id}`;
+
+/**
+ * A scenario that is not this run's. Printed for every one, so the console says what was not
+ * run and the wrapper can hold the list to the zip's: a scenario that vanished from a run
+ * (dropped from the index, or never registered for its mode) is then a mismatch, not a
+ * smaller count that looks the same.
+ */
+export const skipLine = (id: string, mode: Mode, own: Mode): string =>
+  `integration: SKIP ${id}: needs a ${own} run, and this is the ${mode} run`;
 
 export const failLine = (id: string, reason: string): string =>
   `integration: FAIL ${id}: ${oneLine(reason)}`;
@@ -123,6 +152,7 @@ export const runScenarios = async (
   const seen = new Set<string>();
   let passed = 0;
   let failed = 0;
+  let skipped = 0;
 
   for (const scenario of scenarios) {
     const id = String(scenario.id);
@@ -137,6 +167,17 @@ export const runScenarios = async (
       continue;
     }
     seen.add(id);
+
+    if (scenario.mode !== options.mode) {
+      if (!MODES.includes(scenario.mode)) {
+        options.print(failLine(id, `has mode '${String(scenario.mode)}', which is not a mode`));
+        failed += 1;
+        continue;
+      }
+      options.print(skipLine(id, options.mode, scenario.mode));
+      skipped += 1;
+      continue;
+    }
 
     const left = deadline - now();
     if (left <= 0) {
@@ -157,5 +198,5 @@ export const runScenarios = async (
   }
 
   options.print(doneLine(passed, failed));
-  return { passed, failed };
+  return { passed, failed, skipped };
 };

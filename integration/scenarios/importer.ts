@@ -66,6 +66,7 @@ const ledgerRows = async (citizenids: string[]) =>
 export const importerScenarios: Scenario[] = [
   {
     id: 'import-qbphone-apply-seals-and-rerun-writes-nothing',
+    mode: 'standalone',
     tickets: ['MICA-233', 'MICA-165'],
     timeoutMs: 200_000,
     run: async (signal) => {

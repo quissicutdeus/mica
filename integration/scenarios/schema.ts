@@ -56,7 +56,7 @@ const ledgerIds = async (): Promise<string[]> =>
  * proves nothing alone: the wrapper holds the whole console to the success line, and this reads
  * the tables. But a refusal this resource *did* hear is a failure with its reason attached.
  */
-const BOOTSTRAP_REFUSED =
+export const BOOTSTRAP_REFUSED =
   /this database may be half-created|creating micaOS's schema stopped|micaOS created nothing|could not tell whether this database already holds|another server is creating micaOS's schema/;
 
 export const schemaScenarios: Scenario[] = [
@@ -64,6 +64,7 @@ export const schemaScenarios: Scenario[] = [
     // MICA-306: the schema this run reads was made by micaOS's own first start, on a database
     // the wrapper left empty — and it finished, which the ledger's seed (written last) shows.
     id: 'schema-created-by-first-start-without-import',
+    mode: 'standalone',
     tickets: ['MICA-306'],
     timeoutMs: 45_000,
     run: async (signal) => {
@@ -127,6 +128,7 @@ export const schemaScenarios: Scenario[] = [
     // MICA-289 (the ESX/standalone file), MICA-301: every table the declarations generate is
     // in the database the shipped file was imported into.
     id: 'schema-every-shipped-table-exists',
+    mode: 'standalone',
     tickets: ['MICA-289', 'MICA-301'],
     run: async () => {
       const expected = shippedTables(shippedSql());
@@ -149,6 +151,7 @@ export const schemaScenarios: Scenario[] = [
     // MICA-301: the ledger holds every migration the shipped file seeds, once each, and
     // nothing else but the markers that share it on purpose.
     id: 'schema-migrations-ledger-seeded-and-consistent',
+    mode: 'standalone',
     tickets: ['MICA-301'],
     run: async () => {
       const seeded = seededMigrations(shippedSql());
@@ -171,6 +174,7 @@ export const schemaScenarios: Scenario[] = [
     // `micaschema apply` (console only) applies nothing — no migration re-run against tables
     // already in their new shape, no foreign key to drop, no additive column or index.
     id: 'schema-micaschema-report-and-apply-clean-on-fresh-import',
+    mode: 'standalone',
     tickets: ['MICA-301', 'MICA-300', 'MICA-289'],
     timeoutMs: 40_000,
     run: async (signal) => {

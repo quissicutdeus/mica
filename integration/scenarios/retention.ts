@@ -53,6 +53,7 @@ export const retentionScenarios: Scenario[] = [
     // MICA-167: `micamedia prune` removes media older than the window — and keeps what an open
     // report holds, what a live message still shows, and what is younger than the window.
     id: 'retention-micamedia-prune-keeps-held-media',
+    mode: 'standalone',
     tickets: ['MICA-167', 'MICA-292'],
     timeoutMs: 45_000,
     run: async (signal) => {
@@ -124,6 +125,7 @@ export const retentionScenarios: Scenario[] = [
     // a resolved report — while their pending report, their moderation-ledger rows and their
     // media under somebody else's open report stay.
     id: 'purge-character-deleted-keeps-held-rows',
+    mode: 'standalone',
     tickets: ['MICA-168', 'MICA-300', 'MICA-292'],
     timeoutMs: 45_000,
     run: async (signal) => {

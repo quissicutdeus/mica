@@ -42,9 +42,16 @@ const INTEGRATION_DIR = join('dist/integration', INTEGRATION_NAME);
 const REQUIRED_MICA = ['fxmanifest.lua', 'mica.esx.sql'];
 const REQUIRED_INTEGRATION = ['fxmanifest.lua', 'server.js', 'expected-scenarios.txt'];
 
-/** Where the suite's scenarios are declared, one `id: '<kebab-case>'` each. */
+/**
+ * Where the suite's scenarios are declared, one `id: '<kebab-case>'` each, and on the next line
+ * the run it belongs to: `mode: 'standalone'` or `mode: 'qbx'` (MICA-304). The mode group is
+ * optional in the pattern so that an id with no mode is found and refused by name, not skipped.
+ */
 const SCENARIOS_DIR = 'integration/scenarios';
-const SCENARIO_ID = /^\s*id:\s*'([a-z0-9][a-z0-9-]*)'/gm;
+const SCENARIO_ID = /^\s*id:\s*'([a-z0-9][a-z0-9-]*)',?[ \t]*(?:\r?\n\s*mode:\s*'([a-z]+)')?/gm;
+
+/** The box runs the suite once in each, in this order (scripts/deploy/README.md). */
+export const MODES = ['standalone', 'qbx'];
 
 const EOCD = 0x06054b50;
 const CENTRAL = 0x02014b50;
@@ -134,28 +141,66 @@ export function assembleRunEntries(micaEntries, integrationEntries) {
 }
 
 /**
- * The scenario ids declared in the suite's source, which the zip carries as
- * `mica-integration/expected-scenarios.txt` and the box's wrapper holds the run to: exactly
- * those, no more and no fewer. The done line's own count is only as good as what the suite
- * decided to run, and a scenario group dropped from `scenarios/index.ts` would still print a
- * clean `done` with a smaller number. Counting the declarations, which the index cannot
+ * The scenarios declared in the suite's source, as `{ id, mode }` sorted by id. The zip carries
+ * them as `mica-integration/expected-scenarios.txt` and the box's wrapper holds each run to
+ * them: exactly those, no more and no fewer. The done line's own count is only as good as what
+ * the suite decided to run, and a scenario group dropped from `scenarios/index.ts` would still
+ * print a clean `done` with a smaller number. Counting the declarations, which the index cannot
  * drop, is what makes that visible.
  *
  * @param {Array<{ name: string, text: string }>} files the scenario source files
- * @returns {string[]} sorted ids; throws on none or on a duplicate
+ * @returns {Array<{ id: string, mode: string }>} throws on none, on a duplicate, on an id with
+ *   no mode or one that is not in MODES, and on a mode no scenario runs in
  */
 export function scenarioIds(files) {
-  const ids = [];
+  const found = [];
   for (const { name, text } of files) {
     if (name === 'index.ts') continue;
-    for (const match of text.matchAll(SCENARIO_ID)) ids.push(match[1]);
+    for (const match of text.matchAll(SCENARIO_ID)) {
+      const [, id, mode] = match;
+      if (mode === undefined) {
+        throw new Error(
+          `scenario ${id} (${name}) declares no mode; write \`mode: 'standalone'\` or ` +
+            "`mode: 'qbx'` on the line after its id"
+        );
+      }
+      if (!MODES.includes(mode)) {
+        throw new Error(
+          `scenario ${id} (${name}) has mode '${mode}'; the modes are ${MODES.join(', ')}`
+        );
+      }
+      found.push({ id, mode });
+    }
   }
-  if (ids.length === 0) {
+  if (found.length === 0) {
     throw new Error(`no scenario ids found under ${SCENARIOS_DIR}; a suite of none is not a suite`);
   }
-  const duplicate = ids.find((id, i) => ids.indexOf(id) !== i);
-  if (duplicate) throw new Error(`scenario id ${duplicate} is declared twice`);
-  return ids.sort();
+  const duplicate = found.find(({ id }, i) => found.findIndex((other) => other.id === id) !== i);
+  if (duplicate) throw new Error(`scenario id ${duplicate.id} is declared twice`);
+  for (const mode of MODES) {
+    if (!found.some((scenario) => scenario.mode === mode)) {
+      throw new Error(`no scenario runs in ${mode} mode; that run would prove nothing`);
+    }
+  }
+  return found.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+}
+
+/**
+ * The text of `expected-scenarios.txt`. For each run, every scenario: `<mode> pass <id>` where
+ * it belongs to that run and `<mode> skip <id>` where it does not. Both are written in full so
+ * the wrapper holds a run to what it did and to what it left out, and a scenario missing from
+ * either is a mismatch rather than a smaller number.
+ *
+ * @param {Array<{ id: string, mode: string }>} scenarios from scenarioIds
+ */
+export function expectedScenariosText(scenarios) {
+  const lines = [];
+  for (const mode of MODES) {
+    for (const { id, mode: own } of scenarios) {
+      lines.push(`${mode} ${own === mode ? 'pass' : 'skip'} ${id}`);
+    }
+  }
+  return `${lines.join('\n')}\n`;
 }
 
 const walk = (dir) => {
@@ -203,14 +248,14 @@ const main = () => {
       path: relative(INTEGRATION_DIR, file).split('\\').join(posix.sep),
       data: readFileSync(file)
     }));
-    const ids = scenarioIds(
+    const scenarios = scenarioIds(
       readdirSync(SCENARIOS_DIR)
         .filter((name) => name.endsWith('.ts'))
         .map((name) => ({ name, text: readFileSync(join(SCENARIOS_DIR, name), 'utf8') }))
     );
     integrationEntries.push({
       path: 'expected-scenarios.txt',
-      data: Buffer.from(`${ids.join('\n')}\n`)
+      data: Buffer.from(expectedScenariosText(scenarios))
     });
     entries = assembleRunEntries(micaEntries, integrationEntries);
   } catch (error) {

@@ -6,7 +6,7 @@ import { consoleTap } from './lib/console';
 import { db } from './lib/db';
 import { micaReady } from './lib/mica';
 import { sleep } from './lib/wait';
-import { doneLine, failLine, runScenarios } from './runner';
+import { MODES, doneLine, failLine, runScenarios, type Mode } from './runner';
 import { scenarios } from './scenarios';
 
 /**
@@ -35,6 +35,23 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 
 const print = (line: string): void => console.log(line);
 
+/**
+ * Which of the box's two runs this is (MICA-304): `mica_integration_mode`, which the wrapper sets
+ * to `standalone` or `qbx`. Never defaulted. A wrapper that predates the modes sets nothing, and
+ * a suite that guessed would run one stack's scenarios against the other and report the result.
+ */
+const readMode = (): { mode: Mode } | { problem: string } => {
+  const raw = GetConvar('mica_integration_mode', '');
+  const mode = MODES.find((known) => known === raw);
+  if (mode) return { mode };
+  return {
+    problem:
+      `mica_integration_mode is '${raw}', not one of ${MODES.join(' or ')}. The wrapper on the ` +
+      'box predates MICA-304 and does not say which run this is; reinstall ' +
+      'scripts/deploy/mica-smoke-release.sh as scripts/deploy/README.md says.'
+  };
+};
+
 const waitForMica = async (): Promise<string | null> => {
   const deadline = Date.now() + READY_TIMEOUT_MS;
   let lastProblem = 'mica is not started';
@@ -58,6 +75,15 @@ const main = async (): Promise<void> => {
   // Before anything else, so no line micaOS prints during the run is missed.
   consoleTap();
 
+  const chosen = readMode();
+  if ('problem' in chosen) {
+    print(failLine('startup', chosen.problem));
+    print(doneLine(0, 1));
+    return;
+  }
+  const { mode } = chosen;
+  print(`integration: mode ${mode}`);
+
   const problem = await waitForMica();
   if (problem !== null) {
     print(failLine('startup', problem));
@@ -70,6 +96,7 @@ const main = async (): Promise<void> => {
 
   await runScenarios(scenarios, {
     print,
+    mode,
     defaultTimeoutMs: DEFAULT_TIMEOUT_MS,
     budgetMs: BUDGET_MS
   });

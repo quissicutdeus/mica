@@ -2,7 +2,8 @@ name: Integration
 
 # MICA-302: the in-server integration suite, on demand. `release.yml` runs the same suite
 # before a release, on main; this exists so a change can be proven on dev, or on any other
-# ref, before main moves:
+# ref, before main moves. The box runs it twice, standalone and then against qbx_core and
+# ox_inventory (MICA-304), and both are this job's verdict:
 #
 #   gh workflow run integration.yml --ref dev
 #
@@ -50,16 +51,24 @@ jobs:
 
       # A missing secret is a failure, not a skip: a run that quietly stood down because it
       # was not configured would read as a pass. The step fails on ssh's own exit, which is
-      # the wrapper's, which fails on any FAIL, on a missing done line and on a suite that
-      # ran nothing -- and also when the wrapper hoth ran is not this checkout's copy:
+      # the wrapper's, which runs the suite in both modes every time and fails on any FAIL,
+      # on a missing done line, on a suite that ran nothing and on a scenario that was not run
+      # or skipped as the zip lists -- naming the mode, `[standalone mode]` or `[qbx mode]`.
+      # RUN_CHECKED_REQUIRE adds what an exit status cannot say: that the log holds a pass line
+      # for each mode, so a wrapper edited to leave one out and reinstalled is red here.
+      # It also fails when the wrapper hoth ran is not this checkout's copy:
       # `run-checked.sh` holds the session's output to the wrapper's identity line, so a
       # reinstall nobody did is a red step naming the command to run, not an old suite
       # quietly judging a new tree. scripts/deploy/README.md has the server side.
-      - name: Run the integration suite on the FiveM box
+      - name: Run the integration suite on the FiveM box (standalone, then qbx)
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           SMOKE_KEY: ${{ secrets.DEPLOY_KEY_SMOKE }}
           KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          RUN_CHECKED_REQUIRE: |
+            [standalone mode] integration suite passed
+            [qbx mode] integration suite passed
+            integration passed in every run
         run: |
           for name in DEPLOY_HOST SMOKE_KEY KNOWN_HOSTS; do
             if [ -z "${!name}" ]; then

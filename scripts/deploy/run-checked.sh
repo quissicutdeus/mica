@@ -16,7 +16,8 @@
 # did. stdin goes to the command untouched (the release zip is piped in that way), and
 # stdout and stderr both come out live, so the CI log reads as it always did.
 #
-# Exit: the command's status when it failed; otherwise the check's. A pass needs both.
+# Exit: the command's status when it failed; otherwise the check's. A pass needs both, and every
+# line of $RUN_CHECKED_REQUIRE, when set, in the output.
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -55,4 +56,23 @@ if [ "$rc" -ne 0 ]; then
     fi
     exit "$rc"
 fi
-exit "$check"
+[ "$check" -eq 0 ] || exit "$check"
+
+# RUN_CHECKED_REQUIRE (MICA-304): lines, one per line of the variable, that the session's output
+# has to contain. The wrapper's exit status says every run it made passed; this says it made the
+# runs the workflow expects. A wrapper edited to leave a run out, and reinstalled, has a hash that
+# matches its checkout and exits 0, and without this the step would be green for a run that did
+# not happen. Fixed strings, matched anywhere in a line.
+missing=0
+if [ -n "${RUN_CHECKED_REQUIRE:-}" ]; then
+    while IFS= read -r want; do
+        [ -n "$want" ] || continue
+        if ! grep -qF -- "$want" "$tmp/out"; then
+            echo "run-checked: the output never said \`$want\`, so this step fails although \`$1\` exited 0: a run the workflow expects did not happen." >&2
+            missing=1
+        fi
+    done <<EOF
+$RUN_CHECKED_REQUIRE
+EOF
+fi
+exit "$missing"

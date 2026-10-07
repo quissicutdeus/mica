@@ -207,19 +207,28 @@ jobs:
       # it fails on any `integration: FAIL`, on no `integration: done` line, and on a suite
       # that ran nothing. Its console, PASS lines included, is this step's log.
       #
+      # The wrapper runs the suite twice, every time (MICA-304): standalone, then against
+      # qbx_core and ox_inventory. Either failing fails this step and names its mode in the log
+      # (`[standalone mode]`, `[qbx mode]`), and RUN_CHECKED_REQUIRE makes a pass line for each
+      # mode part of the verdict, so a wrapper edited to leave one out is red here too.
+      #
       # It runs for a dispatched tag too: a tag left behind by an earlier failure is exactly
       # the one that must not be released without it. A tag cut before this suite existed
       # has no `integration/` and fails at `pnpm pack:integration`, loudly, rather than
       # being released unchecked.
       #
       # A missing secret is a failure, not a skip, for the reason given on the smoke step.
-      - name: Run the integration suite on the FiveM box
+      - name: Run the integration suite on the FiveM box (standalone, then qbx)
         if: steps.tag.outputs.skip == ''
         timeout-minutes: 45
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           SMOKE_KEY: ${{ secrets.DEPLOY_KEY_SMOKE }}
           KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          RUN_CHECKED_REQUIRE: |
+            [standalone mode] integration suite passed
+            [qbx mode] integration suite passed
+            integration passed in every run
         run: |
           for name in DEPLOY_HOST SMOKE_KEY KNOWN_HOSTS; do
             if [ -z "${!name}" ]; then

@@ -7,7 +7,13 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 // @ts-expect-error -- a plain .js build script with no types; this suite is not typechecked.
-import { assembleRunEntries, readZip, scenarioIds } from '../../scripts/pack-integration.js';
+import {
+  MODES,
+  assembleRunEntries,
+  expectedScenariosText,
+  readZip,
+  scenarioIds
+} from '../../scripts/pack-integration.js';
 // @ts-expect-error -- same.
 import { createZip } from '../../scripts/lib/zip.js';
 
@@ -101,30 +107,81 @@ describe('assembleRunEntries', () => {
 });
 
 describe('scenarioIds', () => {
-  const file = (name: string, ids: string[]) => ({
+  const file = (name: string, ids: string[], mode = 'standalone') => ({
     name,
-    text: ids.map((id) => `  {\n    id: '${id}',\n    tickets: [],\n  },`).join('\n')
+    text: ids
+      .map((id) => `  {\n    id: '${id}',\n    mode: '${mode}',\n    tickets: [],\n  },`)
+      .join('\n')
   });
+  const qbxFile = file('q.ts', ['qbx-one'], 'qbx');
 
-  it('lists every declared id, sorted, and skips the index that only assembles them', () => {
-    const ids = scenarioIds([
+  it('lists every declared scenario with its mode, sorted, and skips the index that only assembles them', () => {
+    const found = scenarioIds([
       file('b.ts', ['beta-one']),
       file('a.ts', ['alpha-one', 'alpha-two']),
+      qbxFile,
       { name: 'index.ts', text: "  id: 'not-a-scenario'" }
     ]);
 
-    expect(ids).toEqual(['alpha-one', 'alpha-two', 'beta-one']);
+    expect(found).toEqual([
+      { id: 'alpha-one', mode: 'standalone' },
+      { id: 'alpha-two', mode: 'standalone' },
+      { id: 'beta-one', mode: 'standalone' },
+      { id: 'qbx-one', mode: 'qbx' }
+    ]);
   });
 
   it('does not read a type annotation or a number id as a scenario', () => {
-    const text = "id: number,\n  id: 'real-one',\n  id: 7,";
+    const text = "id: number,\n  id: 'real-one',\n  mode: 'standalone',\n  id: 7,";
 
-    expect(scenarioIds([{ name: 'a.ts', text }])).toEqual(['real-one']);
+    expect(scenarioIds([{ name: 'a.ts', text }, qbxFile])).toEqual([
+      { id: 'qbx-one', mode: 'qbx' },
+      { id: 'real-one', mode: 'standalone' }
+    ]);
   });
 
-  it('refuses a suite of none, and a duplicate', () => {
+  it('refuses a suite of none, a duplicate, and a run with nothing in it', () => {
     expect(() => scenarioIds([{ name: 'a.ts', text: 'nothing here' }])).toThrow(/no scenario ids/);
-    expect(() => scenarioIds([file('a.ts', ['same', 'same'])])).toThrow(/twice/);
+    expect(() => scenarioIds([file('a.ts', ['same', 'same']), qbxFile])).toThrow(/twice/);
+    expect(() => scenarioIds([file('a.ts', ['alone'])])).toThrow(/no scenario runs in qbx mode/);
+    expect(() => scenarioIds([file('q.ts', ['alone'], 'qbx')])).toThrow(
+      /no scenario runs in standalone mode/
+    );
+  });
+
+  it('refuses a scenario with no mode, or a mode there is not, naming it', () => {
+    const bare = { name: 'a.ts', text: "  {\n    id: 'no-mode',\n    tickets: [],\n  }," };
+    expect(() => scenarioIds([bare, qbxFile])).toThrow(
+      /scenario no-mode \(a\.ts\) declares no mode/
+    );
+    // Not on the next line, which is where the packer reads it: that is no mode too, by name.
+    const sameLine = { name: 'a.ts', text: "  id: 'same-line', mode: 'qbx'," };
+    expect(() => scenarioIds([sameLine, qbxFile])).toThrow(
+      /scenario same-line .* declares no mode/
+    );
+    expect(() => scenarioIds([file('a.ts', ['odd'], 'esx'), qbxFile])).toThrow(
+      /scenario odd \(a\.ts\) has mode 'esx'/
+    );
+  });
+});
+
+describe('expectedScenariosText', () => {
+  it('lists every scenario in both runs, as a pass where it belongs and a skip where it does not', () => {
+    expect(
+      expectedScenariosText([
+        { id: 'alpha', mode: 'standalone' },
+        { id: 'qbx-one', mode: 'qbx' }
+      ])
+    ).toBe(
+      [
+        'standalone pass alpha',
+        'standalone skip qbx-one',
+        'qbx skip alpha',
+        'qbx pass qbx-one',
+        ''
+      ].join('\n')
+    );
+    expect(MODES).toEqual(['standalone', 'qbx']);
   });
 });
 

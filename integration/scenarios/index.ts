@@ -9,6 +9,7 @@ import { cryptoScenarios } from './crypto';
 import { exportScenarios } from './exports';
 import { importerScenarios } from './importer';
 import { oxmysqlScenarios } from './oxmysql';
+import { qbxScenarios } from './qbx';
 import { retentionScenarios } from './retention';
 import { schemaScenarios } from './schema';
 
@@ -17,6 +18,10 @@ import { schemaScenarios } from './schema';
  * correctness: each arranges its own fixtures under ids no other scenario uses, so any order
  * passes or fails the same. The command premise runs first so that, if it is wrong, the first
  * FAIL says so before a command scenario fails for it.
+ *
+ * Every scenario names the run it belongs to (`mode`, MICA-304): the standalone groups run in
+ * the standalone run and are skipped, with a printed SKIP line each, in the qbx run, and
+ * `qbxScenarios` the other way round. A new group is added here, and its mode is its own to say.
  */
 export const scenarios: readonly Scenario[] = [
   ...commandScenarios,
@@ -26,5 +31,6 @@ export const scenarios: readonly Scenario[] = [
   ...addonServiceScenarios,
   ...retentionScenarios,
   ...oxmysqlScenarios,
-  ...importerScenarios
+  ...importerScenarios,
+  ...qbxScenarios
 ];

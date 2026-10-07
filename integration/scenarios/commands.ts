@@ -19,6 +19,7 @@ import { eventually } from '../lib/wait';
 export const commandScenarios: Scenario[] = [
   {
     id: 'commands-execute-command-arrives-as-console-source-0',
+    mode: 'standalone',
     tickets: ['MICA-302'],
     timeoutMs: 10_000,
     run: async (signal) => {
@@ -49,6 +50,7 @@ export const commandScenarios: Scenario[] = [
      * here rather than surfacing as "unknown command" on somebody's server.
      */
     id: 'commands-every-documented-command-is-registered-by-mica',
+    mode: 'standalone',
     tickets: ['MICA-274'],
     timeoutMs: 10_000,
     run: async () => {

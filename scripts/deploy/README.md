@@ -350,13 +350,13 @@ command here, and the zip is released only if it starts.
 unpacks it into a directory of its own under `~gphone/smoke/`, checks it
 unpacked to `mica/fxmanifest.lua`, and hands that directory to the root wrapper.
 `mica-smoke-release.sh` then starts a throwaway MariaDB, imports the zip's own
-`mica.esx.sql` into it (the release smoke only; the integration run below
-imports nothing), and starts a throwaway FXServer from the stack's own image
-with the zip's `mica` mounted read-only beside the main checkout's `oxmysql`, in
-`mica_standalone` mode. The console has to print `mica started!` within three
-minutes, and then, for twenty seconds more, nothing from mica or oxmysql that
-reads as an error. Both containers and their network are removed on exit,
-whichever way it exits, and nothing here touches either live stack: the
+`mica.esx.sql` into it (the release smoke only; the integration runs below
+import nothing of micaOS's), and starts a throwaway FXServer from the stack's
+own image with the zip's `mica` mounted read-only beside the main checkout's
+`oxmysql`, in `mica_standalone` mode. The console has to print `mica started!`
+within three minutes, and then, for twenty seconds more, nothing from mica or
+oxmysql that reads as an error. Both containers and their network are removed on
+exit, whichever way it exits, and nothing here touches either live stack: the
 containers are on a network of their own and publish no port.
 
 **Why a third key, not one of the two deploy keys.** Each deploy key is pinned
@@ -398,6 +398,10 @@ LICENSE_KEY=<a key registered for this box, distinct from both stacks'>
 # FX_IMAGE=fivem-server:latest
 # DB_IMAGE=mariadb:noble
 # OXMYSQL_DIR=/opt/fivem-main/server-data/vendor/oxmysql
+# the integration suite's qbx run (MICA-304); default to the directories beside OXMYSQL_DIR
+# OX_LIB_DIR=/opt/fivem-main/server-data/vendor/ox_lib
+# QBX_CORE_DIR=/opt/fivem-main/server-data/vendor/qbx_core
+# OX_INVENTORY_DIR=/opt/fivem-main/server-data/vendor/ox_inventory
 ENV
 ```
 
@@ -469,16 +473,86 @@ The same key and the same wrapper also run an in-server test suite. CI sends
 `pnpm pack:integration`'s zip, which holds `mica/` exactly as released plus a
 test resource, `mica-integration/` (built from `integration/`), and the wrapper
 switches to integration mode when that directory is present. It generates a
-throwaway content keyring in a small `mica-keys` resource, starts `mica` and
-then `mica-integration` against an **empty** database, which `mica` must create
-itself on first start (MICA-306: the run fails unless the console says
-`created micaOS's schema for`), and reads the suite's verdict from the console:
-one `integration: PASS|FAIL <id>` line per scenario and a final
-`integration: done <P> passed <F> failed`. The run passes only when the PASS ids
-equal `mica-integration/expected-scenarios.txt` exactly, which
-`pack:integration` writes, so a scenario that silently stops running fails it.
-`release.yml` runs it before the smoke test and will not release on a failure;
-`integration.yml` runs it alone on any ref by `workflow_dispatch`.
+throwaway content keyring in a small `mica-keys` resource and runs the suite
+**twice, one after the other, every time** (MICA-304, below): standalone, then
+qbx. In each, it starts `mica` and then `mica-integration` against a database
+that holds no micaOS table, which `mica` must create itself on first start
+(MICA-306: the run fails unless the console says `created micaOS's schema for`
+the shape that run's stack takes), and reads the suite's verdict from the
+console: one `integration: PASS|FAIL|SKIP <id>` line per scenario and a final
+`integration: done <P> passed <F> failed`. `release.yml` runs it before the
+smoke test and will not release on a failure; `integration.yml` runs it alone on
+any ref by `workflow_dispatch`.
+
+#### Two runs, and what each proves (MICA-304)
+
+Nothing chooses between the runs: not the zip, not the arguments, not an
+environment variable (sudoers sends none). A run that could be told to leave qbx
+out is one a stray edit could leave out unnoticed, so both happen on every
+invocation, standalone first. A failing run ends the invocation, and every
+message it prints is tagged `[standalone mode]` or `[qbx mode]`, so the CI job's
+log says which one failed. The suite's own console line
+`integration: mode <run>` is read back and must match.
+
+|                                 | `standalone`                                               | `qbx`                                                                                                                                                       |
+| ------------------------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Resources, in order             | `oxmysql`, `mica`, `mica-integration`                      | `oxmysql`, `ox_lib`, `qbx_core`, `ox_inventory`, `mica`, `mica-integration`                                                                                 |
+| Database before FXServer        | empty                                                      | `qbx_core.sql` imported, then one `players` row (`ITXQBX01`, below); no micaOS table                                                                        |
+| Convars                         | `mica_standalone 1`                                        | `onesync on`, `setr inventory:framework "qbx"`, `inventory:versioncheck false`, `qbx:acknowledge true`, `mica_phone_item "phone"`; **no** `mica_standalone` |
+| Mounted read-only from the host | `oxmysql`                                                  | `oxmysql`, `ox_lib`, `qbx_core`, `ox_inventory`                                                                                                             |
+| The console has to say          | `created micaOS's schema for ESX or standalone`            | `created micaOS's schema for qbx/qb`, and `mica: jobs -> qbx_core ...` (micaOS's bridge took qbx_core)                                                      |
+| Scenarios                       | everything under `integration/scenarios/` not marked `qbx` | the six in `integration/scenarios/qbx.ts`                                                                                                                   |
+
+The resources come from the main checkout's vendor directory, beside `oxmysql`
+(`/opt/fivem-main/server-data/vendor/`), unless `/etc/mica-smoke.env` sets
+`OX_LIB_DIR`, `QBX_CORE_DIR` or `OX_INVENTORY_DIR`. All four are mounted
+read-only and checked, with `qbx_core.sql`, **before anything starts**: a box
+missing one fails in seconds, not after the standalone run. qbx_core does not
+create `players` itself and micaOS reads it, so the wrapper imports qbx_core's
+own `qbx_core.sql` into the throwaway database first, then inserts one character
+for the suite to look up offline. That character's values are in the wrapper
+(`seed_qbx`) and in `integration/lib/qbxSeed.ts`, and
+`server/__tests__/smokeWrapper.test.ts` holds the two equal. ox_inventory
+creates its own table and alters `players` at start; micaOS then creates its
+schema at qb width (50). FXServer gets an extra 60 seconds to print
+`mica started!` in the qbx run, which loads four more resources.
+
+A scenario belongs to one run (`mode: 'standalone' | 'qbx'`, on the line after
+its `id:`). In the other run it is not quietly absent: the suite prints
+`integration: SKIP <id>: needs a <mode> run, and this is the <mode> run`.
+`pack:integration` writes `mica-integration/expected-scenarios.txt` as one line
+per scenario per run, `<mode> pass|skip <id>`, and the wrapper holds each run to
+it: the PASS lines must be **exactly** that run's scenarios and the SKIP lines
+exactly the other run's. A scenario dropped from the suite, never registered for
+its mode, or added without a mode fails the packer or the run, by name. A list
+in the old one-id-a-line format is refused before anything starts.
+
+**What the qbx run proves, with nobody connected:** the stack starts (qbx_core
+refuses to unless `onesync` and `inventory:framework` are right); micaOS's
+bridge takes qbx_core and not standalone; micaOS registered the phone as a
+usable item with qbx_core (read back through `CanUseItem`, against a control);
+the phone item exists in ox_inventory's item list; per-item metadata round-trips
+through a temporary stash in the shapes micaOS's item-metadata seam reads
+(`GetSlotsWithItem`, `SetMetadata`); an offline lookup of the seeded `players`
+row answers the `charinfo` phone, both ways (`GetPhoneNumber`, `GetCitizenId`);
+and the schema micaOS created on first start is 50 wide in every `citizenid`
+column.
+
+**What it cannot:** anything that needs a connected player. micaOS's own
+item-metadata seam is keyed by a source and is not an export, so the stash
+scenario proves ox_inventory's half of it, not micaOS's; the offline lookup
+shows the phone but no export returns the name, so `charinfo`'s name is read
+only from the table; a usable item actually used, online jobs and charinfo
+write-back, and "delivered to an online phone" stay unproven by any suite (see
+MICA-304).
+
+**Time.** The standalone run is what the suite cost before (five to ten minutes
+at most: up to 90s for the database, 180s to start, 300s for the suite). The qbx
+run adds up to 90s, 240s and 300s, and in practice runs only six scenarios, so
+expect it to cost a few minutes of FXServer start plus the suite's fixed three
+seconds. An invocation is therefore up to about 20 minutes (570s and 630s), and
+a release now holds the box for three runs (both integration runs, then the
+smoke test).
 
 **Root never touches a path `gphone` can change.** The wrapper takes hoth's lock
 (`/run/mica-hoth.lock`, below) once the run directory's path is checked, pins
@@ -491,6 +565,16 @@ itself is only read. Reinstall both halves after any change to either:
 install -m 755 scripts/deploy/smoke-release.sh ~gphone/bin/smoke-release.sh
 sudo install -m 700 -o root -g root scripts/deploy/mica-smoke-release.sh /usr/local/sbin/
 ```
+
+**Reinstalling for the qbx run.** Only `mica-smoke-release.sh` changed, so only
+its hash changed: install that one file (the deploy wrappers and
+`compose.yaml`'s pinned hash are untouched), then run
+`sha256sum /usr/local/sbin/mica-smoke-release.sh scripts/deploy/mica-smoke-release.sh`
+and check that the pair agrees. Until it is reinstalled, CI's identity check
+fails every integration and release job, naming the command to run. Nothing else
+on the box changes: no sudoers rule, no new variable, and the resources are read
+from where the live main server already has them. `/etc/mica-smoke.env` needs
+nothing new.
 
 **A key file has to sit inside a resource folder.** FXServer refuses a
 resource's reads outside resource folders, with no grant to lift it, so the
@@ -553,12 +637,15 @@ mica-wrapper: mica-deploy-main-compose.sh FAILED: exit status 1; the line above 
 **Why 1500 seconds.** A deploy holds the box for one to three minutes and an
 integration run for five to ten (at most 90s for the database, 180s for FXServer
 to start and 300s for the suite), and a release makes two runs back to back.
-1500s (25 minutes) outlasts two of the longest, so a job queued behind a run and
-another job still goes; and it is far short of hanging a CI job on a holder that
-is stuck. It is below the thirty minutes `deploy-<target>.sh` waits on its own
-per-stack lock, so a deploy never gives up on the box before it gives up on
-itself. The wait is only for jobs that reach the lock: a misuse (an unset
-variable, a run directory outside the root) is refused at once, before it.
+Since MICA-304 one integration invocation is two such runs under one lock (the
+qbx run is allowed 90s, 240s and 300s: at most 1200s together). 1500s (25
+minutes) outlasts that, so a job queued behind one invocation, and then another
+job, still goes; it does not outlast two integration invocations ahead of it,
+which is a backlog worth reading about. And it is far short of hanging a CI job
+on a holder that is stuck. It is below the thirty minutes `deploy-<target>.sh`
+waits on its own per-stack lock, so a deploy never gives up on the box before it
+gives up on itself. The wait is only for jobs that reach the lock: a misuse (an
+unset variable, a run directory outside the root) is refused at once, before it.
 
 Each wrapper takes the lock before it does any work the others could disturb:
 both deploys before they check or rebuild anything, the smoke wrapper before it

@@ -88,6 +88,7 @@ export const cryptoScenarios: Scenario[] = [
     // (it opens with this row's citizenid and conversation, and only those), and the recipient
     // is offline so the export says it was not delivered live.
     id: 'crypto-send-message-body-sealed-at-rest',
+    mode: 'standalone',
     tickets: ['MICA-165', 'MICA-223'],
     run: async () => {
       const recipient = await seedCitizen('msg_to');
@@ -143,6 +144,7 @@ export const cryptoScenarios: Scenario[] = [
     // MICA-165, MICA-222: the SendSystemEmail export hands back the mail as sent while the row
     // holds it sealed, and the recipient's notification is persisted for when they come back.
     id: 'crypto-send-system-email-body-sealed-at-rest',
+    mode: 'standalone',
     tickets: ['MICA-165', 'MICA-222'],
     run: async (signal) => {
       const recipient = await seedCitizen('mail_to');
@@ -175,6 +177,7 @@ export const cryptoScenarios: Scenario[] = [
     // MICA-222, MICA-165: qb-phone's server-only `sendNewMailToOffline`, fired by another
     // server resource with qb's payload shape, lands as sealed mail for that citizenid.
     id: 'crypto-qbphone-send-new-mail-to-offline-sealed',
+    mode: 'standalone',
     tickets: ['MICA-222', 'MICA-165'],
     run: async (signal) => {
       const recipient = await seedCitizen('qbmail_to');
@@ -206,6 +209,7 @@ export const cryptoScenarios: Scenario[] = [
     // --apply` seals it in place with `updated_at` pinned; a second backfill seals nothing and
     // leaves the stored value byte for byte as it was.
     id: 'crypto-micacrypt-backfill-seals-plaintext-once',
+    mode: 'standalone',
     tickets: ['MICA-165'],
     timeoutMs: 60_000,
     run: async (signal) => {
@@ -282,6 +286,7 @@ export const cryptoScenarios: Scenario[] = [
     // may not look at is reported as not observable rather than counted either way; the paths
     // inside resource folders are the ones checked for real.
     id: 'crypto-micacrypt-keygen-prints-steps-and-writes-nothing',
+    mode: 'standalone',
     tickets: ['MICA-165', 'MICA-303'],
     run: async (signal) => {
       const tap = requireTap();
