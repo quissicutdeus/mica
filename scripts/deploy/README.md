@@ -402,6 +402,7 @@ LICENSE_KEY=<a key registered for this box, distinct from both stacks'>
 # OX_LIB_DIR=/opt/fivem-main/server-data/vendor/ox_lib
 # QBX_CORE_DIR=/opt/fivem-main/server-data/vendor/qbx_core
 # OX_INVENTORY_DIR=/opt/fivem-main/server-data/vendor/ox_inventory
+# QBX_VEHICLES_DIR=/opt/fivem-main/server-data/vendor/qbx_vehicles
 ENV
 ```
 
@@ -496,26 +497,29 @@ log says which one failed. The suite's own console line
 
 |                                 | `standalone`                                               | `qbx`                                                                                                                                                       |
 | ------------------------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Resources, in order             | `oxmysql`, `mica`, `mica-integration`                      | `oxmysql`, `ox_lib`, `qbx_core`, `ox_inventory`, `mica`, `mica-integration`                                                                                 |
-| Database before FXServer        | empty                                                      | `qbx_core.sql` imported, then one `players` row (`ITXQBX01`, below); no micaOS table                                                                        |
+| Resources, in order             | `oxmysql`, `mica`, `mica-integration`                      | `oxmysql`, `ox_lib`, `qbx_core`, `qbx_vehicles`, `ox_inventory`, `mica`, `mica-integration`                                                                 |
+| Database before FXServer        | empty                                                      | `qbx_core.sql` then `vehicles.sql` imported, then one `players` row (`ITXQBX01`, below); no micaOS table                                                    |
 | Convars                         | `mica_standalone 1`                                        | `onesync on`, `setr inventory:framework "qbx"`, `inventory:versioncheck false`, `qbx:acknowledge true`, `mica_phone_item "phone"`; **no** `mica_standalone` |
-| Mounted read-only from the host | `oxmysql`                                                  | `oxmysql`, `ox_lib`, `qbx_core`, `ox_inventory`                                                                                                             |
+| Mounted read-only from the host | `oxmysql`                                                  | `oxmysql`, `ox_lib`, `qbx_core`, `qbx_vehicles`, `ox_inventory`                                                                                             |
 | The console has to say          | `created micaOS's schema for ESX or standalone`            | `created micaOS's schema for qbx/qb`, and `mica: jobs -> qbx_core ...` (micaOS's bridge took qbx_core)                                                      |
 | Scenarios                       | everything under `integration/scenarios/` not marked `qbx` | the six in `integration/scenarios/qbx.ts`                                                                                                                   |
 
 The resources come from the main checkout's vendor directory, beside `oxmysql`
 (`/opt/fivem-main/server-data/vendor/`), unless `/etc/mica-smoke.env` sets
-`OX_LIB_DIR`, `QBX_CORE_DIR` or `OX_INVENTORY_DIR`. All four are mounted
-read-only and checked, with `qbx_core.sql`, **before anything starts**: a box
-missing one fails in seconds, not after the standalone run. qbx_core does not
-create `players` itself and micaOS reads it, so the wrapper imports qbx_core's
-own `qbx_core.sql` into the throwaway database first, then inserts one character
-for the suite to look up offline. That character's values are in the wrapper
-(`seed_qbx`) and in `integration/lib/qbxSeed.ts`, and
+`OX_LIB_DIR`, `QBX_CORE_DIR`, `QBX_VEHICLES_DIR` or `OX_INVENTORY_DIR`. All five
+are mounted read-only and checked, with `qbx_core.sql` and `vehicles.sql`,
+**before anything starts**: a box missing one fails in seconds, not after the
+standalone run. qbx_core does not create `players` itself and micaOS reads it,
+so the wrapper imports qbx_core's own `qbx_core.sql` into the throwaway database
+first, then qbx_vehicles' `vehicles.sql` (its table has a foreign key onto
+`players`), then inserts one character for the suite to look up offline.
+qbx_vehicles is started after qbx_core and **before** ox_inventory, whose qbx
+bridge raises a script error without it (v1.2.0 or higher). That character's
+values are in the wrapper (`seed_qbx`) and in `integration/lib/qbxSeed.ts`, and
 `server/__tests__/smokeWrapper.test.ts` holds the two equal. ox_inventory
 creates its own table and alters `players` at start; micaOS then creates its
 schema at qb width (50). FXServer gets an extra 60 seconds to print
-`mica started!` in the qbx run, which loads four more resources.
+`mica started!` in the qbx run, which loads five more resources.
 
 A scenario belongs to one run (`mode: 'standalone' | 'qbx'`, on the line after
 its `id:`). In the other run it is not quietly absent: the suite prints

@@ -155,6 +155,7 @@ const BRIDGE_QBX = 'mica: jobs -> qbx_core PlayerData.jobs + GetJob';
 const QBX_IDS = ['qbx-one', 'qbx-two'];
 
 const SQL_MARKER = '-- qbx_core.sql stand-in';
+const VEHICLES_MARKER = '-- vehicles.sql stand-in';
 
 /** Directories of the host the wrapper mounts as they are, read-only; every other mount is staged. */
 let hostResources: string[] = [];
@@ -166,6 +167,7 @@ let oxmysql: string;
 let oxLib: string;
 let qbxCore: string;
 let oxInventory: string;
+let qbxVehicles: string;
 let envFile: string;
 let bin: string;
 let victim: string;
@@ -182,18 +184,20 @@ beforeAll(() => {
   oxLib = join(dir, 'ox_lib');
   qbxCore = join(dir, 'qbx_core');
   oxInventory = join(dir, 'ox_inventory');
+  qbxVehicles = join(dir, 'qbx_vehicles');
   envFile = join(dir, 'settings');
   bin = join(dir, 'bin');
   victim = join(dir, 'victim');
   victimDir = join(dir, 'victim-dir');
   mkdirSync(root);
   mkdirSync(bin);
-  for (const resource of [oxmysql, oxLib, qbxCore, oxInventory]) {
+  for (const resource of [oxmysql, oxLib, qbxCore, qbxVehicles, oxInventory]) {
     mkdirSync(resource);
     writeFileSync(join(resource, 'fxmanifest.lua'), '');
   }
   writeFileSync(join(qbxCore, 'qbx_core.sql'), `${SQL_MARKER}\n`);
-  hostResources = [oxmysql, oxLib, qbxCore, oxInventory];
+  writeFileSync(join(qbxVehicles, 'vehicles.sql'), `${VEHICLES_MARKER}\n`);
+  hostResources = [oxmysql, oxLib, qbxCore, qbxVehicles, oxInventory];
   writeFileSync(envFile, `LICENSE_KEY=not-a-real-key\nOXMYSQL_DIR=${oxmysql}\n`);
   writeFileSync(join(bin, 'docker'), FAKE_DOCKER);
   chmodSync(join(bin, 'docker'), 0o755);
@@ -730,6 +734,7 @@ describe.skipIf(!trial)('mica-smoke-release.sh', () => {
         'ensure oxmysql',
         'ensure ox_lib',
         'ensure qbx_core',
+        'ensure qbx_vehicles',
         'ensure ox_inventory',
         'ensure mica',
         'ensure mica-integration'
@@ -751,7 +756,7 @@ describe.skipIf(!trial)('mica-smoke-release.sh', () => {
       }
     });
 
-    it('mounts ox_lib, qbx_core and ox_inventory read-only from the host, into the qbx server only', () => {
+    it('mounts ox_lib, qbx_core, qbx_vehicles and ox_inventory read-only from the host, into the qbx server only', () => {
       const r = wrap(makeRun('manifest'), suite(PASS_A));
 
       expect(r.status, r.out).toBe(0);
@@ -761,6 +766,7 @@ describe.skipIf(!trial)('mica-smoke-release.sh', () => {
       for (const [name, source] of [
         ['ox_lib', oxLib],
         ['qbx_core', qbxCore],
+        ['qbx_vehicles', qbxVehicles],
         ['ox_inventory', oxInventory]
       ]) {
         const mount = `-v ${source}:/opt/fivem/server-data/resources/${name}:ro`;
@@ -779,9 +785,13 @@ describe.skipIf(!trial)('mica-smoke-release.sh', () => {
       const imported = r.stdin.indexOf(SQL_MARKER);
       const seeded = r.stdin.indexOf('INSERT INTO players');
       expect(imported).toBeGreaterThanOrEqual(0);
-      expect(seeded).toBeGreaterThan(imported);
+      // qbx_vehicles' table has a foreign key onto players, so its file goes in after qbx_core's.
+      const vehicles = r.stdin.indexOf(VEHICLES_MARKER);
+      expect(vehicles).toBeGreaterThan(imported);
+      expect(seeded).toBeGreaterThan(vehicles);
       expect(r.stdin).not.toContain('-- sql');
       expect([...r.calls.matchAll(/^exec -i (mica-smoke-db-\S+) /gm)].map((m) => m[1])).toEqual([
+        expect.stringMatching(/^mica-smoke-db-qbx-/),
         expect.stringMatching(/^mica-smoke-db-qbx-/),
         expect.stringMatching(/^mica-smoke-db-qbx-/)
       ]);
@@ -954,6 +964,23 @@ describe.skipIf(!trial)('mica-smoke-release.sh', () => {
       expect(noSql.status).toBe(1);
       expect(noSql.out).toContain('qbx_core.sql is missing');
       expect(noSql.calls).not.toContain('network create');
+
+      // qbx_vehicles: a missing checkout, and one with no vehicles.sql, both before anything starts.
+      const noVehicles = wrap(makeRun('manifest'), suite(PASS_A), {
+        env: settings([`QBX_VEHICLES_DIR=${join(dir, 'no-vehicles')}`])
+      });
+
+      expect(noVehicles.status).toBe(1);
+      expect(noVehicles.out).toContain('no-vehicles is not a resource checkout');
+      expect(noVehicles.calls).not.toContain('network create');
+
+      const noVehiclesSql = wrap(makeRun('manifest'), suite(PASS_A), {
+        env: settings([`QBX_VEHICLES_DIR=${bare}`])
+      });
+
+      expect(noVehiclesSql.status).toBe(1);
+      expect(noVehiclesSql.out).toContain('vehicles.sql is missing');
+      expect(noVehiclesSql.calls).not.toContain('network create');
     });
 
     it.each([

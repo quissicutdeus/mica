@@ -262,6 +262,7 @@ OXMYSQL_DIR=/opt/fivem-main/server-data/vendor/oxmysql
 OX_LIB_DIR=
 QBX_CORE_DIR=
 OX_INVENTORY_DIR=
+QBX_VEHICLES_DIR=
 LICENSE_KEY=
 
 # How long FXServer gets to print `mica started!`, and how long the server is
@@ -304,7 +305,7 @@ esac
 
 # One key per line, read by name. Sourcing the file would let it run anything.
 if [[ -f $ENV_FILE ]]; then
-    for key in LICENSE_KEY FX_IMAGE DB_IMAGE OXMYSQL_DIR OX_LIB_DIR QBX_CORE_DIR OX_INVENTORY_DIR; do
+    for key in LICENSE_KEY FX_IMAGE DB_IMAGE OXMYSQL_DIR OX_LIB_DIR QBX_CORE_DIR OX_INVENTORY_DIR QBX_VEHICLES_DIR; do
         value=$(grep -m1 "^${key}=" "$ENV_FILE" | cut -d= -f2- || true)
         [[ -n $value ]] && printf -v "$key" '%s' "$value"
     done
@@ -314,6 +315,9 @@ fi
 OX_LIB_DIR=${OX_LIB_DIR:-${OXMYSQL_DIR%/*}/ox_lib}
 QBX_CORE_DIR=${QBX_CORE_DIR:-${OXMYSQL_DIR%/*}/qbx_core}
 OX_INVENTORY_DIR=${OX_INVENTORY_DIR:-${OXMYSQL_DIR%/*}/ox_inventory}
+# ox_inventory's qbx bridge refuses to load without qbx_vehicles (v1.2.0 or higher), and raises a
+# script error that the run fails on.
+QBX_VEHICLES_DIR=${QBX_VEHICLES_DIR:-${OXMYSQL_DIR%/*}/qbx_vehicles}
 
 keyless=0
 if [[ -z $LICENSE_KEY ]]; then
@@ -449,12 +453,14 @@ if [[ -e $integ ]]; then
         die "mica-integration/expected-scenarios.txt lists different scenarios for the two runs; each must be a pass or a skip in both"
     # The qbx run's stack, checked before anything starts: a run that found out after the
     # standalone run's five minutes that its resources are missing would have wasted them.
-    for dir in "$OX_LIB_DIR" "$QBX_CORE_DIR" "$OX_INVENTORY_DIR"; do
+    for dir in "$OX_LIB_DIR" "$QBX_CORE_DIR" "$QBX_VEHICLES_DIR" "$OX_INVENTORY_DIR"; do
         [[ -f $dir/fxmanifest.lua ]] ||
-            die "$dir is not a resource checkout, and the qbx run needs it; set OX_LIB_DIR, QBX_CORE_DIR and OX_INVENTORY_DIR in $ENV_FILE (they default to the directories beside OXMYSQL_DIR)"
+            die "$dir is not a resource checkout, and the qbx run needs it; set OX_LIB_DIR, QBX_CORE_DIR, QBX_VEHICLES_DIR and OX_INVENTORY_DIR in $ENV_FILE (they default to the directories beside OXMYSQL_DIR)"
     done
     [[ -f $QBX_CORE_DIR/qbx_core.sql ]] ||
         die "$QBX_CORE_DIR/qbx_core.sql is missing; qbx_core does not create its players table itself, so the qbx run imports this file first"
+    [[ -f $QBX_VEHICLES_DIR/vehicles.sql ]] ||
+        die "$QBX_VEHICLES_DIR/vehicles.sql is missing; qbx_vehicles reads player_vehicles, which it does not create, so the qbx run imports this file after qbx_core.sql"
 fi
 
 # Strip FXServer's colour codes so the patterns below see the words.
@@ -490,6 +496,9 @@ seed_qbx() {
         mdie "qbx_core.sql from $QBX_CORE_DIR failed to import"
     count=$(docker exec "$db" mariadb -uroot -psmoke -N -e "select count(*) from information_schema.tables where table_schema='mica' and table_name='players'")
     [[ $count == 1 ]] || mdie "qbx_core.sql imported but the database holds no players table"
+    # After qbx_core's, since its player_vehicles has a foreign key onto `players`.
+    docker exec -i "$db" mariadb -uroot -psmoke mica <"$QBX_VEHICLES_DIR/vehicles.sql" ||
+        mdie "vehicles.sql from $QBX_VEHICLES_DIR failed to import"
     docker exec -i "$db" mariadb -uroot -psmoke mica <<<"$QBX_SEED_SQL" ||
         mdie "could not seed the qbx_core players table with the suite's character"
     count=$(docker exec "$db" mariadb -uroot -psmoke mica -N -e "select count(*) from players where citizenid='ITXQBX01'")
@@ -557,7 +566,7 @@ run_mode() {
     # write there and nowhere else. Noclobber on every file: a name already there is an error.
     sd="$stage/sd-$mode"
     mkdir "$sd" "$sd/resources" "$sd/resources/oxmysql" "$sd/resources/mica"
-    [[ $mode != qbx ]] || mkdir "$sd/resources/ox_lib" "$sd/resources/qbx_core" "$sd/resources/ox_inventory"
+    [[ $mode != qbx ]] || mkdir "$sd/resources/ox_lib" "$sd/resources/qbx_core" "$sd/resources/qbx_vehicles" "$sd/resources/ox_inventory"
     set -C
     if [[ $integration == 1 ]]; then
         mkdir "$sd/resources/mica-integration" "$sd/resources/$KEY_DIR"
@@ -612,7 +621,8 @@ run_mode() {
         echo 'ensure oxmysql'
         # In the order qbx_core's own documentation gives, with micaOS after the framework it
         # detects: micaOS reads qbx_core's exports as it loads, and registers its phone item then.
-        [[ $mode != qbx ]] || printf 'ensure %s\n' ox_lib qbx_core ox_inventory
+        # qbx_vehicles after qbx_core and before ox_inventory, whose qbx bridge needs it loaded.
+        [[ $mode != qbx ]] || printf 'ensure %s\n' ox_lib qbx_core qbx_vehicles ox_inventory
         echo 'ensure mica'
         [[ $integration != 1 ]] || echo 'ensure mica-integration'
     } >"$sd/server.cfg"
@@ -635,10 +645,11 @@ run_mode() {
         -v "$resource:/opt/fivem/server-data/resources/mica:ro"
     )
     if [[ $mode == qbx ]]; then
-        echo "smoke: ${mode_tag}mounting $OX_LIB_DIR, $QBX_CORE_DIR and $OX_INVENTORY_DIR read-only, and ensuring them before mica"
+        echo "smoke: ${mode_tag}mounting $OX_LIB_DIR, $QBX_CORE_DIR, $QBX_VEHICLES_DIR and $OX_INVENTORY_DIR read-only, and ensuring them before mica"
         mounts+=(
             -v "$OX_LIB_DIR:/opt/fivem/server-data/resources/ox_lib:ro"
             -v "$QBX_CORE_DIR:/opt/fivem/server-data/resources/qbx_core:ro"
+            -v "$QBX_VEHICLES_DIR:/opt/fivem/server-data/resources/qbx_vehicles:ro"
             -v "$OX_INVENTORY_DIR:/opt/fivem/server-data/resources/ox_inventory:ro"
         )
     fi
