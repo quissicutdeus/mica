@@ -225,7 +225,7 @@ describe('runScenarios', () => {
  * prints a SKIP line, which the wrapper holds to the list the zip was packed with. A silent skip
  * is the failure this exists to rule out.
  */
-describe('the two runs', () => {
+describe('the runs', () => {
   it('skips, with a printed line and without running, a scenario of the other run', async () => {
     const ran: string[] = [];
     const mark = (id: string) => async () => {
@@ -234,6 +234,7 @@ describe('the two runs', () => {
     const mixed = [
       scenario('own', mark('own')),
       scenario('theirs', mark('theirs'), undefined, 'qbx'),
+      scenario('esx-only', mark('esx-only'), undefined, 'esx'),
       scenario('own-too', mark('own-too'))
     ];
 
@@ -241,10 +242,11 @@ describe('the two runs', () => {
     expect(standalone.lines).toEqual([
       'integration: PASS own',
       'integration: SKIP theirs: needs a qbx run, and this is the standalone run',
+      'integration: SKIP esx-only: needs a esx run, and this is the standalone run',
       'integration: PASS own-too',
       'integration: done 2 passed 0 failed'
     ]);
-    expect(standalone.result).toEqual({ passed: 2, failed: 0, skipped: 1 });
+    expect(standalone.result).toEqual({ passed: 2, failed: 0, skipped: 2 });
     expect(ran).toEqual(['own', 'own-too']);
 
     ran.length = 0;
@@ -252,18 +254,31 @@ describe('the two runs', () => {
     expect(qbx.lines).toEqual([
       'integration: SKIP own: needs a standalone run, and this is the qbx run',
       'integration: PASS theirs',
+      'integration: SKIP esx-only: needs a esx run, and this is the qbx run',
       'integration: SKIP own-too: needs a standalone run, and this is the qbx run',
       'integration: done 1 passed 0 failed'
     ]);
-    expect(qbx.result).toEqual({ passed: 1, failed: 0, skipped: 2 });
+    expect(qbx.result).toEqual({ passed: 1, failed: 0, skipped: 3 });
     expect(ran).toEqual(['theirs']);
+
+    ran.length = 0;
+    const esx = await run(mixed, { mode: 'esx' });
+    expect(esx.lines).toEqual([
+      'integration: SKIP own: needs a standalone run, and this is the esx run',
+      'integration: SKIP theirs: needs a qbx run, and this is the esx run',
+      'integration: PASS esx-only',
+      'integration: SKIP own-too: needs a standalone run, and this is the esx run',
+      'integration: done 1 passed 0 failed'
+    ]);
+    expect(esx.result).toEqual({ passed: 1, failed: 0, skipped: 3 });
+    expect(ran).toEqual(['esx-only']);
   });
 
-  it('fails, rather than skips, a scenario whose mode is not one of the two', async () => {
-    const odd = { ...scenario('odd', async () => {}), mode: 'esx' } as unknown as Scenario;
+  it('fails, rather than skips, a scenario whose mode is not one of the three', async () => {
+    const odd = { ...scenario('odd', async () => {}), mode: 'arm' } as unknown as Scenario;
     const { lines, result } = await run([odd]);
     expect(lines).toEqual([
-      "integration: FAIL odd: has mode 'esx', which is not a mode",
+      "integration: FAIL odd: has mode 'arm', which is not a mode",
       'integration: done 0 passed 1 failed'
     ]);
     expect(result).toEqual({ passed: 0, failed: 1, skipped: 0 });
@@ -290,13 +305,14 @@ describe('the two runs', () => {
 
 /**
  * MICA-304. The suite as it is registered, held to the numbers the wrapper's lists are packed
- * from. The two counts below are the run's skips: a scenario added to either mode changes one,
+ * from. The three counts below are the runs' skips: a scenario added to any mode changes one,
  * which is the point of writing them down, since a count nobody had to update is a scenario
  * nobody had to decide the mode of.
  */
 describe('the registered suite', () => {
   const STANDALONE = 27;
   const QBX = 7;
+  const ESX = 6;
 
   const printed = async (mode: Mode) => {
     const lines: string[] = [];
@@ -317,29 +333,32 @@ describe('the registered suite', () => {
     return { lines, result };
   };
 
-  it('has a mode on every scenario, from the two there are', () => {
-    expect(registered.length).toBe(STANDALONE + QBX);
+  it('has a mode on every scenario, from the three there are', () => {
+    expect(registered.length).toBe(STANDALONE + QBX + ESX);
     for (const entry of registered) expect(MODES).toContain(entry.mode);
     expect(registered.filter((e) => e.mode === 'standalone')).toHaveLength(STANDALONE);
     expect(registered.filter((e) => e.mode === 'qbx')).toHaveLength(QBX);
+    expect(registered.filter((e) => e.mode === 'esx')).toHaveLength(ESX);
   });
 
-  it('skips every standalone scenario, loudly, in the qbx run, and runs every qbx one', async () => {
-    const { lines, result } = await printed('qbx');
-    expect(result).toEqual({ passed: QBX, failed: 0, skipped: STANDALONE });
-    expect(lines.filter((l) => l.startsWith('integration: SKIP '))).toHaveLength(STANDALONE);
-    expect(lines.filter((l) => l.startsWith('ran '))).toHaveLength(QBX);
-    for (const entry of registered) {
-      const printedFor = lines.some((l) => l.startsWith(`integration: SKIP ${entry.id}:`));
-      expect(printedFor, entry.id).toBe(entry.mode === 'standalone');
+  it.each([
+    ['qbx', QBX],
+    ['esx', ESX],
+    ['standalone', STANDALONE]
+  ] as const)(
+    'runs every %s scenario in the %s run and skips, loudly, every other one',
+    async (mode, own) => {
+      const { lines, result } = await printed(mode);
+      const others = registered.length - own;
+      expect(result).toEqual({ passed: own, failed: 0, skipped: others });
+      expect(lines.filter((l) => l.startsWith('integration: SKIP '))).toHaveLength(others);
+      expect(lines.filter((l) => l.startsWith('ran '))).toHaveLength(own);
+      for (const entry of registered) {
+        const skipped = lines.some((l) => l.startsWith(`integration: SKIP ${entry.id}:`));
+        expect(skipped, entry.id).toBe(entry.mode !== mode);
+      }
     }
-  });
-
-  it('skips every qbx scenario, loudly, in the standalone run, and runs every standalone one', async () => {
-    const { lines, result } = await printed('standalone');
-    expect(result).toEqual({ passed: STANDALONE, failed: 0, skipped: QBX });
-    expect(lines.filter((l) => l.startsWith('integration: SKIP '))).toHaveLength(QBX);
-  });
+  );
 
   it('is what the packer reads from the source, id for id and mode for mode', () => {
     // The packer cannot import TypeScript, so it reads the declarations with a pattern. If the

@@ -6,6 +6,12 @@ import type { Scenario } from '../runner';
 import { requireTap } from '../lib/console';
 import { db } from '../lib/db';
 import { assert, expectOk, expectRefusal, unique } from '../lib/mica';
+import {
+  callOn,
+  itemMetadataRoundTripsThroughAStash,
+  phoneItem,
+  phoneItemExistsInOxInventory
+} from '../lib/oxInventory';
 import { QBX_SEED } from '../lib/qbxSeed';
 import { eventually } from '../lib/wait';
 import { BOOTSTRAP_REFUSED } from './schema';
@@ -29,38 +35,6 @@ import { BOOTSTRAP_REFUSED } from './schema';
  * lines this resource starts too late to hear: micaOS's bridge line for qbx_core and its
  * first-start schema line for qbx/qb.
  */
-
-type Fn = (...args: unknown[]) => unknown;
-
-const resourceExports = (resource: string): Record<string, Fn> => {
-  const found = (exports as unknown as Record<string, Record<string, Fn> | undefined>)[resource];
-  if (!found) throw new Error(`exports.${resource} is not available to this resource`);
-  return found;
-};
-
-const callOn = async <T = unknown>(resource: string, name: string, ...args: unknown[]) => {
-  const fn = resourceExports(resource)[name];
-  if (typeof fn !== 'function') throw new Error(`exports.${resource}.${name} is not callable`);
-  try {
-    return (await fn(...args)) as T;
-  } catch (error) {
-    const why = error instanceof Error ? error.message : String(error);
-    throw new Error(`exports.${resource}.${name} threw: ${why}`, { cause: error });
-  }
-};
-
-/** The item the wrapper makes micaOS's phone: `mica_phone_item`, which is empty (no gate) by default. */
-const phoneItem = (): string => {
-  const item = GetConvar('mica_phone_item', '').trim();
-  if (item === '') {
-    throw new Error(
-      "mica_phone_item is not set, so micaOS registered no usable item. The qbx run's wrapper " +
-        'sets it to the item ox_inventory ships ("phone"); the wrapper on the box predates ' +
-        'MICA-304 (reinstall scripts/deploy/mica-smoke-release.sh as scripts/deploy/README.md says).'
-    );
-  }
-  return item;
-};
 
 /**
  * Waits for micaOS's first-start schema, as `schema-created-by-first-start-without-import` does:
@@ -86,11 +60,6 @@ export const schemaCreated = (signal: { readonly aborted: boolean }): Promise<nu
   );
 
 const STACK = ['oxmysql', 'ox_lib', 'qbx_core', 'ox_inventory', 'mica'] as const;
-
-interface Slot {
-  slot: number;
-  metadata: Record<string, unknown>;
-}
 
 export const qbxScenarios: Scenario[] = [
   {
@@ -150,22 +119,7 @@ export const qbxScenarios: Scenario[] = [
     mode: 'qbx',
     tickets: ['MICA-304', 'MICA-279', 'MICA-280'],
     timeoutMs: 40_000,
-    run: async (signal) => {
-      const item = phoneItem();
-      // ox_inventory loads its item list after it starts; until then `Items` answers nothing.
-      const def = await eventually(
-        async () => {
-          const found = await callOn<Record<string, unknown> | null>('ox_inventory', 'Items', item);
-          return found && typeof found === 'object' ? found : null;
-        },
-        30_000,
-        signal,
-        `ox_inventory's item list to hold '${item}'`
-      );
-      assert(def.name === item, `ox_inventory answered '${String(def.name)}' for '${item}'`);
-      assert(typeof def.label === 'string' && def.label !== '', `'${item}' has no label`);
-      assert(def.stack === false, `'${item}' stacks, so two phones would merge into one slot`);
-    }
+    run: phoneItemExistsInOxInventory
   },
   {
     // MICA-279, MICA-280, MICA-219: per-item metadata through a stash, in the shapes
@@ -177,58 +131,7 @@ export const qbxScenarios: Scenario[] = [
     mode: 'qbx',
     tickets: ['MICA-304', 'MICA-279', 'MICA-280', 'MICA-219'],
     timeoutMs: 40_000,
-    run: async (signal) => {
-      const item = phoneItem();
-      await eventually(
-        async () => (await callOn('ox_inventory', 'Items', item)) || null,
-        30_000,
-        signal,
-        `ox_inventory's item list to hold '${item}'`
-      );
-      const stash = await callOn<string>('ox_inventory', 'CreateTemporaryStash', {
-        label: 'micaOS integration',
-        slots: 5,
-        maxWeight: 100_000
-      });
-      assert(
-        typeof stash === 'string' && stash !== '',
-        `CreateTemporaryStash answered ${String(stash)}`
-      );
-
-      const phoneId = unique('phone');
-      // Lua's `return success, response` crosses the export boundary as `[success, response]`.
-      const answer = await callOn<unknown>('ox_inventory', 'AddItem', stash, item, 1, { phoneId });
-      const added = Array.isArray(answer) ? answer[0] : answer;
-      assert(
-        added === true,
-        `AddItem answered ${JSON.stringify(answer)}; expected success (true, or [true, slot])`
-      );
-
-      const slots =
-        (await callOn<Slot[] | null>('ox_inventory', 'GetSlotsWithItem', stash, item)) ?? [];
-      assert(
-        Array.isArray(slots) && slots.length === 1,
-        `the stash holds ${slots.length} phone(s), not 1`
-      );
-      const held = slots[0];
-      assert(Number.isInteger(held.slot) && held.slot > 0, `the slot is ${String(held.slot)}`);
-      assert(
-        held.metadata?.phoneId === phoneId,
-        `the stored phoneId is ${String(held.metadata?.phoneId)}`
-      );
-
-      // Merge, then write: what `writeItemMetadata` does, and the reason it reads first.
-      await callOn('ox_inventory', 'SetMetadata', stash, held.slot, {
-        ...held.metadata,
-        lastUsed: 7
-      });
-      const again =
-        (await callOn<Slot[] | null>('ox_inventory', 'GetSlotsWithItem', stash, item)) ?? [];
-      assert(again.length === 1, `the stash holds ${again.length} phone(s) after the write`);
-      assert(again[0].slot === held.slot, 'the write moved the item to another slot');
-      assert(again[0].metadata?.phoneId === phoneId, 'the merged write dropped the phoneId');
-      assert(again[0].metadata?.lastUsed === 7, 'the merged write did not store the new key');
-    }
+    run: itemMetadataRoundTripsThroughAStash
   },
   {
     // MICA-223, MICA-232, MICA-284: a character micaOS has never heard of, known only to qbx's

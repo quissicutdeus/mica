@@ -403,6 +403,10 @@ LICENSE_KEY=<a key registered for this box, distinct from both stacks'>
 # QBX_CORE_DIR=/opt/fivem-main/server-data/vendor/qbx_core
 # OX_INVENTORY_DIR=/opt/fivem-main/server-data/vendor/ox_inventory
 # QBX_VEHICLES_DIR=/opt/fivem-main/server-data/vendor/qbx_vehicles
+# the integration suite's esx run (MICA-304); see "ESX_DIR" below. esx_lib and legacy.sql are found beside it
+# ESX_DIR=/opt/mica-smoke/vendor/es_extended
+# ESX_LIB_DIR=/opt/mica-smoke/vendor/esx_lib
+# ESX_SQL=/opt/mica-smoke/vendor/legacy.sql
 ENV
 ```
 
@@ -580,6 +584,19 @@ on the box changes: no sudoers rule, no new variable, and the resources are read
 from where the live main server already has them. `/etc/mica-smoke.env` needs
 nothing new.
 
+**ESX_DIR (the esx run).** The live servers run no ESX, so the esx run reads its
+framework from `/opt/mica-smoke/vendor/`, which only root writes, and refuses to
+start, naming the path, when it is missing. Install one esx_core release
+(`esx-framework/esx_core` tag `1.15.2`, a source archive of the tag) as three
+read-only, root-owned entries there: `es_extended/` (from `[core]/es_extended`),
+`esx_lib/` (from `[core]/esx_lib`, which es_extended's manifest loads) and
+`legacy.sql` (from `[SQL]/legacy.sql`). The wrapper imports `legacy.sql`, not
+`es_extended/es_extended.sql`: that one creates a database of its own and lacks
+the `firstname`, `lastname` and `phone_number` columns of `users` and the
+`licenses` table ox_inventory's esx bridge writes to. Set `ESX_DIR`,
+`ESX_LIB_DIR` or `ESX_SQL` in `/etc/mica-smoke.env` to put any of them
+elsewhere.
+
 **A key file has to sit inside a resource folder.** FXServer refuses a
 resource's reads outside resource folders, with no grant to lift it, so the
 suite's keyring lives in its own tiny resource. The same holds for an owner's
@@ -641,15 +658,19 @@ mica-wrapper: mica-deploy-main-compose.sh FAILED: exit status 1; the line above 
 **Why 1500 seconds.** A deploy holds the box for one to three minutes and an
 integration run for five to ten (at most 90s for the database, 180s for FXServer
 to start and 300s for the suite), and a release makes two runs back to back.
-Since MICA-304 one integration invocation is two such runs under one lock (the
-qbx run is allowed 90s, 240s and 300s: at most 1200s together). 1500s (25
-minutes) outlasts that, so a job queued behind one invocation, and then another
-job, still goes; it does not outlast two integration invocations ahead of it,
-which is a backlog worth reading about. And it is far short of hanging a CI job
-on a holder that is stuck. It is below the thirty minutes `deploy-<target>.sh`
-waits on its own per-stack lock, so a deploy never gives up on the box before it
-gives up on itself. The wait is only for jobs that reach the lock: a misuse (an
-unset variable, a run directory outside the root) is refused at once, before it.
+Since MICA-304 one integration invocation is three such runs under one lock (the
+qbx and esx runs are each allowed 90s, 240s and 300s: at most about 1830s
+together). A real invocation takes minutes (three for standalone and qbx on
+2026-10-07), so 1500s (25 minutes) outlasts every invocation that is working;
+only one that runs every budget to its limit outlasts it, and the job queued
+behind that one fails loudly at the lock instead of waiting on a run that is
+already going to fail. It does not outlast two integration invocations ahead of
+a job either, which is a backlog worth reading about. And it is far short of
+hanging a CI job on a holder that is stuck. It is below the thirty minutes
+`deploy-<target>.sh` waits on its own per-stack lock, so a deploy never gives up
+on the box before it gives up on itself. The wait is only for jobs that reach
+the lock: a misuse (an unset variable, a run directory outside the root) is
+refused at once, before it.
 
 Each wrapper takes the lock before it does any work the others could disturb:
 both deploys before they check or rebuild anything, the smoke wrapper before it

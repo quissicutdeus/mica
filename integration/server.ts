@@ -36,8 +36,8 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 const print = (line: string): void => console.log(line);
 
 /**
- * Which of the box's two runs this is (MICA-304): `mica_integration_mode`, which the wrapper sets
- * to `standalone` or `qbx`. Never defaulted. A wrapper that predates the modes sets nothing, and
+ * Which of the box's runs this is (MICA-304): `mica_integration_mode`, which the wrapper sets to
+ * `standalone`, `qbx` or `esx`. Never defaulted. A wrapper that predates the modes sets nothing, and
  * a suite that guessed would run one stack's scenarios against the other and report the result.
  */
 const readMode = (): { mode: Mode } | { problem: string } => {

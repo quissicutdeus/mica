@@ -55,16 +55,19 @@
 # so the release smoke test cannot drift into this mode. Whatever the mode, a second
 # invocation waits for the first: two servers on one licence key will not both stay up.
 #
-# Two runs, every time (MICA-304). An integration zip is run twice, one after the other, each on
-# a database and a FXServer of its own: `standalone` (micaOS with no framework, no inventory and
-# an empty database) and then `qbx` (oxmysql, ox_lib, qbx_core, ox_inventory, micaOS and the
-# suite, on a database holding qbx_core's own tables and one character). There is no way to ask
-# for one: nothing in the zip, the arguments or the environment picks, because a run that could
-# be told to leave qbx out is one a stray edit could leave out unnoticed. Each run is held to
-# the zip's expected-scenarios.txt (`<mode> pass|skip <id>`): the PASS lines must be exactly the
-# scenarios of that run, and the SKIP lines exactly the other run's, each printed by the suite,
-# so a scenario that went missing from either is a difference rather than a smaller count. A run
-# that fails ends the invocation, and its messages are tagged `[standalone mode]` or `[qbx mode]`.
+# Three runs, every time (MICA-304). An integration zip is run three times, one after the other,
+# each on a database and a FXServer of its own: `standalone` (micaOS with no framework, no
+# inventory and an empty database), then `qbx` (oxmysql, ox_lib, qbx_core, ox_inventory, micaOS
+# and the suite, on a database holding qbx_core's own tables and one character), then `esx`
+# (oxmysql, ox_lib, esx_lib, es_extended, ox_inventory, micaOS and the suite, on a database
+# holding ESX Legacy's own tables and one character). There is no way to ask for one: nothing in
+# the zip, the arguments or the environment picks, because a run that could be told to leave one
+# out is one a stray edit could leave out unnoticed. Each run is held to the zip's
+# expected-scenarios.txt (`<mode> pass|skip <id>`): the PASS lines must be exactly the scenarios
+# of that run, and the SKIP lines exactly the other runs', each printed by the suite, so a
+# scenario that went missing from any is a difference rather than a smaller count. A run that
+# fails ends the invocation, and its messages are tagged `[standalone mode]`, `[qbx mode]` or
+# `[esx mode]`.
 #
 # Nothing the deploy account writes is trusted once it is read. It owns the run directory
 # and runs pushed code, so any name there can be a symlink by the time root gets to it;
@@ -263,6 +266,12 @@ OX_LIB_DIR=
 QBX_CORE_DIR=
 OX_INVENTORY_DIR=
 QBX_VEHICLES_DIR=
+# The esx run's resources (MICA-304). Not beside OXMYSQL_DIR: the live servers run no ESX, so
+# these are installed for this box alone, root-owned and read-only, from one esx_core release
+# (scripts/deploy/README.md names the tag). ESX_LIB_DIR and ESX_SQL default beside ESX_DIR, below.
+ESX_DIR=/opt/mica-smoke/vendor/es_extended
+ESX_LIB_DIR=
+ESX_SQL=
 LICENSE_KEY=
 
 # How long FXServer gets to print `mica started!`, and how long the server is
@@ -305,7 +314,7 @@ esac
 
 # One key per line, read by name. Sourcing the file would let it run anything.
 if [[ -f $ENV_FILE ]]; then
-    for key in LICENSE_KEY FX_IMAGE DB_IMAGE OXMYSQL_DIR OX_LIB_DIR QBX_CORE_DIR OX_INVENTORY_DIR QBX_VEHICLES_DIR; do
+    for key in LICENSE_KEY FX_IMAGE DB_IMAGE OXMYSQL_DIR OX_LIB_DIR QBX_CORE_DIR OX_INVENTORY_DIR QBX_VEHICLES_DIR ESX_DIR ESX_LIB_DIR ESX_SQL; do
         value=$(grep -m1 "^${key}=" "$ENV_FILE" | cut -d= -f2- || true)
         [[ -n $value ]] && printf -v "$key" '%s' "$value"
     done
@@ -318,6 +327,13 @@ OX_INVENTORY_DIR=${OX_INVENTORY_DIR:-${OXMYSQL_DIR%/*}/ox_inventory}
 # ox_inventory's qbx bridge refuses to load without qbx_vehicles (v1.2.0 or higher), and raises a
 # script error that the run fails on.
 QBX_VEHICLES_DIR=${QBX_VEHICLES_DIR:-${OXMYSQL_DIR%/*}/qbx_vehicles}
+# es_extended's fxmanifest loads `@esx_lib/imports.lua`, so the esx run cannot start without
+# esx_lib beside it. The SQL is esx_core's `[SQL]/legacy.sql`, not es_extended.sql: that file
+# creates and `USE`s a database of its own and holds no firstname, lastname, phone_number or
+# licenses (which ox_inventory's esx bridge writes to), and es_extended's own migrations then
+# alter the tables it lacks and ask for a restart that never comes.
+ESX_LIB_DIR=${ESX_LIB_DIR:-${ESX_DIR%/*}/esx_lib}
+ESX_SQL=${ESX_SQL:-${ESX_DIR%/*}/legacy.sql}
 
 keyless=0
 if [[ -z $LICENSE_KEY ]]; then
@@ -378,8 +394,9 @@ stage=
 net=
 db=
 fx=
-# Which run a message belongs to: empty for the release smoke test, `[standalone mode] ` or
-# `[qbx mode] ` for the two integration runs, so a failing job's log names the one that failed.
+# Which run a message belongs to: empty for the release smoke test, `[standalone mode] `,
+# `[qbx mode] ` or `[esx mode] ` for the integration runs, so a failing job's log names the one
+# that failed.
 mode_tag=''
 mdie() { die "$mode_tag$*"; }
 # One run's containers and network, which a run removes when it ends and the exit trap removes
@@ -429,30 +446,32 @@ resource="$stage/src/mica"
 integ="$stage/src/mica-integration"
 integration=0
 # The runs this invocation makes, in order. A release zip is one. The integration zip is the same
-# suite twice, in two stacks (MICA-304), and nothing in the zip, the command line or the
-# environment chooses between them: a run that could be asked to leave qbx out would be one a
+# suite three times, in three stacks (MICA-304), and nothing in the zip, the command line or the
+# environment chooses between them: a run that could be asked to leave one out would be one a
 # stray change could leave out quietly.
 modes=(release)
 if [[ -e $integ ]]; then
     integration=1
-    modes=(standalone qbx)
+    modes=(standalone qbx esx)
     [[ -f $integ/fxmanifest.lua ]] || die "mica-integration/fxmanifest.lua is missing from the zip"
     [[ -f $integ/expected-scenarios.txt ]] ||
         die "mica-integration/expected-scenarios.txt is missing; without it a dropped scenario could not be told from a passed run"
     [[ -s $integ/expected-scenarios.txt ]] || die "mica-integration/expected-scenarios.txt is empty"
-    if grep -qvE '^(standalone|qbx) (pass|skip) [a-z0-9][a-z0-9-]*$' "$integ/expected-scenarios.txt"; then
-        die "mica-integration/expected-scenarios.txt holds a line that is not '<standalone|qbx> <pass|skip> <scenario id>'; the zip was packed by a packer that predates MICA-304, or by hand"
+    if grep -qvE '^(standalone|qbx|esx) (pass|skip) [a-z0-9][a-z0-9-]*$' "$integ/expected-scenarios.txt"; then
+        die "mica-integration/expected-scenarios.txt holds a line that is not '<standalone|qbx|esx> <pass|skip> <scenario id>'; the zip was packed by a packer that predates MICA-304 or its esx run, or by hand"
     fi
-    for m in standalone qbx; do
+    for m in standalone qbx esx; do
         grep -qE "^$m pass " "$integ/expected-scenarios.txt" ||
             die "mica-integration/expected-scenarios.txt lists no scenario to pass in the $m run; a run that expects nothing proves nothing"
         [[ -z $(listed "$m" '(pass|skip)' "$integ/expected-scenarios.txt" | uniq -d) ]] ||
             die "mica-integration/expected-scenarios.txt lists a scenario twice in the $m run"
     done
-    [[ $(listed standalone '(pass|skip)' "$integ/expected-scenarios.txt") == "$(listed qbx '(pass|skip)' "$integ/expected-scenarios.txt")" ]] ||
-        die "mica-integration/expected-scenarios.txt lists different scenarios for the two runs; each must be a pass or a skip in both"
-    # The qbx run's stack, checked before anything starts: a run that found out after the
-    # standalone run's five minutes that its resources are missing would have wasted them.
+    for m in qbx esx; do
+        [[ $(listed standalone '(pass|skip)' "$integ/expected-scenarios.txt") == "$(listed "$m" '(pass|skip)' "$integ/expected-scenarios.txt")" ]] ||
+            die "mica-integration/expected-scenarios.txt lists different scenarios for the standalone and $m runs; each must be a pass or a skip in all"
+    done
+    # The qbx and esx runs' stacks, checked before anything starts: a run that found out after
+    # the standalone run's five minutes that its resources are missing would have wasted them.
     for dir in "$OX_LIB_DIR" "$QBX_CORE_DIR" "$QBX_VEHICLES_DIR" "$OX_INVENTORY_DIR"; do
         [[ -f $dir/fxmanifest.lua ]] ||
             die "$dir is not a resource checkout, and the qbx run needs it; set OX_LIB_DIR, QBX_CORE_DIR, QBX_VEHICLES_DIR and OX_INVENTORY_DIR in $ENV_FILE (they default to the directories beside OXMYSQL_DIR)"
@@ -461,6 +480,14 @@ if [[ -e $integ ]]; then
         die "$QBX_CORE_DIR/qbx_core.sql is missing; qbx_core does not create its players table itself, so the qbx run imports this file first"
     [[ -f $QBX_VEHICLES_DIR/vehicles.sql ]] ||
         die "$QBX_VEHICLES_DIR/vehicles.sql is missing; qbx_vehicles reads player_vehicles, which it does not create, so the qbx run imports this file after qbx_core.sql"
+    # The esx run's: es_extended and esx_lib are resources, and the SQL is one file of esx_core's.
+    # Nothing here is installed by this script, so a box that lacks them is told where to put them.
+    for dir in "$ESX_DIR" "$ESX_LIB_DIR"; do
+        [[ -f $dir/fxmanifest.lua ]] ||
+            die "$dir is not a resource checkout, and the esx run needs it; install es_extended and esx_lib from one esx_core release at ${ESX_DIR%/*} (scripts/deploy/README.md), or set ESX_DIR, ESX_LIB_DIR and ESX_SQL in $ENV_FILE"
+    done
+    [[ -f $ESX_SQL ]] ||
+        die "$ESX_SQL is missing; es_extended does not create its tables itself, so the esx run imports esx_core's legacy.sql first (ESX_SQL in $ENV_FILE says where it is)"
 fi
 
 # Strip FXServer's colour codes so the patterns below see the words.
@@ -468,7 +495,7 @@ plain() { sed 's/\x1b\[[0-9;]*m//g'; }
 
 report() {
     echo "---- FXServer console, ${mode_tag}mica, oxmysql and framework lines ----"
-    docker logs "$fx" 2>&1 | plain | grep -iE 'mica|oxmysql|ox_lib|qbx|ox_inventory|resources\]|svadhesive|Quitting' || true
+    docker logs "$fx" 2>&1 | plain | grep -iE 'mica|oxmysql|ox_lib|qbx|esx|es_extended|ox_inventory|resources\]|svadhesive|Quitting' || true
     echo "----------------------------------------------------"
 }
 
@@ -508,12 +535,46 @@ seed_qbx() {
     echo "smoke: imported qbx_core.sql and seeded one character; the database holds no micaOS table"
 }
 
+# esx mode's database (MICA-304). es_extended does not create its tables at start, and micaOS
+# reads `users` (the framework's own table, never created by micaOS), so it holds ESX Legacy's
+# own schema before FXServer starts, imported from esx_core's own legacy.sql, and one character
+# for the suite to look up offline. That file's `users` carries the `ssn` es_extended's own
+# migrations expect (NOT NULL, unique), and the firstname, lastname and phone_number micaOS's
+# offline lookups read. integration/lib/esxSeed.ts names the same character, and
+# server/__tests__/smokeWrapper.test.ts holds the two to each other. No micaOS table: the run is
+# only a pass if micaOS creates its schema itself, beside this `users`.
+read -r -d '' ESX_SEED_SQL <<'SQL' || true
+INSERT INTO users (identifier, ssn, accounts, `group`, inventory, job, job_grade, loadout, metadata, `position`, firstname, lastname, dateofbirth, sex, height, phone_number)
+VALUES (
+    'license:itxesx01', '555-01-0456',
+    '{"money":0,"bank":0,"black_money":0}', 'user', '[]', 'unemployed', 0, '[]', '{}',
+    '{"x":0.0,"y":0.0,"z":0.0,"heading":0.0}',
+    'Ada', 'Quill', '01/01/1990', 'f', 170, '5550100456'
+);
+SQL
+
+seed_esx() {
+    local count
+    docker exec -i "$db" mariadb -uroot -psmoke mica <"$ESX_SQL" ||
+        mdie "legacy.sql from $ESX_SQL failed to import"
+    count=$(docker exec "$db" mariadb -uroot -psmoke -N -e "select count(*) from information_schema.tables where table_schema='mica' and table_name='users'")
+    [[ $count == 1 ]] || mdie "legacy.sql imported but the database holds no users table"
+    docker exec -i "$db" mariadb -uroot -psmoke mica <<<"$ESX_SEED_SQL" ||
+        mdie "could not seed the es_extended users table with the suite's character"
+    count=$(docker exec "$db" mariadb -uroot -psmoke mica -N -e "select count(*) from users where identifier='license:itxesx01'")
+    [[ $count == 1 ]] || mdie "the suite's character is not in the users table after seeding it"
+    count=$(docker exec "$db" mariadb -uroot -psmoke -N -e "select count(*) from information_schema.tables where table_schema='mica' and table_name like 'mica\\_%'")
+    [[ $count == 0 ]] || mdie "the database holds $count micaOS table(s) before micaOS starts, so the first-start schema would prove nothing"
+    echo "smoke: imported legacy.sql and seeded one character; the database holds no micaOS table"
+}
+
 # One FXServer, start to verdict, against a database of its own. $1 is the run: `release` (the
-# zip's own mica.esx.sql imported, mica started, the console left clean), or one of the two
-# integration runs, `standalone` and `qbx`. A run that fails ends the invocation, naming itself.
+# zip's own mica.esx.sql imported, mica started, the console left clean), or one of the three
+# integration runs, `standalone`, `qbx` and `esx`. A run that fails ends the invocation, naming
+# itself.
 run_mode() {
     local mode=$1 id sd mounts start_timeout deadline started logs running results tables
-    local npass nfail nskip ndone want_pass want_skip got_pass got_skip created_re bridge_re
+    local npass nfail nskip ndone want_pass want_skip got_pass got_skip created_re bridge_re bridge_name
     id=${stage##*/run.}
     mode_tag=''
     [[ $mode == release ]] || mode_tag="[$mode mode] "
@@ -527,6 +588,7 @@ run_mode() {
         release) echo "smoke: starting $DB_IMAGE and importing the zip's mica.esx.sql" ;;
         standalone) echo "smoke: ${mode_tag}starting $DB_IMAGE, EMPTY: micaOS creates the schema itself on its first start" ;;
         qbx) echo "smoke: ${mode_tag}starting $DB_IMAGE with qbx_core's players table and a character in it; micaOS creates its own schema on its first start" ;;
+        esx) echo "smoke: ${mode_tag}starting $DB_IMAGE with ESX Legacy's tables and a character in its users table; micaOS creates its own schema on its first start" ;;
     esac
     docker run -d --name "$db" --network "$net" \
         -e MARIADB_ROOT_PASSWORD=smoke -e MARIADB_DATABASE=mica \
@@ -544,7 +606,7 @@ run_mode() {
     # hand has to import. Standalone mode wants the ESX file: mica.sql reads qb's players table
     # first and fails without it, and this database has none. The standalone integration run
     # leaves the database empty, for micaOS to create (MICA-306): importing here would make the
-    # first start a no-op. The qbx run holds qbx_core's own tables and no micaOS one.
+    # first start a no-op. The qbx and esx runs hold the framework's own tables and no micaOS one.
     case $mode in
         release)
             docker exec -i "$db" mariadb -uroot -psmoke mica <"$resource/mica.esx.sql" ||
@@ -558,6 +620,7 @@ run_mode() {
             echo "smoke: the database holds no table; nothing imported"
             ;;
         qbx) seed_qbx ;;
+        esx) seed_esx ;;
     esac
 
     # A server-data of its own: the config below, and whatever FXServer writes beside it (its
@@ -566,7 +629,10 @@ run_mode() {
     # write there and nowhere else. Noclobber on every file: a name already there is an error.
     sd="$stage/sd-$mode"
     mkdir "$sd" "$sd/resources" "$sd/resources/oxmysql" "$sd/resources/mica"
-    [[ $mode != qbx ]] || mkdir "$sd/resources/ox_lib" "$sd/resources/qbx_core" "$sd/resources/qbx_vehicles" "$sd/resources/ox_inventory"
+    case $mode in
+        qbx) mkdir "$sd/resources/ox_lib" "$sd/resources/qbx_core" "$sd/resources/qbx_vehicles" "$sd/resources/ox_inventory" ;;
+        esx) mkdir "$sd/resources/ox_lib" "$sd/resources/esx_lib" "$sd/resources/es_extended" "$sd/resources/ox_inventory" ;;
+    esac
     set -C
     if [[ $integration == 1 ]]; then
         mkdir "$sd/resources/mica-integration" "$sd/resources/$KEY_DIR"
@@ -605,6 +671,16 @@ run_mode() {
             echo 'set inventory:versioncheck "false"'
             echo 'set qbx:acknowledge "true"'
             echo 'set mica_phone_item "phone"'
+        elif [[ $mode == esx ]]; then
+            # es_extended starts on onesync, and turns itself onto ox_inventory (its
+            # `Config.CustomInventory`) because ox_inventory's folder is there, which ox_inventory's
+            # esx bridge then checks. No `mica_standalone`, for the reason the qbx run gives. The
+            # rest is the qbx run's: no version-check call, and the item that makes micaOS register
+            # the phone as usable.
+            echo 'set onesync on'
+            echo 'setr inventory:framework "esx"'
+            echo 'set inventory:versioncheck "false"'
+            echo 'set mica_phone_item "phone"'
         else
             echo 'set mica_standalone 1'
         fi
@@ -622,7 +698,12 @@ run_mode() {
         # In the order qbx_core's own documentation gives, with micaOS after the framework it
         # detects: micaOS reads qbx_core's exports as it loads, and registers its phone item then.
         # qbx_vehicles after qbx_core and before ox_inventory, whose qbx bridge needs it loaded.
-        [[ $mode != qbx ]] || printf 'ensure %s\n' ox_lib qbx_core qbx_vehicles ox_inventory
+        case $mode in
+            qbx) printf 'ensure %s\n' ox_lib qbx_core qbx_vehicles ox_inventory ;;
+            # esx_lib before es_extended, whose manifest loads it; es_extended before ox_inventory,
+            # whose esx bridge asks it for its shared object half a second after it starts.
+            esx) printf 'ensure %s\n' ox_lib esx_lib es_extended ox_inventory ;;
+        esac
         echo 'ensure mica'
         [[ $integration != 1 ]] || echo 'ensure mica-integration'
     } >"$sd/server.cfg"
@@ -653,6 +734,15 @@ run_mode() {
             -v "$OX_INVENTORY_DIR:/opt/fivem/server-data/resources/ox_inventory:ro"
         )
     fi
+    if [[ $mode == esx ]]; then
+        echo "smoke: ${mode_tag}mounting $OX_LIB_DIR, $ESX_LIB_DIR, $ESX_DIR and $OX_INVENTORY_DIR read-only, and ensuring them before mica"
+        mounts+=(
+            -v "$OX_LIB_DIR:/opt/fivem/server-data/resources/ox_lib:ro"
+            -v "$ESX_LIB_DIR:/opt/fivem/server-data/resources/esx_lib:ro"
+            -v "$ESX_DIR:/opt/fivem/server-data/resources/es_extended:ro"
+            -v "$OX_INVENTORY_DIR:/opt/fivem/server-data/resources/ox_inventory:ro"
+        )
+    fi
     if [[ $integration == 1 ]]; then
         echo "smoke: ${mode_tag}INTEGRATION -- mica-integration is in the zip; mounting it and ensuring it after mica"
         mounts+=(-v "$integ:/opt/fivem/server-data/resources/mica-integration:ro")
@@ -662,9 +752,10 @@ run_mode() {
         "${mounts[@]}" \
         "$FX_IMAGE" +exec server.cfg >/dev/null
 
-    # The qbx stack loads four resources micaOS does not, and qbx_core alone is hundreds of files.
+    # The qbx and esx stacks load four resources micaOS does not, and qbx_core alone is hundreds
+    # of files.
     start_timeout=$START_TIMEOUT
-    [[ $mode != qbx ]] || start_timeout=$((START_TIMEOUT + 60))
+    [[ $mode == release || $mode == standalone ]] || start_timeout=$((START_TIMEOUT + 60))
     started=0
     deadline=$((SECONDS + start_timeout))
     while ((SECONDS < deadline)); do
@@ -772,15 +863,27 @@ run_mode() {
         # The suite reads the tables and the ledger back; only the whole console holds this line,
         # since the suite's own listener starts after micaOS has begun talking. A refusal prints
         # the reason instead, and the lines that say why are shown.
-        if [[ $mode == qbx ]]; then
-            created_re="created micaOS's schema for qbx/qb"
-            # And micaOS's bridge took qbx_core, not a qb core or nothing (MICA-227's line, which
-            # names what answered for jobs). The suite starts too late to hear it.
-            bridge_re='mica: jobs -> qbx_core '
-        else
-            created_re="created micaOS's schema for ESX or standalone"
-            bridge_re=''
-        fi
+        # And micaOS's bridge took the framework this run started, not another or nothing
+        # (MICA-227's line, which names what answered for jobs). The suite starts too late to hear
+        # it. The esx run needs it most: the schema line is the same words standalone prints, since
+        # ESX and standalone share a width, so only this line says micaOS detected es_extended.
+        case $mode in
+            qbx)
+                created_re="created micaOS's schema for qbx/qb"
+                bridge_re='mica: jobs -> qbx_core '
+                bridge_name=qbx_core
+                ;;
+            esx)
+                created_re="created micaOS's schema for ESX or standalone"
+                bridge_re='mica: jobs -> es_extended '
+                bridge_name=es_extended
+                ;;
+            *)
+                created_re="created micaOS's schema for ESX or standalone"
+                bridge_re=''
+                bridge_name=''
+                ;;
+        esac
         if ! grep -qF "$created_re" <<<"$logs"; then
             echo "---- micaOS's schema lines ----" >&2
             grep -iE "\[mica\].*(schema|half-created|database)" <<<"$logs" >&2 || true
@@ -789,10 +892,10 @@ run_mode() {
         if [[ -n $bridge_re ]] && ! grep -qF "$bridge_re" <<<"$logs"; then
             echo "---- micaOS's bridge lines ----" >&2
             grep -iE 'mica: (jobs|banking)|FrameworkBridge' <<<"$logs" >&2 || true
-            mdie "the console never said micaOS's bridge took qbx_core (\"$bridge_re...\"); micaOS did not detect the framework it was started beside"
+            mdie "the console never said micaOS's bridge took $bridge_name (\"$bridge_re...\"); micaOS did not detect the framework it was started beside"
         fi
-        if [[ $mode == qbx ]] && grep -qF 'mica_standalone is set, but' <<<"$logs"; then
-            mdie "micaOS reported mica_standalone set beside the framework; the qbx run must leave it out"
+        if [[ $mode != standalone ]] && grep -qF 'mica_standalone is set, but' <<<"$logs"; then
+            mdie "micaOS reported mica_standalone set beside the framework; the $mode run must leave it out"
         fi
         # The verdict lines are the suite's own and can say anything; what follows is for what
         # the console says about everything else.
@@ -834,6 +937,6 @@ for mode in "${modes[@]}"; do
     run_mode "$mode"
 done
 if [[ $integration == 1 ]]; then
-    echo "smoke: integration passed in every run -- ${ran[0]}; ${ran[1]}"
+    echo "smoke: integration passed in every run -- ${ran[0]}; ${ran[1]}; ${ran[2]}"
 fi
 completed=1

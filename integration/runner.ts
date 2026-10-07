@@ -18,20 +18,21 @@ export interface RunSignal {
 }
 
 /**
- * The two runs the box makes of one zip (MICA-304). `standalone` is micaOS with no framework and
- * no inventory; `qbx` is micaOS beside qbx_core and ox_inventory. A scenario belongs to exactly
- * one: what it arranges and asserts is true of that stack and not the other.
+ * The runs the box makes of one zip (MICA-304). `standalone` is micaOS with no framework and no
+ * inventory; `qbx` is micaOS beside qbx_core and ox_inventory; `esx` is micaOS beside es_extended
+ * and ox_inventory. A scenario belongs to exactly one: what it arranges and asserts is true of
+ * that stack and not the others.
  */
-export type Mode = 'standalone' | 'qbx';
+export type Mode = 'standalone' | 'qbx' | 'esx';
 
-export const MODES: readonly Mode[] = ['standalone', 'qbx'];
+export const MODES: readonly Mode[] = ['standalone', 'qbx', 'esx'];
 
 export interface Scenario {
   /** What it proves, in lower-kebab-case. Printed as is, so it never contains a space. */
   id: string;
   /**
    * The run it belongs to. Written on the line after `id:`, which is how `pack-integration.js`
-   * reads it without importing TypeScript. In the other run it is not silently absent: the
+   * reads it without importing TypeScript. In another run it is not silently absent: the
    * runner prints a SKIP line for it, and the box's wrapper holds the SKIP lines to the list the
    * zip was packed with.
    */
@@ -45,7 +46,7 @@ export interface Scenario {
 
 export interface RunnerOptions {
   print: (line: string) => void;
-  /** Which of the box's two runs this is. A scenario of the other mode is skipped, loudly. */
+  /** Which of the box's runs this is. A scenario of another mode is skipped, loudly. */
   mode: Mode;
   /** Per scenario, unless it names its own. */
   defaultTimeoutMs: number;
@@ -60,7 +61,7 @@ export interface RunnerOptions {
 export interface RunResult {
   passed: number;
   failed: number;
-  /** Scenarios of the other mode. Not in the done line: the wrapper counts SKIP lines itself. */
+  /** Scenarios of another mode. Not in the done line: the wrapper counts SKIP lines itself. */
   skipped: number;
 }
 

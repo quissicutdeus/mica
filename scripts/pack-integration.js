@@ -44,14 +44,14 @@ const REQUIRED_INTEGRATION = ['fxmanifest.lua', 'server.js', 'expected-scenarios
 
 /**
  * Where the suite's scenarios are declared, one `id: '<kebab-case>'` each, and on the next line
- * the run it belongs to: `mode: 'standalone'` or `mode: 'qbx'` (MICA-304). The mode group is
+ * the run it belongs to: `mode: 'standalone'`, `'qbx'` or `'esx'` (MICA-304). The mode group is
  * optional in the pattern so that an id with no mode is found and refused by name, not skipped.
  */
 const SCENARIOS_DIR = 'integration/scenarios';
 const SCENARIO_ID = /^\s*id:\s*'([a-z0-9][a-z0-9-]*)',?[ \t]*(?:\r?\n\s*mode:\s*'([a-z]+)')?/gm;
 
 /** The box runs the suite once in each, in this order (scripts/deploy/README.md). */
-export const MODES = ['standalone', 'qbx'];
+export const MODES = ['standalone', 'qbx', 'esx'];
 
 const EOCD = 0x06054b50;
 const CENTRAL = 0x02014b50;
@@ -160,8 +160,8 @@ export function scenarioIds(files) {
       const [, id, mode] = match;
       if (mode === undefined) {
         throw new Error(
-          `scenario ${id} (${name}) declares no mode; write \`mode: 'standalone'\` or ` +
-            "`mode: 'qbx'` on the line after its id"
+          `scenario ${id} (${name}) declares no mode; write \`mode: 'standalone'\`, ` +
+            "`mode: 'qbx'` or `mode: 'esx'` on the line after its id"
         );
       }
       if (!MODES.includes(mode)) {

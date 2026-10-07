@@ -114,12 +114,14 @@ describe('scenarioIds', () => {
       .join('\n')
   });
   const qbxFile = file('q.ts', ['qbx-one'], 'qbx');
+  const esxFile = file('e.ts', ['esx-one'], 'esx');
 
   it('lists every declared scenario with its mode, sorted, and skips the index that only assembles them', () => {
     const found = scenarioIds([
       file('b.ts', ['beta-one']),
       file('a.ts', ['alpha-one', 'alpha-two']),
       qbxFile,
+      esxFile,
       { name: 'index.ts', text: "  id: 'not-a-scenario'" }
     ]);
 
@@ -127,6 +129,7 @@ describe('scenarioIds', () => {
       { id: 'alpha-one', mode: 'standalone' },
       { id: 'alpha-two', mode: 'standalone' },
       { id: 'beta-one', mode: 'standalone' },
+      { id: 'esx-one', mode: 'esx' },
       { id: 'qbx-one', mode: 'qbx' }
     ]);
   });
@@ -134,7 +137,8 @@ describe('scenarioIds', () => {
   it('does not read a type annotation or a number id as a scenario', () => {
     const text = "id: number,\n  id: 'real-one',\n  mode: 'standalone',\n  id: 7,";
 
-    expect(scenarioIds([{ name: 'a.ts', text }, qbxFile])).toEqual([
+    expect(scenarioIds([{ name: 'a.ts', text }, qbxFile, esxFile])).toEqual([
+      { id: 'esx-one', mode: 'esx' },
       { id: 'qbx-one', mode: 'qbx' },
       { id: 'real-one', mode: 'standalone' }
     ]);
@@ -142,46 +146,56 @@ describe('scenarioIds', () => {
 
   it('refuses a suite of none, a duplicate, and a run with nothing in it', () => {
     expect(() => scenarioIds([{ name: 'a.ts', text: 'nothing here' }])).toThrow(/no scenario ids/);
-    expect(() => scenarioIds([file('a.ts', ['same', 'same']), qbxFile])).toThrow(/twice/);
+    expect(() => scenarioIds([file('a.ts', ['same', 'same']), qbxFile, esxFile])).toThrow(/twice/);
     expect(() => scenarioIds([file('a.ts', ['alone'])])).toThrow(/no scenario runs in qbx mode/);
     expect(() => scenarioIds([file('q.ts', ['alone'], 'qbx')])).toThrow(
       /no scenario runs in standalone mode/
+    );
+    // The third run is held to the same rule: a suite with no esx scenario has no esx run.
+    expect(() => scenarioIds([file('a.ts', ['alone']), qbxFile])).toThrow(
+      /no scenario runs in esx mode/
     );
   });
 
   it('refuses a scenario with no mode, or a mode there is not, naming it', () => {
     const bare = { name: 'a.ts', text: "  {\n    id: 'no-mode',\n    tickets: [],\n  }," };
-    expect(() => scenarioIds([bare, qbxFile])).toThrow(
+    expect(() => scenarioIds([bare, qbxFile, esxFile])).toThrow(
       /scenario no-mode \(a\.ts\) declares no mode/
     );
     // Not on the next line, which is where the packer reads it: that is no mode too, by name.
     const sameLine = { name: 'a.ts', text: "  id: 'same-line', mode: 'qbx'," };
-    expect(() => scenarioIds([sameLine, qbxFile])).toThrow(
+    expect(() => scenarioIds([sameLine, qbxFile, esxFile])).toThrow(
       /scenario same-line .* declares no mode/
     );
-    expect(() => scenarioIds([file('a.ts', ['odd'], 'esx'), qbxFile])).toThrow(
-      /scenario odd \(a\.ts\) has mode 'esx'/
+    expect(() => scenarioIds([file('a.ts', ['odd'], 'arm'), qbxFile, esxFile])).toThrow(
+      /scenario odd \(a\.ts\) has mode 'arm'/
     );
   });
 });
 
 describe('expectedScenariosText', () => {
-  it('lists every scenario in both runs, as a pass where it belongs and a skip where it does not', () => {
+  it('lists every scenario in every run, as a pass where it belongs and a skip where it does not', () => {
     expect(
       expectedScenariosText([
         { id: 'alpha', mode: 'standalone' },
+        { id: 'esx-one', mode: 'esx' },
         { id: 'qbx-one', mode: 'qbx' }
       ])
     ).toBe(
       [
         'standalone pass alpha',
+        'standalone skip esx-one',
         'standalone skip qbx-one',
         'qbx skip alpha',
+        'qbx skip esx-one',
         'qbx pass qbx-one',
+        'esx skip alpha',
+        'esx pass esx-one',
+        'esx skip qbx-one',
         ''
       ].join('\n')
     );
-    expect(MODES).toEqual(['standalone', 'qbx']);
+    expect(MODES).toEqual(['standalone', 'qbx', 'esx']);
   });
 });
 
