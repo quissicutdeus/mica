@@ -19,3 +19,7 @@ line here.
   query embedded; classify on the last line
 - [A start-up gate must not import schemaSql](start-gate-import-cycle.md) —
   Repository reaches contentCipher; the cycle breaks collection, not tsc
+- [A soft delete under a unique key refuses a re-create](soft-delete-under-a-unique-key.md)
+  — re-blocking an unblocked number fails; `test:endpoints` found it
+- [A "does not see it" check passes on a wrong filter](negative-check-needs-a-positive-twin.md)
+  — pair every negative row or push assertion with a positive one

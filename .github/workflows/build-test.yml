@@ -564,3 +564,54 @@ jobs:
           MICA_DB_USER: root
           MICA_DB_PASSWORD: mica-test
         run: node scripts/test-schema.js
+
+  # The real net-event handlers, for several players at once, against real MariaDB (MICA-304).
+  #
+  # `test-endpoints.js` bundles `server/server.ts` and drives it through a stand-in for the
+  # FXServer runtime: a call between two players, a job line's group ring, a text and its
+  # push, an invoice paid and declined, on standalone and on a qb shape. Its own job rather
+  # than a step in `schema`, so a red one names which of the two it was. The database comes
+  # from a service container exactly as `schema`'s does, and for the same reasons.
+  endpoints:
+    name: Endpoint tests
+    runs-on: ubuntu-latest
+    # Same carve-out as `verify` above, for the reason `schema` gives.
+    if: github.event_name != 'pull_request' || github.head_ref != 'dev'
+    env:
+      MICA_DB_HOST: ${{ github.server_url == 'https://github.com' && 'localhost' || 'mariadb' }}
+    strategy:
+      matrix:
+        node-version: [26]
+        pnpm-version: [11]
+    services:
+      mariadb:
+        image: mariadb@sha256:2439dcd7d14010ecd1ff7a4e1c5abe8e208c34fe35290744deeeaac3569043c3
+        env:
+          MARIADB_ROOT_PASSWORD: mica-test
+        options: >-
+          --health-cmd="mariadb-admin ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+        ports:
+          - 3306:3306
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        name: Install pnpm ${{ matrix.pnpm-version }}
+        with:
+          version: ${{ matrix.pnpm-version }}
+      - name: Install Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Test endpoints
+        env:
+          MICA_DB_PORT: 3306
+          MICA_DB_USER: root
+          MICA_DB_PASSWORD: mica-test
+        run: node scripts/test-endpoints.js

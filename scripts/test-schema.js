@@ -2,7 +2,6 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { execFileSync } from 'child_process';
 import crypto from 'crypto';
 import fs from 'fs';
 import os from 'os';
@@ -10,6 +9,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import esbuild from 'esbuild';
 import mysql from 'mysql2/promise';
+import { IMAGE, openDatabase, step } from './lib/mariadb-harness.js';
 
 /**
  * Exercise the real repository code paths against both schema shapes (qb and ESX).
@@ -25,20 +25,7 @@ import mysql from 'mysql2/promise';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
 
-const IMAGE = 'mariadb:11';
 const CONTAINER_LABEL = 'mica-schema-harness';
-const ROOT_PASSWORD = 'mica-throwaway';
-const READY_TIMEOUT = 90_000;
-
-/**
- * Accept an already-running database from the environment, avoiding Docker startup.
- * All four are required together; if any is set, all must be provided.
- */
-const DB_HOST = process.env.MICA_DB_HOST;
-const DB_PORT = process.env.MICA_DB_PORT;
-const DB_USER = process.env.MICA_DB_USER;
-const DB_PASSWORD = process.env.MICA_DB_PASSWORD;
-const EXTERNAL_DB = Boolean(DB_HOST || DB_PORT || DB_USER || DB_PASSWORD);
 
 let checksRun = 0;
 /**
@@ -106,92 +93,11 @@ const check = (label, actual, expected) => {
   console.log(`    ok  ${label}`);
 };
 
-const step = (message) => console.log(`\n== ${message}`);
-
-/* ------------------------------------------------------------------ docker */
-
-const docker = (args, options = {}) =>
-  execFileSync('docker', args, { encoding: 'utf8', stdio: 'pipe', ...options }).trim();
-
-const assertDockerUsable = () => {
-  try {
-    docker(['--version']);
-  } catch {
-    throw new Error(
-      'docker is not on PATH. This harness needs it — install Docker, or run this on a ' +
-        'machine that has it. Nothing was tested.'
-    );
-  }
-
-  try {
-    docker(['info']);
-  } catch {
-    throw new Error(
-      'the docker daemon is not reachable (`docker info` failed). Start Docker and try ' +
-        'again. Nothing was tested.'
-    );
-  }
-};
-
-const startContainer = () => {
-  step(`starting ${IMAGE}`);
-  const id = docker([
-    'run',
-    '--detach',
-    '--rm',
-    '--label',
-    CONTAINER_LABEL,
-    '--env',
-    `MARIADB_ROOT_PASSWORD=${ROOT_PASSWORD}`,
-    '--publish',
-    '127.0.0.1::3306',
-    IMAGE
-  ]);
-
-  const mapping = docker(['port', id, '3306/tcp']);
-  const port = Number(mapping.split('\n')[0].split(':').pop());
-  if (!Number.isInteger(port) || port <= 0) {
-    throw new Error(`could not read the published port from \`docker port\`: ${mapping}`);
-  }
-  console.log(`    container ${id.slice(0, 12)} on 127.0.0.1:${port}`);
-  return { id, port };
-};
-
-const stopContainer = (id) => {
-  try {
-    docker(['stop', '--time', '2', id]);
-  } catch {
-    console.error(`    warning: could not stop container ${id.slice(0, 12)}`);
-  }
-};
-
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
 /**
  * Where the database is, so a variant can open connections of its own: MICA-306's must have
  * no `multipleStatements`, and one of them is a different user. Set where the harness connects.
  */
 let dbConfig = null;
-
-const connectWhenReady = async (port) => {
-  step('waiting for the server to accept connections');
-  const deadline = Date.now() + READY_TIMEOUT;
-  let lastError;
-  while (Date.now() < deadline) {
-    try {
-      const config = { host: '127.0.0.1', port, user: 'root', password: ROOT_PASSWORD };
-      const connected = await mysql.createConnection({ ...config, multipleStatements: true });
-      dbConfig = config;
-      return connected;
-    } catch (error) {
-      lastError = error;
-      await sleep(500);
-    }
-  }
-  throw new Error(
-    `the database never became reachable within ${READY_TIMEOUT / 1000}s: ${lastError?.message}`
-  );
-};
 
 /* ------------------------------------- the oxmysql shim, and the real module */
 
@@ -3195,31 +3101,12 @@ const runBootstrapNoDdlVariant = async ({ connection, hasPlayers, privacy }) => 
 };
 
 const main = async () => {
-  let container;
+  let database;
   let connection;
   try {
-    if (EXTERNAL_DB) {
-      // Validate all four environment variables are set
-      if (!DB_HOST || !DB_PORT || !DB_USER || !DB_PASSWORD) {
-        throw new Error(
-          'all four of MICA_DB_HOST, MICA_DB_PORT, MICA_DB_USER, MICA_DB_PASSWORD ' +
-            'must be provided together. Nothing was tested.'
-        );
-      }
-      step('connecting to provided database');
-      dbConfig = {
-        host: DB_HOST,
-        port: Number(DB_PORT),
-        user: DB_USER,
-        password: DB_PASSWORD
-      };
-      connection = await mysql.createConnection({ ...dbConfig, multipleStatements: true });
-      console.log(`    connected to ${DB_HOST}:${DB_PORT}`);
-    } else {
-      assertDockerUsable();
-      container = startContainer();
-      connection = await connectWhenReady(container.port);
-    }
+    database = await openDatabase(CONTAINER_LABEL);
+    connection = database.connection;
+    dbConfig = database.config;
     installOxmysql(connection);
     const modules = await loadServerModule();
 
@@ -3333,14 +3220,13 @@ const main = async () => {
       );
     }
 
-    if (EXTERNAL_DB) {
+    if (database.external) {
       console.log(`\nAll ${checksRun} checks passed.`);
     } else {
       console.log(`\nAll ${checksRun} checks passed against ${IMAGE}.`);
     }
   } finally {
-    if (connection) await connection.end().catch(() => {});
-    if (container) stopContainer(container.id);
+    if (database) await database.close();
   }
 };
 
