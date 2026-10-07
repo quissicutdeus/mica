@@ -62,6 +62,29 @@ const phoneItem = (): string => {
   return item;
 };
 
+/**
+ * Waits for micaOS's first-start schema, as `schema-created-by-first-start-without-import` does:
+ * the migrations ledger's seed is the bootstrap's last statement, so a ledger with rows is a
+ * create that reached its end. Until then a `mica_` table may not exist, which is not an answer.
+ * Bounded, and the failure says what never happened. Every qbx scenario that reads or writes a
+ * `mica_` table (or calls an export that does) starts with this. The runner does not gate for
+ * them, so a scenario that touches no micaOS table is not held up by a schema it does not use.
+ */
+const schemaCreated = (signal: { readonly aborted: boolean }): Promise<number> =>
+  eventually(
+    async () => {
+      try {
+        const rows = await db.count('SELECT COUNT(*) FROM `mica_schema_migrations`');
+        return rows > 0 ? rows : null;
+      } catch {
+        return null;
+      }
+    },
+    30_000,
+    signal,
+    "micaOS's first-start bootstrap to seed the migrations ledger"
+  );
+
 const STACK = ['oxmysql', 'ox_lib', 'qbx_core', 'ox_inventory', 'mica'] as const;
 
 interface Slot {
@@ -173,8 +196,13 @@ export const qbxScenarios: Scenario[] = [
       );
 
       const phoneId = unique('phone');
-      const added = await callOn<boolean>('ox_inventory', 'AddItem', stash, item, 1, { phoneId });
-      assert(added === true, `AddItem answered ${String(added)}`);
+      // Lua's `return success, response` crosses the export boundary as `[success, response]`.
+      const answer = await callOn<unknown>('ox_inventory', 'AddItem', stash, item, 1, { phoneId });
+      const added = Array.isArray(answer) ? answer[0] : answer;
+      assert(
+        added === true,
+        `AddItem answered ${JSON.stringify(answer)}; expected success (true, or [true, slot])`
+      );
 
       const slots =
         (await callOn<Slot[] | null>('ox_inventory', 'GetSlotsWithItem', stash, item)) ?? [];
@@ -210,7 +238,10 @@ export const qbxScenarios: Scenario[] = [
     id: 'qbx-offline-lookup-reads-the-players-row',
     mode: 'qbx',
     tickets: ['MICA-304', 'MICA-223', 'MICA-232', 'MICA-284'],
-    run: async () => {
+    timeoutMs: 45_000,
+    run: async (signal) => {
+      // The lookups below read `mica_phone_numbers`, which the first start may not have made yet.
+      await schemaCreated(signal);
       const row = await db.row(
         'SELECT `citizenid`, `charinfo` FROM `players` WHERE `citizenid` = ?',
         [QBX_SEED.citizenid]
@@ -266,21 +297,7 @@ export const qbxScenarios: Scenario[] = [
         `mica_integration_schema is '${mode}', not 'bootstrap': this run was not set up to start ` +
           'micaOS on a database holding qbx_core and nothing of its own'
       );
-      // The ledger's seed is the bootstrap's last statement, so rows in it is a create that
-      // reached its end.
-      await eventually(
-        async () => {
-          try {
-            const rows = await db.count('SELECT COUNT(*) FROM `mica_schema_migrations`');
-            return rows > 0 ? rows : null;
-          } catch {
-            return null;
-          }
-        },
-        30_000,
-        signal,
-        'the first-start bootstrap to seed the migrations ledger'
-      );
+      await schemaCreated(signal);
 
       const types = (
         await db.rows(
