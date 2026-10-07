@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { defineService } from '../lib/defineService';
+import { defineService, SchemaRepository } from '../lib/defineService';
 import { Database } from '../lib/Database';
 import { phoneNumberFrom } from '../lib/netGuard';
 
@@ -31,6 +31,48 @@ export interface BlockedNumber {
   updated_at: Date | string;
 }
 
+/**
+ * Blocking a number this phone once blocked and then unblocked brings that row back (MICA-318).
+ *
+ * `delete` is soft, so an unblocked row keeps its `(phone_id, number)` and still holds
+ * `phone_number_unique`: a plain insert for the same pair is a duplicate-key error, which
+ * reached the player as the generic failure. A partial unique index would need MariaDB to
+ * have one, and hard-deleting would break the rule `Repository.delete` keeps for every table.
+ *
+ * So `create` first looks for this citizen's own deleted row for the pair and re-activates
+ * it, refreshing `created_at` as a new block would set it; only when there is none does it
+ * insert. Both statements name the `citizenid` and the `phone_id` (§2.9): another owner's row
+ * under the same key is never revived — that insert still fails on the key, as before.
+ *
+ * The comparison is SQL's, under the column's collation, so it matches the pair the unique
+ * key compares; the revive also requires the citizen, which `handOver` has already moved to
+ * the phone's holder by the time a block runs (`transferPhoneRows`). A double tap that races the revive falls through to the
+ * insert and is refused by the key, the same answer a double tap on a new number gets.
+ */
+class BlocklistRepository extends SchemaRepository<BlockedNumber> {
+  override async create(data: Partial<BlockedNumber>): Promise<number> {
+    const { citizenid, phone_id: phoneId, number } = data;
+    if (citizenid && phoneId && typeof number === 'string') {
+      const id = await Database.scalar<number | null>(
+        `SELECT \`id\` FROM \`${this.tableName}\` ` +
+          "WHERE `citizenid` = ? AND `phone_id` = ? AND `number` = ? AND `status` = 'deleted' " +
+          'LIMIT 1',
+        [citizenid, phoneId, number]
+      );
+      if (id !== null && id !== undefined) {
+        const revived = await Database.update(
+          `UPDATE \`${this.tableName}\` ` +
+            "SET `status` = 'active', `created_at` = CURRENT_TIMESTAMP " +
+            "WHERE `id` = ? AND `citizenid` = ? AND `phone_id` = ? AND `status` = 'deleted'",
+          [id, citizenid, phoneId]
+        );
+        if (revived) return Number(id);
+      }
+    }
+    return await super.create(data);
+  }
+}
+
 export const blocklist = defineService<BlockedNumber>({
   id: 'blocklist',
   deviceOwned: true,
@@ -43,7 +85,8 @@ export const blocklist = defineService<BlockedNumber>({
   // (`0002_phone_data_follows_the_phone` swaps the old `citizenid_number_unique` for it);
   // the *enforcement* in `isBlocked`/`blockedBy` stays by citizen — see their notes.
   indexes: [{ name: 'phone_number_unique', columns: ['phone_id', 'number'], unique: true }],
-  options: { disableUpdate: true }
+  options: { disableUpdate: true },
+  repositoryFactory: (resolved) => new BlocklistRepository(resolved)
 });
 
 /**

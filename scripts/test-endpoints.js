@@ -73,7 +73,7 @@ let checksRun = 0;
  */
 const FLOW_CHECKS = {
   connect: { standalone: 8, qb: 8 },
-  call: { standalone: 33, qb: 33 },
+  call: { standalone: 36, qb: 36 },
   groupRing: { standalone: 17, qb: 15 },
   text: { standalone: 15, qb: 15 },
   invoice: { standalone: 14, qb: 14 },
@@ -597,6 +597,26 @@ const runCall = async (shape, numbers) => {
   const unblocked = await shape.call(2, 'blocklist', 'delete', { id: blocked.id });
   check(`${kind}: 2 lifts the block`, unblocked, true);
 
+  // The unblock is a soft delete under `phone_number_unique (phone_id, number)`, so a second
+  // block of the same number from the same phone used to be refused as a duplicate (MICA-318).
+  step(`${kind}: 2 blocks 1 again, and lifts it again`);
+  const reblocked = await shape.call(2, 'blocklist', 'create', { number: numbers[1] });
+  check(`${kind}: the second block revives the first row`, reblocked?.id, blocked.id);
+  check(
+    `${kind}: which is the one row for the pair, and active`,
+    (
+      await shape.rows('SELECT `id`, `status` FROM `mica_blocklist` WHERE `number` = ?', [
+        numbers[1]
+      ])
+    ).map((r) => [r.id, r.status]),
+    [[blocked.id, 'active']]
+  );
+  check(
+    `${kind}: 2 lifts it again`,
+    await shape.call(2, 'blocklist', 'delete', { id: reblocked?.id }),
+    true
+  );
+
   step(`${kind}: 1 calls themselves`);
   const self = await shape.fire(1, 'mica:server:phone:start', numbers[1]);
   check(
@@ -793,9 +813,6 @@ const runText = async (shape, numbers) => {
   check(`${kind}: 4, not in the thread, is refused it`, typeof outsider?.error, 'string');
   check(`${kind}: and is shown no rows`, outsider?.rows, undefined);
 
-  // 1 blocks 2 rather than 2 blocking 1 again: the call flow above already blocked and
-  // unblocked that pair, and a second block of one number from one phone is refused by
-  // `phone_number_unique` (the unblock is a soft delete), which is a finding of its own.
   step(`${kind}: 1 blocks 2, and 2 texts`);
   const block = await shape.call(1, 'blocklist', 'create', { number: numbers[2] });
   check(`${kind}: 1's block is written`, typeof block?.id, 'number');
