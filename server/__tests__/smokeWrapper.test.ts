@@ -54,6 +54,14 @@ const WRAPPER = join(ROOT, 'scripts/deploy/mica-smoke-release.sh');
 const trial = canRun(trialMissing(), 'the smoke wrapper tests');
 
 /**
+ * A hang case waits out `MICA_SMOKE_INTEGRATION_TIMEOUT` (3s) on purpose, on top of a whole
+ * wrapper run, so it takes over 4s even on a fast machine and Vitest's 5s default failed it on a
+ * loaded CI runner three times (MICA-304). The wait is the behaviour under test, so the budget
+ * grows rather than the wait shrinking. A test that hangs for real still fails, 20s later.
+ */
+const HANG_TEST_TIMEOUT_MS = 20_000;
+
+/**
  * Records every call, and answers the few the wrapper makes. FAKE_LOGS is the console of the
  * standalone or release run's FXServer and FAKE_LOGS_QBX the qbx run's (told apart by the
  * container's name, which carries the run). When an FXServer container is started it copies what
@@ -551,12 +559,16 @@ describe.skipIf(!trial)('mica-smoke-release.sh', () => {
       expect(r.out).toContain('stopped before');
     });
 
-    it('fails when the suite hangs, once the timeout passes', () => {
-      const r = wrap(makeRun('manifest'), suite(['integration: PASS a']), { running: 'true' });
+    it(
+      'fails when the suite hangs, once the timeout passes',
+      () => {
+        const r = wrap(makeRun('manifest'), suite(['integration: PASS a']), { running: 'true' });
 
-      expect(r.status).not.toBe(0);
-      expect(r.out).toContain("no 'integration: done' line within 3s");
-    });
+        expect(r.status).not.toBe(0);
+        expect(r.out).toContain("no 'integration: done' line within 3s");
+      },
+      HANG_TEST_TIMEOUT_MS
+    );
 
     it('fails when the done line disagrees with the lines it summarises', () => {
       const r = wrap(
@@ -891,24 +903,31 @@ describe.skipIf(!trial)('mica-smoke-release.sh', () => {
       expect(r.staged).toEqual([]);
     });
 
-    it('fails when the qbx server stops before the suite is done, and when it hangs', () => {
+    it('fails when the qbx server stops before the suite is done', () => {
       const stopped = wrap(makeRun('manifest'), suite(PASS_A), {
         qbxLogs: [STARTED, BRIDGE_QBX, CREATED_QBX, 'integration: mode qbx'].join('\n') + '\n'
       });
 
       expect(stopped.status).toBe(1);
       expect(stopped.out).toContain('[qbx mode] FXServer stopped before');
-
-      const hung = wrap(makeRun('manifest'), suite(PASS_A), {
-        running: 'true',
-        qbxLogs: [STARTED, 'integration: mode qbx'].join('\n') + '\n'
-      });
-
-      // `running` is one answer for both servers: the standalone console is complete, so it is
-      // the qbx run that never reaches its done line, and the hang is a failure naming its run.
-      expect(hung.status).toBe(1);
-      expect(hung.out).toContain("[qbx mode] no 'integration: done' line within 3s");
     });
+
+    it(
+      'fails when the qbx server hangs before the suite is done',
+      () => {
+        const hung = wrap(makeRun('manifest'), suite(PASS_A), {
+          running: 'true',
+          qbxLogs: [STARTED, 'integration: mode qbx'].join('\n') + '\n'
+        });
+
+        // `running` is one answer for both servers: the standalone console is complete, so it
+        // is the qbx run that never reaches its done line, and the hang is a failure naming its
+        // run.
+        expect(hung.status).toBe(1);
+        expect(hung.out).toContain("[qbx mode] no 'integration: done' line within 3s");
+      },
+      HANG_TEST_TIMEOUT_MS
+    );
 
     it('fails when qbx_core never prints mica started, naming the run and what the console said', () => {
       const r = wrap(makeRun('manifest'), suite(PASS_A), {
