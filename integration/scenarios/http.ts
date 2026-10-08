@@ -17,7 +17,7 @@ import {
 } from '../lib/httpSink';
 import { assert, expectOk, runCommand, seedCitizen, unique } from '../lib/mica';
 import { QBX_SEED } from '../lib/qbxSeed';
-import { bootOrphanSweepEnded } from '../lib/bootSweep';
+import { bootMediaOrphanSweepEnded, bootOrphanSweepEnded } from '../lib/bootSweep';
 import { runMediaPrune } from '../lib/mediaPrune';
 import { eventually } from '../lib/wait';
 import { schemaCreated } from './qbx';
@@ -832,9 +832,11 @@ export const httpScenarios: Scenario[] = [
     timeoutMs: 60_000,
     run: async (signal) => {
       await schemaCreated(signal);
-      // Plant no orphan while micaOS's own start-up sweep is still going: it could take them
-      // first, and the deletes would land before this scenario's mark. See bootSweep.ts.
+      // Plant no orphan while either of micaOS's own start-up sweeps is still going: it could
+      // take them first, and the deletes would land before this scenario's mark; and while the
+      // media one runs, `micamedia prune` refuses (MICA-332). See bootSweep.ts.
       await bootOrphanSweepEnded(requireTap(), 10_000, signal);
+      await bootMediaOrphanSweepEnded(requireTap(), 10_000, signal);
       await withImageHost(async (host) => {
         const tap = requireTap();
         const orphan = unique('http_orphan');

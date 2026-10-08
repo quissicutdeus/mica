@@ -2,8 +2,12 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { RETENTION_BATCH, resetRetentionForTests } from '../lib/contentRetention';
+import { __setSchemaReadyForTests } from '../lib/schemaReady';
+import { ConsoleTap } from '../../integration/lib/console';
+import { bootMediaOrphanSweepEnded } from '../../integration/lib/bootSweep';
+import { ORPHAN_BUSY } from '../../integration/lib/mediaPrune';
 
 /**
  * MICA-71: the per-player quota, the retention prune, and the cleanup that runs when a
@@ -707,5 +711,127 @@ describe('micamedia prune', () => {
       vi.useRealTimers();
       resetRetentionForTests();
     }
+  });
+});
+
+describe('the start-up orphan sweep (MICA-332)', () => {
+  const STARTING = '[micamedia] orphan sweep starting over mica_media.';
+  const finished = (removed: number) =>
+    `[micamedia] orphan sweep finished: removed ${removed} row(s) whose character no longer exists.`;
+  const BUSY =
+    '[micamedia] an orphan sweep of mica_media is already running; ' +
+    'run micamedia prune again when it has finished.';
+  const SKIPPED =
+    '[micamedia] orphan sweep skipped at start: micamedia prune is already sweeping mica_media.';
+
+  /**
+   * Media's own start hook. `on` is captured by name, so the last registration wins, and
+   * `services/Media.ts`'s body runs after every module it imports; the starting line each test
+   * waits for is what proves this is that hook rather than another module's.
+   */
+  const start = () => localHandlers.get('onResourceStart')!('mica');
+  const logged = () => vi.mocked(console.log).mock.calls.map((c) => String(c[0]));
+
+  /** A sweepable server whose sweep waits on its first question to `players` until released. */
+  const heldSweep = (orphans: number) => {
+    sweepableServer(orphans);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const answer = dbMock.single.getMockImplementation()!;
+    dbMock.single.mockImplementation(async (...args: unknown[]) => {
+      await gate;
+      return answer(...(args as [string]));
+    });
+    return release;
+  };
+
+  beforeEach(() => __setSchemaReadyForTests({ kind: 'existing' }));
+  afterEach(() => __setSchemaReadyForTests(null));
+
+  it('says it is starting before its first query, and finished even when it removed nothing', async () => {
+    sweepableServer(0);
+    let queriesAtStart = -1;
+    vi.mocked(console.log).mockImplementation((line: unknown) => {
+      if (line === STARTING) {
+        queriesAtStart = dbMock.single.mock.calls.length + dbMock.query.mock.calls.length;
+      }
+    });
+
+    start();
+
+    await vi.waitFor(() => expect(logged()).toContain(finished(0)));
+    expect(queriesAtStart).toBe(0);
+    expect(logged().indexOf(STARTING)).toBeLessThan(logged().indexOf(finished(0)));
+  });
+
+  it('says how many rows it removed', async () => {
+    sweepableServer(3);
+
+    start();
+
+    await vi.waitFor(() => expect(logged()).toContain(finished(3)));
+    expect(logged()).toContain(STARTING);
+  });
+
+  it('makes micamedia prune refuse while it runs, rather than overlap it', async () => {
+    const release = heldSweep(2);
+    start();
+    await vi.waitFor(() => expect(dbMock.single).toHaveBeenCalled());
+    const before = dbMock.query.mock.calls.length;
+
+    await runMediaPruneCommand(0);
+
+    expect(logged()).toContain(BUSY);
+    // The words the in-server suite's `runMediaPrune` reads as "not yet" (mediaPrune.ts).
+    expect(logged().filter((l) => l.includes(ORPHAN_BUSY))).toEqual([BUSY]);
+    expect(logged().some((l) => l.includes('prune finished'))).toBe(false);
+    expect(dbMock.query.mock.calls.length).toBe(before);
+
+    release();
+    await vi.waitFor(() => expect(logged()).toContain(finished(2)));
+    // Once it has finished, the prune runs: the refusal was "not yet", not "never".
+    await runMediaPruneCommand(0);
+    expect(logged().some((l) => l.startsWith('[micamedia] prune finished: '))).toBe(true);
+  });
+
+  it('skips at start while micamedia prune is sweeping, and says so instead of starting', async () => {
+    const release = heldSweep(1);
+    const prune = runMediaPruneCommand(0);
+    await vi.waitFor(() => expect(dbMock.single).toHaveBeenCalled());
+
+    start();
+
+    await vi.waitFor(() => expect(logged()).toContain(SKIPPED));
+    expect(logged()).not.toContain(STARTING);
+    release();
+    await prune;
+    expect(logged().some((l) => l.startsWith('[micamedia] prune finished: '))).toBe(true);
+    expect(logged().some((l) => l.startsWith('[micamedia] orphan sweep finished'))).toBe(false);
+  });
+
+  it('runs one sweep at a time: a second call while one runs does nothing', async () => {
+    const release = heldSweep(2);
+    const first = pruneOrphanedMedia();
+    await vi.waitFor(() => expect(dbMock.single).toHaveBeenCalledTimes(1));
+
+    expect(await pruneOrphanedMedia()).toBe(0);
+    expect(dbMock.single).toHaveBeenCalledTimes(1);
+
+    release();
+    expect(await first).toBe(2);
+    // …and the flag is down again, so the next one runs.
+    sweepableServer(1);
+    expect(await pruneOrphanedMedia()).toBe(1);
+  });
+
+  it('prints lines the in-server suite waits on (integration/lib/bootSweep.ts)', async () => {
+    sweepableServer(1);
+    start();
+    await vi.waitFor(() => expect(logged()).toContain(finished(1)));
+
+    const tap = new ConsoleTap('script:mica-integration');
+    for (const line of logged()) tap.push('script:mica', line);
+
+    expect(await bootMediaOrphanSweepEnded(tap, 1_000, { aborted: false })).toBe(finished(1));
   });
 });

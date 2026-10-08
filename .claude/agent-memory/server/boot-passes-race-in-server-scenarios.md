@@ -15,9 +15,13 @@ Three passes start at resource start, after `whenSchemaReady`:
 - **The whole-phone orphan sweep** (`lib/shell.ts`): prints
   `[mica] orphan sweep starting` and `finished:` (or `failed:`) whatever it
   found. `bootOrphanSweepEnded` (`integration/lib/bootSweep.ts`) waits on those.
-- **The media-only orphan sweep** (`services/Media.ts` start hook): prints only
-  when it removes rows, and has no running flag, so nothing outside micaOS can
-  tell it has ended. Reported to the lead for a ticket, not hooked.
+- **The media-only orphan sweep** (`services/Media.ts` start hook): since
+  MICA-332 prints `[micamedia] orphan sweep starting` and `finished:` (or
+  `failed:`), and holds a running flag; `micamedia prune` refuses while it runs
+  with `an orphan sweep of mica_media is already running`, a second refusal
+  `runMediaPrune` did not know about when MICA-332 landed.
+  `bootMediaOrphanSweepEnded` waits on it. Its `skipped at start` line is not an
+  end.
 
 The runner's `sleep(3_000)` after `micaReady` is not a guarantee: none of these
 passes is bounded by it. The tap registers when `mica-integration` starts, after

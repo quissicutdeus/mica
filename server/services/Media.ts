@@ -478,6 +478,12 @@ registerRetention(mediaRetention);
 export const pruneExpiredMedia = async (): Promise<number> => await pruneTable(mediaRetention);
 
 /**
+ * Whether a media-only orphan sweep is running right now: the start-up one, or the half of
+ * `micamedia prune` that sweeps orphans. Set and cleared only by `pruneOrphanedMedia`.
+ */
+let mediaOrphanSweepRunning = false;
+
+/**
  * Delete media whose owner no longer exists. **A hard delete, and the character-deletion
  * cleanup.**
  *
@@ -496,13 +502,24 @@ export const pruneExpiredMedia = async (): Promise<number> => await pruneTable(m
  *
  * Still its own function, because `micamedia prune` reports media separately from
  * everything else and because this is the sweep the README told operators about.
+ *
+ * **One at a time** (MICA-332), the way `pruneTable` keeps one retention prune per table: a
+ * call made while another is running does nothing and answers `0`. The start-up sweep and
+ * `micamedia prune` both reach this, so each checks `mediaOrphanSweepRunning` first and says
+ * why it did nothing; this guard is what makes that check true rather than advisory.
  */
 export const pruneOrphanedMedia = async (): Promise<number> => {
-  const { removed } = await sweepOrphanedRows({
-    only: [{ table: media.resolved.table, column: 'citizenid' }],
-    label: 'micamedia'
-  });
-  return removed;
+  if (mediaOrphanSweepRunning) return 0;
+  mediaOrphanSweepRunning = true;
+  try {
+    const { removed } = await sweepOrphanedRows({
+      only: [{ table: media.resolved.table, column: 'citizenid' }],
+      label: 'micamedia'
+    });
+    return removed;
+  } finally {
+    mediaOrphanSweepRunning = false;
+  }
 };
 
 /**
@@ -643,6 +660,16 @@ export const runMediaPruneCommand = async (source: number): Promise<void> => {
     return;
   }
 
+  // The start-up orphan sweep (MICA-332): the same refusal, so the two never overlap and a
+  // run that would have swept nothing is not reported as one that found nothing.
+  if (mediaOrphanSweepRunning) {
+    console.log(
+      '[micamedia] an orphan sweep of mica_media is already running; ' +
+        'run micamedia prune again when it has finished.'
+    );
+    return;
+  }
+
   const days = retentionDays();
   if (days <= 0) {
     console.log(
@@ -730,6 +757,13 @@ RegisterCommand(
  *
  * Failure is logged, never thrown — maintenance must not be able to stop the resource
  * starting. Nothing here blocks anything: no player is connected yet.
+ *
+ * **The orphan sweep says it is starting, then always says how it ended** (MICA-332), the
+ * shape `lib/shell.ts` gives the whole-phone sweep and for its reasons: a sweep that printed
+ * only when it removed something could not be told apart from one still running, or one hung
+ * on its first query before the pool was up. The in-server suite waits on these lines
+ * (`integration/lib/bootSweep.ts`) before it plants orphans of its own; change their wording
+ * there too. When `micamedia prune` already holds the sweep, this says so and runs nothing.
  */
 on('onResourceStart', (resourceName: string) => {
   if (resourceName !== GetCurrentResourceName()) return;
@@ -743,14 +777,22 @@ on('onResourceStart', (resourceName: string) => {
     void rememberImageHost(imageHost());
     // Only the orphan sweep here: the retention half runs on `lib/contentRetention.ts`'s
     // schedule, which starts on this same event, and running it twice at boot buys nothing.
+    if (mediaOrphanSweepRunning) {
+      console.log(
+        '[micamedia] orphan sweep skipped at start: micamedia prune is already sweeping mica_media.'
+      );
+      return;
+    }
+    console.log(`[micamedia] orphan sweep starting over ${media.resolved.table}.`);
     void pruneOrphanedMedia()
       .then((orphaned) => {
-        if (orphaned > 0) {
-          console.log(`[micamedia] removed ${orphaned} row(s) whose character no longer exists.`);
-        }
+        console.log(
+          `[micamedia] orphan sweep finished: removed ${orphaned} row(s) ` +
+            'whose character no longer exists.'
+        );
       })
       .catch((error) => {
-        console.error('[micamedia] start-up maintenance failed:', error);
+        console.error('[micamedia] orphan sweep failed:', error);
       });
   });
 });

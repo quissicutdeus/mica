@@ -16,6 +16,10 @@ import { eventually, sleep, type Signal } from './wait';
  * printing `BUSY` and running nothing. A scenario that prunes soon after boot can land in that
  * window: the qbx run on hoth did (MICA-322, run 37707937593), where earlier runs had not.
  *
+ * Since MICA-332 it refuses for a second reason too: while micaOS's start-up media orphan sweep
+ * (`server/services/Media.ts`) holds `mica_media`, it prints `ORPHAN_BUSY` and runs nothing. A
+ * prune landing at boot can meet either, so both are "not yet" alike.
+ *
  * The integration resource cannot read `isRetentionRunning`, so the command is its own probe:
  * a refusal is "not yet", and it is asked again until it runs or the deadline passes. A refused
  * attempt runs nothing, so a scenario's assertions about what the prune did are about the one
@@ -23,10 +27,27 @@ import { eventually, sleep, type Signal } from './wait';
  */
 
 const SUMMARY =
-  /^\[micamedia\] (prune finished: |a retention prune of mica_media is already running)/;
+  /^\[micamedia\] (prune finished: |(a retention prune|an orphan sweep) of mica_media is already running)/;
 
 /** The refusal's words, as `runMediaPruneCommand` prints them. */
 export const BUSY = 'a retention prune of mica_media is already running';
+
+/** The start-up orphan sweep's refusal (MICA-332), as `runMediaPruneCommand` prints it. */
+export const ORPHAN_BUSY = 'an orphan sweep of mica_media is already running';
+
+/** What each refusal means, for the failure that names the last one. */
+const REFUSALS: readonly { words: string; why: string }[] = [
+  {
+    words: BUSY,
+    why:
+      "a retention prune of mica_media was still running (micaOS's own pass, at start or on " +
+      'its six-hourly schedule)'
+  },
+  {
+    words: ORPHAN_BUSY,
+    why: "an orphan sweep of mica_media was still running (micaOS's start-up media sweep)"
+  }
+];
 
 /**
  * How long after a refusal to ask again. One line per attempt reaches the console, so asking
@@ -50,6 +71,7 @@ export const runMediaPrune = async (
   const deadline = Date.now() + timeoutMs;
   let refused = 0;
   let last = '';
+  let why = '';
   try {
     return await eventually(
       async () => {
@@ -62,9 +84,11 @@ export const runMediaPrune = async (
           signal,
           "micamedia prune's summary"
         );
-        if (!line.includes(BUSY)) return line;
+        const refusal = REFUSALS.find(({ words }) => line.includes(words));
+        if (!refusal) return line;
         refused += 1;
         last = line;
+        why = refusal.why;
         if (Date.now() + RETRY_AFTER_MS < deadline) await sleep(RETRY_AFTER_MS);
         return null;
       },
@@ -76,9 +100,8 @@ export const runMediaPrune = async (
     const message = error instanceof Error ? error.message : String(error);
     if (refused > 0 && message === `no ${what} within ${timeoutMs} ms`) {
       throw new Error(
-        `micamedia prune never ran: refused ${refused} time(s) in ${timeoutMs} ms because a ` +
-          `retention prune of mica_media was still running (micaOS's own pass, at start or on ` +
-          `its six-hourly schedule). Last said: ${last}`,
+        `micamedia prune never ran: refused ${refused} time(s) in ${timeoutMs} ms because ` +
+          `${why}. Last said: ${last}`,
         { cause: error }
       );
     }
