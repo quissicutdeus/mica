@@ -5,7 +5,12 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 const { bridgeMock } = vi.hoisted(() => ({
-  bridgeMock: { getPlayerByPhone: vi.fn(() => undefined), getPlayer: vi.fn() }
+  bridgeMock: {
+    getPlayerByPhone: vi.fn(
+      (_phone?: string): { source: number; citizenid: string } | undefined => undefined
+    ),
+    getPlayer: vi.fn()
+  }
 }));
 vi.mock('../lib/FrameworkBridge', () => ({ FrameworkBridge: bridgeMock }));
 
@@ -16,7 +21,7 @@ import {
   __resetRegistry,
   type LineOptions
 } from '../lib/numberRegistry';
-import { askLine, HANDLER_TIMEOUT_MS } from '../lib/numberRegistry';
+import { askLine, HANDLER_TIMEOUT_MS, type CallVerdict } from '../lib/numberRegistry';
 import { releaseResource, onLineReleased } from '../lib/numberRegistry';
 import { linesForJob, LABEL_MAX, RING_LIST_MAX, RING_MAX } from '../lib/numberRegistry';
 
@@ -264,7 +269,7 @@ describe('numberRegistry handler invocation', () => {
   });
 
   it('dedupes a ring list in first-seen order', async () => {
-    const handler = () => ({ action: 'ring', sources: [7, 5, 7, 6, 5] }) as const;
+    const handler = (): CallVerdict => ({ action: 'ring', sources: [7, 5, 7, 6, 5] });
     await expect(askLine(lineWith(handler), incoming)).resolves.toEqual({
       action: 'ring',
       sources: [7, 5, 6]
@@ -273,7 +278,7 @@ describe('numberRegistry handler invocation', () => {
 
   it('passes a list longer than RING_MAX through whole: the cap is applied after the busy filter', async () => {
     const many = Array.from({ length: RING_LIST_MAX }, (_, i) => i + 1);
-    const handler = () => ({ action: 'ring', sources: [1, 1, ...many] }) as const;
+    const handler = (): CallVerdict => ({ action: 'ring', sources: [1, 1, ...many] });
     await expect(askLine(lineWith(handler), incoming)).resolves.toEqual({
       action: 'ring',
       sources: many
@@ -288,7 +293,7 @@ describe('numberRegistry handler invocation', () => {
   });
 
   it('carries a positive integer max', async () => {
-    const handler = () => ({ action: 'ring', sources: [5, 6], max: 1 }) as const;
+    const handler = (): CallVerdict => ({ action: 'ring', sources: [5, 6], max: 1 });
     await expect(askLine(lineWith(handler), incoming)).resolves.toEqual({
       action: 'ring',
       sources: [5, 6],

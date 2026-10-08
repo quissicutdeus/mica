@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import type { DbCall } from './dbMockTypes';
 import { __resetRateLimits } from '../lib/rateLimit';
 
 /**
@@ -36,11 +37,11 @@ const { participants, emitted, sources, dbMock, handlers, player } = vi.hoisted(
      * test in this file exactly as unblocked as it always was.
      */
     dbMock: {
-      query: vi.fn(async () => []),
-      insert: vi.fn(),
-      update: vi.fn(),
-      single: vi.fn(),
-      scalar: vi.fn(async () => null)
+      query: vi.fn<DbCall>(async () => []),
+      insert: vi.fn<DbCall<number>>(),
+      update: vi.fn<DbCall<boolean>>(),
+      single: vi.fn<DbCall>(),
+      scalar: vi.fn<DbCall>(async () => null)
     },
     handlers: captured,
     // The reaction handlers below go through `ServiceEndpoint`'s wrapper, which resolves

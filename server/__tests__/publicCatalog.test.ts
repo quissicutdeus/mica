@@ -9,11 +9,11 @@ import { join } from 'node:path';
 
 import { publicAddonCatalogUrl } from '../../shared/addonConfig';
 import { SDK_CONTRACT_VERSION } from '../../sdk/version';
-// @ts-expect-error -- a plain .js build script with no types; this suite is not typechecked.
 import {
   publicAddonIds,
   publicCatalogPath,
   writePublicCatalog
+  // @ts-expect-error -- a plain .js build script with no declaration file (declaring one is a non-test change).
 } from '../../scripts/lib/public-catalog.js';
 
 /**
@@ -61,7 +61,7 @@ describe('which add-ons the public catalog lists', () => {
   });
 
   it('lists exactly the ones the resource lacks a bundle for', () => {
-    expect(publicAddonIds(['notes', 'snek', 'hodlr'], (id) => id === 'notes')).toEqual([
+    expect(publicAddonIds(['notes', 'snek', 'hodlr'], (id: string) => id === 'notes')).toEqual([
       'snek',
       'hodlr'
     ]);

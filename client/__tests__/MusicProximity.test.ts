@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { last } from './arrays';
 
 /**
  * The attenuation half of MICA-111 phase 2.
@@ -173,7 +174,7 @@ describe('MusicProximity', () => {
     expect(target).toBeGreaterThan(0.5);
 
     frame();
-    const first = updates.at(-1)![0].volume;
+    const first = last(updates)![0].volume;
     // One frame closes a fraction of the gap, not the whole thing — a volume that arrived
     // in one step would be the "sounds like a fault" case.
     expect(first).toBeGreaterThan(0);
@@ -183,7 +184,7 @@ describe('MusicProximity', () => {
     // Settles to within PUSH_EPSILON of the true target and stops there — the guarantee
     // the convergence gate exists to give, and the reason it is not "changed since the
     // last push", which would strand the value wherever the throttle happened to stop.
-    expect(Math.abs(updates.at(-1)![0].volume - target)).toBeLessThan(0.01);
+    expect(Math.abs(last(updates)![0].volume - target)).toBeLessThan(0.01);
   });
 
   it('stops pushing once the volume has settled, and resumes when the listener moves', async () => {
@@ -216,10 +217,10 @@ describe('MusicProximity', () => {
     MusicProximity.setSources([7]);
     for (let i = 0; i < 60; i += 1) frame();
 
-    const last = updates.at(-1)!;
-    expect(last).toHaveLength(1);
-    expect(last[0].volume).toBe(0);
-    expect(last[0].distance).toBeNull();
+    const latest = last(updates)!;
+    expect(latest).toHaveLength(1);
+    expect(latest[0].volume).toBe(0);
+    expect(latest[0].distance).toBeNull();
   });
 
   it('reports nearest first, with the unlocatable behind everyone it can measure', async () => {
@@ -232,7 +233,7 @@ describe('MusicProximity', () => {
     MusicProximity.setSources([7, 8, 9]);
     frame();
 
-    expect(updates.at(-1)!.map((l) => l.source)).toEqual([8, 7, 9]);
+    expect(last(updates)!.map((l) => l.source)).toEqual([8, 7, 9]);
   });
 
   it('counts height, so a floor between you is quieter', async () => {
@@ -247,9 +248,9 @@ describe('MusicProximity', () => {
     MusicProximity.setSources([7, 8]);
     for (let i = 0; i < 200; i += 1) frame();
 
-    const last = updates.at(-1)!;
-    const ground = last.find((l) => l.source === 7)!.volume;
-    const upstairs = last.find((l) => l.source === 8)!.volume;
+    const latest = last(updates)!;
+    const ground = latest.find((l) => l.source === 7)!.volume;
+    const upstairs = latest.find((l) => l.source === 8)!.volume;
     expect(upstairs).toBeLessThan(ground);
     expect(upstairs).toBeGreaterThan(0);
   });
@@ -264,20 +265,20 @@ describe('MusicProximity', () => {
     peds.set(7, [3, 0, 0]);
     MusicProximity.setSources([7]);
     for (let i = 0; i < 300; i += 1) frame();
-    const before = updates.at(-1)![0].volume;
+    const before = last(updates)![0].volume;
     expect(before).toBeGreaterThan(0.5);
 
     MusicProximity.setSources([]);
     frame();
 
-    const during = updates.at(-1)!;
+    const during = last(updates)!;
     // Still present, and quieter — not gone, and not still at full volume.
     expect(during).toHaveLength(1);
     expect(during[0].volume).toBeLessThan(before);
     expect(during[0].volume).toBeGreaterThan(0);
 
     for (let i = 0; i < 300; i += 1) frame();
-    expect(updates.at(-1)).toEqual([]);
+    expect(last(updates)).toEqual([]);
   });
 
   it('holds a broadcaster loitering on the edge of range at silence, rather than flickering', async () => {
@@ -289,24 +290,24 @@ describe('MusicProximity', () => {
     peds.set(7, [30.5, 0, 0]);
     MusicProximity.setSources([7]);
     for (let i = 0; i < 200; i += 1) frame();
-    expect(updates.at(-1)![0].volume).toBe(0);
+    expect(last(updates)![0].volume).toBe(0);
 
     // A step inside. Bare attenuation is now above zero, but below the deadband, so it
     // stays silent — the shell filters silence before it ranks, so a volume crossing zero
     // is an iframe created and destroyed, not a re-render.
     peds.set(7, [29, 0, 0]);
     for (let i = 0; i < 200; i += 1) frame();
-    expect(updates.at(-1)![0].volume).toBe(0);
+    expect(last(updates)![0].volume).toBe(0);
 
     // Genuinely closer: clears the deadband and becomes audible.
     peds.set(7, [20, 0, 0]);
     for (let i = 0; i < 200; i += 1) frame();
-    expect(updates.at(-1)![0].volume).toBeGreaterThan(0.05);
+    expect(last(updates)![0].volume).toBeGreaterThan(0.05);
 
     // And once latched on it stays on, back out past where it refused to switch on.
     peds.set(7, [29, 0, 0]);
     for (let i = 0; i < 200; i += 1) frame();
-    expect(updates.at(-1)![0].volume).toBeGreaterThan(0);
+    expect(last(updates)![0].volume).toBeGreaterThan(0);
   });
 
   it('honours mica_music_range, clamped so a bad value cannot make the tick meaningless', async () => {
@@ -320,7 +321,7 @@ describe('MusicProximity', () => {
     for (let i = 0; i < 200; i += 1) frame();
 
     // 20m away with a 10m range is silence, where the 30m default would have been audible.
-    expect(updates.at(-1)![0].volume).toBe(0);
+    expect(last(updates)![0].volume).toBe(0);
   });
 
   it('clamps an absurd range rather than trusting the convar', async () => {
@@ -334,7 +335,7 @@ describe('MusicProximity', () => {
     for (let i = 0; i < 200; i += 1) frame();
 
     // 200m is past the 150m ceiling, so it is silent however the convar was set.
-    expect(updates.at(-1)![0].volume).toBe(0);
+    expect(last(updates)![0].volume).toBe(0);
   });
 
   it('closes the same fraction of the gap per second at any framerate', async () => {
@@ -345,15 +346,15 @@ describe('MusicProximity', () => {
       nextTickId = 0;
       now = 1000;
       const mod = await load();
-      let last = 0;
+      let latestVolume = 0;
       mod.MusicProximity.onUpdate((levels) => {
-        if (levels.length) last = levels[0].volume;
+        if (levels.length) latestVolume = levels[0].volume;
       });
       peds.set(7, [3, 0, 0]);
       mod.MusicProximity.setSources([7]);
       // Half a second of wall clock, however many frames that is.
       for (let elapsed = 0; elapsed < 500; elapsed += ms) frame(ms);
-      return last;
+      return latestVolume;
     };
 
     const slow = await runAt(33);

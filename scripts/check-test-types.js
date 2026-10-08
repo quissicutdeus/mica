@@ -31,7 +31,11 @@ import { fileURLToPath } from 'node:url';
  *   node scripts/check-test-types.js --list     print the failing test files, for a baseline
  */
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const TOOLS = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+// Where the `<target>/tsconfig.tests.json` configs and the test files live. The override is a
+// seam for the test, which points it at a scratch tree so the gate can be proved against a
+// baseline of any size without depending on which real tests happen to fail today.
+const ROOT = process.env.MICA_TEST_TYPES_ROOT ? resolve(process.env.MICA_TEST_TYPES_ROOT) : TOOLS;
 // The override exists for the test, which proves both directions against a doctored copy.
 const BASELINE = process.env.MICA_TEST_TYPES_BASELINE
   ? resolve(process.env.MICA_TEST_TYPES_BASELINE)
@@ -101,7 +105,7 @@ export function judge(failing, baseline, exists) {
 }
 
 function runTarget(target) {
-  const tsc = resolve(ROOT, 'node_modules/.bin/tsc');
+  const tsc = resolve(TOOLS, 'node_modules/.bin/tsc');
   if (!existsSync(tsc)) return { fatal: `${tsc} is missing; run pnpm install` };
   const config = `${target}/tsconfig.tests.json`;
   const r = spawnSync(tsc, ['--noEmit', '--pretty', 'false', '-p', config], {

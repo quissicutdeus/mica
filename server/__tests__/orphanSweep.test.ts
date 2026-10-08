@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -650,8 +650,8 @@ describe('comparing across collations (MICA-299)', () => {
   const COLLATED = (column: string) =>
     `ow.identifier = CONVERT(${column} USING utf8mb4) COLLATE utf8mb4_uca1400_ai_ci`;
 
-  let errors: ReturnType<typeof vi.spyOn>;
-  let warnings: ReturnType<typeof vi.spyOn>;
+  let errors: MockInstance<typeof console.error>;
+  let warnings: MockInstance<typeof console.warn>;
   beforeEach(() => {
     asEsx();
     errors = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -762,7 +762,7 @@ describe('comparing across collations (MICA-299)', () => {
 
 /** MICA-299: a statement that errors is a logged failure, whoever called. */
 describe('a failing statement is logged where it fails', () => {
-  let errors: ReturnType<typeof vi.spyOn>;
+  let errors: MockInstance<typeof console.error>;
   beforeEach(() => {
     errors = vi.spyOn(console, 'error').mockImplementation(() => {});
   });

@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { last } from './arrays';
 import { DEVICES } from '@mica/shared/devices';
 
 /**
@@ -81,7 +82,7 @@ describe('DeviceVisibility', () => {
     openDevice('tablet');
     closeDevice('tablet');
     expect(camera.disable).toHaveBeenCalledTimes(1);
-    expect(visible().at(-1)).toEqual({ device: 'tablet', visible: false });
+    expect(last(visible())).toEqual({ device: 'tablet', visible: false });
   });
 
   it('closeOpenDevice lowers whichever is up and is a no-op when nothing is', () => {
@@ -91,6 +92,6 @@ describe('DeviceVisibility', () => {
     openDevice('tablet');
     closeOpenDevice();
     expect(DeviceState.isAnyOpen()).toBe(false);
-    expect(visible().at(-1)).toEqual({ device: 'tablet', visible: false });
+    expect(last(visible())).toEqual({ device: 'tablet', visible: false });
   });
 });

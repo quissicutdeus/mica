@@ -115,7 +115,7 @@ const load = (bridge: string, side: 'server' | 'client', mica: Record<string, Fu
 
 const entriesOf = (bridge: string): Entry[] => loadBridge(ROOT, bridge).entries;
 
-describe.each(BRIDGES)('the %s bridge', (bridge: string) => {
+describe.each<string>(BRIDGES)('the %s bridge', (bridge: string) => {
   const entries = entriesOf(bridge);
 
   it('is one resource directory named for what it answers to', () => {

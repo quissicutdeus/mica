@@ -15,7 +15,9 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
+// @ts-expect-error -- a plain .js check module with no declaration file (declaring one is a non-test change).
 import { checkAddonSources, collectFiles } from '../../sdk/checks/addon.js';
+// @ts-expect-error -- same.
 import { componentClasses, tileClasses } from '../../sdk/checks/classes.js';
 
 /**
@@ -121,10 +123,10 @@ describe('pnpm new:app output', () => {
     const run = runs[name];
     expect(run.code, run.output).toBe(0);
     const files = collectFiles([run.appDir], root);
-    expect(files.svelte.map((f) => relative(run.appDir, f)).sort()).toEqual(svelte);
+    expect(files.svelte.map((f: string) => relative(run.appDir, f)).sort()).toEqual(svelte);
     // Non-vacuity: the scan below reads real class names out of both kinds of file.
     const markup = files.svelte.flatMap(
-      (f) => componentClasses(readFileSync(f, 'utf8'), relative(root, f)).usages
+      (f: string) => componentClasses(readFileSync(f, 'utf8'), relative(root, f)).usages
     );
     expect(markup.length, 'no class read out of the generated markup').toBeGreaterThan(0);
     const manifest = join(run.appDir, 'manifest.ts');
@@ -139,7 +141,10 @@ describe('pnpm new:app output', () => {
     const run = runs[name];
     const { violations } = checkAddonSources(collectFiles([run.appDir], root), { cwd: root });
     expect(
-      violations.map((v) => `${v.file}:${v.line} ${v.rule} ${v.message}`),
+      violations.map(
+        (v: { file: string; line: number; rule: string; message: string }) =>
+          `${v.file}:${v.line} ${v.rule} ${v.message}`
+      ),
       'scripts/new-app.js writes an app that fails the checks every app is held to — fix the ' +
         'template string in the script, not the generated file'
     ).toEqual([]);

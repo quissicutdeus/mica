@@ -3,13 +3,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import type { DbCall } from './dbMockTypes';
 
 const dbMock = vi.hoisted(() => ({
-  query: vi.fn(async () => []),
+  query: vi.fn<DbCall>(async () => []),
   insert: vi.fn(),
   update: vi.fn(),
   scalar: vi.fn(async () => null),
-  single: vi.fn(async () => null)
+  single: vi.fn<DbCall>(async () => null)
 }));
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
 

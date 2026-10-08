@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { DbCall } from './dbMockTypes';
 
 /**
  * `sendFromLine` (MICA-223): a text from something that is not a player lands in a thread
@@ -11,10 +12,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
  */
 const { dbMock, convRepo, sources, phones } = vi.hoisted(() => ({
   dbMock: {
-    query: vi.fn(async () => []),
-    insert: vi.fn(async () => 99),
-    update: vi.fn(async () => true),
-    single: vi.fn(async () => null),
+    query: vi.fn<DbCall>(async () => []),
+    insert: vi.fn<DbCall<number>>(async () => 99),
+    update: vi.fn<DbCall<boolean>>(async () => true),
+    single: vi.fn<DbCall>(async () => null),
     scalar: vi.fn(async () => null)
   },
   convRepo: {
@@ -24,7 +25,7 @@ const { dbMock, convRepo, sources, phones } = vi.hoisted(() => ({
     ensureLineParticipant: vi.fn(async () => undefined)
   },
   sources: new Map<string, number>(),
-  phones: { forCitizen: vi.fn(async () => 'PHONE_A') }
+  phones: { forCitizen: vi.fn(async (_citizenid: string) => 'PHONE_A') }
 }));
 
 vi.mock('../lib/Database', () => ({ Database: dbMock }));

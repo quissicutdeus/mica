@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { last } from './arrays';
 import { nearbyBroadcastFixture } from '@mica/shared/musicBroadcast.fixtures';
 
 /**
@@ -117,7 +118,7 @@ describe('Music (client half)', () => {
     // Trimming to the audible few here would hide a broadcaster from the mute list, and
     // would let a muted one hold a slot the next-nearest should have had.
     expect(
-      (messagesFor('musicBroadcasts').at(-1)!.data as { broadcasts: unknown[] }).broadcasts
+      (last(messagesFor('musicBroadcasts'))!.data as { broadcasts: unknown[] }).broadcasts
     ).toHaveLength(8);
   });
 
@@ -132,7 +133,7 @@ describe('Music (client half)', () => {
 
     // The mute key is `token`, carried on the roster row. The volume map is a measurement
     // of a connection's ped, so it keys on the connection.
-    expect(messagesFor('musicBroadcastVolumes').at(-1)!.data).toEqual({
+    expect(last(messagesFor('musicBroadcastVolumes'))!.data).toEqual({
       volumes: { '9': 0.8, [String(SOURCE)]: 0.2 }
     });
   });
@@ -159,7 +160,7 @@ describe('Music (client half)', () => {
     // a source this file no longer has a row for. It must not invent a key for it.
     emitLevels([{ source: SOURCE, volume: 0.3, distance: 12 }]);
 
-    expect(messagesFor('musicBroadcastVolumes').at(-1)!.data).toEqual({ volumes: {} });
+    expect(last(messagesFor('musicBroadcastVolumes'))!.data).toEqual({ volumes: {} });
   });
 
   it('drops the local player, so nobody gets a second copy of their own track', async () => {
@@ -168,7 +169,7 @@ describe('Music (client half)', () => {
 
     receive({ at: 0, broadcasters: [row(), row({ source: 8, token: 'b8dw3jn6ls0p' })] });
 
-    expect(messagesFor('musicBroadcasts').at(-1)!.data).toMatchObject({
+    expect(last(messagesFor('musicBroadcasts'))!.data).toMatchObject({
       broadcasts: [{ token: 'b8dw3jn6ls0p' }]
     });
     expect(setSources).toHaveBeenCalledWith([8]);
@@ -209,7 +210,7 @@ describe('Music (client half)', () => {
       broadcasters: [row({ token: 'f1rst9xk2vbq' }), row({ token: 's2cnd4t7mq3z' })]
     });
 
-    expect(messagesFor('musicBroadcasts').at(-1)!.data).toMatchObject({
+    expect(last(messagesFor('musicBroadcasts'))!.data).toMatchObject({
       broadcasts: [{ token: 'f1rst9xk2vbq' }]
     });
   });
@@ -224,7 +225,7 @@ describe('Music (client half)', () => {
       )
     });
 
-    expect(setSources.mock.calls.at(-1)![0]).toHaveLength(16);
+    expect(last(setSources.mock.calls)![0]).toHaveLength(16);
   });
 
   it('treats a malformed envelope as nothing rather than as an empty roster', async () => {
@@ -246,7 +247,7 @@ describe('Music (client half)', () => {
 
     receive({ at: 5, broadcasters: [] });
 
-    expect(messagesFor('musicBroadcasts').at(-1)!.data).toEqual({ broadcasts: [] });
+    expect(last(messagesFor('musicBroadcasts'))!.data).toEqual({ broadcasts: [] });
     expect(setSources).toHaveBeenCalledWith([]);
   });
 
@@ -256,7 +257,7 @@ describe('Music (client half)', () => {
     receive({ at: 0, broadcasters: [row({ label: 'x'.repeat(500) })] });
 
     const [broadcast] = (
-      messagesFor('musicBroadcasts').at(-1)!.data as { broadcasts: { label: string }[] }
+      last(messagesFor('musicBroadcasts'))!.data as { broadcasts: { label: string }[] }
     ).broadcasts;
     expect(broadcast.label).toHaveLength(64);
   });

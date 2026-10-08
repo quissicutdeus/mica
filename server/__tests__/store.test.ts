@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
 
 /**
  * `store:catalog` (MICA-237): the server fetches the add-on catalog for the phones.
@@ -100,7 +100,7 @@ const response = (
 const jsonResponse = (value: unknown) => response(bodyOf([bytes(JSON.stringify(value))]));
 
 let fetchMock: ReturnType<typeof vi.fn>;
-let warn: ReturnType<typeof vi.spyOn>;
+let warn: MockInstance<typeof console.warn>;
 
 beforeEach(() => {
   resetStoreCatalogForTests();

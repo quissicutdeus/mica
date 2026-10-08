@@ -6,7 +6,6 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-// @ts-expect-error -- a plain .js build script with no types; this suite is not typechecked.
 import {
   parseSections,
   resolveSection,
@@ -14,6 +13,7 @@ import {
   capEntry,
   MAX_ENTRY_CHARS,
   NOTHING_FOR_OWNER
+  // @ts-expect-error -- a plain .js build script with no declaration file (declaring one is a non-test change).
 } from '../../scripts/lib/release-notes.js';
 
 /**

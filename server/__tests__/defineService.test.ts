@@ -510,7 +510,7 @@ describe('defineService — repositoryFactory', () => {
 describe('child tables', () => {
   const messagesish = {
     id: 'threads',
-    schema: { body: 'text' },
+    schema: { body: 'text' as const },
     childTables: [
       {
         name: 'thread_attachments',

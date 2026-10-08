@@ -114,8 +114,8 @@ const fire = async (event: string, src: number, ...args: unknown[]) => {
   await new Promise((resolve) => setTimeout(resolve, 0));
 };
 
-const createCalls = () =>
-  (dbMock.insert as any).mock.calls.map((args: unknown[]) => args as [string, unknown[]]);
+const createCalls = (): [string, unknown[]][] =>
+  dbMock.insert.mock.calls.map((args: unknown[]) => args as [string, unknown[]]);
 
 const emitCalls = () => (globalThis as any).emitNet.mock.calls as [string, number, ...unknown[]][];
 

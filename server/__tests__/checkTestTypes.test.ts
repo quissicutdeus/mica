@@ -4,7 +4,7 @@
 
 import { afterEach, describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -22,7 +22,6 @@ import { judge, parseBaseline, parseTscOutput } from '../../scripts/check-test-t
 
 const ROOT = resolve(__dirname, '../..');
 const SCRIPT = join(ROOT, 'scripts/check-test-types.js');
-const REAL_BASELINE = join(ROOT, 'scripts/test-types-baseline.txt');
 
 const always = () => true;
 
@@ -76,41 +75,85 @@ describe('the script, run for real', () => {
     for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
   });
 
-  const run = (baselineText: string) => {
-    const dir = mkdtempSync(join(tmpdir(), 'mica-test-types-'));
-    dirs.push(dir);
-    const file = join(dir, 'baseline.txt');
-    writeFileSync(file, baselineText);
+  /**
+   * A scratch tree shaped like the repo's: `server/` and `client/` each with a tsconfig.tests.json
+   * and a `__tests__/`, holding `bad` files that fail typecheck and one that does not. Nothing
+   * here depends on what the real tests do today, so the proof holds for a baseline of any size.
+   */
+  const fixture = (bad: number) => {
+    const root = mkdtempSync(join(tmpdir(), 'mica-test-types-'));
+    dirs.push(root);
+    for (const target of ['server', 'client']) {
+      mkdirSync(join(root, target, '__tests__'), { recursive: true });
+      writeFileSync(
+        join(root, target, 'tsconfig.tests.json'),
+        JSON.stringify({
+          compilerOptions: {
+            strict: true,
+            noEmit: true,
+            types: [],
+            module: 'esnext',
+            target: 'es2022'
+          },
+          include: ['./__tests__/**/*']
+        })
+      );
+      writeFileSync(
+        join(root, target, '__tests__', 'clean.test.ts'),
+        'export const ok: number = 1;\n'
+      );
+    }
+    const failing: string[] = [];
+    for (let i = 0; i < bad; i++) {
+      const rel = `server/__tests__/bad${i}.test.ts`;
+      writeFileSync(join(root, rel), "export const broken: number = 'no';\n");
+      failing.push(rel);
+    }
+    return { root, failing, clean: 'server/__tests__/clean.test.ts' };
+  };
+
+  const run = (root: string, baseline: string[]) => {
+    const file = join(root, 'baseline.txt');
+    writeFileSync(file, `# fixture\n${baseline.join('\n')}\n`);
     return spawnSync(process.execPath, [SCRIPT], {
       cwd: ROOT,
       encoding: 'utf8',
-      env: { ...process.env, MICA_TEST_TYPES_BASELINE: file }
+      env: { ...process.env, MICA_TEST_TYPES_ROOT: root, MICA_TEST_TYPES_BASELINE: file }
     });
   };
 
-  const entries: string[] = parseBaseline(readFileSync(REAL_BASELINE, 'utf8'));
+  it.each([0, 1, 31])(
+    'with %i failing tests',
+    (bad) => {
+      const { root, failing, clean } = fixture(bad);
 
-  it('passes on the committed baseline', () => {
-    const r = spawnSync(process.execPath, [SCRIPT], { cwd: ROOT, encoding: 'utf8' });
-    expect(r.stderr).toBe('');
-    expect(r.status).toBe(0);
-  }, 60_000);
+      const agree = run(root, failing);
+      expect(agree.stderr).toBe('');
+      expect(agree.status).toBe(0);
 
-  it('fails when a failing test is missing from the baseline', () => {
-    expect(entries.length).toBeGreaterThan(1);
-    const r = run(entries.slice(1).join('\n'));
-    expect(r.status).toBe(1);
-    expect(r.stderr).toContain(`NEW  ${entries[0]}`);
-  }, 60_000);
+      // A new break: one more failing file than the baseline lists.
+      writeFileSync(
+        join(root, 'server/__tests__/newbreak.test.ts'),
+        "export const n: number = 'x';\n"
+      );
+      const unlisted = run(root, failing);
+      expect(unlisted.status).toBe(1);
+      expect(unlisted.stderr).toContain('NEW  server/__tests__/newbreak.test.ts');
+      rmSync(join(root, 'server/__tests__/newbreak.test.ts'));
 
-  it('fails when a baselined test actually passes', () => {
-    const clean = readdirSync(join(ROOT, 'server/__tests__'))
-      .filter((f) => f.endsWith('.test.ts'))
-      .map((f) => `server/__tests__/${f}`)
-      .find((f) => !entries.includes(f));
-    expect(clean).toBeDefined();
-    const r = run([...entries, clean].join('\n'));
-    expect(r.status).toBe(1);
-    expect(r.stderr).toContain(`FIXED ${clean}`);
+      // A stale entry: a listed file that typechecks.
+      const stale = run(root, [...failing, clean]);
+      expect(stale.status).toBe(1);
+      expect(stale.stderr).toContain(`FIXED ${clean}`);
+    },
+    60_000
+  );
+
+  it('fails loudly when tsc cannot read its config', () => {
+    const { root } = fixture(0);
+    rmSync(join(root, 'client/tsconfig.tests.json'));
+    const r = run(root, []);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).not.toBe('');
   }, 60_000);
 });

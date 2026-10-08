@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { DbCall } from './dbMockTypes';
 
 const { dbMock, handlers } = vi.hoisted(() => {
   const captured = new Map<string, Function>();
@@ -12,7 +13,13 @@ const { dbMock, handlers } = vi.hoisted(() => {
     return typeof previous === 'function' ? previous(event, handler) : undefined;
   };
   return {
-    dbMock: { query: vi.fn(), insert: vi.fn(), update: vi.fn(), scalar: vi.fn(), single: vi.fn() },
+    dbMock: {
+      query: vi.fn(),
+      insert: vi.fn(),
+      update: vi.fn<DbCall<number | boolean>>(),
+      scalar: vi.fn(),
+      single: vi.fn()
+    },
     handlers: captured
   };
 });
@@ -83,10 +90,8 @@ describe('hodlr: buy and sell', () => {
   };
 
   /** The `UPDATE ... quantity = quantity - ?` calls, in order. */
-  const decrements = () =>
-    dbMock.update.mock.calls.filter(([sql]: [string]) => /`quantity` - \?/.test(sql));
-  const increments = () =>
-    dbMock.update.mock.calls.filter(([sql]: [string]) => /`quantity` \+ \?/.test(sql));
+  const decrements = () => dbMock.update.mock.calls.filter(([sql]) => /`quantity` - \?/.test(sql));
+  const increments = () => dbMock.update.mock.calls.filter(([sql]) => /`quantity` \+ \?/.test(sql));
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -443,13 +448,12 @@ describe('hodlr: buy and sell', () => {
       const handler = handlers.get(event);
       if (!handler) throw new Error(`no handler for ${event}`);
       (globalThis as any).source = 1;
-      const emit = vi.fn();
+      const emit = vi.fn<(...args: unknown[]) => void>();
       (globalThis as any).emitNet = emit;
 
       const [a, b] = payloads;
       return Promise.all([handler('cb-a', a), handler('cb-b', b)]).then(() => {
-        const replyFor = (cbId: string) =>
-          emit.mock.calls.find(([, , id]: [unknown, unknown, string]) => id === cbId)?.[3];
+        const replyFor = (cbId: string) => emit.mock.calls.find(([, , id]) => id === cbId)?.[3];
         return [replyFor('cb-a'), replyFor('cb-b')];
       });
     };
@@ -468,8 +472,9 @@ describe('hodlr: buy and sell', () => {
       let resolveAllWritten: () => void;
       const allWritten = new Promise<void>((resolve) => (resolveAllWritten = resolve));
 
-      dbMock.update.mockImplementation(async (sql: string, params: [number, number]) => {
-        const delta = /`quantity` - \?/.test(sql) ? -params[0] : params[0];
+      dbMock.update.mockImplementation(async (sql: string, params: unknown[] = []) => {
+        const [quantity] = params as [number, number];
+        const delta = /`quantity` - \?/.test(sql) ? -quantity : quantity;
         stored += delta;
         settled += 1;
         if (settled === expected) resolveAllWritten();

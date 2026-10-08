@@ -356,6 +356,7 @@ describe('tellLine never fails its caller', () => {
     blockable: true,
     label: null,
     job: null,
+    jobs: [],
     onCall: () => ({ action: 'reject' }),
     onMessage
   });
@@ -539,7 +540,14 @@ describe('a player texting a line', () => {
 
   it('costs no extra read on a server with no lines registered', async () => {
     db.conversations.set(900, { id: 900, status: 'active', participant_a: PHONE });
-    db.participants.push({ conversation_id: 900, citizenid: 'CIT_A', phone_id: PHONE });
+    db.participants.push({
+      conversation_id: 900,
+      citizenid: 'CIT_A',
+      phone_id: PHONE,
+      role: 'member',
+      status: 'active',
+      left_at: null
+    });
 
     await call('messages', 'send', { conversation_id: 900, message: 'hi' });
 

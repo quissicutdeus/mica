@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { last } from './arrays';
 
 /**
  * The client export surface (MICA-224), pinned the way `server/__tests__/exports.test.ts`
@@ -171,7 +172,7 @@ describe('the rest', () => {
   it('opens the device on an app and hands the shell the props', () => {
     expect(call('OpenApp', 'Contacts', { contactId: 4 })).toEqual({ ok: true, value: undefined });
     expect(DeviceState.isOpen('phone')).toBe(true);
-    expect(sent.at(-1)).toEqual({
+    expect(last(sent)).toEqual({
       action: 'openApp',
       data: { appId: 'contacts', props: { contactId: 4 }, device: 'phone' }
     });
@@ -211,7 +212,7 @@ describe('the rest', () => {
     it('opens an app the list does not name', () => {
       withDisabled('bank');
       expect(call('OpenApp', 'contacts')).toEqual({ ok: true, value: undefined });
-      expect(sent.at(-1)?.action).toBe('openApp');
+      expect(last(sent)?.action).toBe('openApp');
     });
 
     it('refuses nothing when the convar is unset, missing or unreadable', () => {
@@ -230,7 +231,7 @@ describe('the rest', () => {
     expect(call('Notify', { type: 'success', title: 'Lockpick', message: 'Door open' }).ok).toBe(
       true
     );
-    expect(sent.at(-1)).toEqual({
+    expect(last(sent)).toEqual({
       action: 'notify',
       data: { type: 'success', title: 'Lockpick', message: 'Door open' }
     });

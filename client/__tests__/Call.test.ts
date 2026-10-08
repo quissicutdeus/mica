@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { sorted } from './arrays';
 
 /**
  * `Call.ts` is the whole client-side voice integration: three `exports['pma-voice']`
@@ -87,15 +88,15 @@ const serverEvent = (event: string, data?: unknown) => netSubscriptions.get(even
 
 describe('NUI callbacks', () => {
   it('registers every callback the phone UI can invoke', () => {
-    expect(registeredNuiTypes.toSorted()).toEqual(
-      [
+    expect(sorted(registeredNuiTypes)).toEqual(
+      sorted([
         'answerCall',
         'endCall',
         'rejectCall',
         'simulateIncomingCall',
         'startCall',
         'toggleMute'
-      ].toSorted()
+      ])
     );
   });
 

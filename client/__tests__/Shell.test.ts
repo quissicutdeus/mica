@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { last } from './arrays';
 
 /**
  * The server's `openApp` push against the owner's disabled-app list (MICA-234).
@@ -76,7 +77,7 @@ describe('mica:client:shell:openApp and mica_disabled_apps', () => {
     withDisabled('bank');
     openApp({ appId: 'contacts', props: { contactId: 4 } });
     expect(DeviceState.isOpen('phone')).toBe(true);
-    expect(sent.at(-1)).toEqual({
+    expect(last(sent)).toEqual({
       action: 'openApp',
       data: { appId: 'contacts', props: { contactId: 4 }, device: 'phone' }
     });
@@ -98,7 +99,7 @@ describe('mica:client:shell:openApp and mica_disabled_apps', () => {
       g.GetConvar = stub;
       openApp({ appId: 'contacts' });
       expect(DeviceState.isOpen('phone')).toBe(true);
-      expect(sent.at(-1)?.action).toBe('openApp');
+      expect(last(sent)?.action).toBe('openApp');
     }
   });
 

@@ -62,7 +62,9 @@ vi.mock('../lib/FrameworkBridge', () => ({
   }
 }));
 
-const banking = vi.hoisted(() => ({ getSocietyBalance: vi.fn((_job: string) => 12_500) }));
+const banking = vi.hoisted(() => ({
+  getSocietyBalance: vi.fn((_job: string): number | null => 12_500)
+}));
 vi.mock('../lib/BankingBridge', () => ({ BankingBridge: banking }));
 
 const registry = vi.hoisted(() => ({

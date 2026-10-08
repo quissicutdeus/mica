@@ -7,7 +7,6 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-// @ts-expect-error -- a plain .js build module with a hand-written .d.ts beside it.
 import { addOnIds, coreValueOf } from '../../web/scripts/addon-ids.js';
 
 /**

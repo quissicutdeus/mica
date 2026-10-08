@@ -393,7 +393,7 @@ describe('resolving is admin-only', () => {
     // Soft status change, not a delete: the audit trail has to keep pointing at a row.
     // The status is bound rather than interpolated, so this reads the parameters.
     const hide = dbMock.update.mock.calls.find((c: any[]) => /UPDATE `mica_messages`/.test(c[0]));
-    expect(hide, 'the content should be hidden').toBeTruthy();
+    if (!hide) throw new Error('the content should be hidden');
     expect(hide[0]).not.toMatch(/DELETE/i);
     expect(hide[1]).toEqual(expect.arrayContaining(['moderated']));
 
@@ -580,7 +580,7 @@ describe('history and undo', () => {
 
     const statements = dbMock.update.mock.calls;
     const restore = statements.find((c: any[]) => /UPDATE `mica_messages`/.test(c[0]));
-    expect(restore, 'the content should be restored').toBeTruthy();
+    if (!restore) throw new Error('the content should be restored');
     expect(restore[1]).toEqual(expect.arrayContaining(['active']));
   });
 
@@ -609,6 +609,7 @@ describe('history and undo', () => {
 
     await call('reopen', { id: 9 }, ADMIN);
     const audit = dbMock.insert.mock.calls.find((c: any[]) => /mica_audit_logs/.test(c[0]));
+    if (!audit) throw new Error('reopening should write an audit row');
     expect(audit[1]).toEqual(expect.arrayContaining(['unmoderated']));
   });
 });

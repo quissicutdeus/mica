@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { DbCall } from './dbMockTypes';
 
 const { dbMock, handlers, localHandlers } = vi.hoisted(() => {
   const captured = new Map<string, Function>();
@@ -20,11 +21,11 @@ const { dbMock, handlers, localHandlers } = vi.hoisted(() => {
   };
   return {
     dbMock: {
-      query: vi.fn(async (): Promise<unknown> => []),
-      insert: vi.fn(async () => 1),
-      update: vi.fn(async () => true),
+      query: vi.fn<DbCall>(async () => []),
+      insert: vi.fn<DbCall<number>>(async () => 1),
+      update: vi.fn<DbCall<boolean>>(async () => true),
       scalar: vi.fn(),
-      single: vi.fn(async (): Promise<unknown> => null)
+      single: vi.fn<DbCall>(async () => null)
     },
     handlers: captured,
     localHandlers: local
@@ -109,7 +110,10 @@ const fire = async (action: string, data: unknown, src = 1) => {
 };
 
 const updates = () =>
-  dbMock.update.mock.calls.map(([sql, params]) => [String(sql).replace(/\s+/g, ' '), params]);
+  dbMock.update.mock.calls.map(([sql, params]): [string, unknown[] | undefined] => [
+    String(sql).replace(/\s+/g, ' '),
+    params
+  ]);
 
 beforeEach(() => {
   vi.clearAllMocks();

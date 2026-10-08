@@ -87,6 +87,7 @@ import {
 } from '../lib/addonServices';
 import {
   HANDLER_TIMEOUT_MS,
+  type CallVerdict,
   __resetRegistry,
   lookupLine,
   registerNumber
@@ -699,7 +700,7 @@ describe('a forged onResourceStop (MICA-308 review)', () => {
 
   it("does not release a running resource's number, micaOS's own job lines included", () => {
     __resetRegistry();
-    const onCall = () => ({ action: 'reject' });
+    const onCall = (): CallVerdict => ({ action: 'reject' });
     expect(registerNumber('5550101', { onCall }, 'dispatch')).toMatchObject({ ok: true });
     expect(registerNumber('5550911', { onCall }, 'mica')).toMatchObject({ ok: true });
     fireStop('dispatch', 'started');

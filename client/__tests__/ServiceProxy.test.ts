@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { sorted } from './arrays';
 import { requestEventFor, responseEventFor, parseRequestEvent } from '@mica/shared/rpc';
 import { ServiceProxy } from '../lib/ServiceProxy';
 
@@ -85,7 +86,7 @@ describe('ServiceProxy — subscribes the reply it will actually receive', () =>
     app.registerCallback('archiveMail', 'mica:server:mail:archiveMail');
     app.registerCallback('deleteMail', 'mica:server:mail:deleteMail');
 
-    expect([...netSubscriptions.keys()].toSorted()).toEqual([
+    expect(sorted([...netSubscriptions.keys()])).toEqual([
       'mica:client:mail:archiveMail',
       'mica:client:mail:deleteMail',
       'mica:client:mail:getMail',
