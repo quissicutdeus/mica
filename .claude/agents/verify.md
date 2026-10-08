@@ -7,7 +7,7 @@ description: >-
   a boast in the wrong unit that every listener nodded through: a summary line
   is a claim, and the counts have to reconcile before it is a result.
 color: yellow
-model: sonnet
+model: claude-haiku-5-5
 effort: medium
 ---
 
