@@ -11,6 +11,7 @@ import {
   moved,
   numberOr,
   offlineLookup,
+  itemRemoved,
   removeInventoryItem,
   resource,
   stringOr,
@@ -285,26 +286,30 @@ const esxMove = (
 /**
  * Consume an item from an ESX inventory.
  *
- * `xPlayer.removeInventoryItem` returns nothing, like ESX's money calls — but unlike money
- * this is allowed to fail open, because that is already the stated policy for items (see
- * `removeInventoryItem` below and the warning it prints). The trade is the one made there: a
- * consumable whose effect has already happened is not worth refusing over, and money is.
- * There is nothing to coerce because there is nothing returned.
+ * `xPlayer.removeInventoryItem` answers a boolean in es_extended 1.15.2 — `false` when the
+ * player holds too few — and that answer is honoured, through `itemRemoved`, so an array from
+ * an inventory resource that replaces the method and returns `false, 'reason'` reads as the
+ * refusal it is (MICA-325). Builds that return **nothing** still exist, and for them
+ * `undefined` keeps meaning what it always did here: the call ran without throwing, so the
+ * item is taken as consumed. That is the stated item policy (see `removeInventoryItem`): a
+ * consumable is not worth refusing over when the inventory cannot say, and money is.
  *
  * Falls through to the shared helper — and so to ox_inventory, which is common on ESX — when
  * the player object has no inventory call of its own.
  */
 const esxRemoveItem = (xPlayer: any, src: number, item: string, count: number): boolean => {
+  if (typeof xPlayer?.removeInventoryItem !== 'function') {
+    return removeInventoryItem(src, {}, item, count);
+  }
+  let result: unknown;
   try {
-    if (typeof xPlayer?.removeInventoryItem === 'function') {
-      xPlayer.removeInventoryItem(item, count);
-      return true;
-    }
+    result = xPlayer.removeInventoryItem(item, count);
   } catch (error) {
     console.error(`[FrameworkBridge] ESX.removeInventoryItem('${item}') for ${src} threw:`, error);
     return false;
   }
-  return removeInventoryItem(src, {}, item, count);
+  if (result === undefined) return true;
+  return itemRemoved(result, 'ESX.removeInventoryItem', src, item);
 };
 
 /**

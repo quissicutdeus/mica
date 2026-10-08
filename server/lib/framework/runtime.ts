@@ -492,6 +492,11 @@ export const __resetOfflineLookupWarnings = (): void => {
   offlineLookupFailures.clear();
 };
 
+/** Test seam, like `__resetOfflineLookupWarnings`. */
+export const __resetInventoryRemoveWarnings = (): void => {
+  inventoryRemoveFailures.clear();
+};
+
 /**
  * Consume an item through whatever inventory this server has.
  *
@@ -503,7 +508,76 @@ export const __resetOfflineLookupWarnings = (): void => {
  * inventory gets the item's effect without the item being consumed; the alternative
  * is a consumable that silently never works. A silent `return true` here reads as
  * "removed" to every caller, which is the same lie `shareContact` used to tell.
+ *
+ * The fail-open covers an inventory that is **absent**, and only that (MICA-325). An
+ * ox_inventory that is running and whose `RemoveItem` throws is an inventory that answered
+ * "no": refusing is the only reading under which a caller that grants something for the item
+ * — `Battery.ts`'s bank, which says it fails closed — keeps that promise. The two used to share
+ * one `catch`, so a throw from a present ox_inventory fell through to the warning below and
+ * answered `true`, and the phone charged with the item still in the bag. Presence is asked of
+ * `exposes`, which swallows the proxy's throw for an absent resource and nothing else, so the
+ * `try` here wraps only the call itself.
+ *
+ * The same holds for a qb or qbx player's own `Functions.RemoveItem`: a throw is a refusal,
+ * and so is any answer that is not `true` — see `itemRemoved` for the shapes that arrive.
  */
+const inventoryRemoveFailures = new Set<string>();
+
+/** Report one removal failure once per call and item per resource start. */
+const reportRemovalOnce = (call: string, item: string, message: string, error?: unknown) => {
+  const key = `${call} ${item}`;
+  if (inventoryRemoveFailures.has(key)) return;
+  inventoryRemoveFailures.add(key);
+  // Once, because a broken inventory fails on every use, and a line per use would bury the
+  // one that names it.
+  if (error === undefined) console.error(`[FrameworkBridge] ${message}`);
+  else console.error(`[FrameworkBridge] ${message}`, error);
+};
+
+/**
+ * Whether an inventory's answer says the item was removed.
+ *
+ * **A Lua export returning several values reaches JavaScript as an array.** ox_inventory's
+ * `RemoveItem` answers `false, 'reason'` when it refuses, which arrives as `[false, 'reason']`
+ * — truthy — so a caller testing the answer charged the phone and removed nothing. The same
+ * shape was seen on hoth in MICA-304 (`AddItem answered true,[object Object]`). The first value
+ * is the answer, so an array is read through its first element.
+ *
+ * Then the coercion `moved` makes for money: only a boolean is an answer. Anything else — a
+ * promise from an inventory that went async, `nil` from one that stopped returning — cannot
+ * say the item left the inventory, so it reads as a refusal, reported once.
+ */
+export const itemRemoved = (result: unknown, call: string, src: number, item: string): boolean => {
+  const answer = Array.isArray(result) ? result[0] : result;
+  if (typeof answer === 'boolean') return answer;
+  reportRemovalOnce(
+    call,
+    item,
+    `${call} removing '${item}' for source ${src} answered with ${shapeOf(result)} rather ` +
+      `than a boolean. Refusing the action — this cannot tell whether the item was consumed. ` +
+      `Reported once per item per resource start.`
+  );
+  return false;
+};
+
+/** Call an inventory's remove, reading a throw as a refusal and the answer through `itemRemoved`. */
+const attemptRemoval = (call: string, src: number, item: string, run: () => unknown): boolean => {
+  let result: unknown;
+  try {
+    result = run();
+  } catch (error) {
+    reportRemovalOnce(
+      call,
+      item,
+      `${call} threw removing '${item}' for source ${src}. Refusing the action — the item ` +
+        `was not consumed. Reported once per item per resource start.`,
+      error
+    );
+    return false;
+  }
+  return itemRemoved(result, call, src, item);
+};
+
 export const removeInventoryItem = (
   src: number,
   player: any,
@@ -511,14 +585,14 @@ export const removeInventoryItem = (
   count: number
 ): boolean => {
   if (player?.Functions?.RemoveItem) {
-    return player.Functions.RemoveItem(item, count);
+    return attemptRemoval('Functions.RemoveItem', src, item, () =>
+      player.Functions.RemoveItem(item, count)
+    );
   }
-  try {
-    if (resource('ox_inventory')?.RemoveItem) {
-      return resource('ox_inventory').RemoveItem(src, item, count);
-    }
-  } catch {
-    // ox_inventory not present
+  if (exposes('ox_inventory', 'RemoveItem')) {
+    return attemptRemoval("ox_inventory's RemoveItem", src, item, () =>
+      resource('ox_inventory').RemoveItem(src, item, count)
+    );
   }
 
   console.warn(

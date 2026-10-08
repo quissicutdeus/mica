@@ -29,6 +29,7 @@ import {
   __resetOfflineLookupWarnings
 } from '../lib/FrameworkBridge';
 import { __resetAssignedNumbers, rememberNumber } from '../lib/phoneNumbers';
+import { __resetInventoryRemoveWarnings } from '../lib/framework/runtime';
 
 /**
  * Every ownership check in micaOS resolves an identity through here, and it had no test.
@@ -205,6 +206,145 @@ describe('FrameworkBridge.removeInventoryItem', () => {
 
     expect(FrameworkBridge.removeInventoryItem(1, {}, 'battery', 1)).toBe(true);
     expect(warn).toHaveBeenCalled();
+  });
+
+  /**
+   * MICA-325: "absent" and "present but broken" shared one `catch`, so a present
+   * ox_inventory whose `RemoveItem` threw fell through to the fail-open above and answered
+   * `true` — the battery bank charged the phone and the item stayed in the bag.
+   */
+  describe('an ox_inventory that throws (MICA-325)', () => {
+    beforeEach(() => __resetInventoryRemoveWarnings());
+
+    it('keeps the fail-open when ox_inventory is not running and the proxy throws', () => {
+      // FiveM's `exports` proxy throws on a resource that is not running, rather than
+      // answering undefined. That throw means "absent", and keeps today's fallback.
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+      __setResourceLookup((name) => {
+        throw new Error(`No such export ${name}`);
+      });
+
+      expect(FrameworkBridge.removeInventoryItem(1, {}, 'battery', 1)).toBe(true);
+      expect(warn).toHaveBeenCalled();
+      expect(error).not.toHaveBeenCalled();
+    });
+
+    it('refuses when a running ox_inventory throws from RemoveItem, and logs once', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const RemoveItem = vi.fn(() => {
+        throw new Error('inventory busy');
+      });
+      useResources({ ox_inventory: { RemoveItem } });
+
+      expect(FrameworkBridge.removeInventoryItem(1, {}, 'battery', 1)).toBe(false);
+      expect(FrameworkBridge.removeInventoryItem(2, {}, 'battery', 1)).toBe(false);
+
+      expect(RemoveItem).toHaveBeenCalledTimes(2);
+      expect(error).toHaveBeenCalledOnce();
+      expect(String(error.mock.calls[0][0])).toContain("'battery'");
+      // Not the "no inventory" warning: that one says the action was allowed.
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it('refuses through a player adapter too, so the battery bank charges nothing', () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      useResources({
+        ...esx({ 1: xPlayer(LICENSE, { omit: ['removeInventoryItem'] }) }),
+        ox_inventory: {
+          RemoveItem: () => {
+            throw new Error('inventory busy');
+          }
+        }
+      });
+
+      expect(FrameworkBridge.getPlayer(1)!.removeItem('battery_bank', 1)).toBe(false);
+    });
+  });
+
+  /**
+   * MICA-325 review: a Lua export returning two values reaches JavaScript as an array.
+   * ox_inventory answers a refusal with `false, 'reason'`, which arrived as a truthy
+   * `[false, 'reason']`, so the bank charged and nothing was removed (the hoth log in MICA-304
+   * showed the same shape: `AddItem answered true,[object Object]`).
+   */
+  describe('the answer an inventory gives (MICA-325)', () => {
+    beforeEach(() => __resetInventoryRemoveWarnings());
+
+    it("reads ox_inventory's `false, 'reason'` as the refusal it is", () => {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+      useResources({ ox_inventory: { RemoveItem: () => [false, 'not_enough_items'] } });
+
+      expect(FrameworkBridge.removeInventoryItem(1, {}, 'battery', 1)).toBe(false);
+      // An ordinary refusal, not a broken inventory: nothing to report.
+      expect(error).not.toHaveBeenCalled();
+    });
+
+    it('reads a multi-value success through its first value', () => {
+      useResources({ ox_inventory: { RemoveItem: () => [true, { slot: 3 }] } });
+      expect(FrameworkBridge.removeInventoryItem(1, {}, 'battery', 1)).toBe(true);
+    });
+
+    it('refuses an answer that is not a boolean, and reports it once', () => {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+      useResources({ ox_inventory: { RemoveItem: () => Promise.resolve(true) } });
+
+      expect(FrameworkBridge.removeInventoryItem(1, {}, 'battery', 1)).toBe(false);
+      expect(FrameworkBridge.removeInventoryItem(2, {}, 'battery', 1)).toBe(false);
+      expect(error).toHaveBeenCalledOnce();
+    });
+
+    it("refuses when a qb/qbx player's own RemoveItem throws, and logs once per item", () => {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const RemoveItem = vi.fn(() => {
+        throw new Error('inventory busy');
+      });
+      const player = { Functions: { RemoveItem } };
+
+      expect(FrameworkBridge.removeInventoryItem(1, player, 'battery', 1)).toBe(false);
+      expect(FrameworkBridge.removeInventoryItem(1, player, 'battery', 1)).toBe(false);
+      expect(FrameworkBridge.removeInventoryItem(1, player, 'phone', 1)).toBe(false);
+
+      expect(error).toHaveBeenCalledTimes(2);
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it("honours a qb/qbx player's false, bare or multi-value", () => {
+      useResources({});
+      const refusing = (answer: unknown) => ({ Functions: { RemoveItem: () => answer } });
+
+      expect(FrameworkBridge.removeInventoryItem(1, refusing(false), 'battery', 1)).toBe(false);
+      expect(
+        FrameworkBridge.removeInventoryItem(1, refusing([false, 'reason']), 'battery', 1)
+      ).toBe(false);
+    });
+
+    it("honours es_extended's false, which 1.15.2 answers when the player holds too few", () => {
+      const player = xPlayer(LICENSE);
+      player.removeInventoryItem = vi.fn(() => false);
+      useResources(esx({ 1: player }));
+
+      expect(FrameworkBridge.getPlayer(1)!.removeItem('battery_bank', 1)).toBe(false);
+    });
+
+    it('honours a multi-value false from an inventory that replaces the ESX method', () => {
+      const player = xPlayer(LICENSE);
+      player.removeInventoryItem = vi.fn(() => [false, 'not_enough_items']);
+      useResources(esx({ 1: player }));
+
+      expect(FrameworkBridge.getPlayer(1)!.removeItem('battery_bank', 1)).toBe(false);
+    });
+
+    it('keeps reading nothing from an older ESX build as consumed', () => {
+      // Builds that return nothing still exist; their silence is today's "removed".
+      const player = xPlayer(LICENSE);
+      player.removeInventoryItem = vi.fn(() => undefined);
+      useResources(esx({ 1: player }));
+
+      expect(FrameworkBridge.getPlayer(1)!.removeItem('battery_bank', 1)).toBe(true);
+    });
   });
 });
 

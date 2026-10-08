@@ -35,3 +35,5 @@ line here.
   — it moves last, as the durable "unfinished" mark; MICA-319
 - [Splitting a module: re-export only what is imported; no cycle back](splitting-a-module-facade-and-cycles.md)
   — knip fails in-file-only re-exports; a lib helper must not import its service
+- [A Lua export's second return value turns its answer into an array](lua-multi-value-returns-arrive-as-arrays.md)
+  — `false, 'reason'` arrives as a truthy `[false, 'reason']`; read element 0
