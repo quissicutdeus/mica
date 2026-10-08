@@ -33,3 +33,5 @@ line here.
   — prune refused during boot retention; wait on the sweep's lines
 - [The mica_phones row is one of the walked tables](phones-row-is-one-of-the-walked-tables.md)
   — it moves last, as the durable "unfinished" mark; MICA-319
+- [Splitting a module: re-export only what is imported; no cycle back](splitting-a-module-facade-and-cycles.md)
+  — knip fails in-file-only re-exports; a lib helper must not import its service
