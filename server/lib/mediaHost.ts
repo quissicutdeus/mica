@@ -113,8 +113,14 @@ const warnOnce = (key: string, line: string): void => {
 
 /** Image hosts this process has recorded, or read back from the ledger. See `rememberImageHost`. */
 const knownHosts = new Set<string>();
-/** Hosts whose ledger write has been attempted this process, so it is one statement per host. */
+/**
+ * Hosts the ledger is known to hold, so a host costs one statement per process once written.
+ * Only a write that succeeded puts a host here (MICA-328): a failed one leaves it out, so the
+ * next upload or the next start tries again rather than waiting for a restart.
+ */
 const persisted = new Set<string>();
+/** Hosts whose ledger write is in flight, so concurrent uploads do not each send one. */
+const persisting = new Set<string>();
 /** Whether the ledger's hosts have been read into `knownHosts` yet. */
 let ledgerRead = false;
 
@@ -123,6 +129,7 @@ export const resetMediaHostForTests = (): void => {
   said.clear();
   knownHosts.clear();
   persisted.clear();
+  persisting.clear();
   ledgerRead = false;
 };
 
@@ -241,30 +248,51 @@ const HOST_MARKER_PREFIX = 'mediahost:';
 const MAX_MARKER_LENGTH = 255;
 
 /**
- * Record that `host` is an image host micaOS has used. Once per host per process; never
- * throws, because it runs beside an upload and at resource start and neither may fail on it.
+ * Record that `host` is an image host micaOS has used. Once per host per process once the
+ * write succeeds; never throws, because it runs beside an upload and at resource start and
+ * neither may fail on it.
  *
  * Remembered in memory before the write, so this process counts the host even when the
- * ledger cannot be written (`micaschema apply` not yet run), and says so once.
+ * ledger cannot be written (`micaschema apply` not yet run), and says so once per host. A
+ * failed write is not marked done (MICA-328): the next upload to the host tries it again, so
+ * a ledger fixed by `micaschema apply` gets the host before the convar can change, not after
+ * a restart. Only an upload retries — there is no timer, deliberately: with uploads off no
+ * new photo lands on the host, and the start-up call records it on the next start.
  */
 export const rememberImageHost = async (host: string | null): Promise<void> => {
   if (!host || !HOSTNAME.test(host)) return;
   knownHosts.add(host);
-  if (persisted.has(host)) return;
-  persisted.add(host);
+  if (persisted.has(host) || persisting.has(host)) return;
   const id = `${HOST_MARKER_PREFIX}${host}`;
-  if (id.length > MAX_MARKER_LENGTH) return;
+  if (id.length > MAX_MARKER_LENGTH) {
+    // Never fits the column, so there is nothing a retry could change — but its photos drop
+    // out of cleanup once the convar moves, so that is said. By length: the name is the
+    // owner's own convar, and the line only has to say which problem it is.
+    persisted.add(host);
+    warnOnce(
+      `ledger-length:${host}`,
+      `[micamedia] an image host name of ${host.length} characters is too long to record in ` +
+        `${SCHEMA_MIGRATIONS_TABLE} (at most ${MAX_MARKER_LENGTH - HOST_MARKER_PREFIX.length}). ` +
+        `Its photos are not tracked once ${IMAGE_HOST_CONVAR} points elsewhere, so they are ` +
+        'never counted or released after that.'
+    );
+    return;
+  }
+  persisting.add(host);
   try {
     await Database.query(`INSERT IGNORE INTO \`${SCHEMA_MIGRATIONS_TABLE}\` (\`id\`) VALUES (?)`, [
       id
     ]);
+    persisted.add(host);
   } catch (error) {
     warnOnce(
-      'ledger-write',
+      `ledger-write:${host}`,
       `[micamedia] could not record ${host} as an image host in ${SCHEMA_MIGRATIONS_TABLE} ` +
         `(${reasonOf(error)}); run micaschema apply. Until it is recorded, photos on it are ` +
         `not counted once ${IMAGE_HOST_CONVAR} points elsewhere.`
     );
+  } finally {
+    persisting.delete(host);
   }
 };
 
