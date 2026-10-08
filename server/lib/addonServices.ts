@@ -369,6 +369,12 @@ const bind = (id: string, action: string): void => {
       // The add-on's app id, so an owner who switches the app off with `mica_disabled_apps`
       // turns its server half off too — the same refusal a core app gets (MICA-234).
       app: id,
+      // Both devices (MICA-264): a `core: false` add-on may list the tablet, which has a Store
+      // to install it from. Its rows are per citizen — micaOS hands the handler a citizenid and
+      // never a device id — so the tablet reads what the phone does. The endpoint is bound once
+      // per process while registrations come and go, so a per-registration list could not
+      // change it; the device check still refuses a tablet the player does not hold.
+      devices: ['phone', 'tablet'],
       disableGet: true,
       disableCreate: true,
       disableUpdate: true,

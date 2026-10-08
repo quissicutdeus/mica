@@ -1,16 +1,15 @@
 import { test, expect } from '../support/test';
-import { seedHomeGrid } from '../support/homeGrid';
-import { gotoDevice, pressDeviceKey, settledFrameBox } from '../support/device';
-import { addOnFrame, dismissToasts, installAddOn } from '../support/addon';
+import { addOnFrame, dismissToasts } from '../support/addon';
+import { bootWithStore, installFromStore } from '../support/deviceStore';
 
 /**
  * Notes on the tablet is two panes (MICA-261): the list on the left, the selected note on
  * the right, both on screen at once — the phone's `apps/notes.spec.ts` only covers that the
  * screen renders, so create/edit/delete on the wide root is otherwise unexercised.
  *
- * Notes is `core: false`, so it has to be installed from the Store — which is a phone-only
- * app — before it can be raised on the tablet at all (`tablet/launcher.spec.ts` already
- * covers that install-on-one-device/appears-on-the-other path; this starts from it).
+ * Notes is `core: false`, so it has to be installed before it can be raised — and since
+ * MICA-264 a tablet's installs are its own, so it is installed from the tablet's own Store,
+ * not the phone's (`tablet/store.spec.ts` covers the install paths themselves).
  *
  * `tablet.svelte`'s new-note sheet passes `variant="edit"` to `NoteEditor` — unlike the
  * phone, which uses `add` for a fresh note and `edit` only once one exists — so the
@@ -19,13 +18,8 @@ import { addOnFrame, dismissToasts, installAddOn } from '../support/addon';
  */
 test.describe('Notes on the tablet', () => {
   test.beforeEach(async ({ page }) => {
-    await seedHomeGrid(page, ['store']);
-    await seedHomeGrid(page, ['notes'], 'tablet');
-    await gotoDevice(page, 'phone');
-    await installAddOn(page, 'Notes');
-
-    await pressDeviceKey(page, 'tablet');
-    await settledFrameBox(page, 'tablet');
+    await bootWithStore(page, 'tablet', { tablet: ['notes'] });
+    await installFromStore(page, 'Notes');
     await page.getByRole('button', { name: /Notes/i }).first().click();
     await dismissToasts(page);
 

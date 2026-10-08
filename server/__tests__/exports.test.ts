@@ -667,18 +667,31 @@ describe('the device argument (MICA-263)', () => {
   });
 
   it.each(LOCK_EXPORTS)(
-    '%s refuses the tablet as unsupported: it has no lock screen until MICA-264',
+    '%s answers for the tablet once mica_tablet is on: it has a lock screen since MICA-264',
     (name, args) => {
       tablet.on = true;
-      expect(publishedExport(name)!(...args('tablet'))).toMatchObject({
-        ok: false,
-        reason: 'unsupported'
-      });
-      expect(globalThis.emitNet).not.toHaveBeenCalled();
+      expect((publishedExport(name)!(...args('tablet')) as any).ok).toBe(true);
     }
   );
 
-  it('a refused tablet lock leaves the phone lock exactly as it was', () => {
+  it('locks the tablet on its own: the phone lock is untouched, and the push names the tablet', () => {
+    tablet.on = true;
+    publishedExport('LockPhone')!(SRC, 'tablet');
+
+    expect(publishedExport('IsPhoneLocked')!(SRC, 'tablet')).toMatchObject({
+      ok: true,
+      value: true
+    });
+    expect(publishedExport('IsPhoneLocked')!(SRC)).toMatchObject({ ok: true, value: false });
+    expect(globalThis.emitNet).toHaveBeenCalledWith(
+      'mica:client:lockscreen:setLocked',
+      SRC,
+      true,
+      'tablet'
+    );
+  });
+
+  it('a tablet unlock leaves the phone lock exactly as it was', () => {
     tablet.on = true;
     publishedExport('LockPhone')!(SRC);
     publishedExport('UnlockPhone')!(SRC, 'tablet');

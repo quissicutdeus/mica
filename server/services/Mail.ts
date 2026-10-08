@@ -72,6 +72,8 @@ export const mail = defineService<Mail, typeof mailContract>({
   contract: mailContract,
   id: 'mail',
   app: 'mail',
+  // Per citizen, not per device (the owner's call, MICA-264): either device reads one inbox.
+  devices: ['phone', 'tablet'],
   access: { read: 'owner', write: 'server' },
   statuses: ['active', 'archived', 'deleted', 'moderated'],
   /** A mail row is its own thread: the body is bound to its table, column and owner alone. */

@@ -94,5 +94,8 @@
   "permission.wallpaper-write": "Hintergrundbild ändern",
   "needs.money": "Benötigt einen Server mit Geldsystem",
   "needs.jobs": "Benötigt einen Server mit Job-System",
-  "permission.control-center": "Schalter im Kontrollzentrum hinzufügen"
+  "permission.control-center": "Schalter im Kontrollzentrum hinzufügen",
+  "notOnThisDevice": "Auf diesem Gerät nicht verfügbar.",
+  "selectApp": "App auswählen",
+  "selectAppHint": "Details, Berechtigungen und die Installation erscheinen hier."
 }

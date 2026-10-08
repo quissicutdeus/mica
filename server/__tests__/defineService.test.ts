@@ -1028,3 +1028,33 @@ describe('the citizenid column and the guard that fills it', () => {
     expect(citizenIdFromIdentifier(padded)).toBe('x'.repeat(CITIZENID_MAX_LENGTH));
   });
 });
+
+/**
+ * MICA-264: which devices a service answers, resolved once at declaration time. The endpoint
+ * enforces it (`ServiceEndpoint.test.ts`); `deviceServices.test.ts` pins every real service.
+ */
+describe('resolveAppSchema — devices (MICA-264)', () => {
+  it('defaults to the phone alone', () => {
+    expect(resolveAppSchema(notesDefinition).devices).toEqual(['phone']);
+  });
+
+  it('keeps a declared list as declared', () => {
+    expect(resolveAppSchema({ ...notesDefinition, devices: ['phone', 'tablet'] }).devices).toEqual([
+      'phone',
+      'tablet'
+    ]);
+    expect(resolveAppSchema({ ...notesDefinition, devices: ['tablet'] }).devices).toEqual([
+      'tablet'
+    ]);
+  });
+
+  it('refuses an empty list, a device that is not one, and a device named twice', () => {
+    expect(() => resolveAppSchema({ ...notesDefinition, devices: [] })).toThrow(/empty/);
+    expect(() =>
+      resolveAppSchema({ ...notesDefinition, devices: ['phone', 'watch' as never] })
+    ).toThrow(/'watch' in 'devices' is not a device/);
+    expect(() => resolveAppSchema({ ...notesDefinition, devices: ['phone', 'phone'] })).toThrow(
+      /twice/
+    );
+  });
+});

@@ -22,6 +22,8 @@ import {
 } from '../../../../sdk/host/seam/persistedRegistry';
 import { registerSettingsHydrator } from '../../../../sdk/host/seam/settingsHydration';
 import { isRefusal } from '@mica/sdk';
+import { get } from 'svelte/store';
+import { activeDevice } from '../../shell/state/device';
 
 const memoryStore = new Map<string, string>();
 
@@ -133,8 +135,11 @@ async function fetchRowsOrNull(context: string): Promise<PhoneSetting[] | null> 
  * rather than from every page load.
  */
 async function hydrateSettingsInProcess(): Promise<void> {
+  // Dropped when the device changed in flight, as in the sweeping hydrate below (MICA-264):
+  // `?device=tablet` switches during the same boot this answer was asked for in.
+  const device = get(activeDevice);
   const rows = await fetchRowsOrNull('Hydration');
-  if (rows === null) return;
+  if (rows === null || get(activeDevice) !== device) return;
 
   try {
     const backend = getStorageBackend();
@@ -175,8 +180,12 @@ async function hydrateSettingsInProcess(): Promise<void> {
  * silently dropped a real, just-made edit on exactly the double-run case above.
  */
 export async function hydrateSettingsOnCharacterLoad(): Promise<void> {
+  // A phone and a tablet keep separate rows (MICA-264), and the request is stamped with the
+  // device on screen when it is sent. An answer that lands after the player has switched
+  // device is the other identity's, so it is dropped: the switch runs its own hydrate.
+  const device = get(activeDevice);
   const rows = await fetchRowsOrNull('Character-load hydration');
-  if (rows === null) return;
+  if (rows === null || get(activeDevice) !== device) return;
 
   try {
     const backend = getStorageBackend();

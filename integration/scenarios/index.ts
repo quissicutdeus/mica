@@ -6,6 +6,7 @@ import type { Scenario } from '../runner';
 import { addonServiceScenarios } from './addonService';
 import { commandScenarios } from './commands';
 import { cryptoScenarios } from './crypto';
+import { deviceScenarios } from './devices';
 import { esxScenarios } from './esx';
 import { exportScenarios } from './exports';
 import { httpScenarios } from './http';
@@ -31,6 +32,7 @@ export const scenarios: readonly Scenario[] = [
   ...schemaScenarios,
   ...cryptoScenarios,
   ...exportScenarios,
+  ...deviceScenarios,
   ...addonServiceScenarios,
   ...retentionScenarios,
   ...oxmysqlScenarios,

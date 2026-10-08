@@ -393,6 +393,19 @@ repository registers a hook with `onPhoneHandover` (`mica_messages_participants`
 does). So `citizenid` on a device-owned row means _whoever holds the phone now_,
 and it stays the orphan sweep's key.
 
+**A tablet is a device too (MICA-264).** `mica_phones.kind` says which, and a
+device-owned table keys a tablet's rows on the tablet's own id exactly as it
+keys a phone's, so nothing above changes shape. Which devices a service answers
+is declared with `devices` (default `['phone']`), on `defineService` or on a
+hand-built `ServiceEndpoint`'s options; a request from a device not listed is
+refused before the player lookup. Notes, Settings and Lockscreen list
+`['phone', 'tablet']` and so hold separate rows per device. Admin, Reports,
+Store, Privacy, Mail and the shell list both and are not device-owned, so either
+device reads the character's rows (Mail's app is still phone-only; the service
+answers a tablet so it can follow without a server change). Everything else
+keeps the default. The app manifest's `devices` decides where an icon shows;
+this decides what the server answers, and the two should agree.
+
 **The split, decided table by table** — a table moved by accident is a data-loss
 bug that looks like a feature, so the reasoning is written down:
 

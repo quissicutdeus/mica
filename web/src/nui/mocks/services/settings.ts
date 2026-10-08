@@ -2,10 +2,31 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import type { MockHandler } from '../registry';
+import type { DeviceId } from '@mica/shared/devices';
+import { deviceOf } from '../perDevice';
+import type { MockContext, MockHandler } from '../registry';
 
 /**
- * The mock settings table, keyed `<app>:<key>` exactly as the real unique index is.
+ * Every row is one device's (MICA-264), whatever app it belongs to — the real table is keyed
+ * per device, and one rule for the whole table is the point. The phone-wide preferences, the
+ * Store's install list (`store:installedAddOns`), the add-on grants and each add-on's own
+ * storage are all a device's own: an add-on installed on the tablet is on the tablet and not
+ * on the phone, as on a real second device.
+ *
+ * The scoped composite is the key into `mockSettings` and `removedSettings` below; the
+ * answer to `settings:getAll` is everything scoped to the asking device.
+ */
+const scopeOf = (composite: string, device: DeviceId): string => `${device}|${composite}`;
+
+/** The composite back out of a scoped key, or `null` if it is another device's. */
+const visibleTo = (scoped: string, device: DeviceId): string | null => {
+  const bar = scoped.indexOf('|');
+  return scoped.slice(0, bar) === device ? scoped.slice(bar + 1) : null;
+};
+
+/**
+ * The mock settings table, keyed `<app>:<key>` exactly as the real unique index is, behind
+ * the device scope `scopeOf` adds.
  *
  * Module scope, so it survives between `fetchNui` calls within a page but not across a
  * reload — which is the same lifetime the real table has relative to a character session,
@@ -50,6 +71,10 @@ const mockSettings = new Map<string, string>();
  * Excludes anything outside the `mica:<app>:<key>` shape (`mica_first_boot_time` and
  * friends) the same way `host/facets/storage.ts`'s own `parseSettingsKey` does — those are
  * device state, never a server row.
+ *
+ * Every device's starting rows, unscoped (MICA-264): a seed is a spec saying "the server
+ * already has this", and a tablet spec seeds `homeGridItems:tablet` exactly as a phone spec
+ * seeds `homeGridItems`. What a device writes or removes afterwards is its own.
  */
 const initialLocalStorageSettings: [string, string][] = (() => {
   if (typeof localStorage === 'undefined') return [];
@@ -63,7 +88,7 @@ const initialLocalStorageSettings: [string, string][] = (() => {
 })();
 
 /**
- * Composites explicitly removed this session, so `settings:remove`/`settings:clearApp`
+ * Scoped composites explicitly removed this session, so `settings:remove`/`settings:clearApp`
  * can take a key back out of the *snapshot* above too, not only out of `mockSettings`.
  *
  * Without this, a key seeded at boot and never mutated through `settings:set` had nothing
@@ -90,10 +115,17 @@ export const mocks: Record<string, MockHandler> = {
    * reaches this answer only through `mockSettings`, via `settings:set`, exactly like the
    * real table does.
    */
-  'settings:getAll': async () => {
+  'settings:getAll': async (_data?: unknown, context?: MockContext) => {
+    const device = deviceOf(context);
     const merged = new Map<string, string>(initialLocalStorageSettings);
-    for (const [composite, value] of mockSettings) merged.set(composite, value);
-    for (const composite of removedSettings) merged.delete(composite);
+    for (const [scoped, value] of mockSettings) {
+      const composite = visibleTo(scoped, device);
+      if (composite !== null) merged.set(composite, value);
+    }
+    for (const scoped of removedSettings) {
+      const composite = visibleTo(scoped, device);
+      if (composite !== null) merged.delete(composite);
+    }
 
     return [...merged.entries()].map(([composite, setting_value], index) => {
       const [app, ...rest] = composite.split(':');
@@ -110,37 +142,41 @@ export const mocks: Record<string, MockHandler> = {
     });
   },
 
-  'settings:set': async (data?: { app?: string; key?: string; value?: string }) => {
+  'settings:set': async (
+    data?: { app?: string; key?: string; value?: string },
+    context?: MockContext
+  ) => {
     if (!data?.app || !data?.key) return false;
-    const composite = `${data.app}:${data.key}`;
-    mockSettings.set(composite, String(data.value ?? ''));
+    const scoped = scopeOf(`${data.app}:${data.key}`, deviceOf(context));
+    mockSettings.set(scoped, String(data.value ?? ''));
     // A set after a remove un-removes it — the player wrote a new value, so whatever
     // `settings:remove` tombstoned no longer applies.
-    removedSettings.delete(composite);
+    removedSettings.delete(scoped);
     return true;
   },
 
-  'settings:remove': async (data?: { app?: string; key?: string }) => {
+  'settings:remove': async (data?: { app?: string; key?: string }, context?: MockContext) => {
     if (!data?.app || !data?.key) return false;
-    const composite = `${data.app}:${data.key}`;
-    mockSettings.delete(composite);
+    const scoped = scopeOf(`${data.app}:${data.key}`, deviceOf(context));
+    mockSettings.delete(scoped);
     // The key may only exist in the boot-time snapshot (`initialLocalStorageSettings`),
     // which `.delete()` above cannot reach — it is frozen at module init — so the removal
     // has to be tracked separately or the key would resurface on the next `getAll`.
-    removedSettings.add(composite);
+    removedSettings.add(scoped);
     return true;
   },
 
-  'settings:clearApp': async (data?: { app?: string }) => {
+  'settings:clearApp': async (data?: { app?: string }, context?: MockContext) => {
     if (!data?.app) return false;
+    const device = deviceOf(context);
     const prefix = `${data.app}:`;
-    for (const composite of mockSettings.keys()) {
-      if (composite.startsWith(prefix)) mockSettings.delete(composite);
+    for (const scoped of mockSettings.keys()) {
+      if (visibleTo(scoped, device)?.startsWith(prefix)) mockSettings.delete(scoped);
     }
     // Same reason `settings:remove` tombstones one key: a row under this app's prefix may
     // only exist in the frozen boot-time snapshot, which nothing above touches.
     for (const [composite] of initialLocalStorageSettings) {
-      if (composite.startsWith(prefix)) removedSettings.add(composite);
+      if (composite.startsWith(prefix)) removedSettings.add(scopeOf(composite, device));
     }
     return true;
   }

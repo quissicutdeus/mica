@@ -111,24 +111,36 @@ const schedule = (): void => {
  *
  * All three are deliberately unawaited: a failed announce means the people around you cannot
  * hear your music, which is not something to log on every pause or tell the person about —
- * see the note at the top of this file. Unawaited is the whole of it; the `{ quiet: true }`
- * these once passed did nothing, because `fetchNui` reads that option only for a call that
- * was given a default to fall back to and none of these were.
+ * see the note at the top of this file. Unawaited, and caught (`quietly`): a refusal used to
+ * surface as an unhandled rejection instead. The `{ quiet: true }` these once passed did
+ * nothing, because `fetchNui` reads that option only for a call that was given a default to
+ * fall back to and none of these were.
+ *
+ * **Always the phone's** (MICA-264). The music is the phone's — it plays on with every frame
+ * put away, and the Music app is a phone app — so the announce names the phone rather than
+ * taking `fetchNui`'s stamp of whichever device is on screen. Stamped with the tablet, a
+ * pause made while the tablet was up was refused, and everybody nearby kept hearing it.
  */
+const PHONE = { device: 'phone' } as const;
+
+const quietly = (request: Promise<unknown>): void => {
+  request.catch(() => {});
+};
+
 const announceStart = (data: {
   videoId?: string;
   playlistId?: string;
   positionMs?: number;
 }): void => {
-  void call(musicContract, 'broadcastStart', data);
+  quietly(call(musicContract, 'broadcastStart', data, PHONE));
 };
 
 const announceUpdate = (data: { paused?: boolean; positionMs?: number }): void => {
-  void call(musicContract, 'broadcastUpdate', data);
+  quietly(call(musicContract, 'broadcastUpdate', data, PHONE));
 };
 
 const announceStop = (): void => {
-  void call(musicContract, 'broadcastStop', undefined);
+  quietly(call(musicContract, 'broadcastStop', undefined, PHONE));
 };
 
 function sync(): void {

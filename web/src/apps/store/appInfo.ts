@@ -277,3 +277,20 @@ export function unavailableReason(
   if (lacking.length === 0) return null;
   return lacking.map((name) => translate(`store.needs.${name}`)).join('\n');
 }
+
+/**
+ * Why an add-on cannot be installed on the device the Store is open on, or `null` when it
+ * can (MICA-264) — the device half of `unavailableReason`, shown the same way: the row stays,
+ * Install is disabled, and this says why.
+ *
+ * Absent `devices` is the phone alone, as everywhere else (`sdk/manifest.ts`). A tablet keeps
+ * installs of its own, so a phone app offered there would install into a list nothing could
+ * ever show; the registry refuses it on its own as well (`shell/state/registry.ts`).
+ */
+export function deviceUnavailableReason(
+  devices: readonly string[] | undefined,
+  device: string,
+  translate: Translate
+): string | null {
+  return (devices ?? ['phone']).includes(device) ? null : translate('store.notOnThisDevice');
+}

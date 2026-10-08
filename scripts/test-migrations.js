@@ -1925,6 +1925,11 @@ const runWidenResume = async ({ connection, server, complete }) => {
     [run.applied.includes(WIDEN_MIGRATION), run.failed],
     [true, null]
   );
+  // The uninterrupted run it is compared with also ran the additive pass, as `micaschema apply`
+  // does after the migrations: a column declared after the frozen fixture (MICA-264's
+  // `mica_phones.kind`) is the additive pass's to add, so without it this would differ by that.
+  const additive = await server.SchemaMigrator.apply();
+  check(`${label}: the additive pass fails nothing`, additive.failed, null);
   check(
     `${label}: and ends identical to an uninterrupted run`,
     await wholeSchema(connection),

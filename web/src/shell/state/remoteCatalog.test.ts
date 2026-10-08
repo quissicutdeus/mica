@@ -41,10 +41,13 @@ describe('fetchRemoteCatalog', () => {
     await fetchRemoteCatalog();
 
     expect(transport.send).toHaveBeenCalledTimes(1);
+    // `device` is `fetchNui`'s stamp (MICA-264), the device on screen: the Store answers
+    // either, per citizen.
     expect(transport.send).toHaveBeenCalledWith(GENERIC_SERVICE_ACTION, {
       service: 'store',
       action: 'catalog',
-      data: undefined
+      data: undefined,
+      device: 'phone'
     });
   });
 

@@ -79,7 +79,7 @@ const GRANDFATHERED: Record<string, number> = {
   // unselected checkbox. Two before the split, two after.
   'web/src/apps/media/components/PhotoDetail.svelte': 1,
   'web/src/apps/media/components/PhotoGrid.svelte': 1,
-  'web/src/apps/store/components/AppDetails.svelte': 1,
+  'web/src/apps/store/components/AppDetailsBody.svelte': 1,
   // MICA-259 moved `PhoneFrame`'s three into the pieces the tablet frame shares.
   'web/src/shell/frame/DeadBatteryScreen.svelte': 2,
   'web/src/shell/frame/HomeIndicator.svelte': 1,

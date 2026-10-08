@@ -34,6 +34,7 @@ import {
   enqueue
 } from '../shell/state/music';
 import { installMusicBroadcast, resetMusicBroadcastForTest } from './music';
+import { setActiveDevice } from '../shell/state/device';
 
 const fetchNui = vi.mocked(rawFetchNui);
 
@@ -103,8 +104,50 @@ describe('announcing what this phone is playing', () => {
     expect(fetchNui).toHaveBeenLastCalledWith(GENERIC_SERVICE_ACTION, {
       service: 'music',
       action: 'broadcastStart',
-      data: { videoId: VIDEO, playlistId: undefined, positionMs: 0 }
+      data: { videoId: VIDEO, playlistId: undefined, positionMs: 0 },
+      device: 'phone'
     });
+  });
+
+  /**
+   * MICA-264: the music is the phone's, so every announce names the phone — never the device
+   * on screen, which the server would refuse for a phone-only service.
+   */
+  it('names the phone on every announce, even while the tablet is up', async () => {
+    setActiveDevice('tablet');
+    try {
+      playSource(`https://youtu.be/${VIDEO}`);
+      await flush();
+      pauseMusic();
+      await flush();
+      stopMusic();
+      await flush();
+
+      expect(actions()).toEqual(['broadcastStart', 'broadcastUpdate', 'broadcastStop']);
+      expect(
+        fetchNui.mock.calls.map(([, envelope]) => (envelope as { device?: string }).device)
+      ).toEqual(['phone', 'phone', 'phone']);
+    } finally {
+      setActiveDevice('phone');
+    }
+  });
+
+  /**
+   * Checked by the catch on the very promise the transport returned, not by listening for
+   * `unhandledRejection`: Vitest's mock attaches its own handler to every promise it returns
+   * (to record the settled result), so a rejection that went through it is never reported as
+   * unhandled, and a listener here would pass with the catch removed.
+   */
+  it('catches a refused announce rather than leaving the rejection unhandled', async () => {
+    const refusal = Promise.reject(new Error('music is not available on the tablet.'));
+    const caught = vi.spyOn(refusal, 'catch');
+    fetchNui.mockReturnValueOnce(refusal);
+
+    playSource(`https://youtu.be/${VIDEO}`);
+    await flush();
+
+    expect(actions()).toEqual(['broadcastStart']);
+    expect(caught).toHaveBeenCalledOnce();
   });
 
   it('says nothing at all while nothing is playing', async () => {

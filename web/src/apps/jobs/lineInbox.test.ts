@@ -36,6 +36,7 @@ import { jobs, jobsLoaded } from '../../services/jobs';
 import { deliverAppEvent } from '../../shell/state/appEvents';
 import { toast } from '../../shell/state/toast';
 import { contacts } from '../../services/contacts';
+import { setActiveDevice } from '../../shell/state/device';
 import {
   closeInbox,
   closeThread,
@@ -362,6 +363,30 @@ describe('line_message', () => {
 
     await Promise.resolve();
     expect(calls('lineInbox').length).toBe(inboxReads);
+  });
+
+  /**
+   * MICA-264: `jobs` is a phone service, refused from the tablet, so a push that lands while
+   * the tablet is up asks nothing; the inbox is re-read on the next foreground.
+   */
+  it('reads nothing while the tablet is up', async () => {
+    await openEmergency();
+    const inboxReads = calls('lineInbox').length;
+
+    setActiveDevice('tablet');
+    try {
+      lineEvent({ number: '911', conversation_id: 9101 });
+      await Promise.resolve();
+      expect(calls('lineInbox').length).toBe(inboxReads);
+    } finally {
+      setActiveDevice('phone');
+    }
+
+    // Back on the phone the app comes to the foreground again and re-reads the inbox — the
+    // read the push above skipped — and the next push reads as before.
+    await waitFor(() => expect(calls('lineInbox').length).toBe(inboxReads + 1));
+    lineEvent({ number: '911', conversation_id: 9101 });
+    await waitFor(() => expect(calls('lineInbox').length).toBe(inboxReads + 2));
   });
 
   it('reads nothing while no inbox is open', async () => {

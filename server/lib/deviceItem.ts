@@ -20,10 +20,12 @@ import { onPlayerLoaded, pushRehydrate } from './shell';
  * install is untouched. The two gates are independent: a tablet item says nothing about the
  * phone, and the reverse.
  *
- * **The tablet is off unless `mica_tablet` turns it on** (MICA-252, decision 5): it has no
- * identity of its own until MICA-264, so a server gets it only by asking. Off means no usable
- * item is registered for it, `shell:capabilities` leaves it out of `devices`, and every push
- * tells the client it is off. The phone has no enable convar and is always on.
+ * **The tablet is on unless `mica_tablet` turns it off.** It was off by default while it had
+ * no identity of its own (MICA-252, decision 5); since MICA-264 it has one — its own row in
+ * `mica_phones`, its own notes, settings and lock screen — so it ships on like the phone. Off
+ * means no usable item is registered for it, `shell:capabilities` leaves it out of `devices`,
+ * every push tells the client it is off, and `ServiceEndpoint` refuses every request that
+ * names it. The phone has no enable convar and is always on.
  *
  * **The server decides, every time.** The client never says whether it holds an item; it
  * says "look again", and this counts through the inventory and pushes the answer, one push per
@@ -42,10 +44,11 @@ import { onPlayerLoaded, pushRehydrate } from './shell';
  * reads would otherwise lock every device, and the log line is the only symptom either way,
  * so the device stays open and the line says why.
  *
- * **Everything MICA-219 built on the item is the phone's alone.** Phone ids, the active slot
- * (`lastUsedPhoneSlot`), the phone-state subscribers and the rehydrate on a phone switch are
- * all reached only from the phone's paths below. The tablet has no identity until MICA-264,
- * so using one opens it and does nothing else.
+ * **What MICA-219 built on the item is per device since MICA-264.** Each device records its
+ * own last-used slot (`lastUsedDeviceSlot`) and rehydrates the shell when a use switches to a
+ * different one, because a tablet has an identity to follow now as a phone does. The
+ * phone-state subscribers stay the phone's alone: their one subscriber is the number sync, and
+ * a tablet has no number.
  */
 
 export const PHONE_ITEM_CONVAR = 'mica_phone_item';
@@ -65,7 +68,7 @@ const readItemConvar: Record<DeviceId, () => string> = {
 
 const readEnableConvar: Record<DeviceId, (() => string) | null> = {
   phone: null,
-  tablet: () => String(GetConvar(TABLET_ENABLE_CONVAR, 'false'))
+  tablet: () => String(GetConvar(TABLET_ENABLE_CONVAR, 'true'))
 };
 
 /** The convar names, for the tests that hold them to `shared/devices.ts`. */
@@ -151,7 +154,7 @@ export const batteryItemName = (): string | null => {
   return raw;
 };
 
-/** Whether this server has the device on. The phone always; the tablet only by `mica_tablet`. */
+/** Whether this server has the device on. The phone always; the tablet unless `mica_tablet` is off. */
 export const isDeviceEnabled = (device: DeviceId): boolean => {
   const read = readEnableConvar[device];
   if (!read) return true;
@@ -191,7 +194,7 @@ export const deviceItemName = (device: DeviceId): string | null => {
   return raw;
 };
 
-/** The phone's item, as it always was. Read by `services/Phones.ts`'s resolver. */
+/** The phone's item, as it always was. */
 export const phoneItemName = (): string | null => deviceItemName('phone');
 
 const heldBy = (player: FrameworkPlayer, item: string, device: DeviceId): boolean => {
@@ -210,15 +213,20 @@ const heldBy = (player: FrameworkPlayer, item: string, device: DeviceId): boolea
 };
 
 /**
- * Whether this player holds a phone item, counted now, with nothing pushed and nobody
- * notified — the read-only half of `evaluateDeviceItems`, for the `HasPhoneItem` export.
- * `true` whenever there is no gate (convar empty or invalid, or standalone), and `true` when
- * no inventory can count, for the fail-open reason in this file's preamble.
+ * Whether this player holds an item of this device, counted now, with nothing pushed and
+ * nobody notified — the read-only half of `evaluateDeviceItems`, for the `HasPhoneItem` export
+ * and `ServiceEndpoint`'s check on a request that names a device (MICA-264). `true` whenever
+ * there is no gate (convar empty or invalid, or standalone), and `true` when no inventory can
+ * count, for the fail-open reason in this file's preamble. Says nothing about whether the
+ * device is enabled; ask `isDeviceEnabled` for that.
  */
-export const holdsPhoneItem = (player: FrameworkPlayer): boolean => {
-  const item = phoneItemName();
-  return item ? heldBy(player, item, 'phone') : true;
+export const holdsDevice = (player: FrameworkPlayer, device: DeviceId): boolean => {
+  const item = deviceItemName(device);
+  return item ? heldBy(player, item, device) : true;
 };
+
+/** `holdsDevice` for the phone. */
+export const holdsPhoneItem = (player: FrameworkPlayer): boolean => holdsDevice(player, 'phone');
 
 /** One device's answer for one player, counted now. Nothing pushed. */
 const deviceState = (player: FrameworkPlayer, device: DeviceId): DeviceItemState => {
@@ -267,25 +275,58 @@ export const onPhoneStateChanged = (name: string, run: PhoneStateRun): void => {
 export const __phoneStateSubscribers = (): readonly { name: string; run: PhoneStateRun }[] =>
   phoneStateSubscribers;
 
+/** Run one subscriber as its own failure: a throw or a rejection is logged, never raised. */
+const runSubscriber = (what: string, name: string, src: number, run: () => unknown): void => {
+  try {
+    const pending = run();
+    if (pending && typeof (pending as Promise<unknown>).then === 'function') {
+      void (pending as Promise<unknown>).catch((error: unknown) => {
+        console.error(
+          `[mica] ${what} subscriber '${name}' rejected for source ${src}. ` +
+            `The other subscribers still ran.`,
+          error
+        );
+      });
+    }
+  } catch (error) {
+    console.error(
+      `[mica] ${what} subscriber '${name}' threw for source ${src}. ` +
+        `The other subscribers still ran.`,
+      error
+    );
+  }
+};
+
 const notifyPhoneState = (src: number): void => {
   for (const subscriber of phoneStateSubscribers) {
-    try {
-      const pending = subscriber.run(src);
-      if (pending && typeof (pending as Promise<unknown>).then === 'function') {
-        void (pending as Promise<unknown>).catch((error: unknown) => {
-          console.error(
-            `[mica] phone-state subscriber '${subscriber.name}' rejected for source ${src}. ` +
-              `The other subscribers still ran.`,
-            error
-          );
-        });
-      }
-    } catch (error) {
-      console.error(
-        `[mica] phone-state subscriber '${subscriber.name}' threw for source ${src}. ` +
-          `The other subscribers still ran.`,
-        error
-      );
+    runSubscriber('phone-state', subscriber.name, src, () => subscriber.run(src));
+  }
+};
+
+/**
+ * Whoever needs to know that a player's device of some kind may have changed (MICA-264): the
+ * phone-state hook's twin for every device that is not the phone, told on the same occasions —
+ * a load, the client's relay of an inventory change — and on using that device's item.
+ *
+ * Separate from `onPhoneStateChanged` because that hook's subscribers are the number sync and
+ * the battery, both the phone's alone, and a tablet use must not wake them. Its subscriber is
+ * `services/Phones.ts`, which re-resolves the tablet so the synchronous answer `LockState` keys
+ * on follows a switch, a handover or a character switch rather than waiting for the next
+ * device-owned request. The phone needs no entry here: its own subscribers resolve it already.
+ */
+type DeviceStateRun = (src: number, device: DeviceId) => unknown;
+
+const deviceStateSubscribers: { name: string; run: DeviceStateRun }[] = [];
+
+export const onDeviceStateChanged = (name: string, run: DeviceStateRun): void => {
+  deviceStateSubscribers.push({ name, run });
+};
+
+const notifyDeviceState = (src: number, devices: readonly DeviceId[]): void => {
+  for (const device of devices) {
+    if (device === 'phone') continue;
+    for (const subscriber of deviceStateSubscribers) {
+      runSubscriber('device-state', subscriber.name, src, () => subscriber.run(src, device));
     }
   }
 };
@@ -306,11 +347,13 @@ export const evaluateDeviceItems = (src: number): DeviceItemState[] | null => {
   const states = ALL_DEVICES.map((device) => deviceState(player, device));
   for (const state of states) pushDeviceState(src, state);
   notifyPhoneState(src);
+  // Every other device, on or off: an off one is re-resolved to nothing, which clears it.
+  notifyDeviceState(src, ALL_DEVICES);
   return states;
 };
 
 /**
- * Which slot each source last used a phone from (MICA-280).
+ * Which slot each source last used each device from (MICA-280; per device since MICA-264).
  *
  * The active phone is "the one you last used", and this is where that is recorded — here
  * rather than beside the resolver in `services/Phones.ts`, because that file imports this one
@@ -323,18 +366,21 @@ export const evaluateDeviceItems = (src: number): DeviceItemState[] | null => {
  * at length. Keyed by source rather than citizenid because "which phone am I holding" is a
  * property of the session, not of the character.
  */
-const lastUsed = new Map<number, number>();
+const lastUsed = Object.fromEntries(
+  ALL_DEVICES.map((device) => [device, new Map<number, number>()])
+) as Record<DeviceId, Map<number, number>>;
 
-/** The slot this source last used a phone from, if they have used one this session. */
-export const lastUsedPhoneSlot = (src: number): number | undefined => lastUsed.get(src);
+/** The slot this source last used this device from, if they have used one this session. */
+export const lastUsedDeviceSlot = (src: number, device: DeviceId): number | undefined =>
+  lastUsed[device].get(src);
 
-/** Test seam, like `__resetPhoneItemWarnings`. */
+/** Test seam, like `__resetPhoneItemWarnings`. Every device's slots. */
 export const __resetLastUsedPhone = (): void => {
-  lastUsed.clear();
+  for (const device of ALL_DEVICES) lastUsed[device].clear();
 };
 
 on('playerDropped', () => {
-  lastUsed.delete(source);
+  for (const device of ALL_DEVICES) lastUsed[device].delete(source);
 });
 
 /**
@@ -350,6 +396,19 @@ export interface UsedItem {
 }
 
 /**
+ * Record the slot a device was used from, and answer whether that switched the player to a
+ * different one of it. A first use this session is not a switch: there is nothing loaded for
+ * another one yet.
+ */
+const recordUse = (source: number, device: DeviceId, used?: UsedItem): boolean => {
+  const slots = lastUsed[device];
+  const slot = used?.slot;
+  const previous = slots.get(source);
+  if (typeof slot === 'number' && Number.isInteger(slot) && slot > 0) slots.set(source, slot);
+  return previous !== undefined && slots.get(source) !== previous;
+};
+
+/**
  * Using the item opens the phone. The framework calls this only for an item in that player's
  * own inventory, so holding it is established and the count is not asked again.
  *
@@ -358,9 +417,7 @@ export interface UsedItem {
  * visible act — where switching by dragging items between slots would not be.
  */
 const phoneItemUsed = (source: number, used?: UsedItem): void => {
-  const slot = used?.slot;
-  const previous = lastUsed.get(source);
-  if (typeof slot === 'number' && Number.isInteger(slot) && slot > 0) lastUsed.set(source, slot);
+  const switched = recordUse(source, 'phone', used);
 
   pushDeviceState(source, { device: 'phone', enabled: true, gated: true, held: true });
   emitNet(OPEN_EVENT, source);
@@ -372,17 +429,22 @@ const phoneItemUsed = (source: number, used?: UsedItem): void => {
    * shows — contacts, threads, settings, the lock screen's own passcode status — is somebody
    * else's until re-read. The same push a character load sends, for the same reason.
    */
-  if (previous !== undefined && lastUsed.get(source) !== previous) pushRehydrate(source);
+  if (switched) pushRehydrate(source);
 };
 
 /**
- * Using a tablet opens it, and that is all it does. No slot is recorded, no phone-state
- * subscriber is told and nothing is rehydrated: each of those is about which *phone* a player
- * is on, and the tablet has no identity for any of them to follow until MICA-264.
+ * Using a tablet opens it, and records its slot as the phone's use does (MICA-264): the tablet
+ * has an identity now, so a player with two of them switches by using the other, and the
+ * shell's stores — its notes, settings, lock screen — have to be re-read when they do. No
+ * phone-state subscriber is told: they follow the phone's number and battery, which a tablet
+ * does not have. The device-state subscribers are, so the tablet's id follows the use.
  */
-const tabletItemUsed = (source: number): void => {
+const tabletItemUsed = (source: number, used?: UsedItem): void => {
+  const switched = recordUse(source, 'tablet', used);
   pushDeviceState(source, { device: 'tablet', enabled: true, gated: true, held: true });
   emitNet(OPEN_EVENT, source, { device: 'tablet' });
+  notifyDeviceState(source, ['tablet']);
+  if (switched) pushRehydrate(source);
 };
 
 const configuredPhone = phoneItemName();

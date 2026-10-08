@@ -24,7 +24,8 @@ vi.mock('../services/settings', () => serviceMock);
 import { usePersisted } from '../../../sdk/host/usePersisted';
 import { clearAppStorage, hydrateSettings, useStorage } from '../../../sdk/host/useStorage';
 import { hydrateSettingsOnCharacterLoad } from './facets/storage';
-import { __resetSettingsSync } from './settingsSync';
+import { __resetSettingsSync, flushPendingWrites, hasPendingWrite } from './settingsSync';
+import { setActiveDevice } from '../shell/state/device';
 import { ServiceRefusal } from '@mica/sdk';
 
 /**
@@ -73,7 +74,33 @@ describe('server-backed storage', () => {
     await vi.runAllTimersAsync();
 
     expect(serviceMock.saveSetting).toHaveBeenCalledTimes(1);
-    expect(serviceMock.saveSetting).toHaveBeenCalledWith('settings', 'displaySize', '30');
+    // With the device it was made on (MICA-264) — the phone, here.
+    expect(serviceMock.saveSetting).toHaveBeenCalledWith('settings', 'displaySize', '30', 'phone');
+  });
+
+  it('sends a write to the device it was made on, flushed early by a switch (MICA-264)', async () => {
+    const storage = useStorage('settings');
+    storage.setItem('displaySize', 40);
+
+    // The tablet comes up inside the debounce. The switch flushes the queue first, and the
+    // write still belongs to the phone it was made on.
+    setActiveDevice('tablet');
+    try {
+      flushPendingWrites();
+      expect(serviceMock.saveSetting).toHaveBeenCalledWith(
+        'settings',
+        'displaySize',
+        '40',
+        'phone'
+      );
+      expect(hasPendingWrite('settings', 'displaySize')).toBe(false);
+
+      // Nothing is sent twice when the original timer would have fired.
+      await vi.runAllTimersAsync();
+      expect(serviceMock.saveSetting).toHaveBeenCalledTimes(1);
+    } finally {
+      setActiveDevice('phone');
+    }
   });
 
   it('does not let one key delay another', async () => {
@@ -283,7 +310,8 @@ describe('server-backed storage', () => {
       expect(serviceMock.saveSetting).toHaveBeenCalledWith(
         'settings',
         'greeting',
-        '"chosen mid-drag"'
+        '"chosen mid-drag"',
+        'phone'
       );
     });
 

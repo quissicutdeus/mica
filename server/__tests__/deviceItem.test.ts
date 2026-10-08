@@ -60,7 +60,8 @@ import {
   enabledDevices,
   evaluateDeviceItems,
   isDeviceEnabled,
-  lastUsedPhoneSlot,
+  lastUsedDeviceSlot,
+  onDeviceStateChanged,
   onPhoneStateChanged,
   phoneItemName
 } from '../lib/deviceItem';
@@ -431,10 +432,53 @@ describe('every device, one push each (MICA-263)', () => {
 
   it('records the phone slot a phone use came from, and rehydrates on a switch, as before', () => {
     registeredAtImport![1](SRC, { slot: 4 });
-    expect(lastUsedPhoneSlot(SRC)).toBe(4);
+    expect(lastUsedDeviceSlot(SRC, 'phone')).toBe(4);
+    expect(lastUsedDeviceSlot(SRC, 'tablet')).toBeUndefined();
 
     registeredAtImport![1](SRC, { slot: 6 });
     expect(pushRehydrate).toHaveBeenCalledTimes(1);
+  });
+
+  it('tells the device-state subscribers about every device but the phone, once a pass', () => {
+    const seen: unknown[][] = [];
+    onDeviceStateChanged('test-device-pass', (src, device) => {
+      seen.push([src, device]);
+    });
+
+    netHandlers[CHECK]();
+    // On or off: an off tablet is told too, so its cached id is cleared.
+    expect(seen).toEqual([[SRC, 'tablet']]);
+
+    // A phone use is the phone-state hook's, not this one's.
+    seen.length = 0;
+    registeredAtImport![1](SRC, { slot: 4 });
+    expect(seen).toEqual([]);
+  });
+
+  it('keeps a device-state subscriber that throws from stopping the pass', () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const after = vi.fn();
+    onDeviceStateChanged('test-throws', () => {
+      throw new Error('boom');
+    });
+    onDeviceStateChanged('test-after-throw', after);
+
+    expect(() => netHandlers[CHECK]()).not.toThrow();
+    expect(after).toHaveBeenCalledWith(SRC, 'tablet');
+    expect(error.mock.calls.some(([line]) => String(line).includes("'test-throws'"))).toBe(true);
+    error.mockRestore();
+  });
+
+  it('turns the tablet on when mica_tablet is unset, since MICA-264 gave it an identity', () => {
+    const previous = (globalThis as any).GetConvar;
+    (globalThis as any).GetConvar = (name: string, fallback: string) =>
+      name === 'mica_tablet' ? fallback : previous(name, fallback);
+    try {
+      expect(isDeviceEnabled('tablet')).toBe(true);
+      expect(enabledDevices()).toEqual(['phone', 'tablet']);
+    } finally {
+      (globalThis as any).GetConvar = previous;
+    }
   });
 });
 
@@ -487,12 +531,69 @@ describe('a server with mica_tablet on (MICA-263)', () => {
       held: true
     });
     expect(emitNet).toHaveBeenCalledWith(OPEN, SRC, { device: 'tablet' });
-    // MICA-219's phone-only machinery: no slot, no subscriber, no rehydrate, no phone push.
-    expect(mod.lastUsedPhoneSlot(SRC)).toBeUndefined();
+    // Its own slot (MICA-264), never the phone's; no phone-state subscriber, since those follow
+    // the phone's number and battery; and no rehydrate on a first use, which is no switch.
+    expect(mod.lastUsedDeviceSlot(SRC, 'tablet')).toBe(9);
+    expect(mod.lastUsedDeviceSlot(SRC, 'phone')).toBeUndefined();
     expect(subscriber).not.toHaveBeenCalled();
     expect(shell.pushRehydrate).not.toHaveBeenCalled();
     expect(emitNet.mock.calls.some(([, , p]) => (p as any)?.device === 'phone')).toBe(false);
     expect(emitNet).not.toHaveBeenCalledWith(OPEN, SRC);
+  });
+
+  it('tells the device-state subscribers on a tablet use, so its id follows (MICA-264)', async () => {
+    const { registered, mod } = await importWithTablet('tablet');
+    const seen: unknown[][] = [];
+    mod.onDeviceStateChanged('test-tablet-use', (src, device) => {
+      seen.push([src, device]);
+    });
+
+    registered.find(([item]) => item === 'tablet')![1](SRC, { slot: 9 });
+
+    expect(seen).toEqual([[SRC, 'tablet']]);
+  });
+
+  it('records the tablet slot on use and rehydrates when the tablet switches (MICA-264)', async () => {
+    const { registered, mod, shell } = await importWithTablet('tablet');
+    const [, onTablet] = registered.find(([item]) => item === 'tablet')!;
+    const [, onPhone] = registered.find(([item]) => item === 'phone')!;
+
+    onTablet(SRC, { slot: 9 });
+    onTablet(SRC, { slot: 9 });
+    // The same tablet again is no switch.
+    expect(shell.pushRehydrate).not.toHaveBeenCalled();
+
+    onTablet(SRC, { slot: 11 });
+    expect(mod.lastUsedDeviceSlot(SRC, 'tablet')).toBe(11);
+    expect(shell.pushRehydrate).toHaveBeenCalledTimes(1);
+    expect(shell.pushRehydrate).toHaveBeenCalledWith(SRC);
+
+    // A phone use is not a tablet switch, and starts the phone's own record.
+    onPhone(SRC, { slot: 2 });
+    expect(shell.pushRehydrate).toHaveBeenCalledTimes(1);
+    expect(mod.lastUsedDeviceSlot(SRC, 'phone')).toBe(2);
+    expect(mod.lastUsedDeviceSlot(SRC, 'tablet')).toBe(11);
+  });
+
+  it('forgets every device slot on playerDropped', async () => {
+    const handlers: Record<string, Function> = {};
+    const previousOn = (globalThis as any).on;
+    (globalThis as any).on = (event: string, handler: Function) => {
+      handlers[event] = handler;
+    };
+    try {
+      const { registered, mod } = await importWithTablet('tablet');
+      registered.find(([item]) => item === 'tablet')![1](SRC, { slot: 9 });
+      registered.find(([item]) => item === 'phone')![1](SRC, { slot: 2 });
+
+      (globalThis as any).source = SRC;
+      handlers.playerDropped();
+
+      expect(mod.lastUsedDeviceSlot(SRC, 'tablet')).toBeUndefined();
+      expect(mod.lastUsedDeviceSlot(SRC, 'phone')).toBeUndefined();
+    } finally {
+      (globalThis as any).on = previousOn;
+    }
   });
 
   it('does not let one item be both, and keeps it for the phone', async () => {

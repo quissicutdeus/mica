@@ -675,6 +675,7 @@ CREATE TABLE IF NOT EXISTS `mica_phones` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
     `citizenid` varchar(50) NOT NULL,
     `phone_id` varchar(32) NOT NULL,
+    `kind` ENUM('phone', 'tablet') NOT NULL DEFAULT 'phone',
     `claimed` tinyint(1) NOT NULL DEFAULT 0,
     `status` ENUM('active', 'deleted') NOT NULL DEFAULT 'active',
     `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,

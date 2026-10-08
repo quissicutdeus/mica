@@ -34,6 +34,8 @@ import type { PrivacyDeleteResult, PrivacyExport, PrivacyExportCategory } from '
  */
 const app = new ServiceEndpoint<never, typeof privacyContract>('privacy', null, {
   contract: privacyContract,
+  // The citizen's data, whichever device asks: Settings > Your data ships on both (MICA-264).
+  devices: ['phone', 'tablet'],
   disableGet: true,
   disableCreate: true,
   disableUpdate: true,

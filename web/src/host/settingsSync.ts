@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { get } from 'svelte/store';
+import { activeDevice } from '../shell/state/device';
 import { saveSetting, removeSetting, clearAppSettings } from '../services/settings';
 
 /**
@@ -21,8 +23,14 @@ import { saveSetting, removeSetting, clearAppSettings } from '../services/settin
  * a hook that let an add-on force a hydrate is a way to stamp on another app's namespace.
  */
 
-/** Writes still in flight, per `<app>:<key>`, so a slider drag is one request. */
-const pending = new Map<string, ReturnType<typeof setTimeout>>();
+/**
+ * Writes still in flight, per `<app>:<key>`, so a slider drag is one request.
+ *
+ * Each remembers how to send itself, with the device it was made on (MICA-264): a phone
+ * and a tablet keep separate settings rows, and a write that waited out its debounce after
+ * the player raised the other device would otherwise be stamped with that one.
+ */
+const pending = new Map<string, { timer: ReturnType<typeof setTimeout>; send: () => void }>();
 
 /**
  * The device-persisted record of which `<app>:<key>` pairs are unsynced, under an
@@ -118,7 +126,7 @@ export function hasPendingWrite(app: string, key: string): boolean {
 
 /** Test seam: module state that would otherwise leak between cases. */
 export function __resetSettingsSync(): void {
-  for (const timer of pending.values()) clearTimeout(timer);
+  for (const { timer } of pending.values()) clearTimeout(timer);
   pending.clear();
   unsynced.clear();
   persistUnsynced();
@@ -139,15 +147,30 @@ export function queueWrite(app: string, key: string, value: string): void {
   if (unsynced.has(composite)) return;
 
   const existing = pending.get(composite);
-  if (existing) clearTimeout(existing);
+  if (existing) clearTimeout(existing.timer);
 
-  pending.set(
-    composite,
-    setTimeout(() => {
-      pending.delete(composite);
-      void saveSetting(app, key, value);
-    }, WRITE_DEBOUNCE_MS)
-  );
+  const device = get(activeDevice);
+  const send = () => {
+    pending.delete(composite);
+    void saveSetting(app, key, value, device);
+  };
+  pending.set(composite, { timer: setTimeout(send, WRITE_DEBOUNCE_MS), send });
+}
+
+/**
+ * Send every debounced write now, each to the device it was made on (MICA-264).
+ *
+ * A device switch calls this before it re-reads the new device's settings, so no write
+ * made on one identity is still queued while the other's rows are swept into the cache —
+ * where a pending key would be skipped by the sweep and keep the old device's value on
+ * screen under the new one.
+ */
+export function flushPendingWrites(): void {
+  // `send` deletes its own entry; a Map visits every entry still in it, so that is safe.
+  for (const { timer, send } of pending.values()) {
+    clearTimeout(timer);
+    send();
+  }
 }
 
 export function queueRemove(app: string, key: string): void {
@@ -156,7 +179,7 @@ export function queueRemove(app: string, key: string): void {
 
   const existing = pending.get(composite);
   if (existing) {
-    clearTimeout(existing);
+    clearTimeout(existing.timer);
     pending.delete(composite);
   }
   void removeSetting(app, key);
@@ -164,7 +187,7 @@ export function queueRemove(app: string, key: string): void {
 
 /** Drop a whole namespace server-side, so an uninstalled app does not come back on hydrate. */
 export function queueClearApp(app: string): void {
-  for (const [composite, timer] of pending.entries()) {
+  for (const [composite, { timer }] of pending.entries()) {
     if (composite.startsWith(`${app}:`)) {
       clearTimeout(timer);
       pending.delete(composite);

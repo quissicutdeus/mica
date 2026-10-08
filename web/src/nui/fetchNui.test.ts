@@ -2,13 +2,15 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const { transport } = vi.hoisted(() => ({ transport: { send: vi.fn(), on: vi.fn() } }));
 vi.mock('./transport', () => ({ getTransport: () => transport }));
 
 import { fetchNui } from './fetchNui';
 import { isRefusal, ServiceRefusal } from '@mica/sdk';
+import { GENERIC_SERVICE_ACTION } from '@mica/shared/rpc';
+import { setActiveDevice } from '../shell/state/device';
 
 /**
  * The contract is decided by `defaultValue`: supplied means "never throw, give me this
@@ -218,5 +220,55 @@ describe('a refusal keeps its key', () => {
       "fetchNui('x') returned an error; using the default.",
       'English'
     );
+  });
+});
+
+/**
+ * MICA-264: a phone and a tablet are two identities, and the generic envelope is how a
+ * request says which one it speaks for. `fetchNui` is the one door every generic request
+ * goes through, so it stamps the device on screen there.
+ */
+describe('the generic envelope names its device', () => {
+  afterEach(() => setActiveDevice('phone'));
+
+  it('carries the active device when the caller named none', async () => {
+    transport.send.mockResolvedValue([]);
+    setActiveDevice('tablet');
+    await fetchNui(GENERIC_SERVICE_ACTION, { service: 'notes', action: 'get' });
+    expect(transport.send).toHaveBeenCalledWith(GENERIC_SERVICE_ACTION, {
+      service: 'notes',
+      action: 'get',
+      device: 'tablet'
+    });
+  });
+
+  it('reads the device when the request is sent, not when the caller was built', async () => {
+    transport.send.mockResolvedValue([]);
+    const payload = { service: 'notes', action: 'get' };
+    await fetchNui(GENERIC_SERVICE_ACTION, payload);
+    setActiveDevice('tablet');
+    await fetchNui(GENERIC_SERVICE_ACTION, payload);
+    expect(transport.send.mock.calls.map(([, data]) => data.device)).toEqual(['phone', 'tablet']);
+    // The caller's own object is left as it was.
+    expect(payload).toEqual({ service: 'notes', action: 'get' });
+  });
+
+  it('leaves an explicit device alone, even when another is on screen', async () => {
+    transport.send.mockResolvedValue({ ok: true });
+    setActiveDevice('tablet');
+    await fetchNui(GENERIC_SERVICE_ACTION, {
+      service: 'settings',
+      action: 'set',
+      data: { app: 'settings', key: 'theme', value: '"dark"' },
+      device: 'phone'
+    });
+    expect(transport.send.mock.calls[0][1].device).toBe('phone');
+  });
+
+  it('does not touch a named route, which the client stamps itself', async () => {
+    transport.send.mockResolvedValue(null);
+    setActiveDevice('tablet');
+    await fetchNui('setTyping', { typing: true });
+    expect(transport.send).toHaveBeenCalledWith('setTyping', { typing: true });
   });
 });

@@ -94,5 +94,8 @@
   "permission.wallpaper-write": "Change the Wallpaper",
   "needs.money": "Needs a server with money",
   "needs.jobs": "Needs a server with jobs",
-  "permission.control-center": "Add Control Center Toggles"
+  "permission.control-center": "Add Control Center Toggles",
+  "notOnThisDevice": "Not available on this device.",
+  "selectApp": "Select an app",
+  "selectAppHint": "Its details, permissions and install button appear here."
 }

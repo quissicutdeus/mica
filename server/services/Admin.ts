@@ -50,6 +50,8 @@ export const adminAces = (): string[] => {
 };
 const app = new ServiceEndpoint<never, typeof adminContract>('admin', null, {
   contract: adminContract,
+  // Staff tools are the citizen's, not a device's: the admin app ships on both (MICA-264).
+  devices: ['phone', 'tablet'],
   disableGet: true,
   disableCreate: true,
   disableUpdate: true,

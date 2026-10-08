@@ -10,11 +10,14 @@
  * which side it is standing in for. In-process, because a unit test stands in for the shell.
  */
 import '../host/registerFacets';
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import ToastHost from './ToastHost.svelte';
 import { toast } from './state/toast';
+import type { DeviceId } from '@mica/shared/devices';
+import { setActiveDevice } from './state/device';
+import { openDevice } from './state/phoneOpen';
 
 /**
  * MICA-42: a toast sits directly over the top strip of whatever app is on screen, and
@@ -166,5 +169,109 @@ describe('ToastHost announcements', () => {
     // With `aria-atomic="true"` every keystroke in a toast's reply box would read the
     // whole card aloud again, over the player typing into it.
     expect(region(container)?.hasAttribute('aria-atomic')).toBe(false);
+  });
+});
+
+/**
+ * MICA-264: a toast for an app the device on screen does not show — the phone's call, a
+ * shared contact, a message, while the tablet is up — appears, and offers none of its
+ * actions; each of them acts as the phone, through a service the server refuses from the
+ * tablet. Decided as the toast is drawn, so raising the phone brings them back.
+ */
+describe('a phone toast on the tablet (MICA-264)', () => {
+  const up = (device: DeviceId) => {
+    setActiveDevice(device);
+    openDevice.set(device);
+  };
+
+  beforeEach(() => {
+    toast.clear();
+  });
+  afterEach(() => {
+    toast.clear();
+    openDevice.set(null);
+    setActiveDevice('phone');
+  });
+
+  const ring = () =>
+    toast.showCall({ name: 'Ada', number: '555-0100', onAccept: vi.fn(), onDecline: vi.fn() });
+  const share = (onAccept = vi.fn()) => {
+    toast.showContactShare({
+      name: 'Grace Hopper',
+      phone: '555-0101',
+      senderLabel: 'Ada',
+      onAccept,
+      onDecline: vi.fn()
+    });
+    return onAccept;
+  };
+
+  it('shows a call with Accept and Decline on the phone', async () => {
+    up('phone');
+    const { getByText, getByRole } = render(ToastHost);
+    ring();
+    await tick();
+    expect(getByText('Incoming Call')).toBeTruthy();
+    expect(getByRole('button', { name: 'Accept' })).toBeTruthy();
+    expect(getByRole('button', { name: 'Decline' })).toBeTruthy();
+  });
+
+  it('shows a call on the tablet with no actions, and offers them once the phone is up', async () => {
+    up('tablet');
+    const { getByText, queryByRole } = render(ToastHost);
+    ring();
+    await tick();
+    expect(getByText('Incoming Call')).toBeTruthy();
+    expect(queryByRole('button', { name: 'Accept' })).toBeNull();
+    expect(queryByRole('button', { name: 'Decline' })).toBeNull();
+
+    up('phone');
+    await tick();
+    expect(queryByRole('button', { name: 'Accept' })).not.toBeNull();
+  });
+
+  it('shows a shared contact with Accept on the phone', async () => {
+    up('phone');
+    const { getByRole } = render(ToastHost);
+    share();
+    await tick();
+    expect(getByRole('button', { name: 'Accept' })).toBeTruthy();
+  });
+
+  it('shows a shared contact on the tablet with no actions, and a tap does not accept it', async () => {
+    up('tablet');
+    const { getByText, queryByRole } = render(ToastHost);
+    const onAccept = share();
+    await tick();
+    expect(getByText('Contact shared by Ada')).toBeTruthy();
+    expect(queryByRole('button', { name: 'Accept' })).toBeNull();
+    expect(queryByRole('button', { name: 'Decline' })).toBeNull();
+
+    // The body's tap is the share's Accept on the phone; here it only dismisses.
+    getByText('Contact shared by Ada').click();
+    await tick();
+    expect(onAccept).not.toHaveBeenCalled();
+  });
+
+  it('drops the reply box from a message on the tablet', async () => {
+    up('tablet');
+    const { getByText, queryByPlaceholderText } = render(ToastHost);
+    toast.showIncomingMessage({ sender: 'Ada', message: 'On my way', onReply: vi.fn() });
+    await tick();
+    expect(getByText('On my way')).toBeTruthy();
+    expect(queryByPlaceholderText('Reply...')).toBeNull();
+  });
+
+  it('keeps the actions of a toast no app manifest names, on either device', async () => {
+    up('tablet');
+    const { getByRole } = render(ToastHost);
+    toast.show({
+      message: 'Restart now?',
+      type: 'info',
+      duration: 0,
+      actions: [{ label: 'Restart', onClick: vi.fn() }]
+    });
+    await tick();
+    expect(getByRole('button', { name: 'Restart' })).toBeTruthy();
   });
 });

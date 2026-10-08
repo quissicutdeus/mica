@@ -26,8 +26,9 @@ interface DeviceEntry {
   /**
    * Whether this server has the device on at all — the descriptor's `convars.enable`, as
    * the server last said. A device with no enable convar (the phone) is always on; the
-   * tablet starts off until the server pushes otherwise (MICA-263), which is decision 5
-   * of MICA-252: `mica_tablet` defaults off until the tablet has its own identity.
+   * tablet starts off here until the server pushes that it is enabled (MICA-263). The
+   * server now defaults `mica_tablet` on, since the tablet has its own identity (MICA-264),
+   * but this half still waits to be told rather than assuming the server's default.
    */
   serverEnabled: boolean;
   /** MICA-229: what the server last said about the item gate. */

@@ -6,6 +6,9 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { sorted } from './arrays';
 import { requestEventFor, responseEventFor, parseRequestEvent } from '@mica/shared/rpc';
 import { ServiceProxy } from '../lib/ServiceProxy';
+import type { DeviceId } from '@mica/shared/devices';
+
+const onPhone = (): DeviceId => 'phone';
 
 /**
  * The bug these lock down: the client used to subscribe a fixed set of four CRUD reply
@@ -72,7 +75,7 @@ describe('shared/rpc — one derivation for both sides', () => {
 describe('ServiceProxy — subscribes the reply it will actually receive', () => {
   it('subscribes the derived reply for a generic CRUD action', () => {
     const app = new ServiceProxy('notes');
-    app.registerCallback('getNotes', 'mica:server:notes:get');
+    app.registerCallback('getNotes', 'mica:server:notes:get', onPhone);
 
     expect([...netSubscriptions.keys()]).toEqual(['mica:client:notes:receive']);
     expect(registeredNuiTypes).toEqual(['getNotes']);
@@ -81,10 +84,10 @@ describe('ServiceProxy — subscribes the reply it will actually receive', () =>
   it('subscribes the reply for a custom action — the mail regression', () => {
     // Every one of these used to reply into the void.
     const app = new ServiceProxy('mail');
-    app.registerCallback('getMail', 'mica:server:mail:getMail');
-    app.registerCallback('markAsRead', 'mica:server:mail:markAsRead');
-    app.registerCallback('archiveMail', 'mica:server:mail:archiveMail');
-    app.registerCallback('deleteMail', 'mica:server:mail:deleteMail');
+    app.registerCallback('getMail', 'mica:server:mail:getMail', onPhone);
+    app.registerCallback('markAsRead', 'mica:server:mail:markAsRead', onPhone);
+    app.registerCallback('archiveMail', 'mica:server:mail:archiveMail', onPhone);
+    app.registerCallback('deleteMail', 'mica:server:mail:deleteMail', onPhone);
 
     expect(sorted([...netSubscriptions.keys()])).toEqual([
       'mica:client:mail:archiveMail',
@@ -103,8 +106,8 @@ describe('ServiceProxy — subscribes the reply it will actually receive', () =>
     };
 
     const app = new ServiceProxy('conversations');
-    app.registerCallback('deleteConversation', 'mica:server:conversations:delete');
-    app.registerCallback('leaveConversation', 'mica:server:conversations:delete');
+    app.registerCallback('deleteConversation', 'mica:server:conversations:delete', onPhone);
+    app.registerCallback('leaveConversation', 'mica:server:conversations:delete', onPhone);
 
     expect(subscribeSpy).toHaveBeenCalledTimes(1);
     expect(subscribeSpy).toHaveBeenCalledWith('mica:client:conversations:deleted');
@@ -113,7 +116,7 @@ describe('ServiceProxy — subscribes the reply it will actually receive', () =>
   it('refuses a server event whose reply cannot be derived', () => {
     // A caller would otherwise hang for 15s. Fail at startup instead.
     const app = new ServiceProxy('phone');
-    expect(() => app.registerCallback('endCall', 'mica:server:noAppSegment')).toThrow(
+    expect(() => app.registerCallback('endCall', 'mica:server:noAppSegment', onPhone)).toThrow(
       /cannot be derived/
     );
   });
@@ -122,7 +125,7 @@ describe('ServiceProxy — subscribes the reply it will actually receive', () =>
 describe('ServiceProxy — request/response round trip', () => {
   it('resolves the NUI callback when the reply arrives', async () => {
     const app = new ServiceProxy('mail');
-    app.registerCallback('getMail', 'mica:server:mail:getMail');
+    app.registerCallback('getMail', 'mica:server:mail:getMail', onPhone);
 
     const resolved = vi.fn();
     nuiCallbacks.get('getMail')!({}, resolved);
@@ -140,7 +143,7 @@ describe('ServiceProxy — request/response round trip', () => {
 
   it('ignores a reply for an unknown correlation id', () => {
     const app = new ServiceProxy('notes');
-    app.registerCallback('getNotes', 'mica:server:notes:get');
+    app.registerCallback('getNotes', 'mica:server:notes:get', onPhone);
 
     expect(() =>
       netSubscriptions.get('mica:client:notes:receive')!('never-issued', [])
@@ -152,7 +155,7 @@ describe('ServiceProxy — request/response round trip', () => {
     try {
       vi.spyOn(console, 'warn').mockImplementation(() => {});
       const app = new ServiceProxy('notes');
-      app.registerCallback('getNotes', 'mica:server:notes:get');
+      app.registerCallback('getNotes', 'mica:server:notes:get', onPhone);
 
       const resolved = vi.fn();
       nuiCallbacks.get('getNotes')!({}, resolved);
@@ -163,5 +166,20 @@ describe('ServiceProxy — request/response round trip', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('sends the device as the third argument, asked per request (MICA-264)', () => {
+    let current: DeviceId = 'phone';
+    const app = new ServiceProxy('notes');
+    app.registerCallback('getNotes', 'mica:server:notes:get', () => current);
+
+    nuiCallbacks.get('getNotes')!({ q: 1 }, vi.fn());
+    current = 'tablet';
+    nuiCallbacks.get('getNotes')!({ q: 2 }, vi.fn());
+
+    expect(emitted.map(([event, , data, device]) => [event, data, device])).toEqual([
+      ['mica:server:notes:get', { q: 1 }, 'phone'],
+      ['mica:server:notes:get', { q: 2 }, 'tablet']
+    ]);
   });
 });

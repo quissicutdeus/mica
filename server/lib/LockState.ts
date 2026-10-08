@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import type { DeviceId } from '@mica/shared/devices';
-import { activePhoneIdOf } from '../services/Phones';
+import { activeDeviceIdOf } from '../services/Phones';
 
 /**
  * Whether another resource last told micaOS to lock a player's phone (MICA-60).
@@ -24,28 +24,27 @@ import { activePhoneIdOf } from '../services/Phones';
  * restart, and a resource that needs the lock to survive one has to reapply it in its own
  * `onResourceStart` or `playerConnecting`, the same as it would for `SetPhoneEnabled`.
  *
- * Keyed by **phone** since MICA-283 — see `keyFor`.
+ * Keyed by **device** since MICA-283 for the phone and MICA-264 for the tablet — see `keyFor`.
  */
 const locked = new Map<string, boolean>();
 
 /**
- * What the lock is keyed on (MICA-283): the phone in the source's hand, so that switching
- * phones switches the lock with everything else. A burner picked up locked stays locked, in
- * whoever's hand it lands, and unlocking one phone unlocks nothing else. A source that has
- * not resolved a phone yet — a resource locking a player before their first device-owned
- * request — is keyed on the source itself, the pre-283 behaviour, and `playerDropped` clears
- * exactly those entries: a phone's own lock is meant to outlive a session.
+ * What the lock is keyed on (MICA-283): the device in the source's hand, so that switching
+ * devices switches the lock with everything else. A burner picked up locked stays locked, in
+ * whoever's hand it lands, and unlocking one device unlocks nothing else. A source that has
+ * not resolved a device of that kind yet — a resource locking a player before their first
+ * device-owned request — is keyed on the source itself, the pre-283 behaviour, and
+ * `playerDropped` clears exactly those entries: a device's own lock is meant to outlive a
+ * session.
  *
- * **The tablet is keyed on the source, always, until MICA-264** (MICA-263). It has no identity
- * yet — no id to follow from hand to hand — so the only honest key is the session holding it,
- * which is the phone's own pre-283 behaviour, and it is cleared on `playerDropped` for the
- * same reason. Never `activePhoneIdOf`: that is the phone's resolver, and a tablet lock
- * stored under a phone id would lock the phone. MICA-264 moves this to the tablet's own id.
+ * **The tablet follows its own id** since MICA-264 (`activeDeviceIdOf`), as the phone follows
+ * its own: a tablet's id is a different row from any phone's, so its lock can never land on
+ * the phone. Before it resolves one, its source key carries the device, so it is a different
+ * key from the phone's pre-resolution one.
  */
 const keyFor = (source: number, device: DeviceId): string =>
-  device === 'phone'
-    ? (activePhoneIdOf(source) ?? `source:${source}`)
-    : `source:${source}:${device}`;
+  activeDeviceIdOf(source, device) ??
+  (device === 'phone' ? `source:${source}` : `source:${source}:${device}`);
 
 /** Whether a device is locked. Defaults to unlocked for one, or a source, never heard from. */
 export const isDeviceLocked = (source: number, device: DeviceId): boolean =>

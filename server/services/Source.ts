@@ -60,6 +60,8 @@ export const sourceUrl = (): string => {
 
 const app = new ServiceEndpoint<never, typeof shellContract>('shell', null, {
   contract: shellContract,
+  // The shell boots on whichever device is open (MICA-264).
+  devices: ['phone', 'tablet'],
   disableGet: true,
   disableCreate: true,
   disableUpdate: true,

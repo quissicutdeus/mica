@@ -27,6 +27,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { callStore } from '../services/call';
   import { openApp } from './state/navigation';
   import { fade } from '@mica/sdk';
+  import { descriptor } from './state/device';
   import PhoneIcon from '../../../sdk/ui/icons/PhoneIcon.svelte';
 
   /**
@@ -181,12 +182,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     </button>
   </div>
 
-  <button
-    type="button"
-    class="text-on-surface-variant hover:text-on-surface duration-short ease-standard mb-12 flex items-center gap-1.5 text-body-medium transition-colors"
-    onclick={handleEmergencyCall}
-  >
-    <PhoneIcon class="size-icon-sm" />
-    {$t('shell.emergencyCall')}
-  </button>
+  <!-- Only on a device that places calls: the tablet's chrome has none (`shared/devices.ts`),
+       and a button that opened a Phone app it cannot show would be a dead end. The tablet's
+       keypad sits clear of its home indicator by the column's own centring instead. -->
+  {#if $descriptor.chrome.calls}
+    <button
+      type="button"
+      class="text-on-surface-variant hover:text-on-surface duration-short ease-standard mb-12 flex items-center gap-1.5 text-body-medium transition-colors"
+      onclick={handleEmergencyCall}
+    >
+      <PhoneIcon class="size-icon-sm" />
+      {$t('shell.emergencyCall')}
+    </button>
+  {/if}
 </div>

@@ -36,6 +36,8 @@ import { SDK_CONTRACT_VERSION } from '../../sdk/version';
 const app = new ServiceEndpoint<never, typeof storeContract>('store', null, {
   app: 'store',
   contract: storeContract,
+  // Per citizen, and the shell reads the catalog at boot on either device (MICA-264).
+  devices: ['phone', 'tablet'],
   disableGet: true,
   disableCreate: true,
   disableUpdate: true,

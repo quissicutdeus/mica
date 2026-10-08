@@ -47,6 +47,21 @@ Entries are hand-written. See MICA-72 for why a generated one was rejected.
 
 ### Action required
 
+**Run `micaschema apply` from the server console, then decide whether you want
+the tablet: it is now on by default, with an identity of its own (MICA-264).**
+`mica_phones` gains a column, `kind`, which says whether a device is a phone or
+a tablet. It is additive and every existing row reads as a phone, so no data
+changes. **Run it as soon as the new version starts:** until the column exists,
+a player's first phone cannot be created and a notification to a player who is
+offline is dropped. A tablet now gets its own id the first time its item is
+used, and has no phone number; its notes, settings, the add-ons installed from
+its own Store and its passcode are separate from the phone's, and it has a lock
+screen. Admin reads the same on both devices; calls, messages, contacts, mail,
+the camera, Bank and Hodlr stay on the phone. **If you do not want the tablet,
+add `set mica_tablet "false"`.** `LockPhone`, `UnlockPhone` and `IsPhoneLocked`
+with a `device` of `'tablet'` now act on the tablet's own lock screen instead of
+failing with `unsupported`.
+
 **Run `micaschema apply` from the server console: `mica_messages_conversations`
 gains an index, `participant_b_status` (MICA-307).** It is additive and changes
 no data. It serves the job-line inbox below, which still works without it, but
@@ -641,11 +656,9 @@ character still removes those. Both requests are audit-logged, and an export is
 never posted to your staff Discord. No owner action.
 
 **The tablet can be turned on, and gated on an item of its own (MICA-263).** Two
-new convars: `mica_tablet` (default `false`) turns the tablet on, and
-`mica_tablet_item` gates it on an inventory item independently of
-`mica_phone_item`. **Leave `mica_tablet` off unless you are testing:** the
-tablet has no identity of its own until MICA-264, so what it stores may move
-when that lands. `IsPhoneOpen`, `SetPhoneEnabled`, `LockPhone`, `UnlockPhone`,
+new convars: `mica_tablet` turns the tablet on (on by default since MICA-264,
+above), and `mica_tablet_item` gates it on an inventory item independently of
+`mica_phone_item`. `IsPhoneOpen`, `SetPhoneEnabled`, `LockPhone`, `UnlockPhone`,
 `IsPhoneLocked` and `OpenApp` take an optional trailing `device`, defaulting to
 the phone, so existing scripts are unchanged. No owner action; see the README's
 [The tablet](README.md#the-tablet).

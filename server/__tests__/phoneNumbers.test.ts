@@ -100,7 +100,7 @@ import {
   syncNumber,
   __resetPhoneNumberState
 } from '../services/PhoneNumbers';
-import { __resetPhoneState } from '../services/Phones';
+import { __resetPhoneState, phoneForRequest } from '../services/Phones';
 import { __resetLastUsedPhone, __resetPhoneItemWarnings } from '../lib/deviceItem';
 import { PhoneNumberRepository } from '../repositories/PhoneNumberRepository';
 
@@ -535,6 +535,38 @@ describe('the declaration', () => {
  */
 describe('syncing the number with the phone in hand', () => {
   const PHONE_ID = 'c'.repeat(32);
+
+  it('gives a tablet no number: resolving one and a load write no number row (MICA-264)', async () => {
+    const TABLET = 'd'.repeat(32);
+    framework.kind = 'qb';
+    const previous = (globalThis as any).GetConvar;
+    (globalThis as any).GetConvar = (name: string, fallback: string) =>
+      name === 'mica_phone_item' ? 'phone' : name === 'mica_tablet_item' ? 'tablet' : fallback;
+    try {
+      // A tablet in hand and no phone at all.
+      bridgeMock.itemSlots.mockImplementation((_p: unknown, item: string) =>
+        item === 'tablet' ? [{ slot: 5, metadata: { phoneId: TABLET } }] : []
+      );
+      dbMock.query.mockImplementation(async (_sql: string, params: unknown[] = []) =>
+        params.includes(TABLET)
+          ? [{ id: 2, citizenid: CITIZEN, phone_id: TABLET, kind: 'tablet', claimed: 1 }]
+          : []
+      );
+
+      await expect(phoneForRequest(5, CITIZEN, 'tablet')).resolves.toBe(TABLET);
+      await load(5);
+
+      expect(dbMock.insert).not.toHaveBeenCalled();
+      expect(updates()).toEqual([]);
+      expect(numberFor(CITIZEN)).toBeNull();
+      // Nothing asked the number table about the tablet's id either.
+      for (const [, params] of dbMock.single.mock.calls) {
+        expect(params as unknown[]).not.toContain(TABLET);
+      }
+    } finally {
+      (globalThis as any).GetConvar = previous;
+    }
+  });
   const holding = (phoneId = PHONE_ID) =>
     bridgeMock.itemSlots.mockReturnValue([{ slot: 3, metadata: { phoneId } }]);
 

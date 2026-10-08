@@ -9,6 +9,7 @@ import { registerReactable, type ReactableDefinition } from './reactions';
 import { ServiceEndpoint, ServiceOptions } from './ServiceEndpoint';
 import type { ServiceContract } from '@mica/shared/contract';
 import { CITIZENID_MAX_LENGTH } from '@mica/shared/framework';
+import { DEFAULT_DEVICE, isDeviceId, type DeviceId } from '@mica/shared/devices';
 
 /**
  * One declaration per app, replacing the hand-written repository + controller pair.
@@ -515,6 +516,18 @@ export interface ServiceDefinition<C extends ServiceContract = ServiceContract> 
    */
   deviceOwned?: boolean;
   /**
+   * The devices whose requests this service answers (MICA-264). Defaults to `['phone']`; a
+   * request naming any other device is refused at the endpoint, before the player lookup.
+   *
+   * List `'tablet'` only for what a tablet should reach. On a `deviceOwned` service the tablet
+   * then has rows of its own, keyed on its own id — Notes, Settings, the lock screen — never
+   * the phone's. On any other service it reaches the citizen's rows, the same ones the phone
+   * does — Mail. A service that is the phone's by nature (contacts, the call log, the battery)
+   * keeps the default. The app manifest's `devices` is what shows the icon; this is what the
+   * server answers, and the two should agree.
+   */
+  devices?: readonly DeviceId[];
+  /**
    * The thread an encrypted column's value belongs to (MICA-165): this table's own columns,
    * bound after `citizenid` into the authenticated data of every `encrypted: true` column, so a
    * value copied into another conversation — or between another pair of DM accounts — does
@@ -622,6 +635,8 @@ export interface ResolvedService {
   table: string;
   /** See `ServiceDefinition.deviceOwned`. */
   deviceOwned: boolean;
+  /** See `ServiceDefinition.devices`; `['phone']` when the declaration names none. */
+  devices: readonly DeviceId[];
   access: Required<Pick<AccessDefinition, 'read' | 'write'>>;
   /** Resolved defaults filled in; null unless an axis is `members`. */
   membership: ResolvedMembership | null;
@@ -844,6 +859,27 @@ const resolveUniqueAfterDelete = (
   return 'revive';
 };
 
+/**
+ * A declaration's `devices`, checked once at declaration time: every entry a device in
+ * `shared/devices.ts`, none twice, and at least one — an empty list would register a service
+ * no request can reach, which is a declaration mistake rather than a policy.
+ */
+const resolveDevices = (id: string, devices: readonly DeviceId[] | undefined): DeviceId[] => {
+  if (devices === undefined) return [DEFAULT_DEVICE];
+  if (devices.length === 0) {
+    throw new Error(`defineService('${id}'): 'devices' is empty, so no request could reach it.`);
+  }
+  for (const device of devices) {
+    if (!isDeviceId(device)) {
+      throw new Error(`defineService('${id}'): '${String(device)}' in 'devices' is not a device.`);
+    }
+  }
+  if (new Set(devices).size !== devices.length) {
+    throw new Error(`defineService('${id}'): 'devices' names a device twice.`);
+  }
+  return [...devices];
+};
+
 /** A child table's `uniqueAfterDelete`: an opt-out, and only beside a unique index. */
 const assertChildUniqueAfterDelete = (id: string, child: ChildTableDefinition): void => {
   const decision = child.uniqueAfterDelete;
@@ -991,6 +1027,7 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
   }
 
   const deviceOwned = definition.deviceOwned === true;
+  const devices = resolveDevices(id, definition.devices);
 
   const fields: { name: string; def: ColumnDef }[] = [];
   /**
@@ -1209,6 +1246,7 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
     id,
     table,
     deviceOwned,
+    devices,
     access,
     membership,
     editWindow,
@@ -1391,6 +1429,7 @@ export function defineService<T, C extends ServiceContract = ServiceContract>(
     tableName: resolved.table,
     ...(definition.app ? { app: definition.app } : {}),
     ...(resolved.deviceOwned ? { deviceOwned: true } : {}),
+    devices: resolved.devices,
     ...(definition.contract ? { contract: definition.contract } : {}),
     ...(resolved.access.read === 'public'
       ? { publicRead: true, publicColumns: resolved.publicColumns }

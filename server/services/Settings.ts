@@ -116,6 +116,8 @@ let settingsRepo: SettingsRepository | null = null;
 export const settings = defineService<PhoneSetting, typeof settingsContract>({
   contract: settingsContract,
   deviceOwned: true,
+  // Both devices, each with rows of its own: a tablet's settings are its own (MICA-264).
+  devices: ['phone', 'tablet'],
   id: 'settings',
   access: { read: 'owner', write: 'owner' },
   schema: {

@@ -54,12 +54,12 @@ describe('what money capability each framework answers', () => {
     // `-Infinity` sentinel from `getMoney` and `false` from both money moves, so Bank and
     // Hodlr have nothing behind them.
     framework.kind = 'standalone';
-    expect(capabilities()).toEqual({ money: false, jobs: false, devices: ['phone'] });
+    expect(capabilities()).toEqual({ money: false, jobs: false, devices: ['phone', 'tablet'] });
   });
 
   it.each(['qb', 'esx'] as const)('allows money on %s', (kind) => {
     framework.kind = kind;
-    expect(capabilities()).toEqual({ money: true, jobs: true, devices: ['phone'] });
+    expect(capabilities()).toEqual({ money: true, jobs: true, devices: ['phone', 'tablet'] });
   });
 
   it('allows money while the framework is still unknown', () => {
@@ -75,7 +75,7 @@ describe('what money capability each framework answers', () => {
      * money path that already fails closed.
      */
     framework.kind = 'unknown';
-    expect(capabilities()).toEqual({ money: true, jobs: true, devices: ['phone'] });
+    expect(capabilities()).toEqual({ money: true, jobs: true, devices: ['phone', 'tablet'] });
   });
 
   it('reads the framework per call, so boot order does not freeze the answer', () => {
@@ -111,8 +111,12 @@ describe('which devices this server has on (MICA-263)', () => {
     }
   };
 
-  it('answers the phone alone while mica_tablet is unset, which is the default', () => {
-    expect(capabilities().devices).toEqual(['phone']);
+  it('answers both while mica_tablet is unset, which is the default since MICA-264', () => {
+    // The tablet has an identity of its own since MICA-264, so it ships on like the phone.
+    expect(capabilities().devices).toEqual(['phone', 'tablet']);
+  });
+
+  it('answers the phone alone when mica_tablet is off', () => {
     withConvars({ mica_tablet: 'false' }, () => {
       expect(capabilities().devices).toEqual(['phone']);
     });
@@ -128,7 +132,7 @@ describe('which devices this server has on (MICA-263)', () => {
   });
 
   it('does not add the tablet for its item alone: the item gates, it does not enable', () => {
-    withConvars({ mica_tablet_item: 'tablet' }, () => {
+    withConvars({ mica_tablet: 'false', mica_tablet_item: 'tablet' }, () => {
       expect(capabilities().devices).toEqual(['phone']);
     });
   });
@@ -177,7 +181,7 @@ describe('what the handler answers over the wire', () => {
     expect(calls[0][0]).toBe(responseEventFor('shell', 'capabilities'));
     expect(calls[0][1]).toBe(5);
     expect(calls[0][2]).toBe(1);
-    expect(calls[0][3]).toEqual({ money: false, jobs: false, devices: ['phone'] });
+    expect(calls[0][3]).toEqual({ money: false, jobs: false, devices: ['phone', 'tablet'] });
   });
 
   it('answers the same for every empty payload, and refuses a steered one', async () => {
@@ -195,7 +199,7 @@ describe('what the handler answers over the wire', () => {
       expect((globalThis.emitNet as any).mock.calls[0][3], JSON.stringify(empty)).toEqual({
         money: true,
         jobs: true,
-        devices: ['phone']
+        devices: ['phone', 'tablet']
       });
     }
 

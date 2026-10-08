@@ -206,9 +206,11 @@ const isFailure = <T>(value: unknown): value is ExportOutcome<T> =>
  * - a device this server has not switched on (`mica_tablet` off) is `disabled` — the same
  *   reason the client's exports give for a device that will not open, and one a caller can
  *   act on by telling the owner, not by retrying;
- * - a device without the feature the export drives is `unsupported`. The tablet has no lock
- *   screen until MICA-264 (`chrome.lockScreen` in `shared/devices.ts`), so locking one would
- *   record a state nothing on screen shows. That flips by itself when the descriptor does.
+ * - a device without the feature the export drives is `unsupported`, read from the device's
+ *   descriptor (`chrome` in `shared/devices.ts`), since locking a device with no lock screen
+ *   would record a state nothing on screen shows. Every device has a lock screen since MICA-264
+ *   gave the tablet its own passcode row, so nothing is refused this way today; a third device
+ *   without one would be, with no change here.
  *
  * The phone passes both checks by construction: it has no enable convar and has a lock screen.
  */
@@ -222,7 +224,7 @@ const resolveDevice = <T>(raw: unknown, feature?: 'lockScreen'): DeviceId | Expo
     );
   }
   if (feature && !DEVICES[device].chrome[feature]) {
-    return fail<T>('unsupported', `The ${device} has no lock screen yet.`);
+    return fail<T>('unsupported', `The ${device} has no lock screen.`);
   }
   return device;
 };
@@ -813,8 +815,9 @@ export function registerPublicApi(): void {
    * as calling `SetPhoneEnabled` before `client/services/Shell.ts` existed would have been.
    *
    * The phone unless `device` names another (MICA-263). The phone's push is unchanged; any
-   * other device's carries its id as a trailing argument. A device without a lock screen is
-   * refused with `unsupported` (`resolveDevice`), which today is the tablet until MICA-264.
+   * other device's carries its id as a trailing argument, and is keyed on that device's own id
+   * (`LockState`, MICA-264). A device without a lock screen is refused with `unsupported`
+   * (`resolveDevice`), which since MICA-264 is no device.
    */
   const setLockedExport = (name: string, value: boolean) =>
     guarded(name, (source: unknown, rawDevice?: unknown) => {

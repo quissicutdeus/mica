@@ -5,14 +5,15 @@
 import { Repository } from './Repository';
 import { AuditLogger } from './AuditLogger';
 import { type CallbackId, requirePositiveInt } from './payload';
-import { requestEventFor, responseEventFor } from '@mica/shared/rpc';
+import { parseDeviceArg, requestEventFor, responseEventFor } from '@mica/shared/rpc';
+import { DEFAULT_DEVICE, DEVICES, type DeviceId } from '@mica/shared/devices';
 import { FrameworkBridge, FrameworkPlayer } from './FrameworkBridge';
 import { registerCustomAction, registerService } from './services';
 import { allow, installRateLimitCleanup } from './rateLimit';
 import { type ActionInput, type ContractAction, type ServiceContract } from '@mica/shared/contract';
 import { parseInput, SchemaError, type Schema } from '@mica/shared/schema';
 import { GENERIC_ERROR_KEY, GENERIC_ERROR_MESSAGE, PlayerFacingError } from './errors';
-import { phoneForRequest } from './phoneIdentity';
+import { phoneForRequest, requireDeviceInHand } from './phoneIdentity';
 import { appDisabledError, disabledAppFor } from './ownerConfig';
 
 // Once per process, not once per service: `on('playerDropped')` would otherwise be registered
@@ -52,6 +53,16 @@ export interface ServiceOptions<C extends ServiceContract = ServiceContract> {
    * no inventory to hold a phone in.
    */
   deviceOwned?: boolean;
+  /**
+   * The devices this service answers (MICA-264). Defaults to the phone alone; a request naming
+   * a device not listed is refused before the player is even looked up. Set from
+   * `ServiceDefinition.devices`, or directly by a service that builds its own endpoint.
+   *
+   * On a `deviceOwned` service each listed device has rows of its own, keyed on its own id —
+   * a tablet's notes are not the phone's. On any other service the rows are the citizen's
+   * whichever device asks.
+   */
+  devices?: readonly DeviceId[];
   disableGet?: boolean;
   disableCreate?: boolean;
   disableUpdate?: boolean;
@@ -506,7 +517,9 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
     const eventName = requestEventFor(this.serviceName, action);
     const clientEventName = responseEventFor(this.serviceName, action);
 
-    onNet(eventName, async (cbId: CallbackId, data: unknown) => {
+    const devices: readonly DeviceId[] = this.options.devices ?? [DEFAULT_DEVICE];
+
+    onNet(eventName, async (cbId: CallbackId, data: unknown, rawDevice?: unknown) => {
       const src = source;
       try {
         /**
@@ -539,6 +552,35 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
         const disabledApp = disabledAppFor(this.serviceName);
         if (disabledApp) throw appDisabledError(disabledApp);
 
+        /**
+         * The device the request speaks for (MICA-264), the event's third argument. Absent is
+         * the phone, which is every client from before the tablet. Anything present that is
+         * not a device is refused whole with the generic answer and no log line: it is a
+         * modified client or a stale one, and dropping it instead would quietly turn a request
+         * meant for one identity into a request for another.
+         *
+         * Then the service's own list, before the player lookup, since the answer is the same
+         * for every caller: a tablet request to a phone-only service — contacts, the call log,
+         * the battery — is refused rather than answered from the phone's rows.
+         */
+        const device = parseDeviceArg(rawDevice);
+        if (device === null) {
+          emitNet(clientEventName, src, cbId, {
+            error: GENERIC_ERROR_MESSAGE,
+            key: GENERIC_ERROR_KEY
+          });
+          return;
+        }
+        if (!devices.includes(device)) {
+          throw new PlayerFacingError(
+            `${this.serviceName} is not available on the ${DEVICES[device].label.toLowerCase()}.`,
+            {
+              key: 'server.device.unsupported',
+              params: { service: this.serviceName, device: DEVICES[device].label }
+            }
+          );
+        }
+
         const player = FrameworkBridge.getPlayer(src);
 
         if (!player) {
@@ -548,6 +590,17 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
           });
           return;
         }
+
+        /**
+         * A request from any device but the phone is a claim to be holding one, checked now on
+         * every service, device-owned or not: a device this server has off, or one the player
+         * holds none of, is refused with a toast saying which. The phone keeps the check it
+         * always had, which is the device-owned resolver's below — a request with no device is
+         * also every boot-time call the shell makes, and refusing those over the phone item
+         * would be new behaviour this ticket does not ask for.
+         */
+        // Not the phone: its boot-time shell calls must still answer a player holding none.
+        if (device !== DEFAULT_DEVICE) requireDeviceInHand(player, device);
 
         /**
          * Validation slots in **after** authentication and before the handler
@@ -562,7 +615,8 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
         const payload = input ? await parseInput(input, data) : data;
 
         /**
-         * Which phone this is for, on a table that follows the phone (MICA-282).
+         * Which device this is for, on a table that follows the device (MICA-282; the device
+         * the request named since MICA-264).
          *
          * After authentication, because a source with no character has no inventory, and
          * after validation, because a payload that is not even the right shape should not
@@ -572,7 +626,7 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
          * phone identity can be had. `services/Phones.ts` has the three cases.
          */
         const phoneId = this.options.deviceOwned
-          ? await phoneForRequest(src, player.citizenid)
+          ? await phoneForRequest(src, player.citizenid, device)
           : undefined;
 
         const result = await handler(src, cbId, payload, player.citizenid, player, phoneId);

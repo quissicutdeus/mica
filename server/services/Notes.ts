@@ -44,6 +44,8 @@ export const notes = defineService<Note, typeof notesContract>({
   app: 'notes',
   contract: notesContract,
   deviceOwned: true,
+  // Both devices, each with rows of its own: a tablet keeps notes of its own (MICA-264).
+  devices: ['phone', 'tablet'],
   access: { read: 'owner', write: 'owner' },
   statuses: ['active', 'archived', 'deleted', 'moderated'],
   schema: {

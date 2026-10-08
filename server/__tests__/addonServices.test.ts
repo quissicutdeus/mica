@@ -126,11 +126,11 @@ const register = (handlers: Record<string, unknown>, decl: unknown = journal, by
   as(by, 'RegisterService', decl, handlers);
 
 /** Drive `mica:server:<id>:<action>` the way the client relay emits it, and return the reply. */
-const call = async (action: string, data: unknown, id = 'journal') => {
+const call = async (action: string, data: unknown, id = 'journal', ...device: unknown[]) => {
   const handler = fivem.net.get(`mica:server:${id}:${action}`) as NetHandler | undefined;
   if (!handler) throw new Error(`nothing listens on mica:server:${id}:${action}`);
   const before = fivem.emitted.length;
-  await handler('cb-1', data);
+  await (handler as (...args: unknown[]) => Promise<void>)('cb-1', data, ...device);
   const replies = fivem.emitted.slice(before);
   expect(replies).toHaveLength(1);
   const [event, target, cbId, body] = replies[0];
@@ -336,6 +336,26 @@ describe('dispatch through the core guard', () => {
     await register({ create, list });
     await call('list', undefined);
     expect(list).toHaveBeenCalledWith(CID, {}, SRC);
+  });
+
+  it('answers the tablet as the phone, with the same citizen and nothing about the device (MICA-264)', async () => {
+    // A `core: false` add-on may list the tablet, which has a Store to install it from. Its
+    // rows are per citizen: the handler is handed the citizenid either way, never a device id.
+    const create = vi.fn(() => ({ id: 1 }));
+    await register({ create, list: vi.fn() });
+
+    expect(await call('create', { title: 'tab' }, 'journal', 'tablet')).toEqual({ id: 1 });
+    expect(await call('create', { title: 'pho' }, 'journal', 'phone')).toEqual({ id: 1 });
+    expect(create.mock.calls).toEqual([
+      [CID, { title: 'tab' }, SRC],
+      [CID, { title: 'pho' }, SRC]
+    ]);
+    // A device that is not one is still refused whole, before the handler.
+    expect(await call('create', { title: 'x' }, 'journal', 'watch')).toEqual({
+      error: GENERIC_ERROR_MESSAGE,
+      key: GENERIC_ERROR_KEY
+    });
+    expect(create).toHaveBeenCalledTimes(2);
   });
 
   it('answers a synchronous and an asynchronous handler alike', async () => {

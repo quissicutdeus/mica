@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { get, writable } from 'svelte/store';
-import { isRefusal, useAppEvents, useService } from '@mica/sdk';
+import { isRefusal, useAppEvents, useDisplay, useService } from '@mica/sdk';
 import type { ActionInput, ActionOutput, ContractAction } from '@mica/shared/contract';
 import type { jobsContract } from '@mica/shared/contracts/jobs';
 import type { JobLine, JobLineMessage, JobLineThread } from '@mica/shared/types';
@@ -275,6 +275,10 @@ export async function reply(conversationId: number, message: string): Promise<Jo
 useAppEvents('jobs').on<{ number?: unknown; conversation_id?: unknown }>(
   'line_message',
   ({ payload }) => {
+    // MICA-264: the phone's only. Jobs is a phone app on a phone-only service, so with the
+    // tablet up this re-read would go out as the tablet and be refused; the inbox is
+    // re-read on the next foreground instead (`index.svelte`'s `onAppForeground`).
+    if (get(useDisplay().device) !== 'phone') return;
     if (typeof payload?.number !== 'string' || payload.number !== lineNumber()) return;
     void loadInbox();
     if (payload.conversation_id === get(openThreadId)) void refreshThread();

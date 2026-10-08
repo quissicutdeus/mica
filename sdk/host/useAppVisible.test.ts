@@ -70,11 +70,12 @@ describe('useAppVisible (MICA-294)', () => {
     expect(get(visible)).toBe(true);
   });
 
-  it('works on the tablet, which has no lock screen to hide it', () => {
+  it('works on the tablet, whose own lock screen hides it as the phone does (MICA-264)', () => {
     openApp('places');
-    isLocked.set(true);
     openDevice.set('tablet');
     expect(get(useAppVisible('places'))).toBe(true);
+    isLocked.set(true);
+    expect(get(useAppVisible('places'))).toBe(false);
     openDevice.set('phone');
     expect(get(useAppVisible('places'))).toBe(false);
   });

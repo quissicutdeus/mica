@@ -36,6 +36,7 @@ import Phone from '../web/src/apps/phone/index.svelte';
 import Places from '../web/src/apps/places/index.svelte';
 import Settings from '../web/src/apps/settings/index.svelte';
 import SettingsTablet from '../web/src/apps/settings/tablet.svelte';
+import StoreTablet from '../web/src/apps/store/tablet.svelte';
 import Snek from '../web/src/apps/snek/index.svelte';
 import Store from '../web/src/apps/store/index.svelte';
 
@@ -85,7 +86,8 @@ const APPS: Record<string, AppComponent> = {
 const TABLET_ROOTS: Record<string, AppComponent> = {
   admin: AdminTablet,
   notes: NotesTablet,
-  settings: SettingsTablet
+  settings: SettingsTablet,
+  store: StoreTablet
 };
 
 // MICA-172: `__dirname` is `sdk/` at the repo root now. One hop up is the repo root,

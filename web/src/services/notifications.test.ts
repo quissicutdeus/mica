@@ -12,6 +12,8 @@ import {
   markNotificationsRead
 } from './notifications';
 import * as fetchNuiModule from '../nui/fetchNui';
+import { deliverAppEvent } from '../shell/state/appEvents';
+import { setActiveDevice } from '../shell/state/device';
 
 const item = (id: number, app = 'blabber'): NotificationItem => ({
   id,
@@ -129,5 +131,44 @@ describe('markNotificationsOpened (MICA-96)', () => {
       'notifications:markAsRead',
       'notifications:getUnreadCounts'
     ]);
+  });
+});
+
+/**
+ * MICA-264: an app event refreshes the shade and the badges, and both read `notifications`, a
+ * phone service the server refuses from the tablet. The stores hold the active device's
+ * identity, so with the tablet up a push asks nothing at all — neither as the tablet (refused)
+ * nor as the phone (the phone's shade under the tablet).
+ */
+describe('a push while another device is up (MICA-264)', () => {
+  /**
+   * Delivered under the app id `'*'`, because that is the only key the store's
+   * `subscribeAppEvent('*', '*', …)` is filed under: `deliverAppEvent` looks up the envelope's
+   * own app and that app's `'*'`, never a `'*'` app, so an ordinary push (`blabber:mention`)
+   * does not reach this refresh today. Pre-existing, and reported with MICA-264 rather than
+   * fixed in it — a wildcard app would also mark every event taken and stop the replay buffer.
+   */
+  const push = () => deliverAppEvent({ app: '*', event: 'mention', payload: {}, at: Date.now() });
+  const reads = () => sent.filter((s) => s.action.startsWith('notifications:get'));
+
+  it('refreshes the shade and the counts on the phone', async () => {
+    push();
+    await Promise.resolve();
+    expect(
+      reads()
+        .map((r) => r.action)
+        .sort()
+    ).toEqual(['notifications:getShadeNotifications', 'notifications:getUnreadCounts']);
+  });
+
+  it('asks nothing while the tablet is up', async () => {
+    setActiveDevice('tablet');
+    try {
+      push();
+      await Promise.resolve();
+      expect(reads()).toEqual([]);
+    } finally {
+      setActiveDevice('phone');
+    }
   });
 });

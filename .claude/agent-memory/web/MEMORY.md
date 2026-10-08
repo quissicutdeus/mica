@@ -41,3 +41,9 @@ its one-line summary.
 - [A build-flag gate folds](build-flag-gate-and-persist-proof.md) —
   `DEV || VITE_X` dynamic import emits no chunk; prove it on a scratch outDir;
   "persists nothing" needs both a storage snapshot and `saveSetting` unspied
+- [Mock files are scanned as text](mock-files-are-scanned-as-text.md) —
+  routes.test needs 2-space keys and a bare-identifier `defineMockCrud` first
+  arg; handlers get `{ device }`
+- [A mocked promise is never unhandled](mocked-promise-is-never-unhandled.md) —
+  `vi.fn` handles what it returns; spy on the promise's `catch` instead of
+  listening for `unhandledRejection`

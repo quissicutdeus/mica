@@ -12,9 +12,13 @@ const handlers = vi.hoisted(() => {
   return captured;
 });
 
-const phoneOf = vi.hoisted(() => new Map<number, string>());
+const { phoneOf, tabletOf } = vi.hoisted(() => ({
+  phoneOf: new Map<number, string>(),
+  tabletOf: new Map<number, string>()
+}));
 vi.mock('../services/Phones', () => ({
-  activePhoneIdOf: (src: number) => phoneOf.get(src) ?? null
+  activeDeviceIdOf: (src: number, kind: string) =>
+    (kind === 'phone' ? phoneOf : tabletOf).get(src) ?? null
 }));
 
 import { isDeviceLocked, setDeviceLocked, __resetLockState } from '../lib/LockState';
@@ -102,16 +106,18 @@ describe('LockState follows the phone (MICA-283)', () => {
 });
 
 /**
- * MICA-263: the tablet has no identity until MICA-264, so its lock is keyed on the session
- * holding it — never on the phone id, which would make locking a tablet lock the phone.
+ * MICA-263 kept the tablet's lock apart from the phone's; since MICA-264 it follows the
+ * tablet's own id, as the phone's follows the phone's, and falls back to the session holding
+ * it before the tablet has resolved one.
  */
-describe('LockState per device (MICA-263)', () => {
+describe('LockState per device (MICA-263, MICA-264)', () => {
   beforeEach(() => {
     __resetLockState();
     phoneOf.clear();
+    tabletOf.clear();
   });
 
-  it('keeps the tablet and the phone apart, with or without a resolved phone', () => {
+  it('keeps the tablet and the phone apart, with or without a resolved device', () => {
     setDeviceLocked(1, 'tablet', true);
     expect(isDeviceLocked(1, 'tablet')).toBe(true);
     expect(isDeviceLocked(1, 'phone')).toBe(false);
@@ -121,9 +127,16 @@ describe('LockState per device (MICA-263)', () => {
     setDeviceLocked(1, 'tablet', false);
     expect(isDeviceLocked(1, 'phone')).toBe(true);
     expect(isDeviceLocked(1, 'tablet')).toBe(false);
+
+    tabletOf.set(1, 'TABLET_A');
+    setDeviceLocked(1, 'tablet', true);
+    expect(isDeviceLocked(1, 'tablet')).toBe(true);
+    expect(isDeviceLocked(1, 'phone')).toBe(true);
+    setDeviceLocked(1, 'phone', false);
+    expect(isDeviceLocked(1, 'tablet')).toBe(true);
   });
 
-  it('does not follow the phone: a switch leaves the tablet lock where it was', () => {
+  it('does not follow the phone: a phone switch leaves the tablet lock where it was', () => {
     phoneOf.set(1, 'PHONE_A');
     setDeviceLocked(1, 'tablet', true);
     phoneOf.set(1, 'PHONE_B');
@@ -133,7 +146,32 @@ describe('LockState per device (MICA-263)', () => {
     expect(isDeviceLocked(2, 'phone')).toBe(false);
   });
 
-  it("clears the tablet lock on playerDropped, and only that source's", () => {
+  it('follows the tablet in hand (MICA-264): a tablet switch switches its lock', () => {
+    tabletOf.set(1, 'TABLET_A');
+    setDeviceLocked(1, 'tablet', true);
+
+    tabletOf.set(1, 'TABLET_B');
+    expect(isDeviceLocked(1, 'tablet')).toBe(false);
+
+    tabletOf.set(1, 'TABLET_A');
+    expect(isDeviceLocked(1, 'tablet')).toBe(true);
+  });
+
+  it('a locked tablet stays locked in another hand, and survives a disconnect (MICA-264)', () => {
+    tabletOf.set(1, 'TABLET_A');
+    setDeviceLocked(1, 'tablet', true);
+
+    (globalThis as any).source = 1;
+    handlers.get('playerDropped')!();
+    tabletOf.set(2, 'TABLET_A');
+
+    expect(isDeviceLocked(2, 'tablet')).toBe(true);
+    // And it is not the phone's, whatever phone that player holds.
+    phoneOf.set(2, 'PHONE_A');
+    expect(isDeviceLocked(2, 'phone')).toBe(false);
+  });
+
+  it("clears an unresolved tablet's lock on playerDropped, and only that source's", () => {
     setDeviceLocked(4, 'tablet', true);
     setDeviceLocked(44, 'tablet', true);
     setDeviceLocked(4, 'phone', true);

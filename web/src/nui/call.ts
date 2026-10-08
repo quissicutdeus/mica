@@ -4,6 +4,7 @@
 
 import { fetchNui } from './fetchNui';
 import { GENERIC_SERVICE_ACTION } from '@mica/shared/rpc';
+import type { DeviceId } from '@mica/shared/devices';
 import type {
   ActionInput,
   ActionOutput,
@@ -29,17 +30,22 @@ import type {
  * answers it under the scoped key `'<service>:<action>'`, and
  * `server/__tests__/routes.test.ts` checks every call site here against both the server's
  * registered events and that scoped mock.
+ *
+ * `device` names the identity the request speaks for (MICA-264). Leave it out and `fetchNui`
+ * stamps whichever device is on screen when the request is sent, which is right for almost
+ * every call; name it only when the request belongs to a device that may no longer be up — a
+ * debounced settings write queued on the phone that flushes after the tablet was raised.
  */
 export function call<C extends ServiceContract, A extends ContractAction<C>>(
   contract: C,
   action: A,
-  input: ActionInput<C, A>
+  input: ActionInput<C, A>,
+  options?: { device?: DeviceId }
 ): Promise<ActionOutput<C, A>> {
-  return fetchNui<ActionOutput<C, A>>(GENERIC_SERVICE_ACTION, {
-    service: contract.id,
-    action,
-    data: input
-  });
+  return fetchNui<ActionOutput<C, A>>(
+    GENERIC_SERVICE_ACTION,
+    envelope(contract, action, input, options?.device)
+  );
 }
 
 /**
@@ -53,11 +59,26 @@ export function callOr<C extends ServiceContract, A extends ContractAction<C>, D
   action: A,
   input: ActionInput<C, A>,
   defaultValue: D,
-  options?: { quiet?: boolean }
+  options?: { quiet?: boolean; device?: DeviceId }
 ): Promise<ActionOutput<C, A> | D> {
   return fetchNui<ActionOutput<C, A> | D>(
     GENERIC_SERVICE_ACTION,
-    { service: contract.id, action, data: input },
+    envelope(contract, action, input, options?.device),
     { defaultValue, quiet: options?.quiet }
   );
 }
+
+/**
+ * `{ service, action, data }`, and `device` only when one was named: an absent key is what
+ * tells `fetchNui` to stamp the active device, and a call that names none must keep the
+ * exact three-key shape every `toHaveBeenCalledWith` in the suite asserts.
+ */
+const envelope = (
+  contract: ServiceContract,
+  action: string,
+  data: unknown,
+  device: DeviceId | undefined
+) =>
+  device === undefined
+    ? { service: contract.id, action, data }
+    : { service: contract.id, action, data, device };

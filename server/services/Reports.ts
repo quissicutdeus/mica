@@ -92,6 +92,8 @@ class ReportRepository extends SchemaRepository<Report> {
 export const reports = defineService<Report, typeof reportsContract>({
   contract: reportsContract,
   id: 'reports',
+  // Per citizen, like Admin, whose queue reads it on either device (MICA-264).
+  devices: ['phone', 'tablet'],
   access: { read: 'owner', write: 'server' },
   encryptionScope: ['target_table', 'target_id'],
   schema: {

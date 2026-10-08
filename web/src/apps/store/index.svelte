@@ -18,16 +18,23 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     type AppUpdate,
     onAppForeground,
     useLocale,
-    registerMessages,
-    type AppPermission
+    useDisplay,
+    registerMessages
   } from '@mica/sdk';
   import { useCapabilities } from '@mica/sdk/core';
   import {
-    addedPermissions,
+    deviceUnavailableReason,
     formatPermission,
     mergedCatalogApps,
     unavailableReason
   } from './appInfo';
+  import {
+    createStoreActions,
+    filterInstalled,
+    type InstalledFilter,
+    type InstalledSortOrder,
+    type PendingConsent
+  } from './actions';
   import AppDetails from './components/AppDetails.svelte';
   import CatalogList from './components/CatalogList.svelte';
   import InstalledList from './components/InstalledList.svelte';
@@ -47,24 +54,22 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   let catalogAppsList = $state<AppManifest[]>([]);
 
   const { registryStore, updatesStore } = useAppRegistry();
-  const {
-    unregisterApp,
-    registerAddOn,
-    installFromCatalog,
-    refreshUpdates,
-    updateApp,
-    recordConsent,
-    grantedPermissions,
-    fetchRemoteCatalog
-  } = useAppRegistryWrite();
+  const registry = useAppRegistryWrite();
+  const { refreshUpdates, fetchRemoteCatalog } = registry;
 
   const { openApp: openPhoneApp } = useNavigation();
   const { run } = useAppAction('store');
   // A store, so the reason appears when the server's answer does; `missing` is [] until then.
   const caps = useCapabilities();
+  const { device } = useDisplay();
 
-  /** MICA-169: see `unavailableReason` — unavailable apps are shown with a reason, not hidden. */
+  /**
+   * MICA-169: see `unavailableReason` — unavailable apps are shown with a reason, not hidden.
+   * MICA-264: and an add-on this device does not run comes first, since nothing a server
+   * could add would change that answer.
+   */
   const unavailableFor = (app: AppManifest): string | null =>
+    deviceUnavailableReason(app.devices, $device, $t) ??
     unavailableReason(app.requires, (requires) => $caps.missing(requires), $t);
 
   /**
@@ -79,8 +84,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   });
 
   let activeTab = $state<'catalog' | 'installed'>('catalog');
-  let installedFilter = $state<'all' | 'system' | 'addon'>('all');
-  let installedSortOrder = $state<'newest' | 'oldest' | 'updated' | 'name'>('newest');
+  let installedFilter = $state<InstalledFilter>('all');
+  let installedSortOrder = $state<InstalledSortOrder>('newest');
   let selectedApp = $state<AppManifest | null>(null);
   let appToUninstall = $state<AppManifest | null>(null);
   /**
@@ -88,7 +93,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * (MICA-196). Held until the player says yes, because tapping Update on a row that
    * shows a version number is not consent to a list they have not been shown.
    */
-  let updateToAccept = $state<{ update: AppUpdate; added: AppPermission[] } | null>(null);
+  let updateToAccept = $state<PendingConsent | null>(null);
 
   const isInstalled = (appId: string): boolean => $registryStore.some((a) => a.id === appId);
 
@@ -97,143 +102,38 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     $updatesStore.find((u) => u.appId === appId) ?? null;
 
   const filteredInstalledApps = $derived(
-    $registryStore
-      .filter((app) => {
-        if (installedFilter === 'system') return app.core;
-        if (installedFilter === 'addon') return !app.core;
-        return true;
-      })
-      .slice()
-      .sort((a, b) => {
-        if (installedSortOrder === 'name') return a.name.localeCompare(b.name);
-
-        const installedA = a.installedAt ? new Date(a.installedAt).getTime() : 0;
-        const installedB = b.installedAt ? new Date(b.installedAt).getTime() : 0;
-        const updatedA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
-        const updatedB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
-
-        if (installedSortOrder === 'oldest') {
-          return installedA - installedB || a.name.localeCompare(b.name);
-        }
-        if (installedSortOrder === 'updated') {
-          return updatedB - updatedA || a.name.localeCompare(b.name);
-        }
-        return installedB - installedA || a.name.localeCompare(b.name);
-      })
+    filterInstalled($registryStore, installedFilter, installedSortOrder)
   );
 
-  function handleInstall(app: AppManifest) {
-    if (unavailableFor(app)) return;
-    if (app.isRemote && app.bundleUrl) {
-      const target = app;
-      void run(
-        async () => {
-          const catalog = await fetchRemoteCatalog();
-          if (catalog.status === 'off') throw new Error($t('store.noCatalog'));
-          if (catalog.status === 'unavailable') throw new Error($t('store.catalogUnavailable'));
-          const entry = catalog.entries.find((e) => e.id === target.id);
-          if (!entry) throw new Error($t('store.notInCatalog', { name: target.name }));
-          await installFromCatalog(entry);
-          // MICA-201: the player tapped Install on a screen listing exactly this set, so
-          // this is their answer and the shell now holds it. Without it the install lands
-          // and the add-on reaches nothing — the host refuses any permission with no grant.
-          recordConsent(entry.id, entry.permissions ?? []);
-        },
-        {
-          title: $t('store.title'),
-          success: $t('store.installedToast', { name: app.name })
-        }
-      );
-      return;
+  // Install, update and uninstall, shared with `tablet.svelte` (`actions.ts`).
+  const actions = createStoreActions({
+    t: () => $t,
+    run,
+    registry,
+    updateFor,
+    unavailableFor,
+    askConsent: (pending) => (updateToAccept = pending),
+    onUninstalled: (app) => {
+      if (selectedApp?.id === app.id) selectedApp = null;
     }
-
-    // No component to load: a bundled add-on registers as source text, fetched lazily by
-    // `getAddOnSource` the first time it is opened, not eagerly here — the shell never
-    // `import()`s an add-on's code in-process (MICA-16 step 4).
-    void run(
-      () => {
-        registerAddOn(app);
-        recordConsent(app.id, app.permissions ?? []);
-      },
-      {
-        title: $t('store.title'),
-        success: $t('store.installedToast', { name: app.name })
-      }
-    );
-  }
-
-  /**
-   * Install the catalog's copy of an app that has fallen behind.
-   *
-   * One install path, still: `updateApp` goes through `installFromCatalog`, so the bundle
-   * is re-fetched and re-verified against the entry's `sha256` exactly as it was the first
-   * time. What is new is that the *permissions* are compared against what the player
-   * accepted, because a catalog entry is remote data that moves underneath an installed
-   * app — an add-on installed reading nothing can republish asking for `contacts` and
-   * `messages`, and the old path installed that in one tap. The comment this replaces said
-   * the accepted permissions "are on screen while they tap this"; they are on screen in
-   * `AppDetails`, which lists the *installed* app's, not the ones the new version wants.
-   *
-   * An update that adds nothing still installs with no dialog. Prompting on every update
-   * would train the answer, which is how a prompt stops being consent.
-   *
-   * Refusing is refusing the permissions, not merely the dialog: since MICA-201 the
-   * shell keeps its own record of what the player granted each add-on and re-checks every
-   * call against it as well as against the manifest, so a permission nobody accepted here
-   * is refused at the host even if a bundle declaring it is somehow installed.
-   */
-  function handleUpdate(app: AppManifest) {
-    const pending = updateFor(app.id);
-    if (!pending) return;
-    // Against the **grant**, not the installed manifest (MICA-201). The manifest is what
-    // the bundle asked for; the grant is what the player answered, and it is the only one
-    // of the two that this app could not have written itself.
-    const added = addedPermissions(grantedPermissions(app.id), pending.entry);
-    if (added.length > 0) {
-      updateToAccept = { update: pending, added };
-      return;
-    }
-    applyUpdate(pending.name, pending);
-  }
-
-  function applyUpdate(name: string, pending: AppUpdate) {
-    void run(
-      async () => {
-        const manifest = await updateApp(pending.appId);
-        // The answer, recorded after the update actually lands: the new bundle's set
-        // replaces the old grant, so an update that *drops* a permission narrows it too.
-        recordConsent(pending.appId, pending.entry.permissions ?? []);
-        return manifest;
-      },
-      {
-        title: $t('store.title'),
-        success: $t('store.updatedToast', { name, version: pending.availableVersion })
-      }
-    );
-  }
+  });
+  const handleInstall = actions.install;
+  const handleUpdate = actions.update;
 
   function confirmPermissionUpdate() {
     const pending = updateToAccept;
     updateToAccept = null;
     if (!pending) return;
-    applyUpdate(pending.update.name, pending.update);
+    actions.confirmUpdate(pending);
   }
 
   const requestUninstall = (app: AppManifest) => (appToUninstall = app);
-
-  async function handleUninstall(app: AppManifest) {
-    const removed = await run(() => unregisterApp(app.id), {
-      title: $t('store.title'),
-      success: $t('store.uninstalledToast', { name: app.name })
-    });
-    if (removed && selectedApp?.id === app.id) selectedApp = null;
-  }
 
   function confirmUninstall() {
     if (!appToUninstall) return;
     const target = appToUninstall;
     appToUninstall = null;
-    void handleUninstall(target);
+    void actions.uninstall(target);
   }
 </script>
 

@@ -2,7 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { parseRequestEvent, requestEventFor, responseEventFor } from '@mica/shared/rpc';
+import type { DeviceId } from '@mica/shared/devices';
+import { parseRequestEvent, responseEventFor } from '@mica/shared/rpc';
 
 export class ServiceProxy {
   private pendingCallbacks = new Map<string, Function>();
@@ -56,10 +57,12 @@ export class ServiceProxy {
    * separately. Previously each app subscribed a fixed set of four CRUD reply names and
    * had to opt into anything else by hand; every custom action whose author forgot —
    * all four mail actions — timed out after 15 seconds with no error surfaced anywhere.
+   *
+   * `deviceFor` is asked per request, not once here: which device is on screen changes
+   * between requests, and a request speaks for the one that sent it (MICA-264).
    */
-  public registerCallback(action: string, customServerEvent?: string) {
+  public registerCallback(action: string, serverEvent: string, deviceFor: () => DeviceId) {
     const nuiEvent = action;
-    const serverEvent = customServerEvent || requestEventFor(this.serviceName, action);
 
     const target = parseRequestEvent(serverEvent);
     if (!target) {
@@ -74,7 +77,7 @@ export class ServiceProxy {
 
     RegisterNuiCallbackType(nuiEvent);
     on(`__cfx_nui:${nuiEvent}`, (data: any, cb: Function) => {
-      this.relay(action, serverEvent, data, cb);
+      this.relay(action, serverEvent, data, deviceFor(), cb);
     });
   }
 
@@ -97,8 +100,14 @@ export class ServiceProxy {
    * that must not be reimplemented, because getting any of them subtly wrong produces a
    * request that hangs for 15 seconds and then returns a default value with no error
    * anywhere — the failure mode this whole layer exists to have exactly one copy of.
+   *
+   * `device` rides as the event's third argument, `(cbId, data, device)` (MICA-264): a
+   * phone and a tablet are two identities, and the server reads it to pick which of the
+   * caller's own it resolves. A hint, never authority — the server checks the caller holds
+   * that device (`parseDeviceArg` in `shared/rpc.ts`), so a forged one reaches nothing the
+   * caller does not already own.
    */
-  public relay(action: string, serverEvent: string, data: unknown, cb: Function) {
+  public relay(action: string, serverEvent: string, data: unknown, device: DeviceId, cb: Function) {
     const cbId = this.generateId();
     this.pendingCallbacks.set(cbId, cb);
 
@@ -119,6 +128,6 @@ export class ServiceProxy {
 
     this.pendingTimers.set(cbId, timer);
 
-    emitNet(serverEvent, cbId, data);
+    emitNet(serverEvent, cbId, data, device);
   }
 }

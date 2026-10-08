@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 const { dbMock, bridgeMock, auditMock } = vi.hoisted(() => ({
   dbMock: {
@@ -24,7 +24,7 @@ import { Repository } from '../lib/Repository';
 import { ServiceEndpoint, ServiceOptions } from '../lib/ServiceEndpoint';
 import { GENERIC_ERROR_MESSAGE, PlayerFacingError } from '../lib/errors';
 import { __setPhoneResolvers } from '../lib/phoneIdentity';
-import { TEST_PHONE_ID } from './phoneStub';
+import { TEST_PHONE_ID, TEST_TABLET_ID, installTestPhone } from './phoneStub';
 import { defineContract } from '@mica/shared/contract';
 import { s } from '@mica/shared/schema';
 
@@ -47,7 +47,7 @@ class TestRepo extends Repository<TestRow> {
 
 const OWNER = 'CIT_OWNER';
 
-type Handler = (cbId: string, data: unknown) => Promise<void>;
+type Handler = (cbId: string, data: unknown, device?: unknown) => Promise<void>;
 
 let handlers: Map<string, Handler>;
 let emitted: unknown[][];
@@ -645,5 +645,208 @@ describe('ServiceEndpoint — a device-owned service follows the phone', () => {
 
     expect(asked).toBe(0);
     expect(dbMock.query.mock.calls[0][1]).toEqual([OWNER, 'active']);
+  });
+});
+
+/**
+ * MICA-264: a request names the device it speaks for, as the event's third argument. Absent is
+ * the phone; anything that is not a device is refused whole; a device the service does not
+ * list is refused before the player is looked up; and a request from any device but the phone
+ * is a claim to be holding one, which the check in `lib/phoneIdentity.ts` answers.
+ */
+describe('ServiceEndpoint — the device a request speaks for', () => {
+  class DeviceRepo extends Repository<TestRow & { phone_id: string }> {
+    protected tableName = 'mica_device_test';
+    protected columns = [
+      'id',
+      'citizenid',
+      'phone_id',
+      'title',
+      'content',
+      'status',
+      'created_at',
+      'updated_at'
+    ];
+    protected clientWritable = ['title', 'content'];
+    protected clientFilterable = ['title'];
+  }
+
+  const asked: { forRequest: unknown[][]; deviceInHand: unknown[][] } = {
+    forRequest: [],
+    deviceInHand: []
+  };
+
+  /** The stub's answers, with every question recorded. `refuse` makes the device check throw. */
+  const installRecording = (refuse?: PlayerFacingError) => {
+    __setPhoneResolvers({
+      forRequest: async (src, citizenid, device = 'phone') => {
+        asked.forRequest.push([src, citizenid, device]);
+        return device === 'tablet' ? TEST_TABLET_ID : TEST_PHONE_ID;
+      },
+      forCitizen: async () => TEST_PHONE_ID,
+      deviceInHand: (player, device) => {
+        asked.deviceInHand.push([player.citizenid, device]);
+        if (refuse) throw refuse;
+      }
+    });
+  };
+
+  const mountWith = (options: ServiceOptions, deviceOwned = false) => {
+    handlers = new Map();
+    emitted = [];
+    (globalThis as Record<string, unknown>).onNet = (event: string, cb: Handler) => {
+      handlers.set(event, cb);
+    };
+    (globalThis as Record<string, unknown>).emitNet = (...args: unknown[]) => {
+      emitted.push(args);
+    };
+    (globalThis as Record<string, unknown>).source = 5;
+    return new ServiceEndpoint<TestRow>(
+      'test',
+      deviceOwned ? (new DeviceRepo() as any) : new TestRepo(),
+      { ...(deviceOwned ? { deviceOwned: true } : {}), ...options }
+    );
+  };
+
+  const callAs = async (action: string, data: unknown, ...device: unknown[]) => {
+    const handler = handlers.get(`mica:server:test:${action}`);
+    if (!handler) throw new Error(`no handler registered for '${action}'`);
+    await (handler as (...args: unknown[]) => Promise<void>)('cb-1', data, ...device);
+  };
+
+  beforeEach(() => {
+    asked.forRequest = [];
+    asked.deviceInHand = [];
+    installRecording();
+  });
+
+  afterEach(() => {
+    installTestPhone();
+  });
+
+  it('reads a request with no device as the phone, on the phone, with no device check', async () => {
+    mountWith({}, true);
+
+    await callAs('get', {});
+
+    expect(asked.forRequest).toEqual([[5, OWNER, 'phone']]);
+    expect(asked.deviceInHand).toEqual([]);
+    expect(dbMock.query.mock.calls[0][1]).toEqual([OWNER, TEST_PHONE_ID, 'active']);
+  });
+
+  it("reads a request naming 'phone' exactly as one naming nothing", async () => {
+    mountWith({}, true);
+
+    await callAs('get', {}, 'phone');
+
+    expect(asked.forRequest).toEqual([[5, OWNER, 'phone']]);
+    expect(asked.deviceInHand).toEqual([]);
+  });
+
+  // Each wrapped, so `['tablet']` reaches the handler as an array rather than being spread.
+  it.each(['watch', 'PHONE', '', 0, null, true, {}, ['tablet']].map((bad) => [bad]))(
+    'refuses a device that is not one (%j) whole, before anything is read',
+    async (bad: unknown) => {
+      mountWith({ devices: ['phone', 'tablet'] }, true);
+
+      await callAs('get', {}, bad);
+
+      expect(lastReply()).toEqual({ error: GENERIC_ERROR_MESSAGE, key: 'server.generic' });
+      expect(bridgeMock.FrameworkBridge.getPlayer).not.toHaveBeenCalled();
+      expect(asked.forRequest).toEqual([]);
+      expect(dbMock.query).not.toHaveBeenCalled();
+    }
+  );
+
+  it('refuses a tablet request to a phone-only service, before the player is looked up', async () => {
+    mountWith({}, true);
+
+    await callAs('get', {}, 'tablet');
+
+    expect(lastReply()).toEqual({
+      error: 'test is not available on the tablet.',
+      key: 'server.device.unsupported',
+      params: { service: 'test', device: 'Tablet' }
+    });
+    expect(bridgeMock.FrameworkBridge.getPlayer).not.toHaveBeenCalled();
+    expect(asked.forRequest).toEqual([]);
+    expect(dbMock.query).not.toHaveBeenCalled();
+  });
+
+  it('refuses a phone request to a service that lists only the tablet', async () => {
+    mountWith({ devices: ['tablet'] });
+
+    await callAs('get', {});
+
+    expect(lastReply()?.key).toBe('server.device.unsupported');
+    expect(dbMock.query).not.toHaveBeenCalled();
+  });
+
+  it('refuses a tablet request from a player holding no tablet, as a toast', async () => {
+    installRecording(
+      new PlayerFacingError('You are not holding a tablet.', {
+        key: 'server.device.notHeld',
+        params: { device: 'Tablet' }
+      })
+    );
+    mountWith({ devices: ['phone', 'tablet'] }, true);
+
+    await callAs('get', {}, 'tablet');
+
+    expect(lastReply()).toEqual({
+      error: 'You are not holding a tablet.',
+      key: 'server.device.notHeld',
+      params: { device: 'Tablet' }
+    });
+    expect(asked.deviceInHand).toEqual([[OWNER, 'tablet']]);
+    expect(asked.forRequest).toEqual([]);
+    expect(dbMock.query).not.toHaveBeenCalled();
+  });
+
+  it('checks the tablet is in hand on a service that is not device-owned too', async () => {
+    installRecording(
+      new PlayerFacingError('The tablet is turned off on this server.', {
+        key: 'server.device.off',
+        params: { device: 'Tablet' }
+      })
+    );
+    mountWith({ devices: ['phone', 'tablet'] });
+
+    await callAs('get', {}, 'tablet');
+
+    expect(lastReply()?.key).toBe('server.device.off');
+    expect(asked.deviceInHand).toEqual([[OWNER, 'tablet']]);
+    expect(dbMock.query).not.toHaveBeenCalled();
+  });
+
+  it("answers a held tablet from the tablet's own rows on a device-owned service", async () => {
+    mountWith({ devices: ['phone', 'tablet'] }, true);
+
+    await callAs('get', {}, 'tablet');
+
+    expect(asked.deviceInHand).toEqual([[OWNER, 'tablet']]);
+    expect(asked.forRequest).toEqual([[5, OWNER, 'tablet']]);
+    expect(dbMock.query.mock.calls[0][1]).toEqual([OWNER, TEST_TABLET_ID, 'active']);
+  });
+
+  it("answers a held tablet from the citizen's rows on a service that is not device-owned", async () => {
+    mountWith({ devices: ['phone', 'tablet'] });
+
+    await callAs('get', {}, 'tablet');
+
+    expect(asked.forRequest).toEqual([]);
+    expect(dbMock.query.mock.calls[0][1]).toEqual([OWNER, 'active']);
+  });
+
+  it('refuses a tablet request whole when no device check is installed', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    __setPhoneResolvers({ forRequest: async () => TEST_PHONE_ID });
+    mountWith({ devices: ['phone', 'tablet'] });
+
+    await callAs('get', {}, 'tablet');
+
+    expect(lastReply()?.error).toBe(GENERIC_ERROR_MESSAGE);
+    expect(dbMock.query).not.toHaveBeenCalled();
+    logged.mockRestore();
   });
 });

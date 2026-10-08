@@ -112,7 +112,10 @@ const sameNumberKey = (number: string): string => number.replace(/\D/g, '') || n
  * Server-internal and keyed on the phone alone, deliberately without a citizenid: the read
  * only decides what to insert, and rows on one phone all name its holder anyway.
  */
-onPhoneCreated('defaultContacts', async (phoneId, citizenid) => {
+onPhoneCreated('defaultContacts', async (phoneId, citizenid, kind) => {
+  // A phone's address book, not a tablet's (MICA-264): Contacts is phone-only, so defaults
+  // seeded onto a tablet's id would be rows nothing can ever read.
+  if (kind !== 'phone') return;
   const seed = defaultContacts({
     name: contacts.resolved.columnRules.firstname?.maxLength ?? 50,
     number: contacts.resolved.columnRules.phone?.maxLength ?? 20

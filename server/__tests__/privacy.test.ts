@@ -283,7 +283,7 @@ const EXPORTED_COLUMNS: Record<string, { plain: string[]; sized: string[]; withh
     withheld: []
   },
   mica_phones: {
-    plain: ['id', 'status', 'created_at', 'updated_at', 'phone_id', 'claimed'],
+    plain: ['id', 'status', 'created_at', 'updated_at', 'phone_id', 'kind', 'claimed'],
     sized: [],
     withheld: []
   },

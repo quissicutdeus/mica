@@ -13,6 +13,7 @@ import { render } from '@testing-library/svelte';
 import TabletFrame from './TabletFrame.svelte';
 import { charge } from './state/charge';
 import { setActiveDevice } from './state/device';
+import { isLocked } from './state/lockScreen';
 
 // jsdom has no Web Animations API and Svelte's `transition:fly` calls it on mount.
 if (!Element.prototype.animate) {
@@ -36,6 +37,7 @@ describe('TabletFrame', () => {
   beforeEach(() => {
     setActiveDevice('tablet');
     charge.set(100);
+    isLocked.set(false);
   });
 
   it('is the design size from the table, with the shared chrome inside', () => {
@@ -50,10 +52,33 @@ describe('TabletFrame', () => {
     expect(getByRole('button', { name: 'Return to home screen' })).toBeTruthy();
   });
 
-  it('has no hole-punch and no lock screen', () => {
-    const { queryByTestId } = render(TabletFrame, { props: props() });
+  it('has no hole-punch, and no lock screen while unlocked', () => {
+    const { queryByTestId, queryByRole } = render(TabletFrame, { props: props() });
     expect(queryByTestId('camera-cutout')).toBeNull();
     expect(queryByTestId('phone-frame')).toBeNull();
+    expect(queryByRole('dialog', { name: 'Lock screen' })).toBeNull();
+  });
+
+  it('draws the lock screen in place of the status bar and the apps when locked (MICA-264)', () => {
+    isLocked.set(true);
+    const children = vi.fn();
+    const { getByRole, queryByRole, queryByText } = render(TabletFrame, {
+      props: { onClose: () => {}, children: children as never }
+    });
+    expect(getByRole('dialog', { name: 'Lock screen' })).toBeTruthy();
+    expect(getByRole('button', { name: 'Unlock' })).toBeTruthy();
+    expect(queryByRole('button', { name: 'Open notification shade' })).toBeNull();
+    expect(children).not.toHaveBeenCalled();
+    // The tablet places no calls (`shared/devices.ts`), so there is no emergency call to offer.
+    expect(queryByText('Emergency Call')).toBeNull();
+  });
+
+  it('shows the dead battery, not the lock screen, when both apply', () => {
+    isLocked.set(true);
+    charge.set(0);
+    const { queryByRole, getByText } = render(TabletFrame, { props: props() });
+    expect(queryByRole('dialog', { name: 'Lock screen' })).toBeNull();
+    expect(getByText('Battery Low')).toBeTruthy();
   });
 
   it('carries the power and volume keys, and power lowers the device', () => {

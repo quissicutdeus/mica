@@ -6,7 +6,30 @@ import { get } from 'svelte/store';
 import { t, type TranslateParams } from '../../../sdk/i18n';
 import { registerNuiTransport } from '../../../sdk/nui/transport';
 import { ServiceRefusal } from '@mica/sdk';
+import { GENERIC_SERVICE_ACTION } from '@mica/shared/rpc';
+import { activeDevice } from '../shell/state/device';
 import { getTransport } from './transport';
+
+/**
+ * The generic service envelope, naming the device it speaks for (MICA-264).
+ *
+ * A phone and a tablet are two identities, so the same `notes:get` reads two lists depending
+ * on which one asked, and `GenericServiceRequest.device` (`shared/rpc.ts`) is how a request
+ * says which. Stamped here, at the one door every generic request goes through — `call` and
+ * `callOr`, the host's service facet (an add-on's `useService`, in-process or framed),
+ * `createCrudStore`, Settings' privacy and wallpaper reads — rather than at each of them, so a
+ * new caller cannot forget it. Read when the request is sent, not when its caller was built:
+ * the active device is the one on screen now.
+ *
+ * A `device` already on the envelope is left alone. That is a caller deliberately speaking
+ * for a device that is not on screen, and overwriting it would quietly send a request meant
+ * for one identity to the other. Named routes carry none: the client stamps those itself.
+ */
+const withDevice = (eventName: string, data: unknown): unknown => {
+  if (eventName !== GENERIC_SERVICE_ACTION || !data || typeof data !== 'object') return data;
+  if ((data as { device?: unknown }).device !== undefined) return data;
+  return { ...data, device: get(activeDevice) };
+};
 
 /**
  * A failure reply from the other side of the bridge.
@@ -66,7 +89,7 @@ export async function fetchNui<T = unknown>(
 
   let reply: T;
   try {
-    reply = await getTransport().send<T>(eventName, data);
+    reply = await getTransport().send<T>(eventName, withDevice(eventName, data));
   } catch (e) {
     if (hasDefault) {
       if (!options.quiet) {

@@ -152,14 +152,14 @@ export const DEVICES: Readonly<Record<DeviceId, DeviceDescriptor>> = {
       dockSlots: 6,
       drawerColumns: 8
     },
-    // The lock screen follows the passcode row, which is per device only once MICA-264
-    // gives a tablet its own identity; calls and the camera are the phone's. The power
-    // and volume keys are not: a tablet has them like any other handheld, and without
-    // them the only way to put this one down was its keybind.
+    // The lock screen follows the passcode row, which is per device since MICA-264 gave a
+    // tablet its own identity; calls and the camera are the phone's. The power and volume
+    // keys are not: a tablet has them like any other handheld, and without them the only
+    // way to put this one down was its keybind.
     chrome: {
       holePunch: false,
       hardwareButtons: true,
-      lockScreen: false,
+      lockScreen: true,
       calls: false,
       camera: false
     },

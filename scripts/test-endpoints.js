@@ -85,6 +85,7 @@ const FLOW_CHECKS = {
   lineText: { standalone: 13, qb: 13 },
   sendMessage: { standalone: 12, qb: 12 },
   qbMail: { standalone: 10, qb: 10 },
+  devices: { standalone: 27, qb: 31 },
   privacy: { standalone: 13, qb: 13 }
 };
 const MINIMUM_CHECKS = Object.values(FLOW_CHECKS).reduce(
@@ -180,6 +181,7 @@ const NOBODY = 3;
  */
 const createQbCore = () => {
   const loaded = new Map();
+  const items = new Map();
   const core = {
     Functions: {
       GetPlayer: (src) => loaded.get(Number(src)) ?? null,
@@ -199,6 +201,12 @@ const createQbCore = () => {
     return {
       PlayerData,
       Functions: {
+        // What a qb player answers for an item (MICA-264's tablet gate). Nobody holds anything
+        // unless a flow puts it in `items`, so an unset item convar is the only gate in use.
+        GetItemByName: (name) => {
+          const amount = items.get(`${person.citizenid}:${name}`) ?? 0;
+          return amount > 0 ? { name, amount } : null;
+        },
         GetMoney: (type) => PlayerData.money[type],
         RemoveMoney: (type, amount) => {
           if (PlayerData.money[type] < amount) return false;
@@ -229,6 +237,7 @@ const createQbCore = () => {
       return player;
     },
     unload: (src) => loaded.delete(src),
+    give: (person, name, amount) => items.set(`${person.citizenid}:${name}`, amount),
     bank: (src) => loaded.get(src)?.PlayerData.money.bank
   };
 };
@@ -302,13 +311,21 @@ const startShape = async ({ db, kind }) => {
 
   let nextCb = 0;
   /**
-   * A NUI round trip as the client relay makes it: `emitNet(request, cbId, data)`, then the
-   * reply on the derived response event for this source and this callback id.
+   * A NUI round trip as the client relay makes it: `emitNet(request, cbId, data[, device])`,
+   * then the reply on the derived response event for this source and this callback id.
    */
-  const call = async (src, service, action, data) => {
+  const call = async (src, service, action, data, ...device) => {
     const cbId = `endpoints-${++nextCb}`;
     const mark = runtime.sent.length;
-    const ran = await runtime.fire(src, bundle.requestEventFor(service, action), cbId, data);
+    // MICA-264: a request's optional third argument names the device it speaks for. `device`
+    // is a rest list so that "absent", which means the phone, is told apart from `undefined`.
+    const ran = await runtime.fire(
+      src,
+      bundle.requestEventFor(service, action),
+      cbId,
+      data,
+      ...device
+    );
     await settle();
     if (ran === 0) throw new Error(`nothing handles ${service}:${action}`);
     const reply = runtime
@@ -1739,6 +1756,171 @@ const runQbMail = async (shape, live) => {
 };
 
 /**
+ * MICA-264: a request names the device it speaks for, and each device is its own identity.
+ *
+ * Nothing in the in-server suite connects as a client, so this is where the acceptance is
+ * proved, through the real handlers and real SQL: four identities (two characters, a phone and
+ * a tablet each) that never see one another's notes or settings; mail that follows the citizen
+ * rather than the device; and the refusals a client can be handed. On standalone there is no
+ * item gate, so a tablet request resolves to the citizen's identity tablet; the "holds none"
+ * refusal needs an inventory and is qb's alone.
+ */
+const runDevices = async (shape, live) => {
+  const { kind } = shape;
+  const { A, B } = live;
+  const people = { A: PEOPLE[1], B: PEOPLE[2] };
+  const identities = [
+    ['A phone', A, undefined],
+    ['A tablet', A, 'tablet'],
+    ['B phone', B, undefined],
+    ['B tablet', B, 'tablet']
+  ];
+  // `undefined` is "no third argument", which is every client from before the tablet.
+  const as = (device) => (device === undefined ? [] : [device]);
+  const titles = async (src, device) =>
+    (await shape.call(src, 'notes', 'get', {}, ...as(device))).map((n) => n.title).sort();
+  const probe = async (src, device) =>
+    (await shape.call(src, 'settings', 'getAll', undefined, ...as(device)))
+      .filter((row) => row.app === 'probe')
+      .map((row) => `${row.setting_key}=${row.setting_value}`)
+      .sort();
+
+  step(`${kind}: four identities each write a note and a setting`);
+  for (const [name, src, device] of identities) {
+    const made = await shape.call(
+      src,
+      'notes',
+      'create',
+      { title: name, content: 'x' },
+      ...as(device)
+    );
+    check(`${kind}: ${name} creates a note`, typeof made?.id, 'number');
+    check(
+      `${kind}: ${name} sets a preference`,
+      await shape.call(
+        src,
+        'settings',
+        'set',
+        { app: 'probe', key: 'who', value: JSON.stringify(name) },
+        ...as(device)
+      ),
+      true
+    );
+  }
+  for (const [name, src, device] of identities) {
+    check(`${kind}: ${name} reads back only its own note`, await titles(src, device), [name]);
+    check(`${kind}: and only its own preference`, await probe(src, device), [
+      `who=${JSON.stringify(name)}`
+    ]);
+  }
+  const phoneIds = await shape.rows(
+    "SELECT `citizenid`, `kind`, COUNT(*) AS n FROM `mica_phones` WHERE `status` = 'active' AND `citizenid` IN (?, ?) GROUP BY `citizenid`, `kind` ORDER BY `citizenid`, `kind`",
+    [shape.citizenOf(people.A), shape.citizenOf(people.B)]
+  );
+  check(
+    `${kind}: each character has a tablet identity of its own beside the phone's`,
+    phoneIds
+      .filter((r) => r.kind === 'tablet')
+      .map((r) => r.citizenid)
+      .sort(),
+    [shape.citizenOf(people.A), shape.citizenOf(people.B)].sort()
+  );
+
+  step(`${kind}: mail follows the citizen, not the device`);
+  for (const [who, person] of Object.entries(people)) {
+    await shape.invoke('fake_other', 'SendSystemEmail', shape.citizenOf(person), {
+      sender: 'Probe',
+      subject: `For ${who}`,
+      content: `body ${who}`
+    });
+  }
+  // Only this flow's own mail: the qb-phone flow before it left some in the same inboxes.
+  const mailOf = async (src, device) =>
+    (await shape.call(src, 'mail', 'getMail', undefined, ...as(device)))
+      .map((m) => m.subject)
+      .filter((subject) => subject.startsWith('For '))
+      .sort();
+  check(
+    `${kind}: A reads the same mail from the phone and the tablet`,
+    [await mailOf(A, undefined), await mailOf(A, 'tablet')],
+    [['For A'], ['For A']]
+  );
+  check(
+    `${kind}: and B's, from both, is B's alone`,
+    [await mailOf(B, undefined), await mailOf(B, 'tablet')],
+    [['For B'], ['For B']]
+  );
+
+  step(`${kind}: what a request is refused`);
+  const generic = { error: 'Something went wrong. Try again in a moment.', key: 'server.generic' };
+  const before = (await shape.rows('SELECT COUNT(*) AS n FROM `mica_notes`'))[0].n;
+  check(
+    `${kind}: a device that is not one gets the generic refusal`,
+    await shape.call(A, 'notes', 'create', { title: 'laptop', content: 'x' }, 'laptop'),
+    generic
+  );
+  check(
+    `${kind}: and so does one that is not even a string`,
+    await shape.call(A, 'notes', 'get', {}, { device: 'tablet' }),
+    generic
+  );
+  check(
+    `${kind}: and neither wrote a note`,
+    (await shape.rows('SELECT COUNT(*) AS n FROM `mica_notes`'))[0].n,
+    before
+  );
+  check(
+    `${kind}: a tablet request to a phone-only service is refused as unsupported`,
+    (await shape.call(A, 'contacts', 'get', {}, 'tablet'))?.key,
+    'server.device.unsupported'
+  );
+  check(
+    `${kind}: where the same request from the phone is answered`,
+    Array.isArray(await shape.call(A, 'contacts', 'get', {})),
+    true
+  );
+
+  shape.runtime.setConvar('mica_tablet', 'false');
+  check(
+    `${kind}: a tablet request while mica_tablet is false is refused as off`,
+    (await shape.call(A, 'notes', 'get', {}, 'tablet'))?.key,
+    'server.device.off'
+  );
+  check(`${kind}: and the phone is unaffected`, await titles(A, undefined), ['A phone']);
+  shape.runtime.setConvar('mica_tablet', undefined);
+  check(`${kind}: back on, the tablet answers with its own note again`, await titles(A, 'tablet'), [
+    'A tablet'
+  ]);
+
+  if (shape.qb) {
+    // An inventory exists only on qb here: a stand-in whose players hold nothing until told.
+    shape.runtime.setConvar('mica_tablet_item', 'probe_tablet');
+    check(
+      `${kind}: with a tablet item configured and none held, a tablet request is refused as not held`,
+      (await shape.call(A, 'notes', 'get', {}, 'tablet'))?.key,
+      'server.device.notHeld'
+    );
+    check(
+      `${kind}: and so is one to a service that is not device-owned`,
+      (await shape.call(A, 'mail', 'getMail', undefined, 'tablet'))?.key,
+      'server.device.notHeld'
+    );
+    check(
+      `${kind}: while the phone, which has no item configured, is answered`,
+      await titles(A, undefined),
+      ['A phone']
+    );
+    shape.qb.give(people.A, 'probe_tablet', 1);
+    check(
+      `${kind}: holding one, the same tablet request is not refused as not held`,
+      Array.isArray(await shape.call(A, 'mail', 'getMail', undefined, 'tablet')),
+      true
+    );
+    shape.runtime.setConvar('mica_tablet_item', undefined);
+  }
+};
+
+/**
  * MICA-168: a player's export is their own rows, and their delete removes them while another
  * player's — including their messages in a thread the deleter started — stay as they were.
  * Last, because it deletes 1's data.
@@ -1869,6 +2051,7 @@ const runShape = async (db, kind) => {
     await flow(shape, 'lineText', () => runLineText(shape, numbers, live));
     await flow(shape, 'sendMessage', () => runSendMessage(shape, numbers, live));
     await flow(shape, 'qbMail', () => runQbMail(shape, live));
+    await flow(shape, 'devices', () => runDevices(shape, live));
     await flow(shape, 'privacy', () => runPrivacy(shape, live));
   } finally {
     await shape.stop();

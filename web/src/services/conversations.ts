@@ -450,7 +450,10 @@ function createMessagesStore() {
       };
 
       try {
-        const sent = await call(messagesContract, 'send', payload);
+        // Always the phone's (MICA-264): Messages is a phone app on a phone-only service, and
+        // a reply can be sent from an incoming-message toast while the tablet is up
+        // (`shell/nuiMessages.ts`), where `fetchNui`'s stamp would name the tablet.
+        const sent = await call(messagesContract, 'send', payload, { device: 'phone' });
         if (!sent) return null;
 
         let replyToMsg: UIMessage | null = null;

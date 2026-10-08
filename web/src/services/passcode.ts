@@ -2,9 +2,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { writable } from 'svelte/store';
+import { get, writable } from 'svelte/store';
 import { call, callOr } from '../nui/call';
 import { lockscreenContract } from '@mica/shared/contracts/lockscreen';
+import { DEFAULT_DEVICE, type DeviceId } from '@mica/shared/devices';
+import { activeDevice } from '../shell/state/device';
 
 /**
  * The lock screen's passcode, entirely server-side (MICA-60).
@@ -26,29 +28,72 @@ import { lockscreenContract } from '@mica/shared/contracts/lockscreen';
  */
 export const hasPasscode = writable(false);
 
+/**
+ * Which device `hasPasscode` answers for, or `null` while nobody knows (MICA-264).
+ *
+ * The passcode is per device, so the answer is too, and one that belongs to the phone says
+ * nothing about the tablet. A device switch clears this (`forgetPasscodeAnswer`) before it
+ * asks again, and `evaluateLockOnOpen` treats an answer for another device as no answer —
+ * otherwise the tablet would open unlocked, or locked, on the phone's.
+ *
+ * Starts as the phone's, which is what the shell has always assumed at page load: `false`
+ * until `Shell.svelte`'s mount asks, with the whole time before first open to answer.
+ */
+export const passcodeAnswerFor = writable<DeviceId | null>(DEFAULT_DEVICE);
+
+/** Called by a device switch: the answer on hand is the other device's, so it is no answer. */
+export const forgetPasscodeAnswer = (): void => {
+  hasPasscode.set(false);
+  passcodeAnswerFor.set(null);
+};
+
+/**
+ * Ask whether the active device has a passcode. An answer that lands after the player has
+ * already moved to the other device is dropped rather than applied to it.
+ */
 export const refreshPasscodeStatus = async (): Promise<void> => {
+  const device = get(activeDevice);
   try {
-    const reply = await callOr(lockscreenContract, 'status', undefined, {
-      hasPasscode: false
-    });
+    const reply = await callOr(
+      lockscreenContract,
+      'status',
+      undefined,
+      { hasPasscode: false },
+      { device }
+    );
+    if (get(activeDevice) !== device) return;
     hasPasscode.set(reply?.hasPasscode === true);
+    passcodeAnswerFor.set(device);
   } catch (e) {
     console.warn('Could not read passcode status; leaving the last known answer.', e);
+    // The lock is a display state, not a boundary (above): a device whose answer could not
+    // be read is treated as having none, rather than locked behind a passcode nobody can
+    // check — which is what it did before the answer was per device, too.
+    if (get(activeDevice) === device) passcodeAnswerFor.set(device);
   }
 };
 
 /** Set or replace the passcode. `digits` is 4 or 6 characters, `0`-`9` only. */
 export const setPasscodeRemote = async (digits: string): Promise<void> => {
-  await call(lockscreenContract, 'set', { passcode: digits });
+  const device = get(activeDevice);
+  await call(lockscreenContract, 'set', { passcode: digits }, { device });
+  if (get(activeDevice) !== device) return;
   hasPasscode.set(true);
+  passcodeAnswerFor.set(device);
 };
 
 export const clearPasscodeRemote = async (): Promise<void> => {
-  await call(lockscreenContract, 'clear', undefined);
+  const device = get(activeDevice);
+  await call(lockscreenContract, 'clear', undefined, { device });
+  if (get(activeDevice) !== device) return;
   hasPasscode.set(false);
+  passcodeAnswerFor.set(device);
 };
 
-/** The one question the lock screen asks. Never throws on a wrong guess — only on a dead transport. */
+/**
+ * The one question the lock screen asks. Never throws on a wrong guess — only on a dead
+ * transport. Unstamped on purpose: the lock screen on screen is the active device's.
+ */
 export const checkPasscodeRemote = async (digits: string): Promise<boolean> => {
   const reply = await call(lockscreenContract, 'check', { passcode: digits });
   return reply?.ok === true;

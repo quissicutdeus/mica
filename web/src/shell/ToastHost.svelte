@@ -13,6 +13,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import SendIcon from '../../../sdk/ui/icons/SendIcon.svelte';
   import Avatar from '../../../sdk/ui/Avatar.svelte';
   import { appRegistryStore } from './state/registry';
+  import { activeDevice } from './state/device';
+  import { manifestSupportsDevice } from '../lib/phone/appVisibility';
   import SwipeableToast from './SwipeableToast.svelte';
 
   let toasts = $derived($toast);
@@ -24,6 +26,25 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * message all wait their turn.
    */
   let isCall = $derived(toasts[0]?.type === 'call');
+
+  /**
+   * Whether the device on screen can act on this toast (MICA-264).
+   *
+   * A toast for an app this device does not show — the phone's incoming call, a shared
+   * contact, a message, all arriving while the tablet is up — still appears, so the player
+   * knows, but offers none of its actions: no Accept or Decline, no reply box, and no tap on
+   * the body that answers for them. Each of those acts as the phone, through a service the
+   * server refuses from the tablet. The player raises the phone to act, and because this is
+   * decided as the toast is drawn rather than when it was shown, the actions are there the
+   * moment the phone is up. A toast with no app, or one no manifest names (the shell's own),
+   * keeps its actions on any device.
+   */
+  const actionable = (t: ToastMessage | undefined): boolean => {
+    if (!t?.app) return true;
+    const manifest = appRegistryStore.getManifest(t.app);
+    return !manifest || manifestSupportsDevice(manifest, $activeDevice);
+  };
+  let canAct = $derived(actionable(toasts[0]));
 
   // Track local reply input state per toast ID
   let replyInputs = $state<Record<string, string>>({});
@@ -153,8 +174,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
            A toast whose actions are its own inner buttons stays presentational, so it
            does not put an extra stop in the tab order that leads nowhere. -->
     <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-    <!-- `role` and `tabindex` are both keyed on `t.onClick`, so the pairing is always
-           button+0 or presentation+none, and a presentational toast never takes a tab
+    <!-- `role` and `tabindex` are both keyed on `t.onClick && canAct`, so the pairing is
+           always button+0 or presentation+none, and a presentational toast never takes a tab
            stop. The compiler checks the two attributes independently and cannot see that
            they move together; splitting the element in two to prove it would duplicate
            forty lines of markup to satisfy a static analysis rather than a user. -->
@@ -167,7 +188,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           t.type
         )} duration-short ease-standard"
         onclick={async () => {
-          if (t.onClick) {
+          if (t.onClick && canAct) {
             await t.onClick();
           }
           toast.dismiss(t.id);
@@ -175,7 +196,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         onmouseenter={() => toast.pauseDismiss(t.id)}
         onmouseleave={() => toast.resumeDismiss(t.id, 4000)}
         onkeydown={(e) => {
-          if (!t.onClick || (e.key !== 'Enter' && e.key !== ' ')) return;
+          if (!t.onClick || !canAct || (e.key !== 'Enter' && e.key !== ' ')) return;
           // Only the toast body. A keypress from Accept, Decline or the reply box
           // belongs to that control, not to the toast behind it.
           if (e.target !== e.currentTarget) return;
@@ -187,8 +208,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         }}
         onfocusin={() => toast.pauseDismiss(t.id)}
         onfocusout={() => toast.resumeDismiss(t.id, 4000)}
-        role={t.onClick ? 'button' : 'presentation'}
-        tabindex={t.onClick ? 0 : undefined}
+        role={t.onClick && canAct ? 'button' : 'presentation'}
+        tabindex={t.onClick && canAct ? 0 : undefined}
       >
         <div class="flex items-start gap-3">
           {#if t.avatar || t.sender || t.type === 'message' || t.type === 'contact'}
@@ -250,7 +271,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           </button>
         </div>
 
-        {#if t.hasReplyInput}
+        {#if t.hasReplyInput && canAct}
           <!-- Inline Reply Input Box -->
           <div
             class="flex items-center gap-2 pt-1"
@@ -283,7 +304,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           </div>
         {/if}
 
-        {#if t.actions && t.actions.length > 0}
+        {#if t.actions && t.actions.length > 0 && canAct}
           <!-- Action Buttons -->
           <div
             class="flex items-center justify-end gap-2 pt-1"

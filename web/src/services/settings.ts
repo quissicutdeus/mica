@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { call, callOr } from '../nui/call';
+import type { DeviceId } from '@mica/shared/devices';
 import { settingsContract } from '@mica/shared/contracts/settings';
 import type { PhoneSetting } from '@mica/shared/types';
 
@@ -54,9 +55,18 @@ export const fetchSettings = (): Promise<PhoneSetting[]> =>
  * through `usePersisted` during the same boot window `fetchSettings` already accounts for
  * — before a character is selected — and "Player not authenticated" is the expected first
  * answer there too, not a failure worth a console warning.
+ *
+ * `device` is the identity the write belongs to (MICA-264), named by `settingsSync.ts`'s
+ * debounce because the write can flush after the device it was made on has been put away.
+ * Absent, `fetchNui` stamps the device on screen.
  */
-export const saveSetting = (app: string, key: string, value: string): Promise<boolean> =>
-  callOr(settingsContract, 'set', { app, key, value }, false, { quiet: true });
+export const saveSetting = (
+  app: string,
+  key: string,
+  value: string,
+  device?: DeviceId
+): Promise<boolean> =>
+  callOr(settingsContract, 'set', { app, key, value }, false, { quiet: true, device });
 
 export const removeSetting = (app: string, key: string): Promise<boolean> =>
   callOr(settingsContract, 'remove', { app, key }, false);

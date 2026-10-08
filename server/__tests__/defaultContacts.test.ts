@@ -30,7 +30,12 @@ vi.mock('../lib/FrameworkBridge', () => ({
   detectFramework: () => 'qbx'
 }));
 
-import { __resetPhoneState, identityPhone, resolvePhone } from '../services/Phones';
+import {
+  __resetPhoneState,
+  identityPhone,
+  phoneForRequest,
+  resolvePhone
+} from '../services/Phones';
 // Registers the seeding hook, which is the thing under test.
 import '../services/Contacts';
 import { MAX_DEFAULT_CONTACTS, __resetOwnerConfig } from '../lib/ownerConfig';
@@ -117,6 +122,36 @@ describe('seeding a new phone', () => {
 
     expect(resolution.status).toBe('active');
     expect(insertsInto('mica_contacts').map((row) => row.phone_id)).toEqual([CARRIED, CARRIED]);
+  });
+
+  it('seeds nothing onto a tablet, minted from its item or as its identity (MICA-264)', async () => {
+    convar.mica_tablet_item = 'tablet';
+    bridgeMock.itemSlots.mockImplementation((_p: unknown, item: string) =>
+      item === 'tablet' ? [{ slot: 5, metadata: {} }] : null
+    );
+
+    const fromItem = await phoneForRequest(SRC, CID, 'tablet');
+    await settle();
+    expect(insertsInto('mica_phones')).toEqual([
+      { citizenid: CID, phone_id: fromItem, kind: 'tablet', claimed: 1 }
+    ]);
+    expect(insertsInto('mica_contacts')).toEqual([]);
+
+    // And where no item can carry an id: the tablet's identity row, unseeded too.
+    __resetPhoneState();
+    dbMock.insert.mockClear();
+    bridgeMock.itemSlots.mockReturnValue(null);
+    const identity = await phoneForRequest(SRC, CID, 'tablet');
+    await settle();
+    expect(insertsInto('mica_phones')).toEqual([
+      { citizenid: CID, phone_id: identity, kind: 'tablet', claimed: 0 }
+    ]);
+    expect(insertsInto('mica_contacts')).toEqual([]);
+
+    // The phone beside it is seeded as ever, so the silence above is the tablet's alone.
+    const phone = await phoneForRequest(SRC, CID);
+    await settle();
+    expect(insertsInto('mica_contacts').map((row) => row.phone_id)).toEqual([phone, phone]);
   });
 
   it('seeds nothing when the owner set no contacts', async () => {

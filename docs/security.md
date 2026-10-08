@@ -579,6 +579,20 @@ by this list until someone re-weighs it.
   messages — is listed in `docs/schema-and-services.md`, and a table is moved
   onto the phone only by declaring `deviceOwned` on it.
 
+  **MICA-264 adds a second kind of device, and the kind is a claim too.** The
+  tablet item carries an id in the same metadata key, so a resource that can
+  write metadata could copy a phone's id onto a tablet item, or the reverse. A
+  carried id is therefore honoured only when its `mica_phones` row is of the
+  same `kind` as the item it came from; otherwise it is refused and a fresh one
+  minted, before any handover runs. A tablet never adopts an unclaimed row the
+  way a phone adopts the identity phone, and never gets a phone number. The
+  device a request names — the third argument of every `ServiceEndpoint` event —
+  is attacker-controlled as well, and only ever chooses between the caller's own
+  identities: a value that is not a device is refused, a service answers only
+  the devices it declares (`devices` in `defineService`), and a request for the
+  tablet is refused unless the tablet is switched on and the caller holds one. A
+  request naming no device is the phone, as every client before MICA-264 sent.
+
 - **Owner-scoped actions reachable beyond what the UI offers.** A modified
   client can invoke any registered action against its own rows. Closing that
   entirely would mean an allowlist per action on top of the access axes that

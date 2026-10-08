@@ -2,8 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { writable, derived } from 'svelte/store';
+import { writable, derived, get } from 'svelte/store';
 import type { NotificationItem } from '@mica/shared/types';
+import { DEFAULT_DEVICE } from '@mica/shared/devices';
+import { activeDevice } from '../shell/state/device';
 import { callOr } from '../nui/call';
 import { notificationsContract } from '@mica/shared/contracts/notifications';
 import { subscribeAppEvent } from '../shell/state/appEvents';
@@ -99,8 +101,17 @@ export async function restoreNotifications(ids: number[]): Promise<void> {
   await loadUnreadCounts();
 }
 
-// Module-scope subscription so notifications and unread badges refresh on incoming app events
+/**
+ * Module-scope subscription so notifications and unread badges refresh on incoming app events.
+ *
+ * The phone's only (MICA-264). `notifications` is a phone service, refused from any other
+ * device, and the stores above hold one identity, the active device's — so with the tablet up
+ * a push does not ask, rather than asking as the tablet and being refused, or asking as the
+ * phone and showing the phone's shade on the tablet. A switch back to the phone re-runs the
+ * bootstrap (`shell/state/deviceIdentity.ts`), which reads the counts again.
+ */
 subscribeAppEvent('*', '*', () => {
+  if (get(activeDevice) !== DEFAULT_DEVICE) return;
   void loadUnreadCounts();
   void loadShadeNotifications();
 });

@@ -17,7 +17,8 @@ export default defineApp({
   // 'app-events' also carries `line_message`, a job line's inbox changing (MICA-307).
   // 'notifications': the toast a refused switch or duty change explains itself with.
   // 'contacts': a caller's saved name in a job line's inbox, as Messages shows it.
-  permissions: ['jobs', 'call', 'app-events', 'notifications', 'contacts'],
+  // `display` for which device is up: the line inbox's push re-read is the phone's (MICA-264).
+  permissions: ['jobs', 'call', 'app-events', 'notifications', 'contacts', 'display'],
   // Every job here comes from the framework bridge, which is simply absent in standalone
   // mode. Distinct from the `jobs` permission above: that discloses what this app reaches
   // for, this states what the server has to be able to do.

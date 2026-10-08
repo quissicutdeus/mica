@@ -45,3 +45,6 @@ line here.
   delete keeps the number; MICA-327 retry is process memory
 - [A catch spanning a write and its push lies](catch-spanning-a-write-and-its-push.md)
   — answers null for a row that exists; end the try at the write
+- [A defaulted column tripped the widen-resume check](additive-column-trips-widen-resume.md)
+  — resume skipped the additive pass until MICA-264 fixed it; run
+  test:migrations

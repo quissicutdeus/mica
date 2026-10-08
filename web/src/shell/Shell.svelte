@@ -75,8 +75,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { installMusicBroadcast } from '../services/music';
   import { evaluateLockOnOpen, noteLockScreenClosed } from './state/lockScreen';
   import { refreshPasscodeStatus } from '../services/passcode';
+  import { installDeviceIdentity } from './state/deviceIdentity';
 
   installSystemHost();
+
+  // A phone and a tablet are two identities (MICA-264), so every `setActiveDevice` below —
+  // the client's `setVisible`, a notification tap, the browser's keys and `?device=` — is a
+  // full rehydrate against the new one, passcode first. Installed here, once, for the life of
+  // the page, like the music broadcast; `state/deviceIdentity.ts` has the order and why.
+  installDeviceIdentity();
 
   // Tell the server what this phone is playing out loud, so the people standing next to it
   // hear it (MICA-111 phase 2). Installed here rather than imported for its side effect:

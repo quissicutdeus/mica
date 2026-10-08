@@ -32,6 +32,7 @@ import { SDK_CONTRACT_VERSION } from '../../../../sdk/version';
 import { MICA_ADDON_MOCK_MARKER } from '@mica/shared/addonDev';
 import { toast } from './toast';
 import { disabledAppIds } from './ownerConfig';
+import { activeDevice } from './device';
 
 /**
  * Whether the owner has disabled `appId` (MICA-234). Read fresh at every call site below
@@ -676,6 +677,23 @@ function assertCapabilitiesAvailable(manifest: AppManifest): void {
 }
 
 /**
+ * MICA-264: refuse an add-on the device it is being installed on does not run.
+ *
+ * A phone and a tablet keep installs of their own, so an install lands on the device that
+ * made it — and one whose manifest `devices` leaves that device out would sit in its list
+ * with an icon no surface could ever show (`lib/phone/appVisibility.ts`). The Store shows
+ * such an add-on as unavailable rather than offering it (`apps/store/appInfo.ts`); this is
+ * the half that holds for a caller that reaches `registerAddOn` some other way. Absent
+ * `devices` is the phone alone, as everywhere else. Worded for the player, like the
+ * capability refusal above, because `useAppAction`'s `run` toasts it.
+ */
+function assertDeviceSupported(manifest: AppManifest): void {
+  const device = get(activeDevice);
+  if ((manifest.devices ?? [DEFAULT_DEVICE]).includes(device)) return;
+  throw new Error(`${manifest.name} is not available on this device.`);
+}
+
+/**
  * The manifest a catalog entry stands for — built from `entry` and nothing else, never from
  * anything the fetched bundle claims to be. Shared by `installVerified` and the dev add-on
  * loader (MICA-311), so the two cannot disagree on what an entry means.
@@ -888,6 +906,7 @@ function createAppRegistry() {
       }
       assertContractSupported(validatedManifest);
       assertCapabilitiesAvailable(validatedManifest);
+      assertDeviceSupported(validatedManifest);
       assertServicesUnclaimed(validatedManifest, get(installed));
       if (source !== undefined) {
         addOnSources.set(validatedManifest.id, source);
@@ -1193,10 +1212,43 @@ function createAppRegistry() {
      * immediately and leaves the fetch to `getAddOnSource`, lazily, on first open.
      */
     installedAddOnIds.subscribe((ids) => {
+      /**
+       * MICA-264: and drop a bundled add-on the list no longer names. A device switch
+       * rehydrates this key with the other device's list — a tablet keeps installs of its
+       * own — and an add-on the phone installed must not stay registered on the tablet. A
+       * character switch is the same case, and used to leave the last character's add-ons
+       * in the launcher until a reload.
+       *
+       * The runtime registration only, never `unregisterApp`: that clears the add-on's
+       * storage and withdraws its consent, which are the *other* identity's rows and
+       * still theirs. A remote install (`bundleUrl`) and a dev add-on are not on this list
+       * at all, so neither is touched.
+       */
+      const listed = new Set(ids);
+      const stale = get(installed).filter(
+        (a) =>
+          !a.core &&
+          !a.bundleUrl &&
+          addOnIds.has(a.id) &&
+          !devAddOnGrants.has(a.id) &&
+          !listed.has(a.id)
+      );
+      if (stale.length > 0) {
+        for (const app of stale) {
+          addOnSources.delete(app.id);
+          sourceLoads.delete(app.id);
+        }
+        const staleIds = new Set(stale.map((a) => a.id));
+        update((apps) => apps.filter((a) => !staleIds.has(a.id)));
+      }
+
       for (const id of ids) {
         if (get(installed).some((a) => a.id === id)) continue;
         const manifest = addOns.find((a) => a.id === id);
         if (!manifest) continue; // no longer part of this build
+        // MICA-264: listed for a device that does not run it — refused at install, so only
+        // a list from before that check; left listed, and not registered here.
+        if (!(manifest.devices ?? [DEFAULT_DEVICE]).includes(get(activeDevice))) continue;
         // MICA-201: the one-time migration for an install that predates the shell's
         // consent record. A no-op once a grant exists — see `adoptExistingGrant` — so it
         // can never re-widen one, and it runs *before* the registration so the frame this

@@ -35,12 +35,12 @@ describe('appsOnScreen', () => {
     expect(get(appsOnScreen)).toBe(true);
   });
 
-  it('is false on the phone under the lock screen, and true on the tablet, which has none', () => {
+  it('is false under the lock screen on either device, since the tablet has one (MICA-264)', () => {
     isLocked.set(true);
     openDevice.set('phone');
     expect(get(appsOnScreen)).toBe(false);
     openDevice.set('tablet');
-    expect(get(appsOnScreen)).toBe(true);
+    expect(get(appsOnScreen)).toBe(false);
   });
 
   it('is false on either device with a dead battery', () => {

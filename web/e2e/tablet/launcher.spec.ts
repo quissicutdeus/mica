@@ -22,19 +22,24 @@ test('Admin and Settings are on the tablet launcher and Messages is not', async 
   await expect(home.getByRole('button', { name: /Messages/i })).toHaveCount(0);
 });
 
-test('Notes, installed on the phone, is on the tablet too', async ({ page }) => {
-  // The Store is a phone app, so the install happens there; the installed set is the
-  // player's, not the device's, and the tablet's grid names Notes.
-  await seedHomeGrid(page, ['store']);
+test('Notes, installed on the phone, is not on the tablet', async ({ page }) => {
+  // MICA-264: a tablet keeps installs of its own. The tablet's grid names Notes, so the
+  // only thing keeping the icon off is that the tablet never installed it; the phone's own
+  // launcher is the control that the install did happen.
+  await seedHomeGrid(page, ['store', 'notes']);
   await seedHomeGrid(page, ['notes'], 'tablet');
   await gotoDevice(page, 'phone');
   await installAddOn(page, 'Notes');
-
-  await pressDeviceKey(page, 'tablet');
-  await settledFrameBox(page, 'tablet');
   await expect(
     page.getByRole('region', { name: 'Home Screen' }).getByRole('button', { name: /Notes/ })
   ).toBeVisible();
+
+  await pressDeviceKey(page, 'tablet');
+  await settledFrameBox(page, 'tablet');
+  await expect(page.getByRole('region', { name: 'Home Screen' })).toBeVisible();
+  await expect(
+    page.getByRole('region', { name: 'Home Screen' }).getByRole('button', { name: /Notes/ })
+  ).toHaveCount(0);
 });
 
 test('switching device keeps each device on the screen it was left on', async ({ page }) => {

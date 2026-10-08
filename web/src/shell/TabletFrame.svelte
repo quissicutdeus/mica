@@ -23,13 +23,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import DeadBatteryScreen from './frame/DeadBatteryScreen.svelte';
   import { wallpaperBackground } from './state/wallpaper';
   import { themeStyleStore } from './state/theme';
+  import { isLocked } from './state/lockScreen';
+  import LockScreen from './LockScreen.svelte';
 
   /**
    * The tablet's body (MICA-259): a 1280x800 landscape frame with a 12px bezel and a
    * tighter corner, drawn around the same status bar, home indicator and dead-battery
    * takeover the phone uses. What it does not have is what `shared/devices.ts` says it
-   * lacks — no hole-punch, no lock screen until the tablet has an identity of its own to
-   * lock (MICA-264), and no camera, so no transparent mode.
+   * lacks — no hole-punch, and no camera, so no transparent mode. It does have the lock
+   * screen, since MICA-264 gave the tablet an identity, and so a passcode, of its own.
    *
    * It does have the power and volume keys. They were left off when this frame was first
    * written and the omission was invisible: the keybind still put the tablet away, so
@@ -114,8 +116,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <RemoveTarget />
     <DragGhost />
 
+    <!-- The lock screen (MICA-264) as `PhoneFrame.svelte` draws it: a full-surface takeover
+         in place of the status bar and the apps, never over a dead battery. The same
+         `LockScreen` component — `absolute inset-0` against this screen, a centred column
+         whose widest piece is 300px, so it needs nothing of its own at 1256x776 — and the
+         same `{#if}` `appsOnScreen.ts` restates. -->
     {#if $isBatteryDead}
       <DeadBatteryScreen />
+    {:else if $isLocked}
+      <LockScreen />
     {:else}
       <StatusBar />
       <div class="h-full">

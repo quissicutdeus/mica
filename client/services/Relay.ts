@@ -2,7 +2,9 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { DeviceState } from '../lib/DeviceState';
 import { ServiceProxy } from '../lib/ServiceProxy';
+import { DEFAULT_DEVICE, type DeviceId } from '@mica/shared/devices';
 import { clientHookFor } from '../lib/clientHooks';
 import { ROUTES, serverEventFor } from '@mica/shared/routes';
 import { GENERIC_SERVICE_ACTION, parseGenericRequest, requestEventFor } from '@mica/shared/rpc';
@@ -26,13 +28,20 @@ import '@mica/shared/contracts';
  */
 const proxies = new Map<string, ServiceProxy>();
 
+/**
+ * The device a request speaks for when it does not say (MICA-264): the one on screen, since
+ * that is the only one whose page can be sending — and the phone when none is, which is
+ * also what the server assumes of a request with no device at all. Read per request.
+ */
+const openDeviceOrDefault = (): DeviceId => DeviceState.openDevice() ?? DEFAULT_DEVICE;
+
 for (const route of ROUTES) {
   let proxy = proxies.get(route.service);
   if (!proxy) {
     proxy = new ServiceProxy(route.service);
     proxies.set(route.service, proxy);
   }
-  proxy.registerCallback(route.action, serverEventFor(route));
+  proxy.registerCallback(route.action, serverEventFor(route), openDeviceOrDefault);
 }
 
 /**
@@ -91,5 +100,8 @@ on(`__cfx_nui:${GENERIC_SERVICE_ACTION}`, async (payload: unknown, cb: Function)
   // Per request rather than at startup, because which replies this will need is not
   // knowable until one arrives. Deduped inside the proxy, so it is free after the first.
   proxy.ensureSubscribed(request.action);
-  proxy.relay(request.action, requestEventFor(request.service, request.action), data, cb);
+  // `parseGenericRequest` already refused a device that is not ours; an absent one means
+  // the page did not say, so the one on screen speaks.
+  const device = request.device ?? openDeviceOrDefault();
+  proxy.relay(request.action, requestEventFor(request.service, request.action), data, device, cb);
 });

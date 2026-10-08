@@ -11,9 +11,14 @@ export default defineApp({
   icon: Icon,
   author: 'micaOS',
   description: 'Browse, install, and manage micaOS community apps and permissions',
-  permissions: ['app-registry', 'app-registry-write', 'navigation', 'storage'],
+  // `display` for which device the Store is open on: an add-on that device does not run is
+  // shown unavailable rather than offered (MICA-264).
+  permissions: ['app-registry', 'app-registry-write', 'navigation', 'storage', 'display'],
   requiresNetwork: true,
   core: true,
+  // MICA-264: a tablet keeps installs of its own, so it needs its own Store to make them.
+  // `tablet.svelte` is the second root: the catalog beside the selected app's details.
+  devices: ['phone', 'tablet'],
   /**
    * Installed add-ons the catalog has moved past (MICA-74).
    *

@@ -710,7 +710,7 @@ you intend to change something.
 set mica_standalone ""
 set mica_auto_schema 1
 set mica_phone_item ""
-set mica_tablet "false"
+set mica_tablet "true"
 set mica_tablet_item ""
 set mica_battery_item "battery_bank"
 set mica_battery_item_charge 100
@@ -771,7 +771,7 @@ set mica_location_interval 5
 | `mica_standalone`                  | boolean                                                 | empty (off)                         | Run with no framework resource at all                                                                                                 |
 | `mica_auto_schema`                 | boolean                                                 | `1` (on)                            | Create micaOS's schema on first start when the database holds none of its tables                                                      |
 | `mica_phone_item`                  | item name                                               | empty (off)                         | Gate the phone on holding this inventory item                                                                                         |
-| `mica_tablet`                      | boolean                                                 | `false` (off)                       | Turn the tablet on; the phone is always on. Off until the tablet has an identity of its own (MICA-264)                                |
+| `mica_tablet`                      | boolean                                                 | `true` (on)                         | Turn the tablet on; the phone is always on. A tablet has its own identity and no phone number (MICA-264)                              |
 | `mica_tablet_item`                 | item name                                               | empty (off)                         | Gate the tablet on holding this inventory item; independent of `mica_phone_item`                                                      |
 | `mica_battery_item`                | item name                                               | `battery_bank`                      | Item that recharges the phone; empty turns it off                                                                                     |
 | `mica_battery_item_charge`         | integer, 1-100                                          | `100`                               | Percent one use of that item adds                                                                                                     |
@@ -1557,11 +1557,21 @@ way, and the phone is left open rather than locked for everyone.
 ### The tablet
 
 micaOS can also be a tablet: a second device, opened with `F2` by default, laid
-out for a 1280x800 frame, shipping Admin, Settings and Notes. Set
-`mica_tablet "true"` to turn it on. It is **off by default**, and will stay off
-until the tablet has an identity of its own (MICA-264): until then it has no
-phone number, and whatever it stores belongs to the character, so an owner who
-turns it on now accepts that its data may move when that ticket lands.
+out for a 1280x800 frame, shipping Admin, Settings, Notes and the Store. It is
+**on by default**; set `mica_tablet "false"` to turn it off.
+
+A tablet is a device of its own, not a second screen on the phone. It has its
+own identity and no phone number: calls, messages, contacts, mail, the camera,
+Bank and Hodlr stay on the phone. Notes, Settings, the Store and the lock screen
+are the tablet's own, so its notes, its preferences, the add-ons installed from
+its Store and its passcode are separate from the phone's. Admin reads the same
+on either device. An add-on installed from a remote catalog is the exception:
+that list is kept by the player's game client, so it shows on both devices.
+
+Without `mica_tablet_item` (the default) a character has exactly one tablet,
+which nobody can hand to anyone else. With it, the tablet is the item: its id is
+written into the item's metadata the first time it is used, and a tablet passed
+to another character carries its data with it, as a phone does.
 
 `mica_tablet_item` gates it on an inventory item exactly as `mica_phone_item`
 gates the phone (above), and the two are independent: holding a phone does not
@@ -1575,10 +1585,8 @@ and `OpenApp` take an optional trailing `device` (`'phone'` or `'tablet'`),
 defaulting to the phone, so every existing caller is unchanged. A device that is
 not one of those is refused with `invalid_args`, never read as the phone.
 `OpenApp` with no device opens the phone. With a `device` of `'tablet'`, every
-one of these exports fails with `disabled` while `mica_tablet` is off, and
-`LockPhone`, `UnlockPhone` and `IsPhoneLocked` fail with `unsupported` even when
-it is on, because the tablet has no lock screen until it gets its own identity;
-the phone is unaffected by either.
+one of these exports fails with `disabled` while `mica_tablet` is off, and locks
+or reads the tablet's own lock screen when it is on; the phone is unaffected.
 
 ### The battery bank
 

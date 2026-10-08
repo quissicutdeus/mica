@@ -5,6 +5,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { get } from 'svelte/store';
 import { conversationsStore } from './conversations';
+import { fetchNui } from '../nui/fetchNui';
+import { setActiveDevice } from '../shell/state/device';
 
 /**
  * The inbox the mock server holds, and the requests it was asked for.
@@ -282,6 +284,31 @@ describe('messages store', () => {
     const line = get(conversationsStore.messages)[2].find((m) => m.id === 203);
     expect(line?.sender).toBe('other');
     expect(line?.external_sender).toBe('Downtown Cab');
+  });
+
+  /**
+   * MICA-264: a reply can be sent from an incoming-message toast while the tablet is up, and
+   * Messages is a phone service the server refuses from the tablet — so a send always names
+   * the phone rather than taking `fetchNui`'s stamp of the device on screen.
+   */
+  it('sends as the phone, even while the tablet is up', async () => {
+    await conversationsStore.loadConversations();
+    const before = vi.mocked(fetchNui).mock.calls.length;
+
+    setActiveDevice('tablet');
+    try {
+      await conversationsStore.sendMessage(1, 'On my way');
+    } finally {
+      setActiveDevice('phone');
+    }
+
+    const sends = vi
+      .mocked(fetchNui)
+      .mock.calls.slice(before)
+      .filter(([, envelope]) => (envelope as { action?: string })?.action === 'send');
+    expect(sends).toHaveLength(1);
+    expect((sends[0][1] as { service: string; device?: string }).service).toBe('messages');
+    expect((sends[0][1] as { device?: string }).device).toBe('phone');
   });
 
   it('sends message, updates conversation snippet, and sorts conversation to top', async () => {

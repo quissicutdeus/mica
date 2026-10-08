@@ -3,12 +3,26 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { randomBytes } from 'node:crypto';
+import {
+  ALL_DEVICES,
+  DEFAULT_DEVICE,
+  DEVICES,
+  isDeviceId,
+  type DeviceId
+} from '@mica/shared/devices';
 import { Database } from '../lib/Database';
 import { defineService, phoneKeyedRepositories } from '../lib/defineService';
 import { PlayerFacingError } from '../lib/errors';
 import { FrameworkBridge } from '../lib/FrameworkBridge';
+import type { FrameworkPlayer } from '../lib/framework/runtime';
 import { installPhoneResolvers } from '../lib/phoneIdentity';
-import { lastUsedPhoneSlot, phoneItemName } from '../lib/deviceItem';
+import {
+  deviceItemName,
+  holdsDevice,
+  isDeviceEnabled,
+  lastUsedDeviceSlot,
+  onDeviceStateChanged
+} from '../lib/deviceItem';
 
 /**
  * The phone as a thing with an identity of its own (MICA-280, on MICA-279's seam), and the
@@ -30,6 +44,14 @@ import { lastUsedPhoneSlot, phoneItemName } from '../lib/deviceItem';
  * unclaimed phone as the citizen's *identity phone* for good: one phone per citizen, which is
  * exactly what they had before.
  *
+ * **A tablet is a row here too** (MICA-264), told apart by `kind`. It has an identity of its
+ * own — notes, settings and a lock screen of its own, keyed on its own id — but none of a
+ * phone's reach: every lookup that means "the citizen's phone" (`phoneForCitizen`,
+ * `identityPhone`, adoption) reads `kind = 'phone'` only, so an offline call log or a
+ * notification never lands on a tablet, and a tablet never gets a number. The `phone_id`
+ * column and the `phoneId` item-metadata key keep their names for both: renaming either is
+ * churn across every device-owned table for no change in meaning.
+ *
  * **Nothing here is reachable from a client.** Every generic action is off, so this
  * declaration registers no net event at all — a phone id is minted by the server and is never
  * something a payload sets, chooses or deletes (§2.9).
@@ -38,6 +60,8 @@ export interface PhoneRow {
   id: number;
   citizenid: string;
   phone_id: string;
+  /** Which device this is (MICA-264). Fixed when the row is minted; nothing changes it. */
+  kind: DeviceId;
   /** Bound to an inventory item, or still waiting for the first item its citizen uses. */
   claimed: number | boolean;
   status: string;
@@ -60,6 +84,21 @@ export const phones = defineService<PhoneRow>({
      * no reason to hand out a guessable one.
      */
     phone_id: { type: 'string', length: 32, notNull: true, clientWritable: false },
+    /**
+     * Which device this row is (MICA-264): one value per entry in `shared/devices.ts`.
+     *
+     * Defaulted to `'phone'`, which is what makes this additive with no backfill: every row
+     * that existed before the tablet had an identity is a phone. `micaschema apply`'s additive
+     * half adds it to a live table. No index of its own: every read that filters on it also
+     * names the citizen, whose `citizenid_status` key narrows to a handful of rows first.
+     */
+    kind: {
+      type: 'enum',
+      values: ALL_DEVICES,
+      notNull: true,
+      default: DEFAULT_DEVICE,
+      clientWritable: false
+    },
     /**
      * `0` until the phone is written into an inventory item; `1` from then on. A `tinyint`
      * rather than a nullable timestamp because MariaDB's implicit `NOT NULL` on `timestamp`
@@ -95,20 +134,37 @@ const PHONE_ID = /^[0-9a-f]{32}$/;
 
 const newPhoneId = (): string => randomBytes(16).toString('hex');
 
+/** One map per device kind (MICA-264): a phone and a tablet are two answers, never one. */
+const byKind = <K, V>(): Record<DeviceId, Map<K, V>> =>
+  Object.fromEntries(ALL_DEVICES.map((kind) => [kind, new Map<K, V>()])) as Record<
+    DeviceId,
+    Map<K, V>
+  >;
+
 /** Who this process last confirmed holds each phone, so the hot path is not a query. */
 const holderOf = new Map<string, string>();
-/** The phone each citizen most recently resolved to, for rows written on their behalf. */
-const activeByCitizen = new Map<string, string>();
 /**
- * The phone each connected source most recently resolved to (MICA-283), for the two callers
- * that need the answer **synchronously**: `LockState` keys the external lock on it, and the
- * battery's tick loop asks which phone a live charge belongs to. Keyed by source, so cleared
- * on `playerDropped` — FiveM reuses server ids, and a stale entry would key the next player's
- * lock and charge to a phone they have never held.
+ * Which kind each phone id is, once read or minted (MICA-264). A row's kind never changes, so
+ * this is never invalidated: it only saves the query that refuses a phone id carried on a
+ * tablet item, or the reverse.
  */
-const activeBySource = new Map<number, string>();
-/** Each citizen's identity phone, once found or minted. */
-const identityByCitizen = new Map<string, string>();
+const kindOf = new Map<string, DeviceId>();
+/** The device of each kind each citizen most recently resolved to, for rows written on their behalf. */
+const activeByCitizen = byKind<string, string>();
+/**
+ * The device of each kind each connected source most recently resolved to (MICA-283), for the
+ * two callers that need the answer **synchronously**: `LockState` keys the external lock on
+ * it, and the battery's tick loop asks which phone a live charge belongs to. Keyed by source,
+ * so cleared on `playerDropped` — FiveM reuses server ids, and a stale entry would key the
+ * next player's lock and charge to a device they have never held.
+ *
+ * Each entry names the citizen it was resolved for (MICA-264), so a resolve that cannot answer
+ * — no item gate, no character — can still tell an entry left by the character before a
+ * switch on the same source, and drop it. `forgetActive` has the rules.
+ */
+const activeBySource = byKind<number, { phoneId: string; citizenid: string }>();
+/** Each citizen's identity device of each kind, once found or minted. */
+const identityByCitizen = byKind<string, string>();
 
 /**
  * Whoever needs to move rows that `transferPhoneRows` cannot reach when a phone changes hands.
@@ -133,7 +189,8 @@ export const onPhoneHandover = (name: string, run: HandoverRun): void => {
 
 /**
  * Whoever sets a phone up the first time it exists (MICA-234) — `Contacts.ts`, which seeds the
- * owner's default contacts. Registered here rather than imported, for the reason the handover
+ * owner's default contacts. A hook is handed the new row's `kind` (MICA-264) and decides for
+ * itself what a tablet gets; the default contacts are a phone's, so a tablet gets none. Registered here rather than imported, for the reason the handover
  * hooks are: this file must not import the services that key on it.
  *
  * "New" means this server just inserted the phone's `mica_phones` row, which happens once per
@@ -160,7 +217,11 @@ export const onPhoneHandover = (name: string, run: HandoverRun): void => {
  * awaiting it — neither ever finishes, and every later uncached resolve of the phone waits
  * behind both. A hook is handed the phone id and the holder for exactly that reason.
  */
-type CreatedRun = (phoneId: string, citizenid: string) => Promise<unknown> | unknown;
+type CreatedRun = (
+  phoneId: string,
+  citizenid: string,
+  kind: DeviceId
+) => Promise<unknown> | unknown;
 type CreatedHook = { name: string; run: CreatedRun };
 const createdHooks: CreatedHook[] = [];
 
@@ -175,6 +236,8 @@ export const onPhoneCreated = (name: string, run: CreatedRun): void => {
  */
 interface OwedSetup {
   hooks: readonly CreatedHook[];
+  /** The kind the row was minted as, handed to every retry as it was to the first run. */
+  kind: DeviceId;
   failures: number;
   /** No retry before this; `Infinity` while one is already queued. */
   retryAt: number;
@@ -200,6 +263,7 @@ const holderNow = (phoneId: string, fallback: string): string =>
 const runCreated = async (
   phoneId: string,
   fallback: string,
+  kind: DeviceId,
   hooks: readonly CreatedHook[],
   owed: OwedSetup | undefined
 ): Promise<void> => {
@@ -213,7 +277,7 @@ const runCreated = async (
   const failed: CreatedHook[] = [];
   for (const hook of hooks) {
     try {
-      await hook.run(phoneId, citizenid);
+      await hook.run(phoneId, citizenid, kind);
     } catch (error) {
       failed.push(hook);
       console.error(
@@ -226,13 +290,14 @@ const runCreated = async (
   if (failed.length === 0) {
     owedSetup.delete(phoneId);
   } else {
-    owedSetup.set(phoneId, { hooks: failed, failures, retryAt: Date.now() + wait });
+    owedSetup.set(phoneId, { hooks: failed, kind, failures, retryAt: Date.now() + wait });
   }
 };
 
 /** The phone row was just inserted: queue every hook behind whatever the phone is doing. */
-const announceCreated = (phoneId: string, citizenid: string): void => {
-  void queueOnPhone(phoneId, () => runCreated(phoneId, citizenid, createdHooks, undefined));
+const announceCreated = (phoneId: string, citizenid: string, kind: DeviceId): void => {
+  kindOf.set(phoneId, kind);
+  void queueOnPhone(phoneId, () => runCreated(phoneId, citizenid, kind, createdHooks, undefined));
 };
 
 /**
@@ -247,7 +312,9 @@ const finishSetup = (phoneId: string, citizenid: string): void => {
   owed.retryAt = Number.POSITIVE_INFINITY;
   void queueOnPhone(phoneId, () => {
     const current = owedSetup.get(phoneId);
-    return current ? runCreated(phoneId, citizenid, current.hooks, current) : undefined;
+    return current
+      ? runCreated(phoneId, citizenid, current.kind, current.hooks, current)
+      : undefined;
   });
 };
 
@@ -327,12 +394,15 @@ const queueOnPhone = (phoneId: string, work: () => Promise<void> | void): Promis
 /** Test seam: module state that would otherwise leak between cases. Hooks are registrations and stay. */
 export const __resetPhoneState = (): void => {
   holderOf.clear();
+  kindOf.clear();
   pendingHandover.clear();
   settling.clear();
   owedSetup.clear();
-  activeByCitizen.clear();
-  activeBySource.clear();
-  identityByCitizen.clear();
+  for (const kind of ALL_DEVICES) {
+    activeByCitizen[kind].clear();
+    activeBySource[kind].clear();
+    identityByCitizen[kind].clear();
+  }
 };
 
 /**
@@ -343,10 +413,18 @@ export const __resetPhoneState = (): void => {
  * refreshes it, and so does the sync `deviceItem.ts` fires on load, use and inventory change,
  * so it is stale for at most the gap between using a phone and the server hearing about it.
  */
-export const activePhoneIdOf = (src: number): string | null => activeBySource.get(src) ?? null;
+export const activePhoneIdOf = (src: number): string | null =>
+  activeBySource.phone.get(src)?.phoneId ?? null;
+
+/**
+ * `activePhoneIdOf` for any device kind (MICA-264): the device of that kind a connected source
+ * last resolved to, or null. `LockState` keys a tablet's external lock on it.
+ */
+export const activeDeviceIdOf = (src: number, kind: DeviceId): string | null =>
+  activeBySource[kind].get(src)?.phoneId ?? null;
 
 on('playerDropped', () => {
-  activeBySource.delete(source);
+  for (const kind of ALL_DEVICES) activeBySource[kind].delete(source);
 });
 
 /** The phone a player is currently on. */
@@ -503,27 +581,62 @@ const recordHandover = (
  * no row in the usual case, **once per phone per process**: a walk that finishes is cached in
  * `holderOf` and nothing walks that phone again until it changes hands, which walks anyway.
  */
-const ensureHeld = (phoneId: string, citizenid: string): Promise<void> => {
+const ensureHeld = async (
+  phoneId: string,
+  citizenid: string,
+  kind: DeviceId
+): Promise<DeviceId | null> => {
+  // A row of another kind is refused before anything is written or walked (MICA-264): a phone
+  // id copied onto a tablet item must not hand the phone's rows to whoever holds the tablet.
+  const known = kindOf.get(phoneId);
+  if (known !== undefined && known !== kind) return known;
   // The hot path, answered without joining the queue: this holder is settled and nothing is
   // owed. Queuing it would make every resolve of a new phone wait behind its seed, which can be
   // minutes of lock waits (MICA-327). A read only — anything that could need writing (a new
-  // holder, a handover still owed, a first resolve) misses here and queues as before.
+  // holder, a handover still owed, a first resolve) misses here and queues as before. A
+  // settled holder means the row was read, so `known` is its kind here.
   if (!pendingHandover.has(phoneId) && holderOf.get(phoneId) === citizenid) {
-    return Promise.resolve();
+    return known ?? kind;
   }
-  return queueOnPhone(phoneId, () => settleHolder(phoneId, citizenid));
+  let heldAs: DeviceId | null = null;
+  await queueOnPhone(phoneId, async () => {
+    heldAs = await settleHolder(phoneId, citizenid, kind);
+  });
+  return heldAs;
 };
 
-const settleHolder = async (phoneId: string, citizenid: string): Promise<void> => {
+/**
+ * Settle the holder, and answer which kind the row is (MICA-264): `kind` when the row is the
+ * caller's kind or was just created as it, the row's own kind when that differs — in which case
+ * nothing is written, walked or claimed — and `null` when the row could not be read, so nobody
+ * can say. The one read of the row per phone per process is also the kind check, which is why
+ * the check lives here rather than in a query of its own before it.
+ */
+const settleHolder = async (
+  phoneId: string,
+  citizenid: string,
+  kind: DeviceId
+): Promise<DeviceId | null> => {
+  const known = kindOf.get(phoneId);
+  if (known !== undefined && known !== kind) return known;
   const pending = pendingHandover.get(phoneId);
   const owed = pending?.citizenid === citizenid ? pending : undefined;
-  if (owed ? Date.now() < owed.retryAt : holderOf.get(phoneId) === citizenid) return;
+  if (owed ? Date.now() < owed.retryAt : holderOf.get(phoneId) === citizenid) {
+    return known ?? kind;
+  }
 
+  let read = false;
   try {
     const [existing] = await repo.findAll({ phone_id: phoneId } as Partial<PhoneRow>);
+    read = true;
+    if (existing) {
+      const recorded = isDeviceId(existing.kind) ? existing.kind : DEFAULT_DEVICE;
+      kindOf.set(phoneId, recorded);
+      if (recorded !== kind) return recorded;
+    }
     if (!existing) {
-      await repo.create({ citizenid, phone_id: phoneId, claimed: 1 } as Partial<PhoneRow>);
-      announceCreated(phoneId, citizenid);
+      await repo.create({ citizenid, phone_id: phoneId, kind, claimed: 1 } as Partial<PhoneRow>);
+      announceCreated(phoneId, citizenid, kind);
     }
     let done = true;
     let stale = false;
@@ -543,16 +656,23 @@ const settleHolder = async (phoneId: string, citizenid: string): Promise<void> =
       if (done && !pendingHandover.has(phoneId)) holderOf.set(phoneId, citizenid);
       else holderOf.delete(phoneId);
     }
-    identityByCitizen.delete(citizenid);
+    identityByCitizen[kind].delete(citizenid);
+    return kind;
   } catch (error) {
     // Not fatal and not cached: the id is on the item either way, so the next resolve retries.
     console.error(`[mica] could not record the phone row for ${phoneId}`, error);
+    // Read and of this kind, or read and absent: still the caller's kind. Not read at all:
+    // nobody can say, and the caller decides what that costs.
+    return kindOf.get(phoneId) ?? (read ? kind : null);
   }
 };
 
-/** The citizen's phone that is bound to no item yet, or null. Lowest id when there are several. */
-const readUnclaimed = async (citizenid: string): Promise<PhoneRow | null> => {
-  const rows = await repo.findAll({ citizenid, claimed: 0 } as Partial<PhoneRow>);
+/**
+ * The citizen's device of this kind that is bound to no item yet, or null. Lowest id when there
+ * are several. By kind (MICA-264), so a phone item never adopts a tablet's identity row.
+ */
+const readUnclaimed = async (citizenid: string, kind: DeviceId): Promise<PhoneRow | null> => {
+  const rows = await repo.findAll({ citizenid, kind, claimed: 0 } as Partial<PhoneRow>);
   if (rows.length === 0) return null;
   return rows.reduce((lowest, row) => (row.id < lowest.id ? row : lowest));
 };
@@ -565,31 +685,41 @@ const readUnclaimed = async (citizenid: string): Promise<PhoneRow | null> => {
  * ungated qb server, standalone, es_extended's own inventory. On a gated server it is also
  * the phone the first item a citizen uses adopts, which is how the migration's backfill lands
  * on a real item; `resolvePhone` clears the cache below when that happens.
+ *
+ * **A tablet has one too** (MICA-264), for the same servers: one per citizen, `kind = 'tablet'`,
+ * minted the first time a tablet request finds no tablet item that can carry an id. Nothing
+ * adopts it — a tablet item always mints its own — so it stays the identity for good there.
  */
-export const identityPhone = async (citizenid: string): Promise<string> => {
-  const known = identityByCitizen.get(citizenid);
+const identityDevice = async (citizenid: string, kind: DeviceId): Promise<string> => {
+  const known = identityByCitizen[kind].get(citizenid);
   if (known) {
     finishSetup(known, citizenid);
     return known;
   }
 
-  const unclaimed = await readUnclaimed(citizenid);
+  const unclaimed = await readUnclaimed(citizenid, kind);
   let phoneId: string;
   if (unclaimed) {
     phoneId = unclaimed.phone_id;
+    kindOf.set(phoneId, kind);
     finishSetup(phoneId, citizenid);
   } else {
     phoneId = newPhoneId();
-    await repo.create({ citizenid, phone_id: phoneId, claimed: 0 } as Partial<PhoneRow>);
-    announceCreated(phoneId, citizenid);
+    await repo.create({ citizenid, phone_id: phoneId, kind, claimed: 0 } as Partial<PhoneRow>);
+    announceCreated(phoneId, citizenid, kind);
   }
-  identityByCitizen.set(citizenid, phoneId);
+  identityByCitizen[kind].set(citizenid, phoneId);
   return phoneId;
 };
 
+/** The citizen's identity phone — `identityDevice` for the phone, never a tablet. */
+export const identityPhone = (citizenid: string): Promise<string> =>
+  identityDevice(citizenid, 'phone');
+
 /**
  * The phone a citizen is on, for a row written on their behalf — a notification, a photo
- * dropped onto them, a contact a job hands them, a call logged against them.
+ * dropped onto them, a contact a job hands them, a call logged against them. Always a phone,
+ * never a tablet (MICA-264).
  *
  * Their active phone when this process has resolved one; else the phone they touched most
  * recently, which a handover and a claim both move `updated_at` for; else their identity
@@ -597,11 +727,14 @@ export const identityPhone = async (citizenid: string): Promise<string> => {
  * server: nothing is in hand to ask, and the phone they last used is the best answer there is.
  */
 export const phoneForCitizen = async (citizenid: string): Promise<string> => {
-  const active = activeByCitizen.get(citizenid);
+  const active = activeByCitizen.phone.get(citizenid);
   if (active) return active;
 
+  // Phones only (MICA-264): a call logged against an offline player, or a notification for
+  // one, must never land on the tablet they happened to touch last.
   const latest = await Database.single<{ phone_id: string } | null>(
-    `SELECT \`phone_id\` FROM \`mica_phones\` WHERE \`citizenid\` = ? AND \`status\` = 'active'
+    `SELECT \`phone_id\` FROM \`mica_phones\`
+     WHERE \`citizenid\` = ? AND \`kind\` = 'phone' AND \`status\` = 'active'
      ORDER BY \`updated_at\` DESC, \`id\` DESC LIMIT 1`,
     [citizenid]
   );
@@ -629,72 +762,138 @@ export type PhoneResolution =
   | { status: 'unavailable' };
 
 const UNAVAILABLE: PhoneResolution = { status: 'unavailable' };
+const NONE: PhoneResolution = { status: 'none' };
+
+/** Record a device as the one this source and its citizen are on now. */
+const markActive = (src: number, citizenid: string, kind: DeviceId, phoneId: string): void => {
+  activeByCitizen[kind].set(citizenid, phoneId);
+  activeBySource[kind].set(src, { phoneId, citizenid });
+};
 
 /**
- * The phone this source is using, minting one into the item the first time.
+ * Drop the device of this kind a source was last on, when a resolve finds it is no longer
+ * theirs (MICA-264) — unless it was resolved for `keep`, the character the source has now.
  *
- * **The rule lives here and nowhere else**, so no service re-implements it: the phone in the
+ * A resolve that answers `'none'` passes no `keep`: they hold none, so whatever was cached is
+ * somebody else's now, or nobody's, and `LockPhone` must not key it. One that answers
+ * `'unavailable'` passes the current character: on a server that cannot carry an id that
+ * answer is the steady state, and the identity device `phoneForRequest` cached for this same
+ * character is still right, but one cached for the previous character after a switch is not.
+ */
+const forgetActive = (src: number, kind: DeviceId, keep?: string): void => {
+  const entry = activeBySource[kind].get(src);
+  if (entry && entry.citizenid !== keep) activeBySource[kind].delete(src);
+};
+
+/**
+ * The device of this kind this source is using, minting one into the item the first time.
+ *
+ * **The rule lives here and nowhere else**, so no service re-implements it: the device in the
  * slot this player last *used*, falling back to the lowest slot they hold. Last-used rather
  * than purely positional because a player switches phones by using one, which is visible,
  * where switching by dragging items between slots is not. `readItemSlots` returns slots
  * ascending precisely so the fallback is `slots[0]` rather than a sort somebody has to repeat.
+ * Each kind has its own item, its own last-used slot and its own rows (MICA-264).
  *
- * **An item with no id adopts the citizen's unclaimed phone before minting.** That is the
+ * **A carried id must name a row of the same kind** (MICA-264), or it is refused and the item
+ * is given a fresh one, as an item with no id is. `ensureHeld` answers the kind from the one
+ * read of the row it already makes, and writes nothing for a row of another kind. Both items
+ * carry the id under the same `phoneId` key, so without this a phone id copied onto a tablet
+ * item — by an admin menu, a crafting script, a modified inventory — would open the phone's
+ * notes and passcode on the tablet, and the reverse.
+ *
+ * **A resolve that finds no device of this kind clears the cached one** (`forgetActive`), so
+ * the synchronous answer `LockState` keys on never outlives the item it named.
+ *
+ * **A phone item with no id adopts the citizen's unclaimed phone before minting.** That is the
  * runtime half of the migration's backfill: the rows it re-keyed are on that phone, and the
  * first item in the player's hand is the one they should land on. Only when there is none is
- * a fresh id minted.
+ * a fresh id minted. **A tablet never adopts**: there was no tablet data before MICA-264 for a
+ * backfill to have put anywhere, so a tablet item always mints its own.
  *
  * **A minted id is written to the item before it is recorded**, and the resolve answers
  * `'unavailable'` if that write fails. The other order is worse: a row created for an id that
  * never reached the item is an orphan nothing will ever point at, where an id on an item with
  * no row yet is simply picked up and recorded by the next resolve.
  */
-export const resolvePhone = async (src: number): Promise<PhoneResolution> => {
-  const item = phoneItemName();
-  if (!item) return UNAVAILABLE;
-
+export const resolveDevice = async (src: number, kind: DeviceId): Promise<PhoneResolution> => {
+  // An off device has no item to hold. `ServiceEndpoint` refuses its requests before this.
+  if (!isDeviceEnabled(kind)) {
+    forgetActive(src, kind);
+    return NONE;
+  }
   const player = FrameworkBridge.getPlayer(src);
-  if (!player?.citizenid) return UNAVAILABLE;
+  const unavailable = (): PhoneResolution => {
+    forgetActive(src, kind, player?.citizenid);
+    return UNAVAILABLE;
+  };
+
+  const item = deviceItemName(kind);
+  if (!item) return unavailable();
+  if (!player?.citizenid) return unavailable();
 
   const slots = FrameworkBridge.itemSlots(player, item);
   // `null` is "this inventory cannot say", never "holds none" — treating them alike would mint
   // a fresh phone on every resolve for a server that can never store one.
-  if (slots === null) return UNAVAILABLE;
-  if (slots.length === 0) return { status: 'none' };
+  if (slots === null) return unavailable();
+  if (slots.length === 0) {
+    forgetActive(src, kind);
+    return NONE;
+  }
 
-  const preferred = lastUsedPhoneSlot(src);
+  const preferred = lastUsedDeviceSlot(src, kind);
   const chosen = slots.find((entry) => entry.slot === preferred) ?? slots[0];
 
   const carried = chosen.metadata.phoneId;
   if (typeof carried === 'string' && PHONE_ID.test(carried)) {
-    await ensureHeld(carried, player.citizenid);
-    finishSetup(carried, player.citizenid);
-    activeByCitizen.set(player.citizenid, carried);
-    activeBySource.set(src, carried);
-    return { status: 'active', phone: { phoneId: carried, slot: chosen.slot } };
+    const carriedKind = await ensureHeld(carried, player.citizenid, kind);
+    if (carriedKind === kind) {
+      finishSetup(carried, player.citizenid);
+      markActive(src, player.citizenid, kind, carried);
+      return { status: 'active', phone: { phoneId: carried, slot: chosen.slot } };
+    }
+    if (carriedKind === null) {
+      // Which device this id is could not be read. Using it might be a phone id on a tablet;
+      // minting over it might be overwriting a real device's id. Neither, until a read works.
+      throw new Error(`[mica] could not read which device ${carried} is; refusing the resolve.`);
+    }
+    console.warn(
+      `[mica] ${player.citizenid}'s ${kind} item in slot ${chosen.slot} carried ${carried}, ` +
+        `which is a ${carriedKind}. Refused; the item is given a ${kind} id of its own.`
+    );
   }
 
   let adopted: string | null = null;
-  try {
-    adopted = (await readUnclaimed(player.citizenid))?.phone_id ?? null;
-  } catch (error) {
-    // A fresh id is the safe answer: nothing is lost, the unclaimed phone stays where it is.
-    console.error(`[mica] could not look for ${player.citizenid}'s unclaimed phone`, error);
+  if (kind === 'phone') {
+    try {
+      adopted = (await readUnclaimed(player.citizenid, kind))?.phone_id ?? null;
+    } catch (error) {
+      // A fresh id is the safe answer: nothing is lost, the unclaimed phone stays where it is.
+      console.error(`[mica] could not look for ${player.citizenid}'s unclaimed phone`, error);
+    }
   }
   const phoneId = adopted ?? newPhoneId();
 
   if (!FrameworkBridge.setItemMetadata(player, item, chosen.slot, { phoneId })) {
     // `writeItemMetadata` has already said why, once. Claiming an id the item does not carry
     // would hand this player a different phone on their next relog.
-    return UNAVAILABLE;
+    return unavailable();
   }
 
-  await ensureHeld(phoneId, player.citizenid);
+  // Its kind is this one by construction — a fresh id has no row, and an adopted one was read
+  // by kind — so what `ensureHeld` answers is not asked.
+  await ensureHeld(phoneId, player.citizenid, kind);
   finishSetup(phoneId, player.citizenid);
-  activeByCitizen.set(player.citizenid, phoneId);
-  activeBySource.set(src, phoneId);
+  markActive(src, player.citizenid, kind, phoneId);
   return { status: 'active', phone: { phoneId, slot: chosen.slot } };
 };
+
+/**
+ * The phone this source is using: `resolveDevice` for the phone. Kept as its own name because
+ * the number sync (`PhoneNumbers.ts`) and `GetPhoneNumber` are the phone's alone, and a tablet
+ * must never reach either.
+ */
+export const resolvePhone = (src: number): Promise<PhoneResolution> => resolveDevice(src, 'phone');
 
 /**
  * The phone this source is using, or `null` when they have no phone identity right now.
@@ -707,25 +906,67 @@ export const activePhone = async (src: number): Promise<ActivePhone | null> => {
   return resolution.status === 'active' ? resolution.phone : null;
 };
 
+/** What a player who holds none of a device is told. The phone keeps its own MICA-282 key. */
+const notHeld = (device: DeviceId): PlayerFacingError =>
+  device === 'phone'
+    ? new PlayerFacingError('You are not holding a phone.', { key: 'server.phone.notHeld' })
+    : new PlayerFacingError(`You are not holding a ${DEVICES[device].label.toLowerCase()}.`, {
+        key: 'server.device.notHeld',
+        params: { device: DEVICES[device].label }
+      });
+
 /**
- * The phone a request is for — what `ServiceEndpoint` asks before running a device-owned
- * action (MICA-282).
+ * The device a request is for — what `ServiceEndpoint` asks before running a device-owned
+ * action (MICA-282), for whichever device the request named (MICA-264).
  *
- * Holding no phone on a gated server is a refusal the player can read, not a fallthrough: they
- * have no phone for rows to belong to, and the phone is closed for them anyway
- * (`deviceItem.ts`), so the only way this is reached is a client that opened it regardless.
- * Everything else that is not an item in hand degrades to the identity phone.
+ * Holding none on a gated server is a refusal the player can read, not a fallthrough: they
+ * have no device for rows to belong to, and it is closed for them anyway (`deviceItem.ts`), so
+ * the only way this is reached is a client that opened it regardless. Everything else that is
+ * not an item in hand degrades to the citizen's identity device of that kind.
  */
-export const phoneForRequest = async (src: number, citizenid: string): Promise<string> => {
-  const resolution = await resolvePhone(src);
+export const phoneForRequest = async (
+  src: number,
+  citizenid: string,
+  device: DeviceId = DEFAULT_DEVICE
+): Promise<string> => {
+  const resolution = await resolveDevice(src, device);
   if (resolution.status === 'active') return resolution.phone.phoneId;
-  if (resolution.status === 'none') {
-    throw new PlayerFacingError('You are not holding a phone.', { key: 'server.phone.notHeld' });
-  }
-  const identity = await identityPhone(citizenid);
-  activeByCitizen.set(citizenid, identity);
-  activeBySource.set(src, identity);
+  if (resolution.status === 'none') throw notHeld(device);
+  const identity = await identityDevice(citizenid, device);
+  markActive(src, citizenid, device, identity);
   return identity;
 };
 
-installPhoneResolvers({ forRequest: phoneForRequest, forCitizen: phoneForCitizen });
+/**
+ * Refuse a request that names a device this server has off, or one the player holds none of
+ * (MICA-264) — for every service, device-owned or not, since a request from the tablet is
+ * a claim to be holding one. Counted now, through the same `holdsDevice` the item gate uses,
+ * so it fails open exactly where that does: no gate configured, standalone, or an inventory
+ * that cannot count.
+ */
+export const requireDeviceInHand = (player: FrameworkPlayer, device: DeviceId): void => {
+  if (!isDeviceEnabled(device)) {
+    throw new PlayerFacingError(
+      `The ${DEVICES[device].label.toLowerCase()} is turned off on this server.`,
+      { key: 'server.device.off', params: { device: DEVICES[device].label } }
+    );
+  }
+  if (!holdsDevice(player, device)) throw notHeld(device);
+};
+
+/**
+ * Re-resolve a non-phone device whenever `deviceItem.ts` says it may have changed (MICA-264):
+ * a load, a relayed inventory change, a use of its item. The phone's own subscribers (the
+ * number sync, the battery) already resolve the phone on those occasions, which refreshes or
+ * clears its entry the same way; this gives the tablet the same, so `LockPhone(src, 'tablet')`
+ * after a switch, a handover or a character switch keys the tablet in hand, not the last one a
+ * device-owned request happened to resolve. Nothing is minted for a tablet nobody holds: a
+ * resolve that finds none clears the entry and writes nothing.
+ */
+onDeviceStateChanged('device-identity', (src, device) => resolveDevice(src, device));
+
+installPhoneResolvers({
+  forRequest: phoneForRequest,
+  forCitizen: phoneForCitizen,
+  deviceInHand: requireDeviceInHand
+});

@@ -45,16 +45,24 @@ vi.mock('../lib/FrameworkBridge', () => ({
 }));
 
 import {
+  activeDeviceIdOf,
   activePhone,
   activePhoneIdOf,
+  identityPhone,
   onPhoneHandover,
   phoneForCitizen,
   phoneForRequest,
   phones,
+  requireDeviceInHand,
   resolvePhone,
   __resetPhoneState
 } from '../services/Phones';
-import { __resetLastUsedPhone, __resetPhoneItemWarnings } from '../lib/deviceItem';
+import {
+  __resetLastUsedPhone,
+  __resetPhoneItemWarnings,
+  evaluateDeviceItems
+} from '../lib/deviceItem';
+import { __resetLockState, isDeviceLocked, setDeviceLocked } from '../lib/LockState';
 
 /**
  * `deviceItem.ts` registers its usable-item callback at import time, and `clearAllMocks`
@@ -101,6 +109,17 @@ beforeEach(() => {
 describe('the phones table declaration', () => {
   it('is server-authored, so no column is client-writable', () => {
     expect(phones.repo.writableColumns).toEqual([]);
+  });
+
+  it('declares kind over every device, defaulting to the phone, and no client writes it', () => {
+    const kind = phones.resolved.fields.find((f) => f.name === 'kind');
+    expect(kind?.def).toMatchObject({
+      type: 'enum',
+      values: ['phone', 'tablet'],
+      notNull: true,
+      default: 'phone',
+      clientWritable: false
+    });
   });
 
   it('keeps phone_id unique but lets one citizen hold several phones', () => {
@@ -261,7 +280,7 @@ describe('the phone a request is for', () => {
     expect(second).toBe(first);
     // Minted unclaimed — never written into an item — and only the once.
     expect(dbMock.insert).toHaveBeenCalledOnce();
-    expect(dbMock.insert.mock.calls[0][1]).toEqual([CID, first, 0]);
+    expect(dbMock.insert.mock.calls[0][1]).toEqual([CID, first, 'phone', 0]);
   });
 
   it('reuses an unclaimed phone the migration minted rather than minting a second', async () => {
@@ -375,5 +394,416 @@ describe('the phone a source is on, synchronously', () => {
 
     const identity = await phoneForRequest(SRC, CID);
     expect(activePhoneIdOf(SRC)).toBe(identity);
+  });
+});
+
+/**
+ * MICA-264: the tablet has an identity of its own — a `mica_phones` row of `kind = 'tablet'`,
+ * minted into its own item — and none of a phone's reach.
+ */
+describe('the tablet as an identity of its own (MICA-264)', () => {
+  const PHONE_A = 'a'.repeat(32);
+  const TABLET_T = 'd'.repeat(32);
+  const UNCLAIMED = 'e'.repeat(32);
+
+  /** Both items gated, as a server with `mica_tablet_item` set has them. */
+  const gateBoth = () => {
+    globalThis.GetConvar = ((name: string, fallback: string) =>
+      name === 'mica_phone_item'
+        ? 'phone'
+        : name === 'mica_tablet_item'
+          ? 'tablet'
+          : fallback) as any;
+  };
+
+  /** Rows by phone id, and the citizen's unclaimed phone, the way `findAll` would answer. */
+  const rows = (byId: Record<string, object>, unclaimed?: object) => {
+    dbMock.query.mockImplementation(async (_sql: string, params: unknown[] = []) => {
+      for (const [id, row] of Object.entries(byId)) if (params.includes(id)) return [row];
+      if (unclaimed && params.includes('phone') && params.includes(0)) return [unclaimed];
+      return [];
+    });
+  };
+
+  const transfersOf = (phoneId: string) =>
+    dbMock.update.mock.calls.filter(([, params]) => (params as unknown[]).includes(phoneId));
+
+  beforeEach(() => {
+    gateBoth();
+  });
+
+  it('mints a tablet its own id and kind, and never adopts the unclaimed phone', async () => {
+    bridgeMock.itemSlots.mockImplementation((_p: unknown, item: string) =>
+      item === 'tablet' ? [{ slot: 5, metadata: {} }] : []
+    );
+    rows({}, { id: 9, citizenid: CID, phone_id: UNCLAIMED, kind: 'phone', claimed: 0 });
+
+    const tablet = await phoneForRequest(SRC, CID, 'tablet');
+
+    expect(tablet).toMatch(ID_SHAPE);
+    expect(tablet).not.toBe(UNCLAIMED);
+    expect(bridgeMock.setItemMetadata).toHaveBeenCalledWith(player, 'tablet', 5, {
+      phoneId: tablet
+    });
+    expect(dbMock.insert).toHaveBeenCalledOnce();
+    expect(dbMock.insert.mock.calls[0][1]).toEqual([CID, tablet, 'tablet', 1]);
+    // No look for an unclaimed row at all, and nothing claimed.
+    expect(dbMock.query.mock.calls.some(([sql]) => String(sql).includes('`claimed`'))).toBe(false);
+    expect(dbMock.update.mock.calls.some(([sql]) => String(sql).includes('`claimed` = ?'))).toBe(
+      false
+    );
+  });
+
+  it('refuses a phone id carried on a tablet item, and re-mints without touching the phone', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    bridgeMock.itemSlots.mockImplementation((_p: unknown, item: string) =>
+      item === 'tablet' ? [{ slot: 5, metadata: { phoneId: PHONE_A } }] : []
+    );
+    rows({
+      [PHONE_A]: { id: 1, citizenid: 'ZZZ99999', phone_id: PHONE_A, kind: 'phone', claimed: 1 }
+    });
+
+    const tablet = await phoneForRequest(SRC, CID, 'tablet');
+
+    expect(tablet).toMatch(ID_SHAPE);
+    expect(tablet).not.toBe(PHONE_A);
+    expect(bridgeMock.setItemMetadata).toHaveBeenCalledWith(player, 'tablet', 5, {
+      phoneId: tablet
+    });
+    expect(dbMock.insert.mock.calls[0][1]).toEqual([CID, tablet, 'tablet', 1]);
+    // The phone's rows stay with its holder: no handover walk, no claim, nothing.
+    expect(transfersOf(PHONE_A)).toEqual([]);
+    expect(activeDeviceIdOf(SRC, 'tablet')).toBe(tablet);
+    expect(warn.mock.calls.some(([line]) => String(line).includes('which is a phone'))).toBe(true);
+    warn.mockRestore();
+  });
+
+  it('refuses a phone id on a tablet item even once that phone is cached as held', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    rows({ [PHONE_A]: { id: 1, citizenid: CID, phone_id: PHONE_A, kind: 'phone', claimed: 1 } });
+    bridgeMock.itemSlots.mockImplementation((_p: unknown, item: string) =>
+      item === 'phone' ? [{ slot: 3, metadata: { phoneId: PHONE_A } }] : []
+    );
+    await expect(phoneForRequest(SRC, CID)).resolves.toBe(PHONE_A);
+
+    // The same id copied onto the tablet: the phone's holder is cached, so only the kind
+    // cache stands between this and the phone's rows.
+    bridgeMock.itemSlots.mockImplementation((_p: unknown, item: string) =>
+      item === 'tablet'
+        ? [{ slot: 5, metadata: { phoneId: PHONE_A } }]
+        : [{ slot: 3, metadata: { phoneId: PHONE_A } }]
+    );
+    const tablet = await phoneForRequest(SRC, CID, 'tablet');
+
+    expect(tablet).not.toBe(PHONE_A);
+    expect(activeDeviceIdOf(SRC, 'tablet')).toBe(tablet);
+    expect(activePhoneIdOf(SRC)).toBe(PHONE_A);
+    warn.mockRestore();
+  });
+
+  it('refuses a tablet id carried on a phone item, the other way round', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    bridgeMock.itemSlots.mockImplementation((_p: unknown, item: string) =>
+      item === 'phone' ? [{ slot: 3, metadata: { phoneId: TABLET_T } }] : []
+    );
+    rows({ [TABLET_T]: { id: 2, citizenid: CID, phone_id: TABLET_T, kind: 'tablet', claimed: 1 } });
+
+    const phone = await phoneForRequest(SRC, CID);
+
+    expect(phone).not.toBe(TABLET_T);
+    expect(bridgeMock.setItemMetadata).toHaveBeenCalledWith(player, 'phone', 3, { phoneId: phone });
+    expect(transfersOf(TABLET_T)).toEqual([]);
+    warn.mockRestore();
+  });
+
+  it('uses a tablet id carried on a tablet item, as the phone does its own', async () => {
+    bridgeMock.itemSlots.mockImplementation((_p: unknown, item: string) =>
+      item === 'tablet' ? [{ slot: 5, metadata: { phoneId: TABLET_T } }] : []
+    );
+    rows({ [TABLET_T]: { id: 2, citizenid: CID, phone_id: TABLET_T, kind: 'tablet', claimed: 1 } });
+
+    await expect(phoneForRequest(SRC, CID, 'tablet')).resolves.toBe(TABLET_T);
+    expect(bridgeMock.setItemMetadata).not.toHaveBeenCalled();
+    expect(activeDeviceIdOf(SRC, 'tablet')).toBe(TABLET_T);
+    // The phone's synchronous answer is the phone's alone.
+    expect(activePhoneIdOf(SRC)).toBeNull();
+  });
+
+  it('refuses the resolve rather than guess when the row cannot be read', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    bridgeMock.itemSlots.mockImplementation((_p: unknown, item: string) =>
+      item === 'tablet' ? [{ slot: 5, metadata: { phoneId: PHONE_A } }] : []
+    );
+    dbMock.query.mockRejectedValue(new Error('connection lost'));
+
+    await expect(phoneForRequest(SRC, CID, 'tablet')).rejects.toThrow(/could not read/);
+    // Neither used nor overwritten.
+    expect(bridgeMock.setItemMetadata).not.toHaveBeenCalled();
+    expect(activeDeviceIdOf(SRC, 'tablet')).toBeNull();
+    error.mockRestore();
+  });
+
+  it('refuses a player holding no tablet on a gated server, in words they can read', async () => {
+    bridgeMock.itemSlots.mockReturnValue([]);
+
+    await expect(phoneForRequest(SRC, CID, 'tablet')).rejects.toMatchObject({
+      name: 'PlayerFacingError',
+      key: 'server.device.notHeld',
+      params: { device: 'Tablet' }
+    });
+    expect(dbMock.insert).not.toHaveBeenCalled();
+  });
+
+  it('gives a tablet its own identity row where no item can carry one, apart from the phone', async () => {
+    bridgeMock.itemSlots.mockReturnValue(null);
+    dbMock.query.mockResolvedValue([]);
+
+    const tablet = await phoneForRequest(SRC, CID, 'tablet');
+    const phone = await phoneForRequest(SRC, CID);
+
+    expect(tablet).not.toBe(phone);
+    expect(await phoneForRequest(SRC, CID, 'tablet')).toBe(tablet);
+    const inserts = dbMock.insert.mock.calls.map(([, params]) => params);
+    expect(inserts).toEqual([
+      [CID, tablet, 'tablet', 0],
+      [CID, phone, 'phone', 0]
+    ]);
+    // Each identity read asks for its own kind.
+    const unclaimedReads = dbMock.query.mock.calls
+      .filter(([sql]) => String(sql).includes('`claimed`'))
+      .map(([sql, params]) => ({ sql: String(sql), params: params as unknown[] }));
+    expect(unclaimedReads.map((read) => read.params.includes('tablet'))).toEqual([true, false]);
+    expect(unclaimedReads.every((read) => read.sql.includes('`kind`'))).toBe(true);
+    expect(activeDeviceIdOf(SRC, 'tablet')).toBe(tablet);
+    expect(activePhoneIdOf(SRC)).toBe(phone);
+  });
+
+  it("identityPhone never answers a citizen's tablet identity", async () => {
+    // A tablet identity row on record, unclaimed: the phone's identity read filters it out.
+    dbMock.query.mockImplementation(async (sql: string, params: unknown[] = []) =>
+      String(sql).includes('`kind`') && params.includes('tablet')
+        ? [{ id: 4, citizenid: CID, phone_id: TABLET_T, kind: 'tablet', claimed: 0 }]
+        : []
+    );
+
+    const phone = await identityPhone(CID);
+
+    expect(phone).not.toBe(TABLET_T);
+    expect(dbMock.insert.mock.calls[0][1]).toEqual([CID, phone, 'phone', 0]);
+  });
+
+  it('phoneForCitizen reads phones only, and never the tablet the citizen used last', async () => {
+    bridgeMock.itemSlots.mockImplementation((_p: unknown, item: string) =>
+      item === 'tablet' ? [{ slot: 5, metadata: { phoneId: TABLET_T } }] : []
+    );
+    rows({ [TABLET_T]: { id: 2, citizenid: CID, phone_id: TABLET_T, kind: 'tablet', claimed: 1 } });
+    await phoneForRequest(SRC, CID, 'tablet');
+    dbMock.single.mockResolvedValue({ phone_id: PHONE_A });
+
+    await expect(phoneForCitizen(CID)).resolves.toBe(PHONE_A);
+    const [sql, params] = dbMock.single.mock.calls[0];
+    expect(String(sql).replace(/\s+/g, ' ')).toContain("`kind` = 'phone'");
+    expect(params).toEqual([CID]);
+  });
+
+  it('a phone in hand is still what phoneForCitizen answers, beside a resolved tablet', async () => {
+    bridgeMock.itemSlots.mockImplementation((_p: unknown, item: string) =>
+      item === 'tablet'
+        ? [{ slot: 5, metadata: { phoneId: TABLET_T } }]
+        : [{ slot: 3, metadata: { phoneId: PHONE_A } }]
+    );
+    rows({
+      [TABLET_T]: { id: 2, citizenid: CID, phone_id: TABLET_T, kind: 'tablet', claimed: 1 },
+      [PHONE_A]: { id: 1, citizenid: CID, phone_id: PHONE_A, kind: 'phone', claimed: 1 }
+    });
+    await phoneForRequest(SRC, CID);
+    await phoneForRequest(SRC, CID, 'tablet');
+
+    await expect(phoneForCitizen(CID)).resolves.toBe(PHONE_A);
+    expect(dbMock.single).not.toHaveBeenCalled();
+  });
+
+  it('forgets the tablet a source was on at a disconnect', async () => {
+    bridgeMock.itemSlots.mockImplementation((_p: unknown, item: string) =>
+      item === 'tablet' ? [{ slot: 5, metadata: { phoneId: TABLET_T } }] : []
+    );
+    rows({ [TABLET_T]: { id: 2, citizenid: CID, phone_id: TABLET_T, kind: 'tablet', claimed: 1 } });
+    await phoneForRequest(SRC, CID, 'tablet');
+    expect(activeDeviceIdOf(SRC, 'tablet')).toBe(TABLET_T);
+
+    (globalThis as any).source = SRC;
+    for (const dropped of handlers.get('playerDropped')!) dropped();
+    expect(activeDeviceIdOf(SRC, 'tablet')).toBeNull();
+  });
+});
+
+/**
+ * MICA-264: what `ServiceEndpoint` asks for every request naming a device other than the
+ * phone, here against the real item count.
+ */
+describe('the device a request claims to hold (MICA-264)', () => {
+  const convars = (values: Record<string, string>) => {
+    globalThis.GetConvar = ((name: string, fallback: string) =>
+      name in values ? values[name] : fallback) as any;
+  };
+
+  it('refuses a tablet this server has off, whatever the player holds', () => {
+    convars({ mica_tablet: 'false', mica_tablet_item: 'tablet' });
+    bridgeMock.countItem.mockReturnValue(1);
+
+    expect(() => requireDeviceInHand(player as any, 'tablet')).toThrow(
+      expect.objectContaining({
+        name: 'PlayerFacingError',
+        key: 'server.device.off',
+        params: { device: 'Tablet' }
+      })
+    );
+  });
+
+  it('refuses a player holding no tablet where one is required, and passes one who holds it', () => {
+    convars({ mica_tablet_item: 'tablet' });
+
+    bridgeMock.countItem.mockReturnValue(0);
+    expect(() => requireDeviceInHand(player as any, 'tablet')).toThrow(
+      expect.objectContaining({ key: 'server.device.notHeld', params: { device: 'Tablet' } })
+    );
+    expect(bridgeMock.countItem).toHaveBeenLastCalledWith(player, 'tablet');
+
+    bridgeMock.countItem.mockReturnValue(1);
+    expect(() => requireDeviceInHand(player as any, 'tablet')).not.toThrow();
+  });
+
+  it('passes a tablet with no item gate, which is on by default', () => {
+    convars({});
+    bridgeMock.countItem.mockReturnValue(0);
+
+    expect(() => requireDeviceInHand(player as any, 'tablet')).not.toThrow();
+    expect(bridgeMock.countItem).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * MICA-264 review: the synchronous answer `LockState` keys on follows the device in hand. The
+ * tablet is re-resolved on the occasions the phone is (a load or a relayed inventory change,
+ * both `evaluateDeviceItems`), and a resolve that finds none clears the entry for either kind.
+ */
+describe('the device a source is on follows the item (MICA-264 review)', () => {
+  const TABLET_T = 'd'.repeat(32);
+  const TABLET_U = '9'.repeat(32);
+  const PHONE_A = 'a'.repeat(32);
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  const gateBoth = () => {
+    globalThis.GetConvar = ((name: string, fallback: string) =>
+      name === 'mica_phone_item'
+        ? 'phone'
+        : name === 'mica_tablet_item'
+          ? 'tablet'
+          : fallback) as any;
+  };
+
+  /** What each item holds now; every id answers as its own kind, held by whoever asks. */
+  const holding = (tablet: unknown[] | null, phone: unknown[] | null = []) => {
+    bridgeMock.itemSlots.mockImplementation((_p: unknown, item: string) =>
+      item === 'tablet' ? tablet : phone
+    );
+  };
+
+  beforeEach(() => {
+    gateBoth();
+    __resetLockState();
+    dbMock.query.mockImplementation(async (_sql: string, params: unknown[] = []) => {
+      for (const [id, kind] of [
+        [TABLET_T, 'tablet'],
+        [TABLET_U, 'tablet'],
+        [PHONE_A, 'phone']
+      ] as const) {
+        if (params.includes(id)) return [{ id: 1, citizenid: CID, phone_id: id, kind, claimed: 1 }];
+      }
+      return [];
+    });
+  });
+
+  it('clears the phone when a resolve finds none, so the gap MICA-283 left is closed', async () => {
+    holding([], [{ slot: 3, metadata: { phoneId: PHONE_A } }]);
+    await resolvePhone(SRC);
+    expect(activePhoneIdOf(SRC)).toBe(PHONE_A);
+
+    holding([], []);
+    await expect(resolvePhone(SRC)).resolves.toEqual({ status: 'none' });
+    expect(activePhoneIdOf(SRC)).toBeNull();
+  });
+
+  it('refreshes the tablet on a load or relayed change, with no device-owned request', async () => {
+    holding([{ slot: 5, metadata: { phoneId: TABLET_T } }]);
+    evaluateDeviceItems(SRC);
+    await flush();
+    expect(activeDeviceIdOf(SRC, 'tablet')).toBe(TABLET_T);
+
+    // Switched tablets: the next pass follows, and so does the lock key.
+    setDeviceLocked(SRC, 'tablet', true);
+    holding([{ slot: 6, metadata: { phoneId: TABLET_U } }]);
+    evaluateDeviceItems(SRC);
+    await flush();
+    expect(activeDeviceIdOf(SRC, 'tablet')).toBe(TABLET_U);
+    expect(isDeviceLocked(SRC, 'tablet')).toBe(false);
+  });
+
+  it('clears the tablet once it is handed over, so LockPhone keys the source, not its id', async () => {
+    holding([{ slot: 5, metadata: { phoneId: TABLET_T } }]);
+    evaluateDeviceItems(SRC);
+    await flush();
+    setDeviceLocked(SRC, 'tablet', true);
+
+    holding([]);
+    evaluateDeviceItems(SRC);
+    await flush();
+
+    expect(activeDeviceIdOf(SRC, 'tablet')).toBeNull();
+    expect(isDeviceLocked(SRC, 'tablet')).toBe(false);
+    // The tablet's own lock stayed with the tablet, for whoever holds it next.
+    holding([{ slot: 5, metadata: { phoneId: TABLET_T } }]);
+    evaluateDeviceItems(SRC);
+    await flush();
+    expect(isDeviceLocked(SRC, 'tablet')).toBe(true);
+  });
+
+  it('clears the tablet when this server turns it off', async () => {
+    holding([{ slot: 5, metadata: { phoneId: TABLET_T } }]);
+    evaluateDeviceItems(SRC);
+    await flush();
+
+    globalThis.GetConvar = ((name: string, fallback: string) =>
+      name === 'mica_tablet' ? 'false' : name === 'mica_tablet_item' ? 'tablet' : fallback) as any;
+    evaluateDeviceItems(SRC);
+    await flush();
+    expect(activeDeviceIdOf(SRC, 'tablet')).toBeNull();
+  });
+
+  it('drops a device cached for the previous character where no item can carry an id', async () => {
+    // No inventory metadata: the identity tablet is what a request resolves to.
+    holding(null, null);
+    dbMock.query.mockResolvedValue([]);
+    const identity = await phoneForRequest(SRC, CID, 'tablet');
+    expect(activeDeviceIdOf(SRC, 'tablet')).toBe(identity);
+
+    // The same character again: the identity entry is still theirs, and stays.
+    evaluateDeviceItems(SRC);
+    await flush();
+    expect(activeDeviceIdOf(SRC, 'tablet')).toBe(identity);
+
+    // A character switch on the same source: the load re-resolves and the old entry goes.
+    bridgeMock.getPlayer.mockReturnValue({ ...player, citizenid: 'NEW00001' });
+    evaluateDeviceItems(SRC);
+    await flush();
+    expect(activeDeviceIdOf(SRC, 'tablet')).toBeNull();
+  });
+
+  it('mints nothing for a player who holds no tablet', async () => {
+    holding([]);
+    evaluateDeviceItems(SRC);
+    await flush();
+    expect(dbMock.insert).not.toHaveBeenCalled();
+    expect(bridgeMock.setItemMetadata).not.toHaveBeenCalled();
   });
 });

@@ -8,3 +8,5 @@ instead — the break-proof, scratchpad and warm-`.d.ts` notes moved there.
 
 - [pma-voice call channel API](pma-voice-call-channel-api.md) — one call volume
   per client, server `setPlayerCall` syncs the state bag, no positional native
+- [Raw net events are strict tuples](raw-net-events-are-strict-tuples.md) — an
+  extra emitNet arg is dropped silently by guardNetEvent; server tuple first

@@ -61,6 +61,8 @@ export class LockscreenRepository extends SchemaRepository<LockscreenRow> {
 export const lockscreen = defineService<LockscreenRow, typeof lockscreenContract>({
   contract: lockscreenContract,
   deviceOwned: true,
+  // Both devices, each with rows of its own: a tablet has its own passcode row (MICA-264).
+  devices: ['phone', 'tablet'],
   id: 'lockscreen',
   // `write: 'server'` disables the generic create/update outright — nothing about this
   // row is ever written through the generic path, only through the named actions below,

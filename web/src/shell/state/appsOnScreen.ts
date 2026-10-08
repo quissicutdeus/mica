@@ -13,10 +13,11 @@ import { isBatteryDead } from './charge';
  * `useAppVisible`, which adds "and it is this app".
  *
  * A frame has to be up (`openDevice`), and nothing may have taken the whole screen over. The
- * takeovers are the ones each frame draws *instead of* its `children`: the dead battery on
- * both, and the lock screen on a device whose chrome has one — the phone, not the tablet
- * (`DEVICES[id].chrome.lockScreen`; `TabletFrame.svelte` draws no lock screen until MICA-264).
- * This restates those two `{#if}`s in `PhoneFrame.svelte` and `TabletFrame.svelte`, and
+ * takeovers are the ones each frame draws *instead of* its `children`: the dead battery, and
+ * the lock screen on a device whose chrome has one (`DEVICES[id].chrome.lockScreen`) — both
+ * devices since MICA-264 gave the tablet an identity, and so a passcode, of its own. The flag
+ * stays in the predicate so a third device without a lock cannot be held off screen by one.
+ * This restates those `{#if}`s in `PhoneFrame.svelte` and `TabletFrame.svelte`, and
  * `appsOnScreen.test.ts` pins the table so a change to one is a change to both.
  *
  * Not "is the app mounted". Closing is meant to unmount every app, but the frame's outro can

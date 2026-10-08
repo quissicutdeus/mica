@@ -3,6 +3,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { GENERIC_SERVICE_ACTION } from '@mica/shared/rpc';
+import { DEFAULT_DEVICE, isDeviceId, type DeviceId } from '@mica/shared/devices';
+
+/**
+ * What a handler knows about the request beyond its payload (MICA-264): the device it speaks
+ * for, read off the generic envelope exactly as `parseGenericRequest` reads it on the server —
+ * absent means the phone. A named route carries none here, as it carries none from the web in
+ * game, so it is the phone too. Only the per-device mocks (`perDevice.ts`) read it.
+ */
+export interface MockContext {
+  device: DeviceId;
+}
 
 // Deliberately `any`: each handler in a service file's `mocks` declares its own,
 // more specific payload shape than this container type — arrow-function
@@ -10,7 +21,7 @@ import { GENERIC_SERVICE_ACTION } from '@mica/shared/rpc';
 // TypeScript, so `unknown` here would reject every handler whose declared
 // parameter isn't itself `unknown`.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- see comment above
-export type MockHandler<T = any> = (data?: any) => Promise<T> | T;
+export type MockHandler<T = any> = (data?: any, context?: MockContext) => Promise<T> | T;
 
 /**
  * Every service's mocks, one file each under `./services/` (MICA-323).
@@ -100,16 +111,26 @@ if (typeof window !== 'undefined') {
  * Falls back to the bare action name, so a service whose actions are also named routes
  * needs no second fixture.
  */
-function resolveGeneric(data?: unknown): { key: string; payload: unknown } | null {
+function resolveGeneric(
+  data?: unknown
+): { key: string; payload: unknown; context: MockContext } | null {
   if (!data || typeof data !== 'object') return null;
-  const { service, action, data: inner } = data as Record<string, unknown>;
+  const { service, action, data: inner, device } = data as Record<string, unknown>;
   if (typeof service !== 'string' || typeof action !== 'string') return null;
 
   const scoped = `${service}:${action}`;
-  return { key: mockRegistry[scoped] ? scoped : action, payload: inner };
+  return {
+    key: mockRegistry[scoped] ? scoped : action,
+    payload: inner,
+    context: { device: isDeviceId(device) ? device : DEFAULT_DEVICE }
+  };
 }
 
-async function getMockData(eventName: string, data?: unknown): Promise<unknown> {
+async function getMockData(
+  eventName: string,
+  data?: unknown,
+  context: MockContext = { device: DEFAULT_DEVICE }
+): Promise<unknown> {
   if (eventName === GENERIC_SERVICE_ACTION) {
     // Keyed as `ServiceEndpoint` keys it, so `fetchNui` hands back the same `ServiceRefusal`
     // the game would and a key check (`host/facets/storage.ts`) is exercised here (MICA-310).
@@ -125,12 +146,12 @@ async function getMockData(eventName: string, data?: unknown): Promise<unknown> 
       console.warn('[MockRegistry] Malformed generic service request', data);
       return null;
     }
-    return getMockData(resolved.key, resolved.payload);
+    return getMockData(resolved.key, resolved.payload, resolved.context);
   }
 
   const handler = mockRegistry[eventName];
   if (handler) {
-    return handler(data);
+    return handler(data, context);
   }
   // A missing mock used to warn and answer `null`, which reads to the caller as "the
   // server sent nothing" rather than "nobody wired this up" — the exact failure this
