@@ -8,7 +8,7 @@ description: >-
   TypeScript cannot prove.
 color: red
 model: opus
-effort: high
+effort: xhigh
 skills:
   - mica-service
   - nui-endpoint

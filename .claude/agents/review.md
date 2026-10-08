@@ -9,7 +9,7 @@ description: >-
   change is not the change, so read the file.
 color: pink
 model: opus
-effort: high
+effort: xhigh
 disallowedTools: Edit, Write, NotebookEdit
 skills:
   - nui-endpoint
