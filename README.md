@@ -1776,7 +1776,7 @@ MICA-264).
 | `IsPhoneOpen(source, device?)`                     | source                 | Whether that player's phone, or `device`, is open right now                                                               |
 | `SetPhoneEnabled(source, enabled, device?)`        | source                 | Confiscates or returns a player's phone, or `device`; disabling while open force-closes it                                |
 | `OpenApp(source, appId, props, device?)`           | source                 | Force-opens the phone, or `device`, on a named app; `props` becomes that app's `useDeepLink` payload                      |
-| `GetBatteryLevel(source)`                          | source                 | The saved charge, 0-100                                                                                                   |
+| `GetBatteryLevel(source)`                          | source                 | The saved charge, 0-100; `internal_error` if it cannot be read                                                            |
 | `SetBatteryLevel(source, level)`                   | source                 | Sets the charge. Clamped rather than refused                                                                              |
 | `AddBatteryCharge(source, delta)`                  | source                 | Adds or, with a negative delta, drains — an EMP, a taser                                                                  |
 | `SetCharging(source, isCharging)`                  | source                 | Puts the phone on or off charge. A state, not a top-up: it reverses the drain loop                                        |

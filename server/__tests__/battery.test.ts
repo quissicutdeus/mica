@@ -231,16 +231,400 @@ describe('sendLoadedBatteryToClient', () => {
     expect(dbMock.query).not.toHaveBeenCalled();
     expect(dbMock.insert).not.toHaveBeenCalled();
   });
+});
 
-  it('still sends a level when the read throws', async () => {
-    bridgeMock.getPlayer.mockReturnValue(mockPlayer());
-    dbMock.query.mockRejectedValue(new Error('connection lost'));
+/**
+ * MICA-326: a failed read was treated as "no saved row", so the charge defaulted to the
+ * legacy metadata or 100 and the adoption save wrote it — one transient error, and a saved
+ * 12% came back as a full battery. The phone still has a value with nothing pushed: the
+ * client starts at 100 on its own, and that number is display, not a write.
+ */
+describe('a load that cannot read the table (MICA-326)', () => {
+  const PHONE_A = 'a'.repeat(32);
+  const PHONE_B = 'b'.repeat(32);
+  const SAVED = [{ id: 1, citizenid: CID, phone_id: PHONE_A, level: 12 }];
+  const phoneStateChanged = async (src: number) => {
+    const { __phoneStateSubscribers } = await import('../lib/deviceItem');
+    for (const subscriber of __phoneStateSubscribers()) {
+      if (subscriber.name === 'battery') await subscriber.run(src);
+    }
+  };
+  /** `applyCharge` and the tick save fire-and-forget; let them reach the mock. */
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const writes = () => dbMock.insert.mock.calls.length + dbMock.update.mock.calls.length;
+
+  beforeEach(() => {
+    __resetBatteryState();
+    (globalThis as any).emitNet = vi.fn();
     vi.spyOn(console, 'error').mockImplementation(() => {});
+    __setPhoneResolvers({ forRequest: async () => PHONE_A });
+  });
+
+  it('writes nothing, even with legacy metadata to adopt, and holds no charge', async () => {
+    bridgeMock.getPlayer.mockReturnValue(mockPlayer({ mica_battery: 55 }));
+    dbMock.query.mockRejectedValue(new Error('connection lost'));
 
     await sendLoadedBatteryToClient(SRC);
+    __tickBattery();
+    await settle();
 
-    // A dead database must not leave the phone with no charge value at all.
-    expect(emittedCharge()).toBe(100);
+    expect(writes()).toBe(0);
+    expect(chargeCalls()).toEqual([]);
+    expect(console.error).toHaveBeenCalled();
+  });
+
+  it('retries on the next phone-state event, and loads the saved charge rather than writing', async () => {
+    bridgeMock.getPlayer.mockReturnValue(mockPlayer());
+    dbMock.query.mockRejectedValueOnce(new Error('connection lost'));
+    await sendLoadedBatteryToClient(SRC);
+
+    dbMock.query.mockResolvedValue(SAVED);
+    await phoneStateChanged(SRC);
+
+    expect(currentCharge(SRC)).toBe(12);
+    expect(emittedCharge()).toBe(12);
+    expect(writes()).toBe(0);
+  });
+
+  it('retries once: a phone-state event after a good load reads nothing more', async () => {
+    bridgeMock.getPlayer.mockReturnValue(mockPlayer());
+    dbMock.query.mockRejectedValueOnce(new Error('connection lost'));
+    await sendLoadedBatteryToClient(SRC);
+    dbMock.query.mockResolvedValue(SAVED);
+    await phoneStateChanged(SRC);
+    dbMock.query.mockClear();
+
+    await phoneStateChanged(SRC);
+
+    expect(dbMock.query).not.toHaveBeenCalled();
+  });
+
+  it('keeps the last charge known for the same phone on a failed reload', async () => {
+    bridgeMock.getPlayer.mockReturnValue(mockPlayer());
+    dbMock.query.mockResolvedValue(SAVED);
+    await sendLoadedBatteryToClient(SRC);
+    dbMock.query.mockRejectedValue(new Error('connection lost'));
+    (globalThis as any).emitNet = vi.fn();
+
+    await sendLoadedBatteryToClient(SRC);
+    await settle();
+
+    expect(currentCharge(SRC)).toBe(12);
+    expect(emittedCharge()).toBe(12);
+    expect(writes()).toBe(0);
+  });
+
+  it('does not tick the old phone charge into a new phone it could not read', async () => {
+    bridgeMock.getPlayer.mockReturnValue(mockPlayer());
+    let phone = PHONE_A;
+    __setPhoneResolvers({ forRequest: async () => phone });
+    dbMock.query.mockResolvedValue(SAVED);
+    await sendLoadedBatteryToClient(SRC);
+
+    // Only the new phone's load fails; every read after it works, so a save that went
+    // ahead would reach the database rather than failing on its own read.
+    phone = PHONE_B;
+    let readsOfB = 0;
+    dbMock.query.mockImplementation(async (_sql: string, params: unknown[]) => {
+      if (params[0] === PHONE_A) return SAVED;
+      readsOfB += 1;
+      if (readsOfB === 1) throw new Error('connection lost');
+      return [];
+    });
+    await phoneStateChanged(SRC);
+    // One short of the minute-long retry (12 ticks), which would legitimately read B's empty
+    // table and adopt; eleven ticks are enough to move a held 100 or 12 a whole percent.
+    for (let i = 0; i < 11; i += 1) __tickBattery();
+    await settle();
+
+    const toB = [...dbMock.insert.mock.calls, ...dbMock.update.mock.calls].filter(([, params]) =>
+      (params as unknown[]).includes(PHONE_B)
+    );
+    expect(toB).toEqual([]);
+  });
+
+  it('saves no guessed 100 over the previous phone when the player stops holding one', async () => {
+    const { PlayerFacingError } = await import('../lib/errors');
+    bridgeMock.getPlayer.mockReturnValue(mockPlayer());
+    let holding = true;
+    __setPhoneResolvers({
+      forRequest: async () => {
+        if (holding) return PHONE_A;
+        throw new PlayerFacingError('You are not holding a phone.', {
+          key: 'server.phone.notHeld'
+        });
+      }
+    });
+    dbMock.query.mockRejectedValueOnce(new Error('connection lost'));
+    await sendLoadedBatteryToClient(SRC);
+    dbMock.query.mockResolvedValue(SAVED);
+
+    holding = false;
+    await phoneStateChanged(SRC);
+    await settle();
+
+    expect(writes()).toBe(0);
+  });
+
+  it('lets an explicit set win over the failed load, so no retry repaints the stale row', async () => {
+    bridgeMock.getPlayer.mockReturnValue(mockPlayer());
+    dbMock.query.mockRejectedValueOnce(new Error('connection lost'));
+    await sendLoadedBatteryToClient(SRC);
+    dbMock.query.mockResolvedValue(SAVED);
+
+    applyCharge(SRC, 90);
+    await settle();
+    await phoneStateChanged(SRC);
+
+    expect(currentCharge(SRC)).toBe(90);
+  });
+
+  it('rejects the export read rather than answering a full battery', async () => {
+    __setPhoneResolvers({ forCitizen: async () => PHONE_A });
+    dbMock.query.mockRejectedValue(new Error('connection lost'));
+    const { getBatteryLevel } = await import('../services/Battery');
+
+    await expect(getBatteryLevel(CID)).rejects.toThrow('connection lost');
+  });
+
+  /** A read that answers when the test says so, to hold a load in flight. */
+  const heldRead = () => {
+    let release: (rows: unknown[]) => void = () => {};
+    const pending = new Promise<unknown[]>((resolve) => {
+      release = resolve;
+    });
+    return { pending, release: (rows: unknown[]) => release(rows) };
+  };
+  /** The minute-long retry interval, in ticks (`LOAD_RETRY_TICKS`). */
+  const RETRY_TICKS = 12;
+
+  it('refuses the battery bank while no charge is held, and keeps the item', async () => {
+    // Thire, MICA-326 review: `currentCharge` answers 100 for nothing held, so the bank wrote
+    // 100 over a saved 12%, and `applyCharge` cleared the mark so nothing corrected it.
+    globalThis.GetConvarInt = ((_n: string, fallback: number) => fallback) as any;
+    const player = { ...mockPlayer(), removeItem: vi.fn().mockReturnValue(true) };
+    bridgeMock.getPlayer.mockReturnValue(player);
+    dbMock.query.mockRejectedValueOnce(new Error('connection lost'));
+    await sendLoadedBatteryToClient(SRC);
+    dbMock.query.mockResolvedValue(SAVED);
+
+    batteryItemHandler(SRC);
+    await settle();
+
+    expect(player.removeItem).not.toHaveBeenCalled();
+    expect(writes()).toBe(0);
+    // Told, rather than an item that silently does nothing.
+    expect(notifies().map((call: any[]) => call[2]?.key)).toEqual(['server.battery.unavailable']);
+  });
+
+  it('retries from the tick about once a minute, where no phone-state event comes', async () => {
+    bridgeMock.getPlayer.mockReturnValue(mockPlayer());
+    dbMock.query.mockRejectedValueOnce(new Error('connection lost'));
+    await sendLoadedBatteryToClient(SRC);
+    dbMock.query.mockClear();
+    dbMock.query.mockResolvedValue(SAVED);
+
+    for (let i = 0; i < RETRY_TICKS - 1; i += 1) __tickBattery();
+    await settle();
+    expect(dbMock.query).not.toHaveBeenCalled();
+
+    __tickBattery();
+    await settle();
+
+    expect(dbMock.query).toHaveBeenCalledOnce();
+    expect(currentCharge(SRC)).toBe(12);
+    expect(emittedCharge()).toBe(12);
+    expect(writes()).toBe(0);
+  });
+
+  it('keeps one retry in flight per source, however many ticks and events pass', async () => {
+    bridgeMock.getPlayer.mockReturnValue(mockPlayer());
+    dbMock.query.mockRejectedValueOnce(new Error('connection lost'));
+    await sendLoadedBatteryToClient(SRC);
+    const read = heldRead();
+    dbMock.query.mockClear();
+    dbMock.query.mockReturnValue(read.pending);
+
+    for (let i = 0; i < RETRY_TICKS * 3; i += 1) __tickBattery();
+    void phoneStateChanged(SRC);
+    await settle();
+
+    expect(dbMock.query).toHaveBeenCalledOnce();
+    read.release(SAVED);
+    await settle();
+    expect(currentCharge(SRC)).toBe(12);
+  });
+
+  it('stops retrying once the player leaves', async () => {
+    bridgeMock.getPlayer.mockReturnValue(mockPlayer());
+    dbMock.query.mockRejectedValueOnce(new Error('connection lost'));
+    await sendLoadedBatteryToClient(SRC);
+    dbMock.query.mockClear();
+    dbMock.query.mockResolvedValue(SAVED);
+
+    (globalThis as any).source = SRC;
+    handlers.get('playerDropped')!();
+    for (let i = 0; i < RETRY_TICKS * 2; i += 1) __tickBattery();
+    await settle();
+
+    expect(dbMock.query).not.toHaveBeenCalled();
+  });
+
+  it('saves no guessed 100 over the previous phone when switching to a different one', async () => {
+    // The `held` guard on the switch: Thire removed it and every case stayed green.
+    bridgeMock.getPlayer.mockReturnValue(mockPlayer());
+    let phone = PHONE_A;
+    __setPhoneResolvers({ forRequest: async () => phone });
+    dbMock.query.mockRejectedValueOnce(new Error('connection lost'));
+    await sendLoadedBatteryToClient(SRC);
+    // Every read works from here, so a save of A would reach the database.
+    dbMock.query.mockImplementation(async (_sql: string, params: unknown[]) =>
+      params[0] === PHONE_A ? SAVED : []
+    );
+
+    phone = PHONE_B;
+    await phoneStateChanged(SRC);
+    await settle();
+
+    const toA = [...dbMock.insert.mock.calls, ...dbMock.update.mock.calls].filter(([, params]) =>
+      (params as unknown[]).includes(PHONE_A)
+    );
+    expect(toA).toEqual([]);
+    expect(dbMock.update).not.toHaveBeenCalled();
+  });
+
+  it("ticks no old-phone charge into the new phone's row while that row is being read", async () => {
+    // Thire's re-check, reproduced: A's 12 stayed live during B's read, a tick crossing a
+    // whole percent saved 11 into B's row (80) through the moved `phoneOf`, and B's read then
+    // failing left B at 11 for good.
+    bridgeMock.getPlayer.mockReturnValue(mockPlayer());
+    let phone = PHONE_A;
+    __setPhoneResolvers({ forRequest: async () => phone });
+    dbMock.query.mockResolvedValue(SAVED);
+    await sendLoadedBatteryToClient(SRC);
+
+    const firstReadOfB = heldRead();
+    let readsOfB = 0;
+    dbMock.query.mockImplementation(async (_sql: string, params: unknown[]) => {
+      if (params[0] === PHONE_A) return SAVED;
+      readsOfB += 1;
+      if (readsOfB === 1) return firstReadOfB.pending;
+      // Every later read of B answers its row, so a save into B would reach `update`.
+      return [{ id: 2, citizenid: CID, phone_id: PHONE_B, level: 80 }];
+    });
+    phone = PHONE_B;
+    const switching = phoneStateChanged(SRC);
+    await settle();
+    dbMock.update.mockClear();
+    dbMock.insert.mockClear();
+
+    for (let i = 0; i < RETRY_TICKS - 1; i += 1) __tickBattery();
+    await settle();
+    firstReadOfB.release(Promise.reject(new Error('connection lost')) as never);
+    await switching.catch(() => {});
+    await settle();
+
+    const toB = [...dbMock.insert.mock.calls, ...dbMock.update.mock.calls].filter(([, params]) =>
+      (params as unknown[]).includes(PHONE_B)
+    );
+    expect(toB).toEqual([]);
+  });
+
+  it('discards a retry read that a set overtook, so the stale row is not painted back', async () => {
+    bridgeMock.getPlayer.mockReturnValue(mockPlayer());
+    dbMock.query.mockRejectedValueOnce(new Error('connection lost'));
+    await sendLoadedBatteryToClient(SRC);
+    const read = heldRead();
+    dbMock.query.mockReturnValueOnce(read.pending);
+    dbMock.query.mockResolvedValue(SAVED);
+
+    const retry = phoneStateChanged(SRC);
+    await settle();
+    applyCharge(SRC, 90);
+    read.release(SAVED);
+    await retry;
+    await settle();
+
+    expect(currentCharge(SRC)).toBe(90);
+    expect(emittedCharge()).toBe(90);
+  });
+
+  it('discards a first load that a set overtook, too', async () => {
+    bridgeMock.getPlayer.mockReturnValue(mockPlayer());
+    const read = heldRead();
+    dbMock.query.mockReturnValueOnce(read.pending);
+    dbMock.query.mockResolvedValue(SAVED);
+
+    const load = sendLoadedBatteryToClient(SRC);
+    await settle();
+    applyCharge(SRC, 90);
+    read.release(SAVED);
+    await load;
+    await settle();
+
+    expect(currentCharge(SRC)).toBe(90);
+  });
+});
+
+/**
+ * A multichar switch loads a second character on a source that never disconnected. Nothing
+ * else forgets the source, and `phoneOf` answers without asking, so the new character used to
+ * load — and, with a failed read, keep — the previous character's phone and charge.
+ */
+describe('a character switch on the same source', () => {
+  const PHONE_A = 'a'.repeat(32);
+  const PHONE_B = 'b'.repeat(32);
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  beforeEach(() => {
+    __resetBatteryState();
+    __resetRateLimits();
+    (globalThis as any).emitNet = vi.fn();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  it('loads the new character on their own phone, not the previous character', async () => {
+    let character = { cid: CID, phone: PHONE_A };
+    bridgeMock.getPlayer.mockImplementation(() => ({ ...mockPlayer(), citizenid: character.cid }));
+    __setPhoneResolvers({ forRequest: async () => character.phone });
+    dbMock.query.mockImplementation(async (_sql: string, params: unknown[]) =>
+      params[0] === PHONE_A
+        ? [{ id: 1, citizenid: CID, phone_id: PHONE_A, level: 30 }]
+        : [{ id: 2, citizenid: 'OTHER001', phone_id: PHONE_B, level: 70 }]
+    );
+    await sendLoadedBatteryToClient(SRC);
+    expect(currentCharge(SRC)).toBe(30);
+
+    character = { cid: 'OTHER001', phone: PHONE_B };
+    handlers.get('QBCore:Server:PlayerLoaded')!({ PlayerData: { source: SRC } });
+    await settle();
+    await settle();
+
+    expect(currentCharge(SRC)).toBe(70);
+    expect(emittedCharge()).toBe(70);
+  });
+
+  it('holds no previous-character charge when the new character cannot be read', async () => {
+    let character = { cid: CID, phone: PHONE_A };
+    bridgeMock.getPlayer.mockImplementation(() => ({ ...mockPlayer(), citizenid: character.cid }));
+    __setPhoneResolvers({ forRequest: async () => character.phone });
+    dbMock.query.mockResolvedValue([{ id: 1, citizenid: CID, phone_id: PHONE_A, level: 30 }]);
+    await sendLoadedBatteryToClient(SRC);
+
+    character = { cid: 'OTHER001', phone: PHONE_B };
+    dbMock.query.mockRejectedValue(new Error('connection lost'));
+    (globalThis as any).emitNet = vi.fn();
+    handlers.get('QBCore:Server:PlayerLoaded')!({ PlayerData: { source: SRC } });
+    await settle();
+    await settle();
+
+    // A kept charge is pushed as "the last one known for this phone"; the previous
+    // character's 30 is not this character's to show, tick or save. Asserted on the push
+    // rather than on a write, because a save here would fail on its own rejected read.
+    expect(chargeCalls()).toEqual([]);
+    expect(dbMock.query.mock.calls.some(([, params]) => (params as unknown[])[0] === PHONE_B)).toBe(
+      true
+    );
   });
 });
 

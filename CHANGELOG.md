@@ -1140,6 +1140,17 @@ export instead, which authenticates its caller.
 
 ### Fixed
 
+**A failed battery read no longer resets a phone to 100% (MICA-325, MICA-326).**
+When the database could not answer at load, micaOS treated the phone as having
+no saved charge and wrote 100% over it. A read error now writes nothing and is
+retried about once a minute, and a battery bank used meanwhile is refused with
+the item kept. **`GetBatteryLevel` and `AddBatteryCharge` now answer
+`{ ok: false, reason: 'internal_error' }` on a database error** where they used
+to answer 100 (and `AddBatteryCharge` wrote 100 plus its delta); both already
+listed that answer, so a script that checks `ok` needs nothing. A battery bank
+is also refused, and kept, when ox_inventory's `RemoveItem` fails or answers
+`false`, on qb, qbx and ESX alike; it used to charge anyway. Nothing to do.
+
 **Another script could take a resource's phone numbers or invoice callbacks by
 faking its stop (MICA-308).** micaOS released everything a resource held through
 `RegisterNumber`, and the `onPaid`/`onDeclined` callbacks it gave `SendInvoice`,

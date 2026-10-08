@@ -332,6 +332,38 @@ describe('battery exports', () => {
     expect(result.value).toBe(25);
   });
 
+  /**
+   * MICA-326: a read error answered 100, so a caller read a full battery nobody had read, and
+   * `AddBatteryCharge` added its delta to that 100 and wrote the sum over the saved charge.
+   */
+  describe('when the table cannot be read (MICA-326)', () => {
+    let quiet: ReturnType<typeof vi.spyOn>;
+    beforeEach(() => {
+      quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
+      dbMock.query.mockRejectedValue(new Error('connection lost'));
+    });
+    afterEach(() => quiet.mockRestore());
+
+    it('GetBatteryLevel answers internal_error rather than a full battery', async () => {
+      const result = (await publishedExport('GetBatteryLevel')!(SRC)) as any;
+      expect(result).toMatchObject({ ok: false, reason: 'internal_error' });
+    });
+
+    it('AddBatteryCharge writes nothing rather than adding to a guessed 100', async () => {
+      const result = (await publishedExport('AddBatteryCharge')!(SRC, -15)) as any;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(result).toMatchObject({ ok: false, reason: 'internal_error' });
+      expect(dbMock.update).not.toHaveBeenCalled();
+      expect(dbMock.insert).not.toHaveBeenCalled();
+    });
+
+    it('still answers the saved charge once the read works', async () => {
+      dbMock.query.mockResolvedValue([{ id: 1, citizenid: CID, level: 12 }]);
+      expect(await publishedExport('GetBatteryLevel')!(SRC)).toMatchObject({ ok: true, value: 12 });
+    });
+  });
+
   it('pushes charging to the client rather than topping the battery up', () => {
     // The drain loop is client-side; repeated top-ups from here would fight it instead of
     // joining it.

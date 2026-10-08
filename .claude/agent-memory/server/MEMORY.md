@@ -37,3 +37,7 @@ line here.
   — knip fails in-file-only re-exports; a lib helper must not import its service
 - [A Lua export's second return value turns its answer into an array](lua-multi-value-returns-arrive-as-arrays.md)
   — `false, 'reason'` arrives as a truthy `[false, 'reason']`; read element 0
+- [A Database mock that always rejects hides the overwrite](a-rejecting-db-mock-hides-the-overwrite.md)
+  — the save's own read rejects too; fail one read only (MICA-326)
+- [A character switch reuses the source and never fires playerDropped](character-switch-keeps-source-state.md)
+  — source-keyed maps hold the previous character; forget on load
