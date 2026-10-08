@@ -13,7 +13,6 @@ import {
   publicAddonIds,
   publicCatalogPath,
   writePublicCatalog
-  // @ts-expect-error -- a plain .js build script with no declaration file (declaring one is a non-test change).
 } from '../../scripts/lib/public-catalog.js';
 
 /**

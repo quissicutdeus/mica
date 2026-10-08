@@ -12,9 +12,7 @@ import {
   expectedScenariosText,
   readZip,
   scenarioIds
-  // @ts-expect-error -- a plain .js build script with no declaration file (declaring one is a non-test change).
 } from '../../scripts/pack-integration.js';
-// @ts-expect-error -- same.
 import { createZip } from '../../scripts/lib/zip.js';
 
 /**

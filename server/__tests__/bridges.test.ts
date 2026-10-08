@@ -14,9 +14,7 @@ import {
   renderTable,
   rewriteReadme,
   startMarker
-  // @ts-expect-error -- a plain .js build script with no types; this suite is not typechecked.
 } from '../../scripts/lib/bridge-table.js';
-// @ts-expect-error -- same.
 import { BRIDGES_DIR, globToRegExp, manifestGlobs } from '../../scripts/lib/release-zip.js';
 
 /**

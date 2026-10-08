@@ -13,7 +13,6 @@ import {
   discoverCatalogs,
   existingLocales,
   renderLocales
-  // @ts-expect-error -- a plain .js build script with no types; this suite is not typechecked.
 } from '../../scripts/lib/locales.js';
 
 /**
@@ -77,7 +76,9 @@ describe('the generator, on a scratch tree', () => {
       'locales/en/shell.json',
       'locales/en/ui.json'
     ]);
-    expect(JSON.parse(out.get('locales/de/notes.json'))).toEqual({ title: 'Notizen' });
+    const german = out.get('locales/de/notes.json');
+    if (german === undefined) throw new Error('locales/de/notes.json was not rendered');
+    expect(JSON.parse(german)).toEqual({ title: 'Notizen' });
     expect(BUNDLED_LANGS).toEqual(['en', 'de']);
   });
 

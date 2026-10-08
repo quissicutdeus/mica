@@ -21,11 +21,8 @@ import {
   uncoveredGlobs,
   unexpectedBranding,
   zipName
-  // @ts-expect-error -- a plain .js build script with no types; this suite is not typechecked.
 } from '../../scripts/lib/release-zip.js';
-// @ts-expect-error -- same.
 import { createZip } from '../../scripts/lib/zip.js';
-// @ts-expect-error -- same.
 import { LOCALES_DIR as GENERATED_LOCALES_DIR } from '../../scripts/lib/locales.js';
 
 /**

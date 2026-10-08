@@ -16,7 +16,6 @@ import {
   type Scenario
 } from '../../integration/runner';
 import { scenarios as registered } from '../../integration/scenarios';
-// @ts-expect-error -- a plain .js build script with no types; this suite is not typechecked.
 import { scenarioIds } from '../../scripts/pack-integration.js';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, resolve as resolvePath } from 'node:path';

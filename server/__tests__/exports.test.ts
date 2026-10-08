@@ -12,7 +12,7 @@ const { dbMock, bridgeMock } = vi.hoisted(() => ({
     getCitizenId: vi.fn(),
     // The push path resolves a recipient to a live source; undefined is "offline", which
     // is the case these assertions mostly want anyway.
-    getSourceByCitizenId: vi.fn(() => undefined),
+    getSourceByCitizenId: vi.fn((_citizenid: string): number | null | undefined => undefined),
     getPlayerByPhone: vi.fn(() => undefined),
     getPlayerPhone: vi.fn(),
     // The offline half of `PlayerDirectory`. It used to query `players` here directly, so

@@ -8,7 +8,6 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-// @ts-expect-error -- a plain node script with no declaration file
 import { judge, parseBaseline, parseTscOutput } from '../../scripts/check-test-types.js';
 
 /**

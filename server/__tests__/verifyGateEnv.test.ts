@@ -5,7 +5,6 @@
 import { describe, it, expect } from 'vitest';
 import { spawnSync } from 'child_process';
 import { readFileSync } from 'fs';
-// @ts-expect-error -- a plain .js build script with no declaration file (declaring one is a non-test change).
 import { AGENT_ENV_VARS, gateEnv, gateEnvNotice } from '../../scripts/lib/gate-env.js';
 
 /**

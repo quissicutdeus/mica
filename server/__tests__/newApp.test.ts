@@ -15,9 +15,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
-// @ts-expect-error -- a plain .js check module with no declaration file (declaring one is a non-test change).
 import { checkAddonSources, collectFiles } from '../../sdk/checks/addon.js';
-// @ts-expect-error -- same.
 import { componentClasses, tileClasses } from '../../sdk/checks/classes.js';
 
 /**
