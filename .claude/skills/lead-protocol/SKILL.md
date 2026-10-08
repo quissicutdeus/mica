@@ -130,6 +130,12 @@ message reads as something to answer instead of something to execute.
 - A background gate writes its rc to a file and you read the file; the task
   notice reports the wrapper's exit, not the gate's. After a partial failure
   rerun only the gate that failed.
+- **Start a long gate with the Bash tool's `run_in_background`, never a bare `&`
+  or `( … ) &` inside a foreground call.** The lead acts only when something
+  wakes it, and an untracked job sends no notice when it ends. On 2026-10-07 a
+  verify finished green at 19:01 and nothing woke the lead until the owner asked
+  why it had stalled, at 23:25. Before ending a turn with no lane still working,
+  check that something tracked will wake you.
 - **Send a `review` lane before committing server code that writes player
   data**, and again after any rewrite of a delete path. Each review round on
   such code has found a real must-fix after every suite was green.
