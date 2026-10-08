@@ -97,8 +97,11 @@ type Cached = { entries: unknown[] | null; until: number };
 
 /** The last answer per catalog URL: entries on success, `null` for a failure. */
 const cache = new Map<string, Cached>();
+/** What one fetch came to: the entries, or why there are none. */
+type Outcome = { entries: unknown[] } | { reason: string };
+
 /** The fetch in progress per catalog URL, shared by every caller that arrives meanwhile. */
-const inFlight = new Map<string, Promise<unknown[] | null>>();
+const inFlight = new Map<string, Promise<Outcome>>();
 /** The last failure written to the console per URL, so a window says it once. */
 const warned = new Map<string, { reason: string; until: number }>();
 
@@ -131,17 +134,20 @@ export const redactCatalogUrl = (url: string): string => {
   return `${scheme}${at === -1 ? '' : '…@'}${host}${path}${trimmed}`;
 };
 
+/**
+ * A failure's reason fit for a log line. A runtime error can quote the URL it was handed, as
+ * given or normalised; any URL in the reason is redacted as `redactCatalogUrl` does.
+ */
+const redactReason = (reason: string): string =>
+  reason.replace(/[a-z][a-z0-9+.-]*:\/\/\S+/gi, (found) => redactCatalogUrl(found));
+
 const warnFailure = (url: string, reason: string): void => {
   const last = warned.get(url);
   if (last && last.reason === reason && last.until > Date.now()) return;
   warned.set(url, { reason, until: Date.now() + CATALOG_FAILURE_TTL_MS });
-  const safe = redactCatalogUrl(url);
-  // A runtime error can quote the URL it was handed, as given or normalised; any URL in the
-  // reason is redacted the same way.
-  const safeReason = reason.replace(/[a-z][a-z0-9+.-]*:\/\/\S+/gi, (found) =>
-    redactCatalogUrl(found)
+  console.warn(
+    `[micaOS] add-on catalog ${redactCatalogUrl(url)} is unavailable: ${redactReason(reason)}`
   );
-  console.warn(`[micaOS] add-on catalog ${safe} is unavailable: ${safeReason}`);
 };
 
 /** Why `url` may not be fetched with this allowlist, or `null` when it may. */
@@ -270,41 +276,89 @@ export const catalogEntries = async (
   const cached = cache.get(url);
   if (cached && cached.until > Date.now()) return cached.entries;
 
+  const outcome = await fetchAndCache(url);
+  return 'entries' in outcome ? outcome.entries : null;
+};
+
+/**
+ * Fetch `url` and cache the answer, or join the fetch already in flight for it. The one path
+ * to the host, for a phone's `store:catalog` and the console's `micahttp catalog` alike.
+ */
+const fetchAndCache = (url: string): Promise<Outcome> => {
   const pending = inFlight.get(url);
   if (pending) return pending;
 
   // Settled in the same step that fills the cache, so no caller ever finds neither.
   const request = fetchCatalog(url).then(
-    (entries) => {
+    (entries): Outcome => {
       cache.set(url, { entries, until: Date.now() + CATALOG_TTL_MS });
       inFlight.delete(url);
       warned.delete(url);
-      return entries;
+      return { entries };
     },
-    (error: unknown) => {
+    (error: unknown): Outcome => {
+      const reason = reasonOf(error);
       cache.set(url, { entries: null, until: Date.now() + CATALOG_FAILURE_TTL_MS });
       inFlight.delete(url);
-      warnFailure(url, reasonOf(error));
-      return null;
+      warnFailure(url, reason);
+      return { reason };
     }
   );
   inFlight.set(url, request);
   return request;
 };
 
-/** What `store:catalog` answers, read from the two convars at the moment it is asked. */
-export const readCatalog = async (): Promise<StoreCatalogResult> => {
+/** The two convars, resolved, at the moment they are asked. */
+const catalogSetting = () =>
   // Literal names, per call: `convars.test.ts` reads the name at each call site, and a `set`
   // on a running server applies to the next request.
-  const setting = resolveAddonConfig(
+  resolveAddonConfig(
     GetConvar('mica_addon_catalog', CONVAR_UNSET),
     GetConvar('mica_addon_hosts', CONVAR_UNSET),
     SDK_CONTRACT_VERSION
   );
+
+/** What `store:catalog` answers, read from the two convars at the moment it is asked. */
+export const readCatalog = async (): Promise<StoreCatalogResult> => {
+  const setting = catalogSetting();
   if (setting.state === 'off') return { status: 'off' };
 
   const entries = await catalogEntries(setting.catalogUrl, setting.hosts);
   return entries ? { status: 'ok', entries } : { status: 'unavailable' };
+};
+
+/**
+ * What `micahttp catalog` found (MICA-322). Every `url` and `reason` is already redacted as
+ * the console line would be, so a caller can print them as they are.
+ */
+export type CatalogRefresh =
+  | { status: 'off' }
+  | { status: 'refused'; state: 'default' | 'custom'; url: string; reason: string }
+  | { status: 'ok'; state: 'default' | 'custom'; url: string; entries: unknown[] }
+  | { status: 'unavailable'; state: 'default' | 'custom'; url: string; reason: string };
+
+/**
+ * Fetch the catalog now, past the cache, through the same checks and the same request a
+ * phone's `store:catalog` makes, and answer what came of it rather than only logging it. A
+ * success refills the cache, so every phone gets what the console just saw; a failure holds
+ * phones off for the failure window as a phone's own failed fetch would. A fetch already in
+ * flight is joined, not doubled.
+ */
+export const refreshCatalog = async (): Promise<CatalogRefresh> => {
+  const setting = catalogSetting();
+  if (setting.state === 'off') return { status: 'off' };
+  const state = setting.state;
+  const { catalogUrl, hosts } = setting;
+  const url = redactCatalogUrl(catalogUrl);
+
+  const refusal = refusalOf(catalogUrl, hosts);
+  if (refusal) return { status: 'refused', state, url, reason: redactReason(refusal) };
+
+  if (!inFlight.has(catalogUrl)) cache.delete(catalogUrl);
+  const outcome = await fetchAndCache(catalogUrl);
+  return 'entries' in outcome
+    ? { status: 'ok', state, url, entries: outcome.entries }
+    : { status: 'unavailable', state, url, reason: redactReason(outcome.reason) };
 };
 
 app.registerEvent('catalog', async () => readCatalog());

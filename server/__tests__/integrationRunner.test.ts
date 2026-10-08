@@ -310,7 +310,7 @@ describe('the runs', () => {
  * nobody had to decide the mode of.
  */
 describe('the registered suite', () => {
-  const STANDALONE = 27;
+  const STANDALONE = 31;
   const QBX = 7;
   const ESX = 6;
 

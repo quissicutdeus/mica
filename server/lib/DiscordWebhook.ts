@@ -72,7 +72,7 @@ export interface DiscordEmbed {
 /** What `fetch` has to look like for this module; the runtime's global satisfies it. */
 export type WebhookFetch = (
   url: string,
-  init: { method: string; headers: Record<string, string>; body: string }
+  init: { method: string; headers: Record<string, string>; body: string; redirect: 'error' }
 ) => Promise<{ ok: boolean; status: number }>;
 
 declare const fetch: WebhookFetch;
@@ -84,11 +84,15 @@ const COLOR_MODERATION = 0xd32f2f;
 const COLOR_VIEWED = 0xf9a825;
 const COLOR_REPORT = 0x1976d2;
 const COLOR_PAYMENT = 0x2e7d32;
+const COLOR_TEST = 0x607d8b;
 
-const webhookUrl = (): string => {
+/** The convar as set, trimmed, and the URL posted to: `''` unless the value is `https://`. */
+const webhookSetting = (): { raw: string; url: string } => {
   const raw = GetConvar(WEBHOOK_CONVAR, '').trim();
-  return raw.startsWith('https://') ? raw : '';
+  return { raw, url: raw.startsWith('https://') ? raw : '' };
 };
+
+const webhookUrl = (): string => webhookSetting().url;
 
 const contentAllowed = (): boolean => {
   const raw = GetConvar(CONTENT_CONVAR, '').trim().toLowerCase();
@@ -229,6 +233,42 @@ const schedule = (delay: number): void => {
   }, delay);
 };
 
+const reasonOf = (error: unknown): string => {
+  if (!(error instanceof Error)) return String(error);
+  // Node's fetch says `fetch failed` and puts what happened on `cause`.
+  const cause = (error as { cause?: unknown }).cause;
+  return cause instanceof Error ? `${error.message}: ${cause.message}` : error.message;
+};
+
+/** Why a post failed, fit for the console: the webhook URL, or any URL, reduced to its origin. */
+const safeReasonOf = (error: unknown, url: string): string =>
+  reasonOf(error)
+    .split(url)
+    .join(webhookOrigin(url))
+    .replace(/[a-z][a-z0-9+.-]*:\/\/\S+/gi, (found) => webhookOrigin(found));
+
+interface WebhookBody {
+  embeds: DiscordEmbed[];
+  content?: string;
+}
+
+/**
+ * The one request this module makes, for the queue and for `sendWebhookTest` alike.
+ *
+ * **A redirect is refused, not followed** (MICA-322), as the catalog relay refuses one. Fetch
+ * re-sends a POST's body on a 307 or 308, so following one would hand the staff channel's
+ * embeds — content included, under the content gate — to a host the owner never named. Node's
+ * fetch rejects with `fetch failed` and `unexpected redirect` on its cause, which both callers
+ * already treat as a failed post.
+ */
+const post = (url: string, body: WebhookBody): ReturnType<WebhookFetch> =>
+  fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    redirect: 'error'
+  });
+
 const flush = async (): Promise<void> => {
   if (inFlight) return;
   if (pending.length === 0) return;
@@ -251,22 +291,18 @@ const flush = async (): Promise<void> => {
   sentAt.push(now());
   inFlight = true;
   try {
-    const body: { embeds: DiscordEmbed[]; content?: string } = { embeds: batch };
+    const body: WebhookBody = { embeds: batch };
     if (droppedNote > 0) {
       body.content = `⚠️ ${droppedNote} audit event(s) were dropped before this post: the queue was full.`;
     }
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
+    const response = await post(url, body);
     if (!response.ok) {
       failOnce(`Discord answered ${response.status}`);
     } else {
       failureLogged = false;
     }
   } catch (error) {
-    failOnce(error instanceof Error ? error.message : String(error));
+    failOnce(safeReasonOf(error, url));
   } finally {
     inFlight = false;
   }
@@ -337,6 +373,77 @@ export const forwardReportFiled = (event: ReportFiledEvent): void =>
     if (!webhookUrl()) return;
     enqueue(reportEmbed(event, new Date(now())));
   });
+
+// ---------------------------------------------------------------------------------------------
+// The console's test post (`micahttp webhook`, MICA-322)
+// ---------------------------------------------------------------------------------------------
+
+/** The plain-text line a test post carries, so nobody in the channel reads it as moderation. */
+export const TEST_POST_CONTENT = 'micaOS webhook test: not a moderation event.';
+export const TEST_EMBED_TITLE = 'micaOS webhook test';
+
+/**
+ * Where the webhook points, fit for a console line: scheme and host, never the path. A Discord
+ * webhook URL *is* its secret — `/api/webhooks/<id>/<token>` — and anyone holding it can post
+ * to the channel, so neither the path nor any userinfo is ever printed. Done by hand, because
+ * the one URL that most needs it may be one `URL` cannot parse.
+ */
+export const webhookOrigin = (url: string): string => {
+  const scheme = /^[a-z][a-z0-9+.-]*:\/\//i.exec(url)?.[0] ?? '';
+  const authority = url.slice(scheme.length).split(/[/?#\\]/, 1)[0];
+  const host = authority.slice(authority.lastIndexOf('@') + 1);
+  return `${scheme}${host}/…`;
+};
+
+const testEmbed = (at: Date): DiscordEmbed => ({
+  title: TEST_EMBED_TITLE,
+  color: COLOR_TEST,
+  timestamp: at.toISOString(),
+  fields: [
+    { name: 'Sent by', value: '`micahttp webhook`, run on the server console' },
+    {
+      name: 'Means',
+      value: 'This channel receives micaOS moderation events. Nothing happened in game.'
+    }
+  ]
+});
+
+export type WebhookTestResult =
+  /** `mica_discord_webhook` is empty: the webhook is off. */
+  | { outcome: 'unset' }
+  /** Set to something that is not `https://`, which every post refuses. */
+  | { outcome: 'not-https' }
+  /** The host answered. `origin` is `webhookOrigin`'s, never the URL. */
+  | { outcome: 'answered'; origin: string; status: number; ok: boolean; embed: DiscordEmbed }
+  /** No answer: refused, reset, TLS. `reason` has every URL in it reduced to its origin. */
+  | { outcome: 'failed'; origin: string; reason: string };
+
+/**
+ * Post one clearly-labelled test embed through the same request, and the same rate limit, the
+ * queue uses, and answer what happened rather than logging it. The console asked, so the
+ * console is told — every time, not once per failure window. Waits for the limiter when a
+ * burst has used the window up, so a test cannot push the webhook past Discord's budget.
+ * Never throws.
+ */
+export const sendWebhookTest = async (): Promise<WebhookTestResult> => {
+  const { raw, url } = webhookSetting();
+  if (raw === '') return { outcome: 'unset' };
+  if (!url) return { outcome: 'not-https' };
+  const origin = webhookOrigin(url);
+
+  const wait = nextSlotIn();
+  if (wait > 0) await new Promise<void>((resolve) => setTimeout(resolve, wait));
+  sentAt.push(now());
+
+  const embed = testEmbed(new Date(now()));
+  try {
+    const response = await post(url, { content: TEST_POST_CONTENT, embeds: [embed] });
+    if (response.ok) failureLogged = false;
+    return { outcome: 'answered', origin, status: response.status, ok: response.ok, embed };
+  } catch (error) {
+    return { outcome: 'failed', origin, reason: safeReasonOf(error, url) };
+  }
+};
 
 /** Test seam: forget every queued embed, timer and limiter state. */
 export const __resetDiscordWebhook = (): void => {

@@ -9,8 +9,8 @@ import { eventually } from '../lib/wait';
 /**
  * The premise every command scenario stands on (MICA-302): a command this resource runs with
  * `ExecuteCommand` reaches its handler with `source` 0, the console's — the only source
- * `micaschema apply`, `micacrypt`, `micaimport` and `micamedia prune` accept (each refuses any
- * other with a toast and nothing in the console).
+ * `micaschema apply`, `micacrypt`, `micaimport`, `micahttp` and `micamedia prune` accept (each
+ * refuses any other with a toast and nothing in the console).
  *
  * Proven here on a command of this resource's own, so a failure says "the premise is wrong"
  * rather than "some command misbehaved". The command scenarios then prove it again for micaOS's
@@ -61,7 +61,8 @@ export const commandScenarios: Scenario[] = [
         'micacall',
         'micaseed',
         'micaimport',
-        'micacrypt'
+        'micacrypt',
+        'micahttp'
       ];
       const table = GetRegisteredCommands() as { name?: unknown; resource?: unknown }[];
       if (!Array.isArray(table) || table.length === 0) {

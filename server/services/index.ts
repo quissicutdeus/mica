@@ -26,6 +26,7 @@ import './Messages';
 import './Music';
 import './Notes';
 import './Notifications';
+import './OutboundHttp';
 import './Phone';
 import './PhoneCallLog';
 import './PhoneNumbers';

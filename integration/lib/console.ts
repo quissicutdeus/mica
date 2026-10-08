@@ -94,7 +94,7 @@ export class ConsoleTap {
           .filter(
             (line) =>
               line.seq >= mark &&
-              (/^\s*\[(mica|micaOS|micacrypt|micaimport|micamedia)\]/.test(line.text) ||
+              (/^\s*\[(mica|micaOS|micacrypt|micaimport|micamedia|micahttp)\]/.test(line.text) ||
                 line.channel === 'script:oxmysql' ||
                 (line.channel.includes('scripting') && line.text.includes('mica')))
           )

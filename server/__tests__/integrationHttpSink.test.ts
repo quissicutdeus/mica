@@ -14,13 +14,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  * nobody can reach has to fail loudly. Getting any of that wrong would surface on hoth as a
  * scenario failing for the harness's reasons, not micaOS's.
  *
- * The second is the part of MICA-304's sink work no in-server scenario can reach. The Discord
- * webhook (MICA-242) and the catalog relay (MICA-237) are only ever driven by a connected
- * player's net event, and the harness connects none, so this is where their requests are
- * proven on the wire: method, path, headers and body as Node's own `fetch` sends them, which
- * the stubbed-fetch suites (`discordWebhook.test.ts`, `store.test.ts`) cannot show. What this
- * cannot show is FXServer's runtime; `integration/scenarios/http.ts` does that for the image
- * host, and says why it cannot for the other two.
+ * The second is the modules' requests on the wire: method, path, headers and body as Node's
+ * own `fetch` sends them, which the stubbed-fetch suites (`discordWebhook.test.ts`,
+ * `store.test.ts`) cannot show, reached here through the entry points a player's net event
+ * calls — `forwardAudit` for the Discord webhook (MICA-242), `catalogEntries` for the catalog
+ * relay (MICA-237). What this cannot show is FXServer's runtime. `integration/scenarios/http.ts`
+ * shows that for all three: the image host through its own paths, and the other two through
+ * `micahttp` (MICA-322), the console command that drives the same requests with no player
+ * connected. `outboundHttp.test.ts` runs that command against this sink.
  *
  * `Database` is mocked as every server suite mocks it; the image host's reference check and its
  * ledger write are the only queries reached, and both are answered empty.

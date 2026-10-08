@@ -11,10 +11,10 @@ something rather than being swallowed by the client.
 
 ## Who may run them
 
-**All of them but `micaimport` and `micacrypt` are admin-gated by `isAdmin` in
-`server/services/Admin.ts`**; those two take the server console and nobody else.
-That reads the `mica_admin_aces` convar, which defaults to `mica.admin` and
-`command`:
+**All of them but `micaimport`, `micacrypt` and `micahttp` are admin-gated by
+`isAdmin` in `server/services/Admin.ts`**; those three take the server console
+and nobody else. That reads the `mica_admin_aces` convar, which defaults to
+`mica.admin` and `command`:
 
 ```cfg
 setr mica_admin_aces "mica.admin,mygroup.staff"
@@ -38,28 +38,30 @@ principals to check.
 
 ## The commands
 
-| Command                                 | Does                                                                                  |
-| --------------------------------------- | ------------------------------------------------------------------------------------- |
-| `micaschema`                            | Reports where the database differs from the code. Changes nothing                     |
-| `micaschema apply`                      | **Console only.** Runs pending migrations, then the additive pass                     |
-| `micamedia`                             | Reports `mica_media`'s size and its top ten holders. Changes nothing                  |
-| `micamedia prune`                       | **Console only.** Runs the expiry and orphan sweeps now                               |
-| `micacharge [playerId] <0-100>`         | Sets a player's battery level; omit the id for yourself                               |
-| `micaseed` / `micaseed add`             | Creates test characters, contacts and threads for the caller                          |
-| `micaseed text <firstname> <message>`   | Has a seeded character text you — exercises inbound delivery                          |
-| `micaseed clear`                        | Removes everything `micaseed` created                                                 |
-| `micacall [number \| firstname]`        | Rings yourself — a real call, peer faked. See `docs/testing-voip.md`                  |
-| `micacall end`                          | Force-ends your own active call                                                       |
-| `micaimport <qb-phone\|lb-phone\|npwd>` | **Console only.** Reports what it would bring across from that phone. Changes nothing |
-| `micaimport <source> --apply`           | **Console only.** Brings it across. A second run brings nothing new                   |
-| `micacrypt status`                      | **Console only.** Counts sealed, plaintext and unreadable bodies. Changes nothing     |
-| `micacrypt backfill`                    | **Console only.** Reports what `--apply` would seal. Changes nothing                  |
-| `micacrypt backfill --apply`            | **Console only.** Seals plaintext bodies and re-seals old keys'. Safe to repeat       |
-| `micacrypt keygen [kid]`                | **Console only.** Prints the steps that set a content key up. Writes nothing          |
+| Command                                 | Does                                                                                    |
+| --------------------------------------- | --------------------------------------------------------------------------------------- |
+| `micaschema`                            | Reports where the database differs from the code. Changes nothing                       |
+| `micaschema apply`                      | **Console only.** Runs pending migrations, then the additive pass                       |
+| `micamedia`                             | Reports `mica_media`'s size and its top ten holders. Changes nothing                    |
+| `micamedia prune`                       | **Console only.** Runs the expiry and orphan sweeps now                                 |
+| `micacharge [playerId] <0-100>`         | Sets a player's battery level; omit the id for yourself                                 |
+| `micaseed` / `micaseed add`             | Creates test characters, contacts and threads for the caller                            |
+| `micaseed text <firstname> <message>`   | Has a seeded character text you — exercises inbound delivery                            |
+| `micaseed clear`                        | Removes everything `micaseed` created                                                   |
+| `micacall [number \| firstname]`        | Rings yourself — a real call, peer faked. See `docs/testing-voip.md`                    |
+| `micacall end`                          | Force-ends your own active call                                                         |
+| `micaimport <qb-phone\|lb-phone\|npwd>` | **Console only.** Reports what it would bring across from that phone. Changes nothing   |
+| `micaimport <source> --apply`           | **Console only.** Brings it across. A second run brings nothing new                     |
+| `micacrypt status`                      | **Console only.** Counts sealed, plaintext and unreadable bodies. Changes nothing       |
+| `micacrypt backfill`                    | **Console only.** Reports what `--apply` would seal. Changes nothing                    |
+| `micacrypt backfill --apply`            | **Console only.** Seals plaintext bodies and re-seals old keys'. Safe to repeat         |
+| `micacrypt keygen [kid]`                | **Console only.** Prints the steps that set a content key up. Writes nothing            |
+| `micahttp webhook`                      | **Console only.** Posts one labelled test embed to the audit webhook; prints the answer |
+| `micahttp catalog`                      | **Console only.** Fetches the add-on catalog now, past its cache; prints what came back |
 
 Source: `server/services/Schema.ts`, `Media.ts`, `Battery.ts`, `Seed.ts`,
-`Phone.ts`, `Import.ts` and `ContentKeys.ts` respectively — one
-`RegisterCommand` each.
+`Phone.ts`, `Import.ts`, `ContentKeys.ts` and `OutboundHttp.ts` respectively —
+one `RegisterCommand` each.
 
 ## The two that are gated harder than the rest
 
@@ -137,6 +139,29 @@ step 2 into a scratch file, put it **first** in the live key file with the old
 lines after it, restart the resource, run `backfill --apply`, and remove an old
 line only once `status` shows nothing left under it. A body under a key that is
 no longer in the file reads as 🔒.
+
+## `micahttp` reaches out on demand, from the console only
+
+`micahttp` (MICA-322) sends one request through either of micaOS's two outbound
+callers that otherwise only a player's action reaches: the Discord audit webhook
+and the add-on catalog relay. An owner can see either one work without
+moderating anything or opening the Store. Like `micaimport`, it refuses any
+`source` but the console: both subcommands make the server contact a third party
+on demand.
+
+- **`webhook`** posts one embed titled "micaOS webhook test", carrying the line
+  "micaOS webhook test: not a moderation event.", through the same request and
+  rate limit as real audit posts, and prints the status the host answered or why
+  there was none. A redirect is refused, so the embed never reaches a host the
+  convar did not name. It prints the URL's scheme and host only, never its path:
+  a Discord webhook URL's path is its token. With the webhook convar unset, or
+  not `https://`, it says so and sends nothing.
+- **`catalog`** fetches the catalog through the checks the Store applies —
+  `https://` only, the host in `mica_addon_hosts`, no redirects, at most 1 MiB,
+  a JSON array — past the ten-minute cache, and prints the entry count and up to
+  ten ids. Success refills the copy every phone gets; a failure prints its
+  reason and holds phones at "unavailable" for a minute, as a phone's own failed
+  fetch would. Userinfo, query and fragment are stripped from the printed URL.
 
 ## `micacall` runs in game, not from the console
 

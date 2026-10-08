@@ -24,18 +24,15 @@ import { schemaCreated } from './qbx';
  * What micaOS sends over HTTP, received by a stub HTTPS server inside this resource
  * (`lib/httpSink.ts`, MICA-304) and checked request by request.
  *
- * **Only the image host is here** (MICA-243, MICA-292). Of micaOS's three outbound callers it is
- * the one a server reaches with no player connected: `AddMedia` uploads, and the purge, the
- * media-only purge and the orphan sweep release. The other two cannot be driven from here:
- *
- * - The Discord webhook (MICA-242) mirrors audit-ledger entries, and every staff-relevant entry
- *   is written by a player's net event (a moderation, a report read, an admin's conversation
- *   delete) behind `ServiceEndpoint`'s player lookup. No export and no console command writes one.
- * - The add-on catalog relay (MICA-237) answers `store:catalog`, a player's net event, and
- *   nothing else calls it.
- *
- * Both wait for a harness that can connect a client. Until then `integrationHttpSink.test.ts`
- * runs their real modules against this same sink under real Node `fetch`, outside FXServer.
+ * All three of micaOS's outbound callers are here. The image host (MICA-243, MICA-292) is the one
+ * a server reaches with no player connected: `AddMedia` uploads, and the purge, the media-only
+ * purge and the orphan sweep release. The other two answer only a player's net event in play —
+ * the Discord webhook (MICA-242) mirrors audit entries a player's action writes, and the add-on
+ * catalog relay (MICA-237) answers `store:catalog` — so they are driven here through
+ * `micahttp` (MICA-322), the console command that sends one through the same request and
+ * checks. What that does not prove is the net-event half in front of each: that a moderation
+ * reaches `forwardAudit`, that a phone's `store:catalog` reaches `readCatalog`. Those still wait
+ * for a harness that can connect a client.
  *
  * Every URL micaOS posts to is a convar it reads on each call, so each scenario points micaOS at
  * its own sink with `SetConvar` and puts every convar back as it was afterwards. Nothing in the
@@ -195,6 +192,93 @@ const deletedNames = (requests: readonly SinkRequest[]): string[] =>
     .map((request) => decodeURIComponent(request.path.slice(DELETE_PREFIX.length)));
 
 const literal = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// ─── micahttp (MICA-322) ─────────────────────────────────────────────────────────────────────
+
+/**
+ * What `GetConvar` hands back for a convar nobody set, and what restores "nobody set it": the
+ * Store tells unset from empty by this exact default (`CONVAR_UNSET`, `shared/addonConfig.ts`,
+ * which this resource cannot import), and an unset catalog is the public one where an empty one
+ * is off. Putting back `''` would turn a stock server's catalog off for every later scenario.
+ */
+const CONVAR_UNSET = '__mica_convar_unset__';
+
+/** The test post's plain-text line and embed title, as `DiscordWebhook.ts` writes them. */
+const TEST_POST_CONTENT = 'micaOS webhook test: not a moderation event.';
+const TEST_EMBED_TITLE = 'micaOS webhook test';
+
+const WEBHOOK_PREFIX = '/api/webhooks/';
+
+interface Webhook {
+  sink: HttpSink;
+  /** The token in the webhook's path, which no console line may carry. */
+  token: string;
+  path: string;
+}
+
+/**
+ * A sink standing in for Discord, and `mica_discord_webhook` pointed at it with a fresh token,
+ * shaped as Discord's are: `/api/webhooks/<id>/<token>`. Put back as it was afterwards.
+ */
+const withWebhook = (run: (hook: Webhook) => Promise<void>): Promise<void> =>
+  withSink(async (sink) => {
+    const token = randomBytes(24).toString('hex');
+    const path = `${WEBHOOK_PREFIX}${Date.now()}/${token}`;
+    sink.respond(() => ({ status: 204 }));
+    const previous = GetConvar('mica_discord_webhook', '');
+    SetConvar('mica_discord_webhook', `${sink.origin}${path}`);
+    try {
+      await run({ sink, token, path });
+    } finally {
+      SetConvar('mica_discord_webhook', previous);
+    }
+  });
+
+/** The two catalog convars pointed at `url`, allowing only the sink's host, for `run`. */
+const withCatalog = async (url: string, run: () => Promise<void>): Promise<void> => {
+  const previous = (['mica_addon_catalog', 'mica_addon_hosts'] as const).map(
+    (name) => [name, GetConvar(name, CONVAR_UNSET)] as const
+  );
+  SetConvar('mica_addon_catalog', url);
+  SetConvar('mica_addon_hosts', HOST);
+  try {
+    await run();
+  } finally {
+    for (const [name, value] of previous) SetConvar(name, value);
+  }
+};
+
+const micahttpSaid = (tap: ConsoleTap, mark: number): string => {
+  const lines = tap
+    .since(mark)
+    .filter((line) => /^\s*\[(micahttp|micaOS|DiscordWebhook)\]/.test(line))
+    .slice(-4);
+  return lines.length > 0 ? lines.join(' | ') : 'nothing';
+};
+
+/** A line that says a script threw rather than answered. */
+const THREW = /SCRIPT ERROR|unhandled/i;
+
+const assertNoToken = (tap: ConsoleTap, mark: number, token: string): void => {
+  const leaked = tap.since(mark).filter((line) => line.includes(token)).length;
+  assert(leaked === 0, `the webhook's token appeared in ${leaked} console line(s)`);
+};
+
+const jsonOf = (request: SinkRequest): { content?: unknown; embeds?: { title?: unknown }[] } => {
+  try {
+    return JSON.parse(Buffer.from(request.body).toString('utf8'));
+  } catch {
+    throw new Error(`the webhook post's body is not JSON: ${request.headers['content-type']}`);
+  }
+};
+
+const ORIGIN = `https://${literal(HOST)}:\\d+`;
+/**
+ * The `…` micaOS puts where the webhook's path was. Matched as up to three characters with no
+ * slash, since nothing yet proves FXServer's console hands UTF-8 through intact; a path, which
+ * is what must not be there, is longer and has slashes. `assertNoToken` is the leak check.
+ */
+const ELLIPSIS = '[^/\\s;]{1,3}';
 
 const UPLOAD_FAILED =
   /^\[micamedia\] upload to 127\.0\.0\.1 failed \((.*)\); the photo was stored in the database instead\.$/;
@@ -453,6 +537,287 @@ export const httpScenarios: Scenario[] = [
         assert(!(await exists(refused)), 'a photo row survived a purge whose delete was refused');
         assert(!(await exists(dropped)), 'a photo row survived a purge whose delete hung up');
         assertNoLeak(tap, mark, host.secret);
+      })
+  },
+  {
+    // MICA-322: `micahttp webhook` posts one labelled test embed through the webhook's own
+    // request — POST, JSON, to the configured URL — and the console names the host, never the
+    // token. Unset, it says so and sends nothing.
+    id: 'http-micahttp-webhook-posts-a-test-embed',
+    mode: 'standalone',
+    tickets: ['MICA-322', 'MICA-242', 'MICA-304'],
+    timeoutMs: 30_000,
+    run: async (signal) => {
+      const tap = requireTap();
+      await withWebhook(async (hook) => {
+        // Off first: the same sink, nothing sent.
+        SetConvar('mica_discord_webhook', '');
+        let mark = tap.mark();
+        await runCommand('micahttp webhook');
+        await tap.waitFor(
+          mark,
+          /^\[micahttp\] webhook: mica_discord_webhook is not set, so the webhook is off; nothing sent\.$/,
+          10_000,
+          signal,
+          "micahttp's line for an unset webhook"
+        );
+        assert(
+          hook.sink.since(0).length === 0,
+          `an unset webhook sent ${describe(hook.sink.since(0))}`
+        );
+
+        // The twin: pointed at the sink, the post arrives.
+        SetConvar('mica_discord_webhook', `${hook.sink.origin}${hook.path}`);
+        mark = tap.mark();
+        const from = hook.sink.mark();
+        await runCommand('micahttp webhook');
+        const post = await hook.sink.waitFor(
+          from,
+          (request) => request.path.startsWith(WEBHOOK_PREFIX),
+          10_000,
+          signal,
+          `the webhook's test post (micaOS said: ${micahttpSaid(tap, mark)})`
+        );
+        assert(
+          post.method === 'POST' && post.path === hook.path,
+          `the test post was ${post.method} to a path other than the configured webhook's`
+        );
+        assert(
+          post.headers['content-type'] === 'application/json',
+          `the test post is typed ${String(post.headers['content-type'])}`
+        );
+        const body = jsonOf(post);
+        assert(
+          body.content === TEST_POST_CONTENT,
+          `the post's content is ${JSON.stringify(body.content)}`
+        );
+        assert(
+          Array.isArray(body.embeds) && body.embeds.length === 1,
+          `the post carries ${Array.isArray(body.embeds) ? body.embeds.length : 'no'} embed(s), not 1`
+        );
+        assert(
+          body.embeds?.[0]?.title === TEST_EMBED_TITLE,
+          `the embed is titled ${JSON.stringify(body.embeds?.[0]?.title)}`
+        );
+        assert(
+          hook.sink.since(from).length === 1,
+          `one command sent ${describe(hook.sink.since(from))}`
+        );
+
+        await tap.waitFor(
+          mark,
+          new RegExp(
+            `^\\[micahttp\\] webhook: posted the embed "${literal(TEST_EMBED_TITLE)}" to ` +
+              `${ORIGIN}/${ELLIPSIS}; the host answered 204\\.$`
+          ),
+          10_000,
+          signal,
+          "micahttp's line for the post"
+        );
+        // The token was in play — the sink was asked for it — and the console never said it.
+        assert(post.path.includes(hook.token), 'the post did not carry the configured token');
+        assertNoToken(tap, mark, hook.token);
+      });
+    }
+  },
+  {
+    // MICA-322: a 500 from either host is reported on the console and thrown nowhere, and the
+    // command still works afterwards.
+    id: 'http-micahttp-reports-a-500-without-throwing',
+    mode: 'standalone',
+    tickets: ['MICA-322', 'MICA-242', 'MICA-237', 'MICA-304'],
+    timeoutMs: 45_000,
+    run: async (signal) => {
+      const tap = requireTap();
+      await withWebhook(async (hook) => {
+        hook.sink.respond((request) =>
+          request.method === 'GET' ? { status: 500, json: [] } : { status: 500 }
+        );
+
+        let mark = tap.mark();
+        let from = hook.sink.mark();
+        await runCommand('micahttp webhook');
+        await tap.waitFor(
+          mark,
+          new RegExp(
+            `^\\[micahttp\\] webhook: posted the embed .* to ${ORIGIN}/${ELLIPSIS}; ` +
+              'the host answered 500, so the post was refused\\.$'
+          ),
+          10_000,
+          signal,
+          "micahttp's line for a webhook answering 500"
+        );
+        // The twin: the host was asked, so the 500 was its to give.
+        assert(
+          hook.sink.since(from).some((request) => request.method === 'POST'),
+          `the webhook was never asked; it received ${describe(hook.sink.since(from))}`
+        );
+        assert(
+          !tap.since(mark).some((line) => THREW.test(line)),
+          `a 500 from the webhook threw: ${tap
+            .since(mark)
+            .filter((l) => THREW.test(l))
+            .join(' | ')}`
+        );
+        assertNoToken(tap, mark, hook.token);
+
+        await withCatalog(`${hook.sink.origin}/addons/failing.json`, async () => {
+          mark = tap.mark();
+          from = hook.sink.mark();
+          await runCommand('micahttp catalog');
+          await tap.waitFor(
+            mark,
+            new RegExp(
+              `^\\[micahttp\\] catalog: ${ORIGIN}/addons/failing\\.json \\(custom\\) is ` +
+                'unavailable: the host answered 500\\. '
+            ),
+            15_000,
+            signal,
+            "micahttp's line for a catalog answering 500"
+          );
+          assert(
+            hook.sink
+              .since(from)
+              .some((r) => r.method === 'GET' && r.path === '/addons/failing.json'),
+            `the catalog was never asked; the sink received ${describe(hook.sink.since(from))}`
+          );
+          assert(
+            !tap.since(mark).some((line) => THREW.test(line)),
+            `a 500 from the catalog threw: ${tap
+              .since(mark)
+              .filter((l) => THREW.test(l))
+              .join(' | ')}`
+          );
+        });
+
+        // And the command is still standing: the same webhook, answering 204, is posted to.
+        hook.sink.respond(() => ({ status: 204 }));
+        mark = tap.mark();
+        await runCommand('micahttp webhook');
+        await tap.waitFor(
+          mark,
+          /^\[micahttp\] webhook: posted the embed .* the host answered 204\.$/,
+          10_000,
+          signal,
+          "micahttp's line for the post after the 500"
+        );
+        assertNoToken(tap, mark, hook.token);
+      });
+    }
+  },
+  {
+    // MICA-322: a webhook that redirects is refused, not followed. Fetch re-sends a POST's body
+    // on a 307 or 308, so following would hand the staff channel's embeds to a host the owner
+    // never named.
+    id: 'http-micahttp-webhook-refuses-a-redirect',
+    mode: 'standalone',
+    tickets: ['MICA-322', 'MICA-242', 'MICA-304'],
+    timeoutMs: 30_000,
+    run: async (signal) => {
+      const tap = requireTap();
+      await withWebhook(async (hook) => {
+        hook.sink.respond((request) =>
+          request.path === STOLEN_PATH
+            ? { status: 204 }
+            : { status: 307, headers: { Location: `${hook.sink.origin}${STOLEN_PATH}` } }
+        );
+        const mark = tap.mark();
+        const from = hook.sink.mark();
+        await runCommand('micahttp webhook');
+        const said = await tap.waitFor(
+          mark,
+          new RegExp(`^\\[micahttp\\] webhook: the post to ${ORIGIN}/${ELLIPSIS} failed: `),
+          10_000,
+          signal,
+          "micahttp's line for a redirecting webhook"
+        );
+        assert(/redirect/i.test(said), `micaOS gave the reason '${said}'`);
+        // The twin: the webhook itself was asked, so there was a redirect to follow.
+        const received = hook.sink.since(from);
+        assert(
+          received.some((request) => request.method === 'POST' && request.path === hook.path),
+          `the webhook was never asked; the sink received ${describe(received)}`
+        );
+        assert(
+          !received.some((request) => request.path === STOLEN_PATH),
+          `micaOS followed the webhook's redirect: ${describe(received)}`
+        );
+        assertNoToken(tap, mark, hook.token);
+      });
+    }
+  },
+  {
+    // MICA-322, MICA-237: `micahttp catalog` fetches the catalog through the Store's own request
+    // — GET, Accept: application/json — past the cache each time, names what it found, and
+    // refuses a redirect without following it.
+    id: 'http-micahttp-catalog-fetches-from-the-sink',
+    mode: 'standalone',
+    tickets: ['MICA-322', 'MICA-237', 'MICA-304'],
+    timeoutMs: 45_000,
+    run: (signal) =>
+      withSink(async (sink) => {
+        const tap = requireTap();
+        sink.respond((request) =>
+          request.path === '/addons/moved.json'
+            ? { status: 302, headers: { Location: `${sink.origin}${STOLEN_PATH}` } }
+            : request.path === '/addons/catalog.json'
+              ? { status: 200, json: [{ id: 'itx-weather' }, { id: 'itx-radio' }] }
+              : { status: 404 }
+        );
+
+        await withCatalog(`${sink.origin}/addons/catalog.json`, async () => {
+          for (const round of ['first', 'second']) {
+            const mark = tap.mark();
+            const from = sink.mark();
+            await runCommand('micahttp catalog');
+            const request = await sink.waitFor(
+              from,
+              (each) => each.path === '/addons/catalog.json',
+              15_000,
+              signal,
+              `the ${round} catalog fetch (micaOS said: ${micahttpSaid(tap, mark)})`
+            );
+            assert(request.method === 'GET', `the catalog was fetched with ${request.method}`);
+            assert(
+              request.headers.accept === 'application/json',
+              `the catalog was asked for ${String(request.headers.accept)}`
+            );
+            await tap.waitFor(
+              mark,
+              new RegExp(
+                `^\\[micahttp\\] catalog: fetched ${ORIGIN}/addons/catalog\\.json \\(custom\\): ` +
+                  '2 entries \\(itx-weather, itx-radio\\)\\. '
+              ),
+              10_000,
+              signal,
+              `micahttp's line for the ${round} fetch`
+            );
+          }
+        });
+
+        await withCatalog(`${sink.origin}/addons/moved.json`, async () => {
+          const mark = tap.mark();
+          const from = sink.mark();
+          await runCommand('micahttp catalog');
+          await tap.waitFor(
+            mark,
+            new RegExp(
+              `^\\[micahttp\\] catalog: ${ORIGIN}/addons/moved\\.json \\(custom\\) is unavailable: `
+            ),
+            15_000,
+            signal,
+            "micahttp's line for a redirecting catalog"
+          );
+          // The twin: the redirect was asked for, so not following it was micaOS's choice.
+          assert(
+            sink.since(from).some((r) => r.path === '/addons/moved.json'),
+            `the redirecting catalog was never asked; the sink received ${describe(sink.since(from))}`
+          );
+          assert(
+            !sink.since(from).some((r) => r.path === STOLEN_PATH),
+            "micaOS followed the catalog's redirect"
+          );
+        });
       })
   },
   {

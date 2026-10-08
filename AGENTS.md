@@ -73,14 +73,15 @@ Run `pnpm format` to format code across the workspace.
 
 ### In-game commands
 
-`micaschema`, `micamedia`, `micacharge`, `micaseed`, `micacall`, `micaimport`
-and `micacrypt`. The first five are admin-gated by `isAdmin` in
-`server/services/Admin.ts`; `micaimport` and `micacrypt` skip that gate entirely
-and instead refuse any `source` but the console. **`micaschema apply`** (changes
-a live schema, §8), **`micamedia prune`** (deletes rows), **`micaimport`**
-(reads and writes every player's rows, MICA-233) and **`micacrypt`** (the
-content key and the backfill that re-seals every body, MICA-165) take the server
-console and nobody else. Every command, its gating, arguments and dry run:
+`micaschema`, `micamedia`, `micacharge`, `micaseed`, `micacall`, `micaimport`,
+`micacrypt` and `micahttp`. The first five are admin-gated by `isAdmin` in
+`server/services/Admin.ts`; `micaimport`, `micacrypt` and `micahttp` skip that
+gate entirely and instead refuse any `source` but the console.
+**`micaschema apply`** (changes a live schema, §8), **`micamedia prune`**
+(deletes rows), **`micaimport`** (reads and writes every player's rows,
+MICA-233) and **`micacrypt`** (the content key and the backfill that re-seals
+every body, MICA-165) take the server console and nobody else. Every command,
+its gating, arguments and dry run:
 [`docs/in-game-commands.md`](docs/in-game-commands.md).
 
 ### The two Vitest projects
