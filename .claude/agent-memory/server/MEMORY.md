@@ -31,3 +31,5 @@ line here.
   — the sink needs TLS; webhook URL is a secret; restore unset convars, not `''`
 - [micaOS's own start-up passes race in-server scenarios](boot-passes-race-in-server-scenarios.md)
   — prune refused during boot retention; wait on the sweep's lines
+- [The mica_phones row is one of the walked tables](phones-row-is-one-of-the-walked-tables.md)
+  — it moves last, as the durable "unfinished" mark; MICA-319

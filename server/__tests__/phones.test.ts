@@ -232,7 +232,11 @@ describe('the phone a request is for', () => {
     ]);
 
     await expect(phoneForRequest(SRC, CID)).resolves.toBe('a'.repeat(32));
-    expect(dbMock.update).not.toHaveBeenCalled();
+    // The only writes are the first resolve's handover walk (MICA-319), all to this holder.
+    for (const [sql, params] of dbMock.update.mock.calls) {
+      expect(String(sql)).toContain('WHERE `phone_id` = ? AND `citizenid` <> ?');
+      expect(params).toEqual([CID, 'a'.repeat(32), CID]);
+    }
   });
 
   it('refuses a player holding no phone on a gated server, in words they can read', async () => {
@@ -313,17 +317,22 @@ describe('the phone a request is for', () => {
     expect(hook).toHaveBeenCalledWith('a'.repeat(32), CID);
   });
 
-  it('does not hand over a phone whose holder is unchanged, and asks nothing twice', async () => {
+  it('re-checks a phone once per process when its holder is unchanged, and asks nothing twice', async () => {
     bridgeMock.itemSlots.mockReturnValue([{ slot: 3, metadata: { phoneId: 'a'.repeat(32) } }]);
     dbMock.query.mockResolvedValue([
       { id: 1, citizenid: CID, phone_id: 'a'.repeat(32), claimed: 1 }
     ]);
 
     await phoneForRequest(SRC, CID);
+    // The first resolve since a start walks the phone even though its row names this holder
+    // (MICA-319): a restart can leave some tables with whoever held it before.
+    const walked = dbMock.update.mock.calls.length;
+    expect(walked).toBeGreaterThan(0);
+
     await phoneForRequest(SRC, CID);
 
-    expect(dbMock.update).not.toHaveBeenCalled();
-    // The holder is cached after the first resolve.
+    // The holder is cached after the first resolve: no second read, no second walk.
+    expect(dbMock.update).toHaveBeenCalledTimes(walked);
     expect(dbMock.query).toHaveBeenCalledOnce();
   });
 

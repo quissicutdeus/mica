@@ -117,6 +117,12 @@ const identityByCitizen = new Map<string, string>();
  * `phoneKeyedRepositories`; this is for the one shape that list cannot hold — a child table
  * with no repository of its own, which is `mica_messages_participants`. `Conversations.ts`
  * registers it.
+ *
+ * **A hook must be idempotent** (MICA-319). One that throws is run again on a later request
+ * for as long as it keeps failing, and a hook that succeeded is run again whenever a later
+ * walk is a full one — after another hook or table failed and the phone changed hands again,
+ * or after a restart. A `WHERE … AND citizenid <> ?` update, like the participants transfer,
+ * is the shape: a second run finds nothing left to move.
  */
 type HandoverRun = (phoneId: string, citizenid: string) => Promise<unknown> | unknown;
 const handoverHooks: { name: string; run: HandoverRun }[] = [];
@@ -163,9 +169,66 @@ const announceCreated = async (phoneId: string, citizenid: string): Promise<void
   }
 };
 
+/** One table the handover walks, or one hook it runs. */
+type PhoneKeyedRepository = (typeof phoneKeyedRepositories)[number];
+type HandoverHook = (typeof handoverHooks)[number];
+
+/**
+ * The part of a handover still to do: the tables and hooks that have not moved yet. `tables`
+ * names `mica_phones` itself whenever anything else is left, because that row moves last.
+ */
+interface HandoverWork {
+  tables: readonly PhoneKeyedRepository[];
+  hooks: readonly HandoverHook[];
+}
+
+/**
+ * A handover that did not finish (MICA-319): the phone is this citizen's, but these tables and
+ * hooks still name the previous holder.
+ *
+ * Kept apart from `holderOf` because the two answer different questions. `holderOf` is "nothing
+ * left to do for this holder", and caching a partial handover there meant the tables that
+ * failed were never retried for as long as the player held the phone. Keyed by phone, so a
+ * second handover to somebody else replaces it — that one is a full walk, which moves the
+ * tables this entry was owed anyway.
+ *
+ * This is the in-process half, which keeps a retry narrow and backed off. The durable half is
+ * the `mica_phones` row: `handOver` moves it only once everything else has, so a restart that
+ * drops this map still finds a row naming the previous holder, and the first resolve after it
+ * walks every table again.
+ */
+interface PendingHandover extends HandoverWork {
+  citizenid: string;
+  /** Attempts in a row that left something behind, the first handover included. */
+  failures: number;
+  /** No retry before this `Date.now()`, so a table that keeps failing costs one try per wait. */
+  retryAt: number;
+}
+const pendingHandover = new Map<string, PendingHandover>();
+
+/**
+ * How long to wait before retrying, by how many attempts in a row have failed. The first retry
+ * is the next request — most failures are a dropped connection or a lock wait, gone a moment
+ * later — and a table that keeps failing settles at one attempt, and one log line, every ten
+ * minutes rather than one per request.
+ */
+const RETRY_AFTER_MS = [0, 5_000, 30_000, 120_000, 600_000];
+const retryDelay = (failures: number): number =>
+  RETRY_AFTER_MS[Math.min(failures, RETRY_AFTER_MS.length) - 1];
+
+/**
+ * The `ensureHeld` running for each phone, which the next one for that phone waits behind
+ * (MICA-319). Two requests for one phone otherwise both read `pendingHandover`, both walk, and
+ * the slower one records what the faster one already settled. An entry is deleted when the
+ * last call chained onto it settles, so this holds only phones with a call in flight.
+ */
+const settling = new Map<string, Promise<void>>();
+
 /** Test seam: module state that would otherwise leak between cases. Hooks are registrations and stay. */
 export const __resetPhoneState = (): void => {
   holderOf.clear();
+  pendingHandover.clear();
+  settling.clear();
   activeByCitizen.clear();
   activeBySource.clear();
   identityByCitizen.clear();
@@ -203,23 +266,106 @@ export interface ActivePhone {
  * Each table is its own statement and its own failure: a table that could not be moved is
  * logged and the rest still move, because half a handover with a line saying which half is
  * better than a phone that stays the victim's in every table because one of them errored.
+ *
+ * **`mica_phones` moves last, and only when every other table and hook has** (MICA-319). Its
+ * row is what `ensureHeld` reads after a restart, when `pendingHandover` is gone: a row still
+ * naming the previous holder is the durable mark that this handover is not finished, and the
+ * first resolve walks every table again. Moving it first, as the declaration order used to,
+ * left a restart reading a finished handover over tables that never moved.
+ *
+ * Answers what is left to do, which `ensureHeld` keeps and retries. `work` narrows a retry to
+ * exactly that; every statement is `citizenid <> ?`-guarded as well, so re-running one that
+ * already moved its rows finds nothing to move.
  */
-const handOver = async (phoneId: string, citizenid: string): Promise<void> => {
-  for (const keyed of phoneKeyedRepositories) {
+const handOver = async (
+  phoneId: string,
+  citizenid: string,
+  work: HandoverWork = { tables: phoneKeyedRepositories, hooks: handoverHooks }
+): Promise<HandoverWork> => {
+  const tables: PhoneKeyedRepository[] = [];
+  const hooks: HandoverHook[] = [];
+  // Most walks move nothing — the first resolve after a start re-checks a phone whose rows all
+  // name its holder already — so only one that moved a row says so.
+  let moved = false;
+  for (const keyed of work.tables) {
+    if (keyed === repo) continue;
     try {
-      await keyed.transferPhoneRows(phoneId, citizenid);
+      if (await keyed.transferPhoneRows(phoneId, citizenid)) moved = true;
     } catch (error) {
-      console.error(`[mica] could not move part of phone ${phoneId} to ${citizenid}.`, error);
+      tables.push(keyed);
+      console.error(
+        `[mica] could not move ${keyed.table} on phone ${phoneId} to ${citizenid}.`,
+        error
+      );
     }
   }
-  for (const hook of handoverHooks) {
+  for (const hook of work.hooks) {
     try {
-      await hook.run(phoneId, citizenid);
+      if ((await hook.run(phoneId, citizenid)) === true) moved = true;
     } catch (error) {
+      hooks.push(hook);
       console.error(`[mica] handover hook '${hook.name}' failed for phone ${phoneId}.`, error);
     }
   }
-  console.log(`[mica] phone ${phoneId} is now held by ${citizenid}; its rows moved with it.`);
+  if (work.tables.includes(repo)) {
+    if (tables.length > 0 || hooks.length > 0) {
+      tables.push(repo);
+    } else {
+      try {
+        if (await repo.transferPhoneRows(phoneId, citizenid)) moved = true;
+      } catch (error) {
+        tables.push(repo);
+        console.error(
+          `[mica] could not move ${repo.table} on phone ${phoneId} to ${citizenid}.`,
+          error
+        );
+      }
+    }
+  }
+  if (tables.length === 0 && hooks.length === 0) {
+    if (moved) {
+      console.log(`[mica] phone ${phoneId} is now held by ${citizenid}; its rows moved with it.`);
+    }
+  } else {
+    const stuck = [
+      ...tables.map((keyed) => keyed.table),
+      ...hooks.map((hook) => `hook '${hook.name}'`)
+    ];
+    console.error(
+      `[mica] phone ${phoneId} is held by ${citizenid}, but ${stuck.join(', ')} still name ` +
+        `its previous holder; a later request retries them, and ${repo.table} moves last.`
+    );
+  }
+  return { tables, hooks };
+};
+
+/**
+ * Remember what a handover left behind, or that it left nothing — unless the entry this call
+ * started from has been replaced meanwhile, in which case its answer is stale and the newer
+ * entry stands. `started` is the entry read before the walk, whoever it was owed to; it is
+ * the owed one whenever this was a retry. Answers whether it recorded, so a stale call leaves
+ * `holderOf` to whoever replaced it as well.
+ */
+const recordHandover = (
+  phoneId: string,
+  citizenid: string,
+  left: HandoverWork,
+  started: PendingHandover | undefined
+): boolean => {
+  if (pendingHandover.get(phoneId) !== started) return false;
+  if (left.tables.length === 0 && left.hooks.length === 0) {
+    pendingHandover.delete(phoneId);
+    return true;
+  }
+  const failures = (started?.citizenid === citizenid ? started.failures : 0) + 1;
+  pendingHandover.set(phoneId, {
+    citizenid,
+    tables: left.tables,
+    hooks: left.hooks,
+    failures,
+    retryAt: Date.now() + retryDelay(failures)
+  });
+  return true;
 };
 
 /**
@@ -230,22 +376,72 @@ const handOver = async (phoneId: string, citizenid: string): Promise<void> => {
  * a row naming somebody else, which is a handover; a row still unclaimed, which this claims.
  * A create that loses a race with a concurrent one violates `phone_id_unique`, which is the
  * correct outcome — the row exists either way, and the next resolve reads it.
+ *
+ * **Calls for one phone run one after another** (`settling`), so each reads what the one
+ * before it recorded rather than racing it.
+ *
+ * **A handover that left a table behind is not cached as done** (MICA-319). What it left is
+ * kept in `pendingHandover` and retried, alone, on a later request — backed off, so a table
+ * that keeps failing costs one attempt per wait rather than one per request. The phone answers
+ * either way: a table still naming the previous holder hides those rows from this one until a
+ * retry lands, which is better than refusing the phone over them. Which walk runs:
+ *
+ * - A handover to this citizen is owed: the tables and hooks it left, and nothing else. The
+ *   `mica_phones` row still names the previous holder then, by design (`handOver`).
+ * - Anything else that gets past the cache: a full walk. Every statement moves whatever does
+ *   not name this citizen yet, so it also finishes what any earlier handover left.
+ *
+ * **"Anything else" includes a phone whose row already names this citizen**, on purpose: the
+ * first resolve of each phone after a start walks it even when the row says nothing moved.
+ * The row marks a handover *to* its holder as unfinished (`handOver` moves it last), but not
+ * one that was going the other way when the server stopped — a thief's handover that moved
+ * some tables and left the row with the owner, who then has the phone back after the restart.
+ * The row names the owner and the moved tables name the thief, and only a walk finds them.
+ *
+ * That costs one indexed `UPDATE` per phone-keyed table and one per handover hook, matching
+ * no row in the usual case, **once per phone per process**: a walk that finishes is cached in
+ * `holderOf` and nothing walks that phone again until it changes hands, which walks anyway.
  */
-const ensureHeld = async (phoneId: string, citizenid: string): Promise<void> => {
-  if (holderOf.get(phoneId) === citizenid) return;
+const ensureHeld = (phoneId: string, citizenid: string): Promise<void> => {
+  const run = (): Promise<void> => settleHolder(phoneId, citizenid);
+  const next = (settling.get(phoneId) ?? Promise.resolve()).then(run, run);
+  settling.set(phoneId, next);
+  const forget = (): void => {
+    if (settling.get(phoneId) === next) settling.delete(phoneId);
+  };
+  void next.then(forget, forget);
+  return next;
+};
+
+const settleHolder = async (phoneId: string, citizenid: string): Promise<void> => {
+  const pending = pendingHandover.get(phoneId);
+  const owed = pending?.citizenid === citizenid ? pending : undefined;
+  if (owed ? Date.now() < owed.retryAt : holderOf.get(phoneId) === citizenid) return;
 
   try {
     const [existing] = await repo.findAll({ phone_id: phoneId } as Partial<PhoneRow>);
     if (!existing) {
       await repo.create({ citizenid, phone_id: phoneId, claimed: 1 } as Partial<PhoneRow>);
       void announceCreated(phoneId, citizenid);
-    } else {
-      if (existing.citizenid !== citizenid) await handOver(phoneId, citizenid);
-      if (!Number(existing.claimed)) {
-        await repo.update(existing.id, { claimed: 1 } as Partial<PhoneRow>, citizenid);
-      }
     }
-    holderOf.set(phoneId, citizenid);
+    let done = true;
+    let stale = false;
+    if (existing) {
+      // What this citizen is owed, or — past the cache with nothing owed to them: the first
+      // resolve since a start, a phone that changed hands, a handover to somebody else still
+      // owed — a full walk. Recorded before the claim below, so a claim that throws cannot lose
+      // what this walk left.
+      const left = await handOver(phoneId, citizenid, owed);
+      done = left.tables.length === 0 && left.hooks.length === 0;
+      stale = !recordHandover(phoneId, citizenid, left, pending);
+    }
+    if (existing && !Number(existing.claimed)) {
+      await repo.update(existing.id, { claimed: 1 } as Partial<PhoneRow>, citizenid);
+    }
+    if (!stale) {
+      if (done && !pendingHandover.has(phoneId)) holderOf.set(phoneId, citizenid);
+      else holderOf.delete(phoneId);
+    }
     identityByCitizen.delete(citizenid);
   } catch (error) {
     // Not fatal and not cached: the id is on the item either way, so the next resolve retries.

@@ -164,12 +164,34 @@ const load = async (src: number): Promise<void> => {
   await syncNumber(src);
 };
 
-/** The SQL and parameters of every `update` this test made, in order. */
-const updates = () =>
-  dbMock.update.mock.calls.map(([sql, params]) => ({
+/**
+ * The exact statement `Repository.transferPhoneRows` writes when a phone changes hands, and
+ * nothing looser: anchored at both ends, so a number-sync `UPDATE` can never match it.
+ */
+const HANDOVER_TRANSFER =
+  /^UPDATE `mica_\w+` SET `citizenid` = \?(, `updated_at` = `updated_at`)? WHERE `phone_id` = \? AND `citizenid` <> \?$/;
+
+/**
+ * The SQL and parameters of every `update` this test made, in order — less the handover walk.
+ *
+ * A phone's first resolve in a process walks it in full even when its holder is unchanged
+ * (MICA-319, `ensureHeld` in `services/Phones.ts`), so every load here also writes one no-op
+ * transfer per phone-keyed table. Those are not the number sync under test, and are dropped —
+ * after checking each one dropped really is a transfer to one holder, `[holder, phone, holder]`.
+ */
+const updates = () => {
+  const all = dbMock.update.mock.calls.map(([sql, params]) => ({
     sql: String(sql),
     params: params as unknown[]
   }));
+  const isTransfer = (sql: string) => HANDOVER_TRANSFER.test(sql.replace(/\s+/g, ' ').trim());
+  for (const dropped of all.filter((u) => isTransfer(u.sql))) {
+    expect(dropped.params).toHaveLength(3);
+    expect(dropped.params[1]).toMatch(/^[0-9a-f]{32}$/);
+    expect(dropped.params[2]).toBe(dropped.params[0]);
+  }
+  return all.filter((u) => !isTransfer(u.sql));
+};
 
 describe('the generated number', () => {
   const draws = (samples: number): string[] =>
