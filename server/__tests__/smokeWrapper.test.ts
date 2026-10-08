@@ -24,7 +24,15 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { ESX_SEED } from '../../integration/lib/esxSeed';
 import { QBX_SEED } from '../../integration/lib/qbxSeed';
-import { PROBE, canRun, holdLock, holderLine, lockHeld, trialMissing } from './wrapperHarness';
+import {
+  PROBE,
+  canRun,
+  fakeRootMissing,
+  holdLock,
+  holderLine,
+  lockHeld,
+  trialMissing
+} from './wrapperHarness';
 
 /**
  * The root wrapper (MICA-302), against a stand-in `docker` whose console is whatever each
@@ -53,14 +61,6 @@ const ROOT = resolve(__dirname, '../..');
 const WRAPPER = join(ROOT, 'scripts/deploy/mica-smoke-release.sh');
 
 const trial = canRun(trialMissing(), 'the smoke wrapper tests');
-
-/**
- * A hang case waits out `MICA_SMOKE_INTEGRATION_TIMEOUT` (3s) on purpose, on top of a whole
- * wrapper run, so it takes over 4s even on a fast machine and Vitest's 5s default failed it on a
- * loaded CI runner three times (MICA-304). The wait is the behaviour under test, so the budget
- * grows rather than the wait shrinking. A test that hangs for real still fails, 20s later.
- */
-const HANG_TEST_TIMEOUT_MS = 20_000;
 
 /**
  * Records every call, and answers the few the wrapper makes. FAKE_LOGS is the console of the
@@ -310,6 +310,12 @@ const expectedText = (standalone: string[], qbx: string[] = QBX_IDS, esx: string
   ].join('\n') + '\n';
 
 interface WrapOptions {
+  /**
+   * `fake` (default) runs the wrapper's waits and deadlines on its test clock (MICA_SMOKE_FAKE_CLOCK),
+   * so a hang case reaches its timeout without waiting for it. `real` leaves the seam off and the
+   * timeout at 1s, for the one case that proves the unset path still waits in real time.
+   */
+  clock?: 'fake' | 'real';
   running?: string;
   /**
    * The standalone scenario ids the zip was packed with (the qbx and esx ones are QBX_IDS and
@@ -385,7 +391,8 @@ const prepare = (run: string, logs: string, options: WrapOptions) => {
     MICA_HOTH_LOCK: lock,
     MICA_HOTH_LOCK_TIMEOUT: String(options.lockTimeout ?? 600),
     MICA_SMOKE_SETTLE: '0',
-    MICA_SMOKE_INTEGRATION_TIMEOUT: '3',
+    MICA_SMOKE_INTEGRATION_TIMEOUT: options.clock === 'real' ? '1' : '3',
+    ...(options.clock === 'real' ? {} : { MICA_SMOKE_FAKE_CLOCK: '1' }),
     FAKE_LOGS: logFile,
     FAKE_LOGS_QBX: qbxLogFile,
     FAKE_LOGS_ESX: esxLogFile,
@@ -664,15 +671,42 @@ describe.skipIf(!trial)('mica-smoke-release.sh', () => {
       expect(r.out).toContain('stopped before');
     });
 
-    it(
-      'fails when the suite hangs, once the timeout passes',
-      () => {
-        const r = wrap(makeRun('manifest'), suite(['integration: PASS a']), { running: 'true' });
+    it('fails when the suite hangs, once the timeout passes', () => {
+      const r = wrap(makeRun('manifest'), suite(['integration: PASS a']), { running: 'true' });
 
+      expect(r.status).not.toBe(0);
+      expect(r.out).toContain("no 'integration: done' line within 3s");
+    });
+
+    it('with the test clock off, the hang still waits out its timeout in real time', () => {
+      const started = Date.now();
+      const r = wrap(makeRun('manifest'), suite(['integration: PASS a']), {
+        running: 'true',
+        clock: 'real'
+      });
+
+      expect(r.status).not.toBe(0);
+      expect(r.out).toContain("no 'integration: done' line within 1s");
+      expect(Date.now() - started).toBeGreaterThanOrEqual(1000);
+    });
+
+    it.skipIf(fakeRootMissing() !== null)(
+      'as root, refuses a test clock loudly instead of obeying or ignoring it',
+      () => {
+        const run = makeRun('manifest');
+        const { env, calls } = prepare(run, suite(['integration: PASS a']), { running: 'true' });
+        const r = spawnSync('unshare', ['-Ur', 'bash', WRAPPER, run], {
+          encoding: 'utf8',
+          env,
+          timeout: 60_000
+        });
+
+        expect(env.MICA_SMOKE_FAKE_CLOCK).toBe('1');
         expect(r.status).not.toBe(0);
-        expect(r.out).toContain("no 'integration: done' line within 3s");
-      },
-      HANG_TEST_TIMEOUT_MS
+        expect(`${r.stdout}${r.stderr}`).toContain('MICA_SMOKE_FAKE_CLOCK is set');
+        // Refused before it touched docker at all.
+        expect(existsSync(calls) ? readFileSync(calls, 'utf8') : '').toBe('');
+      }
     );
 
     it('fails when the done line disagrees with the lines it summarises', () => {
@@ -1029,22 +1063,18 @@ describe.skipIf(!trial)('mica-smoke-release.sh', () => {
       expect(stopped.out).toContain('[qbx mode] FXServer stopped before');
     });
 
-    it(
-      'fails when the qbx server hangs before the suite is done',
-      () => {
-        const hung = wrap(makeRun('manifest'), suite(PASS_A), {
-          running: 'true',
-          qbxLogs: [STARTED, 'integration: mode qbx'].join('\n') + '\n'
-        });
+    it('fails when the qbx server hangs before the suite is done', () => {
+      const hung = wrap(makeRun('manifest'), suite(PASS_A), {
+        running: 'true',
+        qbxLogs: [STARTED, 'integration: mode qbx'].join('\n') + '\n'
+      });
 
-        // `running` is one answer for both servers: the standalone console is complete, so it
-        // is the qbx run that never reaches its done line, and the hang is a failure naming its
-        // run.
-        expect(hung.status).toBe(1);
-        expect(hung.out).toContain("[qbx mode] no 'integration: done' line within 3s");
-      },
-      HANG_TEST_TIMEOUT_MS
-    );
+      // `running` is one answer for both servers: the standalone console is complete, so it
+      // is the qbx run that never reaches its done line, and the hang is a failure naming its
+      // run.
+      expect(hung.status).toBe(1);
+      expect(hung.out).toContain("[qbx mode] no 'integration: done' line within 3s");
+    });
 
     it('fails when qbx_core never prints mica started, naming the run and what the console said', () => {
       const r = wrap(makeRun('manifest'), suite(PASS_A), {
@@ -1381,22 +1411,18 @@ describe.skipIf(!trial)('mica-smoke-release.sh', () => {
       expect(stopped.out).toContain('[esx mode] FXServer stopped before');
     });
 
-    it(
-      'fails when the esx server hangs before the suite is done',
-      () => {
-        const hung = wrap(makeRun('manifest'), suite(PASS_A), {
-          running: 'true',
-          esxLogs: [STARTED, 'integration: mode esx'].join('\n') + '\n'
-        });
+    it('fails when the esx server hangs before the suite is done', () => {
+      const hung = wrap(makeRun('manifest'), suite(PASS_A), {
+        running: 'true',
+        esxLogs: [STARTED, 'integration: mode esx'].join('\n') + '\n'
+      });
 
-        // `running` is one answer for every server: the standalone and qbx consoles are complete,
-        // so it is the esx run that never reaches its done line, and the hang is a failure naming
-        // its run.
-        expect(hung.status).toBe(1);
-        expect(hung.out).toContain("[esx mode] no 'integration: done' line within 3s");
-      },
-      HANG_TEST_TIMEOUT_MS
-    );
+      // `running` is one answer for every server: the standalone and qbx consoles are complete,
+      // so it is the esx run that never reaches its done line, and the hang is a failure naming
+      // its run.
+      expect(hung.status).toBe(1);
+      expect(hung.out).toContain("[esx mode] no 'integration: done' line within 3s");
+    });
 
     it('fails when es_extended never prints mica started, naming the run and what the console said', () => {
       const r = wrap(makeRun('manifest'), suite(PASS_A), {

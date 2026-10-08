@@ -300,6 +300,26 @@ if [[ $EUID -ne 0 ]]; then
     STAGE_ROOT=${MICA_SMOKE_STAGE:-${TMPDIR:-/tmp}/mica-smoke-stage-$EUID}
 fi
 
+# A test-only clock. With MICA_SMOKE_FAKE_CLOCK=1 every wait and deadline below (the database
+# wait, the start wait, the suite wait and the settle) runs on a counter that nap() advances
+# instead of on real time, so server/__tests__/smokeWrapper.test.ts reaches a timeout path
+# without waiting for it. The lock wait keeps real time. As root it is refused rather than
+# ignored: a seam that silently did nothing would let a test believe it was running on it, and
+# one that took effect would let a caller shorten every timeout on the box.
+fake_clock=0
+fake_elapsed=0
+if [[ -n ${MICA_SMOKE_FAKE_CLOCK:-} ]]; then
+    [[ $EUID -ne 0 ]] || die "MICA_SMOKE_FAKE_CLOCK is set, and this wrapper runs as root and takes no test clock. Unset it; the sudoers rule for this wrapper must not carry SETENV (scripts/deploy/README.md)."
+    fake_clock=1
+fi
+# Seconds on the clock the waits below read, and a wait on it.
+clock_now() {
+    if ((fake_clock)); then echo "$fake_elapsed"; else echo "$SECONDS"; fi
+}
+nap() {
+    if ((fake_clock)); then fake_elapsed=$((fake_elapsed + $1)); else sleep "$1"; fi
+}
+
 run=${1:?usage: $0 <run directory under $SMOKE_ROOT>}
 case "$run" in
     "$SMOKE_ROOT"/*) ;;
@@ -599,7 +619,7 @@ run_mode() {
     ready() { docker exec "$db" mariadb -uroot -psmoke -e 'select 1' >/dev/null 2>&1; }
     for _ in $(seq 1 90); do
         ready && break
-        sleep 1
+        nap 1
     done
     ready || mdie "$DB_IMAGE did not accept a root login within 90s"
     # The release smoke test's import is itself half the test: the file an owner may import by
@@ -757,8 +777,8 @@ run_mode() {
     start_timeout=$START_TIMEOUT
     [[ $mode == release || $mode == standalone ]] || start_timeout=$((START_TIMEOUT + 60))
     started=0
-    deadline=$((SECONDS + start_timeout))
-    while ((SECONDS < deadline)); do
+    deadline=$(($(clock_now) + start_timeout))
+    while (($(clock_now) < deadline)); do
         logs=$(docker logs "$fx" 2>&1 | plain || true)
         if grep -q 'mica started!' <<<"$logs"; then
             started=1
@@ -770,7 +790,7 @@ run_mode() {
         if [[ $(docker inspect -f '{{.State.Running}}' "$fx" 2>/dev/null) != true ]]; then
             break
         fi
-        sleep 2
+        nap 2
     done
 
     if [[ $started != 1 ]]; then
@@ -796,17 +816,17 @@ run_mode() {
     local done_re='integration: done ([0-9]+) passed ([0-9]+) failed'
     if [[ $integration == 1 ]]; then
         echo "smoke: ${mode_tag}INTEGRATION -- waiting up to ${INTEGRATION_TIMEOUT}s for the suite's done line"
-        deadline=$((SECONDS + INTEGRATION_TIMEOUT))
+        deadline=$(($(clock_now) + INTEGRATION_TIMEOUT))
         while :; do
             running=$(docker inspect -f '{{.State.Running}}' "$fx" 2>/dev/null || true)
             logs=$(docker logs "$fx" 2>&1 | plain || true)
             grep -qE "$done_re" <<<"$logs" && break
             [[ $running == true ]] || break
-            ((SECONDS < deadline)) || break
-            sleep 2
+            (($(clock_now) < deadline)) || break
+            nap 2
         done
     else
-        sleep "$SETTLE_SECONDS"
+        nap "$SETTLE_SECONDS"
         logs=$(docker logs "$fx" 2>&1 | plain || true)
     fi
     report
