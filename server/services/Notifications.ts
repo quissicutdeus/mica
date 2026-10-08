@@ -8,6 +8,42 @@ import { Database } from '../lib/Database';
 import { notificationsContract } from '@mica/shared/contracts/notifications';
 import { phoneForCitizen } from '../lib/phoneIdentity';
 
+/** What a failure is logged as when no line of it is safe to print. */
+export const UNKNOWN_DB_ERROR = 'unknown database error';
+
+/**
+ * Why a notification write failed, safe to log: the driver's own last line, never the rest.
+ *
+ * oxmysql rejects with one message holding the whole statement **and its parameters** before
+ * mysql2's reason on the last line, so logging the error as-is would print the notification's
+ * body — a message preview, a mail subject — into the server console. Same rule as
+ * `schemaBootstrap.ts`'s `driverMessage`, with one more case: when mysql2's own message is
+ * empty (Node's dual-stack `ECONNREFUSED` is an `AggregateError` with `message: ''`), the last
+ * non-blank line **is** the parameters, so a line that is the query, the parameters (JSON
+ * array or object) or oxmysql's header is never answered — the constant is, as it is for an
+ * error with no message at all.
+ */
+export const notificationFailureReason = (error: unknown): string => {
+  let text: string;
+  if (error instanceof Error) text = error.message;
+  else if (typeof error === 'string') text = error;
+  else return UNKNOWN_DB_ERROR;
+  if (typeof text !== 'string' || text.trim() === '') return UNKNOWN_DB_ERROR;
+  if (!/unable to execute a query!/.test(text)) return text;
+  const lines = text.split('\n').filter((line) => line.trim() !== '');
+  const last = (lines[lines.length - 1] ?? '').trim();
+  if (
+    last === '' ||
+    last.startsWith('[') ||
+    last.startsWith('{') ||
+    /^Query:/i.test(last) ||
+    /unable to execute a query!/.test(last)
+  ) {
+    return UNKNOWN_DB_ERROR;
+  }
+  return last;
+};
+
 export class NotificationsRepository extends SchemaRepository<NotificationItem> {
   /**
    * Unscoped batch create for background persistent pushes to online and offline recipients.
@@ -16,9 +52,15 @@ export class NotificationsRepository extends SchemaRepository<NotificationItem> 
    * in their hand, or the one they used last, or their identity phone. A recipient whose
    * phone cannot be resolved is skipped and logged rather than written with none, because a
    * notification on no phone is one no phone ever shows.
+   *
+   * One recipient's failed insert never costs the rest theirs (MICA-329): each is caught,
+   * counted, and the batch goes on, with one line at the end naming how many failed and the
+   * first reason. Never the body — see `notificationFailureReason`.
    */
   async createNotificationBatch(items: Partial<NotificationItem>[]): Promise<void> {
     if (items.length === 0) return;
+    let failed = 0;
+    let firstFailure: unknown;
     for (const item of items) {
       let phoneId: string;
       try {
@@ -27,19 +69,32 @@ export class NotificationsRepository extends SchemaRepository<NotificationItem> 
         console.error(`[mica] no phone to notify ${item.citizenid} on; dropping the row.`, error);
         continue;
       }
-      await Database.query(
-        `INSERT INTO mica_notifications (citizenid, phone_id, app, kind, title, body, avatar, deep_link, status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', NOW(), NOW())`,
-        [
-          item.citizenid,
-          phoneId,
-          item.app,
-          item.kind ?? 'general',
-          item.title ?? item.app,
-          item.body ?? '',
-          item.avatar ?? null,
-          item.deep_link ?? null
-        ]
+      try {
+        await Database.query(
+          `INSERT INTO mica_notifications (citizenid, phone_id, app, kind, title, body, avatar, deep_link, status, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', NOW(), NOW())`,
+          [
+            item.citizenid,
+            phoneId,
+            item.app,
+            item.kind ?? 'general',
+            item.title ?? item.app,
+            item.body ?? '',
+            item.avatar ?? null,
+            item.deep_link ?? null
+          ]
+        );
+      } catch (error) {
+        if (failed === 0) firstFailure = error;
+        failed += 1;
+      }
+    }
+    if (failed > 0) {
+      const { app, kind } = items[0];
+      console.error(
+        `[mica] could not store ${failed} of ${items.length} '${app}:${kind ?? 'general'}' ` +
+          `notification(s); the rest were stored. First error: ` +
+          notificationFailureReason(firstFailure)
       );
     }
   }

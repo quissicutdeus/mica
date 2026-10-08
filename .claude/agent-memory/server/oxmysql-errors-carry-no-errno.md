@@ -19,3 +19,14 @@ only. The test that would have caught it throws the oxmysql shape, not the
 mysql2 one — `schemaBootstrap.test.ts`'s `oxmysqlError`. Reuse those before
 classifying a driver error anywhere else; `ConversationRepository`'s
 `/duplicate/i` match is the older precedent and reads the whole message.
+
+## Logging one leaks the parameters
+
+The same shape makes `console.error('…', error)` a leak: the parameters line is
+a message body, a mail subject, a notification preview. MICA-329 logs a failed
+notification insert through `notificationFailureReason` in
+`services/Notifications.ts` (a copy of `driverMessage`, which is not exported).
+The test that catches it throws the oxmysql shape with the body in its
+parameters and asserts the body is absent from every logged line —
+`notificationBatch.test.ts`. A mysql2-shaped error carries no parameters, so a
+suite that throws one cannot see this.

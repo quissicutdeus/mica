@@ -9,7 +9,7 @@ import {
   type AppEventEnvelope,
   type AppEventNotification
 } from '@mica/shared/appEvents';
-import { getNotificationsRepository } from '../services/Notifications';
+import { getNotificationsRepository, notificationFailureReason } from '../services/Notifications';
 
 type PushOutcome =
   | { delivered: true; source: number }
@@ -113,7 +113,15 @@ function persistNotificationsAsync(
     deep_link: deepLink
   }));
 
-  repo.createNotificationBatch(items).catch(() => {});
+  // Never awaited and never thrown: a push must not fail the write that occasioned it (§8).
+  // The batch already logs a failed insert per batch; this is for anything it did not catch,
+  // logged by app, event and count only, never the body (MICA-329).
+  repo.createNotificationBatch(items).catch((error: unknown) => {
+    console.error(
+      `[appEvents] could not store '${app}:${event}' notification(s) for ` +
+        `${items.length} recipient(s): ${notificationFailureReason(error)}`
+    );
+  });
 }
 
 export function appEventChannel(appId: string): AppEventChannel {

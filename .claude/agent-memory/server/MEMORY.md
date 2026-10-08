@@ -16,7 +16,7 @@ line here.
 - [serverMessages.test counts a constant key as keyless](server-messages-ratchet-needs-a-literal-key.md)
   — write `key: 'server.…'` literally
 - [oxmysql errors carry no errno](oxmysql-errors-carry-no-errno.md) — text only,
-  query embedded; classify on the last line
+  query and parameters embedded; classify and log the last line only
 - [A start-up gate must not import schemaSql](start-gate-import-cycle.md) —
   Repository reaches contentCipher; the cycle breaks collection, not tsc
 - [A soft delete under a unique key refuses a re-create](soft-delete-under-a-unique-key.md)
