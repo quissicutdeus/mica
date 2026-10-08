@@ -109,6 +109,20 @@ case "$cmd" in
         ;;
 esac
 
+# Returns 0 when the text $1 names main the way `git push origin main` spells it:
+# origin or upstream followed by main, or a :main destination, with main ending
+# there (so `HEAD:maintenance` is not it). This is the text match, kept for a
+# segment that is not itself a git push (a commit message, an echo, sudo git):
+# check_main_push reads the pushes that are with a real grammar, and so also
+# sees a remote of any name, +main, heads/main, --all and --mirror.
+names_main() {
+    cmd_grep 'push-of-main' "$1" "(origin|upstream)[[:space:]]+[+]?(refs/heads/|heads/)?main([^A-Za-z0-9_./-]|\$)|:(refs/heads/|heads/)?main([^A-Za-z0-9_./-]|\$)"
+}
+
+# A force-push is refused whatever repository it is aimed at. Any other push is
+# only flagged here: whether it moves THIS repository's main is judged by
+# check_main_push, further down, once the helpers it needs are defined.
+main_push=
 case "$cmd" in
     *push*)
         case "$cmd" in
@@ -116,11 +130,7 @@ case "$cmd" in
                 block "a force-push can overwrite upstream history"
                 ;;
         esac
-        case "$cmd" in
-            *'origin main'* | *'upstream main'* | *'HEAD:main'* | *'HEAD:refs/heads/main'* | *:main*)
-                block "this push would move main"
-                ;;
-        esac
+        main_push=1
         ;;
 esac
 
@@ -597,6 +607,625 @@ EOF
 }
 
 check_hard_reset
+
+# --------------------------------------------------------------------------
+# A push that moves main -- of THIS repository.
+#
+# AGENTS.md §2.1 puts moving main behind the user's say-so. That is a rule about
+# this repo, and the text alone cannot tell whose main a push moves: this hook
+# fires for every repository a mica session touches, and it once refused a push
+# to the owner's dotfiles (whose default branch is also main) after the owner had
+# already said yes. So, like the hard reset, this rule asks git which tree the
+# push acts on -- and only a push confidently placed in ANOTHER repository passes.
+#
+# Every segment of the command is read, in order, and every `git ... push` in it
+# is judged on its own. A push is one that moves main when it names it -- any
+# remote, `main`, `+main`, `refs/heads/main`, `heads/main`, `<src>:main`, an
+# empty destination (`:`, a matching push), `--all`, `--mirror`, an option it does
+# not know (git takes abbreviations: --al is --all), or a refspec holding a
+# variable, substitution or glob, which it cannot read -- or when it names no
+# branch (`git push`, `git push origin`, `... HEAD`, or options whose values it
+# cannot line up) and the tree's current branch is main or cannot be read. Options
+# that take a value (-o, -qo x, --recurse-submodules X, --receive-pack, --exec,
+# --repo) consume it. A push of another branch needs no tree at all and passes
+# (`HEAD:maintenance` is maintenance). One that does is blocked when its tree is
+# THIS repository, and let through only when git places it in another -- with one
+# exception: a push that recurses into submodules (--recurse-submodules=on-demand
+# or only, or push.recurseSubmodules set so) from a tree that lists a submodule is
+# judged as if it acted on this repo, since this project is a submodule of its
+# superproject and may be pushed along with it.
+#
+# "This repository" is a tree whose `git rev-parse --path-format=absolute
+# --git-common-dir` equals the project's: the main checkout and every worktree
+# under .claude/worktrees/ share one, so all of them count. The project is
+# $CLAUDE_PROJECT_DIR if set, else the directory two above this script; if
+# neither resolves, the guard cannot tell what it protects and treats the push
+# as aimed at this repo.
+#
+# The tree is the hook input's cwd, moved by `git -C <dir>` (a leading `~` is
+# expanded against $HOME) and by ONE literal `cd <dir>` that opens the command
+# and is followed by `&&` or `;` -- the shape a session writes. That cd is
+# resolved the way the shell does (logically: `cd link/..` stays beside the
+# link), then made physical with pwd -P; only an absolute, `~`, `./` or `../`
+# target is read, since the user's CDPATH could send any other word elsewhere. The
+# hard reset's resolver (segment_is_hard_reset) is not shared -- it is built
+# around finding a reset and still refuses a `cd` and a `~` -- only split_commands
+# and bare are.
+#
+# It fails closed, exactly as before, whenever the tree is not known with
+# confidence: no cwd (or a relative one), GIT_DIR / GIT_WORK_TREE / --git-dir /
+# --work-tree / --bare anywhere in the command, a -C or cd path holding a
+# variable, substitution, glob, quote it cannot read or quoted tilde, a ~ in a
+# command that mentions HOME or has an assignment-only segment, a quote or
+# backslash anywhere in git's options before the subcommand (`git -c 'a=b push'
+# ...`, whose words do not line up; 'git' and \git as the git word itself are
+# read as git), a cd that is not the opening `cd <dir> &&`, anything
+# before the push that is not git or plainly inert (it could have moved the shell:
+# a function, eval, source), a git push reached through sudo, env, sh -c or xargs,
+# or git failing on the directory. A segment that is not itself a push but
+# names one of main in text (a commit message can) blocks, wherever it is.
+#
+# What it still cannot see: a push reached through a git alias, a script, ssh or
+# a remote's own hooks; a second clone of the same remote, which has its own
+# common dir and so counts as another repository; a bare `git push` whose
+# push.default or upstream sends the current branch to a remote main; and a shell
+# whose cd does not behave like sh's.
+
+mp_block() {
+    block "this push would move main -- or the guard cannot show it is aimed at another repository: $1"
+}
+
+# Sets mp_common to this project's git common dir; returns 1 when it cannot.
+mp_project_common() {
+    mp_proj=${CLAUDE_PROJECT_DIR:-}
+    if [ -z "$mp_proj" ]; then
+        mp_proj=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." 2>/dev/null && pwd -P) || return 1
+    fi
+    mp_common=$(git -C "$mp_proj" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1
+    case $mp_common in
+        /*) return 0 ;;
+    esac
+    return 1
+}
+
+# Sets mp_w to the word $1 with one pair of wrapping quotes taken off, and
+# mp_quoted when there was one. Returns 1 when any other quote is left in it, so
+# the word is a fragment of something the guard did not split the way the shell
+# does.
+mp_unquote() {
+    mp_quoted=
+    mp_w=$1
+    case $mp_w in
+        '"'*'"')
+            mp_w=${mp_w#'"'}
+            mp_w=${mp_w%'"'}
+            mp_quoted=1
+            ;;
+        "'"*"'")
+            mp_w=${mp_w#"'"}
+            mp_w=${mp_w%"'"}
+            mp_quoted=1
+            ;;
+    esac
+    case $mp_w in
+        *'"'* | *"'"* | *\\*) return 1 ;;
+    esac
+    return 0
+}
+
+# Returns 0 when the word $1 holds a quote or a backslash: it is not the word the
+# shell would hand to git, so what follows it cannot be lined up with git's grammar.
+mp_odd() {
+    case $1 in
+        *'"'* | *"'"* | *\\*) return 0 ;;
+    esac
+    return 1
+}
+
+# Sets mp_dir to the directory the word $2 names, relative to $1, with a leading
+# ~ expanded against $HOME, and mp_w to the word as written. Returns 1 with mp_why
+# set when it cannot be known.
+mp_join() {
+    mp_why=
+    if ! mp_unquote "$2"; then
+        mp_why="the path $2 holds a quote the guard cannot read"
+        return 1
+    fi
+    mp_p=$mp_w
+    if [ -z "$mp_p" ]; then
+        mp_why="the path is empty"
+        return 1
+    fi
+    case $mp_p in
+        '~'*)
+            if [ -n "$mp_quoted" ]; then
+                mp_why="the path '$mp_p' has a quoted tilde, which the shell leaves alone"
+                return 1
+            fi
+            # An earlier HOME= (or any bare assignment) in the command may have
+            # changed what the tilde means; the hook's own $HOME is then not it.
+            if [ -n "$mp_home_unsure" ]; then
+                mp_why="the path '$mp_p' uses ~ after the command assigned something, possibly HOME"
+                return 1
+            fi
+            ;;
+    esac
+    # The quoted '~' below is the point: it matches a literal tilde in the command
+    # text, which the guard expands itself.
+    # shellcheck disable=SC2088
+    case $mp_p in
+        *'$'* | *'`'* | *'*'* | *'?'* | *'['* | *'{'* | *\\* | *'('* | *')'* | *'<'* | *'>'* | *'!'*)
+            mp_why="the path '$mp_p' is a variable, a substitution or a glob"
+            return 1
+            ;;
+        '~' | '~/'*)
+            case ${HOME:-} in
+                /*) ;;
+                *)
+                    mp_why="the path '$mp_p' needs \$HOME, which is not an absolute path"
+                    return 1
+                    ;;
+            esac
+            mp_dir=${HOME%/}${mp_p#'~'}
+            ;;
+        '~'*)
+            mp_why="the path '$mp_p' is another user's home"
+            return 1
+            ;;
+        /*)
+            mp_dir=$mp_p
+            ;;
+        *)
+            if [ -z "$1" ]; then
+                mp_why="the path '$mp_p' is relative to a directory that is not known"
+                return 1
+            fi
+            mp_dir=$1/$mp_p
+            ;;
+    esac
+    return 0
+}
+
+# Handles the opening `cd <dir>`: the words of the segment are in "$@". Moves
+# mp_base and returns 0, or returns 1 with mp_why set when the cd cannot be
+# placed. The segment must be the start of the command, followed by && or ;, with
+# exactly one literal argument.
+mp_leading_cd() {
+    # The command must open with the word cd itself: not an assignment in front of
+    # it, and not a subshell, whose cd ends where the subshell does.
+    mp_lead=${seg#"${seg%%[![:space:]]*}"}
+    case $mp_lead in
+        cd[[:space:]]*) ;;
+        *)
+            mp_why="a cd that is not the plain opening command, so what it moves cannot be known"
+            return 1
+            ;;
+    esac
+    mp_rest=${cmd#"$seg"}
+    case $mp_rest in
+        '&&'* | ';'*) ;;
+        *)
+            mp_why="a cd that is not followed by && or ;, so what it moves cannot be known"
+            return 1
+            ;;
+    esac
+    if [ $# -ne 2 ]; then
+        mp_why="a cd without exactly one literal path"
+        return 1
+    fi
+    mp_join "$mp_base" "$2" || return 1
+    # CDPATH, or zsh's cdpath, can send a bare word like `sub` anywhere; only a
+    # path the shell reads as itself is followed.
+    # shellcheck disable=SC2088
+    case $mp_w in
+        /* | '~' | '~/'* | . | .. | ./* | ../*) ;;
+        *)
+            mp_why="a cd to '$mp_w', which the user's CDPATH could resolve somewhere else"
+            return 1
+            ;;
+    esac
+    # The shell resolves the target logically -- `cd link/..` stays beside the
+    # link -- while git -C resolves physically and would land beyond it. So the
+    # directory is found the way the shell finds it, then made physical.
+    if ! mp_phys=$(
+        CDPATH=''
+        cd -- "$mp_dir" 2>/dev/null && pwd -P
+    ) || [ -z "$mp_phys" ]; then
+        mp_why="a cd into '$mp_dir', which is not an accessible directory, so the push may run where it started"
+        return 1
+    fi
+    mp_base=$mp_phys
+    return 0
+}
+
+# Notes how the word $1, an argument of a push, bears on main: a name that is main,
+# a spelling the guard cannot read (which may be), or HEAD / @ (the current
+# branch). Sets mp_mainish and mp_bd.
+mp_refword() {
+    mp_rw=$(printf '%s' "$1" | tr -d '\047\042')
+    case $mp_rw in
+        *'$'* | *'`'* | *'*'* | *'?'* | *'['* | *'{'* | *'('* | *\\*)
+            mp_mainish=1
+            return 0
+            ;;
+    esac
+    # The destination: after any +, whatever follows the colon, or the whole word.
+    mp_d=${mp_rw#+}
+    case $mp_d in
+        *:*) mp_d=${mp_d#*:} ;;
+    esac
+    mp_d=${mp_d#refs/heads/}
+    mp_d=${mp_d#heads/}
+    case $mp_d in
+        # No destination at all (`:`, `+:`, `dev:`) is a matching push, which
+        # includes main.
+        '' | main) mp_mainish=1 ;;
+        HEAD | @) mp_bd=1 ;;
+    esac
+}
+
+# Notes the value of a --recurse-submodules: anything but plainly no recursion
+# (check, no) may push a submodule's main too.
+mp_recurse_note() {
+    case $1 in
+        check | no | false | 0 | off) ;;
+        *) mp_recurse=1 ;;
+    esac
+}
+
+# Reads a cluster of short push options, -qo for instance: a push takes -v -q -f -u
+# -n -d -4 -6 and -o, and -o takes a value, glued to it or the next word. Sets
+# mp_consume when the next word is that value, and mp_mainish for a letter it does
+# not know, since it cannot then tell where the refspecs start.
+mp_short_flags() {
+    mp_sr=${1#-}
+    while [ -n "$mp_sr" ]; do
+        mp_c=${mp_sr%"${mp_sr#?}"}
+        mp_sr=${mp_sr#?}
+        case $mp_c in
+            v | q | f | u | n | d | 4 | 6) ;;
+            o)
+                [ -n "$mp_sr" ] || mp_consume=1
+                return 0
+                ;;
+            *)
+                mp_mainish=1
+                return 0
+                ;;
+        esac
+    done
+}
+
+# Reads the words after `git push` in "$@", setting mp_mainish, mp_bd, mp_npos and
+# mp_recurse. An option that takes a value consumes it, so a value is not read as a
+# remote or a refspec; an option it does not know is read as possibly naming main,
+# since git accepts any unambiguous abbreviation (--al is --all).
+mp_push_args() {
+    mp_dd=
+    while [ $# -gt 0 ]; do
+        if [ -n "$mp_dd" ]; then
+            mp_npos=$((mp_npos + 1))
+            mp_refword "$1"
+            shift
+            continue
+        fi
+        case $1 in
+            --)
+                mp_dd=1
+                ;;
+            --all | --mirror | --branches)
+                mp_mainish=1
+                ;;
+            -o | --push-option | --receive-pack | --exec | --repo)
+                if [ $# -lt 2 ]; then
+                    mp_bd=1
+                    break
+                fi
+                shift
+                ;;
+            --recurse-submodules)
+                # Whether the next word is its value or the remote depends on the
+                # git version; either way the push may name no branch.
+                case ${2:-} in
+                    check | on-demand | only | no)
+                        mp_bd=1
+                        mp_recurse_note "$2"
+                        shift
+                        ;;
+                esac
+                ;;
+            --recurse-submodules=*)
+                mp_recurse_note "${1#*=}"
+                ;;
+            --push-option=* | --receive-pack=* | --exec=* | --repo=* | --signed=* | --force-with-lease=* | --force-if-includes=*) ;;
+            --verbose | --quiet | --set-upstream | --dry-run | --delete | --tags | --prune | --follow-tags | --atomic | --porcelain | --progress | --thin | --verify | --signed | --force | --force-with-lease | --force-if-includes | --ipv4 | --ipv6 | --no-*) ;;
+            --*)
+                mp_mainish=1
+                ;;
+            -?*)
+                mp_consume=
+                mp_short_flags "$1"
+                if [ -n "$mp_consume" ]; then
+                    if [ $# -lt 2 ]; then
+                        mp_bd=1
+                        break
+                    fi
+                    shift
+                fi
+                ;;
+            *)
+                mp_npos=$((mp_npos + 1))
+                mp_refword "$1"
+                ;;
+        esac
+        shift
+    done
+}
+
+# Returns 0 when the text of $seg has a git word followed by a push word: a push
+# reached through something the guard does not parse.
+mp_launched_git() {
+    mp_sg=
+    stripped=$(printf '%s' "$seg" | tr -d '\047\042\134')
+    set -f
+    # shellcheck disable=SC2086
+    set -- $stripped
+    set +f
+    for mp_x in "$@"; do
+        bare "$mp_x"
+        case $w in
+            git | */git) mp_sg=1 ;;
+            push) [ -z "$mp_sg" ] || return 0 ;;
+        esac
+    done
+    return 1
+}
+
+# Judges a push that moves main, or may: refuses unless git places its tree in
+# another repository, or -- when it only names no branch -- the tree's current
+# branch is not main. Uses mp_target, mp_bad, mp_mainish and mp_bd.
+mp_resolve() {
+    [ -z "$mp_tainted" ] || mp_block "$mp_tainted"
+    [ -z "$mp_bad" ] || mp_block "$mp_bad"
+    case "$cmd" in
+        *GIT_DIR* | *GIT_WORK_TREE* | *GIT_COMMON_DIR* | *--git-dir* | *--work-tree* | *--bare*)
+            mp_block "GIT_DIR, GIT_WORK_TREE, --git-dir, --work-tree and --bare point git somewhere other than the working directory"
+            ;;
+    esac
+    if [ -n "${GIT_DIR:+x}${GIT_WORK_TREE:+x}${GIT_COMMON_DIR:+x}" ]; then
+        mp_block "the guard's own environment points git somewhere other than the working directory"
+    fi
+    [ -n "$cwd" ] || mp_block "the hook input carried no cwd"
+    case $cwd in
+        /*) ;;
+        *) mp_block "the hook input's cwd is not an absolute path" ;;
+    esac
+    if ! mp_project_common; then
+        mp_block "the guard could not tell which repository it protects"
+    fi
+    if ! mp_top=$(git -C "$mp_target" rev-parse --path-format=absolute --git-common-dir 2>/dev/null); then
+        mp_block "git cannot place '$mp_target' in a repository (missing directory, not a repository, or too old for --path-format)"
+    fi
+    case $mp_top in
+        /*) ;;
+        *) mp_block "git gave no absolute common dir for '$mp_target'" ;;
+    esac
+
+    # A push that recurses into submodules (--recurse-submodules=on-demand or only,
+    # or push.recurseSubmodules set to either) may push a submodule's main too, and
+    # this project is a submodule of the superproject it lives in. So when the tree
+    # lists a submodule at all -- or git cannot say -- the push is judged as if it
+    # acted on this repository.
+    mp_sub_as_this=
+    mp_rs=$mp_recurse
+    if [ -z "$mp_rs" ]; then
+        mp_cfg=$(git -C "$mp_target" config --get push.recurseSubmodules 2>/dev/null)
+        case $mp_cfg in
+            [Oo]n-[Dd]emand | [Oo]nly) mp_rs=1 ;;
+        esac
+    fi
+    if [ -n "$mp_rs" ]; then
+        if ! mp_ls=$(git -C "$mp_target" ls-files --stage 2>/dev/null) || cmd_grep 'submodule' "$mp_ls" '^160000 '; then
+            mp_sub_as_this=1
+        fi
+    fi
+    if [ "$mp_top" != "$mp_common" ] && [ -z "$mp_sub_as_this" ]; then
+        return 0
+    fi
+
+    if [ -n "$mp_mainish" ]; then
+        block "this push would move main"
+    fi
+    # It names no branch, so it pushes the current one.
+    if ! mp_branch=$(git -C "$mp_target" symbolic-ref --short HEAD 2>/dev/null) || [ -z "$mp_branch" ]; then
+        block "this push names no branch and the current branch of '$mp_target' cannot be read, so this push would move main if it is on main"
+    fi
+    if [ "$mp_branch" = main ]; then
+        block "this push names no branch and '$mp_target' is on main, so it would move main"
+    fi
+}
+
+# A segment whose first word is git: reads git's options to find the tree and the
+# subcommand, and judges it when the subcommand is a push that moves main.
+mp_git_segment() {
+    shift
+    mp_target=$mp_base
+    mp_bad=
+    mp_misaligned=
+    mp_recurse=
+    while [ $# -gt 0 ]; do
+        case $1 in
+            -C)
+                if [ $# -lt 2 ]; then
+                    mp_misaligned=1
+                    break
+                fi
+                mp_unquote "$2" || mp_misaligned=1
+                if [ -z "$mp_bad" ]; then
+                    if mp_join "$mp_target" "$2"; then
+                        mp_target=$mp_dir
+                    else
+                        mp_bad="the -C: $mp_why"
+                    fi
+                fi
+                shift 2
+                ;;
+            -c | --config-env | --namespace | --super-prefix | --attr-source)
+                if [ $# -lt 2 ]; then
+                    mp_misaligned=1
+                    break
+                fi
+                ! mp_odd "$2" || mp_misaligned=1
+                # A config that makes push recurse into submodules, set here.
+                case $(printf '%s' "$2" | tr '[:upper:]' '[:lower:]') in
+                    *recursesubmodules*) mp_recurse=1 ;;
+                esac
+                shift 2
+                ;;
+            --git-dir | --git-dir=* | --work-tree | --work-tree=* | --bare)
+                mp_bad="--git-dir, --work-tree and --bare point git somewhere other than the working directory"
+                shift
+                ;;
+            -*)
+                ! mp_odd "$1" || mp_misaligned=1
+                shift
+                ;;
+            *)
+                break
+                ;;
+        esac
+    done
+    if [ $# -gt 0 ]; then
+        ! mp_odd "$1" || mp_misaligned=1
+        # A subcommand the shell has yet to expand is not known either.
+        case $1 in
+            *'$'* | *'`'* | *'*'* | *'?'* | *'['* | *'{'*) mp_misaligned=1 ;;
+        esac
+    fi
+    if [ -n "$mp_misaligned" ] || [ $# -eq 0 ]; then
+        # The words do not line up with git's grammar, so the subcommand is not
+        # known. Harmless unless the segment talks of a push.
+        if [ -n "$mp_pushtext" ]; then
+            mp_block "a git command naming push whose options the guard could not read (a quote among them)"
+        fi
+        return 0
+    fi
+
+    bare "$1"
+    if [ "$w" != push ]; then
+        if [ -n "$mp_pushtext" ] && names_main "$seg"; then
+            mp_block "a git $w command whose text names a push of main"
+        fi
+        return 0
+    fi
+    shift
+
+    mp_mainish=
+    mp_bd=
+    mp_npos=0
+    mp_push_args "$@"
+    [ "$mp_npos" -gt 1 ] || mp_bd=1
+    [ -n "$mp_mainish$mp_bd" ] || return 0
+    mp_resolve
+}
+
+# One segment of the command, in order.
+mp_segment() {
+    mp_pushtext=
+    case $seg in
+        *push*) mp_pushtext=1 ;;
+    esac
+
+    set -f
+    # shellcheck disable=SC2086
+    set -- $seg
+    set +f
+    while [ $# -gt 0 ]; do
+        case $1 in
+            [A-Za-z_]*=*) shift ;;
+            *) break ;;
+        esac
+    done
+    if [ $# -eq 0 ]; then
+        # Nothing but assignments. Any of them could be HOME, or a variable a later
+        # tilde or path leans on.
+        mp_home_unsure=1
+        return 0
+    fi
+
+    bare "$1"
+    mp_first=$w
+    # A quoted or escaped git ('git', "git", \git) is the same program.
+    mp_gw=$(printf '%s' "$mp_first" | tr -d '\047\042\134')
+    case $mp_gw in
+        git | */git)
+            mp_git_segment "$@"
+            return 0
+            ;;
+    esac
+
+    if [ -n "$mp_pushtext" ]; then
+        if names_main "$seg"; then
+            mp_block "a command ('$mp_first') whose text names a push of main, not git itself"
+        fi
+        case $mp_first in
+            sudo | doas | env | time | nice | nohup | command | builtin | exec | xargs | sh | bash | zsh | dash | ash | ksh | eval | timeout | stdbuf | setsid) mp_via=1 ;;
+            *)
+                mp_via=
+                case $seg in
+                    *\$\(* | *'`'*) mp_via=1 ;;
+                esac
+                ;;
+        esac
+        if [ -n "$mp_via" ] && mp_launched_git; then
+            mp_block "a git push reached through '$mp_first', whose tree the guard cannot place"
+        fi
+    fi
+
+    if [ "$mp_index" -eq 1 ] && [ "$mp_first" = cd ]; then
+        mp_leading_cd "$@" || mp_tainted="$mp_why"
+        return 0
+    fi
+    case $mp_first in
+        echo | printf | true | : | false | pwd | ls | cat | test | '[' | sleep | date | head | tail | wc | grep | egrep | fgrep | rg | diff | less | man)
+            return 0
+            ;;
+    esac
+    # Anything else -- cd further along, pushd, eval, source, a shell function --
+    # may have moved the shell. That only matters to a push that needs its tree.
+    mp_tainted="'$mp_first' runs before the push and could move the shell to another directory"
+    return 0
+}
+
+check_main_push() {
+    [ -n "$main_push" ] || return 0
+
+    if ! segments=$(split_commands) || [ -z "$segments" ]; then
+        if names_main "$cmd"; then
+            mp_block "the guard could not split the command to find which tree each push acts on"
+        fi
+        return 0
+    fi
+
+    mp_base=$cwd
+    mp_index=0
+    mp_tainted=
+    mp_home_unsure=
+    # Any mention of HOME -- HOME=x, export HOME, typeset -x HOME -- puts a tilde in
+    # doubt for the whole command, whichever side of it the mention falls.
+    case "$cmd" in
+        *HOME*) mp_home_unsure=1 ;;
+    esac
+    # A here-document, not a pipe, so block's `exit 2` ends the guard.
+    while IFS= read -r seg; do
+        mp_index=$((mp_index + 1))
+        mp_segment
+    done <<EOF
+$segments
+EOF
+}
+
+check_main_push
 
 # --------------------------------------------------------------------------
 # A gate piped into a filter reports the filter's exit code, not the gate's.
