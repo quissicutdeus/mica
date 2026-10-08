@@ -4,9 +4,17 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { execFile } from 'node:child_process';
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, relative, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { checkAddonSources, collectFiles } from '../../sdk/checks/addon.js';
 import { componentClasses, tileClasses } from '../../sdk/checks/classes.js';
 
@@ -29,6 +37,33 @@ import { componentClasses, tileClasses } from '../../sdk/checks/classes.js';
 
 const ROOT = resolve(__dirname, '../..');
 const COPIED = ['scripts', 'sdk', 'server', 'client', 'shared', 'package.json'];
+/** Where a service's browser mock lives, one file per service, globbed (MICA-323). */
+const MOCKS = 'web/src/nui/mocks/services';
+const TAKEN = '// an existing service mock the scaffolder must not overwrite\n';
+
+/**
+ * Every relative import in a generated file that names no file, in the temporary copy the
+ * scaffold wrote into or in this repo — `web/` is not copied, so what a generated file
+ * reaches there is looked up here.
+ *
+ * Not a typecheck: the copy has no `node_modules`, and running `svelte-check` over a
+ * scaffold costs a minute. But a dead path is the failure this has actually shipped — the
+ * store template imported `./createCrudStore` for months after MICA-172 moved it to
+ * `sdk/`, and nothing ran the output to notice.
+ */
+const unresolvedImports = (root: string, file: string): string[] => {
+  const text = readFileSync(join(root, file), 'utf8');
+  const specs = [...text.matchAll(/(?:from\s+|import\()['"](\.{1,2}\/[^'"]+)['"]/g)].map(
+    (m) => m[1]
+  );
+  expect(specs.length, `${file} has no relative import to check`).toBeGreaterThan(0);
+  return specs.filter((spec) => {
+    const target = join(dirname(file), spec);
+    return ![root, ROOT].some((base) =>
+      ['', '.ts', '.js', '.svelte', '/index.ts'].some((ext) => existsSync(join(base, target + ext)))
+    );
+  });
+};
 
 /** One scaffold run, and the app directory it wrote. */
 interface Scaffold {
@@ -68,6 +103,11 @@ describe('pnpm new:app output', () => {
     // Sequential: both runs rewrite `sdk/appContract.test.ts` and the generated barrels.
     runs.plain = await scaffold('scaffold_plain', []);
     runs.full = await scaffold('scaffold_full', ['--service', '--tablet']);
+    // An id whose mock file already exists — `phone`, `shell` and `client` answer mocks
+    // without being apps — must be refused before anything is written over it.
+    mkdirSync(join(root, MOCKS), { recursive: true });
+    writeFileSync(join(root, MOCKS, 'scaffold_taken.ts'), TAKEN);
+    runs.taken = await scaffold('scaffold_taken', ['--service']);
   }, 120_000);
 
   afterAll(() => {
@@ -103,5 +143,52 @@ describe('pnpm new:app output', () => {
       'scripts/new-app.js writes an app that fails the checks every app is held to — fix the ' +
         'template string in the script, not the generated file'
     ).toEqual([]);
+  });
+
+  /**
+   * `--service` writes its own mock file rather than printing a block to paste into a
+   * shared one (MICA-323). The declaration is the exact line `routes.test.ts` reads as
+   * text, and the four CRUD names are the ones the generated store calls — a mock under
+   * any other name answers nothing, which is the dead-in-`pnpm dev` failure.
+   */
+  it('writes the browser mock for --service, and none for a plain app', () => {
+    expect(existsSync(join(root, MOCKS, 'scaffold_plain.ts'))).toBe(false);
+    const mock = readFileSync(join(root, MOCKS, 'scaffold_full.ts'), 'utf8');
+    expect(mock).toMatch(/^export const mocks\b[^\n]*=\s*\{$/m);
+    const store = readFileSync(join(root, 'web/src/services/scaffold_full.ts'), 'utf8');
+    for (const action of ['getScaffoldFull', 'createScaffoldFull', 'updateScaffoldFull']) {
+      expect(store, action).toContain(`'${action}'`);
+      expect(mock, action).toContain(`'${action}'`);
+    }
+    expect(mock).toContain(`remove: 'deleteScaffoldFull'`);
+    expect(runs.full.output).not.toContain('mocks/registry.ts');
+    expect(runs.full.output).toContain(`${MOCKS}/scaffold_full.ts`);
+  });
+
+  it('refuses an id whose mock file already exists, and writes nothing', () => {
+    expect(runs.taken.code, runs.taken.output).not.toBe(0);
+    expect(runs.taken.output).toContain(`${MOCKS}/scaffold_taken.ts already exists`);
+    expect(readFileSync(join(root, MOCKS, 'scaffold_taken.ts'), 'utf8')).toBe(TAKEN);
+    expect(existsSync(join(root, 'web/src/apps/scaffold_taken'))).toBe(false);
+  });
+
+  it.each([
+    ['store', 'web/src/services/scaffold_full.ts'],
+    ['browser mock', `${MOCKS}/scaffold_full.ts`]
+  ])('writes a --service %s whose relative imports all resolve', (_label, file) => {
+    expect(unresolvedImports(root, file)).toEqual([]);
+  });
+
+  /**
+   * Known broken, recorded rather than hidden (MICA-323). The hook template imports
+   * `../../services/<id>`, a repo-root directory that does not exist, and no path fixes it:
+   * the store lives in `web/src/services/`, and the SDK importing its own consumer is the
+   * edge MICA-172 removed. The fix is the shape Notes already has — an app-local store on
+   * `createCrudStore` + `useService` from `@mica/sdk`, no hook file — which is a change to
+   * what `--service` scaffolds, not to a path. `it.fails` turns this red the moment that
+   * lands, so whoever fixes it flips it to `it`.
+   */
+  it.fails('writes a --service SDK hook whose relative imports all resolve', () => {
+    expect(unresolvedImports(root, 'sdk/host/useScaffoldFull.ts')).toEqual([]);
   });
 });

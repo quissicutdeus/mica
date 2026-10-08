@@ -106,7 +106,7 @@ test.describe('Media gallery payloads (MICA-110)', () => {
    * is the ticket. A row could arrive with both columns and render perfectly.
    *
    * **This asserts the mock's projection, not the server's**, and the distinction matters:
-   * `getMedia` is answered here by `nui/mocks/registry.ts`, so a green run says the browser
+   * `getMedia` is answered here by `nui/mocks/services/media.ts`, so a green run says the browser
    * mock agrees with what `server/services/Media.ts` declares — it does not re-prove the
    * declaration. `data: { private: true }` is what actually enforces this in game and the
    * test standing behind *that* belongs in `server/__tests__/`. What this catches is the

@@ -7,7 +7,7 @@ import { seedHomeGrid } from '../support/homeGrid';
  * `?bluetoothNearby=N` is the mock's only knob for this feature — there is no other
  * player in the browser to actually be nearby — so these two specs are what makes both
  * outcomes (delivered / nobody in range) reachable at all, matching the reasoning
- * `web/src/nui/mocks/registry.ts` documents beside the flag.
+ * `web/src/nui/mocks/shared.ts` documents beside the flag.
  */
 test.describe('Bluetooth proximity contact share', () => {
   const openUrsula = async (page: import('@playwright/test').Page) => {

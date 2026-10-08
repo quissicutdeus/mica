@@ -41,13 +41,13 @@ its mock, and only for a `clientPrepared` action a `client/` hook — and every
 directory lane depends on the contract's shape. Left to whichever lane owns the
 handler, the others either wait on it or guess it, and a guessed shape fails
 `routes.test.ts` only after integration. So the contract and its mock in
-`web/src/nui/mocks/registry.ts` go first: written by the lead or a single lane,
-gated (`pnpm typecheck` plus `routes.test.ts`), committed. A contracted action
-needs no `shared/routes.ts` row — that is only for a generic CRUD action a
-`createCrudStore` reaches (`nui-endpoint` has the table). Only then do the lanes
-spawn, each briefed with that sha and the contract as read-only. A change to it
-mid-wave stops the wave: the lead amends it and re-briefs every lane that reads
-it.
+`web/src/nui/mocks/services/<service>.ts` go first: written by the lead or a
+single lane, gated (`pnpm typecheck` plus `routes.test.ts`), committed. A
+contracted action needs no `shared/routes.ts` row — that is only for a generic
+CRUD action a `createCrudStore` reaches (`nui-endpoint` has the table). Only
+then do the lanes spawn, each briefed with that sha and the contract as
+read-only. A change to it mid-wave stops the wave: the lead amends it and
+re-briefs every lane that reads it.
 
 Callsigns come from a pool and fit the work (`lead.md` has it). Never reuse one
 within a session, and never give a lane the lead's name; either makes the

@@ -148,8 +148,8 @@ test.describe('with streamer mode on', () => {
 
   test('Snatchr: the photo picker on a new listing is blurred until tapped', async ({ page }) => {
     // The only picture surface Snatchr has in the browser mock. `marketplace:create` in
-    // `nui/mocks/registry.ts` answers with `attachments: []` whatever was picked, and the
-    // fixture listings ship without photos, so neither the feed card nor the listing
+    // `nui/mocks/services/marketplace.ts` answers with `attachments: []` whatever was picked,
+    // and the fixture listings ship without photos, so neither the feed card nor the listing
     // detail ever draws a `MediaThumb` here — both go through it in the app, and both
     // wait on the mock carrying attachments before a spec can reach them.
     await seedHomeGrid(page, ['marketplace']);

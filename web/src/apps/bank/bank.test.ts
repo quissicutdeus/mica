@@ -73,7 +73,7 @@ const answerHistory = (source: { provider: string | null; available: boolean }) 
   replies.getTransactions = () => ({ ...source, transactions: [] });
 };
 
-/** The shape of `mockInvoices` in `nui/mocks/registry.ts`, minus what a row does not need. */
+/** The shape of `mockInvoices` in `nui/mocks/services/bank.ts`, minus what a row does not need. */
 const invoice = (
   id: number,
   from_label: string,

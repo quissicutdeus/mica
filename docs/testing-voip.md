@@ -29,7 +29,7 @@ proves nothing about whether a real client reacts to any of it.
 
 ## Layer 2 — UI and lifecycle, no game
 
-`web/src/nui/mocks/registry.ts`'s `startCall`/`endCall`/`answerCall`/
+`web/src/nui/mocks/services/phone.ts`'s `startCall`/`endCall`/`answerCall`/
 `rejectCall` play the same lifecycle on a timer — ring, then connect or give up
 — posting the same `callStatus` window message the real client forwards from the
 server, rather than answering the NUI callback and doing nothing.

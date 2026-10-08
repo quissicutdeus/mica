@@ -16,17 +16,18 @@ and in Playwright, and does nothing in game. `readConversation`,
 `renameConversation`, `archiveConversation`, `rejectCall`, `flipCamera` and all
 four mail actions have each shipped as a silent no-op.
 
-**Why the suites don't catch it:** `web/src/nui/mocks/registry.ts` answers by
-action name alone. A mock makes a missing client or server layer invisible.
+**Why the suites don't catch it:** the browser mocks
+(`web/src/nui/mocks/services/`) answer by action name alone. A mock makes a
+missing client or server layer invisible.
 
 ## UI → server: four places, not three
 
-| #   | File                            | What                                                                     |
-| --- | ------------------------------- | ------------------------------------------------------------------------ |
-| 1   | `shared/contracts/<service>.ts` | the action's `input` (and `output`) in the service's `defineContract`    |
-| 2   | `web/src/services/`             | `call(<service>Contract, 'action', input)` from `web/src/nui/call.ts`    |
-| 3   | `server/services/<Service>.ts`  | `registerEvent('<action>', ...)` — the handler receives the parsed input |
-| 4   | `web/src/nui/mocks/registry.ts` | the browser/Playwright mock, under the scoped key `'<service>:<action>'` |
+| #   | File                                      | What                                                                     |
+| --- | ----------------------------------------- | ------------------------------------------------------------------------ |
+| 1   | `shared/contracts/<service>.ts`           | the action's `input` (and `output`) in the service's `defineContract`    |
+| 2   | `web/src/services/`                       | `call(<service>Contract, 'action', input)` from `web/src/nui/call.ts`    |
+| 3   | `server/services/<Service>.ts`            | `registerEvent('<action>', ...)` — the handler receives the parsed input |
+| 4   | `web/src/nui/mocks/services/<service>.ts` | the browser/Playwright mock, under the scoped key `'<service>:<action>'` |
 
 The typed call rides the generic service action (`svc`), the same door an
 add-on's `useService(id).call(...)` goes through, so a contracted action needs

@@ -179,7 +179,14 @@ const collectClientCallbacks = (): Set<string> => {
 };
 
 /**
- * The `mockRegistry` object literal in `web/src/nui/mocks/registry.ts`, and nothing else.
+ * Every service file's `mocks` object literal under `web/src/nui/mocks/services/`, and
+ * nothing else, concatenated.
+ *
+ * Read as text, not imported: `web/src/nui/mocks/registry.ts` collects these files with
+ * `import.meta.glob`, which only Vite understands, and this suite runs under the root
+ * Vitest project with no plugins (MICA-323). So the directory is listed here the same way
+ * the glob lists it, and a file that stops declaring `export const mocks … = {` is an error
+ * rather than a file this check silently skips.
  *
  * Bounded at both ends, deliberately (MICA-195). This used to slice from the first
  * occurrence of the word `mockRegistry` to the end of the file, which starts in a doc
@@ -189,13 +196,24 @@ const collectClientCallbacks = (): Set<string> => {
  * mocks answering nothing.
  */
 const mockRegistrySource = (): string => {
-  const text = readFileSync(join(ROOT, 'web', 'src', 'nui', 'mocks', 'registry.ts'), 'utf8');
-  const start = text.search(/^const mockRegistry\b[^\n]*=\s*\{$/m);
-  const end = start === -1 ? -1 : text.indexOf('\n};', start);
-  if (start === -1 || end === -1) {
-    throw new Error('mocks/registry.ts no longer declares `const mockRegistry ... = {` … `};`');
-  }
-  return text.slice(start, end);
+  const dir = join(ROOT, 'web', 'src', 'nui', 'mocks', 'services');
+  const files = readdirSync(dir)
+    .filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts') && !f.endsWith('.d.ts'))
+    .sort();
+  if (files.length === 0) throw new Error(`no mock service files in ${relative(ROOT, dir)}`);
+  return files
+    .map((file) => {
+      const text = readFileSync(join(dir, file), 'utf8');
+      const start = text.search(/^export const mocks\b[^\n]*=\s*\{$/m);
+      const end = start === -1 ? -1 : text.indexOf('\n};', start);
+      if (start === -1 || end === -1) {
+        throw new Error(
+          `mocks/services/${file} does not declare \`export const mocks … = {\` … \`};\``
+        );
+      }
+      return text.slice(start, end);
+    })
+    .join('\n');
 };
 
 /**
@@ -389,7 +407,7 @@ describe('no dead weight', () => {
     expect(
       missing.toSorted(),
       'no browser mock answers this action, so the feature is dead in pnpm dev and in ' +
-        'Playwright while working in game — add it to web/src/nui/mocks/registry.ts'
+        'Playwright while working in game — add it to web/src/nui/mocks/services/<service>.ts'
     ).toEqual([]);
   });
 
@@ -465,7 +483,7 @@ describe('typed calls over the generic service action (MICA-213)', () => {
     expect(
       missing.map((c) => `'${c.service}:${c.action}'  (${c.file})`).toSorted(),
       'no scoped mock answers this, so the feature is dead in pnpm dev and in Playwright — ' +
-        "add '<service>:<action>' to web/src/nui/mocks/registry.ts"
+        "add '<service>:<action>' to web/src/nui/mocks/services/<service>.ts"
     ).toEqual([]);
   });
 

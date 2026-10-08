@@ -6,7 +6,7 @@ import { seedHomeGrid } from '../support/homeGrid';
  *
  * A browser has no server, so the mock behind `store:catalog` plays it: it fetches the URL in
  * `?mica_addon_catalog=` (the per-page stand-in for the `mica_addon_catalog` convar, see
- * `nui/mocks/registry.ts`) and answers `ok`, `unavailable` or `off` the way the server does.
+ * `nui/mocks/services/store.ts`) and answers `ok`, `unavailable` or `off` the way the server does.
  * `page.route` is the catalog's host here. Every spec below names the answer it wants, so it
  * does not depend on what the build was given in `VITE_MICA_ADDON_CATALOG`.
  *

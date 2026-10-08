@@ -110,9 +110,9 @@ export const test = base.extend<NuiFixtureOptions>({
         'during this test, and the suite does not let one pass silently:\n\n' +
         failures.map((failure) => `  - ${failure}`).join('\n') +
         '\n\nA missing browser mock is the usual cause of a NUI failure — the action needs ' +
-        'an entry in web/src/nui/mocks/registry.ts (AGENTS.md §8). An uncaught page error ' +
-        'is a bug in the phone or in this suite; in game it is thrown and swallowed. A spec ' +
-        'that provokes either on purpose says so with test.use({ allowNuiFailures: true }).'
+        'an entry in web/src/nui/mocks/services/<service>.ts (AGENTS.md §8). An uncaught page ' +
+        'error is a bug in the phone or in this suite; in game it is thrown and swallowed. A ' +
+        'spec that provokes either on purpose says so with test.use({ allowNuiFailures: true }).'
     );
   }
 });

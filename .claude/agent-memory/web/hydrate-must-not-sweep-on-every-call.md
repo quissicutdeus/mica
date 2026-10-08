@@ -5,10 +5,10 @@ into `hydrateSettingsInProcess` — the function wired to the sdk seam's
 `hydrateSettings()`, which `Shell.svelte` calls once at page load. That function
 is also what `pnpm dev`, the demo container and Playwright's browser mock reach
 on every single page load, and the mock's `settings:getAll`
-(`web/src/nui/mocks/registry.ts`) is deliberately seeded empty and answers `[]`
-every time — there is no "not authenticated" concept in the mock to distinguish
-"real empty" from "hasn't loaded a character yet". The sweep read that `[]` as
-authoritative and deleted every seeded `mica:*` key on first paint:
+(`web/src/nui/mocks/services/settings.ts`) is deliberately seeded empty and
+answers `[]` every time — there is no "not authenticated" concept in the mock to
+distinguish "real empty" from "hasn't loaded a character yet". The sweep read
+that `[]` as authoritative and deleted every seeded `mica:*` key on first paint:
 `settings-persistence.spec.ts` and several unrelated specs (home-grid, keybinds,
 owner-config, nui) failed only because they happened to seed localStorage before
 `page.goto('/')`. Review (round 3) caught it; the fix landed a second function

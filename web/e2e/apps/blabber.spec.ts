@@ -654,7 +654,7 @@ test.describe('Blabber', () => {
       // The mock shade holds settings, messages and mail rows too; the tab is filtered to the
       // app it belongs to, so none of them may appear here. The preview is the mentioning
       // Blab's actual body (`mockBlabs` id 2, "anyone up? @ada") rather than an invented line —
-      // see the comment on `mentionNotification` in `web/src/nui/mocks/registry.ts`.
+      // see the comment on `mentionNotification` in `web/src/nui/mocks/services/notifications.ts`.
       await expect(frame.locator('text=anyone up? @ada')).toBeVisible();
       await expect(frame.locator('text=Developer Tools unlocked')).toHaveCount(0);
       await expect(frame.locator('text=GET DOWN HERE')).toHaveCount(0);
@@ -695,7 +695,7 @@ test.describe('Blabber', () => {
    * The fourth tab (Task 15): People/Blabs/Tags segments over the search stores, and a trending
    * chip rail before anything is typed. `#losangeles` is the one tag the fixture keeps alive for
    * this — `mockBlabs` id 3 carries it with a `created_at` relative to `Date.now()` specifically
-   * so it never ages out of `trendingTags`' 48-hour window (`web/src/nui/mocks/registry.ts`).
+   * so it never ages out of `trendingTags`' 48-hour window (`web/src/nui/mocks/social.ts`).
    */
   test.describe('Search tab', () => {
     const openSearch = (page: import('@playwright/test').Page) =>

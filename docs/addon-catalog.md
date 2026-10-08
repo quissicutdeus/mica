@@ -92,12 +92,12 @@ was true of the code and false of any build you could run. The README's
 Configuration section carries what to weigh before allowlisting a host.
 
 In a browser — `pnpm dev`, or the built preview — there are no convars and no
-server, so the mocks in `web/src/nui/mocks/registry.ts` stand in for both:
-`remoteAppConfig` answers from two env vars, and `store:catalog` fetches the
-catalog the way the server would. **Unset means `off` here**, not the public
-catalog, so a dev or e2e run never touches a real host; the demo image sets
-both. A `?mica_addon_catalog=` query parameter overrides it for one page load.
-To walk the loop without a game running:
+server, so the mocks in `web/src/nui/mocks/services/` (`client.ts` and
+`store.ts`) stand in for both: `remoteAppConfig` answers from two env vars, and
+`store:catalog` fetches the catalog the way the server would. **Unset means
+`off` here**, not the public catalog, so a dev or e2e run never touches a real
+host; the demo image sets both. A `?mica_addon_catalog=` query parameter
+overrides it for one page load. To walk the loop without a game running:
 
 ```sh
 VITE_MICA_ADDON_HOSTS=store.example.com \

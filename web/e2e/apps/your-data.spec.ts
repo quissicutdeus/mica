@@ -6,7 +6,7 @@ import { gotoDevice, settledFrameBox } from '../support/device';
  * Settings > Privacy > Your data (MICA-168): see what micaOS holds, copy it, delete it.
  *
  * The browser mock stands in for the server here (`privacy:export` / `privacy:delete` in
- * `web/src/nui/mocks/registry.ts`), and it checks the confirmation word the way the server
+ * `web/src/nui/mocks/services/privacy.ts`), and it checks the confirmation word the way the server
  * does. What this proves is the pane's wiring to the two actions and what it does with
  * their answers; that the server really refuses a wrong word and really deletes is
  * `server/__tests__`, and none of it says anything about the game or CEF.

@@ -21,7 +21,8 @@ import { lockscreenContract } from '@mica/shared/contracts/lockscreen';
  * All four actions are declared in `shared/contracts/lockscreen.ts` and reached through the
  * typed `call` over the generic service action (MICA-213), so none of them needs a row in
  * `shared/routes.ts`; `server/services/Lockscreen.ts` answers them, and
- * `web/src/nui/mocks/registry.ts` answers them under `'lockscreen:<action>'` in a browser.
+ * `web/src/nui/mocks/services/lockscreen.ts` answers them under `'lockscreen:<action>'` in
+ * a browser.
  */
 export const hasPasscode = writable(false);
 

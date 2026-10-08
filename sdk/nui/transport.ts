@@ -12,8 +12,9 @@
  * package boundary an alias is a resolution error rather than a configuration choice.
  *
  * `web/src/nui/fetchNui.ts` cannot come into the package. It reaches `nui/transport.ts`,
- * which reaches `nui/mocks/registry.ts` — the browser mock registry, which answers by
- * action name and therefore knows every app's actions. That is irreducibly phone-side.
+ * which reaches `nui/mocks/registry.ts` — the browser mock registry, which globs every
+ * file in `nui/mocks/services/`, answers by action name and therefore knows every app's
+ * actions. That is irreducibly phone-side.
  *
  * So the same shape used for facets and for `settingsHydration`: the SDK declares the
  * binding, and an entry point installs the implementation. The phone's transport registers

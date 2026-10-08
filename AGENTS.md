@@ -439,7 +439,8 @@ the database only if every layer exists:
    (MICA-213). Generic CRUD uses `createCrudStore` + `route()` in
    `shared/routes.ts`.
 3. **Handler** in `server/services/` via `registerEvent('<action>', ...)`.
-4. **Mock** in `web/src/nui/mocks/registry.ts` under `'<service>:<action>'`.
+4. **Mock** in `web/src/nui/mocks/services/<service>.ts` under
+   `'<service>:<action>'`.
 
 `server/__tests__/routes.test.ts` cross-references all layers both ways.
 

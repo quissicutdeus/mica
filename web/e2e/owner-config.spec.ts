@@ -8,7 +8,7 @@ import { addOnFrame } from './support/addon';
  *
  * `shared/ownerConfig.ts` parses `mica_disabled_apps`, `mica_default_dock` and
  * `mica_default_contacts` once; this suite is against the mock transport's read of the
- * same three query params (`web/src/nui/mocks/registry.ts`'s own convention — see
+ * same three query params (`ownerConfigRaw` in `web/src/nui/mocks/shared.ts` — see
  * `defects.spec.ts`'s `?bluetoothNearby=2`), not against the parser itself. The parser has
  * its own unit tests; this is the wiring from a URL to what a player actually sees, across
  * every surface an app can appear on. As of this file's own commit the wiring does not

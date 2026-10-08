@@ -700,10 +700,12 @@ cannot see DOM focus (see [`security.md`](security.md)).
 
 ## The browser mock
 
-Add your app's fixtures to `web/src/nui/mocks/registry.ts`. Without a mock the
-app is dead in `pnpm dev` and in Playwright, and — worse — a mock that returns
-plausible data while doing nothing makes an e2e test pass with the feature
-broken.
+Add your app's fixtures to a file of its own,
+`web/src/nui/mocks/services/<id>.ts`, exporting `mocks`; the registry picks
+every file there up, so nothing central is edited (`pnpm new:app <id> --service`
+writes it for you). Without a mock the app is dead in `pnpm dev` and in
+Playwright, and — worse — a mock that returns plausible data while doing nothing
+makes an e2e test pass with the feature broken.
 
 `defineMockCrud(fixtures, events, options)` covers the CRUD half and mutates the
 fixtures for you, which is the part that kept being forgotten: a created note

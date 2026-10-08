@@ -14,7 +14,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * boundary," so the one thing that has to be handled carefully is not pretending
    * otherwise. `useLockScreenWrite().setPasscode` is one round trip to a server action that
    * does not exist yet (`PENDING (Cody)` on `shared/routes.ts`'s four `lockscreen` routes) —
-   * `web/src/nui/mocks/registry.ts` answers it in the browser today.
+   * `web/src/nui/mocks/services/lockscreen.ts` answers it in the browser today.
    */
   import {
     SettingsSection,

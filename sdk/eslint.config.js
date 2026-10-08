@@ -98,7 +98,8 @@ export default tseslint.config(
       '@typescript-eslint/no-misused-promises': 'off',
       // The mock transport and NUI registries implement an async interface
       // (`ITransportAdapter.send()` returns `Promise<T>`) whether or not a
-      // given handler body needs to await anything — real for `web/src/nui/mocks/registry.ts` alone.
+      // given handler body needs to await anything — real for
+      // `web/src/nui/mocks/services/*.ts` alone.
       '@typescript-eslint/require-await': 'off',
       // `$props()`/`$state()` destructuring requires `let` (AGENTS.md §4) even
       // when a given binding is never reassigned — Svelte's own reactivity is

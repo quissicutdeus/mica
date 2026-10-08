@@ -39,7 +39,7 @@ test.describe('boot and power-off screens', () => {
   });
 
   test('shows the owner logo when one is configured', async ({ page }) => {
-    // `?mica_brand_logo=` is the mock's own override for this (`nui/mocks/registry.ts`);
+    // `?mica_brand_logo=` is the mock's own override for this (`nui/mocks/services/shell.ts`);
     // `/mock-branding/aurora.svg` is a fixture that already exists for the wallpaper tests,
     // reused here since which image loads is not what this test is about.
     await page.goto(`/?mica_brand_logo=${encodeURIComponent('/mock-branding/aurora.svg')}`);

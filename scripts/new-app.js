@@ -18,10 +18,11 @@ import { fileURLToPath } from 'node:url';
  *   pnpm new:app journal --service    plus a server service, store, routes and mocks
  *   pnpm new:app journal --tablet     plus a tablet root, and the manifest line that shows it
  *
- * It writes the app directory and, with `--service`, the server declaration and client
- * store. It does not edit `shared/routes.ts` or the mock registry — those are tables a
+ * It writes the app directory and, with `--service`, the server declaration, the client
+ * store and the browser mock — a file of its own under `web/src/nui/mocks/services/`,
+ * which the registry globs (MICA-323). It does not edit `shared/routes.ts` — a table a
  * human curates — so it prints exactly what to paste, and `pnpm verify` fails until you
- * have, because `routes.test.ts` cross-references all three layers.
+ * have, because `routes.test.ts` cross-references every layer.
  */
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -47,6 +48,11 @@ if (!/^[a-z][a-z0-9_]*$/.test(id)) {
 
 const appDir = path.join(ROOT, 'web/src/apps', id);
 if (fs.existsSync(appDir)) die(`web/src/apps/${id} already exists.`);
+
+// A service's mock file is named for its id, and some ids answer mocks without being an app
+// (`phone`, `shell`, `client`): scaffolding one of those would overwrite its mocks wholesale.
+const mockFile = `web/src/nui/mocks/services/${id}.ts`;
+if (WITH_SERVICE && fs.existsSync(path.join(ROOT, mockFile))) die(`${mockFile} already exists.`);
 
 /** "journal" -> "Journal", "crypto_tracker" -> "Crypto Tracker". */
 const title = id
@@ -325,7 +331,7 @@ export const ${id} = defineService({
 
   write(
     `web/src/services/${id}.ts`,
-    `import { createCrudStore, byNewest } from './createCrudStore';
+    `import { createCrudStore, byNewest } from '../../../sdk/createCrudStore';
 
 export interface ${Pascal}Row {
   id: number;
@@ -345,6 +351,31 @@ export const ${id} = createCrudStore<${Pascal}Row, Pick<${Pascal}Row, 'title'>>(
   },
   { sort: byNewest<${Pascal}Row>('updated_at') }
 );
+`
+  );
+
+  // Its own file, collected by the registry's glob, so nothing central is edited. The
+  // fixture starts empty: an empty list is a state the app has to render anyway, and
+  // `routes.test.ts` reads this exact `export const mocks … = {` line to cross-check the
+  // keys. The type import is type-only on purpose — the store imports `fetchNui`, whose
+  // transport imports the registry that globs this file.
+  write(
+    mockFile,
+    `import type { ${Pascal}Row } from '../../../services/${id}';
+import { defineMockCrud } from '../defineMockCrud';
+import type { MockHandler } from '../registry';
+
+/** TODO: seed a few rows, so \`pnpm dev\` shows ${title} with data in it. */
+const mock${Pascal}: ${Pascal}Row[] = [];
+
+export const mocks: Record<string, MockHandler> = {
+  ...defineMockCrud<${Pascal}Row>(mock${Pascal}, {
+    list: 'get${Pascal}',
+    create: 'create${Pascal}',
+    update: 'update${Pascal}',
+    remove: 'delete${Pascal}'
+  })
+};
 `
   );
 
@@ -383,7 +414,7 @@ console.log(
 );
 
 if (WITH_SERVICE) {
-  console.log(`\x1b[1mTwo tables are curated by hand. Paste into each:\x1b[0m\n`);
+  console.log(`\x1b[1mThe route table is curated by hand. Paste into it:\x1b[0m\n`);
   console.log(`  \x1b[2mshared/routes.ts\x1b[0m — inside ROUTES`);
   console.log(`    // ${title}`);
   for (const [action, server] of [
@@ -394,17 +425,11 @@ if (WITH_SERVICE) {
   ]) {
     console.log(`    route('${action}', '${id}', '${server}'),`);
   }
-  console.log(`\n  \x1b[2mweb/src/nui/mocks/registry.ts\x1b[0m — inside mockRegistry`);
-  console.log(`    ...defineMockCrud<${Pascal}Row>(mock${Pascal}, {`);
   console.log(
-    `      list: 'get${Pascal}',\n      create: 'create${Pascal}',\n` +
-      `      update: 'update${Pascal}',\n      remove: 'delete${Pascal}'\n    }),`
-  );
-  console.log(`\n  and a \`mock${Pascal}\` fixture array in \`web/src/nui/mocks/data.ts\`.`);
-  console.log(
-    `\n\x1b[2mThey are not generated because they are tables a human curates, and a bad\n` +
-      `merge into one is worse than a missing line. \`pnpm verify\` fails until both are\n` +
-      `there — routes.test.ts cross-references every layer.\x1b[0m`
+    `\n\x1b[2mNot generated because it is a table a human curates, and a bad merge into\n` +
+      `it is worse than a missing line. \`pnpm verify\` fails until it is there —\n` +
+      `routes.test.ts cross-references every layer. The browser mock is already written,\n` +
+      `to ${mockFile}.\x1b[0m`
   );
   console.log(`\nThen: \x1b[1mpnpm generate:sql\x1b[0m and re-import \`mica.sql\`.`);
 
