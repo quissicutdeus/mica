@@ -99,6 +99,12 @@ message reads as something to answer instead of something to execute.
 
 ## A report is a claim
 
+- **A report comes by `SendMessage`, not by idle notice.** The harness truncates
+  an idle notice's summary; a review that reported only that way lost the end of
+  its findings on 2026-10-07. Every brief inherits the rule from `lane-protocol`
+  or the agent's own Report section. If a report still arrives cut off, ask that
+  lane for the rest before acting on any of it, and keep the lane alive until it
+  has answered.
 - **Check the tree before believing a notice.** Idle notices arrive late and out
   of order, often describing work already committed, or predating the message
   you just sent.

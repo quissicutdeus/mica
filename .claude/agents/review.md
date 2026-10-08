@@ -95,3 +95,8 @@ anything you suspect but could not confirm as _plausible_, separately from what
 you confirmed. Close with what you did not check, so silence is not read as
 coverage. If you found nothing, say what you looked for and how — "no findings"
 with no method behind it is the report this agent exists to replace.
+
+**Send it with `SendMessage` to the lead, whole, in one message.** Never leave
+it to your idle notification: the harness truncates that summary, and on
+2026-10-07 a review's findings were cut off mid-list and had to be asked for
+again.

@@ -93,3 +93,7 @@ counts it printed. Then the failing part of the log, for failures only. Then the
 reconciliation — tests run against expected — and every gate that skipped or was
 cached, with why. If a gate could not run at all, that is a failed run, not a
 partial pass, and the report says so in its first line.
+
+**Send it with `SendMessage` to the lead, whole, in one message.** Never leave
+it to your idle notification: the harness truncates that summary, and a
+truncated gate report reads as a shorter list of gates, not as a cut.

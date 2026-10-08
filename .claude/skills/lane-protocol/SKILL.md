@@ -89,3 +89,9 @@ path. A gate you ran is one line: the command, pass or fail, and the counts it
 printed. Paste output only for a failure, and only the failing part. Then the
 e2e spec line above. The rest of the ten lines is whatever your agent type's own
 Report section asks for beyond this.
+
+**Send it with `SendMessage` to the lead, whole, in one message.** Never leave
+it to your idle notification: the harness truncates that summary, and a review's
+findings were cut off mid-list on 2026-10-07 and had to be asked for a second
+time. A follow-up delta goes the same way. If the report will not fit in one
+message, it is too long, not too big to send.
