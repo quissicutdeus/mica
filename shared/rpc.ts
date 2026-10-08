@@ -15,6 +15,8 @@
  * so the two cannot drift apart again.
  */
 
+import { DEFAULT_DEVICE, isDeviceId, type DeviceId } from './devices';
+
 /**
  * The four generic CRUD actions reply on a differently-named event; everything else
  * replies on its own action name.
@@ -80,6 +82,13 @@ export interface GenericServiceRequest {
   service: string;
   action: string;
   data?: unknown;
+  /**
+   * The device the request speaks for (MICA-264). A phone and a tablet are two identities,
+   * so the same `notes:get` reads two different lists depending on which one asked. Absent
+   * means `DEFAULT_DEVICE`: an add-on built before the tablet existed, and every request
+   * the client relays from a named route, never sent one and must keep reaching the phone.
+   */
+  device?: DeviceId;
 }
 
 /** The shape a service or action segment must have — the same one event names require. */
@@ -102,8 +111,26 @@ const ACTION_SEGMENT = /^[a-z][a-zA-Z0-9_]*$/;
  */
 export function parseGenericRequest(raw: unknown): GenericServiceRequest | null {
   if (!raw || typeof raw !== 'object') return null;
-  const { service, action, data } = raw as Record<string, unknown>;
+  const { service, action, data, device } = raw as Record<string, unknown>;
   if (typeof service !== 'string' || !SEGMENT.test(service)) return null;
   if (typeof action !== 'string' || !ACTION_SEGMENT.test(action)) return null;
-  return { service, action, data };
+  // A device that is present but not one of ours is refused whole, not dropped: dropping it
+  // would quietly turn a request meant for one identity into a request for the other.
+  if (device !== undefined && !isDeviceId(device)) return null;
+  return device === undefined ? { service, action, data } : { service, action, data, device };
+}
+
+/**
+ * The device argument of a `mica:server:*` net event, which arrives as
+ * `(cbId, data, device)` since MICA-264.
+ *
+ * `undefined` is `DEFAULT_DEVICE`, for the same reason as `GenericServiceRequest.device`: a
+ * client from before the tablet sends two arguments. Anything else that is not a `DeviceId`
+ * is `null`, which the server refuses. The argument is attacker-controlled like the rest of
+ * the event (§2.9): it only ever chooses which of the caller's own identities a request
+ * reads, and the server checks the caller holds that device before it resolves one.
+ */
+export function parseDeviceArg(raw: unknown): DeviceId | null {
+  if (raw === undefined) return DEFAULT_DEVICE;
+  return isDeviceId(raw) ? raw : null;
 }
