@@ -20,12 +20,14 @@ line here.
 - [A start-up gate must not import schemaSql](start-gate-import-cycle.md) —
   Repository reaches contentCipher; the cycle breaks collection, not tsc
 - [A soft delete under a unique key refuses a re-create](soft-delete-under-a-unique-key.md)
-  — blocklist revives since MICA-318; which other tables could still wedge
+  — `uniqueAfterDelete` since MICA-321; Blabber mouths still wedge
 - [A "does not see it" check passes on a wrong filter](negative-check-needs-a-positive-twin.md)
   — pair every negative row or push assertion with a positive one
 - [A thread page is the newest window, in send order](thread-page-is-newest-window-in-send-order.md)
   — `messages:get` rows are reversed; not newest first
 - [Break-to-prove needs the file in your fence](break-to-prove-needs-the-file-in-fence.md)
   — a harness lane cannot run against edited `server/`; report the gap
-- [Outbound HTTP: https only, two of three need a player](outbound-http-needs-a-player-or-tls.md)
-  — the sink needs TLS; webhook and catalog are unreachable in-server
+- [Outbound HTTP: https only, `micahttp` for the other two](outbound-http-needs-a-player-or-tls.md)
+  — the sink needs TLS; webhook URL is a secret; restore unset convars, not `''`
+- [micaOS's own start-up passes race in-server scenarios](boot-passes-race-in-server-scenarios.md)
+  — prune refused during boot retention; wait on the sweep's lines

@@ -17,6 +17,8 @@ import {
 } from '../lib/httpSink';
 import { assert, expectOk, runCommand, seedCitizen, unique } from '../lib/mica';
 import { QBX_SEED } from '../lib/qbxSeed';
+import { bootOrphanSweepEnded } from '../lib/bootSweep';
+import { runMediaPrune } from '../lib/mediaPrune';
 import { eventually } from '../lib/wait';
 import { schemaCreated } from './qbx';
 
@@ -830,6 +832,9 @@ export const httpScenarios: Scenario[] = [
     timeoutMs: 60_000,
     run: async (signal) => {
       await schemaCreated(signal);
+      // Plant no orphan while micaOS's own start-up sweep is still going: it could take them
+      // first, and the deletes would land before this scenario's mark. See bootSweep.ts.
+      await bootOrphanSweepEnded(requireTap(), 10_000, signal);
       await withImageHost(async (host) => {
         const tap = requireTap();
         const orphan = unique('http_orphan');
@@ -849,15 +854,9 @@ export const httpScenarios: Scenario[] = [
         try {
           const mark = tap.mark();
           const from = host.sink.mark();
-          await runCommand('micamedia prune');
-          const done = await tap.waitFor(
-            mark,
-            /^\[micamedia\] (prune finished: |a retention prune of mica_media is already running)/,
-            45_000,
-            signal,
-            "micamedia prune's summary"
-          );
-          assert(done.includes('prune finished'), done);
+          // Asked again while micaOS's own retention pass holds mica_media; see mediaPrune.ts.
+          const done = await runMediaPrune(tap, 45_000, signal);
+          assert(done.startsWith('[micamedia] prune finished: '), done);
 
           assert(
             !(await exists(lone)) && !(await exists(shared)),

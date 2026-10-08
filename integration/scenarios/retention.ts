@@ -5,7 +5,8 @@
 import type { Scenario } from '../runner';
 import { requireTap } from '../lib/console';
 import { db } from '../lib/db';
-import { assert, runCommand, unique } from '../lib/mica';
+import { assert, unique } from '../lib/mica';
+import { runMediaPrune } from '../lib/mediaPrune';
 import { sleep } from '../lib/wait';
 
 /**
@@ -91,16 +92,9 @@ export const retentionScenarios: Scenario[] = [
       );
       SetConvar(RETENTION_CONVAR, String(WINDOW_DAYS));
       try {
-        const mark = tap.mark();
-        await runCommand('micamedia prune');
-        const done = await tap.waitFor(
-          mark,
-          /^\[micamedia\] (prune finished: |a retention prune of mica_media is already running)/,
-          30_000,
-          signal,
-          "micamedia prune's summary"
-        );
-        assert(done.includes('prune finished'), done);
+        // Asked again while micaOS's own retention pass holds mica_media; see mediaPrune.ts.
+        const done = await runMediaPrune(tap, 30_000, signal);
+        assert(done.startsWith('[micamedia] prune finished: '), done);
         const expired = Number(/prune finished: (\d+) expired/.exec(done)?.[1] ?? -1);
         assert(expired >= 1, `the prune expired ${expired} rows, not at least 1: ${done}`);
 

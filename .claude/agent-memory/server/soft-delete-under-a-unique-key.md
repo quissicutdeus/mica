@@ -5,26 +5,30 @@ whose unique index does not include `status`, the deleted row still holds the
 key, so creating the same row again is a duplicate-key error that reaches the
 player as the generic failure.
 
-Found by `test:endpoints` (MICA-304) on `mica_blocklist`: block a number,
-unblock it (generic `delete`), block it again, and the insert fails on
-`phone_number_unique (phone_id, number)`. Fixed in MICA-318 by a
-`BlocklistRepository.create` that first re-activates the caller's own deleted
-row for the pair (both statements name `citizenid` and `phone_id`), then falls
-back to the insert. `test:endpoints` now asserts block, unblock, block again.
+Found by `test:endpoints` (MICA-304) on `mica_blocklist`: block, unblock
+(generic `delete`), block again. MICA-318 fixed it by hand; MICA-321 made it
+generic. Every `defineService` table with a unique index now declares
+`uniqueAfterDelete`: `'revive'` (`Repository.create` re-activates the caller's
+own deleted row under the key, `citizenid` plus null-safe `phone_id <=> ?`,
+named columns written, the rest `= DEFAULT`, `created_at` refreshed) or
+`{ optOut: '<reason>' }`. A child table with a unique index may only opt out.
+`uniqueKeyDecisions.test.ts` fails an undecided one.
 
-No unit suite can see it: they mock `Database`, so the second insert succeeds.
-`blocklist.test.ts` now carries a small in-memory stand-in that enforces the
-key; copy that shape when a unit test is about a unique key. `test:schema` has
-no handlers. What catches it for real is a create, a generic delete and the same
-create again against MariaDB, through the handler — `test:endpoints`.
+As of MICA-321 only battery, blocklist and hodlr revive. The rest opt out, each
+for its own reason: accounts keep a handle forever, conversations' `pair_key` is
+NULL off `active`, phonenumbers' `assign` reads the refusal and `claimRow`
+reactivates by hand, the upsert tables (settings, lockscreen, highscores)
+hard-delete or never delete, the import ledger is permanent.
 
-Where the trap can bite: a table with a generic `delete` (or any write of
-`'deleted'`) **and** a unique key that ignores `status` **and** a create path
-that does not revive. As of MICA-318 the others are not reachable: Accounts has
-no delete and keeps a handle taken forever on purpose; PhoneNumbers revives in
-`claimRow`; Battery and Hodlr have no delete (but their `findAll`-then-`create`
-would collide if one were added, since `findAll` filters `active`); Settings
-upserts and hard-deletes; the import ledger is never deleted. The player-data
-purge (`purgeOwnedRows`) is a hard `DELETE`, so it frees keys rather than
-wedging them. Before adding a delete to any of those, decide whether a re-create
-revives or is refused on purpose.
+**Blabber's mouths still wedge, on purpose for now.** Generic delete is on, and
+`account_mouth (account_id, mouth_of)` ignores status, so mouth, delete, mouth
+again answers "You have already mouthed that". Reviving would be worse: the feed
+pages by `id DESC`, so the revived mouth would sit at the old position with the
+old reactions. A real fix needs a schema decision (status in the key, or a
+`mouth_of` that is NULL off `active`, like `pair_key`).
+
+No unit suite can see a duplicate key: they mock `Database`. The stand-ins in
+`uniqueAfterDelete.test.ts` and `blocklist.test.ts` enforce the key and fail on
+an unknown statement; copy that shape. The revive SQL was checked on MariaDB 11
+by hand (`<=>` with a NULL bind, `SET col = DEFAULT`, a racing second `UPDATE`
+matching 0 rows). `test:endpoints`' blocklist re-block is the in-harness proof.
