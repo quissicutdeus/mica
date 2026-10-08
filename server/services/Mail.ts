@@ -12,6 +12,7 @@ import { flagUnlessFalse } from '../lib/payload';
 import { MAIL_CONTENT_MAX, mailContract } from '@mica/shared/contracts/mail';
 import { openRows, storablePlaintext } from '../lib/contentCipher';
 import { buildDeepLink } from '@mica/shared/deepLink';
+import { notificationFailureReason } from './Notifications';
 
 /**
  * Mail: `read: 'owner'`, `write: 'server'`.
@@ -153,6 +154,7 @@ export const SendSystemEmail = async (
     content: string;
   }
 ): Promise<Mail | null> => {
+  let newMail: Mail;
   try {
     /**
      * Refused past `MAIL_CONTENT_MAX`, which is what fits the column once sealed (MICA-165).
@@ -179,14 +181,25 @@ export const SendSystemEmail = async (
     };
 
     const id = await mailRepo.createForCitizen(mailItem);
-    const newMail: Mail = {
+    newMail = {
       ...mailItem,
       id,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     } as Mail;
+  } catch (error) {
+    // The driver's last line only: oxmysql's message carries the parameters, which are this
+    // mail's sender, subject and body (MICA-329).
+    console.error(`Error in SendSystemEmail: ${notificationFailureReason(error)}`);
+    return null;
+  }
 
-    // Notify the recipient if they are online.
+  // The row exists from here on, so the answer is the mail whatever the notify steps do: a null
+  // reads to the calling script as "not delivered", and one that retries would put a second
+  // copy in the inbox (MICA-333). Each step is caught on its own so a failed live push cannot
+  // cost the stored notification, and is logged by id, never by subject or body.
+  const mailId = newMail.id;
+  notifyStep(mailId, targetCitizenId, 'live push', () => {
     const players = FrameworkBridge.getAllPlayers();
     for (const src in players) {
       if (players[src]?.PlayerData?.citizenid === targetCitizenId) {
@@ -194,12 +207,13 @@ export const SendSystemEmail = async (
         break;
       }
     }
+  });
 
-    const channel = appEventChannel('mail');
-    channel.push(
+  notifyStep(mailId, targetCitizenId, 'app event', () => {
+    appEventChannel('mail').push(
       targetCitizenId,
       'email',
-      { id, sender: emailData.sender, subject: emailData.subject },
+      { id: mailId, sender: emailData.sender, subject: emailData.subject },
       {
         notify: {
           type: 'info',
@@ -208,14 +222,23 @@ export const SendSystemEmail = async (
         },
         kind: 'email',
         title: `Email from ${emailData.sender}`,
-        deepLink: buildDeepLink('mail', { mailId: id })
+        deepLink: buildDeepLink('mail', { mailId })
       }
     );
+  });
 
-    return newMail;
+  return newMail;
+};
+
+/** One notify step after a system mail is stored: logged on failure, never thrown. */
+const notifyStep = (mailId: number, citizenid: string, step: string, run: () => void): void => {
+  try {
+    run();
   } catch (error) {
-    console.error('Error in SendSystemEmail:', error);
-    return null;
+    console.error(
+      `[mail] stored system mail ${mailId} for ${citizenid}, but its ${step} failed ` +
+        `(${notificationFailureReason(error)}); the mail is in their inbox.`
+    );
   }
 };
 

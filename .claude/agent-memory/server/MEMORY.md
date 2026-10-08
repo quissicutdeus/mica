@@ -43,3 +43,5 @@ line here.
   — source-keyed maps hold the previous character; forget on load
 - [A retried seed reads every status](retried-seed-reads-every-status.md) — soft
   delete keeps the number; MICA-327 retry is process memory
+- [A catch spanning a write and its push lies](catch-spanning-a-write-and-its-push.md)
+  — answers null for a row that exists; end the try at the write
