@@ -1086,6 +1086,74 @@ describe('the Bash guard and a push that moves main', () => {
     });
   });
 
+  /*
+   * A redirection is the shell's, not git's. The guard once read `> $S/push.log` as a
+   * refspec holding a variable it could not read, and refused a push of dev to the
+   * project's own origin from a session that merely logged its output. The
+   * assignment-only segment in front of it (`S=...;`) was not the cause: it only
+   * makes a later `~` unsure, and this command has none.
+   */
+  describe('does not read a redirection as a remote or a refspec', () => {
+    const DEV_PUSH = `${GIT_PUSH} -q origin dev`;
+
+    it.each([
+      [
+        'the reported command: cd, an assignment, a push to a variable log, a tail of it',
+        `cd ${MICA} && S=/tmp/scratch; ${DEV_PUSH} > $S/rex-push.log 2>&1; echo rc=$?; tail -3 $S/rex-push.log`
+      ],
+      [
+        'the same without the cd',
+        `S=/tmp/scratch; ${DEV_PUSH} > $S/rex-push.log 2>&1; echo rc=$?; tail -3 $S/rex-push.log`
+      ],
+      ['the plain form, with no redirect at all', DEV_PUSH],
+      ['a literal target', `${DEV_PUSH} > /tmp/push.log 2>&1`],
+      ['a variable target', `${DEV_PUSH} > $S/push.log`],
+      ['a quoted variable target', `${DEV_PUSH} > "$S/push.log"`],
+      ['a target glued to the operator', `${DEV_PUSH} >$S/push.log`],
+      ['an append', `${DEV_PUSH} >> $S/push.log`],
+      ['an append of stderr', `${DEV_PUSH} 2>> $S/push.log`],
+      ['stderr to a variable file', `${DEV_PUSH} 2> $S/push.err`],
+      ['both streams, &>', `${DEV_PUSH} &> $S/push.log`],
+      ['both streams, >&', `${DEV_PUSH} >& $S/push.log`],
+      ['stderr into stdout, then away', `${DEV_PUSH} 2>&1 >/dev/null`],
+      ['an input redirect', `${DEV_PUSH} < /dev/null`],
+      ['a redirect before the branch', `${GIT_PUSH} -q origin > $S/push.log dev`],
+      ['a clobbering redirect', `${DEV_PUSH} >| $S/push.log`]
+    ])('lets %s through', (_label, command) => {
+      expectAllowed(command, MICA);
+    });
+
+    it.each([
+      ['a push of main with a redirect', `${PUSH_MAIN} > $S/push.log`],
+      ['a push of main with a literal redirect', `${PUSH_MAIN} > /tmp/push.log 2>&1`],
+      ['a refspec after a redirect and a dup', `${DEV_PUSH} 2>&1 >/dev/null ${MAIN}`],
+      ['a refspec after a spaced redirect', `${DEV_PUSH} > /tmp/push.log ${MAIN}`],
+      ['a refspec after a glued redirect', `${DEV_PUSH} >/tmp/push.log ${MAIN}`],
+      ['a variable refspec after a redirect', `${DEV_PUSH} > $S/push.log $B`],
+      ['an option that pushes everything, after a redirect', `${DEV_PUSH} > /tmp/push.log --all`],
+      ['a quoted operator, which is a word git receives', `${DEV_PUSH} ">" ${MAIN}`],
+      ['a redirect on its own as the last word', `${PUSH_MAIN} >`]
+    ])('still blocks %s', (_label, command) => {
+      expectMainBlocked(command, MICA);
+    });
+
+    it.each([
+      ['a remote and a redirect target', `${GIT_PUSH} origin > $S/push.log`],
+      ['a remote only, redirected', `${GIT_PUSH} origin 2>&1`],
+      ['no arguments, redirected', `${GIT_PUSH} > /tmp/push.log`],
+      ['an input redirect and a remote', `${GIT_PUSH} origin < /dev/null`]
+    ])(
+      'does not count a redirect target as the branch: %s still pushes the current one',
+      (_label, command) => {
+        expectMainBlocked(command, WT_MAIN);
+      }
+    );
+
+    it('still lets a redirected push of another repository through', () => {
+      expectAllowed(`${GIT_PUSH} origin ${MAIN} > $S/push.log`, OTHER);
+    });
+  });
+
   describe('sees every way of naming main, and a push that names no branch', () => {
     it.each([
       ['a remote of any name', `${GIT_PUSH} forgejo ${MAIN}`],

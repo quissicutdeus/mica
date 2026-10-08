@@ -896,6 +896,39 @@ mp_short_flags() {
     done
 }
 
+# Returns 0 when the word $1 is a redirection (`> f`, `>>f`, `2>&1`, `&>f`, `<f`,
+# `<<<`, `>|`), which the shell takes out of the command before git sees it: it is
+# no remote and no refspec. Sets mp_rnext when the operator stands alone, so the
+# next word is its target. Only an unquoted operator counts -- a quoted `">"` is
+# a word git receives.
+mp_redirect() {
+    mp_rnext=
+    mp_rop=$1
+    case $mp_rop in
+        '&'*) mp_rop=${mp_rop#'&'} ;;
+        [0-9]*)
+            while :; do
+                case $mp_rop in
+                    [0-9]*) mp_rop=${mp_rop#?} ;;
+                    *) break ;;
+                esac
+            done
+            ;;
+    esac
+    case $mp_rop in
+        '<'* | '>'*) ;;
+        *) return 1 ;;
+    esac
+    while :; do
+        case $mp_rop in
+            '<'* | '>'* | '&'* | '|'*) mp_rop=${mp_rop#?} ;;
+            *) break ;;
+        esac
+    done
+    [ -n "$mp_rop" ] || mp_rnext=1
+    return 0
+}
+
 # Reads the words after `git push` in "$@", setting mp_mainish, mp_bd, mp_npos and
 # mp_recurse. An option that takes a value consumes it, so a value is not read as a
 # remote or a refspec; an option it does not know is read as possibly naming main,
@@ -903,6 +936,18 @@ mp_short_flags() {
 mp_push_args() {
     mp_dd=
     while [ $# -gt 0 ]; do
+        # A redirection is the shell's, not git's: its target (`> $S/log`, whose
+        # variable would otherwise read as an unreadable refspec) is neither a remote
+        # nor a refspec, and does not count toward "names a branch". A word after it
+        # still does, so `2>&1 >/dev/null main` pushes main.
+        if mp_redirect "$1"; then
+            if [ -n "$mp_rnext" ]; then
+                [ $# -ge 2 ] || break
+                shift
+            fi
+            shift
+            continue
+        fi
         if [ -n "$mp_dd" ]; then
             mp_npos=$((mp_npos + 1))
             mp_refword "$1"
