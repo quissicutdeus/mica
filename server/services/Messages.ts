@@ -181,7 +181,13 @@ export const messages = defineService<Message, typeof messagesContract>({
         // key onto `players` gave this table the only index starting with `citizenid`; without
         // it every plan of this table would be a full scan.
         { name: 'citizenid', columns: ['citizenid'] }
-      ]
+      ],
+      uniqueAfterDelete: {
+        optOut:
+          'Hard-deleted: removing a row is a DELETE, so a removed row frees the key, ' +
+          'and the key only ever refuses a duplicate of a live row, which is what makes ' +
+          'the insert idempotent.'
+      }
     }
   ],
   /**

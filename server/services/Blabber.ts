@@ -279,6 +279,20 @@ export const blabber = defineService<Blab, typeof blabberContract>({
     { name: 'account_mouth', columns: ['account_id', 'mouth_of'], unique: true }
   ],
   /**
+   * Not a revive, though a deleted mouth does hold the key: mouthing a Blab, deleting the mouth
+   * and mouthing it again is refused as "You have already mouthed that" (MICA-330, which needs a
+   * schema choice: `status` in the key, or a `mouth_of` that is NULL off `active`).
+   * Reviving would be worse than the refusal. The feed pages by `id DESC`, so a revived mouth
+   * would surface at the deleted one's place in the timeline rather than at the top, and it
+   * would bring back the reactions and reports filed against the deleted row's id.
+   */
+  uniqueAfterDelete: {
+    optOut:
+      'A revived mouth keeps the old id, so the id-keyed feed would show it at the deleted ' +
+      "one's position with the deleted one's reactions; a re-mouth after a delete is refused " +
+      'until MICA-330 makes the schema choice.'
+  },
+  /**
    * Ears. Pairs with a Mouth: one speaks, one listens. A child table rather than a service of
    * its own: it is Blabber's, not shared, and DDL-only keeps the generic CRUD off something
    * that only ever needs insert, delete and count. Uniqueness is the point of declaring it here
@@ -303,7 +317,13 @@ export const blabber = defineService<Blab, typeof blabberContract>({
       indexes: [
         { name: 'blab_account', columns: ['blab_id', 'account_id'], unique: true },
         { name: 'account_id', columns: ['account_id'] }
-      ]
+      ],
+      uniqueAfterDelete: {
+        optOut:
+          'Hard-deleted: removing a row is a DELETE, so a removed row frees the key, ' +
+          'and the key only ever refuses a duplicate of a live row, which is what makes ' +
+          'the insert idempotent.'
+      }
     },
     /**
      * Hashtags. A child table for the same reason likes is one: it belongs to Blabber alone and

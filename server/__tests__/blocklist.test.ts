@@ -122,9 +122,10 @@ describe('blocklist schema', () => {
  * `phone_number_unique` the way MariaDB does — the mocked `Database` above answers every
  * insert, so it could not see the duplicate-key refusal this is about. The stand-in reads
  * the statements the repository sends and nothing else; a statement it does not know fails
- * the test rather than answering.
+ * the test rather than answering. Since MICA-321 the revive is the generic one the blocklist
+ * opts into with `uniqueAfterDelete: 'revive'`; `uniqueAfterDelete.test.ts` covers it alone.
  */
-describe('blocklist — a number blocked again after an unblock (MICA-318)', () => {
+describe('blocklist — a number blocked again after an unblock (MICA-318, MICA-321)', () => {
   interface Row {
     id: number;
     citizenid: string;
@@ -150,9 +151,13 @@ describe('blocklist — a number blocked again after an unblock (MICA-318)', () 
       return id;
     });
     dbMock.scalar.mockImplementation(async (sql: string, params: unknown[]) => {
-      expect(sql).toMatch(/^SELECT `id` FROM `mica_blocklist` WHERE `citizenid` = \?/);
-      expect(sql).toContain("`status` = 'deleted'");
-      const [citizenid, phone_id, number] = params as string[];
+      expect(sql).toBe(
+        'SELECT `id` FROM `mica_blocklist` ' +
+          "WHERE `citizenid` = ? AND `phone_id` <=> ? AND `status` = 'deleted' " +
+          'AND ((`phone_id` = ? AND `number` = ?)) ORDER BY `id` LIMIT 1'
+      );
+      const [citizenid, owningPhone, phone_id, number] = params as string[];
+      expect(owningPhone).toBe(phone_id);
       const hit = rows.find(
         (r) =>
           r.citizenid === citizenid &&
@@ -163,8 +168,13 @@ describe('blocklist — a number blocked again after an unblock (MICA-318)', () 
       return hit ? hit.id : null;
     });
     dbMock.update.mockImplementation(async (sql: string, params: unknown[]) => {
-      if (sql.includes("SET `status` = 'active'")) {
-        const [id, citizenid, phone_id] = params as [number, string, string];
+      if (sql.includes("`status` = 'active'")) {
+        expect(sql).toBe(
+          "UPDATE `mica_blocklist` SET `number` = ?, `status` = 'active', " +
+            '`created_at` = CURRENT_TIMESTAMP ' +
+            "WHERE `id` = ? AND `citizenid` = ? AND `phone_id` <=> ? AND `status` = 'deleted'"
+        );
+        const [, id, citizenid, phone_id] = params as [string, number, string, string];
         const hit = rows.find(
           (r) =>
             r.id === id &&
@@ -252,6 +262,11 @@ describe('blocklist — a number blocked again after an unblock (MICA-318)', () 
 
   it('names the session citizen and phone in the lookup, never the payload', async () => {
     await call('create', { number: '5550100', citizenid: 'CIT_B', phone_id: OTHER_PHONE });
-    expect(dbMock.scalar.mock.calls[0][1]).toEqual(['CIT_A', TEST_PHONE_ID, '5550100']);
+    expect(dbMock.scalar.mock.calls[0][1]).toEqual([
+      'CIT_A',
+      TEST_PHONE_ID,
+      TEST_PHONE_ID,
+      '5550100'
+    ]);
   });
 });

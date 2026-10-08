@@ -101,6 +101,12 @@ export const phoneNumbers = defineService<PhoneNumberRow>({
     { name: 'number_unique', columns: ['number'], unique: true },
     { name: 'phone_id_unique', columns: ['phone_id'], unique: true }
   ],
+  uniqueAfterDelete: {
+    optOut:
+      '`assign` reads the duplicate-key refusal as its signal — another number, or the row a ' +
+      "concurrent sync won — and `claimRow` reactivates a 'deleted' row by hand, with the " +
+      'transfer to the holder a revive scoped to the citizen could not do.'
+  },
   options: { disableGet: true, disableDelete: true },
   repositoryFactory: (resolved) => new PhoneNumberRepository(resolved)
 });

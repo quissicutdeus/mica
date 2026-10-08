@@ -75,6 +75,11 @@ export const phones = defineService<PhoneRow>({
     // lookup by citizenid alone uses its leading column, so no separate one is declared here.
     { name: 'phone_id_unique', columns: ['phone_id'], unique: true }
   ],
+  uniqueAfterDelete: {
+    optOut:
+      'A phone id is minted once and nothing retires one; a create that loses the race to a ' +
+      'concurrent one is refused by the key on purpose, and the next resolve reads the winner.'
+  },
   options: {
     disableGet: true,
     disableCreate: true,

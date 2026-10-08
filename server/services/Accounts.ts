@@ -130,6 +130,12 @@ export const accounts = defineService<Account, typeof accountsContract>({
     // The switcher's read: my accounts in this app.
     { name: 'citizenid_app', columns: ['citizenid', 'app'] }
   ],
+  uniqueAfterDelete: {
+    optOut:
+      'A handle is taken for good: nothing deletes an account (no generic delete, no named ' +
+      'one), `createWithinCap` translates the refusal into "@handle is taken", and a moderated ' +
+      'account keeps its handle so nobody can claim the name it was moderated under.'
+  },
   /**
    * The follow graph, declared here rather than in Blabber.
    *
@@ -186,7 +192,13 @@ export const accounts = defineService<Account, typeof accountsContract>({
          * appended primary key makes it `(followee_account_id, id)` already.
          */
         { name: 'follower_recent', columns: ['follower_account_id', 'id'] }
-      ]
+      ],
+      uniqueAfterDelete: {
+        optOut:
+          'Hard-deleted: removing a row is a DELETE, so a removed row frees the key, ' +
+          'and the key only ever refuses a duplicate of a live row, which is what makes ' +
+          'the insert idempotent.'
+      }
     },
     /**
      * The block graph. Same shape as follows, and for the same reason it lives here rather than
@@ -220,7 +232,13 @@ export const accounts = defineService<Account, typeof accountsContract>({
         },
         // The reverse lookup every enforcement point needs: "has X blocked me."
         { name: 'blocked_account_id', columns: ['blocked_account_id'] }
-      ]
+      ],
+      uniqueAfterDelete: {
+        optOut:
+          'Hard-deleted: removing a row is a DELETE, so a removed row frees the key, ' +
+          'and the key only ever refuses a duplicate of a live row, which is what makes ' +
+          'the insert idempotent.'
+      }
     },
     /**
      * Reactions. Keyed on `account_id` rather than `citizenid`, like every other row here —
@@ -258,7 +276,13 @@ export const accounts = defineService<Account, typeof accountsContract>({
         },
         // The batched read's own lookup: every reaction on a page of targets, one query.
         { name: 'target', columns: ['target_table', 'target_id'] }
-      ]
+      ],
+      uniqueAfterDelete: {
+        optOut:
+          'Hard-deleted: removing a row is a DELETE, so a removed row frees the key, ' +
+          'and the key only ever refuses a duplicate of a live row, which is what makes ' +
+          'the insert idempotent.'
+      }
     }
   ],
   // Custom: validates the handle, caps how many a player may hold, and translates a

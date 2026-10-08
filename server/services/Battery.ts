@@ -45,6 +45,10 @@ export const batteryApp = defineService<PhoneBattery>({
   // can interleave with the drain save. `0003_battery_follows_the_phone` swapped the old
   // `citizenid_unique` for it.
   indexes: [{ name: 'phone_id_unique', columns: ['phone_id'], unique: true }],
+  // The save writes the phone's active row or creates one (`findAll` reads `active` only), so a
+  // deleted row under the key would refuse every save for that phone. Nothing deletes a battery
+  // today; if anything ever does, the next save revives the row with the level it carries.
+  uniqueAfterDelete: 'revive',
   options: {
     disableGet: true,
     disableCreate: true,

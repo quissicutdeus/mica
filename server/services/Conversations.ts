@@ -169,6 +169,11 @@ export const conversations = defineService<Conversation, typeof conversationsCon
      */
     { name: 'participant_b_status', columns: ['participant_b', 'status'] }
   ],
+  uniqueAfterDelete: {
+    optOut:
+      "`pair_key` is generated NULL on any row that is not 'active', and a unique key never " +
+      'collides on NULL, so a deleted or reconciled-away thread already holds no key.'
+  },
   childTables: [
     {
       name: 'mica_messages_participants',
@@ -213,12 +218,13 @@ export const conversations = defineService<Conversation, typeof conversationsCon
         { name: 'status', columns: ['status'] },
         /**
          * One row per **phone** per thread, enforced by the database rather than by the
-         * code that writes it (MICA-153, re-keyed by MICA-282). Nothing adds a participant
-         * to an existing conversation — `addParticipant` is reached only from `create`, and
-         * leaving a thread and messaging that person again starts a new one — so there is
-         * no rejoin this can refuse. Per phone rather than per person because one person's
-         * two phones are two members: a thread between my burner and Bob and a thread
-         * between my main phone and Bob are two threads.
+         * code that writes it (MICA-153, re-keyed by MICA-282). A left row still holds it,
+         * so the one rejoin there is — a phone opening a job line's thread it once left —
+         * goes through `ensureLineParticipant` (MICA-275), which reopens the `left` row in
+         * place before it would insert. Every other `addParticipant` is reached only from
+         * `create`, for a thread that has just been made. Per phone rather than per person
+         * because one person's two phones are two members: a thread between my burner and
+         * Bob and a thread between my main phone and Bob are two threads.
          *
          * It replaces `conversation_participant_unique` on `(conversation_id, citizenid)`,
          * which `0002_phone_data_follows_the_phone` drops. The name had to change:
@@ -236,7 +242,13 @@ export const conversations = defineService<Conversation, typeof conversationsCon
         { name: 'citizenid_status', columns: ['citizenid', 'status'] },
         { name: 'conversation_status', columns: ['conversation_id', 'status'] },
         { name: 'participant_last_read', columns: ['citizenid', 'last_read'] }
-      ]
+      ],
+      uniqueAfterDelete: {
+        optOut:
+          "No generic create, and a participant leaves as 'left' or 'removed', never 'deleted'. " +
+          "The one rejoin, a line's thread (`ensureLineParticipant`, MICA-275), reopens the " +
+          "'left' row in place before it would insert; 'removed' and 'moderated' stay refused."
+      }
     }
   ],
   options: {

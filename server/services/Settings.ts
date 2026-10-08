@@ -139,6 +139,12 @@ export const settings = defineService<PhoneSetting, typeof settingsContract>({
      */
     { name: 'phone_app_key', columns: ['phone_id', 'app', 'setting_key'], unique: true }
   ],
+  uniqueAfterDelete: {
+    optOut:
+      'No generic create or delete: `put` is an INSERT … ON DUPLICATE KEY UPDATE that sets the ' +
+      "row back to 'active', and `remove`/`clearApp` are hard DELETEs, so no deleted row " +
+      'holds a key.'
+  },
   /**
    * No generic action survives. The client addresses a row by `(app, setting_key)` and
    * never by id, so `update` and `delete` have nothing to act on, `create` cannot express

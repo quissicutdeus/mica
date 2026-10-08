@@ -58,6 +58,11 @@ export const notes = defineService<Note>({
   ownership scoping. `server/repositories/` holds the two that need it.
 - `table` overrides the default `mica_<id>`; `options` (`disableGet`,
   `disableCreate`, …) turns off a generic action the shape doesn't fit.
+- **A unique index needs `uniqueAfterDelete`** (MICA-321): `'revive'` (create
+  brings back the caller's own deleted row under the key) or
+  `{ optOut: '<reason>' }`. `delete` is soft, so without a decision the same key
+  created again is a duplicate-key error. `uniqueKeyDecisions.test.ts` fails on
+  an undecided table; `docs/schema-and-services.md` has the rules.
 
 **An app with no table** — Bank — has no declaration: pass `null` as the
 repository to `ServiceEndpoint` and disable every generic action.

@@ -58,6 +58,10 @@ export const hodlr = defineService<HodlrHolding, typeof hodlrContract>({
   // One row per player, enforced by the database rather than a find-then-write that can
   // interleave with a concurrent buy and sell.
   indexes: [{ name: 'citizenid_unique', columns: ['citizenid'], unique: true }],
+  // `findOrCreateHolding` reads the active row or creates one at zero (`findAll` reads `active`
+  // only), so a deleted holding under the key would refuse every trade. Nothing deletes one
+  // today; if anything ever does, the next trade revives the row at the zero its create writes.
+  uniqueAfterDelete: 'revive',
   options: { disableGet: true, disableCreate: true, disableUpdate: true, disableDelete: true },
   /**
    * Price history. Declared here rather than on a separate service, because DDL

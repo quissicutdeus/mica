@@ -599,6 +599,8 @@ const runCall = async (shape, numbers) => {
 
   // The unblock is a soft delete under `phone_number_unique (phone_id, number)`, so a second
   // block of the same number from the same phone used to be refused as a duplicate (MICA-318).
+  // The revive is the generic `uniqueAfterDelete: 'revive'` path since MICA-321, so this is
+  // the check that runs its two statements against MariaDB through a real handler.
   step(`${kind}: 2 blocks 1 again, and lifts it again`);
   const reblocked = await shape.call(2, 'blocklist', 'create', { number: numbers[1] });
   check(`${kind}: the second block revives the first row`, reblocked?.id, blocked.id);

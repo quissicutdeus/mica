@@ -46,6 +46,11 @@ defineService<LedgerRow>({
       unique: true
     }
   ],
+  uniqueAfterDelete: {
+    optOut:
+      'Written only by the raw INSERT in `lib/import/context.ts`, and an entry is never deleted: ' +
+      'the key refusing a second write for one source row is what makes a re-run idempotent.'
+  },
   options: { disableGet: true, disableDelete: true }
 });
 

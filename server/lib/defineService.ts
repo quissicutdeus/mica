@@ -273,6 +273,12 @@ export interface ChildTableDefinition {
   /** Emit `id int(11) NOT NULL AUTO_INCREMENT` + PRIMARY KEY. Defaults to true. */
   autoIncrementId?: boolean;
   indexes?: readonly IndexDefinition[];
+  /**
+   * Required when `indexes` declares a unique one (MICA-321), and only ever an opt-out: a child
+   * table has no repository, so there is no generic `create` to revive through. The reason says
+   * why its own writes cannot wedge — a hard delete frees the key, say.
+   */
+  uniqueAfterDelete?: { readonly optOut: string };
 }
 
 /**
@@ -293,6 +299,9 @@ export type IndexDefinition =
        */
       readonly unique?: boolean;
     };
+
+/** See `ServiceDefinition.uniqueAfterDelete`. */
+export type UniqueAfterDelete = 'revive' | { readonly optOut: string };
 
 export interface ResolvedIndex {
   name: string;
@@ -533,6 +542,24 @@ export interface ServiceDefinition<C extends ServiceContract = ServiceContract> 
    */
   indexes?: readonly IndexDefinition[];
   /**
+   * What happens to a unique key a soft-deleted row still holds (MICA-321). **Required** when
+   * `indexes` declares a unique one — `uniqueKeyDecisions.test.ts` fails a declaration without
+   * it — and refused when there is none.
+   *
+   * `delete` is soft, so a deleted row keeps every unique key it is under, and creating the same
+   * row again is a duplicate-key error the player sees as the generic failure (MICA-318).
+   *
+   * - `'revive'` — `create` brings back the caller's own deleted row under the conflicting key
+   *   instead of inserting: same `citizenid`, and the same `phone_id` on a device-owned table,
+   *   never another owner's. The revived row is written as the insert would have written it
+   *   and keeps only its id. See `Repository.reviveOwnDeleted`.
+   * - `{ optOut: '<reason>' }` — `create` stays a plain insert and the key keeps refusing, for
+   *   the reason given: a handle taken forever by design, a key that is NULL on a deleted row,
+   *   a table that upserts and hard-deletes. The reason is the record of the decision, so it
+   *   says what in this service's own code makes it safe or intended.
+   */
+  uniqueAfterDelete?: UniqueAfterDelete;
+  /**
    * Other tables this app owns — join tables, attachment tables. DDL-only, emitted
    * after the primary table so the generated schema is complete and its foreign keys
    * resolve.
@@ -636,6 +663,8 @@ export interface ResolvedService {
    */
   clientFilterable: string[];
   indexes: readonly ResolvedIndex[];
+  /** The declared decision; null when the declaration made none. */
+  uniqueAfterDelete: UniqueAfterDelete | null;
   childTables: readonly ChildTableDefinition[];
   /** The `encrypted: true` columns, in declaration order (MICA-165). */
   encryptedColumns: string[];
@@ -736,6 +765,104 @@ const resolveEncryptionScope = (
  * Expand a declaration into the concrete lists the runtime needs. Pure — no
  * database, no event registration — so it is cheap to test and to feed to codegen.
  */
+/** An opt-out's reason: a sentence, not a placeholder. */
+const assertOptOutReason = (where: string, decision: unknown): void => {
+  const reason = (decision as { optOut?: unknown } | null)?.optOut;
+  if (typeof reason !== 'string' || reason.trim().length < 10) {
+    throw new Error(
+      `${where}: 'uniqueAfterDelete' must be 'revive' or { optOut: '<reason>' }, and the ` +
+        'reason has to say why this table may keep refusing a re-create.'
+    );
+  }
+};
+
+/**
+ * Check a primary table's `uniqueAfterDelete` against its indexes (MICA-321).
+ *
+ * A decision with no unique index to decide for is refused: it would read as a table that
+ * revives, or one somebody thought about, when neither is true. A missing decision is not
+ * refused here — `uniqueKeyDecisions.test.ts` fails it over every declared service, so an
+ * add-on declaring through this function is not broken at start by a rule it never saw.
+ */
+const resolveUniqueAfterDelete = (
+  id: string,
+  definition: ServiceDefinition,
+  indexes: readonly ResolvedIndex[],
+  fields: readonly { name: string; def: ColumnDef }[]
+): UniqueAfterDelete | null => {
+  const decision = definition.uniqueAfterDelete;
+  if (decision === undefined) return null;
+  const where = `defineService('${id}')`;
+  const unique = indexes.filter((index) => index.unique);
+  if (unique.length === 0) {
+    throw new Error(
+      `${where}: 'uniqueAfterDelete' is declared but the table has no unique index to decide for.`
+    );
+  }
+  if (decision !== 'revive') {
+    assertOptOutReason(where, decision);
+    return { optOut: decision.optOut };
+  }
+  /**
+   * A sealed value is different every time it is written, so a key over one never matches the
+   * value a create carries, and the revive would read as working while never finding a row.
+   */
+  for (const index of unique) {
+    const sealed = index.columns.find((column) =>
+      fields.some((f) => f.name === column && f.def.encrypted === true)
+    );
+    if (sealed) {
+      throw new Error(
+        `${where}: 'uniqueAfterDelete: revive' over '${index.name}', which names the encrypted ` +
+          `column '${sealed}'. Ciphertext never compares equal to a new value.`
+      );
+    }
+  }
+  /**
+   * A revive writes `= DEFAULT` to every declared column the create leaves out, so a NOT NULL
+   * column with no default would take MariaDB's implicit `''` or `0` — a value the insert it
+   * replaces would have refused outright. Exempt only a column in **every** unique key: a revive
+   * needs one key fully named, so such a column is always written and never defaulted.
+   */
+  const inEveryKey = (column: string): boolean =>
+    unique.every((index) => index.columns.includes(column));
+  const implicit = fields.find(
+    ({ name, def }) =>
+      def.notNull === true &&
+      def.default === undefined &&
+      !def.defaultNow &&
+      !def.generatedAs &&
+      !inEveryKey(name)
+  );
+  if (implicit) {
+    throw new Error(
+      `${where}: 'uniqueAfterDelete: revive' with '${implicit.name}', which is NOT NULL with no ` +
+        "default. A revive that leaves it out would write MariaDB's implicit '' or 0 where an " +
+        'insert is refused. Give it a default, or put it in every unique key.'
+    );
+  }
+  return 'revive';
+};
+
+/** A child table's `uniqueAfterDelete`: an opt-out, and only beside a unique index. */
+const assertChildUniqueAfterDelete = (id: string, child: ChildTableDefinition): void => {
+  const decision = child.uniqueAfterDelete;
+  if (decision === undefined) return;
+  const where = `defineService('${id}'): child table '${child.name}'`;
+  if (!(child.indexes ?? []).map(normalizeIndex).some((index) => index.unique)) {
+    throw new Error(
+      `${where}: 'uniqueAfterDelete' is declared but the table has no unique index to decide for.`
+    );
+  }
+  if ((decision as unknown) === 'revive') {
+    throw new Error(
+      `${where}: 'uniqueAfterDelete' can only opt out. A child table has no repository, so ` +
+        'there is no create to revive through.'
+    );
+  }
+  assertOptOutReason(where, decision);
+};
+
 export function resolveAppSchema(definition: ServiceDefinition): ResolvedService {
   const { id, schema } = definition;
 
@@ -984,6 +1111,8 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
     );
   }
 
+  const uniqueAfterDelete = resolveUniqueAfterDelete(id, definition, indexes, fields);
+
   const childTables = definition.childTables ?? [];
   for (const child of childTables) {
     if (!child.name || !/^[a-z][a-z0-9_]*$/.test(child.name)) {
@@ -1026,6 +1155,7 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
           `'${duplicateChildIndex}' twice.`
       );
     }
+    assertChildUniqueAfterDelete(id, child);
     if (child.name === table) {
       throw new Error(
         `defineService('${id}'): child table '${child.name}' collides with the primary table.`
@@ -1089,6 +1219,7 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
     statuses,
     fields: storedFields,
     indexes,
+    uniqueAfterDelete,
     childTables,
     encryptedColumns,
     encryptionScope,
@@ -1121,6 +1252,14 @@ export class SchemaRepository<T> extends Repository<T> {
     this.membership = resolved.membership;
     this.columnRules = resolved.columnRules;
     this.editWindow = resolved.editWindow;
+    if (resolved.uniqueAfterDelete === 'revive') {
+      this.reviveKeys = resolved.indexes
+        .filter((index) => index.unique)
+        .map((index) => index.columns);
+      this.reviveResets = resolved.fields
+        .filter((field) => !field.def.generatedAs && field.name !== 'phone_id')
+        .map((field) => field.name);
+    }
   }
 }
 
@@ -1183,6 +1322,16 @@ export function defineService<T, C extends ServiceContract = ServiceContract>(
   const repo = definition.repositoryFactory
     ? (definition.repositoryFactory(resolved) as Repository<T>)
     : buildRepository<T>(resolved);
+  /**
+   * A factory that builds something other than a `SchemaRepository` would drop `'revive'`
+   * without a word, and a decision that silently does not happen reads as one that does.
+   */
+  if (resolved.uniqueAfterDelete === 'revive' && repo.revivesUnder.length === 0) {
+    throw new Error(
+      `defineService('${resolved.id}'): 'uniqueAfterDelete' is 'revive', but the repository ` +
+        "its 'repositoryFactory' built revives under no key. Extend SchemaRepository."
+    );
+  }
 
   if (declaredServices.some((existing) => existing.table === resolved.table)) {
     throw new Error(

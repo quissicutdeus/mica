@@ -114,6 +114,25 @@ export abstract class Repository<T> {
   protected editWindow: number | null = null;
 
   /**
+   * The unique keys `create` revives the caller's own soft-deleted row under (MICA-321), each a
+   * full ordered column list. Empty — the default, and every hand-written repository's — makes
+   * `create` a plain insert. `SchemaRepository` fills it from `uniqueAfterDelete: 'revive'`.
+   */
+  protected reviveKeys: readonly (readonly string[])[] = [];
+
+  /**
+   * The columns a revive sets back to their default when the create does not name them, so a
+   * revived row carries nothing of the deleted one but its id. Declared fields only: never a
+   * generated column, nor `citizenid` or `phone_id`, which the revive's predicate pins.
+   */
+  protected reviveResets: readonly string[] = [];
+
+  /** See `reviveKeys`. Read by `defineService` to refuse a `'revive'` its factory dropped. */
+  public get revivesUnder(): readonly (readonly string[])[] {
+    return this.reviveKeys;
+  }
+
+  /**
    * Reject a client-supplied value the column cannot actually hold.
    *
    * The declaration has always carried the answer — `length: 50`, `values: [...]` — and
@@ -190,6 +209,14 @@ export abstract class Repository<T> {
         params: { column, min: rule.min, max: rule.max }
       });
     }
+  }
+
+  /**
+   * The table this repository writes, for a caller that has to name it — a log line saying which
+   * table a handover left behind. Read-only: the name is fixed at construction.
+   */
+  public get table(): string {
+    return this.tableName;
   }
 
   public get tableColumns(): readonly string[] {
@@ -490,10 +517,85 @@ export abstract class Repository<T> {
   async create(data: Partial<T>): Promise<number> {
     const sealed = await this.sealForInsert(data as Record<string, unknown>);
     const { keys, values } = this.prepareColumns(sealed, 'create');
+    const revived = await this.reviveOwnDeleted(sealed, keys);
+    if (revived !== null) return revived;
     const columnList = keys.map((key) => `\`${key}\``).join(', ');
     const placeholders = keys.map(() => '?').join(', ');
     const query = `INSERT INTO \`${this.tableName}\` (${columnList}) VALUES (${placeholders})`;
     return await Database.insert(query, values);
+  }
+
+  /**
+   * Bring back the caller's own soft-deleted row that holds a unique key this create needs, in
+   * place of an insert the key would refuse (MICA-321). Null when there is none to revive, and
+   * `create` inserts as it always did.
+   *
+   * `delete` is soft, so a deleted row keeps every unique key it is under: on a table whose key
+   * ignores `status`, creating the same row again was a duplicate-key error answered as the
+   * generic failure (MICA-318 found it on the blocklist). A partial unique index would need
+   * MariaDB to have one, and a hard delete would break the rule `delete` keeps for every table.
+   *
+   * **Own** is §2.9's ownership predicate, the same one `delete` used: the `citizenid` of the
+   * row being created, and on a table that follows the phone its `phone_id` as well, compared
+   * null-safely so a row with no phone matches only a row with no phone. Both statements carry
+   * it. Another owner's row under the same key is never revived; that insert is still refused
+   * by the key, as before. Only `'deleted'` is revived — a moderated row stays where a
+   * moderator put it, and its key keeps refusing.
+   *
+   * The revive is made to look like the insert it replaces: every column the create names is
+   * written, every other declared column goes back to its default, `created_at` is refreshed,
+   * and `status` is `'active'`. Only the id is the old row's. A key is considered only when the
+   * create names every one of its columns with a non-null value — a NULL never collides under
+   * a unique key — and the comparison is SQL's, under the column's collation, so it matches
+   * exactly what the key compares.
+   *
+   * Two creates racing for one deleted row: the second `UPDATE` matches nothing, falls through
+   * to the insert, and is refused by the key — the answer a double tap on a new row gets.
+   */
+  private async reviveOwnDeleted(
+    data: Record<string, unknown>,
+    keys: readonly string[]
+  ): Promise<number | null> {
+    if (this.reviveKeys.length === 0) return null;
+    const citizenid = data.citizenid;
+    if (typeof citizenid !== 'string' || citizenid === '') return null;
+
+    const named = (column: string): boolean => data[column] !== undefined && data[column] !== null;
+    const held = this.reviveKeys.filter((key) => key.every(named));
+    if (held.length === 0) return null;
+
+    let owner = '`citizenid` = ?';
+    const ownerParams: unknown[] = [citizenid];
+    if (this.hasPhoneColumn) {
+      owner += ' AND `phone_id` <=> ?';
+      ownerParams.push(data.phone_id ?? null);
+    }
+    owner += " AND `status` = 'deleted'";
+
+    const keyClause = held
+      .map((key) => `(${key.map((column) => `\`${column}\` = ?`).join(' AND ')})`)
+      .join(' OR ');
+    const id = await Database.scalar<number | string | null>(
+      `SELECT \`id\` FROM \`${this.tableName}\` WHERE ${owner} AND (${keyClause}) ` +
+        'ORDER BY `id` LIMIT 1',
+      [...ownerParams, ...held.flatMap((key) => key.map((column) => data[column]))]
+    );
+    if (id === null || id === undefined) return null;
+
+    const written = keys.filter((key) => key !== 'citizenid' && key !== 'phone_id');
+    const assignments = [
+      ...written.map((column) => `\`${column}\` = ?`),
+      ...this.reviveResets
+        .filter((column) => !keys.includes(column))
+        .map((column) => `\`${column}\` = DEFAULT`),
+      "`status` = 'active'",
+      ...(this.columns.includes('created_at') ? ['`created_at` = CURRENT_TIMESTAMP'] : [])
+    ];
+    const revived = await Database.update(
+      `UPDATE \`${this.tableName}\` SET ${assignments.join(', ')} WHERE \`id\` = ? AND ${owner}`,
+      [...written.map((column) => data[column]), id, ...ownerParams]
+    );
+    return revived ? Number(id) : null;
   }
 
   /**

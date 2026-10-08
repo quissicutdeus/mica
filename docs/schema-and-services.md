@@ -347,6 +347,22 @@ DDL.
   nullable column constrains only the non-null rows, which is what makes
   `(account_id, mouth_of)` safe on a table where ordinary posts have no
   `mouth_of` at all.
+- **A table with a unique index must say what a create does after a delete**
+  (`uniqueAfterDelete`, MICA-321). `delete` is soft, so a deleted row keeps
+  holding every unique key it is under, and the same key created again is a
+  duplicate-key error (MICA-318). `'revive'` makes `create` bring back the
+  caller's own `'deleted'` row under that key — scoped by `citizenid` and, on a
+  device-owned table, `phone_id` (§2.9), never a moderated row or another
+  owner's — writing the new values, resetting the rest to their defaults and
+  refreshing `created_at`; a revive that loses a race falls through to the
+  insert. `{ optOut: '<reason>' }` keeps the error, and the reason is the record
+  of why: a handle taken for good, an upsert with real deletes, a feed ordered
+  by id that a revived row would corrupt (MICA-330). The declaration throws for
+  a unique index with no decision, a decision with no unique index, a blank
+  reason, a revive over an encrypted key column, or a revive table with a
+  `NOT NULL` column that has no default and is not in every key — a revive would
+  reset that column where an insert would refuse.
+  `server/__tests__/uniqueKeyDecisions.test.ts` holds every table to it.
 - Per-column `index: true` is shorthand for an index paired with `citizenid`.
   Right for an owner-scoped table, dead weight on a public one that never
   filters by owner — declare those explicitly instead.

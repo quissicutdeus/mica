@@ -71,6 +71,11 @@ export const highscores = defineService<Highscore, typeof highscoresContract>({
     score: { type: 'int', notNull: true, clientWritable: false }
   },
   indexes: [{ name: 'citizenid_app', columns: ['citizenid', 'app'], unique: true }],
+  uniqueAfterDelete: {
+    optOut:
+      'No generic create or delete: `upsertBest` is an INSERT … ON DUPLICATE KEY UPDATE, and ' +
+      "nothing writes 'deleted' to a score, so there is no deleted row to collide with."
+  },
   options: {
     disableGet: true,
     disableCreate: true,

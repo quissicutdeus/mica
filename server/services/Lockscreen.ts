@@ -83,6 +83,11 @@ export const lockscreen = defineService<LockscreenRow, typeof lockscreenContract
   // `citizenid_unique` for it). The lock belongs to the device: a second phone has its own,
   // and a stolen one keeps the code its owner set until the thief clears it.
   indexes: [{ name: 'phone_id_unique', columns: ['phone_id'], unique: true }],
+  uniqueAfterDelete: {
+    optOut:
+      'No generic create: `upsert` is an INSERT … ON DUPLICATE KEY UPDATE that sets the row ' +
+      "back to 'active' itself, and `clear` is a hard DELETE, so no deleted row holds the key."
+  },
   // No generic action survives. `get` would ship the hash back to its own owner —
   // exactly what "never sent back to the client in any form" forbids — and `delete`
   // would need a row id the client is never given. `create`/`update` are already off
