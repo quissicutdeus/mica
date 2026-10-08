@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["@citizenfx/client", "node"],
+    "incremental": true,
+    "tsBuildInfoFile": "../node_modules/.tmp/client-tests.tsbuildinfo"
+  },
+  "include": ["./__tests__/**/*"],
+  "exclude": ["**/node_modules"]
+}

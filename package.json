@@ -24,6 +24,7 @@
     "typecheck:client": "tsc --noEmit -p client/tsconfig.json",
     "typecheck:server": "tsc --noEmit -p server/tsconfig.json",
     "typecheck:integration": "tsc --noEmit -p integration/tsconfig.json",
+    "typecheck:tests": "node scripts/check-test-types.js",
     "typecheck:web": "pnpm --filter web check",
     "typecheck:sdk": "node scripts/check-sdk-partition.js && tsc --noEmit -p sdk/tsconfig.tsc.json && pnpm --filter @mica/sdk check",
     "typecheck": "concurrently \"pnpm:typecheck:*\"",

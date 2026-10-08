@@ -1,0 +1,34 @@
+# Test files that do not typecheck yet (MICA-320). Checked by scripts/check-test-types.js.
+# Fix a file, then delete its line: the check fails if a listed file now passes, and fails
+# if an unlisted file does not. Regenerate with: node scripts/check-test-types.js --list
+client/__tests__/Call.test.ts
+client/__tests__/DeviceVisibility.test.ts
+client/__tests__/Music.test.ts
+client/__tests__/MusicProximity.test.ts
+client/__tests__/ServiceProxy.test.ts
+client/__tests__/Shell.test.ts
+client/__tests__/publicApi.test.ts
+server/__tests__/addonDiscovery.test.ts
+server/__tests__/addonServices.test.ts
+server/__tests__/bridges.test.ts
+server/__tests__/defineService.test.ts
+server/__tests__/esxOfflinePhone.test.ts
+server/__tests__/exports.test.ts
+server/__tests__/frameworkAdapters.test.ts
+server/__tests__/hodlr.test.ts
+server/__tests__/invoices.test.ts
+server/__tests__/jobs.test.ts
+server/__tests__/licenseBanner.test.ts
+server/__tests__/lineMessages.test.ts
+server/__tests__/messageDelivery.test.ts
+server/__tests__/newApp.test.ts
+server/__tests__/numberRegistry.test.ts
+server/__tests__/orphanSweep.test.ts
+server/__tests__/packIntegration.test.ts
+server/__tests__/phone.test.ts
+server/__tests__/publicCatalog.test.ts
+server/__tests__/releaseNotes.test.ts
+server/__tests__/reports.test.ts
+server/__tests__/sendFromLine.test.ts
+server/__tests__/store.test.ts
+server/__tests__/verifyGateEnv.test.ts
