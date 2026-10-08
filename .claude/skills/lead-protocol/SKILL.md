@@ -104,7 +104,9 @@ message reads as something to answer instead of something to execute.
   its findings on 2026-10-07. Every brief inherits the rule from `lane-protocol`
   or the agent's own Report section. If a report still arrives cut off, ask that
   lane for the rest before acting on any of it, and keep the lane alive until it
-  has answered.
+  has answered. A `Plan`, `Explore` or `general-purpose` lane loads neither, so
+  its brief says "report by `SendMessage` to the lead" itself and never asks for
+  the result as a final answer; a plan cut off that way on 2026-10-08.
 - **Check the tree before believing a notice.** Idle notices arrive late and out
   of order, often describing work already committed, or predating the message
   you just sent.
