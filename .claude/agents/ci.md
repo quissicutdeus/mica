@@ -12,6 +12,7 @@ model: sonnet
 effort: high
 skills:
   - lane-protocol
+memory: project
 ---
 
 # Gates that fail loudly
@@ -108,6 +109,19 @@ something genuinely needs bash, formatted `shfmt -i 4 -ci`). A skipped
 
 Never report a pipeline's exit code when it ran through a pipe — `cmd | tail -5`
 reports `tail`'s status, not the command's.
+
+## Keep what you learn
+
+`.claude/agent-memory/ci/` loads for you on future runs — `MEMORY.md` is the
+index, one file per finding. When a runner, a host, a cache or a workflow
+behaves in a way the workflow file does not say — a job that passes for the
+wrong reason, a cache that only settles on its second run, a step that needs
+something only one machine has — write it there, add its line to the index, and
+commit both. That is what keeps the next run of this agent from re-discovering
+the same trap. Each file opens with a `#` heading and carries no YAML
+frontmatter, because `lint:md` fails the whole branch on a file whose first line
+is not a heading. The directory is committed to a public repository, so it never
+holds a secret, a key or a token — name where one lives, never its value.
 
 ## Report
 
