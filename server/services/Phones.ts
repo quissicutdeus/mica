@@ -145,28 +145,110 @@ export const onPhoneHandover = (name: string, run: HandoverRun): void => {
  *
  * Hooks run **after** the phone is answered, not inside the request that created it: a new
  * phone's first request should not wait on an owner's contact list. So a hook's work may land
- * a moment after the phone does, and nothing may depend on it having finished. A failed hook
- * is logged and not retried, as before, since the phone row that marks it done already exists.
+ * a moment after the phone does, and nothing may depend on it having finished.
+ *
+ * **A hook that throws is run again** (MICA-327), on a later resolve of the same phone, until
+ * it succeeds — so it must be idempotent: a second run finishes what the first left and adds
+ * nothing the first already wrote. The phone row cannot be the mark that a hook *finished*,
+ * only that the phone is new, because it is inserted before any hook runs. Every run is handed
+ * whoever holds the phone when it runs, which after a handover is not who it was created for,
+ * so rows land with the holder the handover walk already moved the rest to.
+ *
+ * **A hook must never await `resolvePhone`, `phoneForRequest`, `activePhone` or anything else
+ * that reaches `ensureHeld` for the same phone.** Hooks run on the phone's queue
+ * (`queueOnPhone`), and a resolve that has to settle a holder joins that queue behind the hook
+ * awaiting it — neither ever finishes, and every later uncached resolve of the phone waits
+ * behind both. A hook is handed the phone id and the holder for exactly that reason.
  */
 type CreatedRun = (phoneId: string, citizenid: string) => Promise<unknown> | unknown;
-const createdHooks: { name: string; run: CreatedRun }[] = [];
+type CreatedHook = { name: string; run: CreatedRun };
+const createdHooks: CreatedHook[] = [];
 
 export const onPhoneCreated = (name: string, run: CreatedRun): void => {
   createdHooks.push({ name, run });
 };
 
 /**
- * Each hook is its own failure, and none can fail the phone the row was just written for.
- * Never rejects, which is what lets the two callers start it without awaiting it.
+ * New-phone hooks that threw, by phone, and when to try them again (MICA-327). Process memory:
+ * a restart before the retry lands forgets it — the schema has nowhere durable to say "set-up
+ * unfinished" without a column, which this does not add.
  */
-const announceCreated = async (phoneId: string, citizenid: string): Promise<void> => {
-  for (const hook of createdHooks) {
+interface OwedSetup {
+  hooks: readonly CreatedHook[];
+  failures: number;
+  /** No retry before this; `Infinity` while one is already queued. */
+  retryAt: number;
+}
+const owedSetup = new Map<string, OwedSetup>();
+
+/**
+ * Who holds the phone now, as far as this process knows: a handover still owed names its new
+ * holder, else the last one settled, else `fallback` — the citizen the caller resolved for,
+ * which on the identity path, where `holderOf` is never written, is the only answer.
+ */
+const holderNow = (phoneId: string, fallback: string): string =>
+  pendingHandover.get(phoneId)?.citizenid ?? holderOf.get(phoneId) ?? fallback;
+
+/**
+ * Run these hooks for this phone, each its own failure, and remember any that threw. Never
+ * rejects. Only ever run from the phone's queue (`queueOnPhone`), so it cannot overlap
+ * another run for the phone — which is what keeps an idempotent hook from doubling — or a
+ * handover: a seed that wrote rows naming the old holder after the new holder's walk had
+ * moved the rest would leave them there, since that holder is cached with nothing to walk.
+ * The rows go to whoever holds the phone **when it runs**, for the same reason.
+ */
+const runCreated = async (
+  phoneId: string,
+  fallback: string,
+  hooks: readonly CreatedHook[],
+  owed: OwedSetup | undefined
+): Promise<void> => {
+  const citizenid = holderNow(phoneId, fallback);
+  const failures = (owed?.failures ?? 0) + 1;
+  const wait = retryDelay(failures);
+  const when =
+    wait === 0
+      ? "on the phone's next resolve"
+      : `no sooner than ${wait / 1000}s from now, on the phone's next resolve`;
+  const failed: CreatedHook[] = [];
+  for (const hook of hooks) {
     try {
       await hook.run(phoneId, citizenid);
     } catch (error) {
-      console.error(`[mica] new-phone hook '${hook.name}' failed for phone ${phoneId}.`, error);
+      failed.push(hook);
+      console.error(
+        `[mica] new-phone hook '${hook.name}' failed for phone ${phoneId} ` +
+          `(attempt ${failures}); retrying ${when}.`,
+        error
+      );
     }
   }
+  if (failed.length === 0) {
+    owedSetup.delete(phoneId);
+  } else {
+    owedSetup.set(phoneId, { hooks: failed, failures, retryAt: Date.now() + wait });
+  }
+};
+
+/** The phone row was just inserted: queue every hook behind whatever the phone is doing. */
+const announceCreated = (phoneId: string, citizenid: string): void => {
+  void queueOnPhone(phoneId, () => runCreated(phoneId, citizenid, createdHooks, undefined));
+};
+
+/**
+ * Retry whatever a new phone's hooks left, if anything, without holding up the resolve that
+ * calls it: queued, not awaited, so the **next** call for the phone waits behind it instead.
+ * One map lookup when nothing is owed, which is every phone but a failed new one; backed off
+ * like a handover retry, so a hook that keeps failing is one attempt per wait.
+ */
+const finishSetup = (phoneId: string, citizenid: string): void => {
+  const owed = owedSetup.get(phoneId);
+  if (!owed || Date.now() < owed.retryAt) return;
+  owed.retryAt = Number.POSITIVE_INFINITY;
+  void queueOnPhone(phoneId, () => {
+    const current = owedSetup.get(phoneId);
+    return current ? runCreated(phoneId, citizenid, current.hooks, current) : undefined;
+  });
 };
 
 /** One table the handover walks, or one hook it runs. */
@@ -217,18 +299,37 @@ const retryDelay = (failures: number): number =>
   RETRY_AFTER_MS[Math.min(failures, RETRY_AFTER_MS.length) - 1];
 
 /**
- * The `ensureHeld` running for each phone, which the next one for that phone waits behind
- * (MICA-319). Two requests for one phone otherwise both read `pendingHandover`, both walk, and
+ * The work queued for each phone — `ensureHeld`, and since MICA-327 the new-phone hooks — which
+ * the next call for that phone waits behind (MICA-319). Two requests for one phone otherwise both read `pendingHandover`, both walk, and
  * the slower one records what the faster one already settled. An entry is deleted when the
  * last call chained onto it settles, so this holds only phones with a call in flight.
  */
 const settling = new Map<string, Promise<void>>();
+
+/**
+ * Run `work` for this phone once everything already queued for it has settled, and answer
+ * when it has. The queue is `ensureHeld` and the new-phone hooks (MICA-327): both write rows
+ * that name a holder, so neither may run under the other.
+ */
+const queueOnPhone = (phoneId: string, work: () => Promise<void> | void): Promise<void> => {
+  const run = async (): Promise<void> => {
+    await work();
+  };
+  const next = (settling.get(phoneId) ?? Promise.resolve()).then(run, run);
+  settling.set(phoneId, next);
+  const forget = (): void => {
+    if (settling.get(phoneId) === next) settling.delete(phoneId);
+  };
+  void next.then(forget, forget);
+  return next;
+};
 
 /** Test seam: module state that would otherwise leak between cases. Hooks are registrations and stay. */
 export const __resetPhoneState = (): void => {
   holderOf.clear();
   pendingHandover.clear();
   settling.clear();
+  owedSetup.clear();
   activeByCitizen.clear();
   activeBySource.clear();
   identityByCitizen.clear();
@@ -403,14 +504,14 @@ const recordHandover = (
  * `holderOf` and nothing walks that phone again until it changes hands, which walks anyway.
  */
 const ensureHeld = (phoneId: string, citizenid: string): Promise<void> => {
-  const run = (): Promise<void> => settleHolder(phoneId, citizenid);
-  const next = (settling.get(phoneId) ?? Promise.resolve()).then(run, run);
-  settling.set(phoneId, next);
-  const forget = (): void => {
-    if (settling.get(phoneId) === next) settling.delete(phoneId);
-  };
-  void next.then(forget, forget);
-  return next;
+  // The hot path, answered without joining the queue: this holder is settled and nothing is
+  // owed. Queuing it would make every resolve of a new phone wait behind its seed, which can be
+  // minutes of lock waits (MICA-327). A read only — anything that could need writing (a new
+  // holder, a handover still owed, a first resolve) misses here and queues as before.
+  if (!pendingHandover.has(phoneId) && holderOf.get(phoneId) === citizenid) {
+    return Promise.resolve();
+  }
+  return queueOnPhone(phoneId, () => settleHolder(phoneId, citizenid));
 };
 
 const settleHolder = async (phoneId: string, citizenid: string): Promise<void> => {
@@ -422,7 +523,7 @@ const settleHolder = async (phoneId: string, citizenid: string): Promise<void> =
     const [existing] = await repo.findAll({ phone_id: phoneId } as Partial<PhoneRow>);
     if (!existing) {
       await repo.create({ citizenid, phone_id: phoneId, claimed: 1 } as Partial<PhoneRow>);
-      void announceCreated(phoneId, citizenid);
+      announceCreated(phoneId, citizenid);
     }
     let done = true;
     let stale = false;
@@ -467,16 +568,20 @@ const readUnclaimed = async (citizenid: string): Promise<PhoneRow | null> => {
  */
 export const identityPhone = async (citizenid: string): Promise<string> => {
   const known = identityByCitizen.get(citizenid);
-  if (known) return known;
+  if (known) {
+    finishSetup(known, citizenid);
+    return known;
+  }
 
   const unclaimed = await readUnclaimed(citizenid);
   let phoneId: string;
   if (unclaimed) {
     phoneId = unclaimed.phone_id;
+    finishSetup(phoneId, citizenid);
   } else {
     phoneId = newPhoneId();
     await repo.create({ citizenid, phone_id: phoneId, claimed: 0 } as Partial<PhoneRow>);
-    void announceCreated(phoneId, citizenid);
+    announceCreated(phoneId, citizenid);
   }
   identityByCitizen.set(citizenid, phoneId);
   return phoneId;
@@ -563,6 +668,7 @@ export const resolvePhone = async (src: number): Promise<PhoneResolution> => {
   const carried = chosen.metadata.phoneId;
   if (typeof carried === 'string' && PHONE_ID.test(carried)) {
     await ensureHeld(carried, player.citizenid);
+    finishSetup(carried, player.citizenid);
     activeByCitizen.set(player.citizenid, carried);
     activeBySource.set(src, carried);
     return { status: 'active', phone: { phoneId: carried, slot: chosen.slot } };
@@ -584,6 +690,7 @@ export const resolvePhone = async (src: number): Promise<PhoneResolution> => {
   }
 
   await ensureHeld(phoneId, player.citizenid);
+  finishSetup(phoneId, player.citizenid);
   activeByCitizen.set(player.citizenid, phoneId);
   activeBySource.set(src, phoneId);
   return { status: 'active', phone: { phoneId, slot: chosen.slot } };

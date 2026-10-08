@@ -41,3 +41,5 @@ line here.
   — the save's own read rejects too; fail one read only (MICA-326)
 - [A character switch reuses the source and never fires playerDropped](character-switch-keeps-source-state.md)
   — source-keyed maps hold the previous character; forget on load
+- [A retried seed reads every status](retried-seed-reads-every-status.md) — soft
+  delete keeps the number; MICA-327 retry is process memory

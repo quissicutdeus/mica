@@ -218,7 +218,30 @@ describe('seeding never holds up the phone', () => {
     const resolution = await resolvePhone(SRC);
 
     expect(resolution).toMatchObject({ status: 'active', phone: { phoneId: CARRIED } });
+    // The seed is queued behind the resolve on the phone's queue (MICA-327), so it starts a
+    // tick later — and its first insert then hangs for good, after the phone was answered.
+    await settle();
     expect(insertsInto('mica_contacts')).toHaveLength(1);
+  });
+});
+
+describe('a seed still running never holds up a settled phone (MICA-327)', () => {
+  it('answers a second resolve of a new phone while its contacts hang', async () => {
+    convar.mica_phone_item = 'phone';
+    bridgeMock.itemSlots.mockReturnValue([{ slot: 3, metadata: { phoneId: CARRIED } }]);
+    hangContactInserts();
+
+    await resolvePhone(SRC);
+    await settle();
+    expect(insertsInto('mica_contacts'), 'the seed is running, and hangs').toHaveLength(1);
+
+    // The holder is settled, so the second resolve must not wait in the phone's queue behind
+    // a seed that never finishes.
+    const second = await Promise.race([
+      resolvePhone(SRC),
+      new Promise((resolve) => setTimeout(() => resolve('still waiting'), 50))
+    ]);
+    expect(second).toMatchObject({ status: 'active', phone: { phoneId: CARRIED } });
   });
 });
 

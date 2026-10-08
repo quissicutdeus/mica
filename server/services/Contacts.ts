@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { defineService, SchemaRepository } from '../lib/defineService';
+import { Database } from '../lib/Database';
 import { Contact, SharedContactCard } from '@mica/shared/types';
 import { guardNetEvent } from '../lib/netGuard';
 import { findNearbyVisiblePlayers } from '../lib/proximity';
@@ -76,24 +77,63 @@ export const contacts = defineService<Contact, typeof contactsContract>({
 });
 
 /**
+ * What makes two contact numbers the same one: their digits, so `5550100` saved by the player
+ * and a default of `555-0100` are one contact, not two side by side. This is the rule the
+ * phone already uses to find the contact for a number — `contactRingtone` in
+ * `web/src/shell/state/toast.ts`, matching a caller who arrives as `5550199` to a contact
+ * saved as `555-0199` — mirrored here because a server module cannot import the shell. A
+ * number with no digits at all is compared as written, trimmed, the way `phoneNumberFrom`
+ * leaves it, rather than every such number being one key.
+ */
+const sameNumberKey = (number: string): string => number.replace(/\D/g, '') || number.trim();
+
+/**
  * The owner's default contacts (`mica_default_contacts`, MICA-234), written into a phone the
  * moment this server first creates it and never again — see `onPhoneCreated` for why the
  * phone's own insert is the once-only mark. Onto that phone id directly rather than through
  * `addForPlayer`, whose `phoneForCitizen` could name a different phone the citizen holds.
  * A throw here is logged by `Phones.ts` and the phone is created regardless.
+ *
+ * **Idempotent, because a throw is retried** (MICA-327). Seeding is entry by entry, so a throw
+ * on the third of five used to leave two and lose three for good. Now `Phones.ts` runs this
+ * again on a later resolve of the phone, and each run writes only the entries the phone does
+ * not have yet: a default is "there" when any row on this phone carries its number
+ * (`sameNumberKey`), **in any status**. That is what keeps a retry from bringing back a
+ * default the player deleted on purpose — `delete` is soft, so the deleted row still carries
+ * the number — and from doubling one the first run wrote. A number the player already saved
+ * themselves, in any format, counts as there too, which is the right answer: they have that
+ * contact.
+ *
+ * Per entry rather than one transaction for the lot. A transaction would make a run all or
+ * nothing, but the failed run still has to be run again, and something still has to say which
+ * defaults a phone has; reading the rows answers that for both. The one miss: a seeded default
+ * whose number the player edited before a retry, which the retry adds again.
+ *
+ * Server-internal and keyed on the phone alone, deliberately without a citizenid: the read
+ * only decides what to insert, and rows on one phone all name its holder anyway.
  */
 onPhoneCreated('defaultContacts', async (phoneId, citizenid) => {
   const seed = defaultContacts({
     name: contacts.resolved.columnRules.firstname?.maxLength ?? 50,
     number: contacts.resolved.columnRules.phone?.maxLength ?? 20
   });
+  if (seed.length === 0) return;
+  const present = await Database.query<{ phone: string }[]>(
+    `SELECT \`phone\` FROM \`${contacts.resolved.table}\` WHERE \`phone_id\` = ?`,
+    [phoneId]
+  );
+  const have = new Set(
+    (Array.isArray(present) ? present : []).map((row) => sameNumberKey(String(row.phone)))
+  );
   for (const entry of seed) {
+    if (have.has(sameNumberKey(entry.number))) continue;
     await contacts.repo.create({
       firstname: entry.name,
       phone: entry.number,
       citizenid,
       phone_id: phoneId
     } as Partial<Contact>);
+    have.add(sameNumberKey(entry.number));
   }
 });
 
