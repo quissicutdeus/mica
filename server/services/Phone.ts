@@ -10,7 +10,7 @@ import { ServiceEndpoint } from '../lib/ServiceEndpoint';
 import { guardNetEvent, noInput, phoneNumber, phoneNumberFrom } from '../lib/netGuard';
 import { s } from '@mica/shared/schema';
 import { phoneCallLog } from './PhoneCallLog';
-import { phoneForCitizen, phoneForRequest, requireDeviceInHand } from '../lib/phoneIdentity';
+import { phoneForCitizen, deviceForRequest, requireDeviceInHand } from '../lib/deviceIdentity';
 import { readPhoneIdByNumber, readRowByPhoneId } from '../lib/phoneNumbers';
 import { isAdmin } from './Admin';
 import { SEED_CHARACTERS } from '../lib/seed';
@@ -400,8 +400,8 @@ async function logCall(
   duration: number
 ): Promise<void> {
   try {
-    const phone_id = (await readPhoneIdByNumber(ownNumber)) ?? (await phoneForCitizen(citizenid));
-    await phoneCallLog.repo.create({ citizenid, phone_id, kind, number, duration });
+    const device_id = (await readPhoneIdByNumber(ownNumber)) ?? (await phoneForCitizen(citizenid));
+    await phoneCallLog.repo.create({ citizenid, device_id, kind, number, duration });
   } catch (error) {
     console.error(`[mica] could not log a ${kind} call for ${citizenid}.`, error);
   }
@@ -689,8 +689,8 @@ async function callerNumberOf(src: number): Promise<string | null> {
   const player = FrameworkBridge.getPlayer(src);
   if (!player?.citizenid) return null;
   try {
-    const phoneId = await phoneForRequest(src, player.citizenid, 'phone');
-    const row = await readRowByPhoneId(phoneId);
+    const deviceId = await deviceForRequest(src, player.citizenid, 'phone');
+    const row = await readRowByPhoneId(deviceId);
     return row?.number || FrameworkBridge.getPlayerPhone(src);
   } catch (error) {
     if (!(error instanceof PlayerFacingError)) {

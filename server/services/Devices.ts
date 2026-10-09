@@ -11,11 +11,11 @@ import {
   type DeviceId
 } from '@mica/shared/devices';
 import { Database } from '../lib/Database';
-import { defineService, phoneKeyedRepositories } from '../lib/defineService';
+import { defineService, deviceKeyedRepositories } from '../lib/defineService';
 import { PlayerFacingError } from '../lib/errors';
 import { FrameworkBridge } from '../lib/FrameworkBridge';
 import type { FrameworkPlayer } from '../lib/framework/runtime';
-import { installPhoneResolvers } from '../lib/phoneIdentity';
+import { installDeviceResolvers } from '../lib/deviceIdentity';
 import {
   deviceItemName,
   holdsDevice,
@@ -31,7 +31,7 @@ import {
  * **Why this is its own table rather than `mica_phone_numbers`.** The number table is what a
  * phone *has*; this is what a phone *is*. MICA-284 moved the number onto the phone, and
  * MICA-282 moved contacts, notes, media and the rest — every table declared `deviceOwned`
- * carries a `phone_id` that points here. `citizenid` on this row, as on every one of those,
+ * carries a `device_id` that points here. `citizenid` on this row, as on every one of those,
  * is **whoever holds the phone now**, and it moves with the phone: see `handOver`.
  *
  * **`claimed` is what makes the upgrade work without minting into items.** A phone id lives
@@ -48,18 +48,18 @@ import {
  * own — notes, settings and a lock screen of its own, keyed on its own id — but none of a
  * phone's reach: every lookup that means "the citizen's phone" (`phoneForCitizen`,
  * `identityPhone`, adoption) reads `kind = 'phone'` only, so an offline call log or a
- * notification never lands on a tablet, and a tablet never gets a number. The `phone_id`
- * column and the `phoneId` item-metadata key keep their names for both: renaming either is
- * churn across every device-owned table for no change in meaning.
+ * notification never lands on a tablet, and a tablet never gets a number. The table, the
+ * `device_id` column and the `deviceId` item-metadata key are named for any device, since
+ * MICA-344, because both kinds share them.
  *
  * **Nothing here is reachable from a client.** Every generic action is off, so this
  * declaration registers no net event at all — a phone id is minted by the server and is never
  * something a payload sets, chooses or deletes (§2.9).
  */
-export interface PhoneRow {
+export interface DeviceRow {
   id: number;
   citizenid: string;
-  phone_id: string;
+  device_id: string;
   /** Which device this is (MICA-264). Fixed when the row is minted; nothing changes it. */
   kind: DeviceId;
   /** Bound to an inventory item, or still waiting for the first item its citizen uses. */
@@ -68,9 +68,9 @@ export interface PhoneRow {
   updated_at?: Date | string;
 }
 
-export const phones = defineService<PhoneRow>({
-  id: 'phones',
-  table: 'mica_phones',
+export const devices = defineService<DeviceRow>({
+  id: 'devices',
+  table: 'mica_devices',
   access: { read: 'owner', write: 'server' },
   schema: {
     /**
@@ -83,7 +83,7 @@ export const phones = defineService<PhoneRow>({
      * MICA-281 makes a phone id useless without the citizen predicate beside it — but there is
      * no reason to hand out a guessable one.
      */
-    phone_id: { type: 'string', length: 32, notNull: true, clientWritable: false },
+    device_id: { type: 'string', length: 32, notNull: true, clientWritable: false },
     /**
      * Which device this row is (MICA-264): one value per entry in `shared/devices.ts`.
      *
@@ -112,7 +112,7 @@ export const phones = defineService<PhoneRow>({
     // Not unique on citizenid, deliberately: the whole point of MICA-219 is that a character
     // may hold several phones. `defineService` already emits a `citizenid_status` key, and a
     // lookup by citizenid alone uses its leading column, so no separate one is declared here.
-    { name: 'phone_id_unique', columns: ['phone_id'], unique: true }
+    { name: 'device_id_unique', columns: ['device_id'], unique: true }
   ],
   uniqueAfterDelete: {
     optOut:
@@ -127,12 +127,12 @@ export const phones = defineService<PhoneRow>({
   }
 });
 
-const repo = phones.repo;
+const repo = devices.repo;
 
 /** What a minted id looks like, and the only shape trusted off item metadata. */
-const PHONE_ID = /^[0-9a-f]{32}$/;
+const DEVICE_ID = /^[0-9a-f]{32}$/;
 
-const newPhoneId = (): string => randomBytes(16).toString('hex');
+const newDeviceId = (): string => randomBytes(16).toString('hex');
 
 /** One map per device kind (MICA-264): a phone and a tablet are two answers, never one. */
 const byKind = <K, V>(): Record<DeviceId, Map<K, V>> =>
@@ -162,15 +162,15 @@ const activeByCitizen = byKind<string, string>();
  * — no item gate, no character — can still tell an entry left by the character before a
  * switch on the same source, and drop it. `forgetActive` has the rules.
  */
-const activeBySource = byKind<number, { phoneId: string; citizenid: string }>();
+const activeBySource = byKind<number, { deviceId: string; citizenid: string }>();
 /** Each citizen's identity device of each kind, once found or minted. */
 const identityByCitizen = byKind<string, string>();
 
 /**
- * Whoever needs to move rows that `transferPhoneRows` cannot reach when a phone changes hands.
+ * Whoever needs to move rows that `transferDeviceRows` cannot reach when a phone changes hands.
  *
- * Every table with a `phone_id` column is walked automatically through
- * `phoneKeyedRepositories`; this is for the one shape that list cannot hold — a child table
+ * Every table with a `device_id` column is walked automatically through
+ * `deviceKeyedRepositories`; this is for the one shape that list cannot hold — a child table
  * with no repository of its own, which is `mica_messages_participants`. `Conversations.ts`
  * registers it.
  *
@@ -180,10 +180,10 @@ const identityByCitizen = byKind<string, string>();
  * or after a restart. A `WHERE … AND citizenid <> ?` update, like the participants transfer,
  * is the shape: a second run finds nothing left to move.
  */
-type HandoverRun = (phoneId: string, citizenid: string) => Promise<unknown> | unknown;
+type HandoverRun = (deviceId: string, citizenid: string) => Promise<unknown> | unknown;
 const handoverHooks: { name: string; run: HandoverRun }[] = [];
 
-export const onPhoneHandover = (name: string, run: HandoverRun): void => {
+export const onDeviceHandover = (name: string, run: HandoverRun): void => {
   handoverHooks.push({ name, run });
 };
 
@@ -193,8 +193,8 @@ export const onPhoneHandover = (name: string, run: HandoverRun): void => {
  * itself what a tablet gets; the default contacts are a phone's, so a tablet gets none. Registered here rather than imported, for the reason the handover
  * hooks are: this file must not import the services that key on it.
  *
- * "New" means this server just inserted the phone's `mica_phones` row, which happens once per
- * phone id (`phone_id_unique`) and never again: nothing deletes a phone row, a handover and a
+ * "New" means this server just inserted the phone's `mica_devices` row, which happens once per
+ * phone id (`device_id_unique`) and never again: nothing deletes a phone row, a handover and a
  * claim update the one that exists, and the rows `0002_phone_data_follows_the_phone` backfilled
  * were inserted by SQL, not here, so an existing player's phone is never treated as new. That
  * once-only insert is the mark — a player who deletes a seeded contact is never re-seeded,
@@ -211,21 +211,21 @@ export const onPhoneHandover = (name: string, run: HandoverRun): void => {
  * whoever holds the phone when it runs, which after a handover is not who it was created for,
  * so rows land with the holder the handover walk already moved the rest to.
  *
- * **A hook must never await `resolvePhone`, `phoneForRequest`, `activePhone` or anything else
+ * **A hook must never await `resolvePhone`, `deviceForRequest`, `activePhone` or anything else
  * that reaches `ensureHeld` for the same phone.** Hooks run on the phone's queue
- * (`queueOnPhone`), and a resolve that has to settle a holder joins that queue behind the hook
+ * (`queueOnDevice`), and a resolve that has to settle a holder joins that queue behind the hook
  * awaiting it — neither ever finishes, and every later uncached resolve of the phone waits
  * behind both. A hook is handed the phone id and the holder for exactly that reason.
  */
 type CreatedRun = (
-  phoneId: string,
+  deviceId: string,
   citizenid: string,
   kind: DeviceId
 ) => Promise<unknown> | unknown;
 type CreatedHook = { name: string; run: CreatedRun };
 const createdHooks: CreatedHook[] = [];
 
-export const onPhoneCreated = (name: string, run: CreatedRun): void => {
+export const onDeviceCreated = (name: string, run: CreatedRun): void => {
   createdHooks.push({ name, run });
 };
 
@@ -249,25 +249,25 @@ const owedSetup = new Map<string, OwedSetup>();
  * holder, else the last one settled, else `fallback` — the citizen the caller resolved for,
  * which on the identity path, where `holderOf` is never written, is the only answer.
  */
-const holderNow = (phoneId: string, fallback: string): string =>
-  pendingHandover.get(phoneId)?.citizenid ?? holderOf.get(phoneId) ?? fallback;
+const holderNow = (deviceId: string, fallback: string): string =>
+  pendingHandover.get(deviceId)?.citizenid ?? holderOf.get(deviceId) ?? fallback;
 
 /**
  * Run these hooks for this phone, each its own failure, and remember any that threw. Never
- * rejects. Only ever run from the phone's queue (`queueOnPhone`), so it cannot overlap
+ * rejects. Only ever run from the phone's queue (`queueOnDevice`), so it cannot overlap
  * another run for the phone — which is what keeps an idempotent hook from doubling — or a
  * handover: a seed that wrote rows naming the old holder after the new holder's walk had
  * moved the rest would leave them there, since that holder is cached with nothing to walk.
  * The rows go to whoever holds the phone **when it runs**, for the same reason.
  */
 const runCreated = async (
-  phoneId: string,
+  deviceId: string,
   fallback: string,
   kind: DeviceId,
   hooks: readonly CreatedHook[],
   owed: OwedSetup | undefined
 ): Promise<void> => {
-  const citizenid = holderNow(phoneId, fallback);
+  const citizenid = holderNow(deviceId, fallback);
   const failures = (owed?.failures ?? 0) + 1;
   const wait = retryDelay(failures);
   const when =
@@ -277,27 +277,29 @@ const runCreated = async (
   const failed: CreatedHook[] = [];
   for (const hook of hooks) {
     try {
-      await hook.run(phoneId, citizenid, kind);
+      await hook.run(deviceId, citizenid, kind);
     } catch (error) {
       failed.push(hook);
       console.error(
-        `[mica] new-phone hook '${hook.name}' failed for phone ${phoneId} ` +
+        `[mica] new-phone hook '${hook.name}' failed for phone ${deviceId} ` +
           `(attempt ${failures}); retrying ${when}.`,
         error
       );
     }
   }
   if (failed.length === 0) {
-    owedSetup.delete(phoneId);
+    owedSetup.delete(deviceId);
   } else {
-    owedSetup.set(phoneId, { hooks: failed, kind, failures, retryAt: Date.now() + wait });
+    owedSetup.set(deviceId, { hooks: failed, kind, failures, retryAt: Date.now() + wait });
   }
 };
 
 /** The phone row was just inserted: queue every hook behind whatever the phone is doing. */
-const announceCreated = (phoneId: string, citizenid: string, kind: DeviceId): void => {
-  kindOf.set(phoneId, kind);
-  void queueOnPhone(phoneId, () => runCreated(phoneId, citizenid, kind, createdHooks, undefined));
+const announceCreated = (deviceId: string, citizenid: string, kind: DeviceId): void => {
+  kindOf.set(deviceId, kind);
+  void queueOnDevice(deviceId, () =>
+    runCreated(deviceId, citizenid, kind, createdHooks, undefined)
+  );
 };
 
 /**
@@ -306,28 +308,28 @@ const announceCreated = (phoneId: string, citizenid: string, kind: DeviceId): vo
  * One map lookup when nothing is owed, which is every phone but a failed new one; backed off
  * like a handover retry, so a hook that keeps failing is one attempt per wait.
  */
-const finishSetup = (phoneId: string, citizenid: string): void => {
-  const owed = owedSetup.get(phoneId);
+const finishSetup = (deviceId: string, citizenid: string): void => {
+  const owed = owedSetup.get(deviceId);
   if (!owed || Date.now() < owed.retryAt) return;
   owed.retryAt = Number.POSITIVE_INFINITY;
-  void queueOnPhone(phoneId, () => {
-    const current = owedSetup.get(phoneId);
+  void queueOnDevice(deviceId, () => {
+    const current = owedSetup.get(deviceId);
     return current
-      ? runCreated(phoneId, citizenid, current.kind, current.hooks, current)
+      ? runCreated(deviceId, citizenid, current.kind, current.hooks, current)
       : undefined;
   });
 };
 
 /** One table the handover walks, or one hook it runs. */
-type PhoneKeyedRepository = (typeof phoneKeyedRepositories)[number];
+type DeviceKeyedRepository = (typeof deviceKeyedRepositories)[number];
 type HandoverHook = (typeof handoverHooks)[number];
 
 /**
  * The part of a handover still to do: the tables and hooks that have not moved yet. `tables`
- * names `mica_phones` itself whenever anything else is left, because that row moves last.
+ * names `mica_devices` itself whenever anything else is left, because that row moves last.
  */
 interface HandoverWork {
-  tables: readonly PhoneKeyedRepository[];
+  tables: readonly DeviceKeyedRepository[];
   hooks: readonly HandoverHook[];
 }
 
@@ -342,7 +344,7 @@ interface HandoverWork {
  * tables this entry was owed anyway.
  *
  * This is the in-process half, which keeps a retry narrow and backed off. The durable half is
- * the `mica_phones` row: `handOver` moves it only once everything else has, so a restart that
+ * the `mica_devices` row: `handOver` moves it only once everything else has, so a restart that
  * drops this map still finds a row naming the previous holder, and the first resolve after it
  * walks every table again.
  */
@@ -378,21 +380,21 @@ const settling = new Map<string, Promise<void>>();
  * when it has. The queue is `ensureHeld` and the new-phone hooks (MICA-327): both write rows
  * that name a holder, so neither may run under the other.
  */
-const queueOnPhone = (phoneId: string, work: () => Promise<void> | void): Promise<void> => {
+const queueOnDevice = (deviceId: string, work: () => Promise<void> | void): Promise<void> => {
   const run = async (): Promise<void> => {
     await work();
   };
-  const next = (settling.get(phoneId) ?? Promise.resolve()).then(run, run);
-  settling.set(phoneId, next);
+  const next = (settling.get(deviceId) ?? Promise.resolve()).then(run, run);
+  settling.set(deviceId, next);
   const forget = (): void => {
-    if (settling.get(phoneId) === next) settling.delete(phoneId);
+    if (settling.get(deviceId) === next) settling.delete(deviceId);
   };
   void next.then(forget, forget);
   return next;
 };
 
 /** Test seam: module state that would otherwise leak between cases. Hooks are registrations and stay. */
-export const __resetPhoneState = (): void => {
+export const __resetDeviceState = (): void => {
   holderOf.clear();
   kindOf.clear();
   pendingHandover.clear();
@@ -409,27 +411,27 @@ export const __resetPhoneState = (): void => {
  * The phone a connected source last resolved to, or null before its first resolve.
  *
  * Synchronous by design and therefore a cache, not a lookup: it answers what the last
- * `resolvePhone`/`phoneForRequest` for this source found. Every device-owned request
+ * `resolvePhone`/`deviceForRequest` for this source found. Every device-owned request
  * refreshes it, and so does the sync `deviceItem.ts` fires on load, use and inventory change,
  * so it is stale for at most the gap between using a phone and the server hearing about it.
  */
 export const activePhoneIdOf = (src: number): string | null =>
-  activeBySource.phone.get(src)?.phoneId ?? null;
+  activeBySource.phone.get(src)?.deviceId ?? null;
 
 /**
  * `activePhoneIdOf` for any device kind (MICA-264): the device of that kind a connected source
  * last resolved to, or null. `LockState` keys a tablet's external lock on it.
  */
 export const activeDeviceIdOf = (src: number, kind: DeviceId): string | null =>
-  activeBySource[kind].get(src)?.phoneId ?? null;
+  activeBySource[kind].get(src)?.deviceId ?? null;
 
 on('playerDropped', () => {
   for (const kind of ALL_DEVICES) activeBySource[kind].delete(source);
 });
 
 /** The phone a player is currently on. */
-export interface ActivePhone {
-  phoneId: string;
+export interface ActiveDevice {
+  deviceId: string;
   slot: number;
 }
 
@@ -446,7 +448,7 @@ export interface ActivePhone {
  * logged and the rest still move, because half a handover with a line saying which half is
  * better than a phone that stays the victim's in every table because one of them errored.
  *
- * **`mica_phones` moves last, and only when every other table and hook has** (MICA-319). Its
+ * **`mica_devices` moves last, and only when every other table and hook has** (MICA-319). Its
  * row is what `ensureHeld` reads after a restart, when `pendingHandover` is gone: a row still
  * naming the previous holder is the durable mark that this handover is not finished, and the
  * first resolve walks every table again. Moving it first, as the declaration order used to,
@@ -457,11 +459,11 @@ export interface ActivePhone {
  * already moved its rows finds nothing to move.
  */
 const handOver = async (
-  phoneId: string,
+  deviceId: string,
   citizenid: string,
-  work: HandoverWork = { tables: phoneKeyedRepositories, hooks: handoverHooks }
+  work: HandoverWork = { tables: deviceKeyedRepositories, hooks: handoverHooks }
 ): Promise<HandoverWork> => {
-  const tables: PhoneKeyedRepository[] = [];
+  const tables: DeviceKeyedRepository[] = [];
   const hooks: HandoverHook[] = [];
   // Most walks move nothing — the first resolve after a start re-checks a phone whose rows all
   // name its holder already — so only one that moved a row says so.
@@ -469,21 +471,21 @@ const handOver = async (
   for (const keyed of work.tables) {
     if (keyed === repo) continue;
     try {
-      if (await keyed.transferPhoneRows(phoneId, citizenid)) moved = true;
+      if (await keyed.transferDeviceRows(deviceId, citizenid)) moved = true;
     } catch (error) {
       tables.push(keyed);
       console.error(
-        `[mica] could not move ${keyed.table} on phone ${phoneId} to ${citizenid}.`,
+        `[mica] could not move ${keyed.table} on phone ${deviceId} to ${citizenid}.`,
         error
       );
     }
   }
   for (const hook of work.hooks) {
     try {
-      if ((await hook.run(phoneId, citizenid)) === true) moved = true;
+      if ((await hook.run(deviceId, citizenid)) === true) moved = true;
     } catch (error) {
       hooks.push(hook);
-      console.error(`[mica] handover hook '${hook.name}' failed for phone ${phoneId}.`, error);
+      console.error(`[mica] handover hook '${hook.name}' failed for phone ${deviceId}.`, error);
     }
   }
   if (work.tables.includes(repo)) {
@@ -491,11 +493,11 @@ const handOver = async (
       tables.push(repo);
     } else {
       try {
-        if (await repo.transferPhoneRows(phoneId, citizenid)) moved = true;
+        if (await repo.transferDeviceRows(deviceId, citizenid)) moved = true;
       } catch (error) {
         tables.push(repo);
         console.error(
-          `[mica] could not move ${repo.table} on phone ${phoneId} to ${citizenid}.`,
+          `[mica] could not move ${repo.table} on phone ${deviceId} to ${citizenid}.`,
           error
         );
       }
@@ -503,7 +505,7 @@ const handOver = async (
   }
   if (tables.length === 0 && hooks.length === 0) {
     if (moved) {
-      console.log(`[mica] phone ${phoneId} is now held by ${citizenid}; its rows moved with it.`);
+      console.log(`[mica] phone ${deviceId} is now held by ${citizenid}; its rows moved with it.`);
     }
   } else {
     const stuck = [
@@ -511,7 +513,7 @@ const handOver = async (
       ...hooks.map((hook) => `hook '${hook.name}'`)
     ];
     console.error(
-      `[mica] phone ${phoneId} is held by ${citizenid}, but ${stuck.join(', ')} still name ` +
+      `[mica] phone ${deviceId} is held by ${citizenid}, but ${stuck.join(', ')} still name ` +
         `its previous holder; a later request retries them, and ${repo.table} moves last.`
     );
   }
@@ -526,18 +528,18 @@ const handOver = async (
  * `holderOf` to whoever replaced it as well.
  */
 const recordHandover = (
-  phoneId: string,
+  deviceId: string,
   citizenid: string,
   left: HandoverWork,
   started: PendingHandover | undefined
 ): boolean => {
-  if (pendingHandover.get(phoneId) !== started) return false;
+  if (pendingHandover.get(deviceId) !== started) return false;
   if (left.tables.length === 0 && left.hooks.length === 0) {
-    pendingHandover.delete(phoneId);
+    pendingHandover.delete(deviceId);
     return true;
   }
   const failures = (started?.citizenid === citizenid ? started.failures : 0) + 1;
-  pendingHandover.set(phoneId, {
+  pendingHandover.set(deviceId, {
     citizenid,
     tables: left.tables,
     hooks: left.hooks,
@@ -550,10 +552,10 @@ const recordHandover = (
 /**
  * Make sure the phone has a row naming this holder, without paying a query on every resolve.
  *
- * Keyed on `phone_id` rather than the row id, because the id in item metadata is all a caller
+ * Keyed on `device_id` rather than the row id, because the id in item metadata is all a caller
  * has. Three outcomes: no row yet, so one is created already claimed (the id is on an item);
  * a row naming somebody else, which is a handover; a row still unclaimed, which this claims.
- * A create that loses a race with a concurrent one violates `phone_id_unique`, which is the
+ * A create that loses a race with a concurrent one violates `device_id_unique`, which is the
  * correct outcome — the row exists either way, and the next resolve reads it.
  *
  * **Calls for one phone run one after another** (`settling`), so each reads what the one
@@ -566,7 +568,7 @@ const recordHandover = (
  * retry lands, which is better than refusing the phone over them. Which walk runs:
  *
  * - A handover to this citizen is owed: the tables and hooks it left, and nothing else. The
- *   `mica_phones` row still names the previous holder then, by design (`handOver`).
+ *   `mica_devices` row still names the previous holder then, by design (`handOver`).
  * - Anything else that gets past the cache: a full walk. Every statement moves whatever does
  *   not name this citizen yet, so it also finishes what any earlier handover left.
  *
@@ -582,25 +584,25 @@ const recordHandover = (
  * `holderOf` and nothing walks that phone again until it changes hands, which walks anyway.
  */
 const ensureHeld = async (
-  phoneId: string,
+  deviceId: string,
   citizenid: string,
   kind: DeviceId
 ): Promise<DeviceId | null> => {
   // A row of another kind is refused before anything is written or walked (MICA-264): a phone
   // id copied onto a tablet item must not hand the phone's rows to whoever holds the tablet.
-  const known = kindOf.get(phoneId);
+  const known = kindOf.get(deviceId);
   if (known !== undefined && known !== kind) return known;
   // The hot path, answered without joining the queue: this holder is settled and nothing is
   // owed. Queuing it would make every resolve of a new phone wait behind its seed, which can be
   // minutes of lock waits (MICA-327). A read only — anything that could need writing (a new
   // holder, a handover still owed, a first resolve) misses here and queues as before. A
   // settled holder means the row was read, so `known` is its kind here.
-  if (!pendingHandover.has(phoneId) && holderOf.get(phoneId) === citizenid) {
+  if (!pendingHandover.has(deviceId) && holderOf.get(deviceId) === citizenid) {
     return known ?? kind;
   }
   let heldAs: DeviceId | null = null;
-  await queueOnPhone(phoneId, async () => {
-    heldAs = await settleHolder(phoneId, citizenid, kind);
+  await queueOnDevice(deviceId, async () => {
+    heldAs = await settleHolder(deviceId, citizenid, kind);
   });
   return heldAs;
 };
@@ -613,30 +615,30 @@ const ensureHeld = async (
  * the check lives here rather than in a query of its own before it.
  */
 const settleHolder = async (
-  phoneId: string,
+  deviceId: string,
   citizenid: string,
   kind: DeviceId
 ): Promise<DeviceId | null> => {
-  const known = kindOf.get(phoneId);
+  const known = kindOf.get(deviceId);
   if (known !== undefined && known !== kind) return known;
-  const pending = pendingHandover.get(phoneId);
+  const pending = pendingHandover.get(deviceId);
   const owed = pending?.citizenid === citizenid ? pending : undefined;
-  if (owed ? Date.now() < owed.retryAt : holderOf.get(phoneId) === citizenid) {
+  if (owed ? Date.now() < owed.retryAt : holderOf.get(deviceId) === citizenid) {
     return known ?? kind;
   }
 
   let read = false;
   try {
-    const [existing] = await repo.findAll({ phone_id: phoneId } as Partial<PhoneRow>);
+    const [existing] = await repo.findAll({ device_id: deviceId } as Partial<DeviceRow>);
     read = true;
     if (existing) {
       const recorded = isDeviceId(existing.kind) ? existing.kind : DEFAULT_DEVICE;
-      kindOf.set(phoneId, recorded);
+      kindOf.set(deviceId, recorded);
       if (recorded !== kind) return recorded;
     }
     if (!existing) {
-      await repo.create({ citizenid, phone_id: phoneId, kind, claimed: 1 } as Partial<PhoneRow>);
-      announceCreated(phoneId, citizenid, kind);
+      await repo.create({ citizenid, device_id: deviceId, kind, claimed: 1 } as Partial<DeviceRow>);
+      announceCreated(deviceId, citizenid, kind);
     }
     let done = true;
     let stale = false;
@@ -645,25 +647,25 @@ const settleHolder = async (
       // resolve since a start, a phone that changed hands, a handover to somebody else still
       // owed — a full walk. Recorded before the claim below, so a claim that throws cannot lose
       // what this walk left.
-      const left = await handOver(phoneId, citizenid, owed);
+      const left = await handOver(deviceId, citizenid, owed);
       done = left.tables.length === 0 && left.hooks.length === 0;
-      stale = !recordHandover(phoneId, citizenid, left, pending);
+      stale = !recordHandover(deviceId, citizenid, left, pending);
     }
     if (existing && !Number(existing.claimed)) {
-      await repo.update(existing.id, { claimed: 1 } as Partial<PhoneRow>, citizenid);
+      await repo.update(existing.id, { claimed: 1 } as Partial<DeviceRow>, citizenid);
     }
     if (!stale) {
-      if (done && !pendingHandover.has(phoneId)) holderOf.set(phoneId, citizenid);
-      else holderOf.delete(phoneId);
+      if (done && !pendingHandover.has(deviceId)) holderOf.set(deviceId, citizenid);
+      else holderOf.delete(deviceId);
     }
     identityByCitizen[kind].delete(citizenid);
     return kind;
   } catch (error) {
     // Not fatal and not cached: the id is on the item either way, so the next resolve retries.
-    console.error(`[mica] could not record the phone row for ${phoneId}`, error);
+    console.error(`[mica] could not record the phone row for ${deviceId}`, error);
     // Read and of this kind, or read and absent: still the caller's kind. Not read at all:
     // nobody can say, and the caller decides what that costs.
-    return kindOf.get(phoneId) ?? (read ? kind : null);
+    return kindOf.get(deviceId) ?? (read ? kind : null);
   }
 };
 
@@ -671,8 +673,8 @@ const settleHolder = async (
  * The citizen's device of this kind that is bound to no item yet, or null. Lowest id when there
  * are several. By kind (MICA-264), so a phone item never adopts a tablet's identity row.
  */
-const readUnclaimed = async (citizenid: string, kind: DeviceId): Promise<PhoneRow | null> => {
-  const rows = await repo.findAll({ citizenid, kind, claimed: 0 } as Partial<PhoneRow>);
+const readUnclaimed = async (citizenid: string, kind: DeviceId): Promise<DeviceRow | null> => {
+  const rows = await repo.findAll({ citizenid, kind, claimed: 0 } as Partial<DeviceRow>);
   if (rows.length === 0) return null;
   return rows.reduce((lowest, row) => (row.id < lowest.id ? row : lowest));
 };
@@ -698,18 +700,18 @@ const identityDevice = async (citizenid: string, kind: DeviceId): Promise<string
   }
 
   const unclaimed = await readUnclaimed(citizenid, kind);
-  let phoneId: string;
+  let deviceId: string;
   if (unclaimed) {
-    phoneId = unclaimed.phone_id;
-    kindOf.set(phoneId, kind);
-    finishSetup(phoneId, citizenid);
+    deviceId = unclaimed.device_id;
+    kindOf.set(deviceId, kind);
+    finishSetup(deviceId, citizenid);
   } else {
-    phoneId = newPhoneId();
-    await repo.create({ citizenid, phone_id: phoneId, kind, claimed: 0 } as Partial<PhoneRow>);
-    announceCreated(phoneId, citizenid, kind);
+    deviceId = newDeviceId();
+    await repo.create({ citizenid, device_id: deviceId, kind, claimed: 0 } as Partial<DeviceRow>);
+    announceCreated(deviceId, citizenid, kind);
   }
-  identityByCitizen[kind].set(citizenid, phoneId);
-  return phoneId;
+  identityByCitizen[kind].set(citizenid, deviceId);
+  return deviceId;
 };
 
 /** The citizen's identity phone — `identityDevice` for the phone, never a tablet. */
@@ -742,13 +744,13 @@ export const phoneForCitizen = async (citizenid: string): Promise<string> => {
 
   // Phones only (MICA-264): a call logged against an offline player, or a notification for
   // one, must never land on the tablet they happened to touch last.
-  const latest = await Database.single<{ phone_id: string } | null>(
-    `SELECT \`phone_id\` FROM \`mica_phones\`
+  const latest = await Database.single<{ device_id: string } | null>(
+    `SELECT \`device_id\` FROM \`mica_devices\`
      WHERE \`citizenid\` = ? AND \`kind\` = 'phone' AND \`status\` = 'active'
      ORDER BY \`updated_at\` DESC, \`id\` DESC LIMIT 1`,
     [citizenid]
   );
-  if (latest?.phone_id) return latest.phone_id;
+  if (latest?.device_id) return latest.device_id;
 
   return await identityPhone(citizenid);
 };
@@ -764,20 +766,20 @@ export const phoneForCitizen = async (citizenid: string): Promise<string> => {
  * `'unavailable'` (no gate configured, no loaded character, the metadata write failed) all
  * want that same degrade.
  */
-export type PhoneResolution =
-  | { status: 'active'; phone: ActivePhone }
+export type DeviceResolution =
+  | { status: 'active'; device: ActiveDevice }
   /** A phone item is required here and this player holds none. */
   | { status: 'none' }
   /** No phone identity can be had on this server, or for this source, right now. */
   | { status: 'unavailable' };
 
-const UNAVAILABLE: PhoneResolution = { status: 'unavailable' };
-const NONE: PhoneResolution = { status: 'none' };
+const UNAVAILABLE: DeviceResolution = { status: 'unavailable' };
+const NONE: DeviceResolution = { status: 'none' };
 
 /** Record a device as the one this source and its citizen are on now. */
-const markActive = (src: number, citizenid: string, kind: DeviceId, phoneId: string): void => {
-  activeByCitizen[kind].set(citizenid, phoneId);
-  activeBySource[kind].set(src, { phoneId, citizenid });
+const markActive = (src: number, citizenid: string, kind: DeviceId, deviceId: string): void => {
+  activeByCitizen[kind].set(citizenid, deviceId);
+  activeBySource[kind].set(src, { deviceId, citizenid });
 };
 
 /**
@@ -787,7 +789,7 @@ const markActive = (src: number, citizenid: string, kind: DeviceId, phoneId: str
  * A resolve that answers `'none'` passes no `keep`: they hold none, so whatever was cached is
  * somebody else's now, or nobody's, and `LockPhone` must not key it. One that answers
  * `'unavailable'` passes the current character: on a server that cannot carry an id that
- * answer is the steady state, and the identity device `phoneForRequest` cached for this same
+ * answer is the steady state, and the identity device `deviceForRequest` cached for this same
  * character is still right, but one cached for the previous character after a switch is not.
  */
 const forgetActive = (src: number, kind: DeviceId, keep?: string): void => {
@@ -808,7 +810,7 @@ const forgetActive = (src: number, kind: DeviceId, keep?: string): void => {
  * **A carried id must name a row of the same kind** (MICA-264), or it is refused and the item
  * is given a fresh one, as an item with no id is. `ensureHeld` answers the kind from the one
  * read of the row it already makes, and writes nothing for a row of another kind. Both items
- * carry the id under the same `phoneId` key, so without this a phone id copied onto a tablet
+ * carry the id under the same `deviceId` key, so without this a phone id copied onto a tablet
  * item — by an admin menu, a crafting script, a modified inventory — would open the phone's
  * notes and passcode on the tablet, and the reverse.
  *
@@ -826,14 +828,14 @@ const forgetActive = (src: number, kind: DeviceId, keep?: string): void => {
  * never reached the item is an orphan nothing will ever point at, where an id on an item with
  * no row yet is simply picked up and recorded by the next resolve.
  */
-export const resolveDevice = async (src: number, kind: DeviceId): Promise<PhoneResolution> => {
+export const resolveDevice = async (src: number, kind: DeviceId): Promise<DeviceResolution> => {
   // An off device has no item to hold. `ServiceEndpoint` refuses its requests before this.
   if (!isDeviceEnabled(kind)) {
     forgetActive(src, kind);
     return NONE;
   }
   const player = FrameworkBridge.getPlayer(src);
-  const unavailable = (): PhoneResolution => {
+  const unavailable = (): DeviceResolution => {
     forgetActive(src, kind, player?.citizenid);
     return UNAVAILABLE;
   };
@@ -854,13 +856,13 @@ export const resolveDevice = async (src: number, kind: DeviceId): Promise<PhoneR
   const preferred = lastUsedDeviceSlot(src, kind);
   const chosen = slots.find((entry) => entry.slot === preferred) ?? slots[0];
 
-  const carried = chosen.metadata.phoneId;
-  if (typeof carried === 'string' && PHONE_ID.test(carried)) {
+  const carried = chosen.metadata.deviceId;
+  if (typeof carried === 'string' && DEVICE_ID.test(carried)) {
     const carriedKind = await ensureHeld(carried, player.citizenid, kind);
     if (carriedKind === kind) {
       finishSetup(carried, player.citizenid);
       markActive(src, player.citizenid, kind, carried);
-      return { status: 'active', phone: { phoneId: carried, slot: chosen.slot } };
+      return { status: 'active', device: { deviceId: carried, slot: chosen.slot } };
     }
     if (carriedKind === null) {
       // Which device this id is could not be read. Using it might be a phone id on a tablet;
@@ -876,15 +878,15 @@ export const resolveDevice = async (src: number, kind: DeviceId): Promise<PhoneR
   let adopted: string | null = null;
   if (kind === 'phone') {
     try {
-      adopted = (await readUnclaimed(player.citizenid, kind))?.phone_id ?? null;
+      adopted = (await readUnclaimed(player.citizenid, kind))?.device_id ?? null;
     } catch (error) {
       // A fresh id is the safe answer: nothing is lost, the unclaimed phone stays where it is.
       console.error(`[mica] could not look for ${player.citizenid}'s unclaimed phone`, error);
     }
   }
-  const phoneId = adopted ?? newPhoneId();
+  const deviceId = adopted ?? newDeviceId();
 
-  if (!FrameworkBridge.setItemMetadata(player, item, chosen.slot, { phoneId })) {
+  if (!FrameworkBridge.setItemMetadata(player, item, chosen.slot, { deviceId })) {
     // `writeItemMetadata` has already said why, once. Claiming an id the item does not carry
     // would hand this player a different phone on their next relog.
     return unavailable();
@@ -892,10 +894,10 @@ export const resolveDevice = async (src: number, kind: DeviceId): Promise<PhoneR
 
   // Its kind is this one by construction — a fresh id has no row, and an adopted one was read
   // by kind — so what `ensureHeld` answers is not asked.
-  await ensureHeld(phoneId, player.citizenid, kind);
-  finishSetup(phoneId, player.citizenid);
-  markActive(src, player.citizenid, kind, phoneId);
-  return { status: 'active', phone: { phoneId, slot: chosen.slot } };
+  await ensureHeld(deviceId, player.citizenid, kind);
+  finishSetup(deviceId, player.citizenid);
+  markActive(src, player.citizenid, kind, deviceId);
+  return { status: 'active', device: { deviceId, slot: chosen.slot } };
 };
 
 /**
@@ -903,7 +905,7 @@ export const resolveDevice = async (src: number, kind: DeviceId): Promise<PhoneR
  * the number sync (`PhoneNumbers.ts`) and `GetPhoneNumber` are the phone's alone, and a tablet
  * must never reach either.
  */
-export const resolvePhone = (src: number): Promise<PhoneResolution> => resolveDevice(src, 'phone');
+export const resolvePhone = (src: number): Promise<DeviceResolution> => resolveDevice(src, 'phone');
 
 /**
  * The phone this source is using, or `null` when they have no phone identity right now.
@@ -911,9 +913,9 @@ export const resolvePhone = (src: number): Promise<PhoneResolution> => resolveDe
  * `resolvePhone` with its three answers folded to one, for a caller that does not need to
  * tell "holds none" from "cannot say".
  */
-export const activePhone = async (src: number): Promise<ActivePhone | null> => {
+export const activePhone = async (src: number): Promise<ActiveDevice | null> => {
   const resolution = await resolvePhone(src);
-  return resolution.status === 'active' ? resolution.phone : null;
+  return resolution.status === 'active' ? resolution.device : null;
 };
 
 /** What a player who holds none of a device is told. The phone keeps its own MICA-282 key. */
@@ -934,13 +936,13 @@ const notHeld = (device: DeviceId): PlayerFacingError =>
  * the only way this is reached is a client that opened it regardless. Everything else that is
  * not an item in hand degrades to the citizen's identity device of that kind.
  */
-export const phoneForRequest = async (
+export const deviceForRequest = async (
   src: number,
   citizenid: string,
   device: DeviceId = DEFAULT_DEVICE
 ): Promise<string> => {
   const resolution = await resolveDevice(src, device);
-  if (resolution.status === 'active') return resolution.phone.phoneId;
+  if (resolution.status === 'active') return resolution.device.deviceId;
   if (resolution.status === 'none') throw notHeld(device);
   const identity = await identityDevice(citizenid, device);
   markActive(src, citizenid, device, identity);
@@ -975,8 +977,8 @@ export const requireDeviceInHand = (player: FrameworkPlayer, device: DeviceId): 
  */
 onDeviceStateChanged('device-identity', (src, device) => resolveDevice(src, device));
 
-installPhoneResolvers({
-  forRequest: phoneForRequest,
+installDeviceResolvers({
+  forRequest: deviceForRequest,
   forCitizen: phoneForCitizen,
   deviceInHand: requireDeviceInHand
 });

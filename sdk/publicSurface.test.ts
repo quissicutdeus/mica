@@ -2137,13 +2137,13 @@ const BASELINE_TYPE_SHAPES: Record<string, string[]> = {
     'avatar?',
     'citizenid',
     'created_at',
+    'device_id?',
     'email?',
     'favorite',
     'firstname',
     'id',
     'lastname?',
     'phone',
-    'phone_id?',
     'ringtone?',
     'status?',
     'updated_at'
@@ -2265,7 +2265,16 @@ const BASELINE_TYPE_SHAPES: Record<string, string[]> = {
   MusicSource: ['playlistId', 'videoId'],
   MusicStatus: ['|error', '|idle', '|loading', '|paused', '|playing'],
   NearbyBroadcast: ['label', 'paused', 'playlistId', 'source', 'startedAt', 'token', 'videoId'],
-  Note: ['citizenid', 'content', 'created_at', 'id', 'phone_id?', 'status?', 'title', 'updated_at'],
+  Note: [
+    'citizenid',
+    'content',
+    'created_at',
+    'device_id?',
+    'id',
+    'status?',
+    'title',
+    'updated_at'
+  ],
   PagedListOptions: [
     'container?',
     'hasMore?',

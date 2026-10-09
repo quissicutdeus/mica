@@ -8,7 +8,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
  * MICA-339: what one member of a Messages thread learns about another.
  *
  * Before this, `conversations:get` spread each raw membership row (its `citizenid` and
- * `phone_id`) and added the member's directory name and **active** number; every message row
+ * `device_id`) and added the member's directory name and **active** number; every message row
  * carried its sender's citizenid; and the conversation row carried its creator's citizenid and
  * the pair's phone ids. Alice texting Bob from a burner and switching back to her main phone
  * was enough for Bob's phone to label the burner thread "Alice", from her main number, with
@@ -108,13 +108,13 @@ const member = (over: Record<string, unknown>): ParticipantRow =>
 const ALICE = member({
   id: 10,
   citizenid: 'CIT_A',
-  phone_id: TEST_PHONE_ID,
+  device_id: TEST_PHONE_ID,
   phone_number: '5550100'
 });
 const BEA = member({
   id: 11,
   citizenid: 'CIT_B',
-  phone_id: 'PHONE_BURNER',
+  device_id: 'PHONE_BURNER',
   role: 'admin',
   phone_number: '5550222'
 });
@@ -335,7 +335,7 @@ describe('conversations:update — rename is the admin on the phone in hand (F15
     expect(dbMock.update).toHaveBeenCalledTimes(1);
     const [sql, params] = dbMock.update.mock.calls[0];
     expect(String(sql)).toContain("p.role = 'admin' AND p.status = 'active' AND p.left_at IS NULL");
-    expect(String(sql)).toContain('p.citizenid = ? AND p.phone_id = ?');
+    expect(String(sql)).toContain('p.citizenid = ? AND p.device_id = ?');
     // Not the creator's row predicate the generic update wrote, which never moved on handover.
     expect(String(sql)).not.toMatch(/WHERE `id` = \? AND `citizenid` = \?/);
     expect(params).toEqual(['Crew', 1, 'CIT_A', TEST_PHONE_ID]);
@@ -395,7 +395,7 @@ describe('the reader projections', () => {
 
   it("is not the reader's own membership on another of their phones", () => {
     const otherPhone = participantForReader(
-      { ...ALICE, phone_id: 'PHONE_TWO' } as ParticipantRow,
+      { ...ALICE, device_id: 'PHONE_TWO' } as ParticipantRow,
       'CIT_A',
       TEST_PHONE_ID
     );

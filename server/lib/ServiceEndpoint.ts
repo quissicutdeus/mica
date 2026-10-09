@@ -13,7 +13,7 @@ import { allow, installRateLimitCleanup } from './rateLimit';
 import { type ActionInput, type ContractAction, type ServiceContract } from '@mica/shared/contract';
 import { parseInput, SchemaError, type Schema } from '@mica/shared/schema';
 import { GENERIC_ERROR_KEY, GENERIC_ERROR_MESSAGE, PlayerFacingError } from './errors';
-import { phoneForRequest, requireDeviceInHand } from './phoneIdentity';
+import { deviceForRequest, requireDeviceInHand } from './deviceIdentity';
 import { appDisabledError, disabledAppFor } from './ownerConfig';
 
 // Once per process, not once per service: `on('playerDropped')` would otherwise be registered
@@ -49,7 +49,7 @@ export interface ServiceOptions<C extends ServiceContract = ServiceContract> {
    * Every generic action then scopes by the caller's active phone as well as their citizenid
    * — the read filters on it, the create stamps it, update and delete narrow by it — and every
    * handler, generic or custom, is handed it as its sixth argument. Resolved once per request
-   * through `phoneForRequest`, *after* authentication: a player with no loaded character has
+   * through `deviceForRequest`, *after* authentication: a player with no loaded character has
    * no inventory to hold a phone in.
    */
   deviceOwned?: boolean;
@@ -284,7 +284,7 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
           data: unknown,
           citizenid: string,
           _player: FrameworkPlayer,
-          phoneId?: string
+          deviceId?: string
         ) => {
           const filter = this.sanitizeFilter(data);
 
@@ -295,7 +295,7 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
           }
           // And the device beside it, on a table that follows the phone (MICA-282): a phone
           // shows its own rows, not every row its holder has on every phone they carry.
-          if (phoneId) (filter as Record<string, unknown>).phone_id = phoneId;
+          if (deviceId) (filter as Record<string, unknown>).device_id = deviceId;
 
           /**
            * Both axes narrow, for different reasons, and each has its own list.
@@ -358,7 +358,7 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
           data: unknown,
           citizenid: string,
           _player: FrameworkPlayer,
-          phoneId?: string
+          deviceId?: string
         ) => {
           const fields = this.sanitizeWrite(data);
           if (Object.keys(fields).length === 0) {
@@ -368,9 +368,9 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
             );
           }
 
-          // Stamped by the server, never read from the payload — `phone_id` is refused by the
+          // Stamped by the server, never read from the payload — `device_id` is refused by the
           // write allowlist whatever the client sent (MICA-281).
-          const newItem = { ...fields, citizenid, ...(phoneId ? { phone_id: phoneId } : {}) };
+          const newItem = { ...fields, citizenid, ...(deviceId ? { device_id: deviceId } : {}) };
           const id = await this.repository.create(newItem as any);
           return { ...this.serverStampedFields(), ...newItem, id };
         }
@@ -387,7 +387,7 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
           data: unknown,
           citizenid: string,
           _player: FrameworkPlayer,
-          phoneId?: string
+          deviceId?: string
         ) => {
           const id = this.requireId(data);
           const fields = this.sanitizeWrite(data);
@@ -398,7 +398,7 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
             );
           }
 
-          const success = await this.repository.update(id, fields as any, citizenid, phoneId);
+          const success = await this.repository.update(id, fields as any, citizenid, deviceId);
           return success;
         }
       );
@@ -414,10 +414,10 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
           data: unknown,
           citizenid: string,
           _player: FrameworkPlayer,
-          phoneId?: string
+          deviceId?: string
         ) => {
           const id = this.requireId(data);
-          const success = await this.repository.delete(id, citizenid, phoneId);
+          const success = await this.repository.delete(id, citizenid, deviceId);
           if (success) {
             await AuditLogger.log({
               citizenid,
@@ -456,7 +456,7 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
       data: unknown,
       citizenid: string,
       player: FrameworkPlayer,
-      phoneId?: string
+      deviceId?: string
     ) => Promise<any>
   ) {
     const contract = this.options.contract;
@@ -489,7 +489,7 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
       citizenid: string,
       player: FrameworkPlayer,
       /** The caller's active phone, on a `deviceOwned` service; undefined otherwise (MICA-282). */
-      phoneId?: string
+      deviceId?: string
     ) => Promise<any>
   ) {
     const contract = this.options.contract;
@@ -522,7 +522,7 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
         data: unknown,
         citizenid: string,
         player: FrameworkPlayer,
-        phoneId?: string
+        deviceId?: string
       ) => Promise<any>
     );
   }
@@ -537,7 +537,7 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
       data: unknown,
       citizenid: string,
       player: FrameworkPlayer,
-      phoneId?: string
+      deviceId?: string
     ) => Promise<any>
   ) {
     // Both names come from shared/rpc.ts so the client derives exactly the same ones.
@@ -652,13 +652,13 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
          * cost an inventory read. The resolver throws a `PlayerFacingError` for a player
          * holding no phone on a server that gates on one — it lands in the catch below and
          * reaches them as a toast — and degrades to the citizen's identity phone where no
-         * phone identity can be had. `services/Phones.ts` has the three cases.
+         * phone identity can be had. `services/Devices.ts` has the three cases.
          */
-        const phoneId = this.options.deviceOwned
-          ? await phoneForRequest(src, player.citizenid, device)
+        const deviceId = this.options.deviceOwned
+          ? await deviceForRequest(src, player.citizenid, device)
           : undefined;
 
-        const result = await handler(src, cbId, payload, player.citizenid, player, phoneId);
+        const result = await handler(src, cbId, payload, player.citizenid, player, deviceId);
 
         if (result !== undefined) {
           emitNet(clientEventName, src, cbId, result);

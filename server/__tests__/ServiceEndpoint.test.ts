@@ -23,7 +23,7 @@ vi.mock('../lib/AuditLogger', () => auditMock);
 import { Repository } from '../lib/Repository';
 import { ServiceEndpoint, ServiceOptions } from '../lib/ServiceEndpoint';
 import { GENERIC_ERROR_MESSAGE, PlayerFacingError } from '../lib/errors';
-import { __setPhoneResolvers } from '../lib/phoneIdentity';
+import { __setDeviceResolvers } from '../lib/deviceIdentity';
 import { TEST_PHONE_ID, TEST_TABLET_ID, installTestPhone } from './phoneStub';
 import { defineContract } from '@mica/shared/contract';
 import { s } from '@mica/shared/schema';
@@ -505,24 +505,24 @@ describe('ServiceEndpoint — what an error discloses', () => {
 /**
  * MICA-282: a device-owned service scopes every generic action by the caller's phone as well
  * as their citizenid, and hands the phone to every handler. The phone comes from the resolver
- * in `lib/phoneIdentity.ts` — `setup.ts` installs a stub answering `TEST_PHONE_ID` for every
- * suite — and never from the payload: `phone_id` is on the blanket refusal lists (MICA-281).
+ * in `lib/deviceIdentity.ts` — `setup.ts` installs a stub answering `TEST_PHONE_ID` for every
+ * suite — and never from the payload: `device_id` is on the blanket refusal lists (MICA-281).
  */
 describe('ServiceEndpoint — a device-owned service follows the phone', () => {
-  class DeviceRepo extends Repository<TestRow & { phone_id: string }> {
+  class DeviceRepo extends Repository<TestRow & { device_id: string }> {
     protected tableName = 'mica_device_test';
     protected columns = [
       'id',
       'citizenid',
-      'phone_id',
+      'device_id',
       'title',
       'content',
       'status',
       'created_at',
       'updated_at'
     ];
-    protected clientWritable = ['title', 'content', 'phone_id'];
-    protected clientFilterable = ['title', 'phone_id'];
+    protected clientWritable = ['title', 'content', 'device_id'];
+    protected clientFilterable = ['title', 'device_id'];
   }
 
   const mountDevice = (options: ServiceOptions = {}) => {
@@ -544,11 +544,11 @@ describe('ServiceEndpoint — a device-owned service follows the phone', () => {
   it('filters the generic read by the phone in hand, beside the citizen', async () => {
     mountDevice();
 
-    await call('get', { title: 'x', phone_id: 'SOMEBODY_ELSES' });
+    await call('get', { title: 'x', device_id: 'SOMEBODY_ELSES' });
 
     const [sql, params] = dbMock.query.mock.calls[0];
     expect(String(sql)).toContain('`citizenid` = ?');
-    expect(String(sql)).toContain('`phone_id` = ?');
+    expect(String(sql)).toContain('`device_id` = ?');
     // The payload's phone id never reaches the statement; the resolver's does.
     expect(params).toEqual(['x', OWNER, TEST_PHONE_ID, 'active']);
   });
@@ -556,11 +556,11 @@ describe('ServiceEndpoint — a device-owned service follows the phone', () => {
   it('stamps the phone on create, whatever the payload claimed', async () => {
     mountDevice();
 
-    await call('create', { title: 'mine', phone_id: 'SOMEBODY_ELSES' });
+    await call('create', { title: 'mine', device_id: 'SOMEBODY_ELSES' });
 
     const [sql, params] = dbMock.insert.mock.calls[0];
     expect(String(sql)).toBe(
-      'INSERT INTO `mica_device_test` (`title`, `citizenid`, `phone_id`) VALUES (?, ?, ?)'
+      'INSERT INTO `mica_device_test` (`title`, `citizenid`, `device_id`) VALUES (?, ?, ?)'
     );
     expect(params).toEqual(['mine', OWNER, TEST_PHONE_ID]);
   });
@@ -570,7 +570,7 @@ describe('ServiceEndpoint — a device-owned service follows the phone', () => {
 
     await call('update', { id: 7, title: 'renamed' });
     expect(sqlOf(dbMock.update.mock.calls[0])).toContain(
-      'WHERE `id` = ? AND `citizenid` = ? AND `phone_id` = ?'
+      'WHERE `id` = ? AND `citizenid` = ? AND `device_id` = ?'
     );
     expect(dbMock.update.mock.calls[0][1]).toEqual(['renamed', 7, OWNER, TEST_PHONE_ID]);
 
@@ -601,8 +601,8 @@ describe('ServiceEndpoint — a device-owned service follows the phone', () => {
         disableDelete: true
       }
     );
-    app.registerEvent('refuse', async (_s, _cb, _d, citizenid, _player, phoneId) => {
-      seen.push(citizenid, phoneId);
+    app.registerEvent('refuse', async (_s, _cb, _d, citizenid, _player, deviceId) => {
+      seen.push(citizenid, deviceId);
       return true;
     });
 
@@ -612,7 +612,7 @@ describe('ServiceEndpoint — a device-owned service follows the phone', () => {
   });
 
   it('refuses the whole request, as a toast, when the player holds no phone', async () => {
-    __setPhoneResolvers({
+    __setDeviceResolvers({
       forRequest: async () => {
         throw new PlayerFacingError('You are not holding a phone.', {
           key: 'server.phone.notHeld'
@@ -633,7 +633,7 @@ describe('ServiceEndpoint — a device-owned service follows the phone', () => {
 
   it('does not ask which phone at all for a service that belongs to the citizen', async () => {
     let asked = 0;
-    __setPhoneResolvers({
+    __setDeviceResolvers({
       forRequest: async () => {
         asked += 1;
         return TEST_PHONE_ID;
@@ -652,15 +652,15 @@ describe('ServiceEndpoint — a device-owned service follows the phone', () => {
  * MICA-264: a request names the device it speaks for, as the event's third argument. Absent is
  * the phone; anything that is not a device is refused whole; a device the service does not
  * list is refused before the player is looked up; and a request from any device but the phone
- * is a claim to be holding one, which the check in `lib/phoneIdentity.ts` answers.
+ * is a claim to be holding one, which the check in `lib/deviceIdentity.ts` answers.
  */
 describe('ServiceEndpoint — the device a request speaks for', () => {
-  class DeviceRepo extends Repository<TestRow & { phone_id: string }> {
+  class DeviceRepo extends Repository<TestRow & { device_id: string }> {
     protected tableName = 'mica_device_test';
     protected columns = [
       'id',
       'citizenid',
-      'phone_id',
+      'device_id',
       'title',
       'content',
       'status',
@@ -678,7 +678,7 @@ describe('ServiceEndpoint — the device a request speaks for', () => {
 
   /** The stub's answers, with every question recorded. `refuse` makes the device check throw. */
   const installRecording = (refuse?: PlayerFacingError) => {
-    __setPhoneResolvers({
+    __setDeviceResolvers({
       forRequest: async (src, citizenid, device = 'phone') => {
         asked.forRequest.push([src, citizenid, device]);
         return device === 'tablet' ? TEST_TABLET_ID : TEST_PHONE_ID;
@@ -840,7 +840,7 @@ describe('ServiceEndpoint — the device a request speaks for', () => {
 
   it('refuses a tablet request whole when no device check is installed', async () => {
     const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
-    __setPhoneResolvers({ forRequest: async () => TEST_PHONE_ID });
+    __setDeviceResolvers({ forRequest: async () => TEST_PHONE_ID });
     mountWith({ devices: ['phone', 'tablet'] });
 
     await callAs('get', {}, 'tablet');
@@ -895,7 +895,7 @@ describe('ServiceEndpoint — an action flagged requirePhoneFor needs a phone in
   beforeEach(() => {
     holds.phone = true;
     asked.length = 0;
-    __setPhoneResolvers({
+    __setDeviceResolvers({
       forRequest: async () => TEST_PHONE_ID,
       forCitizen: async () => TEST_PHONE_ID,
       deviceInHand: (_player, device) => {

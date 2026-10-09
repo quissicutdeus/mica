@@ -22,7 +22,7 @@ import { onPlayerLoaded, pushRehydrate } from './shell';
  *
  * **The tablet is on unless `mica_tablet` turns it off.** It was off by default while it had
  * no identity of its own (MICA-252, decision 5); since MICA-264 it has one — its own row in
- * `mica_phones`, its own notes, settings and lock screen — so it ships on like the phone. Off
+ * `mica_devices`, its own notes, settings and lock screen — so it ships on like the phone. Off
  * means no usable item is registered for it, `shell:capabilities` leaves it out of `devices`,
  * every push tells the client it is off, and `ServiceEndpoint` refuses every request that
  * names it. The phone has no enable convar and is always on.
@@ -310,7 +310,7 @@ const notifyPhoneState = (src: number): void => {
  *
  * Separate from `onPhoneStateChanged` because that hook's subscribers are the number sync and
  * the battery, both the phone's alone, and a tablet use must not wake them. Its subscriber is
- * `services/Phones.ts`, which re-resolves the tablet so the synchronous answer `LockState` keys
+ * `services/Devices.ts`, which re-resolves the tablet so the synchronous answer `LockState` keys
  * on follows a switch, a handover or a character switch rather than waiting for the next
  * device-owned request. The phone needs no entry here: its own subscribers resolve it already.
  */
@@ -356,7 +356,7 @@ export const evaluateDeviceItems = (src: number): DeviceItemState[] | null => {
  * Which slot each source last used each device from (MICA-280; per device since MICA-264).
  *
  * The active phone is "the one you last used", and this is where that is recorded — here
- * rather than beside the resolver in `services/Phones.ts`, because that file imports this one
+ * rather than beside the resolver in `services/Devices.ts`, because that file imports this one
  * and the reverse would close a runtime cycle. The rule that *reads* this still lives in one
  * place; only the fact being recorded lives here, next to the callback that observes it.
  *

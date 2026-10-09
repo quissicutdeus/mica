@@ -80,11 +80,11 @@ describe('settings service', () => {
     // the engine returns first.
     // Per phone since MICA-282: a character with two phones has two themes.
     const index = (settings.resolved.indexes ?? []).find(
-      (i: any) => i.name === 'phone_app_key'
+      (i: any) => i.name === 'device_app_key'
     ) as any;
     expect(index).toBeDefined();
     expect(index.unique).toBe(true);
-    expect(index.columns).toEqual(['phone_id', 'app', 'setting_key']);
+    expect(index.columns).toEqual(['device_id', 'app', 'setting_key']);
   });
 
   it('registers no generic CRUD action', () => {
@@ -116,7 +116,7 @@ describe('settings service', () => {
       await repo().findAllForPlayer(CID, TEST_PHONE_ID);
 
       const [sql, params] = dbMock.query.mock.calls[0];
-      expect(sql).toMatch(/WHERE citizenid = \? AND phone_id = \?/);
+      expect(sql).toMatch(/WHERE citizenid = \? AND device_id = \?/);
       expect(params).toEqual([CID, TEST_PHONE_ID]);
     });
 
@@ -126,7 +126,7 @@ describe('settings service', () => {
       await repo().remove(CID, TEST_PHONE_ID, 'blabber', 'activeAccountId');
 
       const [sql, params] = dbMock.query.mock.calls[0];
-      expect(sql).toMatch(/citizenid = \? AND phone_id = \? AND app = \? AND setting_key = \?/);
+      expect(sql).toMatch(/citizenid = \? AND device_id = \? AND app = \? AND setting_key = \?/);
       expect(params).toEqual([CID, TEST_PHONE_ID, 'blabber', 'activeAccountId']);
     });
 
@@ -134,7 +134,7 @@ describe('settings service', () => {
       await repo().clearApp(CID, TEST_PHONE_ID, 'snake');
 
       const [sql, params] = dbMock.query.mock.calls[0];
-      expect(sql).toMatch(/citizenid = \? AND phone_id = \? AND app = \?/);
+      expect(sql).toMatch(/citizenid = \? AND device_id = \? AND app = \?/);
       expect(params).toEqual([CID, TEST_PHONE_ID, 'snake']);
     });
 

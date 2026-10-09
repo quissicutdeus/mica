@@ -182,8 +182,8 @@ const repo = media.repo;
 // Every handler below is scoped to the phone in the caller's hand as well as to them
 // (MICA-282). The phone id is always present on a device-owned service — the endpoint
 // refused the request otherwise — and the casts say so where the type cannot.
-app.registerEvent('restore', async (_source, _cbId, data, citizenid, _player, phoneId) => {
-  const ok = await repo.restore(data.id, citizenid, restoreWindowDays(), phoneId);
+app.registerEvent('restore', async (_source, _cbId, data, citizenid, _player, deviceId) => {
+  const ok = await repo.restore(data.id, citizenid, restoreWindowDays(), deviceId);
   return { ok };
 });
 
@@ -194,12 +194,12 @@ app.registerEvent('restore', async (_source, _cbId, data, citizenid, _player, ph
  * no `data`, so a deleted row full of base64 bytes does not cost its whole payload just to
  * appear in a list that only needs a caption and a small still.
  */
-app.registerEvent('getDeleted', async (_source, _cbId, _data, citizenid, _player, phoneId) => {
+app.registerEvent('getDeleted', async (_source, _cbId, _data, citizenid, _player, deviceId) => {
   return await repo.findDeleted(
     citizenid,
     restoreWindowDays(),
     ['id', 'kind', 'thumbnail', 'mime_type', 'alt_text', 'created_at', 'updated_at'],
-    phoneId
+    deviceId
   );
 });
 
@@ -221,8 +221,8 @@ app.registerEvent('getDeleted', async (_source, _cbId, _data, citizenid, _player
  * both get, deliberately: distinguishing them would answer "does this id exist" for ids the
  * caller does not own.
  */
-app.registerEvent('item', async (_source, _cbId, data, citizenid, _player, phoneId) => {
-  const row = await repo.findById(data.id, citizenid, phoneId);
+app.registerEvent('item', async (_source, _cbId, data, citizenid, _player, deviceId) => {
+  const row = await repo.findById(data.id, citizenid, deviceId);
   if (!row || row.status !== 'active')
     throw new PlayerFacingError('That photo could not be found.', {
       key: 'server.media.notFound'
@@ -269,17 +269,17 @@ app.registerEvent('item', async (_source, _cbId, data, citizenid, _player, phone
  * sessions and the same photo race by nature, and "somebody got there first" is a normal
  * outcome rather than a failure a player should be told about.
  */
-app.registerEvent('thumbnail', async (_source, _cbId, data, citizenid, _player, phoneId) => {
+app.registerEvent('thumbnail', async (_source, _cbId, data, citizenid, _player, deviceId) => {
   const privileged = repo as unknown as {
     storeThumbnail(
       id: number,
       citizenid: string,
-      phoneId: string,
+      deviceId: string,
       thumbnail: string
     ): Promise<boolean>;
   };
   return {
-    stored: await privileged.storeThumbnail(data.id, citizenid, phoneId as string, data.thumbnail)
+    stored: await privileged.storeThumbnail(data.id, citizenid, deviceId as string, data.thumbnail)
   };
 });
 
@@ -306,8 +306,8 @@ app.registerEvent('thumbnail', async (_source, _cbId, data, citizenid, _player, 
  * reachable by its id and would go right back out to nearby players, the same hole
  * `access.editWindow`'s `status != 'moderated'` predicate closes on the write side.
  */
-app.registerEvent('drop', async (source, _cbId, data, citizenid, _player, phoneId) => {
-  const owned = await repo.findById(data.mediaId, citizenid, phoneId);
+app.registerEvent('drop', async (source, _cbId, data, citizenid, _player, deviceId) => {
+  const owned = await repo.findById(data.mediaId, citizenid, deviceId);
   if (!owned || owned.status !== 'active')
     throw new PlayerFacingError('That photo could not be found.', {
       key: 'server.media.notFound'
@@ -390,7 +390,7 @@ app.registerEvent('drop', async (source, _cbId, data, citizenid, _player, phoneI
  * client-writable path, because `data` and `alt_text` here are both server-determined —
  * a location row's `data` is never something the client itself should be free to set.
  */
-app.registerEvent('shareLocation', async (source, _cbId, data, citizenid, _player, phoneId) => {
+app.registerEvent('shareLocation', async (source, _cbId, data, citizenid, _player, deviceId) => {
   const label = data.label?.trim() || undefined;
 
   const coords = playerCoords(source);
@@ -408,10 +408,10 @@ app.registerEvent('shareLocation', async (source, _cbId, data, citizenid, _playe
     data: JSON.stringify({ x, y, z }),
     alt_text: label,
     // The phone in hand, rather than the one `addForPlayer` would resolve for the citizen.
-    phone_id: phoneId
+    device_id: deviceId
   } as Partial<MediaItem>);
 
-  return { id, media: await repo.findById(id, citizenid, phoneId) };
+  return { id, media: await repo.findById(id, citizenid, deviceId) };
 });
 
 /**

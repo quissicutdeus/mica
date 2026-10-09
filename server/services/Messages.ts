@@ -8,7 +8,7 @@ import {
   messageForReader,
   type MessageRow
 } from '../repositories/MessageRepository';
-import { phoneForRequest } from '../lib/phoneIdentity';
+import { deviceForRequest } from '../lib/deviceIdentity';
 import { conversations, type ConversationRepo } from './Conversations';
 import {
   lineKey,
@@ -31,7 +31,7 @@ import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { AuditLogger } from '../lib/AuditLogger';
 import { Database } from '../lib/Database';
 import { blockedBy } from './Blocklist';
-import { phoneForCitizen } from './Phones';
+import { phoneForCitizen } from './Devices';
 import { OPEN_REPORT, parseRetentionDays, registerRetention } from '../lib/contentRetention';
 
 /**
@@ -65,7 +65,7 @@ export const messages = defineService<MessageRow, typeof messagesContract>({
       localKey: 'conversation_id',
       // Per phone (MICA-282), like the conversation's own membership: `requireParticipant`
       // asks about the phone in the caller's hand, not every phone they carry.
-      phoneColumn: 'phone_id',
+      deviceColumn: 'device_id',
       liveWhileNull: 'left_at'
     }
   },
@@ -277,9 +277,9 @@ const requireParticipant = async (
   conversationId: number,
   citizenid: string,
   /** The phone in the caller's hand (MICA-282): membership is the phone's, and the citizen's. */
-  phoneId: string
+  deviceId: string
 ): Promise<void> => {
-  if (!(await messageRepo.isMember(conversationId, citizenid, phoneId))) {
+  if (!(await messageRepo.isMember(conversationId, citizenid, deviceId))) {
     throw new PlayerFacingError('Not a participant in this conversation.', {
       key: 'server.messages.notParticipant'
     });
@@ -310,7 +310,7 @@ const requireParticipant = async (
 const requireOwnMessage = async (
   data: { id: number },
   citizenid: string,
-  phoneId: string
+  deviceId: string
 ): Promise<MessageRow> => {
   const row = await messageRepo.findById(data.id, citizenid);
   // A text from a line sits under the recipient's citizenid (MICA-223), so the ownership
@@ -325,7 +325,7 @@ const requireOwnMessage = async (
       key: 'server.messages.noLongerAvailable'
     });
   }
-  await requireParticipant(row.conversation_id, citizenid, phoneId);
+  await requireParticipant(row.conversation_id, citizenid, deviceId);
   return row;
 };
 
@@ -343,7 +343,7 @@ const requireOwnMessage = async (
 app.registerEvent('get', async (source, cbId, data, citizenid) => {
   const conversationId = conversationIdFrom(data);
   const page = pageBounds(data, MESSAGE_PAGING);
-  await requireParticipant(conversationId, citizenid, await phoneForRequest(source, citizenid));
+  await requireParticipant(conversationId, citizenid, await deviceForRequest(source, citizenid));
 
   // Each row as this reader receives it (MICA-339): `mine` and the sender's membership id in
   // place of the sender's citizenid, which matched across threads linked a burner to its holder.
@@ -377,7 +377,7 @@ app.registerEvent('get', async (source, cbId, data, citizenid) => {
  * unsend, and that is the other action, with its own confirmation in front of it.
  */
 app.registerEvent('edit', async (source, cbId, data, citizenid) => {
-  const row = await requireOwnMessage(data, citizenid, await phoneForRequest(source, citizenid));
+  const row = await requireOwnMessage(data, citizenid, await deviceForRequest(source, citizenid));
 
   const message = data.message.trim();
   if (!message) {
@@ -431,7 +431,7 @@ app.registerEvent('edit', async (source, cbId, data, citizenid) => {
  * message that is no longer in the thread needs to know it was the author who removed it.
  */
 app.registerEvent('delete', async (source, cbId, data, citizenid) => {
-  const row = await requireOwnMessage(data, citizenid, await phoneForRequest(source, citizenid));
+  const row = await requireOwnMessage(data, citizenid, await deviceForRequest(source, citizenid));
 
   const success = await messageRepo.delete(row.id, citizenid);
   if (success) {
@@ -489,7 +489,7 @@ app.registerEvent('delete', async (source, cbId, data, citizenid) => {
 const requireReactableMessage = async (
   messageId: number,
   citizenid: string,
-  phoneId: string
+  deviceId: string
 ): Promise<MessageRow> => {
   const row = await messageRepo.findById(messageId);
   if (!row) {
@@ -497,7 +497,7 @@ const requireReactableMessage = async (
       key: 'server.messages.notAvailable'
     });
   }
-  await requireParticipant(row.conversation_id, citizenid, phoneId);
+  await requireParticipant(row.conversation_id, citizenid, deviceId);
   if ((row.status ?? 'active') !== 'active') {
     throw new PlayerFacingError('That message is no longer available.', {
       key: 'server.messages.noLongerAvailable'
@@ -509,7 +509,7 @@ const requireReactableMessage = async (
 app.registerEvent('react', async (source, cbId, data, citizenid) => {
   const { message_id: messageId, emoji } = data;
 
-  await requireReactableMessage(messageId, citizenid, await phoneForRequest(source, citizenid));
+  await requireReactableMessage(messageId, citizenid, await deviceForRequest(source, citizenid));
 
   try {
     await Database.insert(
@@ -548,16 +548,16 @@ app.registerEvent('reactionsFor', async (source, cbId, data, citizenid) => {
   if (requested.length === 0) return {};
 
   const requestedPlaceholders = requested.map(() => '?').join(', ');
-  const phoneId = await phoneForRequest(source, citizenid);
+  const deviceId = await deviceForRequest(source, citizenid);
   // Only messages in a conversation the caller is a *live* participant of right now, on the
   // phone in their hand — see the docblock above for why this batched read cannot trust
   // every id in the payload the way Blabber's equivalent, over public posts, safely can.
   const visible = await Database.query<{ id: number }[]>(
     `SELECT m.\`id\` FROM \`mica_messages\` m
      JOIN \`mica_messages_participants\` p ON p.\`conversation_id\` = m.\`conversation_id\`
-     WHERE m.\`id\` IN (${requestedPlaceholders}) AND p.\`citizenid\` = ? AND p.\`phone_id\` = ?
+     WHERE m.\`id\` IN (${requestedPlaceholders}) AND p.\`citizenid\` = ? AND p.\`device_id\` = ?
        AND p.\`left_at\` IS NULL`,
-    [...requested, citizenid, phoneId]
+    [...requested, citizenid, deviceId]
   );
   const messageIds = visible.map((row) => row.id);
   if (messageIds.length === 0) return {};
@@ -709,10 +709,10 @@ export const sendFromLine = async (
   body: string,
   attachments: unknown
 ): Promise<{ conversationId: number; messageId: number; delivered: boolean }> => {
-  const phoneId = await phoneForCitizen(citizenid);
+  const deviceId = await phoneForCitizen(citizenid);
   const key = lineKey(from);
   const label = lineLabel(from);
-  const conversationId = (await openLineThread(conversationRepo, citizenid, phoneId, from)).id;
+  const conversationId = (await openLineThread(conversationRepo, citizenid, deviceId, from)).id;
 
   const resolvedAttachments = await resolveOwnedAttachments(attachments, citizenid, mediaRepo);
   const now = new Date().toISOString();
@@ -753,7 +753,7 @@ export const sendFromLine = async (
 
 app.registerEvent('send', async (source, cbId, data, citizenid) => {
   const conversationId = data.conversation_id;
-  await requireParticipant(conversationId, citizenid, await phoneForRequest(source, citizenid));
+  await requireParticipant(conversationId, citizenid, await deviceForRequest(source, citizenid));
 
   const message = data.message;
   const attachments = await resolveOwnedAttachments(data.attachments, citizenid, mediaRepo);

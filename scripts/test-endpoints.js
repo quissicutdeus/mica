@@ -616,7 +616,7 @@ const runCall = async (shape, numbers) => {
   const unblocked = await shape.call(2, 'blocklist', 'delete', { id: blocked.id });
   check(`${kind}: 2 lifts the block`, unblocked, true);
 
-  // The unblock is a soft delete under `phone_number_unique (phone_id, number)`, so a second
+  // The unblock is a soft delete under `device_number_unique (device_id, number)`, so a second
   // block of the same number from the same phone used to be refused as a duplicate (MICA-318).
   // The revive is the generic `uniqueAfterDelete: 'revive'` path since MICA-321, so this is
   // the check that runs its two statements against MariaDB through a real handler.
@@ -1821,13 +1821,13 @@ const runDevices = async (shape, live) => {
       `who=${JSON.stringify(name)}`
     ]);
   }
-  const phoneIds = await shape.rows(
-    "SELECT `citizenid`, `kind`, COUNT(*) AS n FROM `mica_phones` WHERE `status` = 'active' AND `citizenid` IN (?, ?) GROUP BY `citizenid`, `kind` ORDER BY `citizenid`, `kind`",
+  const deviceIds = await shape.rows(
+    "SELECT `citizenid`, `kind`, COUNT(*) AS n FROM `mica_devices` WHERE `status` = 'active' AND `citizenid` IN (?, ?) GROUP BY `citizenid`, `kind` ORDER BY `citizenid`, `kind`",
     [shape.citizenOf(people.A), shape.citizenOf(people.B)]
   );
   check(
     `${kind}: each character has a tablet identity of its own beside the phone's`,
-    phoneIds
+    deviceIds
       .filter((r) => r.kind === 'tablet')
       .map((r) => r.citizenid)
       .sort(),

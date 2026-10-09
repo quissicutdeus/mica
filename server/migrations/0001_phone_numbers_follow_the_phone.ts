@@ -124,6 +124,9 @@ export const migration: Migration = {
     `character's charinfo.phone as a legacy row so nobody's number changes, and drops ` +
     `${CITIZEN_KEY} — a character holding two phones holds two numbers`,
   up: async () => {
+    // MICA-344: `device_id` is what 0008 renamed this column to, so a table carrying it is past
+    // this migration — renamed after it ran, or created in the final shape with no ledger.
+    if (await hasColumn(TABLE, 'device_id')) return;
     if (!(await hasColumn(TABLE, COLUMN))) {
       await Database.query(
         `ALTER TABLE \`${TABLE}\` ADD COLUMN \`${COLUMN}\` varchar(32) DEFAULT NULL`,

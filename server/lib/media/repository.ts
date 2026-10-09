@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { SchemaRepository } from '../defineService';
-import { phoneForCitizen } from '../phoneIdentity';
+import { phoneForCitizen } from '../deviceIdentity';
 import { MediaItem } from '@mica/shared/types';
 import { Database } from '../Database';
 import { PlayerFacingError } from '../errors';
@@ -67,12 +67,12 @@ export class MediaRepository extends SchemaRepository<MediaItem> {
     // Onto the phone the citizen is on (MICA-282), unless the caller already knows which —
     // `shareLocation` does, from the request; `AddMedia` does not, and a row on no phone
     // is one no phone ever shows.
-    const phone_id = item.phone_id ?? (await phoneForCitizen(citizenid));
+    const device_id = item.device_id ?? (await phoneForCitizen(citizenid));
     // An `AddMedia` photo goes to the host too, when there is one (MICA-243); a
     // location's JSON never does, by kind.
     const stored = await hostPhoto(item);
     return await releaseOnFailure(stored, item, () =>
-      super.create({ ...stored, citizenid, phone_id } as Partial<MediaItem>)
+      super.create({ ...stored, citizenid, device_id } as Partial<MediaItem>)
     );
   }
 
@@ -204,7 +204,7 @@ export class MediaRepository extends SchemaRepository<MediaItem> {
   async copyToPlayers(citizenids: readonly string[], source: MediaItem): Promise<string[]> {
     if (citizenids.length === 0) return [];
 
-    const columns = ['citizenid', 'phone_id', ...COPIED_COLUMNS];
+    const columns = ['citizenid', 'device_id', ...COPIED_COLUMNS];
     // Literals rather than payload keys, and still held to the table's own allowlist:
     // a column renamed out from under this list fails loudly instead of building SQL.
     for (const column of columns) {
@@ -225,7 +225,7 @@ export class MediaRepository extends SchemaRepository<MediaItem> {
         try {
           // Each copy lands on the phone its recipient is on (MICA-282) — they are nearby,
           // so almost always the one in their hand.
-          const phoneId = await phoneForCitizen(citizenid);
+          const deviceId = await phoneForCitizen(citizenid);
           let id: number;
           if (limit <= 0) {
             id = await Database.insert(
@@ -233,7 +233,7 @@ export class MediaRepository extends SchemaRepository<MediaItem> {
                SELECT ?, ?, ${copied}
                FROM \`${this.tableName}\` AS src
                WHERE ${stillThere}`,
-              [citizenid, phoneId, source.id, source.citizenid]
+              [citizenid, deviceId, source.id, source.citizenid]
             );
           } else {
             const used = usedBytesQuery(citizenid, prefixes);
@@ -245,7 +245,7 @@ export class MediaRepository extends SchemaRepository<MediaItem> {
                AND quota.used + ${storedBytesSql(prefixes.length, 'src')} <= ?`,
               [
                 citizenid,
-                phoneId,
+                deviceId,
                 ...used.params,
                 source.id,
                 source.citizenid,
@@ -311,23 +311,23 @@ export class MediaRepository extends SchemaRepository<MediaItem> {
   async storeThumbnail(
     id: number,
     citizenid: string,
-    phoneId: string,
+    deviceId: string,
     thumbnail: string
   ): Promise<boolean> {
     return await Database.update(
       `UPDATE \`${this.tableName}\` SET \`thumbnail\` = ? ` +
-        'WHERE `id` = ? AND `citizenid` = ? AND `phone_id` = ? ' +
+        'WHERE `id` = ? AND `citizenid` = ? AND `device_id` = ? ' +
         "AND `status` = 'active' AND `thumbnail` IS NULL",
-      [thumbnail, id, citizenid, phoneId]
+      [thumbnail, id, citizenid, deviceId]
     );
   }
 
   async findById(
     id: number | string,
     citizenid?: string,
-    phoneId?: string
+    deviceId?: string
   ): Promise<MediaItem | null> {
-    const row = await super.findById(id, citizenid, phoneId);
+    const row = await super.findById(id, citizenid, deviceId);
     return row ? coerceBinaryText(row) : null;
   }
 }

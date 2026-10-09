@@ -27,7 +27,7 @@ const { handlers, db, players, directory } = vi.hoisted(() => {
       participants: [] as {
         conversation_id: number;
         citizenid: string;
-        phone_id: string;
+        device_id: string;
         role: string;
         status: string;
         left_at: string | null;
@@ -59,7 +59,7 @@ vi.mock('../lib/Database', () => ({
   Database: {
     insert: vi.fn(async (sql: string, params: unknown[]) => {
       if (sql.includes('INSERT INTO mica_messages_participants')) {
-        const [conversation_id, citizenid, phone_id, role] = params as string[] as [
+        const [conversation_id, citizenid, device_id, role] = params as string[] as [
           number,
           string,
           string,
@@ -68,23 +68,23 @@ vi.mock('../lib/Database', () => ({
         // The real statement's guard: no second live row for the same phone.
         if (
           db.participants.some(
-            (p) => p.conversation_id === conversation_id && p.phone_id === phone_id && !p.left_at
+            (p) => p.conversation_id === conversation_id && p.device_id === device_id && !p.left_at
           )
         ) {
           return 0;
         }
-        // `conversation_phone_unique` holds a left row too.
+        // `conversation_device_unique` holds a left row too.
         if (
           db.participants.some(
-            (p) => p.conversation_id === conversation_id && p.phone_id === phone_id
+            (p) => p.conversation_id === conversation_id && p.device_id === device_id
           )
         ) {
-          throw new Error("Duplicate entry for key 'conversation_phone_unique'");
+          throw new Error("Duplicate entry for key 'conversation_device_unique'");
         }
         db.participants.push({
           conversation_id,
           citizenid,
-          phone_id,
+          device_id,
           role,
           status: 'active',
           left_at: null
@@ -134,13 +134,13 @@ vi.mock('../lib/Database', () => ({
     }),
     single: vi.fn(async (sql: string, params: unknown[]) => {
       if (sql.includes('mica_messages_participants')) {
-        const [conversationId, citizenid, phoneId] = params;
+        const [conversationId, citizenid, deviceId] = params;
         return db.participants.some(
           (p) =>
             p.conversation_id === conversationId &&
             p.citizenid === citizenid &&
             !p.left_at &&
-            (phoneId === undefined || p.phone_id === phoneId)
+            (deviceId === undefined || p.device_id === deviceId)
         )
           ? { 1: 1 }
           : null;
@@ -150,11 +150,11 @@ vi.mock('../lib/Database', () => ({
     update: vi.fn(async (sql: string, params: unknown[]) => {
       db.writes.push(sql);
       if (sql.includes('SET left_at = NULL')) {
-        const [citizenid, conversationId, phoneId] = params as [string, number, string];
+        const [citizenid, conversationId, deviceId] = params as [string, number, string];
         const row = db.participants.find(
           (p) =>
             p.conversation_id === conversationId &&
-            p.phone_id === phoneId &&
+            p.device_id === deviceId &&
             p.status === 'left' &&
             p.left_at
         );
@@ -163,12 +163,12 @@ vi.mock('../lib/Database', () => ({
         return true;
       }
       if (sql.includes('SET left_at = CURRENT_TIMESTAMP')) {
-        const [status, conversationId, citizenid, phoneId] = params as string[];
+        const [status, conversationId, citizenid, deviceId] = params as string[];
         const row = db.participants.find(
           (p) =>
             p.conversation_id === Number(conversationId) &&
             p.citizenid === citizenid &&
-            p.phone_id === phoneId &&
+            p.device_id === deviceId &&
             !p.left_at
         );
         if (!row) return false;
@@ -210,8 +210,8 @@ vi.mock('../lib/PlayerDirectory', () => ({
 }));
 
 const PHONE = '0123456789abcdef0123456789abcdef';
-vi.mock('../services/Phones', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../services/Phones')>()),
+vi.mock('../services/Devices', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../services/Devices')>()),
   phoneForCitizen: async () => '0123456789abcdef0123456789abcdef'
 }));
 
@@ -412,7 +412,7 @@ describe('a player starting a thread with a line', () => {
       participant_b: LINE_KEY
     });
     expect(db.participants).toEqual([
-      expect.objectContaining({ conversation_id: thread.id, citizenid: 'CIT_A', phone_id: PHONE })
+      expect.objectContaining({ conversation_id: thread.id, citizenid: 'CIT_A', device_id: PHONE })
     ]);
   });
 
@@ -546,7 +546,7 @@ describe('a player texting a line', () => {
     db.participants.push({
       conversation_id: 900,
       citizenid: 'CIT_A',
-      phone_id: PHONE,
+      device_id: PHONE,
       role: 'member',
       status: 'active',
       left_at: null
@@ -632,14 +632,14 @@ describe('when the line goes away', () => {
 /** Seeds a thread and its participants directly, as rows written before this change. */
 const seed = (
   thread: Record<string, any>,
-  members: { citizenid: string; phone_id: string; role?: string; left?: boolean }[]
+  members: { citizenid: string; device_id: string; role?: string; left?: boolean }[]
 ) => {
   db.conversations.set(thread.id, { status: 'active', is_group: 0, ...thread });
   for (const m of members) {
     db.participants.push({
       conversation_id: thread.id,
       citizenid: m.citizenid,
-      phone_id: m.phone_id,
+      device_id: m.device_id,
       role: m.role ?? 'member',
       status: m.left ? 'left' : 'active',
       left_at: m.left ? 'earlier' : null
@@ -651,12 +651,12 @@ const seed = (
  * A player who left a line thread before MICA-275 made leaving delete it: the thread is still
  * active, so the line found it again, but the player had no membership and every send into it
  * was refused. Opening it restores the phone's own row rather than inserting a second one,
- * which `conversation_phone_unique` would refuse.
+ * which `conversation_device_unique` would refuse.
  */
 describe('a line thread the player left before leaving deleted it', () => {
   const stranded = () =>
     seed({ id: 500, participant_a: PHONE, participant_b: LINE_KEY, name: 'Downtown Cab' }, [
-      { citizenid: 'CIT_A', phone_id: PHONE, left: true }
+      { citizenid: 'CIT_A', device_id: PHONE, left: true }
     ]);
 
   it("is restored when the line texts again, and the player's reply reaches it", async () => {
@@ -671,7 +671,7 @@ describe('a line thread the player left before leaving deleted it', () => {
     expect(reply).toMatchObject({ conversation_id: 500, message: 'Yes.' });
     expect(onMessage).toHaveBeenCalledWith(expect.objectContaining({ conversationId: 500 }));
     expect(db.participants.filter((p) => p.conversation_id === 500)).toEqual([
-      expect.objectContaining({ citizenid: 'CIT_A', phone_id: PHONE, left_at: null })
+      expect.objectContaining({ citizenid: 'CIT_A', device_id: PHONE, left_at: null })
     ]);
   });
 
@@ -688,14 +688,14 @@ describe('a line thread the player left before leaving deleted it', () => {
   it('never reopens a membership that was removed rather than left', async () => {
     register();
     seed({ id: 501, participant_a: PHONE, participant_b: LINE_KEY }, [
-      { citizenid: 'CIT_A', phone_id: PHONE }
+      { citizenid: 'CIT_A', device_id: PHONE }
     ]);
     const row = db.participants[0];
     Object.assign(row, { status: 'moderated', left_at: 'earlier' });
 
     await expect(
       sendFromLine('CIT_A', { name: 'Downtown Cab', number: LINE }, 'Hi', [])
-    ).rejects.toThrow(/conversation_phone_unique/);
+    ).rejects.toThrow(/conversation_device_unique/);
     expect(row.status).toBe('moderated');
   });
 });
@@ -709,8 +709,8 @@ describe('leaving a thread without a line', () => {
 
   it('only leaves a one-to-one with another player', async () => {
     seed({ id: 600, participant_a: PHONE, participant_b: OTHER_PHONE }, [
-      { citizenid: 'CIT_A', phone_id: PHONE },
-      { citizenid: 'CIT_B', phone_id: OTHER_PHONE, role: 'admin' }
+      { citizenid: 'CIT_A', device_id: PHONE },
+      { citizenid: 'CIT_B', device_id: OTHER_PHONE, role: 'admin' }
     ]);
 
     await call('conversations', 'delete', { id: 600 });
@@ -721,9 +721,9 @@ describe('leaving a thread without a line', () => {
 
   it('only leaves a group', async () => {
     seed({ id: 601, is_group: 1, participant_a: null, participant_b: null }, [
-      { citizenid: 'CIT_A', phone_id: PHONE },
-      { citizenid: 'CIT_B', phone_id: OTHER_PHONE, role: 'admin' },
-      { citizenid: 'CIT_C', phone_id: 'aaaabbbbccccddddaaaabbbbccccdddd' }
+      { citizenid: 'CIT_A', device_id: PHONE },
+      { citizenid: 'CIT_B', device_id: OTHER_PHONE, role: 'admin' },
+      { citizenid: 'CIT_C', device_id: 'aaaabbbbccccddddaaaabbbbccccdddd' }
     ]);
 
     await call('conversations', 'delete', { id: 601 });
@@ -734,7 +734,7 @@ describe('leaving a thread without a line', () => {
 
   it('refuses a caller who is not in the thread, line or not', async () => {
     seed({ id: 602, participant_a: OTHER_PHONE, participant_b: LINE_KEY }, [
-      { citizenid: 'CIT_B', phone_id: OTHER_PHONE }
+      { citizenid: 'CIT_B', device_id: OTHER_PHONE }
     ]);
 
     const { reply } = await call('conversations', 'delete', { id: 602 });

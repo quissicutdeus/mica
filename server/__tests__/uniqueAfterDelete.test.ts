@@ -131,7 +131,7 @@ const deviceTable: ServiceDefinition = {
       generatedAs: 'UPPER(`number`)'
     }
   },
-  indexes: [{ name: 'phone_number_unique', columns: ['phone_id', 'number'], unique: true }],
+  indexes: [{ name: 'device_number_unique', columns: ['device_id', 'number'], unique: true }],
   uniqueAfterDelete: 'revive'
 };
 
@@ -155,12 +155,12 @@ beforeEach(() => {
 
 describe('uniqueAfterDelete: revive', () => {
   it("revives the caller's own deleted row under the key instead of inserting", async () => {
-    const rows = standIn('mica_revive_device', [['phone_id', 'number']], { note: 'none' });
+    const rows = standIn('mica_revive_device', [['device_id', 'number']], { note: 'none' });
     const repo = repoFor(deviceTable);
 
-    const first = await repo.create({ citizenid: 'CIT_A', phone_id: PHONE, number: '5550100' });
+    const first = await repo.create({ citizenid: 'CIT_A', device_id: PHONE, number: '5550100' });
     rows[0].status = 'deleted';
-    const again = await repo.create({ citizenid: 'CIT_A', phone_id: PHONE, number: '5550100' });
+    const again = await repo.create({ citizenid: 'CIT_A', device_id: PHONE, number: '5550100' });
 
     expect(again).toBe(first);
     expect(dbMock.insert).toHaveBeenCalledTimes(1);
@@ -169,63 +169,75 @@ describe('uniqueAfterDelete: revive', () => {
   });
 
   it('is a plain insert, and the key still refuses, when the table opted out', async () => {
-    const rows = standIn('mica_revive_optout', [['phone_id', 'number']], {});
+    const rows = standIn('mica_revive_optout', [['device_id', 'number']], {});
     const repo = repoFor({
       ...deviceTable,
       id: 'revive_optout',
       uniqueAfterDelete: { optOut: 'refused on purpose, for this test' }
     });
-    rows.push({ id: 1, citizenid: 'CIT_A', phone_id: PHONE, number: '5550100', status: 'deleted' });
+    rows.push({
+      id: 1,
+      citizenid: 'CIT_A',
+      device_id: PHONE,
+      number: '5550100',
+      status: 'deleted'
+    });
 
     await expect(
-      repo.create({ citizenid: 'CIT_A', phone_id: PHONE, number: '5550100' })
+      repo.create({ citizenid: 'CIT_A', device_id: PHONE, number: '5550100' })
     ).rejects.toThrow(/Duplicate entry/);
     expect(dbMock.scalar).not.toHaveBeenCalled();
   });
 
   it('inserts when there is no deleted row to revive', async () => {
-    const rows = standIn('mica_revive_device', [['phone_id', 'number']], { note: 'none' });
+    const rows = standIn('mica_revive_device', [['device_id', 'number']], { note: 'none' });
     const repo = repoFor(deviceTable);
 
-    expect(await repo.create({ citizenid: 'CIT_A', phone_id: PHONE, number: '5550100' })).toBe(1);
-    expect(await repo.create({ citizenid: 'CIT_A', phone_id: PHONE, number: '5550199' })).toBe(2);
+    expect(await repo.create({ citizenid: 'CIT_A', device_id: PHONE, number: '5550100' })).toBe(1);
+    expect(await repo.create({ citizenid: 'CIT_A', device_id: PHONE, number: '5550199' })).toBe(2);
     expect(rows.map((r) => r.number)).toEqual(['5550100', '5550199']);
   });
 
   it("never revives another citizen's row under the same key", async () => {
-    const rows = standIn('mica_revive_device', [['phone_id', 'number']], { note: 'none' });
+    const rows = standIn('mica_revive_device', [['device_id', 'number']], { note: 'none' });
     const repo = repoFor(deviceTable);
     // The phone's previous holder unblocked the number and the rows have not followed it yet.
-    rows.push({ id: 1, citizenid: 'CIT_B', phone_id: PHONE, number: '5550100', status: 'deleted' });
-
-    await expect(
-      repo.create({ citizenid: 'CIT_A', phone_id: PHONE, number: '5550100' })
-    ).rejects.toThrow(/Duplicate entry/);
-    expect(rows).toEqual([
-      { id: 1, citizenid: 'CIT_B', phone_id: PHONE, number: '5550100', status: 'deleted' }
-    ]);
-  });
-
-  it("never revives the same citizen's row from another phone", async () => {
-    const rows = standIn('mica_revive_device', [['phone_id', 'number']], { note: 'none' });
-    const repo = repoFor(deviceTable);
     rows.push({
       id: 1,
-      citizenid: 'CIT_A',
-      phone_id: OTHER_PHONE,
+      citizenid: 'CIT_B',
+      device_id: PHONE,
       number: '5550100',
       status: 'deleted'
     });
 
-    expect(await repo.create({ citizenid: 'CIT_A', phone_id: PHONE, number: '5550100' })).toBe(2);
-    expect(rows.map((r) => [r.phone_id, r.status])).toEqual([
+    await expect(
+      repo.create({ citizenid: 'CIT_A', device_id: PHONE, number: '5550100' })
+    ).rejects.toThrow(/Duplicate entry/);
+    expect(rows).toEqual([
+      { id: 1, citizenid: 'CIT_B', device_id: PHONE, number: '5550100', status: 'deleted' }
+    ]);
+  });
+
+  it("never revives the same citizen's row from another phone", async () => {
+    const rows = standIn('mica_revive_device', [['device_id', 'number']], { note: 'none' });
+    const repo = repoFor(deviceTable);
+    rows.push({
+      id: 1,
+      citizenid: 'CIT_A',
+      device_id: OTHER_PHONE,
+      number: '5550100',
+      status: 'deleted'
+    });
+
+    expect(await repo.create({ citizenid: 'CIT_A', device_id: PHONE, number: '5550100' })).toBe(2);
+    expect(rows.map((r) => [r.device_id, r.status])).toEqual([
       [OTHER_PHONE, 'deleted'],
       [PHONE, 'active']
     ]);
   });
 
   it('names the phone null-safely, so a phoneless create matches only a phoneless row', async () => {
-    standIn('mica_revive_device', [['phone_id', 'number']], { note: 'none' });
+    standIn('mica_revive_device', [['device_id', 'number']], { note: 'none' });
     const repo = repoFor({
       ...deviceTable,
       id: 'revive_phoneless',
@@ -236,47 +248,47 @@ describe('uniqueAfterDelete: revive', () => {
 
     await repo.create({ citizenid: 'CIT_A', number: '5550100' });
     const [sql, params] = dbMock.scalar.mock.calls[0];
-    expect(sql).toContain('`citizenid` = ? AND `phone_id` <=> ?');
+    expect(sql).toContain('`citizenid` = ? AND `device_id` <=> ?');
     expect(params).toEqual(['CIT_A', null, 'CIT_A', '5550100']);
   });
 
   it('leaves a moderated row where the moderator put it', async () => {
-    const rows = standIn('mica_revive_device', [['phone_id', 'number']], { note: 'none' });
+    const rows = standIn('mica_revive_device', [['device_id', 'number']], { note: 'none' });
     const repo = repoFor(deviceTable);
     rows.push({
       id: 1,
       citizenid: 'CIT_A',
-      phone_id: PHONE,
+      device_id: PHONE,
       number: '5550100',
       status: 'moderated'
     });
 
     await expect(
-      repo.create({ citizenid: 'CIT_A', phone_id: PHONE, number: '5550100' })
+      repo.create({ citizenid: 'CIT_A', device_id: PHONE, number: '5550100' })
     ).rejects.toThrow(/Duplicate entry/);
     expect(rows[0].status).toBe('moderated');
   });
 
   it('writes the revived row as the insert would have: named columns set, the rest defaulted', async () => {
-    const rows = standIn('mica_revive_device', [['phone_id', 'number']], { note: 'none' });
+    const rows = standIn('mica_revive_device', [['device_id', 'number']], { note: 'none' });
     const repo = repoFor(deviceTable);
     rows.push({
       id: 1,
       citizenid: 'CIT_A',
-      phone_id: PHONE,
+      device_id: PHONE,
       number: '5550100',
       note: 'from the deleted row',
       status: 'deleted'
     });
 
-    await repo.create({ citizenid: 'CIT_A', phone_id: PHONE, number: '5550100' });
+    await repo.create({ citizenid: 'CIT_A', device_id: PHONE, number: '5550100' });
     expect(rows[0]).toMatchObject({ note: 'none', status: 'active' });
 
     const [sql, params] = dbMock.update.mock.calls[0];
     expect(sql).toBe(
       'UPDATE `mica_revive_device` SET `number` = ?, `note` = DEFAULT, ' +
         "`status` = 'active', `created_at` = CURRENT_TIMESTAMP " +
-        "WHERE `id` = ? AND `citizenid` = ? AND `phone_id` <=> ? AND `status` = 'deleted'"
+        "WHERE `id` = ? AND `citizenid` = ? AND `device_id` <=> ? AND `status` = 'deleted'"
     );
     // The generated column is never assigned; the owner and phone are pinned, not rewritten.
     expect(sql).not.toContain('`shown`');
@@ -284,18 +296,18 @@ describe('uniqueAfterDelete: revive', () => {
   });
 
   it('writes a column the create names over the deleted row', async () => {
-    const rows = standIn('mica_revive_device', [['phone_id', 'number']], { note: 'none' });
+    const rows = standIn('mica_revive_device', [['device_id', 'number']], { note: 'none' });
     const repo = repoFor(deviceTable);
     rows.push({
       id: 1,
       citizenid: 'CIT_A',
-      phone_id: PHONE,
+      device_id: PHONE,
       number: '5550100',
       note: 'old',
       status: 'deleted'
     });
 
-    await repo.create({ citizenid: 'CIT_A', phone_id: PHONE, number: '5550100', note: 'new' });
+    await repo.create({ citizenid: 'CIT_A', device_id: PHONE, number: '5550100', note: 'new' });
     expect(rows[0].note).toBe('new');
   });
 
@@ -309,17 +321,17 @@ describe('uniqueAfterDelete: revive', () => {
       { id: 4, citizenid: 'CIT_A', quantity: 0, status: 'active', created_at: 'now' }
     ]);
     // No phone column, so no phone in the predicate.
-    expect(String(dbMock.scalar.mock.calls[0][0])).not.toContain('phone_id');
+    expect(String(dbMock.scalar.mock.calls[0][0])).not.toContain('device_id');
   });
 
   it('falls through to the insert when a racing create revived the row first', async () => {
     const repo = repoFor(deviceTable);
     dbMock.scalar.mockResolvedValue(1);
     dbMock.update.mockResolvedValue(false);
-    dbMock.insert.mockRejectedValue(new Error("Duplicate entry for key 'phone_number_unique'"));
+    dbMock.insert.mockRejectedValue(new Error("Duplicate entry for key 'device_number_unique'"));
 
     await expect(
-      repo.create({ citizenid: 'CIT_A', phone_id: PHONE, number: '5550100' })
+      repo.create({ citizenid: 'CIT_A', device_id: PHONE, number: '5550100' })
     ).rejects.toThrow(/Duplicate entry/);
     expect(dbMock.insert).toHaveBeenCalledTimes(1);
   });
@@ -329,8 +341,8 @@ describe('uniqueAfterDelete: revive', () => {
     dbMock.insert.mockResolvedValue(1);
 
     await repo.create({ citizenid: 'CIT_A', number: '5550100' }); // no phone: key incomplete
-    await repo.create({ phone_id: PHONE, number: '5550100' }); // no citizen: no owner
-    await repo.create({ citizenid: '', phone_id: PHONE, number: '5550100' });
+    await repo.create({ device_id: PHONE, number: '5550100' }); // no citizen: no owner
+    await repo.create({ citizenid: '', device_id: PHONE, number: '5550100' });
     expect(dbMock.scalar).not.toHaveBeenCalled();
     expect(dbMock.insert).toHaveBeenCalledTimes(3);
   });
@@ -338,7 +350,7 @@ describe('uniqueAfterDelete: revive', () => {
   it('checks the columns before it looks, so a bad key never reaches the lookup', async () => {
     const repo = repoFor(deviceTable);
     await expect(
-      repo.create({ citizenid: 'CIT_A', phone_id: PHONE, number: '1', evil: 1 })
+      repo.create({ citizenid: 'CIT_A', device_id: PHONE, number: '1', evil: 1 })
     ).rejects.toThrow(/rejected unknown column 'evil'/);
     expect(dbMock.scalar).not.toHaveBeenCalled();
   });
@@ -351,16 +363,16 @@ describe('uniqueAfterDelete: revive', () => {
       schema: { number: { type: 'string', length: 16 } },
       indexes: [
         { name: 'number_unique', columns: ['number'], unique: true },
-        { name: 'phone_id_unique', columns: ['phone_id'], unique: true }
+        { name: 'device_id_unique', columns: ['device_id'], unique: true }
       ],
       uniqueAfterDelete: 'revive'
     });
     dbMock.scalar.mockResolvedValue(null);
     dbMock.insert.mockResolvedValue(1);
 
-    await repo.create({ citizenid: 'CIT_A', phone_id: PHONE, number: '5550100' });
+    await repo.create({ citizenid: 'CIT_A', device_id: PHONE, number: '5550100' });
     const [sql, params] = dbMock.scalar.mock.calls[0];
-    expect(sql).toContain('AND ((`number` = ?) OR (`phone_id` = ?))');
+    expect(sql).toContain('AND ((`number` = ?) OR (`device_id` = ?))');
     expect(params).toEqual(['CIT_A', PHONE, '5550100', PHONE]);
   });
 });
@@ -499,9 +511,9 @@ describe('uniqueAfterDelete: the declaration', () => {
 
   it('hands a SchemaRepository its keys, and a subclass inherits them', () => {
     const resolved = resolveAppSchema(deviceTable);
-    expect(buildRepository(resolved).revivesUnder).toEqual([['phone_id', 'number']]);
+    expect(buildRepository(resolved).revivesUnder).toEqual([['device_id', 'number']]);
     expect(new (class extends SchemaRepository<unknown> {})(resolved).revivesUnder).toEqual([
-      ['phone_id', 'number']
+      ['device_id', 'number']
     ]);
     expect(
       buildRepository(

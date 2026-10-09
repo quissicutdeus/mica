@@ -61,7 +61,7 @@ const exported = () => ownedTables().filter(({ table }) => !EXPORT_EXCLUDED.has(
 const WHOLE_KEPT = [
   'mica_audit_logs',
   'mica_import_ledger',
-  'mica_phones',
+  'mica_devices',
   'mica_phone_numbers',
   'mica_battery',
   'mica_lockscreen'
@@ -181,7 +181,7 @@ const EXPORTED_COLUMNS: Record<string, { plain: string[]; sized: string[]; withh
       'status',
       'created_at',
       'updated_at',
-      'phone_id',
+      'device_id',
       'app',
       'kind',
       'title',
@@ -210,7 +210,7 @@ const EXPORTED_COLUMNS: Record<string, { plain: string[]; sized: string[]; withh
     withheld: []
   },
   mica_battery: {
-    plain: ['id', 'status', 'created_at', 'updated_at', 'phone_id', 'level'],
+    plain: ['id', 'status', 'created_at', 'updated_at', 'device_id', 'level'],
     sized: [],
     withheld: []
   },
@@ -220,7 +220,7 @@ const EXPORTED_COLUMNS: Record<string, { plain: string[]; sized: string[]; withh
       'status',
       'created_at',
       'updated_at',
-      'phone_id',
+      'device_id',
       'app',
       'setting_key',
       'setting_value'
@@ -234,7 +234,7 @@ const EXPORTED_COLUMNS: Record<string, { plain: string[]; sized: string[]; withh
       'status',
       'created_at',
       'updated_at',
-      'phone_id',
+      'device_id',
       'kind',
       'url',
       'mime_type',
@@ -278,12 +278,12 @@ const EXPORTED_COLUMNS: Record<string, { plain: string[]; sized: string[]; withh
     withheld: []
   },
   mica_blocklist: {
-    plain: ['id', 'status', 'created_at', 'updated_at', 'phone_id', 'number'],
+    plain: ['id', 'status', 'created_at', 'updated_at', 'device_id', 'number'],
     sized: [],
     withheld: []
   },
-  mica_phones: {
-    plain: ['id', 'status', 'created_at', 'updated_at', 'phone_id', 'kind', 'claimed'],
+  mica_devices: {
+    plain: ['id', 'status', 'created_at', 'updated_at', 'device_id', 'kind', 'claimed'],
     sized: [],
     withheld: []
   },
@@ -293,7 +293,7 @@ const EXPORTED_COLUMNS: Record<string, { plain: string[]; sized: string[]; withh
       'status',
       'created_at',
       'updated_at',
-      'phone_id',
+      'device_id',
       'firstname',
       'lastname',
       'phone',
@@ -313,7 +313,7 @@ const EXPORTED_COLUMNS: Record<string, { plain: string[]; sized: string[]; withh
     plain: [
       'id',
       'conversation_id',
-      'phone_id',
+      'device_id',
       'role',
       'status',
       'last_read',
@@ -368,7 +368,7 @@ const EXPORTED_COLUMNS: Record<string, { plain: string[]; sized: string[]; withh
     withheld: ['payee']
   },
   mica_lockscreen: {
-    plain: ['id', 'status', 'created_at', 'updated_at', 'phone_id'],
+    plain: ['id', 'status', 'created_at', 'updated_at', 'device_id'],
     sized: [],
     withheld: ['passcode_hash', 'passcode_salt']
   },
@@ -418,17 +418,17 @@ const EXPORTED_COLUMNS: Record<string, { plain: string[]; sized: string[]; withh
     withheld: []
   },
   mica_notes: {
-    plain: ['id', 'status', 'created_at', 'updated_at', 'phone_id', 'title', 'content'],
+    plain: ['id', 'status', 'created_at', 'updated_at', 'device_id', 'title', 'content'],
     sized: [],
     withheld: []
   },
   mica_phone_call_log: {
-    plain: ['id', 'status', 'created_at', 'updated_at', 'phone_id', 'kind', 'number', 'duration'],
+    plain: ['id', 'status', 'created_at', 'updated_at', 'device_id', 'kind', 'number', 'duration'],
     sized: [],
     withheld: []
   },
   mica_phone_numbers: {
-    plain: ['id', 'status', 'created_at', 'updated_at', 'number', 'phone_id'],
+    plain: ['id', 'status', 'created_at', 'updated_at', 'number', 'device_id'],
     sized: [],
     withheld: []
   },
@@ -438,7 +438,7 @@ const EXPORTED_COLUMNS: Record<string, { plain: string[]; sized: string[]; withh
       'status',
       'created_at',
       'updated_at',
-      'phone_id',
+      'device_id',
       'name',
       'street_label',
       'x',
@@ -739,11 +739,11 @@ describe('what a self-service delete keeps (MICA-168)', () => {
     expect(SELF_SERVICE_EXCEPT.map(({ table }) => table).toSorted()).toEqual([
       'mica_audit_logs',
       'mica_battery',
+      'mica_devices',
       'mica_import_ledger',
       'mica_invoices',
       'mica_lockscreen',
       'mica_phone_numbers',
-      'mica_phones',
       'mica_reports'
     ]);
   });

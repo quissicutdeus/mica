@@ -230,8 +230,8 @@ const loadServerModule = async () => {
     // the import phase then fails loudly rather than being skipped.
     ...(fs.existsSync(IMPORTER) ? [`export { runImport } from '${IMPORTER}';`] : []),
     // The real phone resolver, installed when this module loads, as in game: an import writes
-    // device-owned rows, and which phone they land on is `services/Phones.ts`'s answer.
-    `export { phones } from '${root}/server/services/Phones.ts';`,
+    // device-owned rows, and which phone they land on is `services/Devices.ts`'s answer.
+    `export { devices } from '${root}/server/services/Devices.ts';`,
     // Blabber registers itself as the app that takes imported posts when it loads (core may
     // not name the add-on, so the importer asks a registry). Without it every tweet would be
     // skipped as 'no installed app takes imported posts', and the post checks would fail.
@@ -413,11 +413,11 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, modules }) => {
   const phoneA = 'a'.repeat(32);
   const phoneB = 'b'.repeat(32);
   await connection.query(
-    `INSERT INTO mica_phones (citizenid, phone_id, claimed) VALUES (?, ?, 0), (?, ?, 0)`,
+    `INSERT INTO mica_devices (citizenid, device_id, claimed) VALUES (?, ?, 0), (?, ?, 0)`,
     [ownerA, phoneA, ownerB, phoneB]
   );
   await connection.query(
-    `INSERT INTO mica_messages_participants (conversation_id, citizenid, phone_id, role, left_at, status)
+    `INSERT INTO mica_messages_participants (conversation_id, citizenid, device_id, role, left_at, status)
      VALUES (?, ?, ?, 'admin', NULL, 'active'), (?, ?, ?, 'member', NULL, 'active')`,
     [conversationId, ownerA, phoneA, conversationId, ownerB, phoneB]
   );
@@ -604,7 +604,7 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, modules }) => {
 /**
  * MICA-275: a phone's membership of a thread with a line, on a real engine.
  *
- * `conversation_phone_unique` is on `(conversation_id, phone_id)` and still holds a row
+ * `conversation_device_unique` is on `(conversation_id, device_id)` and still holds a row
  * after the player leaves, so rejoining by inserting a second row is a duplicate-key error
  * no mock can show. `ensureLineParticipant` reopens the left row instead; these checks hold
  * it to that, and to never reopening a moderated one. The declared repository opens the
@@ -626,7 +626,7 @@ const runLineMembership = async ({
   const key = 'ext:5550123';
   const membership = async (id) => {
     const [rows] = await connection.query(
-      'SELECT id, status, left_at FROM mica_messages_participants WHERE conversation_id = ? AND phone_id = ?',
+      'SELECT id, status, left_at FROM mica_messages_participants WHERE conversation_id = ? AND device_id = ?',
       [id, phoneB]
     );
     return rows;
@@ -689,7 +689,7 @@ const runLineMembership = async ({
 
   await connection.query(
     `UPDATE mica_messages_participants SET status = 'moderated', left_at = NOW()
-      WHERE conversation_id = ? AND phone_id = ?`,
+      WHERE conversation_id = ? AND device_id = ?`,
     [threadId, phoneB]
   );
   await attempt();
@@ -1469,7 +1469,7 @@ const runPrivacyVariant = async ({ connection, schemaFile, hasPlayers, privacy }
     'https://img.example.test/p/21.webp'
   ]);
   await q(
-    "INSERT INTO mica_lockscreen (citizenid, phone_id, passcode_hash, passcode_salt) VALUES (?, 'p1', ?, ?)",
+    "INSERT INTO mica_lockscreen (citizenid, device_id, passcode_hash, passcode_salt) VALUES (?, 'p1', ?, ?)",
     [A, 'f'.repeat(64), 'e'.repeat(32)]
   );
   await q(
@@ -1939,10 +1939,10 @@ const runCharacterDeletedVariant = async ({
     [A]
   );
   await q(
-    "INSERT INTO mica_lockscreen (citizenid, phone_id, passcode_hash, passcode_salt) VALUES (?, 'pa', ?, ?)",
+    "INSERT INTO mica_lockscreen (citizenid, device_id, passcode_hash, passcode_salt) VALUES (?, 'pa', ?, ?)",
     [A, 'f'.repeat(64), 'e'.repeat(32)]
   );
-  await q("INSERT INTO mica_phones (citizenid, phone_id, claimed) VALUES (?, 'pa', 0)", [A]);
+  await q("INSERT INTO mica_devices (citizenid, device_id, claimed) VALUES (?, 'pa', 0)", [A]);
 
   const rowsOf = async (owner) => {
     let total = 0;
@@ -2110,7 +2110,7 @@ const runCharacterDeletedVariant = async ({
         await count('mica_invoices'),
         await count('mica_import_ledger'),
         await count('mica_lockscreen'),
-        await count('mica_phones')
+        await count('mica_devices')
       ],
       [1, 1, 0, 0, 0, 0]
     );

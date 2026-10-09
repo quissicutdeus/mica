@@ -32,17 +32,17 @@ export class SettingsRepository extends SchemaRepository<PhoneSetting> {
    * it is read exactly once per session, and the phone needs all of it before it paints.
    * Paging here would mean the theme arrives on page two.
    */
-  async findAllForPlayer(citizenid: string, phoneId: string): Promise<PhoneSetting[]> {
+  async findAllForPlayer(citizenid: string, deviceId: string): Promise<PhoneSetting[]> {
     return await Database.query<PhoneSetting[]>(
-      `SELECT * FROM mica_settings WHERE citizenid = ? AND phone_id = ? AND status = 'active'`,
-      [citizenid, phoneId]
+      `SELECT * FROM mica_settings WHERE citizenid = ? AND device_id = ? AND status = 'active'`,
+      [citizenid, deviceId]
     );
   }
 
   /**
    * Write one key.
    *
-   * `ON DUPLICATE KEY UPDATE` against the unique `(phone_id, app, setting_key)` index,
+   * `ON DUPLICATE KEY UPDATE` against the unique `(device_id, app, setting_key)` index,
    * rather than find-then-insert. Two rapid writes to the same key — which is what
    * dragging a slider produces — race in the find-then-insert form and the loser becomes
    * either a duplicate row or a lost write. The constraint decides, not the order the
@@ -54,16 +54,16 @@ export class SettingsRepository extends SchemaRepository<PhoneSetting> {
    */
   async put(
     citizenid: string,
-    phoneId: string,
+    deviceId: string,
     app: string,
     key: string,
     value: string
   ): Promise<void> {
     await Database.query(
-      `INSERT INTO mica_settings (citizenid, phone_id, app, setting_key, setting_value, status, created_at, updated_at)
+      `INSERT INTO mica_settings (citizenid, device_id, app, setting_key, setting_value, status, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, 'active', NOW(), NOW())
        ON DUPLICATE KEY UPDATE citizenid = VALUES(citizenid), setting_value = VALUES(setting_value), status = 'active', updated_at = NOW()`,
-      [citizenid, phoneId, app, key, value]
+      [citizenid, deviceId, app, key, value]
     );
   }
 
@@ -89,10 +89,10 @@ export class SettingsRepository extends SchemaRepository<PhoneSetting> {
   }
 
   /** Remove one key. Hard delete: a tombstoned preference is not a preference. */
-  async remove(citizenid: string, phoneId: string, app: string, key: string): Promise<void> {
+  async remove(citizenid: string, deviceId: string, app: string, key: string): Promise<void> {
     await Database.query(
-      `DELETE FROM mica_settings WHERE citizenid = ? AND phone_id = ? AND app = ? AND setting_key = ?`,
-      [citizenid, phoneId, app, key]
+      `DELETE FROM mica_settings WHERE citizenid = ? AND device_id = ? AND app = ? AND setting_key = ?`,
+      [citizenid, deviceId, app, key]
     );
   }
 
@@ -103,10 +103,10 @@ export class SettingsRepository extends SchemaRepository<PhoneSetting> {
    * next hydrate — which is exactly the resurrection bug `clearAppStorage`'s own comment
    * says it exists to prevent, moved one layer down.
    */
-  async clearApp(citizenid: string, phoneId: string, app: string): Promise<void> {
+  async clearApp(citizenid: string, deviceId: string, app: string): Promise<void> {
     await Database.query(
-      `DELETE FROM mica_settings WHERE citizenid = ? AND phone_id = ? AND app = ?`,
-      [citizenid, phoneId, app]
+      `DELETE FROM mica_settings WHERE citizenid = ? AND device_id = ? AND app = ?`,
+      [citizenid, deviceId, app]
     );
   }
 }
@@ -130,7 +130,7 @@ export const settings = defineService<PhoneSetting, typeof settingsContract>({
    * safe; without it two writes in the same tick produce two rows for one preference and
    * the read picks whichever the engine returns first.
    *
-   * `phone_id` itself is injected by `deviceOwned` (MICA-282): a preference belongs to the
+   * `device_id` itself is injected by `deviceOwned` (MICA-282): a preference belongs to the
    * phone it was set on, and follows it.
    */
   indexes: [
@@ -139,7 +139,7 @@ export const settings = defineService<PhoneSetting, typeof settingsContract>({
      * `citizenid_app_key` for it): a character with two phones has two themes, and the upsert
      * in `put` collides on this key and no other.
      */
-    { name: 'phone_app_key', columns: ['phone_id', 'app', 'setting_key'], unique: true }
+    { name: 'device_app_key', columns: ['device_id', 'app', 'setting_key'], unique: true }
   ],
   uniqueAfterDelete: {
     optOut:
@@ -203,11 +203,11 @@ const MAX_VALUE_LENGTH = 8192;
 
 // A device-owned service always has a phone id by the time a handler runs; the endpoint
 // refused the request otherwise. The cast says so where the type cannot.
-app.registerEvent('getAll', async (_source, _cbId, _data, citizenid, _player, phoneId) => {
-  return settingsRepo ? await settingsRepo.findAllForPlayer(citizenid, phoneId as string) : [];
+app.registerEvent('getAll', async (_source, _cbId, _data, citizenid, _player, deviceId) => {
+  return settingsRepo ? await settingsRepo.findAllForPlayer(citizenid, deviceId as string) : [];
 });
 
-app.registerEvent('set', async (_source, _cbId, data, citizenid, _player, phoneId) => {
+app.registerEvent('set', async (_source, _cbId, data, citizenid, _player, deviceId) => {
   if (!settingsRepo) return false;
   const { app: appId, key } = namespaceOf(data);
 
@@ -222,25 +222,25 @@ app.registerEvent('set', async (_source, _cbId, data, citizenid, _player, phoneI
     });
   }
 
-  await settingsRepo.put(citizenid, phoneId as string, appId, key, value);
+  await settingsRepo.put(citizenid, deviceId as string, appId, key, value);
   return true;
 });
 
-app.registerEvent('remove', async (_source, _cbId, data, citizenid, _player, phoneId) => {
+app.registerEvent('remove', async (_source, _cbId, data, citizenid, _player, deviceId) => {
   if (!settingsRepo) return false;
   const { app: appId, key } = namespaceOf(data);
-  await settingsRepo.remove(citizenid, phoneId as string, appId, key);
+  await settingsRepo.remove(citizenid, deviceId as string, appId, key);
   return true;
 });
 
-app.registerEvent('clearApp', async (_source, _cbId, data, citizenid, _player, phoneId) => {
+app.registerEvent('clearApp', async (_source, _cbId, data, citizenid, _player, deviceId) => {
   if (!settingsRepo) return false;
   const appId = data.app.trim();
   if (!appId)
     throw new PlayerFacingError('That app could not be cleared.', {
       key: 'server.settings.appNotCleared'
     });
-  await settingsRepo.clearApp(citizenid, phoneId as string, appId);
+  await settingsRepo.clearApp(citizenid, deviceId as string, appId);
   return true;
 });
 

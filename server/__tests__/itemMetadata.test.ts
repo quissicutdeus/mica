@@ -53,15 +53,15 @@ describe('reading slots through ox_inventory', () => {
 
   it('answers every slot holding the item, lowest first', () => {
     oxWith([
-      { slot: 9, metadata: { phoneId: 'b' } },
-      { slot: 3, metadata: { phoneId: 'a' } }
+      { slot: 9, metadata: { deviceId: 'b' } },
+      { slot: 3, metadata: { deviceId: 'a' } }
     ]);
 
     // Sorted here rather than by the caller, so nothing else has to know that MICA-280's
     // fallback rule is "the lowest slot".
     expect(readItemSlots(SRC, {}, ITEM)).toEqual([
-      { slot: 3, metadata: { phoneId: 'a' } },
-      { slot: 9, metadata: { phoneId: 'b' } }
+      { slot: 3, metadata: { deviceId: 'a' } },
+      { slot: 9, metadata: { deviceId: 'b' } }
     ]);
   });
 
@@ -97,8 +97,8 @@ describe('reading slots through a qb player', () => {
   const qbHolding = (found: unknown) => ({ Functions: { GetItemByName: vi.fn(() => found) } });
 
   it('reads the item info table as metadata', () => {
-    const player = qbHolding({ slot: 4, info: { phoneId: 'a' } });
-    expect(readItemSlots(SRC, player, ITEM)).toEqual([{ slot: 4, metadata: { phoneId: 'a' } }]);
+    const player = qbHolding({ slot: 4, info: { deviceId: 'a' } });
+    expect(readItemSlots(SRC, player, ITEM)).toEqual([{ slot: 4, metadata: { deviceId: 'a' } }]);
   });
 
   it('answers an empty list rather than null when the player simply holds none', () => {
@@ -135,11 +135,11 @@ describe('writing metadata', () => {
       }
     });
 
-    expect(writeItemMetadata(SRC, {}, ITEM, 3, { phoneId: 'a' })).toBe(true);
+    expect(writeItemMetadata(SRC, {}, ITEM, 3, { deviceId: 'a' })).toBe(true);
 
     // ox_inventory's SetMetadata assigns the whole table, so a straight-through write would
     // have destroyed `durability` — and nothing would have reported it.
-    expect(SetMetadata).toHaveBeenCalledWith(SRC, 3, { durability: 80, phoneId: 'a' });
+    expect(SetMetadata).toHaveBeenCalledWith(SRC, 3, { durability: 80, deviceId: 'a' });
   });
 
   it('refuses when the slot is not one the player actually holds', () => {
@@ -148,7 +148,7 @@ describe('writing metadata', () => {
       ox_inventory: { GetSlotsWithItem: vi.fn(() => [{ slot: 3, metadata: {} }]), SetMetadata }
     });
 
-    expect(writeItemMetadata(SRC, {}, ITEM, 9, { phoneId: 'a' })).toBe(false);
+    expect(writeItemMetadata(SRC, {}, ITEM, 9, { deviceId: 'a' })).toBe(false);
     expect(SetMetadata).not.toHaveBeenCalled();
   });
 
@@ -156,18 +156,18 @@ describe('writing metadata', () => {
     const SetItemData = vi.fn(() => true);
     useResources({ 'qb-inventory': { SetItemData } });
 
-    expect(writeItemMetadata(SRC, {}, ITEM, 1, { phoneId: 'a' })).toBe(true);
-    expect(SetItemData).toHaveBeenCalledWith(SRC, ITEM, 'phoneId', 'a');
+    expect(writeItemMetadata(SRC, {}, ITEM, 1, { deviceId: 'a' })).toBe(true);
+    expect(SetItemData).toHaveBeenCalledWith(SRC, ITEM, 'deviceId', 'a');
   });
 
   it('reports a qb-inventory write that did not take, rather than claiming it stored', () => {
     useResources({ 'qb-inventory': { SetItemData: vi.fn(() => false) } });
-    expect(writeItemMetadata(SRC, {}, ITEM, 1, { phoneId: 'a' })).toBe(false);
+    expect(writeItemMetadata(SRC, {}, ITEM, 1, { deviceId: 'a' })).toBe(false);
   });
 
   it('refuses and says so once when no inventory can write', () => {
-    expect(writeItemMetadata(SRC, {}, ITEM, 1, { phoneId: 'a' })).toBe(false);
-    expect(writeItemMetadata(SRC, {}, ITEM, 1, { phoneId: 'a' })).toBe(false);
+    expect(writeItemMetadata(SRC, {}, ITEM, 1, { deviceId: 'a' })).toBe(false);
+    expect(writeItemMetadata(SRC, {}, ITEM, 1, { deviceId: 'a' })).toBe(false);
 
     expect(console.warn).toHaveBeenCalledOnce();
   });

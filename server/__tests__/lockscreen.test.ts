@@ -142,7 +142,7 @@ describe('lockscreen:check (MICA-60)', () => {
   /** Round-trips a `set` through the mocked upsert so `check` can be handed the same row back. */
   const setAndCapture = async (passcode: string) => {
     await call('set', { passcode });
-    // citizenid, phone_id, hash, salt — the phone rides beside the citizen since MICA-282.
+    // citizenid, device_id, hash, salt — the phone rides beside the citizen since MICA-282.
     const [, , passcode_hash, passcode_salt] = queryCalls()[0][1] as string[];
     dbMock.single.mockResolvedValue({
       id: 1,

@@ -51,9 +51,9 @@ for (const [key, value] of Object.entries(fivemGlobals)) {
 /**
  * Which phone a device-owned request is for, when no suite has said (MICA-282). See
  * `phoneStub.ts`. Installed at load *and* before every test, because importing a service that
- * pulls `services/Phones.ts` in — Conversations does, for its handover hook — installs the real
- * resolvers at import time, and the real ones read `mica_phones`, which no mocked suite seeds.
- * A suite about the resolution itself calls `phoneForRequest` from `services/Phones.ts`
+ * pulls `services/Devices.ts` in — Conversations does, for its handover hook — installs the real
+ * resolvers at import time, and the real ones read `mica_devices`, which no mocked suite seeds.
+ * A suite about the resolution itself calls `deviceForRequest` from `services/Devices.ts`
  * directly rather than through the seam.
  */
 installTestPhone();

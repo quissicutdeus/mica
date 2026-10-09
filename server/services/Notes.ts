@@ -62,8 +62,8 @@ export const notes = defineService<Note, typeof notesContract>({
  * the same answer, matching `delete`'s own generic reply shape rather than inventing a
  * reason a client would have no use for beyond "did it work".
  */
-notes.app.registerEvent('restore', async (source, cbId, data, citizenid, _player, phoneId) => {
-  const ok = await notes.repo.restore(data.id, citizenid, restoreWindowDays(), phoneId);
+notes.app.registerEvent('restore', async (source, cbId, data, citizenid, _player, deviceId) => {
+  const ok = await notes.repo.restore(data.id, citizenid, restoreWindowDays(), deviceId);
   return { ok };
 });
 
@@ -74,6 +74,6 @@ notes.app.registerEvent('restore', async (source, cbId, data, citizenid, _player
  * false`, so the web side reaches this through `useService('notes').call('getDeleted', {})`
  * rather than a `shared/routes.ts` row.
  */
-notes.app.registerEvent('getDeleted', async (source, cbId, data, citizenid, _player, phoneId) => {
-  return await notes.repo.findDeleted(citizenid, restoreWindowDays(), undefined, phoneId);
+notes.app.registerEvent('getDeleted', async (source, cbId, data, citizenid, _player, deviceId) => {
+  return await notes.repo.findDeleted(citizenid, restoreWindowDays(), undefined, deviceId);
 });

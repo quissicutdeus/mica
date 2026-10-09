@@ -20,9 +20,9 @@ import { resolveByPhone, resolveMany } from '../lib/PlayerDirectory';
 import { detectFramework } from '../lib/FrameworkBridge';
 import { conversationIdFrom, pageBounds, recencyCursor } from '../lib/payload';
 import { conversationsContract } from '@mica/shared/contracts/conversations';
-import { phoneForCitizen, phoneForRequest } from '../lib/phoneIdentity';
+import { phoneForCitizen, deviceForRequest } from '../lib/deviceIdentity';
 import { readPhoneIdByNumber } from '../lib/phoneNumbers';
-import { onPhoneHandover } from './Phones';
+import { onDeviceHandover } from './Devices';
 
 // Re-exported: the constant moved beside the line helpers in the repository (MICA-275).
 export { PARTICIPANT_KEY_MAX_LENGTH };
@@ -69,7 +69,7 @@ export const conversations = defineService<ConversationRow, typeof conversations
       localKey: 'id',
       // Membership is per phone (MICA-282): the thread is on the device, and `isMember` can
       // narrow to the one in the caller's hand.
-      phoneColumn: 'phone_id',
+      deviceColumn: 'device_id',
       liveWhileNull: 'left_at'
     }
   },
@@ -201,7 +201,7 @@ export const conversations = defineService<ConversationRow, typeof conversations
          * for the same reason `deviceOwned` columns are — the migration backfills it — and
          * because a child table has no repository to refuse a NULL through.
          */
-        phone_id: { type: 'string', length: 32 },
+        device_id: { type: 'string', length: 32 },
         role: { type: 'string', length: 20, notNull: true, default: 'member' },
         status: {
           type: 'enum',
@@ -240,11 +240,11 @@ export const conversations = defineService<ConversationRow, typeof conversations
          * ones with nothing reporting it.
          */
         {
-          name: 'conversation_phone_unique',
-          columns: ['conversation_id', 'phone_id'],
+          name: 'conversation_device_unique',
+          columns: ['conversation_id', 'device_id'],
           unique: true
         },
-        { name: 'phone_id', columns: ['phone_id'] },
+        { name: 'device_id', columns: ['device_id'] },
         { name: 'citizenid_status', columns: ['citizenid', 'status'] },
         { name: 'conversation_status', columns: ['conversation_id', 'status'] },
         { name: 'participant_last_read', columns: ['citizenid', 'last_read'] }
@@ -313,11 +313,11 @@ if (!CONVERSATION_PAGING) {
 app.registerEvent('get', async (source, cbId, data, citizenid) => {
   const page = pageBounds(data, CONVERSATION_PAGING, recencyCursor);
   // The thread list is the phone's, not the person's (MICA-282): the one in the caller's hand.
-  const phoneId = await phoneForRequest(source, citizenid);
+  const deviceId = await deviceForRequest(source, citizenid);
 
   // Named `list`, not `conversations`: the module-level export of that name is the
   // app handle, and shadowing it here would be a trap for the next reader.
-  const { rows: list, nextCursor } = await conversationRepo.findForPhone(citizenid, phoneId, page);
+  const { rows: list, nextCursor } = await conversationRepo.findForPhone(citizenid, deviceId, page);
   if (list.length === 0) return { rows: [], nextCursor };
 
   const members = await conversationRepo.findParticipantsForConversations(list.map((c) => c.id));
@@ -336,7 +336,7 @@ app.registerEvent('get', async (source, cbId, data, citizenid) => {
     return conversationForReader(conv, {
       participant_count: participants.length,
       participants: participants.map((p) =>
-        participantForReader(p, citizenid, phoneId, numberOf(p))
+        participantForReader(p, citizenid, deviceId, numberOf(p))
       ),
       unread_count: Number(conv.unread_count ?? 0),
       archived_at: conv.archived_at ?? null,
@@ -411,7 +411,7 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
   // The phone this thread is being started from. A conversation is between phones (MICA-282):
   // the creator's participant row names it, the pair columns are phones, and the recipients
   // are the phones that own the numbers given.
-  const ownPhoneId = await phoneForRequest(source, citizenid);
+  const ownPhoneId = await deviceForRequest(source, citizenid);
 
   // The client chooses every field here except `is_group`, which is derived below, so each
   // is read once into a named local with the shape it is actually allowed to have.
@@ -659,17 +659,17 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
  * is optimistic and does not say so either.
  */
 app.registerEvent('update', async (source, cbId, data, citizenid) => {
-  const phoneId = await phoneForRequest(source, citizenid);
+  const deviceId = await deviceForRequest(source, citizenid);
   const name = data.name.trim();
   if (!name) return false;
-  return await conversationRepo.renameAsAdmin(data.id, name, citizenid, phoneId);
+  return await conversationRepo.renameAsAdmin(data.id, name, citizenid, deviceId);
 });
 
 // Mark this participant's thread as read. Scoped to the caller's own membership.
 app.registerEvent('read', async (source, cbId, data, citizenid) => {
   const id = conversationIdFrom(data);
-  const phoneId = await phoneForRequest(source, citizenid);
-  return await conversationRepo.markRead(id, citizenid, phoneId);
+  const deviceId = await deviceForRequest(source, citizenid);
+  return await conversationRepo.markRead(id, citizenid, deviceId);
 });
 
 /**
@@ -682,20 +682,20 @@ app.registerEvent('read', async (source, cbId, data, citizenid) => {
  */
 app.registerEvent('archive', async (source, cbId, data, citizenid) => {
   const id = conversationIdFrom(data);
-  const phoneId = await phoneForRequest(source, citizenid);
+  const deviceId = await deviceForRequest(source, citizenid);
   // `status` is a required enum in the contract, so there is no absent case to default —
   // the old `flagUnlessFalse(data.archive)` read a flag the web never sent (MICA-208).
-  return await conversationRepo.setArchived(id, citizenid, phoneId, data.status === 'archived');
+  return await conversationRepo.setArchived(id, citizenid, deviceId, data.status === 'archived');
 });
 
 // Delete/Leave
 app.registerEvent('delete', async (source, cbId, data, citizenid) => {
   const id = conversationIdFrom(data);
-  const phoneId = await phoneForRequest(source, citizenid);
+  const deviceId = await deviceForRequest(source, citizenid);
 
   // Check role — of the membership on the phone in hand, which is the one being acted on.
   const participants = await conversationRepo.findParticipants(id);
-  const self = participants.find((p) => p.citizenid === citizenid && p.phone_id === phoneId);
+  const self = participants.find((p) => p.citizenid === citizenid && p.device_id === deviceId);
 
   if (!self) {
     throw new PlayerFacingError('Not a participant', {
@@ -729,7 +729,7 @@ app.registerEvent('delete', async (source, cbId, data, citizenid) => {
     return success;
   } else {
     // Insert new row with status 'left' (Left Voluntarily)
-    await conversationRepo.removeParticipant(id, citizenid, phoneId, 'left');
+    await conversationRepo.removeParticipant(id, citizenid, deviceId, 'left');
     await AuditLogger.log({
       citizenid,
       action: 'left',
@@ -746,10 +746,10 @@ app.registerEvent('delete', async (source, cbId, data, citizenid) => {
  * A phone changed hands: its memberships now belong to whoever holds it (MICA-282).
  *
  * `mica_messages_participants` is a child table with no repository of its own, so the
- * automatic walk over `phoneKeyedRepositories` in `services/Phones.ts` cannot reach it; this
- * is the one hook that list needs. The thread stays the phone's — `phone_id` and the pair
+ * automatic walk over `deviceKeyedRepositories` in `services/Devices.ts` cannot reach it; this
+ * is the one hook that list needs. The thread stays the phone's — `device_id` and the pair
  * columns are untouched — and the person reading it is now the holder.
  */
-onPhoneHandover('conversations', (phoneId, citizenid) =>
-  conversationRepo.transferParticipants(phoneId, citizenid)
+onDeviceHandover('conversations', (deviceId, citizenid) =>
+  conversationRepo.transferParticipants(deviceId, citizenid)
 );

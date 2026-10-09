@@ -1419,7 +1419,7 @@ describe('the character-deleted hook', () => {
     for (const table of [
       'mica_import_ledger',
       'mica_invoices',
-      'mica_phones',
+      'mica_devices',
       'mica_phone_numbers',
       'mica_battery',
       'mica_lockscreen'

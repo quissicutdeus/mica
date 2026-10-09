@@ -100,9 +100,9 @@ export const itemMetadataRoundTripsThroughAStash = async (signal: {
     `CreateTemporaryStash answered ${String(stash)}`
   );
 
-  const phoneId = unique('phone');
+  const deviceId = unique('phone');
   // Lua's `return success, response` crosses the export boundary as `[success, response]`.
-  const answer = await callOn<unknown>('ox_inventory', 'AddItem', stash, item, 1, { phoneId });
+  const answer = await callOn<unknown>('ox_inventory', 'AddItem', stash, item, 1, { deviceId });
   const added = Array.isArray(answer) ? answer[0] : answer;
   assert(
     added === true,
@@ -118,8 +118,8 @@ export const itemMetadataRoundTripsThroughAStash = async (signal: {
   const held = slots[0];
   assert(Number.isInteger(held.slot) && held.slot > 0, `the slot is ${String(held.slot)}`);
   assert(
-    held.metadata?.phoneId === phoneId,
-    `the stored phoneId is ${String(held.metadata?.phoneId)}`
+    held.metadata?.deviceId === deviceId,
+    `the stored deviceId is ${String(held.metadata?.deviceId)}`
   );
 
   // Merge, then write: what `writeItemMetadata` does, and the reason it reads first.
@@ -131,6 +131,6 @@ export const itemMetadataRoundTripsThroughAStash = async (signal: {
     (await callOn<Slot[] | null>('ox_inventory', 'GetSlotsWithItem', stash, item)) ?? [];
   assert(again.length === 1, `the stash holds ${again.length} phone(s) after the write`);
   assert(again[0].slot === held.slot, 'the write moved the item to another slot');
-  assert(again[0].metadata?.phoneId === phoneId, 'the merged write dropped the phoneId');
+  assert(again[0].metadata?.deviceId === deviceId, 'the merged write dropped the deviceId');
   assert(again[0].metadata?.lastUsed === 7, 'the merged write did not store the new key');
 };

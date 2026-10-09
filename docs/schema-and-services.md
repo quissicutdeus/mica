@@ -352,7 +352,7 @@ DDL.
   holding every unique key it is under, and the same key created again is a
   duplicate-key error (MICA-318). `'revive'` makes `create` bring back the
   caller's own `'deleted'` row under that key — scoped by `citizenid` and, on a
-  device-owned table, `phone_id` (§2.9), never a moderated row or another
+  device-owned table, `device_id` (§2.9), never a moderated row or another
   owner's — writing the new values, resetting the rest to their defaults and
   refreshing `created_at`; a revive that loses a race falls through to the
   insert. `{ optOut: '<reason>' }` keeps the error, and the reason is the record
@@ -374,26 +374,26 @@ DDL.
 
 A phone is an item (MICA-219), and since MICA-282 its data belongs to the
 **phone**, not to the character holding it. A service opts in with
-`deviceOwned: true`, which injects a nullable `phone_id` column and a `phone_id`
-key, makes every generic action scope by the caller's active phone as well as
-their citizenid, and hands custom handlers the phone id as their sixth argument.
-The phone id is resolved by `ServiceEndpoint` from the item in the caller's own
-inventory (`services/Phones.ts`, through `lib/phoneIdentity.ts`), never from a
-payload — `phone_id` is refused by the write and filter allowlists whatever a
-client sends (MICA-281).
+`deviceOwned: true`, which injects a nullable `device_id` column and a
+`device_id` key, makes every generic action scope by the caller's active phone
+as well as their citizenid, and hands custom handlers the phone id as their
+sixth argument. The phone id is resolved by `ServiceEndpoint` from the item in
+the caller's own inventory (`services/Devices.ts`, through
+`lib/deviceIdentity.ts`), never from a payload — `device_id` is refused by the
+write and filter allowlists whatever a client sends (MICA-281).
 
 **The predicate is still both.** Every read and write on a device-owned table
-names `citizenid = ? AND phone_id = ?`. What makes a stolen phone show its data
+names `citizenid = ? AND device_id = ?`. What makes a stolen phone show its data
 to the thief is a _handover_, not a weaker predicate: when `resolvePhone` finds
-a player holding an item whose `mica_phones` row names somebody else, every
-table with a `phone_id` column gets
-`UPDATE … SET citizenid = holder WHERE phone_id = ?` through
-`Repository.transferPhoneRows`, a named privileged write. A child table with no
-repository registers a hook with `onPhoneHandover` (`mica_messages_participants`
-does). So `citizenid` on a device-owned row means _whoever holds the phone now_,
-and it stays the orphan sweep's key.
+a player holding an item whose `mica_devices` row names somebody else, every
+table with a `device_id` column gets
+`UPDATE … SET citizenid = holder WHERE device_id = ?` through
+`Repository.transferDeviceRows`, a named privileged write. A child table with no
+repository registers a hook with `onDeviceHandover`
+(`mica_messages_participants` does). So `citizenid` on a device-owned row means
+_whoever holds the phone now_, and it stays the orphan sweep's key.
 
-**A tablet is a device too (MICA-264).** `mica_phones.kind` says which, and a
+**A tablet is a device too (MICA-264).** `mica_devices.kind` says which, and a
 device-owned table keys a tablet's rows on the tablet's own id exactly as it
 keys a phone's, so nothing above changes shape. Which devices a service answers
 is declared with `devices` (default `['phone']`), on `defineService` or on a
@@ -417,7 +417,7 @@ bug that looks like a feature, so the reasoning is written down:
 | `mica_blocklist`                                           | Kept per phone; **enforced** per citizen, see `isBlocked`             |
 | `mica_messages_participants`                               | Membership: the thread lives on the phone                             |
 | `mica_battery`                                             | The charge is the device's; a bank charges the one in hand (MICA-283) |
-| `mica_phones`, `mica_phone_numbers`                        | The phone itself, and its number (MICA-284)                           |
+| `mica_devices`, `mica_phone_numbers`                       | The phone itself, and its number (MICA-284)                           |
 
 | Stays with the person                                                           | Why                                                                                               |
 | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
@@ -433,7 +433,7 @@ passcodes, two themes, two block lists and two memberships in a thread, so
 `mica_lockscreen`, `mica_settings`, `mica_blocklist` and
 `mica_messages_participants` are unique per phone, not per citizen.
 `0002_phone_data_follows_the_phone` did the swap; a new device-owned table with
-a per-owner unique key should name `phone_id` in it from the start.
+a per-owner unique key should name `device_id` in it from the start.
 
 **Rows written on a player's behalf** — a notification, a photo dropped on them,
 a contact a job hands them, a call logged against them — land on the phone
@@ -444,11 +444,11 @@ stolen phone reach the thief.
 
 **A server that cannot carry a phone id** — an ungated qb server, standalone,
 es_extended's own inventory — gives every citizen one unclaimed _identity phone_
-(`mica_phones.claimed = 0`), minted on demand and never written into an item. On
-a gated server the first item a citizen uses adopts that phone, which is how the
-migration's backfill lands on a real item. A player on a gated server holding no
-phone is refused with a player-facing message; there is no phone for their rows
-to belong to.
+(`mica_devices.claimed = 0`), minted on demand and never written into an item.
+On a gated server the first item a citizen uses adopts that phone, which is how
+the migration's backfill lands on a real item. A player on a gated server
+holding no phone is refused with a player-facing message; there is no phone for
+their rows to belong to.
 
 ### Declaring the custom actions: `contract`
 

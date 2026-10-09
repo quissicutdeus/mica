@@ -52,14 +52,14 @@ export interface ConversationListRow extends ConversationRow {
 
 /**
  * A membership row as the server holds it (MICA-339). `citizenid` is whoever holds the phone now
- * and `phone_id` is the phone; neither reaches another member. `phone_number` is the number on
+ * and `device_id` is the phone; neither reaches another member. `phone_number` is the number on
  * that phone, read with the row — see `PARTICIPANT_NUMBER` for which number that is.
  */
 export interface ParticipantRow {
   id: number;
   conversation_id: number;
   citizenid: string;
-  phone_id?: string | null;
+  device_id?: string | null;
   role: Participant['role'];
   status?: Participant['status'];
   last_read: Date | string;
@@ -76,7 +76,7 @@ export interface ParticipantRow {
  * *now* — so a thread with a burner carried its holder's main number the moment they switched
  * back, and the reader's contacts named it. Now, in order:
  *
- * 1. The number row on this membership's phone (`phone_id_unique`). Every phone a qb or
+ * 1. The number row on this membership's phone (`device_id_unique`). Every phone a qb or
  *    standalone server has seen in use carries one (MICA-284).
  * 2. The citizen's legacy row, a number on no phone yet. That exists only on a server whose
  *    inventory cannot carry a phone id — one phone per citizen, so their number *is* this
@@ -90,9 +90,9 @@ export interface ParticipantRow {
  */
 const PARTICIPANT_NUMBER =
   `COALESCE(` +
-  `(SELECT n.\`number\` FROM \`${PHONE_NUMBERS_TABLE}\` n WHERE n.\`phone_id\` = p.\`phone_id\` LIMIT 1), ` +
+  `(SELECT n.\`number\` FROM \`${PHONE_NUMBERS_TABLE}\` n WHERE n.\`device_id\` = p.\`device_id\` LIMIT 1), ` +
   `(SELECT l.\`number\` FROM \`${PHONE_NUMBERS_TABLE}\` l ` +
-  `WHERE l.\`citizenid\` = p.\`citizenid\` AND l.\`phone_id\` IS NULL ORDER BY l.\`id\` LIMIT 1)` +
+  `WHERE l.\`citizenid\` = p.\`citizenid\` AND l.\`device_id\` IS NULL ORDER BY l.\`id\` LIMIT 1)` +
   `) AS phone_number`;
 
 /** Whether one side of a 1:1 is a line rather than a phone (MICA-223). */
@@ -141,7 +141,7 @@ export const participantForReader = (
   created_at: row.created_at,
   left_at: row.left_at ?? null,
   updated_at: row.updated_at,
-  self: row.citizenid === readerCitizenId && row.phone_id === readerPhoneId,
+  self: row.citizenid === readerCitizenId && row.device_id === readerPhoneId,
   phone
 });
 
@@ -276,17 +276,17 @@ export const openLineThread = async (
     'findExternalThread' | 'createConversation' | 'ensureLineParticipant'
   >,
   citizenid: string,
-  phoneId: string,
+  deviceId: string,
   from: LineSender
 ): Promise<ConversationRow> => {
   const key = lineKey(from);
   const label = lineLabel(from);
 
-  const existing = await repo.findExternalThread(phoneId, key);
+  const existing = await repo.findExternalThread(deviceId, key);
   if (existing) {
     // A player who left this thread before leaving deleted it (MICA-275) would otherwise
     // get it back with no membership, and every send into it would be refused.
-    await repo.ensureLineParticipant(existing.id, citizenid, phoneId);
+    await repo.ensureLineParticipant(existing.id, citizenid, deviceId);
     return existing;
   }
 
@@ -294,7 +294,7 @@ export const openLineThread = async (
     citizenid,
     is_group: false,
     name: label,
-    participant_a: phoneId,
+    participant_a: deviceId,
     participant_b: key
   };
   let conversationId: number;
@@ -304,15 +304,15 @@ export const openLineThread = async (
     // Two texts from the same line in the same instant: `pair_key_unique` refused the
     // second. The first one's thread is the answer.
     const winner = /duplicate/i.test(error instanceof Error ? error.message : '')
-      ? await repo.findExternalThread(phoneId, key)
+      ? await repo.findExternalThread(deviceId, key)
       : null;
     if (!winner) throw error;
     // Still added: the winner may not have written its participant row yet, and
     // `ensureLineParticipant` is a no-op when it already has.
-    await repo.ensureLineParticipant(winner.id, citizenid, phoneId);
+    await repo.ensureLineParticipant(winner.id, citizenid, deviceId);
     return winner;
   }
-  await repo.ensureLineParticipant(conversationId, citizenid, phoneId);
+  await repo.ensureLineParticipant(conversationId, citizenid, deviceId);
   return { ...created, id: conversationId } as ConversationRow;
 };
 
@@ -360,9 +360,9 @@ export class ConversationRepository extends SchemaRepository<ConversationRow> {
     conversationId: number,
     name: string,
     citizenid: string,
-    phoneId: string
+    deviceId: string
   ): Promise<boolean> {
-    if (!citizenid || !phoneId) return false;
+    if (!citizenid || !deviceId) return false;
     this.assertWritableValue('name', name);
     return await Database.update(
       `UPDATE mica_messages_conversations c
@@ -371,10 +371,10 @@ export class ConversationRepository extends SchemaRepository<ConversationRow> {
           AND EXISTS (
               SELECT 1 FROM mica_messages_participants p
                WHERE p.conversation_id = c.id
-                 AND p.citizenid = ? AND p.phone_id = ?
+                 AND p.citizenid = ? AND p.device_id = ?
                  AND p.role = 'admin' AND p.status = 'active' AND p.left_at IS NULL
           )`,
-      [name, conversationId, citizenid, phoneId]
+      [name, conversationId, citizenid, deviceId]
     );
   }
 
@@ -426,17 +426,17 @@ export class ConversationRepository extends SchemaRepository<ConversationRow> {
     conversationId: number,
     citizenid: string,
     /** The phone the membership is on (MICA-282): the thread lives on the device. */
-    phoneId: string,
+    deviceId: string,
     role: 'admin' | 'member' = 'member'
   ): Promise<boolean> {
     const query = `
             INSERT INTO mica_messages_participants
-                (conversation_id, citizenid, phone_id, role, left_at, status)
+                (conversation_id, citizenid, device_id, role, left_at, status)
             SELECT ?, ?, ?, ?, NULL, 'active' FROM DUAL
             WHERE NOT EXISTS (
                 SELECT 1 FROM (
                     SELECT 1 FROM mica_messages_participants
-                    WHERE conversation_id = ? AND phone_id = ? AND left_at IS NULL
+                    WHERE conversation_id = ? AND device_id = ? AND left_at IS NULL
                     LIMIT 1
                 ) live
             )
@@ -444,10 +444,10 @@ export class ConversationRepository extends SchemaRepository<ConversationRow> {
     const insertId = await Database.insert(query, [
       conversationId,
       citizenid,
-      phoneId,
+      deviceId,
       role,
       conversationId,
-      phoneId
+      deviceId
     ]);
     // A conditional insert that matched nothing reports an insert id of 0.
     return Boolean(insertId);
@@ -456,8 +456,8 @@ export class ConversationRepository extends SchemaRepository<ConversationRow> {
   /**
    * The phone's live membership of a thread with a line, restored if it had left (MICA-275).
    *
-   * Not `addParticipant` alone: `conversation_phone_unique` is on `(conversation_id,
-   * phone_id)` and holds a left row too, so inserting a second row for a phone that left is
+   * Not `addParticipant` alone: `conversation_device_unique` is on `(conversation_id,
+   * device_id)` and holds a left row too, so inserting a second row for a phone that left is
    * a duplicate-key error rather than a rejoin. A `left` row is reopened and re-pointed at
    * the phone's current holder; a phone with no row at all gets one; a live row is left
    * alone. `removed` and `moderated` are never reopened.
@@ -470,22 +470,22 @@ export class ConversationRepository extends SchemaRepository<ConversationRow> {
   async ensureLineParticipant(
     conversationId: number,
     citizenid: string,
-    phoneId: string
+    deviceId: string
   ): Promise<void> {
     const restored = await Database.update(
       `UPDATE mica_messages_participants
           SET left_at = NULL, status = 'active', citizenid = ?
-        WHERE conversation_id = ? AND phone_id = ? AND status = 'left' AND left_at IS NOT NULL`,
-      [citizenid, conversationId, phoneId]
+        WHERE conversation_id = ? AND device_id = ? AND status = 'left' AND left_at IS NOT NULL`,
+      [citizenid, conversationId, deviceId]
     );
     if (restored) return;
-    await this.addParticipant(conversationId, citizenid, phoneId, 'member');
+    await this.addParticipant(conversationId, citizenid, deviceId, 'member');
   }
 
   async removeParticipant(
     conversationId: number,
     citizenid: string,
-    phoneId: string,
+    deviceId: string,
     status: string = 'removed'
   ) {
     // Find existing active session (left_at IS NULL) and close it
@@ -493,26 +493,26 @@ export class ConversationRepository extends SchemaRepository<ConversationRow> {
     const query = `
             UPDATE mica_messages_participants
             SET left_at = CURRENT_TIMESTAMP, status = ?
-            WHERE conversation_id = ? AND citizenid = ? AND phone_id = ? AND left_at IS NULL
+            WHERE conversation_id = ? AND citizenid = ? AND device_id = ? AND left_at IS NULL
         `;
-    return await Database.update(query, [status, conversationId, citizenid, phoneId]);
+    return await Database.update(query, [status, conversationId, citizenid, deviceId]);
   }
 
   /**
    * A phone changed hands: every membership on it now names its new holder (MICA-282).
    *
-   * The child-table twin of `Repository.transferPhoneRows`, reached through the handover hook
+   * The child-table twin of `Repository.transferDeviceRows`, reached through the handover hook
    * `Conversations.ts` registers because this table has no repository for the automatic walk
    * to find. `updated_at` is pinned so a handover does not reorder anyone's inbox. Named and
    * privileged for the same reason `markDeletedByAdmin` is: the row's citizenid is exactly
    * what is being changed, so no ownership predicate could express it.
    */
-  async transferParticipants(phoneId: string, citizenid: string): Promise<boolean> {
+  async transferParticipants(deviceId: string, citizenid: string): Promise<boolean> {
     return await Database.update(
       `UPDATE mica_messages_participants
           SET citizenid = ?, updated_at = updated_at
-        WHERE phone_id = ? AND citizenid <> ?`,
-      [citizenid, phoneId, citizenid]
+        WHERE device_id = ? AND citizenid <> ?`,
+      [citizenid, deviceId, citizenid]
     );
   }
 
@@ -532,13 +532,13 @@ export class ConversationRepository extends SchemaRepository<ConversationRow> {
    * Scoped by citizenid and `left_at IS NULL`, so a player can only ever mark
    * their own membership read, and only while they are still in the thread.
    */
-  async markRead(conversationId: number, citizenid: string, phoneId: string): Promise<boolean> {
+  async markRead(conversationId: number, citizenid: string, deviceId: string): Promise<boolean> {
     const query = `
             UPDATE mica_messages_participants
             SET last_read = CURRENT_TIMESTAMP
-            WHERE conversation_id = ? AND citizenid = ? AND phone_id = ? AND left_at IS NULL
+            WHERE conversation_id = ? AND citizenid = ? AND device_id = ? AND left_at IS NULL
         `;
-    return await Database.update(query, [conversationId, citizenid, phoneId]);
+    return await Database.update(query, [conversationId, citizenid, deviceId]);
   }
 
   /**
@@ -551,15 +551,15 @@ export class ConversationRepository extends SchemaRepository<ConversationRow> {
   async setArchived(
     conversationId: number,
     citizenid: string,
-    phoneId: string,
+    deviceId: string,
     archived: boolean
   ): Promise<boolean> {
     const query = `
             UPDATE mica_messages_participants
             SET archived_at = ${archived ? 'CURRENT_TIMESTAMP' : 'NULL'}
-            WHERE conversation_id = ? AND citizenid = ? AND phone_id = ? AND left_at IS NULL
+            WHERE conversation_id = ? AND citizenid = ? AND device_id = ? AND left_at IS NULL
         `;
-    return await Database.update(query, [conversationId, citizenid, phoneId]);
+    return await Database.update(query, [conversationId, citizenid, deviceId]);
   }
 
   /**
@@ -641,10 +641,10 @@ export class ConversationRepository extends SchemaRepository<ConversationRow> {
   async findForPhone(
     citizenid: string,
     /** The phone whose inbox this is (MICA-282) — beside the citizen, never instead (§2.9). */
-    phoneId: string,
+    deviceId: string,
     page: { limit: number; cursor: RecencyCursor | null }
   ): Promise<{ rows: ConversationListRow[]; nextCursor: RecencyCursor | null }> {
-    const params: unknown[] = [citizenid, phoneId];
+    const params: unknown[] = [citizenid, deviceId];
 
     /**
      * Written once and used three times — the projection, the cursor predicate and the sort —
@@ -681,7 +681,7 @@ export class ConversationRepository extends SchemaRepository<ConversationRow> {
             JOIN mica_messages_participants me
                 ON me.conversation_id = c.id
                 AND me.citizenid = ?
-                AND me.phone_id = ?
+                AND me.device_id = ?
                 AND me.left_at IS NULL
             LEFT JOIN mica_messages m ON m.id = (
                 SELECT id FROM mica_messages
@@ -800,11 +800,11 @@ export class ConversationRepository extends SchemaRepository<ConversationRow> {
             WHERE c.is_group = 0 AND c.status = 'active'
             AND EXISTS (
                 SELECT 1 FROM mica_messages_participants p1
-                WHERE p1.conversation_id = c.id AND p1.phone_id = ? AND p1.left_at IS NULL
+                WHERE p1.conversation_id = c.id AND p1.device_id = ? AND p1.left_at IS NULL
             )
             AND EXISTS (
                 SELECT 1 FROM mica_messages_participants p2
-                WHERE p2.conversation_id = c.id AND p2.phone_id = ? AND p2.left_at IS NULL
+                WHERE p2.conversation_id = c.id AND p2.device_id = ? AND p2.left_at IS NULL
             )
             ORDER BY c.id ASC
             LIMIT 1
@@ -852,7 +852,7 @@ export class ConversationRepository extends SchemaRepository<ConversationRow> {
    * such a thread is the phone. So the pair columns are the key here, in either order --
    * `pair_key_unique` is what guarantees there is at most one of them.
    */
-  async findExternalThread(phoneId: string, externalKey: string): Promise<ConversationRow | null> {
+  async findExternalThread(deviceId: string, externalKey: string): Promise<ConversationRow | null> {
     const rows = await Database.query<ConversationRow[]>(
       `SELECT c.*
          FROM mica_messages_conversations c
@@ -860,7 +860,7 @@ export class ConversationRepository extends SchemaRepository<ConversationRow> {
           AND ((c.participant_a = ? AND c.participant_b = ?)
             OR (c.participant_a = ? AND c.participant_b = ?))
         LIMIT 1`,
-      [phoneId, externalKey, externalKey, phoneId]
+      [deviceId, externalKey, externalKey, deviceId]
     );
     return rows.length > 0 ? rows[0] : null;
   }
@@ -905,7 +905,7 @@ export class ConversationRepository extends SchemaRepository<ConversationRow> {
    * implicit `id` as the tiebreak) because an `id` order cannot ride that key and filesorts
    * every thread's messages. A thread nobody has written a live message in is not in the inbox,
    * and a deleted or moderated message is never the one shown to staff. The player's number
-   * joins `mica_phone_numbers` on `phone_id_unique`. The text is opened off the row's own
+   * joins `mica_phone_numbers` on `device_id_unique`. The text is opened off the row's own
    * citizenid and conversation (MICA-165), as `findByConversation` opens a page. Checked by
    * EXPLAIN against MariaDB 11 with 5,200 threads and 104,000 messages.
    */
@@ -918,7 +918,7 @@ export class ConversationRepository extends SchemaRepository<ConversationRow> {
               SELECT x.id FROM mica_messages x
                WHERE x.conversation_id = c.id AND x.status = 'active'
                ORDER BY x.created_at DESC, x.id DESC LIMIT 1)
-         LEFT JOIN \`${PHONE_NUMBERS_TABLE}\` n ON n.phone_id = c.participant_a
+         LEFT JOIN \`${PHONE_NUMBERS_TABLE}\` n ON n.device_id = c.participant_a
         WHERE c.participant_b = ? AND c.is_group = 0 AND c.status = 'active'
         ORDER BY m.created_at DESC, m.id DESC
         LIMIT ?`,
@@ -950,11 +950,11 @@ export class ConversationRepository extends SchemaRepository<ConversationRow> {
             WHERE c.is_group = 0 AND c.status = 'active'
             AND EXISTS (
                 SELECT 1 FROM mica_messages_participants p1
-                WHERE p1.conversation_id = c.id AND p1.phone_id = ? AND p1.left_at IS NULL
+                WHERE p1.conversation_id = c.id AND p1.device_id = ? AND p1.left_at IS NULL
             )
             AND EXISTS (
                 SELECT 1 FROM mica_messages_participants p2
-                WHERE p2.conversation_id = c.id AND p2.phone_id = ? AND p2.left_at IS NULL
+                WHERE p2.conversation_id = c.id AND p2.device_id = ? AND p2.left_at IS NULL
             )
             LIMIT 1
         `;

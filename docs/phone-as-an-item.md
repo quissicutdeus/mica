@@ -25,11 +25,11 @@ that qb-core and ox_inventory both ship an item called `phone` already, so
 `set mica_phone_item "phone"` needs nothing else on those.
 
 The phone's id is minted the first time a player **uses** the item, and it is
-written into that slot's metadata under the key `phoneId`
-(`server/services/Phones.ts`, `resolvePhone`). Where that key lands depends on
+written into that slot's metadata under the key `deviceId`
+(`server/services/Devices.ts`, `resolvePhone`). Where that key lands depends on
 the inventory (`server/lib/framework/itemMetadata.ts`):
 
-| Inventory                                       | Where `phoneId` is stored                                                             | Read | Write                                    |
+| Inventory                                       | Where `deviceId` is stored                                                            | Read | Write                                    |
 | ----------------------------------------------- | ------------------------------------------------------------------------------------- | ---- | ---------------------------------------- |
 | ox_inventory (qbx_core, or ox on qb-core / ESX) | the slot's `metadata` table, through `SetMetadata`, merged with what is already there | yes  | yes                                      |
 | qb-inventory                                    | the item's `info` table                                                               | yes  | only if your build exposes `SetItemData` |
@@ -78,11 +78,11 @@ qb-shops lists products per shop in its `config.lua`:
 { name = 'phone', price = 250, amount = 50 },
 ```
 
-What happens on first use (`resolvePhone` in `server/services/Phones.ts`, and
+What happens on first use (`resolvePhone` in `server/services/Devices.ts`, and
 `numberForPhone` in `server/services/PhoneNumbers.ts`), in order:
 
-1. The item carries no `phoneId`. If the character has an **unclaimed identity
-   phone** (`mica_phones.claimed = 0`), the item adopts it: that is the phone
+1. The item carries no `deviceId`. If the character has an **unclaimed identity
+   phone** (`mica_devices.claimed = 0`), the item adopts it: that is the phone
    the upgrade migration put all their existing rows on, and it is why a
    player's contacts survive the day you turn the gate on. Otherwise a fresh id
    is minted.
@@ -113,14 +113,14 @@ There is nothing to script for the data. When a phone moves inventories intact,
 the next player to **use** it becomes its holder, and the handover is what moves
 everything:
 
-- `resolvePhone` finds an item whose `mica_phones` row names somebody else and
-  calls `handOver`, which runs `Repository.transferPhoneRows`: one
-  `UPDATE … SET citizenid = <holder> WHERE phone_id = ?` across every table with
-  a `phone_id` column. Contacts, notes, photos, places, settings, the passcode
-  row, notifications, the call log, the block list, thread memberships and the
-  battery charge all now belong to the thief. `docs/schema-and-services.md` has
-  the table-by-table split, and why `citizenid` on those rows means "whoever
-  holds the phone now".
+- `resolvePhone` finds an item whose `mica_devices` row names somebody else and
+  calls `handOver`, which runs `Repository.transferDeviceRows`: one
+  `UPDATE … SET citizenid = <holder> WHERE device_id = ?` across every table
+  with a `device_id` column. Contacts, notes, photos, places, settings, the
+  passcode row, notifications, the call log, the block list, thread memberships
+  and the battery charge all now belong to the thief.
+  `docs/schema-and-services.md` has the table-by-table split, and why
+  `citizenid` on those rows means "whoever holds the phone now".
 - The number travels: `numberForPhone` transfers the `mica_phone_numbers` row to
   the holder, and a message or call to that number reaches the phone, whoever
   has it. The framework's `charinfo.phone` for the thief is written back to the
@@ -158,7 +158,7 @@ Two independent controls exist, and a confiscation script normally wants both:
 **Take the item.** Remove the phone from the player's inventory and put it in
 the officer's, or in an evidence stash. The player's phone closes as soon as the
 client relays the change, exactly as it does on a robbery. The data goes
-nowhere: the rows keep their `phone_id`, with `citizenid` still naming the
+nowhere: the rows keep their `device_id`, with `citizenid` still naming the
 player, because nobody has _used_ the item since. An officer who uses the
 confiscated phone becomes its holder through the handover above and can read it,
 which is realistic and worth knowing before you let a stash be that easy to
@@ -195,8 +195,8 @@ framework agrees on, and a phone in a stash, on the ground, or in a dead
 player's dropped inventory looks identical to one that is gone forever.
 
 So when a phone item is destroyed, its rows stay exactly where they are: keyed
-on a `phone_id` no item carries any more, with `citizenid` naming the last
-holder, and a `mica_phones` row that is now permanently claimed. Nothing reads
+on a `device_id` no item carries any more, with `citizenid` naming the last
+holder, and a `mica_devices` row that is now permanently claimed. Nothing reads
 them again, and nothing deletes them. The same is true of a phone dropped on
 death and never picked up. A trade is not this case at all; it is a handover the
 moment the buyer uses the phone.
@@ -221,7 +221,7 @@ What already covers some of that:
 There is no export or command today that says "this phone id is gone, drop its
 rows". On a server where phones are destroyed often, the abandoned rows are
 small and inert, but they are not reclaimed until the character is. An owner who
-needs that has to delete `WHERE phone_id = ?` by hand across the device-owned
+needs that has to delete `WHERE device_id = ?` by hand across the device-owned
 tables, in the order `docs/schema-and-services.md` lists them.
 
 ## A burner
@@ -247,7 +247,7 @@ anonymity a burner really buys:
 - **Other players see nothing linking them.** A message from the burner's number
   carries the burner's number; a contact saved on one phone is not on the other;
   the block list is per phone.
-- **The server links them by character.** Both `mica_phones` rows name the same
+- **The server links them by character.** Both `mica_devices` rows name the same
   `citizenid`, so do the `mica_phone_numbers` rows, and every device-owned row
   on either phone carries the holder's `citizenid`. Messages the character
   writes from either phone name them as author. `mica_audit_logs`, the

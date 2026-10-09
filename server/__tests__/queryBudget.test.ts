@@ -192,7 +192,7 @@ describe('the conversation list is two queries, whatever the list holds', () => 
     expect(db.statements[1].params).toEqual([1, 2, 3]);
     // The number on the phone in the thread, read with the row.
     expect(db.statements[1].sql).toContain(
-      '`mica_phone_numbers` n WHERE n.`phone_id` = p.`phone_id`'
+      '`mica_phone_numbers` n WHERE n.`device_id` = p.`device_id`'
     );
     // Never a join onto the framework's own table: errno 1267 on a stock ESX install.
     expect(db.statements[1].sql).not.toContain('LEFT JOIN');

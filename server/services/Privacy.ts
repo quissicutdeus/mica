@@ -188,7 +188,7 @@ export const EXPORT_EXCLUDED: ReadonlySet<string> = new Set([AUDIT_LOG_TABLE]);
  * - `mica_invoices`, the open ones: a bill somebody else issued to the player and they have
  *   not paid. Deleting it would be walking away from the debt. A paid, declined or expired
  *   invoice is the player's history and goes.
- * - `mica_phones`, `mica_phone_numbers`, `mica_battery`, `mica_lockscreen`, whole: the
+ * - `mica_devices`, `mica_phone_numbers`, `mica_battery`, `mica_lockscreen`, whole: the
  *   device's identity and state, not the player's content. Deleting them under a live session
  *   desyncs it — the number registry and the lock keep the old row, and a number could be
  *   reassigned while its holder still has the phone open. They stay in the export.
@@ -211,7 +211,7 @@ export const SELF_SERVICE_EXCEPT: readonly PurgeException[] = [
   },
   { table: 'mica_import_ledger' },
   // The device, not the player's content — see the list above.
-  { table: 'mica_phones' },
+  { table: 'mica_devices' },
   { table: 'mica_phone_numbers' },
   { table: 'mica_battery' },
   { table: 'mica_lockscreen' }

@@ -348,7 +348,7 @@ describe('addParticipant — the live row is unique by construction', () => {
     addParticipant: (
       id: number,
       citizenid: string,
-      phoneId: string,
+      deviceId: string,
       role?: 'admin' | 'member'
     ) => Promise<boolean>;
   };
@@ -431,7 +431,7 @@ describe('conversations:create — participant_a/participant_b and the unique-in
     directory.byPhone.set('555-0100', { citizenid: 'CIT_B' });
     // The number 555-0100 is on phone PHONE_B (`mica_phone_numbers`), so that is the phone the
     // thread reaches — a pair is two phones since MICA-282, not two people.
-    dbMock.single.mockResolvedValue({ phone_id: 'PHONE_B' });
+    dbMock.single.mockResolvedValue({ device_id: 'PHONE_B' });
   });
 
   it('stamps participant_a/participant_b on a 1:1 create, as the two phones', async () => {

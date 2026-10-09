@@ -7,5 +7,6 @@ import { migration as m3 } from './0004_citizenid_widens_on_esx';
 import { migration as m4 } from './0005_contact_ringtone_holds_owner_sounds';
 import { migration as m5 } from './0006_players_foreign_keys_dropped';
 import { migration as m6 } from './0007_sealed_bodies_widen_their_columns';
+import { migration as m7 } from './0008_phones_become_devices';
 
-export const migrations = [m0, m1, m2, m3, m4, m5, m6];
+export const migrations = [m0, m1, m2, m3, m4, m5, m6, m7];

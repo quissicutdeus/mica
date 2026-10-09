@@ -41,7 +41,7 @@ export const PHONE_NUMBERS_TABLE = 'mica_phone_numbers';
 /**
  * One row, as the declaration defines it.
  *
- * `phone_id` is the phone this number belongs to, or **`NULL` for a legacy row**: a number
+ * `device_id` is the phone this number belongs to, or **`NULL` for a legacy row**: a number
  * that is this citizen's and has not yet been attached to a phone. Every row was a legacy row
  * before MICA-284, and on a server whose inventory cannot carry a phone id (standalone, or
  * es_extended's own inventory) every row stays one — one number per citizen, exactly as
@@ -52,7 +52,7 @@ export interface PhoneNumberRow {
   id: number;
   citizenid: string;
   number: string;
-  phone_id: string | null;
+  device_id: string | null;
   status: string;
 }
 
@@ -124,7 +124,7 @@ export interface AssignedNumberRow {
 /**
  * A citizenid's **legacy** row — their number that is not yet on any phone — or null.
  *
- * `phone_id IS NULL` is the whole definition. Before MICA-284 every row was one of these,
+ * `device_id IS NULL` is the whole definition. Before MICA-284 every row was one of these,
  * and the migration seeds one per existing qb character, so on upgrade this is where a
  * player's number is found the first time they use a phone, and the row is then attached to
  * it rather than a fresh number issued. On a server that cannot carry a phone id every row
@@ -144,18 +144,18 @@ export const readLegacyRow = async (citizenid: string): Promise<AssignedNumberRo
   if (!citizenid) return null;
   return await Database.single<AssignedNumberRow | null>(
     `SELECT \`id\`, \`citizenid\`, \`number\`, \`status\` FROM \`${PHONE_NUMBERS_TABLE}\`
-     WHERE \`citizenid\` = ? AND \`phone_id\` IS NULL ORDER BY \`id\` LIMIT 1`,
+     WHERE \`citizenid\` = ? AND \`device_id\` IS NULL ORDER BY \`id\` LIMIT 1`,
     [citizenid]
   );
 };
 
 /** The number row on a phone, whoever holds it, or null when the phone has none yet. */
-export const readRowByPhoneId = async (phoneId: string): Promise<AssignedNumberRow | null> => {
-  if (!phoneId) return null;
+export const readRowByPhoneId = async (deviceId: string): Promise<AssignedNumberRow | null> => {
+  if (!deviceId) return null;
   return await Database.single<AssignedNumberRow | null>(
     `SELECT \`id\`, \`citizenid\`, \`number\`, \`status\` FROM \`${PHONE_NUMBERS_TABLE}\`
-     WHERE \`phone_id\` = ? LIMIT 1`,
-    [phoneId]
+     WHERE \`device_id\` = ? LIMIT 1`,
+    [deviceId]
   );
 };
 
@@ -188,11 +188,11 @@ export const ACTIVE_STATUS = 'active';
  */
 export const readPhoneIdByNumber = async (number: string): Promise<string | null> => {
   if (!number) return null;
-  const row = await Database.single<{ phone_id: string | null } | null>(
-    `SELECT \`phone_id\` FROM \`${PHONE_NUMBERS_TABLE}\` WHERE \`number\` = ? LIMIT 1`,
+  const row = await Database.single<{ device_id: string | null } | null>(
+    `SELECT \`device_id\` FROM \`${PHONE_NUMBERS_TABLE}\` WHERE \`number\` = ? LIMIT 1`,
     [number]
   );
-  return row?.phone_id ?? null;
+  return row?.device_id ?? null;
 };
 
 /** Whoever holds this number, or null. The reverse of `readNumber`, for dialling. */

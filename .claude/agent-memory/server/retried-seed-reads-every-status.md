@@ -1,12 +1,13 @@
 # A retried seed decides "already there" over every status
 
 MICA-327: a new phone's default-contacts seed was logged and lost when it threw
-part-way. The `mica_phones` insert is the "phone is new" mark, and it is written
-**before** any hook runs, so it can never also mean "set-up finished". Failed
-`onPhoneCreated` hooks are now kept per phone in `Phones.ts` (`owedSetup`) and
-retried on that phone's next resolve, backed off like a handover retry.
+part-way. The `mica_devices` insert is the "phone is new" mark, and it is
+written **before** any hook runs, so it can never also mean "set-up finished".
+Failed `onDeviceCreated` hooks are now kept per phone in `Devices.ts`
+(`owedSetup`) and retried on that phone's next resolve, backed off like a
+handover retry.
 
-**Every write that names a holder goes on the phone's queue** (`queueOnPhone`,
+**Every write that names a holder goes on the phone's queue** (`queueOnDevice`,
 the MICA-319 `settling` chain): `ensureHeld`, the first seed, and every retry.
 The retry is queued, not awaited, so the next resolve waits behind it. A seed
 running outside that queue can race a handover: the new holder's walk moves the
@@ -17,7 +18,7 @@ phone when it runs (`holderNow`), not who triggered it.
 A retried hook must be idempotent, and for contacts the "already there" check
 has to read rows **in any status**. `Repository.delete` is soft, so a default
 the player deleted still has a row with its number; a read of active rows only
-would re-seed it. The read is keyed on `phone_id` alone (server-internal,
+would re-seed it. The read is keyed on `device_id` alone (server-internal,
 decides what to insert). Numbers compare by digits (`sameNumberKey`), mirroring
 the web caller-ID rule `contactRingtone` in `toast.ts`; no shared helper exists
 yet.

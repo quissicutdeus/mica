@@ -37,11 +37,11 @@ const { dbMock, bridgeMock, handlers, everyHandler } = vi.hoisted(() => {
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
 vi.mock('../lib/FrameworkBridge', () => ({ FrameworkBridge: bridgeMock }));
 /**
- * `services/Phones.ts`'s synchronous identity cache, which is all Battery reads from it: which
+ * `services/Devices.ts`'s synchronous identity cache, which is all Battery reads from it: which
  * tablet a source is using, if any (MICA-337). Nothing is in use unless a case says so.
  */
 const inUse = vi.hoisted(() => ({ tablet: null as string | null }));
-vi.mock('../services/Phones', () => ({
+vi.mock('../services/Devices', () => ({
   activeDeviceIdOf: (_src: number, kind: string) => (kind === 'tablet' ? inUse.tablet : null)
 }));
 /**
@@ -92,7 +92,7 @@ const batteryItemHandler: (src: number) => void = bridgeMock.registerUsableItem.
   (call: unknown[]) => call[0] === 'battery_bank'
 )?.[1];
 import { __resetRateLimits } from '../lib/rateLimit';
-import { __setPhoneResolvers } from '../lib/phoneIdentity';
+import { __setDeviceResolvers } from '../lib/deviceIdentity';
 import { TEST_PHONE_ID } from './phoneStub';
 import { PlayerFacingError } from '../lib/errors';
 
@@ -137,7 +137,7 @@ describe('battery table declaration', () => {
   it('carries a unique index on the phone, so a phone cannot end up with two rows', () => {
     // Per phone since MICA-283: two phones hold two charges, so the key names the device.
     const unique = batteryApp.resolved.indexes.filter((i) => i.unique);
-    expect(unique).toEqual([{ name: 'phone_id_unique', columns: ['phone_id'], unique: true }]);
+    expect(unique).toEqual([{ name: 'device_id_unique', columns: ['device_id'], unique: true }]);
   });
 });
 
@@ -165,7 +165,7 @@ describe('savePlayerBattery', () => {
     // Ownership-scoped: the citizenid is in the WHERE clause, not just the lookup — and the
     // phone beside it (MICA-283).
     expect(sql).toContain('AND `citizenid` = ?');
-    expect(sql).toContain('AND `phone_id` = ?');
+    expect(sql).toContain('AND `device_id` = ?');
     expect(params).toEqual([42, 3, CID, TEST_PHONE_ID]);
   });
 
@@ -278,7 +278,7 @@ describe('sendLoadedBatteryToClient', () => {
 describe('a load that cannot read the table (MICA-326)', () => {
   const PHONE_A = 'a'.repeat(32);
   const PHONE_B = 'b'.repeat(32);
-  const SAVED = [{ id: 1, citizenid: CID, phone_id: PHONE_A, level: 12 }];
+  const SAVED = [{ id: 1, citizenid: CID, device_id: PHONE_A, level: 12 }];
   const phoneStateChanged = async (src: number) => {
     const { __phoneStateSubscribers } = await import('../lib/deviceItem');
     for (const subscriber of __phoneStateSubscribers()) {
@@ -293,7 +293,7 @@ describe('a load that cannot read the table (MICA-326)', () => {
     __resetBatteryState();
     (globalThis as any).emitNet = vi.fn();
     vi.spyOn(console, 'error').mockImplementation(() => {});
-    __setPhoneResolvers({ forRequest: async () => PHONE_A });
+    __setDeviceResolvers({ forRequest: async () => PHONE_A });
   });
 
   it('writes nothing, even with legacy metadata to adopt, and holds no charge', async () => {
@@ -353,7 +353,7 @@ describe('a load that cannot read the table (MICA-326)', () => {
   it('does not tick the old phone charge into a new phone it could not read', async () => {
     bridgeMock.getPlayer.mockReturnValue(mockPlayer());
     let phone = PHONE_A;
-    __setPhoneResolvers({ forRequest: async () => phone });
+    __setDeviceResolvers({ forRequest: async () => phone });
     dbMock.query.mockResolvedValue(SAVED);
     await sendLoadedBatteryToClient(SRC);
 
@@ -382,7 +382,7 @@ describe('a load that cannot read the table (MICA-326)', () => {
   it('saves no guessed 100 over the previous phone when the player stops holding one', async () => {
     bridgeMock.getPlayer.mockReturnValue(mockPlayer());
     let holding = true;
-    __setPhoneResolvers({
+    __setDeviceResolvers({
       forRequest: async () => {
         if (holding) return PHONE_A;
         throw new PlayerFacingError('You are not holding a phone.', {
@@ -415,7 +415,7 @@ describe('a load that cannot read the table (MICA-326)', () => {
   });
 
   it('rejects the export read rather than answering a full battery', async () => {
-    __setPhoneResolvers({ forCitizen: async () => PHONE_A });
+    __setDeviceResolvers({ forCitizen: async () => PHONE_A });
     dbMock.query.mockRejectedValue(new Error('connection lost'));
     const { getBatteryLevel } = await import('../services/Battery');
 
@@ -509,7 +509,7 @@ describe('a load that cannot read the table (MICA-326)', () => {
     // The `held` guard on the switch: Thire removed it and every case stayed green.
     bridgeMock.getPlayer.mockReturnValue(mockPlayer());
     let phone = PHONE_A;
-    __setPhoneResolvers({ forRequest: async () => phone });
+    __setDeviceResolvers({ forRequest: async () => phone });
     dbMock.query.mockRejectedValueOnce(new Error('connection lost'));
     await sendLoadedBatteryToClient(SRC);
     // Every read works from here, so a save of A would reach the database.
@@ -534,7 +534,7 @@ describe('a load that cannot read the table (MICA-326)', () => {
     // failing left B at 11 for good.
     bridgeMock.getPlayer.mockReturnValue(mockPlayer());
     let phone = PHONE_A;
-    __setPhoneResolvers({ forRequest: async () => phone });
+    __setDeviceResolvers({ forRequest: async () => phone });
     dbMock.query.mockResolvedValue(SAVED);
     await sendLoadedBatteryToClient(SRC);
 
@@ -545,7 +545,7 @@ describe('a load that cannot read the table (MICA-326)', () => {
       readsOfB += 1;
       if (readsOfB === 1) return firstReadOfB.pending;
       // Every later read of B answers its row, so a save into B would reach `update`.
-      return [{ id: 2, citizenid: CID, phone_id: PHONE_B, level: 80 }];
+      return [{ id: 2, citizenid: CID, device_id: PHONE_B, level: 80 }];
     });
     phone = PHONE_B;
     const switching = phoneStateChanged(SRC);
@@ -621,11 +621,11 @@ describe('a character switch on the same source', () => {
   it('loads the new character on their own phone, not the previous character', async () => {
     let character = { cid: CID, phone: PHONE_A };
     bridgeMock.getPlayer.mockImplementation(() => ({ ...mockPlayer(), citizenid: character.cid }));
-    __setPhoneResolvers({ forRequest: async () => character.phone });
+    __setDeviceResolvers({ forRequest: async () => character.phone });
     dbMock.query.mockImplementation(async (_sql: string, params: unknown[]) =>
       params[0] === PHONE_A
-        ? [{ id: 1, citizenid: CID, phone_id: PHONE_A, level: 30 }]
-        : [{ id: 2, citizenid: 'OTHER001', phone_id: PHONE_B, level: 70 }]
+        ? [{ id: 1, citizenid: CID, device_id: PHONE_A, level: 30 }]
+        : [{ id: 2, citizenid: 'OTHER001', device_id: PHONE_B, level: 70 }]
     );
     await sendLoadedBatteryToClient(SRC);
     expect(currentCharge(SRC)).toBe(30);
@@ -642,8 +642,8 @@ describe('a character switch on the same source', () => {
   it('holds no previous-character charge when the new character cannot be read', async () => {
     let character = { cid: CID, phone: PHONE_A };
     bridgeMock.getPlayer.mockImplementation(() => ({ ...mockPlayer(), citizenid: character.cid }));
-    __setPhoneResolvers({ forRequest: async () => character.phone });
-    dbMock.query.mockResolvedValue([{ id: 1, citizenid: CID, phone_id: PHONE_A, level: 30 }]);
+    __setDeviceResolvers({ forRequest: async () => character.phone });
+    dbMock.query.mockResolvedValue([{ id: 1, citizenid: CID, device_id: PHONE_A, level: 30 }]);
     await sendLoadedBatteryToClient(SRC);
 
     character = { cid: 'OTHER001', phone: PHONE_B };
@@ -846,7 +846,7 @@ describe('the write-skip cache', () => {
     __resetBatteryState();
     // The cache is keyed by phone since MICA-283, so every character here is on a phone of
     // their own, and each report comes from its own source — one source is one character.
-    __setPhoneResolvers({ forRequest: async (_src, citizenid) => `phone-of-${citizenid}` });
+    __setDeviceResolvers({ forRequest: async (_src, citizenid) => `phone-of-${citizenid}` });
     bridgeMock.getPlayer.mockReturnValue(playerFor(CID));
 
     await savePlayerBattery(SRC, 42);
@@ -1018,8 +1018,8 @@ describe('the charge follows the phone', () => {
   });
 
   it('loads and saves the charge of the phone in hand, not the character', async () => {
-    __setPhoneResolvers({ forRequest: async () => PHONE_A });
-    dbMock.query.mockResolvedValue([{ id: 1, citizenid: CID, phone_id: PHONE_A, level: 30 }]);
+    __setDeviceResolvers({ forRequest: async () => PHONE_A });
+    dbMock.query.mockResolvedValue([{ id: 1, citizenid: CID, device_id: PHONE_A, level: 30 }]);
 
     await sendLoadedBatteryToClient(SRC);
 
@@ -1029,11 +1029,11 @@ describe('the charge follows the phone', () => {
 
   it('switching phones saves the old charge and loads the new one', async () => {
     let phone = PHONE_A;
-    __setPhoneResolvers({ forRequest: async () => phone });
+    __setDeviceResolvers({ forRequest: async () => phone });
     dbMock.query.mockImplementation(async (_sql: string, params: unknown[]) =>
       params[0] === PHONE_A
-        ? [{ id: 1, citizenid: CID, phone_id: PHONE_A, level: 30 }]
-        : [{ id: 2, citizenid: CID, phone_id: PHONE_B, level: 80 }]
+        ? [{ id: 1, citizenid: CID, device_id: PHONE_A, level: 30 }]
+        : [{ id: 2, citizenid: CID, device_id: PHONE_B, level: 80 }]
     );
     await sendLoadedBatteryToClient(SRC);
     applyCharge(SRC, 25);
@@ -1054,8 +1054,8 @@ describe('the charge follows the phone', () => {
   });
 
   it('does nothing on a phone-state event that did not change the phone', async () => {
-    __setPhoneResolvers({ forRequest: async () => PHONE_A });
-    dbMock.query.mockResolvedValue([{ id: 1, citizenid: CID, phone_id: PHONE_A, level: 30 }]);
+    __setDeviceResolvers({ forRequest: async () => PHONE_A });
+    dbMock.query.mockResolvedValue([{ id: 1, citizenid: CID, device_id: PHONE_A, level: 30 }]);
     await sendLoadedBatteryToClient(SRC);
     dbMock.query.mockClear();
     dbMock.update.mockClear();
@@ -1068,7 +1068,7 @@ describe('the charge follows the phone', () => {
   });
 
   it('holds nothing live for a player holding no phone on a gated server', async () => {
-    __setPhoneResolvers({
+    __setDeviceResolvers({
       forRequest: async () => {
         throw new PlayerFacingError('You are not holding a phone.', {
           key: 'server.phone.notHeld'
@@ -1085,8 +1085,8 @@ describe('the charge follows the phone', () => {
   });
 
   it('answers the export for the phone the character is on', async () => {
-    __setPhoneResolvers({ forCitizen: async () => PHONE_B });
-    dbMock.query.mockResolvedValue([{ id: 2, citizenid: CID, phone_id: PHONE_B, level: 63 }]);
+    __setDeviceResolvers({ forCitizen: async () => PHONE_B });
+    dbMock.query.mockResolvedValue([{ id: 2, citizenid: CID, device_id: PHONE_B, level: 63 }]);
     const { getBatteryLevel } = await import('../services/Battery');
 
     await expect(getBatteryLevel(CID)).resolves.toBe(63);
@@ -1109,7 +1109,7 @@ describe('the tablet has a battery of its own (MICA-337)', () => {
 
   /**
    * What each device resolves to; `null` is "holding none", which a gated server refuses. What
-   * `services/Phones.ts` has cached as in use is `inUse`, moved by a case where Phones would.
+   * `services/Devices.ts` has cached as in use is `inUse`, moved by a case where Phones would.
    */
   const hand: { phone: string | null; tablet: string | null } = {
     phone: PHONE_A,
@@ -1154,7 +1154,7 @@ describe('the tablet has a battery of its own (MICA-337)', () => {
       name === 'mica_tablet' ? (tabletConvar.on ? 'true' : 'false') : fallback;
     (globalThis as any).GetConvarInt = (_n: string, fallback: number) => fallback;
     bridgeMock.getPlayer.mockReturnValue({ ...mockPlayer(), removeItem: vi.fn(() => true) });
-    __setPhoneResolvers({
+    __setDeviceResolvers({
       forRequest: async (_src, _citizenid, device = 'phone') => {
         const id = hand[device];
         if (id === null) {
@@ -1168,7 +1168,7 @@ describe('the tablet has a battery of its own (MICA-337)', () => {
     dbMock.query.mockImplementation(async (_sql: string, params: unknown[]) => {
       const id = params[0] as string;
       return id in LEVELS
-        ? [{ id: id.charCodeAt(0), citizenid: CID, phone_id: id, level: LEVELS[id] }]
+        ? [{ id: id.charCodeAt(0), citizenid: CID, device_id: id, level: LEVELS[id] }]
         : [];
     });
   });
@@ -1237,7 +1237,7 @@ describe('the tablet has a battery of its own (MICA-337)', () => {
     beforeEach(() => {
       resolverCalls.length = 0;
       inUse.tablet = null;
-      __setPhoneResolvers({
+      __setDeviceResolvers({
         forRequest: async (src, citizenid, device = 'phone') => {
           resolverCalls.push([src, citizenid, device]);
           const id = hand[device];

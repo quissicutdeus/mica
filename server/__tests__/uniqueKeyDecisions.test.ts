@@ -71,13 +71,13 @@ describe('unique keys and soft deletes (MICA-321)', () => {
         'blabber',
         'blocklist',
         'conversations',
+        'devices',
         'highscores',
         'hodlr',
         'importledger',
         'lockscreen',
         'messages',
         'phonenumbers',
-        'phones',
         'settings'
       ])
     );

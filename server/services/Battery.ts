@@ -26,8 +26,8 @@ import {
   onPhoneStateChanged
 } from '../lib/deviceItem';
 import { isDeviceOpen } from '../lib/PhoneOpenState';
-import { phoneForCitizen, phoneForRequest } from '../lib/phoneIdentity';
-import { activeDeviceIdOf } from './Phones';
+import { phoneForCitizen, deviceForRequest } from '../lib/deviceIdentity';
+import { activeDeviceIdOf } from './Devices';
 import { PlayerFacingError } from '../lib/errors';
 
 /**
@@ -59,7 +59,7 @@ export const batteryApp = defineService<PhoneBattery>({
   // One row per **phone**, enforced by the database rather than by a find-then-write that
   // can interleave with the drain save. `0003_battery_follows_the_phone` swapped the old
   // `citizenid_unique` for it.
-  indexes: [{ name: 'phone_id_unique', columns: ['phone_id'], unique: true }],
+  indexes: [{ name: 'device_id_unique', columns: ['device_id'], unique: true }],
   // The save writes the phone's active row or creates one (`findAll` reads `active` only), so a
   // deleted row under the key would refuse every save for that phone. Nothing deletes a battery
   // today; if anything ever does, the next save revives the row with the level it carries.
@@ -88,8 +88,8 @@ export const batteryApp = defineService<PhoneBattery>({
 const WRITE_CACHE_LIMIT = 512;
 const lastWritten = new Map<string, number>();
 
-const rememberWrite = (phoneId: string, level: number): void => {
-  lastWritten.set(phoneId, level);
+const rememberWrite = (deviceId: string, level: number): void => {
+  lastWritten.set(deviceId, level);
   while (lastWritten.size > WRITE_CACHE_LIMIT) {
     const oldest = lastWritten.keys().next().value;
     if (oldest === undefined) break;
@@ -111,7 +111,7 @@ const rememberWrite = (phoneId: string, level: number): void => {
  * Every piece of live state below is held **per device** (MICA-337): one map per kind, each
  * keyed by source, so a player carrying a phone and a tablet has two charges, two owning ids,
  * two charging flags and two load marks, and nothing one device does reaches the other — a
- * dead tablet never blocks the phone, and the reverse. The same shape `services/Phones.ts`
+ * dead tablet never blocks the phone, and the reverse. The same shape `services/Devices.ts`
  * keeps its `activeBySource` in.
  */
 type PerDevice<V> = Record<DeviceId, Map<number, V>>;
@@ -137,7 +137,7 @@ const knownSources = new Set<number>();
 
 /**
  * A device id the previous character on this source was using, recorded at a character switch
- * (MICA-337). `activeDeviceIdOf` still answers it until `services/Phones.ts` re-resolves for the
+ * (MICA-337). `activeDeviceIdOf` still answers it until `services/Devices.ts` re-resolves for the
  * new character, which happens asynchronously on the same load — and loading it in that gap
  * would show, tick and save the previous character's tablet. Refused while the cache still
  * answers it; the mark goes as soon as the answer changes.
@@ -311,8 +311,8 @@ const forgetSource = (src: number): void => {
     loadFailed[device].delete(src);
     loadToken[device].delete(src);
 
-    const phoneId = phoneOf[device].get(src);
-    if (phoneId !== undefined) lastWritten.delete(phoneId);
+    const deviceId = phoneOf[device].get(src);
+    if (deviceId !== undefined) lastWritten.delete(deviceId);
     phoneOf[device].delete(src);
   }
 };
@@ -396,7 +396,7 @@ const removeBatteryItem = (src: number, item: string): boolean => {
 
 /**
  * The id of a device other than the phone this source is already using, or `null` (MICA-337):
- * what `services/Phones.ts` last resolved it to — on a tablet request, or for a tablet item in
+ * what `services/Devices.ts` last resolved it to — on a tablet request, or for a tablet item in
  * hand — and never one minted here. A cached id left over from the previous character on this
  * source is not this one's (`staleIdentity`).
  */
@@ -421,7 +421,7 @@ export const hasBatteryDevice = (src: number, device: DeviceId): boolean =>
 /**
  * The phone a source's charge belongs to: the one already recorded for it, else the one in
  * its hand. `null` for a player holding no phone on a gated server — there is nothing for a
- * charge to belong to, and `phoneForRequest` says so as a `PlayerFacingError`, which is not
+ * charge to belong to, and `deviceForRequest` says so as a `PlayerFacingError`, which is not
  * an error here but an answer.
  */
 const phoneForSource = async (
@@ -431,13 +431,13 @@ const phoneForSource = async (
 ): Promise<string | null> => {
   const known = phoneOf[device].get(src);
   if (known) return known;
-  // Never a resolve for any other device (MICA-337): `phoneForRequest` falls back to the
-  // citizen's identity device, which *mints* a tablet — a `mica_phones` row, its created hooks,
+  // Never a resolve for any other device (MICA-337): `deviceForRequest` falls back to the
+  // citizen's identity device, which *mints* a tablet — a `mica_devices` row, its created hooks,
   // then a battery row and a drain — for a player who may never open one. A tablet's charge
   // follows an identity the tablet's own use created, and nothing else.
   if (device !== DEFAULT_DEVICE) return deviceInUse(src, device);
   try {
-    return await phoneForRequest(src, citizenid, device);
+    return await deviceForRequest(src, citizenid, device);
   } catch (error) {
     if (error instanceof PlayerFacingError) return null;
     throw error;
@@ -448,22 +448,22 @@ const phoneForSource = async (
  * Persist a charge to a device — the phone unless `device` names another. Returns silently for
  * a source with no loaded character, and for one holding none of that device.
  *
- * `phoneId` names the device explicitly when the caller knows better than the cache — the
+ * `deviceId` names the device explicitly when the caller knows better than the cache — the
  * switch saves the *old* device's charge after `phoneOf` has already moved on.
  */
 export const savePlayerBattery = async (
   src: number,
   level: number,
   device: DeviceId = DEFAULT_DEVICE,
-  phoneId?: string
+  deviceId?: string
 ): Promise<void> => {
   const player = FrameworkBridge.getPlayer(src);
   if (!player?.citizenid) return;
 
   const { citizenid } = player;
-  const phone = phoneId ?? (await phoneForSource(src, citizenid, device));
+  const phone = deviceId ?? (await phoneForSource(src, citizenid, device));
   if (!phone) return;
-  if (!phoneId) phoneOf[device].set(src, phone);
+  if (!deviceId) phoneOf[device].set(src, phone);
 
   const safeLevel = Math.max(0, Math.min(100, Math.round(level)));
   if (lastWritten.get(phone) === safeLevel) return;
@@ -475,13 +475,13 @@ export const savePlayerBattery = async (
   if (device === DEFAULT_DEVICE) player.setMeta('mica_battery', safeLevel);
 
   try {
-    const [existing] = await batteryApp.repo.findAll({ phone_id: phone } as Partial<PhoneBattery>);
+    const [existing] = await batteryApp.repo.findAll({ device_id: phone } as Partial<PhoneBattery>);
     if (existing) {
       // Scoped by the holder as well as the phone (§2.9). The holder is this citizen: the
       // resolve that produced `phone` moved the row to them if it had to.
       await batteryApp.repo.update(existing.id, { level: safeLevel }, citizenid, phone);
     } else {
-      await batteryApp.repo.create({ citizenid, phone_id: phone, level: safeLevel });
+      await batteryApp.repo.create({ citizenid, device_id: phone, level: safeLevel });
     }
   } catch (e) {
     // A failed write must not take the event handler down; the next report retries.
@@ -660,7 +660,7 @@ export const sendLoadedBatteryToClient = async (
 
   let savedCharge: number | null = null;
   try {
-    const [row] = await batteryApp.repo.findAll({ phone_id: phone } as Partial<PhoneBattery>);
+    const [row] = await batteryApp.repo.findAll({ device_id: phone } as Partial<PhoneBattery>);
     if (row) savedCharge = Number(row.level);
   } catch (e) {
     if (superseded()) return;
@@ -758,7 +758,7 @@ onPlayerLoaded('battery', (src) => {
   forgetSource(src);
   knownSources.add(src);
   // Only the phone at a character load (MICA-337). Any other device's cached id is still the
-  // previous character's until `services/Phones.ts` re-resolves — on this same load, but
+  // previous character's until `services/Devices.ts` re-resolves — on this same load, but
   // asynchronously — so it is marked stale here and the tick loads the device once its id is
   // this character's. A first load has nothing cached, and marks nothing.
   for (const device of ALL_DEVICES) {
@@ -799,7 +799,7 @@ const switchBatteryDevice = async (src: number, device: DeviceId): Promise<void>
 
   let next: string | null;
   try {
-    next = await phoneForRequest(src, player.citizenid, device);
+    next = await deviceForRequest(src, player.citizenid, device);
   } catch (error) {
     if (!(error instanceof PlayerFacingError)) throw error;
     if (stale()) return;
@@ -971,7 +971,7 @@ export const getBatteryLevel = async (
 ): Promise<number | null> => {
   const phone = await batteryDeviceOf(citizenid, device, src);
   if (!phone) return null;
-  const [row] = await batteryApp.repo.findAll({ phone_id: phone } as Partial<PhoneBattery>);
+  const [row] = await batteryApp.repo.findAll({ device_id: phone } as Partial<PhoneBattery>);
   return row ? Number(row.level) : 100;
 };
 
@@ -982,7 +982,7 @@ export const getBatteryLevel = async (
  * so the export answers for the phone a reconnect would restore (MICA-283). Never `null`.
  *
  * Any other device (MICA-337): the one this source's live charge belongs to, else the one in
- * their hand, through the same `phoneForRequest` a tablet request is scoped by. `null` for a
+ * their hand, through the same `deviceForRequest` a tablet request is scoped by. `null` for a
  * player holding none on a gated server, which the export reports rather than reading or
  * writing a row for a tablet they do not have — and for a call with no source, since there is
  * no citizen-level "last tablet" to fall back on.

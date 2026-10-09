@@ -57,6 +57,9 @@ export const migration: Migration = {
     `no phone, puts every row on its owner's phone, and swaps citizenid_unique for ` +
     `phone_id_unique — two phones hold two charges`,
   up: async () => {
+    // MICA-344: `device_id` is what 0008 renamed this column to, so a table carrying it is past
+    // this migration — renamed after it ran, or created in the final shape with no ledger.
+    if (await hasColumn(TABLE, 'device_id')) return;
     if (!(await hasColumn(TABLE, 'phone_id'))) {
       await Database.query(
         `ALTER TABLE \`${TABLE}\` ADD COLUMN \`phone_id\` varchar(32) DEFAULT NULL`,

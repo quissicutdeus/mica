@@ -50,7 +50,7 @@ export interface Contact {
   id: number;
   citizenid: string;
   /** The phone this row is on (MICA-282). Set by the server; absent on a row written before phones were items. */
-  phone_id?: string | null;
+  device_id?: string | null;
   firstname: string;
   lastname?: string;
   phone: string;
@@ -386,7 +386,7 @@ export interface PhoneBattery {
   id: number;
   citizenid: string;
   /** The phone this charge belongs to (MICA-283). */
-  phone_id?: string | null;
+  device_id?: string | null;
   level: number;
   status?: 'active' | 'deleted';
   created_at: Date | string;
@@ -406,7 +406,7 @@ export interface PhoneCallLogEntry {
   id: number;
   citizenid: string;
   /** The phone this row is on (MICA-282). Set by the server; absent on a row written before phones were items. */
-  phone_id?: string | null;
+  device_id?: string | null;
   kind: 'incoming' | 'outgoing' | 'missed';
   number: string;
   /** Seconds. 0 when the call was never answered. */
@@ -433,7 +433,7 @@ export interface PhoneSetting {
   id: number;
   citizenid: string;
   /** The phone this row is on (MICA-282). Set by the server; absent on a row written before phones were items. */
-  phone_id?: string | null;
+  device_id?: string | null;
   /** Storage namespace — `settings`, `blabber`, or an add-on's id. */
   app: string;
   setting_key: string;
@@ -653,7 +653,7 @@ export interface Note {
   id: number;
   citizenid: string;
   /** The phone this row is on (MICA-282). Set by the server; absent on a row written before phones were items. */
-  phone_id?: string | null;
+  device_id?: string | null;
   title: string;
   content: string;
   status?: 'active' | 'archived' | 'deleted' | 'moderated';
@@ -674,7 +674,7 @@ export interface SavedPlace {
   id: number;
   citizenid: string;
   /** The phone this row is on (MICA-282). Set by the server; absent on a row written before phones were items. */
-  phone_id?: string | null;
+  device_id?: string | null;
   name: string;
   street_label?: string;
   x: number;
@@ -715,7 +715,7 @@ export interface MediaItem {
   id: number;
   citizenid: string;
   /** The phone this row is on (MICA-282). Set by the server; absent on a row written before phones were items. */
-  phone_id?: string | null;
+  device_id?: string | null;
   kind: MediaKind;
   /** Base64. Was `image`, and still the only field anything writes today. */
   data?: string;
@@ -784,7 +784,7 @@ export interface SavedPlace {
   id: number;
   citizenid: string;
   /** The phone this row is on (MICA-282). Set by the server; absent on a row written before phones were items. */
-  phone_id?: string | null;
+  device_id?: string | null;
   name: string;
   street_label?: string;
   x: number;
@@ -799,7 +799,7 @@ export interface NotificationItem {
   id: number;
   citizenid: string;
   /** The phone this row is on (MICA-282). Set by the server; absent on a row written before phones were items. */
-  phone_id?: string | null;
+  device_id?: string | null;
   app: string;
   kind: string;
   title: string;

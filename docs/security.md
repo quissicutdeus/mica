@@ -569,7 +569,7 @@ by this list until someone re-weighs it.
   will not accept a phone id as an ownership predicate on its own: the citizenid
   the server resolved from the framework connection stays required, and the
   phone id only ever narrows a `WHERE` that already has an owner in it.
-  `phone_id` is in both `NEVER_CLIENT_WRITABLE` and `NEVER_CLIENT_FILTERABLE`,
+  `device_id` is in both `NEVER_CLIENT_WRITABLE` and `NEVER_CLIENT_FILTERABLE`,
   so a payload can neither set one nor filter by one — the latter matters
   because "I once held this phone" would otherwise become a query for everything
   that phone owns. And a phone id in a shape micaOS would not have written is
@@ -578,23 +578,23 @@ by this list until someone re-weighs it.
 
   **MICA-282 made holding the item the thing that moves rows**, and it is worth
   saying exactly what is trusted. When `resolvePhone` finds an item in a
-  player's inventory carrying a phone id whose `mica_phones` row names somebody
-  else, every table with a `phone_id` column gets its `citizenid` rewritten to
-  the holder (`Repository.transferPhoneRows`). The predicate on every read and
-  write is unchanged — still `citizenid` **and** `phone_id` — so what is trusted
-  is the inventory resource's own export saying "this player holds this item",
-  which is the same trust the framework's `GetPlayer` is given. The residual
-  risk is therefore the inventory's: a resource that can write item metadata can
-  hand any phone, and everything on it, to any player. No client can; item
-  metadata is server-authoritative in every inventory micaOS reads. What stays
-  with the person regardless — money, listings, social accounts, authored
-  messages — is listed in `docs/schema-and-services.md`, and a table is moved
-  onto the phone only by declaring `deviceOwned` on it.
+  player's inventory carrying a phone id whose `mica_devices` row names somebody
+  else, every table with a `device_id` column gets its `citizenid` rewritten to
+  the holder (`Repository.transferDeviceRows`). The predicate on every read and
+  write is unchanged — still `citizenid` **and** `device_id` — so what is
+  trusted is the inventory resource's own export saying "this player holds this
+  item", which is the same trust the framework's `GetPlayer` is given. The
+  residual risk is therefore the inventory's: a resource that can write item
+  metadata can hand any phone, and everything on it, to any player. No client
+  can; item metadata is server-authoritative in every inventory micaOS reads.
+  What stays with the person regardless — money, listings, social accounts,
+  authored messages — is listed in `docs/schema-and-services.md`, and a table is
+  moved onto the phone only by declaring `deviceOwned` on it.
 
   **MICA-264 adds a second kind of device, and the kind is a claim too.** The
   tablet item carries an id in the same metadata key, so a resource that can
   write metadata could copy a phone's id onto a tablet item, or the reverse. A
-  carried id is therefore honoured only when its `mica_phones` row is of the
+  carried id is therefore honoured only when its `mica_devices` row is of the
   same `kind` as the item it came from; otherwise it is refused and a fresh one
   minted, before any handover runs. A tablet never adopts an unclaimed row the
   way a phone adopts the identity phone, and never gets a phone number. The

@@ -1,8 +1,8 @@
-# The mica_phones row is one of the tables a handover moves
+# The mica_devices row is one of the tables a handover moves
 
-`mica_phones` carries a `phone_id` column, so `defineService` puts its
-repository in `phoneKeyedRepositories`, and `handOver` in
-`server/services/Phones.ts` moves that row's `citizenid` along with every other
+`mica_devices` carries a `device_id` column, so `defineService` puts its
+repository in `deviceKeyedRepositories`, and `handOver` in
+`server/services/Devices.ts` moves that row's `citizenid` along with every other
 table. So "does this phone need a handover?" cannot be answered from that row
 alone unless the walk is ordered so that it can.
 
@@ -12,7 +12,7 @@ in-process `pendingHandover` map. Review (Bly) found that a restart drops that
 map, and that the phone row had already moved first, by declaration order. After
 a restart the row read "done" over tables that never moved. The settled design:
 
-- `mica_phones` moves **last**, and only when every other table and hook has
+- `mica_devices` moves **last**, and only when every other table and hook has
   moved. A row still naming the previous holder is then the durable "unfinished"
   marker that the restart path already reads.
 - `pendingHandover` keeps the in-process retry narrow and backed off.
@@ -24,8 +24,8 @@ a restart the row read "done" over tables that never moved. The settled design:
 writes. The marker can succeed while the work it marks fails. Order the marker
 last, and remember that process memory is not durable.
 
-**Tests that catch it:** `server/__tests__/phoneHandoverRetry.test.ts`. It keeps
-the rows in memory, applies each transfer `UPDATE` to them, and can hold a
+**Tests that catch it:** `server/__tests__/deviceHandoverRetry.test.ts`. It
+keeps the rows in memory, applies each transfer `UPDATE` to them, and can hold a
 transfer open (`hold`) to make calls overlap. Each review fix turns its own case
 red when reverted.
 

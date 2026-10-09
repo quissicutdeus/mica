@@ -66,7 +66,7 @@ const EXTERNAL_DB = Boolean(DB_HOST || DB_PORT || DB_USER || DB_PASSWORD);
  * configured": a harness that returns early — a fixture that silently seeded nothing, a loop
  * over an empty list — would otherwise print a pass having checked almost nothing.
  *
- * The run currently makes **366** checks. The last census, at 258, named each fixture: the two
+ * The run currently makes **401** checks. The last census, at 258, named each fixture: the two
  * `runVariant`s (17 each), the two `runSweepFixtures` (17 each), the two `runNumberMigration`s
  * (MICA-284; 21 on qb, 16 on ESX), the two `runDataMigration`s (MICA-282; 38 each), the two
  * `runBatteryMigration`s (MICA-283; 9 each), and MICA-289's `runWidenMigration` (14 on qb, 15 on
@@ -77,12 +77,14 @@ const EXTERNAL_DB = Boolean(DB_HOST || DB_PORT || DB_USER || DB_PASSWORD);
  * `runApplyWidensEsxWithPlayersKeys` (2) to 315, and MICA-301's `runReimportRunsMigrations`
  * (5 on each shape), `runReimportWithoutLedger` (5) and `runFreshImportSeeds` (2 on each) to
  * 334, and MICA-165's `runSealedWidthMigration`s (11 on each shape) and
- * `runSealedWidthRefusesCopy`s (5 on each) to 366 — so the margin here is eight again.
+ * `runSealedWidthRefusesCopy`s (5 on each) to 366, and MICA-344's `runRenameMigration`s (15 on
+ * each shape) and `runReimportOverFlattenedBaseline` (4) to 401 — so the margin here is eight
+ * again.
  * That is deliberately tight: losing any one fixture drops below it and fails, which is the
  * whole point. Raise the floor when you add checks, rather than letting the gap widen until it
  * stops catching anything.
  */
-const MINIMUM_CHECKS = 358;
+const MINIMUM_CHECKS = 393;
 let checksRun = 0;
 
 const check = (label, actual, expected) => {
@@ -316,7 +318,7 @@ const B_PHONE = 'b'.repeat(32);
  *
  * Before the flatten this seeded five fixtures full of duplicates, because migrations
  * existed to clean them up and the fixtures were the mess they had to survive. The
- * baseline now creates `conversation_phone_unique` and `pair_key_unique` in their
+ * baseline now creates `conversation_device_unique` and `pair_key_unique` in their
  * final shape, so a duplicate cannot be inserted here at all -- which is the property
  * worth proving instead. What is left is the smallest legal graph the rejection tests
  * need: one genuine pair, and the people to build a second one from.
@@ -347,7 +349,7 @@ const seedBaselineRows = async (connection, hasPlayers) => {
   ]) {
     await connection.query(
       `INSERT INTO mica_messages_participants
-         (conversation_id, citizenid, phone_id, role, left_at, status)
+         (conversation_id, citizenid, device_id, role, left_at, status)
        VALUES (?, ?, ?, ?, NULL, 'active')`,
       [genuine, citizenid, phoneId, role]
     );
@@ -442,7 +444,7 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, server }) => {
   const participantIndexes = await indexesOn(connection, 'mica_messages_participants');
   check(
     `${schemaFile}: the unique participant key is on, per phone (MICA-282)`,
-    participantIndexes.includes('conversation_phone_unique (unique)'),
+    participantIndexes.includes('conversation_device_unique (unique)'),
     true
   );
   check(
@@ -454,7 +456,7 @@ const runVariant = async ({ connection, schemaFile, hasPlayers, server }) => {
   let rejected = null;
   try {
     await connection.query(
-      `INSERT INTO mica_messages_participants (conversation_id, citizenid, phone_id, role, left_at, status)
+      `INSERT INTO mica_messages_participants (conversation_id, citizenid, device_id, role, left_at, status)
        VALUES (?, ?, ?, 'member', NULL, 'active')`,
       [ids.genuine, 'CIT_B', B_PHONE]
     );
@@ -768,6 +770,70 @@ const runSweepFixtures = async ({ connection, schemaFile, hasPlayers, server }) 
   server.__setResourceLookup();
 };
 
+/* ------------------- MICA-344: the device entity is named for any device */
+
+const RENAME_MIGRATION = '0008_phones_become_devices';
+
+/**
+ * Every key 0008 renames: table as it was, key before, key after, unique, columns before.
+ * Retyped from the DDL as it stood rather than imported from the migration, so the two can
+ * disagree and fail.
+ */
+const RENAMED_KEYS = [
+  ['mica_battery', 'phone_id_unique', 'device_id_unique', true, '(phone_id)'],
+  ['mica_battery', 'phone_id', 'device_id', false, '(phone_id)'],
+  ['mica_blocklist', 'phone_number_unique', 'device_number_unique', true, '(phone_id, number)'],
+  ['mica_blocklist', 'phone_id', 'device_id', false, '(phone_id)'],
+  ['mica_contacts', 'phone_id', 'device_id', false, '(phone_id)'],
+  ['mica_lockscreen', 'phone_id_unique', 'device_id_unique', true, '(phone_id)'],
+  ['mica_lockscreen', 'phone_id', 'device_id', false, '(phone_id)'],
+  ['mica_media', 'phone_id', 'device_id', false, '(phone_id)'],
+  [
+    'mica_messages_participants',
+    'conversation_phone_unique',
+    'conversation_device_unique',
+    true,
+    '(conversation_id, phone_id)'
+  ],
+  ['mica_messages_participants', 'phone_id', 'device_id', false, '(phone_id)'],
+  ['mica_notes', 'phone_id', 'device_id', false, '(phone_id)'],
+  ['mica_notifications', 'phone_id', 'device_id', false, '(phone_id)'],
+  ['mica_phone_call_log', 'phone_id', 'device_id', false, '(phone_id)'],
+  ['mica_phone_numbers', 'phone_id_unique', 'device_id_unique', true, '(phone_id)'],
+  ['mica_phones', 'phone_id_unique', 'device_id_unique', true, '(phone_id)'],
+  ['mica_places', 'phone_id', 'device_id', false, '(phone_id)'],
+  ['mica_settings', 'phone_app_key', 'device_app_key', true, '(phone_id, app, setting_key)'],
+  ['mica_settings', 'phone_id', 'device_id', false, '(phone_id)']
+];
+/** Every table that carried a `phone_id` before 0008, under its name then. */
+const RENAMED_TABLES = [...new Set(RENAMED_KEYS.map(([table]) => table))];
+/** A table's name after 0008. */
+const renamedTable = (table) => (table === 'mica_phones' ? 'mica_devices' : table);
+
+/**
+ * Put the current schema back into the names it had before 0008: `mica_phones`, `phone_id`,
+ * and every key built on it under its old name — and the ledger row the seed pre-inserted
+ * taken out, so the runner sees 0008 as pending. Every scenario for a migration older than
+ * 0008 starts here, because that migration was written against these names; 0008 then runs
+ * after it in the same apply, as it would on a server, and the scenario judges the end state.
+ */
+const regressDeviceNames = async (connection) => {
+  await connection.query('RENAME TABLE mica_devices TO mica_phones');
+  for (const table of RENAMED_TABLES) {
+    const changes = [
+      `CHANGE COLUMN device_id phone_id varchar(32) ${
+        table === 'mica_phones' ? 'NOT NULL' : 'DEFAULT NULL'
+      }`
+    ];
+    for (const [owner, before, after, unique, columns] of RENAMED_KEYS) {
+      if (owner !== table) continue;
+      changes.push(`DROP KEY ${after}`, `ADD ${unique ? 'UNIQUE ' : ''}KEY ${before} ${columns}`);
+    }
+    await connection.query(`ALTER TABLE ${table} ${changes.join(', ')}`);
+  }
+  await connection.query('DELETE FROM mica_schema_migrations WHERE id = ?', [RENAME_MIGRATION]);
+};
+
 /* --------------------------------- MICA-284: the number follows the phone */
 
 const NUMBERS = 'mica_phone_numbers';
@@ -810,8 +876,9 @@ const QB_CHARACTERS = [
   ['CIT_HAS', { phone: '5550005' }]
 ];
 
+/** After 0008 has run, so on its column name. */
 const insertNumber = (connection, citizenid, number, phoneId) =>
-  connection.query(`INSERT INTO ${NUMBERS} (citizenid, number, phone_id) VALUES (?, ?, ?)`, [
+  connection.query(`INSERT INTO ${NUMBERS} (citizenid, number, device_id) VALUES (?, ?, ?)`, [
     citizenid,
     number,
     phoneId
@@ -847,6 +914,7 @@ const runNumberMigration = async ({ connection, schemaFile, hasPlayers, server }
   await connection.changeUser({ database });
   if (hasPlayers) await connection.query(PLAYERS_TABLE);
   await connection.query(fs.readFileSync(path.join(root, schemaFile), 'utf8'));
+  await regressDeviceNames(connection);
   await regressNumbersTable(connection);
 
   const before = await indexesOn(connection, NUMBERS);
@@ -883,14 +951,17 @@ const runNumberMigration = async ({ connection, schemaFile, hasPlayers, server }
   }
 
   const run = await server.runPendingMigrations();
-  check(`${label}: the migration applied`, run.applied, [NUMBER_MIGRATION]);
+  check(`${label}: the migration applied, and 0008 after it`, run.applied, [
+    NUMBER_MIGRATION,
+    RENAME_MIGRATION
+  ]);
   check(`${label}: and failed nothing`, run.failed, null);
 
   const after = await indexesOn(connection, NUMBERS);
   check(
-    `${label}: phone_id_unique is on, citizenid_unique is gone, number_unique stays`,
+    `${label}: device_id_unique is on, citizenid_unique is gone, number_unique stays`,
     [
-      after.includes('phone_id_unique (unique)'),
+      after.includes('device_id_unique (unique)'),
       after.includes('citizenid_unique (unique)'),
       after.includes('number_unique (unique)')
     ],
@@ -899,10 +970,10 @@ const runNumberMigration = async ({ connection, schemaFile, hasPlayers, server }
 
   const [columns] = await connection.query(
     `SELECT column_type AS type, is_nullable AS nullable FROM information_schema.COLUMNS
-      WHERE table_schema = DATABASE() AND table_name = ? AND column_name = 'phone_id'`,
+      WHERE table_schema = DATABASE() AND table_name = ? AND column_name = 'device_id'`,
     [NUMBERS]
   );
-  check(`${label}: phone_id is a nullable varchar(32)`, columns[0], {
+  check(`${label}: device_id is a nullable varchar(32)`, columns[0], {
     type: 'varchar(32)',
     nullable: 'YES'
   });
@@ -915,7 +986,7 @@ const runNumberMigration = async ({ connection, schemaFile, hasPlayers, server }
   check(`${label}: and reports no drift`, plan.drift, []);
 
   const [rows] = await connection.query(
-    `SELECT citizenid, number, phone_id FROM ${NUMBERS} ORDER BY citizenid`
+    `SELECT citizenid, number, device_id FROM ${NUMBERS} ORDER BY citizenid`
   );
   const numbers = Object.fromEntries(rows.map((r) => [r.citizenid, r.number]));
 
@@ -941,7 +1012,7 @@ const runNumberMigration = async ({ connection, schemaFile, hasPlayers, server }
   }
   check(
     `${label}: no seeded row is on a phone yet`,
-    rows.every((r) => r.phone_id === null),
+    rows.every((r) => r.device_id === null),
     true
   );
 
@@ -995,16 +1066,32 @@ const DEVICE_TABLES = [
   'mica_blocklist',
   'mica_messages_participants'
 ];
-/** The per-phone unique keys 0002 adds, and the per-citizen ones it replaces. */
+/**
+ * The per-phone unique keys 0002 adds, the per-citizen ones it replaces, and the name 0008
+ * gives the one it added.
+ */
 const KEY_SWAPS = [
-  ['mica_lockscreen', 'phone_id_unique', 'citizenid_unique', '(citizenid)'],
-  ['mica_settings', 'phone_app_key', 'citizenid_app_key', '(citizenid, app, setting_key)'],
-  ['mica_blocklist', 'phone_number_unique', 'citizenid_number_unique', '(citizenid, number)'],
+  ['mica_lockscreen', 'phone_id_unique', 'citizenid_unique', '(citizenid)', 'device_id_unique'],
+  [
+    'mica_settings',
+    'phone_app_key',
+    'citizenid_app_key',
+    '(citizenid, app, setting_key)',
+    'device_app_key'
+  ],
+  [
+    'mica_blocklist',
+    'phone_number_unique',
+    'citizenid_number_unique',
+    '(citizenid, number)',
+    'device_number_unique'
+  ],
   [
     'mica_messages_participants',
     'conversation_phone_unique',
     'conversation_participant_unique',
-    '(conversation_id, citizenid)'
+    '(conversation_id, citizenid)',
+    'conversation_device_unique'
   ]
 ];
 
@@ -1035,8 +1122,9 @@ const columnsOn = async (connection, table) => {
   return rows.map((r) => r.name);
 };
 
+/** After 0008 has run, so under its names. */
 const phoneOf = async (connection, citizenid) =>
-  await scalar(connection, 'SELECT phone_id FROM mica_phones WHERE citizenid = ? ORDER BY id', [
+  await scalar(connection, 'SELECT device_id FROM mica_devices WHERE citizenid = ? ORDER BY id', [
     citizenid
   ]);
 
@@ -1078,6 +1166,7 @@ const runDataMigration = async ({ connection, schemaFile, hasPlayers, server }) 
     }
   }
   await connection.query(fs.readFileSync(path.join(root, schemaFile), 'utf8'));
+  await regressDeviceNames(connection);
   await regressDeviceTables(connection);
 
   check(
@@ -1138,7 +1227,10 @@ const runDataMigration = async ({ connection, schemaFile, hasPlayers, server }) 
   );
 
   const run = await server.runPendingMigrations();
-  check(`${label}: the migration applied`, run.applied, [DATA_MIGRATION]);
+  check(`${label}: the migration applied, and 0008 after it`, run.applied, [
+    DATA_MIGRATION,
+    RENAME_MIGRATION
+  ]);
   check(`${label}: and failed nothing`, run.failed, null);
 
   step(`${schemaFile} — who has a phone afterwards`);
@@ -1154,47 +1246,47 @@ const runDataMigration = async ({ connection, schemaFile, hasPlayers, server }) 
   check(
     `${label}: the pre-existing phone is claimed and the minted ones are not`,
     (
-      await connection.query('SELECT citizenid, claimed FROM mica_phones ORDER BY citizenid')
+      await connection.query('SELECT citizenid, claimed FROM mica_devices ORDER BY citizenid')
     )[0].map((r) => `${r.citizenid}:${r.claimed}`),
     [`${A}:1`, `${B}:0`, `${C}:0`]
   );
 
   step(`${schemaFile} — every row is on its owner's phone`);
   const rowsOf = async (table, extra = '') =>
-    (await connection.query(`SELECT citizenid, phone_id${extra} FROM ${table} ORDER BY id`))[0];
+    (await connection.query(`SELECT citizenid, device_id${extra} FROM ${table} ORDER BY id`))[0];
   check(
     `${label}: contacts`,
-    (await rowsOf('mica_contacts')).map((r) => r.phone_id),
+    (await rowsOf('mica_contacts')).map((r) => r.device_id),
     [PHONE_A, phoneB]
   );
   check(
     `${label}: notes`,
-    (await rowsOf('mica_notes')).map((r) => r.phone_id),
+    (await rowsOf('mica_notes')).map((r) => r.device_id),
     [phoneB]
   );
   check(
     `${label}: lockscreen`,
-    (await rowsOf('mica_lockscreen')).map((r) => r.phone_id),
+    (await rowsOf('mica_lockscreen')).map((r) => r.device_id),
     [PHONE_A, phoneB]
   );
   check(
     `${label}: settings`,
-    (await rowsOf('mica_settings')).map((r) => r.phone_id),
+    (await rowsOf('mica_settings')).map((r) => r.device_id),
     [PHONE_A, phoneB]
   );
   check(
     `${label}: blocklist`,
-    (await rowsOf('mica_blocklist')).map((r) => r.phone_id),
+    (await rowsOf('mica_blocklist')).map((r) => r.device_id),
     [PHONE_A, phoneB]
   );
   check(
     `${label}: notifications`,
-    (await rowsOf('mica_notifications')).map((r) => r.phone_id),
+    (await rowsOf('mica_notifications')).map((r) => r.device_id),
     [phoneC]
   );
   check(
     `${label}: participants`,
-    (await rowsOf('mica_messages_participants')).map((r) => r.phone_id),
+    (await rowsOf('mica_messages_participants')).map((r) => r.device_id),
     [PHONE_A, phoneB]
   );
 
@@ -1214,32 +1306,32 @@ const runDataMigration = async ({ connection, schemaFile, hasPlayers, server }) 
   );
 
   const numbers = (
-    await connection.query('SELECT number, phone_id FROM mica_phone_numbers ORDER BY id')
+    await connection.query('SELECT number, device_id FROM mica_phone_numbers ORDER BY id')
   )[0];
   check(
     `${label}: B's legacy number is on B's phone; A's stays legacy because A's phone has one`,
-    numbers.map((n) => `${n.number}:${n.phone_id ?? 'NULL'}`),
+    numbers.map((n) => `${n.number}:${n.device_id ?? 'NULL'}`),
     [`5550009:${PHONE_A}`, '5550001:NULL', `5550002:${phoneB}`]
   );
 
   step(`${schemaFile} — the migrated tables are the declared tables`);
   const plans = await server.SchemaMigrator.plan();
-  for (const table of [...DEVICE_TABLES, 'mica_phones']) {
+  for (const table of [...DEVICE_TABLES, 'mica_devices']) {
     const plan = plans.find((p) => p.table === table);
     check(`${label}: ${table} — nothing to add, no drift`, [plan.additive, plan.drift], [[], []]);
   }
-  for (const [table, added, dropped] of KEY_SWAPS) {
+  for (const [table, , dropped, , renamed] of KEY_SWAPS) {
     const keys = await indexesOn(connection, table);
     check(
-      `${label}: ${table} — ${added} is unique and ${dropped} is gone`,
-      [keys.includes(`${added} (unique)`), keys.some((k) => k.startsWith(dropped))],
+      `${label}: ${table} — ${renamed} is unique and ${dropped} is gone`,
+      [keys.includes(`${renamed} (unique)`), keys.some((k) => k.startsWith(dropped))],
       [true, false]
     );
   }
 
   step(`${schemaFile} — running up() a second time changes nothing`);
   const snapshot = async () => ({
-    phones: await rowsIn(connection, 'mica_phones'),
+    phones: await rowsIn(connection, 'mica_devices'),
     contacts: await rowsIn(connection, 'mica_contacts'),
     numbers: numbers.length
   });
@@ -1254,7 +1346,7 @@ const runDataMigration = async ({ connection, schemaFile, hasPlayers, server }) 
     `${label}: a second passcode for A on another phone is allowed`,
     await rejects(() =>
       connection.query(
-        'INSERT INTO mica_lockscreen (citizenid, phone_id, passcode_hash, passcode_salt) VALUES (?, ?, ?, ?)',
+        'INSERT INTO mica_lockscreen (citizenid, device_id, passcode_hash, passcode_salt) VALUES (?, ?, ?, ?)',
         [A, B_PHONE, 'x'.repeat(64), 'y'.repeat(32)]
       )
     ),
@@ -1264,7 +1356,7 @@ const runDataMigration = async ({ connection, schemaFile, hasPlayers, server }) 
     `${label}: a second passcode on the same phone is rejected`,
     await rejects(() =>
       connection.query(
-        'INSERT INTO mica_lockscreen (citizenid, phone_id, passcode_hash, passcode_salt) VALUES (?, ?, ?, ?)',
+        'INSERT INTO mica_lockscreen (citizenid, device_id, passcode_hash, passcode_salt) VALUES (?, ?, ?, ?)',
         [A, PHONE_A, 'x'.repeat(64), 'y'.repeat(32)]
       )
     ),
@@ -1274,7 +1366,7 @@ const runDataMigration = async ({ connection, schemaFile, hasPlayers, server }) 
     `${label}: the same phone twice in one thread is rejected`,
     await rejects(() =>
       connection.query(
-        `INSERT INTO mica_messages_participants (conversation_id, citizenid, phone_id, role, left_at, status)
+        `INSERT INTO mica_messages_participants (conversation_id, citizenid, device_id, role, left_at, status)
          VALUES (?, ?, ?, 'member', NULL, 'active')`,
         [conv.insertId, A, PHONE_A]
       )
@@ -1285,7 +1377,7 @@ const runDataMigration = async ({ connection, schemaFile, hasPlayers, server }) 
     `${label}: the same person's second phone in that thread is allowed`,
     await rejects(() =>
       connection.query(
-        `INSERT INTO mica_messages_participants (conversation_id, citizenid, phone_id, role, left_at, status)
+        `INSERT INTO mica_messages_participants (conversation_id, citizenid, device_id, role, left_at, status)
          VALUES (?, ?, ?, 'member', NULL, 'active')`,
         [conv.insertId, A, B_PHONE]
       )
@@ -1328,6 +1420,7 @@ const runBatteryMigration = async ({ connection, schemaFile, hasPlayers, server 
     }
   }
   await connection.query(fs.readFileSync(path.join(root, schemaFile), 'utf8'));
+  await regressDeviceNames(connection);
   await connection.query(
     'ALTER TABLE mica_battery DROP KEY phone_id_unique, DROP KEY phone_id, DROP COLUMN phone_id, ADD UNIQUE KEY citizenid_unique (citizenid)'
   );
@@ -1344,7 +1437,10 @@ const runBatteryMigration = async ({ connection, schemaFile, hasPlayers, server 
   ]);
 
   const run = await server.runPendingMigrations();
-  check(`${label}: the migration applied`, run.applied, [BATTERY_MIGRATION]);
+  check(`${label}: the migration applied, and 0008 after it`, run.applied, [
+    BATTERY_MIGRATION,
+    RENAME_MIGRATION
+  ]);
   check(`${label}: and failed nothing`, run.failed, null);
 
   const phoneB = await phoneOf(connection, B);
@@ -1352,14 +1448,14 @@ const runBatteryMigration = async ({ connection, schemaFile, hasPlayers, server 
   check(
     `${label}: every charge is on its owner's phone`,
     (
-      await connection.query('SELECT citizenid, phone_id, level FROM mica_battery ORDER BY id')
-    )[0].map((r) => `${r.phone_id}:${r.level}`),
+      await connection.query('SELECT citizenid, device_id, level FROM mica_battery ORDER BY id')
+    )[0].map((r) => `${r.device_id}:${r.level}`),
     [`${PHONE_A}:42`, `${phoneB}:7`]
   );
   const keys = await indexesOn(connection, 'mica_battery');
   check(
-    `${label}: phone_id_unique is unique and citizenid_unique is gone`,
-    [keys.includes('phone_id_unique (unique)'), keys.includes('citizenid_unique (unique)')],
+    `${label}: device_id_unique is unique and citizenid_unique is gone`,
+    [keys.includes('device_id_unique (unique)'), keys.includes('citizenid_unique (unique)')],
     [true, false]
   );
   const plan = (await server.SchemaMigrator.plan()).find((p) => p.table === 'mica_battery');
@@ -1368,7 +1464,7 @@ const runBatteryMigration = async ({ connection, schemaFile, hasPlayers, server 
   check(
     `${label}: a second charge for A, on another phone, is allowed`,
     await rejects(() =>
-      connection.query('INSERT INTO mica_battery (citizenid, phone_id, level) VALUES (?, ?, 99)', [
+      connection.query('INSERT INTO mica_battery (citizenid, device_id, level) VALUES (?, ?, 99)', [
         A,
         B_PHONE
       ])
@@ -1378,7 +1474,7 @@ const runBatteryMigration = async ({ connection, schemaFile, hasPlayers, server 
   check(
     `${label}: a second charge on the same phone is rejected`,
     await rejects(() =>
-      connection.query('INSERT INTO mica_battery (citizenid, phone_id, level) VALUES (?, ?, 99)', [
+      connection.query('INSERT INTO mica_battery (citizenid, device_id, level) VALUES (?, ?, 99)', [
         A,
         PHONE_A
       ])
@@ -1386,12 +1482,276 @@ const runBatteryMigration = async ({ connection, schemaFile, hasPlayers, server 
     'ER_DUP_ENTRY'
   );
 
-  const before = await rowsIn(connection, 'mica_phones');
+  const before = await rowsIn(connection, 'mica_devices');
   await server.migrations.find((m) => m.id === BATTERY_MIGRATION).up();
   check(
     `${label}: running up() a second time mints nothing`,
-    await rowsIn(connection, 'mica_phones'),
+    await rowsIn(connection, 'mica_devices'),
     before
+  );
+};
+
+/** Every column named `name` in the current database, as `table.column`. */
+const columnsNamed = async (connection, name) => {
+  const [rows] = await connection.query(
+    `SELECT table_name AS t FROM information_schema.COLUMNS
+      WHERE table_schema = DATABASE() AND column_name = ? ORDER BY table_name`,
+    [name]
+  );
+  return rows.map((r) => `${r.t}.${name}`);
+};
+
+/** Every key in the current database, as `table.key` with its uniqueness. */
+const allIndexes = async (connection) => {
+  const [rows] = await connection.query(
+    `SELECT DISTINCT table_name AS t, index_name AS name, non_unique
+       FROM information_schema.STATISTICS
+      WHERE table_schema = DATABASE() AND table_name LIKE 'mica|_%' ESCAPE '|'
+      ORDER BY table_name, index_name`
+  );
+  return rows.map((r) => `${r.t}.${r.name}${Number(r.non_unique) === 0 ? ' (unique)' : ''}`);
+};
+
+/**
+ * MICA-344's 0008, executed rather than read: the current schema put back under the names it
+ * had before (`regressDeviceNames`), a row on every renamed table, and the real runner. The
+ * end state is held to a fresh import of the same file, column for column and key for key —
+ * an upgraded database and a new one must not be able to disagree — and every row is still
+ * on the device it was on.
+ */
+const runRenameMigration = async ({ connection, schemaFile, hasPlayers, server }) => {
+  const variant = hasPlayers ? 'qb' : 'esx';
+  const label = `${schemaFile} rename`;
+  step(`${schemaFile} — MICA-344 ${RENAME_MIGRATION}, on a ${variant} database`);
+
+  const fresh = async (database) => {
+    await connection.query(`DROP DATABASE IF EXISTS \`${database}\``);
+    await connection.query(`CREATE DATABASE \`${database}\``);
+    await connection.changeUser({ database });
+    if (hasPlayers) await connection.query(PLAYERS_TABLE);
+    await connection.query(fs.readFileSync(path.join(root, schemaFile), 'utf8'));
+  };
+
+  await fresh(`mica_rename_shape_${variant}`);
+  const shape = { columns: await wholeSchema(connection), keys: await allIndexes(connection) };
+
+  await fresh(`mica_rename_${variant}`);
+  await regressDeviceNames(connection);
+  check(
+    `${label}: the regressed schema has the old names and none of the new`,
+    [
+      (await columnsNamed(connection, 'phone_id')).length,
+      await columnsNamed(connection, 'device_id'),
+      await rowsIn(connection, 'mica_phones')
+    ],
+    [RENAMED_TABLES.length, [], 0]
+  );
+
+  const A = hasPlayers ? 'CIT_A' : SWEEP_LIVE;
+  await connection.query('INSERT INTO mica_phones (citizenid, phone_id, kind, claimed) VALUES ?', [
+    [
+      [A, A_PHONE, 'phone', 1],
+      [A, B_PHONE, 'tablet', 1]
+    ]
+  ]);
+  await connection.query('INSERT INTO mica_notes (citizenid, phone_id, title) VALUES (?, ?, ?)', [
+    A,
+    B_PHONE,
+    'on the tablet'
+  ]);
+  await connection.query(
+    'INSERT INTO mica_settings (citizenid, phone_id, app, setting_key, setting_value) VALUES (?, ?, ?, ?, ?)',
+    [A, A_PHONE, 'settings', 'theme', 'dark']
+  );
+  await connection.query(
+    'INSERT INTO mica_phone_numbers (citizenid, number, phone_id) VALUES (?, ?, ?), (?, ?, NULL)',
+    [A, '5551234', A_PHONE, A, '5554321']
+  );
+  const [conversation] = await connection.query(
+    `INSERT INTO mica_messages_conversations (citizenid, is_group, name, status)
+     VALUES (?, 1, 'group', 'active')`,
+    [A]
+  );
+  await connection.query(
+    `INSERT INTO mica_messages_participants (conversation_id, citizenid, phone_id, role, status)
+     VALUES (?, ?, ?, 'admin', 'active')`,
+    [conversation.insertId, A, A_PHONE]
+  );
+
+  const run = await server.runPendingMigrations();
+  check(`${label}: the migration applied`, run.applied, [RENAME_MIGRATION]);
+  check(`${label}: and failed nothing`, run.failed, null);
+
+  check(
+    `${label}: mica_phones is mica_devices now, with both rows`,
+    [
+      await scalar(
+        connection,
+        "SELECT COUNT(*) FROM information_schema.TABLES WHERE table_schema = DATABASE() AND table_name = 'mica_phones'"
+      ),
+      (await connection.query('SELECT device_id, kind FROM mica_devices ORDER BY id'))[0].map(
+        (r) => `${r.device_id}:${r.kind}`
+      )
+    ],
+    [0, [`${A_PHONE}:phone`, `${B_PHONE}:tablet`]]
+  );
+  check(
+    `${label}: no column is called phone_id any more`,
+    await columnsNamed(connection, 'phone_id'),
+    []
+  );
+  check(
+    `${label}: every row kept the device it was on`,
+    [
+      await scalar(connection, 'SELECT device_id FROM mica_notes WHERE citizenid = ?', [A]),
+      await scalar(connection, 'SELECT device_id FROM mica_settings WHERE citizenid = ?', [A]),
+      (
+        await connection.query('SELECT number, device_id FROM mica_phone_numbers ORDER BY id')
+      )[0].map((r) => `${r.number}:${r.device_id ?? 'NULL'}`),
+      await scalar(
+        connection,
+        'SELECT device_id FROM mica_messages_participants WHERE conversation_id = ?',
+        [conversation.insertId]
+      )
+    ],
+    [B_PHONE, A_PHONE, [`5551234:${A_PHONE}`, '5554321:NULL'], A_PHONE]
+  );
+  check(
+    `${label}: every column is a fresh import's, type, nullability and collation`,
+    await wholeSchema(connection),
+    shape.columns
+  );
+  check(`${label}: and every key is a fresh import's`, await allIndexes(connection), shape.keys);
+  const plans = await server.SchemaMigrator.plan();
+  check(
+    `${label}: the planner finds nothing to add and no drift`,
+    plans.flatMap((p) => [...p.additive, ...p.drift]),
+    []
+  );
+
+  check(
+    `${label}: a second number on the same device is still rejected`,
+    await rejects(() =>
+      connection.query(
+        'INSERT INTO mica_phone_numbers (citizenid, number, device_id) VALUES (?, ?, ?)',
+        [A, '5559876', A_PHONE]
+      )
+    ),
+    'ER_DUP_ENTRY'
+  );
+  check(
+    `${label}: and a second row for the same device id`,
+    await rejects(() =>
+      connection.query(
+        'INSERT INTO mica_devices (citizenid, device_id, claimed) VALUES (?, ?, 0)',
+        [A, A_PHONE]
+      )
+    ),
+    'ER_DUP_ENTRY'
+  );
+
+  const settled = await wholeSchema(connection);
+  await server.migrations.find((m) => m.id === RENAME_MIGRATION).up();
+  check(
+    `${label}: running up() a second time changes nothing`,
+    await wholeSchema(connection),
+    settled
+  );
+  const second = await server.runPendingMigrations();
+  check(`${label}: a second run applies nothing`, second.applied, []);
+
+  // A re-import over a database from before 0008 creates an empty `mica_devices` beside the
+  // real `mica_phones`; `runReimportRunsMigrations` proves that one is dropped and the real one
+  // renamed. One holding rows is not a state the migration may guess about.
+  step(`${schemaFile} — ${RENAME_MIGRATION} refuses two device tables that both hold rows`);
+  await fresh(`mica_rename_both_${variant}`);
+  await regressDeviceNames(connection);
+  await connection.query(`CREATE TABLE mica_devices LIKE mica_phones`);
+  await connection.query('INSERT INTO mica_devices (citizenid, phone_id) VALUES (?, ?)', [
+    A,
+    A_PHONE
+  ]);
+  const refused = await captured(() => server.runPendingMigrations());
+  check(
+    `${label}: 0008 is the migration that failed, and is not recorded`,
+    [refused.result.failed?.id, refused.result.applied.includes(RENAME_MIGRATION)],
+    [RENAME_MIGRATION, false]
+  );
+  check(
+    `${label}: and nothing was renamed`,
+    [
+      (await columnsNamed(connection, 'phone_id')).length,
+      await columnsNamed(connection, 'device_id')
+    ],
+    [RENAMED_TABLES.length + 1, []]
+  );
+};
+
+/**
+ * MICA-344, from review: the current `mica.sql` re-imported over the flattened baseline of
+ * 2026-09-04 (`scripts/fixtures/pre-0001/`), which predates `mica_phones` — MICA-280 added it
+ * with no migration. The re-import creates `mica_devices` and never `mica_phones`, so 0002 has
+ * no table to mint into. It must fail there, loudly and unrecorded, rather than read the new
+ * table as "already past me", record itself, and leave every row it should have keyed on a
+ * device with none.
+ */
+const runReimportOverFlattenedBaseline = async ({ connection, server }) => {
+  const label = 'mica.sql re-imported over the flattened baseline';
+  step(label);
+
+  const database = 'mica_reimport_flattened';
+  await connection.query(`DROP DATABASE IF EXISTS \`${database}\``);
+  await connection.query(`CREATE DATABASE \`${database}\``);
+  await connection.changeUser({ database });
+  await connection.query(PLAYERS_TABLE);
+  await connection.query(
+    fs.readFileSync(path.join(root, 'scripts', 'fixtures', 'pre-0001', 'mica.sql'), 'utf8')
+  );
+  await connection.query('INSERT INTO players (citizenid, charinfo) VALUES (?, ?)', [
+    'CIT_FLAT',
+    JSON.stringify({ phone: '5550042' })
+  ]);
+  await connection.query(
+    'INSERT INTO mica_contacts (citizenid, firstname, phone) VALUES (?, ?, ?)',
+    ['CIT_FLAT', 'Ada', '5550001']
+  );
+  await connection.query(fs.readFileSync(path.join(root, 'mica.sql'), 'utf8'));
+
+  const tables = async () =>
+    (
+      await connection.query(
+        `SELECT table_name AS t FROM information_schema.TABLES
+          WHERE table_schema = DATABASE() AND table_name IN ('mica_phones', 'mica_devices')
+          ORDER BY table_name`
+      )
+    )[0].map((r) => r.t);
+  check(
+    `${label}: the re-import made mica_devices and no mica_phones, and contacts has no device column`,
+    [
+      await tables(),
+      (await columnsOn(connection, 'mica_contacts')).filter(
+        (c) => c === 'phone_id' || c === 'device_id'
+      )
+    ],
+    [['mica_devices'], []]
+  );
+
+  runningFramework(server, true);
+  const run = await captured(() => server.runPendingMigrations());
+  check(
+    `${label}: 0001 applies, and 0002 fails rather than recording itself`,
+    [run.result.applied, run.result.failed?.id],
+    [[NUMBER_MIGRATION], DATA_MIGRATION]
+  );
+  check(
+    `${label}: the ledger does not claim 0002`,
+    (await ledgerIds(connection)).includes(DATA_MIGRATION),
+    false
+  );
+  check(
+    `${label}: and the contact is left exactly as it was`,
+    await rowsIn(connection, 'mica_contacts'),
+    1
   );
 };
 
@@ -1455,16 +1815,23 @@ const LONG_IDENTIFIER = `char1:license:${'a1b2c3d4e5'.repeat(4)}`;
 const preWidenSchema = (schemaFile) =>
   fs.readFileSync(path.join(root, 'scripts', 'fixtures', 'pre-0004', schemaFile), 'utf8');
 
+/**
+ * Keyed by the frozen name, so a signature from before 0008 and one from after it compare: a
+ * table 0008 renamed (MICA-344) is read under its new name once the old one is gone.
+ */
 const signatureOf = async (connection, columns) => {
   const out = {};
   for (const [table, column] of columns) {
-    const [rows] = await connection.query(
-      `SELECT column_type AS type, is_nullable AS nullable, collation_name AS collation
-         FROM information_schema.COLUMNS
-        WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?`,
-      [table, column]
-    );
-    out[`${table}.${column}`] = rows[0] ?? null;
+    const read = async (name) =>
+      (
+        await connection.query(
+          `SELECT column_type AS type, is_nullable AS nullable, collation_name AS collation
+             FROM information_schema.COLUMNS
+            WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?`,
+          [name, column]
+        )
+      )[0][0];
+    out[`${table}.${column}`] = (await read(table)) ?? (await read(renamedTable(table))) ?? null;
   }
   return out;
 };
@@ -2566,6 +2933,15 @@ const main = async () => {
       server
     });
 
+    // MICA-344. 0008 alone, on both shapes; the three above also run it after their own.
+    await runRenameMigration({ connection, schemaFile: 'mica.sql', hasPlayers: true, server });
+    await runRenameMigration({
+      connection,
+      schemaFile: 'mica.esx.sql',
+      hasPlayers: false,
+      server
+    });
+
     // MICA-289. 0004 is the one migration the scenarios above never run: they import the
     // current schema, which seeds it as applied. These import the frozen pre-0004 one.
     await runWidenMigration({ connection, schemaFile: 'mica.sql', hasPlayers: true, server });
@@ -2624,6 +3000,8 @@ const main = async () => {
       server
     });
     await runReimportOverOldSchema({ connection, server });
+    // MICA-344. The oldest schema an owner can still hold, re-imported under the new names.
+    await runReimportOverFlattenedBaseline({ connection, server });
     await runApplyWidensEsxWithPlayersKeys({ connection, server });
 
     // MICA-301. A re-import records only what an import created; apply runs the rest.

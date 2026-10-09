@@ -12,10 +12,10 @@ import { contactsContract } from '@mica/shared/contracts/contacts';
 import { s } from '@mica/shared/schema';
 import { resolve as resolvePlayer } from '../lib/PlayerDirectory';
 import { restoreWindowDays } from '../lib/retention';
-import { phoneForCitizen } from '../lib/phoneIdentity';
+import { phoneForCitizen } from '../lib/deviceIdentity';
 import { defaultContacts } from '../lib/ownerConfig';
 import { isRingtoneValue, MAX_OWNER_SOUND_ID } from '@mica/shared/ownerConfig';
-import { onPhoneCreated } from './Phones';
+import { onDeviceCreated } from './Devices';
 
 /**
  * Contacts: owner-scoped address book, all four generic CRUD actions.
@@ -70,8 +70,8 @@ export const contacts = defineService<Contact, typeof contactsContract>({
        * would be one no phone ever shows.
        */
       async addForPlayer(citizenid: string, item: Partial<Contact>): Promise<number> {
-        const phone_id = await phoneForCitizen(citizenid);
-        return await this.create({ ...item, citizenid, phone_id } as Partial<Contact>);
+        const device_id = await phoneForCitizen(citizenid);
+        return await this.create({ ...item, citizenid, device_id } as Partial<Contact>);
       }
     })(resolved)
 });
@@ -89,13 +89,13 @@ const sameNumberKey = (number: string): string => number.replace(/\D/g, '') || n
 
 /**
  * The owner's default contacts (`mica_default_contacts`, MICA-234), written into a phone the
- * moment this server first creates it and never again — see `onPhoneCreated` for why the
+ * moment this server first creates it and never again — see `onDeviceCreated` for why the
  * phone's own insert is the once-only mark. Onto that phone id directly rather than through
  * `addForPlayer`, whose `phoneForCitizen` could name a different phone the citizen holds.
- * A throw here is logged by `Phones.ts` and the phone is created regardless.
+ * A throw here is logged by `Devices.ts` and the phone is created regardless.
  *
  * **Idempotent, because a throw is retried** (MICA-327). Seeding is entry by entry, so a throw
- * on the third of five used to leave two and lose three for good. Now `Phones.ts` runs this
+ * on the third of five used to leave two and lose three for good. Now `Devices.ts` runs this
  * again on a later resolve of the phone, and each run writes only the entries the phone does
  * not have yet: a default is "there" when any row on this phone carries its number
  * (`sameNumberKey`), **in any status**. That is what keeps a retry from bringing back a
@@ -112,7 +112,7 @@ const sameNumberKey = (number: string): string => number.replace(/\D/g, '') || n
  * Server-internal and keyed on the phone alone, deliberately without a citizenid: the read
  * only decides what to insert, and rows on one phone all name its holder anyway.
  */
-onPhoneCreated('defaultContacts', async (phoneId, citizenid, kind) => {
+onDeviceCreated('defaultContacts', async (deviceId, citizenid, kind) => {
   // A phone's address book, not a tablet's (MICA-264): Contacts is phone-only, so defaults
   // seeded onto a tablet's id would be rows nothing can ever read.
   if (kind !== 'phone') return;
@@ -122,8 +122,8 @@ onPhoneCreated('defaultContacts', async (phoneId, citizenid, kind) => {
   });
   if (seed.length === 0) return;
   const present = await Database.query<{ phone: string }[]>(
-    `SELECT \`phone\` FROM \`${contacts.resolved.table}\` WHERE \`phone_id\` = ?`,
-    [phoneId]
+    `SELECT \`phone\` FROM \`${contacts.resolved.table}\` WHERE \`device_id\` = ?`,
+    [deviceId]
   );
   const have = new Set(
     (Array.isArray(present) ? present : []).map((row) => sameNumberKey(String(row.phone)))
@@ -134,7 +134,7 @@ onPhoneCreated('defaultContacts', async (phoneId, citizenid, kind) => {
       firstname: entry.name,
       phone: entry.number,
       citizenid,
-      phone_id: phoneId
+      device_id: deviceId
     } as Partial<Contact>);
     have.add(sameNumberKey(entry.number));
   }
@@ -145,8 +145,8 @@ onPhoneCreated('defaultContacts', async (phoneId, citizenid, kind) => {
  * `Repository.restore` for the ownership scoping and why `updated_at` stands in for a
  * deletion timestamp.
  */
-contacts.app.registerEvent('restore', async (source, cbId, data, citizenid, _player, phoneId) => {
-  const ok = await contacts.repo.restore(data.id, citizenid, restoreWindowDays(), phoneId);
+contacts.app.registerEvent('restore', async (source, cbId, data, citizenid, _player, deviceId) => {
+  const ok = await contacts.repo.restore(data.id, citizenid, restoreWindowDays(), deviceId);
   return { ok };
 });
 
@@ -157,8 +157,8 @@ contacts.app.registerEvent('restore', async (source, cbId, data, citizenid, _pla
  */
 contacts.app.registerEvent(
   'getDeleted',
-  async (source, cbId, data, citizenid, _player, phoneId) => {
-    return await contacts.repo.findDeleted(citizenid, restoreWindowDays(), undefined, phoneId);
+  async (source, cbId, data, citizenid, _player, deviceId) => {
+    return await contacts.repo.findDeleted(citizenid, restoreWindowDays(), undefined, deviceId);
   }
 );
 

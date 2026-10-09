@@ -269,12 +269,12 @@ const schedule = (): void => {
  */
 const resolveRecipients = async (
   citizenid: string,
-  phoneId: string | undefined,
+  deviceId: string | undefined,
   contactIds: readonly number[],
   sharerNumber: string
 ): Promise<Map<string, string>> => {
   const rows = await Promise.all(
-    [...new Set(contactIds)].map((id) => contacts.repo.findById(id, citizenid, phoneId))
+    [...new Set(contactIds)].map((id) => contacts.repo.findById(id, citizenid, deviceId))
   );
   const numbers = new Set<string>();
   for (const row of rows) {
@@ -329,14 +329,14 @@ app.registerEvent('live', async (source, _cbId, _data, citizenid) =>
   liveStateFor(source, citizenid)
 );
 
-app.registerEvent('startSharing', async (source, _cbId, data, citizenid, _player, phoneId) => {
+app.registerEvent('startSharing', async (source, _cbId, data, citizenid, _player, deviceId) => {
   const number = FrameworkBridge.getPlayerPhone(source);
   if (!number) {
     throw new PlayerFacingError('Your phone has no number to share from.', {
       key: 'server.places.noNumber'
     });
   }
-  const recipients = await resolveRecipients(citizenid, phoneId, data.contact_ids, number);
+  const recipients = await resolveRecipients(citizenid, deviceId, data.contact_ids, number);
   if (recipients.size === 0) {
     throw new PlayerFacingError('None of those contacts can receive your location.', {
       key: 'server.places.noRecipients'

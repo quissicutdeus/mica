@@ -24,7 +24,7 @@ export interface BlockedNumber {
   id: number;
   citizenid: string;
   /** The phone the block was made on (MICA-282). */
-  phone_id?: string | null;
+  device_id?: string | null;
   number: string;
   status?: 'active' | 'deleted';
   created_at: Date | string;
@@ -42,13 +42,13 @@ export const blocklist = defineService<BlockedNumber>({
   // find-then-insert a double-tap on "Block" could race. Per phone since MICA-282
   // (`0002_phone_data_follows_the_phone` swaps the old `citizenid_number_unique` for it);
   // the *enforcement* in `isBlocked`/`blockedBy` stays by citizen — see their notes.
-  indexes: [{ name: 'phone_number_unique', columns: ['phone_id', 'number'], unique: true }],
+  indexes: [{ name: 'device_number_unique', columns: ['device_id', 'number'], unique: true }],
   /**
    * Blocking a number this phone once blocked and then unblocked brings that row back
    * (MICA-318, made generic by MICA-321). Unblocking is the generic soft `delete`, so the
-   * unblocked row keeps its `(phone_id, number)` and a plain insert for the pair is refused by
+   * unblocked row keeps its `(device_id, number)` and a plain insert for the pair is refused by
    * the key. The revive names this citizen and this phone, so a row the phone's previous holder
-   * left — before `transferPhoneRows` has moved it — is never revived; that insert is refused.
+   * left — before `transferDeviceRows` has moved it — is never revived; that insert is refused.
    */
   uniqueAfterDelete: 'revive',
   options: { disableUpdate: true }

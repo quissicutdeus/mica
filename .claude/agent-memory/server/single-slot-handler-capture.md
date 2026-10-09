@@ -2,7 +2,7 @@
 
 Most server suites capture `on`/`onNet` into a `Map<string, Function>` in
 `vi.hoisted`, so `handlers.get('playerDropped')` is whichever module registered
-it last. Battery, `PhoneOpenState`, `deviceItem`, `shell.ts` and `Phones.ts`
+it last. Battery, `PhoneOpenState`, `deviceItem`, `shell.ts` and `Devices.ts`
 each register one.
 
 In MICA-337 a break-to-prove mutation dropped the only use of an import from

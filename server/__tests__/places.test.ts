@@ -81,7 +81,7 @@ describe('places:create (MICA-65)', () => {
     expect(reply).toMatchObject({ id: 101, place: expect.objectContaining({ name: 'Home' }) });
     const [sql, params] = dbMock.insert.mock.calls[0];
     expect(String(sql)).toBe(
-      'INSERT INTO `mica_places` (`name`, `x`, `y`, `z`, `citizenid`, `phone_id`) VALUES (?, ?, ?, ?, ?, ?)'
+      'INSERT INTO `mica_places` (`name`, `x`, `y`, `z`, `citizenid`, `device_id`) VALUES (?, ?, ?, ?, ?, ?)'
     );
     expect(params).toEqual(['Home', 100, 200, 30, 'CIT_A', TEST_PHONE_ID]);
   });

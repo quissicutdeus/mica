@@ -122,7 +122,7 @@ export const readItemSlots = (src: number, player: any, item: string): ItemSlot[
  * Merge `patch` into one slot's metadata. `true` only when the inventory really stored it.
  *
  * **Merged, not replaced.** ox_inventory's `SetMetadata` assigns the whole table
- * (`slot.metadata = metadata`), so writing `{ phoneId }` straight through would drop
+ * (`slot.metadata = metadata`), so writing `{ deviceId }` straight through would drop
  * `durability`, `imageurl` and anything another resource keeps there. Read, merge, write.
  *
  * The read is redone here rather than taken from the caller, because the caller's copy was

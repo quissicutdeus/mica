@@ -19,7 +19,7 @@ import {
   type PhoneNumberRow
 } from '../lib/phoneNumbers';
 import { PhoneNumberRepository } from '../repositories/PhoneNumberRepository';
-import { resolvePhone, type ActivePhone } from './Phones';
+import { resolvePhone, type ActiveDevice } from './Devices';
 
 /**
  * The one table micaOS owns a phone number in (MICA-151), and the phone each number belongs
@@ -45,7 +45,7 @@ import { resolvePhone, type ActivePhone } from './Phones';
  * **A number attaches to a phone lazily**, because it has to. A phone id lives in inventory
  * item metadata (MICA-280) and can only be minted at runtime, when a player actually holds the
  * item; SQL cannot invent one. So the migration that ships with this gives every existing qb
- * character a **legacy row** — their current number, `phone_id` NULL — and the first time they
+ * character a **legacy row** — their current number, `device_id` NULL — and the first time they
  * use a phone `syncNumber` attaches that row to it. Nobody's number changes on upgrade; it
  * moves onto their phone the first time they pick it up. A server whose inventory cannot carry
  * a phone id at all stays on legacy rows forever, which is exactly one number per citizen, as
@@ -70,15 +70,15 @@ export const phoneNumbers = defineService<PhoneNumberRow>({
      */
     number: { type: 'string', length: 16, notNull: true, clientWritable: false },
     /**
-     * The phone this number is on: a `mica_phones.phone_id`, or NULL for a legacy row that is
+     * The phone this number is on: a `mica_devices.device_id`, or NULL for a legacy row that is
      * a citizen's number not yet attached to any phone. Nullable on purpose — see the
-     * declaration note — and deliberately **not a foreign key** onto `mica_phones`: the
+     * declaration note — and deliberately **not a foreign key** onto `mica_devices`: the
      * additive half of `micaschema apply` adds columns and keys and never a constraint, so a
      * foreign key here would hold on a fresh install and not on an upgraded one. A constraint
-     * that is true on half the servers is a lie, and the resolver in `Phones.ts` is what keeps
+     * that is true on half the servers is a lie, and the resolver in `Devices.ts` is what keeps
      * the two tables in step instead.
      */
-    phone_id: { type: 'string', length: 32, clientWritable: false }
+    device_id: { type: 'string', length: 32, clientWritable: false }
   },
   indexes: [
     /**
@@ -88,7 +88,7 @@ export const phoneNumbers = defineService<PhoneNumberRow>({
      * connecting in the same tick that no amount of care in TypeScript closes, and a duplicate
      * number is not a cosmetic problem — two players would receive each other's messages.
      *
-     * `number` unique: no two phones share a number. `phone_id` unique: a phone has one number
+     * `number` unique: no two phones share a number. `device_id` unique: a phone has one number
      * — and NULL is exempt from a unique key, so any number of legacy rows coexist.
      *
      * **There is deliberately no unique key on `citizenid` any more.** MICA-151 had one, and
@@ -99,7 +99,7 @@ export const phoneNumbers = defineService<PhoneNumberRow>({
      * behaviour for a row that is a player's identity, and `claimRow` keeps doing it.
      */
     { name: 'number_unique', columns: ['number'], unique: true },
-    { name: 'phone_id_unique', columns: ['phone_id'], unique: true }
+    { name: 'device_id_unique', columns: ['device_id'], unique: true }
   ],
   uniqueAfterDelete: {
     optOut:
@@ -224,7 +224,7 @@ const number = (row: AssignedNumberRow): string => `number ${row.number}`;
  *   papered over by handing out a number somebody already has.
  *
  * A duplicate can come from either key. A duplicate `number` is an ordinary collision:
- * generate another. A duplicate `phone_id` means a concurrent sync already gave this phone a
+ * generate another. A duplicate `device_id` means a concurrent sync already gave this phone a
  * number, and no new candidate will get past that — so the winner's row is claimed instead.
  * With no phone id, the same question is asked of the citizen's legacy row.
  *
@@ -234,7 +234,7 @@ const number = (row: AssignedNumberRow): string => `number ${row.number}`;
  */
 const assign = async (
   citizenid: string,
-  phoneId: string | null,
+  deviceId: string | null,
   preferred: string | null
 ): Promise<string | null> => {
   const candidates = function* (): Generator<string> {
@@ -247,7 +247,7 @@ const assign = async (
       await repo.create({
         citizenid,
         number: candidate,
-        ...(phoneId ? { phone_id: phoneId } : {})
+        ...(deviceId ? { device_id: deviceId } : {})
       } as Partial<PhoneNumberRow>);
       return candidate;
     } catch (error) {
@@ -261,7 +261,7 @@ const assign = async (
         return null;
       }
 
-      const winner = phoneId ? await readRowByPhoneId(phoneId) : await readLegacyRow(citizenid);
+      const winner = deviceId ? await readRowByPhoneId(deviceId) : await readLegacyRow(citizenid);
       if (winner) return await claimRow(winner, citizenid);
 
       if (candidate === preferred) {
@@ -322,11 +322,11 @@ export const ensureNumber = async (
  */
 const attachLegacy = async (
   legacy: AssignedNumberRow,
-  phoneId: string,
+  deviceId: string,
   citizenid: string
 ): Promise<string | null> => {
   try {
-    const attached = await repo.attachToPhone(legacy.id, phoneId);
+    const attached = await repo.attachToPhone(legacy.id, deviceId);
     if (!attached) {
       console.error(
         `[mica] could not attach ${number(legacy)} to the phone ${citizenid} is using. It ` +
@@ -338,7 +338,7 @@ const attachLegacy = async (
       console.error(`[mica] could not attach ${number(legacy)} to a phone.`, error);
       return null;
     }
-    const winner = await readRowByPhoneId(phoneId);
+    const winner = await readRowByPhoneId(deviceId);
     return winner ? await claimRow(winner, citizenid) : null;
   }
   return await claimRow(legacy, citizenid);
@@ -354,25 +354,25 @@ const attachLegacy = async (
  * character keeps their number through the upgrade that introduced phones.
  */
 const numberForPhone = async (
-  phone: ActivePhone,
+  phone: ActiveDevice,
   citizenid: string,
   preferred: string | null
 ): Promise<string | null> => {
-  const known = onPhone.get(phone.phoneId);
+  const known = onPhone.get(phone.deviceId);
   if (known && known.citizenid === citizenid) return known.number;
 
   let resolved: string | null;
-  const existing = await readRowByPhoneId(phone.phoneId);
+  const existing = await readRowByPhoneId(phone.deviceId);
   if (existing) {
     resolved = await claimRow(existing, citizenid);
   } else {
     const legacy = await readLegacyRow(citizenid);
     resolved = legacy
-      ? await attachLegacy(legacy, phone.phoneId, citizenid)
-      : await assign(citizenid, phone.phoneId, preferred);
+      ? await attachLegacy(legacy, phone.deviceId, citizenid)
+      : await assign(citizenid, phone.deviceId, preferred);
   }
 
-  if (resolved) onPhone.set(phone.phoneId, { number: resolved, citizenid });
+  if (resolved) onPhone.set(phone.deviceId, { number: resolved, citizenid });
   return resolved;
 };
 
@@ -460,7 +460,7 @@ const syncOnce = async (src: number): Promise<string | null> => {
 
   const resolved =
     resolution.status === 'active'
-      ? await numberForPhone(resolution.phone, player.citizenid, preferred)
+      ? await numberForPhone(resolution.device, player.citizenid, preferred)
       : await ensureNumber(player.citizenid, preferred);
   if (!resolved) return null;
 

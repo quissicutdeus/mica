@@ -30,7 +30,7 @@ vi.mock('../lib/FrameworkBridge', () => ({
   detectFramework: () => 'qbx'
 }));
 
-import { __resetPhoneState, identityPhone, resolvePhone } from '../services/Phones';
+import { __resetDeviceState, identityPhone, resolvePhone } from '../services/Devices';
 // Registers the seeding hook, which is the thing under test.
 import '../services/Contacts';
 import { __resetOwnerConfig } from '../lib/ownerConfig';
@@ -59,14 +59,14 @@ const SEED = [
 
 type ContactRow = {
   id: number;
-  phone_id: string;
+  device_id: string;
   phone: string;
   citizenid: string;
   status: string;
 };
 let contactRows: ContactRow[];
-type PhoneRow = { id: number; phone_id: string; citizenid: string; claimed: number };
-let phoneRows: PhoneRow[];
+type DeviceRow = { id: number; device_id: string; citizenid: string; claimed: number };
+let phoneRows: DeviceRow[];
 /** Gates a table's next handover transfer waits on, in order. */
 let transferGates: Record<string, Promise<void>[]>;
 /** Each contacts insert, by its position across the whole case, that throws (once). */
@@ -78,8 +78,8 @@ let gates: Promise<void>[];
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 /** The numbers on a phone, in insert order, every status. */
-const numbersOn = (phoneId: string) =>
-  contactRows.filter((row) => row.phone_id === phoneId).map((row) => row.phone);
+const numbersOn = (deviceId: string) =>
+  contactRows.filter((row) => row.device_id === deviceId).map((row) => row.phone);
 
 const hold = () => {
   let release!: () => void;
@@ -95,7 +95,7 @@ const holdTransfer = (table: string) => {
 };
 
 const TRANSFER =
-  /^UPDATE `(mica_\w+)` SET `citizenid` = \?.* WHERE `phone_id` = \? AND `citizenid` <> \?$/;
+  /^UPDATE `(mica_\w+)` SET `citizenid` = \?.* WHERE `device_id` = \? AND `citizenid` <> \?$/;
 
 /** The columns and values of an INSERT, as a record. */
 const inserted = (sql: string, values: unknown[]): Record<string, unknown> => {
@@ -108,7 +108,7 @@ const inserted = (sql: string, values: unknown[]): Record<string, unknown> => {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  __resetPhoneState();
+  __resetDeviceState();
   __resetOwnerConfig();
   for (const key of Object.keys(convar)) delete convar[key];
   convar.mica_default_contacts = JSON.stringify(SEED);
@@ -125,23 +125,23 @@ beforeEach(() => {
       // rows would be caught here rather than answered with every row regardless.
       const activeOnly = /`status`\s*=\s*'active'/.test(String(sql));
       return contactRows
-        .filter((row) => row.phone_id === params[0])
+        .filter((row) => row.device_id === params[0])
         .filter((row) => !activeOnly || row.status === 'active')
         .map((row) => ({ phone: row.phone }));
     }
-    // `mica_phones`: `findAll` by phone id, or `readUnclaimed` by citizen.
+    // `mica_devices`: `findAll` by phone id, or `readUnclaimed` by citizen.
     const byPhone = (params as unknown[]).find((value) => /^[0-9a-f]{32}$/.test(String(value)));
     const rows = byPhone
-      ? phoneRows.filter((row) => row.phone_id === byPhone)
+      ? phoneRows.filter((row) => row.device_id === byPhone)
       : phoneRows.filter((row) => row.citizenid === params[0] && !row.claimed);
     return rows.map((row) => ({ ...row, status: 'active' }));
   });
   dbMock.insert.mockImplementation(async (sql: string, values: unknown[]) => {
-    if (String(sql).includes('`mica_phones`')) {
+    if (String(sql).includes('`mica_devices`')) {
       const row = inserted(String(sql), values);
       phoneRows.push({
         id: phoneRows.length + 1,
-        phone_id: String(row.phone_id),
+        device_id: String(row.device_id),
         citizenid: String(row.citizenid),
         claimed: Number(row.claimed)
       });
@@ -155,7 +155,7 @@ beforeEach(() => {
     const row = inserted(String(sql), values);
     contactRows.push({
       id: contactRows.length + 1,
-      phone_id: String(row.phone_id),
+      device_id: String(row.device_id),
       phone: String(row.phone),
       citizenid: String(row.citizenid),
       status: 'active'
@@ -168,11 +168,11 @@ beforeEach(() => {
     const gate = transferGates[match[1]]?.shift();
     if (gate) await gate;
     const [to, phone] = params as string[];
-    const rows: { phone_id: string; citizenid: string }[] =
-      match[1] === 'mica_contacts' ? contactRows : match[1] === 'mica_phones' ? phoneRows : [];
+    const rows: { device_id: string; citizenid: string }[] =
+      match[1] === 'mica_contacts' ? contactRows : match[1] === 'mica_devices' ? phoneRows : [];
     let moved = 0;
     for (const row of rows) {
-      if (row.phone_id === phone && row.citizenid !== to) {
+      if (row.device_id === phone && row.citizenid !== to) {
         row.citizenid = to;
         moved++;
       }
@@ -197,16 +197,16 @@ describe('a default-contacts seed that fails part-way (MICA-327)', () => {
   it('is finished by the next resolve of the phone, each default once', async () => {
     failInsert.add(3);
 
-    const phoneId = await identityPhone(CID);
+    const deviceId = await identityPhone(CID);
     await settle();
-    expect(numbersOn(phoneId), 'the third insert threw, and the rest were not tried').toEqual([
+    expect(numbersOn(deviceId), 'the third insert threw, and the rest were not tried').toEqual([
       '911',
       '555-0100'
     ]);
 
-    await expect(identityPhone(CID)).resolves.toBe(phoneId);
+    await expect(identityPhone(CID)).resolves.toBe(deviceId);
     await settle();
-    expect(numbersOn(phoneId)).toEqual(SEED.map((entry) => entry.number));
+    expect(numbersOn(deviceId)).toEqual(SEED.map((entry) => entry.number));
     expect(contactRows.every((row) => row.citizenid === CID)).toBe(true);
 
     // Finished, so nothing is owed: a later resolve reads and writes nothing.
@@ -218,7 +218,7 @@ describe('a default-contacts seed that fails part-way (MICA-327)', () => {
 
   it('is finished through the phone in hand on a gated server, too', async () => {
     convar.mica_phone_item = 'phone';
-    bridgeMock.itemSlots.mockReturnValue([{ slot: 3, metadata: { phoneId: CARRIED } }]);
+    bridgeMock.itemSlots.mockReturnValue([{ slot: 3, metadata: { deviceId: CARRIED } }]);
     failInsert.add(2);
 
     await resolvePhone(SRC);
@@ -232,7 +232,7 @@ describe('a default-contacts seed that fails part-way (MICA-327)', () => {
 
   it('does not bring back a default the player deleted before the retry', async () => {
     failInsert.add(3);
-    const phoneId = await identityPhone(CID);
+    const deviceId = await identityPhone(CID);
     await settle();
 
     // The player deletes the Mechanic before the retry runs: soft, so the row stays.
@@ -241,7 +241,7 @@ describe('a default-contacts seed that fails part-way (MICA-327)', () => {
     await identityPhone(CID);
     await settle();
 
-    expect(numbersOn(phoneId)).toEqual(SEED.map((entry) => entry.number));
+    expect(numbersOn(deviceId)).toEqual(SEED.map((entry) => entry.number));
     const mechanic = contactRows.filter((row) => row.phone === '555-0100');
     expect(mechanic).toHaveLength(1);
     expect(mechanic[0].status).toBe('deleted');
@@ -249,7 +249,7 @@ describe('a default-contacts seed that fails part-way (MICA-327)', () => {
 
   it('does not double a default when resolves overlap a retry', async () => {
     failInsert.add(3);
-    const phoneId = await identityPhone(CID);
+    const deviceId = await identityPhone(CID);
     await settle();
 
     // The retry is held on its first insert while two more resolves come in.
@@ -262,18 +262,18 @@ describe('a default-contacts seed that fails part-way (MICA-327)', () => {
     release();
     await settle();
 
-    expect(numbersOn(phoneId)).toEqual(SEED.map((entry) => entry.number));
+    expect(numbersOn(deviceId)).toEqual(SEED.map((entry) => entry.number));
   });
 
   it('counts a number the player saved in another format as the default it matches', async () => {
     failInsert.add(2); // the Mechanic, `555-0100`
-    const phoneId = await identityPhone(CID);
+    const deviceId = await identityPhone(CID);
     await settle();
 
     // Before the retry, the player saves the Mechanic themselves, without the dash.
     contactRows.push({
       id: contactRows.length + 1,
-      phone_id: phoneId,
+      device_id: deviceId,
       phone: '5550100',
       citizenid: CID,
       status: 'active'
@@ -282,13 +282,13 @@ describe('a default-contacts seed that fails part-way (MICA-327)', () => {
     await identityPhone(CID);
     await settle();
 
-    expect(numbersOn(phoneId)).toEqual(['911', '5550100', '555-0101', '555-0102', '555-0103']);
+    expect(numbersOn(deviceId)).toEqual(['911', '5550100', '555-0101', '555-0102', '555-0103']);
   });
 
   describe('against a handover', () => {
     beforeEach(() => {
       convar.mica_phone_item = 'phone';
-      bridgeMock.itemSlots.mockReturnValue([{ slot: 3, metadata: { phoneId: CARRIED } }]);
+      bridgeMock.itemSlots.mockReturnValue([{ slot: 3, metadata: { deviceId: CARRIED } }]);
     });
 
     /** Every contact on the phone, and the phone row, name this citizen. */
@@ -369,9 +369,9 @@ describe('a default-contacts seed that fails part-way (MICA-327)', () => {
       return 1;
     });
 
-    const phoneId = await identityPhone(CID);
+    const deviceId = await identityPhone(CID);
     await settle();
-    await expect(identityPhone(CID)).resolves.toBe(phoneId); // the immediate retry
+    await expect(identityPhone(CID)).resolves.toBe(deviceId); // the immediate retry
     await settle();
     expect(insertCount).toBe(2);
     // Each failure says it will retry, which attempt it was, and when the next one is due.
@@ -383,7 +383,7 @@ describe('a default-contacts seed that fails part-way (MICA-327)', () => {
       )
     ]);
 
-    for (let i = 0; i < 5; i++) await expect(identityPhone(CID)).resolves.toBe(phoneId);
+    for (let i = 0; i < 5; i++) await expect(identityPhone(CID)).resolves.toBe(deviceId);
     await settle();
     expect(insertCount, 'inside the wait, no attempt').toBe(2);
 

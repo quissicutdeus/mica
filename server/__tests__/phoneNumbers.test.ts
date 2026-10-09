@@ -100,7 +100,7 @@ import {
   syncNumber,
   __resetPhoneNumberState
 } from '../services/PhoneNumbers';
-import { __resetPhoneState, phoneForRequest } from '../services/Phones';
+import { __resetDeviceState, deviceForRequest } from '../services/Devices';
 import { __resetLastUsedPhone, __resetPhoneItemWarnings } from '../lib/deviceItem';
 import { PhoneNumberRepository } from '../repositories/PhoneNumberRepository';
 
@@ -128,7 +128,7 @@ beforeEach(() => {
   vi.spyOn(console, 'log').mockImplementation(() => {});
   __resetAssignedNumbers();
   __resetPhoneNumberState();
-  __resetPhoneState();
+  __resetDeviceState();
   __resetLastUsedPhone();
   __resetPhoneItemWarnings();
   framework.kind = 'standalone';
@@ -137,11 +137,11 @@ beforeEach(() => {
   dbMock.single.mockResolvedValue(null);
   dbMock.insert.mockResolvedValue(1);
   dbMock.update.mockResolvedValue(true);
-  // The `mica_phones` row already exists and names this citizen as its claimed holder, so
+  // The `mica_devices` row already exists and names this citizen as its claimed holder, so
   // `resolvePhone` neither inserts a phone nor hands one over, and every `insert` and
   // `update` counted below is about a number.
   dbMock.query.mockResolvedValue([
-    { id: 1, citizenid: CITIZEN, phone_id: 'c'.repeat(32), claimed: 1 }
+    { id: 1, citizenid: CITIZEN, device_id: 'c'.repeat(32), claimed: 1 }
   ]);
   bridgeMock.itemSlots.mockReturnValue(null);
   bridgeMock.setItemMetadata.mockReturnValue(true);
@@ -165,17 +165,17 @@ const load = async (src: number): Promise<void> => {
 };
 
 /**
- * The exact statement `Repository.transferPhoneRows` writes when a phone changes hands, and
+ * The exact statement `Repository.transferDeviceRows` writes when a phone changes hands, and
  * nothing looser: anchored at both ends, so a number-sync `UPDATE` can never match it.
  */
 const HANDOVER_TRANSFER =
-  /^UPDATE `mica_\w+` SET `citizenid` = \?(, `updated_at` = `updated_at`)? WHERE `phone_id` = \? AND `citizenid` <> \?$/;
+  /^UPDATE `mica_\w+` SET `citizenid` = \?(, `updated_at` = `updated_at`)? WHERE `device_id` = \? AND `citizenid` <> \?$/;
 
 /**
  * The SQL and parameters of every `update` this test made, in order — less the handover walk.
  *
  * A phone's first resolve in a process walks it in full even when its holder is unchanged
- * (MICA-319, `ensureHeld` in `services/Phones.ts`), so every load here also writes one no-op
+ * (MICA-319, `ensureHeld` in `services/Devices.ts`), so every load here also writes one no-op
  * transfer per phone-keyed table. Those are not the number sync under test, and are dropped —
  * after checking each one dropped really is a transfer to one holder, `[holder, phone, holder]`.
  */
@@ -296,7 +296,7 @@ describe('assigning a number', () => {
   });
 
   it("looks only at the citizen's legacy rows, and never pre-checks the number", async () => {
-    // A legacy row is a number not yet on any phone — `phone_id IS NULL` is its definition,
+    // A legacy row is a number not yet on any phone — `device_id IS NULL` is its definition,
     // and a number already attached to a phone is that phone's, not the citizen's to reclaim.
     // The uniqueness constraint is the authority on the number itself: a check-then-insert
     // has a race between two players connecting in the same tick that nothing closes.
@@ -305,7 +305,7 @@ describe('assigning a number', () => {
     const reads = dbMock.single.mock.calls.map((call) => String(call[0]));
     expect(reads).toHaveLength(1);
     expect(reads[0]).toContain('`citizenid` = ?');
-    expect(reads[0]).toContain('`phone_id` IS NULL');
+    expect(reads[0]).toContain('`device_id` IS NULL');
   });
 
   it('tries another number when the one it generated is taken', async () => {
@@ -496,14 +496,14 @@ describe('the declaration', () => {
 
   it('holds a number wider than the seven digits it generates, and a nullable phone id', () => {
     // `netGuard.phoneNumberFrom` accepts up to 32 characters off the wire, and a number
-    // adopted from qb keeps whatever shape qb gave it. `phone_id` is NULL on a legacy row —
+    // adopted from qb keeps whatever shape qb gave it. `device_id` is NULL on a legacy row —
     // a number not yet attached to a phone — so it cannot be NOT NULL.
     expect(phoneNumbers.resolved.columns).toContain('number');
-    expect(phoneNumbers.resolved.columns).toContain('phone_id');
+    expect(phoneNumbers.resolved.columns).toContain('device_id');
     expect(phoneNumbers.resolved.table).toBe(PHONE_NUMBERS_TABLE);
 
-    const phoneId = phoneNumbers.resolved.fields.find((f) => f.name === 'phone_id');
-    expect(phoneId?.def.notNull).toBeFalsy();
+    const deviceId = phoneNumbers.resolved.fields.find((f) => f.name === 'device_id');
+    expect(deviceId?.def.notNull).toBeFalsy();
   });
 
   it('declares uniqueness on the number and on the phone, and no longer on the citizen', () => {
@@ -516,7 +516,7 @@ describe('the declaration', () => {
       .map((index: any) => index.columns.join(','));
 
     expect(unique).toContain('number');
-    expect(unique).toContain('phone_id');
+    expect(unique).toContain('device_id');
     expect(unique).not.toContain('citizenid');
   });
 
@@ -545,15 +545,15 @@ describe('syncing the number with the phone in hand', () => {
     try {
       // A tablet in hand and no phone at all.
       bridgeMock.itemSlots.mockImplementation((_p: unknown, item: string) =>
-        item === 'tablet' ? [{ slot: 5, metadata: { phoneId: TABLET } }] : []
+        item === 'tablet' ? [{ slot: 5, metadata: { deviceId: TABLET } }] : []
       );
       dbMock.query.mockImplementation(async (_sql: string, params: unknown[] = []) =>
         params.includes(TABLET)
-          ? [{ id: 2, citizenid: CITIZEN, phone_id: TABLET, kind: 'tablet', claimed: 1 }]
+          ? [{ id: 2, citizenid: CITIZEN, device_id: TABLET, kind: 'tablet', claimed: 1 }]
           : []
       );
 
-      await expect(phoneForRequest(5, CITIZEN, 'tablet')).resolves.toBe(TABLET);
+      await expect(deviceForRequest(5, CITIZEN, 'tablet')).resolves.toBe(TABLET);
       await load(5);
 
       expect(dbMock.insert).not.toHaveBeenCalled();
@@ -567,8 +567,8 @@ describe('syncing the number with the phone in hand', () => {
       (globalThis as any).GetConvar = previous;
     }
   });
-  const holding = (phoneId = PHONE_ID) =>
-    bridgeMock.itemSlots.mockReturnValue([{ slot: 3, metadata: { phoneId } }]);
+  const holding = (deviceId = PHONE_ID) =>
+    bridgeMock.itemSlots.mockReturnValue([{ slot: 3, metadata: { deviceId } }]);
 
   it('issues a number on load, on a server with no framework', async () => {
     framework.kind = 'standalone';
@@ -651,7 +651,7 @@ describe('syncing the number with the phone in hand', () => {
     expect(numberFor(CITIZEN)).toBe('5559876');
     expect(dbMock.insert).not.toHaveBeenCalled();
     expect(updates()).toHaveLength(1);
-    expect(updates()[0].sql).toContain('`phone_id` = ?');
+    expect(updates()[0].sql).toContain('`device_id` = ?');
     expect(updates()[0].params).toEqual([PHONE_ID, 42]);
   });
 
@@ -664,7 +664,7 @@ describe('syncing the number with the phone in hand', () => {
     expect(numberFor(CITIZEN)).toBe('5559876');
     expect(dbMock.insert).toHaveBeenCalledTimes(1);
     const [sql, params] = dbMock.insert.mock.calls[0];
-    expect(String(sql)).toContain('`phone_id`');
+    expect(String(sql)).toContain('`device_id`');
     expect(params).toContain(PHONE_ID);
   });
 
@@ -751,8 +751,8 @@ describe('syncing the number with the phone in hand', () => {
   it('re-syncs when the player uses a phone, which is how they switch', async () => {
     framework.kind = 'qb';
     bridgeMock.itemSlots.mockReturnValue([
-      { slot: 2, metadata: { phoneId: 'b'.repeat(32) } },
-      { slot: 8, metadata: { phoneId: PHONE_ID } }
+      { slot: 2, metadata: { deviceId: 'b'.repeat(32) } },
+      { slot: 8, metadata: { deviceId: PHONE_ID } }
     ]);
     dbMock.single
       .mockResolvedValueOnce(row('5552222', 'active', CITIZEN)) // slot 2, on load

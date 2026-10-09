@@ -31,7 +31,7 @@ const ABSENT_SOURCE = 4243;
 
 export const deviceScenarios: Scenario[] = [
   {
-    // MICA-264, MICA-306: the first-start bootstrap made `mica_phones.kind` from the
+    // MICA-264, MICA-306: the first-start bootstrap made `mica_devices.kind` from the
     // declaration, with the default that makes every pre-tablet row a phone without a backfill.
     id: 'devices-phones-kind-column-created-by-first-start',
     mode: 'standalone',
@@ -42,20 +42,20 @@ export const deviceScenarios: Scenario[] = [
       const column = await db.row(
         'SELECT `COLUMN_TYPE` AS `type`, `IS_NULLABLE` AS `nullable`, ' +
           '`COLUMN_DEFAULT` AS `fallback` FROM information_schema.COLUMNS ' +
-          "WHERE `TABLE_SCHEMA` = DATABASE() AND `TABLE_NAME` = 'mica_phones' " +
+          "WHERE `TABLE_SCHEMA` = DATABASE() AND `TABLE_NAME` = 'mica_devices' " +
           "AND `COLUMN_NAME` = 'kind'"
       );
-      if (!column) throw new Error('mica_phones has no kind column; the bootstrap left it out');
+      if (!column) throw new Error('mica_devices has no kind column; the bootstrap left it out');
       assert(
         String(column.type).toLowerCase() === "enum('phone','tablet')",
-        `mica_phones.kind is ${String(column.type)}, not enum('phone','tablet')`
+        `mica_devices.kind is ${String(column.type)}, not enum('phone','tablet')`
       );
-      assert(column.nullable === 'NO', 'mica_phones.kind is nullable');
+      assert(column.nullable === 'NO', 'mica_devices.kind is nullable');
       // MariaDB 10.2.7 and later quote a string default here; older ones do not.
       const fallback = String(column.fallback ?? '').replace(/^'|'$/g, '');
       assert(
         fallback === 'phone',
-        `mica_phones.kind defaults to ${String(column.fallback)}, not 'phone'`
+        `mica_devices.kind defaults to ${String(column.fallback)}, not 'phone'`
       );
     }
   },
@@ -114,9 +114,9 @@ export const deviceScenarios: Scenario[] = [
       await schemaCreated(signal);
       const who = await seedCitizen('two_devices');
       const tabletId = unique('tablet');
-      assert(tabletId.length <= 32, `the fixture tablet id ${tabletId} is wider than phone_id`);
+      assert(tabletId.length <= 32, `the fixture tablet id ${tabletId} is wider than device_id`);
       await db.insert(
-        'INSERT INTO `mica_phones` (`citizenid`, `phone_id`, `kind`, `claimed`) ' +
+        'INSERT INTO `mica_devices` (`citizenid`, `device_id`, `kind`, `claimed`) ' +
           "VALUES (?, ?, 'tablet', 0)",
         [who.citizenid, tabletId]
       );
@@ -132,25 +132,25 @@ export const deviceScenarios: Scenario[] = [
 
       // The positive half: the row exists and names a device at all, so the checks after it are
       // about which device and not about a notification that was never written.
-      const phoneId = await eventually(
+      const deviceId = await eventually(
         async () => {
           const row = await db.row(
-            'SELECT `phone_id` FROM `mica_notifications` WHERE `citizenid` = ? AND `app` = ?',
+            'SELECT `device_id` FROM `mica_notifications` WHERE `citizenid` = ? AND `app` = ?',
             [who.citizenid, app]
           );
-          return row?.phone_id ? String(row.phone_id) : null;
+          return row?.device_id ? String(row.device_id) : null;
         },
         5_000,
         signal,
         'the persisted notification'
       );
-      assert(phoneId !== tabletId, "the offline notification landed on the citizen's tablet");
+      assert(deviceId !== tabletId, "the offline notification landed on the citizen's tablet");
 
       const device = await db.row(
-        'SELECT `citizenid`, `kind` FROM `mica_phones` WHERE `phone_id` = ?',
-        [phoneId]
+        'SELECT `citizenid`, `kind` FROM `mica_devices` WHERE `device_id` = ?',
+        [deviceId]
       );
-      if (!device) throw new Error(`the notification names phone ${phoneId}, which has no row`);
+      if (!device) throw new Error(`the notification names phone ${deviceId}, which has no row`);
       assert(device.kind === 'phone', `the notification landed on a ${String(device.kind)}`);
       assert(
         device.citizenid === who.citizenid,
@@ -159,7 +159,7 @@ export const deviceScenarios: Scenario[] = [
 
       // Minting the phone left the tablet as it was: still a tablet, still theirs, not claimed.
       const tablet = await db.row(
-        'SELECT `citizenid`, `kind`, `claimed` FROM `mica_phones` WHERE `phone_id` = ?',
+        'SELECT `citizenid`, `kind`, `claimed` FROM `mica_devices` WHERE `device_id` = ?',
         [tabletId]
       );
       assert(
@@ -169,7 +169,7 @@ export const deviceScenarios: Scenario[] = [
         `the tablet row changed: ${JSON.stringify(tablet)}`
       );
       const phones = await db.count(
-        "SELECT COUNT(*) FROM `mica_phones` WHERE `citizenid` = ? AND `kind` = 'phone'",
+        "SELECT COUNT(*) FROM `mica_devices` WHERE `citizenid` = ? AND `kind` = 'phone'",
         [who.citizenid]
       );
       assert(phones === 1, `the citizen has ${phones} phone rows, not the one minted for them`);

@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import { Database, type TransactionQuery } from '../Database';
 import * as PlayerDirectory from '../PlayerDirectory';
 import { readCitizenIdByNumber, readPhoneIdByNumber } from '../phoneNumbers';
-import { phoneForCitizen } from '../phoneIdentity';
+import { phoneForCitizen } from '../deviceIdentity';
 import { cutText } from './cutText';
 import { SKIP, type ImportSource } from './report';
 
@@ -275,7 +275,7 @@ export const tablePresent = async (table: string): Promise<boolean> => {
 };
 
 /** Which phone a row lands on, or that the number it came from is now someone else's. */
-export type PhoneAnswer = { kind: 'ok'; phoneId: string | null } | { kind: 'reassigned' };
+export type PhoneAnswer = { kind: 'ok'; deviceId: string | null } | { kind: 'reassigned' };
 
 /**
  * Who a source row belongs to, and which of their phones it lands on.
@@ -343,7 +343,7 @@ export class Resolver {
    * only if the citizen holds it; held by anyone else, the answer is `reassigned` and the row is
    * skipped rather than written onto somebody else's phone. Otherwise it is the citizen's own
    * phone — `phoneForCitizen`, on apply only, since it creates an identity phone for a citizen
-   * who has none and a dry run must not write (`phoneId` is null then).
+   * who has none and a dry run must not write (`deviceId` is null then).
    */
   phone(
     citizenid: string,
@@ -359,10 +359,10 @@ export class Resolver {
           if (onNumber) {
             const holder = await readCitizenIdByNumber(number);
             if (holder && holder !== citizenid) return { kind: 'reassigned' };
-            return { kind: 'ok', phoneId: onNumber };
+            return { kind: 'ok', deviceId: onNumber };
           }
         }
-        return { kind: 'ok', phoneId: apply ? await phoneForCitizen(citizenid) : null };
+        return { kind: 'ok', deviceId: apply ? await phoneForCitizen(citizenid) : null };
       })();
       this.phones.set(key, pending);
     }

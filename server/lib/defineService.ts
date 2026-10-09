@@ -398,7 +398,7 @@ interface MembershipDefinition {
    * The column on the join table naming the phone a member is on (MICA-282), so `isMember`
    * can narrow to one device. Declare it only when the table really carries one.
    */
-  phoneColumn?: string;
+  deviceColumn?: string;
   /** Membership is live only while this column IS NULL — `left_at`. */
   liveWhileNull?: string;
 }
@@ -452,8 +452,8 @@ export interface ResolvedMembership {
   foreignKey: string;
   localKey: string;
   citizenColumn: string;
-  /** The membership table's phone column, or null when membership belongs to the citizen alone. */
-  phoneColumn: string | null;
+  /** The membership table's device column, or null when membership belongs to the citizen alone. */
+  deviceColumn: string | null;
   liveWhileNull: string | null;
 }
 
@@ -504,12 +504,12 @@ export interface ServiceDefinition<C extends ServiceContract = ServiceContract> 
   /**
    * The rows follow the phone, not the character (MICA-282).
    *
-   * Injects a nullable `phone_id` column and a `phone_id` index, and makes every generic
+   * Injects a nullable `device_id` column and a `device_id` index, and makes every generic
    * action scope by the caller's active phone as well as their citizenid — the phone id is
    * resolved by `ServiceEndpoint` from the item in the caller's own inventory and handed to
    * custom handlers as their sixth argument. A row's `citizenid` names whoever holds the phone
-   * now, and moves with it: `services/Phones.ts` calls `transferPhoneRows` on every table
-   * with a `phone_id` column when a phone changes hands. Declare it for what belongs to the
+   * now, and moves with it: `services/Devices.ts` calls `transferDeviceRows` on every table
+   * with a `device_id` column when a phone changes hands. Declare it for what belongs to the
    * *device* — contacts, notes, media, the lock screen — and never for what belongs to the
    * *person*, or a stolen phone hands over somebody's money. `docs/schema-and-services.md`
    * has the split, table by table.
@@ -563,7 +563,7 @@ export interface ServiceDefinition<C extends ServiceContract = ServiceContract> 
    * row again is a duplicate-key error the player sees as the generic failure (MICA-318).
    *
    * - `'revive'` — `create` brings back the caller's own deleted row under the conflicting key
-   *   instead of inserting: same `citizenid`, and the same `phone_id` on a device-owned table,
+   *   instead of inserting: same `citizenid`, and the same `device_id` on a device-owned table,
    *   never another owner's. The revived row is written as the insert would have written it
    *   and keeps only its id. See `Repository.reviveOwnDeleted`.
    * - `{ optOut: '<reason>' }` — `create` stays a plain insert and the key keeps refusing, for
@@ -985,7 +985,7 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
       ['foreignKey', rawMembership.foreignKey],
       ['localKey', rawMembership.localKey],
       ['citizenColumn', rawMembership.citizenColumn],
-      ['phoneColumn', rawMembership.phoneColumn],
+      ['deviceColumn', rawMembership.deviceColumn],
       ['liveWhileNull', rawMembership.liveWhileNull]
     ];
     for (const [field, value] of identifiers) {
@@ -1013,7 +1013,7 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
       foreignKey: rawMembership.foreignKey,
       localKey: rawMembership.localKey ?? 'id',
       citizenColumn: rawMembership.citizenColumn ?? 'citizenid',
-      phoneColumn: rawMembership.phoneColumn ?? null,
+      deviceColumn: rawMembership.deviceColumn ?? null,
       liveWhileNull: rawMembership.liveWhileNull ?? null
     };
   }
@@ -1039,13 +1039,13 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
    * endpoint from the caller's own inventory.
    */
   if (deviceOwned) {
-    if (Object.prototype.hasOwnProperty.call(schema, 'phone_id')) {
+    if (Object.prototype.hasOwnProperty.call(schema, 'device_id')) {
       throw new Error(
-        `defineService('${id}'): 'phone_id' is supplied by 'deviceOwned' and must not be ` +
+        `defineService('${id}'): 'device_id' is supplied by 'deviceOwned' and must not be ` +
           'declared in the schema as well.'
       );
     }
-    fields.push({ name: 'phone_id', def: { type: 'string', length: 32, clientWritable: false } });
+    fields.push({ name: 'device_id', def: { type: 'string', length: 32, clientWritable: false } });
   }
   for (const [name, spec] of Object.entries(schema)) {
     if ((IMPLICIT_COLUMNS as readonly string[]).includes(name)) {
@@ -1109,9 +1109,9 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
   const columns = [...IMPLICIT_COLUMNS, ...fields.map((f) => f.name)] as string[];
 
   const indexes = (definition.indexes ?? []).map(normalizeIndex);
-  // The handover's own lookup — `UPDATE … WHERE phone_id = ?` — and the narrowing half of
+  // The handover's own lookup — `UPDATE … WHERE device_id = ?` — and the narrowing half of
   // every scoped read. One plain key, named for the column like `citizenid_status` is.
-  if (deviceOwned) indexes.push({ name: 'phone_id', columns: ['phone_id'], unique: false });
+  if (deviceOwned) indexes.push({ name: 'device_id', columns: ['device_id'], unique: false });
   for (const index of indexes) {
     if (index.columns.length === 0) {
       throw new Error(`defineService('${id}'): an index must name at least one column.`);
@@ -1295,7 +1295,7 @@ export class SchemaRepository<T> extends Repository<T> {
         .filter((index) => index.unique)
         .map((index) => index.columns);
       this.reviveResets = resolved.fields
-        .filter((field) => !field.def.generatedAs && field.name !== 'phone_id')
+        .filter((field) => !field.def.generatedAs && field.name !== 'device_id')
         .map((field) => field.name);
     }
   }
@@ -1320,14 +1320,14 @@ export interface ServerAppHandle<T, C extends ServiceContract = ServiceContract>
 export const declaredServices: ResolvedService[] = [];
 
 /**
- * Every repository whose table carries a `phone_id`, declared this process (MICA-282).
+ * Every repository whose table carries a `device_id`, declared this process (MICA-282).
  *
- * The handover in `services/Phones.ts` walks this list and calls `transferPhoneRows` on each,
+ * The handover in `services/Devices.ts` walks this list and calls `transferDeviceRows` on each,
  * so a table that follows the phone follows it without being named anywhere but its own
- * declaration — the same reason `declaredServices` exists for the DDL. `mica_phones` and
+ * declaration — the same reason `declaredServices` exists for the DDL. `mica_devices` and
  * `mica_phone_numbers` are in it too, by the same rule: they carry the column.
  */
-export const phoneKeyedRepositories: Repository<any>[] = [];
+export const deviceKeyedRepositories: Repository<any>[] = [];
 
 /**
  * Declare an app's server half: derives the repository, registers the generic CRUD
@@ -1378,7 +1378,7 @@ export function defineService<T, C extends ServiceContract = ServiceContract>(
     );
   }
   declaredServices.push(resolved);
-  if (resolved.columns.includes('phone_id')) phoneKeyedRepositories.push(repo);
+  if (resolved.columns.includes('device_id')) deviceKeyedRepositories.push(repo);
 
   /**
    * Every encrypted column joins the registry `lib/contentCipher.ts` keeps, which the generic

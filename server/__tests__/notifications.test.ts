@@ -113,7 +113,7 @@ describe('Notifications Service & Repository', () => {
     expect(reply).toBe(true);
     expect(dbMock.query).toHaveBeenCalledWith(
       expect.stringContaining(
-        'WHERE citizenid = ? AND phone_id = ? AND app = ? AND cleared_at IS NULL'
+        'WHERE citizenid = ? AND device_id = ? AND app = ? AND cleared_at IS NULL'
       ),
       expect.arrayContaining([CITIZEN, TEST_PHONE_ID, 'blabber'])
     );

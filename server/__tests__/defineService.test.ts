@@ -178,7 +178,7 @@ describe('resolveAppSchema — derived lists', () => {
       foreignKey: 'ride_id',
       localKey: 'id',
       citizenColumn: 'citizenid',
-      phoneColumn: null,
+      deviceColumn: null,
       liveWhileNull: null
     });
   });

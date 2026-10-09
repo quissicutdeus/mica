@@ -9,7 +9,7 @@ Found by `test:endpoints` (MICA-304) on `mica_blocklist`: block, unblock
 (generic `delete`), block again. MICA-318 fixed it by hand; MICA-321 made it
 generic. Every `defineService` table with a unique index now declares
 `uniqueAfterDelete`: `'revive'` (`Repository.create` re-activates the caller's
-own deleted row under the key, `citizenid` plus null-safe `phone_id <=> ?`,
+own deleted row under the key, `citizenid` plus null-safe `device_id <=> ?`,
 named columns written, the rest `= DEFAULT`, `created_at` refreshed) or
 `{ optOut: '<reason>' }`. A child table with a unique index may only opt out.
 `uniqueKeyDecisions.test.ts` fails an undecided one.

@@ -1,6 +1,6 @@
 # A citizen-keyed phone cache outlives a handover
 
-`Phones.ts` keeps `activeByCitizen`, which every resolve writes and nothing
+`Devices.ts` keeps `activeByCitizen`, which every resolve writes and nothing
 clears. After a robbery it still names the phone the thief now holds. So
 `phoneForCitizen(victim)` filed notifications, line texts and dropped photos on
 the stolen phone under the victim, and the next handover walk gave them to the
@@ -9,7 +9,7 @@ thief (MICA-339 F7, which predates MICA-264).
 The fix checks the cached phone against `holderNow` (a pending handover's
 holder, then `holderOf`) before answering. It closes the window only once the
 thief has resolved the phone in this process. Until then nothing records the
-theft: the row, `holderOf` and the `mica_phones` fallback all still name the
+theft: the row, `holderOf` and the `mica_devices` fallback all still name the
 victim.
 
 **Decided, do not re-fix:** a phone out of the inventory can't be told stolen

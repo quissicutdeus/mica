@@ -177,9 +177,9 @@ const dbMock = vi.hoisted(() => {
       };
     }
     if (sql.startsWith('INSERT INTO `mica_contacts`')) {
-      const [citizenid, phone_id, firstname, lastname, phone, favorite] = params;
+      const [citizenid, device_id, firstname, lastname, phone, favorite] = params;
       const id = db.nextId++;
-      db.contacts.push({ id, citizenid, phone_id, firstname, lastname, phone, favorite });
+      db.contacts.push({ id, citizenid, device_id, firstname, lastname, phone, favorite });
       return { id };
     }
 
@@ -198,9 +198,9 @@ const dbMock = vi.hoisted(() => {
       };
     }
     if (sql.startsWith('INSERT INTO `mica_media`')) {
-      const [citizenid, phone_id, kind, data, url, created_at] = params;
+      const [citizenid, device_id, kind, data, url, created_at] = params;
       const id = db.nextId++;
-      db.media.push({ id, citizenid, phone_id, kind, data, url, created_at });
+      db.media.push({ id, citizenid, device_id, kind, data, url, created_at });
       return { id };
     }
 
@@ -208,7 +208,7 @@ const dbMock = vi.hoisted(() => {
     if (sql.startsWith('SELECT c.`id` FROM `mica_messages_conversations`')) {
       const [a, b] = params;
       const live = (id: number, phone: string) =>
-        db.participants.some((p) => p.conversation_id === id && p.phone_id === phone);
+        db.participants.some((p) => p.conversation_id === id && p.device_id === phone);
       const found = db.conversations.find((c) => !c.is_group && live(c.id, a) && live(c.id, b));
       return { rows: found ? [{ id: found.id }] : [] };
     }
@@ -219,16 +219,16 @@ const dbMock = vi.hoisted(() => {
       return { id };
     }
     if (sql.startsWith('INSERT INTO `mica_messages_participants`')) {
-      const [conversation_id, citizenid, phone_id, role] = params;
+      const [conversation_id, citizenid, device_id, role] = params;
       if (
         db.participants.some(
-          (p) => p.conversation_id === conversation_id && p.phone_id === phone_id
+          (p) => p.conversation_id === conversation_id && p.device_id === device_id
         )
       ) {
-        throw new Error("Duplicate entry for key 'conversation_phone_unique'");
+        throw new Error("Duplicate entry for key 'conversation_device_unique'");
       }
       const id = db.nextId++;
-      db.participants.push({ id, conversation_id, citizenid, phone_id, role });
+      db.participants.push({ id, conversation_id, citizenid, device_id, role });
       return { id };
     }
     if (sql.startsWith('INSERT INTO `mica_messages`')) {
@@ -379,13 +379,13 @@ vi.mock('../lib/PlayerDirectory', () => ({
   })
 }));
 /** micaOS's own number table: number → the phone it is on and who holds that phone. */
-const micaNumbers = vi.hoisted(() => new Map<string, { phoneId: string; holder: string }>());
+const micaNumbers = vi.hoisted(() => new Map<string, { deviceId: string; holder: string }>());
 vi.mock('../lib/phoneNumbers', () => ({
   readCitizenIdByNumber: vi.fn(async (n: string) => micaNumbers.get(n)?.holder ?? null),
-  readPhoneIdByNumber: vi.fn(async (n: string) => micaNumbers.get(n)?.phoneId ?? null)
+  readPhoneIdByNumber: vi.fn(async (n: string) => micaNumbers.get(n)?.deviceId ?? null)
 }));
 const phoneForCitizen = vi.hoisted(() => vi.fn(async (cid: string) => `phone-${cid}`));
-vi.mock('../lib/phoneIdentity', () => ({ phoneForCitizen }));
+vi.mock('../lib/deviceIdentity', () => ({ phoneForCitizen }));
 
 import { runImport, type ImportReport } from '../lib/import';
 import { MESSAGE_BODY_MAX } from '@mica/shared/contracts/messages';
@@ -583,7 +583,7 @@ describe('micaimport qb-phone', () => {
     }
 
     expect(
-      db.contacts.map((c) => [c.citizenid, c.phone_id, c.firstname, c.lastname, c.phone])
+      db.contacts.map((c) => [c.citizenid, c.device_id, c.firstname, c.lastname, c.phone])
     ).toEqual([
       ['CIT_A', 'phone-CIT_A', 'Bob', 'Test', '555-0002'],
       ['CIT_A', 'phone-CIT_A', 'Downtown', 'Cab', '555-0199'],
@@ -597,7 +597,7 @@ describe('micaimport qb-phone', () => {
       participant_a: 'phone-CIT_A',
       participant_b: 'phone-CIT_B'
     });
-    expect(db.participants.map((p) => [p.citizenid, p.phone_id])).toEqual([
+    expect(db.participants.map((p) => [p.citizenid, p.device_id])).toEqual([
       ['CIT_A', 'phone-CIT_A'],
       ['CIT_B', 'phone-CIT_B']
     ]);
@@ -1184,7 +1184,7 @@ describe('MICA-233 review: identity, membership, completeness, scale', () => {
 
     await runImport('lb-phone', { apply: true });
 
-    expect(db.contacts[0]).toMatchObject({ citizenid: 'CIT_A', phone_id: 'phone-CIT_A' });
+    expect(db.contacts[0]).toMatchObject({ citizenid: 'CIT_A', device_id: 'phone-CIT_A' });
     expect(db.participants.map((p) => p.citizenid).sort()).toEqual(['CIT_A', 'CIT_B']);
     // Sender 555-0001 is A by lb-phone, so "first" is A's, not B's.
     expect(db.messages.map((m) => [m.citizenid, m.message])).toEqual([
@@ -1195,7 +1195,7 @@ describe('MICA-233 review: identity, membership, completeness, scale', () => {
 
   it('skips a row whose number is now on a micaOS phone another character holds, rather than splitting it', async () => {
     seedLbPair();
-    micaNumbers.set('555-0001', { phoneId: 'phone-X', holder: 'CIT_B' });
+    micaNumbers.set('555-0001', { deviceId: 'phone-X', holder: 'CIT_B' });
 
     const report = await runImport('lb-phone', { apply: true });
 
@@ -1210,10 +1210,10 @@ describe('MICA-233 review: identity, membership, completeness, scale', () => {
 
   it('uses the micaOS phone on the number when the owner holds it, and phoneForCitizen otherwise', async () => {
     seedLbPair();
-    micaNumbers.set('555-0001', { phoneId: 'phone-A-burner', holder: 'CIT_A' });
+    micaNumbers.set('555-0001', { deviceId: 'phone-A-burner', holder: 'CIT_A' });
     await runImport('lb-phone', { apply: true });
-    expect(db.contacts[0].phone_id).toBe('phone-A-burner');
-    expect(db.participants.map((p) => p.phone_id).sort()).toEqual([
+    expect(db.contacts[0].device_id).toBe('phone-A-burner');
+    expect(db.participants.map((p) => p.device_id).sort()).toEqual([
       'phone-A-burner',
       'phone-CIT_B'
     ]);
@@ -1314,8 +1314,8 @@ describe('MICA-233 review: identity, membership, completeness, scale', () => {
     // The two phones already share a thread, so c1 is linked rather than created.
     db.conversations.push({ id: 500, citizenid: 'CIT_A', is_group: 0 });
     db.participants.push(
-      { id: 501, conversation_id: 500, citizenid: 'CIT_A', phone_id: 'phone-CIT_A' },
-      { id: 502, conversation_id: 500, citizenid: 'CIT_B', phone_id: 'phone-CIT_B' }
+      { id: 501, conversation_id: 500, citizenid: 'CIT_A', device_id: 'phone-CIT_A' },
+      { id: 502, conversation_id: 500, citizenid: 'CIT_B', device_id: 'phone-CIT_B' }
     );
     const original = dbMock.insert.getMockImplementation()!;
     let raced = false;
@@ -1426,7 +1426,7 @@ describe('NPWD on ESX', () => {
     const report = await runImport('npwd', { apply: true });
 
     expect(db.contacts).toHaveLength(1);
-    expect(db.contacts[0]).toMatchObject({ citizenid: ESX_ID, phone_id: `phone-${ESX_ID}` });
+    expect(db.contacts[0]).toMatchObject({ citizenid: ESX_ID, device_id: `phone-${ESX_ID}` });
     expect(skipped(report, 'npwd_phone_contacts')).toEqual({ [SKIP.unresolvedOwner]: 2 });
     expect(db.messages[0]).toMatchObject({ citizenid: ESX_ID, message: 'hi from ESX' });
     expect(db.ledger.find((r) => r.target_table === 'mica_messages')?.citizenid).toBe(ESX_ID);

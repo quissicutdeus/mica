@@ -47,6 +47,23 @@ Entries are hand-written. See MICA-72 for why a generated one was rejected.
 
 ### Action required
 
+**Run `micaschema apply` from the server console: the device table and its
+column are renamed from phone to device (MICA-344).** Since MICA-264 the table
+holds tablets as well as phones, so migration `0008_phones_become_devices`
+renames `mica_phones` to `mica_devices`, and the `phone_id` column to
+`device_id` on `mica_battery`, `mica_blocklist`, `mica_contacts`,
+`mica_devices`, `mica_lockscreen`, `mica_media`, `mica_messages_participants`,
+`mica_notes`, `mica_notifications`, `mica_phone_call_log`, `mica_phone_numbers`,
+`mica_places` and `mica_settings`, with its keys: `device_id`,
+`device_id_unique`, `device_number_unique`, `conversation_device_unique` and
+`device_app_key`. Nothing is retyped and no row changes; running it twice
+changes nothing. **A phone or tablet item now carries its id under `deviceId` in
+its metadata, not `phoneId`**, and the old key is not read: an item still
+carrying `phoneId` is given a fresh id the next time it is used, and the rows
+written under its old id stay with that id. Nothing was live, so nothing was
+kept for it. A script that read `phoneId` from an item's metadata reads
+`deviceId`.
+
 **Run `micaschema apply` from the server console, then decide whether you want
 the tablet: it is now on by default, with an identity of its own (MICA-264).**
 `mica_phones` gains a column, `kind`, which says whether a device is a phone or

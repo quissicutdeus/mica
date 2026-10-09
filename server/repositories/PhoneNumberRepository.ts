@@ -28,11 +28,11 @@ export class PhoneNumberRepository extends SchemaRepository<PhoneNumberRow> {
    * Put a citizen's legacy number onto the phone they are using.
    *
    * Throws the driver's duplicate-entry error if the phone already carries a number — two
-   * syncs racing for the same phone — because `phone_id_unique` is the authority on that and
+   * syncs racing for the same phone — because `device_id_unique` is the authority on that and
    * the caller reads the winner back rather than pre-checking (see `numberForPhone`).
    */
-  async attachToPhone(rowId: number, phoneId: string): Promise<boolean> {
-    return await this.updateUnscoped(rowId, { phone_id: phoneId });
+  async attachToPhone(rowId: number, deviceId: string): Promise<boolean> {
+    return await this.updateUnscoped(rowId, { device_id: deviceId });
   }
 
   /**

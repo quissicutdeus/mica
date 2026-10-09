@@ -93,7 +93,7 @@ import {
 import { __resetRateLimits, allow } from '../lib/rateLimit';
 import { registerNumber, releaseResource, type CallVerdict } from '../lib/numberRegistry';
 import { __setVoiceBackend } from '../lib/speakerphone';
-import { __setPhoneResolvers } from '../lib/phoneIdentity';
+import { __setDeviceResolvers } from '../lib/deviceIdentity';
 import { PlayerFacingError } from '../lib/errors';
 import { installTestPhone, TEST_PHONE_ID } from './phoneStub';
 
@@ -1439,7 +1439,7 @@ describe('group ring (MICA-307)', () => {
     // `readPhoneIdByNumber` answers only for the winner's own number. Looked up by the line's
     // number instead, the row would fall back to `phoneForCitizen` and land on TEST_PHONE_ID.
     dbMock.single.mockImplementation(async (_sql: string, params: unknown[]) =>
-      params[0] === '555-0006' ? { phone_id: 'PHONE_OF_SIX' } : null
+      params[0] === '555-0006' ? { device_id: 'PHONE_OF_SIX' } : null
     );
     try {
       ringLine([5, 6]);
@@ -1617,7 +1617,7 @@ describe('group ring (MICA-307)', () => {
   });
 
   it('skips a candidate who holds no phone, whatever number the framework has (MICA-339)', async () => {
-    __setPhoneResolvers({
+    __setDeviceResolvers({
       forRequest: async () => TEST_PHONE_ID,
       forCitizen: async () => TEST_PHONE_ID,
       deviceInHand: (player) => {
@@ -1759,9 +1759,9 @@ describe('group ring (MICA-307)', () => {
 describe('a call needs a phone, and shows its own number (MICA-339)', () => {
   const NOT_HELD = () => new PlayerFacingError('You are not holding a phone.');
   /** The number row on the caller's phone, as `readRowByPhoneId` reads it. */
-  const numberOnPhone = (phoneId: string, number: string) =>
+  const numberOnPhone = (deviceId: string, number: string) =>
     dbMock.single.mockImplementation(async (sql: string, params: unknown[]) =>
-      /WHERE `phone_id` = \?/.test(sql) && params[0] === phoneId
+      /WHERE `device_id` = \?/.test(sql) && params[0] === deviceId
         ? { id: 1, citizenid: 'CID_CALLER', number, status: 'active' }
         : null
     );
@@ -1772,7 +1772,7 @@ describe('a call needs a phone, and shows its own number (MICA-339)', () => {
   });
 
   it('refuses a caller holding no phone, whatever their framework number says', async () => {
-    __setPhoneResolvers({
+    __setDeviceResolvers({
       forRequest: async (src) => {
         if (src === 1) throw NOT_HELD();
         return TEST_PHONE_ID;
@@ -1814,7 +1814,7 @@ describe('a call needs a phone, and shows its own number (MICA-339)', () => {
 
   it('ignores an answer from a target who no longer holds a phone', async () => {
     let targetHolds = true;
-    __setPhoneResolvers({
+    __setDeviceResolvers({
       forRequest: async () => TEST_PHONE_ID,
       forCitizen: async () => TEST_PHONE_ID,
       deviceInHand: (player) => {

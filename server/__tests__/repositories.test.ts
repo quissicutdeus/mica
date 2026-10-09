@@ -236,7 +236,7 @@ describe('shipped repositories — inherited guarantees', () => {
     // The citizen and the phone (MICA-282): a membership is the phone's, held by the citizen.
     expect(sql).toBe(
       'UPDATE mica_messages_participants SET last_read = CURRENT_TIMESTAMP ' +
-        'WHERE conversation_id = ? AND citizenid = ? AND phone_id = ? AND left_at IS NULL'
+        'WHERE conversation_id = ? AND citizenid = ? AND device_id = ? AND left_at IS NULL'
     );
     expect(dbMock.update.mock.calls[0][1]).toEqual([3, 'CIT_A', 'PHONE_A']);
   });
@@ -251,7 +251,7 @@ describe('shipped repositories — inherited guarantees', () => {
     // Joins the caller's own participant row so last_read is in scope...
     expect(sql).toContain('JOIN mica_messages_participants me');
     expect(sql).toContain('me.citizenid = ?');
-    expect(sql).toContain('me.phone_id = ?');
+    expect(sql).toContain('me.device_id = ?');
     expect(sql).toContain('me.left_at IS NULL');
     // ...counts only messages newer than it, and never the caller's own.
     expect(sql).toContain('unread.created_at > me.last_read');

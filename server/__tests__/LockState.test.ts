@@ -16,7 +16,7 @@ const { phoneOf, tabletOf } = vi.hoisted(() => ({
   phoneOf: new Map<number, string>(),
   tabletOf: new Map<number, string>()
 }));
-vi.mock('../services/Phones', () => ({
+vi.mock('../services/Devices', () => ({
   activeDeviceIdOf: (src: number, kind: string) =>
     (kind === 'phone' ? phoneOf : tabletOf).get(src) ?? null
 }));

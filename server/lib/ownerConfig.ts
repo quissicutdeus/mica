@@ -367,7 +367,7 @@ export const isAppDisabled = (appId: string): boolean => disabledApps().includes
  *
  * A list rather than the silent default, so a forgotten declaration still fails a test —
  * `ownerConfig.test.ts` holds every registered service to declaring an app or appearing here,
- * never both. The phone itself (`shell`, `phone`, `phones`, `phonenumbers`, `battery`,
+ * never both. The phone itself (`shell`, `phone`, `devices`, `phonenumbers`, `battery`,
  * `signal`, `lockscreen`, `notifications`, `settings`) and the privileged surface (`admin`,
  * `reports`) are not apps. The rest are data several apps share through a permission facet.
  * It names no add-on, and must not.
@@ -381,6 +381,7 @@ export const NEVER_REFUSED_SERVICES: readonly string[] = [
   'blocklist',
   'contacts',
   'conversations',
+  'devices',
   // `micaimport`'s ledger (MICA-233): a table with no actions, and no app's.
   'importledger',
   'lockscreen',
@@ -391,7 +392,6 @@ export const NEVER_REFUSED_SERVICES: readonly string[] = [
   'phone',
   'phone_call_log',
   'phonenumbers',
-  'phones',
   // A player's own data (MICA-168): export and delete are never switched off.
   'privacy',
   'reports',

@@ -24,36 +24,36 @@ import { lockscreenContract } from '@mica/shared/contracts/lockscreen';
  * generic action of any kind is registered.
  */
 export class LockscreenRepository extends SchemaRepository<LockscreenRow> {
-  async findForPhone(citizenid: string, phoneId: string): Promise<LockscreenRow | null> {
+  async findForPhone(citizenid: string, deviceId: string): Promise<LockscreenRow | null> {
     return await Database.single<LockscreenRow>(
-      `SELECT * FROM mica_lockscreen WHERE citizenid = ? AND phone_id = ?`,
-      [citizenid, phoneId]
+      `SELECT * FROM mica_lockscreen WHERE citizenid = ? AND device_id = ?`,
+      [citizenid, deviceId]
     );
   }
 
   /**
    * One row per **phone** (MICA-282), so a second `setPasscode` replaces the first rather
    * than adding a second row for the unique index to reject. `ON DUPLICATE KEY UPDATE`
-   * against `phone_id_unique`, the same upsert shape `Settings.ts`'s `put` uses for the
+   * against `device_id_unique`, the same upsert shape `Settings.ts`'s `put` uses for the
    * same reason: two rapid writes race in a find-then-insert, and the constraint decides
    * here instead of whichever query happens to interleave first. `citizenid` is rewritten
    * on the update too, because the phone may have changed hands since the row was made.
    */
-  async upsert(citizenid: string, phoneId: string, hash: string, salt: string): Promise<void> {
+  async upsert(citizenid: string, deviceId: string, hash: string, salt: string): Promise<void> {
     await Database.query(
-      `INSERT INTO mica_lockscreen (citizenid, phone_id, passcode_hash, passcode_salt, status, created_at, updated_at)
+      `INSERT INTO mica_lockscreen (citizenid, device_id, passcode_hash, passcode_salt, status, created_at, updated_at)
        VALUES (?, ?, ?, ?, 'active', NOW(), NOW())
        ON DUPLICATE KEY UPDATE citizenid = VALUES(citizenid), passcode_hash = VALUES(passcode_hash),
          passcode_salt = VALUES(passcode_salt), status = 'active', updated_at = NOW()`,
-      [citizenid, phoneId, hash, salt]
+      [citizenid, deviceId, hash, salt]
     );
   }
 
   /** Hard delete: an unset passcode is not a row to keep around, and there is nothing to audit. */
-  async clear(citizenid: string, phoneId: string): Promise<void> {
-    await Database.query(`DELETE FROM mica_lockscreen WHERE citizenid = ? AND phone_id = ?`, [
+  async clear(citizenid: string, deviceId: string): Promise<void> {
+    await Database.query(`DELETE FROM mica_lockscreen WHERE citizenid = ? AND device_id = ?`, [
       citizenid,
-      phoneId
+      deviceId
     ]);
   }
 }
@@ -84,7 +84,7 @@ export const lockscreen = defineService<LockscreenRow, typeof lockscreenContract
   // One passcode per **phone** (MICA-282; `0002_phone_data_follows_the_phone` swaps the old
   // `citizenid_unique` for it). The lock belongs to the device: a second phone has its own,
   // and a stolen one keeps the code its owner set until the thief clears it.
-  indexes: [{ name: 'phone_id_unique', columns: ['phone_id'], unique: true }],
+  indexes: [{ name: 'device_id_unique', columns: ['device_id'], unique: true }],
   uniqueAfterDelete: {
     optOut:
       'No generic create: `upsert` is an INSERT … ON DUPLICATE KEY UPDATE that sets the row ' +
@@ -101,7 +101,7 @@ export const lockscreen = defineService<LockscreenRow, typeof lockscreenContract
 interface LockscreenRow {
   id: number;
   citizenid: string;
-  phone_id: string;
+  device_id: string;
   passcode_hash: string;
   passcode_salt: string;
   status?: string;
@@ -279,18 +279,18 @@ const recordFailure = (citizenid: string): void => {
  */
 // The phone id is always present on a device-owned service — the endpoint refused the
 // request otherwise — and the cast says so where the type cannot.
-app.registerEvent('status', async (source, cbId, data, citizenid, _player, phoneId) => {
-  const row = await repo.findForPhone(citizenid, phoneId as string);
+app.registerEvent('status', async (source, cbId, data, citizenid, _player, deviceId) => {
+  const row = await repo.findForPhone(citizenid, deviceId as string);
   return { hasPasscode: row !== null };
 });
 
 /** `set` — replace (or create) the passcode on the phone in the caller's hand. Never anyone else's: `citizenid` and the phone are both resolved server-side. */
-app.registerEvent('set', async (source, cbId, data, citizenid, _player, phoneId) => {
+app.registerEvent('set', async (source, cbId, data, citizenid, _player, deviceId) => {
   const { passcode } = data;
 
   const salt = randomBytes(16).toString(HASH_ENCODING);
   const hash = await hashPasscode(passcode, salt);
-  await repo.upsert(citizenid, phoneId as string, hash, salt);
+  await repo.upsert(citizenid, deviceId as string, hash, salt);
   // Setting a passcode clears any standing lockout: the person who just set it is not the
   // person the lockout was slowing down.
   attempts.delete(citizenid);
@@ -311,7 +311,7 @@ app.registerEvent('set', async (source, cbId, data, citizenid, _player, phoneId)
  * guess that cannot be right and a guess that is wrong look the same, and the lock screen
  * only ever calls this when `getPasscodeStatus` already said one exists.
  */
-app.registerEvent('check', async (source, cbId, data, citizenid, _player, phoneId) => {
+app.registerEvent('check', async (source, cbId, data, citizenid, _player, deviceId) => {
   // A guess of the wrong shape answers `false` rather than erroring — see the contract for
   // why `check` is bounded but not patterned while `set` is both.
   const { passcode } = data;
@@ -328,7 +328,7 @@ app.registerEvent('check', async (source, cbId, data, citizenid, _player, phoneI
     });
   }
 
-  const row = await repo.findForPhone(citizenid, phoneId as string);
+  const row = await repo.findForPhone(citizenid, deviceId as string);
 
   /**
    * The KDF runs whether or not a row exists.
@@ -348,7 +348,7 @@ app.registerEvent('check', async (source, cbId, data, citizenid, _player, phoneI
 });
 
 /** `clear` — remove the caller's own passcode. Idempotent: clearing an unset one is still `ok`. */
-app.registerEvent('clear', async (source, cbId, data, citizenid, _player, phoneId) => {
-  await repo.clear(citizenid, phoneId as string);
+app.registerEvent('clear', async (source, cbId, data, citizenid, _player, deviceId) => {
+  await repo.clear(citizenid, deviceId as string);
   return { ok: true };
 });

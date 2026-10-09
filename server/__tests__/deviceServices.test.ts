@@ -73,11 +73,11 @@ beforeAll(async () => {
 
 describe('which services answer the tablet (MICA-264)', () => {
   it('reaches a reply from every registered service with an endpoint action', () => {
-    // These register no action through `ServiceEndpoint`: `phones`, `phonenumbers` and the
+    // These register no action through `ServiceEndpoint`: `devices`, `phonenumbers` and the
     // import ledger have none a client may reach, and `battery` and `signal` answer raw guarded
     // events (`battery:load`) that read no device and are the phone's alone. A service added
     // to either side of this list is a decision about the tablet, made here.
-    const noEndpointAction = ['battery', 'importledger', 'phonenumbers', 'phones', 'signal'];
+    const noEndpointAction = ['battery', 'devices', 'importledger', 'phonenumbers', 'signal'];
     expect([...outcome.keys()].sort()).toEqual(
       [...new Set(knownServices())].filter((id) => !noEndpointAction.includes(id)).sort()
     );

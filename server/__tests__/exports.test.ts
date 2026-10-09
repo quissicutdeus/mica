@@ -38,12 +38,12 @@ const sendFromLine = vi.hoisted(() =>
   vi.fn(async () => ({ conversationId: 1, messageId: 2, delivered: false }))
 );
 /**
- * Which tablet `services/Phones.ts` has cached as in use, for the MICA-337 cases: `undefined`
+ * Which tablet `services/Devices.ts` has cached as in use, for the MICA-337 cases: `undefined`
  * leaves the real cache answering, which every other case here relies on.
  */
 const tabletInUse = vi.hoisted(() => ({ id: undefined as string | null | undefined }));
-vi.mock('../services/Phones', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../services/Phones')>();
+vi.mock('../services/Devices', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/Devices')>();
   return {
     ...actual,
     activeDeviceIdOf: (src: number, kind: 'phone' | 'tablet') =>
@@ -70,7 +70,7 @@ import { callAsResource } from './invokingResource';
 import { __resetLockState, isDeviceLocked } from '../lib/LockState';
 import { __resetOpenState } from '../lib/PhoneOpenState';
 import { __resetBatteryState, currentCharge } from '../services/Battery';
-import { __setPhoneResolvers } from '../lib/phoneIdentity';
+import { __setDeviceResolvers } from '../lib/deviceIdentity';
 import { PlayerFacingError } from '../lib/errors';
 import { installTestPhone, TEST_PHONE_ID, TEST_TABLET_ID } from './phoneStub';
 
@@ -1127,14 +1127,14 @@ describe('the battery exports take a device (MICA-337)', () => {
   const rows = (_sql: string, params: unknown[]) =>
     Promise.resolve(
       params[0] === TEST_TABLET_ID
-        ? [{ id: 2, citizenid: CID, phone_id: TEST_TABLET_ID, level: 70 }]
+        ? [{ id: 2, citizenid: CID, device_id: TEST_TABLET_ID, level: 70 }]
         : params[0] === TEST_PHONE_ID
-          ? [{ id: 1, citizenid: CID, phone_id: TEST_PHONE_ID, level: 40 }]
+          ? [{ id: 1, citizenid: CID, device_id: TEST_PHONE_ID, level: 40 }]
           : []
     );
   const holdNoTablet = () => {
     tabletInUse.id = null;
-    __setPhoneResolvers({
+    __setDeviceResolvers({
       forRequest: async (_src, _citizenid, device = 'phone') => {
         if (device === 'tablet') {
           throw new PlayerFacingError('You are not holding a tablet.', {
@@ -1263,7 +1263,7 @@ describe('the battery exports take a device (MICA-337)', () => {
 
   it('GetBatteryLevel for an unused tablet mints nothing: no resolve, no read, no write', async () => {
     const forRequest = vi.fn(async () => TEST_TABLET_ID);
-    __setPhoneResolvers({
+    __setDeviceResolvers({
       forRequest,
       forCitizen: async () => TEST_PHONE_ID,
       deviceInHand: () => undefined

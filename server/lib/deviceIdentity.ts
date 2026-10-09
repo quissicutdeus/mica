@@ -6,14 +6,14 @@ import type { DeviceId } from '@mica/shared/devices';
 import type { FrameworkPlayer } from './framework/runtime';
 
 /**
- * Which phone a request, or a citizen, is on — asked here, answered in `services/Phones.ts`
- * (MICA-282). Since MICA-264 "phone" here means any device with an identity — a request names
- * the device it speaks for, and a tablet's rows are keyed on its own id the same way — but the
- * names stay, to keep the churn out of every caller that only ever meant the phone.
+ * Which device a request, or a citizen, is on — asked here, answered in `services/Devices.ts`
+ * (MICA-282). A request names the device it speaks for (MICA-264), and a tablet's rows are
+ * keyed on its own id the same way. `phoneForCitizen` keeps its name because it only ever
+ * answers a phone.
  *
  * `ServiceEndpoint` has to know the caller's phone to scope a device-owned action, and it
  * cannot import the service that knows: `defineService` imports `ServiceEndpoint`, and
- * `services/Phones.ts` is a `defineService` call, so the reverse edge is a runtime cycle.
+ * `services/Devices.ts` is a `defineService` call, so the reverse edge is a runtime cycle.
  * This module is the seam between them — two function slots the service fills at import,
  * the same shape `lib/services.ts` uses for the registry the endpoint registers into. The third
  * slot, `deviceInHand`, is here for the same cycle: the item count lives in `deviceItem.ts`,
@@ -26,7 +26,7 @@ import type { FrameworkPlayer } from './framework/runtime';
  * sees the generic message and the log names this file.
  */
 
-export type RequestPhoneResolver = (
+export type RequestDeviceResolver = (
   src: number,
   citizenid: string,
   device?: DeviceId
@@ -35,13 +35,13 @@ export type CitizenPhoneResolver = (citizenid: string) => Promise<string>;
 /** Throws a `PlayerFacingError` when the device is off or the player holds none of it. */
 export type DeviceInHandCheck = (player: FrameworkPlayer, device: DeviceId) => void;
 
-let forRequest: RequestPhoneResolver | null = null;
+let forRequest: RequestDeviceResolver | null = null;
 let forCitizen: CitizenPhoneResolver | null = null;
 let deviceInHand: DeviceInHandCheck | null = null;
 
-/** Called once, by `services/Phones.ts`, at import. */
-export const installPhoneResolvers = (resolvers: {
-  forRequest: RequestPhoneResolver;
+/** Called once, by `services/Devices.ts`, at import. */
+export const installDeviceResolvers = (resolvers: {
+  forRequest: RequestDeviceResolver;
   forCitizen: CitizenPhoneResolver;
   deviceInHand: DeviceInHandCheck;
 }): void => {
@@ -51,8 +51,8 @@ export const installPhoneResolvers = (resolvers: {
 };
 
 /** Test seam. Pass nothing to clear every slot. */
-export const __setPhoneResolvers = (resolvers?: {
-  forRequest?: RequestPhoneResolver;
+export const __setDeviceResolvers = (resolvers?: {
+  forRequest?: RequestDeviceResolver;
   forCitizen?: CitizenPhoneResolver;
   deviceInHand?: DeviceInHandCheck;
 }): void => {
@@ -63,8 +63,8 @@ export const __setPhoneResolvers = (resolvers?: {
 
 const notInstalled = (what: string): Error =>
   new Error(
-    `[mica] ${what} was asked for before services/Phones.ts installed its resolver. A ` +
-      `device-owned action cannot run without knowing which phone it is for; import the ` +
+    `[mica] ${what} was asked for before services/Devices.ts installed its resolver. A ` +
+      `device-owned action cannot run without knowing which device it is for; import the ` +
       `services barrel, or install a resolver in the test.`
   );
 
@@ -74,14 +74,14 @@ const notInstalled = (what: string): Error =>
  * Throws a `PlayerFacingError` (from the resolver) for a player holding none of that device on
  * a server that gates on it — there is no device for their rows to belong to, and it is closed
  * for them anyway — and degrades to the citizen's identity device of that kind where no item
- * can carry an id at all. `services/Phones.ts` has the three cases.
+ * can carry an id at all. `services/Devices.ts` has the three cases.
  */
-export const phoneForRequest = (
+export const deviceForRequest = (
   src: number,
   citizenid: string,
   device: DeviceId = 'phone'
 ): Promise<string> => {
-  if (!forRequest) throw notInstalled('the phone for a request');
+  if (!forRequest) throw notInstalled('the device for a request');
   return forRequest(src, citizenid, device);
 };
 

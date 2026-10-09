@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import type { DeviceId } from '@mica/shared/devices';
-import { activeDeviceIdOf } from '../services/Phones';
+import { activeDeviceIdOf } from '../services/Devices';
 
 /**
  * Whether another resource last told micaOS to lock a player's phone (MICA-60).

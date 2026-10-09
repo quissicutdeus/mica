@@ -48,8 +48,8 @@ vi.mock('../services/Conversations', () => ({
   conversations: { repo: convRepo },
   PARTICIPANT_KEY_MAX_LENGTH: 50
 }));
-vi.mock('../services/Phones', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../services/Phones')>()),
+vi.mock('../services/Devices', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../services/Devices')>()),
   phoneForCitizen: (citizenid: string) => phones.forCitizen(citizenid)
 }));
 

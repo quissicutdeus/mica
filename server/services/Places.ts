@@ -33,10 +33,10 @@ export class PlacesRepository extends SchemaRepository<SavedPlace> {
    */
   async addForPlayer(
     citizenid: string,
-    phoneId: string,
+    deviceId: string,
     item: Partial<SavedPlace>
   ): Promise<number> {
-    return await super.create({ ...item, citizenid, phone_id: phoneId } as Partial<SavedPlace>);
+    return await super.create({ ...item, citizenid, device_id: deviceId } as Partial<SavedPlace>);
   }
 }
 
@@ -72,7 +72,7 @@ const repo = places.repo as PlacesRepository;
  * generic `create` being disabled above is what makes this registration legal rather than
  * a collision — `ServiceEndpoint` never wires the generic one when `disableCreate` is set.
  */
-app.registerEvent('create', async (source, cbId, data, citizenid, _player, phoneId) => {
+app.registerEvent('create', async (source, cbId, data, citizenid, _player, deviceId) => {
   // Trimmed, not capped: the contract already refused anything over the column's length, so
   // trimming here can only ever shorten a name that already fits.
   const name = data.name.trim();
@@ -97,7 +97,7 @@ app.registerEvent('create', async (source, cbId, data, citizenid, _player, phone
   // A device-owned service always has one; the endpoint refused the request otherwise.
   const id = await repo.addForPlayer(
     citizenid,
-    phoneId as string,
+    deviceId as string,
     {
       name,
       ...(streetLabel ? { street_label: streetLabel } : {}),
@@ -107,5 +107,5 @@ app.registerEvent('create', async (source, cbId, data, citizenid, _player, phone
     } as Partial<SavedPlace>
   );
 
-  return { id, place: await repo.findById(id, citizenid, phoneId) };
+  return { id, place: await repo.findById(id, citizenid, deviceId) };
 });

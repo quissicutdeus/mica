@@ -125,6 +125,7 @@ describe('0001_phone_numbers_follow_the_phone', () => {
     live({ 'players.charinfo': true });
     // Counts, in the order the migration asks: rows before, eligible characters, rows after.
     dbMock.scalar
+      .mockResolvedValueOnce(0) // device_id column (MICA-344)
       .mockResolvedValueOnce(0) // phone_id column
       .mockResolvedValueOnce(0) // phone_id_unique
       .mockResolvedValueOnce(1) // players.charinfo

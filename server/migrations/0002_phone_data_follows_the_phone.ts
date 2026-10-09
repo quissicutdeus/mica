@@ -74,6 +74,15 @@ const hasColumn = async (table: string, column: string): Promise<boolean> => {
   return Number(count) > 0;
 };
 
+const hasTable = async (table: string): Promise<boolean> => {
+  const count = await Database.scalar<number>(
+    `SELECT COUNT(*) FROM information_schema.TABLES
+      WHERE table_schema = DATABASE() AND table_name = ?`,
+    [table]
+  );
+  return Number(count) > 0;
+};
+
 const hasIndex = async (table: string, index: string): Promise<boolean> => {
   const count = await Database.scalar<number>(
     `SELECT COUNT(*) FROM information_schema.STATISTICS
@@ -140,6 +149,14 @@ export const migration: Migration = {
     `legacy numbers, re-keys 1:1 threads onto phones, and swaps four per-citizen unique keys ` +
     `for per-phone ones`,
   up: async () => {
+    // MICA-344: 0008 renames `phone_id` to `device_id` on every table this keys. Only a schema
+    // with no `mica_phones` *and* a `device_id` on one of those tables is past this migration:
+    // renamed after it ran, or created in the final shape with no ledger. A re-import over an
+    // older database creates an empty `mica_devices` but alters no existing table, so it fails
+    // below on the missing `mica_phones` rather than recording work it never did.
+    if (!(await hasTable(PHONES)) && (await hasColumn('mica_contacts', 'device_id'))) {
+      return;
+    }
     // 1. Which phones are already on an item.
     if (!(await hasColumn(PHONES, 'claimed'))) {
       await Database.query(

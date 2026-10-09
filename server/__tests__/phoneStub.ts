@@ -3,16 +3,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { PlayerFacingError } from '../lib/errors';
-import { __setPhoneResolvers } from '../lib/phoneIdentity';
+import { __setDeviceResolvers } from '../lib/deviceIdentity';
 
 /**
  * The phone every server suite is on unless it says otherwise (MICA-282).
  *
- * `ServiceEndpoint` asks `lib/phoneIdentity.ts` which phone a device-owned request is for,
- * and in production `services/Phones.ts` answers from the item in the caller's inventory. A
+ * `ServiceEndpoint` asks `lib/deviceIdentity.ts` which phone a device-owned request is for,
+ * and in production `services/Devices.ts` answers from the item in the caller's inventory. A
  * suite that imports one service without the barrel has no answer installed, and the seam
  * throws rather than guessing — so `setup.ts` installs this one for everybody. A suite about
- * the resolution itself (`phones.test.ts`, `phoneNumbers.test.ts`) imports the real service,
+ * the resolution itself (`devices.test.ts`, `phoneNumbers.test.ts`) imports the real service,
  * which re-installs the real resolvers over these at import.
  */
 export const TEST_PHONE_ID = '0123456789abcdef0123456789abcdef';
@@ -25,7 +25,7 @@ export const TEST_PHONE_ID = '0123456789abcdef0123456789abcdef';
 export const TEST_TABLET_ID = 'fedcba9876543210fedcba9876543210';
 
 export const installTestPhone = (): void => {
-  __setPhoneResolvers({
+  __setDeviceResolvers({
     forRequest: async (_src, _citizenid, device = 'phone') =>
       device === 'tablet' ? TEST_TABLET_ID : TEST_PHONE_ID,
     forCitizen: async () => TEST_PHONE_ID,
@@ -35,11 +35,11 @@ export const installTestPhone = (): void => {
 
 /**
  * Every player holds no phone (MICA-339): the device check refuses the phone the way
- * `services/Phones.ts` does on a gated server, with its `server.phone.notHeld` key. For a
+ * `services/Devices.ts` does on a gated server, with its `server.phone.notHeld` key. For a
  * suite proving an action flagged `requirePhoneFor` is refused; `installTestPhone` undoes it.
  */
 export const refusePhone = (): void => {
-  __setPhoneResolvers({
+  __setDeviceResolvers({
     forRequest: async () => TEST_PHONE_ID,
     forCitizen: async () => TEST_PHONE_ID,
     deviceInHand: (_player, device) => {

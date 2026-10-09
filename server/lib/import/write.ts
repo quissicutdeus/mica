@@ -34,13 +34,13 @@ export interface OwnerRef {
 type Pages<T> = AsyncIterable<readonly T[]>;
 
 /** The phone id to write, on apply. `phone()` has already said the number is not someone else's. */
-const phoneIdFor = async (
+const deviceIdFor = async (
   ctx: ImportContext,
   citizenid: string,
   number: string | null | undefined
 ): Promise<string | null> => {
   const answer = await ctx.resolver.phone(citizenid, number, true);
-  return answer.kind === 'ok' ? answer.phoneId : null;
+  return answer.kind === 'ok' ? answer.deviceId : null;
 };
 
 // ─── contacts ────────────────────────────────────────────────────────────────
@@ -109,11 +109,11 @@ export const importContacts = async (
         async () => [
           {
             query: `INSERT INTO \`mica_contacts\`
-               (\`citizenid\`, \`phone_id\`, \`firstname\`, \`lastname\`, \`phone\`, \`favorite\`)
+               (\`citizenid\`, \`device_id\`, \`firstname\`, \`lastname\`, \`phone\`, \`favorite\`)
              VALUES (?, ?, ?, ?, ?, ?)`,
             params: [
               citizenid,
-              await phoneIdFor(ctx, citizenid, row.owner.number),
+              await deviceIdFor(ctx, citizenid, row.owner.number),
               cutText(row.firstname.trim() || phone, 50),
               row.lastname ? cutText(row.lastname, 50) : null,
               phone,
@@ -235,11 +235,11 @@ export const importMedia = async (
         async () => [
           {
             query: `INSERT INTO \`mica_media\`
-               (\`citizenid\`, \`phone_id\`, \`kind\`, \`data\`, \`url\`, \`created_at\`)
+               (\`citizenid\`, \`device_id\`, \`kind\`, \`data\`, \`url\`, \`created_at\`)
              VALUES (?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP))`,
             params: [
               citizenid,
-              await phoneIdFor(ctx, citizenid, row.owner.number),
+              await deviceIdFor(ctx, citizenid, row.owner.number),
               row.isVideo ? 'video' : 'photo',
               isData ? link : null,
               isData ? null : link,
@@ -283,7 +283,7 @@ export interface ThreadIn {
 
 interface Member {
   citizenid: string;
-  phoneId: string | null;
+  deviceId: string | null;
 }
 
 type ThreadState = { id: number; members: ReadonlySet<string> } | { skip: string };
@@ -294,9 +294,9 @@ const findOneToOne = async (phoneA: string, phoneB: string): Promise<number | nu
     `SELECT c.\`id\` FROM \`mica_messages_conversations\` c
      WHERE c.\`is_group\` = 0 AND c.\`status\` = 'active'
        AND EXISTS (SELECT 1 FROM \`mica_messages_participants\` p1
-                   WHERE p1.\`conversation_id\` = c.\`id\` AND p1.\`phone_id\` = ? AND p1.\`left_at\` IS NULL)
+                   WHERE p1.\`conversation_id\` = c.\`id\` AND p1.\`device_id\` = ? AND p1.\`left_at\` IS NULL)
        AND EXISTS (SELECT 1 FROM \`mica_messages_participants\` p2
-                   WHERE p2.\`conversation_id\` = c.\`id\` AND p2.\`phone_id\` = ? AND p2.\`left_at\` IS NULL)
+                   WHERE p2.\`conversation_id\` = c.\`id\` AND p2.\`device_id\` = ? AND p2.\`left_at\` IS NULL)
      LIMIT 1`,
     [phoneA, phoneB]
   );
@@ -305,13 +305,13 @@ const findOneToOne = async (phoneA: string, phoneB: string): Promise<number | nu
 
 /**
  * A participant of a thread being created in the same transaction, so `@mica_import_id` is its
- * id. A plain insert: the thread is new, so `conversation_phone_unique` cannot collide.
+ * id. A plain insert: the thread is new, so `conversation_device_unique` cannot collide.
  */
 const participant = (member: Member, role: 'admin' | 'member'): TransactionQuery => ({
   query: `INSERT INTO \`mica_messages_participants\`
-       (\`conversation_id\`, \`citizenid\`, \`phone_id\`, \`role\`, \`status\`)
+       (\`conversation_id\`, \`citizenid\`, \`device_id\`, \`role\`, \`status\`)
      VALUES (@mica_import_id, ?, ?, ?, 'active')`,
-  params: [member.citizenid, member.phoneId, role]
+  params: [member.citizenid, member.deviceId, role]
 });
 
 type Retry = { thread: ThreadIn; members: Member[] };
@@ -373,7 +373,7 @@ export class Threads {
         this.memberRows?.skip(SKIP.numberReassigned);
         continue;
       }
-      members.push({ citizenid, phoneId: onPhone.phoneId });
+      members.push({ citizenid, deviceId: onPhone.deviceId });
     }
 
     if (members.length < 2) {
@@ -411,7 +411,7 @@ export class Threads {
     if ((await this.link(thread, members)) !== null) return;
 
     const pair =
-      !thread.isGroup && members.length === 2 && members[0].phoneId !== members[1].phoneId;
+      !thread.isGroup && members.length === 2 && members[0].deviceId !== members[1].deviceId;
     await ctx.ledger.write(
       this.ledgerTable,
       thread.key,
@@ -428,8 +428,8 @@ export class Threads {
             // A group keeps the name it had. A 1:1 between two phones keeps none (MICA-339):
             // each reader labels it from their own contacts and the server never sends it.
             !pair && thread.name ? cutText(thread.name, 50) : null,
-            pair ? members[0].phoneId : null,
-            pair ? members[1].phoneId : null
+            pair ? members[0].deviceId : null,
+            pair ? members[1].deviceId : null
           ]
         },
         ...members.map((m, i) => participant(m, i === 0 ? 'admin' : 'member'))
@@ -447,9 +447,9 @@ export class Threads {
   /** Link to the 1:1 thread the pair's phones already share, if they share one. */
   private async link(thread: ThreadIn, members: readonly Member[]): Promise<number | null> {
     const [a, b] = members;
-    if (thread.isGroup || members.length !== 2 || !a.phoneId || !b.phoneId) return null;
-    if (a.phoneId === b.phoneId) return null;
-    const existing = await findOneToOne(a.phoneId, b.phoneId);
+    if (thread.isGroup || members.length !== 2 || !a.deviceId || !b.deviceId) return null;
+    if (a.deviceId === b.deviceId) return null;
+    const existing = await findOneToOne(a.deviceId, b.deviceId);
     if (existing === null) return null;
     const id = await this.ctx.ledger.record(
       this.ledgerTable,
