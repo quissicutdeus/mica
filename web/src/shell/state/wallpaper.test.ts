@@ -61,6 +61,17 @@ describe('Wallpaper Store', () => {
     expect(get(themeStore).seed).toBe('#00ff00');
   });
 
+  it('throws for an image it will not set, and leaves the wallpaper alone (MICA-339)', () => {
+    for (const bad of [
+      "url('data:image/png;base64,x');display:none;--x:('')",
+      "url('javascript:alert(1)')",
+      "url('http://x.test/a.png')"
+    ]) {
+      expect(() => setWallpaperImage(bad), bad).toThrow(/wallpaper/);
+      expect(get(wallpaperStore), bad).toEqual(DEFAULT_WALLPAPER);
+    }
+  });
+
   describe('presets', () => {
     it('declares a hex seed for every preset', () => {
       for (const preset of PRESETS) {
@@ -143,6 +154,25 @@ describe('Wallpaper Store', () => {
     it('keeps a stored image that is a url()', () => {
       wallpaperStore.set({ type: 'image', image: "url('data:image/png;base64,x')" });
       expect(get(wallpaperStore).type).toBe('image');
+    });
+
+    /**
+     * MICA-339 (F16). The sanitizer checked only the `url(` prefix, so a stored source with a
+     * `'` closed the CSS string and the rest applied to the phone screen, on every start.
+     */
+    it('refuses a stored image whose source breaks out of the CSS string', () => {
+      wallpaperStore.set({
+        type: 'image',
+        image: "url('data:image/png;base64,AAAA');display:none;--x:('')"
+      });
+      expect(get(wallpaperStore)).toEqual(DEFAULT_WALLPAPER);
+    });
+
+    it('refuses a stored http image, and keeps an https one', () => {
+      wallpaperStore.set({ type: 'image', image: "url('http://x.test/a.png')" });
+      expect(get(wallpaperStore)).toEqual(DEFAULT_WALLPAPER);
+      wallpaperStore.set({ type: 'image', image: "url('https://x.test/a.png')" });
+      expect(get(wallpaperStore)).toEqual({ type: 'image', image: "url('https://x.test/a.png')" });
     });
 
     it('repairs anything that is not a wallpaper', () => {

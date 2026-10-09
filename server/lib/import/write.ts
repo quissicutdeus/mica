@@ -425,7 +425,9 @@ export class Threads {
           params: [
             members[0].citizenid,
             pair ? 0 : 1,
-            thread.name ? cutText(thread.name, 50) : null,
+            // A group keeps the name it had. A 1:1 between two phones keeps none (MICA-339):
+            // each reader labels it from their own contacts and the server never sends it.
+            !pair && thread.name ? cutText(thread.name, 50) : null,
             pair ? members[0].phoneId : null,
             pair ? members[1].phoneId : null
           ]

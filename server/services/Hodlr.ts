@@ -365,3 +365,6 @@ app.registerEvent('sell', async (source, cbId, data, citizenid, player) => {
 
   return { ok: true, quantity: currentQuantity, price, proceeds };
 });
+
+// A phone in hand, server-side: the client closing the phone is not the check (MICA-339).
+app.requirePhoneFor('buy', 'sell');

@@ -443,6 +443,60 @@ describe('conversations:create — participant_a/participant_b and the unique-in
     );
   });
 
+  /**
+   * MICA-339. The directory's name for the number used to become the thread name and come back
+   * in the reply, so `create` answered "who holds this number" — a burner's included — for
+   * anyone who knew it.
+   */
+  it("never names a thread, or answers, with the number holder's directory name", async () => {
+    directory.byPhone.set('555-0100', {
+      citizenid: 'CIT_B',
+      displayName: 'Bea Holder',
+      phone: '555-0100'
+    } as never);
+
+    const reply = await call('create', { phone: '555-0100' });
+
+    expect(conversationInsertColumns().name).toBeUndefined();
+    expect(reply).toMatchObject({ id: expect.any(Number) });
+    expect(JSON.stringify(reply)).not.toContain('Bea Holder');
+    expect(JSON.stringify(reply)).not.toContain('CIT_B');
+  });
+
+  it('stores no name on a 1:1 between players, even one the caller chose', async () => {
+    directory.byPhone.set('555-0100', { citizenid: 'CIT_B', displayName: 'Bea Holder' } as never);
+
+    const reply = await call('create', {
+      phone: '555-0100',
+      name: 'Supplier',
+      participant: { firstname: 'Bea', lastname: 'Card' }
+    });
+
+    // Never shown to anyone (each reader labels a 1:1 from their own contacts), so never kept.
+    expect(conversationInsertColumns().name).toBeUndefined();
+    // A 1:1 between two phones is labelled by each reader from their own contacts, so no
+    // stored name is sent for one — including the directory names rows written before
+    // MICA-339 still hold.
+    expect(reply).not.toHaveProperty('name');
+    expect(reply).not.toHaveProperty('participant_a');
+    expect(reply).not.toHaveProperty('participant_b');
+    expect(reply).not.toHaveProperty('citizenid');
+  });
+
+  it('answers a group with the name its creator gave it', async () => {
+    directory.byPhone.set('555-0200', { citizenid: 'CIT_C' });
+
+    const reply = await call('create', {
+      phone: '555-0100',
+      participants: ['555-0200'],
+      name: 'Crew'
+    });
+
+    expect(reply).toMatchObject({ is_group: true, name: 'Crew' });
+    // The positive twin of the 1:1 case above: a group's name is stored.
+    expect(conversationInsertColumns().name).toBe('Crew');
+  });
+
   it('writes participant_a/participant_b as null, not undefined, on a group create', async () => {
     directory.byPhone.set('555-0200', { citizenid: 'CIT_C' });
 
@@ -470,7 +524,9 @@ describe('conversations:create — participant_a/participant_b and the unique-in
 
     const created = await call('create', { phone: '555-0100' });
 
-    expect(created).toEqual(winner);
+    // The winner, as a reader is shown it (MICA-339): its creator's citizenid stays behind.
+    expect(created).toMatchObject({ id: 555, is_group: false });
+    expect(created).not.toHaveProperty('citizenid');
     // No participant rows were written for a create that never actually happened.
     expect(participantsAdded()).toEqual([]);
   });

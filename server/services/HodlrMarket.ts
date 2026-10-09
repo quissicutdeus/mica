@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { randomBytes } from 'node:crypto';
 import { Database } from '../lib/Database';
 import { startupJobsMayRunNow, whenSchemaReady } from '../lib/schemaReady';
 import type { PricePoint } from '@mica/shared/types';
@@ -155,8 +156,23 @@ const bounded = (value: number): number => {
  * toward `REFERENCE_PRICE` is what keeps a long-running server's coin in a band instead of
  * random-walking into a clamp and staying there.
  */
+/**
+ * A uniform draw in `[0, 1)` from the operating system's CSPRNG. MICA-339.
+ *
+ * Not `Math.random`, which is V8's xorshift128+ and shared by the whole resource: its state can
+ * be recovered from a run of its outputs, and other code here hands such outputs to clients. A
+ * player who recovered it could compute the coming ticks and trade ahead of them, which turns
+ * the walk into a money printer. 48 bits, the most a double holds exactly from six bytes.
+ */
+const secureUnit = (): number => {
+  const bytes = randomBytes(6);
+  let value = 0;
+  for (const byte of bytes) value = value * 256 + byte;
+  return value / 2 ** 48;
+};
+
 const nextPrice = (price: number): number => {
-  const step = (Math.random() * 2 - 1) * MAX_STEP_PCT;
+  const step = (secureUnit() * 2 - 1) * MAX_STEP_PCT;
   const pull = REVERSION_PER_TICK * Math.log(REFERENCE_PRICE / price);
   return bounded(Math.round(price * Math.exp(step + pull)));
 };

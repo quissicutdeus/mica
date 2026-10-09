@@ -14,7 +14,8 @@ import {
   moderateTarget,
   restoreTarget,
   summariseTarget,
-  type ReportableTable
+  type ReportableTable,
+  type TargetSummary
 } from '../lib/moderation';
 import { AuditLogger } from '../lib/AuditLogger';
 import { openRows, storablePlaintext } from '../lib/contentCipher';
@@ -23,6 +24,8 @@ import { openRows, storablePlaintext } from '../lib/contentCipher';
 const MAX_PREVIEW_CHARS = 300;
 import { forwardReportFiled } from '../lib/DiscordWebhook';
 import { isAdmin } from './Admin';
+import { accountsByIds } from './Accounts';
+import { messages } from './Messages';
 import type { Report, ReportResolution } from '@mica/shared/types';
 
 /**
@@ -138,6 +141,107 @@ export const reports = defineService<Report, typeof reportsContract>({
 const app = reports.app;
 const repo = reports.repo as ReportRepository;
 
+/**
+ * Whether a player can see a row: the question a report asks before it reads one (MICA-339).
+ *
+ * `targetTable` and `targetId` are the payload's, and `summariseTarget` reads by id alone and
+ * opens a sealed body into the report. Without this, any player could walk the ids of other
+ * players' messages and DMs, copy them into the staff queue, and hold them out of retention.
+ *
+ * **Keyed by table here, not on the `reportable` declaration**, and **closed by default**: a
+ * table declared reportable with no rule below cannot be reported at all, rather than being
+ * reportable by anyone. `reports.test.ts` files a report against every declared table, so a
+ * table added without a rule fails there, not in a player's hands.
+ *
+ * Each rule is the same question that table's own reads ask. A row that is not `active` is
+ * one no app shows, so it is not visible either.
+ */
+type CanSee = (id: number, citizenid: string) => Promise<boolean>;
+
+/** A public table: anyone may see a row while it is up. */
+const whileActive =
+  (table: string): CanSee =>
+  async (id) =>
+    // `table` is a literal from the map below, never the payload.
+    Boolean(
+      await Database.single<unknown>(
+        `SELECT 1 FROM \`${table}\` WHERE \`id\` = ? AND \`status\` = 'active' LIMIT 1`,
+        [id]
+      )
+    );
+
+/** A message: membership of its thread, through the Messages declaration's own predicate. */
+const canSeeMessage: CanSee = async (id, citizenid) => {
+  const row = await Database.single<{ conversation_id: number } | null>(
+    "SELECT `conversation_id` FROM `mica_messages` WHERE `id` = ? AND `status` = 'active' LIMIT 1",
+    [id]
+  );
+  return Boolean(row) && (await messages.repo.isMember(row!.conversation_id, citizenid));
+};
+
+/** A DM: one of the caller's live accounts is one of its two ends. */
+const canSeeDm: CanSee = async (id, citizenid) => {
+  const row = await Database.single<{ from_account: number; to_account: number } | null>(
+    'SELECT `from_account`, `to_account` FROM `mica_blabber_dms` ' +
+      "WHERE `id` = ? AND `status` = 'active' LIMIT 1",
+    [id]
+  );
+  if (!row) return false;
+  const ends = await accountsByIds([row.from_account, row.to_account]);
+  return ends.some((end) => end.citizenid === citizenid && end.status === 'active');
+};
+
+/**
+ * A photo: the caller's own, or attached to something the caller can see — a live Blab or
+ * listing, which anyone can, or a live message in a thread they are in.
+ *
+ * The photo's own status is asked the way the attachment reads ask it: not `moderated`. Those
+ * reads drop a moderated photo from every thread, Blab and listing (MICA-339), so it is not
+ * visible and is answered as gone. A photo its owner only *deleted* from their gallery still
+ * shows in the thread it was sent to, so it can still be reported.
+ */
+const canSeeMedia: CanSee = async (id, citizenid) => {
+  const reachable = await Database.single<unknown>(
+    `SELECT 1 FROM \`mica_media\` x WHERE x.\`id\` = ? AND x.\`status\` <> 'moderated'
+       AND (x.\`citizenid\` = ?
+       OR EXISTS (SELECT 1 FROM \`mica_blabber_attachments\` a
+                  JOIN \`mica_blabber\` b ON b.\`id\` = a.\`blab_id\`
+                  WHERE a.\`media_id\` = x.\`id\` AND b.\`status\` = 'active')
+       OR EXISTS (SELECT 1 FROM \`mica_marketplace_attachments\` a
+                  JOIN \`mica_marketplace\` l ON l.\`id\` = a.\`listing_id\`
+                  WHERE a.\`media_id\` = x.\`id\` AND l.\`status\` = 'active'))
+     LIMIT 1`,
+    [id, citizenid]
+  );
+  if (reachable) return true;
+
+  const threads = await Database.query<{ conversation_id: number }[]>(
+    `SELECT DISTINCT m.\`conversation_id\` FROM \`mica_messages_attachments\` a
+     JOIN \`mica_messages\` m ON m.\`id\` = a.\`message_id\`
+     JOIN \`mica_media\` p ON p.\`id\` = a.\`photo_id\` AND p.\`status\` <> 'moderated'
+     WHERE a.\`photo_id\` = ? AND m.\`status\` = 'active'`,
+    [id]
+  );
+  for (const thread of threads ?? []) {
+    if (await messages.repo.isMember(thread.conversation_id, citizenid)) return true;
+  }
+  return false;
+};
+
+const VISIBILITY = new Map<string, CanSee>([
+  ['mica_messages', canSeeMessage],
+  ['mica_blabber_dms', canSeeDm],
+  ['mica_media', canSeeMedia],
+  ['mica_accounts', whileActive('mica_accounts')],
+  ['mica_blabber', whileActive('mica_blabber')],
+  ['mica_marketplace', whileActive('mica_marketplace')]
+]);
+
+const canSeeTarget = async (table: string, id: number, citizenid: string): Promise<boolean> => {
+  const rule = VISIBILITY.get(table);
+  return rule ? await rule(id, citizenid) : false;
+};
+
 /** File a report. Anyone may; everything about it is checked. */
 app.registerEvent('create', async (source, cbId, data, citizenid) => {
   const table = data.targetTable;
@@ -156,7 +260,12 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
   // Trimmed, not capped — the contract already refused anything over the column's length.
   const note = data.note?.trim() || undefined;
 
-  const target = await summariseTarget(table, targetId);
+  // Asked before the row is read, and answered as a missing row: a different reply would
+  // tell the caller which ids exist in a table they cannot see into.
+  const visible = await canSeeTarget(table, targetId, citizenid);
+  const target: TargetSummary = visible
+    ? await summariseTarget(table, targetId)
+    : { exists: false };
   if (!target.exists) {
     throw new PlayerFacingError('That content no longer exists.', {
       key: 'server.reports.targetGone'

@@ -404,9 +404,10 @@ describe('a player starting a thread with a line', () => {
 
     const thread = await openFromPhone();
 
-    expect(thread).toMatchObject({
-      is_group: false,
-      name: 'Downtown Cab',
+    // The line's label is the thread's name; the pair columns stay on the row (MICA-339).
+    expect(thread).toMatchObject({ is_group: false, name: 'Downtown Cab' });
+    expect(thread).not.toHaveProperty('participant_a');
+    expect(db.conversations.get(thread.id)).toMatchObject({
       participant_a: PHONE,
       participant_b: LINE_KEY
     });
@@ -462,7 +463,9 @@ describe('a player texting a line', () => {
       message: 'Pick me up at Legion.'
     });
 
-    expect(reply).toMatchObject({ conversation_id: thread.id, citizenid: 'CIT_A' });
+    // The player's own text, as they are answered it: theirs, and nobody's citizenid (MICA-339).
+    expect(reply).toMatchObject({ conversation_id: thread.id, mine: true });
+    expect(reply).not.toHaveProperty('citizenid');
     expect(onMessage).toHaveBeenCalledWith({
       to: LINE,
       from: PLAYER.phone,

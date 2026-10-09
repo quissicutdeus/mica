@@ -5,14 +5,19 @@
 import { PlayerFacingError } from '../lib/errors';
 import {
   ConversationRepository,
+  conversationForReader,
+  lastMessageForReader,
   openLineThread,
-  PARTICIPANT_KEY_MAX_LENGTH
+  participantForReader,
+  PARTICIPANT_KEY_MAX_LENGTH,
+  type ConversationRow,
+  type ParticipantRow
 } from '../repositories/ConversationRepository';
 import { lookupLine } from '../lib/numberRegistry';
 import { defineService } from '../lib/defineService';
-import { Conversation, Participant } from '@mica/shared/types';
 import { AuditLogger } from '../lib/AuditLogger';
 import { resolveByPhone, resolveMany } from '../lib/PlayerDirectory';
+import { detectFramework } from '../lib/FrameworkBridge';
 import { conversationIdFrom, pageBounds, recencyCursor } from '../lib/payload';
 import { conversationsContract } from '@mica/shared/contracts/conversations';
 import { phoneForCitizen, phoneForRequest } from '../lib/phoneIdentity';
@@ -35,11 +40,12 @@ const PAIR_KEY_MAX_LENGTH = PARTICIPANT_KEY_MAX_LENGTH * 2 + 1;
 /**
  * Conversations: owner on both axes, with membership declared alongside.
  *
- * The row genuinely has an owner — `citizenid` is the creator — and renaming is
- * correctly restricted to them by the ownership-scoped generic update. What is shared
- * is *visibility*, and that is decided by the participants join table, which every
- * custom action below checks. Setting either axis to `members` would disable the generic
- * update and silently break rename.
+ * The row genuinely has an owner — `citizenid` is the creator. What is shared is
+ * *visibility*, and that is decided by the participants join table, which every custom
+ * action below checks. Rename is one of those since MICA-339: it rode the ownership-scoped
+ * generic update, which asked the row's `citizenid` and so stayed with the creator after the
+ * phone the thread is on changed hands. It is the custom `update` below now, authorized by the
+ * admin membership on the phone in hand, and the generic one is off.
  *
  * That split is exactly why `access` has two axes rather than one `scope`: this table
  * needs ownership-scoped writes *and* membership-scoped reads at the same time, which a
@@ -49,7 +55,7 @@ const PAIR_KEY_MAX_LENGTH = PARTICIPANT_KEY_MAX_LENGTH * 2 + 1;
  * emits a complete schema: it carries `role`, a different status enum, and two
  * nullable timestamps, none of which fit the primary-table shape.
  */
-export const conversations = defineService<Conversation, typeof conversationsContract>({
+export const conversations = defineService<ConversationRow, typeof conversationsContract>({
   contract: conversationsContract,
   id: 'conversations',
   table: 'mica_messages_conversations',
@@ -72,7 +78,7 @@ export const conversations = defineService<Conversation, typeof conversationsCon
     // Derived by the custom create from the resolved member count, never client-writable
     // and never read from a payload. See the note on `isGroup` in the create handler.
     is_group: { type: 'bool', notNull: true, default: 0, clientWritable: false },
-    // The only generic write. `update` scopes it to the creator.
+    // Written by the custom `update` only (MICA-339), as the thread's admin.
     name: { type: 'string', length: 50 },
     /**
      * The two sides of a 1:1 thread, snapshotted at creation (MICA-161's half of
@@ -254,7 +260,8 @@ export const conversations = defineService<Conversation, typeof conversationsCon
   options: {
     disableGet: true, // Custom: hydrates participants and unread counts
     disableCreate: true, // Custom: resolves a phone number to a citizenid
-    disableDelete: true // Custom: admin soft-deletes, everyone else leaves
+    disableDelete: true, // Custom: admin soft-deletes, everyone else leaves
+    disableUpdate: true // Custom: rename, as the admin through the phone in hand (MICA-339)
   },
   repositoryFactory: (resolved) => new ConversationRepository(resolved)
 });
@@ -281,22 +288,17 @@ if (!CONVERSATION_PAGING) {
  * characters in `users(identifier)` — so on ESX the whole Messages list did not merely go
  * slowly, it threw, and the app was empty.
  *
- * Now: one page of threads, one `IN (…)` for that page's membership, and one batched
- * directory lookup for the names of whoever is not currently connected. Two when everyone in
- * the list is online, since the framework answers those from memory.
+ * Now: one page of threads and one `IN (…)` for that page's membership, which carries the
+ * number on each member's phone. A third, batched, only on es_extended, where the number lives
+ * on the character (`participantNumbers`). **No names at all since MICA-339:** the directory's
+ * name and active number for each member reached every other member, which named a burner's
+ * holder and gave their main number; the phone names a member from its own contacts now.
  *
- * **Why the names are not a fourth column on the second query.** They were, and a throwaway
- * MariaDB loaded with `mica.esx.sql` refused it: micaOS pins `utf8mb4_unicode_ci` and
- * es_extended's `users.identifier` takes the server default, so the column-to-column join is
- * errno 1267 rather than a slow query. `FrameworkBridge`'s note above
- * `findOfflineByCitizenIds` has the finding in full. `PlayerDirectory` compares against bound
- * parameters, which have no such problem, so a third statement buys correctness on the one
- * framework this ticket is about and stays constant in the size of the list either way.
- *
- * **`resolveMany` is also the better answer for a loaded player**, not merely the safe one:
- * the framework's in-memory character is authoritative and a rename may not have been written
- * back to the table yet — the same ordering `resolveByPhone` states, applied to a list — and
- * on a standalone server it is the only name there is.
+ * **Why the es_extended number is not a join on the second query.** A column-to-column join
+ * onto `users` is errno 1267, not a slow query: micaOS pins `utf8mb4_unicode_ci` and
+ * es_extended's `users.identifier` takes the server default (`FrameworkBridge`'s note above
+ * `findOfflineByCitizenIds` has it in full). `PlayerDirectory` compares against bound
+ * parameters, which have no such problem.
  *
  * `participant_count` used to be a correlated subquery on every returned row, counting
  * exactly the rows the membership query now returns. It is derived rather than asked for.
@@ -316,70 +318,55 @@ app.registerEvent('get', async (source, cbId, data, citizenid) => {
   // Named `list`, not `conversations`: the module-level export of that name is the
   // app handle, and shadowing it here would be a trap for the next reader.
   const { rows: list, nextCursor } = await conversationRepo.findForPhone(citizenid, phoneId, page);
-  if (list.length === 0) return { rows: list, nextCursor };
+  if (list.length === 0) return { rows: [], nextCursor };
 
-  const rows = await conversationRepo.findParticipantsForConversations(list.map((c) => c.id));
+  const members = await conversationRepo.findParticipantsForConversations(list.map((c) => c.id));
 
-  const byConversation = new Map<number, Participant[]>();
-  for (const row of rows) {
+  const byConversation = new Map<number, ParticipantRow[]>();
+  for (const row of members) {
     const held = byConversation.get(row.conversation_id);
     if (held) held.push(row);
     else byConversation.set(row.conversation_id, [row]);
   }
 
-  const directory = await resolveMany(rows.map((row) => row.citizenid));
+  const numberOf = await participantNumbers(members);
 
-  for (const conv of list) {
+  const rows = list.map((conv) => {
     const participants = byConversation.get(conv.id) ?? [];
-
-    (conv as Conversation & { participant_count: number }).participant_count = participants.length;
-
-    conv.participants = participants.map((p) => {
-      const [first, last] = splitName(directory.get(p.citizenid)?.displayName);
-
-      /**
-       * `?? ''`, and that is a fix rather than a coercion for the type's sake.
-       *
-       * `Contact.firstname` and `.phone` are declared non-null and this path has been handing
-       * the UI raw `NULL`s since it was written — the framework has no record of every
-       * citizenid that has ever been in a thread, and ESX has no phone column at all.
-       * `web/src/services/conversations.ts` interpolates the name unguarded
-       * (`${firstname} ${lastname || ''}`), so a missing one rendered as the literal text
-       * "null". Empty is falsy everywhere the old value was, so nothing that already handled
-       * it changes.
-       */
-      return {
-        ...p,
-        contact: {
-          firstname: first ?? '',
-          lastname: last ?? '',
-          phone: directory.get(p.citizenid)?.phone ?? '',
-          citizenid: p.citizenid,
-          id: 0,
-          favorite: false,
-          created_at: new Date(),
-          updated_at: new Date()
-        } // Mocking contact structure for UI convenience
-      };
+    return conversationForReader(conv, {
+      participant_count: participants.length,
+      participants: participants.map((p) =>
+        participantForReader(p, citizenid, phoneId, numberOf(p))
+      ),
+      unread_count: Number(conv.unread_count ?? 0),
+      archived_at: conv.archived_at ?? null,
+      ...(conv.last_message
+        ? { last_message: lastMessageForReader(conv.last_message, citizenid, participants) }
+        : {})
     });
-  }
+  });
 
-  return { rows: list, nextCursor };
+  return { rows, nextCursor };
 });
 
 /**
- * A directory display name back into the two fields the UI renders.
+ * The number each member is shown by, with es_extended's one exception (MICA-339).
  *
- * `DirectoryEntry` carries one joined `Firstname Lastname`, because that is what every other
- * caller wants; the participant contact shape predates it and wants the halves. Split on the
- * first space, the same way `esxCharinfo` and `standaloneCharinfo` build one from a single
- * name — so a round trip through the directory cannot invent a surname that was not there.
+ * The number on the phone in the thread comes back with the membership read
+ * (`ConversationRepository`'s `PARTICIPANT_NUMBER`). On es_extended micaOS holds no numbers at
+ * all — the number is the character's, set by whatever phone-number resource the server runs,
+ * and every phone they hold answers to it — so there, and only there, a member with no number
+ * row is asked of the directory. Asking it anywhere else would be the bug this ticket fixed: the
+ * directory's number for a citizen is the phone they hold *now*, which is a burner's holder's
+ * main number.
  */
-const splitName = (displayName: string | null | undefined): [string | null, string | null] => {
-  const name = displayName?.trim();
-  if (!name) return [null, null];
-  const space = name.indexOf(' ');
-  return space === -1 ? [name, null] : [name.slice(0, space), name.slice(space + 1).trim()];
+const participantNumbers = async (
+  members: readonly ParticipantRow[]
+): Promise<(row: ParticipantRow) => string | null> => {
+  const missing = members.filter((row) => !row.phone_number).map((row) => row.citizenid);
+  const directory =
+    missing.length > 0 && detectFramework() === 'esx' ? await resolveMany(missing) : null;
+  return (row) => row.phone_number ?? directory?.get(row.citizenid)?.phone ?? null;
 };
 
 /**
@@ -451,8 +438,18 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
    * `PlayerData` it did `targetCitizenId = targetPlayer.phone_number`, putting a **phone
    * number** where a citizenid goes, and `mica_messages_participants.citizenid` is a foreign
    * key onto `players`.
+   *
+   * **Only the citizenid leaves this block, and it never leaves the server** (MICA-339). The
+   * resolved `displayName` used to become the thread's name and come back in the reply, which
+   * made `create` a number-to-character lookup: anyone holding a burner's number got its
+   * holder's real name for the price of opening a chat. A thread with a player is now named by
+   * what the caller chose and nothing else; the web labels a 1:1 from the caller's own contact
+   * for the number, else the number, exactly as a phone with no directory would.
+   *
+   * An unknown number still answers `null`, and that does say the number is not in use. Kept
+   * deliberately: a real network says "not in service" too, and dialling the number already
+   * tells a caller whether anyone answers. What it must not say is *who*.
    */
-  let targetName: string | null = null;
   if (phone) {
     const target = await resolveByPhone(phone);
     if (!target) {
@@ -465,17 +462,18 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
       if ((data.participants ?? []).length === 0) {
         const line = lookupLine(phone);
         if (line) {
-          return await openLineThread(conversationRepo, citizenid, ownPhoneId, {
-            name: line.label,
-            number: line.number
-          });
+          return conversationForReader(
+            await openLineThread(conversationRepo, citizenid, ownPhoneId, {
+              name: line.label,
+              number: line.number
+            })
+          );
         }
       }
       console.log(`[Conversation] No player holds phone ${phone}; refusing to start a thread.`);
       return null;
     }
     targetCitizenId = target.citizenid;
-    targetName = target.displayName;
     phoneOf.set(target.citizenid, await phoneForNumber(phone, target.citizenid));
   }
 
@@ -554,16 +552,20 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
   // Logic for 1-on-1: existing check
   if (pairPhoneId) {
     const existing = await conversationRepo.findOneToOne(ownPhoneId, pairPhoneId);
-    if (existing) return existing;
+    if (existing) return conversationForReader(existing);
   }
 
   // Create new
-  const newConv: Partial<Conversation> = {
+  const newConv: Partial<ConversationRow> = {
     citizenid: citizenid,
     is_group: isGroup,
-    // Provided name, or the one resolved from the phone, or the contact object the UI
-    // sometimes sends instead of a citizenid.
-    name: requestedName ?? targetName ?? nameOf(participant) ?? undefined,
+    // A group's name: provided, or the contact object the UI sometimes sends instead of a
+    // citizenid — both the caller's own words, never the directory's name for a number.
+    // **Nothing for a thread between players that is not a group** (MICA-339): each reader
+    // labels a 1:1 from their own contacts and `conversationForReader` never sends its name,
+    // so a stored one would only sit at rest for nobody. A line's label is written by
+    // `openLineThread`, not here, and stays.
+    name: isGroup ? (requestedName ?? nameOf(participant) ?? undefined) : undefined,
     // Explicit `null` rather than `undefined` for a group thread: `Repository.create`
     // builds its column list from `Object.keys`, which keeps a key set to `undefined`
     // (only `delete` or never-assigning it would drop it), and the driver underneath
@@ -591,7 +593,7 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
     const message = error instanceof Error ? error.message : '';
     if (pairPhoneId && /duplicate/i.test(message)) {
       const winner = await conversationRepo.findOneToOne(ownPhoneId, pairPhoneId);
-      if (winner) return winner;
+      if (winner) return conversationForReader(winner);
     }
     throw error;
   }
@@ -635,7 +637,32 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
     `[Conversation] Created conversation ${conversationId} with ${members.size} participant(s).`
   );
 
-  return { ...newConv, id: conversationId };
+  // Through the reader's projection like every other answer here: the pair's phone ids and the
+  // creator's citizenid are the row's, not the reply's (MICA-339).
+  const now = new Date().toISOString();
+  return conversationForReader({
+    ...newConv,
+    id: conversationId,
+    created_at: now,
+    updated_at: now
+  } as ConversationRow);
+});
+
+/**
+ * Rename a thread (MICA-339). **Only the thread's admin, on the phone in their hand.**
+ *
+ * The admin is the membership `create` writes for the creator, and it moves with the phone
+ * when the phone changes hands (`transferParticipants`), so the person holding the phone the
+ * thread was started on is the one who may rename it — not whoever started it, who may have
+ * sold that phone and left. Same answer as the old owner-scoped generic update in every case
+ * but that one. Other members are refused as before, with `false` and no toast; the rename UI
+ * is optimistic and does not say so either.
+ */
+app.registerEvent('update', async (source, cbId, data, citizenid) => {
+  const phoneId = await phoneForRequest(source, citizenid);
+  const name = data.name.trim();
+  if (!name) return false;
+  return await conversationRepo.renameAsAdmin(data.id, name, citizenid, phoneId);
 });
 
 // Mark this participant's thread as read. Scoped to the caller's own membership.

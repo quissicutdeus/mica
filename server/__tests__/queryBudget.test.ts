@@ -37,7 +37,7 @@ const { framework, handlers, emitted } = vi.hoisted(() => {
      * Who is connected, as a mutable box — a budget has to hold whether everyone is online
      * (the framework answers every name from memory) or nobody is (one batched lookup).
      */
-    framework: { online: new Map<string, number>() }
+    framework: { online: new Map<string, number>(), kind: 'qb' as string }
   };
 });
 
@@ -89,7 +89,9 @@ vi.mock('../lib/FrameworkBridge', async (importOriginal) => {
     }
   }
 
-  return { ...actual, FrameworkBridge: TestBridge };
+  // Which framework is running decides whether a member's number can come from the directory
+  // at all (MICA-339): only es_extended keeps the number on the character.
+  return { ...actual, FrameworkBridge: TestBridge, detectFramework: () => framework.kind };
 });
 
 // Imported for its side effect: loading the module is what registers
@@ -106,6 +108,7 @@ const CALLER_SOURCE = 5;
 beforeEach(() => {
   db.reset();
   framework.online.clear();
+  framework.kind = 'qb';
   emitted.length = 0;
   __resetRateLimits();
   (globalThis as any).source = CALLER_SOURCE;
@@ -157,7 +160,64 @@ const participantsOf = (n: number) =>
     }
   ]);
 
-describe('the conversation list is three queries at most, whatever the list holds', () => {
+describe('the conversation list is two queries, whatever the list holds', () => {
+  for (const n of [1, 8, 60]) {
+    it(`costs exactly two statements for ${n} thread(s)`, async () => {
+      db.answerQuery(threads(n), participantsOf(n));
+
+      await call('get', {});
+
+      expect(db.count()).toBe(2);
+    });
+  }
+
+  /**
+   * The two, named: the page, and the membership with the number on each member's phone.
+   *
+   * There used to be a third, the directory's name and active number for every member, which
+   * reached every other member (MICA-339): it named a burner's holder and gave their main
+   * number. A member's number is read off the phone in the thread now, inside the membership
+   * read, so it costs no statement of its own.
+   */
+  it('spends them on the page and on the membership, numbers included', async () => {
+    db.answerQuery(threads(3), participantsOf(3));
+
+    await call('get', {});
+
+    expect(db.statements).toHaveLength(2);
+    expect(db.statements[0].sql).toContain('FROM mica_messages_conversations c');
+    expect(db.statements[1].sql).toContain('FROM `mica_messages_participants` p');
+    // One placeholder per conversation on the page, and the ids are bound, never inlined.
+    expect(db.statements[1].sql).toContain('IN (?, ?, ?)');
+    expect(db.statements[1].params).toEqual([1, 2, 3]);
+    // The number on the phone in the thread, read with the row.
+    expect(db.statements[1].sql).toContain(
+      '`mica_phone_numbers` n WHERE n.`phone_id` = p.`phone_id`'
+    );
+    // Never a join onto the framework's own table: errno 1267 on a stock ESX install.
+    expect(db.statements[1].sql).not.toContain('LEFT JOIN');
+  });
+
+  /** An empty list asks nothing further — there are no ids to hydrate. */
+  it('costs one statement when the player has no threads at all', async () => {
+    db.answerQuery([]);
+
+    await call('get', {});
+
+    expect(db.count()).toBe(1);
+  });
+});
+
+/**
+ * es_extended keeps the number on the character, so micaOS has no number row for any phone and
+ * the directory is the only place a member's number is (MICA-339). One batched statement for
+ * the page, deduplicated, and still a constant.
+ */
+describe('on es_extended, three queries at most', () => {
+  beforeEach(() => {
+    framework.kind = 'esx';
+  });
+
   for (const n of [1, 8, 60]) {
     it(`costs exactly three statements for ${n} thread(s)`, async () => {
       db.answerQuery(threads(n), participantsOf(n));
@@ -168,37 +228,16 @@ describe('the conversation list is three queries at most, whatever the list hold
     });
   }
 
-  /**
-   * The three, named. Counting to three is only meaningful if they are the page, the
-   * membership and the names rather than, say, the page three times.
-   *
-   * The third is the one that could have been a `LEFT JOIN` onto the framework's character
-   * table and is deliberately not: micaOS pins `utf8mb4_unicode_ci` and es_extended's
-   * `users.identifier` takes the server default, so a column-to-column comparison is MySQL
-   * errno 1267 on a stock ESX install. A bound-parameter `IN` has no such problem.
-   */
-  it('spends them on the page, the membership and one batched name lookup', async () => {
-    db.answerQuery(threads(3), participantsOf(3));
+  it('asks for every missing number in one statement, deduplicated', async () => {
+    db.answerQuery(threads(4), participantsOf(4));
 
     await call('get', {});
 
-    expect(db.statements).toHaveLength(3);
-    expect(db.statements[0].sql).toContain('FROM mica_messages_conversations c');
-    expect(db.statements[1].sql).toContain('FROM `mica_messages_participants` p');
-    // One placeholder per conversation on the page, and the ids are bound, never inlined.
-    expect(db.statements[1].sql).toContain('IN (?, ?, ?)');
-    expect(db.statements[1].params).toEqual([1, 2, 3]);
-    // Never a join onto the framework's own table — see above.
-    expect(db.statements[1].sql).not.toContain('LEFT JOIN');
-    expect(db.statements[2].sql).toContain('IN (?, ?, ?, ?)');
+    // Four threads, five distinct people: the caller once, plus one other per thread.
+    expect(db.statements[2].params).toEqual([CALLER, 'CIT_1', 'CIT_2', 'CIT_3', 'CIT_4']);
   });
 
-  /**
-   * Everyone connected is answered from the framework's in-memory characters, so the name
-   * lookup does not happen at all. This is the only case that drops to two, and it drops
-   * because a query became unnecessary rather than because a batch grew.
-   */
-  it('costs two when every participant is already connected', async () => {
+  it('costs two when every member is already connected', async () => {
     for (let index = 1; index <= 10; index++) framework.online.set(`CIT_${index}`, 100 + index);
     framework.online.set(CALLER, CALLER_SOURCE);
     db.answerQuery(threads(10), participantsOf(10));
@@ -208,28 +247,13 @@ describe('the conversation list is three queries at most, whatever the list hold
     expect(db.count()).toBe(2);
   });
 
-  /**
-   * The names are asked for **once**, not once per thread and not once per participant — the
-   * whole page's citizenids go into one statement, deduplicated, so the caller appearing in
-   * all sixty threads is one parameter rather than sixty.
-   */
-  it('asks for every name in one statement, deduplicated', async () => {
+  it('asks the directory nothing on any other framework', async () => {
+    framework.kind = 'qb';
     db.answerQuery(threads(4), participantsOf(4));
 
     await call('get', {});
 
-    const names = db.statements[2];
-    // Four threads, five distinct people: the caller once, plus one other per thread.
-    expect(names.params).toEqual([CALLER, 'CIT_1', 'CIT_2', 'CIT_3', 'CIT_4']);
-  });
-
-  /** An empty list asks nothing further — there are no ids to hydrate. */
-  it('costs one statement when the player has no threads at all', async () => {
-    db.answerQuery([]);
-
-    await call('get', {});
-
-    expect(db.count()).toBe(1);
+    expect(db.count()).toBe(2);
   });
 });
 

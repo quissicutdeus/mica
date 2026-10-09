@@ -30,6 +30,19 @@ const { dbMock, handlers, globalHandlers, commands } = vi.hoisted(() => {
 });
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
 
+/**
+ * Bytes a case queues come out of `randomBytes` first (MICA-339), so a suite can force two
+ * call ids to collide; with nothing queued it is the real generator.
+ */
+const randomQueue = vi.hoisted(() => ({ bytes: [] as Uint8Array[] }));
+vi.mock('node:crypto', async (importOriginal) => {
+  const real = await importOriginal<typeof import('node:crypto')>();
+  return {
+    ...real,
+    randomBytes: (size: number) => randomQueue.bytes.shift() ?? real.randomBytes(size)
+  };
+});
+
 const adminState = vi.hoisted(() => ({ isAdmin: true }));
 vi.mock('../services/Admin', () => ({
   isAdmin: (src: number) => (src === 0 ? true : adminState.isAdmin)
@@ -80,6 +93,9 @@ import {
 import { __resetRateLimits, allow } from '../lib/rateLimit';
 import { registerNumber, releaseResource, type CallVerdict } from '../lib/numberRegistry';
 import { __setVoiceBackend } from '../lib/speakerphone';
+import { __setPhoneResolvers } from '../lib/phoneIdentity';
+import { PlayerFacingError } from '../lib/errors';
+import { installTestPhone, TEST_PHONE_ID } from './phoneStub';
 
 const START = 'mica:server:phone:start';
 const ANSWER = 'mica:server:phone:answer';
@@ -1535,6 +1551,25 @@ describe('group ring (MICA-307)', () => {
     expect(incomingPayloads().map(([dest]) => dest)).toEqual([5]);
   });
 
+  it('skips a candidate who holds no phone, whatever number the framework has (MICA-339)', async () => {
+    __setPhoneResolvers({
+      forRequest: async () => TEST_PHONE_ID,
+      forCitizen: async () => TEST_PHONE_ID,
+      deviceInHand: (player) => {
+        if (player.citizenid === 'CID_FIVE') {
+          throw new PlayerFacingError('You are not holding a phone.');
+        }
+      }
+    });
+    try {
+      ringLine([5, 6]);
+      await placeCall(1, LINE);
+      expect(incomingPayloads().map(([dest]) => dest)).toEqual([6]);
+    } finally {
+      installTestPhone();
+    }
+  });
+
   it('fails as unreachable, in MICA-64 shape, when nobody is left to ring', async () => {
     await fire(START, 3, '555-0005'); // 5 busy
     (globalThis as any).emitNet.mockClear();
@@ -1648,5 +1683,132 @@ describe('group ring (MICA-307)', () => {
     await placeCall(1, LINE);
     const { callId } = incomingPayloads()[0][1] as { callId: number };
     expect(endLineCall(callId, OWNER)).toBe('no_such_call');
+  });
+});
+
+/**
+ * MICA-339 F17: a call needs a phone in hand, and shows that phone's own number — never the
+ * framework's `charinfo.phone`, which a robbed player keeps naming the number the thief's
+ * phone now carries.
+ */
+describe('a call needs a phone, and shows its own number (MICA-339)', () => {
+  const NOT_HELD = () => new PlayerFacingError('You are not holding a phone.');
+  /** The number row on the caller's phone, as `readRowByPhoneId` reads it. */
+  const numberOnPhone = (phoneId: string, number: string) =>
+    dbMock.single.mockImplementation(async (sql: string, params: unknown[]) =>
+      /WHERE `phone_id` = \?/.test(sql) && params[0] === phoneId
+        ? { id: 1, citizenid: 'CID_CALLER', number, status: 'active' }
+        : null
+    );
+
+  afterEach(() => {
+    dbMock.single.mockReset();
+    installTestPhone();
+  });
+
+  it('refuses a caller holding no phone, whatever their framework number says', async () => {
+    __setPhoneResolvers({
+      forRequest: async (src) => {
+        if (src === 1) throw NOT_HELD();
+        return TEST_PHONE_ID;
+      },
+      forCitizen: async () => TEST_PHONE_ID,
+      deviceInHand: () => undefined
+    });
+
+    await expect(placeCall(1, '555-0002')).resolves.toBe('caller_has_no_phone');
+    await fire(START, 1, '555-0002');
+
+    expect(incomingCalls()).toEqual([]);
+    expect(isInCall(2)).toBe(false);
+  });
+
+  it('places the call for a caller who holds one', async () => {
+    await expect(placeCall(1, '555-0002')).resolves.toBe('placed');
+    expect(incomingCalls()).toHaveLength(1);
+  });
+
+  it("shows the number on the phone in hand, not the framework's stale one", async () => {
+    // The bridge still answers 555-0001; the phone the caller holds carries 555-0042.
+    numberOnPhone(TEST_PHONE_ID, '555-0042');
+
+    await fire(START, 1, '555-0002');
+
+    expect(incomingCalls().map(([, , payload]) => (payload as { from: string }).from)).toEqual([
+      '555-0042'
+    ]);
+  });
+
+  it("falls back to the framework's number only where the phone has none", async () => {
+    await fire(START, 1, '555-0002');
+
+    expect(incomingCalls().map(([, , payload]) => (payload as { from: string }).from)).toEqual([
+      '555-0001'
+    ]);
+  });
+
+  it('ignores an answer from a target who no longer holds a phone', async () => {
+    let targetHolds = true;
+    __setPhoneResolvers({
+      forRequest: async () => TEST_PHONE_ID,
+      forCitizen: async () => TEST_PHONE_ID,
+      deviceInHand: (player) => {
+        if (player.citizenid === 'CID_TARGET' && !targetHolds) throw NOT_HELD();
+      }
+    });
+    await fire(START, 1, '555-0002');
+    targetHolds = false;
+
+    await fire(ANSWER, 2);
+    expect(emitCalls().some(([event]) => event === 'mica:client:phone:accepted')).toBe(false);
+
+    targetHolds = true;
+    await fire(ANSWER, 2);
+    expect(emitCalls().filter(([event]) => event === 'mica:client:phone:accepted')).toHaveLength(2);
+  });
+});
+
+/**
+ * MICA-339 F8: a call id is the call's pma-voice channel, which any client can join, so it
+ * comes from `node:crypto` over 31 bits rather than `Math.random` over 900,000 values, and no
+ * two live calls ever share one.
+ */
+describe('call ids are not guessable and never shared (MICA-339)', () => {
+  const callIds = () =>
+    incomingCalls().map(([, , payload]) => (payload as { callId: number }).callId);
+
+  afterEach(() => {
+    randomQueue.bytes = [];
+    vi.restoreAllMocks();
+  });
+
+  it('never asks Math.random, and stays a positive int32', async () => {
+    const random = vi.spyOn(Math, 'random').mockReturnValue(0);
+
+    await fire(START, 1, '555-0002');
+    injectIncomingCall(3, '5550100');
+
+    const ids = callIds();
+    expect(ids).toHaveLength(2);
+    expect(new Set(ids).size).toBe(2);
+    for (const id of ids) {
+      expect(Number.isInteger(id)).toBe(true);
+      expect(id).toBeGreaterThan(0);
+      expect(id).toBeLessThanOrEqual(2 ** 31 - 1);
+    }
+    expect(random).not.toHaveBeenCalled();
+  });
+
+  it('draws again rather than reuse an id a live call holds', async () => {
+    const same = Uint8Array.of(0x12, 0x34, 0x56, 0x78);
+    randomQueue.bytes = [same, same, Uint8Array.of(0, 0, 0, 0), Uint8Array.of(0, 0, 0, 9)];
+
+    await fire(START, 1, '555-0002');
+    injectIncomingCall(3, '5550100');
+
+    // The second draw collided and the third was 0, pma-voice's "no call": both refused.
+    expect(callIds()).toEqual([0x12345678, 9]);
+    expect(__callById(0x12345678)?.caller).toBe(1);
+    expect(__callById(9)?.target).toBe(3);
   });
 });

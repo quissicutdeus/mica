@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { Database } from '../Database';
-import { numberFor, readCitizenIdByNumber } from '../phoneNumbers';
+import { citizenIdForNumber, numberFor, readCitizenIdByNumber } from '../phoneNumbers';
 import {
   balanceOf,
   booleanOf,
@@ -120,12 +120,20 @@ export const qbFindOfflineByPhone = async (phone: string): Promise<FrameworkIden
  * before the write-back lands; `charinfo.phone` second, because it is the mirror of the same
  * value and is all there is before the first sync, and forever on a build whose write-back
  * could not be made (see `writeBack` in `services/PhoneNumbers.ts`).
+ *
+ * **Never a mirror somebody else now holds** (MICA-339). The write-back deliberately leaves
+ * `charinfo.phone` alone for a player whose phone was taken, so once the number has moved to
+ * the new holder, the old holder's mirror still names it. Answering it would let them place
+ * calls showing a number that rings somebody else's phone.
  */
 export const qbPhoneNumber = (citizenid: string, player: any): string | null => {
   const cached = numberFor(citizenid);
   if (cached) return cached;
   const mirrored = player?.PlayerData?.charinfo?.phone;
-  return mirrored === null || mirrored === undefined || mirrored === '' ? null : String(mirrored);
+  if (mirrored === null || mirrored === undefined || mirrored === '') return null;
+  const value = String(mirrored);
+  const holder = citizenIdForNumber(value);
+  return holder === null || holder === citizenid ? value : null;
 };
 
 /**

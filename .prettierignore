@@ -26,3 +26,7 @@ web/docs
 # not read .gitignore, and a store file is JavaScript with no extension or a
 # shebang that is not a stylesheet, so a walk into it is a red format gate.
 .pnpm-store
+
+# Claude Security scan reports. Each holds its own .gitignore of `*`, so it never
+# reaches a commit, but Prettier does not read .gitignore, same reason as above.
+CLAUDE-SECURITY-*

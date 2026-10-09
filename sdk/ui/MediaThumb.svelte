@@ -14,6 +14,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { t } from '../i18n';
   import './messages';
   import { useStreamerMode } from '../host/useStreamerMode';
+  import { isDataImage } from '@mica/shared/imageSource';
 
   /**
    * One media row, drawn by its `kind`.
@@ -94,7 +95,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * fact about the row rather than a preference of the caller. A video asked for its
    * original still resolves to its poster, since `data` is empty and its `url` is an `.mp4`.
    */
-  const bytes = $derived(safe(item.data));
+  /**
+   * `data` is inline bytes, so only a `data:image/` URI draws from it — never `https:`
+   * (MICA-339). A remote URL in `data` was a beacon: a player stored one on their own row,
+   * attached or dropped it, and every phone that drew the tile requested it, handing the host
+   * that viewer's IP. The server refuses one on the client path now; this is what keeps a row
+   * written before that from still being drawn. A remote image reaches this component only
+   * through `url`, which is server-written.
+   *
+   * Any `data:image/`, not only the camera's two shapes: a `data:` URI fetches nothing, and
+   * a row a server resource wrote through `AddMedia` is not held to the camera's encoder.
+   */
+  const bytes = $derived(isDataImage(item.data) ? item.data : undefined);
   const poster = $derived(safe(item.thumbnail));
   const linked = $derived(URL_IS_AN_IMAGE.has(item.kind) ? safe(item.url) : undefined);
 

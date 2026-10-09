@@ -64,6 +64,7 @@ vi.mock('../lib/FrameworkBridge', () => ({
 
 import { pollMusic, activeBroadcasts, __resetMusic } from '../services/Music';
 import { __resetRateLimits } from '../lib/rateLimit';
+import { installTestPhone, NOT_HELD_REPLY, refusePhone } from './phoneStub';
 import { MUSIC_BROADCAST_NET_EVENT } from '@mica/shared/musicBroadcast';
 import { nearbyBroadcastFields } from '@mica/shared/musicBroadcast.fixtures';
 
@@ -129,6 +130,18 @@ beforeEach(() => {
  * server-side through the one parser both sides share rather than trusted from the payload.
  */
 describe('what a broadcast may name', () => {
+  it('refuses a broadcast from a player holding no phone, and starts nothing (MICA-339)', async () => {
+    place(1, [0, 0, 0]);
+    refusePhone();
+    try {
+      await call(START, 1, { videoId: VIDEO });
+      expect(replyTo('mica:client:music:broadcastStart')).toEqual(NOT_HELD_REPLY);
+      expect(activeBroadcasts()).toEqual([]);
+    } finally {
+      installTestPhone();
+    }
+  });
+
   it('refuses anything that is not a YouTube source, and starts nothing', async () => {
     place(1, [0, 0, 0]);
     await call(START, 1, { videoId: 'javascript:alert(1)' });

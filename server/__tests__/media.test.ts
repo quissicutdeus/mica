@@ -4,6 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { TEST_PHONE_ID } from './phoneStub';
+import { placeholderPhoto } from '../../sdk/lib/placeholderImage';
 
 const { dbMock, handlers } = vi.hoisted(() => {
   const captured = new Map<string, Function>();
@@ -674,8 +675,9 @@ describe('media:create — the size a photo may actually be (MICA-116)', () => {
 
   it('refuses one the column would happily have taken', async () => {
     // The exact hole: `mediumtext` holds 16MB, so this row was written and reported as a
-    // success before the cap existed.
-    const reply = await callCreate({ kind: 'photo', data: 'A'.repeat(12 * 1024 * 1024) });
+    // success before the cap existed. Shaped as an image, so it is the size that refuses it
+    // and not MICA-339's rule that `data` is an inline image at all.
+    const reply = await callCreate({ kind: 'photo', data: photoOf(12 * 1024 * 1024) });
 
     expect(reply.error).toMatch(/too large/i);
     expect(dbMock.insert).not.toHaveBeenCalled();
@@ -700,6 +702,70 @@ describe('media:create — the size a photo may actually be (MICA-116)', () => {
 
     expect(reply).toEqual({ count: 1 });
     expect(dbMock.insert).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * MICA-339 (F9, F13). `kind` and `data` are the two columns a client may write, and until
+ * these rules either took anything the enum and the length allowed: a remote URL in `data`
+ * made every viewer of the row request it (an IP beacon), a `'` in it broke out of the
+ * wallpaper's CSS `url('…')`, and `kind: 'location'` forged the coordinates a recipient's
+ * waypoint acts on. Each refusal has its positive twin, so a rule that refused everything
+ * would fail here too.
+ */
+describe('media:create — what a client may write (MICA-339)', () => {
+  const PHOTO = 'data:image/webp;base64,UklGRg==';
+
+  it.each([
+    ['an https URL', 'https://logger.attacker.example/p.png'],
+    ['an http URL', 'http://logger.attacker.example/p.png'],
+    ['a protocol-relative URL', '//logger.attacker.example/p.png'],
+    ['a data URI that closes the CSS string', `${PHOTO}');display:none;--x:('`],
+    ['a data URI with a newline after it', `${PHOTO}\nx`],
+    ['a non-image data URI', 'data:text/html;base64,PHNjcmlwdD4='],
+    ['an SVG data URI carrying a quote', "data:image/svg+xml,%3Csvg')"],
+    ['bare base64', 'iVBORw0KGgo=']
+  ])('refuses %s in data', async (_label, data) => {
+    const reply = await callCreate({ kind: 'photo', data });
+
+    expect(reply.error).toMatch(/data/);
+    expect(reply.error).not.toContain('mica_media');
+    expect(dbMock.insert).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a webp capture', PHOTO],
+    ['a jpeg capture', 'data:image/jpeg;base64,/9j/4AAQ'],
+    ['the camera’s own stand-in for an empty capture', placeholderPhoto('mica-gallery-0')]
+  ])('stores %s', async (_label, data) => {
+    const reply = await callCreate({ kind: 'photo', data });
+
+    expect(reply.error).toBeUndefined();
+    expect(dbMock.insert).toHaveBeenCalledTimes(1);
+    expect(dbMock.insert.mock.calls[0][1] as unknown[]).toContain(data);
+  });
+
+  it.each(['location', 'gif', 'video', 'audio', 'sticker', 'file', 'link'])(
+    'refuses kind %s, which no client writes',
+    async (kind) => {
+      const reply = await callCreate({ kind, data: PHOTO });
+
+      expect(reply.error).toMatch(/kind/);
+      expect(dbMock.insert).not.toHaveBeenCalled();
+    }
+  );
+
+  it('refuses a forged location row, coordinates and all', async () => {
+    const reply = await callCreate({ kind: 'location', data: '{"x":1234,"y":-567,"z":30}' });
+
+    expect(reply.error).toBeDefined();
+    expect(dbMock.insert).not.toHaveBeenCalled();
+  });
+
+  it('stores a photo, and one whose kind is left to the column default', async () => {
+    expect((await callCreate({ kind: 'photo', data: PHOTO })).error).toBeUndefined();
+    expect((await callCreate({ data: PHOTO })).error).toBeUndefined();
+    expect(dbMock.insert).toHaveBeenCalledTimes(2);
   });
 });
 

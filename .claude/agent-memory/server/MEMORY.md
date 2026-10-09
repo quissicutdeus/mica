@@ -48,3 +48,14 @@ line here.
 - [A defaulted column tripped the widen-resume check](additive-column-trips-widen-resume.md)
   — resume skipped the additive pass until MICA-264 fixed it; run
   test:migrations
+- [A citizen-keyed phone cache outlives a handover](citizen-phone-cache-outlives-the-holder.md)
+  — check against `holderNow`; owner chose a stashed phone keeps receiving
+- [A loop over a registry function asserts nothing](registry-loop-over-a-function-is-empty.md)
+  — `Object.entries(REPORTABLE)` is `[]`; assert the count, import every
+  declarer
+- [The camera's failure fallback is an SVG data URI](camera-fallback-is-an-svg-data-uri.md)
+  — a `data` shape rule must admit it; a shared-helper status check breaks other
+  services' fixtures
+- [A shared wire type change is an SDK contract change](shared-wire-types-are-sdk-surface.md)
+  — `UIMessage extends Message`; only `test:unit:web` sees it; run
+  test:endpoints too

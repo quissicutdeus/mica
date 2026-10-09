@@ -143,6 +143,41 @@ describe('MediaThumb', () => {
     expect(getByText('Voice note')).toBeTruthy();
   });
 
+  /**
+   * MICA-339 (F9). `data` is inline bytes; a remote URL there made every phone that drew the
+   * tile request it, handing that host the viewer's IP. The positive twin is the same URL in
+   * `url`, where a hosted photo legitimately lives and still draws.
+   */
+  describe('a remote URL in data', () => {
+    const BEACON = 'https://logger.attacker.example/p.png';
+
+    it.each(['still', 'original'] as const)('is never drawn, at prefer %s', (prefer) => {
+      const { container } = render(MediaThumb, { item: item({ data: BEACON }), prefer });
+      expect(container.querySelector('img')).toBeNull();
+      expect(container.innerHTML).not.toContain('logger.attacker.example');
+    });
+
+    it('nor is a protocol-relative or http one', () => {
+      for (const data of ['//logger.attacker.example/p.png', 'http://logger.attacker.example/p']) {
+        const { container } = render(MediaThumb, { item: item({ data }) });
+        expect(container.querySelector('img'), data).toBeNull();
+      }
+    });
+
+    it('falls through to the thumbnail, and the same URL in url still draws', () => {
+      const withPoster = render(MediaThumb, {
+        item: item({ data: BEACON, thumbnail: 'data:image/webp;base64,SMALL' }),
+        prefer: 'original'
+      });
+      expect(withPoster.container.querySelector('img')?.getAttribute('src')).toBe(
+        'data:image/webp;base64,SMALL'
+      );
+
+      const hosted = render(MediaThumb, { item: item({ url: BEACON }), prefer: 'original' });
+      expect(hosted.container.querySelector('img')?.getAttribute('src')).toBe(BEACON);
+    });
+  });
+
   it('refuses a src that could execute', () => {
     // `url` is server-written today, so this is defence in depth — but the value is one
     // refactor away from reaching something that is not an <img>, and §7 is emphatic that

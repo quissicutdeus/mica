@@ -51,14 +51,9 @@ export const ROUTES: readonly Route[] = [
   route('createContact', 'contacts', 'create'),
   route('updateContact', 'contacts', 'update'),
   route('deleteContact', 'contacts', 'delete'),
-  // Conversations. `get`, `create`, `read`, `archive` and `delete` are contracted, so
-  // `web/` reaches them with the typed `call` over the generic service action and they
-  // need no row here (MICA-213).
-  //
-  // Rename rides the generic update: `clientWritable` on the conversations repo is
-  // ['name'], and `update` is ownership-scoped, so only the creator can rename. It is not
-  // in the contract, so it keeps its row.
-  route('renameConversation', 'conversations', 'update'),
+  // Conversations. Every action is contracted, so `web/` reaches them with the typed `call`
+  // over the generic service action and they need no row here (MICA-213). Rename joined them
+  // in MICA-339, when it stopped riding the creator-scoped generic update.
 
   // Mail
 

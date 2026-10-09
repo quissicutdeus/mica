@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { PlayerFacingError } from '../lib/errors';
 import { __setPhoneResolvers } from '../lib/phoneIdentity';
 
 /**
@@ -30,4 +31,29 @@ export const installTestPhone = (): void => {
     forCitizen: async () => TEST_PHONE_ID,
     deviceInHand: () => undefined
   });
+};
+
+/**
+ * Every player holds no phone (MICA-339): the device check refuses the phone the way
+ * `services/Phones.ts` does on a gated server, with its `server.phone.notHeld` key. For a
+ * suite proving an action flagged `requirePhoneFor` is refused; `installTestPhone` undoes it.
+ */
+export const refusePhone = (): void => {
+  __setPhoneResolvers({
+    forRequest: async () => TEST_PHONE_ID,
+    forCitizen: async () => TEST_PHONE_ID,
+    deviceInHand: (_player, device) => {
+      if (device === 'phone') {
+        throw new PlayerFacingError('You are not holding a phone.', {
+          key: 'server.phone.notHeld'
+        });
+      }
+    }
+  });
+};
+
+/** What a refused request is answered with. */
+export const NOT_HELD_REPLY = {
+  error: 'You are not holding a phone.',
+  key: 'server.phone.notHeld'
 };

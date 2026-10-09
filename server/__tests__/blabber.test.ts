@@ -29,6 +29,8 @@ vi.mock('../lib/FrameworkBridge', () => ({
 
 import { blabber } from '../services/Blabber';
 import type { BlabberRepository } from '../repositories/BlabberRepository';
+import { installTestPhone, NOT_HELD_REPLY, refusePhone } from './phoneStub';
+import { postsTarget } from '../lib/import/targets';
 
 const repo = blabber.repo as BlabberRepository;
 
@@ -185,11 +187,77 @@ describe('posting', () => {
   });
 });
 
+/**
+ * MICA-339. A post is published to everyone, so it needs a phone in hand server-side; and a
+ * photo moderated after it was attached stops showing on the post. Moderation only: one its
+ * owner deleted from their own gallery still shows where they posted it.
+ */
+describe('create needs a phone in hand, and the feed hides moderated media', () => {
+  it('refuses a post from a player holding no phone, before anything is read or written', async () => {
+    refusePhone();
+    try {
+      expect(await call('create', { account_id: 1, body: 'hello' })).toEqual(NOT_HELD_REPLY);
+      expect(dbMock.single).not.toHaveBeenCalled();
+      expect(dbMock.insert).not.toHaveBeenCalled();
+    } finally {
+      installTestPhone();
+    }
+    // The positive twin: the same post with a phone in hand is written.
+    dbMock.single.mockResolvedValueOnce(MY_ACCOUNT);
+    dbMock.insert.mockResolvedValueOnce(50);
+    expect((await call('create', { account_id: 1, body: 'hello' })).error).toBeUndefined();
+    expect(dbMock.insert).toHaveBeenCalled();
+  });
+
+  it('hides moderated media on a post, and names no other status', async () => {
+    dbMock.query.mockResolvedValueOnce([]);
+    await repo.findAttachmentsFor([10]);
+    const sql = String(dbMock.query.mock.calls[0][0]).replace(/\s+/g, ' ');
+    expect(sql).toContain("JOIN `mica_media` m ON a.media_id = m.id AND m.status <> 'moderated'");
+    expect(sql).not.toMatch(/'active'|'deleted'/);
+  });
+});
+
+/**
+ * MICA-339. `micaimport` writes an imported account's avatar straight into `mica_accounts`,
+ * past the `accepts` rule on the declaration, and every feed viewer draws it as an `<img src>`.
+ * A remote one was F9's beacon by the importer's door: it imports as no avatar now, and an
+ * inline one that fits the column is kept as it was.
+ */
+describe('micaimport: an imported account keeps only an inline avatar', () => {
+  const avatarPlannedFor = async (avatar: string | null) => {
+    dbMock.single.mockResolvedValueOnce(null); // no account of that handle on this character
+    dbMock.scalar.mockResolvedValueOnce(0); // none held, so not at the cap
+    dbMock.scalar.mockResolvedValueOnce(null); // the handle is free
+    const plan = await postsTarget()!.planAccount('CIT_A', { handle: 'ada_ls', avatar });
+    if (typeof plan !== 'object' || !('create' in plan)) throw new Error('expected a new account');
+    return (plan.create.params as unknown[])[4];
+  };
+  const INLINE = 'data:image/png;base64,iVBORw0KGgo=';
+
+  it.each([
+    'https://logger.attacker.example/a.png',
+    'http://logger.attacker.example/a.png',
+    '//logger.attacker.example/a.png',
+    `data:image/png;base64,${'A'.repeat(300)}`
+  ])('imports %s as no avatar', async (avatar) => {
+    expect(await avatarPlannedFor(avatar)).toBeNull();
+  });
+
+  it('keeps an inline avatar that fits the column, unchanged', async () => {
+    expect(await avatarPlannedFor(INLINE)).toBe(INLINE);
+  });
+
+  it('keeps none when the source had none', async () => {
+    expect(await avatarPlannedFor(null)).toBeNull();
+  });
+});
+
 describe('attachments', () => {
   it('allows a picture post with no body, as long as it owns the photo', async () => {
     dbMock.single
       .mockResolvedValueOnce(MY_ACCOUNT) // ownedAccount
-      .mockResolvedValueOnce({ id: 5, citizenid: 'CIT_A' }); // photoRepo.findById(5, 'CIT_A')
+      .mockResolvedValueOnce({ id: 5, citizenid: 'CIT_A', status: 'active' }); // photoRepo.findById(5, 'CIT_A')
     dbMock.insert.mockResolvedValueOnce(50); // the Blab row
 
     const reply = await call('create', { account_id: 1, attachments: [{ photo_id: 5 }] });

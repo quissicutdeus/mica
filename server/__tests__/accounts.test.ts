@@ -126,6 +126,48 @@ describe('the declaration', () => {
  * every profile showed one arbitrary stranger. Asserted against the SQL rather than the reply,
  * because the reply looked entirely plausible while being about somebody else.
  */
+/**
+ * MICA-339. Every feed, profile and DM row draws `avatar` as an `<img src>` for whoever reads
+ * it, and the generic update let a client set any 255 characters — so `https://logger/x.png`
+ * logged the IP of every player who scrolled past. Only an inline image is accepted now.
+ */
+describe('an avatar is an inline image, never an address', () => {
+  const avatarWrites = () =>
+    dbMock.update.mock.calls.filter(([sql]) => String(sql).includes('`avatar`'));
+
+  it.each([
+    'https://logger.example/x.png',
+    'http://logger.example/x.png',
+    '//logger.example/x.png',
+    'data:text/html;base64,PHNjcmlwdD4=',
+    'data:image/svg+xml,<svg onload=alert(1)>'
+  ])('refuses %s, and writes nothing', async (avatar) => {
+    const reply = await call('update', { id: 3, avatar });
+
+    expect(reply).toMatchObject({ key: 'server.repository.notAccepted' });
+    expect(avatarWrites()).toEqual([]);
+  });
+
+  it('accepts a small inline raster, the positive twin', async () => {
+    const avatar =
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAwS2OUAAAAABJRU5ErkJggg==';
+    expect(avatar.length).toBeLessThanOrEqual(255);
+
+    const reply = await call('update', { id: 3, avatar });
+
+    expect(reply?.error).toBeUndefined();
+    expect(avatarWrites()).toHaveLength(1);
+    expect(avatarWrites()[0][1]).toContain(avatar);
+  });
+
+  it('still clears with null', async () => {
+    const reply = await call('update', { id: 3, avatar: null });
+
+    expect(reply?.error).toBeUndefined();
+    expect(avatarWrites()).toHaveLength(1);
+  });
+});
+
 describe('looking an account up by handle', () => {
   it('narrows the public read by both app and handle', async () => {
     dbMock.query.mockResolvedValueOnce([{ id: 4, app: 'blabber', handle: 'ada' }]);
@@ -668,8 +710,95 @@ describe('blocking', () => {
 describe('reactions', () => {
   const MINE = { id: 3, citizenid: 'CIT_A', app: 'blabber', handle: 'ada', status: 'active' };
 
+  /**
+   * A small world the reads are answered from, by what each one asks rather than by call order
+   * (MICA-339): the DM rows, which account blocked which, and the reactions already stored.
+   * Each read honours the predicates its SQL actually carries, so a test that drops one — the
+   * status, the account, the block — sees the row it would then have reached.
+   */
+  type Dm = { id: number; from_account: number; to_account: number; status: string };
+  const world = (
+    opts: {
+      owned?: typeof MINE | null;
+      dms?: Dm[];
+      blocks?: [number, number][];
+      accounts?: { id: number; citizenid: string; app: string; status: string }[];
+      reactions?: { account_id: number; target_id: number; emoji: string }[];
+    } = {}
+  ) => {
+    const owned = opts.owned === undefined ? MINE : opts.owned;
+    const dms = opts.dms ?? [{ id: 4, from_account: 3, to_account: 8, status: 'active' }];
+    const blocks = opts.blocks ?? [];
+    const accounts = opts.accounts ?? [
+      { id: 3, citizenid: 'CIT_A', app: 'blabber', status: 'active' },
+      { id: 8, citizenid: 'CIT_B', app: 'blabber', status: 'active' },
+      { id: 9, citizenid: 'CIT_C', app: 'blabber', status: 'active' }
+    ];
+    const reactions = opts.reactions ?? [];
+    const activeOnly = (sql: string) => /`status` = 'active'/.test(sql);
+
+    dbMock.single.mockImplementation(async (sql: string, params: unknown[]) => {
+      if (sql.includes('FROM `mica_accounts`')) {
+        return owned && params[0] === owned.id && params[1] === owned.citizenid ? owned : null;
+      }
+      if (sql.includes('FROM `mica_blabber_dms`')) {
+        const dm = dms.find((row) => row.id === params[0]);
+        return dm && (!activeOnly(sql) || dm.status === 'active') ? dm : null;
+      }
+      if (sql.includes('FROM `mica_account_blocks`')) {
+        return blocks.some(([by, of]) => by === params[0] && of === params[1]) ? { id: 1 } : null;
+      }
+      return null;
+    });
+
+    dbMock.query.mockImplementation(async (sql: string, params: unknown[]) => {
+      if (sql.includes('FROM `mica_blabber_dms` d')) {
+        // [...ids, citizenid, app]
+        const ids = params.slice(0, -2) as number[];
+        const [citizenid, app] = params.slice(-2);
+        const mine = accounts
+          .filter((a) => a.citizenid === citizenid && a.app === app && a.status === 'active')
+          .map((a) => a.id);
+        return dms
+          .filter((dm) => ids.includes(dm.id) && dm.status === 'active')
+          .filter((dm) => mine.includes(dm.from_account) || mine.includes(dm.to_account))
+          .map((dm) => ({ id: dm.id }));
+      }
+      if (sql.includes('COUNT(*) AS total')) {
+        const ids = params.slice(1) as number[];
+        const grouped = new Map<string, { target_id: number; emoji: string; total: number }>();
+        for (const r of reactions.filter((r) => ids.includes(r.target_id))) {
+          const key = `${r.target_id}|${r.emoji}`;
+          const row = grouped.get(key) ?? { target_id: r.target_id, emoji: r.emoji, total: 0 };
+          row.total += 1;
+          grouped.set(key, row);
+        }
+        return [...grouped.values()];
+      }
+      if (sql.includes('FROM `mica_accounts`')) {
+        const [citizenid, app] = params;
+        return accounts
+          .filter((a) => a.citizenid === citizenid && a.app === app && a.status === 'active')
+          .map((a) => ({ id: a.id }));
+      }
+      if (sql.includes('`account_id` IN')) {
+        return reactions
+          .filter((r) => params.includes(r.target_id) && params.slice(1).includes(r.account_id))
+          .map(({ target_id, emoji }) => ({ target_id, emoji }));
+      }
+      return [];
+    });
+  };
+
+  const react = (target_id: number, account_id = 3, citizenid = 'CIT_A') =>
+    call(
+      'react',
+      { app: 'blabber', account_id, target_table: 'mica_blabber_dms', target_id, emoji: '👍' },
+      citizenid
+    );
+
   it('refuses a reaction as an account the caller does not own', async () => {
-    dbMock.single.mockResolvedValueOnce(null);
+    world({ owned: null });
 
     const reply = await call('react', {
       app: 'blabber',
@@ -684,7 +813,7 @@ describe('reactions', () => {
   });
 
   it('refuses a table that never opted in', async () => {
-    dbMock.single.mockResolvedValueOnce(MINE);
+    world();
 
     const reply = await call('react', {
       app: 'blabber',
@@ -699,8 +828,8 @@ describe('reactions', () => {
   });
 
   it('refuses a value that is not a plausible single emoji', async () => {
-    // No queued row: the emoji is bounded by the contract, so the request is refused before
-    // the ownership lookup runs at all.
+    // No world: the emoji is bounded by the contract, so the request is refused before the
+    // ownership lookup runs at all.
     const reply = await call('react', {
       app: 'blabber',
       account_id: 3,
@@ -713,37 +842,74 @@ describe('reactions', () => {
     expect(dbMock.insert).not.toHaveBeenCalled();
   });
 
-  it('inserts a reaction on a reactable table', async () => {
-    dbMock.single.mockResolvedValueOnce(MINE);
+  it('inserts a reaction on a DM the account sent', async () => {
+    world();
 
-    await call('react', {
-      app: 'blabber',
-      account_id: 3,
-      target_table: 'mica_blabber_dms',
-      target_id: 4,
-      emoji: '👍'
-    });
+    await react(4);
 
     expect(dbMock.insert.mock.calls[0][1]).toEqual([3, 'mica_blabber_dms', 4, '👍']);
   });
 
+  it('inserts a reaction on a DM the account received', async () => {
+    world({ dms: [{ id: 4, from_account: 8, to_account: 3, status: 'active' }] });
+
+    expect(await react(4)).toBe(true);
+    expect(dbMock.insert).toHaveBeenCalledTimes(1);
+  });
+
   it('treats a duplicate reaction as success', async () => {
-    dbMock.single.mockResolvedValueOnce(MINE);
+    world();
     dbMock.insert.mockRejectedValueOnce(new Error('ER_DUP_ENTRY: Duplicate entry'));
 
-    const reply = await call('react', {
-      app: 'blabber',
-      account_id: 3,
-      target_table: 'mica_blabber_dms',
-      target_id: 4,
-      emoji: '👍'
-    });
+    expect(await react(4)).toBe(true);
+  });
 
-    expect(reply).toBe(true);
+  /**
+   * MICA-339 (F4/F6). `target_id` is the payload's, and the only check was that the table
+   * is reactable — so any account wrote a reaction into a private DM between two others.
+   */
+  it('refuses a reaction on a DM between two other accounts', async () => {
+    world({ dms: [{ id: 4, from_account: 8, to_account: 9, status: 'active' }] });
+
+    const reply = await react(4);
+
+    expect(reply.error).toBe('That content no longer exists.');
+    expect(dbMock.insert).not.toHaveBeenCalled();
+  });
+
+  it('answers a stranger’s DM exactly as it answers an id that does not exist', async () => {
+    world({ dms: [{ id: 4, from_account: 8, to_account: 9, status: 'active' }] });
+    const stranger = await react(4);
+    vi.clearAllMocks();
+    world({ dms: [] });
+    const missing = await react(4);
+
+    expect(stranger).toEqual(missing);
+  });
+
+  it('refuses a reaction on a DM that is no longer up', async () => {
+    world({ dms: [{ id: 4, from_account: 3, to_account: 8, status: 'moderated' }] });
+
+    const reply = await react(4);
+
+    expect(reply.error).toBe('That content no longer exists.');
+    expect(dbMock.insert).not.toHaveBeenCalled();
+  });
+
+  it('refuses a reaction across a block, in either direction, as send does', async () => {
+    for (const blocks of [[[8, 3]], [[3, 8]]] as [number, number][][]) {
+      vi.clearAllMocks();
+      world({ blocks });
+
+      const reply = await react(4);
+
+      expect(reply.error, JSON.stringify(blocks)).toBe('That content no longer exists.');
+      expect(dbMock.insert).not.toHaveBeenCalled();
+    }
   });
 
   it('scopes an unreact to the caller’s own account', async () => {
-    dbMock.single.mockResolvedValueOnce(MINE);
+    world();
 
     await call('unreact', {
       app: 'blabber',
@@ -779,14 +945,18 @@ describe('reactions', () => {
   });
 
   it('groups counts per target and emoji, and reports which are the caller’s own', async () => {
-    dbMock.query
-      .mockResolvedValueOnce([
-        { target_id: 4, emoji: '👍', total: 2 },
-        { target_id: 4, emoji: '❤️', total: 1 },
-        { target_id: 5, emoji: '👍', total: 1 }
-      ])
-      .mockResolvedValueOnce([{ id: 3 }]) // the caller's own accounts in this app
-      .mockResolvedValueOnce([{ target_id: 4, emoji: '👍' }]);
+    world({
+      dms: [
+        { id: 4, from_account: 3, to_account: 8, status: 'active' },
+        { id: 5, from_account: 8, to_account: 3, status: 'active' }
+      ],
+      reactions: [
+        { account_id: 3, target_id: 4, emoji: '👍' },
+        { account_id: 8, target_id: 4, emoji: '👍' },
+        { account_id: 8, target_id: 4, emoji: '❤️' },
+        { account_id: 8, target_id: 5, emoji: '👍' }
+      ]
+    });
 
     const reply = await call('reactionsFor', {
       app: 'blabber',
@@ -798,6 +968,73 @@ describe('reactions', () => {
       4: { counts: { '👍': 2, '❤️': 1 }, mine: ['👍'] },
       5: { counts: { '👍': 1 }, mine: [] }
     });
+  });
+
+  /** MICA-339 (F6/F12): the batched read counted reactions on any DM id it was handed. */
+  it('counts nothing on a DM the caller is not an end of, and still answers its id', async () => {
+    world({
+      dms: [
+        { id: 4, from_account: 3, to_account: 8, status: 'active' },
+        { id: 6, from_account: 8, to_account: 9, status: 'active' }
+      ],
+      reactions: [
+        { account_id: 8, target_id: 4, emoji: '👍' },
+        { account_id: 9, target_id: 6, emoji: 'xx' }
+      ]
+    });
+
+    const reply = await call('reactionsFor', {
+      app: 'blabber',
+      target_table: 'mica_blabber_dms',
+      target_ids: [4, 6]
+    });
+
+    // The positive twin first: the caller's own DM is counted, so the filter is not just
+    // refusing everything.
+    expect(reply[4]).toEqual({ counts: { '👍': 1 }, mine: [] });
+    expect(reply[6]).toEqual({ counts: {}, mine: [] });
+    for (const [, params] of dbMock.query.mock.calls.filter(([sql]) =>
+      String(sql).includes('mica_account_reactions')
+    )) {
+      expect(params).not.toContain(6);
+    }
+  });
+
+  it('reads nothing at all when none of the ids are the caller’s', async () => {
+    world({ dms: [{ id: 6, from_account: 8, to_account: 9, status: 'active' }] });
+
+    const reply = await call('reactionsFor', {
+      app: 'blabber',
+      target_table: 'mica_blabber_dms',
+      target_ids: [6, 7]
+    });
+
+    expect(reply).toEqual({ 6: { counts: {}, mine: [] }, 7: { counts: {}, mine: [] } });
+    expect(
+      dbMock.query.mock.calls.some(([sql]) => String(sql).includes('mica_account_reactions'))
+    ).toBe(false);
+  });
+
+  it('scopes the batch to the caller’s live accounts in the app it asked as', async () => {
+    world({
+      accounts: [
+        { id: 3, citizenid: 'CIT_A', app: 'other', status: 'active' },
+        { id: 8, citizenid: 'CIT_B', app: 'blabber', status: 'active' }
+      ],
+      reactions: [{ account_id: 8, target_id: 4, emoji: '👍' }]
+    });
+
+    const reply = await call('reactionsFor', {
+      app: 'blabber',
+      target_table: 'mica_blabber_dms',
+      target_ids: [4]
+    });
+
+    expect(reply[4]).toEqual({ counts: {}, mine: [] });
+    const [sql] = dbMock.query.mock.calls[0];
+    expect(sql).toMatch(/a\.`app` = \?/);
+    expect(sql).toMatch(/a\.`status` = 'active'/);
+    expect(sql).toMatch(/d\.`status` = 'active'/);
   });
 });
 

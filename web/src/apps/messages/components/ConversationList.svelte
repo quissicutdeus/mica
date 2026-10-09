@@ -29,7 +29,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     query = $bindable(''),
     showSearch,
     viewingArchive,
-    myCitizenId,
     isLastMsgReadByOther,
     onselect,
     onloadmore
@@ -48,7 +47,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     query: string;
     showSearch: boolean;
     viewingArchive: boolean;
-    myCitizenId: string;
     isLastMsgReadByOther: (conv: UIConversation) => boolean;
     onselect: (id: number) => void;
     onloadmore: () => void;
@@ -105,7 +103,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           </span>
         </div>
         <div class="flex items-center">
-          {#if conv.last_message?.citizenid === myCitizenId && !conv.last_message?.external_sender}
+          {#if conv.last_message?.mine}
             <MessageStatusIcon
               status={isLastMsgReadByOther(conv) ? 'read' : 'delivered'}
               class="mr-1.5 h-3.5 w-3.5 shrink-0"

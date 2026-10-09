@@ -146,6 +146,9 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
   };
 });
 
+// A phone in hand, server-side: a listing is published to everyone (MICA-339).
+app.requirePhoneFor('create');
+
 /**
  * One listing, public projection, for the detail screen. Also resolves the
  * seller's phone number so Call/Text can reach them — never returned as a

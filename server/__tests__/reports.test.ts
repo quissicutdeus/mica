@@ -51,6 +51,7 @@ import '../services/Media';
 import '../services/Accounts';
 import '../services/Blabber';
 import '../services/BlabberDms';
+import '../services/Marketplace';
 import { isReportableTable, isReportCategory, REPORTABLE } from '../lib/moderation';
 
 const REPORTER = 'REPORTER1';
@@ -117,7 +118,11 @@ describe('reportable allowlist', () => {
   });
 
   it('every reportable table declares how to preview it', () => {
-    for (const [table, meta] of Object.entries(REPORTABLE)) {
+    // `REPORTABLE` is a function: `Object.entries` of the function itself is empty, which made
+    // this loop assert nothing at all.
+    const declared = Object.entries(REPORTABLE());
+    expect(declared.length).toBeGreaterThan(0);
+    for (const [table, meta] of declared) {
       expect(meta.previewColumn, table).toBeTruthy();
       expect(meta.label, table).toBeTruthy();
     }
@@ -248,6 +253,391 @@ describe('the queue is admin-only', () => {
     const reply = await call('queue', {}, ADMIN);
     // A queue that surfaces the newest first starves the backlog.
     expect(reply.map((r: any) => r.id)).toEqual([1, 2]);
+  });
+});
+
+/**
+ * MICA-339 (F1/F14). `targetTable`/`targetId` are the payload's, and `summariseTarget` read the
+ * row by id alone and opened its sealed body into the report. Every report now asks first
+ * whether the reporter can see the row, the way that table's own reads would.
+ *
+ * The reads are answered from a small world by what each one asks, honouring the predicates
+ * its SQL carries, so a rule that drops one — the status, the membership, the account — reaches
+ * the row it would then have reached.
+ */
+describe('a report is only of something the reporter can see', () => {
+  type Row = Record<string, unknown> & { id: number; citizenid: string; status: string };
+  interface World {
+    rows?: Record<string, Row[]>;
+    /** `[conversation_id, citizenid]` pairs with `left_at` null. */
+    members?: [number, string][];
+    accounts?: { id: number; citizenid: string; status: string }[];
+    messageAttachments?: { message_id: number; photo_id: number }[];
+    blabAttachments?: { blab_id: number; media_id: number }[];
+    listingAttachments?: { listing_id: number; media_id: number }[];
+  }
+
+  const activeIn = (sql: string, alias = '') =>
+    sql.includes(`${alias}\`status\` = 'active'`)
+      ? (row?: Row) => row?.status === 'active'
+      : () => true;
+
+  const world = (w: World) => {
+    const rows = w.rows ?? {};
+    const find = (table: string, id: unknown) => (rows[table] ?? []).find((r) => r.id === id);
+    const members = w.members ?? [];
+    const accounts = w.accounts ?? [];
+
+    dbMock.single.mockImplementation(async (sql: string, params: unknown[]) => {
+      // `summariseTarget`'s read: what the report would copy.
+      const summary = /FROM `(\w+)` WHERE `id` = \?/.exec(sql);
+      if (sql.includes('AS preview') && summary) {
+        const row = find(summary[1], params[0]);
+        return row ? { citizenid: row.citizenid, status: row.status, preview: row.preview } : null;
+      }
+      if (sql.includes('FROM `mica_messages_participants`')) {
+        const [conversation, citizenid] = params;
+        return members.some(([c, who]) => c === conversation && who === citizenid)
+          ? { 1: 1 }
+          : null;
+      }
+      if (sql.includes('FROM `mica_media` x')) {
+        const [id, citizenid] = params;
+        const photo = find('mica_media', id);
+        if (!photo) return null;
+        if (/x\.`status` <> 'moderated'/.test(sql) && photo.status === 'moderated') return null;
+        const own = photo.citizenid === citizenid;
+        const blab = (w.blabAttachments ?? []).some(
+          (a) => a.media_id === id && activeIn(sql, 'b.')(find('mica_blabber', a.blab_id))
+        );
+        const listing = (w.listingAttachments ?? []).some(
+          (a) => a.media_id === id && activeIn(sql, 'l.')(find('mica_marketplace', a.listing_id))
+        );
+        return own || blab || listing ? { 1: 1 } : null;
+      }
+      const plain = /FROM `(\w+)` WHERE `id` = \?/.exec(sql.replace(/\s+/g, ' '));
+      if (plain) {
+        const row = find(plain[1], params[0]);
+        return row && activeIn(sql)(row) ? row : null;
+      }
+      return null;
+    });
+
+    dbMock.query.mockImplementation(async (sql: string, params: unknown[]) => {
+      if (sql.includes('FROM `mica_accounts`') && sql.includes('`id` IN')) {
+        return accounts.filter((a) => params.includes(a.id));
+      }
+      if (sql.includes('FROM `mica_messages_attachments` a')) {
+        const ids = (w.messageAttachments ?? [])
+          .filter((a) => a.photo_id === params[0])
+          .filter(
+            (a) =>
+              !/p\.`status` <> 'moderated'/.test(sql) ||
+              find('mica_media', a.photo_id)?.status !== 'moderated'
+          )
+          .map((a) => find('mica_messages', a.message_id))
+          .filter((m) => activeIn(sql, 'm.')(m))
+          .map((m) => m!.conversation_id as number);
+        return [...new Set(ids)].map((conversation_id) => ({ conversation_id }));
+      }
+      return [];
+    });
+  };
+
+  /** Did anything read the row's body? The refusal has to come before that read. */
+  const bodyWasRead = () =>
+    dbMock.single.mock.calls.some(([sql]) => String(sql).includes('AS preview'));
+
+  const GONE = 'That content no longer exists.';
+
+  const message = (over: Partial<Row> = {}): Row => ({
+    id: 12,
+    citizenid: 'AUTHOR1',
+    status: 'active',
+    conversation_id: 40,
+    preview: 'a private message',
+    ...over
+  });
+
+  describe('a message', () => {
+    it('files one from a thread the reporter is in', async () => {
+      world({ rows: { mica_messages: [message()] }, members: [[40, REPORTER]] });
+
+      const reply = await call('create', { targetTable: 'mica_messages', targetId: 12 });
+
+      expect(reply).toMatchObject({ ok: true });
+    });
+
+    it('refuses one from a thread the reporter is not in, without reading it', async () => {
+      world({ rows: { mica_messages: [message()] }, members: [[40, 'SOMEONE']] });
+
+      const reply = await call('create', { targetTable: 'mica_messages', targetId: 12 });
+
+      expect(reply.error).toBe(GONE);
+      expect(bodyWasRead()).toBe(false);
+      expect(dbMock.insert).not.toHaveBeenCalled();
+    });
+
+    it('refuses one that has been unsent', async () => {
+      world({
+        rows: { mica_messages: [message({ status: 'deleted' })] },
+        members: [[40, REPORTER]]
+      });
+
+      const reply = await call('create', { targetTable: 'mica_messages', targetId: 12 });
+
+      expect(reply.error).toBe(GONE);
+      expect(dbMock.insert).not.toHaveBeenCalled();
+    });
+
+    it('asks membership of the thread on the row, by the reporter’s citizenid', async () => {
+      world({ rows: { mica_messages: [message()] }, members: [[40, REPORTER]] });
+
+      await call('create', { targetTable: 'mica_messages', targetId: 12 });
+
+      const membership = dbMock.single.mock.calls.find(([sql]) =>
+        String(sql).includes('mica_messages_participants')
+      );
+      expect(membership?.[0]).toMatch(/`left_at` IS NULL/);
+      expect(membership?.[1]).toEqual([40, REPORTER]);
+    });
+  });
+
+  describe('a Blabber DM', () => {
+    const dm = (from: number, to: number, status = 'active'): Row => ({
+      id: 21,
+      citizenid: 'AUTHOR1',
+      status,
+      from_account: from,
+      to_account: to,
+      preview: 'a private DM'
+    });
+    const accounts = [
+      { id: 1, citizenid: REPORTER, status: 'active' },
+      { id: 2, citizenid: 'AUTHOR1', status: 'active' },
+      { id: 3, citizenid: 'OTHER', status: 'active' }
+    ];
+
+    it('files one the reporter received', async () => {
+      world({ rows: { mica_blabber_dms: [dm(2, 1)] }, accounts });
+
+      const reply = await call('create', { targetTable: 'mica_blabber_dms', targetId: 21 });
+
+      expect(reply).toMatchObject({ ok: true });
+    });
+
+    it('refuses one between two other accounts, without reading it', async () => {
+      world({ rows: { mica_blabber_dms: [dm(2, 3)] }, accounts });
+
+      const reply = await call('create', { targetTable: 'mica_blabber_dms', targetId: 21 });
+
+      expect(reply.error).toBe(GONE);
+      expect(bodyWasRead()).toBe(false);
+      expect(dbMock.insert).not.toHaveBeenCalled();
+    });
+
+    it('refuses one the reporter received on an account that is no longer live', async () => {
+      world({
+        rows: { mica_blabber_dms: [dm(2, 1)] },
+        accounts: accounts.map((a) => (a.id === 1 ? { ...a, status: 'moderated' } : a))
+      });
+
+      const reply = await call('create', { targetTable: 'mica_blabber_dms', targetId: 21 });
+
+      expect(reply.error).toBe(GONE);
+    });
+
+    it('refuses one that is no longer up', async () => {
+      world({ rows: { mica_blabber_dms: [dm(2, 1, 'moderated')] }, accounts });
+
+      const reply = await call('create', { targetTable: 'mica_blabber_dms', targetId: 21 });
+
+      expect(reply.error).toBe(GONE);
+    });
+  });
+
+  describe('a photo', () => {
+    const photo: Row = { id: 30, citizenid: 'AUTHOR1', status: 'active', preview: 'data:...' };
+    const blab = (status: string): Row => ({ id: 50, citizenid: 'AUTHOR1', status });
+
+    it('refuses someone else’s photo nobody showed the reporter', async () => {
+      world({ rows: { mica_media: [photo] } });
+
+      const reply = await call('create', { targetTable: 'mica_media', targetId: 30 });
+
+      expect(reply.error).toBe(GONE);
+      expect(bodyWasRead()).toBe(false);
+      expect(dbMock.insert).not.toHaveBeenCalled();
+    });
+
+    it('files one attached to a live Blab', async () => {
+      world({
+        rows: { mica_media: [photo], mica_blabber: [blab('active')] },
+        blabAttachments: [{ blab_id: 50, media_id: 30 }]
+      });
+
+      const reply = await call('create', { targetTable: 'mica_media', targetId: 30 });
+
+      expect(reply).toMatchObject({ ok: true });
+    });
+
+    it('refuses one attached only to a Blab that is no longer up', async () => {
+      world({
+        rows: { mica_media: [photo], mica_blabber: [blab('moderated')] },
+        blabAttachments: [{ blab_id: 50, media_id: 30 }]
+      });
+
+      const reply = await call('create', { targetTable: 'mica_media', targetId: 30 });
+
+      expect(reply.error).toBe(GONE);
+    });
+
+    it('files one attached to a live listing', async () => {
+      world({
+        rows: {
+          mica_media: [photo],
+          mica_marketplace: [{ id: 60, citizenid: 'AUTHOR1', status: 'active' }]
+        },
+        listingAttachments: [{ listing_id: 60, media_id: 30 }]
+      });
+
+      const reply = await call('create', { targetTable: 'mica_media', targetId: 30 });
+
+      expect(reply).toMatchObject({ ok: true });
+    });
+
+    /**
+     * The attachment reads drop a moderated photo (MICA-339), so it is not visible and is
+     * answered as gone. A photo its owner only deleted from their gallery still shows in the
+     * thread, so it stays reportable: the rule is `<> 'moderated'`, not `= 'active'`.
+     */
+    it('refuses a moderated photo, on a live Blab or in the reporter’s own thread', async () => {
+      const moderated = { ...photo, status: 'moderated' };
+      world({
+        rows: {
+          mica_media: [moderated],
+          mica_blabber: [blab('active')],
+          mica_messages: [message()]
+        },
+        blabAttachments: [{ blab_id: 50, media_id: 30 }],
+        messageAttachments: [{ message_id: 12, photo_id: 30 }],
+        members: [[40, REPORTER]]
+      });
+
+      const reply = await call('create', { targetTable: 'mica_media', targetId: 30 });
+
+      expect(reply.error).toBe(GONE);
+      expect(dbMock.insert).not.toHaveBeenCalled();
+    });
+
+    it('files one its owner deleted from the gallery but that still shows in the thread', async () => {
+      world({
+        rows: { mica_media: [{ ...photo, status: 'deleted' }], mica_messages: [message()] },
+        messageAttachments: [{ message_id: 12, photo_id: 30 }],
+        members: [[40, REPORTER]]
+      });
+
+      const reply = await call('create', { targetTable: 'mica_media', targetId: 30 });
+
+      expect(reply).toMatchObject({ ok: true });
+    });
+
+    it('files one sent into a thread the reporter is in, and refuses it from one they are not', async () => {
+      const rows = { mica_media: [photo], mica_messages: [message()] };
+      const messageAttachments = [{ message_id: 12, photo_id: 30 }];
+
+      world({ rows, messageAttachments, members: [[40, REPORTER]] });
+      expect(await call('create', { targetTable: 'mica_media', targetId: 30 })).toMatchObject({
+        ok: true
+      });
+
+      vi.clearAllMocks();
+      dbMock.insert.mockResolvedValue(1);
+      world({ rows, messageAttachments, members: [[40, 'SOMEONE']] });
+      const reply = await call('create', { targetTable: 'mica_media', targetId: 30 });
+      expect(reply.error).toBe(GONE);
+      expect(dbMock.insert).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('a public row', () => {
+    it.each(['mica_blabber', 'mica_marketplace', 'mica_accounts'])(
+      'files a live one from %s and refuses one no longer up',
+      async (table) => {
+        world({
+          rows: { [table]: [{ id: 5, citizenid: 'AUTHOR1', status: 'active', preview: 'x' }] }
+        });
+        expect(await call('create', { targetTable: table, targetId: 5 })).toMatchObject({
+          ok: true
+        });
+
+        vi.clearAllMocks();
+        world({
+          rows: { [table]: [{ id: 5, citizenid: 'AUTHOR1', status: 'moderated', preview: 'x' }] }
+        });
+        const reply = await call('create', { targetTable: table, targetId: 5 });
+        expect(reply.error).toBe(GONE);
+        expect(dbMock.insert).not.toHaveBeenCalled();
+      }
+    );
+  });
+
+  it('answers a row the reporter cannot see exactly as it answers one that does not exist', async () => {
+    world({ rows: { mica_messages: [message()] }, members: [] });
+    const hidden = await call('create', { targetTable: 'mica_messages', targetId: 12 });
+    vi.clearAllMocks();
+    world({ rows: {}, members: [] });
+    const missing = await call('create', { targetTable: 'mica_messages', targetId: 12 });
+
+    expect(hidden).toEqual(missing);
+  });
+
+  it('answers the reporter’s own message, in a thread they are in, as their own', async () => {
+    world({
+      rows: { mica_messages: [message({ citizenid: REPORTER })] },
+      members: [[40, REPORTER]]
+    });
+
+    const reply = await call('create', { targetTable: 'mica_messages', targetId: 12 });
+
+    expect(reply.error).toMatch(/your own content/i);
+  });
+
+  /**
+   * Closed by default: a table declared reportable with no visibility rule cannot be reported
+   * by anyone. So every declared table has to file when everything is visible, or the rule is
+   * missing — and this is where that shows, rather than in a player's hands.
+   */
+  it('has a visibility rule for every table declared reportable', async () => {
+    const tables = Object.keys(REPORTABLE());
+    expect(tables.length).toBeGreaterThanOrEqual(6);
+
+    for (const table of tables) {
+      vi.clearAllMocks();
+      dbMock.insert.mockResolvedValue(1);
+      const row: Row = {
+        id: 5,
+        citizenid: 'AUTHOR1',
+        status: 'active',
+        preview: 'x',
+        conversation_id: 40,
+        from_account: 2,
+        to_account: 1
+      };
+      world({
+        // The thread a photo was sent into, beside the target row itself.
+        rows: {
+          mica_messages: [message()],
+          [table]: [row, ...(table === 'mica_messages' ? [message()] : [])]
+        },
+        members: [[40, REPORTER]],
+        accounts: [{ id: 1, citizenid: REPORTER, status: 'active' }],
+        messageAttachments: [{ message_id: 12, photo_id: 5 }]
+      });
+
+      const reply = await call('create', { targetTable: table, targetId: 5 });
+      expect(reply, table).toMatchObject({ ok: true });
+    }
   });
 });
 

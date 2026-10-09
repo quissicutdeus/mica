@@ -22,6 +22,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   } from '@mica/sdk';
   import ColorWheelPicker from './ColorWheelPicker.svelte';
   import { canBeWallpaper, isHostedPhoto } from '@mica/shared/hostedPhoto';
+  import { cssUrl, isInlineImage } from '@mica/shared/imageSource';
   import { loadOwnerWallpapers, ownerWallpapers } from '../ownerWallpapers';
 
   const { t } = useLocale();
@@ -51,7 +52,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   const wallpaper = $derived($wallpaperStore);
   const isOwnerWallpaperActive = (url: string) =>
-    wallpaper.type === 'image' && wallpaper.image === `url('${url}')`;
+    wallpaper.type === 'image' && wallpaper.image === cssUrl(url);
   const seed = $derived($activeSeed);
   const scheme = $derived($schemeStore);
   const mode = $derived($themeStore.mode);
@@ -133,9 +134,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     try {
       const full = await fullMedia(mediaId);
       if (!full?.data) throw new Error('That photo has no image data.');
+      // Checked before anything reads it (MICA-339): a row stored before the server checked
+      // `data` can still hold a remote URL, and `seedFromImage` loading one would request it
+      // from this player's machine. Quoted and escaped by `cssUrl`, and vetted again by the
+      // shell's `setWallpaperImage`, so nothing in `data` can close the CSS string.
+      if (!isInlineImage(full.data)) throw new Error('That photo is not an inline image.');
 
       const derivedSeed = await seedFromImage(full.data);
-      setWallpaperImage(`url('${full.data}')`, derivedSeed ?? undefined);
+      setWallpaperImage(cssUrl(full.data), derivedSeed ?? undefined);
     } catch (e) {
       console.warn(`Photo ${mediaId} could not be applied as a wallpaper.`, e);
       toast.show({
@@ -285,7 +291,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         {#each $ownerWallpapers as url (url)}
           <button
             type="button"
-            onclick={() => setWallpaperImage(`url('${url}')`)}
+            onclick={() => setWallpaperImage(cssUrl(url))}
             aria-pressed={isOwnerWallpaperActive(url)}
             aria-label={$t('settings.theme.useAsWallpaper')}
             class={`flex cursor-pointer overflow-hidden rounded-box border p-1 ${

@@ -11,6 +11,13 @@ import type { Conversation, Message } from '@mica/shared/types';
  * Both extend a `@mica/shared/types` row the SDK already imports, so moving them in acquired no
  * new dependency: the wire shape stays shared with `server/`, and what is added here is the
  * UI's own projection of it.
+ *
+ * **Nobody else's identity is in either (MICA-339).** A conversation carries no creator
+ * `citizenid` and no `participant_a`/`participant_b`; each of `participants` is the number on
+ * the phone in the thread (`phone`) and whether it is the reader's own (`self`); a message says
+ * whether the reader sent it (`mine`) and which member did (`sender_id`, a `participants[].id`)
+ * instead of carrying the sender's `citizenid`. A name is the reader's own contact for that
+ * number, or the number.
  */
 
 export interface UIConversation extends Conversation {
@@ -44,4 +51,10 @@ export interface IncomingMessage {
   avatar?: string;
   created_at?: string;
   reply_to_id?: number | null;
+  /**
+   * The sending member's `participants[].id` in the thread (MICA-339). `senderName` is only a
+   * line's label now; a player's text carries no name, and is named from the reader's contacts
+   * for `phone`.
+   */
+  sender_id?: number | null;
 }

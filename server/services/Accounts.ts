@@ -11,6 +11,7 @@ import { Account } from '@mica/shared/types';
 import { pageBounds, requirePositiveInt } from '../lib/payload';
 import { accountsContract } from '@mica/shared/contracts/accounts';
 import { buildDeepLink } from '@mica/shared/deepLink';
+import { isInlineImage } from '@mica/shared/imageSource';
 
 /**
  * Social identities, shared by every social app.
@@ -117,7 +118,14 @@ export const accounts = defineService<Account, typeof accountsContract>({
       clientFilterable: true
     },
     display_name: { type: 'string', length: 50 },
-    avatar: { type: 'string', length: 255 },
+    /**
+     * An inline image only (MICA-339). Every feed, profile and DM row draws this as an `<img
+     * src>` for whoever reads it, so a remote address here is a beacon: a modified client
+     * points it at a logger and learns the IP of every player who scrolls past. No UI writes it,
+     * and nothing in the column's length could say "inline", so `accepts` does. At 255
+     * characters only a very small raster or SVG fits; widening it is a schema change.
+     */
+    avatar: { type: 'string', length: 255, accepts: isInlineImage },
     bio: { type: 'string', length: 160 }
   },
   indexes: [
@@ -621,6 +629,61 @@ app.registerEvent('unblock', async (source, cbId, data, citizenid) => {
 });
 
 /**
+ * Whether an account may react to a row, by table (MICA-339).
+ *
+ * `target_id` is the payload's, so without this any account could put a reaction into any
+ * row of a reactable table — including a private DM between two other people, which is the
+ * one reactable table there is. Keyed by table and **closed by default**: a table that opts
+ * into reactions with no rule here refuses every reaction rather than accepting every one.
+ *
+ * A DM takes a reaction from one of its two ends, while it is up, and not across a block in
+ * either direction — the same rule `blabber_dms:send` holds a new message to, since a
+ * reaction is also something written into the other side's thread.
+ */
+const REACTION_TARGETS = new Map<string, (account: Account, targetId: number) => Promise<boolean>>([
+  [
+    'mica_blabber_dms',
+    async (account, targetId) => {
+      const dm = await Database.single<{ from_account: number; to_account: number } | null>(
+        'SELECT `from_account`, `to_account` FROM `mica_blabber_dms` ' +
+          "WHERE `id` = ? AND `status` = 'active' LIMIT 1",
+        [targetId]
+      );
+      if (!dm || (dm.from_account !== account.id && dm.to_account !== account.id)) return false;
+      const peer = dm.from_account === account.id ? dm.to_account : dm.from_account;
+      return (
+        !(await accountHasBlocked(account.id, peer)) && !(await accountHasBlocked(peer, account.id))
+      );
+    }
+  ]
+]);
+
+/**
+ * The ids out of a batch whose reactions this player may read: on a DM, only one they are an
+ * end of, as one of their live accounts in the app they asked as. Closed by default like
+ * `REACTION_TARGETS`. Messages scopes its own batched read the same way, for the same reason.
+ */
+const VISIBLE_REACTION_TARGETS = new Map<
+  string,
+  (ids: number[], citizenid: string, appId: string) => Promise<number[]>
+>([
+  [
+    'mica_blabber_dms',
+    async (ids, citizenid, appId) => {
+      const rows = await Database.query<{ id: number }[]>(
+        `SELECT d.\`id\` FROM \`mica_blabber_dms\` d
+         WHERE d.\`id\` IN (${ids.map(() => '?').join(', ')}) AND d.\`status\` = 'active'
+           AND EXISTS (SELECT 1 FROM \`mica_accounts\` a
+                       WHERE a.\`citizenid\` = ? AND a.\`app\` = ? AND a.\`status\` = 'active'
+                         AND a.\`id\` IN (d.\`from_account\`, d.\`to_account\`))`,
+        [...ids, citizenid, appId]
+      );
+      return (rows ?? []).map((row) => Number(row.id));
+    }
+  ]
+]);
+
+/**
  * React to a row on any table that opted in via `defineService`'s `reactable`.
  *
  * `target_table` is bound as a value, not interpolated as an identifier, so this is not the
@@ -646,6 +709,14 @@ app.registerEvent('react', async (source, cbId, data, citizenid) => {
       key: 'server.accounts.notReactable'
     });
   const targetId = data.target_id;
+
+  // The same answer whether the row is missing or not the caller's to react to, so the reply
+  // cannot tell a stranger which DM ids exist.
+  const mayReact = REACTION_TARGETS.get(targetTable);
+  if (!mayReact || !(await mayReact(account, targetId)))
+    throw new PlayerFacingError('That content no longer exists.', {
+      key: 'server.reports.targetGone'
+    });
 
   try {
     await Database.insert(
@@ -704,13 +775,22 @@ app.registerEvent('reactionsFor', async (source, cbId, data, citizenid) => {
 
   if (targetIds.length === 0) return {};
 
-  const placeholders = targetIds.map(() => '?').join(', ');
+  // Every requested id still answers, so the shape the client draws is unchanged; only the
+  // ones the caller can see are counted, so an id they cannot see reads as one with none.
+  const out: Record<number, { counts: Record<string, number>; mine: string[] }> = {};
+  for (const id of targetIds) out[id] = { counts: {}, mine: [] };
+
+  const visibleOf = VISIBLE_REACTION_TARGETS.get(targetTable);
+  const visible = visibleOf ? await visibleOf(targetIds, citizenid, appId) : [];
+  if (visible.length === 0) return out;
+
+  const placeholders = visible.map(() => '?').join(', ');
   const [counts, mine] = await Promise.all([
     Database.query<{ target_id: number; emoji: string; total: number }[]>(
       `SELECT \`target_id\`, \`emoji\`, COUNT(*) AS total FROM \`mica_account_reactions\`
        WHERE \`target_table\` = ? AND \`target_id\` IN (${placeholders})
        GROUP BY \`target_id\`, \`emoji\``,
-      [targetTable, ...targetIds]
+      [targetTable, ...visible]
     ),
     (async () => {
       const mineAccounts = await Database.query<{ id: number }[]>(
@@ -723,13 +803,11 @@ app.registerEvent('reactionsFor', async (source, cbId, data, citizenid) => {
         `SELECT \`target_id\`, \`emoji\` FROM \`mica_account_reactions\`
          WHERE \`target_table\` = ? AND \`target_id\` IN (${placeholders})
          AND \`account_id\` IN (${myIds.map(() => '?').join(', ')})`,
-        [targetTable, ...targetIds, ...myIds]
+        [targetTable, ...visible, ...myIds]
       );
     })()
   ]);
 
-  const out: Record<number, { counts: Record<string, number>; mine: string[] }> = {};
-  for (const id of targetIds) out[id] = { counts: {}, mine: [] };
   for (const row of counts) {
     out[row.target_id].counts[row.emoji] = Number(row.total);
   }

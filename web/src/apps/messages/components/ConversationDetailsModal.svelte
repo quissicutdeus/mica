@@ -82,9 +82,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             {currentConv.targetName}
           </h2>
           {#if !currentConv.is_group}
-            {@const targetContact = $contacts.find(
-              (c) => c.phone === currentConv.target || c.citizenid === currentConv.target
-            )}
+            {@const targetContact = $contacts.find((c) => c.phone === currentConv.target)}
             {#if targetContact?.favorite}
               <StarIcon filled={true} class="size-icon-md shrink-0 text-yellow-400" />
             {/if}
@@ -125,9 +123,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <div
           class="divide-outline-variant border-outline-variant bg-surface-container shadow-elevation-3 divide-y overflow-hidden rounded-box border"
         >
-          {#each currentConv.participants || [] as member (member.citizenid)}
-            {@const pContact =
-              member.contact || $contacts.find((c) => c.citizenid === member.citizenid)}
+          <!-- A member is the number on their phone, named from your own contacts (MICA-339). -->
+          {#each currentConv.participants || [] as member (member.id)}
+            {@const pContact = member.phone
+              ? $contacts.find((c) => c.phone === member.phone)
+              : undefined}
             <button
               type="button"
               class="group hover:bg-surface-container-high duration-short ease-standard flex w-full cursor-pointer items-center justify-between p-3 text-left transition-colors"
@@ -152,13 +152,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   <p
                     class="text-on-surface group-hover:text-on-surface duration-short ease-standard text-body-small transition-colors"
                   >
-                    {pContact
-                      ? `${pContact.firstname} ${pContact.lastname || ''}`.trim()
-                      : member.citizenid}
+                    {member.self
+                      ? $t('messages.you')
+                      : pContact
+                        ? `${pContact.firstname} ${pContact.lastname || ''}`.trim()
+                        : member.phone || $t('messages.member')}
                   </p>
-                  {#if pContact?.phone}
+                  {#if member.phone && (pContact || member.self)}
                     <p class="text-on-surface-variant text-label-small">
-                      {pContact.phone}
+                      {member.phone}
                     </p>
                   {/if}
                 </div>

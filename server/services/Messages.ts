@@ -3,14 +3,20 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { PlayerFacingError } from '../lib/errors';
-import { MessageRepository } from '../repositories/MessageRepository';
+import {
+  MessageRepository,
+  messageForReader,
+  type MessageRow
+} from '../repositories/MessageRepository';
 import { phoneForRequest } from '../lib/phoneIdentity';
 import { conversations, type ConversationRepo } from './Conversations';
 import {
   lineKey,
   lineLabel,
   openLineThread,
-  type LineSender
+  senderIdOf,
+  type LineSender,
+  type ParticipantRow
 } from '../repositories/ConversationRepository';
 import { allLines, tellLine, type RegisteredLine } from '../lib/numberRegistry';
 // Media is a declared app; reuse its derived repository rather than a second
@@ -21,7 +27,6 @@ import { conversationIdFrom, pageBounds } from '../lib/payload';
 import { MESSAGE_BODY_MAX, messagesContract } from '@mica/shared/contracts/messages';
 import { storablePlaintext } from '../lib/contentCipher';
 import { resolveOwnedAttachments } from '../lib/attachments';
-import { Message } from '@mica/shared/types';
 import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { AuditLogger } from '../lib/AuditLogger';
 import { Database } from '../lib/Database';
@@ -46,7 +51,7 @@ import { OPEN_REPORT, parseRetentionDays, registerRetention } from '../lib/conte
  * emits a complete schema. It carries neither `status` nor timestamps, which is why
  * it cannot use the primary-table shape.
  */
-export const messages = defineService<Message, typeof messagesContract>({
+export const messages = defineService<MessageRow, typeof messagesContract>({
   contract: messagesContract,
   id: 'messages',
   reportable: { label: 'Message', previewColumn: 'message' },
@@ -306,7 +311,7 @@ const requireOwnMessage = async (
   data: { id: number },
   citizenid: string,
   phoneId: string
-): Promise<Message> => {
+): Promise<MessageRow> => {
   const row = await messageRepo.findById(data.id, citizenid);
   // A text from a line sits under the recipient's citizenid (MICA-223), so the ownership
   // predicate alone would let them rewrite the bank's message. It is not theirs to change.
@@ -340,7 +345,10 @@ app.registerEvent('get', async (source, cbId, data, citizenid) => {
   const page = pageBounds(data, MESSAGE_PAGING);
   await requireParticipant(conversationId, citizenid, await phoneForRequest(source, citizenid));
 
-  return await messageRepo.findByConversation(conversationId, page);
+  // Each row as this reader receives it (MICA-339): `mine` and the sender's membership id in
+  // place of the sender's citizenid, which matched across threads linked a burner to its holder.
+  const { rows, nextCursor } = await messageRepo.findByConversation(conversationId, page);
+  return { rows: rows.map((row) => messageForReader(row, citizenid)), nextCursor };
 });
 
 /**
@@ -394,7 +402,7 @@ app.registerEvent('edit', async (source, cbId, data, citizenid) => {
     return { id: row.id, conversation_id: row.conversation_id, message };
   }
 
-  const success = await messageRepo.update(row.id, { message } as Partial<Message>, citizenid);
+  const success = await messageRepo.update(row.id, { message } as Partial<MessageRow>, citizenid);
   if (!success) {
     throw new PlayerFacingError('That message could not be edited.', {
       key: 'server.messages.editFailed'
@@ -482,7 +490,7 @@ const requireReactableMessage = async (
   messageId: number,
   citizenid: string,
   phoneId: string
-): Promise<Message> => {
+): Promise<MessageRow> => {
   const row = await messageRepo.findById(messageId);
   if (!row) {
     throw new PlayerFacingError('That message is not available.', {
@@ -586,14 +594,26 @@ app.registerEvent('reactionsFor', async (source, cbId, data, citizenid) => {
  *
  * Offline participants are skipped rather than queued: the row is already written, so
  * they get it from the normal fetch when they next open the thread.
+ *
+ * **What a recipient is told about the sender (MICA-339).** The row as `messages:get` would
+ * hand it to them — `mine: false` and the sender's membership id, never the sender's citizenid
+ * — and the number the text came from, which the phone names from its own contacts. A
+ * `senderName` rides along only for a text from a line, where it is the label the resource
+ * gave `SendMessage`; a player's character name used to ride here too, which told a burner's
+ * correspondent who held it on every text.
+ *
+ * `known` is the thread's membership when the caller has already read it, so a send costs
+ * one membership read rather than two.
  */
 export const deliverToParticipants = async (
   conversationId: number,
   senderCitizenId: string,
   sender: { name?: string | null; phone?: string | null; blockable?: boolean },
-  message: Message & { id: number }
+  message: MessageRow & { id: number },
+  known?: readonly ParticipantRow[]
 ): Promise<boolean> => {
-  const participants = await conversationRepo.findParticipants(conversationId);
+  const participants = known ?? (await conversationRepo.findParticipants(conversationId));
+  const senderId = senderIdOf(participants, senderCitizenId, message.external_sender);
 
   /**
    * Everyone this send could reach, decided before anything is asked about any of them.
@@ -643,9 +663,9 @@ export const deliverToParticipants = async (
     emitNet('mica:client:messages:received', target, {
       conversation_id: conversationId,
       message: message.message,
-      senderName: sender.name ?? undefined,
+      senderName: message.external_sender ? (sender.name ?? undefined) : undefined,
       phone: sender.phone ?? undefined,
-      row: message
+      row: messageForReader(message, citizenid, senderId)
     });
     pushed = true;
   }
@@ -699,7 +719,7 @@ export const sendFromLine = async (
   // A script's words, often relaying a player's: never refused for starting like a sealed value
   // (MICA-165). The player's own send keeps its refusal; this one stores the text as it is.
   const text = await storablePlaintext(body, MESSAGE_BODY_MAX);
-  const row: Partial<Message> = {
+  const row: Partial<MessageRow> = {
     conversation_id: conversationId,
     citizenid,
     message: text,
@@ -711,7 +731,7 @@ export const sendFromLine = async (
     status: 'active'
   };
   const messageId = await messageRepo.create(row);
-  const stored = { ...row, id: messageId } as Message & { id: number };
+  const stored = { ...row, id: messageId } as MessageRow & { id: number };
 
   let delivered = false;
   try {
@@ -753,7 +773,7 @@ app.registerEvent('send', async (source, cbId, data, citizenid) => {
     });
   }
 
-  const newMessage: Partial<Message> = {
+  const newMessage: Partial<MessageRow> = {
     conversation_id: conversationId,
     citizenid: citizenid,
     message,
@@ -765,22 +785,33 @@ app.registerEvent('send', async (source, cbId, data, citizenid) => {
   };
 
   const id = await messageRepo.create(newMessage);
-  const stored = { ...newMessage, id } as Message & { id: number };
+  const stored = { ...newMessage, id } as MessageRow & { id: number };
+  /**
+   * Read once, for the reply's `sender_id` and the push below. The row is committed, so a
+   * failed read costs the reply its `sender_id` and leaves the push to read for itself; it
+   * never fails the send.
+   */
+  let participants: readonly ParticipantRow[] | undefined;
+  try {
+    participants = await conversationRepo.findParticipants(conversationId);
+  } catch (error) {
+    console.error('[Messages] Reading the members failed for conversation', conversationId, error);
+  }
   /** The sender's number, kept for the line below. Read inside the guard, as it always was. */
   let senderPhone: string | null = null;
 
   // Delivery must not fail the send: the row is committed either way, and the sender
   // should not see an error for something that already happened.
   try {
-    const senderPlayer = FrameworkBridge.getPlayer(source);
-    senderPhone = senderPlayer?.phone ?? null;
-    const charinfo = senderPlayer?.rawPlayer?.PlayerData?.charinfo;
-    const name = charinfo ? `${charinfo.firstname ?? ''} ${charinfo.lastname ?? ''}`.trim() : '';
+    senderPhone = FrameworkBridge.getPlayer(source)?.phone ?? null;
+    // No name: a recipient names the sender from their own contacts for the number
+    // (MICA-339). The character's name rode here and reached every member on every text.
     await deliverToParticipants(
       conversationId,
       citizenid,
-      { name: name || null, phone: senderPhone },
-      stored
+      { name: null, phone: senderPhone },
+      stored,
+      participants
     );
   } catch (error) {
     console.error('[Messages] Delivery failed for conversation', conversationId, error);
@@ -794,8 +825,11 @@ app.registerEvent('send', async (source, cbId, data, citizenid) => {
     console.error('[Messages] Telling a line failed for conversation', conversationId, error);
   }
 
-  return stored;
+  return messageForReader(stored, citizenid, senderIdOf(participants ?? [], citizenid));
 });
+
+// A phone in hand, server-side: a text reaches other players (MICA-339).
+app.requirePhoneFor('send');
 
 /**
  * If this thread is one with a registered line, hand the text to its `onMessage`.
@@ -808,7 +842,7 @@ app.registerEvent('send', async (source, cbId, data, citizenid) => {
  */
 const tellLineAbout = async (
   conversationId: number,
-  stored: Message & { id: number },
+  stored: MessageRow & { id: number },
   source: number,
   citizenid: string,
   from: string | null

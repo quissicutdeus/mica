@@ -112,10 +112,13 @@ export const mocks: Record<string, MockHandler> = {
     if (payload.message.length > MESSAGE_BODY_MAX)
       throw new Error(`message must be ${MESSAGE_BODY_MAX} characters or fewer.`);
     const convId = payload.conversation_id;
+    const conv = mockConversations.find((c) => c.id === convId);
     const msg: Message = {
       id: Math.floor(Math.random() * 1000000),
       conversation_id: convId,
-      citizenid: 'my-id',
+      // As the server answers its sender (MICA-339): theirs, by their own membership id.
+      mine: true,
+      sender_id: conv?.participants?.find((p) => p.self)?.id ?? null,
       status: 'active',
       message: payload.message,
       // Kept on the row as the server keeps it now (MICA-209), so a thread re-read in the
@@ -140,7 +143,6 @@ export const mocks: Record<string, MockHandler> = {
     }
     mockMessages[convId].push(msg);
 
-    const conv = mockConversations.find((c) => c.id === convId);
     if (conv) {
       conv.last_message = msg;
       conv.updated_at = msg.created_at;
@@ -154,7 +156,7 @@ export const mocks: Record<string, MockHandler> = {
    * Both mutate `mockMessages` rather than answering `true` and leaving the fixture alone:
    * the store applies the server's reply optimistically, so a mock that only said "fine"
    * would still look right on screen and hide a reload that disagreed with it. The
-   * ownership rule is mirrored too — `citizenid !== 'my-id'` is refused here exactly as the
+   * ownership rule is mirrored too — a row that is not `mine` is refused here exactly as the
    * server refuses a message the caller did not send.
    */
   'messages:edit': async (data?: { id?: number; message?: string }) => {
@@ -166,7 +168,7 @@ export const mocks: Record<string, MockHandler> = {
     for (const list of Object.values(mockMessages)) {
       const msg = list.find((m) => m.id === data?.id);
       if (!msg) continue;
-      if (msg.citizenid !== 'my-id') throw new Error('That message is not yours to change.');
+      if (!msg.mine) throw new Error('That message is not yours to change.');
       if (msg.message === text)
         return { id: msg.id, conversation_id: msg.conversation_id, message: text };
       msg.message = text;
@@ -181,13 +183,13 @@ export const mocks: Record<string, MockHandler> = {
     for (const [convId, list] of Object.entries(mockMessages)) {
       const index = list.findIndex((m) => m.id === data?.id);
       if (index === -1) continue;
-      if (list[index].citizenid !== 'my-id')
-        throw new Error('That message is not yours to change.');
+      if (!list[index].mine) throw new Error('That message is not yours to change.');
+      const wasNewest = index === list.length - 1;
       list.splice(index, 1);
       const conv = mockConversations.find((c) => c.id === Number(convId));
       // The list preview follows the thread: unsending the newest message must not leave
       // the conversation row quoting something nobody can open any more.
-      if (conv && conv.last_message?.id === data?.id) {
+      if (conv && wasNewest) {
         conv.last_message = list[list.length - 1];
       }
       return true;
@@ -240,7 +242,6 @@ export const mocks: Record<string, MockHandler> = {
     const members = 2 + new Set(participants ?? []).size;
     return {
       id: Math.random(),
-      citizenid: 'my-id',
       is_group: members > 2,
       status: 'active',
       created_at: new Date().toISOString(),
@@ -254,7 +255,7 @@ export const mocks: Record<string, MockHandler> = {
     const conv = mockConversations.find((c) => c.id === id);
     if (conv) {
       conv.unread_count = 0;
-      const myPart = conv.participants?.find((p) => p.citizenid === 'my-id');
+      const myPart = conv.participants?.find((p) => p.self);
       if (myPart && conv.last_message) {
         myPart.last_read = conv.last_message.created_at;
       }
@@ -281,14 +282,16 @@ export const mocks: Record<string, MockHandler> = {
     }
     return true;
   },
-  renameConversation: async (data?: { id?: number; conversation_id?: number; name?: string }) => {
+  /**
+   * Rename, as the server answers it since MICA-339: a contracted action, `true` only for the
+   * thread's admin — the caller's own membership in every fixture here — and `false` otherwise.
+   */
+  'conversations:update': async (data?: { id?: number; name?: string }) => {
     await delay(200);
-    const id = data?.id ?? data?.conversation_id;
-    const name = data?.name;
-    const conv = mockConversations.find((c) => c.id === id);
-    if (conv) {
-      conv.name = name;
-    }
-    return { success: true, name };
+    const conv = mockConversations.find((c) => c.id === data?.id);
+    const admin = conv?.participants?.some((p) => p.self && p.role === 'admin');
+    if (!conv || !admin || !data?.name?.trim()) return false;
+    conv.name = data.name.trim();
+    return true;
   }
 };

@@ -10,7 +10,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     useMessages,
     useContacts,
     useMedia,
-    useAccount,
     onAppForeground,
     useAppAction,
     useAppLevels,
@@ -53,7 +52,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   const { busy, run } = useAppAction('messages');
   const { contactsStore: contacts } = useContacts();
   const { media } = useMedia();
-  const { citizenid } = useAccount();
   import ConversationList from './components/ConversationList.svelte';
   import MessageComposer from './components/MessageComposer.svelte';
   import MessageThread from './components/MessageThread.svelte';
@@ -205,14 +203,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   const isMessageReadByOther = (msg: UIMessage) => {
     if (!currentConv || !currentConv.participants || currentConv.participants.length === 0)
       return false;
-    const other = currentConv.participants.find((p) => p.citizenid !== $citizenid);
+    const other = currentConv.participants.find((p) => !p.self);
     if (!other || !other.last_read) return false;
     return new Date(msg.created_at).getTime() <= new Date(other.last_read).getTime();
   };
 
   const isConvLastMsgReadByOther = (conv: UIConversation) => {
     if (!conv || !conv.participants || conv.participants.length === 0) return false;
-    const other = conv.participants.find((p) => p.citizenid !== $citizenid);
+    const other = conv.participants.find((p) => !p.self);
     if (!other || !other.last_read || !conv.last_message) return false;
     return new Date(conv.last_message.created_at).getTime() <= new Date(other.last_read).getTime();
   };
@@ -758,7 +756,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       bind:query={searchQuery}
       {showSearch}
       {viewingArchive}
-      myCitizenId={$citizenid}
       isLastMsgReadByOther={isConvLastMsgReadByOther}
       onselect={handleSelectConversation}
       onloadmore={loadMoreConversations}

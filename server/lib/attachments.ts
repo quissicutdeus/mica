@@ -36,11 +36,19 @@ import { PlayerFacingError } from './errors';
  *
  * Duplicates collapse before any query runs: the same photo attached twice is one row and
  * one lookup, not two.
+ *
+ * **Owned is not enough: the row must also be `active`** (MICA-339). `findById` scopes by
+ * owner and knows nothing of this table's moderation state, so a photo a moderator had pulled,
+ * or one its owner had deleted, still passed and went straight back out on a new message, Blab
+ * or listing. `Media.ts`'s `item` and `drop` refuse a non-active row for the same reason. A row
+ * with no status at all is refused too: every real row carries one, so its absence is a caller
+ * that read the wrong thing, and the check fails closed. Dropped as quietly as an unowned id,
+ * for the same reason — a moderated id is not something to confirm the existence of.
  */
 export const resolveOwnedAttachments = async (
   raw: unknown,
   citizenid: string,
-  photoRepo: { findById(id: number, citizenid: string): Promise<unknown | null> }
+  photoRepo: { findById(id: number, citizenid: string): Promise<{ status?: string } | null> }
 ): Promise<{ photo_id: number }[]> => {
   if (!Array.isArray(raw)) return [];
 
@@ -66,10 +74,12 @@ export const resolveOwnedAttachments = async (
     seen.add(photoId);
 
     const photo = await photoRepo.findById(photoId, citizenid);
-    if (photo) {
+    if (photo?.status === 'active') {
       owned.push({ photo_id: photoId });
     } else {
-      console.warn(`[attachments] Dropped attachment ${photoId} not owned by ${citizenid}.`);
+      console.warn(
+        `[attachments] Dropped attachment ${photoId}: not an active photo owned by ${citizenid}.`
+      );
     }
   }
   return owned;

@@ -34,6 +34,7 @@ vi.mock('../lib/PlayerDirectory', () => playerDirectoryMock);
 
 import { marketplace } from '../services/Marketplace';
 import type { MarketplaceRepository } from '../repositories/MarketplaceRepository';
+import { installTestPhone, NOT_HELD_REPLY, refusePhone } from './phoneStub';
 
 // Referencing `.repo` (not just importing the binding) keeps this side-effecting import
 // alive under esbuild's tree-shaking — an unreferenced named import can otherwise be
@@ -62,6 +63,25 @@ describe('Marketplace service', () => {
   });
 
   describe('create', () => {
+    it('refuses a listing from a player holding no phone, before anything is written (MICA-339)', async () => {
+      refusePhone();
+      try {
+        expect(await call('create', { title: 'Bike', price: 10, description: 'x' })).toEqual(
+          NOT_HELD_REPLY
+        );
+        expect(dbMock.insert).not.toHaveBeenCalled();
+      } finally {
+        installTestPhone();
+      }
+      // The positive twin: the same listing with a phone in hand is written.
+      dbMock.insert.mockResolvedValue(1);
+      dbMock.query.mockResolvedValue([]);
+      expect(
+        (await call('create', { title: 'Bike', price: 10, description: 'x' })).error
+      ).toBeUndefined();
+      expect(dbMock.insert).toHaveBeenCalled();
+    });
+
     it('rejects a missing title, price, or description', async () => {
       expect((await call('create', { price: 100, description: 'x' })).error).toBeTruthy();
       expect((await call('create', { title: 'x', description: 'x' })).error).toBeTruthy();
@@ -78,7 +98,8 @@ describe('Marketplace service', () => {
       // once per attachment in payload order. ids 1-5 are "owned", 999 is not.
       dbMock.single.mockImplementation(async (_sql: string, params: unknown[]) => {
         const id = params[0];
-        return typeof id === 'number' && id <= 5 ? { id } : null;
+        // `status` because only an active photo may be attached (MICA-339).
+        return typeof id === 'number' && id <= 5 ? { id, status: 'active' } : null;
       });
       dbMock.insert.mockResolvedValue(1);
       dbMock.query.mockResolvedValue([]);
@@ -133,7 +154,7 @@ describe('Marketplace service', () => {
     });
 
     it('inserts owned attachment rows into the child table, scoped to the caller', async () => {
-      dbMock.single.mockResolvedValue({ id: 1 });
+      dbMock.single.mockResolvedValue({ id: 1, status: 'active' });
       dbMock.insert.mockResolvedValueOnce(42); // the listing row
       dbMock.insert.mockResolvedValueOnce(1); // the attachment row
 

@@ -95,47 +95,77 @@ export interface SharedContactCard {
   };
 }
 
+/**
+ * A Messages thread as the phone receives it — the wire shape, not the row (MICA-339).
+ *
+ * **Nothing here names another player.** The row behind it carries the creator's `citizenid`
+ * and the two phone ids of a 1:1 (`participant_a`/`participant_b`); none of them crosses to a
+ * client, because a creator's citizenid and a phone id are exactly what links a burner thread to
+ * the character and their main phone. The server's own row type is `ConversationRow` in
+ * `server/repositories/ConversationRepository.ts`; `conversationForReader` there is the one
+ * place a row becomes this.
+ */
 export interface Conversation {
   id: number;
-  citizenid: string;
   is_group: boolean;
+  /** A name a member chose (a group's), or a line's label. Never a directory name for a number. */
   name?: string;
-  /**
-   * The two sides of a 1:1 thread (MICA-161), null for a group thread. Set once at
-   * creation by the server and never client-writable — see `mica_messages_conversations`
-   * in `server/services/Conversations.ts` for the generated `pair_key` these back. **Phone
-   * ids since MICA-282**, not citizenids: a pair is two phones, so one person's two phones
-   * can each hold a thread with the same contact.
-   */
-  participant_a?: string | null;
-  participant_b?: string | null;
   status?: 'active' | 'archived' | 'deleted' | 'moderated';
   created_at: Date | string;
   updated_at: Date | string;
   participants?: Participant[];
-  last_message?: Message;
+  /** The newest live message, as much of it as the inbox row draws. */
+  last_message?: Pick<Message, 'message' | 'created_at' | 'mine' | 'sender_id' | 'external_sender'>;
   unread_count?: number;
+  /** How many live members the thread has, the caller included. */
+  participant_count?: number;
+  /** When the caller archived it for themselves; null while it is in the inbox. */
+  archived_at?: Date | string | null;
 }
 
+/**
+ * One member of a thread, as another member is shown them (MICA-339).
+ *
+ * Who a member is reaches the phone only as the number of **the phone that is in the thread**,
+ * never the character holding it: no citizenid, no phone id, and no directory name. A member
+ * is named on the phone from the reader's own contacts for that number, else shown as the
+ * number — exactly what a real phone with no directory can do. The server's row type is
+ * `ParticipantRow` in `server/repositories/ConversationRepository.ts`.
+ */
 export interface Participant {
+  /** The membership row's own id. The key a message's `sender_id` names, within one thread. */
   id: number;
   conversation_id: number;
-  citizenid: string;
-  /** The phone this membership is on (MICA-282): the thread lives on the device. */
-  phone_id?: string | null;
   role: 'admin' | 'member';
   status?: 'active' | 'left' | 'removed' | 'moderated';
   last_read: Date | string;
   created_at: Date | string;
   left_at?: Date | string | null;
   updated_at: Date | string;
-  contact?: Contact; // hydrated
+  /** Whether this is the reader's own membership, worked out on the server. */
+  self: boolean;
+  /** The number on the phone this membership is on, or null when micaOS knows none for it. */
+  phone: string | null;
 }
 
+/**
+ * One message as a member of its thread receives it (MICA-339).
+ *
+ * The row's `citizenid` (the sender) stays on the server: matching it across threads is what
+ * linked one person's burner and main phone. In its place, two answers the server works out for
+ * the reader: whether they wrote it, and which member of this thread did. The server's row type
+ * is `MessageRow` in `server/repositories/MessageRepository.ts`.
+ */
 export interface Message {
   id: number;
   conversation_id: number;
-  citizenid: string; // Sender
+  /** Whether the reader sent this. False for a text from a line, which arrives on their row. */
+  mine: boolean;
+  /**
+   * The `Participant.id` of the member who sent it, in this thread; null for a text from a line
+   * and for a sender who has since left the thread.
+   */
+  sender_id: number | null;
   status?: 'active' | 'deleted' | 'moderated';
   message: string;
   created_at: Date | string;
@@ -152,10 +182,8 @@ export interface Message {
   reply_to_id?: number | null;
   /**
    * Who sent this, when it was not a player (MICA-223): the label a resource gave
-   * `SendMessage` -- a business name, or the number it registered. `citizenid` on such a row
-   * is the **recipient**, because the row is theirs to keep and to lose with their character,
-   * so a reader deciding "mine or theirs" checks this before it compares citizenids. Null,
-   * and absent from the wire, for a message a player wrote.
+   * `SendMessage` -- a business name, or the number it registered. Null, and absent from the
+   * wire, for a message a player wrote.
    */
   external_sender?: string | null;
   /**

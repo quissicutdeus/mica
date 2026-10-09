@@ -155,6 +155,28 @@ const myAccounts = async (citizenid: string): Promise<number[]> =>
   (await accountsOwnedBy(citizenid, APP)).map((row) => row.id);
 
 /**
+ * A DM row as it may leave the server: without `citizenid`, whatever the query selected.
+ *
+ * Identity in a DM is the account, so the sender's character must never reach the other party
+ * (MICA-339). `SELECT *` used to put `citizenid` on every row, and a peer reading their own
+ * thread or inbox got the citizenid of whoever replied, which links one player's alts to each
+ * other and to the character. Both reads below now list their columns, and this is the belt to
+ * that: a future read that goes back to `*`, or a join that brings the column in, still cannot
+ * hand a peer the sender's character.
+ *
+ * The lists are written out in each statement rather than shared through a constant, because
+ * `encryptedColumns.test.ts` reads the SQL literal to find who touches `body`, and an
+ * interpolated list hides it. `from_account` and `to_account` stay in: they are the encryption
+ * scope a sealed body opens against (MICA-165).
+ */
+const toPeerSafe = (row: BlabberDm): BlabberDm => {
+  if (!('citizenid' in row)) return row;
+  const safe = { ...row };
+  delete safe.citizenid;
+  return safe;
+};
+
+/**
  * One thread: every message between two accounts, newest first.
  *
  * Authorised by owning **one side of it**, which is the 1:1 equivalent of a membership check.
@@ -178,11 +200,14 @@ app.registerEvent('get', async (source, cbId, data, citizenid) => {
   if (cursor !== null) params.push(cursor);
   params.push(limit + 1);
 
-  // Bodies are sealed at rest (MICA-165); `*` carries each row's context, so they open here.
+  // Bodies are sealed at rest (MICA-165); the account columns carry each row's context, so
+  // they open here.
   const rows = openRows(
     blabberDms.resolved.table,
     await Database.query<BlabberDm[]>(
-      `SELECT * FROM \`mica_blabber_dms\`
+      `SELECT \`id\`, \`from_account\`, \`to_account\`, \`body\`, \`read_at\`, \`status\`,
+              \`created_at\`, \`updated_at\`
+       FROM \`mica_blabber_dms\`
        WHERE ((\`from_account\` = ? AND \`to_account\` = ?)
           OR (\`from_account\` = ? AND \`to_account\` = ?))
          AND \`status\` = 'active'${cursorClause}
@@ -194,7 +219,10 @@ app.registerEvent('get', async (source, cbId, data, citizenid) => {
 
   const hasMore = rows.length > limit;
   const page = hasMore ? rows.slice(0, limit) : rows;
-  return { rows: page, nextCursor: hasMore ? page[page.length - 1].id : null };
+  return {
+    rows: page.map(toPeerSafe),
+    nextCursor: hasMore ? page[page.length - 1].id : null
+  };
 });
 
 /**
@@ -231,7 +259,9 @@ app.registerEvent('threads', async (source, cbId, data, citizenid) => {
   const messages = openRows(
     blabberDms.resolved.table,
     await Database.query<BlabberDm[]>(
-      `SELECT * FROM \`mica_blabber_dms\` WHERE \`id\` IN (${lastIds.map(() => '?').join(', ')})`,
+      `SELECT \`id\`, \`from_account\`, \`to_account\`, \`body\`, \`read_at\`, \`status\`,
+              \`created_at\`, \`updated_at\`
+       FROM \`mica_blabber_dms\` WHERE \`id\` IN (${lastIds.map(() => '?').join(', ')})`,
       lastIds
     )
   );
@@ -248,7 +278,7 @@ app.registerEvent('threads', async (source, cbId, data, citizenid) => {
     accounts
   );
 
-  const byId = new Map(messages.map((row) => [Number(row.id), row]));
+  const byId = new Map(messages.map((row) => [Number(row.id), toPeerSafe(row)]));
   const peerById = new Map(peers.map((row) => [Number(row.id), row]));
   const unreadBy = new Map(unread.map((row) => [Number(row.from_account), Number(row.total)]));
 
@@ -353,6 +383,9 @@ app.registerEvent('send', async (source, cbId, data, citizenid) => {
     status: 'active'
   };
 });
+
+// A phone in hand, server-side: a DM reaches another player (MICA-339).
+app.requirePhoneFor('send');
 
 /**
  * Mark a correspondent's messages read.

@@ -927,6 +927,18 @@ describe('micaimport lb-phone', () => {
     expect(db.conversations.map((c) => c.name)).toContain('c'.repeat(49));
   });
 
+  it('stores no name on a 1:1 between two phones, and keeps a group its name', async () => {
+    // MICA-339: a 1:1 is labelled by each reader from their own contacts and never sent with
+    // a name, so the importer keeps none rather than an at-rest label nobody sees.
+    seedLb();
+    db.source.get('phone_message_channels')![0].name = 'Night shift';
+
+    await runImport('lb-phone', { apply: true });
+
+    const pair = db.conversations.find((c) => !c.is_group);
+    expect(pair).toMatchObject({ participant_a: expect.any(String), name: null });
+  });
+
   it('keeps an lb-phone username as the handle and threads a reply under its parent', async () => {
     seedLb();
     const report = await runImport('lb-phone', { apply: true });

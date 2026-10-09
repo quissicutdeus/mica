@@ -766,6 +766,14 @@ describe('Reports (mica_reports.target_preview) and the review queue', () => {
       sql.includes('FROM `mica_blabber_dms`')
         ? { citizenid: 'CIT_B', status: 'active', preview: dm, from_account: 2, to_account: 1 }
         : null;
+    // The reporter has to be one of the DM's ends to report it (MICA-339): account 1 is theirs.
+    answerQuery = (sql) =>
+      sql.includes('FROM `mica_accounts`')
+        ? [
+            { id: 1, citizenid: 'CIT_A', status: 'active' },
+            { id: 2, citizenid: 'CIT_B', status: 'active' }
+          ]
+        : [];
 
     expect((await summariseTarget('mica_blabber_dms', 5)).preview).toBe('you will regret this');
 

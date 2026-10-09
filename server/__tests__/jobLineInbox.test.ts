@@ -439,9 +439,16 @@ describe('lineThread (MICA-307)', () => {
       ],
       nextCursor: null
     });
-    // The attachment is never selected, only whether there was one.
+    // The attachment is never selected, only whether there was one. Since MICA-339 the
+    // `EXISTS` joins `mica_media` to skip a moderated picture, so the media table appears, but
+    // only inside it, and none of its columns is in the select list.
     const [read] = ofStatement('a.message_id = m.id');
-    expect(read.sql).not.toMatch(/mica_media|p\.data/);
+    expect(read.sql).not.toMatch(/p\.(data|url|thumbnail)/);
+    const selectList = read.sql.slice(0, read.sql.indexOf('EXISTS'));
+    expect(selectList).not.toMatch(/mica_media/);
+    expect(read.sql).toContain(
+      "JOIN mica_media p ON p.id = a.photo_id AND p.status <> 'moderated'"
+    );
   });
 
   it('pages by keyset on the thread named, like messages:get', async () => {

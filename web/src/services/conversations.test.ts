@@ -7,6 +7,16 @@ import { get } from 'svelte/store';
 import { conversationsStore } from './conversations';
 import { fetchNui } from '../nui/fetchNui';
 import { setActiveDevice } from '../shell/state/device';
+import { contacts } from './contacts';
+
+/**
+ * The address book, as a bare store: what `resolveDisplayInfo` reads is the list, not how the
+ * contacts service loads it. Lifted above the imports by `vi.mock`, like `fetchNui` below.
+ */
+vi.mock('./contacts', async () => {
+  const { writable } = await import('svelte/store');
+  return { contacts: writable<any[]>([]) };
+});
 
 /**
  * The inbox the mock server holds, and the requests it was asked for.
@@ -31,56 +41,75 @@ const server = vi.hoisted(() => ({
   threadRequests: [] as any[]
 }));
 
+/**
+ * The inbox as the server answers it since MICA-339: each member is the number on their phone
+ * and whether it is the reader's own, a message says `mine` and names its sender by membership
+ * id, and nobody's citizenid is on the wire.
+ */
 const DEFAULT_CONVERSATIONS = [
   {
     id: 1,
-    citizenid: 'my-id',
     is_group: false,
     name: 'Ursula (Crazy Ex)',
     status: 'active',
     unread_count: 25,
     last_message: {
-      id: 101,
-      conversation_id: 1,
-      citizenid: 'gta-ursula',
       message: 'ANSWER ME NOW!',
-      created_at: '2026-07-24T20:00:00Z'
+      created_at: '2026-07-24T20:00:00Z',
+      mine: false,
+      sender_id: 10
     },
     participants: [
       {
+        id: 11,
+        conversation_id: 1,
+        role: 'admin',
+        status: 'active',
+        last_read: '2026-07-24T20:00:00Z',
+        self: true,
+        phone: '867-5309'
+      },
+      {
         id: 10,
         conversation_id: 1,
-        citizenid: 'gta-ursula',
         role: 'member',
         status: 'active',
         last_read: '2026-07-24T19:00:00Z',
-        contact: { firstname: 'Ursula', lastname: '', phone: '555-0199' }
+        self: false,
+        phone: '555-0199'
       }
     ]
   },
   {
     id: 2,
-    citizenid: 'my-id',
     is_group: false,
     name: 'Trevor Philips',
     status: 'active',
     unread_count: 0,
     last_message: {
-      id: 201,
-      conversation_id: 2,
-      citizenid: 'my-id',
       message: 'Stash is secure.',
-      created_at: '2026-07-24T21:00:00Z'
+      created_at: '2026-07-24T21:00:00Z',
+      mine: true,
+      sender_id: 21
     },
     participants: [
       {
+        id: 21,
+        conversation_id: 2,
+        role: 'admin',
+        status: 'active',
+        last_read: '2026-07-24T21:00:00Z',
+        self: true,
+        phone: '867-5309'
+      },
+      {
         id: 20,
         conversation_id: 2,
-        citizenid: 'gta-trevor',
         role: 'member',
         status: 'active',
         last_read: '2026-07-24T21:00:00Z',
-        contact: { firstname: 'Trevor', lastname: 'Philips', phone: '555-0123' }
+        self: false,
+        phone: '555-0123'
       }
     ]
   }
@@ -119,6 +148,17 @@ vi.mock('../nui/fetchNui', () => ({
   fetchNui: vi.fn((rawMethod: string, rawData?: any) => {
     const { method, data } = unwrap(rawMethod, rawData);
     if (method === 'getCitizenId') return Promise.resolve('my-id');
+    // `conversations:create` as the server answers a new 1:1 since MICA-339: no name, because
+    // the directory's name for the number is never sent, and no participants yet.
+    if (method === 'startConversation') {
+      return Promise.resolve({
+        id: 77,
+        is_group: false,
+        status: 'active',
+        created_at: '2026-07-25T10:00:00Z',
+        updated_at: '2026-07-25T10:00:00Z'
+      });
+    }
     if (method === 'getConversations') {
       server.pageRequests.push(data);
       /**
@@ -176,7 +216,8 @@ vi.mock('../nui/fetchNui', () => ({
         {
           id: 201,
           conversation_id: data.conversation_id,
-          citizenid: 'my-id',
+          mine: true,
+          sender_id: 21,
           message: 'Stash is secure.',
           created_at: '2026-07-24T21:00:00Z'
         },
@@ -187,7 +228,8 @@ vi.mock('../nui/fetchNui', () => ({
               {
                 id: 202,
                 conversation_id: data.conversation_id,
-                citizenid: 'gta-trevor',
+                mine: false,
+                sender_id: 20,
                 message: 'Good.',
                 reply_to_id: 201,
                 created_at: '2026-07-24T21:05:00Z'
@@ -200,7 +242,9 @@ vi.mock('../nui/fetchNui', () => ({
               {
                 id: 203,
                 conversation_id: data.conversation_id,
-                citizenid: 'my-id',
+                // On my row, written by a line: the server answers `mine: false` (MICA-339).
+                mine: false,
+                sender_id: null,
                 external_sender: 'Downtown Cab',
                 message: 'Your ride is outside.',
                 created_at: '2026-07-24T21:06:00Z'
@@ -214,7 +258,8 @@ vi.mock('../nui/fetchNui', () => ({
       return Promise.resolve({
         id: 999,
         conversation_id: data.conversation_id,
-        citizenid: 'my-id',
+        mine: true,
+        sender_id: 21,
         message: data.message,
         created_at: new Date().toISOString()
       });
@@ -277,8 +322,8 @@ describe('messages store', () => {
   });
 
   it('reads a text from a line as theirs even though the row is mine', async () => {
-    // The recipient owns the row (`citizenid`), so comparing citizenids alone would draw it
-    // as a sent bubble. `external_sender` is what says it arrived.
+    // The recipient owns the row, so the server answers `mine: false` for it (MICA-339); the
+    // store draws what the server says rather than deciding for itself.
     server.threadHasLineText = true;
     await conversationsStore.loadMessages(2);
     const line = get(conversationsStore.messages)[2].find((m) => m.id === 203);
@@ -417,7 +462,6 @@ describe('conversation paging', () => {
       const id = i + 1;
       return {
         id,
-        citizenid: 'my-id',
         is_group: false,
         name: `Thread ${id}`,
         status: 'active',
@@ -525,7 +569,8 @@ describe('thread paging', () => {
       return {
         id,
         conversation_id: 2,
-        citizenid: i % 2 === 0 ? 'gta-trevor' : 'my-id',
+        mine: i % 2 !== 0,
+        sender_id: i % 2 === 0 ? 20 : 21,
         message: `msg ${id}`,
         created_at: new Date(Date.UTC(2026, 0, 1) + i * 60_000).toISOString()
       };
@@ -751,5 +796,85 @@ describe('a message arriving live', () => {
     // No thread was open for it, so nothing is cached for it either — the messages arrive
     // on the next open.
     expect(get(conversationsStore.messages)[77]).toBeUndefined();
+  });
+});
+
+/**
+ * MICA-339. The server stopped naming a new 1:1 after whoever holds the number, because that
+ * made starting a chat a lookup of a burner's owner. The label is the caller's own business:
+ * their contact for the number, else the number — never "Unknown".
+ */
+describe('starting a thread with a number', () => {
+  beforeEach(() => {
+    (contacts as unknown as { set: (list: unknown[]) => void }).set([]);
+  });
+
+  it('labels it with the number when the caller has no contact for it', async () => {
+    const mapped = await conversationsStore.startConversation('555-0188');
+
+    expect(mapped).toMatchObject({ target: '555-0188', targetName: '555-0188' });
+  });
+
+  it("labels it with the caller's own contact for the number", async () => {
+    (contacts as unknown as { set: (list: unknown[]) => void }).set([
+      { id: 4, firstname: 'Lamar', lastname: 'Davis', phone: '555-0188', favorite: false }
+    ]);
+
+    const mapped = await conversationsStore.startConversation('555-0188');
+
+    expect(mapped).toMatchObject({ target: '555-0188', targetName: 'Lamar Davis' });
+  });
+});
+
+/**
+ * MICA-339. The inbox gets each member as the number on the phone in the thread and whether it
+ * is the reader's own; the label is the reader's contact for that number, else the number.
+ */
+describe('who a thread is with', () => {
+  beforeEach(() => {
+    (contacts as unknown as { set: (list: unknown[]) => void }).set([
+      { id: 9, firstname: 'Ursula', lastname: '', phone: '555-0199', favorite: false }
+    ]);
+  });
+
+  it("labels a 1:1 from the reader's contact for the other member's number", async () => {
+    await conversationsStore.loadConversations();
+    const ursula = get(conversationsStore).find((c) => c.id === 1);
+    expect(ursula).toMatchObject({ target: '555-0199', targetName: 'Ursula' });
+  });
+
+  it('relabels a thread when the contact arrives after the inbox did', async () => {
+    (contacts as unknown as { set: (list: unknown[]) => void }).set([]);
+    await conversationsStore.loadConversations();
+    expect(get(conversationsStore).find((c) => c.id === 1)?.targetName).toBe('555-0199');
+
+    (contacts as unknown as { set: (list: unknown[]) => void }).set([
+      { id: 9, firstname: 'Ursula', lastname: '', phone: '555-0199', favorite: false }
+    ]);
+
+    expect(get(conversationsStore).find((c) => c.id === 1)?.targetName).toBe('Ursula');
+  });
+
+  it('labels it with the number when the reader has no contact, never the stored name', async () => {
+    await conversationsStore.loadConversations();
+    const trevor = get(conversationsStore).find((c) => c.id === 2);
+    // The fixture's row still carries a `name`; a 1:1 is never labelled by it.
+    expect(trevor).toMatchObject({ target: '555-0123', targetName: '555-0123' });
+  });
+
+  it("takes the reader's own membership as `self`, not the first member listed", async () => {
+    server.conversations = server.conversations.map((c) => ({
+      ...c,
+      participants: [...c.participants].reverse()
+    }));
+    await conversationsStore.loadConversations();
+    expect(get(conversationsStore).find((c) => c.id === 1)?.target).toBe('555-0199');
+  });
+
+  it('draws a message as sent by the reader only when the server says it is theirs', async () => {
+    await conversationsStore.loadMessages(2);
+    const [sent] = get(conversationsStore.messages)[2];
+    expect(sent).toMatchObject({ id: 201, mine: true, sender: 'me', sender_id: 21 });
+    expect(sent).not.toHaveProperty('citizenid');
   });
 });

@@ -106,3 +106,6 @@ app.registerEvent(
     });
   }
 );
+
+// A phone in hand, server-side: the client closing the phone is not the check (MICA-339).
+app.requirePhoneFor('sendMoney');

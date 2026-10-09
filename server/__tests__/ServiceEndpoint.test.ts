@@ -850,3 +850,94 @@ describe('ServiceEndpoint — the device a request speaks for', () => {
     logged.mockRestore();
   });
 });
+
+/**
+ * MICA-339 F19: what moves money or publishes needs a phone in hand, server-side, even on a
+ * service that is not `deviceOwned`. Reads stay open, so the shell's boot calls and every
+ * badge preload still answer a player who holds none.
+ */
+describe('ServiceEndpoint — an action flagged requirePhoneFor needs a phone in hand', () => {
+  const phoneContract = defineContract({
+    id: 'test_phone_contract',
+    actions: {
+      send: { input: s.object({ body: s.string({ max: 20 }) }) },
+      list: { input: s.none() }
+    }
+  });
+
+  const holds = { phone: true };
+  const asked: string[] = [];
+  const sent = vi.fn(async () => ({ ok: true }));
+  const listed = vi.fn(async () => []);
+
+  const mountFlagged = () => {
+    handlers = new Map();
+    emitted = [];
+    (globalThis as Record<string, unknown>).onNet = (event: string, cb: Handler) => {
+      handlers.set(event, cb);
+    };
+    (globalThis as Record<string, unknown>).emitNet = (...args: unknown[]) => {
+      emitted.push(args);
+    };
+    (globalThis as Record<string, unknown>).source = 5;
+    const app = new ServiceEndpoint<TestRow, typeof phoneContract>('test', null, {
+      contract: phoneContract,
+      disableGet: true,
+      disableCreate: true,
+      disableUpdate: true,
+      disableDelete: true
+    });
+    app.registerEvent('send', sent);
+    app.registerEvent('list', listed);
+    app.requirePhoneFor('send');
+  };
+
+  beforeEach(() => {
+    holds.phone = true;
+    asked.length = 0;
+    __setPhoneResolvers({
+      forRequest: async () => TEST_PHONE_ID,
+      forCitizen: async () => TEST_PHONE_ID,
+      deviceInHand: (_player, device) => {
+        asked.push(device);
+        if (device === 'phone' && !holds.phone) {
+          throw new PlayerFacingError('You are not holding a phone.', {
+            key: 'server.phone.notHeld'
+          });
+        }
+      }
+    });
+    mountFlagged();
+  });
+
+  afterEach(() => {
+    installTestPhone();
+  });
+
+  it('refuses a flagged action to a player holding no phone, with the notHeld key', async () => {
+    holds.phone = false;
+
+    await call('send', { body: 'hi' });
+
+    expect(sent).not.toHaveBeenCalled();
+    expect(lastReply()).toMatchObject({ key: 'server.phone.notHeld' });
+    expect(asked).toEqual(['phone']);
+  });
+
+  it('runs a flagged action for a player who holds one', async () => {
+    await call('send', { body: 'hi' });
+
+    expect(sent).toHaveBeenCalledOnce();
+    expect(lastReply()).toEqual({ ok: true });
+  });
+
+  it('leaves an unflagged read alone, phone or not, and never counts the inventory', async () => {
+    holds.phone = false;
+
+    await call('list', undefined);
+
+    expect(listed).toHaveBeenCalledOnce();
+    expect(lastReply()).toEqual([]);
+    expect(asked).toEqual([]);
+  });
+});

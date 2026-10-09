@@ -34,7 +34,6 @@ registerMessages('messages', { en, de });
  */
 const conversation = (id: number): UIConversation => ({
   id,
-  citizenid: 'my-id',
   is_group: false,
   status: 'active',
   target: `555-000${id}`,
@@ -54,7 +53,6 @@ const props = (overrides: Record<string, unknown> = {}) => ({
   query: '',
   showSearch: false,
   viewingArchive: false,
-  myCitizenId: 'my-id',
   isLastMsgReadByOther: () => false,
   onselect: () => {},
   onloadmore: () => {},

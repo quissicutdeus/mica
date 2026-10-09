@@ -3,7 +3,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { writable, derived, get } from 'svelte/store';
-import { fetchNui } from '../nui/fetchNui';
 import { call, callOr } from '../nui/call';
 import { conversationsContract } from '@mica/shared/contracts/conversations';
 import { messagesContract } from '@mica/shared/contracts/messages';
@@ -13,7 +12,6 @@ import { byNewest } from '../../../sdk/createCrudStore';
 import { createPagedStore, type PageReader } from '../../../sdk/createPagedStore';
 import { createReactionStore } from '../../../sdk/kit/createReactionStore';
 
-import { citizenid, fetchCitizenId } from './account';
 import { contacts } from './contacts';
 
 /**
@@ -58,8 +56,18 @@ const CONVERSATION_PAGE_SIZE = 25;
  */
 const MAX_CACHED_THREADS = 5;
 
-/** Resolve display info for one conversation against the caller and their address book. */
-const resolveDisplayInfo = (conv: Conversation, myId: string, currentContacts: Contact[]) => {
+/**
+ * Resolve display info for one conversation against the caller's address book.
+ *
+ * **Who the other side is, is the caller's own business** (MICA-339). The server sends each
+ * member as the number on the phone that is in the thread, and whether it is the caller's own
+ * membership — no citizenid, no directory name. A 1:1 is therefore labelled from the caller's
+ * contact for that number, else the number, which is all a real phone with no directory knows.
+ *
+ * `dialled` is the number the caller just started a thread with, for a reply that carries no
+ * participants yet: the server does not name a new 1:1 after whoever holds the number either.
+ */
+const resolveDisplayInfo = (conv: Conversation, currentContacts: Contact[], dialled?: string) => {
   let target = '';
   let targetName = conv.name || 'Unknown';
   let targetAvatar: string | undefined = undefined;
@@ -68,16 +76,13 @@ const resolveDisplayInfo = (conv: Conversation, myId: string, currentContacts: C
     target = 'group';
     targetName = conv.name || 'Group Chat';
   } else {
-    // Find other participant
-    const other = conv.participants?.find((p) => p.citizenid !== myId);
-    if (other) {
-      if (other.contact) {
-        target = other.contact.phone;
-        targetName = `${other.contact.firstname} ${other.contact.lastname || ''}`.trim();
-        targetAvatar = other.contact.avatar;
-      } else {
-        target = other.citizenid;
-      }
+    const other = conv.participants?.find((p) => !p.self);
+    if (other?.phone) {
+      target = other.phone;
+      targetName = other.phone;
+    } else if (dialled) {
+      target = dialled;
+      targetName = conv.name || dialled;
     }
   }
 
@@ -94,10 +99,29 @@ const resolveDisplayInfo = (conv: Conversation, myId: string, currentContacts: C
 };
 
 /**
+ * A 1:1 labelled from the address book as it is **now**, not as it was when the page loaded.
+ *
+ * The server sends no name for the other member (MICA-339), so the label is the reader's
+ * contact for their number or the number itself. A page that arrived before the address book
+ * did — Messages opened first after a boot — would otherwise show bare numbers until the next
+ * refetch, and a contact saved while the inbox is open would not reach it at all. A row with no
+ * contact keeps the label it was mapped with: the number, or a line's own name.
+ */
+const withContactLabel = (row: UIConversation, currentContacts: Contact[]): UIConversation => {
+  if (row.is_group || !row.target || row.target === 'group') return row;
+  const found = currentContacts.find((c) => c.phone === row.target);
+  if (!found) return row;
+  const targetName = `${found.firstname} ${found.lastname || ''}`.trim();
+  return targetName === row.targetName && found.avatar === row.targetAvatar
+    ? row
+    : { ...row, targetName, targetAvatar: found.avatar };
+};
+
+/**
  * One page of the inbox, mapped for display.
  *
  * A reader rather than handing `createPagedStore` an action name, because the rows need the
- * caller's citizenid and address book folded in before anything can render them, and that is
+ * caller's address book folded in before anything can render them, and that is
  * a mapping step the factory has no hook for. Since MICA-213 the reader makes the typed
  * `call(conversationsContract, 'get', ...)`, so there is no action name for either the
  * factory or `server/__tests__/routes.test.ts` to read as a route — the contract is what the
@@ -120,8 +144,6 @@ const resolveDisplayInfo = (conv: Conversation, myId: string, currentContacts: C
  * populated inbox whenever a background refresh failed.
  */
 const readConversationPage: PageReader<UIConversation> = async (payload) => {
-  let myId = get(citizenid);
-  if (!myId) myId = await fetchCitizenId();
   const currentContacts = get(contacts);
 
   // `PageReader` hands its payload as an untyped bag; `createPagedStore` builds it as
@@ -146,7 +168,7 @@ const readConversationPage: PageReader<UIConversation> = async (payload) => {
   const nextCursor = data?.nextCursor ?? null;
 
   const rows: UIConversation[] = raw.map((c) => {
-    const { target, targetName, targetAvatar } = resolveDisplayInfo(c, myId, currentContacts);
+    const { target, targetName, targetAvatar } = resolveDisplayInfo(c, currentContacts);
     return {
       ...c,
       target,
@@ -188,8 +210,10 @@ function createMessagesStore() {
    * inbox locally (an optimistic bump after sending, a live arrival, a rename) do not go
    * through the server at all.
    */
-  const ordered = derived(list, ($rows) =>
-    [...$rows].sort(byNewest<UIConversation>('lastMessageAt'))
+  const ordered = derived([list, contacts], ([$rows, $contacts]) =>
+    $rows
+      .map((row) => withContactLabel(row, $contacts))
+      .sort(byNewest<UIConversation>('lastMessageAt'))
   );
 
   /** Messages of the threads currently held, keyed by conversation id. */
@@ -243,7 +267,7 @@ function createMessagesStore() {
    * re-resolves the whole held thread once pages are joined, because a reply on the newest
    * page may quote a message on an older one that only arrives later.
    */
-  const fetchThreadPage = async (conversationId: number, cursor: number | null, myId: string) => {
+  const fetchThreadPage = async (conversationId: number, cursor: number | null) => {
     const page = await callOr(
       messagesContract,
       'get',
@@ -255,9 +279,9 @@ function createMessagesStore() {
     const rows = Array.isArray(page?.rows) ? page.rows : [];
     const mapped: UIMessage[] = rows.map((m) => ({
       ...m,
-      // A text from a line is owned by the recipient's row but not written by them
-      // (`external_sender`); it reads as theirs, never as mine.
-      sender: m.citizenid === myId && !m.external_sender ? 'me' : 'other',
+      // The server answers "did the reader write this" itself (MICA-339), and a text from a
+      // line, which sits on the reader's row without being theirs, is never `mine`.
+      sender: m.mine ? 'me' : 'other',
       replyToMsg: null
     }));
     return {
@@ -388,10 +412,7 @@ function createMessagesStore() {
      */
     loadMessages: async (conversationId: number) => {
       activeConversationId.set(conversationId);
-      let myId = get(citizenid);
-      if (!myId) myId = await fetchCitizenId();
-
-      const { rows, nextCursor } = await fetchThreadPage(conversationId, null, myId);
+      const { rows, nextCursor } = await fetchThreadPage(conversationId, null);
 
       touchThread(conversationId);
       messagesByConversation.update((msgs) => ({
@@ -416,10 +437,7 @@ function createMessagesStore() {
     loadOlderMessages: async (conversationId: number) => {
       const cursor = get(threadCursors)[conversationId];
       if (cursor === undefined || cursor === null) return false;
-      let myId = get(citizenid);
-      if (!myId) myId = await fetchCitizenId();
-
-      const { rows, nextCursor } = await fetchThreadPage(conversationId, cursor, myId);
+      const { rows, nextCursor } = await fetchThreadPage(conversationId, cursor);
 
       // The thread may have been evicted while the page was in flight; a page for a thread
       // nobody holds is dropped rather than resurrecting the cache entry.
@@ -547,7 +565,6 @@ function createMessagesStore() {
     },
 
     startConversation: async (phone: string, isGroup: boolean = false) => {
-      const myId = get(citizenid);
       const currentContacts = get(contacts);
 
       try {
@@ -560,8 +577,8 @@ function createMessagesStore() {
         // Map it
         const { target, targetName, targetAvatar } = resolveDisplayInfo(
           newConv,
-          myId,
-          currentContacts
+          currentContacts,
+          phone
         );
         const mapped: UIConversation = {
           ...newConv,
@@ -617,9 +634,10 @@ function createMessagesStore() {
     renameConversation: async (conversationId: number, name: string) => {
       patchConversation(conversationId, { name, targetName: name });
       try {
-        // `id`, not `conversation_id`: rename maps onto the generic CRUD update,
-        // which reads the row id from `id`.
-        await fetchNui('renameConversation', { id: conversationId, name });
+        // A contracted action since MICA-339, authorized by the thread's admin membership on
+        // the phone in hand rather than by who created the row. Still `id`, as the generic
+        // update it replaced read it.
+        await call(conversationsContract, 'update', { id: conversationId, name });
       } catch (e) {
         console.error('Failed to rename conversation', e);
       }
@@ -635,6 +653,8 @@ function createMessagesStore() {
       avatar?: string;
       created_at?: string;
       reply_to_id?: number | null;
+      /** The sending member's id in the thread (MICA-339), as `messages:get` names it. */
+      sender_id?: number | null;
     }) => {
       const convId = incoming.conversation_id || 1;
       const currentActiveId = get(activeConversationId);
@@ -652,13 +672,19 @@ function createMessagesStore() {
         // A thread the inbox has never seen — the push is the first thing the phone knows
         // about it. Enough of a row to render until the next `loadConversations` replaces
         // it with the server's.
+        // Named from the reader's own contacts for the number, else a line's label, else the
+        // number: a player's push carries no name of its own since MICA-339.
+        const known = incoming.phone
+          ? get(contacts).find((c) => c.phone === incoming.phone)
+          : undefined;
         const newConv: UIConversation = {
           id: convId,
-          citizenid: '',
           is_group: false,
           target: incoming.phone || 'unknown',
-          targetName: incoming.senderName || incoming.phone || 'Unknown',
-          targetAvatar: incoming.avatar,
+          targetName: known
+            ? `${known.firstname} ${known.lastname || ''}`.trim()
+            : incoming.senderName || incoming.phone || 'Unknown',
+          targetAvatar: known?.avatar ?? incoming.avatar,
           lastMessage: incoming.message || '',
           lastMessageAt: incoming.created_at || new Date().toISOString(),
           unreadCount: isCurrentlyActive ? 0 : 1,
@@ -689,7 +715,8 @@ function createMessagesStore() {
         const newUiMsg: UIMessage = {
           id: incoming.id ?? Math.floor(Math.random() * 1000000),
           conversation_id: convId,
-          citizenid: 'other-cit',
+          mine: false,
+          sender_id: incoming.sender_id ?? null,
           sender: 'other',
           status: 'active',
           message: incoming.message || '',

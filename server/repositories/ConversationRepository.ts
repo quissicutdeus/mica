@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { SchemaRepository } from '../lib/defineService';
-import { Conversation, Participant } from '@mica/shared/types';
+import type { Conversation, Participant } from '@mica/shared/types';
 import { Database } from '../lib/Database';
 import {
   contentContext,
@@ -15,6 +15,184 @@ import {
 } from '../lib/contentCipher';
 import { toSqlDateTime, type RecencyCursor } from '../lib/payload';
 import { PHONE_NUMBERS_TABLE } from '../lib/phoneNumbers';
+
+/**
+ * A conversation as the server holds it — the row, not what a phone is shown (MICA-339).
+ *
+ * `citizenid` is the creator and `participant_a`/`participant_b` are the two phone ids of a 1:1
+ * (or a phone id and a line's `ext:` key). All three stay here: `conversationForReader` below is
+ * the one place a row becomes the wire `Conversation`, and it names none of them.
+ */
+export interface ConversationRow {
+  id: number;
+  citizenid: string;
+  is_group: boolean;
+  name?: string | null;
+  participant_a?: string | null;
+  participant_b?: string | null;
+  status?: Conversation['status'];
+  created_at: Date | string;
+  updated_at: Date | string;
+}
+
+/** The newest live message of a thread, as `findForPhone` carries it: still the sender's row. */
+export interface LastMessageRow {
+  message: string;
+  created_at: Date | string;
+  citizenid: string;
+  external_sender: string | null;
+}
+
+/** `findForPhone`'s row: the thread, plus what only the reader's own membership can say. */
+export interface ConversationListRow extends ConversationRow {
+  unread_count?: number;
+  archived_at?: Date | string | null;
+  last_message?: LastMessageRow;
+}
+
+/**
+ * A membership row as the server holds it (MICA-339). `citizenid` is whoever holds the phone now
+ * and `phone_id` is the phone; neither reaches another member. `phone_number` is the number on
+ * that phone, read with the row — see `PARTICIPANT_NUMBER` for which number that is.
+ */
+export interface ParticipantRow {
+  id: number;
+  conversation_id: number;
+  citizenid: string;
+  phone_id?: string | null;
+  role: Participant['role'];
+  status?: Participant['status'];
+  last_read: Date | string;
+  created_at: Date | string;
+  left_at?: Date | string | null;
+  updated_at: Date | string;
+  phone_number?: string | null;
+}
+
+/**
+ * The number a member is shown by: the one on **the phone that is in the thread** (MICA-339).
+ *
+ * It used to be the directory's number for the member's citizenid — the phone they are using
+ * *now* — so a thread with a burner carried its holder's main number the moment they switched
+ * back, and the reader's contacts named it. Now, in order:
+ *
+ * 1. The number row on this membership's phone (`phone_id_unique`). Every phone a qb or
+ *    standalone server has seen in use carries one (MICA-284).
+ * 2. The citizen's legacy row, a number on no phone yet. That exists only on a server whose
+ *    inventory cannot carry a phone id — one phone per citizen, so their number *is* this
+ *    phone's — or for a citizen who has not used an id'd phone since the upgrade, whose
+ *    thread can only be on their identity phone.
+ * 3. Neither: null. On es_extended micaOS holds no numbers at all and the number lives on the
+ *    character; `Conversations.get` asks the directory for those, and only there.
+ *
+ * A correlated read per member, each on a unique or leading key, over at most one page of
+ * threads' members — the same bound the membership read already has.
+ */
+const PARTICIPANT_NUMBER =
+  `COALESCE(` +
+  `(SELECT n.\`number\` FROM \`${PHONE_NUMBERS_TABLE}\` n WHERE n.\`phone_id\` = p.\`phone_id\` LIMIT 1), ` +
+  `(SELECT l.\`number\` FROM \`${PHONE_NUMBERS_TABLE}\` l ` +
+  `WHERE l.\`citizenid\` = p.\`citizenid\` AND l.\`phone_id\` IS NULL ORDER BY l.\`id\` LIMIT 1)` +
+  `) AS phone_number`;
+
+/** Whether one side of a 1:1 is a line rather than a phone (MICA-223). */
+export const isLineSide = (side: unknown): boolean =>
+  typeof side === 'string' && side.startsWith(LINE_KEY_PREFIX);
+
+/**
+ * The member of this thread who sent a message, as the `Participant.id` a reader can match.
+ *
+ * Null for a text from a line, whose row sits under the recipient's citizenid and so would
+ * otherwise name the recipient, and for a sender no longer in the thread. Matched on the
+ * citizen because a message row names no phone; one person with two phones in one group is the
+ * one case that cannot be told apart, and the lower membership id answers it every time.
+ */
+export const senderIdOf = (
+  participants: readonly ParticipantRow[],
+  senderCitizenId: string,
+  externalSender?: string | null
+): number | null => {
+  if (externalSender) return null;
+  let found: number | null = null;
+  for (const row of participants) {
+    if (row.citizenid !== senderCitizenId || row.left_at) continue;
+    const id = Number(row.id);
+    if (found === null || id < found) found = id;
+  }
+  return found;
+};
+
+/**
+ * A membership row as another member of the thread is shown it (MICA-339): its own id, its role
+ * and timestamps, whether it is the reader's, and the number on its phone. Built field by field,
+ * so a column added to the table later is not handed to every member by a spread.
+ */
+export const participantForReader = (
+  row: ParticipantRow,
+  readerCitizenId: string,
+  readerPhoneId: string,
+  phone: string | null = row.phone_number ?? null
+): Participant => ({
+  id: Number(row.id),
+  conversation_id: Number(row.conversation_id),
+  role: row.role,
+  status: row.status,
+  last_read: row.last_read,
+  created_at: row.created_at,
+  left_at: row.left_at ?? null,
+  updated_at: row.updated_at,
+  self: row.citizenid === readerCitizenId && row.phone_id === readerPhoneId,
+  phone
+});
+
+/** The inbox's preview of a thread's newest message, for one reader. */
+export const lastMessageForReader = (
+  row: LastMessageRow,
+  readerCitizenId: string,
+  participants: readonly ParticipantRow[]
+): NonNullable<Conversation['last_message']> => ({
+  message: row.message,
+  created_at: row.created_at,
+  external_sender: row.external_sender ?? null,
+  mine: !row.external_sender && row.citizenid === readerCitizenId,
+  sender_id: senderIdOf(participants, row.citizenid, row.external_sender)
+});
+
+/**
+ * A conversation row as a member is shown it (MICA-339).
+ *
+ * Built field by field rather than spread, so the creator's citizenid, the pair's phone ids and
+ * the generated pair key never leave — and neither does anything added to the table later.
+ *
+ * **A 1:1 between two phones carries no name.** The row's `name` was, until this ticket, the
+ * directory's name for the number the creator dialled, and rows written then still hold it. The
+ * phone never shows a 1:1 by that field anyway — it labels it from the reader's contacts for the
+ * other member's number — so withholding it costs nothing and stops the stored name reaching a
+ * later holder of either phone. A group keeps the name its members gave it, and a thread with a
+ * line keeps the line's label, which is the only name it has.
+ */
+export const conversationForReader = (
+  row: ConversationRow,
+  extras: Partial<
+    Pick<
+      Conversation,
+      'participants' | 'last_message' | 'unread_count' | 'participant_count' | 'archived_at'
+    >
+  > = {}
+): Conversation => {
+  const withLine = isLineSide(row.participant_a) || isLineSide(row.participant_b);
+  const named = Boolean(row.is_group) || withLine;
+  const now = new Date().toISOString();
+  return {
+    id: Number(row.id),
+    is_group: Boolean(row.is_group),
+    ...(named && row.name ? { name: row.name } : {}),
+    status: row.status ?? 'active',
+    created_at: row.created_at ?? now,
+    updated_at: row.updated_at ?? now,
+    ...extras
+  };
+};
 
 /**
  * One player's thread with a line, as a job line's inbox reads it (MICA-307): the thread, the
@@ -100,7 +278,7 @@ export const openLineThread = async (
   citizenid: string,
   phoneId: string,
   from: LineSender
-): Promise<Conversation> => {
+): Promise<ConversationRow> => {
   const key = lineKey(from);
   const label = lineLabel(from);
 
@@ -112,7 +290,7 @@ export const openLineThread = async (
     return existing;
   }
 
-  const created: Partial<Conversation> = {
+  const created: Partial<ConversationRow> = {
     citizenid,
     is_group: false,
     name: label,
@@ -135,7 +313,7 @@ export const openLineThread = async (
     return winner;
   }
   await repo.ensureLineParticipant(conversationId, citizenid, phoneId);
-  return { ...created, id: conversationId } as Conversation;
+  return { ...created, id: conversationId } as ConversationRow;
 };
 
 /**
@@ -147,9 +325,57 @@ export const openLineThread = async (
  * path cannot reach. The join table's DDL is declared as a child table on the
  * conversations app so the generated schema stays complete.
  */
-export class ConversationRepository extends SchemaRepository<Conversation> {
-  async createConversation(data: Partial<Conversation>): Promise<number> {
-    return await this.create(data as Conversation);
+export class ConversationRepository extends SchemaRepository<ConversationRow> {
+  async createConversation(data: Partial<ConversationRow>): Promise<number> {
+    return await this.create(data as ConversationRow);
+  }
+
+  /**
+   * Rename a thread, as its admin, through the phone the admin's membership is on (MICA-339).
+   *
+   * **Who may rename: the thread's admin, on the phone in their hand.** That is the creator's
+   * membership — `create` writes it as `admin` — and it moves with the phone on a handover
+   * (`transferParticipants`), where the row's own `citizenid` never did. The generic owner-scoped
+   * update this replaces asked `citizenid = ?` of the conversation row, so the creator could still
+   * rename a thread after selling the phone it was on and leaving it, and the phone's new holder
+   * could not. A member who is not the admin is refused, as they always were.
+   *
+   * One statement, the membership predicate in its `WHERE`, so there is no window between asking
+   * and writing. Named and on the repository because it writes without the row's own ownership
+   * predicate (§2.9); the `EXISTS` is the authorization, with the citizen **and** the phone in
+   * it, never the phone alone. `false` for a thread the caller is not the admin of, a deleted
+   * one, and a name that did not change, which is what the generic update answered too.
+   *
+   * **Why not `updateUnscoped`**, which §2.9 names as the door for a privileged write. It
+   * builds `UPDATE … WHERE id = ?` and takes no further predicate, so the admin check would
+   * have to be a read before it: an `isMember`-style query, then the write. Between the two
+   * the phone can change hands or the admin can leave, and the rename would land for someone
+   * who no longer holds it. Keeping the check in the write's own `WHERE` is the stronger
+   * guarantee, and widening `updateUnscoped` to carry one is a change to every repository's
+   * core (`lib/Repository.ts`), not this one's. What `applyUpdate` would add is covered here:
+   * the column is a literal (no payload key reaches the SQL), `assertWritableValue` applies the
+   * column's own rule, and `name` is not an encrypted column, so there is nothing to seal.
+   */
+  async renameAsAdmin(
+    conversationId: number,
+    name: string,
+    citizenid: string,
+    phoneId: string
+  ): Promise<boolean> {
+    if (!citizenid || !phoneId) return false;
+    this.assertWritableValue('name', name);
+    return await Database.update(
+      `UPDATE mica_messages_conversations c
+          SET c.name = ?
+        WHERE c.id = ? AND c.status = 'active'
+          AND EXISTS (
+              SELECT 1 FROM mica_messages_participants p
+               WHERE p.conversation_id = c.id
+                 AND p.citizenid = ? AND p.phone_id = ?
+                 AND p.role = 'admin' AND p.status = 'active' AND p.left_at IS NULL
+          )`,
+      [name, conversationId, citizenid, phoneId]
+    );
   }
 
   /**
@@ -290,14 +516,14 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
     );
   }
 
-  async findParticipants(conversationId: number): Promise<Participant[]> {
-    // Simply find those with left_at IS NULL
+  /** A thread's live members, each with the number on its phone (`PARTICIPANT_NUMBER`). */
+  async findParticipants(conversationId: number): Promise<ParticipantRow[]> {
     const query = `
-            SELECT * FROM mica_messages_participants 
-            WHERE conversation_id = ? AND left_at IS NULL
+            SELECT p.*, ${PARTICIPANT_NUMBER}
+            FROM mica_messages_participants p
+            WHERE p.conversation_id = ? AND p.left_at IS NULL
         `;
-    const participants = await Database.query<Participant[]>(query, [conversationId]);
-    return participants;
+    return await Database.query<ParticipantRow[]>(query, [conversationId]);
   }
 
   /**
@@ -358,17 +584,17 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
    */
   async findParticipantsForConversations(
     conversationIds: readonly number[]
-  ): Promise<Participant[]> {
+  ): Promise<ParticipantRow[]> {
     const ids = [...new Set(conversationIds)].filter((id) => Number.isInteger(id));
     if (ids.length === 0) return [];
 
     const placeholders = ids.map(() => '?').join(', ');
     const query = `
-            SELECT p.*
+            SELECT p.*, ${PARTICIPANT_NUMBER}
             FROM \`mica_messages_participants\` p
             WHERE p.\`conversation_id\` IN (${placeholders}) AND p.\`left_at\` IS NULL
         `;
-    return await Database.query<Participant[]>(query, ids);
+    return await Database.query<ParticipantRow[]>(query, ids);
   }
 
   /**
@@ -417,7 +643,7 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
     /** The phone whose inbox this is (MICA-282) — beside the citizen, never instead (§2.9). */
     phoneId: string,
     page: { limit: number; cursor: RecencyCursor | null }
-  ): Promise<{ rows: Conversation[]; nextCursor: RecencyCursor | null }> {
+  ): Promise<{ rows: ConversationListRow[]; nextCursor: RecencyCursor | null }> {
     const params: unknown[] = [citizenid, phoneId];
 
     /**
@@ -626,8 +852,8 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
    * such a thread is the phone. So the pair columns are the key here, in either order --
    * `pair_key_unique` is what guarantees there is at most one of them.
    */
-  async findExternalThread(phoneId: string, externalKey: string): Promise<Conversation | null> {
-    const rows = await Database.query<Conversation[]>(
+  async findExternalThread(phoneId: string, externalKey: string): Promise<ConversationRow | null> {
+    const rows = await Database.query<ConversationRow[]>(
       `SELECT c.*
          FROM mica_messages_conversations c
         WHERE c.is_group = 0 AND c.status = 'active'
@@ -648,7 +874,7 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
    * line's thread.
    */
   async lineKeyOf(conversationId: number): Promise<string | null> {
-    const rows = await Database.query<Pick<Conversation, 'participant_a' | 'participant_b'>[]>(
+    const rows = await Database.query<Pick<ConversationRow, 'participant_a' | 'participant_b'>[]>(
       `SELECT c.participant_a, c.participant_b
          FROM mica_messages_conversations c
         WHERE c.id = ? AND c.is_group = 0 AND c.status = 'active'
@@ -717,7 +943,7 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
     return row?.citizenid ?? null;
   }
 
-  async findOneToOne(phone1: string, phone2: string): Promise<Conversation | null> {
+  async findOneToOne(phone1: string, phone2: string): Promise<ConversationRow | null> {
     const query = `
             SELECT c.*
             FROM mica_messages_conversations c
@@ -732,7 +958,7 @@ export class ConversationRepository extends SchemaRepository<Conversation> {
             )
             LIMIT 1
         `;
-    const result = await Database.query<Conversation[]>(query, [phone1, phone2]);
+    const result = await Database.query<ConversationRow[]>(query, [phone1, phone2]);
     return result.length > 0 ? result[0] : null;
   }
 }

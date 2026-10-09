@@ -283,6 +283,9 @@ invoices.app.registerEvent('pay', async (source, cbId, data, citizenid) => {
   return { ok: true, invoices: await openFor(citizenid) } satisfies InvoiceActionOutcome;
 });
 
+// A phone in hand, server-side: the client closing the phone is not the check (MICA-339).
+invoices.app.requirePhoneFor('pay');
+
 const stampPaidAt = async (id: number, citizenid: string, paidAt: number): Promise<void> => {
   try {
     await repo.stampPaid(id, citizenid, paidAt);

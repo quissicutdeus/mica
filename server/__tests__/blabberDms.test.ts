@@ -30,6 +30,7 @@ vi.mock('../lib/FrameworkBridge', () => ({
 }));
 
 import { blabberDms } from '../services/BlabberDms';
+import { NOT_HELD_REPLY, refusePhone } from './phoneStub';
 
 const MY_ACCOUNT = { id: 1, citizenid: 'CIT_A', app: 'blabber', handle: 'ada', status: 'active' };
 const PEER = { id: 2, citizenid: 'CIT_B', handle: 'nightowl' };
@@ -137,6 +138,17 @@ describe('sending', () => {
     expect(reply.error).toMatch(/cannot message yourself/);
   });
 
+  it('refuses a DM from a player holding no phone, before anything is read or written', async () => {
+    // MICA-339: a modified client can emit the send with the phone closed; the server asks.
+    refusePhone();
+
+    const reply = await call('send', { account_id: 1, peer_account_id: 2, body: 'hello' });
+
+    expect(reply).toEqual(NOT_HELD_REPLY);
+    expect(dbMock.single).not.toHaveBeenCalled();
+    expect(dbMock.insert).not.toHaveBeenCalled();
+  });
+
   it('refuses an empty body', async () => {
     const reply = await call('send', { account_id: 1, peer_account_id: 2, body: '   ' });
 
@@ -199,6 +211,63 @@ describe('reading a thread', () => {
     await call('get', { account_id: 1, peer_account_id: 2, limit: 5000 });
 
     expect((dbMock.query.mock.calls[0][1] as unknown[]).at(-1)).toBe(81);
+  });
+});
+
+describe('who is behind an account (MICA-339)', () => {
+  /**
+   * Identity in a DM is the account. A peer reading their own thread got the replier's
+   * `citizenid` on every row, which links one player's alts to each other and to the character.
+   * Rows here carry the column, the way a `SELECT *` hands it back, so these fail on a read that
+   * only stops asking for it in SQL and passes the row through.
+   */
+  const PEER_ROW = {
+    id: 9,
+    citizenid: 'CIT_B',
+    from_account: 2,
+    to_account: 1,
+    body: 'hi',
+    read_at: null,
+    status: 'active'
+  };
+
+  it('never names the column in a thread read', async () => {
+    dbMock.single.mockResolvedValueOnce(MY_ACCOUNT);
+
+    await call('get', { account_id: 1, peer_account_id: 2 });
+
+    const sql = String(dbMock.query.mock.calls[0][0]);
+    expect(sql).not.toContain('*');
+    expect(sql).not.toContain('citizenid');
+    // The positive twin: the encryption scope a sealed body opens against is still selected.
+    expect(sql).toContain('`from_account`, `to_account`, `body`');
+  });
+
+  it("hands a thread read back without the sender's citizenid", async () => {
+    dbMock.single.mockResolvedValueOnce(MY_ACCOUNT);
+    dbMock.query.mockResolvedValueOnce([PEER_ROW]);
+
+    const reply = await call('get', { account_id: 1, peer_account_id: 2 });
+
+    expect(reply.rows).toHaveLength(1);
+    expect(reply.rows[0]).not.toHaveProperty('citizenid');
+    expect(reply.rows[0]).toMatchObject({ id: 9, from_account: 2, to_account: 1, body: 'hi' });
+  });
+
+  it("hands the inbox's last message back without the sender's citizenid", async () => {
+    dbMock.query.mockResolvedValueOnce([{ id: 1 }]);
+    dbMock.query.mockResolvedValueOnce([{ peer: 2, last_id: 9 }]);
+    dbMock.query.mockResolvedValueOnce([PEER_ROW]);
+    dbMock.query.mockResolvedValueOnce([{ id: 2, handle: 'nightowl', display_name: null }]);
+    dbMock.query.mockResolvedValueOnce([]);
+
+    const reply = await call('threads', {});
+
+    const sql = String(dbMock.query.mock.calls[2][0]);
+    expect(sql).not.toContain('*');
+    expect(sql).not.toContain('citizenid');
+    expect(reply[0].last).not.toHaveProperty('citizenid');
+    expect(reply[0].last).toMatchObject({ id: 9, body: 'hi' });
   });
 });
 

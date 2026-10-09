@@ -4,17 +4,47 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { dbMock } = vi.hoisted(() => ({
+const { dbMock, rng } = vi.hoisted(() => ({
   dbMock: {
     query: vi.fn(),
     insert: vi.fn(),
     update: vi.fn(),
     scalar: vi.fn(),
     single: vi.fn()
-  }
+  },
+  /**
+   * The walk's draw, as a unit in `[0, 1]`, or null for real randomness. The market reads
+   * `node:crypto`'s `randomBytes` since MICA-339, so this is the seam the helpers below pin,
+   * and `calls` counts the draws so a test can prove the walk reads it and not `Math.random`.
+   */
+  rng: { draw: null as null | (() => number), calls: 0 }
 }));
 
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
+
+/**
+ * `randomBytes`, answering the unit `rng.draw` names, big-endian, as many bytes as asked. A
+ * unit of 1 is the largest the bytes can hold, one part in 2^48 under it: the same tick once
+ * the price is rounded to a whole coin.
+ */
+vi.mock('node:crypto', async (importOriginal) => {
+  const real = await importOriginal<typeof import('node:crypto')>();
+  return {
+    ...real,
+    randomBytes: (size: number) => {
+      if (!rng.draw) return real.randomBytes(size);
+      rng.calls += 1;
+      const top = 2 ** (8 * size) - 1;
+      let value = Math.min(top, Math.max(0, Math.floor(rng.draw() * 2 ** (8 * size))));
+      const bytes = new Uint8Array(size);
+      for (let i = size - 1; i >= 0; i -= 1) {
+        bytes[i] = value % 256;
+        value = Math.floor(value / 256);
+      }
+      return bytes;
+    }
+  };
+});
 
 import {
   getCurrentPrice,
@@ -33,13 +63,15 @@ const CEIL = 5000;
 const MAX_STEP_PCT = 0.03;
 
 /**
- * Pins `Math.random` so a tick's direction is exact rather than probable.
+ * Pins the walk's draw so a tick's direction is exact rather than probable.
  *
- * The step is `(Math.random() * 2 - 1) * 0.03` applied in log space, so 1 is the largest
- * up-tick this market can take and 0 the largest down-tick. Anything in between is a
- * smaller move of the corresponding sign; 0.5 is a no-op at the reference price.
+ * The step is `(draw * 2 - 1) * 0.03` applied in log space, so 1 is the largest up-tick this
+ * market can take and 0 the largest down-tick. Anything in between is a smaller move of the
+ * corresponding sign; 0.5 is a no-op at the reference price.
  */
-const alwaysStep = (value: number) => vi.spyOn(Math, 'random').mockReturnValue(value);
+const alwaysStep = (value: number) => {
+  rng.draw = () => value;
+};
 const MAX_UP = 1;
 const MAX_DOWN = 0;
 const NO_MOVE = 0.5;
@@ -47,20 +79,20 @@ const NO_MOVE = 0.5;
 /** A fixed sequence of draws, so a many-tick property is deterministic rather than flaky. */
 const stepSequence = (values: number[]) => {
   let i = 0;
-  return vi.spyOn(Math, 'random').mockImplementation(() => values[i++ % values.length]);
+  rng.draw = () => values[i++ % values.length];
 };
 
 /**
- * A seeded generator standing in for `Math.random`, for the statistical properties below. A
- * real `Math.random` would make them probabilistic and therefore flaky; the same seed makes
- * the whole walk reproducible while still exercising a full spread of draws.
+ * A seeded generator standing in for the CSPRNG, for the statistical properties below. Real
+ * randomness would make them probabilistic and therefore flaky; the same seed makes the whole
+ * walk reproducible while still exercising a full spread of draws.
  */
 const seededRandom = (seed: number) => {
   let state = seed % 2147483647;
-  return vi.spyOn(Math, 'random').mockImplementation(() => {
+  rng.draw = () => {
     state = (state * 16807) % 2147483647;
     return state / 2147483647;
-  });
+  };
 };
 
 /** Every price this suite's snapshot inserts have recorded, oldest first. */
@@ -70,6 +102,8 @@ const snapshottedPrices = (): number[] =>
 beforeEach(() => {
   vi.restoreAllMocks();
   vi.clearAllMocks();
+  rng.draw = null;
+  rng.calls = 0;
   __resetMarketState();
   // The tick's restore retry consults the first-start schema check (MICA-306): settled, existing.
   __setSchemaReadyForTests({ kind: 'existing' });
@@ -115,6 +149,23 @@ describe('HodlrMarket restore retry and the schema gate', () => {
 
     await vi.waitFor(() => expect(isMarketReady()).toBe(true));
     expect(getCurrentPrice()).toBe(172);
+  });
+});
+
+/**
+ * MICA-339 (F20). `Math.random` is V8's xorshift128+, shared by the whole resource and
+ * recoverable from a run of its outputs; a player who recovered it could compute the coming
+ * ticks and trade ahead of them. The walk draws from the CSPRNG instead.
+ */
+describe('HodlrMarket draws from the CSPRNG, not Math.random', () => {
+  it('moves on the crypto draw and ignores a pinned Math.random', () => {
+    const mathRandom = vi.spyOn(Math, 'random').mockReturnValue(1);
+    alwaysStep(MAX_DOWN);
+    __tickMarket();
+
+    expect(rng.calls).toBeGreaterThan(0);
+    expect(mathRandom).not.toHaveBeenCalled();
+    expect(getCurrentPrice()).toBe(Math.round(STARTING_PRICE * Math.exp(-MAX_STEP_PCT)));
   });
 });
 

@@ -327,4 +327,25 @@ describe('writing a phone number back', () => {
     });
     expect(FrameworkBridge.getPlayerPhone(5)).toBe('5561234');
   });
+
+  /**
+   * MICA-339 F18: the number moved to another citizen with the phone, and the write-back
+   * leaves the previous holder's `charinfo.phone` naming it on purpose. That mirror must not
+   * become their caller id, on either qb core.
+   */
+  it('never answers a charinfo mirror whose number another citizen now holds', () => {
+    const victim = { PlayerData: { citizenid: 'CIT_A', charinfo: { phone: '5550000' } } };
+    useResources({ qbx_core: { GetPlayer: () => victim } });
+    // Nobody holds it yet as far as this process knows: the mirror is all there is.
+    expect(FrameworkBridge.getPlayerPhone(5)).toBe('5550000');
+
+    rememberNumber('CIT_THIEF', '5550000');
+    expect(FrameworkBridge.getPlayerPhone(5)).toBeNull();
+    expect(FrameworkBridge.getPlayer(5)?.phone).toBeUndefined();
+
+    useResources({
+      'qb-core': { GetCoreObject: () => ({ Functions: { GetPlayer: () => victim } }) }
+    });
+    expect(FrameworkBridge.getPlayerPhone(5)).toBeNull();
+  });
 });

@@ -285,6 +285,9 @@ app.registerEvent('broadcastStart', async (source, _cbId, data, citizenid) => {
   return { ok: true };
 });
 
+// A phone in hand, server-side: the client closing the phone is not the check (MICA-339).
+app.requirePhoneFor('broadcastStart');
+
 /**
  * Pause, resume, or seek an existing broadcast.
  *

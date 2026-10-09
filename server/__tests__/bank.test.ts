@@ -35,6 +35,7 @@ const transferMock = vi.hoisted(() => vi.fn());
 vi.mock('../lib/Payments', () => ({ transfer: transferMock }));
 
 import '../services/Bank';
+import { installTestPhone, NOT_HELD_REPLY, refusePhone } from './phoneStub';
 
 /**
  * `Bank.ts`'s own orchestration around `Payments.transfer` — resolving a recipient by
@@ -60,6 +61,17 @@ describe('bank: sendMoney', () => {
     bridge.byPhone.clear();
     (globalThis as any).GetConvar = (_name: string, fallback: string) => fallback;
     transferMock.mockResolvedValue({ ok: true, from: 'CID_CALLER', to: 'CID_TARGET', amount: 100 });
+  });
+
+  it('refuses a send from a player holding no phone, and moves nothing (MICA-339)', async () => {
+    bridge.byPhone.set('555-0002', { citizenid: 'CID_TARGET', source: 2 });
+    refusePhone();
+    try {
+      expect(await call({ phone: '555-0002', amount: 100 })).toEqual(NOT_HELD_REPLY);
+      expect(transferMock).not.toHaveBeenCalled();
+    } finally {
+      installTestPhone();
+    }
   });
 
   it('resolves the recipient by phone number and forwards to Payments.transfer', async () => {

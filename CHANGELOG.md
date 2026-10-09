@@ -1153,6 +1153,34 @@ export instead, which authenticates its caller.
 
 ### Fixed
 
+**A security review closed a set of privacy and authority gaps (MICA-339).** No
+schema change and no command to run. What players and scripts notice:
+
+- **On a server that sets `mica_phone_item`, the server now refuses some actions
+  from a player holding no phone**, instead of trusting the player's client:
+  sending money, paying an invoice, trading on Hodlr, posting a listing or a
+  Blab, sending a message or a Blabber DM, and starting a music broadcast. They
+  get the usual "You are not holding a phone" toast. Reading is unchanged, so a
+  phone-less player's phone still starts. **`CreateCall` for such a player now
+  answers `caller_has_no_phone`**, and a call shows the number of the phone
+  actually in hand.
+- **Messages no longer tell one player another's character name or main
+  number.** People show as the reader's saved contact, else their number, and a
+  new 1:1 thread is named the same way. A thread with a burner now shows the
+  burner's own number. 1:1 threads created before this keep the other player's
+  name in the database, but it no longer leaves the server.
+- **A player can report, and react to, only what they can see**: a message in
+  their own thread, a DM they sent or received, a photo they own or can see
+  attached, or a public post that is still up. Anything else is answered as if
+  it did not exist.
+- **A photo moderated or deleted after it was attached stops showing** on Blabs,
+  listings and messages, and can no longer be attached again.
+- **A photo a player saves must be an image, not a link**, so a shared photo can
+  no longer make every viewer's game fetch somebody else's server. The same goes
+  for a Blabber avatar, including one brought in by `micaimport`, which now
+  keeps only an image and drops a link. Wallpapers take only an image or an
+  `https` address, escaped.
+
 **A failed battery read no longer resets a phone to 100% (MICA-325, MICA-326).**
 When the database could not answer at load, micaOS treated the phone as having
 no saved charge and wrote 100% over it. A read error now writes nothing and is
@@ -1357,6 +1385,21 @@ Everything above is written for a server owner. This part is not. It is for
 somebody maintaining a `core: false` add-on outside this repo, and it answers
 one question: does that bundle still compile against this release, and does its
 manifest still ask for the right things.
+
+**Messages no longer carry other players' ids (MICA-339).** `UIConversation`
+drops `citizenid`, `participant_a` and `participant_b`; `UIMessage` drops
+`citizenid`. Use `UIMessage.mine` (the reader sent it) and `UIMessage.sender_id`
+(the sending member's `participants[].id` in that thread, or `null` for a line
+or a member who has left) instead of comparing citizenids. Each of
+`participants` is `{ id, role, status, last_read, self, phone }`: `self` marks
+the reader's own membership, and `phone` is the number on the phone in the
+thread; it no longer has `citizenid`, `phone_id` or a `contact`, so name a
+member from your own contacts by `phone`. `IncomingMessage` gains `sender_id`,
+and its `senderName` is set only for a text from a line. A wallpaper set through
+`useWallpaperWrite` must be an inline image or an `https` address with no quote,
+bracket or whitespace, or the call rejects, and `MediaThumb` draws `data` only
+when it is an inline `data:image/`. SDK 1 had not been released, so
+`SDK_CONTRACT_VERSION` stays `1`.
 
 **A server refusal now keeps its key (MICA-310).** When the server refuses
 `useService(...).call(...)` with a catalog key (`server.rateLimited`,

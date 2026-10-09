@@ -76,6 +76,8 @@ export interface ReceiveMessagePayload {
   avatar?: string;
   created_at?: string;
   replyToId?: number;
+  /** The sending member's id in the thread, off `row` (MICA-339); a player's citizenid is not sent. */
+  senderId?: number;
 }
 
 /**
@@ -279,7 +281,18 @@ export function parseReceiveMessage(data: unknown): ReceiveMessagePayload | null
   const row = safeObject(obj.row);
   const replyToId = safeNumber(row?.reply_to_id ?? obj.reply_to_id);
   const id = safeNumber(row?.id ?? obj.id);
-  return { id, conversationId, message, senderName, phone, avatar, created_at, replyToId };
+  const senderId = safeNumber(row?.sender_id);
+  return {
+    id,
+    conversationId,
+    message,
+    senderName,
+    phone,
+    avatar,
+    created_at,
+    replyToId,
+    senderId
+  };
 }
 
 function parseContactShareSender(val: unknown): ContactShareSender | null {

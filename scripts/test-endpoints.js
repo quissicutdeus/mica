@@ -46,7 +46,8 @@ import { connectAsOxmysql, createOxmysql } from './lib/oxmysql-shim.js';
  * answered, and blocked like a number unless its owner says otherwise (MICA-278); a line told
  * of a player's text and replying into the same thread (MICA-275); `SendMessage` to a player
  * online and offline (MICA-223); qb-phone's mail events (MICA-222); and a player's own data
- * exported and deleted with another's untouched (MICA-168). qb-phone's `CustomNotification` is
+ * exported and deleted with another's untouched (MICA-168); and a report or a reaction refused,
+ * exactly as a missing id is, on a DM, a text or a photo its sender cannot see (MICA-339). qb-phone's `CustomNotification` is
  * a client event with no server half, so it is not here.
  *
  * **What this does not prove, and nothing in this repo can:** the client relay (`client/`)
@@ -86,6 +87,7 @@ const FLOW_CHECKS = {
   sendMessage: { standalone: 12, qb: 12 },
   qbMail: { standalone: 10, qb: 10 },
   devices: { standalone: 27, qb: 31 },
+  reports: { standalone: 14, qb: 14 },
   privacy: { standalone: 13, qb: 13 }
 };
 const MINIMUM_CHECKS = Object.values(FLOW_CHECKS).reduce(
@@ -805,20 +807,26 @@ const runText = async (shape, numbers) => {
   );
   const push = pushes[0]?.args[0];
   check(
-    `${kind}: the push carries the thread, the text and the sender`,
+    `${kind}: the push carries the thread, the text and the number, never the sender's name or citizenid`,
     {
       conversation_id: push?.conversation_id,
       message: push?.message,
       phone: push?.phone,
       senderName: push?.senderName,
-      row: push?.row?.id
+      row: push?.row?.id,
+      rowCitizenid: push?.row?.citizenid,
+      mine: push?.row?.mine
     },
     {
+      // MICA-339: a player's real name and citizenid never reach another player; the
+      // reader names the sender from their own contacts, else the number.
       conversation_id: thread.id,
       message: 'hello from 1',
       phone: numbers[1],
-      senderName: 'Alice Test',
-      row: sent.id
+      senderName: undefined,
+      row: sent.id,
+      rowCitizenid: undefined,
+      mine: false
     }
   );
 
@@ -2014,6 +2022,181 @@ const runPrivacy = async (shape, live) => {
   );
 };
 
+/* ------------------------------------------------------------------ reports and reactions */
+
+/**
+ * A report or a reaction only reaches a row its sender can see (MICA-339).
+ *
+ * 1 and 2 (sources `A` and `B`) share a Blabber DM, a text thread and a photo sent into it; 4
+ * (`D`) is in neither. 4 reports and reacts to what is between 1 and 2 and is answered exactly as
+ * an id that does not exist is answered, while 1 and 2 are not refused. The visibility rules are
+ * SQL the unit suites only stub — the correlated EXISTS behind a photo, the DM ends through
+ * `mica_accounts`, the batched read's join — so this is the first place they run.
+ *
+ * The photos and the Blab are seeded straight into the database: what is under test is who may
+ * report them, not how they were posted.
+ */
+const MISSING = 999_999;
+
+const runReports = async (shape, live) => {
+  const { kind } = shape;
+  const { A, B, D } = live;
+  const report = (src, targetTable, targetId) =>
+    shape.call(src, 'reports', 'create', { targetTable, targetId, category: 'harassment' });
+  const react = (src, account, targetId) =>
+    shape.call(src, 'accounts', 'react', {
+      app: 'blabber',
+      account_id: account,
+      target_table: 'mica_blabber_dms',
+      target_id: targetId,
+      emoji: '👍'
+    });
+
+  step(`${kind}: 1, 2 and 4 claim Blabber handles; 1 DMs 2 and texts 2`);
+  const claim = (src, handle) => shape.call(src, 'accounts', 'create', { app: 'blabber', handle });
+  const [a, b, d] = [
+    await claim(A, `alice_${kind}`),
+    await claim(B, `bob_${kind}`),
+    await claim(D, `dana_${kind}`)
+  ];
+  const dm = await shape.call(A, 'blabber_dms', 'send', {
+    account_id: a?.id,
+    peer_account_id: b?.id,
+    body: 'between 1 and 2'
+  });
+  const thread = await shape.call(A, 'conversations', 'create', {
+    phone: await shape.numberOf(PEOPLE[2])
+  });
+  const text = await shape.call(A, 'messages', 'send', {
+    conversation_id: thread?.id,
+    message: 'also between 1 and 2'
+  });
+  check(
+    `${kind}: three accounts, a DM and a text exist`,
+    [a?.id, b?.id, d?.id, dm?.id, text?.id].map((id) => typeof id),
+    ['number', 'number', 'number', 'number', 'number']
+  );
+
+  step(`${kind}: 4 reports and reacts to what is between 1 and 2`);
+  const gone = await report(D, 'mica_blabber_dms', MISSING);
+  check(
+    `${kind}: an id that does not exist is answered as gone`,
+    gone?.key,
+    'server.reports.targetGone'
+  );
+  check(
+    `${kind}: 4 reporting 1 and 2's DM is answered exactly as that`,
+    await report(D, 'mica_blabber_dms', dm?.id),
+    gone
+  );
+  check(
+    `${kind}: 4 reporting 1's text to 2 is answered exactly as a missing text`,
+    [await report(D, 'mica_messages', text?.id), await report(D, 'mica_messages', MISSING)],
+    [gone, gone]
+  );
+  const reactGone = await react(D, d?.id, MISSING);
+  check(
+    `${kind}: 4 reacting to 1 and 2's DM is answered exactly as a missing DM`,
+    [await react(D, d?.id, dm?.id), reactGone?.key],
+    [reactGone, 'server.reports.targetGone']
+  );
+  const written = async (sql, params) => Number((await shape.rows(sql, params))[0]?.n);
+  check(
+    `${kind}: and nothing of 4's is written`,
+    [
+      await written('SELECT COUNT(*) AS n FROM `mica_reports` WHERE `citizenid` = ?', [
+        shape.citizenOf(PEOPLE[4])
+      ]),
+      await written('SELECT COUNT(*) AS n FROM `mica_account_reactions` WHERE `account_id` = ?', [
+        d?.id
+      ])
+    ],
+    [0, 0]
+  );
+
+  step(`${kind}: 1 and 2 react to their DM, and 2 reports what 1 sent`);
+  check(
+    `${kind}: both ends of the DM may react to it`,
+    [await react(A, a?.id, dm?.id), await react(B, b?.id, dm?.id)],
+    [true, true]
+  );
+  const filed = [
+    await report(B, 'mica_blabber_dms', dm?.id),
+    await report(B, 'mica_messages', text?.id)
+  ];
+  check(
+    `${kind}: 2 may report 1's DM and 1's text`,
+    filed.map((r) => r?.ok),
+    [true, true]
+  );
+
+  step(`${kind}: 1 unsends a text, and 2 reports it`);
+  const unsent = await shape.call(A, 'messages', 'send', {
+    conversation_id: thread?.id,
+    message: 'taken back'
+  });
+  await shape.call(A, 'messages', 'delete', { id: unsent?.id });
+  check(
+    `${kind}: a report on an unsent text is answered as a missing one`,
+    await report(B, 'mica_messages', unsent?.id),
+    gone
+  );
+
+  step(`${kind}: a photo on 2's public Blab, and one 1 sent only into the thread with 2`);
+  const photo = async (person) =>
+    (
+      await shape.rows(
+        "INSERT INTO `mica_media` (`citizenid`, `kind`, `data`) VALUES (?, 'photo', 'data:image/webp;base64,AAAA')",
+        [shape.citizenOf(person)]
+      )
+    ).insertId;
+  const onBlab = await photo(PEOPLE[2]);
+  const blab = (
+    await shape.rows(
+      'INSERT INTO `mica_blabber` (`citizenid`, `account_id`, `body`) VALUES (?, ?, ?)',
+      [shape.citizenOf(PEOPLE[2]), b?.id, 'look at this']
+    )
+  ).insertId;
+  await shape.rows(
+    'INSERT INTO `mica_blabber_attachments` (`blab_id`, `citizenid`, `media_id`) VALUES (?, ?, ?)',
+    [blab, shape.citizenOf(PEOPLE[2]), onBlab]
+  );
+  const inThread = await photo(PEOPLE[1]);
+  await shape.rows(
+    'INSERT INTO `mica_messages_attachments` (`message_id`, `citizenid`, `photo_id`) VALUES (?, ?, ?)',
+    [text?.id, shape.citizenOf(PEOPLE[1]), inThread]
+  );
+  check(
+    `${kind}: 4 may report the photo on a public Blab`,
+    (await report(D, 'mica_media', onBlab))?.ok,
+    true
+  );
+  check(
+    `${kind}: 4 reporting the photo in 1 and 2's thread is answered as a missing one`,
+    [await report(D, 'mica_media', inThread), await report(D, 'mica_media', MISSING)],
+    [gone, gone]
+  );
+  check(
+    `${kind}: 2, in that thread, may report it`,
+    (await report(B, 'mica_media', inThread))?.ok,
+    true
+  );
+
+  step(`${kind}: 4 and 2 ask for the reactions on 1 and 2's DM`);
+  const reactionsFor = (src) =>
+    shape.call(src, 'accounts', 'reactionsFor', {
+      app: 'blabber',
+      target_table: 'mica_blabber_dms',
+      target_ids: [dm?.id]
+    });
+  check(
+    `${kind}: 2 is counted both reactions, one of them its own`,
+    (await reactionsFor(B))?.[dm?.id],
+    { counts: { '👍': 2 }, mine: ['👍'] }
+  );
+  check(`${kind}: 4 is counted none`, (await reactionsFor(D))?.[dm?.id], { counts: {}, mine: [] });
+};
+
 /* ------------------------------------------------------------------ main */
 
 /** One flow, held to its own floor. */
@@ -2052,6 +2235,7 @@ const runShape = async (db, kind) => {
     await flow(shape, 'sendMessage', () => runSendMessage(shape, numbers, live));
     await flow(shape, 'qbMail', () => runQbMail(shape, live));
     await flow(shape, 'devices', () => runDevices(shape, live));
+    await flow(shape, 'reports', () => runReports(shape, live));
     await flow(shape, 'privacy', () => runPrivacy(shape, live));
   } finally {
     await shape.stop();

@@ -24,12 +24,13 @@ const threadRef = {
 };
 
 /**
- * Conversations: `get`, `create` and `delete` are hand-written and therefore custom, even
- * though three of those are generic-sounding names. What decides is the registration path.
+ * Conversations: `get`, `create`, `update` and `delete` are hand-written and therefore custom,
+ * even though all four are generic-sounding names. What decides is the registration path.
  *
- * `update` is **not** here, and that is the interesting one: renaming a thread rides the
- * ordinary ownership-scoped generic `update`, so only the creator can do it and the write
- * allowlist is what validates it. A service can mix the two.
+ * `update` joined them in MICA-339. Renaming used to ride the ownership-scoped generic update,
+ * which asked the conversation row's `citizenid` — the creator's, which never moves — so a
+ * creator who had sold the phone the thread was on could still rename it, and its new holder
+ * could not. It is a custom action now, authorized by the admin membership on the phone in hand.
  */
 export const conversationsContract = defineContract({
   id: 'conversations',
@@ -73,8 +74,12 @@ export const conversationsContract = defineContract({
       input: s.object({
         /** The other party, as a number. Resolved server-side, and never a raw citizenid. */
         phone: s.string({ min: 1, max: 32 }).optional(),
-        /** A thread name the creator chose. `mica_messages_conversations.name` is a varchar(255). */
-        name: s.string({ min: 1, max: 255 }).optional(),
+        /**
+         * A thread name the creator chose. `mica_messages_conversations.name` is a varchar(50);
+         * this said 255 until MICA-339, so a longer name passed the contract and was refused by
+         * the column's own rule instead.
+         */
+        name: s.string({ min: 1, max: 50 }).optional(),
         /**
          * Group members, each a phone number resolved the same way `phone` is.
          *
@@ -109,6 +114,20 @@ export const conversationsContract = defineContract({
         is_group: s.boolean().optional()
       }),
       output: responseType<Conversation | null>()
+    },
+
+    /**
+     * Rename a thread: the admin, through the phone in hand (MICA-339). `id`, not
+     * `conversation_id`, because that is what the generic update it replaced read and what the
+     * web already sends. 50 is the column's width. `false` when the caller is not the thread's
+     * admin on that phone, as the generic update answered a non-creator.
+     */
+    update: {
+      input: s.object({
+        id: s.positiveInt(),
+        name: s.string({ min: 1, max: 50 })
+      }),
+      output: responseType<boolean>()
     },
 
     /** Mark this participant's thread read. Scoped to their own participant row. */

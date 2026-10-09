@@ -152,7 +152,7 @@ export class BlabberRepository extends SchemaRepository<Blab> {
               m.id AS media_id, m.kind, m.data, m.url, m.thumbnail,
               m.mime_type, m.duration_ms, m.alt_text
          FROM \`mica_blabber_attachments\` a
-         JOIN \`mica_media\` m ON a.media_id = m.id
+         JOIN \`mica_media\` m ON a.media_id = m.id AND m.status <> 'moderated'
         WHERE a.blab_id IN (${placeholders})
         ORDER BY a.id ASC`,
       ids

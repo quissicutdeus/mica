@@ -7,6 +7,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script lang="ts">
   import MediaThumb from './MediaThumb.svelte';
   import type { MediaPreview } from '@mica/shared/types';
+  import { isDataImage } from '@mica/shared/imageSource';
   import { useMedia } from '../host/useMedia';
   import { usePhoneNotification } from '../host/usePhoneNotification';
   import PhotoIcon from './icons/PhotoIcon.svelte';
@@ -78,6 +79,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     try {
       const full = await fullMedia(photo.id);
       if (!full?.data) throw new Error('That photo has no image data.');
+      // Inline bytes only (MICA-339), the rule `MediaThumb` draws `data` by: a row stored before
+      // the server checked `data` can still hold a remote URL, and handing it on as an avatar
+      // would have every phone that draws the contact request it.
+      if (!isDataImage(full.data)) throw new Error('That photo is not an inline image.');
       onselect?.(full.data);
     } catch (e) {
       console.warn(`Photo ${photo.id} could not be loaded for selection.`, e);

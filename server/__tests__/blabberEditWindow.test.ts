@@ -64,6 +64,9 @@ const load = async (value?: string) => {
   (globalThis as any).GetConvar = (name: string, fallback: string) =>
     name === CONVAR && value !== undefined ? value : fallback;
   const mod = await import('../services/Blabber');
+  // `create` needs a phone in hand since MICA-339, and the phone seam is a fresh module now
+  // too: `setup.ts` installed the test phone in the graph `resetModules` just dropped.
+  (await import('./phoneStub')).installTestPhone();
   return mod.blabber;
 };
 

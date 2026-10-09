@@ -101,12 +101,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       ? $conversationsStore.find(
           (c) =>
             c.target === selectedContact?.phone ||
-            c.target === selectedContact?.citizenid ||
-            c.participants?.some(
-              (p) =>
-                p.contact?.phone === selectedContact?.phone ||
-                p.citizenid === selectedContact?.citizenid
-            )
+            // By the number on a member's phone (MICA-339). A contact's own `citizenid` is its
+            // owner's, so matching members on it found any thread the owner was in.
+            c.participants?.some((p) => !p.self && p.phone === selectedContact?.phone)
         )
       : null
   );

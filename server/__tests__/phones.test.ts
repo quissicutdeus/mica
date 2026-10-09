@@ -370,6 +370,37 @@ describe('the phone a request is for', () => {
     await expect(phoneForCitizen(CID)).resolves.toBe('f'.repeat(32));
     expect(dbMock.insert).not.toHaveBeenCalled();
   });
+
+  /**
+   * MICA-339 F7: the victim resolved the phone before it was taken, so the cache still named
+   * it. A row filed there under the victim is hidden from them and handed to the thief by the
+   * next handover walk.
+   */
+  it("never files a victim's row on the phone a thief now holds", async () => {
+    const STOLEN = 'a'.repeat(32);
+    const THIEF_SRC = 8;
+    const THIEF = 'THIEF001';
+    const thief = { citizenid: THIEF, source: THIEF_SRC, setMeta: vi.fn(), rawPlayer: {} };
+    bridgeMock.getPlayer.mockImplementation((src: number) => (src === THIEF_SRC ? thief : player));
+    bridgeMock.itemSlots.mockReturnValue([{ slot: 3, metadata: { phoneId: STOLEN } }]);
+
+    // The victim holds it: the cache answers, with no query.
+    dbMock.query.mockResolvedValue([{ id: 1, citizenid: CID, phone_id: STOLEN, claimed: 1 }]);
+    await phoneForRequest(SRC, CID);
+    await expect(phoneForCitizen(CID)).resolves.toBe(STOLEN);
+    expect(dbMock.single).not.toHaveBeenCalled();
+
+    // The thief resolves it: a handover, and the row names the thief from here on.
+    dbMock.query.mockResolvedValue([{ id: 1, citizenid: CID, phone_id: STOLEN, claimed: 1 }]);
+    await phoneForRequest(THIEF_SRC, THIEF);
+
+    // The victim's next row lands on the phone they last touched that is still theirs.
+    const KEPT = 'b'.repeat(32);
+    dbMock.single.mockResolvedValue({ phone_id: KEPT });
+    await expect(phoneForCitizen(CID)).resolves.toBe(KEPT);
+    // And the thief's own rows are on the phone in their hand.
+    await expect(phoneForCitizen(THIEF)).resolves.toBe(STOLEN);
+  });
 });
 
 describe('the phone a source is on, synchronously', () => {

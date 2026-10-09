@@ -725,10 +725,20 @@ export const identityPhone = (citizenid: string): Promise<string> =>
  * recently, which a handover and a claim both move `updated_at` for; else their identity
  * phone, created if they have none at all. The middle case is an offline player on a gated
  * server: nothing is in hand to ask, and the phone they last used is the best answer there is.
+ *
+ * **The cached phone is only an answer while nobody else is known to hold it** (MICA-339).
+ * `activeByCitizen` is written by every resolve and cleared by none, so after a robbery it
+ * still names the phone the thief now holds. Rows filed there under the victim are hidden from
+ * the victim and handed to the thief by the next handover walk. Checked against `holderNow`
+ * rather than cleared at the handover, so the one record of who holds a phone decides, and a
+ * cache entry can never outlive it.
  */
 export const phoneForCitizen = async (citizenid: string): Promise<string> => {
   const active = activeByCitizen.phone.get(citizenid);
-  if (active) return active;
+  if (active) {
+    if (holderNow(active, citizenid) === citizenid) return active;
+    activeByCitizen.phone.delete(citizenid);
+  }
 
   // Phones only (MICA-264): a call logged against an offline player, or a notification for
   // one, must never land on the tablet they happened to touch last.

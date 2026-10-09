@@ -2333,8 +2333,9 @@ const BASELINE_TYPE_SHAPES: Record<string, string[]> = {
     'type'
   ],
   Transaction: ['amount', 'direction', 'id', 'issuer?', 'message?', 'receiver?', 'time', 'title?'],
+  // MICA-339 (owner, 2026-10-08): SDK 1 was unreleased, so these removals stay at version 1
+  // rather than bumping.
   UIConversation: [
-    'citizenid',
     'created_at',
     'id',
     'is_group',
@@ -2342,8 +2343,6 @@ const BASELINE_TYPE_SHAPES: Record<string, string[]> = {
     'lastMessageAt',
     'last_message?',
     'name?',
-    'participant_a?',
-    'participant_b?',
     'participants?',
     'status?',
     'target',
@@ -2353,9 +2352,10 @@ const BASELINE_TYPE_SHAPES: Record<string, string[]> = {
     'unread_count?',
     'updated_at'
   ],
+  // MICA-339 (owner, 2026-10-08): SDK 1 was unreleased, so these removals stay at version 1
+  // rather than bumping.
   UIMessage: [
     'attachments?',
-    'citizenid',
     'conversation_id',
     'created_at',
     'edited?',

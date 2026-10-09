@@ -863,6 +863,49 @@ by this list until someone re-weighs it.
   existed is not recognised at all. The log gives a host and a count, never the
   URLs.
 
+- **A security scan of `server/` and `shared/` on 2026-10-08 (MICA-339) left six
+  things open on purpose.**
+  - **Imported message bodies still sit in the import ledger's keys**
+    (MICA-340). A qb-phone message's `mica_import_ledger.source_key` holds its
+    body verbatim or as an unkeyed SHA-1. A key without the body breaks the
+    dedup that keeps a re-import from duplicating or dropping messages, and the
+    right key, an HMAC under the content key, needs a rotation rule first. The
+    exposure begins only once the qb-phone tables are dropped, since until then
+    the same bodies sit there in plaintext.
+  - **Any client can join any call's voice channel** (MICA-341). A call's id is
+    its pma-voice channel, and pma-voice's own `setPlayerCall` net event lets a
+    client join any channel. Call ids are now 31 bits from `node:crypto` instead
+    of six digits from `Math.random`, which slows guessing but does not stop a
+    client that learns one.
+  - **Holding a phone is enforced on the server for a named set of writes.** On
+    a server with `mica_phone_item`, sending money, paying an invoice, trading
+    on Hodlr, posting a listing or a Blab, sending a message or a DM, and
+    starting a music broadcast refuse a player holding no phone
+    (`requirePhoneFor` on the endpoint). Reads are left open so a phone-less
+    player's shell still boots and loads its badges. Other writes still run for
+    a phone-less player: following and reacting on Blabber, a Blabber ear,
+    sharing a contact or a live location, marking a listing sold or removing it,
+    and declining an invoice. `SetPhoneEnabled(false)` is still enforced by the
+    player's own client only.
+  - **A stolen phone keeps receiving its old owner's new rows until the thief
+    first opens it.** Notifications, line texts and dropped photos for a
+    character are filed on the phone they last used. Once someone else is seen
+    holding it, micaOS stops (MICA-339's F7). Before that, nothing tells a
+    stolen phone from one in a stash, and the owner chose that a stashed or
+    confiscated phone keeps receiving, like a real one. So a stolen phone gets
+    the victim's new rows until the thief's first use hands them over.
+  - **A number that moved to another phone can show on a call for a while after
+    a restart.** On qb, `charinfo.phone` is no longer used once another citizen
+    holds that number, but until the new holder's number syncs after a resource
+    restart nothing says so.
+  - **Media rows and Blabber avatars written before this fix may hold a remote
+    URL.** Avatars written since, by a player or by `micaimport`, must be an
+    inline image. The old media rows are kept, but nothing draws them: a
+    thumbnail draws only an inline image from `data`, and a wallpaper takes only
+    an inline image or an `https` source with no quote, parenthesis or
+    whitespace, escaped. An old remote avatar does still draw in the Blabber
+    feed, so it still reaches the address it names, until its owner changes it.
+
 ---
 
 ## What the test suite cannot tell you

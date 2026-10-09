@@ -180,6 +180,58 @@ describe('notification click-through', () => {
   });
 });
 
+/**
+ * MICA-339. A player's text no longer carries the sender's character name, which told a
+ * burner's correspondent who held it on every message. The toast names the sender from the
+ * reader's own contacts for the number, else shows a line's label, else the number.
+ */
+describe('who an incoming text is from', () => {
+  const withContacts = (list: unknown[]) =>
+    vi.spyOn(contacts, 'subscribe').mockImplementation((run: (value: never) => void) => {
+      run(list as never);
+      return () => {};
+    });
+
+  it("names the sender from the reader's own contact for the number", () => {
+    const spy = withContacts([
+      { id: 1, firstname: 'Lamar', lastname: 'Davis', phone: '555-0188', favorite: false }
+    ]);
+    try {
+      route(message('receiveMessage', { conversation_id: 3, phone: '555-0188', message: 'yo' }));
+      expect(lastToast()).toMatchObject({ sender: 'Lamar Davis' });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('shows the number when the reader has no contact for it', () => {
+    const spy = withContacts([]);
+    try {
+      route(message('receiveMessage', { conversation_id: 3, phone: '555-0188', message: 'yo' }));
+      expect(lastToast()).toMatchObject({ sender: '555-0188' });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("still shows a line's label, which is the only name a line has", () => {
+    const spy = withContacts([]);
+    try {
+      route(
+        message('receiveMessage', {
+          conversation_id: 3,
+          phone: '555-0420',
+          senderName: 'Downtown Cab',
+          message: 'Outside'
+        })
+      );
+      expect(lastToast()).toMatchObject({ sender: 'Downtown Cab' });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
 describe('installApp', () => {
   const catalogEntry = {
     id: 'remote_weather',

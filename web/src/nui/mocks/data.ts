@@ -992,6 +992,9 @@ const defaultGtaPrompts = [
 
 export const mockMessages: Record<number, Message[]> = {};
 
+/** The mock player's own number, as `getPhoneNumber` answers it in `services/client.ts`. */
+export const MOCK_OWN_NUMBER = '867-5309';
+
 export const mockConversations: Conversation[] = conversationTitles.map((c, convIndex) => {
   const convId = convIndex + 1;
   const convTimeOffset = convIndex * 1.4 * 24 * 60 * 60 * 1000;
@@ -1007,28 +1010,33 @@ export const mockConversations: Conversation[] = conversationTitles.map((c, conv
   const groupMembers = c.is_group
     ? mockContacts.slice((convIndex * 3) % 10, ((convIndex * 3) % 10) + 4)
     : [];
-  const matchingContact = mockContacts.find((mc) => mc.phone === c.phone || mc.citizenid === c.cit);
+  /**
+   * Membership ids, as the server hands them out in place of anyone's citizenid (MICA-339):
+   * the caller's own row, the other side of a 1:1, and each group member. A message names its
+   * sender by one of these, never by who they are.
+   */
+  const selfId = convId * 100 + 99;
+  const otherId = convId * 10;
+  const memberId = (idx: number) => convId * 100 + idx;
 
   const msgList: Message[] = Array.from({ length: 200 }, (_, mIndex) => {
     const isUnreadExMsg = isCrazyEx && mIndex >= 175;
     let isMe = mIndex % 2 === 0;
-    let senderCit = isMe ? 'my-id' : c.cit;
 
     if (c.is_group && groupMembers.length > 0) {
-      if (!isMe) {
-        const member = groupMembers[mIndex % groupMembers.length];
-        senderCit = member.citizenid;
-      }
+      // Each group member in turn; `isMe` stands.
     } else if (isCrazyEx) {
       isMe = mIndex < 175 ? mIndex % 2 === 0 : false;
-      senderCit = isMe ? 'my-id' : c.cit;
     } else if (isSentByMeRead || isSentByMeDelivered) {
       isMe = mIndex % 2 === 1;
-      senderCit = isMe ? 'my-id' : c.cit;
     } else if (isOtherUnread) {
       isMe = mIndex % 2 === 0;
-      senderCit = isMe ? 'my-id' : c.cit;
     }
+    const senderId = isMe
+      ? selfId
+      : c.is_group && groupMembers.length > 0
+        ? memberId(mIndex % groupMembers.length)
+        : otherId;
 
     const hasAttachment = !isCrazyEx && mIndex % 25 === 12;
     const multiAttachment = !isCrazyEx && mIndex % 50 === 37;
@@ -1084,7 +1092,8 @@ export const mockConversations: Conversation[] = conversationTitles.map((c, conv
     return {
       id: convId * 1000 + mIndex + 1,
       conversation_id: convId,
-      citizenid: senderCit,
+      mine: isMe,
+      sender_id: senderId,
       status: 'active',
       message: text,
       attachments,
@@ -1113,9 +1122,20 @@ export const mockConversations: Conversation[] = conversationTitles.map((c, conv
     recipientLastRead = lastMsg.created_at as string;
   }
 
+  /** The caller's own membership, as the server includes it (MICA-339), on the mock's number. */
+  const self = {
+    id: selfId,
+    conversation_id: convId,
+    role: 'admin' as const,
+    status: 'active' as const,
+    last_read: lastMsg.created_at,
+    ...ts(),
+    self: true,
+    phone: MOCK_OWN_NUMBER
+  };
+
   return {
     id: convId,
-    citizenid: 'my-id',
     is_group: c.is_group,
     name: c.name,
     status: 'active',
@@ -1123,36 +1143,33 @@ export const mockConversations: Conversation[] = conversationTitles.map((c, conv
     updated_at: lastMsg.created_at,
     unread_count: unreadCount,
     last_message: lastMsg,
+    // Each member as the number on their phone and nothing else (MICA-339): the thread list
+    // names them from the address book, exactly as it must in game.
     participants: c.is_group
-      ? groupMembers.map((member, idx) => ({
-          id: convId * 100 + idx,
-          conversation_id: convId,
-          citizenid: member.citizenid,
-          role: idx === 0 ? 'admin' : 'member',
-          status: 'active',
-          last_read: ts().created_at,
-          ...ts(),
-          contact: member
-        }))
-      : [
-          {
-            id: convId * 10,
+      ? [
+          self,
+          ...groupMembers.map((member, idx) => ({
+            id: memberId(idx),
             conversation_id: convId,
-            citizenid: c.cit,
+            role: 'member' as const,
+            status: 'active' as const,
+            last_read: ts().created_at,
+            ...ts(),
+            self: false,
+            phone: member.phone
+          }))
+        ]
+      : [
+          self,
+          {
+            id: otherId,
+            conversation_id: convId,
             role: 'member',
             status: 'active',
             last_read: recipientLastRead,
             ...ts(),
-            contact: matchingContact || {
-              id: convId,
-              citizenid: c.cit,
-              firstname: c.name.split(' ')[0] || c.name,
-              lastname: c.name.split(' ')[1] || '',
-              phone: c.phone,
-              avatar: c.avatar,
-              favorite: false,
-              ...ts()
-            }
+            self: false,
+            phone: c.phone
           }
         ]
   };

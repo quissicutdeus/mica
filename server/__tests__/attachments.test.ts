@@ -13,7 +13,14 @@ import { MAX_ATTACHMENTS } from '@mica/shared/attachments';
  */
 const ownerOf = (owned: Set<number>) => ({
   findById: vi.fn(async (id: number, citizenid: string) =>
-    owned.has(id) ? { id, citizenid } : null
+    owned.has(id) ? { id, citizenid, status: 'active' } : null
+  )
+});
+
+/** Every id is the caller's own, at the status given for it. */
+const ownedAt = (statuses: Record<number, string | undefined>) => ({
+  findById: vi.fn(async (id: number, citizenid: string) =>
+    id in statuses ? { id, citizenid, status: statuses[id] } : null
   )
 });
 
@@ -38,6 +45,24 @@ describe('resolveOwnedAttachments', () => {
       repo
     );
     expect(result).toEqual([{ photo_id: 5 }]);
+  });
+
+  /**
+   * MICA-339 (F11). Ownership alone let a moderated or deleted photo be attached again and
+   * go back out to a thread, the feed or a listing. The positive twin is in the same call: the
+   * active row survives, so the filter is a status filter and not one that drops everything.
+   */
+  it('keeps only active photos: a moderated, deleted or status-less row is dropped', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const repo = ownedAt({ 1: 'active', 2: 'moderated', 3: 'deleted', 4: undefined });
+    const result = await resolveOwnedAttachments(
+      [{ photo_id: 1 }, { photo_id: 2 }, { photo_id: 3 }, { photo_id: 4 }],
+      'ABC',
+      repo
+    );
+    expect(result).toEqual([{ photo_id: 1 }]);
+    expect(repo.findById).toHaveBeenCalledTimes(4);
+    warn.mockRestore();
   });
 
   it('returns an empty array for a non-array or empty input', async () => {

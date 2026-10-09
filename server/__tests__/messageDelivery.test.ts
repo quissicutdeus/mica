@@ -237,7 +237,10 @@ describe('deliverToParticipants', () => {
 
   it('sends the shape the shell already routes', async () => {
     // `receiveMessage` reads these field names; a mismatch is a silent no-op toast.
-    participants.rows = [{ citizenid: 'OTHER', status: 'active' }];
+    participants.rows = [
+      { id: 70, citizenid: 'SENDER', status: 'active' },
+      { id: 71, citizenid: 'OTHER', status: 'active' }
+    ];
     sources.set('OTHER', 3);
 
     await deliverToParticipants(7, 'SENDER', { name: 'Marla Vance', phone: '5550101' }, message);
@@ -245,8 +248,45 @@ describe('deliverToParticipants', () => {
     expect(emitted[0].payload).toMatchObject({
       conversation_id: 7,
       message: 'hi',
-      senderName: 'Marla Vance',
-      phone: '5550101'
+      phone: '5550101',
+      row: { id: 42, conversation_id: 7, mine: false, sender_id: 70 }
+    });
+  });
+
+  /**
+   * MICA-339. The push carried the sender's character name and the raw row with their
+   * citizenid to every member, on every text: a burner's correspondent learned who held it.
+   * The recipient names the sender from their own contacts for `phone` now.
+   */
+  it("never pushes a player sender's name or citizenid", async () => {
+    participants.rows = [
+      { id: 70, citizenid: 'SENDER', status: 'active' },
+      { id: 71, citizenid: 'OTHER', status: 'active' }
+    ];
+    sources.set('OTHER', 3);
+
+    await deliverToParticipants(7, 'SENDER', { name: 'Marla Vance', phone: '5550101' }, message);
+
+    expect(emitted[0].payload.senderName).toBeUndefined();
+    expect(emitted[0].payload.row).not.toHaveProperty('citizenid');
+    expect(JSON.stringify(emitted[0].payload)).not.toContain('SENDER');
+    expect(JSON.stringify(emitted[0].payload)).not.toContain('Marla Vance');
+  });
+
+  it("still pushes a line's label, which is the only name a line has", async () => {
+    participants.rows = [{ id: 71, citizenid: 'OTHER', status: 'active' }];
+    sources.set('OTHER', 3);
+
+    await deliverToParticipants(
+      7,
+      'ext:5550420',
+      { name: 'Downtown Cab', phone: '5550420' },
+      { ...message, citizenid: 'OTHER', external_sender: 'Downtown Cab' }
+    );
+
+    expect(emitted[0].payload).toMatchObject({
+      senderName: 'Downtown Cab',
+      row: { mine: false, sender_id: null, external_sender: 'Downtown Cab' }
     });
   });
 

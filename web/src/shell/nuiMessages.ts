@@ -156,12 +156,18 @@ export function createNuiMessageRouter(bridge: NotificationBridge) {
       phone: msg.phone,
       avatar: msg.avatar,
       created_at: msg.created_at,
-      reply_to_id: msg.replyToId
+      reply_to_id: msg.replyToId,
+      sender_id: msg.senderId ?? null
     });
+    // Named from the player's own contacts for the number, else a line's label, else the
+    // number (MICA-339): a player's text no longer carries the sender's character name.
+    const known = msg.phone ? get(contacts).find((c) => c.phone === msg.phone) : undefined;
     toast.showIncomingMessage({
-      sender: msg.senderName ?? msg.phone ?? 'Message',
+      sender: known
+        ? `${known.firstname} ${known.lastname || ''}`.trim()
+        : (msg.senderName ?? msg.phone ?? 'Message'),
       message: msg.message,
-      avatar: msg.avatar,
+      avatar: known?.avatar ?? msg.avatar,
       onReply: async (replyText) => {
         if (msg.conversationId) await conversationsStore.sendMessage(msg.conversationId, replyText);
       },

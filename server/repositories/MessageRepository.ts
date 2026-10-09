@@ -5,7 +5,44 @@
 import { SchemaRepository } from '../lib/defineService';
 import { Database } from '../lib/Database';
 import { openRows } from '../lib/contentCipher';
-import { Message } from '@mica/shared/types';
+import type { Message } from '@mica/shared/types';
+
+/**
+ * A message as the server holds it (MICA-339): the wire `Message` without the two answers worked
+ * out per reader, and with the sender's `citizenid`, which never leaves. `sender_id` is present
+ * on a row `findByConversation` read, where SQL works it out; see `messageForReader`.
+ */
+export type MessageRow = Omit<Message, 'mine' | 'sender_id'> & {
+  citizenid: string;
+  sender_id?: number | null;
+};
+
+/**
+ * A message row as one member of its thread receives it (MICA-339).
+ *
+ * Built field by field, so the sender's `citizenid` — and anything added to the table later — is
+ * not handed to every member by a spread. `mine` is the reader's own question, answered here: a
+ * text from a line sits on the reader's row without being theirs. `senderId` is the sending
+ * member's `Participant.id`, or null; a caller that has it from SQL passes the row's own.
+ */
+export const messageForReader = (
+  row: MessageRow,
+  readerCitizenId: string,
+  senderId: number | null = row.sender_id == null ? null : Number(row.sender_id)
+): Message => ({
+  id: Number(row.id),
+  conversation_id: Number(row.conversation_id),
+  mine: !row.external_sender && row.citizenid === readerCitizenId,
+  sender_id: row.external_sender ? null : senderId,
+  status: row.status,
+  message: row.message,
+  created_at: row.created_at,
+  updated_at: row.updated_at,
+  ...(row.edited === undefined ? {} : { edited: Boolean(row.edited) }),
+  reply_to_id: row.reply_to_id ?? null,
+  ...(row.external_sender ? { external_sender: row.external_sender } : {}),
+  ...(row.attachments === undefined ? {} : { attachments: row.attachments })
+});
 
 /** A line thread's message as `findLinePage` reads it (MICA-307). */
 export interface LineMessageRow {
@@ -25,8 +62,8 @@ export interface LineMessageRow {
  * via `SchemaRepository`; this class only adds the multi-table reads and writes the
  * generic path cannot express.
  */
-export class MessageRepository extends SchemaRepository<Message> {
-  async create(data: Partial<Message>): Promise<number> {
+export class MessageRepository extends SchemaRepository<MessageRow> {
+  async create(data: Partial<MessageRow>): Promise<number> {
     // 1. Insert Message
     const messageId = await super.create({
       conversation_id: data.conversation_id,
@@ -94,7 +131,9 @@ export class MessageRepository extends SchemaRepository<Message> {
    * One page of a line thread as its staff read it (MICA-307): newest first, live rows only,
    * and whether each carried an attachment rather than the attachment, which is the player's
    * own media. One statement on `conversation_id_id`, plus an `EXISTS` per row on the
-   * attachments' `message_id` key.
+   * attachments' `message_id` key — joined to the picture, so a message whose only attachments
+   * were moderated does not claim to carry one (MICA-339). A picture its owner deleted from their
+   * gallery still counts: the recipient received it.
    *
    * Keyset on `id DESC` with an exclusive cursor, exactly as `findByConversation` pages, and
    * selected by `conversation_id` first, so a cursor lifted from another thread reads nothing
@@ -113,7 +152,9 @@ export class MessageRepository extends SchemaRepository<Message> {
       'mica_messages',
       await Database.query<LineMessageRow[]>(
         `SELECT m.id, m.conversation_id, m.citizenid, m.message, m.external_sender, m.created_at,
-                EXISTS (SELECT 1 FROM mica_messages_attachments a WHERE a.message_id = m.id)
+                EXISTS (SELECT 1 FROM mica_messages_attachments a
+                          JOIN mica_media p ON p.id = a.photo_id AND p.status <> 'moderated'
+                         WHERE a.message_id = m.id)
                   AS has_attachments
            FROM mica_messages m
           WHERE m.conversation_id = ? AND m.status = 'active'
@@ -152,7 +193,7 @@ export class MessageRepository extends SchemaRepository<Message> {
   async findByConversation(
     conversationId: number,
     page: { limit: number; cursor: number | null } = { limit: 50, cursor: null }
-  ): Promise<{ rows: Message[]; nextCursor: number | null }> {
+  ): Promise<{ rows: MessageRow[]; nextCursor: number | null }> {
     /**
      * Messages, plus the one derived column the thread cannot render without.
      *
@@ -176,12 +217,25 @@ export class MessageRepository extends SchemaRepository<Message> {
     if (page.cursor !== null) params.push(page.cursor);
     params.push(page.limit + 1);
 
-    // Opened here, off each row's own citizenid and conversation (MICA-165): `m.*` is the
-    // context, so nothing else needs selecting.
+    /**
+     * Opened here, off each row's own citizenid and conversation (MICA-165): `m.*` is the
+     * context, so nothing else needs selecting.
+     *
+     * `sender_id` is the sending member's membership id in this thread (MICA-339), which is
+     * what a reader is told in place of the sender's citizenid. A correlated read per row on
+     * `conversation_status`, over one page, so the thread stays three statements. Null for a
+     * text from a line — its row sits under the recipient's citizenid — and for a sender who
+     * has left; `senderIdOf` in `ConversationRepository` answers the same question in memory.
+     */
     const fetched = openRows(
       'mica_messages',
-      await Database.query<Message[]>(
-        `SELECT m.*, (m.updated_at > m.created_at) AS edited
+      await Database.query<MessageRow[]>(
+        `SELECT m.*, (m.updated_at > m.created_at) AS edited,
+                CASE WHEN m.external_sender IS NULL THEN (
+                  SELECT MIN(p.id) FROM mica_messages_participants p
+                   WHERE p.conversation_id = m.conversation_id
+                     AND p.citizenid = m.citizenid AND p.left_at IS NULL
+                ) END AS sender_id
            FROM mica_messages m
           WHERE m.conversation_id = ? AND m.status != 'deleted'
             ${cursorClause}
@@ -212,6 +266,12 @@ export class MessageRepository extends SchemaRepository<Message> {
      * `data` and renders from `thumbnail`, a GIF may be a `url`, and `duration_ms` is the
      * badge. Selecting only `data`, as this did, made every attachment a photo by
      * construction.
+     *
+     * **Not a moderated picture** (MICA-339): the join drops a media row an admin moderated
+     * after it was sent, so it stops showing in every thread it was attached to. Only
+     * `moderated`, not "anything but `active`": a sender deleting the photo from their own
+     * gallery (`deleted`) must not reach into every recipient's thread and take back what they
+     * already received. Media's statuses are `active`, `deleted` and `moderated`.
      */
     // This page's attachments and nothing more: bound to the ids just selected rather than
     // to the conversation, or every page would re-hydrate the whole thread's pictures and
@@ -223,7 +283,7 @@ export class MessageRepository extends SchemaRepository<Message> {
               p.id AS media_id, p.kind, p.data, p.url, p.thumbnail,
               p.mime_type, p.duration_ms, p.alt_text
          FROM mica_messages_attachments a
-         JOIN mica_media p ON a.photo_id = p.id
+         JOIN mica_media p ON a.photo_id = p.id AND p.status <> 'moderated'
         WHERE a.message_id IN (${placeholders})`,
       messageIds
     );

@@ -6,6 +6,7 @@ import { derived } from 'svelte/store';
 import { usePersisted } from '../../../../sdk/host/usePersisted';
 import { backgroundForScheme, buildSchemes, sanitizeSeed } from '../../../../sdk/host/seam/theme';
 import { schemeStore, setThemeSeed, themeStore } from './theme';
+import { wallpaperImage } from '@mica/shared/imageSource';
 
 /**
  * The home screen background.
@@ -52,17 +53,19 @@ export const DEFAULT_WALLPAPER: WallpaperState = { type: 'color' };
 
 /**
  * A stored wallpaper outlives the code that wrote it, and an image is a `url(...)` that
- * goes straight into a `background` property — so a stored value that is not one is
- * refused rather than rendered.
+ * goes straight into PhoneFrame's `style` attribute — so a stored value is rebuilt by
+ * `wallpaperImage` (`shared/imageSource.ts`) or refused, never rendered as it was stored.
+ *
+ * It used to check only the `url(` prefix, which let a source carrying a `'` close the CSS
+ * string and apply whatever followed to the phone screen, persisted on this PC and so back on
+ * every start (MICA-339). A value this module wrote comes out unchanged.
  */
 const sanitizeWallpaper = (stored: unknown): WallpaperState => {
   if (!stored || typeof stored !== 'object') return DEFAULT_WALLPAPER;
 
   const { type, image } = stored as Record<string, unknown>;
-  if (type === 'image' && typeof image === 'string' && image.startsWith('url(')) {
-    return { type, image };
-  }
-  return DEFAULT_WALLPAPER;
+  const safe = type === 'image' ? wallpaperImage(image) : null;
+  return safe ? { type: 'image', image: safe } : DEFAULT_WALLPAPER;
 };
 
 /**
@@ -113,7 +116,12 @@ export const setPresetWallpaper = (preset: WallpaperPreset) => setWallpaperSeed(
  * changes and the colors stay put.
  */
 export const setWallpaperImage = (image: string, seed?: string) => {
-  wallpaperStore.set({ type: 'image', image });
+  // The one door every caller comes through — Settings, an add-on by the `wallpaperWrite`
+  // facet — so the check is here, and it throws rather than ignoring: an add-on's call
+  // rejects and says why, instead of appearing to work (MICA-339).
+  const safe = wallpaperImage(image);
+  if (!safe) throw new Error('That image cannot be used as a wallpaper.');
+  wallpaperStore.set({ type: 'image', image: safe });
   if (seed) setThemeSeed(sanitizeSeed(seed));
 };
 

@@ -2,14 +2,16 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { randomBytes } from 'node:crypto';
 import { FrameworkBridge } from '../lib/FrameworkBridge';
+import { PlayerFacingError } from '../lib/errors';
 import { notifyPlayer } from '../lib/shell';
 import { ServiceEndpoint } from '../lib/ServiceEndpoint';
 import { guardNetEvent, noInput, phoneNumber, phoneNumberFrom } from '../lib/netGuard';
 import { s } from '@mica/shared/schema';
 import { phoneCallLog } from './PhoneCallLog';
-import { phoneForCitizen } from '../lib/phoneIdentity';
-import { readPhoneIdByNumber } from '../lib/phoneNumbers';
+import { phoneForCitizen, phoneForRequest, requireDeviceInHand } from '../lib/phoneIdentity';
+import { readPhoneIdByNumber, readRowByPhoneId } from '../lib/phoneNumbers';
 import { isAdmin } from './Admin';
 import { SEED_CHARACTERS } from '../lib/seed';
 import { isBlocked } from './Blocklist';
@@ -111,11 +113,33 @@ const isRinging = (call: ActiveCall): call is ActiveCall & { group: RingGroup } 
 const activeCalls: Record<number, ActiveCall> = {};
 const playerCalls: Record<number, number> = {}; // Source -> CallID (Fast lookup)
 
-const generateCallId = () => Math.floor(Math.random() * 900000) + 100000;
+/**
+ * A call id, which is also the call's pma-voice channel: the client joins `addPlayerToCall` on
+ * it, and pma-voice's own `pma-voice:setPlayerCall` net event lets any client join any channel
+ * and answers with its members. So the id is the only thing between a modified client and a
+ * call's audio, and it must not be guessable (MICA-339).
+ *
+ * 31 bits from `node:crypto`, never 0 (pma-voice's "no call"). Not wider, deliberately: a
+ * positive int32 crosses every hop — the server's net event to the client, the client export,
+ * pma-voice's own net event, a Lua table key, a state bag — in exactly the encoding the old
+ * six-digit ids did, and nothing here can prove a wider one does in game. That is about two
+ * billion values against the 900,000 `Math.random` gave, which slows an enumeration down but
+ * does not make it impossible: pma-voice applies no limit to joins, and only a channel the
+ * server puts both parties into itself would close it.
+ */
+const generateCallId = (): number => {
+  for (;;) {
+    const [a, b, c, d] = randomBytes(4);
+    const id = ((a & 0x7f) << 24) | (b << 16) | (c << 8) | d;
+    if (id !== 0) return id;
+  }
+};
 
 /**
- * An id no live call and no reservation holds. Only the group re-key needs the guarantee: a
- * fresh id there is a security property (see `takeGroupCall`), not just a likely-unique key.
+ * An id no live call and no reservation holds. Every call is given one through here: two calls
+ * on one id would share one voice channel, and the second would overwrite the first in
+ * `activeCalls`. For the group re-key a fresh id is also a security property (see
+ * `takeGroupCall`), not just a likely-unique key.
  */
 const freshCallId = (): number => {
   const held = new Set(Object.values(playerCalls));
@@ -368,7 +392,7 @@ const allocateLineSource = (): number => nextLineSource--;
 export function injectIncomingCall(targetSrc: number, callerPhone: string): number | null {
   if (playerCalls[targetSrc]) return null;
 
-  const callId = generateCallId();
+  const callId = freshCallId();
   const call: ActiveCall = {
     id: callId,
     caller: CONSOLE_CALLER_SOURCE,
@@ -457,16 +481,10 @@ export function endLineCall(callId: unknown, owner: string): EndLineCallResult {
  * would have been exactly the tell a "does not confirm the block" caller is promised not
  * to get: dial a made-up number and a real blocked one, and only one leaves a row.
  */
-function failUnreachable(src: number, targetPhone: string): void {
+function failUnreachable(src: number, callerPhone: string, targetPhone: string): void {
   const callerCitizenid = FrameworkBridge.getCitizenId(src);
   if (callerCitizenid) {
-    void logCall(
-      callerCitizenid,
-      FrameworkBridge.getPlayerPhone(src) ?? '',
-      'outgoing',
-      targetPhone,
-      0
-    );
+    void logCall(callerCitizenid, callerPhone, 'outgoing', targetPhone, 0);
   }
 
   // Issued before the `failed` push, which is what sends the caller's phone back to idle
@@ -497,6 +515,58 @@ export type PlaceCallResult =
   'placed' | 'unreachable' | 'busy' | 'caller_has_no_phone' | 'invalid_target';
 
 /**
+ * Whether `src` holds a phone, where this server requires one to (MICA-339): the same count
+ * `ServiceEndpoint` asks for a device-owned request, and open wherever that is — no item gate,
+ * standalone, an inventory that cannot count. Synchronous, so the `answer` handler can ask it
+ * without giving up the ordering that keeps two answers from both winning a group call.
+ */
+const holdsPhone = (src: number): boolean => {
+  const player = FrameworkBridge.getPlayer(src);
+  if (!player) return false;
+  try {
+    requireDeviceInHand(player, 'phone');
+    return true;
+  } catch (error) {
+    if (!(error instanceof PlayerFacingError)) {
+      console.error(`[mica] could not check whether source ${src} holds a phone.`, error);
+    }
+    return false;
+  }
+};
+
+/**
+ * The number a call from `src` shows, or null when they have no phone to call from
+ * (MICA-339).
+ *
+ * The phone in their hand first, through the same resolver a device-owned request uses: on a
+ * server that gates on an item, a player holding none is refused here, however their client
+ * got the dial out. Then **that phone's own number**, from `mica_phone_numbers` — never the
+ * framework's `charinfo.phone`, which is deliberately left naming the number a robbed player
+ * used to have, so a caller id read from it rings back on somebody else's phone.
+ *
+ * The framework's number only where the phone has no number row: ESX, whose numbers micaOS
+ * does not own; an identity phone, whose number is the citizen's legacy row; and a phone in
+ * hand whose number the sync has not settled yet. On qb the bridge refuses a mirror another
+ * citizen now holds (`qbPhoneNumber`), so that fallback cannot name a moved number either.
+ *
+ * Fails closed: a resolve or a read that throws is a call not placed, and a line in the log.
+ */
+async function callerNumberOf(src: number): Promise<string | null> {
+  const player = FrameworkBridge.getPlayer(src);
+  if (!player?.citizenid) return null;
+  try {
+    const phoneId = await phoneForRequest(src, player.citizenid, 'phone');
+    const row = await readRowByPhoneId(phoneId);
+    return row?.number || FrameworkBridge.getPlayerPhone(src);
+  } catch (error) {
+    if (!(error instanceof PlayerFacingError)) {
+      console.error(`[mica] could not find the phone ${player.citizenid} is calling from.`, error);
+    }
+    return null;
+  }
+}
+
+/**
  * Place a call from `src` to a dialed number, whatever placed it.
  *
  * Extracted from the `start` handler so `phone:start` and the `CreateCall` export share one
@@ -512,7 +582,7 @@ export async function placeCall(src: number, rawTarget: unknown): Promise<PlaceC
   const targetPhone = phoneNumberFrom(rawTarget);
   if (!targetPhone) return 'invalid_target';
 
-  const callerPhone = FrameworkBridge.getPlayerPhone(src);
+  const callerPhone = await callerNumberOf(src);
   if (!callerPhone) return 'caller_has_no_phone';
 
   // A character always wins over a registered line, so a number the framework later
@@ -567,7 +637,7 @@ export async function placeCall(src: number, rawTarget: unknown): Promise<PlaceC
   // has already happened on every path, so the return value adds no timing to what the
   // caller's phone was told.
   if (!targetSrc || blocked) {
-    failUnreachable(src, targetPhone);
+    failUnreachable(src, callerPhone, targetPhone);
     return 'unreachable';
   }
 
@@ -583,7 +653,7 @@ export async function placeCall(src: number, rawTarget: unknown): Promise<PlaceC
     return 'busy';
   }
 
-  const callId = generateCallId();
+  const callId = freshCallId();
   const call: ActiveCall = {
     id: callId,
     caller: src,
@@ -627,7 +697,7 @@ async function connectLineCall(
     return 'busy';
   }
 
-  const callId = generateCallId();
+  const callId = freshCallId();
 
   // Claim the caller's key *before* awaiting a handler that belongs to another resource and
   // may take up to `HANDLER_TIMEOUT_MS` — a window whose length that resource controls. Read
@@ -652,7 +722,7 @@ async function connectLineCall(
   // re-registration inside the window is a different line and this verdict is not its answer.
   if (lookupLine(targetPhone) !== line) {
     delete playerCalls[src];
-    failUnreachable(src, targetPhone);
+    failUnreachable(src, callerPhone, targetPhone);
     return 'unreachable';
   }
 
@@ -674,7 +744,7 @@ async function connectLineCall(
     delete playerCalls[src];
     const redial = await placeCall(src, FrameworkBridge.getPlayerPhone(verdict.source) ?? '');
     if (redial === 'invalid_target' || redial === 'caller_has_no_phone') {
-      failUnreachable(src, targetPhone);
+      failUnreachable(src, callerPhone, targetPhone);
       return 'unreachable';
     }
     return redial;
@@ -692,7 +762,7 @@ async function connectLineCall(
   // by a caller with a stopwatch; only the content half of that guarantee holds here.
   if (verdict.action !== 'accept') {
     delete playerCalls[src];
-    failUnreachable(src, targetPhone);
+    failUnreachable(src, callerPhone, targetPhone);
     return 'unreachable';
   }
 
@@ -745,13 +815,13 @@ function ringGroup(
     if (ringing.size >= limit) break;
     if (candidate === src || playerCalls[candidate]) continue;
     const phone = FrameworkBridge.getPlayerPhone(candidate);
-    if (!phone) continue;
+    if (!phone || !holdsPhone(candidate)) continue;
     ringing.set(candidate, phone);
   }
 
   if (ringing.size === 0) {
     delete playerCalls[src];
-    failUnreachable(src, targetPhone);
+    failUnreachable(src, callerPhone, targetPhone);
     return 'unreachable';
   }
 
@@ -826,6 +896,9 @@ onNet('mica:server:phone:answer', (...args: unknown[]) => {
   const src = source;
   const call = activeCalls[playerCalls[src]];
   if (!call) return;
+  // A call needs a phone at both ends (MICA-339). Ignored, like any answer that is not theirs
+  // to give: the call rings on until the caller or the timeout ends it.
+  if (!holdsPhone(src)) return;
 
   if (isRinging(call)) {
     if (!call.group.ringing.has(src)) return;

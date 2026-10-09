@@ -57,6 +57,7 @@ vi.mock('../services/HodlrMarket', () => ({
 
 import { __resetRateLimits } from '../lib/rateLimit';
 import { quoteSpread } from '../services/Hodlr';
+import { installTestPhone, NOT_HELD_REPLY, refusePhone } from './phoneStub';
 
 /**
  * Hodlr's `buy` and `sell`, which are the only things that ever move a holding — the
@@ -105,6 +106,19 @@ describe('hodlr: buy and sell', () => {
     // findOrCreateHolding: the player already owns 5 gCoin.
     dbMock.query.mockResolvedValue([{ ...HOLDING }]);
     dbMock.update.mockResolvedValue(1);
+  });
+
+  it('refuses a buy and a sell from a player holding no phone, and trades nothing (MICA-339)', async () => {
+    refusePhone();
+    try {
+      expect(await call(BUY, { quantity: 2 })).toEqual(NOT_HELD_REPLY);
+      expect(await call(SELL, { quantity: 1 })).toEqual(NOT_HELD_REPLY);
+      expect(player.removeMoney).not.toHaveBeenCalled();
+      expect(player.addMoney).not.toHaveBeenCalled();
+      expect(dbMock.update).not.toHaveBeenCalled();
+    } finally {
+      installTestPhone();
+    }
   });
 
   describe('sell', () => {

@@ -20,6 +20,7 @@ import { imageHost, releaseHostedImages, rememberImageHost, reportRelease } from
 import { MediaRepository } from '../lib/media/repository';
 import { formatBytes, mediaStorageStats } from '../lib/media/stats';
 import { logMediaLimits, retentionDays } from '../lib/media/limits';
+import { acceptsClientData, acceptsClientKind } from '../lib/media/clientWrite';
 
 export {
   NOMINAL_HOSTED_BYTES,
@@ -90,7 +91,13 @@ export const media = defineService<MediaItem, typeof mediaContract>({
       type: 'enum',
       values: ['photo', 'video', 'audio', 'gif', 'sticker', 'file', 'link', 'location'],
       notNull: true,
-      default: 'photo'
+      default: 'photo',
+      /**
+       * A client may write only `photo` (MICA-339). The other kinds are written by server
+       * paths that never meet this rule — `shareLocation`'s `location` above all, whose
+       * coordinates a client-written row would forge. `lib/media/clientWrite.ts` says why.
+       */
+      accepts: acceptsClientKind
     },
     /**
      * Base64 for locally captured media. Was `image`.
@@ -110,7 +117,15 @@ export const media = defineService<MediaItem, typeof mediaContract>({
      * owner's to read; they come from the `item` action below, one row at a time, when a
      * photo is actually opened.
      */
-    data: { type: 'mediumtext', private: true },
+    data: {
+      type: 'mediumtext',
+      private: true,
+      /**
+       * An inline image only, never a URL (MICA-339): a remote address here made every viewer
+       * of the row request it. `lib/media/clientWrite.ts` has the shapes and the reasons.
+       */
+      accepts: acceptsClientData
+    },
     /** Hotlinks — a remote GIF or video that is not ours to store. */
     url: { type: 'string', length: 512, clientWritable: false },
     /** Poster frame for video and GIF, so a feed has something before the media loads. */

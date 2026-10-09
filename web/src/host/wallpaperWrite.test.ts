@@ -30,6 +30,25 @@ describe('wallpaperWrite.setWallpaperImage (MICA-293)', () => {
     expect(get(wallpaperStore)).toEqual(DEFAULT_WALLPAPER);
   });
 
+  /**
+   * MICA-339 (F16). An add-on's string reached PhoneFrame's `style` as it was passed; a `'`
+   * in it closed the CSS string and the rest styled the phone screen. It is refused now, and
+   * an add-on's ordinary https wallpaper still sets.
+   */
+  it('refuses an add-on string that breaks out of url(), and sets an https one', () => {
+    const { setWallpaperImage } = wallpaperWrite();
+    expect(() =>
+      setWallpaperImage("url('https://addon.example/a.png');display:none;--x:('')")
+    ).toThrow(/wallpaper/);
+    expect(get(wallpaperStore)).toEqual(DEFAULT_WALLPAPER);
+
+    setWallpaperImage("url('https://addon.example/a.png')");
+    expect(get(wallpaperStore)).toEqual({
+      type: 'image',
+      image: "url('https://addon.example/a.png')"
+    });
+  });
+
   it('still sets a data url', () => {
     const { setWallpaperImage } = wallpaperWrite();
     const image = "url('data:image/png;base64,AAAA')";

@@ -97,6 +97,9 @@ export interface ServiceOptions<C extends ServiceContract = ServiceContract> {
 }
 
 export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
+  /** The actions a phone request may run only with a phone in hand (`requirePhoneFor`). */
+  private readonly phoneRequired = new Set<string>();
+
   constructor(
     private serviceName: string,
     /**
@@ -108,6 +111,30 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
   ) {
     registerService(serviceName, options.app);
     this.registerCrudEvents();
+  }
+
+  /**
+   * Refuse these actions to a phone request from a player who holds no phone (MICA-339).
+   *
+   * For what moves money or publishes something other players see: a bank send, an invoice
+   * paid, a listing, a post, a message. The client closes the phone for a player holding none
+   * on a server that gates on an item, but a modified client can still emit the event, and a
+   * service that is not `deviceOwned` never asks which phone the request is for. Reads are left
+   * alone on purpose: the shell's boot calls and every app's badge preload are requests too,
+   * and refusing them would change what a player without a phone sees.
+   *
+   * Counted through the same `requireDeviceInHand` a tablet request is held to, so it is open
+   * exactly where that is (no item gate, standalone, an inventory that cannot count) and a
+   * refusal is the `server.phone.notHeld` toast. A request naming another device is already
+   * held to that device. A `deviceOwned` action needs no flag: its resolver refuses the same
+   * player. Named per action rather than per service, and on the endpoint rather than the
+   * declaration, so the service that owns the action says so beside it.
+   */
+  public requirePhoneFor(
+    ...actions: readonly (ContractAction<C> | 'get' | 'create' | 'update' | 'delete')[]
+  ): this {
+    for (const action of actions) this.phoneRequired.add(action);
+    return this;
   }
 
   /** The repository, or a loud failure if a generic action was left enabled without one. */
@@ -601,6 +628,8 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
          */
         // Not the phone: its boot-time shell calls must still answer a player holding none.
         if (device !== DEFAULT_DEVICE) requireDeviceInHand(player, device);
+        // The phone's own actions that move money or publish do need one (MICA-339).
+        else if (this.phoneRequired.has(action)) requireDeviceInHand(player, device);
 
         /**
          * Validation slots in **after** authentication and before the handler

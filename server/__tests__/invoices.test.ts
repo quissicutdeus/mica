@@ -74,6 +74,7 @@ import { publishedExport, __resetExportRateLimits } from '../lib/exports';
 import { __resetRateLimits } from '../lib/rateLimit';
 import { __setSchemaReadyForTests } from '../lib/schemaReady';
 import { callAsResource } from './invokingResource';
+import { installTestPhone, NOT_HELD_REPLY, refusePhone } from './phoneStub';
 import type { Invoice } from '@mica/shared/types';
 
 /**
@@ -168,6 +169,17 @@ describe('what a client can reach', () => {
 });
 
 describe('pay', () => {
+  it('refuses to pay for a player holding no phone, before the row is claimed (MICA-339)', async () => {
+    refusePhone();
+    try {
+      expect(await fire('pay', { id: 7 })).toEqual(NOT_HELD_REPLY);
+      expect(dbMock.update).not.toHaveBeenCalled();
+      expect(payments.payToSociety).not.toHaveBeenCalled();
+    } finally {
+      installTestPhone();
+    }
+  });
+
   it('claims the row before any money moves, then pays the society', async () => {
     const reply = await fire('pay', { id: 7 });
 

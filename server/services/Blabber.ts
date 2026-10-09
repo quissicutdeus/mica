@@ -31,6 +31,7 @@ import { appEventChannel } from '../lib/appEvents';
 import { mentionedHandles, taggedTopics } from '@mica/shared/richText';
 import { BlabberRepository } from '../repositories/BlabberRepository';
 import { buildDeepLink } from '@mica/shared/deepLink';
+import { isInlineImage } from '@mica/shared/imageSource';
 
 /** The app id, which is also the handle namespace accounts are claimed in. */
 const APP = 'blabber';
@@ -627,6 +628,9 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
   }
 });
 
+// A phone in hand, server-side: a post is published to everyone (MICA-339).
+app.requirePhoneFor('create');
+
 /**
  * Ear a Blab, as one of the caller's accounts.
  *
@@ -1135,6 +1139,19 @@ const handleCandidates = (base: string): string[] => {
 };
 
 /**
+ * The avatar an imported account keeps: an inline image that fits `mica_accounts.avatar`
+ * (`varchar(255)`), else none. MICA-339.
+ *
+ * This kept any `http(s)` URL, cut to 255 characters. Every feed viewer draws an avatar as an
+ * `<img src>`, so a remote one made each of their phones request it — F9's beacon by the
+ * importer's door, and the one path into the column that `accepts` on the declaration does not
+ * see. An inline image is never cut either: a truncated data URI is a broken picture, not a
+ * shorter one.
+ */
+const importedAvatar = (avatar: string | null | undefined): string | null =>
+  isInlineImage(avatar) && avatar.length <= 255 ? avatar : null;
+
+/**
  * What a source account becomes on Blabber: the account of the same handle this character
  * already holds; else, at `maxPerApp` accounts, their oldest (folded, so the cap holds); else a
  * new account under the first free handle. Reads only — `micaimport`'s dry run plans the same.
@@ -1185,7 +1202,7 @@ const planImportedAccount = async (
           APP,
           handle,
           account.displayName ? account.displayName.slice(0, 50) : null,
-          account.avatar && /^https?:/i.test(account.avatar) ? account.avatar.slice(0, 255) : null,
+          importedAvatar(account.avatar),
           account.bio ? account.bio.slice(0, 160) : null
         ]
       }
