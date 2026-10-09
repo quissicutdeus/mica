@@ -15,6 +15,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     useSystemHardware,
     useSystemHardwareWrite,
     useAppAction,
+    useDisplay,
     ToggleSwitch,
     isBrowser,
     placeholderAvatar
@@ -30,6 +31,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   const { run } = useAppAction('settings');
   const { openApp } = useNavigation();
   const { fetchNui } = useNuiBridge();
+  const { device } = useDisplay();
   const { callStore } = useCall();
   const { mailStore } = useMail();
   const { conversationsStore } = useMessages();
@@ -42,12 +44,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * Apply a battery level for real rather than only in the UI.
    *
    * The slider used to call `charge.set()`, which the client's drain loop overwrote
-   * within a second and which never reached the character's saved charge.
+   * within a second and which never reached the character's saved charge. It names the
+   * device it is open on (MICA-337), since the tablet has a battery of its own and
+   * `setCharge` above writes that device's.
    */
   const applyBatteryLevel = async (level: number) => {
     setCharge(level);
     if (isBrowser()) return;
-    await run(() => fetchNui('setBatteryLevel', { level }), {
+    await run(() => fetchNui('setBatteryLevel', { level, device: $device }), {
       error: $t('settings.devtools.batteryError')
     });
   };

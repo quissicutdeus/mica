@@ -37,7 +37,7 @@
   "reports.ownContent": "You cannot report your own content.",
   "reports.targetGone": "That content no longer exists.",
   "battery.noPermission": "You do not have permission to do that.",
-  "battery.unavailable": "Your phone can't be charged right now. The battery bank was not used.",
+  "battery.unavailable": "{device} can't be charged right now. The battery bank was not used.",
   "media.consoleOnly": "micamedia prune only runs from the server console.",
   "media.noLocation": "Could not determine your location.",
   "media.noPermission": "You do not have permission to use that.",

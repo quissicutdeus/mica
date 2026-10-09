@@ -6,14 +6,15 @@ import { derived } from 'svelte/store';
 import { DEVICES } from '@mica/shared/devices';
 import { openDevice } from './phoneOpen';
 import { isLocked } from './lockScreen';
-import { isBatteryDead } from './charge';
+import { deadByDevice } from './charge';
 
 /**
  * Whether the device's screen is showing apps right now (MICA-294) — the shell half of
  * `useAppVisible`, which adds "and it is this app".
  *
  * A frame has to be up (`openDevice`), and nothing may have taken the whole screen over. The
- * takeovers are the ones each frame draws *instead of* its `children`: the dead battery, and
+ * takeovers are the ones each frame draws *instead of* its `children`: the dead battery —
+ * the open device's own since MICA-337, so a flat tablet never hides the phone's apps — and
  * the lock screen on a device whose chrome has one (`DEVICES[id].chrome.lockScreen`) — both
  * devices since MICA-264 gave the tablet an identity, and so a passcode, of its own. The flag
  * stays in the predicate so a third device without a lock cannot be held off screen by one.
@@ -26,7 +27,7 @@ import { isBatteryDead } from './charge';
  * player leaves it closed. This store is the answer that does not depend on that.
  */
 export const appsOnScreen = derived(
-  [openDevice, isLocked, isBatteryDead],
+  [openDevice, isLocked, deadByDevice],
   ([$device, $locked, $dead]) =>
-    $device !== null && !$dead && !($locked && DEVICES[$device].chrome.lockScreen)
+    $device !== null && !$dead[$device] && !($locked && DEVICES[$device].chrome.lockScreen)
 );

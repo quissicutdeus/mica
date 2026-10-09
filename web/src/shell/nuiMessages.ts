@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { charge } from './state/charge';
+import { chargeOf, chargingOf } from './state/charge';
 import { contacts } from '../services/contacts';
 import { mailStore } from '../services/mail';
 import { conversationsStore } from '../services/conversations';
@@ -35,6 +35,7 @@ import {
   parseReceiveMail,
   parseReceiveMessage,
   parseSetCharge,
+  parseSetCharging,
   parseSetSignal,
   parseSetTime,
   parseUninstallApp
@@ -291,7 +292,11 @@ export function createNuiMessageRouter(bridge: NotificationBridge) {
     },
     setCharge: (data) => {
       const parsed = parseSetCharge(data);
-      if (parsed !== null) charge.set(parsed);
+      if (parsed) chargeOf[parsed.device].set(parsed.level);
+    },
+    setCharging: (data) => {
+      const parsed = parseSetCharging(data);
+      if (parsed) chargingOf[parsed.device].set(parsed.charging);
     },
     /**
      * MICA-287 round 3: the *sweeping* hydrate, not the sdk seam's `hydrateSettings()` —

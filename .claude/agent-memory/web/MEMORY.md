@@ -47,3 +47,5 @@ its one-line summary.
 - [A mocked promise is never unhandled](mocked-promise-is-never-unhandled.md) —
   `vi.fn` handles what it returns; spy on the promise's `catch` instead of
   listening for `unhandledRejection`
+- [The Bash guard reads a regex `|` as a pipe](bash-guard-reads-regex-pipe.md) —
+  `grep -E "a|b"` beside a gate drops the batch; filter logs with `-e` flags

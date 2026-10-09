@@ -4,7 +4,7 @@
 
 import { get, writable } from 'svelte/store';
 import { audio } from './audio';
-import { isBatteryDead } from './charge';
+import { isBatteryDeadOf } from './charge';
 import { isPhoneOpen } from './phoneOpen';
 import { contacts } from '../../services/contacts';
 import { addNotificationItem, clearNotifications } from '../../services/notifications';
@@ -360,14 +360,15 @@ function createToastStore() {
     }) => {
       // A dead phone renders no children (PhoneFrame skips them), so the toast is
       // invisible — playing the ringtone anyway meant a dead phone rang with nothing
-      // on screen and no way to answer.
+      // on screen and no way to answer. The phone's battery, by name (MICA-337): calls
+      // ring on the phone, so a flat tablet on screen never silences one.
       //
       // Do Not Disturb silences the ringtone and nothing else: the banner below still
       // appears, because it carries the only Accept button there is. See the long note in
       // `notificationPolicy.ts` — a suppressed call banner is an unanswerable call, not a
       // quiet one.
       if (
-        !get(isBatteryDead) &&
+        !get(isBatteryDeadOf.phone) &&
         notificationAllows('sound', {
           source: 'call',
           app: 'phone',

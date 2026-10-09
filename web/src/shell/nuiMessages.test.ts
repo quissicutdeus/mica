@@ -32,7 +32,7 @@ vi.mock('../services/settings', () => settingsServiceMock);
 import { createNuiMessageRouter } from './nuiMessages';
 import { toast } from './state/toast';
 import { time } from './state/time';
-import { charge } from './state/charge';
+import { charge, chargeOf, chargingOf } from './state/charge';
 import { signalLevel } from './state/signal';
 import { contacts } from '../services/contacts';
 import { appRegistryStore } from './state/registry';
@@ -100,6 +100,54 @@ describe('hardware state', () => {
     route(message('setSignal', 1));
     expect(get(charge)).toBe(12);
     expect(get(signalLevel)).toBe(1);
+  });
+});
+
+/** MICA-337: the client names the device a charge belongs to. */
+describe('battery per device', () => {
+  beforeEach(() => {
+    chargeOf.phone.set(100);
+    chargeOf.tablet.set(100);
+    chargingOf.phone.set(false);
+    chargingOf.tablet.set(false);
+  });
+
+  it("lands a named device's level on that device alone", () => {
+    route(message('setCharge', { device: 'tablet', level: 7 }));
+    expect(get(chargeOf.tablet)).toBe(7);
+    expect(get(chargeOf.phone)).toBe(100);
+
+    route(message('setCharge', { device: 'phone', level: 33 }));
+    expect(get(chargeOf.phone)).toBe(33);
+    expect(get(chargeOf.tablet)).toBe(7);
+  });
+
+  it('reads a bare number, or an object with no device, as the phone', () => {
+    route(message('setCharge', 41));
+    expect(get(chargeOf.phone)).toBe(41);
+    route(message('setCharge', { level: 22 }));
+    expect(get(chargeOf.phone)).toBe(22);
+    expect(get(chargeOf.tablet)).toBe(100);
+  });
+
+  it('drops an unknown device or a bad level rather than painting the phone', () => {
+    route(message('setCharge', { device: 'watch', level: 3 }));
+    route(message('setCharge', { device: 'tablet', level: 'low' }));
+    route(message('setCharge', [5]));
+    expect(get(chargeOf.phone)).toBe(100);
+    expect(get(chargeOf.tablet)).toBe(100);
+  });
+
+  it('keeps the charging flag per device', () => {
+    expect(route(message('setCharging', { device: 'tablet', charging: true }))).toBe(true);
+    expect(get(chargingOf.tablet)).toBe(true);
+    expect(get(chargingOf.phone)).toBe(false);
+
+    route(message('setCharging', { charging: true }));
+    expect(get(chargingOf.phone)).toBe(true);
+    route(message('setCharging', { device: 'watch', charging: false }));
+    route(message('setCharging', { device: 'tablet', charging: 'yes' }));
+    expect(get(chargingOf.tablet)).toBe(true);
   });
 });
 

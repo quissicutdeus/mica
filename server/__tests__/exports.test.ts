@@ -37,6 +37,21 @@ vi.mock('../lib/FrameworkBridge', () => ({
 const sendFromLine = vi.hoisted(() =>
   vi.fn(async () => ({ conversationId: 1, messageId: 2, delivered: false }))
 );
+/**
+ * Which tablet `services/Phones.ts` has cached as in use, for the MICA-337 cases: `undefined`
+ * leaves the real cache answering, which every other case here relies on.
+ */
+const tabletInUse = vi.hoisted(() => ({ id: undefined as string | null | undefined }));
+vi.mock('../services/Phones', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/Phones')>();
+  return {
+    ...actual,
+    activeDeviceIdOf: (src: number, kind: 'phone' | 'tablet') =>
+      kind === 'tablet' && tabletInUse.id !== undefined
+        ? tabletInUse.id
+        : actual.activeDeviceIdOf(src, kind)
+  };
+});
 vi.mock('../services/Messages', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../services/Messages')>()),
   sendFromLine
@@ -54,6 +69,10 @@ import { __resetCalls, endActiveCallFor } from '../services/Phone';
 import { callAsResource } from './invokingResource';
 import { __resetLockState, isDeviceLocked } from '../lib/LockState';
 import { __resetOpenState } from '../lib/PhoneOpenState';
+import { __resetBatteryState, currentCharge } from '../services/Battery';
+import { __setPhoneResolvers } from '../lib/phoneIdentity';
+import { PlayerFacingError } from '../lib/errors';
+import { installTestPhone, TEST_PHONE_ID, TEST_TABLET_ID } from './phoneStub';
 
 const SRC = 7;
 const CID = 'ABC12345';
@@ -1084,5 +1103,179 @@ describe('bridge-compat exports (MICA-232)', () => {
       ok: false,
       reason: 'unknown_player'
     });
+  });
+});
+
+/**
+ * MICA-337: the battery exports take the same trailing device MICA-263 gave the open and lock
+ * exports. Absent is the phone, unchanged; the tablet answers its own charge on its own row; a
+ * non-device is refused, the tablet is `disabled` while `mica_tablet` is off, and so is a
+ * tablet the player is not holding — never an `ok` for a battery that is not there.
+ */
+describe('the battery exports take a device (MICA-337)', () => {
+  const BAD = ['watch', 'PHONE', '', 0, true, {}, ['tablet']];
+  const EXPORTS = [
+    ['GetBatteryLevel', (d: unknown) => [SRC, d]],
+    ['SetBatteryLevel', (d: unknown) => [SRC, 50, d]],
+    ['AddBatteryCharge', (d: unknown) => [SRC, -5, d]],
+    ['SetCharging', (d: unknown) => [SRC, true, d]]
+  ] as const;
+
+  let previousConvar: unknown;
+  const tablet = { on: true };
+  /** Which row each device id reads: the phone at 40, the tablet at 70. */
+  const rows = (_sql: string, params: unknown[]) =>
+    Promise.resolve(
+      params[0] === TEST_TABLET_ID
+        ? [{ id: 2, citizenid: CID, phone_id: TEST_TABLET_ID, level: 70 }]
+        : params[0] === TEST_PHONE_ID
+          ? [{ id: 1, citizenid: CID, phone_id: TEST_PHONE_ID, level: 40 }]
+          : []
+    );
+  const holdNoTablet = () => {
+    tabletInUse.id = null;
+    __setPhoneResolvers({
+      forRequest: async (_src, _citizenid, device = 'phone') => {
+        if (device === 'tablet') {
+          throw new PlayerFacingError('You are not holding a tablet.', {
+            key: 'server.device.notHeld'
+          });
+        }
+        return TEST_PHONE_ID;
+      },
+      forCitizen: async () => TEST_PHONE_ID,
+      deviceInHand: () => undefined
+    });
+  };
+
+  beforeEach(() => {
+    __resetBatteryState();
+    installTestPhone();
+    tabletInUse.id = TEST_TABLET_ID;
+    tablet.on = true;
+    previousConvar = (globalThis as any).GetConvar;
+    (globalThis as any).GetConvar = (name: string, fallback: string) =>
+      name === 'mica_tablet' ? (tablet.on ? 'true' : 'false') : fallback;
+    dbMock.query.mockImplementation(rows);
+  });
+
+  afterEach(() => {
+    (globalThis as any).GetConvar = previousConvar;
+    installTestPhone();
+    tabletInUse.id = undefined;
+  });
+
+  it.each(EXPORTS)(
+    '%s refuses a device that is not one, and changes nothing',
+    async (name, args) => {
+      for (const bad of BAD) {
+        const result = (await publishedExport(name)!(...args(bad))) as any;
+        expect(result, `${name}(${JSON.stringify(bad)})`).toMatchObject({
+          ok: false,
+          reason: 'invalid_args'
+        });
+      }
+      expect(globalThis.emitNet).not.toHaveBeenCalled();
+      expect(dbMock.query).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each(EXPORTS)(
+    '%s refuses the tablet as disabled while mica_tablet is off',
+    async (name, args) => {
+      tablet.on = false;
+      const result = (await publishedExport(name)!(...args('tablet'))) as any;
+      expect(result).toMatchObject({ ok: false, reason: 'disabled' });
+      expect(result.message).toContain('mica_tablet');
+      expect(globalThis.emitNet).not.toHaveBeenCalled();
+      expect(dbMock.query).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each(EXPORTS)(
+    '%s accepts the phone, named or not, with the tablet off',
+    async (name, args) => {
+      tablet.on = false;
+      for (const device of ['phone', null, undefined]) {
+        expect(((await publishedExport(name)!(...args(device))) as any).ok, `${device}`).toBe(true);
+      }
+    }
+  );
+
+  it('GetBatteryLevel reads the phone by default and the tablet when named', async () => {
+    expect(await publishedExport('GetBatteryLevel')!(SRC)).toMatchObject({ ok: true, value: 40 });
+    expect(await publishedExport('GetBatteryLevel')!(SRC, 'tablet')).toMatchObject({
+      ok: true,
+      value: 70
+    });
+  });
+
+  it('SetBatteryLevel sets the tablet alone, and pushes it naming the tablet', async () => {
+    expect(await publishedExport('SetBatteryLevel')!(SRC, 15, 'tablet')).toMatchObject({
+      ok: true,
+      value: 15
+    });
+    expect(currentCharge(SRC, 'tablet')).toBe(15);
+    // The phone holds nothing it was not given: the absent default, not 15.
+    expect(currentCharge(SRC)).toBe(100);
+    expect(globalThis.emitNet).toHaveBeenCalledWith('mica:client:battery:set', SRC, 15, 'tablet');
+  });
+
+  it("AddBatteryCharge adds to the tablet's own saved charge", async () => {
+    const result = (await publishedExport('AddBatteryCharge')!(SRC, -20, 'tablet')) as any;
+    expect(result).toMatchObject({ ok: true, value: 50 });
+    expect(currentCharge(SRC, 'tablet')).toBe(50);
+  });
+
+  it('SetCharging flags the tablet alone, and pushes it naming the tablet', () => {
+    expect((publishedExport('SetCharging')!(SRC, true, 'tablet') as any).ok).toBe(true);
+    expect(globalThis.emitNet).toHaveBeenCalledWith(
+      'mica:client:battery:charging',
+      SRC,
+      true,
+      'tablet'
+    );
+    // The phone's push keeps its bare shape.
+    publishedExport('SetCharging')!(SRC, true);
+    expect(globalThis.emitNet).toHaveBeenLastCalledWith('mica:client:battery:charging', SRC, true);
+  });
+
+  it.each(['GetBatteryLevel', 'SetBatteryLevel', 'AddBatteryCharge', 'SetCharging'] as const)(
+    '%s answers disabled for a player with no tablet in use, and writes nothing',
+    async (name) => {
+      holdNoTablet();
+      const args = EXPORTS.find(([n]) => n === name)![1]('tablet');
+      const result = (await publishedExport(name)!(...args)) as any;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(result).toMatchObject({ ok: false, reason: 'disabled' });
+      expect(currentCharge(SRC, 'tablet')).toBe(100);
+      expect(dbMock.insert).not.toHaveBeenCalled();
+      expect(dbMock.update).not.toHaveBeenCalled();
+      expect(globalThis.emitNet).not.toHaveBeenCalled();
+    }
+  );
+
+  it('still answers the phone for a player holding no tablet', async () => {
+    holdNoTablet();
+    expect(await publishedExport('GetBatteryLevel')!(SRC)).toMatchObject({ ok: true, value: 40 });
+  });
+
+  it('GetBatteryLevel for an unused tablet mints nothing: no resolve, no read, no write', async () => {
+    const forRequest = vi.fn(async () => TEST_TABLET_ID);
+    __setPhoneResolvers({
+      forRequest,
+      forCitizen: async () => TEST_PHONE_ID,
+      deviceInHand: () => undefined
+    });
+    tabletInUse.id = null;
+
+    const result = (await publishedExport('GetBatteryLevel')!(SRC, 'tablet')) as any;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(result).toMatchObject({ ok: false, reason: 'disabled' });
+    expect(forRequest).not.toHaveBeenCalled();
+    expect(dbMock.query).not.toHaveBeenCalled();
+    expect(dbMock.insert).not.toHaveBeenCalled();
   });
 });

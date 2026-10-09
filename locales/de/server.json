@@ -37,7 +37,7 @@
   "reports.ownContent": "Du kannst deine eigenen Inhalte nicht melden.",
   "reports.targetGone": "Dieser Inhalt existiert nicht mehr.",
   "battery.noPermission": "Du hast keine Berechtigung, das zu tun.",
-  "battery.unavailable": "Dein Telefon kann gerade nicht geladen werden. Die Powerbank wurde nicht verwendet.",
+  "battery.unavailable": "{device} kann gerade nicht geladen werden. Die Powerbank wurde nicht verwendet.",
   "media.consoleOnly": "micamedia prune läuft nur in der Serverkonsole.",
   "media.noLocation": "Dein Standort konnte nicht ermittelt werden.",
   "media.noPermission": "Du hast keine Berechtigung, das zu benutzen.",

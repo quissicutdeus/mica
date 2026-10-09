@@ -11,7 +11,7 @@ import '../host/registerFacets';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render } from '@testing-library/svelte';
 import TabletFrame from './TabletFrame.svelte';
-import { charge } from './state/charge';
+import { charge, chargeOf } from './state/charge';
 import { setActiveDevice } from './state/device';
 import { isLocked } from './state/lockScreen';
 
@@ -37,6 +37,7 @@ describe('TabletFrame', () => {
   beforeEach(() => {
     setActiveDevice('tablet');
     charge.set(100);
+    chargeOf.phone.set(100);
     isLocked.set(false);
   });
 
@@ -102,5 +103,21 @@ describe('TabletFrame', () => {
     const { queryByRole, getByText } = render(TabletFrame, { props: props() });
     expect(queryByRole('button', { name: 'Open notification shade' })).toBeNull();
     expect(getByText('Battery Low')).toBeTruthy();
+  });
+
+  it("shows the tablet's own charge in its status bar, not the phone's (MICA-337)", () => {
+    chargeOf.phone.set(90);
+    chargeOf.tablet.set(40);
+    const { getByText, queryByText } = render(TabletFrame, { props: props() });
+    expect(getByText('40%')).toBeTruthy();
+    expect(queryByText('90%')).toBeNull();
+  });
+
+  it('is never blanked by a dead phone (MICA-337)', () => {
+    chargeOf.phone.set(0);
+    const { getByRole, queryByText, getByTestId } = render(TabletFrame, { props: props() });
+    expect(getByRole('button', { name: 'Open notification shade' })).toBeTruthy();
+    expect(queryByText('Battery Low')).toBeNull();
+    expect(getByTestId('tablet-screen').className).not.toMatch(/\bbg-black\b/);
   });
 });

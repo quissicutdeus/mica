@@ -6,6 +6,7 @@ import { describe, it, expect } from 'vitest';
 import {
   parseSetTime,
   parseSetCharge,
+  parseSetCharging,
   parseSetSignal,
   parseNotify,
   parseOpenApp,
@@ -26,14 +27,43 @@ describe('Shared NUI Payload Validation', () => {
   });
 
   it('clamps and validates setCharge and setSignal', () => {
-    expect(parseSetCharge(75)).toBe(75);
-    expect(parseSetCharge(150)).toBe(100);
-    expect(parseSetCharge(-20)).toBe(0);
+    expect(parseSetCharge(75)).toEqual({ device: 'phone', level: 75 });
+    expect(parseSetCharge(150)).toEqual({ device: 'phone', level: 100 });
+    expect(parseSetCharge(-20)).toEqual({ device: 'phone', level: 0 });
     expect(parseSetCharge('75')).toBeNull();
 
     expect(parseSetSignal(4)).toBe(4);
     expect(parseSetSignal(10)).toBe(5);
     expect(parseSetSignal(null)).toBeNull();
+  });
+
+  it('reads setCharge per device, a bare number or no device being the phone (MICA-337)', () => {
+    expect(parseSetCharge({ device: 'tablet', level: 42.9 })).toEqual({
+      device: 'tablet',
+      level: 42
+    });
+    expect(parseSetCharge({ device: 'phone', level: 101 })).toEqual({
+      device: 'phone',
+      level: 100
+    });
+    expect(parseSetCharge({ level: 7 })).toEqual({ device: 'phone', level: 7 });
+    expect(parseSetCharge({ device: 'watch', level: 7 })).toBeNull();
+    expect(parseSetCharge({ device: 'tablet', level: '7' })).toBeNull();
+    expect(parseSetCharge({ device: 'tablet' })).toBeNull();
+    expect(parseSetCharge([7])).toBeNull();
+    expect(parseSetCharge(Number.NaN)).toBeNull();
+  });
+
+  it('reads setCharging per device (MICA-337)', () => {
+    expect(parseSetCharging({ device: 'tablet', charging: true })).toEqual({
+      device: 'tablet',
+      charging: true
+    });
+    expect(parseSetCharging({ charging: false })).toEqual({ device: 'phone', charging: false });
+    expect(parseSetCharging({ device: 'watch', charging: true })).toBeNull();
+    expect(parseSetCharging({ device: 'tablet', charging: 'yes' })).toBeNull();
+    expect(parseSetCharging(true)).toBeNull();
+    expect(parseSetCharging(null)).toBeNull();
   });
 
   it('validates notify toasts with defaults and length bounds', () => {

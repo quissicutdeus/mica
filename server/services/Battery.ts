@@ -3,6 +3,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // The server half of the battery service.
+import {
+  ALL_DEVICES,
+  DEFAULT_DEVICE,
+  DEVICES,
+  isDeviceId,
+  type DeviceId
+} from '@mica/shared/devices';
 import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { defineService } from '../lib/defineService';
 import { PhoneBattery } from '@mica/shared/types';
@@ -13,9 +20,14 @@ import { s } from '@mica/shared/schema';
 import {
   __resetBatteryItemWarnings,
   batteryItemName,
+  enabledDevices,
+  isDeviceEnabled,
+  onDeviceStateChanged,
   onPhoneStateChanged
 } from '../lib/deviceItem';
+import { isDeviceOpen } from '../lib/PhoneOpenState';
 import { phoneForCitizen, phoneForRequest } from '../lib/phoneIdentity';
+import { activeDeviceIdOf } from './Phones';
 import { PlayerFacingError } from '../lib/errors';
 
 /**
@@ -34,9 +46,12 @@ import { PlayerFacingError } from '../lib/errors';
  */
 export const batteryApp = defineService<PhoneBattery>({
   id: 'battery',
-  // The charge is the phone's (MICA-283): two phones hold two charges, and a battery bank
-  // charges the one in hand.
+  // The charge is the device's (MICA-283): two phones hold two charges, and a battery bank
+  // charges the one in hand. The tablet has one of its own (MICA-337), keyed on the tablet's
+  // id exactly as a phone's is on the phone's — the same column and the same unique index,
+  // since the ids of the two kinds never collide.
   deviceOwned: true,
+  devices: ['phone', 'tablet'],
   access: { read: 'owner', write: 'server' },
   schema: {
     level: { type: 'int', notNull: true, default: 100 }
@@ -92,7 +107,42 @@ const rememberWrite = (phoneId: string, level: number): void => {
  * fires the framework may already have unloaded the player and there would be nothing left
  * to ask.
  */
-const phoneOf = new Map<number, string>();
+/**
+ * Every piece of live state below is held **per device** (MICA-337): one map per kind, each
+ * keyed by source, so a player carrying a phone and a tablet has two charges, two owning ids,
+ * two charging flags and two load marks, and nothing one device does reaches the other — a
+ * dead tablet never blocks the phone, and the reverse. The same shape `services/Phones.ts`
+ * keeps its `activeBySource` in.
+ */
+type PerDevice<V> = Record<DeviceId, Map<number, V>>;
+
+const perDevice = <V>(): PerDevice<V> =>
+  Object.fromEntries(ALL_DEVICES.map((device) => [device, new Map<number, V>()])) as PerDevice<V>;
+
+const phoneOf = perDevice<string>();
+
+/**
+ * Sources whose last load of a device found none in hand (MICA-337). A later device-state
+ * event — the item picked up — loads that device's charge then, where a switch with no
+ * previous device would otherwise stay silent and leave a tablet acquired after the character
+ * loaded with no charge until the next reconnect. The phone gets the same, for the same case.
+ */
+const heldNone = perDevice<true>();
+
+/**
+ * Sources whose character has loaded, or that asked for their charge (MICA-337): the ones the
+ * tick looks at for a tablet that has come into use since. Cleared with everything else.
+ */
+const knownSources = new Set<number>();
+
+/**
+ * A device id the previous character on this source was using, recorded at a character switch
+ * (MICA-337). `activeDeviceIdOf` still answers it until `services/Phones.ts` re-resolves for the
+ * new character, which happens asynchronously on the same load — and loading it in that gap
+ * would show, tick and save the previous character's tablet. Refused while the cache still
+ * answers it; the mark goes as soon as the answer changes.
+ */
+const staleIdentity = perDevice<string>();
 
 /**
  * Sources whose last load could not read the table (MICA-326), with the ticks left until the
@@ -112,7 +162,7 @@ const phoneOf = new Map<number, string>();
  * the failed load and clears the entry, and `loadToken` makes a read already in flight discard
  * what it read rather than paint the stale row over the set.
  */
-const loadFailed = new Map<number, number>();
+const loadFailed = perDevice<number>();
 
 /**
  * The load each source is waiting on (MICA-326), as an identity token.
@@ -124,7 +174,7 @@ const loadFailed = new Map<number, number>();
  * a newer load replaces it, so whichever happens last wins. Identity rather than a counter so a
  * deleted entry can never compare equal to one a load is holding.
  */
-const loadToken = new Map<number, object>();
+const loadToken = perDevice<object>();
 
 /** Test seam: the write-skip cache is module state that would leak between cases. */
 export const __resetBatteryCache = () => lastWritten.clear();
@@ -144,8 +194,8 @@ export const __resetBatteryCache = () => lastWritten.clear();
  * Keyed by source rather than citizenid because it only ticks while connected — which the
  * server knows, where the client merely stopped running.
  */
-const charge = new Map<number, number>();
-const charging = new Set<number>();
+const charge = perDevice<number>();
+const charging = perDevice<true>();
 
 /** Percent per minute. Draining is slow; a charger should visibly beat it. */
 const DRAIN_PER_MINUTE = 1;
@@ -154,8 +204,15 @@ const TICK_MS = 5000;
 /** About once a minute: a failed load retried every tick would hammer a database already in trouble. */
 const LOAD_RETRY_TICKS = Math.round(60_000 / TICK_MS);
 
-const pushCharge = (src: number, level: number): void => {
-  if (typeof emitNet === 'function') emitNet('mica:client:battery:set', src, level);
+/**
+ * Tell the client a device's charge. The phone's push is the bare level it has always been, so
+ * a client built before MICA-337 is unchanged; any other device appends its id, which the
+ * client reads as absent-means-phone.
+ */
+const pushCharge = (src: number, device: DeviceId, level: number): void => {
+  if (typeof emitNet !== 'function') return;
+  if (device === DEFAULT_DEVICE) emitNet('mica:client:battery:set', src, level);
+  else emitNet('mica:client:battery:set', src, level, device);
 };
 
 /**
@@ -166,29 +223,49 @@ const pushCharge = (src: number, level: number): void => {
  * saving the client's `saveCounter` was reaching for, expressed where the number lives.
  */
 const tickBattery = (): void => {
-  for (const [src, level] of charge) {
-    const rate = charging.has(src) ? CHARGE_PER_MINUTE : -DRAIN_PER_MINUTE;
-    const next = Math.max(0, Math.min(100, level + (rate * TICK_MS) / 60_000));
-    if (next === level) continue;
+  // Each device on its own (MICA-337), on the same rule: a device drains while its charge is
+  // held, which is while the player carries it, and charges while its own flag is set.
+  for (const device of ALL_DEVICES) {
+    for (const [src, level] of charge[device]) {
+      const rate = charging[device].has(src) ? CHARGE_PER_MINUTE : -DRAIN_PER_MINUTE;
+      const next = Math.max(0, Math.min(100, level + (rate * TICK_MS) / 60_000));
+      if (next === level) continue;
 
-    charge.set(src, next);
-    if (Math.round(next) !== Math.round(level)) {
-      pushCharge(src, Math.round(next));
-      void savePlayerBattery(src, Math.round(next));
+      charge[device].set(src, next);
+      if (Math.round(next) !== Math.round(level)) {
+        pushCharge(src, device, Math.round(next));
+        void savePlayerBattery(src, Math.round(next), device);
+      }
+    }
+
+    // Loads that could not read the table (MICA-326). Claimed by deleting the entry, so the
+    // next tick cannot start a second retry while this one is in flight.
+    for (const [src, ticks] of loadFailed[device]) {
+      if (ticks > 1) {
+        loadFailed[device].set(src, ticks - 1);
+        continue;
+      }
+      loadFailed[device].delete(src);
+      void sendLoadedBatteryToClient(src, device).catch((error: unknown) => {
+        console.error(`[mica] ${device} battery load retry for source ${src} threw`, error);
+      });
     }
   }
 
-  // Loads that could not read the table (MICA-326). Claimed by deleting the entry, so the next
-  // tick cannot start a second retry while this one is in flight.
-  for (const [src, ticks] of loadFailed) {
-    if (ticks > 1) {
-      loadFailed.set(src, ticks - 1);
-      continue;
+  // A tablet that has come into use since the character loaded (MICA-337): its first request,
+  // or an item resolved for it, gave it an identity, and nothing in this file was told. Loaded
+  // here, at most a tick later; never before, so nobody's tablet drains unused.
+  for (const src of knownSources) {
+    for (const device of ALL_DEVICES) {
+      if (device === DEFAULT_DEVICE || !isDeviceEnabled(device)) continue;
+      if (charge[device].has(src) || loadToken[device].has(src) || loadFailed[device].has(src)) {
+        continue;
+      }
+      if (deviceInUse(src, device) === null) continue;
+      void sendLoadedBatteryToClient(src, device).catch((error: unknown) => {
+        console.error(`[mica] ${device} battery load for source ${src} threw`, error);
+      });
     }
-    loadFailed.delete(src);
-    void sendLoadedBatteryToClient(src).catch((error: unknown) => {
-      console.error(`[mica] battery load retry for source ${src} threw`, error);
-    });
   }
 };
 
@@ -197,12 +274,17 @@ if (typeof setInterval === 'function') setInterval(tickBattery, TICK_MS);
 /** Test seams: module state and a deterministic tick, rather than waiting on wall clock. */
 export const __tickBattery = tickBattery;
 export const __resetBatteryState = (): void => {
-  charge.clear();
-  charging.clear();
-  phoneOf.clear();
+  for (const device of ALL_DEVICES) {
+    charge[device].clear();
+    charging[device].clear();
+    phoneOf[device].clear();
+    heldNone[device].clear();
+    staleIdentity[device].clear();
+    loadFailed[device].clear();
+    loadToken[device].clear();
+  }
+  knownSources.clear();
   lastWritten.clear();
-  loadFailed.clear();
-  loadToken.clear();
 };
 
 /**
@@ -219,31 +301,42 @@ export const __resetBatteryState = (): void => {
  * the player — which is exactly when `FrameworkBridge.getPlayer` starts answering nothing.
  */
 const forgetSource = (src: number): void => {
-  charge.delete(src);
-  charging.delete(src);
-  loadFailed.delete(src);
-  loadToken.delete(src);
+  knownSources.delete(src);
+  // Every device's (MICA-337): a tablet left charging is the same booby trap as a phone.
+  for (const device of ALL_DEVICES) {
+    charge[device].delete(src);
+    charging[device].delete(src);
+    heldNone[device].delete(src);
+    staleIdentity[device].delete(src);
+    loadFailed[device].delete(src);
+    loadToken[device].delete(src);
 
-  const phoneId = phoneOf.get(src);
-  if (phoneId !== undefined) lastWritten.delete(phoneId);
-  phoneOf.delete(src);
+    const phoneId = phoneOf[device].get(src);
+    if (phoneId !== undefined) lastWritten.delete(phoneId);
+    phoneOf[device].delete(src);
+  }
 };
 
 on('playerDropped', () => {
   forgetSource(source);
 });
 
-/** What the server believes this player's charge is. */
-export const currentCharge = (src: number): number => Math.round(charge.get(src) ?? 100);
+/** What the server believes this player's charge is — the phone's, unless `device` names another. */
+export const currentCharge = (src: number, device: DeviceId = DEFAULT_DEVICE): number =>
+  Math.round(charge[device].get(src) ?? 100);
 
-/** Set the live value, tell the phone, and persist. The one way charge changes outright. */
-export const applyCharge = (src: number, level: number): number => {
+/** Set the live value, tell the device, and persist. The one way charge changes outright. */
+export const applyCharge = (
+  src: number,
+  level: number,
+  device: DeviceId = DEFAULT_DEVICE
+): number => {
   const clamped = Math.max(0, Math.min(100, Math.round(level)));
-  charge.set(src, clamped);
-  loadFailed.delete(src);
-  loadToken.delete(src);
-  pushCharge(src, clamped);
-  void savePlayerBattery(src, clamped);
+  charge[device].set(src, clamped);
+  loadFailed[device].delete(src);
+  loadToken[device].delete(src);
+  pushCharge(src, device, clamped);
+  void savePlayerBattery(src, clamped, device);
   return clamped;
 };
 
@@ -302,16 +395,49 @@ const removeBatteryItem = (src: number, item: string): boolean => {
 };
 
 /**
+ * The id of a device other than the phone this source is already using, or `null` (MICA-337):
+ * what `services/Phones.ts` last resolved it to — on a tablet request, or for a tablet item in
+ * hand — and never one minted here. A cached id left over from the previous character on this
+ * source is not this one's (`staleIdentity`).
+ */
+const deviceInUse = (src: number, device: DeviceId): string | null => {
+  const id = activeDeviceIdOf(src, device);
+  const stale = staleIdentity[device].get(src);
+  if (stale !== undefined) {
+    if (id === stale) return null;
+    staleIdentity[device].delete(src);
+  }
+  return id;
+};
+
+/**
+ * Whether this source has a device of this kind for a charge to belong to, synchronously: the
+ * phone always (its path is unchanged), any other device only once its charge is loaded or it
+ * has an identity in use. `SetCharging` asks it.
+ */
+export const hasBatteryDevice = (src: number, device: DeviceId): boolean =>
+  device === DEFAULT_DEVICE || phoneOf[device].has(src) || deviceInUse(src, device) !== null;
+
+/**
  * The phone a source's charge belongs to: the one already recorded for it, else the one in
  * its hand. `null` for a player holding no phone on a gated server — there is nothing for a
  * charge to belong to, and `phoneForRequest` says so as a `PlayerFacingError`, which is not
  * an error here but an answer.
  */
-const phoneForSource = async (src: number, citizenid: string): Promise<string | null> => {
-  const known = phoneOf.get(src);
+const phoneForSource = async (
+  src: number,
+  citizenid: string,
+  device: DeviceId
+): Promise<string | null> => {
+  const known = phoneOf[device].get(src);
   if (known) return known;
+  // Never a resolve for any other device (MICA-337): `phoneForRequest` falls back to the
+  // citizen's identity device, which *mints* a tablet — a `mica_phones` row, its created hooks,
+  // then a battery row and a drain — for a player who may never open one. A tablet's charge
+  // follows an identity the tablet's own use created, and nothing else.
+  if (device !== DEFAULT_DEVICE) return deviceInUse(src, device);
   try {
-    return await phoneForRequest(src, citizenid);
+    return await phoneForRequest(src, citizenid, device);
   } catch (error) {
     if (error instanceof PlayerFacingError) return null;
     throw error;
@@ -319,32 +445,34 @@ const phoneForSource = async (src: number, citizenid: string): Promise<string | 
 };
 
 /**
- * Persist a charge to a phone. Returns silently for a source with no loaded character, and
- * for one holding no phone.
+ * Persist a charge to a device — the phone unless `device` names another. Returns silently for
+ * a source with no loaded character, and for one holding none of that device.
  *
- * `phoneId` names the phone explicitly when the caller knows better than the cache — the
- * switch saves the *old* phone's charge after `phoneOf` has already moved on.
+ * `phoneId` names the device explicitly when the caller knows better than the cache — the
+ * switch saves the *old* device's charge after `phoneOf` has already moved on.
  */
 export const savePlayerBattery = async (
   src: number,
   level: number,
+  device: DeviceId = DEFAULT_DEVICE,
   phoneId?: string
 ): Promise<void> => {
   const player = FrameworkBridge.getPlayer(src);
   if (!player?.citizenid) return;
 
   const { citizenid } = player;
-  const phone = phoneId ?? (await phoneForSource(src, citizenid));
+  const phone = phoneId ?? (await phoneForSource(src, citizenid, device));
   if (!phone) return;
-  if (!phoneId) phoneOf.set(src, phone);
+  if (!phoneId) phoneOf[device].set(src, phone);
 
   const safeLevel = Math.max(0, Math.min(100, Math.round(level)));
   if (lastWritten.get(phone) === safeLevel) return;
   rememberWrite(phone, safeLevel);
 
   // Mirrored into character metadata so other resources reading `mica_battery` keep
-  // working. Our table is the authority; this is a courtesy copy — of the phone in hand.
-  player.setMeta('mica_battery', safeLevel);
+  // working. Our table is the authority; this is a courtesy copy — of the phone in hand, and
+  // only the phone's: a resource reading `mica_battery` has only ever meant the phone.
+  if (device === DEFAULT_DEVICE) player.setMeta('mica_battery', safeLevel);
 
   try {
     const [existing] = await batteryApp.repo.findAll({ phone_id: phone } as Partial<PhoneBattery>);
@@ -395,7 +523,11 @@ export const savePlayerBattery = async (
  * convenient UI, not the capability. Server-authoritative battery is a separate,
  * larger change: persistence (below) is not the same thing as authority.
  */
-const SET_BATTERY_INPUT = s.tuple([batteryLevel]);
+/**
+ * The level, and since MICA-337 the device the slider speaks for: absent means the phone, so a
+ * client built before the tablet had a battery sends exactly what it always did.
+ */
+const SET_BATTERY_INPUT = s.tuple([batteryLevel, s.string({ max: 32 }).optional()]);
 
 onNet('mica:server:admin:setBattery', (...args: unknown[]) => {
   // Rate limit, parse and authenticate, in the order `ServiceEndpoint` uses. Raw `onNet`
@@ -403,7 +535,11 @@ onNet('mica:server:admin:setBattery', (...args: unknown[]) => {
   // before the admin check, so a non-admin sending garbage is dropped rather than toasted.
   const guarded = guardNetEvent('admin', 'setBattery', SET_BATTERY_INPUT, args);
   if (!guarded) return;
-  const [level] = guarded.input;
+  const [level, rawDevice] = guarded.input;
+  // A device this server does not know, or has off, is dropped rather than read as the phone:
+  // a slider that meant the tablet must not move the phone's charge.
+  const device = rawDevice === undefined ? DEFAULT_DEVICE : rawDevice;
+  if (!isDeviceId(device) || !isDeviceEnabled(device)) return;
 
   const src = source;
   if (!isAdmin(src)) {
@@ -415,26 +551,60 @@ onNet('mica:server:admin:setBattery', (...args: unknown[]) => {
     return;
   }
 
-  void savePlayerBattery(src, level);
-  emitNet('mica:client:battery:set', src, level);
+  // Through `setBatteryLevel` and so `applyCharge`, like `micacharge` and the battery bank: a
+  // bare save-and-push left the live charge the drain loop ticks from untouched, so the next
+  // whole percent pushed the old level straight back over the slider. `setBatteryLevel` also
+  // refuses a tablet the admin has none of, rather than seeding a charge that would tick for a
+  // device that is not there. The phone's path runs synchronously, as it always did.
+  void setBatteryLevel(src, level, device).catch((error: unknown) => {
+    console.error(`[mica] battery slider for source ${src} threw`, error);
+  });
 });
 
 /**
- * Send a player their saved charge.
- *
- * Our table first. Framework metadata is only consulted when there is no row yet, so a
- * player who had a charge before this table existed keeps it — and that read is written
- * straight back, so the fallback runs exactly once per character.
+ * Forget one device's live state for a source, leaving its other devices alone: a device that
+ * is off, or that the player no longer holds, has nothing to tick.
  */
-export const sendLoadedBatteryToClient = async (src: number): Promise<void> => {
+const dropDevice = (src: number, device: DeviceId): void => {
+  charge[device].delete(src);
+  loadFailed[device].delete(src);
+  loadToken[device].delete(src);
+  phoneOf[device].delete(src);
+};
+
+/**
+ * Send a player one device's saved charge — the phone's unless `device` names another.
+ *
+ * Our table first. Framework metadata is only consulted when the phone has no row yet, so a
+ * player who had a charge before this table existed keeps it — and that read is written
+ * straight back, so the fallback runs exactly once per character. A tablet has no such past
+ * (MICA-337): no row is a full battery.
+ */
+export const sendLoadedBatteryToClient = async (
+  src: number,
+  device: DeviceId = DEFAULT_DEVICE
+): Promise<void> => {
+  // A device this server has off holds nothing. `mica_tablet` is read live, so a tablet
+  // switched off under a running resource stops ticking at its next load.
+  if (!isDeviceEnabled(device)) {
+    dropDevice(src, device);
+    return;
+  }
+
   const player = FrameworkBridge.getPlayer(src);
   const citizenid = player?.citizenid;
 
   // No loaded character yet — a multichar player still at the selection screen. Nothing
-  // to look up, and `src_<id>` would key a row to a source number that gets reused.
+  // to look up, and `src_<id>` would key a row to a source number that gets reused. The phone
+  // is told a full battery, as it always was; any other device holds nothing (MICA-337), since
+  // with no character there is no inventory to be holding one in.
   if (!citizenid) {
-    charge.set(src, 100);
-    emitNet('mica:client:battery:set', src, 100);
+    if (device !== DEFAULT_DEVICE) {
+      dropDevice(src, device);
+      return;
+    }
+    charge[device].set(src, 100);
+    pushCharge(src, device, 100);
     return;
   }
 
@@ -442,47 +612,51 @@ export const sendLoadedBatteryToClient = async (src: number): Promise<void> => {
   // that is no longer the current one — superseded by a set, a newer load or a disconnect —
   // stops without touching anything, because what it read may already be stale.
   const token = {};
-  loadToken.set(src, token);
-  const superseded = (): boolean => loadToken.get(src) !== token;
+  loadToken[device].set(src, token);
+  const superseded = (): boolean => loadToken[device].get(src) !== token;
 
-  // Unknown is not "no row" (MICA-326), and that holds for the phone as much as the charge.
+  // Unknown is not "no row" (MICA-326), and that holds for the device as much as the charge.
   const failed = (what: string, error: unknown, keepCharge: boolean): void => {
-    loadToken.delete(src);
-    loadFailed.set(src, LOAD_RETRY_TICKS);
-    if (!keepCharge) charge.delete(src);
+    loadToken[device].delete(src);
+    loadFailed[device].set(src, LOAD_RETRY_TICKS);
+    if (!keepCharge) charge[device].delete(src);
     console.error(
       `[mica] failed to ${what} for source ${src}; nothing was written. Retrying in about a ` +
-        `minute, or sooner on a phone-state change.`,
+        `minute, or sooner on a device-state change.`,
       error
     );
-    const known = charge.get(src);
-    if (known !== undefined) emitNet('mica:client:battery:set', src, Math.round(known));
+    const known = charge[device].get(src);
+    if (known !== undefined) pushCharge(src, device, Math.round(known));
   };
 
-  // The phone in hand (MICA-283). Holding none on a gated server means there is no charge
-  // to show and nothing to tick: the phone is closed for them anyway.
+  // The device in hand (MICA-283, per device since MICA-337). Holding none on a gated server
+  // means there is no charge to show and nothing to tick: the device is closed for them anyway.
   let phone: string | null;
   try {
-    phone = await phoneForSource(src, citizenid);
+    phone = await phoneForSource(src, citizenid, device);
   } catch (e) {
     if (superseded()) return;
-    // `phoneForSource` answers a known phone without asking anything, so a throw means none
-    // was known: whatever charge is held is not this phone's.
-    failed('resolve the phone for the battery', e, false);
+    // `phoneForSource` answers a known device without asking anything, so a throw means none
+    // was known: whatever charge is held is not this device's.
+    failed(`resolve the ${device} for the battery`, e, false);
     return;
   }
   if (superseded()) return;
   if (!phone) {
-    loadToken.delete(src);
-    charge.delete(src);
+    loadToken[device].delete(src);
+    charge[device].delete(src);
+    // Picked up later, it is loaded then (`heldNone`). A tablet not yet in use is not "held
+    // none": the tick loads it once it has an identity.
+    if (device === DEFAULT_DEVICE) heldNone[device].set(src, true);
     return;
   }
-  // Whether the live charge, if any, is already this phone's — a reload of the same phone,
-  // rather than a first load or a switch, where it is nobody's or the previous phone's.
-  const samePhone = phoneOf.get(src) === phone;
+  heldNone[device].delete(src);
+  // Whether the live charge, if any, is already this device's — a reload of the same one,
+  // rather than a first load or a switch, where it is nobody's or the previous device's.
+  const samePhone = phoneOf[device].get(src) === phone;
   // Recorded before the lookup, so a disconnect knows which cache entry to forget even if
-  // this phone's charge never moves far enough to be written.
-  phoneOf.set(src, phone);
+  // this device's charge never moves far enough to be written.
+  phoneOf[device].set(src, phone);
 
   let savedCharge: number | null = null;
   try {
@@ -491,41 +665,71 @@ export const sendLoadedBatteryToClient = async (src: number): Promise<void> => {
   } catch (e) {
     if (superseded()) return;
     // Falling through to the default would save it, and a saved 12% would come back as 100
-    // after one transient error. So: write nothing, keep the last charge known for this phone
+    // after one transient error. So: write nothing, keep the last charge known for this device
     // or hold none, and retry — see `loadFailed`. With none held the loop does not tick this
     // source, so nothing saves a guess behind our back either, and the battery bank refuses
-    // (`batteryItemUsed`); the phone keeps showing what it showed.
-    failed('load battery', e, samePhone);
+    // (`batteryItemUsed`); the device keeps showing what it showed.
+    failed(`load the ${device} battery`, e, samePhone);
     return;
   }
   if (superseded()) return;
-  loadFailed.delete(src);
+  loadFailed[device].delete(src);
 
   if (savedCharge === null) {
-    const metadata = player.rawPlayer?.PlayerData?.metadata;
+    // Legacy metadata is the phone's alone: it predates the tablet having a battery at all.
+    const metadata = device === DEFAULT_DEVICE ? player.rawPlayer?.PlayerData?.metadata : null;
     const legacy = metadata?.mica_battery ?? metadata?.phone_battery;
     savedCharge = legacy === undefined ? 100 : Number(legacy);
     // Adopt it, so the next load reads our table. Awaited rather than fired and
     // forgotten: a `loadBattery` racing the drain loop's first `saveBattery` could
     // otherwise both see no row and both insert.
-    await savePlayerBattery(src, savedCharge, phone);
+    await savePlayerBattery(src, savedCharge, device, phone);
     if (superseded()) return;
   }
-  loadToken.delete(src);
+  loadToken[device].delete(src);
 
   if (!Number.isFinite(savedCharge)) savedCharge = 100;
-  // Seed the live value, not just the phone. The loop ticks from this map, so a load that
+  // Seed the live value, not just the device. The loop ticks from this map, so a load that
   // only told the client would leave the server ticking down from 100 for somebody whose
   // saved charge is 12.
-  charge.set(src, savedCharge);
-  emitNet('mica:client:battery:set', src, savedCharge);
+  charge[device].set(src, savedCharge);
+  pushCharge(src, device, savedCharge);
 };
 
-// Event for client to request saved battery level on spawn / join
+/**
+ * Answer `battery:load` for every device this server has on (MICA-337): the phone always, the
+ * tablet unless `mica_tablet` is off — and then only once it is in use. Each load is its own
+ * failure, as each device is its own battery: a tablet whose row cannot be read must not stop
+ * the phone's charge arriving.
+ */
+const loadEnabledDevices = async (src: number): Promise<void> => {
+  knownSources.add(src);
+  const outcomes = await Promise.allSettled(
+    enabledDevices().map((device) => {
+      if (device === DEFAULT_DEVICE) return sendLoadedBatteryToClient(src, device);
+      // Lazily (MICA-337): a charge already held is answered as it is, and one not yet loaded
+      // is loaded only for a device already in use. Nothing here gives a tablet an identity.
+      const held = charge[device].get(src);
+      if (held !== undefined) {
+        pushCharge(src, device, Math.round(held));
+        return Promise.resolve();
+      }
+      if (deviceInUse(src, device) === null) return Promise.resolve();
+      return sendLoadedBatteryToClient(src, device);
+    })
+  );
+  const rejected = outcomes.find((outcome) => outcome.status === 'rejected');
+  if (rejected) throw rejected.reason;
+};
+
+// Event for client to request saved battery level on spawn / join: one answer per device.
 onNet('mica:server:battery:load', (...args: unknown[]) => {
   if (!guardNetEvent('battery', 'load', noInput, args)) return;
 
-  void sendLoadedBatteryToClient(source);
+  const src = source;
+  void loadEnabledDevices(src).catch((error: unknown) => {
+    console.error(`[mica] battery load for source ${src} threw`, error);
+  });
 });
 
 /**
@@ -549,20 +753,38 @@ onPlayerLoaded('battery', (src) => {
   // multichar logout and pick, with no `playerDropped` between. Everything held for this
   // source belonged to the previous character: `phoneOf` above all, which `phoneForSource`
   // answers from without asking, so the new character would have loaded, ticked and saved
-  // the previous character's phone. Forgotten first, exactly as a disconnect forgets it.
+  // the previous character's phone — and tablet. Forgotten first, every device, exactly as a
+  // disconnect forgets it.
   forgetSource(src);
-  return sendLoadedBatteryToClient(src);
+  knownSources.add(src);
+  // Only the phone at a character load (MICA-337). Any other device's cached id is still the
+  // previous character's until `services/Phones.ts` re-resolves — on this same load, but
+  // asynchronously — so it is marked stale here and the tick loads the device once its id is
+  // this character's. A first load has nothing cached, and marks nothing.
+  for (const device of ALL_DEVICES) {
+    if (device === DEFAULT_DEVICE) continue;
+    const previous = activeDeviceIdOf(src, device);
+    if (previous !== null) staleIdentity[device].set(src, previous);
+  }
+  return sendLoadedBatteryToClient(src, DEFAULT_DEVICE);
 });
 
 /**
- * The phone in hand may have changed (MICA-283): the live charge belongs to the old phone,
- * so it is saved there, and the new phone's charge is loaded in its place. Fired on load
- * too, where `phoneOf` is still empty and the `onPlayerLoaded` subscriber above is the one
- * doing the loading — so an empty `phoneOf` is left to it rather than loaded twice.
+ * The device in hand may have changed (MICA-283; any device since MICA-337): the live charge
+ * belongs to the old one, so it is saved there, and the new one's charge is loaded in its
+ * place. Fired on load too, where `phoneOf` is still empty and the `onPlayerLoaded` subscriber
+ * above is the one doing the loading — so an empty `phoneOf` is left to it rather than loaded
+ * twice, unless that load already ran and found none in hand (`heldNone`): then this is the
+ * device being picked up, and nothing else would load it.
  */
-const switchBatteryPhone = async (src: number): Promise<void> => {
-  const previous = phoneOf.get(src);
-  if (!previous) return;
+const switchBatteryDevice = async (src: number, device: DeviceId): Promise<void> => {
+  const previous = phoneOf[device].get(src);
+  if (!previous) {
+    const pickedUp = heldNone[device].delete(src);
+    const inUse = device !== DEFAULT_DEVICE && deviceInUse(src, device) !== null;
+    if (pickedUp || inUse) await sendLoadedBatteryToClient(src, device);
+    return;
+  }
 
   const player = FrameworkBridge.getPlayer(src);
   if (!player?.citizenid) return;
@@ -570,46 +792,52 @@ const switchBatteryPhone = async (src: number): Promise<void> => {
   // Whether this switch still speaks for the source once its await returns. A character load
   // or a disconnect forgets `phoneOf`, and a concurrent switch moves it; either way the charge
   // held now is not `previous`'s to save, and the load is somebody else's to make.
-  const stale = (): boolean => phoneOf.get(src) !== previous;
+  const stale = (): boolean => phoneOf[device].get(src) !== previous;
   // Only a charge actually held is saved. After a failed load there may be none, and
   // `currentCharge` would answer 100 for it — the overwrite MICA-326 removed from the load.
-  const held = (): boolean => charge.has(src);
+  const held = (): boolean => charge[device].has(src);
 
   let next: string | null;
   try {
-    next = await phoneForRequest(src, player.citizenid);
+    next = await phoneForRequest(src, player.citizenid, device);
   } catch (error) {
     if (!(error instanceof PlayerFacingError)) throw error;
     if (stale()) return;
-    // Holding no phone now. The old phone's charge is saved and nothing ticks until a phone is
-    // in hand again.
-    if (held()) await savePlayerBattery(src, currentCharge(src), previous);
-    phoneOf.delete(src);
-    charge.delete(src);
-    loadFailed.delete(src);
+    // Holding none now. The old device's charge is saved and nothing ticks until one is in
+    // hand again — and then it is loaded (`heldNone`).
+    if (held()) await savePlayerBattery(src, currentCharge(src, device), device, previous);
+    dropDevice(src, device);
+    heldNone[device].set(src, true);
     return;
   }
   if (stale()) return;
   if (next === previous) {
-    // The same phone, so nothing to switch — but a load that could not read the table is
+    // The same device, so nothing to switch — but a load that could not read the table is
     // owed a retry, and this is the next occasion (MICA-326). Claimed by deleting the mark, so
     // a second event while this retry is in flight does not start another; a retry that fails
     // again puts it back.
-    if (loadFailed.delete(src)) await sendLoadedBatteryToClient(src);
+    if (loadFailed[device].delete(src)) await sendLoadedBatteryToClient(src, device);
     return;
   }
 
-  if (held()) await savePlayerBattery(src, currentCharge(src), previous);
-  phoneOf.delete(src);
+  if (held()) await savePlayerBattery(src, currentCharge(src, device), device, previous);
+  phoneOf[device].delete(src);
   // The charge held is `previous`'s and has just been saved there. Left in the map, a tick that
-  // crossed a whole percent while the new phone's row was being read saved it — through the
-  // `phoneOf` the load had already moved — into the *new* phone's row, and a read that then
-  // failed left it there for good. Nothing is held until the new phone's load says what it is.
-  charge.delete(src);
-  await sendLoadedBatteryToClient(src);
+  // crossed a whole percent while the new device's row was being read saved it — through the
+  // `phoneOf` the load had already moved — into the *new* device's row, and a read that then
+  // failed left it there for good. Nothing is held until the new device's load says what it is.
+  charge[device].delete(src);
+  await sendLoadedBatteryToClient(src, device);
 };
 
-onPhoneStateChanged('battery', (src) => switchBatteryPhone(src));
+onPhoneStateChanged('battery', (src) => switchBatteryDevice(src, DEFAULT_DEVICE));
+
+/**
+ * Every other device's twin of the line above (MICA-337): `deviceItem.ts` tells this hook about
+ * the tablet — on a load, an inventory change and a use of its item — and never about the
+ * phone, so the two subscriptions never load one device twice.
+ */
+onDeviceStateChanged('battery', (src, device) => switchBatteryDevice(src, device));
 
 /**
  * Out-of-band recharge: `micacharge [playerId] <0-100>`.
@@ -673,7 +901,12 @@ RegisterCommand(
 );
 
 /**
- * Using the item recharges the phone.
+ * Using the item recharges the open device, else the phone (MICA-337).
+ *
+ * "Open" is the server's mirror of the client's own state (`PhoneOpenState`, per device since
+ * MICA-263): a player looking at their tablet who uses a battery bank means the tablet. The
+ * phone is the answer otherwise — with the phone open, with nothing open, and with a tablet
+ * this server has switched off, whose open state is stale by definition.
  *
  * Through `applyCharge`, not a bare push. The charge lives in three places — the map the
  * drain loop ticks, the phone, and the table — and this used to set only the phone: the
@@ -685,21 +918,30 @@ RegisterCommand(
  * framework calls us for is the item we charge for even if the convar is changed underneath
  * a running resource.
  */
+const bankTarget = (src: number): DeviceId =>
+  isDeviceEnabled('tablet') && isDeviceOpen(src, 'tablet') ? 'tablet' : DEFAULT_DEVICE;
+
 const batteryItemUsed = (src: number, item: string): void => {
-  // No charge held — a load that could not read the table, or no phone in hand — so there is
-  // nothing to add to: `currentCharge` would answer 100 and the bank would write that over the
-  // saved charge (MICA-326). Refused before the item is touched, so the player keeps it — and
-  // told, because using an item that silently does nothing reads as a broken item.
-  if (!charge.has(src)) {
+  const device = bankTarget(src);
+  // No charge held — a load that could not read the table, or none of that device in hand — so
+  // there is nothing to add to: `currentCharge` would answer 100 and the bank would write that
+  // over the saved charge (MICA-326). Refused before the item is touched, so the player keeps
+  // it — and told, because using an item that silently does nothing reads as a broken item.
+  // Not passed on to the phone when it is the open tablet that cannot take it: the player is
+  // looking at the tablet, and charging a device they did not mean spends the item behind
+  // their back.
+  if (!charge[device].has(src)) {
+    const label = DEVICES[device].label;
     notifyPlayer(src, {
       type: 'error',
-      message: "Your phone can't be charged right now. The battery bank was not used.",
-      key: 'server.battery.unavailable'
+      message: `Your ${label.toLowerCase()} can't be charged right now. The battery bank was not used.`,
+      key: 'server.battery.unavailable',
+      params: { device: label }
     });
     return;
   }
   if (!removeBatteryItem(src, item)) return;
-  applyCharge(src, currentCharge(src) + batteryItemCharge());
+  applyCharge(src, currentCharge(src, device) + batteryItemCharge(), device);
 };
 
 const configuredBatteryItem = batteryItemName();
@@ -722,12 +964,37 @@ if (configuredBatteryItem) {
  * delta to that 100 and *write* the result over the saved charge. No row is still 100, the
  * same default the column and a first load use.
  */
-export const getBatteryLevel = async (citizenid: string): Promise<number> => {
-  // The phone this citizen is on — in hand, else last used, else their identity phone —
-  // so the export answers for the phone a reconnect would restore (MICA-283).
-  const phone = await phoneForCitizen(citizenid);
+export const getBatteryLevel = async (
+  citizenid: string,
+  device: DeviceId = DEFAULT_DEVICE,
+  src?: number
+): Promise<number | null> => {
+  const phone = await batteryDeviceOf(citizenid, device, src);
+  if (!phone) return null;
   const [row] = await batteryApp.repo.findAll({ phone_id: phone } as Partial<PhoneBattery>);
   return row ? Number(row.level) : 100;
+};
+
+/**
+ * The device an export's charge belongs to, or `null` for none.
+ *
+ * The phone: the one this citizen is on — in hand, else last used, else their identity phone —
+ * so the export answers for the phone a reconnect would restore (MICA-283). Never `null`.
+ *
+ * Any other device (MICA-337): the one this source's live charge belongs to, else the one in
+ * their hand, through the same `phoneForRequest` a tablet request is scoped by. `null` for a
+ * player holding none on a gated server, which the export reports rather than reading or
+ * writing a row for a tablet they do not have — and for a call with no source, since there is
+ * no citizen-level "last tablet" to fall back on.
+ */
+const batteryDeviceOf = async (
+  citizenid: string,
+  device: DeviceId,
+  src: number | undefined
+): Promise<string | null> => {
+  if (device === DEFAULT_DEVICE) return phoneForCitizen(citizenid);
+  if (src === undefined) return null;
+  return phoneForSource(src, citizenid, device);
 };
 
 /**
@@ -739,10 +1006,23 @@ export const getBatteryLevel = async (citizenid: string): Promise<number> => {
  * place. Returns the clamped level so a caller sees what actually happened rather than
  * what it asked for.
  */
-export const setBatteryLevel = async (src: number, level: number): Promise<number> => {
+export const setBatteryLevel = async (
+  src: number,
+  level: number,
+  device: DeviceId = DEFAULT_DEVICE
+): Promise<number | null> => {
+  // The phone's path is what it always was: straight to the authoritative value, even for a
+  // player holding no phone (MICA-337 changes nothing an existing caller sees). Another device
+  // is refused for a player holding none of it — an `ok` for a tablet that does not exist
+  // would be a charge nothing shows and nothing saves.
+  if (device !== DEFAULT_DEVICE) {
+    const citizenid = FrameworkBridge.getPlayer(src)?.citizenid;
+    if (!citizenid) return null;
+    if (!(await batteryDeviceOf(citizenid, device, src))) return null;
+  }
   // Straight to the authoritative value. Nothing to reconcile with a client timer any
   // more, which is what the old comment about resynchronising a drifted phone was for.
-  return applyCharge(src, level);
+  return applyCharge(src, level, device);
 };
 
 /**
@@ -757,10 +1037,22 @@ export const setBatteryLevel = async (src: number, level: number): Promise<numbe
  * so `playerDropped` clears it — a charger left plugged in would otherwise charge the phone
  * of whoever lands on that id next, at ten percent a minute, from nothing they did.
  */
-export const setCharging = (src: number, isCharging: boolean): void => {
+export const setCharging = (
+  src: number,
+  isCharging: boolean,
+  device: DeviceId = DEFAULT_DEVICE
+): boolean => {
+  // Refused for a device other than the phone that this source has none of (MICA-337), as
+  // `SetBatteryLevel` is: a flag for a tablet that does not exist charges nothing anyone sees.
+  if (!hasBatteryDevice(src, device)) return false;
   // The loop is server-side now, so this flips a flag the loop reads rather than pushing a
-  // state the client's own timer had to honour.
-  if (isCharging) charging.add(src);
-  else charging.delete(src);
-  if (typeof emitNet === 'function') emitNet('mica:client:battery:charging', src, isCharging);
+  // state the client's own timer had to honour. One flag per device (MICA-337): a tablet on a
+  // charger says nothing about the phone in the player's pocket.
+  if (isCharging) charging[device].set(src, true);
+  else charging[device].delete(src);
+  if (typeof emitNet !== 'function') return true;
+  // The phone's push is the bare flag it has always been; another device appends its id.
+  if (device === DEFAULT_DEVICE) emitNet('mica:client:battery:charging', src, isCharging);
+  else emitNet('mica:client:battery:charging', src, isCharging, device);
+  return true;
 };

@@ -70,7 +70,8 @@ interface Window {
   webkitAudioContext?: typeof AudioContext;
 
   // Dev harness, browser only.
-  setBattery?: (value: number) => void;
+  /** The active device's battery, or the named one's (MICA-337). */
+  setBattery?: (value: number, device?: import('@mica/shared/devices').DeviceId) => void;
   setDrainSpeed?: (multiplier: number) => void;
   setSignalLevel?: (level: number) => void;
   triggerTestToast?: (type?: 'message' | 'contact' | 'call' | 'email') => void;

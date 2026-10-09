@@ -18,10 +18,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * The Status widget (MICA-245): battery and signal, from the stores the status bar reads,
    * so the two never disagree.
    *
-   * There is no "charging" state here on purpose. The web side has none to read — the
-   * client's charging flag was removed when the drain moved server-side (see the note in
-   * `state/charge.ts`) — and a glyph invented from a level that happened to rise would be
-   * wrong as often as right.
+   * There is no "charging" glyph here. The client forwards a per-device charging flag
+   * again since MICA-337 (`state/charge.ts`'s `chargingOf`), but `BatteryIcon` has no
+   * charging state to draw it with, and the status bar shows none either; a glyph invented
+   * from a level that happened to rise would be wrong as often as right.
    *
    * Low is `<= 20`, the status bar's own threshold, and shows in `text-error` rather than
    * a dimmed colour. Every run of text sits on the widget's own `surface-container`, so it

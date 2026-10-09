@@ -6,7 +6,8 @@
 import '../../host/registerFacets';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { get } from 'svelte/store';
-import { charge } from './charge';
+import { charge, chargeOf } from './charge';
+import { setActiveDevice } from './device';
 import { setMotionPreference } from './motion';
 import { openDevice } from './phoneOpen';
 import { BOOT_MS, OPEN_FLY_MS, POWER_OFF_MS, observePower, powerState } from './power';
@@ -21,11 +22,18 @@ let stop: () => void;
 const phase = () => get(powerState).phase;
 const open = () => openDevice.set('phone');
 const close = () => openDevice.set(null);
+/** Raise a device as `Shell.svelte` does: it becomes the active one, and its frame is up. */
+const raise = (device: 'phone' | 'tablet') => {
+  setActiveDevice(device);
+  openDevice.set(device);
+};
 
 beforeEach(() => {
   vi.useFakeTimers();
   openDevice.set(null);
-  charge.set(100);
+  setActiveDevice('phone');
+  chargeOf.phone.set(100);
+  chargeOf.tablet.set(100);
   callStore.setStatus('idle');
   setMotionPreference('full');
   stop = observePower();
@@ -133,5 +141,52 @@ describe('suppression', () => {
     expect(phase()).toBe('boot');
     callStore.setIncoming('555-0100', 'Ada');
     expect(phase()).toBe('idle');
+  });
+});
+
+/** MICA-337: each device has a battery of its own, so each powers off and boots on its own. */
+describe('per device', () => {
+  it('treats switching from a dead phone to a charged tablet as an open, not a revival', () => {
+    raise('phone');
+    vi.advanceTimersByTime(5000);
+    chargeOf.phone.set(0);
+    expect(phase()).toBe('off');
+    vi.advanceTimersByTime(5000);
+
+    raise('tablet');
+    expect(phase()).toBe('idle');
+  });
+
+  it('plays nothing on the open phone when the tablet dies or revives', () => {
+    raise('phone');
+    vi.advanceTimersByTime(5000);
+    chargeOf.tablet.set(0);
+    expect(phase()).toBe('idle');
+    chargeOf.tablet.set(40);
+    expect(phase()).toBe('idle');
+  });
+
+  it('powers the tablet off on its own battery, not the phone', () => {
+    raise('tablet');
+    vi.advanceTimersByTime(5000);
+    chargeOf.phone.set(0);
+    expect(phase()).toBe('idle');
+    chargeOf.tablet.set(0);
+    expect(get(powerState)).toEqual({ phase: 'off', delayMs: 0 });
+  });
+
+  it('boots a device on its next open when it revived while the other was up', () => {
+    raise('tablet');
+    vi.advanceTimersByTime(5000);
+    chargeOf.tablet.set(0);
+    vi.advanceTimersByTime(5000);
+
+    raise('phone');
+    chargeOf.tablet.set(30);
+    expect(phase()).toBe('idle');
+    vi.advanceTimersByTime(5000);
+
+    raise('tablet');
+    expect(get(powerState)).toEqual({ phase: 'boot', delayMs: OPEN_FLY_MS });
   });
 });

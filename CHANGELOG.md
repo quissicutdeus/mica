@@ -590,6 +590,15 @@ with `internal_error` and the rest of Messages is unaffected.
 
 ### Added
 
+**The tablet has a battery of its own (MICA-337).** It drains while carried and
+charges on its own, separately from the phone, and shows its own flat-battery
+screen; a flat tablet never stops the phone, or the reverse. A battery bank
+charges the tablet if it is open, otherwise the phone. `GetBatteryLevel`,
+`SetBatteryLevel`, `AddBatteryCharge` and `SetCharging` take an optional
+trailing `device`, defaulting to the phone, so existing scripts are unchanged;
+`'tablet'` answers `disabled` while the tablet is off or the player holds none.
+No owner action.
+
 **A fresh install no longer imports any SQL (MICA-306).** Start micaOS against
 an empty database and it creates its own schema for your framework, records the
 shipped migrations as applied, and says so in the console. It needs CREATE,

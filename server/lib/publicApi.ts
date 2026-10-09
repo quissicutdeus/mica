@@ -566,39 +566,68 @@ export function registerPublicApi(): void {
     })
   );
 
+  /**
+   * The battery exports take a trailing `device` since MICA-337, as the open and lock exports
+   * do since MICA-263: absent means the phone, a non-device is `invalid_args`, and a device this
+   * server has off is `disabled` (`resolveDevice`). A player holding none of a device other
+   * than the phone is `disabled` too — the reason `shared/exports.ts` gives for "gated on an
+   * item they do not hold" — rather than an `ok` for a battery nothing shows. So is a tablet
+   * that has no identity yet because it has never been used: the read exports never mint one
+   * (`services/Battery.ts`), so they cannot answer a charge for it. The phone keeps answering
+   * exactly what it always did.
+   */
+  const noDevice = <T>(device: DeviceId): ExportOutcome<T> =>
+    fail<T>('disabled', `That player is not holding a ${device}, or has not used one yet.`);
+
   publish(
     'GetBatteryLevel',
-    guardedAsync('GetBatteryLevel', async (source: unknown) => {
+    guardedAsync('GetBatteryLevel', async (source: unknown, rawDevice?: unknown) => {
+      const device = resolveDevice<number>(rawDevice);
+      if (isFailure<number>(device)) return device;
       const resolved = citizenOf(source);
       if (isFailure(resolved)) return resolved as ExportOutcome<number>;
-      return ok(await getBatteryLevel(resolved.citizenid));
+      const level = await getBatteryLevel(resolved.citizenid, device, source as number);
+      return level === null ? noDevice<number>(device) : ok(level);
     })
   );
 
   publish(
     'SetBatteryLevel',
-    guardedAsync('SetBatteryLevel', async (source: unknown, level: unknown) => {
-      const resolved = citizenOf(source);
-      if (isFailure(resolved)) return resolved as ExportOutcome<number>;
-      if (typeof level !== 'number' || !Number.isFinite(level)) {
-        return fail<number>('invalid_args', 'A level between 0 and 100 is required.');
+    guardedAsync(
+      'SetBatteryLevel',
+      async (source: unknown, level: unknown, rawDevice?: unknown) => {
+        const device = resolveDevice<number>(rawDevice);
+        if (isFailure<number>(device)) return device;
+        const resolved = citizenOf(source);
+        if (isFailure(resolved)) return resolved as ExportOutcome<number>;
+        if (typeof level !== 'number' || !Number.isFinite(level)) {
+          return fail<number>('invalid_args', 'A level between 0 and 100 is required.');
+        }
+        const applied = await setBatteryLevel(source as number, level, device);
+        return applied === null ? noDevice<number>(device) : ok(applied);
       }
-      return ok(await setBatteryLevel(source as number, level));
-    })
+    )
   );
 
   /** Negative drains — an EMP, a taser, a long night. */
   publish(
     'AddBatteryCharge',
-    guardedAsync('AddBatteryCharge', async (source: unknown, delta: unknown) => {
-      const resolved = citizenOf(source);
-      if (isFailure(resolved)) return resolved as ExportOutcome<number>;
-      if (typeof delta !== 'number' || !Number.isFinite(delta)) {
-        return fail<number>('invalid_args', 'A numeric delta is required.');
+    guardedAsync(
+      'AddBatteryCharge',
+      async (source: unknown, delta: unknown, rawDevice?: unknown) => {
+        const device = resolveDevice<number>(rawDevice);
+        if (isFailure<number>(device)) return device;
+        const resolved = citizenOf(source);
+        if (isFailure(resolved)) return resolved as ExportOutcome<number>;
+        if (typeof delta !== 'number' || !Number.isFinite(delta)) {
+          return fail<number>('invalid_args', 'A numeric delta is required.');
+        }
+        const current = await getBatteryLevel(resolved.citizenid, device, source as number);
+        if (current === null) return noDevice<number>(device);
+        const applied = await setBatteryLevel(source as number, current + delta, device);
+        return applied === null ? noDevice<number>(device) : ok(applied);
       }
-      const current = await getBatteryLevel(resolved.citizenid);
-      return ok(await setBatteryLevel(source as number, current + delta));
-    })
+    )
   );
 
   /**
@@ -700,10 +729,14 @@ export function registerPublicApi(): void {
 
   publish(
     'SetCharging',
-    guarded('SetCharging', (source: unknown, isCharging: unknown) => {
+    guarded('SetCharging', (source: unknown, isCharging: unknown, rawDevice?: unknown) => {
+      const device = resolveDevice<undefined>(rawDevice);
+      if (isFailure<undefined>(device)) return device;
       const resolved = citizenOf(source);
       if (isFailure(resolved)) return resolved as ExportOutcome<never>;
-      setCharging(source as number, isCharging === true);
+      if (!setCharging(source as number, isCharging === true, device)) {
+        return noDevice<undefined>(device);
+      }
       return ok();
     })
   );

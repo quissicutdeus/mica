@@ -7,10 +7,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script lang="ts">
   import { t } from './messages';
   import { toast } from './state/toast';
+  import type { DeviceId } from '@mica/shared/devices';
   import {
-    displayCharge,
-    isBatteryDead,
-    firedBatteryWarnings,
+    displayChargeOf,
+    isBatteryDeadOf,
+    firedBatteryWarningsOf,
     stepBatteryWarning
   } from './state/charge';
   import { isLocked } from './state/lockScreen';
@@ -28,18 +29,22 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * - **20% and 5%**, read from `displayCharge` — the store and the comparison the status
    *   bar uses to turn the percentage red, so the toast and the bar never disagree.
    * - **Once per drain cycle per threshold.** The fired flags live in
-   *   `state/charge.ts` (`firedBatteryWarnings`), not here: a frame mounts on every phone
+   *   `state/charge.ts` (`firedBatteryWarningsOf`), not here: a frame mounts on every phone
    *   open, and component state would re-warn each time. Rising back above a threshold
-   *   re-arms it; that is the only charging signal the web side has, since the client's
-   *   charging flag went with the server-side drain (`client/services/Battery.ts`).
-   * - **Held, not dropped, while blocked.** Dead (`isBatteryDead`), in a call
+   *   re-arms it — the level, not the charging flag MICA-337 brought back (`chargingOf`),
+   *   since a warning is about how much charge is left.
+   * - **Held, not dropped, while blocked.** Dead (`isBatteryDeadOf`), in a call
    *   (`callStore.status !== 'idle'` — dialing and ringing count, a toast over a call
    *   banner is the worst moment) or on the lock screen (`isLocked`, so the toast can
    *   never sit over a screen with no way to dismiss it). A blocked threshold stays armed
    *   and fires on the first tick that is clear, so ending a call at 12% still warns.
-   * - **The tablet gets it too.** There is one `charge` store until MICA-264, so the
-   *   tablet's battery is the phone's; `isLocked` and the call store are simply never set
-   *   on a tablet (`shared/devices.ts` gives it neither).
+   * - **Per device (MICA-337).** Each frame mounts one for its own `device`, which reads
+   *   that device's charge and keeps that device's fired flags, so the tablet draining
+   *   neither warns on the phone nor spends the phone's warning. A device whose frame is
+   *   not up is not warned about: its threshold stays armed and fires on its next open,
+   *   the same hold as the lock screen below. `isLocked` is the open frame's lock, which
+   *   is this one's while it is mounted; the call store is never set on a tablet
+   *   (`shared/devices.ts` gives it no calls).
    * - **`source: 'system'`**, which `notificationPolicy.ts` never suppresses — Do Not
    *   Disturb muting the one warning that the phone is about to stop working would be
    *   the policy defeating its own purpose. Lower than a call's 12s, longer than the
@@ -47,6 +52,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    */
 
   const WARNING_DURATION_MS = 6000;
+
+  let { device }: { device: DeviceId } = $props();
+
+  // A frame's device never changes under it, so the stores are picked once.
+  // svelte-ignore state_referenced_locally
+  const displayCharge = displayChargeOf[device];
+  // svelte-ignore state_referenced_locally
+  const isBatteryDead = isBatteryDeadOf[device];
+  // svelte-ignore state_referenced_locally
+  const firedBatteryWarnings = firedBatteryWarningsOf[device];
 
   $effect(() => {
     const level = $displayCharge;

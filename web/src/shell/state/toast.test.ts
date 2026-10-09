@@ -20,6 +20,8 @@ import { audio } from './audio';
 import { contacts } from '../../services/contacts';
 import type { Contact } from '@mica/shared/types';
 import { openDevice } from './phoneOpen';
+import { chargeOf } from './charge';
+import { setActiveDevice } from './device';
 
 describe('toast store interactive notifications', () => {
   beforeEach(() => {
@@ -404,6 +406,27 @@ describe('toast policy enforcement (MICA-63)', () => {
 
     play.mockRestore();
     contacts.set([]);
+  });
+
+  it("rings on the phone's own battery, whichever device is in hand (MICA-337)", () => {
+    const play = vi.spyOn(audio, 'play').mockImplementation(() => {});
+    try {
+      setActiveDevice('tablet');
+      chargeOf.tablet.set(0);
+      toast.showCall({ number: '5550100', onAccept: () => {} });
+      expect(play).toHaveBeenCalledWith('ringtone', expect.anything());
+
+      play.mockClear();
+      chargeOf.tablet.set(100);
+      chargeOf.phone.set(0);
+      toast.showCall({ number: '5550101', onAccept: () => {} });
+      expect(play).not.toHaveBeenCalledWith('ringtone', expect.anything());
+    } finally {
+      play.mockRestore();
+      setActiveDevice('phone');
+      chargeOf.phone.set(100);
+      chargeOf.tablet.set(100);
+    }
   });
 
   it('stops a playing owner ring on accept, decline, a plain dismiss, and expiry (MICA-256)', () => {

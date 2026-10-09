@@ -10,12 +10,13 @@ import { get } from 'svelte/store';
 import { appsOnScreen } from './appsOnScreen';
 import { openDevice } from './phoneOpen';
 import { isLocked } from './lockScreen';
-import { charge } from './charge';
+import { chargeOf } from './charge';
 
 afterEach(() => {
   openDevice.set(null);
   isLocked.set(false);
-  charge.set(100);
+  chargeOf.phone.set(100);
+  chargeOf.tablet.set(100);
 });
 
 /**
@@ -44,10 +45,25 @@ describe('appsOnScreen', () => {
   });
 
   it('is false on either device with a dead battery', () => {
-    charge.set(0);
+    chargeOf.phone.set(0);
+    chargeOf.tablet.set(0);
     openDevice.set('phone');
     expect(get(appsOnScreen)).toBe(false);
     openDevice.set('tablet');
+    expect(get(appsOnScreen)).toBe(false);
+  });
+
+  it("reads the open device's own battery, so a flat one never hides the other (MICA-337)", () => {
+    chargeOf.tablet.set(0);
+    openDevice.set('phone');
+    expect(get(appsOnScreen)).toBe(true);
+    openDevice.set('tablet');
+    expect(get(appsOnScreen)).toBe(false);
+
+    chargeOf.tablet.set(50);
+    chargeOf.phone.set(0);
+    expect(get(appsOnScreen)).toBe(true);
+    openDevice.set('phone');
     expect(get(appsOnScreen)).toBe(false);
   });
 

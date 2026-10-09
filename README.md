@@ -1590,11 +1590,13 @@ or reads the tablet's own lock screen when it is on; the phone is unaffected.
 
 ### The battery bank
 
-The phone's charge drains while a player carries it, and `mica_battery_item`
-names the inventory item that tops it back up. Using one removes it and adds
-`mica_battery_item_charge` percent — 100 by default, so one battery bank is a
-full phone. Set the charge lower and a bank becomes a partial top-up worth
-carrying several of:
+The phone's charge drains while a player carries it, and so does the tablet's,
+separately: each device has its own charge and its own flat-battery screen, and
+a flat tablet never stops the phone (MICA-337). `mica_battery_item` names the
+inventory item that tops one back up: the tablet if it is open, otherwise the
+phone. Using one removes it and adds `mica_battery_item_charge` percent — 100 by
+default, so one battery bank is a full phone. Set the charge lower and a bank
+becomes a partial top-up worth carrying several of:
 
 ```cfg
 set mica_battery_item "battery_bank"
@@ -1784,10 +1786,10 @@ MICA-264).
 | `IsPhoneOpen(source, device?)`                     | source                 | Whether that player's phone, or `device`, is open right now                                                               |
 | `SetPhoneEnabled(source, enabled, device?)`        | source                 | Confiscates or returns a player's phone, or `device`; disabling while open force-closes it                                |
 | `OpenApp(source, appId, props, device?)`           | source                 | Force-opens the phone, or `device`, on a named app; `props` becomes that app's `useDeepLink` payload                      |
-| `GetBatteryLevel(source)`                          | source                 | The saved charge, 0-100; `internal_error` if it cannot be read                                                            |
-| `SetBatteryLevel(source, level)`                   | source                 | Sets the charge. Clamped rather than refused                                                                              |
-| `AddBatteryCharge(source, delta)`                  | source                 | Adds or, with a negative delta, drains — an EMP, a taser                                                                  |
-| `SetCharging(source, isCharging)`                  | source                 | Puts the phone on or off charge. A state, not a top-up: it reverses the drain loop                                        |
+| `GetBatteryLevel(source, device?)`                 | source                 | The saved charge, 0-100; `internal_error` if it cannot be read                                                            |
+| `SetBatteryLevel(source, level, device?)`          | source                 | Sets the charge. Clamped rather than refused                                                                              |
+| `AddBatteryCharge(source, delta, device?)`         | source                 | Adds or, with a negative delta, drains — an EMP, a taser                                                                  |
+| `SetCharging(source, isCharging, device?)`         | source                 | Puts the phone, or `device`, on or off charge. A state, not a top-up: it reverses the drain loop                          |
 | `SetGlobalSignal(level)`                           | —                      | City-wide reception, 0-4. `0` is a blackout                                                                               |
 | `ClearGlobalSignal()`                              | —                      | Back to full bars                                                                                                         |
 | `AddDeadZone({x,y,z,radius,level})`                | —                      | A jammer, a tunnel, a basement. Returns an id                                                                             |

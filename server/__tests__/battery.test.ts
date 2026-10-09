@@ -2,14 +2,18 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-const { dbMock, bridgeMock, handlers } = vi.hoisted(() => {
+const { dbMock, bridgeMock, handlers, everyHandler } = vi.hoisted(() => {
   // Inside `vi.hoisted` because ESM evaluates imports first: assigning `on`/`onNet`
   // below the imports would run after the service registered and capture nothing.
   const captured = new Map<string, Function>();
+  // Every handler per event as well (MICA-337): `playerDropped` has one per module, and which
+  // one `captured` keeps depends on import order.
+  const all = new Map<string, Function[]>();
   const captureHandler = (event: string, handler: Function) => {
     captured.set(event, handler);
+    all.set(event, [...(all.get(event) ?? []), handler]);
   };
   (globalThis as any).on = captureHandler;
   (globalThis as any).onNet = captureHandler;
@@ -23,13 +27,44 @@ const { dbMock, bridgeMock, handlers } = vi.hoisted(() => {
       single: vi.fn()
     },
     // registerUsableItem runs at import time; the rest is only what this suite drives.
-    bridgeMock: { getPlayer: vi.fn(), registerUsableItem: vi.fn() },
-    handlers: captured
+    // `forgetSource` is `lib/shell.ts`'s `playerDropped`, which the MICA-337 cases run too.
+    bridgeMock: { getPlayer: vi.fn(), registerUsableItem: vi.fn(), forgetSource: vi.fn() },
+    handlers: captured,
+    everyHandler: all
   };
 });
 
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
 vi.mock('../lib/FrameworkBridge', () => ({ FrameworkBridge: bridgeMock }));
+/**
+ * `services/Phones.ts`'s synchronous identity cache, which is all Battery reads from it: which
+ * tablet a source is using, if any (MICA-337). Nothing is in use unless a case says so.
+ */
+const inUse = vi.hoisted(() => ({ tablet: null as string | null }));
+vi.mock('../services/Phones', () => ({
+  activeDeviceIdOf: (_src: number, kind: string) => (kind === 'tablet' ? inUse.tablet : null)
+}));
+/**
+ * The device-state subscribers (MICA-264) are run fire-and-forget by `deviceItem.ts`, with no
+ * seam to await one. Wrapped here so a case can run Battery's tablet subscriber and wait on it,
+ * while the real registration still happens underneath.
+ */
+const deviceStateSubscribers = vi.hoisted(
+  () => new Map<string, (src: number, device: 'phone' | 'tablet') => unknown>()
+);
+vi.mock('../lib/deviceItem', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../lib/deviceItem')>();
+  return {
+    ...actual,
+    onDeviceStateChanged: (
+      name: string,
+      run: (src: number, device: 'phone' | 'tablet') => unknown
+    ) => {
+      deviceStateSubscribers.set(name, run);
+      actual.onDeviceStateChanged(name, run);
+    }
+  };
+});
 
 import {
   applyCharge,
@@ -59,6 +94,7 @@ const batteryItemHandler: (src: number) => void = bridgeMock.registerUsableItem.
 import { __resetRateLimits } from '../lib/rateLimit';
 import { __setPhoneResolvers } from '../lib/phoneIdentity';
 import { TEST_PHONE_ID } from './phoneStub';
+import { PlayerFacingError } from '../lib/errors';
 
 const SRC = 7;
 const CID = 'ABC12345';
@@ -344,7 +380,6 @@ describe('a load that cannot read the table (MICA-326)', () => {
   });
 
   it('saves no guessed 100 over the previous phone when the player stops holding one', async () => {
-    const { PlayerFacingError } = await import('../lib/errors');
     bridgeMock.getPlayer.mockReturnValue(mockPlayer());
     let holding = true;
     __setPhoneResolvers({
@@ -1033,7 +1068,6 @@ describe('the charge follows the phone', () => {
   });
 
   it('holds nothing live for a player holding no phone on a gated server', async () => {
-    const { PlayerFacingError } = await import('../lib/errors');
     __setPhoneResolvers({
       forRequest: async () => {
         throw new PlayerFacingError('You are not holding a phone.', {
@@ -1057,5 +1091,527 @@ describe('the charge follows the phone', () => {
 
     await expect(getBatteryLevel(CID)).resolves.toBe(63);
     expect(dbMock.query.mock.calls[0][1]).toEqual([PHONE_B, 'active']);
+  });
+});
+
+/**
+ * MICA-337: the tablet has a battery of its own. Every case here holds a phone and a tablet at
+ * once, on ids of their own, and checks that what happens to one never reaches the other.
+ */
+describe('the tablet has a battery of its own (MICA-337)', () => {
+  const PHONE_A = 'a'.repeat(32);
+  const TABLET_A = 'c'.repeat(32);
+  const TABLET_B = 'd'.repeat(32);
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const tickAMinute = () => {
+    for (let i = 0; i < 12; i += 1) __tickBattery();
+  };
+
+  /**
+   * What each device resolves to; `null` is "holding none", which a gated server refuses. What
+   * `services/Phones.ts` has cached as in use is `inUse`, moved by a case where Phones would.
+   */
+  const hand: { phone: string | null; tablet: string | null } = {
+    phone: PHONE_A,
+    tablet: TABLET_A
+  };
+  const tabletConvar = { on: true };
+  const LEVELS: Record<string, number> = { [PHONE_A]: 30, [TABLET_A]: 80, [TABLET_B]: 55 };
+
+  const tabletPushes = () => chargeCalls().filter((c: any[]) => c[3] === 'tablet');
+  const phonePushes = () => chargeCalls().filter((c: any[]) => c[3] === undefined);
+  const queriedIds = () => dbMock.query.mock.calls.map(([, params]) => (params as unknown[])[0]);
+  const updates = () => dbMock.update.mock.calls.map(([, params]) => params as unknown[]);
+
+  /** The tablet subscriber Battery registered with `onDeviceStateChanged`, awaited. */
+  const tabletStateChanged = async (src: number) => {
+    const run = deviceStateSubscribers.get('battery');
+    if (!run) throw new Error('battery registered no device-state subscriber');
+    await run(src, 'tablet');
+  };
+
+  const setOpen = (src: number, device: 'phone' | 'tablet', open: boolean) => {
+    (globalThis as any).source = src;
+    handlers.get('mica:server:shell:setOpen')!({ device, open });
+  };
+
+  const dropSource = (src: number) => {
+    (globalThis as any).source = src;
+    for (const handler of everyHandler.get('playerDropped') ?? []) handler();
+  };
+
+  beforeEach(async () => {
+    __resetBatteryState();
+    __resetRateLimits();
+    const { __resetOpenState } = await import('../lib/PhoneOpenState');
+    __resetOpenState();
+    (globalThis as any).emitNet = vi.fn();
+    hand.phone = PHONE_A;
+    hand.tablet = TABLET_A;
+    inUse.tablet = TABLET_A;
+    tabletConvar.on = true;
+    (globalThis as any).GetConvar = (name: string, fallback: string) =>
+      name === 'mica_tablet' ? (tabletConvar.on ? 'true' : 'false') : fallback;
+    (globalThis as any).GetConvarInt = (_n: string, fallback: number) => fallback;
+    bridgeMock.getPlayer.mockReturnValue({ ...mockPlayer(), removeItem: vi.fn(() => true) });
+    __setPhoneResolvers({
+      forRequest: async (_src, _citizenid, device = 'phone') => {
+        const id = hand[device];
+        if (id === null) {
+          throw new PlayerFacingError(`You are not holding a ${device}.`, {
+            key: 'server.device.notHeld'
+          });
+        }
+        return id;
+      }
+    });
+    dbMock.query.mockImplementation(async (_sql: string, params: unknown[]) => {
+      const id = params[0] as string;
+      return id in LEVELS
+        ? [{ id: id.charCodeAt(0), citizenid: CID, phone_id: id, level: LEVELS[id] }]
+        : [];
+    });
+  });
+
+  afterEach(() => {
+    inUse.tablet = null;
+  });
+
+  describe('battery:load', () => {
+    const load = async () => {
+      (globalThis as any).source = SRC;
+      handlers.get('mica:server:battery:load')!();
+      await settle();
+      await settle();
+    };
+
+    it('answers for the phone and the tablet, each from its own row', async () => {
+      await load();
+
+      expect(phonePushes()).toEqual([['mica:client:battery:set', SRC, 30]]);
+      expect(tabletPushes()).toEqual([['mica:client:battery:set', SRC, 80, 'tablet']]);
+      expect(currentCharge(SRC)).toBe(30);
+      expect(currentCharge(SRC, 'tablet')).toBe(80);
+    });
+
+    it('answers for the phone alone while mica_tablet is off, and never reads a tablet', async () => {
+      tabletConvar.on = false;
+      await load();
+
+      expect(phonePushes()).toHaveLength(1);
+      expect(tabletPushes()).toHaveLength(0);
+      expect(queriedIds()).not.toContain(TABLET_A);
+    });
+
+    it('still answers the phone when the tablet is not held, and holds no tablet charge', async () => {
+      hand.tablet = null;
+      inUse.tablet = null;
+      await load();
+
+      expect(phonePushes()).toHaveLength(1);
+      expect(tabletPushes()).toHaveLength(0);
+      tickAMinute();
+      expect(tabletPushes()).toHaveLength(0);
+    });
+
+    it('pushes the phone its default and holds no tablet for a source with no character', async () => {
+      // Pinned by the endpoints harness too: an unnameable source gets defaults and no data.
+      bridgeMock.getPlayer.mockReturnValue(undefined);
+      // Direct, as the connect path reaches it: `battery:load` is guarded and drops a source
+      // with no character before it gets here.
+      await sendLoadedBatteryToClient(SRC);
+      await sendLoadedBatteryToClient(SRC, 'tablet');
+
+      expect(phonePushes()).toEqual([['mica:client:battery:set', SRC, 100]]);
+      expect(tabletPushes()).toHaveLength(0);
+      (globalThis as any).emitNet = vi.fn();
+      tickAMinute();
+      expect(tabletPushes()).toHaveLength(0);
+    });
+  });
+
+  describe('loading lazily: a tablet nobody has used is never minted or drained', () => {
+    const tabletResolves = () => resolverCalls.filter(([, , device]) => device === 'tablet').length;
+    const resolverCalls: unknown[][] = [];
+
+    beforeEach(() => {
+      resolverCalls.length = 0;
+      inUse.tablet = null;
+      __setPhoneResolvers({
+        forRequest: async (src, citizenid, device = 'phone') => {
+          resolverCalls.push([src, citizenid, device]);
+          const id = hand[device];
+          if (id === null) throw new PlayerFacingError('none', { key: 'server.device.notHeld' });
+          return id;
+        }
+      });
+    });
+
+    const characterLoads = async () => {
+      handlers.get('QBCore:Server:PlayerLoaded')!({ PlayerData: { source: SRC } });
+      await settle();
+      await settle();
+    };
+
+    it('a character load loads the phone only, and never resolves a tablet', async () => {
+      await characterLoads();
+      tickAMinute();
+      await settle();
+
+      expect(currentCharge(SRC)).toBeLessThan(31);
+      expect(tabletResolves()).toBe(0);
+      expect(queriedIds()).not.toContain(TABLET_A);
+      expect(tabletPushes()).toHaveLength(0);
+      expect(dbMock.insert).not.toHaveBeenCalled();
+    });
+
+    it('battery:load answers no tablet before one is in use, and resolves none', async () => {
+      (globalThis as any).source = SRC;
+      handlers.get('mica:server:battery:load')!();
+      await settle();
+      await settle();
+
+      expect(phonePushes()).toHaveLength(1);
+      expect(tabletPushes()).toHaveLength(0);
+      expect(tabletResolves()).toBe(0);
+    });
+
+    it('the tick loads a tablet once its own use has given it an identity', async () => {
+      await characterLoads();
+      __tickBattery();
+      await settle();
+      expect(tabletPushes()).toHaveLength(0);
+
+      inUse.tablet = TABLET_A;
+      __tickBattery();
+      await settle();
+      await settle();
+
+      expect(currentCharge(SRC, 'tablet')).toBe(80);
+      expect(tabletPushes()).toEqual([['mica:client:battery:set', SRC, 80, 'tablet']]);
+      // Loaded from the identity Phones holds, not by resolving (and so minting) one.
+      expect(tabletResolves()).toBe(0);
+    });
+
+    it('battery:load answers a tablet charge already held without reading it again', async () => {
+      inUse.tablet = TABLET_A;
+      await sendLoadedBatteryToClient(SRC, 'tablet');
+      applyCharge(SRC, 64, 'tablet');
+      await settle();
+      dbMock.query.mockClear();
+      (globalThis as any).emitNet = vi.fn();
+
+      (globalThis as any).source = SRC;
+      handlers.get('mica:server:battery:load')!();
+      await settle();
+      await settle();
+
+      expect(tabletPushes()).toEqual([['mica:client:battery:set', SRC, 64, 'tablet']]);
+      expect(queriedIds()).not.toContain(TABLET_A);
+    });
+
+    it('the read export neither resolves nor reads a tablet that has no identity', async () => {
+      const { getBatteryLevel } = await import('../services/Battery');
+
+      await expect(getBatteryLevel(CID, 'tablet', SRC)).resolves.toBeNull();
+      expect(tabletResolves()).toBe(0);
+      expect(dbMock.query).not.toHaveBeenCalled();
+    });
+
+    it('SetCharging refuses a tablet with no identity, and flags nothing', () => {
+      expect(setCharging(SRC, true, 'tablet')).toBe(false);
+      expect(globalThis.emitNet).not.toHaveBeenCalled();
+      inUse.tablet = TABLET_A;
+      expect(setCharging(SRC, true, 'tablet')).toBe(true);
+    });
+  });
+
+  describe('the drain loop', () => {
+    it('drains both devices, each on its own', async () => {
+      applyCharge(SRC, 50);
+      applyCharge(SRC, 20, 'tablet');
+      (globalThis as any).emitNet = vi.fn();
+
+      tickAMinute();
+
+      expect(currentCharge(SRC)).toBe(49);
+      expect(currentCharge(SRC, 'tablet')).toBe(19);
+      expect(phonePushes()).toEqual([['mica:client:battery:set', SRC, 49]]);
+      expect(tabletPushes()).toEqual([['mica:client:battery:set', SRC, 19, 'tablet']]);
+    });
+
+    it('charges only the device on the charger, and the phone keeps draining', async () => {
+      applyCharge(SRC, 50);
+      applyCharge(SRC, 50, 'tablet');
+      setCharging(SRC, true, 'tablet');
+
+      tickAMinute();
+
+      expect(currentCharge(SRC, 'tablet')).toBe(60);
+      expect(currentCharge(SRC)).toBe(49);
+    });
+
+    it('a flat tablet stays flat and does not stop the phone draining', async () => {
+      applyCharge(SRC, 0, 'tablet');
+      applyCharge(SRC, 50);
+
+      tickAMinute();
+
+      expect(currentCharge(SRC, 'tablet')).toBe(0);
+      expect(currentCharge(SRC)).toBe(49);
+    });
+
+    it("saves each device's charge to its own row", async () => {
+      await sendLoadedBatteryToClient(SRC);
+      await sendLoadedBatteryToClient(SRC, 'tablet');
+      dbMock.update.mockClear();
+
+      tickAMinute();
+      await settle();
+
+      expect(updates()).toEqual(
+        expect.arrayContaining([
+          expect.arrayContaining([29, PHONE_A]),
+          expect.arrayContaining([79, TABLET_A])
+        ])
+      );
+    });
+
+    it("mirrors only the phone's charge into character metadata", async () => {
+      const player = mockPlayer();
+      bridgeMock.getPlayer.mockReturnValue(player);
+
+      await savePlayerBattery(SRC, 33, 'tablet');
+      expect(player.setMeta).not.toHaveBeenCalled();
+      await savePlayerBattery(SRC, 44);
+      expect(player.setMeta).toHaveBeenCalledWith('mica_battery', 44);
+    });
+  });
+
+  describe('the battery bank', () => {
+    beforeEach(() => {
+      applyCharge(SRC, 40);
+      applyCharge(SRC, 40, 'tablet');
+    });
+
+    it('charges the tablet while the tablet is open', () => {
+      setOpen(SRC, 'tablet', true);
+      batteryItemHandler(SRC);
+
+      expect(currentCharge(SRC, 'tablet')).toBe(100);
+      expect(currentCharge(SRC)).toBe(40);
+    });
+
+    it('charges the phone when nothing is open', () => {
+      batteryItemHandler(SRC);
+
+      expect(currentCharge(SRC)).toBe(100);
+      expect(currentCharge(SRC, 'tablet')).toBe(40);
+    });
+
+    it('charges the phone while the phone is open and the tablet closed', () => {
+      setOpen(SRC, 'tablet', true);
+      setOpen(SRC, 'tablet', false);
+      setOpen(SRC, 'phone', true);
+      batteryItemHandler(SRC);
+
+      expect(currentCharge(SRC)).toBe(100);
+      expect(currentCharge(SRC, 'tablet')).toBe(40);
+    });
+
+    it('charges the phone when a tablet is open on a server that has switched it off', () => {
+      setOpen(SRC, 'tablet', true);
+      tabletConvar.on = false;
+      batteryItemHandler(SRC);
+
+      expect(currentCharge(SRC)).toBe(100);
+      expect(currentCharge(SRC, 'tablet')).toBe(40);
+    });
+
+    it('refuses an open tablet holding no charge, keeps the item, and leaves the phone alone', () => {
+      const player = { ...mockPlayer(), removeItem: vi.fn(() => true) };
+      bridgeMock.getPlayer.mockReturnValue(player);
+      __resetBatteryState();
+      applyCharge(SRC, 40);
+      setOpen(SRC, 'tablet', true);
+      (globalThis as any).emitNet = vi.fn();
+
+      batteryItemHandler(SRC);
+
+      expect(player.removeItem).not.toHaveBeenCalled();
+      expect(currentCharge(SRC)).toBe(40);
+      expect(notifies()[0]?.[2]).toMatchObject({
+        type: 'error',
+        key: 'server.battery.unavailable',
+        params: { device: 'Tablet' }
+      });
+    });
+  });
+
+  describe('forgetting a source', () => {
+    it('a disconnect clears every device: no charge, no charger, nothing ticked', async () => {
+      applyCharge(SRC, 50);
+      applyCharge(SRC, 50, 'tablet');
+      setCharging(SRC, true);
+      setCharging(SRC, true, 'tablet');
+
+      dropSource(SRC);
+      (globalThis as any).emitNet = vi.fn();
+      tickAMinute();
+
+      expect(chargeCalls()).toHaveLength(0);
+      expect(currentCharge(SRC)).toBe(100);
+      expect(currentCharge(SRC, 'tablet')).toBe(100);
+
+      // The next player on the id: both devices drain, neither is still on a charger.
+      applyCharge(SRC, 50);
+      applyCharge(SRC, 50, 'tablet');
+      tickAMinute();
+      expect(currentCharge(SRC)).toBe(49);
+      expect(currentCharge(SRC, 'tablet')).toBe(49);
+    });
+
+    it("a character switch drops the previous character's tablet and loads the new one's", async () => {
+      await sendLoadedBatteryToClient(SRC);
+      await sendLoadedBatteryToClient(SRC, 'tablet');
+      setCharging(SRC, true, 'tablet');
+      expect(currentCharge(SRC, 'tablet')).toBe(80);
+
+      bridgeMock.getPlayer.mockReturnValue({ ...mockPlayer(), citizenid: 'OTHER001' });
+      hand.tablet = TABLET_B;
+      dbMock.query.mockClear();
+      (globalThis as any).emitNet = vi.fn();
+      // Phones still has the previous character's tablet cached: its re-resolve is async.
+      handlers.get('QBCore:Server:PlayerLoaded')!({ PlayerData: { source: SRC } });
+      await settle();
+      await settle();
+      __tickBattery();
+      await settle();
+
+      // Nothing of the previous character's tablet is loaded, ticked or shown.
+      expect(queriedIds()).not.toContain(TABLET_A);
+      expect(tabletPushes()).toHaveLength(0);
+      expect(currentCharge(SRC, 'tablet')).toBe(100);
+
+      // Phones re-resolves for the new character; the next tick loads the new tablet.
+      inUse.tablet = TABLET_B;
+      __tickBattery();
+      await settle();
+      await settle();
+      expect(queriedIds()).toContain(TABLET_B);
+      expect(currentCharge(SRC, 'tablet')).toBe(55);
+      // And the previous character's charger is unplugged.
+      tickAMinute();
+      expect(currentCharge(SRC, 'tablet')).toBe(54);
+    });
+  });
+
+  describe('switching tablets', () => {
+    it("saves the old tablet's charge there and loads the new one's, leaving the phone", async () => {
+      await sendLoadedBatteryToClient(SRC);
+      await sendLoadedBatteryToClient(SRC, 'tablet');
+      applyCharge(SRC, 25, 'tablet');
+      await settle();
+      // The set's own write is done and forgotten, so a 25 on the old tablet's row below can
+      // only be the switch's save.
+      __resetBatteryCache();
+      dbMock.update.mockClear();
+      dbMock.query.mockClear();
+      (globalThis as any).emitNet = vi.fn();
+
+      hand.tablet = TABLET_B;
+      inUse.tablet = TABLET_B;
+      await tabletStateChanged(SRC);
+
+      expect(updates().some((p) => p[0] === 25 && p.includes(TABLET_A))).toBe(true);
+      expect(currentCharge(SRC, 'tablet')).toBe(55);
+      expect(tabletPushes()).toEqual([['mica:client:battery:set', SRC, 55, 'tablet']]);
+      // The phone was neither read, saved nor pushed.
+      expect(queriedIds()).not.toContain(PHONE_A);
+      expect(updates().some((p) => p.includes(PHONE_A))).toBe(false);
+      expect(phonePushes()).toHaveLength(0);
+      expect(currentCharge(SRC)).toBe(30);
+    });
+
+    it('saves and stops ticking a tablet that is put down', async () => {
+      await sendLoadedBatteryToClient(SRC, 'tablet');
+      applyCharge(SRC, 25, 'tablet');
+      await settle();
+      dbMock.update.mockClear();
+
+      hand.tablet = null;
+      inUse.tablet = null;
+      await tabletStateChanged(SRC);
+      (globalThis as any).emitNet = vi.fn();
+      tickAMinute();
+
+      expect(tabletPushes()).toHaveLength(0);
+      expect(currentCharge(SRC, 'tablet')).toBe(100);
+    });
+
+    it('loads a tablet picked up after the character loaded holding none', async () => {
+      hand.tablet = null;
+      inUse.tablet = null;
+      await sendLoadedBatteryToClient(SRC, 'tablet');
+      expect(tabletPushes()).toHaveLength(0);
+
+      hand.tablet = TABLET_A;
+      inUse.tablet = TABLET_A;
+      await tabletStateChanged(SRC);
+
+      expect(currentCharge(SRC, 'tablet')).toBe(80);
+      expect(tabletPushes()).toEqual([['mica:client:battery:set', SRC, 80, 'tablet']]);
+    });
+
+    it('does nothing for a tablet event while the tablet is not in use', async () => {
+      inUse.tablet = null;
+      await tabletStateChanged(SRC);
+      expect(dbMock.query).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('the Developer Tools slider (admin:setBattery)', () => {
+    const slide = async (...args: unknown[]) => {
+      (globalThis as any).source = SRC;
+      handlers.get('mica:server:admin:setBattery')!(...args);
+      await settle();
+    };
+
+    beforeEach(() => {
+      (globalThis as any).IsPlayerAceAllowed = () => true;
+      applyCharge(SRC, 50);
+      applyCharge(SRC, 50, 'tablet');
+    });
+
+    it('sets the phone with no device, through the live charge the loop ticks', async () => {
+      await slide(12);
+      expect(currentCharge(SRC)).toBe(12);
+      expect(currentCharge(SRC, 'tablet')).toBe(50);
+    });
+
+    it('sets the tablet when the tablet is named', async () => {
+      await slide(12, 'tablet');
+      expect(currentCharge(SRC, 'tablet')).toBe(12);
+      expect(currentCharge(SRC)).toBe(50);
+    });
+
+    it('refuses the tablet for an admin with no tablet in use, seeding no charge', async () => {
+      __resetBatteryState();
+      inUse.tablet = null;
+      (globalThis as any).emitNet = vi.fn();
+      await slide(12, 'tablet');
+      expect(tabletPushes()).toHaveLength(0);
+      tickAMinute();
+      expect(tabletPushes()).toHaveLength(0);
+      expect(currentCharge(SRC, 'tablet')).toBe(100);
+    });
+
+    it('drops a device that is not one, or the tablet while it is off', async () => {
+      await slide(12, 'watch');
+      tabletConvar.on = false;
+      await slide(12, 'tablet');
+      expect(currentCharge(SRC)).toBe(50);
+      expect(currentCharge(SRC, 'tablet')).toBe(50);
+    });
   });
 });

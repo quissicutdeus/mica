@@ -3,9 +3,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // @vitest-environment jsdom
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import {
   charge,
+  chargeOf,
+  deadByDevice,
+  displayChargeOf,
+  isBatteryDeadOf,
   roundedCharge,
   displayCharge,
   isBatteryDead,
@@ -13,6 +17,7 @@ import {
   NO_BATTERY_WARNINGS_FIRED
 } from './charge';
 import { get } from 'svelte/store';
+import { setActiveDevice } from './device';
 
 describe('charge store', () => {
   it('initializes charge to 100', () => {
@@ -53,6 +58,58 @@ describe('charge store', () => {
     expect(get(roundedCharge)).toBe(0);
     expect(get(displayCharge)).toBe(0);
     expect(get(isBatteryDead)).toBe(true);
+  });
+});
+
+/** MICA-337: the tablet has a battery of its own. */
+describe('charge per device', () => {
+  beforeEach(() => {
+    setActiveDevice('phone');
+    chargeOf.phone.set(100);
+    chargeOf.tablet.set(100);
+  });
+
+  it("keeps each device's level, and the dead flag, apart", () => {
+    chargeOf.tablet.set(0);
+    chargeOf.phone.set(64);
+    expect(get(isBatteryDeadOf.tablet)).toBe(true);
+    expect(get(isBatteryDeadOf.phone)).toBe(false);
+    expect(get(displayChargeOf.phone)).toBe(64);
+    expect(get(deadByDevice)).toEqual({ phone: false, tablet: true });
+  });
+
+  it('shows the active device and follows a switch', () => {
+    chargeOf.phone.set(80);
+    chargeOf.tablet.set(30);
+    expect(get(displayCharge)).toBe(80);
+    expect(get(isBatteryDead)).toBe(false);
+
+    setActiveDevice('tablet');
+    expect(get(charge)).toBe(30);
+    expect(get(displayCharge)).toBe(30);
+
+    chargeOf.tablet.set(0);
+    expect(get(isBatteryDead)).toBe(true);
+    setActiveDevice('phone');
+    expect(get(isBatteryDead)).toBe(false);
+  });
+
+  it("writes the active device's own battery and leaves the other alone", () => {
+    setActiveDevice('tablet');
+    charge.set(12);
+    expect(get(chargeOf.tablet)).toBe(12);
+    expect(get(chargeOf.phone)).toBe(100);
+  });
+
+  it('lets the browser harness drain one device without the other', () => {
+    window.setBattery?.(5, 'tablet');
+    expect(get(chargeOf.tablet)).toBe(5);
+    expect(get(chargeOf.phone)).toBe(100);
+
+    setActiveDevice('tablet');
+    window.setBattery?.(40);
+    expect(get(chargeOf.tablet)).toBe(40);
+    expect(get(chargeOf.phone)).toBe(100);
   });
 });
 

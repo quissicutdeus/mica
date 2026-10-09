@@ -42,7 +42,7 @@ export const openDevice = (id: DeviceId): void => {
   DeviceAnimation.spawnProp(ped, descriptor);
 
   sendTimeToNui();
-  sendChargeToNui();
+  sendChargeToNui(id);
 };
 
 export const closeDevice = (id: DeviceId): void => {

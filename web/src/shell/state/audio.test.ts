@@ -39,7 +39,8 @@ import { ownerConfig, DEFAULT_OWNER_CONFIG } from './ownerConfig';
 import type { RingMode } from '../../../../sdk/vocabulary/audio';
 import { get } from 'svelte/store';
 import { useStorage } from '../../../../sdk/host/useStorage';
-import { charge } from './charge';
+import { charge, chargeOf } from './charge';
+import { setActiveDevice } from './device';
 
 describe('audio', () => {
   beforeEach(() => {
@@ -239,6 +240,35 @@ describe('while the battery is dead', () => {
 
   it('refuses toggleMute', () => {
     toggleMute();
+    expect(get(soundMuted)).toBe(false);
+  });
+});
+
+/** MICA-337: the volume keys belong to the device in hand, so its battery decides. */
+describe("the active device's battery", () => {
+  beforeEach(() => {
+    soundMuted.set(false);
+    soundVolume.set(0.5);
+  });
+
+  afterEach(() => {
+    setActiveDevice('phone');
+    chargeOf.phone.set(100);
+    chargeOf.tablet.set(100);
+  });
+
+  it('lets the phone change volume while the tablet is flat', () => {
+    chargeOf.tablet.set(0);
+    setVolume(0.8);
+    expect(get(soundVolume)).toBe(0.8);
+  });
+
+  it('refuses on a flat tablet in hand, though the phone is charged', () => {
+    chargeOf.tablet.set(0);
+    setActiveDevice('tablet');
+    setVolume(0.8);
+    toggleMute();
+    expect(get(soundVolume)).toBe(0.5);
     expect(get(soundMuted)).toBe(false);
   });
 });

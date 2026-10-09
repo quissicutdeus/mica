@@ -13,7 +13,7 @@ import '../host/registerFacets';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render } from '@testing-library/svelte';
 import PhoneFrame from './PhoneFrame.svelte';
-import { charge } from './state/charge';
+import { charge, chargeOf } from './state/charge';
 
 /**
  * In game the phone is a transparent NUI overlay: the camera viewfinder is the actual
@@ -60,6 +60,30 @@ const renderFrame = (transparent: boolean) =>
   render(PhoneFrame, {
     props: { transparent, onClose: () => {}, children: noopSnippet }
   });
+
+/** MICA-337: the phone and the tablet each have a battery of their own. */
+describe('PhoneFrame battery', () => {
+  beforeEach(() => {
+    chargeOf.phone.set(100);
+    chargeOf.tablet.set(100);
+  });
+
+  it('is never blanked by a dead tablet', () => {
+    chargeOf.tablet.set(0);
+    const { getByTestId, getByRole, queryByText } = renderFrame(false);
+    expect(getByTestId('phone-screen').className).not.toMatch(/\bbg-black\b/);
+    expect(getByRole('button', { name: 'Open notification shade' })).toBeTruthy();
+    expect(queryByText('Battery Low')).toBeNull();
+  });
+
+  it("shows the phone's own charge in its status bar", () => {
+    chargeOf.phone.set(55);
+    chargeOf.tablet.set(10);
+    const { getByText, queryByText } = renderFrame(false);
+    expect(getByText('55%')).toBeTruthy();
+    expect(queryByText('10%')).toBeNull();
+  });
+});
 
 describe('PhoneFrame transparency', () => {
   beforeEach(() => {

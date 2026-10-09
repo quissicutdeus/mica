@@ -8,7 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { t } from './messages';
   import { onMount, type Snippet } from 'svelte';
   import { fly } from '@mica/sdk';
-  import { isBatteryDead } from './state/charge';
+  import { isBatteryDeadOf } from './state/charge';
   import { stepVolume } from './state/audio';
   import { enableDragScroll } from '../lib/phone/dragScroll';
   import { frame } from './state/device';
@@ -40,6 +40,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     onClose,
     children
   }: { transparent?: boolean; onClose: () => void; children: Snippet } = $props();
+  // The phone's own battery (MICA-337): a dead tablet never blanks this frame.
+  const isBatteryDead = isBatteryDeadOf.phone;
   let screenElement = $state<HTMLElement | null>(null);
   const wallpaper = $derived($wallpaperBackground);
   const themeStyle = $derived($themeStyleStore);
@@ -151,7 +153,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <ControlCenter />
 
     <!-- Low-battery warning (MICA-193): no markup, only the effect that shows the toast. -->
-    <BatteryWarning />
+    <BatteryWarning device="phone" />
 
     <!-- Take-it-off-the-home-screen drop target. Rendered here rather than in
          `Launcher.svelte` for the same reason the ghost is: a drag can begin on the home

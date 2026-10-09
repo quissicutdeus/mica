@@ -10,9 +10,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   /**
    * The dead-battery takeover, out of `PhoneFrame.svelte` so the tablet's frame draws the
-   * same one (MICA-259). There is one charge store until MICA-264 gives the tablet its
-   * own identity, so a flat phone is a flat tablet; the overlay is the honest picture of
-   * that rather than a tablet that keeps working on a battery the phone says is empty.
+   * same one (MICA-259). Each frame draws it on its own device's battery (MICA-337,
+   * `state/charge.ts`'s `isBatteryDeadOf`), so a flat tablet never blanks the phone, and
+   * the reverse.
    */
 </script>
 

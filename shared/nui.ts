@@ -49,6 +49,24 @@ export interface SetVisiblePayload {
   visible: boolean;
 }
 
+/**
+ * `setCharge` and `setCharging` name a device since the tablet got a battery of its own
+ * (MICA-337). `setCharge` was a bare number until then, and a bare number still means the
+ * phone -- the only battery there was. `device` absent means the phone too; a `device` this
+ * build does not know is refused, as `setVisible` refuses one, rather than painted onto the
+ * phone's battery.
+ */
+export interface SetChargePayload {
+  device: DeviceId;
+  /** Whole percent, clamped to 0-100. */
+  level: number;
+}
+
+export interface SetChargingPayload {
+  device: DeviceId;
+  charging: boolean;
+}
+
 export interface UninstallAppPayload {
   appId: string;
 }
@@ -164,10 +182,28 @@ export function parseSetTime(data: unknown): SetTimePayload | null {
   return { hours, minutes };
 }
 
-export function parseSetCharge(data: unknown): number | null {
-  const val = safeNumber(data);
-  if (val === undefined) return null;
-  return Math.max(0, Math.min(100, Math.floor(val)));
+/** A payload's `device`: absent is the phone, a known id is itself, anything else `null`. */
+function deviceField(value: unknown): DeviceId | null {
+  if (value === undefined) return DEFAULT_DEVICE;
+  return isDeviceId(value) ? value : null;
+}
+
+export function parseSetCharge(data: unknown): SetChargePayload | null {
+  const obj: Record<string, unknown> | null =
+    typeof data === 'number' ? { level: data } : safeObject(data);
+  if (!obj) return null;
+  const val = safeNumber(obj.level);
+  const device = deviceField(obj.device);
+  if (val === undefined || device === null) return null;
+  return { device, level: Math.max(0, Math.min(100, Math.floor(val))) };
+}
+
+export function parseSetCharging(data: unknown): SetChargingPayload | null {
+  const obj = safeObject(data);
+  if (!obj || typeof obj.charging !== 'boolean') return null;
+  const device = deviceField(obj.device);
+  if (device === null) return null;
+  return { device, charging: obj.charging };
 }
 
 export function parseSetSignal(data: unknown): number | null {

@@ -9,7 +9,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { fly } from '@mica/sdk';
   import { t } from './messages';
   import { stepVolume } from './state/audio';
-  import { isBatteryDead } from './state/charge';
+  import { isBatteryDeadOf } from './state/charge';
   import { enableDragScroll } from '../lib/phone/dragScroll';
   import { frame } from './state/device';
   import VolumeHud from './VolumeHud.svelte';
@@ -45,6 +45,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    */
 
   let { onClose, children }: { onClose: () => void; children: Snippet } = $props();
+  // The tablet's own battery (MICA-337): a dead phone never blanks this frame.
+  const isBatteryDead = isBatteryDeadOf.tablet;
   let screenElement = $state<HTMLElement | null>(null);
   const wallpaper = $derived($wallpaperBackground);
   const themeStyle = $derived($themeStyleStore);
@@ -112,7 +114,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <ControlCenter />
 
     <!-- Low-battery warning (MICA-193): no markup, only the effect that shows the toast. -->
-    <BatteryWarning />
+    <BatteryWarning device="tablet" />
     <RemoveTarget />
     <DragGhost />
 

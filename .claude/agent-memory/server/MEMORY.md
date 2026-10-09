@@ -59,3 +59,7 @@ line here.
 - [A shared wire type change is an SDK contract change](shared-wire-types-are-sdk-surface.md)
   — `UIMessage extends Message`; only `test:unit:web` sees it; run
   test:endpoints too
+- [A suite's captured handler is the last one registered](single-slot-handler-capture.md)
+  — `playerDropped` has five; an elided import changes which one a test runs
+- [pma-voice's call join is unchecked; micaOS undoes it](pma-voice-call-join-is-unchecked.md)
+  — MICA-341; read the state bag, no guardNetEvent limit, census fails 9 ways

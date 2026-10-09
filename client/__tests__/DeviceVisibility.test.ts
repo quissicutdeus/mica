@@ -55,6 +55,7 @@ describe('DeviceVisibility', () => {
     expect(animation.spawnProp).toHaveBeenCalledWith(7, DEVICES.phone);
     expect(sent.some((m) => m.action === 'setTime')).toBe(true);
     expect(battery.sendChargeToNui).toHaveBeenCalledTimes(1);
+    expect(battery.sendChargeToNui).toHaveBeenCalledWith('phone');
   });
 
   it('lowers the other device first, so one frame is ever up', () => {
@@ -69,6 +70,8 @@ describe('DeviceVisibility', () => {
     expect(DeviceState.isOpen('phone')).toBe(false);
     expect(DeviceState.openDevice()).toBe('tablet');
     expect(animation.spawnProp).toHaveBeenLastCalledWith(7, DEVICES.tablet);
+    // Its own battery, not the phone's (MICA-337).
+    expect(battery.sendChargeToNui).toHaveBeenLastCalledWith('tablet');
   });
 
   it('puts the scripted camera down with the phone and never for the tablet', () => {

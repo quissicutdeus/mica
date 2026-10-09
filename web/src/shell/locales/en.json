@@ -47,7 +47,7 @@
   "volumeUp": "Volume Up",
   "volumeDown": "Volume Down",
   "batteryLow": "Battery Low",
-  "batteryLowMessage": "{percent}% battery remaining. Charge your phone soon.",
+  "batteryLowMessage": "{percent}% battery remaining. Charge it soon.",
   "connectBatteryBank": "Connect Battery Bank",
   "replySent": "Reply sent",
   "dismissNotification": "Dismiss notification",
