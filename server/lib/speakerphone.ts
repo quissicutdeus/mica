@@ -160,6 +160,12 @@ export const __setVoiceBackend = (next?: VoiceBackend): void => {
   backend = next ?? pmaVoice;
 };
 
+/**
+ * The voice resource, for `Phone.ts` to place a call's parties through (MICA-341), so a
+ * call's parties and its bystanders are moved by one backend and one test seam.
+ */
+export const voiceBackend = (): VoiceBackend => backend;
+
 /** Whether this server can put a phone on speaker at all. Asked per call, never cached. */
 export const speakerAvailable = (): boolean => speakerRange() > 0 && backend.ready();
 
@@ -186,6 +192,13 @@ export const __resetSpeakerphone = (): void => {
 /** Read-only views for tests and for `Phone.ts`'s own checks. */
 export const isSpeakerOn = (src: number): boolean => speakers.has(src);
 export const speakerListeners = (): number[] => [...listeners.keys()];
+
+/**
+ * The call channel a speaker put `src` in, or null when no speaker brought them in. What
+ * `Phone.ts` admits a listener back into when their own client rejoins it (MICA-341), so a
+ * listener is let into the call they are hearing and no other.
+ */
+export const listenerChannel = (src: number): number | null => listeners.get(src)?.callId ?? null;
 
 const bucketOf = (src: number): number =>
   typeof GetPlayerRoutingBucket === 'function' ? GetPlayerRoutingBucket(String(src)) : 0;

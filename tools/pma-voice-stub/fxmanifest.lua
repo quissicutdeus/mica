@@ -8,3 +8,4 @@ description 'Dev-only stub of pma-voice, for solo call testing (MICA-55). Not pa
 lua54 'yes'
 
 client_script 'client.lua'
+server_script 'server.lua'

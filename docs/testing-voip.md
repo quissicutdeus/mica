@@ -55,19 +55,20 @@ Two pieces, meant to be used together:
   yourself; `micacall end` force-ends it. Fakes only the peer (a synthetic
   source, `CONSOLE_CALLER_SOURCE`, that can never collide with a real player)
   and drives the rest of the real path: NUI focus, the `callStatus` messages,
-  and — answering it for real — the pma-voice join. Settings > Developer Tools'
-  "Simulate Incoming Call" routes through the same mechanism in game
+  and — answering it for real — the server placing both parties in the call
+  channel (MICA-341). Settings > Developer Tools' "Simulate Incoming Call"
+  routes through the same mechanism in game
   (`mica:server:phone:simulateIncoming`); in a browser it still fakes the toast
   locally, since there's no server to ask.
 - **`tools/pma-voice-stub/`** — a dev-only FiveM resource, _not_ part of this
-  one, that stands in for pma-voice: prints every `setPlayerTalkingOverride`/
-  `addPlayerToCall`/`removePlayerFromCall` call, and flags it loudly if
-  `addPlayerToCall`/`removePlayerFromCall` are ever called out of balance — the
-  channel-leak class of bug `client/__tests__/Call.test.ts` checks against a
-  mocked client. See its own `README.md` for how to run it.
+  one, that stands in for pma-voice. Since MICA-341 it has a server half too: it
+  prints every server `setPlayerCall`, which is how micaOS now puts both parties
+  into a call and takes them out, and its client half still prints
+  `setPlayerTalkingOverride`. See its own `README.md` for how to run it.
 
-Ring yourself, answer, hang up, watch the stub's console output for a clean
-`addPlayerToCall` → `removePlayerFromCall` pair with no imbalance warning.
+Ring yourself, answer, hang up, and watch the stub's server console for a
+`setPlayerCall` to the call's channel for each party, then one back to `0` for
+each when the call ends.
 
 **Stops at:** whether the client holds up its end of the pma-voice contract.
 Proves the join/leave calls happen, symmetrically, against the real client;
@@ -138,17 +139,18 @@ offered: pma-voice started, `voice_enableCalls` on, `mica_speaker_range` above
 is the contracted `phone:speaker` action, and the phone shows the server's
 answer rather than its own guess.
 
-**A pma-voice hole this does not open, and does not close.** pma-voice's
+**A pma-voice hole micaOS narrows but cannot close (MICA-341).** pma-voice's
 `pma-voice:setPlayerCall` net event takes any channel from any client with no
-check (`server/module/phone.lua`), so a modified client can already join any
-call it can guess the id of. Speakerphone adds no way to do that; closing it is
+check (`server/module/phone.lua`). micaOS now places both parties itself, and
+listens to that event: a client found in a live call it was not placed in is put
+back, for up to about one server tick of overhearing. Closing it fully is
 pma-voice's business (its `addChannelCheck` covers radio channels only).
 
 ### Manual test — three people, in game
 
-Needs the real pma-voice, not `tools/pma-voice-stub/`: the stub has no server
-half, so it has no `setPlayerCall` and nobody is ever added. Three players A, B
-and C on the same server; `voice_debugMode 4` on the server prints pma-voice's
+Needs the real pma-voice, not `tools/pma-voice-stub/`: the stub's server half
+only prints `setPlayerCall`, so nobody actually hears anybody. Three players A,
+B and C on the same server; `voice_debugMode 4` on the server prints pma-voice's
 `[call] Added`/`Removed` lines.
 
 1. A calls B; B answers. **Both** phones show Speaker. On a server without

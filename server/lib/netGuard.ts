@@ -11,19 +11,27 @@ import { disabledAppFor } from './ownerConfig';
  * The preamble every `onNet` handler needs, in one place.
  *
  * `ServiceEndpoint` applies rate limiting, authentication and a declared input schema to
- * every action it registers. Eleven handlers are raw `onNet` listeners instead — they answer
+ * every action it registers. Twelve handlers are raw `onNet` listeners instead — they answer
  * fire-and-forget events with no callback id, so they cannot go through the endpoint — and
  * they had none of the three. A modified client could drive any of them in a loop, as an
  * unauthenticated source, with whatever positional arguments it liked.
  *
  * Nine are mica-named, across `Phone.ts`, `Battery.ts`, `Contacts.ts`, `PhoneOpenState.ts`
- * and `deviceItem.ts`. The other two are framework-named. `QBCore:Server:OnPlayerLoaded` in
- * `shell.ts` reaches this preamble through `loadedPlayerSource`. `qb-phone:server:sendNewMail`
- * in `qbPhoneCompat.ts` (MICA-222) is answered on purpose so qb scripts work unmodified, and
- * applies the same checks inline -- `allow`, then `getPlayer`, then its own `qbMailFrom` --
- * because the only thing it can do is mail the source. `docs/security.md` explains why that
- * category was missed for so long: an entry-point census organised by mica event names has
- * no row for an event somebody else named.
+ * and `deviceItem.ts`. The other three are named by somebody else, two by a framework and
+ * one by a voice resource. `QBCore:Server:OnPlayerLoaded` in `shell.ts` reaches this preamble
+ * through `loadedPlayerSource`. `qb-phone:server:sendNewMail` in `qbPhoneCompat.ts` (MICA-222)
+ * is answered on purpose so qb scripts work unmodified, and applies the same checks inline --
+ * `allow`, then `getPlayer`, then its own `qbMailFrom` -- because the only thing it can do is
+ * mail the source. `docs/security.md` explains why that category was missed for so long: an
+ * entry-point census organised by mica event names has no row for an event somebody else
+ * named.
+ *
+ * The third, `pma-voice:setPlayerCall` in `Phone.ts` (MICA-341), is pma-voice's own event,
+ * which adds any client to any call channel with no check. micaOS listens to it only to undo
+ * a join into a live call it did not make. It deliberately takes **none** of this preamble:
+ * it reads no argument (the channel comes back from pma-voice's state bag), needs no
+ * character, and must not be rate limited, because a limiter that stops answering would
+ * leave a client that loops the join sitting in the call.
  *
  * **That category used to have three rows, and the drop is a smaller attack surface rather
  * than a recount.** `Settings.ts` and `Battery.ts` each registered the same framework event
@@ -35,8 +43,8 @@ import { disabledAppFor } from './ownerConfig';
  * micaOS and no client can reach it.
  *
  * Recount rather than trusting this comment, which has been wrong before:
- * `grep -rn "onNet(" server --include="*.ts" | grep -v __tests__`. That returns thirteen
- * lines for eleven handlers — the other two are `ServiceEndpoint.ts`'s own generic registrar
+ * `grep -rn "onNet(" server --include="*.ts" | grep -v __tests__`. That returns fourteen
+ * lines for twelve handlers — the other two are `ServiceEndpoint.ts`'s own generic registrar
  * and the example below, neither a handler.
  *
  * **The schema is a required argument, not an option (MICA-210).** MICA-195 put a declared

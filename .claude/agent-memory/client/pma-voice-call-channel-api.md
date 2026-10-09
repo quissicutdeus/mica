@@ -14,13 +14,14 @@ change to `client/services/Call.ts` trips over.
   back from the state bag.
 - **The client export `addPlayerToCall(id)`** is just `setCallChannel`, which
   fires the unguarded net event `pma-voice:setPlayerCall`. Any client can join
-  any channel; that hole is pma-voice's, not ours.
+  any channel. Since MICA-341 micaOS no longer joins from the client: the server
+  places both parties, and undoes a join it did not make (Phone.ts).
 - **No native moves a remote talker's voice to another entity** and none mixes
   game audio into the outgoing stream (checked against `@citizenfx/client`
   2.0.34410-1's Mumble and submix declarations). A positional speakerphone is
   not buildable on the release client.
-- **`tools/pma-voice-stub/` has no server half**, so anything that calls the
-  server export `setPlayerCall` cannot be exercised with it.
+- **`tools/pma-voice-stub/` has a server half since MICA-341**, which prints
+  `setPlayerCall`; it moves no audio.
 
 **Why:** each of these would otherwise be rediscovered by reading Lua, and the
 first two decide how a feature that touches call audio has to be shaped.

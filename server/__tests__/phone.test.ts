@@ -1228,6 +1228,9 @@ describe('speakerphone', () => {
 
   it('refuses a player who is not a party to any call', async () => {
     await connect();
+    // The parties' own placement goes through this backend too (MICA-341); what is asserted
+    // is that the speaker request moved nobody.
+    setCall.mockClear();
 
     expect(await speaker(3, true)).toEqual({ ok: false, enabled: false });
     expect(setCall).not.toHaveBeenCalled();
@@ -1235,10 +1238,72 @@ describe('speakerphone', () => {
 
   it('refuses a payload that is not a boolean, before any of it runs', async () => {
     await connect();
+    setCall.mockClear();
     const reply = await speaker(1, 'yes');
 
     expect(reply).toEqual(expect.objectContaining({ error: expect.any(String) }));
     expect(setCall).not.toHaveBeenCalled();
+  });
+
+  describe('a listener rejoining through pma-voice (MICA-341)', () => {
+    const forgeJoin = async (src: number, channel: number) => {
+      // pma-voice's own handler has already run: the state bag says where it put them.
+      channels.set(src, channel);
+      (globalThis as any).source = src;
+      const handler = handlers.get('pma-voice:setPlayerCall');
+      if (!handler) throw new Error('no pma-voice:setPlayerCall handler');
+      handler(channel);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    };
+
+    /** Call A, 1 and 2, on speaker with 3 listening; call B, 5 alone, on speaker too. */
+    const twoSpeakers = async () => {
+      const { callId: a } = await connect();
+      await speaker(1, true);
+      expect(channels.get(3)).toBe(a);
+
+      injectIncomingCall(5, '5550100');
+      await fire(ANSWER, 5);
+      const b = (
+        emitCalls().find(
+          ([event, dest]) => event === 'mica:client:phone:accepted' && dest === 5
+        )![2] as { callId: number }
+      ).callId;
+      expect(await speaker(5, true)).toEqual({ ok: true, enabled: true });
+      setCall.mockClear();
+      return { a, b };
+    };
+
+    beforeEach(() => {
+      bridge.players.set(5, 'CID_FIVE');
+      bridge.phones.set(5, '555-0005');
+      coords['5'] = [1000, 0, 0];
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      bridge.players.delete(5);
+      bridge.phones.delete(5);
+      vi.restoreAllMocks();
+    });
+
+    it('lets them back into the call whose speaker they are hearing', async () => {
+      const { a } = await twoSpeakers();
+
+      await forgeJoin(3, a);
+
+      expect(setCall).not.toHaveBeenCalled();
+      expect(channels.get(3)).toBe(a);
+    });
+
+    it('refuses another call that also has a speaker on, and puts them back in theirs', async () => {
+      const { a, b } = await twoSpeakers();
+
+      await forgeJoin(3, b);
+
+      expect(setCall.mock.calls).toEqual([[3, a]]);
+      expect(channels.get(3)).toBe(a);
+    });
   });
 
   it('lets every bystander go when the call ends, whoever ends it', async () => {
@@ -1810,5 +1875,278 @@ describe('call ids are not guessable and never shared (MICA-339)', () => {
     expect(callIds()).toEqual([0x12345678, 9]);
     expect(__callById(0x12345678)?.caller).toBe(1);
     expect(__callById(9)?.target).toBe(3);
+  });
+});
+
+/**
+ * MICA-341: the call id is the call's pma-voice channel, and pma-voice's own
+ * `pma-voice:setPlayerCall` net event adds any client to any channel with no check. So the
+ * server puts both parties in and takes them out on every end path, and undoes a join into a
+ * live call's channel that it did not make.
+ */
+describe('pma-voice channels are placed by the server (MICA-341)', () => {
+  const JOIN = 'pma-voice:setPlayerCall';
+  const channels = new Map<number, number>();
+  let ready = true;
+  const setCall = vi.fn((src: number, channel: number) => {
+    if (channel === 0) channels.delete(src);
+    else channels.set(src, channel);
+  });
+
+  beforeEach(() => {
+    channels.clear();
+    setCall.mockClear();
+    ready = true;
+    __setVoiceBackend({
+      ready: () => ready,
+      setCall,
+      channelOf: (src) => channels.get(src) ?? 0,
+      clearChannel: (src) => channels.delete(src)
+    });
+  });
+
+  afterEach(() => {
+    __setVoiceBackend();
+    releaseResource('taxi');
+    releaseResource('dispatch');
+    vi.restoreAllMocks();
+  });
+
+  const acceptedId = (src: number): number => {
+    const found = emitCalls().find(
+      ([event, dest]) => event === 'mica:client:phone:accepted' && dest === src
+    );
+    if (!found) throw new Error(`no accepted for ${src}`);
+    return (found[2] as { callId: number }).callId;
+  };
+
+  const connect = async (): Promise<number> => {
+    await fire(START, 1, '555-0002');
+    await fire(ANSWER, 2);
+    return acceptedId(1);
+  };
+
+  /** Who the server has taken out of a channel since `setCall` was last cleared. */
+  const leftBy = () => setCall.mock.calls.filter(([, ch]) => ch === 0).map(([src]) => src);
+
+  describe('placing', () => {
+    it('puts both parties in the call channel on answer, before either phone is told', async () => {
+      await fire(START, 1, '555-0002');
+      expect(setCall).not.toHaveBeenCalled();
+
+      await fire(ANSWER, 2);
+      const callId = acceptedId(1);
+
+      expect(setCall.mock.calls).toEqual([
+        [1, callId],
+        [2, callId]
+      ]);
+      expect([channels.get(1), channels.get(2)]).toEqual([callId, callId]);
+      // Placed, then told: both setCall calls land before the first `accepted` emit.
+      const firstAccepted = (globalThis as any).emitNet.mock.invocationCallOrder[
+        emitCalls().findIndex(([event]) => event === 'mica:client:phone:accepted')
+      ];
+      expect(Math.max(...setCall.mock.invocationCallOrder)).toBeLessThan(firstAccepted);
+    });
+
+    it('places nobody while a call only rings', async () => {
+      await fire(START, 1, '555-0002');
+      expect(channels.size).toBe(0);
+    });
+
+    it('places the target alone on the console test call, never source -1', async () => {
+      injectIncomingCall(2, '5550100');
+      await fire(ANSWER, 2);
+      expect(setCall.mock.calls).toEqual([[2, acceptedId(2)]]);
+    });
+
+    it('places a line caller in the channel alone, as the client used to join it', async () => {
+      registerNumber('5559999', { onCall: () => ({ action: 'accept' }) as const }, 'taxi');
+      await placeCall(1, '5559999');
+      expect(setCall.mock.calls).toEqual([[1, acceptedId(1)]]);
+    });
+
+    it('places the group call winner and the caller under the fresh id, never a loser', async () => {
+      registerNumber(
+        '5558888',
+        { onCall: () => ({ action: 'ring', sources: [2, 3] }) as CallVerdict },
+        'dispatch'
+      );
+      await placeCall(1, '5558888');
+      await fire(ANSWER, 3);
+
+      const callId = acceptedId(3);
+      expect([channels.get(1), channels.get(3), channels.get(2)]).toEqual([
+        callId,
+        callId,
+        undefined
+      ]);
+      expect(leftBy()).toEqual([2]);
+    });
+
+    it('still connects the call when pma-voice is not running', async () => {
+      ready = false;
+      await connect();
+      expect(setCall).not.toHaveBeenCalled();
+      expect(isInCall(1) && isInCall(2)).toBe(true);
+    });
+  });
+
+  describe('removing, on every end path', () => {
+    it.each([
+      ['a hang-up by the caller', 1],
+      ['a hang-up by the target, or a battery drain, both phone:end from 2', 2]
+    ])('%s takes both parties out', async (_, ender) => {
+      await connect();
+      setCall.mockClear();
+
+      await fire(END, ender);
+
+      expect(leftBy().toSorted()).toEqual([1, 2]);
+      expect(channels.size).toBe(0);
+    });
+
+    it('a decline takes both out of whatever they were in', async () => {
+      await fire(START, 1, '555-0002');
+      await fire(END, 2);
+      expect(leftBy().toSorted()).toEqual([1, 2]);
+    });
+
+    it('a drop takes the survivor out, and leaves the departed to pma-voice', async () => {
+      await connect();
+      setCall.mockClear();
+
+      await drop(2);
+
+      expect(leftBy()).toEqual([1]);
+      expect(channels.has(1)).toBe(false);
+    });
+
+    it('a forced end through endActiveCallFor takes both out', async () => {
+      await connect();
+      setCall.mockClear();
+
+      endActiveCallFor(1);
+
+      expect(leftBy().toSorted()).toEqual([1, 2]);
+    });
+
+    it('a line hanging up takes its caller out', async () => {
+      registerNumber('5559999', { onCall: () => ({ action: 'accept' }) as const }, 'taxi');
+      await placeCall(1, '5559999');
+      setCall.mockClear();
+
+      expect(endLineCall(acceptedId(1), 'taxi')).toBe('ended');
+      expect(leftBy()).toEqual([1]);
+    });
+
+    it('resource stop takes every connected party out, and nobody else', async () => {
+      await connect();
+      injectIncomingCall(3, '5550100');
+      setCall.mockClear();
+
+      const stop = globalHandlers.get('onResourceStop');
+      if (!stop) throw new Error('no onResourceStop handler');
+      stop('some-other-resource');
+      expect(setCall).not.toHaveBeenCalled();
+
+      stop('mica');
+      expect(leftBy().toSorted()).toEqual([1, 2]);
+    });
+
+    it('clears the state bag pma-voice rejoins from when it cannot be asked', async () => {
+      const callId = await connect();
+      ready = false;
+      channels.set(1, callId);
+      channels.set(2, callId);
+
+      await fire(END, 1);
+
+      expect(channels.size).toBe(0);
+    });
+  });
+
+  describe('a join through pma-voice that the server did not make', () => {
+    /** Drives the listener with pma-voice's handler running before or after it. */
+    const join = async (src: number, channel: number, pmaVoiceFirst: boolean) => {
+      (globalThis as any).source = src;
+      const handler = handlers.get(JOIN);
+      if (!handler) throw new Error(`no handler for ${JOIN}`);
+      if (pmaVoiceFirst) channels.set(src, channel);
+      handler(channel);
+      if (!pmaVoiceFirst) channels.set(src, channel);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    };
+
+    beforeEach(() => {
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+    });
+
+    it.each([
+      ['pma-voice ran first', true],
+      ['pma-voice runs after micaOS', false]
+    ])('takes an outsider back out of a live call (%s)', async (_, first) => {
+      const callId = await connect();
+      setCall.mockClear();
+
+      await join(3, callId, first);
+
+      expect(channels.has(3)).toBe(false);
+      expect(setCall).toHaveBeenCalledWith(3, 0);
+      // The parties stay where they are.
+      expect([channels.get(1), channels.get(2)]).toEqual([callId, callId]);
+    });
+
+    it('lets a party rejoin its own call -- pma-voice restarting rejoins from the state bag', async () => {
+      const callId = await connect();
+      setCall.mockClear();
+
+      await join(1, callId, true);
+
+      expect(setCall).not.toHaveBeenCalled();
+      expect(channels.get(1)).toBe(callId);
+    });
+
+    it('puts a party who hops into another call back in their own', async () => {
+      const first = await connect();
+      injectIncomingCall(3, '5550100');
+      await fire(ANSWER, 3);
+      const second = acceptedId(3);
+      setCall.mockClear();
+
+      await join(1, second, true);
+
+      expect(setCall.mock.calls).toEqual([[1, first]]);
+      expect(channels.get(1)).toBe(first);
+    });
+
+    it('refuses the ringing target, who was told the id before answering', async () => {
+      await fire(START, 1, '555-0002');
+      const { callId } = incomingCalls()[0][2] as { callId: number };
+
+      await join(2, callId, true);
+
+      expect(channels.has(2)).toBe(false);
+    });
+
+    it("leaves a channel alone that is no live call of micaOS's", async () => {
+      await connect();
+      setCall.mockClear();
+
+      await join(3, 77, true);
+
+      expect(setCall).not.toHaveBeenCalled();
+      expect(channels.get(3)).toBe(77);
+    });
+
+    it("leaves an ended call's channel alone -- the id names nothing now", async () => {
+      const callId = await connect();
+      await fire(END, 1);
+      setCall.mockClear();
+
+      await join(3, callId, true);
+
+      expect(setCall).not.toHaveBeenCalled();
+    });
   });
 });

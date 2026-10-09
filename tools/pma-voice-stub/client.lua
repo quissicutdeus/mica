@@ -1,36 +1,43 @@
--- Stub of the three pma-voice exports micaOS's call path calls, for solo in-game
+-- Stub of the pma-voice client exports micaOS's call path touches, for solo in-game
 -- testing (MICA-55). See README.md in this folder for how to run it.
 --
--- Does no actual voice routing. What it does is print every call, with an
--- argument, and complain loudly if `addPlayerToCall`/`removePlayerFromCall` are
--- ever called out of balance — that imbalance is exactly the channel-leak class
--- of bug `client/services/Call.ts`'s own tests were written to catch, and this
--- is the same check against the real client instead of a mocked one.
+-- Does no actual voice routing. Since MICA-341 the server places both parties in a
+-- call's channel (`server.lua`), so the only call-channel traffic this half should see
+-- is the server telling it where it was put. Every client-side way into a channel —
+-- `addPlayerToCall`, `setCallChannel`, `removePlayerFromCall` — goes through the
+-- `pma-voice:setPlayerCall` net event, exactly as the real pma-voice's client does
+-- (`client/module/phone.lua`), and `server.lua` says so loudly when micaOS's own client
+-- is the one using it.
 
-local inCall = false
+local callChannel = 0
 
 local function log(fmt, ...)
   print(('[pma-voice-stub] ' .. fmt):format(...))
+end
+
+local function setCallChannel(channel)
+  log('client setCallChannel(%s) — sent as pma-voice:setPlayerCall', tostring(channel))
+  TriggerServerEvent('pma-voice:setPlayerCall', channel)
+  callChannel = channel
 end
 
 exports('setPlayerTalkingOverride', function(override)
   log('setPlayerTalkingOverride(%s)', tostring(override))
 end)
 
-exports('addPlayerToCall', function(callId)
-  if inCall then
-    log('addPlayerToCall(%s) — already in a call. A channel was never left.', tostring(callId))
-  else
-    log('addPlayerToCall(%s)', tostring(callId))
-  end
-  inCall = true
+exports('setCallChannel', setCallChannel)
+exports('SetCallChannel', setCallChannel)
+
+exports('addPlayerToCall', function(channel)
+  local call = tonumber(channel)
+  if call then setCallChannel(call) end
 end)
 
 exports('removePlayerFromCall', function()
-  if not inCall then
-    log('removePlayerFromCall() — called with no call joined. Harmless here, but check the caller.')
-  else
-    log('removePlayerFromCall()')
-  end
-  inCall = false
+  setCallChannel(0)
+end)
+
+RegisterNetEvent('pma-voice:clSetPlayerCall', function(channel)
+  log('the server put this player in call %s', tostring(channel))
+  callChannel = channel
 end)

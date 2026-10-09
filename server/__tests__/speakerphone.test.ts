@@ -32,6 +32,7 @@ import {
   __resetSpeakerphone,
   __setVoiceBackend,
   isSpeakerOn,
+  listenerChannel,
   setSpeaker,
   speakerDropped,
   speakerListeners,
@@ -39,6 +40,7 @@ import {
   speakerReleaseAll,
   speakerVolume,
   tickSpeakers,
+  voiceBackend,
   type SpeakerCalls
 } from '../lib/speakerphone';
 
@@ -411,5 +413,31 @@ describe('with nobody on speaker', () => {
     (globalThis as any).GetEntityCoords = coords;
     tickSpeakers(calls);
     expect(coords).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * What `Phone.ts` reads from here (MICA-341): the backend it places a call's parties through,
+ * and the one channel a listener may rejoin, so a forged join into another speaker's call is
+ * refused rather than waved through.
+ */
+describe('what Phone.ts reads (MICA-341)', () => {
+  it('hands out the backend in force, test seam included', () => {
+    expect(voiceBackend().setCall).toBe(setCall);
+    __setVoiceBackend();
+    expect(voiceBackend().setCall).not.toBe(setCall);
+  });
+
+  it("names the listener's own call channel, and nobody else's", () => {
+    place(3, [1, 0, 0]);
+    expect(listenerChannel(3)).toBeNull();
+
+    setSpeaker(OWNER, true, calls);
+    expect(listenerChannel(3)).toBe(CALL);
+    expect(listenerChannel(OWNER)).toBeNull();
+    expect(listenerChannel(2)).toBeNull();
+
+    speakerOff(OWNER);
+    expect(listenerChannel(3)).toBeNull();
   });
 });

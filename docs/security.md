@@ -111,7 +111,7 @@ handler wrote, in either language.
 
 ### 2. Raw `onNet` handlers
 
-**Eleven, across seven files**, and they fall into two categories that need
+**Twelve, across seven files**, and they fall into two categories that need
 different things said about them. They sit outside `ServiceEndpoint` because
 they answer fire-and-forget events with no callback id, so they cannot go
 through it.
@@ -126,7 +126,7 @@ not from this page:
 grep -rn "onNet(" server --include="*.ts" | grep -v __tests__
 ```
 
-**That prints thirteen lines for eleven handlers.** Two of them are not entry
+**That prints fourteen lines for twelve handlers.** Two of them are not entry
 points: `ServiceEndpoint.ts`'s generic registrar, which is the machinery behind
 category 1 of this document, and the worked example in `netGuard.ts`'s doc
 comment.
@@ -234,12 +234,13 @@ client can emit, while nothing in micaOS ever emitted it and the framework's
 usable-item callback did the job properly. Deleting an entry point beats
 hardening one. `Signal.ts` has no `onNet` left at all.
 
-#### Framework-named — two, and this is the category that was missing
+#### Framework-named — three, and this is the category that was missing
 
 | Event                          | Handler                       |
 | ------------------------------ | ----------------------------- |
 | `QBCore:Server:OnPlayerLoaded` | `server/lib/shell.ts`         |
 | `qb-phone:server:sendNewMail`  | `server/lib/qbPhoneCompat.ts` |
+| `pma-voice:setPlayerCall`      | `server/services/Phone.ts`    |
 
 The second is deliberate (MICA-222): qb scripts fire it with the player as
 `source` to mail that player, and answering it unmodified is the point. It can
@@ -247,6 +248,17 @@ do nothing but mail the source, it applies the same two checks inline -- `allow`
 first, `getPlayer` second -- and its sibling `sendNewMailToOffline`, which names
 a citizenid, is registered with `on` and is not an entry point at all. qb-phone
 had that one as a net event; the hole did not come across.
+
+The third is pma-voice's own event, not a framework's, and micaOS listens to it
+only to undo it (MICA-341). pma-voice adds any client that sends it to any call
+channel, with no check (`server/module/phone.lua` in pma-voice); a call's id is
+its channel. The server now places both parties itself, and this handler takes
+back out anybody who lands in a live call's channel without being placed there.
+It reads the channel from pma-voice's state bag, never from the payload. It
+takes no `guardNetEvent` preamble on purpose, since a rate limit that stopped
+answering would leave a looping client in the call. **It narrows the hole to
+about one server tick per forged join; it does not close it.** Only a check in
+pma-voice itself can, and that is upstream's to add.
 
 **This was three until ESX support landed, and the drop is a real reduction in
 surface rather than a recount.** `Settings.ts` and `Battery.ts` each registered
@@ -872,11 +884,13 @@ by this list until someone re-weighs it.
     right key, an HMAC under the content key, needs a rotation rule first. The
     exposure begins only once the qb-phone tables are dropped, since until then
     the same bodies sit there in plaintext.
-  - **Any client can join any call's voice channel** (MICA-341). A call's id is
-    its pma-voice channel, and pma-voice's own `setPlayerCall` net event lets a
-    client join any channel. Call ids are now 31 bits from `node:crypto` instead
-    of six digits from `Math.random`, which slows guessing but does not stop a
-    client that learns one.
+  - **A client can still overhear a call for about one server tick** (MICA-341).
+    A call's id is its pma-voice channel, and pma-voice's own `setPlayerCall`
+    net event lets any client join any channel. The server now places both
+    parties itself and takes back out anyone found in a live call they were not
+    placed in, but pma-voice has already routed the audio by then, so a client
+    that loops the event can catch fragments. Call ids are 31 bits from
+    `node:crypto`, so finding a live one is a guess as well.
   - **Holding a phone is enforced on the server for a named set of writes.** On
     a server with `mica_phone_item`, sending money, paying an invoice, trading
     on Hodlr, posting a listing or a Blab, sending a message or a DM, and

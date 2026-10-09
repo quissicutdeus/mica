@@ -43,7 +43,8 @@ const WORDS: Record<string, number> = {
   ten: 10,
   eleven: 11,
   twelve: 12,
-  thirteen: 13
+  thirteen: 13,
+  fourteen: 14
 };
 
 /**
@@ -167,17 +168,20 @@ describe('the onNet census in netGuard.ts is true', () => {
     expect(actual).toEqual(named);
   });
 
-  it('has exactly two framework-named handlers, in shell.ts and qbPhoneCompat.ts', () => {
+  it('has exactly three handlers named by somebody else, in shell.ts, qbPhoneCompat.ts and Phone.ts', () => {
     // Three, before MICA-150 — `Settings.ts` and `Battery.ts` each pasted the same listener,
     // which is why all three carried MICA-136's payload bug simultaneously. They subscribe
     // through `onPlayerLoaded` now and register nothing. MICA-222 added the second on
     // purpose: qb-phone's `sendNewMail` is fired by qb scripts with the player as `source`,
-    // and answering it is the point. This is the whole category.
+    // and answering it is the point. MICA-341 added the third, pma-voice's own
+    // `setPlayerCall`, which pma-voice lets any client send for any call channel; `Phone.ts`
+    // listens only to take back out a client it did not place. This is the whole category.
     const framework = handlers.filter((h) => !isGphoneNamed(h.event));
 
-    expect(framework.map((h) => h.file).sort()).toEqual([
-      path.join('lib', 'qbPhoneCompat.ts'),
-      path.join('lib', 'shell.ts')
+    expect(framework.map((h) => `${h.file}  ${h.event}`).sort()).toEqual([
+      `${path.join('lib', 'qbPhoneCompat.ts')}  QB_PHONE_SERVER_EVENTS.sendNewMail`,
+      `${path.join('lib', 'shell.ts')}  PLAYER_LOADED_EVENTS.network`,
+      `${path.join('services', 'Phone.ts')}  pma-voice:setPlayerCall`
     ]);
   });
 
@@ -368,6 +372,17 @@ describe('every raw onNet handler declares its input (MICA-210)', () => {
     [path.join('lib', 'qbPhoneCompat.ts'), 'QB_PHONE_SERVER_EVENTS.sendNewMail']
   ]);
 
+  /**
+   * The one handler that takes no preamble at all, because it reads nothing from its
+   * payload and must answer every packet (MICA-341). `pma-voice:setPlayerCall` is
+   * pma-voice's event, which adds any client to any call channel unchecked; `Phone.ts`
+   * listens only to undo a join into a live call it did not make, reading the channel back
+   * from pma-voice's state bag. A rate limit here would be the hole: once spent, a client
+   * looping the join would stay in. Held by name, and checked below to stay argument-free,
+   * so this is not a door any other handler can walk through.
+   */
+  const VOICE_GUARD = new Map([[path.join('services', 'Phone.ts'), 'pma-voice:setPlayerCall']]);
+
   /** Source with comment lines removed, so a docblock's worked example is never a call. */
   const code = (file: string): string =>
     fs
@@ -395,6 +410,7 @@ describe('every raw onNet handler declares its input (MICA-210)', () => {
   it('routes every handler through guardNetEvent, or through loadedPlayerSource, which does', () => {
     const unguarded = handlers
       .filter((h) => INLINE.get(h.file) !== h.event)
+      .filter((h) => VOICE_GUARD.get(h.file) !== h.event)
       .filter((h) => !/\b(guardNetEvent|loadedPlayerSource)\(/.test(bodyOf(h.file, h.event)))
       .map((h) => `${h.file}  ${h.event}`);
 
@@ -439,7 +455,7 @@ describe('every raw onNet handler declares its input (MICA-210)', () => {
     expect(failures).toEqual([]);
     // One site per guarded handler. The emptiness-shaped pass would be a regex that matched
     // nothing; the count is what refuses it.
-    expect(sites).toBe(handlers.length - INLINE.size);
+    expect(sites).toBe(handlers.length - INLINE.size - VOICE_GUARD.size);
   });
 
   it('keeps the inline exemption to the handler that documents it, still parsed by hand', () => {
@@ -452,6 +468,21 @@ describe('every raw onNet handler declares its input (MICA-210)', () => {
       for (const check of ['allow(', 'getPlayer(', 'qbMailFrom(']) {
         expect(body, `${event} no longer applies ${check} inline`).toContain(check);
       }
+    }
+  });
+
+  it('keeps the voice guard argument-free, and still undoing the join', () => {
+    for (const [file, event] of VOICE_GUARD) {
+      expect(
+        handlers.some((h) => h.file === file && h.event === event),
+        `${event} moved`
+      ).toBe(true);
+      const body = bodyOf(file, event);
+      // Takes no parameter, so nothing a client sends can reach it unparsed.
+      expect(body, `${event} now reads its payload; give it a schema`).toMatch(
+        new RegExp(`^onNet\\(\\s*'${event}',\\s*\\(\\)\\s*=>`)
+      );
+      expect(body, `${event} no longer undoes the join`).toContain('refuseUnplacedJoin(');
     }
   });
 });

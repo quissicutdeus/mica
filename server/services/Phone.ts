@@ -25,12 +25,14 @@ import {
 import { refreshJobLines } from '../lib/jobLines';
 import { phoneContract } from '@mica/shared/contracts/phone';
 import {
+  listenerChannel,
   setSpeaker,
   speakerAvailable,
   speakerDropped,
   speakerOff,
   speakerReleaseAll,
   tickSpeakers,
+  voiceBackend,
   __resetSpeakerphone,
   type SpeakerCalls
 } from '../lib/speakerphone';
@@ -114,18 +116,17 @@ const activeCalls: Record<number, ActiveCall> = {};
 const playerCalls: Record<number, number> = {}; // Source -> CallID (Fast lookup)
 
 /**
- * A call id, which is also the call's pma-voice channel: the client joins `addPlayerToCall` on
- * it, and pma-voice's own `pma-voice:setPlayerCall` net event lets any client join any channel
- * and answers with its members. So the id is the only thing between a modified client and a
- * call's audio, and it must not be guessable (MICA-339).
+ * A call id, which is also the call's pma-voice channel. The server puts both parties in it
+ * and takes them out (MICA-341); the client never joins one itself. pma-voice's own
+ * `pma-voice:setPlayerCall` net event still lets any client ask to join any channel, so
+ * `refuseUnplacedJoin` below takes back out anybody who joins a live call's channel without
+ * having been put there, and the id staying unguessable (MICA-339) keeps that from being
+ * tried blind.
  *
  * 31 bits from `node:crypto`, never 0 (pma-voice's "no call"). Not wider, deliberately: a
- * positive int32 crosses every hop — the server's net event to the client, the client export,
- * pma-voice's own net event, a Lua table key, a state bag — in exactly the encoding the old
- * six-digit ids did, and nothing here can prove a wider one does in game. That is about two
- * billion values against the 900,000 `Math.random` gave, which slows an enumeration down but
- * does not make it impossible: pma-voice applies no limit to joins, and only a channel the
- * server puts both parties into itself would close it.
+ * positive int32 crosses every hop — the server's net event to the client, the pma-voice
+ * export, a Lua table key, a state bag — in exactly the encoding the old six-digit ids did,
+ * and nothing here can prove a wider one does in game.
  */
 const generateCallId = (): number => {
   for (;;) {
@@ -177,6 +178,124 @@ export const __callById = (
  */
 export const isInCall = (src: number): boolean => Boolean(playerCalls[src]);
 
+/** Only a connected player has a voice: not the console's caller, not a line's far end. */
+const isPlayer = (src: number): boolean => Number.isInteger(src) && src > 0;
+
+/**
+ * Put one party in their call's channel, through speakerphone's pma-voice backend (MICA-341),
+ * so parties and bystanders move through one backend and one test seam. Not `ready()` —
+ * pma-voice stopped, or `voice_enableCalls` off — asks nothing, and the call still connects,
+ * as it did when the client's join quietly found no pma-voice. A failure is a line in the
+ * log, never a failed call.
+ */
+function joinVoice(src: number, channel: number): void {
+  if (!isPlayer(src) || !voiceBackend().ready()) return;
+  try {
+    voiceBackend().setCall(src, channel);
+  } catch (error) {
+    console.error(`[mica] could not put ${src} in call ${channel}.`, error);
+  }
+}
+
+/**
+ * Take one player out of whatever call channel they are in — what their client's own
+ * `removePlayerFromCall` did on `ended` before MICA-341, a nearby speaker's channel included.
+ * When pma-voice cannot be asked, the state bag it would rejoin from on restart is cleared.
+ */
+function leaveVoice(src: number): void {
+  if (!isPlayer(src)) return;
+  try {
+    if (voiceBackend().ready()) {
+      voiceBackend().setCall(src, 0);
+      return;
+    }
+  } catch (error) {
+    console.error(`[mica] could not take ${src} out of their call channel.`, error);
+  }
+  try {
+    if (voiceBackend().channelOf(src) !== 0) voiceBackend().clearChannel(src);
+  } catch {
+    // No state bag either; nothing left that could rejoin them.
+  }
+}
+
+/**
+ * Tell one side its call ended, and take them out of the channel. `gone` is a player who has
+ * just dropped: still told, as every party is (MICA-232), but left to pma-voice's own
+ * `playerDropped`, since asking it to move a departed source recreates the voice state it is
+ * deleting.
+ */
+function endFor(src: number, gone?: number): void {
+  notifyParty('mica:client:phone:ended', src);
+  if (src !== gone) leaveVoice(src);
+}
+
+/**
+ * The channel micaOS put `src` in, or 0: a party to an answered call, on that call's id. A
+ * ringing call places nobody — its target was told the id in `incoming`, and joining before
+ * answering would be listening in on the caller.
+ */
+const placedChannelOf = (src: number): number => {
+  const call = activeCalls[playerCalls[src]];
+  if (!call || call.answeredAt === null) return 0;
+  return call.caller === src || call.target === src ? call.id : 0;
+};
+
+/**
+ * Whether `src` may be in `channel`: placed there as a party, or a bystander a speaker
+ * brought in to exactly this call — the one they are hearing, and no other.
+ */
+const mayBeIn = (src: number, channel: number): boolean =>
+  placedChannelOf(src) === channel || listenerChannel(src) === channel;
+
+/** One console line per source per minute: a client looping the event must not flood it. */
+const REFUSAL_LOG_MS = 60_000;
+const refusalLoggedAt = new Map<number, number>();
+
+/**
+ * pma-voice's `pma-voice:setPlayerCall` (`server/module/phone.lua`) adds whoever sends it to
+ * whatever channel it names, with no check at all — radio has `addChannelCheck`, calls have
+ * nothing. A modified client can emit it for a live call's id and hear both parties.
+ *
+ * micaOS cannot stop pma-voice's handler from running, so this undoes it: if the sender is now
+ * in a live call's channel that micaOS did not put them in, they are put back where micaOS
+ * did put them — their own call, or the speaker they were hearing — or in no call. Read from the state bag pma-voice has just written rather than
+ * from the payload, so a channel spelled in a way JavaScript parses differently from Lua's
+ * `tonumber` changes nothing. Checked now, in case pma-voice's handler ran first, and again on
+ * the next tick, in case it runs after this one. Channels that are no live call of ours are
+ * left alone: another resource's calls are its business.
+ *
+ * **This narrows the hole to about one server tick per forged join; it does not close it.**
+ * Between pma-voice adding the sender and this taking them out, the call's members' clients
+ * have been told to route their voices to the sender, so a client looping the event can hear
+ * fragments. Only a check inside pma-voice itself, before it adds anybody, makes it zero.
+ *
+ * Deliberately not behind `guardNetEvent`: its rate limit stops answering once spent, and a
+ * client looping the join would then stay in the call. See `lib/netGuard.ts`.
+ */
+function refuseUnplacedJoin(src: number): void {
+  if (!isPlayer(src) || !voiceBackend().ready()) return;
+  const channel = voiceBackend().channelOf(src);
+  if (channel === 0 || !activeCalls[channel] || mayBeIn(src, channel)) return;
+  const at = Date.now();
+  if (at - (refusalLoggedAt.get(src) ?? -Infinity) >= REFUSAL_LOG_MS) {
+    refusalLoggedAt.set(src, at);
+    console.warn(`[mica] ${src} joined call ${channel} through pma-voice without being placed.`);
+  }
+  try {
+    // Back where micaOS put them: their own call, the speaker they were hearing, or nowhere.
+    voiceBackend().setCall(src, placedChannelOf(src) || (listenerChannel(src) ?? 0));
+  } catch (error) {
+    console.error(`[mica] could not take ${src} back out of call ${channel}.`, error);
+  }
+}
+
+onNet('pma-voice:setPlayerCall', () => {
+  const src = source;
+  refuseUnplacedJoin(src);
+  setTimeout(() => refuseUnplacedJoin(src), 0);
+});
+
 /**
  * Calls are a service with no table: pure signalling, hand-written `onNet` handlers below.
  * The endpoint carries the one contracted action, `speaker` (MICA-246), and every generic
@@ -221,9 +340,18 @@ if (typeof setInterval === 'function') {
   setInterval(() => tickSpeakers(speakerCalls), SPEAKER_TICK_MS);
 }
 
-/** Bystanders are in a pma-voice channel micaOS put them in; stopping takes them out. */
-on('onResourceStop', (resource: string) => {
-  if (resource === GetCurrentResourceName()) speakerReleaseAll();
+/**
+ * Bystanders and parties are in pma-voice channels micaOS put them in; stopping takes them
+ * out (MICA-341). Nobody is told `ended`: their phone is going down with this resource.
+ */
+on('onResourceStop', (stopped: string) => {
+  if (stopped !== GetCurrentResourceName()) return;
+  speakerReleaseAll();
+  for (const call of Object.values(activeCalls)) {
+    if (call.answeredAt === null) continue;
+    leaveVoice(call.caller);
+    if (call.target !== null) leaveVoice(call.target);
+  }
 });
 
 /**
@@ -312,16 +440,18 @@ const notifyParty = (event: string, src: number, payload?: unknown): void => {
  * handler is idempotent, so a second teardown costs nothing; `notifyParty` still skips the
  * console's and a line's negative sources, which are nobody.
  */
-function endActiveCall(callId: number): void {
+function endActiveCall(callId: number, gone?: number): void {
   const call = activeCalls[callId];
   if (!call) return;
 
   // Every candidate still ringing is told and let go too (MICA-307). Empty once answered.
   const ringing = call.group ? [...call.group.ringing.keys()] : [];
-  for (const candidate of ringing) notifyParty('mica:client:phone:ended', candidate);
+  for (const candidate of ringing) endFor(candidate, gone);
 
-  notifyParty('mica:client:phone:ended', call.caller);
-  if (call.target !== null) notifyParty('mica:client:phone:ended', call.target);
+  // Out of the channel as well as told (MICA-341): the server put them in, the server takes
+  // them out, whichever end path brought us here.
+  endFor(call.caller, gone);
+  if (call.target !== null) endFor(call.target, gone);
 
   // Before the maps are cleared, so nobody is left in a channel the call has already left.
   speakerOff(call.caller);
@@ -350,11 +480,15 @@ function releaseCandidateKey(candidate: number, callId: number): void {
  * let go and told `ended`. The last to leave ends the call as a single target declining does:
  * the caller is told, and logs the outgoing row to the line's number.
  */
-function releaseCandidate(call: ActiveCall & { group: RingGroup }, candidate: number): void {
+function releaseCandidate(
+  call: ActiveCall & { group: RingGroup },
+  candidate: number,
+  gone?: number
+): void {
   call.group.ringing.delete(candidate);
   releaseCandidateKey(candidate, call.id);
-  notifyParty('mica:client:phone:ended', candidate);
-  if (call.group.ringing.size === 0) endActiveCall(call.id);
+  endFor(candidate, gone);
+  if (call.group.ringing.size === 0) endActiveCall(call.id, gone);
 }
 
 /**
@@ -421,7 +555,7 @@ export function injectIncomingCall(targetSrc: number, callerPhone: string): numb
  *
  * Returns whether anything was held.
  */
-function releaseCallFor(src: number): boolean {
+function releaseCallFor(src: number, gone?: number): boolean {
   const callId = playerCalls[src];
   if (!callId) return false;
 
@@ -433,11 +567,11 @@ function releaseCallFor(src: number): boolean {
 
   // A candidate on a ringing group call takes only themselves out; the caller ends it all.
   if (isRinging(call) && call.group.ringing.has(src)) {
-    releaseCandidate(call, src);
+    releaseCandidate(call, src, gone);
     return true;
   }
 
-  endActiveCall(callId);
+  endActiveCall(callId, gone);
   return true;
 }
 
@@ -782,6 +916,9 @@ async function connectLineCall(
   // `playerCalls[src]` is already this call — claimed before the await above.
   playerCalls[lineSource] = callId;
 
+  // A channel with only the caller in it, as the client's own join on `accepted` made: the
+  // line's far end is a script with no voice (MICA-341 moved the join, not what it joins).
+  joinVoice(src, callId);
   emitNet('mica:client:phone:accepted', src, { callId, speaker: false });
   return 'placed';
 }
@@ -914,6 +1051,10 @@ onNet('mica:server:phone:answer', (...args: unknown[]) => {
   // a group call has just been re-keyed by `takeGroupCall`.
   const speaker = speakerOffered(call);
   const { id: callId } = call;
+  // Both parties into the channel by the server, before either phone is told (MICA-341). The
+  // client used to join on `accepted` through pma-voice's unchecked net event.
+  joinVoice(call.caller, callId);
+  joinVoice(src, callId);
   notifyParty('mica:client:phone:accepted', call.caller, { callId, speaker });
   // `src` is the target on both paths above: a player's own call, or the group call they won.
   notifyParty('mica:client:phone:accepted', src, { callId, speaker });
@@ -936,12 +1077,11 @@ function takeGroupCall(call: ActiveCall & { group: RingGroup }, winner: number):
   ringing.clear();
   for (const loser of losers) {
     releaseCandidateKey(loser, oldId);
-    notifyParty('mica:client:phone:ended', loser);
+    endFor(loser);
   }
 
-  // Re-keyed, because the id is the voice channel: the client joins pma-voice on the id in
-  // `accepted`, pma-voice lets any client join any channel, and every loser was sent the old
-  // id in `incoming`. Answered under a fresh id, the losers hold one that names nothing.
+  // Re-keyed, because the id is the voice channel and every loser was sent the old id in
+  // `incoming`. Answered under a fresh id, the losers hold one that names nothing.
   const newId = freshCallId();
   delete activeCalls[oldId];
   call.id = newId;
@@ -959,8 +1099,9 @@ onNet('mica:server:phone:end', (...args: unknown[]) => {
 // Clean up on drop
 on('playerDropped', () => {
   const src = source;
-  releaseCallFor(src);
+  releaseCallFor(src, src);
   speakerDropped(src);
+  refusalLoggedAt.delete(src);
 });
 
 /**

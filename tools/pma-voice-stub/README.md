@@ -2,11 +2,17 @@
 
 A dev-only stand-in for [pma-voice](https://github.com/AvarianKnight/pma-voice),
 for testing calls in game with one player (MICA-55). Not a working voice
-implementation — it does no actual audio routing. What it does is print every
-call micaOS's client makes to `exports['pma-voice']`, and flag it loudly if
-`addPlayerToCall`/`removePlayerFromCall` are ever called out of balance, which
-is the channel-leak class of bug this exists to catch — see
-`client/__tests__/Call.test.ts` for the same check against a mocked client.
+implementation — it does no actual audio routing. What it models is how a player
+gets into a call channel.
+
+Since MICA-341 micaOS's **server** puts both parties of a call in its channel
+through pma-voice's `setPlayerCall` export, and takes them out on every end
+path; the client never joins by itself. `server.lua` stubs that export and also
+the `pma-voice:setPlayerCall` net event, which in the real pma-voice lets any
+client join any channel unchecked. The stub leaves it just as open, and prints a
+warning whenever a client joins a channel that way. That line is how you see a
+client joining by itself, which micaOS's own client no longer does. It is also
+how you see micaOS putting such a client back out.
 
 ## Running it
 
@@ -19,17 +25,26 @@ is the channel-leak class of bug this exists to catch — see
 3. `ensure pma-voice` before `ensure mica` in your `server.cfg`, same ordering
    the real resource needs.
 4. Watch the server console. `micacall [number]` (AGENTS.md §1) rings yourself;
-   answer it and confirm `addPlayerToCall` printed with the right call id; hang
+   answer it and confirm `setPlayerCall(<you>, <call id>) by mica` printed; hang
    up (or have the simulated peer's side end it) and confirm
-   `removePlayerFromCall` printed too. No "already in a call" or "called with no
-   call joined" warning means nothing leaked.
+   `setPlayerCall(<you>, 0) by mica` printed too. No "joined call … by its own
+   client" line means the client never joined by itself, and no "moved from call
+   … without leaving it first" means nothing leaked.
+5. To watch the refusal, send `pma-voice:setPlayerCall` with a live call's id
+   from a client micaOS did not place in it: a second player, or yourself while
+   `micacall` is still ringing, since a ringing target is not placed. The stub
+   prints the forged join, then `setPlayerCall(<them>, 0) by mica` taking it
+   back.
 
 ## What this does not catch
 
 Nothing here proves audio actually reaches anyone — that needs a real voice
 resource and a second person, and there is no way around that
-(`docs/testing-voip.md` says more about why). This is one layer below that: does
-the client hold up its end of the pma-voice contract, symmetrically, every time.
+(`docs/testing-voip.md` says more about why). Nor can it show how long a forged
+join lasts before micaOS undoes it: that depends on the order FiveM runs the two
+resources' handlers, which only a real server shows. This is one layer below
+that: does micaOS put the right players in the right channel and take them out
+again, every time.
 
 ## Never ship this
 

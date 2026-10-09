@@ -46,18 +46,11 @@ on('__cfx_nui:answerCall', (_: any, cb: Function) => {
 RegisterNuiCallbackType('endCall');
 on('__cfx_nui:endCall', (_: any, cb: Function) => {
   // The server's teardown sends `ended` to both parties, this one included, and that is
-  // what reliably clears the flag and leaves pma-voice. Doing both here as well means a
-  // hang-up takes effect at once rather than a round trip later, and costs nothing when
-  // `ended` repeats it. Only ever to false: the page can end a call, never start one.
+  // what reliably clears the flag. Clearing it here as well means a hang-up takes effect at
+  // once rather than a round trip later. Only ever to false: the page can end a call, never
+  // start one. The pma-voice channel is the server's to leave (MICA-341), on `phone:end`.
   connected = false;
-  // Leaving pma-voice below leaves a nearby speaker's channel too, as in `ended`.
   stopListening();
-  // Guarded like `ended` -- a throw here must not stop the server hearing the hang-up.
-  try {
-    pmaVoice()?.removePlayerFromCall?.();
-  } catch {
-    // pma-voice absent or a different version; the call still ends server-side.
-  }
   TriggerServerEvent('mica:server:phone:end');
   cb({ status: 'idle' });
 });
@@ -205,21 +198,18 @@ onNet('mica:client:phone:incoming', (data: IncomingCall) => {
   );
 });
 
+/**
+ * The server has connected this player's call, and has already put them in its pma-voice
+ * channel itself (MICA-341). The client does not join: pma-voice's client join is its
+ * `pma-voice:setPlayerCall` net event, which any client can send for any channel, and a
+ * channel the server places both parties in is the one a modified client cannot talk its
+ * way into.
+ */
 onNet('mica:client:phone:accepted', (data: { callId: number; speaker?: boolean }) => {
   connected = true;
   // A call of this player's own replaces any speaker they were listening to; the server
   // lets go of them too, and this puts their own call back at their own volume first.
   stopListening();
-
-  // Connect to PMA Voice Channel. Guarded the same way `toggleMute` is: without pma-voice
-  // present, or a version that renamed this export, an unguarded call threw inside this
-  // handler and the UI update below never ran — the phone showed "dialing" forever on a
-  // call the server had already connected.
-  try {
-    pmaVoice()?.addPlayerToCall?.(data.callId);
-  } catch {
-    // pma-voice absent or a different version; the UI still reflects the connected call.
-  }
 
   // Update UI. `speakerAvailable` is the server's word on whether this call can go on
   // speaker at all; the phone hides the control when it is false (MICA-246).
@@ -233,19 +223,10 @@ onNet('mica:client:phone:accepted', (data: { callId: number; speaker?: boolean }
 
 onNet('mica:client:phone:ended', () => {
   connected = false;
-  // `removePlayerFromCall` below leaves whatever pma-voice channel this player is in, a
-  // nearby speaker's included — a bystander whose own dial was refused lands here without
-  // ever connecting. The server drops them from that speaker on its next tick; the volume
-  // comes back now (MICA-246).
+  // The server has taken this player out of whatever pma-voice channel they were in, a
+  // nearby speaker's included (MICA-341) — a bystander whose own dial was refused lands here
+  // without ever connecting. The volume comes back now (MICA-246).
   stopListening();
-
-  // Disconnect from PMA Voice. Same guard as `accepted` above — a throw here must not
-  // stop the phone from returning to idle.
-  try {
-    pmaVoice()?.removePlayerFromCall?.();
-  } catch {
-    // pma-voice absent or a different version; the UI still returns to idle.
-  }
 
   // Update UI
   SendNuiMessage(
@@ -258,7 +239,7 @@ onNet('mica:client:phone:ended', () => {
 
 // If calls fail. Only ever emitted from the server's `start` handler — before an
 // `accepted` event has ever been sent for this call — so no pma-voice channel was joined
-// and there is deliberately no `removePlayerFromCall()` here to undo.
+// and there is nothing here to undo.
 onNet('mica:client:phone:failed', () => {
   connected = false;
 

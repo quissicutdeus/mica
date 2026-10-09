@@ -24,6 +24,8 @@ let registeredNuiTypes: string[];
 let pmaVoice: {
   setPlayerTalkingOverride: ReturnType<typeof vi.fn>;
   addPlayerToCall: ReturnType<typeof vi.fn>;
+  setCallChannel: ReturnType<typeof vi.fn>;
+  SetCallChannel: ReturnType<typeof vi.fn>;
   removePlayerFromCall: ReturnType<typeof vi.fn>;
   getCallVolume: ReturnType<typeof vi.fn>;
   setCallVolume: ReturnType<typeof vi.fn>;
@@ -54,6 +56,8 @@ beforeEach(async () => {
   pmaVoice = {
     setPlayerTalkingOverride: vi.fn(),
     addPlayerToCall: vi.fn(),
+    setCallChannel: vi.fn(),
+    SetCallChannel: vi.fn(),
     removePlayerFromCall: vi.fn(),
     getCallVolume: vi.fn(() => 60),
     setCallVolume: vi.fn()
@@ -281,14 +285,29 @@ describe('incoming call', () => {
   });
 });
 
+/**
+ * Every way pma-voice's client lets a script pick a call channel. Each one ends in its
+ * `pma-voice:setPlayerCall` net event, which pma-voice's server takes from any client for any
+ * channel, so the server places and removes the parties itself (MICA-341).
+ */
+const clientChannelCalls = () => [
+  ...pmaVoice.addPlayerToCall.mock.calls,
+  ...pmaVoice.setCallChannel.mock.calls,
+  ...pmaVoice.SetCallChannel.mock.calls,
+  ...pmaVoice.removePlayerFromCall.mock.calls,
+  ...triggeredServerEvents.filter(([event]) => String(event).startsWith('pma-voice:'))
+];
+
 describe('accepted', () => {
-  it('joins the pma-voice channel with the call id and shows connected', () => {
+  it('shows connected and does not join the channel itself -- the server has (MICA-341)', () => {
+    serverEvent('mica:client:phone:incoming', { from: '555-0101', callId: 42 });
     serverEvent('mica:client:phone:accepted', { callId: 42, speaker: true });
 
-    expect(pmaVoice.addPlayerToCall).toHaveBeenCalledWith(42);
-    expect(sentNuiMessages).toEqual([
-      { action: 'callStatus', data: { status: 'connected', speakerAvailable: true } }
-    ]);
+    expect(clientChannelCalls()).toEqual([]);
+    expect(sentNuiMessages[sentNuiMessages.length - 1]).toEqual({
+      action: 'callStatus',
+      data: { status: 'connected', speakerAvailable: true }
+    });
   });
 
   it('hides the speaker unless the server offered it, whatever else it said (MICA-246)', () => {
@@ -312,11 +331,15 @@ describe('accepted', () => {
 });
 
 describe('ended', () => {
-  it('leaves the pma-voice channel and returns to idle — every teardown path funnels here', () => {
+  it('returns to idle and leaves the channel to the server -- every teardown funnels here', () => {
+    serverEvent('mica:client:phone:accepted', { callId: 42 });
     serverEvent('mica:client:phone:ended');
 
-    expect(pmaVoice.removePlayerFromCall).toHaveBeenCalledTimes(1);
-    expect(sentNuiMessages).toEqual([{ action: 'callStatus', data: { status: 'idle' } }]);
+    expect(clientChannelCalls()).toEqual([]);
+    expect(sentNuiMessages[sentNuiMessages.length - 1]).toEqual({
+      action: 'callStatus',
+      data: { status: 'idle' }
+    });
   });
 
   it('still returns to idle when pma-voice is absent, rather than stranding the UI', () => {
@@ -331,8 +354,7 @@ describe('failed', () => {
   it('returns to idle without touching pma-voice — no channel was ever joined at this point', () => {
     serverEvent('mica:client:phone:failed');
 
-    expect(pmaVoice.addPlayerToCall).not.toHaveBeenCalled();
-    expect(pmaVoice.removePlayerFromCall).not.toHaveBeenCalled();
+    expect(clientChannelCalls()).toEqual([]);
     expect(sentNuiMessages).toEqual([{ action: 'callStatus', data: { status: 'idle' } }]);
   });
 });
@@ -350,40 +372,23 @@ describe('isInCall (MICA-232)', () => {
     expect(await inCall()).toBe(false);
   });
 
-  it('is true even when pma-voice throws on join, since the server did connect it', async () => {
-    pmaVoice.addPlayerToCall.mockImplementation(() => {
-      throw new Error('renamed export');
-    });
-    serverEvent('mica:client:phone:accepted', { callId: 4 });
-    expect(await inCall()).toBe(true);
-  });
-
   it('is cleared by hanging up locally -- the server never sends ended to the side that ended', async () => {
     serverEvent('mica:client:phone:accepted', { callId: 4 });
     await nuiCall('endCall');
     expect(await inCall()).toBe(false);
   });
 
-  it('hanging up locally leaves the pma-voice channel, once', async () => {
-    serverEvent('mica:client:phone:accepted', { callId: 4 });
-    await nuiCall('endCall');
-    expect(pmaVoice.removePlayerFromCall).toHaveBeenCalledTimes(1);
-  });
-
-  it('hanging up still reaches the server and answers when pma-voice throws', async () => {
-    pmaVoice.removePlayerFromCall.mockImplementation(() => {
-      throw new Error('renamed export');
-    });
+  it('hanging up locally asks the server, which takes the player out of the channel', async () => {
     serverEvent('mica:client:phone:accepted', { callId: 4 });
     expect(await nuiCall('endCall')).toEqual({ status: 'idle' });
-    expect(triggeredServerEvents).toContainEqual(['mica:server:phone:end']);
-    expect(await inCall()).toBe(false);
+    expect(triggeredServerEvents).toEqual([['mica:server:phone:end']]);
+    expect(clientChannelCalls()).toEqual([]);
   });
 
   it('rejecting a ringing call does not touch pma-voice -- it was never joined', async () => {
     serverEvent('mica:client:phone:incoming', { from: '555-0101', callId: 4 });
     await nuiCall('rejectCall');
-    expect(pmaVoice.removePlayerFromCall).not.toHaveBeenCalled();
+    expect(clientChannelCalls()).toEqual([]);
   });
 
   it('is cleared by failed', async () => {
