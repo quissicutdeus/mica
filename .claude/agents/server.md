@@ -108,13 +108,13 @@ Each file opens with a `#` heading and carries no YAML frontmatter, because
 
 ## Verifying
 
-Server code is typechecked strictly under TS 7 (§3), but **server tests are
-excluded from `tsc`**, so `pnpm test:unit:server` is the only check reading
-them. What `tsc` cannot prove is behavior, and the net-event and
-framework-bridge halves are all behavior. New or changed server logic gets a
-test in `server/__tests__/`, which needs `setup.ts`'s FiveM global stubs and
-must mock `../lib/Database` — it reads `exports.oxmysql` in module scope and
-must never reach a real connection.
+Server code is typechecked strictly under TS 7 (§3), and its tests by
+`pnpm typecheck:tests` against a shrink-only baseline (MICA-320), so a new type
+error in a test fails `pnpm typecheck`. What `tsc` cannot prove is behavior, and
+the net-event and framework-bridge halves are all behavior. New or changed
+server logic gets a test in `server/__tests__/`, which needs `setup.ts`'s FiveM
+global stubs and must mock `../lib/Database` — it reads `exports.oxmysql` in
+module scope and must never reach a real connection.
 
 Run `pnpm exec vitest run <path>` (root config, not the web project) and
 `pnpm typecheck:server` — your one target, under the stricter TS 7. The lead

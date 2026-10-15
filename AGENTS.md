@@ -91,8 +91,9 @@ projects**: `web/src/**` and `sdk/**` run under `web/vite.config.ts` (the SDK
 has no project of its own); `server/__tests__/` and `client/__tests__/` run
 under the root `vitest.config.ts`, node environment, no plugins, no globals.
 
-Both tsconfigs exclude `server/__tests__/`, so **server tests are not
-typechecked** — `pnpm test:unit:server` is the only thing that validates them.
+Both tsconfigs exclude `server/__tests__/`; `pnpm typecheck:tests` (part of
+`pnpm typecheck`, MICA-320) reads them through `<target>/tsconfig.tests.json`
+against a shrink-only baseline, so a **new** type error in a test fails.
 `server/__tests__/setup.ts` stubs the FiveM globals (`exports`, `onNet`,
 `emitNet`, `source`) that server modules touch at import time. **Mock
 `../lib/Database` in any suite that loads a repository** — it reads
@@ -542,8 +543,8 @@ Then, before saying it works:
 - **New or changed server logic gets a test** in `server/__tests__/`. Server
   code _is_ typechecked, under the stricter TS 7 (§3) — what `tsc` cannot prove
   is behavior, and the net-event and framework-bridge halves are all behavior.
-  The test files themselves are the unchecked part: both tsconfigs exclude
-  `__tests__`, so `pnpm test:unit:server` is the only thing reading them (§8).
+  The test files are checked by `typecheck:tests` against a shrink-only baseline
+  (§8), so a test listed there can still hide an old type error.
 - **Report failures as failures.** If a suite is red, say so and paste the
   output. A pipeline like `pnpm test:e2e | tail -5` reports `tail`'s exit code,
   not the suite's — check the real one.
