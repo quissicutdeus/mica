@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { get } from 'svelte/store';
 import type { NotificationItem } from '@mica/shared/types';
 import {
@@ -12,7 +12,7 @@ import {
   markNotificationsRead
 } from './notifications';
 import * as fetchNuiModule from '../nui/fetchNui';
-import { deliverAppEvent } from '../shell/state/appEvents';
+import { clearAppEvents, deliverAppEvent, subscribeAppEvent } from '../shell/state/appEvents';
 import { setActiveDevice } from '../shell/state/device';
 
 const item = (id: number, app = 'blabber'): NotificationItem => ({
@@ -140,35 +140,111 @@ describe('markNotificationsOpened (MICA-96)', () => {
  * identity, so with the tablet up a push asks nothing at all — neither as the tablet (refused)
  * nor as the phone (the phone's shade under the tablet).
  */
-describe('a push while another device is up (MICA-264)', () => {
-  /**
-   * Delivered under the app id `'*'`, because that is the only key the store's
-   * `subscribeAppEvent('*', '*', …)` is filed under: `deliverAppEvent` looks up the envelope's
-   * own app and that app's `'*'`, never a `'*'` app, so an ordinary push (`blabber:mention`)
-   * does not reach this refresh today. Pre-existing, and reported with MICA-264 rather than
-   * fixed in it — a wildcard app would also mark every event taken and stop the replay buffer.
-   */
-  const push = () => deliverAppEvent({ app: '*', event: 'mention', payload: {}, at: Date.now() });
-  const reads = () => sent.filter((s) => s.action.startsWith('notifications:get'));
+/**
+ * MICA-338: a real push — an ordinary app's envelope through the real `deliverAppEvent`, never a
+ * delivery under app `'*'`, which is the shape that hid this subscriber never firing at all.
+ */
+const push = (app = 'blabber', event = 'mention') =>
+  deliverAppEvent({ app, event, payload: {}, at: Date.now() });
+const reads = () =>
+  sent
+    .filter((s) => s.action.startsWith('notifications:get'))
+    .map((s) => s.action)
+    .sort();
+const PAIR = ['notifications:getShadeNotifications', 'notifications:getUnreadCounts'];
 
-  it('refreshes the shade and the counts on the phone', async () => {
+describe('a push refreshes the shade and the badges (MICA-338)', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(async () => {
+    // Drain the refresh a test left scheduled, so it cannot land in the next one.
+    await vi.runAllTimersAsync();
+    vi.useRealTimers();
+    clearAppEvents('blabber');
+    clearAppEvents('mail');
+  });
+
+  it('refreshes both on a push for an ordinary app', async () => {
     push();
-    await Promise.resolve();
-    expect(
-      reads()
-        .map((r) => r.action)
-        .sort()
-    ).toEqual(['notifications:getShadeNotifications', 'notifications:getUnreadCounts']);
+    await vi.runAllTimersAsync();
+
+    expect(reads()).toEqual(PAIR);
+  });
+
+  it('coalesces a burst of pushes from several apps into one refresh', async () => {
+    for (let i = 0; i < 20; i++) push(i % 2 ? 'mail' : 'blabber', 'received');
+    await vi.runAllTimersAsync();
+
+    expect(reads()).toEqual(PAIR);
+  });
+
+  it('runs exactly one more refresh for pushes that land while one is in flight', async () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const base = vi.mocked(fetchNuiModule.fetchNui).getMockImplementation()!;
+    let first = true;
+    vi.mocked(fetchNuiModule.fetchNui).mockImplementation(async (method, payload) => {
+      const result = base(method, payload);
+      if (first && (payload as { action?: string })?.action === 'getShadeNotifications') {
+        first = false;
+        await held;
+      }
+      return result;
+    });
+
+    push();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(reads()).toEqual(PAIR);
+
+    // In flight: these must neither start a second refresh now nor be lost.
+    for (let i = 0; i < 5; i++) push();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(reads()).toEqual(PAIR);
+
+    release();
+    await vi.runAllTimersAsync();
+    expect(reads()).toEqual([...PAIR, ...PAIR].sort());
+  });
+
+  it('does not take the event from its own app, which still replays it on mount', async () => {
+    push('blabber', 'mention');
+    await vi.runAllTimersAsync();
+
+    const seen: boolean[] = [];
+    const off = subscribeAppEvent('blabber', 'mention', (e) => seen.push(e.replayed));
+    off();
+    expect(seen).toEqual([true]);
+  });
+});
+
+/**
+ * MICA-264: both reads are of `notifications`, a phone service the server refuses from the
+ * tablet. The stores hold the active device's identity, so with the tablet up a push asks
+ * nothing at all — neither as the tablet (refused) nor as the phone (the phone's shade under the
+ * tablet).
+ */
+describe('a push while another device is up (MICA-264)', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(async () => {
+    await vi.runAllTimersAsync();
+    vi.useRealTimers();
+    setActiveDevice('phone');
+    clearAppEvents('blabber');
+    clearAppEvents('mail');
   });
 
   it('asks nothing while the tablet is up', async () => {
     setActiveDevice('tablet');
-    try {
-      push();
-      await Promise.resolve();
-      expect(reads()).toEqual([]);
-    } finally {
-      setActiveDevice('phone');
-    }
+    push();
+    await vi.runAllTimersAsync();
+
+    expect(reads()).toEqual([]);
+  });
+
+  it('asks nothing if the tablet comes up before the coalesced refresh runs', async () => {
+    push();
+    setActiveDevice('tablet');
+    await vi.runAllTimersAsync();
+
+    expect(reads()).toEqual([]);
   });
 });

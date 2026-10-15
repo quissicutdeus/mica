@@ -52,3 +52,5 @@ its one-line summary.
   `shouldAdvanceTime`
 - [The Bash guard reads a regex `|` as a pipe](bash-guard-reads-regex-pipe.md) —
   `grep -E "a|b"` beside a gate drops the batch; filter logs with `-e` flags
+- [`__resetAppEvents` wipes module subscribers](reset-app-events-wipes-module-subscribers.md)
+  — import-time subscribers never re-register; drain with `clearAppEvents`

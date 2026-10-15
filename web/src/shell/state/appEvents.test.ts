@@ -167,3 +167,119 @@ describe('a new app joins without editing the shell', () => {
     expect(seen).toEqual(['anything']);
   });
 });
+
+/**
+ * MICA-338. `('*', '*')` is how the shell watches every push — `services/notifications.ts`
+ * refreshes the shade and the badges off it. The lookup used to try only the envelope's own app,
+ * so that subscriber had never fired for a real push. Every envelope here is a real app's: a
+ * delivery under app `'*'` is the shape that hid the bug, since the server never sends one.
+ */
+describe('the every-app observer (MICA-338)', () => {
+  it('receives a push for any app', () => {
+    const seen: string[] = [];
+    subscribeAppEvent('*', '*', (e) => seen.push(`${e.app}:${e.event}`));
+
+    deliverAppEvent(envelope('blabber', 'mention'));
+    deliverAppEvent(envelope('mail', 'received'));
+
+    expect(seen).toEqual(['blabber:mention', 'mail:received']);
+  });
+
+  it('does not count as the consumer, so the event still replays to its own app', () => {
+    // The naive fix marks every event taken and empties the buffer that holds events for apps
+    // not yet mounted. Observing a push is not handling it.
+    const observed: string[] = [];
+    subscribeAppEvent('*', '*', (e) => observed.push(e.event));
+
+    deliverAppEvent(envelope('blabber', 'mention', { blab_id: 3 }));
+
+    const seen: { payload: unknown; replayed: boolean }[] = [];
+    subscribeAppEvent('blabber', 'mention', (e) =>
+      seen.push({ payload: e.payload, replayed: e.replayed })
+    );
+
+    expect(observed).toEqual(['mention']);
+    expect(seen).toEqual([{ payload: { blab_id: 3 }, replayed: true }]);
+  });
+
+  it("runs after the app's own handlers, and once", () => {
+    const order: string[] = [];
+    subscribeAppEvent('*', '*', () => order.push('observer'));
+    subscribeAppEvent('blabber', 'mention', () => order.push('exact'));
+    subscribeAppEvent('blabber', '*', () => order.push('app-wide'));
+
+    deliverAppEvent(envelope('blabber', 'mention'));
+
+    expect(order).toEqual(['exact', 'app-wide', 'observer']);
+  });
+
+  it("is replayed nothing on subscribe, and drains no app's buffer", () => {
+    // Replaying every app's buffer to the observer would take each event off it — the same
+    // bug as counting the observer as the consumer, one step later.
+    deliverAppEvent(envelope('blabber', 'mention'));
+
+    const observed: unknown[] = [];
+    subscribeAppEvent('*', '*', (e) => observed.push(e));
+
+    const seen: unknown[] = [];
+    subscribeAppEvent('blabber', 'mention', (e) => seen.push(e));
+
+    expect(observed).toEqual([]);
+    expect(seen).toHaveLength(1);
+  });
+
+  it('hands the observer its own copy, so it cannot rewrite what the app replays', () => {
+    subscribeAppEvent('*', '*', (e) => {
+      e.payload.blab_id = 999;
+      (e as { replayed: boolean }).replayed = true;
+    });
+
+    deliverAppEvent(envelope('blabber', 'mention', { blab_id: 3 }));
+
+    const seen: { payload: unknown; replayed: boolean }[] = [];
+    subscribeAppEvent('blabber', 'mention', (e) =>
+      seen.push({ payload: e.payload, replayed: e.replayed })
+    );
+    expect(seen).toEqual([{ payload: { blab_id: 3 }, replayed: true }]);
+  });
+
+  it("stops neither the app's handler nor the buffer when it throws", () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    subscribeAppEvent('*', '*', () => {
+      throw new Error('boom');
+    });
+    const live: string[] = [];
+    subscribeAppEvent('blabber', 'mention', (e) => live.push(e.event));
+
+    deliverAppEvent(envelope('blabber', 'mention'));
+    deliverAppEvent(envelope('mail', 'received'));
+
+    const replayed: string[] = [];
+    subscribeAppEvent('mail', 'received', (e) => replayed.push(e.event));
+    expect(live).toEqual(['mention']);
+    expect(replayed).toEqual(['received']);
+  });
+
+  it("leaves ('*', name) as it was: it does not match that name in every app", () => {
+    const seen: string[] = [];
+    subscribeAppEvent('*', 'mention', (e) => seen.push(e.app));
+
+    deliverAppEvent(envelope('blabber', 'mention'));
+
+    expect(seen).toEqual([]);
+  });
+
+  it("leaves (app, '*') scoped to its own app with an observer present", () => {
+    // What an add-on's `appEvents.onAny` builds: `IframeHostServer` replaces the frame's app id
+    // with its own manifest id, which `sdk/manifest.ts` holds to `^[a-z][a-z0-9_]*$` — never
+    // `'*'`. So the observer is out of an add-on's reach, and this is all it can subscribe to.
+    subscribeAppEvent('*', '*', () => {});
+    const seen: string[] = [];
+    subscribeAppEvent('probe', '*', (e) => seen.push(`${e.app}:${e.event}`));
+
+    deliverAppEvent(envelope('blabber', 'mention'));
+    deliverAppEvent(envelope('probe', 'ping'));
+
+    expect(seen).toEqual(['probe:ping']);
+  });
+});

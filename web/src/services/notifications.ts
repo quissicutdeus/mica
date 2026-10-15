@@ -102,19 +102,58 @@ export async function restoreNotifications(ids: number[]): Promise<void> {
 }
 
 /**
- * Module-scope subscription so notifications and unread badges refresh on incoming app events.
+ * How long a push waits for others before the shade and the counts are read again.
  *
+ * Every refresh is two NUI round trips and two server reads, and nothing bounds how often pushes
+ * arrive: a job fan-out, a busy group chat, or another resource pushing through the public
+ * export can land many in a second. Coalesced, a burst of any size costs one refresh, and a
+ * sustained stream at most one per window plus one round trip.
+ */
+const REFRESH_COALESCE_MS = 250;
+
+let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+let refreshing = false;
+let refreshAgain = false;
+
+function scheduleRefresh(): void {
+  if (refreshing) {
+    // Read once more when this one lands: what it is fetching may predate the push.
+    refreshAgain = true;
+    return;
+  }
+  refreshTimer ??= setTimeout(() => void refreshFromPush(), REFRESH_COALESCE_MS);
+}
+
+/**
  * The phone's only (MICA-264). `notifications` is a phone service, refused from any other
  * device, and the stores above hold one identity, the active device's — so with the tablet up
  * a push does not ask, rather than asking as the tablet and being refused, or asking as the
- * phone and showing the phone's shade on the tablet. A switch back to the phone re-runs the
- * bootstrap (`shell/state/deviceIdentity.ts`), which reads the counts again.
+ * phone and showing the phone's shade on the tablet. Checked when the refresh runs, not when the
+ * push lands, since the device can change inside the window. A switch back to the phone re-runs
+ * the bootstrap (`shell/state/deviceIdentity.ts`), which reads the counts again.
  */
-subscribeAppEvent('*', '*', () => {
+async function refreshFromPush(): Promise<void> {
+  refreshTimer = undefined;
   if (get(activeDevice) !== DEFAULT_DEVICE) return;
-  void loadUnreadCounts();
-  void loadShadeNotifications();
-});
+  refreshing = true;
+  try {
+    await Promise.all([loadUnreadCounts(), loadShadeNotifications()]);
+  } finally {
+    refreshing = false;
+    if (refreshAgain) {
+      refreshAgain = false;
+      scheduleRefresh();
+    }
+  }
+}
+
+/**
+ * Module-scope subscription so notifications and unread badges refresh on incoming app events.
+ *
+ * `('*', '*')` is the bus's observer (MICA-338): it sees every app's push without taking it, so
+ * an app that is not mounted still has the event replayed when it is.
+ */
+subscribeAppEvent('*', '*', scheduleRefresh);
 
 /** Add a local notification item to the shade store (used for toasts and client notifications). */
 export function addNotificationItem(item: {
