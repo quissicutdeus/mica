@@ -66,7 +66,7 @@ const EXTERNAL_DB = Boolean(DB_HOST || DB_PORT || DB_USER || DB_PASSWORD);
  * configured": a harness that returns early — a fixture that silently seeded nothing, a loop
  * over an empty list — would otherwise print a pass having checked almost nothing.
  *
- * The run currently makes **455** checks. The last census, at 258, named each fixture: the two
+ * The run currently makes **459** checks. The last census, at 258, named each fixture: the two
  * `runVariant`s (17 each), the two `runSweepFixtures` (17 each), the two `runNumberMigration`s
  * (MICA-284; 21 on qb, 16 on ESX), the two `runDataMigration`s (MICA-282; 38 each), the two
  * `runBatteryMigration`s (MICA-283; 9 each), and MICA-289's `runWidenMigration` (14 on qb, 15 on
@@ -80,12 +80,13 @@ const EXTERNAL_DB = Boolean(DB_HOST || DB_PORT || DB_USER || DB_PASSWORD);
  * `runSealedWidthRefusesCopy`s (5 on each) to 366, and MICA-344's `runRenameMigration`s (15 on
  * each shape) and `runReimportOverFlattenedBaseline` (4) to 401, and MICA-342's
  * `runWedgedPairsMigration`s (10 on each shape) to 421, and MICA-335's
- * `runContactKeyMigration`s (17 on each shape) to 455 — so the margin here is eight again.
+ * `runContactKeyMigration`s (17 on each shape) to 455, and MICA-350's two more in each
+ * `runWedgedPairsMigration` to 459 — so the margin here is eight again.
  * That is deliberately tight: losing any one fixture drops below it and fails, which is the
  * whole point. Raise the floor when you add checks, rather than letting the gap widen until it
  * stops catching anything.
  */
-const MINIMUM_CHECKS = 447;
+const MINIMUM_CHECKS = 451;
 let checksRun = 0;
 
 const check = (label, actual, expected) => {
@@ -3102,6 +3103,10 @@ const WEDGED_MIGRATION = '0009_wedged_pairs_released';
  * and a group. The wedge is proved real first, by the database refusing a new thread between
  * the same two phones. Only the wedged pairs may lose their key, and a second run must find
  * nothing.
+ *
+ * MICA-350 amended 0009 in place: it adds `absent_number`, so the import drops it first, and a
+ * released pair keeps the number row of the phone that has gone. One side's row is there, one
+ * was purged, and a third thread has lost both sides, which records nothing.
  */
 const runWedgedPairsMigration = async ({ connection, schemaFile, hasPlayers, server }) => {
   const variant = hasPlayers ? 'qb' : 'esx';
@@ -3115,6 +3120,17 @@ const runWedgedPairsMigration = async ({ connection, schemaFile, hasPlayers, ser
   await connection.query(hasPlayers ? PLAYERS_TABLE : USERS_TABLE);
   await connection.query(fs.readFileSync(path.join(root, schemaFile), 'utf8'));
   await connection.query('DELETE FROM mica_schema_migrations WHERE id = ?', [WEDGED_MIGRATION]);
+  // MICA-350 amended 0009 to add this column, so the import starts without it.
+  await connection.query('ALTER TABLE mica_messages_conversations DROP COLUMN absent_number');
+  const absentColumn = async () =>
+    (
+      await connection.query(
+        `SELECT CONCAT(COLUMN_TYPE, ':', IS_NULLABLE) AS t FROM information_schema.COLUMNS
+          WHERE table_schema = DATABASE() AND table_name = 'mica_messages_conversations'
+            AND column_name = 'absent_number'`
+      )
+    )[0][0]?.t ?? null;
+  const absentBefore = await absentColumn();
 
   const C_PHONE = 'c'.repeat(32);
   const D_PHONE = 'd'.repeat(32);
@@ -3152,15 +3168,32 @@ const runWedgedPairsMigration = async ({ connection, schemaFile, hasPlayers, ser
   const group = await thread(1, null, null);
   await member(group, 'CIT_A', A_PHONE);
   await member(group, 'CIT_D', D_PHONE, true);
+  // MICA-350: both sides gone, so there is no telling which is the other one.
+  const bothGone = await thread(0, C_PHONE, D_PHONE);
+  await member(bothGone, 'CIT_D', D_PHONE, true);
+  const RELEASED = [left, purged, bothGone];
 
-  const threads = async () =>
+  // Every phone has a number row but C's, which a privacy delete purged.
+  await connection.query(
+    `INSERT INTO mica_phone_numbers (citizenid, number, device_id)
+     VALUES ('CIT_A', '5550001', ?), ('CIT_B', '5550002', ?), ('CIT_D', '5550004', ?)`,
+    [A_PHONE, B_PHONE, D_PHONE]
+  );
+
+  /** Each thread as a string; with `absent_number` once 0009 has added it. */
+  const threads = async (withNumber = true) =>
     (
       await connection.query(
         `SELECT id, participant_a AS a, participant_b AS b, pair_key AS k, status,
-                DATE_FORMAT(updated_at, '%Y-%m-%d %H:%i:%s') AS at
+                DATE_FORMAT(updated_at, '%Y-%m-%d %H:%i:%s') AS at,
+                ${withNumber ? 'absent_number' : 'NULL'} AS n
            FROM mica_messages_conversations ORDER BY id`
       )
-    )[0].map((r) => `${r.id}:${r.a ?? '-'}:${r.b ?? '-'}:${r.k ?? '-'}:${r.status}:${r.at}`);
+    )[0].map(
+      (r) =>
+        `${r.id}:${r.a ?? '-'}:${r.b ?? '-'}:${r.k ?? '-'}:${r.status}:${r.at}` +
+        (withNumber ? `:${r.n ?? '-'}` : '')
+    );
   const members = async () =>
     (
       await connection.query(
@@ -3187,24 +3220,39 @@ const runWedgedPairsMigration = async ({ connection, schemaFile, hasPlayers, ser
     ],
     [true, true, 'ER_DUP_ENTRY', 'ER_DUP_ENTRY']
   );
-  const before = await threads();
+  const before = await threads(false);
   const membersBefore = await members();
-  const untouched = (rows) => rows.filter((r) => ![left, purged].includes(Number(r.split(':')[0])));
+  const untouched = (rows) => rows.filter((r) => !RELEASED.includes(Number(r.split(':')[0])));
 
   const run = await server.runPendingMigrations();
   check(`${label}: 0009 applied`, run.applied, [WEDGED_MIGRATION]);
   check(`${label}: and failed nothing, leaving nothing`, [run.failed, run.remaining], [null, []]);
+  check(
+    `${label}: absent_number was missing, and 0009 added it as the declaration has it`,
+    [absentBefore, await absentColumn()],
+    [null, 'varchar(16):YES']
+  );
 
   const after = await threads();
   check(
-    `${label}: both wedged pairs are released, still active, with updated_at held`,
-    after.filter((r) => [left, purged].includes(Number(r.split(':')[0]))),
-    [`${left}:-:-:-:active:${OLD}`, `${purged}:-:-:-:active:${OLD}`]
+    `${label}: the wedged pairs are released, still active, with updated_at held, keeping ` +
+      "the departed side's number: B's from its row, none for C's purged row or two gone sides",
+    after.filter((r) => RELEASED.includes(Number(r.split(':')[0]))),
+    [
+      `${left}:-:-:-:active:${OLD}:5550002`,
+      `${purged}:-:-:-:active:${OLD}:-`,
+      `${bothGone}:-:-:-:active:${OLD}:-`
+    ]
   );
   check(
     `${label}: the healthy pair, the line thread and the group did not move`,
-    untouched(after),
+    untouched(await threads(false)),
     untouched(before)
+  );
+  check(
+    `${label}: and none of them records a number, though every phone in them has one`,
+    untouched(after).map((r) => r.split(':').at(-1)),
+    ['-', '-', '-']
   );
   check(`${label}: and no membership moved`, await members(), membersBefore);
 

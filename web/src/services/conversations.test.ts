@@ -871,6 +871,75 @@ describe('who a thread is with', () => {
     expect(get(conversationsStore).find((c) => c.id === 1)?.target).toBe('555-0199');
   });
 
+  /**
+   * A 1:1 nobody else is in (MICA-350): the other side left, was purged, or the number was never
+   * held. `participants` is the reader alone, and the other side's number arrives as
+   * `absent_number` instead, to be named exactly as a live member's would be.
+   */
+  describe('a 1:1 nobody else is in', () => {
+    const me = {
+      id: 91,
+      conversation_id: 9,
+      role: 'admin',
+      status: 'active',
+      last_read: '2026-07-24T20:00:00Z',
+      self: true,
+      phone: '867-5309'
+    };
+    const thread = (extra: Record<string, unknown>) => ({
+      id: 9,
+      is_group: false,
+      status: 'active',
+      unread_count: 0,
+      created_at: '2026-07-24T20:00:00Z',
+      updated_at: '2026-07-24T20:00:00Z',
+      participant_count: 1,
+      participants: [me],
+      ...extra
+    });
+    const labelOf = async (row: Record<string, unknown>) => {
+      server.conversations = [row];
+      await conversationsStore.loadConversations();
+      return get(conversationsStore).find((c) => c.id === 9);
+    };
+
+    it("is named for the reader's contact for the absent number", async () => {
+      expect(await labelOf(thread({ absent_number: '555-0199' }))).toMatchObject({
+        target: '555-0199',
+        targetName: 'Ursula'
+      });
+    });
+
+    it('shows the absent number itself when the reader has no contact for it', async () => {
+      expect(await labelOf(thread({ absent_number: '555-0404' }))).toMatchObject({
+        target: '555-0404',
+        targetName: '555-0404'
+      });
+    });
+
+    it('keeps the old fallback when the server sent no number', async () => {
+      expect(await labelOf(thread({ absent_number: null }))).toMatchObject({
+        target: '',
+        targetName: 'Unknown'
+      });
+    });
+
+    it('never labels a group from one, even if a payload carried it', async () => {
+      expect(
+        await labelOf(thread({ is_group: true, name: 'Heist crew', absent_number: '555-0199' }))
+      ).toMatchObject({ target: 'group', targetName: 'Heist crew' });
+    });
+
+    it('lets a live member win over it', async () => {
+      const other = { ...me, id: 92, role: 'member', self: false, phone: '555-0123' };
+      expect(
+        await labelOf(
+          thread({ participants: [me, other], participant_count: 2, absent_number: '555-0199' })
+        )
+      ).toMatchObject({ target: '555-0123', targetName: '555-0123' });
+    });
+  });
+
   it('draws a message as sent by the reader only when the server says it is theirs', async () => {
     await conversationsStore.loadMessages(2);
     const [sent] = get(conversationsStore.messages)[2];

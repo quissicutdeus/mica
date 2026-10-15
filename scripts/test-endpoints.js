@@ -88,8 +88,8 @@ const FLOW_CHECKS = {
   qbMail: { standalone: 10, qb: 10 },
   devices: { standalone: 27, qb: 31 },
   reports: { standalone: 14, qb: 14 },
-  privacy: { standalone: 22, qb: 22 },
-  leftThread: { standalone: 13, qb: 13 }
+  privacy: { standalone: 24, qb: 24 },
+  leftThread: { standalone: 15, qb: 15 }
 };
 const MINIMUM_CHECKS = Object.values(FLOW_CHECKS).reduce(
   (sum, perShape) => sum + perShape.standalone + perShape.qb,
@@ -2070,6 +2070,16 @@ const runPrivacy = async (shape, live) => {
     ],
     [true, true, true]
   );
+  // MICA-350: 2 sees the number of the phone 1 was on, and the pair both are in carries none.
+  const listed = async (src, id) =>
+    (await shape.call(src, 'conversations', 'get', {}))?.rows?.find((c) => c.id === id);
+  const oldRow = await listed(B, shared);
+  const freshRow = await listed(B, fresh?.id);
+  check(
+    `${kind}: 2's list names 1's number on the old thread, and nothing on the new one`,
+    [oldRow?.absent_number, freshRow ? 'absent_number' in freshRow : 'missing'],
+    [numberBefore, false]
+  );
   // MICA-349: the old thread reads, and a text typed into it would reach nobody.
   check(
     `${kind}: 2's text into the thread 1 was taken out of is refused`,
@@ -2093,6 +2103,11 @@ const runPrivacy = async (shape, live) => {
     `${kind}: and 1 starting one with 2 finds it`,
     (await shape.call(A, 'conversations', 'create', { phone: twoNumber }))?.id,
     third?.id
+  );
+  check(
+    `${kind}: 1's list names 2's number on the thread 2 left`,
+    (await listed(A, fresh?.id))?.absent_number,
+    twoNumber
   );
 };
 
@@ -2172,6 +2187,14 @@ const runLeftThread = async (shape, { A, B, D }) => {
     (await shape.call(A, 'conversations', 'create', { phone: twoNumber }))?.id,
     again?.id
   );
+  const list = (await shape.call(B, 'conversations', 'get', {}))?.rows ?? [];
+  const leftRow = list.find((c) => c.id === thread?.id);
+  const againRow = list.find((c) => c.id === again?.id);
+  check(
+    `${kind}: 2's list names 1's number on the thread 1 left (MICA-350), and nothing on the new one`,
+    [leftRow?.absent_number, againRow ? 'absent_number' in againRow : 'missing'],
+    [oneNumber, false]
+  );
   mark = shape.runtime.sent.length;
   const sent = await shape.call(B, 'messages', 'send', {
     conversation_id: again?.id,
@@ -2231,6 +2254,15 @@ const runLeftThread = async (shape, { A, B, D }) => {
     `${kind}: the thread exists, and the text is refused with nothing written`,
     [typeof solo?.id, solo?.is_group, unheard?.key, await rowsIn(solo?.id)],
     ['number', false, 'server.messages.noRecipient', 0]
+  );
+  check(
+    `${kind}: it carries the number dialled, in the reply and in 1's list (MICA-350)`,
+    [
+      solo?.absent_number,
+      (await shape.call(A, 'conversations', 'get', {}))?.rows?.find((c) => c.id === solo?.id)
+        ?.absent_number
+    ],
+    ['5550404', '5550404']
   );
 };
 

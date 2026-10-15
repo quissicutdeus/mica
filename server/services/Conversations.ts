@@ -5,10 +5,12 @@
 import { PlayerFacingError } from '../lib/errors';
 import {
   ConversationRepository,
+  absentNumberFrom,
   conversationForReader,
   lastMessageForReader,
   openLineThread,
   participantForReader,
+  ABSENT_NUMBER_MAX_LENGTH,
   PARTICIPANT_KEY_MAX_LENGTH,
   type ConversationRow,
   type ParticipantRow
@@ -141,6 +143,29 @@ export const conversations = defineService<ConversationRow, typeof conversations
         "CASE WHEN `status` = 'active' " +
         "THEN CONCAT(LEAST(`participant_a`, `participant_b`), '|', GREATEST(`participant_a`, `participant_b`)) " +
         'ELSE NULL END'
+    },
+    /**
+     * The number on the side of a 1:1 that nobody is in any more (MICA-350). The side that
+     * stays reads it, because no live member is left to carry it.
+     *
+     * Written by three things and nothing else. `releasePair` and `releasePairsOf` record the
+     * leaving phone's number as they null the pair, a leave or a privacy delete. `create` records
+     * the one number dialled when nobody holds it. Migration 0009 records it for the pairs it
+     * released. NULL when the number could not be read; a release never fails over it.
+     *
+     * The width of `mica_phone_numbers.number`, where every number it copies comes from. A
+     * framework number or a dialled one that is longer is recorded as NULL rather than cut.
+     *
+     * `conversationForReader` sends it only to a member alone in a 1:1, so it never names a
+     * number on a healthy pair or a line's thread. It is exported to the row's owner, who is
+     * shown it in the app: it is the number of the phone the thread was with, which a real
+     * phone keeps in its history, even after a privacy delete took that phone's holder out.
+     */
+    absent_number: {
+      type: 'string',
+      length: ABSENT_NUMBER_MAX_LENGTH,
+      clientWritable: false,
+      private: true
     }
   },
   /**
@@ -340,17 +365,23 @@ app.registerEvent('get', async (source, cbId, data, citizenid) => {
 
   const rows = list.map((conv) => {
     const participants = byConversation.get(conv.id) ?? [];
-    return conversationForReader(conv, {
-      participant_count: participants.length,
-      participants: participants.map((p) =>
-        participantForReader(p, citizenid, deviceId, numberOf(p))
-      ),
-      unread_count: Number(conv.unread_count ?? 0),
-      archived_at: conv.archived_at ?? null,
-      ...(conv.last_message
-        ? { last_message: lastMessageForReader(conv.last_message, citizenid, participants) }
-        : {})
-    });
+    return conversationForReader(
+      conv,
+      {
+        participant_count: participants.length,
+        participants: participants.map((p) =>
+          participantForReader(p, citizenid, deviceId, numberOf(p))
+        ),
+        unread_count: Number(conv.unread_count ?? 0),
+        archived_at: conv.archived_at ?? null,
+        ...(conv.last_message
+          ? { last_message: lastMessageForReader(conv.last_message, citizenid, participants) }
+          : {})
+      },
+      // Every live member's phone, so a reader alone in a 1:1 is sent the number of the side
+      // that is gone (MICA-350). The reader is a member: `findForPhone` joined their row.
+      { readerPhoneId: deviceId, memberPhones: participants.map((p) => p.device_id) }
+    );
   });
 
   return { rows, nextCursor };
@@ -374,6 +405,28 @@ const participantNumbers = async (
   const directory =
     missing.length > 0 && detectFramework() === 'esx' ? await resolveMany(missing) : null;
   return (row) => row.phone_number ?? directory?.get(row.citizenid)?.phone ?? null;
+};
+
+/**
+ * The number a leaving citizen's phone answered to on es_extended, for `absent_number`
+ * (MICA-350), or null everywhere else.
+ *
+ * On es_extended micaOS keeps no number rows: the number is the character's, which every phone
+ * they hold answers to, and the directory is where it is read, as `participantNumbers` reads it.
+ * On qb and standalone the release reads the phone's own row in its statement, and the
+ * directory's number there is the phone held now, not the one leaving. A release must never fail
+ * because the number cannot be read, so a directory that throws is logged and answers null.
+ */
+const frameworkNumberOf = async (citizenid: string): Promise<string | null> => {
+  if (detectFramework() !== 'esx') return null;
+  try {
+    return (await resolveMany([citizenid])).get(citizenid)?.phone ?? null;
+  } catch (error) {
+    // The last line only: a driver error carries the statement and its parameters.
+    const reason = error instanceof Error ? (error.message.split('\n').at(-1) ?? '') : '';
+    console.error(`[Conversation] could not read the number a leaving phone had: ${reason}`);
+    return null;
+  }
 };
 
 /**
@@ -499,6 +552,8 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
 
   const members = new Set<string>([citizenid]);
   if (targetCitizenId) members.add(targetCitizenId);
+  /** Each number in the list nobody holds, trimmed and deduplicated, for `absent_number`. */
+  const unheld = new Set<string>();
 
   /**
    * Refuse an oversized request outright, before any `resolveByPhone` call is spent on it.
@@ -522,7 +577,10 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
   // is — never a raw citizenid, for the same reason `targetCitizenId` above isn't one.
   for (const memberPhone of uniquePhones) {
     const target = await resolveByPhone(memberPhone);
-    if (!target) continue; // unknown number
+    if (!target) {
+      unheld.add(memberPhone.trim());
+      continue;
+    }
     // The first number that reaches a person decides which of their phones is in the thread.
     if (!phoneOf.has(target.citizenid)) {
       phoneOf.set(target.citizenid, await phoneForNumber(memberPhone, target.citizenid));
@@ -556,6 +614,17 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
   const pairCitizenId = !isGroup && others.length === 1 ? others[0] : null;
   const pairPhoneId = pairCitizenId ? (phoneOf.get(pairCitizenId) ?? null) : null;
 
+  /**
+   * A thread with nobody but the caller in it, because every number named is one nobody holds
+   * (MICA-350). It keeps the number dialled, so the caller sees who the thread was meant for, in
+   * the same field a 1:1 the other side has left keeps theirs. Only when exactly one number was
+   * dialled: several unheld numbers were a group nobody joined, and naming one of them would show
+   * it as a 1:1 with that number alone, so they record NULL and read as unknown. A group of one
+   * member is not this: `is_group` is false here.
+   */
+  const solo = others.length === 0;
+  const absentNumber = solo && unheld.size === 1 ? absentNumberFrom([...unheld][0]) : null;
+
   // Logic for 1-on-1: existing check
   if (pairPhoneId) {
     const existing = await conversationRepo.findOneToOne(ownPhoneId, pairPhoneId);
@@ -580,7 +649,9 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
     // `pair_key`'s generated expression turns into a `NULL` pair key, which a unique
     // index never treats as a collision.
     participant_a: pairPhoneId ? ownPhoneId : null,
-    participant_b: pairPhoneId ?? null
+    participant_b: pairPhoneId ?? null,
+    // Named only on a solo thread, so every other create's statement is as it was.
+    ...(solo ? { absent_number: absentNumber } : {})
   };
 
   let conversationId: number;
@@ -647,12 +718,20 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
   // Through the reader's projection like every other answer here: the pair's phone ids and the
   // creator's citizenid are the row's, not the reply's (MICA-339).
   const now = new Date().toISOString();
-  return conversationForReader({
-    ...newConv,
-    id: conversationId,
-    created_at: now,
-    updated_at: now
-  } as ConversationRow);
+  return conversationForReader(
+    {
+      ...newConv,
+      id: conversationId,
+      created_at: now,
+      updated_at: now
+    } as ConversationRow,
+    {},
+    // The phones just written into it, so a solo thread's reply carries its number (MICA-350).
+    {
+      readerPhoneId: ownPhoneId,
+      memberPhones: [ownPhoneId, ...others.map((member) => phoneOf.get(member) ?? null)]
+    }
+  );
 });
 
 /**
@@ -743,7 +822,7 @@ app.registerEvent('delete', async (source, cbId, data, citizenid) => {
      * is still live to authorize it. If the leave below then fails, a member who is still in
      * the thread is still found by `findOneToOne`. A group or a released thread is a no-op.
      */
-    await conversationRepo.releasePair(id, citizenid, deviceId);
+    await conversationRepo.releasePair(id, citizenid, deviceId, await frameworkNumberOf(citizenid));
     // Insert new row with status 'left' (Left Voluntarily)
     await conversationRepo.removeParticipant(id, citizenid, deviceId, 'left');
     await AuditLogger.log({
@@ -788,5 +867,5 @@ onDeviceHandover('conversations', (deviceId, citizenid) =>
  * race guard on their keys, and `reconcilePairDuplicate` settles that race regardless.
  */
 onBeforeSelfServiceDelete('conversations', async (citizenid) => {
-  await conversationRepo.releasePairsOf(citizenid);
+  await conversationRepo.releasePairsOf(citizenid, await frameworkNumberOf(citizenid));
 });

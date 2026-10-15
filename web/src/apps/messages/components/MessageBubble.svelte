@@ -94,15 +94,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     if (!currentConv) return { name: $t('messages.member'), avatar: undefined, contact: undefined };
     // The sending member, by the id the server gives in place of their citizenid, named from
     // the reader's own contacts for the number on their phone, else shown as that number
-    // (MICA-339). Nothing else about who they are reaches the phone.
+    // (MICA-339). Nothing else about who they are reaches the phone. In a 1:1 the other side
+    // has left, nobody is left to carry the number, and the server sends it as `absent_number`
+    // instead (MICA-350), on exactly that thread: every message not the reader's is theirs.
     const p =
       targetMsg.sender_id == null
         ? undefined
         : currentConv.participants?.find((part) => part.id === targetMsg.sender_id);
-    const contact = p?.phone ? $contacts.find((c) => c.phone === p.phone) : undefined;
+    const phone = p ? p.phone : currentConv.is_group ? undefined : currentConv.absent_number;
+    const contact = phone ? $contacts.find((c) => c.phone === phone) : undefined;
     const name = contact
       ? `${contact.firstname} ${contact.lastname || ''}`.trim()
-      : p?.phone || $t('messages.member');
+      : phone || $t('messages.member');
     const avatar = contact?.avatar;
     return { name, avatar, contact };
   };

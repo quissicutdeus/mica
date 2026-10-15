@@ -36,14 +36,18 @@ const mockMessageReactions: { messageId: number; citizenid: string; emoji: strin
  * live members only, so `participants` is the reader alone. That is the whole signal the phone
  * has, and the shape this fixture has to match: the Messages e2e spec asserts the composer gives
  * way to the "no one else" notice here, and a fixture with a name or a second member would be a
- * shape the server never sends for this thread. Labelled "Unknown" in the inbox for the same
- * reason the server gives it nothing better: the number of a phone that left is not in the
- * payload.
+ * shape the server never sends for this thread. Since MICA-350 the server sends the number of
+ * the side that left as `absent_number`, and the phone labels the thread from it exactly as it
+ * would a live member's: here Alan Armstrong's, a mock contact with no thread of his own, so the
+ * inbox row and header show his name rather than "Unknown". The number-only path (an unsaved
+ * number) is held by `web/src/services/conversations.test.ts` instead of a second fixture.
  *
  * Here rather than in `data.ts`'s generated set, which builds every 1:1 with its other member.
  * Pushed once, guarded by id, so a module re-evaluated under HMR does not seat it twice.
  */
 const EMPTY_ONE_TO_ONE_ID = 900;
+/** Alan Armstrong's, in `data.ts`'s generated contacts; no other fixture uses it. */
+const ABSENT_NUMBER = '555-0204';
 if (!mockConversations.some((c) => c.id === EMPTY_ONE_TO_ONE_ID)) {
   const selfId = EMPTY_ONE_TO_ONE_ID * 100 + 99;
   const at = (hoursAgo: number) => new Date(Date.now() - hoursAgo * 3_600_000).toISOString();
@@ -74,6 +78,7 @@ if (!mockConversations.some((c) => c.id === EMPTY_ONE_TO_ONE_ID)) {
     unread_count: 0,
     last_message: last,
     participant_count: 1,
+    absent_number: ABSENT_NUMBER,
     participants: [
       {
         id: selfId,

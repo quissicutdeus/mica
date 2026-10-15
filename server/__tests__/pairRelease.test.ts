@@ -36,7 +36,7 @@ interface Person {
   number: string;
 }
 
-const { handlers, db, people } = vi.hoisted(() => {
+const { handlers, db, people, fw } = vi.hoisted(() => {
   const captured = new Map<string, Function>();
   const previous = (globalThis as any).onNet;
   (globalThis as any).onNet = (event: string, handler: Function) => {
@@ -56,9 +56,19 @@ const { handlers, db, people } = vi.hoisted(() => {
       conversations: new Map<number, Record<string, any>>(),
       participants: [] as Member[],
       /** Each statement that wrote, in order, plus `purge` where the purge ran. */
-      log: [] as string[]
+      log: [] as string[],
+      /** `mica_phone_numbers` by phone: each person's phone carries their number (MICA-350). */
+      numberRows: new Map<string, string>(),
+      /** `mica_phone_numbers` legacy rows (`device_id IS NULL`), by citizenid. */
+      legacyRows: new Map<string, string>()
     },
-    people: [person(1, 'a'), person(2, 'b'), person(3, 'c')] as Person[]
+    people: [person(1, 'a'), person(2, 'b'), person(3, 'c')] as Person[],
+    /** What `detectFramework` and the directory answer (MICA-350's es_extended number). */
+    fw: {
+      kind: 'unknown' as string,
+      directory: new Map<string, { phone?: string }>(),
+      directoryFails: false
+    }
   };
 });
 
@@ -209,11 +219,18 @@ vi.mock('../lib/Database', () => ({
         typeof side === 'string' && !side.startsWith(pattern.replace(/%$/, ''));
       // `releasePairsOf`, its WHERE evaluated clause by clause, over every thread.
       if (
-        sql.includes('SET c.participant_a = NULL, c.participant_b = NULL') &&
+        sql.includes('c.participant_a = NULL, c.participant_b = NULL') &&
         !sql.includes('c.id = ?')
       ) {
         db.log.push('releasePairsOf');
-        const [lineA, lineB, citizenid] = params as [string, string, string];
+        const [numberCitizen, legacyCitizen, framework, lineA, lineB, citizenid] = params as [
+          string,
+          string,
+          string | null,
+          string,
+          string,
+          string
+        ];
         let released = 0;
         for (const c of db.conversations.values()) {
           const matches =
@@ -229,6 +246,18 @@ vi.mock('../lib/Database', () => ({
                 (p.device_id === c.participant_a || p.device_id === c.participant_b)
             );
           if (!matches) continue;
+          // The number of the citizen's own live membership on a side, as the subquery reads it.
+          const mine = db.participants.find(
+            (p) =>
+              p.conversation_id === c.id &&
+              p.citizenid === numberCitizen &&
+              p.left_at === null &&
+              (p.device_id === c.participant_a || p.device_id === c.participant_b)
+          );
+          c.absent_number =
+            (mine ? db.numberRows.get(mine.device_id) : undefined) ??
+            db.legacyRows.get(legacyCitizen) ??
+            framework;
           c.participant_a = null;
           c.participant_b = null;
           released += 1;
@@ -236,9 +265,23 @@ vi.mock('../lib/Database', () => ({
         return released > 0;
       }
       // `releasePair`, its WHERE evaluated clause by clause.
-      if (sql.includes('SET c.participant_a = NULL, c.participant_b = NULL')) {
+      if (sql.includes('c.participant_a = NULL, c.participant_b = NULL')) {
         db.log.push('releasePair');
-        const [id, sideA, sideB, lineA, lineB, citizenid, deviceId] = params as [
+        const [
+          numberPhone,
+          legacyCitizen,
+          framework,
+          id,
+          sideA,
+          sideB,
+          lineA,
+          lineB,
+          citizenid,
+          deviceId
+        ] = params as [
+          string,
+          string,
+          string | null,
           number,
           string,
           string,
@@ -263,6 +306,8 @@ vi.mock('../lib/Database', () => ({
               p.left_at === null
           );
         if (!matches) return false;
+        c.absent_number =
+          db.numberRows.get(numberPhone) ?? db.legacyRows.get(legacyCitizen) ?? framework;
         c.participant_a = null;
         c.participant_b = null;
         return true;
@@ -305,7 +350,26 @@ vi.mock('../lib/PlayerDirectory', () => ({
     const who = byNumber(phone);
     return who ? { citizenid: who.citizenid } : null;
   },
-  resolveMany: async () => new Map()
+  resolveMany: async (citizenids: string[]) => {
+    // oxmysql's shape: the statement and its parameters, then the driver's reason last.
+    if (fw.directoryFails) {
+      throw new Error(
+        'mica was unable to execute a query!\nQuery: SELECT … WHERE citizenid IN (?)\n' +
+          `${JSON.stringify(citizenids)}\nConnection lost`
+      );
+    }
+    return new Map(
+      citizenids.flatMap((id) => {
+        const entry = fw.directory.get(id);
+        return entry ? [[id, entry] as const] : [];
+      })
+    );
+  }
+}));
+
+vi.mock('../lib/FrameworkBridge', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../lib/FrameworkBridge')>()),
+  detectFramework: () => fw.kind
 }));
 
 /**
@@ -325,7 +389,11 @@ vi.mock('../lib/orphanSweep', async (importOriginal) => ({
 import '../services/Conversations';
 import '../services/Privacy';
 import { conversations } from '../services/Conversations';
-import type { ConversationRepository } from '../repositories/ConversationRepository';
+import {
+  conversationForReader,
+  type ConversationRepository,
+  type ConversationRow
+} from '../repositories/ConversationRepository';
 import { Database } from '../lib/Database';
 import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { __setDeviceResolvers } from '../lib/deviceIdentity';
@@ -358,6 +426,11 @@ beforeEach(() => {
   db.conversations.clear();
   db.participants = [];
   db.log = [];
+  db.numberRows = new Map(people.map((p) => [p.phone, p.number]));
+  db.legacyRows = new Map();
+  fw.kind = 'unknown';
+  fw.directory = new Map();
+  fw.directoryFails = false;
   // Back to the stand-in, so a one-off failure a test queued and never reached cannot leak.
   for (const fn of Object.values(Database)) vi.mocked(fn).mockReset();
   __resetRateLimits();
@@ -532,7 +605,18 @@ describe('releasePair names the thread, the leaving side and the citizen (MICA-3
     );
     // `updated_at` is held, so the other side's inbox order does not move.
     expect(where).toContain('c.updated_at = c.updated_at');
-    expect(params).toEqual([id, TWO.phone, TWO.phone, 'ext:%', 'ext:%', TWO.citizenid, TWO.phone]);
+    expect(params).toEqual([
+      TWO.phone,
+      TWO.citizenid,
+      null,
+      id,
+      TWO.phone,
+      TWO.phone,
+      'ext:%',
+      'ext:%',
+      TWO.citizenid,
+      TWO.phone
+    ]);
   });
 
   it('refuses without a citizen or a phone, before any statement', async () => {
@@ -580,6 +664,182 @@ describe('releasePairsOf is releasePair for every thread a citizen is still in (
         'AND (p.device_id = c.participant_a OR p.device_id = c.participant_b)'
     );
     expect(where).toContain('c.updated_at = c.updated_at');
-    expect(params).toEqual(['ext:%', 'ext:%', ONE.citizenid]);
+    expect(params).toEqual([ONE.citizenid, ONE.citizenid, null, 'ext:%', 'ext:%', ONE.citizenid]);
+  });
+});
+
+/**
+ * MICA-350: the side still in a 1:1 nobody else is in sees the number of the side that is gone.
+ *
+ * The release records it in the same statement that unpairs the thread, and the list sends it
+ * only to a member alone in a 1:1. Each case that sends it has a twin that must not.
+ */
+const rowsOf = async (who: Person): Promise<Record<string, any>[]> =>
+  (await call(who, 'conversations', 'get', {}))?.rows ?? [];
+
+const listed = async (who: Person, id: number | undefined) =>
+  (await rowsOf(who)).find((row) => row.id === id);
+
+describe('a 1:1 one side has gone from keeps its number (MICA-350)', () => {
+  it("shows 1 the number of 2's phone after 2 leaves, and nothing on the fresh pair", async () => {
+    const old = await open(ONE, TWO);
+    await call(TWO, 'conversations', 'delete', { id: old });
+    expect(thread(old)).toMatchObject({ absent_number: TWO.number, participant_a: null });
+
+    const fresh = await open(ONE, TWO);
+    expect(await listed(ONE, old)).toMatchObject({ absent_number: TWO.number });
+    // The twin: a pair both sides are in carries no field at all.
+    expect(await listed(ONE, fresh)).not.toHaveProperty('absent_number');
+    expect(await listed(TWO, fresh)).not.toHaveProperty('absent_number');
+  });
+
+  it("shows 2 the number of 1's phone after 1's privacy delete", async () => {
+    const old = await open(ONE, TWO);
+    const kept = await open(TWO, OUTSIDER);
+    await call(ONE, 'privacy', 'delete', { confirm: 'DELETE' });
+
+    expect(await listed(TWO, old)).toMatchObject({ absent_number: ONE.number });
+    expect(await listed(TWO, kept)).not.toHaveProperty('absent_number');
+  });
+
+  it("falls back to the leaver's legacy number, then to null, and still releases", async () => {
+    const legacy = await open(ONE, TWO);
+    db.numberRows.delete(TWO.phone);
+    db.legacyRows.set(TWO.citizenid, '5550222');
+    await call(TWO, 'conversations', 'delete', { id: legacy });
+    expect(thread(legacy)).toMatchObject({ absent_number: '5550222', participant_a: null });
+
+    const none = await open(ONE, OUTSIDER);
+    db.numberRows.delete(OUTSIDER.phone);
+    await call(OUTSIDER, 'conversations', 'delete', { id: none });
+    expect(thread(none)).toMatchObject({ absent_number: null, participant_a: null });
+    // Sent as null, not left out: the thread is the kind that has an absent side.
+    expect(await listed(ONE, none)).toHaveProperty('absent_number', null);
+  });
+
+  it('records the framework number on es_extended, and null when the directory fails', async () => {
+    fw.kind = 'esx';
+    db.numberRows.clear();
+    fw.directory.set(TWO.citizenid, { phone: '5550777' });
+    const left = await open(ONE, TWO);
+    await call(TWO, 'conversations', 'delete', { id: left });
+    expect(thread(left)).toMatchObject({ absent_number: '5550777', participant_a: null });
+
+    fw.directory.set(ONE.citizenid, { phone: '5550111' });
+    const purged = await open(ONE, OUTSIDER);
+    await call(ONE, 'privacy', 'delete', { confirm: 'DELETE' });
+    expect(thread(purged)).toMatchObject({ absent_number: '5550111', participant_a: null });
+
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    fw.directoryFails = true;
+    const failed = await open(TWO, OUTSIDER);
+    expect(await call(OUTSIDER, 'conversations', 'delete', { id: failed })).toBe(true);
+    expect(thread(failed)).toMatchObject({ absent_number: null, participant_a: null });
+    // The last line of the driver's error only, never the statement and its parameters.
+    expect(errors).toHaveBeenCalledTimes(1);
+    expect(errors.mock.calls[0].join(' ')).toContain('Connection lost');
+    expect(errors.mock.calls[0].join(' ')).not.toContain(OUTSIDER.citizenid);
+  });
+
+  it('records null for a framework number wider than the column, rather than failing', async () => {
+    fw.kind = 'esx';
+    db.numberRows.clear();
+    fw.directory.set(TWO.citizenid, { phone: '1'.repeat(17) });
+    const left = await open(ONE, TWO);
+    await call(TWO, 'conversations', 'delete', { id: left });
+    expect(thread(left)).toMatchObject({ absent_number: null, participant_a: null });
+  });
+
+  it('assigns the number before it nulls the pair, in both statements', async () => {
+    const id = (await open(ONE, TWO))!;
+    vi.mocked(Database.update).mockClear();
+    await repo.releasePair(id, TWO.citizenid, TWO.phone, ' 5550999 ');
+    await repo.releasePairsOf(ONE.citizenid);
+
+    const [pair, pairParams] = vi.mocked(Database.update).mock.calls[0];
+    const [ofCitizen] = vi.mocked(Database.update).mock.calls[1];
+    for (const sql of [pair, ofCitizen]) {
+      const flat = sql.replace(/\s+/g, ' ');
+      expect(flat.indexOf('c.absent_number = COALESCE(')).toBeGreaterThan(-1);
+      expect(flat.indexOf('c.absent_number =')).toBeLessThan(
+        flat.indexOf('c.participant_a = NULL')
+      );
+      expect(flat).toContain('`device_id` IS NULL ORDER BY');
+    }
+    // The fallback is bound, trimmed, never interpolated.
+    expect(pairParams?.slice(0, 3)).toEqual([TWO.phone, TWO.citizenid, '5550999']);
+    expect(pair).not.toContain('5550999');
+  });
+});
+
+describe('a thread started to a number nobody holds keeps that number (MICA-350)', () => {
+  it('records the one number dialled, and the reply and the list carry it', async () => {
+    const reply = await call(ONE, 'conversations', 'create', { participants: [' 5550404 '] });
+    expect(reply).toMatchObject({ is_group: false, absent_number: '5550404' });
+    expect(thread(reply.id)).toMatchObject({ absent_number: '5550404', participant_a: null });
+    expect(await listed(ONE, reply.id)).toMatchObject({ absent_number: '5550404' });
+  });
+
+  it('records null for several numbers nobody holds', async () => {
+    const reply = await call(ONE, 'conversations', 'create', {
+      participants: ['5550404', '5550405']
+    });
+    expect(reply).toMatchObject({ is_group: false, absent_number: null });
+    expect(thread(reply.id)).toMatchObject({ absent_number: null });
+  });
+
+  it('writes nothing on a pair or a group, whose create names no such column', async () => {
+    const pair = await call(ONE, 'conversations', 'create', {
+      participants: [TWO.number, '5550404']
+    });
+    const group = await call(ONE, 'conversations', 'create', {
+      participants: [TWO.number, OUTSIDER.number, '5550404']
+    });
+    for (const reply of [pair, group]) {
+      expect(reply).not.toHaveProperty('absent_number');
+      expect(thread(reply.id)).not.toHaveProperty('absent_number');
+    }
+    expect(thread(pair.id)).toMatchObject({ participant_a: ONE.phone, participant_b: TWO.phone });
+  });
+});
+
+describe('conversationForReader sends absent_number to a member alone in a 1:1 only (MICA-350)', () => {
+  const row = (over: Partial<ConversationRow> = {}): ConversationRow => ({
+    id: 7,
+    citizenid: ONE.citizenid,
+    is_group: false,
+    participant_a: null,
+    participant_b: null,
+    absent_number: TWO.number,
+    status: 'active',
+    created_at: '2026-10-15 12:00:00',
+    updated_at: '2026-10-15 12:00:00',
+    ...over
+  });
+  const alone = { readerPhoneId: ONE.phone, memberPhones: [ONE.phone] };
+
+  it('sends it to the reader alone in an unpaired 1:1', () => {
+    expect(conversationForReader(row(), {}, alone)).toHaveProperty('absent_number', TWO.number);
+  });
+
+  it('never on a group, a line thread, a thread someone else is in, or without presence', () => {
+    const cases = [
+      conversationForReader(row({ is_group: true }), {}, alone),
+      conversationForReader(row({ participant_a: ONE.phone, participant_b: LINE_KEY }), {}, alone),
+      conversationForReader(row(), {}, { ...alone, memberPhones: [ONE.phone, TWO.phone] }),
+      // A legacy membership with no phone id is somebody, as `nobodyElseIn` counts it.
+      conversationForReader(row(), {}, { ...alone, memberPhones: [ONE.phone, null] }),
+      // An empty list was never read, and is not "alone".
+      conversationForReader(row(), {}, { ...alone, memberPhones: [] }),
+      conversationForReader(row())
+    ];
+    for (const reply of cases) expect(reply).not.toHaveProperty('absent_number');
+  });
+
+  it('sends a stored value that is not a number of the column width as null', () => {
+    expect(conversationForReader(row({ absent_number: '9'.repeat(40) }), {}, alone)).toHaveProperty(
+      'absent_number',
+      null
+    );
   });
 });

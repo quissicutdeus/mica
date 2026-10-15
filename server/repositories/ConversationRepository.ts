@@ -30,10 +30,52 @@ export interface ConversationRow {
   name?: string | null;
   participant_a?: string | null;
   participant_b?: string | null;
+  /** The number on the side of a 1:1 nobody is in any more (MICA-350); see the declaration. */
+  absent_number?: string | null;
   status?: Conversation['status'];
   created_at: Date | string;
   updated_at: Date | string;
 }
+
+/**
+ * `absent_number`'s width (MICA-350): `mica_phone_numbers.number`'s, where every number a release
+ * copies comes from.
+ */
+export const ABSENT_NUMBER_MAX_LENGTH = 16;
+
+/**
+ * A number as `absent_number` may hold it, or null (MICA-350): trimmed, and refused rather than
+ * cut when it is longer than the column. A cut number is a different number, and a write over the
+ * width is a failed statement, which a release must never be over a number it cannot read.
+ */
+export const absentNumberFrom = (value: unknown): string | null => {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed && trimmed.length <= ABSENT_NUMBER_MAX_LENGTH ? trimmed : null;
+};
+
+/**
+ * Whether the reader is alone in a 1:1, the rule `ConversationRepository.nobodyElseIn` asks of the
+ * database (MICA-349), here over a membership already read (MICA-350).
+ *
+ * An active thread that is not a group and has no line side, where every live member is on the
+ * reader's phone. `memberPhones` is the `device_id` of each live membership; a legacy one with no
+ * phone id counts as somebody else, as `nobodyElseIn`'s `NOT (p.device_id <=> ?)` counts it. An
+ * empty list is not "alone": the reader's own membership is always in it, so an empty one is a
+ * list that was never read.
+ */
+export const aloneInOneToOne = (
+  row: Pick<ConversationRow, 'is_group' | 'status' | 'participant_a' | 'participant_b'>,
+  readerPhoneId: string,
+  memberPhones: readonly (string | null | undefined)[]
+): boolean =>
+  !row.is_group &&
+  (row.status ?? 'active') === 'active' &&
+  !isLineSide(row.participant_a) &&
+  !isLineSide(row.participant_b) &&
+  Boolean(readerPhoneId) &&
+  memberPhones.length > 0 &&
+  memberPhones.every((phone) => phone === readerPhoneId);
 
 /** The newest live message of a thread, as `findForPhone` carries it: still the sender's row. */
 export interface LastMessageRow {
@@ -94,6 +136,14 @@ const PARTICIPANT_NUMBER =
   `(SELECT l.\`number\` FROM \`${PHONE_NUMBERS_TABLE}\` l ` +
   `WHERE l.\`citizenid\` = p.\`citizenid\` AND l.\`device_id\` IS NULL ORDER BY l.\`id\` LIMIT 1)` +
   `) AS phone_number`;
+
+/**
+ * `PARTICIPANT_NUMBER`'s second answer, a citizen's legacy number, with the citizen bound rather
+ * than joined: what a release records when the leaving phone has no number row of its own.
+ */
+const LEGACY_NUMBER =
+  `(SELECT l.\`number\` FROM \`${PHONE_NUMBERS_TABLE}\` l ` +
+  `WHERE l.\`citizenid\` = ? AND l.\`device_id\` IS NULL ORDER BY l.\`id\` LIMIT 1)`;
 
 /** Whether one side of a 1:1 is a line rather than a phone (MICA-223). */
 export const isLineSide = (side: unknown): boolean =>
@@ -178,11 +228,25 @@ export const conversationForReader = (
       Conversation,
       'participants' | 'last_message' | 'unread_count' | 'participant_count' | 'archived_at'
     >
-  > = {}
+  > = {},
+  /**
+   * Who is in the thread, for `absent_number` (MICA-350): the reader's phone and every live
+   * member's. Left out, the reply carries no `absent_number`, which is right for every answer
+   * that is not about a thread the reader may be alone in.
+   */
+  presence?: { readerPhoneId: string; memberPhones: readonly (string | null | undefined)[] }
 ): Conversation => {
   const withLine = isLineSide(row.participant_a) || isLineSide(row.participant_b);
   const named = Boolean(row.is_group) || withLine;
   const now = new Date().toISOString();
+  /**
+   * The number of the side nobody is in any more, only to a member alone in a 1:1 (MICA-350).
+   * A healthy pair's members carry their own numbers, a group has no other side, and a line's
+   * thread is named by its label. `null`, not absent, when the thread qualifies and the number
+   * could not be recorded, so the phone can tell "unknown" from "not this kind of thread".
+   */
+  const alone =
+    presence !== undefined && aloneInOneToOne(row, presence.readerPhoneId, presence.memberPhones);
   return {
     id: Number(row.id),
     is_group: Boolean(row.is_group),
@@ -190,7 +254,8 @@ export const conversationForReader = (
     status: row.status ?? 'active',
     created_at: row.created_at ?? now,
     updated_at: row.updated_at ?? now,
-    ...extras
+    ...extras,
+    ...(alone ? { absent_number: absentNumberFrom(row.absent_number) } : {})
   };
 };
 
@@ -407,15 +472,32 @@ export class ConversationRepository extends SchemaRepository<ConversationRow> {
    * SQL. `updated_at` is pinned, as `transferParticipants` pins it, so the other side's inbox is
    * not reordered by something it cannot see.
    *
+   * **The leaving phone's number stays behind** (MICA-350), in `absent_number`, so the side
+   * that stays still sees who the thread was with. It is the number that phone was shown by in
+   * the thread, `PARTICIPANT_NUMBER`'s answer: its own number row, else the citizen's legacy
+   * row, else `frameworkNumber`, which only es_extended passes because micaOS holds no numbers
+   * there. Read in the same statement, so it cannot fail apart from the release, and NULL when
+   * none of them answers. It is assigned before the pair columns are nulled, which MariaDB
+   * evaluates left to right.
+   *
    * `false` for a group, a line thread, a thread already unpaired, and a caller who is not a
    * live member on a side of the pair.
    */
-  async releasePair(conversationId: number, citizenid: string, deviceId: string): Promise<boolean> {
+  async releasePair(
+    conversationId: number,
+    citizenid: string,
+    deviceId: string,
+    frameworkNumber: string | null = null
+  ): Promise<boolean> {
     if (!citizenid || !deviceId) return false;
     const line = `${LINE_KEY_PREFIX}%`;
     return await Database.update(
       `UPDATE mica_messages_conversations c
-          SET c.participant_a = NULL, c.participant_b = NULL, c.updated_at = c.updated_at
+          SET c.absent_number = COALESCE(
+                (SELECT n.\`number\` FROM \`${PHONE_NUMBERS_TABLE}\` n WHERE n.\`device_id\` = ? LIMIT 1),
+                ${LEGACY_NUMBER},
+                ?),
+              c.participant_a = NULL, c.participant_b = NULL, c.updated_at = c.updated_at
         WHERE c.id = ? AND c.is_group = 0 AND c.status = 'active'
           AND (c.participant_a = ? OR c.participant_b = ?)
           AND c.participant_a NOT LIKE ? AND c.participant_b NOT LIKE ?
@@ -424,7 +506,18 @@ export class ConversationRepository extends SchemaRepository<ConversationRow> {
                WHERE p.conversation_id = c.id
                  AND p.citizenid = ? AND p.device_id = ? AND p.left_at IS NULL
           )`,
-      [conversationId, deviceId, deviceId, line, line, citizenid, deviceId]
+      [
+        deviceId,
+        citizenid,
+        absentNumberFrom(frameworkNumber),
+        conversationId,
+        deviceId,
+        deviceId,
+        line,
+        line,
+        citizenid,
+        deviceId
+      ]
     );
   }
 
@@ -437,13 +530,27 @@ export class ConversationRepository extends SchemaRepository<ConversationRow> {
    * citizen's, live, and on a phone that is one side of the thread's pair. There is no thread
    * id or phone id from a payload, because a privacy delete names neither. The citizenid is
    * the authenticated session's. `false` when the citizen is in no such thread.
+   *
+   * Each thread keeps the number of the citizen's phone in it, as `releasePair` keeps it
+   * (MICA-350). The phone is the citizen's live membership on a side of that thread's pair, the
+   * same membership the `WHERE` asks for. It runs before the purge, so the number rows are still
+   * there to read.
    */
-  async releasePairsOf(citizenid: string): Promise<boolean> {
+  async releasePairsOf(citizenid: string, frameworkNumber: string | null = null): Promise<boolean> {
     if (!citizenid) return false;
     const line = `${LINE_KEY_PREFIX}%`;
     return await Database.update(
       `UPDATE mica_messages_conversations c
-          SET c.participant_a = NULL, c.participant_b = NULL, c.updated_at = c.updated_at
+          SET c.absent_number = COALESCE(
+                (SELECT n.\`number\`
+                   FROM mica_messages_participants mine
+                   JOIN \`${PHONE_NUMBERS_TABLE}\` n ON n.\`device_id\` = mine.device_id
+                  WHERE mine.conversation_id = c.id AND mine.citizenid = ? AND mine.left_at IS NULL
+                    AND (mine.device_id = c.participant_a OR mine.device_id = c.participant_b)
+                  LIMIT 1),
+                ${LEGACY_NUMBER},
+                ?),
+              c.participant_a = NULL, c.participant_b = NULL, c.updated_at = c.updated_at
         WHERE c.is_group = 0 AND c.status = 'active'
           AND c.participant_a NOT LIKE ? AND c.participant_b NOT LIKE ?
           AND EXISTS (
@@ -452,7 +559,7 @@ export class ConversationRepository extends SchemaRepository<ConversationRow> {
                  AND p.citizenid = ? AND p.left_at IS NULL
                  AND (p.device_id = c.participant_a OR p.device_id = c.participant_b)
           )`,
-      [line, line, citizenid]
+      [citizenid, citizenid, absentNumberFrom(frameworkNumber), line, line, citizenid]
     );
   }
 

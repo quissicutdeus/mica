@@ -66,6 +66,13 @@ const MAX_CACHED_THREADS = 5;
  *
  * `dialled` is the number the caller just started a thread with, for a reply that carries no
  * participants yet: the server does not name a new 1:1 after whoever holds the number either.
+ *
+ * A 1:1 nobody else is in has no live member to carry the other side's number — they left, were
+ * purged by a privacy delete, or the number was never held — so the server sends it as
+ * `absent_number` on exactly those threads (MICA-350), and it stands in for the member's `phone`:
+ * the same contacts lookup here and in `withContactLabel` names it, else it shows as the number.
+ * `!is_group` is implied by where the server sends it and checked anyway, against a malformed
+ * payload labelling a group after one number.
  */
 const resolveDisplayInfo = (conv: Conversation, currentContacts: Contact[], dialled?: string) => {
   let target = '';
@@ -83,6 +90,9 @@ const resolveDisplayInfo = (conv: Conversation, currentContacts: Contact[], dial
     } else if (dialled) {
       target = dialled;
       targetName = conv.name || dialled;
+    } else if (!other && conv.absent_number) {
+      target = conv.absent_number;
+      targetName = conv.absent_number;
     }
   }
 

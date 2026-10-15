@@ -242,6 +242,7 @@ CREATE TABLE IF NOT EXISTS `mica_messages_conversations` (
     `participant_a` varchar(50) DEFAULT NULL,
     `participant_b` varchar(50) DEFAULT NULL,
     `pair_key` varchar(101) GENERATED ALWAYS AS (CASE WHEN `status` = 'active' THEN CONCAT(LEAST(`participant_a`, `participant_b`), '|', GREATEST(`participant_a`, `participant_b`)) ELSE NULL END) VIRTUAL,
+    `absent_number` varchar(16) DEFAULT NULL,
     `status` ENUM('active', 'archived', 'deleted', 'moderated') NOT NULL DEFAULT 'active',
     `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

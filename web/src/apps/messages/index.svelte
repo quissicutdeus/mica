@@ -371,9 +371,20 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     recipientQuery = '';
   };
 
+  /**
+   * The thread to open for a number, if the reader already has one that can still be written to.
+   *
+   * A 1:1 nobody else is in carries the other side's number as its `target` since MICA-350, so it
+   * matches the number it was with — but nothing sent into it can land. Opening it for "Text"
+   * would strand the reader on the notice with no way to start the 1:1 they asked for, so it is
+   * passed over and a fresh thread is started instead. It stays in the inbox, readable.
+   */
+  const openThreadFor = (phone: string) =>
+    $conversationsStore.find((c) => c.target === phone && !nobodyElse(c));
+
   const handleStartTextRaw = async (phone: string) => {
     // Check if conversation already exists
-    const existing = $conversationsStore.find((c) => c.target === phone);
+    const existing = openThreadFor(phone);
     if (existing) {
       handleSelectConversation(existing.id);
       isComposing = false;
@@ -505,8 +516,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       handleSelectConversation(conversationId);
       return true;
     }
-    if (phone && (!currentConv || currentConv.target !== phone)) {
-      const existing = $conversationsStore.find((c) => c.target === phone);
+    if (phone && (!currentConv || currentConv.target !== phone || threadClosed)) {
+      const existing = openThreadFor(phone);
       if (existing) {
         handleSelectConversation(existing.id);
         return true;

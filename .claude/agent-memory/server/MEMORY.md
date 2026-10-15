@@ -78,3 +78,5 @@ line here.
 - [An unpaired 1:1 holds NULL pair columns](unpaired-thread-needs-coalesce.md) —
   `NOT LIKE` drops it; COALESCE, `<=>` for device_id, a named yes column
   (MICA-349)
+- [Assign before the SET that nulls the source](record-before-you-null.md) —
+  MariaDB SET is left to right; MICA-350's `absent_number`

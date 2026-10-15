@@ -5,10 +5,19 @@
 import type { Migration } from '../lib/migrations';
 import { Database } from '../lib/Database';
 
-/** The two tables and the line prefix, frozen: what they were called when this shipped. */
+/** The tables and the line prefix, frozen: what they were called when this shipped. */
 const CONVERSATIONS = 'mica_messages_conversations';
 const PARTICIPANTS = 'mica_messages_participants';
+const NUMBERS = 'mica_phone_numbers';
 const LINE_PREFIX = 'ext:';
+
+/**
+ * MICA-350's column, frozen as the declaration renders it on the day this was amended. Added
+ * here because migrations run before `micaschema apply`'s additive pass, and the release below
+ * writes it.
+ */
+const ABSENT_NUMBER = 'absent_number';
+const ABSENT_NUMBER_DDL = '`absent_number` varchar(16) DEFAULT NULL';
 
 /** Every column the statement names, per table. A table missing one is not a state this knows. */
 const COLUMNS: Readonly<Record<string, readonly string[]>> = {
@@ -35,6 +44,14 @@ const hasColumn = async (table: string, column: string): Promise<boolean> =>
     )
   ) > 0;
 
+const hasTableColumns = async (table: string, columns: readonly string[]): Promise<boolean> => {
+  if (!(await hasTable(table))) return false;
+  for (const column of columns) {
+    if (!(await hasColumn(table, column))) return false;
+  }
+  return true;
+};
+
 const affectedRows = (result: unknown): number => {
   const rows = (result as { affectedRows?: unknown } | null)?.affectedRows;
   return typeof rows === 'number' && Number.isFinite(rows) ? rows : 0;
@@ -42,6 +59,18 @@ const affectedRows = (result: unknown): number => {
 
 /**
  * MICA-342: release the 1:1 threads a side left before the fix, so the two can talk again.
+ * **Amended in place for MICA-350**, which is safe only because this shipped to the dev server
+ * alone, where it released no thread, and no other install has run it: a server that recorded it
+ * before the amendment would never run the new half.
+ *
+ * **What MICA-350 added.** The thread keeps the number of the side that is gone, in
+ * `absent_number`, so the side still in it does not see "Unknown". The column is added first
+ * when it is missing. The number is the one on the pair phone with no live membership, read off
+ * that phone's number row. A thread both of whose phones have gone records NULL, since there is
+ * no telling which one the reader would call the other side, and so does a phone with no number
+ * row: a privacy delete purged it, or the server is es_extended, where micaOS keeps no numbers
+ * and a frozen migration cannot ask the framework. A server with no number table records NULL
+ * throughout. A number that cannot be read never stops a release.
  *
  * `pair_key_unique` holds a 1:1's pair while the row is `active`. `findOneToOne` matches a
  * pair only while both phones are still in the thread. Before MICA-342, a side leaving a 1:1
@@ -75,7 +104,7 @@ export const migration: Migration = {
   id: '0009_wedged_pairs_released',
   description:
     `releases the pair key of every active 1:1 in ${CONVERSATIONS} that one side has left, ` +
-    'so the two can start a thread with each other again',
+    'so the two can start a thread with each other again, keeping the number of the side that left',
   up: async () => {
     for (const table of Object.keys(COLUMNS)) {
       if (!(await hasTable(table))) return;
@@ -91,14 +120,30 @@ export const migration: Migration = {
       }
     }
 
+    if (!(await hasColumn(CONVERSATIONS, ABSENT_NUMBER))) {
+      await Database.query(`ALTER TABLE \`${CONVERSATIONS}\` ADD COLUMN ${ABSENT_NUMBER_DDL}`, []);
+    }
+
     const live = (side: string) =>
       `EXISTS (SELECT 1 FROM \`${PARTICIPANTS}\` p
                 WHERE p.\`conversation_id\` = c.\`id\` AND p.\`device_id\` = c.\`${side}\`
                   AND p.\`left_at\` IS NULL)`;
+    const numberOf = (side: string) =>
+      `(SELECT n.\`number\` FROM \`${NUMBERS}\` n WHERE n.\`device_id\` = c.\`${side}\` LIMIT 1)`;
+    // Exactly one side gone: that side's number. Assigned before the pair is nulled, which
+    // MariaDB evaluates left to right.
+    const absent = (await hasTableColumns(NUMBERS, ['device_id', 'number']))
+      ? `CASE WHEN ${live('participant_a')} AND NOT ${live('participant_b')}
+              THEN ${numberOf('participant_b')}
+              WHEN ${live('participant_b')} AND NOT ${live('participant_a')}
+              THEN ${numberOf('participant_a')}
+              ELSE NULL END`
+      : 'NULL';
     const line = `${LINE_PREFIX}%`;
     const result = await Database.query(
       `UPDATE \`${CONVERSATIONS}\` c
-          SET c.\`participant_a\` = NULL, c.\`participant_b\` = NULL,
+          SET c.\`${ABSENT_NUMBER}\` = ${absent},
+              c.\`participant_a\` = NULL, c.\`participant_b\` = NULL,
               c.\`updated_at\` = c.\`updated_at\`
         WHERE c.\`is_group\` = 0 AND c.\`status\` = 'active'
           AND c.\`participant_a\` IS NOT NULL AND c.\`participant_b\` IS NOT NULL

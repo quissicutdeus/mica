@@ -75,7 +75,14 @@ Leaving and a privacy delete now release the pair as the player goes, and
 migration `0009_wedged_pairs_released` releases every thread wedged that way
 before this update. No thread, member or text is removed: the player still in
 the old thread keeps it, readable, and the next 1:1 between the two is a new
-one. Running it twice changes nothing.
+one. Running it twice changes nothing. **`mica_messages_conversations` gains a
+column, `absent_number` (MICA-350):** the number of the side that is gone, so
+the player still in the thread sees that number, or their contact's name for it,
+instead of "Unknown"; the migration records it for the threads it releases where
+that phone still has a number, and a 1:1 started to a number nobody holds keeps
+the number dialled. **Until you run it, leaving a 1:1, a player's own privacy
+export and privacy delete, and starting a thread to a number nobody holds all
+fail.**
 
 **A character switch now ends what the previous character was doing on the phone
 (MICA-336).** On a multicharacter server, a player who switches character

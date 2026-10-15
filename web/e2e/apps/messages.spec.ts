@@ -395,6 +395,58 @@ test.describe('Messages App E2E', () => {
     expect(text!.y + text!.height, 'the notice sits above the gesture bar').toBeLessThan(home!.y);
   });
 
+  /**
+   * The same thread is still named for who was on the other side (MICA-350). No live member is
+   * left to carry their number, so the server sends it as `absent_number`, and the phone resolves
+   * it through the reader's contacts as it would a member's: the fixture's is Alan Armstrong's, so
+   * the inbox row and the header say his name rather than "Unknown". The unsaved-number half,
+   * where the label is the number itself, is a unit case in `web/src/services/conversations.test.ts`.
+   */
+  test('a 1:1 with nobody else in it is named for the side that is gone', async ({ page }) => {
+    const row = page
+      .locator('[role="button"]')
+      .filter({ hasText: 'Long enough. Take care of yourself.' })
+      .first();
+    await expect(row, 'the inbox row names the contact').toContainText('Alan Armstrong');
+    await expect(row, 'the inbox row is not "Unknown"').not.toContainText('Unknown');
+
+    await row.click({ force: true });
+    await expect(page.locator('#messages-container')).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: 'Alan Armstrong', exact: true }),
+      'the thread header names the contact'
+    ).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Unknown', exact: true })).toHaveCount(0);
+  });
+
+  /**
+   * Naming that thread for the number it was with must not make it the thread "Text" opens for
+   * that number (MICA-350). Nothing sent into it can land, so starting a text to Alan has to open
+   * a fresh 1:1 with a composer, not strand the reader on thread 900's notice. The deep-link path
+   * from Contacts' "Text" goes through the same lookup.
+   */
+  test('texting the number a dead 1:1 was with starts a fresh thread', async ({ page }) => {
+    await page.getByRole('button', { name: 'Start Chat' }).first().click();
+    await page.getByPlaceholder('To: Name or Phone Number').last().fill('555-0204');
+    await page.locator('[role="button"]').filter({ hasText: '555-0204' }).first().click();
+
+    const messagesContainer = page.locator('#messages-container');
+    await expect(messagesContainer).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: 'Alan Armstrong', exact: true }),
+      'the new thread is with Alan'
+    ).toBeVisible();
+    await expect(page.getByTestId('thread-closed'), 'not the closed thread').toHaveCount(0);
+    await expect(
+      messagesContainer.getByText('Moving out of town for a while.'),
+      "not thread 900's history"
+    ).toHaveCount(0);
+    await expect(
+      messagesContainer.locator('..').getByRole('button', { name: 'Send' }),
+      'a composer to write in'
+    ).toBeVisible();
+  });
+
   /** The twin: a 1:1 both sides are still in keeps its composer and shows no notice. */
   test('a 1:1 with someone else in it keeps its composer', async ({ page }) => {
     await page

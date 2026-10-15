@@ -309,7 +309,7 @@ const EXPORTED_COLUMNS: Record<string, { plain: string[]; sized: string[]; withh
     withheld: ['phone_key']
   },
   mica_messages_conversations: {
-    plain: ['id', 'status', 'created_at', 'updated_at', 'is_group', 'name'],
+    plain: ['id', 'status', 'created_at', 'updated_at', 'is_group', 'name', 'absent_number'],
     sized: [],
     withheld: ['participant_a', 'participant_b', 'pair_key']
   },
