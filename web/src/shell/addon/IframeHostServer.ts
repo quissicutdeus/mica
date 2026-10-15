@@ -167,14 +167,70 @@ export const ADDON_LIMITS = {
   instances: 128
 } as const;
 
+/**
+ * How long a frame has to say `hello` after its server is built, before it counts as
+ * crashed.
+ *
+ * The server is built when the `<iframe>` is in the DOM with its `srcdoc` set. By then the
+ * bundle is already in memory, fetched and hash-checked by the registry (or fetched whole
+ * by `devAddOn.ts` before it registers anything), and `bootAddOn` sends `hello` as its
+ * first act. So the honest path is parsing and running one inline script with nothing on
+ * the network: tens of milliseconds on a desktop, and a second or two for a large DEV
+ * bundle on a slow machine with the game loading. A guest that is still silent after that
+ * is not going to speak. Either its bundle threw at top level before `bootAddOn` installed
+ * its error forwarding, or it never calls `bootAddOn`. Before this, it stayed a blank
+ * screen until the player closed the app.
+ *
+ * Eight seconds is about four times the slowest honest start above. A false trip costs a
+ * crash screen with Restart on it; a late one costs only more of the blank screen this
+ * replaces, so the window errs long. It is still short enough that the crash screen
+ * arrives while the player is waiting for the app, not after they have given up on it.
+ * A frozen renderer thread delays this timer along with everything else, so a hitch
+ * cannot fire it early, only late.
+ *
+ * Not reset by a reload. The timer stops at the first accepted `hello`, and a reloaded
+ * guest is a later document in a frame that has already started.
+ */
+export const ADDON_HELLO_TIMEOUT_MS = 8_000;
+
 export function createIframeHostServer(opts: IframeHostServerOptions) {
   const { host, manifest, guest } = opts;
   const post = (msg: ToFrame) => guest()?.postMessage(msg, '*');
   const instances = new Map<string, Record<string, unknown>>();
   const subscriptions = new Map<number, () => void>();
   const handles = new Map<number, (...a: unknown[]) => unknown>();
+  /**
+   * The handles that are a `call`'s whole return value: the release for whatever that call
+   * registered (`lifecycle.onBack`, `keybinds.onKeybind`, `appEvents.on`). `forgetGuest`
+   * runs every one the frame did not release itself. A function nested inside a returned
+   * object is not here, because nothing guarantees it is a release. A store's `set` has
+   * that shape too, and calling it with no argument would clear the store.
+   */
+  const releases = new Set<number>();
   let nextHandle = 1;
   let disposed = false;
+  /**
+   * Which guest document a reply or callback belongs to. `forgetGuest` bumps it. Ids start
+   * from 1 again in every new document, so a reply or callback left over from the last
+   * document would resolve the new one's `await` or run its handler. Anything stamped with
+   * an older epoch is dropped instead.
+   */
+  let guestEpoch = 0;
+  const live = (epoch: number) => !disposed && epoch === guestEpoch;
+  /** The startup watchdog (`ADDON_HELLO_TIMEOUT_MS`). Cleared by an accepted `hello` or by shutting down. */
+  let helloTimer: ReturnType<typeof setTimeout> | undefined = setTimeout(() => {
+    helloTimer = undefined;
+    if (disposed) return;
+    // Shut down before telling the caller, so a `hello` that arrives late, between this
+    // and the frame being taken off screen, gets no answer.
+    shutDown();
+    opts.onError(
+      `'${manifest.id}' never started: its frame did not say hello within ` +
+        `${ADDON_HELLO_TIMEOUT_MS / 1000}s. Its bundle most likely threw before calling ` +
+        `bootAddOn, or never calls it.`,
+      null
+    );
+  }, ADDON_HELLO_TIMEOUT_MS);
   let stopTheme: (() => void) | undefined;
   /** MICA-287: unregisters this frame's `pushStorageToAddOns` callback — see `hydrate()`. */
   let stopAddOnStoragePush: (() => void) | undefined;
@@ -394,22 +450,32 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
     return obj;
   }
 
-  const decodeArgs = (args: unknown[]): unknown[] =>
-    args.map((a) => {
-      if (isCallbackRef(a))
-        return (...cbArgs: unknown[]) => post({ kind: 'callback', cb: a.__cb, args: cbArgs });
+  /** Callback refs become live functions, dropped once the document that sent them is gone. */
+  const decodeArgs = (args: unknown[], epoch: number): unknown[] => {
+    const callback =
+      (cb: number) =>
+      (...cbArgs: unknown[]) => {
+        if (live(epoch)) post({ kind: 'callback', cb, args: cbArgs });
+      };
+    return args.map((a) => {
+      if (isCallbackRef(a)) return callback(a.__cb);
       if (a && typeof a === 'object' && !Array.isArray(a)) {
         return Object.fromEntries(
-          Object.entries(a).map(([k, v]) => [
-            k,
-            isCallbackRef(v)
-              ? (...cbArgs: unknown[]) => post({ kind: 'callback', cb: v.__cb, args: cbArgs })
-              : v
-          ])
+          Object.entries(a).map(([k, v]) => [k, isCallbackRef(v) ? callback(v.__cb) : v])
         );
       }
       return a;
     });
+  };
+
+  /** Run a release, logging rather than throwing: one failure must not stop the rest. */
+  const runRelease = (release: (...a: unknown[]) => unknown) => {
+    try {
+      release();
+    } catch (e) {
+      console.error(`[micaOS] add-on '${host.appId}' release failed during teardown:`, e);
+    }
+  };
 
   const encodeResult = (v: unknown): unknown => {
     if (typeof v === 'function') {
@@ -457,6 +523,8 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
     });
 
   async function call(msg: Extract<ToShell, { kind: 'call' }>) {
+    // The document asking, so the answer goes to it or to nobody (see `guestEpoch`).
+    const epoch = guestEpoch;
     try {
       if (!withinBudget()) {
         throw new Error(
@@ -469,9 +537,17 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
       const member = obj[msg.member];
       if (typeof member !== 'function')
         throw new Error(`[micaOS] '${msg.facet}.${msg.member}' is not callable`);
-      const args = decodeArgs(msg.args);
+      const args = decodeArgs(msg.args, epoch);
       const value: unknown = await member.apply(obj, args);
-      if (!disposed) post({ kind: 'reply', id: msg.id, ok: true, value: encodeResult(value) });
+      if (!live(epoch)) {
+        // Settled after its document went: nobody is left to `invoke` a release, so it is
+        // run here, the same as `forgetGuest` runs the ones that were handed out in time.
+        if (typeof value === 'function') runRelease(value as (...a: unknown[]) => unknown);
+        return;
+      }
+      const encoded = encodeResult(value);
+      if (typeof value === 'function') releases.add((encoded as { __fn: number }).__fn);
+      post({ kind: 'reply', id: msg.id, ok: true, value: encoded });
     } catch (e) {
       // A synchronous throw here (unknown facet, missing permission, non-function
       // member) would otherwise settle in the very same tick it was handled in, ahead
@@ -479,7 +555,7 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
       // same depth an awaited member reply settles at, keeping same-tick calls replying
       // in the order they arrived rather than the order they finished.
       await Promise.resolve();
-      if (!disposed) fail(msg.id, e);
+      if (live(epoch)) fail(msg.id, e);
     }
   }
 
@@ -520,19 +596,33 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
   /** Stop answering, permanently. The public `dispose()` and `escaped()` both land here. */
   function shutDown() {
     disposed = true;
+    clearTimeout(helloTimer);
+    helloTimer = undefined;
     forgetGuest();
   }
 
-  /** Drop everything held on behalf of one guest document. */
+  /**
+   * Drop everything held on behalf of one guest document, and finish what it started.
+   *
+   * A release the frame was handed and never invoked is run here. The document that would
+   * have invoked it has crashed, reloaded or been torn down, and its registration is a live
+   * entry in the shell. A `back` handler left on the keybind stack is the active one for
+   * this app id, so Back on the crash screen fired into a frame that was gone. The epoch is
+   * bumped first, so a callback a release fires on its way out reaches no document.
+   */
   function forgetGuest() {
+    guestEpoch += 1;
     stopTheme?.();
     stopTheme = undefined;
     stopAddOnStoragePush?.();
     stopAddOnStoragePush = undefined;
     for (const off of subscriptions.values()) off();
     subscriptions.clear();
+    const owed = [...releases].flatMap((h) => handles.get(h) ?? []);
+    releases.clear();
     handles.clear();
     instances.clear();
+    for (const release of owed) runRelease(release);
   }
 
   function hydrate() {
@@ -705,6 +795,9 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
            */
           if (hydrated !== undefined && hydrated !== event.source) forgetGuest();
           hydrated = event.source;
+          // The frame started; the watchdog's question is answered.
+          clearTimeout(helloTimer);
+          helloTimer = undefined;
           hydrate();
           break;
         case 'call':
@@ -724,6 +817,7 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
           // entry can go rather than living until the whole frame tears down.
           handles.get(msg.handle)?.(...msg.args);
           handles.delete(msg.handle);
+          releases.delete(msg.handle);
           break;
         case 'error':
           opts.onError(msg.message, msg.stack);

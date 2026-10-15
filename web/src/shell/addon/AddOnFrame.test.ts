@@ -12,7 +12,9 @@
 import '../../host/registerFacets';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import AddOnFrame from './AddOnFrame.svelte';
+import { ADDON_HELLO_TIMEOUT_MS } from './IframeHostServer';
 import { appRegistryStore } from '../state/registry';
 import { createInProcessHost } from '../../../../sdk/host/inProcess/createInProcessHost';
 import { defineApp, type AppManifest } from '../../../../sdk/manifest';
@@ -484,5 +486,90 @@ describe('AddOnFrame', () => {
     // effect that builds the server resets it, or Restart would trip the rule immediately.
     await fireEvent.click(getByText('Restart App'));
     await waitForFrame(container);
+  });
+});
+
+/**
+ * The startup watchdog, from the component's side: a frame that never says `hello` reaches
+ * the same crash screen as one that reports an error, and Restart arms a fresh watchdog.
+ * `IframeHostServer.test.ts` pins the timer itself; this pins that it is wired to
+ * `AppCrashed` and torn down with the frame.
+ *
+ * `shouldAdvanceTime` so `waitFor`'s own polling, which also runs on the faked clock, still
+ * moves while the test waits for the frame.
+ */
+describe('AddOnFrame startup watchdog', () => {
+  beforeEach(() => vi.useFakeTimers({ shouldAdvanceTime: true }));
+  afterEach(() => vi.useRealTimers());
+
+  const mount = () =>
+    render(AddOnFrame, {
+      props: {
+        appId: 'probe',
+        manifest,
+        host: createInProcessHost('probe', []),
+        props: {},
+        active: true,
+        onKey: vi.fn(),
+        onTyping: vi.fn()
+      }
+    });
+
+  const sayHello = (iframe: HTMLIFrameElement) =>
+    fireEvent(
+      window,
+      new MessageEvent('message', {
+        data: { kind: 'hello', appId: 'probe' },
+        source: iframe.contentWindow as unknown as Window,
+        origin: 'null'
+      })
+    );
+
+  it('shows the crash screen for a frame that never says hello, and Restart starts the clock again', async () => {
+    const { container, getByText, queryByText } = mount();
+    const first = await waitForFrame(container);
+
+    vi.advanceTimersByTime(ADDON_HELLO_TIMEOUT_MS - 100);
+    await tick();
+    expect(queryByText('App Stopped Working')).toBeNull();
+
+    vi.advanceTimersByTime(100);
+    await waitFor(() => expect(getByText('App Stopped Working')).toBeTruthy());
+    expect(container.querySelector('iframe[data-app="probe"]')).toBeNull();
+
+    await fireEvent.click(getByText('Restart App'));
+    const second = await waitForFrame(container);
+    expect(second).not.toBe(first);
+
+    // The restarted frame starts, so its own watchdog never fires.
+    await sayHello(second);
+    vi.advanceTimersByTime(ADDON_HELLO_TIMEOUT_MS * 2);
+    await tick();
+    expect(queryByText('App Stopped Working')).toBeNull();
+    expect(container.querySelector('iframe[data-app="probe"]')).toBe(second);
+  });
+
+  it('leaves a frame that said hello alone', async () => {
+    const { container, queryByText } = mount();
+    const iframe = await waitForFrame(container);
+
+    await sayHello(iframe);
+    vi.advanceTimersByTime(ADDON_HELLO_TIMEOUT_MS * 2);
+    await tick();
+
+    expect(queryByText('App Stopped Working')).toBeNull();
+  });
+
+  it('clears the timer when the frame is torn down before it started', async () => {
+    const { container, unmount } = mount();
+    await waitForFrame(container);
+
+    unmount();
+    vi.advanceTimersByTime(ADDON_HELLO_TIMEOUT_MS * 2);
+
+    expect(console.error).not.toHaveBeenCalledWith(
+      expect.stringContaining('crashed'),
+      expect.stringContaining('never started')
+    );
   });
 });

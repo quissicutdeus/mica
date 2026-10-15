@@ -174,6 +174,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
          * frame's first `hello` land, with nothing to rebuild and no ordering to lose.
          */
         guest: () => el.contentWindow,
+        // Also how a frame that never said `hello` reaches the crash screen: the server's
+        // startup watchdog (`ADDON_HELLO_TIMEOUT_MS`) reports it here. The timer belongs to
+        // this server, so the teardown below clears it. Restart builds a new server with a
+        // new timer.
         onError: (message, stack) => {
           console.error(`[micaOS] add-on '${appId}' crashed:`, message);
           crashed = { message, stack };

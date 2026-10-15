@@ -11,6 +11,7 @@ import { tick } from 'svelte';
 import { get } from 'svelte/store';
 import { __reloadPausedWidgetsForTest, pausedWidgets, resumeWidget } from './widgetPause';
 import AddOnWidgetFrame from './AddOnWidgetFrame.svelte';
+import { ADDON_HELLO_TIMEOUT_MS } from './IframeHostServer';
 import { appRegistryStore } from '../state/registry';
 import { resetHostsForTest } from '../../../../sdk/host/current';
 import { hostForApp } from '../../../../sdk/host/inProcess/createInProcessHost';
@@ -290,5 +291,47 @@ describe('AddOnWidgetFrame crash-loop breaker', () => {
     expect(marked()).toEqual([]);
     __reloadPausedWidgetsForTest();
     expect(get(pausedWidgets).has('probe')).toBe(false);
+  });
+
+  /**
+   * The startup watchdog. A widget that throws before `hello` sends neither `ready` nor an
+   * error, so without it the mark stayed set for the session, and a page that went away
+   * without a teardown paused the widget next load as though it had hung the phone. The
+   * timer firing is the thread coming back, so it settles the mark the way a crash does.
+   */
+  it('settles and goes blank, rather than pausing, when the widget never says hello', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const { container } = render(AddOnWidgetFrame, { props: { appId: 'probe', size: '2x1' } });
+      await waitForFrame(container);
+      expect(marked()).toEqual(['probe']);
+
+      vi.advanceTimersByTime(ADDON_HELLO_TIMEOUT_MS);
+      await waitFor(() => expect(frameIn(container)).toBeNull());
+
+      expect(marked()).toEqual([]);
+      __reloadPausedWidgetsForTest();
+      expect(get(pausedWidgets).has('probe')).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('builds no server, and so arms no watchdog, for a paused widget', async () => {
+    localStorage.setItem(MARKER, JSON.stringify(['probe']));
+    __reloadPausedWidgetsForTest();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const { container } = render(AddOnWidgetFrame, { props: { appId: 'probe', size: '2x1' } });
+      await settle();
+      vi.advanceTimersByTime(ADDON_HELLO_TIMEOUT_MS * 2);
+      await settle();
+
+      expect(frameIn(container)).toBeNull();
+      expect(built.opts).toHaveLength(0);
+      expect(get(pausedWidgets).has('probe')).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

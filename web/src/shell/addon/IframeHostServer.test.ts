@@ -15,13 +15,15 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { get, writable } from 'svelte/store';
 import { createInProcessHost } from '../../../../sdk/host/inProcess/createInProcessHost';
 import { registerFacet, resetHostsForTest } from '../../../../sdk/host/current';
-import { ADDON_LIMITS, createIframeHostServer } from './IframeHostServer';
+import { ADDON_HELLO_TIMEOUT_MS, ADDON_LIMITS, createIframeHostServer } from './IframeHostServer';
 import { defineApp } from '../../../../sdk/manifest';
 import { DENIED_FACETS } from '../../../../sdk/permissions';
 import { SDK_CONTRACT_VERSION } from '../../../../sdk/version';
 import { is24Hour as shellIs24Hour } from '../state/time';
 import { recordConsent, resetGrantsForTest } from '../state/addOnGrants';
 import { pushStorageToAddOns, __resetSettingsSync } from '../../host/settingsSync';
+import { lifecycle } from '../../host/facets/lifecycle';
+import { activeHandlerFor } from '../state/keybinds';
 import type { ToFrame } from '../../../../sdk/host/iframe/messages';
 import '../../../../sdk/host/useContacts';
 import '../../../../sdk/host/useDisplay';
@@ -1150,6 +1152,286 @@ describe('IframeHostServer', () => {
       store.set(2);
 
       expect(posted.filter((m) => m.kind === 'push')).toHaveLength(1);
+    });
+  });
+
+  /**
+   * A frame that never says `hello` used to stay blank until the player closed the app: a
+   * bundle that throws at top level does it before `bootAddOn` installs the error forwarding
+   * that would have reported it. The watchdog turns that silence into the ordinary
+   * `onError` crash path.
+   */
+  describe('the startup watchdog', () => {
+    const hello = { kind: 'hello', appId: 'probe' };
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
+    /** `server()` with its `onError` in hand, built after the fake clock is installed. */
+    function watched() {
+      recordConsent('probe', manifest.permissions!);
+      const posted: ToFrame[] = [];
+      const makeWindow = () => ({ postMessage: (m: ToFrame) => posted.push(m) });
+      let current = makeWindow();
+      const onError = vi.fn();
+      const s = createIframeHostServer({
+        host: createInProcessHost('probe', manifest.permissions!),
+        manifest,
+        props: {},
+        guest: () => current,
+        onError,
+        onKey: vi.fn(),
+        onTyping: vi.fn()
+      });
+      const from = (data: unknown, source: unknown = current) =>
+        s.handle({ data, source, origin: 'null' } as MessageEvent);
+      const reload = () => (current = makeWindow());
+      return { posted, from, s, onError, reload };
+    }
+
+    it('reports a frame that never says hello as a crash, once, when the window closes', () => {
+      const { onError } = watched();
+
+      vi.advanceTimersByTime(ADDON_HELLO_TIMEOUT_MS - 1);
+      expect(onError).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+
+      expect(onError).toHaveBeenCalledOnce();
+      expect(onError).toHaveBeenCalledWith(expect.stringContaining('never started'), null);
+      vi.advanceTimersByTime(ADDON_HELLO_TIMEOUT_MS * 2);
+      expect(onError).toHaveBeenCalledOnce();
+    });
+
+    it('stops answering once it has fired, so a hello after the crash screen gets nothing', () => {
+      const { posted, from } = watched();
+      vi.advanceTimersByTime(ADDON_HELLO_TIMEOUT_MS);
+
+      from(hello);
+
+      expect(posted).toEqual([]);
+    });
+
+    it('is satisfied by an accepted hello, and stays quiet after it', () => {
+      const { from, onError } = watched();
+      vi.advanceTimersByTime(ADDON_HELLO_TIMEOUT_MS - 1);
+      const pending = vi.getTimerCount();
+      from(hello);
+      expect(vi.getTimerCount()).toBe(pending - 1);
+
+      vi.advanceTimersByTime(ADDON_HELLO_TIMEOUT_MS * 2);
+
+      expect(onError).not.toHaveBeenCalled();
+    });
+
+    it('is not satisfied by a hello it refused, from the wrong id or the wrong window', () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      const { from, onError } = watched();
+      from({ kind: 'hello', appId: 'someone-else' });
+      from(hello, { postMessage: () => {} });
+
+      vi.advanceTimersByTime(ADDON_HELLO_TIMEOUT_MS);
+
+      expect(onError).toHaveBeenCalledOnce();
+    });
+
+    it('is cleared by dispose, so a frame torn down before it started is not called crashed', () => {
+      const { s, onError } = watched();
+      // Relative, not zero: seeding the grant queues a debounced save of its own.
+      const pending = vi.getTimerCount();
+      s.dispose();
+
+      expect(vi.getTimerCount()).toBe(pending - 1);
+      vi.advanceTimersByTime(ADDON_HELLO_TIMEOUT_MS);
+      expect(onError).not.toHaveBeenCalled();
+    });
+
+    it('does not restart for a reloaded frame', () => {
+      const { from, onError, reload } = watched();
+      from(hello);
+      // A second hello from a new window in the same frame: the reload path, not a fresh start.
+      from(hello, reload());
+
+      vi.advanceTimersByTime(ADDON_HELLO_TIMEOUT_MS);
+
+      expect(onError).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * What a guest started is finished with the guest, not left running behind it.
+   *
+   * A `call` that registers a callback in the shell (`lifecycle.onBack`, `keybinds.onKeybind`,
+   * `appEvents.on`) hands the frame a release handle, and the frame releases it by `invoke`.
+   * A frame that crashes, reloads or is torn down never sends that `invoke` — so the server
+   * has to, or the registration outlives the document that made it. A reply or a callback
+   * that settles after its document is gone must not reach the next one either: ids restart
+   * from 1 in a new document, so a stale `reply id: 1` resolves the wrong `await`.
+   */
+  describe('in-flight work when the guest goes away', () => {
+    const hello = { kind: 'hello', appId: 'probe' };
+
+    /** A stand-in `contacts` whose callback-taking member records what is still live. */
+    function liveRegistrations() {
+      const live = new Set<(n: number) => void>();
+      let settle: (v: unknown) => void = () => {};
+      registerFacet(
+        'contacts' as any,
+        (() => ({
+          contactsStore: store,
+          // Registers and returns its release — the `onBack` shape.
+          restoreContact: (cb: (n: number) => void) => {
+            live.add(cb);
+            return () => live.delete(cb);
+          },
+          // Registers and returns nothing — a callback the shell keeps firing at will.
+          shareContact: (cb: (n: number) => void) => {
+            live.add(cb);
+          },
+          // Settles whenever the test says so — a slow NUI round trip.
+          addContact: () => new Promise((resolve) => (settle = resolve))
+        })) as any
+      );
+      return { live, settle: (v: unknown) => settle(v) };
+    }
+
+    const register = (id: number, cb: number, member = 'restoreContact') => ({
+      kind: 'call',
+      id,
+      facet: 'contacts',
+      factoryArgs: [],
+      member,
+      args: [{ __cb: cb }]
+    });
+    const flush = async () => {
+      for (let i = 0; i < 4; i++) await Promise.resolve();
+    };
+
+    it('releases a registration the frame never released, on dispose', async () => {
+      const { live } = liveRegistrations();
+      const { from, s } = server();
+      from(hello);
+      from(register(1, 7));
+      await flush();
+      expect(live.size).toBe(1);
+
+      s.dispose();
+
+      expect(live.size).toBe(0);
+    });
+
+    it('releases the previous document’s registrations when a reloaded frame says hello', async () => {
+      const { live } = liveRegistrations();
+      const { from, reload } = server();
+      from(hello);
+      from(register(1, 7));
+      await flush();
+
+      from(hello, reload());
+
+      expect(live.size).toBe(0);
+    });
+
+    it('takes a dead add-on’s Back handler off the real keybind stack', async () => {
+      // The user-visible half: with the release dropped, the stale handler stays the active
+      // `back` for this app id, so Back on the crash screen fires into a frame that is gone.
+      registerFacet('lifecycle' as any, lifecycle as any);
+      const { from, s } = server([]);
+      from(hello);
+      from({
+        kind: 'call',
+        id: 1,
+        facet: 'lifecycle',
+        factoryArgs: ['probe'],
+        member: 'onBack',
+        args: [{ __cb: 3 }]
+      });
+      await flush();
+      expect(activeHandlerFor('back', 'probe')).toBeDefined();
+
+      s.dispose();
+
+      expect(activeHandlerFor('back', 'probe')).toBeUndefined();
+    });
+
+    it('does not post a reply that settles after a reload to the new document, and releases it', async () => {
+      const { settle } = liveRegistrations();
+      const { posted, from, reload } = server();
+      from(hello);
+      from({
+        kind: 'call',
+        id: 1,
+        facet: 'contacts',
+        factoryArgs: [],
+        member: 'addContact',
+        args: []
+      });
+      await flush();
+
+      from(hello, reload());
+      posted.length = 0;
+      const release = vi.fn();
+      settle(release);
+      await flush();
+
+      // The new document's own call 1 would take this as its answer.
+      expect(posted.filter((m) => m.kind === 'reply')).toEqual([]);
+      expect(release).toHaveBeenCalledOnce();
+    });
+
+    it('releases a registration whose reply settles after dispose', async () => {
+      const { settle } = liveRegistrations();
+      const { posted, from, s } = server();
+      from(hello);
+      from({
+        kind: 'call',
+        id: 1,
+        facet: 'contacts',
+        factoryArgs: [],
+        member: 'addContact',
+        args: []
+      });
+      await flush();
+
+      s.dispose();
+      posted.length = 0;
+      const release = vi.fn();
+      settle(release);
+      await flush();
+
+      expect(posted).toEqual([]);
+      expect(release).toHaveBeenCalledOnce();
+    });
+
+    it('does not fire the previous document’s callbacks into the new one', async () => {
+      const { live } = liveRegistrations();
+      const { posted, from, reload } = server();
+      from(hello);
+      from(register(1, 1, 'shareContact'));
+      await flush();
+
+      from(hello, reload());
+      posted.length = 0;
+      for (const cb of live) cb(99);
+
+      // Callback ids restart in the new document too: `cb: 1` would run its handler.
+      expect(posted.filter((m) => m.kind === 'callback')).toEqual([]);
+    });
+
+    it('still releases a handle exactly once when the frame already invoked it', async () => {
+      let releases = 0;
+      registerFacet(
+        'contacts' as any,
+        (() => ({ restoreContact: () => () => (releases += 1) })) as any
+      );
+      const { posted, from, s } = server();
+      from(hello);
+      from(register(1, 7));
+      await flush();
+      const reply = posted.find((m) => m.kind === 'reply') as any;
+      from({ kind: 'invoke', handle: reply.value.__fn, args: [] });
+
+      s.dispose();
+
+      expect(releases).toBe(1);
     });
   });
 

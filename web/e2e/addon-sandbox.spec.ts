@@ -47,7 +47,13 @@ const manifestFor = (id: string, name: string) =>
  * `securitypolicyviolation` event is what makes each refusal legible — an `<img>` that
  * merely fails to load and one the policy refused are the same `error` event otherwise.
  */
-const PROBE_BUNDLE = `
+const probeBundle = (id: string) => `
+  // What bootAddOn sends first (sdk/host/iframe/boot.ts, ToShell in messages.ts). The shell's
+  // startup watchdog shuts a frame down that has not said hello in ADDON_HELLO_TIMEOUT_MS, so
+  // a probe that stayed silent would race it. The hydrate that comes back is ignored: the
+  // probe reports through its own DOM and nothing it asserts depends on the shell's reply.
+  parent.postMessage({ kind: 'hello', appId: ${JSON.stringify(id)} }, '*');
+
   const seen = new Set();
   const out = document.createElement('pre');
   out.id = 'violations';
@@ -113,7 +119,10 @@ const PROBE_BUNDLE = `
  * one worth knowing: an add-on cannot dodge the rule by leaving early, because leaving
  * early means the shell never hydrated it and it never had a channel in the first place.
  */
-const NAVIGATOR_BUNDLE = `
+const navigatorBundle = (id: string) => `
+  // Hello first, so the crash these tests expect is the navigation's and cannot be the
+  // startup watchdog's (a frame that never said hello would show the same screen).
+  parent.postMessage({ kind: 'hello', appId: ${JSON.stringify(id)} }, '*');
   document.getElementById('app').textContent = 'about to leave';
   addEventListener('load', () => { setTimeout(() => { location.href = '/'; }, 0); });
 `;
@@ -135,7 +144,7 @@ test.describe('the add-on sandbox', () => {
   test('refuses an image beacon over http and https and a nested remote frame, and survives all three', async ({
     page
   }) => {
-    await registerAddOn(page, 'sandbox_probe', 'Sandbox Probe', PROBE_BUNDLE);
+    await registerAddOn(page, 'sandbox_probe', 'Sandbox Probe', probeBundle('sandbox_probe'));
     await page.getByRole('button', { name: 'Sandbox Probe' }).click();
 
     const violations = addOnFrame(page, 'sandbox_probe').locator('#violations');
@@ -166,7 +175,12 @@ test.describe('the add-on sandbox', () => {
   });
 
   test('stops an add-on that navigates its frame away from its own bundle', async ({ page }) => {
-    await registerAddOn(page, 'sandbox_navigator', 'Sandbox Navigator', NAVIGATOR_BUNDLE);
+    await registerAddOn(
+      page,
+      'sandbox_navigator',
+      'Sandbox Navigator',
+      navigatorBundle('sandbox_navigator')
+    );
     await page.getByRole('button', { name: 'Sandbox Navigator' }).click();
 
     // The crash screen, because to a player this is the same event as any other way an app
@@ -185,7 +199,7 @@ test.describe('the add-on sandbox', () => {
    * loads one document and stays put must still be running.
    */
   test('leaves an add-on that loads exactly one document alone', async ({ page }) => {
-    await registerAddOn(page, 'sandbox_settled', 'Sandbox Settled', PROBE_BUNDLE);
+    await registerAddOn(page, 'sandbox_settled', 'Sandbox Settled', probeBundle('sandbox_settled'));
     await page.getByRole('button', { name: 'Sandbox Settled' }).click();
 
     await expect(addOnFrame(page, 'sandbox_settled').locator('#violations')).toBeVisible();

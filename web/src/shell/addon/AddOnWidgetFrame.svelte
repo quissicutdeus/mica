@@ -121,6 +121,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         guest: () => el.contentWindow,
         // A crash or an escape is the thread coming back, not a hang: settle the marker so
         // the widget is blank this time rather than paused for good.
+        //
+        // The server's startup watchdog (`ADDON_HELLO_TIMEOUT_MS`) lands here as well, and
+        // widgets keep it on purpose. A widget that throws before `hello` would otherwise
+        // stay marked as booting for the rest of the session, and a page that goes away
+        // without an orderly teardown (a resource restart, a disconnect) would pause it next
+        // load as if it had hung the phone. The timer only firing at all shows the thread
+        // came back. The cost is the widget's ordinary failure state, blank with a console
+        // line. A paused widget builds no server and so has no timer, and an unmounted one
+        // clears its timer in the teardown below.
         onError: (message) => {
           console.error(`[micaOS] add-on '${appId}' widget crashed:`, message);
           markWidgetSettled(appId);
