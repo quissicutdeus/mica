@@ -23,6 +23,7 @@ import { is24Hour as shellIs24Hour } from '../state/time';
 import { recordConsent, resetGrantsForTest } from '../state/addOnGrants';
 import { pushStorageToAddOns, __resetSettingsSync } from '../../host/settingsSync';
 import { lifecycle } from '../../host/facets/lifecycle';
+import { keybinds } from '../../host/facets/keybinds';
 import { activeHandlerFor } from '../state/keybinds';
 import type { ToFrame } from '../../../../sdk/host/iframe/messages';
 import '../../../../sdk/host/useContacts';
@@ -1157,9 +1158,9 @@ describe('IframeHostServer', () => {
 
   /**
    * A frame that never says `hello` used to stay blank until the player closed the app: a
-   * bundle that throws at top level does it before `bootAddOn` installs the error forwarding
-   * that would have reported it. The watchdog turns that silence into the ordinary
-   * `onError` crash path.
+   * bundle that never calls `bootAddOn`, or hangs before it. (One that throws is reported
+   * by `srcdocFor`'s fallback `error` listener and was never silent.) The watchdog turns
+   * that silence into the ordinary `onError` crash path.
    */
   describe('the startup watchdog', () => {
     const hello = { kind: 'hello', appId: 'probe' };
@@ -1432,6 +1433,150 @@ describe('IframeHostServer', () => {
       s.dispose();
 
       expect(releases).toBe(1);
+    });
+  });
+
+  /**
+   * An app id passed as a *call argument* is pinned the same way a factory argument is.
+   *
+   * `APP_SCOPED_FACETS` only ever rewrote `factoryArgs[0]`. `keybinds.onKeybind` takes its
+   * owner as its third argument, so a raw `call` could register `back` under another app's
+   * id, or under none. An unscoped handler is the active one whatever app is in front, so a
+   * resident add-on took Back away from every app on the phone. `notifications.clearAll`,
+   * `highscores.submitScore` and the `accounts` members carry an app id the same way.
+   */
+  describe('app ids in call arguments are pinned to the calling app', () => {
+    /** Every argument list each stub member was called with, keyed `facet.member`. */
+    let seen: Record<string, unknown[][]>;
+    const record =
+      (key: string) =>
+      (...args: unknown[]) => {
+        (seen[key] ??= []).push(args);
+        return key === 'keybinds.onKeybind' ? () => {} : undefined;
+      };
+    const flush = async () => {
+      for (let i = 0; i < 4; i++) await Promise.resolve();
+    };
+
+    beforeEach(() => {
+      seen = {};
+      registerFacet(
+        'keybinds' as any,
+        (() => ({ onKeybind: record('keybinds.onKeybind') })) as any
+      );
+      registerFacet(
+        'notifications' as any,
+        (() => ({ clearAll: record('notifications.clearAll') })) as any
+      );
+      registerFacet(
+        'highscores' as any,
+        (() => ({
+          submitScore: record('highscores.submitScore'),
+          getLeaderboard: record('highscores.getLeaderboard')
+        })) as any
+      );
+      registerFacet(
+        'accounts' as any,
+        (() =>
+          Object.fromEntries(
+            [
+              'getMyAccounts',
+              'getAccounts',
+              'createAccount',
+              'getFollowStats',
+              'getFollowers',
+              'getFollowing',
+              'searchAccounts',
+              'followAccount',
+              'unfollowAccount',
+              'blockAccount',
+              'unblockAccount',
+              'getReactionsFor',
+              'reactToTarget',
+              'unreactToTarget'
+            ].map((m) => [m, record(`accounts.${m}`)])
+          )) as any
+      );
+    });
+
+    const PERMS: AppPermission[] = ['keybinds', 'notifications', 'highscores', 'social'];
+    const call = (facet: string, member: string, args: unknown[]) => ({
+      kind: 'call',
+      id: 1,
+      facet,
+      factoryArgs: [],
+      member,
+      args
+    });
+
+    it('scopes onKeybind to the frame, whether the frame named another app or none', async () => {
+      const { from } = server(PERMS);
+      from(call('keybinds', 'onKeybind', ['back', { __cb: 1 }, 'settings']));
+      from(call('keybinds', 'onKeybind', ['back', { __cb: 2 }]));
+      from(call('keybinds', 'onKeybind', ['back', { __cb: 3 }, undefined]));
+      await flush();
+
+      expect(seen['keybinds.onKeybind'].map((a) => a[2])).toEqual(['probe', 'probe', 'probe']);
+      // The action and the handler are the frame's to choose, and pass through untouched.
+      expect(seen['keybinds.onKeybind'].map((a) => a[0])).toEqual(['back', 'back', 'back']);
+      expect(typeof seen['keybinds.onKeybind'][0][1]).toBe('function');
+    });
+
+    it('leaves the real Back stack with no handler for any app but the frame', async () => {
+      registerFacet('keybinds' as any, keybinds as any);
+      const { from, s } = server(PERMS);
+      from(call('keybinds', 'onKeybind', ['back', { __cb: 1 }]));
+      from(call('keybinds', 'onKeybind', ['back', { __cb: 2 }, 'settings']));
+      await flush();
+
+      expect(activeHandlerFor('back', 'probe')).toBeDefined();
+      expect(activeHandlerFor('back', 'settings')).toBeUndefined();
+      expect(activeHandlerFor('back', 'home')).toBeUndefined();
+      s.dispose();
+    });
+
+    it('clears only the frame’s own notifications, whatever id it sent', async () => {
+      const { from } = server(PERMS);
+      from(call('notifications', 'clearAll', ['messages']));
+      from(call('notifications', 'clearAll', []));
+      from(call('notifications', 'clearAll', ['']));
+      await flush();
+
+      expect(seen['notifications.clearAll'].map((a) => a[0])).toEqual(['probe', 'probe', 'probe']);
+    });
+
+    it('submits a score to the frame’s own leaderboard, and still reads any', async () => {
+      const { from } = server(PERMS);
+      from(call('highscores', 'submitScore', ['snek', 999]));
+      from(call('highscores', 'getLeaderboard', ['snek']));
+      await flush();
+
+      expect(seen['highscores.submitScore']).toEqual([['probe', 999]]);
+      // A leaderboard is public to every player on the server: reading another game's is
+      // what a games hub would do, and discloses nothing a player could not already see.
+      expect(seen['highscores.getLeaderboard']).toEqual([['snek']]);
+    });
+
+    it('acts in the frame’s own account namespace, never another app’s', async () => {
+      const { from } = server(PERMS);
+      from(call('accounts', 'getMyAccounts', ['blabber']));
+      from(call('accounts', 'createAccount', [{ app: 'blabber', handle: 'ada' }]));
+      from(call('accounts', 'followAccount', [{ follower_account_id: 1, followee_account_id: 2 }]));
+      from(
+        call('accounts', 'getReactionsFor', [
+          { app: 'blabber', target_table: 't', target_ids: [1] }
+        ])
+      );
+      await flush();
+
+      expect(seen['accounts.getMyAccounts']).toEqual([['probe']]);
+      expect(seen['accounts.createAccount']).toEqual([[{ app: 'probe', handle: 'ada' }]]);
+      expect(seen['accounts.followAccount']).toEqual([
+        [{ app: 'probe', follower_account_id: 1, followee_account_id: 2 }]
+      ]);
+      expect(seen['accounts.getReactionsFor']).toEqual([
+        [{ app: 'probe', target_table: 't', target_ids: [1] }]
+      ]);
     });
   });
 

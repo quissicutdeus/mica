@@ -123,8 +123,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         // the widget is blank this time rather than paused for good.
         //
         // The server's startup watchdog (`ADDON_HELLO_TIMEOUT_MS`) lands here as well, and
-        // widgets keep it on purpose. A widget that throws before `hello` would otherwise
-        // stay marked as booting for the rest of the session, and a page that goes away
+        // widgets keep it on purpose. A widget that never calls `bootAddOn`, or hangs on an
+        // `await` before it, sends no `hello`, no `ready` and no error (a *throw* there is
+        // reported by `srcdocFor`'s fallback listener), so it would otherwise stay marked as
+        // booting for the rest of the session, and a page that goes away
         // without an orderly teardown (a resource restart, a disconnect) would pause it next
         // load as if it had hung the phone. The timer only firing at all shows the thread
         // came back. The cost is the widget's ordinary failure state, blank with a console

@@ -177,9 +177,12 @@ export const ADDON_LIMITS = {
  * first act. So the honest path is parsing and running one inline script with nothing on
  * the network: tens of milliseconds on a desktop, and a second or two for a large DEV
  * bundle on a slow machine with the game loading. A guest that is still silent after that
- * is not going to speak. Either its bundle threw at top level before `bootAddOn` installed
- * its error forwarding, or it never calls `bootAddOn`. Before this, it stayed a blank
- * screen until the player closed the app.
+ * is not going to speak. A bundle that *throws* before `bootAddOn` is not this case:
+ * `srcdocFor` puts a plain-script `error` listener ahead of the module, so that is reported
+ * as an `error` message and reaches `onError` on its own. What stays silent is a bundle
+ * that never calls `bootAddOn`, one that hangs before it (an `await` that never settles,
+ * work that never finishes), or one whose `hello` names another app and is refused.
+ * Before this, each of those stayed a blank screen until the player closed the app.
  *
  * Eight seconds is about four times the slowest honest start above. A false trip costs a
  * crash screen with Restart on it; a late one costs only more of the blank screen this
@@ -192,6 +195,12 @@ export const ADDON_LIMITS = {
  * guest is a later document in a frame that has already started.
  */
 export const ADDON_HELLO_TIMEOUT_MS = 8_000;
+
+/** Where a call argument carries an app id: the argument's index, and its field if an object. */
+interface ArgPin {
+  arg: number;
+  field?: 'app';
+}
 
 export function createIframeHostServer(opts: IframeHostServerOptions) {
   const { host, manifest, guest } = opts;
@@ -226,8 +235,8 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
     shutDown();
     opts.onError(
       `'${manifest.id}' never started: its frame did not say hello within ` +
-        `${ADDON_HELLO_TIMEOUT_MS / 1000}s. Its bundle most likely threw before calling ` +
-        `bootAddOn, or never calls it.`,
+        `${ADDON_HELLO_TIMEOUT_MS / 1000}s. Its bundle never calls bootAddOn, or hangs ` +
+        `before it does.`,
       null
     );
   }, ADDON_HELLO_TIMEOUT_MS);
@@ -338,6 +347,53 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
    */
   const CONFIG_APP_ID_FACETS: ReadonlySet<string> = new Set(['appLevels']);
 
+  /**
+   * The same pin for members that take an app id as a **call** argument rather than a
+   * factory one, keyed `facet.member`: which argument holds it, and, when that argument is
+   * an object, which field.
+   *
+   * `pinAppId` only ever rewrote `factoryArgs`, so these went through as the frame sent them.
+   * `keybinds.onKeybind(actionId, handler, appId?)` was the sharp one. A raw `call` naming
+   * another app, or naming none, registered a handler the shell's dispatcher ran whatever
+   * app was in front (an unscoped one is everyone's fallback), so an add-on holding the
+   * `keybinds` permission could take Back away from every app for as long as it stayed
+   * resident. Pinned, the claim is the add-on's own. The frame-side twin already sends its
+   * own id, or nothing, and the dispatcher only reaches its handler while it is in front,
+   * which is the contract for an app's claim.
+   *
+   * The rest name whose data the call acts on. `clearAll` would empty another app's (or,
+   * with `''`, every app's) notifications. `submitScore` would post to another game's
+   * leaderboard. Every `accounts` member names the social namespace it reads or writes,
+   * which would let an add-on learn the player's Blabber handles, or follow and block as
+   * them there.
+   *
+   * Deliberately not pinned: `highscores.getLeaderboard`, because a leaderboard is public
+   * to every player on the server and reading another game's discloses nothing.
+   * `accounts.updateAccount` carries no `app` to pin, and the server refuses `app` on a
+   * generic write anyway. Adding one there would change the payload, not narrow it.
+   */
+  const APP_ID_MEMBER_ARGS: ReadonlyMap<string, ArgPin> = new Map<string, ArgPin>([
+    ['keybinds.onKeybind', { arg: 2 }],
+    ['notifications.clearAll', { arg: 0 }],
+    ['highscores.submitScore', { arg: 0 }],
+    ['accounts.getMyAccounts', { arg: 0 }],
+    ...[
+      'getAccounts',
+      'createAccount',
+      'getFollowStats',
+      'getFollowers',
+      'getFollowing',
+      'searchAccounts',
+      'followAccount',
+      'unfollowAccount',
+      'blockAccount',
+      'unblockAccount',
+      'getReactionsFor',
+      'reactToTarget',
+      'unreactToTarget'
+    ].map((m): [string, ArgPin] => [`accounts.${m}`, { arg: 0, field: 'app' }])
+  ]);
+
   // `DENIED_FACETS` and `membersOfFacet` are imported from `sdk/permissions.ts`, not
   // declared here (MICA-33, MICA-196): see that file's doc comments for which facets
   // and why. `DENIED_FACETS` used to be a local set with a second, independently hand-typed
@@ -411,6 +467,25 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
       return [pinned, ...factoryArgs.slice(1)];
     }
     return factoryArgs;
+  }
+
+  /** A call's arguments with any app id in them replaced by the calling app's own. */
+  function pinMemberArgs(facet: string, member: string, args: unknown[]): unknown[] {
+    const pin = APP_ID_MEMBER_ARGS.get(`${facet}.${member}`);
+    if (!pin) return args;
+    const out = [...args];
+    // Padded, so an id the frame left out is written in rather than left to default.
+    while (out.length <= pin.arg) out.push(undefined);
+    if (pin.field) {
+      const given = out[pin.arg];
+      out[pin.arg] =
+        given && typeof given === 'object' && !Array.isArray(given)
+          ? { ...given, [pin.field]: host.appId }
+          : { [pin.field]: host.appId };
+    } else {
+      out[pin.arg] = host.appId;
+    }
+    return out;
   }
 
   /**
@@ -537,7 +612,7 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
       const member = obj[msg.member];
       if (typeof member !== 'function')
         throw new Error(`[micaOS] '${msg.facet}.${msg.member}' is not callable`);
-      const args = decodeArgs(msg.args, epoch);
+      const args = pinMemberArgs(msg.facet, msg.member, decodeArgs(msg.args, epoch));
       const value: unknown = await member.apply(obj, args);
       if (!live(epoch)) {
         // Settled after its document went: nobody is left to `invoke` a release, so it is

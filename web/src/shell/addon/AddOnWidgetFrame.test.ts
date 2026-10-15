@@ -294,8 +294,8 @@ describe('AddOnWidgetFrame crash-loop breaker', () => {
   });
 
   /**
-   * The startup watchdog. A widget that throws before `hello` sends neither `ready` nor an
-   * error, so without it the mark stayed set for the session, and a page that went away
+   * The startup watchdog. A widget that never calls `bootAddOn`, or hangs before it, sends
+   * neither `ready` nor an error, so without it the mark stayed set for the session, and a page that went away
    * without a teardown paused the widget next load as though it had hung the phone. The
    * timer firing is the thread coming back, so it settles the mark the way a crash does.
    */

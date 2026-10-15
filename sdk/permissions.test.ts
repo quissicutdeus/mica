@@ -40,6 +40,7 @@ import {
   validateManifestPermissions
 } from './permissions';
 import { declaredPermissions, permissionShortfall, sdkImportNames } from './lib/permissionScan';
+import type { Facets } from './host/facets';
 import { bundledAddOns, registeredApps } from '../web/src/shell/state/registry';
 
 /**
@@ -466,6 +467,63 @@ describe('every reachable facet declares its members (MICA-196)', () => {
       expect(membersOfFacet('appRegistryWrite') ?? []).not.toContain(member);
       expect(membersOfFacet('appRegistry') ?? []).not.toContain(member);
     }
+  });
+
+  /**
+   * Every member a frame can call whose result, awaited, is itself a function.
+   *
+   * `IframeHostServer` treats such a result as the release for whatever the call registered.
+   * The frame `invoke`s it to let go, and the server runs every one still held when the
+   * frame crashes, reloads or is torn down. That is right for these four, and nothing says
+   * it is right for a fifth. So adding one has to fail here until someone decides whether it
+   * is a release (and if it is not, what the server should do with it instead).
+   *
+   * Two halves. `FUNCTION_RESULTS` is every such member of every facet, held to the `Facets`
+   * types by `pnpm typecheck` (the `exact` line below stops compiling when one is added or
+   * removed). The runtime half narrows that to the members `FACET_MEMBERS` lets a frame call.
+   * The types are the contract a facet is built against; a facet that returns a function its
+   * type does not declare is outside what this can see.
+   */
+  it('names exactly the members whose call hands a frame a release', () => {
+    type FunctionResults = {
+      [F in keyof Facets]: Facets[F] extends (...args: never[]) => infer R
+        ? R extends object
+          ? {
+              [M in keyof R & string]: R[M] extends (...args: never[]) => infer V
+                ? Awaited<V> extends (...args: never[]) => unknown
+                  ? `${F}.${M}`
+                  : never
+                : never;
+            }[keyof R & string]
+          : never
+        : never;
+    }[keyof Facets];
+    type Equal<A, B> =
+      (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
+
+    const FUNCTION_RESULTS = [
+      'appEvents.on',
+      'appEvents.onAny',
+      'keybinds.onKeybind',
+      'lifecycle.onBack',
+      // Core only: their rows are empty, so no frame can call them.
+      'persisted.subscribe',
+      'timer.after',
+      'timer.every'
+    ] as const;
+    const exact: Equal<FunctionResults, (typeof FUNCTION_RESULTS)[number]> = true;
+    expect(exact).toBe(true);
+
+    const callable = FUNCTION_RESULTS.filter((key) => {
+      const [facet, member] = key.split('.');
+      return !DENIED_FACETS.has(facet) && (membersOfFacet(facet) ?? []).includes(member);
+    });
+    expect(callable).toEqual([
+      'appEvents.on',
+      'appEvents.onAny',
+      'keybinds.onKeybind',
+      'lifecycle.onBack'
+    ]);
   });
 });
 
