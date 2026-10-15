@@ -445,6 +445,58 @@ describe('FrameworkBridge money is believed only when the framework says so plai
       expect(FrameworkBridge.getPlayer(1)?.getMoney('bank')).toBe(0);
       expect(console.error).not.toHaveBeenCalled();
     });
+
+    /**
+     * MICA-336: a Lua export returning two values reaches JavaScript as an array, the shape
+     * MICA-325 unwraps for item removal. Read as a whole, `[true, 'reason']` is not a boolean,
+     * so a payment that went through was answered "not moved".
+     */
+    describe('a Lua multi-value answer is read through its first value', () => {
+      it('takes `true, …` as the move having happened, debit and credit', () => {
+        useResources(
+          install(player({ RemoveMoney: () => [true, 'paid'], AddMoney: () => [true, { id: 1 }] }))
+        );
+        const bridged = FrameworkBridge.getPlayer(1);
+
+        expect(bridged?.removeMoney('bank', 50)).toBe(true);
+        expect(bridged?.addMoney('bank', 50)).toBe(true);
+        expect(console.error).not.toHaveBeenCalled();
+      });
+
+      it('takes `false, reason` as an ordinary refusal, and does not shout about it', () => {
+        useResources(
+          install(
+            player({ RemoveMoney: () => [false, 'overdrawn'], AddMoney: () => [false, 'no'] })
+          )
+        );
+        const bridged = FrameworkBridge.getPlayer(1);
+
+        expect(bridged?.removeMoney('bank', 50)).toBe(false);
+        expect(bridged?.addMoney('bank', 50)).toBe(false);
+        expect(console.error).not.toHaveBeenCalled();
+      });
+
+      it('reads a balance out of `balance, …`', () => {
+        useResources(install(player({ GetMoney: () => [500, 'bank'] })));
+
+        expect(FrameworkBridge.getPlayer(1)?.getMoney('bank')).toBe(500);
+        expect(console.error).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        ['an empty array', () => []],
+        ['a promise first', () => [Promise.resolve(true), 'x']],
+        ['a string first', () => ['500', 'x']]
+      ])('still refuses a first value that is not an answer — %s', (_label, answer) => {
+        useResources(install(player({ RemoveMoney: answer, AddMoney: answer, GetMoney: answer })));
+        const bridged = FrameworkBridge.getPlayer(1)!;
+
+        expect(bridged.removeMoney('bank', 50)).toBe(false);
+        expect(bridged.addMoney('bank', 50)).toBe(false);
+        expect(bridged.getMoney('bank') < 1).toBe(true);
+        expect(console.error).toHaveBeenCalled();
+      });
+    });
   });
 
   it('guards the PlayerData fallback too, not just the framework call', () => {
@@ -469,6 +521,21 @@ describe('FrameworkBridge money is believed only when the framework says so plai
 
     expect(bridged.getMoney('bank') < 1).toBe(true);
     expect(bridged.addMoney('bank', 50)).toBe(false);
+  });
+
+  it('unwraps a multi-value answer on the qbx_core export path too (MICA-336)', () => {
+    useResources({
+      qbx_core: {
+        GetPlayer: () => ({ PlayerData: { citizenid: 'CIT_A' }, Functions: {} }),
+        GetMoney: () => [500, 'bank'],
+        AddMoney: () => [true, 'added']
+      }
+    });
+    const bridged = FrameworkBridge.getPlayer(1)!;
+
+    expect(bridged.getMoney('bank')).toBe(500);
+    expect(bridged.addMoney('bank', 50)).toBe(true);
+    expect(console.error).not.toHaveBeenCalled();
   });
 });
 

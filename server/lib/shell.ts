@@ -115,6 +115,8 @@ const refusalsLogged = new Set<number>();
 
 on('playerDropped', () => {
   refusalsLogged.delete(source);
+  // A new connection on this id is nobody's switch (MICA-336): see `loadedCharacter`.
+  loadedCharacter.delete(source);
   /**
    * And forget which server id this character was on (MICA-197).
    *
@@ -390,6 +392,84 @@ export const onPlayerLoaded = (name: string, run: PlayerLoadedRun): void => {
 };
 
 /**
+ * Forget what a source held for the character that was on it before. Synchronous. Handed that
+ * character's citizenid, for anything that still has to be filed under them on the way out.
+ */
+type SourceForget = (src: number, previousCitizenid: string) => void;
+
+const playerLoadedForgetters: { name: string; forget: SourceForget }[] = [];
+
+/**
+ * Forget source-keyed state when a **different** character loads on a source, before any
+ * subscriber runs (MICA-336).
+ *
+ * A character load on a source that is already connected can be a character switch — a
+ * multichar logout and pick — and FiveM fires no `playerDropped` for it, and no framework gives
+ * micaOS an unload event it listens to. So everything keyed by source and cleared only on drop
+ * still names the previous character when the next one loads: the slot they last used a phone
+ * from, the call they were on. Battery's `phoneOf` was the first of these found (MICA-326).
+ *
+ * A phase of its own rather than an ordinary subscriber, because subscribers run in import
+ * order and read each other's state: a subscriber that resolves a device ahead of the one
+ * that forgets the last-used slot would resolve the previous character's phone. Every
+ * forgetter runs first, so no subscriber can be handed state from before the load.
+ *
+ * **Only on a switch.** A load is announced more than once: qbx fires the local
+ * `QBCore:Server:PlayerLoaded` inside its character load, and the network
+ * `QBCore:Server:OnPlayerLoaded` only once the player confirms a spawn in qbx_spawn — with no
+ * time limit, while the character is loaded, has a number, and can be rung (the client opens
+ * the phone for an incoming call). Forgetting on that second announcement ended a call answered
+ * on the spawn screen. So `dispatchPlayerLoaded` runs forgetters only when the character it is
+ * loading differs from the one the shell last dispatched on the source (`loadedCharacter`,
+ * deliberately not the bridge's registry); a first load since connecting, and a player
+ * re-sending the network event for themselves, both forget nothing.
+ *
+ * State that belongs to the connection rather than the character — rate windows, what the
+ * client was last told — is not registered at all.
+ */
+export const forgetOnPlayerLoaded = (name: string, forget: SourceForget): void => {
+  playerLoadedForgetters.push({ name, forget });
+};
+
+/**
+ * The character the shell last dispatched as loaded on each source (MICA-336), which is what a
+ * load compares against to tell a switch from the same character announced again.
+ *
+ * **The shell's own, and nothing rebuilds it.** `FrameworkBridge` keeps a source registry too,
+ * but rebuilds it from the framework on any lookup that misses (`reseedSources`), and the
+ * framework's answer is wrong at both ends of a qbx switch: logout empties `QBX.Players[src]`
+ * while the player sits on character select, so a rebuild there forgets who left; and login
+ * seats the new character and awaits before announcing it, so a rebuild there records them
+ * early. Either way the next load looked like no switch at all. Set only here, after the
+ * forgetters run, and cleared only by `playerDropped`.
+ */
+const loadedCharacter = new Map<number, string>();
+
+/**
+ * The character a load replaces, or null when it replaces nobody: nobody dispatched on the
+ * source since it connected, or the same character announced again.
+ */
+const replacedCharacter = (src: number, current: string | undefined): string | null => {
+  const previous = loadedCharacter.get(src);
+  return previous !== undefined && current && current !== previous ? previous : null;
+};
+
+/** Every forgetter, each its own failure, for a source whose character `previous` was. */
+const forgetCharacter = (src: number, previous: string): void => {
+  for (const { name, forget } of playerLoadedForgetters) {
+    try {
+      forget(src, previous);
+    } catch (error) {
+      console.error(
+        `[mica] player-loaded forgetter '${name}' threw for source ${src}. The previous ` +
+          `character's state it holds may still be visible; the rest still ran.`,
+        error
+      );
+    }
+  }
+};
+
+/**
  * Run every subscriber for a source that has already been established.
  *
  * **One subscriber failing must not take the others with it, and must not fail the load.**
@@ -402,6 +482,10 @@ export const onPlayerLoaded = (name: string, run: PlayerLoadedRun): void => {
  * its name: silence that reads as success is the failure mode this repo cares most about.
  */
 const dispatchPlayerLoaded = (src: number): void => {
+  const current = FrameworkBridge.getPlayer(src)?.citizenid;
+  const previous = replacedCharacter(src, current);
+  if (previous !== null) forgetCharacter(src, previous);
+  if (current) loadedCharacter.set(src, current);
   for (const subscriber of playerLoadedSubscribers) {
     try {
       const pending = subscriber.run(src);

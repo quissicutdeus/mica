@@ -121,11 +121,17 @@ const repo = phoneNumbers.repo as PhoneNumberRepository;
 const onPhone = new Map<string, { number: string; citizenid: string }>();
 
 /**
- * One sync in flight per source. The phone-item relay and the usable-item callback can fire
- * within a tick of each other on a load, and two assignment loops for the same citizen would
- * happily issue two numbers now that nothing in the schema stops them.
+ * One sync in flight per source and character. The phone-item relay and the usable-item
+ * callback can fire within a tick of each other on a load, and two assignment loops for the
+ * same citizen would happily issue two numbers now that nothing in the schema stops them.
+ *
+ * **Tagged with the citizen it was started for** (MICA-336). A multichar switch keeps the
+ * source, so a sync still in flight for the previous character would otherwise be joined by
+ * the next one's load and hand them the previous character's number, with nothing to re-sync
+ * them after. Tagged rather than forgotten on load: a second dispatch of the *same* load (qbx
+ * fires two) must still join the first, which is the whole of what this map is for.
  */
-const syncing = new Map<number, Promise<string | null>>();
+const syncing = new Map<number, { citizenid: string | null; run: Promise<string | null> }>();
 
 const reported = new Set<string>();
 
@@ -434,6 +440,17 @@ const ESX_KEEPS_THE_NUMBER =
   `and issues none of its own. A phone that changes hands keeps the holder's own number ` +
   `here. Reported once per resource start.`;
 
+/**
+ * Whether `citizenid` is still the character on `src` (MICA-336). A sync is started for one
+ * character and awaits the database; a multichar switch can land in any of those awaits,
+ * keeping the source. Everything after an await that would act through the source — above all
+ * the write-back, which qbx_core's `SetCharInfo` addresses by source, so it would give the next
+ * character the previous one's number — is abandoned once this is false. The next character's
+ * load runs a sync of its own.
+ */
+const stillOn = (src: number, citizenid: string): boolean =>
+  FrameworkBridge.getPlayer(src)?.citizenid === citizenid;
+
 const syncOnce = async (src: number): Promise<string | null> => {
   const kind = detectFramework();
   if (kind === 'esx') {
@@ -450,6 +467,7 @@ const syncOnce = async (src: number): Promise<string | null> => {
   if (!player?.citizenid) return null;
 
   const resolution = await resolvePhone(src);
+  if (!stillOn(src, player.citizenid)) return null;
   // Holding no phone on a server that gates on one: nothing to resolve, and nothing to
   // change. The cache and the framework keep whatever they last had — see `writeBack`.
   if (resolution.status === 'none') return null;
@@ -462,7 +480,7 @@ const syncOnce = async (src: number): Promise<string | null> => {
     resolution.status === 'active'
       ? await numberForPhone(resolution.device, player.citizenid, preferred)
       : await ensureNumber(player.citizenid, preferred);
-  if (!resolved) return null;
+  if (!resolved || !stillOn(src, player.citizenid)) return null;
 
   rememberNumber(player.citizenid, resolved);
   writeBack(player, resolved);
@@ -482,13 +500,15 @@ const syncOnce = async (src: number): Promise<string | null> => {
  * running two assignment loops.
  */
 export const syncNumber = (src: number): Promise<string | null> => {
+  const citizenid = FrameworkBridge.getPlayer(src)?.citizenid ?? null;
   const pending = syncing.get(src);
-  if (pending) return pending;
+  if (pending && pending.citizenid === citizenid) return pending.run;
 
   const run = syncOnce(src).finally(() => {
-    syncing.delete(src);
+    // Only its own entry: a later character's sync may have taken the key meanwhile.
+    if (syncing.get(src)?.run === run) syncing.delete(src);
   });
-  syncing.set(src, run);
+  syncing.set(src, { citizenid, run });
   return run;
 };
 

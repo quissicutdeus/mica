@@ -1845,7 +1845,9 @@ the poster frame rather than playing the clip.
 **Reception is one primitive with a precedence order**, not two. A blackout is a
 global level, a jammer is a zone, and the lowest applicable value wins — so they
 cannot disagree. A per-player `SetSignal` beats both, in either direction, which
-is what makes it possible to give somebody bars _inside_ a blackout.
+is what makes it possible to give somebody bars _inside_ a blackout. It belongs
+to the character it was set on: a disconnect or a switch to another character
+clears it, so a script that wants it on the next character sets it again.
 
 Bars are evaluated on each player's own client against the rules the server
 pushes, because the server does not know where anybody is standing and asking

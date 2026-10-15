@@ -14,7 +14,7 @@ import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { defineService } from '../lib/defineService';
 import { PhoneBattery } from '@mica/shared/types';
 import { isAdmin } from './Admin';
-import { onPlayerLoaded, notifyPlayer } from '../lib/shell';
+import { forgetOnPlayerLoaded, onPlayerLoaded, notifyPlayer } from '../lib/shell';
 import { batteryLevel, guardNetEvent, noInput } from '../lib/netGuard';
 import { s } from '@mica/shared/schema';
 import {
@@ -134,6 +134,18 @@ const heldNone = perDevice<true>();
  * tick looks at for a tablet that has come into use since. Cleared with everything else.
  */
 const knownSources = new Set<number>();
+
+/**
+ * The character each source's battery state was loaded for (MICA-336). Per source, not per
+ * device: it is the character, and every device's state above belongs to them.
+ *
+ * What tells the character-load subscriber a re-announcement from a switch. qbx announces one
+ * load twice — inside its character load, and again once the player confirms a spawn, however
+ * long that takes — and reloading on the second put the saved row back over a charge that had
+ * drained or charged since, and dropped the charging flag. The switch itself is handled by the
+ * gated forgetter; this is also what lets a phone load catch one the gate cannot see.
+ */
+const loadedFor = new Map<number, string>();
 
 /**
  * A device id the previous character on this source was using, recorded at a character switch
@@ -284,6 +296,7 @@ export const __resetBatteryState = (): void => {
     loadToken[device].clear();
   }
   knownSources.clear();
+  loadedFor.clear();
   lastWritten.clear();
 };
 
@@ -302,6 +315,7 @@ export const __resetBatteryState = (): void => {
  */
 const forgetSource = (src: number): void => {
   knownSources.delete(src);
+  loadedFor.delete(src);
   // Every device's (MICA-337): a tablet left charging is the same booby trap as a phone.
   for (const device of ALL_DEVICES) {
     charge[device].delete(src);
@@ -608,6 +622,20 @@ export const sendLoadedBatteryToClient = async (
     return;
   }
 
+  // Whose battery this is (MICA-336). A phone load for somebody other than the character the
+  // state was loaded for is a switch that nothing handled yet — `FrameworkBridge` had nobody
+  // recorded to gate on, or a `battery:load` arrived first — and is handled here, before
+  // `phoneForSource` can answer the previous character's phone out of `phoneOf`.
+  if (device === DEFAULT_DEVICE) {
+    const heldFor = loadedFor.get(src);
+    if (heldFor !== undefined && heldFor !== citizenid) {
+      switchCharacter(src);
+      // Forgetting took the source out of the tick's set; this load is the new character's.
+      knownSources.add(src);
+    }
+    loadedFor.set(src, citizenid);
+  }
+
   // This load's token (`loadToken`). Taken before the first await; after every await, a load
   // that is no longer the current one — superseded by a set, a newer load or a disconnect —
   // stops without touching anything, because what it read may already be stale.
@@ -733,6 +761,34 @@ onNet('mica:server:battery:load', (...args: unknown[]) => {
 });
 
 /**
+ * A different character on the source: everything held belonged to the one before (MICA-326).
+ *
+ * A multichar logout and pick, with no `playerDropped` between. `phoneOf` above all, which
+ * `phoneForSource` answers from without asking, so the new character would have loaded, ticked
+ * and saved the previous character's phone — and tablet. Forgotten, every device, exactly as a
+ * disconnect forgets it.
+ *
+ * Any device but the phone (MICA-337) is then marked stale rather than loaded: its cached id is
+ * still the previous character's until `services/Devices.ts` re-resolves — on this same load,
+ * but asynchronously — so the tick loads the device once its id is this character's. Read
+ * here, synchronously, before anything awaits, which is why it still names the old device.
+ */
+const switchCharacter = (src: number): void => {
+  forgetSource(src);
+  for (const device of ALL_DEVICES) {
+    if (device === DEFAULT_DEVICE) continue;
+    const previous = activeDeviceIdOf(src, device);
+    if (previous !== null) staleIdentity[device].set(src, previous);
+  }
+};
+
+/**
+ * Registered as a forgetter (MICA-336), so `lib/shell.ts` runs it only when the character on the
+ * source changes, and before any subscriber — the device-item pass included.
+ */
+forgetOnPlayerLoaded('battery', switchCharacter);
+
+/**
  * Seed the live value from the table when a character loads.
  *
  * Without this the loop has nothing to tick, and `currentCharge` would answer 100 for a
@@ -745,27 +801,31 @@ onNet('mica:server:battery:load', (...args: unknown[]) => {
  * come back for. `lib/shell.ts` now owns every player-loaded entry point and this is handed a
  * source already established from the connection, so there is no payload here to get wrong.
  *
+ * The same character announced again is not reloaded (MICA-336) — see `loadedFor`.
+ *
  * Returned rather than `void`-ed: the registry catches a rejection and names this subscriber,
  * where a swallowed one would be an unhandled rejection with nothing pointing at battery.
  */
 onPlayerLoaded('battery', (src) => {
-  // A character load on a source that is already connected is a character **switch** — a
-  // multichar logout and pick, with no `playerDropped` between. Everything held for this
-  // source belonged to the previous character: `phoneOf` above all, which `phoneForSource`
-  // answers from without asking, so the new character would have loaded, ticked and saved
-  // the previous character's phone — and tablet. Forgotten first, every device, exactly as a
-  // disconnect forgets it.
-  forgetSource(src);
   knownSources.add(src);
-  // Only the phone at a character load (MICA-337). Any other device's cached id is still the
-  // previous character's until `services/Devices.ts` re-resolves — on this same load, but
-  // asynchronously — so it is marked stale here and the tick loads the device once its id is
-  // this character's. A first load has nothing cached, and marks nothing.
-  for (const device of ALL_DEVICES) {
-    if (device === DEFAULT_DEVICE) continue;
-    const previous = activeDeviceIdOf(src, device);
-    if (previous !== null) staleIdentity[device].set(src, previous);
+  const citizenid = FrameworkBridge.getPlayer(src)?.citizenid;
+
+  // The same character announced again: the phone's charge is live and already theirs, or a
+  // load for it is still in flight. Re-sent rather than re-read, so nothing drained or charged
+  // since the first announcement is put back, and charging is left alone; a failed load that
+  // kept a charge is retried by the tick (`loadFailed`). Anything else — a first load, a load
+  // that failed holding nothing or found no phone, a switch — loads, and the load itself
+  // handles a switch nothing has yet (`loadedFor`).
+  if (citizenid && loadedFor.get(src) === citizenid) {
+    const live = charge[DEFAULT_DEVICE].get(src);
+    if (live !== undefined) {
+      pushCharge(src, DEFAULT_DEVICE, Math.round(live));
+      return undefined;
+    }
+    if (loadToken[DEFAULT_DEVICE].has(src)) return undefined;
   }
+
+  // Only the phone at a character load (MICA-337); any other device loads once in use.
   return sendLoadedBatteryToClient(src, DEFAULT_DEVICE);
 });
 

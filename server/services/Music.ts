@@ -8,6 +8,7 @@ import { ServiceEndpoint } from '../lib/ServiceEndpoint';
 import { musicContract } from '@mica/shared/contracts/music';
 import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { playerCoords } from '../lib/playerCoords';
+import { forgetOnPlayerLoaded } from '../lib/shell';
 import { isPlaylistId, isVideoId, parseYouTubeSource } from '@mica/shared/youtube';
 import {
   DEFAULT_MAX_NEARBY,
@@ -503,4 +504,19 @@ on('playerDropped', () => {
   // Immediately, not on the next tick: the whole point is that a disconnect never leaves a
   // stereo playing for everyone standing where its owner used to be.
   if (wasBroadcasting) pollMusic();
+});
+
+/**
+ * And a character switch stops the stereo too (MICA-336). A broadcast is the character's —
+ * it carries their citizenid, and `tokenFor` names it to every listener by that — so after a
+ * multichar switch, which keeps the source and fires no drop, the next character's ped went
+ * on playing it under the previous one's token, and a listener's mute of either applied to
+ * the other. Polled at once for the reason the drop is.
+ *
+ * `lastPushed` stays: it is what this connection's client was last told, which a character
+ * switch does not reset, and forgetting it would skip the push that tells that client a
+ * stereo it was hearing has stopped.
+ */
+forgetOnPlayerLoaded('music-broadcast', (src) => {
+  if (broadcasts.delete(src)) pollMusic();
 });

@@ -14,6 +14,16 @@ vi.mock('../lib/FrameworkBridge', () => ({
   }
 }));
 
+/** What `forgetOnPlayerLoaded` was handed; `lib/shell.ts` runs it on a change of character. */
+const forgetters = vi.hoisted(
+  () => [] as { name: string; forget: (src: number, previous: string) => void }[]
+);
+vi.mock('../lib/shell', () => ({
+  forgetOnPlayerLoaded: (name: string, forget: (src: number, previous: string) => void) => {
+    forgetters.push({ name, forget });
+  }
+}));
+
 import { FrameworkBridge } from '../lib/FrameworkBridge';
 import {
   addDeadZone,
@@ -40,6 +50,25 @@ beforeEach(() => {
  * outage and a jammer are deliberately the **same primitive** rather than two mechanisms,
  * because two would drift the first time they disagreed.
  */
+/**
+ * MICA-336: an override is set for a character's reason — jail, a tinfoil hat — and a
+ * multichar switch keeps the source and fires no drop. `lib/shell.ts` runs this only when the
+ * character on the source changes (`playerLoaded.test.ts` holds that gate).
+ */
+describe('a character switch', () => {
+  it("drops the previous character's override, and nobody else's", () => {
+    const forgetter = forgetters.find(({ name }) => name === 'signal-override');
+    expect(forgetter, 'Signal forgets overrides on a character switch').toBeDefined();
+    setPlayerSignal(5, 0);
+    setPlayerSignal(6, 1);
+
+    forgetter!.forget(5, 'CID_A');
+
+    expect(playerOverride(5)).toBeNull();
+    expect(playerOverride(6)).toBe(1);
+  });
+});
+
 describe('signal rules', () => {
   it('starts at full bars with nothing to say otherwise', () => {
     expect(currentRules()).toEqual({ global: FULL_SIGNAL, zones: [] });

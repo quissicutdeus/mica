@@ -6,6 +6,7 @@
 import { registerService } from '../lib/services';
 import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { playerCoords } from '../lib/playerCoords';
+import { forgetOnPlayerLoaded } from '../lib/shell';
 
 /**
  * Cellular reception: a city-wide level, a set of dead zones, and per-player overrides.
@@ -251,6 +252,19 @@ on('playerDropped', () => {
   // they would join with no bars and nothing on screen explaining why.
   overrides.delete(source);
   lastPushed.delete(source);
+});
+
+/**
+ * And an override goes when a different character loads on the source (MICA-336). It is set
+ * for a reason that belongs to a character — a jailed player, a tinfoil hat — and a multichar
+ * switch keeps the source and fires no drop, so the next character joined with no bars and
+ * nothing explaining why. A resource that wants the new character overridden too sets it
+ * again for them, as it would after a reconnect. The next poll pushes the world's level.
+ *
+ * `lastPushed` stays: it is what this connection's client was last shown.
+ */
+forgetOnPlayerLoaded('signal-override', (src) => {
+  overrides.delete(src);
 });
 
 /** For the `GetSignal` export: the rules a player is subject to, without their position. */

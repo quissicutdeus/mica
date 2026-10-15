@@ -75,7 +75,8 @@ vi.mock('../lib/Database', () => ({ Database: dbMock }));
 vi.mock('../lib/shell', () => ({
   onPlayerLoaded: (name: string, run: (src: number) => unknown) => {
     subscribers.push({ name, run });
-  }
+  },
+  forgetOnPlayerLoaded: () => {}
 }));
 vi.mock('../lib/FrameworkBridge', () => ({
   detectFramework: () => framework.kind,
@@ -734,6 +735,72 @@ describe('syncing the number with the phone in hand', () => {
     await Promise.all([syncNumber(5), syncNumber(5), syncNumber(5)]);
 
     expect(dbMock.insert).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * MICA-336: a multichar switch keeps the source, so a sync still in flight for the previous
+   * character was joined by the next one's load, which then got that character's number and
+   * no sync of its own. The same character's triggers must still share one sync.
+   */
+  it('never hands a sync in flight for one character to the next on the same source', async () => {
+    framework.kind = 'qb';
+    holding();
+    try {
+      const forA = syncNumber(5);
+      // The positive twin: a second trigger for the same character joins the first.
+      expect(syncNumber(5)).toBe(forA);
+
+      // Character B loads on the same source before A's sync has settled.
+      bridgeMock.getPlayer.mockImplementation((src: number) =>
+        src === 5 ? { ...player, citizenid: OTHER } : null
+      );
+      const forB = syncNumber(5);
+
+      expect(forB).not.toBe(forA);
+      // And B's later triggers join B's sync, not A's.
+      expect(syncNumber(5)).toBe(forB);
+      await Promise.allSettled([forA, forB]);
+    } finally {
+      bridgeMock.getPlayer.mockImplementation((src: number) => (src === 5 ? player : null));
+    }
+  });
+
+  /**
+   * MICA-336: a switch landing in one of the sync's awaits keeps the source, and the run goes
+   * on as the previous character. Its write-back is addressed by source on qbx
+   * (`SetCharInfo(src, …)`), so finishing it gave the next character the previous one's number.
+   * The run is abandoned once the source holds somebody else.
+   */
+  it('abandons a sync whose character switched out under it, and writes nothing', async () => {
+    framework.kind = 'qb';
+    holding();
+    dbMock.single.mockResolvedValue(row('5559876', 'active', CITIZEN));
+    const next = { ...player, citizenid: OTHER, setPhone: vi.fn(() => true) };
+    // The switch lands while A's sync is reading the phone's row.
+    dbMock.query.mockImplementationOnce(async () => {
+      bridgeMock.getPlayer.mockImplementation((src: number) => (src === 5 ? next : null));
+      return [{ id: 1, citizenid: CITIZEN, device_id: PHONE_ID, claimed: 1 }];
+    });
+    try {
+      await expect(syncNumber(5)).resolves.toBeNull();
+
+      // Nothing written back through either character, and no number row moved to anybody.
+      expect(player.setPhone).not.toHaveBeenCalled();
+      expect(next.setPhone).not.toHaveBeenCalled();
+      expect(updates()).toEqual([]);
+      // The row still names A, its holder; nothing claimed it for B either.
+      expect(numberFor(OTHER)).toBeNull();
+    } finally {
+      bridgeMock.getPlayer.mockImplementation((src: number) => (src === 5 ? player : null));
+    }
+  });
+
+  it('still finishes a sync when nothing switched (the positive twin)', async () => {
+    framework.kind = 'qb';
+    holding();
+    dbMock.single.mockResolvedValue(row('5559876', 'active', CITIZEN));
+
+    await expect(syncNumber(5)).resolves.toBe('5559876');
   });
 
   it('costs no query when nothing has changed since the last sync', async () => {

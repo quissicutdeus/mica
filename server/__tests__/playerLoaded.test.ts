@@ -91,7 +91,12 @@ vi.mock('../lib/FrameworkBridge', () => ({
   detectFramework: () => framework.kind
 }));
 
-import { loadedPlayerSource, onPlayerLoaded, PLAYER_LOADED_EVENTS } from '../lib/shell';
+import {
+  forgetOnPlayerLoaded,
+  loadedPlayerSource,
+  onPlayerLoaded,
+  PLAYER_LOADED_EVENTS
+} from '../lib/shell';
 import { __resetBatteryCache } from '../services/Battery';
 import '../services/Settings';
 import { __resetRateLimits } from '../lib/rateLimit';
@@ -420,16 +425,129 @@ describe('the player-loaded registry', () => {
     );
   });
 
+  /**
+   * MICA-336: a character switch keeps the source and fires no `playerDropped`, so state keyed
+   * by source is forgotten on the load instead — and before any subscriber, because subscribers
+   * run in import order and one resolving a device ahead of the forget would read the previous
+   * character's slot.
+   */
+  /** A load of whoever the bridge answers for the connection, through the network listener. */
+  const loadConnection = () => {
+    for (const listener of loadedListeners()) listener(undefined);
+  };
+  /** From now on the bridge answers `citizenid` for the connection: a switch on that source. */
+  const switchConnectionTo = (citizenid: string) => {
+    bridgeMock.getPlayer.mockImplementation((src: number) =>
+      src === ATTACKER ? { ...asPlayer(src), citizenid } : asPlayer(src)
+    );
+  };
+
+  it('runs every forgetter before any subscriber, whatever order they registered in', () => {
+    loadConnection();
+    const order: string[] = [];
+    onPlayerLoaded('ordered-subscriber', (src) => {
+      order.push(`subscriber:${src}`);
+    });
+    forgetOnPlayerLoaded('ordered-forgetter', (src, previous) => {
+      order.push(`forget:${src}:${previous}`);
+    });
+
+    switchConnectionTo('CID_NEXT');
+    loadConnection();
+
+    expect(order).toEqual([`forget:${ATTACKER}:CID${ATTACKER}`, `subscriber:${ATTACKER}`]);
+  });
+
+  /**
+   * qbx announces one load twice — locally inside its character load, and over the network
+   * only once the player confirms a spawn, however long that takes. A call answered on the
+   * spawn screen must survive the second announcement, so only a change of character forgets.
+   * What the shell compares against is its own record of the last load it dispatched; that it
+   * survives the bridge rebuilding its registry is `characterSwitchGate.test.ts`'s.
+   */
+  describe('forgets only when the character on the source changes', () => {
+    const forgot = vi.fn();
+    const ran = vi.fn();
+    onPlayerLoaded('gate-subscriber', ran);
+    forgetOnPlayerLoaded('gate-forgetter', forgot);
+
+    it('forgets nothing on a first load, with nobody dispatched on the source', () => {
+      loadConnection();
+
+      expect(forgot).not.toHaveBeenCalled();
+      expect(ran).toHaveBeenCalledWith(ATTACKER);
+    });
+
+    it('forgets nothing when the same character is announced again', () => {
+      loadConnection();
+      loadConnection();
+
+      expect(forgot).not.toHaveBeenCalled();
+      expect(ran).toHaveBeenCalledTimes(2);
+    });
+
+    it('forgets, naming the character replaced, when a different one loads', () => {
+      loadConnection();
+      switchConnectionTo('CID_NEXT');
+      loadConnection();
+
+      expect(forgot).toHaveBeenCalledTimes(1);
+      expect(forgot).toHaveBeenCalledWith(ATTACKER, `CID${ATTACKER}`);
+    });
+
+    it("forgets nothing after a drop: a new connection on the id is nobody's switch", () => {
+      loadConnection();
+      dropEveryone();
+      switchConnectionTo('CID_NEXT');
+      loadConnection();
+
+      expect(forgot).not.toHaveBeenCalled();
+    });
+  });
+
+  it('names a forgetter that threw, and still runs the rest and every subscriber', async () => {
+    loadConnection();
+    switchConnectionTo('CID_NEXT');
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const after = vi.fn();
+    forgetOnPlayerLoaded('forgetter-boom', () => {
+      throw new Error('forgetter exploded');
+    });
+    forgetOnPlayerLoaded('forgetter-after', after);
+    (globalThis.emitNet as any).mockClear();
+
+    expect(() => loadConnection()).not.toThrow();
+
+    expect(after).toHaveBeenCalledWith(ATTACKER, `CID${ATTACKER}`);
+    expect(error.mock.calls.some((call) => String(call[0]).includes('forgetter-boom'))).toBe(true);
+    expect(emitted()).toContainEqual(['mica:client:shell:rehydrate', ATTACKER]);
+    await vi.waitFor(() =>
+      expect(emitted()).toContainEqual(['mica:client:battery:set', ATTACKER, 100])
+    );
+  });
+
   it('never reaches a subscriber with a source the connection did not supply', () => {
     // The MICA-136 property, now asserted one layer further in: the registry is handed an
-    // already-resolved source, so a forged payload is refused before any subscriber sees it.
+    // already-resolved source, so a forged payload is refused before any subscriber sees it —
+    // or any forgetter, which would otherwise let one client wipe another's state (MICA-336).
+    // The victim has a character loaded, and the bridge would now answer a different one.
+    for (const local of handlers.get(PLAYER_LOADED_EVENTS.qbLocal) ?? []) {
+      local({ PlayerData: { source: VICTIM } });
+    }
+    bridgeMock.getPlayer.mockImplementation((src: number) =>
+      src === VICTIM ? { ...asPlayer(src), citizenid: 'CID_NEXT' } : asPlayer(src)
+    );
+    (globalThis.emitNet as any).mockClear();
     onPlayerLoaded('watcher', (src) => {
       throw new Error(`should not have run for ${src}`);
     });
+    const forgot = vi.fn();
+    forgetOnPlayerLoaded('forget-watcher', forgot);
 
     for (const listener of loadedListeners()) listener({ PlayerData: { source: VICTIM } });
 
     expect(emitted()).toHaveLength(0);
+    expect(forgot).not.toHaveBeenCalled();
   });
 });
 

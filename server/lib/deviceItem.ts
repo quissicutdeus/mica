@@ -6,7 +6,7 @@ import { ALL_DEVICES, type DeviceId } from '@mica/shared/devices';
 import { detectFramework, FrameworkBridge } from './FrameworkBridge';
 import type { FrameworkPlayer } from './framework/runtime';
 import { guardNetEvent, noInput } from './netGuard';
-import { onPlayerLoaded, pushRehydrate } from './shell';
+import { forgetOnPlayerLoaded, onPlayerLoaded, pushRehydrate } from './shell';
 
 /**
  * Each device as something a player has to be holding, and the tablet as something a server
@@ -364,7 +364,8 @@ export const evaluateDeviceItems = (src: number): DeviceItemState[] | null => {
  * back out, so an entry left behind points whoever lands on that id next at a slot in an
  * inventory that is not theirs — `Battery.ts`'s `forgetSource` is the same hazard, written up
  * at length. Keyed by source rather than citizenid because "which phone am I holding" is a
- * property of the session, not of the character.
+ * property of the session — and a character switch starts a new one, so a switch
+ * clears it as well (MICA-336).
  */
 const lastUsed = Object.fromEntries(
   ALL_DEVICES.map((device) => [device, new Map<number, number>()])
@@ -379,9 +380,22 @@ export const __resetLastUsedPhone = (): void => {
   for (const device of ALL_DEVICES) lastUsed[device].clear();
 };
 
+const forgetLastUsed = (src: number): void => {
+  for (const device of ALL_DEVICES) lastUsed[device].delete(src);
+};
+
 on('playerDropped', () => {
-  for (const device of ALL_DEVICES) lastUsed[device].delete(source);
+  forgetLastUsed(source);
 });
+
+/**
+ * And on a character switch (MICA-336), which keeps the source and fires no drop. The
+ * slot was the previous character's: in the next character's inventory it names whatever
+ * they keep there, so the resolver would prefer it over the lowest slot for no reason they
+ * gave. Forgotten before any subscriber resolves a device, so the load's own resolve already
+ * reads it empty and falls back to the lowest slot, as a first use this session does.
+ */
+forgetOnPlayerLoaded('device-last-used', forgetLastUsed);
 
 /**
  * What the framework hands the callback beside the source.

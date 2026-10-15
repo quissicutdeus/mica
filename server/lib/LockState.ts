@@ -4,6 +4,7 @@
 
 import type { DeviceId } from '@mica/shared/devices';
 import { activeDeviceIdOf } from '../services/Devices';
+import { forgetOnPlayerLoaded } from './shell';
 
 /**
  * Whether another resource last told micaOS to lock a player's phone (MICA-60).
@@ -60,13 +61,26 @@ export const __resetLockState = (): void => {
   locked.clear();
 };
 
+/** Every source-keyed entry: the phone's pre-resolution one and each tablet's. */
+const forgetSourceLocks = (src: number): void => {
+  const prefix = `source:${src}`;
+  for (const key of locked.keys()) {
+    if (key === prefix || key.startsWith(`${prefix}:`)) locked.delete(key);
+  }
+};
+
 on('playerDropped', () => {
   // FiveM reuses server ids, so a stale `true` left behind under a *source* key would greet
   // the next player to take this slot with a forced lock screen nobody told their session to
   // have. A phone-keyed lock is the phone's and stays.
-  // Every source-keyed entry goes: the phone's pre-resolution one and each tablet's.
-  const prefix = `source:${source}`;
-  for (const key of locked.keys()) {
-    if (key === prefix || key.startsWith(`${prefix}:`)) locked.delete(key);
-  }
+  forgetSourceLocks(source);
 });
+
+/**
+ * And on a character switch (MICA-336), for the reason `Signal.ts` clears its override: a
+ * source key is a lock set on *the player* before their device resolved, and a multichar switch
+ * keeps the source and fires no drop, so the next character — who may hold no device for it
+ * to move onto — met the previous one's forced lock screen. A device-keyed lock is the
+ * device's and stays, whoever holds it next.
+ */
+forgetOnPlayerLoaded('source-locks', forgetSourceLocks);

@@ -661,6 +661,65 @@ describe('a character switch on the same source', () => {
       true
     );
   });
+
+  /**
+   * MICA-336: qbx announces one load twice — inside its character load, and again only once
+   * the player confirms a spawn, however long that takes. The second used to forget and
+   * reload: the charger came unplugged and the saved row went back over the live charge.
+   */
+  describe('announced again for the same character (MICA-336)', () => {
+    const load = async () => {
+      handlers.get('QBCore:Server:PlayerLoaded')!({ PlayerData: { source: SRC } });
+      await settle();
+      await settle();
+    };
+    const tickAMinute = () => {
+      for (let i = 0; i < 12; i += 1) __tickBattery();
+    };
+
+    beforeEach(() => {
+      bridgeMock.getPlayer.mockImplementation(() => ({ ...mockPlayer(), citizenid: CID }));
+      __setDeviceResolvers({ forRequest: async () => PHONE_A });
+      // The table keeps answering 30, so a reload is visible as the charge going back to it.
+      dbMock.query.mockResolvedValue([{ id: 1, citizenid: CID, device_id: PHONE_A, level: 30 }]);
+    });
+
+    it('keeps charging on and the live charge as it is', async () => {
+      await load();
+      expect(currentCharge(SRC)).toBe(30);
+      setCharging(SRC, true);
+      tickAMinute();
+      expect(currentCharge(SRC)).toBe(40);
+
+      // The shell recorded this character at the first announcement.
+      await load();
+
+      expect(currentCharge(SRC)).toBe(40);
+      expect(emittedCharge()).toBe(40);
+      tickAMinute();
+      // Still on the charger.
+      expect(currentCharge(SRC)).toBe(50);
+    });
+
+    it('still forgets everything when the character is a different one', async () => {
+      await load();
+      setCharging(SRC, true);
+      tickAMinute();
+      expect(currentCharge(SRC)).toBe(40);
+
+      bridgeMock.getPlayer.mockImplementation(() => ({ ...mockPlayer(), citizenid: 'OTHER001' }));
+      __setDeviceResolvers({ forRequest: async () => PHONE_B });
+      dbMock.query.mockResolvedValue([
+        { id: 2, citizenid: 'OTHER001', device_id: PHONE_B, level: 70 }
+      ]);
+      await load();
+
+      expect(currentCharge(SRC)).toBe(70);
+      tickAMinute();
+      // Draining: the previous character's charger is unplugged.
+      expect(currentCharge(SRC)).toBe(69);
+    });
+  });
 });
 
 const notifies = () =>

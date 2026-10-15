@@ -21,7 +21,49 @@ vi.mock('../services/Devices', () => ({
     (kind === 'phone' ? phoneOf : tabletOf).get(src) ?? null
 }));
 
+/** What `forgetOnPlayerLoaded` was handed; `lib/shell.ts` runs it on a change of character. */
+const forgetters = vi.hoisted(
+  () => [] as { name: string; forget: (src: number, previous: string) => void }[]
+);
+vi.mock('../lib/shell', () => ({
+  forgetOnPlayerLoaded: (name: string, forget: (src: number, previous: string) => void) => {
+    forgetters.push({ name, forget });
+  }
+}));
+
 import { isDeviceLocked, setDeviceLocked, __resetLockState } from '../lib/LockState';
+
+/**
+ * MICA-336: a lock set on the player before their device resolved is keyed by source, and a
+ * multichar switch keeps the source and fires no drop. `lib/shell.ts` runs this only when the
+ * character on the source changes (`playerLoaded.test.ts` holds that gate).
+ */
+describe('LockState on a character switch', () => {
+  beforeEach(() => {
+    __resetLockState();
+    phoneOf.clear();
+    tabletOf.clear();
+  });
+
+  it("drops the source's own locks and keeps every device's", () => {
+    const forgetter = forgetters.find(({ name }) => name === 'source-locks');
+    expect(forgetter, 'LockState forgets source locks on a character switch').toBeDefined();
+    setDeviceLocked(4, 'phone', true);
+    setDeviceLocked(4, 'tablet', true);
+    setDeviceLocked(6, 'phone', true);
+    phoneOf.set(5, 'PHONE_X');
+    setDeviceLocked(5, 'phone', true);
+
+    forgetter!.forget(4, 'CID_A');
+    forgetter!.forget(5, 'CID_B');
+
+    expect(isDeviceLocked(4, 'phone')).toBe(false);
+    expect(isDeviceLocked(4, 'tablet')).toBe(false);
+    // Another source's, and a device-keyed lock, which is the device's whoever holds it.
+    expect(isDeviceLocked(6, 'phone')).toBe(true);
+    expect(isDeviceLocked(5, 'phone')).toBe(true);
+  });
+});
 
 describe('LockState (MICA-60)', () => {
   it('defaults to unlocked for a source never heard from', () => {

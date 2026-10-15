@@ -1245,6 +1245,129 @@ describe('speakerphone', () => {
     expect(setCall).not.toHaveBeenCalled();
   });
 
+  /**
+   * MICA-336: a multichar switch keeps the source and fires no `playerDropped`, so the call
+   * the previous character was on stayed live in the next one's pma-voice channel. Driven
+   * through `lib/shell.ts`'s real local player-loaded listener, with the bridge already
+   * answering the new character, as qbx's login does.
+   */
+  describe('another character loading on the source (MICA-336)', () => {
+    /** A load of `citizenid` on `src`, over whoever the shell last dispatched there. */
+    const loadCharacter = async (src: number, citizenid: string) => {
+      bridge.players.set(src, citizenid);
+      const handler = globalHandlers.get('QBCore:Server:PlayerLoaded');
+      if (!handler) throw new Error('no handler for QBCore:Server:PlayerLoaded');
+      handler({ PlayerData: { source: src } });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    };
+
+    let error: ReturnType<typeof vi.spyOn>;
+    beforeEach(() => {
+      // Other subscribers reach a bridge this suite does not stub, and the registry logs that.
+      error = vi.spyOn(console, 'error').mockImplementation(() => {});
+      // Each character on the source as the shell saw it load, so a later load can be told a
+      // switch from the same one announced again. Then nothing this did is left to assert on.
+      const handler = globalHandlers.get('QBCore:Server:PlayerLoaded')!;
+      for (const src of [1, 2, 3]) handler({ PlayerData: { source: src } });
+      (globalThis as any).emitNet.mockClear();
+      dbMock.insert.mockClear();
+    });
+    afterEach(() => {
+      bridge.players.set(1, 'CID_CALLER');
+      bridge.players.set(2, 'CID_TARGET');
+      bridge.players.set(3, 'CID_THIRD');
+      error.mockRestore();
+    });
+
+    const forgetterErrors = () =>
+      error.mock.calls.filter(([line]: unknown[]) => String(line).includes('forgetter'));
+
+    it('ends the call, out of the channel, filing the row under who was on it', async () => {
+      const { callId } = await connect();
+      expect(channels.get(2)).toBe(callId);
+
+      await loadCharacter(2, 'CID_NEW');
+
+      expect(forgetterErrors()).toEqual([]);
+      expect(isInCall(1)).toBe(false);
+      expect(isInCall(2)).toBe(false);
+      expect(channels.has(1)).toBe(false);
+      expect(channels.has(2)).toBe(false);
+      const ended = emitCalls().filter(([event]) => event === 'mica:client:phone:ended');
+      expect(ended.map(([, dest]) => dest).sort()).toEqual([1, 2]);
+
+      // Both rows, and the switching side's under the character who took the call — never
+      // the one who has just loaded.
+      const rows = createCalls().map(([, params]) => params);
+      expect(rows).toHaveLength(2);
+      expect(rows[0]).toEqual(expect.arrayContaining(['CID_CALLER', 'outgoing', '555-0002']));
+      expect(rows[1]).toEqual(expect.arrayContaining(['CID_TARGET', 'incoming', '555-0001']));
+      expect(rows.flat()).not.toContain('CID_NEW');
+
+      // And the new character is not "Busy": their first dial rings.
+      (globalThis as any).emitNet.mockClear();
+      await fire(START, 2, '555-0003');
+      expect(emitCalls().filter(([event]) => event === 'mica:client:phone:incoming')).toHaveLength(
+        1
+      );
+    });
+
+    it('takes a bystander out of a speaker, and leaves the call itself alone', async () => {
+      const { callId } = await connect();
+      await speaker(1, true);
+      expect(channels.get(3)).toBe(callId);
+
+      await loadCharacter(3, 'CID_OTHER');
+
+      expect(forgetterErrors()).toEqual([]);
+      expect(channels.has(3)).toBe(false);
+      expect(listenPushes(3).at(-1)).toEqual({ listening: false });
+      // The positive twin: the parties are still on, in their channel.
+      expect(isInCall(1)).toBe(true);
+      expect(isInCall(2)).toBe(true);
+      expect(channels.get(1)).toBe(callId);
+    });
+
+    it('files a ringing call as missed for the character it rang', async () => {
+      await fire(START, 1, '555-0002');
+
+      await loadCharacter(2, 'CID_NEW');
+
+      expect(isInCall(1)).toBe(false);
+      const rows = createCalls().map(([, params]) => params);
+      expect(rows[1]).toEqual(expect.arrayContaining(['CID_TARGET', 'missed', 0]));
+      expect(rows.flat()).not.toContain('CID_NEW');
+    });
+
+    /**
+     * qbx announces a load again only when the player confirms a spawn, and the character is
+     * loaded and callable on that screen the whole time. The second announcement is the same
+     * character, and must not end a call they answered there.
+     */
+    it('leaves a call alone when the same character is announced again', async () => {
+      const { callId } = await connect();
+      await speaker(1, true);
+      (globalThis as any).emitNet.mockClear();
+
+      await loadCharacter(2, 'CID_TARGET');
+
+      expect(isInCall(1)).toBe(true);
+      expect(isInCall(2)).toBe(true);
+      expect(channels.get(2)).toBe(callId);
+      expect(channels.get(3)).toBe(callId);
+      expect(emitCalls().filter(([event]) => event === 'mica:client:phone:ended')).toEqual([]);
+      expect(createCalls()).toEqual([]);
+    });
+
+    it('does nothing to a source with no call', async () => {
+      await loadCharacter(3, 'CID_OTHER');
+
+      expect(forgetterErrors()).toEqual([]);
+      expect(emitCalls().filter(([event]) => event === 'mica:client:phone:ended')).toEqual([]);
+      expect(createCalls()).toEqual([]);
+    });
+  });
+
   describe('a listener rejoining through pma-voice (MICA-341)', () => {
     const forgeJoin = async (src: number, channel: number) => {
       // pma-voice's own handler has already run: the state bag says where it put them.

@@ -12,7 +12,8 @@ line here.
 - [changelog.test wants an index by its own name](changelog-test-blind-to-new-index.md)
   — since MICA-309; still blind on post-baseline tables
 - [A type-level test only runs where a tsconfig reads it](type-tests-belong-in-integration.md)
-  — server, client and shared tests are never typechecked; `integration/` is
+  — server/client tests typecheck against a baseline since MICA-320; shared do
+  not
 - [serverMessages.test counts a constant key as keyless](server-messages-ratchet-needs-a-literal-key.md)
   — write `key: 'server.…'` literally
 - [oxmysql errors carry no errno](oxmysql-errors-carry-no-errno.md) — text only,
@@ -40,7 +41,8 @@ line here.
 - [A Database mock that always rejects hides the overwrite](a-rejecting-db-mock-hides-the-overwrite.md)
   — the save's own read rejects too; fail one read only (MICA-326)
 - [A character switch reuses the source and never fires playerDropped](character-switch-keeps-source-state.md)
-  — source-keyed maps hold the previous character; forget on load
+  — `forgetOnPlayerLoaded`; loads dispatch twice, end-time reads name the new
+  character
 - [A retried seed reads every status](retried-seed-reads-every-status.md) — soft
   delete keeps the number; MICA-327 retry is process memory
 - [A catch spanning a write and its push lies](catch-spanning-a-write-and-its-push.md)

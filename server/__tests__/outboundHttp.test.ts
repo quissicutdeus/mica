@@ -16,7 +16,7 @@ const { dbMock, notifyPlayer } = vi.hoisted(() => ({
 }));
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
 vi.mock('../lib/FrameworkBridge', () => ({ FrameworkBridge: { getPlayer: () => null } }));
-vi.mock('../lib/shell', () => ({ notifyPlayer }));
+vi.mock('../lib/shell', () => ({ notifyPlayer, forgetOnPlayerLoaded: () => {} }));
 
 import { withSink, type HttpSink } from '../../integration/lib/httpSink';
 import {

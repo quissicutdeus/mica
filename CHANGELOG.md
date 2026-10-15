@@ -47,6 +47,20 @@ Entries are hand-written. See MICA-72 for why a generated one was rejected.
 
 ### Action required
 
+**A character switch now ends what the previous character was doing on the phone
+(MICA-336).** On a multicharacter server, a player who switches character
+without disconnecting no longer carries the last one's call, speakerphone, music
+broadcast, number sync or preferred phone slot onto the next; an active call
+ends for both parties and its call-log row is filed under the character who was
+on it. **Two exports change with it:** a `SetSignal` override is cleared when a
+different character loads on that player, as it already was on disconnect, and a
+`LockPhone` set on a player before their phone was known is cleared the same
+way; a lock on a phone itself still follows the phone. A script that wants
+either on the new character sets it again. qbx announcing the same character a
+second time after spawn changes nothing. On qb and qbx, a money export that
+answers with more than one value is now read by its first, so a payment that
+went through is no longer refused.
+
 **Run `micaschema apply` from the server console: `mica_marketplace` gains a
 column, `seller_phone` (MICA-343).** A listing now shows the number of the phone
 that posted it, not the seller's current main number, so on qb and standalone a

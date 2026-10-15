@@ -269,6 +269,16 @@ export function speakerDropped(src: number): void {
   speakerOff(src);
 }
 
+/**
+ * A different character has loaded on `src` (MICA-336). Unlike a drop, the connection and
+ * its pma-voice state are still here, so a listener is taken back out of the channel and
+ * told, and a speaker is switched off with everyone it brought in. Idempotent.
+ */
+export function speakerCharacterChanged(src: number): void {
+  release(src);
+  speakerOff(src);
+}
+
 /** Every bystander out, for resource stop. */
 export function speakerReleaseAll(): void {
   for (const owner of speakers.keys()) speakerOff(owner);

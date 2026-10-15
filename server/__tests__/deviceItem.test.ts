@@ -4,42 +4,46 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
-const { bridgeMock, convar, netHandlers, loadedSubscribers, emitNet } = vi.hoisted(() => {
-  const net: Record<string, Function> = {};
-  const loaded: { name: string; run: (src: number) => unknown }[] = [];
-  const emit = vi.fn();
-  (globalThis as any).onNet = (event: string, handler: Function) => {
-    net[event] = handler;
-  };
-  (globalThis as any).emitNet = emit;
-  // Set before the module loads: registration happens at import, from the convars. The
-  // tablet is off at import, so the module under test is the default install's.
-  const value = {
-    current: 'phone',
-    tablet: 'false',
-    tabletItem: 'tablet',
-    battery: 'battery_bank'
-  };
-  (globalThis as any).GetConvar = (name: string, fallback: string) => {
-    if (name === 'mica_phone_item') return value.current;
-    if (name === 'mica_tablet') return value.tablet;
-    if (name === 'mica_tablet_item') return value.tabletItem;
-    if (name === 'mica_battery_item') return value.battery;
-    return fallback;
-  };
-  return {
-    bridgeMock: {
-      getPlayer: vi.fn(),
-      countItem: vi.fn(),
-      registerUsableItem: vi.fn(),
-      framework: 'qb' as string
-    },
-    convar: value,
-    netHandlers: net,
-    loadedSubscribers: loaded,
-    emitNet: emit
-  };
-});
+const { bridgeMock, convar, netHandlers, loadedSubscribers, loadedForgetters, emitNet } =
+  vi.hoisted(() => {
+    const net: Record<string, Function> = {};
+    const loaded: { name: string; run: (src: number) => unknown }[] = [];
+    /** What `forgetOnPlayerLoaded` was handed, which the real registry runs before `loaded`. */
+    const forgetters: { name: string; forget: (src: number, previous: string) => void }[] = [];
+    const emit = vi.fn();
+    (globalThis as any).onNet = (event: string, handler: Function) => {
+      net[event] = handler;
+    };
+    (globalThis as any).emitNet = emit;
+    // Set before the module loads: registration happens at import, from the convars. The
+    // tablet is off at import, so the module under test is the default install's.
+    const value = {
+      current: 'phone',
+      tablet: 'false',
+      tabletItem: 'tablet',
+      battery: 'battery_bank'
+    };
+    (globalThis as any).GetConvar = (name: string, fallback: string) => {
+      if (name === 'mica_phone_item') return value.current;
+      if (name === 'mica_tablet') return value.tablet;
+      if (name === 'mica_tablet_item') return value.tabletItem;
+      if (name === 'mica_battery_item') return value.battery;
+      return fallback;
+    };
+    return {
+      bridgeMock: {
+        getPlayer: vi.fn(),
+        countItem: vi.fn(),
+        registerUsableItem: vi.fn(),
+        framework: 'qb' as string
+      },
+      convar: value,
+      netHandlers: net,
+      loadedSubscribers: loaded,
+      loadedForgetters: forgetters,
+      emitNet: emit
+    };
+  });
 vi.mock('../lib/FrameworkBridge', () => ({
   FrameworkBridge: bridgeMock,
   detectFramework: () => bridgeMock.framework
@@ -47,6 +51,9 @@ vi.mock('../lib/FrameworkBridge', () => ({
 vi.mock('../lib/shell', () => ({
   onPlayerLoaded: (name: string, run: (src: number) => unknown) => {
     loadedSubscribers.push({ name, run });
+  },
+  forgetOnPlayerLoaded: (name: string, forget: (src: number, previous: string) => void) => {
+    loadedForgetters.push({ name, forget });
   },
   pushRehydrate: vi.fn()
 }));
@@ -594,6 +601,57 @@ describe('a server with mica_tablet on (MICA-263)', () => {
     } finally {
       (globalThis as any).on = previousOn;
     }
+  });
+
+  /**
+   * MICA-336: a multichar switch keeps the source and fires no `playerDropped`, so the slot
+   * the previous character last used each device from was still preferred by the next one's
+   * resolve. Driven the way `lib/shell.ts` dispatches a load: forgetters, then subscribers.
+   */
+  it('forgets every device slot when another character loads on the source (MICA-336)', async () => {
+    const { registered, mod } = await importWithTablet('tablet');
+    // The re-imported module's own registration, not the one from the first import.
+    const forgetter = loadedForgetters.filter(({ name }) => name === 'device-last-used').at(-1);
+    const subscriber = loadedSubscribers.filter(({ name }) => name === 'phone-item').at(-1);
+    expect(forgetter, 'deviceItem forgets its slots on a character load').toBeDefined();
+    const OTHER = SRC + 1;
+
+    // Character A uses both devices; somebody else on another source uses a phone.
+    registered.find(([item]) => item === 'tablet')![1](SRC, { slot: 9 });
+    registered.find(([item]) => item === 'phone')![1](SRC, { slot: 2 });
+    registered.find(([item]) => item === 'phone')![1](OTHER, { slot: 3 });
+    expect(mod.lastUsedDeviceSlot(SRC, 'phone')).toBe(2);
+    expect(mod.lastUsedDeviceSlot(SRC, 'tablet')).toBe(9);
+
+    // Character B loads on the same source, replacing A.
+    bridgeMock.getPlayer.mockReturnValue({ ...PLAYER, citizenid: 'CITIZEN_B' });
+    forgetter!.forget(SRC, PLAYER.citizenid);
+    await subscriber!.run(SRC);
+
+    expect(mod.lastUsedDeviceSlot(SRC, 'phone')).toBeUndefined();
+    expect(mod.lastUsedDeviceSlot(SRC, 'tablet')).toBeUndefined();
+    // Only that source: the player on the next one keeps theirs.
+    expect(mod.lastUsedDeviceSlot(OTHER, 'phone')).toBe(3);
+
+    // And B's own first use is recorded as a first use, not as a switch away from A's slot.
+    registered.find(([item]) => item === 'phone')![1](SRC, { slot: 5 });
+    expect(mod.lastUsedDeviceSlot(SRC, 'phone')).toBe(5);
+  });
+
+  /**
+   * The same character announced again — qbx's second, network announcement after the spawn
+   * screen — reaches only the subscriber: `lib/shell.ts` runs forgetters on a change of
+   * character alone (`playerLoaded.test.ts` holds that gate). The subscriber must not clear
+   * the slot on its own, or a phone used on the spawn screen would be forgotten anyway.
+   */
+  it('keeps the slot through a re-announced load of the same character', async () => {
+    const { registered, mod } = await importWithTablet('tablet');
+    const subscriber = loadedSubscribers.filter(({ name }) => name === 'phone-item').at(-1);
+
+    registered.find(([item]) => item === 'phone')![1](SRC, { slot: 2 });
+    await subscriber!.run(SRC);
+
+    expect(mod.lastUsedDeviceSlot(SRC, 'phone')).toBe(2);
   });
 
   it('does not let one item be both, and keeps it for the phone', async () => {

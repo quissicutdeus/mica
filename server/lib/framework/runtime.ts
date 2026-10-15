@@ -197,6 +197,18 @@ export const exposes = (name: string, key: string): boolean => {
  * level down.
  */
 
+/**
+ * The first value of another resource's answer.
+ *
+ * **A Lua export returning several values reaches JavaScript as an array.** ox_inventory's
+ * `RemoveItem` answers `false, 'reason'` when it refuses, which arrives as `[false, 'reason']`
+ * (MICA-325), and hoth logged `AddItem answered true,[object Object]` in MICA-304. The first
+ * value is the answer, so an array is read through its first element and anything else is
+ * read as it is. Only unwrapping: the caller still decides what counts as an answer, which is
+ * a real boolean for a move and a finite number for a balance.
+ */
+const firstLuaValue = (result: unknown): unknown => (Array.isArray(result) ? result[0] : result);
+
 /** Enough of a description to make a framework upgrade recognisable in a server log. */
 export const shapeOf = (value: unknown): string => {
   if (value === null) return 'null';
@@ -220,7 +232,10 @@ export const shapeOf = (value: unknown): string => {
  * is evidence the contract moved.
  */
 export const moved = (result: unknown, call: string, src: number): boolean => {
-  if (typeof result === 'boolean') return result;
+  // `true, …` from a Lua export is a move that happened (MICA-336); read whole, the array was
+  // "not a boolean" and a payment that went through was answered as refused.
+  const answer = firstLuaValue(result);
+  if (typeof answer === 'boolean') return answer;
   console.error(
     `[FrameworkBridge] ${call} for source ${src} answered with ${shapeOf(result)} rather than ` +
       `a boolean. Treating the move as refused — the framework's contract has changed and ` +
@@ -238,7 +253,8 @@ export const moved = (result: unknown, call: string, src: number): boolean => {
  * could arrive at honestly, so it cannot be confused for one.
  */
 export const balanceOf = (result: unknown, call: string, src: number): number => {
-  if (typeof result === 'number' && Number.isFinite(result)) return result;
+  const answer = firstLuaValue(result);
+  if (typeof answer === 'number' && Number.isFinite(answer)) return answer;
   console.error(
     `[FrameworkBridge] ${call} for source ${src} answered with ${shapeOf(result)} rather than ` +
       `a finite number. Reporting the balance as undeterminable, which reads as unaffordable ` +
@@ -537,18 +553,15 @@ const reportRemovalOnce = (call: string, item: string, message: string, error?: 
 /**
  * Whether an inventory's answer says the item was removed.
  *
- * **A Lua export returning several values reaches JavaScript as an array.** ox_inventory's
- * `RemoveItem` answers `false, 'reason'` when it refuses, which arrives as `[false, 'reason']`
- * — truthy — so a caller testing the answer charged the phone and removed nothing. The same
- * shape was seen on hoth in MICA-304 (`AddItem answered true,[object Object]`). The first value
- * is the answer, so an array is read through its first element.
+ * Read through `firstLuaValue`: ox_inventory's refusal arrives as `[false, 'reason']`, which
+ * is truthy, so a caller testing the answer whole charged the phone and removed nothing.
  *
  * Then the coercion `moved` makes for money: only a boolean is an answer. Anything else — a
  * promise from an inventory that went async, `nil` from one that stopped returning — cannot
  * say the item left the inventory, so it reads as a refusal, reported once.
  */
 export const itemRemoved = (result: unknown, call: string, src: number, item: string): boolean => {
-  const answer = Array.isArray(result) ? result[0] : result;
+  const answer = firstLuaValue(result);
   if (typeof answer === 'boolean') return answer;
   reportRemovalOnce(
     call,

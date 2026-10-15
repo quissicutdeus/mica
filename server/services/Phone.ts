@@ -5,7 +5,7 @@
 import { randomBytes } from 'node:crypto';
 import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { PlayerFacingError } from '../lib/errors';
-import { notifyPlayer } from '../lib/shell';
+import { forgetOnPlayerLoaded, notifyPlayer } from '../lib/shell';
 import { ServiceEndpoint } from '../lib/ServiceEndpoint';
 import { guardNetEvent, noInput, phoneNumber, phoneNumberFrom } from '../lib/netGuard';
 import { s } from '@mica/shared/schema';
@@ -28,6 +28,7 @@ import {
   listenerChannel,
   setSpeaker,
   speakerAvailable,
+  speakerCharacterChanged,
   speakerDropped,
   speakerOff,
   speakerReleaseAll,
@@ -354,20 +355,33 @@ on('onResourceStop', (stopped: string) => {
   }
 });
 
+/** A party whose source carries a new character now, and the character who was on the call. */
+interface SwitchedSide {
+  src: number;
+  citizenid: string;
+}
+
 /**
  * Writes one call-log row per participant. Called from every path a call can end
  * through — `end` (hangup, decline, or a client-side timeout, which all resolve to
  * the same event) and `playerDropped` — so "missed" always means the same thing
  * regardless of why the target never answered.
+ *
+ * `switched` is a side whose source now carries a different character (MICA-336): the call is
+ * being ended because the next one loaded, so asking the framework who that source is would
+ * name the new character and file the previous one's call in their log. That side's row is
+ * filed under the character who was on the call, which the switch hands over.
  */
-function logCallEnd(call: ActiveCall): void {
+function logCallEnd(call: ActiveCall, switched?: SwitchedSide): void {
   const answered = call.answeredAt !== null;
   const durationSec = answered ? Math.round((Date.now() - call.answeredAt!) / 1000) : 0;
 
-  const callerCitizenid = FrameworkBridge.getCitizenId(call.caller);
+  const citizenOf = (src: number): string | null =>
+    src === switched?.src ? switched.citizenid : FrameworkBridge.getCitizenId(src);
+  const callerCitizenid = citizenOf(call.caller);
   // A group call nobody answered has no target, and its candidates get no row: it was the
   // line's call, not theirs (MICA-307). Only the caller's outgoing row is written.
-  const targetCitizenid = call.target === null ? null : FrameworkBridge.getCitizenId(call.target);
+  const targetCitizenid = call.target === null ? null : citizenOf(call.target);
 
   if (callerCitizenid) {
     void logCall(callerCitizenid, call.callerPhone, 'outgoing', call.targetPhone, durationSec);
@@ -440,7 +454,7 @@ const notifyParty = (event: string, src: number, payload?: unknown): void => {
  * handler is idempotent, so a second teardown costs nothing; `notifyParty` still skips the
  * console's and a line's negative sources, which are nobody.
  */
-function endActiveCall(callId: number, gone?: number): void {
+function endActiveCall(callId: number, gone?: number, switched?: SwitchedSide): void {
   const call = activeCalls[callId];
   if (!call) return;
 
@@ -457,7 +471,7 @@ function endActiveCall(callId: number, gone?: number): void {
   speakerOff(call.caller);
   if (call.target !== null) speakerOff(call.target);
 
-  logCallEnd(call);
+  logCallEnd(call, switched);
 
   for (const candidate of ringing) releaseCandidateKey(candidate, callId);
   delete playerCalls[call.caller];
@@ -553,9 +567,9 @@ export function injectIncomingCall(targetSrc: number, callerPhone: string): numb
  * `endActiveCall` cannot do this on its own: it is keyed by call id and returns early when
  * no call answers to it, which would leave the reservation held until the resource stopped.
  *
- * Returns whether anything was held.
+ * Returns whether anything was held. `switched` is passed through to `logCallEnd`.
  */
-function releaseCallFor(src: number, gone?: number): boolean {
+function releaseCallFor(src: number, gone?: number, switched?: SwitchedSide): boolean {
   const callId = playerCalls[src];
   if (!callId) return false;
 
@@ -571,7 +585,7 @@ function releaseCallFor(src: number, gone?: number): boolean {
     return true;
   }
 
-  endActiveCall(callId, gone);
+  endActiveCall(callId, gone, switched);
   return true;
 }
 
@@ -1102,6 +1116,28 @@ on('playerDropped', () => {
   releaseCallFor(src, src);
   speakerDropped(src);
   refusalLoggedAt.delete(src);
+});
+
+/**
+ * And end it when a character loads on a source that is still on one (MICA-336).
+ *
+ * A multichar switch keeps the source and fires no `playerDropped`, so the call the previous
+ * character was on stayed live: the next character sat in its pma-voice channel hearing the
+ * other party, and `playerCalls` answered "Busy" to their first dial. Ended as a hang-up is,
+ * with the connection still here — told `ended` and taken out of the channel — and this side's
+ * row filed under the character who was on the call, not the one now on the source
+ * (`logCallEnd`). The speaker goes the same way, and a bystander hearing somebody else's
+ * speaker is taken out.
+ *
+ * Only on a real switch: `lib/shell.ts` runs this when the character changes, never on the
+ * second announcement of the same load, which on qbx arrives after a spawn screen the player
+ * can take a call on.
+ *
+ * `refusalLoggedAt` is not cleared: it limits console lines per connection, not per character.
+ */
+forgetOnPlayerLoaded('phone-call', (src, previousCitizenid) => {
+  releaseCallFor(src, undefined, { src, citizenid: previousCitizenid });
+  speakerCharacterChanged(src);
 });
 
 /**

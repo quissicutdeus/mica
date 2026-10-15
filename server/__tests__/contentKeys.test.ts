@@ -37,7 +37,7 @@ const { dbMock, notifyPlayer, commands, gate } = vi.hoisted(() => {
   };
 });
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
-vi.mock('../lib/shell', () => ({ notifyPlayer }));
+vi.mock('../lib/shell', () => ({ notifyPlayer, forgetOnPlayerLoaded: () => {} }));
 
 import { USAGE, defaultKid, keygenSteps, runContentKeysCommand } from '../services/ContentKeys';
 import { parseKeyring, resetContentCipherForTests } from '../lib/contentCipher';

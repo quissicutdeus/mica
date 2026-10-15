@@ -12,6 +12,8 @@ expected. Read any answer from another resource through its first element
 boolean, the way `moved` does for money. When stubbing, include one
 `[false, 'reason']` case beside each bare `false`.
 
-`moved` and `balanceOf` (money) do not unwrap arrays yet. They refuse an array,
-which fails closed, so a multi-value money export reads as refused rather than
-as moved.
+Since MICA-336 `moved` and `balanceOf` (money) read through the same
+module-private `firstLuaValue` helper `itemRemoved` uses. Before that, a money
+export's `true, …` read as refused: fail closed, but it refused a payment that
+went through. ESX money is proved by the balance, not the return, so only the qb
+and qbx paths changed.

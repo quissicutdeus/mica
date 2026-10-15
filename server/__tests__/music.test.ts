@@ -485,6 +485,55 @@ describe('when a broadcast ends', () => {
     expect(lastPushTo(2)?.broadcasters).toEqual([]);
   });
 
+  /**
+   * MICA-336: a multichar switch keeps the source and fires no `playerDropped`, so the next
+   * character's ped went on playing the previous one's stereo under their token. Driven through
+   * `lib/shell.ts`'s real local player-loaded listener.
+   */
+  it('ends when another character loads on the source, and only that one', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      place(1, [0, 0, 0]);
+      place(2, [5, 0, 0]);
+      place(3, [6, 0, 0]);
+      // CID_1 loads on source 1, as the shell saw it.
+      gameEvents.get('QBCore:Server:PlayerLoaded')!({ PlayerData: { source: 1 } });
+      await call(START, 1, { videoId: VIDEO });
+      await call(START, 3, { videoId: OTHER_VIDEO });
+      pollMusic();
+      expect(lastPushTo(2)?.broadcasters).toHaveLength(2);
+
+      // Character B on source 1, which the framework already answers for, over CID_1.
+      place(1, [0, 0, 0], { citizenid: 'CID_NEXT' });
+      gameEvents.get('QBCore:Server:PlayerLoaded')!({ PlayerData: { source: 1 } });
+
+      // The positive twin: source 3's stereo is untouched, and the listener is told at once.
+      expect(activeBroadcasts().map((b) => b.source)).toEqual([3]);
+      expect(lastPushTo(2)?.broadcasters.map((b: any) => b.source)).toEqual([3]);
+      expect(error.mock.calls.filter(([line]) => String(line).includes('forgetter'))).toEqual([]);
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it('keeps playing when the same character is announced again (qbx, after spawn)', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      place(1, [0, 0, 0]);
+      place(2, [5, 0, 0]);
+      gameEvents.get('QBCore:Server:PlayerLoaded')!({ PlayerData: { source: 1 } });
+      await call(START, 1, { videoId: VIDEO });
+      pollMusic();
+
+      gameEvents.get('QBCore:Server:PlayerLoaded')!({ PlayerData: { source: 1 } });
+
+      expect(activeBroadcasts().map((b) => b.source)).toEqual([1]);
+      expect(lastPushTo(2)?.broadcasters.map((b: any) => b.source)).toEqual([1]);
+    } finally {
+      error.mockRestore();
+    }
+  });
+
   it('keeps a broadcast whose owner has no ped for a moment, but nobody hears it', async () => {
     place(1, [0, 0, 0]);
     place(2, [5, 0, 0]);

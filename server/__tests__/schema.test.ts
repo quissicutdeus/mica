@@ -48,7 +48,10 @@ vi.mock('../lib/migrations', () => ({
   runPendingMigrations: runPendingMigrationsMock,
   reportPendingMigrations: reportPendingMigrationsMock
 }));
-vi.mock('../lib/shell', () => ({ notifyPlayer: notifyPlayerMock }));
+vi.mock('../lib/shell', () => ({
+  notifyPlayer: notifyPlayerMock,
+  forgetOnPlayerLoaded: () => {}
+}));
 
 import { runApply } from '../services/Schema';
 import { SchemaMigrator, type AdditiveApplyResult } from '../lib/SchemaMigrator';
