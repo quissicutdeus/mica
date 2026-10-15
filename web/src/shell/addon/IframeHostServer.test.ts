@@ -17,7 +17,13 @@ import { createInProcessHost } from '../../../../sdk/host/inProcess/createInProc
 import { registerFacet, resetHostsForTest } from '../../../../sdk/host/current';
 import { ADDON_HELLO_TIMEOUT_MS, ADDON_LIMITS, createIframeHostServer } from './IframeHostServer';
 import { defineApp } from '../../../../sdk/manifest';
-import { DENIED_FACETS } from '../../../../sdk/permissions';
+import {
+  DENIED_FACETS,
+  MEMBER_APP_ARGS,
+  permissionOfFacet,
+  type AppIdArg,
+  type UnpinnedAppIdArg
+} from '../../../../sdk/permissions';
 import { SDK_CONTRACT_VERSION } from '../../../../sdk/version';
 import { is24Hour as shellIs24Hour } from '../state/time';
 import { recordConsent, resetGrantsForTest } from '../state/addOnGrants';
@@ -1577,6 +1583,59 @@ describe('IframeHostServer', () => {
       expect(seen['accounts.getReactionsFor']).toEqual([
         [{ app: 'probe', target_table: 't', target_ids: [1] }]
       ]);
+    });
+
+    /**
+     * Every pinned row of `MEMBER_APP_ARGS`, not a sample of them. Driven from the table, so
+     * a row added later is exercised the moment it exists, and a row whose index or field
+     * is wrong fails here by name. The stubs are built from the table too, so a pinned
+     * member on a facet this file never stubbed is still reached.
+     */
+    it('pins every pinned row of MEMBER_APP_ARGS, at the argument and field it names', async () => {
+      const rows = Object.entries(
+        MEMBER_APP_ARGS as Record<string, AppIdArg | UnpinnedAppIdArg | null>
+      ).flatMap(([key, pin]): [string, AppIdArg][] =>
+        pin && !('unpinned' in pin) ? [[key, pin]] : []
+      );
+      expect(rows.length).toBeGreaterThanOrEqual(17);
+
+      const byFacet = new Map<string, string[]>();
+      for (const [key] of rows) {
+        const [facet, member] = key.split('.');
+        byFacet.set(facet, [...(byFacet.get(facet) ?? []), member]);
+      }
+      const perms = new Set<AppPermission>();
+      for (const [facet, members] of byFacet) {
+        registerFacet(
+          facet as any,
+          (() => Object.fromEntries(members.map((m) => [m, record(`${facet}.${m}`)]))) as any
+        );
+        const needed = permissionOfFacet(facet)?.needed;
+        for (const p of needed === null || needed === undefined ? [] : [needed].flat()) {
+          perms.add(p);
+        }
+      }
+
+      const { from } = server([...perms]);
+      for (const [key, pin] of rows) {
+        const [facet, member] = key.split('.');
+        const args: unknown[] = Array.from({ length: pin.arg }, (_, i) => `arg${i}`);
+        args.push(pin.field ? { [pin.field]: 'someone-else', kept: key } : 'someone-else');
+        from(call(facet, member, args));
+      }
+      await flush();
+
+      const wrong = rows.flatMap(([key, pin]) => {
+        const got = seen[key]?.[0];
+        const want = pin.field ? { [pin.field]: 'probe', kept: key } : 'probe';
+        const before = Array.from({ length: pin.arg }, (_, i) => `arg${i}`);
+        const ok =
+          got !== undefined &&
+          JSON.stringify(got[pin.arg]) === JSON.stringify(want) &&
+          JSON.stringify(got.slice(0, pin.arg)) === JSON.stringify(before);
+        return ok ? [] : [`${key}: ${JSON.stringify(got)}`];
+      });
+      expect(wrong, 'these rows reached the member with the frame’s own id unpinned').toEqual([]);
     });
   });
 

@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import type { AppPermission } from './manifest';
+import type { Facets } from './host/facets';
 
 /**
  * Every host hook, and the permission that discloses it. `null` is implicit: the hook is
@@ -346,7 +347,7 @@ export const SAFE_IMPLICIT_FACETS: ReadonlySet<string> = new Set([
  * - `storage` has no `getItem`: the twin answers reads from the hydrate snapshot and only
  *   writes cross the wire.
  */
-export const FACET_MEMBERS: Readonly<Record<string, readonly string[]>> = {
+export const FACET_MEMBERS = {
   // Player data.
   account: [
     'myPhoneNumber',
@@ -602,7 +603,7 @@ export const FACET_MEMBERS: Readonly<Record<string, readonly string[]>> = {
     'seedFromImage'
   ],
   wallpaperWrite: ['setWallpaperSeed', 'setPresetWallpaper', 'setWallpaperImage', 'resetWallpaper']
-};
+} as const satisfies Readonly<Record<string, readonly string[]>>;
 
 /**
  * The members reachable on `facet` from inside a sandbox, or `undefined` if the facet is
@@ -715,4 +716,226 @@ export function validateManifestPermissions(
         `use instead of being covered by this declaration.`
     );
   }
+}
+
+type Members = typeof FACET_MEMBERS;
+
+/** The type of `facet.member` on the facet's own object, or `never`. */
+export type MemberType<F extends keyof Facets, M> = Facets[F] extends (...args: never[]) => infer R
+  ? M extends keyof R
+    ? R[M]
+    : never
+  : never;
+
+/**
+ * Every `facet.member` a sandboxed frame can **call**: named in `FACET_MEMBERS`, and a
+ * function on the facet's type rather than a store. Derived, so a row added to
+ * `FACET_MEMBERS` lands here by itself and `MEMBER_APP_ARGS` stops compiling until it is
+ * classified.
+ */
+export type ReachableCallable = {
+  [F in keyof Members & keyof Facets]: {
+    [M in Members[F][number]]: MemberType<F, M> extends (...args: never[]) => unknown
+      ? `${F}.${M}`
+      : never;
+  }[Members[F][number]];
+}[keyof Members & keyof Facets];
+
+/** The parameter list of a `facet.member` key. */
+export type ParamsOf<K extends string> =
+  K extends `${infer F extends keyof Facets & keyof Members}.${infer M}`
+    ? MemberType<F, M> extends (...args: infer P) => unknown
+      ? P
+      : never
+    : never;
+
+/**
+ * Where a call argument carries the app id the call acts as: the argument's index, and the
+ * field when that argument is an object. `IframeHostServer` overwrites it with the frame's
+ * own id before the member runs.
+ */
+export interface AppIdArg {
+  readonly arg: number;
+  readonly field?: 'app';
+}
+
+/** An app id a member takes on purpose to name *another* app, and why it stays as sent. */
+export interface UnpinnedAppIdArg {
+  readonly arg: number;
+  readonly unpinned: string;
+}
+
+/**
+ * Every member a frame can call, and whether it carries an app id: an `AppIdArg` is pinned
+ * to the caller, an `UnpinnedAppIdArg` names another app deliberately, and `null` takes no
+ * app id at all.
+ *
+ * `APP_SCOPED_FACETS` in `IframeHostServer.ts` pins an app id passed to a facet's
+ * *factory*. This is the same pin for one passed to a *member*. Without it,
+ * `keybinds.onKeybind(actionId, handler, appId?)` let a raw `call` register Back under
+ * another app or none, and an unscoped handler runs whatever app is in front.
+ *
+ * Total by type: a `Record` over `ReachableCallable`, so a member a frame can newly call
+ * fails to compile here until somebody decides which of the three it is. A type cannot tell
+ * an app id from any other string, which is why the `null`s are written out rather than
+ * implied. `permissions.test.ts` checks the rest: that every member with an `{ app: string }`
+ * parameter is field-pinned, and that each index points at a string or an `{ app }` object.
+ */
+export const MEMBER_APP_ARGS = {
+  'account.fetchBalance': null,
+  'account.fetchCitizenId': null,
+  'account.fetchPhoneNumber': null,
+  'account.fetchTransactions': null,
+  'accounts.blockAccount': { arg: 0, field: 'app' },
+  'accounts.createAccount': { arg: 0, field: 'app' },
+  'accounts.followAccount': { arg: 0, field: 'app' },
+  'accounts.getAccounts': { arg: 0, field: 'app' },
+  'accounts.getFollowStats': { arg: 0, field: 'app' },
+  'accounts.getFollowers': { arg: 0, field: 'app' },
+  'accounts.getFollowing': { arg: 0, field: 'app' },
+  'accounts.getMyAccounts': { arg: 0 },
+  'accounts.getReactionsFor': { arg: 0, field: 'app' },
+  'accounts.reactToTarget': { arg: 0, field: 'app' },
+  'accounts.searchAccounts': { arg: 0, field: 'app' },
+  'accounts.unblockAccount': { arg: 0, field: 'app' },
+  'accounts.unfollowAccount': { arg: 0, field: 'app' },
+  'accounts.unreactToTarget': { arg: 0, field: 'app' },
+  // Names a row by `id`, not an app. Its `app` field is optional and the server refuses it
+  // on a generic write, so there is nothing here to pin.
+  'accounts.updateAccount': null,
+  'admin.refreshAdmin': null,
+  'appAction.notify': null,
+  'appEvents.clear': null,
+  'appEvents.on': null,
+  'appEvents.onAny': null,
+  'appRegistry.getFirstBootTime': null,
+  'bank.declineInvoice': null,
+  'bank.fetchInvoices': null,
+  'bank.payInvoice': null,
+  'bank.sendMoney': null,
+  'call.answerCall': null,
+  'call.endCall': null,
+  'call.loadCallLog': null,
+  'call.startCall': null,
+  'call.toggleSpeaker': null,
+  'clockWrite.setIs24Hour': null,
+  'contacts.addContact': null,
+  'contacts.getDeletedContacts': null,
+  'contacts.restoreContact': null,
+  'contacts.shareContact': null,
+  'controlCenter.registerToggle': null,
+  'controlCenter.setToggleActive': null,
+  'controlCenter.unregisterToggle': null,
+  'devTools.lock': null,
+  'devTools.unlock': null,
+  'displayWrite.setDisplaySize': null,
+  'displayWrite.setHomeGridSize': null,
+  'displayWrite.setMotionPreference': null,
+  'highscores.getLeaderboard': { arg: 0, unpinned: 'a leaderboard is public to every player' },
+  'highscores.submitScore': { arg: 0 },
+  'jobs.fetchJobs': null,
+  'jobs.setActiveJob': null,
+  'jobs.setDuty': null,
+  'keybinds.findConflict': null,
+  'keybinds.onKeybind': { arg: 2 },
+  'lifecycle.consumeDeepLink': null,
+  'lifecycle.goHome': null,
+  'lifecycle.onBack': null,
+  'location.setWaypoint': null,
+  'location.shareLocation': null,
+  'lockScreenWrite.clearPasscode': null,
+  'lockScreenWrite.setAutoLockPolicy': null,
+  'lockScreenWrite.setPasscode': null,
+  'mail.addReceivedMail': null,
+  'mail.archiveMail': null,
+  'mail.deleteMail': null,
+  'mail.markAsRead': null,
+  'marketplace.loadFeed': null,
+  'marketplace.loadMine': null,
+  'marketplace.markSold': null,
+  'marketplace.postListing': null,
+  'marketplace.removeListing': null,
+  'marketplace.searchListings': null,
+  'marketplace.viewListing': null,
+  'media.capturePhoto': null,
+  'media.deletePhoto': null,
+  'media.dropNearby': null,
+  'media.fullMedia': null,
+  'media.getDeletedMedia': null,
+  'media.restoreMedia': null,
+  'messages.addReceivedMessage': null,
+  'messages.loadMessageReactions': null,
+  'messages.sendMessage': null,
+  'messages.startText': null,
+  'messages.toggleMessageReaction': null,
+  'music.clearMutedBroadcasters': null,
+  'music.clearQueue': null,
+  'music.cycleRepeat': null,
+  'music.enqueue': null,
+  'music.muteBroadcaster': null,
+  'music.nextTrack': null,
+  'music.pauseMusic': null,
+  'music.playQueueIndex': null,
+  'music.playSource': null,
+  'music.previousTrack': null,
+  'music.removeFromQueue': null,
+  'music.resumeMusic': null,
+  'music.seekMusic': null,
+  'music.setMusicMuted': null,
+  'music.setMusicVolume': null,
+  'music.setMuteAllNearby': null,
+  'music.setRepeat': null,
+  'music.stopMusic': null,
+  'music.toggleBroadcasterMute': null,
+  'music.toggleMusicMute': null,
+  'music.toggleMuteAllNearby': null,
+  'music.toggleShuffle': null,
+  'music.unmuteBroadcaster': null,
+  'navigation.closePhone': null,
+  'navigation.goHome': null,
+  'navigation.openApp': { arg: 0, unpinned: 'opening another app is what it is for' },
+  'notifications.clear': null,
+  'notifications.clearAll': { arg: 0 },
+  'notifications.load': null,
+  'notifications.markRead': null,
+  'phoneNotification.dismissNotification': null,
+  'phoneNotification.sendNotification': null,
+  'report.submit': null,
+  'reports.loadPendingReports': null,
+  'reports.loadReportHistory': null,
+  'reports.reopenReport': null,
+  'reports.resolveReport': null,
+  'searchProvider.publish': null,
+  'service.call': null,
+  'sound.play': null,
+  'sourceUrl.refreshSourceUrl': null,
+  'storage.clear': null,
+  'storage.markUnsynced': null,
+  'storage.removeItem': null,
+  'storage.setItem': null,
+  'systemHardwareWrite.previewNotificationTone': null,
+  'systemHardwareWrite.previewRingtone': null,
+  'systemHardwareWrite.setRingMode': null,
+  'systemHardwareWrite.setVolume': null,
+  'themeWrite.resetTheme': null,
+  'themeWrite.setThemeMode': null,
+  'themeWrite.setThemeSeed': null,
+  'wallpaper.backgroundForSeed': null,
+  'wallpaper.seedFromImage': null,
+  'wallpaperWrite.resetWallpaper': null,
+  'wallpaperWrite.setPresetWallpaper': null,
+  'wallpaperWrite.setWallpaperImage': null,
+  'wallpaperWrite.setWallpaperSeed': null
+} as const satisfies Record<ReachableCallable, AppIdArg | UnpinnedAppIdArg | null>;
+
+/** Through a `Map`, for the same reason as `FACET_MEMBER_INDEX`: the key arrives off the wire. */
+const APP_ID_ARG_INDEX = new Map<string, AppIdArg>(
+  Object.entries(MEMBER_APP_ARGS as Record<string, AppIdArg | UnpinnedAppIdArg | null>).flatMap(
+    ([key, pin]): [string, AppIdArg][] => (pin && !('unpinned' in pin) ? [[key, pin]] : [])
+  )
+);
+
+/** Where `facet.member`'s app id argument is, if the server must pin one. */
+export function appIdArgOf(facet: string, member: string): AppIdArg | undefined {
+  return APP_ID_ARG_INDEX.get(`${facet}.${member}`);
 }

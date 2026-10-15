@@ -6,7 +6,12 @@ import { get } from 'svelte/store';
 import type { Host } from '../../../../sdk/host/protocol';
 import { AppPermissionError } from '../../../../sdk/host/protocol';
 import { facets } from '../../../../sdk/host/current';
-import { permissionOfFacet, DENIED_FACETS, membersOfFacet } from '../../../../sdk/permissions';
+import {
+  appIdArgOf,
+  permissionOfFacet,
+  DENIED_FACETS,
+  membersOfFacet
+} from '../../../../sdk/permissions';
 import type { AppManifest, AppPermission } from '../../../../sdk/manifest';
 import { SDK_CONTRACT_VERSION } from '../../../../sdk/version';
 import type {
@@ -196,12 +201,6 @@ export const ADDON_LIMITS = {
  */
 export const ADDON_HELLO_TIMEOUT_MS = 8_000;
 
-/** Where a call argument carries an app id: the argument's index, and its field if an object. */
-interface ArgPin {
-  arg: number;
-  field?: 'app';
-}
-
 export function createIframeHostServer(opts: IframeHostServerOptions) {
   const { host, manifest, guest } = opts;
   const post = (msg: ToFrame) => guest()?.postMessage(msg, '*');
@@ -226,7 +225,10 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
    */
   let guestEpoch = 0;
   const live = (epoch: number) => !disposed && epoch === guestEpoch;
-  /** The startup watchdog (`ADDON_HELLO_TIMEOUT_MS`). Cleared by an accepted `hello` or by shutting down. */
+  /**
+   * The startup watchdog (`ADDON_HELLO_TIMEOUT_MS`). Cleared by an accepted `hello` or by
+   * shutting down.
+   */
   let helloTimer: ReturnType<typeof setTimeout> | undefined = setTimeout(() => {
     helloTimer = undefined;
     if (disposed) return;
@@ -348,51 +350,11 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
   const CONFIG_APP_ID_FACETS: ReadonlySet<string> = new Set(['appLevels']);
 
   /**
-   * The same pin for members that take an app id as a **call** argument rather than a
-   * factory one, keyed `facet.member`: which argument holds it, and, when that argument is
-   * an object, which field.
-   *
-   * `pinAppId` only ever rewrote `factoryArgs`, so these went through as the frame sent them.
-   * `keybinds.onKeybind(actionId, handler, appId?)` was the sharp one. A raw `call` naming
-   * another app, or naming none, registered a handler the shell's dispatcher ran whatever
-   * app was in front (an unscoped one is everyone's fallback), so an add-on holding the
-   * `keybinds` permission could take Back away from every app for as long as it stayed
-   * resident. Pinned, the claim is the add-on's own. The frame-side twin already sends its
-   * own id, or nothing, and the dispatcher only reaches its handler while it is in front,
-   * which is the contract for an app's claim.
-   *
-   * The rest name whose data the call acts on. `clearAll` would empty another app's (or,
-   * with `''`, every app's) notifications. `submitScore` would post to another game's
-   * leaderboard. Every `accounts` member names the social namespace it reads or writes,
-   * which would let an add-on learn the player's Blabber handles, or follow and block as
-   * them there.
-   *
-   * Deliberately not pinned: `highscores.getLeaderboard`, because a leaderboard is public
-   * to every player on the server and reading another game's discloses nothing.
-   * `accounts.updateAccount` carries no `app` to pin, and the server refuses `app` on a
-   * generic write anyway. Adding one there would change the payload, not narrow it.
+   * The same pin for an app id passed as a **call** argument rather than a factory one:
+   * `MEMBER_APP_ARGS` in `sdk/permissions.ts`, read through `appIdArgOf`. It lives there
+   * beside `FACET_MEMBERS` so that every member a frame can call has to be classified
+   * (pinned, deliberately unpinned, or taking no app id) before it compiles.
    */
-  const APP_ID_MEMBER_ARGS: ReadonlyMap<string, ArgPin> = new Map<string, ArgPin>([
-    ['keybinds.onKeybind', { arg: 2 }],
-    ['notifications.clearAll', { arg: 0 }],
-    ['highscores.submitScore', { arg: 0 }],
-    ['accounts.getMyAccounts', { arg: 0 }],
-    ...[
-      'getAccounts',
-      'createAccount',
-      'getFollowStats',
-      'getFollowers',
-      'getFollowing',
-      'searchAccounts',
-      'followAccount',
-      'unfollowAccount',
-      'blockAccount',
-      'unblockAccount',
-      'getReactionsFor',
-      'reactToTarget',
-      'unreactToTarget'
-    ].map((m): [string, ArgPin] => [`accounts.${m}`, { arg: 0, field: 'app' }])
-  ]);
 
   // `DENIED_FACETS` and `membersOfFacet` are imported from `sdk/permissions.ts`, not
   // declared here (MICA-33, MICA-196): see that file's doc comments for which facets
@@ -471,7 +433,7 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
 
   /** A call's arguments with any app id in them replaced by the calling app's own. */
   function pinMemberArgs(facet: string, member: string, args: unknown[]): unknown[] {
-    const pin = APP_ID_MEMBER_ARGS.get(`${facet}.${member}`);
+    const pin = appIdArgOf(facet, member);
     if (!pin) return args;
     const out = [...args];
     // Padded, so an id the frame left out is written in rather than left to default.

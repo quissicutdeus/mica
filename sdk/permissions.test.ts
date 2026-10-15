@@ -37,7 +37,12 @@ import {
   SAFE_IMPLICIT_FACETS,
   FACET_MEMBERS,
   membersOfFacet,
-  validateManifestPermissions
+  validateManifestPermissions,
+  MEMBER_APP_ARGS,
+  appIdArgOf,
+  type MemberType,
+  type ParamsOf,
+  type ReachableCallable
 } from './permissions';
 import { declaredPermissions, permissionShortfall, sdkImportNames } from './lib/permissionScan';
 import type { Facets } from './host/facets';
@@ -524,6 +529,77 @@ describe('every reachable facet declares its members (MICA-196)', () => {
       'keybinds.onKeybind',
       'lifecycle.onBack'
     ]);
+  });
+});
+
+/**
+ * `MEMBER_APP_ARGS`: which call arguments carry an app id the shell must pin.
+ *
+ * Totality is the table's own type: it is a `Record` over `ReachableCallable`, so a member a
+ * frame can newly call does not compile until it is classified. A type cannot tell an app
+ * id from any other string, which is why every member is listed. What a type *can* see is
+ * checked here. Each assertion is a type the `pnpm typecheck` gate evaluates; the `expect`
+ * beside it only keeps the value used.
+ */
+describe('MEMBER_APP_ARGS classifies every member a frame can call', () => {
+  type Pin<K extends ReachableCallable> = (typeof MEMBER_APP_ARGS)[K];
+  type Equal<A, B> =
+    (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
+
+  it('covers only facets and members that exist on the Facets types', () => {
+    // A row of `FACET_MEMBERS` that is not on its facet's type would drop out of
+    // `ReachableCallable` silently, and so out of the classification.
+    type Members = typeof FACET_MEMBERS;
+    type UnknownFacet = Exclude<keyof Members, keyof Facets>;
+    type UnknownMember = {
+      [F in keyof Members & keyof Facets]: {
+        [M in Members[F][number]]: [MemberType<F, M>] extends [never] ? `${F}.${M}` : never;
+      }[Members[F][number]];
+    }[keyof Members & keyof Facets];
+    const noFacet: [UnknownFacet] extends [never] ? true : false = true;
+    const noMember: [UnknownMember] extends [never] ? true : false = true;
+    expect([noFacet, noMember]).toEqual([true, true]);
+  });
+
+  it('field-pins exactly the members that take an `{ app: string }` argument', () => {
+    type TakesAppField = {
+      [K in ReachableCallable]: [Extract<ParamsOf<K>[number], { app: string }>] extends [never]
+        ? never
+        : K;
+    }[ReachableCallable];
+    type FieldPinned = {
+      [K in ReachableCallable]: Pin<K> extends { field: 'app' } ? K : never;
+    }[ReachableCallable];
+    const exact: Equal<TakesAppField, FieldPinned> = true;
+    expect(exact).toBe(true);
+  });
+
+  it('points every entry at an argument that can hold an app id', () => {
+    // A field pin's argument must be an `{ app: string }` object; a plain pin's, or an
+    // unpinned one's, must accept a string. An index past the end, or one landing on a
+    // handler, fails both.
+    type Misplaced = {
+      [K in ReachableCallable]: Pin<K> extends { arg: infer I extends number }
+        ? Pin<K> extends { field: 'app' }
+          ? ParamsOf<K>[I] extends { app: string }
+            ? never
+            : K
+          : string extends ParamsOf<K>[I]
+            ? never
+            : K
+        : never;
+    }[ReachableCallable];
+    const none: [Misplaced] extends [never] ? true : false = true;
+    expect(none).toBe(true);
+  });
+
+  it('answers appIdArgOf for pinned rows only, and never for an inherited key', () => {
+    expect(appIdArgOf('keybinds', 'onKeybind')).toEqual({ arg: 2 });
+    expect(appIdArgOf('accounts', 'createAccount')).toEqual({ arg: 0, field: 'app' });
+    expect(appIdArgOf('navigation', 'openApp')).toBeUndefined();
+    expect(appIdArgOf('contacts', 'addContact')).toBeUndefined();
+    expect(appIdArgOf('toString', '')).toBeUndefined();
+    expect(appIdArgOf('constructor', 'name')).toBeUndefined();
   });
 });
 
