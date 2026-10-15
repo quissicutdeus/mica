@@ -32,7 +32,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <EmptyState title={$t('snek.noScores')} description={$t('snek.noScoresHint')} />
   {:else}
     <ol class="flex flex-col gap-1">
-      {#each entries as entry, i (entry.citizenid)}
+      {#each entries as entry, i (i)}
         <li class="flex justify-between">
           <span>{i + 1}. {entry.displayName ?? $t('snek.unknown')}</span>
           <span>{entry.score}</span>

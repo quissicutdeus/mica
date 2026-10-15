@@ -11,7 +11,9 @@ import { marketplaceContract } from '@mica/shared/contracts/marketplace';
 import { resolveOwnedAttachments } from '../lib/attachments';
 import { media } from './Media';
 import { Database } from '../lib/Database';
-import { resolve as resolvePlayer } from '../lib/PlayerDirectory';
+import { detectFramework, FrameworkBridge } from '../lib/FrameworkBridge';
+import { deviceForRequest } from '../lib/deviceIdentity';
+import { readLegacyRow, readRowByPhoneId } from '../lib/phoneNumbers';
 
 /**
  * Marketplace: a gray-market listings feed.
@@ -48,7 +50,20 @@ export const marketplace = defineService<Listing, typeof marketplaceContract>({
   schema: {
     title: { type: 'string', length: 100, notNull: true },
     price: { type: 'int', notNull: true },
-    description: { type: 'text', notNull: true }
+    description: { type: 'text', notNull: true },
+    /**
+     * The number of the phone that posted the listing, recorded at `create` (MICA-343), and
+     * the only number `view` ever hands out. Before this, `view` resolved the seller's
+     * *active* number at read time, so a listing posted from a burner later rang the seller's
+     * main phone. The number rather than the device id: a number is what `view` returns and
+     * already moves with the phone (MICA-284), it resolves on ESX where no number row
+     * exists, and a device id is the very value MICA-339 keeps off every wire.
+     *
+     * `private`, so the feed and search projections never carry it; `view` reads it alongside
+     * the owner column. Null on a listing posted before the column existed, which `view`
+     * answers with no number at all rather than with whatever the seller is on today.
+     */
+    seller_phone: { type: 'string', length: 16, private: true, clientWritable: false }
   },
   /**
    * Every action below is custom: `create` needs to resolve and cap attachments,
@@ -102,7 +117,65 @@ if (!paging) {
   throw new Error("defineService('marketplace'): a public read must declare paging.");
 }
 
-/** Non-negative integer price, or throws. Zero is a legitimate "free" listing. */
+/** `seller_phone`'s declared width, read off the declaration rather than restated. */
+const SELLER_PHONE_LENGTH = (() => {
+  const field = marketplace.resolved.fields.find((candidate) => candidate.name === 'seller_phone');
+  if (!field?.def.length) {
+    throw new Error("defineService('marketplace'): seller_phone must declare a length.");
+  }
+  return field.def.length;
+})();
+
+/**
+ * The number, or null when there is none or the column cannot hold it. `.length` counts UTF-16
+ * units, never fewer than the characters a varchar counts, so it can only refuse, never admit,
+ * a value at the edge.
+ */
+const fitsSellerPhone = (number: string | null | undefined): string | null =>
+  number && number.length <= SELLER_PHONE_LENGTH ? number : null;
+
+/**
+ * The number to record on a listing: the number of the phone in `src`'s hand, or null.
+ *
+ * **Not `callerNumberOf`'s rule (MICA-343).** That falls back to the framework's number when
+ * the phone in hand has no number row, which is the number of whichever phone the sync last
+ * settled — the main phone, for a burner whose row the sync has not written yet, or never will
+ * if assignment gave up. A call carries that for one ring; a listing would store it for good.
+ * So, in order:
+ *
+ * - **The phone's own row**, by its device id. Every item phone the sync has reached.
+ * - **The framework's number on ESX**, which keeps numbers on the character and has no rows:
+ *   there it is the phone's number.
+ * - **The citizen's legacy row** (`device_id IS NULL`), on qb and standalone. It is the
+ *   identity phone's number on a server that cannot carry a phone id, where every listing would
+ *   otherwise have none. On a server that can, a legacy row exists only while no phone of the
+ *   citizen's has been synced, and the first one synced takes it — so it never names a
+ *   different phone of theirs.
+ * - Otherwise **null**: the listing shows no Call/Text, rather than another phone's number.
+ *
+ * **Whatever the source, a number the column cannot hold is null too.** ESX's number is
+ * whatever a community resource wrote, unchecked: one longer than `seller_phone` would make a
+ * strict MariaDB refuse the insert — that player could never post — and a lax one truncate it
+ * to somebody else's number. The bound is read off the declaration, so the two cannot drift.
+ *
+ * Never throws: a listing with no number is still a listing.
+ */
+const numberToRecord = async (src: number, citizenid: string): Promise<string | null> => {
+  try {
+    const deviceId = await deviceForRequest(src, citizenid, 'phone');
+    const own = await readRowByPhoneId(deviceId);
+    if (own?.number) return fitsSellerPhone(own.number);
+    if (detectFramework() === 'esx') return fitsSellerPhone(FrameworkBridge.getPlayerPhone(src));
+    const legacy = await readLegacyRow(citizenid);
+    return fitsSellerPhone(legacy?.number);
+  } catch (error) {
+    if (!(error instanceof PlayerFacingError)) {
+      console.error(`[marketplace] could not read the number of ${citizenid}'s phone.`, error);
+    }
+    return null;
+  }
+};
+
 app.registerEvent('create', async (source, cbId, data, citizenid) => {
   // Trimmed rather than capped: the contract refused anything over the column's length, so
   // what is left to catch is a value that was nothing but whitespace.
@@ -121,10 +194,11 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
   // No `.slice()` any more: the cap is applied inside the resolver, before it does the work
   // the cap is supposed to bound (MICA-154).
   const attachments = await resolveOwnedAttachments(data.attachments, citizenid, mediaRepo);
+  const sellerPhone = await numberToRecord(source, citizenid);
 
   const id = await Database.insert(
-    'INSERT INTO `mica_marketplace` (`citizenid`, `title`, `price`, `description`, `status`) VALUES (?, ?, ?, ?, ?)',
-    [citizenid, title, price, description, 'active']
+    'INSERT INTO `mica_marketplace` (`citizenid`, `title`, `price`, `description`, `status`, `seller_phone`) VALUES (?, ?, ?, ?, ?, ?)',
+    [citizenid, title, price, description, 'active', sellerPhone]
   );
 
   for (const attachment of attachments) {
@@ -150,13 +224,14 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
 app.requirePhoneFor('create');
 
 /**
- * One listing, public projection, for the detail screen. Also resolves the
- * seller's phone number so Call/Text can reach them — never returned as a
- * display field, only as `contactPhone`, which the client feeds straight into
- * `useCall()`/`openApp('messages', ...)` and never renders. `isOwn` lets the
- * client hide the Report button on the viewer's own listing without ever
- * seeing a citizenid to compare against — the server already knows who is
- * asking.
+ * One listing, public projection, for the detail screen. Also hands out the number of the
+ * phone that posted it so Call/Text can reach them — never returned as a display field, only
+ * as `contactPhone`, which the client feeds straight into `useCall()`/`openApp('messages', ...)`
+ * and never renders. That is `seller_phone` as recorded at `create`, never the seller's number
+ * today (MICA-343): a burner's listing reaches the burner. A listing from before that column
+ * answers null, so it shows no Call/Text rather than a number it was not posted from.
+ * `isOwn` lets the client hide the Report button on the viewer's own listing without ever
+ * seeing a citizenid to compare against — the server already knows who is asking.
  */
 app.registerEvent('view', async (source, cbId, data, citizenid) => {
   const id = data.id;
@@ -170,17 +245,16 @@ app.registerEvent('view', async (source, cbId, data, citizenid) => {
       key: 'server.marketplace.listingGone'
     });
 
-  const owner = await Database.single<{ citizenid: string }>(
-    'SELECT `citizenid` FROM `mica_marketplace` WHERE `id` = ?',
+  const owner = await Database.single<{ citizenid: string; seller_phone: string | null }>(
+    'SELECT `citizenid`, `seller_phone` FROM `mica_marketplace` WHERE `id` = ?',
     [id]
   );
-  const contact = owner ? await resolvePlayer(owner.citizenid) : null;
 
   const attachmentsById = await repo.findAttachmentsFor([id]);
   return {
     ...row,
     attachments: attachmentsById.get(id) ?? [],
-    contactPhone: contact?.phone ?? null,
+    contactPhone: owner?.seller_phone || null,
     isOwn: owner?.citizenid === citizenid
   };
 });

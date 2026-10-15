@@ -28,6 +28,9 @@ vi.mock('../lib/FrameworkBridge', () => ({
         : null,
     getSourceByCitizenId: () => bridge.source,
     getSourcesByCitizenId: () => new Map(),
+    // The framework's number for the character: their main phone, which a share must never
+    // carry (MICA-343). Answered here so a regression that reads it is visible in the payload.
+    getPlayerPhone: () => '555-0001',
     registerUsableItem: () => {}
   }
 }));
@@ -157,15 +160,14 @@ describe('contacts:share', () => {
   });
 
   /**
-   * MICA-155. `contacts:share` used to relay `firstname`/`lastname`/`phone`/`avatar`
-   * straight from the payload with no sender attached at all — an impersonation primitive,
-   * since an accepted card could rename a Messages thread off nothing but a phone-number
-   * match with no way to tell who had actually sent it.
+   * MICA-155 attached a `sender` to every share — citizenid, directory name and *active*
+   * number — and sent it to every player in range. MICA-343 took it off: a card handed over
+   * from a burner named the character and their main phone. The share is proximity-based, so
+   * the receiver can see who is next to them; the payload is the card and nothing else.
    */
-  describe('sender identity is attached server-side, not read off the payload', () => {
-    it('stamps the caller-derived citizenid, ignoring anything the payload sends for it', async () => {
+  describe('the share carries the card and nothing about the sender (MICA-343)', () => {
+    it('relays the card fields, and nothing a payload names as the sender', async () => {
       proximity.nearby = [{ source: 9, citizenid: 'CID_B' }];
-      bridge.citizenid = 'CID_A';
 
       await call({
         firstname: 'Ada',
@@ -176,33 +178,29 @@ describe('contacts:share', () => {
       });
 
       const incoming = pushesTo('mica:client:contacts:incoming');
-      expect(incoming[0][2].sender.citizenid).toBe('CID_A');
-      expect(incoming[0][2].sender).not.toMatchObject({ citizenid: 'CID_SPOOFED' });
+      expect(incoming).toHaveLength(1);
+      expect(Object.keys(incoming[0][2]).toSorted()).toEqual([
+        'avatar',
+        'firstname',
+        'lastname',
+        'phone'
+      ]);
+      expect(incoming[0][2]).toMatchObject({ firstname: 'Ada', phone: '555-0100' });
     });
 
-    it('resolves to a different sender for a different connection, from the source alone', async () => {
-      proximity.nearby = [{ source: 9, citizenid: 'CID_B' }];
-      bridge.citizenid = 'CID_C';
-      bridge.source = 7;
-      (globalThis as any).source = 7;
-
-      await call({ firstname: 'Ada', phone: '555-0100' });
-
-      const incoming = pushesTo('mica:client:contacts:incoming');
-      expect(incoming[0][2].sender.citizenid).toBe('CID_C');
-    });
-
-    it('still carries the card fields the sender chose, unresolved against their own identity', async () => {
-      // The card is arbitrary by design — sharing someone else's saved contact is the
-      // feature, not a bug, so `phone`/`firstname` must not be forced to match the sender.
+    it('names neither the citizen, their name, nor their main phone to the players in range', async () => {
       proximity.nearby = [{ source: 9, citizenid: 'CID_B' }];
 
       await call({ firstname: 'Someone Else', phone: '555-7777' });
 
       const incoming = pushesTo('mica:client:contacts:incoming');
-      expect(incoming[0][2].firstname).toBe('Someone Else');
-      expect(incoming[0][2].phone).toBe('555-7777');
-      expect(incoming[0][2].sender.citizenid).toBe('CID_A');
+      expect(incoming).toHaveLength(1);
+      const wire = JSON.stringify(incoming[0][2]);
+      expect(wire).not.toContain('CID_A');
+      expect(wire).not.toContain('555-0001');
+      expect(incoming[0][2]).not.toHaveProperty('sender');
+      // The card the sender chose — someone else's, which is the feature — still arrives whole.
+      expect(incoming[0][2]).toMatchObject({ firstname: 'Someone Else', phone: '555-7777' });
     });
   });
 });

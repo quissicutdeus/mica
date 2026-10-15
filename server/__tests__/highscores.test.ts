@@ -139,8 +139,35 @@ describe('highscores:top', () => {
     ]);
     const reply = await call('top', { app: 'snek' });
     expect(reply).toEqual([
-      { citizenid: 'A', score: 99, displayName: 'Player A' },
-      { citizenid: 'B', score: 42, displayName: 'Player B' }
+      { score: 99, displayName: 'Player A' },
+      { score: 42, displayName: 'Player B' }
+    ]);
+  });
+
+  /**
+   * MICA-343. The board shows the character's name and nothing that identifies the citizen
+   * behind it: the citizenid used to ride beside the name to every player who opened it. The
+   * positive twin is the name itself, so a board that dropped everything would fail too.
+   */
+  it('never hands a citizenid to the player reading the board, and still names each row', async () => {
+    dbMock.query.mockResolvedValueOnce([
+      { citizenid: 'CID_SECRET_A', score: 99 },
+      { citizenid: 'CID_SECRET_B', score: 42 }
+    ]);
+    const { resolveMany } = await import('../lib/PlayerDirectory');
+    (resolveMany as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      new Map([
+        ['CID_SECRET_A', { citizenid: 'CID_SECRET_A', displayName: 'Ada Lane', phone: null }],
+        ['CID_SECRET_B', { citizenid: 'CID_SECRET_B', displayName: 'Dez Ito', phone: null }]
+      ])
+    );
+    const reply = await call('top', { app: 'snek' });
+
+    expect(JSON.stringify(reply)).not.toContain('CID_SECRET');
+    for (const entry of reply) expect(entry).not.toHaveProperty('citizenid');
+    expect(reply.map((entry: { displayName: string }) => entry.displayName)).toEqual([
+      'Ada Lane',
+      'Dez Ito'
     ]);
   });
 
@@ -173,6 +200,6 @@ describe('highscores:top', () => {
 
     const reply = await call('top', { app: 'snek' });
 
-    expect(reply).toEqual([{ citizenid: 'GONE', score: 5, displayName: null }]);
+    expect(reply).toEqual([{ score: 5, displayName: null }]);
   });
 });

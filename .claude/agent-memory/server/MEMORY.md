@@ -63,3 +63,6 @@ line here.
   — `playerDropped` has five; an elided import changes which one a test runs
 - [pma-voice's call join is unchecked; micaOS undoes it](pma-voice-call-join-is-unchecked.md)
   — MICA-341; read the state bag, no guardNetEvent limit, census fails 9 ways
+- [The framework-number fallback names the old phone](framework-number-fallback-names-the-old-phone.md)
+  — burner with no row yet shows the main number; Phone/Messages unfixed,
+  listings fail closed

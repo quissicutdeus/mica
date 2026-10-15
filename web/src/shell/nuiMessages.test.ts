@@ -413,49 +413,38 @@ describe('contact share', () => {
   });
 
   /**
-   * MICA-155: `firstname`/`lastname`/`phone` on the card are the sender's own free
-   * choice — `contacts.share` forwards any saved card, not only the sender's own — so
-   * they carry no provenance by themselves. `sender` is attached server-side from the
-   * actual connection that sent the event and must be what the player sees identified as
-   * the sender, in the text the toast actually renders, before they decide whether to
-   * Accept.
+   * MICA-343: the share carries no sender — MICA-155's citizenid, name and number went to
+   * every player in range. `firstname`/`lastname`/`phone` on the card stay the sender's own
+   * free choice (`contacts.share` forwards any saved card), so the toast must still not
+   * present the card's name as who sent it, and must not show anything a payload smuggles in
+   * under `sender`.
    */
-  describe('surfaces the true sender, independent of what the card claims', () => {
-    it('shows the resolved sender name even when the card claims someone else entirely', () => {
-      route(
-        message('shareContact', {
-          firstname: 'John',
-          lastname: 'Doe',
-          phone: '555-0199',
-          sender: { citizenid: 'ABC123', name: 'Trevor Philips', phone: '555-0000' }
-        })
-      );
+  describe('names nobody as the sender', () => {
+    it('says the card came from someone nearby, never from the person the card names', () => {
+      route(message('shareContact', { firstname: 'John', lastname: 'Doe', phone: '555-0199' }));
 
       const shown = lastToast();
-      expect(shown?.title).toContain('Trevor Philips');
+      expect(shown?.title).toBe('Contact shared by someone nearby');
       expect(shown?.title).not.toContain('John');
-      // The claimed card identity is still visible too, just not mistaken for the sender.
+      // The card itself is still shown, as what is being offered.
       expect(shown?.message).toBe('John Doe (555-0199)');
     });
 
-    it('falls back to the sender citizenid when the framework has no resolved name', () => {
+    it('shows nothing a payload still carries under sender', () => {
       route(
         message('shareContact', {
           firstname: 'Franklin',
           phone: '555-0177',
-          sender: { citizenid: 'XYZ789', name: null, phone: null }
+          sender: { citizenid: 'XYZ789', name: 'Trevor Philips', phone: '555-0000' }
         })
       );
 
-      expect(lastToast()?.title).toContain('XYZ789');
-    });
-
-    it('never renders blank or silent — an old server or mock with no sender still says so', () => {
-      route(message('shareContact', { firstname: 'Franklin', phone: '555-0177' }));
-
       const shown = lastToast();
-      expect(shown?.title).toBeTruthy();
-      expect(shown?.title).toContain('Unknown sender');
+      const rendered = JSON.stringify({ title: shown?.title, message: shown?.message });
+      expect(rendered).not.toContain('XYZ789');
+      expect(rendered).not.toContain('Trevor');
+      expect(rendered).not.toContain('555-0000');
+      expect(shown?.message).toBe('Franklin (555-0177)');
     });
   });
 });

@@ -111,6 +111,12 @@ app.registerEvent('submit', async (source, cbId, data, citizenid) => {
  *
  * A citizenid the framework has no record of keeps its `null` name rather than being dropped:
  * the score is real and belongs on the board whether or not the character still exists.
+ *
+ * **The citizenid stays on the server (MICA-343).** It is the key the names are looked up by,
+ * and nothing else: an entry is a rank, a score and the character's name. The citizenid rode
+ * along to every player who opened the board, next to the name it belongs to, which is the
+ * one pairing that turns a name on a leaderboard into a handle on everything else that
+ * citizen did.
  */
 app.registerEvent('top', async (source, cbId, data) => {
   if (!isKnownApp(data.app)) {
@@ -121,7 +127,6 @@ app.registerEvent('top', async (source, cbId, data) => {
   const directory = await resolveMany(rows.map((row) => row.citizenid));
 
   const entries: LeaderboardEntry[] = rows.map((row) => ({
-    citizenid: row.citizenid,
     score: row.score,
     displayName: directory.get(row.citizenid)?.displayName ?? null
   }));

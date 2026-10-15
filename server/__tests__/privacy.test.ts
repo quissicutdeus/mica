@@ -388,7 +388,16 @@ const EXPORTED_COLUMNS: Record<string, { plain: string[]; sized: string[]; withh
     withheld: []
   },
   mica_marketplace: {
-    plain: ['id', 'status', 'created_at', 'updated_at', 'title', 'price', 'description'],
+    plain: [
+      'id',
+      'status',
+      'created_at',
+      'updated_at',
+      'title',
+      'price',
+      'description',
+      'seller_phone'
+    ],
     sized: [],
     withheld: []
   },

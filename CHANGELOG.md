@@ -47,6 +47,18 @@ Entries are hand-written. See MICA-72 for why a generated one was rejected.
 
 ### Action required
 
+**Run `micaschema apply` from the server console: `mica_marketplace` gains a
+column, `seller_phone` (MICA-343).** A listing now shows the number of the phone
+that posted it, not the seller's current main number, so on qb and standalone a
+listing posted from a burner no longer gives the seller's real number away (on
+ESX a phone has no number of its own, as with calls). The column is additive and
+nullable. Listings posted before it exists have no recorded number, and show no
+Call or Text button rather than a number they may never have been posted from;
+so does a listing posted from a phone that had no number assigned yet. **Until
+you run it, posting a listing and opening one both fail.** Sharing a contact
+card no longer sends the sharer's identity or number to the players around them,
+and a leaderboard no longer carries each player's citizenid.
+
 **Run `micaschema apply` from the server console: the device table and its
 column are renamed from phone to device (MICA-344).** Since MICA-264 the table
 holds tablets as well as phones, so migration `0008_phones_become_devices`
@@ -1411,6 +1423,13 @@ Everything above is written for a server owner. This part is not. It is for
 somebody maintaining a `core: false` add-on outside this repo, and it answers
 one question: does that bundle still compile against this release, and does its
 manifest still ask for the right things.
+
+**A leaderboard entry no longer carries a citizenid (MICA-343).**
+`LeaderboardEntry`, which `useHighscores().getLeaderboard` returns, drops
+`citizenid`; the name and score stay. Key a list of entries by its position
+rather than by `citizenid`, which is now `undefined` on every row and would give
+Svelte a duplicate key. SDK 1 has not been released, so `SDK_CONTRACT_VERSION`
+stays `1`.
 
 **Messages no longer carry other players' ids (MICA-339).** `UIConversation`
 drops `citizenid`, `participant_a` and `participant_b`; `UIMessage` drops

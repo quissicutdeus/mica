@@ -525,6 +525,7 @@ CREATE TABLE IF NOT EXISTS `mica_marketplace` (
     `title` varchar(100) NOT NULL,
     `price` int(11) NOT NULL,
     `description` text NOT NULL,
+    `seller_phone` varchar(16) DEFAULT NULL,
     `status` ENUM('active', 'sold', 'removed', 'moderated', 'deleted') NOT NULL DEFAULT 'active',
     `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

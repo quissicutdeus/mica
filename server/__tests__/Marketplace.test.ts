@@ -18,11 +18,15 @@ const { dbMock, handlers } = vi.hoisted(() => {
 });
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
 
-const bridge = vi.hoisted(() => ({ current: 'CIT_A' }));
+const bridge = vi.hoisted(() => ({ current: 'CIT_A', framework: 'qb', phone: '555-0100' }));
 vi.mock('../lib/FrameworkBridge', () => ({
+  detectFramework: () => bridge.framework,
   FrameworkBridge: {
     getPlayer: () => ({ citizenid: bridge.current, source: 5, setMeta: () => {} }),
     getCitizenId: () => bridge.current,
+    // The framework's number for the character: their main phone. MICA-343's tests prove a
+    // listing never hands this out unless it is the number of the phone that posted.
+    getPlayerPhone: () => bridge.phone,
     registerUsableItem: () => {}
   }
 }));
@@ -34,7 +38,7 @@ vi.mock('../lib/PlayerDirectory', () => playerDirectoryMock);
 
 import { marketplace } from '../services/Marketplace';
 import type { MarketplaceRepository } from '../repositories/MarketplaceRepository';
-import { installTestPhone, NOT_HELD_REPLY, refusePhone } from './phoneStub';
+import { installTestPhone, NOT_HELD_REPLY, refusePhone, TEST_PHONE_ID } from './phoneStub';
 
 // Referencing `.repo` (not just importing the binding) keeps this side-effecting import
 // alive under esbuild's tree-shaking — an unreferenced named import can otherwise be
@@ -169,6 +173,158 @@ describe('Marketplace service', () => {
         String(sql).includes('mica_marketplace_attachments')
       );
       expect(attachmentInsert?.[1]).toEqual([42, 'CIT_A', 1]);
+    });
+  });
+
+  /**
+   * MICA-343. A listing carries the number of the phone that posted it. `view` used to resolve
+   * the seller's *active* number at read time, so a listing posted from a burner later showed
+   * whatever the seller was on now — their main phone, linking the burner to them.
+   */
+  describe('the number a listing hands out (MICA-343)', () => {
+    /** The phone in hand is a burner whose own number row says 555-0199. */
+    const onBurner = (): void => {
+      dbMock.single.mockImplementation(async (sql: string, params: unknown[]) =>
+        String(sql).includes('mica_phone_numbers') && params[0] === TEST_PHONE_ID
+          ? { id: 9, citizenid: 'CIT_A', number: '555-0199', status: 'active' }
+          : null
+      );
+    };
+
+    it('records the number of the phone that posted, not the character number', async () => {
+      onBurner();
+      dbMock.insert.mockResolvedValue(42);
+      dbMock.query.mockResolvedValue([]);
+
+      await call('create', { title: 'Bike', price: 10, description: 'x' });
+
+      const [sql, params] = dbMock.insert.mock.calls[0];
+      expect(String(sql)).toContain('`seller_phone`');
+      expect(params).toContain('555-0199');
+      expect(params).not.toContain('555-0100');
+    });
+
+    /** The value bound for `seller_phone`, the last column of the listing insert. */
+    const recorded = (): unknown => {
+      const [sql, params] = dbMock.insert.mock.calls[0];
+      expect(String(sql)).toContain('`seller_phone`) VALUES');
+      return (params as unknown[])[(params as unknown[]).length - 1];
+    };
+
+    it('records no number for a burner whose number row the sync has not written', async () => {
+      // qb, a phone in hand with no row of its own and no legacy row: the citizen's other
+      // phone holds their number. The framework still answers that main number, and a call
+      // would show it; a listing stores it for good, so it records nothing instead.
+      dbMock.single.mockResolvedValue(null);
+      dbMock.insert.mockResolvedValue(42);
+      dbMock.query.mockResolvedValue([]);
+
+      const reply = await call('create', { title: 'Bike', price: 10, description: 'x' });
+
+      expect(reply.error).toBeUndefined();
+      expect(recorded()).toBeNull();
+      expect(dbMock.insert.mock.calls[0][1]).not.toContain('555-0100');
+    });
+
+    it('records the legacy number of a phone that cannot carry an id of its own', async () => {
+      // qb or standalone with no phone item: the phone in hand is the identity phone, and its
+      // number is the citizen's legacy row (`device_id IS NULL`).
+      dbMock.single.mockImplementation(async (sql: string) =>
+        String(sql).includes('`device_id` IS NULL')
+          ? { id: 3, citizenid: 'CIT_A', number: '555-0133', status: 'active' }
+          : null
+      );
+      dbMock.insert.mockResolvedValue(42);
+      dbMock.query.mockResolvedValue([]);
+
+      await call('create', { title: 'Bike', price: 10, description: 'x' });
+
+      expect(recorded()).toBe('555-0133');
+    });
+
+    /**
+     * `seller_phone` is a varchar(16), and ESX's number is whatever a community resource wrote.
+     * A longer one made a strict MariaDB refuse the insert — that player could never post — and
+     * a lax one truncate it to a different number. It records nothing instead; the 16-character
+     * twin proves the bound is the column's, not something tighter.
+     */
+    it('records no number one the column cannot hold, and keeps one that exactly fits', async () => {
+      bridge.framework = 'esx';
+      try {
+        dbMock.single.mockResolvedValue(null);
+        dbMock.insert.mockResolvedValue(42);
+        dbMock.query.mockResolvedValue([]);
+
+        bridge.phone = '+1 (555) 123-4567'; // 17
+        const refused = await call('create', { title: 'Bike', price: 10, description: 'x' });
+        expect(refused.error).toBeUndefined();
+        expect(recorded()).toBeNull();
+
+        dbMock.insert.mockClear();
+        bridge.phone = '+1 555 123-45678'; // 16
+        await call('create', { title: 'Bike', price: 10, description: 'x' });
+        expect(recorded()).toBe('+1 555 123-45678');
+      } finally {
+        bridge.framework = 'qb';
+        bridge.phone = '555-0100';
+      }
+    });
+
+    it('records the framework number on ESX, where the number is the character', async () => {
+      bridge.framework = 'esx';
+      try {
+        dbMock.single.mockResolvedValue(null);
+        dbMock.insert.mockResolvedValue(42);
+        dbMock.query.mockResolvedValue([]);
+
+        await call('create', { title: 'Bike', price: 10, description: 'x' });
+
+        expect(recorded()).toBe('555-0100');
+      } finally {
+        bridge.framework = 'qb';
+      }
+    });
+
+    it('hands out the recorded number, never the seller number today', async () => {
+      dbMock.single
+        .mockResolvedValueOnce({ id: 1, title: 'Bike', price: 10 })
+        .mockResolvedValueOnce({ citizenid: 'CIT_A', seller_phone: '555-0199' });
+      dbMock.query.mockResolvedValue([]);
+      playerDirectoryMock.resolve.mockClear();
+
+      const reply = await call('view', { id: 1 }, 'CIT_B');
+
+      expect(reply.contactPhone).toBe('555-0199');
+      expect(JSON.stringify(reply)).not.toContain('555-0100');
+      expect(playerDirectoryMock.resolve).not.toHaveBeenCalled();
+    });
+
+    it('hands out no number for a listing posted before the number was recorded', async () => {
+      dbMock.single
+        .mockResolvedValueOnce({ id: 1, title: 'Bike', price: 10 })
+        .mockResolvedValueOnce({ citizenid: 'CIT_A', seller_phone: null });
+      dbMock.query.mockResolvedValue([]);
+
+      const reply = await call('view', { id: 1 }, 'CIT_B');
+
+      expect(reply.error).toBeUndefined();
+      expect(reply.title).toBe('Bike');
+      expect(reply.contactPhone).toBeNull();
+    });
+
+    it('never projects the recorded number into the feed or a search', async () => {
+      dbMock.query.mockResolvedValue([]);
+      await call('feed', {});
+      await call('search', { q: 'bike' });
+
+      const selects = dbMock.query.mock.calls
+        .map(([sql]) => String(sql))
+        .filter((sql) => sql.includes('FROM `mica_marketplace`'));
+      expect(selects).toHaveLength(2);
+      for (const sql of selects) {
+        expect(sql).toContain('`title`');
+        expect(sql).not.toContain('seller_phone');
+      }
     });
   });
 

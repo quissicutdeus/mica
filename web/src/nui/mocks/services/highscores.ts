@@ -9,7 +9,7 @@ export const mocks: Record<string, MockHandler> = {
   // server per docs/writing-an-app.md, so this is just enough to exercise the UI.
   'highscores:submit': async () => ({ ok: true }),
   'highscores:top': async () => [
-    { citizenid: 'MOCK1', score: 42, displayName: 'Ada' },
-    { citizenid: 'MOCK2', score: 17, displayName: 'Dez' }
+    { score: 42, displayName: 'Ada' },
+    { score: 17, displayName: 'Dez' }
   ]
 };

@@ -10,7 +10,6 @@ import { findNearbyVisiblePlayers } from '../lib/proximity';
 import { appEventChannel } from '../lib/appEvents';
 import { contactsContract } from '@mica/shared/contracts/contacts';
 import { s } from '@mica/shared/schema';
-import { resolve as resolvePlayer } from '../lib/PlayerDirectory';
 import { restoreWindowDays } from '../lib/retention';
 import { phoneForCitizen } from '../lib/deviceIdentity';
 import { defaultContacts } from '../lib/ownerConfig';
@@ -178,15 +177,15 @@ const MAX_SHARE_AVATAR_LENGTH =
 /**
  * The card fields a sender chooses — arbitrary by design. `contacts.share` on the web side
  * offers any saved contact, not necessarily the sender's own identity (sharing someone
- * else's business card is the point), so these stay exactly what the payload said. Provenance
- * is `sender`'s job now, attached separately and never from here.
+ * else's business card is the point), so these stay exactly what the payload said. They prove
+ * nothing about who sent them, and nothing about the sender travels with them (MICA-343).
  *
  * Same clamps `AddContact` applies — the columns behind them are unchanged — declared once
  * as the event's input (MICA-210). `truncate` rather than `max` because an oversized name
  * is clipped and delivered, not refused; `min: 1` after `trim` is "not blank". Unknown keys
  * are stripped rather than refused because the web sends the whole `Contact` row it was
  * offered, and a `sender` or `citizenid` in it is ignored here exactly as any other column
- * is: the sender is stamped from the connection below, never read.
+ * is: nothing about the sender is read off the payload, and nothing is added below.
  */
 const SHARED_CARD = s.object(
   {
@@ -217,13 +216,14 @@ const SHARE_INPUT = s.tuple([SHARED_CARD]);
  * delivered to N nearby phones, or nobody in range — reaches the sender through the
  * generic push-and-toast channel instead, the same one a delivered DM uses.
  *
- * **`sender` is attached here, never read off the payload (MICA-155).** Before this, the
- * relayed card carried no identity at all — an accepted card even renamed Messages threads
- * off nothing but a phone-number match, with no way to tell who had actually sent it. The
- * card's own fields stay whatever the sender chose: `contacts.share` on the web side offers
- * any saved contact, not necessarily the sender's own, so resolving `phone` against the
- * sender here would break sharing someone else's card at all. `sender` is the fix instead —
- * provenance the receiving client can check independently of what the card claims to be.
+ * **The card and nothing else (MICA-343).** MICA-155 attached a `sender` here — the
+ * citizenid, the directory name and the *active* number — so a receiver could tell who had
+ * really sent a card. It went to every player in range, so a card handed over from a burner
+ * named the character and their main phone. The share is proximity-based: the receiver can
+ * see who is standing next to them, and a sender number would still hand out the number of
+ * the phone in hand every time somebody passes on a third party's card. So nothing about the
+ * sender is attached. The card's fields stay whatever the sender chose: `contacts.share` on
+ * the web side offers any saved contact, not necessarily the sender's own.
  */
 onNet('mica:server:contacts:share', (...args: unknown[]) => {
   const guarded = guardNetEvent('contacts', 'share', SHARE_INPUT, args);
@@ -233,20 +233,9 @@ onNet('mica:server:contacts:share', (...args: unknown[]) => {
 
   void (async () => {
     const nearby = await findNearbyVisiblePlayers(player.source, player.citizenid);
-    // Resolved from the connection that emitted the event, not from anything the payload
-    // named — a citizenid off the wire is never proof of who is speaking (§2.9). Falls back
-    // to just the citizenid on the rare miss (the sender disconnecting mid-lookup, say),
-    // rather than failing the share outright: an unresolved name is a display gap, not a
-    // security hole, since `sender.citizenid` alone is still genuine.
-    const senderIdentity = await resolvePlayer(player.citizenid);
-    const share: SharedContactCard = {
-      ...cardFields,
-      sender: {
-        citizenid: player.citizenid,
-        name: senderIdentity?.displayName ?? null,
-        phone: senderIdentity?.phone ?? null
-      }
-    };
+    // The card as `SHARED_CARD` parsed it, and nothing more: anything else the payload sent
+    // was stripped there, and nothing about the sender is added here (MICA-343).
+    const share: SharedContactCard = { ...cardFields };
 
     if (typeof emitNet === 'function') {
       for (const target of nearby) {

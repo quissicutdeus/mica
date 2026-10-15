@@ -240,9 +240,12 @@ describe('contacts:share — a card', () => {
       firstname: 'Ada',
       lastname: '',
       phone: '5'.repeat(20),
-      avatar: '',
-      sender: { citizenid: 'CID' }
+      avatar: ''
     });
+    // The card and nothing about who sent it (MICA-343): no citizenid, no number.
+    expect(push[2]).not.toHaveProperty('sender');
+    expect(JSON.stringify(push[2])).not.toContain('CID');
+    expect(JSON.stringify(push[2])).not.toContain('555-0000');
   });
 
   it('drops a card that is not an object, or whose name or phone is missing, blank or not text', async () => {

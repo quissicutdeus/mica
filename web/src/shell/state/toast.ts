@@ -303,12 +303,11 @@ function createToastStore() {
       phone: string;
       avatar?: string;
       /**
-       * MICA-155: who actually sent this card, resolved server-side from the connection
-       * that emitted it — never the card's own claimed name, which `contacts.share`
-       * deliberately lets be about someone else entirely (forwarding a friend's number).
-       * Required, not optional, so a caller cannot silently drop it the way the toast used
-       * to show only the claimed identity with nothing to check it against. The player
-       * needs this *before* Accept, not after.
+       * Who the title says sent the card. Never the card's own claimed name, which
+       * `contacts.share` deliberately lets be about someone else entirely (forwarding a
+       * friend's number). Since MICA-343 a share carries nothing about its sender, so the
+       * receiver passes "someone nearby": the share is proximity-based, and the player can
+       * see who is next to them. Required, so a caller cannot fall back to the card's name.
        */
       senderLabel: string;
       onAccept: () => void | Promise<void>;
