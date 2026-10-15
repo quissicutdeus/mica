@@ -1640,6 +1640,102 @@ describe('IframeHostServer', () => {
   });
 
   /**
+   * MICA-345. A row id is not an app id, so the pins above cannot reach it.
+   *
+   * `notifications.markRead(ids)`/`clear(ids)` and `accounts.updateAccount({ id })` name rows,
+   * and the server scopes those only by `citizenid`: every row the player owns is fair game,
+   * whichever app it belongs to. Ids are sequential, so an add-on could mark read or clear
+   * another app's notifications, or rewrite the player's Blabber profile, by counting. The
+   * shell is where the caller's app is known, so the shell narrows the ids to its own.
+   */
+  describe('row ids in call arguments are narrowed to the calling app’s own rows', () => {
+    let seen: Record<string, unknown[][]>;
+    const record =
+      (key: string) =>
+      (...args: unknown[]) => {
+        (seen[key] ??= []).push(args);
+      };
+    const flush = async () => {
+      for (let i = 0; i < 6; i++) await Promise.resolve();
+    };
+    let call = 0;
+    const raw = (facet: string, member: string, args: unknown[]) => ({
+      kind: 'call',
+      id: ++call,
+      facet,
+      factoryArgs: [],
+      member,
+      args
+    });
+    const replyTo = (posted: ToFrame[], id: number) =>
+      posted.find((m) => m.kind === 'reply' && m.id === id) as
+        Extract<ToFrame, { kind: 'reply' }> | undefined;
+
+    beforeEach(() => {
+      seen = {};
+      call = 0;
+      registerFacet(
+        'notifications' as any,
+        ((appId?: string) => ({
+          // The shade, filtered to the factory's app the way the real facet is.
+          notificationsStore: writable(
+            [
+              { id: 1, app: 'probe' },
+              { id: 2, app: 'messages' },
+              { id: 3, app: 'probe' }
+            ].filter((n) => !appId || n.app === appId)
+          ),
+          markRead: record('notifications.markRead'),
+          clear: record('notifications.clear')
+        })) as any
+      );
+      registerFacet(
+        'accounts' as any,
+        (() => ({
+          getMyAccounts: (app: string) =>
+            Promise.resolve({ rows: app === 'probe' ? [{ id: 10 }] : [{ id: 20 }], limit: 3 }),
+          updateAccount: record('accounts.updateAccount')
+        })) as any
+      );
+    });
+
+    it('marks read and clears only the frame’s own notifications', async () => {
+      const { from } = server(['notifications']);
+      from(raw('notifications', 'markRead', [[1, 2, 3]]));
+      from(raw('notifications', 'clear', [[2]]));
+      from(raw('notifications', 'clear', [[3]]));
+      await flush();
+
+      expect(seen['notifications.markRead']).toEqual([[[1, 3]]]);
+      // Another app's id alone narrows to nothing; the frame's own still goes through.
+      expect(seen['notifications.clear']).toEqual([[[]], [[3]]]);
+    });
+
+    it('treats anything but an array of ids as no ids at all', async () => {
+      const { from } = server(['notifications']);
+      from(raw('notifications', 'markRead', [2]));
+      from(raw('notifications', 'clear', [{ length: 1, 0: 2 }]));
+      await flush();
+
+      expect(seen['notifications.markRead']).toEqual([[[]]]);
+      expect(seen['notifications.clear']).toEqual([[[]]]);
+    });
+
+    it('refuses to update an account the frame’s app does not own, and updates its own', async () => {
+      const { posted, from } = server(['social']);
+      from(raw('accounts', 'updateAccount', [{ id: 20, display_name: 'pwned' }]));
+      from(raw('accounts', 'updateAccount', [{ id: 10, display_name: 'mine' }]));
+      from(raw('accounts', 'updateAccount', [{ display_name: 'no id' }]));
+      await flush();
+
+      expect(seen['accounts.updateAccount']).toEqual([[{ id: 10, display_name: 'mine' }]]);
+      expect(replyTo(posted, 1)).toMatchObject({ ok: false });
+      expect(replyTo(posted, 2)).toMatchObject({ ok: true });
+      expect(replyTo(posted, 3)).toMatchObject({ ok: false });
+    });
+  });
+
+  /**
    * MICA-196. `event.source` cannot tell a navigated guest from the original one — a
    * `WindowProxy` survives navigation, same object, new document — so a frame that sets
    * `location.href = 'https://evil'` goes on satisfying every check the reload work

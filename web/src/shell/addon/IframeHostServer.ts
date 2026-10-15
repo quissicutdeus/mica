@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { get } from 'svelte/store';
+import { get, type Readable } from 'svelte/store';
 import type { Host } from '../../../../sdk/host/protocol';
 import { AppPermissionError } from '../../../../sdk/host/protocol';
 import { facets } from '../../../../sdk/host/current';
@@ -451,6 +451,58 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
   }
 
   /**
+   * MICA-345: a call's **row** ids, narrowed to rows this app owns.
+   *
+   * The pin above handles an app id. These members name rows instead, and the server
+   * scopes a row only by `citizenid`: every row the player owns is in reach, whichever app
+   * it belongs to. Ids are sequential, so an add-on could mark read or clear another app's
+   * notifications, or rewrite the player's Blabber profile, just by counting. The shell is
+   * where the caller's app is known, so the check is here, and only here. A `core: true`
+   * app calls the facet in-process and never passes through this server, so nothing it
+   * does changes.
+   *
+   * - `notifications.markRead`/`clear` keep only ids whose notification is this app's. `obj`
+   *   is `notifications(host.appId)` (the factory argument is pinned), so its store already
+   *   holds just this app's rows; `app` is checked again rather than trusted. Anything but
+   *   an array becomes no ids, which the service treats as a no-op. An id for a row the
+   *   shade has not loaded is dropped too. That fails closed, and an honest frame only
+   *   ever has ids it read from that same store.
+   * - `accounts.updateAccount` is refused unless its `id` is one of this app's own accounts,
+   *   asked of the server at the time of the call. A failed lookup answers no rows, which
+   *   refuses too.
+   *
+   * Synchronous unless it has to ask, so every other call keeps the reply depth the
+   * ordering note in `call` relies on.
+   */
+  function narrowRows(
+    facet: string,
+    member: string,
+    obj: Record<string, unknown>,
+    args: unknown[]
+  ): unknown[] | Promise<unknown[]> {
+    if (facet === 'notifications' && (member === 'markRead' || member === 'clear')) {
+      const items = get(
+        obj.notificationsStore as Readable<readonly { id: unknown; app?: unknown }[]>
+      );
+      const own = new Set(items.filter((n) => n.app === host.appId).map((n) => n.id));
+      const ids: unknown[] = Array.isArray(args[0]) ? args[0].filter((id) => own.has(id)) : [];
+      return [ids, ...args.slice(1)];
+    }
+    if (facet === 'accounts' && member === 'updateAccount') {
+      const input = args[0];
+      const id = input && typeof input === 'object' ? (input as { id?: unknown }).id : undefined;
+      const mine = obj.getMyAccounts as (app: string) => Promise<{ rows?: { id: unknown }[] }>;
+      return mine(host.appId).then((reply) => {
+        if (typeof id !== 'number' || !(reply?.rows ?? []).some((row) => row.id === id)) {
+          throw new Error(`[micaOS] '${host.appId}' may only update its own accounts`);
+        }
+        return args;
+      });
+    }
+    return args;
+  }
+
+  /**
    * Resolve (and cache) the facet object for `facet(factoryArgs)`, after the permission
    * check — `host.require` is a no-op for an implicit (`null`) permission, `lifecycle`
    * included, so there is no separate "skip the check" path to maintain (MICA-27).
@@ -574,7 +626,12 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
       const member = obj[msg.member];
       if (typeof member !== 'function')
         throw new Error(`[micaOS] '${msg.facet}.${msg.member}' is not callable`);
-      const args = pinMemberArgs(msg.facet, msg.member, decodeArgs(msg.args, epoch));
+      const pinned = pinMemberArgs(msg.facet, msg.member, decodeArgs(msg.args, epoch));
+      const narrowed = narrowRows(msg.facet, msg.member, obj, pinned);
+      const args = narrowed instanceof Promise ? await narrowed : narrowed;
+      // The check asked the server; the document may have gone while it did. Nothing it
+      // asked for is done on its behalf after that.
+      if (!live(epoch)) return;
       const value: unknown = await member.apply(obj, args);
       if (!live(epoch)) {
         // Settled after its document went: nobody is left to `invoke` a release, so it is
