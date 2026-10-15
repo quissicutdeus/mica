@@ -75,3 +75,6 @@ line here.
   legacy row after it
 - [Privacy.ts cannot import a service that reaches Devices](privacy-cannot-import-a-service.md)
   — `lib/shell` imports Privacy; use `onBeforeSelfServiceDelete`, BFS the edge
+- [An unpaired 1:1 holds NULL pair columns](unpaired-thread-needs-coalesce.md) —
+  `NOT LIKE` drops it; COALESCE, `<=>` for device_id, a named yes column
+  (MICA-349)

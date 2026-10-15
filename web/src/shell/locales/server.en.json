@@ -100,6 +100,7 @@
   "messages.editFailed": "That message could not be edited.",
   "messages.emptyEdit": "A message needs some text. Unsend it instead of emptying it.",
   "messages.noLongerAvailable": "That message is no longer available.",
+  "messages.noRecipient": "No one else is in this conversation.",
   "messages.notAvailable": "That message is not available.",
   "messages.notParticipant": "Not a participant in this conversation.",
   "messages.notYours": "That message is not yours to change.",

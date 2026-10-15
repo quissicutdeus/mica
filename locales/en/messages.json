@@ -39,6 +39,7 @@
   "unreadMessages": "Unread Messages ({count})",
   "noMatchingInChat": "No matching messages found in this chat",
   "noMessagesYet": "No messages yet",
+  "nobodyElse": "No one else is in this conversation.",
   "waypointSet": "Waypoint set",
   "waypointFailed": "Could not set waypoint",
   "unsendTitle": "Unsend message?",

@@ -757,6 +757,20 @@ app.registerEvent('send', async (source, cbId, data, citizenid, player) => {
   const conversationId = data.conversation_id;
   const deviceId = await deviceForRequest(source, citizenid);
   await requireParticipant(conversationId, citizenid, deviceId);
+  /**
+   * A 1:1 with nobody in it but the sender reaches nobody (MICA-349). There are two kinds: one
+   * the other side has left, which since MICA-342 stays readable to the side still in it, and
+   * one started to a number nobody holds, which has only the caller as a member. A text typed
+   * into either was stored and delivered to no one, with no sign to the sender. A group is never
+   * refused, even with one member left: an admin can add people back. A line thread is never
+   * refused: the line is not a member, and its texts go through `tellLineAbout`. Asked before
+   * the number, so a refused send costs no sync.
+   */
+  if (await conversationRepo.nobodyElseIn(conversationId, deviceId)) {
+    throw new PlayerFacingError('No one else is in this conversation.', {
+      key: 'server.messages.noRecipient'
+    });
+  }
 
   const message = data.message;
   const attachments = await resolveOwnedAttachments(data.attachments, citizenid, mediaRepo);

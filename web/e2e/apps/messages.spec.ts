@@ -358,6 +358,60 @@ test.describe('Messages App E2E', () => {
   });
 
   /**
+   * A 1:1 with nobody else in it (MICA-349), because the other side left or the number never had
+   * anyone, stays readable, and the server refuses anything sent into it. The player is told
+   * before they type, not by a toast after: the composer gives way to a notice in its place. The
+   * fixture is `EMPTY_ONE_TO_ONE_ID` in the Messages mock — the reader's own membership and nobody
+   * else's, and no name, which is how the server sends it.
+   */
+  test('a 1:1 with nobody else in it shows a notice in place of the composer', async ({ page }) => {
+    await page
+      .locator('[role="button"]')
+      .filter({ hasText: 'Long enough. Take care of yourself.' })
+      .first()
+      .click({ force: true });
+
+    const messagesContainer = page.locator('#messages-container');
+    await expect(messagesContainer).toBeVisible();
+    await expect(
+      messagesContainer.getByText('Moving out of town for a while.'),
+      'the thread stays readable'
+    ).toBeVisible();
+
+    const notice = page.getByTestId('thread-closed');
+    await expect(notice).toBeVisible();
+    await expect(notice).toHaveText('No one else is in this conversation.');
+    // Scoped to the thread's own column: the shell keeps other apps' fields in the page, which
+    // is why the composer specs above reach for `.last()`.
+    const chat = messagesContainer.locator('..');
+    await expect(chat.getByRole('textbox'), 'no field to type into').toHaveCount(0);
+    await expect(chat.getByRole('button', { name: 'Send' }), 'no send button').toHaveCount(0);
+
+    // Where the composer was, so it clears the gesture bar the way the composer does.
+    const text = await notice.getByRole('status').boundingBox();
+    const home = await page.locator("button[aria-label='Return to home screen']").boundingBox();
+    expect(text, 'the notice is on screen').not.toBeNull();
+    expect(home, 'the home indicator is on screen').not.toBeNull();
+    expect(text!.y + text!.height, 'the notice sits above the gesture bar').toBeLessThan(home!.y);
+  });
+
+  /** The twin: a 1:1 both sides are still in keeps its composer and shows no notice. */
+  test('a 1:1 with someone else in it keeps its composer', async ({ page }) => {
+    await page
+      .locator('[role="button"]')
+      .filter({ hasText: 'Trevor' })
+      .first()
+      .click({ force: true });
+    const messagesContainer = page.locator('#messages-container');
+    await expect(messagesContainer).toBeVisible();
+
+    const chat = messagesContainer.locator('..');
+    await expect(chat.getByRole('textbox')).toBeVisible();
+    await expect(chat.getByRole('button', { name: 'Send' })).toBeVisible();
+    await expect(page.getByTestId('thread-closed')).toHaveCount(0);
+  });
+
+  /**
    * Reactions (MICA-143), on the shared primitive Blabber's DMs already use
    * (`createReactionStore`/`ReactionBar`, MICA-98). Driven through the actual
    * emoji-picker affordance rather than the store directly, because the wiring — the

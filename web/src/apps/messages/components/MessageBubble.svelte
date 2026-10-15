@@ -278,33 +278,37 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
     {#if showActions}
       <div class="flex shrink-0 items-center gap-1.5">
-        <button
-          type="button"
-          class="bg-surface-container-high text-on-surface-variant hover:bg-primary-container hover:text-on-primary-container shadow-elevation-2 duration-short ease-standard flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full transition-all active:scale-95"
-          onclick={(e) => {
-            e.stopPropagation();
-            onreply?.(msg);
-          }}
-          title={$t('messages.replyToMessage')}
-          aria-label={$t('messages.replyToMessage')}
-        >
-          <ReplyIcon class="size-icon-sm" />
-        </button>
-
-        {#if isMine}
+        {#if onreply}
           <button
             type="button"
             class="bg-surface-container-high text-on-surface-variant hover:bg-primary-container hover:text-on-primary-container shadow-elevation-2 duration-short ease-standard flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full transition-all active:scale-95"
             onclick={(e) => {
               e.stopPropagation();
-              showActions = false;
-              onedit?.(msg);
+              onreply?.(msg);
             }}
-            title={$t('messages.editMessage')}
-            aria-label={$t('messages.editMessage')}
+            title={$t('messages.replyToMessage')}
+            aria-label={$t('messages.replyToMessage')}
           >
-            <EditIcon class="size-icon-sm" />
+            <ReplyIcon class="size-icon-sm" />
           </button>
+        {/if}
+
+        {#if isMine}
+          {#if onedit}
+            <button
+              type="button"
+              class="bg-surface-container-high text-on-surface-variant hover:bg-primary-container hover:text-on-primary-container shadow-elevation-2 duration-short ease-standard flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full transition-all active:scale-95"
+              onclick={(e) => {
+                e.stopPropagation();
+                showActions = false;
+                onedit?.(msg);
+              }}
+              title={$t('messages.editMessage')}
+              aria-label={$t('messages.editMessage')}
+            >
+              <EditIcon class="size-icon-sm" />
+            </button>
+          {/if}
           <!-- "Unsend", not "Delete". The message goes from everyone's thread, and the
                word has to say so before the confirmation does. -->
           <button

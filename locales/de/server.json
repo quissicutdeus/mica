@@ -100,6 +100,7 @@
   "messages.editFailed": "Diese Nachricht konnte nicht bearbeitet werden.",
   "messages.emptyEdit": "Eine Nachricht braucht Text. Nimm sie zurück, statt sie zu leeren.",
   "messages.noLongerAvailable": "Diese Nachricht ist nicht mehr verfügbar.",
+  "messages.noRecipient": "Außer dir ist niemand in dieser Unterhaltung.",
   "messages.notAvailable": "Diese Nachricht ist nicht verfügbar.",
   "messages.notParticipant": "Kein Teilnehmer dieser Unterhaltung.",
   "messages.notYours": "Diese Nachricht kannst du nicht ändern.",

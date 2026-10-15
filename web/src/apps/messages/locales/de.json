@@ -39,6 +39,7 @@
   "unreadMessages": "Ungelesene Nachrichten ({count})",
   "noMatchingInChat": "Keine passenden Nachrichten in diesem Chat",
   "noMessagesYet": "Noch keine Nachrichten",
+  "nobodyElse": "Außer dir ist niemand in dieser Unterhaltung.",
   "waypointSet": "Wegpunkt gesetzt",
   "waypointFailed": "Wegpunkt konnte nicht gesetzt werden",
   "unsendTitle": "Nachricht zurückziehen?",

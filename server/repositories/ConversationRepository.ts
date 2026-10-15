@@ -457,6 +457,54 @@ export class ConversationRepository extends SchemaRepository<ConversationRow> {
   }
 
   /**
+   * Whether this is a 1:1 with nobody in it but the caller, so a text into it would reach nobody
+   * (MICA-349). One indexed read, asked by `messages:send` after the caller's own membership is
+   * confirmed.
+   *
+   * **What it asks.** An active thread that is not a group and has no line side, with no live
+   * member on any phone but the caller's. Two kinds of thread answer yes:
+   *
+   * - **A 1:1 the other side has left.** Since MICA-342 the side that leaves (or is purged by a
+   *   privacy delete) unpairs the thread, and the side that stays keeps it readable.
+   * - **A 1:1 to a number nobody holds.** `conversations:create` naming only unknown numbers
+   *   makes a thread with no pair and the caller as its only member.
+   *
+   * Nothing delivers a text typed into either one, and the sender would see it sent.
+   *
+   * **What it never refuses.** A group, whose sole remaining member still posts to a thread an
+   * admin may add to again. A line thread, whose far side is never a member: a line has no
+   * `players` row, and its texts reach it through `tellLineAbout`. The pair columns are
+   * `COALESCE`d because an unpaired thread holds NULL there, and `NULL NOT LIKE` would answer
+   * NULL and drop exactly the rows this is for.
+   *
+   * **The other member is any phone that is not this one.** `device_id` is nullable on a legacy
+   * membership, so the comparison is null-safe (`<=>`): a live row with no phone id counts as
+   * somebody still there, which is the side that refuses nothing it should not. The caller's own
+   * row always carries this phone, because `isMember` matched it on that phone.
+   *
+   * The answer is read off a named column, not off "a row came back", so a stubbed `single`
+   * that answers every query with a row cannot turn every send into a refusal.
+   */
+  async nobodyElseIn(conversationId: number, deviceId: string): Promise<boolean> {
+    if (!deviceId) return false;
+    const line = `${LINE_KEY_PREFIX}%`;
+    const row = await Database.single<{ nobody_else?: number } | null>(
+      `SELECT 1 AS nobody_else
+         FROM mica_messages_conversations c
+        WHERE c.id = ? AND c.is_group = 0 AND c.status = 'active'
+          AND COALESCE(c.participant_a, '') NOT LIKE ?
+          AND COALESCE(c.participant_b, '') NOT LIKE ?
+          AND NOT EXISTS (
+              SELECT 1 FROM mica_messages_participants p
+               WHERE p.conversation_id = c.id AND p.left_at IS NULL
+                 AND NOT (p.device_id <=> ?)
+          )`,
+      [conversationId, line, line, deviceId]
+    );
+    return Boolean(row?.nobody_else);
+  }
+
+  /**
    * `isParticipant` used to live here. It is now the inherited `Repository.isMember`,
    * derived from this service's `membership` declaration — same query, one definition, and
    * Messages no longer reaches into this class to authorize its own reads.

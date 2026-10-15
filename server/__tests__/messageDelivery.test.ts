@@ -80,7 +80,13 @@ vi.mock('../lib/FrameworkBridge', () => ({
 }));
 
 vi.mock('../services/Conversations', () => ({
-  conversations: { repo: { findParticipants: async () => participants.rows } }
+  conversations: {
+    repo: {
+      findParticipants: async () => participants.rows,
+      // Somebody is still in every thread here; the refusal is conversationPrivacy's (MICA-349).
+      nobodyElseIn: async () => false
+    }
+  }
 }));
 
 (globalThis as any).emitNet = (event: string, target: number, payload: any) => {

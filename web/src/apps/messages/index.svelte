@@ -56,6 +56,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import MessageComposer from './components/MessageComposer.svelte';
   import MessageThread from './components/MessageThread.svelte';
   import ConversationDetailsModal from './components/ConversationDetailsModal.svelte';
+  import { nobodyElse } from './nobodyElse';
 
   let {
     onback,
@@ -120,6 +121,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   let currentConv = $derived(
     selectedConversationId ? conversations.find((c) => c.id === selectedConversationId) : null
   );
+
+  /**
+   * A 1:1 with nobody else in it (MICA-349), because the other side left or the number never had
+   * anyone. It stays readable, but the server refuses a send into it, so the composer gives way
+   * to a notice, and so do reply and edit, which only ever work through it.
+   */
+  let threadClosed = $derived(!!currentConv && nobodyElse(currentConv));
 
   // Derived messages for current conversation
   // We must subscribe to the inner store
@@ -722,9 +730,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         {currentConv}
         {lastReadMyMessageId}
         isReadByOther={isMessageReadByOther}
-        onreply={(msg: UIMessage) => (replyingToMsg = msg)}
+        onreply={threadClosed ? undefined : (msg: UIMessage) => (replyingToMsg = msg)}
         onscrollto={handleScrollToMessage}
-        onedit={startEdit}
+        onedit={threadClosed ? undefined : startEdit}
         ondelete={handleUnsendMessage}
         onloadmore={page.loadMore}
         onscroll={page.onScroll}
@@ -734,18 +742,35 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         ontogglereaction={toggleMessageReaction}
       />
 
-      <MessageComposer
-        bind:text={newMessageText}
-        bind:attachments={selectedAttachments}
-        replyingTo={replyingToMsg}
-        editing={editingMsg}
-        {currentConv}
-        busy={$busy}
-        onsend={handleSendMessage}
-        onopenphotos={openPhotoPicker}
-        oncancelreply={() => (replyingToMsg = null)}
-        oncanceledit={cancelEdit}
-      />
+      {#if threadClosed}
+        <!-- In the composer's place, on the same two boxes as `MessageBar`, so it sits where the
+             row did and clears the home indicator the same way: the outer box reaches down
+             behind the gesture bar, the inner one carries the padding. Padding on the `<p>`
+             itself put its box flush on the bar's top edge. -->
+        <div
+          class="border-outline-variant bg-surface-container pb-home-indicator border-t backdrop-blur-md"
+          data-testid="thread-closed"
+        >
+          <div class="p-3">
+            <p class="text-on-surface-variant text-body-medium text-center" role="status">
+              {$t('messages.nobodyElse')}
+            </p>
+          </div>
+        </div>
+      {:else}
+        <MessageComposer
+          bind:text={newMessageText}
+          bind:attachments={selectedAttachments}
+          replyingTo={replyingToMsg}
+          editing={editingMsg}
+          {currentConv}
+          busy={$busy}
+          onsend={handleSendMessage}
+          onopenphotos={openPhotoPicker}
+          oncancelreply={() => (replyingToMsg = null)}
+          oncanceledit={cancelEdit}
+        />
+      {/if}
     </div>
   {:else}
     <ConversationList

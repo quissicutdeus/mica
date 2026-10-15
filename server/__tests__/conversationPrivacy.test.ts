@@ -443,6 +443,50 @@ describe('messages:send needs a phone in hand (MICA-339)', () => {
   });
 });
 
+describe('messages:send into a 1:1 with nobody else in it is refused (MICA-349)', () => {
+  /** Whether the repository's `nobodyElseIn` read answers yes; every other `single` as before. */
+  const answerLeft = (left: boolean) => {
+    const before = dbMock.single.getMockImplementation()!;
+    dbMock.single.mockImplementation(async (sql: string, params: unknown[]) =>
+      String(sql).includes('nobody_else') ? (left ? { nobody_else: 1 } : null) : before(sql, params)
+    );
+  };
+  const asks = (needle: string) =>
+    dbMock.single.mock.calls.filter(([sql]) => String(sql).includes(needle));
+  const messageInserts = () =>
+    dbMock.insert.mock.calls.filter(([sql]) => String(sql).includes('INTO `mica_messages`'));
+  const pushed = () =>
+    ((globalThis.emitNet as any).mock.calls as unknown[][]).filter(
+      ([event]) => event === 'mica:client:messages:received'
+    );
+
+  it('answers the key, writes nothing, pushes nothing and reads no number', async () => {
+    answerLeft(true);
+
+    const reply = await call('messages', 'send', { conversation_id: 1, message: 'are you there' });
+
+    expect(reply).toMatchObject({ key: 'server.messages.noRecipient' });
+    expect(asks('nobody_else').map(([, params]) => params)).toEqual([
+      [1, 'ext:%', 'ext:%', TEST_PHONE_ID]
+    ]);
+    expect(messageInserts()).toEqual([]);
+    expect(pushed()).toEqual([]);
+    expect(asks('`mica_phone_numbers`')).toEqual([]);
+    expect(numberSync.run).not.toHaveBeenCalled();
+  });
+
+  it('sends as before when someone else is still in the thread', async () => {
+    answerLeft(false);
+
+    const reply = await call('messages', 'send', { conversation_id: 1, message: 'are you there' });
+
+    expect(reply).toMatchObject({ id: 50, mine: true });
+    expect(asks('nobody_else')).toHaveLength(1);
+    expect(messageInserts()).toHaveLength(1);
+    expect(pushed()).toHaveLength(1);
+  });
+});
+
 describe('conversations:update — rename is the admin on the phone in hand (F15)', () => {
   it('is a contracted action, with the generic owner-scoped update turned off', () => {
     expect(conversations.resolved.clientWritable).toContain('name');

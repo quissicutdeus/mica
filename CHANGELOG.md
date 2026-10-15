@@ -1235,6 +1235,16 @@ export instead, which authenticates its caller.
 
 ### Fixed
 
+**A text into a 1:1 nobody else is in is refused, and the thread says so
+(MICA-349).** After the other side left a 1:1, or was taken out of it by a
+privacy delete, or when a 1:1 was started to a number nobody holds, a text typed
+into it was stored and reached nobody, and the sender saw it as sent. The thread
+now shows "No one else is in this conversation." where the text field was, and
+the server refuses such a send with the same words, writing nothing. The thread
+stays readable, and starting a new 1:1 with the same number works. A group is
+never refused, even with one member left, and nor is a thread with a business
+line.
+
 **A phone with no number of its own no longer gives away its holder's main
 number (MICA-346).** On qb and standalone, a call, a text, a forwarded call's
 Recents entry and a shared live location from a phone that had no number yet,

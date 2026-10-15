@@ -4,7 +4,7 @@
 
 import { MESSAGE_BODY_MAX } from '@mica/shared/contracts/messages';
 import type { Conversation, Message } from '@mica/shared/types';
-import { mockConversations, mockMedia, mockMessages } from '../data';
+import { MOCK_OWN_NUMBER, mockConversations, mockMedia, mockMessages } from '../data';
 import type { MockHandler } from '../registry';
 import { delay } from '../shared';
 
@@ -27,6 +27,68 @@ const mockMessageReactions: { messageId: number; citizenid: string; emoji: strin
   { messageId: 2001, citizenid: 'group-heist-member-a', emoji: '🔥' },
   { messageId: 2001, citizenid: 'group-heist-member-b', emoji: '🔥' }
 ];
+
+/**
+ * A 1:1 with nobody else in it (MICA-349): here, one the other side has left, as the server
+ * sends it to the side that stayed.
+ *
+ * Since MICA-342 a leave unpairs the thread, so it carries no name, and the membership read is
+ * live members only, so `participants` is the reader alone. That is the whole signal the phone
+ * has, and the shape this fixture has to match: the Messages e2e spec asserts the composer gives
+ * way to the "no one else" notice here, and a fixture with a name or a second member would be a
+ * shape the server never sends for this thread. Labelled "Unknown" in the inbox for the same
+ * reason the server gives it nothing better: the number of a phone that left is not in the
+ * payload.
+ *
+ * Here rather than in `data.ts`'s generated set, which builds every 1:1 with its other member.
+ * Pushed once, guarded by id, so a module re-evaluated under HMR does not seat it twice.
+ */
+const EMPTY_ONE_TO_ONE_ID = 900;
+if (!mockConversations.some((c) => c.id === EMPTY_ONE_TO_ONE_ID)) {
+  const selfId = EMPTY_ONE_TO_ONE_ID * 100 + 99;
+  const at = (hoursAgo: number) => new Date(Date.now() - hoursAgo * 3_600_000).toISOString();
+  const thread: Message[] = [
+    { mine: false, message: 'Moving out of town for a while.', hoursAgo: 52 },
+    { mine: true, message: 'For how long?', hoursAgo: 51 },
+    { mine: false, message: 'Long enough. Take care of yourself.', hoursAgo: 50 }
+  ].map((m, index) => ({
+    id: EMPTY_ONE_TO_ONE_ID * 1000 + index + 1,
+    conversation_id: EMPTY_ONE_TO_ONE_ID,
+    mine: m.mine,
+    // The side that left is no member any more, so its messages name a membership id the
+    // thread no longer lists — exactly what the server's are.
+    sender_id: m.mine ? selfId : EMPTY_ONE_TO_ONE_ID * 10,
+    status: 'active',
+    message: m.message,
+    created_at: at(m.hoursAgo),
+    updated_at: at(m.hoursAgo)
+  }));
+  mockMessages[EMPTY_ONE_TO_ONE_ID] = thread;
+  const last = thread[thread.length - 1];
+  mockConversations.push({
+    id: EMPTY_ONE_TO_ONE_ID,
+    is_group: false,
+    status: 'active',
+    created_at: at(24 * 20),
+    updated_at: last.created_at,
+    unread_count: 0,
+    last_message: last,
+    participant_count: 1,
+    participants: [
+      {
+        id: selfId,
+        conversation_id: EMPTY_ONE_TO_ONE_ID,
+        role: 'admin',
+        status: 'active',
+        last_read: last.created_at,
+        created_at: at(24 * 20),
+        updated_at: at(24 * 20),
+        self: true,
+        phone: MOCK_OWN_NUMBER
+      }
+    ]
+  });
+}
 
 export const mocks: Record<string, MockHandler> = {
   // Messages
@@ -112,6 +174,8 @@ export const mocks: Record<string, MockHandler> = {
     if (payload.message.length > MESSAGE_BODY_MAX)
       throw new Error(`message must be ${MESSAGE_BODY_MAX} characters or fewer.`);
     const convId = payload.conversation_id;
+    // As `messages:send` refuses it in game (MICA-349, `server.messages.noRecipient`).
+    if (convId === EMPTY_ONE_TO_ONE_ID) throw new Error('No one else is in this conversation.');
     const conv = mockConversations.find((c) => c.id === convId);
     const msg: Message = {
       id: Math.floor(Math.random() * 1000000),

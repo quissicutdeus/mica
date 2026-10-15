@@ -88,7 +88,8 @@ const FLOW_CHECKS = {
   qbMail: { standalone: 10, qb: 10 },
   devices: { standalone: 27, qb: 31 },
   reports: { standalone: 14, qb: 14 },
-  privacy: { standalone: 21, qb: 21 }
+  privacy: { standalone: 22, qb: 22 },
+  leftThread: { standalone: 13, qb: 13 }
 };
 const MINIMUM_CHECKS = Object.values(FLOW_CHECKS).reduce(
   (sum, perShape) => sum + perShape.standalone + perShape.qb,
@@ -2069,6 +2070,12 @@ const runPrivacy = async (shape, live) => {
     ],
     [true, true, true]
   );
+  // MICA-349: the old thread reads, and a text typed into it would reach nobody.
+  check(
+    `${kind}: 2's text into the thread 1 was taken out of is refused`,
+    (await shape.call(B, 'messages', 'send', { conversation_id: shared, message: 'hello?' }))?.key,
+    'server.messages.noRecipient'
+  );
 
   step(`${kind}: 2 leaves the new thread, and they start one again`);
   check(
@@ -2086,6 +2093,144 @@ const runPrivacy = async (shape, live) => {
     `${kind}: and 1 starting one with 2 finds it`,
     (await shape.call(A, 'conversations', 'create', { phone: twoNumber }))?.id,
     third?.id
+  );
+};
+
+/* ------------------------------------------------------------------ a thread nobody else is in */
+
+/**
+ * A text into a 1:1 with nobody else in it is refused, and says why (MICA-349).
+ *
+ * Since MICA-342 the side that leaves unpairs the thread and the side that stays keeps it to
+ * read. Typing into it stored a text that reached nobody. Whether anyone else is still in it
+ * is a NOT EXISTS over the membership table, with the pair columns NULL after the leave,
+ * which the unit suites only stub. So this asks the real one. Before the leave the same thread
+ * delivers, so the refusal is not a send that never worked. After it, a new thread between the
+ * two reaches the other side again. A group whose other members all left is not a 1:1, and
+ * its last member still posts. Last, the other kind of 1:1 with nobody else in it: one started
+ * to a number nobody holds.
+ */
+const runLeftThread = async (shape, { A, B, D }) => {
+  const { kind } = shape;
+  const oneNumber = await shape.numberOf(PEOPLE[1]);
+  const twoNumber = await shape.numberOf(PEOPLE[2]);
+  const rowsIn = async (id) =>
+    (await shape.rows('SELECT `id` FROM `mica_messages` WHERE `conversation_id` = ?', [id])).length;
+
+  step(`${kind}: 1 texts 2, then leaves the thread`);
+  const thread = await shape.call(B, 'conversations', 'create', { phone: oneNumber });
+  check(`${kind}: 2 has a thread with 1`, typeof thread?.id, 'number');
+  let mark = shape.runtime.sent.length;
+  await shape.call(A, 'messages', 'send', { conversation_id: thread?.id, message: 'still here?' });
+  check(
+    `${kind}: before the leave, 1's text reaches 2`,
+    shape.runtime
+      .since(mark, (m) => m.event === RECEIVED)
+      .map((m) => [m.target, m.args[0].conversation_id, m.args[0].message]),
+    [[B, thread?.id, 'still here?']]
+  );
+  check(
+    `${kind}: 1, who is not its admin, leaves it`,
+    await shape.call(A, 'conversations', 'delete', { id: thread?.id }),
+    true
+  );
+
+  step(`${kind}: 2 texts into the thread 1 left`);
+  const before = await rowsIn(thread?.id);
+  mark = shape.runtime.sent.length;
+  const refused = await shape.call(B, 'messages', 'send', {
+    conversation_id: thread?.id,
+    message: 'are you there'
+  });
+  check(
+    `${kind}: the text is refused, saying no one else is there`,
+    refused?.key,
+    'server.messages.noRecipient'
+  );
+  check(
+    `${kind}: nothing is written and nothing is pushed`,
+    [await rowsIn(thread?.id), shape.runtime.since(mark, (m) => m.event === RECEIVED).length],
+    [before, 0]
+  );
+  check(
+    `${kind}: 2 still reads the thread`,
+    (await shape.call(B, 'messages', 'get', { conversation_id: thread?.id }))?.rows?.some(
+      (m) => m.message === 'still here?'
+    ),
+    true
+  );
+
+  step(`${kind}: 2 starts a new thread with 1`);
+  const again = await shape.call(B, 'conversations', 'create', { phone: oneNumber });
+  check(
+    `${kind}: it is a new thread, not the one 1 left`,
+    [typeof again?.id, again?.id === thread?.id],
+    ['number', false]
+  );
+  check(
+    `${kind}: 1 starting one with 2 finds it`,
+    (await shape.call(A, 'conversations', 'create', { phone: twoNumber }))?.id,
+    again?.id
+  );
+  mark = shape.runtime.sent.length;
+  const sent = await shape.call(B, 'messages', 'send', {
+    conversation_id: again?.id,
+    message: 'there you are'
+  });
+  check(
+    `${kind}: 2's text in it is sent and reaches 1`,
+    [
+      typeof sent?.id,
+      shape.runtime
+        .since(mark, (m) => m.event === RECEIVED)
+        .map((m) => [m.target, m.args[0].conversation_id, m.args[0].message])
+    ],
+    ['number', [[A, again?.id, 'there you are']]]
+  );
+
+  step(`${kind}: a group whose other members left still takes its last member's text`);
+  const group = await shape.call(A, 'conversations', 'create', {
+    participants: [twoNumber, await shape.numberOf(PEOPLE[4])]
+  });
+  check(
+    `${kind}: 1 starts a group with 2 and 4`,
+    [typeof group?.id, group?.is_group],
+    ['number', true]
+  );
+  check(
+    `${kind}: 2 and 4 leave it`,
+    [
+      await shape.call(B, 'conversations', 'delete', { id: group?.id }),
+      await shape.call(D, 'conversations', 'delete', { id: group?.id })
+    ],
+    [true, true]
+  );
+  const alone = await shape.call(A, 'messages', 'send', {
+    conversation_id: group?.id,
+    message: 'anyone?'
+  });
+  check(
+    `${kind}: 1's text into it is sent, not refused`,
+    [typeof alone?.id, alone?.key, await rowsIn(group?.id)],
+    ['number', undefined, 1]
+  );
+
+  /**
+   * The other kind of thread with nobody else in it. A `phone` nobody holds (and no line
+   * answers) is refused at create with no thread at all. A `participants` list of only such
+   * numbers makes a 1:1 with no pair and the caller as its only member. 5550404 sits in the
+   * exchange no generated number is drawn from, and nothing in this harness seeds it.
+   */
+  step(`${kind}: 1 starts a thread with a number nobody holds, and texts into it`);
+  const solo = await shape.call(A, 'conversations', 'create', { participants: ['5550404'] });
+  const unheard = await shape.call(A, 'messages', 'send', {
+    conversation_id: solo?.id,
+    message: 'hello?'
+  });
+  check(
+    `${kind}: the thread exists, and the text is refused with nothing written`,
+    [typeof solo?.id, solo?.is_group, unheard?.key, await rowsIn(solo?.id)],
+    ['number', false, 'server.messages.noRecipient', 0]
   );
 };
 
@@ -2304,6 +2449,7 @@ const runShape = async (db, kind) => {
     await flow(shape, 'devices', () => runDevices(shape, live));
     await flow(shape, 'reports', () => runReports(shape, live));
     await flow(shape, 'privacy', () => runPrivacy(shape, live));
+    await flow(shape, 'leftThread', () => runLeftThread(shape, live));
   } finally {
     await shape.stop();
   }
