@@ -35,14 +35,22 @@ const world = vi.hoisted(() => ({
     5: [100, 200, 30],
     6: [-50, -60, 10],
     7: [900, 900, 5]
-  } as Record<number, [number, number, number]>
+  } as Record<number, [number, number, number]>,
+  /** `mica_phone_numbers`: a phone id to the number on it. qb keeps the number on the phone. */
+  numbers: new Map<string, string>()
 }));
 
 vi.mock('../lib/FrameworkBridge', () => ({
+  detectFramework: () => 'qb',
   FrameworkBridge: {
     getPlayer: (src: number) =>
       world.online.has(src)
-        ? { citizenid: world.players[src].citizenid, source: src, setMeta: () => {} }
+        ? {
+            citizenid: world.players[src].citizenid,
+            source: src,
+            phone: world.players[src].phone,
+            setMeta: () => {}
+          }
         : undefined,
     getPlayerPhone: (src: number) => world.players[src]?.phone ?? null,
     getSourceByCitizenId: (cid: string) => {
@@ -60,6 +68,14 @@ vi.mock('../lib/FrameworkBridge', () => ({
       return undefined;
     }
   }
+}));
+
+/** The number sync (MICA-346), awaited for a phone with no number row. Writes nothing by default. */
+const numberSync = vi.hoisted(() => ({
+  run: vi.fn(async (_src: number): Promise<unknown> => null)
+}));
+vi.mock('../services/PhoneNumbers', () => ({
+  syncNumber: (src: number) => numberSync.run(src)
 }));
 
 vi.mock('../lib/PlayerDirectory', () => ({
@@ -81,6 +97,7 @@ import {
   DEFAULT_MAP_BOUNDS
 } from '../services/PlacesLive';
 import { __resetRateLimits } from '../lib/rateLimit';
+import { __setDeviceResolvers } from '../lib/deviceIdentity';
 import { TEST_PHONE_ID } from './phoneStub';
 
 /** A's address book: 1 is B, 2 is C but deleted, 3 is A's own number. */
@@ -113,11 +130,18 @@ beforeEach(() => {
   world.players[6] = { citizenid: 'CIT_B', phone: '555-0002' };
   world.players[7] = { citizenid: 'CIT_C', phone: '555-0003' };
   dbMock.query.mockResolvedValue([]);
-  dbMock.single.mockImplementation(async (sql: string, params: unknown[]) =>
-    String(sql).includes('`mica_contacts`') && params[1] === 'CIT_A'
+  // A shares from the phone every request resolves to, which carries A's number.
+  world.numbers = new Map([[TEST_PHONE_ID, '555-0001']]);
+  numberSync.run.mockImplementation(async () => null);
+  dbMock.single.mockImplementation(async (sql: string, params: unknown[]) => {
+    if (String(sql).includes('`mica_phone_numbers`') && /WHERE `device_id` = \?/.test(sql)) {
+      const number = world.numbers.get(String(params[0]));
+      return number ? { id: 1, citizenid: 'CIT_A', number, status: 'active' } : null;
+    }
+    return String(sql).includes('`mica_contacts`') && params[1] === 'CIT_A'
       ? (contactRows[Number(params[0])] ?? null)
-      : null
-  );
+      : null;
+  });
   (globalThis as any).GetPlayerPed = (src: string) => Number(src);
   (globalThis as any).DoesEntityExist = () => true;
   (globalThis as any).GetEntityCoords = (ped: number) => world.coords[ped];
@@ -129,7 +153,11 @@ describe('places:startSharing (MICA-244)', () => {
 
     // 1 is B; 2 is deleted; 3 is the sharer's own number; 99 is not A's row.
     expect(reply).toMatchObject({ recipients: 1, expires_at: clock + 15 * 60_000 });
-    for (const [sql, params] of dbMock.single.mock.calls) {
+    const contactReads = dbMock.single.mock.calls.filter(([sql]) =>
+      String(sql).includes('`mica_contacts`')
+    );
+    expect(contactReads).toHaveLength(4);
+    for (const [sql, params] of contactReads) {
       expect(String(sql)).toContain('`citizenid` = ?');
       expect(params).toContain('CIT_A');
       expect(params).toContain(TEST_PHONE_ID);
@@ -160,6 +188,62 @@ describe('places:startSharing (MICA-244)', () => {
     expect(snapDuration(1)).toBe(15);
     expect(snapDuration(16)).toBe(60);
     expect(snapDuration(240)).toBe(240);
+  });
+});
+
+/**
+ * MICA-346. A share shows every recipient the sharer's number, and on qb the framework's number
+ * names the main phone of a player who has just picked up a burner with no number row.
+ */
+describe('places:startSharing from a burner (MICA-346)', () => {
+  const BURNER_ID = 'b'.repeat(32);
+
+  beforeEach(() => {
+    // A holds a burner. The framework still answers A's main number, 555-0001.
+    __setDeviceResolvers({
+      forRequest: async () => BURNER_ID,
+      forCitizen: async () => BURNER_ID,
+      deviceInHand: () => undefined
+    });
+  });
+
+  it('refuses a share from a burner the sync has not numbered, never as the main number', async () => {
+    // The sync this joins is still settling the main phone, and answers its number.
+    numberSync.run.mockImplementation(async () => '555-0001');
+
+    const reply = await call(5, 'startSharing', { contact_ids: [1], minutes: 15 });
+
+    expect(numberSync.run).toHaveBeenCalledWith(5);
+    expect(reply).toMatchObject({ key: 'server.places.noNumber' });
+    expect((await call(6, 'live', {})).incoming).toEqual([]);
+  });
+
+  it("shares as the burner's own number once the sync writes its row", async () => {
+    numberSync.run.mockImplementation(async () => {
+      world.numbers.set(BURNER_ID, '555-0777');
+      return '555-0777';
+    });
+
+    const reply = await call(5, 'startSharing', { contact_ids: [1], minutes: 15 });
+
+    expect(reply).toMatchObject({ recipients: 1 });
+    expect((await call(6, 'live', {})).incoming).toEqual([
+      expect.objectContaining({ number: '555-0777' })
+    ]);
+  });
+
+  it('starts no share for a character who switched out while the number was read (MICA-336)', async () => {
+    // The same sync as above, and the next character loads on source 5 while it runs.
+    numberSync.run.mockImplementation(async () => {
+      world.numbers.set(BURNER_ID, '555-0777');
+      world.players[5] = { citizenid: 'CIT_NEXT', phone: '555-0009' };
+      return '555-0777';
+    });
+
+    const reply = await call(5, 'startSharing', { contact_ids: [1], minutes: 15 });
+
+    expect(reply).toBeUndefined();
+    expect((await call(6, 'live', {})).incoming).toEqual([]);
   });
 });
 

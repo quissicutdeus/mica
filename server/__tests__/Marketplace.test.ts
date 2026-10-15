@@ -22,13 +22,29 @@ const bridge = vi.hoisted(() => ({ current: 'CIT_A', framework: 'qb', phone: '55
 vi.mock('../lib/FrameworkBridge', () => ({
   detectFramework: () => bridge.framework,
   FrameworkBridge: {
-    getPlayer: () => ({ citizenid: bridge.current, source: 5, setMeta: () => {} }),
+    getPlayer: () => ({
+      citizenid: bridge.current,
+      source: 5,
+      phone: bridge.phone,
+      setMeta: () => {}
+    }),
     getCitizenId: () => bridge.current,
     // The framework's number for the character: their main phone. MICA-343's tests prove a
     // listing never hands this out unless it is the number of the phone that posted.
     getPlayerPhone: () => bridge.phone,
     registerUsableItem: () => {}
   }
+}));
+
+/**
+ * The number sync (`services/PhoneNumbers.ts`), awaited for a phone with no number row
+ * (MICA-346). Writes nothing unless a case says it does.
+ */
+const numberSync = vi.hoisted(() => ({
+  run: vi.fn(async (_src: number): Promise<unknown> => null)
+}));
+vi.mock('../services/PhoneNumbers', () => ({
+  syncNumber: (src: number) => numberSync.run(src)
 }));
 
 const playerDirectoryMock = vi.hoisted(() => ({
@@ -59,6 +75,7 @@ const call = async (action: string, data: unknown, citizenid = 'CIT_A') => {
 
 describe('Marketplace service', () => {
   beforeEach(() => {
+    numberSync.run.mockReset().mockImplementation(async () => null);
     dbMock.query.mockReset();
     dbMock.insert.mockReset();
     dbMock.update.mockReset();
@@ -213,8 +230,10 @@ describe('Marketplace service', () => {
 
     it('records no number for a burner whose number row the sync has not written', async () => {
       // qb, a phone in hand with no row of its own and no legacy row: the citizen's other
-      // phone holds their number. The framework still answers that main number, and a call
-      // would show it; a listing stores it for good, so it records nothing instead.
+      // phone holds their number. The framework still answers that main number, and so does
+      // the sync this joins, which is still settling the main phone. A listing stores the
+      // number for good, so it records nothing instead.
+      numberSync.run.mockImplementation(async () => '555-0100');
       dbMock.single.mockResolvedValue(null);
       dbMock.insert.mockResolvedValue(42);
       dbMock.query.mockResolvedValue([]);
@@ -222,8 +241,29 @@ describe('Marketplace service', () => {
       const reply = await call('create', { title: 'Bike', price: 10, description: 'x' });
 
       expect(reply.error).toBeUndefined();
+      expect(numberSync.run).toHaveBeenCalledWith(5);
       expect(recorded()).toBeNull();
       expect(dbMock.insert.mock.calls[0][1]).not.toContain('555-0100');
+    });
+
+    it("records the burner's own number once the sync writes its row (MICA-346)", async () => {
+      // The twin: the same burner, and the sync it awaits writes the burner's row.
+      let synced = false;
+      numberSync.run.mockImplementation(async () => {
+        synced = true;
+        return '555-0199';
+      });
+      dbMock.single.mockImplementation(async (sql: string, params: unknown[]) =>
+        synced && String(sql).includes('`device_id` = ?') && params[0] === TEST_PHONE_ID
+          ? { id: 9, citizenid: 'CIT_A', number: '555-0199', status: 'active' }
+          : null
+      );
+      dbMock.insert.mockResolvedValue(42);
+      dbMock.query.mockResolvedValue([]);
+
+      await call('create', { title: 'Bike', price: 10, description: 'x' });
+
+      expect(recorded()).toBe('555-0199');
     });
 
     it('records the legacy number of a phone that cannot carry an id of its own', async () => {

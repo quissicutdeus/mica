@@ -740,15 +740,18 @@ describe('syncing the number with the phone in hand', () => {
   /**
    * MICA-336: a multichar switch keeps the source, so a sync still in flight for the previous
    * character was joined by the next one's load, which then got that character's number and
-   * no sync of its own. The same character's triggers must still share one sync.
+   * no sync of its own. The same character's triggers still share one run, queued behind the
+   * one going (MICA-346).
    */
   it('never hands a sync in flight for one character to the next on the same source', async () => {
     framework.kind = 'qb';
     holding();
     try {
       const forA = syncNumber(5);
-      // The positive twin: a second trigger for the same character joins the first.
-      expect(syncNumber(5)).toBe(forA);
+      // The positive twin: A's later triggers share one run queued behind A's.
+      const againA = syncNumber(5);
+      expect(againA).not.toBe(forA);
+      expect(syncNumber(5)).toBe(againA);
 
       // Character B loads on the same source before A's sync has settled.
       bridgeMock.getPlayer.mockImplementation((src: number) =>
@@ -757,12 +760,68 @@ describe('syncing the number with the phone in hand', () => {
       const forB = syncNumber(5);
 
       expect(forB).not.toBe(forA);
-      // And B's later triggers join B's sync, not A's.
-      expect(syncNumber(5)).toBe(forB);
-      await Promise.allSettled([forA, forB]);
+      expect(forB).not.toBe(againA);
+      // And B's later triggers queue behind B's run, not A's.
+      const againB = syncNumber(5);
+      expect(againB).not.toBe(againA);
+      expect(syncNumber(5)).toBe(againB);
+      // A's queued run finds B on the source and leaves the sync to B's own.
+      await expect(againA).resolves.toBeNull();
+      await Promise.allSettled([forA, forB, againB]);
     } finally {
       bridgeMock.getPlayer.mockImplementation((src: number) => (src === 5 ? player : null));
     }
+  });
+
+  /**
+   * MICA-346: a run picks the phone in hand when it starts. A trigger joined the run already
+   * going, so a burner used while the main phone's load sync was still running was never
+   * synced, and a call or text from it had no number until the next trigger.
+   */
+  it('numbers a burner swapped in mid-sync, and never puts the main number on it', async () => {
+    const MAIN = 'b'.repeat(32);
+    framework.kind = 'qb';
+    // The framework already names the main phone's number, as the last write-back left it.
+    player.rawPlayer.PlayerData.charinfo.phone = '5552222';
+    bridgeMock.itemSlots.mockReturnValue([
+      { slot: 2, metadata: { deviceId: MAIN } },
+      { slot: 8, metadata: { deviceId: PHONE_ID } }
+    ]);
+    let release!: () => void;
+    const mainRead = new Promise<void>((resolve) => (release = resolve));
+    dbMock.single.mockImplementation(async (sql: string, params: unknown[] = []) => {
+      if (params[0] === MAIN) {
+        await mainRead;
+        return row('5552222');
+      }
+      return null; // the burner has no row, and the citizen no legacy row
+    });
+    // `5552222` is the main phone's, so the number key refuses it anywhere else.
+    dbMock.insert.mockImplementation(async (_sql: string, params: unknown[] = []) => {
+      if (params.includes('5552222')) throw duplicate();
+      return 7;
+    });
+
+    // The load's sync starts on the main phone, the lowest slot, and waits on its row.
+    const forMain = syncNumber(5);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // The player uses the burner meanwhile; the usable-item callback triggers a sync.
+    usePhoneItem!(5, { slot: 8 });
+    const forBurner = syncNumber(5);
+    release();
+
+    await expect(forMain).resolves.toBe('5552222');
+    const burnerNumber = await forBurner;
+
+    expect(burnerNumber).toMatch(/^\d{7}$/);
+    expect(burnerNumber).not.toBe('5552222');
+    expect(numberFor(CITIZEN)).toBe(burnerNumber);
+    expect(player.setPhone).toHaveBeenLastCalledWith(burnerNumber);
+    // Every number row written for the burner, and only one taken: never the main number.
+    const written = dbMock.insert.mock.calls.map(([, params]) => params as unknown[]);
+    expect(written.filter((params) => params.includes(PHONE_ID)).length).toBeGreaterThan(0);
+    expect(written.filter((params) => params.includes(MAIN))).toEqual([]);
+    expect(updates()).toEqual([]);
   });
 
   /**

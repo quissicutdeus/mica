@@ -27,11 +27,13 @@ import { conversationIdFrom, pageBounds } from '../lib/payload';
 import { MESSAGE_BODY_MAX, messagesContract } from '@mica/shared/contracts/messages';
 import { storablePlaintext } from '../lib/contentCipher';
 import { resolveOwnedAttachments } from '../lib/attachments';
-import { FrameworkBridge } from '../lib/FrameworkBridge';
+import { detectFramework, FrameworkBridge } from '../lib/FrameworkBridge';
 import { AuditLogger } from '../lib/AuditLogger';
 import { Database } from '../lib/Database';
+import { numberOfPhone } from '../lib/phoneNumbers';
 import { blockedBy } from './Blocklist';
 import { phoneForCitizen } from './Devices';
+import { syncNumber } from './PhoneNumbers';
 import { OPEN_REPORT, parseRetentionDays, registerRetention } from '../lib/contentRetention';
 
 /**
@@ -751,9 +753,10 @@ export const sendFromLine = async (
   return { conversationId, messageId, delivered };
 };
 
-app.registerEvent('send', async (source, cbId, data, citizenid) => {
+app.registerEvent('send', async (source, cbId, data, citizenid, player) => {
   const conversationId = data.conversation_id;
-  await requireParticipant(conversationId, citizenid, await deviceForRequest(source, citizenid));
+  const deviceId = await deviceForRequest(source, citizenid);
+  await requireParticipant(conversationId, citizenid, deviceId);
 
   const message = data.message;
   const attachments = await resolveOwnedAttachments(data.attachments, citizenid, mediaRepo);
@@ -770,6 +773,31 @@ app.registerEvent('send', async (source, cbId, data, citizenid) => {
   if (replyToId !== null && !(await messageRepo.inConversation(replyToId, conversationId))) {
     throw new PlayerFacingError('That message is not in this conversation.', {
       key: 'server.messages.replyNotInConversation'
+    });
+  }
+
+  /**
+   * The sender's number: the number of the phone the text is sent from, the one just checked
+   * against the thread. Never the framework's number on qb or standalone, which names the main
+   * phone of a sender who has just picked up a burner (MICA-346). Read before anything is
+   * written, because it decides two things.
+   *
+   * **No number, no text, on qb and standalone,** as for a call or a share. A text with no
+   * number would reach every member with no number to check a block against. The sync is
+   * awaited first, so a phone gets here numberless only when its number could not be issued.
+   * Refusing it keeps any such case from being a way past a block. ESX keeps its numbers on the
+   * character, so a character with none still sends there (MICA-348).
+   *
+   * **Asked again who is on the source once it is read** (MICA-336). It can await a whole sync,
+   * and a character switch keeps the source. The text was the previous character's, and is
+   * dropped unwritten and unanswered rather than pushed from a source somebody else now holds.
+   */
+  const framework = detectFramework();
+  const senderPhone = await numberOfPhone(deviceId, player, { framework, sync: syncNumber });
+  if (FrameworkBridge.getPlayer(source)?.citizenid !== citizenid) return undefined;
+  if (!senderPhone && framework !== 'esx') {
+    throw new PlayerFacingError('This phone has no number yet.', {
+      key: 'server.phone.noNumber'
     });
   }
 
@@ -797,13 +825,9 @@ app.registerEvent('send', async (source, cbId, data, citizenid) => {
   } catch (error) {
     console.error('[Messages] Reading the members failed for conversation', conversationId, error);
   }
-  /** The sender's number, kept for the line below. Read inside the guard, as it always was. */
-  let senderPhone: string | null = null;
-
   // Delivery must not fail the send: the row is committed either way, and the sender
   // should not see an error for something that already happened.
   try {
-    senderPhone = FrameworkBridge.getPlayer(source)?.phone ?? null;
     // No name: a recipient names the sender from their own contacts for the number
     // (MICA-339). The character's name rode here and reached every member on every text.
     await deliverToParticipants(

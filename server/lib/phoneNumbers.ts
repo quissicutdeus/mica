@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { Database } from './Database';
+import type { FrameworkKind, FrameworkPlayer } from './framework/runtime';
 
 /**
  * Phone numbers micaOS owns, and the phone each one belongs to (MICA-151, MICA-284).
@@ -203,6 +204,79 @@ export const readCitizenIdByNumber = async (number: string): Promise<string | nu
     [number]
   );
   return row?.citizenid ?? null;
+};
+
+/**
+ * What `numberOfPhone` needs from above `lib/`, passed in rather than imported.
+ *
+ * `FrameworkBridge` imports this file for the caches, and `services/PhoneNumbers.ts` imports it
+ * for the reads, so importing either one back closes a runtime cycle: the one the note at the
+ * top of this file is there to avoid. Every caller is a service, and a service imports both.
+ */
+export interface NumberSources {
+  /** `detectFramework()`: ESX is the one framework whose number is the phone's. */
+  framework: FrameworkKind;
+  /**
+   * `syncNumber`, from `services/PhoneNumbers.ts`. It joins the sync already running for this
+   * source, or starts one, and that sync writes the row for a phone that has none yet. What it
+   * returns is not used: see `numberOfPhone` for why.
+   */
+  sync: (src: number) => Promise<unknown>;
+}
+
+/**
+ * The number a phone shows when it calls, texts or shares a location: its own, or null
+ * (MICA-346).
+ *
+ * `deviceId` is the phone the request is from, and `holder` is the player holding it. In order:
+ *
+ * - **ESX: the framework's number.** micaOS keeps no rows there. The number belongs to the
+ *   character, so it is the number of whatever phone they hold.
+ * - **The phone's own row**, by its device id. This is every item phone the sync has reached.
+ * - **The sync, awaited, then the citizen's legacy row** (`device_id IS NULL`). The legacy row
+ *   is the identity phone's number on a server that cannot carry a phone id. On a server that
+ *   can, the first phone synced takes the legacy row, so it never names a different phone.
+ *   Reading it after the sync is what makes that hold: a sync still attaching the legacy row to
+ *   another phone has finished by then.
+ * - **The phone's own row again**, which the sync has just written for a phone picked up
+ *   moments ago.
+ * - Otherwise **null**: no number, never another phone's.
+ *
+ * **Never the framework's number on qb or standalone.** On qb and standalone it is the number
+ * of the phone the last sync settled. After a switch to a burner that has no row yet, that is
+ * the main phone. It stays the main phone until the sync lands, and for good if assignment
+ * gives up. A call or text from the burner used to carry it, which told the other end whose
+ * burner it was. The sync's own answer is unusable for the same reason. A sync joined while
+ * it was resolving a different phone answers that phone's number. Only a row keyed by this
+ * phone's id answers for this phone.
+ *
+ * A sync that rejects is logged, and the reads go ahead without it. A read that throws is the
+ * caller's to handle.
+ */
+export const numberOfPhone = async (
+  deviceId: string,
+  holder: Pick<FrameworkPlayer, 'source' | 'citizenid' | 'phone'>,
+  sources: NumberSources
+): Promise<string | null> => {
+  if (sources.framework === 'esx') return holder.phone || null;
+
+  const own = await readRowByPhoneId(deviceId);
+  if (own?.number) return own.number;
+
+  try {
+    await sources.sync(holder.source);
+  } catch (error) {
+    console.error(
+      `[mica] could not sync the number of the phone ${holder.citizenid} holds.`,
+      error
+    );
+  }
+
+  const legacy = await readLegacyRow(holder.citizenid);
+  if (legacy?.number) return legacy.number;
+
+  const settled = await readRowByPhoneId(deviceId);
+  return settled?.number || null;
 };
 
 /**

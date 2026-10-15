@@ -3,7 +3,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { PlayerFacingError } from '../lib/errors';
-import { FrameworkBridge } from '../lib/FrameworkBridge';
+import { detectFramework, FrameworkBridge } from '../lib/FrameworkBridge';
+import { deviceForRequest } from '../lib/deviceIdentity';
+import { numberOfPhone } from '../lib/phoneNumbers';
 import { playerCoords } from '../lib/playerCoords';
 import { resolveByPhone } from '../lib/PlayerDirectory';
 import { appEventChannel } from '../lib/appEvents';
@@ -20,6 +22,7 @@ import {
 import { places } from './Places';
 import { contacts } from './Contacts';
 import { blockedBy } from './Blocklist';
+import { syncNumber } from './PhoneNumbers';
 
 /**
  * The Places map and live location sharing (MICA-244).
@@ -329,8 +332,18 @@ app.registerEvent('live', async (source, _cbId, _data, citizenid) =>
   liveStateFor(source, citizenid)
 );
 
-app.registerEvent('startSharing', async (source, _cbId, data, citizenid, _player, deviceId) => {
-  const number = FrameworkBridge.getPlayerPhone(source);
+app.registerEvent('startSharing', async (source, _cbId, data, citizenid, player, deviceId) => {
+  // The number of the phone sharing, which every recipient is shown and blocks are checked
+  // against. Never the framework's number on qb or standalone, which names the main phone of a
+  // player who has just picked up a burner (MICA-346). `deviceId` is always set: Places is
+  // device-owned.
+  const sharing = deviceId ?? (await deviceForRequest(source, citizenid));
+  const sources = { framework: detectFramework(), sync: syncNumber };
+  const number = await numberOfPhone(sharing, player, sources);
+  // That can await a whole sync, and a character switch keeps the source (MICA-336). The share
+  // was the previous character's: dropped, unanswered, rather than started for a source
+  // somebody else now holds.
+  if (FrameworkBridge.getPlayer(source)?.citizenid !== citizenid) return undefined;
   if (!number) {
     throw new PlayerFacingError('Your phone has no number to share from.', {
       key: 'server.places.noNumber'

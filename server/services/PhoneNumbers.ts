@@ -128,10 +128,23 @@ const onPhone = new Map<string, { number: string; citizenid: string }>();
  * **Tagged with the citizen it was started for** (MICA-336). A multichar switch keeps the
  * source, so a sync still in flight for the previous character would otherwise be joined by
  * the next one's load and hand them the previous character's number, with nothing to re-sync
- * them after. Tagged rather than forgotten on load: a second dispatch of the *same* load (qbx
- * fires two) must still join the first, which is the whole of what this map is for.
+ * them after.
+ *
+ * **A trigger never joins a run already going; it queues one run behind it** (MICA-346). A run
+ * picks the phone in hand the moment it starts, so a trigger that arrives once it has started
+ * may be about another phone: a burner used while the main phone's load sync is still running.
+ * Joining that run left the burner with no number until the next trigger. `again` is a fresh
+ * run that starts when this one ends, and every trigger before it starts joins it, so a burst
+ * still costs one run behind the one going. That run picks the phone in hand when it starts,
+ * so it is the right phone whichever trigger asked. When nothing changed it is all cache:
+ * `onPhone` answers and the write-back finds nothing to write.
  */
-const syncing = new Map<number, { citizenid: string | null; run: Promise<string | null> }>();
+interface SyncRun {
+  citizenid: string | null;
+  run: Promise<string | null>;
+  again: Promise<string | null> | null;
+}
+const syncing = new Map<number, SyncRun>();
 
 const reported = new Set<string>();
 
@@ -487,6 +500,35 @@ const syncOnce = async (src: number): Promise<string | null> => {
   return resolved;
 };
 
+/** Start a run for `src` and make it the one in flight. */
+const begin = (src: number, citizenid: string | null): Promise<string | null> => {
+  const entry: SyncRun = { citizenid, run: syncOnce(src), again: null };
+  entry.run = entry.run.finally(() => {
+    // Only its own entry: a later character's sync, or the run queued behind this one, may
+    // have taken the key meanwhile.
+    if (syncing.get(src) === entry) syncing.delete(src);
+  });
+  syncing.set(src, entry);
+  return entry.run;
+};
+
+/** Its outcome is the run's own callers' to read; the run behind it only waits for it. */
+const whateverHappened = (): void => undefined;
+
+/**
+ * The run behind `pending`, started once it ends. Two things can have changed by then. The
+ * source can carry a different character, whose own load runs their sync, so this one does
+ * nothing (MICA-336). Or a trigger since `pending` ended can have started a run already. That
+ * run picked the phone after every trigger queued here, so they share it.
+ */
+const queueBehind = (src: number, pending: SyncRun): Promise<string | null> =>
+  pending.run.then(whateverHappened, whateverHappened).then(() => {
+    if ((FrameworkBridge.getPlayer(src)?.citizenid ?? null) !== pending.citizenid) return null;
+    const current = syncing.get(src);
+    if (current && current.citizenid === pending.citizenid) return current.run;
+    return begin(src, pending.citizenid);
+  });
+
 /**
  * Bring a source's number into line with the phone they are on.
  *
@@ -496,20 +538,17 @@ const syncOnce = async (src: number): Promise<string | null> => {
  * happens — which is what makes it safe to hang off a client-triggered event; the only thing
  * a modified client can do is ask often, and `guardNetEvent` bounds that.
  *
- * One in flight per source, so two triggers a tick apart on a load share a result instead of
- * running two assignment loops.
+ * One in flight per source, so two triggers a tick apart on a load never run two assignment
+ * loops side by side. A trigger while one runs gets the run queued behind it (`syncing` has
+ * why), which answers for the phone in hand once that run ends.
  */
 export const syncNumber = (src: number): Promise<string | null> => {
   const citizenid = FrameworkBridge.getPlayer(src)?.citizenid ?? null;
   const pending = syncing.get(src);
-  if (pending && pending.citizenid === citizenid) return pending.run;
+  if (!pending || pending.citizenid !== citizenid) return begin(src, citizenid);
 
-  const run = syncOnce(src).finally(() => {
-    // Only its own entry: a later character's sync may have taken the key meanwhile.
-    if (syncing.get(src)?.run === run) syncing.delete(src);
-  });
-  syncing.set(src, { citizenid, run });
-  return run;
+  if (!pending.again) pending.again = queueBehind(src, pending);
+  return pending.again;
 };
 
 /**

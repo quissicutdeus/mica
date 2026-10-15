@@ -48,7 +48,14 @@ vi.mock('../services/Admin', () => ({
   isAdmin: (src: number) => (src === 0 ? true : adminState.isAdmin)
 }));
 
+/**
+ * `framework` is ESX unless a case says otherwise. There the framework's number is the number
+ * of whatever phone the character holds (MICA-346), so `phones` is each player's own number,
+ * which is what every case written before MICA-346 assumed. The cases about a phone's own number
+ * row run as qb or standalone.
+ */
 const bridge = vi.hoisted(() => ({
+  framework: 'esx' as 'qb' | 'esx' | 'standalone',
   players: new Map<number, string>([
     [1, 'CID_CALLER'],
     [2, 'CID_TARGET'],
@@ -58,12 +65,17 @@ const bridge = vi.hoisted(() => ({
     [1, '555-0001'],
     [2, '555-0002'],
     [3, '555-0003']
-  ])
+  ]),
+  /** Numbers the bridge's holder cache names first, as `rememberNumber` fills it on qb. */
+  held: new Map<string, number>()
 }));
 vi.mock('../lib/FrameworkBridge', () => ({
+  detectFramework: () => bridge.framework,
   FrameworkBridge: {
     getPlayer: (src: number) =>
-      bridge.players.has(src) ? { citizenid: bridge.players.get(src), source: src } : null,
+      bridge.players.has(src)
+        ? { citizenid: bridge.players.get(src), source: src, phone: bridge.phones.get(src) }
+        : null,
     getCitizenId: (src: number) => bridge.players.get(src) ?? null,
     getPlayerPhone: (src: number) => bridge.phones.get(src) ?? null,
     // Speakerphone's bystander scan (MICA-246).
@@ -72,12 +84,25 @@ vi.mock('../lib/FrameworkBridge', () => ({
         [...bridge.players].map(([src, citizenid]) => [src, { PlayerData: { citizenid } }])
       ),
     getPlayerByPhone: (phone: string) => {
+      const holder = bridge.held.get(phone);
+      if (holder !== undefined) return { source: holder, citizenid: bridge.players.get(holder) };
       for (const [src, p] of bridge.phones) {
         if (p === phone) return { source: src, citizenid: bridge.players.get(src) };
       }
       return null;
     }
   }
+}));
+
+/**
+ * The number sync (`services/PhoneNumbers.ts`), which `numberOfPhone` awaits for a phone with no
+ * row yet. Nothing by default; a case that needs the sync to write a row says so.
+ */
+const numberSync = vi.hoisted(() => ({
+  run: vi.fn(async (_src: number): Promise<unknown> => null)
+}));
+vi.mock('../services/PhoneNumbers', () => ({
+  syncNumber: (src: number) => numberSync.run(src)
 }));
 
 import '../services/Phone';
@@ -106,6 +131,8 @@ beforeEach(() => {
   __resetRateLimits();
   __resetCalls();
   adminState.isAdmin = true;
+  bridge.framework = 'esx';
+  numberSync.run.mockImplementation(async () => null);
   dbMock.insert.mockResolvedValue(1);
   dbMock.query.mockResolvedValue([]);
   // `Blocklist.ts`'s `isBlocked` (MICA-64), asked once per call: `null` means nobody is
@@ -1917,7 +1944,8 @@ describe('a call needs a phone, and shows its own number (MICA-339)', () => {
   });
 
   it("shows the number on the phone in hand, not the framework's stale one", async () => {
-    // The bridge still answers 555-0001; the phone the caller holds carries 555-0042.
+    // qb: the bridge still answers 555-0001; the phone the caller holds carries 555-0042.
+    bridge.framework = 'qb';
     numberOnPhone(TEST_PHONE_ID, '555-0042');
 
     await fire(START, 1, '555-0002');
@@ -1927,12 +1955,15 @@ describe('a call needs a phone, and shows its own number (MICA-339)', () => {
     ]);
   });
 
-  it("falls back to the framework's number only where the phone has none", async () => {
+  it("shows the framework's number on ESX, where the number is the character's", async () => {
     await fire(START, 1, '555-0002');
 
     expect(incomingCalls().map(([, , payload]) => (payload as { from: string }).from)).toEqual([
       '555-0001'
     ]);
+    // ESX keeps no number rows, so there is nothing to read or sync.
+    expect(dbMock.single).not.toHaveBeenCalled();
+    expect(numberSync.run).not.toHaveBeenCalled();
   });
 
   it('ignores an answer from a target who no longer holds a phone', async () => {
@@ -1953,6 +1984,331 @@ describe('a call needs a phone, and shows its own number (MICA-339)', () => {
     targetHolds = true;
     await fire(ANSWER, 2);
     expect(emitCalls().filter(([event]) => event === 'mica:client:phone:accepted')).toHaveLength(2);
+  });
+});
+
+/**
+ * MICA-346. On qb and standalone the framework's number is the number of the phone the last
+ * sync settled. For a player who has just picked up a burner with no number row, that is their
+ * main phone, and a call from the burner showed it. A call now carries the number of the phone
+ * it is made from, or is not placed.
+ */
+describe('a phone with no number row never calls as the main phone (MICA-346)', () => {
+  const BURNER_ID = 'b'.repeat(32);
+  const TARGET_PHONE_ID = 'c'.repeat(32);
+  const LINE = '5559999';
+  /** Number rows by phone id, and legacy rows by citizenid, as the two reads find them. */
+  const rows = new Map<string, string>();
+  const legacy = new Map<string, string>();
+  const from = () => incomingCalls().map(([, , payload]) => (payload as { from: string }).from);
+
+  beforeEach(() => {
+    rows.clear();
+    legacy.clear();
+    bridge.framework = 'qb';
+    // The caller holds a burner; the target holds a phone of their own.
+    __setDeviceResolvers({
+      forRequest: async (src) => (src === 1 ? BURNER_ID : TARGET_PHONE_ID),
+      forCitizen: async () => TEST_PHONE_ID,
+      deviceInHand: () => undefined
+    });
+    dbMock.single.mockImplementation(async (sql: string, params: unknown[]) => {
+      const key = String(params[0]);
+      if (/`device_id` IS NULL/.test(sql)) {
+        const number = legacy.get(key);
+        return number ? { id: 2, citizenid: key, number, status: 'active' } : null;
+      }
+      if (/WHERE `device_id` = \?/.test(sql)) {
+        const number = rows.get(key);
+        return number ? { id: 1, citizenid: 'CID_CALLER', number, status: 'active' } : null;
+      }
+      return null;
+    });
+  });
+
+  afterEach(() => {
+    dbMock.single.mockReset();
+    bridge.held.clear();
+    installTestPhone();
+    releaseResource('taxi');
+  });
+
+  it.each(['qb', 'standalone'] as const)(
+    '%s: places no call from a burner the sync has not numbered, and resets the dialler',
+    async (framework) => {
+      bridge.framework = framework;
+      // The sync this joins is the one still settling the main phone: it answers the main
+      // number and writes no row for the burner.
+      numberSync.run.mockImplementation(async () => '555-0001');
+
+      await fire(START, 1, '555-0002');
+
+      expect(numberSync.run).toHaveBeenCalledWith(1);
+      expect(incomingCalls()).toEqual([]);
+      expect(isInCall(2)).toBe(false);
+      expect(failedTo(1)).toHaveLength(1);
+      // Told why, in the player's language: the toast carries its catalog key.
+      expect(emitCalls()).toContainEqual([
+        'mica:client:shell:notify',
+        1,
+        expect.objectContaining({ type: 'error', key: 'server.phone.noNumber' })
+      ]);
+      expect(JSON.stringify(emitCalls())).not.toContain('555-0001');
+      expect(createCalls()).toEqual([]);
+    }
+  );
+
+  it.each(['qb', 'standalone'] as const)(
+    "%s: calls from the burner's own number once the sync writes its row",
+    async (framework) => {
+      bridge.framework = framework;
+      numberSync.run.mockImplementation(async () => {
+        rows.set(BURNER_ID, '555-0777');
+        return '555-0777';
+      });
+
+      await fire(START, 1, '555-0002');
+
+      expect(from()).toEqual(['555-0777']);
+      expect(failedTo(1)).toEqual([]);
+    }
+  );
+
+  it('calls from a numbered burner without waiting on the sync', async () => {
+    rows.set(BURNER_ID, '555-0777');
+
+    await fire(START, 1, '555-0002');
+
+    expect(from()).toEqual(['555-0777']);
+    expect(numberSync.run).not.toHaveBeenCalled();
+  });
+
+  it("calls from an identity phone's legacy number", async () => {
+    // Standalone with no phone item: the phone in hand is the identity phone, and its number
+    // is the citizen's legacy row. Read after the sync, so a sync still attaching that row to
+    // a different phone has finished first.
+    bridge.framework = 'standalone';
+    legacy.set('CID_CALLER', '555-0133');
+
+    await fire(START, 1, '555-0002');
+
+    expect(from()).toEqual(['555-0133']);
+    expect(numberSync.run).toHaveBeenCalledWith(1);
+  });
+
+  it('places no call when the sync rejects and the phone still has no number', async () => {
+    numberSync.run.mockRejectedValue(new Error('could not read which device'));
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await expect(placeCall(1, '555-0002')).resolves.toBe('caller_has_no_phone');
+      expect(incomingCalls()).toEqual([]);
+      expect(logged).toHaveBeenCalled();
+    } finally {
+      logged.mockRestore();
+    }
+  });
+
+  /** Every toast a source was sent, as the client receives it. */
+  const toastsTo = (src: number) =>
+    emitCalls()
+      .filter(([event, dest]) => event === 'mica:client:shell:notify' && dest === src)
+      .map(([, , payload]) => payload as { key?: string; message: string });
+
+  it('tells a caller holding no phone that, not that a phone has no number', async () => {
+    __setDeviceResolvers({
+      forRequest: async (src) => {
+        if (src === 1) {
+          throw new PlayerFacingError('You are not holding a phone.', {
+            key: 'server.phone.notHeld'
+          });
+        }
+        return TARGET_PHONE_ID;
+      },
+      forCitizen: async () => TEST_PHONE_ID,
+      deviceInHand: () => undefined
+    });
+
+    await fire(START, 1, '555-0002');
+
+    expect(toastsTo(1)).toEqual([
+      expect.objectContaining({
+        key: 'server.phone.notHeld',
+        message: 'You are not holding a phone.'
+      })
+    ]);
+    expect(failedTo(1)).toHaveLength(1);
+    expect(incomingCalls()).toEqual([]);
+    expect(numberSync.run).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['numbers the burner', true],
+    ['leaves the burner without a number', false]
+  ])(
+    'places no call, and only resets the dialler, when the caller switched out during a sync that %s (MICA-336)',
+    async (_, numbers) => {
+      // The next character loads on source 1 while the sync runs.
+      numberSync.run.mockImplementation(async () => {
+        if (numbers) rows.set(BURNER_ID, '555-0777');
+        bridge.players.set(1, 'CID_NEXT');
+        return '555-0777';
+      });
+      try {
+        await fire(START, 1, '555-0002');
+
+        expect(incomingCalls()).toEqual([]);
+        expect(isInCall(2)).toBe(false);
+        // The next character's phone is still on the dialling screen; nothing else resets it.
+        expect(failedTo(1)).toHaveLength(1);
+        expect(toastsTo(1)).toEqual([]);
+        expect(createCalls()).toEqual([]);
+      } finally {
+        bridge.players.set(1, 'CID_CALLER');
+      }
+    }
+  );
+
+  it.each([
+    ['dialled from the phone, resets the dialler', true],
+    ['placed by a script, tells nobody', false]
+  ])(
+    'places no call when the caller switched out during the blocklist read: %s (MICA-336)',
+    async (_, dialled) => {
+      rows.set(BURNER_ID, '555-0777');
+      dbMock.scalar.mockImplementation(async () => {
+        bridge.players.set(1, 'CID_NEXT');
+        return null;
+      });
+      try {
+        if (dialled) await fire(START, 1, '555-0002');
+        else await expect(placeCall(1, '555-0002')).resolves.toBe('caller_has_no_phone');
+
+        expect(incomingCalls()).toEqual([]);
+        expect(isInCall(1)).toBe(false);
+        expect(failedTo(1)).toHaveLength(dialled ? 1 : 0);
+        expect(toastsTo(1)).toEqual([]);
+        expect(createCalls()).toEqual([]);
+      } finally {
+        bridge.players.set(1, 'CID_CALLER');
+        dbMock.scalar.mockReset().mockResolvedValue(null);
+      }
+    }
+  );
+
+  it('only resets the dialler, and logs nothing, when the caller switched out during a forward (MICA-336)', async () => {
+    rows.set(BURNER_ID, '555-0777');
+    rows.set(TARGET_PHONE_ID, '555-0888');
+    bridge.held.set('555-0888', 2);
+    registerNumber(LINE, { onCall: () => ({ action: 'forward', source: 2 }) as const }, 'taxi');
+    // The dial to the line asks the blocklist first; the re-dial asks it again, and the next
+    // character loads on source 1 while it does.
+    dbMock.scalar.mockResolvedValueOnce(null).mockImplementationOnce(async () => {
+      bridge.players.set(1, 'CID_NEXT');
+      return null;
+    });
+    try {
+      await fire(START, 1, LINE);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(incomingCalls()).toEqual([]);
+      expect(failedTo(1)).toHaveLength(1);
+      expect(toastsTo(1)).toEqual([]);
+      expect(createCalls()).toEqual([]);
+    } finally {
+      bridge.players.set(1, 'CID_CALLER');
+    }
+  });
+
+  /**
+   * The switch arriving through `lib/shell.ts`'s real player-loaded listener, while a forward
+   * reads its target's number. The switch releases the caller's reservation, and the forward
+   * stands down when it finds the reservation gone. Only the release can reset the dialler.
+   */
+  it('resets the dialler when a switch releases a forward still reading its target (MICA-336)', async () => {
+    const loaded = globalHandlers.get('QBCore:Server:PlayerLoaded');
+    if (!loaded) throw new Error('no handler for QBCore:Server:PlayerLoaded');
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    rows.set(BURNER_ID, '555-0777');
+    registerNumber(LINE, { onCall: () => ({ action: 'forward', source: 2 }) as const }, 'taxi');
+    // The shell has seen the caller load, so the next load on source 1 is a switch.
+    loaded({ PlayerData: { source: 1 } });
+    // The forward's target has no row yet, so their number waits on a sync, and the next
+    // character loads on source 1 meanwhile.
+    numberSync.run.mockImplementation(async (src: number) => {
+      if (src === 2) {
+        bridge.players.set(1, 'CID_NEXT');
+        loaded({ PlayerData: { source: 1 } });
+      }
+      return null;
+    });
+    (globalThis as any).emitNet.mockClear();
+    try {
+      await fire(START, 1, LINE);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(incomingCalls()).toEqual([]);
+      expect(isInCall(1)).toBe(false);
+      expect(failedTo(1)).toHaveLength(1);
+      expect(toastsTo(1)).toEqual([]);
+      expect(createCalls()).toEqual([]);
+    } finally {
+      bridge.players.set(1, 'CID_CALLER');
+      loaded({ PlayerData: { source: 1 } });
+      error.mockRestore();
+    }
+  });
+
+  it("forwards to the target's burner number, and refuses one with no number", async () => {
+    rows.set(BURNER_ID, '555-0777');
+    registerNumber(LINE, { onCall: () => ({ action: 'forward', source: 2 }) as const }, 'taxi');
+
+    // The target's phone has no row: refused like an unreachable number, never rung on 555-0002.
+    await fire(START, 1, LINE);
+    expect(incomingCalls()).toEqual([]);
+    expect(failedTo(1)).toHaveLength(1);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(JSON.stringify(createCalls())).not.toContain('555-0002');
+
+    // The twin: their phone has a number, so it rings there, and the caller's row records it.
+    rows.set(TARGET_PHONE_ID, '555-0888');
+    bridge.held.set('555-0888', 2);
+    (globalThis as any).emitNet.mockClear();
+    dbMock.insert.mockClear();
+
+    await fire(START, 1, LINE);
+    expect(incomingCalls().map(([, dest]) => dest)).toEqual([2]);
+    expect(from()).toEqual(['555-0777']);
+    await fire(END, 1);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(createCalls().map(([, params]) => params)).toEqual(
+      expect.arrayContaining([expect.arrayContaining(['CID_CALLER', 'outgoing', '555-0888'])])
+    );
+  });
+
+  it('forwards nobody for a caller who hung up while the target was being synced', async () => {
+    rows.set(BURNER_ID, '555-0777');
+    bridge.held.set('555-0888', 2);
+    let settle!: () => void;
+    numberSync.run.mockImplementation(
+      (src: number) =>
+        new Promise<unknown>((resolve) => {
+          if (src !== 2) return resolve(null);
+          settle = () => {
+            rows.set(TARGET_PHONE_ID, '555-0888');
+            resolve('555-0888');
+          };
+        })
+    );
+    registerNumber(LINE, { onCall: () => ({ action: 'forward', source: 2 }) as const }, 'taxi');
+
+    const pending = placeCall(1, LINE);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await fire(END, 1);
+    settle();
+
+    await expect(pending).resolves.toBe('placed');
+    expect(incomingCalls()).toEqual([]);
+    expect([isInCall(1), isInCall(2)]).toEqual([false, false]);
   });
 });
 

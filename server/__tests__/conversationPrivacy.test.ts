@@ -34,14 +34,18 @@ const { dbMock, handlers, data, fw } = vi.hoisted(() => {
       members: [] as object[],
       page: [] as Record<string, unknown>[]
     },
-    fw: { kind: 'qb' }
+    /**
+     * The framework, and who it says is on source 5 with what number: Alice, whose main phone
+     * is 5550100. A case can switch the character or take the number away.
+     */
+    fw: { kind: 'qb', citizenid: 'CIT_A', phone: '5550100' as string | undefined }
   };
 });
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
 
 vi.mock('../lib/FrameworkBridge', () => ({
   FrameworkBridge: {
-    getPlayer: () => ({ citizenid: 'CIT_A', source: 5, phone: '5550100', setMeta: () => {} }),
+    getPlayer: () => ({ citizenid: fw.citizenid, source: 5, phone: fw.phone, setMeta: () => {} }),
     getSourceByCitizenId: () => null,
     getSourcesByCitizenId: (ids: readonly string[]) =>
       new Map(ids.filter((id) => id === 'CIT_B').map((id) => [id, 6])),
@@ -64,6 +68,17 @@ const resolveMany = vi.hoisted(() =>
 vi.mock('../lib/PlayerDirectory', () => ({
   resolveByPhone: async () => null,
   resolveMany
+}));
+
+/**
+ * The number sync (`services/PhoneNumbers.ts`), awaited for a phone with no number row
+ * (MICA-346). Writes nothing unless a case says it does.
+ */
+const numberSync = vi.hoisted(() => ({
+  run: vi.fn(async (_src: number): Promise<unknown> => null)
+}));
+vi.mock('../services/PhoneNumbers', () => ({
+  syncNumber: (src: number) => numberSync.run(src)
 }));
 
 import { messages } from '../services/Messages';
@@ -142,6 +157,9 @@ const BURNER_THREAD = {
 beforeEach(() => {
   vi.clearAllMocks();
   fw.kind = 'qb';
+  fw.citizenid = 'CIT_A';
+  fw.phone = '5550100';
+  numberSync.run.mockImplementation(async () => null);
   data.threads = [BURNER_THREAD];
   data.members = [ALICE, BEA];
   data.page = [];
@@ -156,7 +174,12 @@ beforeEach(() => {
     if (sql.includes('FROM mica_messages m')) return data.page;
     return [];
   });
-  dbMock.single.mockResolvedValue({ 1: 1 });
+  // Alice's phone in hand carries 5550100 in its own number row; a send needs one (MICA-346).
+  dbMock.single.mockImplementation(async (sql: string) =>
+    String(sql).includes('`mica_phone_numbers`')
+      ? { id: 1, citizenid: 'CIT_A', number: '5550100', status: 'active' }
+      : { 1: 1 }
+  );
   dbMock.insert.mockResolvedValue(50);
   dbMock.update.mockResolvedValue(true);
   (globalThis as any).GetConvar = (_n: string, f: string) => f;
@@ -300,6 +323,101 @@ describe('messages — a row says whose it is without naming anyone', () => {
     expect(payload.senderName).toBeUndefined();
     expect(payload.row).toMatchObject({ mine: false, sender_id: 10, message: 'on my way' });
     expect(JSON.stringify(payload)).not.toContain('CIT_A');
+  });
+});
+
+/**
+ * MICA-346. Alice's main phone is 5550100, and the framework still answers it while she texts
+ * from TEST_PHONE_ID, a burner. On qb and standalone a text carries the number of the phone it
+ * is sent from, or none: never the main one.
+ */
+describe('messages:send carries the number of the phone it is sent from (MICA-346)', () => {
+  /** `mica_phone_numbers` rows by phone id. Alice has no legacy row. */
+  const rows = new Map<string, string>();
+  const pushed = (): Record<string, any> | undefined =>
+    ((globalThis.emitNet as any).mock.calls as unknown[][]).find(
+      ([event]) => event === 'mica:client:messages:received'
+    )?.[2] as Record<string, any> | undefined;
+  const blocklistAsks = () =>
+    dbMock.query.mock.calls.filter(([sql]) => String(sql).includes('mica_blocklist'));
+
+  beforeEach(() => {
+    rows.clear();
+    dbMock.single.mockImplementation(async (sql: string, params: unknown[]) => {
+      if (!String(sql).includes('`mica_phone_numbers`')) return { 1: 1 };
+      const number = /WHERE `device_id` = \?/.test(sql) ? rows.get(String(params[0])) : undefined;
+      return number ? { id: 1, citizenid: 'CIT_A', number, status: 'active' } : null;
+    });
+  });
+
+  const messageInserts = () =>
+    dbMock.insert.mock.calls.filter(([sql]) => String(sql).includes('INTO `mica_messages`'));
+
+  it.each(['qb', 'standalone'])(
+    '%s: refuses a text from a burner the sync has not numbered, and writes nothing',
+    async (kind) => {
+      fw.kind = kind;
+      // The sync it awaits is still settling the main phone, and answers that phone's number.
+      numberSync.run.mockImplementation(async () => '5550100');
+
+      const reply = await call('messages', 'send', { conversation_id: 1, message: 'on my way' });
+
+      expect(reply).toMatchObject({ key: 'server.phone.noNumber' });
+      expect(numberSync.run).toHaveBeenCalledWith(5);
+      expect(messageInserts()).toEqual([]);
+      expect(pushed()).toBeUndefined();
+    }
+  );
+
+  it.each(['qb', 'standalone'])(
+    "%s: carries the burner's own number once the sync writes its row",
+    async (kind) => {
+      fw.kind = kind;
+      numberSync.run.mockImplementation(async () => {
+        rows.set(TEST_PHONE_ID, '5550777');
+        return '5550777';
+      });
+
+      await call('messages', 'send', { conversation_id: 1, message: 'on my way' });
+
+      expect(pushed()?.phone).toBe('5550777');
+      expect(blocklistAsks()).toEqual([[expect.any(String), ['CIT_B', '5550777']]]);
+    }
+  );
+
+  it("carries the framework's number on ESX, where the number is the character's", async () => {
+    fw.kind = 'esx';
+
+    await call('messages', 'send', { conversation_id: 1, message: 'on my way' });
+
+    expect(pushed()?.phone).toBe('5550100');
+    expect(numberSync.run).not.toHaveBeenCalled();
+  });
+
+  it('still sends from an ESX character with no number, as before (MICA-348)', async () => {
+    fw.kind = 'esx';
+    fw.phone = undefined;
+
+    const reply = await call('messages', 'send', { conversation_id: 1, message: 'on my way' });
+
+    expect(reply).toMatchObject({ id: 50, mine: true });
+    expect(messageInserts()).toHaveLength(1);
+    expect(pushed()?.phone).toBeUndefined();
+  });
+
+  it('drops a text whose character switched out while its number was read (MICA-336)', async () => {
+    // The sync it awaits writes the burner's row, and the next character loads on source 5.
+    numberSync.run.mockImplementation(async () => {
+      rows.set(TEST_PHONE_ID, '5550777');
+      fw.citizenid = 'CIT_NEXT';
+      return '5550777';
+    });
+
+    const reply = await call('messages', 'send', { conversation_id: 1, message: 'on my way' });
+
+    expect(reply).toBeUndefined();
+    expect(messageInserts()).toEqual([]);
+    expect(pushed()).toBeUndefined();
   });
 });
 

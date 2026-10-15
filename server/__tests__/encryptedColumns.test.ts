@@ -525,9 +525,14 @@ beforeEach(() => {
     nextId += 1;
     return nextId;
   });
-  dbMock.single.mockImplementation(async (sql: string, params: unknown[] = []) =>
-    answerSingle(String(sql), params)
-  );
+  dbMock.single.mockImplementation(async (sql: string, params: unknown[] = []) => {
+    const text = String(sql);
+    // The phone in hand has a number of its own; a text from one without is refused (MICA-346).
+    if (text.includes('`mica_phone_numbers`') && /WHERE `device_id` = \?/.test(text)) {
+      return { id: 1, citizenid: player.current, number: '5550100', status: 'active' };
+    }
+    return answerSingle(text, params);
+  });
   dbMock.update.mockResolvedValue(true);
   dbMock.scalar.mockResolvedValue(null);
   vi.spyOn(console, 'warn').mockImplementation(() => {});

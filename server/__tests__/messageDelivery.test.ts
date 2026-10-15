@@ -55,6 +55,8 @@ const { participants, emitted, sources, dbMock, handlers, player } = vi.hoisted(
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
 
 vi.mock('../lib/FrameworkBridge', () => ({
+  // A send reads the number of the phone it is sent from off its own row on qb (MICA-346).
+  detectFramework: () => 'qb',
   FrameworkBridge: {
     getSourceByCitizenId: (citizenid: string) => sources.get(citizenid) ?? null,
     /**
@@ -462,10 +464,16 @@ describe('send persists reply_to_id (MICA-209)', () => {
     };
   });
 
-  /** `isMember` confirms the caller is in the thread; nothing else is answered. */
+  /**
+   * `isMember` confirms the caller is in the thread, and the phone they text from has a number
+   * of its own, which a send now needs (MICA-346). Nothing else is answered.
+   */
   const asParticipant = () => {
     dbMock.single.mockImplementation(async (sql: string) => {
       if (sql.includes('mica_messages_participants')) return { placeholder: 1 };
+      if (sql.includes('`mica_phone_numbers`') && /WHERE `device_id` = \?/.test(sql)) {
+        return { id: 1, citizenid: 'SENDER', number: '5550100', status: 'active' };
+      }
       throw new Error(`unexpected single(): ${sql}`);
     });
     dbMock.insert.mockResolvedValue(99);

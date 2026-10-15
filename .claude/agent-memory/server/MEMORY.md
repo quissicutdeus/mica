@@ -67,7 +67,7 @@ line here.
 - [pma-voice's call join is unchecked; micaOS undoes it](pma-voice-call-join-is-unchecked.md)
   — MICA-341; read the state bag, no guardNetEvent limit, census fails 9 ways
 - [The framework-number fallback names the old phone](framework-number-fallback-names-the-old-phone.md)
-  — burner with no row yet shows the main number; Phone/Messages unfixed,
-  listings fail closed
+  — `numberOfPhone` since MICA-346; never trust `syncNumber`'s answer, read the
+  legacy row after it
 - [Privacy.ts cannot import a service that reaches Devices](privacy-cannot-import-a-service.md)
   — `lib/shell` imports Privacy; use `onBeforeSelfServiceDelete`, BFS the edge

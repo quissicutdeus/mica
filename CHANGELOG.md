@@ -1216,6 +1216,17 @@ export instead, which authenticates its caller.
 
 ### Fixed
 
+**A phone with no number of its own no longer gives away its holder's main
+number (MICA-346).** On qb and standalone, a call, a text, a forwarded call's
+Recents entry and a shared live location from a phone that had no number yet,
+such as a burner just picked up, carried the holder's main number instead. Each
+now waits for the phone's own number and, if it still has none, refuses: the
+player sees "This phone has no number yet." and nothing is sent. A listing from
+such a phone shows no Call or Text button. A burner used while the main phone's
+number was still syncing now gets its own number rather than none. A player
+holding no phone at all now sees "You are not holding a phone" when dialling.
+ESX is unchanged: there a phone's number is the character's.
+
 **A security review closed a set of privacy and authority gaps (MICA-339).** No
 schema change and no command to run. What players and scripts notice:
 

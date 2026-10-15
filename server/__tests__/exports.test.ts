@@ -56,6 +56,8 @@ vi.mock('../services/Messages', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../services/Messages')>()),
   sendFromLine
 }));
+// The number sync (MICA-346). A phone here has its number row or none, and no sync writes one.
+vi.mock('../services/PhoneNumbers', () => ({ syncNumber: vi.fn(async () => null) }));
 
 import { registerPublicApi } from '../lib/publicApi';
 import {
@@ -99,7 +101,13 @@ beforeEach(() => {
   // And dials nobody by default; `vi.clearAllMocks` keeps a return value a case set.
   bridgeMock.getPlayerByPhone.mockReturnValue(undefined);
   dbMock.query.mockResolvedValue([]);
-  dbMock.single.mockResolvedValue(null);
+  // The phone in their hand carries 555-0100 in its own number row, which is where a call
+  // reads its number from on qb (MICA-346). Every other single-row read finds nothing.
+  dbMock.single.mockImplementation(async (sql: string) =>
+    String(sql).includes('`mica_phone_numbers`') && /WHERE `device_id` = \?/.test(String(sql))
+      ? { id: 1, citizenid: CID, number: '555-0100', status: 'active' }
+      : null
+  );
   __resetExportRateLimits();
   // `CreateCall` cases below register a line and leave a player on a call; a later case
   // must inherit neither. `releaseResource` rather than `__resetRegistry`, which would also
@@ -846,8 +854,9 @@ describe('line exports (MICA-226)', () => {
     // `placeCall` returns silently for this case — no client event, nothing for the caller
     // to see go wrong. This is the gap the return-value contract exists to close: without
     // it a script would be told a call was placed when placeCall never got past its own
-    // second line.
-    bridgeMock.getPlayerPhone.mockReturnValue(null);
+    // second line. On qb a phone with no number row has no number, whatever the framework
+    // still answers (MICA-346).
+    dbMock.single.mockResolvedValue(null);
     const createCall = publishedExport('CreateCall')!;
     await expect(createCall(SRC, '5551234')).resolves.toMatchObject({
       ok: false,

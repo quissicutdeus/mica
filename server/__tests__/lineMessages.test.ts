@@ -36,7 +36,9 @@ const { handlers, db, players, directory } = vi.hoisted(() => {
       /** Every `query` statement, so a test can say which reads a path cost. */
       reads: [] as string[],
       /** Every `update` statement. */
-      writes: [] as string[]
+      writes: [] as string[],
+      /** `mica_phone_numbers`: a phone id to the number on that phone (MICA-346). */
+      numbers: new Map<string, string>()
     },
     players: new Map<number, { citizenid: string; source: number; phone: string | null }>(),
     directory: new Map<string, { citizenid: string; displayName: string }>()
@@ -145,6 +147,10 @@ vi.mock('../lib/Database', () => ({
           ? { 1: 1 }
           : null;
       }
+      if (sql.includes('mica_phone_numbers') && /WHERE `device_id` = \?/.test(sql)) {
+        const number = db.numbers.get(String(params[0]));
+        return number ? { id: 1, citizenid: 'CIT_A', number, status: 'active' } : null;
+      }
       return null;
     }),
     update: vi.fn(async (sql: string, params: unknown[]) => {
@@ -187,6 +193,7 @@ vi.mock('../lib/Database', () => ({
 }));
 
 vi.mock('../lib/FrameworkBridge', () => ({
+  detectFramework: () => 'qb',
   FrameworkBridge: {
     getPlayer: (source: number) => {
       const p = players.get(source);
@@ -214,6 +221,8 @@ vi.mock('../services/Devices', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../services/Devices')>()),
   phoneForCitizen: async () => '0123456789abcdef0123456789abcdef'
 }));
+// The number sync (MICA-346): every phone here already has its number row, or none.
+vi.mock('../services/PhoneNumbers', () => ({ syncNumber: async () => null }));
 
 import '../services/Conversations';
 import { sendFromLine } from '../services/Messages';
@@ -266,6 +275,9 @@ beforeEach(() => {
   db.writes.length = 0;
   players.clear();
   players.set(PLAYER.source, PLAYER);
+  // The phone in the player's hand carries their number in its own row, as on qb.
+  db.numbers.clear();
+  db.numbers.set(PHONE, PLAYER.phone);
   directory.clear();
   __resetRegistry();
   __resetRateLimits();

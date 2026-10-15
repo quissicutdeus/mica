@@ -3,15 +3,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { randomBytes } from 'node:crypto';
-import { FrameworkBridge } from '../lib/FrameworkBridge';
-import { PlayerFacingError } from '../lib/errors';
+import { detectFramework, FrameworkBridge } from '../lib/FrameworkBridge';
+import { GENERIC_ERROR_MESSAGE, PlayerFacingError } from '../lib/errors';
 import { forgetOnPlayerLoaded, notifyPlayer } from '../lib/shell';
 import { ServiceEndpoint } from '../lib/ServiceEndpoint';
 import { guardNetEvent, noInput, phoneNumber, phoneNumberFrom } from '../lib/netGuard';
 import { s } from '@mica/shared/schema';
 import { phoneCallLog } from './PhoneCallLog';
 import { phoneForCitizen, deviceForRequest, requireDeviceInHand } from '../lib/deviceIdentity';
-import { readPhoneIdByNumber, readRowByPhoneId } from '../lib/phoneNumbers';
+import { numberOfPhone, readPhoneIdByNumber } from '../lib/phoneNumbers';
+import { syncNumber } from './PhoneNumbers';
 import { isAdmin } from './Admin';
 import { SEED_CHARACTERS } from '../lib/seed';
 import { isBlocked } from './Blocklist';
@@ -546,6 +547,7 @@ export function injectIncomingCall(targetSrc: number, callerPhone: string): numb
     caller: CONSOLE_CALLER_SOURCE,
     target: targetSrc,
     callerPhone,
+    // Only picks the phone the target's row is filed on. There is no caller to show it to.
     targetPhone: FrameworkBridge.getPlayerPhone(targetSrc) ?? '',
     startTime: Date.now(),
     answeredAt: null
@@ -568,6 +570,11 @@ export function injectIncomingCall(targetSrc: number, callerPhone: string): numb
  * no call answers to it, which would leave the reservation held until the resource stopped.
  *
  * Returns whether anything was held. `switched` is passed through to `logCallEnd`.
+ *
+ * A reservation released by a character switch resets the phone's dialler (MICA-346). The
+ * dial was waiting on a line's handler, or on the number of the player a line forwarded to,
+ * and the path that would have told the phone sees its key gone and stands down silently. A
+ * hang-up needs no reset, since the phone that hung up is already idle.
  */
 function releaseCallFor(src: number, gone?: number, switched?: SwitchedSide): boolean {
   const callId = playerCalls[src];
@@ -576,6 +583,7 @@ function releaseCallFor(src: number, gone?: number, switched?: SwitchedSide): bo
   const call = activeCalls[callId];
   if (!call) {
     delete playerCalls[src];
+    if (switched) emitNet('mica:client:phone:failed', src);
     return true;
   }
 
@@ -652,6 +660,10 @@ function failUnreachable(src: number, callerPhone: string, targetPhone: string):
  * ringing or connected; `'unreachable'` and `'busy'` are the two refusals the caller's own
  * phone was told about (toast, reset event, and for unreachable a call-log row); the last
  * two are the silent early returns, where nothing happened and nothing told anyone.
+ * `'caller_has_no_phone'` also covers a phone in hand with no number of its own, and a
+ * character switch during the dial (MICA-346). A dial the player made (`dialled`, from the
+ * `start` handler) is the exception to the silence: it is told why, and a phone a switch took
+ * the dial from is reset without a toast.
  *
  * `'unreachable'` is one value on purpose (MICA-64): a number nobody holds, a blocked
  * caller, and a line that rejected or went away all arrive here as the same word, after the
@@ -683,35 +695,83 @@ const holdsPhone = (src: number): boolean => {
 };
 
 /**
- * The number a call from `src` shows, or null when they have no phone to call from
- * (MICA-339).
+ * What `numberInHandOf` found, and why when it found no number: a dial the player made
+ * themselves is told which (`tellCallerWhy`).
+ */
+type NumberInHand =
+  | { kind: 'number'; number: string; citizenid: string }
+  /** A phone in hand with no number of its own (MICA-346). */
+  | { kind: 'noNumber' }
+  /** No phone in hand: the resolver's own refusal, which is the phone's `notHeld`. */
+  | { kind: 'notHeld'; message: string }
+  /** A resolve or a read that threw, and is in the log. */
+  | { kind: 'failed' }
+  /** Nobody to answer for: no character, or a different one by the time it was read. */
+  | { kind: 'switched' };
+
+/**
+ * The number of the phone in `src`'s hand (MICA-339, MICA-346). It is what a call from them
+ * shows, and what a line's `forward` rings them on.
  *
- * The phone in their hand first, through the same resolver a device-owned request uses: on a
- * server that gates on an item, a player holding none is refused here, however their client
- * got the dial out. Then **that phone's own number**, from `mica_phone_numbers` — never the
- * framework's `charinfo.phone`, which is deliberately left naming the number a robbed player
- * used to have, so a caller id read from it rings back on somebody else's phone.
+ * First the phone in their hand, through the same resolver a device-owned request uses. On a
+ * server that gates on an item, a player holding none is refused here, however their client got
+ * the dial out. Then **that phone's own number**, by `numberOfPhone`. It never uses the
+ * framework's `charinfo.phone` on qb or standalone. That field names the number a robbed
+ * player used to have, and the main phone of a player who has just picked up a burner. Either
+ * way a caller id read from it names somebody else's phone.
  *
- * The framework's number only where the phone has no number row: ESX, whose numbers micaOS
- * does not own; an identity phone, whose number is the citizen's legacy row; and a phone in
- * hand whose number the sync has not settled yet. On qb the bridge refuses a mirror another
- * citizen now holds (`qbPhoneNumber`), so that fallback cannot name a moved number either.
+ * **Asked again who is on the source once the number is read** (MICA-336). `numberOfPhone` can
+ * await a whole sync, and a character switch keeps the source. A call placed after one would
+ * put the next character on the line under the previous one's number.
  *
  * Fails closed: a resolve or a read that throws is a call not placed, and a line in the log.
  */
-async function callerNumberOf(src: number): Promise<string | null> {
+async function numberInHandOf(src: number): Promise<NumberInHand> {
   const player = FrameworkBridge.getPlayer(src);
-  if (!player?.citizenid) return null;
+  if (!player?.citizenid) return { kind: 'switched' };
+  let number: string | null;
   try {
     const deviceId = await deviceForRequest(src, player.citizenid, 'phone');
-    const row = await readRowByPhoneId(deviceId);
-    return row?.number || FrameworkBridge.getPlayerPhone(src);
+    number = await numberOfPhone(deviceId, player, {
+      framework: detectFramework(),
+      sync: syncNumber
+    });
   } catch (error) {
-    if (!(error instanceof PlayerFacingError)) {
-      console.error(`[mica] could not find the phone ${player.citizenid} is calling from.`, error);
-    }
-    return null;
+    // The phone's resolver refuses only one way: `notHeld`, for a player holding no phone.
+    if (error instanceof PlayerFacingError) return { kind: 'notHeld', message: error.message };
+    console.error(
+      `[mica] could not read the number of the phone ${player.citizenid} holds.`,
+      error
+    );
+    return { kind: 'failed' };
   }
+  if (FrameworkBridge.getPlayer(src)?.citizenid !== player.citizenid) return { kind: 'switched' };
+  return number ? { kind: 'number', number, citizenid: player.citizenid } : { kind: 'noNumber' };
+}
+
+/**
+ * Tell a player whose own dial was refused on their side why, and reset their dialler.
+ *
+ * Only a dial from the player's phone asks for this. `CreateCall` answers its script with the
+ * result, and a line's `forward` turns the refusal into its own unreachable.
+ *
+ * A source that now carries a different character gets no toast: the dial was not theirs. Its
+ * phone is still on the dialling screen, though, and nothing else will reset it. The switch's
+ * own teardown (`releaseCallFor`) finds no call to end, because none was claimed yet.
+ */
+function tellCallerWhy(src: number, why: Exclude<NumberInHand, { kind: 'number' }>): void {
+  if (why.kind === 'noNumber') {
+    notifyPlayer(src, {
+      type: 'error',
+      message: 'This phone has no number yet.',
+      key: 'server.phone.noNumber'
+    });
+  } else if (why.kind === 'notHeld') {
+    notifyPlayer(src, { type: 'error', message: why.message, key: 'server.phone.notHeld' });
+  } else if (why.kind === 'failed') {
+    notifyPlayer(src, { type: 'error', message: GENERIC_ERROR_MESSAGE, key: 'server.generic' });
+  }
+  emitNet('mica:client:phone:failed', src);
 }
 
 /**
@@ -722,16 +782,26 @@ async function callerNumberOf(src: number): Promise<string | null> {
  * §2.9 being enforced here is that there is exactly one place a call can be set up. The
  * `onNet` handler ignores the return value, since a client that dialed badly already sees
  * nothing happen; `CreateCall` cannot afford to, since its caller gets no such visual cue.
+ * `dialled` is the `onNet` handler's: a refusal on the caller's own side (no phone, no number)
+ * is told to them there, where nothing else would (MICA-346).
  */
-export async function placeCall(src: number, rawTarget: unknown): Promise<PlaceCallResult> {
+export async function placeCall(
+  src: number,
+  rawTarget: unknown,
+  dialled = false
+): Promise<PlaceCallResult> {
   // Typed and bounded before it reaches `getPlayerByPhone`, which belongs to the
   // framework rather than to us. Not injection — an unbounded or non-string value
   // reaching somebody else's lookup.
   const targetPhone = phoneNumberFrom(rawTarget);
   if (!targetPhone) return 'invalid_target';
 
-  const callerPhone = await callerNumberOf(src);
-  if (!callerPhone) return 'caller_has_no_phone';
+  const caller = await numberInHandOf(src);
+  if (caller.kind !== 'number') {
+    if (dialled) tellCallerWhy(src, caller);
+    return 'caller_has_no_phone';
+  }
+  const callerPhone = caller.number;
 
   // A character always wins over a registered line, so a number the framework later
   // issues to a real player stops reaching the script rather than intercepting them.
@@ -775,6 +845,14 @@ export async function placeCall(src: number, rawTarget: unknown): Promise<PlaceC
   const unblockable = targetPhone === emergencyNumber();
 
   const blocked = !unblockable && (await isBlocked(targetPlayer?.citizenid ?? '', callerPhone));
+
+  // The last await before the call is claimed. A character switch inside it would put the next
+  // character on the line under this one's number (MICA-336), so the dial is dropped. A dial
+  // from the phone still has its dialler reset, with no toast (`tellCallerWhy`).
+  if (FrameworkBridge.getPlayer(src)?.citizenid !== caller.citizenid) {
+    if (dialled) tellCallerWhy(src, { kind: 'switched' });
+    return 'caller_has_no_phone';
+  }
 
   // A line is never refused by that answer, only timed by it — see above.
   if (!targetSrc && line) {
@@ -878,20 +956,35 @@ async function connectLineCall(
   // character holds is refused at registration and loses to the player lookup on every call,
   // so `placeCall` resolves it down the player path.
   //
-  // Two things make that re-dial reach nothing, and neither is hypothetical: a `source`
-  // nobody is connected on, and a connected player whose `phone` is null, which is an
-  // ordinary ESX shape rather than a broken one. Both arrive as a number `phoneNumberFrom`
-  // refuses, and `placeCall`'s refusals for a bad number are silent by design. So its answer
-  // is checked rather than discarded: a silent refusal means nothing was emitted, and the
-  // caller — whose reservation is already released — would otherwise sit on the dialling
-  // screen with no toast and no call-log row until they hung up themselves. The re-dial's
-  // own refusals (`'unreachable'`, `'busy'`) have already told the caller and pass through.
+  // Several things make that re-dial reach nothing, and none is hypothetical: a `source`
+  // nobody is connected on; a connected player whose `phone` is null, which is an ordinary ESX
+  // shape rather than a broken one; and a player holding no phone, or a phone with no number
+  // of its own (MICA-346). Each arrives as a number `phoneNumberFrom` refuses, and
+  // `placeCall`'s refusals for a bad number are silent by design. So its answer is checked
+  // rather than discarded: a silent refusal means nothing was emitted, and the caller — whose
+  // reservation is already released — would otherwise sit on the dialling screen with no
+  // toast and no call-log row until they hung up themselves. The re-dial's own refusals
+  // (`'unreachable'`, `'busy'`) have already told the caller and pass through.
   if (verdict.action === 'forward') {
+    // The number of the phone in their hand, which is what the caller's log records as the
+    // number called. The framework's number named their main phone for a player who had just
+    // picked up a burner (MICA-346).
+    const forwardTo = await numberInHandOf(verdict.source);
+    // The caller hung up, dropped or switched character while that was read: a switch releases
+    // the call too (MICA-336). Either way there is nobody left to forward.
+    if (playerCalls[src] !== callId) return 'placed';
+    const dialler = FrameworkBridge.getPlayer(src)?.citizenid;
     // Released before re-entering, or `placeCall`'s own busy check would refuse the caller
     // the call this line just asked for.
     delete playerCalls[src];
-    const redial = await placeCall(src, FrameworkBridge.getPlayerPhone(verdict.source) ?? '');
+    const redial = await placeCall(src, forwardTo.kind === 'number' ? forwardTo.number : '');
     if (redial === 'invalid_target' || redial === 'caller_has_no_phone') {
+      // Switched out during the re-dial: the next character on the source gets no toast and
+      // no call-log row for a call that was not theirs, only the reset its phone still needs.
+      if (FrameworkBridge.getPlayer(src)?.citizenid !== dialler) {
+        emitNet('mica:client:phone:failed', src);
+        return 'caller_has_no_phone';
+      }
       failUnreachable(src, callerPhone, targetPhone);
       return 'unreachable';
     }
@@ -965,6 +1058,10 @@ function ringGroup(
   for (const candidate of sources) {
     if (ringing.size >= limit) break;
     if (candidate === src || playerCalls[candidate]) continue;
+    // The framework's number, which on qb can still name the main phone of a candidate who
+    // has just picked up a burner. It is read here anyway because it reaches nobody: it only
+    // picks the phone the winner's incoming row is filed on. The caller's own row records
+    // the line's number (MICA-346). An await here would split this check from the claim below.
     const phone = FrameworkBridge.getPlayerPhone(candidate);
     if (!phone || !holdsPhone(candidate)) continue;
     ringing.set(candidate, phone);
@@ -1035,8 +1132,10 @@ onNet('mica:server:phone:start', async (...args: unknown[]) => {
   const guarded = guardNetEvent('phone', 'start', START_INPUT, args);
   if (!guarded) return;
   const [target] = guarded.input;
+  const src = source;
 
-  await placeCall(source, target);
+  // Dialled by the player, so a refusal on their own side tells them why (MICA-346).
+  await placeCall(src, target, true);
 });
 
 onNet('mica:server:phone:answer', (...args: unknown[]) => {
