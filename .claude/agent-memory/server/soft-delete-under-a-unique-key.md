@@ -20,6 +20,20 @@ NULL off `active`, phonenumbers' `assign` reads the refusal and `claimRow`
 reactivates by hand, the upsert tables (settings, lockscreen, highscores)
 hard-delete or never delete, the import ledger is permanent.
 
+**"NULL off `active`" was not the whole story for `pair_key` (MICA-342).** A 1:1
+that one side has left stays `active` for the other side. The non-admin `delete`
+leaves it, and a privacy delete purges the membership row while the cascade
+guard keeps the thread. `findOneToOne` needs both phones live, so it stopped
+matching, but the key stayed, so every new thread between the two was a
+duplicate key and `server.generic`. The fix releases the key as the side leaves.
+`ConversationRepository.releasePair` nulls both pair columns on a leave, and
+`releasePairsOf` does the same from Privacy's `onBeforeSelfServiceDelete` hook.
+Migration `0009_wedged_pairs_released` released the pairs that were already
+wedged. Releasing lazily at create time cannot be made race-free, because a
+thread whose participant rows are not written yet looks exactly like a broken
+pair. When a row's liveness depends on another table, ask what still holds the
+key once that table moves.
+
 **Blabber's mouths still wedge, on purpose for now.** Generic delete is on, and
 `account_mouth (account_id, mouth_of)` ignores status, so mouth, delete, mouth
 again answers "You have already mouthed that". Reviving would be worse: the feed

@@ -379,6 +379,84 @@ export class ConversationRepository extends SchemaRepository<ConversationRow> {
   }
 
   /**
+   * Unpair a 1:1 thread that one of its phones is leaving, so the two can start a fresh one
+   * (MICA-342).
+   *
+   * **Why.** `findOneToOne` matches a pair only while both phones are still in the thread, and
+   * `pair_key_unique` holds the pair for as long as the row is `active`. A thread one side has
+   * left (the non-admin `delete`) or been taken out of (a privacy delete purges the membership
+   * row) stays active for the other side, so it kept the key that nothing would find again.
+   * Every new thread between the two was then a duplicate key, which reached either player only
+   * as "something went wrong". Nulling both pair columns makes the generated `pair_key` NULL.
+   * The thread itself stays: the side still in it keeps it and every text in it, `active` and
+   * readable, and the next 1:1 between the two phones is a new row.
+   *
+   * **Who may.** Only a live member, on a phone that is one side of this thread's pair, and only
+   * on a 1:1 between two phones. The thread id, the leaving phone as `participant_a` or
+   * `participant_b`, and the `EXISTS` over that citizen's live membership on that phone are all
+   * in the `WHERE`. A thread id is never authorization, and a phone id only narrows a predicate
+   * that already names the citizen (§2.9), so this cannot unpair a thread the caller is not in.
+   * A thread with a line is never unpaired: `findExternalThread` finds it by these columns, and
+   * leaving it deletes it instead (`Conversations.delete`). The leave calls this *before* the
+   * membership goes, because afterwards there is no live row to authorize it. A privacy delete
+   * goes through `releasePairsOf`, for the same reason, before the purge.
+   *
+   * **Why not `updateUnscoped`.** The reason is the same as for `renameAsAdmin`. That method
+   * builds `UPDATE … WHERE id = ?` and takes no further predicate, so the check would have to be
+   * a read before the write. Every column written is a literal, and no payload key reaches the
+   * SQL. `updated_at` is pinned, as `transferParticipants` pins it, so the other side's inbox is
+   * not reordered by something it cannot see.
+   *
+   * `false` for a group, a line thread, a thread already unpaired, and a caller who is not a
+   * live member on a side of the pair.
+   */
+  async releasePair(conversationId: number, citizenid: string, deviceId: string): Promise<boolean> {
+    if (!citizenid || !deviceId) return false;
+    const line = `${LINE_KEY_PREFIX}%`;
+    return await Database.update(
+      `UPDATE mica_messages_conversations c
+          SET c.participant_a = NULL, c.participant_b = NULL, c.updated_at = c.updated_at
+        WHERE c.id = ? AND c.is_group = 0 AND c.status = 'active'
+          AND (c.participant_a = ? OR c.participant_b = ?)
+          AND c.participant_a NOT LIKE ? AND c.participant_b NOT LIKE ?
+          AND EXISTS (
+              SELECT 1 FROM mica_messages_participants p
+               WHERE p.conversation_id = c.id
+                 AND p.citizenid = ? AND p.device_id = ? AND p.left_at IS NULL
+          )`,
+      [conversationId, deviceId, deviceId, line, line, citizenid, deviceId]
+    );
+  }
+
+  /**
+   * `releasePair` for every 1:1 a citizen is still in, in one statement. It runs before a
+   * privacy delete purges that citizen's memberships (MICA-342).
+   *
+   * The predicates are `releasePair`'s, with the citizen's live membership standing in for
+   * the one thread id. The thread is an active 1:1 with no line side. The membership is the
+   * citizen's, live, and on a phone that is one side of the thread's pair. There is no thread
+   * id or phone id from a payload, because a privacy delete names neither. The citizenid is
+   * the authenticated session's. `false` when the citizen is in no such thread.
+   */
+  async releasePairsOf(citizenid: string): Promise<boolean> {
+    if (!citizenid) return false;
+    const line = `${LINE_KEY_PREFIX}%`;
+    return await Database.update(
+      `UPDATE mica_messages_conversations c
+          SET c.participant_a = NULL, c.participant_b = NULL, c.updated_at = c.updated_at
+        WHERE c.is_group = 0 AND c.status = 'active'
+          AND c.participant_a NOT LIKE ? AND c.participant_b NOT LIKE ?
+          AND EXISTS (
+              SELECT 1 FROM mica_messages_participants p
+               WHERE p.conversation_id = c.id
+                 AND p.citizenid = ? AND p.left_at IS NULL
+                 AND (p.device_id = c.participant_a OR p.device_id = c.participant_b)
+          )`,
+      [line, line, citizenid]
+    );
+  }
+
+  /**
    * `isParticipant` used to live here. It is now the inherited `Repository.isMember`,
    * derived from this service's `membership` declaration — same query, one definition, and
    * Messages no longer reaches into this class to authorize its own reads.

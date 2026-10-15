@@ -88,7 +88,7 @@ const FLOW_CHECKS = {
   qbMail: { standalone: 10, qb: 10 },
   devices: { standalone: 27, qb: 31 },
   reports: { standalone: 14, qb: 14 },
-  privacy: { standalone: 13, qb: 13 }
+  privacy: { standalone: 21, qb: 21 }
 };
 const MINIMUM_CHECKS = Object.values(FLOW_CHECKS).reduce(
   (sum, perShape) => sum + perShape.standalone + perShape.qb,
@@ -2019,6 +2019,73 @@ const runPrivacy = async (shape, live) => {
     `${kind}: a second delete within the hour is refused`,
     (await shape.call(A, 'privacy', 'delete', { confirm: 'DELETE' }))?.key,
     'server.privacy.deleteTooSoon'
+  );
+
+  /**
+   * MICA-342. The delete took 1 out of the thread with 2, but 2 is still in it, so the thread
+   * stayed active and kept the pair's key. A new thread between them was then a duplicate key,
+   * and each side was told only that something went wrong. Leaving a 1:1 now releases its key.
+   * The next thread between the two is a fresh one that both of them reach, and the old one
+   * stays 2's to read. A leave breaks the pair in the same way, so it is checked the same way.
+   */
+  step(`${kind}: after the delete, 1 and 2 start a thread with each other again`);
+  const twoNumber = await shape.numberOf(PEOPLE[2]);
+  const fresh = await shape.call(A, 'conversations', 'create', { phone: twoNumber });
+  check(
+    `${kind}: 1 starts a new thread with 2, not the one 1 was taken out of`,
+    [typeof fresh?.id, fresh?.id === shared],
+    ['number', false]
+  );
+  check(
+    `${kind}: 2 starting one with 1 finds that new thread`,
+    (await shape.call(B, 'conversations', 'create', { phone: numberBefore }))?.id,
+    fresh?.id
+  );
+  const mark = shape.runtime.sent.length;
+  await shape.call(B, 'messages', 'send', { conversation_id: fresh?.id, message: 'welcome back' });
+  check(
+    `${kind}: 2's text in it reaches 1`,
+    shape.runtime
+      .since(mark, (m) => m.event === RECEIVED)
+      .map((m) => [m.target, m.args[0].conversation_id, m.args[0].message]),
+    [[A, fresh?.id, 'welcome back']]
+  );
+  const inbox = async (src) =>
+    (await shape.call(src, 'conversations', 'get', {}))?.rows?.map((c) => c.id) ?? [];
+  const aInbox = await inbox(A);
+  check(
+    `${kind}: 1's inbox has the new thread and not the old one`,
+    [aInbox.includes(fresh?.id), aInbox.includes(shared)],
+    [true, false]
+  );
+  const bInbox = await inbox(B);
+  const oldPage = await shape.call(B, 'messages', 'get', { conversation_id: shared });
+  check(
+    `${kind}: 2's inbox has both, and the old thread still reads`,
+    [
+      bInbox.includes(fresh?.id),
+      bInbox.includes(shared),
+      oldPage?.rows?.some((m) => m.message === 'are you there')
+    ],
+    [true, true, true]
+  );
+
+  step(`${kind}: 2 leaves the new thread, and they start one again`);
+  check(
+    `${kind}: 2, who is not its admin, leaves it`,
+    await shape.call(B, 'conversations', 'delete', { id: fresh?.id }),
+    true
+  );
+  const third = await shape.call(B, 'conversations', 'create', { phone: numberBefore });
+  check(
+    `${kind}: 2 starting one with 1 gets a new thread`,
+    [typeof third?.id, third?.id === fresh?.id],
+    ['number', false]
+  );
+  check(
+    `${kind}: and 1 starting one with 2 finds it`,
+    (await shape.call(A, 'conversations', 'create', { phone: twoNumber }))?.id,
+    third?.id
   );
 };
 

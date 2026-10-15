@@ -47,6 +47,17 @@ Entries are hand-written. See MICA-72 for why a generated one was rejected.
 
 ### Action required
 
+**Run `micaschema apply` from the server console to free the 1:1 threads one
+side had left (MICA-342).** Leaving a 1:1, or a privacy delete taking a player
+out of every thread, used to leave the thread holding the pair's key with
+nothing able to find it again: the two players could never start a thread with
+each other afterwards, and either one trying saw only "something went wrong".
+Leaving and a privacy delete now release the pair as the player goes, and
+migration `0009_wedged_pairs_released` releases every thread wedged that way
+before this update. No thread, member or text is removed: the player still in
+the old thread keeps it, readable, and the next 1:1 between the two is a new
+one. Running it twice changes nothing.
+
 **A character switch now ends what the previous character was doing on the phone
 (MICA-336).** On a multicharacter server, a player who switches character
 without disconnecting no longer carries the last one's call, speakerphone, music

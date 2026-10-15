@@ -768,4 +768,5 @@ SELECT `id` FROM (
     UNION ALL SELECT '0006_players_foreign_keys_dropped'
     UNION ALL SELECT '0007_sealed_bodies_widen_their_columns'
     UNION ALL SELECT '0008_phones_become_devices'
+    UNION ALL SELECT '0009_wedged_pairs_released'
 ) AS `seed` WHERE @mica_fresh_import = 1;

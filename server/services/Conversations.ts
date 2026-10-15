@@ -23,6 +23,7 @@ import { conversationsContract } from '@mica/shared/contracts/conversations';
 import { phoneForCitizen, deviceForRequest } from '../lib/deviceIdentity';
 import { readPhoneIdByNumber } from '../lib/phoneNumbers';
 import { onDeviceHandover } from './Devices';
+import { onBeforeSelfServiceDelete } from './Privacy';
 
 // Re-exported: the constant moved beside the line helpers in the repository (MICA-275).
 export { PARTICIPANT_KEY_MAX_LENGTH };
@@ -115,6 +116,11 @@ export const conversations = defineService<ConversationRow, typeof conversations
      *   This mirrors `findOneToOne`'s own `status = 'active'` filter, which already
      *   treats a non-active pair as not existing.
      *
+     * A third case is written rather than generated: **a 1:1 one side has left**, by leaving or
+     * by a privacy delete. The thread stays `active` for the other side, so the `CASE` keeps its
+     * key, and `findOneToOne` no longer matches it. `releasePair` nulls both pair columns as
+     * the side leaves (MICA-342). Before that, the two could never start a thread again.
+     *
      * `private: true` withholds it from the generic list projection on principle, though
      * `disableGet` below already means nothing reads through that path — the columns it is
      * built from are no more secret than what `findForCitizen`'s hydrated participant list
@@ -178,7 +184,8 @@ export const conversations = defineService<ConversationRow, typeof conversations
   uniqueAfterDelete: {
     optOut:
       "`pair_key` is generated NULL on any row that is not 'active', and a unique key never " +
-      'collides on NULL, so a deleted or reconciled-away thread already holds no key.'
+      'collides on NULL, so a deleted or reconciled-away thread already holds no key. A 1:1 a ' +
+      'side has left stays active, and `releasePair` nulls its pair as that side goes (MICA-342).'
   },
   childTables: [
     {
@@ -728,6 +735,15 @@ app.registerEvent('delete', async (source, cbId, data, citizenid) => {
     }
     return success;
   } else {
+    /**
+     * A 1:1 stops being a pair once one side leaves it (MICA-342). Without this the thread
+     * kept the pair's key while `findOneToOne` no longer matched it, so neither side could
+     * start a thread with the other again. The admin keeps the thread and its history, and the
+     * next 1:1 between the two is a fresh one. This runs first, while the caller's membership
+     * is still live to authorize it. If the leave below then fails, a member who is still in
+     * the thread is still found by `findOneToOne`. A group or a released thread is a no-op.
+     */
+    await conversationRepo.releasePair(id, citizenid, deviceId);
     // Insert new row with status 'left' (Left Voluntarily)
     await conversationRepo.removeParticipant(id, citizenid, deviceId, 'left');
     await AuditLogger.log({
@@ -753,3 +769,24 @@ app.registerEvent('delete', async (source, cbId, data, citizenid) => {
 onDeviceHandover('conversations', (deviceId, citizenid) =>
   conversationRepo.transferParticipants(deviceId, citizenid)
 );
+
+/**
+ * A player's own delete is about to take them out of every thread: unpair each 1:1 first
+ * (MICA-342).
+ *
+ * The purge removes the player's membership rows. A thread another player is still in stays,
+ * because the cascade guard keeps it for that player's membership and texts. It used to stay
+ * `active` with the pair's key, and `findOneToOne` no longer matched it, so a new thread between
+ * the two was a duplicate key and `create` told either of them only that something went wrong.
+ * Unpaired, the other player keeps the thread and every text left in it, still readable, and
+ * the next 1:1 between the two is a fresh one that both of them reach. Nothing brings the player
+ * back into the old thread, which is the point of the delete.
+ *
+ * One statement, `releasePairsOf`. It runs before the purge, because it needs the live
+ * membership to authorize it. If the purge then fails, the released threads still have all
+ * their members, and `findOneToOne` still finds them by membership. The only loss is the insert
+ * race guard on their keys, and `reconcilePairDuplicate` settles that race regardless.
+ */
+onBeforeSelfServiceDelete('conversations', async (citizenid) => {
+  await conversationRepo.releasePairsOf(citizenid);
+});

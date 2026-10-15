@@ -66,7 +66,7 @@ const EXTERNAL_DB = Boolean(DB_HOST || DB_PORT || DB_USER || DB_PASSWORD);
  * configured": a harness that returns early — a fixture that silently seeded nothing, a loop
  * over an empty list — would otherwise print a pass having checked almost nothing.
  *
- * The run currently makes **401** checks. The last census, at 258, named each fixture: the two
+ * The run currently makes **421** checks. The last census, at 258, named each fixture: the two
  * `runVariant`s (17 each), the two `runSweepFixtures` (17 each), the two `runNumberMigration`s
  * (MICA-284; 21 on qb, 16 on ESX), the two `runDataMigration`s (MICA-282; 38 each), the two
  * `runBatteryMigration`s (MICA-283; 9 each), and MICA-289's `runWidenMigration` (14 on qb, 15 on
@@ -78,13 +78,13 @@ const EXTERNAL_DB = Boolean(DB_HOST || DB_PORT || DB_USER || DB_PASSWORD);
  * (5 on each shape), `runReimportWithoutLedger` (5) and `runFreshImportSeeds` (2 on each) to
  * 334, and MICA-165's `runSealedWidthMigration`s (11 on each shape) and
  * `runSealedWidthRefusesCopy`s (5 on each) to 366, and MICA-344's `runRenameMigration`s (15 on
- * each shape) and `runReimportOverFlattenedBaseline` (4) to 401 — so the margin here is eight
- * again.
+ * each shape) and `runReimportOverFlattenedBaseline` (4) to 401, and MICA-342's
+ * `runWedgedPairsMigration`s (10 on each shape) to 421 — so the margin here is eight again.
  * That is deliberately tight: losing any one fixture drops below it and fails, which is the
  * whole point. Raise the floor when you add checks, rather than letting the gap widen until it
  * stops catching anything.
  */
-const MINIMUM_CHECKS = 393;
+const MINIMUM_CHECKS = 413;
 let checksRun = 0;
 
 const check = (label, actual, expected) => {
@@ -2847,6 +2847,142 @@ const runFreshImportSeeds = async ({ connection, schemaFile, hasPlayers, server 
   check(`${label}: and apply runs none of them`, [run.applied, run.failed], [[], null]);
 };
 
+const WEDGED_MIGRATION = '0009_wedged_pairs_released';
+
+/**
+ * MICA-342's 0009, executed rather than read. The current schema is imported with 0009 taken
+ * back out of the ledger. It holds the two wedged shapes a side leaving used to produce: a
+ * 1:1 the non-admin left (a `left` row) and one a privacy delete took a side out of (no row at
+ * all). Beside them sit what must not move: a healthy pair, a line's thread whose player left,
+ * and a group. The wedge is proved real first, by the database refusing a new thread between
+ * the same two phones. Only the wedged pairs may lose their key, and a second run must find
+ * nothing.
+ */
+const runWedgedPairsMigration = async ({ connection, schemaFile, hasPlayers, server }) => {
+  const variant = hasPlayers ? 'qb' : 'esx';
+  const label = `${schemaFile} wedged pairs`;
+  step(`${schemaFile} — MICA-342 ${WEDGED_MIGRATION}, on a ${variant} database`);
+
+  const database = `mica_wedged_${variant}`;
+  await connection.query(`DROP DATABASE IF EXISTS \`${database}\``);
+  await connection.query(`CREATE DATABASE \`${database}\``);
+  await connection.changeUser({ database });
+  await connection.query(hasPlayers ? PLAYERS_TABLE : USERS_TABLE);
+  await connection.query(fs.readFileSync(path.join(root, schemaFile), 'utf8'));
+  await connection.query('DELETE FROM mica_schema_migrations WHERE id = ?', [WEDGED_MIGRATION]);
+
+  const C_PHONE = 'c'.repeat(32);
+  const D_PHONE = 'd'.repeat(32);
+  const LINE = 'ext:5550199';
+  const OLD = '2026-01-02 03:04:05';
+  const thread = async (isGroup, a, b) => {
+    const [row] = await connection.query(
+      `INSERT INTO mica_messages_conversations
+         (citizenid, is_group, participant_a, participant_b, status, updated_at)
+       VALUES ('CIT_A', ?, ?, ?, 'active', ?)`,
+      [isGroup, a, b, OLD]
+    );
+    return row.insertId;
+  };
+  const member = async (conversationId, citizenid, deviceId, left = false) =>
+    await connection.query(
+      `INSERT INTO mica_messages_participants
+         (conversation_id, citizenid, device_id, role, status, left_at)
+       VALUES (?, ?, ?, 'member', ?, ?)`,
+      [conversationId, citizenid, deviceId, left ? 'left' : 'active', left ? OLD : null]
+    );
+
+  // B left: the non-admin leave before the fix.
+  const left = await thread(0, A_PHONE, B_PHONE);
+  await member(left, 'CIT_A', A_PHONE);
+  await member(left, 'CIT_B', B_PHONE, true);
+  // C's row is gone: a privacy delete before the fix.
+  const purged = await thread(0, A_PHONE, C_PHONE);
+  await member(purged, 'CIT_A', A_PHONE);
+  const healthy = await thread(0, B_PHONE, C_PHONE);
+  await member(healthy, 'CIT_B', B_PHONE);
+  await member(healthy, 'CIT_C', C_PHONE);
+  const line = await thread(0, D_PHONE, LINE);
+  await member(line, 'CIT_D', D_PHONE, true);
+  const group = await thread(1, null, null);
+  await member(group, 'CIT_A', A_PHONE);
+  await member(group, 'CIT_D', D_PHONE, true);
+
+  const threads = async () =>
+    (
+      await connection.query(
+        `SELECT id, participant_a AS a, participant_b AS b, pair_key AS k, status,
+                DATE_FORMAT(updated_at, '%Y-%m-%d %H:%i:%s') AS at
+           FROM mica_messages_conversations ORDER BY id`
+      )
+    )[0].map((r) => `${r.id}:${r.a ?? '-'}:${r.b ?? '-'}:${r.k ?? '-'}:${r.status}:${r.at}`);
+  const members = async () =>
+    (
+      await connection.query(
+        `SELECT conversation_id AS c, citizenid, device_id AS d, status, left_at IS NULL AS live
+           FROM mica_messages_participants ORDER BY id`
+      )
+    )[0].map((r) => `${r.c}:${r.citizenid}:${r.d}:${r.status}:${r.live}`);
+  const newPair = (a, b) =>
+    connection.query(
+      `INSERT INTO mica_messages_conversations (citizenid, is_group, participant_a, participant_b)
+       VALUES ('CIT_B', 0, ?, ?)`,
+      [b, a]
+    );
+  const keyOf = async (id) =>
+    await scalar(connection, 'SELECT pair_key FROM mica_messages_conversations WHERE id = ?', [id]);
+
+  check(
+    `${label}: before, both wedged pairs hold their key and refuse a new thread`,
+    [
+      (await keyOf(left)) !== null,
+      (await keyOf(purged)) !== null,
+      await rejects(() => newPair(A_PHONE, B_PHONE)),
+      await rejects(() => newPair(A_PHONE, C_PHONE))
+    ],
+    [true, true, 'ER_DUP_ENTRY', 'ER_DUP_ENTRY']
+  );
+  const before = await threads();
+  const membersBefore = await members();
+  const untouched = (rows) => rows.filter((r) => ![left, purged].includes(Number(r.split(':')[0])));
+
+  const run = await server.runPendingMigrations();
+  check(`${label}: 0009 applied`, run.applied, [WEDGED_MIGRATION]);
+  check(`${label}: and failed nothing, leaving nothing`, [run.failed, run.remaining], [null, []]);
+
+  const after = await threads();
+  check(
+    `${label}: both wedged pairs are released, still active, with updated_at held`,
+    after.filter((r) => [left, purged].includes(Number(r.split(':')[0]))),
+    [`${left}:-:-:-:active:${OLD}`, `${purged}:-:-:-:active:${OLD}`]
+  );
+  check(
+    `${label}: the healthy pair, the line thread and the group did not move`,
+    untouched(after),
+    untouched(before)
+  );
+  check(`${label}: and no membership moved`, await members(), membersBefore);
+
+  const second = await server.runPendingMigrations();
+  check(`${label}: a second run applies nothing`, second.applied, []);
+  await server.migrations.find((m) => m.id === WEDGED_MIGRATION).up();
+  check(`${label}: running up() a second time changes nothing`, await threads(), after);
+
+  check(
+    `${label}: a new thread between each released pair now inserts`,
+    [
+      await rejects(() => newPair(A_PHONE, B_PHONE)),
+      await rejects(() => newPair(A_PHONE, C_PHONE))
+    ],
+    [null, null]
+  );
+  check(
+    `${label}: and the healthy pair still refuses one`,
+    await rejects(() => newPair(B_PHONE, C_PHONE)),
+    'ER_DUP_ENTRY'
+  );
+};
+
 const main = async () => {
   let container;
   let connection;
@@ -2936,6 +3072,20 @@ const main = async () => {
     // MICA-344. 0008 alone, on both shapes; the three above also run it after their own.
     await runRenameMigration({ connection, schemaFile: 'mica.sql', hasPlayers: true, server });
     await runRenameMigration({
+      connection,
+      schemaFile: 'mica.esx.sql',
+      hasPlayers: false,
+      server
+    });
+
+    // MICA-342. 0009 alone, on both shapes: only a 1:1 one side has left loses its key.
+    await runWedgedPairsMigration({
+      connection,
+      schemaFile: 'mica.sql',
+      hasPlayers: true,
+      server
+    });
+    await runWedgedPairsMigration({
       connection,
       schemaFile: 'mica.esx.sql',
       hasPlayers: false,

@@ -21,7 +21,8 @@ line here.
 - [A start-up gate must not import schemaSql](start-gate-import-cycle.md) —
   Repository reaches contentCipher; the cycle breaks collection, not tsc
 - [A soft delete under a unique key refuses a re-create](soft-delete-under-a-unique-key.md)
-  — `uniqueAfterDelete` since MICA-321; Blabber mouths still wedge
+  — `uniqueAfterDelete` since MICA-321; a left 1:1 held `pair_key` until
+  MICA-342; Blabber mouths still wedge
 - [A "does not see it" check passes on a wrong filter](negative-check-needs-a-positive-twin.md)
   — pair every negative row or push assertion with a positive one
 - [A thread page is the newest window, in send order](thread-page-is-newest-window-in-send-order.md)
@@ -68,3 +69,5 @@ line here.
 - [The framework-number fallback names the old phone](framework-number-fallback-names-the-old-phone.md)
   — burner with no row yet shows the main number; Phone/Messages unfixed,
   listings fail closed
+- [Privacy.ts cannot import a service that reaches Devices](privacy-cannot-import-a-service.md)
+  — `lib/shell` imports Privacy; use `onBeforeSelfServiceDelete`, BFS the edge

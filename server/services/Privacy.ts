@@ -432,16 +432,48 @@ export const buildExport = async (citizenid: string): Promise<PrivacyExport> => 
   };
 };
 
+type BeforeSelfServiceDelete = (citizenid: string) => Promise<void>;
+const beforeDeleteHooks: { name: string; run: BeforeSelfServiceDelete }[] = [];
+
+/**
+ * Work a service must do before a player's own delete purges their rows, while those rows
+ * still exist to say what they were (MICA-342). `Conversations.ts` is the one user: it unpairs
+ * every 1:1 the player is about to be taken out of.
+ *
+ * Registered here rather than imported, for the reason `onDeviceHandover` is registered.
+ * `Conversations.ts` reaches `lib/shell.ts` through `Devices.ts`, and `lib/shell.ts` imports this
+ * file, so importing it here would close a cycle. A hook that throws fails the whole delete
+ * before anything is purged, so the player's retry starts clean.
+ */
+export const onBeforeSelfServiceDelete = (name: string, run: BeforeSelfServiceDelete): void => {
+  beforeDeleteHooks.push({ name, run });
+};
+
 /**
  * A player's own delete: `purgeCascadeSafe` (`lib/orphanSweep.ts`), keeping what
  * `SELF_SERVICE_EXCEPT` keeps, what an open report holds and what hangs off it, and never
- * following a cascade into a row it would not delete itself.
+ * following a cascade into a row it would not delete itself. The `onBeforeSelfServiceDelete`
+ * hooks run first.
+ *
+ * Only this purge runs them. The character-deleted purge and the start-up sweep
+ * (`lib/shell.ts`) delete the device rows too, so a 1:1 pair they leave behind names a phone
+ * that is gone. That pair stays held only if the phone's item outlives its character and is
+ * used again. That case is not handled here.
  */
-export const selfServicePurge = (citizenid: string) =>
-  purgeOwnedRows(citizenid, {
+export const selfServicePurge = async (citizenid: string) => {
+  for (const hook of beforeDeleteHooks) {
+    try {
+      await hook.run(citizenid);
+    } catch (error) {
+      console.error(`[privacy] ${hook.name}'s work before the delete failed; nothing purged.`);
+      throw error;
+    }
+  }
+  return await purgeOwnedRows(citizenid, {
     except: SELF_SERVICE_EXCEPT,
     cascade: { dependents: CASCADE_DEPENDENTS }
   });
+};
 
 // ---------------------------------------------------------------------------------------------
 // Handlers
