@@ -43,10 +43,23 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   });
 
   let Widget = $derived(loaded?.default);
+
+  // A core widget renders in-process, so without a boundary of its own a throw while it
+  // renders, or in one of its effects, escapes into the Launcher and takes the whole home
+  // screen down with it. `ErrorBoundary` is the wrong catch here: its fallback is the full
+  // app crash screen, which does not fit a tile. With `onerror` and no `failed` snippet the
+  // boundary renders nothing, so a widget that crashes stays blank, the same as one that
+  // fails to load. The boundary sits inside the `Widget` branch, so the next load for a
+  // different widget id builds a fresh one rather than inheriting this one's failed state.
+  function handleError(e: unknown) {
+    console.error(`[micaOS] WidgetHost caught crash in widget '${widgetId}':`, e);
+  }
 </script>
 
 {#if entry.render.kind === 'addon'}
   <AddOnWidgetFrame appId={entry.render.appId} {size} />
 {:else if Widget}
-  <Widget {size} />
+  <svelte:boundary onerror={handleError}>
+    <Widget {size} />
+  </svelte:boundary>
 {/if}
