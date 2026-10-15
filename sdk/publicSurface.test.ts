@@ -922,8 +922,13 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'registerPersistedReset',
     'releaseCanvas',
     'renderMarkdown',
-    'setRemoteCatalogUrl',
-    'setTrustedRemoteAppHosts',
+    // `setRemoteCatalogUrl` and `setTrustedRemoteAppHosts` stood here and were taken off on
+    // purpose, without a `SDK_CONTRACT_VERSION` bump — the one removal this list has seen
+    // that its own rule does not cover. This key is `index.ts`, which the package publishes
+    // under no subpath (`UNPUBLISHED_BY_DESIGN`), so nothing outside this tree compiled
+    // against it; and the two were never on `addon.ts`, the barrel an add-on did compile
+    // against. They let any in-process app rewrite the phone's trusted add-on hosts and its
+    // Store catalog. `NEVER_EXPORTED` below is what keeps them off.
     'thumbnailFromImage',
     'tileFromColorClasses',
     'tokenizeRichText',
@@ -2721,19 +2726,35 @@ const namedReexports = (file: string): string[] => {
 };
 
 /**
- * On `index.ts`, deliberately not on `addon.ts`: the shell's own controls. An add-on
- * cannot reach `shell/state/` by any route (§2.7, and `seam.test.ts` enforces it), and
- * these set the phone's trusted add-on hosts and its Store catalog — a sandboxed add-on
- * able to name its own host as trusted is the hole the sandbox exists to close.
+ * On `index.ts`, deliberately not on `addon.ts`: the shell's reads of its own add-on
+ * configuration — the trusted hosts, the Store catalog URL and the catalog itself — which
+ * the Store app renders and a sandboxed add-on has no use for.
+ *
+ * The two **setters** beside them are deliberately absent from both barrels, not listed
+ * here: a sandboxed add-on able to name its own host as trusted is the hole the sandbox
+ * exists to close, and an in-process app able to do the same is that hole one step
+ * further in. The shell imports them by path. `NEVER_EXPORTED` holds them off.
  */
 const SHELL_ONLY_BY_DESIGN = [
   'fetchCatalog',
   'getRemoteCatalogUrl',
   'getTrustedRemoteAppHosts',
-  'setRemoteCatalogUrl',
-  'setTrustedRemoteAppHosts',
   'type CatalogEntry'
 ];
+
+/**
+ * Names no entry point may export, as a value or a type. The two setters configure the
+ * shell's add-on trust boundary — which hosts a bundle may be fetched from, and which
+ * catalog the Store and the update check read — and that is the operator's decision,
+ * made once at boot by `web/src/shell/state/remoteAppConfig.ts`. Both were on `index.ts`
+ * until it was noticed that any in-process app could rewrite them.
+ *
+ * Written down because the gates above would not hold the line alone: putting one back
+ * fails `publishes nothing nobody decided to publish`, whose own message says to add the
+ * name to the baseline — which is the right answer for an ordinary export and the wrong
+ * one here.
+ */
+const NEVER_EXPORTED = ['setRemoteCatalogUrl', 'setTrustedRemoteAppHosts'];
 
 /** On `addon.ts` only: the iframe entry point, which has no meaning in-process. */
 const ADD_ON_ONLY_BY_DESIGN = ['bootAddOn'];
@@ -2838,7 +2859,7 @@ const SUBPATH_OF_ENTRY: Record<string, string> = {
  * So the shell reaches its own barrel through `web/vite.config.ts`, the way `addon.ts` used
  * to be reached, and an outside consumer resolving `@mica/sdk` now gets the barrel it can
  * actually use. Publishing `index.ts` under some subpath of its own was considered and
- * rejected: it exports six shell-only names backed by shell state and no `bootAddOn`, so a
+ * rejected: it exports four shell-only names backed by shell state and no `bootAddOn`, so a
  * subpath for it would be a supported way to reach something unusable.
  */
 const UNPUBLISHED_BY_DESIGN = ['@mica/sdk'];
@@ -3292,6 +3313,29 @@ describe('the SDK public surface (MICA-125)', () => {
       expect(undeclaredDivergence(['a', 'b'], ['a'], ['b'])).toEqual([]);
       expect(undeclaredDivergence(['a', 'type T'], ['a'], ['type T'])).toEqual([]);
     });
+  });
+
+  it('exports none of the shell trust-boundary setters from any entry point', () => {
+    // Runtime, typechecker and barrel source, so an `export *` arrival, a type alias and a
+    // literal re-export line are each caught by an arm that can see it.
+    const entries = Object.keys(ENTRY_POINTS);
+    expect(entries.length).toBeGreaterThan(3);
+    const found = entries.flatMap((entry) =>
+      NEVER_EXPORTED.filter(
+        (name) => (exportsNow[entry] ?? []).includes(name) || (typesNow[entry] ?? []).includes(name)
+      ).map((name) => `${entry}: ${name}`)
+    );
+    for (const file of ['index.ts', 'addon.ts']) {
+      for (const name of namedReexports(file)) {
+        if (NEVER_EXPORTED.includes(name)) found.push(`${file}: ${name}`);
+      }
+    }
+    expect(
+      found,
+      'these configure which hosts an add-on may be fetched from and which catalog the ' +
+        'Store reads — the operator decides that at boot, through the shell, and no app ' +
+        'may. Import the module by path from `web/src/shell/` instead.'
+    ).toEqual([]);
   });
 
   describe('an add-on can still name every entry point', () => {

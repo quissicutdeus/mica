@@ -89,7 +89,15 @@ export interface CatalogEntry {
  */
 let remoteCatalogUrl: string | undefined;
 
-/** Point the Store and the update check at an operator's catalog. Both read the one value. */
+/**
+ * Point the Store and the update check at an operator's catalog. Both read the one value.
+ *
+ * **Shell-only, and on no barrel.** Its one shipped caller is
+ * `web/src/shell/state/remoteAppConfig.ts`, which imports this module by path. It was on
+ * `index.ts` until it was noticed that any in-process app could then repoint the phone's
+ * Store at a catalog of its choosing; the getter and `fetchCatalog` stay exported because
+ * reading the operator's answer is not deciding it.
+ */
 export function setRemoteCatalogUrl(url: string | undefined): void {
   remoteCatalogUrl = url || undefined;
 }

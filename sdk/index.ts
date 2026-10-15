@@ -40,7 +40,7 @@ export type { PagedStore } from './createPagedStore';
  * paged read that goes through a facet (`useAccounts().getFollowers`) rather than a route.
  */
 export type { PageReader } from './createPagedStore';
-export { setTrustedRemoteAppHosts, getTrustedRemoteAppHosts } from './remoteAppSecurity';
+export { getTrustedRemoteAppHosts } from './remoteAppSecurity';
 /**
  * @public
  * MICA-70's one privacy-disclosure string, read by both the first-run notice
@@ -68,7 +68,7 @@ export { PRIVACY_NOTICE_TEXT } from './privacyNotice';
  * anything does.
  */
 export { fade, fly } from './lib/motion';
-export { fetchCatalog, getRemoteCatalogUrl, setRemoteCatalogUrl } from './catalog';
+export { fetchCatalog, getRemoteCatalogUrl } from './catalog';
 export type { CatalogEntry } from './catalog';
 /**
  * The Store renders the update rows; `useAppRegistry()` is what produces them. Only the

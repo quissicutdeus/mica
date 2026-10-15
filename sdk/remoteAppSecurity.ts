@@ -21,7 +21,14 @@
  */
 let trustedHosts: string[] = [];
 
-/** Configure the allowlist. Call this once, e.g. from the phone's own bootstrap. */
+/**
+ * Configure the allowlist. The phone's own bootstrap calls this once.
+ *
+ * **Shell-only, and on no barrel.** Its one shipped caller is
+ * `web/src/shell/state/remoteAppConfig.ts`, which imports this module by path. On
+ * `index.ts` it let any in-process app name its own host as trusted, which is the
+ * operator's decision and nobody else's; `getTrustedRemoteAppHosts` stays exported.
+ */
 export function setTrustedRemoteAppHosts(hosts: string[]): void {
   trustedHosts = hosts.map((h) => h.toLowerCase());
 }

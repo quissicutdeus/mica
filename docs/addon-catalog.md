@@ -134,7 +134,7 @@ builds, and is described with its limits in `docs/security.md`.
    and a `data:` URL would run inline source with no host check and no hash to
    verify.
 2. Refuse a `bundleUrl` whose host isn't on the trusted-remote-app allowlist
-   (`web/src/shell/state/remoteAppSecurity.ts`'s `setTrustedRemoteAppHosts`/
+   (`sdk/remoteAppSecurity.ts`'s `setTrustedRemoteAppHosts`/
    `getTrustedRemoteAppHosts`), empty until `mica_addon_hosts` fills it — so on
    a server that has set no convars this step refuses everything, which is the
    intended behaviour rather than a misconfiguration.
@@ -211,8 +211,12 @@ indefinitely (MICA-74). `web/src/shell/state/appUpdates.ts` is the join:
   (`store:catalog`) and validates every entry with `isCatalogEntry`, dropping a
   bad row with a warning. The Store's listing, its install lookup and the update
   check all read it, so no phone fetches the catalog itself (MICA-237).
-  `getRemoteCatalogUrl()`/`setRemoteCatalogUrl()` and `fetchCatalog()` stay
-  exported in `catalog.ts` for add-on tooling.
+  `getRemoteCatalogUrl()` and `fetchCatalog()` stay exported from the shell's
+  barrel. The two setters, `setRemoteCatalogUrl()` and
+  `setTrustedRemoteAppHosts()`, are on no barrel at all: only
+  `remoteAppConfig.ts` calls them, by path, because an in-process app able to
+  rewrite the trusted hosts could name its own. `NEVER_EXPORTED` in
+  `sdk/publicSurface.test.ts` keeps them off.
 - **`refreshAppUpdates()`** reads that catalog and compares. It runs from the
   Store's manifest `preload` (so the launcher badge is right before first paint)
   and again from its `onAppForeground`. A failed fetch **keeps the previous

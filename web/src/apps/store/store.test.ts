@@ -12,7 +12,8 @@
 import '../../host/registerFacets';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import manifest from './manifest';
-import { useAppRegistry, useAppRegistryWrite, setTrustedRemoteAppHosts } from '@mica/sdk';
+import { useAppRegistry, useAppRegistryWrite } from '@mica/sdk';
+import { setTrustedRemoteAppHosts } from '../../../../sdk/remoteAppSecurity';
 import type { AppManifest } from '@mica/sdk';
 import { renderApp } from '@mica/sdk/testing';
 import { catalogApps, remoteCatalogApps, mergedCatalogApps } from './appInfo';
