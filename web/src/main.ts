@@ -26,6 +26,11 @@ import '@fontsource/roboto/700.css';
 // stylesheet, for a consumer resolving through node rather than through these aliases.
 import '../../sdk/app.css';
 import App from './shell/Shell.svelte';
+import { installGlobalErrors } from './shell/globalErrors';
+
+// Before mount, so a throw from the first render's event handlers is already covered. It
+// cannot cover a throw while the imports above evaluate: that aborts this module first.
+installGlobalErrors();
 
 const app = mount(App, {
   target: document.getElementById('app')!
