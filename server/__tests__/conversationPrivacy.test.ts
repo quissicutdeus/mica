@@ -392,17 +392,20 @@ describe('messages:send carries the number of the phone it is sent from (MICA-34
 
     expect(pushed()?.phone).toBe('5550100');
     expect(numberSync.run).not.toHaveBeenCalled();
+    expect(messageInserts()).toHaveLength(1);
   });
 
-  it('still sends from an ESX character with no number, as before (MICA-348)', async () => {
+  it('refuses a text from an ESX character with no number, and writes nothing (MICA-348)', async () => {
     fw.kind = 'esx';
     fw.phone = undefined;
 
     const reply = await call('messages', 'send', { conversation_id: 1, message: 'on my way' });
 
-    expect(reply).toMatchObject({ id: 50, mine: true });
-    expect(messageInserts()).toHaveLength(1);
-    expect(pushed()?.phone).toBeUndefined();
+    expect(reply).toMatchObject({ key: 'server.phone.noNumber' });
+    expect(numberSync.run).not.toHaveBeenCalled();
+    expect(messageInserts()).toEqual([]);
+    expect(pushed()).toBeUndefined();
+    expect(blocklistAsks()).toEqual([]);
   });
 
   it('drops a text whose character switched out while its number was read (MICA-336)', async () => {

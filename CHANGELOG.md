@@ -1243,8 +1243,11 @@ now waits for the phone's own number and, if it still has none, refuses: the
 player sees "This phone has no number yet." and nothing is sent. A listing from
 such a phone shows no Call or Text button. A burner used while the main phone's
 number was still syncing now gets its own number rather than none. A player
-holding no phone at all now sees "You are not holding a phone" when dialling.
-ESX is unchanged: there a phone's number is the character's.
+holding no phone at all now sees "You are not holding a phone" when dialling. On
+ESX a phone's number is the character's, so the leak never happened there, but a
+character with no number could still text, and nobody could block a text that
+carried no number: such a text is now refused the same way, as its calls already
+were (MICA-348).
 
 **A security review closed a set of privacy and authority gaps (MICA-339).** No
 schema change and no command to run. What players and scripts notice:

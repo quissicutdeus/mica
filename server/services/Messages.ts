@@ -782,11 +782,13 @@ app.registerEvent('send', async (source, cbId, data, citizenid, player) => {
    * phone of a sender who has just picked up a burner (MICA-346). Read before anything is
    * written, because it decides two things.
    *
-   * **No number, no text, on qb and standalone,** as for a call or a share. A text with no
-   * number would reach every member with no number to check a block against. The sync is
-   * awaited first, so a phone gets here numberless only when its number could not be issued.
-   * Refusing it keeps any such case from being a way past a block. ESX keeps its numbers on the
-   * character, so a character with none still sends there (MICA-348).
+   * **No number, no text, on every framework,** as for a call or a share. A text with no
+   * number would reach every member with no number to check a block against. On qb and
+   * standalone the sync is awaited first, so a phone gets here numberless only when its number
+   * could not be issued. ESX keeps the number on the character, and a character with none is
+   * refused too (MICA-348): it cannot be called or addressed by number either, and letting it
+   * text was a way past every blocklist. Every player send comes through here, a group's, a
+   * line's and an attachments-only one alike, so this is the one place it is refused.
    *
    * **Asked again who is on the source once it is read** (MICA-336). It can await a whole sync,
    * and a character switch keeps the source. The text was the previous character's, and is
@@ -795,7 +797,7 @@ app.registerEvent('send', async (source, cbId, data, citizenid, player) => {
   const framework = detectFramework();
   const senderPhone = await numberOfPhone(deviceId, player, { framework, sync: syncNumber });
   if (FrameworkBridge.getPlayer(source)?.citizenid !== citizenid) return undefined;
-  if (!senderPhone && framework !== 'esx') {
+  if (!senderPhone) {
     throw new PlayerFacingError('This phone has no number yet.', {
       key: 'server.phone.noNumber'
     });
