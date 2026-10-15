@@ -66,7 +66,7 @@ const EXTERNAL_DB = Boolean(DB_HOST || DB_PORT || DB_USER || DB_PASSWORD);
  * configured": a harness that returns early — a fixture that silently seeded nothing, a loop
  * over an empty list — would otherwise print a pass having checked almost nothing.
  *
- * The run currently makes **421** checks. The last census, at 258, named each fixture: the two
+ * The run currently makes **455** checks. The last census, at 258, named each fixture: the two
  * `runVariant`s (17 each), the two `runSweepFixtures` (17 each), the two `runNumberMigration`s
  * (MICA-284; 21 on qb, 16 on ESX), the two `runDataMigration`s (MICA-282; 38 each), the two
  * `runBatteryMigration`s (MICA-283; 9 each), and MICA-289's `runWidenMigration` (14 on qb, 15 on
@@ -79,12 +79,13 @@ const EXTERNAL_DB = Boolean(DB_HOST || DB_PORT || DB_USER || DB_PASSWORD);
  * 334, and MICA-165's `runSealedWidthMigration`s (11 on each shape) and
  * `runSealedWidthRefusesCopy`s (5 on each) to 366, and MICA-344's `runRenameMigration`s (15 on
  * each shape) and `runReimportOverFlattenedBaseline` (4) to 401, and MICA-342's
- * `runWedgedPairsMigration`s (10 on each shape) to 421 — so the margin here is eight again.
+ * `runWedgedPairsMigration`s (10 on each shape) to 421, and MICA-335's
+ * `runContactKeyMigration`s (17 on each shape) to 455 — so the margin here is eight again.
  * That is deliberately tight: losing any one fixture drops below it and fails, which is the
  * whole point. Raise the floor when you add checks, rather than letting the gap widen until it
  * stops catching anything.
  */
-const MINIMUM_CHECKS = 413;
+const MINIMUM_CHECKS = 447;
 let checksRun = 0;
 
 const check = (label, actual, expected) => {
@@ -834,6 +835,24 @@ const regressDeviceNames = async (connection) => {
   await connection.query('DELETE FROM mica_schema_migrations WHERE id = ?', [RENAME_MIGRATION]);
 };
 
+/* -------------------------- MICA-335: one live contact per number on a device */
+
+const CONTACT_KEY_MIGRATION = '0010_contact_numbers_unique_per_device';
+
+/**
+ * Take out what 0010 adds — `device_phone_unique` and the `phone_key` it is built on — and the
+ * ledger row the seed pre-inserted, so the runner sees 0010 as pending. The scenario for 0002
+ * has to, because 0002 starts from a contacts table with no device column for the key to be on.
+ */
+const regressContactKey = async (connection) => {
+  await connection.query(
+    'ALTER TABLE mica_contacts DROP KEY device_phone_unique, DROP COLUMN phone_key'
+  );
+  await connection.query('DELETE FROM mica_schema_migrations WHERE id = ?', [
+    CONTACT_KEY_MIGRATION
+  ]);
+};
+
 /* --------------------------------- MICA-284: the number follows the phone */
 
 const NUMBERS = 'mica_phone_numbers';
@@ -1101,6 +1120,9 @@ const KEY_SWAPS = [
  * Reconstructed by hand from the DDL as it stood, the same way `regressNumbersTable` is.
  */
 const regressDeviceTables = async (connection) => {
+  // `device_phone_unique` is on `device_id`, which is `phone_id` here and goes below; 0010 puts
+  // it back after 0002 and 0008 have run.
+  await regressContactKey(connection);
   for (const [table, added, dropped, columns] of KEY_SWAPS) {
     await connection.query(
       `ALTER TABLE ${table} DROP KEY ${added}, ADD UNIQUE KEY ${dropped} ${columns}`
@@ -1227,9 +1249,10 @@ const runDataMigration = async ({ connection, schemaFile, hasPlayers, server }) 
   );
 
   const run = await server.runPendingMigrations();
-  check(`${label}: the migration applied, and 0008 after it`, run.applied, [
+  check(`${label}: the migration applied, and 0008 and 0010 after it`, run.applied, [
     DATA_MIGRATION,
-    RENAME_MIGRATION
+    RENAME_MIGRATION,
+    CONTACT_KEY_MIGRATION
   ]);
   check(`${label}: and failed nothing`, run.failed, null);
 
@@ -1753,6 +1776,228 @@ const runReimportOverFlattenedBaseline = async ({ connection, server }) => {
     await rowsIn(connection, 'mica_contacts'),
     1
   );
+};
+
+/**
+ * MICA-335's 0010, run the way an owner runs it: `micaschema apply` (`runApply`), so the
+ * migration and then the additive pass, on a database that predates all three of MICA-335's
+ * columns and holds the duplicates the key would refuse.
+ *
+ * Two claims only a real database can settle. That the settling compares rows exactly as the
+ * key will — under the column's collation, so `555-TAXI` and `555-taxi` are one number — or the
+ * `ADD UNIQUE KEY` aborts on ER 1062, which is how MICA-153 failed. And that every device row
+ * that existed before `setup_pending` reads `0` once the additive pass has added it, so no phone
+ * on an upgraded server re-runs its set-up.
+ */
+const runContactKeyMigration = async ({ connection, schemaFile, hasPlayers, server }) => {
+  const variant = hasPlayers ? 'qb' : 'esx';
+  const label = `${schemaFile} contact key`;
+  step(`${schemaFile} — MICA-335 ${CONTACT_KEY_MIGRATION}, on a ${variant} database`);
+
+  const fresh = async (database) => {
+    await connection.query(`DROP DATABASE IF EXISTS \`${database}\``);
+    await connection.query(`CREATE DATABASE \`${database}\``);
+    await connection.changeUser({ database });
+    if (hasPlayers) await connection.query(PLAYERS_TABLE);
+    await connection.query(fs.readFileSync(path.join(root, schemaFile), 'utf8'));
+  };
+
+  // Sorted: 0010 and the additive pass append their columns, where a fresh import has them in
+  // declaration order. Which columns, and what each one is, is the claim.
+  await fresh(`mica_contact_key_shape_${variant}`);
+  const shape = {
+    columns: (await wholeSchema(connection)).toSorted(),
+    keys: await allIndexes(connection)
+  };
+
+  await fresh(`mica_contact_key_${variant}`);
+  await regressContactKey(connection);
+  await connection.query('ALTER TABLE mica_contacts DROP COLUMN default_number');
+  await connection.query('ALTER TABLE mica_devices DROP COLUMN setup_pending');
+  check(
+    `${label}: the regressed schema has none of MICA-335's columns, nor its key`,
+    [
+      await columnsNamed(connection, 'phone_key'),
+      await columnsNamed(connection, 'default_number'),
+      await columnsNamed(connection, 'setup_pending'),
+      (await allIndexes(connection)).filter((key) => key.includes('device_phone_unique'))
+    ],
+    [[], [], [], []]
+  );
+
+  const A = hasPlayers ? 'CIT_A' : SWEEP_LIVE;
+  const C_PHONE = 'c'.repeat(32);
+  await connection.query(
+    'INSERT INTO mica_devices (citizenid, device_id, kind, claimed) VALUES ?',
+    [
+      [
+        [A, A_PHONE, 'phone', 1],
+        [A, B_PHONE, 'phone', 0]
+      ]
+    ]
+  );
+  const contact = async (device, name, phone, options = {}) => {
+    const { status = 'active', favorite = 0, at = '2026-01-01 00:00:00' } = options;
+    const [result] = await connection.query(
+      `INSERT INTO mica_contacts (citizenid, device_id, firstname, phone, status, favorite, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [A, device, name, phone, status, favorite, at]
+    );
+    return result.insertId;
+  };
+  const ids = {
+    // Three live rows with one number: the favourite stays, though it is neither the newest nor
+    // the last edited.
+    mom: await contact(A_PHONE, 'Mom', '5550100', { at: '2026-01-01 00:00:00' }),
+    mother: await contact(A_PHONE, 'Mother', '5550100', { favorite: 1, at: '2026-01-02 00:00:00' }),
+    mum: await contact(A_PHONE, 'Mum', '5550100', { at: '2026-01-03 00:00:00' }),
+    // Deleted beside them: legal under the key already, and left exactly as it is.
+    gone: await contact(A_PHONE, 'Gone', '5550100', { status: 'deleted' }),
+    // No favourite: the last edited stays, though it is the older row.
+    taxi: await contact(A_PHONE, 'Taxi', '5550101', { at: '2026-03-01 00:00:00' }),
+    cab: await contact(A_PHONE, 'Cab', '5550101', { at: '2026-02-01 00:00:00' }),
+    // Nothing between them: the newest.
+    tow: await contact(A_PHONE, 'Tow', '5550102'),
+    towAgain: await contact(A_PHONE, 'Tow', '5550102'),
+    // One number under the column's collation, not byte for byte.
+    upper: await contact(A_PHONE, 'Upper', '555-TAXI'),
+    lower: await contact(A_PHONE, 'Lower', '555-taxi'),
+    // The same number on another device, and on none: nothing for the key to refuse.
+    elsewhere: await contact(B_PHONE, 'Mom', '5550100'),
+    loose: await contact(null, 'Loose', '5550100'),
+    looseAgain: await contact(null, 'Loose', '5550100'),
+    // Two spellings of one number are two contacts, as the player typed them.
+    dashed: await contact(A_PHONE, 'Dashed', '555-0100')
+  };
+  const settledAway = [ids.mom, ids.mum, ids.cab, ids.tow, ids.upper];
+  const rows = async () =>
+    (
+      await connection.query(
+        'SELECT id, status, CAST(updated_at AS CHAR) AS at FROM mica_contacts ORDER BY id'
+      )
+    )[0].map((r) => `${r.id}:${r.status}:${r.at}`);
+  const before = await rows();
+
+  runningFramework(server, hasPlayers);
+  const apply = await captured(() => server.runApply(0));
+  check(
+    `${label}: apply runs 0010, then the additive pass adds the two plain columns, failing nothing`,
+    [
+      apply.lines.includes(`[mica] applied migration ${CONTACT_KEY_MIGRATION}`),
+      apply.lines.includes('[mica] add column mica_contacts.default_number'),
+      apply.lines.includes('[mica] add column mica_devices.setup_pending'),
+      apply.lines.filter((line) => /fail/i.test(line))
+    ],
+    [true, true, true, []]
+  );
+  check(
+    `${label}: of each live duplicate, the favourite, else the last edited, else the newest stays live`,
+    (
+      await connection.query("SELECT id FROM mica_contacts WHERE status = 'active' ORDER BY id")
+    )[0].map((r) => r.id),
+    [
+      ids.mother,
+      ids.taxi,
+      ids.towAgain,
+      ids.lower,
+      ids.elsewhere,
+      ids.loose,
+      ids.looseAgain,
+      ids.dashed
+    ]
+  );
+  check(
+    `${label}: every other one is soft-deleted, updated_at unchanged, and nothing is removed`,
+    await rows(),
+    before.map((row) =>
+      settledAway.some((id) => row.startsWith(`${id}:`))
+        ? row.replace(':active:', ':deleted:')
+        : row
+    )
+  );
+  check(
+    `${label}: the log names how many, and which`,
+    apply.lines.some(
+      (line) =>
+        line.includes(`${settledAway.length} live contact(s)`) &&
+        line.includes(`Ids: ${settledAway.join(', ')}.`)
+    ),
+    true
+  );
+  check(
+    `${label}: every device that existed before setup_pending reads as set up`,
+    (await connection.query('SELECT setup_pending FROM mica_devices ORDER BY id'))[0].map((r) =>
+      Number(r.setup_pending)
+    ),
+    [0, 0]
+  );
+  check(
+    `${label}: and no existing contact claims to be a seeded default`,
+    Number(
+      await scalar(
+        connection,
+        'SELECT COUNT(*) FROM mica_contacts WHERE default_number IS NOT NULL'
+      )
+    ),
+    0
+  );
+  check(
+    `${label}: every column a fresh import has, type, nullability and collation`,
+    (await wholeSchema(connection)).toSorted(),
+    shape.columns
+  );
+  check(`${label}: and every key`, await allIndexes(connection), shape.keys);
+  const plans = await server.SchemaMigrator.plan();
+  check(
+    `${label}: the planner finds nothing to add and no drift`,
+    plans.flatMap((p) => [...p.additive, ...p.drift]),
+    []
+  );
+
+  step(`${schemaFile} — what device_phone_unique allows and refuses`);
+  const save = (device, status = 'active') =>
+    connection.query(
+      'INSERT INTO mica_contacts (citizenid, device_id, firstname, phone, status) VALUES (?, ?, ?, ?, ?)',
+      [A, device, 'Again', '5550100', status]
+    );
+  check(
+    `${label}: a second live contact with a number the device has is refused`,
+    await rejects(() => save(A_PHONE)),
+    'ER_DUP_ENTRY'
+  );
+  check(
+    `${label}: a deleted one beside it is not`,
+    await rejects(() => save(A_PHONE, 'deleted')),
+    null
+  );
+  check(
+    `${label}: nor the number live on a third device`,
+    await rejects(() => save(C_PHONE)),
+    null
+  );
+  await connection.query("UPDATE mica_contacts SET status = 'deleted' WHERE id = ?", [ids.mother]);
+  check(
+    `${label}: once the live one is deleted, its number saves again — no revive needed`,
+    await rejects(() => save(A_PHONE)),
+    null
+  );
+  check(
+    `${label}: and restoring the deleted one is then refused, which restore answers as false`,
+    await rejects(() =>
+      connection.query("UPDATE mica_contacts SET status = 'active' WHERE id = ?", [ids.mother])
+    ),
+    'ER_DUP_ENTRY'
+  );
+
+  const settled = { schema: await wholeSchema(connection), rows: await rows() };
+  await server.migrations.find((m) => m.id === CONTACT_KEY_MIGRATION).up();
+  check(
+    `${label}: running up() a second time changes nothing`,
+    { schema: await wholeSchema(connection), rows: await rows() },
+    settled
+  );
+  const second = await server.runPendingMigrations();
+  check(`${label}: a second run applies nothing`, second.applied, []);
 };
 
 const WIDEN_MIGRATION = '0004_citizenid_widens_on_esx';
@@ -3086,6 +3331,15 @@ const main = async () => {
       server
     });
     await runWedgedPairsMigration({
+      connection,
+      schemaFile: 'mica.esx.sql',
+      hasPlayers: false,
+      server
+    });
+
+    // MICA-335. 0010 through `micaschema apply`, on both shapes; 0002's scenario runs it too.
+    await runContactKeyMigration({ connection, schemaFile: 'mica.sql', hasPlayers: true, server });
+    await runContactKeyMigration({
       connection,
       schemaFile: 'mica.esx.sql',
       hasPlayers: false,

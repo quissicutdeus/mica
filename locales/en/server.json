@@ -3,6 +3,7 @@
   "rateLimited": "Too many requests. Slow down and try again.",
   "notAuthenticated": "Player not authenticated",
   "content.reservedPrefix": "That text can't be saved: it starts with a reserved code.",
+  "contacts.numberTaken": "You already have a contact with that number.",
   "blabber.alreadyMouthed": "You have already mouthed that.",
   "blabber.blabGone": "That Blab is no longer available.",
   "blabber.emptyBlab": "A Blab needs something in it.",

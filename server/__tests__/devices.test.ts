@@ -278,9 +278,10 @@ describe('the phone a request is for', () => {
 
     expect(first).toMatch(ID_SHAPE);
     expect(second).toBe(first);
-    // Minted unclaimed — never written into an item — and only the once.
+    // Minted unclaimed — never written into an item — and only the once. The trailing `1` is
+    // `setup_pending` (MICA-335): every row this server inserts owes its set-up until it runs.
     expect(dbMock.insert).toHaveBeenCalledOnce();
-    expect(dbMock.insert.mock.calls[0][1]).toEqual([CID, first, 'phone', 0]);
+    expect(dbMock.insert.mock.calls[0][1]).toEqual([CID, first, 'phone', 0, 1]);
   });
 
   it('reuses an unclaimed phone the migration minted rather than minting a second', async () => {
@@ -477,7 +478,7 @@ describe('the tablet as an identity of its own (MICA-264)', () => {
       deviceId: tablet
     });
     expect(dbMock.insert).toHaveBeenCalledOnce();
-    expect(dbMock.insert.mock.calls[0][1]).toEqual([CID, tablet, 'tablet', 1]);
+    expect(dbMock.insert.mock.calls[0][1]).toEqual([CID, tablet, 'tablet', 1, 1]);
     // No look for an unclaimed row at all, and nothing claimed.
     expect(dbMock.query.mock.calls.some(([sql]) => String(sql).includes('`claimed`'))).toBe(false);
     expect(dbMock.update.mock.calls.some(([sql]) => String(sql).includes('`claimed` = ?'))).toBe(
@@ -501,7 +502,7 @@ describe('the tablet as an identity of its own (MICA-264)', () => {
     expect(bridgeMock.setItemMetadata).toHaveBeenCalledWith(player, 'tablet', 5, {
       deviceId: tablet
     });
-    expect(dbMock.insert.mock.calls[0][1]).toEqual([CID, tablet, 'tablet', 1]);
+    expect(dbMock.insert.mock.calls[0][1]).toEqual([CID, tablet, 'tablet', 1, 1]);
     // The phone's rows stay with its holder: no handover walk, no claim, nothing.
     expect(transfersOf(PHONE_A)).toEqual([]);
     expect(activeDeviceIdOf(SRC, 'tablet')).toBe(tablet);
@@ -602,8 +603,8 @@ describe('the tablet as an identity of its own (MICA-264)', () => {
     expect(await deviceForRequest(SRC, CID, 'tablet')).toBe(tablet);
     const inserts = dbMock.insert.mock.calls.map(([, params]) => params);
     expect(inserts).toEqual([
-      [CID, tablet, 'tablet', 0],
-      [CID, phone, 'phone', 0]
+      [CID, tablet, 'tablet', 0, 1],
+      [CID, phone, 'phone', 0, 1]
     ]);
     // Each identity read asks for its own kind.
     const unclaimedReads = dbMock.query.mock.calls
@@ -626,7 +627,7 @@ describe('the tablet as an identity of its own (MICA-264)', () => {
     const phone = await identityPhone(CID);
 
     expect(phone).not.toBe(TABLET_T);
-    expect(dbMock.insert.mock.calls[0][1]).toEqual([CID, phone, 'phone', 0]);
+    expect(dbMock.insert.mock.calls[0][1]).toEqual([CID, phone, 'phone', 0, 1]);
   });
 
   it('phoneForCitizen reads phones only, and never the tablet the citizen used last', async () => {

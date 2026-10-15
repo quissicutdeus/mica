@@ -47,6 +47,25 @@ Entries are hand-written. See MICA-72 for why a generated one was rejected.
 
 ### Action required
 
+**Run `micaschema apply` from the server console: a new phone's setup now
+survives a restart, and a phone holds each number in its contacts once
+(MICA-335).** `mica_devices` gains `setup_pending`, set while a new phone or
+tablet is still being set up (today, its default contacts being added) and
+cleared when that finishes; a restart in between now finishes it on the phone's
+next use instead of leaving it with some of its defaults for good. Every
+existing device reads as already set up. `mica_contacts` gains `default_number`,
+which marks a contact added as one of the owner's defaults, so a default the
+player has since renumbered is not added again, and a generated `phone_key`
+under a new unique key, `device_phone_unique`: a phone can hold a number live in
+its contacts only once. Migration `0010_contact_numbers_unique_per_device` runs
+first and, where a phone already holds the same number live more than once,
+keeps the favourite, else the last edited, else the newest, and marks the rest
+deleted (their ids are logged; nothing is erased). **Until you run it, no new
+phone or tablet can be set up.** Saving a number the phone already has now says
+so instead of adding a second contact, `micaimport` counts such a row as a
+duplicate rather than a failure, and the `AddContact` export answers the
+existing contact's id.
+
 **Run `micaschema apply` from the server console to free the 1:1 threads one
 side had left (MICA-342).** Leaving a 1:1, or a privacy delete taking a player
 out of every thread, used to leave the thread holding the pair's key with

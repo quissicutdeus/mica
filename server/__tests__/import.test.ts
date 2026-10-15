@@ -168,16 +168,42 @@ const dbMock = vi.hoisted(() => {
       return { rows: rows.slice(offset, offset + Number(paged[6])) };
     }
 
-    // Contacts.
+    // Contacts. Numbers compare as `utf8mb4_unicode_ci` compares them, near enough: case
+    // folded, trailing spaces ignored. `device_phone_unique` (MICA-335) refuses a second live
+    // row with one number on one device, whoever it names.
+    const sameNumber = (a: unknown, b: unknown) =>
+      String(a).toLowerCase().trimEnd() === String(b).toLowerCase().trimEnd();
+    const liveContact = (c: Row) => (c.status ?? 'active') === 'active';
+    if (sql.startsWith('SELECT 1 FROM `mica_contacts` WHERE `device_id` = ?')) {
+      return {
+        scalar: db.contacts.some(
+          (c) => liveContact(c) && c.device_id === params[0] && sameNumber(c.phone, params[1])
+        )
+          ? 1
+          : null
+      };
+    }
     if (sql.startsWith('SELECT 1 FROM `mica_contacts`')) {
       return {
-        scalar: db.contacts.some((c) => c.citizenid === params[0] && c.phone === params[1])
+        scalar: db.contacts.some(
+          (c) => liveContact(c) && c.citizenid === params[0] && sameNumber(c.phone, params[1])
+        )
           ? 1
           : null
       };
     }
     if (sql.startsWith('INSERT INTO `mica_contacts`')) {
       const [citizenid, device_id, firstname, lastname, phone, favorite] = params;
+      if (
+        device_id !== null &&
+        db.contacts.some(
+          (c) => liveContact(c) && c.device_id === device_id && sameNumber(c.phone, phone)
+        )
+      ) {
+        throw new Error(
+          `Duplicate entry '${device_id}-${phone}' for key 'mica_contacts.device_phone_unique'`
+        );
+      }
       const id = db.nextId++;
       db.contacts.push({ id, citizenid, device_id, firstname, lastname, phone, favorite });
       return { id };
@@ -685,6 +711,55 @@ describe('micaimport qb-phone', () => {
     const report = await runImport('qb-phone', { apply: false });
     expect(skipped(report, 'player_contacts')[SKIP.alreadyInContacts]).toBe(1);
     expect(table(report, 'player_contacts').written).toBe(2);
+  });
+
+  /**
+   * MICA-335: `device_phone_unique` is per device and compares under the column's collation.
+   * What it would refuse has to be skipped as a duplicate before the write, or it is written,
+   * refused, and reported as a failed write. The deleted twin is the positive case: the same
+   * row, not live, holds no key, and the contact is written.
+   */
+  it.each([
+    ['live, skips it as already there', 'active', 2, { [SKIP.alreadyInContacts]: 1 }],
+    ['deleted, writes it', 'deleted', 3, {}]
+  ])(
+    'with the number on the phone under its previous holder, %s',
+    async (_label, status, written, skips) => {
+      seedQb();
+      db.contacts.push({
+        id: 1,
+        citizenid: 'CIT_PREVIOUS',
+        device_id: 'phone-CIT_A',
+        phone: '555-0199',
+        status
+      });
+      const report = await runImport('qb-phone', { apply: true });
+      expect(table(report, 'player_contacts').written).toBe(written);
+      expect(skipped(report, 'player_contacts')).toEqual({
+        [SKIP.duplicateInSource]: 1,
+        [SKIP.unresolvedOwner]: 1,
+        ...skips
+      });
+    }
+  );
+
+  it('counts two source rows that differ only in case as one number, not a failed write', async () => {
+    seedQb();
+    db.source
+      .get('player_contacts')!
+      .push(
+        { id: 6, citizenid: 'CIT_A', name: 'Taxi', number: '555-TAXI' },
+        { id: 7, citizenid: 'CIT_A', name: 'Taxi again', number: '555-taxi' }
+      );
+    const report = await runImport('qb-phone', { apply: true });
+    expect(table(report, 'player_contacts').written).toBe(4);
+    expect(skipped(report, 'player_contacts')).toEqual({
+      [SKIP.duplicateInSource]: 2,
+      [SKIP.unresolvedOwner]: 1
+    });
+    expect(db.contacts.filter((c) => /taxi/i.test(c.phone)).map((c) => c.phone)).toEqual([
+      '555-TAXI'
+    ]);
   });
 
   it('skips a messages column it cannot read, with a reason, and carries on', async () => {
@@ -1364,7 +1439,9 @@ describe('MICA-233 review: identity, membership, completeness, scale', () => {
       expect.stringContaining('npwd_phone_contacts: 5000 rows read')
     );
     log.mockRestore();
-  });
+    // 5001 rows, each now also asking whether its phone already holds the number (MICA-335),
+    // against an in-memory table: ~2s alone, past vitest's 5s default under the full suite.
+  }, 20_000);
 
   it('reports a timed-out chunk and finishes the run', async () => {
     seedQb();

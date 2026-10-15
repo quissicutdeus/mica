@@ -66,6 +66,10 @@ line here.
   — `playerDropped` has five; an elided import changes which one a test runs
 - [pma-voice's call join is unchecked; micaOS undoes it](pma-voice-call-join-is-unchecked.md)
   — MICA-341; read the state bag, no guardNetEvent limit, census fails 9 ways
+- [A dedupe before ADD UNIQUE KEY compares as the key does](dedupe-compares-as-the-key-does.md)
+  — join on the generated key column; revive refused by NOT NULL columns
+- [A new column on an exported table fails privacy.test](new-column-trips-the-privacy-pin.md)
+  — `EXPORTED_COLUMNS` pin; only the full server run sees it
 - [The framework-number fallback names the old phone](framework-number-fallback-names-the-old-phone.md)
   — `numberOfPhone` since MICA-346; never trust `syncNumber`'s answer, read the
   legacy row after it

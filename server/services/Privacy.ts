@@ -154,7 +154,13 @@ const BYTE_TYPES: ReadonlySet<ColumnType> = new Set<ColumnType>(['blob', 'medium
 const WITHHELD: Readonly<Record<string, readonly string[]>> = {
   mica_messages_conversations: ['participant_a', 'participant_b', 'pair_key'],
   // A snapshot of the reported content, which is the reported player's, not the reporter's.
-  mica_reports: ['target_preview']
+  mica_reports: ['target_preview'],
+  // MICA-335. `phone_key` is `phone` again while the row is live, and NULL otherwise: the
+  // unique key's machinery, telling the player nothing `phone` and `status` do not.
+  mica_contacts: ['phone_key'],
+  // MICA-335. Whether the device's new-device hooks still owe it a run: the server's own
+  // bookkeeping, not anything the player made.
+  mica_devices: ['setup_pending']
 };
 
 // ---------------------------------------------------------------------------------------------

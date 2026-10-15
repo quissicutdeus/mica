@@ -8,7 +8,6 @@ import { onPhoneStateChanged } from '../lib/deviceItem';
 import {
   ACTIVE_STATUS,
   generatePhoneNumber,
-  isDuplicateEntry,
   MAX_ASSIGN_ATTEMPTS,
   numberFor,
   PHONE_NUMBERS_TABLE,
@@ -19,6 +18,7 @@ import {
   type PhoneNumberRow
 } from '../lib/phoneNumbers';
 import { PhoneNumberRepository } from '../repositories/PhoneNumberRepository';
+import { isDuplicateKey } from '../lib/sqlErrors';
 import { resolvePhone, type ActiveDevice } from './Devices';
 
 /**
@@ -270,7 +270,7 @@ const assign = async (
       } as Partial<PhoneNumberRow>);
       return candidate;
     } catch (error) {
-      if (!isDuplicateEntry(error)) {
+      if (!isDuplicateKey(error)) {
         console.error(
           `[mica] could not assign a phone number to ${citizenid}. They will have a phone ` +
             `that cannot be dialled until this is fixed; nothing else is affected. If the ` +
@@ -353,7 +353,7 @@ const attachLegacy = async (
       );
     }
   } catch (error) {
-    if (!isDuplicateEntry(error)) {
+    if (!isDuplicateKey(error)) {
       console.error(`[mica] could not attach ${number(legacy)} to a phone.`, error);
       return null;
     }

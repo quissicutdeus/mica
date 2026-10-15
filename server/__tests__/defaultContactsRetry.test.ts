@@ -63,9 +63,18 @@ type ContactRow = {
   phone: string;
   citizenid: string;
   status: string;
+  /** Which default the row was seeded as (MICA-335); null on one the player saved. */
+  default_number?: string | null;
 };
 let contactRows: ContactRow[];
-type DeviceRow = { id: number; device_id: string; citizenid: string; claimed: number };
+/** `setup_pending` absent is a row read before `micaschema apply` added the column. */
+type DeviceRow = {
+  id: number;
+  device_id: string;
+  citizenid: string;
+  claimed: number;
+  setup_pending?: number;
+};
 let phoneRows: DeviceRow[];
 /** Gates a table's next handover transfer waits on, in order. */
 let transferGates: Record<string, Promise<void>[]>;
@@ -74,8 +83,36 @@ let failInsert: Set<number>;
 let insertCount: number;
 /** Gates the next contacts insert waits on, in order. */
 let gates: Promise<void>[];
+/** How many of the next set-up marks throw. */
+let failMark: number;
+/**
+ * Whether inserts honour `device_phone_unique` (MICA-335). Off unless a case is about the key:
+ * with it on, a second overlapping seed run would be refused rather than doubling a row, and
+ * the MICA-327 cases below exist to show the phone's queue keeps runs from overlapping at all.
+ */
+let uniqueKey: boolean;
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+/**
+ * The error oxmysql rejects with across a resource boundary: no `errno`, no `code`, the query
+ * and its parameters in the text, and mysql2's own message on the last line only.
+ */
+const oxmysqlError = (sql: string, params: unknown[], message: string): Error =>
+  new Error(
+    `mica was unable to execute a query!\nQuery: ${sql}\n${JSON.stringify(params)}\n${message}`
+  );
+
+/** Restart micaOS: every in-process map gone, the rows still there. */
+const restart = () => __resetDeviceState();
+
+/** `setup_pending` on a phone's row, as a restart would read it. */
+const pendingOf = (deviceId: string) =>
+  phoneRows.find((row) => row.device_id === deviceId)?.setup_pending;
+
+/** How many times the seed read what a phone already has. */
+const seedReads = () =>
+  dbMock.query.mock.calls.filter(([sql]) => String(sql).includes('`mica_contacts`')).length;
 
 /** The numbers on a phone, in insert order, every status. */
 const numbersOn = (deviceId: string) =>
@@ -118,6 +155,8 @@ beforeEach(() => {
   failInsert = new Set();
   insertCount = 0;
   gates = [];
+  failMark = 0;
+  uniqueKey = false;
 
   dbMock.query.mockImplementation(async (sql: string, params: unknown[]) => {
     if (String(sql).includes('`mica_contacts`')) {
@@ -127,7 +166,11 @@ beforeEach(() => {
       return contactRows
         .filter((row) => row.device_id === params[0])
         .filter((row) => !activeOnly || row.status === 'active')
-        .map((row) => ({ phone: row.phone }));
+        .map((row) =>
+          String(sql).includes('`default_number`')
+            ? { phone: row.phone, default_number: row.default_number ?? null }
+            : { phone: row.phone }
+        );
     }
     // `mica_devices`: `findAll` by phone id, or `readUnclaimed` by citizen.
     const byPhone = (params as unknown[]).find((value) => /^[0-9a-f]{32}$/.test(String(value)));
@@ -143,7 +186,9 @@ beforeEach(() => {
         id: phoneRows.length + 1,
         device_id: String(row.device_id),
         citizenid: String(row.citizenid),
-        claimed: Number(row.claimed)
+        claimed: Number(row.claimed),
+        // `DEFAULT 0`, as the column is declared.
+        setup_pending: Number(row.setup_pending ?? 0)
       });
       return phoneRows.length;
     }
@@ -151,19 +196,49 @@ beforeEach(() => {
     const position = ++insertCount;
     const gate = gates.shift();
     if (gate) await gate;
-    if (failInsert.delete(position)) throw new Error('Lock wait timeout exceeded');
+    if (failInsert.delete(position)) {
+      throw oxmysqlError(String(sql), values, 'Lock wait timeout exceeded');
+    }
     const row = inserted(String(sql), values);
+    // `device_phone_unique` over (device_id, phone_key): one live row per number on a phone.
+    if (
+      uniqueKey &&
+      contactRows.some(
+        (other) =>
+          other.device_id === row.device_id &&
+          other.status === 'active' &&
+          other.phone === row.phone
+      )
+    ) {
+      throw oxmysqlError(
+        String(sql),
+        values,
+        `Duplicate entry '${String(row.device_id)}-${String(row.phone)}' for key 'device_phone_unique'`
+      );
+    }
     contactRows.push({
       id: contactRows.length + 1,
       device_id: String(row.device_id),
       phone: String(row.phone),
       citizenid: String(row.citizenid),
-      status: 'active'
+      status: 'active',
+      default_number: (row.default_number as string | undefined) ?? null
     });
     return contactRows.length;
   });
   dbMock.update.mockImplementation(async (sql: string, params: unknown[]) => {
-    const match = TRANSFER.exec(String(sql).replace(/\s+/g, ' ').trim());
+    const flat = String(sql).replace(/\s+/g, ' ').trim();
+    if (flat.startsWith('UPDATE `mica_devices` SET `setup_pending` = 0')) {
+      if (failMark > 0) {
+        failMark--;
+        throw oxmysqlError(flat, params, 'Lock wait timeout exceeded');
+      }
+      const row = phoneRows.find((candidate) => candidate.device_id === params[0]);
+      if (!row || !row.setup_pending) return false;
+      row.setup_pending = 0;
+      return true;
+    }
+    const match = TRANSFER.exec(flat);
     if (!match) return true;
     const gate = transferGates[match[1]]?.shift();
     if (gate) await gate;
@@ -391,5 +466,191 @@ describe('a default-contacts seed that fails part-way (MICA-327)', () => {
     await identityPhone(CID);
     await settle();
     expect(insertCount).toBe(3);
+  });
+});
+
+/**
+ * MICA-335: the debt MICA-327 kept in process memory is on the row now. `setup_pending` is
+ * inserted `1`, cleared once every hook has run, and read on the device's first resolve after a
+ * start. `restart()` drops every in-process map and keeps the rows, as a restart does.
+ */
+describe('a set-up a restart interrupted (MICA-335)', () => {
+  const seeded = SEED.map((entry) => entry.number);
+
+  it('is marked finished only once every hook has run', async () => {
+    failInsert.add(3);
+    const deviceId = await identityPhone(CID);
+    await settle();
+    expect(numbersOn(deviceId)).toEqual(['911', '555-0100']);
+    expect(pendingOf(deviceId), 'a hook failed, so the row still owes it').toBe(1);
+
+    await identityPhone(CID);
+    await settle();
+    expect(numbersOn(deviceId)).toEqual(seeded);
+    expect(pendingOf(deviceId)).toBe(0);
+  });
+
+  it('is finished on the first resolve after the restart, each default once', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    failInsert.add(3);
+    const deviceId = await identityPhone(CID);
+    await settle();
+    expect(numbersOn(deviceId)).toEqual(['911', '555-0100']);
+
+    restart();
+    await expect(identityPhone(CID)).resolves.toBe(deviceId);
+    await settle();
+
+    expect(numbersOn(deviceId)).toEqual(seeded);
+    expect(pendingOf(deviceId)).toBe(0);
+    expect(log.mock.calls.map(([line]) => String(line))).toContainEqual(
+      expect.stringContaining(`phone ${deviceId}'s set-up did not finish`)
+    );
+  });
+
+  it('is finished through the phone in hand after the restart, too', async () => {
+    convar.mica_phone_item = 'phone';
+    bridgeMock.itemSlots.mockReturnValue([{ slot: 3, metadata: { deviceId: CARRIED } }]);
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    failInsert.add(2);
+    await resolvePhone(SRC);
+    await settle();
+    expect(numbersOn(CARRIED)).toEqual(['911']);
+
+    restart();
+    await resolvePhone(SRC);
+    await settle();
+
+    expect(numbersOn(CARRIED)).toEqual(seeded);
+    expect(pendingOf(CARRIED)).toBe(0);
+  });
+
+  it('lands with whoever holds the phone after the restart', async () => {
+    convar.mica_phone_item = 'phone';
+    bridgeMock.itemSlots.mockReturnValue([{ slot: 3, metadata: { deviceId: CARRIED } }]);
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    failInsert.add(3);
+    await resolvePhone(SRC);
+    await settle();
+
+    restart();
+    await resolvePhone(SRC_B);
+    await settle();
+
+    expect(numbersOn(CARRIED)).toEqual(seeded);
+    expect(contactRows.map((row) => row.citizenid)).toEqual(seeded.map(() => CID_B));
+    expect(phoneRows.map((row) => row.citizenid)).toEqual([CID_B]);
+  });
+
+  /**
+   * The upgrade: every row that existed before the column reads `0` (the additive pass's
+   * `DEFAULT 0`), or has no value at all before `micaschema apply` adds it. Neither may run a
+   * hook. The `1` row is the positive twin — the same fixture, read the same way, does seed —
+   * so the two silent cases are silent because of the flag, not because nothing could run.
+   */
+  it.each([
+    ['set up before (0), seeds nothing', 0, []],
+    ['read before the column exists, seeds nothing', undefined, []],
+    ['still owed (1), seeds every default', 1, seeded]
+  ])('on a phone row %s', async (_label, setup_pending, expected) => {
+    convar.mica_phone_item = 'phone';
+    bridgeMock.itemSlots.mockReturnValue([{ slot: 3, metadata: { deviceId: CARRIED } }]);
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    phoneRows.push({ id: 1, device_id: CARRIED, citizenid: CID, claimed: 1, setup_pending });
+
+    await resolvePhone(SRC);
+    await settle();
+
+    expect(numbersOn(CARRIED)).toEqual(expected);
+    expect(seedReads()).toBe(expected.length > 0 ? 1 : 0);
+    // A later resolve of the same phone does not ask again either way.
+    await resolvePhone(SRC);
+    await settle();
+    expect(seedReads()).toBe(expected.length > 0 ? 1 : 0);
+  });
+
+  it.each([
+    ['in the same process', false],
+    ['across a restart', true]
+  ])('does not add a renumbered default again, %s', async (_label, restarts) => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    failInsert.add(3);
+    const deviceId = await identityPhone(CID);
+    await settle();
+
+    // The player renumbers the seeded Mechanic before the retry. The number moves; which
+    // default the row is does not.
+    contactRows.find((row) => row.phone === '555-0100')!.phone = '555-9999';
+
+    if (restarts) restart();
+    await identityPhone(CID);
+    await settle();
+
+    expect(numbersOn(deviceId)).toEqual(['911', '555-9999', '555-0101', '555-0102', '555-0103']);
+    expect(pendingOf(deviceId)).toBe(0);
+  });
+
+  it('takes a number the player saved mid-seed, refused by the key, as the default', async () => {
+    uniqueKey = true;
+    const error = vi.spyOn(console, 'error');
+    // The seed has read the phone (nothing on it) and its first insert is held; meanwhile the
+    // player saves the Dispatch number exactly as the default has it.
+    const release = hold();
+    const deviceId = await identityPhone(CID);
+    await settle();
+    contactRows.push({
+      id: contactRows.length + 1,
+      device_id: deviceId,
+      phone: '911',
+      citizenid: CID,
+      status: 'active',
+      default_number: null
+    });
+    release();
+    await settle();
+
+    expect(numbersOn(deviceId)).toEqual(seeded);
+    expect(contactRows.find((row) => row.phone === '911')?.default_number).toBeNull();
+    // Not a failure: nothing logged, nothing owed.
+    expect(error).not.toHaveBeenCalled();
+    expect(pendingOf(deviceId)).toBe(0);
+  });
+
+  it('reads only the driver message: a failure whose parameters say "Duplicate entry" still fails', async () => {
+    // The default's own name lands in the error's parameter line. Classifying the whole text
+    // would take this lock wait for a duplicate and lose the default for good.
+    convar.mica_default_contacts = JSON.stringify([
+      { name: "Duplicate entry '1' for key 'x'", number: '555-0177' }
+    ]);
+    failInsert.add(1);
+    const deviceId = await identityPhone(CID);
+    await settle();
+    expect(numbersOn(deviceId)).toEqual([]);
+    expect(pendingOf(deviceId)).toBe(1);
+    expect(vi.mocked(console.error).mock.calls[0]?.[0]).toContain(
+      "new-phone hook 'defaultContacts' failed"
+    );
+
+    await identityPhone(CID);
+    await settle();
+    expect(numbersOn(deviceId)).toEqual(['555-0177']);
+    expect(pendingOf(deviceId)).toBe(0);
+  });
+
+  it('writes a mark that failed to land again, without running the hooks again', async () => {
+    failMark = 1;
+    const deviceId = await identityPhone(CID);
+    await settle();
+    expect(numbersOn(deviceId)).toEqual(seeded);
+    expect(pendingOf(deviceId)).toBe(1);
+    expect(vi.mocked(console.error).mock.calls.map(([line]) => String(line))).toEqual([
+      expect.stringContaining(`phone ${deviceId}'s set-up finished, but could not be recorded`)
+    ]);
+    const reads = seedReads();
+
+    await identityPhone(CID);
+    await settle();
+    expect(pendingOf(deviceId)).toBe(0);
+    expect(seedReads(), 'the hooks are not run again for a mark').toBe(reads);
   });
 });

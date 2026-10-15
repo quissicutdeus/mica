@@ -15,6 +15,108 @@ import { phoneForCitizen } from '../lib/deviceIdentity';
 import { defaultContacts } from '../lib/ownerConfig';
 import { isRingtoneValue, MAX_OWNER_SOUND_ID } from '@mica/shared/ownerConfig';
 import { onDeviceCreated } from './Devices';
+import { PlayerFacingError } from '../lib/errors';
+import { isDuplicateKey } from '../lib/sqlErrors';
+
+/**
+ * What a player is told when a write would give their phone a second live contact with one
+ * number (MICA-335): `device_phone_unique` refused it. Without this the refusal was the generic
+ * failure, which says nothing about what to change.
+ */
+const numberTaken = (): PlayerFacingError =>
+  new PlayerFacingError('You already have a contact with that number.', {
+    key: 'server.contacts.numberTaken'
+  });
+
+/**
+ * The contacts table's repository: the generic path, with `device_phone_unique`'s refusal put
+ * in words on every write a player makes, and the two writes the server makes on a player's
+ * behalf.
+ */
+class ContactRepository extends SchemaRepository<Contact> {
+  /** The generic create. A number the phone already has live is refused as `numberTaken`. */
+  override async create(data: Partial<Contact>): Promise<number> {
+    try {
+      return await super.create(data);
+    } catch (error) {
+      throw isDuplicateKey(error) ? numberTaken() : error;
+    }
+  }
+
+  /** The generic update: renumbering a contact onto a number another one holds live. */
+  override async update(
+    id: number | string,
+    data: Partial<Contact>,
+    citizenid: string,
+    deviceId?: string
+  ): Promise<boolean> {
+    try {
+      return await super.update(id, data, citizenid, deviceId);
+    } catch (error) {
+      throw isDuplicateKey(error) ? numberTaken() : error;
+    }
+  }
+
+  /** Bringing a deleted contact back after its number was saved again. */
+  override async restore(
+    id: number | string,
+    citizenid: string,
+    windowDays: number,
+    deviceId?: string
+  ): Promise<boolean> {
+    try {
+      return await super.restore(id, citizenid, windowDays, deviceId);
+    } catch (error) {
+      throw isDuplicateKey(error) ? numberTaken() : error;
+    }
+  }
+
+  /**
+   * Insert a contact the server writes for a player, or answer `null` when the phone already
+   * holds its number live. For the default-contacts seed and `AddContact`, where a number the
+   * phone has is not a refusal but the contact already being there.
+   */
+  async insertUnlessHeld(data: Partial<Contact>): Promise<number | null> {
+    try {
+      return await super.create(data);
+    } catch (error) {
+      if (isDuplicateKey(error)) return null;
+      throw error;
+    }
+  }
+
+  /**
+   * Onto the phone the citizen is on (MICA-282): their active one, or the one they used
+   * last, or their identity phone — `phoneForCitizen` decides, and a row with no phone
+   * would be one no phone ever shows.
+   *
+   * **A number the phone already has answers that contact's id** (MICA-335). A job that
+   * hands its dispatch number out on every shift used to stack one copy per shift;
+   * `device_phone_unique` now refuses the second, and the contact the export asked for is
+   * there either way, so the export says so rather than failing. The existing row is left
+   * as the player keeps it, name included.
+   *
+   * Found the way the key found it — by phone and `phone_key`, and by no citizen: a live row
+   * there can still name the phone's previous holder while a handover is unwalked, and the key
+   * refuses on it all the same. Server-internal, like the seed's read: the id is only answered
+   * to the resource that asked, and the row is on the phone this citizen is on.
+   */
+  async addForPlayer(citizenid: string, item: Partial<Contact>): Promise<number> {
+    const device_id = await phoneForCitizen(citizenid);
+    const id = await this.insertUnlessHeld({ ...item, citizenid, device_id } as Partial<Contact>);
+    if (id !== null) return id;
+    const existing = await Database.scalar<number | string | null>(
+      `SELECT \`id\` FROM \`${this.tableName}\` WHERE \`device_id\` = ? AND \`phone_key\` = ? LIMIT 1`,
+      [device_id, item.phone]
+    );
+    if (existing === null || existing === undefined) {
+      // Refused, and gone by the time it was looked for: deleted in between. Not a contact to
+      // point the caller at.
+      throw new Error(`[contacts] ${this.tableName} refused a number it no longer holds.`);
+    }
+    return Number(existing);
+  }
+}
 
 /**
  * Contacts: owner-scoped address book, all four generic CRUD actions.
@@ -47,13 +149,59 @@ export const contacts = defineService<Contact, typeof contactsContract>({
      * question: a removed sound falls back to the system ringtone when it plays.
      */
     ringtone: { type: 'string', length: MAX_OWNER_SOUND_ID, accepts: isRingtoneValue },
-    favorite: { type: 'bool', default: 0, clientFilterable: true }
+    favorite: { type: 'bool', default: 0, clientFilterable: true },
+    /**
+     * The owner's default this row was seeded from, by its number as the owner configured it
+     * (MICA-335); `NULL` on every contact a player or a job saved. Never client-writable, so
+     * it survives the player editing the contact's number — which is what lets a retried seed
+     * tell "this default is here, renumbered" from "this default is missing" and not add the
+     * original number a second time. Nullable and undefaulted, so the additive pass adds it with
+     * every existing row `NULL`: an existing row is simply not known to be a seeded one, which
+     * only a retry reads, and no existing phone owes one. `private`: no client reads it.
+     */
+    default_number: { type: 'string', length: 20, clientWritable: false, private: true },
+    /**
+     * `phone` while the row is `'active'`, `NULL` otherwise: what `device_phone_unique`
+     * constrains (MICA-335), so one phone holds at most one live contact per number and a
+     * deleted or moderated one holds no slot. The technique, and the reasoning, are
+     * `pair_key`'s in `Conversations.ts`: a unique key never collides on `NULL`.
+     *
+     * Over every status instead, `delete` being soft would wedge the number — deleting a
+     * contact and saving its number again would be a duplicate-key error — and `'revive'`
+     * cannot be declared here, since `firstname` is `NOT NULL` with no default.
+     *
+     * **`0010_contact_numbers_unique_per_device` restates this expression**, frozen as it
+     * shipped: change it here and a fresh install and an upgraded one disagree, which the
+     * planner cannot see (it compares a generated column by name only). A change is a new
+     * migration.
+     */
+    phone_key: {
+      type: 'string',
+      length: 20,
+      clientWritable: false,
+      private: true,
+      generatedAs: "CASE WHEN `status` = 'active' THEN `phone` ELSE NULL END"
+    }
   },
   indexes: [
     { name: 'phone', columns: ['phone'] },
     { name: 'citizenid_phone', columns: ['citizenid', 'phone'] },
-    { name: 'citizenid_favorite', columns: ['citizenid', 'favorite', 'status'] }
+    { name: 'citizenid_favorite', columns: ['citizenid', 'favorite', 'status'] },
+    /**
+     * One live contact per number on a phone (MICA-335). What closes the seed's race with a
+     * player saving the same number between the seed's read and its insert: the second insert
+     * is refused rather than written beside the first. Exact text under the column's collation,
+     * not `sameNumberKey`'s digits — `555-0100` and `5550100` are still two rows, as the
+     * player typed them.
+     */
+    { name: 'device_phone_unique', columns: ['device_id', 'phone_key'], unique: true }
   ],
+  uniqueAfterDelete: {
+    optOut:
+      "`phone_key` is generated NULL on any row that is not 'active', so a deleted contact holds " +
+      'no key and saving its number again is a plain insert; a restore that would make two ' +
+      'live contacts share a number is refused by the key, as numberTaken.'
+  },
   /**
    * `addForPlayer` is what makes the `AddContact` export possible — a job handing out a
    * dispatch number writes on the player's behalf, which the generic owner-scoped create
@@ -61,19 +209,10 @@ export const contacts = defineService<Contact, typeof contactsContract>({
    * `Photos.ts`'s `addForPlayer`: a named method rather than a service-level bypass (§2.9),
    * so the columns it sets are exactly the ones a contact needs and nothing wider opens up.
    */
-  repositoryFactory: (resolved) =>
-    new (class extends SchemaRepository<Contact> {
-      /**
-       * Onto the phone the citizen is on (MICA-282): their active one, or the one they used
-       * last, or their identity phone — `phoneForCitizen` decides, and a row with no phone
-       * would be one no phone ever shows.
-       */
-      async addForPlayer(citizenid: string, item: Partial<Contact>): Promise<number> {
-        const device_id = await phoneForCitizen(citizenid);
-        return await this.create({ ...item, citizenid, device_id } as Partial<Contact>);
-      }
-    })(resolved)
+  repositoryFactory: (resolved) => new ContactRepository(resolved)
 });
+
+const repo = contacts.repo as ContactRepository;
 
 /**
  * What makes two contact numbers the same one: their digits, so `5550100` saved by the player
@@ -105,8 +244,17 @@ const sameNumberKey = (number: string): string => number.replace(/\D/g, '') || n
  *
  * Per entry rather than one transaction for the lot. A transaction would make a run all or
  * nothing, but the failed run still has to be run again, and something still has to say which
- * defaults a phone has; reading the rows answers that for both. The one miss: a seeded default
- * whose number the player edited before a retry, which the retry adds again.
+ * defaults a phone has; reading the rows answers that for both.
+ *
+ * **Each seeded row says which default it is** (`default_number`, MICA-335), and a default is
+ * also "there" when a row says it is. The number a player can edit; that column they cannot.
+ * So a seeded default the player renumbered before a retry is not added again under its
+ * original number — which, since a restart no longer forgets the retry, can now be days later.
+ *
+ * **A duplicate-key refusal is "there" too.** `device_phone_unique` refuses an insert of a
+ * number this phone already holds live, which is exactly a player saving the default's number,
+ * as typed, between the read above and the insert here. Before the key that race wrote the
+ * number twice; now the seed's insert loses it, and the player's row is the default.
  *
  * Server-internal and keyed on the phone alone, deliberately without a citizenid: the read
  * only decides what to insert, and rows on one phone all name its holder anyway.
@@ -120,22 +268,27 @@ onDeviceCreated('defaultContacts', async (deviceId, citizenid, kind) => {
     number: contacts.resolved.columnRules.phone?.maxLength ?? 20
   });
   if (seed.length === 0) return;
-  const present = await Database.query<{ phone: string }[]>(
-    `SELECT \`phone\` FROM \`${contacts.resolved.table}\` WHERE \`device_id\` = ?`,
+  const present = await Database.query<{ phone: string; default_number?: string | null }[]>(
+    `SELECT \`phone\`, \`default_number\` FROM \`${contacts.resolved.table}\` WHERE \`device_id\` = ?`,
     [deviceId]
   );
-  const have = new Set(
-    (Array.isArray(present) ? present : []).map((row) => sameNumberKey(String(row.phone)))
-  );
+  const have = new Set<string>();
+  for (const row of Array.isArray(present) ? present : []) {
+    have.add(sameNumberKey(String(row.phone)));
+    if (row.default_number) have.add(sameNumberKey(String(row.default_number)));
+  }
   for (const entry of seed) {
-    if (have.has(sameNumberKey(entry.number))) continue;
-    await contacts.repo.create({
+    const key = sameNumberKey(entry.number);
+    if (have.has(key)) continue;
+    // `null` when the phone holds the number live already: the race above, lost to the player.
+    await repo.insertUnlessHeld({
       firstname: entry.name,
       phone: entry.number,
+      default_number: entry.number,
       citizenid,
       device_id: deviceId
     } as Partial<Contact>);
-    have.add(sameNumberKey(entry.number));
+    have.add(key);
   }
 });
 
@@ -143,6 +296,10 @@ onDeviceCreated('defaultContacts', async (deviceId, citizenid, kind) => {
  * Undo a `delete`, within `restoreWindowDays()` of it (MICA-75) — see
  * `Repository.restore` for the ownership scoping and why `updated_at` stands in for a
  * deletion timestamp.
+ *
+ * **Refused as `numberTaken` when the phone has a live contact with the number now**
+ * (MICA-335): the player saved it again after deleting this one, and `device_phone_unique`
+ * will not hold two (`ContactRepository.restore`). The row stays in Recently Deleted.
  */
 contacts.app.registerEvent('restore', async (source, cbId, data, citizenid, _player, deviceId) => {
   const ok = await contacts.repo.restore(data.id, citizenid, restoreWindowDays(), deviceId);

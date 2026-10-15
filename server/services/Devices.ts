@@ -11,7 +11,7 @@ import {
   type DeviceId
 } from '@mica/shared/devices';
 import { Database } from '../lib/Database';
-import { defineService, deviceKeyedRepositories } from '../lib/defineService';
+import { defineService, deviceKeyedRepositories, SchemaRepository } from '../lib/defineService';
 import { PlayerFacingError } from '../lib/errors';
 import { FrameworkBridge } from '../lib/FrameworkBridge';
 import type { FrameworkPlayer } from '../lib/framework/runtime';
@@ -64,8 +64,33 @@ export interface DeviceRow {
   kind: DeviceId;
   /** Bound to an inventory item, or still waiting for the first item its citizen uses. */
   claimed: number | boolean;
+  /**
+   * `1` from the insert until every new-device hook has finished (MICA-335). Absent on a row
+   * read before `micaschema apply` added the column, which reads as finished.
+   */
+  setup_pending?: number | boolean;
   status: string;
   updated_at?: Date | string;
+}
+
+/**
+ * The devices table's repository, with the one write the generic path has no shape for: marking
+ * a device's set-up finished, keyed on the device id alone. Server-internal, like
+ * `transferDeviceRows` — nothing reaching it comes from a payload; the id is one this server
+ * minted or read back, and the hooks it vouches for have just run for it.
+ */
+class DeviceRepository extends SchemaRepository<DeviceRow> {
+  /**
+   * Clear `setup_pending`. `updated_at` is pinned, as a handover pins it: `phoneForCitizen`
+   * reads it as "the phone this citizen used last", and finishing a set-up is not using one.
+   */
+  async markSetupFinished(deviceId: string): Promise<boolean> {
+    return await Database.update(
+      `UPDATE \`${this.tableName}\` SET \`setup_pending\` = 0, \`updated_at\` = \`updated_at\` ` +
+        'WHERE `device_id` = ? AND `setup_pending` <> 0',
+      [deviceId]
+    );
+  }
 }
 
 export const devices = defineService<DeviceRow>({
@@ -104,7 +129,24 @@ export const devices = defineService<DeviceRow>({
      * rather than a nullable timestamp because MariaDB's implicit `NOT NULL` on `timestamp`
      * makes `DEFAULT NULL` a per-server question, and this needs one answer.
      */
-    claimed: { type: 'bool', notNull: true, default: 0, clientWritable: false }
+    claimed: { type: 'bool', notNull: true, default: 0, clientWritable: false },
+    /**
+     * Whether the device's new-device hooks still owe it anything (MICA-335): the durable half
+     * of `owedSetup`, so a restart between a hook failing and its retry no longer forgets the
+     * retry. Every insert below writes `1`, and `runCreated` clears it once every hook has
+     * finished; the first resolve of a device after a start reads it with the row it already
+     * reads, and runs the hooks again when it is still set.
+     *
+     * **Defaulted to `0`, and that default is the upgrade.** `micaschema apply`'s additive half
+     * adds the column with `DEFAULT 0`, which MariaDB writes into every row already there, so
+     * every device that existed before this column reads as set up — its hooks ran, or ran
+     * and failed under MICA-327's in-process retry, and either way re-running them on every
+     * phone at once is the outcome this must never have. A `NULL`-able "done at" timestamp
+     * would have read every existing row as unfinished. A row read before the column exists
+     * has no value at all, which reads as finished too. A `tinyint` for the reason `claimed`
+     * is one.
+     */
+    setup_pending: { type: 'bool', notNull: true, default: 0, clientWritable: false }
   },
   indexes: [
     // Uniqueness is the schema's job. Two phones sharing an id would be two players sharing a
@@ -124,10 +166,11 @@ export const devices = defineService<DeviceRow>({
     disableCreate: true,
     disableUpdate: true,
     disableDelete: true
-  }
+  },
+  repositoryFactory: (resolved) => new DeviceRepository(resolved)
 });
 
-const repo = devices.repo;
+const repo = devices.repo as DeviceRepository;
 
 /** What a minted id looks like, and the only shape trusted off item metadata. */
 const DEVICE_ID = /^[0-9a-f]{32}$/;
@@ -206,8 +249,11 @@ export const onDeviceHandover = (name: string, run: HandoverRun): void => {
  *
  * **A hook that throws is run again** (MICA-327), on a later resolve of the same phone, until
  * it succeeds — so it must be idempotent: a second run finishes what the first left and adds
- * nothing the first already wrote. The phone row cannot be the mark that a hook *finished*,
- * only that the phone is new, because it is inserted before any hook runs. Every run is handed
+ * nothing the first already wrote. The phone row's existence cannot be the mark that a hook
+ * *finished*, only that the phone is new, because it is inserted before any hook runs; its
+ * `setup_pending` column is that mark (MICA-335), so a restart between a failure and its retry
+ * runs **every** hook again on the phone's first resolve after the start — the ones that had
+ * already succeeded included, since nothing durable says which those were. Every run is handed
  * whoever holds the phone when it runs, which after a handover is not who it was created for,
  * so rows land with the holder the handover walk already moved the rest to.
  *
@@ -230,11 +276,13 @@ export const onDeviceCreated = (name: string, run: CreatedRun): void => {
 };
 
 /**
- * New-phone hooks that threw, by phone, and when to try them again (MICA-327). Process memory:
- * a restart before the retry lands forgets it — the schema has nowhere durable to say "set-up
- * unfinished" without a column, which this does not add.
+ * New-phone hooks that threw, by phone, and when to try them again (MICA-327). The in-process
+ * half, which keeps a retry narrow — only the hooks that failed — and backed off. The durable
+ * half is `setup_pending` on the row (MICA-335): a restart drops this map, and the first resolve
+ * after it reads the column and puts every hook back here (`resumeSetup`).
  */
 interface OwedSetup {
+  /** What is left to run. Empty when every hook finished and only the mark failed to land. */
   hooks: readonly CreatedHook[];
   /** The kind the row was minted as, handed to every retry as it was to the first run. */
   kind: DeviceId;
@@ -259,6 +307,11 @@ const holderNow = (deviceId: string, fallback: string): string =>
  * handover: a seed that wrote rows naming the old holder after the new holder's walk had
  * moved the rest would leave them there, since that holder is cached with nothing to walk.
  * The rows go to whoever holds the phone **when it runs**, for the same reason.
+ *
+ * **The row is marked finished only once nothing is left** (MICA-335), and only after the last
+ * hook, so the mark can never land over work that did not. A mark that fails to land is owed
+ * like a hook: kept with no hooks left to run, and written again on a later resolve. Until it
+ * lands a restart runs every hook again, which they are idempotent for.
  */
 const runCreated = async (
   deviceId: string,
@@ -287,26 +340,74 @@ const runCreated = async (
       );
     }
   }
-  if (failed.length === 0) {
-    owedSetup.delete(deviceId);
-  } else {
+  if (failed.length > 0) {
     owedSetup.set(deviceId, { hooks: failed, kind, failures, retryAt: Date.now() + wait });
+    return;
   }
+  try {
+    await repo.markSetupFinished(deviceId);
+  } catch (error) {
+    console.error(
+      `[mica] phone ${deviceId}'s set-up finished, but could not be recorded as finished ` +
+        `(attempt ${failures}); retrying ${when}.`,
+      error
+    );
+    owedSetup.set(deviceId, { hooks: [], kind, failures, retryAt: Date.now() + wait });
+    return;
+  }
+  owedSetup.delete(deviceId);
 };
 
-/** The phone row was just inserted: queue every hook behind whatever the phone is doing. */
+/** Does this row say its set-up is still owed (MICA-335)? A row with no such column says not. */
+const setupPending = (row: Pick<DeviceRow, 'setup_pending'>): boolean =>
+  Number(row.setup_pending) === 1;
+
+/**
+ * A device row read back with `setup_pending` still set (MICA-335): its hooks did not all
+ * finish before the process that created it stopped, so this one owes them — every hook, since
+ * nothing durable says which already succeeded, run on the device's queue by the `finishSetup`
+ * that follows this read. Nothing is done when this process already owes the device a run, or
+ * when the row was marked finished. Called where a resolve reads the row anyway, so this costs
+ * no query of its own: `settleHolder` once per device per process, `identityDevice` once per
+ * citizen.
+ */
+const resumeSetup = (
+  deviceId: string,
+  row: Pick<DeviceRow, 'setup_pending'>,
+  kind: DeviceId
+): void => {
+  if (!setupPending(row) || owedSetup.has(deviceId)) return;
+  owedSetup.set(deviceId, { hooks: createdHooks, kind, failures: 0, retryAt: 0 });
+  console.log(
+    `[mica] phone ${deviceId}'s set-up did not finish before micaOS last stopped; ` +
+      'running it again.'
+  );
+};
+
+/**
+ * The phone row was just inserted: queue every hook behind whatever the phone is doing. Owed
+ * from this moment rather than from the first failure, so a read of the row while the first
+ * run is still queued — `setup_pending` is set — is not taken for one a restart left behind
+ * (`resumeSetup`); `retryAt` is `Infinity` because the run is already queued.
+ */
 const announceCreated = (deviceId: string, citizenid: string, kind: DeviceId): void => {
   kindOf.set(deviceId, kind);
-  void queueOnDevice(deviceId, () =>
-    runCreated(deviceId, citizenid, kind, createdHooks, undefined)
-  );
+  const owed: OwedSetup = {
+    hooks: createdHooks,
+    kind,
+    failures: 0,
+    retryAt: Number.POSITIVE_INFINITY
+  };
+  owedSetup.set(deviceId, owed);
+  void queueOnDevice(deviceId, () => runCreated(deviceId, citizenid, kind, createdHooks, owed));
 };
 
 /**
  * Retry whatever a new phone's hooks left, if anything, without holding up the resolve that
  * calls it: queued, not awaited, so the **next** call for the phone waits behind it instead.
- * One map lookup when nothing is owed, which is every phone but a failed new one; backed off
- * like a handover retry, so a hook that keeps failing is one attempt per wait.
+ * One map lookup when nothing is owed, which is every phone but a new one whose hooks have not
+ * all finished — in this process, or in one before it (`resumeSetup`); backed off like a
+ * handover retry, so a hook that keeps failing is one attempt per wait.
  */
 const finishSetup = (deviceId: string, citizenid: string): void => {
   const owed = owedSetup.get(deviceId);
@@ -635,9 +736,16 @@ const settleHolder = async (
       const recorded = isDeviceId(existing.kind) ? existing.kind : DEFAULT_DEVICE;
       kindOf.set(deviceId, recorded);
       if (recorded !== kind) return recorded;
+      resumeSetup(deviceId, existing, recorded);
     }
     if (!existing) {
-      await repo.create({ citizenid, device_id: deviceId, kind, claimed: 1 } as Partial<DeviceRow>);
+      await repo.create({
+        citizenid,
+        device_id: deviceId,
+        kind,
+        claimed: 1,
+        setup_pending: 1
+      } as Partial<DeviceRow>);
       announceCreated(deviceId, citizenid, kind);
     }
     let done = true;
@@ -704,10 +812,17 @@ const identityDevice = async (citizenid: string, kind: DeviceId): Promise<string
   if (unclaimed) {
     deviceId = unclaimed.device_id;
     kindOf.set(deviceId, kind);
+    resumeSetup(deviceId, unclaimed, kind);
     finishSetup(deviceId, citizenid);
   } else {
     deviceId = newDeviceId();
-    await repo.create({ citizenid, device_id: deviceId, kind, claimed: 0 } as Partial<DeviceRow>);
+    await repo.create({
+      citizenid,
+      device_id: deviceId,
+      kind,
+      claimed: 0,
+      setup_pending: 1
+    } as Partial<DeviceRow>);
     announceCreated(deviceId, citizenid, kind);
   }
   identityByCitizen[kind].set(citizenid, deviceId);

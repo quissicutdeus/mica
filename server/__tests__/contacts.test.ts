@@ -70,6 +70,15 @@ const call = async (data: unknown) => {
 const pushesTo = (event: string) =>
   (globalThis.emitNet as any).mock.calls.filter((args: unknown[]) => args[0] === event);
 
+/**
+ * The error oxmysql rejects with across a resource boundary: no `errno`, no `code`, the query
+ * and its parameters in the text, and mysql2's own message on the last line only.
+ */
+const oxmysqlError = (sql: string, params: unknown[], message: string): Error =>
+  new Error(
+    `mica was unable to execute a query!\nQuery: ${sql}\n${JSON.stringify(params)}\n${message}`
+  );
+
 describe('contacts:share', () => {
   it('does nothing for a source with no loaded character', async () => {
     bridge.loaded = false;
@@ -368,6 +377,170 @@ describe('contacts:restore (MICA-75)', () => {
   it('is registered alongside the generic CRUD actions', () => {
     expect(handlers.has('mica:server:contacts:restore')).toBe(true);
     expect(contacts.resolved.id).toBe('contacts');
+  });
+
+  it('says so when another live contact on the phone holds the number now (MICA-335)', async () => {
+    dbMock.update.mockRejectedValue(
+      oxmysqlError(
+        'UPDATE `mica_contacts` SET `status` = ...',
+        [3, 'CID_A'],
+        `Duplicate entry '${TEST_PHONE_ID}-555-0100' for key 'device_phone_unique'`
+      )
+    );
+
+    expect(await genericCall('restore', { id: 3 })).toEqual({
+      error: 'You already have a contact with that number.',
+      key: 'server.contacts.numberTaken',
+      params: undefined
+    });
+  });
+
+  it('still answers the generic failure for any other reason', async () => {
+    dbMock.update.mockRejectedValue(
+      oxmysqlError('UPDATE `mica_contacts` SET `status` = ...', [3], 'Lock wait timeout exceeded')
+    );
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    expect(await genericCall('restore', { id: 3 })).toMatchObject({ key: 'server.generic' });
+  });
+});
+
+describe('one live contact per number on a phone (MICA-335)', () => {
+  const field = (name: string) => contacts.resolved.fields.find((f) => f.name === name)?.def;
+
+  it('keys the phone and the number of a live row only', () => {
+    expect(contacts.resolved.indexes).toContainEqual(
+      expect.objectContaining({
+        name: 'device_phone_unique',
+        columns: ['device_id', 'phone_key'],
+        unique: true
+      })
+    );
+    expect(field('phone_key')?.generatedAs).toBe(
+      "CASE WHEN `status` = 'active' THEN `phone` ELSE NULL END"
+    );
+    // A deleted row holds no key, so the soft delete needs no revive.
+    expect(contacts.resolved.uniqueAfterDelete).toMatchObject({ optOut: expect.any(String) });
+  });
+
+  it('never lets a payload write or read either new column', () => {
+    expect(contacts.repo.writableColumns).not.toContain('default_number');
+    expect(contacts.repo.writableColumns).not.toContain('phone_key');
+    expect(contacts.resolved.listColumns).not.toContain('default_number');
+    expect(contacts.resolved.listColumns).not.toContain('phone_key');
+    expect(contacts.resolved.listColumns).toContain('phone');
+  });
+
+  describe('AddContact', () => {
+    const addForPlayer = (item: Record<string, unknown>) =>
+      (
+        contacts.repo as unknown as {
+          addForPlayer(citizenid: string, item: Record<string, unknown>): Promise<number>;
+        }
+      ).addForPlayer('CID_A', item);
+
+    it('answers a fresh contact its new id', async () => {
+      dbMock.insert.mockResolvedValue(41);
+
+      await expect(addForPlayer({ firstname: 'Dispatch', phone: '911' })).resolves.toBe(41);
+      expect(dbMock.scalar).not.toHaveBeenCalled();
+    });
+
+    it('answers the contact already there when the phone has the number', async () => {
+      dbMock.insert.mockRejectedValue(
+        oxmysqlError(
+          'INSERT INTO `mica_contacts` ...',
+          ['Dispatch', '911'],
+          `Duplicate entry '${TEST_PHONE_ID}-911' for key 'device_phone_unique'`
+        )
+      );
+      dbMock.scalar.mockResolvedValue(17);
+
+      await expect(addForPlayer({ firstname: 'Dispatch', phone: '911' })).resolves.toBe(17);
+      // Looked up as the key looks: by phone and live number, and by no citizen — a live row
+      // still naming the phone's previous holder refuses the insert just the same.
+      const [sql, params] = dbMock.scalar.mock.calls[0];
+      expect(String(sql)).toContain('`device_id` = ? AND `phone_key` = ?');
+      expect(String(sql)).not.toContain('`citizenid`');
+      expect(params).toEqual([TEST_PHONE_ID, '911']);
+    });
+
+    it('fails, rather than answer nothing, when the refusing row is gone by the lookup', async () => {
+      dbMock.insert.mockRejectedValue(
+        oxmysqlError('INSERT ...', [], "Duplicate entry 'x-911' for key 'device_phone_unique'")
+      );
+      dbMock.scalar.mockResolvedValue(null);
+
+      await expect(addForPlayer({ firstname: 'Dispatch', phone: '911' })).rejects.toThrow(
+        /no longer holds/
+      );
+    });
+
+    it('rethrows anything else, even with "Duplicate entry" among its parameters', async () => {
+      const failure = oxmysqlError(
+        'INSERT INTO `mica_contacts` ...',
+        ["Duplicate entry '911' for key 'x'", '911'],
+        'Lock wait timeout exceeded'
+      );
+      dbMock.insert.mockRejectedValue(failure);
+
+      await expect(
+        addForPlayer({ firstname: "Duplicate entry '911' for key 'x'", phone: '911' })
+      ).rejects.toBe(failure);
+      expect(dbMock.scalar).not.toHaveBeenCalled();
+    });
+
+    it('takes the errno mysql2 carries in-process as well', async () => {
+      dbMock.insert.mockRejectedValue(
+        Object.assign(new Error('Duplicate entry'), { errno: 1062, code: 'ER_DUP_ENTRY' })
+      );
+      dbMock.scalar.mockResolvedValue(17);
+
+      await expect(addForPlayer({ firstname: 'Dispatch', phone: '911' })).resolves.toBe(17);
+    });
+  });
+
+  /**
+   * A player saving a number the phone already holds live, by create or by edit, is told so in
+   * words. The lock wait is the positive twin: the same path, any other failure, still the
+   * generic answer — so the key is matched on the refusal, not on every throw.
+   */
+  describe('a player saving a number the phone already has', () => {
+    const genericCall = async (action: 'create' | 'update', data: unknown) => {
+      const handler = handlers.get(`mica:server:contacts:${action}`);
+      if (!handler) throw new Error(`no handler for contacts:${action}`);
+      await (handler as any)('cb-1', data);
+      return (globalThis.emitNet as any).mock.calls.at(-1)?.[3];
+    };
+    const taken = oxmysqlError(
+      'INSERT INTO `mica_contacts` ...',
+      ['Ada', '555-0100'],
+      `Duplicate entry '${TEST_PHONE_ID}-555-0100' for key 'mica_contacts.device_phone_unique'`
+    );
+    const lockWait = oxmysqlError('INSERT INTO `mica_contacts` ...', [], 'Lock wait timeout');
+
+    it.each([
+      ['create', { firstname: 'Ada', phone: '555-0100' }, 'insert'],
+      ['update', { id: 3, phone: '555-0100' }, 'update']
+    ] as const)('on %s, is told the number is taken', async (action, data, method) => {
+      dbMock[method].mockRejectedValue(taken);
+      expect(await genericCall(action, data)).toMatchObject({
+        error: 'You already have a contact with that number.',
+        key: 'server.contacts.numberTaken'
+      });
+    });
+
+    it.each([
+      ['create', { firstname: 'Ada', phone: '555-0100' }, 'insert'],
+      ['update', { id: 3, phone: '555-0100' }, 'update']
+    ] as const)(
+      'on %s, any other failure is still the generic one',
+      async (action, data, method) => {
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        dbMock[method].mockRejectedValue(lockWait);
+        expect(await genericCall(action, data)).toMatchObject({ key: 'server.generic' });
+      }
+    );
   });
 });
 

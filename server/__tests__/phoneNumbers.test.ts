@@ -86,7 +86,6 @@ vi.mock('../lib/FrameworkBridge', () => ({
 import {
   citizenIdForNumber,
   generatePhoneNumber,
-  isDuplicateEntry,
   numberFor,
   readCitizenIdByNumber,
   readNumber,
@@ -95,6 +94,7 @@ import {
   PHONE_NUMBERS_TABLE,
   __resetAssignedNumbers
 } from '../lib/phoneNumbers';
+import { isDuplicateKey } from '../lib/sqlErrors';
 import {
   ensureNumber,
   phoneNumbers,
@@ -256,7 +256,7 @@ describe('telling a duplicate key from a real failure', () => {
     ['a message with nothing else on it', new Error('Duplicate entry for key citizenid_unique')],
     ['a code with no errno', Object.assign(new Error('nope'), { code: 'er_dup_entry' })]
   ])('recognises %s', (_label, error) => {
-    expect(isDuplicateEntry(error)).toBe(true);
+    expect(isDuplicateKey(error)).toBe(true);
   });
 
   it.each([
@@ -265,7 +265,7 @@ describe('telling a duplicate key from a real failure', () => {
     ['nothing at all', undefined],
     ['null', null]
   ])('does not mistake %s for one', (_label, error) => {
-    expect(isDuplicateEntry(error)).toBe(false);
+    expect(isDuplicateKey(error)).toBe(false);
   });
 });
 

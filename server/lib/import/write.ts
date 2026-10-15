@@ -54,6 +54,14 @@ export interface ContactIn {
   favorite?: boolean;
 }
 
+/**
+ * A number as `mica_contacts.phone`'s collation (`utf8mb4_unicode_ci`) compares it, near enough
+ * for an in-memory set: case folded, and trailing spaces ignored (PAD SPACE). Only for this
+ * run's own duplicates — the ones not in the database yet. Anything already written is
+ * compared by SQL, under the real collation.
+ */
+const numberKey = (phone: string): string => phone.toLowerCase().trimEnd();
+
 export const importContacts = async (
   ctx: ImportContext,
   tally: Tally,
@@ -81,11 +89,15 @@ export const importContacts = async (
       }
       // A natural-key guard on top of the ledger: the same number saved twice in the source,
       // or a contact the player already re-added by hand after switching phones, appears once.
-      const natural = `${citizenid}\u0000${phone}`;
+      // Folded as the column's collation folds it (MICA-335), since `device_phone_unique`
+      // compares that way: two source rows differing only in case would otherwise both be
+      // queued, and the second refused by the key as a failed write.
+      const natural = `${citizenid}\u0000${numberKey(phone)}`;
       if (counted.has(natural)) {
         tally.skip(SKIP.duplicateInSource);
         continue;
       }
+      // `phone = ?` is compared under the column's collation, as the key compares it.
       const existing = await Database.scalar<number | null>(
         "SELECT 1 FROM `mica_contacts` WHERE `citizenid` = ? AND `phone` = ? AND `status` = 'active' LIMIT 1",
         [citizenid, phone]
@@ -99,7 +111,35 @@ export const importContacts = async (
         tally.skip(SKIP.numberReassigned);
         continue;
       }
+      /**
+       * The phone the row lands on, and whether that phone already holds the number live
+       * (MICA-335). `device_phone_unique` is per device, not per citizen: a live row there can
+       * still name a previous holder whose handover has not been walked yet, and the citizen
+       * check above cannot see it. The same question the key asks — `device_id` and
+       * `phone_key` — so what it would refuse is skipped here as already there rather than
+       * written and failed. Resolved on apply only, as the write always did: a dry run must not
+       * mint a phone, and a phone it would mint holds nothing yet.
+       */
+      const deviceId = ctx.apply
+        ? await deviceIdFor(ctx, citizenid, row.owner.number)
+        : onPhone.deviceId;
+      const onDevice = deviceId ? `\u0001${deviceId}\u0000${numberKey(phone)}` : null;
+      if (onDevice && counted.has(onDevice)) {
+        tally.skip(SKIP.duplicateInSource);
+        continue;
+      }
+      if (deviceId) {
+        const live = await Database.scalar<number | null>(
+          'SELECT 1 FROM `mica_contacts` WHERE `device_id` = ? AND `phone_key` = ? LIMIT 1',
+          [deviceId, phone]
+        );
+        if (live) {
+          tally.skip(SKIP.alreadyInContacts);
+          continue;
+        }
+      }
       counted.add(natural);
+      if (onDevice) counted.add(onDevice);
 
       await ctx.ledger.write(
         tally.table,
@@ -113,7 +153,7 @@ export const importContacts = async (
              VALUES (?, ?, ?, ?, ?, ?)`,
             params: [
               citizenid,
-              await deviceIdFor(ctx, citizenid, row.owner.number),
+              deviceId,
               cutText(row.firstname.trim() || phone, 50),
               row.lastname ? cutText(row.lastname, 50) : null,
               phone,
@@ -127,6 +167,7 @@ export const importContacts = async (
             return;
           }
           counted.delete(natural);
+          if (onDevice) counted.delete(onDevice);
           tally.skip(reason ?? SKIP.writeFailed);
         }
       );

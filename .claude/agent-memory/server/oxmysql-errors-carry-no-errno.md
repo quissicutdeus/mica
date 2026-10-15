@@ -20,6 +20,10 @@ mysql2 one — `schemaBootstrap.test.ts`'s `oxmysqlError`. Reuse those before
 classifying a driver error anywhere else; `ConversationRepository`'s
 `/duplicate/i` match is the older precedent and reads the whole message.
 
+For ER 1062 use `isDuplicateKey` in `server/lib/sqlErrors.ts` (MICA-335), which
+reads errno, then the last line only. It replaced `phoneNumbers.ts`'
+`isDuplicateEntry`, which matched the whole text.
+
 ## Logging one leaks the parameters
 
 The same shape makes `console.error('…', error)` a leak: the parameters line is

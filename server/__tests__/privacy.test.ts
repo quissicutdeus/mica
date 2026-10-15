@@ -285,7 +285,8 @@ const EXPORTED_COLUMNS: Record<string, { plain: string[]; sized: string[]; withh
   mica_devices: {
     plain: ['id', 'status', 'created_at', 'updated_at', 'device_id', 'kind', 'claimed'],
     sized: [],
-    withheld: []
+    // MICA-335: the server's own record of whether the device's set-up finished.
+    withheld: ['setup_pending']
   },
   mica_contacts: {
     plain: [
@@ -299,10 +300,13 @@ const EXPORTED_COLUMNS: Record<string, { plain: string[]; sized: string[]; withh
       'phone',
       'email',
       'ringtone',
-      'favorite'
+      'favorite',
+      // MICA-335: which owner default the row was seeded as. The player's, and harmless.
+      'default_number'
     ],
     sized: ['avatar'],
-    withheld: []
+    // MICA-335: `phone` again while live, NULL otherwise — the unique key's, not the player's.
+    withheld: ['phone_key']
   },
   mica_messages_conversations: {
     plain: ['id', 'status', 'created_at', 'updated_at', 'is_group', 'name'],

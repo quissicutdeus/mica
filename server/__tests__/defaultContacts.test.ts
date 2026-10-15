@@ -107,9 +107,22 @@ describe('seeding a new phone', () => {
 
     expect(deviceId).toMatch(ID_SHAPE);
     expect(insertsInto('mica_devices')).toHaveLength(1);
+    // Each row says which default it is (MICA-335), so a retry knows it even once renumbered.
     expect(insertsInto('mica_contacts')).toEqual([
-      { firstname: 'Dispatch', phone: '911', citizenid: CID, device_id: deviceId },
-      { firstname: 'Mechanic', phone: '555-0100', citizenid: CID, device_id: deviceId }
+      {
+        firstname: 'Dispatch',
+        phone: '911',
+        default_number: '911',
+        citizenid: CID,
+        device_id: deviceId
+      },
+      {
+        firstname: 'Mechanic',
+        phone: '555-0100',
+        default_number: '555-0100',
+        citizenid: CID,
+        device_id: deviceId
+      }
     ]);
   });
 
@@ -133,7 +146,7 @@ describe('seeding a new phone', () => {
     const fromItem = await deviceForRequest(SRC, CID, 'tablet');
     await settle();
     expect(insertsInto('mica_devices')).toEqual([
-      { citizenid: CID, device_id: fromItem, kind: 'tablet', claimed: 1 }
+      { citizenid: CID, device_id: fromItem, kind: 'tablet', claimed: 1, setup_pending: 1 }
     ]);
     expect(insertsInto('mica_contacts')).toEqual([]);
 
@@ -144,7 +157,7 @@ describe('seeding a new phone', () => {
     const identity = await deviceForRequest(SRC, CID, 'tablet');
     await settle();
     expect(insertsInto('mica_devices')).toEqual([
-      { citizenid: CID, device_id: identity, kind: 'tablet', claimed: 0 }
+      { citizenid: CID, device_id: identity, kind: 'tablet', claimed: 0, setup_pending: 1 }
     ]);
     expect(insertsInto('mica_contacts')).toEqual([]);
 

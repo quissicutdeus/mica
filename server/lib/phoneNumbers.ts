@@ -339,28 +339,6 @@ export const generatePhoneNumber = (random: () => number = Math.random): string 
 };
 
 /**
- * Is this the unique-key violation the assignment loop expects, or a real failure?
- *
- * Told apart rather than treated alike, because the two demand opposite responses: a
- * duplicate is ordinary and means try again, while a connection error or a missing table
- * means stop and say so. A loop that retried both would turn "the table was never imported"
- * into eight identical failures and then a misleading "the number space is exhausted".
- *
- * Three shapes, because the driver is not one thing: mysql2 supplies `errno`/`code` on an
- * Error, oxmysql sometimes rejects with a bare string, and a wrapper may leave only the
- * message. Matching any of them beats matching whichever one this machine happens to produce.
- */
-export const isDuplicateEntry = (error: unknown): boolean => {
-  if (typeof error === 'string') return /duplicate entry/i.test(error);
-  const candidate = error as { errno?: unknown; code?: unknown; message?: unknown };
-  if (candidate?.errno === 1062) return true;
-  if (typeof candidate?.code === 'string' && candidate.code.toUpperCase() === 'ER_DUP_ENTRY') {
-    return true;
-  }
-  return typeof candidate?.message === 'string' && /duplicate entry/i.test(candidate.message);
-};
-
-/**
  * How many numbers to try before giving up and saying the space is full.
  *
  * Bounded rather than infinite, and loud rather than silent, because the two ways this loop

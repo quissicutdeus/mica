@@ -32,8 +32,13 @@ catch a wrong status filter. `defaultContactsRetry.test.ts` honours a status
 predicate on purpose; with it, an active-only read fails exactly the "deleted
 default" case.
 
-**Still open:** the debt is process memory. A restart between the failed run and
-the retry forgets it; a durable marker needs a column, which is a schema change.
+**Durable since MICA-335.** `mica_devices.setup_pending` (`DEFAULT 0`, so every
+pre-existing row reads as done; every insert writes `1`) is cleared after the
+last hook, and the first resolve after a start re-arms every hook from it
+(`resumeSetup`). `announceCreated` puts the phone in `owedSetup` before its
+first run, so a read of the row mid-run is not taken for a restart's leftover.
+Each seeded contact carries `default_number`, which the player cannot edit, so a
+renumbered default is not re-added.
 
 Related: [[negative-check-needs-a-positive-twin]],
 [[phones-row-is-one-of-the-walked-tables]]

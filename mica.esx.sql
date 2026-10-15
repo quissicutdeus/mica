@@ -216,6 +216,8 @@ CREATE TABLE IF NOT EXISTS `mica_contacts` (
     `avatar` mediumblob DEFAULT NULL,
     `ringtone` varchar(54) DEFAULT NULL,
     `favorite` tinyint(1) DEFAULT 0,
+    `default_number` varchar(20) DEFAULT NULL,
+    `phone_key` varchar(20) GENERATED ALWAYS AS (CASE WHEN `status` = 'active' THEN `phone` ELSE NULL END) VIRTUAL,
     `status` ENUM('active', 'deleted', 'moderated') NOT NULL DEFAULT 'active',
     `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -225,6 +227,7 @@ CREATE TABLE IF NOT EXISTS `mica_contacts` (
     KEY `phone` (`phone`),
     KEY `citizenid_phone` (`citizenid`, `phone`),
     KEY `citizenid_favorite` (`citizenid`, `favorite`, `status`),
+    UNIQUE KEY `device_phone_unique` (`device_id`, `phone_key`),
     KEY `device_id` (`device_id`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
@@ -283,6 +286,7 @@ CREATE TABLE IF NOT EXISTS `mica_devices` (
     `device_id` varchar(32) NOT NULL,
     `kind` ENUM('phone', 'tablet') NOT NULL DEFAULT 'phone',
     `claimed` tinyint(1) NOT NULL DEFAULT 0,
+    `setup_pending` tinyint(1) NOT NULL DEFAULT 0,
     `status` ENUM('active', 'deleted') NOT NULL DEFAULT 'active',
     `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -769,4 +773,5 @@ SELECT `id` FROM (
     UNION ALL SELECT '0007_sealed_bodies_widen_their_columns'
     UNION ALL SELECT '0008_phones_become_devices'
     UNION ALL SELECT '0009_wedged_pairs_released'
+    UNION ALL SELECT '0010_contact_numbers_unique_per_device'
 ) AS `seed` WHERE @mica_fresh_import = 1;
