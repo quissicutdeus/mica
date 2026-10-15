@@ -113,6 +113,13 @@ export interface Conversation {
   participant_count?: number;
   /** When the caller archived it for themselves; null while it is in the inbox. */
   archived_at?: Date | string | null;
+  /**
+   * The number on the other side of a 1:1 nobody else is in (MICA-350): the phone that left
+   * it, or was taken out of it by a privacy delete, or a number nobody held when the thread was
+   * started. No live member is there to carry it, so without this the reader sees no number at
+   * all. Absent on a group, a line thread, and a 1:1 both sides are still in.
+   */
+  absent_number?: string | null;
 }
 
 /**
