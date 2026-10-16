@@ -11,7 +11,7 @@
  */
 import '../../host/registerFacets';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { toast, closedPhoneToast } from './toast';
+import { toast, closedPhoneToast, MAX_QUEUED_TOASTS } from './toast';
 import { get } from 'svelte/store';
 import { shadeNotifications } from '../../services/notifications';
 import { appNotificationPolicies, dndEnabled } from './notificationPolicy';
@@ -280,6 +280,70 @@ describe('toast queue — only one visible at a time', () => {
 
     // If the queue had survived clear(), the stale 'Second' toast would surface here.
     expect(get(toast)).toHaveLength(0);
+  });
+});
+
+/**
+ * MICA-376: at most `MAX_QUEUED_TOASTS` wait behind the visible one. A burst of distinct
+ * arrivals keeps its newest banners and drops the oldest waiting ones; every arrival still
+ * lands in the shade, and a call or a toast with an `onExpire` is never the one dropped.
+ */
+describe('toast queue cap (MICA-376)', () => {
+  beforeEach(() => {
+    toast.clear();
+    shadeNotifications.set([]);
+    vi.useFakeTimers();
+  });
+
+  // No `useRealTimers` here: later describes in this file advance timers without installing
+  // fake ones themselves, relying on the queue tests above having left them on.
+  afterEach(() => {
+    toast.clear();
+  });
+
+  /** Dismiss the visible toast until none is left; the titles, in the order they showed. */
+  const drain = (): string[] => {
+    const shown: string[] = [];
+    for (let toastUp = get(toast)[0]; toastUp; toastUp = get(toast)[0]) {
+      shown.push(toastUp.title ?? '');
+      toast.dismiss(toastUp.id);
+    }
+    return shown;
+  };
+
+  it('keeps the newest waiting banners and drops the oldest, but not their shade rows', () => {
+    const burst = 20;
+    for (let i = 0; i < burst; i++) toast.show({ message: `m${i}`, title: `T${i}`, app: 'jobs' });
+
+    // The first is up; of the nineteen behind it, the newest five wait, in arrival order.
+    const newest = Array.from({ length: MAX_QUEUED_TOASTS }, (_, k) => `T${burst - 5 + k}`);
+    expect(drain()).toEqual(['T0', ...newest]);
+    // Every arrival is still in the shade, dropped banner or not.
+    expect(get(shadeNotifications)).toHaveLength(burst);
+  });
+
+  it('never drops a waiting call to make room', () => {
+    toast.show({ message: 'up', title: 'Up' });
+    toast.show({ message: 'ringing', title: 'First call', type: 'call', duration: 0 });
+    // The call took the screen; `Up` waits behind it. Now a burst.
+    for (let i = 0; i < 10; i++) toast.show({ message: `m${i}`, title: `T${i}` });
+    // A second call takes the screen and puts the first back in line.
+    toast.show({ message: 'ringing', title: 'Second call', type: 'call', duration: 0 });
+
+    const shown = drain();
+    expect(shown[0]).toBe('Second call');
+    expect(shown[1]).toBe('First call');
+    // The cap holds on the call's path into the line too: the oldest banner made room.
+    expect(shown).toHaveLength(MAX_QUEUED_TOASTS + 1);
+  });
+
+  it('never drops a toast whose owner is waiting on its onExpire', () => {
+    const onExpire = vi.fn();
+    toast.show({ message: 'up', title: 'Up' });
+    toast.show({ message: 'owed', title: 'Owed', onExpire });
+    for (let i = 0; i < 10; i++) toast.show({ message: `m${i}`, title: `T${i}` });
+
+    expect(drain()).toContain('Owed');
   });
 });
 

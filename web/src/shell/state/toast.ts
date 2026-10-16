@@ -45,6 +45,24 @@ isPhoneOpen.subscribe((open) => {
   closedPhoneToast.set(null);
 });
 
+/**
+ * The most toasts that may wait behind the visible one (MICA-376).
+ *
+ * Each plays for 4.5-12s, and the spam merge only folds a repeat of the same title or sender,
+ * so a burst of distinct arrivals — a job fan-out, a busy group chat — used to queue without
+ * bound and play back one at a time for minutes, every banner long stale by the time it showed.
+ * Past this, the oldest waiting banner is dropped. Its notification is not: the shade row is
+ * written before a banner is ever queued, so a dropped one is still there when the player looks.
+ */
+export const MAX_QUEUED_TOASTS = 5;
+
+/**
+ * Whether a waiting toast can be dropped to make room. Not a call, which is a decision the
+ * player has to be shown, and not one carrying `onExpire`, which promises its owner a callback
+ * when it goes — a call's `declineCall`, or an add-on's own — that a silent drop would break.
+ */
+const droppable = (toast: ToastMessage): boolean => toast.type !== 'call' && !toast.onExpire;
+
 function createToastStore() {
   const store = writable<ToastMessage[]>([]);
   const { subscribe, update } = store;
@@ -66,6 +84,18 @@ function createToastStore() {
     update(() => [next]);
     if (next.duration !== undefined && next.duration > 0) {
       scheduleToastTimer(next.id, next.duration);
+    }
+  };
+
+  /**
+   * Hold the line to `MAX_QUEUED_TOASTS`, oldest droppable first. If none may go — a queue of
+   * nothing but calls — the cap gives way rather than losing one.
+   */
+  const trimQueue = () => {
+    while (queue.length > MAX_QUEUED_TOASTS) {
+      const oldest = queue.findIndex(droppable);
+      if (oldest === -1) return;
+      queue.splice(oldest, 1);
     }
   };
 
@@ -219,11 +249,13 @@ function createToastStore() {
       // A call interrupts whatever is showing, which resumes once the call is handled.
       clearToastTimer(visible[0].id);
       queue.unshift(visible[0]);
+      trimQueue();
       showNext(newToast);
       return id;
     }
 
     queue.push(newToast);
+    trimQueue();
     return id;
   };
 
