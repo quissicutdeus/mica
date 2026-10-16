@@ -4,9 +4,18 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../lib/FrameworkBridge', () => ({
-  FrameworkBridge: { getAllPlayers: vi.fn(() => ({})) }
-}));
+vi.mock('../lib/FrameworkBridge', () => {
+  /** The fixture stays a player table; the code walks its ids and names whom it keeps. */
+  const bridge = {
+    getAllPlayers: vi.fn((): Record<string, any> => ({})),
+    onlineSources: vi.fn(() => Object.keys(bridge.getAllPlayers()).map(Number)),
+    getPlayer: vi.fn((src: number) => {
+      const citizenid = bridge.getAllPlayers()[src]?.PlayerData?.citizenid;
+      return citizenid ? { citizenid, source: src } : null;
+    })
+  };
+  return { FrameworkBridge: bridge };
+});
 
 const settingsRepo = vi.hoisted(() => ({ getValuesFor: vi.fn(async () => new Map()) }));
 vi.mock('../services/Settings', () => ({
@@ -198,5 +207,61 @@ describe('findNearbyVisiblePlayers', () => {
     (globalThis as any).DoesEntityExist = (ped: string) => ped !== 'phantom-ped';
 
     await expect(findNearbyVisiblePlayers(1, 'CID_A')).resolves.toEqual([]);
+  });
+});
+
+/**
+ * MICA-354: the walk is over ids; a player record is asked for only for those in range, and
+ * the citizenid a share reaches is that record's, never whatever the id list was built from.
+ */
+describe('findNearbyVisiblePlayers reads ids (MICA-354)', () => {
+  const online = vi.mocked(FrameworkBridge.onlineSources);
+  const record = vi.mocked(FrameworkBridge.getPlayer);
+  const all = vi.mocked(FrameworkBridge.getAllPlayers);
+
+  /** The derivations from the fixture, put back so no later case inherits this one's. */
+  const restore = () => {
+    online.mockImplementation(() => Object.keys(all()).map(Number));
+    record.mockImplementation((src: number) => {
+      const citizenid = all()[src]?.PlayerData?.citizenid;
+      return citizenid ? ({ citizenid, source: src } as any) : null;
+    });
+  };
+
+  it('asks for a record only for a player in range, and never walks player records', async () => {
+    place(1, [0, 0, 0]);
+    place(2, [5, 0, 0]);
+    place(3, [100, 0, 0]);
+    online.mockImplementation(() => [1, 2, 3]);
+    record.mockImplementation((src: number) => ({ citizenid: `CID_${src}`, source: src }) as any);
+
+    try {
+      expect(await findNearbyVisiblePlayers(1, 'CID_1')).toEqual([
+        { source: 2, citizenid: 'CID_2' }
+      ]);
+      expect(record.mock.calls.map(([src]) => src)).toEqual([2]);
+      expect(all).not.toHaveBeenCalled();
+    } finally {
+      restore();
+    }
+  });
+
+  it('reaches the character a player is now, and nobody on character select', async () => {
+    // After a multichar switch the id is still listed; only `getPlayer` knows who is on it.
+    place(1, [0, 0, 0]);
+    place(2, [5, 0, 0]);
+    place(3, [6, 0, 0]);
+    online.mockImplementation(() => [1, 2, 3]);
+    record.mockImplementation((src: number) =>
+      src === 2 ? ({ citizenid: 'CID_NEW_CHARACTER', source: 2 } as any) : null
+    );
+
+    try {
+      expect(await findNearbyVisiblePlayers(1, 'CID_1')).toEqual([
+        { source: 2, citizenid: 'CID_NEW_CHARACTER' }
+      ]);
+    } finally {
+      restore();
+    }
   });
 });

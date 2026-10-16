@@ -24,14 +24,12 @@ const framework = vi.hoisted(() => ({
 }));
 vi.mock('../lib/FrameworkBridge', () => ({
   FrameworkBridge: {
-    getAllPlayers: () =>
-      Object.fromEntries([
-        ...[...framework.players].map(([src, p]) => [
-          src,
-          { PlayerData: { citizenid: p.citizenid } }
-        ]),
-        ...[...framework.gone].map((src) => [src, { PlayerData: { citizenid: `CID_${src}` } }])
-      ]),
+    // Not the walk any more (MICA-354): `staffFor` reads ids and one record per player, so a
+    // call here would be the whole-server record walk coming back.
+    getAllPlayers: () => {
+      throw new Error('staffFor walked player records');
+    },
+    onlineSources: () => [...framework.players.keys(), ...framework.gone],
     getPlayer: (src: number) => {
       const player = framework.players.get(src);
       return player

@@ -177,3 +177,62 @@ describe('source registry reseed (MICA-353)', () => {
     expect(walks()).toBe(settled);
   });
 });
+
+/**
+ * MICA-354: the id walk the timer loops read. Registry ids, walking the framework only when
+ * the registry has reason to be incomplete — never once per tick.
+ */
+describe('onlineSources (MICA-354)', () => {
+  it('fills from one walk when the registry may be incomplete, then answers without walking', () => {
+    const { loaded, walks } = qb();
+    loaded.set(3, 'CIT_ONLINE_3');
+    loaded.set(8, 'CIT_ONLINE_8');
+
+    // The seam marks the registry dirty, as a start does.
+    expect(FrameworkBridge.onlineSources().sort((a, b) => a - b)).toEqual([3, 8]);
+    for (let i = 0; i < 30; i++) FrameworkBridge.onlineSources();
+    advance(RESEED_INTERVAL_MS * 4);
+    FrameworkBridge.onlineSources();
+
+    expect(walks()).toBe(1);
+  });
+
+  it('follows rememberSource and forgetSource with no walk', () => {
+    const { loaded, walks } = qb();
+    loaded.set(3, 'CIT_ONLINE_3');
+    FrameworkBridge.onlineSources();
+
+    loaded.set(9, 'CIT_ONLINE_9');
+    FrameworkBridge.rememberSource(9);
+    expect(FrameworkBridge.onlineSources().sort((a, b) => a - b)).toEqual([3, 9]);
+
+    FrameworkBridge.forgetSource(3);
+    expect(FrameworkBridge.onlineSources()).toEqual([9]);
+    expect(walks()).toBe(1);
+  });
+
+  it('walks again after a core restarts, and keeps walking while it finds nobody', () => {
+    const { loaded, walks } = qb();
+    expect(FrameworkBridge.onlineSources()).toEqual([]);
+    expect(FrameworkBridge.onlineSources()).toEqual([]);
+    expect(walks()).toBe(2);
+
+    loaded.set(4, 'CIT_ONLINE_4');
+    expect(FrameworkBridge.onlineSources()).toEqual([4]);
+    FrameworkBridge.onlineSources();
+    expect(walks()).toBe(3);
+
+    fire('onResourceStart', 'qb-core');
+    FrameworkBridge.onlineSources();
+    expect(walks()).toBe(4);
+  });
+
+  it('hands out a copy, so a caller forgetting a source mid-walk changes nothing it holds', () => {
+    const { loaded } = qb();
+    loaded.set(3, 'CIT_ONLINE_3');
+    loaded.set(8, 'CIT_ONLINE_8');
+    const ids = FrameworkBridge.onlineSources();
+    FrameworkBridge.forgetSource(3);
+    expect(ids.sort((a, b) => a - b)).toEqual([3, 8]);
+  });
+});

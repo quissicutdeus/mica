@@ -530,6 +530,36 @@ export class FrameworkBridge {
   }
 
   /**
+   * The server ids of every loaded character, from the registry: no player records (MICA-354).
+   *
+   * For the loops that run on a timer and want ids — `Signal`'s poll every 2s, the
+   * speakerphone's every second, `Music`'s while a stereo plays — and for the walks that only
+   * need a record for the few players they end up keeping (`proximity`, `jobLines`). Each of
+   * them read `Object.keys(getAllPlayers())`, which on qb is a msgpack copy of every
+   * connected player's whole record, to throw everything but the keys away.
+   *
+   * Walks first only when `reseedDirty` says the registry has reason to be incomplete — at
+   * start, after a core starts or stops, after `rememberSource` could not name a player, after
+   * a walk that found nobody — so a restart with players connected is filled before the first
+   * tick answers. Otherwise the registry is kept by `rememberSource` and `forgetSource`.
+   *
+   * **An id here is not a loaded character's proof.** A multichar switch keeps the source and
+   * fires no drop, so the registry still holds a player sitting on character select, under
+   * the character they left — where `getAllPlayers` would not list them. A caller that acts on
+   * *who* the player is, or that must only reach a loaded character, asks `getPlayer` for the
+   * ids it keeps, as `proximity`, `speakerphone` and `jobLines` do. A copy, so a caller may
+   * forget a source while it walks.
+   */
+  public static onlineSources(): number[] {
+    try {
+      if (reseedDirty) FrameworkBridge.reseedSources();
+    } catch (error) {
+      console.error('[FrameworkBridge] Error resolving sources:', error);
+    }
+    return [...citizenBySource.keys()];
+  }
+
+  /**
    * The server id of an online character, or null when they are not connected.
    *
    * Needed to push anything to a specific character — delivering a message, for one.

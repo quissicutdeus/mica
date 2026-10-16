@@ -185,6 +185,7 @@ beforeEach(() => {
   vi.spyOn(FrameworkBridge, 'getAllPlayers').mockImplementation(() =>
     Object.fromEntries([...players].map(([src, p]) => [src, { PlayerData: p }]))
   );
+  vi.spyOn(FrameworkBridge, 'onlineSources').mockImplementation(() => [...players.keys()]);
   vi.spyOn(FrameworkBridge, 'getPlayerByPhone').mockReturnValue(null);
 
   dbMock.query.mockImplementation(async (sql: string, params: unknown[] = []) => {

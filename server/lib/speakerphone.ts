@@ -352,9 +352,8 @@ export function tickSpeakers(calls: SpeakerCalls): void {
 
   if (speakers.size === 0) return;
 
-  const players = Object.keys(FrameworkBridge.getAllPlayers())
-    .map(Number)
-    .filter((src) => Number.isInteger(src) && src > 0);
+  // Ids, not player records (MICA-354): this runs every second while a speaker is on.
+  const players = FrameworkBridge.onlineSources().filter((src) => Number.isInteger(src) && src > 0);
   const rangeSquared = range * range;
 
   for (const [owner, callId] of speakers) {
@@ -374,6 +373,10 @@ export function tickSpeakers(calls: SpeakerCalls): void {
       const d = distanceSquared(origin, coords);
       if (d > rangeSquared || bucketOf(src) !== bucket) continue;
       if (backend.channelOf(src) !== 0 || isDead(src)) continue;
+      // A loaded character, asked of only the few in range: an id from the registry can be a
+      // player on character select after a switch, whom the record walk never listed and who
+      // must not be put into somebody's call.
+      if (!FrameworkBridge.getPlayer(src)) continue;
       nearby.push({ src, distanceSquared: d });
     }
 

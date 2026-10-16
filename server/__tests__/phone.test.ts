@@ -83,6 +83,7 @@ vi.mock('../lib/FrameworkBridge', () => ({
       Object.fromEntries(
         [...bridge.players].map(([src, citizenid]) => [src, { PlayerData: { citizenid } }])
       ),
+    onlineSources: () => [...bridge.players.keys()],
     getPlayerByPhone: (phone: string) => {
       const holder = bridge.held.get(phone);
       if (holder !== undefined) return { source: holder, citizenid: bridge.players.get(holder) };

@@ -102,8 +102,8 @@ interface StaffMember {
  */
 const staffMembers = (line: JobLine, caller: number): StaffMember[] => {
   const staff: StaffMember[] = [];
-  for (const key of Object.keys(FrameworkBridge.getAllPlayers())) {
-    const src = Number(key);
+  // Ids, not player records (MICA-354): the record that matters is `getPlayer`'s, below.
+  for (const src of FrameworkBridge.onlineSources()) {
     if (!Number.isInteger(src) || src <= 0 || src === caller) continue;
     const player = FrameworkBridge.getPlayer(src);
     if (!player?.citizenid) continue;

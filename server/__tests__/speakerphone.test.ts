@@ -12,15 +12,29 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const world = vi.hoisted(() => ({
   players: new Set<number>(),
+  /** Connected and still in the registry, but on character select: `getPlayer` is null. */
+  unloaded: new Set<number>(),
   coords: {} as Record<string, [number, number, number]>,
   buckets: {} as Record<string, number>,
   health: {} as Record<string, number>
 }));
 
+// The scan walks ids and asks for a record only for a bystander in range (MICA-354).
+const bridge = vi.hoisted(() => ({
+  getAllPlayers: vi.fn(() =>
+    Object.fromEntries([...world.players].map((src) => [src, { PlayerData: {} }]))
+  ),
+  getPlayer: vi.fn((src: number) =>
+    world.players.has(src) && !world.unloaded.has(src)
+      ? { citizenid: `CID_${src}`, source: src }
+      : null
+  )
+}));
 vi.mock('../lib/FrameworkBridge', () => ({
   FrameworkBridge: {
-    getAllPlayers: () =>
-      Object.fromEntries([...world.players].map((src) => [src, { PlayerData: {} }]))
+    getAllPlayers: bridge.getAllPlayers,
+    onlineSources: () => [...world.players],
+    getPlayer: bridge.getPlayer
   }
 }));
 
@@ -97,6 +111,9 @@ beforeEach(() => {
   onCall.clear();
   answered.clear();
   world.players.clear();
+  world.unloaded.clear();
+  bridge.getAllPlayers.mockClear();
+  bridge.getPlayer.mockClear();
   for (const key of Object.keys(world.coords)) delete world.coords[key];
   for (const key of Object.keys(world.buckets)) delete world.buckets[key];
   for (const key of Object.keys(world.health)) delete world.health[key];
@@ -403,6 +420,41 @@ describe('speakerVolume', () => {
     expect(speakerVolume()).toBe(100);
     convars.mica_speaker_volume = -5;
     expect(speakerVolume()).toBe(1);
+  });
+});
+
+describe('the bystander scan reads ids, not player records (MICA-354)', () => {
+  it('never takes the whole-server record walk, on switching on or on a tick', () => {
+    place(3, [2, 0, 0]);
+    setSpeaker(OWNER, true, calls);
+    tickSpeakers(calls);
+    tickSpeakers(calls);
+
+    expect(speakerListeners()).toEqual([3]);
+    expect(bridge.getAllPlayers).not.toHaveBeenCalled();
+  });
+
+  it('asks for a record only for a bystander in range', () => {
+    place(3, [2, 0, 0]);
+    place(5, [50, 0, 0]);
+    setSpeaker(OWNER, true, calls);
+
+    const asked = bridge.getPlayer.mock.calls.map(([src]) => src);
+    expect(asked).toContain(3);
+    expect(asked).not.toContain(5);
+    // The far party is past range too: no record for them either.
+    expect(asked).not.toContain(2);
+  });
+
+  it('never adds somebody on character select, however close', () => {
+    // A switch keeps the source in the registry, where the record walk never listed them.
+    place(3, [1, 0, 0]);
+    world.unloaded.add(3);
+    place(4, [2, 0, 0]);
+    setSpeaker(OWNER, true, calls);
+
+    expect(speakerListeners()).toEqual([4]);
+    expect(channels.has(3)).toBe(false);
   });
 });
 

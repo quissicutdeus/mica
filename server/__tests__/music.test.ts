@@ -53,15 +53,18 @@ vi.mock('../lib/FrameworkBridge', () => ({
       const player = world.players[String(src)] as
         { PlayerData?: { citizenid?: string } } | undefined;
       const citizenid = player?.PlayerData?.citizenid;
-      return citizenid ? { citizenid, source: src } : null;
+      // `rawPlayer` is where a broadcaster's label is read since MICA-354.
+      return citizenid ? { citizenid, source: src, rawPlayer: player } : null;
     },
     getAllPlayers: () => world.players,
+    onlineSources: () => Object.keys(world.players).map(Number),
     getSourceByCitizenId: () => null,
     getSourcesByCitizenId: () => new Map(),
     registerUsableItem: () => {}
   }
 }));
 
+import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { pollMusic, activeBroadcasts, __resetMusic } from '../services/Music';
 import { __resetRateLimits } from '../lib/rateLimit';
 import { installTestPhone, NOT_HELD_REPLY, refusePhone } from './phoneStub';
@@ -280,6 +283,63 @@ describe('who hears it', () => {
  * every broadcaster in front of every nearby client, which is what the repo's public
  * projections strip on purpose.
  */
+describe('a tick reads ids, not player records (MICA-354)', () => {
+  /** Still connected and still listed, but on character select: no character, so no record. */
+  const logOut = (src: number) => {
+    world.players[String(src)] = { PlayerData: {} };
+  };
+
+  it('walks ids, and asks for a record only for the broadcaster and listeners in range', async () => {
+    place(1, [0, 0, 0]);
+    place(2, [5, 0, 0]);
+    place(6, [500, 0, 0]);
+    await call(START, 1, { videoId: VIDEO });
+
+    const all = vi.spyOn(FrameworkBridge, 'getAllPlayers');
+    const one = vi.spyOn(FrameworkBridge, 'getPlayer');
+    try {
+      place(5, [8, 0, 0]);
+      pollMusic();
+
+      expect(lastPushTo(5)?.broadcasters[0].label).toBe('Player1 Smith');
+      expect(all).not.toHaveBeenCalled();
+      const asked = one.mock.calls.map(([src]) => src);
+      expect(asked).toContain(1);
+      expect(asked).toContain(5);
+      // Out of range, with nothing to hear: never looked up.
+      expect(asked).not.toContain(6);
+    } finally {
+      all.mockRestore();
+      one.mockRestore();
+    }
+  });
+
+  it('pushes nothing to a player on character select beside a stereo (review)', async () => {
+    place(1, [0, 0, 0]);
+    place(2, [5, 0, 0]);
+    logOut(2);
+    await call(START, 1, { videoId: VIDEO });
+    pollMusic();
+
+    expect(pushesTo(2)).toEqual([]);
+  });
+
+  it('tells a listener who logs out, once, that it stopped', async () => {
+    place(1, [0, 0, 0]);
+    place(2, [5, 0, 0]);
+    await call(START, 1, { videoId: VIDEO });
+    expect(lastPushTo(2)?.broadcasters).toHaveLength(1);
+    const before = pushesTo(2).length;
+
+    logOut(2);
+    pollMusic();
+    pollMusic();
+
+    expect(pushesTo(2)).toHaveLength(before + 1);
+    expect(lastPushTo(2)?.broadcasters).toEqual([]);
+  });
+});
+
 describe('the broadcaster token', () => {
   it('survives a reconnect on a different server id', async () => {
     place(1, [0, 0, 0]);

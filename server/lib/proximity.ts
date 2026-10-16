@@ -136,15 +136,12 @@ export async function findNearbyVisiblePlayers(
 
   const range = rangeMeters();
   const rangeSquared = range * range;
-  const players = FrameworkBridge.getAllPlayers();
-
   const candidates: (NearbyPlayer & { distanceSquared: number })[] = [];
-  for (const key of Object.keys(players)) {
-    const src = Number(key);
+  // Ids first, and a player record only for those in range (MICA-354). The citizenid comes
+  // from `getPlayer`, never from the registry: after a multichar switch the registry still
+  // names the character the player left, and a share must reach the one they are now.
+  for (const src of FrameworkBridge.onlineSources()) {
     if (!Number.isFinite(src) || src === senderSource) continue;
-
-    const citizenid = players[key]?.PlayerData?.citizenid;
-    if (!citizenid || citizenid === senderCitizenid) continue;
 
     const coords = playerCoords(src);
     if (!coords) continue;
@@ -154,6 +151,9 @@ export async function findNearbyVisiblePlayers(
     const dz = coords[2] - origin[2];
     const distanceSquared = dx * dx + dy * dy + dz * dz;
     if (distanceSquared > rangeSquared) continue;
+
+    const citizenid = FrameworkBridge.getPlayer(src)?.citizenid;
+    if (!citizenid || citizenid === senderCitizenid) continue;
 
     candidates.push({ source: src, citizenid, distanceSquared });
   }

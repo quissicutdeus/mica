@@ -4,15 +4,18 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../lib/FrameworkBridge', () => ({
-  FrameworkBridge: {
+vi.mock('../lib/FrameworkBridge', () => {
+  const bridge = {
     getPlayer: vi.fn(() => ({ citizenid: 'CID' })),
     // The server evaluates every connected player now, so changing the rules walks the
     // player list rather than broadcasting to it.
-    getAllPlayers: vi.fn(() => ({})),
+    getAllPlayers: vi.fn((): Record<string, unknown> => ({})),
+    // What the poll actually walks since MICA-354: the ids of the same fixture.
+    onlineSources: vi.fn(() => Object.keys(bridge.getAllPlayers()).map(Number)),
     registerUsableItem: vi.fn()
-  }
-}));
+  };
+  return { FrameworkBridge: bridge };
+});
 
 /** What `forgetOnPlayerLoaded` was handed; `lib/shell.ts` runs it on a change of character. */
 const forgetters = vi.hoisted(
@@ -209,6 +212,70 @@ describe('signal rules', () => {
     expect(attemptsFor(5)).toBe(2);
 
     (FrameworkBridge.getAllPlayers as any).mockReturnValue({});
+  });
+});
+
+/**
+ * MICA-354: the poll walks ids, not player records, and the quiet world tells only the
+ * players who have not yet heard full bars.
+ */
+describe('the poll reads ids (MICA-354)', () => {
+  const pushed = () =>
+    (globalThis.emitNet as any).mock.calls
+      .filter((c: unknown[]) => c[0] === 'mica:client:signal:set')
+      .map((c: unknown[]) => [c[1], c[2]]);
+
+  beforeEach(() => {
+    vi.mocked(FrameworkBridge.getAllPlayers).mockClear();
+    vi.mocked(FrameworkBridge.getPlayer).mockClear();
+  });
+
+  it('in a quiet world with no overrides, pushes full bars only to sources not yet told', () => {
+    const online = [5, 6];
+    vi.mocked(FrameworkBridge.onlineSources).mockImplementation(() => [...online]);
+    const coords = vi.fn();
+    (globalThis as any).GetEntityCoords = coords;
+
+    try {
+      pollSignal();
+      expect(pushed()).toEqual([
+        [5, FULL_SIGNAL],
+        [6, FULL_SIGNAL]
+      ]);
+
+      pollSignal();
+      expect(pushed()).toHaveLength(2);
+
+      online.push(7);
+      pollSignal();
+      expect(pushed().slice(2)).toEqual([[7, FULL_SIGNAL]]);
+
+      // Never a player record, and never a position, for any of it.
+      expect(FrameworkBridge.getAllPlayers).not.toHaveBeenCalled();
+      expect(FrameworkBridge.getPlayer).not.toHaveBeenCalled();
+      expect(coords).not.toHaveBeenCalled();
+    } finally {
+      delete (globalThis as any).GetEntityCoords;
+      vi.mocked(FrameworkBridge.onlineSources).mockReset();
+      vi.mocked(FrameworkBridge.onlineSources).mockImplementation(() =>
+        Object.keys(FrameworkBridge.getAllPlayers()).map(Number)
+      );
+    }
+  });
+
+  it('still delivers an override in a quiet world, to somebody already told full bars', () => {
+    vi.mocked(FrameworkBridge.onlineSources).mockImplementation(() => [5, 6]);
+    try {
+      pollSignal();
+      setPlayerSignal(5, 1);
+      expect(pushed().slice(2)).toEqual([[5, 1]]);
+      expect(FrameworkBridge.getAllPlayers).not.toHaveBeenCalled();
+    } finally {
+      vi.mocked(FrameworkBridge.onlineSources).mockReset();
+      vi.mocked(FrameworkBridge.onlineSources).mockImplementation(() =>
+        Object.keys(FrameworkBridge.getAllPlayers()).map(Number)
+      );
+    }
   });
 });
 

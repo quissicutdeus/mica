@@ -154,10 +154,11 @@ export const pollSignal = (): void => {
    */
   const worldIsQuiet = rules.zones.length === 0 && rules.global >= FULL_SIGNAL;
 
-  const players = FrameworkBridge.getAllPlayers();
-  for (const key of Object.keys(players)) {
-    const src = Number(key);
-    if (!Number.isFinite(src)) continue;
+  // Ids, not player records (MICA-354): this runs every two seconds and reads nothing else.
+  for (const src of FrameworkBridge.onlineSources()) {
+    // The quiet world with no overrides: everyone's answer is full bars, so the only players
+    // with anything to hear are those not already told it — a join, or a retry.
+    if (worldIsQuiet && overrides.size === 0 && lastPushed.get(src) === FULL_SIGNAL) continue;
 
     const override = overrides.get(src) ?? null;
 
@@ -174,7 +175,7 @@ export const pollSignal = (): void => {
 
     if (lastPushed.get(src) === level) continue;
 
-    // The framework can list a player (`FrameworkBridge.getAllPlayers()`) slightly before
+    // The framework can list a player (`FrameworkBridge.onlineSources()`) slightly before
     // FiveM's own networking layer has fully attached their connection — the window right
     // around join. `emitNet` to a source in that state throws a native argument error
     // rather than failing quietly, and it repeats every poll until the player finishes

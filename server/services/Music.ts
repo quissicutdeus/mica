@@ -398,8 +398,6 @@ export const pollMusic = (): void => {
     return;
   }
 
-  const players = FrameworkBridge.getAllPlayers();
-
   const located: {
     broadcast: Broadcast;
     coords: [number, number, number];
@@ -410,20 +408,20 @@ export const pollMusic = (): void => {
     // No ped — spawning, or between characters. Inaudible this tick, but still theirs: a
     // player walking back into the world should not have to press play again.
     if (!coords) continue;
-    located.push({ broadcast, coords, label: labelFor(players[String(broadcast.source)]) });
+    // One record per audible broadcaster, for the name — never one per player (MICA-354).
+    const label = labelFor(FrameworkBridge.getPlayer(broadcast.source)?.rawPlayer);
+    located.push({ broadcast, coords, label });
   }
 
   const range = rangeMeters();
   const rangeSquared = range * range;
   const cap = maxNearby();
 
-  for (const key of Object.keys(players)) {
-    const listener = Number(key);
-    if (!Number.isFinite(listener)) continue;
-
+  // Ids, not player records (MICA-354): this runs every two seconds while a stereo plays.
+  for (const listener of FrameworkBridge.onlineSources()) {
     const listenerCoords = playerCoords(listener);
 
-    const audible = listenerCoords
+    const inRange = listenerCoords
       ? located
           .filter(({ broadcast }) => broadcast.source !== listener)
           .map((entry) => {
@@ -439,6 +437,16 @@ export const pollMusic = (): void => {
           .slice(0, cap)
           .map(({ entry }) => entry)
       : [];
+
+    /**
+     * Only a loaded character hears anything (MICA-354 review). The ids are the registry's,
+     * which still holds a player on character select after a multichar logout, under the
+     * character they left — and a push would hand them the stereo and its owner's label.
+     * Such a listener hears nothing, so one who was listening is told once that it stopped,
+     * exactly as if they had walked away. Asked only of a listener with something in range,
+     * so the lookup is paid per audible listener, never per player.
+     */
+    const audible = inRange.length > 0 && !FrameworkBridge.getPlayer(listener) ? [] : inRange;
 
     /**
      * Signature over the *set*, and over the stored state rather than the payload.
