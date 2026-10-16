@@ -360,8 +360,126 @@ describe('MusicProximity', () => {
     const slow = await runAt(33);
     const fast = await runAt(8);
     // A 30fps client and a 125fps one are at the same point half a second in, which is the
-    // property `GetFrameTime`-based smoothing exists to have.
+    // property smoothing on the game-timer delta between samples exists to have.
     expect(Math.abs(slow - fast)).toBeLessThan(0.05);
     expect(MusicProximity).toBeTruthy();
+  });
+});
+
+describe('MusicProximity — sampling (MICA-359)', () => {
+  /** Count the position reads, which is what a sample costs in natives. */
+  const countCoordReads = () => {
+    const g = globalThis as Record<string, unknown>;
+    const inner = g.GetEntityCoords as (entity: number) => number[];
+    let reads = 0;
+    g.GetEntityCoords = (entity: number) => {
+      reads += 1;
+      return inner(entity);
+    };
+    return () => reads;
+  };
+
+  it('samples positions every 75ms or so, not every frame', async () => {
+    const { MusicProximity } = await load();
+    MusicProximity.onUpdate(() => {});
+    peds.set(7, [5, 0, 0]);
+    peds.set(8, [9, 0, 0]);
+    MusicProximity.setSources([7, 8]);
+    const reads = countCoordReads();
+
+    // One second at 60fps: 62 frames, and one sample (three reads) per ~75ms of game time.
+    for (let i = 0; i < 62; i += 1) frame(16);
+
+    const samples = reads() / 3;
+    expect(samples).toBeGreaterThanOrEqual(11);
+    expect(samples).toBeLessThanOrEqual(14);
+  });
+
+  it('still converges through irregular frames and hitches, timed by the game timer', async () => {
+    const { MusicProximity, musicAttenuation } = await load();
+    const updates: number[] = [];
+    MusicProximity.onUpdate((levels) => {
+      if (levels.length) updates.push(levels[0].volume);
+    });
+    peds.set(7, [5, 0, 0]);
+    MusicProximity.setSources([7]);
+
+    const lengths = [7, 16, 33, 250, 9, 16, 16, 120, 41];
+    for (let i = 0; i < 400; i += 1) frame(lengths[i % lengths.length]);
+
+    expect(Math.abs(last(updates)! - musicAttenuation(5, 30))).toBeLessThan(0.01);
+  });
+
+  it('pushes a broadcaster joining a settled roster on the very next frame', async () => {
+    const { MusicProximity } = await load();
+    const updates: number[][] = [];
+    MusicProximity.onUpdate((levels) => updates.push(levels.map(({ source }) => source)));
+    peds.set(7, [5, 0, 0]);
+    peds.set(8, [6, 0, 0]);
+    MusicProximity.setSources([7]);
+    for (let i = 0; i < 300; i += 1) frame();
+    const settled = updates.length;
+
+    MusicProximity.setSources([7, 8]);
+    frame(1);
+
+    expect(updates.length).toBe(settled + 1);
+    expect(last(updates)).toEqual([7, 8]);
+  });
+
+  it('sends a push the throttle dropped, so the last value is never stranded short', async () => {
+    const { MusicProximity, musicAttenuation } = await load();
+    const updates: number[] = [];
+    MusicProximity.onUpdate((levels) => updates.push(levels[0].volume));
+    peds.set(7, [3, 0, 0]);
+    const target = musicAttenuation(3, 30);
+    MusicProximity.setSources([7]);
+
+    // Twenty-one samples 75ms apart leave the gap at about 0.0103: still moving, so pushed.
+    for (let i = 0; i < 21; i += 1) frame(75);
+    expect(target - last(updates)!).toBeGreaterThan(0.01);
+
+    // A re-sent roster forces a sample inside the push interval: still moving, so the
+    // throttle drops it. The next regular sample has converged, and without the owed push
+    // the shell would be left holding a value more than PUSH_EPSILON short of the target.
+    MusicProximity.setSources([7]);
+    frame(70);
+    frame(75);
+
+    expect(target - last(updates)!).toBeLessThan(0.01);
+  });
+
+  it('pushes nothing when the same roster is re-sent after settling', async () => {
+    const { MusicProximity } = await load();
+    let pushes = 0;
+    MusicProximity.onUpdate(() => {
+      pushes += 1;
+    });
+    peds.set(7, [5, 0, 0]);
+    MusicProximity.setSources([7]);
+    for (let i = 0; i < 300; i += 1) frame();
+    const settled = pushes;
+
+    for (let i = 0; i < 10; i += 1) {
+      MusicProximity.setSources([7]);
+      frame();
+    }
+
+    expect(pushes).toBe(settled);
+  });
+
+  it('pushes the roster again once a departed broadcaster has faded and been dropped', async () => {
+    const { MusicProximity } = await load();
+    const updates: number[][] = [];
+    MusicProximity.onUpdate((levels) => updates.push(levels.map(({ source }) => source)));
+    peds.set(7, [5, 0, 0]);
+    peds.set(8, [6, 0, 0]);
+    MusicProximity.setSources([7, 8]);
+    for (let i = 0; i < 300; i += 1) frame();
+
+    MusicProximity.setSources([7]);
+    for (let i = 0; i < 300; i += 1) frame();
+
+    expect(last(updates)).toEqual([7]);
   });
 });

@@ -100,6 +100,17 @@ const SMOOTHING_TAU_SECONDS = 0.35;
 /** Milliseconds. The tick is per-frame; the NUI push is not. See {@link maybePush}. */
 const PUSH_INTERVAL_MS = 75;
 
+/**
+ * Milliseconds between position samples (MICA-359).
+ *
+ * The tick still fires every frame, but only reads the clock until this much has passed:
+ * a sample costs `PlayerPedId`, `GetEntityCoords` and three natives per broadcaster, and at
+ * sixteen broadcasters that was 49 natives a frame for a volume nobody hears change faster
+ * than the push carries it. Equal to {@link PUSH_INTERVAL_MS}, so every sample is a push
+ * candidate and sampling faster would only compute values the throttle then drops.
+ */
+const SAMPLE_INTERVAL_MS = PUSH_INTERVAL_MS;
+
 /** Volume difference worth a message. 1% of full scale is below what anyone can hear. */
 const PUSH_EPSILON = 0.01;
 
@@ -210,7 +221,20 @@ export class MusicProximity {
   private static listener: ((levels: MusicLevel[]) => void) | null = null;
 
   private static lastPushAt = 0;
-  private static lastPushedIds = '';
+
+  /**
+   * Bumped whenever an entry is added or dropped, so a roster change is one integer compare
+   * rather than a sorted, joined string built every frame (MICA-359).
+   */
+  private static rosterVersion = 0;
+  private static lastPushedVersion = 0;
+
+  /** Game time of the last position sample; see {@link SAMPLE_INTERVAL_MS}. */
+  private static lastSampleAt = 0;
+  /** `setSources` asks for the next frame to sample rather than wait out the interval. */
+  private static sampleDue = false;
+  /** The throttle dropped a push; see {@link maybePush}. */
+  private static pushOwed = false;
 
   private static cachedRange = DEFAULT_MUSIC_RANGE;
   private static rangeReadAt = 0;
@@ -247,7 +271,11 @@ export class MusicProximity {
         audible: false,
         retiring: false
       });
+      MusicProximity.rosterVersion += 1;
     }
+    // A new or departing broadcaster is answered on the next frame, not up to an interval
+    // later — the envelope arrives at the server's cadence, so this costs one extra sample.
+    MusicProximity.sampleDue = true;
 
     if (MusicProximity.entries.size > 0) MusicProximity.start();
     else MusicProximity.stop();
@@ -256,7 +284,7 @@ export class MusicProximity {
   /**
    * Metres at which music reaches silence.
    *
-   * Cached, because a per-frame tick reads it and `GetConvarInt` is a native call;
+   * Cached, because every sample reads it and `GetConvarInt` is a native call;
    * re-read periodically, because a replicated convar can change while the session runs
    * and a value read once at boot would outlive the change for the rest of it.
    */
@@ -298,6 +326,8 @@ export class MusicProximity {
 
   private static start(): void {
     if (MusicProximity.tick !== null) return;
+    // The first sample's `dt` runs from here, so a fade-in starts from the real elapsed time.
+    MusicProximity.lastSampleAt = MusicProximity.gameTimer();
     MusicProximity.tick = setTick(() => MusicProximity.frame());
   }
 
@@ -305,8 +335,11 @@ export class MusicProximity {
   private static stop(): void {
     MusicProximity.entries.clear();
     MusicProximity.clearTickIfRunning();
-    MusicProximity.lastPushedIds = '';
+    MusicProximity.rosterVersion += 1;
+    MusicProximity.lastPushedVersion = MusicProximity.rosterVersion;
     MusicProximity.lastPushAt = 0;
+    MusicProximity.sampleDue = false;
+    MusicProximity.pushOwed = false;
     MusicProximity.listener?.([]);
   }
 
@@ -317,6 +350,12 @@ export class MusicProximity {
   }
 
   private static frame(): void {
+    const now = MusicProximity.gameTimer();
+    const elapsed = now - MusicProximity.lastSampleAt;
+    if (!MusicProximity.sampleDue && elapsed < SAMPLE_INTERVAL_MS) return;
+    MusicProximity.sampleDue = false;
+    MusicProximity.lastSampleAt = now;
+
     const origin = GetEntityCoords(PlayerPedId(), true);
     const range = MusicProximity.range();
     const located = Boolean(origin && origin.length >= 3);
@@ -348,10 +387,10 @@ export class MusicProximity {
       }
     }
 
-    // Frame-rate independent smoothing: the fraction of the remaining gap closed this
-    // frame is a function of how long the frame was, so a 30fps client and a 144fps one
-    // hear the same ramp rather than the same number of steps.
-    const dt = typeof GetFrameTime === 'function' ? GetFrameTime() : 0;
+    // Rate-independent smoothing: the fraction of the remaining gap closed this sample is a
+    // function of the game time since the last one, so a 30fps client and a 144fps one hear
+    // the same ramp rather than the same number of steps, however the samples land on frames.
+    const dt = elapsed / 1000;
     const alpha = dt > 0 ? 1 - Math.exp(-dt / SMOOTHING_TAU_SECONDS) : 1;
 
     let converged = true;
@@ -363,39 +402,46 @@ export class MusicProximity {
 
     // A retiring entry only leaves once it has actually faded out.
     for (const [source, entry] of MusicProximity.entries) {
-      if (entry.retiring && entry.volume === 0) MusicProximity.entries.delete(source);
+      if (entry.retiring && entry.volume === 0) {
+        MusicProximity.entries.delete(source);
+        MusicProximity.rosterVersion += 1;
+      }
     }
     if (MusicProximity.entries.size === 0) {
       MusicProximity.stop();
       return;
     }
 
-    MusicProximity.maybePush(converged);
+    MusicProximity.maybePush(converged, now);
   }
 
   /**
    * Push at most every {@link PUSH_INTERVAL_MS}, and only while something is still moving.
    *
-   * The tick runs per frame because the arithmetic is a handful of subtractions;
-   * `SendNuiMessage` is the part that costs, so it is throttled and then gated on
-   * convergence. A listener standing still therefore settles within about a second and
-   * goes quiet — no messages at all until they or the roster move again.
+   * Samples already arrive about this far apart, but `SendNuiMessage` is the part that
+   * costs, so the push keeps its own throttle and is then gated on convergence. A listener
+   * standing still therefore settles within about a second and goes quiet — no messages at
+   * all until they or the roster move again.
    *
    * The gate is `|volume - target|` rather than "changed since the last push", which is
    * what guarantees the *last* message sent is within `PUSH_EPSILON` of the real target.
    * Gating on the delta would stop early and strand the volume wherever the throttle
-   * happened to leave it.
+   * happened to leave it. For the same reason a push the throttle drops is owed: the next
+   * sample sends it even if that sample has converged, or a sample forced by `setSources`
+   * inside the interval could be the last moving one and strand the volume after all.
    */
-  private static maybePush(converged: boolean): void {
-    const ids = [...MusicProximity.entries.keys()].sort((a, b) => a - b).join(',');
-    const rosterChanged = ids !== MusicProximity.lastPushedIds;
-    if (converged && !rosterChanged) return;
+  private static maybePush(converged: boolean, now: number): void {
+    const rosterChanged = MusicProximity.rosterVersion !== MusicProximity.lastPushedVersion;
+    if (converged && !rosterChanged && !MusicProximity.pushOwed) return;
 
-    const now = MusicProximity.gameTimer();
-    if (!rosterChanged && now - MusicProximity.lastPushAt < PUSH_INTERVAL_MS) return;
+    if (!rosterChanged && now - MusicProximity.lastPushAt < PUSH_INTERVAL_MS) {
+      MusicProximity.pushOwed = true;
+      return;
+    }
 
+    MusicProximity.pushOwed = false;
     MusicProximity.lastPushAt = now;
-    MusicProximity.lastPushedIds = ids;
+    MusicProximity.lastPushedVersion = MusicProximity.rosterVersion;
 
     const levels: MusicLevel[] = [...MusicProximity.entries.values()].map((entry) => ({
       source: entry.source,
