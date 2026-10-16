@@ -5,7 +5,11 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { APP_EVENT_NET_EVENT, APP_EVENT_NUI_ACTION } from '@mica/shared/appEvents';
+import {
+  APP_EVENT_NET_EVENT,
+  APP_EVENT_NUI_ACTION,
+  parseAppEventEnvelope
+} from '@mica/shared/appEvents';
 
 const ROOT = join(__dirname, '..', '..');
 const read = (relative: string) => readFileSync(join(ROOT, relative), 'utf8');
@@ -88,5 +92,30 @@ describe('a push does not excuse a fetch', () => {
     if (app.includes('useAppEvents')) {
       expect(app).toContain('onAppForeground');
     }
+  });
+});
+
+describe('persisted crosses every hop (MICA-365)', () => {
+  it('the parser keeps it, and both hops forward what the parser returns', () => {
+    /**
+     * The client relay and the NUI route both re-parse the envelope and forward the parsed
+     * object, not the raw one — so a field the parser drops never reaches the shell, silently.
+     * `persisted` is what decides whether the shade and badges re-read at all.
+     */
+    expect(
+      parseAppEventEnvelope({ app: 'mail', event: 'received', persisted: true })?.persisted
+    ).toBe(true);
+    const client = read('client/services/AppEvents.ts');
+    expect(client).toContain('const envelope = parseAppEventEnvelope(raw)');
+    expect(client).toContain('sendNuiMessage(APP_EVENT_NUI_ACTION, envelope)');
+    const nui = read('web/src/shell/nuiMessages.ts');
+    expect(nui).toContain('const envelope = parseAppEventEnvelope(data)');
+  });
+
+  it('the server sets it on every envelope it builds', () => {
+    // Required on `AppEventEnvelope`, so typecheck already refuses an envelope without it; this
+    // pins where the value comes from — the write decision, not a constant.
+    const server = read('server/lib/appEvents.ts');
+    expect(server).toContain('const persisted = persistNotificationsAsync(');
   });
 });

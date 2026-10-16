@@ -61,6 +61,19 @@ export interface AppEventEnvelope {
    * `deep_link` (`blab/99`) — two shapes for one destination, and Blabber read neither.
    */
   deepLink?: string;
+  /**
+   * Whether this push wrote a notification row (MICA-365): true exactly when the server
+   * started storing one — `notify` or `persist` was given and `persist` was not `false`.
+   *
+   * The shade and the launcher badges are read from those rows, so a push that wrote none —
+   * a live location tick, a typing indicator, a broadcast volume — changes nothing either
+   * can show. Without this the shell re-read both on every push from every app, which is two
+   * NUI round trips and two server reads for nothing on the noisiest channels there are.
+   *
+   * Required on the wire, so a server that forgets it fails typecheck rather than reading as
+   * "nothing stored". Anything off the wire that is not exactly `true` parses as `false`.
+   */
+  persisted: boolean;
 }
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
@@ -107,6 +120,9 @@ export function parseAppEventEnvelope(raw: unknown): AppEventEnvelope | null {
     // every single time — which looks correct for a push whose payload happens to name the
     // same app, and silently goes nowhere for one that does not.
     deepLink:
-      typeof raw.deepLink === 'string' && parseDeepLink(raw.deepLink) ? raw.deepLink : undefined
+      typeof raw.deepLink === 'string' && parseDeepLink(raw.deepLink) ? raw.deepLink : undefined,
+    // Carried through rather than rebuilt, because this parser is also the client relay's
+    // (`client/services/AppEvents.ts`): a field it leaves out never reaches the NUI at all.
+    persisted: raw.persisted === true
   };
 }

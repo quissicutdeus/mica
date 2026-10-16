@@ -8,6 +8,7 @@ import '../host/registerFacets';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { NuiTransportAdapter, setTransport } from './transport';
 import { deliverAppEvent } from '../shell/state/appEvents';
+import { openDevice } from '../shell/state/phoneOpen';
 import '../services/notifications';
 
 /**
@@ -50,6 +51,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  openDevice.set(null);
   setTransport(null);
   vi.unstubAllGlobals();
   vi.useRealTimers();
@@ -88,10 +90,18 @@ describe('NuiTransportAdapter timeout (MICA-372)', () => {
   });
 
   it('lets the shade refresh again after a hung refresh times out', async () => {
+    // A stored push with a frame up reads both (MICA-365).
+    openDevice.set('phone');
     const fetchSpy = hangingFetch();
     vi.stubGlobal('fetch', fetchSpy);
 
-    deliverAppEvent({ app: 'blabber', event: 'mention', payload: {}, at: Date.now() });
+    deliverAppEvent({
+      app: 'blabber',
+      event: 'mention',
+      payload: {},
+      at: Date.now(),
+      persisted: true
+    });
     await vi.advanceTimersByTimeAsync(1_000);
     const first = actionsOf(fetchSpy).filter((a) => a.startsWith('notifications:get'));
     expect(first.sort()).toEqual([
@@ -103,7 +113,13 @@ describe('NuiTransportAdapter timeout (MICA-372)', () => {
     // Before MICA-372 this push was folded into the hung refresh and never read anything.
     await vi.advanceTimersByTimeAsync(TIMEOUT_MS);
     fetchSpy.mockClear();
-    deliverAppEvent({ app: 'blabber', event: 'mention', payload: {}, at: Date.now() });
+    deliverAppEvent({
+      app: 'blabber',
+      event: 'mention',
+      payload: {},
+      at: Date.now(),
+      persisted: true
+    });
     await vi.advanceTimersByTimeAsync(1_000);
     expect(
       actionsOf(fetchSpy)

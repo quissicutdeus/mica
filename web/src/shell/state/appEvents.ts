@@ -34,10 +34,29 @@ const MAX_BUFFERED_PER_APP = 25;
 const handlers = new Map<string, Map<string, Set<Handler>>>();
 const buffered = new Map<string, AppEvent[]>();
 
+/** What a payload-blind observer is told about a push: which app, which event, whether stored. */
+export interface AppEventSighting {
+  app: string;
+  event: string;
+  /** The envelope's `persisted`: a notification row was written for this push (MICA-365). */
+  persisted: boolean;
+}
+
+/**
+ * Observers that never read a payload (MICA-365). Subscribing here *is* the declaration: they
+ * are handed an `AppEventSighting`, which has no payload in it, so there is nothing to clone.
+ *
+ * Shell-internal, not SDK surface — an add-on's subscriptions go through `subscribeAppEvent`,
+ * pinned to its own manifest id. The `('*', '*')` observer below still exists for a shell
+ * caller that does need the payload, and still gets its own copy.
+ */
+const sightingObservers = new Set<(sighting: AppEventSighting) => void>();
+
 /** Test seam, matching `__resetBatteryCache` and friends. */
 export const __resetAppEvents = (): void => {
   handlers.clear();
   buffered.clear();
+  sightingObservers.clear();
 };
 
 const listeners = (app: string, event: string): Set<Handler> | undefined =>
@@ -65,7 +84,11 @@ const run = (handler: Handler, event: AppEvent, copy = false): void => {
  * an add-on's subscriptions are pinned to its own manifest id, which can never be `'*'`.
  * `('*', name)` is deliberately *not* widened to match that name in every app.
  */
-export function deliverAppEvent(envelope: AppEventEnvelope): void {
+export function deliverAppEvent(
+  // `persisted` optional here, not on the wire: it defaults to "nothing stored", which is what
+  // an envelope from the dev harness or a test that never mentions it means.
+  envelope: Omit<AppEventEnvelope, 'persisted'> & { persisted?: boolean }
+): void {
   const event: AppEvent = {
     app: envelope.app,
     event: envelope.event,
@@ -87,6 +110,21 @@ export function deliverAppEvent(envelope: AppEventEnvelope): void {
   // replays on mount must be what the server sent. `structuredClone` is Chromium 98, under the
   // CEF floor; the payload is parsed JSON, so it always clones.
   for (const handler of observers ?? []) run(handler, event, true);
+
+  if (envelope.app !== '*' && sightingObservers.size > 0) {
+    const sighting: AppEventSighting = {
+      app: envelope.app,
+      event: envelope.event,
+      persisted: envelope.persisted === true
+    };
+    for (const observer of sightingObservers) {
+      try {
+        observer(sighting);
+      } catch (error) {
+        console.error(`[appEvents] Observer of '${envelope.app}:${envelope.event}' threw:`, error);
+      }
+    }
+  }
 
   if (taken) return;
 
@@ -130,6 +168,21 @@ export function subscribeAppEvent(app: string, event: string, handler: Handler):
 
   return () => {
     set.delete(handler);
+  };
+}
+
+/**
+ * See every app's push without its payload, and without taking it (MICA-365).
+ *
+ * The same position as the `('*', '*')` observer — after the app's own handlers, never counting
+ * as taking the event, so nothing is replayed into it either — for a caller that only needs to
+ * know *that* something arrived. No replay: a sighting is a signal to re-read, and anything that
+ * landed before subscribing is already in whatever that read returns.
+ */
+export function observeAppEvents(observer: (sighting: AppEventSighting) => void): () => void {
+  sightingObservers.add(observer);
+  return () => {
+    sightingObservers.delete(observer);
   };
 }
 

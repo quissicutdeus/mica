@@ -11,6 +11,7 @@ vi.mock('../lib/Database', () => ({
 import { appEventChannel } from '../lib/appEvents';
 import { __setResourceLookup } from '../lib/FrameworkBridge';
 import { APP_EVENT_NET_EVENT, parseAppEventEnvelope } from '@mica/shared/appEvents';
+import * as notificationsService from '../services/Notifications';
 
 /**
  * Pushing to a specific player's app.
@@ -169,5 +170,91 @@ describe('pushMany', () => {
       expect(parsed).not.toBeNull();
       expect(parsed?.deepLink).toBeUndefined();
     });
+  });
+});
+
+/**
+ * MICA-365: the envelope says whether the push wrote a notification row, so the shell re-reads
+ * the shade and the badges only when there is something new to read. True exactly when a write
+ * was started; never at the cost of the push itself.
+ */
+describe('persisted', () => {
+  let batch: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    online({ 5: 'CIT_A', 6: 'CIT_B' });
+    const repo = notificationsService.getNotificationsRepository()!;
+    expect(repo).not.toBeNull();
+    batch = vi
+      .spyOn(repo, 'createNotificationBatch')
+      .mockResolvedValue(undefined as never) as never;
+  });
+
+  const sent = () => parseAppEventEnvelope(emitted.at(-1)![2])!;
+  const notify = { title: 'New', message: 'hello' };
+
+  it('is true when the push notifies, and the row is written', () => {
+    appEventChannel('blabber').push('CIT_A', 'mention', {}, { notify });
+    expect(sent().persisted).toBe(true);
+    expect(batch).toHaveBeenCalledOnce();
+  });
+
+  it('is true for persist without notify — a row with no toast is still a row', () => {
+    appEventChannel('blabber').push('CIT_A', 'mention', {}, { persist: true, body: 'quiet' });
+    expect(sent().persisted).toBe(true);
+    expect(sent().notify).toBeUndefined();
+    expect(batch).toHaveBeenCalledOnce();
+  });
+
+  it('is false when persist is false, even with a toast', () => {
+    appEventChannel('blabber').push('CIT_A', 'mention', {}, { notify, persist: false });
+    expect(sent().persisted).toBe(false);
+    expect(batch).not.toHaveBeenCalled();
+  });
+
+  it('is false for a bare push, which writes nothing', () => {
+    appEventChannel('blabber').push('CIT_A', 'mention', { blab_id: 1 });
+    expect(sent().persisted).toBe(false);
+    expect(batch).not.toHaveBeenCalled();
+  });
+
+  it('is false when there is no notifications repository to write to', () => {
+    vi.spyOn(notificationsService, 'getNotificationsRepository').mockReturnValue(null);
+    appEventChannel('blabber').push('CIT_A', 'mention', {}, { notify });
+    expect(sent().persisted).toBe(false);
+  });
+
+  it('carries the same answer to every recipient of a fan-out', () => {
+    const result = appEventChannel('blabber').pushMany(
+      ['CIT_A', 'CIT_B'],
+      'mention',
+      {},
+      {
+        notify
+      }
+    );
+    expect(result.delivered).toEqual(['CIT_A', 'CIT_B']);
+    expect(emitted.map((e) => parseAppEventEnvelope(e[2])!.persisted)).toEqual([true, true]);
+    expect(batch).toHaveBeenCalledOnce();
+  });
+
+  it('never fails the push when the write it started fails', async () => {
+    batch.mockRejectedValue(new Error('db down'));
+    const result = appEventChannel('blabber').push('CIT_A', 'mention', {}, { notify });
+    expect(result).toEqual({ delivered: true, source: 5 });
+    expect(sent().persisted).toBe(true);
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  it('parses anything but exactly true as false, so a forged string cannot read as stored', () => {
+    for (const persisted of [undefined, 'true', 1, null]) {
+      expect(parseAppEventEnvelope({ app: 'mail', event: 'received', persisted })!.persisted).toBe(
+        false
+      );
+    }
+    expect(
+      parseAppEventEnvelope({ app: 'mail', event: 'received', persisted: true })!.persisted
+    ).toBe(true);
   });
 });

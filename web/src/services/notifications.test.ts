@@ -14,6 +14,7 @@ import {
 import * as fetchNuiModule from '../nui/fetchNui';
 import { clearAppEvents, deliverAppEvent, subscribeAppEvent } from '../shell/state/appEvents';
 import { setActiveDevice } from '../shell/state/device';
+import { openDevice } from '../shell/state/phoneOpen';
 
 const item = (id: number, app = 'blabber'): NotificationItem => ({
   id,
@@ -144,8 +145,8 @@ describe('markNotificationsOpened (MICA-96)', () => {
  * MICA-338: a real push — an ordinary app's envelope through the real `deliverAppEvent`, never a
  * delivery under app `'*'`, which is the shape that hid this subscriber never firing at all.
  */
-const push = (app = 'blabber', event = 'mention') =>
-  deliverAppEvent({ app, event, payload: {}, at: Date.now() });
+const push = (app = 'blabber', event = 'mention', persisted = true) =>
+  deliverAppEvent({ app, event, payload: {}, at: Date.now(), persisted });
 const reads = () =>
   sent
     .filter((s) => s.action.startsWith('notifications:get'))
@@ -154,11 +155,16 @@ const reads = () =>
 const PAIR = ['notifications:getShadeNotifications', 'notifications:getUnreadCounts'];
 
 describe('a push refreshes the shade and the badges (MICA-338)', () => {
-  beforeEach(() => vi.useFakeTimers());
+  beforeEach(() => {
+    vi.useFakeTimers();
+    // The shade list is only re-read with a frame up (MICA-365); these are about the refresh.
+    openDevice.set('phone');
+  });
   afterEach(async () => {
     // Drain the refresh a test left scheduled, so it cannot land in the next one.
     await vi.runAllTimersAsync();
     vi.useRealTimers();
+    openDevice.set(null);
     clearAppEvents('blabber');
     clearAppEvents('mail');
   });
@@ -246,5 +252,55 @@ describe('a push while another device is up (MICA-264)', () => {
     await vi.runAllTimersAsync();
 
     expect(reads()).toEqual([]);
+  });
+});
+
+/**
+ * MICA-365: the shade and the counts are read from notification rows, so only a push that wrote
+ * one refreshes, and with no frame up only the counts — the list is re-read by the shade's own
+ * mount on the next open.
+ */
+describe('only a stored push refreshes, and a closed phone reads the counts alone (MICA-365)', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(async () => {
+    await vi.runAllTimersAsync();
+    vi.useRealTimers();
+    openDevice.set(null);
+    clearAppEvents('blabber');
+    clearAppEvents('liveloc');
+  });
+
+  it('reads nothing for a push that wrote no row', async () => {
+    openDevice.set('phone');
+    for (let i = 0; i < 10; i++) push('liveloc', 'tick', false);
+    await vi.runAllTimersAsync();
+
+    expect(reads()).toEqual([]);
+  });
+
+  it('reads both for a stored push with the phone open', async () => {
+    openDevice.set('phone');
+    push('liveloc', 'tick', false);
+    push('blabber', 'mention', true);
+    await vi.runAllTimersAsync();
+
+    expect(reads()).toEqual(PAIR);
+  });
+
+  it('reads only the counts for a stored push with the phone closed', async () => {
+    openDevice.set(null);
+    push('blabber', 'mention', true);
+    await vi.runAllTimersAsync();
+
+    expect(reads()).toEqual(['notifications:getUnreadCounts']);
+  });
+
+  it('decides open or closed when the refresh runs, not when the push landed', async () => {
+    openDevice.set(null);
+    push('blabber', 'mention', true);
+    openDevice.set('phone');
+    await vi.runAllTimersAsync();
+
+    expect(reads()).toEqual(PAIR);
   });
 });

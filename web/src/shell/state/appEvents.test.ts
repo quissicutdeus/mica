@@ -3,7 +3,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { __resetAppEvents, clearAppEvents, deliverAppEvent, subscribeAppEvent } from './appEvents';
+import {
+  __resetAppEvents,
+  clearAppEvents,
+  deliverAppEvent,
+  observeAppEvents,
+  subscribeAppEvent,
+  type AppEventSighting
+} from './appEvents';
 
 /**
  * The bus a pushed event lands on.
@@ -281,5 +288,61 @@ describe('the every-app observer (MICA-338)', () => {
     deliverAppEvent(envelope('probe', 'ping'));
 
     expect(seen).toEqual(['probe:ping']);
+  });
+});
+
+/**
+ * MICA-365. A payload-blind observer: told which app, which event and whether a row was stored,
+ * never the payload — so the bus clones nothing for it. Same position as the `('*', '*')`
+ * observer: it never takes an event, and is replayed nothing.
+ */
+describe('the payload-blind observer (MICA-365)', () => {
+  it('sees every app with its persisted flag, and no payload', () => {
+    const seen: AppEventSighting[] = [];
+    observeAppEvents((s) => seen.push(s));
+
+    deliverAppEvent({ ...envelope('blabber', 'mention', { blab_id: 1 }), persisted: true });
+    deliverAppEvent(envelope('liveloc', 'tick'));
+
+    expect(seen).toEqual([
+      { app: 'blabber', event: 'mention', persisted: true },
+      { app: 'liveloc', event: 'tick', persisted: false }
+    ]);
+    expect(seen[0]).not.toHaveProperty('payload');
+  });
+
+  it('clones no payload for it', () => {
+    const clone = vi.spyOn(globalThis, 'structuredClone');
+    observeAppEvents(() => {});
+
+    deliverAppEvent({ ...envelope('blabber', 'mention', { blab_id: 1 }), persisted: true });
+
+    expect(clone).not.toHaveBeenCalled();
+    clone.mockRestore();
+  });
+
+  it('does not take the event, so its own app still replays it', () => {
+    observeAppEvents(() => {});
+    deliverAppEvent({ ...envelope('blabber', 'mention', { blab_id: 3 }), persisted: true });
+
+    const replayed: boolean[] = [];
+    subscribeAppEvent('blabber', 'mention', (e) => replayed.push(e.replayed));
+    expect(replayed).toEqual([true]);
+  });
+
+  it('keeps delivering when one throws, and stops after unsubscribe', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    observeAppEvents(() => {
+      throw new Error('boom');
+    });
+    const seen: string[] = [];
+    const off = observeAppEvents((s) => seen.push(s.event));
+
+    deliverAppEvent(envelope('blabber', 'one'));
+    off();
+    deliverAppEvent(envelope('blabber', 'two'));
+
+    expect(seen).toEqual(['one']);
+    vi.restoreAllMocks();
   });
 });

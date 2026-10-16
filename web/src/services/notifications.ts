@@ -8,7 +8,8 @@ import { DEFAULT_DEVICE } from '@mica/shared/devices';
 import { activeDevice } from '../shell/state/device';
 import { callOr } from '../nui/call';
 import { notificationsContract } from '@mica/shared/contracts/notifications';
-import { subscribeAppEvent } from '../shell/state/appEvents';
+import { observeAppEvents } from '../shell/state/appEvents';
+import { isPhoneOpen } from '../shell/state/phoneOpen';
 
 export const shadeNotifications = writable<NotificationItem[]>([]);
 export const unreadCounts = writable<Record<string, number>>({});
@@ -137,7 +138,14 @@ async function refreshFromPush(): Promise<void> {
   if (get(activeDevice) !== DEFAULT_DEVICE) return;
   refreshing = true;
   try {
-    await Promise.all([loadUnreadCounts(), loadShadeNotifications()]);
+    // MICA-365: with no frame up, nothing is showing the list — only the launcher badges'
+    // counts are worth keeping current. The list is re-read by `NotificationShade`'s own mount,
+    // which runs on every open (`PhoneFrame` sits inside `Shell.svelte`'s `{#if visible}`), so
+    // a list skipped here is never shown stale. Read when the refresh runs, not when the push
+    // landed, since the phone can open inside the window.
+    await (get(isPhoneOpen)
+      ? Promise.all([loadUnreadCounts(), loadShadeNotifications()])
+      : loadUnreadCounts());
   } finally {
     refreshing = false;
     if (refreshAgain) {
@@ -150,10 +158,17 @@ async function refreshFromPush(): Promise<void> {
 /**
  * Module-scope subscription so notifications and unread badges refresh on incoming app events.
  *
- * `('*', '*')` is the bus's observer (MICA-338): it sees every app's push without taking it, so
- * an app that is not mounted still has the event replayed when it is.
+ * An observer (MICA-338): it sees every app's push without taking it, so an app that is not
+ * mounted still has the event replayed when it is. Payload-blind since MICA-365 — this never
+ * read one, and the `('*', '*')` observer cloned every payload for it anyway.
+ *
+ * Only a push that wrote a notification row refreshes (MICA-365). The shade and the counts are
+ * read from those rows, so a live-location tick or a broadcast volume changes nothing either can
+ * show, and used to cost two NUI round trips and two server reads each.
  */
-subscribeAppEvent('*', '*', scheduleRefresh);
+observeAppEvents(({ persisted }) => {
+  if (persisted) scheduleRefresh();
+});
 
 /** Add a local notification item to the shade store (used for toasts and client notifications). */
 export function addNotificationItem(item: {

@@ -60,14 +60,16 @@ const envelopeFor = (
   app: string,
   event: string,
   payload: Record<string, unknown>,
-  options?: PushOptions
+  options: PushOptions | undefined,
+  persisted: boolean
 ): AppEventEnvelope => ({
   app,
   event,
   payload,
   at: Date.now(),
   notify: options?.notify,
-  deepLink: options?.deepLink
+  deepLink: options?.deepLink,
+  persisted
 });
 
 const measure = (payload: Record<string, unknown>): 'ok' | 'oversize' | 'unserializable' => {
@@ -80,18 +82,26 @@ const measure = (payload: Record<string, unknown>): 'ok' | 'oversize' | 'unseria
   return json.length > MAX_PAYLOAD_BYTES ? 'oversize' : 'ok';
 };
 
+/**
+ * Start storing the notification rows for a push, and say whether it did (MICA-365).
+ *
+ * The answer is the envelope's `persisted`: true exactly when a write was started here —
+ * `notify` or `persist` given, `persist` not `false`, and a repository to write to. `persist`
+ * without `notify` is a real case (a row with no toast) and counts. The write itself is still
+ * never awaited, so `true` means "a row is on its way", not "a row is committed".
+ */
 function persistNotificationsAsync(
   app: string,
   event: string,
   citizenids: string[],
   payload: Record<string, unknown>,
   options?: PushOptions
-) {
-  if (options?.persist === false) return;
-  if (!options?.notify && !options?.persist) return;
+): boolean {
+  if (options?.persist === false) return false;
+  if (!options?.notify && !options?.persist) return false;
 
   const repo = getNotificationsRepository();
-  if (!repo) return;
+  if (!repo) return false;
 
   const notifyObj = options.notify;
   const title = options.title ?? notifyObj?.title ?? app;
@@ -122,6 +132,7 @@ function persistNotificationsAsync(
         `${items.length} recipient(s): ${notificationFailureReason(error)}`
     );
   });
+  return true;
 }
 
 export function appEventChannel(appId: string): AppEventChannel {
@@ -138,7 +149,8 @@ export function appEventChannel(appId: string): AppEventChannel {
     source: number,
     event: string,
     payload: Record<string, unknown>,
-    options?: PushOptions
+    options: PushOptions | undefined,
+    persisted: boolean
   ): PushOutcome => {
     const size = measure(payload);
     if (size !== 'ok') {
@@ -148,7 +160,7 @@ export function appEventChannel(appId: string): AppEventChannel {
       );
       return { delivered: false, reason: size };
     }
-    emitNet(APP_EVENT_NET_EVENT, source, envelopeFor(app, event, payload, options));
+    emitNet(APP_EVENT_NET_EVENT, source, envelopeFor(app, event, payload, options, persisted));
     return { delivered: true, source };
   };
 
@@ -161,11 +173,11 @@ export function appEventChannel(appId: string): AppEventChannel {
       }
 
       // Persist notification asynchronously regardless of online state
-      persistNotificationsAsync(app, event, [citizenid], payload, options);
+      const persisted = persistNotificationsAsync(app, event, [citizenid], payload, options);
 
       const source = FrameworkBridge.getSourceByCitizenId(citizenid);
       if (source === null) return { delivered: false, reason: 'offline' };
-      return send(citizenid, source, event, payload, options);
+      return send(citizenid, source, event, payload, options, persisted);
     },
 
     pushMany: (citizenids, event, payload = {}, options) => {
@@ -175,7 +187,7 @@ export function appEventChannel(appId: string): AppEventChannel {
 
       const uniqueCitizenids = [...new Set(citizenids)];
       // Persist notification batch asynchronously regardless of online state
-      persistNotificationsAsync(app, event, uniqueCitizenids, payload, options);
+      const persisted = persistNotificationsAsync(app, event, uniqueCitizenids, payload, options);
 
       const sources = FrameworkBridge.getSourcesByCitizenId(citizenids);
       const delivered: string[] = [];
@@ -187,7 +199,9 @@ export function appEventChannel(appId: string): AppEventChannel {
           offline.push(citizenid);
           continue;
         }
-        if (send(citizenid, source, event, payload, options).delivered) delivered.push(citizenid);
+        if (send(citizenid, source, event, payload, options, persisted).delivered) {
+          delivered.push(citizenid);
+        }
       }
       return { delivered, offline };
     }
