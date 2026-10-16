@@ -408,6 +408,23 @@ describe('toast policy enforcement (MICA-63)', () => {
     contacts.set([]);
   });
 
+  it('rings with a contact saved after the first ring, not a stale lookup (MICA-374)', () => {
+    contacts.set([]);
+    const play = vi.spyOn(audio, 'play').mockImplementation(() => {});
+
+    toast.showCall({ number: '5550199', onAccept: () => {} });
+    expect(play).toHaveBeenLastCalledWith('ringtone', { tone: null });
+
+    contacts.set([
+      { id: 1, firstname: 'A', phone: '555-0199', ringtone: 'owner:Bell' }
+    ] as unknown as Contact[]);
+    toast.showCall({ number: '5550199', onAccept: () => {} });
+    expect(play).toHaveBeenLastCalledWith('ringtone', { tone: 'owner:Bell' });
+
+    play.mockRestore();
+    contacts.set([]);
+  });
+
   it("rings on the phone's own battery, whichever device is in hand (MICA-337)", () => {
     const play = vi.spyOn(audio, 'play').mockImplementation(() => {});
     try {

@@ -6,7 +6,7 @@ import { get, writable } from 'svelte/store';
 import { audio } from './audio';
 import { isBatteryDeadOf } from './charge';
 import { isPhoneOpen } from './phoneOpen';
-import { contacts } from '../../services/contacts';
+import { contactIndex } from '../../services/contacts';
 import { addNotificationItem, clearNotifications } from '../../services/notifications';
 import { notificationAllows } from './notificationPolicy';
 import type { ToastMessage } from '../../../../sdk/vocabulary/shell';
@@ -431,8 +431,7 @@ function createToastStore() {
 const contactRingtone = (number: string): string | null => {
   const digits = number.replace(/\D/g, '');
   if (!digits) return null;
-  const match = get(contacts).find((c) => c.phone.replace(/\D/g, '') === digits);
-  return match?.ringtone ?? null;
+  return get(contactIndex).byDigits.get(digits)?.ringtone ?? null;
 };
 
 export const toast = createToastStore();

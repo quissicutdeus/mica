@@ -3,7 +3,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { contacts, favoriteContacts } from './contacts';
+import { contactIndex, contacts, favoriteContacts } from './contacts';
+import type { Contact } from '@mica/shared/types';
 import { get } from 'svelte/store';
 /**
  * MICA-172: the stub point is `sdk/nui/transport`, not `nui/fetchNui`.
@@ -137,5 +138,62 @@ describe('contacts store', () => {
       await expect(contacts.delete(1)).rejects.toThrow('denied');
       expect(get(contacts)).toHaveLength(1);
     });
+  });
+});
+
+/**
+ * MICA-374: the address book keyed by number, built once per change to the list. Each key
+ * keeps the rule its caller matched by before: a thread label matches the number exactly, a
+ * ringtone matches its digits.
+ */
+describe('contactIndex', () => {
+  const row = (id: number, phone: string, extra: Partial<Contact> = {}) =>
+    ({ id, firstname: `C${id}`, lastname: '', phone, favorite: false, ...extra }) as Contact;
+
+  beforeEach(() => contacts.set([]));
+
+  it('keys byPhone on the number as saved, and byDigits on its digits', () => {
+    contacts.set([row(1, '555-0199')]);
+    const { byPhone, byDigits } = get(contactIndex);
+    expect(byPhone.get('555-0199')?.id).toBe(1);
+    expect(byPhone.get('5550199')).toBeUndefined();
+    expect(byDigits.get('5550199')?.id).toBe(1);
+  });
+
+  it('lets the first contact listed win a shared number, as find did', () => {
+    contacts.set([row(1, '555-0199'), row(2, '555-0199'), row(3, '(555) 0199')]);
+    const { byPhone, byDigits } = get(contactIndex);
+    // Against `find` over the list as the store holds it, which is the rule this replaced.
+    const held = get(contacts);
+    expect(byPhone.get('555-0199')).toBe(held.find((c) => c.phone === '555-0199'));
+    expect(byDigits.get('5550199')).toBe(
+      held.find((c) => c.phone.replace(/\D/g, '') === '5550199')
+    );
+  });
+
+  it('leaves a number with no digits out of byDigits', () => {
+    contacts.set([row(1, 'n/a')]);
+    expect(get(contactIndex).byDigits.size).toBe(0);
+    expect(get(contactIndex).byPhone.get('n/a')?.id).toBe(1);
+  });
+
+  it('skips a row with no number rather than throwing inside the store', () => {
+    contacts.set([{ id: 1, firstname: 'X' } as Contact, row(2, '555-0200')]);
+    expect(get(contactIndex).byPhone.get('555-0200')?.id).toBe(2);
+    // A throw in a subscriber would leave svelte/store's queue stuck, and this second write
+    // would never reach the index.
+    contacts.set([row(3, '555-0300')]);
+    expect(get(contactIndex).byPhone.get('555-0300')?.id).toBe(3);
+  });
+
+  it('is built once per change to the list, not once per read', () => {
+    contacts.set([row(1, '555-0199')]);
+    const before = get(contactIndex);
+    expect(get(contactIndex)).toBe(before);
+
+    contacts.set([row(1, '555-0199'), row(2, '555-0200')]);
+    const after = get(contactIndex);
+    expect(after).not.toBe(before);
+    expect(after.byPhone.get('555-0200')?.id).toBe(2);
   });
 });

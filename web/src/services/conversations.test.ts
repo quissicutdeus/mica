@@ -10,13 +10,11 @@ import { setActiveDevice } from '../shell/state/device';
 import { contacts } from './contacts';
 
 /**
- * The address book, as a bare store: what `resolveDisplayInfo` reads is the list, not how the
- * contacts service loads it. Lifted above the imports by `vi.mock`, like `fetchNui` below.
+ * The address book is the real store, filled with `contacts.set`: what `resolveDisplayInfo`
+ * reads is the list, not how the contacts service loads it. Not mocked since MICA-374, because
+ * the labels now come through `contactIndex`, which is derived from the real store — a bare
+ * writable standing in for `contacts` would leave the index it feeds unexercised.
  */
-vi.mock('./contacts', async () => {
-  const { writable } = await import('svelte/store');
-  return { contacts: writable<any[]>([]) };
-});
 
 /**
  * The inbox the mock server holds, and the requests it was asked for.

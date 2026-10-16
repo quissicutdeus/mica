@@ -74,3 +74,43 @@ export const contacts = {
 export const favoriteContacts = derived(contacts, ($contacts) =>
   $contacts.filter((c) => c.favorite)
 );
+
+/** Digits only, so `555-0199` and `5550199` are one number. */
+const digitsOf = (phone: string): string => phone.replace(/\D/g, '');
+
+/**
+ * The address book keyed by number, rebuilt once per change to the list (MICA-374).
+ *
+ * Two lookups ran a `find` over every contact per call: the inbox once per conversation row
+ * on every message, read or rename, and the ringtone lookup once per ring, stripping every
+ * contact's number as it went. Both read this instead.
+ *
+ * **Two keys, because the two callers match differently, and each keeps its own rule.**
+ * `byPhone` is the number exactly as saved — what a thread's label has always matched on.
+ * `byDigits` is the number with everything but digits stripped — what a ringtone has always
+ * matched on, since a caller arrives as `5550199` and a contact is saved as `555-0199`. The
+ * first contact listed wins either key, as `find` did. A contact with no digits at all is
+ * left out of `byDigits`, so an empty caller id cannot match one, and a row with no number
+ * at all is left out of both.
+ */
+export const contactIndex = derived(contacts, ($contacts) => {
+  const byPhone = new Map<string, Contact>();
+  const byDigits = new Map<string, Contact>();
+  for (const contact of $contacts) {
+    // A row with no number is skipped rather than read. A throw here would be a throw inside
+    // a store subscriber, which leaves svelte/store's shared queue mid-flush and stops every
+    // store in the phone from updating — far worse than one unlabelled contact.
+    if (typeof contact.phone !== 'string') continue;
+    if (!byPhone.has(contact.phone)) byPhone.set(contact.phone, contact);
+    const digits = digitsOf(contact.phone);
+    if (digits && !byDigits.has(digits)) byDigits.set(digits, contact);
+  }
+  return { byPhone, byDigits };
+});
+
+// Held subscribed for the life of the module, so the index is built once per change to the
+// list and every `get(contactIndex)` reads that copy. Without a subscriber, a derived store
+// recomputes on each `get()` — a ring or a page read would rebuild both maps every time,
+// which is the per-call walk this exists to remove. The list's own store has no start
+// function, so subscribing loads nothing.
+contactIndex.subscribe(() => {});

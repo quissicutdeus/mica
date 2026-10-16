@@ -12,7 +12,7 @@ import { byNewest } from '../../../sdk/createCrudStore';
 import { createPagedStore, type PageReader } from '../../../sdk/createPagedStore';
 import { createReactionStore } from '../../../sdk/kit/createReactionStore';
 
-import { contacts } from './contacts';
+import { contactIndex } from './contacts';
 
 /**
  * One server page of threads — a screenful, since MICA-211.
@@ -74,7 +74,11 @@ const MAX_CACHED_THREADS = 5;
  * `!is_group` is implied by where the server sends it and checked anyway, against a malformed
  * payload labelling a group after one number.
  */
-const resolveDisplayInfo = (conv: Conversation, currentContacts: Contact[], dialled?: string) => {
+const resolveDisplayInfo = (
+  conv: Conversation,
+  byPhone: ReadonlyMap<string, Contact>,
+  dialled?: string
+) => {
   let target = '';
   let targetName = conv.name || 'Unknown';
   let targetAvatar: string | undefined = undefined;
@@ -98,7 +102,7 @@ const resolveDisplayInfo = (conv: Conversation, currentContacts: Contact[], dial
 
   // If we have a phone target, try to improve name & avatar from address book
   if (target && target !== 'group') {
-    const found = currentContacts.find((c) => c.phone === target);
+    const found = byPhone.get(target);
     if (found) {
       targetName = `${found.firstname} ${found.lastname || ''}`.trim();
       targetAvatar = found.avatar;
@@ -117,9 +121,12 @@ const resolveDisplayInfo = (conv: Conversation, currentContacts: Contact[], dial
  * refetch, and a contact saved while the inbox is open would not reach it at all. A row with no
  * contact keeps the label it was mapped with: the number, or a line's own name.
  */
-const withContactLabel = (row: UIConversation, currentContacts: Contact[]): UIConversation => {
+const withContactLabel = (
+  row: UIConversation,
+  byPhone: ReadonlyMap<string, Contact>
+): UIConversation => {
   if (row.is_group || !row.target || row.target === 'group') return row;
-  const found = currentContacts.find((c) => c.phone === row.target);
+  const found = byPhone.get(row.target);
   if (!found) return row;
   const targetName = `${found.firstname} ${found.lastname || ''}`.trim();
   return targetName === row.targetName && found.avatar === row.targetAvatar
@@ -154,7 +161,7 @@ const withContactLabel = (row: UIConversation, currentContacts: Contact[]): UICo
  * populated inbox whenever a background refresh failed.
  */
 const readConversationPage: PageReader<UIConversation> = async (payload) => {
-  const currentContacts = get(contacts);
+  const { byPhone } = get(contactIndex);
 
   // `PageReader` hands its payload as an untyped bag; `createPagedStore` builds it as
   // `{ ...filter, cursor, limit }`, which is exactly what the contract declares.
@@ -178,7 +185,7 @@ const readConversationPage: PageReader<UIConversation> = async (payload) => {
   const nextCursor = data?.nextCursor ?? null;
 
   const rows: UIConversation[] = raw.map((c) => {
-    const { target, targetName, targetAvatar } = resolveDisplayInfo(c, currentContacts);
+    const { target, targetName, targetAvatar } = resolveDisplayInfo(c, byPhone);
     return {
       ...c,
       target,
@@ -220,9 +227,9 @@ function createMessagesStore() {
    * inbox locally (an optimistic bump after sending, a live arrival, a rename) do not go
    * through the server at all.
    */
-  const ordered = derived([list, contacts], ([$rows, $contacts]) =>
+  const ordered = derived([list, contactIndex], ([$rows, { byPhone }]) =>
     $rows
-      .map((row) => withContactLabel(row, $contacts))
+      .map((row) => withContactLabel(row, byPhone))
       .sort(byNewest<UIConversation>('lastMessageAt'))
   );
 
@@ -575,7 +582,7 @@ function createMessagesStore() {
     },
 
     startConversation: async (phone: string, isGroup: boolean = false) => {
-      const currentContacts = get(contacts);
+      const { byPhone } = get(contactIndex);
 
       try {
         const newConv = await call(conversationsContract, 'create', {
@@ -585,11 +592,7 @@ function createMessagesStore() {
         if (!newConv) return null;
 
         // Map it
-        const { target, targetName, targetAvatar } = resolveDisplayInfo(
-          newConv,
-          currentContacts,
-          phone
-        );
+        const { target, targetName, targetAvatar } = resolveDisplayInfo(newConv, byPhone, phone);
         const mapped: UIConversation = {
           ...newConv,
           target,
@@ -684,9 +687,7 @@ function createMessagesStore() {
         // it with the server's.
         // Named from the reader's own contacts for the number, else a line's label, else the
         // number: a player's push carries no name of its own since MICA-339.
-        const known = incoming.phone
-          ? get(contacts).find((c) => c.phone === incoming.phone)
-          : undefined;
+        const known = incoming.phone ? get(contactIndex).byPhone.get(incoming.phone) : undefined;
         const newConv: UIConversation = {
           id: convId,
           is_group: false,
