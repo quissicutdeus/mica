@@ -313,7 +313,7 @@ interface WrapOptions {
   /**
    * `fake` (default) runs the wrapper's waits and deadlines on its test clock (MICA_SMOKE_FAKE_CLOCK),
    * so a hang case reaches its timeout without waiting for it. `real` leaves the seam off and the
-   * timeout at 1s, for the one case that proves the unset path still waits in real time.
+   * timeout at 2s, for the one case that proves the unset path still waits in real time.
    */
   clock?: 'fake' | 'real';
   running?: string;
@@ -391,7 +391,7 @@ const prepare = (run: string, logs: string, options: WrapOptions) => {
     MICA_HOTH_LOCK: lock,
     MICA_HOTH_LOCK_TIMEOUT: String(options.lockTimeout ?? 600),
     MICA_SMOKE_SETTLE: '0',
-    MICA_SMOKE_INTEGRATION_TIMEOUT: options.clock === 'real' ? '1' : '3',
+    MICA_SMOKE_INTEGRATION_TIMEOUT: options.clock === 'real' ? '2' : '3',
     ...(options.clock === 'real' ? {} : { MICA_SMOKE_FAKE_CLOCK: '1' }),
     FAKE_LOGS: logFile,
     FAKE_LOGS_QBX: qbxLogFile,
@@ -686,7 +686,10 @@ describe.skipIf(!trial)('mica-smoke-release.sh', () => {
       });
 
       expect(r.status).not.toBe(0);
-      expect(r.out).toContain("no 'integration: done' line within 1s");
+      expect(r.out).toContain("no 'integration: done' line within 2s");
+      // The wrapper's real clock is bash's $SECONDS, which counts whole-second boundaries crossed.
+      // A deadline of SECONDS+2 is therefore at least 1s of real time away, not 2: a 1s budget
+      // could end a few milliseconds in, and did, under load. 1s is what it guarantees.
       expect(Date.now() - started).toBeGreaterThanOrEqual(1000);
     });
 

@@ -106,12 +106,16 @@ export const reasonOf = (error: unknown): string => {
 class TimedOut extends Error {}
 
 /**
- * Run `scenario` with `limitMs` to do it in. Resolves with null on a pass and the reason on a
- * fail; never rejects. A scenario still running at its limit is left to finish on its own —
- * nothing can cancel a promise — with its signal set so its waits give up. Its eventual
- * rejection is not reported as unhandled: the race below has already subscribed to it.
+ * Run `scenario` with `limitMs` to do it in. Resolves with a null reason on a pass and the reason
+ * on a fail, and says whether the fail was the limit running out; never rejects. A scenario still
+ * running at its limit is left to finish on its own — nothing can cancel a promise — with its
+ * signal set so its waits give up. Its eventual rejection is not reported as unhandled: the race
+ * below has already subscribed to it.
  */
-const runOne = async (scenario: Scenario, limitMs: number): Promise<string | null> => {
+const runOne = async (
+  scenario: Scenario,
+  limitMs: number
+): Promise<{ reason: string | null; timedOut: boolean }> => {
   const signal = { aborted: false };
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_resolve, reject) => {
@@ -126,14 +130,16 @@ const runOne = async (scenario: Scenario, limitMs: number): Promise<string | nul
     running = Promise.resolve(scenario.run(signal));
   } catch (error) {
     if (timer !== undefined) clearTimeout(timer);
-    return reasonOf(error);
+    return { reason: reasonOf(error), timedOut: false };
   }
 
   try {
     await Promise.race([running, timeout]);
-    return null;
+    return { reason: null, timedOut: false };
   } catch (error) {
-    return error instanceof TimedOut ? error.message : reasonOf(error);
+    return error instanceof TimedOut
+      ? { reason: error.message, timedOut: true }
+      : { reason: reasonOf(error), timedOut: false };
   } finally {
     if (timer !== undefined) clearTimeout(timer);
   }
@@ -151,6 +157,10 @@ export const runScenarios = async (
   const now = options.now ?? Date.now;
   const deadline = now() + options.budgetMs;
   const seen = new Set<string>();
+  // A timer can fire a millisecond before Date.now() says its time is up, so a scenario cut off at
+  // the budget would leave the next one a millisecond of it. Hitting the budget's own cap is the
+  // budget being spent, whatever the clock still reads.
+  let budgetSpent = false;
   let passed = 0;
   let failed = 0;
   let skipped = 0;
@@ -181,14 +191,15 @@ export const runScenarios = async (
     }
 
     const left = deadline - now();
-    if (left <= 0) {
+    if (budgetSpent || left <= 0) {
       options.print(failLine(id, `not run: the suite's ${options.budgetMs} ms budget is spent`));
       failed += 1;
       continue;
     }
 
     const limit = Math.min(scenario.timeoutMs ?? options.defaultTimeoutMs, left);
-    const reason = await runOne(scenario, limit);
+    const { reason, timedOut } = await runOne(scenario, limit);
+    if (timedOut && limit === left) budgetSpent = true;
     if (reason === null) {
       options.print(passLine(id));
       passed += 1;

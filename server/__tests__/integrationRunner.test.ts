@@ -43,14 +43,15 @@ const scenario = (
 
 const run = async (
   scenarios: Scenario[],
-  over: { budgetMs?: number; defaultTimeoutMs?: number; mode?: Mode } = {}
+  over: { budgetMs?: number; defaultTimeoutMs?: number; mode?: Mode; now?: () => number } = {}
 ) => {
   const lines: string[] = [];
   const result = await runScenarios(scenarios, {
     print: (line) => lines.push(line),
     mode: over.mode ?? 'standalone',
     defaultTimeoutMs: over.defaultTimeoutMs ?? 1_000,
-    budgetMs: over.budgetMs ?? 10_000
+    budgetMs: over.budgetMs ?? 10_000,
+    ...(over.now === undefined ? {} : { now: over.now })
   });
   return { lines, result };
 };
@@ -128,19 +129,23 @@ describe('runScenarios', () => {
 
   it('fails a hung scenario at its own timeout, signals it, and moves on', async () => {
     let seen: RunSignal | null = null;
-    const started = Date.now();
-    const { lines } = await run([
-      scenario(
-        'hangs',
-        (signal) => {
-          seen = signal;
-          return never();
-        },
-        50
-      ),
-      scenario('after', async () => {})
-    ]);
-    expect(Date.now() - started).toBeLessThan(900);
+    // The default timeout is made enormous so that a runner which ignored the scenario's own 50 ms
+    // would hang until vitest's test timeout fails the case, instead of racing a wall-clock bound
+    // that a loaded machine can overrun.
+    const { lines } = await run(
+      [
+        scenario(
+          'hangs',
+          (signal) => {
+            seen = signal;
+            return never();
+          },
+          50
+        ),
+        scenario('after', async () => {})
+      ],
+      { defaultTimeoutMs: 600_000 }
+    );
     expect(lines).toEqual([
       'integration: FAIL hangs: timed out after 50 ms',
       'integration: PASS after',
@@ -189,11 +194,38 @@ describe('runScenarios', () => {
       { budgetMs: 60 }
     );
     expect(ran).toEqual([]);
-    expect(lines[0]).toMatch(/^integration: FAIL eats-the-budget: timed out after (5\d|60) ms$/);
+    // The cap is the budget left when the scenario started, which is the whole 60 ms less however
+    // long the runner took to get there: that is not 50 or more on a loaded machine.
+    const capped = /^integration: FAIL eats-the-budget: timed out after (\d+) ms$/.exec(lines[0]!);
+    expect(capped).not.toBeNull();
+    expect(Number(capped![1])).toBeGreaterThan(0);
+    expect(Number(capped![1])).toBeLessThanOrEqual(60);
     expect(lines[1]).toBe(
       "integration: FAIL never-reached: not run: the suite's 60 ms budget is spent"
     );
     expect(lines[2]).toBe('integration: done 0 passed 2 failed');
+    expect(result).toEqual({ passed: 0, failed: 2, skipped: 0 });
+  });
+
+  it('counts a scenario cut off at the budget as spending it, whatever the clock still reads', async () => {
+    // A timer can fire a millisecond before Date.now() agrees; a clock that never moves is that
+    // case in its limit, and the next scenario must still not run.
+    const ran: string[] = [];
+    const { lines, result } = await run(
+      [
+        scenario('eats-the-budget', never, 10_000),
+        scenario('never-reached', async () => {
+          ran.push('never-reached');
+        })
+      ],
+      { budgetMs: 30, now: () => 0 }
+    );
+    expect(ran).toEqual([]);
+    expect(lines).toEqual([
+      'integration: FAIL eats-the-budget: timed out after 30 ms',
+      "integration: FAIL never-reached: not run: the suite's 30 ms budget is spent",
+      'integration: done 0 passed 2 failed'
+    ]);
     expect(result).toEqual({ passed: 0, failed: 2, skipped: 0 });
   });
 

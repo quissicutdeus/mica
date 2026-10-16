@@ -503,6 +503,9 @@ describe('the first-run grace', () => {
   const markerWrites = () => calls().filter((c) => c.sql.startsWith('INSERT IGNORE INTO'));
 
   it('on the first start: counts, writes the marker, warns once, and deletes nothing', async () => {
+    // A pinned clock makes the announced deadline exact; afterEach restores real timers.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-03-01T12:00:00.000Z'));
     db.markers.clear();
     expired('mica_messages', 42);
 
@@ -519,10 +522,12 @@ describe('the first-run grace', () => {
       /^\[mica\] retention: 42 mica_messages rows are older than 180 days and will be deleted from \S+Z\. Set mica_message_retention "0" to keep them forever\.$/
     );
     const deadline = Date.parse(/deleted from (\S+)\. /.exec(line)![1]);
-    expect(Math.abs(deadline - (Date.now() + RETENTION_GRACE_MS))).toBeLessThan(5000);
+    expect(deadline).toBe(Date.now() + RETENTION_GRACE_MS);
   });
 
   it('keeps the original deadline across a restart inside the grace', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-03-01T12:00:00.000Z'));
     db.markers.clear();
     db.markers.set('retention:mica_messages:180d', 10 * 60 * 60);
     expired('mica_messages', 42);
@@ -534,7 +539,7 @@ describe('the first-run grace', () => {
     expect(console.warn).not.toHaveBeenCalled();
     const line = String((console.log as any).mock.calls.at(-1)[0]);
     const deadline = Date.parse(/before (\S+)\.$/.exec(line)![1]);
-    expect(Math.abs(deadline - (Date.now() + 14 * 60 * 60 * 1000))).toBeLessThan(5000);
+    expect(deadline).toBe(Date.now() + 14 * 60 * 60 * 1000);
   });
 
   it('prunes on a start 25 hours after the marker', async () => {
