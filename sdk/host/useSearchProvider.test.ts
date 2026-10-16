@@ -92,7 +92,10 @@ describe('useSearchProvider', () => {
     expect(hitsFor('notes', 'hi')).toEqual([]);
     expect(hitsFor('snek', 'hi')).toEqual(['High score']);
     searchQuery.set('hig');
-    expect(warn).toHaveBeenCalledTimes(1);
+    // Only this warning is counted: `guarded` also warns, once per module lifetime, that the
+    // hook fell back to the system host, and which test hears that depends on file order.
+    const thrown = warn.mock.calls.filter(([msg]) => String(msg).includes('provider threw'));
+    expect(thrown).toHaveLength(1);
     warn.mockRestore();
   });
 

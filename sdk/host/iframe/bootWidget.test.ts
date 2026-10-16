@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // @vitest-environment jsdom
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { flushSync } from 'svelte';
 import { bootAddOn } from './boot';
 import { hostFor, resetHostsForTest } from '../current';
@@ -70,7 +70,26 @@ async function boot(payload: HydratePayload, roots: Parameters<typeof bootAddOn>
   return { sent, parent };
 }
 
+// Every boot leaves listeners on the shared jsdom `window` — the transport's `message`
+// handler and the `keydown`/`focusin` forwarders — and `bootAddOn` returns no teardown. Left
+// in place, an earlier app-mode boot's forwarder posts a key to whichever `parent` the next
+// test stubs, so each test removes what it added rather than relying on file order.
+let added: Parameters<typeof window.addEventListener>[] = [];
+beforeEach(() => {
+  added = [];
+  const add = window.addEventListener.bind(window);
+  vi.spyOn(window, 'addEventListener').mockImplementation(
+    (...args: Parameters<typeof window.addEventListener>) => {
+      added.push(args);
+      add(...args);
+    }
+  );
+});
+
 afterEach(() => {
+  for (const [type, listener, options] of added) {
+    window.removeEventListener(type, listener, options);
+  }
   resetHostsForTest();
   document.body.innerHTML = '';
   document.documentElement.removeAttribute('style');
@@ -130,7 +149,6 @@ describe('bootAddOn in a widget frame (MICA-245)', () => {
     expect(document.body.textContent).toContain('widget 2x1');
   });
 
-  // Last on purpose: an app-mode boot leaves its `keydown` forwarder on `window`.
   it('forwards a key the player presses in an app frame while it is still hydrating', async () => {
     const sent: ToShell[] = [];
     const parent = { postMessage: (msg: ToShell) => sent.push(msg) };
