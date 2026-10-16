@@ -45,6 +45,15 @@ export class Freelook {
   private static freelookTick: number | null = null;
   private static flushTick: number | null = null;
   private static profile: ControlProfile = 'freelook';
+  /**
+   * Whether keep-input has been on at any point since the last `resetFreelook` — that is,
+   * during this open of the device (MICA-370).
+   *
+   * Only keep-input can strand a held control, so only a close that follows it needs
+   * {@link flushHeldControls}. Every close used to flush, which swallowed about 160ms of the
+   * player's input after every phone close, freelook or not.
+   */
+  private static keptInput = false;
 
   /**
    * Force every control to read as released for a few frames.
@@ -87,6 +96,7 @@ export class Freelook {
     Freelook.cancelFlush();
     Freelook.isFreelookActive = true;
     Freelook.profile = profile;
+    Freelook.keptInput = true;
     SetNuiFocus(true, false);
     SetNuiFocusKeepInput(true);
 
@@ -116,7 +126,8 @@ export class Freelook {
     Freelook.isFreelookActive = false;
     SetNuiFocusKeepInput(false);
     SetNuiFocus(false, false);
-    Freelook.flushHeldControls();
+    if (Freelook.keptInput) Freelook.flushHeldControls();
+    Freelook.keptInput = false;
 
     if (Freelook.freelookTick !== null) {
       clearTick(Freelook.freelookTick);
