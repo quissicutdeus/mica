@@ -118,6 +118,29 @@ const activeCalls: Record<number, ActiveCall> = {};
 const playerCalls: Record<number, number> = {}; // Source -> CallID (Fast lookup)
 
 /**
+ * The character each player source carried when it took the key it holds in `playerCalls`
+ * (MICA-383), so a character switch ends only a call the previous character took.
+ *
+ * qbx seats the next character, then awaits a client callback, and only then announces the load
+ * (`qbx_core/server/player.lua:1055`, `:1058`, `:1064`). Inside that await the framework names
+ * the new character, so they can be rung, or dial; asking the framework at the announcement
+ * would name them too, and could not tell their call from the previous character's.
+ *
+ * Read only while the source holds a key, and every new key a player takes goes through
+ * `claimCallKey`, so an entry left behind by a released key is overwritten before it is read
+ * again. Cleared on drop; one entry per connected source.
+ */
+const keyCharacter = new Map<number, string>();
+
+/** Give `src` the key to `callId`, recording who it is now. Not for a line's pseudo-source. */
+function claimCallKey(src: number, callId: number): void {
+  playerCalls[src] = callId;
+  const citizenid = FrameworkBridge.getCitizenId(src);
+  if (citizenid) keyCharacter.set(src, citizenid);
+  else keyCharacter.delete(src);
+}
+
+/**
  * A call id, which is also the call's pma-voice channel. The server puts both parties in it
  * and takes them out (MICA-341); the client never joins one itself. pma-voice's own
  * `pma-voice:setPlayerCall` net event still lets any client ask to join any channel, so
@@ -160,6 +183,7 @@ const freshCallId = (): number => {
 export const __resetCalls = (): void => {
   for (const key of Object.keys(activeCalls)) delete activeCalls[Number(key)];
   for (const key of Object.keys(playerCalls)) delete playerCalls[Number(key)];
+  keyCharacter.clear();
   nextLineSource = FIRST_LINE_SOURCE;
   __resetSpeakerphone();
 };
@@ -554,7 +578,7 @@ export function injectIncomingCall(targetSrc: number, callerPhone: string): numb
   };
 
   activeCalls[callId] = call;
-  playerCalls[targetSrc] = callId;
+  claimCallKey(targetSrc, callId);
   emitNet('mica:client:phone:incoming', targetSrc, { from: callerPhone, callId });
   return callId;
 }
@@ -891,8 +915,8 @@ export async function placeCall(
   };
 
   activeCalls[callId] = call;
-  playerCalls[src] = callId;
-  playerCalls[targetSrc] = callId;
+  claimCallKey(src, callId);
+  claimCallKey(targetSrc, callId);
 
   // Notify receiving player
   emitNet('mica:client:phone:incoming', targetSrc, {
@@ -930,7 +954,7 @@ async function connectLineCall(
   // without claiming, a second `start` inside it passes the busy check too, and its call
   // overwrites this key, orphaning an `ActiveCall` that neither `end` nor `playerDropped`
   // can reach again. Every path out of here below either connects on this key or releases it.
-  playerCalls[src] = callId;
+  claimCallKey(src, callId);
 
   const verdict = await askLine(line, { from: callerPhone, source: src, callId });
 
@@ -1088,7 +1112,7 @@ function ringGroup(
   };
   // `playerCalls[src]` is already this call — claimed before the await in `connectLineCall`.
   for (const candidate of ringing.keys()) {
-    playerCalls[candidate] = callId;
+    claimCallKey(candidate, callId);
     // `line` is new and optional: a client that does not read it shows an ordinary call.
     notifyParty('mica:client:phone:incoming', candidate, {
       from: callerPhone,
@@ -1213,6 +1237,7 @@ onNet('mica:server:phone:end', (...args: unknown[]) => {
 on('playerDropped', () => {
   const src = source;
   releaseCallFor(src, src);
+  keyCharacter.delete(src);
   speakerDropped(src);
   refusalLoggedAt.delete(src);
 });
@@ -1232,10 +1257,18 @@ on('playerDropped', () => {
  * second announcement of the same load, which on qbx arrives after a spawn screen the player
  * can take a call on.
  *
+ * Only a call the previous character took (MICA-383): on qbx the next character can be rung, or
+ * dial, between being seated and being announced (`keyCharacter`), and that call is theirs. A
+ * key with no character recorded is ended, as every key was before. One taken after a logout was
+ * announced, while the framework still names the character leaving, is theirs and ended here.
+ *
  * `refusalLoggedAt` is not cleared: it limits console lines per connection, not per character.
  */
 forgetOnPlayerLoaded('phone-call', (src, previousCitizenid) => {
-  releaseCallFor(src, undefined, { src, citizenid: previousCitizenid });
+  const holder = playerCalls[src] ? keyCharacter.get(src) : undefined;
+  if (holder === undefined || holder === previousCitizenid) {
+    releaseCallFor(src, undefined, { src, citizenid: previousCitizenid });
+  }
   speakerCharacterChanged(src);
 });
 

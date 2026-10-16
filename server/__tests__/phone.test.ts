@@ -1370,6 +1370,71 @@ describe('speakerphone', () => {
     });
 
     /**
+     * MICA-383: qbx's `CreatePlayer` seats the new character in `QBX.Players`, then awaits a
+     * client callback (`qbx_core/server/player.lua:1055`, `:1058`), and only then announces the
+     * load (`:1064`). Inside that await the framework already names the new character, so a call
+     * they take there is theirs: the announcement must not end it, nor file it under the
+     * character before them. The rung case is the one no client can choose — somebody else dialled.
+     */
+    const announce = async (src: number) => {
+      globalHandlers.get('QBCore:Server:PlayerLoaded')!({ PlayerData: { source: src } });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    };
+
+    it('leaves a call the new character placed before the load was announced', async () => {
+      bridge.players.set(2, 'CID_NEW');
+      await fire(START, 2, '555-0003');
+      expect(isInCall(2)).toBe(true);
+
+      await announce(2);
+
+      expect(forgetterErrors()).toEqual([]);
+      expect(isInCall(2)).toBe(true);
+      expect(isInCall(3)).toBe(true);
+      expect(emitCalls().filter(([event]) => event === 'mica:client:phone:ended')).toEqual([]);
+      expect(createCalls()).toEqual([]);
+    });
+
+    it('leaves the new character ringing when they were rung before the announcement', async () => {
+      bridge.players.set(2, 'CID_NEW');
+      await fire(START, 1, '555-0002');
+      expect(isInCall(2)).toBe(true);
+
+      await announce(2);
+
+      expect(isInCall(1)).toBe(true);
+      expect(isInCall(2)).toBe(true);
+      expect(emitCalls().filter(([event]) => event === 'mica:client:phone:ended')).toEqual([]);
+      expect(createCalls()).toEqual([]);
+
+      // And it is theirs when it ends: the missed row is the new character's.
+      await fire(END, 1);
+      const rows = createCalls().map(([, params]) => params);
+      expect(rows[1]).toEqual(expect.arrayContaining(['CID_NEW', 'missed', 0]));
+      expect(rows.flat()).not.toContain('CID_TARGET');
+    });
+
+    /**
+     * qbx and qb-core name the player as the unload is announced too; and qbx still names them
+     * through `Logout`'s `Wait(200)` (`qbx_core/server/player.lua:747`, `:752`). A call taken
+     * there is the previous character's, and the next load still ends it under their name.
+     */
+    it('still ends a call taken after the logout was announced, under who took it', async () => {
+      globalHandlers.get('QBCore:Server:OnPlayerUnload')!(2);
+      await fire(START, 2, '555-0003');
+      expect(isInCall(2)).toBe(true);
+
+      await loadCharacter(2, 'CID_NEW');
+
+      expect(isInCall(2)).toBe(false);
+      expect(isInCall(3)).toBe(false);
+      const rows = createCalls().map(([, params]) => params);
+      expect(rows[0]).toEqual(expect.arrayContaining(['CID_TARGET', 'outgoing', '555-0003']));
+      expect(rows[1]).toEqual(expect.arrayContaining(['CID_THIRD', 'missed', 0]));
+      expect(rows.flat()).not.toContain('CID_NEW');
+    });
+
+    /**
      * qbx announces a load again only when the player confirms a spawn, and the character is
      * loaded and callable on that screen the whole time. The second announcement is the same
      * character, and must not end a call they answered there.
