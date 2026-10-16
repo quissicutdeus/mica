@@ -305,10 +305,17 @@ export const openApp = (appName: string, props: Record<string, unknown> = {}) =>
    * than a store — so without re-setting the array the app would sit on its loading
    * placeholder until some other state happened to change. Idempotent: `loadComponent`
    * caches both the module and the in-flight promise.
+   *
+   * Only on a first load (MICA-375). A nudge re-runs every resident app's item in `Shell`'s
+   * `{#each}`, so one after every switch to an app whose code was already here bought a
+   * second pass over the whole list for nothing. Nor for an add-on, whose chunk this never
+   * is: `loadComponent` answers `undefined` for one, and `Shell` renders its frame from the
+   * manifest, which is already there.
    */
-  void appRegistryStore
-    .loadComponent(id, device)
-    .then(() => runningApps.update((apps) => [...apps]));
+  if (appRegistryStore.getComponent(id, device)) return;
+  void appRegistryStore.loadComponent(id, device).then((component) => {
+    if (component) runningApps.update((apps) => [...apps]);
+  });
 };
 
 /**

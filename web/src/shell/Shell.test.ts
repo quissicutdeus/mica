@@ -24,6 +24,13 @@ import { closeControlCenter, openControlCenter, orderedToggles } from './state/c
 import { searchNeedle, searchProviders } from './state/searchProviders';
 import type { AppManifest } from '@mica/sdk';
 import ResidentProbe from './__fixtures__/ResidentProbe.svelte';
+import { hostForApp } from '../../../sdk/host/inProcess/createInProcessHost';
+
+// Passed through, only counted: MICA-375 is about how often the shell asks.
+vi.mock('../../../sdk/host/inProcess/createInProcessHost', async (actual) => {
+  const real = await actual<typeof import('../../../sdk/host/inProcess/createInProcessHost')>();
+  return { ...real, hostForApp: vi.fn(real.hostForApp) };
+});
 
 /**
  * jsdom has no Web Animations. The frame's fly-in and fly-out run on `element.animate`, and
@@ -195,5 +202,62 @@ describe('Shell mounts the current app first after an open (MICA-356)', () => {
     openControlCenter();
     flushSync();
     expect(probeTileUp()).toBe(true);
+  });
+});
+
+describe("Shell asks for an app's host once, not on every pass (MICA-375)", () => {
+  const asksFor = (appId: string) =>
+    vi.mocked(hostForApp).mock.calls.filter(([id]) => id === appId).length;
+
+  beforeAll(async () => {
+    for (const id of ['calculator', 'contacts']) await appRegistryStore.loadComponent(id, 'phone');
+  }, 60_000);
+
+  afterEach(() => {
+    cleanup();
+    closeAllApps();
+    openDevice.set(null);
+  });
+
+  it('asks once for a resident app however often the player switches', async () => {
+    await renderOpen();
+    vi.mocked(hostForApp).mockClear();
+
+    openApp('calculator');
+    flushSync();
+    for (let i = 0; i < 5; i++) {
+      goHome();
+      flushSync();
+      openApp('contacts');
+      flushSync();
+      openApp('calculator');
+      flushSync();
+    }
+    expect(asksFor('calculator')).toBe(1);
+    expect(asksFor('contacts')).toBe(1);
+  });
+
+  it('asks again when the app comes back with a different manifest', async () => {
+    await renderOpen();
+    openApp(PROBE);
+    flushSync();
+    vi.mocked(hostForApp).mockClear();
+
+    // A reinstall: a new manifest object under the same id, which may declare other
+    // permissions — the one case where the remembered host can be the wrong one.
+    appRegistryStore.registerApp(
+      {
+        id: PROBE,
+        name: 'Resident Probe',
+        tile: { bg: 'bg-gray-800' },
+        core: true
+      } as unknown as AppManifest,
+      ResidentProbe
+    );
+    goHome();
+    flushSync();
+    openApp(PROBE);
+    flushSync();
+    expect(asksFor(PROBE)).toBe(1);
   });
 });

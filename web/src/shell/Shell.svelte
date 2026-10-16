@@ -66,6 +66,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import NotNetworkScreen from './NotNetworkScreen.svelte';
   import HostProvider from '../../../sdk/HostProvider.svelte';
   import { hostForApp } from '../../../sdk/host/inProcess/createInProcessHost';
+  import { hostFor } from '../../../sdk/host/current';
+  import type { Host } from '../../../sdk/host/protocol';
+  import type { AppManifest } from '../../../sdk/manifest';
   import { installSystemHost } from '../../../sdk/host/inProcess/system';
   import { clampedSignalLevel } from './state/signal';
   import { audio } from './state/audio';
@@ -590,6 +593,29 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * add-on's own `onTyping` report (`AddOnFrame`'s frame has no real DOM focus event
    * of its own to drive `handleFocusIn`/`handleFocusOut`).
    */
+  /**
+   * Each resident app's `Host`, remembered per app id (MICA-375).
+   *
+   * The template asked `hostForApp` afresh every time the `{#each}` below re-ran its items —
+   * every switch, every nudge — and for a core app that compares `ALL_PERMISSIONS` against
+   * itself with an `every`/`includes`, quadratic in the permission table, to arrive at the
+   * host it already had. Asked again only when the answer could differ: a different manifest
+   * object (a reinstall, a reloaded dev add-on, which may declare other permissions), or a
+   * host registry no longer holding the one remembered here (something else re-registered
+   * the id — an add-on widget's frame asks `hostForApp` too).
+   */
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity -- a cache the template writes while rendering; reactive, it would make each read subscribe to its own write
+  const appHosts = new Map<string, { manifest: AppManifest | undefined; host: Host }>();
+  const hostOf = (appId: string, manifest: AppManifest | undefined): Host => {
+    const remembered = appHosts.get(appId);
+    if (remembered && remembered.manifest === manifest && hostFor(appId) === remembered.host) {
+      return remembered.host;
+    }
+    const host = hostForApp(appId, manifest);
+    appHosts.set(appId, { manifest, host });
+    return host;
+  };
+
   const reportTyping = (typing: boolean) => fetchNui('setTyping', { typing }).catch(() => {});
 
   /**
@@ -917,7 +943,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <AddOnFrame
                 appId={instance.id}
                 {manifest}
-                host={hostForApp(instance.id, manifest)}
+                host={hostOf(instance.id, manifest)}
                 props={instance.props}
                 active={isActive}
                 onKey={handleFrameKey}
@@ -932,7 +958,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           {/if}
         {:else if AppComponent}
           <ErrorBoundary appName={manifest?.name ?? instance.id}>
-            <HostProvider host={hostForApp(instance.id, manifest)}>
+            <HostProvider host={hostOf(instance.id, manifest)}>
               <div class="h-full w-full" inert={isNetworkBlocked}>
                 <AppComponent onback={goHome} {...instance.props} />
               </div>

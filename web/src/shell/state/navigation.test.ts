@@ -33,6 +33,8 @@ import {
 import { setActiveDevice } from './device';
 import { openDevice } from './phoneOpen';
 import { ownerConfig, DEFAULT_OWNER_CONFIG } from './ownerConfig';
+import { appRegistryStore } from './registry';
+import type { AppComponent } from '../../../../sdk/manifest';
 import * as fetchNuiModule from '../../nui/fetchNui';
 
 const names = () => get(runningApps).map((a) => a.id);
@@ -427,5 +429,54 @@ describe('what is mounted since the frame was created (MICA-356)', () => {
     openApp('notes');
     closeAllApps();
     expect(mounted()).toEqual([]);
+  });
+});
+
+/**
+ * MICA-375: `openApp` re-sets `runningApps` after a load only when there was something to
+ * load. Each re-set re-runs every resident app's item in `Shell`'s `{#each}`.
+ */
+describe('the nudge after a chunk lands (MICA-375)', () => {
+  const component = (() => {}) as unknown as AppComponent;
+
+  /** How many times `runningApps` publishes while `run` and its promises play out. */
+  const publishes = async (run: () => void): Promise<number> => {
+    let count = -1; // `subscribe` calls once with the current value
+    const stop = runningApps.subscribe(() => count++);
+    run();
+    // A macrotask: every promise the open chained has settled by the time it runs.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    stop();
+    return count;
+  };
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('nudges once the first load of an app delivers its component', async () => {
+    vi.spyOn(appRegistryStore, 'getComponent').mockReturnValue(undefined);
+    const load = vi.spyOn(appRegistryStore, 'loadComponent').mockResolvedValue(component);
+
+    // One for the open itself, one for the nudge once the component is here.
+    expect(await publishes(() => openApp('calculator'))).toBe(2);
+    expect(load).toHaveBeenCalledWith('calculator', 'phone');
+  });
+
+  it('does not load or nudge for an app whose component is already here', async () => {
+    vi.spyOn(appRegistryStore, 'getComponent').mockReturnValue(component);
+    const load = vi.spyOn(appRegistryStore, 'loadComponent').mockResolvedValue(component);
+
+    openApp('calculator');
+    goHome();
+    expect(await publishes(() => openApp('calculator'))).toBe(1);
+    expect(load).not.toHaveBeenCalled();
+  });
+
+  it('does not nudge when the load brings no component (an add-on, or a failed chunk)', async () => {
+    vi.spyOn(appRegistryStore, 'getComponent').mockReturnValue(undefined);
+    vi.spyOn(appRegistryStore, 'loadComponent').mockResolvedValue(undefined);
+
+    expect(await publishes(() => openApp('notes'))).toBe(1);
   });
 });
