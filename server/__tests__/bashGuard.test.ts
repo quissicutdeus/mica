@@ -155,6 +155,63 @@ describe('the Bash guard blocks what AGENTS.md §2.1 says it blocks', () => {
   });
 });
 
+/*
+ * The force rule judges the push's own arguments, not the whole chain. A `-f`
+ * that belongs to checkout, clean or rm in the same command is not a force-push
+ * (the first case below is a real command that was refused for it), and every
+ * real force form must stay refused wherever it sits in a chain.
+ */
+const SHORT_F = '-' + 'f';
+const SHORT_FU = '-' + 'fu';
+const LEASE = FORCE + '-with-lease';
+const INCLUDES = FORCE + '-if-includes';
+const PLUS_REF = '+' + 'HEAD:refs/heads/dev';
+const MIRROR = '--mir' + 'ror';
+
+describe('the Bash guard reads only the push for a force flag', () => {
+  it.each([
+    [
+      'a push by refspec after a checkout with its own force flag',
+      `cd /repo && W=/tmp/w && git -C $W checkout -q ${SHORT_F} --detach 9216d818 && git -C $W clean -fdq && git -C $W status --short | wc -l && git -C $W push origin 9216d818:refs/heads/dev > $W/../p.log 2>&1; echo rc=$?; tail -2 $W/../p.log`
+    ],
+    ['a checkout -f before a plain push', `git checkout ${SHORT_F} x && git push origin dev`],
+    ['an rm -f before a plain push', `rm ${SHORT_F} x.log; git push origin dev`],
+    ['a force flag after the push in another command', `git push origin dev; rm ${SHORT_F} x`],
+    ['a push by refspec', 'git -C /tmp/w push origin 9216d818:refs/heads/dev'],
+    ['a push with -u', 'git push -u origin dev'],
+    ['a push-option value', 'git push -o ci.skip origin dev']
+  ])('allows %s', (_label, command) => {
+    expect(run(command)).toBe(0);
+  });
+
+  it.each([
+    ['--force', `git push ${FORCE} origin dev`],
+    ['-f', `git push ${SHORT_F} origin dev`],
+    ['-f last', `git push origin dev ${SHORT_F}`],
+    ['a combined short flag', `git push ${SHORT_FU} origin dev`],
+    ['--force-with-lease', `git push ${LEASE} origin dev`],
+    ['--force-with-lease=ref', `git push ${LEASE}=dev origin dev`],
+    ['--force-if-includes', `git push ${INCLUDES} origin dev`],
+    ['an abbreviated long flag', `git push --for origin dev`],
+    ['a + refspec', `git push origin ${PLUS_REF}`],
+    ['--mirror', `git push ${MIRROR} backup`],
+    [
+      'a force push after a harmless command in a chain',
+      `git status && git push ${SHORT_F} origin dev`
+    ],
+    ['a force push followed by a harmless command', `git push ${FORCE} origin dev; echo done`],
+    ['a force push after git -C', `git -C /tmp/w push ${FORCE} origin dev`],
+    [
+      'a force push after a checkout -f in the same chain',
+      `git checkout ${SHORT_F} x && git push ${SHORT_F} origin dev`
+    ],
+    ['a force push through sudo', `sudo git push ${SHORT_F} origin dev`],
+    ['a force push inside sh -c', `sh -c 'git push ${FORCE} origin dev'`]
+  ])('blocks %s', (_label, command) => {
+    expect(run(command)).toBe(BLOCKED);
+  });
+});
+
 describe('the Bash guard blocks a gate whose exit code would be lost', () => {
   it.each([
     ['a gate piped into tail', `${PM} verify 2>&1 | tail -16`],
@@ -819,6 +876,13 @@ const expectMainBlocked = (command: string, cwd: string, env = mica): void => {
   expect(stderr).toContain(MOVES_MAIN);
 };
 
+/** Asserts the hook refused as a force-push, which it does in any repository. */
+const expectForceBlocked = (command: string, cwd: string, env = mica): void => {
+  const { status, stderr } = runAt(command, cwd, env);
+  expect(status).toBe(BLOCKED);
+  expect(stderr).toContain('a force-push can overwrite upstream history');
+};
+
 const expectAllowed = (command: string, cwd: string, env = mica): void => {
   const { status, stderr } = runAt(command, cwd, env);
   expect({ status, stderr }).toEqual({ status: 0, stderr: '' });
@@ -1191,25 +1255,37 @@ describe('the Bash guard and a push that moves main', () => {
   describe('sees every way of naming main, and a push that names no branch', () => {
     it.each([
       ['a remote of any name', `${GIT_PUSH} forgejo ${MAIN}`],
-      ['a plus before the name', `${GIT_PUSH} origin +${MAIN}`],
       ['the full ref', `${GIT_PUSH} origin refs/heads/${MAIN}`],
-      ['a plus and the full ref', `${GIT_PUSH} origin +refs/heads/${MAIN}`],
       ['a source and the full ref', `${GIT_PUSH} origin dev:refs/heads/${MAIN}`],
       ['a source and the name', `${GIT_PUSH} origin dev:${MAIN}`],
       ['every branch', `${GIT_PUSH} --all origin`],
-      ['a mirror', `${GIT_PUSH} --mirror origin`],
       ['the name quoted', `${GIT_PUSH} origin "${MAIN}"`],
       ['an option with a value in front', `${GIT_PUSH} -o ci.skip forgejo ${MAIN}`]
     ])('blocks %s', (_label, command) => {
       expectMainBlocked(command, MICA);
     });
 
+    // A `+` refspec and --mirror are force-pushes, and a force-push is refused
+    // whatever repository it is aimed at (AGENTS.md §2.1), so these are refused
+    // by the force rule before the main rule is asked, in this repository and in
+    // any other. The message is the force rule's, not "would move main".
+    it.each([
+      ['a plus before the name', `${GIT_PUSH} origin +${MAIN}`],
+      ['a plus and the full ref', `${GIT_PUSH} origin +refs/heads/${MAIN}`],
+      ['a mirror', `${GIT_PUSH} --mirror origin`]
+    ])('blocks %s as a force-push', (_label, command) => {
+      expectForceBlocked(command, MICA);
+    });
+
     it.each([
       ['a remote of any name', `${GIT_PUSH} forgejo ${MAIN}`],
-      ['every branch', `${GIT_PUSH} --all origin`],
-      ['a plus before the name', `${GIT_PUSH} origin +${MAIN}`]
+      ['every branch', `${GIT_PUSH} --all origin`]
     ])('lets %s through in another repository', (_label, command) => {
       expectAllowed(command, OTHER);
+    });
+
+    it('blocks a plus before the name in another repository too: a + push is a force-push anywhere', () => {
+      expectForceBlocked(`${GIT_PUSH} origin +${MAIN}`, OTHER);
     });
 
     it.each([
@@ -1266,12 +1342,18 @@ describe('the Bash guard and a push that moves main', () => {
     it.each([
       ['heads/ without refs/', `${GIT_PUSH} origin heads/${MAIN}`],
       ['a source and heads/', `${GIT_PUSH} origin dev:heads/${MAIN}`],
-      ['a plus and heads/', `${GIT_PUSH} origin +heads/${MAIN}`],
       ['an empty destination, which is a matching push', `${GIT_PUSH} origin :`],
-      ['a plus and an empty destination', `${GIT_PUSH} origin +:`],
       ['a source and an empty destination', `${GIT_PUSH} origin dev:`]
     ])('blocks %s', (_label, command) => {
       expectMainBlocked(command, MICA);
+    });
+
+    // A leading `+` makes these force-pushes, refused by the force rule first.
+    it.each([
+      ['a plus and heads/', `${GIT_PUSH} origin +heads/${MAIN}`],
+      ['a plus and an empty destination', `${GIT_PUSH} origin +:`]
+    ])('blocks %s as a force-push', (_label, command) => {
+      expectForceBlocked(command, MICA);
     });
 
     it.each([

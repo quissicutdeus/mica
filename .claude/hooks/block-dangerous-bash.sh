@@ -119,19 +119,12 @@ names_main() {
     cmd_grep 'push-of-main' "$1" "(origin|upstream)[[:space:]]+[+]?(refs/heads/|heads/)?main([^A-Za-z0-9_./-]|\$)|:(refs/heads/|heads/)?main([^A-Za-z0-9_./-]|\$)"
 }
 
-# A force-push is refused whatever repository it is aimed at. Any other push is
-# only flagged here: whether it moves THIS repository's main is judged by
-# check_main_push, further down, once the helpers it needs are defined.
+# A push is only flagged here: whether it is a force-push (check_force_push) or
+# moves THIS repository's main (check_main_push) is judged further down, once
+# the helpers they need are defined.
 main_push=
 case "$cmd" in
-    *push*)
-        case "$cmd" in
-            *--force* | *' -f '* | *' -f')
-                block "a force-push can overwrite upstream history"
-                ;;
-        esac
-        main_push=1
-        ;;
+    *push*) main_push=1 ;;
 esac
 
 # --------------------------------------------------------------------------
@@ -1270,6 +1263,76 @@ $segments
 EOF
 }
 
+# Returns 0 when the word $1, an argument of a push, forces it: a --force family
+# option (git accepts any unambiguous abbreviation, so everything from --for on),
+# --mirror, a short cluster holding f (-f, -fu, -uf), or a +refspec.
+fp_forces() {
+    case $1 in
+        --for* | --mirror | --mirror=*) return 0 ;;
+        --*) return 1 ;;
+        -*)
+            case ${1#-} in
+                *f*) return 0 ;;
+            esac
+            return 1
+            ;;
+        +*) return 0 ;;
+    esac
+    return 1
+}
+
+# One segment: refuses it when a git push in it carries a force argument. Only
+# the words AFTER the push word are read, so a -f that belongs to a neighbour
+# (checkout -f, rm -f, clean -f) never counts as the push's. Reached through
+# sudo, env or sh -c, the push is still found: quotes are stripped and the words
+# read flat, as mp_launched_git does.
+fp_segment() {
+    stripped=$(printf '%s' "$seg" | tr -d '\047\042\134')
+    set -f
+    # shellcheck disable=SC2086
+    set -- $stripped
+    set +f
+    fp_git=
+    fp_pushing=
+    for fp_x in "$@"; do
+        if [ -n "$fp_pushing" ]; then
+            if fp_forces "$fp_x"; then
+                block "a force-push can overwrite upstream history"
+            fi
+            continue
+        fi
+        bare "$fp_x"
+        case $w in
+            git | */git) fp_git=1 ;;
+            push) [ -z "$fp_git" ] || fp_pushing=1 ;;
+        esac
+    done
+}
+
+# A force-push is refused whatever repository it is aimed at. If the command
+# cannot be split into its simple commands, the whole text is read the old, flat
+# way, so an unreadable command can only be refused, never waved through.
+check_force_push() {
+    [ -n "$main_push" ] || return 0
+
+    if ! fp_segments=$(split_commands) || [ -z "$fp_segments" ]; then
+        case "$cmd" in
+            *--force* | *' -f '* | *' -f')
+                block "a force-push can overwrite upstream history"
+                ;;
+        esac
+        return 0
+    fi
+
+    # A here-document, not a pipe, so block's `exit 2` ends the guard.
+    while IFS= read -r seg; do
+        fp_segment
+    done <<EOF
+$fp_segments
+EOF
+}
+
+check_force_push
 check_main_push
 
 # --------------------------------------------------------------------------
