@@ -162,9 +162,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     items: () => (inChatSearchQuery.trim() ? [] : filteredMessages),
     olderAt: 'start',
     container: () => document.getElementById('messages-container'),
+    // A failed page answers "nothing arrived" here rather than rejecting: `usePagedList`
+    // awaits this with no `catch`, so a rejection would leave its loading guard set and stop
+    // the thread paging for good. The store keeps the cursor on a failure, so `hasMore` still
+    // says there is more and the next scroll asks again.
     loadOlder: () =>
       selectedConversationId
-        ? conversationsStore.loadOlderMessages(selectedConversationId)
+        ? conversationsStore.loadOlderMessages(selectedConversationId).catch((error) => {
+            console.warn('micaOS Messages: could not load older messages', error);
+            return false;
+          })
         : Promise.resolve(false),
     hasMore: () => (selectedConversationId ? !!$hasOlderMessages[selectedConversationId] : false)
   });
@@ -205,7 +212,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    */
   $effect(() => {
     const ids = renderedMessages.map((m) => m.id);
-    if (ids.length > 0) void loadMessageReactions(ids);
+    // A failed read keeps the chips already shown; the next page on screen asks again.
+    if (ids.length > 0) {
+      loadMessageReactions(ids).catch((error) => {
+        console.warn('micaOS Messages: could not load reactions', error);
+      });
+    }
   });
 
   const isMessageReadByOther = (msg: UIMessage) => {
@@ -337,7 +349,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     const conv = $conversationsStore.find((c) => c.id === id);
     initialUnreadCount = conv?.unreadCount || 0;
     selectedConversationId = id;
-    await conversationsStore.loadMessages(id);
+    try {
+      await conversationsStore.loadMessages(id);
+    } catch (error) {
+      // Whatever was held for the thread stays on screen, and nothing is marked read that the
+      // player has not been shown. Opening the conversation again is the retry.
+      console.warn('micaOS Messages: could not load the conversation', error);
+      return;
+    }
 
     const msgs = $messageStore[id] || [];
     if (initialUnreadCount > 0 && msgs.length > 0) {

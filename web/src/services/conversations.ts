@@ -3,10 +3,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { writable, derived, get } from 'svelte/store';
-import { call, callOr } from '../nui/call';
+import { call } from '../nui/call';
 import { conversationsContract } from '@mica/shared/contracts/conversations';
 import { messagesContract } from '@mica/shared/contracts/messages';
-import type { Contact, Conversation } from '@mica/shared/types';
+import type { Contact, Conversation, ReactionSummary } from '@mica/shared/types';
 import type { UIConversation, UIMessage } from '@mica/sdk';
 import { byNewest } from '../../../sdk/createCrudStore';
 import { createPagedStore, type PageReader } from '../../../sdk/createPagedStore';
@@ -283,17 +283,25 @@ function createMessagesStore() {
    * A quoted message is resolved against the page it arrives with; `withReplies` below
    * re-resolves the whole held thread once pages are joined, because a reply on the newest
    * page may quote a message on an older one that only arrives later.
+   *
+   * **A failure throws**, before anything touches the held thread or its cursor. This was
+   * `callOr` with an empty page as the default, and an empty page is exactly what the end of
+   * a thread looks like: a failed open showed an empty conversation, and a failed older page
+   * set the cursor to `null`, so the thread stopped paging for good on one bad request. A
+   * reply with no `rows` list is not an answer either, for the same reason.
    */
   const fetchThreadPage = async (conversationId: number, cursor: number | null) => {
-    const page = await callOr(
+    const page = await call(
       messagesContract,
       'get',
       cursor === null
         ? { conversation_id: conversationId }
-        : { conversation_id: conversationId, cursor },
-      { rows: [], nextCursor: null }
+        : { conversation_id: conversationId, cursor }
     );
-    const rows = Array.isArray(page?.rows) ? page.rows : [];
+    if (!page || !Array.isArray(page.rows)) {
+      throw new Error(`messages:get answered without rows for thread ${conversationId}`);
+    }
+    const rows = page.rows;
     const mapped: UIMessage[] = rows.map((m) => ({
       ...m,
       // The server answers "did the reader write this" itself (MICA-339), and a text from a
@@ -426,6 +434,9 @@ function createMessagesStore() {
      * way MICA-197 did it for conversations. The rest of the thread arrives through
      * `loadOlderMessages` as the player scrolls up; `MAX_CACHED_THREADS` bounds how many
      * threads are held, and the cursor bounds how much of each one is.
+     *
+     * A failed read rejects and leaves whatever was held for the thread, and its cursor,
+     * untouched — opening it again is the retry.
      */
     loadMessages: async (conversationId: number) => {
       activeConversationId.set(conversationId);
@@ -450,6 +461,9 @@ function createMessagesStore() {
      * must not be able to re-fetch the newest page into the middle of the thread. Prepends,
      * because the page is older than everything held; the scroll compensation that keeps the
      * reader in place is `usePagedList`'s, around the call.
+     *
+     * A failed page rejects with the cursor where it was, so `hasOlderMessages` still says
+     * there is more and the next scroll asks again; only a real empty page ends the thread.
      */
     loadOlderMessages: async (conversationId: number) => {
       const cursor = get(threadCursors)[conversationId];
@@ -778,7 +792,15 @@ export const unreadMessagesCount = derived(
  * deliberate scope of this pass rather than an oversight.
  */
 export const messageReactions = createReactionStore({
-  load: (ids) => callOr(messagesContract, 'reactionsFor', { target_ids: ids }, {}),
+  // Throws on failure or on a reply that is not a map, so the store keeps the chips it holds:
+  // `{}` here answered "no reactions" for every message asked about and wiped them (MICA-384).
+  load: async (ids) => {
+    const reply: unknown = await call(messagesContract, 'reactionsFor', { target_ids: ids });
+    if (!reply || typeof reply !== 'object' || Array.isArray(reply)) {
+      throw new Error('messages:reactionsFor answered with an unexpected shape');
+    }
+    return reply as Record<number, ReactionSummary>;
+  },
   react: (messageId, emoji) => call(messagesContract, 'react', { message_id: messageId, emoji }),
   unreact: (messageId, emoji) => call(messagesContract, 'unreact', { message_id: messageId, emoji })
 });

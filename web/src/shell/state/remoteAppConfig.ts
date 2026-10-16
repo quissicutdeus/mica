@@ -26,6 +26,31 @@ import { setTrustedRemoteAppHosts } from '../../../../sdk/remoteAppSecurity';
  */
 const NO_CONFIG: RemoteAppConfigPayload = { hosts: [], catalogUrl: '' };
 
+/** The first retry after a failed ask, doubling to `RETRY_MAX_MS` while it keeps failing. */
+const RETRY_FIRST_MS = 1_000;
+const RETRY_MAX_MS = 60_000;
+
+/** The last configuration the client actually answered with, once there is one. */
+let answered: RemoteAppConfigPayload | null = null;
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
+let retryDelay = RETRY_FIRST_MS;
+
+const apply = (config: RemoteAppConfigPayload) => {
+  setTrustedRemoteAppHosts(config.hosts);
+  setRemoteCatalogUrl(config.catalogUrl || undefined);
+};
+
+/** Ask again later, backing off. One pending retry at most; a direct call supersedes it. */
+const scheduleRetry = () => {
+  if (retryTimer) return;
+  const delay = retryDelay;
+  retryDelay = Math.min(retryDelay * 2, RETRY_MAX_MS);
+  retryTimer = setTimeout(() => {
+    retryTimer = null;
+    void loadRemoteAppConfig();
+  }, delay);
+};
+
 /**
  * Ask the client, apply, and only then let the registry re-verify what is installed.
  *
@@ -36,25 +61,45 @@ const NO_CONFIG: RemoteAppConfigPayload = { hosts: [], catalogUrl: '' };
  * real once there is an allowlist to judge against. Skip the `await` here and a player who
  * installed an add-on last session finds it gone this one.
  *
- * `defaultValue` rather than a throw: a transport failure has to leave the phone in the
- * configured-nothing state, which is the safe direction. Idempotent, so calling it twice
- * costs one extra round trip and changes nothing.
+ * **A failure fails closed, and is asked again.** A transport failure, or a reply that is not
+ * a configuration, leaves the phone configured-nothing — no host trusted, nothing remote
+ * installs — which is the safe direction. It used to stop there: this was asked once, at
+ * `Shell.svelte`'s mount, so a failure at resource start (the client's callback not yet
+ * registered) kept every saved add-on off the launcher for the whole session. It now retries
+ * on a backoff until the client answers, and the answer rehydrates saved installs as the
+ * first one would have. A configuration already applied is kept through a later failure:
+ * the convars are the operator's, and a failed re-ask has learned nothing about them.
+ *
+ * Resolves after the first attempt either way, so the caller is never held behind a retry.
+ * Idempotent, so calling it twice costs one extra round trip and changes nothing.
  */
 export async function loadRemoteAppConfig(): Promise<RemoteAppConfigPayload> {
-  const reply = await fetchNui<unknown>(
-    'remoteAppConfig',
-    {},
-    { defaultValue: NO_CONFIG, quiet: true }
-  );
+  if (retryTimer) {
+    clearTimeout(retryTimer);
+    retryTimer = null;
+  }
 
-  const applied = parseRemoteAppConfig(reply) ?? NO_CONFIG;
+  let config: RemoteAppConfigPayload | null;
+  try {
+    config = parseRemoteAppConfig(await fetchNui<unknown>('remoteAppConfig', {}));
+  } catch {
+    config = null;
+  }
 
-  setTrustedRemoteAppHosts(applied.hosts);
-  setRemoteCatalogUrl(applied.catalogUrl || undefined);
+  if (!config) {
+    scheduleRetry();
+    if (answered) return answered;
+    apply(NO_CONFIG);
+    return NO_CONFIG;
+  }
 
-  if (applied.hosts.length > 0) {
+  answered = config;
+  retryDelay = RETRY_FIRST_MS;
+  apply(config);
+
+  if (config.hosts.length > 0) {
     await appRegistryStore.rehydrateSavedRemoteApps();
   }
 
-  return applied;
+  return config;
 }

@@ -11,7 +11,14 @@ export const submitScore = async (app: string, score: number): Promise<void> => 
   await call(highscoresContract, 'submit', { app, score }).catch(() => undefined);
 };
 
+/**
+ * The top scores for one game. Rejects on failure, and on a reply that is not a list.
+ *
+ * It used to answer `[]` for both, which the leaderboard renders as "No scores yet" — a
+ * board with real scores on it, reported empty because one request failed.
+ */
 export const getLeaderboard = async (app: string): Promise<LeaderboardEntry[]> => {
-  const rows = await call(highscoresContract, 'top', { app }).catch(() => []);
-  return Array.isArray(rows) ? rows : [];
+  const rows: unknown = await call(highscoresContract, 'top', { app });
+  if (!Array.isArray(rows)) throw new Error('highscores:top answered without a list');
+  return rows as LeaderboardEntry[];
 };

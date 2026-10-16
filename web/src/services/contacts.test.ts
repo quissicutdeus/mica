@@ -15,6 +15,7 @@ import { get } from 'svelte/store';
  * the seam and both sides of it are covered.
  */
 import * as fetchNuiModule from '../../../sdk/nui/transport';
+import * as nuiFetch from '../nui/fetchNui';
 
 describe('contacts store', () => {
   beforeEach(() => {
@@ -195,5 +196,37 @@ describe('contactIndex', () => {
     const after = get(contactIndex);
     expect(after).not.toBe(before);
     expect(after.byPhone.get('555-0200')?.id).toBe(2);
+  });
+});
+
+/**
+ * MICA-384: "Recently Deleted" answered `[]` on a failed read, which is the "nothing to restore"
+ * a player is shown for something they deleted a minute ago. Refused the way the real
+ * `fetchNui` refuses — the default if the caller asked for one, a throw if it did not — since a
+ * bare rejection would skip the defaulting and pass against the old read.
+ */
+describe('contacts.getDeleted on failure', () => {
+  const refuse = (_event: string, _data?: unknown, options?: { defaultValue?: unknown }) =>
+    options?.defaultValue !== undefined
+      ? Promise.resolve(options.defaultValue)
+      : Promise.reject(new Error('Player not authenticated'));
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('rejects on a refused request rather than answering an empty list', async () => {
+    vi.spyOn(nuiFetch, 'fetchNui').mockImplementation(refuse);
+    await expect(contacts.getDeleted()).rejects.toThrow();
+  });
+
+  it('rejects a reply that is not a list', async () => {
+    vi.spyOn(nuiFetch, 'fetchNui').mockResolvedValue(null);
+    await expect(contacts.getDeleted()).rejects.toThrow();
+  });
+
+  it('takes a real empty list as empty', async () => {
+    vi.spyOn(nuiFetch, 'fetchNui').mockResolvedValue([]);
+    await expect(contacts.getDeleted()).resolves.toEqual([]);
   });
 });

@@ -15,11 +15,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   let entries = $state<LeaderboardEntry[]>([]);
   let loaded = $state(false);
 
+  // `loaded` only on a real answer: a failed read is not "No scores yet". The board stays
+  // blank instead, and opening it again asks again.
   $effect(() => {
-    getLeaderboard('snek').then((rows) => {
-      entries = rows;
-      loaded = true;
-    });
+    getLeaderboard('snek').then(
+      (rows) => {
+        entries = rows;
+        loaded = true;
+      },
+      (error) => console.warn('micaOS Snek: could not load the leaderboard', error)
+    );
   });
 </script>
 

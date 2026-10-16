@@ -4,7 +4,7 @@
 
 import { derived } from 'svelte/store';
 import { fetchNui } from '../nui/fetchNui';
-import { callOr } from '../nui/call';
+import { call, callOr } from '../nui/call';
 import { contactsContract } from '@mica/shared/contracts/contacts';
 import { createCrudStore } from '../../../sdk/createCrudStore';
 import type { Contact } from '@mica/shared/types';
@@ -56,9 +56,16 @@ export const contacts = {
    * within the restore window. Not part of the cached `store` above: this is a screen
    * visited rarely enough that a fresh read each time is the right cost, not a second
    * list to keep in sync with the first.
+   *
+   * Rejects on failure, and on a reply that is not a list. It answered `[]` instead, which is
+   * the "Nothing recently deleted" a player is shown for a contact they deleted a minute ago
+   * and can still restore.
    */
-  getDeleted: (): Promise<Contact[]> =>
-    callOr(contactsContract, 'getDeleted', undefined, [] as Contact[]),
+  getDeleted: async (): Promise<Contact[]> => {
+    const rows: unknown = await call(contactsContract, 'getDeleted', undefined);
+    if (!Array.isArray(rows)) throw new Error('contacts:getDeleted answered without a list');
+    return rows as Contact[];
+  },
 
   /**
    * Undo a delete. Refreshes the main list on success so the restored contact reappears

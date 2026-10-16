@@ -18,6 +18,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   } from './state/controlCenter';
   import { drawerDragPhase, isDrawerOpen, searchQuery } from './state/appDrawer';
   import { refreshCapabilities } from '../services/capabilities';
+  import { ensureAdmin } from '../services/admin';
   import { createNuiMessageRouter } from './nuiMessages';
   import { installDevHarness, seedBrowserPhone } from './devHarness';
   import { hostRuntime, isBrowser } from '@mica/sdk';
@@ -700,6 +701,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   $effect(() => {
     if (visible) {
       bootstrapStores();
+      // Every open, not only the first: `bootstrapStores` returns early once it has run, so a
+      // failed admin ask at resource start would otherwise hide Administration until a
+      // character switch. A no-op once the server has answered (MICA-384).
+      void ensureAdmin();
     }
   });
 

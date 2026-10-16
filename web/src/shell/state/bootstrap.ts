@@ -30,6 +30,7 @@ import { activeDevice } from './device';
 import { DEFAULT_DEVICE, type DeviceId } from '@mica/shared/devices';
 import { manifestSupportsDevice } from '../../lib/phone/appVisibility';
 import { currentApp } from './navigation';
+import { forgetCharacterStores } from '../../../../sdk/characterStores';
 
 let isBootstrapped = false;
 let running = false;
@@ -241,6 +242,10 @@ export function forgetCharacterData(): void {
   shadeNotifications.set([]);
   notificationsLoaded.set(false);
   unreadCounts.set({});
+  // Every list store built by `createCrudStore` or `createPagedStore` — contacts, notes,
+  // mail, messages, photos — so a refused re-read leaves none of them showing the previous
+  // character's rows (MICA-384).
+  forgetCharacterStores();
 }
 
 export function resetBootstrapState(): void {

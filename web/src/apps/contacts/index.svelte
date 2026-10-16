@@ -115,7 +115,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   $effect(() => {
     if (selectedContact && matchingConv) {
-      conversationsStore.loadMessages(matchingConv.id);
+      // A failed read keeps whatever the thread already held; reopening the contact retries.
+      conversationsStore.loadMessages(matchingConv.id).catch((error) => {
+        console.warn('micaOS Contacts: could not load recent messages', error);
+      });
     }
   });
 
@@ -279,10 +282,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * than a cached store — the screen is visited rarely enough that this is the right
    * cost, and it means a contact deleted moments ago from the details screen is already
    * there without a second round trip to reconcile.
+   *
+   * Opened on a real answer only. A failed read toasts and stays where it was, rather than
+   * opening on "Nothing recently deleted"; tapping it again is the retry.
    */
   const openRecentlyDeleted = async () => {
-    showRecentlyDeleted = true;
-    deletedContacts = await getDeletedContacts();
+    const ok = await run(async () => {
+      deletedContacts = await getDeletedContacts();
+    });
+    if (ok) showRecentlyDeleted = true;
   };
 
   const fullName = (c: Pick<Contact, 'firstname' | 'lastname'>) =>

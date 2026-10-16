@@ -64,6 +64,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   let rows = $state<Blab[]>([]);
   let cursor = $state<number | null>(null);
   let loading = $state(true);
+  /** The last page asked for failed. Not "no Blabs": the list below says nothing until it loads. */
+  let pageFailed = $state(false);
 
   const mine = $derived($myAccounts.some((a) => a.handle === handle));
 
@@ -74,13 +76,30 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * a bespoke endpoint. It cannot return the owner's citizenid — a public projection withholds
    * it, which on a profile page is the single most useful field for correlating an alt back to
    * whoever owns it.
+   *
+   * A failed read is not "no such handle": the skeleton stays rather than the not-found state,
+   * and opening the profile again is the retry. Only a real answer with no row says not found.
    */
   const loadAccount = async () => {
-    const reply = await getAccounts({ app: 'blabber', handle, limit: 1 });
-    account = reply.rows?.[0] ?? null;
+    loading = true;
+    let reply: Awaited<ReturnType<typeof getAccounts>>;
+    try {
+      reply = await getAccounts({ app: 'blabber', handle, limit: 1 });
+    } catch (error) {
+      console.warn('micaOS Blabber: could not load this profile', error);
+      return;
+    }
+    account = reply.rows[0] ?? null;
+    if (!account) {
+      loading = false;
+      return;
+    }
     // Counts come from the graph rather than from a column on the account: a stored
-    // `follower_count` is a second copy of a fact `mica_account_follows` already holds.
-    if (account) await loadFollowStats(account.id);
+    // `follower_count` is a second copy of a fact `mica_account_follows` already holds. A
+    // failure keeps whatever counts were cached for this account and lets the Blabs load.
+    await loadFollowStats(account.id).catch((error) => {
+      console.warn('micaOS Blabber: could not load follow counts', error);
+    });
   };
 
   /**
@@ -131,11 +150,21 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           tab,
           cursor: from ?? undefined,
           viewer_account_id: $activeAccount?.id
-        },
-        { rows: [], nextCursor: null }
+        }
       );
+      if (!reply || !Array.isArray(reply.rows)) {
+        throw new Error('blabber:profile answered without rows');
+      }
       rows = from === null ? reply.rows : [...rows, ...reply.rows];
-      cursor = reply.nextCursor;
+      cursor = typeof reply.nextCursor === 'number' ? reply.nextCursor : null;
+      pageFailed = false;
+    } catch (error) {
+      // No default any more (MICA-384): an empty page is what a profile with no Blabs looks
+      // like, so a failed first page said "No Blabs yet" and a failed older page ended the list.
+      // The rows and the cursor stay as they were, so the next scroll asks for the same page
+      // again; a failed first page retries on a tab switch or reopening the profile.
+      pageFailed = true;
+      console.warn("micaOS Blabber: could not load this profile's Blabs", error);
     } finally {
       loading = false;
     }
@@ -276,7 +305,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     </div>
 
     <div class="flex-1 overflow-y-auto" onscroll={onScroll}>
-      {#if loading && rows.length === 0}
+      {#if (loading || pageFailed) && rows.length === 0}
         <div class="p-4"><Skeleton count={3} height="h-16" /></div>
       {:else if rows.length === 0}
         <EmptyState

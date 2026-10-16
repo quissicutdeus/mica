@@ -5,6 +5,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { get } from 'svelte/store';
 import { createCrudStore, byNewest } from './createCrudStore';
+import { forgetCharacterStores, keepAcrossCharacters } from './characterStores';
 /**
  * MICA-172: the stub point is `sdk/nui/transport`, not `nui/fetchNui`.
  *
@@ -83,15 +84,24 @@ describe('createCrudStore', () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
-  it('empties the list rather than trusting a reply of the wrong shape', async () => {
+  it('treats a reply of the wrong shape as a failed load, not as an empty list', async () => {
+    // MICA-384: `{ error }` is what a refused read looks like after `call`. Emptying the
+    // list and calling it loaded showed "No contacts" as fact.
     const store = createCrudStore<Row>('Rows', events);
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
-    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue({ error: 'nope' });
+    const spy = vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValueOnce({ error: 'nope' });
 
     await store.load();
-
     expect(get(store)).toEqual([]);
+    expect(get(store.loaded)).toBe(false);
     expect(error).toHaveBeenCalled();
+
+    spy.mockResolvedValueOnce([{ id: 1, label: 'a' }]);
+    await store.load();
+    spy.mockResolvedValueOnce(null);
+    await store.load();
+    expect(get(store)).toEqual([{ id: 1, label: 'a' }]);
+    expect(get(store.loaded)).toBe(true);
   });
 
   it('lets a failed write reach the caller, and does not touch the list', async () => {
@@ -192,6 +202,124 @@ describe('createCrudStore', () => {
 
     await store.load();
     expect(get(store).map((r) => r.id)).toEqual([2, 1]);
+  });
+});
+
+/**
+ * MICA-384: a failed read is not an answer, and one character's rows are not the next one's.
+ *
+ * Each failure is stubbed the way `fetchNui` really fails — the default when one was asked
+ * for, a throw otherwise — so a store that went back to passing `defaultValue: []` would get
+ * a silent empty reply here and these would go red, which a bare rejection would not catch.
+ */
+describe('createCrudStore when a read fails or the character changes', () => {
+  const failLikeFetchNui = async (
+    _event: string,
+    _data?: unknown,
+    options?: { defaultValue?: unknown }
+  ): Promise<unknown> => {
+    if (options && 'defaultValue' in options) return options.defaultValue;
+    throw new Error('Request timed out');
+  };
+
+  beforeEach(() => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  it('leaves a store whose first load failed not loaded, and the next load retries', async () => {
+    const store = createCrudStore<Row>('Rows', events);
+    const spy = vi.spyOn(fetchNuiModule, 'fetchNui').mockImplementationOnce(failLikeFetchNui);
+
+    await store.load();
+    expect(get(store.loaded)).toBe(false);
+    expect(get(store)).toEqual([]);
+
+    spy.mockResolvedValueOnce([{ id: 1, label: 'a' }]);
+    await store.load();
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(get(store.loaded)).toBe(true);
+    expect(get(store)).toEqual([{ id: 1, label: 'a' }]);
+  });
+
+  it('keeps the last list, still loaded, when a later load fails', async () => {
+    const store = createCrudStore<Row>('Rows', events);
+    const spy = vi.spyOn(fetchNuiModule, 'fetchNui');
+    spy.mockResolvedValueOnce([{ id: 1, label: 'a' }]);
+    await store.load();
+
+    spy.mockImplementationOnce(failLikeFetchNui);
+    await store.load();
+
+    expect(get(store)).toEqual([{ id: 1, label: 'a' }]);
+    expect(get(store.loaded)).toBe(true);
+  });
+
+  it('forgetCharacterStores empties every store and its loaded flag', async () => {
+    const contacts = createCrudStore<Row>('Contacts', events);
+    const notes = createCrudStore<Row>('Notes', events);
+    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue([{ id: 1, label: 'first character' }]);
+    await contacts.load();
+    await notes.load();
+
+    forgetCharacterStores();
+
+    for (const store of [contacts, notes]) {
+      expect(get(store)).toEqual([]);
+      expect(get(store.loaded)).toBe(false);
+    }
+  });
+
+  it('leaves the list empty when the next character fails its first read', async () => {
+    // The ticket's comment, end to end: without the forget, the refused read kept the
+    // previous character's rows on screen as the new one's.
+    const contacts = createCrudStore<Row>('Contacts', events);
+    const spy = vi.spyOn(fetchNuiModule, 'fetchNui');
+    spy.mockResolvedValueOnce([{ id: 1, label: 'first character' }]);
+    await contacts.load();
+
+    forgetCharacterStores();
+    spy.mockImplementationOnce(failLikeFetchNui);
+    await contacts.load();
+
+    expect(get(contacts)).toEqual([]);
+    expect(get(contacts.loaded)).toBe(false);
+  });
+
+  it('drops a read or a write that started before the forget and landed after it', async () => {
+    const store = createCrudStore<Row>('Rows', events);
+    let answerList!: (rows: Row[]) => void;
+    let answerCreate!: (row: Row) => void;
+    vi.spyOn(fetchNuiModule, 'fetchNui').mockImplementation(async (action: string) => {
+      if (action === events.list) return new Promise<Row[]>((r) => (answerList = r));
+      if (action === events.create) return new Promise<Row>((r) => (answerCreate = r));
+      throw new Error(`unexpected action ${action}`);
+    });
+
+    const loading = store.load();
+    const adding = store.add({ label: 'b' });
+    forgetCharacterStores();
+    answerList([{ id: 1, label: 'first character' }]);
+    answerCreate({ id: 2, label: 'b' });
+    await loading;
+
+    // The caller still learns what the server created; the list does not take it.
+    await expect(adding).resolves.toEqual({ id: 2, label: 'b' });
+    expect(get(store)).toEqual([]);
+    expect(get(store.loaded)).toBe(false);
+  });
+
+  it('leaves a store that opted out untouched', async () => {
+    const shared = keepAcrossCharacters(createCrudStore<Row>('Shared', events));
+    const own = createCrudStore<Row>('Own', events);
+    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue([{ id: 1, label: 'everyone' }]);
+    await shared.load();
+    await own.load();
+
+    forgetCharacterStores();
+
+    expect(get(shared)).toEqual([{ id: 1, label: 'everyone' }]);
+    expect(get(shared.loaded)).toBe(true);
+    expect(get(own)).toEqual([]);
   });
 });
 

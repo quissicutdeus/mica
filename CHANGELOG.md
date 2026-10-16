@@ -1529,6 +1529,23 @@ somebody maintaining a `core: false` add-on outside this repo, and it answers
 one question: does that bundle still compile against this release, and does its
 manifest still ask for the right things.
 
+**Reads that fail now say so instead of answering empty (MICA-384).** These now
+reject when the request fails or the reply is malformed, where they used to
+resolve with an empty value that looked like a real answer:
+
+- `useAccounts`: `getMyAccounts`, `getAccounts`, `getFollowStats` and
+  `getReactionsFor`;
+- `useHighscores().getLeaderboard`;
+- the Recently Deleted reads, `getDeletedContacts` and `getDeletedMedia`;
+- the messages facet's `loadMessageReactions`.
+
+Catch the rejection and keep what you are showing; an empty array or `{}` now
+always means the server said so. `createCrudStore` and `createPagedStore` no
+longer set `loaded` after a failed load, and a reply that is not a list counts
+as a failure, so a list stays in its loading state and the next load retries.
+`usePagedList` now clears `loading` after a page that rejects. No signature
+changes, so `SDK_CONTRACT_VERSION` stays `1`.
+
 **A leaderboard entry no longer carries a citizenid (MICA-343).**
 `LeaderboardEntry`, which `useHighscores().getLeaderboard` returns, drops
 `citizenid`; the name and score stay. Key a list of entries by its position

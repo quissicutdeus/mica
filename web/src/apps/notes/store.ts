@@ -65,8 +65,15 @@ export function useNotes() {
      * The "Recently Deleted" list (MICA-75-wiring) — every soft-deleted note still
      * within the restore window. Not part of `notes` above: a screen visited rarely
      * enough that a fresh read each time is the right cost, not a second cached list.
+     *
+     * Rejects on failure, and on a reply that is not a list (MICA-384). It answered `[]`,
+     * which is the "nothing to restore" a player is shown for a note they deleted a minute ago.
      */
-    getDeletedNotes: (): Promise<Note[]> => service().call<Note[]>('getDeleted', {}, []),
+    getDeletedNotes: async (): Promise<Note[]> => {
+      const rows: unknown = await service().call<Note[]>('getDeleted', {});
+      if (!Array.isArray(rows)) throw new Error('notes:getDeleted answered without a list');
+      return rows as Note[];
+    },
 
     /** Undo a delete. Refreshes the main list on success so the note reappears in it. */
     restoreNote: async (id: number): Promise<boolean> => {

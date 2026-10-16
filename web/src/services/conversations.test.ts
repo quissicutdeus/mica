@@ -4,7 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { get } from 'svelte/store';
-import { conversationsStore } from './conversations';
+import { conversationsStore, messageReactions } from './conversations';
 import { fetchNui } from '../nui/fetchNui';
 import { setActiveDevice } from '../shell/state/device';
 import { contacts } from './contacts';
@@ -36,7 +36,13 @@ const server = vi.hoisted(() => ({
    */
   threads: {} as Record<number, any[]>,
   /** Every `getMessages` payload the store sent, in order. */
-  threadRequests: [] as any[]
+  threadRequests: [] as any[],
+  /**
+   * How `getMessages` fails, when it does (MICA-384): `'refuse'` the way the real `fetchNui`
+   * fails — the default if the caller asked for one, a throw if it did not — and `'null'` a
+   * reply with nothing in it.
+   */
+  threadFailure: null as null | 'refuse' | 'null'
 }));
 
 /**
@@ -143,7 +149,7 @@ const unwrap = vi.hoisted(() => {
 });
 
 vi.mock('../nui/fetchNui', () => ({
-  fetchNui: vi.fn((rawMethod: string, rawData?: any) => {
+  fetchNui: vi.fn((rawMethod: string, rawData?: any, options?: { defaultValue?: unknown }) => {
     const { method, data } = unwrap(rawMethod, rawData);
     if (method === 'getCitizenId') return Promise.resolve('my-id');
     // `conversations:create` as the server answers a new 1:1 since MICA-339: no name, because
@@ -192,6 +198,12 @@ vi.mock('../nui/fetchNui', () => ({
     }
     if (method === 'getMessages') {
       server.threadRequests.push(data);
+      if (server.threadFailure === 'refuse') {
+        return options?.defaultValue !== undefined
+          ? Promise.resolve(options.defaultValue)
+          : Promise.reject(new Error('Player not authenticated'));
+      }
+      if (server.threadFailure === 'null') return Promise.resolve(null);
       /**
        * `messages:get` as MICA-212 shaped it: keyset on `id DESC`, `cursor` a bare row id
        * and exclusive, `limit` clamped at fifty by default, and `{ rows, nextCursor }` back
@@ -282,6 +294,7 @@ beforeEach(async () => {
   server.threadHasReply = false;
   server.threadHasLineText = false;
   server.threads = {};
+  server.threadFailure = null;
   conversationsStore.setActiveConversationId(null);
   // The store is a module singleton, so its window, cursor and thread cache outlive a case.
   // One refetch with no active thread resets all three — which is itself the eviction rule
@@ -649,6 +662,50 @@ describe('thread paging', () => {
     expect(get(conversationsStore.hasOlderMessages)[2]).toBe(true);
   });
 
+  /**
+   * A failed page is not the end of the thread (MICA-384). It answered an empty page, which is
+   * exactly what the oldest page looks like: an open showed an empty conversation and an older
+   * page set the cursor to `null`, so the thread stopped paging for good.
+   */
+  it('keeps the held thread when reopening it fails', async () => {
+    server.threads[2] = longThread(120);
+    await conversationsStore.loadMessages(2);
+
+    server.threadFailure = 'refuse';
+    await expect(conversationsStore.loadMessages(2)).rejects.toThrow();
+
+    expect(get(conversationsStore.messages)[2]).toHaveLength(50);
+    expect(get(conversationsStore.hasOlderMessages)[2]).toBe(true);
+  });
+
+  it('keeps the cursor when an older page fails, so the next scroll asks again', async () => {
+    server.threads[2] = longThread(120);
+    await conversationsStore.loadMessages(2);
+
+    server.threadFailure = 'refuse';
+    await expect(conversationsStore.loadOlderMessages(2)).rejects.toThrow();
+    expect(get(conversationsStore.messages)[2]).toHaveLength(50);
+    expect(get(conversationsStore.hasOlderMessages)[2]).toBe(true);
+
+    server.threadFailure = null;
+    expect(await conversationsStore.loadOlderMessages(2)).toBe(true);
+    expect(server.threadRequests[server.threadRequests.length - 1]).toEqual({
+      conversation_id: 2,
+      cursor: 2071
+    });
+    expect(get(conversationsStore.messages)[2]).toHaveLength(100);
+  });
+
+  it('reads a reply with no rows as a failure, not as an empty thread', async () => {
+    server.threads[2] = longThread(120);
+    await conversationsStore.loadMessages(2);
+
+    server.threadFailure = 'null';
+    await expect(conversationsStore.loadOlderMessages(2)).rejects.toThrow();
+
+    expect(get(conversationsStore.hasOlderMessages)[2]).toBe(true);
+  });
+
   it('forgets the cursor with the thread when it is evicted', async () => {
     server.threads[2] = longThread(120);
     await conversationsStore.loadMessages(2);
@@ -943,5 +1000,38 @@ describe('who a thread is with', () => {
     const [sent] = get(conversationsStore.messages)[2];
     expect(sent).toMatchObject({ id: 201, mine: true, sender: 'me', sender_id: 21 });
     expect(sent).not.toHaveProperty('citizenid');
+  });
+});
+
+/**
+ * MICA-384: the reaction read answered `{}` on failure, and `createReactionStore` reads an
+ * omitted target as "no reactions", so one failed read wiped every chip it was asked about.
+ */
+describe('message reactions on a failed read', () => {
+  const refuse = (_event: string, _data?: unknown, options?: { defaultValue?: unknown }) =>
+    options?.defaultValue !== undefined
+      ? Promise.resolve(options.defaultValue)
+      : Promise.reject(new Error('Player not authenticated'));
+
+  it('keeps the chips it holds and rejects', async () => {
+    const held = { counts: { '\u{1F44D}': 2 }, mine: [] };
+    vi.mocked(fetchNui).mockResolvedValueOnce({ 501: held });
+    await messageReactions.load([501]);
+
+    vi.mocked(fetchNui).mockImplementationOnce(refuse);
+    await expect(messageReactions.load([501])).rejects.toThrow();
+
+    expect(get(messageReactions)[501]).toEqual(held);
+  });
+
+  it('reads a reply that is not a map as a failure', async () => {
+    const held = { counts: { '\u{1F525}': 1 }, mine: [] };
+    vi.mocked(fetchNui).mockResolvedValueOnce({ 502: held });
+    await messageReactions.load([502]);
+
+    vi.mocked(fetchNui).mockResolvedValueOnce(null);
+    await expect(messageReactions.load([502])).rejects.toThrow();
+
+    expect(get(messageReactions)[502]).toEqual(held);
   });
 });

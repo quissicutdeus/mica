@@ -126,6 +126,40 @@ describe('usePagedList', () => {
     expect(page.visible).toHaveLength(50);
   });
 
+  it('clears loading when the server page rejects, and the next loadMore retries', async () => {
+    // MICA-384: `loading` was cleared only after a success, so a rejected page held the
+    // re-entrancy guard forever — the spinner stayed up and no scroll could ask again.
+    // Nothing hidden locally, so every `loadMore` goes to the server.
+    const loadOlder = vi
+      .fn<() => Promise<boolean>>()
+      .mockRejectedValueOnce(new Error('Request timed out'))
+      .mockResolvedValueOnce(true);
+    const page = usePagedList({ items: () => rows(50), pageSize: 50, olderAt: 'end', loadOlder });
+
+    await expect(page.loadMore()).rejects.toThrow('Request timed out');
+    expect(page.loading).toBe(false);
+    expect(page.visible).toHaveLength(50);
+
+    // Not swallowed by a guard still held from the failure: the server is asked again.
+    await page.loadMore();
+    expect(loadOlder).toHaveBeenCalledTimes(2);
+    expect(page.loading).toBe(false);
+  });
+
+  it('logs a page that rejected under a scroll, rather than leaving it unhandled', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const loadOlder = vi.fn<() => Promise<boolean>>().mockRejectedValue(new Error('refused'));
+    const page = usePagedList({ items: () => rows(10), olderAt: 'end', loadOlder });
+    const target = { scrollTop: 700, scrollHeight: 1000, clientHeight: 300 };
+
+    page.onScroll({ target } as unknown as Event);
+    expect(page.loading).toBe(true);
+    await vi.waitFor(() => expect(warn).toHaveBeenCalled());
+
+    expect(page.loading).toBe(false);
+    warn.mockRestore();
+  });
+
   it('does not run two loads at once', async () => {
     const page = usePagedList({ items: () => rows(500), pageSize: 50 });
     const spy = vi.spyOn(page, 'loading', 'get');

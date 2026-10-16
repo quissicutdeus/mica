@@ -2753,8 +2753,12 @@ const SHELL_ONLY_BY_DESIGN = [
  * fails `publishes nothing nobody decided to publish`, whose own message says to add the
  * name to the baseline — which is the right answer for an ordinary export and the wrong
  * one here.
+ *
+ * `forgetCharacterStores` (MICA-384) empties every in-process list store on a character
+ * load. An app able to call it could blank every other app's list at will; the shell
+ * imports it by path from `characterStores.ts`.
  */
-const NEVER_EXPORTED = ['setRemoteCatalogUrl', 'setTrustedRemoteAppHosts'];
+const NEVER_EXPORTED = ['forgetCharacterStores', 'setRemoteCatalogUrl', 'setTrustedRemoteAppHosts'];
 
 /** On `addon.ts` only: the iframe entry point, which has no meaning in-process. */
 const ADD_ON_ONLY_BY_DESIGN = ['bootAddOn'];

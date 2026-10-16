@@ -4,6 +4,7 @@
 
 import { writable } from 'svelte/store';
 import { fetchNui } from './nui/transport';
+import { registerCharacterStore } from './characterStores';
 import { GENERIC_SERVICE_ACTION } from '@mica/shared/rpc';
 import type {
   AddonActionInput,
@@ -137,6 +138,14 @@ function crudStore<T extends { id: number }, TDraft>(
   const { subscribe, set, update: mutate } = writable<T[]>([]);
 
   /**
+   * Bumped by every forget. A round trip started for the previous character can land after
+   * the switch, and without this its rows would be written straight back into the list the
+   * forget just emptied — so each read and write remembers the generation it began in, and
+   * leaves the list alone when that is no longer the current one.
+   */
+  let generation = 0;
+
+  /**
    * One transport, two routes to the same server.
    *
    * Without `service`, `events` are NUI action names from `shared/routes.ts` — the path
@@ -160,12 +169,16 @@ function crudStore<T extends { id: number }, TDraft>(
       : fetchNui<R>(action, payload, opts);
 
   /**
-   * False until the first load has come back, whatever it came back with.
+   * False until a load has come back with an answer.
    *
    * An empty list means two different things — still fetching, and nothing to show — and
    * no store could tell them apart, so every app stated "No photos yet" as fact for as
    * long as the round trip took. It stays true afterwards, so a refresh on re-entry does
    * not blank a list the player is already looking at.
+   *
+   * A load that **failed** is not an answer and does not set it (MICA-384). It used to,
+   * from a `finally`, so a refused first read showed "No contacts" as fact; now the app
+   * keeps its loading state and the next load — the next foreground — is the retry.
    */
   const loaded = writable(false);
 
@@ -217,49 +230,59 @@ function crudStore<T extends { id: number }, TDraft>(
     return event;
   };
 
-  return {
+  const store = {
     subscribe,
     loaded: { subscribe: loaded.subscribe },
 
     load: async (): Promise<void> => {
+      const started = generation;
+      let data: T[];
       try {
-        const data = await request<T[]>(events.list, null);
-        if (!Array.isArray(data)) {
-          console.error(`${name} store received invalid data:`, data);
-          set([]);
-          return;
-        }
-        set(ordered(data));
+        data = await request<T[]>(events.list, null);
       } catch (e) {
         console.warn(`${name} store failed to load; keeping the last known list.`, e);
-      } finally {
-        loaded.set(true);
+        return;
       }
+      // Not an answer either: an error-shaped reply is what a refused read looks like once
+      // `call` has unwrapped it, so it is a failure like a throw — the last list stays, and
+      // so does `loaded` (MICA-384; it used to empty the list and report it loaded).
+      if (!Array.isArray(data)) {
+        console.error(`${name} store received invalid data; keeping the last known list.`, data);
+        return;
+      }
+      if (started !== generation) return;
+      set(ordered(data));
+      loaded.set(true);
     },
 
     add: async (draft: TDraft): Promise<T> => {
       options.validate?.(draft);
+      const started = generation;
       const created = await request<T>(required(events.create, 'create'), draft);
       // A `load()` racing this round trip may already have pulled `created` in from the
       // server — appending it again would show the row twice. Replace in place if it's
       // already there, append only if it isn't (MICA-119).
-      mutate((rows) =>
-        rows.some((r) => r.id === created.id)
-          ? replaced(rows, created.id, () => created)
-          : appended(rows, created)
-      );
+      if (started === generation) {
+        mutate((rows) =>
+          rows.some((r) => r.id === created.id)
+            ? replaced(rows, created.id, () => created)
+            : appended(rows, created)
+        );
+      }
       return created;
     },
 
     update: async (row: T): Promise<void> => {
       options.validate?.(row);
+      const started = generation;
       await request(required(events.update, 'update'), row);
-      mutate((rows) => replaced(rows, row.id, () => row));
+      if (started === generation) mutate((rows) => replaced(rows, row.id, () => row));
     },
 
     delete: async (id: number): Promise<void> => {
+      const started = generation;
       await request(required(events.remove, 'delete'), { id });
-      mutate((rows) => rows.filter((r) => r.id !== id));
+      if (started === generation) mutate((rows) => rows.filter((r) => r.id !== id));
     },
 
     /** For the paths a list alone cannot express — an incoming message, a local patch. */
@@ -267,6 +290,13 @@ function crudStore<T extends { id: number }, TDraft>(
     patch: (id: number, changes: Partial<T>) =>
       mutate((rows) => replaced(rows, id, (r) => ({ ...r, ...changes })))
   };
+
+  registerCharacterStore(store, () => {
+    generation += 1;
+    set([]);
+    loaded.set(false);
+  });
+  return store;
 }
 
 /** What `createCrudStore` returns, whichever door it was called through. */
@@ -398,13 +428,15 @@ export function createCrudStore<
  * - **Validation** — Contacts checked its required fields, in the store and again in the
  *   component; nobody else checked anything.
  * - **Bad data** — three stores logged and emptied the list on a non-array reply, one
- *   let it through.
+ *   let it through. Now a non-array reply is a failed load (MICA-384): logged, and the
+ *   list and `loaded` are left as they were.
  *
  * Neither reads nor writes pass a `defaultValue`, so `fetchNui` throws on failure instead
  * of masking it. Writes propagate the throw to the caller, which already had a value to
  * fall back to. `load` catches it itself and keeps the store's last known list — the
  * store has nothing better to show, and a background refresh that failed should not wipe
- * out what the player was already looking at.
+ * out what the player was already looking at. Nor does it set `loaded`: a first load that
+ * failed leaves the store still loading, and calling `load` again is the retry.
  */
 // Last on purpose: the string form is the general one, and the overload a reader of the type
 // (`ReturnType`, `publicSurface.test.ts`) sees — as `useService` orders its two.

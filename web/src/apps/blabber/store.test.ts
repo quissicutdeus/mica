@@ -89,6 +89,16 @@ const actionOf = (name: unknown, payload: unknown): string => {
   return `${p?.service}:${p?.action}`;
 };
 
+/**
+ * A refused request, answered the way the real `fetchNui` answers one: the default when the
+ * caller asked for one, a throw when it did not. `mockRejectedValue` skips the defaulting and
+ * passes against reads that turn a failure into an answer (MICA-384).
+ */
+const refuse = <T>(_name: string, _payload?: unknown, options?: { defaultValue?: T }) =>
+  options?.defaultValue !== undefined
+    ? Promise.resolve(options.defaultValue)
+    : Promise.reject(new Error('Player not authenticated'));
+
 describe('blabber service', () => {
   beforeEach(() => {
     registerNuiTransport((...args) => fetchNuiModule.fetchNui(...args));
@@ -196,6 +206,37 @@ describe('blabber service', () => {
       expect(result).toEqual(created);
       expect(get(myAccounts)).toContainEqual(created);
       expect(get(activeAccountId)).toBe(10);
+    });
+
+    /**
+     * MICA-384: `accountsLoaded` was set in a `finally` over a read that answered `[]` on
+     * failure, so one failed request offered a player who holds a handle the claim screen.
+     */
+    it('a failed load is not "no accounts": nothing is marked loaded, and it does not reject', async () => {
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+      vi.spyOn(fetchNuiModule, 'fetchNui').mockImplementation(refuse);
+
+      await expect(loadMyAccounts()).resolves.toBeUndefined();
+
+      expect(get(accountsLoaded)).toBe(false);
+      expect(get(myAccounts)).toEqual([]);
+    });
+
+    it('a failed reload keeps the accounts and the active one it had', async () => {
+      vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValueOnce({
+        rows: [{ id: 1 } as Account, { id: 2 } as Account],
+        limit: 3
+      });
+      await loadMyAccounts();
+      activeAccountId.set(2);
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+      vi.spyOn(fetchNuiModule, 'fetchNui').mockImplementation(refuse);
+
+      await loadMyAccounts();
+
+      expect(get(myAccounts).map((a) => a.id)).toEqual([1, 2]);
+      expect(get(activeAccountId)).toBe(2);
+      expect(get(accountsLoaded)).toBe(true);
     });
 
     it('canClaimAnother computes derived state correctly', () => {
@@ -365,6 +406,42 @@ describe('blabber service', () => {
       await loadFollowStats(42);
 
       expect(get(followStats)[42]).toEqual(stats);
+    });
+
+    it('a failed loadFollowStats keeps the counts it had', async () => {
+      const held: FollowStats = {
+        followers: 10,
+        following: 5,
+        followedByMe: true,
+        blockedByMe: false
+      };
+      followStats.set({ 42: held });
+      vi.spyOn(fetchNuiModule, 'fetchNui').mockImplementation(refuse);
+
+      await expect(loadFollowStats(42)).rejects.toThrow();
+
+      expect(get(followStats)[42]).toEqual(held);
+    });
+
+    it('a refused follow whose refetch also fails puts the counts back, and rethrows the write', async () => {
+      activeAccountId.set(1);
+      myAccounts.set([{ id: 1 } as Account]);
+      const held: FollowStats = {
+        followers: 10,
+        following: 5,
+        followedByMe: false,
+        blockedByMe: false
+      };
+      followStats.set({ 42: held });
+      vi.spyOn(fetchNuiModule, 'fetchNui').mockImplementation((name, payload, options) =>
+        actionOf(name, payload) === 'accounts:follow'
+          ? Promise.reject(new Error('refused'))
+          : refuse(name, payload, options)
+      );
+
+      await expect(toggleFollow(42)).rejects.toThrow('refused');
+
+      expect(get(followStats)[42]).toEqual(held);
     });
 
     it('toggleFollow throws if trying to follow yourself', async () => {
@@ -561,15 +638,24 @@ describe('blabber service', () => {
 
         await loadDmReactions([10, 11]);
 
-        expect(spy).toHaveBeenCalledWith(
-          'svc',
-          {
-            service: 'accounts',
-            action: 'reactionsFor',
-            data: { app: 'blabber', target_table: 'mica_blabber_dms', target_ids: [10, 11] }
-          },
-          { defaultValue: {} }
-        );
+        expect(spy).toHaveBeenCalledWith('svc', {
+          service: 'accounts',
+          action: 'reactionsFor',
+          data: { app: 'blabber', target_table: 'mica_blabber_dms', target_ids: [10, 11] }
+        });
+      });
+
+      it('keeps the chips it holds when a read fails, and does not reject', async () => {
+        vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValueOnce({
+          30: { counts: { '\u{1F525}': 2 }, mine: [] }
+        });
+        await loadDmReactions([30]);
+        vi.spyOn(console, 'warn').mockImplementation(() => {});
+        vi.spyOn(fetchNuiModule, 'fetchNui').mockImplementation(refuse);
+
+        await expect(loadDmReactions([30])).resolves.toBeUndefined();
+
+        expect(get(dmReactions)[30]).toEqual({ counts: { '\u{1F525}': 2 }, mine: [] });
       });
 
       it('reacts as the active account, naming the DM row', async () => {

@@ -126,18 +126,30 @@ export const canClaimAnother = derived(
   ([accounts, limit]) => accounts.length < limit
 );
 
+/**
+ * Read this player's accounts. Never rejects: it runs from `preload` and `onAppForeground`.
+ *
+ * `accountsLoaded` is set only by a real answer. It used to be set in a `finally`, and the read
+ * answered an empty list on failure, so one failed request showed a player who already holds a
+ * handle the screen for claiming their first — and a claim that then fails as taken, by them.
+ * A failure now keeps the last list, and the stored active account, exactly as they were; with
+ * nothing loaded yet the app stays on its skeleton, and the next foreground asks again.
+ */
 export const loadMyAccounts = async (): Promise<void> => {
+  let reply: Awaited<ReturnType<ReturnType<typeof accounts>['getMyAccounts']>>;
   try {
-    const reply = await accounts().getMyAccounts('blabber');
-    const rows = reply.rows ?? [];
-    myAccounts.set(rows);
-    if (typeof reply.limit === 'number') accountLimit.set(reply.limit);
-    activeAccountId.update((current) =>
-      current !== null && rows.some((a) => a.id === current) ? current : (rows[0]?.id ?? null)
-    );
-  } finally {
-    accountsLoaded.set(true);
+    reply = await accounts().getMyAccounts('blabber');
+  } catch (error) {
+    console.warn('micaOS Blabber: could not load your accounts', error);
+    return;
   }
+  const rows = reply.rows;
+  myAccounts.set(rows);
+  if (typeof reply.limit === 'number') accountLimit.set(reply.limit);
+  activeAccountId.update((current) =>
+    current !== null && rows.some((a) => a.id === current) ? current : (rows[0]?.id ?? null)
+  );
+  accountsLoaded.set(true);
 };
 
 /**
@@ -291,6 +303,11 @@ const NO_FOLLOWS: FollowStats = {
   blockedByMe: false
 };
 
+/**
+ * Read one profile's counts. Rejects on failure and leaves the entry it holds alone — the
+ * read used to answer zeros on failure, which overwrote real counts and looked like an
+ * account nobody follows.
+ */
 export const loadFollowStats = async (accountId: number): Promise<void> => {
   const reply = await accounts().getFollowStats({
     app: 'blabber',
@@ -351,6 +368,28 @@ export const loadFollowingList = async (accountId: number): Promise<void> => {
 };
 
 /**
+ * Put a profile's counts back after a refused write: the server's, if it answers, otherwise
+ * what the map held before the optimistic update. Never rejects — the refused write is the
+ * error the caller toasts, and a failed refetch must neither replace it nor leave the
+ * optimistic entry standing.
+ */
+const reconcileFollowStats = async (
+  accountId: number,
+  before: FollowStats | undefined
+): Promise<void> => {
+  try {
+    await loadFollowStats(accountId);
+  } catch {
+    followStats.update((current) => {
+      const next = { ...current };
+      if (before) next[accountId] = before;
+      else delete next[accountId];
+      return next;
+    });
+  }
+};
+
+/**
  * Follow or unfollow, optimistically.
  *
  * Same shape as `toggleEar`, and for the same reason: a Follow button must change on tap rather
@@ -366,7 +405,9 @@ export const toggleFollow = async (accountId: number): Promise<void> => {
   if (follower === accountId) throw new Error('You cannot follow yourself.');
 
   let wasFollowing = false;
+  let before: FollowStats | undefined;
   followStats.update((current) => {
+    before = current[accountId];
     const existing = current[accountId] ?? NO_FOLLOWS;
     wasFollowing = existing.followedByMe;
     return {
@@ -396,7 +437,7 @@ export const toggleFollow = async (accountId: number): Promise<void> => {
       });
     }
   } catch (error) {
-    await loadFollowStats(accountId);
+    await reconcileFollowStats(accountId, before);
     throw error;
   }
 };
@@ -413,7 +454,9 @@ export const toggleBlock = async (accountId: number): Promise<void> => {
   if (blocker === accountId) throw new Error('You cannot block yourself.');
 
   let wasBlocked = false;
+  let before: FollowStats | undefined;
   followStats.update((current) => {
+    before = current[accountId];
     const existing = current[accountId] ?? NO_FOLLOWS;
     wasBlocked = existing.blockedByMe;
     return { ...current, [accountId]: { ...existing, blockedByMe: !wasBlocked } };
@@ -436,7 +479,7 @@ export const toggleBlock = async (accountId: number): Promise<void> => {
       });
     }
   } catch (error) {
-    await loadFollowStats(accountId);
+    await reconcileFollowStats(accountId, before);
     throw error;
   }
 };
@@ -613,7 +656,14 @@ export const dmReactions = createReactionStore({
   unreact: (targetId, emoji) => accounts().unreactToTarget(dmReactionPayload(targetId, emoji))
 });
 
-export const loadDmReactions = (ids: number[]): Promise<void> => dmReactions.load(ids);
+/**
+ * Never rejects: `Messages.svelte` fires it without waiting. A failed read leaves the chips
+ * the store already holds, and the next page of DMs asks again.
+ */
+export const loadDmReactions = (ids: number[]): Promise<void> =>
+  dmReactions.load(ids).catch((error) => {
+    console.warn('micaOS Blabber: could not load reactions', error);
+  });
 
 /**
  * Toggle, with the handle check in front of it.

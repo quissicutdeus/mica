@@ -39,8 +39,19 @@ describe('getLeaderboard', () => {
     await expect(getLeaderboard('snek')).resolves.toEqual(rows);
   });
 
-  it('returns an empty list on failure rather than throwing', async () => {
-    fetchNuiMock.mockRejectedValue(new Error('offline'));
-    await expect(getLeaderboard('snek')).resolves.toEqual([]);
+  // MICA-384: `[]` on failure rendered as "No scores yet" over a board with scores on it.
+  // Refused the way the real `fetchNui` refuses: the default if one was asked for, else a throw.
+  it('rejects on failure rather than answering an empty board', async () => {
+    fetchNuiMock.mockImplementation((_e: string, _d?: unknown, o?: { defaultValue?: unknown }) =>
+      o?.defaultValue !== undefined
+        ? Promise.resolve(o.defaultValue)
+        : Promise.reject(new Error('offline'))
+    );
+    await expect(getLeaderboard('snek')).rejects.toThrow();
+  });
+
+  it('rejects a reply that is not a list', async () => {
+    fetchNuiMock.mockResolvedValue(null);
+    await expect(getLeaderboard('snek')).rejects.toThrow();
   });
 });

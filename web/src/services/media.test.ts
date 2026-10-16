@@ -405,3 +405,35 @@ describe('media store', () => {
     });
   });
 });
+
+/**
+ * MICA-384: "Recently Deleted" answered `[]` on a failed read, which is the "nothing to restore"
+ * a player is shown for something they deleted a minute ago. Refused the way the real
+ * `fetchNui` refuses — the default if the caller asked for one, a throw if it did not — since a
+ * bare rejection would skip the defaulting and pass against the old read.
+ */
+describe('media.getDeleted on failure', () => {
+  const refuse = (_event: string, _data?: unknown, options?: { defaultValue?: unknown }) =>
+    options?.defaultValue !== undefined
+      ? Promise.resolve(options.defaultValue)
+      : Promise.reject(new Error('Player not authenticated'));
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('rejects on a refused request rather than answering an empty list', async () => {
+    vi.spyOn(fetchNuiModule, 'fetchNui').mockImplementation(refuse);
+    await expect(media.getDeleted()).rejects.toThrow();
+  });
+
+  it('rejects a reply that is not a list', async () => {
+    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(null);
+    await expect(media.getDeleted()).rejects.toThrow();
+  });
+
+  it('takes a real empty list as empty', async () => {
+    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue([]);
+    await expect(media.getDeleted()).resolves.toEqual([]);
+  });
+});

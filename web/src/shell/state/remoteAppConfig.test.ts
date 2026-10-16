@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 /**
  * The one caller of `setTrustedRemoteAppHosts` and `setRemoteCatalogUrl` in a shipped build
@@ -35,18 +35,34 @@ const load = async () => {
 };
 
 beforeEach(async () => {
+  // Fake throughout, so a retry a failure schedules can never fire inside a later case.
+  vi.useFakeTimers();
   vi.resetModules();
   fetchNui.mockReset();
   rehydrateSavedRemoteApps.mockReset();
   rehydrateSavedRemoteApps.mockResolvedValue(undefined);
 });
 
+afterEach(() => {
+  vi.clearAllTimers();
+  vi.useRealTimers();
+});
+
+/**
+ * A refused request, answered the way the real `fetchNui` answers one: the default when the
+ * caller asked for one, a throw when it did not.
+ */
+const refuse = (_event: string, _data?: unknown, options?: { defaultValue?: unknown }) =>
+  options?.defaultValue !== undefined
+    ? Promise.resolve(options.defaultValue)
+    : Promise.reject(new Error('callback not registered'));
+
 describe('loadRemoteAppConfig', () => {
   it('asks the client for the operator convars', async () => {
     fetchNui.mockResolvedValue({ hosts: [], catalogUrl: '' });
     const { loadRemoteAppConfig } = await load();
     await loadRemoteAppConfig();
-    expect(fetchNui).toHaveBeenCalledWith('remoteAppConfig', {}, expect.anything());
+    expect(fetchNui).toHaveBeenCalledWith('remoteAppConfig', {});
   });
 
   it('leaves the phone configured-nothing when the server sets neither convar', async () => {
@@ -114,6 +130,71 @@ describe('loadRemoteAppConfig', () => {
     await expect(loadRemoteAppConfig()).resolves.toEqual({
       hosts: ['store.example.com'],
       catalogUrl: ''
+    });
+  });
+
+  /**
+   * MICA-384. This was asked once, at `Shell.svelte`'s mount, and a failure there — the
+   * client's callback not yet registered at resource start — kept every saved add-on off the
+   * launcher for the session. It still fails closed; it now asks again.
+   */
+  describe('a failed ask', () => {
+    it('fails closed and retries until the client answers', async () => {
+      fetchNui.mockImplementation(refuse);
+      const { loadRemoteAppConfig, isTrustedRemoteUrl } = await load();
+
+      await expect(loadRemoteAppConfig()).resolves.toEqual({ hosts: [], catalogUrl: '' });
+      expect(isTrustedRemoteUrl('https://store.example.com/blabber.js')).toBe(false);
+      expect(rehydrateSavedRemoteApps).not.toHaveBeenCalled();
+
+      fetchNui.mockResolvedValue({ hosts: ['store.example.com'], catalogUrl: '' });
+      await vi.advanceTimersByTimeAsync(1_000);
+
+      expect(fetchNui).toHaveBeenCalledTimes(2);
+      expect(isTrustedRemoteUrl('https://store.example.com/blabber.js')).toBe(true);
+      expect(rehydrateSavedRemoteApps).toHaveBeenCalledTimes(1);
+    });
+
+    it('backs off while the failures continue, and stops once answered', async () => {
+      fetchNui.mockImplementation(refuse);
+      const { loadRemoteAppConfig } = await load();
+      await loadRemoteAppConfig();
+
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(fetchNui).toHaveBeenCalledTimes(2);
+      // The second retry waits twice as long as the first.
+      await vi.advanceTimersByTimeAsync(1_999);
+      expect(fetchNui).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(fetchNui).toHaveBeenCalledTimes(3);
+
+      fetchNui.mockResolvedValue({ hosts: [], catalogUrl: '' });
+      await vi.advanceTimersByTimeAsync(4_000);
+      expect(fetchNui).toHaveBeenCalledTimes(4);
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(fetchNui).toHaveBeenCalledTimes(4);
+    });
+
+    it('retries a reply that is not a configuration, too', async () => {
+      fetchNui.mockResolvedValue('not a config');
+      const { loadRemoteAppConfig } = await load();
+      await loadRemoteAppConfig();
+
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(fetchNui).toHaveBeenCalledTimes(2);
+    });
+
+    it('keeps a configuration already applied through a later failure', async () => {
+      fetchNui.mockResolvedValue({ hosts: ['store.example.com'], catalogUrl: '' });
+      const { loadRemoteAppConfig, isTrustedRemoteUrl } = await load();
+      await loadRemoteAppConfig();
+
+      fetchNui.mockImplementation(refuse);
+      await expect(loadRemoteAppConfig()).resolves.toEqual({
+        hosts: ['store.example.com'],
+        catalogUrl: ''
+      });
+      expect(isTrustedRemoteUrl('https://store.example.com/blabber.js')).toBe(true);
     });
   });
 });

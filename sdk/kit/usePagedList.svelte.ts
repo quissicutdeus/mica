@@ -103,25 +103,34 @@ export function usePagedList<T>(options: PagedListOptions<T>) {
 
     loading = true;
 
-    const el = olderAt === 'start' ? (options.container?.() ?? null) : null;
-    const previousHeight = el ? el.scrollHeight : 0;
-    const previousTop = el ? el.scrollTop : 0;
+    /**
+     * `finally`, because `loadOlder` is the caller's and may reject (MICA-384). Clearing
+     * `loading` only on the way out of a success left a rejected page holding the guard
+     * above forever: the spinner stayed up and no scroll could ask again. Now a rejection
+     * reaches the caller as before, the window and scroll are untouched, and the next
+     * `loadMore` is the retry.
+     */
+    try {
+      const el = olderAt === 'start' ? (options.container?.() ?? null) : null;
+      const previousHeight = el ? el.scrollHeight : 0;
+      const previousTop = el ? el.scrollTop : 0;
 
-    if (revealLocally) {
-      limit += pageSize;
-    } else {
-      const arrived = await options.loadOlder!();
-      // Grow the window to cover what arrived, or the new rows sit hidden behind the old limit
-      // and a second scroll would be needed to see rows that are already loaded.
-      if (arrived) limit += pageSize;
+      if (revealLocally) {
+        limit += pageSize;
+      } else {
+        const arrived = await options.loadOlder!();
+        // Grow the window to cover what arrived, or the new rows sit hidden behind the old
+        // limit and a second scroll would be needed to see rows that are already loaded.
+        if (arrived) limit += pageSize;
+      }
+      await tick();
+
+      // Keep the reader where they were. The list just grew above them, so the same
+      // content now sits further down by exactly the height that was added.
+      if (el) el.scrollTop = el.scrollHeight - previousHeight + previousTop;
+    } finally {
+      loading = false;
     }
-    await tick();
-
-    // Keep the reader where they were. The list just grew above them, so the same
-    // content now sits further down by exactly the height that was added.
-    if (el) el.scrollTop = el.scrollHeight - previousHeight + previousTop;
-
-    loading = false;
   };
 
   const onScroll = (event: Event): void => {
@@ -136,7 +145,10 @@ export function usePagedList<T>(options: PagedListOptions<T>) {
         ? el.scrollTop <= threshold
         : el.scrollHeight - el.scrollTop - el.clientHeight <= threshold;
 
-    if (atEdge) void loadMore();
+    // Nobody awaits a scroll, so a rejected page is logged here rather than left unhandled.
+    if (atEdge) {
+      loadMore().catch((e: unknown) => console.warn('usePagedList: loading older rows failed.', e));
+    }
   };
 
   /** Back to one page. Call when the list is replaced rather than appended to. */

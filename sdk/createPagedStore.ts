@@ -4,6 +4,7 @@
 
 import { writable, type Readable } from 'svelte/store';
 import { fetchNui } from './nui/transport';
+import { registerCharacterStore } from './characterStores';
 import { GENERIC_SERVICE_ACTION } from '@mica/shared/rpc';
 import type {
   AddonActionInput,
@@ -25,7 +26,10 @@ import type {
  */
 
 export interface PagedStore<T> extends Readable<T[]> {
-  /** False until the first page has come back. An empty list is not the same as "none yet". */
+  /**
+   * False until a first page has come back. An empty list is not the same as "none yet". A
+   * page that failed does not set it (MICA-384); calling `load` again is the retry.
+   */
   loaded: Readable<boolean>;
   /** Whether the server said there is another page. */
   hasMore: Readable<boolean>;
@@ -130,10 +134,14 @@ function pagedStore<T extends { id: number }>(
     // A mock or an older server could answer with a bare array; treat it as one full page
     // rather than rendering nothing and looking like an empty feed.
     if (Array.isArray(reply)) return { rows: reply, nextCursor: null };
-    return { rows: reply?.rows ?? [], nextCursor: reply?.nextCursor ?? null };
+    // Anything else without a `rows` list is not a page (MICA-384): an error-shaped reply is
+    // what a refused read looks like after `call`, and reading it as an empty last page
+    // showed "no messages" as fact and ended paging. It fails like a throw instead.
+    if (!Array.isArray(reply?.rows)) throw new Error(`'${label}' answered something not a page`);
+    return { rows: reply.rows, nextCursor: reply.nextCursor ?? null };
   };
 
-  return {
+  const store: PagedStore<T> = {
     subscribe: rows.subscribe,
     loaded: { subscribe: loaded.subscribe },
     hasMore: { subscribe: hasMore.subscribe },
@@ -157,16 +165,17 @@ function pagedStore<T extends { id: number }>(
         rows.set(page.rows);
         cursor = page.nextCursor;
         hasMore.set(page.nextCursor !== null);
+        // Only an answer sets it (MICA-384). It was set from the `finally`, so a refused
+        // first page read as an empty feed; now the store stays loading and the next `load`
+        // is the retry.
+        loaded.set(true);
       } catch (e) {
         console.warn(`Paged store '${label}' failed to load; keeping the last known page.`, e);
       } finally {
         // Only the request that is still the latest gets to say the store is idle — an
         // earlier, now-superseded call finishing later must not clear a busy flag a newer
         // request is still relying on.
-        if (generation === myGeneration) {
-          inFlight = false;
-          loaded.set(true);
-        }
+        if (generation === myGeneration) inFlight = false;
       }
     },
 
@@ -212,6 +221,21 @@ function pagedStore<T extends { id: number }>(
       ),
     remove: (id: number) => rows.update((current) => current.filter((row) => row.id !== id))
   };
+
+  // Forgotten on a character load (`characterStores.ts`). The bump supersedes every request
+  // still in flight, exactly as a newer `load` would, so none of them lands on the emptied
+  // window. A superseded request never clears `inFlight`, so this does, and the store reads
+  // idle at once rather than at the next `load`.
+  registerCharacterStore(store, () => {
+    generation += 1;
+    inFlight = false;
+    cursor = null;
+    filter = {};
+    rows.set([]);
+    hasMore.set(false);
+    loaded.set(false);
+  });
+  return store;
 }
 
 // --- The declaration form (MICA-313) ---------------------------------------------------------

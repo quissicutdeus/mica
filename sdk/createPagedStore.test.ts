@@ -5,6 +5,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { get } from 'svelte/store';
 import { createPagedStore } from './createPagedStore';
+import { forgetCharacterStores, keepAcrossCharacters } from './characterStores';
 /**
  * MICA-172: the stub point is `sdk/nui/transport`, not `nui/fetchNui`.
  *
@@ -294,5 +295,131 @@ describe('createPagedStore', () => {
         { id: 1, label: 'a' }
       ]);
     });
+  });
+});
+
+/**
+ * MICA-384: a failed page is not an answer, and one character's window is not the next one's.
+ * Failures are stubbed the way `fetchNui` really fails — the default when one was asked for,
+ * a throw otherwise — not with a bare rejection.
+ */
+describe('createPagedStore when a page fails or the character changes', () => {
+  const failLikeFetchNui = async (
+    _event: string,
+    _data?: unknown,
+    options?: { defaultValue?: unknown }
+  ): Promise<unknown> => {
+    if (options && 'defaultValue' in options) return options.defaultValue;
+    throw new Error('Request timed out');
+  };
+  const page = (ids: number[], nextCursor: number | null = null) => ({
+    rows: ids.map((id) => ({ id, label: `row ${id}` })),
+    nextCursor
+  });
+
+  beforeEach(() => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  it('leaves a store whose first page failed not loaded, and the next load retries', async () => {
+    const store = createPagedStore<Row>('getFeed');
+    const spy = vi.spyOn(fetchNuiModule, 'fetchNui').mockImplementationOnce(failLikeFetchNui);
+
+    await store.load();
+    expect(get(store.loaded)).toBe(false);
+    expect(get(store)).toEqual([]);
+
+    spy.mockResolvedValueOnce(page([1]));
+    await store.load();
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(get(store.loaded)).toBe(true);
+    expect(get(store).map((r) => r.id)).toEqual([1]);
+  });
+
+  it('keeps the last window, still loaded, when a later page fails', async () => {
+    const store = createPagedStore<Row>('getFeed');
+    const spy = vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValueOnce(page([2], 2));
+    await store.load();
+
+    spy.mockImplementationOnce(failLikeFetchNui);
+    await store.load();
+
+    expect(get(store).map((r) => r.id)).toEqual([2]);
+    expect(get(store.loaded)).toBe(true);
+    expect(get(store.hasMore)).toBe(true);
+  });
+
+  it('treats a reply that is not a page as a failure, not as an empty last page', async () => {
+    // `{ error }` is what a refused read looks like after `call`. Read as a page it was an
+    // empty feed with `nextCursor: null`, which also ended paging.
+    const store = createPagedStore<Row>('getFeed');
+    const spy = vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValueOnce({ error: 'nope' });
+
+    await store.load();
+    expect(get(store.loaded)).toBe(false);
+
+    spy.mockResolvedValueOnce(page([2], 2));
+    await store.load();
+    spy.mockResolvedValueOnce(null);
+    await store.load();
+    spy.mockResolvedValueOnce({ error: 'nope' });
+    expect(await store.loadMore()).toBe(false);
+
+    expect(get(store).map((r) => r.id)).toEqual([2]);
+    expect(get(store.hasMore)).toBe(true);
+  });
+
+  it('forgetCharacterStores empties the window, its cursor and its loaded flag', async () => {
+    const messages = createPagedStore<Row>('getFeed');
+    const spy = vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValueOnce(page([2], 2));
+    await messages.load();
+
+    forgetCharacterStores();
+
+    expect(get(messages)).toEqual([]);
+    expect(get(messages.loaded)).toBe(false);
+    expect(get(messages.hasMore)).toBe(false);
+    // No cursor left over from the last character to page on from.
+    expect(await messages.loadMore()).toBe(false);
+    expect(spy).toHaveBeenCalledTimes(1);
+
+    // And the next character's failed first page leaves it empty, not the last one's.
+    spy.mockImplementationOnce(failLikeFetchNui);
+    await messages.load();
+    expect(get(messages)).toEqual([]);
+    expect(get(messages.loaded)).toBe(false);
+  });
+
+  it('drops a page that was in flight across the forget, and lets the next load run', async () => {
+    const store = createPagedStore<Row>('getFeed');
+    let answer!: (reply: ReturnType<typeof page>) => void;
+    const spy = vi
+      .spyOn(fetchNuiModule, 'fetchNui')
+      .mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)));
+
+    const loading = store.load();
+    forgetCharacterStores();
+    answer(page([1], 1));
+    await loading;
+
+    expect(get(store)).toEqual([]);
+    expect(get(store.loaded)).toBe(false);
+
+    // And the store pages normally for the next character.
+    spy.mockResolvedValueOnce(page([5], 5)).mockResolvedValueOnce(page([4]));
+    await store.load();
+    expect(await store.loadMore()).toBe(true);
+    expect(get(store).map((r) => r.id)).toEqual([5, 4]);
+  });
+
+  it('leaves a store that opted out untouched', async () => {
+    const shared = keepAcrossCharacters(createPagedStore<Row>('getFeed'));
+    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValueOnce(page([1]));
+    await shared.load();
+
+    forgetCharacterStores();
+
+    expect(get(shared).map((r) => r.id)).toEqual([1]);
+    expect(get(shared.loaded)).toBe(true);
   });
 });

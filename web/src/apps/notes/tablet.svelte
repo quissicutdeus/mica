@@ -103,9 +103,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     ]
   });
 
+  // Opened on a real answer only (MICA-384): a failed read toasts and stays where it was,
+  // rather than opening on an empty list. Tapping it again is the retry.
   const openRecentlyDeleted = async () => {
-    showRecentlyDeleted = true;
-    deletedNotes = await getDeletedNotes();
+    const ok = await run(async () => {
+      deletedNotes = await getDeletedNotes();
+    });
+    if (ok) showRecentlyDeleted = true;
   };
 
   const recentlyDeletedItems = $derived<RecentlyDeletedItem[]>(

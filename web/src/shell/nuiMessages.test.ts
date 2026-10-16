@@ -43,6 +43,7 @@ import { bankBalance, transactions, transactionsLoaded } from '../services/accou
 import { invoices, invoicesLoaded } from '../services/bank';
 import { jobs, jobsLoaded } from '../services/jobs';
 import { notificationsLoaded, shadeNotifications, unreadCounts } from '../services/notifications';
+import { registerNuiTransport } from '../../../sdk/nui/transport';
 
 /**
  * These twelve branches previously lived inside `App.svelte` and had no unit tests at
@@ -618,6 +619,40 @@ describe('rehydrateShell forgets the previous character', () => {
       );
     } finally {
       vi.mocked(fetchNui).mockImplementation(async () => ({}));
+    }
+  });
+
+  /**
+   * MICA-384: a CRUD store is built in the SDK, not in `services/`, so `forgetCharacterData`
+   * reached none of them by name — contacts, notes, mail kept the previous character's rows,
+   * and a refused re-read left them on screen as the new one's. `forgetCharacterStores` is
+   * what reaches them. Contacts stands in for every one: it goes through the SDK transport,
+   * which is why that is the seam stubbed here rather than `fetchNui`.
+   */
+  it("empties a CRUD store, so a refused re-read shows none of the old character's rows", async () => {
+    registerNuiTransport(
+      async <T>() => [{ id: 1, firstname: 'Old', phone: '555-0100' }] as unknown as T
+    );
+    await contacts.load();
+    expect(get(contacts)).toHaveLength(1);
+    expect(get(contacts.loaded)).toBe(true);
+
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    registerNuiTransport(async (_event, _data, options) => {
+      if (options?.defaultValue !== undefined) return options.defaultValue;
+      throw new Error('Player not authenticated');
+    });
+    vi.mocked(fetchNui).mockRejectedValue(new Error('Player not authenticated'));
+    try {
+      expect(route(message('rehydrateShell'))).toBe(true);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(get(contacts)).toEqual([]);
+      expect(get(contacts.loaded)).toBe(false);
+    } finally {
+      vi.mocked(fetchNui).mockImplementation(async () => ({}));
+      registerNuiTransport((...args) => fetchNui(...args));
     }
   });
 });

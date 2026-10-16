@@ -13,7 +13,10 @@ import { get } from 'svelte/store';
  * fresh copies of its own imports too, which a spy installed on the old instance never
  * reaches.
  */
-const loadAdmin = async (browser: boolean, reply: () => Promise<unknown>) => {
+const loadAdmin = async (
+  browser: boolean,
+  reply: (event: string, data?: unknown, options?: { defaultValue?: unknown }) => Promise<unknown>
+) => {
   vi.resetModules();
   const fetchNui = vi.fn(reply);
   vi.doMock('../../../sdk/lib/isBrowser', () => ({ isBrowser: () => browser }));
@@ -41,6 +44,16 @@ beforeEach(() => vi.resetModules());
 afterEach(() => vi.doUnmock('../../../sdk/lib/isBrowser'));
 
 const grants = async () => ({ isAdmin: true });
+
+/**
+ * A refused request, answered the way the real `fetchNui` answers one: the default when the
+ * caller asked for one, a throw when it did not. A bare rejection would skip the defaulting
+ * and pass against code that reads a failure as an answer.
+ */
+const refuses = async (_event: string, _data?: unknown, options?: { defaultValue?: unknown }) => {
+  if (options?.defaultValue !== undefined) return options.defaultValue;
+  throw new Error('Player not authenticated');
+};
 
 describe('admin store', () => {
   it('stands in as allowed in a plain browser, which has no ace list to ask about', async () => {
@@ -102,5 +115,77 @@ describe('admin store', () => {
 
     expect(fetchNui).toHaveBeenCalledTimes(2);
     expect(get(isAdmin)).toBe(false);
+  });
+
+  /**
+   * MICA-384. A failed ask set `isAdmin` false and stopped, which read exactly like "holds no
+   * ace": the first ask is the one likeliest to fail, at resource start before a character has
+   * loaded, and nothing asked again until a character switch.
+   */
+  describe('a failed ask', () => {
+    it('stays hidden, and is not an answer', async () => {
+      const { isAdmin, adminKnown, refreshAdmin } = await loadAdmin(false, refuses);
+      await refreshAdmin();
+
+      expect(get(isAdmin)).toBe(false);
+      expect(get(adminKnown)).toBe(false);
+    });
+
+    it('is asked again by the next ensure, which then takes the answer', async () => {
+      let fail = true;
+      const { isAdmin, adminKnown, refreshAdmin, ensureAdmin, fetchNui } = await loadAdmin(
+        false,
+        (event, data, options) => (fail ? refuses(event, data, options) : grants())
+      );
+      await refreshAdmin();
+
+      fail = false;
+      await ensureAdmin();
+
+      expect(fetchNui).toHaveBeenCalledTimes(2);
+      expect(get(isAdmin)).toBe(true);
+      expect(get(adminKnown)).toBe(true);
+    });
+
+    it('reads a reply without a boolean as unknown, not as a grant or a refusal', async () => {
+      const { isAdmin, adminKnown, refreshAdmin } = await loadAdmin(false, async () => null);
+      await refreshAdmin();
+
+      expect(get(isAdmin)).toBe(false);
+      expect(get(adminKnown)).toBe(false);
+    });
+
+    it('does not keep a grant through a failed re-ask', async () => {
+      // A forced re-ask is a character switch: the next character must not inherit the last
+      // one's Administration icon because the request for theirs failed.
+      let fail = false;
+      const { isAdmin, adminKnown, refreshAdmin } = await loadAdmin(false, (e, d, o) =>
+        fail ? refuses(e, d, o) : grants()
+      );
+      await refreshAdmin();
+      expect(get(isAdmin)).toBe(true);
+
+      fail = true;
+      await refreshAdmin();
+
+      expect(get(isAdmin)).toBe(false);
+      expect(get(adminKnown)).toBe(false);
+    });
+  });
+
+  it('ensure asks nothing once the server has answered', async () => {
+    const { refreshAdmin, ensureAdmin, fetchNui } = await loadAdmin(false, grants);
+    await refreshAdmin();
+    await ensureAdmin();
+
+    expect(fetchNui).toHaveBeenCalledTimes(1);
+  });
+
+  it('ensure asks nothing in a plain browser', async () => {
+    const { ensureAdmin, adminKnown, fetchNui } = await loadAdmin(true, grants);
+    await ensureAdmin();
+
+    expect(fetchNui).not.toHaveBeenCalled();
+    expect(get(adminKnown)).toBe(true);
   });
 });

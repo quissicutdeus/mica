@@ -322,9 +322,15 @@ export const media = {
    * the restore window, projected the same way `getMedia` already is (MICA-110): no
    * `data`. Not part of the cached `store` above — a screen visited rarely enough that a
    * fresh read each time is the right cost.
+   *
+   * Rejects on failure, and on a reply that is not a list, rather than answering `[]` — an
+   * empty list is "nothing to restore", which a failed read is not.
    */
-  getDeleted: (): Promise<DeletedMediaItem[]> =>
-    callOr(mediaContract, 'getDeleted', undefined, []) as Promise<DeletedMediaItem[]>,
+  getDeleted: async (): Promise<DeletedMediaItem[]> => {
+    const rows: unknown = await call(mediaContract, 'getDeleted', undefined);
+    if (!Array.isArray(rows)) throw new Error('media:getDeleted answered without a list');
+    return rows as DeletedMediaItem[];
+  },
 
   /**
    * Undo a delete. Refreshes the main list on success so the restored row reappears in

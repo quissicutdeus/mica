@@ -225,10 +225,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * "Recently Deleted" (MICA-75-wiring). A fresh read every time it's opened rather
    * than a cached store — the screen is visited rarely enough that this is the right
    * cost, and it means a photo deleted moments ago is already there.
+   *
+   * Opened on a real answer only. A failed read toasts and stays where it was, rather than
+   * opening on an empty list; tapping it again is the retry.
    */
   const openRecentlyDeleted = async () => {
-    showRecentlyDeleted = true;
-    deletedMedia = await getDeletedMedia();
+    const ok = await run(async () => {
+      deletedMedia = await getDeletedMedia();
+    });
+    if (ok) showRecentlyDeleted = true;
   };
 
   const recentlyDeletedItems = $derived<RecentlyDeletedItem[]>(

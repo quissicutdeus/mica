@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { fetchNui } from '../nui/fetchNui';
-import { call, callOr } from '../nui/call';
+import { call } from '../nui/call';
 import { accountsContract } from '@mica/shared/contracts/accounts';
 import type { Account, FollowStats } from '@mica/shared/types';
 import type { AccountSearchQuery, FollowListQuery, FollowPage, ReactionTarget } from '@mica/sdk';
@@ -18,11 +18,38 @@ import type { AccountSearchQuery, FollowListQuery, FollowPage, ReactionTarget } 
  * accounts are "mine" is per app, and the app holds that.
  */
 
-export const getMyAccounts = (app: string) =>
-  callOr(accountsContract, 'mine', { app }, { rows: [] as Account[], limit: 3 });
+/**
+ * A reply that is not the shape asked for, refused like a failed request.
+ *
+ * `call` hands a `null` reply back as `null`, and a read that turned that into an empty
+ * answer would be the lie these functions stopped telling.
+ */
+const malformed = (action: string): Error =>
+  new Error(`accounts:${action} answered with an unexpected shape`);
 
-export const getAccounts = (query: { app: string; handle?: string; limit?: number }) =>
-  fetchNui<{ rows: Account[] }>('getAccounts', query, { defaultValue: { rows: [] } });
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  !!value && typeof value === 'object' && !Array.isArray(value);
+
+/**
+ * **Every read here throws on failure** — no `defaultValue`, the rule the paged reads below
+ * already followed. These four used to resolve an empty page, zero counts or an empty map
+ * when the request never reached the server, which is exactly what a real "nothing" looks
+ * like: a failed `getMyAccounts` showed a player who already holds a handle the screen for
+ * claiming their first one, a failed `getFollowStats` overwrote real counts with zeros, and
+ * a failed `getReactionsFor` wiped every chip it was asked about. The caller holds the last
+ * answer it had and decides what a failure does to it.
+ */
+export const getMyAccounts = async (app: string) => {
+  const reply = await call(accountsContract, 'mine', { app });
+  if (!isRecord(reply) || !Array.isArray(reply.rows)) throw malformed('mine');
+  return reply;
+};
+
+export const getAccounts = async (query: { app: string; handle?: string; limit?: number }) => {
+  const reply = await fetchNui<{ rows: Account[] }>('getAccounts', query);
+  if (!isRecord(reply) || !Array.isArray(reply.rows)) throw malformed('get');
+  return reply;
+};
 
 export const createAccount = (input: { app: string; handle: string; display_name?: string }) =>
   call(accountsContract, 'create', input);
@@ -30,17 +57,21 @@ export const createAccount = (input: { app: string; handle: string; display_name
 export const updateAccount = (input: { id: number } & Partial<Account>) =>
   fetchNui('updateAccount', input, undefined);
 
-export const getFollowStats = (input: {
+export const getFollowStats = async (input: {
   app: string;
   account_id: number;
   viewer_account_id?: number;
-}) =>
-  callOr(accountsContract, 'follows', input, {
-    followers: 0,
-    following: 0,
-    followedByMe: false,
-    blockedByMe: false
-  } satisfies FollowStats);
+}): Promise<FollowStats> => {
+  const reply: unknown = await call(accountsContract, 'follows', input);
+  if (
+    !isRecord(reply) ||
+    typeof reply.followers !== 'number' ||
+    typeof reply.following !== 'number'
+  ) {
+    throw malformed('follows');
+  }
+  return reply as unknown as FollowStats;
+};
 
 /**
  * The two lists behind those counts, paged.
@@ -56,7 +87,7 @@ export const getFollowStats = (input: {
 // `toggleFollow` gives: `server/__tests__/routes.test.ts` scans for the contract's action
 // name as a string literal at the call site, and one it cannot see goes unchecked.
 //
-// No `defaultValue`, deliberately — unlike every read above. These two feed a
+// No `defaultValue`, deliberately — like every read above. These two feed a
 // `createPagedStore`, whose own contract is that a failure throws so `load`/`loadMore` can
 // decide what it does to the window they are already holding (they keep the last known
 // page and warn). An empty page handed back on a transport failure is indistinguishable
@@ -109,8 +140,15 @@ export const unblockAccount = (input: {
   blocked_account_id: number;
 }) => call(accountsContract, 'unblock', input);
 
-export const getReactionsFor = (target: ReactionTarget) =>
-  callOr(accountsContract, 'reactionsFor', target, {});
+/**
+ * Throws on failure, so `createReactionStore`'s `load` keeps the map it holds: a `{}` here
+ * would have answered "no reactions" for every target asked about.
+ */
+export const getReactionsFor = async (target: ReactionTarget) => {
+  const reply = await call(accountsContract, 'reactionsFor', target);
+  if (!isRecord(reply)) throw malformed('reactionsFor');
+  return reply;
+};
 
 export const reactToTarget = (payload: {
   app: string;
