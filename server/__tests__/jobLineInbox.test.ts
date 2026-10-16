@@ -625,6 +625,21 @@ describe('a player texting a job line (MICA-307)', () => {
     await textFrom(3, '555-0003');
     expect(pushes.pushMany).not.toHaveBeenCalled();
   });
+
+  it('reads each connected player once, and never asks for a citizenid again (MICA-366)', async () => {
+    // It was `getPlayer` per player for the jobs, then `getCitizenId` — a second full lookup —
+    // per member of staff for the push.
+    const getCitizenId = vi.spyOn(FrameworkBridge, 'getCitizenId');
+    const getPlayer = vi.mocked(FrameworkBridge.getPlayer);
+    getPlayer.mockClear();
+
+    await textFrom(3, '555-0003');
+
+    expect(pushes.pushMany.mock.calls[0][1]).toEqual(['CID_COP', 'CID_COP2']);
+    expect(getCitizenId).not.toHaveBeenCalled();
+    const asked = (src: number) => getPlayer.mock.calls.filter(([s]) => s === src).length;
+    for (const src of [1, 2, 4, 5, 6]) expect(asked(src)).toBe(1);
+  });
 });
 
 describe('a job line notifies once per wait, not once per text (MICA-307)', () => {

@@ -88,19 +88,25 @@ const holdsJob = (line: JobLine, job: JobState) =>
 export const isLineStaff = (line: JobLine, jobs: readonly JobState[]): boolean =>
   jobs.some((job) => holdsJob(line, job));
 
+/** A member of staff found by one walk: their server id, and who the framework says they are. */
+interface StaffMember {
+  src: number;
+  citizenid: string;
+}
+
 /**
- * The connected players a line rings: holding one of its jobs as the active job, on duty when
- * the line requires it, never the caller, by ascending source. Every one of them, uncapped:
- * `maxRing` travels on the verdict as `max` and `Phone.ts` applies it after dropping the busy,
- * so ten busy officers with low server ids cannot hide two free ones.
+ * The one walk both `staffFor` and `pushLineMessage` read (MICA-366): one `getPlayer` per
+ * connected player, whose answer supplies both the jobs and the citizenid. The citizenid used
+ * to be a second `getCitizenId` per staff member — another full framework lookup for an answer
+ * the first one already held. By ascending source.
  */
-export function staffFor(line: JobLine, caller: number): number[] {
-  const staff: number[] = [];
+const staffMembers = (line: JobLine, caller: number): StaffMember[] => {
+  const staff: StaffMember[] = [];
   for (const key of Object.keys(FrameworkBridge.getAllPlayers())) {
     const src = Number(key);
     if (!Number.isInteger(src) || src <= 0 || src === caller) continue;
     const player = FrameworkBridge.getPlayer(src);
-    if (!player) continue;
+    if (!player?.citizenid) continue;
     let jobs: ReturnType<typeof player.getJobs>;
     try {
       jobs = player.getJobs();
@@ -108,16 +114,24 @@ export function staffFor(line: JobLine, caller: number): number[] {
       console.error(`[micaOS] mica_job_lines: could not read jobs for player ${src}:`, error);
       continue;
     }
-    if (isLineStaff(line, jobs)) staff.push(src);
+    if (isLineStaff(line, jobs)) staff.push({ src, citizenid: player.citizenid });
   }
-  return staff.sort((a, b) => a - b);
+  return staff.sort((a, b) => a.src - b.src);
+};
+
+/**
+ * The connected players a line rings: holding one of its jobs as the active job, on duty when
+ * the line requires it, never the caller, by ascending source. Every one of them, uncapped:
+ * `maxRing` travels on the verdict as `max` and `Phone.ts` applies it after dropping the busy,
+ * so ten busy officers with low server ids cannot hide two free ones.
+ */
+export function staffFor(line: JobLine, caller: number): number[] {
+  return staffMembers(line, caller).map((member) => member.src);
 }
 
 /** The citizenids of a line's staff right now, but for the player on `except`. */
 const staffCitizenIds = (line: JobLine, except: number): string[] =>
-  staffFor(line, except)
-    .map((src) => FrameworkBridge.getCitizenId(src))
-    .filter((citizenid): citizenid is string => Boolean(citizenid));
+  staffMembers(line, except).map((member) => member.citizenid);
 
 /**
  * Tell a line's staff a thread moved (MICA-307), so every open inbox refetches: `line_message`
