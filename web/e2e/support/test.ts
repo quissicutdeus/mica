@@ -24,12 +24,16 @@ export { expect };
  * What counts as a failure, exactly, because a pattern that matches nothing makes every
  * spec vacuous and one that matches too much makes every spec red:
  *
- * - `[MockRegistry]` anywhere — the registry's own prefix, on the missing-mock throw and
+ * - `[MockRegistry]` anywhere — the registry's own prefix, on the missing-mock report and
  *   on the malformed-generic-request warning.
  * - `fetchNui('<action>') failed` and `fetchNui('<action>') returned an error` — the two
  *   messages `web/src/nui/fetchNui.ts` prints when it falls back to a default. A call
- *   made with `quiet: true` prints neither, so a missing mock behind one is invisible
- *   here; `server/__tests__/routes.test.ts` is the gate for that, statically.
+ *   made with `quiet: true` prints neither, and neither does `call` or a store that catches
+ *   the rejection; those are covered by the registry's own report instead: it
+ *   `console.error`s `[MockRegistry] No handler found …` at the miss itself, so a missing
+ *   mock is seen whatever path made the call and whatever the caller did with the failure
+ *   (`nui.spec.ts` has a probe for each). A mock that answers `{ error }` is still seen
+ *   only on the defaulted, non-quiet path.
  * - An uncaught page error — in the main document or an add-on frame — whose message
  *   matches either of the two above. A write with no default rejects instead of warning,
  *   and a store that does not catch it lands here; so does an add-on that lets a failed

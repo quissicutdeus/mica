@@ -157,7 +157,14 @@ async function getMockData(
   // server sent nothing" rather than "nobody wired this up" — the exact failure this
   // registry exists to make visible instead of hidden. Throwing surfaces it the same
   // way a real unhandled route would.
-  throw new Error(`[MockRegistry] No handler found for event: ${eventName}`);
+  //
+  // The throw alone is not enough: `call`, a quiet `callOr` and any store that catches the
+  // rejection print nothing, so the e2e fixture (`web/e2e/support/test.ts`) could not see
+  // the miss. Reporting it here, at the miss, covers every path whatever the caller does
+  // with the failure. Only the browser mock transport reaches this; in CEF it never runs.
+  const message = `[MockRegistry] No handler found for event: ${eventName}`;
+  console.error(message);
+  throw new Error(message);
 }
 
 export const MockRegistry = {

@@ -63,6 +63,36 @@ test.describe('a NUI call with no browser mock', () => {
 });
 
 /**
+ * The same gate through the two doors the first probe does not use. The sweep moved most
+ * reads onto `call`, which has no default (the store catches the rejection) or a quiet one,
+ * and neither prints a `fetchNui` console line. The registry reports its own miss, so the
+ * fixture sees it whichever way the caller swallowed the failure.
+ */
+test.describe('a NUI call with no browser mock, however the caller swallows it', () => {
+  test('with no default, the caller catching the rejection', async ({ page }) => {
+    test.fail(true, 'the fixture must fail a spec whose caller swallowed an unmocked call');
+    await page.goto('/');
+    await expect(page.getByTestId('phone-frame')).toBeVisible();
+
+    const outcome = await page.evaluate(() =>
+      window.fetchNui!('micaE2eNoSuchAction', {}).catch(() => 'swallowed')
+    );
+    expect(outcome).toBe('swallowed');
+  });
+
+  test('with a quiet default', async ({ page }) => {
+    test.fail(true, 'the fixture must fail a spec whose quiet read hit an unmocked action');
+    await page.goto('/');
+    await expect(page.getByTestId('phone-frame')).toBeVisible();
+
+    const reply = await page.evaluate(() =>
+      window.fetchNui!('micaE2eNoSuchAction', {}, { defaultValue: 'default', quiet: true })
+    );
+    expect(reply).toBe('default');
+  });
+});
+
+/**
  * A server refusal reaches the player in the phone's language (MICA-216). The browser
  * mock answers the self-follow refusal in the wire shape the server uses — the English
  * text plus a catalog key — and with the locale seeded to German before boot, the error
