@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { derived, writable } from 'svelte/store';
-import { call, callOr } from '../nui/call';
+import { call } from '../nui/call';
 import { reportsContract } from '@mica/shared/contracts/reports';
 import type { Report } from '@mica/shared/types';
 import type { SubmitReportInput } from '@mica/sdk';
@@ -25,15 +25,25 @@ export const pendingReportCount = derived(pendingReports, ($pending) => $pending
 
 const asReports = (value: unknown): Report[] => (Array.isArray(value) ? (value as Report[]) : []);
 
+/**
+ * A failed read keeps the last list rather than emptying it: an emptied queue zeroes the
+ * badge and tells an admin there is nothing waiting. A non-admin is refused server-side and
+ * keeps the empty list it started with, which is still the right thing to show.
+ */
 export const loadPendingReports = async (): Promise<void> => {
-  // A non-admin is refused server-side; an empty queue is the right thing to show.
-  const rows = await callOr(reportsContract, 'queue', undefined, []);
-  pendingReports.set(asReports(rows));
+  try {
+    pendingReports.set(asReports(await call(reportsContract, 'queue', undefined)));
+  } catch (error) {
+    console.warn('Could not load the report queue; keeping the last one.', error);
+  }
 };
 
 export const loadReportHistory = async (): Promise<void> => {
-  const rows = await callOr(reportsContract, 'history', undefined, []);
-  resolvedReports.set(asReports(rows));
+  try {
+    resolvedReports.set(asReports(await call(reportsContract, 'history', undefined)));
+  } catch (error) {
+    console.warn('Could not load report history; keeping the last one.', error);
+  }
 };
 
 /** Resolve, then re-read both lists so the badge and history agree with the server. */

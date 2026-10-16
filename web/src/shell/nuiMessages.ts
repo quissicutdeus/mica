@@ -12,7 +12,8 @@ import { isCatalogEntry, type CatalogEntry } from '../../../sdk/catalog';
 import { setSignal } from './state/signal';
 import { time } from './state/time';
 import { hydrateSettingsOnCharacterLoad } from '../host/facets/storage';
-import { bootstrapStores, resetBootstrapState } from './state/bootstrap';
+import { bootstrapStores, forgetCharacterData, resetBootstrapState } from './state/bootstrap';
+import { reloadCharacterLock } from './state/deviceIdentity';
 import { toast } from './state/toast';
 import { messageOf } from '@mica/sdk';
 import { get } from 'svelte/store';
@@ -309,12 +310,17 @@ export function createNuiMessageRouter(bridge: NotificationBridge) {
       void hydrateSettingsOnCharacterLoad();
     },
     rehydrateShell: () => {
+      // The previous character's cached rows go first, so a re-read refused for the new
+      // one shows nothing rather than someone else's balance (`forgetCharacterData`).
+      forgetCharacterData();
       resetBootstrapState();
       void bootstrapStores(true);
       // A phone switch (`server/lib/deviceItem.ts`) sends only this route, never
       // `rehydrateSettings` — and settings are stored per phone id, so the previous
       // phone's values need the same sweep or they stay on screen under the new one.
-      void hydrateSettingsOnCharacterLoad();
+      // `reloadCharacterLock` runs that sweep, alongside the passcode re-ask it has to wait
+      // for before the lock is judged again (MICA-385).
+      void reloadCharacterLock();
     },
     setSignal: (data) => {
       const parsed = parseSetSignal(data);

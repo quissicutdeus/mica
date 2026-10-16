@@ -13,17 +13,23 @@ import { get } from 'svelte/store';
  * resolves by hand, so a test can look at the lock while the new device's answer is still
  * out — the window the ticket is about.
  */
-const { calls, pendingStatus } = vi.hoisted(() => ({
+const { calls, pendingStatus, settingsGetAll } = vi.hoisted(() => ({
+  /** The settings sweep's answer, which one test makes fail. */
+  settingsGetAll: vi.fn((): Promise<unknown> => Promise.resolve([])),
   calls: [] as { id: string; action: string; device?: string }[],
-  pendingStatus: [] as { device?: string; resolve: (v: { hasPasscode: boolean }) => void }[]
+  pendingStatus: [] as {
+    device?: string;
+    resolve: (v: { hasPasscode: boolean }) => void;
+    reject: (e: Error) => void;
+  }[]
 }));
 vi.mock('../../nui/call', () => {
   const answer = (contract: { id: string }, action: string, device?: string) => {
     calls.push({ id: contract.id, action, device });
     if (contract.id === 'lockscreen' && action === 'status') {
-      return new Promise((resolve) => pendingStatus.push({ device, resolve }));
+      return new Promise((resolve, reject) => pendingStatus.push({ device, resolve, reject }));
     }
-    if (contract.id === 'settings' && action === 'getAll') return Promise.resolve([]);
+    if (contract.id === 'settings' && action === 'getAll') return settingsGetAll();
     return Promise.resolve(true);
   };
   return {
@@ -41,10 +47,10 @@ const { bootstrapStores, resetBootstrapState } = vi.hoisted(() => ({
 }));
 vi.mock('./bootstrap', () => ({ bootstrapStores, resetBootstrapState }));
 
-import { installDeviceIdentity } from './deviceIdentity';
+import { installDeviceIdentity, reloadCharacterLock } from './deviceIdentity';
 import { setActiveDevice } from './device';
 import { openDevice } from './phoneOpen';
-import { autoLockPolicy, evaluateLockOnOpen, isLocked } from './lockScreen';
+import { autoLockPolicy, evaluateLockOnOpen, isLocked, trustLockPolicy } from './lockScreen';
 import { hasPasscode, passcodeAnswerFor } from '../../services/passcode';
 
 /** Let every settled promise run its continuation. */
@@ -69,6 +75,7 @@ beforeEach(() => {
   bootstrapStores.mockClear();
   resetBootstrapState.mockClear();
   // The phone, open and unlocked, with a known answer of "no passcode".
+  trustLockPolicy();
   autoLockPolicy.set('onClose');
   hasPasscode.set(false);
   passcodeAnswerFor.set('phone');
@@ -160,5 +167,156 @@ describe('a switch of the active device', () => {
     setActiveDevice('phone');
     expect(calls).toEqual([]);
     expect(get(passcodeAnswerFor)).toBe('phone');
+  });
+});
+
+/** MICA-385: a character load re-asks the passcode, and an answer it cannot get keeps the lock. */
+describe('a character load', () => {
+  const refuseStatus = async () => {
+    const next = pendingStatus.shift();
+    expect(next, 'a lockscreen:status request is out').toBeDefined();
+    next!.reject(new Error('Player not authenticated'));
+    await settle();
+  };
+
+  it('keeps a phone opened on a fresh connect locked when the ask still fails', async () => {
+    // Fresh connect: the mount-time ask was refused, so nothing is known, and the phone was
+    // raised before the character loaded. The open asks again, and that is refused too.
+    passcodeAnswerFor.set(null);
+    evaluateLockOnOpen();
+    expect(get(isLocked)).toBe(true);
+    await refuseStatus();
+
+    const done = reloadCharacterLock();
+    await refuseStatus();
+    await done;
+
+    expect(get(passcodeAnswerFor)).toBeNull();
+    expect(get(isLocked)).toBe(true);
+  });
+
+  it('opens it once the loaded character turns out to have no passcode', async () => {
+    passcodeAnswerFor.set(null);
+    evaluateLockOnOpen();
+    await refuseStatus();
+
+    const done = reloadCharacterLock();
+    await answerStatus(false);
+    await done;
+
+    expect(get(isLocked)).toBe(false);
+  });
+
+  it("locks on a switch to a character with a passcode, on the new character's answer", async () => {
+    // The previous character: no passcode, phone open and unlocked.
+    expect(get(isLocked)).toBe(false);
+
+    const done = reloadCharacterLock();
+    // Forgotten at once — the previous character's "no passcode" is not this one's.
+    expect(get(passcodeAnswerFor)).toBeNull();
+    expect(get(isLocked)).toBe(true);
+    expect(calls).toContainEqual({ id: 'lockscreen', action: 'status', device: 'phone' });
+
+    await answerStatus(true);
+    await done;
+
+    expect(get(hasPasscode)).toBe(true);
+    expect(get(passcodeAnswerFor)).toBe('phone');
+    expect(get(isLocked)).toBe(true);
+  });
+
+  it('asks again when an open finds the answer unknown, and unlocks on "no passcode"', async () => {
+    // The character-load ask failed: unknown, and locked.
+    const done = reloadCharacterLock();
+    await refuseStatus();
+    await done;
+    // That reload's own re-evaluation asked once more; refused as well.
+    await refuseStatus();
+    expect(get(passcodeAnswerFor)).toBeNull();
+    expect(get(isLocked)).toBe(true);
+
+    // The player closes and opens the phone: the open asks, and this time it answers.
+    openDevice.set(null);
+    openDevice.set('phone');
+    evaluateLockOnOpen();
+    expect(pendingStatus).toHaveLength(1);
+    await answerStatus(false);
+
+    expect(get(passcodeAnswerFor)).toBe('phone');
+    expect(get(isLocked)).toBe(false);
+  });
+
+  it("drops a reply to an ask made before the forget, rather than taking it as the new character's", async () => {
+    // An ask for the previous character is still out when the new one loads.
+    passcodeAnswerFor.set(null);
+    evaluateLockOnOpen();
+    expect(pendingStatus).toHaveLength(1);
+
+    const done = reloadCharacterLock();
+    expect(pendingStatus).toHaveLength(2);
+
+    // The previous character's late "no passcode" lands first, and is not this one's.
+    await answerStatus(false);
+    expect(get(passcodeAnswerFor)).toBeNull();
+    expect(get(isLocked)).toBe(true);
+
+    await answerStatus(true);
+    await done;
+    expect(get(hasPasscode)).toBe(true);
+    expect(get(isLocked)).toBe(true);
+  });
+
+  it("reads the strict policy when the new character's settings fail to load", async () => {
+    // The previous character skipped the lock entirely.
+    autoLockPolicy.set('never');
+    settingsGetAll.mockImplementationOnce(() => Promise.reject(new Error('timeout')));
+
+    const done = reloadCharacterLock();
+    await answerStatus(true);
+    await done;
+
+    // This character has a passcode, and their own policy never arrived: 'onClose', not the
+    // previous character's 'never'.
+    expect(get(autoLockPolicy)).toBe('never');
+    expect(get(isLocked)).toBe(true);
+  });
+
+  it("trusts the saved policy again once the new character's settings land", async () => {
+    autoLockPolicy.set('never');
+    settingsGetAll.mockImplementationOnce(() =>
+      Promise.resolve([
+        { app: 'settings', setting_key: 'auto_lock_policy', setting_value: '"never"' }
+      ])
+    );
+
+    const done = reloadCharacterLock();
+    await answerStatus(true);
+    await done;
+
+    expect(get(isLocked)).toBe(false);
+  });
+
+  it("does not let the previous character's late sweep vouch for the policy", async () => {
+    autoLockPolicy.set('never');
+    // A's settings answer is held back until after B has loaded.
+    let finishSweepA: (rows: unknown) => void = () => {};
+    settingsGetAll.mockImplementationOnce(() => new Promise((resolve) => (finishSweepA = resolve)));
+    const doneA = reloadCharacterLock();
+
+    // B loads, and B's own sweep fails.
+    settingsGetAll.mockImplementationOnce(() => Promise.reject(new Error('timeout')));
+    const doneB = reloadCharacterLock();
+
+    await answerStatus(false); // A's passcode ask: from before B's forget, so dropped.
+    await answerStatus(true); // B has a passcode.
+    await doneB;
+
+    // A's sweep lands last, and succeeds — for A.
+    finishSweepA([]);
+    await doneA;
+
+    // B's policy never arrived: the strict one, not A's 'never'.
+    expect(get(hasPasscode)).toBe(true);
+    expect(get(isLocked)).toBe(true);
   });
 });

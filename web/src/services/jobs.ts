@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { writable } from 'svelte/store';
-import { call, callOr } from '../nui/call';
+import { call } from '../nui/call';
 import { jobsContract } from '@mica/shared/contracts/jobs';
 import type { JobActionOutcome, JobView } from '@mica/shared/types';
 
@@ -25,13 +25,19 @@ export const jobs = writable<JobView[]>([]);
  */
 export const jobsLoaded = writable(false);
 
+/**
+ * A failed read keeps the last list and leaves `jobsLoaded` where it was — "you hold no
+ * jobs" only ever from the server. The next foreground or `changed` event asks again.
+ */
 export const fetchJobs = async () => {
   try {
-    jobs.set(await callOr(jobsContract, 'getJobs', undefined, [] as JobView[]));
+    const rows = await call(jobsContract, 'getJobs', undefined);
+    // Not a list is a failure, not data — `fetchNui`'s own rule for a defaulted read.
+    if (!Array.isArray(rows)) throw new Error('getJobs answered something other than a list');
+    jobs.set(rows);
+    jobsLoaded.set(true);
   } catch (error) {
     console.error('Failed to fetch jobs:', error);
-  } finally {
-    jobsLoaded.set(true);
   }
 };
 

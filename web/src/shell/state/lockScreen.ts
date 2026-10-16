@@ -5,8 +5,9 @@
 import { writable, get } from 'svelte/store';
 import { usePersisted } from '../../../../sdk/host/usePersisted';
 import { DEVICES, type DeviceId } from '@mica/shared/devices';
-import { hasPasscode, passcodeAnswerFor } from '../../services/passcode';
+import { ensurePasscodeAnswer, hasPasscode, passcodeAnswerFor } from '../../services/passcode';
 import { activeDevice } from './device';
+import { openDevice } from './phoneOpen';
 
 /**
  * Lock-screen display state (MICA-60), scoped exactly as the ticket's item 4 reads it:
@@ -42,8 +43,44 @@ export const autoLockPolicy = usePersisted<AutoLockPolicy>(
   { sanitize: sanitizePolicy }
 );
 
-export const setAutoLockPolicy = (policy: AutoLockPolicy): void =>
+export const setAutoLockPolicy = (policy: AutoLockPolicy): void => {
+  // The player's own choice, made now, is this identity's by definition.
+  policyUnconfirmed = false;
   autoLockPolicy.set(sanitizePolicy(policy));
+};
+
+/**
+ * Whether the saved auto-lock policy may still be the previous identity's.
+ *
+ * A character load or device switch sweeps settings to the new identity's rows, but a failed
+ * sweep returns early and leaves the old ones (`hydrateSettingsOnCharacterLoad`) — so a
+ * previous character's `'never'` would carry over to one who has a passcode. Until a sweep
+ * succeeds the lock reads the strict default, `'onClose'`, instead.
+ *
+ * A flag the evaluation reads rather than a write of `'onClose'` into `autoLockPolicy`: that
+ * store's `set` persists and queues a server save, and the sweep skips any key with a write
+ * still pending — so the reset would have been saved as the new character's choice and their
+ * real row never applied.
+ */
+let policyUnconfirmed = false;
+
+/** A character load or device switch: the policy on hand may not be this identity's. */
+export const distrustLockPolicy = (): number => {
+  policyUnconfirmed = true;
+  return ++policyGeneration;
+};
+
+/**
+ * Bumped by every distrust, so a sweep that finishes after a later identity change cannot
+ * vouch for the policy: it applied the previous identity's rows, not the current one's.
+ */
+let policyGeneration = 0;
+
+/** The new identity's settings have been applied, so the saved policy is theirs. */
+export const trustLockPolicy = (generation?: number): void => {
+  if (generation !== undefined && generation !== policyGeneration) return;
+  policyUnconfirmed = false;
+};
 
 /** How long the phone has to sit closed before `'onTimeout'` locks it on the next open. */
 export const AUTO_LOCK_TIMEOUT_MS = 5 * 60 * 1000;
@@ -86,12 +123,17 @@ export const noteLockScreenClosed = (device: DeviceId = get(activeDevice)): void
  */
 export const evaluateLockOnOpen = (): void => {
   const device = get(activeDevice);
+  lockedForUnknown = false;
   if (!DEVICES[device].chrome.lockScreen) {
     isLocked.set(false);
     return;
   }
   if (get(passcodeAnswerFor) !== device) {
     isLocked.set(true);
+    lockedForUnknown = true;
+    // Ask again — or join the ask already out. The subscription below lifts this lock if
+    // the answer is "no passcode"; without the ask, a failed one was final for the session.
+    void ensurePasscodeAnswer();
     return;
   }
   if (!get(hasPasscode)) {
@@ -99,7 +141,7 @@ export const evaluateLockOnOpen = (): void => {
     return;
   }
 
-  const policy = get(autoLockPolicy);
+  const policy = policyUnconfirmed ? 'onClose' : get(autoLockPolicy);
   if (policy === 'never') {
     isLocked.set(false);
     return;
@@ -118,4 +160,34 @@ export const evaluateLockOnOpen = (): void => {
 };
 
 /** A correct passcode, or the emergency-call bypass, both go through here. */
-export const unlock = (): void => isLocked.set(false);
+export const unlock = (): void => {
+  lockedForUnknown = false;
+  isLocked.set(false);
+};
+
+/**
+ * Whether the lock on screen is there only because the passcode answer was unknown when the
+ * frame came up — not because a passcode and the auto-lock policy put it there.
+ */
+let lockedForUnknown = false;
+
+/**
+ * Let an unknown-answer lock go once the answer turns out to be "no passcode" (MICA-385).
+ *
+ * The answer now starts unknown, and stays so after a failed ask, so a frame raised before it
+ * lands is locked — the browser's first open can follow `Shell.svelte`'s mount-time ask
+ * within a tick, and in game a phone opened before the character loaded waits for the ask a
+ * character load makes. With no passcode there was never anything to check, so the lock
+ * lifts the moment that is known, whoever asked.
+ *
+ * Only ever towards unlocked, and only for "no passcode": an answer that a passcode exists
+ * keeps the lock as it is, and whoever asked re-evaluates with the policy in hand — a device
+ * switch or a character load (`state/deviceIdentity.ts`) waits for the settings hydrate too,
+ * since the policy is a setting and the one on hand may be the previous identity's.
+ */
+passcodeAnswerFor.subscribe((answerFor) => {
+  if (!lockedForUnknown || !get(isLocked)) return;
+  const device = get(activeDevice);
+  if (answerFor !== device || get(openDevice) !== device || get(hasPasscode)) return;
+  unlock();
+});

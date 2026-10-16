@@ -3,13 +3,28 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { get } from 'svelte/store';
-import { fetchCitizenId, fetchBalance } from '../../services/account';
+import {
+  fetchCitizenId,
+  fetchBalance,
+  bankBalance,
+  transactions,
+  transactionsLoaded,
+  historySource
+} from '../../services/account';
+import { invoices, invoicesLoaded } from '../../services/bank';
+import { jobs, jobsLoaded } from '../../services/jobs';
 import { refreshAdmin } from '../../services/admin';
-import { refreshCapabilities } from '../../services/capabilities';
+import { ensureCapabilities, refreshCapabilities } from '../../services/capabilities';
 import { refreshImageHost } from '../../services/imageHost';
 import { refreshLocale, refreshServerLanguages } from './locale';
 import { disabledAppIds, refreshOwnerConfig } from './ownerConfig';
-import { loadUnreadCounts } from '../../services/notifications';
+import {
+  loadShadeNotifications,
+  loadUnreadCounts,
+  notificationsLoaded,
+  shadeNotifications,
+  unreadCounts
+} from '../../services/notifications';
 import { bundledAddOns, registeredApps } from './registry';
 import { activeDevice } from './device';
 import { DEFAULT_DEVICE, type DeviceId } from '@mica/shared/devices';
@@ -143,10 +158,12 @@ export async function bootstrapStores(force: boolean = false): Promise<void> {
         // before it renders, rather than having it appear a beat later.
         refreshAdmin(),
         // Same reason as the admin check, and the same re-read on a character switch:
-        // `rehydrateShell` runs this whole function again, and both of these decide which
-        // icons exist. `Shell.svelte` also asks at mount so the answer is usually already
-        // in hand by the time the phone is first opened; the two share one request.
-        refreshCapabilities(),
+        // `rehydrateShell` runs this whole function again, forced, and both of these decide
+        // which icons exist — so a forced run always asks. An unforced one is the first open,
+        // and `Shell.svelte` has already asked at mount: this asks again only if that ask
+        // failed or never came (`ensureCapabilities`), which at resource start, before a
+        // character has loaded, it can.
+        force ? refreshCapabilities() : ensureCapabilities(),
         // MICA-61: the owner's default language, before the first screen renders.
         refreshLocale(),
         // MICA-235: languages an owner dropped on disk, and (via the store) their strings.
@@ -170,7 +187,10 @@ export async function bootstrapStores(force: boolean = false): Promise<void> {
         // `NotificationShade` inside it, whose own mount reads these counts — so asking here too
         // was the same request twice in the fly-in. A forced run is a character or device switch
         // with the frame possibly already up, where nothing remounts, so it still asks.
-        ...(onPhone && force ? [loadUnreadCounts()] : []),
+        //
+        // The shade's own rows too: on a character switch `forgetCharacterData` has emptied
+        // them, and with the frame up nothing remounts the shade to ask again.
+        ...(onPhone && force ? [loadUnreadCounts(), loadShadeNotifications()] : []),
         // App preloads, after the open animation (MICA-364): `deferAppPreloads` has when and
         // why, and `preloadsFor` which apps.
         //
@@ -196,6 +216,31 @@ export async function bootstrapStores(force: boolean = false): Promise<void> {
   })();
 
   return bootstrapPromise;
+}
+
+/**
+ * Empty every per-character cache a failed re-read would otherwise leave on screen.
+ *
+ * The reads behind these keep their last value when they fail, so that a dropped request does
+ * not tell the player "$0", "no jobs" or "No Activity Yet". On a character switch that same
+ * kindness is a leak: a forced re-read refused for the new character would show the previous
+ * one's balance, history, invoices, jobs and notifications as if they were theirs. So
+ * `rehydrateShell` (`shell/nuiMessages.ts`) clears them, and their loaded flags, before it
+ * asks again. Not on a device switch: the character is the same, and the tablet does not
+ * re-read the phone's bank or notifications.
+ */
+export function forgetCharacterData(): void {
+  bankBalance.set(0);
+  transactions.set([]);
+  transactionsLoaded.set(false);
+  historySource.set({ provider: null, available: false });
+  invoices.set([]);
+  invoicesLoaded.set(false);
+  jobs.set([]);
+  jobsLoaded.set(false);
+  shadeNotifications.set([]);
+  notificationsLoaded.set(false);
+  unreadCounts.set({});
 }
 
 export function resetBootstrapState(): void {

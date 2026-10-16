@@ -7,7 +7,13 @@ import type { DeviceId } from '@mica/shared/devices';
 import { activeDevice } from './device';
 import { openDevice } from './phoneOpen';
 import { bootstrapStores, resetBootstrapState } from './bootstrap';
-import { evaluateLockOnOpen, isLocked, noteLockScreenClosed } from './lockScreen';
+import {
+  distrustLockPolicy,
+  evaluateLockOnOpen,
+  isLocked,
+  noteLockScreenClosed,
+  trustLockPolicy
+} from './lockScreen';
 import { hydrateSettingsOnCharacterLoad } from '../../host/facets/storage';
 import { flushPendingWrites } from '../../host/settingsSync';
 import { forgetPasscodeAnswer, refreshPasscodeStatus } from '../../services/passcode';
@@ -40,6 +46,7 @@ export async function switchDeviceIdentity(device: DeviceId, previous: DeviceId)
   flushPendingWrites();
 
   forgetPasscodeAnswer();
+  const policyGeneration = distrustLockPolicy();
   isLocked.set(false);
   // A frame already up — the swap — shows the new device at once, so it is evaluated now
   // (and locks, the answer being unknown) rather than showing its apps until the answer lands.
@@ -50,11 +57,46 @@ export async function switchDeviceIdentity(device: DeviceId, previous: DeviceId)
   // `Shell.svelte` runs it, reset, and a closed shell has no reason to preload anything yet.
   if (open !== null) void bootstrapStores(true);
 
-  await Promise.allSettled([refreshPasscodeStatus(), hydrateSettingsOnCharacterLoad()]);
+  await Promise.allSettled([refreshPasscodeStatus(), sweepAndTrust(policyGeneration)]);
 
   // Superseded by a later switch, which is evaluating for itself.
   if (get(activeDevice) !== device) return;
   if (get(openDevice) === device) evaluateLockOnOpen();
+}
+
+/**
+ * The sweeping hydrate, and the saved lock policy trusted again only if it applied — and
+ * only if no later identity change has distrusted it since (`policyGeneration`).
+ */
+async function sweepAndTrust(policyGeneration: number): Promise<void> {
+  if (await hydrateSettingsOnCharacterLoad()) trustLockPolicy(policyGeneration);
+}
+
+/**
+ * A character load is a change of identity too, for the lock (MICA-385).
+ *
+ * `rehydrateShell` (`shell/nuiMessages.ts`) arrives when the framework loads a character, and
+ * the passcode answer on hand is either the previous character's or — on a fresh connect —
+ * nothing at all, because `Shell.svelte`'s mount-time ask is refused before any character
+ * exists. So it is forgotten and asked again, in the same order a device switch uses: a frame
+ * already up locks on the unknown answer, and the lock is evaluated again only once the new
+ * character's passcode *and* their auto-lock policy (a setting, swept here) have answered.
+ *
+ * A player who unlocked in the meantime is left unlocked. A failed ask leaves the answer
+ * unknown, which keeps the lock — the honest direction, since the passcode is unknown.
+ */
+export async function reloadCharacterLock(): Promise<void> {
+  const device = get(activeDevice);
+  forgetPasscodeAnswer();
+  // Until this character's settings land, the lock reads the strict policy, not whatever the
+  // previous character saved — a failed sweep would otherwise carry a `'never'` over.
+  const policyGeneration = distrustLockPolicy();
+  if (get(openDevice) === device) evaluateLockOnOpen();
+
+  await Promise.allSettled([refreshPasscodeStatus(), sweepAndTrust(policyGeneration)]);
+
+  if (get(activeDevice) !== device) return;
+  if (get(openDevice) === device && get(isLocked)) evaluateLockOnOpen();
 }
 
 /**

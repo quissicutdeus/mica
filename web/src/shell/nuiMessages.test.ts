@@ -38,6 +38,11 @@ import { contacts } from '../services/contacts';
 import { appRegistryStore } from './state/registry';
 import { audibleBroadcasts, nearbyBroadcasts, resetNearbyMusicForTest } from './state/nearbyMusic';
 import { usePersisted } from '../../../sdk/host/usePersisted';
+import { fetchNui } from '../nui/fetchNui';
+import { bankBalance, transactions, transactionsLoaded } from '../services/account';
+import { invoices, invoicesLoaded } from '../services/bank';
+import { jobs, jobsLoaded } from '../services/jobs';
+import { notificationsLoaded, shadeNotifications, unreadCounts } from '../services/notifications';
 
 /**
  * These twelve branches previously lived inside `App.svelte` and had no unit tests at
@@ -568,5 +573,51 @@ describe('rehydrateSettings and rehydrateShell sweep settings (MICA-287 round 3)
     await vi.waitFor(() => {
       expect(get(store)).toBe('default');
     });
+  });
+});
+
+/**
+ * A failed read keeps its last value, so a dropped request does not say "$0" — and on a
+ * character switch that would be the previous character's. `rehydrateShell` empties those
+ * caches first, so a re-read refused for the new character shows nothing of the old one.
+ */
+describe('rehydrateShell forgets the previous character', () => {
+  it("shows nothing of the old character when the new one's re-reads are refused", async () => {
+    bankBalance.set(91_000);
+    transactions.set([{ amount: 500, time: 1 }] as never);
+    transactionsLoaded.set(true);
+    invoices.set([{ id: 1 }] as never);
+    invoicesLoaded.set(true);
+    jobs.set([{ name: 'police' }] as never);
+    jobsLoaded.set(true);
+    shadeNotifications.set([{ id: 7 }] as never);
+    notificationsLoaded.set(true);
+    unreadCounts.set({ blabber: 4 });
+
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.mocked(fetchNui).mockRejectedValue(new Error('Player not authenticated'));
+    try {
+      expect(route(message('rehydrateShell'))).toBe(true);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(get(bankBalance)).toBe(0);
+      expect(get(transactions)).toEqual([]);
+      expect(get(transactionsLoaded)).toBe(false);
+      expect(get(invoices)).toEqual([]);
+      expect(get(invoicesLoaded)).toBe(false);
+      expect(get(jobs)).toEqual([]);
+      expect(get(jobsLoaded)).toBe(false);
+      expect(get(shadeNotifications)).toEqual([]);
+      expect(get(notificationsLoaded)).toBe(false);
+      expect(get(unreadCounts)).toEqual({});
+      // And the passcode is asked again for the new character (MICA-385).
+      expect(vi.mocked(fetchNui)).toHaveBeenCalledWith(
+        'svc',
+        expect.objectContaining({ service: 'lockscreen', action: 'status' })
+      );
+    } finally {
+      vi.mocked(fetchNui).mockImplementation(async () => ({}));
+    }
   });
 });

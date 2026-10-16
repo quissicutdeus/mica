@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { writable } from 'svelte/store';
-import { callOr } from '../nui/call';
+import { call } from '../nui/call';
 import { shellContract } from '@mica/shared/contracts/shell';
 
 /**
@@ -27,7 +27,15 @@ const ORIGIN = /^https:\/\/[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?$/;
  * space or a `;` in it would add a source or a directive the server never meant to allow.
  */
 export async function refreshImageHost(): Promise<void> {
-  const res = await callOr(shellContract, 'imageHost', undefined, { origin: null });
+  // A failure keeps the last answer: `null` written over a real host — on a character
+  // switch's re-run — read as "this server hosts no images" and broke add-on photos.
+  let res: { origin?: unknown } | null;
+  try {
+    res = await call(shellContract, 'imageHost', undefined);
+  } catch (error) {
+    console.warn('Could not read the image host; keeping the last answer.', error);
+    return;
+  }
   const origin = typeof res?.origin === 'string' ? res.origin.trim().toLowerCase() : '';
   imageHostOrigin.set(ORIGIN.test(origin) ? origin : null);
 }

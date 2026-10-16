@@ -4,7 +4,7 @@
 
 import { derived, writable } from 'svelte/store';
 import type { OwnerConfig } from '@mica/shared/ownerConfig';
-import { callOr } from '../../nui/call';
+import { call } from '../../nui/call';
 import { shellContract } from '@mica/shared/contracts/shell';
 
 export const DEFAULT_OWNER_CONFIG: OwnerConfig = {
@@ -34,13 +34,19 @@ export const disabledAppIds = derived(
 
 /**
  * Ask the server for the owner's configuration, the way `refreshLocale` asks for
- * `shell:locale` — quiet, because it may run before a character has loaded, and defaulted
- * rather than thrown, so a slow or failed round trip leaves `ownerConfig` at the defaults
- * it already started with.
+ * `shell:locale` — quiet, because it may run before a character has loaded. A slow or
+ * failed round trip leaves `ownerConfig` at whatever it already held: the defaults it
+ * started with, or the last real answer.
  */
 export async function refreshOwnerConfig(): Promise<void> {
-  const reply = await callOr(shellContract, 'ownerConfig', undefined, DEFAULT_OWNER_CONFIG, {
-    quiet: true
-  });
-  ownerConfig.set(reply);
+  // Thrown rather than defaulted, and caught here: a failure keeps whatever `ownerConfig`
+  // already holds. A default written over a real answer — on a character switch's re-run —
+  // put every app the owner disabled back on the launcher and reset the dock.
+  try {
+    const reply = await call(shellContract, 'ownerConfig', undefined);
+    // An empty reply is still the server's, and reads as the defaults — as it always did.
+    ownerConfig.set(reply ?? DEFAULT_OWNER_CONFIG);
+  } catch {
+    // Quiet, as before: it may run before a character has loaded.
+  }
 }

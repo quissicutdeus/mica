@@ -24,12 +24,15 @@ import {
   unlock,
   AUTO_LOCK_TIMEOUT_MS
 } from './lockScreen';
-import { hasPasscode } from '../../services/passcode';
+import { hasPasscode, passcodeAnswerFor } from '../../services/passcode';
+import { openDevice } from './phoneOpen';
 
 describe('lock screen display state (MICA-60)', () => {
   beforeEach(() => {
     isLocked.set(false);
     hasPasscode.set(false);
+    // The phone's answer is in hand: these are about the policy, not about the ask.
+    passcodeAnswerFor.set('phone');
     autoLockPolicy.set('onClose');
   });
 
@@ -84,5 +87,55 @@ describe('lock screen display state (MICA-60)', () => {
     isLocked.set(true);
     unlock();
     expect(get(isLocked)).toBe(false);
+  });
+});
+
+/** MICA-385: an answer nobody has yet locks, and "no passcode" lifts that lock on arrival. */
+describe('the lock while the passcode answer is unknown', () => {
+  beforeEach(() => {
+    isLocked.set(false);
+    hasPasscode.set(false);
+    passcodeAnswerFor.set(null);
+    autoLockPolicy.set('never');
+    openDevice.set('phone');
+  });
+
+  it('locks a phone opened while the answer is unknown, whatever the policy', () => {
+    evaluateLockOnOpen();
+    expect(get(isLocked)).toBe(true);
+  });
+
+  it('lifts that lock when the answer lands and there is no passcode', () => {
+    evaluateLockOnOpen();
+    expect(get(isLocked)).toBe(true);
+
+    passcodeAnswerFor.set('phone');
+
+    expect(get(isLocked)).toBe(false);
+  });
+
+  it('keeps it when the answer is that a passcode exists', () => {
+    evaluateLockOnOpen();
+
+    hasPasscode.set(true);
+    passcodeAnswerFor.set('phone');
+
+    expect(get(isLocked)).toBe(true);
+  });
+
+  it('leaves a lock the policy put there alone', () => {
+    hasPasscode.set(true);
+    passcodeAnswerFor.set('phone');
+    autoLockPolicy.set('onClose');
+    evaluateLockOnOpen();
+    expect(get(isLocked)).toBe(true);
+
+    // A later "no passcode" for the same device is someone clearing it in Settings, which
+    // is not this lock's business to lift.
+    hasPasscode.set(false);
+    passcodeAnswerFor.set(null);
+    passcodeAnswerFor.set('phone');
+
+    expect(get(isLocked)).toBe(true);
   });
 });

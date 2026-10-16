@@ -75,7 +75,7 @@ describe('capabilities store', () => {
     expect(get(capabilities).money).toBe(false);
   });
 
-  it('denies everything when the request fails', async () => {
+  it('denies everything when the request fails, without calling that an answer', async () => {
     const { capabilities, capabilitiesKnown, refreshCapabilities } = await loadCapabilities(
       true,
       async () => {
@@ -85,6 +85,27 @@ describe('capabilities store', () => {
     await refreshCapabilities();
 
     expect(get(capabilities).money).toBe(false);
+    // Not known: the install gate and `useCapabilities` must not read a failure as a server
+    // with no framework, which is what all-false-and-known looked like.
+    expect(get(capabilitiesKnown)).toBe(false);
+  });
+
+  it('keeps an earlier real answer when a later ask fails, since capabilities are server-wide', async () => {
+    let fail = false;
+    const { capabilities, capabilitiesKnown, refreshCapabilities } = await loadCapabilities(
+      false,
+      async () => {
+        if (fail) throw new Error('refused');
+        return { money: true };
+      }
+    );
+    await refreshCapabilities();
+    expect(get(capabilitiesKnown)).toBe(true);
+
+    fail = true;
+    await refreshCapabilities();
+
+    expect(get(capabilities).money).toBe(true);
     expect(get(capabilitiesKnown)).toBe(true);
   });
 
@@ -113,5 +134,63 @@ describe('capabilities store', () => {
 
     expect(fetchNui).toHaveBeenCalledTimes(2);
     expect(get(capabilities).money).toBe(false);
+  });
+
+  describe('ensureCapabilities', () => {
+    it('asks when nothing has been asked yet', async () => {
+      const { capabilities, ensureCapabilities, fetchNui } = await loadCapabilities(
+        false,
+        hasMoney
+      );
+      await ensureCapabilities();
+
+      expect(fetchNui).toHaveBeenCalledTimes(1);
+      expect(get(capabilities).money).toBe(true);
+    });
+
+    it('does not ask again once an ask has been answered', async () => {
+      const { refreshCapabilities, ensureCapabilities, fetchNui } = await loadCapabilities(
+        false,
+        hasMoney
+      );
+      await refreshCapabilities();
+      await ensureCapabilities();
+
+      expect(fetchNui).toHaveBeenCalledTimes(1);
+    });
+
+    it('asks again after a failed ask, and takes that answer', async () => {
+      let fail = true;
+      const { capabilities, capabilitiesKnown, refreshCapabilities, ensureCapabilities, fetchNui } =
+        await loadCapabilities(false, async () => {
+          if (fail) throw new Error('no character loaded');
+          return { money: true };
+        });
+      await refreshCapabilities();
+
+      fail = false;
+      await ensureCapabilities();
+
+      expect(fetchNui).toHaveBeenCalledTimes(2);
+      expect(get(capabilities).money).toBe(true);
+      expect(get(capabilitiesKnown)).toBe(true);
+    });
+
+    it('shares an ask still in flight rather than starting a second', async () => {
+      const { refreshCapabilities, ensureCapabilities, fetchNui } = await loadCapabilities(
+        false,
+        hasMoney
+      );
+      await Promise.all([refreshCapabilities(), ensureCapabilities()]);
+
+      expect(fetchNui).toHaveBeenCalledTimes(1);
+    });
+
+    it('still asks in a plain browser, whose stand-in is known but not an answer', async () => {
+      const { ensureCapabilities, fetchNui } = await loadCapabilities(true, hasMoney);
+      await ensureCapabilities();
+
+      expect(fetchNui).toHaveBeenCalledTimes(1);
+    });
   });
 });

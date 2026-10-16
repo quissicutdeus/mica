@@ -4,7 +4,7 @@
 
 import { writable } from 'svelte/store';
 import { fetchNui } from '../nui/fetchNui';
-import { callOr } from '../nui/call';
+import { call } from '../nui/call';
 import { bankContract } from '@mica/shared/contracts/bank';
 import type { BankHistory, BankHistorySource, Transaction } from '@mica/shared/types';
 
@@ -57,28 +57,37 @@ export const fetchPhoneNumber = async () => {
   }
 };
 
+/**
+ * No `defaultValue`: a failed read keeps the last balance rather than showing `$0`, which
+ * reads exactly like the bank's answer for an empty account.
+ */
 export const fetchBalance = async () => {
   try {
-    const balance = await fetchNui<number>('getBankBalance', null, { defaultValue: 0 });
-    bankBalance.set(balance);
+    const balance = await fetchNui<number>('getBankBalance', null);
+    // A reply that is not a number is no answer either; the old default read it as `0`.
+    if (typeof balance === 'number') bankBalance.set(balance);
   } catch (error) {
     console.error('Failed to fetch bank balance:', error);
   }
 };
 
+/**
+ * `call`, not `callOr`: a failed read keeps the last list and leaves `transactionsLoaded`
+ * where it was. Defaulting to an empty history and marking it loaded told the player "no
+ * transactions" when the truth was "could not ask"; the next foreground asks again.
+ */
 export const fetchTransactions = async () => {
   try {
     const empty: BankHistory = { provider: null, available: false, transactions: [] };
-    const data = await callOr(bankContract, 'getTransactions', undefined, empty);
+    const data = await call(bankContract, 'getTransactions', undefined);
     // A reply that is not the contract's shape — a stale server, a mock answering the old
     // bare array — is treated as the default rather than thrown on: the list stays empty and
     // the source stays "unknown", which is the honest state for an answer this cannot read.
     const history = data && Array.isArray(data.transactions) ? data : empty;
     transactions.set(history.transactions);
     historySource.set({ provider: history.provider, available: history.available });
+    transactionsLoaded.set(true);
   } catch (error) {
     console.error('Failed to fetch transactions:', error);
-  } finally {
-    transactionsLoaded.set(true);
   }
 };

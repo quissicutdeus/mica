@@ -12,7 +12,11 @@ const load = async (replies: Record<string, unknown>) => {
     async (_e: string, data: { action: string; data?: { locale?: string } }, o?: any) => {
       const key = data.action === 'catalog' ? `catalog:${data.data?.locale}` : data.action;
       const reply = replies[key];
-      if (reply instanceof Error) return o?.defaultValue;
+      // `fetchNui`'s contract: a failure answers the default if one was asked for, else throws.
+      if (reply instanceof Error) {
+        if (o && 'defaultValue' in o) return o.defaultValue;
+        throw reply;
+      }
       return reply ?? o?.defaultValue;
     }
   );
@@ -103,5 +107,29 @@ describe('server-provided languages (MICA-235)', () => {
     const m = await load({});
     await m.refreshServerLanguages();
     expect(get(m.serverLanguages)).toEqual([]);
+  });
+
+  it('a failed re-read keeps the language list it had', async () => {
+    const replies: Record<string, unknown> = { locales: { languages: ['de'] } };
+    const m = await load(replies);
+    await m.refreshServerLanguages();
+    expect(get(m.serverLanguages)).toEqual(['de']);
+
+    replies.locales = new Error('Player not authenticated');
+    await m.refreshServerLanguages();
+
+    expect(get(m.serverLanguages)).toEqual(['de']);
+  });
+
+  it("a failed re-read keeps the server's default language", async () => {
+    const replies: Record<string, unknown> = { locale: { locale: 'de' } };
+    const m = await load(replies);
+    await m.refreshLocale();
+    expect(get(m.serverLocale)).toBe('de');
+
+    replies.locale = new Error('Player not authenticated');
+    await m.refreshLocale();
+
+    expect(get(m.serverLocale)).toBe('de');
   });
 });

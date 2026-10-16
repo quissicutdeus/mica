@@ -4,7 +4,7 @@
 
 import { derived, writable } from 'svelte/store';
 import { usePersisted } from '@mica/sdk';
-import { callOr } from '../../nui/call';
+import { call, callOr } from '../../nui/call';
 import { shellContract } from '@mica/shared/contracts/shell';
 import {
   FALLBACK_LOCALE,
@@ -60,8 +60,14 @@ export const setLocale = (next: string): void => {
 
 /** Ask the server for its default. Quiet: it may run before a character is loaded. */
 export async function refreshLocale(): Promise<void> {
-  const reply = await callOr(shellContract, 'locale', undefined, { locale: '' }, { quiet: true });
-  serverLocale.set(normalizeLocale(reply?.locale));
+  // A failure keeps the last default rather than writing `''` over it, which read as "this
+  // server has no default language" and dropped the player back to English.
+  try {
+    const reply = await call(shellContract, 'locale', undefined);
+    serverLocale.set(normalizeLocale(reply?.locale));
+  } catch {
+    // Quiet: see above.
+  }
 }
 
 /**
@@ -99,7 +105,13 @@ export async function loadCatalog(language: string): Promise<void> {
 
 /** Ask the server which languages it has on disk. Quiet, like `refreshLocale`. */
 export async function refreshServerLanguages(): Promise<void> {
-  const reply = await callOr(shellContract, 'locales', undefined, null, { quiet: true });
+  // A failure keeps the last list: an emptied one reads as "the owner added no languages".
+  let reply: { languages?: unknown } | null;
+  try {
+    reply = await call(shellContract, 'locales', undefined);
+  } catch {
+    return;
+  }
   const list = Array.isArray(reply?.languages) ? reply.languages : [];
   const tags = list.map(normalizeLocale).filter((tag) => tag !== '');
   // An empty catalog makes the language show up in `availableLocales()` — which Settings,

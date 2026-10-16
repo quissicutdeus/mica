@@ -447,8 +447,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * whether Bank and Hodlr have icons at all: `services/capabilities.ts` starts denied in
    * game on purpose, so waiting for first open would mean painting the launcher without
    * them and adding them a beat later, in front of the player. Asking at mount gives the
-   * request the whole time between resource start and first open; the in-flight promise in
-   * that module means the two callers cost one request rather than two.
+   * request the whole time between resource start and first open. If it succeeds, the first
+   * open does not ask again; if it fails — at resource start it reaches `ServiceEndpoint`'s
+   * auth before a character has loaded — the first open's `ensureCapabilities` is the retry.
    */
   onMount(() => {
     void refreshCapabilities();

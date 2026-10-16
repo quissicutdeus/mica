@@ -11,6 +11,7 @@
  */
 import '../../host/registerFacets';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { get } from 'svelte/store';
 import { bootstrapStores, resetBootstrapState } from './bootstrap';
 import { contacts } from '../../services/contacts';
 import { conversationsStore } from '../../services/conversations';
@@ -246,5 +247,99 @@ describe('bootstrapStores', () => {
       void bootstrapStores(true);
       expect(unread).toHaveBeenCalledOnce();
     });
+  });
+});
+
+/**
+ * The capabilities ask at first open (no ticket; the MICA-364 leftover). `Shell.svelte` asks at
+ * mount, so the open asks again only if that ask failed or never came — and a failed one must
+ * be repaired there, since at resource start it reaches `ServiceEndpoint`'s auth before a
+ * character has loaded.
+ */
+describe('bootstrapStores and the capabilities answer', () => {
+  /**
+   * A fresh module graph per test. `capabilities.ts` keeps a real answer once it has one, and
+   * every forced run earlier in this file has given it one — so "the mount-time ask failed"
+   * is only reachable in a copy that has never been answered.
+   */
+  const fresh = async () => {
+    vi.resetModules();
+    // The new graph's facets, before anything in it reads one (`serverLocale.test.ts` too).
+    await import('../../host/registerFacets');
+    const { fetchNui: transport } = await import('../../nui/fetchNui');
+    const capabilitiesModule = await import('../../services/capabilities');
+    const account = await import('../../services/account');
+    const bootstrap = await import('./bootstrap');
+    vi.spyOn(account, 'fetchCitizenId').mockResolvedValue('CIT-101');
+    vi.spyOn(account, 'fetchBalance').mockResolvedValue();
+    const transportMock = vi.mocked(transport);
+    // Only now: the modules just imported start their own `setInterval`s at import, and
+    // under fake timers `runAllTimersAsync` would chase them forever.
+    vi.useFakeTimers();
+
+    return {
+      ...capabilitiesModule,
+      /** How many times the server was asked what it can do. */
+      capabilityAsks: () =>
+        transportMock.mock.calls.filter(
+          ([, data]) => (data as { action?: string })?.action === 'capabilities'
+        ).length,
+      /** Stand in for `Shell.svelte`'s mount-time ask, answered with `reply`. */
+      askAtMount: async (reply: () => Promise<unknown>) => {
+        transportMock.mockImplementationOnce(reply);
+        await capabilitiesModule.refreshCapabilities();
+        transportMock.mockClear();
+      },
+      answerNext: (reply: () => Promise<unknown>) => transportMock.mockImplementationOnce(reply),
+      /** A run, preloads and all; unforced is the first open. */
+      run: async (force = false) => {
+        const done = bootstrap.bootstrapStores(force);
+        await vi.runAllTimersAsync();
+        await done;
+      }
+    };
+  };
+
+  afterEach(async () => {
+    await vi.runAllTimersAsync();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('does not ask again on first open when the mount-time ask was answered', async () => {
+    const m = await fresh();
+    await m.askAtMount(async () => ({ money: true }));
+    expect(get(m.capabilitiesKnown)).toBe(true);
+
+    await m.run();
+
+    expect(m.capabilityAsks()).toBe(0);
+    expect(get(m.capabilities).money).toBe(true);
+  });
+
+  it('repairs a mount-time ask that failed, by asking again on first open', async () => {
+    const m = await fresh();
+    await m.askAtMount(async () => {
+      throw new Error('no character loaded');
+    });
+    // Denied, but not presented as the server's answer.
+    expect(get(m.capabilities).money).toBe(false);
+    expect(get(m.capabilitiesKnown)).toBe(false);
+
+    m.answerNext(async () => ({ money: true }));
+    await m.run();
+
+    expect(m.capabilityAsks()).toBe(1);
+    expect(get(m.capabilities).money).toBe(true);
+    expect(get(m.capabilitiesKnown)).toBe(true);
+  });
+
+  it('always asks on a forced run, since a character switch can change the answer', async () => {
+    const m = await fresh();
+    await m.askAtMount(async () => ({ money: true }));
+
+    await m.run(true);
+
+    expect(m.capabilityAsks()).toBe(1);
   });
 });

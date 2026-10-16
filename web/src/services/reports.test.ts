@@ -15,6 +15,17 @@ import {
 } from './reports';
 import * as fetchNuiModule from '../nui/fetchNui';
 
+/**
+ * A refused request, answered the way the real `fetchNui` answers one: the default when the
+ * caller asked for one, a throw when it did not. A bare `mockRejectedValue` would skip the
+ * defaulting entirely and pass against the very code this file exists to catch.
+ */
+function refuse<T>(_event: string, _data?: unknown, options?: { defaultValue?: T }): Promise<T> {
+  return options?.defaultValue !== undefined
+    ? Promise.resolve(options.defaultValue)
+    : Promise.reject(new Error('Player not authenticated'));
+}
+
 beforeEach(() => {
   vi.restoreAllMocks();
   pendingReports.set([]);
@@ -108,5 +119,20 @@ describe('reports store', () => {
 
     expect(named(spy)[0]).toBe('reports:reopen');
     expect(get(pendingReports)).toHaveLength(1);
+  });
+});
+
+describe('a failed reports read is not an answer', () => {
+  it('keeps the queue and its badge rather than telling an admin nothing is waiting', async () => {
+    pendingReports.set([report(1), report(2)]);
+    resolvedReports.set([report(3)]);
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(fetchNuiModule, 'fetchNui').mockImplementation(refuse);
+
+    await loadPendingReports();
+    await loadReportHistory();
+
+    expect(get(pendingReportCount)).toBe(2);
+    expect(get(resolvedReports)).toEqual([report(3)]);
   });
 });

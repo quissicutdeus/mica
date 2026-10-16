@@ -9,9 +9,23 @@ import {
   shadeNotifications,
   unreadCounts,
   markNotificationsOpened,
-  markNotificationsRead
+  markNotificationsRead,
+  notificationsLoaded,
+  loadShadeNotifications,
+  loadUnreadCounts
 } from './notifications';
 import * as fetchNuiModule from '../nui/fetchNui';
+
+/**
+ * A refused request, answered the way the real `fetchNui` answers one: the default when the
+ * caller asked for one, a throw when it did not. A bare `mockRejectedValue` would skip the
+ * defaulting entirely and pass against the very code this file exists to catch.
+ */
+function refuse<T>(_event: string, _data?: unknown, options?: { defaultValue?: T }): Promise<T> {
+  return options?.defaultValue !== undefined
+    ? Promise.resolve(options.defaultValue)
+    : Promise.reject(new Error('Player not authenticated'));
+}
 import { clearAppEvents, deliverAppEvent, subscribeAppEvent } from '../shell/state/appEvents';
 import { setActiveDevice } from '../shell/state/device';
 import { openDevice } from '../shell/state/phoneOpen';
@@ -302,5 +316,43 @@ describe('only a stored push refreshes, and a closed phone reads the counts alon
     await vi.runAllTimersAsync();
 
     expect(reads()).toEqual(PAIR);
+  });
+});
+
+describe('a failed shade read is not an answer', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(fetchNuiModule, 'fetchNui').mockImplementation(refuse);
+  });
+
+  it('keeps the rows the shade showed, and does not mark it loaded', async () => {
+    const rows = [item(1)];
+    shadeNotifications.set(rows);
+    notificationsLoaded.set(false);
+
+    await loadShadeNotifications();
+
+    expect(get(shadeNotifications)).toBe(rows);
+    expect(get(notificationsLoaded)).toBe(false);
+  });
+
+  it('keeps the launcher badges rather than clearing them to zero', async () => {
+    unreadCounts.set({ blabber: 3 });
+
+    await loadUnreadCounts();
+
+    expect(get(unreadCounts)).toEqual({ blabber: 3 });
+  });
+});
+
+describe('an unread-count reply that is not a map', () => {
+  it('is a failure, so a list never lands in the badges', async () => {
+    unreadCounts.set({ blabber: 3 });
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue([1, 2] as never);
+
+    await loadUnreadCounts();
+
+    expect(get(unreadCounts)).toEqual({ blabber: 3 });
   });
 });

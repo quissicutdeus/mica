@@ -71,8 +71,25 @@ export const capabilities = writable<CapabilitySet>(uniform(inPlainBrowser()));
  * so an unanswered capability reads as absent there. Refusing an *install* while the reply
  * is in flight would fail every saved add-on on the boot path that re-verifies them, so
  * `registry.ts` waits for a real answer before turning one away.
+ *
+ * **A failed ask is not an answer.** With no real answer yet in hand it leaves this `false`
+ * and every capability denied, so the icons stay hidden and the install gate stays open, and
+ * `ensureCapabilities` asks again; with one, it keeps that one. It used to set this `true` with everything `false`, which read exactly like a
+ * server with no framework — and the mount-time ask fails routinely, because it reaches
+ * `ServiceEndpoint`'s auth at resource start, before a character has loaded.
  */
 export const capabilitiesKnown = writable(inPlainBrowser());
+
+/**
+ * Whether the last ask came back with the server's answer — not the starting assumption,
+ * and not a failure.
+ *
+ * Kept apart from `capabilitiesKnown` because a plain browser starts that `true` on the
+ * stand-in, and the question here is narrower: has a request actually succeeded, so that
+ * the first open has nothing left to ask. Module state rather than a store, since nothing
+ * renders from it.
+ */
+let answered = false;
 
 /**
  * In flight, so the mount-time ask and `bootstrapStores` collapse into one request.
@@ -100,12 +117,39 @@ export const refreshCapabilities = async (): Promise<void> => {
         Object.fromEntries(ALL_CAPABILITIES.map((name) => [name, res?.[name] === true]))
       );
       capabilitiesKnown.set(true);
+      answered = true;
     } catch {
-      capabilities.set(uniform(false));
-      capabilitiesKnown.set(true);
+      // A real answer already in hand stays: what the server can do is the server's, not the
+      // character's (`server/services/Capabilities.ts`), so a forced re-ask on a character
+      // switch that fails has learned nothing that should take Bank off the launcher.
+      //
+      // With none, denied — a Bank that would only error stays off the launcher — but not
+      // known, and not answered, so neither the install gate nor an app's `useCapabilities`
+      // reads this as the server's word, and the next `ensureCapabilities` asks again.
+      if (!answered) {
+        capabilities.set(uniform(false));
+        capabilitiesKnown.set(false);
+      }
     } finally {
       inFlight = null;
     }
   })();
   return inFlight;
+};
+
+/**
+ * Ask only if the last ask failed or never came; otherwise keep the answer in hand.
+ *
+ * What the first open calls (`bootstrapStores`, unforced). `Shell.svelte` asks at mount, so
+ * by the first open the answer is usually here already and a second request would only
+ * repeat it — unless that mount-time ask failed, which at resource start it can, and then
+ * this is the retry that repairs it. One still in flight is shared, as with any caller.
+ *
+ * A character switch does not come through here: the answer can differ by character, so
+ * a forced bootstrap calls `refreshCapabilities` and always asks.
+ */
+export const ensureCapabilities = (): Promise<void> => {
+  if (inFlight) return inFlight;
+  if (answered) return Promise.resolve();
+  return refreshCapabilities();
 };

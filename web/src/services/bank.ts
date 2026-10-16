@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { call, callOr } from '../nui/call';
+import { call } from '../nui/call';
 import { bankContract } from '@mica/shared/contracts/bank';
 import { invoicesContract } from '@mica/shared/contracts/invoices';
 import { writable } from 'svelte/store';
@@ -42,14 +42,19 @@ export const sendMoney = async (input: SendMoneyInput): Promise<SendMoneyOutcome
 export const invoices = writable<Invoice[]>([]);
 export const invoicesLoaded = writable(false);
 
+/**
+ * A failed read keeps the last list and leaves `invoicesLoaded` where it was, so "no open
+ * invoices" is only ever the server's answer; the next foreground asks again.
+ */
 export const fetchInvoices = async (): Promise<void> => {
   try {
-    const rows = await callOr(invoicesContract, 'getOpen', undefined, [] as Invoice[]);
-    invoices.set(Array.isArray(rows) ? rows : []);
+    const rows = await call(invoicesContract, 'getOpen', undefined);
+    // Not a list is a failure, not data — `fetchNui`'s own rule for a defaulted read.
+    if (!Array.isArray(rows)) throw new Error('getOpen answered something other than a list');
+    invoices.set(rows);
+    invoicesLoaded.set(true);
   } catch (error) {
     console.error('Failed to fetch invoices:', error);
-  } finally {
-    invoicesLoaded.set(true);
   }
 };
 

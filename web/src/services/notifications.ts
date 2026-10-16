@@ -6,7 +6,7 @@ import { writable, derived, get } from 'svelte/store';
 import type { NotificationItem } from '@mica/shared/types';
 import { DEFAULT_DEVICE } from '@mica/shared/devices';
 import { activeDevice } from '../shell/state/device';
-import { callOr } from '../nui/call';
+import { call, callOr } from '../nui/call';
 import { notificationsContract } from '@mica/shared/contracts/notifications';
 import { observeAppEvents } from '../shell/state/appEvents';
 import { isPhoneOpen } from '../shell/state/phoneOpen';
@@ -27,19 +27,37 @@ export const totalUnreadNotifications = derived(unreadCounts, ($counts) =>
   Object.values($counts).reduce((total, count) => total + count, 0)
 );
 
+/**
+ * A failed read keeps the shade as it was and leaves `notificationsLoaded` alone: an empty
+ * shade marked loaded reads as "No Activity Yet", and a refresh that failed used to wipe
+ * real rows that way. The next mount or app-event refresh asks again.
+ */
 export async function loadShadeNotifications(): Promise<void> {
-  const items = await callOr(notificationsContract, 'getShadeNotifications', undefined, []);
-  shadeNotifications.set(items);
-  notificationsLoaded.set(true);
+  try {
+    const items = await call(notificationsContract, 'getShadeNotifications', undefined);
+    if (!Array.isArray(items)) throw new Error('the shade answered something other than a list');
+    shadeNotifications.set(items);
+    notificationsLoaded.set(true);
+  } catch (error) {
+    console.warn('Could not load the notification shade; keeping what it showed.', error);
+  }
 }
 
 export async function loadNotificationHistory(): Promise<NotificationItem[]> {
   return await callOr(notificationsContract, 'getNotificationHistory', undefined, []);
 }
 
+/** A failed read keeps the badges as they were rather than clearing every one to zero. */
 export async function loadUnreadCounts(): Promise<void> {
-  const counts = await callOr(notificationsContract, 'getUnreadCounts', undefined, {});
-  unreadCounts.set(counts);
+  try {
+    const counts = await call(notificationsContract, 'getUnreadCounts', undefined);
+    if (!counts || typeof counts !== 'object' || Array.isArray(counts)) {
+      throw new Error('unread counts were not a map');
+    }
+    unreadCounts.set(counts);
+  } catch (error) {
+    console.warn('Could not load unread counts; keeping the badges as they were.', error);
+  }
 }
 
 export async function markNotificationsRead(ids: number[]): Promise<void> {

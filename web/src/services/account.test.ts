@@ -6,6 +6,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   bankBalance,
   transactions,
+  transactionsLoaded,
   historySource,
   citizenid,
   fetchBalance,
@@ -14,6 +15,17 @@ import {
 } from './account';
 import { get } from 'svelte/store';
 import * as fetchNuiModule from '../nui/fetchNui';
+
+/**
+ * A refused request, answered the way the real `fetchNui` answers one: the default when the
+ * caller asked for one, a throw when it did not. A bare `mockRejectedValue` would skip the
+ * defaulting entirely and pass against the very code this file exists to catch.
+ */
+function refuse<T>(_event: string, _data?: unknown, options?: { defaultValue?: T }): Promise<T> {
+  return options?.defaultValue !== undefined
+    ? Promise.resolve(options.defaultValue)
+    : Promise.reject(new Error('Player not authenticated'));
+}
 
 describe('account store', () => {
   beforeEach(() => {
@@ -58,5 +70,46 @@ describe('account store', () => {
     await fetchTransactions();
     expect(get(transactions)).toEqual([]);
     expect(get(historySource)).toEqual({ provider: null, available: false });
+  });
+
+  describe('a failed read is not an answer', () => {
+    it('keeps the balance rather than showing $0', async () => {
+      bankBalance.set(15000);
+      vi.spyOn(fetchNuiModule, 'fetchNui').mockImplementation(refuse);
+
+      await fetchBalance();
+
+      expect(get(bankBalance)).toBe(15000);
+    });
+
+    it('leaves the history unloaded when the first read fails', async () => {
+      transactions.set([]);
+      transactionsLoaded.set(false);
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      vi.spyOn(fetchNuiModule, 'fetchNui').mockImplementation(refuse);
+
+      await fetchTransactions();
+
+      // Still loading, not "no transactions": the next foreground asks again.
+      expect(get(transactionsLoaded)).toBe(false);
+    });
+
+    it('keeps the last history when a later read fails', async () => {
+      const tx = [{ amount: 5, time: 1 }] as never;
+      vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValueOnce({
+        provider: 'okokBanking',
+        available: true,
+        transactions: tx
+      });
+      await fetchTransactions();
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      vi.spyOn(fetchNuiModule, 'fetchNui').mockImplementation(refuse);
+
+      await fetchTransactions();
+
+      expect(get(transactions)).toEqual(tx);
+      expect(get(historySource)).toEqual({ provider: 'okokBanking', available: true });
+      expect(get(transactionsLoaded)).toBe(true);
+    });
   });
 });

@@ -37,8 +37,22 @@ test.describe('fresh character boot', () => {
     await page.goto('/?mica_boot=unauthenticated');
     await expect(page.getByTestId('phone-frame')).toBeVisible();
 
-    // The unauthenticated window: open the drawer (reads capabilities/ownerConfig/admin
-    // through $derived in AppDrawer), close it, open an app.
+    // MICA-385: with no character the passcode ask is refused, so the phone cannot know
+    // whether to lock and stays LOCKED rather than guessing "no passcode". The lock screen is
+    // all there is until the character loads.
+    const lockScreen = page.getByRole('dialog', { name: 'Lock screen' });
+    await expect(lockScreen).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Search', exact: true })).toHaveCount(0);
+
+    // The character loads: the real rehydrate re-asks the passcode (the mock answers "no
+    // passcode"), which lifts the lock, and `bootstrapStores(true)` refills every store the
+    // drawer and launcher read.
+    await page.evaluate(() => window.postMessage({ action: 'rehydrateShell' }, '*'));
+    await expect(lockScreen).toBeHidden();
+
+    // Open the drawer straight away, while that refill may still be in flight rather than
+    // waiting it out (reads capabilities/ownerConfig/admin through $derived in AppDrawer),
+    // close it, open an app.
     await page.getByRole('button', { name: 'Search', exact: true }).click();
     await expect(page.getByRole('dialog', { name: 'App Drawer' })).toBeVisible();
     // The handle, not Escape: the search input grabs focus on open, and `back` does not
@@ -48,10 +62,6 @@ test.describe('fresh character boot', () => {
 
     await page.getByLabel('Home Screen').getByRole('button', { name: 'Calculator' }).click();
     await expect(page.locator('h1', { hasText: 'Calculator' })).toBeVisible();
-
-    // The character loads: the real rehydrate arrives while an app is foreground and
-    // `bootstrapStores(true)` is refilling every store the drawer and launcher read.
-    await page.evaluate(() => window.postMessage({ action: 'rehydrateShell' }, '*'));
 
     // Switch straight back home and reopen the drawer while that refill may still be
     // in flight, rather than waiting it out.

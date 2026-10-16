@@ -178,14 +178,18 @@ async function hydrateSettingsInProcess(): Promise<void> {
  * answer just arrived, since the debounce has simply not flushed it to the server yet.
  * Cancelling that write instead (this ticket's first attempt, via `cancelAllPendingWrites`)
  * silently dropped a real, just-made edit on exactly the double-run case above.
+ *
+ * Resolves `true` only when this identity's rows were applied in full, so a caller can tell
+ * a settled sweep from one that left the previous identity's values (`lockScreen.ts`'s
+ * auto-lock policy is the caller that needs to).
  */
-export async function hydrateSettingsOnCharacterLoad(): Promise<void> {
+export async function hydrateSettingsOnCharacterLoad(): Promise<boolean> {
   // A phone and a tablet keep separate rows (MICA-264), and the request is stamped with the
   // device on screen when it is sent. An answer that lands after the player has switched
   // device is the other identity's, so it is dropped: the switch runs its own hydrate.
   const device = get(activeDevice);
   const rows = await fetchRowsOrNull('Character-load hydration');
-  if (rows === null || get(activeDevice) !== device) return;
+  if (rows === null || get(activeDevice) !== device) return false;
 
   try {
     const backend = getStorageBackend();
@@ -224,11 +228,13 @@ export async function hydrateSettingsOnCharacterLoad(): Promise<void> {
     // Pushed last, after this side is already correct, so a frame that reads its snapshot
     // the moment it arrives never sees a half-applied hydrate.
     pushStorageToAddOns();
+    return true;
   } catch (error) {
     console.error(
       '[settings] Character-load hydration failed partway through; some values may be stale.',
       error
     );
+    return false;
   }
 }
 

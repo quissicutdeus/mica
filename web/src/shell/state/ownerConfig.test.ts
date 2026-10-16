@@ -10,10 +10,9 @@ import { get } from 'svelte/store';
  * suites load — a fresh module per test, the same mechanics `capabilities.test.ts` uses,
  * so a mock installed here never leaks into another file's copy.
  *
- * `refreshOwnerConfig` leans on `callOr`/the real `fetchNui` to turn a transport failure
- * into `defaultValue` (see `fetchNui.ts`'s own doc) rather than catching itself, the same
- * as `refreshLocale`. The stub below honours that one contract — catch, and hand back
- * `options.defaultValue` — without reimplementing the rest of the real transport.
+ * The stub honours `fetchNui`'s one contract that matters here (see its own doc): a
+ * failure hands back `options.defaultValue` when one was asked for and throws when not.
+ * `refreshOwnerConfig` asks for none and catches itself, so a failure keeps what it held.
  */
 const loadOwnerConfig = async (send: () => Promise<unknown>) => {
   vi.resetModules();
@@ -21,8 +20,9 @@ const loadOwnerConfig = async (send: () => Promise<unknown>) => {
     async (_event: string, _data: unknown, options?: { defaultValue?: unknown }) => {
       try {
         return await send();
-      } catch {
-        return options?.defaultValue;
+      } catch (error) {
+        if (options && 'defaultValue' in options) return options.defaultValue;
+        throw error;
       }
     }
   );
@@ -54,11 +54,13 @@ describe('ownerConfig store', () => {
     );
     await refreshOwnerConfig();
 
-    expect(fetchNui).toHaveBeenCalledWith(
-      'svc',
-      { service: 'shell', action: 'ownerConfig', data: undefined },
-      expect.objectContaining({ quiet: true })
-    );
+    // No default: a failure has to throw, so it can keep what is held instead of
+    // writing the defaults over it.
+    expect(fetchNui).toHaveBeenCalledWith('svc', {
+      service: 'shell',
+      action: 'ownerConfig',
+      data: undefined
+    });
     expect(get(ownerConfig)).toEqual({
       disabledApps: ['bank'],
       defaultDock: ['phone', '', '', '']
@@ -81,5 +83,20 @@ describe('ownerConfig store', () => {
       brandLogo: null,
       sounds: []
     });
+  });
+
+  it('keeps a real answer when a later read fails, rather than re-enabling every app', async () => {
+    let fail = false;
+    const { ownerConfig, disabledAppIds, refreshOwnerConfig } = await loadOwnerConfig(async () => {
+      if (fail) throw new Error('Player not authenticated');
+      return { disabledApps: ['bank'], defaultDock: [] };
+    });
+    await refreshOwnerConfig();
+
+    fail = true;
+    await refreshOwnerConfig();
+
+    expect(get(disabledAppIds)).toEqual(new Set(['bank']));
+    expect(get(ownerConfig)).toEqual({ disabledApps: ['bank'], defaultDock: [] });
   });
 });

@@ -19,6 +19,7 @@ import {
 } from './state/navigation';
 import { appRegistryStore } from './state/registry';
 import { openDevice } from './state/phoneOpen';
+import { isLocked } from './state/lockScreen';
 import { closeDrawer, openDrawer, searchQuery } from './state/appDrawer';
 import { closeControlCenter, openControlCenter, orderedToggles } from './state/controlCenter';
 import { searchNeedle, searchProviders } from './state/searchProviders';
@@ -77,8 +78,13 @@ const probeAnswered = () =>
   );
 
 /** Render the shell, which opens itself in a browser, and wait for the frame. */
+/**
+ * Rendered, and past the lock. The passcode answer starts unknown (MICA-385), so the first
+ * open paints the lock screen until the mock's "no passcode" lands a tick later.
+ */
 const renderOpen = async () => {
   const view = render(Shell);
+  await waitFor(() => expect(get(isLocked)).toBe(false));
   await waitFor(() => expect(view.container.querySelector('main')).not.toBeNull());
   return view;
 };
