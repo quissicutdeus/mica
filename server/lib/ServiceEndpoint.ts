@@ -436,6 +436,9 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
           const id = this.requireId(data);
           const success = await this.repository.delete(id, citizenid, deviceId);
           if (success) {
+            // Awaited on purpose, not fire-and-forget (MICA-379): the owner's call is that the
+            // audit row exists before the client hears the delete succeeded. It costs one round
+            // trip per delete; do not trade it away for speed.
             await AuditLogger.log({
               citizenid,
               action: 'deleted',
