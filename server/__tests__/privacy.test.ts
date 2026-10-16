@@ -245,7 +245,8 @@ const EXPORTED_COLUMNS: Record<string, { plain: string[]; sized: string[]; withh
       'alt_text'
     ],
     sized: ['data', 'thumbnail'],
-    withheld: []
+    // MICA-358: the quota's record of what the row costs — the server's, not the player's.
+    withheld: ['stored_bytes']
   },
   mica_blabber: {
     plain: [

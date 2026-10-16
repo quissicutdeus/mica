@@ -215,18 +215,19 @@ const dbMock = vi.hoisted(() => {
         scalar: db.media.some((m) => m.citizenid === params[0] && m.url === params[1]) ? 1 : null
       };
     }
-    if (sql.startsWith('SELECT COALESCE(SUM(')) {
+    // The library's size, as two sums since MICA-358: recorded sizes, then measured ones.
+    if (sql.startsWith('SELECT (SELECT COALESCE(SUM(`stored_bytes`)')) {
       return {
-        // The owner is the last value: any hosted-URL patterns come first (MICA-293).
+        // The owner is the last value: any hosted-URL patterns come before it (MICA-293).
         scalar: db.media
           .filter((m) => m.citizenid === params.at(-1))
           .reduce((sum, m) => sum + (m.data?.length ?? 0), 0)
       };
     }
     if (sql.startsWith('INSERT INTO `mica_media`')) {
-      const [citizenid, device_id, kind, data, url, created_at] = params;
+      const [citizenid, device_id, kind, data, url, stored_bytes, created_at] = params;
       const id = db.nextId++;
-      db.media.push({ id, citizenid, device_id, kind, data, url, created_at });
+      db.media.push({ id, citizenid, device_id, kind, data, url, stored_bytes, created_at });
       return { id };
     }
 
@@ -428,6 +429,7 @@ import { __resetLbPrefix } from '../lib/import/lbPhone';
 import { SKIP, threadTableUnusable } from '../lib/import/report';
 import { __resetImportTargets, postsTarget, registerImportTarget } from '../lib/import/targets';
 import { runImportCommand } from '../services/Import';
+import { NOMINAL_HOSTED_BYTES } from '../lib/media/quota';
 // Blabber registers itself as where imported posts go; core never names it.
 import '../services/Blabber';
 
@@ -858,6 +860,25 @@ describe('media quota', () => {
     const report = await runImport('npwd', { apply: true });
     expect(skipped(report, 'npwd_phone_gallery')).toEqual({ [SKIP.unsafeUrl]: 2 });
     expect(db.media).toHaveLength(0);
+  });
+
+  it('records what each row costs, with the quota off too (MICA-358)', async () => {
+    // No ceiling, so nothing is refused; a row still records its cost, so a quota switched on
+    // later sums it instead of measuring every imported photo.
+    (globalThis as any).GetConvarInt = (name: string, fallback: number) =>
+      name === 'mica_media_quota_mb' ? 0 : fallback;
+    (globalThis as any).GetConvar = (name: string, fallback: string) =>
+      name === 'mica_media_image_host' ? 'img.example.test' : fallback;
+    const inline = `data:image/png;base64,${'A'.repeat(1000)}`;
+    db.source.set('npwd_phone_gallery', [
+      { id: 1, identifier: 'CIT_A', image: inline },
+      { id: 2, identifier: 'CIT_A', image: 'https://img.example.test/p/1.webp' },
+      { id: 3, identifier: 'CIT_A', image: 'https://cdn.example.com/x.png' }
+    ]);
+
+    await runImport('npwd', { apply: true });
+
+    expect(db.media.map((m) => m.stored_bytes)).toEqual([inline.length, NOMINAL_HOSTED_BYTES, 0]);
   });
 });
 

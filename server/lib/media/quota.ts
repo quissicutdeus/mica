@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { Buffer } from 'node:buffer';
 import { PlayerFacingError } from '../errors';
 import { MediaItem } from '@mica/shared/types';
 import { Database } from '../Database';
@@ -157,9 +158,20 @@ export const hostedUrlPrefixes = async (): Promise<string[]> => {
  * matches its lower-case prefix.
  *
  * No hosts, no term: an install that never configured one runs the expression it always did.
+ *
+ * **The row's own `stored_bytes` first** (MICA-358): that is this same number, recorded when the
+ * row was written (`storedBytesOf`), and the expression above is only the fallback for a row
+ * that carries none — written before the column, or by a path that does not set it. See
+ * `usedBytesQuery` for why the quota does not use this form.
  */
-export const storedBytesSql = (prefixCount: number, alias = ''): string => {
-  const column = (name: string): string => (alias ? `${alias}.\`${name}\`` : name);
+export const storedBytesSql = (prefixCount: number, alias = ''): string =>
+  `COALESCE(${columnOf('stored_bytes', alias)}, ${measuredBytesSql(prefixCount, alias)})`;
+
+const columnOf = (name: string, alias: string): string => (alias ? `${alias}.\`${name}\`` : name);
+
+/** What a row costs measured from its columns, reading `data` and `thumbnail` to do it. */
+const measuredBytesSql = (prefixCount: number, alias = ''): string => {
+  const column = (name: string): string => columnOf(name, alias);
   const inline = `IFNULL(LENGTH(${column('data')}), 0) + IFNULL(LENGTH(${column('thumbnail')}), 0)`;
   if (prefixCount === 0) return inline;
   const hosted = Array.from(
@@ -175,6 +187,10 @@ export const storedBytesSql = (prefixCount: number, alias = ''): string => {
 /** `prefixes` as the `LIKE` patterns `storedBytesSql` binds, one per prefix. */
 export const prefixPatterns = (prefixes: readonly string[]): string[] =>
   prefixes.map((prefix) => `${prefix}%`);
+
+/** A text column's size as `LENGTH` measures it: UTF-8 bytes, `0` for anything not text. */
+const textBytes = (value: unknown): number =>
+  typeof value === 'string' ? Buffer.from(value, 'utf8').length : 0;
 
 /**
  * The per-player ceiling in bytes, or `0` for no ceiling.
@@ -199,12 +215,15 @@ export const quotaBytes = (): number => {
 /**
  * What a row costs, measured exactly the way `storedBytesSql` measures it, given the same
  * `prefixes` (`hostedUrlPrefixes`). The importer holds a row to the quota with this before it
- * writes one, so the two must agree to the byte.
+ * writes one, so the two must agree to the byte — and since MICA-358 it is also the value a
+ * written row records in `stored_bytes`.
+ *
+ * UTF-8 bytes, because `LENGTH` is bytes: base64 is ASCII, where the two agree, but a
+ * location's JSON in `data` need not be, and a stored size the fallback would not reproduce is
+ * the drift this column must not have.
  */
 export const storedBytesOf = (item: Partial<MediaItem>, prefixes: readonly string[]): number => {
-  const inline =
-    (typeof item.data === 'string' ? item.data.length : 0) +
-    (typeof item.thumbnail === 'string' ? item.thumbnail.length : 0);
+  const inline = textBytes(item.data) + textBytes(item.thumbnail);
   const url = item.url;
   if (typeof url !== 'string' || !prefixes.some((prefix) => url.startsWith(prefix))) {
     return inline;
@@ -232,15 +251,26 @@ export const storedBytesOf = (item: Partial<MediaItem>, prefixes: readonly strin
  * hard-deleting on the player's own delete — which throws away the evidence a report of
  * that photo is built on (`reportable.previewColumn`) — or a second grace-window knob, and
  * both are bigger decisions than this ticket.
+ *
+ * **Two sums, not one `SUM(COALESCE(stored_bytes, …))`** (MICA-358). The sum used to be
+ * `LENGTH(data) + LENGTH(thumbnail)` over every active row, and `data` is an off-page
+ * `mediumtext`: up to the whole quota read from disk on every capture, twice for a hosted one.
+ * A `COALESCE` would still name `data`, and InnoDB fetches every column a statement names
+ * whether or not the expression gets as far as it. So the rows that recorded their size are
+ * summed on their own, from `citizenid_status_stored` alone, and only the rows that recorded
+ * none are measured — from the blob, exactly as before. The two halves partition the active
+ * rows on `stored_bytes IS NULL`, so the total is the one `storedBytesSql` gives row by row.
  */
 export const usedBytesQuery = (
   citizenid: string,
   prefixes: readonly string[]
 ): { sql: string; params: unknown[] } => ({
   sql:
-    `SELECT COALESCE(SUM(${storedBytesSql(prefixes.length)}), 0) AS used ` +
-    `FROM \`mica_media\` WHERE \`citizenid\` = ? AND \`status\` = 'active'`,
-  params: [...prefixPatterns(prefixes), citizenid]
+    'SELECT (SELECT COALESCE(SUM(`stored_bytes`), 0) FROM `mica_media` ' +
+    "WHERE `citizenid` = ? AND `status` = 'active' AND `stored_bytes` IS NOT NULL) + " +
+    `(SELECT COALESCE(SUM(${measuredBytesSql(prefixes.length)}), 0) FROM \`mica_media\` ` +
+    "WHERE `citizenid` = ? AND `status` = 'active' AND `stored_bytes` IS NULL) AS used",
+  params: [citizenid, ...prefixPatterns(prefixes), citizenid]
 });
 
 /**

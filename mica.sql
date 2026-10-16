@@ -439,6 +439,7 @@ CREATE TABLE IF NOT EXISTS `mica_media` (
     `duration_ms` int(11) DEFAULT NULL,
     `byte_size` int(11) DEFAULT NULL,
     `alt_text` varchar(255) DEFAULT NULL,
+    `stored_bytes` int(11) DEFAULT NULL,
     `status` ENUM('active', 'deleted', 'moderated') NOT NULL DEFAULT 'active',
     `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -447,6 +448,7 @@ CREATE TABLE IF NOT EXISTS `mica_media` (
     KEY `citizenid_status` (`citizenid`, `status`),
     KEY `citizenid_status_created` (`citizenid`, `status`, `created_at`),
     KEY `created_at` (`created_at`),
+    KEY `citizenid_status_stored` (`citizenid`, `status`, `stored_bytes`),
     KEY `device_id` (`device_id`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
@@ -775,4 +777,5 @@ SELECT `id` FROM (
     UNION ALL SELECT '0008_phones_become_devices'
     UNION ALL SELECT '0009_wedged_pairs_released'
     UNION ALL SELECT '0010_contact_numbers_unique_per_device'
+    UNION ALL SELECT '0011_media_records_its_size'
 ) AS `seed` WHERE @mica_fresh_import = 1;

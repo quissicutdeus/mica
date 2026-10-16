@@ -160,7 +160,10 @@ const WITHHELD: Readonly<Record<string, readonly string[]>> = {
   mica_contacts: ['phone_key'],
   // MICA-335. Whether the device's new-device hooks still owe it a run: the server's own
   // bookkeeping, not anything the player made.
-  mica_devices: ['setup_pending']
+  mica_devices: ['setup_pending'],
+  // MICA-358. What a row costs against the media quota: size bookkeeping the server keeps so
+  // the quota need not measure every photo. The export already gives each byte column's size.
+  mica_media: ['stored_bytes']
 };
 
 // ---------------------------------------------------------------------------------------------

@@ -63,12 +63,15 @@ vi.mock('../lib/proximity', () => ({
   })
 }));
 
+import type { MediaItem } from '@mica/shared/types';
 import { releaseHostedImages, resetMediaHostForTests } from '../lib/mediaHost';
 import {
   hostedUrlPrefixes,
+  media,
   mediaStorageStats,
   NOMINAL_HOSTED_BYTES,
-  storedBytesOf
+  storedBytesOf,
+  usedBytesQuery
 } from '../services/Media';
 
 const CREATE_EVENT = 'mica:server:media:create';
@@ -243,7 +246,7 @@ describe('a hosted capture is held to the quota', () => {
   const uploads = () => fetchMock.mock.calls.filter((c: any[]) => c[1]?.method === 'POST');
   const usedSoFar = (bytes: number) =>
     dbMock.scalar.mockImplementation(async (sql: string) =>
-      String(sql).startsWith('SELECT COALESCE(SUM(') ? bytes : null
+      String(sql).startsWith('SELECT (SELECT COALESCE(SUM(`stored_bytes`)') ? bytes : null
     );
 
   it('refuses a capture with no room before anything is posted to the host', async () => {
@@ -259,7 +262,8 @@ describe('a hosted capture is held to the quota', () => {
     // Measured the way the insert measures: the player, and the hosted rows at their cost.
     const [sql, params] = dbMock.scalar.mock.calls[0];
     expect(String(sql)).toContain('CAST(url AS BINARY) LIKE ?');
-    expect(params).toEqual([`${PREFIX}%`, 'CID_A']);
+    // The player twice since MICA-358: once for the sizes rows recorded, once for the rest.
+    expect(params).toEqual(['CID_A', `${PREFIX}%`, 'CID_A']);
   });
 
   it('lets a capture that just fits upload, and still leaves the decision to the insert', async () => {
@@ -420,4 +424,103 @@ describe('a drop racing a release', () => {
       });
     });
   }
+});
+
+/**
+ * MICA-358: every row records what it costs (`stored_bytes`), and the quota sums that rather
+ * than measuring every photo the player holds. Each case is a write path that must record the
+ * size, or a read that must not reach for the bytes of a row that recorded one.
+ */
+describe('the size a row records (MICA-358)', () => {
+  const lastInsert = () => {
+    const [sql, params] = dbMock.insert.mock.calls.at(-1)!;
+    const flat = String(sql).replace(/\s+/g, ' ');
+    const columns = flat.slice(flat.indexOf('(') + 1, flat.indexOf(')')).split(', ');
+    return { sql: flat, params: params as unknown[], columns };
+  };
+  const recorded = () => {
+    const { params, columns } = lastInsert();
+    return params[columns.indexOf('`stored_bytes`')];
+  };
+
+  it('records an inline capture at exactly what the quota charged for it', async () => {
+    await call(CREATE_EVENT, { kind: 'photo', data: PHOTO });
+
+    expect(recorded()).toBe(PHOTO.length);
+    expect(lastInsert().params.slice(-2, -1)).toEqual([PHOTO.length]);
+  });
+
+  it('records a hosted capture at the uploaded size, not the URL', async () => {
+    hosting();
+    await call(CREATE_EVENT, { kind: 'photo', data: PHOTO });
+
+    expect(recorded()).toBe(FILE.length);
+  });
+
+  it('records the size with the quota switched off, so switching it on finds it', async () => {
+    convars = { mica_media_quota_mb: '0' };
+    await call(CREATE_EVENT, { kind: 'photo', data: PHOTO });
+
+    expect(lastInsert().sql).not.toContain('quota.used');
+    expect(recorded()).toBe(PHOTO.length);
+  });
+
+  it('never takes a size from the client', async () => {
+    await call(CREATE_EVENT, { kind: 'photo', data: PHOTO, stored_bytes: 1 });
+
+    expect(recorded()).toBe(PHOTO.length);
+  });
+
+  it('records the size of a row an export adds', async () => {
+    const privileged = media.repo as unknown as {
+      addForPlayer(citizenid: string, item: Partial<MediaItem>): Promise<number>;
+    };
+    await privileged.addForPlayer('CID_A', {
+      kind: 'photo',
+      data: PHOTO,
+      device_id: 'phone-a'
+    });
+
+    expect(recorded()).toBe(PHOTO.length);
+  });
+
+  it('measures in UTF-8 bytes, as LENGTH does, not in UTF-16 units', () => {
+    const json = JSON.stringify({ label: 'Café Ünïcode ☕' });
+    expect(storedBytesOf({ data: json }, [])).toBe(Buffer.byteLength(json));
+    expect(storedBytesOf({ data: json }, [])).toBeGreaterThan(json.length);
+  });
+
+  describe('the quota read', () => {
+    it('sums recorded sizes without naming the bytes, and measures only rows with none', () => {
+      const { sql, params } = usedBytesQuery('CID_A', [PREFIX]);
+      const [recordedHalf, measuredHalf] = sql.split(') + (');
+
+      expect(recordedHalf).toContain('SUM(`stored_bytes`)');
+      expect(recordedHalf).toContain('`stored_bytes` IS NOT NULL');
+      expect(recordedHalf).not.toMatch(/data|thumbnail|url|byte_size/);
+
+      expect(measuredHalf).toContain('LENGTH(data)');
+      expect(measuredHalf).toContain('CAST(url AS BINARY) LIKE ?');
+      expect(measuredHalf).toContain('`stored_bytes` IS NULL');
+
+      // The same owner and the same active rows on both sides of the partition.
+      expect(sql.match(/`citizenid` = \? AND `status` = 'active'/g)).toHaveLength(2);
+      expect(params).toEqual(['CID_A', `${PREFIX}%`, 'CID_A']);
+      expect(sql.split('?').length - 1).toBe(params.length);
+    });
+
+    it('is what the capture insert is held to, in the same statement', async () => {
+      await call(CREATE_EVENT, { kind: 'photo', data: PHOTO });
+
+      const { sql } = lastInsert();
+      expect(sql).toContain(`FROM (${usedBytesQuery('CID_A', []).sql}) AS quota`);
+    });
+  });
+
+  it('charges a drop its source row by the recorded size first, and copies it', async () => {
+    const { storedBytesSql } = await import('../lib/media/quota');
+    expect(storedBytesSql(0, 'src')).toBe(
+      'COALESCE(src.`stored_bytes`, IFNULL(LENGTH(src.`data`), 0) + IFNULL(LENGTH(src.`thumbnail`), 0))'
+    );
+  });
 });

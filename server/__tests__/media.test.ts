@@ -202,8 +202,13 @@ describe('media:drop', () => {
       // carries one — the decision is in the write rather than in front of it.
       const flat = String(sql).replace(/\s+/g, ' ');
       expect(flat).toContain('SUM(');
-      // Charged what the source row costs as it stands, in the same statement (MICA-293).
-      expect(flat).toMatch(/AND quota\.used \+ IFNULL\(LENGTH\(src\.`data`\), 0\).* <= \?$/);
+      // Charged what the source row costs as it stands, in the same statement (MICA-293): its
+      // recorded size, else measured (MICA-358).
+      expect(flat).toMatch(
+        /AND quota\.used \+ COALESCE\(src\.`stored_bytes`, IFNULL\(LENGTH\(src\.`data`\), 0\).* <= \?$/
+      );
+      // And the copy records the size it was charged.
+      expect(flat).toContain('src.`stored_bytes` FROM');
       // And copied from the source row only while it still exists (MICA-293).
       expect(flat).toContain("src.`id` = ? AND src.`citizenid` = ? AND src.`status` = 'active'");
       // Every placeholder is bound, which is what keeps the statement parameterized.
@@ -526,6 +531,16 @@ describe('media:item — one row, bytes and all (MICA-110)', () => {
     expect(reply).toMatchObject({ id: 42, kind: 'photo', data: 'base64-bytes' });
   });
 
+  it('hands out the photo and not the quota bookkeeping the row carries (MICA-358)', async () => {
+    dbMock.single.mockResolvedValueOnce({ ...OWNED_ROW, stored_bytes: 12 });
+
+    const reply = await callItem({ id: 42 });
+
+    // Positive twin first: the reply is the row, not an error or an empty object.
+    expect(reply).toMatchObject({ id: 42, data: 'base64-bytes' });
+    expect(reply).not.toHaveProperty('stored_bytes');
+  });
+
   it('coerces a Buffer payload to a string, as the list read does', async () => {
     // A `mediumtext` can arrive as a Buffer depending on the driver, which would cross NUI
     // as `{type:'Buffer',data:[...]}` and render as nothing.
@@ -604,7 +619,15 @@ describe('media:thumbnail — storing a thumbnail a client generated', () => {
     // Write-once. Without it the one door to a `clientWritable: false` column is also a way
     // to rewrite it repeatedly.
     expect(sql as string).toContain('`thumbnail` IS NULL');
-    expect(params as unknown[]).toEqual([TINY_STILL, 42, 'CID_A', TEST_PHONE_ID]);
+    // The recorded size grows by the thumbnail's bytes in the same statement (MICA-358).
+    expect(sql as string).toContain('`stored_bytes` = `stored_bytes` + ?');
+    expect(params as unknown[]).toEqual([
+      TINY_STILL,
+      Buffer.byteLength(TINY_STILL),
+      42,
+      'CID_A',
+      TEST_PHONE_ID
+    ]);
     expect(reply).toEqual({ stored: true });
   });
 

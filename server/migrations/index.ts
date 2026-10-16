@@ -10,5 +10,6 @@ import { migration as m6 } from './0007_sealed_bodies_widen_their_columns';
 import { migration as m7 } from './0008_phones_become_devices';
 import { migration as m8 } from './0009_wedged_pairs_released';
 import { migration as m9 } from './0010_contact_numbers_unique_per_device';
+import { migration as m10 } from './0011_media_records_its_size';
 
-export const migrations = [m0, m1, m2, m3, m4, m5, m6, m7, m8, m9];
+export const migrations = [m0, m1, m2, m3, m4, m5, m6, m7, m8, m9, m10];

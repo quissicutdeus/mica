@@ -201,7 +201,9 @@ export const importMedia = async (
   source: Pages<MediaIn>
 ): Promise<void> => {
   const limit = quotaBytes();
-  const prefixes = limit > 0 ? await hostedUrlPrefixes() : [];
+  // Read with the quota off too: every row records what it costs (MICA-358), and a row on the
+  // image host costs what a hosted photo does whether or not a ceiling holds it.
+  const prefixes = await hostedUrlPrefixes();
   const used = new Map<string, number>();
   const counted = new Set<string>();
 
@@ -275,15 +277,19 @@ export const importMedia = async (
         citizenid,
         async () => [
           {
+            // `stored_bytes` is `cost`: what the quota charged this row, recorded so the quota sums
+            // it rather than measuring the row again on every capture after (MICA-358).
             query: `INSERT INTO \`mica_media\`
-               (\`citizenid\`, \`device_id\`, \`kind\`, \`data\`, \`url\`, \`created_at\`)
-             VALUES (?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP))`,
+               (\`citizenid\`, \`device_id\`, \`kind\`, \`data\`, \`url\`, \`stored_bytes\`,
+                \`created_at\`)
+             VALUES (?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP))`,
             params: [
               citizenid,
               await deviceIdFor(ctx, citizenid, row.owner.number),
               row.isVideo ? 'video' : 'photo',
               isData ? link : null,
               isData ? null : link,
+              cost,
               row.at
             ]
           }

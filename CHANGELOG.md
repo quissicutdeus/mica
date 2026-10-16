@@ -47,6 +47,21 @@ Entries are hand-written. See MICA-72 for why a generated one was rejected.
 
 ### Action required
 
+**Run `micaschema apply` from the server console: `mica_media` records each
+photo's size, so the storage quota stops reading every photo a player has
+(MICA-358).** Checking the quota on a capture used to measure every stored photo
+and video of that player, up to the whole 64MB default quota read from disk on
+every shot, twice for a hosted one. `mica_media` gains a column, `stored_bytes`,
+written with every row, and an index, `citizenid_status_stored`, which the quota
+now reads instead. Migration `0011_media_records_its_size` adds the column and
+fills it in for every existing photo held inline, in batches, without touching
+when anything was last changed, so no deleted photo's restore window reopens.
+Rows that are a link rather than a stored photo are left empty and measured as
+before. Running it twice changes nothing. **Until you run it, taking, sharing or
+adding a photo fails, through the `AddMedia` export too, and so does
+`micamedia stats`;** the gallery still opens. The quota itself, and what counts
+against it, are unchanged.
+
 **Run `micaschema apply` from the server console: a new phone's setup now
 survives a restart, and a phone holds each number in its contacts once
 (MICA-335).** `mica_devices` gains `setup_pending`, set while a new phone or

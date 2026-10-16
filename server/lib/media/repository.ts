@@ -27,6 +27,10 @@ import {
  * the timestamps are the new row's own, and `citizenid` is supplied per recipient. `status`
  * is deliberately absent too — a copy starts `active` by the table's default rather than
  * inheriting anything, and `drop` has already refused to copy a row that is not.
+ *
+ * `stored_bytes` travels with the bytes it describes (MICA-358): a copy holds the same `data`,
+ * `thumbnail`, `url` and `byte_size`, so it costs its recipient what it cost the sender, and a
+ * sender's row with none recorded makes a copy with none, measured from its columns.
  */
 const COPIED_COLUMNS = [
   'kind',
@@ -38,8 +42,16 @@ const COPIED_COLUMNS = [
   'height',
   'duration_ms',
   'byte_size',
-  'alt_text'
+  'alt_text',
+  'stored_bytes'
 ] as const;
+
+/** A row about to be written, with the size `stored_bytes` records for it (MICA-358). */
+const withStoredBytes = (
+  item: Partial<MediaItem>,
+  prefixes: readonly string[]
+): Partial<MediaItem> =>
+  ({ ...item, stored_bytes: storedBytesOf(item, prefixes) }) as Partial<MediaItem>;
 
 /**
  * `mica_media`'s repository: what `repositoryFactory` in `services/Media.ts` builds. Split
@@ -71,8 +83,8 @@ export class MediaRepository extends SchemaRepository<MediaItem> {
     // An `AddMedia` photo goes to the host too, when there is one (MICA-243); a
     // location's JSON never does, by kind.
     const stored = await hostPhoto(item);
-    return await releaseOnFailure(stored, item, () =>
-      super.create({ ...stored, citizenid, device_id } as Partial<MediaItem>)
+    return await releaseOnFailure(stored, item, async () =>
+      super.create(withStoredBytes({ ...stored, citizenid, device_id }, await hostedUrlPrefixes()))
     );
   }
 
@@ -104,13 +116,17 @@ export class MediaRepository extends SchemaRepository<MediaItem> {
    * The insert half of `create`, quota-gated when a ceiling is set. Split out only so
    * `create` can release a hosted file when this refuses or throws (MICA-243).
    */
-  async insertOwned(item: Partial<MediaItem>): Promise<number> {
+  async insertOwned(unsized: Partial<MediaItem>): Promise<number> {
     const limit = quotaBytes();
-    const citizenid = item.citizenid;
+    const citizenid = unsized.citizenid;
+    // Measured once, and recorded on the row whether or not a ceiling holds it (MICA-358): a
+    // ceiling switched on later sums what was recorded rather than reading every photo.
+    const prefixes = await hostedUrlPrefixes();
+    const item = withStoredBytes(unsized, prefixes);
 
-    // No ceiling configured, or nobody to measure — the ordinary insert, byte for byte
-    // what it always was. `ServiceEndpoint` always supplies a citizenid on this path, so
-    // the second half is a guard against a caller that is not the client path at all.
+    // No ceiling configured, or nobody to measure — the ordinary insert, with the size
+    // recorded. `ServiceEndpoint` always supplies a citizenid on this path, so the second half
+    // is a guard against a caller that is not the client path at all.
     if (limit <= 0 || typeof citizenid !== 'string' || citizenid.length === 0) {
       return await super.create(item);
     }
@@ -125,7 +141,6 @@ export class MediaRepository extends SchemaRepository<MediaItem> {
       }
     }
 
-    const prefixes = await hostedUrlPrefixes();
     const id = await insertWithinQuota(
       columns,
       columns.map((column) => (item as Record<string, unknown>)[column]),
@@ -306,7 +321,13 @@ export class MediaRepository extends SchemaRepository<MediaItem> {
    *   already has one.
    *
    * The column names are literals in this file, never payload keys, so there is no
-   * identifier to check against an allowlist — only the three bound values.
+   * identifier to check against an allowlist — only the bound values.
+   *
+   * `stored_bytes` grows by the thumbnail in the same statement (MICA-358), so the recorded
+   * size cannot fall behind the row. From the bound value rather than the column, which does
+   * not depend on the order MariaDB applies the `SET`; the old thumbnail is `NULL` by the
+   * predicate, so it had cost nothing. A row with no size recorded keeps none — `NULL + n` —
+   * and is still measured from its columns.
    */
   async storeThumbnail(
     id: number,
@@ -315,10 +336,11 @@ export class MediaRepository extends SchemaRepository<MediaItem> {
     thumbnail: string
   ): Promise<boolean> {
     return await Database.update(
-      `UPDATE \`${this.tableName}\` SET \`thumbnail\` = ? ` +
+      `UPDATE \`${this.tableName}\` SET \`thumbnail\` = ?, ` +
+        '`stored_bytes` = `stored_bytes` + ? ' +
         'WHERE `id` = ? AND `citizenid` = ? AND `device_id` = ? ' +
         "AND `status` = 'active' AND `thumbnail` IS NULL",
-      [thumbnail, id, citizenid, deviceId]
+      [thumbnail, storedBytesOf({ thumbnail }, []), id, citizenid, deviceId]
     );
   }
 

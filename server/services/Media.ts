@@ -137,12 +137,28 @@ export const media = defineService<MediaItem, typeof mediaContract>({
     duration_ms: { type: 'int', clientWritable: false },
     byte_size: { type: 'int', clientWritable: false },
     /** Accessibility, and what RCS carries alongside an attachment. */
-    alt_text: { type: 'string', length: 255, clientWritable: false }
+    alt_text: { type: 'string', length: 255, clientWritable: false },
+    /**
+     * What the row costs against its owner's quota, recorded when it is written (MICA-358):
+     * `storedBytesOf`, the same number `storedBytesSql` measures from `data` and `thumbnail`.
+     * The quota sums this instead of reading every photo's bytes on every capture. `NULL` on a
+     * row that predates it or that a path wrote without it — the quota measures that row from
+     * its columns, as it always did, so a missing value costs speed and never a wrong answer.
+     * `0011_media_records_its_size` backfills it. Server bookkeeping: never client-written,
+     * and kept off the wire.
+     *
+     * Fixed when written, so it is the charge under the hosts known then. A hotlink onto a host
+     * the owner only configures later stays free on its own row where the live measure would
+     * now charge it — the one way the two can differ, and it errs toward the player.
+     */
+    stored_bytes: { type: 'int', clientWritable: false, private: true }
   },
   indexes: [
     { name: 'citizenid_status_created', columns: ['citizenid', 'status', 'created_at'] },
     // The retention prune's walk (MICA-167): oldest first across every owner. Additive.
-    { name: 'created_at', columns: ['created_at'] }
+    { name: 'created_at', columns: ['created_at'] },
+    // The quota's read (MICA-358): one player's live sizes from the index alone, no row read.
+    { name: 'citizenid_status_stored', columns: ['citizenid', 'status', 'stored_bytes'] }
   ],
   /**
    * Keyset on `id DESC`, like every other paged read here (§10).
@@ -220,6 +236,10 @@ app.registerEvent('getDeleted', async (_source, _cbId, _data, citizenid, _player
  * The error text is the same sentence a missing row and a row belonging to somebody else
  * both get, deliberately: distinguishing them would answer "does this id exist" for ids the
  * caller does not own.
+ *
+ * `findById` selects `*`, so the row carries `stored_bytes` (MICA-358), the server's quota
+ * bookkeeping and no part of `MediaItem`. Taken off here, so the one read that hands out a
+ * whole row hands out only the photo.
  */
 app.registerEvent('item', async (_source, _cbId, data, citizenid, _player, deviceId) => {
   const row = await repo.findById(data.id, citizenid, deviceId);
@@ -228,7 +248,9 @@ app.registerEvent('item', async (_source, _cbId, data, citizenid, _player, devic
       key: 'server.media.notFound'
     });
 
-  return row;
+  const shown: Partial<MediaItem> & { stored_bytes?: unknown } = { ...row };
+  delete shown.stored_bytes;
+  return shown as MediaItem;
 });
 
 /**
