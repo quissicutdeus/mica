@@ -827,7 +827,7 @@ describe('conversationForReader sends absent_number to a member alone in a 1:1 o
       conversationForReader(row({ is_group: true }), {}, alone),
       conversationForReader(row({ participant_a: ONE.phone, participant_b: LINE_KEY }), {}, alone),
       conversationForReader(row(), {}, { ...alone, memberPhones: [ONE.phone, TWO.phone] }),
-      // A legacy membership with no phone id is somebody, as `nobodyElseIn` counts it.
+      // A legacy membership with no phone id is somebody, as a send's refusal counts it.
       conversationForReader(row(), {}, { ...alone, memberPhones: [ONE.phone, null] }),
       // An empty list was never read, and is not "alone".
       conversationForReader(row(), {}, { ...alone, memberPhones: [] }),

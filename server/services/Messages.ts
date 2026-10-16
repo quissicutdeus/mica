@@ -11,12 +11,16 @@ import {
 import { deviceForRequest } from '../lib/deviceIdentity';
 import { conversations, type ConversationRepo } from './Conversations';
 import {
+  aloneInOneToOne,
+  isLiveMemberOn,
   lineKey,
+  lineKeyOfThread,
   lineLabel,
   openLineThread,
   senderIdOf,
   type LineSender,
-  type ParticipantRow
+  type ParticipantRow,
+  type ThreadForSend
 } from '../repositories/ConversationRepository';
 import { allLines, tellLine, type RegisteredLine } from '../lib/numberRegistry';
 // Media is a declared app; reuse its derived repository rather than a second
@@ -281,12 +285,14 @@ const requireParticipant = async (
   /** The phone in the caller's hand (MICA-282): membership is the phone's, and the citizen's. */
   deviceId: string
 ): Promise<void> => {
-  if (!(await messageRepo.isMember(conversationId, citizenid, deviceId))) {
-    throw new PlayerFacingError('Not a participant in this conversation.', {
-      key: 'server.messages.notParticipant'
-    });
-  }
+  if (!(await messageRepo.isMember(conversationId, citizenid, deviceId))) throw notParticipant();
 };
+
+/** What a caller who is not a live member of the thread, on the phone in hand, is told. */
+const notParticipant = (): PlayerFacingError =>
+  new PlayerFacingError('Not a participant in this conversation.', {
+    key: 'server.messages.notParticipant'
+  });
 
 /**
  * The message a payload names, if the caller is allowed to change it — and a loud
@@ -620,8 +626,13 @@ app.registerEvent('reactionsFor', async (source, cbId, data, citizenid, player) 
  * gave `SendMessage`; a player's character name used to ride here too, which told a burner's
  * correspondent who held it on every text.
  *
- * `known` is the thread's membership when the caller has already read it, so a send costs
- * one membership read rather than two.
+ * `known` is the thread's membership when the caller has already read it, so a send reads its
+ * members once (MICA-367). That read is from before the write, so a membership that ends while
+ * the send is in flight — a member who leaves, one purged by a privacy delete, a 1:1 whose pair
+ * is released — is still pushed the text, and one that begins is not (they read it from the
+ * thread, as an offline member does). `send` keeps that window to a few statements: when its
+ * number took a sync, which can await a whole number issue, it reads the members again after
+ * the write instead and hands that list here.
  */
 export const deliverToParticipants = async (
   conversationId: number,
@@ -778,17 +789,35 @@ app.registerEvent('send', async (source, cbId, data, citizenid, player, resolved
    */
   if (!resolved) throw new Error('[Messages] send ran without the phone it was sent from.');
   const deviceId = resolved;
-  await requireParticipant(conversationId, citizenid, deviceId);
   /**
-   * A 1:1 with nobody in it but the sender reaches nobody (MICA-349). There are two kinds: one
-   * the other side has left, which since MICA-342 stays readable to the side still in it, and
-   * one started to a number nobody holds, which has only the caller as a member. A text typed
-   * into either was stored and delivered to no one, with no sign to the sender. A group is never
-   * refused, even with one member left: an admin can add people back. A line thread is never
-   * refused: the line is not a member, and its texts go through `tellLineAbout`. Asked before
-   * the number, so a refused send costs no sync.
+   * The thread and its live members, read once (MICA-367), and every question this send asks of
+   * them answered from that one read: membership now, "nobody else" next, then the reply's
+   * `sender_id`, the push's recipients (unless the number took a sync, below) and the line it
+   * goes to. A send used to read the members
+   * three times — `isMember`, `nobodyElseIn`, `findParticipants` — and the thread once more.
+   *
+   * **Membership decides first, before anything else is read or written**, from the predicate
+   * the declaration gives `isMember`: this citizen, on this phone, not left (`isLiveMemberOn`).
+   * An id the caller is not in is refused the same way whether or not the thread exists, so a
+   * walk over ids learns nothing; in particular the reply check below never runs, which would
+   * otherwise say whether a message sits in a thread the caller cannot read.
    */
-  if (await conversationRepo.nobodyElseIn(conversationId, deviceId)) {
+  const { thread, participants } = await conversationRepo.readForSend(conversationId);
+  if (!isLiveMemberOn(participants, citizenid, deviceId)) throw notParticipant();
+  /**
+   * A 1:1 with nobody in it but the sender reaches nobody (MICA-349): one the other side has
+   * left, or one started to a number nobody holds (`aloneInOneToOne` has both, and why a group
+   * and a line thread never are). A text typed into either was stored and delivered to no one,
+   * with no sign to the sender. Asked before the number, so a refused send costs no sync.
+   */
+  if (
+    thread &&
+    aloneInOneToOne(
+      thread,
+      deviceId,
+      participants.map((row) => row.device_id)
+    )
+  ) {
     throw new PlayerFacingError('No one else is in this conversation.', {
       key: 'server.messages.noRecipient'
     });
@@ -831,7 +860,14 @@ app.registerEvent('send', async (source, cbId, data, citizenid, player, resolved
    * dropped unwritten and unanswered rather than pushed from a source somebody else now holds.
    */
   const framework = detectFramework();
-  const senderPhone = await numberOfPhone(deviceId, player, { framework, sync: syncNumber });
+  let synced = false;
+  const senderPhone = await numberOfPhone(deviceId, player, {
+    framework,
+    sync: (src) => {
+      synced = true;
+      return syncNumber(src);
+    }
+  });
   if (FrameworkBridge.getPlayer(source)?.citizenid !== citizenid) return undefined;
   if (!senderPhone) {
     throw new PlayerFacingError('This phone has no number yet.', {
@@ -853,15 +889,25 @@ app.registerEvent('send', async (source, cbId, data, citizenid, player, resolved
   const id = await messageRepo.create(newMessage);
   const stored = { ...newMessage, id } as MessageRow & { id: number };
   /**
-   * Read once, for the reply's `sender_id` and the push below. The row is committed, so a
-   * failed read costs the reply its `sender_id` and leaves the push to read for itself; it
-   * never fails the send.
+   * Who the push goes to: the members read before anything was decided, unless the number took
+   * a sync. A sync can await a whole number issue, and in that time a member may leave, be purged
+   * by a privacy delete, or lose a 1:1 whose pair is released — none of whom may be pushed a text
+   * written after. So then the members are read again, after the write, as every send did before
+   * MICA-367. A re-read that fails hands the push nothing known, so it reads for itself or
+   * pushes nobody; the stale snapshot is never the fallback. The row is committed either way.
    */
-  let participants: readonly ParticipantRow[] | undefined;
-  try {
-    participants = await conversationRepo.findParticipants(conversationId);
-  } catch (error) {
-    console.error('[Messages] Reading the members failed for conversation', conversationId, error);
+  let recipients: readonly ParticipantRow[] | undefined = participants;
+  if (synced) {
+    try {
+      recipients = await conversationRepo.findParticipants(conversationId);
+    } catch (error) {
+      recipients = undefined;
+      console.error(
+        '[Messages] Reading the members failed for conversation',
+        conversationId,
+        error
+      );
+    }
   }
   // Delivery must not fail the send: the row is committed either way, and the sender
   // should not see an error for something that already happened.
@@ -873,7 +919,7 @@ app.registerEvent('send', async (source, cbId, data, citizenid, player, resolved
       citizenid,
       { name: null, phone: senderPhone },
       stored,
-      participants
+      recipients
     );
   } catch (error) {
     console.error('[Messages] Delivery failed for conversation', conversationId, error);
@@ -882,12 +928,13 @@ app.registerEvent('send', async (source, cbId, data, citizenid, player, resolved
   // A thread with a line: tell its handler (MICA-275). After the write and the push, and
   // never able to fail the send, for the same reason delivery cannot.
   try {
-    await tellLineAbout(conversationId, stored, source, citizenid, senderPhone);
+    tellLineAbout(thread, conversationId, stored, source, citizenid, senderPhone);
   } catch (error) {
     console.error('[Messages] Telling a line failed for conversation', conversationId, error);
   }
 
-  return messageForReader(stored, citizenid, senderIdOf(participants ?? [], citizenid));
+  // The sender's own membership id, which they were confirmed in before the write.
+  return messageForReader(stored, citizenid, senderIdOf(recipients ?? participants, citizenid));
 });
 
 // A phone in hand, server-side: a text reaches other players (MICA-339). Resolved at the
@@ -897,21 +944,23 @@ app.requirePhoneFor('send').resolveDeviceFor('send');
 /**
  * If this thread is one with a registered line, hand the text to its `onMessage`.
  *
- * No line registered at all is the common server, and it costs no query: the registry is in
- * memory. Otherwise one indexed read of the thread's pair columns. A thread whose line is not
- * registered right now (unregistered, or its resource stopped) keeps the text and tells
- * nobody, the same as a text to a player who is offline; the line sees the thread again when
- * its number is registered again, because the key is built from the number.
+ * No line registered at all is the common server, and it asks nothing: the registry is in
+ * memory. Otherwise the line's side comes off the thread row the send already read
+ * (`readForSend`, MICA-367), not a read of its own. A thread whose line is not registered right
+ * now (unregistered, or its resource stopped) keeps the text and tells nobody, the same as a
+ * text to a player who is offline; the line sees the thread again when its number is registered
+ * again, because the key is built from the number.
  */
-const tellLineAbout = async (
+const tellLineAbout = (
+  thread: ThreadForSend['thread'],
   conversationId: number,
   stored: MessageRow & { id: number },
   source: number,
   citizenid: string,
   from: string | null
-): Promise<void> => {
+): void => {
   if (allLines().length === 0) return;
-  const key = await conversationRepo.lineKeyOf(conversationId);
+  const key = lineKeyOfThread(thread);
   if (!key) return;
   const line = lineForKey(key);
   if (!line) return;

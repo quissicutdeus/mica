@@ -41,6 +41,7 @@ vi.mock('../lib/Database', () => ({ Database: dbMock }));
 import '../services';
 import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { __resetRateLimits } from '../lib/rateLimit';
+import { TEST_PHONE_ID } from './phoneStub';
 import {
   UNREADABLE_CONTENT,
   encryptedColumns,
@@ -517,6 +518,20 @@ beforeEach(() => {
     if (text.startsWith('INSERT INTO mica_notifications')) {
       inserts.push({ sql: text, params });
       return {};
+    }
+    // A thread's live members (`findParticipants`): the caller on the phone in hand, and Bea.
+    // `messages:send` decides membership from this read since MICA-367.
+    if (text.includes('WHERE p.conversation_id = ? AND p.left_at IS NULL')) {
+      const member = {
+        conversation_id: params[0],
+        role: 'member',
+        status: 'active',
+        left_at: null
+      };
+      return [
+        { ...member, id: 1, citizenid: player.current, device_id: TEST_PHONE_ID },
+        { ...member, id: 2, citizenid: 'CIT_B', device_id: 'f'.repeat(32) }
+      ];
     }
     return answerQuery(text, params);
   });

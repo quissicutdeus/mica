@@ -135,6 +135,19 @@ vi.mock('../lib/Database', () => ({
       return [];
     }),
     single: vi.fn(async (sql: string, params: unknown[]) => {
+      // `readForSend`'s thread row (MICA-367), by primary key, whatever its status.
+      if (sql.includes('SELECT c.is_group, c.status, c.participant_a, c.participant_b')) {
+        db.reads.push(sql);
+        const row = db.conversations.get(Number(params[0]));
+        return row
+          ? {
+              is_group: row.is_group ?? 0,
+              status: row.status,
+              participant_a: row.participant_a ?? null,
+              participant_b: row.participant_b ?? null
+            }
+          : null;
+      }
       if (sql.includes('mica_messages_participants')) {
         const [conversationId, citizenid, deviceId] = params;
         return db.participants.some(
@@ -529,10 +542,16 @@ describe('a player texting a line', () => {
       []
     );
 
+    db.reads.length = 0;
     await call('messages', 'send', { conversation_id: conversationId, message: 'Coming.' });
 
     expect(onMessage).toHaveBeenCalledTimes(1);
     expect(onMessage.mock.calls[0][0]).toMatchObject({ conversationId, body: 'Coming.' });
+    // The line's side comes off the thread row the send already read (MICA-367), not lineKeyOf.
+    expect(db.reads.some((sql) => sql.includes('SELECT c.participant_a, c.participant_b'))).toBe(
+      false
+    );
+    expect(db.reads.filter((sql) => sql.includes('SELECT c.is_group, c.status'))).toHaveLength(1);
   });
 
   it("lands the script's reply in the same thread and pushes it live", async () => {

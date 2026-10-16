@@ -55,14 +55,21 @@ export const absentNumberFrom = (value: unknown): string | null => {
 };
 
 /**
- * Whether the reader is alone in a 1:1, the rule `ConversationRepository.nobodyElseIn` asks of the
- * database (MICA-349), here over a membership already read (MICA-350).
+ * Whether the reader is alone in a 1:1, over a membership already read: what `messages:send`
+ * refuses a text into (MICA-349, read once with the send's other questions since MICA-367) and
+ * what `conversations:get` names the absent side for (MICA-350).
  *
  * An active thread that is not a group and has no line side, where every live member is on the
  * reader's phone. `memberPhones` is the `device_id` of each live membership; a legacy one with no
- * phone id counts as somebody else, as `nobodyElseIn`'s `NOT (p.device_id <=> ?)` counts it. An
- * empty list is not "alone": the reader's own membership is always in it, so an empty one is a
- * list that was never read.
+ * phone id counts as somebody else, the side that refuses nothing it should not. An empty list is
+ * not "alone": the reader's own membership is always in it, so an empty one is a list that was
+ * never read.
+ *
+ * Two kinds of thread answer yes: a 1:1 the other side has left (since MICA-342 the side that
+ * leaves unpairs it, and the side that stays keeps it readable), and a 1:1 started to a number
+ * nobody holds. A group never does, even with one member left: an admin may add people back. A
+ * line thread never does: a line is never a member, and its texts reach it through
+ * `tellLineAbout`.
  */
 export const aloneInOneToOne = (
   row: Pick<ConversationRow, 'is_group' | 'status' | 'participant_a' | 'participant_b'>,
@@ -76,6 +83,38 @@ export const aloneInOneToOne = (
   Boolean(readerPhoneId) &&
   memberPhones.length > 0 &&
   memberPhones.every((phone) => phone === readerPhoneId);
+
+/**
+ * Whether this phone, in this citizen's hand, is a live member, over a membership already read
+ * (MICA-367): the predicate the `messages` membership declaration gives `Repository.isMember` —
+ * the citizen, the phone, and `left_at IS NULL` — asked of `findParticipants`' rows rather than
+ * of the database, so a send reads its thread's members once.
+ *
+ * `findParticipants` reads live rows only; `left_at` is checked again here so the answer never
+ * rests on which read produced the list. Compared exactly, where the database compares under the
+ * column's collation (case and trailing space ignored): stricter, so it can refuse a member the
+ * query would admit, never admit one it would refuse. Every value compared here was written by
+ * the server, from the same source the caller's are read from. No citizen or no phone is never a
+ * member: `isMember` with no phone would have asked about the citizen alone.
+ */
+export const isLiveMemberOn = (
+  participants: readonly ParticipantRow[],
+  citizenid: string,
+  deviceId: string
+): boolean =>
+  Boolean(citizenid) &&
+  Boolean(deviceId) &&
+  participants.some(
+    (row) => !row.left_at && row.citizenid === citizenid && row.device_id === deviceId
+  );
+
+/** What `messages:send` reads of a thread before it decides anything (MICA-367). */
+export interface ThreadForSend {
+  /** The sides `aloneInOneToOne` reads; null for an id that names no thread. */
+  thread: Pick<ConversationRow, 'is_group' | 'status' | 'participant_a' | 'participant_b'> | null;
+  /** Its live members, each with the number on its phone (`findParticipants`). */
+  participants: ParticipantRow[];
+}
 
 /** The newest live message of a thread, as `findForPhone` carries it: still the sender's row. */
 export interface LastMessageRow {
@@ -144,6 +183,25 @@ const PARTICIPANT_NUMBER =
 const LEGACY_NUMBER =
   `(SELECT l.\`number\` FROM \`${PHONE_NUMBERS_TABLE}\` l ` +
   `WHERE l.\`citizenid\` = ? AND l.\`device_id\` IS NULL ORDER BY l.\`id\` LIMIT 1)`;
+
+/** The side of a pair that is a line's key, or null (MICA-275): a phone id never has the prefix. */
+const lineSide = (a: unknown, b: unknown): string | null => {
+  for (const side of [a, b]) {
+    if (typeof side === 'string' && side.startsWith(LINE_KEY_PREFIX)) return side;
+  }
+  return null;
+};
+
+/**
+ * `lineKeyOf` over a thread row already read (MICA-367): the line side of an active 1:1, or null
+ * for a group, a thread no longer active, a thread with no line, or no row at all.
+ */
+export const lineKeyOfThread = (
+  row: Pick<ConversationRow, 'is_group' | 'status' | 'participant_a' | 'participant_b'> | null
+): string | null =>
+  !row || row.is_group || (row.status ?? 'active') !== 'active'
+    ? null
+    : lineSide(row.participant_a, row.participant_b);
 
 /** Whether one side of a 1:1 is a line rather than a phone (MICA-223). */
 export const isLineSide = (side: unknown): boolean =>
@@ -564,51 +622,27 @@ export class ConversationRepository extends SchemaRepository<ConversationRow> {
   }
 
   /**
-   * Whether this is a 1:1 with nobody in it but the caller, so a text into it would reach nobody
-   * (MICA-349). One indexed read, asked by `messages:send` after the caller's own membership is
-   * confirmed.
+   * Everything `messages:send` asks of a thread before it writes, read once (MICA-367): the
+   * thread's sides and its live members. Membership (`isLiveMemberOn`), "nobody else is in it"
+   * (`aloneInOneToOne`), the reply's `sender_id` and the push's recipients are all answered from
+   * this, where a send used to read the members three times and the thread once more.
    *
-   * **What it asks.** An active thread that is not a group and has no line side, with no live
-   * member on any phone but the caller's. Two kinds of thread answer yes:
-   *
-   * - **A 1:1 the other side has left.** Since MICA-342 the side that leaves (or is purged by a
-   *   privacy delete) unpairs the thread, and the side that stays keeps it readable.
-   * - **A 1:1 to a number nobody holds.** `conversations:create` naming only unknown numbers
-   *   makes a thread with no pair and the caller as its only member.
-   *
-   * Nothing delivers a text typed into either one, and the sender would see it sent.
-   *
-   * **What it never refuses.** A group, whose sole remaining member still posts to a thread an
-   * admin may add to again. A line thread, whose far side is never a member: a line has no
-   * `players` row, and its texts reach it through `tellLineAbout`. The pair columns are
-   * `COALESCE`d because an unpaired thread holds NULL there, and `NULL NOT LIKE` would answer
-   * NULL and drop exactly the rows this is for.
-   *
-   * **The other member is any phone that is not this one.** `device_id` is nullable on a legacy
-   * membership, so the comparison is null-safe (`<=>`): a live row with no phone id counts as
-   * somebody still there, which is the side that refuses nothing it should not. The caller's own
-   * row always carries this phone, because `isMember` matched it on that phone.
-   *
-   * The answer is read off a named column, not off "a row came back", so a stubbed `single`
-   * that answers every query with a row cannot turn every send into a refusal.
+   * Two statements, sent together: the thread by its primary key, and `findParticipants`. Nothing
+   * here is authorization by itself — the caller decides membership from it before anything else
+   * is read or written, and refuses an id it is not a member of with the same answer whether or
+   * not the thread exists.
    */
-  async nobodyElseIn(conversationId: number, deviceId: string): Promise<boolean> {
-    if (!deviceId) return false;
-    const line = `${LINE_KEY_PREFIX}%`;
-    const row = await Database.single<{ nobody_else?: number } | null>(
-      `SELECT 1 AS nobody_else
-         FROM mica_messages_conversations c
-        WHERE c.id = ? AND c.is_group = 0 AND c.status = 'active'
-          AND COALESCE(c.participant_a, '') NOT LIKE ?
-          AND COALESCE(c.participant_b, '') NOT LIKE ?
-          AND NOT EXISTS (
-              SELECT 1 FROM mica_messages_participants p
-               WHERE p.conversation_id = c.id AND p.left_at IS NULL
-                 AND NOT (p.device_id <=> ?)
-          )`,
-      [conversationId, line, line, deviceId]
-    );
-    return Boolean(row?.nobody_else);
+  async readForSend(conversationId: number): Promise<ThreadForSend> {
+    const [thread, participants] = await Promise.all([
+      Database.single<ThreadForSend['thread']>(
+        `SELECT c.is_group, c.status, c.participant_a, c.participant_b
+           FROM mica_messages_conversations c
+          WHERE c.id = ?`,
+        [conversationId]
+      ),
+      this.findParticipants(conversationId)
+    ]);
+    return { thread: thread ?? null, participants };
   }
 
   /**
@@ -1115,11 +1149,7 @@ export class ConversationRepository extends SchemaRepository<ConversationRow> {
       [conversationId]
     );
     const row = rows[0];
-    if (!row) return null;
-    for (const side of [row.participant_a, row.participant_b]) {
-      if (typeof side === 'string' && side.startsWith(LINE_KEY_PREFIX)) return side;
-    }
-    return null;
+    return row ? lineSide(row.participant_a, row.participant_b) : null;
   }
 
   /**

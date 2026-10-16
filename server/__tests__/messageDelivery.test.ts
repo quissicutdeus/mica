@@ -5,6 +5,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { DbCall } from './dbMockTypes';
 import { __resetRateLimits } from '../lib/rateLimit';
+import { TEST_PHONE_ID } from './phoneStub';
 
 /**
  * A sent message has to reach the other people in the thread.
@@ -83,8 +84,12 @@ vi.mock('../services/Conversations', () => ({
   conversations: {
     repo: {
       findParticipants: async () => participants.rows,
-      // Somebody is still in every thread here; the refusal is conversationPrivacy's (MICA-349).
-      nobodyElseIn: async () => false
+      // A send reads the thread and its members once (MICA-367). A group here, so nobody is ever
+      // alone in it; the 1:1 refusal is conversationPrivacy's (MICA-349).
+      readForSend: async () => ({
+        thread: { is_group: 1, status: 'active', participant_a: null, participant_b: null },
+        participants: participants.rows
+      })
     }
   }
 }));
@@ -471,12 +476,16 @@ describe('send persists reply_to_id (MICA-209)', () => {
   });
 
   /**
-   * `isMember` confirms the caller is in the thread, and the phone they text from has a number
-   * of its own, which a send now needs (MICA-346). Nothing else is answered.
+   * The caller is a live member on the phone in hand (MICA-367 reads it off the members), and the
+   * phone they text from has a number of its own, which a send now needs (MICA-346). Nothing else
+   * is answered.
    */
   const asParticipant = () => {
+    participants.rows = [
+      { id: 1, citizenid: 'SENDER', device_id: TEST_PHONE_ID, status: 'active', left_at: null },
+      { id: 2, citizenid: 'OTHER', device_id: 'f'.repeat(32), status: 'active', left_at: null }
+    ];
     dbMock.single.mockImplementation(async (sql: string) => {
-      if (sql.includes('mica_messages_participants')) return { placeholder: 1 };
       if (sql.includes('`mica_phone_numbers`') && /WHERE `device_id` = \?/.test(sql)) {
         return { id: 1, citizenid: 'SENDER', number: '5550100', status: 'active' };
       }

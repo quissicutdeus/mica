@@ -444,46 +444,238 @@ describe('messages:send needs a phone in hand (MICA-339)', () => {
 });
 
 describe('messages:send into a 1:1 with nobody else in it is refused (MICA-349)', () => {
-  /** Whether the repository's `nobodyElseIn` read answers yes; every other `single` as before. */
-  const answerLeft = (left: boolean) => {
+  /** Bea's burner 1:1, as `readForSend` reads it by id; unpaired once a side has left. */
+  const ONE_TO_ONE = { is_group: 0, status: 'active', participant_a: null, participant_b: null };
+  /** The thread row `readForSend` answers; every other `single` as before. */
+  const threadIs = (row: Record<string, unknown> | null) => {
     const before = dbMock.single.getMockImplementation()!;
     dbMock.single.mockImplementation(async (sql: string, params: unknown[]) =>
-      String(sql).includes('nobody_else') ? (left ? { nobody_else: 1 } : null) : before(sql, params)
+      String(sql).includes('SELECT c.is_group, c.status, c.participant_a, c.participant_b')
+        ? row
+        : before(sql, params)
     );
   };
-  const asks = (needle: string) =>
-    dbMock.single.mock.calls.filter(([sql]) => String(sql).includes(needle));
   const messageInserts = () =>
     dbMock.insert.mock.calls.filter(([sql]) => String(sql).includes('INTO `mica_messages`'));
   const pushed = () =>
     ((globalThis.emitNet as any).mock.calls as unknown[][]).filter(
       ([event]) => event === 'mica:client:messages:received'
     );
+  const numberReads = () =>
+    dbMock.single.mock.calls.filter(([sql]) => String(sql).includes('`mica_phone_numbers`'));
 
   it('answers the key, writes nothing, pushes nothing and reads no number', async () => {
-    answerLeft(true);
+    threadIs(ONE_TO_ONE);
+    data.members = [ALICE];
 
     const reply = await call('messages', 'send', { conversation_id: 1, message: 'are you there' });
 
     expect(reply).toMatchObject({ key: 'server.messages.noRecipient' });
-    expect(asks('nobody_else').map(([, params]) => params)).toEqual([
-      [1, 'ext:%', 'ext:%', TEST_PHONE_ID]
-    ]);
     expect(messageInserts()).toEqual([]);
     expect(pushed()).toEqual([]);
-    expect(asks('`mica_phone_numbers`')).toEqual([]);
+    expect(numberReads()).toEqual([]);
     expect(numberSync.run).not.toHaveBeenCalled();
   });
 
   it('sends as before when someone else is still in the thread', async () => {
-    answerLeft(false);
+    threadIs(ONE_TO_ONE);
 
     const reply = await call('messages', 'send', { conversation_id: 1, message: 'are you there' });
 
     expect(reply).toMatchObject({ id: 50, mine: true });
-    expect(asks('nobody_else')).toHaveLength(1);
     expect(messageInserts()).toHaveLength(1);
     expect(pushed()).toHaveLength(1);
+  });
+
+  it('never refuses a group or a line thread with only the sender left in it', async () => {
+    data.members = [ALICE];
+    for (const row of [
+      { ...ONE_TO_ONE, is_group: 1 },
+      { ...ONE_TO_ONE, participant_a: TEST_PHONE_ID, participant_b: 'ext:5550123' }
+    ]) {
+      threadIs(row);
+      const reply = await call('messages', 'send', { conversation_id: 1, message: 'anyone' });
+      expect(reply).toMatchObject({ mine: true });
+    }
+    expect(messageInserts()).toHaveLength(2);
+  });
+
+  it('counts a legacy member with no phone id as somebody still there', async () => {
+    threadIs(ONE_TO_ONE);
+    data.members = [ALICE, { ...BEA, device_id: null }];
+
+    const reply = await call('messages', 'send', { conversation_id: 1, message: 'still here?' });
+
+    expect(reply).toMatchObject({ mine: true });
+  });
+});
+
+/**
+ * MICA-367: a send reads the thread and its members once, before it decides anything, and
+ * answers membership, "nobody else", the reply's `sender_id`, the push and the line from that
+ * read. Membership still decides first: the citizen, the phone in hand, not left.
+ */
+describe('messages:send reads its thread once, and membership decides first (MICA-367)', () => {
+  const memberReads = () =>
+    dbMock.query.mock.calls.filter(([sql]) =>
+      String(sql).includes('WHERE p.conversation_id = ? AND p.left_at IS NULL')
+    );
+  const threadReads = () =>
+    dbMock.single.mock.calls.filter(([sql]) =>
+      String(sql).includes('SELECT c.is_group, c.status, c.participant_a, c.participant_b')
+    );
+  /** `isMember`, `nobodyElseIn` and `lineKeyOf`, each of which a send used to ask on its own. */
+  const separateAsks = () => [
+    ...dbMock.single.mock.calls.filter(([sql]) =>
+      /mica_messages_participants|nobody_else/.test(String(sql))
+    ),
+    ...dbMock.query.mock.calls.filter(([sql]) =>
+      String(sql).includes('SELECT c.participant_a, c.participant_b')
+    )
+  ];
+  const writes = () => [...dbMock.insert.mock.calls, ...dbMock.update.mock.calls];
+
+  it('reads the members and the thread once each, for the whole send', async () => {
+    const reply = await call('messages', 'send', { conversation_id: 1, message: 'on my way' });
+
+    expect(reply).toMatchObject({ id: 50, mine: true, sender_id: 10 });
+    expect(memberReads().map(([, params]) => params)).toEqual([[1]]);
+    expect(threadReads().map(([, params]) => params)).toEqual([[1]]);
+    expect(separateAsks()).toEqual([]);
+  });
+
+  it('refuses a caller who is not in the thread, before reading or writing anything else', async () => {
+    data.members = [BEA];
+
+    const reply = await call('messages', 'send', {
+      conversation_id: 1,
+      message: 'let me in',
+      reply_to_id: 77
+    });
+
+    expect(reply).toMatchObject({ key: 'server.messages.notParticipant' });
+    // The reply check never runs: it would say whether message 77 sits in a thread the caller
+    // cannot read. Nor does the number, nor any write.
+    expect(dbMock.scalar).not.toHaveBeenCalled();
+    expect(numberSync.run).not.toHaveBeenCalled();
+    expect(writes()).toEqual([]);
+  });
+
+  it('answers a thread that does not exist exactly as one the caller is not in', async () => {
+    data.members = [];
+    dbMock.single.mockImplementation(async () => null);
+
+    const reply = await call('messages', 'send', { conversation_id: 404, message: 'hello?' });
+
+    expect(reply).toMatchObject({ key: 'server.messages.notParticipant' });
+    expect(writes()).toEqual([]);
+  });
+
+  it("refuses the citizen's membership on another phone: it is the phone in hand's", async () => {
+    data.members = [{ ...ALICE, device_id: 'PHONE_MAIN' }, BEA];
+
+    const reply = await call('messages', 'send', { conversation_id: 1, message: 'from my main' });
+
+    expect(reply).toMatchObject({ key: 'server.messages.notParticipant' });
+    expect(writes()).toEqual([]);
+  });
+
+  it('refuses a membership row that has left, whatever read handed it over', async () => {
+    data.members = [{ ...ALICE, left_at: NOW }, BEA];
+
+    const reply = await call('messages', 'send', { conversation_id: 1, message: 'back again' });
+
+    expect(reply).toMatchObject({ key: 'server.messages.notParticipant' });
+    expect(writes()).toEqual([]);
+  });
+
+  /**
+   * Wolffe's review: the number can take a sync, which awaits a whole number issue, and a
+   * membership can end meanwhile (a privacy delete purges it, a release unpairs it). Then the
+   * members are read again after the write, and the push goes to that list, never the snapshot.
+   */
+  describe('when the number takes a sync', () => {
+    /** The burner has no number row until the sync writes one; `during` runs inside the sync. */
+    const syncing = (during: () => void = () => {}) => {
+      let numbered = false;
+      dbMock.single.mockImplementation(async (sql: string) => {
+        if (!String(sql).includes('`mica_phone_numbers`')) return { 1: 1 };
+        return numbered && /WHERE `device_id` = \?/.test(sql)
+          ? { id: 1, citizenid: 'CIT_A', number: '5550777', status: 'active' }
+          : null;
+      });
+      numberSync.run.mockImplementation(async () => {
+        during();
+        numbered = true;
+        return '5550777';
+      });
+    };
+    const pushesTo = () =>
+      ((globalThis.emitNet as any).mock.calls as unknown[][])
+        .filter(([event]) => event === 'mica:client:messages:received')
+        .map(([, target]) => target);
+
+    it('pushes nobody a member purged while it ran, reading the members after the write', async () => {
+      // Bea's membership is purged by a privacy delete while the number is being issued.
+      syncing(() => {
+        data.members = [ALICE];
+      });
+
+      const reply = await call('messages', 'send', { conversation_id: 1, message: 'on my way' });
+
+      expect(numberSync.run).toHaveBeenCalledOnce();
+      expect(reply).toMatchObject({ id: 50, mine: true, sender_id: 10 });
+      expect(pushesTo()).toEqual([]);
+      expect(memberReads()).toHaveLength(2);
+      // The second read is after the message is written.
+      const write = dbMock.insert.mock.calls.findIndex(([sql]) =>
+        String(sql).includes('INTO `mica_messages`')
+      );
+      expect(write).toBeGreaterThanOrEqual(0);
+      const reread = dbMock.query.mock.calls.indexOf(memberReads()[1]);
+      expect(dbMock.query.mock.invocationCallOrder[reread]).toBeGreaterThan(
+        dbMock.insert.mock.invocationCallOrder[write]
+      );
+    });
+
+    it('still pushes a member who stayed, from the list read after the write', async () => {
+      syncing();
+
+      await call('messages', 'send', { conversation_id: 1, message: 'on my way' });
+
+      expect(pushesTo()).toEqual([6]);
+      expect(memberReads()).toHaveLength(2);
+    });
+
+    it('never falls back to the snapshot when the read after the write fails', async () => {
+      const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+      syncing(() => {
+        const before = dbMock.query.getMockImplementation()!;
+        dbMock.query.mockImplementation(async (sql: string, params: unknown[]) => {
+          if (String(sql).includes('WHERE p.conversation_id = ? AND p.left_at IS NULL')) {
+            throw new Error('connection lost');
+          }
+          return before(sql, params);
+        });
+      });
+
+      const reply = await call('messages', 'send', { conversation_id: 1, message: 'on my way' });
+
+      // Committed and answered; pushed to nobody, since nothing current says who is in it.
+      expect(reply).toMatchObject({ id: 50, mine: true });
+      expect(pushesTo()).toEqual([]);
+      logged.mockRestore();
+    });
+  });
+
+  it('pushes the members it read, without asking for them again after the write', async () => {
+    await call('messages', 'send', { conversation_id: 1, message: 'on my way' });
+
+    const push = ((globalThis.emitNet as any).mock.calls as unknown[][]).find(
+      ([event]) => event === 'mica:client:messages:received'
+    );
+    expect(push?.[1]).toBe(6);
+    expect(memberReads()).toHaveLength(1);
   });
 });
 
