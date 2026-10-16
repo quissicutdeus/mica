@@ -62,7 +62,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <nav
   aria-label={ariaLabel}
-  class="border-outline-variant bg-surface-container-high pb-safe-bottom absolute bottom-0 left-0 z-20 flex w-full border-t backdrop-blur-md"
+  class="border-outline-variant bg-surface-container-high pb-safe-bottom absolute bottom-0 left-0 z-20 flex w-full border-t"
 >
   {#each options as opt (opt.id)}
     {@const Icon = opt.icon}

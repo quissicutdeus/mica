@@ -247,7 +247,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       y: $shadeDragRevealDistance,
       duration: $drawerDragPhase === 'idle' ? 300 : 0
     }}
-    class="bg-surface-container-high text-on-surface shadow-elevation-5 rounded-t-xl absolute inset-x-0 top-10 bottom-0 z-55 flex flex-col pt-10 pb-2 backdrop-blur-3xl {$drawerDragPhase ===
+    class="bg-surface-container-high text-on-surface shadow-elevation-5 rounded-t-xl absolute inset-x-0 top-10 bottom-0 z-55 flex flex-col pt-10 pb-2 {$drawerDragPhase ===
     'settling'
       ? 'duration-medium ease-emphasized transition-transform'
       : ''}"

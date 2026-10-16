@@ -355,7 +355,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       y: -$shadeDragRevealDistance,
       duration: $shadeDragPhase === 'idle' ? 300 : 0
     }}
-    class="bg-surface-container-high text-on-surface shadow-elevation-5 absolute inset-0 z-55 flex h-full w-full flex-col pt-14 pb-2 backdrop-blur-3xl {$shadeDragPhase ===
+    class="bg-surface-container-high text-on-surface shadow-elevation-5 absolute inset-0 z-55 flex h-full w-full flex-col pt-14 pb-2 {$shadeDragPhase ===
     'settling'
       ? 'duration-medium ease-emphasized transition-transform'
       : ''}"
@@ -501,7 +501,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 <SwipeableRow onCommit={() => restoreSingle(item.id)}>
                   <div
                     transition:fly={{ y: 10, duration: 150 }}
-                    class="group border-outline-variant bg-surface hover:border-outline-variant hover:bg-surface shadow-elevation-3 duration-short ease-standard relative flex cursor-pointer items-start gap-3 rounded-box border p-3.5 opacity-90 backdrop-blur-md transition-all hover:opacity-100 active:scale-[0.99]"
+                    class="group border-outline-variant bg-surface hover:border-outline-variant hover:bg-surface shadow-elevation-3 duration-short ease-standard relative flex cursor-pointer items-start gap-3 rounded-box border p-3.5 opacity-90 transition-all hover:opacity-100 active:scale-[0.99]"
                     onclick={() => handleRowClick(item)}
                     role="button"
                     tabindex={0}
@@ -559,7 +559,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               {:else}
                 <!-- Grouped Collapsible Archive Stack -->
                 <div
-                  class="border-outline-variant bg-surface shadow-elevation-4 rounded-box border p-3.5 opacity-90 backdrop-blur-md hover:opacity-100"
+                  class="border-outline-variant bg-surface shadow-elevation-4 rounded-box border p-3.5 opacity-90 hover:opacity-100"
                 >
                   <!-- Group Header Card -->
                   <SwipeableRow onCommit={() => restoreGroup(group.app)}>
@@ -736,7 +736,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 <SwipeableRow onCommit={() => clearSingle(item.id)}>
                   <div
                     transition:fly={{ y: 10, duration: 150 }}
-                    class="group border-outline-variant bg-surface hover:border-outline-variant hover:bg-surface shadow-elevation-3 duration-short ease-standard relative flex cursor-pointer items-start gap-3 rounded-box border p-3.5 backdrop-blur-md transition-all active:scale-[0.99]"
+                    class="group border-outline-variant bg-surface hover:border-outline-variant hover:bg-surface shadow-elevation-3 duration-short ease-standard relative flex cursor-pointer items-start gap-3 rounded-box border p-3.5 transition-all active:scale-[0.99]"
                     onclick={() => handleRowClick(item)}
                     role="button"
                     tabindex={0}
@@ -794,7 +794,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               {:else}
                 <!-- Grouped Collapsible App Stack -->
                 <div
-                  class="border-outline-variant bg-surface shadow-elevation-4 rounded-box border p-3.5 backdrop-blur-md"
+                  class="border-outline-variant bg-surface shadow-elevation-4 rounded-box border p-3.5"
                 >
                   <!-- Group Header Card -->
                   <SwipeableRow onCommit={() => clearGroup(group.app)}>

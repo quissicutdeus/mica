@@ -191,7 +191,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       y: -$shadeDragRevealDistance,
       duration: $controlCenterDragPhase === 'idle' ? 300 : 0
     }}
-    class="bg-surface-container-high text-on-surface shadow-elevation-5 absolute inset-0 z-55 flex h-full w-full flex-col pt-14 pb-2 backdrop-blur-3xl {$controlCenterDragPhase ===
+    class="bg-surface-container-high text-on-surface shadow-elevation-5 absolute inset-0 z-55 flex h-full w-full flex-col pt-14 pb-2 {$controlCenterDragPhase ===
     'settling'
       ? 'duration-medium ease-emphasized transition-transform'
       : ''}"
