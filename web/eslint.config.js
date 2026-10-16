@@ -22,6 +22,7 @@ export default tseslint.config(
       'docs/**',
       'playwright-report/**',
       'test-results/**',
+      'blob-report/**',
       // Built add-on bundles, gitignored — minified output, not source.
       'public/addons/**'
     ]

@@ -22,6 +22,11 @@ export default {
     '.claude/**',
     // TypeDoc's output, gitignored: generated locally, never shipped, absent in CI.
     'web/docs/**',
+    // Playwright's output, gitignored, which stylelint does not read: a failed run leaves a
+    // trace viewer whose CSS uses `:has()`, and `lint:css` then fails on an artifact.
+    '**/playwright-report/**',
+    '**/test-results/**',
+    '**/blob-report/**',
     // The mica.gg landing page, served to ordinary browsers rather than FiveM's CEF.
     'docker/landing/**'
   ],
