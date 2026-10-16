@@ -11,7 +11,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { migrateAppDrawerHintForExistingSaves } from './state/onboarding';
   import { appRegistryStore } from './state/registry';
   import { loadRemoteAppConfig } from './state/remoteAppConfig';
-  import { markControlCenterRegistryReady } from './state/controlCenter';
+  import {
+    controlCenterDragPhase,
+    isControlCenterOpen,
+    markControlCenterRegistryReady
+  } from './state/controlCenter';
+  import { drawerDragPhase, isDrawerOpen, searchQuery } from './state/appDrawer';
   import { refreshCapabilities } from '../services/capabilities';
   import { createNuiMessageRouter } from './nuiMessages';
   import { installDevHarness, seedBrowserPhone } from './devHarness';
@@ -20,6 +25,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import {
     currentApp,
     runningApps,
+    mountedApps,
+    mountResidentApps,
     openApp,
     closeApp,
     goHome,
@@ -147,6 +154,28 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    */
   $effect(() => {
     openDevice.set(visible ? $activeDevice : null);
+  });
+
+  /**
+   * MICA-356: the surfaces that list what background apps registered — the drawer and its
+   * search, and the Control Center's tiles — mount every resident app the moment one starts
+   * to open, rather than waiting out the intro (`mountResidentApps` in `state/navigation.ts`).
+   * A drag counts: a half-pulled sheet is already showing its contents.
+   *
+   * Declared after the `openDevice` effect above on purpose. Effects run in the order they
+   * were created, so on an open that one has started the frame's bookkeeping before this one
+   * asks it to mount — which is what makes a drawer left open across a close mount the lot
+   * at once on the reopen, instead of being a no-op against a frame that was not up yet.
+   */
+  const residentAppsShown = $derived(
+    $isDrawerOpen ||
+      $drawerDragPhase !== 'idle' ||
+      $searchQuery !== '' ||
+      $isControlCenterOpen ||
+      $controlCenterDragPhase !== 'idle'
+  );
+  $effect(() => {
+    if (visible && residentAppsShown) mountResidentApps();
   });
 
   /**
@@ -795,7 +824,20 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 {#snippet screen()}
   <ToastContainer />
-  <!-- Every resident app is mounted; only the active one is visible.
+  <!-- Every resident app has a slot; only the active one is visible. On an open only the
+               current app is mounted at first, and the rest once the frame's intro is over
+               (MICA-356).
+
+               An open rebuilds this whole snippet — the frame is destroyed on every close —
+               so mounting every resident app here built up to five app trees, and booted
+               every add-on's sandbox, on the frames where the fly-in plays. They still all
+               mount, just after it, or at once if the drawer, its search or the Control
+               Center opens first: what an app registers from inside its component is only
+               there while it is mounted. `mountedApps` in `state/navigation.ts` has the
+               bookkeeping, and why the current app mounts on `isActive` as well as on that
+               set. The slot itself is always rendered: it holds the app's place in the DOM
+               order (a moved iframe reloads — see `openApp`), and it is the `inert` box the
+               residency e2e counts.
 
                Keyed by name so Svelte reuses the instance instead of tearing it down —
                that reuse *is* the state preservation.
@@ -831,6 +873,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     {#each $runningApps as instance (instance.id)}
       {@const AppComponent = appRegistryStore.getComponent(instance.id, $activeDevice)}
       {@const isActive = $currentApp.id === instance.id}
+      {@const isMounted = isActive || $mountedApps.has(instance.id)}
       {@const manifest = appRegistryStore.getManifest(instance.id)}
       {@const isNetworkBlocked = (manifest?.requiresNetwork ?? false) && $clampedSignalLevel === 0}
       {@const isAddOn = !!manifest && !manifest.core && !AppComponent}
@@ -854,7 +897,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         class:pointer-events-none={!isActive && isAddOn}
         inert={!isActive}
       >
-        {#if manifest && !manifest.core && !AppComponent}
+        {#if !isMounted}
+          <!-- Resident, but this frame's intro is still playing: nothing to build yet. -->
+        {:else if manifest && !manifest.core && !AppComponent}
           <!-- A shipped or Store-installed add-on: source text, a frame, a wall.
                        A `core:false` app that *has* a component is a DEV-only runtime
                        registration (see `registry.ts` and `error_boundary.spec.ts`) and

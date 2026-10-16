@@ -25,9 +25,13 @@ import {
   closeAllApps,
   closePhone,
   consumeAppProps,
+  mountedApps,
+  mountResidentApps,
+  RESIDENT_MOUNT_DELAY_MS,
   MAX_RESIDENT_APPS
 } from './navigation';
 import { setActiveDevice } from './device';
+import { openDevice } from './phoneOpen';
 import { ownerConfig, DEFAULT_OWNER_CONFIG } from './ownerConfig';
 import * as fetchNuiModule from '../../nui/fetchNui';
 
@@ -281,5 +285,147 @@ describe('an app the owner disables while it is resident (MICA-234)', () => {
     setActiveDevice('phone');
     expect(names()).toEqual([]);
     expect(get(currentApp).id).toBe('home');
+  });
+});
+
+/**
+ * MICA-356: an open mounts only what is on screen. `openDevice` stands in for `Shell`'s
+ * `visible` rune here exactly as it does in the shell — `Shell` sets it from an effect.
+ */
+describe('what is mounted since the frame was created (MICA-356)', () => {
+  const mounted = () => [...get(mountedApps)].sort();
+
+  beforeEach(() => {
+    openDevice.set(null);
+  });
+
+  afterEach(() => {
+    openDevice.set(null);
+    setActiveDevice('phone');
+  });
+
+  it('notes every app that becomes current while the frame is up', () => {
+    openDevice.set('phone');
+    openApp('notes');
+    openApp('mail');
+    goHome();
+    openApp('contacts');
+    expect(mounted()).toEqual(['contacts', 'mail', 'notes']);
+  });
+
+  it('forgets them all on close, while they stay resident', () => {
+    openDevice.set('phone');
+    openApp('notes');
+    openApp('mail');
+    openDevice.set(null);
+    expect(mounted()).toEqual([]);
+    expect(names()).toEqual(['notes', 'mail']);
+  });
+
+  it('after an open, holds only the current app, and the others join as they are switched to', () => {
+    openDevice.set('phone');
+    openApp('notes');
+    openApp('mail');
+    openApp('contacts');
+    openDevice.set(null);
+
+    openDevice.set('phone');
+    expect(mounted()).toEqual(['contacts']);
+    expect(names()).toEqual(['notes', 'mail', 'contacts']);
+
+    openApp('notes');
+    expect(mounted()).toEqual(['contacts', 'notes']);
+  });
+
+  it('holds nothing after an open onto home', () => {
+    openDevice.set('phone');
+    openApp('notes');
+    goHome();
+    openDevice.set(null);
+
+    openDevice.set('phone');
+    expect(mounted()).toEqual([]);
+  });
+
+  it('notes nothing while no frame is up', () => {
+    // A notification tap or the client's `openApp` can move `currentApp` before the open
+    // renders; that app mounts by being current, not from this set.
+    openApp('notes');
+    openApp('mail');
+    expect(mounted()).toEqual([]);
+  });
+
+  it('starts over on a device swap, which builds the other frame afresh', () => {
+    openDevice.set('phone');
+    openApp('notes');
+    openApp('mail');
+
+    setActiveDevice('tablet');
+    openDevice.set('tablet');
+    openApp('notes');
+    expect(mounted()).toEqual(['notes']);
+
+    // Back to the phone without a close: its frame is rebuilt too, so only the app it was
+    // left on mounts, and `mail`'s tree is not rebuilt behind it.
+    setActiveDevice('phone');
+    openDevice.set('phone');
+    expect(get(currentApp).id).toBe('mail');
+    expect(mounted()).toEqual(['mail']);
+  });
+
+  describe('the rest of the resident apps', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    /** Three resident, `contacts` current, the frame closed and opened again. */
+    const reopened = () => {
+      openDevice.set('phone');
+      openApp('notes');
+      openApp('mail');
+      openApp('contacts');
+      openDevice.set(null);
+      openDevice.set('phone');
+    };
+
+    it('mount once the intro has had its time, and not a tick before', () => {
+      reopened();
+      vi.advanceTimersByTime(RESIDENT_MOUNT_DELAY_MS - 1);
+      expect(mounted()).toEqual(['contacts']);
+      vi.advanceTimersByTime(1);
+      expect(mounted()).toEqual(['contacts', 'mail', 'notes']);
+    });
+
+    it('mount at once when asked, and the timer then has nothing left to do', () => {
+      reopened();
+      mountResidentApps();
+      expect(mounted()).toEqual(['contacts', 'mail', 'notes']);
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('are not mounted by a close that beats the intro', () => {
+      reopened();
+      openDevice.set(null);
+      vi.advanceTimersByTime(RESIDENT_MOUNT_DELAY_MS);
+      expect(mounted()).toEqual([]);
+    });
+
+    it('are not mounted while no frame is up, whoever asks', () => {
+      openApp('notes');
+      openApp('mail');
+      mountResidentApps();
+      expect(mounted()).toEqual([]);
+    });
+  });
+
+  it('is emptied by closeAllApps', () => {
+    openDevice.set('phone');
+    openApp('notes');
+    closeAllApps();
+    expect(mounted()).toEqual([]);
   });
 });

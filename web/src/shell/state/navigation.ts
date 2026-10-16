@@ -9,6 +9,7 @@ import { activeDevice } from './device';
 import { appRegistryStore } from './registry';
 import { manifestSupportsDevice } from '../../lib/phone/appVisibility';
 import { disabledAppIds } from './ownerConfig';
+import { openDevice } from './phoneOpen';
 
 /**
  * Which app is on screen, and which apps are still alive behind it.
@@ -76,11 +77,98 @@ interface NavSnapshot {
 const snapshots = new Map<DeviceId, NavSnapshot>();
 let device: DeviceId = get(activeDevice);
 
+/**
+ * MICA-356: which resident apps have a component tree in the frame that is up.
+ *
+ * Residency outlives a close, but the component trees do not: `Shell.svelte`'s
+ * `{#if visible}` tears the frame down on every close (MICA-86 depends on that), so every
+ * open rebuilds every resident app — its tree, its `HostProvider`, its subscriptions, and
+ * each add-on's sandboxed iframe. Doing all of that at once landed on the very frames the
+ * fly-in plays, for apps that are not even on screen.
+ *
+ * So an open mounts the current app at once and the rest of `runningApps` once the intro
+ * is over (`RESIDENT_MOUNT_DELAY_MS`). The rest still has to mount: a resident app is a
+ * running app, and what it registers from inside its component — a search provider, a
+ * Control Center tile, an unscoped keybind, its `useAppLevels` ladder — is only there while
+ * it is mounted. `useSearchProvider` promises an app opened once stays findable. Anything
+ * that shows those registrations before the delay is up calls `mountResidentApps` to skip
+ * the wait (`Shell.svelte`: the drawer, its search, the Control Center).
+ *
+ * Reset on close and on a device swap, the two ways a frame is created afresh. Driven by
+ * `openDevice`, `Shell`'s own mirror of its `visible` rune, rather than a call `Shell` has
+ * to remember to make. That mirror is set by an effect, *after* the open's first render —
+ * which is why `Shell` mounts the current app on `isActive` as well as on this set, and
+ * why the set it renders against on an open is the empty one the close left.
+ *
+ * An id is never removed while the frame is up: an evicted or closed app is no longer in
+ * `runningApps`, so a stale id here renders nothing, and the only way back into the list
+ * is `openApp`, which makes it current anyway.
+ */
+let mountedSet: ReadonlySet<string> = new Set();
+const mounted = writable<ReadonlySet<string>>(mountedSet);
+export const mountedApps = { subscribe: mounted.subscribe };
+
+/**
+ * How long after an open the background resident apps mount: the frame's fly-in, which is
+ * `duration: 500` on both `PhoneFrame.svelte` and `TabletFrame.svelte`.
+ *
+ * A timer at the intro's own length rather than `requestIdleCallback`. The fly is a Web
+ * Animation, so the main thread sits idle for most of it and an idle callback would fire
+ * mid-intro — the window this exists to keep clear. A `timeout` on one only bounds the
+ * wait from above, never from below. Change it with the frames' duration.
+ */
+export const RESIDENT_MOUNT_DELAY_MS = 500;
+
+/** The device whose frame `mountedSet` describes, or `null` while no frame is up. */
+let mountedOn: DeviceId | null = null;
+let residentTimer: ReturnType<typeof setTimeout> | null = null;
+
+const clearResidentTimer = () => {
+  if (residentTimer === null) return;
+  clearTimeout(residentTimer);
+  residentTimer = null;
+};
+
+const resetMounted = (ids: readonly string[]) => {
+  mountedSet = new Set(ids.filter((id) => id !== 'home'));
+  mounted.set(mountedSet);
+};
+
+/**
+ * Mount every resident app in the frame that is up, now rather than when the intro ends.
+ * A no-op while no frame is up — there is nothing to mount into — and once they all are.
+ */
+export const mountResidentApps = () => {
+  if (mountedOn === null) return;
+  clearResidentTimer();
+  const missing = get(runningApps).filter((a) => !mountedSet.has(a.id));
+  if (missing.length === 0) return;
+  mountedSet = new Set([...mountedSet, ...missing.map((a) => a.id)]);
+  mounted.set(mountedSet);
+};
+
+openDevice.subscribe((frame) => {
+  if (frame === mountedOn) return;
+  mountedOn = frame;
+  clearResidentTimer();
+  resetMounted(frame === null ? [] : [get(currentApp).id]);
+  if (frame !== null) residentTimer = setTimeout(mountResidentApps, RESIDENT_MOUNT_DELAY_MS);
+});
+
+currentApp.subscribe(({ id }) => {
+  if (mountedOn === null || id === 'home' || mountedSet.has(id)) return;
+  mountedSet = new Set([...mountedSet, id]);
+  mounted.set(mountedSet);
+});
+
 activeDevice.subscribe((next) => {
   if (next === device) return;
   snapshots.set(device, { running: get(runningApps), current: get(currentApp), recency });
   const restored = snapshots.get(next);
   device = next;
+  // The other device's frame is about to be built with none of its apps mounted. Before
+  // `currentApp` moves, so the restored app is the one noted into the fresh set.
+  resetMounted([]);
   recency = restored?.recency ?? [];
   runningApps.set(restored?.running ?? []);
   currentApp.set(restored?.current ?? { id: 'home', props: {} });
@@ -263,6 +351,7 @@ export const closeAllApps = () => {
   snapshots.clear();
   recency = [];
   runningApps.set([]);
+  resetMounted([]);
   goHome();
 };
 
