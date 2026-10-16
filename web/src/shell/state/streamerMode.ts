@@ -46,8 +46,13 @@ export const setStreamerMode = (on: boolean) => streamerMode.set(sanitizeStreame
  * itself means nothing; a subscriber only reacts to it changing. Live only while something
  * subscribes, which is the store contract and costs nothing when nothing is watching.
  */
+/**
+ * Module scope, not inside the start function: the store stops when its last subscriber
+ * leaves and keeps its value, so a counter restarted at 0 would set that same value on the
+ * next bump, which no subscriber hears as a change.
+ */
+let generation = 0;
 export const revealGeneration = readable(0, (set) => {
-  let generation = 0;
   let armed = false;
   const bump = () => {
     // Every source fires once on subscribe; that is the initial value, not a change.

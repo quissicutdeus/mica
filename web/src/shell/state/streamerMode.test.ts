@@ -51,7 +51,8 @@ describe('streamer mode', () => {
   it('bumps the generation when the flag flips, the foreground app changes, or the device closes', () => {
     const seen: number[] = [];
     const stop = revealGeneration.subscribe((g) => seen.push(g));
-    expect(seen).toEqual([0]);
+    // The initial value, whatever an earlier subscription left it at — the value means nothing.
+    expect(seen).toHaveLength(1);
 
     setStreamerMode(true);
     expect(seen.length).toBe(2);
@@ -67,5 +68,27 @@ describe('streamer mode', () => {
     expect(seen).toEqual([...seen].sort((a, b) => a - b));
     expect(new Set(seen).size).toBe(seen.length);
     stop();
+  });
+
+  /**
+   * The store stops when its last subscriber leaves — every thumb unmounts when the phone
+   * closes — and keeps its last value. A counter that restarted with it would set that same
+   * value on the next bump, which a store does not report as a change, so a picture revealed
+   * after the phone reopened stayed revealed when the foreground app changed.
+   */
+  it('still bumps after every subscriber has left and a new one arrives', () => {
+    const first: number[] = [];
+    const stopFirst = revealGeneration.subscribe((g) => first.push(g));
+    currentApp.set({ id: 'media', props: {} });
+    stopFirst();
+    const left = first[first.length - 1];
+
+    const second: number[] = [];
+    const stopSecond = revealGeneration.subscribe((g) => second.push(g));
+    expect(second).toEqual([left]);
+    currentApp.set({ id: 'messages', props: {} });
+    expect(second, 'a bump after resubscribing must reach the subscriber').toHaveLength(2);
+    expect(second[1]).not.toBe(left);
+    stopSecond();
   });
 });
