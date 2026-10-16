@@ -145,6 +145,11 @@ const QB_ONLY_GUARD = [
  * file, word for word, so the generated files did not change when it moved; the SPDX lines in
  * it are the ones they always carried.
  */
+// The SPDX lines below are text this script writes into the SQL files, not this file's own
+// licence, which is the header at the top. REUSE reads every line that looks like a tag, and
+// parsed the quote and comma here as part of the expression, so the License check failed on
+// main. The markers keep it reading only this file's own header.
+// REUSE-IgnoreStart
 const AUDIT_LOG_HEADER = [
   '-- SPDX-FileCopyrightText: 2025 quissicutdeus',
   '--',
@@ -174,6 +179,7 @@ const AUDIT_LOG_HEADER = [
   "-- `citizenid` is written at qb's width, `players.citizenid`'s 50. `pnpm generate:sql` widens",
   "-- it to 60, `users.identifier`'s, in mica.esx.sql (MICA-289), as it does every declared table."
 ].join('\n');
+// REUSE-IgnoreEnd
 
 /** The audit log as a generated file carries it: its comment block, then the statement. */
 const withAuditLogHeader = (ddl) => `${AUDIT_LOG_HEADER}\n${ddl}`;
