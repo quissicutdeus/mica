@@ -47,15 +47,49 @@ const HOOK = '.claude/hooks/block-dangerous-bash.sh';
 const BLOCKED = 2;
 
 /**
+ * The variables that tell git WHICH repository to act on. A git hook (pre-push
+ * runs this suite) exports them pointing at the real repository, and `git -C
+ * <tmp> init` then re-initialises that repository instead of the fixture --
+ * once it wrote core.bare=true into the real one and broke every git command.
+ * The fixtures and the hook must never inherit them; a case that wants one sets
+ * it on purpose, pointed at its own temp repository.
+ */
+const REPO_LOCATORS = [
+  'GIT_DIR',
+  'GIT_WORK_TREE',
+  'GIT_INDEX_FILE',
+  'GIT_COMMON_DIR',
+  'GIT_OBJECT_DIRECTORY',
+  'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+  'GIT_PREFIX',
+  'GIT_NAMESPACE'
+];
+
+function withoutRepoLocators(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return Object.fromEntries(Object.entries(env).filter(([key]) => !REPO_LOCATORS.includes(key)));
+}
+
+/**
  * The fixture repos and the hook both run without the user's git config: a
  * global `commit.gpgsign` would stall the fixture commits, and a global
  * `status.showUntrackedFiles` is what one of the cases below sets on purpose.
  */
 const HERMETIC: Record<string, string | undefined> = {
-  ...process.env,
+  ...withoutRepoLocators(process.env),
   GIT_CONFIG_GLOBAL: '/dev/null',
   GIT_CONFIG_NOSYSTEM: '1'
 };
+
+describe('the fixtures never inherit a repository locator', () => {
+  it('strips every variable that names the repository', () => {
+    const polluted = Object.fromEntries(REPO_LOCATORS.map((key) => [key, '/the/real/repo']));
+    expect(withoutRepoLocators({ ...polluted, KEEP: 'me' })).toEqual({ KEEP: 'me' });
+  });
+
+  it('leaves none of them in the environment handed to git and the hook', () => {
+    for (const key of REPO_LOCATORS) expect(HERMETIC[key]).toBeUndefined();
+  });
+});
 
 type Outcome = { status: number; stderr: string };
 
