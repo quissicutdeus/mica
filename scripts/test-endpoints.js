@@ -89,7 +89,8 @@ const FLOW_CHECKS = {
   devices: { standalone: 27, qb: 31 },
   reports: { standalone: 14, qb: 14 },
   privacy: { standalone: 24, qb: 24 },
-  leftThread: { standalone: 15, qb: 15 }
+  leftThread: { standalone: 15, qb: 15 },
+  characterSwitch: { standalone: 0, qb: 18 }
 };
 const MINIMUM_CHECKS = Object.values(FLOW_CHECKS).reduce(
   (sum, perShape) => sum + perShape.standalone + perShape.qb,
@@ -295,7 +296,8 @@ const startShape = async ({ db, kind }) => {
   });
   runtime.install();
 
-  const bundle = await import(`file://${BUNDLE}?shape=${kind}`);
+  let restarts = 0;
+  let bundle = await import(`file://${BUNDLE}?shape=${kind}`);
 
   /**
    * Wait until the handlers' work is done: no statement in flight and no short timer pending,
@@ -418,6 +420,21 @@ const startShape = async ({ db, kind }) => {
     numberOf,
     rows,
     settle,
+    /**
+     * A resource restart with the players still connected: every handler the old bundle
+     * registered goes, a fresh copy of the bundle is imported (its module state empty, as a
+     * restarted resource's is), and `onResourceStart` is raised. The framework's characters, the
+     * connected players and the database are untouched, because a restart does not touch them.
+     * The old copy's timers keep running; they only read state nothing asserts on afterwards.
+     */
+    restart: async () => {
+      runtime.handlers.clear();
+      runtime.netSafe.clear();
+      runtime.commands.clear();
+      restarts += 1;
+      bundle = await import(`file://${BUNDLE}?shape=${kind}&restart=${restarts}`);
+      await raise(() => runtime.local('onResourceStart', 'mica'));
+    },
     stop: async () => {
       await ox.end().catch(() => {});
       runtime.shutdown();
@@ -2441,6 +2458,153 @@ const runReports = async (shape, live) => {
   check(`${kind}: 4 is counted none`, (await reactionsFor(D))?.[dm?.id], { counts: {}, mine: [] });
 };
 
+/* ------------------------------------------------------------ a character switch */
+
+/**
+ * A second character for a source to switch to. Not in `PEOPLE`: nobody connects as them, they
+ * are only ever picked on a connection that is already someone else.
+ */
+const ERIN = {
+  name: 'Erin Test',
+  license: 'license:' + 'e5'.repeat(20),
+  citizenid: 'CIT_E',
+  phone: '5550007',
+  bank: 50,
+  job: 'unemployed'
+};
+
+/**
+ * A character switch on one source (MICA-347): MICA-336's "forget what the previous character
+ * was doing", driven through the real local `QBCore:Server:PlayerLoaded` and the fake qb core.
+ *
+ * **qb-core is not vendored**, so which event pair a stock qb-core fires on a switch is
+ * unconfirmed here: `shell.ts` documents qbx_core's (the local `PlayerLoaded` from its
+ * character load, the network `OnPlayerLoaded` from the client on a spawn). This drives the
+ * local one, which carries the Player object, and proves what micaOS does when it is told a
+ * different citizen now holds a source, not that any core announces it that way.
+ *
+ * Qb only: standalone has no characters, a source there is one license until it drops.
+ *
+ * **The gate is the shell's own `loadedCharacter` map**, not the bridge's source registry
+ * (`shell.ts`, `forgetOnPlayerLoaded`) — the registry refills by lazy reseed, and the shell
+ * deliberately does not trust that. So after a resource restart the gate knows nobody until
+ * its first dispatch on a source; the last step pins what that does.
+ */
+const runCharacterSwitch = async (shape, numbers, live) => {
+  const { kind } = shape;
+  const { A, B } = live;
+  const signalOf = async (src) =>
+    (await shape.runtime.callExport('fake_other', 'GetSignal', src))?.value?.override;
+  const callRows = (person) =>
+    shape.rows(
+      'SELECT `kind`, `number` FROM `mica_phone_call_log` WHERE `citizenid` = ? ORDER BY `id`',
+      [shape.citizenOf(person)]
+    );
+  /** The framework announcing a load on `src`: the core seats the character, then fires. */
+  const announce = (src, person) =>
+    shape.raise(async () => {
+      await shape.runtime.local('QBCore:Server:PlayerLoaded', shape.qb.load(src, person));
+    });
+
+  await shape.rows('INSERT INTO players (citizenid, charinfo) VALUES (?, ?)', [
+    ERIN.citizenid,
+    JSON.stringify({ firstname: 'Erin', lastname: 'Test', phone: ERIN.phone })
+  ]);
+
+  step(`${kind}: 1 is on a call with 2 and has a signal override`);
+  await shape.fire(A, 'mica:server:phone:start', numbers[2]);
+  await shape.fire(B, 'mica:server:phone:answer');
+  await shape.invoke('fake_other', 'SetSignal', A, 1);
+  const aBefore = (await callRows(PEOPLE[1])).length;
+  check(
+    `${kind}: both are in the call, and 1 is overridden`,
+    [await isInCall(shape, A), await isInCall(shape, B), await signalOf(A)],
+    [true, true, 1]
+  );
+
+  step(`${kind}: the framework announces 1's character again — the same citizen`);
+  const again = await announce(A, PEOPLE[1]);
+  check(
+    `${kind}: no call ended, for either party`,
+    [to(again, ENDED, A), to(again, ENDED, B)],
+    [[], []]
+  );
+  check(
+    `${kind}: the call is still up and the override still set`,
+    [await isInCall(shape, A), await isInCall(shape, B), await signalOf(A)],
+    [true, true, 1]
+  );
+  check(`${kind}: and no call-log row was written`, (await callRows(PEOPLE[1])).length, aBefore);
+
+  step(`${kind}: the framework announces a different citizen on 1's source`);
+  const switched = await announce(A, ERIN);
+  check(`${kind}: the call ended for the source that switched`, to(switched, ENDED, A).length, 1);
+  check(`${kind}: and for the other party`, to(switched, ENDED, B).length, 1);
+  check(
+    `${kind}: neither is in a call any more`,
+    [await isInCall(shape, A), await isInCall(shape, B)],
+    [false, false]
+  );
+  const aRows = await callRows(PEOPLE[1]);
+  check(`${kind}: the call was filed under the first character`, aRows.length, aBefore + 1);
+  check(
+    `${kind}: as the outgoing call it was`,
+    [aRows.at(-1)?.kind, aRows.at(-1)?.number],
+    ['outgoing', numbers[2]]
+  );
+  check(`${kind}: the second character has no call-log row`, (await callRows(ERIN)).length, 0);
+  const bRow = await lastCallRow(shape, PEOPLE[2]);
+  check(
+    `${kind}: the other party's row is the incoming call from the first character's number`,
+    [bRow?.kind, bRow?.number],
+    ['incoming', numbers[1]]
+  );
+  check(
+    `${kind}: the signal override did not follow to the second character`,
+    await signalOf(A),
+    null
+  );
+  check(`${kind}: the second character has their number`, await shape.numberOf(ERIN), ERIN.phone);
+  const toErin = await shape.fire(B, 'mica:server:phone:start', ERIN.phone);
+  check(
+    `${kind}: a call to that number rings this source`,
+    [to(toErin.sent, INCOMING, A).length, to(toErin.sent, INCOMING, A)[0]?.args[0]?.from],
+    [1, numbers[2]]
+  );
+  await shape.fire(B, 'mica:server:phone:end');
+  const toFirst = await shape.fire(B, 'mica:server:phone:start', numbers[1]);
+  check(
+    `${kind}: the first character's number no longer rings this source`,
+    to(toFirst.sent, INCOMING, A).length,
+    0
+  );
+  await shape.fire(B, 'mica:server:phone:end');
+
+  step(`${kind}: the resource restarts with everyone connected, then the source switches`);
+  await shape.restart();
+  await shape.invoke('fake_other', 'SetSignal', A, 2);
+  check(`${kind}: after the restart the override is set on the new copy`, await signalOf(A), 2);
+  await announce(A, PEOPLE[1]);
+  // PINNED, whatever the code does: the restarted shell has dispatched on nobody, so
+  // `replacedCharacter` finds no previous character and the load counts as a first load —
+  // the override of the character who was on the source is NOT forgotten. Nothing is torn
+  // down, which fails safe for a call but keeps a jailed player's override on the new
+  // character until the next switch. The bridge's lazy reseed is not what decides this
+  // (`shell.ts` `loadedCharacter` is deliberately not the registry), so it does not close the
+  // window either; only a dispatch or a logout on the source does.
+  check(
+    `${kind}: a switch in that window forgets nothing — the override stays`,
+    await signalOf(A),
+    2
+  );
+  await announce(A, ERIN);
+  check(
+    `${kind}: the window is closed by that first dispatch — the next switch forgets again`,
+    await signalOf(A),
+    null
+  );
+};
+
 /* ------------------------------------------------------------------ main */
 
 /** One flow, held to its own floor. */
@@ -2482,6 +2646,11 @@ const runShape = async (db, kind) => {
     await flow(shape, 'reports', () => runReports(shape, live));
     await flow(shape, 'privacy', () => runPrivacy(shape, live));
     await flow(shape, 'leftThread', () => runLeftThread(shape, live));
+    // Qb only: a standalone source is one license until it drops, so nothing there switches.
+    // Last, because it restarts the resource.
+    if (kind === 'qb') {
+      await flow(shape, 'characterSwitch', () => runCharacterSwitch(shape, numbers, live));
+    }
   } finally {
     await shape.stop();
   }
