@@ -462,6 +462,33 @@ playing on it. The phone is unaffected in every case — micaOS's own
 degrades is a third-party integration reading the mirror, never the battery
 itself.
 
+### Multicharacter: what your resource must fire
+
+A player who logs out to character select stays connected, so FiveM fires no
+`playerDropped`. micaOS therefore listens for the framework's own logout event
+and, when it hears one, ends that character's call for both parties (filing the
+call-log row under them), turns off their speakerphone and music broadcast,
+clears the phone they last used, and stops addressing pushes such as a 911 call,
+a contact share or a notification to the player until a character loads again.
+
+| Framework         | Event micaOS listens for       | Fired by                         |
+| ----------------- | ------------------------------ | -------------------------------- |
+| qbx_core, qb-core | `QBCore:Server:OnPlayerUnload` | the core's `Logout`              |
+| ESX Legacy        | `esx:playerLogout`             | `esx_multicharacter`, on a relog |
+
+Both are local server events and micaOS listens with `on` only, so a player's
+client cannot raise either. **If your multicharacter resource fires neither, you
+lose nothing you had before:** the same things end when the next character
+loads, and a player sitting on character select stays in their call and
+addressable until they pick.
+
+Some state deliberately waits for that next load rather than ending at logout:
+battery's stale-phone mark, the locks `LockPhone` sets, and a `SetSignal`
+override. They belong to the character rather than the session, so a jailed
+character who relogs as themselves is still locked. Picking a _different_
+character runs every one of them again, including those that already ran at
+logout.
+
 ---
 
 ### Running with no framework
@@ -1847,7 +1874,9 @@ global level, a jammer is a zone, and the lowest applicable value wins — so th
 cannot disagree. A per-player `SetSignal` beats both, in either direction, which
 is what makes it possible to give somebody bars _inside_ a blackout. It belongs
 to the character it was set on: a disconnect or a switch to another character
-clears it, so a script that wants it on the next character sets it again.
+clears it, so a script that wants it on the next character sets it again. It
+survives a logout and a relog of the _same_ character, so a jail script's dead
+zone cannot be escaped by going to character select and back.
 
 Bars are evaluated on each player's own client against the rules the server
 pushes, because the server does not know where anybody is standing and asking

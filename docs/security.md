@@ -351,6 +351,31 @@ say so.
 It is guarded, not eliminated, so the census below still counts it — ten in
 total, nine mica-named and this one.
 
+**The unload events are the same category and add no row to the table.**
+`server/lib/shell.ts` (`PLAYER_UNLOADED_EVENTS`) listens for
+`QBCore:Server:OnPlayerUnload` on qbx and qb-core and `esx:playerLogout` on ESX
+Legacy (MICA-382), so that a multicharacter logout, for which FiveM fires no
+`playerDropped`, ends the call and stops addressing the character who left. Both
+are registered with `on` alone, for the reason the paragraphs above give: both
+frameworks raise them in-process, and network-safety is per-resource, so a
+client emitting either name reaches nothing in micaOS. There is deliberately no
+`onNet` twin. It would be the one change that made this dangerous, since it
+would let any client name another player's server id and have the server end
+their call and stop their pushes.
+
+The payload is the identity here, as it is for `QBCore:Server:PlayerLoaded`, but
+it is still only believed as a positive integer (`unloadedSource`), which is
+what a server id is; anything else is ignored. There is no `guardNetEvent`
+preamble because there is no network caller to rate-limit.
+
+What a forged one could do is bounded by who can raise it: only a resource on
+the server, which is already trusted with the framework's own events. Raised
+with a connected player's id, it ends that player's call for both parties (the
+call-log row is written as for any ended call), switches off their speakerphone
+and music broadcast, and stops pushes addressed to their character until the
+next load on that id. It reads and writes no rows, and it does not touch their
+source locks or signal override, which wait for a different character's load.
+
 #### Bridge-named — one per optional bridge, outside this resource
 
 The lb-phone and NPWD bridges (MICA-232, `bridges/`) are separate resources an
