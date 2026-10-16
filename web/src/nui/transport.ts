@@ -11,6 +11,21 @@ export interface ITransportAdapter {
   on<T = unknown>(event: string, handler: (data: T) => void): () => void;
 }
 
+/**
+ * How long a NUI callback may take to answer before `send` gives up on it (MICA-372).
+ *
+ * A client handler that never calls `cb()` used to leave the promise pending for the rest of
+ * the session, and every caller awaiting it with it — `notifications.ts` held `refreshing`
+ * true forever and stopped refreshing on push. This is the backstop for exactly that case.
+ *
+ * Longer than 15 seconds on purpose. A relayed service call already has a 15-second timer
+ * on the client (`client/lib/ServiceProxy.ts`) that answers `{ error: 'Request timed out' }`,
+ * which `fetchNui` turns into a proper failure. A timeout here at or under that would race
+ * the answer the client has already promised, and lose it; this one fires only when nothing
+ * on the other side was ever going to answer.
+ */
+const NUI_CALLBACK_TIMEOUT_MS = 20_000;
+
 export class NuiTransportAdapter implements ITransportAdapter {
   private resourceName: string;
 
@@ -18,17 +33,38 @@ export class NuiTransportAdapter implements ITransportAdapter {
     this.resourceName = window.GetParentResourceName ? window.GetParentResourceName() : 'mica';
   }
 
+  /**
+   * POST to the client's NUI callback, and reject if it has not answered in time.
+   *
+   * `AbortController` and a plain timer rather than `AbortSignal.timeout()`, which shipped in
+   * Chromium 103 itself — the CEF floor, with no margin (AGENTS.md §6). The abort covers the
+   * body read as well as the headers, so a reply that starts and then stalls is caught too.
+   */
   async send<T = unknown>(event: string, data?: unknown): Promise<T> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), NUI_CALLBACK_TIMEOUT_MS);
     const options = {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json; charset=UTF-8'
       },
-      body: JSON.stringify(data)
+      body: JSON.stringify(data),
+      signal: controller.signal
     };
 
-    const resp = await fetch(`https://${this.resourceName}/${event}`, options);
-    return (await resp.json()) as T;
+    try {
+      const resp = await fetch(`https://${this.resourceName}/${event}`, options);
+      return (await resp.json()) as T;
+    } catch (err) {
+      if (controller.signal.aborted) {
+        throw new Error(
+          `NUI callback '${event}' did not answer within ${NUI_CALLBACK_TIMEOUT_MS}ms`
+        );
+      }
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   on<T = unknown>(event: string, handler: (data: T) => void): () => void {
