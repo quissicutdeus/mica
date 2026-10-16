@@ -255,6 +255,21 @@ export function appStorageBytes(appId: string): number {
 }
 
 /**
+ * The stored string behind one app key, undecoded, or `null` when there is none.
+ *
+ * Not a facet member, and not the SDK's: only `persisted.ts` beside this file reads it, so
+ * a rehydrate can tell an unchanged value from a changed one without parsing it (MICA-368).
+ * A backend that throws reads as `null`, the same "nothing stored" `getItem` falls back on.
+ */
+export function readStoredRaw(appId: string, key: string): string | null {
+  try {
+    return getStorageBackend().getItem(`${namespaceOf(appId)}${key}`);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * OS Service Hook for app key-value storage.
  */
 export function storage(appId: string) {

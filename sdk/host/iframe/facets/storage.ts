@@ -47,6 +47,11 @@ function wireOnStorage(): void {
   }
 }
 
+/** The undecoded cached string behind one app key — see the inProcess twin's `readStoredRaw`. */
+export function readStoredRaw(appId: string, key: string): string | null {
+  return readKey(`${namespaceOf(appId)}${key}`);
+}
+
 /** Implementation of the `useStorage` facet — see the inProcess twin for the usage contract. */
 export function storage(appId: string): Twin {
   wireOnStorage();

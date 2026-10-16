@@ -30,31 +30,120 @@
  * the CEF page never unloads. Sweeping the keys alone left the old value on screen and the
  * store's next write put the key straight back.
  *
- * Stores are never disposed — they live in module scope for the life of the page — so there
- * is nothing to unregister and no leak in keeping them.
+ * `usePersisted` registers **weakly** (MICA-368). It is a hook, so one called inside a
+ * component — an add-on's high score, read in its root component — built a fresh store per
+ * mount, and a strong registration kept every one of them, and its two closures, for the
+ * life of the page. Unregistering in `onDestroy` was the first attempt and the wrong one: a
+ * store built lazily *during* a component's init but kept at module scope would be dropped
+ * when that component died while the store lived on — and a store that has stopped
+ * rehydrating shows the previous character's value after a switch, which is worse than the
+ * leak. So the registry holds a `WeakRef` to the store's handle instead, and the store's own
+ * members hold the handle: the registration lives exactly as long as anything can still
+ * reach the store, however and wherever it was built.
+ *
+ * One more holder than that, because a store can be reachable through nothing but its own
+ * subscribers: `usePersisted(…).subscribe(apply)` at module scope keeps no reference to the
+ * store and still needs every rehydrate. While a store has at least one subscriber it is
+ * pinned strongly (`holdPersistedHandle`, wired as the inner writable's start/stop), and
+ * only an unsubscribed, unreachable store is ever collected.
+ *
+ * `registerPersistedReset` and `registerPersistedRehydrate` stay strong, as they always
+ * were — they take a bare callback, and a weakly held inline closure would be collected
+ * before its first call. They are on the add-on surface, so they keep that meaning and now
+ * also return an unregister, for a caller that wants to clean up after itself.
  */
+
+/** What `usePersisted` registers: one store's two answers. Held weakly; see above. */
+export interface PersistedHandle {
+  readonly appId: string;
+  /** Back to the shipped default — `clearAppStorage`. */
+  reset(): void;
+  /** Re-read the key from the backend — a settings hydrate. */
+  rehydrate(): void;
+}
 
 const persistedResets = new Map<string, Set<() => void>>();
 const persistedRehydrators = new Set<() => void>();
+const weakHandles = new Set<WeakRef<PersistedHandle>>();
+const heldHandles = new Set<PersistedHandle>();
 
-/** Internal, for `usePersisted`. Not something an app has a reason to call. */
-export function registerPersistedReset(appId: string, reset: () => void): void {
+/** Drop every weak entry whose store has been collected. */
+function pruneHandles(): void {
+  for (const ref of weakHandles) if (!ref.deref()) weakHandles.delete(ref);
+}
+
+/**
+ * Every handle whose store is still reachable, pruning as it goes.
+ *
+ * Pruned on read and on register rather than by a `FinalizationRegistry`: every reader walks
+ * the set anyway, so it never holds more dead entries than were collected since the last
+ * store was built or the last hydrate or clear ran.
+ */
+function* liveHandles(): Generator<PersistedHandle> {
+  for (const ref of weakHandles) {
+    const handle = ref.deref();
+    if (handle) yield handle;
+    else weakHandles.delete(ref);
+  }
+}
+
+/**
+ * Internal, for `usePersisted`: register one store, weakly. The caller keeps `handle`
+ * reachable from every member of the store it returns — that reachability *is* the
+ * registration — and wires `holdPersistedHandle` as the inner writable's start notifier.
+ */
+export function registerPersistedHandle(handle: PersistedHandle): void {
+  pruneHandles();
+  weakHandles.add(new WeakRef(handle));
+}
+
+/**
+ * Internal, for `usePersisted`: pin a store strongly while it has a subscriber, as the inner
+ * writable's start notifier. Svelte calls start on the first subscriber and the returned stop
+ * after the last, so the pin needs no count of its own.
+ */
+export function holdPersistedHandle(handle: PersistedHandle): () => void {
+  heldHandles.add(handle);
+  return () => {
+    heldHandles.delete(handle);
+  };
+}
+
+/**
+ * Register a reset for one app's storage being cleared. Held strongly, for the life of the
+ * page or until the returned unregister is called; calling that twice is harmless, and the
+ * app's entry goes once its last reset does.
+ */
+export function registerPersistedReset(appId: string, reset: () => void): () => void {
   const existing = persistedResets.get(appId);
   if (existing) existing.add(reset);
   else persistedResets.set(appId, new Set([reset]));
+  return () => {
+    const resets = persistedResets.get(appId);
+    if (!resets) return;
+    resets.delete(reset);
+    if (resets.size === 0) persistedResets.delete(appId);
+  };
 }
 
-/** Internal, for `usePersisted`. Stores live for the life of the page, so nothing unregisters. */
-export function registerPersistedRehydrate(rehydrate: () => void): void {
+/** Register a rehydrate, held strongly; the returned unregister is harmless to call twice. */
+export function registerPersistedRehydrate(rehydrate: () => void): () => void {
   persistedRehydrators.add(rehydrate);
+  return () => {
+    persistedRehydrators.delete(rehydrate);
+  };
 }
 
-/** Every reset callback registered for one app. Used by `clearAppStorage` on both sides. */
-export function persistedResetsFor(appId: string): Iterable<() => void> {
-  return persistedResets.get(appId) ?? [];
+/** Every reset for one app, strong and live weak alike. Used by `clearAppStorage` on both sides. */
+export function* persistedResetsFor(appId: string): Generator<() => void> {
+  yield* persistedResets.get(appId) ?? [];
+  for (const handle of liveHandles()) {
+    if (handle.appId === appId) yield () => handle.reset();
+  }
 }
 
-/** Every rehydrate callback in this context. Used by the in-process settings hydrate. */
-export function persistedRehydratorsAll(): Iterable<() => void> {
-  return persistedRehydrators;
+/** Every rehydrate in this context, strong and live weak alike. Used by both settings hydrates. */
+export function* persistedRehydratorsAll(): Generator<() => void> {
+  yield* persistedRehydrators;
+  for (const handle of liveHandles()) yield () => handle.rehydrate();
 }
