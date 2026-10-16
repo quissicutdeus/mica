@@ -902,13 +902,23 @@ by this list until someone re-weighs it.
 
 - **A security scan of `server/` and `shared/` on 2026-10-08 (MICA-339) left six
   things open on purpose.**
-  - **Imported message bodies still sit in the import ledger's keys**
-    (MICA-340). A qb-phone message's `mica_import_ledger.source_key` holds its
-    body verbatim or as an unkeyed SHA-1. A key without the body breaks the
-    dedup that keeps a re-import from duplicating or dropping messages, and the
-    right key, an HMAC under the content key, needs a rotation rule first. The
-    exposure begins only once the qb-phone tables are dropped, since until then
-    the same bodies sit there in plaintext.
+  - **Imported message bodies can still be confirmed from import ledger entries
+    written before MICA-340, until they are re-keyed.** With a content key
+    configured, a qb-phone message's `mica_import_ledger.source_key` is now
+    `hmac:<kid>:<hex>`, an HMAC under that key. An entry written before MICA-340
+    holds the raw key (both participants, the date, the minute, the sender and
+    the body) or, past 64 characters, which is most messages, its unkeyed SHA-1,
+    which anyone with a dump can test a guessed message against.
+    `micacrypt backfill --apply` keys the raw entries; a SHA-1 cannot be undone,
+    so only a `micaimport qb-phone --apply` re-run keys those, for every source
+    row it can still read. `micacrypt status` counts what is left. Without a
+    content key, new entries stay in the old form, since the bodies are
+    plaintext then anyway. An HMAC entry matches a re-import only while its key
+    is in the key file, so `micaimport --apply` refuses to run while any entry
+    is keyed under a key the file no longer holds, rather than import those
+    messages twice. The exposure begins only once the qb-phone tables are
+    dropped, since until then the same bodies sit there in plaintext, and by
+    then a re-run can no longer key what is left.
   - **A client can still overhear a call for about one server tick** (MICA-341).
     A call's id is its pma-voice channel, and pma-voice's own `setPlayerCall`
     net event lets any client join any channel. The server now places both

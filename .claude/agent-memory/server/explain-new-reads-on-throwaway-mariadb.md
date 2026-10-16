@@ -30,3 +30,14 @@ What it found on MICA-307 (2026-10-05):
 Do not pipe or `sed` a script whose name contains `test-` in a Bash call. The
 repo's guard hook reads it as a gate and blocks the whole call, including any
 edit in the same command. Read it with the Read tool.
+
+Running the real code, not a retyped statement (MICA-340, 2026-10-16): a
+scratchpad `.mjs` can esbuild-bundle one `server/lib` module with `resolveDir`
+at the repo root, install `scripts/test-migrations.js`'s oxmysql shim on
+`globalThis.exports` first, and load `mysql2`/`esbuild` through
+`createRequire('<repo>/package.json')`. Then every statement is the one the code
+emits, and the shim can inject a concurrent write between a page read and its
+compare-and-set. Nothing outside the fence is touched. `mariadb:12.3` is on the
+box too. A keyset page filtered by `(source, source_table)` rides PRIMARY and
+reads about batch ÷ selectivity rows, without a filesort. The unique key cannot
+serve `ORDER BY id`, because its third column is `source_key`.

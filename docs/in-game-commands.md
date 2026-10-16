@@ -99,7 +99,11 @@ cannot match to a character, an attachment, a post over 280 characters, a
 duplicate — so the report adds up to what the source held. A text message longer
 than 12,276 characters is cut to that length, never through the middle of an
 emoji, and with a content key set every imported message is sealed on the way
-in. Source: `server/lib/import/`.
+in. With a key set, a qb-phone message's ledger entry is an HMAC rather than its
+text (MICA-340): a re-run keys any older entry it matches, and `--apply` refuses
+to run, writing nothing, while any entry is keyed under a content key the key
+file no longer holds, since it could not recognise those messages and would
+import them twice. Source: `server/lib/import/`.
 
 ## `micacrypt` is console only, all of it
 
@@ -132,13 +136,21 @@ one `status` or `backfill` runs at a time.
   statement locks or rewrites a table, and a body a player edits mid-run is left
   for the next run rather than overwritten. `updated_at` is pinned, so nothing
   reads as edited. A second run changes nothing. It refuses to start without a
-  usable key.
+  usable key. After the bodies it walks the import ledger the same way and keys
+  each qb-phone message entry still holding its body verbatim with an HMAC under
+  the active key (MICA-340). An entry stored as a SHA-1, or keyed under an older
+  key, cannot be re-keyed from the ledger alone and is counted instead; a
+  `micaimport qb-phone --apply` re-run keys those it still has the source row
+  for. `status` and `backfill` warn that entries under an older key match a
+  re-import only while that key stays in the key file.
 
 **Rotating the key** starts from the same steps. Write the new key's line with
 step 2 into a scratch file, put it **first** in the live key file with the old
 lines after it, restart the resource, run `backfill --apply`, and remove an old
 line only once `status` shows nothing left under it. A body under a key that is
-no longer in the file reads as 🔒.
+no longer in the file reads as 🔒. Import ledger entries keyed under the old key
+stay under it unless a `micaimport` re-run re-keys them; once that key is gone,
+`micaimport --apply` refuses to run until it is back.
 
 ## `micahttp` reaches out on demand, from the console only
 

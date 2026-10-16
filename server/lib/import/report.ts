@@ -20,12 +20,22 @@ export interface TableReport {
   read: number;
   written: number;
   skipped: Array<{ reason: string; count: number }>;
+  /**
+   * Ledger entries found in an older form — the raw key, its SHA-1, or an older content key's
+   * digest — and re-keyed to the active key (MICA-340); would-re-key on a dry run. Each is also
+   * counted as `already imported`: the row is not written again, only its ledger key changes.
+   */
+  rekeyed?: number;
 }
 
 export interface ImportReport {
   source: ImportSource;
   apply: boolean;
   tables: TableReport[];
+  /** Why an `--apply` wrote nothing at all; `tables` is empty then. */
+  refused?: string;
+  /** What a dry run found that an `--apply` would refuse over. */
+  warnings?: string[];
 }
 
 /** The reasons a row is skipped, named once so the tests and the console agree on them. */
@@ -114,9 +124,15 @@ export class Tally {
 /** The console rendering, one line per table and one indented line per skip reason. */
 export const formatReport = (report: ImportReport): string[] => {
   const verb = report.apply ? 'written' : 'would write';
+  if (report.refused !== undefined) {
+    return [`[micaimport] ${report.source} — REFUSED, nothing written: ${report.refused}`];
+  }
   const lines = [
     `[micaimport] ${report.source} — ${report.apply ? 'APPLIED' : 'dry run (add --apply to write)'}`
   ];
+  for (const warning of report.warnings ?? []) {
+    lines.push(`[micaimport] WARNING, --apply would refuse: ${warning}`);
+  }
   for (const table of report.tables) {
     if (!table.present) {
       lines.push(`[micaimport]   ${table.table}: not present, nothing read`);
@@ -130,6 +146,13 @@ export const formatReport = (report: ImportReport): string[] => {
     );
     for (const skip of table.skipped) {
       lines.push(`[micaimport]     ${skip.count} × ${skip.reason}`);
+    }
+    if (table.rekeyed) {
+      lines.push(
+        `[micaimport]     ${table.rekeyed} ledger entr${table.rekeyed === 1 ? 'y' : 'ies'} ` +
+          `${report.apply ? 're-keyed' : 'would be re-keyed'} to the active content key ` +
+          '(their rows are counted above as already imported)'
+      );
     }
   }
   return lines;

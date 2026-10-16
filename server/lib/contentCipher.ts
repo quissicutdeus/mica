@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { Buffer, type Bytes } from 'node:buffer';
-import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHmac, randomBytes } from 'node:crypto';
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { cwd, platform } from 'node:process';
 import { Database } from './Database';
@@ -532,6 +532,52 @@ export const activeKeyId = (): string | null => {
 export const loadedKeyIds = (): string[] => {
   const ring = currentKeyring();
   return ring.kind === 'loaded' ? [...ring.keys.keys()] : [];
+};
+
+/** Bound into every digest key's derivation, beside the caller's purpose. */
+const DIGEST_DOMAIN = 'micaOS digest v1';
+
+/**
+ * Derived digest keys, per content key and purpose. Held by the key's own bytes, weakly, so a
+ * keyring read again (a test's reset) can never be answered from a key it no longer holds.
+ */
+const digestKeys = new WeakMap<Bytes, Map<string, Bytes>>();
+
+const digestKey = (key: Bytes, purpose: string): Bytes => {
+  let byPurpose = digestKeys.get(key);
+  if (!byPurpose) {
+    byPurpose = new Map();
+    digestKeys.set(key, byPurpose);
+  }
+  let derived = byPurpose.get(purpose);
+  if (!derived) {
+    derived = createHmac('sha256', key).update(`${DIGEST_DOMAIN}\u0000${purpose}`).digest();
+    byPurpose.set(purpose, derived);
+  }
+  return derived;
+};
+
+/**
+ * A keyed digest of `value` under every loaded key, active first, each with its key id: for a
+ * value that must be found again by equality and never read back — the import ledger's key for
+ * a message, built from its body (MICA-340).
+ *
+ * HMAC-SHA-256 under a key derived from the content key per `purpose` (itself an HMAC of the
+ * domain and the purpose), never the content key as it is: the AES key is not reused as a MAC
+ * key, and two purposes never share a digest. The key stays in this module; what leaves it is
+ * the id and the digest. `[]` with no usable keyring, none or refused — the caller decides what
+ * an unkeyed value becomes, as it decides for a write.
+ */
+export const contentDigests = (
+  purpose: string,
+  value: string
+): { kid: string; digest: Bytes }[] => {
+  const ring = currentKeyring();
+  if (ring.kind !== 'loaded') return [];
+  return [...ring.keys].map(([kid, key]) => ({
+    kid,
+    digest: createHmac('sha256', digestKey(key, purpose)).update(value).digest()
+  }));
 };
 
 // ─── the enabled marker ──────────────────────────────────────────────────────────────────────

@@ -2,12 +2,21 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { createHash } from 'node:crypto';
 import { Database, type TransactionQuery } from '../Database';
 import * as PlayerDirectory from '../PlayerDirectory';
 import { readCitizenIdByNumber, readPhoneIdByNumber } from '../phoneNumbers';
 import { phoneForCitizen } from '../deviceIdentity';
 import { cutText } from './cutText';
+import { loadedKeyIds } from '../contentCipher';
+import {
+  LEDGER_TABLE,
+  bodyKeyedTables,
+  isBodyKeyed,
+  keyForms,
+  keyedKid,
+  orphanedKeyIds,
+  rekeyEntry
+} from './ledgerKeys';
 import { SKIP, type ImportSource } from './report';
 
 /**
@@ -20,13 +29,7 @@ import { SKIP, type ImportSource } from './report';
  * to "never read another resource's tables", and it runs once, from the console.
  */
 
-export const LEDGER_TABLE = 'mica_import_ledger';
-
-/** Keys longer than the ledger column are hashed rather than truncated, so two never collide. */
-const KEY_MAX = 64;
-
-export const ledgerKey = (raw: string): string =>
-  raw.length <= KEY_MAX ? raw : `sha1:${createHash('sha1').update(raw).digest().toString('hex')}`;
+export { LEDGER_TABLE } from './ledgerKeys';
 
 /**
  * Rows per write transaction. Each row is three or four statements, so a chunk is a few hundred
@@ -76,6 +79,11 @@ const slot = (sourceTable: string, key: string): string => `${sourceTable}\u0000
  */
 export class Ledger {
   private readonly loaded = new Map<string, Map<string, number>>();
+  /** Each loaded entry's own row id, by stored key: what a re-key compares and sets by. */
+  private readonly entryIds = new Map<string, Map<string, number>>();
+  /** Entries met in an older form this run (MICA-340), so each is re-keyed or counted once. */
+  private readonly adopted = new Set<string>();
+  private readonly rekeys = new Map<string, number>();
   private readonly thisRun = new Set<string>();
   private readonly pending = new Set<string>();
   private queue: Pending[] = [];
@@ -91,14 +99,51 @@ export class Ledger {
     let rows = this.loaded.get(sourceTable);
     if (rows) return rows;
     rows = new Map();
-    const found = await Database.query<{ source_key: string; target_id: number }[]>(
-      `SELECT \`source_key\`, \`target_id\` FROM \`${LEDGER_TABLE}\`
+    const ids = new Map<string, number>();
+    const found = await Database.query<{ source_key: string; target_id: number; id: number }[]>(
+      `SELECT \`source_key\`, \`target_id\`, \`id\` FROM \`${LEDGER_TABLE}\`
        WHERE \`source\` = ? AND \`source_table\` = ?`,
       [this.source, sourceTable]
     );
-    for (const row of found ?? []) rows.set(String(row.source_key), Number(row.target_id));
+    for (const row of found ?? []) {
+      rows.set(String(row.source_key), Number(row.target_id));
+      ids.set(String(row.source_key), Number(row.id));
+    }
     this.loaded.set(sourceTable, rows);
+    this.entryIds.set(sourceTable, ids);
     return rows;
+  }
+
+  /**
+   * Why an `--apply` must not start, or null (MICA-340): entries of a body-keyed table stored
+   * under a key the keyring no longer holds. Nothing can match them, so this run would write
+   * their messages a second time. A dry run carries the same text as a warning.
+   */
+  async refusal(): Promise<string | null> {
+    const found: string[] = [];
+    const kids = new Set<string>();
+    for (const sourceTable of bodyKeyedTables(this.source)) {
+      for (const [kid, count] of orphanedKeyIds((await this.table(sourceTable)).keys())) {
+        found.push(`${count} in ${sourceTable} under '${kid}'`);
+        kids.add(kid);
+      }
+    }
+    if (found.length === 0) return null;
+    const named = [...kids].toSorted().join("', '");
+    const why =
+      `import ledger entries are keyed with a content key that is not loaded (${found.join('; ')}). ` +
+      'This run could not recognise those messages and would import them a second time.';
+    return loadedKeyIds().length === 0
+      ? `no usable content key is loaded, and ${why} Fix mica_content_key_file (the boot log's ` +
+          `'content encryption' line says what is wrong) so it holds '${named}', restart, and run ` +
+          'micaimport again.'
+      : `the key file does not hold '${named}', and ${why} Put that key back in the key file ` +
+          '(mica_content_key_file), restart, and run micaimport again.';
+  }
+
+  /** How many entries of a source table this run re-keyed (or would, on a dry run). */
+  rekeyedIn(sourceTable: string): number {
+    return this.rekeys.get(sourceTable) ?? 0;
   }
 
   private mark(sourceTable: string, key: string, id: number): number {
@@ -107,19 +152,88 @@ export class Ledger {
     return id;
   }
 
+  /**
+   * The stored form an entry for `rawKey` is written as, and every form it may already be
+   * stored in (MICA-340, `keyForms`). `store` is also the key's identity in this run's sets.
+   */
+  private keys(sourceTable: string, rawKey: string): { store: string; forms: string[] } {
+    return keyForms(this.source, sourceTable, rawKey);
+  }
+
+  /**
+   * The form an entry for this key already has in the ledger, if any — after bringing it to
+   * `store` when it was found in another one.
+   */
+  private async found(
+    sourceTable: string,
+    store: string,
+    forms: readonly string[]
+  ): Promise<string | null> {
+    const rows = await this.table(sourceTable);
+    const form = forms.find((candidate) => rows.has(candidate)) ?? null;
+    return form === null ? null : await this.adopt(sourceTable, form, store);
+  }
+
+  /**
+   * Re-key an entry met in an older form — raw, SHA-1, or keyed under an older key — to the
+   * active key's form (MICA-340). Only this run can: it holds the raw key, which the ledger
+   * keeps only as a digest that cannot be undone. On a dry run it is counted, not written.
+   *
+   * A compare-and-set by the entry's id (`rekeyEntry`), so the raw key is never a parameter. A
+   * miss leaves the entry as it was, still matching in its old form; nothing here fails a row.
+   */
+  private async adopt(sourceTable: string, form: string, store: string): Promise<string> {
+    if (form === store || keyedKid(store) === null) return form;
+    const once = slot(sourceTable, form);
+    if (this.adopted.has(once)) return form;
+    this.adopted.add(once);
+    const count = (): void => {
+      this.rekeys.set(sourceTable, this.rekeyedIn(sourceTable) + 1);
+    };
+    if (!this.apply) {
+      count();
+      return form;
+    }
+    const rows = this.loaded.get(sourceTable);
+    const ids = this.entryIds.get(sourceTable);
+    const id = ids?.get(form);
+    const target = rows?.get(form);
+    if (!rows || !ids || id === undefined || target === undefined) return form;
+    const outcome = await rekeyEntry(id, form, store);
+    if (outcome !== 'rekeyed') {
+      if (outcome !== 'raced') {
+        console.error(
+          `[micaimport] could not re-key import ledger entry ${id} (${outcome}); ` +
+            'it still matches in its old form.'
+        );
+      }
+      return form;
+    }
+    rows.delete(form);
+    rows.set(store, target);
+    ids.delete(form);
+    ids.set(store, id);
+    count();
+    return store;
+  }
+
   /** The micaOS id a source key became, or null. Writes a queued key first, if it is queued. */
   async lookup(sourceTable: string, rawKey: string): Promise<number | null> {
-    const key = ledgerKey(rawKey);
-    if (this.pending.has(slot(sourceTable, key))) await this.flush();
-    return (await this.table(sourceTable)).get(key) ?? null;
+    const { store, forms } = this.keys(sourceTable, rawKey);
+    if (this.pending.has(slot(sourceTable, store))) await this.flush();
+    const form = await this.found(sourceTable, store, forms);
+    return form === null ? null : ((await this.table(sourceTable)).get(form) ?? null);
   }
 
   /** Null when the key is new; otherwise the skip reason that fits. */
   async seen(sourceTable: string, rawKey: string): Promise<string | null> {
-    const key = ledgerKey(rawKey);
-    if (this.pending.has(slot(sourceTable, key))) return SKIP.duplicateInSource;
-    if (!(await this.table(sourceTable)).has(key)) return null;
-    return this.thisRun.has(slot(sourceTable, key)) ? SKIP.duplicateInSource : SKIP.alreadyImported;
+    const { store, forms } = this.keys(sourceTable, rawKey);
+    if (this.pending.has(slot(sourceTable, store))) return SKIP.duplicateInSource;
+    const form = await this.found(sourceTable, store, forms);
+    if (form === null) return null;
+    return this.thisRun.has(slot(sourceTable, form))
+      ? SKIP.duplicateInSource
+      : SKIP.alreadyImported;
   }
 
   /**
@@ -136,7 +250,7 @@ export class Ledger {
     build: () => Promise<TransactionQuery[]>,
     settle: Settle
   ): Promise<void> {
-    const key = ledgerKey(rawKey);
+    const key = this.keys(sourceTable, rawKey).store;
     await this.table(sourceTable);
     if (!this.apply) {
       settle(this.mark(sourceTable, key, this.placeholder--));
@@ -238,7 +352,7 @@ export class Ledger {
     targetId: number | null,
     citizenid: string
   ): Promise<number | null> {
-    const key = ledgerKey(rawKey);
+    const key = this.keys(sourceTable, rawKey).store;
     await this.table(sourceTable);
     if (!this.apply || targetId === null) return this.mark(sourceTable, key, this.placeholder--);
     try {
@@ -258,7 +372,9 @@ export class Ledger {
         [this.source, sourceTable, key]
       ).catch(() => null);
       if (existing) return this.mark(sourceTable, key, Number(existing));
-      console.error(`[micaimport] could not record ${sourceTable} ${rawKey} in the ledger:`, error);
+      // A body-keyed table's raw key is the body: name the entry by its stored form instead.
+      const named = isBodyKeyed(this.source, sourceTable) ? key : rawKey;
+      console.error(`[micaimport] could not record ${sourceTable} ${named} in the ledger:`, error);
       return null;
     }
   }

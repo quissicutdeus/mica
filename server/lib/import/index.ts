@@ -31,6 +31,11 @@ export const runImport = async (
     resolver: new Resolver(source === 'lb-phone' ? lbNumberOwners : undefined)
   };
 
+  // MICA-340: entries under a key that is gone would match nothing, and their messages would
+  // be written twice. Checked before anything is read or written; a dry run is only warned.
+  const refusal = await ctx.ledger.refusal();
+  if (refusal !== null && apply) return { source, apply, tables: [], refused: refusal };
+
   let tables: TableReport[];
   switch (source) {
     case 'qb-phone':
@@ -46,5 +51,9 @@ export const runImport = async (
       throw new Error(`micaimport: '${String(source)}' is not a source this importer reads.`);
   }
 
-  return { source, apply, tables };
+  for (const table of tables) {
+    const rekeyed = ctx.ledger.rekeyedIn(table.table);
+    if (rekeyed > 0) table.rekeyed = rekeyed;
+  }
+  return { source, apply, tables, ...(refusal === null ? {} : { warnings: [refusal] }) };
 };

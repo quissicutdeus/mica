@@ -13,9 +13,13 @@
  * `--apply` was never sent at all. The runs read as "the apply hangs"; there was no apply.
  */
 
-/** The line that ends a qb-phone report — `phone_tweets` is its last table, present or not. */
+/**
+ * The line that ends a qb-phone report — `phone_tweets` is its last table, present or not — or
+ * the one line a run that never got that far prints: failed, already running, or refused before
+ * reading anything because ledger entries are keyed under a key that is not loaded (MICA-340).
+ */
 export const REPORT_END =
-  /^\[micaimport\] {3}phone_tweets: |^\[micaimport\] (qb-phone failed part-way|an import is already running)/;
+  /^\[micaimport\] {3}phone_tweets: |^\[micaimport\] (qb-phone failed part-way|an import is already running|qb-phone — REFUSED)/;
 
 export const TABLE_LINE =
   /^\[micaimport\] {3}([a-z_#]+): read (\d+), (?:written|would write) (\d+), skipped (\d+)$/;

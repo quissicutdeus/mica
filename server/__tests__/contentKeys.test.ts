@@ -131,7 +131,9 @@ describe('status and backfill', () => {
     expect(logged).toEqual([
       '[micacrypt] no content key is set; new bodies are stored as plaintext.',
       '[micacrypt] no encrypted column is registered.',
-      '[micacrypt] DM notifications still holding a body: 3.'
+      '[micacrypt] DM notifications still holding a body: 3.',
+      // MICA-340: the import ledger's message keys, after the bodies.
+      '[micacrypt] mica_import_ledger (message keys): not in the database; nothing to key.'
     ]);
     // The add-on's app id comes from this service, not from core.
     const counted = dbMock.query.mock.calls.find((c) =>
@@ -144,7 +146,7 @@ describe('status and backfill', () => {
   it('backfill without --apply is a dry run and writes nothing', async () => {
     await runContentKeysCommand(0, ['backfill', '--batch', '50']);
     expect(logged[0]).toContain('backfill dry run (nothing written; add --apply)');
-    expect(logged.at(-1)).toBe('[micacrypt] DM notification bodies that would be blanked: 3.');
+    expect(logged).toContain('[micacrypt] DM notification bodies that would be blanked: 3.');
     expect(dbMock.update).not.toHaveBeenCalled();
     expect(dbMock.query.mock.calls.some((c) => String(c[0]).startsWith('UPDATE'))).toBe(false);
   });
@@ -171,7 +173,7 @@ describe('status and backfill', () => {
     logged = [];
     gate.hold = null;
     await runContentKeysCommand(0, ['status']);
-    expect(logged.at(-1)).toBe('[micacrypt] DM notifications still holding a body: 3.');
+    expect(logged).toContain('[micacrypt] DM notifications still holding a body: 3.');
   });
 
   it('says a failed run failed, and frees the command for the next', async () => {
@@ -180,7 +182,7 @@ describe('status and backfill', () => {
     expect(errors.join('\n')).toContain('status failed part-way');
     dbMock.query.mockImplementation(async () => [{ n: 0 }]);
     await runContentKeysCommand(0, ['status']);
-    expect(logged.at(-1)).toBe('[micacrypt] DM notifications still holding a body: 0.');
+    expect(logged).toContain('[micacrypt] DM notifications still holding a body: 0.');
   });
 });
 

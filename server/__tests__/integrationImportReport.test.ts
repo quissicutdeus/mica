@@ -49,6 +49,30 @@ describe("the importer scenario's reading of micaimport's report", () => {
     expect(REPORT_END.test('[micaimport] an import is already running; wait.')).toBe(true);
   });
 
+  it('stops on the one line a refused --apply prints (MICA-340)', () => {
+    const lines = formatReport({
+      source: 'qb-phone',
+      apply: true,
+      tables: [],
+      refused: "the key file does not hold 'k1', and …"
+    });
+    expect(lines).toHaveLength(1);
+    expect(REPORT_END.test(lines[0])).toBe(true);
+  });
+
+  it("does not stop early on a dry run's refusal warning or a re-key line", () => {
+    const dry: ImportReport = {
+      ...report(false),
+      warnings: ["the key file does not hold 'k1', and …"]
+    };
+    dry.tables[1] = { ...dry.tables[1], rekeyed: 2 };
+    const lines = formatReport(dry);
+    expect(lines.some((line) => line.includes('WARNING, --apply would refuse'))).toBe(true);
+    expect(lines.some((line) => line.includes('would be re-keyed'))).toBe(true);
+    expect(lines.filter((line) => REPORT_END.test(line))).toEqual([lines[lines.length - 1]]);
+    expect(tableLines(lines)).toHaveLength(3);
+  });
+
   it('parses every table line of a dry run and of an apply', () => {
     expect(tableLines(formatReport(report(false)))).toEqual([
       { table: 'player_contacts', read: 1, written: 1, skipped: 0 },

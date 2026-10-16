@@ -47,6 +47,21 @@ Entries are hand-written. See MICA-72 for why a generated one was rejected.
 
 ### Action required
 
+**If you imported from qb-phone and set a content key, run
+`micacrypt backfill --apply` and then `micaimport qb-phone --apply` once while
+the qb-phone tables still exist: the import ledger stops holding message bodies
+(MICA-340).** `mica_import_ledger.source_key` kept each imported qb-phone
+message's key, its participants, time, sender and body, verbatim or as an
+unkeyed SHA-1, outside the sealed columns. With a content key set, new entries
+are now an HMAC under that key, `hmac:<kid>:<hex>`. The backfill keys the
+entries that still hold the text, the re-run keys the SHA-1 ones for every
+message it still finds in qb-phone's tables, and neither imports anything twice.
+`micacrypt status` counts what is left. `micaimport --apply` now refuses to run,
+writing nothing, while any entry is keyed under a content key the key file no
+longer holds, because it could not recognise those messages and would import
+them a second time; put the key back to run it. Without a content key nothing
+changes. `docs/security.md` says what an old SHA-1 entry still gives away.
+
 **Logging out to character select now ends that character's call (MICA-382).**
 On a multicharacter server, a player who logs out without disconnecting used to
 stay in their call, on speakerphone and broadcasting music while sitting on

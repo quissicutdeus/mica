@@ -18,11 +18,13 @@ import {
   serverDataDir,
   suggestedKeyFile
 } from '../lib/contentCipher';
+import { formatLedgerKeys, walkLedgerKeys } from '../lib/import/ledgerKeys';
 import { notifyPlayer } from '../lib/shell';
 
 /**
  * `micacrypt` (MICA-165): the console's view of content encryption, the backfill that seals
- * what was stored before a key existed, and the steps that set a key up.
+ * what was stored before a key existed — and keys the import ledger's message keys, which held
+ * the body in clear (MICA-340) — and the steps that set a key up.
  *
  * **Console only, the gate `micaimport` carries.** `backfill --apply` rewrites every player's
  * message, DM and mail bodies; `status` and `keygen` are gated with it so the command has one
@@ -46,6 +48,9 @@ export const USAGE = [
 let running = false;
 
 const say = (line: string): void => console.log(line);
+
+/** Between batches of the ledger walk, so a server tick runs. */
+const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
 const two = (n: number): string => String(n).padStart(2, '0');
 
@@ -193,6 +198,8 @@ export const runContentKeysCommand = async (source: number, args: string[]): Pro
     if (backfill === null) {
       const report = await walkContent({ apply: false, notifications: DM_NOTIFICATIONS });
       for (const line of formatStatus(report)) say(line);
+      const ledger = await walkLedgerKeys({ apply: false, batch: DEFAULT_BATCH, pause: tick });
+      for (const line of formatLedgerKeys(ledger, null)) say(line);
     } else {
       const report = await walkContent({
         apply: backfill.apply,
@@ -200,6 +207,14 @@ export const runContentKeysCommand = async (source: number, args: string[]): Pro
         notifications: DM_NOTIFICATIONS
       });
       for (const line of formatBackfill(report)) say(line);
+      // After the bodies: the import ledger's message keys hold what they were built from, the
+      // body included, until they are keyed (MICA-340). Same batch, same console-only gate.
+      const ledger = await walkLedgerKeys({
+        apply: backfill.apply,
+        batch: backfill.batch,
+        pause: tick
+      });
+      for (const line of formatLedgerKeys(ledger, backfill.apply)) say(line);
     }
   } catch (error) {
     if (error instanceof NoActiveKeyError) {

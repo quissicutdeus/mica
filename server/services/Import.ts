@@ -34,7 +34,8 @@ defineService<LedgerRow>({
   schema: {
     source: { type: 'string', length: 16, notNull: true, clientWritable: false },
     source_table: { type: 'string', length: 64, notNull: true, clientWritable: false },
-    // Raw when it fits, `sha1:<hex>` when it does not — see `ledgerKey`.
+    // Raw when it fits, `sha1:<hex>` when it does not; a message body's key is
+    // `hmac:<kid>:<hex>` under the content key (MICA-340) — see `lib/import/ledgerKeys.ts`.
     source_key: { type: 'string', length: 64, notNull: true, clientWritable: false },
     target_table: { type: 'string', length: 64, notNull: true, clientWritable: false },
     target_id: { type: 'int', notNull: true, clientWritable: false }

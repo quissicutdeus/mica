@@ -90,6 +90,17 @@ declare module 'node:crypto' {
   }
 
   export function createHash(algorithm: string): Hash;
+
+  /**
+   * HMAC-SHA-256, for `lib/contentCipher.ts`'s keyed digests (MICA-340): the import ledger's
+   * key for a message body. A string is hashed as UTF-8, Node's default.
+   */
+  interface Hmac {
+    update(data: string): Hmac;
+    digest(): Bytes;
+  }
+
+  export function createHmac(algorithm: 'sha256', key: Uint8Array): Hmac;
   /** Real bytes (`Bytes` is a `Digest` too, so `.toString('hex')` callers are unchanged). */
   export function randomBytes(size: number): Bytes;
 

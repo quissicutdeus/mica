@@ -14,7 +14,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { randomBytes } from 'node:crypto';
+import { createHmac, randomBytes } from 'node:crypto';
 
 /**
  * MICA-165: the content cipher. `Database` is a stub answering only the enabled-marker
@@ -40,6 +40,7 @@ import {
   activeKeyId,
   announceContentCipher,
   contentContext,
+  contentDigests,
   contextColumns,
   encryptedColumn,
   encryptedColumns,
@@ -411,6 +412,33 @@ describe('seal and open with a key', () => {
 
   it('leaves a sealed-looking text alone for storage, since it will be sealed', async () => {
     expect(await storablePlaintext('$mc1$k1$AAAA')).toBe('$mc1$k1$AAAA');
+  });
+});
+
+describe('keyed digests (MICA-340)', () => {
+  it('digests under every loaded key, active first, the same each time', () => {
+    const k1 = randomBytes(32);
+    useKeyFile(keyFile([`k1 ${k1.toString('base64')}`, `k0 ${b64()}`]));
+    const first = contentDigests('ledger', 'CIT_A|CIT_B|You up?');
+    expect(first.map((d) => d.kid)).toEqual(['k1', 'k0']);
+    expect(first.map((d) => d.digest.length)).toEqual([32, 32]);
+    const hex = (list: ReturnType<typeof contentDigests>): string[] =>
+      list.map((d) => d.digest.toString('hex'));
+    expect(hex(contentDigests('ledger', 'CIT_A|CIT_B|You up?'))).toEqual(hex(first));
+    // A different key, value or purpose: a different digest.
+    expect(hex(first)[0]).not.toBe(hex(first)[1]);
+    expect(hex(contentDigests('ledger', 'CIT_A|CIT_B|You up!'))[0]).not.toBe(hex(first)[0]);
+    expect(hex(contentDigests('other', 'CIT_A|CIT_B|You up?'))[0]).not.toBe(hex(first)[0]);
+    // Never an HMAC under the content key as it is: the MAC key is derived from it.
+    const direct = createHmac('sha256', k1).update('CIT_A|CIT_B|You up?').digest('hex');
+    expect(hex(first)[0]).not.toBe(direct);
+  });
+
+  it('is empty with no key, and with a key file it cannot use', () => {
+    expect(contentDigests('ledger', 'x')).toEqual([]);
+    useKeyFile(keyFile(['k1 not-a-key']));
+    resetContentCipherForTests();
+    expect(contentDigests('ledger', 'x')).toEqual([]);
   });
 });
 

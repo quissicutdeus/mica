@@ -3,10 +3,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 
 /**
  * `micaimport` (MICA-233) against an in-memory stand-in for the database.
@@ -41,6 +41,8 @@ const db = vi.hoisted(() => ({
   timeouts: 0,
   /** Runs once after the next ledger insert, which lets a case fake a concurrent writer. */
   afterLedgerInsert: null as null | (() => void),
+  /** Every ledger re-key's parameters, as sent (MICA-340). */
+  ledgerUpdates: [] as any[][],
   pageReads: 0
 }));
 
@@ -83,12 +85,51 @@ const dbMock = vi.hoisted(() => {
         : [...rawParams, db.importId];
     }
 
+    // `micacrypt`'s ledger walk (MICA-340): whether the ledger exists, then a page of it.
+    if (sql.startsWith('SELECT COUNT(*) AS `n` FROM information_schema.TABLES')) {
+      return { rows: [{ n: params[0] === 'mica_import_ledger' ? 1 : 0 }] };
+    }
+    if (sql.startsWith('SELECT `id`, `source_key` FROM `mica_import_ledger` WHERE `id` > ?')) {
+      const [after, source, sourceTable, limit] = params;
+      return {
+        rows: db.ledger
+          .filter((r) => r.id > after && r.source === source && r.source_table === sourceTable)
+          .toSorted((x, y) => x.id - y.id)
+          .slice(0, limit)
+      };
+    }
+    // A compare-and-set on the stored key's SHA-256, as MariaDB's `SHA2(source_key, 256)`.
+    if (sql.startsWith('UPDATE `mica_import_ledger` SET `source_key` = ?')) {
+      const [next, id, was] = params;
+      db.ledgerUpdates.push(params);
+      const row = db.ledger.find(
+        (r) => r.id === id && createHash('sha256').update(r.source_key).digest('hex') === was
+      );
+      if (!row) return { scalar: false };
+      if (
+        db.ledger.some(
+          (r) =>
+            r !== row &&
+            r.source === row.source &&
+            r.source_table === row.source_table &&
+            r.source_key === next
+        )
+      ) {
+        throw new Error("Duplicate entry for key 'source_row_unique'");
+      }
+      row.source_key = next;
+      return { scalar: true };
+    }
+
     if (sql.includes('information_schema.TABLES')) {
       return { scalar: db.source.has(params[0]) ? 1 : null };
     }
 
     // The ledger.
-    if (sql.startsWith('SELECT `source_key`, `target_id` FROM `mica_import_ledger`')) {
+    if (
+      sql.startsWith('SELECT `source_key`, `target_id` FROM `mica_import_ledger`') ||
+      sql.startsWith('SELECT `source_key`, `target_id`, `id` FROM `mica_import_ledger`')
+    ) {
       return {
         rows: db.ledger.filter((r) => r.source === params[0] && r.source_table === params[1])
       };
@@ -112,7 +153,15 @@ const dbMock = vi.hoisted(() => {
       ) {
         throw new Error("Duplicate entry for key 'source_row_unique'");
       }
-      db.ledger.push({ citizenid, source, source_table, source_key, target_table, target_id });
+      db.ledger.push({
+        id: db.nextId++,
+        citizenid,
+        source,
+        source_table,
+        source_key,
+        target_table,
+        target_id
+      });
       if (db.afterLedgerInsert) {
         const hook = db.afterLedgerInsert;
         db.afterLedgerInsert = null;
@@ -350,7 +399,9 @@ const dbMock = vi.hoisted(() => {
       db.inserts++;
       return answer(sql, params).id ?? 0;
     }),
-    update: vi.fn(async () => true),
+    update: vi.fn(async (sql: string, params: any[] = []) =>
+      sql.includes('`mica_import_ledger`') ? answer(sql, params).scalar === true : true
+    ),
     /**
      * oxmysql's `transaction_async` as `Database.transaction` sees it: every statement or none,
      * and `false` rather than a throw when one fails.
@@ -414,7 +465,7 @@ vi.mock('../lib/phoneNumbers', () => ({
 const phoneForCitizen = vi.hoisted(() => vi.fn(async (cid: string) => `phone-${cid}`));
 vi.mock('../lib/deviceIdentity', () => ({ phoneForCitizen }));
 
-import { runImport, type ImportReport } from '../lib/import';
+import { formatReport, runImport, type ImportReport } from '../lib/import';
 import { MESSAGE_BODY_MAX } from '@mica/shared/contracts/messages';
 import {
   contentContext,
@@ -426,6 +477,7 @@ import {
   unregisterEncryptedColumnForTests
 } from '../lib/contentCipher';
 import { __resetLbPrefix } from '../lib/import/lbPhone';
+import { formatLedgerKeys, keyForms, walkLedgerKeys } from '../lib/import/ledgerKeys';
 import { SKIP, threadTableUnusable } from '../lib/import/report';
 import { __resetImportTargets, postsTarget, registerImportTarget } from '../lib/import/targets';
 import { runImportCommand } from '../services/Import';
@@ -555,6 +607,7 @@ beforeEach(() => {
   db.timeouts = 0;
   db.afterLedgerInsert = null;
   db.pageReads = 0;
+  db.ledgerUpdates.length = 0;
   micaNumbers.clear();
   directory.citizens = new Set(['CIT_A', 'CIT_B']);
   (globalThis as any).GetConvar = (_name: string, fallback: string) => fallback;
@@ -1790,5 +1843,264 @@ describe('MICA-165: an imported message is sealed like a sent one', () => {
     await runImport('qb-phone', { apply: false });
     expect(db.messages).toHaveLength(0);
     expect(db.inserts).toBe(0);
+  });
+
+  // ─── MICA-340: the ledger's key for a message is built from its body ──────────────────────
+
+  const BODIES = ['You up?', "Yeah, what's up", 'Meet at Legion'];
+  const messageKeys = (): string[] =>
+    db.ledger.filter((r) => r.source_table === 'phone_messages').map((r) => r.source_key);
+  const keyFile = (): string => join(dir, 'content.key');
+  const useKeys = (lines: string[]): void => {
+    writeFileSync(keyFile(), `${lines.join('\n')}\n`);
+    resetContentCipherForTests();
+  };
+  const noKey = (): void => {
+    (globalThis as any).GetConvar = (_name: string, fallback: string) => fallback;
+    resetContentCipherForTests();
+  };
+  const withKey = (): void => {
+    (globalThis as any).GetConvar = (name: string, fallback: string) =>
+      name === 'mica_content_key_file' ? keyFile() : fallback;
+    resetContentCipherForTests();
+  };
+  const walk = (apply: boolean) => walkLedgerKeys({ apply, batch: 2, pause: async () => {} });
+
+  it('keys a message’s ledger entry with the content key, never with its body', async () => {
+    seedQb();
+    const report = await runImport('qb-phone', { apply: true });
+
+    // The same counts as without a key: both participants' copies still collapse to one.
+    expect(table(report, 'phone_messages')).toMatchObject({ read: 8, written: 3 });
+    expect(skipped(report, 'phone_messages')).toEqual({
+      [SKIP.duplicateInSource]: 3,
+      [SKIP.thinThread]: 2
+    });
+    const keys = messageKeys();
+    expect(keys).toHaveLength(3);
+    for (const key of keys) expect(key).toMatch(/^hmac:k1:[0-9a-f]{40}$/);
+    for (const row of db.ledger) {
+      for (const body of BODIES) expect(row.source_key).not.toContain(body);
+    }
+    // Only the body-keyed table: a thread's key is its pair, and stays readable.
+    expect(db.ledger.find((r) => r.source_table === 'phone_messages#threads')?.source_key).toBe(
+      'CIT_A|CIT_B'
+    );
+
+    const again = await runImport('qb-phone', { apply: true });
+    expect(table(again, 'phone_messages').written).toBe(0);
+    expect(skipped(again, 'phone_messages')[SKIP.alreadyImported]).toBe(6);
+  });
+
+  it('keeps the ordinal: two same-minute texts alike are two messages, on both rows', async () => {
+    seedQb();
+    const thread = qbHistory([
+      ['24-9-2026', '21:04', 'CIT_A', 'ok'],
+      ['24-9-2026', '21:04', 'CIT_A', 'ok']
+    ]);
+    db.source.set('phone_messages', [
+      { id: 1, citizenid: 'CIT_A', number: '555-0002', messages: thread },
+      { id: 2, citizenid: 'CIT_B', number: '555-0001', messages: thread }
+    ]);
+
+    const report = await runImport('qb-phone', { apply: true });
+
+    expect(table(report, 'phone_messages')).toMatchObject({ read: 4, written: 2 });
+    expect(skipped(report, 'phone_messages')).toEqual({ [SKIP.duplicateInSource]: 2 });
+    expect(new Set(messageKeys()).size).toBe(2);
+    const again = await runImport('qb-phone', { apply: true });
+    expect(skipped(again, 'phone_messages')).toEqual({ [SKIP.alreadyImported]: 4 });
+  });
+
+  /** One text whose key is too long to store as it is: written before MICA-340 as SHA-1. */
+  const LONG = 'a long one: ' + 'x'.repeat(80);
+  const seedWithLong = (): void => {
+    seedQb();
+    const thread = qbHistory([
+      ['24-9-2026', '21:04', 'CIT_A', 'You up?'],
+      ['24-9-2026', '21:05', 'CIT_B', LONG]
+    ]);
+    db.source.set('phone_messages', [
+      { id: 1, citizenid: 'CIT_A', number: '555-0002', messages: thread },
+      { id: 2, citizenid: 'CIT_B', number: '555-0001', messages: thread }
+    ]);
+  };
+
+  /** No re-key ever sends the raw key: it is compared by digest (oxmysql logs parameters). */
+  const noBodyInUpdates = (): void => {
+    for (const params of db.ledgerUpdates) {
+      for (const value of params) {
+        expect(String(value)).not.toContain('You up?');
+        expect(String(value)).not.toContain('a long one');
+      }
+    }
+  };
+
+  it('a keyed re-import matches what was imported unkeyed, raw or SHA-1, and re-keys it once', async () => {
+    noKey();
+    seedWithLong();
+    await runImport('qb-phone', { apply: true });
+    const legacy = messageKeys();
+    expect(legacy.filter((k) => k.startsWith('sha1:'))).toHaveLength(1);
+    expect(legacy.filter((k) => k.includes('You up?'))).toHaveLength(1);
+
+    withKey();
+    // A dry run counts what it would re-key, once per entry though each is met twice, and
+    // writes nothing.
+    const dry = await runImport('qb-phone', { apply: false });
+    expect(table(dry, 'phone_messages')).toMatchObject({ written: 0, rekeyed: 2 });
+    expect(formatReport(dry)).toContain(
+      '[micaimport]     2 ledger entries would be re-keyed to the active content key ' +
+        '(their rows are counted above as already imported)'
+    );
+    expect(messageKeys()).toEqual(legacy);
+    expect(db.ledgerUpdates).toHaveLength(0);
+
+    const again = await runImport('qb-phone', { apply: true });
+    expect(table(again, 'phone_messages')).toMatchObject({ written: 0, rekeyed: 2 });
+    expect(skipped(again, 'phone_messages')).toEqual({ [SKIP.alreadyImported]: 4 });
+    const keys = messageKeys();
+    expect(keys).toHaveLength(2);
+    for (const key of keys) expect(key).toMatch(/^hmac:k1:[0-9a-f]{40}$/);
+    expect(db.ledgerUpdates).toHaveLength(2);
+    noBodyInUpdates();
+    // Only the body-keyed table: the thread entry keeps its readable pair key.
+    expect(db.ledger.find((r) => r.source_table === 'phone_messages#threads')?.source_key).toBe(
+      'CIT_A|CIT_B'
+    );
+
+    const third = await runImport('qb-phone', { apply: true });
+    expect(table(third, 'phone_messages').rekeyed).toBeUndefined();
+    expect(skipped(third, 'phone_messages')).toEqual({ [SKIP.alreadyImported]: 4 });
+    expect(db.ledgerUpdates).toHaveLength(2);
+  });
+
+  it('micacrypt backfill keys the raw entries and leaves SHA-1 ones for the import to key', async () => {
+    noKey();
+    seedWithLong();
+    await runImport('qb-phone', { apply: true });
+    withKey();
+
+    const dry = await walk(false);
+    expect(dry).toMatchObject({ missing: false, rows: 2, raw: 1, hashed: 1, rewritten: 0 });
+    expect(messageKeys().some((k) => k.includes('You up?'))).toBe(true);
+
+    const applied = await walk(true);
+    expect(applied).toMatchObject({ rows: 2, raw: 1, hashed: 1, rewritten: 1, raced: 0 });
+    let keys = messageKeys();
+    expect(keys.filter((k) => /^hmac:k1:[0-9a-f]{40}$/.test(k))).toHaveLength(1);
+    expect(keys.filter((k) => k.startsWith('sha1:'))).toHaveLength(1);
+    for (const key of keys) expect(key).not.toContain('You up?');
+    noBodyInUpdates();
+    expect(db.ledger.find((r) => r.source_table === 'phone_messages#threads')?.source_key).toBe(
+      'CIT_A|CIT_B'
+    );
+    expect(formatLedgerKeys(applied, true)).toEqual([
+      '[micacrypt] mica_import_ledger (message keys): 2 row(s) — active key 0, older keys 0, ' +
+        'keyed 1 of 1 in clear, unkeyed SHA-1 1 (keyed only by a micaimport --apply re-run), ' +
+        'changed mid-run, left for the next run 0.'
+    ]);
+    expect(await walk(true)).toMatchObject({ raw: 0, active: 1, hashed: 1, rewritten: 0 });
+
+    // The import holds the raw key, so it keys the SHA-1 entry the backfill could not.
+    const again = await runImport('qb-phone', { apply: true });
+    expect(table(again, 'phone_messages')).toMatchObject({ written: 0, rekeyed: 1 });
+    keys = messageKeys();
+    for (const key of keys) expect(key).toMatch(/^hmac:k1:[0-9a-f]{40}$/);
+    expect(await walk(false)).toMatchObject({ rows: 2, active: 2, hashed: 0, raw: 0 });
+  });
+
+  it('after a rotation, re-keys entries under the old key while it is listed, and refuses once it is gone', async () => {
+    seedQb();
+    await runImport('qb-phone', { apply: true });
+    const k1 = readFileSync(keyFile(), 'utf8').trim();
+    const k2 = `k2 ${randomBytes(32).toString('base64')}`;
+
+    useKeys([k2, k1]);
+    const status = await walk(false);
+    expect(status).toMatchObject({ rows: 3, active: 0, older: { k1: 3 }, raw: 0 });
+    expect(formatLedgerKeys(status, null).at(-1)).toBe(
+      '[micacrypt] entries keyed with k1 match only while that key stays in the key file; a ' +
+        'micaimport --apply re-run re-keys those whose source rows it still reads.'
+    );
+
+    // The old key gone before a re-import: nothing can match those entries, so --apply refuses
+    // before reading or writing anything, and a dry run warns in the same words.
+    useKeys([k2]);
+    expect(formatLedgerKeys(await walk(false), null).at(-1)).toBe(
+      '[micacrypt] the key file no longer holds k1, so those entries cannot be matched; ' +
+        'micaimport --apply refuses to run until that key is back in the key file.'
+    );
+    const inserts = db.inserts;
+    const refused = await runImport('qb-phone', { apply: true });
+    expect(refused.tables).toEqual([]);
+    expect(refused.refused).toContain("the key file does not hold 'k1'");
+    expect(refused.refused).toContain("3 in phone_messages under 'k1'");
+    expect(formatReport(refused)).toEqual([
+      `[micaimport] qb-phone — REFUSED, nothing written: ${refused.refused}`
+    ]);
+    expect(db.inserts).toBe(inserts);
+    expect(db.ledgerUpdates).toHaveLength(0);
+    const warned = await runImport('qb-phone', { apply: false });
+    expect(warned.warnings).toEqual([refused.refused]);
+    expect(formatReport(warned)[1]).toBe(
+      `[micaimport] WARNING, --apply would refuse: ${refused.refused}`
+    );
+
+    // Listed again, a re-import re-keys all three to k2; after that k1 can go.
+    useKeys([k2, k1]);
+    const rekeyed = await runImport('qb-phone', { apply: true });
+    expect(table(rekeyed, 'phone_messages')).toMatchObject({ written: 0, rekeyed: 3 });
+    for (const key of messageKeys()) expect(key).toMatch(/^hmac:k2:[0-9a-f]{40}$/);
+    useKeys([k2]);
+    const after = await runImport('qb-phone', { apply: true });
+    expect(after.refused).toBeUndefined();
+    expect(table(after, 'phone_messages').written).toBe(0);
+    expect(skipped(after, 'phone_messages')[SKIP.alreadyImported]).toBe(6);
+  });
+
+  it('with no usable key, says so, and the import refuses rather than duplicating', async () => {
+    seedQb();
+    await runImport('qb-phone', { apply: true });
+    noKey();
+
+    expect(formatLedgerKeys(await walk(false), null).at(-1)).toBe(
+      '[micacrypt] no usable content key is loaded, so the entries keyed with k1 cannot be ' +
+        'matched; micaimport --apply refuses to run until the key file is back.'
+    );
+    const refused = await runImport('qb-phone', { apply: true });
+    expect(refused.refused).toMatch(/^no usable content key is loaded, .* holds 'k1', restart/);
+    expect(refused.tables).toEqual([]);
+  });
+
+  it('counts an entry whose keyed form is already in the ledger, and stops on any other failure without the key', async () => {
+    noKey();
+    seedQb();
+    await runImport('qb-phone', { apply: true });
+    withKey();
+    const raw = db.ledger.find((r) => r.source_table === 'phone_messages')!;
+    const keyed = keyForms('qb-phone', 'phone_messages', raw.source_key).store;
+    db.ledger.push({ ...raw, id: db.nextId++, source_key: keyed });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const report = await walk(true);
+    expect(report).toMatchObject({ raw: 3, rewritten: 2, collided: 1, active: 1 });
+    expect(String(vi.mocked(console.error).mock.calls.at(-1))).not.toContain(raw.source_key);
+
+    noKey();
+    seedQb();
+    db.ledger.length = 0;
+    await runImport('qb-phone', { apply: true });
+    withKey();
+    const body = db.ledger.find((r) => r.source_table === 'phone_messages')!.source_key;
+    dbMock.update.mockRejectedValueOnce(new Error(`ER_LOCK_WAIT_TIMEOUT: UPDATE … ['${body}']`));
+    const failed = await walk(true).catch((error: unknown) => String(error));
+    expect(failed).toContain('could not be written');
+    expect(failed).not.toContain(body);
+  });
+
+  it('refuses to key the ledger with no key loaded, before reading it', async () => {
+    noKey();
+    await expect(walk(true)).rejects.toThrow('no content key is loaded');
   });
 });
