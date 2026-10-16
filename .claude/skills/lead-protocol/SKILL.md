@@ -148,6 +148,24 @@ message reads as something to answer instead of something to execute.
   files, stage one commit, `git stash push --keep-index --include-untracked`,
   gate that exact tree, commit, `git stash pop --index`, then diff the restored
   tree against the backup.
+- **Land from a worktree so the lanes never stop.** Copy the ready tickets'
+  files into a detached worktree at the dev tip, run `pnpm verify` there in the
+  background, then `cmp` each file against the main checkout before committing
+  by path, and prove `git diff --quiet "$(git -C <wt> write-tree)" HEAD`
+  afterwards. Lanes on other files keep editing throughout; one on a file in the
+  batch holds its next ticket until the commit lands. Used for six batches on
+  2026-10-15.
+- **`pre-push` judges the uncommitted tree, not what is pushed.** `check:fast`
+  selects suites from the working diff, so a lane's half-finished file (a
+  migration with no CHANGELOG entry yet) refuses a push of verified commits.
+  Push once that work is in, rather than routing the push elsewhere; a push from
+  the worktree by refspec was refused by the bash guard as a force-push.
+- **A root wrapper in `scripts/deploy/` is pinned by its sha on hoth.** Changing
+  one means the owner reinstalls it as root, and every integration and release
+  run fails until they do. Weigh that before letting a lane edit one.
+- **A lane's denied permission is not the lead's to use.** When the auto-mode
+  classifier refuses a lane's edit, do not make the edit yourself: surface it to
+  the owner, who approves or does it.
 
 ## Close it down
 
