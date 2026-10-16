@@ -32,9 +32,11 @@ export class ServiceProxy {
       this.pendingCallbacks.delete(cbId); // Clean up FIRST to prevent leaks on crash
 
       if (cb) {
-        // Safe serialization check: handles `undefined` without throwing an error
-        const cleanData = data !== undefined ? JSON.parse(JSON.stringify(data)) : null;
-        cb(cleanData);
+        // Handed over as it arrived (MICA-361). Net-event data is already plain,
+        // msgpack-decoded data, and `cb` serializes it for NUI itself, so a JSON round trip
+        // here only did that work twice on the game's JS thread — for a full base64 photo on
+        // a media `get`. `undefined` is the one value worth mapping: NUI needs `null`.
+        cb(data === undefined ? null : data);
       }
     }
   }

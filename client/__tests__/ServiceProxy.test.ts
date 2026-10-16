@@ -141,6 +141,33 @@ describe('ServiceProxy — request/response round trip', () => {
     expect(resolved).toHaveBeenCalledWith([{ id: 1, subject: 'Statement' }]);
   });
 
+  it('hands the reply to NUI as it arrived, without a copy (MICA-361)', () => {
+    const app = new ServiceProxy('media');
+    app.registerCallback('getMedia', 'mica:server:media:get', onPhone);
+
+    const resolved = vi.fn();
+    nuiCallbacks.get('getMedia')!({}, resolved);
+    const [, cbId] = emitted[0] as [string, string, unknown];
+
+    const reply = { id: 7, data: 'base64…' };
+    netSubscriptions.get('mica:client:media:receive')!(cbId, reply);
+
+    expect(resolved.mock.calls[0]![0]).toBe(reply);
+  });
+
+  it('answers NUI null when the server replies with nothing', () => {
+    const app = new ServiceProxy('notes');
+    app.registerCallback('deleteNote', 'mica:server:notes:delete', onPhone);
+
+    const resolved = vi.fn();
+    nuiCallbacks.get('deleteNote')!({}, resolved);
+    const [, cbId] = emitted[0] as [string, string, unknown];
+
+    netSubscriptions.get('mica:client:notes:deleted')!(cbId, undefined);
+
+    expect(resolved).toHaveBeenCalledWith(null);
+  });
+
   it('ignores a reply for an unknown correlation id', () => {
     const app = new ServiceProxy('notes');
     app.registerCallback('getNotes', 'mica:server:notes:get', onPhone);
