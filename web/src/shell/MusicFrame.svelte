@@ -143,6 +143,20 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   };
 
   /**
+   * The last `0..100` level this frame was told, so an unchanged one is not posted again.
+   *
+   * A plain variable, not `$state`: nothing renders from it, and making it reactive would
+   * re-run the effect that reads it. `undefined` until the frame has loaded, and reset with
+   * every new `url` — a new element is a new player that has been told nothing (MICA-360).
+   */
+  let postedLevel: number | undefined;
+
+  const postVolume = (next: number): void => {
+    postedLevel = next;
+    post(playerCommand('setVolume', [next]));
+  };
+
+  /**
    * Ask the player to start reporting state, then set the volume before anything is heard.
    *
    * Without the handshake the frame answers nothing; it is the same `listening` message
@@ -154,7 +168,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    */
   const onLoad = () => {
     post(JSON.stringify({ event: 'listening', id: 'mica-music', channel: 'widget' }));
-    post(playerCommand('setVolume', [level(volume)]));
+    postVolume(level(volume));
     ready = true;
   };
 
@@ -195,12 +209,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   $effect(() => {
     void url;
     ready = false;
+    postedLevel = undefined;
   });
 
+  // Skips a level the player already has. A float volume that moved without crossing an
+  // integer is the same `setVolume` as last time, and each post is a cross-origin message
+  // into a YouTube frame, several times a second while anyone nearby plays music.
   $effect(() => {
     const next = level(volume);
-    if (!ready) return;
-    post(playerCommand('setVolume', [next]));
+    if (!ready || next === postedLevel) return;
+    postVolume(next);
   });
 </script>
 

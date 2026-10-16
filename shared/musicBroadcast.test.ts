@@ -192,8 +192,10 @@ describe('a broadcast, end to end', () => {
     expect(audible).toHaveLength(1);
     expect(audible[0].token).toBe(TOKEN);
     expect(audible[0].source).toBe(SOURCE);
-    // The property this whole file exists for.
-    expect(audible[0].attenuation).toBeCloseTo(computed, 6);
+    // The property this whole file exists for. The shell hands players the client's level at
+    // 1/100, the step `setVolume` takes (MICA-360), so it is compared at that resolution and
+    // rounded the same way `recompute` does — not by loosening the precision.
+    expect(audible[0].attenuation).toBeCloseTo(Math.round(computed * 100) / 100, 6);
   });
 
   it('is silent when the listener is out of range, without dropping off the roster', async () => {

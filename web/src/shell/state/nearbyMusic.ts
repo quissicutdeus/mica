@@ -262,6 +262,17 @@ const volumeFor = (volumes: Record<string, number>, source: number): number => {
   return Math.max(0, Math.min(1, raw));
 };
 
+/**
+ * An attenuation at the resolution a player can act on: 1/100, the step `setVolume` takes.
+ *
+ * The game client pushes a smoothed float at ~13Hz, and a float that moved in its sixth
+ * decimal is a "different" broadcast to `sameAudible` — so without this, every tick wrote the
+ * store and re-rendered every frame for a change no ear could hear (MICA-360). Only what the
+ * players are told is quantized; ranking and eligibility still read the raw value, so the
+ * incumbent margin and the out-of-earshot test behave exactly as they did.
+ */
+const quantize = (value: number): number => Math.round(value * 100) / 100;
+
 const sameAudible = (a: AudibleBroadcast[], b: AudibleBroadcast[]): boolean =>
   a.length === b.length &&
   a.every((x, i) => {
@@ -360,7 +371,7 @@ function recompute(): void {
 
   const next = winners.map((b) => ({
     ...b,
-    attenuation: volumeFor(volumes, b.source),
+    attenuation: quantize(volumeFor(volumes, b.source)),
     startAt: startAtFor(b, now)
   }));
 

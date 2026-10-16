@@ -399,6 +399,30 @@ describe('what the players are told', () => {
     expect(writes).toBe(1);
   });
 
+  it('quantizes attenuation to 1/100, so a sub-step tick writes nothing (MICA-360)', () => {
+    receiveNearbyBroadcasts([row('a')]);
+    receiveNearbyVolumes(volumes({ a: 0.5012 }));
+    expect(get(audibleBroadcasts)[0].attenuation).toBe(0.5);
+
+    let writes = 0;
+    const stop = audibleBroadcasts.subscribe(() => (writes += 1));
+    receiveNearbyVolumes(volumes({ a: 0.4987 }));
+    receiveNearbyVolumes(volumes({ a: 0.50431 }));
+    expect(writes).toBe(1);
+
+    receiveNearbyVolumes(volumes({ a: 0.516 }));
+    stop();
+    expect(writes).toBe(2);
+    expect(get(audibleBroadcasts)[0].attenuation).toBe(0.52);
+  });
+
+  it('ranks on the raw volume, not the quantized one', () => {
+    receiveNearbyBroadcasts([row('a'), row('b')]);
+    // Both quantize to 0.5; the nearer one still wins the order.
+    receiveNearbyVolumes(volumes({ a: 0.4991, b: 0.5004 }));
+    expect(audibleIds()).toEqual(['b', 'a']);
+  });
+
   it('passes a pause through without tearing the player down', () => {
     receiveNearbyBroadcasts([row('a')]);
     receiveNearbyVolumes(volumes({ a: 0.5 }));
