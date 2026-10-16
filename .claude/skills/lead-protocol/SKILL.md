@@ -69,6 +69,15 @@ anywhere. A lane's `commit --amend` once landed on the lead's merge commit
 because the shared directory moved under it. Read other trees with `git -C`, and
 run web commands with `pnpm --filter ./web` or in a subshell.
 
+A scratch worktree a lane makes for itself gets its own
+`pnpm install --frozen-lockfile --offline`, never a symlink to the main
+checkout's `node_modules`. On 2026-10-16 a pnpm run in a lane's symlinked
+scratch tree rewrote every `.bin` shim in the main checkout to a `NODE_PATH`
+inside that tree, which the lane then deleted: `@tsconfig/svelte` stopped
+resolving, and `check:fast` refused a push.
+`grep -l <tree-name> node_modules/.bin/*` finds it; a reinstall in the main
+checkout repairs it.
+
 ## Brief a lane
 
 Every brief opens with the exact tip sha and the spawn mode. A worktree lane
