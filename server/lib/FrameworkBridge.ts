@@ -9,6 +9,7 @@ import { qbxAdapter } from './framework/qbx';
 import { reportStandaloneConflict, standaloneAdapter } from './framework/standalone';
 import {
   countInventoryItem as countItemThroughInventory,
+  heldUntilRestart,
   NO_JOB_SUPPORT,
   removeInventoryItem as removeItemThroughInventory,
   type FrameworkAdapter,
@@ -80,13 +81,47 @@ const runningFramework = (): FrameworkAdapter | null => {
 };
 
 /**
+ * The resources whose starting or stopping can change which adapter answers (MICA-352).
+ *
+ * Every adapter's probes ask one of these, plus standalone's convar. A remembered answer is
+ * dropped whenever any of them starts or stops, so a core that comes up after micaOS — the
+ * boot window `detectFramework` describes — is found on the next call.
+ */
+const CORE_RESOURCES = ['qbx_core', 'qb-core', 'es_extended'] as const;
+
+/**
+ * Remember a positive answer until a core starts or stops; never remember `null` (MICA-352).
+ *
+ * The probes cost real work per call: FiveM's `exports` proxy caches only exports that exist,
+ * so a probe for a missing one throws, and is caught, **every time**. That was one failed
+ * probe per `getPlayer` on qb-core, two on ESX, and about six on standalone, where
+ * `detectFramework` re-ran all three plus a `GetConvar`.
+ *
+ * `null` is never held, because it is the answer that changes without a start or stop event
+ * we can rely on: "nothing answers yet" during the boot window, and an ESX shared object that
+ * exists before it has `GetPlayerFromId` (the MICA-351 review). Each is asked again on the
+ * next call, exactly as before. A positive answer can only go stale when a core starts or
+ * stops, and that drops it.
+ *
+ * `standalone` is held like any other positive answer, so the `mica_standalone` convar is
+ * read once rather than per call: changing it on a running server takes effect at the next
+ * start or stop of a core, or of micaOS. It is a server.cfg setting that re-keys every row,
+ * not something to flip live.
+ */
+const rememberedUntilRestart = (
+  choose: () => FrameworkAdapter | null
+): (() => FrameworkAdapter | null) => heldUntilRestart(CORE_RESOURCES, choose, () => true);
+
+/**
  * The adapter answering for this server, or `null` when nothing is.
  *
  * `detectFramework` is this, named. Expressing both through one function is what makes the
  * promise the old code made in prose — "one detection rather than two that can disagree" —
  * structural: there is no second place for the framework to be decided.
+ *
+ * Remembered: see `rememberedUntilRestart`.
  */
-const activeAdapter = (): FrameworkAdapter | null => {
+const activeAdapter = rememberedUntilRestart((): FrameworkAdapter | null => {
   const framework = runningFramework();
 
   if (!standaloneAdapter.detect()) return framework;
@@ -100,7 +135,7 @@ const activeAdapter = (): FrameworkAdapter | null => {
   }
 
   return standaloneAdapter;
-};
+});
 
 /**
  * Which framework is answering for this server **right now** — and the third answer.
@@ -183,6 +218,17 @@ const serving = (can: (adapter: FrameworkAdapter) => boolean): FrameworkAdapter 
   }
   return detectFramework() === 'standalone' && can(standaloneAdapter) ? standaloneAdapter : null;
 };
+
+/**
+ * `serving`'s answer for the two calls every request makes, remembered (MICA-352).
+ *
+ * Per method still, for the reason `serving` gives. `registerUsableItem` is not remembered:
+ * its predicate *is* the registration, so walking the adapters is the act, not a probe.
+ */
+const servingGetPlayer = rememberedUntilRestart(() => serving((adapter) => adapter.canGetPlayer()));
+const servingListPlayers = rememberedUntilRestart(() =>
+  serving((adapter) => adapter.canListPlayers())
+);
 
 /**
  * **There is deliberately no "join the framework's character table" helper here**, and the
@@ -347,7 +393,7 @@ export class FrameworkBridge {
 
   public static getPlayer(src: number): FrameworkPlayer | null {
     try {
-      return serving((adapter) => adapter.canGetPlayer())?.getPlayer(src) ?? null;
+      return servingGetPlayer()?.getPlayer(src) ?? null;
     } catch (error) {
       console.error('[FrameworkBridge] Error getting player:', error);
     }
@@ -373,7 +419,7 @@ export class FrameworkBridge {
    */
   public static getAllPlayers(): Record<string | number, any> {
     try {
-      return serving((adapter) => adapter.canListPlayers())?.getAllPlayers() ?? {};
+      return servingListPlayers()?.getAllPlayers() ?? {};
     } catch (error) {
       console.error('[FrameworkBridge] Error fetching all players:', error);
     }
