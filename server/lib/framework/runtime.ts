@@ -153,7 +153,8 @@ export const resource: ResourceLookup = (name) => lookup(name);
 /**
  * Test seam, like `__resetBatteryCache`. Pass nothing to restore the real lookup.
  *
- * Also drops every value `heldUntilRestart` holds: it was read through the old lookup, and a suite swapping in a new fake must never be answered by the
+ * Also runs every `dropOn` subscriber, so whatever `heldUntilRestart` holds is dropped: it was
+ * read through the old lookup, and a suite swapping in a new fake must never be answered by the
  * previous one's.
  */
 export const __setResourceLookup = (fn?: ResourceLookup): void => {
@@ -161,16 +162,19 @@ export const __setResourceLookup = (fn?: ResourceLookup): void => {
   for (const drop of heldValues) drop();
 };
 
-/** How to drop each value `heldUntilRestart` holds. */
+/** How to drop each value `heldUntilRestart` holds, and everything else `dropOn` was given. */
 const heldValues: (() => void)[] = [];
 
 /**
- * Subscribe `drop` to the lifecycle of `resources`, and to `events`.
+ * Subscribe `drop` to the lifecycle of `resources`, and to `events` — and to the test seam,
+ * which runs every `drop` when a suite swaps in a new fake.
  *
  * Plain `on`, not `onResourceReleased`'s genuine-stop check: a forged `onResourceStop` here
- * releases nothing anybody owns, it only costs one fetch on the next call.
+ * releases nothing anybody owns, it only costs one fetch on the next call. Exported for
+ * `FrameworkBridge`'s source registry, which forgets when it last walked the same way
+ * (MICA-353).
  */
-const dropOn = (
+export const dropOn = (
   resources: readonly string[],
   events: readonly string[],
   drop: () => void

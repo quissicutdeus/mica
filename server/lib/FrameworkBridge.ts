@@ -9,6 +9,7 @@ import { qbxAdapter } from './framework/qbx';
 import { reportStandaloneConflict, standaloneAdapter } from './framework/standalone';
 import {
   countInventoryItem as countItemThroughInventory,
+  dropOn,
   heldUntilRestart,
   NO_JOB_SUPPORT,
   removeInventoryItem as removeItemThroughInventory,
@@ -299,7 +300,38 @@ const citizenBySource = new Map<number, string>();
  * **one walk per call instead of one per citizenid.** `deliverToParticipants` asked about a
  * 32-person thread one participant at a time and paid 32 snapshots of the whole server; it
  * now pays one when anybody in it is offline and none when everybody is loaded.
+ *
+ * **And at most one walk per `RESEED_INTERVAL_MS`** (MICA-353). A miss is any offline citizen,
+ * so "one walk per call" was still one per text into a thread with an offline member, one per
+ * push to an offline citizen — on qb a whole-server snapshot per request. A miss only
+ * withholds a live push; the row is written either way, and the recipient reads it when they
+ * load. Misdelivery comes from a stale *hit*, which this does not touch: `rememberSource`
+ * evicts by source and `playerDropped` forgets.
+ *
+ * The window is skipped whenever the registry has reason to be incomplete, through
+ * `reseedDirty`: at start (a restart with players connected loads nobody), when a core starts
+ * or stops, when `rememberSource` could not record a player it was told had loaded, and after
+ * a walk that found nobody — which is either an empty server, where a walk costs nothing, or
+ * a framework that failed to answer, where the old behaviour of asking again is right. So a
+ * player who loads is found at once through `rememberSource`, or, when that failed, on the
+ * next miss; one whose load micaOS never heard of at all is found within the window.
  */
+
+/** How long one walk's answer stands before a miss may walk again (MICA-353). */
+export const RESEED_INTERVAL_MS = 5000;
+
+/** When the last walk ran, by `Date.now()`. */
+let lastReseedAt = Number.NEGATIVE_INFINITY;
+
+/** Whether the next miss walks regardless of the window. True at start: nothing is recorded. */
+let reseedDirty = true;
+
+/** A core starting or stopping loads or unloads every character on it; so does the test seam. */
+dropOn(CORE_RESOURCES, [], () => {
+  reseedDirty = true;
+});
+
+const reseedDue = (): boolean => reseedDirty || Date.now() - lastReseedAt >= RESEED_INTERVAL_MS;
 
 export class FrameworkBridge {
   /**
@@ -444,8 +476,12 @@ export class FrameworkBridge {
 
     const player = FrameworkBridge.getPlayer(src);
     // `getPlayer` has already said why, through `unidentified`. A player the framework will
-    // not name must not be recorded under a name: that is the whole of MICA-133's rule.
-    if (!player?.citizenid) return;
+    // not name must not be recorded under a name: that is the whole of MICA-133's rule. They
+    // may yet be named, so the next miss walks rather than waiting out the window (MICA-353).
+    if (!player?.citizenid) {
+      reseedDirty = true;
+      return;
+    }
 
     FrameworkBridge.forgetSource(src);
 
@@ -486,6 +522,11 @@ export class FrameworkBridge {
       sourceByCitizen.set(citizenid, src);
       citizenBySource.set(src, citizenid);
     }
+
+    lastReseedAt = Date.now();
+    // Nobody found: an empty server, where walking again costs nothing, or a framework that
+    // failed to answer, where walking again is what the next miss did before MICA-353.
+    reseedDirty = sourceByCitizen.size === 0;
   }
 
   /**
@@ -506,7 +547,8 @@ export class FrameworkBridge {
    * one-element call into it, so `Messages.deliverToParticipants` walked the whole server once
    * per recipient. The bound is now **one walk per call**: everyone the registry knows is
    * answered outright, and a single reseed settles the rest. See the note above the registry
-   * for why a miss is never simply believed.
+   * for why a miss is never simply believed — and for the window that bounds the walks across
+   * calls, after which a miss is believed for at most `RESEED_INTERVAL_MS` (MICA-353).
    */
   public static getSourcesByCitizenId(citizenids: readonly string[]): Map<string, number> {
     const found = new Map<string, number>();
@@ -528,7 +570,7 @@ export class FrameworkBridge {
     };
 
     try {
-      if (collect()) {
+      if (collect() && reseedDue()) {
         FrameworkBridge.reseedSources();
         collect();
       }
