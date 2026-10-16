@@ -78,6 +78,8 @@ vi.mock('../lib/FrameworkBridge', () => ({
         : null,
     getCitizenId: (src: number) => bridge.players.get(src) ?? null,
     getPlayerPhone: (src: number) => bridge.phones.get(src) ?? null,
+    // The shell's unload listener forgets the source here too (MICA-382).
+    logOutSource: () => {},
     // Speakerphone's bystander scan (MICA-246).
     getAllPlayers: () =>
       Object.fromEntries(
@@ -1392,6 +1394,120 @@ describe('speakerphone', () => {
 
       expect(forgetterErrors()).toEqual([]);
       expect(emitCalls().filter(([event]) => event === 'mica:client:phone:ended')).toEqual([]);
+      expect(createCalls()).toEqual([]);
+    });
+  });
+
+  /**
+   * MICA-382: a framework that announces a logout ends the call then, rather than leaving its
+   * party in the voice channel on character select until they pick again — and the pick that
+   * follows ends nothing a second time. Driven through `lib/shell.ts`'s real unload listener.
+   */
+  describe('a character logging out of the source (MICA-382)', () => {
+    /** The call-log rows are written after an await, so the tick is let run. */
+    const logOut = async (src: number) => {
+      const handler = globalHandlers.get('QBCore:Server:OnPlayerUnload');
+      if (!handler) throw new Error('no handler for QBCore:Server:OnPlayerUnload');
+      handler(src);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    };
+    const loadCharacter = async (src: number, citizenid: string) => {
+      bridge.players.set(src, citizenid);
+      globalHandlers.get('QBCore:Server:PlayerLoaded')!({ PlayerData: { source: src } });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    };
+    const ends = () => emitCalls().filter(([event]) => event === 'mica:client:phone:ended');
+
+    let error: ReturnType<typeof vi.spyOn>;
+    beforeEach(() => {
+      error = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const handler = globalHandlers.get('QBCore:Server:PlayerLoaded')!;
+      for (const src of [1, 2, 3]) handler({ PlayerData: { source: src } });
+      (globalThis as any).emitNet.mockClear();
+      dbMock.insert.mockClear();
+    });
+    afterEach(() => {
+      bridge.players.set(1, 'CID_CALLER');
+      bridge.players.set(2, 'CID_TARGET');
+      bridge.players.set(3, 'CID_THIRD');
+      error.mockRestore();
+    });
+
+    const forgetterErrors = () =>
+      error.mock.calls.filter(([line]: unknown[]) => String(line).includes('forgetter'));
+
+    it('ends the call for both parties, filing the row under who was on it', async () => {
+      const { callId } = await connect();
+      expect(channels.get(2)).toBe(callId);
+
+      await logOut(2);
+
+      expect(forgetterErrors()).toEqual([]);
+      expect(isInCall(1)).toBe(false);
+      expect(isInCall(2)).toBe(false);
+      expect(channels.has(1)).toBe(false);
+      expect(channels.has(2)).toBe(false);
+      expect(
+        ends()
+          .map(([, dest]) => dest)
+          .sort()
+      ).toEqual([1, 2]);
+
+      const rows = createCalls().map(([, params]) => params);
+      expect(rows).toHaveLength(2);
+      expect(rows[0]).toEqual(expect.arrayContaining(['CID_CALLER', 'outgoing', '555-0002']));
+      expect(rows[1]).toEqual(expect.arrayContaining(['CID_TARGET', 'incoming', '555-0001']));
+    });
+
+    it('ends it once: the next character loading on the source ends nothing again', async () => {
+      await connect();
+      await logOut(2);
+      // qbx clears the player after its `Wait(200)`; the next pick seats somebody else.
+      bridge.players.delete(2);
+      const endedAtLogout = ends().length;
+      const rowsAtLogout = createCalls().length;
+
+      await loadCharacter(2, 'CID_NEW');
+
+      expect(ends()).toHaveLength(endedAtLogout);
+      expect(createCalls()).toHaveLength(rowsAtLogout);
+      expect(createCalls().flatMap(([, params]) => params)).not.toContain('CID_NEW');
+      expect(forgetterErrors()).toEqual([]);
+    });
+
+    it('ends it once when the unload is announced twice', async () => {
+      await connect();
+      await logOut(2);
+      await logOut(2);
+
+      expect(ends()).toHaveLength(2);
+      expect(createCalls()).toHaveLength(2);
+    });
+
+    it('takes a bystander out of a speaker when the bystander logs out', async () => {
+      const { callId } = await connect();
+      await speaker(1, true);
+      expect(channels.get(3)).toBe(callId);
+
+      await logOut(3);
+
+      expect(channels.has(3)).toBe(false);
+      expect(listenPushes(3).at(-1)).toEqual({ listening: false });
+      // The positive twin: the parties are still on, in their channel.
+      expect(isInCall(1)).toBe(true);
+      expect(isInCall(2)).toBe(true);
+      expect(channels.get(1)).toBe(callId);
+    });
+
+    it('leaves the other parties alone when somebody not on the call logs out', async () => {
+      const { callId } = await connect();
+
+      await logOut(3);
+
+      expect(isInCall(1)).toBe(true);
+      expect(isInCall(2)).toBe(true);
+      expect(channels.get(2)).toBe(callId);
+      expect(ends()).toEqual([]);
       expect(createCalls()).toEqual([]);
     });
   });

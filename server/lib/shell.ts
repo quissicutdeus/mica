@@ -117,6 +117,7 @@ on('playerDropped', () => {
   refusalsLogged.delete(source);
   // A new connection on this id is nobody's switch (MICA-336): see `loadedCharacter`.
   loadedCharacter.delete(source);
+  loggedOut.delete(source);
   /**
    * And forget which server id this character was on (MICA-197).
    *
@@ -134,6 +135,68 @@ on('playerDropped', () => {
    */
   FrameworkBridge.forgetSource(source);
 });
+
+/**
+ * Every event name that means "this character logged out, and the connection stayed"
+ * (MICA-382): a multichar logout to character select, for which FiveM fires no
+ * `playerDropped`.
+ *
+ * - **`qbLocal`** is raised in-process, with the server id as its one argument, by qbx_core's
+ *   `Logout` (`qbx_core/server/player.lua:747`, vendored here) and — by the same name and
+ *   shape — by qb-core's `QBCore.Player.Logout`, which is not vendored here. qbx fires it
+ *   *before* the `Wait(200)` that clears the player, which is why the bridge records the
+ *   logout rather than only forgetting it; qb-core clears the player straight after firing it.
+ *   qbx also fires `qbx_core:server:playerLoggedOut` after that wait; listening to it as well
+ *   would forget the same source twice.
+ * - **`esxLocal`** is ESX Legacy's `esx:playerLogout`, `(playerId, cb)`, raised in-process by
+ *   esx_multicharacter on a relog and answered by es_extended itself, which saves the player
+ *   and clears it in the save's callback. Not vendored here; the shape is es_extended's.
+ *
+ * Both are local, and so are registered with `on` alone, for the reason `esxLocal` above gives:
+ * `RegisterNetEvent`'s network-safety flag is per-resource, so a client emitting either name
+ * reaches nothing here. That is the whole of the defence that matters — an `onNet` twin would
+ * let any client make the server forget another player's source and stop their pushes.
+ *
+ * Standalone has no characters to log out of; a standalone player leaves only by dropping.
+ */
+export const PLAYER_UNLOADED_EVENTS = {
+  qbLocal: 'QBCore:Server:OnPlayerUnload',
+  esxLocal: 'esx:playerLogout'
+} as const;
+
+/**
+ * The server id an unload event names, or `undefined`. The argument is the identity — no
+ * client can reach these names (above) — but it is still only believed as a positive integer,
+ * which is what a server id is.
+ */
+const unloadedSource = (src: unknown): number | undefined =>
+  typeof src === 'number' && Number.isInteger(src) && src > 0 ? src : undefined;
+
+/**
+ * A character logged out and the connection stayed (MICA-382): end what a character switch ends,
+ * now rather than at the next pick, and stop addressing the character who left at this source.
+ *
+ * - **The `forgetOnPlayerLoaded` forgetters that run at logout** (`endLoggedOutCharacter`): the
+ *   call they were on ends for both parties and is filed under them, their speaker goes off
+ *   and their stereo stops. A player sitting on character select stayed in the call's voice
+ *   channel until they picked again. What belongs to the character rather than the session —
+ *   a lock or a signal override a script set on them — waits for a different character's load
+ *   (`atLogout: false`), so a relog does not escape it.
+ * - **The bridge's registry** (`logOutSource`), so a push addressed to the character who left — a
+ *   911 or job-line call, a contact share, a notification — reaches nobody rather than the
+ *   character-select screen. The row is written either way; they read it when they load.
+ *
+ * Forgetters first, while the bridge can still name every other party to the call by source.
+ */
+const forgetLoggedOut = (src: unknown): void => {
+  const id = unloadedSource(src);
+  if (id === undefined) return;
+  endLoggedOutCharacter(id);
+  FrameworkBridge.logOutSource(id);
+};
+
+on(PLAYER_UNLOADED_EVENTS.qbLocal, forgetLoggedOut);
+on(PLAYER_UNLOADED_EVENTS.esxLocal, forgetLoggedOut);
 
 /**
  * Refuse, and say so once.
@@ -397,17 +460,47 @@ export const onPlayerLoaded = (name: string, run: PlayerLoadedRun): void => {
  */
 type SourceForget = (src: number, previousCitizenid: string) => void;
 
-const playerLoadedForgetters: { name: string; forget: SourceForget }[] = [];
+interface SourceForgetter {
+  /** Named only so a throw can say which one threw. */
+  name: string;
+  forget: SourceForget;
+  /** Whether it runs when the character logs out, rather than when the next one loads. */
+  atLogout: boolean;
+}
+
+/** When a forgetter may run. See `forgetOnPlayerLoaded`. */
+interface ForgetOptions {
+  /**
+   * `false` keeps a forgetter to the next character's load, for one that is only right once
+   * that character is known. Defaults to `true`.
+   */
+  atLogout?: boolean;
+}
+
+const playerLoadedForgetters: SourceForgetter[] = [];
 
 /**
  * Forget source-keyed state when a **different** character loads on a source, before any
  * subscriber runs (MICA-336).
  *
  * A character load on a source that is already connected can be a character switch — a
- * multichar logout and pick — and FiveM fires no `playerDropped` for it, and no framework gives
- * micaOS an unload event it listens to. So everything keyed by source and cleared only on drop
- * still names the previous character when the next one loads: the slot they last used a phone
- * from, the call they were on. Battery's `phoneOf` was the first of these found (MICA-326).
+ * multichar logout and pick — and FiveM fires no `playerDropped` for it. So everything keyed by
+ * source and cleared only on drop still names the previous character when the next one loads:
+ * the slot they last used a phone from, the call they were on. Battery's `phoneOf` was the first
+ * of these found (MICA-326).
+ *
+ * **At logout too, where the framework says so (MICA-382).** A framework that fires an unload
+ * event (`PLAYER_UNLOADED_EVENTS`) runs every forgetter registered with `atLogout` — the
+ * default — when the character logs out, so a call does not stay live while its party sits on
+ * character select. Those registered `atLogout: false` are only right once the next character
+ * is known, and wait for the load.
+ *
+ * **And every forgetter again when a different character loads**, logout or not. The frameworks
+ * still name the character for a moment after announcing the unload — qbx's `Wait(200)`, ESX's
+ * save; qb-core clears them at once — so a slot or a call can be recorded for them after their
+ * logout forgetters ran, and the next character would inherit it. So an `atLogout` forgetter **must be idempotent**: by the
+ * second run there is normally nothing left, and it must do nothing then — no second `ended`, no
+ * second call-log row. The same character picked again is not a switch and runs nothing.
  *
  * A phase of its own rather than an ordinary subscriber, because subscribers run in import
  * order and read each other's state: a subscriber that resolves a device ahead of the one
@@ -427,8 +520,12 @@ const playerLoadedForgetters: { name: string; forget: SourceForget }[] = [];
  * State that belongs to the connection rather than the character — rate windows, what the
  * client was last told — is not registered at all.
  */
-export const forgetOnPlayerLoaded = (name: string, forget: SourceForget): void => {
-  playerLoadedForgetters.push({ name, forget });
+export const forgetOnPlayerLoaded = (
+  name: string,
+  forget: SourceForget,
+  options: ForgetOptions = {}
+): void => {
+  playerLoadedForgetters.push({ name, forget, atLogout: options.atLogout ?? true });
 };
 
 /**
@@ -440,10 +537,19 @@ export const forgetOnPlayerLoaded = (name: string, forget: SourceForget): void =
  * framework's answer is wrong at both ends of a qbx switch: logout empties `QBX.Players[src]`
  * while the player sits on character select, so a rebuild there forgets who left; and login
  * seats the new character and awaits before announcing it, so a rebuild there records them
- * early. Either way the next load looked like no switch at all. Set only here, after the
- * forgetters run, and cleared only by `playerDropped`.
+ * early. Either way the next load looked like no switch at all. Set here, after the
+ * forgetters run, and at a logout that names a character it had not seen load (a resource
+ * restart since); cleared only by `playerDropped`. A logout keeps it, so the next load still
+ * tells a switch from the same character picked again.
  */
 const loadedCharacter = new Map<number, string>();
+
+/**
+ * Sources whose character's logout already ran the `atLogout` forgetters (MICA-382), so a second
+ * unload event for the same logout runs nothing. Cleared by the next load that names a
+ * character, and by `playerDropped`, so bounded by the connected players.
+ */
+const loggedOut = new Set<number>();
 
 /**
  * The character a load replaces, or null when it replaces nobody: nobody dispatched on the
@@ -454,9 +560,18 @@ const replacedCharacter = (src: number, current: string | undefined): string | n
   return previous !== undefined && current && current !== previous ? previous : null;
 };
 
-/** Every forgetter, each its own failure, for a source whose character `previous` was. */
-const forgetCharacter = (src: number, previous: string): void => {
-  for (const { name, forget } of playerLoadedForgetters) {
+/**
+ * Every forgetter `which` selects, each its own failure, for a source whose character `previous`
+ * was.
+ */
+const forgetCharacter = (
+  src: number,
+  previous: string,
+  which: (forgetter: SourceForgetter) => boolean
+): void => {
+  for (const forgetter of playerLoadedForgetters) {
+    if (!which(forgetter)) continue;
+    const { name, forget } = forgetter;
     try {
       forget(src, previous);
     } catch (error) {
@@ -467,6 +582,28 @@ const forgetCharacter = (src: number, previous: string): void => {
       );
     }
   }
+};
+
+const atLogout = (forgetter: SourceForgetter): boolean => forgetter.atLogout;
+const everyForgetter = (): boolean => true;
+
+/**
+ * The logout half of a switch (MICA-382): the `atLogout` forgetters, handed the character who
+ * logged out.
+ *
+ * That character is the one the shell last dispatched on the source or, when it never saw them
+ * load (a resource restart since), the one the framework still names: both frameworks announce
+ * the unload before they clear the player. Recorded as `loadedCharacter` in that case, so the
+ * next load is still recognised as a switch and runs the load-only forgetters. A source with no
+ * character to name has nothing to forget.
+ */
+const endLoggedOutCharacter = (src: number): void => {
+  if (loggedOut.has(src)) return;
+  const previous = loadedCharacter.get(src) ?? FrameworkBridge.getPlayer(src)?.citizenid;
+  if (!previous) return;
+  loggedOut.add(src);
+  loadedCharacter.set(src, previous);
+  forgetCharacter(src, previous, atLogout);
 };
 
 /**
@@ -483,9 +620,15 @@ const forgetCharacter = (src: number, previous: string): void => {
  */
 const dispatchPlayerLoaded = (src: number): void => {
   const current = FrameworkBridge.getPlayer(src)?.citizenid;
-  const previous = replacedCharacter(src, current);
-  if (previous !== null) forgetCharacter(src, previous);
-  if (current) loadedCharacter.set(src, current);
+  if (current) {
+    // Only a load that names a character ends a logout: one the framework will not name yet
+    // is announced again, and the logout stays recorded until then.
+    loggedOut.delete(src);
+    // Every forgetter, after a logout too: see `forgetOnPlayerLoaded` for why they run again.
+    const previous = replacedCharacter(src, current);
+    if (previous !== null) forgetCharacter(src, previous, everyForgetter);
+    loadedCharacter.set(src, current);
+  }
   for (const subscriber of playerLoadedSubscribers) {
     try {
       const pending = subscriber.run(src);

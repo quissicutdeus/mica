@@ -70,7 +70,9 @@ const { dbMock, bridgeMock, handlers, networked, framework } = vi.hoisted(() => 
        * both paths.
        */
       rememberSource: vi.fn(),
-      forgetSource: vi.fn()
+      forgetSource: vi.fn(),
+      /** And the logout half (MICA-382), from the framework unload listeners. */
+      logOutSource: vi.fn()
     },
     /**
      * Which framework the bridge is answering for, as a mutable box.
@@ -95,7 +97,8 @@ import {
   forgetOnPlayerLoaded,
   loadedPlayerSource,
   onPlayerLoaded,
-  PLAYER_LOADED_EVENTS
+  PLAYER_LOADED_EVENTS,
+  PLAYER_UNLOADED_EVENTS
 } from '../lib/shell';
 import { __resetBatteryCache } from '../services/Battery';
 import '../services/Settings';
@@ -502,6 +505,128 @@ describe('the player-loaded registry', () => {
       loadConnection();
 
       expect(forgot).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * MICA-382: a framework that announces a logout runs the forgetters then, rather than at the
+   * next pick, so a call does not stay live on character select. A forgetter that is only right
+   * once the next character is known opts out and runs at the load. A different character
+   * loading runs every forgetter again, for what was recorded in the unload window; the same one
+   * picked again runs nothing.
+   */
+  describe('at a logout the framework announces', () => {
+    const atLogout = vi.fn();
+    const atLoad = vi.fn();
+    forgetOnPlayerLoaded('logout-forgetter', atLogout);
+    forgetOnPlayerLoaded('load-only-forgetter', atLoad, { atLogout: false });
+
+    const logOut = (src: number = ATTACKER, event: string = PLAYER_UNLOADED_EVENTS.qbLocal) => {
+      for (const listener of handlers.get(event) ?? []) listener(src);
+    };
+
+    it.each(Object.values(PLAYER_UNLOADED_EVENTS))(
+      'runs the logout forgetters on %s, naming the character who left',
+      (event) => {
+        loadConnection();
+
+        logOut(ATTACKER, event);
+
+        expect(atLogout).toHaveBeenCalledTimes(1);
+        expect(atLogout).toHaveBeenCalledWith(ATTACKER, `CID${ATTACKER}`);
+        expect(atLoad).not.toHaveBeenCalled();
+        expect(bridgeMock.logOutSource).toHaveBeenCalledWith(ATTACKER);
+      }
+    );
+
+    it('runs every forgetter when a different character loads after the logout', () => {
+      loadConnection();
+      logOut();
+      switchConnectionTo('CID_NEXT');
+      loadConnection();
+
+      // Again, for the unload window: each is idempotent (`forgetOnPlayerLoaded`).
+      expect(atLogout).toHaveBeenCalledTimes(2);
+      expect(atLogout).toHaveBeenLastCalledWith(ATTACKER, `CID${ATTACKER}`);
+      expect(atLoad).toHaveBeenCalledTimes(1);
+      expect(atLoad).toHaveBeenCalledWith(ATTACKER, `CID${ATTACKER}`);
+    });
+
+    it('runs nothing more when the same character is picked again', () => {
+      loadConnection();
+      logOut();
+      loadConnection();
+
+      expect(atLogout).toHaveBeenCalledTimes(1);
+      expect(atLoad).not.toHaveBeenCalled();
+    });
+
+    it('runs every forgetter at a switch with no logout announced, as before', () => {
+      loadConnection();
+      switchConnectionTo('CID_NEXT');
+      loadConnection();
+
+      expect(atLogout).toHaveBeenCalledTimes(1);
+      expect(atLoad).toHaveBeenCalledTimes(1);
+    });
+
+    it('runs the logout forgetters once when the unload is announced twice', () => {
+      loadConnection();
+      logOut();
+      logOut(ATTACKER, PLAYER_UNLOADED_EVENTS.esxLocal);
+
+      expect(atLogout).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps the logout through a load the framework cannot name yet', () => {
+      loadConnection();
+      logOut();
+      bridgeMock.getPlayer.mockImplementation(() => null);
+      loadConnection();
+      // The logout is still recorded, so a late second unload event is still the same logout.
+      logOut(ATTACKER, PLAYER_UNLOADED_EVENTS.esxLocal);
+
+      expect(atLogout).toHaveBeenCalledTimes(1);
+      expect(atLoad).not.toHaveBeenCalled();
+    });
+
+    it('names the character the framework still holds when it never saw them load', () => {
+      // A resource restart since the load: nothing dispatched, the core still names them.
+      logOut();
+      switchConnectionTo('CID_NEXT');
+      loadConnection();
+
+      expect(atLogout).toHaveBeenCalledWith(ATTACKER, `CID${ATTACKER}`);
+      expect(atLoad).toHaveBeenCalledWith(ATTACKER, `CID${ATTACKER}`);
+    });
+
+    it('forgets nothing for a source with no character to name', () => {
+      bridgeMock.getPlayer.mockImplementation(() => null);
+
+      logOut();
+
+      expect(atLogout).not.toHaveBeenCalled();
+    });
+
+    it('forgets nothing for an unload naming no server id', () => {
+      loadConnection();
+
+      for (const named of [0, -1, 1.5, '7', undefined, { source: ATTACKER }]) {
+        for (const listener of handlers.get(PLAYER_UNLOADED_EVENTS.qbLocal) ?? []) {
+          listener(named);
+        }
+      }
+
+      expect(atLogout).not.toHaveBeenCalled();
+      expect(bridgeMock.logOutSource).not.toHaveBeenCalled();
+    });
+
+    it("forgets nobody else's: only the source the unload names", () => {
+      loadConnection();
+
+      logOut(VICTIM);
+
+      expect(atLogout).not.toHaveBeenCalledWith(ATTACKER, expect.anything());
     });
   });
 

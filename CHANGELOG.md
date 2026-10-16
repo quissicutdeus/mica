@@ -47,6 +47,21 @@ Entries are hand-written. See MICA-72 for why a generated one was rejected.
 
 ### Action required
 
+**Logging out to character select now ends that character's call (MICA-382).**
+On a multicharacter server, a player who logs out without disconnecting used to
+stay in their call, on speakerphone and broadcasting music while sitting on
+character select, and a push meant for the character they left, such as a 911
+call, a contact share or a notification, still reached their screen. Now the
+logout ends the call for both parties, filing its call-log row under the
+character who was on it, ends speakerphone and the music broadcast, and stops
+addressing that character's pushes to the player. micaOS listens for
+`QBCore:Server:OnPlayerUnload` on qbx and qb-core and `esx:playerLogout` on ESX
+Legacy; a server whose multicharacter resource fires neither keeps the old
+behaviour, where these end when the next character loads. **A `SetSignal`
+override and a `LockPhone` set on the player are kept when the same character is
+picked again**, so a relog does not escape a jail script's lock or dead zone;
+they are cleared when a different character loads, as before.
+
 **Run `micaschema apply` from the server console: `mica_media` records each
 photo's size, so the storage quota stops reading every photo a player has
 (MICA-358).** Checking the quota on a capture used to measure every stored photo

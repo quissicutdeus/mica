@@ -28,7 +28,13 @@ const { dbMock, bridgeMock, handlers, everyHandler } = vi.hoisted(() => {
     },
     // registerUsableItem runs at import time; the rest is only what this suite drives.
     // `forgetSource` is `lib/shell.ts`'s `playerDropped`, which the MICA-337 cases run too.
-    bridgeMock: { getPlayer: vi.fn(), registerUsableItem: vi.fn(), forgetSource: vi.fn() },
+    // `logOutSource` is its framework-unload listener's, which the MICA-382 case runs.
+    bridgeMock: {
+      getPlayer: vi.fn(),
+      registerUsableItem: vi.fn(),
+      forgetSource: vi.fn(),
+      logOutSource: vi.fn()
+    },
     handlers: captured,
     everyHandler: all
   };
@@ -72,6 +78,7 @@ import {
   batteryItemCharge,
   batteryItemName,
   currentCharge,
+  hasBatteryDevice,
   runChargeCommand,
   savePlayerBattery,
   sendLoadedBatteryToClient,
@@ -1692,6 +1699,34 @@ describe('the tablet has a battery of its own (MICA-337)', () => {
       tickAMinute();
       expect(currentCharge(SRC, 'tablet')).toBe(54);
     });
+  });
+
+  /**
+   * MICA-382: battery's forgetter waits for the next character's load rather than running at
+   * logout. At logout it would mark the tablet in use as the previous character's, and the same
+   * character picked again re-resolves that same tablet — which the mark then refused for the
+   * rest of the session: no charge loaded, nothing ticked, `SetCharging` refused.
+   */
+  it('keeps the tablet charging for the same character logging out and picking them again', async () => {
+    // A connection of its own, so this first load is nobody's switch; the shell sees it, so the
+    // logout names them.
+    dropSource(SRC);
+    handlers.get('QBCore:Server:PlayerLoaded')!({ PlayerData: { source: SRC } });
+    await settle();
+    await settle();
+    await sendLoadedBatteryToClient(SRC, 'tablet');
+    expect(currentCharge(SRC, 'tablet')).toBe(80);
+
+    handlers.get('QBCore:Server:OnPlayerUnload')!(SRC);
+    handlers.get('QBCore:Server:PlayerLoaded')!({ PlayerData: { source: SRC } });
+    await settle();
+    await settle();
+    tickAMinute();
+    await settle();
+
+    expect(hasBatteryDevice(SRC, 'tablet')).toBe(true);
+    expect(currentCharge(SRC, 'tablet')).toBe(79);
+    dropSource(SRC);
   });
 
   describe('switching tablets', () => {

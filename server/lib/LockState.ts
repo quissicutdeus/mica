@@ -82,5 +82,8 @@ on('playerDropped', () => {
  * keeps the source and fires no drop, so the next character — who may hold no device for it
  * to move onto — met the previous one's forced lock screen. A device-keyed lock is the
  * device's and stays, whoever holds it next.
+ *
+ * Not at logout (MICA-382): the lock is the character's, so logging out and picking the same
+ * character again keeps it, and only a different character's load clears it.
  */
-forgetOnPlayerLoaded('source-locks', forgetSourceLocks);
+forgetOnPlayerLoaded('source-locks', forgetSourceLocks, { atLogout: false });

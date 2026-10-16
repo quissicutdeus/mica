@@ -263,10 +263,17 @@ on('playerDropped', () => {
  * again for them, as it would after a reconnect. The next poll pushes the world's level.
  *
  * `lastPushed` stays: it is what this connection's client was last shown.
+ *
+ * Not at logout (MICA-382): a jailed character who logs out and picks themselves again is still
+ * jailed. Only a different character's load clears it.
  */
-forgetOnPlayerLoaded('signal-override', (src) => {
-  overrides.delete(src);
-});
+forgetOnPlayerLoaded(
+  'signal-override',
+  (src) => {
+    overrides.delete(src);
+  },
+  { atLogout: false }
+);
 
 /** For the `GetSignal` export: the rules a player is subject to, without their position. */
 export const describeSignalFor = (src: number): { override: number | null; global: number } => ({

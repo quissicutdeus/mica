@@ -281,9 +281,31 @@ const servingListPlayers = rememberedUntilRestart(() =>
  * (`lib/shell.ts` wires it), `rememberSource` evicts by source before recording, so a
  * recycled id cannot keep its previous owner even if that event were ever missed, and a
  * reseed rebuilds the whole thing from the framework.
+ *
+ * A multichar logout keeps the connection and fires no `playerDropped`, so the framework's
+ * unload event removes the entry as well (`logOutSource`, MICA-382).
  */
 const sourceByCitizen = new Map<string, number>();
 const citizenBySource = new Map<number, string>();
+
+/**
+ * The character each source logged out of, while the player sits on character select
+ * (MICA-382). A reseed skips exactly that pairing.
+ *
+ * Forgetting the entry is not enough on its own, because the frameworks still list the
+ * character for a while after announcing the logout: qbx_core fires
+ * `QBCore:Server:OnPlayerUnload`, `Wait(200)`, and only then clears the player, and ESX clears
+ * `ESX.Players[id]` in the callback of the save it starts on `esx:playerLogout`. (qb-core
+ * clears the player straight after firing the event, so has no window.) A miss in
+ * that window walks `getAllPlayers` and would put the character straight back, addressing
+ * their pushes to the character-select screen again until the next load.
+ *
+ * The citizenid is kept, not just the source, so a reseed still finds a *different*
+ * character seated on the source before micaOS hears it load. Cleared by `rememberSource`
+ * (a load was announced on the source, whoever it names) and by `forgetSource` (a drop),
+ * so it never holds more than the connected players.
+ */
+const loggedOutOf = new Map<number, string>();
 
 /**
  * **The registry never answers a miss.** It is a fast path over the walk, not a replacement
@@ -326,9 +348,14 @@ let lastReseedAt = Number.NEGATIVE_INFINITY;
 /** Whether the next miss walks regardless of the window. True at start: nothing is recorded. */
 let reseedDirty = true;
 
-/** A core starting or stopping loads or unloads every character on it; so does the test seam. */
+/**
+ * A core starting or stopping loads or unloads every character on it; so does the test seam.
+ * Whoever was on character select is either listed by the core that comes back or is not, so
+ * a recorded logout has nothing left to correct (MICA-382).
+ */
 dropOn(CORE_RESOURCES, [], () => {
   reseedDirty = true;
+  loggedOutOf.clear();
 });
 
 const reseedDue = (): boolean => reseedDirty || Date.now() - lastReseedAt >= RESEED_INTERVAL_MS;
@@ -474,6 +501,12 @@ export class FrameworkBridge {
   public static rememberSource(src: number): void {
     if (!Number.isInteger(src) || src <= 0) return;
 
+    // A load on the source ends any logout recorded on it, whether or not it can be named.
+    // Including a forged one: inside qbx's `Wait(200)` the player's own client can send
+    // `QBCore:Server:OnPlayerLoaded`, which still names the character who left and so records
+    // them here again. Accepted: the pushes it brings back are only that player's own.
+    loggedOutOf.delete(src);
+
     const player = FrameworkBridge.getPlayer(src);
     // `getPlayer` has already said why, through `unidentified`. A player the framework will
     // not name must not be recorded under a name: that is the whole of MICA-133's rule. They
@@ -496,11 +529,35 @@ export class FrameworkBridge {
 
   /** Forget a server id. Wired from `lib/shell.ts`'s `playerDropped` handler. */
   public static forgetSource(src: number): void {
+    loggedOutOf.delete(src);
     const citizenid = citizenBySource.get(src);
     if (citizenid === undefined) return;
     citizenBySource.delete(src);
     // Guarded, because the character may already have been recorded on a newer id.
     if (sourceByCitizen.get(citizenid) === src) sourceByCitizen.delete(citizenid);
+  }
+
+  /**
+   * Forget a server id whose character logged out while the connection stayed (MICA-382).
+   * Wired from `lib/shell.ts`'s framework unload listeners.
+   *
+   * A multichar logout to character select fires no `playerDropped`, so without this the
+   * registry kept answering the character who left with this source until another character
+   * loaded on it, and a push meant for them — a 911 call, a contact share, a notification —
+   * landed on the select screen.
+   *
+   * **Does not mark the registry dirty.** Nothing is missing from it: the character really is
+   * offline, and the next miss walks on the window as it always does. And the walk cannot put
+   * them back, because `loggedOutOf` records the pairing a reseed must skip. The citizenid is
+   * taken from the registry, or from the framework when the registry never heard them load
+   * (a resource restart since): the frameworks still name the character when they announce
+   * the logout.
+   */
+  public static logOutSource(src: number): void {
+    if (!Number.isInteger(src) || src <= 0) return;
+    const citizenid = citizenBySource.get(src) ?? FrameworkBridge.getPlayer(src)?.citizenid;
+    FrameworkBridge.forgetSource(src);
+    if (citizenid) loggedOutOf.set(src, citizenid);
   }
 
   /**
@@ -519,6 +576,8 @@ export class FrameworkBridge {
       const src = parseInt(key, 10);
       const citizenid = players[key]?.PlayerData?.citizenid;
       if (!citizenid || !Number.isFinite(src)) continue;
+      // Still listed in the moments after a logout; see `loggedOutOf` (MICA-382).
+      if (loggedOutOf.get(src) === citizenid) continue;
       sourceByCitizen.set(citizenid, src);
       citizenBySource.set(src, citizenid);
     }
@@ -544,8 +603,9 @@ export class FrameworkBridge {
    * tick answers. Otherwise the registry is kept by `rememberSource` and `forgetSource`.
    *
    * **An id here is not a loaded character's proof.** A multichar switch keeps the source and
-   * fires no drop, so the registry still holds a player sitting on character select, under
-   * the character they left — where `getAllPlayers` would not list them. A caller that acts on
+   * fires no drop; the framework's unload event forgets it (`logOutSource`, MICA-382), but a
+   * framework or multichar that never fires one leaves the registry holding a player sitting
+   * on character select, under the character they left. A caller that acts on
    * *who* the player is, or that must only reach a loaded character, asks `getPlayer` for the
    * ids it keeps, as `proximity`, `speakerphone` and `jobLines` do. A copy, so a caller may
    * forget a source while it walks.

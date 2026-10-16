@@ -831,9 +831,11 @@ const switchCharacter = (src: number): void => {
 
 /**
  * Registered as a forgetter (MICA-336), so `lib/shell.ts` runs it only when the character on the
- * source changes, and before any subscriber — the device-item pass included.
+ * source changes, and before any subscriber — the device-item pass included. Not at logout
+ * (MICA-382): the same character picked again re-resolves the same tablet, which the stale mark
+ * would then refuse for the rest of the session.
  */
-forgetOnPlayerLoaded('battery', switchCharacter);
+forgetOnPlayerLoaded('battery', switchCharacter, { atLogout: false });
 
 /**
  * Seed the live value from the table when a character loads.
