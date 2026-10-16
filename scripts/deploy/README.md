@@ -14,6 +14,7 @@ command, and the server decides what runs.
 | `smoke-release.sh`            | `/home/gphone/bin/smoke-release.sh` | `gphone`, via forced command |
 | `mica-smoke-release.sh`       | `/usr/local/sbin/`                  | `root`, via `sudoers`        |
 | `gphone-deploy.sudoers`       | `/etc/sudoers.d/gphone-deploy`      | read by `sudo`, mode 440     |
+| `mica-smoke.sudoers`          | `/etc/sudoers.d/mica-smoke`         | read by `sudo`, mode 440     |
 | `check-wrapper-identity.sh`   | not installed                       | CI, on the runner            |
 | `run-checked.sh`              | not installed                       | CI, on the runner            |
 
@@ -387,9 +388,11 @@ install -m 755 scripts/deploy/smoke-release.sh ~gphone/bin/smoke-release.sh
 sudo install -m 700 -o root -g root \
   scripts/deploy/mica-smoke-release.sh /usr/local/sbin/
 
-# let gphone invoke it by exact path, with a run directory as its one argument
-echo 'gphone ALL=(root) NOPASSWD: /usr/local/sbin/mica-smoke-release.sh /home/gphone/smoke/*' |
-  sudo tee /etc/sudoers.d/mica-smoke >/dev/null && sudo chmod 440 /etc/sudoers.d/mica-smoke
+# let gphone invoke it by exact path, with a run directory as its one argument (MICA-317):
+# validated first, installed with the right owner and mode in one step
+sudo visudo -cf scripts/deploy/mica-smoke.sudoers # must say: parsed OK
+sudo install -m 440 -o root -g root \
+  scripts/deploy/mica-smoke.sudoers /etc/sudoers.d/mica-smoke
 
 # the licence key, and anything the defaults get wrong for this box
 sudo install -m 600 -o root -g root /dev/null /etc/mica-smoke.env
@@ -409,6 +412,35 @@ LICENSE_KEY=<a key registered for this box, distinct from both stacks'>
 # ESX_SQL=/opt/mica-smoke/vendor/legacy.sql
 ENV
 ```
+
+**The sudoers rule, and the probe that proves it fires (MICA-317).**
+`mica-smoke.sudoers` allows one argument shape:
+`^/home/gphone/smoke/[A-Za-z0-9]{8}$`, which is what
+`mktemp -d "$HOME/smoke/XXXXXXXX"` in `smoke-release.sh` makes. It was
+`/home/gphone/smoke/*`, and in sudoers `*` matches `/` and `..`, so
+`mica-smoke-release.sh /home/gphone/smoke/../../../etc` passed sudo and only the
+wrapper's own run-directory check refused it. The wrapper keeps that check.
+Regular-expression arguments need sudo 1.9.10 or later; hoth runs 1.9.17p2. On
+an older sudo the `^` word is taken as a literal path, nothing matches, and
+every smoke run fails loudly at `sudo: a password is required`, rather than
+silently allowing more. `server/__tests__/deployWrapper.test.ts` holds the file
+to the shape `smoke-release.sh` makes, to "no `*`", and to `visudo -cf`. After
+installing, prove the rule fires from `gphone`'s own account (nothing here runs
+a wrapper; sudo refuses before it would):
+
+```sh
+# each must be refused by sudo itself: "a password is required" (NOPASSWD matched nothing)
+for arg in /home/gphone/smoke/../x /home/gphone/smoke/../../../etc \
+  /home/gphone/smoke/aB3dE9x /home/gphone/smoke/aB3dE9xZ/ '/home/gphone/smoke/aB3dE9xZ /etc'; do
+  sudo -u gphone sudo -n /usr/local/sbin/mica-smoke-release.sh $arg 2>&1 | head -1
+done
+# and the real shape must NOT be refused by sudo (the wrapper then says the dir does not exist)
+sudo -u gphone sudo -n /usr/local/sbin/mica-smoke-release.sh /home/gphone/smoke/aB3dE9xZ 2>&1 | head -1
+```
+
+Read the output, not the exit status: the pipe reports `head`'s. A `..` argument
+that reaches the wrapper (its own `is not under` or `resolves to` message) means
+the rule still has the glob.
 
 The wrapper reads that file one named key at a time rather than sourcing it.
 `FX_IMAGE` is the stack's own FXServer image (`docker images | grep server`; the

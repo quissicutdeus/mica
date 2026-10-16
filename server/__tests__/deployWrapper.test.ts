@@ -830,6 +830,62 @@ describe.skipIf(!canTrial)('the compose wrappers', () => {
       expect(readme).toContain(body);
     });
 
+    // MICA-317: the smoke rule takes one argument, in the shape smoke-release.sh makes.
+    describe('the smoke sudoers rule', () => {
+      const SMOKE_SUDOERS = join(DEPLOY, 'mica-smoke.sudoers');
+      const rule = () =>
+        readFileSync(SMOKE_SUDOERS, 'utf8')
+          .split('\n')
+          .filter((l) => l.trim() !== '' && !l.trim().startsWith('#'));
+      const argRegex = () => {
+        const lines = rule();
+        expect(lines, 'exactly one rule line').toHaveLength(1);
+        const m =
+          /^gphone ALL=\(root\) NOPASSWD: \/usr\/local\/sbin\/mica-smoke-release\.sh (\^\S+\$)$/.exec(
+            lines[0] ?? ''
+          );
+        expect(m, 'the rule is "<exact wrapper path> ^regex$", no SETENV').not.toBeNull();
+        return new RegExp(m?.[1] ?? '');
+      };
+
+      it('takes no glob, which in sudoers matches / and ..', () => {
+        expect(rule().join('\n')).not.toContain('*');
+      });
+
+      it('accepts what smoke-release.sh makes and nothing else', () => {
+        const script = readFileSync(join(DEPLOY, 'smoke-release.sh'), 'utf8');
+        expect(script).toContain('mktemp -d "$SMOKE_ROOT/XXXXXXXX"');
+        expect(script).toContain('SMOKE_ROOT="$HOME/smoke"');
+        const re = argRegex();
+        for (const ok of ['aB3dE9xZ', '00000000', 'ZZZZZZZZ']) {
+          expect(re.test(`/home/gphone/smoke/${ok}`), ok).toBe(true);
+        }
+        for (const bad of [
+          '/home/gphone/smoke/../x',
+          '/home/gphone/smoke/../../../etc',
+          '/home/gphone/smoke/........',
+          '/home/gphone/smoke/aB3dE9x',
+          '/home/gphone/smoke/aB3dE9xZZ',
+          '/home/gphone/smoke/aB3dE9xZ/',
+          '/home/gphone/smoke/aB3dE9xZ/..',
+          '/home/gphone/smoke/a/b3dE9x',
+          '/home/gphone/smoke/aB3dE9xZ /etc',
+          '/home/gphone/smoke/',
+          '/home/gphone/smoke',
+          '/tmp/aB3dE9xZ',
+          ''
+        ]) {
+          expect(re.test(bad), JSON.stringify(bad)).toBe(false);
+        }
+      });
+
+      it('is installed by the README steps', () => {
+        const readme = readFileSync(join(DEPLOY, 'README.md'), 'utf8');
+        expect(readme).toContain('scripts/deploy/mica-smoke.sudoers /etc/sudoers.d/mica-smoke');
+        expect(readme).not.toContain('mica-smoke-release.sh /home/gphone/smoke/*');
+      });
+    });
+
     // The sudoers syntax check is sudo's own, `visudo -cf`, which is what the install runs first.
     // Named in a constant because knip reads a literal `spawnSync('visudo', ...)` as an unlisted
     // binary and its config (outside this lane) has nowhere to list one but `ignoreBinaries`.
@@ -842,6 +898,15 @@ describe.skipIf(!canTrial)('the compose wrappers', () => {
     );
     it.skipIf(!hasVisudo)('parses under visudo -cf, which is what the install runs first', () => {
       const r = spawnSync(VISUDO, ['-cf', SUDOERS], { encoding: 'utf8' });
+
+      expect(`${r.stdout}${r.stderr}`).toContain('parsed OK');
+      expect(r.status).toBe(0);
+    });
+
+    it.skipIf(!hasVisudo)('the smoke rule parses under visudo -cf too', () => {
+      const r = spawnSync(VISUDO, ['-cf', join(DEPLOY, 'mica-smoke.sudoers')], {
+        encoding: 'utf8'
+      });
 
       expect(`${r.stdout}${r.stderr}`).toContain('parsed OK');
       expect(r.status).toBe(0);

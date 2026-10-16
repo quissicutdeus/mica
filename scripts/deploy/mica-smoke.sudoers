@@ -1,0 +1,15 @@
+# SPDX-FileCopyrightText: 2026 quissicutdeus
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# /etc/sudoers.d/mica-smoke on hoth, mode 440, root:root. Not installed by CI: a person installs
+# it, after `visudo -cf`, as scripts/deploy/README.md says (MICA-317).
+#
+# gphone may run the release smoke wrapper by exact path with exactly one argument: a run
+# directory of the shape smoke-release.sh makes, `mktemp -d "$HOME/smoke/XXXXXXXX"`, eight
+# letters or digits straight under /home/gphone/smoke. The argument is a regular expression
+# (sudoers 1.9.10+; a word starting with ^ is one), matched against the whole argument string.
+# A glob would not do: in sudoers `*` matches `/` and `..`, so `/home/gphone/smoke/*` also
+# allowed `/home/gphone/smoke/../../../etc` and only the wrapper's own check stood in the way.
+# The wrapper keeps that check; this is the first of two locks, not a replacement for the second.
+gphone ALL=(root) NOPASSWD: /usr/local/sbin/mica-smoke-release.sh ^/home/gphone/smoke/[A-Za-z0-9]{8}$
