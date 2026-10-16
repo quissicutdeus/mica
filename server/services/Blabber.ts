@@ -21,6 +21,7 @@ import { defineContract } from '@mica/shared/contract';
 import { s } from '@mica/shared/schema';
 import { resolveOwnedAttachments } from '../lib/attachments';
 import { Database } from '../lib/Database';
+import { isDuplicateKey } from '../lib/sqlErrors';
 import {
   registerImportTarget,
   type AccountPlan,
@@ -254,6 +255,35 @@ export const blabber = defineService<Blab, typeof blabberContract>({
       clientWritable: false,
       clientFilterable: true,
       references: { table: 'mica_blabber', column: 'id' }
+    },
+    /**
+     * `mouth_of` unless the row is `'deleted'`, `NULL` then: what `account_mouth_key` constrains
+     * (MICA-330), so an account holds at most one mouth of a Blab that it has not deleted. The
+     * technique is `phone_key`'s in `Contacts.ts`: a unique key never collides on `NULL`, so
+     * every ordinary post and every deleted mouth passes it.
+     *
+     * Status by status, of the three `statuses` declares:
+     * - `'active'` holds the slot. It is the mouth.
+     * - `'moderated'` holds it too. A takedown is reversible — reopening the report puts the row
+     *   back to `'active'` (`restoreTarget`) — so a re-mouth in the meantime would make that
+     *   restore a second live mouth, and the key would refuse the admin instead.
+     * - `'deleted'` frees it: the author withdrew the mouth, and no action restores a deleted
+     *   Blab, so mouthing it again is a new row at the top of the feed.
+     *
+     * Written as `<> 'deleted'` rather than as a list of the statuses that hold, so a status
+     * added to the enum later holds the slot until someone decides otherwise: a refused
+     * re-mouth can be undone, two live mouths of one Blab cannot.
+     *
+     * **`0012_blabber_mouths_unique_while_live` restates this expression**, frozen as it
+     * shipped: change it here and a fresh install and an upgraded one disagree, which the
+     * planner cannot see (it compares a generated column by name only). A change is a new
+     * migration.
+     */
+    mouth_key: {
+      type: 'int',
+      clientWritable: false,
+      private: true,
+      generatedAs: "CASE WHEN `status` <> 'deleted' THEN `mouth_of` ELSE NULL END"
     }
   },
   /**
@@ -271,27 +301,31 @@ export const blabber = defineService<Blab, typeof blabberContract>({
     { name: 'reply_to', columns: ['reply_to'] },
     { name: 'root_id', columns: ['root_id'] },
     /**
-     * One mouth per account per Blab, enforced by the database.
+     * One live mouth per account per Blab, enforced by the database.
      *
-     * Safe as a unique index *because* MySQL permits many NULLs in one: every ordinary post
-     * has `mouth_of NULL`, so this constrains mouths only. A find-then-insert would have a race
-     * two rapid taps would find.
+     * Safe as a unique index *because* MySQL permits many NULLs in one: `mouth_key` is `NULL`
+     * on every ordinary post and on every deleted mouth, so this constrains the mouths an
+     * author has not withdrawn, live or taken down. A find-then-insert would have a race two
+     * rapid taps would find.
+     *
+     * It was `account_mouth` over `mouth_of` itself until MICA-330, which held the slot through
+     * a soft delete; `0012_blabber_mouths_unique_while_live` replaces it on an existing install.
      */
-    { name: 'account_mouth', columns: ['account_id', 'mouth_of'], unique: true }
+    { name: 'account_mouth_key', columns: ['account_id', 'mouth_key'], unique: true }
   ],
   /**
-   * Not a revive, though a deleted mouth does hold the key: mouthing a Blab, deleting the mouth
-   * and mouthing it again is refused as "You have already mouthed that" (MICA-330, which needs a
-   * schema choice: `status` in the key, or a `mouth_of` that is NULL off `active`).
-   * Reviving would be worse than the refusal. The feed pages by `id DESC`, so a revived mouth
-   * would surface at the deleted one's place in the timeline rather than at the top, and it
-   * would bring back the reactions and reports filed against the deleted row's id.
+   * Not a revive, and not needed: a deleted mouth's `mouth_key` is `NULL`, so mouthing the same
+   * Blab again is a plain insert of a new row (MICA-330). A moderated mouth keeps its slot, so
+   * its author is refused a re-mouth while the takedown stands. Reviving would be wrong besides.
+   * The feed pages by `id DESC`, so a revived mouth would surface at the deleted one's place in
+   * the timeline rather than at the top, and it would bring back the reactions and reports
+   * filed against the deleted row's id.
    */
   uniqueAfterDelete: {
     optOut:
-      'A revived mouth keeps the old id, so the id-keyed feed would show it at the deleted ' +
-      "one's position with the deleted one's reactions; a re-mouth after a delete is refused " +
-      'until MICA-330 makes the schema choice.'
+      "`mouth_key` is generated NULL only on a 'deleted' row, so a deleted mouth holds no key " +
+      'and mouthing the same Blab again inserts a new row at the top of the feed. A moderated ' +
+      'mouth keeps its key, so reopening its report restores it without a collision.'
   },
   /**
    * Ears. Pairs with a Mouth: one speaks, one listens. A child table rather than a service of
@@ -613,9 +647,9 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
     };
   } catch (error) {
     // The unique index refusing a second mouth of the same Blab. Translated, because the raw
-    // driver text reaches a player's toast.
-    const message = error instanceof Error ? error.message : '';
-    if (mouthOf !== null && /duplicate/i.test(message)) {
+    // driver text reaches a player's toast. `isDuplicateKey` reads the driver's own message
+    // only: oxmysql's text embeds the parameters, and a quote's body may say "duplicate".
+    if (mouthOf !== null && isDuplicateKey(error)) {
       // `{ cause }` is the constructor's ES2022 form; this repo's lib target is ES2021, so
       // the property is set directly instead — same effect, portable to the older lib.
       const already = new PlayerFacingError('You have already mouthed that.', {
@@ -732,12 +766,19 @@ app.registerEvent('engagement', async (source, cbId, data, citizenid) => {
       )
     : [];
 
+  /**
+   * "Mouthed by me" means what `account_mouth_key` means: a mouth that is not deleted
+   * (MICA-330). A moderated one still holds the slot, so counting only `'active'` showed its
+   * author a Blab as un-mouthed and then refused the mouth as "already mouthed". Only the
+   * caller's own accounts are read, so this tells nobody but the author that their own
+   * taken-down mouth exists; the public `mouths` count above stays live rows only.
+   */
   const myMouths = myAccountIds.length
     ? await Database.query<{ mouth_of: number }[]>(
         `SELECT \`mouth_of\` FROM \`mica_blabber\`
          WHERE \`mouth_of\` IN (${placeholders})
          AND \`account_id\` IN (${myAccountIds.map(() => '?').join(', ')})
-         AND \`status\` = 'active'`,
+         AND \`status\` <> 'deleted'`,
         [...ids, ...myAccountIds]
       )
     : [];
@@ -1249,10 +1290,12 @@ registerImportTarget('posts', {
       'SELECT `root_id` FROM `mica_blabber` WHERE `id` = ? LIMIT 1',
       [postId]
     )) ?? null,
+  // Asks exactly what `account_mouth_key` refuses: a mouth that is not deleted. A deleted one
+  // holds no key since MICA-330, so a repeat of it imports as a new row rather than a skip.
   repeats: async (accountId, postId) =>
     Boolean(
       await Database.scalar<number | null>(
-        'SELECT 1 FROM `mica_blabber` WHERE `account_id` = ? AND `mouth_of` = ? LIMIT 1',
+        "SELECT 1 FROM `mica_blabber` WHERE `account_id` = ? AND `mouth_of` = ? AND `status` <> 'deleted' LIMIT 1",
         [accountId, postId]
       )
     )

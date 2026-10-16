@@ -104,8 +104,8 @@ export const conversations = defineService<ConversationRow, typeof conversations
      *
      * `NULL` in two cases, both deliberate, since a unique index treats every `NULL` as
      * distinct from every other and therefore constrains nothing between them — the same
-     * technique `mica_blabber`'s `(account_id, mouth_of)` index uses for a mouth-less
-     * post:
+     * technique `mica_blabber`'s `account_mouth_key` uses for a mouth-less post and a
+     * deleted mouth:
      *
      * - **A group thread.** `participant_a`/`participant_b` are both `NULL`, and `CONCAT`
      *   (so the whole expression) returns `NULL` the instant either input is, with no

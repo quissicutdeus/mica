@@ -31,6 +31,8 @@ import { blabber } from '../services/Blabber';
 import type { BlabberRepository } from '../repositories/BlabberRepository';
 import { installTestPhone, NOT_HELD_REPLY, refusePhone } from './phoneStub';
 import { postsTarget } from '../lib/import/targets';
+import { moderateTarget, restoreTarget } from '../lib/moderation';
+import { PlayerFacingError } from '../lib/errors';
 
 const repo = blabber.repo as BlabberRepository;
 
@@ -114,12 +116,24 @@ describe('the declaration', () => {
     expect(blabber.resolved.editWindow).toBe(900);
   });
 
-  it('lets one account mouth a Blab only once, by index', () => {
-    // Safe as a unique index because MySQL permits many NULLs in one: every ordinary post has
-    // `mouth_of NULL`, so this constrains mouths only. A find-then-insert would have a race two
-    // rapid taps would find.
-    const unique = blabber.resolved.indexes.find((i) => i.name === 'account_mouth');
-    expect(unique).toMatchObject({ columns: ['account_id', 'mouth_of'], unique: true });
+  it('lets one account hold one live mouth of a Blab, by index', () => {
+    // Safe as a unique index because MySQL permits many NULLs in one: `mouth_key` is NULL on
+    // every ordinary post and on every mouth that is not active, so this constrains live mouths
+    // only (MICA-330). A find-then-insert would have a race two rapid taps would find.
+    const unique = blabber.resolved.indexes.find((i) => i.name === 'account_mouth_key');
+    expect(unique).toMatchObject({ columns: ['account_id', 'mouth_key'], unique: true });
+    // The key over `mouth_of` itself held a deleted mouth's slot; 0012 drops it.
+    expect(blabber.resolved.indexes.map((i) => i.name)).not.toContain('account_mouth');
+  });
+
+  it('generates mouth_key as mouth_of while active, NULL otherwise, and nobody writes it', () => {
+    const declared = blabber.resolved.fields.find((f) => f.name === 'mouth_key')?.def;
+    expect(declared).toMatchObject({
+      type: 'int',
+      generatedAs: "CASE WHEN `status` <> 'deleted' THEN `mouth_of` ELSE NULL END"
+    });
+    expect(blabber.resolved.clientWritable).not.toContain('mouth_key');
+    expect(blabber.resolved.publicColumns).not.toContain('mouth_key');
   });
 
   it('makes an ear unique per account, in the child table', () => {
@@ -564,11 +578,35 @@ describe('replies, mouths and ears', () => {
   it('translates a second mouth of the same Blab into something readable', async () => {
     dbMock.single.mockResolvedValueOnce(MY_ACCOUNT);
     dbMock.single.mockResolvedValueOnce({ id: 9, status: 'active' });
-    dbMock.insert.mockRejectedValueOnce(new Error("Duplicate entry '1-9' for key 'account_mouth'"));
+    dbMock.insert.mockRejectedValueOnce(
+      new Error("Duplicate entry '1-9' for key 'mica_blabber.account_mouth_key'")
+    );
 
     const reply = await call('create', { account_id: 1, mouth_of: 9 });
 
     expect(reply.error).toBe('You have already mouthed that.');
+  });
+
+  it('does not call another failure a second mouth because a quote says "duplicate"', async () => {
+    // oxmysql's text embeds the parameters; only the driver's last line classifies it.
+    dbMock.single.mockResolvedValueOnce(MY_ACCOUNT);
+    dbMock.single.mockResolvedValueOnce({ id: 9, status: 'active' });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    dbMock.insert.mockRejectedValueOnce(
+      new Error(
+        'mica was unable to execute a query!\nINSERT INTO `mica_blabber` …\n' +
+          '["Duplicate entry for key, again"]\nLost connection to server during query'
+      )
+    );
+
+    const reply = await call('create', {
+      account_id: 1,
+      mouth_of: 9,
+      body: 'Duplicate entry for key, again'
+    });
+
+    expect(reply.error).toBeTruthy();
+    expect(reply.error).not.toBe('You have already mouthed that.');
   });
 
   it('treats a duplicate ear as success, so a double tap is not an error', async () => {
@@ -597,6 +635,165 @@ describe('replies, mouths and ears', () => {
 
     expect(reply.error).toMatch(/not yours/);
     expect(dbMock.insert).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Mouth, delete, mouth again (MICA-330), against a stand-in for `mica_blabber` that keeps
+ * `account_mouth_key` the way MariaDB does: `mouth_key` is `mouth_of` unless the row is
+ * `'deleted'`, `NULL` then, and a unique key never collides on `NULL`. The mocked `Database`
+ * above answers every insert, so it cannot see the refusal this is about. The stand-in reads
+ * only the statements create, delete and moderation send; anything else fails the test.
+ */
+describe('a mouth deleted and mouthed again (MICA-330)', () => {
+  interface Row {
+    id: number;
+    citizenid: string;
+    account_id: number;
+    mouth_of: number | null;
+    status: string;
+  }
+  let rows: Row[];
+  const mouthKey = (row: Row) => (row.status !== 'deleted' ? row.mouth_of : null);
+
+  beforeEach(() => {
+    // The Blab being mouthed, somebody else's.
+    rows = [{ id: 9, citizenid: 'CIT_B', account_id: 2, mouth_of: null, status: 'active' }];
+    dbMock.single.mockImplementation(async (sql: string, params: unknown[]) => {
+      if (sql.includes('`mica_accounts`')) return MY_ACCOUNT;
+      if (sql.includes('FROM `mica_blabber`') && sql.includes('`id` = ?')) {
+        return rows.find((r) => r.id === Number(params[0])) ?? null;
+      }
+      throw new Error(`stand-in: unexpected single: ${sql}`);
+    });
+    dbMock.insert.mockImplementation(async (sql: string, params: unknown[]) => {
+      const match = /^INSERT INTO `mica_blabber` \(([^)]*)\) VALUES/.exec(sql);
+      if (!match) throw new Error(`stand-in: unexpected insert: ${sql}`);
+      const columns = match[1].split(',').map((c) => c.trim().replace(/`/g, ''));
+      const value = (name: string) => params[columns.indexOf(name)];
+      const row: Row = {
+        id: rows.length + 50,
+        citizenid: String(value('citizenid')),
+        account_id: Number(value('account_id')),
+        mouth_of: value('mouth_of') == null ? null : Number(value('mouth_of')),
+        status: 'active'
+      };
+      const key = mouthKey(row);
+      if (
+        key !== null &&
+        rows.some((r) => r.account_id === row.account_id && mouthKey(r) === key)
+      ) {
+        throw new Error(`Duplicate entry '${row.account_id}-${key}' for key 'account_mouth_key'`);
+      }
+      rows.push(row);
+      return row.id;
+    });
+    dbMock.update.mockImplementation(async (sql: string, params: unknown[]) => {
+      if (!sql.startsWith('UPDATE `mica_blabber` SET `status` = ?')) {
+        throw new Error(`stand-in: unexpected update: ${sql}`);
+      }
+      // Moderation's own unscoped form, by id alone; else the owner-scoped soft delete.
+      const unscoped = sql === 'UPDATE `mica_blabber` SET `status` = ? WHERE `id` = ?';
+      const [status, id, citizenid] = params as [string, number, string];
+      const hit = rows.find(
+        (r) =>
+          r.id === Number(id) &&
+          (unscoped || (r.citizenid === citizenid && r.status !== 'moderated'))
+      );
+      if (!hit) return false;
+      // What the key says about the row's new status: one that takes a held slot is refused.
+      const next = { ...hit, status };
+      const key = mouthKey(next);
+      if (
+        key !== null &&
+        rows.some((r) => r !== hit && r.account_id === hit.account_id && mouthKey(r) === key)
+      ) {
+        throw new Error(`Duplicate entry '${hit.account_id}-${key}' for key 'account_mouth_key'`);
+      }
+      hit.status = status;
+      return true;
+    });
+  });
+
+  it('mouths, deletes the mouth, and mouths the same Blab again as a new row', async () => {
+    const first = await call('create', { account_id: 1, mouth_of: 9 });
+    expect(first?.error).toBeUndefined();
+    expect(await call('delete', { id: first.id })).toBe(true);
+    expect(rows.find((r) => r.id === first.id)?.status).toBe('deleted');
+
+    const again = await call('create', { account_id: 1, mouth_of: 9 });
+    expect(again?.error).toBeUndefined();
+    expect(again).toMatchObject({ mouth_of: 9 });
+    // A new row, so a new id: the id-keyed feed shows it at the top, not at the old place.
+    expect(again.id).not.toBe(first.id);
+    expect(rows.filter((r) => r.mouth_of === 9).map((r) => r.status)).toEqual([
+      'deleted',
+      'active'
+    ]);
+  });
+
+  it('still refuses a second live mouth of the same Blab, readably', async () => {
+    const first = await call('create', { account_id: 1, mouth_of: 9 });
+    expect(first?.error).toBeUndefined();
+
+    const second = await call('create', { account_id: 1, mouth_of: 9 });
+    expect(second.error).toBe('You have already mouthed that.');
+    expect(rows.filter((r) => r.mouth_of === 9)).toHaveLength(1);
+  });
+
+  it('refuses the second live mouth after a delete and a re-mouth too', async () => {
+    const first = await call('create', { account_id: 1, mouth_of: 9 });
+    await call('delete', { id: first.id });
+    await call('create', { account_id: 1, mouth_of: 9 });
+
+    const third = await call('create', { account_id: 1, mouth_of: 9 });
+    expect(third.error).toBe('You have already mouthed that.');
+    expect(rows.filter((r) => mouthKey(r) === 9)).toHaveLength(1);
+  });
+
+  it('keeps a moderated mouth in its slot, so reopening the report restores it cleanly', async () => {
+    // Before, a takedown freed the slot: the author mouthed again, and the admin's reopen then
+    // hit the key and got the generic failure.
+    const first = await call('create', { account_id: 1, mouth_of: 9 });
+    expect(await moderateTarget('mica_blabber', first.id, 'ADMIN', 'report #3: spam')).toBe(true);
+
+    const again = await call('create', { account_id: 1, mouth_of: 9 });
+    expect(again.error).toBe('You have already mouthed that.');
+
+    expect(await restoreTarget('mica_blabber', first.id, 'ADMIN', 'report #3 reopened')).toBe(true);
+    expect(rows.filter((r) => r.mouth_of === 9).map((r) => r.status)).toEqual(['active']);
+  });
+
+  it('answers a takedown of a deleted mouth its author has mouthed again in words', async () => {
+    // Reported while live, deleted by its author, mouthed again: moderating the old row would
+    // put two mouths of Blab 9 in the key.
+    const first = await call('create', { account_id: 1, mouth_of: 9 });
+    await call('delete', { id: first.id });
+    await call('create', { account_id: 1, mouth_of: 9 });
+
+    const error = await moderateTarget('mica_blabber', first.id, 'ADMIN', 'report #3').catch(
+      (e: unknown) => e
+    );
+    expect(error).toBeInstanceOf(PlayerFacingError);
+    expect((error as PlayerFacingError).key).toBe('server.reports.targetConflict');
+    expect(rows.find((r) => r.id === first.id)?.status).toBe('deleted');
+  });
+});
+
+/**
+ * The importer's `repeats` asks what `account_mouth_key` refuses — a mouth not deleted — so a
+ * repeat of a mouth the player deleted imports rather than being skipped (MICA-330).
+ */
+describe('micaimport: a repeat is a mouth not deleted', () => {
+  it('asks for any row but a deleted one', async () => {
+    dbMock.scalar.mockResolvedValueOnce(null);
+    expect(await postsTarget()?.repeats(1, 9)).toBe(false);
+    const [sql, params] = dbMock.scalar.mock.calls.at(-1) ?? [];
+    expect(sql).toBe(
+      'SELECT 1 FROM `mica_blabber` WHERE `account_id` = ? AND `mouth_of` = ? ' +
+        "AND `status` <> 'deleted' LIMIT 1"
+    );
+    expect(params).toEqual([1, 9]);
   });
 });
 
@@ -881,6 +1078,26 @@ describe('engagement', () => {
       earedByMe: false,
       mouthedByMe: false
     });
+  });
+
+  it('counts my moderated mouth as mouthed, as the key does, and the public count does not', async () => {
+    // MICA-330: a moderated mouth holds `account_mouth_key`, so showing it un-mouthed sent its
+    // author into "already mouthed". The public count stays live rows only.
+    dbMock.query.mockImplementation(async (sql: string) => {
+      if (sql.includes('`mica_accounts`')) return [{ id: 1 }];
+      if (/SELECT `mouth_of` FROM `mica_blabber`/.test(sql)) return [{ mouth_of: 7 }];
+      return [];
+    });
+
+    const reply = await call('engagement', { ids: [7] });
+
+    expect(reply[7]).toMatchObject({ mouths: 0, mouthedByMe: true });
+    const statements = dbMock.query.mock.calls.map(([sql]) => String(sql).replace(/\s+/g, ' '));
+    const mine = statements.find((sql) => sql.startsWith('SELECT `mouth_of` FROM `mica_blabber`'));
+    expect(mine).toContain('AND `account_id` IN (?)');
+    expect(mine).toContain("AND `status` <> 'deleted'");
+    const count = statements.find((sql) => sql.includes('SELECT `mouth_of` AS parent'));
+    expect(count).toContain("AND `status` = 'active'");
   });
 });
 

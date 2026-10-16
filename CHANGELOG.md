@@ -62,6 +62,22 @@ longer holds, because it could not recognise those messages and would import
 them a second time; put the key back to run it. Without a content key nothing
 changes. `docs/security.md` says what an old SHA-1 entry still gives away.
 
+**Run `micaschema apply` from the server console: a Blabber mouth that was
+deleted can be mouthed again (MICA-330).** The unique key that stops a player
+mouthing the same Blab twice counted deleted mouths too, so mouthing, deleting
+and mouthing again answered "You have already mouthed that". Migration
+`0012_blabber_mouths_unique_while_live` adds `mica_blabber.mouth_key`, which
+holds the mouthed Blab unless the mouth is deleted, and replaces the unique key
+`mica_blabber.account_mouth` with `mica_blabber.account_mouth_key` over it. It
+adds the new key before dropping the old one, so the table is never without the
+rule, and running it twice changes nothing. A mouth made again is a new post at
+the top of the feed, not the old one brought back. A mouth taken down by a
+moderator still holds its place, so its author cannot post it again around the
+moderation, and reopening the report restores it. Until you run it, Blabber
+behaves as before, except that `micaimport` reports a repeat of a mouth its
+author deleted as a row it could not write, and writes it on a re-run after the
+apply.
+
 **Logging out to character select now ends that character's call (MICA-382).**
 On a multicharacter server, a player who logs out without disconnecting used to
 stay in their call, on speakerphone and broadcasting music while sitting on

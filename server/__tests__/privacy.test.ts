@@ -261,7 +261,8 @@ const EXPORTED_COLUMNS: Record<string, { plain: string[]; sized: string[]; withh
       'root_id'
     ],
     sized: [],
-    withheld: []
+    // MICA-330: `mouth_of` again while live, NULL otherwise — the unique key's, not the player's.
+    withheld: ['mouth_key']
   },
   mica_blabber_attachments: { plain: ['id', 'blab_id', 'media_id'], sized: [], withheld: [] },
   mica_blabber_dms: {

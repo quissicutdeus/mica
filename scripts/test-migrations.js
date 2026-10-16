@@ -66,7 +66,7 @@ const EXTERNAL_DB = Boolean(DB_HOST || DB_PORT || DB_USER || DB_PASSWORD);
  * configured": a harness that returns early — a fixture that silently seeded nothing, a loop
  * over an empty list — would otherwise print a pass having checked almost nothing.
  *
- * The run currently makes **459** checks. The last census, at 258, named each fixture: the two
+ * The run currently makes **495** checks. The last census, at 258, named each fixture: the two
  * `runVariant`s (17 each), the two `runSweepFixtures` (17 each), the two `runNumberMigration`s
  * (MICA-284; 21 on qb, 16 on ESX), the two `runDataMigration`s (MICA-282; 38 each), the two
  * `runBatteryMigration`s (MICA-283; 9 each), and MICA-289's `runWidenMigration` (14 on qb, 15 on
@@ -81,12 +81,13 @@ const EXTERNAL_DB = Boolean(DB_HOST || DB_PORT || DB_USER || DB_PASSWORD);
  * each shape) and `runReimportOverFlattenedBaseline` (4) to 401, and MICA-342's
  * `runWedgedPairsMigration`s (10 on each shape) to 421, and MICA-335's
  * `runContactKeyMigration`s (17 on each shape) to 455, and MICA-350's two more in each
- * `runWedgedPairsMigration` to 459 — so the margin here is eight again.
+ * `runWedgedPairsMigration` to 459, and MICA-330's `runMouthKeyMigration`s (18 on each shape)
+ * to 495 — so the margin here is eight again.
  * That is deliberately tight: losing any one fixture drops below it and fails, which is the
  * whole point. Raise the floor when you add checks, rather than letting the gap widen until it
  * stops catching anything.
  */
-const MINIMUM_CHECKS = 451;
+const MINIMUM_CHECKS = 487;
 let checksRun = 0;
 
 const check = (label, actual, expected) => {
@@ -2001,6 +2002,185 @@ const runContactKeyMigration = async ({ connection, schemaFile, hasPlayers, serv
   check(`${label}: a second run applies nothing`, second.applied, []);
 };
 
+const MOUTH_KEY_MIGRATION = '0012_blabber_mouths_unique_while_live';
+
+/**
+ * MICA-330's 0012, executed rather than read: the current schema put back to the key it had
+ * before (`account_mouth` over `mouth_of` itself, no `mouth_key`), a mouth in each status, the
+ * real `micaschema apply`, and then what the new key allows and refuses. The unit suite pins the
+ * statements as text and a stand-in's idea of the key; only MariaDB can say what a generated
+ * column under a unique key actually refuses.
+ */
+const runMouthKeyMigration = async ({ connection, schemaFile, hasPlayers, server }) => {
+  const variant = hasPlayers ? 'qb' : 'esx';
+  const label = `${schemaFile} mouth key`;
+  step(`${schemaFile} — MICA-330 ${MOUTH_KEY_MIGRATION}, on a ${variant} database`);
+
+  const fresh = async (database) => {
+    await connection.query(`DROP DATABASE IF EXISTS \`${database}\``);
+    await connection.query(`CREATE DATABASE \`${database}\``);
+    await connection.changeUser({ database });
+    if (hasPlayers) await connection.query(PLAYERS_TABLE);
+    await connection.query(fs.readFileSync(path.join(root, schemaFile), 'utf8'));
+  };
+
+  // Sorted: 0012 appends its column, where a fresh import has it in declaration order.
+  await fresh(`mica_mouth_key_shape_${variant}`);
+  const shape = {
+    columns: (await wholeSchema(connection)).toSorted(),
+    keys: await allIndexes(connection)
+  };
+
+  await fresh(`mica_mouth_key_${variant}`);
+  await connection.query(
+    `ALTER TABLE mica_blabber
+       DROP KEY account_mouth_key,
+       DROP COLUMN mouth_key,
+       ADD UNIQUE KEY account_mouth (account_id, mouth_of)`
+  );
+  await connection.query('DELETE FROM mica_schema_migrations WHERE id = ?', [MOUTH_KEY_MIGRATION]);
+  const mouthKeys = async () =>
+    (await allIndexes(connection)).filter((key) => key.startsWith('mica_blabber.account_mouth'));
+  check(
+    `${label}: the regressed schema has no mouth_key, and the old key over mouth_of`,
+    [await columnsNamed(connection, 'mouth_key'), await mouthKeys()],
+    [[], ['mica_blabber.account_mouth (unique)']]
+  );
+
+  const A = hasPlayers ? 'CIT_A' : SWEEP_LIVE;
+  const B = hasPlayers ? 'CIT_B' : SWEEP_GONE;
+  const account = async (citizenid, handle) =>
+    (
+      await connection.query(
+        "INSERT INTO mica_accounts (citizenid, app, handle) VALUES (?, 'blabber', ?)",
+        [citizenid, handle]
+      )
+    )[0].insertId;
+  const ada = await account(A, 'ada');
+  const bob = await account(B, 'bob');
+  const blab = async (accountId, citizenid, mouthOf = null, status = 'active') =>
+    (
+      await connection.query(
+        'INSERT INTO mica_blabber (citizenid, account_id, body, mouth_of, status) VALUES (?, ?, ?, ?, ?)',
+        [citizenid, accountId, mouthOf === null ? 'a post' : null, mouthOf, status]
+      )
+    )[0].insertId;
+  // Three of Bob's Blabs, and one of Ada's mouths of each, in each status there is.
+  const wedged = await blab(bob, B);
+  const live = await blab(bob, B);
+  const takenDown = await blab(bob, B);
+  const deletedMouth = await blab(ada, A, wedged, 'deleted');
+  await blab(ada, A, live, 'active');
+  const moderatedMouth = await blab(ada, A, takenDown, 'moderated');
+  const rows = async () =>
+    (
+      await connection.query(
+        'SELECT id, account_id, mouth_of, status FROM mica_blabber ORDER BY id'
+      )
+    )[0].map((r) => `${r.id}:${r.account_id}:${r.mouth_of}:${r.status}`);
+  const before = await rows();
+
+  runningFramework(server, hasPlayers);
+  const apply = await captured(() => server.runApply(0));
+  check(
+    `${label}: apply runs 0012, failing nothing`,
+    [
+      apply.lines.includes(`[mica] applied migration ${MOUTH_KEY_MIGRATION}`),
+      apply.lines.filter((line) => /fail/i.test(line))
+    ],
+    [true, []]
+  );
+  check(`${label}: and touches no row`, await rows(), before);
+  check(
+    `${label}: mouth_key is generated as declared, NULL only on a deleted row`,
+    String(
+      await scalar(
+        connection,
+        `SELECT generation_expression FROM information_schema.COLUMNS
+          WHERE table_schema = DATABASE() AND table_name = 'mica_blabber'
+            AND column_name = 'mouth_key'`
+      )
+    )
+      .replace(/\s+/g, ' ')
+      .toLowerCase(),
+    "case when `status` <> 'deleted' then `mouth_of` else null end"
+  );
+  check(`${label}: account_mouth_key replaces account_mouth`, await mouthKeys(), [
+    'mica_blabber.account_mouth_key (unique)'
+  ]);
+  check(
+    `${label}: every column a fresh import has, type, nullability and collation`,
+    (await wholeSchema(connection)).toSorted(),
+    shape.columns
+  );
+  check(`${label}: and every key`, await allIndexes(connection), shape.keys);
+  const plans = await server.SchemaMigrator.plan();
+  check(
+    `${label}: the planner finds nothing to add and no drift`,
+    plans.flatMap((p) => [...p.additive, ...p.drift]),
+    []
+  );
+
+  step(`${schemaFile} — what account_mouth_key allows and refuses`);
+  const mouth = (accountId, citizenid, of) =>
+    rejects(() =>
+      connection.query(
+        'INSERT INTO mica_blabber (citizenid, account_id, mouth_of) VALUES (?, ?, ?)',
+        [citizenid, accountId, of]
+      )
+    );
+  check(
+    `${label}: a Blab whose mouth was deleted before the migration mouths again`,
+    await mouth(ada, A, wedged),
+    null
+  );
+  check(
+    `${label}: a second live mouth of it is refused`,
+    await mouth(ada, A, wedged),
+    'ER_DUP_ENTRY'
+  );
+  check(
+    `${label}: a mouth still live before the migration still holds its slot`,
+    await mouth(ada, A, live),
+    'ER_DUP_ENTRY'
+  );
+  check(
+    `${label}: a moderated mouth holds its slot too`,
+    await mouth(ada, A, takenDown),
+    'ER_DUP_ENTRY'
+  );
+  check(
+    `${label}: so reopening its report restores it without a collision`,
+    await rejects(() =>
+      connection.query("UPDATE mica_blabber SET status = 'active' WHERE id = ?", [moderatedMouth])
+    ),
+    null
+  );
+  check(`${label}: another account mouths the same Blab`, await mouth(bob, B, wedged), null);
+  check(
+    `${label}: and ordinary posts never collide`,
+    [await rejects(() => blab(ada, A)), await rejects(() => blab(ada, A))],
+    [null, null]
+  );
+  check(
+    `${label}: a deleted mouth cannot come back into a slot a new mouth holds`,
+    await rejects(() =>
+      connection.query("UPDATE mica_blabber SET status = 'moderated' WHERE id = ?", [deletedMouth])
+    ),
+    'ER_DUP_ENTRY'
+  );
+
+  const settled = { schema: await wholeSchema(connection), rows: await rows() };
+  await server.migrations.find((m) => m.id === MOUTH_KEY_MIGRATION).up();
+  check(
+    `${label}: running up() a second time changes nothing`,
+    { schema: await wholeSchema(connection), rows: await rows() },
+    settled
+  );
+  const second = await server.runPendingMigrations();
+  check(`${label}: a second run applies nothing`, second.applied, []);
+};
+
 const WIDEN_MIGRATION = '0004_citizenid_widens_on_esx';
 
 /**
@@ -3388,6 +3568,15 @@ const main = async () => {
     // MICA-335. 0010 through `micaschema apply`, on both shapes; 0002's scenario runs it too.
     await runContactKeyMigration({ connection, schemaFile: 'mica.sql', hasPlayers: true, server });
     await runContactKeyMigration({
+      connection,
+      schemaFile: 'mica.esx.sql',
+      hasPlayers: false,
+      server
+    });
+
+    // MICA-330. 0012 through `micaschema apply`, on both shapes, then what its key refuses.
+    await runMouthKeyMigration({ connection, schemaFile: 'mica.sql', hasPlayers: true, server });
+    await runMouthKeyMigration({
       connection,
       schemaFile: 'mica.esx.sql',
       hasPlayers: false,

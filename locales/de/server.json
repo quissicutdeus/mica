@@ -36,6 +36,7 @@
   "reports.notReportable": "Diese Art von Inhalt kann nicht gemeldet werden.",
   "reports.noSuchReport": "Diese Meldung gibt es nicht.",
   "reports.ownContent": "Du kannst deine eigenen Inhalte nicht melden.",
+  "reports.targetConflict": "Dieser Inhalt kollidiert mit einer neueren Kopie seines Autors, deshalb lässt sich sein Status nicht ändern.",
   "reports.targetGone": "Dieser Inhalt existiert nicht mehr.",
   "battery.noPermission": "Du hast keine Berechtigung, das zu tun.",
   "battery.unavailable": "{device} kann gerade nicht geladen werden. Die Powerbank wurde nicht verwendet.",

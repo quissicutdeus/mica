@@ -11,5 +11,6 @@ import { migration as m7 } from './0008_phones_become_devices';
 import { migration as m8 } from './0009_wedged_pairs_released';
 import { migration as m9 } from './0010_contact_numbers_unique_per_device';
 import { migration as m10 } from './0011_media_records_its_size';
+import { migration as m11 } from './0012_blabber_mouths_unique_while_live';
 
-export const migrations = [m0, m1, m2, m3, m4, m5, m6, m7, m8, m9, m10];
+export const migrations = [m0, m1, m2, m3, m4, m5, m6, m7, m8, m9, m10, m11];

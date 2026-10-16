@@ -34,12 +34,28 @@ thread whose participant rows are not written yet looks exactly like a broken
 pair. When a row's liveness depends on another table, ask what still holds the
 key once that table moves.
 
-**Blabber's mouths still wedge, on purpose for now.** Generic delete is on, and
-`account_mouth (account_id, mouth_of)` ignores status, so mouth, delete, mouth
-again answers "You have already mouthed that". Reviving would be worse: the feed
-pages by `id DESC`, so the revived mouth would sit at the old position with the
-old reactions. A real fix needs a schema decision (status in the key, or a
-`mouth_of` that is NULL off `active`, like `pair_key`).
+**Blabber's mouths wedged until MICA-330.** Generic delete is on, and
+`account_mouth (account_id, mouth_of)` ignored status, so mouth, delete, mouth
+again answered "You have already mouthed that". Reviving would be worse: the
+feed pages by `id DESC`, so the revived mouth would sit at the old position with
+the old reactions. Migration `0012_blabber_mouths_unique_while_live` took
+`phone_key`'s shape: `mouth_key` is generated NULL only on `'deleted'`, and
+`account_mouth_key (account_id, mouth_key)` replaced the old key. No dedupe is
+needed when the old key is strictly stronger than the new one. Add the new key
+before dropping the old one, so the table always has a constraint. Dropping a
+unique key led by `account_id` cost `mouth_of`'s foreign key nothing, because
+InnoDB had already given it its own `fk_mica_blabber_mouth_of` index.
+
+**A status-keyed slot must stay held by every status something can reverse.**
+The first draft freed the slot off `'active'`, so a moderated mouth freed it.
+The author mouthed again, the admin reopened the report, and `restoreTarget` hit
+ER 1062 and showed the generic error. Review caught it; every suite was green.
+`moderated` holds now, and the move still refused (moderating a deleted mouth
+whose author has mouthed again) answers `server.reports.targetConflict` from
+`moderation.ts`. `test:migrations`' `runMouthKeyMigration` checks what the key
+refuses in each status on a real MariaDB. Before you free a slot for a status,
+list the transitions out of it: `Reports.ts` restores to `'active'` blindly,
+even a row that was `'deleted'` before the takedown.
 
 No unit suite can see a duplicate key: they mock `Database`. The stand-ins in
 `uniqueAfterDelete.test.ts` and `blocklist.test.ts` enforce the key and fail on

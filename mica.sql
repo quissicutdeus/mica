@@ -463,6 +463,7 @@ CREATE TABLE IF NOT EXISTS `mica_blabber` (
     `reply_to` int(11) DEFAULT NULL,
     `mouth_of` int(11) DEFAULT NULL,
     `root_id` int(11) DEFAULT NULL,
+    `mouth_key` int(11) GENERATED ALWAYS AS (CASE WHEN `status` <> 'deleted' THEN `mouth_of` ELSE NULL END) VIRTUAL,
     `status` ENUM('active', 'deleted', 'moderated') NOT NULL DEFAULT 'active',
     `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -472,7 +473,7 @@ CREATE TABLE IF NOT EXISTS `mica_blabber` (
     KEY `account_id` (`account_id`),
     KEY `reply_to` (`reply_to`),
     KEY `root_id` (`root_id`),
-    UNIQUE KEY `account_mouth` (`account_id`, `mouth_of`),
+    UNIQUE KEY `account_mouth_key` (`account_id`, `mouth_key`),
     CONSTRAINT `fk_mica_blabber_account_id` FOREIGN KEY (`account_id`)
         REFERENCES `mica_accounts` (`id`) ON DELETE CASCADE,
     CONSTRAINT `fk_mica_blabber_reply_to` FOREIGN KEY (`reply_to`)
@@ -778,4 +779,5 @@ SELECT `id` FROM (
     UNION ALL SELECT '0009_wedged_pairs_released'
     UNION ALL SELECT '0010_contact_numbers_unique_per_device'
     UNION ALL SELECT '0011_media_records_its_size'
+    UNION ALL SELECT '0012_blabber_mouths_unique_while_live'
 ) AS `seed` WHERE @mica_fresh_import = 1;

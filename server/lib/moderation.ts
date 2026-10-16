@@ -4,6 +4,8 @@
 
 import { Database } from './Database';
 import { AuditLogger } from './AuditLogger';
+import { PlayerFacingError } from './errors';
+import { isDuplicateKey } from './sqlErrors';
 import { contentContext, encryptedColumn, isSealed, openContent } from './contentCipher';
 import type { ReportCategory } from '@mica/shared/types';
 
@@ -158,10 +160,28 @@ const setTargetStatus = async (
   reason: string
 ): Promise<boolean> => {
   // `status` is a literal from this function's own signature, never a payload.
-  const ok = await Database.update(`UPDATE \`${table}\` SET \`status\` = ? WHERE \`id\` = ?`, [
-    status,
-    id
-  ]);
+  let ok: boolean;
+  try {
+    ok = await Database.update(`UPDATE \`${table}\` SET \`status\` = ? WHERE \`id\` = ?`, [
+      status,
+      id
+    ]);
+  } catch (error) {
+    /**
+     * A unique key built on `status` refusing the move (MICA-330). `mica_blabber`'s
+     * `account_mouth_key` frees a deleted mouth's slot, so a mouth reported while live, then
+     * deleted by its author and mouthed again, cannot be marked moderated: that would be two
+     * mouths of one Blab holding the key. Said in words, because the admin acting on it is the
+     * one person who can do something else — dismiss the report, or act on the newer row.
+     */
+    if (!isDuplicateKey(error)) throw error;
+    const conflict = new PlayerFacingError(
+      'That content clashes with a newer copy its author posted, so its status cannot change.',
+      { key: 'server.reports.targetConflict' }
+    );
+    (conflict as PlayerFacingError & { cause?: unknown }).cause = error;
+    throw conflict;
+  }
 
   if (ok) {
     await AuditLogger.log({

@@ -22,7 +22,7 @@ line here.
   Repository reaches contentCipher; the cycle breaks collection, not tsc
 - [A soft delete under a unique key refuses a re-create](soft-delete-under-a-unique-key.md)
   — `uniqueAfterDelete` since MICA-321; a left 1:1 held `pair_key` until
-  MICA-342; Blabber mouths still wedge
+  MICA-342; Blabber mouths until MICA-330
 - [A "does not see it" check passes on a wrong filter](negative-check-needs-a-positive-twin.md)
   — pair every negative row or push assertion with a positive one
 - [A thread page is the newest window, in send order](thread-page-is-newest-window-in-send-order.md)

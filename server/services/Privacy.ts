@@ -163,7 +163,10 @@ const WITHHELD: Readonly<Record<string, readonly string[]>> = {
   mica_devices: ['setup_pending'],
   // MICA-358. What a row costs against the media quota: size bookkeeping the server keeps so
   // the quota need not measure every photo. The export already gives each byte column's size.
-  mica_media: ['stored_bytes']
+  mica_media: ['stored_bytes'],
+  // MICA-330. `mouth_key` is `mouth_of` again while the mouth is live, and NULL otherwise: the
+  // unique key's machinery, telling the player nothing `mouth_of` and `status` do not.
+  mica_blabber: ['mouth_key']
 };
 
 // ---------------------------------------------------------------------------------------------
