@@ -60,9 +60,18 @@ const warnRejected = (convar: string, raw: string, rejected: string[], rule: str
   );
 };
 
-/** Apps the owner switched off. Settings is never among them; the parser refuses it. */
-export const disabledApps = (): string[] => {
+/**
+ * The disabled list as last parsed, keyed by the raw string it was parsed from (MICA-378).
+ * `isAppDisabled` runs on every request to a service that names an app; the convar is still
+ * read each time, so a `set` applies on the next request, and only an unchanged value skips the
+ * parse.
+ */
+let disabledParsed: { raw: string; apps: readonly string[]; set: ReadonlySet<string> } | null =
+  null;
+
+const disabledNow = (): { apps: readonly string[]; set: ReadonlySet<string> } => {
   const raw = GetConvar('mica_disabled_apps', '');
+  if (disabledParsed?.raw === raw) return disabledParsed;
   const parsed = parseDisabledApps(raw);
   warnRejected(
     'mica_disabled_apps',
@@ -70,8 +79,12 @@ export const disabledApps = (): string[] => {
     parsed.rejected,
     "Each entry is an app id such as 'mail'; 'settings' cannot be turned off."
   );
-  return parsed.value;
+  disabledParsed = { raw, apps: [...parsed.value], set: new Set(parsed.value) };
+  return disabledParsed;
 };
+
+/** Apps the owner switched off. Settings is never among them; the parser refuses it. */
+export const disabledApps = (): string[] => [...disabledNow().apps];
 
 /** The phone's four dock slots, or `[]` for the built-in dock. */
 export const defaultDock = (): string[] => {
@@ -339,7 +352,7 @@ on('onResourceStart', (resourceName: string) => {
   ownerConfig();
 });
 
-export const isAppDisabled = (appId: string): boolean => disabledApps().includes(appId);
+export const isAppDisabled = (appId: string): boolean => disabledNow().set.has(appId);
 
 /**
  * Which services a disabled app takes down with it.
@@ -602,6 +615,7 @@ export const defaultContacts = (limits: { name: number; number: number }): Defau
 /** Test seam: forget which values were warned about and the resolved contacts. */
 export const __resetOwnerConfig = (): void => {
   checked.clear();
+  disabledParsed = null;
   contactsMemo = null;
   listed.clear();
   soundsListed = null;

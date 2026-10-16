@@ -59,17 +59,27 @@ export const __setRateLimitClock = (fn?: () => number): void => {
 
 export const __resetRateLimits = (): void => {
   windows.clear();
+  parsedLimit = null;
 };
+
+/** The last value the convar held and what it parsed to (MICA-378). */
+let parsedLimit: { raw: string; limit: number } | null = null;
 
 /**
  * The configured ceiling, or the default.
  *
  * Read per call rather than cached, so a server owner can change it with `setr` and not
- * restart. `GetConvar` is a cheap native and this is already on the request path.
+ * restart. `GetConvar` is a cheap native and this is already on the request path. Only the
+ * parse is remembered, keyed by the string it parsed, so a changed value is parsed again on the
+ * very request that first reads it.
  */
 const configuredLimit = (): number => {
-  const raw = Number.parseInt(GetConvar(CONVAR, String(DEFAULT_LIMIT)), 10);
-  return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_LIMIT;
+  const raw = GetConvar(CONVAR, String(DEFAULT_LIMIT));
+  if (parsedLimit?.raw !== raw) {
+    const parsed = Number.parseInt(raw, 10);
+    parsedLimit = { raw, limit: Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_LIMIT };
+  }
+  return parsedLimit.limit;
 };
 
 /**

@@ -159,6 +159,21 @@ const IDENTIFIER = /^[a-z][a-z0-9_]*$/;
 const registry: EncryptedColumn[] = [];
 
 /**
+ * The registry by table, rebuilt for a table whenever one of its columns is registered or taken
+ * out (MICA-378). Every read and write of every repository asks for its table's columns, most of
+ * them for a table with none, and `openRows` asked once per row; filtering the whole registry
+ * each time was a scan per row for an answer fixed at resource start.
+ */
+const byTable = new Map<string, readonly EncryptedColumn[]>();
+const NONE: readonly EncryptedColumn[] = Object.freeze([]);
+
+const reindex = (table: string): void => {
+  const entries = registry.filter((entry) => entry.table === table);
+  if (entries.length === 0) byTable.delete(table);
+  else byTable.set(table, Object.freeze(entries));
+};
+
+/**
  * Add a column to the registry. `defineService` calls this for every `encrypted: true` column;
  * a test may call it for a table of its own.
  *
@@ -183,6 +198,7 @@ export const registerEncryptedColumn = (entry: EncryptedColumn): void => {
     throw new Error(`[contentCipher] ${entry.table}.${entry.column} is already registered.`);
   }
   registry.push({ ...entry, scope: [...entry.scope] });
+  reindex(entry.table);
 };
 
 /** Every encrypted column declared this process. */
@@ -190,15 +206,16 @@ export const encryptedColumns = (): readonly EncryptedColumn[] => registry;
 
 /** A table's encrypted columns, `[]` for a table with none. */
 export const encryptedColumnsOf = (table: string): readonly EncryptedColumn[] =>
-  registry.filter((entry) => entry.table === table);
+  byTable.get(table) ?? NONE;
 
 export const encryptedColumn = (table: string, column: string): EncryptedColumn | null =>
-  registry.find((entry) => entry.table === table && entry.column === column) ?? null;
+  encryptedColumnsOf(table).find((entry) => entry.column === column) ?? null;
 
 /** Tests only: take a hand-registered column back out. */
 export const unregisterEncryptedColumnForTests = (table: string, column: string): void => {
   const index = registry.findIndex((entry) => entry.table === table && entry.column === column);
   if (index >= 0) registry.splice(index, 1);
+  reindex(table);
 };
 
 // ─── the context ─────────────────────────────────────────────────────────────────────────────
@@ -899,8 +916,12 @@ export const sealRow = async <R extends object>(table: string, row: R): Promise<
  * row does not carry are left alone; one it carries without its context columns throws — the
  * select forgot them.
  */
-export const openRow = <R extends object>(table: string, row: R): R => {
-  const entries = encryptedColumnsOf(table);
+export const openRow = <R extends object>(table: string, row: R): R =>
+  openWith(encryptedColumnsOf(table), row);
+
+/** `openRow` with the table's columns already looked up, so a result set looks them up once. */
+const openWith = <R extends object>(entries: readonly EncryptedColumn[], row: R): R => {
+  if (entries.length === 0) return row;
   const values = row as Record<string, unknown>;
   let out: Record<string, unknown> | null = null;
   for (const entry of entries) {
@@ -913,8 +934,12 @@ export const openRow = <R extends object>(table: string, row: R): R => {
 };
 
 /** `openRow` over a result set. A non-array (a failed query's `undefined`) passes through. */
-export const openRows = <R extends object>(table: string, rows: R[]): R[] =>
-  Array.isArray(rows) ? rows.map((row) => openRow(table, row)) : rows;
+export const openRows = <R extends object>(table: string, rows: R[]): R[] => {
+  if (!Array.isArray(rows)) return rows;
+  const entries = encryptedColumnsOf(table);
+  // A copy either way, as it always was: a caller may sort or splice what it is handed.
+  return entries.length === 0 ? rows.slice() : rows.map((row) => openWith(entries, row));
+};
 
 // ─── boot ────────────────────────────────────────────────────────────────────────────────────
 

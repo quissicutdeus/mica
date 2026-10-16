@@ -223,29 +223,80 @@ export abstract class Repository<T> {
     return this.columns;
   }
 
+  /**
+   * The sets derived from `columns`, `clientWritable` and `clientFilterable`, computed once per
+   * repository rather than per request (MICA-378) — `writableColumns` is read by every generic
+   * write, and `assertColumns` runs for every key of every statement.
+   *
+   * Lazy rather than built in a constructor, because a subclass's field initializers run after
+   * this class's constructor and the arrays are not there yet. Keyed on the arrays' identity, so
+   * a subclass that assigns a new list (`SchemaRepository` does, in its constructor) is derived
+   * again rather than answered from the old one; the lists are never mutated in place.
+   */
+  private derived: {
+    columns: readonly string[];
+    writable: readonly string[];
+    filterable: readonly string[];
+    columnSet: ReadonlySet<string>;
+    writableColumns: readonly string[];
+    filterableColumns: readonly string[];
+  } | null = null;
+
+  private derivedSets() {
+    const cached = this.derived;
+    if (
+      cached &&
+      cached.columns === this.columns &&
+      cached.writable === this.clientWritable &&
+      cached.filterable === this.clientFilterable
+    ) {
+      return cached;
+    }
+    const columnSet = new Set(this.columns);
+    const next = {
+      columns: this.columns,
+      writable: this.clientWritable,
+      filterable: this.clientFilterable,
+      columnSet,
+      writableColumns: Object.freeze(
+        this.clientWritable.filter(
+          (column) => !NEVER_CLIENT_WRITABLE.has(column) && columnSet.has(column)
+        )
+      ),
+      filterableColumns: Object.freeze(
+        this.clientFilterable.filter(
+          (column) => !NEVER_CLIENT_FILTERABLE.has(column) && columnSet.has(column)
+        )
+      )
+    };
+    this.derived = next;
+    return next;
+  }
+
+  /** Is `column` one this table physically has? The identifier allowlist's membership test. */
+  protected hasColumn(column: string): boolean {
+    return this.derivedSets().columnSet.has(column);
+  }
+
   public get writableColumns(): readonly string[] {
-    return this.clientWritable.filter(
-      (column) => !NEVER_CLIENT_WRITABLE.has(column) && this.columns.includes(column)
-    );
+    return this.derivedSets().writableColumns;
   }
 
   public get filterableColumns(): readonly string[] {
-    return this.clientFilterable.filter(
-      (column) => !NEVER_CLIENT_FILTERABLE.has(column) && this.columns.includes(column)
-    );
+    return this.derivedSets().filterableColumns;
   }
 
   protected get hasStatusColumn(): boolean {
-    return this.columns.includes('status');
+    return this.hasColumn('status');
   }
 
   protected get hasOwnerColumn(): boolean {
-    return this.columns.includes('citizenid');
+    return this.hasColumn('citizenid');
   }
 
   /** Does this table follow the phone rather than only the citizen (MICA-281)? */
   protected get hasDeviceColumn(): boolean {
-    return this.columns.includes('device_id');
+    return this.hasColumn('device_id');
   }
 
   /**
@@ -368,7 +419,7 @@ export abstract class Repository<T> {
     if (!deviceId || !citizenid) {
       throw new Error(`[Repository] transferDeviceRows requires both a device id and a citizenid.`);
     }
-    const pin = this.columns.includes('updated_at') ? ', `updated_at` = `updated_at`' : '';
+    const pin = this.hasColumn('updated_at') ? ', `updated_at` = `updated_at`' : '';
     return await Database.update(
       `UPDATE \`${this.tableName}\` SET \`citizenid\` = ?${pin} ` +
         'WHERE `device_id` = ? AND `citizenid` <> ?',
@@ -379,7 +430,7 @@ export abstract class Repository<T> {
   /** Reject any key that is not a real column on this table. */
   private assertColumns(keys: string[], operation: string): void {
     for (const key of keys) {
-      if (!this.columns.includes(key)) {
+      if (!this.hasColumn(key)) {
         throw new Error(
           `[Repository] ${operation} on '${this.tableName}' rejected unknown column '${key}'.`
         );
@@ -589,7 +640,7 @@ export abstract class Repository<T> {
         .filter((column) => !keys.includes(column))
         .map((column) => `\`${column}\` = DEFAULT`),
       "`status` = 'active'",
-      ...(this.columns.includes('created_at') ? ['`created_at` = CURRENT_TIMESTAMP'] : [])
+      ...(this.hasColumn('created_at') ? ['`created_at` = CURRENT_TIMESTAMP'] : [])
     ];
     const revived = await Database.update(
       `UPDATE \`${this.tableName}\` SET ${assignments.join(', ')} WHERE \`id\` = ? AND ${owner}`,
@@ -830,7 +881,7 @@ export abstract class Repository<T> {
        * deciding and writing. Both sides of the comparison are the database's clock, which is
        * what makes it immune to skew.
        */
-      if (enforceEditWindow && this.editWindow !== null && this.columns.includes('created_at')) {
+      if (enforceEditWindow && this.editWindow !== null && this.hasColumn('created_at')) {
         query += ' AND `created_at` > NOW() - INTERVAL ? SECOND';
         params.push(this.editWindow);
       }
@@ -890,7 +941,7 @@ export abstract class Repository<T> {
         `[Repository] restore on '${this.tableName}' requires a 'status' column for soft delete.`
       );
     }
-    if (!this.columns.includes('updated_at')) {
+    if (!this.hasColumn('updated_at')) {
       throw new Error(
         `[Repository] restore on '${this.tableName}' requires an 'updated_at' column.`
       );

@@ -120,7 +120,7 @@ export class MediaRepository extends SchemaRepository<MediaItem> {
     // parameterize an identifier, and this method builds its own statement rather than
     // going through `super.create`'s `prepareColumns`.
     for (const column of columns) {
-      if (!this.tableColumns.includes(column)) {
+      if (!this.hasColumn(column)) {
         throw new Error(`[Repository] create on '${this.tableName}' rejected '${column}'.`);
       }
     }
@@ -208,7 +208,7 @@ export class MediaRepository extends SchemaRepository<MediaItem> {
     // Literals rather than payload keys, and still held to the table's own allowlist:
     // a column renamed out from under this list fails loudly instead of building SQL.
     for (const column of columns) {
-      if (!this.tableColumns.includes(column)) {
+      if (!this.hasColumn(column)) {
         throw new Error(`[Repository] copyToPlayers rejected unknown column '${column}'.`);
       }
     }
