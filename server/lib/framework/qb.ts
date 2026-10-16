@@ -8,6 +8,7 @@ import {
   balanceOf,
   booleanOf,
   exposes,
+  heldUntilRestart,
   identityFromCharinfo,
   moved,
   numberOr,
@@ -205,9 +206,29 @@ export const qbSetDuty = (player: any, src: number, name: string, onDuty: boolea
   return booleanOf(player.PlayerData?.job?.onduty, 'PlayerData.job.onduty', src) === onDuty;
 };
 
+/**
+ * qb-core's core object, fetched once (MICA-351). `heldUntilRestart` has why, and why only its
+ * functions are read here: `Functions.GetPlayer` and `Functions.GetQBPlayers` are references
+ * back into qb-core, so a held copy still answers with who is connected now.
+ *
+ * Held only once it has both of those, so a copy fetched mid-start is asked for again. Dropped
+ * on `QBCore:Server:UpdateObject` as well as on qb-core's own restart, because that event is
+ * how qb-core tells every resource holding the object to fetch it again.
+ */
+const qbCore = heldUntilRestart(
+  ['qb-core'],
+  () => resource('qb-core').GetCoreObject(),
+  // The two every request reaches for. `CreateUseableItem` is not required: it is asked for
+  // only at start-up, and requiring it would refetch per request on a build without it.
+  (core: any) =>
+    typeof core?.Functions?.GetPlayer === 'function' &&
+    typeof core?.Functions?.GetQBPlayers === 'function',
+  ['QBCore:Server:UpdateObject']
+);
+
 /** A loaded qb-core player, or null. */
 const qbPlayer = (src: number): FrameworkPlayer | null => {
-  const QBCore = resource('qb-core').GetCoreObject();
+  const QBCore = qbCore();
   const player = QBCore?.Functions?.GetPlayer ? QBCore.Functions.GetPlayer(src) : null;
   if (!player) return null;
   const citizenid = player.PlayerData?.citizenid;
@@ -274,7 +295,7 @@ export const qbAdapter: FrameworkAdapter = {
   getPlayer: qbPlayer,
 
   getAllPlayers: () => {
-    const QBCore = resource('qb-core').GetCoreObject();
+    const QBCore = qbCore();
     return QBCore?.Functions?.GetQBPlayers ? QBCore.Functions.GetQBPlayers() : {};
   },
 
@@ -296,7 +317,7 @@ export const qbAdapter: FrameworkAdapter = {
   registerUsableItem: (item, cb) => {
     if (!exposes('qb-core', 'GetCoreObject')) return false;
 
-    const QBCore = resource('qb-core').GetCoreObject();
+    const QBCore = qbCore();
     if (!QBCore?.Functions?.CreateUseableItem) return false;
     QBCore.Functions.CreateUseableItem(item, cb);
     return true;

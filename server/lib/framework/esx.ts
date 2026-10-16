@@ -8,6 +8,7 @@ import {
   balanceOf,
   booleanOf,
   exposes,
+  heldUntilRestart,
   moved,
   numberOr,
   offlineLookup,
@@ -40,11 +41,10 @@ import {
  * build old enough to have no export — deliberately second, because it costs an event
  * dispatch on a path `getPlayer` walks for every request.
  *
- * Not cached, matching the qb branches, which call `GetCoreObject()` afresh every time. A
- * cached object survives an `ensure es_extended` and is then a handle onto a dead framework;
- * the call it replaces is a table lookup.
+ * This fetches afresh, and is what `esxCore` holds. Only `esxAllPlayers`' read of the
+ * `Players` *data field* calls it directly, because a held copy's data is as old as the copy.
  */
-const esxCore = (): any => {
+const fetchEsxCore = (): any => {
   // Probed through `exposes` rather than accessed directly, for the reason it gives: on a
   // server with no es_extended this lookup throws rather than answering undefined, and that
   // throw would surface as "Error fetching all players" on a perfectly healthy qb server.
@@ -66,6 +66,23 @@ const esxCore = (): any => {
     return null;
   }
 };
+
+/**
+ * The ESX shared object, fetched once and held until es_extended starts or stops (MICA-351).
+ *
+ * `getSharedObject()` across resources is a msgpack copy of the whole of `ESX` — every
+ * connected xPlayer, the item and job tables, a reference per function — and `getPlayer` runs
+ * on every net event. `heldUntilRestart` has why a held copy is safe to call functions on and
+ * why it is dropped on a restart: an `ensure es_extended` would otherwise leave this a handle
+ * onto a dead framework.
+ */
+const esxCore = heldUntilRestart(
+  ['es_extended'],
+  fetchEsxCore,
+  // `canGetPlayer`'s own test. A shared object can exist before it has `GetPlayerFromId`;
+  // held, that would keep `canGetPlayer` false until es_extended next restarted.
+  (core: any) => typeof core?.GetPlayerFromId === 'function'
+);
 
 /** A non-empty trimmed string, or null — ESX stores an absent value as `''` as often as nil. */
 const esxString = (value: unknown): string | null => {
@@ -482,7 +499,7 @@ const esxFrameworkPlayer = (xPlayer: any, src: number): FrameworkPlayer | null =
  * it, and `GetPlayers()` (ids only, oldest). The fan-out in `pushMany`, `proximity` and
  * `Signal` should not depend on which one an operator happens to be running.
  */
-const esxAllPlayers = (core: any): Record<number, unknown> => {
+const esxAllPlayers = (core: any, fresh: () => any): Record<number, unknown> => {
   const out: Record<number, unknown> = {};
 
   const add = (xPlayer: any): void => {
@@ -502,8 +519,13 @@ const esxAllPlayers = (core: any): Record<number, unknown> => {
     return out;
   }
 
+  // A data field, so never off the held copy: that would list whoever was connected when the
+  // copy was made, dropped players and recycled server ids included (MICA-351).
   if (core?.Players && typeof core.Players === 'object') {
-    for (const key of Object.keys(core.Players)) add(core.Players[key]);
+    const players = fresh()?.Players;
+    if (players && typeof players === 'object') {
+      for (const key of Object.keys(players)) add(players[key]);
+    }
     if (Object.keys(out).length > 0) return out;
   }
 
@@ -706,7 +728,7 @@ export const esxAdapter: FrameworkAdapter = {
   // the framework directory need no framework check of their own.
   getAllPlayers: () => {
     const esx = esxCore();
-    return esx ? esxAllPlayers(esx) : {};
+    return esx ? esxAllPlayers(esx, fetchEsxCore) : {};
   },
 
   ownerTable: () => ESX_OWNER_TABLE,

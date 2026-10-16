@@ -150,9 +150,85 @@ let lookup: ResourceLookup = realLookup;
  */
 export const resource: ResourceLookup = (name) => lookup(name);
 
-/** Test seam, like `__resetBatteryCache`. Pass nothing to restore the real lookup. */
+/**
+ * Test seam, like `__resetBatteryCache`. Pass nothing to restore the real lookup.
+ *
+ * Also drops every value `heldUntilRestart` holds: it was read through the old lookup, and a suite swapping in a new fake must never be answered by the
+ * previous one's.
+ */
 export const __setResourceLookup = (fn?: ResourceLookup): void => {
   lookup = fn ?? realLookup;
+  for (const drop of heldValues) drop();
+};
+
+/** How to drop each value `heldUntilRestart` holds. */
+const heldValues: (() => void)[] = [];
+
+/**
+ * Subscribe `drop` to the lifecycle of `resources`, and to `events`.
+ *
+ * Plain `on`, not `onResourceReleased`'s genuine-stop check: a forged `onResourceStop` here
+ * releases nothing anybody owns, it only costs one fetch on the next call.
+ */
+const dropOn = (
+  resources: readonly string[],
+  events: readonly string[],
+  drop: () => void
+): void => {
+  heldValues.push(drop);
+  if (typeof on !== 'function') return;
+  const forResource = (name: unknown): void => {
+    if (typeof name === 'string' && resources.includes(name)) drop();
+  };
+  on('onResourceStart', forResource);
+  on('onResourceStop', forResource);
+  for (const event of events) on(event, drop);
+};
+
+/**
+ * Another resource's core object, fetched once and held until that resource starts or stops
+ * (MICA-351).
+ *
+ * qb-core's `GetCoreObject()` and es_extended's `getSharedObject()` are cross-resource calls,
+ * and FiveM answers one by **copying** the whole table through msgpack: every connected
+ * player, the Shared items, vehicles and jobs, and a function reference per function. Asking
+ * for it on every `getPlayer` made each net event cost work proportional to player count plus
+ * the item catalog. Held, the copy is made once.
+ *
+ * **Only the functions on a held object are live.** They are references back into the owning
+ * resource, so `GetPlayer(src)` on a copy fetched an hour ago still reads that resource's
+ * current state. Its *data* fields are not: `ESX.Players` on a held copy is the player table
+ * as it was when the copy was made. A caller reading a data field must ask `fetch` afresh —
+ * `esxAllPlayers` does.
+ *
+ * A held copy also outlives the resource it came from: after `ensure qb-core` its function
+ * references point into a dead instance. So it is dropped on `onResourceStart` and
+ * `onResourceStop` naming any of `resources`, and on each of `events` — qb-core's
+ * `QBCore:Server:UpdateObject` is its own "fetch me again".
+ *
+ * **Only a ready object is held.** A failed or empty fetch is not, and neither is one `ready`
+ * refuses — a core object fetched while its resource is still starting can exist without the
+ * functions the adapter calls on it, and holding that would leave the adapter answering "not
+ * ready" until the next restart, where fetching per call recovered on its own. Such an object
+ * is still returned to the call that fetched it, which judges it exactly as it always did; the
+ * next call fetches again.
+ */
+export const heldUntilRestart = <T>(
+  resources: readonly string[],
+  fetch: () => T | null | undefined,
+  ready: (value: T) => boolean,
+  events: readonly string[] = []
+): (() => T | null) => {
+  let held: T | null = null;
+  dropOn(resources, events, () => {
+    held = null;
+  });
+  return () => {
+    if (held !== null) return held;
+    const fresh = fetch() ?? null;
+    if (fresh !== null && ready(fresh)) held = fresh;
+    return fresh;
+  };
 };
 
 /**
