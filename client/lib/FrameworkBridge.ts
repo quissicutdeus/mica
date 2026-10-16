@@ -81,16 +81,84 @@ const esxPlayerData = (data: any): any => {
 };
 
 /**
+ * FiveM's `exports` proxy. The bare identifier is the real global in game, but under a
+ * Node-based test runner it resolves to the module's own (empty) exports object — the same
+ * trap `services/Call.ts` and the server's `Database.ts` document — so `globalThis` is asked
+ * first. In the real client the two are the same object.
+ */
+const fx = (): any => (globalThis as any).exports ?? exports;
+
+/**
+ * Whether a framework's resource is running, asked without touching `exports`.
+ *
+ * `exports` is a FiveM proxy that **throws** on a resource it does not know rather than
+ * answering `undefined`, so probing `qbx_core` through it on a qb or ESX server threw and was
+ * caught on every lookup, and `GetPhoneNumber` is a client export any resource may poll
+ * (MICA-355). The resource state answers the same question for the price of one native.
+ */
+const started = (resource: string): boolean => {
+  try {
+    return GetResourceState(resource) === 'started';
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Which frameworks to probe through `exports`, from their resource states.
+ *
+ * `blind` is the case where none of the three names reads 'started': a fork can `provide`
+ * qb-core or es_extended under a resource name of its own, and then every state reads
+ * 'missing' while the export still answers under the provided name. That case falls back to
+ * probing all three through try/catch, as before MICA-355 — a standalone server lands here
+ * too and pays the same throws it always did, so nothing gets worse for it.
+ */
+const frameworkProbes = (): { qbx: boolean; qb: boolean; esx: boolean } => {
+  const qbx = started('qbx_core');
+  const qb = started('qb-core');
+  const esx = started('es_extended');
+  const blind = !qbx && !qb && !esx;
+  return { qbx: qbx || blind, qb: qb || blind, esx: esx || blind };
+};
+
+/**
+ * Each framework's core object, fetched once rather than per lookup (MICA-355).
+ *
+ * `GetCoreObject()` and `getSharedObject()` copy the whole core across the export boundary —
+ * `QBCore.Shared` and a funcref per function — and the phone only ever wants one function off
+ * it. Caching the copy is safe because the functions on it are funcrefs into the framework's
+ * live state: `Functions.GetPlayerData()` and `ESX.GetPlayerData()` answer the current
+ * character on every call, not the one at fetch time. A framework restart invalidates those
+ * funcrefs, so the cache is dropped whenever any client resource starts or stops, and a call
+ * that throws refetches once before giving up.
+ */
+let qbCore: any = null;
+let esxShared: any = null;
+
+/**
+ * Any resource, not only `qb-core` and `es_extended`: a fork that `provide`s one of them starts
+ * under its own name, and a funcref left from before a restart may answer nil rather than
+ * throw, which would leave the phone blank until micaOS itself restarted. Starts and stops
+ * are rare after join and the cost of a clear is one refetch on the next lookup.
+ */
+const dropCachedCores = (): void => {
+  qbCore = null;
+  esxShared = null;
+};
+on('onClientResourceStart', dropCachedCores);
+on('onClientResourceStop', dropCachedCores);
+
+/**
  * The ESX shared object on the client, or null.
  *
  * Mirrors `esxCore` on the server, including the `esx:getSharedObject` fallback for a build
- * predating the export. `exports` is a FiveM proxy that **throws** on a property it does not
- * know rather than answering `undefined` — the trap `getBankBalance` already documents — so
- * the lookup is inside the try rather than guarded by an optional chain.
+ * predating the export. Only a Legacy object, one with a `GetPlayerData` function, is cached: an
+ * older build answers through a `PlayerData` field, which is a snapshot taken when the object
+ * was copied and would be stale from the first character switch on.
  */
-const esxCore = (): any => {
+const fetchEsxCore = (): any => {
   try {
-    const es = exports['es_extended'];
+    const es = fx()['es_extended'];
     if (es?.getSharedObject) return es.getSharedObject() ?? null;
   } catch {
     // es_extended is not this server's framework.
@@ -108,6 +176,39 @@ const esxCore = (): any => {
   }
 };
 
+const esxPlayerDataOf = (esx: any): any =>
+  // `ESX.GetPlayerData()` on Legacy, `ESX.PlayerData` on older builds.
+  typeof esx?.GetPlayerData === 'function' ? esx.GetPlayerData() : esx?.PlayerData;
+
+const esxRawPlayerData = (): any => {
+  if (esxShared) {
+    try {
+      return esxPlayerDataOf(esxShared);
+    } catch {
+      // A stale funcref from before an es_extended restart — fetch the object again.
+      esxShared = null;
+    }
+  }
+  const esx = fetchEsxCore();
+  if (typeof esx?.GetPlayerData === 'function') esxShared = esx;
+  return esxPlayerDataOf(esx);
+};
+
+const qbRawPlayerData = (): any => {
+  if (qbCore) {
+    try {
+      return qbCore.Functions.GetPlayerData();
+    } catch {
+      // A stale funcref from before a qb-core restart — fetch the object again.
+      qbCore = null;
+    }
+  }
+  const core = fx()['qb-core'].GetCoreObject();
+  const data = core.Functions.GetPlayerData();
+  qbCore = core;
+  return data;
+};
+
 export class FrameworkBridge {
   public static getPlayerData(): any {
     /**
@@ -115,35 +216,39 @@ export class FrameworkBridge {
      *
      * `exports` is a FiveM proxy that **throws** on a property whose resource is not there,
      * instead of answering `undefined` — the trap `getBankBalance` below already documents.
-     * With all three branches under one `try`, probing `qbx_core` on a pure ESX server throws
-     * and the catch returns null, so "qbx_core is not installed" reads as "there is no
-     * framework" and the ESX branch is never reached at all. The phone would simply never
-     * find a player, with one line in the console blaming the wrong core.
+     * With all three branches under one `try`, a throw in one framework's lookup would be read
+     * as "there is no framework" and the next branch never reached. `frameworkProbes` keeps a
+     * framework that is not running from being touched at all; the separate `try`s keep a
+     * broken one from hiding the next.
      */
-    try {
-      if (exports['qbx_core']?.GetPlayerData) {
-        return exports['qbx_core'].GetPlayerData();
+    const probe = frameworkProbes();
+    if (probe.qbx) {
+      try {
+        if (fx()['qbx_core']?.GetPlayerData) {
+          return fx()['qbx_core'].GetPlayerData();
+        }
+      } catch {
+        // Not this server's framework — try the next.
       }
-    } catch {
-      // Not this server's framework — try the next.
     }
 
-    try {
-      if (exports['qb-core']?.GetCoreObject) {
-        return exports['qb-core'].GetCoreObject().Functions.GetPlayerData();
+    if (probe.qb) {
+      try {
+        return qbRawPlayerData();
+      } catch {
+        // Not this server's framework — try the next.
+        qbCore = null;
       }
-    } catch {
-      // Not this server's framework — try the next.
     }
 
     // ESX last, matching the server bridge: a server with a qb core keeps the identity its
     // rows are already under.
+    if (!probe.esx) return null;
     try {
-      const esx = esxCore();
-      // `ESX.GetPlayerData()` on Legacy, `ESX.PlayerData` on older builds.
-      const data = typeof esx?.GetPlayerData === 'function' ? esx.GetPlayerData() : esx?.PlayerData;
+      const data = esxRawPlayerData();
       return data ? esxPlayerData(data) : null;
     } catch (error) {
+      esxShared = null;
       console.error('[FrameworkBridge] Error getting client PlayerData:', error);
       return null;
     }
@@ -154,19 +259,19 @@ export class FrameworkBridge {
     // throws on property access for an export a resource does not register, so
     // `exports['qbx_core']?.GetMoney` throws rather than evaluating to `undefined` when
     // this qbx_core build has no `GetMoney` export. Letting that escape into the outer
-    // try would skip the fallback entirely and always report a balance of 0. Not
-    // covered by a test: `exports` is a FiveM runtime global that Vite shadows with a
-    // per-module object (see `server/__tests__/BankingBridge.test.ts`), so a missing
-    // export cannot be faked from a test — verifying this needs a running server.
-    try {
-      if (exports['qbx_core']?.GetMoney) {
-        const balance = exports['qbx_core'].GetMoney('bank');
-        if (typeof balance === 'number') {
-          return balance;
+    // try would skip the fallback entirely and always report a balance of 0.
+    // `client/__tests__/FrameworkBridge.test.ts` fakes the throwing proxy.
+    if (frameworkProbes().qbx) {
+      try {
+        if (fx()['qbx_core']?.GetMoney) {
+          const balance = fx()['qbx_core'].GetMoney('bank');
+          if (typeof balance === 'number') {
+            return balance;
+          }
         }
+      } catch {
+        // No GetMoney export on this qbx_core build — fall through to PlayerData below.
       }
-    } catch {
-      // No GetMoney export on this qbx_core build — fall through to PlayerData below.
     }
 
     try {
