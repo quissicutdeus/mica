@@ -22,11 +22,29 @@ interface AppState {
 
 const delay = (ms: number) => new Promise((res) => setTimeout(() => res(true), ms));
 
+/**
+ * How long a dictionary or model may take to stream before the load gives up (MICA-369).
+ *
+ * Both used to poll every 10ms with no limit, so an asset that never arrived — a dictionary
+ * a fork renamed, a model the server does not stream — spun forever, and every further open
+ * of the device added another loop beside it. A real load finishes well inside this.
+ */
+const LOAD_TIMEOUT_MS = 2500;
+const LOAD_POLL_MS = 10;
+
 export class DeviceAnimation {
   private static prop: number | null = null;
   private static activeApp: string | null = null;
   private static savedCameraViewMode: number | null = null;
   private static currentAnimId = 0;
+  /**
+   * Bumped by every `spawnProp` and `removeProp`, so a model load knows when the prop it was
+   * loading for is no longer wanted. Separate from {@link currentAnimId}: opening the camera
+   * app restarts the animation while the device stays up, and must not cancel the prop.
+   */
+  private static currentPropId = 0;
+  /** Dictionaries `DoesAnimDictExist` denied, so each is warned about once per session. */
+  private static missingDicts = new Set<string>();
   /** What is in the hand right now, so `stopAll` knows which idle to stop. */
   private static idle: AppState = DEVICES.phone.animation;
 
@@ -47,26 +65,73 @@ export class DeviceAnimation {
     }
   };
 
-  private static async loadAnimDict(dict: string): Promise<void> {
-    RequestAnimDict(dict);
-    while (!HasAnimDictLoaded(dict)) {
-      await delay(10);
+  /**
+   * Stream `dict` in, answering whether it is ready to play.
+   *
+   * False, with nothing left requested, when it has not arrived within
+   * {@link LOAD_TIMEOUT_MS}, or when `animId` stopped being the current animation — a device
+   * closed, or another pose asked for, mid-load.
+   *
+   * `DoesAnimDictExist` is asked, but only to explain a failure in advance: it is never a
+   * gate. Nothing here can check its answer in game, and if it said no to a dictionary that
+   * does exist, a gate would mean the phone never animates, silently. The deadline already
+   * bounds the cost of requesting one that truly is missing.
+   */
+  private static async loadAnimDict(dict: string, animId: number): Promise<boolean> {
+    if (!DoesAnimDictExist(dict) && !DeviceAnimation.missingDicts.has(dict)) {
+      DeviceAnimation.missingDicts.add(dict);
+      console.warn(
+        `[DeviceAnimation] Animation dictionary '${dict}' reports as missing; requesting it ` +
+          'anyway. Reported once per dictionary.'
+      );
     }
+    RequestAnimDict(dict);
+    const deadline = GetGameTimer() + LOAD_TIMEOUT_MS;
+    while (!HasAnimDictLoaded(dict)) {
+      if (animId !== DeviceAnimation.currentAnimId) {
+        RemoveAnimDict(dict);
+        return false;
+      }
+      if (GetGameTimer() >= deadline) {
+        console.warn(`[DeviceAnimation] Animation dictionary '${dict}' did not load in time.`);
+        RemoveAnimDict(dict);
+        return false;
+      }
+      await delay(LOAD_POLL_MS);
+    }
+    return true;
   }
 
-  private static async loadModel(model: string | number): Promise<void> {
-    const hash = typeof model === 'string' ? GetHashKey(model) : model;
-    if (IsModelValid(hash)) {
-      RequestModel(hash);
-      while (!HasModelLoaded(hash)) {
-        await delay(10);
-      }
+  /**
+   * Stream `hash` in, answering whether it is ready to spawn. The same timeout as
+   * {@link loadAnimDict}, with the prop's own id as the cancellation. Unlike the dictionary
+   * check, `IsModelValid` stays a gate, as it was before MICA-369.
+   */
+  private static async loadModel(hash: number, propId: number): Promise<boolean> {
+    if (!IsModelValid(hash)) {
+      console.warn(`[DeviceAnimation] Prop model ${hash} is not a valid model.`);
+      return false;
     }
+    RequestModel(hash);
+    const deadline = GetGameTimer() + LOAD_TIMEOUT_MS;
+    while (!HasModelLoaded(hash)) {
+      if (propId !== DeviceAnimation.currentPropId) {
+        SetModelAsNoLongerNeeded(hash);
+        return false;
+      }
+      if (GetGameTimer() >= deadline) {
+        console.warn(`[DeviceAnimation] Prop model ${hash} did not load in time.`);
+        SetModelAsNoLongerNeeded(hash);
+        return false;
+      }
+      await delay(LOAD_POLL_MS);
+    }
+    return true;
   }
 
   private static async play(ped: number, state: AppState, init?: () => void): Promise<void> {
     const animId = ++DeviceAnimation.currentAnimId;
-    await DeviceAnimation.loadAnimDict(state.dict);
+    if (!(await DeviceAnimation.loadAnimDict(state.dict, animId))) return;
 
     // Abort if another animation was requested, or the device closed, while loading.
     if (animId !== DeviceAnimation.currentAnimId) {
@@ -98,19 +163,22 @@ export class DeviceAnimation {
 
   public static spawnProp(ped: number, descriptor: DeviceDescriptor): void {
     const { model, bone, offset, rotation } = descriptor.prop;
-    DeviceAnimation.loadModel(model).then(() => {
-      // Only if the device is still the one being raised, and nothing is in the hand yet.
-      if (DeviceAnimation.idle !== descriptor.animation || DeviceAnimation.prop) return;
+    const hash = GetHashKey(model);
+    const propId = ++DeviceAnimation.currentPropId;
+    void DeviceAnimation.loadModel(hash, propId).then((loaded) => {
+      if (!loaded) return;
+      // Only if this prop is still wanted — no `removeProp` since, which a close calls — the
+      // device is still the one being raised, and nothing is in the hand yet.
+      if (
+        propId !== DeviceAnimation.currentPropId ||
+        DeviceAnimation.idle !== descriptor.animation ||
+        DeviceAnimation.prop
+      ) {
+        SetModelAsNoLongerNeeded(hash);
+        return;
+      }
       const coords = GetEntityCoords(ped, true);
-      DeviceAnimation.prop = CreateObject(
-        GetHashKey(model),
-        coords[0],
-        coords[1],
-        coords[2],
-        true,
-        true,
-        false
-      );
+      DeviceAnimation.prop = CreateObject(hash, coords[0], coords[1], coords[2], true, true, false);
       AttachEntityToEntity(
         DeviceAnimation.prop,
         ped,
@@ -128,7 +196,7 @@ export class DeviceAnimation {
         1,
         true
       );
-      SetModelAsNoLongerNeeded(GetHashKey(model));
+      SetModelAsNoLongerNeeded(hash);
     });
   }
 
@@ -138,6 +206,7 @@ export class DeviceAnimation {
   }
 
   public static removeProp(): void {
+    DeviceAnimation.currentPropId++; // Cancel a prop still loading
     if (DeviceAnimation.prop) {
       DeleteObject(DeviceAnimation.prop);
       DeviceAnimation.prop = null;
