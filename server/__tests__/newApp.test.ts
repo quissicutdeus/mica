@@ -158,14 +158,30 @@ describe('pnpm new:app output', () => {
     expect(existsSync(join(root, MOCKS, 'scaffold_plain.ts'))).toBe(false);
     const mock = readFileSync(join(root, MOCKS, 'scaffold_full.ts'), 'utf8');
     expect(mock).toMatch(/^export const mocks\b[^\n]*=\s*\{$/m);
-    const store = readFileSync(join(root, 'web/src/services/scaffold_full.ts'), 'utf8');
-    for (const action of ['getScaffoldFull', 'createScaffoldFull', 'updateScaffoldFull']) {
-      expect(store, action).toContain(`'${action}'`);
-      expect(mock, action).toContain(`'${action}'`);
+    // Scoped keys, matching the store's `service` option — the generic route's request shape.
+    for (const action of ['get', 'create', 'update', 'delete']) {
+      expect(mock, action).toContain(`'scaffold_full:${action}'`);
     }
-    expect(mock).toContain(`remove: 'deleteScaffoldFull'`);
     expect(runs.full.output).not.toContain('mocks/registry.ts');
     expect(runs.full.output).toContain(`${MOCKS}/scaffold_full.ts`);
+  });
+
+  /**
+   * The typed app contract has to cover the new app, tablet root included. The registration
+   * matched only `index.svelte` imports, which are not one block once a tablet root sits
+   * among them, and wrote the file back unchanged — nothing said so, and the typecheck then
+   * failed on the row it had added (`Cannot find name`).
+   */
+  it('registers the scaffolded app and its tablet root in the typed app contract', () => {
+    const contract = readFileSync(join(root, 'sdk/appContract.test.ts'), 'utf8');
+    expect(contract).toContain(
+      "import ScaffoldFull from '../web/src/apps/scaffold_full/index.svelte';"
+    );
+    expect(contract).toContain(
+      "import ScaffoldFullTablet from '../web/src/apps/scaffold_full/tablet.svelte';"
+    );
+    expect(contract).toContain('scaffold_full: ScaffoldFull,');
+    expect(contract).toContain('scaffold_full: ScaffoldFullTablet');
   });
 
   it('refuses an id whose mock file already exists, and writes nothing', () => {
@@ -175,23 +191,21 @@ describe('pnpm new:app output', () => {
     expect(existsSync(join(root, 'web/src/apps/scaffold_taken'))).toBe(false);
   });
 
-  it.each([
-    ['store', 'web/src/services/scaffold_full.ts'],
-    ['browser mock', `${MOCKS}/scaffold_full.ts`]
-  ])('writes a --service %s whose relative imports all resolve', (_label, file) => {
-    expect(unresolvedImports(root, file)).toEqual([]);
+  it('writes a --service browser mock whose relative imports all resolve', () => {
+    expect(unresolvedImports(root, `${MOCKS}/scaffold_full.ts`)).toEqual([]);
   });
 
   /**
-   * Known broken, recorded rather than hidden (MICA-323). The hook template imports
-   * `../../services/<id>`, a repo-root directory that does not exist, and no path fixes it:
-   * the store lives in `web/src/services/`, and the SDK importing its own consumer is the
-   * edge MICA-172 removed. The fix is the shape Notes already has — an app-local store on
-   * `createCrudStore` + `useService` from `@mica/sdk`, no hook file — which is a change to
-   * what `--service` scaffolds, not to a path. `it.fails` turns this red the moment that
-   * lands, so whoever fixes it flips it to `it`.
+   * MICA-331: `--service` once wrote `sdk/host/use<Pascal>.ts`, importing `../../services/<id>`,
+   * a directory that does not exist. It now writes what Notes is: an app-local store on the
+   * SDK's factory and no hook file, so there is nothing in `sdk/` for a path to break.
    */
-  it.fails('writes a --service SDK hook whose relative imports all resolve', () => {
-    expect(unresolvedImports(root, 'sdk/host/useScaffoldFull.ts')).toEqual([]);
+  it('writes a --service store inside the app, and no SDK hook', () => {
+    expect(existsSync(join(root, 'sdk/host/useScaffoldFull.ts'))).toBe(false);
+    expect(existsSync(join(root, 'web/src/services/scaffold_full.ts'))).toBe(false);
+    const store = readFileSync(join(root, 'web/src/apps/scaffold_full/store.ts'), 'utf8');
+    expect(store).toContain("from '@mica/sdk'");
+    expect(store).toContain("service: 'scaffold_full'");
+    expect(runs.full.output).not.toContain('Paste into it');
   });
 });

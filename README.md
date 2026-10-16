@@ -1732,7 +1732,7 @@ check.
 
 ```sh
 pnpm new:app journal            # the app
-pnpm new:app journal --service  # and its server half
+pnpm new:app journal --service  # and its server half, store and mock
 ```
 
 Then `pnpm dev` and open `http://localhost:5173/?app=journal` to boot straight

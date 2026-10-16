@@ -30,6 +30,12 @@ web/src/apps/journal/
 └── Icon.svelte     32×32, sized h-8 w-8 like every other icon
 ```
 
+`--service` adds the server half in Notes' shape: `store.ts` in the app's own
+directory on `createCrudStore` from `@mica/sdk`, its browser mock in
+`web/src/nui/mocks/services/journal.ts` under scoped keys (`journal:get`), and
+`server/services/Journal.ts`. It writes no SDK hook and no `shared/routes.ts`
+row, since an add-on can add to neither (MICA-331); see "The store" below.
+
 ## See it
 
 ```sh

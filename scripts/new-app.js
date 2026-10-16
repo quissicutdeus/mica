@@ -15,14 +15,15 @@ import { fileURLToPath } from 'node:url';
  * one fails silently — which is the single most common bug this codebase has shipped.
  *
  *   pnpm new:app journal              a UI-only app, like Calculator
- *   pnpm new:app journal --service    plus a server service, store, routes and mocks
+ *   pnpm new:app journal --service    plus a server service, an app-local store and mocks
  *   pnpm new:app journal --tablet     plus a tablet root, and the manifest line that shows it
  *
- * It writes the app directory and, with `--service`, the server declaration, the client
- * store and the browser mock — a file of its own under `web/src/nui/mocks/services/`,
- * which the registry globs (MICA-323). It does not edit `shared/routes.ts` — a table a
- * human curates — so it prints exactly what to paste, and `pnpm verify` fails until you
- * have, because `routes.test.ts` cross-references every layer.
+ * It writes the app directory and, with `--service`, the server declaration, the store
+ * inside the app (`apps/<id>/store.ts`, the shape Notes has) and the browser mock — a file
+ * of its own under `web/src/nui/mocks/services/`, which the registry globs (MICA-323).
+ * The scaffold is `core: false`, so the store reaches the server through the one generic
+ * callback (`service: '<id>'`): no `shared/routes.ts` row, no SDK hook file, no row in the
+ * permission table (MICA-331).
  */
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -142,12 +143,14 @@ write(
 `
 );
 
-const dataImports = WITH_SERVICE ? `,\n  Skeleton,\n  onAppForeground,\n  use${Pascal}` : '';
+const dataImports = WITH_SERVICE ? `,\n  Skeleton,\n  onAppForeground` : '';
 
 write(
   `web/src/apps/${id}/index.svelte`,
   `<script lang="ts">
-  import { EmptyState, Screen, useAppLevels, type AppProps${dataImports} } from '@mica/sdk';
+  import { EmptyState, Screen, useAppLevels, type AppProps${dataImports} } from '@mica/sdk';${
+    WITH_SERVICE ? `\n  import { ${id} } from './store';` : ''
+  }
 
   // The annotation, not \`$props<AppProps>()\` — that form only works for an inline object
   // literal and reports "Expected 0 type arguments" for a named type.
@@ -155,7 +158,6 @@ write(
 ${
   WITH_SERVICE
     ? `
-  const { ${id} } = use${Pascal}();
   const loaded = ${id}.loaded;
 
   // Every visit, not once per session — apps stay resident (AGENTS.md §11).
@@ -252,8 +254,14 @@ const registerInAppContract = () => {
   if (contract.includes(`../web/src/apps/${id}/index.svelte`)) return;
 
   const importLine = `import ${Pascal} from '../web/src/apps/${id}/index.svelte';`;
+  // Every app import, a tablet root's included: they sit in one block, and matching only the
+  // `index.svelte` lines left a block that was not contiguous, so the replace below found
+  // nothing to replace and wrote the file back unchanged — a silent no-op, and an app the
+  // typed contract never covered.
   const imports = [
-    ...contract.matchAll(/^import \w+ from '\.\.\/web\/src\/apps\/\w+\/index\.svelte';$/gm)
+    ...contract.matchAll(
+      /^import \w+ from '\.\.\/web\/src\/apps\/\w+\/(?:index|tablet)\.svelte';$/gm
+    )
   ].map((m) => m[0]);
   // An empty match would make the `replace` below an insert at index 0 — String.replace('', x)
   // prepends — which silently fuses the new import onto whatever line 1 happens to be. Louder
@@ -264,8 +272,18 @@ const registerInAppContract = () => {
         'The path this script writes has drifted from the one the file uses; fix it here.'
     );
   }
-  const sortedImports = [...imports, importLine].toSorted((a, b) => a.localeCompare(b));
-  contract = contract.replace(imports.join('\n'), sortedImports.join('\n'));
+  const block = imports.join('\n');
+  if (!contract.includes(block)) {
+    throw new Error(`${relative}: the app imports are not one contiguous block; fix it by hand.`);
+  }
+  // Insert before the first import that sorts after the new one, leaving the rest as written.
+  const added = WITH_TABLET
+    ? `${importLine}\nimport ${Pascal}Tablet from '../web/src/apps/${id}/tablet.svelte';`
+    : importLine;
+  const after = imports.find((line) => line.localeCompare(importLine) > 0);
+  contract = contract.replace(block, () =>
+    after ? block.replace(after, () => `${added}\n${after}`) : `${block}\n${added}`
+  );
 
   const entries = contract.match(/const APPS: Record<string, AppComponent> = \{\n([\s\S]*?)\n\};/);
   const rows = entries[1]
@@ -279,8 +297,6 @@ const registerInAppContract = () => {
   );
 
   if (WITH_TABLET) {
-    const tabletImport = `import ${Pascal}Tablet from '../web/src/apps/${id}/tablet.svelte';`;
-    contract = contract.replace(importLine, `${importLine}\n${tabletImport}`);
     const roots = contract.match(
       /const TABLET_ROOTS: Record<string, AppComponent> = \{\n?([\s\S]*?)\n?\};/
     );
@@ -321,6 +337,7 @@ if (WITH_SERVICE) {
  */
 export const ${id} = defineService({
   id: '${id}',
+  app: '${id}',
   access: { read: 'owner', write: 'owner' },
   schema: {
     title: { type: 'string', length: 100, notNull: true }
@@ -329,9 +346,12 @@ export const ${id} = defineService({
 `
   );
 
+  // Notes' shape: the store lives inside the app, on the SDK's factory. `service` sends the
+  // CRUD verbs through the one generic callback as server action names (`get`, `create`),
+  // so nothing in core — `shared/routes.ts`, a hook in `sdk/host/` — has to learn this app.
   write(
-    `web/src/services/${id}.ts`,
-    `import { createCrudStore, byNewest } from '../../../sdk/createCrudStore';
+    `web/src/apps/${id}/store.ts`,
+    `import { createCrudStore, byNewest } from '@mica/sdk';
 
 export interface ${Pascal}Row {
   id: number;
@@ -343,13 +363,8 @@ export interface ${Pascal}Row {
 
 export const ${id} = createCrudStore<${Pascal}Row, Pick<${Pascal}Row, 'title'>>(
   '${title}',
-  {
-    list: 'get${Pascal}',
-    create: 'create${Pascal}',
-    update: 'update${Pascal}',
-    remove: 'delete${Pascal}'
-  },
-  { sort: byNewest<${Pascal}Row>('updated_at') }
+  { list: 'get', create: 'create', update: 'update', remove: 'delete' },
+  { service: '${id}', sort: byNewest<${Pascal}Row>('updated_at') }
 );
 `
   );
@@ -357,11 +372,12 @@ export const ${id} = createCrudStore<${Pascal}Row, Pick<${Pascal}Row, 'title'>>(
   // Its own file, collected by the registry's glob, so nothing central is edited. The
   // fixture starts empty: an empty list is a state the app has to render anyway, and
   // `routes.test.ts` reads this exact `export const mocks … = {` line to cross-check the
-  // keys. The type import is type-only on purpose — the store imports `fetchNui`, whose
-  // transport imports the registry that globs this file.
+  // keys. The keys are scoped (`<id>:get`) because the request arrives through the generic
+  // service route as `{ service, action }`. The type import is type-only on purpose — the
+  // store imports `fetchNui`, whose transport imports the registry that globs this file.
   write(
     mockFile,
-    `import type { ${Pascal}Row } from '../../../services/${id}';
+    `import type { ${Pascal}Row } from '../../../apps/${id}/store';
 import { defineMockCrud } from '../defineMockCrud';
 import type { MockHandler } from '../registry';
 
@@ -370,23 +386,12 @@ const mock${Pascal}: ${Pascal}Row[] = [];
 
 export const mocks: Record<string, MockHandler> = {
   ...defineMockCrud<${Pascal}Row>(mock${Pascal}, {
-    list: 'get${Pascal}',
-    create: 'create${Pascal}',
-    update: 'update${Pascal}',
-    remove: 'delete${Pascal}'
+    list: '${id}:get',
+    create: '${id}:create',
+    update: '${id}:update',
+    remove: '${id}:delete'
   })
 };
-`
-  );
-
-  write(
-    `sdk/host/use${Pascal}.ts`,
-    `import { ${id} } from '../../services/${id}';
-
-/** OS Service Hook for ${title}. */
-export function use${Pascal}() {
-  return { ${id} };
-}
 `
   );
 }
@@ -394,14 +399,9 @@ export function use${Pascal}() {
 // --- the generated barrel ------------------------------------------------------------
 
 if (WITH_SERVICE) {
-  // `sdk/host/index.ts` is generated and committed, and until now only `build`
-  // and `watch` regenerated it. `pnpm verify` typechecks long before it builds, so the
-  // app this script had just written failed its own closing instruction — on the one
-  // import the script itself generated. Doing it here fixes the barrel, but the tree is
-  // not coherent the moment the scaffold finishes: `permissions.ts`, `manifest.ts`, and
-  // the app's own `permissions` array are hand-curated and still missing. The third
-  // printed block below says so; `permissions.test.ts` is what will name the gap if it's
-  // skipped.
+  // `server/services/index.ts` is generated and committed, and only `build` and `watch`
+  // regenerated it. `pnpm verify` typechecks long before it builds, so the service this
+  // script had just written would sit outside the barrel until then.
   await import('./generate-barrels.js');
 }
 
@@ -414,46 +414,12 @@ console.log(
 );
 
 if (WITH_SERVICE) {
-  console.log(`\x1b[1mThe route table is curated by hand. Paste into it:\x1b[0m\n`);
-  console.log(`  \x1b[2mshared/routes.ts\x1b[0m — inside ROUTES`);
-  console.log(`    // ${title}`);
-  for (const [action, server] of [
-    [`get${Pascal}`, 'get'],
-    [`create${Pascal}`, 'create'],
-    [`update${Pascal}`, 'update'],
-    [`delete${Pascal}`, 'delete']
-  ]) {
-    console.log(`    route('${action}', '${id}', '${server}'),`);
-  }
   console.log(
-    `\n\x1b[2mNot generated because it is a table a human curates, and a bad merge into\n` +
-      `it is worse than a missing line. \`pnpm verify\` fails until it is there —\n` +
-      `routes.test.ts cross-references every layer. The browser mock is already written,\n` +
-      `to ${mockFile}.\x1b[0m`
+    `\x1b[1mThe data half is wired.\x1b[0m The store is \`apps/${id}/store.ts\`, on the generic\n` +
+      `service route, so there is no \`shared/routes.ts\` row, no SDK hook and no permission\n` +
+      `table entry to add. The browser mock is already written, to ${mockFile}.`
   );
   console.log(`\nThen: \x1b[1mpnpm generate:sql\x1b[0m and re-import \`mica.sql\`.`);
-
-  console.log(`\n\x1b[1mThe permission table is also hand-curated. Update it:\x1b[0m\n`);
-  console.log(
-    `  \x1b[2msdk/permissions.ts\x1b[0m — add a row \`use${Pascal}: '${id}'\`, unless the\n` +
-      `  new hook is only ever called by ${title}'s own store through \`useService\`, in\n` +
-      `  which case no hook file and no row are needed at all.`
-  );
-  console.log(
-    `\n  \x1b[2msdk/manifest.ts\x1b[0m — add '${id}' to \`ALL_PERMISSIONS\` (and so to the\n` +
-      `  \`AppPermission\` union it derives).`
-  );
-  console.log(
-    `\n  \x1b[2mweb/src/apps/store/appInfo.ts\x1b[0m — a label for '${id}' in \`LABELS\`.`
-  );
-  console.log(
-    `\n  \x1b[2mweb/src/apps/${id}/manifest.ts\x1b[0m — declare '${id}' in \`permissions\`.`
-  );
-  console.log(
-    `\n\x1b[2mThis script does not write any of those for you. Skip a step and \`pnpm verify\`\n` +
-      `will still pass the barrel/typecheck gates — \`permissions.test.ts\` is what catches\n` +
-      `it, naming the exact app and hook that's undeclared.\x1b[0m`
-  );
 } else {
   console.log(
     `Then: \x1b[1mpnpm dev\x1b[0m and open \x1b[1mlocalhost:5173/?app=${id}\x1b[0m.\n` +
