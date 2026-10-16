@@ -342,10 +342,14 @@ const requireOwnMessage = async (
  * reply is `{ rows, nextCursor }`, the shape the generic paged read already answers, with
  * `null` meaning the oldest message is in this page.
  */
-app.registerEvent('get', async (source, cbId, data, citizenid) => {
+app.registerEvent('get', async (source, cbId, data, citizenid, player) => {
   const conversationId = conversationIdFrom(data);
   const page = pageBounds(data, MESSAGE_PAGING);
-  await requireParticipant(conversationId, citizenid, await deviceForRequest(source, citizenid));
+  await requireParticipant(
+    conversationId,
+    citizenid,
+    await deviceForRequest(source, citizenid, 'phone', { player })
+  );
 
   // Each row as this reader receives it (MICA-339): `mine` and the sender's membership id in
   // place of the sender's citizenid, which matched across threads linked a burner to its holder.
@@ -378,8 +382,12 @@ app.registerEvent('get', async (source, cbId, data, citizenid) => {
  * An empty body is refused rather than accepted: a message edited down to nothing is an
  * unsend, and that is the other action, with its own confirmation in front of it.
  */
-app.registerEvent('edit', async (source, cbId, data, citizenid) => {
-  const row = await requireOwnMessage(data, citizenid, await deviceForRequest(source, citizenid));
+app.registerEvent('edit', async (source, cbId, data, citizenid, player) => {
+  const row = await requireOwnMessage(
+    data,
+    citizenid,
+    await deviceForRequest(source, citizenid, 'phone', { player })
+  );
 
   const message = data.message.trim();
   if (!message) {
@@ -432,8 +440,12 @@ app.registerEvent('edit', async (source, cbId, data, citizenid) => {
  * Audited for the same reason the generic delete is — a moderator looking at a report of a
  * message that is no longer in the thread needs to know it was the author who removed it.
  */
-app.registerEvent('delete', async (source, cbId, data, citizenid) => {
-  const row = await requireOwnMessage(data, citizenid, await deviceForRequest(source, citizenid));
+app.registerEvent('delete', async (source, cbId, data, citizenid, player) => {
+  const row = await requireOwnMessage(
+    data,
+    citizenid,
+    await deviceForRequest(source, citizenid, 'phone', { player })
+  );
 
   const success = await messageRepo.delete(row.id, citizenid);
   if (success) {
@@ -508,10 +520,14 @@ const requireReactableMessage = async (
   return row;
 };
 
-app.registerEvent('react', async (source, cbId, data, citizenid) => {
+app.registerEvent('react', async (source, cbId, data, citizenid, player) => {
   const { message_id: messageId, emoji } = data;
 
-  await requireReactableMessage(messageId, citizenid, await deviceForRequest(source, citizenid));
+  await requireReactableMessage(
+    messageId,
+    citizenid,
+    await deviceForRequest(source, citizenid, 'phone', { player })
+  );
 
   try {
     await Database.insert(
@@ -542,7 +558,7 @@ app.registerEvent('unreact', async (source, cbId, data, citizenid) => {
  * used — mirrors `accounts:reactionsFor`'s batched shape, one call per page of messages
  * rather than one per row.
  */
-app.registerEvent('reactionsFor', async (source, cbId, data, citizenid) => {
+app.registerEvent('reactionsFor', async (source, cbId, data, citizenid, player) => {
   // Deduplicated rather than trimmed: the contract bounds the count, and a repeated id would
   // otherwise add a placeholder and a bind parameter for a row already named.
   const requested = [...new Set(data.target_ids)];
@@ -550,7 +566,7 @@ app.registerEvent('reactionsFor', async (source, cbId, data, citizenid) => {
   if (requested.length === 0) return {};
 
   const requestedPlaceholders = requested.map(() => '?').join(', ');
-  const deviceId = await deviceForRequest(source, citizenid);
+  const deviceId = await deviceForRequest(source, citizenid, 'phone', { player });
   // Only messages in a conversation the caller is a *live* participant of right now, on the
   // phone in their hand — see the docblock above for why this batched read cannot trust
   // every id in the payload the way Blabber's equivalent, over public posts, safely can.
@@ -753,9 +769,15 @@ export const sendFromLine = async (
   return { conversationId, messageId, delivered };
 };
 
-app.registerEvent('send', async (source, cbId, data, citizenid, player) => {
+app.registerEvent('send', async (source, cbId, data, citizenid, player, resolved) => {
   const conversationId = data.conversation_id;
-  const deviceId = await deviceForRequest(source, citizenid);
+  /**
+   * The phone in hand, resolved by the endpoint (`resolveDeviceFor` below, MICA-362): the same
+   * slot read is the `requirePhoneFor` check, so a text costs one inventory read, not two.
+   * Absent only if that wiring is gone, which must refuse rather than guess a phone.
+   */
+  if (!resolved) throw new Error('[Messages] send ran without the phone it was sent from.');
+  const deviceId = resolved;
   await requireParticipant(conversationId, citizenid, deviceId);
   /**
    * A 1:1 with nobody in it but the sender reaches nobody (MICA-349). There are two kinds: one
@@ -868,8 +890,9 @@ app.registerEvent('send', async (source, cbId, data, citizenid, player) => {
   return messageForReader(stored, citizenid, senderIdOf(participants ?? [], citizenid));
 });
 
-// A phone in hand, server-side: a text reaches other players (MICA-339).
-app.requirePhoneFor('send');
+// A phone in hand, server-side: a text reaches other players (MICA-339). Resolved at the
+// endpoint, so the resolve that names the phone is the check that it is held (MICA-362).
+app.requirePhoneFor('send').resolveDeviceFor('send');
 
 /**
  * If this thread is one with a registered line, hand the text to its `onMessage`.

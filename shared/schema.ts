@@ -522,19 +522,40 @@ export const s = {
 };
 
 /**
+ * Validate a value against any Standard Schema, or throw a `SchemaError` — and say whether the
+ * schema answered in place (MICA-362).
+ *
+ * `inPlace` is what a caller holding something it read before the check needs: every micaOS
+ * schema answers synchronously, so awaiting it costs microtasks only and no host event — a
+ * FiveM net event, a character switch — can run in between. A foreign schema may answer with a
+ * promise, and then anything read before the check may be stale after it. Anything thenable
+ * counts as a promise, so a schema that merely looks synchronous is never trusted to be.
+ * `ServiceEndpoint` asks this before handing the player it looked up to the device resolver.
+ */
+export async function checkPayload<S extends StandardSchemaV1>(
+  schema: S,
+  value: unknown
+): Promise<{ value: Infer<S>; inPlace: boolean }> {
+  const result = schema['~standard'].validate(value);
+  const inPlace = typeof (result as { then?: unknown }).then !== 'function';
+  const outcome = await result;
+  if (outcome.issues) throw new SchemaError(outcome.issues);
+  return { value: outcome.value as Infer<S>, inPlace };
+}
+
+/**
  * Validate a value against any Standard Schema, or throw a `SchemaError`.
  *
  * Async because the spec allows an async `validate` and a foreign schema may use one. Every
  * micaOS schema resolves synchronously, so the await costs a microtask on the server's hot
- * path and buys an add-on the right to bring whatever validator it already uses.
+ * path and buys an add-on the right to bring whatever validator it already uses. The check
+ * itself is `checkPayload`'s, so the two can never disagree about what passes.
  */
 export async function parseInput<S extends StandardSchemaV1>(
   schema: S,
   value: unknown
 ): Promise<Infer<S>> {
-  const result = await schema['~standard'].validate(value);
-  if (result.issues) throw new SchemaError(result.issues);
-  return result.value as Infer<S>;
+  return (await checkPayload(schema, value)).value;
 }
 
 /** Whether a value is a Standard Schema v1, which is the only thing a contract accepts. */

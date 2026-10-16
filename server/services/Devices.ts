@@ -15,7 +15,7 @@ import { defineService, deviceKeyedRepositories, SchemaRepository } from '../lib
 import { PlayerFacingError } from '../lib/errors';
 import { FrameworkBridge } from '../lib/FrameworkBridge';
 import type { FrameworkPlayer } from '../lib/framework/runtime';
-import { installDeviceResolvers } from '../lib/deviceIdentity';
+import { installDeviceResolvers, type RequestDeviceOptions } from '../lib/deviceIdentity';
 import {
   deviceItemName,
   holdsDevice,
@@ -942,17 +942,48 @@ const forgetActive = (src: number, kind: DeviceId, keep?: string): void => {
  * `'unavailable'` if that write fails. The other order is worse: a row created for an id that
  * never reached the item is an orphan nothing will ever point at, where an id on an item with
  * no row yet is simply picked up and recorded by the next resolve.
+ *
+ * `player` is the one the caller already looked up for this source (MICA-362), so a request
+ * does not walk the framework's player table twice; absent, it is looked up here.
  */
-export const resolveDevice = async (src: number, kind: DeviceId): Promise<DeviceResolution> => {
+export const resolveDevice = async (
+  src: number,
+  kind: DeviceId,
+  player?: FrameworkPlayer
+): Promise<DeviceResolution> => (await resolveCounted(src, kind, player)).resolution;
+
+/**
+ * `resolveDevice`, and what it learned on the way that `deviceForRequest` needs for the in-hand
+ * check (MICA-362): the player it resolved for, and whether the inventory listed its slots. A
+ * listed answer is the count — slots, or none — so the check asks nothing more; an unlisted
+ * one (`itemSlots` is `null`) is a server where only a count can say.
+ */
+interface CountedResolution {
+  resolution: DeviceResolution;
+  player: FrameworkPlayer | null;
+  listed: boolean;
+}
+
+const resolveCounted = async (
+  src: number,
+  kind: DeviceId,
+  given?: FrameworkPlayer
+): Promise<CountedResolution> => {
   // An off device has no item to hold. `ServiceEndpoint` refuses its requests before this.
   if (!isDeviceEnabled(kind)) {
     forgetActive(src, kind);
-    return NONE;
+    return { resolution: NONE, player: null, listed: false };
   }
-  const player = FrameworkBridge.getPlayer(src);
-  const unavailable = (): DeviceResolution => {
+  const player = given ?? FrameworkBridge.getPlayer(src);
+  let listed = false;
+  const answer = (resolution: DeviceResolution): CountedResolution => ({
+    resolution,
+    player,
+    listed
+  });
+  const unavailable = (): CountedResolution => {
     forgetActive(src, kind, player?.citizenid);
-    return UNAVAILABLE;
+    return answer(UNAVAILABLE);
   };
 
   const item = deviceItemName(kind);
@@ -963,9 +994,10 @@ export const resolveDevice = async (src: number, kind: DeviceId): Promise<Device
   // `null` is "this inventory cannot say", never "holds none" — treating them alike would mint
   // a fresh phone on every resolve for a server that can never store one.
   if (slots === null) return unavailable();
+  listed = true;
   if (slots.length === 0) {
     forgetActive(src, kind);
-    return NONE;
+    return answer(NONE);
   }
 
   const preferred = lastUsedDeviceSlot(src, kind);
@@ -977,7 +1009,7 @@ export const resolveDevice = async (src: number, kind: DeviceId): Promise<Device
     if (carriedKind === kind) {
       finishSetup(carried, player.citizenid);
       markActive(src, player.citizenid, kind, carried);
-      return { status: 'active', device: { deviceId: carried, slot: chosen.slot } };
+      return answer({ status: 'active', device: { deviceId: carried, slot: chosen.slot } });
     }
     if (carriedKind === null) {
       // Which device this id is could not be read. Using it might be a phone id on a tablet;
@@ -1012,7 +1044,7 @@ export const resolveDevice = async (src: number, kind: DeviceId): Promise<Device
   await ensureHeld(deviceId, player.citizenid, kind);
   finishSetup(deviceId, player.citizenid);
   markActive(src, player.citizenid, kind, deviceId);
-  return { status: 'active', device: { deviceId, slot: chosen.slot } };
+  return answer({ status: 'active', device: { deviceId, slot: chosen.slot } });
 };
 
 /**
@@ -1042,6 +1074,16 @@ const notHeld = (device: DeviceId): PlayerFacingError =>
         params: { device: DEVICES[device].label }
       });
 
+/** What a request naming a device this server has off is told. */
+const turnedOff = (device: DeviceId): PlayerFacingError =>
+  new PlayerFacingError(
+    `The ${DEVICES[device].label.toLowerCase()} is turned off on this server.`,
+    {
+      key: 'server.device.off',
+      params: { device: DEVICES[device].label }
+    }
+  );
+
 /**
  * The device a request is for — what `ServiceEndpoint` asks before running a device-owned
  * action (MICA-282), for whichever device the request named (MICA-264).
@@ -1050,15 +1092,32 @@ const notHeld = (device: DeviceId): PlayerFacingError =>
  * have no device for rows to belong to, and it is closed for them anyway (`deviceItem.ts`), so
  * the only way this is reached is a client that opened it regardless. Everything else that is
  * not an item in hand degrades to the citizen's identity device of that kind.
+ *
+ * **`requireHeld` makes it `requireDeviceInHand` too** (MICA-362), from the same slot read: a
+ * request that is both a claim to hold the device and scoped by it used to count the item and
+ * then list its slots, two inventory reads for one question. An off device is refused first,
+ * with the same `server.device.off` toast. A listed inventory has already answered — slots in
+ * hand or `'none'` — and only one that cannot list (`itemSlots` is `null`, es_extended's own
+ * inventory) is counted, so the check is never weaker than `holdsDevice` and fails open exactly
+ * where it does. Nothing is kept: the next request reads the slots again, because that read is
+ * the proof the device is still in hand after a robbery.
  */
 export const deviceForRequest = async (
   src: number,
   citizenid: string,
-  device: DeviceId = DEFAULT_DEVICE
+  device: DeviceId = DEFAULT_DEVICE,
+  options: RequestDeviceOptions = {}
 ): Promise<string> => {
-  const resolution = await resolveDevice(src, device);
+  if (options.requireHeld && !isDeviceEnabled(device)) throw turnedOff(device);
+  const { resolution, player, listed } = await resolveCounted(src, device, options.player);
   if (resolution.status === 'active') return resolution.device.deviceId;
   if (resolution.status === 'none') throw notHeld(device);
+  // Unavailable. A listed inventory saw the device in hand (the item write failed after it);
+  // one that could not list is counted, as `requireDeviceInHand` would, and a request with no
+  // player to count is refused rather than waved through.
+  if (options.requireHeld && !listed && !(player && holdsDevice(player, device))) {
+    throw notHeld(device);
+  }
   const identity = await identityDevice(citizenid, device);
   markActive(src, citizenid, device, identity);
   return identity;
@@ -1072,12 +1131,7 @@ export const deviceForRequest = async (
  * that cannot count.
  */
 export const requireDeviceInHand = (player: FrameworkPlayer, device: DeviceId): void => {
-  if (!isDeviceEnabled(device)) {
-    throw new PlayerFacingError(
-      `The ${DEVICES[device].label.toLowerCase()} is turned off on this server.`,
-      { key: 'server.device.off', params: { device: DEVICES[device].label } }
-    );
-  }
+  if (!isDeviceEnabled(device)) throw turnedOff(device);
   if (!holdsDevice(player, device)) throw notHeld(device);
 };
 

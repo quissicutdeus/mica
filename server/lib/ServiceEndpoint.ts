@@ -11,7 +11,7 @@ import { FrameworkBridge, FrameworkPlayer } from './FrameworkBridge';
 import { registerCustomAction, registerService } from './services';
 import { allow, installRateLimitCleanup } from './rateLimit';
 import { type ActionInput, type ContractAction, type ServiceContract } from '@mica/shared/contract';
-import { parseInput, SchemaError, type Schema } from '@mica/shared/schema';
+import { checkPayload, SchemaError, type Schema } from '@mica/shared/schema';
 import { GENERIC_ERROR_KEY, GENERIC_ERROR_MESSAGE, PlayerFacingError } from './errors';
 import { deviceForRequest, requireDeviceInHand } from './deviceIdentity';
 import { appDisabledError, disabledAppFor } from './ownerConfig';
@@ -99,6 +99,8 @@ export interface ServiceOptions<C extends ServiceContract = ServiceContract> {
 export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
   /** The actions a phone request may run only with a phone in hand (`requirePhoneFor`). */
   private readonly phoneRequired = new Set<string>();
+  /** The actions handed the device in the caller's hand on a service that is not `deviceOwned`. */
+  private readonly deviceResolved = new Set<string>();
 
   constructor(
     private serviceName: string,
@@ -134,6 +136,21 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
     ...actions: readonly (ContractAction<C> | 'get' | 'create' | 'update' | 'delete')[]
   ): this {
     for (const action of actions) this.phoneRequired.add(action);
+    return this;
+  }
+
+  /**
+   * Hand these actions the device in the caller's hand as their sixth argument, as every action
+   * of a `deviceOwned` service is, on a service that is not one (MICA-362).
+   *
+   * For a service whose rows are shared rather than the device's — Messages, whose membership is
+   * per phone — but whose handlers need to know which phone is asking. Resolved here rather than
+   * in the handler so that an action also flagged `requirePhoneFor` pays one slot read for both
+   * questions: the resolve is the in-hand check (`RequestDeviceOptions.requireHeld`). Resolved
+   * per request and never remembered, the same as a `deviceOwned` service's.
+   */
+  public resolveDeviceFor(...actions: readonly ContractAction<C>[]): this {
+    for (const action of actions) this.deviceResolved.add(action);
     return this;
   }
 
@@ -627,9 +644,15 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
          * would be new behaviour this ticket does not ask for.
          */
         // Not the phone: its boot-time shell calls must still answer a player holding none.
-        if (device !== DEFAULT_DEVICE) requireDeviceInHand(player, device);
         // The phone's own actions that move money or publish do need one (MICA-339).
-        else if (this.phoneRequired.has(action)) requireDeviceInHand(player, device);
+        const mustHold = device !== DEFAULT_DEVICE || this.phoneRequired.has(action);
+        /**
+         * A request that is about to resolve its device answers the in-hand check from that
+         * resolve's slot read (MICA-362), after validation below; counting the item here as well
+         * would read the inventory twice for one question. Every other request is counted now.
+         */
+        const resolves = Boolean(this.options.deviceOwned) || this.deviceResolved.has(action);
+        if (mustHold && !resolves) requireDeviceInHand(player, device);
 
         /**
          * Validation slots in **after** authentication and before the handler
@@ -641,7 +664,32 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
          * A `SchemaError` from here lands in the catch below and reaches the player as a
          * toast, which is why its messages name a field and never a table.
          */
-        const payload = input ? await parseInput(input, data) : data;
+        const checked = input ? await checkPayload(input, data) : { value: data, inPlace: true };
+        const payload = checked.value;
+
+        /**
+         * The player to resolve the device for (MICA-362). The one looked up above, handed
+         * through rather than looked up again, when nothing could have run in between — every
+         * micaOS schema answers in place (`checkPayload`). A schema that awaited may have let a
+         * character switch land, which keeps the source (`forgetOnPlayerLoaded`): the player
+         * above would then be the previous character while the inventory keyed by this source
+         * holds the new one's phone, and the resolve would hand that phone to the old citizen.
+         * So after an await the source is asked again, and a request whose source is no longer
+         * the character it was sent as is refused whole — generic answer, no log line, the same
+         * as any other stale client — rather than resolved for either character.
+         */
+        let holder = player;
+        if (resolves && !checked.inPlace) {
+          const now = FrameworkBridge.getPlayer(src);
+          if (!now || now.citizenid !== player.citizenid) {
+            emitNet(clientEventName, src, cbId, {
+              error: GENERIC_ERROR_MESSAGE,
+              key: GENERIC_ERROR_KEY
+            });
+            return;
+          }
+          holder = now;
+        }
 
         /**
          * Which device this is for, on a table that follows the device (MICA-282; the device
@@ -653,12 +701,20 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
          * holding no phone on a server that gates on one — it lands in the catch below and
          * reaches them as a toast — and degrades to the citizen's identity phone where no
          * phone identity can be had. `services/Devices.ts` has the three cases.
+         *
+         * It is handed `holder`, the player this source is known to be right now (above), so it
+         * does not walk the framework's players again (MICA-362). `requireHeld` makes the resolve
+         * the in-hand check skipped above, from the same slot read; never cached, so every
+         * request reads the slots again.
          */
-        const deviceId = this.options.deviceOwned
-          ? await deviceForRequest(src, player.citizenid, device)
+        const deviceId = resolves
+          ? await deviceForRequest(src, player.citizenid, device, {
+              player: holder,
+              requireHeld: mustHold
+            })
           : undefined;
 
-        const result = await handler(src, cbId, payload, player.citizenid, player, deviceId);
+        const result = await handler(src, cbId, payload, player.citizenid, holder, deviceId);
 
         if (result !== undefined) {
           emitNet(clientEventName, src, cbId, result);

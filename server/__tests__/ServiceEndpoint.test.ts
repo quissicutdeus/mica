@@ -23,7 +23,7 @@ vi.mock('../lib/AuditLogger', () => auditMock);
 import { Repository } from '../lib/Repository';
 import { ServiceEndpoint, ServiceOptions } from '../lib/ServiceEndpoint';
 import { GENERIC_ERROR_MESSAGE, PlayerFacingError } from '../lib/errors';
-import { __setDeviceResolvers } from '../lib/deviceIdentity';
+import { __setDeviceResolvers, type RequestDeviceOptions } from '../lib/deviceIdentity';
 import { TEST_PHONE_ID, TEST_TABLET_ID, installTestPhone } from './phoneStub';
 import { defineContract } from '@mica/shared/contract';
 import { s } from '@mica/shared/schema';
@@ -671,16 +671,27 @@ describe('ServiceEndpoint — the device a request speaks for', () => {
     protected clientFilterable = ['title'];
   }
 
-  const asked: { forRequest: unknown[][]; deviceInHand: unknown[][] } = {
+  const asked: {
+    forRequest: unknown[][];
+    options: (RequestDeviceOptions | undefined)[];
+    deviceInHand: unknown[][];
+  } = {
     forRequest: [],
+    options: [],
     deviceInHand: []
   };
 
-  /** The stub's answers, with every question recorded. `refuse` makes the device check throw. */
+  /**
+   * The stub's answers, with every question recorded. `refuse` makes the device check throw —
+   * `deviceInHand`, and a resolve asked to be that check (`requireHeld`, MICA-362), as the real
+   * resolver is.
+   */
   const installRecording = (refuse?: PlayerFacingError) => {
     __setDeviceResolvers({
-      forRequest: async (src, citizenid, device = 'phone') => {
+      forRequest: async (src, citizenid, device = 'phone', options) => {
         asked.forRequest.push([src, citizenid, device]);
+        asked.options.push(options);
+        if (refuse && options?.requireHeld) throw refuse;
         return device === 'tablet' ? TEST_TABLET_ID : TEST_PHONE_ID;
       },
       forCitizen: async () => TEST_PHONE_ID,
@@ -716,6 +727,7 @@ describe('ServiceEndpoint — the device a request speaks for', () => {
 
   beforeEach(() => {
     asked.forRequest = [];
+    asked.options = [];
     asked.deviceInHand = [];
     installRecording();
   });
@@ -730,6 +742,10 @@ describe('ServiceEndpoint — the device a request speaks for', () => {
     await callAs('get', {});
 
     expect(asked.forRequest).toEqual([[5, OWNER, 'phone']]);
+    // The endpoint's player is handed through (MICA-362), and the phone is not held to a check.
+    expect(asked.options).toEqual([
+      { player: expect.objectContaining({ citizenid: OWNER }), requireHeld: false }
+    ]);
     expect(asked.deviceInHand).toEqual([]);
     expect(dbMock.query.mock.calls[0][1]).toEqual([OWNER, TEST_PHONE_ID, 'active']);
   });
@@ -798,8 +814,11 @@ describe('ServiceEndpoint — the device a request speaks for', () => {
       key: 'server.device.notHeld',
       params: { device: 'Tablet' }
     });
-    expect(asked.deviceInHand).toEqual([[OWNER, 'tablet']]);
-    expect(asked.forRequest).toEqual([]);
+    // Refused by the resolve, which is the in-hand check on a device-owned service (MICA-362):
+    // one slot read, not a count and then a read.
+    expect(asked.deviceInHand).toEqual([]);
+    expect(asked.forRequest).toEqual([[5, OWNER, 'tablet']]);
+    expect(asked.options[0]?.requireHeld).toBe(true);
     expect(dbMock.query).not.toHaveBeenCalled();
   });
 
@@ -824,8 +843,11 @@ describe('ServiceEndpoint — the device a request speaks for', () => {
 
     await callAs('get', {}, 'tablet');
 
-    expect(asked.deviceInHand).toEqual([[OWNER, 'tablet']]);
+    expect(asked.deviceInHand).toEqual([]);
     expect(asked.forRequest).toEqual([[5, OWNER, 'tablet']]);
+    expect(asked.options).toEqual([
+      { player: expect.objectContaining({ citizenid: OWNER }), requireHeld: true }
+    ]);
     expect(dbMock.query.mock.calls[0][1]).toEqual([OWNER, TEST_TABLET_ID, 'active']);
   });
 
@@ -939,5 +961,232 @@ describe('ServiceEndpoint — an action flagged requirePhoneFor needs a phone in
     expect(listed).toHaveBeenCalledOnce();
     expect(lastReply()).toEqual([]);
     expect(asked).toEqual([]);
+  });
+});
+
+/**
+ * MICA-362: an action handed the device in hand on a service that is not `deviceOwned`
+ * (`resolveDeviceFor`, as Messages' `send` is). The resolve gets the endpoint's own player, and
+ * an action also flagged `requirePhoneFor` is held to the in-hand check by that same resolve —
+ * one slot read for both questions, never a count beside it.
+ */
+describe('ServiceEndpoint — an action resolved at the endpoint asks the inventory once', () => {
+  const resolvedContract = defineContract({
+    id: 'test_resolved_contract',
+    actions: {
+      send: { input: s.object({ body: s.string({ max: 20 }) }) },
+      list: { input: s.none() },
+      ping: { input: s.none() }
+    }
+  });
+
+  const holds = { phone: true };
+  const asked: { forRequest: (RequestDeviceOptions | undefined)[]; deviceInHand: string[] } = {
+    forRequest: [],
+    deviceInHand: []
+  };
+  const seen: unknown[] = [];
+  const record = (name: string) =>
+    vi.fn(async (...args: unknown[]) => {
+      seen.push([name, args[5]]);
+      return true;
+    });
+
+  const mountResolved = () => {
+    handlers = new Map();
+    emitted = [];
+    (globalThis as Record<string, unknown>).onNet = (event: string, cb: Handler) => {
+      handlers.set(event, cb);
+    };
+    (globalThis as Record<string, unknown>).emitNet = (...args: unknown[]) => {
+      emitted.push(args);
+    };
+    (globalThis as Record<string, unknown>).source = 5;
+    const app = new ServiceEndpoint<TestRow, typeof resolvedContract>('test', null, {
+      contract: resolvedContract,
+      disableGet: true,
+      disableCreate: true,
+      disableUpdate: true,
+      disableDelete: true
+    });
+    app.registerEvent('send', record('send'));
+    app.registerEvent('list', record('list'));
+    app.registerEvent('ping', record('ping'));
+    app.requirePhoneFor('send').resolveDeviceFor('send', 'list');
+  };
+
+  beforeEach(() => {
+    holds.phone = true;
+    asked.forRequest = [];
+    asked.deviceInHand = [];
+    seen.length = 0;
+    __setDeviceResolvers({
+      // The real resolver's contract: `requireHeld` refuses a player holding none.
+      forRequest: async (_src, _citizenid, _device, options) => {
+        asked.forRequest.push(options);
+        if (options?.requireHeld && !holds.phone) {
+          throw new PlayerFacingError('You are not holding a phone.', {
+            key: 'server.phone.notHeld'
+          });
+        }
+        return TEST_PHONE_ID;
+      },
+      forCitizen: async () => TEST_PHONE_ID,
+      deviceInHand: (_player, device) => {
+        asked.deviceInHand.push(device);
+      }
+    });
+    mountResolved();
+  });
+
+  afterEach(() => {
+    installTestPhone();
+  });
+
+  it('resolves a flagged action once, as the in-hand check, with the player it looked up', async () => {
+    await call('send', { body: 'hi' });
+
+    expect(lastReply()).toBe(true);
+    expect(seen).toEqual([['send', TEST_PHONE_ID]]);
+    expect(asked.deviceInHand).toEqual([]);
+    expect(asked.forRequest).toHaveLength(1);
+    expect(asked.forRequest[0]?.requireHeld).toBe(true);
+    // The very object the endpoint looked up: no second walk of the framework's players.
+    expect(asked.forRequest[0]?.player).toBe(
+      bridgeMock.FrameworkBridge.getPlayer.mock.results[0].value
+    );
+    expect(bridgeMock.FrameworkBridge.getPlayer).toHaveBeenCalledOnce();
+  });
+
+  it('refuses a flagged action to a player holding no phone, from that one resolve', async () => {
+    holds.phone = false;
+
+    await call('send', { body: 'hi' });
+
+    expect(seen).toEqual([]);
+    expect(lastReply()).toMatchObject({ key: 'server.phone.notHeld' });
+    expect(asked.deviceInHand).toEqual([]);
+    expect(asked.forRequest).toHaveLength(1);
+  });
+
+  it('resolves an unflagged action without holding it to the check', async () => {
+    holds.phone = false;
+
+    await call('list', undefined);
+
+    expect(seen).toEqual([['list', TEST_PHONE_ID]]);
+    expect(asked.forRequest[0]?.requireHeld).toBe(false);
+    expect(asked.deviceInHand).toEqual([]);
+  });
+
+  it('asks nothing about the device for an action it was not told to resolve', async () => {
+    await call('ping', undefined);
+
+    expect(seen).toEqual([['ping', undefined]]);
+    expect(asked.forRequest).toEqual([]);
+    expect(asked.deviceInHand).toEqual([]);
+  });
+
+  it('reads the slots again on every request, so a phone taken in between is refused', async () => {
+    await call('send', { body: 'hi' });
+    holds.phone = false;
+    await call('send', { body: 'again' });
+
+    expect(seen).toEqual([['send', TEST_PHONE_ID]]);
+    expect(lastReply()).toMatchObject({ key: 'server.phone.notHeld' });
+    expect(asked.forRequest).toHaveLength(2);
+  });
+});
+
+/**
+ * MICA-362 review: an add-on's contract may carry a foreign Standard Schema whose `validate`
+ * awaits, and a character switch keeps the source. The player looked up before such a check is
+ * not handed to the resolve unasked: the source is looked up again, and a request whose source
+ * is now another character is refused whole rather than resolved — the inventory keyed by the
+ * source would name the new character's phone, and the resolve would hand it to the old one.
+ */
+describe('ServiceEndpoint — a schema that awaits does not hand a stale player to the resolve', () => {
+  const SWITCHED = 'CIT_SWITCHED';
+  /** What the foreign schema does while the endpoint awaits it. */
+  const during = { switchCharacter: false };
+  const foreign = {
+    '~standard': {
+      version: 1 as const,
+      vendor: 'foreign',
+      validate: async (value: unknown) => {
+        await Promise.resolve();
+        if (during.switchCharacter) {
+          bridgeMock.FrameworkBridge.getPlayer.mockReturnValue({ citizenid: SWITCHED, source: 5 });
+        }
+        return { value };
+      }
+    }
+  };
+  const foreignContract = defineContract({
+    id: 'test_foreign_contract',
+    actions: { send: { input: foreign } }
+  });
+
+  const options: (RequestDeviceOptions | undefined)[] = [];
+  const seen: unknown[][] = [];
+
+  beforeEach(() => {
+    during.switchCharacter = false;
+    options.length = 0;
+    seen.length = 0;
+    __setDeviceResolvers({
+      forRequest: async (_src, _citizenid, _device, opts) => {
+        options.push(opts);
+        return TEST_PHONE_ID;
+      },
+      forCitizen: async () => TEST_PHONE_ID,
+      deviceInHand: () => undefined
+    });
+    handlers = new Map();
+    emitted = [];
+    (globalThis as Record<string, unknown>).onNet = (event: string, cb: Handler) => {
+      handlers.set(event, cb);
+    };
+    (globalThis as Record<string, unknown>).emitNet = (...args: unknown[]) => {
+      emitted.push(args);
+    };
+    (globalThis as Record<string, unknown>).source = 5;
+    const app = new ServiceEndpoint<TestRow, typeof foreignContract>('test', null, {
+      contract: foreignContract,
+      disableGet: true,
+      disableCreate: true,
+      disableUpdate: true,
+      disableDelete: true
+    });
+    app.registerEvent('send', async (...args: unknown[]) => {
+      seen.push([args[3], (args[4] as { citizenid: string }).citizenid, args[5]]);
+      return true;
+    });
+    app.requirePhoneFor('send').resolveDeviceFor('send');
+  });
+
+  afterEach(() => {
+    installTestPhone();
+  });
+
+  it('refuses a request whose character switched during the check, resolving nothing', async () => {
+    during.switchCharacter = true;
+
+    await call('send', { body: 'hi' });
+
+    expect(options).toEqual([]);
+    expect(seen).toEqual([]);
+    expect(lastReply()).toEqual({ error: GENERIC_ERROR_MESSAGE, key: 'server.generic' });
+  });
+
+  it('asks the source again after a check that awaited, and resolves with that answer', async () => {
+    await call('send', { body: 'hi' });
+
+    expect(bridgeMock.FrameworkBridge.getPlayer).toHaveBeenCalledTimes(2);
+    expect(options).toHaveLength(1);
+    expect(options[0]?.player).toBe(bridgeMock.FrameworkBridge.getPlayer.mock.results[1].value);
+    expect(options[0]?.requireHeld).toBe(true);
+    expect(seen).toEqual([[OWNER, OWNER, TEST_PHONE_ID]]);
+    expect(lastReply()).toBe(true);
   });
 });

@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect } from 'vitest';
-import { s, SchemaError, parseInput, isSchema, type Infer } from './schema';
+import { s, SchemaError, checkPayload, parseInput, isSchema, type Infer } from './schema';
 
 /**
  * What the DSL has to get right, and why each case is here.
@@ -285,6 +285,58 @@ describe('Standard Schema v1', () => {
     };
     const wrapped = s.object({ note: foreign });
     await expect(parseInput(wrapped, { note: 1 })).rejects.toThrow(/note: not a string/);
+  });
+
+  /**
+   * MICA-362: `ServiceEndpoint` hands the player it looked up to the device resolver only when
+   * the check could not have let a net event run in between. Every micaOS schema answers in
+   * place; a foreign one that returns a promise, or anything thenable, does not.
+   */
+  describe('checkPayload says whether the schema answered in place', () => {
+    const vendor = (validate: (value: unknown) => unknown) => ({
+      '~standard': { version: 1 as const, vendor: 'somebody-else', validate }
+    });
+
+    it('in place for a micaOS schema, with the parsed value', async () => {
+      await expect(checkPayload(s.object({ n: s.int() }), { n: 3 })).resolves.toEqual({
+        value: { n: 3 },
+        inPlace: true
+      });
+    });
+
+    it('in place for a foreign schema that answers synchronously', async () => {
+      await expect(checkPayload(vendor((value) => ({ value })) as any, 'ok')).resolves.toEqual({
+        value: 'ok',
+        inPlace: true
+      });
+    });
+
+    it('not in place for a foreign schema that answers with a promise', async () => {
+      await expect(
+        checkPayload(vendor(async (value) => ({ value })) as any, 'ok')
+      ).resolves.toEqual({ value: 'ok', inPlace: false });
+    });
+
+    it('not in place for a thenable that is not a Promise', async () => {
+      const thenable = (value: unknown) => ({
+        // eslint-disable-next-line unicorn/no-thenable -- a thenable that is not a Promise is the case under test
+        then: (resolve: (result: unknown) => void) => resolve({ value })
+      });
+      await expect(checkPayload(vendor(thenable) as any, 'ok')).resolves.toEqual({
+        value: 'ok',
+        inPlace: false
+      });
+    });
+
+    it('throws a SchemaError on issues, in place or not', async () => {
+      const issues = { issues: [{ message: 'not a string' }] };
+      await expect(checkPayload(vendor(() => issues) as any, 3)).rejects.toBeInstanceOf(
+        SchemaError
+      );
+      await expect(checkPayload(vendor(async () => issues) as any, 3)).rejects.toBeInstanceOf(
+        SchemaError
+      );
+    });
   });
 
   it('rejects a v2 or a non-schema', () => {

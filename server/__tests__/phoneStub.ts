@@ -39,15 +39,18 @@ export const installTestPhone = (): void => {
  * suite proving an action flagged `requirePhoneFor` is refused; `installTestPhone` undoes it.
  */
 export const refusePhone = (): void => {
+  const notHeld = () =>
+    new PlayerFacingError('You are not holding a phone.', { key: 'server.phone.notHeld' });
   __setDeviceResolvers({
-    forRequest: async () => TEST_PHONE_ID,
+    // A resolve asked to be the in-hand check (MICA-362) refuses the same player, as the real
+    // resolver does: an action resolved at the endpoint is never counted beside it.
+    forRequest: async (_src, _citizenid, device = 'phone', options) => {
+      if (options?.requireHeld && device === 'phone') throw notHeld();
+      return TEST_PHONE_ID;
+    },
     forCitizen: async () => TEST_PHONE_ID,
     deviceInHand: (_player, device) => {
-      if (device === 'phone') {
-        throw new PlayerFacingError('You are not holding a phone.', {
-          key: 'server.phone.notHeld'
-        });
-      }
+      if (device === 'phone') throw notHeld();
     }
   });
 };

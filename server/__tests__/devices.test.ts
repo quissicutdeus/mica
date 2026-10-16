@@ -725,6 +725,128 @@ describe('the device a request claims to hold (MICA-264)', () => {
 });
 
 /**
+ * MICA-362: a request that is scoped by the device it claims to hold asks both questions of one
+ * slot read, with the player the endpoint already looked up, and nothing is remembered between
+ * requests — the slot read is the proof the phone is still in hand after a robbery.
+ */
+describe('the in-hand check and the resolve share one slot read (MICA-362)', () => {
+  const PHONE_A = 'a'.repeat(32);
+  /** A player object other than the one `getPlayer` answers, so a second lookup is visible. */
+  const handed = { citizenid: CID, source: SRC, setMeta: vi.fn(), rawPlayer: { handed: true } };
+  const held = () => {
+    bridgeMock.itemSlots.mockReturnValue([{ slot: 3, metadata: { deviceId: PHONE_A } }]);
+    dbMock.query.mockResolvedValue([{ id: 1, citizenid: CID, device_id: PHONE_A, claimed: 1 }]);
+  };
+
+  it('resolves with the player it was handed, one slot read and no count', async () => {
+    held();
+
+    await expect(
+      deviceForRequest(SRC, CID, 'phone', { player: handed as any, requireHeld: true })
+    ).resolves.toBe(PHONE_A);
+
+    expect(bridgeMock.getPlayer).not.toHaveBeenCalled();
+    expect(bridgeMock.itemSlots).toHaveBeenCalledOnce();
+    expect(bridgeMock.itemSlots).toHaveBeenCalledWith(handed, 'phone');
+    expect(bridgeMock.countItem).not.toHaveBeenCalled();
+  });
+
+  it('still looks the player up when none is handed', async () => {
+    held();
+
+    await expect(deviceForRequest(SRC, CID)).resolves.toBe(PHONE_A);
+
+    expect(bridgeMock.getPlayer).toHaveBeenCalledWith(SRC);
+    expect(bridgeMock.itemSlots).toHaveBeenCalledWith(player, 'phone');
+  });
+
+  it('refuses a player holding none from the slot read alone', async () => {
+    bridgeMock.itemSlots.mockReturnValue([]);
+
+    await expect(
+      deviceForRequest(SRC, CID, 'phone', { player: handed as any, requireHeld: true })
+    ).rejects.toMatchObject({ name: 'PlayerFacingError', key: 'server.phone.notHeld' });
+
+    expect(bridgeMock.itemSlots).toHaveBeenCalledOnce();
+    expect(bridgeMock.countItem).not.toHaveBeenCalled();
+  });
+
+  it('refuses a device this server has off before reading anything', async () => {
+    globalThis.GetConvar = ((name: string, fallback: string) =>
+      name === 'mica_tablet' ? 'false' : name === 'mica_tablet_item' ? 'tablet' : fallback) as any;
+
+    await expect(
+      deviceForRequest(SRC, CID, 'tablet', { player: handed as any, requireHeld: true })
+    ).rejects.toMatchObject({ key: 'server.device.off', params: { device: 'Tablet' } });
+
+    expect(bridgeMock.itemSlots).not.toHaveBeenCalled();
+    expect(bridgeMock.countItem).not.toHaveBeenCalled();
+    expect(dbMock.query).not.toHaveBeenCalled();
+  });
+
+  it('counts where the inventory cannot list slots, and refuses a count of none', async () => {
+    // es_extended's own inventory: no slots to list, but a count to ask.
+    bridgeMock.itemSlots.mockReturnValue(null);
+    bridgeMock.countItem.mockReturnValue(0);
+
+    await expect(
+      deviceForRequest(SRC, CID, 'phone', { player: handed as any, requireHeld: true })
+    ).rejects.toMatchObject({ key: 'server.phone.notHeld' });
+
+    expect(bridgeMock.countItem).toHaveBeenCalledOnce();
+    expect(bridgeMock.countItem).toHaveBeenCalledWith(handed, 'phone');
+  });
+
+  it('answers the identity phone where the count says one is held', async () => {
+    bridgeMock.itemSlots.mockReturnValue(null);
+    bridgeMock.countItem.mockReturnValue(1);
+
+    await expect(
+      deviceForRequest(SRC, CID, 'phone', { player: handed as any, requireHeld: true })
+    ).resolves.toMatch(ID_SHAPE);
+  });
+
+  it('never counts without requireHeld, degrading as it always has', async () => {
+    // The positive twin of the refusal above: the same inventory, the same count of none,
+    // answered rather than refused because nothing asked whether a phone is in hand.
+    bridgeMock.itemSlots.mockReturnValue(null);
+    bridgeMock.countItem.mockReturnValue(0);
+
+    await expect(deviceForRequest(SRC, CID, 'phone', { player: handed as any })).resolves.toMatch(
+      ID_SHAPE
+    );
+
+    expect(bridgeMock.countItem).not.toHaveBeenCalled();
+  });
+
+  it('does not count a phone the slot read already saw, when its id could not be written', async () => {
+    bridgeMock.itemSlots.mockReturnValue([{ slot: 3, metadata: {} }]);
+    bridgeMock.setItemMetadata.mockReturnValue(false);
+
+    await expect(
+      deviceForRequest(SRC, CID, 'phone', { player: handed as any, requireHeld: true })
+    ).resolves.toMatch(ID_SHAPE);
+
+    expect(bridgeMock.countItem).not.toHaveBeenCalled();
+  });
+
+  it('remembers nothing: a phone taken between two requests is refused on the second', async () => {
+    held();
+    await expect(
+      deviceForRequest(SRC, CID, 'phone', { player: handed as any, requireHeld: true })
+    ).resolves.toBe(PHONE_A);
+
+    // Robbed: the slot is empty now.
+    bridgeMock.itemSlots.mockReturnValue([]);
+    await expect(
+      deviceForRequest(SRC, CID, 'phone', { player: handed as any, requireHeld: true })
+    ).rejects.toMatchObject({ key: 'server.phone.notHeld' });
+
+    expect(bridgeMock.itemSlots).toHaveBeenCalledTimes(2);
+  });
+});
+
+/**
  * MICA-264 review: the synchronous answer `LockState` keys on follows the device in hand. The
  * tablet is re-resolved on the occasions the phone is (a load or a relayed inventory change,
  * both `evaluateDeviceItems`), and a resolve that finds none clears the entry for either kind.

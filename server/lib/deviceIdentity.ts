@@ -26,10 +26,37 @@ import type { FrameworkPlayer } from './framework/runtime';
  * sees the generic message and the log names this file.
  */
 
+/**
+ * What a request already knows, handed to the resolver so it is not asked twice (MICA-362).
+ *
+ * **Per call, never remembered.** Nothing here outlives the request that passed it: the slot
+ * read behind `requireHeld` is the phone-in-hand proof, and a phone taken in a robbery a second
+ * ago must be refused on the next request, not answered from the last one.
+ */
+export interface RequestDeviceOptions {
+  /**
+   * The player `ServiceEndpoint` looked up for this request, so the resolver does not walk the
+   * framework's player table for the same source again. Absent, it looks them up itself.
+   *
+   * Only ever the player looked up for this same request, with no host event able to run in
+   * between — a character switch keeps the source (`forgetOnPlayerLoaded`), so a player held
+   * across a yield to the host would name the previous character's inventory.
+   */
+  player?: FrameworkPlayer;
+  /**
+   * Refuse a player holding none of the device, as `requireDeviceInHand` does, answered from
+   * the one slot read the resolve makes anyway rather than a count beside it. Also refuses a
+   * device this server has off. Where the inventory cannot list slots at all (es_extended's own
+   * inventory), the resolver counts instead, so the check is never weaker than the count.
+   */
+  requireHeld?: boolean;
+}
+
 export type RequestDeviceResolver = (
   src: number,
   citizenid: string,
-  device?: DeviceId
+  device?: DeviceId,
+  options?: RequestDeviceOptions
 ) => Promise<string>;
 export type CitizenPhoneResolver = (citizenid: string) => Promise<string>;
 /** Throws a `PlayerFacingError` when the device is off or the player holds none of it. */
@@ -74,15 +101,17 @@ const notInstalled = (what: string): Error =>
  * Throws a `PlayerFacingError` (from the resolver) for a player holding none of that device on
  * a server that gates on it — there is no device for their rows to belong to, and it is closed
  * for them anyway — and degrades to the citizen's identity device of that kind where no item
- * can carry an id at all. `services/Devices.ts` has the three cases.
+ * can carry an id at all. `services/Devices.ts` has the three cases. With `requireHeld` it is also
+ * the in-hand check (`RequestDeviceOptions`), so a request that needs both pays one slot read.
  */
 export const deviceForRequest = (
   src: number,
   citizenid: string,
-  device: DeviceId = 'phone'
+  device: DeviceId = 'phone',
+  options?: RequestDeviceOptions
 ): Promise<string> => {
   if (!forRequest) throw notInstalled('the device for a request');
-  return forRequest(src, citizenid, device);
+  return forRequest(src, citizenid, device, options);
 };
 
 /**
