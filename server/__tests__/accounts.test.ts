@@ -342,6 +342,38 @@ describe('claiming a handle', () => {
   });
 });
 
+/**
+ * `createWithinCap` builds its own column list, so the identifier allowlist is its own (§2.9).
+ * It reads the set Repository works out once (MICA-378); both halves are pinned, so a check
+ * that let everything through, or refused everything, fails one of them.
+ */
+describe('the cap insert’s column allowlist', () => {
+  const capped = accounts.repo as unknown as {
+    createWithinCap(account: Record<string, unknown>, limit: number): Promise<number>;
+  };
+
+  it('refuses a column the table does not have, before any SQL', async () => {
+    await expect(
+      capped.createWithinCap({ citizenid: 'CIT_A', app: 'blabber', 'handle`, `x': 'a' }, 3)
+    ).rejects.toThrow(/rejected 'handle`, `x'/);
+    await expect(
+      capped.createWithinCap({ citizenid: 'CIT_A', app: 'blabber', nope: 'a' }, 3)
+    ).rejects.toThrow(/rejected 'nope'/);
+    expect(dbMock.insert).not.toHaveBeenCalled();
+  });
+
+  it('inserts when every column is one the table has, the positive twin', async () => {
+    const id = await capped.createWithinCap(
+      { citizenid: 'CIT_A', app: 'blabber', handle: 'ada', display_name: 'Ada' },
+      3
+    );
+
+    expect(id).toBe(7);
+    const [sql] = dbMock.insert.mock.calls[0];
+    expect(String(sql)).toContain('(`citizenid`, `app`, `handle`, `display_name`)');
+  });
+});
+
 describe('listing my own accounts', () => {
   it('scopes to the caller server-side rather than trusting a filter', async () => {
     // Deliberately not a filter on the public `get`: making citizenid client-filterable would

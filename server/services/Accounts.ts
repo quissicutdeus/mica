@@ -58,8 +58,9 @@ class AccountRepository extends SchemaRepository<Account> {
     const columns = Object.keys(account);
     // Built here rather than by `super.create`, so the identifier allowlist is this
     // method's own responsibility (§2.9): MySQL cannot parameterize a column name.
+    // `hasColumn` answers from the set Repository works out once (MICA-378).
     for (const column of columns) {
-      if (!this.tableColumns.includes(column)) {
+      if (!this.hasColumn(column)) {
         throw new Error(`[Repository] create on '${this.tableName}' rejected '${column}'.`);
       }
     }
