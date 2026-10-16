@@ -18,8 +18,12 @@ import { media } from '../../services/media';
 import { mailStore } from '../../services/mail';
 import { notes } from '../../apps/notes/store';
 import * as accountModule from '../../services/account';
+import * as ownerConfigModule from './ownerConfig';
 import { ownerConfig, DEFAULT_OWNER_CONFIG } from './ownerConfig';
+import { registeredApps } from './registry';
 import { setActiveDevice } from './device';
+import * as notificationsModule from '../../services/notifications';
+import { currentApp, openApp } from './navigation';
 
 vi.mock('../../nui/fetchNui', () => ({
   fetchNui: vi.fn(() => Promise.resolve([]))
@@ -58,8 +62,11 @@ describe('bootstrapStores', () => {
     it('is skipped, while an app still enabled preloads as usual', async () => {
       // Read with `get`, not awaited (`bootstrap.ts`'s own doc) — so this only reflects an
       // answer already in hand, the way a character switch's `bootstrapStores(true)` finds
-      // one from the previous run. Setting it directly stands in for that.
+      // one from the previous run. Setting it directly stands in for that, and this run's
+      // own ask is held off: since MICA-364 the list is read when the deferred preloads run,
+      // by which time the mocked reply would otherwise have replaced it with the defaults.
       ownerConfig.set({ ...DEFAULT_OWNER_CONFIG, disabledApps: ['notes'] });
+      vi.spyOn(ownerConfigModule, 'refreshOwnerConfig').mockResolvedValue();
 
       const spyCitizenId = vi.spyOn(accountModule, 'fetchCitizenId').mockResolvedValue('CIT-101');
       vi.spyOn(accountModule, 'fetchBalance').mockResolvedValue();
@@ -117,6 +124,127 @@ describe('bootstrapStores', () => {
       resetBootstrapState();
       await bootstrapStores(true);
       expect(spyContacts).toHaveBeenCalledOnce();
+    });
+  });
+
+  /**
+   * MICA-364: the app preloads wait out the open animation, and start the moment an app is
+   * shown if that comes first — so no store is any later than before by the time its app is up.
+   */
+  describe('MICA-364: app preloads after the open animation', () => {
+    /** `PhoneFrame`'s fly-in, `duration: 500`, which `bootstrap.ts` waits out. */
+    const FLY_IN_MS = 500;
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      currentApp.set({ id: 'home', props: {} });
+    });
+
+    afterEach(async () => {
+      await vi.runAllTimersAsync();
+      vi.useRealTimers();
+      currentApp.set({ id: 'home', props: {} });
+      // The manifest `preload` spies sit on shared registry objects; put them back.
+      vi.restoreAllMocks();
+    });
+
+    const spies = () => {
+      const citizenId = vi.spyOn(accountModule, 'fetchCitizenId').mockResolvedValue('CIT-101');
+      vi.spyOn(accountModule, 'fetchBalance').mockResolvedValue();
+      const notesLoad = vi.spyOn(notes, 'load').mockResolvedValue();
+      const contactsLoad = vi.spyOn(contacts, 'load').mockResolvedValue();
+      const unread = vi.spyOn(notificationsModule, 'loadUnreadCounts').mockResolvedValue();
+      for (const spy of [citizenId, notesLoad, contactsLoad, unread]) spy.mockClear();
+      return { citizenId, notesLoad, contactsLoad, unread };
+    };
+
+    /**
+     * The contacts manifest's own `preload`, spied. It awaits a chunk import before it calls
+     * `load`, so "started in the same tick" is a question about the preload, not the load.
+     */
+    const contactsPreload = () => {
+      const manifest = registeredApps.find((app) => app.id === 'contacts') as unknown as {
+        preload: () => Promise<unknown>;
+      };
+      const spy = vi.spyOn(manifest, 'preload').mockResolvedValue(undefined);
+      spy.mockClear();
+      return spy;
+    };
+
+    it('starts the shell reads with the open and the app preloads after the fly-in', async () => {
+      const { citizenId, notesLoad, contactsLoad } = spies();
+
+      const done = bootstrapStores();
+      expect(citizenId).toHaveBeenCalledOnce();
+
+      await vi.advanceTimersByTimeAsync(FLY_IN_MS - 1);
+      expect(notesLoad).not.toHaveBeenCalled();
+      expect(contactsLoad).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(contactsLoad).toHaveBeenCalledOnce();
+      // `notes` imports its store chunk first; let that land.
+      await done;
+      expect(notesLoad).toHaveBeenCalledOnce();
+    });
+
+    it('starts them in the same tick an app is opened, before it can be shown', async () => {
+      spies();
+      const preload = contactsPreload();
+
+      void bootstrapStores();
+      await vi.advanceTimersByTimeAsync(100);
+      expect(preload).not.toHaveBeenCalled();
+
+      openApp('contacts');
+      // Synchronous: nothing has rendered yet, and the preload is already in flight.
+      expect(preload).toHaveBeenCalledOnce();
+
+      // And the timer does not start them a second time.
+      await vi.advanceTimersByTimeAsync(FLY_IN_MS);
+      expect(preload).toHaveBeenCalledOnce();
+    });
+
+    it('runs them at once when the phone opens onto an app already up', async () => {
+      spies();
+      const preload = contactsPreload();
+      currentApp.set({ id: 'contacts', props: {} });
+
+      void bootstrapStores();
+      expect(preload).toHaveBeenCalledOnce();
+    });
+
+    it("drops a superseded run's preloads, so a switch never lands the old identity's", async () => {
+      const { contactsLoad } = spies();
+
+      void bootstrapStores();
+      resetBootstrapState();
+      await vi.advanceTimersByTimeAsync(FLY_IN_MS * 2);
+      expect(contactsLoad).not.toHaveBeenCalled();
+    });
+
+    it('shares a run still in flight with a reopen inside the window', async () => {
+      const { citizenId } = spies();
+      const preload = contactsPreload();
+
+      const first = bootstrapStores();
+      const second = bootstrapStores();
+      await vi.advanceTimersByTimeAsync(FLY_IN_MS);
+      await Promise.all([first, second]);
+      // One run: the shell reads were asked once, not once per open.
+      expect(citizenId).toHaveBeenCalledOnce();
+      expect(preload).toHaveBeenCalledOnce();
+    });
+
+    it("leaves the open's unread counts to the shade it mounts, and asks on a forced run", async () => {
+      const { unread } = spies();
+
+      void bootstrapStores();
+      await vi.advanceTimersByTimeAsync(FLY_IN_MS);
+      expect(unread).not.toHaveBeenCalled();
+
+      void bootstrapStores(true);
+      expect(unread).toHaveBeenCalledOnce();
     });
   });
 });

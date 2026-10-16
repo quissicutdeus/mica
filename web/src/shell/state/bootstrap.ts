@@ -12,11 +12,86 @@ import { disabledAppIds, refreshOwnerConfig } from './ownerConfig';
 import { loadUnreadCounts } from '../../services/notifications';
 import { bundledAddOns, registeredApps } from './registry';
 import { activeDevice } from './device';
-import { DEFAULT_DEVICE } from '@mica/shared/devices';
+import { DEFAULT_DEVICE, type DeviceId } from '@mica/shared/devices';
 import { manifestSupportsDevice } from '../../lib/phone/appVisibility';
+import { currentApp } from './navigation';
 
 let isBootstrapped = false;
+let running = false;
+/** Which run is current, so a superseded one cannot write the flags of the one that replaced it. */
+let runId = 0;
 let bootstrapPromise: Promise<void> | null = null;
+
+/**
+ * How long app preloads wait after an open: `PhoneFrame`'s fly-in, `duration: 500` (MICA-364).
+ *
+ * The first open used to start every app's `preload` in the same tick as the fly-in — about
+ * seventeen NUI round trips and two chunk imports competing with the one animation the player
+ * is watching. None of that is needed to paint the home screen; it is needed before an *app*
+ * is shown, and `deferAppPreloads` starts it the moment one is, so waiting out the animation
+ * costs nothing an app can see.
+ */
+const APP_PRELOAD_DELAY_MS = 500;
+
+/** The deferred preloads of the run in progress, if they have not started yet. */
+let pendingPreloads: { cancel: () => void } | null = null;
+
+/** Every app this device shows and the owner has not disabled — read when the preloads run. */
+const preloadsFor = (device: DeviceId) =>
+  [...registeredApps, ...bundledAddOns]
+    .filter((app) => !get(disabledAppIds).has(app.id))
+    .filter((app) => manifestSupportsDevice(app, device))
+    .map((app) => app.preload?.());
+
+/**
+ * Run the app preloads once the open animation has played, or at once if an app is shown first.
+ *
+ * **Every store is still loaded before its app is shown.** The trigger is `currentApp`
+ * leaving home, which `openApp` sets synchronously, so the preloads start in the same tick the
+ * app is asked for — before Svelte has rendered a frame of it — exactly as early as they did
+ * when they started with the open. A phone opened straight onto an app (a notification tap, a
+ * reopen with one still up) runs them immediately, for the same reason.
+ *
+ * Cancelled by `resetBootstrapState` and by a forced re-run: a device or character switch must
+ * not have the previous identity's preloads land half a second later.
+ */
+function deferAppPreloads(device: DeviceId): Promise<void> {
+  return new Promise<void>((resolve) => {
+    let settled = false;
+    let stopWatching: (() => void) | undefined;
+
+    const finish = (run: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      stopWatching?.();
+      if (pendingPreloads === entry) pendingPreloads = null;
+      if (!run) {
+        resolve();
+        return;
+      }
+      // MICA-234: the disabled list is read here rather than when the open began, so it is
+      // whatever `refreshOwnerConfig` — usually answered by now — last said.
+      let preloads: unknown[] = [];
+      try {
+        preloads = preloadsFor(device);
+      } catch (error) {
+        console.error('Failed to start app preloads:', error);
+      }
+      void Promise.allSettled(preloads).then(() => resolve());
+    };
+
+    const entry = { cancel: () => finish(false) };
+    pendingPreloads = entry;
+    const timer = setTimeout(() => finish(true), APP_PRELOAD_DELAY_MS);
+    // Called once at once with the current value, so an app already up runs them now.
+    const unsubscribe = currentApp.subscribe(($app) => {
+      if ($app.id !== 'home') finish(true);
+    });
+    if (settled) unsubscribe();
+    else stopWatching = unsubscribe;
+  });
+}
 
 /**
  * Preloads primary stores in parallel on phone opening, so switching between apps is
@@ -43,10 +118,16 @@ let bootstrapPromise: Promise<void> | null = null;
  * launcher paints (§11.1).
  */
 export async function bootstrapStores(force: boolean = false): Promise<void> {
-  if (isBootstrapped && !force && bootstrapPromise) {
+  // A run still in flight is shared too, not only a finished one: with the preloads deferred,
+  // a close and reopen inside the window would otherwise start a second full run.
+  if ((isBootstrapped || running) && !force && bootstrapPromise) {
     return bootstrapPromise;
   }
 
+  // A forced run supersedes the last one's preloads if they have not started.
+  pendingPreloads?.cancel();
+  const run = ++runId;
+  running = true;
   bootstrapPromise = (async () => {
     // MICA-264: the device this run loads for, read once. A device switch resets the
     // bootstrap and runs it again for the new one (`state/deviceIdentity.ts`), so a run never
@@ -83,31 +164,34 @@ export async function bootstrapStores(force: boolean = false): Promise<void> {
         ...(onPhone ? [fetchBalance()] : []),
         // The launcher badges' unread counts, from the `notifications` service, which is the
         // phone's alone: the tablet's badges stay empty until it has a service to ask.
-        ...(onPhone ? [loadUnreadCounts()] : []),
-        // MICA-234: skip a preload the owner has already told us is disabled — its data is
-        // refused server-side regardless (§2.9), so calling for it here is only ever wasted
-        // work and a refusal to log. Read with `get`, not awaited: `refreshOwnerConfig()` is
-        // one of this same array's entries and has not necessarily answered yet, so this is
-        // whatever the *last* bootstrap already knew — nothing, on a player's very first
-        // boot, and the real list from then on, since a character switch re-runs this whole
-        // function. Not gated on the answer landing first, deliberately, the same as
-        // `openApp` (`navigation.ts`) never gates *opening* on it: this is a courtesy that
-        // cuts noise, not a security boundary, so it must not cost every boot the round trip.
         //
-        // MICA-264: and skip one the active device does not show. A tablet is an identity of
-        // its own, and the server refuses a request from it to a service that is the phone's
-        // alone (contacts, the call log, the bank) — so preloading those from the tablet was
-        // a refusal per app on every boot, for a list it can never open. Read when the
-        // bootstrap runs: a device switch resets it and runs it again for the new device
-        // (`state/deviceIdentity.ts`).
-        ...[...registeredApps, ...bundledAddOns]
-          .filter((app) => !get(disabledAppIds).has(app.id))
-          .filter((app) => manifestSupportsDevice(app, device))
-          .map((app) => app.preload?.())
+        // MICA-364: only on a forced run. An unforced one is the open itself (`Shell.svelte`'s
+        // `visible` effect is its only caller), and that open mounts `PhoneFrame` and the
+        // `NotificationShade` inside it, whose own mount reads these counts — so asking here too
+        // was the same request twice in the fly-in. A forced run is a character or device switch
+        // with the frame possibly already up, where nothing remounts, so it still asks.
+        ...(onPhone && force ? [loadUnreadCounts()] : []),
+        // App preloads, after the open animation (MICA-364): `deferAppPreloads` has when and
+        // why, and `preloadsFor` which apps.
+        //
+        // MICA-234: a preload the owner has already told us is disabled is skipped — its data
+        // is refused server-side regardless (§2.9), so calling for it is only ever wasted work
+        // and a refusal to log. Read with `get`, not awaited: this is a courtesy that cuts
+        // noise, not a security boundary, the same as `openApp` (`navigation.ts`) never gates
+        // *opening* on it, so it must not cost every boot the round trip.
+        //
+        // MICA-264: and one the active device does not show. A tablet is an identity of its
+        // own, and the server refuses a request from it to a service that is the phone's alone
+        // (contacts, the call log, the bank) — so preloading those from the tablet was a
+        // refusal per app on every boot, for a list it can never open. A device switch resets
+        // the bootstrap and runs it again for the new device (`state/deviceIdentity.ts`).
+        deferAppPreloads(device)
       ]);
-      isBootstrapped = true;
+      if (run === runId) isBootstrapped = true;
     } catch (error) {
       console.error('Failed during store bootstrapping:', error);
+    } finally {
+      if (run === runId) running = false;
     }
   })();
 
@@ -115,6 +199,9 @@ export async function bootstrapStores(force: boolean = false): Promise<void> {
 }
 
 export function resetBootstrapState(): void {
+  pendingPreloads?.cancel();
+  runId += 1;
   isBootstrapped = false;
+  running = false;
   bootstrapPromise = null;
 }
