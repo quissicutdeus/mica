@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { last } from './arrays';
 import { DEVICES } from '@mica/shared/devices';
 
@@ -29,8 +29,9 @@ g.TriggerServerEvent = () => {};
 g.SetNuiFocus = (...args: unknown[]) => focus.push(args);
 g.SendNuiMessage = (payload: string) => sent.push(JSON.parse(payload));
 g.PlayerPedId = () => 7;
-g.GetClockHours = () => 9;
-g.GetClockMinutes = () => 30;
+let clock = { hours: 9, minutes: 30 };
+g.GetClockHours = () => clock.hours;
+g.GetClockMinutes = () => clock.minutes;
 
 import { DeviceState } from '../lib/DeviceState';
 import { openDevice, closeDevice, closeOpenDevice } from '../lib/DeviceVisibility';
@@ -39,10 +40,20 @@ const visible = () => sent.filter((m) => m.action === 'setVisible').map((m) => m
 
 describe('DeviceVisibility', () => {
   beforeEach(() => {
+    vi.useFakeTimers();
+    // Lower anything a previous test left up, so its clock interval does not leak into this one.
     sent = [];
     focus = [];
+    closeOpenDevice();
+    sent = [];
+    focus = [];
+    clock = { hours: 9, minutes: 30 };
     vi.clearAllMocks();
     DeviceState.__reset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('raises a device: state, focus, the frame, its own prop and idle, time and charge', () => {
@@ -96,5 +107,56 @@ describe('DeviceVisibility', () => {
     closeOpenDevice();
     expect(DeviceState.isAnyOpen()).toBe(false);
     expect(last(visible())).toEqual({ device: 'tablet', visible: false });
+  });
+
+  describe('the clock (MICA-371)', () => {
+    const times = () => sent.filter((m) => m.action === 'setTime').map((m) => m.data);
+
+    it('sends the time once on open, then only when the minute changes', () => {
+      openDevice('phone');
+      expect(times()).toEqual([{ hours: 9, minutes: 30 }]);
+
+      vi.advanceTimersByTime(5000);
+      expect(times()).toHaveLength(1);
+
+      clock = { hours: 9, minutes: 31 };
+      vi.advanceTimersByTime(1000);
+      expect(times()).toEqual([
+        { hours: 9, minutes: 30 },
+        { hours: 9, minutes: 31 }
+      ]);
+
+      vi.advanceTimersByTime(3000);
+      expect(times()).toHaveLength(2);
+    });
+
+    it('runs no interval while every device is down', () => {
+      expect(vi.getTimerCount()).toBe(0);
+      openDevice('phone');
+      expect(vi.getTimerCount()).toBe(1);
+
+      closeDevice('phone');
+      expect(vi.getTimerCount()).toBe(0);
+      clock = { hours: 10, minutes: 0 };
+      vi.advanceTimersByTime(5000);
+      expect(times()).toHaveLength(1);
+    });
+
+    it('sends the time again on a reopen even when it has not changed', () => {
+      openDevice('phone');
+      closeDevice('phone');
+      openDevice('tablet');
+
+      expect(times()).toHaveLength(2);
+    });
+
+    it('keeps one interval when one device replaces the other', () => {
+      openDevice('phone');
+      openDevice('tablet');
+
+      expect(vi.getTimerCount()).toBe(1);
+      closeOpenDevice();
+      expect(vi.getTimerCount()).toBe(0);
+    });
   });
 });

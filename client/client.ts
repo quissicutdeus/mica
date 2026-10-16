@@ -5,7 +5,6 @@
 import './services';
 import './game';
 import { FrameworkBridge } from './lib/FrameworkBridge';
-import { sendNuiMessage } from './lib/nui';
 import { DeviceState } from './lib/DeviceState';
 import { closeOpenDevice, toggleDevice } from './lib/DeviceVisibility';
 import { registerClientApi } from './lib/publicApi';
@@ -14,13 +13,6 @@ import { Freelook } from './game/Freelook';
 import { PhoneCamera } from './game/PhoneCamera';
 import { GAME_SCOPE_ACTIONS } from '@mica/shared/keybinds';
 import { ALL_DEVICES, DEVICES } from '@mica/shared/devices';
-
-// Send system time to NUI
-const sendTimeToNui = () => {
-  const hours = GetClockHours();
-  const minutes = GetClockMinutes();
-  sendNuiMessage('setTime', { hours, minutes });
-};
 
 // One command per device, named by the descriptor: `togglePhone` predates the table and
 // players already have it bound; `toggleTablet` is the tablet's.
@@ -119,10 +111,3 @@ on('__cfx_nui:getPhoneNumber', (_: any, cb: Function) => {
   const phone = FrameworkBridge.getPhoneNumber();
   cb(phone || '867-5309');
 });
-
-// Time Sync Loop
-setInterval(() => {
-  if (DeviceState.isAnyOpen()) {
-    sendTimeToNui();
-  }
-}, 1000);

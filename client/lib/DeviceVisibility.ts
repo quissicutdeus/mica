@@ -24,8 +24,41 @@ import { requestDeviceItemCheck } from '../services/DeviceItem';
  * web side (`state/device.ts`) assumes exactly that.
  */
 
-const sendTimeToNui = () => {
-  sendNuiMessage('setTime', { hours: GetClockHours(), minutes: GetClockMinutes() });
+/**
+ * How often the game clock is read while a device is up. A game minute passes about every
+ * two real seconds, so a reading this often is never more than a second late.
+ */
+const CLOCK_POLL_MS = 1000;
+
+let clockTimer: ReturnType<typeof setInterval> | null = null;
+/** The last `hours * 60 + minutes` sent, so a reading that has not moved sends nothing. */
+let lastClock: number | null = null;
+
+/**
+ * The status-bar clock (MICA-371). Sent only when the minute changed — the poll is faster
+ * than the game clock, so about half the readings repeat — or when `force`d on open, since
+ * the page may have been showing another device's last time or none at all.
+ */
+const sendTimeToNui = (force: boolean): void => {
+  const hours = GetClockHours();
+  const minutes = GetClockMinutes();
+  const clock = hours * 60 + minutes;
+  if (!force && clock === lastClock) return;
+  lastClock = clock;
+  sendNuiMessage('setTime', { hours, minutes });
+};
+
+/** Runs only while a device is up: `client.ts`'s interval used to tick for the whole session. */
+const startClock = (): void => {
+  sendTimeToNui(true);
+  if (clockTimer === null) clockTimer = setInterval(() => sendTimeToNui(false), CLOCK_POLL_MS);
+};
+
+const stopClock = (): void => {
+  if (clockTimer !== null) {
+    clearInterval(clockTimer);
+    clockTimer = null;
+  }
 };
 
 export const openDevice = (id: DeviceId): void => {
@@ -41,13 +74,14 @@ export const openDevice = (id: DeviceId): void => {
   void DeviceAnimation.playIdle(ped, descriptor);
   DeviceAnimation.spawnProp(ped, descriptor);
 
-  sendTimeToNui();
+  startClock();
   sendChargeToNui(id);
 };
 
 export const closeDevice = (id: DeviceId): void => {
   const descriptor = DEVICES[id];
   DeviceState.setOpen(id, false);
+  stopClock();
 
   const ped = PlayerPedId();
   // Only the phone has a camera to put down; the scripted cam is never up for the tablet.
