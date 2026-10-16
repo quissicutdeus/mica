@@ -88,13 +88,39 @@ export const batteryApp = defineService<PhoneBattery>({
 const WRITE_CACHE_LIMIT = 512;
 const lastWritten = new Map<string, number>();
 
-const rememberWrite = (deviceId: string, level: number): void => {
-  lastWritten.set(deviceId, level);
-  while (lastWritten.size > WRITE_CACHE_LIMIT) {
-    const oldest = lastWritten.keys().next().value;
+/** Set `key` in a per-phone cache, evicting the phone set longest ago past the bound. */
+const rememberBounded = <V>(cache: Map<string, V>, key: string, value: V): void => {
+  cache.delete(key);
+  cache.set(key, value);
+  while (cache.size > WRITE_CACHE_LIMIT) {
+    const oldest = cache.keys().next().value;
     if (oldest === undefined) break;
-    lastWritten.delete(oldest);
+    cache.delete(oldest);
   }
+};
+
+const rememberWrite = (deviceId: string, level: number): void =>
+  rememberBounded(lastWritten, deviceId, level);
+
+/**
+ * The `mica_battery` row id of each phone, once a read or an insert has seen it (MICA-377).
+ *
+ * The save used to read the row by `device_id` before every write, about once a minute per
+ * device, only to learn an id that never changes: `device_id_unique` keeps one row per phone,
+ * nothing deletes one, and a revive keeps the id. So the save writes by the remembered id and
+ * reads only when it has none.
+ *
+ * An id is never authorization (§2.9), and this one is not used as any: the `UPDATE` still
+ * carries the holder's citizenid and the phone beside it, so a remembered id for a row that has
+ * since moved to someone else matches nothing. A write that matches nothing forgets the id and
+ * takes the read path, which is exactly what every save did before. Bounded and forgotten on a
+ * disconnect exactly as `lastWritten` is, and refilled by the load's own read on a rejoin.
+ */
+const rowOf = new Map<string, number>();
+
+const rememberRow = (deviceId: string, row: { id?: unknown } | undefined): void => {
+  const id = Number(row?.id);
+  if (Number.isSafeInteger(id) && id > 0) rememberBounded(rowOf, deviceId, id);
 };
 
 /**
@@ -189,7 +215,10 @@ const loadFailed = perDevice<number>();
 const loadToken = perDevice<object>();
 
 /** Test seam: the write-skip cache is module state that would leak between cases. */
-export const __resetBatteryCache = () => lastWritten.clear();
+export const __resetBatteryCache = (): void => {
+  lastWritten.clear();
+  rowOf.clear();
+};
 
 /**
  * Charge per connected source, ticked by the server.
@@ -298,6 +327,7 @@ export const __resetBatteryState = (): void => {
   knownSources.clear();
   loadedFor.clear();
   lastWritten.clear();
+  rowOf.clear();
 };
 
 /**
@@ -326,7 +356,10 @@ const forgetSource = (src: number): void => {
     loadToken[device].delete(src);
 
     const deviceId = phoneOf[device].get(src);
-    if (deviceId !== undefined) lastWritten.delete(deviceId);
+    if (deviceId !== undefined) {
+      lastWritten.delete(deviceId);
+      rowOf.delete(deviceId);
+    }
     phoneOf[device].delete(src);
   }
 };
@@ -489,17 +522,28 @@ export const savePlayerBattery = async (
   if (device === DEFAULT_DEVICE) player.setMeta('mica_battery', safeLevel);
 
   try {
+    // Scoped by the holder as well as the phone (§2.9), by a remembered id or a read one alike.
+    // The holder is this citizen: the resolve that produced `phone` moved the row to them if it
+    // had to.
+    const known = rowOf.get(phone);
+    if (known !== undefined) {
+      if (await batteryApp.repo.update(known, { level: safeLevel }, citizenid, phone)) return;
+      // Matched nothing: the row is not this holder's under that id any more, or the level was
+      // already there. Either way, ask the table rather than the cache.
+      rowOf.delete(phone);
+    }
     const [existing] = await batteryApp.repo.findAll({ device_id: phone } as Partial<PhoneBattery>);
     if (existing) {
-      // Scoped by the holder as well as the phone (§2.9). The holder is this citizen: the
-      // resolve that produced `phone` moved the row to them if it had to.
+      rememberRow(phone, existing);
       await batteryApp.repo.update(existing.id, { level: safeLevel }, citizenid, phone);
     } else {
-      await batteryApp.repo.create({ citizenid, device_id: phone, level: safeLevel });
+      const id = await batteryApp.repo.create({ citizenid, device_id: phone, level: safeLevel });
+      rememberRow(phone, { id });
     }
   } catch (e) {
-    // A failed write must not take the event handler down; the next report retries.
+    // A failed write must not take the event handler down; the next report retries, and reads.
     lastWritten.delete(phone);
+    rowOf.delete(phone);
     console.error('[mica] failed to save battery', e);
   }
 };
@@ -689,7 +733,10 @@ export const sendLoadedBatteryToClient = async (
   let savedCharge: number | null = null;
   try {
     const [row] = await batteryApp.repo.findAll({ device_id: phone } as Partial<PhoneBattery>);
-    if (row) savedCharge = Number(row.level);
+    if (row) {
+      savedCharge = Number(row.level);
+      rememberRow(phone, row);
+    }
   } catch (e) {
     if (superseded()) return;
     // Falling through to the default would save it, and a saved 12% would come back as 100

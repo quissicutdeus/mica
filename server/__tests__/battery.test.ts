@@ -185,7 +185,10 @@ describe('savePlayerBattery', () => {
     await savePlayerBattery(SRC, 42);
     await savePlayerBattery(SRC, 41);
 
-    expect(dbMock.insert).toHaveBeenCalledTimes(2);
+    // The second write is an update of the row the first one inserted (MICA-377).
+    expect(dbMock.insert).toHaveBeenCalledOnce();
+    expect(dbMock.update).toHaveBeenCalledOnce();
+    expect(dbMock.update.mock.calls[0][1][0]).toBe(41);
   });
 
   it('clamps out-of-range levels', async () => {
@@ -195,7 +198,7 @@ describe('savePlayerBattery', () => {
     expect(dbMock.insert.mock.calls[0][1]).toEqual(expect.arrayContaining([100]));
 
     await savePlayerBattery(SRC, -80);
-    expect(dbMock.insert.mock.calls[1][1]).toEqual(expect.arrayContaining([0]));
+    expect(dbMock.update.mock.calls[0][1][0]).toBe(0);
   });
 
   it('does nothing for a source with no loaded character', async () => {
@@ -205,6 +208,116 @@ describe('savePlayerBattery', () => {
 
     expect(dbMock.insert).not.toHaveBeenCalled();
     expect(dbMock.update).not.toHaveBeenCalled();
+  });
+
+  /**
+   * MICA-377: the row id of a phone never changes, so the save stopped reading it before every
+   * write. Each case below is a read the cache must still make, or the predicate it must keep.
+   */
+  describe('by the remembered row id (MICA-377)', () => {
+    const batteryReads = () =>
+      dbMock.query.mock.calls.filter((call: unknown[]) =>
+        String(call[0]).includes('FROM `mica_battery`')
+      ).length;
+
+    it('reads the row once, then writes by its id with the holder and phone in the WHERE', async () => {
+      bridgeMock.getPlayer.mockReturnValue(mockPlayer());
+      dbMock.query.mockResolvedValue([{ id: 3, citizenid: CID, level: 90 }]);
+
+      await savePlayerBattery(SRC, 42);
+      await savePlayerBattery(SRC, 41);
+      await savePlayerBattery(SRC, 40);
+
+      expect(batteryReads()).toBe(1);
+      expect(dbMock.update).toHaveBeenCalledTimes(3);
+      const [sql, params] = dbMock.update.mock.calls[2];
+      expect(sql).toContain('WHERE `id` = ? AND `citizenid` = ?');
+      expect(sql).toContain('AND `device_id` = ?');
+      expect(params).toEqual([40, 3, CID, TEST_PHONE_ID]);
+    });
+
+    it('positive twin: a save with nothing remembered still reads', async () => {
+      bridgeMock.getPlayer.mockReturnValue(mockPlayer());
+      dbMock.query.mockResolvedValue([{ id: 3, citizenid: CID, level: 90 }]);
+
+      await savePlayerBattery(SRC, 42);
+
+      expect(batteryReads()).toBe(1);
+    });
+
+    it('remembers the id of the row it inserted, so the next save neither reads nor inserts', async () => {
+      bridgeMock.getPlayer.mockReturnValue(mockPlayer());
+      dbMock.insert.mockResolvedValue(17);
+
+      await savePlayerBattery(SRC, 42);
+      const readsAfterInsert = batteryReads();
+      await savePlayerBattery(SRC, 41);
+
+      expect(batteryReads()).toBe(readsAfterInsert);
+      expect(dbMock.insert).toHaveBeenCalledOnce();
+      expect(dbMock.update.mock.calls[0][1]).toEqual([41, 17, CID, TEST_PHONE_ID]);
+    });
+
+    it('remembers the id the load read, so the first save after a load does not read again', async () => {
+      bridgeMock.getPlayer.mockReturnValue(mockPlayer());
+      dbMock.query.mockResolvedValue([{ id: 9, citizenid: CID, level: 55 }]);
+      await sendLoadedBatteryToClient(SRC);
+      const readsAfterLoad = batteryReads();
+      expect(readsAfterLoad).toBe(1);
+
+      await savePlayerBattery(SRC, 54);
+
+      expect(batteryReads()).toBe(readsAfterLoad);
+      expect(dbMock.update.mock.calls.at(-1)?.[1]).toEqual([54, 9, CID, TEST_PHONE_ID]);
+    });
+
+    it('reads again when the remembered row matches nothing, and writes by what it read', async () => {
+      bridgeMock.getPlayer.mockReturnValue(mockPlayer());
+      dbMock.query.mockResolvedValue([{ id: 3, citizenid: CID, level: 90 }]);
+      await savePlayerBattery(SRC, 42);
+
+      // Under id 3 the row is not this holder's any more; the table now says id 4.
+      dbMock.update.mockResolvedValueOnce(false);
+      dbMock.query.mockResolvedValue([{ id: 4, citizenid: CID, level: 42 }]);
+      await savePlayerBattery(SRC, 41);
+
+      expect(batteryReads()).toBe(2);
+      expect(dbMock.update.mock.calls.map((call: unknown[][]) => call[1][1])).toEqual([3, 3, 4]);
+      expect(dbMock.insert).not.toHaveBeenCalled();
+
+      // And the id it read is the one remembered from then on.
+      await savePlayerBattery(SRC, 40);
+      expect(batteryReads()).toBe(2);
+      expect(dbMock.update.mock.calls.at(-1)?.[1]).toEqual([40, 4, CID, TEST_PHONE_ID]);
+    });
+
+    it('forgets the id after a failed write, so the retry reads', async () => {
+      bridgeMock.getPlayer.mockReturnValue(mockPlayer());
+      dbMock.query.mockResolvedValue([{ id: 3, citizenid: CID, level: 90 }]);
+      await savePlayerBattery(SRC, 42);
+
+      dbMock.update.mockRejectedValueOnce(new Error('deadlock'));
+      await savePlayerBattery(SRC, 41);
+      await savePlayerBattery(SRC, 41);
+
+      expect(batteryReads()).toBe(2);
+    });
+
+    it('keeps one id per phone: a second phone reads and writes its own row', async () => {
+      bridgeMock.getPlayer.mockReturnValue(mockPlayer());
+      dbMock.query.mockImplementation(async (_sql: string, params: unknown[]) =>
+        params.includes('phone-a') ? [{ id: 1, level: 50 }] : [{ id: 2, level: 50 }]
+      );
+
+      for (const phone of ['phone-a', 'phone-b']) await savePlayerBattery(SRC, 42, 'phone', phone);
+      for (const phone of ['phone-a', 'phone-b']) await savePlayerBattery(SRC, 41, 'phone', phone);
+
+      expect(batteryReads()).toBe(2);
+      expect(dbMock.update.mock.calls.slice(2).map((call: unknown[]) => call[1])).toEqual([
+        [41, 1, CID, 'phone-a'],
+        [41, 2, CID, 'phone-b']
+      ]);
+    });
   });
 
   it('retries after a failed write instead of caching the level it never stored', async () => {
@@ -875,6 +988,22 @@ describe('a disconnect', () => {
     // No entry left to iterate: nothing is pushed, and the map answers the absent default.
     expect(chargeCalls()).toHaveLength(0);
     expect(currentCharge(SRC)).toBe(100);
+  });
+
+  it('forgets the remembered row id, so a rejoin reads the row again (MICA-377)', async () => {
+    const reads = () =>
+      dbMock.query.mock.calls.filter((call: unknown[]) =>
+        String(call[0]).includes('FROM `mica_battery`')
+      ).length;
+    dbMock.query.mockResolvedValue([{ id: 3, citizenid: CID, level: 90 }]);
+    await savePlayerBattery(SRC, 42);
+    await savePlayerBattery(SRC, 41);
+    expect(reads()).toBe(1);
+
+    dropSource(SRC);
+    await savePlayerBattery(SRC, 40);
+
+    expect(reads()).toBe(2);
   });
 
   it('forgets the write-skip entry, so the same level is written again on a rejoin', async () => {
