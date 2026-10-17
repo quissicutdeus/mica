@@ -703,6 +703,56 @@ export interface GlimpseComment {
   avatar?: string | null;
 }
 
+/**
+ * One Dark Chat channel the caller is a live member of (MICA-254), as `list` answers it.
+ *
+ * The join code is not here: only the owner may read it, through its own action. Nothing in
+ * any Dark Chat projection names a citizenid, a phone number or an account handle, and nothing
+ * names the caller's other channels, so two aliases cannot be tied to one player.
+ */
+export interface DarkchatChannel {
+  id: number;
+  /** `mica_darkchat.name`, a varchar(32). */
+  name: string;
+  /** The caller's own member row in this channel, and the alias it speaks under. */
+  my_member_id: number;
+  my_alias: string;
+  is_owner: boolean;
+}
+
+/**
+ * A live member of a channel, as another member sees it. Deliberately no owner flag and no
+ * join time: the same join second across two channels would link two aliases.
+ */
+export interface DarkchatMember {
+  id: number;
+  /** `mica_darkchat_members.alias`, a varchar(24), unique among a channel's live members. */
+  alias: string;
+}
+
+/** What `create` and `join` answer. `code` is present only for the channel's owner. */
+export interface DarkchatJoined {
+  channel: DarkchatChannel;
+  code?: string;
+}
+
+/**
+ * One message in a channel, as a member reads it (MICA-254). `member_id` is null and `bot`
+ * true for a line a server script posted through the `PostToDarkChat` export; `alias` is then
+ * the alias that script supplied. `mine` is computed for the reader, never stored.
+ */
+export interface DarkchatMessage {
+  id: number;
+  channel_id: number;
+  member_id: number | null;
+  alias: string;
+  bot: boolean;
+  mine: boolean;
+  /** `mica_darkchat_messages.body`, at most 500 characters. */
+  body: string;
+  created_at: Date | string;
+}
+
 export interface Note {
   id: number;
   citizenid: string;

@@ -6,6 +6,7 @@ export * from './bank';
 export * from './blabber_dms';
 export * from './contacts';
 export * from './conversations';
+export * from './darkchat_messages';
 export * from './glimpse_comments';
 export * from './highscores';
 export * from './invoices';
