@@ -642,7 +642,10 @@ describe.skipIf(!trial)('mica-smoke-release.sh', () => {
       expect(failed.staged).toEqual([]);
     });
 
-    it('a keyring is fresh each run', () => {
+    // Two real wrapper runs in one test. On the 24.04 runner this took 3.1s under the full
+    // parallel suite and on 26.04 5.7s -- a measured slowdown, not a hang (every sibling that
+    // spawns the wrapper took 0.5-3s) -- so it gets headroom over vitest's 5s default.
+    it('a keyring is fresh each run', { timeout: 20_000 }, () => {
       const a = wrap(makeRun('manifest'), suite(PASS_A));
       const b = wrap(makeRun('manifest'), suite(PASS_A));
 

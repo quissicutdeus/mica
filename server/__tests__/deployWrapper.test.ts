@@ -887,15 +887,27 @@ describe.skipIf(!canTrial)('the compose wrappers', () => {
     });
 
     // The sudoers syntax check is sudo's own, `visudo -cf`, which is what the install runs first.
-    // Named in a constant because knip reads a literal `spawnSync('visudo', ...)` as an unlisted
+    // It must be CLASSIC sudo's: the rules target a host running sudo 1.9, and sudo-rs (the
+    // `visudo` on Ubuntu 26.04 runners, where the classic one is only `visudo.ws`) refuses the
+    // `^...$` regex arguments the smoke rule is written with. So prefer `visudo.ws`, accept a
+    // plain `visudo` only if it is not sudo-rs, and otherwise report it missing -- which fails
+    // on GitHub CI rather than skipping.
+    // Named in constants because knip reads a literal `spawnSync('visudo', ...)` as an unlisted
     // binary and its config (outside this lane) has nowhere to list one but `ignoreBinaries`.
-    const VISUDO = 'visudo';
-    const hasVisudo = canRun(
-      spawnSync('sh', ['-c', `command -v ${VISUDO}`]).status === 0
-        ? null
-        : '`visudo` is not installed',
-      'the sudoers syntax check'
-    );
+    const VISUDO_CLASSIC = 'visudo.ws';
+    const VISUDO_PLAIN = 'visudo';
+    const found = (bin: string) => spawnSync('sh', ['-c', `command -v ${bin}`]).status === 0;
+    const plainIsSudoRs = () =>
+      `${spawnSync(VISUDO_PLAIN, ['--version'], { encoding: 'utf8' }).stdout}`.includes(
+        'visudo-rs'
+      );
+    const VISUDO = found(VISUDO_CLASSIC) ? VISUDO_CLASSIC : VISUDO_PLAIN;
+    let visudoMissing: string | null = null;
+    if (!found(VISUDO)) visudoMissing = '`visudo` is not installed';
+    else if (VISUDO === VISUDO_PLAIN && plainIsSudoRs())
+      visudoMissing =
+        '`visudo` is sudo-rs, which refuses regex rules; classic sudo (`visudo.ws`) is needed';
+    const hasVisudo = canRun(visudoMissing, 'the sudoers syntax check');
     it.skipIf(!hasVisudo)('parses under visudo -cf, which is what the install runs first', () => {
       const r = spawnSync(VISUDO, ['-cf', SUDOERS], { encoding: 'utf8' });
 
