@@ -41,7 +41,7 @@ principals to check.
 | Command                                 | Does                                                                                    |
 | --------------------------------------- | --------------------------------------------------------------------------------------- |
 | `micaschema`                            | Reports where the database differs from the code. Changes nothing                       |
-| `micaschema apply`                      | **Console only.** Runs pending migrations, then the additive pass                       |
+| `micaschema apply`                      | **Console only.** Runs pending migrations, then creates missing tables and adds columns |
 | `micamedia`                             | Reports `mica_media`'s size and its top ten holders. Changes nothing                    |
 | `micamedia prune`                       | **Console only.** Runs the expiry and orphan sweeps now                                 |
 | `micacharge [playerId] <0-100>`         | Sets a player's battery level; omit the id for yourself                                 |

@@ -5,9 +5,12 @@
 import { Database } from './Database';
 import { declaredServices } from './defineService';
 import { ownerTableKnown } from './ownerWidth';
+import { AUDIT_LOG_TABLE } from './AuditLogger';
+import { orderAppsByDependency } from './schemaSql';
 import {
   isNoop,
   planAppMigration,
+  planAuditLogMigration,
   planChildMigration,
   type LiveTable,
   type MigrationPlan
@@ -23,8 +26,9 @@ import {
  * upgraded micaOS whose database is missing a column the code expects otherwise fails later,
  * as a query error in whichever app happened to touch it first.
  *
- * Additive only, and loud. Anything it will not do itself is printed with the exact
- * situation, so the operator can decide. See `migrate.ts` for why drops, renames and
+ * Additive only, and loud. A missing table is created whole (MICA-388); a missing column or
+ * index is added. Anything it will not do itself is printed with the exact situation, so the
+ * operator can decide. See `migrate.ts` for why drops, renames and
  * type changes are excluded, and `migrations.ts` for the path that does handle them.
  */
 
@@ -70,14 +74,23 @@ const readLiveTable = async (schema: string, table: string): Promise<LiveTable> 
   };
 };
 
-/** Every table micaOS declares, primary and child alike. */
+/**
+ * Every table micaOS owns, primary and child alike, and the audit ledger — **in the order the
+ * first-start bootstrap creates them** (`bootstrapTables`): the ledger, which nothing
+ * references, then apps in foreign-key order (`orderAppsByDependency`), each primary table
+ * before its child tables. `apply()` runs creates in this order, so a new table's foreign key
+ * always finds its target, whether that was there already or created a statement earlier.
+ * The migrations ledger is not here: `runPendingMigrations` creates it, before this runs.
+ */
 const collectPlans = async (schema: string): Promise<MigrationPlan[]> => {
-  const plans: MigrationPlan[] = [];
-
   // Which width a citizenid column should have here (MICA-289); null in the boot window.
   const options = { ownerTable: ownerTableKnown() };
 
-  for (const resolved of declaredServices) {
+  const plans: MigrationPlan[] = [
+    planAuditLogMigration(await readLiveTable(schema, AUDIT_LOG_TABLE), options)
+  ];
+
+  for (const resolved of orderAppsByDependency(declaredServices)) {
     plans.push(planAppMigration(resolved, await readLiveTable(schema, resolved.table), options));
 
     for (const child of resolved.childTables) {
@@ -101,9 +114,7 @@ export interface AdditiveApplyResult {
 
 const describe = (plan: MigrationPlan): string[] => {
   const lines: string[] = [];
-  if (plan.missingTable) {
-    lines.push(`  ${plan.table}: table does not exist — import mica.sql`);
-  }
+  if (plan.create) lines.push(`  ${plan.create.description} (it does not exist)`);
   for (const statement of plan.additive) lines.push(`  ${statement.description}`);
   for (const issue of plan.drift) lines.push(`  needs a human: ${issue}`);
   return lines;
@@ -137,12 +148,23 @@ export const SchemaMigrator = {
     for (const plan of interesting) {
       for (const line of describe(plan)) console.log(line);
     }
+    if (interesting.some((p) => p.create || p.additive.length > 0)) {
+      console.log(
+        "[mica] run 'micaschema apply' from the server console to create and add what is " +
+          'listed above, after taking a backup.'
+      );
+    }
   },
 
   /**
-   * Execute every additive statement `plan()` finds — the missing columns and indexes it is
-   * always safe to add. Never touches anything `plan()` reports as `drift`; those need a
+   * Execute every additive statement `plan()` finds — the missing tables, columns and indexes
+   * it is always safe to add. Never touches anything `plan()` reports as `drift`; those need a
    * human, and stay untouched.
+   *
+   * **Every create first, then every column and index** (MICA-388), creates in `plan()`'s
+   * foreign-key order. Each create is `CREATE TABLE IF NOT EXISTS` from the declaration, in its
+   * final shape, so a table it creates has no additive statement of its own and a second run
+   * finds nothing to do.
    *
    * Reports partial progress rather than throwing it away. MySQL DDL auto-commits per
    * statement, so a failure on the third of five leaves the first two applied and permanent;
@@ -157,7 +179,11 @@ export const SchemaMigrator = {
    * `information_schema` read), not partial progress, and nothing has been applied.
    */
   async apply(): Promise<AdditiveApplyResult> {
-    const statements = (await SchemaMigrator.plan()).flatMap((plan) => plan.additive);
+    const plans = await SchemaMigrator.plan();
+    const statements = [
+      ...plans.flatMap((plan) => (plan.create ? [plan.create] : [])),
+      ...plans.flatMap((plan) => plan.additive)
+    ];
     const applied: string[] = [];
 
     for (let i = 0; i < statements.length; i++) {

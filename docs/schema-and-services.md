@@ -19,10 +19,12 @@ schema.
 1. **Versioned migrations** — every file in `server/migrations/` the
    `mica_schema_migrations` ledger has no row for, oldest id first.
    `server/lib/migrations.ts`.
-2. **The additive pass** — `SchemaMigrator.apply()` executing the `ADD COLUMN` /
-   `ADD KEY` statements `plan()` derives from the difference between
-   `information_schema` and the declarations. `server/lib/SchemaMigrator.ts`
-   over `server/lib/migrate.ts`.
+2. **The additive pass** — `SchemaMigrator.apply()` executing what `plan()`
+   derives from the difference between `information_schema` and the
+   declarations: first a `CREATE TABLE IF NOT EXISTS` for every declared table
+   that does not exist yet, in foreign-key order and in the same shape a fresh
+   install gets (MICA-388), then the `ADD COLUMN` / `ADD KEY` statements for the
+   tables that do. `server/lib/SchemaMigrator.ts` over `server/lib/migrate.ts`.
 
 One command rather than two, because an operator thinks "bring my database up to
 date", not "apply the two kinds of change separately".
@@ -667,10 +669,12 @@ silent-failure shape as a missing NUI layer. Regenerate and review the diff.
 
 What a running server _can_ do is bring an existing table up to date, and only
 when an operator asks it to by name: `micaschema apply` runs the versioned
-migrations and then the additive plan. Its one `CREATE TABLE IF NOT EXISTS` is
-the `mica_schema_migrations` ledger, which is exempt from the objection above
-because it has a single fixed shape and will never gain a column — "already
-there" really is nothing to do, rather than a change quietly skipped.
+migrations and then the additive plan. Its `CREATE TABLE IF NOT EXISTS`
+statements are exempt from the objection above: the ledger
+`mica_schema_migrations` has a single fixed shape, and the additive plan creates
+a declared table only after reading that it does not exist, then adds missing
+columns to the ones that do. "Already there" really is nothing to do, rather
+than a change quietly skipped.
 
 **The numeric prefix is apply order, and alphabetical would be wrong.** Foreign
 keys cross app boundaries — `mica_messages_attachments` references `mica_media`,

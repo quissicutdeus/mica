@@ -10,8 +10,14 @@ const { dbMock } = vi.hoisted(() => ({
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
 
 import { resolveAppSchema } from '../lib/defineService';
-import { expectedShape } from '../lib/schemaSql';
-import { planAppMigration, planChildMigration, isNoop, type LiveTable } from '../lib/migrate';
+import { auditLogDdl, expectedShape, toChildTableSql, toCreateTableSql } from '../lib/schemaSql';
+import {
+  planAppMigration,
+  planAuditLogMigration,
+  planChildMigration,
+  isNoop,
+  type LiveTable
+} from '../lib/migrate';
 import '../services/index';
 
 /**
@@ -64,6 +70,8 @@ function declaredTypeOf(name: string): string {
 
 const sqlOf = (plan: { additive: { sql: string }[] }) => plan.additive.map((s) => s.sql);
 
+const MISSING: LiveTable = { exists: false, columns: [], indexes: [] };
+
 describe('planAppMigration', () => {
   it('does nothing when the table already matches', () => {
     const plan = planAppMigration(schema, inSync());
@@ -102,10 +110,36 @@ describe('planAppMigration', () => {
     ]);
   });
 
-  it('reports a table that does not exist rather than trying to patch it', () => {
-    const plan = planAppMigration(schema, { exists: false, columns: [], indexes: [] });
+  /**
+   * MICA-388: a missing table used to plan nothing at all, "import mica.sql" on the report, so
+   * `micaschema apply` created nothing and then said the schema was up to date.
+   */
+  it('plans the whole create for a table that does not exist, and nothing to patch', () => {
+    const plan = planAppMigration(schema, MISSING, { ownerTable: true });
     expect(plan.missingTable).toBe(true);
     expect(plan.additive).toEqual([]);
+    expect(plan.drift).toEqual([]);
+    expect(isNoop(plan)).toBe(false);
+    expect(plan.create).toEqual({
+      description: 'create table mica_widgets',
+      sql: toCreateTableSql(schema, { ownerTable: true })
+    });
+    // The generated files' form, never the bootstrap's plain one: running it twice is a no-op.
+    expect(plan.create?.sql).toMatch(/^CREATE TABLE IF NOT EXISTS `mica_widgets` \(/);
+    expect(plan.create?.sql).toContain('`citizenid` varchar(50) NOT NULL');
+  });
+
+  it('sizes a created citizenid for the framework, and the wider one while it is unknown', () => {
+    expect(planAppMigration(schema, MISSING, { ownerTable: false }).create?.sql).toContain(
+      '`citizenid` varchar(60) NOT NULL'
+    );
+    expect(planAppMigration(schema, MISSING).create?.sql).toBe(
+      toCreateTableSql(schema, { ownerTable: false })
+    );
+  });
+
+  it('plans no create for a table that exists', () => {
+    expect(planAppMigration(schema, inSync()).create).toBeNull();
   });
 
   it('never emits DROP, RENAME or MODIFY', () => {
@@ -233,6 +267,8 @@ describe('planAppMigration', () => {
 });
 
 import { SchemaMigrator } from '../lib/SchemaMigrator';
+import { setOwnerTableResolver } from '../lib/ownerWidth';
+import { bootstrapTables, createStatements, SCHEMA_MIGRATIONS_TABLE } from '../lib/schemaSql';
 
 const liveChild = (): LiveTable => ({
   exists: true,
@@ -271,6 +307,17 @@ describe('planChildMigration', () => {
     ]);
   });
 
+  it("plans the child table's whole create when it does not exist", () => {
+    const plan = planChildMigration(child, MISSING, { ownerTable: true });
+    expect(plan.missingTable).toBe(true);
+    expect(plan.additive).toEqual([]);
+    expect(plan.create).toEqual({
+      description: 'create table mica_widget_parts',
+      sql: toChildTableSql(child, { ownerTable: true })
+    });
+    expect(plan.create?.sql).toMatch(/^CREATE TABLE IF NOT EXISTS `mica_widget_parts` \(/);
+  });
+
   it('does not expect an id when the child opts out of one', () => {
     const noId = { ...child, autoIncrementId: false };
     const live = liveChild();
@@ -302,6 +349,7 @@ describe('SchemaMigrator', () => {
       {
         table: 'mica_widgets',
         missingTable: false,
+        create: null,
         additive: [
           {
             description: 'add column mica_widgets.body',
@@ -333,6 +381,7 @@ describe('SchemaMigrator', () => {
       {
         table: 'mica_widgets',
         missingTable: false,
+        create: null,
         additive: [],
         drift: ['mica_widgets.x exists but is not declared']
       }
@@ -356,12 +405,14 @@ describe('SchemaMigrator', () => {
       {
         table: 'mica_widgets',
         missingTable: false,
+        create: null,
         additive: [statement('body'), statement('subtitle')],
         drift: []
       },
       {
         table: 'mica_notes',
         missingTable: false,
+        create: null,
         additive: [
           { description: 'add column mica_notes.pinned', sql: 'ALTER TABLE `mica_notes` ...' }
         ],
@@ -426,6 +477,7 @@ describe('SchemaMigrator', () => {
       {
         table: 'mica_widgets',
         missingTable: true,
+        create: { description: 'create table mica_widgets', sql: 'CREATE TABLE IF NOT EXISTS …' },
         additive: [],
         drift: ['mica_widgets.foo exists but is not declared']
       }
@@ -435,9 +487,164 @@ describe('SchemaMigrator', () => {
     await SchemaMigrator.report();
 
     expect(logSpy).toHaveBeenCalledWith('[mica] schema differences:');
-    expect(logSpy).toHaveBeenCalledWith('  mica_widgets: table does not exist — import mica.sql');
+    expect(logSpy).toHaveBeenCalledWith('  create table mica_widgets (it does not exist)');
+    expect(logSpy).toHaveBeenCalledWith(
+      "[mica] run 'micaschema apply' from the server console to create and add what is " +
+        'listed above, after taking a backup.'
+    );
+    expect(logSpy).not.toHaveBeenCalledWith('[mica] schema is up to date.');
+    expect(logSpy.mock.calls.flat().join('\n')).not.toMatch(/import mica\.sql/);
     expect(logSpy).toHaveBeenCalledWith(
       '  needs a human: mica_widgets.foo exists but is not declared'
     );
+  });
+});
+
+/**
+ * MICA-388. `micaschema apply` creates a missing table — the audit ledger, an app's table, a
+ * child table — from the same DDL the first-start bootstrap runs, in the bootstrap's order,
+ * before any column or index is added.
+ */
+describe('a missing table (MICA-388)', () => {
+  const createOf = (table: string, sql: string) => ({
+    table,
+    missingTable: true,
+    create: { description: `create table ${table}`, sql },
+    additive: [],
+    drift: []
+  });
+
+  it('plans the audit ledger as its create when missing, and leaves it alone when not', () => {
+    expect(planAuditLogMigration(MISSING, { ownerTable: true })).toEqual(
+      createOf('mica_audit_logs', auditLogDdl({ ownerTable: true }))
+    );
+    expect(planAuditLogMigration(MISSING).create?.sql).toBe(auditLogDdl({ ownerTable: false }));
+    expect(
+      isNoop(
+        planAuditLogMigration({
+          exists: true,
+          columns: [{ name: 'id', type: 'int(11)', nullable: false }],
+          indexes: ['PRIMARY']
+        })
+      )
+    ).toBe(true);
+  });
+
+  it('plan() lists every table in the bootstrap order, each with the bootstrap DDL', async () => {
+    setOwnerTableResolver(() => true);
+    try {
+      dbMock.scalar.mockResolvedValueOnce('mica_db');
+      dbMock.query.mockResolvedValue([]);
+
+      const plans = await SchemaMigrator.plan();
+
+      // The bootstrap's own list, less the migrations ledger `runPendingMigrations` creates.
+      const expected = bootstrapTables().filter((t) => t !== SCHEMA_MIGRATIONS_TABLE);
+      expect(plans.map((p) => p.table)).toEqual(expected);
+      // Its statements too, less the ledger and the seed, in IF NOT EXISTS form.
+      const bootstrap = createStatements(true).filter((sql) => sql.startsWith('CREATE TABLE '));
+      expect(bootstrap.length).toBe(expected.length + 1);
+      expect(plans.map((p) => p.create?.sql)).toEqual(
+        bootstrap
+          .slice(1)
+          .map((sql) => sql.replace(/^CREATE TABLE /, 'CREATE TABLE IF NOT EXISTS '))
+      );
+      expect(plans.every((p) => p.missingTable && p.additive.length === 0)).toBe(true);
+    } finally {
+      setOwnerTableResolver(() => null);
+    }
+  });
+
+  it('plan() puts every foreign key target before the table that references it', async () => {
+    dbMock.scalar.mockResolvedValueOnce('mica_db');
+    dbMock.query.mockResolvedValue([]);
+
+    const plans = await SchemaMigrator.plan();
+    const at = new Map(plans.map((p, i) => [p.table, i]));
+
+    let references = 0;
+    for (const [i, plan] of plans.entries()) {
+      for (const [, target] of (plan.create?.sql ?? '').matchAll(/REFERENCES `([^`]+)`/g)) {
+        references += 1;
+        // A self-reference (a reply onto its own table) resolves inside its own create.
+        expect(at.get(target), `${plan.table} references ${target}`).toBeLessThanOrEqual(i);
+      }
+    }
+    // A loop over no references would assert nothing; the declarations carry dozens.
+    expect(references).toBeGreaterThan(5);
+  });
+
+  it('apply() runs every create, in plan order, before any column or index', async () => {
+    dbMock.query.mockClear();
+    vi.spyOn(SchemaMigrator, 'plan').mockResolvedValueOnce([
+      {
+        table: 'mica_widgets',
+        missingTable: false,
+        create: null,
+        additive: [statement('body')],
+        drift: []
+      },
+      createOf('mica_parents', 'CREATE TABLE IF NOT EXISTS `mica_parents` (…)'),
+      createOf('mica_children', 'CREATE TABLE IF NOT EXISTS `mica_children` (…)')
+    ]);
+    dbMock.query.mockResolvedValue([]);
+
+    const result = await SchemaMigrator.apply();
+
+    expect(dbMock.query.mock.calls.map(([sql]) => sql)).toEqual([
+      'CREATE TABLE IF NOT EXISTS `mica_parents` (…)',
+      'CREATE TABLE IF NOT EXISTS `mica_children` (…)',
+      'ALTER TABLE `mica_widgets` ADD COLUMN `body` text'
+    ]);
+    expect(result).toEqual({
+      applied: [
+        'create table mica_parents',
+        'create table mica_children',
+        'add column mica_widgets.body'
+      ],
+      failed: null,
+      remaining: []
+    });
+  });
+
+  it('apply() stops at a failed create, attempting no later create nor any column', async () => {
+    dbMock.query.mockClear();
+    vi.spyOn(SchemaMigrator, 'plan').mockResolvedValueOnce([
+      createOf('mica_parents', 'CREATE TABLE IF NOT EXISTS `mica_parents` (…)'),
+      createOf('mica_children', 'CREATE TABLE IF NOT EXISTS `mica_children` (…)'),
+      {
+        table: 'mica_widgets',
+        missingTable: false,
+        create: null,
+        additive: [statement('body')],
+        drift: []
+      }
+    ]);
+    dbMock.query.mockImplementation((sql: string) =>
+      sql.includes('mica_parents')
+        ? Promise.reject(new Error("Can't create table"))
+        : Promise.resolve([])
+    );
+
+    const result = await SchemaMigrator.apply();
+
+    expect(result).toEqual({
+      applied: [],
+      failed: { description: 'create table mica_parents', error: "Can't create table" },
+      remaining: ['create table mica_children', 'add column mica_widgets.body']
+    });
+    expect(dbMock.query).toHaveBeenCalledTimes(1);
+  });
+
+  it('report() never says up to date while a table is missing', async () => {
+    vi.spyOn(SchemaMigrator, 'plan').mockResolvedValueOnce([
+      createOf('mica_widgets', 'CREATE TABLE IF NOT EXISTS `mica_widgets` (…)')
+    ]);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await SchemaMigrator.report();
+
+    expect(logSpy).not.toHaveBeenCalledWith('[mica] schema is up to date.');
+    expect(logSpy).toHaveBeenCalledWith('  create table mica_widgets (it does not exist)');
   });
 });

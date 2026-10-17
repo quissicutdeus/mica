@@ -1325,6 +1325,17 @@ export instead, which authenticates its caller.
 
 ### Fixed
 
+**`micaschema apply` now creates a table that does not exist yet (MICA-388).**
+It creates a new app's table, its child tables and the audit ledger, in
+foreign-key order and in the same shape a fresh install gets, before it adds
+missing columns and indexes. Before, it created nothing and still said the
+schema was up to date. So a server that updated past a release adding a table
+never got it, although the entries for those releases told you `apply` would
+create it. `micaschema plan` now lists such a table as `create table …` instead
+of telling you to import `mica.sql`. If you ran `apply` for an earlier release
+that added a table, run it again: it creates whatever is still missing and
+changes nothing else.
+
 **A text into a 1:1 nobody else is in is refused, and the thread says so
 (MICA-349).** After the other side left a 1:1, or was taken out of it by a
 privacy delete, or when a 1:1 was started to a number nobody holds, a text typed

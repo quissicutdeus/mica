@@ -24,13 +24,16 @@ import { migrations as shippedMigrations } from '../migrations';
  * no import. Both go through `createStatements` below, so the two cannot describe different
  * schemas, and `generatedSchema.test.ts` holds the committed files to it.
  *
- * **Nothing here ever runs against a database that already has a micaOS table.** The files
- * use `CREATE TABLE IF NOT EXISTS`, which silently does nothing to a table that is there, so a
- * schema change applied that way would be a no-op with no error — the same silent-failure
- * shape that produced the dead NUI endpoints. A live table is brought up to date by
- * `micaschema apply` (AGENTS.md §8), never by re-running this. The first-start path uses plain
- * `CREATE TABLE` instead (`plainCreate`), so a table that unexpectedly exists is an error that
- * stops it rather than a statement that quietly skipped.
+ * **Nothing here ever changes a table that already exists.** The files use `CREATE TABLE IF NOT
+ * EXISTS`, which silently does nothing to a table that is there, so a schema change applied
+ * that way would be a no-op with no error — the same silent-failure shape that produced the
+ * dead NUI endpoints. A live table is brought up to date by `micaschema apply` (AGENTS.md §8),
+ * never by re-running this. That command's third reader is a table that is **not** there
+ * (MICA-388): `migrate.ts` plans it as this module's `CREATE TABLE IF NOT EXISTS`, per table,
+ * in `orderAppsByDependency`'s order, so an upgrade gains a new app's table in the shape a fresh
+ * install gets. The first-start path uses plain `CREATE TABLE` instead (`plainCreate`), so a
+ * table that unexpectedly exists is an error that stops it rather than a statement that
+ * quietly skipped.
  *
  * `schemaMigrationsLedgerDdl` is also run by `server/lib/migrations.ts` with `IF NOT EXISTS`:
  * that table has a single fixed shape and never gains a column, so it cannot hide a change.

@@ -82,12 +82,13 @@ const EXTERNAL_DB = Boolean(DB_HOST || DB_PORT || DB_USER || DB_PASSWORD);
  * `runWedgedPairsMigration`s (10 on each shape) to 421, and MICA-335's
  * `runContactKeyMigration`s (17 on each shape) to 455, and MICA-350's two more in each
  * `runWedgedPairsMigration` to 459, and MICA-330's `runMouthKeyMigration`s (18 on each shape)
- * to 495 — so the margin here is eight again.
+ * to 495, and MICA-388's `runApplyCreatesMissingTables` (9 on each shape, over a current ledger
+ * and over an empty one) to 531 — so the margin here is eight again.
  * That is deliberately tight: losing any one fixture drops below it and fails, which is the
  * whole point. Raise the floor when you add checks, rather than letting the gap widen until it
  * stops catching anything.
  */
-const MINIMUM_CHECKS = 487;
+const MINIMUM_CHECKS = 523;
 let checksRun = 0;
 
 const check = (label, actual, expected) => {
@@ -2954,10 +2955,17 @@ const runPlayersKeysMigration = async ({ connection, schemaFile, hasPlayers, ser
   check(`${label}: the additive pass after it fails nothing`, additive.failed, null);
   const plans = await server.SchemaMigrator.plan();
   check(
-    `${label}: and the planner finds nothing to add and no drift`,
-    plans.flatMap((p) => [...p.additive, ...p.drift]),
+    `${label}: and the planner finds nothing to create or add and no drift`,
+    plans.flatMap((p) => [...(p.create ? [p.create] : []), ...p.additive, ...p.drift]),
     []
   );
+  // The fixture predates tables an update added since, which the pass above created (MICA-388),
+  // keys and all; what is kept is every key on a table that was there.
+  const created = additive.applied
+    .filter((line) => line.startsWith('create table '))
+    .map((line) => line.slice('create table '.length));
+  const keptKeys = async () =>
+    (await ownForeignKeys(connection)).filter((key) => !created.includes(key.split('.')[0]));
 
   if (hasPlayers) {
     await connection.query('DELETE FROM players WHERE citizenid = ?', ['CIT_KEYS']);
@@ -2974,14 +2982,14 @@ const runPlayersKeysMigration = async ({ connection, schemaFile, hasPlayers, ser
     [second.applied, second.failed, await ownerForeignKeys(connection)],
     [[], null, 0]
   );
-  check(`${label}: and keeps micaOS's own keys`, await ownForeignKeys(connection), own);
+  check(`${label}: and keeps micaOS's own keys`, await keptKeys(), own);
 
   // Run it once more by hand, as a retry after a failed ledger write would.
   const zeroSix = server.migrations.find((m) => m.id === KEYS_MIGRATION);
   await zeroSix.up();
   check(
     `${label}: and its up() on a database it already ran on is a no-op`,
-    [await ownerForeignKeys(connection), await ownForeignKeys(connection)],
+    [await ownerForeignKeys(connection), await keptKeys()],
     [0, own]
   );
 };
@@ -3456,6 +3464,166 @@ const runWedgedPairsMigration = async ({ connection, schemaFile, hasPlayers, ser
   );
 };
 
+/* ------------------ MICA-388: micaschema apply creates a table that is missing */
+
+/**
+ * Dropped from a current import, children before parents so MariaDB lets them go: Glimpse's
+ * three tables (the qbox_dev case MICA-388 was found on), `mica_media` with every table that
+ * references it — a target in another app that the creates must put first — and the audit
+ * ledger, which no `defineService` declares.
+ */
+const MISSING_TABLES = [
+  'mica_glimpse_comments',
+  'mica_glimpse_attachments',
+  'mica_blabber_attachments',
+  'mica_marketplace_attachments',
+  'mica_messages_attachments',
+  'mica_glimpse',
+  'mica_media',
+  'mica_audit_logs'
+];
+
+/** Each named table's `SHOW CREATE TABLE`, which is every column, key and foreign key. */
+const createTableOf = async (connection, tables) => {
+  const out = {};
+  for (const table of tables) {
+    const [[row]] = await connection.query(`SHOW CREATE TABLE \`${table}\``);
+    out[table] = row['Create Table'];
+  }
+  return out;
+};
+
+/**
+ * MICA-388, run the way an owner runs it: `micaschema apply` (`runApply`) over an existing
+ * database whose ledger is current and which lacks tables an update added. Until MICA-388 the
+ * planner reported each as "import mica.sql" and apply, which ran only planned statements,
+ * created nothing and then said the schema was already up to date.
+ *
+ * Only a real database settles the three claims: that the creates run in an order every foreign
+ * key resolves in (errno 150 otherwise), that what they create is exactly what a fresh import
+ * of the same file has — `SHOW CREATE TABLE`, byte for byte, citizenid width included — and that
+ * a second run finds nothing to do.
+ *
+ * `ledger: false` is a half-created database instead — the ledger there but empty, which a
+ * first-start create that stopped part-way leaves — where apply runs every migration over the
+ * tables that exist before creating the rest; the bootstrap's refusal points such a database at
+ * this command.
+ */
+const runApplyCreatesMissingTables = async ({
+  connection,
+  schemaFile,
+  hasPlayers,
+  server,
+  ledger = true
+}) => {
+  const variant = hasPlayers ? 'qb' : 'esx';
+  const label = `${schemaFile} missing tables${ledger ? '' : ', empty ledger'}`;
+  step(
+    `${schemaFile} — MICA-388 micaschema apply creates missing tables, on a ${variant} ` +
+      `database${ledger ? '' : ' with an empty ledger'}`
+  );
+
+  const fresh = async (database) => {
+    await connection.query(`DROP DATABASE IF EXISTS \`${database}\``);
+    await connection.query(`CREATE DATABASE \`${database}\``);
+    await connection.changeUser({ database });
+    if (hasPlayers) await connection.query(PLAYERS_TABLE);
+    await connection.query(fs.readFileSync(path.join(root, schemaFile), 'utf8'));
+  };
+  const suffix = `${variant}${ledger ? '' : '_noledger'}`;
+
+  await fresh(`mica_missing_shape_${suffix}`);
+  const shape = {
+    columns: await wholeSchema(connection),
+    keys: await allIndexes(connection),
+    creates: await createTableOf(connection, MISSING_TABLES)
+  };
+
+  await fresh(`mica_missing_${suffix}`);
+  const A = hasPlayers ? 'CIT_A' : SWEEP_LIVE;
+  await connection.query("INSERT INTO mica_notes (citizenid, title) VALUES (?, 'kept')", [A]);
+  for (const table of MISSING_TABLES) await connection.query(`DROP TABLE \`${table}\``);
+  if (!ledger) await connection.query('DELETE FROM mica_schema_migrations');
+  const [present] = await connection.query(
+    `SELECT table_name AS t FROM information_schema.TABLES
+      WHERE table_schema = DATABASE() AND table_name IN (?)`,
+    [MISSING_TABLES]
+  );
+  check(`${label}: the regressed database lacks every one of them`, present, []);
+
+  runningFramework(server, hasPlayers);
+  const report = await captured(() => server.SchemaMigrator.report());
+  check(
+    `${label}: micaschema describes each create and the command, never "up to date" or an import`,
+    [
+      MISSING_TABLES.filter(
+        (t) => !report.lines.includes(`  create table ${t} (it does not exist)`)
+      ),
+      report.lines.some((line) => line.includes("run 'micaschema apply'")),
+      report.lines.filter((line) => /up to date|import mica/i.test(line))
+    ],
+    [[], true, []]
+  );
+
+  const apply = await captured(() => server.runApply(0));
+  const created = apply.lines
+    .map((line) => /^\[mica\] create table (\S+)$/.exec(line)?.[1])
+    .filter(Boolean);
+  check(
+    `${label}: apply creates every missing table, failing nothing and claiming nothing current`,
+    [
+      created.toSorted(),
+      apply.lines.filter((line) => /fail|not attempted|up to date/i.test(line)),
+      apply.lines.filter((line) => line.startsWith('[mica] add '))
+    ],
+    [MISSING_TABLES.toSorted(), [], []]
+  );
+  const before = (parent, child) => created.indexOf(parent) < created.indexOf(child);
+  check(
+    `${label}: in foreign-key order — mica_media and mica_glimpse before what references them`,
+    [
+      before('mica_media', 'mica_glimpse_attachments'),
+      before('mica_media', 'mica_blabber_attachments'),
+      before('mica_media', 'mica_marketplace_attachments'),
+      before('mica_media', 'mica_messages_attachments'),
+      before('mica_glimpse', 'mica_glimpse_attachments'),
+      before('mica_glimpse', 'mica_glimpse_comments')
+    ],
+    [true, true, true, true, true, true]
+  );
+  check(
+    `${label}: each created table is exactly what a fresh import of ${schemaFile} has`,
+    await createTableOf(connection, MISSING_TABLES),
+    shape.creates
+  );
+  check(
+    `${label}: and so is every column and key of the whole schema`,
+    [await wholeSchema(connection), await allIndexes(connection)],
+    [shape.columns, shape.keys]
+  );
+  check(
+    `${label}: rows in the tables that were there are untouched`,
+    Number(await scalar(connection, "SELECT COUNT(*) FROM mica_notes WHERE title = 'kept'")),
+    1
+  );
+  check(
+    `${label}: ${ledger ? 'no migration ran' : 'every migration ran, and is recorded'}`,
+    [
+      apply.lines.filter((line) => line.startsWith('[mica] applied migration')).length,
+      await ledgerIds(connection)
+    ],
+    [ledger ? 0 : ALL_MIGRATIONS().length, ALL_MIGRATIONS()]
+  );
+
+  const again = await captured(() => server.runApply(0));
+  const quiet = await captured(() => server.SchemaMigrator.report());
+  check(
+    `${label}: a second apply changes nothing and says so, and micaschema agrees`,
+    [again.lines, quiet.lines, await createTableOf(connection, MISSING_TABLES)],
+    [['[mica] schema is already up to date.'], ['[mica] schema is up to date.'], shape.creates]
+  );
+};
+
 const main = async () => {
   let container;
   let connection;
@@ -3666,6 +3834,25 @@ const main = async () => {
       hasPlayers: false,
       server
     });
+
+    // MICA-388. `micaschema apply` creates missing tables, on both shapes, over a current
+    // ledger and over an empty one.
+    for (const ledger of [true, false]) {
+      await runApplyCreatesMissingTables({
+        connection,
+        schemaFile: 'mica.sql',
+        hasPlayers: true,
+        server,
+        ledger
+      });
+      await runApplyCreatesMissingTables({
+        connection,
+        schemaFile: 'mica.esx.sql',
+        hasPlayers: false,
+        server,
+        ledger
+      });
+    }
 
     if (checksRun < MINIMUM_CHECKS) {
       throw new Error(

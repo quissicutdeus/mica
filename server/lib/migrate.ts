@@ -4,11 +4,15 @@
 
 import { normalizeIndex, type ChildTableDefinition, type ColumnDef } from './defineService';
 import {
+  auditLogDdl,
   columnDefinitionSql,
   expectedShape,
   indexDefinitionSql,
+  toChildTableSql,
+  toCreateTableSql,
   type ExpectedShape
 } from './schemaSql';
+import { AUDIT_LOG_TABLE } from './AuditLogger';
 import type { ResolvedService } from './defineService';
 
 /**
@@ -31,10 +35,17 @@ const UNKNOWN_OWNER: PlanOptions = { ownerTable: null };
  * `IF NOT EXISTS` made that silent: re-running the file on a live database succeeds and
  * changes nothing. `archived_at` on the participants table shipped exactly that way.
  *
- * Deliberately **additive only**. Adding a column or an index cannot lose data; a drop,
- * a rename or a type change can, and none of the three is inferable from a diff — a
+ * Deliberately **additive only**. Adding a table, a column or an index cannot lose data; a
+ * drop, a rename or a type change can, and none of the three is inferable from a diff — a
  * renamed column is indistinguishable from one dropped and another added. Those are
  * reported for a human to act on, never applied.
+ *
+ * A table that does not exist at all is planned as its whole `CREATE TABLE IF NOT EXISTS`
+ * (MICA-388), rendered by the same `schemaSql.ts` functions the generated files and the
+ * first-start bootstrap use, so an upgraded install gains a new app's table in exactly the
+ * shape a fresh one is created with. Until then the planner said "import mica.sql" and
+ * `micaschema apply`, which runs only planned statements, created nothing and then said the
+ * schema was up to date.
  */
 
 interface PlannedStatement {
@@ -54,6 +65,12 @@ export interface MigrationPlan {
   drift: string[];
   /** True when the table does not exist yet and the CREATE should run instead. */
   missingTable: boolean;
+  /**
+   * The table's whole `CREATE TABLE IF NOT EXISTS`, exactly when `missingTable`. `apply()` runs
+   * every plan's create before any plan's additive statements, in plan order, which
+   * `SchemaMigrator` makes foreign-key order.
+   */
+  create: PlannedStatement | null;
 }
 
 /** One row of `information_schema.columns`, reduced to what the planner needs. */
@@ -110,18 +127,29 @@ const declaredType = (name: string, def: ColumnDef, ownerTable: boolean): string
   return afterName.split(/\s+(?=NOT NULL|DEFAULT|ON UPDATE|AUTO_INCREMENT)/i)[0].trim();
 };
 
+/** The plan for a table that is not there: its create, and nothing else to compare. */
+const createPlan = (table: string, sql: string): MigrationPlan => ({
+  table,
+  additive: [],
+  drift: [],
+  missingTable: true,
+  create: { description: `create table ${table}`, sql }
+});
+
 const planFor = (
   table: string,
   columns: { name: string; def: ColumnDef; autoIncrement?: boolean }[],
   indexes: { name: string; columns: readonly string[]; unique: boolean }[],
   live: LiveTable,
-  { ownerTable }: PlanOptions
+  { ownerTable }: PlanOptions,
+  createSql: (ownerTable: boolean) => string
 ): MigrationPlan => {
   // Unknown owner: a column added now takes the ESX width, the wider one, which holds either
   // key. `citizenIdWidth(false)` is that width; `migrate.test.ts` pins that it is the wider.
+  // A table created now takes it too, for the same reason.
   const renderAs = ownerTable ?? false;
-  const plan: MigrationPlan = { table, additive: [], drift: [], missingTable: !live.exists };
-  if (!live.exists) return plan;
+  if (!live.exists) return createPlan(table, createSql(renderAs));
+  const plan: MigrationPlan = { table, additive: [], drift: [], missingTable: false, create: null };
 
   const liveByName = new Map(live.columns.map((c) => [c.name.toLowerCase(), c]));
   const liveIndexes = new Set(live.indexes.map((i) => i.toLowerCase()));
@@ -197,7 +225,9 @@ export const planAppMigration = (
   options: PlanOptions = UNKNOWN_OWNER
 ): MigrationPlan => {
   const shape: ExpectedShape = expectedShape(resolved);
-  return planFor(shape.table, shape.columns, [...shape.indexes], live, options);
+  return planFor(shape.table, shape.columns, [...shape.indexes], live, options, (ownerTable) =>
+    toCreateTableSql(resolved, { ownerTable })
+  );
 };
 
 export const planChildMigration = (
@@ -219,8 +249,28 @@ export const planChildMigration = (
           ...columns
         ];
 
-  return planFor(child.name, all, (child.indexes ?? []).map(normalizeIndex), live, options);
+  return planFor(
+    child.name,
+    all,
+    (child.indexes ?? []).map(normalizeIndex),
+    live,
+    options,
+    (ownerTable) => toChildTableSql(child, { ownerTable })
+  );
 };
+
+/**
+ * The moderation audit ledger, `mica_audit_logs`, which no `defineService` declares: created
+ * when it is missing, and otherwise left alone. Its shape has no declaration to compare with,
+ * and its one way to change — a widened `action` ENUM — is a versioned migration's.
+ */
+export const planAuditLogMigration = (
+  live: LiveTable,
+  { ownerTable }: PlanOptions = UNKNOWN_OWNER
+): MigrationPlan =>
+  live.exists
+    ? { table: AUDIT_LOG_TABLE, additive: [], drift: [], missingTable: false, create: null }
+    : createPlan(AUDIT_LOG_TABLE, auditLogDdl({ ownerTable: ownerTable ?? false }));
 
 /** Nothing to do — used to keep the startup log quiet when a schema is already current. */
 export const isNoop = (plan: MigrationPlan): boolean =>

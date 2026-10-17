@@ -101,11 +101,12 @@ schema change to a live install still needs `micaschema apply`.
 
 A live install is brought up to date by **`micaschema apply`** from the server
 console (console-only, `source === 0`). It runs versioned migrations
-oldest-first, **then** the additive `ADD COLUMN` / `ADD KEY` pass — that order
-is a correctness requirement, not a preference: run the additive pass first and
-a rename finds an empty column already sitting under the new name with the real
-data stranded. MySQL DDL is not transactional, so both halves stop at the first
-failure rather than retrying blind.
+oldest-first, **then** the additive pass (create any missing table, then
+`ADD COLUMN` / `ADD KEY`) — that order is a correctness requirement, not a
+preference: run the additive pass first and a rename finds an empty column
+already sitting under the new name with the real data stranded. MySQL DDL is not
+transactional, so both halves stop at the first failure rather than retrying
+blind.
 
 In development, against a database you don't mind losing:
 `pnpm generate:sql:reset` writes a drop-and-rebuild file. **Ask before running
