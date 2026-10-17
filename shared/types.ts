@@ -634,7 +634,12 @@ export interface ReactionSummary {
  * third person could be added to. Identity is the *account*, not the citizenid, so two alts can
  * talk without either learning who is behind the other.
  */
-export interface BlabberDm {
+/**
+ * One direct message between two accounts on the identity layer, in whichever social app the
+ * two accounts belong to. The row lives in `mica_blabber_dms`, which kept its name when the
+ * service became `dms` (sealed bodies are bound to the table name).
+ */
+export interface DirectMessage {
   id: number;
   /** The sender's owner. Never crosses to the other party. */
   citizenid?: string;
@@ -648,14 +653,18 @@ export interface BlabberDm {
   updated_at: Date | string;
 }
 
-/** One correspondent in the DM inbox, with the last thing said and what is unread. */
-export interface BlabberDmThread {
+/** One correspondent in a DM inbox, with the last thing said and what is unread. */
+export interface DirectMessageThread {
   peer_account_id: number;
   handle: string | null;
   display_name: string | null;
-  last: BlabberDm | null;
+  last: DirectMessage | null;
   unread: number;
 }
+
+/** Blabber's names for the same two shapes, kept so nothing that reads them has to move. */
+export type BlabberDm = DirectMessage;
+export type BlabberDmThread = DirectMessageThread;
 
 /**
  * One photo post in Glimpse (MICA-253), as a reader receives it.
