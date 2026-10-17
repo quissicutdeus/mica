@@ -94,17 +94,18 @@ export default defineApp({ id: 'notes', core: false });`)
   });
 
   /**
-   * The real tree, so this cannot pass on fixtures while the shipped set has changed. Six
+   * The real tree, so this cannot pass on fixtures while the shipped set has changed. Seven
    * add-ons today; `pnpm build` emits exactly these bundles.
    */
-  it('finds the six add-ons this repo actually ships', () => {
+  it('finds the seven add-ons this repo actually ships', () => {
     expect(addOnIds(join(ROOT, 'web/src/apps')).sort()).toEqual([
       'blabber',
       'darkchat',
       'glimpse',
       'hodlr',
       'notes',
-      'snek'
+      'snek',
+      'spark'
     ]);
   });
 

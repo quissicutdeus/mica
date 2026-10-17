@@ -93,3 +93,8 @@ line here.
   — `${TABLE}` hides a body read from encryptedColumns.test; name it literally
 - [A DM policy is registered by the app's file](dm-policy-registers-from-the-app.md)
   — a suite may already load Blabber's; re-registering throws (MICA-390)
+- [Repository.findAll has no predicate seam](findall-has-no-predicate-seam.md) —
+  an override rebuilds the SQL and skips sealed widening; unfiltered `get` spans
+  apps
+- [A unique key on a permanent parent's id freezes a soft delete](unique-key-on-a-permanent-parent.md)
+  — revive refused by NOT NULL rule; use a status-aware generated key (MICA-255)

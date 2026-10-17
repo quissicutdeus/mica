@@ -110,6 +110,14 @@ for players and seamless framework integration for server developers.
   takes over. Messages are deleted after `mica_darkchat_retention` hours, a
   member can report another's message to Admin, and a job script can post into a
   channel with `PostToDarkChat`. Installs from the Store.
+- **Spark** _(add-on)_: Dating with swipe matching. Opt in with a profile (a
+  name, an in-character age of 18 or over, a bio and one to four gallery
+  photos), swipe through other profiles, and a mutual like opens a direct
+  message; nobody learns who liked them until it is mutual. A pass comes back
+  after 14 days, a like does not. Profiles and messages can be reported to
+  Admin, and deleting the profile removes it from every deck at once. One
+  profile per character, hidden from search and follows. Installs from the
+  Store.
 - **Marketplace**: Peer-to-peer classified listings — a feed with debounced
   search, a detail screen that can Call, Text or Report the seller, a create
   form capped at four photos, and a My Listings screen to mark sold or remove.

@@ -160,7 +160,11 @@ describe('sending', () => {
       body: 'x'
     });
 
-    expect(reply.error).toMatch(/No such account/);
+    // The words a block gets, so a refusal says nothing about whether the id exists (MICA-255).
+    expect(reply).toMatchObject({
+      error: "You can't message this account.",
+      key: 'server.blabberDms.blocked'
+    });
   });
 
   it('refuses messaging yourself', async () => {

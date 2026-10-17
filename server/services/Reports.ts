@@ -325,7 +325,10 @@ const canSeeDm: CanSee = async (id, citizenid) => {
 
 /**
  * A photo: the caller's own, or attached to something the caller can see — a live Blab,
- * Glimpse post or listing, which anyone can, or a live message in a thread they are in.
+ * Glimpse post or listing, which anyone can, a photo on a live Spark profile (MICA-255; looser
+ * than the profile's own rule below, which also wants the reporter to hold a profile, because
+ * a photo's rule cannot tell which surface it was seen on), or a live message in a thread they
+ * are in.
  *
  * The photo's own status is asked the way the attachment reads ask it: not `moderated`. Those
  * reads drop a moderated photo from every thread, Blab and listing (MICA-339), so it is not
@@ -344,7 +347,10 @@ const canSeeMedia: CanSee = async (id, citizenid) => {
                   WHERE a.\`media_id\` = x.\`id\` AND g.\`status\` = 'active')
        OR EXISTS (SELECT 1 FROM \`mica_marketplace_attachments\` a
                   JOIN \`mica_marketplace\` l ON l.\`id\` = a.\`listing_id\`
-                  WHERE a.\`media_id\` = x.\`id\` AND l.\`status\` = 'active'))
+                  WHERE a.\`media_id\` = x.\`id\` AND l.\`status\` = 'active')
+       OR EXISTS (SELECT 1 FROM \`mica_spark_photos\` a
+                  JOIN \`mica_spark\` p ON p.\`id\` = a.\`profile_id\`
+                  WHERE a.\`media_id\` = x.\`id\` AND p.\`status\` = 'active'))
      LIMIT 1`,
     [id, citizenid]
   );
@@ -392,6 +398,22 @@ const canSeeDarkchatMessage: CanSee = async (id, citizenid) => {
   return Boolean(row) && (await darkchatMessages.repo.isMember(row!.channel_id, citizenid));
 };
 
+/**
+ * A Spark profile (MICA-255): live, and the reporter holds a live Spark profile of their own —
+ * the deck is shown only to a player who has one, so nobody else has seen a card to report.
+ */
+const canSeeSparkProfile: CanSee = async (id, citizenid) =>
+  Boolean(
+    await Database.single<unknown>(
+      `SELECT 1 FROM \`mica_spark\` s
+       WHERE s.\`id\` = ? AND s.\`status\` = 'active'
+         AND EXISTS (SELECT 1 FROM \`mica_spark\` r
+                     WHERE r.\`citizenid\` = ? AND r.\`status\` = 'active')
+       LIMIT 1`,
+      [id, citizenid]
+    )
+  );
+
 const VISIBILITY = new Map<string, CanSee>([
   ['mica_messages', canSeeMessage],
   ['mica_blabber_dms', canSeeDm],
@@ -401,7 +423,8 @@ const VISIBILITY = new Map<string, CanSee>([
   ['mica_blabber', whileActive('mica_blabber')],
   ['mica_glimpse', whileActive('mica_glimpse')],
   ['mica_glimpse_comments', canSeeGlimpseComment],
-  ['mica_marketplace', whileActive('mica_marketplace')]
+  ['mica_marketplace', whileActive('mica_marketplace')],
+  ['mica_spark', canSeeSparkProfile]
 ]);
 
 const canSeeTarget = async (table: string, id: number, citizenid: string): Promise<boolean> => {

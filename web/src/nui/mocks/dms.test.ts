@@ -47,7 +47,7 @@ describe('dms mocks', () => {
     // 21 is a Glimpse account; Blabber cannot reach it.
     expect(() =>
       dms['dms:send']({ app: 'blabber', account_id: 1, peer_account_id: 21, body: 'hi' })
-    ).toThrow('No such account.');
+    ).toThrow("You can't message this account.");
     // 20 is the player's, but in Glimpse: naming Blabber does not make it a Blabber account.
     expect(() =>
       dms['dms:send']({ app: 'blabber', account_id: 20, peer_account_id: 2, body: 'hi' })

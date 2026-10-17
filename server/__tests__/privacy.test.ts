@@ -310,6 +310,17 @@ const EXPORTED_COLUMNS: Record<string, { plain: string[]; sized: string[]; withh
     withheld: []
   },
   mica_glimpse_attachments: { plain: ['id', 'post_id', 'media_id'], sized: [], withheld: [] },
+  // MICA-255. `live_citizen` is the citizenid again while the profile is not deleted.
+  mica_spark: {
+    plain: ['id', 'status', 'created_at', 'updated_at', 'account_id', 'age', 'bio', 'looking_for'],
+    sized: [],
+    withheld: ['live_citizen']
+  },
+  mica_spark_photos: {
+    plain: ['id', 'profile_id', 'media_id', 'position'],
+    sized: [],
+    withheld: []
+  },
   mica_glimpse_comments: {
     plain: ['id', 'status', 'created_at', 'updated_at', 'account_id', 'post_id', 'body'],
     sized: [],

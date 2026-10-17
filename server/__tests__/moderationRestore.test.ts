@@ -38,6 +38,7 @@ import '../services/DarkchatMessages';
 import '../services/Glimpse';
 import '../services/GlimpseComments';
 import '../services/Marketplace';
+import '../services/Spark';
 import { REPORTABLE } from '../lib/moderation';
 
 /**
@@ -244,7 +245,7 @@ const moderate = (id: number) => call('resolve', { id, action: 'moderate' });
 const reopen = (id: number) => call('reopen', { id });
 
 describe('a reopen puts back what the takedown replaced (MICA-386)', () => {
-  it('declares the nine reportable tables this suite walks', () => {
+  it('declares the ten reportable tables this suite walks', () => {
     // A loop over an empty registry asserts nothing, so the count is the first assertion.
     expect(Object.keys(REPORTABLE()).sort()).toEqual([
       'mica_accounts',
@@ -255,7 +256,8 @@ describe('a reopen puts back what the takedown replaced (MICA-386)', () => {
       'mica_glimpse_comments',
       'mica_marketplace',
       'mica_media',
-      'mica_messages'
+      'mica_messages',
+      'mica_spark'
     ]);
   });
 
@@ -462,7 +464,9 @@ describe('a takedown with no record of what it replaced (MICA-386)', () => {
     mica_glimpse: 'deleted',
     mica_glimpse_comments: 'deleted',
     mica_messages: 'deleted',
-    mica_media: 'deleted'
+    mica_media: 'deleted',
+    // A Spark profile's owner deletes it; `live_citizen` frees on `deleted`, so no key refuses.
+    mica_spark: 'deleted'
   };
 
   it('decides a fallback for every reportable table, and defaults the rest closed', () => {

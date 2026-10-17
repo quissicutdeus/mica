@@ -62,3 +62,5 @@ its one-line summary.
 - [A new app trips two pins](new-app-trips-two-pins.md) — appContract `APPS` row
   and the computed-class ratchet (Icon `class={className}`); `run()` answers a
   boolean
+- [`Object.hasOwn` fails web's typecheck](es2022-lib-gap-object-hasown.md) — CEF
+  has it, web's TS lib does not; use a `Map`. No `m-4`/`mx-4`/`aspect-[3/4]`

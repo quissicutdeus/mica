@@ -105,7 +105,8 @@ const REPORTABLE_TABLES = [
   'mica_glimpse_comments',
   'mica_marketplace',
   'mica_media',
-  'mica_messages'
+  'mica_messages',
+  'mica_spark'
 ];
 
 const QB = { table: 'players', column: 'citizenid' };
@@ -261,7 +262,9 @@ describe('which tables the sweep covers, and how that set is derived', () => {
       'mica_account_reactions',
       'mica_blabber_ears',
       'mica_blabber_tags',
-      'mica_hodlr_price_history'
+      'mica_hodlr_price_history',
+      'mica_spark_matches',
+      'mica_spark_swipes'
     ]) {
       expect(tables, table).not.toContain(table);
     }

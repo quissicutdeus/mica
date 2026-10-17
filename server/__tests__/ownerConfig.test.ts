@@ -428,6 +428,7 @@ describe('which services a disabled app takes down', () => {
       marketplace: 'marketplace',
       notes: 'notes',
       places: 'places',
+      spark: 'spark',
       store: 'store'
     });
   });

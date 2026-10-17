@@ -438,10 +438,16 @@ app.registerEvent('send', async (source, cbId, data, citizenid) => {
    * The recipient has to exist and be an account in the same app. Checked rather than trusted,
    * because `peer_account_id` is client-chosen and an unchecked one writes a row pointing at
    * nothing — or at an account in another app's namespace.
+   *
+   * Answered in the same words as a block or a policy refusal (MICA-255): a separate "No such
+   * account" told a prober which ids are live accounts in an app, which for an unlisted app
+   * (Spark) is the directory it deliberately does not have.
    */
   const peer = await activeAccount(peerId, data.app);
   if (!peer)
-    throw new PlayerFacingError('No such account.', { key: 'server.blabberDms.noSuchAccount' });
+    throw new PlayerFacingError("You can't message this account.", {
+      key: 'server.blabberDms.blocked'
+    });
 
   /**
    * Bidirectional, unlike the feed/profile filters above: a DM has exactly two participants,

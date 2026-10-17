@@ -55,6 +55,7 @@ import '../services/DarkchatMessages';
 import '../services/Glimpse';
 import '../services/GlimpseComments';
 import '../services/Marketplace';
+import '../services/Spark';
 import { isReportableTable, isReportCategory, REPORTABLE } from '../lib/moderation';
 
 const REPORTER = 'REPORTER1';
@@ -281,6 +282,7 @@ describe('a report is only of something the reporter can see', () => {
     glimpseAttachments?: { post_id: number; media_id: number }[];
     /** `[channel_id, citizenid]` pairs with `left_at` null: live Dark Chat members. */
     darkchatMembers?: [number, string][];
+    sparkPhotos?: { profile_id: number; media_id: number }[];
   }
 
   const activeIn = (sql: string, alias = '') =>
@@ -322,7 +324,21 @@ describe('a report is only of something the reporter can see', () => {
         const post = (w.glimpseAttachments ?? []).some(
           (a) => a.media_id === id && activeIn(sql, 'g.')(find('mica_glimpse', a.post_id))
         );
-        return own || blab || listing || post ? { 1: 1 } : null;
+        const profile =
+          sql.includes('FROM `mica_spark_photos` a') &&
+          (w.sparkPhotos ?? []).some(
+            (a) => a.media_id === id && activeIn(sql, 'p.')(find('mica_spark', a.profile_id))
+          );
+        return own || blab || listing || post || profile ? { 1: 1 } : null;
+      }
+      // A Spark profile: live, and the reporter holds a live profile of their own.
+      if (sql.includes('FROM `mica_spark` s')) {
+        const [id, citizenid] = params;
+        const target = find('mica_spark', id);
+        const reporterHasOne = (rows.mica_spark ?? []).some(
+          (r) => r.citizenid === citizenid && activeIn(sql, 'r.')(r)
+        );
+        return target && activeIn(sql, 's.')(target) && reporterHasOne ? { 1: 1 } : null;
       }
       // A Dark Chat message: live, written by a member (not an export's line), and the
       // caller a live member of its channel. The window is the database's to apply.
@@ -591,6 +607,63 @@ describe('a report is only of something the reporter can see', () => {
     });
   });
 
+  /**
+   * MICA-255. A card is shown only in a deck, and a deck only to a player with a live profile,
+   * so a profile is reportable while it is live by a reporter who holds one. Its photos are
+   * reportable while the profile they are on is live.
+   */
+  describe('a Spark profile', () => {
+    const profile = (status: string): Row => ({
+      id: 70,
+      citizenid: 'AUTHOR1',
+      status,
+      preview: 'a bio'
+    });
+    const mine = (status: string): Row => ({ id: 71, citizenid: REPORTER, status });
+
+    it('files a live one when the reporter holds a live profile', async () => {
+      world({ rows: { mica_spark: [profile('active'), mine('active')] } });
+      expect(await call('create', { targetTable: 'mica_spark', targetId: 70 })).toMatchObject({
+        ok: true
+      });
+    });
+
+    it('refuses it to a reporter with no live profile, and refuses one no longer up', async () => {
+      for (const rows of [
+        [profile('active')],
+        [profile('active'), mine('deleted')],
+        [profile('deleted'), mine('active')],
+        [profile('moderated'), mine('active')]
+      ]) {
+        vi.clearAllMocks();
+        world({ rows: { mica_spark: rows } });
+        const reply = await call('create', { targetTable: 'mica_spark', targetId: 70 });
+        expect(reply.error).toBe(GONE);
+        expect(bodyWasRead()).toBe(false);
+        expect(dbMock.insert).not.toHaveBeenCalled();
+      }
+    });
+
+    it('files a photo on a live profile, and refuses one only on a deleted profile', async () => {
+      const photo: Row = { id: 30, citizenid: 'AUTHOR1', status: 'active', preview: 'data:...' };
+      world({
+        rows: { mica_media: [photo], mica_spark: [profile('active')] },
+        sparkPhotos: [{ profile_id: 70, media_id: 30 }]
+      });
+      expect(await call('create', { targetTable: 'mica_media', targetId: 30 })).toMatchObject({
+        ok: true
+      });
+
+      vi.clearAllMocks();
+      world({
+        rows: { mica_media: [photo], mica_spark: [profile('deleted')] },
+        sparkPhotos: [{ profile_id: 70, media_id: 30 }]
+      });
+      const reply = await call('create', { targetTable: 'mica_media', targetId: 30 });
+      expect(reply.error).toBe(GONE);
+    });
+  });
+
   describe('a public row', () => {
     it.each(['mica_blabber', 'mica_marketplace', 'mica_accounts'])(
       'files a live one from %s and refuses one no longer up',
@@ -664,7 +737,12 @@ describe('a report is only of something the reporter can see', () => {
           mica_messages: [message()],
           // The live post a Glimpse comment sits under.
           mica_glimpse: [{ id: 7, citizenid: 'AUTHOR1', status: 'active' }],
-          [table]: [row, ...(table === 'mica_messages' ? [message()] : [])]
+          [table]: [
+            row,
+            ...(table === 'mica_messages' ? [message()] : []),
+            // A Spark card is reportable only by a player who holds a live profile.
+            ...(table === 'mica_spark' ? [{ id: 6, citizenid: REPORTER, status: 'active' }] : [])
+          ]
         },
         members: [[40, REPORTER]],
         darkchatMembers: [[30, REPORTER]],

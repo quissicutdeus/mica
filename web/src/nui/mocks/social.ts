@@ -5,6 +5,7 @@
 import type {
   Account,
   Blab,
+  DirectMessage,
   GlimpseComment,
   GlimpsePost,
   MediaItem,
@@ -31,6 +32,18 @@ import { startFresh } from './shared';
  * look fine in `pnpm dev` while being wrong against the real server — the exact failure mode
  * the route table exists to outlaw.
  */
+function sparkAccount(id: number, display_name: string): Account {
+  return {
+    id,
+    app: 'spark',
+    handle: `spark_${id}`,
+    display_name,
+    status: 'active',
+    created_at: '2026-10-01T10:00:00Z',
+    updated_at: '2026-10-01T10:00:00Z'
+  };
+}
+
 export const mockAccounts: Account[] = [
   {
     id: 1,
@@ -88,7 +101,14 @@ export const mockAccounts: Account[] = [
     status: 'active',
     created_at: '2026-09-03T10:00:00Z',
     updated_at: '2026-09-03T10:00:00Z'
-  }
+  },
+  // Spark's (MICA-255): one account per citizen, made by the server and never listed, so the
+  // handle is a placeholder no screen shows. The player's is 30; `mocks/spark.ts` holds the
+  // profiles, and which of these liked or was blocked by whom.
+  sparkAccount(30, 'Ada'),
+  sparkAccount(31, 'Maya'),
+  sparkAccount(32, 'Jordan'),
+  sparkAccount(33, 'Casey')
 ];
 
 /**
@@ -102,9 +122,10 @@ export const mockAccounts: Account[] = [
  *
  * Two owned accounts rather than one, because switching identity needs something to switch to,
  * and two of a cap of three leaves room to claim another. One in Glimpse, @ada (20), so its
- * feed has an owner to remove a comment as; `?state=fresh` owns none, which is the claim gate.
+ * feed has an owner to remove a comment as, and the Spark account (30), which exists before a
+ * profile does; `?state=fresh` owns none, which is the claim gate, and Spark's `save` takes 30.
  */
-export const mockOwnedAccountIds = new Set<number>(startFresh ? [] : [1, 4, 20]);
+export const mockOwnedAccountIds = new Set<number>(startFresh ? [] : [1, 4, 20, 30]);
 
 export const mockBlabs: Blab[] = [
   {
@@ -313,3 +334,23 @@ mockReactions.push(
   { account: 22, table: 'mica_glimpse', target: 10, emoji: '❤️' },
   { account: 21, table: 'mica_glimpse', target: 6, emoji: '❤️' }
 );
+
+/**
+ * Direct messages for every app with a policy (MICA-390), here rather than in `services/dms.ts`
+ * so Spark's mock can leave the seeded opener in a thread when a match is made.
+ */
+export const mockDms: DirectMessage[] = [
+  {
+    id: 1,
+    from_account: 2,
+    to_account: 1,
+    body: 'saw your post, funny stuff',
+    read_at: null,
+    status: 'active',
+    created_at: '2026-08-02T12:30:00Z',
+    updated_at: '2026-08-02T12:30:00Z'
+  }
+];
+
+let nextDmId = 50;
+export const nextMockDmId = (): number => nextDmId++;

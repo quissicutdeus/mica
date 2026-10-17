@@ -40,6 +40,7 @@ import Settings from '../web/src/apps/settings/index.svelte';
 import SettingsTablet from '../web/src/apps/settings/tablet.svelte';
 import StoreTablet from '../web/src/apps/store/tablet.svelte';
 import Snek from '../web/src/apps/snek/index.svelte';
+import Spark from '../web/src/apps/spark/index.svelte';
 import Store from '../web/src/apps/store/index.svelte';
 
 /**
@@ -78,6 +79,7 @@ const APPS: Record<string, AppComponent> = {
   places: Places,
   settings: Settings,
   snek: Snek,
+  spark: Spark,
   store: Store
 };
 

@@ -634,6 +634,44 @@ a channel it owned keeps a dead owner: its members still talk, but nobody can
 read or replace the code or remove a member. Membership follows the character,
 not the phone, so a burner phone handed to someone else carries no channels.
 
+## Spark: who liked whom is the secret
+
+Spark (MICA-255) is a dating add-on on the accounts layer. Its anonymity problem
+is different from Dark Chat's: players show their face on purpose, and what must
+not leak is the swiping. Nobody learns who liked them until it is mutual. The
+first like answers nothing and pushes nothing; only the second like creates the
+match, and that one insert tells both sides. There is no count of likes
+anywhere, the deck is ordered by profile id and never by the other person's
+swipes, and a swipe on a profile that is yours, blocked, deleted or missing gets
+the same generic refusal. Swipes and matches carry no owner, so a player's data
+export shows neither who liked them nor whom they liked, as Blabber's likes
+already do not.
+
+A Spark account is one per character and unlisted: `search`, `follow`, the
+follower lists and the public account read never show it, so a dating profile
+cannot be found from Blabber or Glimpse. A card carries the Spark account's id
+and display name and nothing from any other app. A profile photo is named by its
+Spark row, not the gallery id, which is global and would tie the profile to a
+Glimpse post of the same picture. Messages after a match are the shared `dms`
+service under Spark's policy, which allows a thread only while a match exists
+and neither side has blocked the other; unmatch, block and profile delete each
+delete the thread, except one under an open report, which is kept whole. The
+notification says only "New message", because it shows on the lock screen.
+
+**What staff see.** A reported profile or message carries the reporter's and the
+author's citizenid, as every report does, and Admin previews the bio or the
+message. Staff do not see swipes or matches.
+
+**Accepted.** The age is in character and entered by the player; the server
+refuses anything under 18 and can verify nothing more. Because an account is
+never deleted, a deleted profile leaves its handle behind, scrubbed of its name,
+bio and avatar; a new profile reuses it, which is what keeps blocks against a
+player in force across a deleted-and-recreated profile. An unmatch is not a
+block: it holds only while both profiles exist, so a player who deletes and
+remakes their profile can appear in the other's deck again, and that
+reappearance tells them the profile was remade. Only a block survives a remade
+profile.
+
 ## Accepted risks
 
 Accepted against the feature set at `0922a9b` (2026-08-29) — a risk below was

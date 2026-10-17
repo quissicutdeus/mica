@@ -880,6 +880,75 @@ CREATE TABLE IF NOT EXISTS `mica_settings` (
     KEY `device_id` (`device_id`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
+-- Generated from the 'spark' defineService declaration.
+-- Do not edit by hand; change the declaration and regenerate.
+
+CREATE TABLE IF NOT EXISTS `mica_spark` (
+    `id` int(11) NOT NULL AUTO_INCREMENT,
+    `citizenid` varchar(60) NOT NULL,
+    `account_id` int(11) NOT NULL,
+    `age` int(11) NOT NULL,
+    `bio` varchar(300) DEFAULT NULL,
+    `looking_for` varchar(60) DEFAULT NULL,
+    `live_citizen` varchar(60) GENERATED ALWAYS AS (CASE WHEN `status` <> 'deleted' THEN `citizenid` ELSE NULL END) VIRTUAL,
+    `status` ENUM('active', 'deleted', 'moderated') NOT NULL DEFAULT 'active',
+    `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `status` (`status`),
+    KEY `citizenid_status` (`citizenid`, `status`),
+    UNIQUE KEY `live_citizen` (`live_citizen`),
+    KEY `account_id` (`account_id`),
+    CONSTRAINT `fk_mica_spark_account_id` FOREIGN KEY (`account_id`)
+        REFERENCES `mica_accounts` (`id`) ON DELETE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `mica_spark_photos` (
+    `id` int(11) NOT NULL AUTO_INCREMENT,
+    `profile_id` int(11) NOT NULL,
+    `citizenid` varchar(60) NOT NULL,
+    `media_id` int(11) NOT NULL,
+    `position` int(11) NOT NULL,
+    PRIMARY KEY (`id`),
+    KEY `profile_position` (`profile_id`, `position`),
+    KEY `citizenid` (`citizenid`),
+    KEY `media_id` (`media_id`),
+    CONSTRAINT `fk_mica_spark_photos_profile_id` FOREIGN KEY (`profile_id`)
+        REFERENCES `mica_spark` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_mica_spark_photos_media_id` FOREIGN KEY (`media_id`)
+        REFERENCES `mica_media` (`id`) ON DELETE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `mica_spark_swipes` (
+    `id` int(11) NOT NULL AUTO_INCREMENT,
+    `swiper_profile_id` int(11) NOT NULL,
+    `target_profile_id` int(11) NOT NULL,
+    `kind` ENUM('like', 'pass') NOT NULL,
+    `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `swiper_target` (`swiper_profile_id`, `target_profile_id`),
+    KEY `target_profile_id` (`target_profile_id`),
+    KEY `kind_created_at` (`kind`, `created_at`),
+    CONSTRAINT `fk_mica_spark_swipes_swiper_profile_id` FOREIGN KEY (`swiper_profile_id`)
+        REFERENCES `mica_spark` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_mica_spark_swipes_target_profile_id` FOREIGN KEY (`target_profile_id`)
+        REFERENCES `mica_spark` (`id`) ON DELETE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `mica_spark_matches` (
+    `id` int(11) NOT NULL AUTO_INCREMENT,
+    `profile_a` int(11) NOT NULL,
+    `profile_b` int(11) NOT NULL,
+    `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `pair` (`profile_a`, `profile_b`),
+    KEY `profile_b` (`profile_b`),
+    CONSTRAINT `fk_mica_spark_matches_profile_a` FOREIGN KEY (`profile_a`)
+        REFERENCES `mica_spark` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_mica_spark_matches_profile_b` FOREIGN KEY (`profile_b`)
+        REFERENCES `mica_spark` (`id`) ON DELETE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
 -- Versioned schema migrations ledger.
 CREATE TABLE IF NOT EXISTS `mica_schema_migrations` (
     `id` varchar(255) NOT NULL,

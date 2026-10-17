@@ -250,13 +250,19 @@ export const SELF_SERVICE_EXCEPT: readonly PurgeException[] = [
  * - `mica_account_blocks`: either side of a block. Another player's block of this account
  *   protects them from an account that no longer exists; a new account is a new id either way.
  * - `mica_account_reactions`: the account's own reactions, keyed by account rather than owner.
+ * - `mica_spark_swipes`: either side of a like or pass on a Spark profile (MICA-255). Another
+ *   player's swipe on a profile that is gone; keeping the profile for it would keep it in decks.
+ * - `mica_spark_matches`: either side of a match, which ends with the profile. Its thread is
+ *   deleted by Spark's own hook before the purge (`onBeforeSelfServiceDelete`).
  */
 export const CASCADE_DEPENDENTS: readonly string[] = [
   'mica_blabber_tags',
   'mica_blabber_ears',
   'mica_account_follows',
   'mica_account_blocks',
-  'mica_account_reactions'
+  'mica_account_reactions',
+  'mica_spark_swipes',
+  'mica_spark_matches'
 ];
 
 interface ColumnSpec {

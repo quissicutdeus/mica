@@ -44,4 +44,5 @@ import './Seed';
 import './Settings';
 import './Signal';
 import './Source';
+import './Spark';
 import './Store';

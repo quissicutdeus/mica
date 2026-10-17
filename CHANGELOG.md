@@ -69,6 +69,16 @@ open report, which is kept until the report is resolved. A new export,
 Staff see more than players do: `docs/security.md` lists what a moderator can
 and cannot see.
 
+**Run `micaschema apply` to create Spark's tables (MICA-255).** Spark is a new
+dating add-on, installed from the Store, with swipe matching. It stores
+profiles, their photos, swipes and matches in four new tables: `mica_spark`,
+`mica_spark_photos`, `mica_spark_swipes` and `mica_spark_matches`. Its messages
+are direct messages on the shared `dms` service (MICA-390), so they live in
+`mica_blabber_dms` under Spark's own accounts and follow `mica_dm_retention`.
+The change is additive, needs no migration and adds no convar: a pass comes back
+after 14 days, which is a constant. A Spark account is one per character and
+unlisted, so it never appears in search, follows or the public account read.
+
 **If you imported from qb-phone and set a content key, run
 `micacrypt backfill --apply` and then `micaimport qb-phone --apply` once while
 the qb-phone tables still exist: the import ledger stops holding message bodies

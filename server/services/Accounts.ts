@@ -12,6 +12,7 @@ import { pageBounds, requirePositiveInt } from '../lib/payload';
 import { accountsContract } from '@mica/shared/contracts/accounts';
 import { buildDeepLink } from '@mica/shared/deepLink';
 import { isInlineImage } from '@mica/shared/imageSource';
+import { encryptedColumnsOf, openRows } from '../lib/contentCipher';
 
 /**
  * Social identities, shared by every social app.
@@ -53,7 +54,7 @@ import { isInlineImage } from '@mica/shared/imageSource';
  * race is untouched and still belongs to the unique index — the two guard different things
  * and the index remains the better instrument for its one.
  */
-class AccountRepository extends SchemaRepository<Account> {
+export class AccountRepository extends SchemaRepository<Account> {
   async createWithinCap(account: Partial<Account>, limit: number): Promise<number> {
     const columns = Object.keys(account);
     // Built here rather than by `super.create`, so the identifier allowlist is this
@@ -79,6 +80,83 @@ class AccountRepository extends SchemaRepository<Account> {
        WHERE cap.held < ?`,
       [...values, account.citizenid, account.app, limit]
     );
+  }
+
+  /**
+   * The generic read, with every unlisted app's accounts left out of it (MICA-255).
+   *
+   * An unlisted app's accounts are no less public than anyone's once you hold an id, but the
+   * generic `get` is a directory: `{ app: 'spark' }` with no handle pages through every profile.
+   * So the exclusion is a predicate in the statement rather than a filter over its rows — a
+   * post-filter would still have paged by the hidden rows and handed back short pages and a
+   * cursor pointing into them.
+   *
+   * With no unlisted app registered this is `super.findAll` and its SQL is byte-identical to
+   * what it always was. The other branch builds the same statement itself, because the base
+   * class has no seam for an extra condition; it opens rows with `openRows` and does not widen
+   * the projection for sealed columns, which is why the module refuses to load if this table
+   * ever gains one (below the declaration).
+   */
+  override async findAll(
+    where: Partial<Account> = {},
+    page?: { limit?: number; cursor?: number },
+    projection?: readonly string[]
+  ): Promise<Account[]> {
+    const hidden = unlistedApps();
+    if (hidden.length === 0) return await super.findAll(where, page, projection);
+
+    const filter = { ...where } as Record<string, unknown>;
+    if (!('status' in filter)) filter.status = 'active';
+
+    const selected = projection && projection.length > 0 ? projection : null;
+    for (const column of [...Object.keys(filter), ...(selected ?? [])]) {
+      if (!this.hasColumn(column)) {
+        throw new Error(`[Repository] findAll on '${this.tableName}' rejected '${column}'.`);
+      }
+    }
+
+    const conditions: string[] = [];
+    const bound: unknown[] = [];
+    for (const [key, value] of Object.entries(filter)) {
+      if (value === null) {
+        conditions.push(`\`${key}\` IS NULL`);
+      } else {
+        conditions.push(`\`${key}\` = ?`);
+        bound.push(value);
+      }
+    }
+    conditions.push(`\`app\` NOT IN (${hidden.map(() => '?').join(', ')})`);
+    bound.push(...hidden);
+    if (page?.cursor !== undefined) {
+      conditions.push('`id` < ?');
+      bound.push(page.cursor);
+    }
+
+    const selection = selected ? selected.map((column) => `\`${column}\``).join(', ') : '*';
+    let query = `SELECT ${selection} FROM \`${this.tableName}\` WHERE ${conditions.join(' AND ')}`;
+    if (page) {
+      query += ' ORDER BY `id` DESC';
+      if (page.limit !== undefined) {
+        query += ' LIMIT ?';
+        bound.push(page.limit);
+      }
+    }
+
+    return openRows(this.tableName, await Database.query<Account[]>(query, bound));
+  }
+
+  /**
+   * Blank an account's profile and keep the account (MICA-255).
+   *
+   * For an app whose "delete my profile" must not free the identity: Spark holds one account per
+   * citizen for good, so a block made against it survives the profile being deleted and made
+   * again. The handle and the row stay; display name, bio and avatar go.
+   *
+   * The owner-scoped `update`, so the statement names the citizen (§2.9) and, like any owner
+   * edit, does not reach a moderated row. Server-only: no net event calls this, and none may.
+   */
+  async scrubAccount(id: number, citizenid: string): Promise<boolean> {
+    return await this.update(id, { display_name: null, bio: null, avatar: null }, citizenid);
   }
 }
 
@@ -319,6 +397,11 @@ export const accounts = defineService<Account, typeof accountsContract>({
 const app = accounts.app;
 const repo = accounts.repo as AccountRepository;
 
+// `AccountRepository.findAll`'s own statement does not widen a projection for sealed columns.
+if (encryptedColumnsOf(accounts.resolved.table).length > 0) {
+  throw new Error("Accounts: findAll's unlisted-app branch cannot open a sealed column.");
+}
+
 /**
  * The declared page bounds, for the custom paged reads below.
  *
@@ -350,6 +433,98 @@ export const maxPerApp = (): number => {
 };
 
 /**
+ * What one app changes about its accounts (MICA-255). Registered by the app's own service file,
+ * the way `registerDmPolicy` and `registerReportable` are, so this file never names an app.
+ */
+export interface AccountAppPolicy {
+  /** How many accounts one citizen may hold in this app. Absent: `maxPerApp()`, the convar. */
+  maxPerCitizen?: number;
+  /**
+   * `false` keeps the app's accounts out of every directory: `search` and the follow lists
+   * answer empty, `follow`/`unfollow` refuse, and the generic `get` leaves them out. Reactions
+   * and blocks are untouched. Absent: `true`.
+   */
+  listed?: boolean;
+}
+
+/** Keyed by app id. A Map, not an object: `data.app` is the payload's, `__proto__` included. */
+const appPolicies = new Map<string, Readonly<AccountAppPolicy>>();
+
+/** The account column's own width and the app id shape every net event segment has. */
+const POLICY_APP_PATTERN = /^[a-z][a-z0-9_]{0,31}$/;
+
+/**
+ * Change one app's account rules. Called once, at import time, by that app's service file.
+ * Throws on a second registration for the same app, which would otherwise replace the first
+ * silently, on an id that is not an app id, and on a cap that is not a positive integer.
+ */
+export const registerAccountAppPolicy = (appId: string, policy: AccountAppPolicy): void => {
+  if (appPolicies.has(appId)) {
+    throw new Error(`registerAccountAppPolicy: '${appId}' already has an account policy.`);
+  }
+  if (!POLICY_APP_PATTERN.test(appId)) {
+    throw new Error(`registerAccountAppPolicy: '${appId}' is not an app id.`);
+  }
+  const cap = policy.maxPerCitizen;
+  if (cap !== undefined && !(Number.isInteger(cap) && cap > 0)) {
+    throw new Error(
+      `registerAccountAppPolicy: '${appId}' maxPerCitizen must be a positive integer.`
+    );
+  }
+  appPolicies.set(appId, Object.freeze({ ...policy }));
+};
+
+/** The cap for one app: its policy's, else the convar's. */
+const capFor = (appId: string): number => appPolicies.get(appId)?.maxPerCitizen ?? maxPerApp();
+
+/** Whether an app's accounts appear in search, the follow graph and the generic `get`. */
+const isListed = (appId: string): boolean => appPolicies.get(appId)?.listed !== false;
+
+/** Every app registered `listed: false`, for the generic read's predicate. */
+function unlistedApps(): string[] {
+  return [...appPolicies].filter(([, policy]) => policy.listed === false).map(([id]) => id);
+}
+
+/** An unlisted app has no follow graph to write to. */
+const refuseUnlistedFollow = (appId: string): void => {
+  if (!isListed(appId)) {
+    throw new PlayerFacingError('Following is not available here.', {
+      key: 'server.accounts.followUnavailable'
+    });
+  }
+};
+
+/**
+ * What an app does when one of its accounts blocks another (MICA-255), keyed by app id. A Map,
+ * for the same `__proto__` reason as `appPolicies`.
+ */
+const blockHandlers = new Map<string, (blocker: Account, blocked: Account) => Promise<void>>();
+
+/**
+ * Run `handler` after a block in `appId` has landed: Spark ends the match, so an unblock does
+ * not bring the pair back with the thread intact. Called once, at import time, by the app's own
+ * service file. Throws on a second handler for the same app, which would otherwise replace the
+ * first silently.
+ *
+ * Runs after the block row and the follow cascade are written, never before, and for a block
+ * that already existed too, so the handler must be idempotent. A handler that throws is logged
+ * and not surfaced: the block has already landed, and reporting it as failed would be a lie.
+ */
+export const onAccountBlocked = (
+  appId: string,
+  handler: (blocker: Account, blocked: Account) => Promise<void>
+): void => {
+  if (blockHandlers.has(appId)) {
+    throw new Error(`onAccountBlocked: '${appId}' already has a block handler.`);
+  }
+  blockHandlers.set(appId, handler);
+};
+
+/** Blank an account's profile, keeping the handle and the row. Server-only; see the method. */
+export const scrubAccount = (id: number, citizenid: string): Promise<boolean> =>
+  repo.scrubAccount(id, citizenid);
+
+/**
  * The accounts this player holds in an app, and how many they are allowed.
  *
  * Scoped to the caller server-side and deliberately **not** a filter on the public `get`:
@@ -371,7 +546,7 @@ app.registerEvent('mine', async (source, cbId, data, citizenid) => {
     [citizenid, appId]
   );
 
-  return { rows, limit: maxPerApp() };
+  return { rows, limit: capFor(appId) };
 });
 
 app.registerEvent('create', async (source, cbId, data, citizenid) => {
@@ -394,7 +569,7 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
    * index, and for the same reason. A count read before an insert cannot hold a cap on its
    * own (MICA-132); what it can do is tell the common case what went wrong in words.
    */
-  const limit = maxPerApp();
+  const limit = capFor(appId);
   const held = await Database.scalar<number>(
     `SELECT COUNT(*) FROM \`mica_accounts\`
      WHERE \`citizenid\` = ? AND \`app\` = ? AND \`status\` = 'active'`,
@@ -468,6 +643,7 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
  */
 app.registerEvent('follow', async (source, cbId, data, citizenid) => {
   const appId = data.app;
+  refuseUnlistedFollow(appId);
 
   const follower = await ownedAccount(data.follower_account_id, citizenid, appId);
   if (!follower)
@@ -542,6 +718,7 @@ app.registerEvent('follow', async (source, cbId, data, citizenid) => {
 });
 
 app.registerEvent('unfollow', async (source, cbId, data, citizenid) => {
+  refuseUnlistedFollow(data.app);
   const follower = await ownedAccount(data.follower_account_id, citizenid, data.app);
   if (!follower)
     throw new PlayerFacingError('That account is not yours.', {
@@ -581,8 +758,10 @@ app.registerEvent('block', async (source, cbId, data, citizenid) => {
       key: 'server.accounts.cannotBlockSelf'
     });
 
-  const blocked = await Database.single<{ id: number }>(
-    "SELECT `id` FROM `mica_accounts` WHERE `id` = ? AND `app` = ? AND `status` = 'active' LIMIT 1",
+  // The identity columns rather than just the id, for `onAccountBlocked`'s handler.
+  const blocked = await Database.single<AccountIdentity>(
+    `SELECT ${ACCOUNT_IDENTITY} FROM \`mica_accounts\`
+     WHERE \`id\` = ? AND \`app\` = ? AND \`status\` = 'active' LIMIT 1`,
     [blockedId, appId]
   );
   if (!blocked)
@@ -607,6 +786,15 @@ app.registerEvent('block', async (source, cbId, data, citizenid) => {
         OR (\`follower_account_id\` = ? AND \`followee_account_id\` = ?)`,
     [blocker.id, blocked.id, blocked.id, blocker.id]
   );
+
+  const onBlocked = blockHandlers.get(appId);
+  if (onBlocked) {
+    try {
+      await onBlocked(blocker, blocked);
+    } catch (error) {
+      console.error(`[accounts] The ${appId} block handler failed for ${blocker.id}:`, error);
+    }
+  }
 
   return true;
 });
@@ -887,6 +1075,17 @@ app.registerEvent('follows', async (source, cbId, data, citizenid) => {
       ? null
       : await ownedAccount(data.viewer_account_id, citizenid, appId);
 
+  // An unlisted app has no follow graph, so it reads as empty; the block state is still real,
+  // because blocks still work there and a Block button needs it.
+  if (!isListed(appId)) {
+    return {
+      followers: 0,
+      following: 0,
+      followedByMe: false,
+      blockedByMe: viewer ? await accountHasBlocked(viewer.id, accountId) : false
+    };
+  }
+
   const [followers, following, mine, blocked] = await Promise.all([
     Database.scalar<number>(
       'SELECT COUNT(*) FROM `mica_account_follows` WHERE `followee_account_id` = ?',
@@ -950,6 +1149,7 @@ const followList = async (
   const appId = data.app;
   const accountId = data.account_id;
   const { limit, cursor } = pageBounds(data, paging);
+  if (!isListed(appId)) return { rows: [], nextCursor: null };
 
   /**
    * Which end of the relation is the subject and which is the row being listed. Both are literals
@@ -1018,6 +1218,8 @@ app.registerEvent('search', async (source, cbId, data) => {
 
   const q = data.q;
   const { limit, cursor } = pageBounds(data, paging);
+  // Not a directory for an unlisted app: an id is reached some other way, or not at all.
+  if (!isListed(appId)) return { rows: [], nextCursor: null };
 
   const projection = accounts.resolved.publicColumns.map((column) => `\`${column}\``).join(', ');
   const cursorClause = cursor === null ? '' : ' AND `id` < ?';

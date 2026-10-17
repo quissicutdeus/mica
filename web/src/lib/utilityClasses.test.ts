@@ -128,7 +128,7 @@ describe('app-utilities.css coverage', () => {
  * the new sites listed. Lower this number when you remove one; never raise it to silence
  * the test without looking at the sites it prints.
  */
-const COMPUTED_CLASS_RATCHET = 37;
+const COMPUTED_CLASS_RATCHET = 38;
 
 describe('class expressions inside markup', () => {
   const defined = loadDefinedClasses();

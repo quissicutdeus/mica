@@ -79,7 +79,8 @@ describe('unique keys and soft deletes (MICA-321)', () => {
         'lockscreen',
         'messages',
         'phonenumbers',
-        'settings'
+        'settings',
+        'spark'
       ])
     );
   });
