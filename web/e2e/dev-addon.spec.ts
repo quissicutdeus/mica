@@ -79,7 +79,10 @@ test.describe('a dev add-on', () => {
 
     // A push: the mock's `add` handler pushes `row_added`, which `useAppEvents` hears. The
     // pushed list is separate from the rows, so this is the event and not the answer.
+    // The call's own answer is shown first, so a click that never reached the add-on (no
+    // answer) is told apart from a push that was lost after the answer (answer, no push).
     await frame.getByTestId('add').click();
+    await expect(frame.getByTestId('answer')).toContainText('answered: added by a click');
     await expect(frame.getByTestId('pushed')).toContainText('pushed: added by a click');
 
     // Still the ordinary sandbox: scripts only, a CSP, an opaque origin.

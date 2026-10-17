@@ -7,6 +7,7 @@
 
   let rows: Row[] = $state([]);
   let pushed: string[] = $state([]);
+  let answered = $state('');
   const server = useService(probe);
 
   onAppForeground('devprobe', () => {
@@ -31,10 +32,14 @@
       type="button"
       data-testid="add"
       class="bg-primary text-on-primary rounded-full px-4 py-2"
-      onclick={() => void server.call('add', { text: 'added by a click' }, null)}
+      onclick={() =>
+        void server.call<Row | null>('add', { text: 'added by a click' }, null).then((row) => {
+          answered = row ? `answered: ${row.text}` : 'answered: nothing';
+        })}
     >
       Add a row
     </button>
+    <p data-testid="answer" class="text-body-medium text-on-surface">{answered}</p>
     <ul data-testid="pushed">
       {#each pushed as text, i (i)}
         <li class="text-body-medium text-on-surface">pushed: {text}</li>
