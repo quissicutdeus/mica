@@ -57,7 +57,7 @@ import {
 import { declaredServices, resolveAppSchema } from '../lib/defineService';
 import { summariseTarget } from '../lib/moderation';
 import { messages, sendFromLine } from '../services/Messages';
-import { blabberDms } from '../services/BlabberDms';
+import { directMessages } from '../services/DirectMessages';
 import { mail, SendSystemEmail } from '../services/Mail';
 import { reports } from '../services/Reports';
 import { conversations } from '../services/Conversations';
@@ -85,7 +85,7 @@ const ALLOWLIST: Record<string, { column: string; files: readonly string[] }> = 
       'server/lib/import/write.ts'
     ]
   },
-  mica_blabber_dms: { column: 'body', files: ['server/services/BlabberDms.ts'] },
+  mica_blabber_dms: { column: 'body', files: ['server/services/DirectMessages.ts'] },
   mica_darkchat_messages: { column: 'body', files: ['server/services/DarkchatMessages.ts'] },
   mica_mail: { column: 'content', files: ['server/services/Mail.ts'] },
   mica_reports: { column: 'target_preview', files: [] }
@@ -366,8 +366,8 @@ describe('what the declarations mean for size', () => {
   });
 
   it('keeps a varchar plaintext bound and emits the column as wide as its sealed form', () => {
-    expect(rule(blabberDms, 'body')).toBe(500);
-    expect(stored(blabberDms, 'body').length).toBe(sealedLengthForChars(500));
+    expect(rule(directMessages, 'body')).toBe(500);
+    expect(stored(directMessages, 'body').length).toBe(sealedLengthForChars(500));
     expect(rule(reports, 'target_preview')).toBe(300);
     expect(stored(reports, 'target_preview').length).toBe(sealedLengthForChars(300));
   });
@@ -686,7 +686,8 @@ describe('Blabber DMs (mica_blabber_dms.body)', () => {
     };
     answerQuery = (sql) => (sql.includes('mica_accounts') ? [MINE] : []);
 
-    const reply = await call('blabber_dms', 'send', {
+    const reply = await call('dms', 'send', {
+      app: 'blabber',
       account_id: 1,
       peer_account_id: 2,
       body: 'secret plans'
@@ -716,10 +717,10 @@ describe('Blabber DMs (mica_blabber_dms.body)', () => {
       return [];
     };
 
-    const thread = await call('blabber_dms', 'get', { account_id: 1, peer_account_id: 2 });
+    const thread = await call('dms', 'get', { app: 'blabber', account_id: 1, peer_account_id: 2 });
     expect(thread.rows[0].body).toBe('hello ada');
 
-    const inbox = await call('blabber_dms', 'threads', undefined);
+    const inbox = await call('dms', 'threads', { app: 'blabber' });
     expect(inbox[0].last.body).toBe('hello ada');
   });
 
@@ -733,7 +734,9 @@ describe('Blabber DMs (mica_blabber_dms.body)', () => {
         ? [{ body: sealed, citizenid: 'CIT_A', from_account: 1, to_account: 2 }]
         : [];
 
-    const rows = await blabberDms.repo.findAll({ citizenid: 'CIT_A' } as any, undefined, ['body']);
+    const rows = await directMessages.repo.findAll({ citizenid: 'CIT_A' } as any, undefined, [
+      'body'
+    ]);
 
     expect(rows).toEqual([{ body: 'projected' }]);
   });
@@ -904,7 +907,12 @@ describe('text that starts like a sealed value', () => {
 
     const sent = await call('messages', 'send', { conversation_id: 7, message: LOOKALIKE });
     expect(sent.message).toBe(LOOKALIKE);
-    await call('blabber_dms', 'send', { account_id: 1, peer_account_id: 2, body: LOOKALIKE });
+    await call('dms', 'send', {
+      app: 'blabber',
+      account_id: 1,
+      peer_account_id: 2,
+      body: LOOKALIKE
+    });
     await SendSystemEmail('CIT_A', { sender: 'Bank', subject: 'S', content: LOOKALIKE });
 
     const rows = [
@@ -979,7 +987,8 @@ describe('text that starts like a sealed value', () => {
 
     const sent = await call('messages', 'send', { conversation_id: 7, message: LOOKALIKE });
     expect(sent.key).toBe('server.content.reservedPrefix');
-    const dm = await call('blabber_dms', 'send', {
+    const dm = await call('dms', 'send', {
+      app: 'blabber',
       account_id: 1,
       peer_account_id: 2,
       body: LOOKALIKE

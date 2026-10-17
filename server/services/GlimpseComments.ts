@@ -22,7 +22,7 @@ import type { GlimpseComment } from '@mica/shared/types';
  * its own and needs its own status: a takedown, an author's delete, and a post owner's removal
  * are each a status change on one row. `app: 'glimpse'` (through `GLIMPSE_APP`) puts it behind
  * the add-on's `mica_disabled_apps` switch, and `useService` reaches it as `<appId>_*`, the
- * precedent `blabber_dms` set.
+ * precedent `blabber_dms` set before it became the app-agnostic `dms` (MICA-390).
  *
  * Every generic action is off. A comment is never edited; it is removed through `remove`,
  * because the post's owner may remove one they did not write, which an ownership-scoped generic

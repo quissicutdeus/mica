@@ -51,7 +51,7 @@ const EDIT_WINDOW_SECONDS = ((): number => {
  * Glimpse's contract, declared here rather than in `shared/contracts/`, for Blabber's reason:
  * Glimpse is `core: false`, and core may not name an app the Store installs. The comments
  * contract is the exception that proves it — `glimpse_comments` is not the add-on's id, so it
- * sits in `shared/contracts/` the way `blabber_dms` does.
+ * sits in `shared/contracts/` the way `dms` does.
  *
  * `update` and `delete` are **not** here. Editing a caption and deleting a post ride the
  * generic ownership-scoped path, where the write allowlist and `access.editWindow` validate

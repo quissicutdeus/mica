@@ -1616,6 +1616,17 @@ somebody maintaining a `core: false` add-on outside this repo, and it answers
 one question: does that bundle still compile against this release, and does its
 manifest still ask for the right things.
 
+**`useDirectMessages(appId)` is new, behind the existing `social` permission
+(MICA-390).** Private one-to-one messages between two accounts in your app:
+`threads()` lists every correspondent across your accounts there,
+`thread({ account_id, peer_account_id, cursor, limit })` reads one newest first,
+`send({ account_id, peer_account_id, body })` and
+`markRead({ account_id, peer_account_id })` write. Reads answer empty on failure
+and writes reject. The server refuses any app that has not registered a DM
+policy, and in a frame the app is always your own. The types are `DirectMessage`
+and `DirectMessageThread`. Nothing was removed, and `SDK_CONTRACT_VERSION` stays
+`1`.
+
 **An add-on can ship a separate tablet root (MICA-265).** `bootAddOn`'s options
 take an optional `tablet` root, which it mounts instead of the main one while
 the tablet is on screen. The template's build passes `src/tablet.svelte` when

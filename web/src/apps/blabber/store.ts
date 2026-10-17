@@ -16,6 +16,7 @@ import {
   createReactionStore,
   useAccounts,
   useAppEvents,
+  useDirectMessages,
   usePersisted,
   useService
 } from '@mica/sdk';
@@ -36,7 +37,8 @@ import {
 // Resolved per call for the same reason as `accounts` below: a handle captured at module
 // scope closes over the transport as it was at import time.
 const blabberService = () => useService('blabber');
-const dmService = () => useService('blabber_dms');
+// MICA-390: DMs are the shared `dms` service, Blabber's being the app it is asked about.
+const dmService = () => useDirectMessages('blabber');
 /**
  * Resolved per call, not destructured once — same reasoning as `blabberService`/`dmService`
  * above: a handle captured at module scope closes over the transport as it was at import time.
@@ -564,7 +566,7 @@ export const unreadDms = derived(dmThreads, (threads) =>
 );
 
 export const loadDmThreads = async (): Promise<void> => {
-  dmThreads.set(await dmService().call<BlabberDmThread[]>('threads', {}, []));
+  dmThreads.set(await dmService().threads());
 };
 
 /**
@@ -572,7 +574,7 @@ export const loadDmThreads = async (): Promise<void> => {
  * that order, so a new message appends at the bottom like every other chat on the phone
  * (MICA-101).
  *
- * The wire order is the opposite and stays that way: `blabber_dms:get` is keyset-paged on
+ * The wire order is the opposite and stays that way: `dms:get` is keyset-paged on
  * `id DESC`, so the newest page is the one a cursor-less read returns, and reversing the query
  * instead would mean paging from the wrong end of the thread. The reversal belongs here, once,
  * rather than in the component — `sendDm` has to agree with it, and a component-side `reverse()`
@@ -581,16 +583,15 @@ export const loadDmThreads = async (): Promise<void> => {
 export const loadDmMessages = async (peerAccountId: number): Promise<void> => {
   const accountId = getActiveAccountId();
   if (accountId === null) return;
-  const reply = await dmService().call<{ rows: BlabberDm[] }>(
-    'get',
-    { account_id: accountId, peer_account_id: peerAccountId },
-    { rows: [] }
-  );
+  const reply = await dmService().thread({
+    account_id: accountId,
+    peer_account_id: peerAccountId
+  });
   dmMessages.set([...(reply.rows ?? [])].reverse());
 
   // Opening the thread is what marks it read, so the badge falls for the same reason the player
   // would expect it to.
-  await dmService().call('read', { account_id: accountId, peer_account_id: peerAccountId });
+  await dmService().markRead({ account_id: accountId, peer_account_id: peerAccountId });
   await loadDmThreads();
 };
 
@@ -598,7 +599,7 @@ export const sendDm = async (peerAccountId: number, body: string): Promise<void>
   const accountId = getActiveAccountId();
   if (accountId === null) throw new Error('Claim a handle first.');
 
-  const created = await dmService().call<BlabberDm>('send', {
+  const created = await dmService().send({
     account_id: accountId,
     peer_account_id: peerAccountId,
     body

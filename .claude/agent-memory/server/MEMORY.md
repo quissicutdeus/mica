@@ -91,3 +91,5 @@ line here.
   half-created sweep fails
 - [The sealed-SQL guard cannot see an interpolated table](sealed-sql-guard-needs-a-literal-table.md)
   — `${TABLE}` hides a body read from encryptedColumns.test; name it literally
+- [A DM policy is registered by the app's file](dm-policy-registers-from-the-app.md)
+  — a suite may already load Blabber's; re-registering throws (MICA-390)

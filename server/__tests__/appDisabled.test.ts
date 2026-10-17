@@ -124,10 +124,10 @@ describe('a disabled app, at the ServiceEndpoint boundary', () => {
   });
 
   it('refuses a service its app owns under another name', async () => {
-    const handler = mountCustom('blabber_dms', 'blabber');
-    disable('blabber');
+    const handler = mountCustom('invoices', 'bank');
+    disable('bank');
 
-    expect(await call('blabber_dms', 'ping')).toMatchObject({ params: { app: 'blabber' } });
+    expect(await call('invoices', 'ping')).toMatchObject({ params: { app: 'bank' } });
     expect(handler).not.toHaveBeenCalled();
   });
 
@@ -181,6 +181,41 @@ describe("Snek's board, through its real declaration", () => {
 
     disable('');
     expect(await call('highscores', 'submit', { app: 'snek', score: 10 })).toEqual({ ok: true });
+  });
+});
+
+describe('DMs, through their real declaration (MICA-390)', () => {
+  it("refuses by the payload's app, per call, and leaves every other app's DMs alone", async () => {
+    // Imported here, after `onNet` points at this case's map, so its handlers land in it. `dms`
+    // declares no app — several share it — so the gate is each handler's, on `data.app`.
+    const { registerDmPolicy } = await import('../services/DirectMessages');
+    const notify = () => ({ title: 't', message: 'm', deepLink: 'x' });
+    registerDmPolicy('blabber', { canSend: () => true, notify });
+    registerDmPolicy('glimpse', { canSend: () => true, notify });
+    disable('blabber');
+    // Importing it starts the notification sweep, which is not a DM read.
+    dbMock.query.mockClear();
+
+    const thread = { app: 'blabber', account_id: 1, peer_account_id: 2 };
+    for (const [action, data] of [
+      ['get', thread],
+      ['read', thread],
+      ['send', { ...thread, body: 'hi' }],
+      ['threads', { app: 'blabber' }]
+    ] as const) {
+      expect(await call('dms', action, data), action).toEqual({
+        error: 'The blabber app is turned off on this server.',
+        key: 'server.endpoint.appDisabled',
+        params: { app: 'blabber' }
+      });
+    }
+    expect(dbMock.single).not.toHaveBeenCalled();
+    expect(dbMock.query).not.toHaveBeenCalled();
+
+    // The positive twin: the same service, another app's payload, reaches its account read.
+    expect(await call('dms', 'threads', { app: 'glimpse' })).toEqual([]);
+    expect(String(dbMock.query.mock.calls[0]?.[0])).toContain('mica_accounts');
+    expect(dbMock.query.mock.calls[0]?.[1]).toEqual(['CIT_A', 'glimpse']);
   });
 });
 

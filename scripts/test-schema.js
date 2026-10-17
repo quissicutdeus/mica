@@ -248,7 +248,8 @@ const loadServerModule = async () => {
     `export { releaseHostedImages, resetMediaHostForTests } from '${root}/server/lib/mediaHost.ts';`,
     `export { orphanScope, purgeOwnedRows, sweepOrphanedRows } from '${root}/server/lib/orphanSweep.ts';`,
     `import '${root}/server/services/Messages.ts';`,
-    `import '${root}/server/services/BlabberDms.ts';`,
+    // MICA-390: a thread's hard delete keeps a reported DM by the same hold retention does.
+    `export { deleteThread } from '${root}/server/services/DirectMessages.ts';`,
     `import '${root}/server/services/Marketplace.ts';`,
     // MICA-165: the cipher and the backfill, in the same bundle as the importer, so an import
     // seals through the same registry and keyring the backfill reads.
@@ -1155,6 +1156,38 @@ const runRetentionVariant = async ({ connection, schemaFile, hasPlayers, modules
       `${label}: resolving the report releases the conversation`,
       await prune('mica_messages'),
       3
+    );
+
+    step(`${label} — deleteThread (MICA-390): a reported DM holds its thread, or it all goes`);
+    // DM 1 (1->2) is under an open report; 2 (2->1) is the same thread; 3 and 5 are not in it.
+    await q(
+      `INSERT INTO mica_blabber_dms (id, citizenid, from_account, to_account, body) VALUES
+       (6, ?, 1, 2, 'y'), (7, ?, 2, 1, 'y')`,
+      [A, B]
+    );
+    await q(
+      `INSERT INTO mica_account_reactions (account_id, target_table, target_id, emoji) VALUES
+       (1, 'mica_blabber_dms', 1, 'x'), (2, 'mica_blabber_dms', 7, 'x')`
+    );
+    check(`${label}: a reported DM holds the whole thread`, await modules.deleteThread(2, 1), 0);
+    check(
+      `${label}: every DM in the held thread stays`,
+      await ids('mica_blabber_dms'),
+      [1, 2, 3, 5, 6, 7]
+    );
+    await q(
+      "UPDATE mica_reports SET resolution = 'dismissed' WHERE target_table = 'mica_blabber_dms'"
+    );
+    check(
+      `${label}: once the report is resolved, both directions go`,
+      await modules.deleteThread(2, 1),
+      4
+    );
+    check(`${label}: the other threads stay`, await ids('mica_blabber_dms'), [3, 5]);
+    check(
+      `${label}: a deleted DM takes its reactions`,
+      await q('SELECT id FROM mica_account_reactions'),
+      []
     );
   } finally {
     await connection.query('SET SESSION sql_mode = @mica_saved_sql_mode');

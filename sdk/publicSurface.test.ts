@@ -948,6 +948,8 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'useContacts',
     'useDeepLink',
     'useDevTools',
+    // MICA-390: one app's direct messages on the shared `dms` service.
+    'useDirectMessages',
     'useDisplay',
     'useHighscores',
     'useJobs',
@@ -1176,6 +1178,8 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'useContacts',
     'useDeepLink',
     'useDevTools',
+    // MICA-390: one app's direct messages on the shared `dms` service.
+    'useDirectMessages',
     'useDisplay',
     'useHighscores',
     'useJobs',
@@ -1321,6 +1325,9 @@ const BASELINE_TYPE_EXPORTS: Record<string, string[]> = {
     'CreateListingInput',
     'CrudEvents',
     'CrudOptions',
+    // MICA-390: what `useDirectMessages` answers in.
+    'DirectMessage',
+    'DirectMessageThread',
     'Facets',
     'FocusTrapOptions',
     'FollowListQuery',
@@ -1413,6 +1420,9 @@ const BASELINE_TYPE_EXPORTS: Record<string, string[]> = {
     'CreateListingInput',
     'CrudEvents',
     'CrudOptions',
+    // MICA-390: what `useDirectMessages` answers in.
+    'DirectMessage',
+    'DirectMessageThread',
     'Facets',
     'FocusTrapOptions',
     'FollowListQuery',
@@ -1748,6 +1758,8 @@ const BASELINE_HOOK_RETURNS: Record<string, string[]> = {
     'shareContact'
   ],
   useDevTools: ['devToolsUnlocked', 'lock', 'unlock'],
+  // MICA-390
+  useDirectMessages: ['markRead', 'send', 'thread', 'threads'],
   useDisplay: [
     'device',
     'displaySize',
@@ -2156,6 +2168,19 @@ const BASELINE_TYPE_SHAPES: Record<string, string[]> = {
   CreateListingInput: ['attachments', 'description', 'price', 'title'],
   CrudEvents: ['create?', 'list', 'remove?', 'update?'],
   CrudOptions: ['service?', 'sort?', 'validate?'],
+  // MICA-390
+  DirectMessage: [
+    'body',
+    'citizenid?',
+    'created_at',
+    'from_account',
+    'id',
+    'read_at?',
+    'status?',
+    'to_account',
+    'updated_at'
+  ],
+  DirectMessageThread: ['display_name', 'handle', 'last', 'peer_account_id', 'unread'],
   Facets: [
     'account',
     'accounts',
@@ -2175,6 +2200,7 @@ const BASELINE_TYPE_SHAPES: Record<string, string[]> = {
     'contacts',
     'deepLink',
     'devTools',
+    'directMessages',
     'display',
     'displayWrite',
     'highscores',

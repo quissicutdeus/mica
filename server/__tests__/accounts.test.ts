@@ -43,7 +43,7 @@ import {
 } from '../services/Accounts';
 import { registerReactable } from '../lib/reactions';
 
-// Registered by `BlabberDms.ts`'s own `defineService` call in the real app, which this file
+// Registered by `DirectMessages.ts`'s own `defineService` call in the real app, which this file
 // never imports — so the reactions tests below register it directly rather than pulling in an
 // unrelated service just to trigger its module-scope side effect.
 registerReactable('mica_blabber_dms', { label: 'Direct message' });

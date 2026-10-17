@@ -33,6 +33,7 @@ import { mentionedHandles, taggedTopics } from '@mica/shared/richText';
 import { BlabberRepository } from '../repositories/BlabberRepository';
 import { buildDeepLink } from '@mica/shared/deepLink';
 import { isInlineImage } from '@mica/shared/imageSource';
+import { registerDmPolicy } from './DirectMessages';
 
 /** The app id, which is also the handle namespace accounts are claimed in. */
 const APP = 'blabber';
@@ -436,6 +437,20 @@ const app = blabber.app;
 const repo = blabber.repo as BlabberRepository;
 const mediaRepo = media.repo;
 const channel = appEventChannel(APP);
+
+/**
+ * Blabber's DMs (MICA-390): any two accounts may message, past the block and the rest the
+ * service holds for every app. The notification is the sender's handle and the text, and opens
+ * the thread, which Blabber keys on the peer's handle.
+ */
+registerDmPolicy(APP, {
+  canSend: () => true,
+  notify: (from, text) => ({
+    title: `@${from.handle}`,
+    message: text.slice(0, 120),
+    deepLink: buildDeepLink(APP, { dmHandle: from.handle })
+  })
+});
 
 /**
  * The declared page bounds, for the custom paged reads below. Non-null by construction: this is a

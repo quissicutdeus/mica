@@ -336,7 +336,10 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
     'lifecycle',
     // MICA-235. `catalogs` hands back the strings of whichever app the id names; pinned, it
     // can only ever be this frame's own namespace and `ui`.
-    'locale'
+    'locale',
+    // MICA-390. Every member sends its factory's app id to the `dms` service; unpinned, an
+    // add-on holding `social` could read and send another app's private messages.
+    'directMessages'
   ]);
 
   /**

@@ -110,6 +110,9 @@ export const PERMISSION_OF: Record<string, AppPermission | readonly AppPermissio
   usePhoneNotification: 'notifications',
   useReport: 'reports',
   useAccounts: 'social',
+  // MICA-390: private messages between accounts on the same identity layer `useAccounts`
+  // reads, so the same disclosure. Pinned to the caller's own app (`APP_SCOPED_FACETS`).
+  useDirectMessages: 'social',
   useStorage: 'storage',
   usePersisted: 'storage',
   appStorageBytes: 'storage',
@@ -161,6 +164,7 @@ export const HOOK_OF_FACET = {
   call: 'useCall',
   camera: 'useCamera',
   contacts: 'useContacts',
+  directMessages: 'useDirectMessages',
   highscores: 'useHighscores',
   jobs: 'useJobs',
   location: 'useLocation',
@@ -405,6 +409,7 @@ export const FACET_MEMBERS = {
     'getDeletedContacts',
     'restoreContact'
   ],
+  directMessages: ['threads', 'thread', 'send', 'markRead'],
   highscores: ['submitScore', 'getLeaderboard'],
   jobs: ['jobs', 'jobsLoaded', 'fetchJobs', 'setActiveJob', 'setDuty'],
   location: ['shareLocation', 'setWaypoint'],
@@ -828,6 +833,12 @@ export const MEMBER_APP_ARGS = {
   'controlCenter.unregisterToggle': null,
   'devTools.lock': null,
   'devTools.unlock': null,
+  // MICA-390. The app is the factory's argument, pinned by `APP_SCOPED_FACETS`; no member
+  // takes one, and the facet spreads its own over anything an input carries.
+  'directMessages.markRead': null,
+  'directMessages.send': null,
+  'directMessages.thread': null,
+  'directMessages.threads': null,
   'displayWrite.setDisplaySize': null,
   'displayWrite.setHomeGridSize': null,
   'displayWrite.setMotionPreference': null,

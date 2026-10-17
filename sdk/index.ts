@@ -87,6 +87,7 @@ export type { AppEvent } from './vocabulary/shell';
 export type { M3Tokens } from './lib/m3';
 export type { FollowPage, FollowListQuery, AccountSearchQuery } from './vocabulary/accounts';
 export type { ListingPage, CreateListingInput } from './vocabulary/marketplace';
+export type { DirectMessage, DirectMessageThread } from './vocabulary/directMessages';
 export type { SendMoneyOutcome, SendMoneyInput } from './vocabulary/bank';
 /**
  * Deterministic placeholder imagery, for the fixtures an app renders in a browser.

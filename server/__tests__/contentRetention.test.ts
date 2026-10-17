@@ -60,7 +60,7 @@ import {
 import { __setSchemaReadyForTests } from '../lib/schemaReady';
 import '../services/Media';
 import '../services/Messages';
-import '../services/BlabberDms';
+import '../services/DirectMessages';
 import '../services/Marketplace';
 import '../services/Blabber';
 

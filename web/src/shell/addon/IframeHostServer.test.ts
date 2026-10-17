@@ -393,6 +393,13 @@ describe('IframeHostServer', () => {
           return { query: writable(''), publish: () => true };
         }) as any
       );
+      registerFacet(
+        'directMessages' as any,
+        ((appId?: unknown) => {
+          built.push({ facet: 'directMessages', appId });
+          return { threads: () => [], thread: () => ({ rows: [], nextCursor: null }) };
+        }) as any
+      );
     });
 
     it("replaces a call's factoryArgs[0] with the server's own appId", async () => {
@@ -477,6 +484,55 @@ describe('IframeHostServer', () => {
 
       // Not 'notes' — the frame said so, and saying so is not being so.
       expect(built).toEqual([{ facet: 'searchProvider', appId: 'probe' }]);
+    });
+
+    /**
+     * MICA-390, for the same reason as the search provider above: proves `directMessages`
+     * is in the set, so an add-on with `social` reads its own app's DMs and nobody else's.
+     * Both a read and the paged thread, since either left unpinned is a private-message leak.
+     */
+    it("pins direct messages, so an add-on cannot read another app's DMs", async () => {
+      const { posted, from } = server(['social'] as AppPermission[]);
+      from({
+        kind: 'call',
+        id: 6,
+        facet: 'directMessages',
+        factoryArgs: ['blabber'],
+        member: 'threads',
+        args: []
+      });
+      from({
+        kind: 'call',
+        id: 7,
+        facet: 'directMessages',
+        factoryArgs: ['blabber'],
+        member: 'thread',
+        args: [{ account_id: 1, peer_account_id: 2 }]
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(posted.filter((m: any) => m.kind === 'reply' && m.ok)).toHaveLength(2);
+      // Not 'blabber' — the frame named Blabber's inbox and was handed its own. Built once:
+      // both calls reach the one instance the pinned arguments name.
+      expect(built).toEqual([{ facet: 'directMessages', appId: 'probe' }]);
+    });
+
+    it('refuses direct messages to an add-on without the social permission', async () => {
+      const { posted, from } = server([] as AppPermission[]);
+      from({
+        kind: 'call',
+        id: 8,
+        facet: 'directMessages',
+        factoryArgs: ['probe'],
+        member: 'threads',
+        args: []
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(posted[posted.length - 1]).toMatchObject({ kind: 'reply', id: 8, ok: false });
+      expect(built).toEqual([]);
     });
   });
 

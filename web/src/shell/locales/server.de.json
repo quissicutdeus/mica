@@ -26,6 +26,7 @@
   "blabberDms.notYours": "Dieses Konto gehört dir nicht.",
   "blabberDms.notYoursToSend": "Aus diesem Konto darfst du nichts senden.",
   "blabberDms.selfMessage": "Du kannst dir nicht selbst schreiben.",
+  "dms.noPolicy": "Diese App unterstützt keine Direktnachrichten.",
   "jobs.lineUnavailable": "Diese Leitung ist für dich nicht verfügbar.",
   "marketplace.descriptionRequired": "Eine Anzeige braucht eine Beschreibung.",
   "marketplace.listingGone": "Diese Anzeige ist nicht mehr verfügbar.",

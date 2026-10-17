@@ -464,9 +464,9 @@ export interface ServiceDefinition<C extends ServiceContract = ServiceContract> 
    * The one app this service belongs to, when no other app reaches it (MICA-234).
    *
    * An owner disabling that app with `mica_disabled_apps` then refuses every event here, custom
-   * and generic. Not always `id`: Blabber's DMs are `blabber_dms`. Declared here rather than in
-   * `lib/ownerConfig.ts` so core never names an app. Leave it off for a service several apps
-   * share — see `ServiceOptions.app`.
+   * and generic. Not always `id`: Glimpse's comments are `glimpse_comments`. Declared here
+   * rather than in `lib/ownerConfig.ts` so core never names an app. Leave it off for a service
+   * several apps share — see `ServiceOptions.app`.
    */
   app?: string;
   /**

@@ -3,7 +3,6 @@
 export * from './accounts';
 export * from './admin';
 export * from './bank';
-export * from './blabber_dms';
 export * from './contacts';
 export * from './conversations';
 export * from './darkchat_messages';

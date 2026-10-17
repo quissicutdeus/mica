@@ -515,7 +515,7 @@ read:
 | Column                        | What it holds                            | Bound to, besides the table, column and `citizenid` |
 | ----------------------------- | ---------------------------------------- | --------------------------------------------------- |
 | `mica_messages.message`       | A text message                           | `conversation_id`                                   |
-| `mica_blabber_dms.body`       | A Blabber direct message                 | `from_account`, `to_account`                        |
+| `mica_blabber_dms.body`       | A direct message, in any social app      | `from_account`, `to_account`                        |
 | `mica_mail.content`           | An email's body                          | nothing more; a mailbox is its own thread           |
 | `mica_reports.target_preview` | The snapshot of a reported message or DM | `target_table`, `target_id`                         |
 

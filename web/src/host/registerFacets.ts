@@ -80,6 +80,7 @@ import './facets/contacts';
 import './facets/controlCenter';
 import './facets/deepLink.svelte';
 import './facets/devTools';
+import './facets/directMessages';
 import './facets/display';
 import './facets/displayWrite';
 import './facets/highscores';

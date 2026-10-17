@@ -5,8 +5,9 @@
 import { PlayerFacingError } from '../lib/errors';
 import { defineService } from '../lib/defineService';
 import { Database } from '../lib/Database';
-import { appEventChannel } from '../lib/appEvents';
+import { appEventChannel, type AppEventChannel } from '../lib/appEvents';
 import { openRows } from '../lib/contentCipher';
+import { appDisabledError, isAppDisabled } from '../lib/ownerConfig';
 import {
   ownedAccount,
   accountHasBlocked,
@@ -15,15 +16,26 @@ import {
   activeAccount,
   accounts as accountsService
 } from './Accounts';
-import { BlabberDm } from '@mica/shared/types';
-import { blabberDmsContract } from '@mica/shared/contracts/blabber_dms';
-import { buildDeepLink } from '@mica/shared/deepLink';
+import type { Account, DirectMessage } from '@mica/shared/types';
+import { dmsContract } from '@mica/shared/contracts/dms';
 import { OPEN_REPORT, parseRetentionDays, registerRetention } from '../lib/contentRetention';
 
-const APP = 'blabber';
-
 /**
- * Direct messages in Blabber. **Strictly one to one.**
+ * Direct messages between two accounts on the shared identity layer, for **any** social app
+ * (MICA-390). **Strictly one to one.**
+ *
+ * This was Blabber's `blabber_dms`, hard-wired to Blabber's id. The app is now a payload field
+ * on every action, and what differs per app — who may message whom, and what the notification
+ * says — is a policy the app registers (`registerDmPolicy`). An app with no policy is refused:
+ * `data.app` is the payload's, so default-allow would open DMs in any app id a client names.
+ * What is the same for every app stays here: owning the sending account, the peer being an
+ * active account in the same app, no messaging yourself, and a block in either direction.
+ *
+ * No `app:` on the declaration, the way `accounts` has none: several apps share it, so one
+ * being off must not refuse the others. Each handler asks `isAppDisabled(data.app)` instead.
+ *
+ * The table keeps the name `mica_blabber_dms`: `contentCipher` binds every sealed body to its
+ * table, and `mica_reports.target_table` and `mica_account_reactions.target_table` hold it too.
  *
  * Enforced by construction rather than by a rule: two account columns on the row and no
  * participants table, so there is no shape a third person could be added to. Contrast
@@ -38,10 +50,9 @@ const APP = 'blabber';
  * character. That is what makes DMs work between alts without either side learning who is
  * behind the other.
  */
-export const blabberDms = defineService<BlabberDm, typeof blabberDmsContract>({
-  contract: blabberDmsContract,
-  id: 'blabber_dms',
-  app: 'blabber',
+export const directMessages = defineService<DirectMessage, typeof dmsContract>({
+  contract: dmsContract,
+  id: 'dms',
   reportable: { label: 'Direct message', previewColumn: 'body' },
   reactable: { label: 'Direct message' },
   table: 'mica_blabber_dms',
@@ -105,14 +116,14 @@ export const blabberDms = defineService<BlabberDm, typeof blabberDmsContract>({
  */
 registerRetention({
   label: 'micadms',
-  table: blabberDms.resolved.table,
+  table: directMessages.resolved.table,
   convar: 'mica_dm_retention',
   days: () => parseRetentionDays(GetConvar('mica_dm_retention', ''), 90, 'mica_dm_retention'),
   dependents: [
     {
       table: 'mica_account_reactions',
       column: 'target_id',
-      scope: { column: 'target_table', value: blabberDms.resolved.table }
+      scope: { column: 'target_table', value: directMessages.resolved.table }
     }
   ],
   holds: [
@@ -134,25 +145,109 @@ registerRetention({
         `WHERE r.\`target_table\` = ? AND ${OPEN_REPORT}) held ` +
         `WHERE (held.\`a\` = ${row}.\`from_account\` AND held.\`b\` = ${row}.\`to_account\`) ` +
         `OR (held.\`a\` = ${row}.\`to_account\` AND held.\`b\` = ${row}.\`from_account\`))`,
-      params: [blabberDms.resolved.table]
+      params: [directMessages.resolved.table]
     }
   ]
 });
 
-const app = blabberDms.app;
-const repo = blabberDms.repo;
-const channel = appEventChannel(APP);
+const app = directMessages.app;
+const repo = directMessages.repo;
+
+/** What a notification for a new DM says, and where tapping it goes. */
+export interface DmNotice {
+  title: string;
+  message: string;
+  /** A `buildDeepLink` string into the app the DM belongs to. */
+  deepLink: string;
+}
 
 /**
- * Every Blabber account this player holds. The set a DM may be sent from, or read as.
+ * One app's rules for its DMs. `mine` is the caller's account, `peer` the other end; both are
+ * active accounts in that app, the caller owns `mine`, and neither has blocked the other — the
+ * service checks all of that before it asks the policy anything.
+ */
+export interface DmPolicy {
+  /** Whether `mine` may send `peer` a new message. A dating app answers "only after a match". */
+  canSend: (mine: Account, peer: Account) => boolean | Promise<boolean>;
+  /**
+   * Whether `mine` may read, and mark read, its thread with `peer`. Absent means always. A
+   * refusal reads as an empty thread rather than an error, so it says nothing about what is
+   * there.
+   */
+  canRead?: (mine: Account, peer: Account) => boolean | Promise<boolean>;
+  /** The notification for a DM `from` sent. `text` is the trimmed body, uncut. */
+  notify: (from: Account, text: string) => DmNotice;
+}
+
+interface RegisteredPolicy {
+  policy: DmPolicy;
+  /** The app's own channel, so each app gets its own badge, inbox and deep link. */
+  channel: AppEventChannel;
+}
+
+/** Keyed by app id. A Map, not an object: `data.app` is the payload's, `__proto__` included. */
+const policies = new Map<string, RegisteredPolicy>();
+
+/**
+ * Let an app's accounts message each other. Called once, at import time, by the app's own
+ * service file — `Blabber.ts` for Blabber. Throws on a second registration for the same app,
+ * which would otherwise replace the first one's rules silently, and on an id that is not an
+ * app id (`appEventChannel` holds the pattern).
+ */
+export const registerDmPolicy = (appId: string, policy: DmPolicy): void => {
+  if (policies.has(appId)) {
+    throw new Error(`registerDmPolicy: '${appId}' already has a DM policy.`);
+  }
+  if (appId !== appId.toLowerCase()) {
+    throw new Error(`registerDmPolicy: '${appId}' must be lower_snake_case.`);
+  }
+  policies.set(appId, { policy, channel: appEventChannel(appId) });
+};
+
+/** Test seam: forget a policy a suite registered. */
+export const unregisterDmPolicyForTests = (appId: string): void => {
+  policies.delete(appId);
+};
+
+/**
+ * The gate every action opens with: the app is on, and it registered a policy. Before any read,
+ * so an app id nobody registered costs no query.
+ */
+const policyFor = (appId: string): RegisteredPolicy => {
+  if (isAppDisabled(appId)) throw appDisabledError(appId);
+  const registered = policies.get(appId);
+  if (!registered) {
+    throw new PlayerFacingError("This app doesn't support direct messages.", {
+      key: 'server.dms.noPolicy'
+    });
+  }
+  return registered;
+};
+
+/** Whether `mine` may read its thread with `peerId`, by the app's `canRead`, if it has one. */
+const mayRead = async (
+  policy: DmPolicy,
+  mine: Account,
+  peerId: number,
+  appId: string
+): Promise<boolean> => {
+  if (!policy.canRead) return true;
+  // Any status, as the inbox reads it: a deleted correspondent's history stays readable.
+  const [peer] = await accountsByIds([peerId]);
+  if (!peer || peer.app !== appId) return false;
+  return await policy.canRead(mine, peer);
+};
+
+/**
+ * Every account this player holds in one app. The set a DM may be sent from, or read as.
  *
  * Through the Accounts resolver rather than a hand-written read of its table: three services
  * were spelling the same `app = ? AND status = 'active'` predicate for themselves, and
  * "active" is the clause that decides whether a deleted account can still be messaged
  * (MICA-197).
  */
-const myAccounts = async (citizenid: string): Promise<number[]> =>
-  (await accountsOwnedBy(citizenid, APP)).map((row) => row.id);
+const myAccounts = async (citizenid: string, appId: string): Promise<Account[]> =>
+  await accountsOwnedBy(citizenid, appId);
 
 /**
  * A DM row as it may leave the server: without `citizenid`, whatever the query selected.
@@ -169,7 +264,7 @@ const myAccounts = async (citizenid: string): Promise<number[]> =>
  * interpolated list hides it. `from_account` and `to_account` stay in: they are the encryption
  * scope a sealed body opens against (MICA-165).
  */
-const toPeerSafe = (row: BlabberDm): BlabberDm => {
+const toPeerSafe = (row: DirectMessage): DirectMessage => {
   if (!('citizenid' in row)) return row;
   const safe = { ...row };
   delete safe.citizenid;
@@ -183,13 +278,15 @@ const toPeerSafe = (row: BlabberDm): BlabberDm => {
  * Without it a client walks account ids and reads anyone's messages.
  */
 app.registerEvent('get', async (source, cbId, data, citizenid) => {
-  const mine = await ownedAccount(data.account_id, citizenid, APP);
+  const { policy } = policyFor(data.app);
+  const mine = await ownedAccount(data.account_id, citizenid, data.app);
   if (!mine)
     throw new PlayerFacingError('That account is not yours.', {
       key: 'server.blabberDms.notYours'
     });
 
   const peer = data.peer_account_id;
+  if (!(await mayRead(policy, mine, peer, data.app))) return { rows: [], nextCursor: null };
   // Clamped rather than refused: a high limit is a legitimate request with a wrong number in
   // it, which is the same call `ServiceEndpoint`'s own paging makes.
   const limit = Math.min(data.limit ?? 40, 80);
@@ -203,8 +300,8 @@ app.registerEvent('get', async (source, cbId, data, citizenid) => {
   // Bodies are sealed at rest (MICA-165); the account columns carry each row's context, so
   // they open here.
   const rows = openRows(
-    blabberDms.resolved.table,
-    await Database.query<BlabberDm[]>(
+    directMessages.resolved.table,
+    await Database.query<DirectMessage[]>(
       `SELECT \`id\`, \`from_account\`, \`to_account\`, \`body\`, \`read_at\`, \`status\`,
               \`created_at\`, \`updated_at\`
        FROM \`mica_blabber_dms\`
@@ -233,8 +330,10 @@ app.registerEvent('get', async (source, cbId, data, citizenid) => {
  * throw most of it away is the shape that stops working quietly at scale.
  */
 app.registerEvent('threads', async (source, cbId, data, citizenid) => {
-  const accounts = await myAccounts(citizenid);
-  if (accounts.length === 0) return [];
+  const { policy } = policyFor(data.app);
+  const owned = await myAccounts(citizenid, data.app);
+  if (owned.length === 0) return [];
+  const accounts = owned.map((row) => row.id);
 
   const list = accounts.map(() => '?').join(', ');
 
@@ -257,8 +356,8 @@ app.registerEvent('threads', async (source, cbId, data, citizenid) => {
 
   const lastIds = heads.map((row) => Number(row.last_id));
   const messages = openRows(
-    blabberDms.resolved.table,
-    await Database.query<BlabberDm[]>(
+    directMessages.resolved.table,
+    await Database.query<DirectMessage[]>(
       `SELECT \`id\`, \`from_account\`, \`to_account\`, \`body\`, \`read_at\`, \`status\`,
               \`created_at\`, \`updated_at\`
        FROM \`mica_blabber_dms\` WHERE \`id\` IN (${lastIds.map(() => '?').join(', ')})`,
@@ -282,7 +381,26 @@ app.registerEvent('threads', async (source, cbId, data, citizenid) => {
   const peerById = new Map(peers.map((row) => [Number(row.id), row]));
   const unreadBy = new Map(unread.map((row) => [Number(row.from_account), Number(row.total)]));
 
-  return heads.map((head) => {
+  // The app's `canRead`, asked as whichever of my accounts the thread's last message is on. A
+  // thread it refuses is left out, as `get` answers it empty.
+  let visible = heads;
+  if (policy.canRead) {
+    const ownedById = new Map(owned.map((row) => [Number(row.id), row]));
+    const kept: typeof heads = [];
+    for (const head of heads) {
+      const last = byId.get(Number(head.last_id));
+      const peer = peerById.get(Number(head.peer));
+      const mine =
+        last &&
+        (ownedById.get(Number(last.from_account)) ?? ownedById.get(Number(last.to_account)));
+      if (mine && peer && peer.app === data.app && (await policy.canRead(mine, peer))) {
+        kept.push(head);
+      }
+    }
+    visible = kept;
+  }
+
+  return visible.map((head) => {
     const peer = peerById.get(Number(head.peer));
     return {
       peer_account_id: Number(head.peer),
@@ -295,6 +413,7 @@ app.registerEvent('threads', async (source, cbId, data, citizenid) => {
 });
 
 app.registerEvent('send', async (source, cbId, data, citizenid) => {
+  const { policy, channel } = policyFor(data.app);
   // Trimmed, not capped — the contract already refused anything over the column's length, so
   // trimming can only ever shorten a body that already fits. Whitespace-only is still empty.
   const text = data.body.trim();
@@ -303,7 +422,7 @@ app.registerEvent('send', async (source, cbId, data, citizenid) => {
       key: 'server.blabberDms.emptyMessage'
     });
 
-  const mine = await ownedAccount(data.account_id, citizenid, APP);
+  const mine = await ownedAccount(data.account_id, citizenid, data.app);
   if (!mine)
     throw new PlayerFacingError('That account is not yours to send from.', {
       key: 'server.blabberDms.notYoursToSend'
@@ -316,11 +435,11 @@ app.registerEvent('send', async (source, cbId, data, citizenid) => {
     });
 
   /**
-   * The recipient has to exist and be a Blabber account. Checked rather than trusted, because
-   * `peer_account_id` is client-chosen and an unchecked one writes a row pointing at nothing —
-   * or at an account in another app's namespace.
+   * The recipient has to exist and be an account in the same app. Checked rather than trusted,
+   * because `peer_account_id` is client-chosen and an unchecked one writes a row pointing at
+   * nothing — or at an account in another app's namespace.
    */
-  const peer = await activeAccount(peerId, APP);
+  const peer = await activeAccount(peerId, data.app);
   if (!peer)
     throw new PlayerFacingError('No such account.', { key: 'server.blabberDms.noSuchAccount' });
 
@@ -336,12 +455,20 @@ app.registerEvent('send', async (source, cbId, data, citizenid) => {
     });
   }
 
+  // The app's own rule last, so it is only ever asked about two real, unblocked accounts. The
+  // same words as a block: a refusal must not tell the sender which rule it was.
+  if (!(await policy.canSend(mine, peer))) {
+    throw new PlayerFacingError("You can't message this account.", {
+      key: 'server.blabberDms.blocked'
+    });
+  }
+
   const id = await repo.create({
     citizenid,
     from_account: mine.id,
     to_account: peer.id,
     body: text
-  } as Partial<BlabberDm>);
+  } as Partial<DirectMessage>);
 
   /**
    * Tell them, and never let telling them fail the send.
@@ -352,26 +479,28 @@ app.registerEvent('send', async (source, cbId, data, citizenid) => {
    * The toast shows the text; the notification row it leaves behind does not (MICA-165). The
    * body is sealed in `mica_blabber_dms`, and a plaintext copy in `mica_notifications` would be
    * the same words in the same dump, so the persisted row keeps the sender and an empty body.
+   *
+   * On the app's own channel, so the push, the badge and the deep link are that app's. The try
+   * starts after the write: a throwing `notify` must not answer a committed row as a failure.
    */
-  const outcome = channel.push(
-    peer.citizenid,
-    'dm',
-    { peer_account_id: mine.id, handle: mine.handle },
-    {
-      notify: {
-        type: 'message',
-        title: `@${mine.handle}`,
-        message: text.slice(0, 120)
-      } as never,
-      kind: 'dm',
-      body: '',
-      // A DM notification had no destination at all, so tapping it did nothing whichever
-      // route it came through. The thread is keyed on the peer's handle.
-      deepLink: buildDeepLink('blabber', { dmHandle: mine.handle })
+  try {
+    const notice = policy.notify(mine, text);
+    const outcome = channel.push(
+      peer.citizenid,
+      'dm',
+      { peer_account_id: mine.id, handle: mine.handle },
+      {
+        notify: { type: 'message', title: notice.title, message: notice.message } as never,
+        kind: 'dm',
+        body: '',
+        deepLink: notice.deepLink
+      }
+    );
+    if (!outcome.delivered && outcome.reason !== 'offline') {
+      console.error(`[dms] Notification for ${id} was refused: ${outcome.reason}.`);
     }
-  );
-  if (!outcome.delivered && outcome.reason !== 'offline') {
-    console.error(`[blabber_dms] Notification for ${id} was refused: ${outcome.reason}.`);
+  } catch (error) {
+    console.error(`[dms] Notification for ${id} failed:`, error);
   }
 
   return {
@@ -394,16 +523,92 @@ app.requirePhoneFor('send');
  * authorization: there is no id a player can pass that clears somebody else's unread count.
  */
 app.registerEvent('read', async (source, cbId, data, citizenid) => {
-  const mine = await ownedAccount(data.account_id, citizenid, APP);
+  const { policy } = policyFor(data.app);
+  const mine = await ownedAccount(data.account_id, citizenid, data.app);
   if (!mine)
     throw new PlayerFacingError('That account is not yours.', {
       key: 'server.blabberDms.notYours'
     });
 
   const peer = data.peer_account_id;
+  if (!(await mayRead(policy, mine, peer, data.app))) return false;
   return await Database.update(
     `UPDATE \`mica_blabber_dms\` SET \`read_at\` = CURRENT_TIMESTAMP
      WHERE \`to_account\` = ? AND \`from_account\` = ? AND \`read_at\` IS NULL`,
     [mine.id, peer]
   );
 });
+
+/** Ids per statement in `deleteThread`, the retention prune's batch. */
+const DELETE_BATCH = 500;
+
+/**
+ * True while an open report names any DM between the two accounts, either direction. Bound as
+ * `[table, a, b, b, a]`. Through a `DISTINCT` derived table because it reads the table the
+ * delete targets (MySQL error 1093) — the shape retention's thread hold above uses.
+ */
+const THREAD_HELD =
+  'EXISTS (SELECT 1 FROM (SELECT DISTINCT r.`id` FROM `mica_reports` r ' +
+  'JOIN `mica_blabber_dms` d ON d.`id` = r.`target_id` ' +
+  `WHERE r.\`target_table\` = ? AND ${OPEN_REPORT} ` +
+  'AND ((d.`from_account` = ? AND d.`to_account` = ?) ' +
+  'OR (d.`from_account` = ? AND d.`to_account` = ?))) held)';
+
+/**
+ * Hard-delete every DM between two accounts, both directions, and the reactions on them —
+ * unless an open report names any one of them, in which case **the whole thread stays**, as
+ * retention holds it: a reported DM without the messages around it is evidence without its
+ * context. Answers how many DMs went, `0` for a held thread.
+ *
+ * For an app's own rule that a conversation ends with nothing left — an unmatch in a dating
+ * app. Not reachable from any net event: a sent message is not unsendable by a player
+ * (`reachability.test.ts`), and this is a server-side call an app's service makes once its own
+ * rule has decided. The ids are the caller's to have checked; nothing here asks who owns them.
+ *
+ * Selected first and deleted by id, with the hold asked again in each delete, so a report filed
+ * between the two still wins for every row not yet gone. Reactions go only for the ids actually
+ * gone, as the prune does.
+ */
+export const deleteThread = async (a: number, b: number): Promise<number> => {
+  for (const id of [a, b]) {
+    if (!Number.isSafeInteger(id) || id <= 0) {
+      throw new Error(`deleteThread: '${String(id)}' is not an account id.`);
+    }
+  }
+  const table = directMessages.resolved.table;
+  const held = [table, a, b, b, a];
+
+  const rows = await Database.query<{ id: number }[]>(
+    `SELECT t.\`id\` FROM \`mica_blabber_dms\` t
+     WHERE ((t.\`from_account\` = ? AND t.\`to_account\` = ?)
+        OR (t.\`from_account\` = ? AND t.\`to_account\` = ?))
+       AND NOT ${THREAD_HELD}
+     ORDER BY t.\`id\``,
+    [a, b, b, a, ...held]
+  );
+  const ids = (Array.isArray(rows) ? rows : [])
+    .map((row) => Number(row.id))
+    .filter((id) => Number.isSafeInteger(id) && id > 0);
+
+  let removed = 0;
+  for (let start = 0; start < ids.length; start += DELETE_BATCH) {
+    const batch = ids.slice(start, start + DELETE_BATCH);
+    const marks = batch.map(() => '?').join(', ');
+    const result = await Database.query<{ affectedRows?: number }>(
+      `DELETE FROM \`mica_blabber_dms\` WHERE \`id\` IN (${marks})
+         AND ((\`from_account\` = ? AND \`to_account\` = ?)
+           OR (\`from_account\` = ? AND \`to_account\` = ?))
+         AND NOT ${THREAD_HELD}`,
+      [...batch, a, b, b, a, ...held]
+    );
+    removed += Number(result?.affectedRows ?? 0) || 0;
+    await Database.query(
+      `DELETE FROM \`mica_account_reactions\`
+       WHERE \`target_table\` = ? AND \`target_id\` IN (${marks})
+         AND NOT EXISTS (SELECT 1 FROM \`mica_blabber_dms\` p
+                         WHERE p.\`id\` = \`mica_account_reactions\`.\`target_id\`)`,
+      [table, ...batch]
+    );
+  }
+  return removed;
+};

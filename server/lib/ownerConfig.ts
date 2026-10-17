@@ -369,9 +369,9 @@ export const isAppDisabled = (appId: string): boolean => disabledNow().set.has(a
  * the contract.
  *
  * A service id is not always its app's id, which is why it is a declaration rather than
- * `service === app`: Blabber's DMs are `blabber_dms`, Bank's invoices are `invoices`, and
- * Snek's board is `highscores`. `bank` itself declares no app: `useAccount` reads its
- * transactions from Messages and Settings.
+ * `service === app`: Glimpse's comments are `glimpse_comments`, Bank's invoices are
+ * `invoices`, and Snek's board is `highscores`. `bank` itself declares no app: `useAccount`
+ * reads its transactions from Messages and Settings.
  */
 
 /**
@@ -395,6 +395,8 @@ export const NEVER_REFUSED_SERVICES: readonly string[] = [
   'contacts',
   'conversations',
   'devices',
+  // Direct messages for every social app (MICA-390); each handler asks `isAppDisabled(data.app)`.
+  'dms',
   // `micaimport`'s ledger (MICA-233): a table with no actions, and no app's.
   'importledger',
   'lockscreen',

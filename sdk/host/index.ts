@@ -20,6 +20,7 @@ export * from './useContacts';
 export * from './useControlCenter';
 export * from './useDeepLink.svelte';
 export * from './useDevTools';
+export * from './useDirectMessages';
 export * from './useDisplay';
 export * from './useDisplayWrite';
 export * from './useHighscores';

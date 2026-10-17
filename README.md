@@ -855,7 +855,7 @@ set mica_location_interval 5
 | `mica_media_image_host`            | host name                                               | the upload URL's host               | The only host a returned photo URL may be on                                                                                          |
 | `mica_media_delete_url`            | https URL with `{url}` or `{name}`                      | empty (off)                         | Endpoint sent `DELETE` for a hosted photo once no row names it                                                                        |
 | `mica_message_retention`           | integer, days, or `off`                                 | `180`                               | How long text messages are kept                                                                                                       |
-| `mica_dm_retention`                | integer, days, or `off`                                 | `90`                                | How long Blabber direct messages are kept                                                                                             |
+| `mica_dm_retention`                | integer, days, or `off`                                 | `90`                                | How long direct messages are kept, in every social app that has them                                                                  |
 | `mica_darkchat_retention`          | integer, hours, at least 1                              | `24`                                | How long a Dark Chat message is kept; there is no off switch                                                                          |
 | `mica_content_key_file`            | absolute file path                                      | empty (off)                         | Key file that seals message, DM and mail bodies at rest (`set`, never `setr`); see below                                              |
 | `mica_orphan_owner_table`          | `table.column`                                          | empty (off)                         | Overrides which table the orphan sweep checks against                                                                                 |
@@ -1125,12 +1125,12 @@ the convar is invisible until the resource restarts.
   path; the resolved value is printed at resource start so "off" is something
   you read rather than discover. Set it to 0 for no ceiling.
 - **Content retention: `mica_message_retention` (180 days), `mica_dm_retention`
-  (90) and `mica_media_retention` (365) (MICA-167).** Text messages, Blabber
-  direct messages and stored media older than the window are deleted permanently
-  -- media is stored in the row, so the photo is gone with it. `0` or `off`
-  keeps that content forever; a value micaOS cannot read falls back to the
-  default with a warning. The prune runs at resource start and every six hours,
-  500 rows at a time and at most 100,000 rows per table per run, and
+  (90) and `mica_media_retention` (365) (MICA-167).** Text messages, direct
+  messages in any social app, and stored media older than the window are deleted
+  permanently -- media is stored in the row, so the photo is gone with it. `0`
+  or `off` keeps that content forever; a value micaOS cannot read falls back to
+  the default with a warning. The prune runs at resource start and every six
+  hours, 500 rows at a time and at most 100,000 rows per table per run, and
   `micamedia prune` runs it on demand. What is never deleted: anything under an
   open report -- the reported message's whole conversation, the reported DM's
   whole thread, and every DM of a reported account -- until the report is

@@ -28,3 +28,5 @@ in its own file and gets a line here.
 - [Waiting on a first push](waiting-on-a-first-push.md) — a refused subscribe
   never replies; seed `undefined`, bound the wait; device switch rebuilds the
   frame
+- [Adding a host facet](adding-a-facet.md) — eleven places; the
+  `APP_SCOPED_FACETS` pin fails open if forgotten, so name it in a test

@@ -70,6 +70,7 @@ import type {
 } from '../vocabulary/display';
 import type { CreateListingInput, ListingPage } from '../vocabulary/marketplace';
 import type { DeletedMediaItem } from '../vocabulary/media';
+import type { DirectMessage, DirectMessageThread } from '../vocabulary/directMessages';
 import type { IncomingMessage, UIConversation, UIMessage } from '../vocabulary/messages';
 import type {
   AudibleBroadcast,
@@ -521,6 +522,30 @@ export interface Facets {
     devToolsUnlocked: Writable<boolean>;
     unlock: () => void;
     lock: () => void;
+  };
+  /**
+   * MICA-390. One app's direct messages, on the `dms` service with the app as a payload
+   * field. The factory's `appId` is the app every member passes, pinned to the caller for a
+   * sandboxed frame (`APP_SCOPED_FACETS`), so no member takes one of its own.
+   */
+  directMessages: (appId: string) => {
+    /** Every correspondent across the player's accounts in this app. `[]` on failure. */
+    threads: () => Promise<DirectMessageThread[]>;
+    /** One thread, newest first, keyset-paged on the message id. An empty page on failure. */
+    thread: (query: {
+      account_id: number;
+      peer_account_id: number;
+      cursor?: number | null;
+      limit?: number;
+    }) => Promise<{ rows: DirectMessage[]; nextCursor: number | null }>;
+    /** Rejects on a refusal, so a caller can tell nothing was sent. */
+    send: (input: {
+      account_id: number;
+      peer_account_id: number;
+      body: string;
+    }) => Promise<DirectMessage>;
+    /** Mark everything `peer_account_id` sent `account_id` read. Rejects on a refusal. */
+    markRead: (input: { account_id: number; peer_account_id: number }) => Promise<boolean>;
   };
   display: () => {
     /**

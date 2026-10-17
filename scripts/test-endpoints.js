@@ -2320,7 +2320,8 @@ const runReports = async (shape, live) => {
     await claim(B, `bob_${kind}`),
     await claim(D, `dana_${kind}`)
   ];
-  const dm = await shape.call(A, 'blabber_dms', 'send', {
+  const dm = await shape.call(A, 'dms', 'send', {
+    app: 'blabber',
     account_id: a?.id,
     peer_account_id: b?.id,
     body: 'between 1 and 2'

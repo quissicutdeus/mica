@@ -485,12 +485,40 @@ describe('blabber service', () => {
         { peer_account_id: 3, handle: 'charlie', display_name: 'Charlie', unread: 1, last: null }
       ];
 
-      vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(threads);
+      const spy = vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue(threads);
 
       await loadDmThreads();
 
       expect(get(dmThreads)).toEqual(threads);
       expect(get(unreadDms)).toBe(4);
+      expect(spy).toHaveBeenCalledWith(
+        'svc',
+        { service: 'dms', action: 'threads', data: { app: 'blabber' } },
+        expect.objectContaining({ defaultValue: [] })
+      );
+    });
+
+    /** As before MICA-390: an inbox that failed to load is empty, not a crashed screen. */
+    it('loadDmThreads answers an empty inbox when the read is refused', async () => {
+      dmThreads.set([
+        { peer_account_id: 2, handle: 'bob', display_name: 'Bob', unread: 3, last: null }
+      ]);
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+      vi.spyOn(fetchNuiModule, 'fetchNui').mockImplementation(refuse);
+
+      await expect(loadDmThreads()).resolves.toBeUndefined();
+
+      expect(get(dmThreads)).toEqual([]);
+    });
+
+    it('sendDm rejects when the server refuses, and appends nothing', async () => {
+      activeAccountId.set(1);
+      myAccounts.set([{ id: 1 } as Account]);
+      vi.spyOn(fetchNuiModule, 'fetchNui').mockImplementation(refuse);
+
+      await expect(sendDm(2, 'Hello')).rejects.toThrow('Player not authenticated');
+
+      expect(get(dmMessages)).toEqual([]);
     });
 
     it('loadDmMessages fetches messages, marks read, and reloads threads', async () => {
@@ -509,23 +537,33 @@ describe('blabber service', () => {
 
       const spy = vi.spyOn(fetchNuiModule, 'fetchNui').mockImplementation((name, payload) => {
         const action = actionOf(name, payload);
-        if (action === 'blabber_dms:get') return Promise.resolve({ rows: mockDms } as any);
-        if (action === 'blabber_dms:threads') return Promise.resolve([] as any);
+        if (action === 'dms:get') return Promise.resolve({ rows: mockDms } as any);
+        if (action === 'dms:threads') return Promise.resolve([] as any);
         return Promise.resolve(undefined as any);
       });
 
       await loadDmMessages(2);
 
       expect(get(dmMessages)).toEqual(mockDms);
+      // MICA-390: the shared `dms` service, with Blabber named as the app on every call.
+      expect(spy).toHaveBeenCalledWith('svc', {
+        service: 'dms',
+        action: 'read',
+        data: { account_id: 1, peer_account_id: 2, app: 'blabber' }
+      });
       expect(spy).toHaveBeenCalledWith(
         'svc',
-        { service: 'blabber_dms', action: 'read', data: { account_id: 1, peer_account_id: 2 } },
-        undefined
+        {
+          service: 'dms',
+          action: 'get',
+          data: { account_id: 1, peer_account_id: 2, app: 'blabber' }
+        },
+        expect.objectContaining({ defaultValue: { rows: [], nextCursor: null } })
       );
     });
 
     /**
-     * MICA-101. `blabber_dms:get` is keyset-paged on `id DESC`, so the wire order is
+     * MICA-101. `dms:get` is keyset-paged on `id DESC`, so the wire order is
      * newest-first and the thread was rendering it straight through — a new message landed
      * above the older ones instead of below them.
      */
@@ -545,8 +583,8 @@ describe('blabber service', () => {
 
       vi.spyOn(fetchNuiModule, 'fetchNui').mockImplementation((name, payload) => {
         const action = actionOf(name, payload);
-        if (action === 'blabber_dms:get') return Promise.resolve({ rows: wire } as any);
-        if (action === 'blabber_dms:threads') return Promise.resolve([] as any);
+        if (action === 'dms:get') return Promise.resolve({ rows: wire } as any);
+        if (action === 'dms:threads') return Promise.resolve([] as any);
         return Promise.resolve(undefined as any);
       });
 
@@ -577,8 +615,8 @@ describe('blabber service', () => {
 
       vi.spyOn(fetchNuiModule, 'fetchNui').mockImplementation((name, payload) => {
         const action = actionOf(name, payload);
-        if (action === 'blabber_dms:send') return Promise.resolve(mockDm as any);
-        if (action === 'blabber_dms:threads') return Promise.resolve([] as any);
+        if (action === 'dms:send') return Promise.resolve(mockDm as any);
+        if (action === 'dms:threads') return Promise.resolve([] as any);
         return Promise.resolve(undefined as any);
       });
 
@@ -613,8 +651,8 @@ describe('blabber service', () => {
 
       vi.spyOn(fetchNuiModule, 'fetchNui').mockImplementation((name, payload) => {
         const action = actionOf(name, payload);
-        if (action === 'blabber_dms:send') return Promise.resolve(created as any);
-        if (action === 'blabber_dms:threads') return Promise.resolve([] as any);
+        if (action === 'dms:send') return Promise.resolve(created as any);
+        if (action === 'dms:threads') return Promise.resolve([] as any);
         return Promise.resolve(undefined as any);
       });
 

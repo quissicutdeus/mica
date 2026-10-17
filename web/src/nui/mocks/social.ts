@@ -15,7 +15,7 @@ import { startFresh } from './shared';
 
 /**
  * The account graph, the Blab feed and the Glimpse grid, shared by `services/accounts.ts`,
- * `services/blabber.ts`, `services/blabber_dms.ts`, `services/glimpse.ts`,
+ * `services/blabber.ts`, `services/dms.ts`, `services/glimpse.ts`,
  * `services/glimpse_comments.ts` and `services/notifications.ts` (MICA-323).
  *
  * Mutable state rather than fixtures: an account claimed, a follow, a block or a Blab

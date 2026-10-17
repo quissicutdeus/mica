@@ -312,7 +312,7 @@ app.registerEvent('thumbnail', async (_source, _cbId, data, citizenid, _player, 
  * A custom `registerEvent` action rather than a raw `onNet` handler — reached through the
  * named `shareMediaNearby` route (`shared/routes.ts`), so `ServiceEndpoint`'s own rate
  * limiting and citizenid resolution already cover it, and its return value becomes the
- * NUI response directly (§10's `BlabberDms.ts` `send` action is the worked example of
+ * NUI response directly (§10's `DirectMessages.ts` `send` action is the worked example of
  * this shape).
  *
  * `findById(mediaId, citizenid)` is the ownership check (§2.9) — a `mediaId` naming a row

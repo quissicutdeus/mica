@@ -183,12 +183,12 @@ DDL.
 - **`app` names the one app this service belongs to (MICA-234), when no other
   app reaches it.** An owner who disables that app with `mica_disabled_apps`
   then has every event here refused too, custom and generic — not just hidden
-  from the UI. It is not always the service's own `id`: Blabber's DMs declare
-  `app: 'blabber'`, not `app: 'blabber_dms'`, and Snek's high-score board
-  declares `app: 'snek'` from a service called `highscores`. Leave it off for a
-  service more than one app legitimately reaches — Contacts, Media, and Bank's
-  own balance are three of them — and it is never refused, whatever the owner
-  names. **A service that leaves `app` off must be listed in
+  from the UI. It is not always the service's own `id`: Glimpse's comments
+  declare `app: 'glimpse'`, not `app: 'glimpse_comments'`, and Snek's high-score
+  board declares `app: 'snek'` from a service called `highscores`. Leave it off
+  for a service more than one app legitimately reaches — Contacts, Media, and
+  Bank's own balance are three of them — and it is never refused, whatever the
+  owner names. **A service that leaves `app` off must be listed in
   `NEVER_REFUSED_SERVICES` (`server/lib/ownerConfig.ts`)**, or
   `server/__tests__/ownerConfig.test.ts` fails: every registered service has to
   declare an app or appear there, never both, so a forgotten declaration cannot
@@ -336,10 +336,11 @@ DDL.
   — `{ disableGet, disableCreate, disableUpdate, disableDelete }`. Reach for it
   when the generic shape is not merely incomplete but wrong: Blabber disables
   `create` because a post has to prove the account it claims belongs to the
-  caller, and Blabber DMs additionally disables `update` because a sent message
-  is not editable, so there is nothing for it to do. Some of these are set for
-  you — `read: 'members'` implies `disableGet`, `write: 'server'` implies no
-  create or update — and declaring one that is already implied is harmless.
+  caller, and the shared `dms` service additionally disables `update` because a
+  sent message is not editable, so there is nothing for it to do. Some of these
+  are set for you — `read: 'members'` implies `disableGet`, `write: 'server'`
+  implies no create or update — and declaring one that is already implied is
+  harmless.
 - **An index may be `unique: true`.** Either form takes it:
   `{ name, columns, unique: true }`. It is a constraint, not an optimisation,
   and it is the right tool where the alternative is find-then-insert with a race
@@ -551,12 +552,19 @@ deliberately **not** denormalised onto the Blab row — a `like_count` column is
 second copy of a fact the likes table already holds, and it drifts the first
 time a like is removed by a path that forgets to decrement.
 
-`server/services/BlabberDms.ts` is one-to-one **by construction**: two account
-columns and no participants table, so there is no shape a third person could be
-added to. Contrast Conversations, which needs a join table precisely because a
-thread there can grow, and pays for it with `left_at`, roles, and a membership
-predicate in every query. Reach for `access.membership` when a thread can grow;
-reach for two columns when it cannot.
+`server/services/DirectMessages.ts` (service id `dms`, table `mica_blabber_dms`,
+MICA-390) is one-to-one **by construction**: two account columns and no
+participants table, so there is no shape a third person could be added to. It
+belongs to no app: every action names the `app` its two accounts live in, and a
+per-app policy registered with `registerDmPolicy` decides who may message whom
+there — Blabber's is open, Spark's requires a match — while the shared rules
+(blocks either way, no messaging yourself, both accounts in the same app) stay
+in the service. An app with no policy is refused. The table kept Blabber's name
+because every sealed body is bound to it (`contentCipher`); renaming it would
+mean re-sealing every message. Contrast Conversations, which needs a join table
+precisely because a thread there can grow, and pays for it with `left_at`,
+roles, and a membership predicate in every query. Reach for `access.membership`
+when a thread can grow; reach for two columns when it cannot.
 
 ### Apps that own more than one table
 

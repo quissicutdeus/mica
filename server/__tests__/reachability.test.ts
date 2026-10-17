@@ -37,7 +37,7 @@ vi.mock('../lib/FrameworkBridge', () => ({
 
 import '../services/Accounts';
 import '../services/Notifications';
-import '../services/BlabberDms';
+import '../services/DirectMessages';
 import '../services/Battery';
 import '../services/Phone';
 import '../services/Signal';
@@ -90,7 +90,7 @@ describe('nothing registers an action the app does not use', () => {
     ['mica:server:signal:rules', 'the client no longer holds the zone list'],
     ['mica:server:notifications:get', 'the shade reads through getShadeNotifications'],
     ['mica:server:notifications:delete', 'clearing is a soft delete onto cleared_at'],
-    ['mica:server:blabber_dms:delete', 'a sent DM is not deletable']
+    ['mica:server:dms:delete', 'a sent DM is not deletable']
   ])('%s is not registered — %s', (event) => {
     expect(handlers.has(event)).toBe(false);
   });
@@ -102,7 +102,7 @@ describe('nothing registers an action the app does not use', () => {
     for (const event of [
       'mica:server:accounts:update',
       'mica:server:notifications:markAsRead',
-      'mica:server:blabber_dms:send'
+      'mica:server:dms:send'
     ]) {
       expect(handlers.has(event), event).toBe(true);
     }

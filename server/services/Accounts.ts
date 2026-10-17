@@ -638,7 +638,7 @@ app.registerEvent('unblock', async (source, cbId, data, citizenid) => {
  * into reactions with no rule here refuses every reaction rather than accepting every one.
  *
  * A DM takes a reaction from one of its two ends, while it is up, and not across a block in
- * either direction — the same rule `blabber_dms:send` holds a new message to, since a
+ * either direction — the same rule `dms:send` holds a new message to, since a
  * reaction is also something written into the other side's thread.
  */
 const REACTION_TARGETS = new Map<string, (account: Account, targetId: number) => Promise<boolean>>([

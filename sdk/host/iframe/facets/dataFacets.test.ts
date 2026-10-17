@@ -26,6 +26,7 @@ import { admin as inAdmin } from '../../../../web/src/host/facets/admin';
 import { call as inCall } from '../../../../web/src/host/facets/call';
 import { camera as inCamera } from '../../../../web/src/host/facets/camera';
 import { contacts as inContacts } from '../../../../web/src/host/facets/contacts';
+import { directMessages as inDirectMessages } from '../../../../web/src/host/facets/directMessages';
 import { highscores as inHighscores } from '../../../../web/src/host/facets/highscores';
 import { jobs as inJobs } from '../../../../web/src/host/facets/jobs';
 import { location as inLocation } from '../../../../web/src/host/facets/location';
@@ -44,6 +45,7 @@ import { admin } from './admin';
 import { call } from './call';
 import { camera } from './camera';
 import { contacts } from './contacts';
+import { directMessages } from './directMessages';
 import { highscores } from './highscores';
 import { jobs } from './jobs';
 import { location } from './location';
@@ -83,6 +85,11 @@ describe('iframe data facet twins — key parity with inProcess', () => {
   it('notifications(appId): same keys as inProcess', () => {
     fakeTransport();
     expect(keys(notifications('blabber'))).toEqual(keys(inNotifications('blabber')));
+  });
+
+  it('directMessages(appId): same keys as inProcess', () => {
+    fakeTransport();
+    expect(keys(directMessages('blabber'))).toEqual(keys(inDirectMessages('blabber')));
   });
 
   it('service(serviceId): same keys as inProcess', () => {

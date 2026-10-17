@@ -33,7 +33,7 @@ import '../services/Messages';
 import '../services/Media';
 import '../services/Accounts';
 import '../services/Blabber';
-import '../services/BlabberDms';
+import '../services/DirectMessages';
 import '../services/DarkchatMessages';
 import '../services/Glimpse';
 import '../services/GlimpseComments';

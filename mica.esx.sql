@@ -158,32 +158,6 @@ CREATE TABLE IF NOT EXISTS `mica_battery` (
     KEY `device_id` (`device_id`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
--- Generated from the 'blabber_dms' defineService declaration.
--- Do not edit by hand; change the declaration and regenerate.
-
-CREATE TABLE IF NOT EXISTS `mica_blabber_dms` (
-    `id` int(11) NOT NULL AUTO_INCREMENT,
-    `citizenid` varchar(60) NOT NULL,
-    `from_account` int(11) NOT NULL,
-    `to_account` int(11) NOT NULL,
-    `body` varchar(2726) NOT NULL,
-    `read_at` timestamp DEFAULT NULL,
-    `status` ENUM('active', 'deleted', 'moderated') NOT NULL DEFAULT 'active',
-    `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    PRIMARY KEY (`id`),
-    KEY `status` (`status`),
-    KEY `citizenid_status` (`citizenid`, `status`),
-    KEY `from_to` (`from_account`, `to_account`),
-    KEY `to_from` (`to_account`, `from_account`),
-    KEY `to_unread` (`to_account`, `read_at`),
-    KEY `created_at` (`created_at`),
-    CONSTRAINT `fk_mica_blabber_dms_from_account` FOREIGN KEY (`from_account`)
-        REFERENCES `mica_accounts` (`id`) ON DELETE CASCADE,
-    CONSTRAINT `fk_mica_blabber_dms_to_account` FOREIGN KEY (`to_account`)
-        REFERENCES `mica_accounts` (`id`) ON DELETE CASCADE
-) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
-
 -- Generated from the 'blocklist' defineService declaration.
 -- Do not edit by hand; change the declaration and regenerate.
 
@@ -357,6 +331,32 @@ CREATE TABLE IF NOT EXISTS `mica_devices` (
     KEY `status` (`status`),
     KEY `citizenid_status` (`citizenid`, `status`),
     UNIQUE KEY `device_id_unique` (`device_id`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+-- Generated from the 'dms' defineService declaration.
+-- Do not edit by hand; change the declaration and regenerate.
+
+CREATE TABLE IF NOT EXISTS `mica_blabber_dms` (
+    `id` int(11) NOT NULL AUTO_INCREMENT,
+    `citizenid` varchar(60) NOT NULL,
+    `from_account` int(11) NOT NULL,
+    `to_account` int(11) NOT NULL,
+    `body` varchar(2726) NOT NULL,
+    `read_at` timestamp DEFAULT NULL,
+    `status` ENUM('active', 'deleted', 'moderated') NOT NULL DEFAULT 'active',
+    `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `status` (`status`),
+    KEY `citizenid_status` (`citizenid`, `status`),
+    KEY `from_to` (`from_account`, `to_account`),
+    KEY `to_from` (`to_account`, `from_account`),
+    KEY `to_unread` (`to_account`, `read_at`),
+    KEY `created_at` (`created_at`),
+    CONSTRAINT `fk_mica_blabber_dms_from_account` FOREIGN KEY (`from_account`)
+        REFERENCES `mica_accounts` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_mica_blabber_dms_to_account` FOREIGN KEY (`to_account`)
+        REFERENCES `mica_accounts` (`id`) ON DELETE CASCADE
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
 -- Generated from the 'highscores' defineService declaration.
