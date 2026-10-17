@@ -3470,21 +3470,54 @@ const runWedgedPairsMigration = async ({ connection, schemaFile, hasPlayers, ser
 /* ------------------ MICA-388: micaschema apply creates a table that is missing */
 
 /**
- * Dropped from a current import, children before parents so MariaDB lets them go: Glimpse's
- * three tables (the qbox_dev case MICA-388 was found on), `mica_media` with every table that
- * references it — a target in another app that the creates must put first — and the audit
- * ledger, which no `defineService` declares.
+ * What is dropped from a current import starts from these: Glimpse's three tables (the qbox_dev
+ * case MICA-388 was found on), `mica_media` — a target in another app that the creates must put
+ * first — and the audit ledger, which no `defineService` declares. Every table that references
+ * one of them is dropped too (`dropSetOf`); a hand-kept list of those went stale the day
+ * MICA-255 added `mica_spark_photos` and MariaDB refused `DROP TABLE mica_media`.
  */
-const MISSING_TABLES = [
+const SEED_TABLES = [
   'mica_glimpse_comments',
   'mica_glimpse_attachments',
-  'mica_blabber_attachments',
-  'mica_marketplace_attachments',
-  'mica_messages_attachments',
   'mica_glimpse',
   'mica_media',
   'mica_audit_logs'
 ];
+
+/**
+ * The seeds plus every table that references one, directly or through another, read from the
+ * foreign keys of the database `connection` is on, ordered children before parents so each
+ * `DROP TABLE` is allowed. A cycle cannot be ordered and throws rather than dropping some.
+ */
+const dropSetOf = async (connection, seeds) => {
+  const [rows] = await connection.query(
+    `SELECT table_name AS child, referenced_table_name AS parent
+       FROM information_schema.KEY_COLUMN_USAGE
+      WHERE table_schema = DATABASE() AND referenced_table_schema = DATABASE()
+        AND referenced_table_name IS NOT NULL AND table_name <> referenced_table_name`
+  );
+  const set = new Set(seeds);
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const { child, parent } of rows) {
+      if (set.has(parent) && !set.has(child)) {
+        set.add(child);
+        grew = true;
+      }
+    }
+  }
+  const ordered = [];
+  const left = new Set(set);
+  while (left.size > 0) {
+    const leaves = [...left].filter((t) => !rows.some((r) => r.parent === t && left.has(r.child)));
+    if (leaves.length === 0) throw new Error(`foreign keys cycle among ${[...left].join(', ')}`);
+    for (const t of leaves.toSorted()) {
+      ordered.push(t);
+      left.delete(t);
+    }
+  }
+  return ordered;
+};
 
 /** Each named table's `SHOW CREATE TABLE`, which is every column, key and foreign key. */
 const createTableOf = async (connection, tables) => {
@@ -3536,6 +3569,8 @@ const runApplyCreatesMissingTables = async ({
   const suffix = `${variant}${ledger ? '' : '_noledger'}`;
 
   await fresh(`mica_missing_shape_${suffix}`);
+  const MISSING_TABLES = await dropSetOf(connection, SEED_TABLES);
+  console.log(`    drop set (${MISSING_TABLES.length}): ${MISSING_TABLES.join(', ')}`);
   const shape = {
     columns: await wholeSchema(connection),
     keys: await allIndexes(connection),
