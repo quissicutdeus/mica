@@ -131,14 +131,44 @@ export const glimpseContract = defineContract({
  * `citizenid` is the ownership anchor and never leaves the server; `account_id` is the display
  * identity, because a player may hold several Glimpse accounts and a public read carrying the
  * citizenid would tie them together. Likes are reactions (`mica_account_reactions`, ❤️ only —
- * `Accounts.ts` holds the rule), so nothing here counts them.
+ * the `reactable` rule below), so nothing here counts them.
  */
 export const glimpse = defineService<GlimpsePost, typeof glimpseContract>({
   contract: glimpseContract,
   id: GLIMPSE_APP,
   app: GLIMPSE_APP,
   reportable: { label: 'Post', previewColumn: 'caption' },
-  reactable: { label: 'Post' },
+  /**
+   * A like is a ❤️ and nothing else (MICA-253). It comes from a Glimpse account — never one
+   * claimed in another app's namespace, since `data.app` is the payload's — while the post is
+   * up, and not across a block in either direction, the rule `glimpse_comments:create` holds a
+   * comment to. A post is public while it is up, so its likes are too. Moved here from
+   * Accounts' hand-kept lists (MICA-391); the SQL is unchanged.
+   */
+  reactable: {
+    label: 'Post',
+    emoji: ['\u2764\uFE0F'],
+    canReact: async (account, targetId) => {
+      if (account.app !== GLIMPSE_APP) return false;
+      const post = await Database.single<{ account_id: number } | null>(
+        "SELECT `account_id` FROM `mica_glimpse` WHERE `id` = ? AND `status` = 'active' LIMIT 1",
+        [targetId]
+      );
+      if (!post) return false;
+      return (
+        !(await accountHasBlocked(account.id, post.account_id)) &&
+        !(await accountHasBlocked(post.account_id, account.id))
+      );
+    },
+    visibleTo: async (ids) => {
+      const rows = await Database.query<{ id: number }[]>(
+        `SELECT \`id\` FROM \`mica_glimpse\`
+         WHERE \`id\` IN (${ids.map(() => '?').join(', ')}) AND \`status\` = 'active'`,
+        ids
+      );
+      return (rows ?? []).map((row) => Number(row.id));
+    }
+  },
   access: {
     read: 'public',
     write: 'owner',

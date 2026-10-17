@@ -5,7 +5,7 @@
 import { Repository } from './Repository';
 import { maxPlaintextChars, registerEncryptedColumn, sealedLengthForChars } from './contentCipher';
 import { registerReportable, type ReportableDefinition } from './moderation';
-import { registerReactable, type ReactableDefinition } from './reactions';
+import type { ReactableDefinition } from './reactions';
 import { ServiceEndpoint, ServiceOptions } from './ServiceEndpoint';
 import type { ServiceContract } from '@mica/shared/contract';
 import { CITIZENID_MAX_LENGTH } from '@mica/shared/framework';
@@ -494,11 +494,14 @@ export interface ServiceDefinition<C extends ServiceContract = ServiceContract> 
    */
   reportable?: ReportableDefinition;
   /**
-   * Make this service's rows reactable — `mica_account_reactions` may target them.
+   * Make this service's rows reactable — `mica_account_reactions` may target them — and carry
+   * the whole rule: who may react to a row (`canReact`), whose reactions a viewer may read
+   * (`visibleTo`), and, when it is not the open palette, which emoji (`emoji`).
    *
-   * Same shape as `reportable` and for the same reason: declared here so core never has to
-   * name an add-on's table, and validated at declaration time rather than failing the first
-   * time a reaction targets it.
+   * Same reason as `reportable`: declared here so core never has to name an add-on's table
+   * (MICA-391). `services/Accounts.ts` reads the rule back through `lib/reactions.ts` at call
+   * time. Both functions are required: a reactable table with no rule would have to either
+   * refuse everything or accept everything, and neither is a decision to make by omission.
    */
   reactable?: ReactableDefinition;
   /**
@@ -685,6 +688,8 @@ export interface ResolvedService {
   encryptedColumns: string[];
   /** `ServiceDefinition.encryptionScope`; `[]` when nothing is encrypted. */
   encryptionScope: string[];
+  /** `ServiceDefinition.reactable`; null when the declaration did not opt in. */
+  reactable: ReactableDefinition | null;
 }
 
 /**
@@ -897,6 +902,24 @@ const assertChildUniqueAfterDelete = (id: string, child: ChildTableDefinition): 
     );
   }
   assertOptOutReason(where, decision);
+};
+
+/**
+ * A `reactable` declaration, checked here rather than at the first reaction. An empty `emoji`
+ * list would refuse every reaction while reading as an opt-in.
+ */
+const resolveReactable = (
+  id: string,
+  reactable: ReactableDefinition | undefined
+): ReactableDefinition | null => {
+  if (!reactable) return null;
+  if (reactable.emoji && reactable.emoji.length === 0) {
+    throw new Error(
+      `defineService('${id}'): 'reactable.emoji' is empty, which refuses every reaction. ` +
+        'Leave it out for the open palette.'
+    );
+  }
+  return reactable;
 };
 
 export function resolveAppSchema(definition: ServiceDefinition): ResolvedService {
@@ -1261,6 +1284,7 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
     childTables,
     encryptedColumns,
     encryptionScope,
+    reactable: resolveReactable(id, definition.reactable),
     columns,
     clientWritable: fields.filter((f) => isClientWritable(f.def, access.write)).map((f) => f.name),
     clientFilterable: fields.filter((f) => isClientFilterable(f.def)).map((f) => f.name)
@@ -1410,11 +1434,6 @@ export function defineService<T, C extends ServiceContract = ServiceContract>(
       );
     }
     registerReportable(resolved.table, definition.reportable);
-  }
-
-  /** Opt in to reactions, if the declaration asked for it. Same reasoning as `reportable`. */
-  if (definition.reactable) {
-    registerReactable(resolved.table, definition.reactable);
   }
 
   const accessLockdown: ServiceOptions<C> = {

@@ -53,6 +53,11 @@ export const notes = defineService<Note>({
   meaning end of list.
 - `childTables` declares join/attachment tables: DDL only, no repository or
   events derived. Declare every column explicitly.
+- `reportable` opts a table into Reports (`{ label, previewColumn }`), and
+  `reactable` opts it into `mica_account_reactions` and carries the whole rule:
+  `canReact(account, rowId)`, `visibleTo(ids, citizenid, appId)`, and an
+  optional `emoji` set (absent means the open palette). Core reads both at call
+  time (MICA-391); no list in Accounts or Reports names a table.
 - `repositoryFactory` subclasses `SchemaRepository` for reads the single-table
   generic path cannot express, without losing the identifier allowlist or the
   ownership scoping. `server/repositories/` holds the two that need it.

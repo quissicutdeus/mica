@@ -6,7 +6,7 @@ import { PlayerFacingError } from '../lib/errors';
 import { defineService, SchemaRepository, type ResolvedService } from '../lib/defineService';
 import { Database } from '../lib/Database';
 import { appEventChannel } from '../lib/appEvents';
-import { isReactableTable } from '../lib/reactions';
+import { isReactableTable, reactableRule } from '../lib/reactions';
 import { Account } from '@mica/shared/types';
 import { pageBounds, requirePositiveInt } from '../lib/payload';
 import { accountsContract } from '@mica/shared/contracts/accounts';
@@ -332,7 +332,7 @@ export const accounts = defineService<Account, typeof accountsContract>({
      * an account reacts, not a player, and a player may hold several. Declared under Accounts
      * rather than Blabber for the same reason follows and blocks are: reactions are a property
      * of the identity graph, not of one app's content, so a future app that wants them needs
-     * only `registerReactable`, not a migration.
+     * only a `reactable` rule on its own declaration, not a migration.
      *
      * `target_table`/`target_id` have no foreign key — there is no single parent table a
      * reaction can point at — so `isReactableTable` (`server/lib/reactions.ts`) is what stands
@@ -818,101 +818,6 @@ app.registerEvent('unblock', async (source, cbId, data, citizenid) => {
 });
 
 /**
- * Whether an account may react to a row, by table (MICA-339).
- *
- * `target_id` is the payload's, so without this any account could put a reaction into any
- * row of a reactable table — including a private DM between two other people, which is the
- * one reactable table there is. Keyed by table and **closed by default**: a table that opts
- * into reactions with no rule here refuses every reaction rather than accepting every one.
- *
- * A DM takes a reaction from one of its two ends, while it is up, and not across a block in
- * either direction — the same rule `dms:send` holds a new message to, since a
- * reaction is also something written into the other side's thread.
- */
-const REACTION_TARGETS = new Map<string, (account: Account, targetId: number) => Promise<boolean>>([
-  [
-    'mica_blabber_dms',
-    async (account, targetId) => {
-      const dm = await Database.single<{ from_account: number; to_account: number } | null>(
-        'SELECT `from_account`, `to_account` FROM `mica_blabber_dms` ' +
-          "WHERE `id` = ? AND `status` = 'active' LIMIT 1",
-        [targetId]
-      );
-      if (!dm || (dm.from_account !== account.id && dm.to_account !== account.id)) return false;
-      const peer = dm.from_account === account.id ? dm.to_account : dm.from_account;
-      return (
-        !(await accountHasBlocked(account.id, peer)) && !(await accountHasBlocked(peer, account.id))
-      );
-    }
-  ],
-  [
-    /**
-     * A Glimpse post (MICA-253) takes a like from a Glimpse account — never one claimed in
-     * another app's namespace, since `data.app` is the payload's — while the post is up, and not
-     * across a block in either direction, the rule `glimpse_comments:create` holds a comment to.
-     */
-    'mica_glimpse',
-    async (account, targetId) => {
-      if (account.app !== 'glimpse') return false;
-      const post = await Database.single<{ account_id: number } | null>(
-        "SELECT `account_id` FROM `mica_glimpse` WHERE `id` = ? AND `status` = 'active' LIMIT 1",
-        [targetId]
-      );
-      if (!post) return false;
-      return (
-        !(await accountHasBlocked(account.id, post.account_id)) &&
-        !(await accountHasBlocked(post.account_id, account.id))
-      );
-    }
-  ]
-]);
-
-/**
- * Tables whose reactions are one fixed set of emoji rather than the open palette. Glimpse's
- * likes are a ❤️ and nothing else (MICA-253): a 😂 stored on a post is a reaction its UI cannot
- * draw and every count would be wrong by. Written as code points so the variation selector
- * (U+FE0F) the palette sends is unmistakable — a bare U+2764 is a different string.
- */
-const REACTION_EMOJI = new Map<string, readonly string[]>([['mica_glimpse', ['\u2764\uFE0F']]]);
-
-/**
- * The ids out of a batch whose reactions this player may read: on a DM, only one they are an
- * end of, as one of their live accounts in the app they asked as. Closed by default like
- * `REACTION_TARGETS`. Messages scopes its own batched read the same way, for the same reason.
- */
-const VISIBLE_REACTION_TARGETS = new Map<
-  string,
-  (ids: number[], citizenid: string, appId: string) => Promise<number[]>
->([
-  [
-    'mica_blabber_dms',
-    async (ids, citizenid, appId) => {
-      const rows = await Database.query<{ id: number }[]>(
-        `SELECT d.\`id\` FROM \`mica_blabber_dms\` d
-         WHERE d.\`id\` IN (${ids.map(() => '?').join(', ')}) AND d.\`status\` = 'active'
-           AND EXISTS (SELECT 1 FROM \`mica_accounts\` a
-                       WHERE a.\`citizenid\` = ? AND a.\`app\` = ? AND a.\`status\` = 'active'
-                         AND a.\`id\` IN (d.\`from_account\`, d.\`to_account\`))`,
-        [...ids, citizenid, appId]
-      );
-      return (rows ?? []).map((row) => Number(row.id));
-    }
-  ],
-  [
-    // A Glimpse post is public while it is up, so its likes are too.
-    'mica_glimpse',
-    async (ids) => {
-      const rows = await Database.query<{ id: number }[]>(
-        `SELECT \`id\` FROM \`mica_glimpse\`
-         WHERE \`id\` IN (${ids.map(() => '?').join(', ')}) AND \`status\` = 'active'`,
-        ids
-      );
-      return (rows ?? []).map((row) => Number(row.id));
-    }
-  ]
-]);
-
-/**
  * React to a row on any table that opted in via `defineService`'s `reactable`.
  *
  * `target_table` is bound as a value, not interpolated as an identifier, so this is not the
@@ -939,16 +844,19 @@ app.registerEvent('react', async (source, cbId, data, citizenid) => {
     });
   const targetId = data.target_id;
 
+  // The rule is the owning service's declaration (MICA-391), read now rather than at import
+  // because `declaredServices` fills as services load. `isReactableTable` above means it exists.
+  const rule = reactableRule(targetTable);
+
   // The same answer whether the row is missing or not the caller's to react to, so the reply
   // cannot tell a stranger which DM ids exist.
-  const onlyEmoji = REACTION_EMOJI.get(targetTable);
+  const onlyEmoji = rule?.emoji;
   if (onlyEmoji && !onlyEmoji.includes(data.emoji))
     throw new PlayerFacingError('That cannot be reacted to.', {
       key: 'server.accounts.notReactable'
     });
 
-  const mayReact = REACTION_TARGETS.get(targetTable);
-  if (!mayReact || !(await mayReact(account, targetId)))
+  if (!rule || !(await rule.canReact(account, targetId)))
     throw new PlayerFacingError('That content no longer exists.', {
       key: 'server.reports.targetGone'
     });
@@ -1015,7 +923,8 @@ app.registerEvent('reactionsFor', async (source, cbId, data, citizenid) => {
   const out: Record<number, { counts: Record<string, number>; mine: string[] }> = {};
   for (const id of targetIds) out[id] = { counts: {}, mine: [] };
 
-  const visibleOf = VISIBLE_REACTION_TARGETS.get(targetTable);
+  // Closed by default: no declared rule reads as nothing visible.
+  const visibleOf = reactableRule(targetTable)?.visibleTo;
   const visible = visibleOf ? await visibleOf(targetIds, citizenid, appId) : [];
   if (visible.length === 0) return out;
 

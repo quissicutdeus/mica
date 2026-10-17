@@ -54,7 +54,43 @@ export const directMessages = defineService<DirectMessage, typeof dmsContract>({
   contract: dmsContract,
   id: 'dms',
   reportable: { label: 'Direct message', previewColumn: 'body' },
-  reactable: { label: 'Direct message' },
+  /**
+   * A DM takes a reaction from one of its two ends, while it is up, and not across a block in
+   * either direction — the same rule `send` holds a new message to, since a reaction is also
+   * something written into the other side's thread (MICA-339). Any app's DM, since the account
+   * is already proven the caller's in the app the payload named. Moved here from Accounts'
+   * hand-kept lists (MICA-391); the SQL is unchanged.
+   */
+  reactable: {
+    label: 'Direct message',
+    canReact: async (account, targetId) => {
+      const dm = await Database.single<{ from_account: number; to_account: number } | null>(
+        'SELECT `from_account`, `to_account` FROM `mica_blabber_dms` ' +
+          "WHERE `id` = ? AND `status` = 'active' LIMIT 1",
+        [targetId]
+      );
+      if (!dm || (dm.from_account !== account.id && dm.to_account !== account.id)) return false;
+      const peer = dm.from_account === account.id ? dm.to_account : dm.from_account;
+      return (
+        !(await accountHasBlocked(account.id, peer)) && !(await accountHasBlocked(peer, account.id))
+      );
+    },
+    /**
+     * Only a DM the viewer is an end of, as one of their live accounts in the app they asked
+     * as. Messages scopes its own batched read the same way, for the same reason.
+     */
+    visibleTo: async (ids, citizenid, appId) => {
+      const rows = await Database.query<{ id: number }[]>(
+        `SELECT d.\`id\` FROM \`mica_blabber_dms\` d
+         WHERE d.\`id\` IN (${ids.map(() => '?').join(', ')}) AND d.\`status\` = 'active'
+           AND EXISTS (SELECT 1 FROM \`mica_accounts\` a
+                       WHERE a.\`citizenid\` = ? AND a.\`app\` = ? AND a.\`status\` = 'active'
+                         AND a.\`id\` IN (d.\`from_account\`, d.\`to_account\`))`,
+        [...ids, citizenid, appId]
+      );
+      return (rows ?? []).map((row) => Number(row.id));
+    }
+  },
   table: 'mica_blabber_dms',
   access: { read: 'owner', write: 'owner' },
   statuses: ['active', 'deleted', 'moderated'],

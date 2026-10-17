@@ -41,12 +41,9 @@ import {
   accountsOwnedBy,
   activeAccount
 } from '../services/Accounts';
-import { registerReactable } from '../lib/reactions';
-
-// Registered by `DirectMessages.ts`'s own `defineService` call in the real app, which this file
-// never imports — so the reactions tests below register it directly rather than pulling in an
-// unrelated service just to trigger its module-scope side effect.
-registerReactable('mica_blabber_dms', { label: 'Direct message' });
+// The DM reaction rule lives on `DirectMessages.ts`'s own declaration (MICA-391), so the
+// reactions tests below run the real one rather than a stand-in registered by hand.
+import '../services/DirectMessages';
 
 const SRC = 5;
 

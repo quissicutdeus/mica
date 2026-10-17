@@ -332,6 +332,13 @@ DDL.
 - **`table` overrides the table name; the default is `mica_<id>`.** Two apps may
   not declare the same table, and the check is on the resolved name rather than
   the id.
+- **`reportable` and `reactable` opt a table into Reports and into
+  `mica_account_reactions`, and each carries its whole rule.** `reportable` is
+  `{ label, previewColumn }`; `reactable` is `canReact(account, rowId)`,
+  `visibleTo(ids, citizenid, appId)` and an optional `emoji` set, absent meaning
+  the open palette. Core reads both from the declarations at call time
+  (MICA-391), so an add-on's rows can take reactions without a list in Accounts
+  naming its table; before that, Glimpse had to edit core to be reactable.
 - **`options` passes through to `ServiceEndpoint` to turn a generic action off**
   — `{ disableGet, disableCreate, disableUpdate, disableDelete }`. Reach for it
   when the generic shape is not merely incomplete but wrong: Blabber disables
