@@ -11,6 +11,7 @@ import {
   REPORT_CATEGORIES,
   isReportCategory,
   isReportableTable,
+  isRestorableStatus,
   moderateTarget,
   restoreTarget,
   summariseTarget,
@@ -27,6 +28,76 @@ import { isAdmin } from './Admin';
 import { accountsByIds } from './Accounts';
 import { messages } from './Messages';
 import type { Report, ReportResolution } from '@mica/shared/types';
+
+/**
+ * What a reopen restores when the report holds no record of what its takedown replaced: a
+ * report moderated before MICA-386, or one whose record failed to write.
+ *
+ * Per table, from what that table's own author can do to a row, because the status a takedown
+ * replaced is unknowable here and the wrong guesses are not alike:
+ *
+ * - **`mica_accounts`, `mica_blabber_dms` → `active`.** Nothing deletes either — no generic
+ *   delete, no named one — so `active` is the only status a takedown can have replaced. Any
+ *   other guess loses the row, and an account its handle for good: `app_handle` opts out of
+ *   `uniqueAfterDelete`.
+ * - **`mica_marketplace` → `removed`.** Nothing produces `deleted` on a listing; a seller can
+ *   mark one `sold` or `removed`, and `removed`, the seller's own takedown, is the guess that
+ *   puts nothing back up for sale.
+ * - **Every other table → `deleted`** (`mica_blabber`, `mica_messages`, `mica_media`, and a
+ *   table declared reportable later), failing closed: guessing `active` over a row its author
+ *   had deleted publishes what they took down, which is MICA-386's bug. No unique key built on
+ *   status refuses a move to `deleted`.
+ *
+ * `deleted` is the author's own delete, not "hidden everywhere". For `mica_media` it takes a
+ * photo out of its owner's gallery into their Recently Deleted, while every live message, Blab
+ * and listing it is attached to shows it again: those reads, and `canSeeMedia` below, drop
+ * only `moderated` (MICA-339) — exactly what the owner's own delete would have left.
+ */
+const UNRECORDED_BY_TABLE: ReadonlyMap<string, string> = new Map([
+  ['mica_accounts', 'active'],
+  ['mica_blabber_dms', 'active'],
+  ['mica_marketplace', 'removed']
+]);
+
+/** The fallback for a table with no entry above. */
+export const UNRECORDED_DEFAULT = 'deleted';
+
+export const unrecordedPriorStatus = (table: string): string =>
+  UNRECORDED_BY_TABLE.get(table) ?? UNRECORDED_DEFAULT;
+
+/**
+ * One decision about a reported row at a time (MICA-386 review).
+ *
+ * A takedown and a reopen each read state and then act on it — whether another report holds
+ * the row, what status the row is on, which record to inherit — across several statements,
+ * and two of them interleaved over one row got it wrong both ways: a reopen restoring a row
+ * another report's takedown had just claimed, leaving it live under an actioned report; two
+ * takedowns at once, the second inheriting a record the first had not written yet.
+ *
+ * Queued per target rather than refused, so an admin never sees a busy error. In process
+ * memory: oxmysql has no interactive transaction for a `SELECT … FOR UPDATE` to hold, and one
+ * FXServer owns its database — two servers sharing one would not be serialised by this. The
+ * CAS writes in `moderation.ts` and the report claims still hold on their own.
+ */
+const decisions = new Map<string, Promise<void>>();
+
+const oneDecisionAt = async <T>(report: Report, work: () => Promise<T>): Promise<T> => {
+  const key = `${report.target_table}#${report.target_id}`;
+  const turn = (decisions.get(key) ?? Promise.resolve()).then(work);
+  const settled = turn.then(
+    () => undefined,
+    () => undefined
+  );
+  decisions.set(key, settled);
+  try {
+    return await turn;
+  } finally {
+    if (decisions.get(key) === settled) decisions.delete(key);
+  }
+};
+
+/** A report row with the column the shared `Report` wire type does not carry (MICA-386). */
+type ReportRow = Report & { target_prior_status?: string | null };
 
 /**
  * Resolving is a privileged write: the row's `citizenid` is the reporter, so the
@@ -72,6 +143,52 @@ class ReportRepository extends SchemaRepository<Report> {
    * check in the handler. `findAll` cannot express "not pending". The preview is sealed at
    * rest (MICA-165) and opens here, as `findAll` opens it for the queue.
    */
+  /**
+   * Keep the status this report's takedown replaced, for its reopen (MICA-386). Null records
+   * "unknown" — the row was gone — rather than leaving a previous cycle's answer in place.
+   */
+  async recordPriorStatus(id: number, status: string | null): Promise<boolean> {
+    return await Database.update(
+      `UPDATE \`${this.tableName}\` SET \`target_prior_status\` = ? WHERE \`id\` = ?`,
+      [status, id]
+    );
+  }
+
+  /**
+   * The status recorded by another report whose takedown still holds the same row.
+   *
+   * A second report of content already moderated finds the row `moderated`, which is not what
+   * the content goes back to. It inherits what the takedown in force replaced, so whichever
+   * report is reopened last restores the status from before any of them.
+   */
+  async priorHeldElsewhere(report: Report): Promise<string | null> {
+    const status = await Database.scalar<unknown>(
+      `SELECT \`target_prior_status\` FROM \`${this.tableName}\`
+       WHERE \`target_table\` = ? AND \`target_id\` = ? AND \`id\` <> ?
+         AND \`resolution\` = 'actioned' AND \`status\` = 'active'
+         AND \`target_prior_status\` IS NOT NULL
+       ORDER BY \`id\` LIMIT 1`,
+      [report.target_table, report.target_id, report.id]
+    );
+    return typeof status === 'string' ? status : null;
+  }
+
+  /**
+   * Whether another report's takedown still holds the same row.
+   *
+   * Asked by a reopen after its own claim has committed, so two reports reopened at once
+   * cannot each see the other as still holding and both leave the content down.
+   */
+  async isHeldElsewhere(report: Report): Promise<boolean> {
+    const count = await Database.scalar<unknown>(
+      `SELECT COUNT(*) FROM \`${this.tableName}\`
+       WHERE \`target_table\` = ? AND \`target_id\` = ? AND \`id\` <> ?
+         AND \`resolution\` = 'actioned' AND \`status\` = 'active'`,
+      [report.target_table, report.target_id, report.id]
+    );
+    return Number(count) > 0;
+  }
+
   async findAllResolved(): Promise<Report[]> {
     return openRows(
       this.tableName,
@@ -123,7 +240,11 @@ export const reports = defineService<Report, typeof reportsContract>({
     // the content has gone. A copy of a message or a DM, so sealed like them (MICA-165), bound
     // to the reporter and the target; the column is as wide as 300 characters' sealed form.
     target_preview: { type: 'string', length: 300, encrypted: true },
-    target_author: { type: 'string', citizenId: true }
+    target_author: { type: 'string', citizenId: true },
+    // The status the takedown replaced, which a reopen puts back rather than `active`
+    // (MICA-386). Server-written, read off the reported row; null on a report moderated before
+    // MICA-386, or when the row was already gone. Read only while the report is `actioned`.
+    target_prior_status: { type: 'string', length: 32 }
   },
   indexes: [
     { name: 'resolution_created', columns: ['resolution', 'created_at'] },
@@ -400,23 +521,40 @@ app.registerEvent('reopen', async (source, cbId, data, citizenid) => {
       key: 'server.reports.alreadyOpen'
     });
 
-  /**
-   * Claim before restoring, not after. The claim carries the resolution this handler read,
-   * so it fails if a concurrent `reopen` or `resolve` moved the row — and only the winner
-   * goes on to restore the content, where before both did.
-   */
   const previous = report.resolution;
-  if (!(await repo.claimResolution(id, previous, 'pending'))) {
-    throw new PlayerFacingError('That report is already open.', {
-      key: 'server.reports.alreadyOpen'
-    });
-  }
+  await oneDecisionAt(report, async () => {
+    /**
+     * Claim before restoring, not after. The claim carries the resolution this handler read,
+     * so it fails if a concurrent `reopen` or `resolve` moved the row — and only the winner
+     * goes on to restore the content, where before both did.
+     */
+    if (!(await repo.claimResolution(id, previous, 'pending'))) {
+      throw new PlayerFacingError('That report is already open.', {
+        key: 'server.reports.alreadyOpen'
+      });
+    }
 
-  if (previous === 'actioned' && isReportableTable(report.target_table)) {
+    /**
+     * Restore what the takedown replaced, not `active` (MICA-386): a row its author deleted,
+     * or a listing sold, before the admin acted goes back to that. Not while another report's
+     * takedown of the same row still stands — undoing one decision must not undo another, and
+     * the last report reopened restores the status from before all of them.
+     */
+    if (
+      previous !== 'actioned' ||
+      !isReportableTable(report.target_table) ||
+      (await repo.isHeldElsewhere(report))
+    ) {
+      return;
+    }
+    // Read again under the claim: the read above may predate a reopen and a fresh takedown
+    // of this same report, whose record is the one this cycle has to restore.
+    const recorded = ((await repo.findById(id)) as ReportRow | null)?.target_prior_status;
     try {
       await restoreTarget(
         report.target_table as ReportableTable,
         report.target_id,
+        isRestorableStatus(recorded) ? recorded : unrecordedPriorStatus(report.target_table),
         citizenid,
         `report #${id} reopened`
       );
@@ -427,7 +565,7 @@ app.registerEvent('reopen', async (source, cbId, data, citizenid) => {
       await repo.resolve(id, previous);
       throw error;
     }
-  }
+  });
 
   return { ok: true, resolution: 'pending' };
 });
@@ -458,33 +596,51 @@ app.registerEvent('resolve', async (source, cbId, data, citizenid) => {
 
   const resolution: ReportResolution = action === 'moderate' ? 'actioned' : 'dismissed';
 
-  /**
-   * Claim the report *first*, then act on what it points at. Reading `resolution` and
-   * checking it in JavaScript decided nothing — two admins both saw `pending` and both
-   * moderated (MICA-132). Exactly one caller can move the row off `pending`, and only
-   * that one goes on to take the content down.
-   */
-  if (!(await repo.claimResolution(id, 'pending', resolution))) {
-    throw new PlayerFacingError('That report is already resolved.', {
-      key: 'server.reports.alreadyResolved'
-    });
-  }
-
-  if (action === 'moderate') {
-    try {
-      await moderateTarget(
-        report.target_table as ReportableTable,
-        report.target_id,
-        citizenid,
-        `report #${id}: ${report.category}`
-      );
-    } catch (error) {
-      // The claim already committed. Release it rather than leave a report marked actioned
-      // over content that is still up — mirroring `reopen` above, and `Hodlr` sell's refund.
-      await repo.resolve(id, 'pending');
-      throw error;
+  await oneDecisionAt(report, async () => {
+    /**
+     * Claim the report *first*, then act on what it points at. Reading `resolution` and
+     * checking it in JavaScript decided nothing — two admins both saw `pending` and both
+     * moderated (MICA-132). Exactly one caller can move the row off `pending`, and only
+     * that one goes on to take the content down.
+     */
+    if (!(await repo.claimResolution(id, 'pending', resolution))) {
+      throw new PlayerFacingError('That report is already resolved.', {
+        key: 'server.reports.alreadyResolved'
+      });
     }
-  }
+
+    if (action === 'moderate') {
+      let replaced: string | null;
+      try {
+        replaced = await moderateTarget(
+          report.target_table as ReportableTable,
+          report.target_id,
+          citizenid,
+          `report #${id}: ${report.category}`
+        );
+      } catch (error) {
+        // The claim already committed. Release it rather than leave a report marked actioned
+        // over content that is still up — mirroring `reopen` above, and `Hodlr` sell's refund.
+        await repo.resolve(id, 'pending');
+        throw error;
+      }
+
+      /**
+       * Kept for the reopen (MICA-386), outside the try above: the takedown has committed, so
+       * failing to record it must not release the claim over content that is now down. A
+       * record that fails to write leaves the reopen on `unrecordedPriorStatus`'s guess. A row
+       * already moderated under another report takes that report's record.
+       */
+      try {
+        const prior = replaced === 'moderated' ? await repo.priorHeldElsewhere(report) : replaced;
+        await repo.recordPriorStatus(id, isRestorableStatus(prior) ? prior : null);
+      } catch (error) {
+        // The driver's last line only: an oxmysql error embeds the whole statement above it.
+        const line = error instanceof Error ? error.message.split('\n').pop() : String(error);
+        console.error(`[reports] report #${id}: the replaced status was not recorded: ${line}`);
+      }
+    }
+  });
 
   return { ok: true, resolution };
 });

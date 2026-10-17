@@ -692,13 +692,15 @@ describe('a mouth deleted and mouthed again (MICA-330)', () => {
       if (!sql.startsWith('UPDATE `mica_blabber` SET `status` = ?')) {
         throw new Error(`stand-in: unexpected update: ${sql}`);
       }
-      // Moderation's own unscoped form, by id alone; else the owner-scoped soft delete.
-      const unscoped = sql === 'UPDATE `mica_blabber` SET `status` = ? WHERE `id` = ?';
-      const [status, id, citizenid] = params as [string, number, string];
+      // Moderation's own unscoped form, by id and the status it read (MICA-386); else the
+      // owner-scoped soft delete.
+      const unscoped =
+        sql === 'UPDATE `mica_blabber` SET `status` = ? WHERE `id` = ? AND `status` = ?';
+      const [status, id, third] = params as [string, number, string];
       const hit = rows.find(
         (r) =>
           r.id === Number(id) &&
-          (unscoped || (r.citizenid === citizenid && r.status !== 'moderated'))
+          (unscoped ? r.status === third : r.citizenid === third && r.status !== 'moderated')
       );
       if (!hit) return false;
       // What the key says about the row's new status: one that takes a held slot is refused.
@@ -755,13 +757,41 @@ describe('a mouth deleted and mouthed again (MICA-330)', () => {
     // Before, a takedown freed the slot: the author mouthed again, and the admin's reopen then
     // hit the key and got the generic failure.
     const first = await call('create', { account_id: 1, mouth_of: 9 });
-    expect(await moderateTarget('mica_blabber', first.id, 'ADMIN', 'report #3: spam')).toBe(true);
+    expect(await moderateTarget('mica_blabber', first.id, 'ADMIN', 'report #3: spam')).toBe(
+      'active'
+    );
 
     const again = await call('create', { account_id: 1, mouth_of: 9 });
     expect(again.error).toBe('You have already mouthed that.');
 
-    expect(await restoreTarget('mica_blabber', first.id, 'ADMIN', 'report #3 reopened')).toBe(true);
+    expect(
+      await restoreTarget('mica_blabber', first.id, 'active', 'ADMIN', 'report #3 reopened')
+    ).toBe(true);
     expect(rows.filter((r) => r.mouth_of === 9).map((r) => r.status)).toEqual(['active']);
+  });
+
+  it('puts a deleted mouth back to deleted on reopen, which frees its slot again (MICA-386)', async () => {
+    // Reported while live, deleted by its author, then moderated: the takedown holds the slot
+    // while it stands, and the reopen hands it back to the author rather than republishing.
+    const first = await call('create', { account_id: 1, mouth_of: 9 });
+    await call('delete', { id: first.id });
+
+    const replaced = await moderateTarget('mica_blabber', first.id, 'ADMIN', 'report #3');
+    expect(replaced).toBe('deleted');
+    expect((await call('create', { account_id: 1, mouth_of: 9 })).error).toBe(
+      'You have already mouthed that.'
+    );
+
+    expect(await restoreTarget('mica_blabber', first.id, replaced!, 'ADMIN', 'reopened')).toBe(
+      true
+    );
+    expect(rows.find((r) => r.id === first.id)?.status).toBe('deleted');
+    const again = await call('create', { account_id: 1, mouth_of: 9 });
+    expect(again?.error).toBeUndefined();
+    expect(rows.filter((r) => r.mouth_of === 9).map((r) => r.status)).toEqual([
+      'deleted',
+      'active'
+    ]);
   });
 
   it('answers a takedown of a deleted mouth its author has mouthed again in words', async () => {

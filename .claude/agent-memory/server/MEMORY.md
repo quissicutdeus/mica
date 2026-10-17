@@ -80,3 +80,5 @@ line here.
   (MICA-349)
 - [Assign before the SET that nulls the source](record-before-you-null.md) —
   MariaDB SET is left to right; MICA-350's `absent_number`
+- [A race test's gate catches every later write](a-race-gate-catches-every-later-write.md)
+  — key the gate on the raced statement, not the table; a new write times out

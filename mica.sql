@@ -729,6 +729,7 @@ CREATE TABLE IF NOT EXISTS `mica_reports` (
     `resolution` ENUM('pending', 'actioned', 'dismissed') NOT NULL DEFAULT 'pending',
     `target_preview` varchar(1662) DEFAULT NULL,
     `target_author` varchar(50) DEFAULT NULL,
+    `target_prior_status` varchar(32) DEFAULT NULL,
     `status` ENUM('active', 'deleted') NOT NULL DEFAULT 'active',
     `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

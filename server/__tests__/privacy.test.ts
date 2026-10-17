@@ -476,7 +476,7 @@ const EXPORTED_COLUMNS: Record<string, { plain: string[]; sized: string[]; withh
       'resolution'
     ],
     sized: [],
-    withheld: ['target_preview', 'target_author']
+    withheld: ['target_preview', 'target_author', 'target_prior_status']
   }
 };
 

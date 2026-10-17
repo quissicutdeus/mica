@@ -865,14 +865,16 @@ describe('resolving is admin-only', () => {
 
   it('lets only one of two overlapping resolves moderate the target', async () => {
     // Both admins read `pending` before either wrote — the shape the JavaScript check could
-    // never decide. Driven against one stub and released out of order.
+    // never decide. Driven against one stub, each claim held until the test releases it.
     (globalThis as any).IsPlayerAceAllowed = () => true;
     dbMock.single.mockResolvedValue(pending);
 
     let claimed = false;
     const gate: (() => void)[] = [];
     dbMock.update.mockImplementation(async (sql: string) => {
-      if (!/UPDATE `mica_reports`/.test(sql)) return true;
+      // The claim only: the winner's record of what its takedown replaced (MICA-386) is a
+      // later `mica_reports` write, and is not part of the race.
+      if (!/UPDATE `mica_reports` SET `resolution` = \? WHERE `id` = \? AND/.test(sql)) return true;
       await new Promise<void>((resolve) => gate.push(resolve));
       if (claimed) return false;
       claimed = true;
@@ -889,9 +891,15 @@ describe('resolving is admin-only', () => {
       handler('cb-second', { id: 9, action: 'moderate' })
     ]);
 
-    await vi.waitFor(() => expect(gate).toHaveLength(2));
-    gate.pop()!();
-    gate.pop()!();
+    // Both read `pending` before either claims. The claims themselves take turns — one
+    // decision about a row at a time (MICA-386) — so each is released as it arrives, and the
+    // claim's own predicate is what refuses the second.
+    await vi.waitFor(() => expect(gate).toHaveLength(1));
+    const reads = dbMock.single.mock.calls.filter(([sql]) => /FROM `mica_reports`/.test(sql));
+    expect(reads).toHaveLength(2);
+    gate.shift()!();
+    await vi.waitFor(() => expect(gate).toHaveLength(1));
+    gate.shift()!();
     await running;
 
     const outcomes = [replies.get('cb-first'), replies.get('cb-second')];
@@ -943,7 +951,9 @@ describe('history and undo', () => {
     resolution: 'actioned',
     target_table: 'mica_messages',
     target_id: 4,
-    category: 'spam'
+    category: 'spam',
+    // What the takedown replaced (MICA-386); `moderationRestore.test.ts` has the other cases.
+    target_prior_status: 'active'
   };
 
   it('history is admin-only', async () => {

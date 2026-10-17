@@ -78,6 +78,20 @@ behaves as before, except that `micaimport` reports a repeat of a mouth its
 author deleted as a row it could not write, and writes it on a re-run after the
 apply.
 
+**Run `micaschema apply`: reopening a moderated report no longer brings back
+content its author had deleted (MICA-386).** Reopening a report used to put the
+reported row back to live whatever it was before the takedown, so a post its
+author had deleted, or a listing already sold, came back. The apply adds
+`mica_reports.target_prior_status`, where a takedown now records the status it
+replaced, and a reopen restores that status. While another report on the same
+row still stands, the row stays down until that one is reopened too. Reports
+moderated before this upgrade have nothing recorded, so they restore to a
+per-table guess: Blabber accounts and DMs to active, since nothing can delete
+them; listings to removed; and Blabs, messages and photos to deleted. A photo
+restored to deleted leaves its owner's gallery for Recently Deleted but shows
+again wherever it is attached to a live message, Blab or listing. The new column
+is withheld from the reporter's data export, since it says what the author did.
+
 **Logging out to character select now ends that character's call (MICA-382).**
 On a multicharacter server, a player who logs out without disconnecting used to
 stay in their call, on speakerphone and broadcasting music while sitting on

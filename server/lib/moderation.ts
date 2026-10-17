@@ -144,28 +144,44 @@ export const summariseTarget = async (
   };
 };
 
+/** The status a takedown holds a row at, and the one status a restore never writes back. */
+const MODERATED = 'moderated';
+
+/** Every `statuses` list declares lowercase words; anything else did not come off a row. */
+const STATUS_SHAPE = /^[a-z_]{1,32}$/;
+
+/** A status a restore may put a row back to: a status word, and not `moderated` itself. */
+export const isRestorableStatus = (value: unknown): value is string =>
+  typeof value === 'string' && STATUS_SHAPE.test(value) && value !== MODERATED;
+
 /**
- * Mark a row moderated.
+ * How many times a takedown re-reads a row whose status moved between its read and its write
+ * before giving up. One retry covers an author deleting at the same moment; three is generous.
+ */
+const MODERATE_ATTEMPTS = 3;
+
+/**
+ * Move a row from one status to another, **only if it is still on the one the caller read**.
  *
  * Unscoped by necessity — the whole point is acting on content the caller does not own
  * — so the authorisation has to happen before this is called. It is exported from a
  * module that does nothing else, rather than added to a repository, so that is obvious
  * at the call site.
+ *
+ * Both statuses are bound, never interpolated: `from` was read off the row, `to` is either
+ * `moderated` or a status a report recorded off the same row (MICA-386).
  */
-const setTargetStatus = async (
+const moveStatus = async (
   table: ReportableTable,
   id: number,
-  status: 'moderated' | 'active',
-  actorCitizenid: string,
-  reason: string
+  from: string,
+  to: string
 ): Promise<boolean> => {
-  // `status` is a literal from this function's own signature, never a payload.
-  let ok: boolean;
   try {
-    ok = await Database.update(`UPDATE \`${table}\` SET \`status\` = ? WHERE \`id\` = ?`, [
-      status,
-      id
-    ]);
+    return await Database.update(
+      `UPDATE \`${table}\` SET \`status\` = ? WHERE \`id\` = ? AND \`status\` = ?`,
+      [to, id, from]
+    );
   } catch (error) {
     /**
      * A unique key built on `status` refusing the move (MICA-330). `mica_blabber`'s
@@ -182,31 +198,84 @@ const setTargetStatus = async (
     (conflict as PlayerFacingError & { cause?: unknown }).cause = error;
     throw conflict;
   }
-
-  if (ok) {
-    await AuditLogger.log({
-      citizenid: actorCitizenid,
-      action: status === 'moderated' ? 'moderated' : 'unmoderated',
-      service: 'reports',
-      method: status === 'moderated' ? 'resolve' : 'reopen',
-      targetId: id,
-      targetTable: table,
-      details: reason
-    });
-  }
-
-  return ok;
 };
 
-export const moderateTarget = (table: ReportableTable, id: number, actor: string, reason: string) =>
-  setTargetStatus(table, id, 'moderated', actor, reason);
+const audit = (
+  table: ReportableTable,
+  id: number,
+  takedown: boolean,
+  actorCitizenid: string,
+  reason: string
+) =>
+  AuditLogger.log({
+    citizenid: actorCitizenid,
+    action: takedown ? 'moderated' : 'unmoderated',
+    service: 'reports',
+    method: takedown ? 'resolve' : 'reopen',
+    targetId: id,
+    targetTable: table,
+    details: reason
+  });
 
 /**
- * Put moderated content back.
+ * Mark a row moderated, and answer **the status the takedown replaced** (MICA-386) — or null
+ * when there is no such row, and nothing was written.
  *
- * Restores to `active` rather than to whatever it was before, because the previous
- * status is not recorded anywhere — and the only status a moderated row can have had is
- * active, since a deleted row is not visible to report in the first place.
+ * The caller keeps the answer, because a reopen has to put back what was there rather than
+ * `active`: a report is filed while its content is live, but the author can delete it, or a
+ * seller mark a listing sold, before an admin gets to the queue. Restoring those to `active`
+ * brought back content its author had taken down.
+ *
+ * Read, then a write that holds only while the row is still on what was read, so the answer is
+ * the status actually replaced even when the author acts in between. A row already moderated —
+ * under another report — is left alone and answered as `moderated`; the decision is still
+ * audited, since it is one.
  */
-export const restoreTarget = (table: ReportableTable, id: number, actor: string, reason: string) =>
-  setTargetStatus(table, id, 'active', actor, reason);
+export const moderateTarget = async (
+  table: ReportableTable,
+  id: number,
+  actor: string,
+  reason: string
+): Promise<string | null> => {
+  for (let attempt = 0; attempt < MODERATE_ATTEMPTS; attempt++) {
+    // `table` comes from the allowlist above, never from the payload.
+    const row = await Database.single<{ status: unknown } | null>(
+      `SELECT \`status\` FROM \`${table}\` WHERE \`id\` = ?`,
+      [id]
+    );
+    if (!row) return null;
+    const current = String(row.status);
+
+    if (current === MODERATED) {
+      await audit(table, id, true, actor, reason);
+      return MODERATED;
+    }
+    if (await moveStatus(table, id, current, MODERATED)) {
+      await audit(table, id, true, actor, reason);
+      return current;
+    }
+  }
+  throw new Error(`[moderation] ${table} #${id} kept changing status under a takedown`);
+};
+
+/**
+ * Put moderated content back to `status`, the one its takedown replaced (MICA-386).
+ *
+ * Only while the row is still moderated: a row something else has moved since is not this
+ * reopen's to overwrite, and answers false. `status` is checked for shape rather than trusted —
+ * it is server-written, off the row itself, but it is about to be written back unscoped.
+ */
+export const restoreTarget = async (
+  table: ReportableTable,
+  id: number,
+  status: string,
+  actor: string,
+  reason: string
+): Promise<boolean> => {
+  if (!isRestorableStatus(status)) {
+    throw new Error(`[moderation] refusing to restore ${table} #${id} to '${status}'`);
+  }
+  const ok = await moveStatus(table, id, MODERATED, status);
+  if (ok) await audit(table, id, false, actor, reason);
+  return ok;
+};

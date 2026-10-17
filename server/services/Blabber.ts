@@ -265,8 +265,10 @@ export const blabber = defineService<Blab, typeof blabberContract>({
      * Status by status, of the three `statuses` declares:
      * - `'active'` holds the slot. It is the mouth.
      * - `'moderated'` holds it too. A takedown is reversible — reopening the report puts the row
-     *   back to `'active'` (`restoreTarget`) — so a re-mouth in the meantime would make that
-     *   restore a second live mouth, and the key would refuse the admin instead.
+     *   back to the status its takedown replaced (`restoreTarget`, MICA-386), `'active'` for a
+     *   mouth that was live — so a re-mouth in the meantime would make that restore a second
+     *   live mouth, and the key would refuse the admin instead. A mouth its author had deleted
+     *   goes back to `'deleted'`, freeing the slot again.
      * - `'deleted'` frees it: the author withdrew the mouth, and no action restores a deleted
      *   Blab, so mouthing it again is a new row at the top of the feed.
      *

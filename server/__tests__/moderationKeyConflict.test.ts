@@ -25,14 +25,16 @@ import { PlayerFacingError } from '../lib/errors';
 const oxmysqlDuplicate = () =>
   new Error(
     'mica was unable to execute a query!\n' +
-      'UPDATE `mica_blabber` SET `status` = ? WHERE `id` = ?\n' +
-      '["moderated",11]\n' +
+      'UPDATE `mica_blabber` SET `status` = ? WHERE `id` = ? AND `status` = ?\n' +
+      '["moderated",11,"deleted"]\n' +
       "Duplicate entry '1-9' for key 'mica_blabber.account_mouth_key'"
   );
 
 beforeEach(() => {
   vi.clearAllMocks();
   dbMock.insert.mockResolvedValue(1);
+  // The row a takedown reads before it writes: deleted by its author (MICA-330's case).
+  dbMock.single.mockResolvedValue({ status: 'deleted' });
   vi.spyOn(console, 'error').mockImplementation(() => {});
 });
 
@@ -53,9 +55,13 @@ describe('a status move a unique key refuses (MICA-330)', () => {
     const driver = oxmysqlDuplicate();
     dbMock.update.mockRejectedValueOnce(driver);
 
-    const error = (await restoreTarget('mica_blabber', 11, 'ADMIN', 'report #3 reopened').catch(
-      (e: unknown) => e
-    )) as PlayerFacingError & { cause?: unknown };
+    const error = (await restoreTarget(
+      'mica_blabber',
+      11,
+      'active',
+      'ADMIN',
+      'report #3 reopened'
+    ).catch((e: unknown) => e)) as PlayerFacingError & { cause?: unknown };
 
     expect(error).toBeInstanceOf(PlayerFacingError);
     expect(error.message).toMatch(/newer copy/);
@@ -74,12 +80,83 @@ describe('a status move a unique key refuses (MICA-330)', () => {
     await expect(moderateTarget('mica_blabber', 11, 'ADMIN', 'r')).rejects.toBe(other);
   });
 
-  it('still moderates when nothing collides', async () => {
+  it('still moderates when nothing collides, and answers the status it replaced', async () => {
     dbMock.update.mockResolvedValueOnce(true);
-    await expect(moderateTarget('mica_blabber', 11, 'ADMIN', 'r')).resolves.toBe(true);
+    await expect(moderateTarget('mica_blabber', 11, 'ADMIN', 'r')).resolves.toBe('deleted');
     expect(dbMock.update.mock.calls[0]).toEqual([
-      'UPDATE `mica_blabber` SET `status` = ? WHERE `id` = ?',
-      ['moderated', 11]
+      'UPDATE `mica_blabber` SET `status` = ? WHERE `id` = ? AND `status` = ?',
+      ['moderated', 11, 'deleted']
     ]);
   });
+});
+
+/**
+ * The status a takedown replaced, and putting exactly that back (MICA-386). The round trip
+ * through the report is `moderationRestore.test.ts`; this is the primitive's own contract.
+ */
+describe('what a takedown replaced, and what a restore writes (MICA-386)', () => {
+  it('re-reads a row whose status moved between its read and its write', async () => {
+    // Read live, then the author deletes before the write lands: the swap matches nothing,
+    // and the answer is the status the takedown actually replaced.
+    dbMock.single.mockResolvedValueOnce({ status: 'active' }).mockResolvedValueOnce({
+      status: 'deleted'
+    });
+    dbMock.update.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+
+    await expect(moderateTarget('mica_blabber', 11, 'ADMIN', 'r')).resolves.toBe('deleted');
+    expect(dbMock.update.mock.calls.map(([, params]) => params)).toEqual([
+      ['moderated', 11, 'active'],
+      ['moderated', 11, 'deleted']
+    ]);
+  });
+
+  it('gives up loudly on a row that never holds still, and audits nothing', async () => {
+    dbMock.single.mockResolvedValue({ status: 'active' });
+    dbMock.update.mockResolvedValue(false);
+
+    await expect(moderateTarget('mica_blabber', 11, 'ADMIN', 'r')).rejects.toThrow(/kept changing/);
+    expect(dbMock.update).toHaveBeenCalledTimes(3);
+    const audited = dbMock.insert.mock.calls.some(([sql]) => /mica_audit_logs/.test(String(sql)));
+    expect(audited).toBe(false);
+  });
+
+  it('answers null for a row that is gone, and writes nothing', async () => {
+    dbMock.single.mockResolvedValue(null);
+    await expect(moderateTarget('mica_blabber', 11, 'ADMIN', 'r')).resolves.toBeNull();
+    expect(dbMock.update).not.toHaveBeenCalled();
+  });
+
+  it('leaves a row already moderated alone, answers so, and still audits the decision', async () => {
+    dbMock.single.mockResolvedValue({ status: 'moderated' });
+    await expect(moderateTarget('mica_blabber', 11, 'ADMIN', 'r')).resolves.toBe('moderated');
+    expect(dbMock.update).not.toHaveBeenCalled();
+    const audited = dbMock.insert.mock.calls.some(([sql]) => /mica_audit_logs/.test(String(sql)));
+    expect(audited).toBe(true);
+  });
+
+  it('restores the status it is given, and only over a row still moderated', async () => {
+    dbMock.update.mockResolvedValueOnce(true);
+    await expect(restoreTarget('mica_blabber', 11, 'deleted', 'ADMIN', 'r')).resolves.toBe(true);
+    expect(dbMock.update.mock.calls[0]).toEqual([
+      'UPDATE `mica_blabber` SET `status` = ? WHERE `id` = ? AND `status` = ?',
+      ['deleted', 11, 'moderated']
+    ]);
+  });
+
+  it('writes nothing, and audits nothing, over a row no longer moderated', async () => {
+    dbMock.update.mockResolvedValueOnce(false);
+    await expect(restoreTarget('mica_blabber', 11, 'active', 'ADMIN', 'r')).resolves.toBe(false);
+    const audited = dbMock.insert.mock.calls.some(([sql]) => /mica_audit_logs/.test(String(sql)));
+    expect(audited).toBe(false);
+  });
+
+  it.each(['moderated', '', 'Active', "active' OR 1=1", 'x'.repeat(33)])(
+    'refuses to restore to %j, before any statement',
+    async (status) => {
+      await expect(restoreTarget('mica_blabber', 11, status, 'ADMIN', 'r')).rejects.toThrow(
+        /refusing to restore/
+      );
+      expect(dbMock.update).not.toHaveBeenCalled();
+    }
+  );
 });
