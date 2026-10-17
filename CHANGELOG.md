@@ -1574,6 +1574,13 @@ somebody maintaining a `core: false` add-on outside this repo, and it answers
 one question: does that bundle still compile against this release, and does its
 manifest still ask for the right things.
 
+**An add-on can ship a separate tablet root (MICA-265).** `bootAddOn`'s options
+take an optional `tablet` root, which it mounts instead of the main one while
+the tablet is on screen. The template's build passes `src/tablet.svelte` when
+the file exists. A tablet root needs `display` in the manifest's `permissions`,
+and the build refuses one without it. This is additive, and the contract version
+is unchanged.
+
 **Reads that fail now say so instead of answering empty (MICA-384).** These now
 reject when the request fails or the reply is malformed, where they used to
 resolve with an empty value that looked like a real answer:

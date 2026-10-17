@@ -147,7 +147,17 @@ const SHARED_DECISIONS: [name: string, pattern: RegExp][] = [
   [
     "the mock's runtime marker is refused in the finished chunk",
     literal(`const MOCK_MARKER = '${MICA_ADDON_MOCK_MARKER}';`)
-  ]
+  ],
+  /**
+   * MICA-265. A `tablet.svelte` beside `index.svelte` is handed to `bootAddOn` as the tablet
+   * root, on both sides, and the permission scan counts it as the `useDisplay` read
+   * `bootAddOn` makes to choose between them. Without the first, an add-on's tablet layout
+   * is silently left out of its bundle; without the second, a bundle reads the device under
+   * an install sheet that never said so, and is then refused at run time and drawn with its
+   * phone root.
+   */
+  ['a tablet.svelte is passed to bootAddOn as the tablet root', /'tablet: Tablet'/],
+  ['a tablet root is counted as a useDisplay read', /TABLET_ROOT_READS = 'useDisplay'/]
 ];
 
 describe('the out-of-tree add-on template', () => {
@@ -511,6 +521,22 @@ describe('the out-of-tree add-on template', () => {
       };
     };
 
+    /** A `src/tablet.svelte` carrying `TABLET_MARKER`, and the manifest, with or without `display`. */
+    const TABLET_MARKER = 'mica-265-tablet-root';
+    const withTablet = (display: boolean) => {
+      const manifest = read(path.join(TEMPLATE_DIR, 'src/manifest.ts'));
+      const patched = manifest.replace(
+        "permissions: ['app-events'],",
+        `permissions: ['app-events'${display ? ", 'display'" : ''}],\n  devices: ['phone', 'tablet'],`
+      );
+      // Non-vacuity: the template's own permissions line moved and nothing was declared.
+      expect(patched).not.toBe(manifest);
+      return {
+        'src/manifest.ts': patched,
+        'src/tablet.svelte': `<script lang="ts">\n  import type { AppProps } from '@mica/sdk';\n  let {}: AppProps = $props();\n</script>\n\n<p>${TABLET_MARKER}</p>\n`
+      };
+    };
+
     const builds: Record<string, { dir: string; code: number; output: string }> = {};
 
     beforeAll(async () => {
@@ -543,7 +569,11 @@ describe('the out-of-tree add-on template', () => {
           ),
           'production'
         ],
-        ['marker', sneaking(`console.log('${MICA_ADDON_MOCK_MARKER}');\n`), 'production']
+        ['marker', sneaking(`console.log('${MICA_ADDON_MOCK_MARKER}');\n`), 'production'],
+        // MICA-265: a tablet root, under a manifest that declares what reading the device
+        // costs, and the same root under one that does not.
+        ['tablet', withTablet(true), 'production'],
+        ['tablet without display', withTablet(false), 'production']
       ];
       await Promise.all(
         cases.map(async ([name, extra, mode, args]) => {
@@ -611,6 +641,19 @@ describe('the out-of-tree add-on template', () => {
     ])('refuses a production build that reaches %s', (_label, name, reason) => {
       expect(builds[name].code, builds[name].output).not.toBe(0);
       expect(builds[name].output).toMatch(reason);
+    });
+
+    it('bundles a src/tablet.svelte as the tablet root (MICA-265)', () => {
+      expect(builds.tablet.code, builds.tablet.output).toBe(0);
+      expect(bundleOf('tablet')).toContain(TABLET_MARKER);
+      // And only because of it: the same template without the file carries no trace.
+      expect(bundleOf('production')).not.toContain(TABLET_MARKER);
+    });
+
+    it("refuses a tablet root under a manifest that does not declare 'display'", () => {
+      expect(builds['tablet without display'].code).not.toBe(0);
+      expect(builds['tablet without display'].output).toMatch(/useDisplay\s+needs 'display'/);
+      expect(builds['tablet without display'].output).toMatch(/src\/tablet\.svelte exists/);
     });
   });
 

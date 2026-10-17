@@ -21,15 +21,14 @@ export default defineApp({
   description: 'Create and store personal notes',
   permissions: ['storage', 'display'],
   /**
-   * MICA-261: Notes is usable in the wide frame. It is `core: false`, so the shell
-   * cannot mount a second root for it — the add-on bundle has one entry, `index.svelte`
-   * (`web/vite.addon.config.ts`), and a separate tablet entry is MICA-265. So this is
-   * the "one root, two layouts" path: `index.svelte` reads `useDisplay().device` and
-   * renders `tablet.svelte` in the tablet frame. `tablet.svelte` is a real root all the
-   * same, so the day the add-on build learns about it nothing here has to move.
+   * MICA-261: Notes is usable in the wide frame, with a root of its own for it. It is
+   * `core: false`, so the shell does not mount `tablet.svelte` itself as it would a core
+   * app's; the add-on build hands it to `bootAddOn` as the tablet root (MICA-265), and the
+   * frame mounts it instead of `index.svelte` while the tablet is on screen.
    *
-   * `display` above is what pays for that read — the add-on build's permission scan
-   * refuses a manifest that understates what its code imports.
+   * `display` above is what pays for that: the frame learns its device from
+   * `useDisplay().device`, and the add-on build's permission scan counts a `tablet.svelte`
+   * as that read and refuses a manifest that does not declare it.
    */
   devices: ['phone', 'tablet'],
   // No `author`: it is written in this repo, so it inherits 'micaOS' from defineApp. It

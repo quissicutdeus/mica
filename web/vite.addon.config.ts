@@ -24,6 +24,23 @@ const appsDir = path.resolve(here, 'src/apps');
 
 const VIRTUAL = '\0addon-entry:';
 
+/** An add-on's tablet root (MICA-265), or `undefined` when it ships one root for both. */
+const tabletRootOf = (app: string): string | undefined => {
+  const file = path.join(appsDir, app, 'tablet.svelte');
+  return fs.existsSync(file) ? file : undefined;
+};
+
+/**
+ * The hook `bootAddOn` calls on a bundle's behalf when it is handed a tablet root: which
+ * device is on screen is `useDisplay().device`, read before any of the app's own code runs.
+ * Counted against the manifest exactly as if the app had imported it, so a tablet root
+ * cannot ship under a manifest whose install sheet leaves `display` out.
+ */
+const TABLET_ROOT_READS = 'useDisplay';
+const TABLET_ROOT_NOTE =
+  `${TABLET_ROOT_READS} is read for you when the app ships a tablet.svelte: bootAddOn uses ` +
+  `it to decide which root to mount, so a tablet root needs its permission declared.`;
+
 /** One virtual entry per add-on: manifest + component → bootAddOn. */
 function addOnEntries(): Plugin {
   return {
@@ -43,14 +60,24 @@ function addOnEntries(): Plugin {
       // tells the shell to boot it; this only puts the component in the bundle.
       const widget = path.join(appsDir, app, 'widget.svelte');
       const hasWidget = fs.existsSync(widget);
+      // MICA-265: a `tablet.svelte` is the root the frame mounts while the tablet is on
+      // screen, as the registry does for a core app. `bootAddOn` learns the device from
+      // `useDisplay().device`, which is why `requireDeclaredPermissions()` below counts this
+      // file as that read.
+      const tablet = tabletRootOf(app);
+      const roots = [
+        ...(hasWidget ? ['widget: Widget'] : []),
+        ...(tablet ? ['tablet: Tablet'] : [])
+      ];
       return [
         `import '${path.resolve(here, '../sdk/app.css')}';`,
         `import manifest from '${path.join(appsDir, app, 'manifest.ts')}';`,
         `import App from '${path.join(appsDir, app, 'index.svelte')}';`,
         ...(hasWidget ? [`import Widget from '${widget}';`] : []),
+        ...(tablet ? [`import Tablet from '${tablet}';`] : []),
         `import { bootAddOn } from '@mica/sdk';`,
-        hasWidget
-          ? `void bootAddOn(manifest, App, { widget: Widget });`
+        roots.length > 0
+          ? `void bootAddOn(manifest, App, { ${roots.join(', ')} });`
           : `void bootAddOn(manifest, App);`
       ].join('\n');
     }
@@ -285,14 +312,15 @@ function requireDeclaredPermissions(): Plugin {
             );
           }
 
-          const shortfall = permissionShortfall(
-            imported.get(app) ?? [],
-            declared.permissions,
-            table ?? {}
-          );
+          const reads = new Set(imported.get(app));
+          if (tabletRootOf(app)) reads.add(TABLET_ROOT_READS);
+          const shortfall = permissionShortfall(reads, declared.permissions, table ?? {});
           if (shortfall.length > 0) {
+            const why = shortfall.some((need) => need.hook === TABLET_ROOT_READS)
+              ? `\n\n${TABLET_ROOT_NOTE}`
+              : '';
             this.error(
-              `[micaOS] ${shortfallMessage(app, path.relative(repoRoot, manifest), shortfall)}`
+              `[micaOS] ${shortfallMessage(app, path.relative(repoRoot, manifest), shortfall)}${why}`
             );
           }
         }

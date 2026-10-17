@@ -17,8 +17,9 @@ import './registerFacets';
  * same reason the facet set is explicit: an entry point choosing is the whole design.
  */
 import './fetchNui';
-import { mount } from 'svelte';
+import { mount, unmount } from 'svelte';
 import { clientTransport } from './transport';
+import { remoteStore } from './remote';
 import { createInProcessHost } from '../inProcess/createInProcessHost';
 import { registerHost, setSystemHost } from '../current';
 import { HOST_CONTEXT_KEY } from '../protocol';
@@ -34,6 +35,7 @@ import {
 } from './liveProps.svelte';
 import type { Component } from 'svelte';
 import type { AppComponent, AppManifest, WidgetSize } from '../../manifest';
+import type { DeviceId } from '@mica/shared/devices';
 
 // MICA-16 step 4: the add-on's entry point, called by the bundle every add-on ships
 // instead of the shell mounting it in-process. Wires the transport, waits for hydrate,
@@ -90,8 +92,8 @@ function applyTheme(css: string) {
 
 /**
  * The optional roots a bundle ships beside its app (MICA-245). An object rather than more
- * positional arguments so the next one — a tablet root, MICA-265 — is another key and not a
- * fourth parameter every caller has to count to.
+ * positional arguments, so each new root is another key and not a parameter every caller
+ * has to count to.
  */
 interface BootRoots {
   /**
@@ -100,6 +102,77 @@ interface BootRoots {
    * shell there is one to boot.
    */
   widget?: Component<{ size: WidgetSize }>;
+  /**
+   * The root for the tablet frame (MICA-265), mounted instead of `App` while the device on
+   * screen is the tablet. It gets the same props `App` does, deep links included, and
+   * swaps with `App` if the device changes under a running frame, as a core app's
+   * `tablet.svelte` does.
+   *
+   * Which device that is comes from `useDisplay().device`, so the manifest declares the
+   * `display` permission and lists `'tablet'` in `devices`. Without `display` this root is
+   * never mounted and `App` is drawn on every device, stretched to the frame on the
+   * tablet, as it would be with no tablet root at all.
+   */
+  tablet?: AppComponent;
+}
+
+/**
+ * How long a frame with a tablet root waits for the shell to say which device it is on
+ * before drawing `App` anyway.
+ *
+ * The answer is the first push on `display.device`, normally one round trip. A shell that
+ * predates that member (MICA-260) refuses the subscription without a reply, and a shell
+ * cannot be asked which members it has, so the wait is bounded rather than open: a blank
+ * frame forever is worse than the phone root on a tablet. A push that lands after this
+ * still swaps to the right root.
+ */
+const DEVICE_WAIT_MS = 1000;
+
+/**
+ * Mount `App` or `tablet` by the device on screen, and swap them if it changes.
+ *
+ * Read over the `display` facet's `device` store rather than a new field on the hydrate
+ * payload: that store is what `useDisplay().device` already reads, so the shell has one
+ * answer to give, an app reading it from its own code shares this wire, and the shell
+ * re-checks the `display` permission on it like on any other subscription.
+ */
+function mountByDevice(
+  App: AppComponent,
+  tablet: AppComponent,
+  permissions: readonly string[],
+  appId: string,
+  mountRoot: (root: AppComponent) => ReturnType<typeof mount>
+): void {
+  let shown: { root: AppComponent; instance: ReturnType<typeof mount> } | undefined;
+  const show = (root: AppComponent) => {
+    if (shown?.root === root) return;
+    if (shown) void unmount(shown.instance);
+    shown = { root, instance: mountRoot(root) };
+  };
+
+  if (!permissions.includes('display')) {
+    // Not an error: `App` on a tablet is what an app without a tablet root gets. The
+    // add-on builds refuse a tablet root without `display` declared, so this is a grant
+    // that did not include it, and the player still gets a working app.
+    console.warn(
+      `[micaOS] add-on '${appId}' passed a tablet root but holds no 'display' permission, ` +
+        `so it cannot learn which device it is on. Its app root is drawn on every device.`
+    );
+    show(App);
+    return;
+  }
+
+  const fallback = setTimeout(() => {
+    if (!shown) show(App);
+  }, DEVICE_WAIT_MS);
+  // `undefined` until the shell's first push, which the default `display().device` seed
+  // (`'phone'`) would hide: mounting the phone root first and swapping it a round trip
+  // later would run its `onAppForeground` load for nothing on every tablet open.
+  remoteStore<DeviceId | undefined>('display', [], 'device', undefined).subscribe((device) => {
+    if (device === undefined) return;
+    clearTimeout(fallback);
+    show(device === 'tablet' ? tablet : App);
+  });
 }
 
 export async function bootAddOn(
@@ -179,5 +252,10 @@ export async function bootAddOn(
   // way for a second deep link to reach an app that was already open.
   transport.onProps(setLiveAddOnProps);
 
-  mount(App, { target, props: liveAddOnProps, context });
+  const mountRoot = (root: AppComponent) => mount(root, { target, props: liveAddOnProps, context });
+  if (roots.tablet) {
+    mountByDevice(App, roots.tablet, payload.permissions, payload.appId, mountRoot);
+    return;
+  }
+  mountRoot(App);
 }

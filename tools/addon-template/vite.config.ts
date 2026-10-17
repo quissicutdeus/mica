@@ -52,6 +52,17 @@ const SERVICE = path.join(here, 'src/service.ts');
 const SERVER_RESOURCE = path.join(here, 'my_addon_server');
 const COMPONENT = path.join(here, 'src/index.svelte');
 const WIDGET = path.join(here, 'src/widget.svelte');
+/**
+ * Your tablet root, when the add-on has one: mounted instead of `src/index.svelte` while the
+ * tablet is on screen. See `addonEntry()`.
+ */
+const TABLET = path.join(here, 'src/tablet.svelte');
+/**
+ * The hook `bootAddOn` calls for you when it is handed a tablet root: which device is on
+ * screen is `useDisplay().device`. `requireDeclaredPermissions()` counts it as if you had
+ * imported it, so a tablet root needs `display` in your manifest's `permissions`.
+ */
+const TABLET_ROOT_READS = 'useDisplay';
 /** Your server half, mocked for `pnpm dev`. Reached only by the development entry below. */
 const MOCK = path.join(here, 'src/mock.ts');
 
@@ -177,6 +188,17 @@ function addonEntry(): Plugin {
       // a second root. Declare `widget: { sizes: ['2x1'] }` in the manifest as well: that is
       // what tells the phone to boot it.
       const hasWidget = fs.existsSync(WIDGET);
+      // A `src/tablet.svelte` is the root the phone mounts while the tablet is on screen,
+      // with the same props `src/index.svelte` gets, and swaps back if the player changes
+      // device. Without one, `src/index.svelte` is stretched to the tablet's frame. List
+      // `'tablet'` in the manifest's `devices` and `'display'` in its `permissions`: the
+      // first puts your icon on the tablet, the second is how the frame learns which
+      // device it is on, and this build refuses a tablet root without it.
+      const hasTablet = fs.existsSync(TABLET);
+      const roots = [
+        ...(hasWidget ? ['widget: Widget'] : []),
+        ...(hasTablet ? ['tablet: Tablet'] : [])
+      ];
       const mocked = development && fs.existsSync(MOCK);
       if (development && !mocked && fs.existsSync(SERVICE)) {
         this.warn(
@@ -191,9 +213,10 @@ function addonEntry(): Plugin {
         `import manifest from ${JSON.stringify(MANIFEST)};`,
         `import App from ${JSON.stringify(COMPONENT)};`,
         ...(hasWidget ? [`import Widget from ${JSON.stringify(WIDGET)};`] : []),
+        ...(hasTablet ? [`import Tablet from ${JSON.stringify(TABLET)};`] : []),
         `import { bootAddOn } from '@mica/sdk';`,
-        hasWidget
-          ? `void bootAddOn(manifest, App, { widget: Widget });`
+        roots.length > 0
+          ? `void bootAddOn(manifest, App, { ${roots.join(', ')} });`
           : `void bootAddOn(manifest, App);`
       ].join('\n');
     }
@@ -544,10 +567,16 @@ function requireDeclaredPermissions(): Plugin {
           );
         }
 
-        const shortfall = sdk.permissionShortfall(imported, declared.permissions, sdk.table);
+        const reads = new Set(imported);
+        if (fs.existsSync(TABLET)) reads.add(TABLET_ROOT_READS);
+        const shortfall = sdk.permissionShortfall(reads, declared.permissions, sdk.table);
         if (shortfall.length > 0) {
+          const why = shortfall.some((need) => need.hook === TABLET_ROOT_READS)
+            ? `\n\n${TABLET_ROOT_READS} is read for you because src/tablet.svelte exists: ` +
+              `bootAddOn uses it to decide which root to mount.`
+            : '';
           this.error(
-            `[mica-addon] ${sdk.shortfallMessage(id, path.relative(here, MANIFEST), shortfall)}`
+            `[mica-addon] ${sdk.shortfallMessage(id, path.relative(here, MANIFEST), shortfall)}${why}`
           );
         }
       }

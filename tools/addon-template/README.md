@@ -314,10 +314,15 @@ Do not write responsive CSS. Breakpoints and viewport units (`vh`, `vw`, `dvh`)
 answer to the browser window, which is not the phone — the phone is a fixed-size
 frame that Settings > Display scales with a single `transform`, so the layout is
 identical at every size. The tablet is a second fixed frame, not a wider phone:
-your manifest's `devices` says which you support (absent means the phone), and
-an add-on that lists `'tablet'` renders its one root inside the tablet frame,
-reading `useDisplay().device` to lay itself out for it. Size against the frame:
-`h-full`, `flex-1`, and the `safe-top` / `safe-bottom` insets.
+your manifest's `devices` says which you support (absent means the phone). An
+add-on that lists `'tablet'` and ships only `src/index.svelte` renders that one
+root inside the tablet frame. Add a `src/tablet.svelte` and the build hands it
+to `bootAddOn` as a second root: the phone mounts it instead of
+`src/index.svelte` while the tablet is on screen, with the same props, and swaps
+the two if the player changes device. The frame learns which device it is on
+from `useDisplay().device`, so a tablet root needs `'display'` in your
+manifest's `permissions`, and the build refuses one without it. Size against the
+frame: `h-full`, `flex-1`, and the `safe-top` / `safe-bottom` insets.
 
 Inside `Screen`, fill with **`min-h-0 flex-1`** — never `h-full`, never a bare
 `flex-1`. Both fail silently and only once there is enough content to overflow.

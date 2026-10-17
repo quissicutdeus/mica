@@ -23,6 +23,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     renderMarkdown,
     useAppAction,
     useAppLevels,
+    useDeepLink,
     useLocale,
     registerMessages,
     type AppProps,
@@ -36,26 +37,22 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * Notes in the tablet frame (MICA-261): the list on the left, the note on the right,
    * both on screen at once.
    *
-   * `registerMessages` is idempotent and is called here as well as in `index.svelte` on
-   * purpose. Today the phone root is what renders this one — Notes is `core: false`, so
-   * the add-on bundle has a single entry — but the registry mounts a core app's
-   * `tablet.svelte` directly, and this file should not depend on which of the two got
-   * there first.
+   * A root of its own (MICA-265): the add-on build hands this file to `bootAddOn` as the
+   * tablet root, and the frame mounts it instead of `index.svelte` while the tablet is on
+   * screen. So it registers its own strings, deep link and search, as `index.svelte` does —
+   * only one of the two is ever mounted.
    */
   registerMessages('notes', { en, de });
   const { t } = useLocale();
   import { useNotes } from './store';
+  import { provideNoteSearch } from './search';
 
   const { notesStore: notes, getDeletedNotes, restoreNote } = useNotes();
   const notesLoaded = notes.loaded;
   const { busy, run } = useAppAction('notes');
 
-  /**
-   * `initialNote` is what a `noteId` deep link resolved to (MICA-286). The phone root owns
-   * the link — it is the one the shell mounts — and hands the note over rather than
-   * reaching into this root's own selection.
-   */
-  let { onback, initialNote = null }: AppProps & { initialNote?: Note | null } = $props();
+  /** `noteId` is this app's deep link (MICA-286), from a search hit or a notification. */
+  let { onback, noteId }: AppProps & { noteId?: number } = $props();
 
   let selectedNote: Note | null = $state(null);
   let draftNote: Note | null = $state(null);
@@ -157,10 +154,21 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     selectedNote = note;
   };
 
-  // Only when the link changes: selecting a note by hand afterwards must stick, and
-  // `selectNote` writes nothing this effect reads, so there is no loop to fall into.
-  $effect(() => {
-    if (initialNote) selectNote(initialNote);
+  provideNoteSearch(notes);
+
+  /**
+   * Open the note a deep link named, in the right pane.
+   *
+   * Returns `false` until the list has arrived, which is what keeps a cold open working:
+   * the link survives until the note it names exists (see `useDeepLink`). Consumed once
+   * it lands, so selecting another note by hand afterwards sticks.
+   */
+  useDeepLink('notes', () => {
+    if (!noteId) return false;
+    const found = $notes.find((n) => n.id === noteId);
+    if (!found) return false;
+    selectNote(found);
+    return true;
   });
 
   const addNote = async () => {

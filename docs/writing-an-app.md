@@ -160,9 +160,16 @@ ways to make that true:
   `index.svelte`, and refuses a `tablet.svelte` on an app whose manifest does
   not list the tablet.
 - **One root, two layouts.** Read `useDisplay().device` (`'phone'` or
-  `'tablet'`) and `useDisplay().frame` (the design size) and branch. This is
-  what a `core: false` add-on does today: the sandboxed frame fills whichever
-  device is up, and a tablet-specific add-on root is a later ticket.
+  `'tablet'`) and `useDisplay().frame` (the design size) and branch.
+
+A `core: false` add-on can take either way. With one root, its sandboxed frame
+fills whichever device is up. With a second, the add-on build passes
+`tablet.svelte` to `bootAddOn` as `{ tablet }`, and the frame mounts it instead
+of `index.svelte` while the tablet is on screen, with the same props and deep
+links. The frame learns the device from `useDisplay().device`, so the manifest
+must declare the `display` permission; the build refuses a tablet root without
+it. Only one root is mounted at a time, so each registers its own `useDeepLink`
+and `useSearchProvider`. Notes is the shipped example.
 
 An app that lists only the phone is simply absent on the tablet: no icon, no
 search result, no deep link. Nothing about its server half changes.

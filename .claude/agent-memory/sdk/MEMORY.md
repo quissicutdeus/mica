@@ -22,3 +22,6 @@ in its own file and gets a line here.
 - [Removing from index.ts is not a bump](index-barrel-removal-is-not-a-bump.md)
   — shell barrel is unpublished; edit the baseline with a comment, guard with
   `NEVER_EXPORTED`
+- [Waiting on a first push](waiting-on-a-first-push.md) — a refused subscribe
+  never replies; seed `undefined`, bound the wait; device switch rebuilds the
+  frame
