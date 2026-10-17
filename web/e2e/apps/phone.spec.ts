@@ -99,10 +99,19 @@ test.describe('Phone Dialer App E2E', () => {
    * log for an unanswered call, never `missed` — `missed` is exclusively what the
    * person who didn't pick up sees in theirs. An earlier draft of this test asserted
    * the wrong one; the mock was right, the assertion wasn't.
+   *
+   * The clock is pinned to 22:00 on purpose. The status-bar clock reads "10:00 PM", which
+   * contains the duration text "0:00" — a bare `getByText('0:00')` is a strict-mode
+   * violation at any wall-clock time with that substring, and passed here only by hour.
+   * Pinned, the hostile case runs every time instead of twice a day.
    */
   test('an unanswered outgoing call still logs, with zero duration and no error styling', async ({
     page
   }) => {
+    await page.clock.setFixedTime(new Date('2026-01-15T22:00:00'));
+    await page.goto('/');
+    await page.locator('button', { hasText: 'Phone' }).first().click();
+    await expect(page.locator('h1', { hasText: 'Phone' })).toBeVisible();
     await dial(page, '0000000');
     await page.locator('button[aria-label="Call"]').click();
 
@@ -120,7 +129,9 @@ test.describe('Phone Dialer App E2E', () => {
     const row = page.getByText('0000000');
     await expect(row).toBeVisible();
     await expect(row).not.toHaveClass(/text-error/);
-    await expect(page.getByText('0:00')).toBeVisible();
+    // Scoped to the row's own button, and exact: the status-bar clock must not match.
+    const logEntry = page.locator('button', { has: row });
+    await expect(logEntry.getByText('0:00', { exact: true })).toBeVisible();
   });
 
   /**
