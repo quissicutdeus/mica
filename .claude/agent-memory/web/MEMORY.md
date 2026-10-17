@@ -54,3 +54,6 @@ its one-line summary.
   `grep -E "a|b"` beside a gate drops the batch; filter logs with `-e` flags
 - [`__resetAppEvents` wipes module subscribers](reset-app-events-wipes-module-subscribers.md)
   — import-time subscribers never re-register; drain with `clearAppEvents`
+- [A new app trips two pins](new-app-trips-two-pins.md) — appContract `APPS` row
+  and the computed-class ratchet (Icon `class={className}`); `run()` answers a
+  boolean

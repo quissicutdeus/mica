@@ -23,6 +23,7 @@ import Blabber from '../web/src/apps/blabber/index.svelte';
 import Calculator from '../web/src/apps/calculator/index.svelte';
 import Camera from '../web/src/apps/camera/index.svelte';
 import Contacts from '../web/src/apps/contacts/index.svelte';
+import Glimpse from '../web/src/apps/glimpse/index.svelte';
 import Hodlr from '../web/src/apps/hodlr/index.svelte';
 import Jobs from '../web/src/apps/jobs/index.svelte';
 import Mail from '../web/src/apps/mail/index.svelte';
@@ -62,6 +63,7 @@ const APPS: Record<string, AppComponent> = {
   calculator: Calculator,
   camera: Camera,
   contacts: Contacts,
+  glimpse: Glimpse,
   hodlr: Hodlr,
   jobs: Jobs,
   mail: Mail,

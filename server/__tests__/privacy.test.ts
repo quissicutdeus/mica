@@ -279,6 +279,17 @@ const EXPORTED_COLUMNS: Record<string, { plain: string[]; sized: string[]; withh
     sized: [],
     withheld: []
   },
+  mica_glimpse: {
+    plain: ['id', 'status', 'created_at', 'updated_at', 'account_id', 'caption'],
+    sized: [],
+    withheld: []
+  },
+  mica_glimpse_attachments: { plain: ['id', 'post_id', 'media_id'], sized: [], withheld: [] },
+  mica_glimpse_comments: {
+    plain: ['id', 'status', 'created_at', 'updated_at', 'account_id', 'post_id', 'body'],
+    sized: [],
+    withheld: []
+  },
   mica_blocklist: {
     plain: ['id', 'status', 'created_at', 'updated_at', 'device_id', 'number'],
     sized: [],

@@ -11,6 +11,8 @@
   "blabber.notYoursToPost": "That account is not yours to post from.",
   "blabber.replyOrMouth": "A Blab can reply or mouth, not both.",
   "blabber.tagRequired": "A tag is required.",
+  "glimpse.needsPhoto": "Pick at least one photo to post.",
+  "glimpse.cannotComment": "You cannot comment on that post.",
   "blabberDms.blocked": "You can't message this account.",
   "blabberDms.emptyMessage": "A message needs something in it.",
   "blabberDms.noSuchAccount": "No such account.",

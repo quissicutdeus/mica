@@ -651,6 +651,58 @@ export interface BlabberDmThread {
   unread: number;
 }
 
+/**
+ * One photo post in Glimpse (MICA-253), as a reader receives it.
+ *
+ * The public projection only, hydrated for display. `citizenid` is deliberately **not** a
+ * field here rather than an optional one: it is the ownership anchor, and `account_id` is
+ * the display identity, so a projection that could carry it would correlate a player's alts
+ * back to one person. Likes are reactions (`mica_account_reactions`, ❤️ only) and come from
+ * `reactionsFor`, not from this row.
+ */
+export interface GlimpsePost {
+  id: number;
+  account_id: number;
+  /** `mica_glimpse.caption`, a varchar(500). Null for a post that is only its photos. */
+  caption: string | null;
+  status?: 'active' | 'deleted' | 'moderated';
+  created_at: Date | string;
+  updated_at: Date | string;
+  /** Hydrated from the author's account; not columns. */
+  handle?: string;
+  display_name?: string | null;
+  avatar?: string | null;
+  /**
+   * The carousel, in posting order. `MediaPreview`, never `MediaItem`: the uploader's
+   * `citizenid` must not ride along on a public read. A photo retention removed is simply
+   * absent, so a post can arrive with none left.
+   */
+  attachments: { id: number; media: MediaPreview }[];
+}
+
+/** What `glimpse:create` answers: the post, plus the caption edit window in seconds. */
+export type GlimpseCreated = GlimpsePost & { editWindow: number };
+
+/** Counts for one post. Likes are not here: they are reactions, read through `reactionsFor`. */
+export interface GlimpseEngagement {
+  comments: number;
+}
+
+/** One comment under a post, as a reader receives it. No `citizenid`, for the same reason. */
+export interface GlimpseComment {
+  id: number;
+  post_id: number;
+  account_id: number;
+  /** `mica_glimpse_comments.body`, a varchar(300). */
+  body: string;
+  status?: 'active' | 'deleted' | 'moderated';
+  created_at: Date | string;
+  updated_at: Date | string;
+  handle?: string;
+  display_name?: string | null;
+  avatar?: string | null;
+}
+
 export interface Note {
   id: number;
   citizenid: string;

@@ -313,8 +313,8 @@ const canSeeDm: CanSee = async (id, citizenid) => {
 };
 
 /**
- * A photo: the caller's own, or attached to something the caller can see — a live Blab or
- * listing, which anyone can, or a live message in a thread they are in.
+ * A photo: the caller's own, or attached to something the caller can see — a live Blab,
+ * Glimpse post or listing, which anyone can, or a live message in a thread they are in.
  *
  * The photo's own status is asked the way the attachment reads ask it: not `moderated`. Those
  * reads drop a moderated photo from every thread, Blab and listing (MICA-339), so it is not
@@ -328,6 +328,9 @@ const canSeeMedia: CanSee = async (id, citizenid) => {
        OR EXISTS (SELECT 1 FROM \`mica_blabber_attachments\` a
                   JOIN \`mica_blabber\` b ON b.\`id\` = a.\`blab_id\`
                   WHERE a.\`media_id\` = x.\`id\` AND b.\`status\` = 'active')
+       OR EXISTS (SELECT 1 FROM \`mica_glimpse_attachments\` a
+                  JOIN \`mica_glimpse\` g ON g.\`id\` = a.\`post_id\`
+                  WHERE a.\`media_id\` = x.\`id\` AND g.\`status\` = 'active')
        OR EXISTS (SELECT 1 FROM \`mica_marketplace_attachments\` a
                   JOIN \`mica_marketplace\` l ON l.\`id\` = a.\`listing_id\`
                   WHERE a.\`media_id\` = x.\`id\` AND l.\`status\` = 'active'))
@@ -349,12 +352,28 @@ const canSeeMedia: CanSee = async (id, citizenid) => {
   return false;
 };
 
+/**
+ * A Glimpse comment: live, under a live post — what `glimpse_comments:list` reads, which shows
+ * nothing under a post that is gone or taken down.
+ */
+const canSeeGlimpseComment: CanSee = async (id) =>
+  Boolean(
+    await Database.single<unknown>(
+      `SELECT 1 FROM \`mica_glimpse_comments\` c
+       JOIN \`mica_glimpse\` p ON p.\`id\` = c.\`post_id\` AND p.\`status\` = 'active'
+       WHERE c.\`id\` = ? AND c.\`status\` = 'active' LIMIT 1`,
+      [id]
+    )
+  );
+
 const VISIBILITY = new Map<string, CanSee>([
   ['mica_messages', canSeeMessage],
   ['mica_blabber_dms', canSeeDm],
   ['mica_media', canSeeMedia],
   ['mica_accounts', whileActive('mica_accounts')],
   ['mica_blabber', whileActive('mica_blabber')],
+  ['mica_glimpse', whileActive('mica_glimpse')],
+  ['mica_glimpse_comments', canSeeGlimpseComment],
   ['mica_marketplace', whileActive('mica_marketplace')]
 ]);
 

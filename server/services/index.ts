@@ -12,6 +12,8 @@ import './Contacts';
 import './ContentKeys';
 import './Conversations';
 import './Devices';
+import './Glimpse';
+import './GlimpseComments';
 import './Highscores';
 import './Hodlr';
 import './HodlrMarket';

@@ -656,8 +656,36 @@ const REACTION_TARGETS = new Map<string, (account: Account, targetId: number) =>
         !(await accountHasBlocked(account.id, peer)) && !(await accountHasBlocked(peer, account.id))
       );
     }
+  ],
+  [
+    /**
+     * A Glimpse post (MICA-253) takes a like from a Glimpse account — never one claimed in
+     * another app's namespace, since `data.app` is the payload's — while the post is up, and not
+     * across a block in either direction, the rule `glimpse_comments:create` holds a comment to.
+     */
+    'mica_glimpse',
+    async (account, targetId) => {
+      if (account.app !== 'glimpse') return false;
+      const post = await Database.single<{ account_id: number } | null>(
+        "SELECT `account_id` FROM `mica_glimpse` WHERE `id` = ? AND `status` = 'active' LIMIT 1",
+        [targetId]
+      );
+      if (!post) return false;
+      return (
+        !(await accountHasBlocked(account.id, post.account_id)) &&
+        !(await accountHasBlocked(post.account_id, account.id))
+      );
+    }
   ]
 ]);
+
+/**
+ * Tables whose reactions are one fixed set of emoji rather than the open palette. Glimpse's
+ * likes are a ❤️ and nothing else (MICA-253): a 😂 stored on a post is a reaction its UI cannot
+ * draw and every count would be wrong by. Written as code points so the variation selector
+ * (U+FE0F) the palette sends is unmistakable — a bare U+2764 is a different string.
+ */
+const REACTION_EMOJI = new Map<string, readonly string[]>([['mica_glimpse', ['\u2764\uFE0F']]]);
 
 /**
  * The ids out of a batch whose reactions this player may read: on a DM, only one they are an
@@ -678,6 +706,18 @@ const VISIBLE_REACTION_TARGETS = new Map<
                        WHERE a.\`citizenid\` = ? AND a.\`app\` = ? AND a.\`status\` = 'active'
                          AND a.\`id\` IN (d.\`from_account\`, d.\`to_account\`))`,
         [...ids, citizenid, appId]
+      );
+      return (rows ?? []).map((row) => Number(row.id));
+    }
+  ],
+  [
+    // A Glimpse post is public while it is up, so its likes are too.
+    'mica_glimpse',
+    async (ids) => {
+      const rows = await Database.query<{ id: number }[]>(
+        `SELECT \`id\` FROM \`mica_glimpse\`
+         WHERE \`id\` IN (${ids.map(() => '?').join(', ')}) AND \`status\` = 'active'`,
+        ids
       );
       return (rows ?? []).map((row) => Number(row.id));
     }
@@ -713,6 +753,12 @@ app.registerEvent('react', async (source, cbId, data, citizenid) => {
 
   // The same answer whether the row is missing or not the caller's to react to, so the reply
   // cannot tell a stranger which DM ids exist.
+  const onlyEmoji = REACTION_EMOJI.get(targetTable);
+  if (onlyEmoji && !onlyEmoji.includes(data.emoji))
+    throw new PlayerFacingError('That cannot be reacted to.', {
+      key: 'server.accounts.notReactable'
+    });
+
   const mayReact = REACTION_TARGETS.get(targetTable);
   if (!mayReact || !(await mayReact(account, targetId)))
     throw new PlayerFacingError('That content no longer exists.', {

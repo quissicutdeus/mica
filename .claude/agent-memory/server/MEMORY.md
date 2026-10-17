@@ -82,3 +82,7 @@ line here.
   MariaDB SET is left to right; MICA-350's `absent_number`
 - [A race test's gate catches every later write](a-race-gate-catches-every-later-write.md)
   — key the gate on the raced statement, not the table; a new write times out
+- [A new reportable service fails ten pinned lists](new-reportable-service-fans-out.md)
+  — four outside the fence: two locale catalogs, README, CHANGELOG (MICA-253)
+- [Replay captured dbMock SQL on MariaDB](replay-captured-sql-on-mariadb.md) —
+  dump calls from a temp suite copy; a fake-world id fails an FK, not the code

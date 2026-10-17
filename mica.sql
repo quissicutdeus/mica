@@ -524,6 +524,63 @@ CREATE TABLE IF NOT EXISTS `mica_blabber_attachments` (
         REFERENCES `mica_media` (`id`) ON DELETE CASCADE
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
+-- Generated from the 'glimpse' defineService declaration.
+-- Do not edit by hand; change the declaration and regenerate.
+
+CREATE TABLE IF NOT EXISTS `mica_glimpse` (
+    `id` int(11) NOT NULL AUTO_INCREMENT,
+    `citizenid` varchar(50) NOT NULL,
+    `account_id` int(11) NOT NULL,
+    `caption` varchar(500) DEFAULT NULL,
+    `status` ENUM('active', 'deleted', 'moderated') NOT NULL DEFAULT 'active',
+    `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `status` (`status`),
+    KEY `citizenid_status` (`citizenid`, `status`),
+    KEY `account_id` (`account_id`),
+    CONSTRAINT `fk_mica_glimpse_account_id` FOREIGN KEY (`account_id`)
+        REFERENCES `mica_accounts` (`id`) ON DELETE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `mica_glimpse_attachments` (
+    `id` int(11) NOT NULL AUTO_INCREMENT,
+    `post_id` int(11) NOT NULL,
+    `citizenid` varchar(50) NOT NULL,
+    `media_id` int(11) NOT NULL,
+    PRIMARY KEY (`id`),
+    KEY `post_id` (`post_id`),
+    KEY `citizenid` (`citizenid`),
+    KEY `media_id` (`media_id`),
+    CONSTRAINT `fk_mica_glimpse_attachments_post_id` FOREIGN KEY (`post_id`)
+        REFERENCES `mica_glimpse` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_mica_glimpse_attachments_media_id` FOREIGN KEY (`media_id`)
+        REFERENCES `mica_media` (`id`) ON DELETE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+-- Generated from the 'glimpse_comments' defineService declaration.
+-- Do not edit by hand; change the declaration and regenerate.
+
+CREATE TABLE IF NOT EXISTS `mica_glimpse_comments` (
+    `id` int(11) NOT NULL AUTO_INCREMENT,
+    `citizenid` varchar(50) NOT NULL,
+    `account_id` int(11) NOT NULL,
+    `post_id` int(11) NOT NULL,
+    `body` varchar(300) NOT NULL,
+    `status` ENUM('active', 'deleted', 'moderated') NOT NULL DEFAULT 'active',
+    `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `status` (`status`),
+    KEY `citizenid_status` (`citizenid`, `status`),
+    KEY `post_id` (`post_id`),
+    KEY `account_id` (`account_id`),
+    CONSTRAINT `fk_mica_glimpse_comments_account_id` FOREIGN KEY (`account_id`)
+        REFERENCES `mica_accounts` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_mica_glimpse_comments_post_id` FOREIGN KEY (`post_id`)
+        REFERENCES `mica_glimpse` (`id`) ON DELETE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
 -- Generated from the 'marketplace' defineService declaration.
 -- Do not edit by hand; change the declaration and regenerate.
 

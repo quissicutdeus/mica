@@ -34,6 +34,8 @@ import '../services/Media';
 import '../services/Accounts';
 import '../services/Blabber';
 import '../services/BlabberDms';
+import '../services/Glimpse';
+import '../services/GlimpseComments';
 import '../services/Marketplace';
 import { REPORTABLE } from '../lib/moderation';
 
@@ -241,12 +243,14 @@ const moderate = (id: number) => call('resolve', { id, action: 'moderate' });
 const reopen = (id: number) => call('reopen', { id });
 
 describe('a reopen puts back what the takedown replaced (MICA-386)', () => {
-  it('declares the six reportable tables this suite walks', () => {
+  it('declares the eight reportable tables this suite walks', () => {
     // A loop over an empty registry asserts nothing, so the count is the first assertion.
     expect(Object.keys(REPORTABLE()).sort()).toEqual([
       'mica_accounts',
       'mica_blabber',
       'mica_blabber_dms',
+      'mica_glimpse',
+      'mica_glimpse_comments',
       'mica_marketplace',
       'mica_media',
       'mica_messages'
@@ -451,6 +455,8 @@ describe('a takedown with no record of what it replaced (MICA-386)', () => {
     mica_blabber_dms: 'active',
     mica_marketplace: 'removed',
     mica_blabber: 'deleted',
+    mica_glimpse: 'deleted',
+    mica_glimpse_comments: 'deleted',
     mica_messages: 'deleted',
     mica_media: 'deleted'
   };

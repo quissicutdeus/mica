@@ -51,6 +51,8 @@ import '../services/Media';
 import '../services/Accounts';
 import '../services/Blabber';
 import '../services/BlabberDms';
+import '../services/Glimpse';
+import '../services/GlimpseComments';
 import '../services/Marketplace';
 import { isReportableTable, isReportCategory, REPORTABLE } from '../lib/moderation';
 
@@ -275,6 +277,7 @@ describe('a report is only of something the reporter can see', () => {
     messageAttachments?: { message_id: number; photo_id: number }[];
     blabAttachments?: { blab_id: number; media_id: number }[];
     listingAttachments?: { listing_id: number; media_id: number }[];
+    glimpseAttachments?: { post_id: number; media_id: number }[];
   }
 
   const activeIn = (sql: string, alias = '') =>
@@ -313,7 +316,18 @@ describe('a report is only of something the reporter can see', () => {
         const listing = (w.listingAttachments ?? []).some(
           (a) => a.media_id === id && activeIn(sql, 'l.')(find('mica_marketplace', a.listing_id))
         );
-        return own || blab || listing ? { 1: 1 } : null;
+        const post = (w.glimpseAttachments ?? []).some(
+          (a) => a.media_id === id && activeIn(sql, 'g.')(find('mica_glimpse', a.post_id))
+        );
+        return own || blab || listing || post ? { 1: 1 } : null;
+      }
+      // A Glimpse comment is visible while it and the post it sits under are both live.
+      if (sql.includes('FROM `mica_glimpse_comments` c')) {
+        const comment = find('mica_glimpse_comments', params[0]);
+        const post = comment && find('mica_glimpse', comment.post_id);
+        return activeIn(sql, 'c.')(comment) && activeIn(sql, 'p.')(post) && comment && post
+          ? { 1: 1 }
+          : null;
       }
       const plain = /FROM `(\w+)` WHERE `id` = \?/.exec(sql.replace(/\s+/g, ' '));
       if (plain) {
@@ -622,12 +636,15 @@ describe('a report is only of something the reporter can see', () => {
         preview: 'x',
         conversation_id: 40,
         from_account: 2,
-        to_account: 1
+        to_account: 1,
+        post_id: 7
       };
       world({
         // The thread a photo was sent into, beside the target row itself.
         rows: {
           mica_messages: [message()],
+          // The live post a Glimpse comment sits under.
+          mica_glimpse: [{ id: 7, citizenid: 'AUTHOR1', status: 'active' }],
           [table]: [row, ...(table === 'mica_messages' ? [message()] : [])]
         },
         members: [[40, REPORTER]],

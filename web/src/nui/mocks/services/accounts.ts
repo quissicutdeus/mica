@@ -4,9 +4,13 @@
 
 import type { Account } from '@mica/shared/types';
 import type { MockHandler } from '../registry';
-import { mockAccounts, mockOwnedAccountIds, mockFollows, mockBlocks } from '../social';
-
-const mockReactions: { account: number; table: string; target: number; emoji: string }[] = [];
+import {
+  mockAccounts,
+  mockOwnedAccountIds,
+  mockFollows,
+  mockBlocks,
+  mockReactions
+} from '../social';
 
 interface FollowListArgs {
   account_id: number;
@@ -31,27 +35,49 @@ const mockFollowPage = (accountIds: number[], cursor: number | undefined, limit:
   const end = from + limit;
   return { rows, nextCursor: end < newestFirst.length ? end : null };
 };
-let nextAccountId = 10;
+let nextAccountId = 100;
 
 /** Mirrors `mica_max_accounts_per_app`'s default. The server is the boundary. */
 const MOCK_ACCOUNT_LIMIT = 3;
+
+/** The player's accounts in one app — `ownedAccount`'s question, which always names the app. */
+const ownedIn = (app: string) =>
+  mockAccounts.filter((a) => a.app === app && mockOwnedAccountIds.has(a.id));
+
+/**
+ * The one emoji Glimpse's likes may be (MICA-253). The server refuses any other on
+ * `mica_glimpse`; a mock that took a 😂 would show a reaction the game never stores.
+ */
+const ONLY_EMOJI: Record<string, string> = { mica_glimpse: '❤️' };
 
 export const mocks: Record<string, MockHandler> = {
   // Accounts. `limit` is the per-app cap the server reports from a convar — matched here
   // because a mock that omitted it would hide the Claim button in `pnpm dev` and show it
   // in game, or the reverse.
-  'accounts:mine': () => ({
-    rows: mockAccounts.filter((a) => a.app === 'blabber' && mockOwnedAccountIds.has(a.id)),
+  // Every action names its app, and the mock reads it rather than assuming Blabber: handles
+  // are unique within an app, and the cap is per app, exactly as `mica_accounts` keys them.
+  'accounts:mine': ({ app }: { app: string }) => ({
+    rows: ownedIn(app),
     limit: MOCK_ACCOUNT_LIMIT
   }),
-  'accounts:create': ({ handle, display_name }: { handle: string; display_name?: string }) => {
-    if (mockAccounts.some((a) => a.handle === handle)) throw new Error(`@${handle} is taken.`);
-    if (mockOwnedAccountIds.size >= MOCK_ACCOUNT_LIMIT) {
+  'accounts:create': ({
+    app,
+    handle,
+    display_name
+  }: {
+    app: string;
+    handle: string;
+    display_name?: string;
+  }) => {
+    if (mockAccounts.some((a) => a.app === app && a.handle === handle)) {
+      throw new Error(`@${handle} is taken.`);
+    }
+    if (ownedIn(app).length >= MOCK_ACCOUNT_LIMIT) {
       throw new Error(`You already hold ${MOCK_ACCOUNT_LIMIT} accounts here.`);
     }
     const created: Account = {
       id: nextAccountId++,
-      app: 'blabber',
+      app,
       handle,
       display_name: display_name ?? null,
       status: 'active',
@@ -89,9 +115,9 @@ export const mocks: Record<string, MockHandler> = {
     account.updated_at = new Date().toISOString();
     return true;
   },
-  getAccounts: ({ handle, limit = 30 }: { handle?: string; limit?: number } = {}) => {
+  getAccounts: ({ app, handle, limit = 30 }: { app: string; handle?: string; limit?: number }) => {
     const matches = mockAccounts.filter(
-      (a) => a.app === 'blabber' && (handle === undefined || a.handle === handle)
+      (a) => a.app === app && (handle === undefined || a.handle === handle)
     );
     return { rows: matches.slice(0, limit), nextCursor: null };
   },
@@ -270,22 +296,28 @@ export const mocks: Record<string, MockHandler> = {
   }),
 
   /**
-   * Reactions, on any target table — DM messages today. `mockReactions` holds every row this
-   * session has created, keyed by the same `(account_id, target_table, target_id, emoji)` tuple
-   * the server's unique index enforces.
+   * Reactions, on any target table — DM messages and Glimpse posts. `mockReactions` (in
+   * `../social`) holds the seeded rows and every one this session creates, keyed by the same
+   * `(account_id, target_table, target_id, emoji)` tuple the server's unique index enforces.
    */
   'accounts:react': ({
+    app,
     account_id,
     target_table,
     target_id,
     emoji
   }: {
+    app: string;
     account_id: number;
     target_table: string;
     target_id: number;
     emoji: string;
   }) => {
-    if (!mockOwnedAccountIds.has(account_id)) throw new Error('That account is not yours.');
+    if (!ownedIn(app).some((a) => a.id === account_id)) {
+      throw new Error('That account is not yours.');
+    }
+    const only = ONLY_EMOJI[target_table];
+    if (only !== undefined && emoji !== only) throw new Error('That reaction is not available.');
     if (
       !mockReactions.some(
         (r) =>
@@ -300,17 +332,21 @@ export const mocks: Record<string, MockHandler> = {
     return true;
   },
   'accounts:unreact': ({
+    app,
     account_id,
     target_table,
     target_id,
     emoji
   }: {
+    app: string;
     account_id: number;
     target_table: string;
     target_id: number;
     emoji: string;
   }) => {
-    if (!mockOwnedAccountIds.has(account_id)) throw new Error('That account is not yours.');
+    if (!ownedIn(app).some((a) => a.id === account_id)) {
+      throw new Error('That account is not yours.');
+    }
     const at = mockReactions.findIndex(
       (r) =>
         r.account === account_id &&
@@ -322,19 +358,25 @@ export const mocks: Record<string, MockHandler> = {
     return true;
   },
   'accounts:reactionsFor': ({
+    app,
     target_table,
     target_ids
   }: {
+    app: string;
     target_table: string;
     target_ids: number[];
   }) => {
     const out: Record<number, { counts: Record<string, number>; mine: string[] }> = {};
     for (const id of target_ids) out[id] = { counts: {}, mine: [] };
+    // "Mine" is every one of the player's accounts **in this app**, as the server reads it —
+    // the main and an alt, not a single account, and never one from another app's graph.
+    const mineIds = new Set(ownedIn(app).map((a) => a.id));
     for (const row of mockReactions) {
       if (row.table !== target_table || !(row.target in out)) continue;
       out[row.target].counts[row.emoji] = (out[row.target].counts[row.emoji] ?? 0) + 1;
-      // The mock's single active account, matching every other "mine" fixture here.
-      if (row.account === 1) out[row.target].mine.push(row.emoji);
+      if (mineIds.has(row.account) && !out[row.target].mine.includes(row.emoji)) {
+        out[row.target].mine.push(row.emoji);
+      }
     }
     return out;
   }

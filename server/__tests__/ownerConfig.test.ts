@@ -415,6 +415,8 @@ describe('which services a disabled app takes down', () => {
     expect(Object.fromEntries([...serviceApps()].sort(([a], [b]) => a.localeCompare(b)))).toEqual({
       blabber: 'blabber',
       blabber_dms: 'blabber',
+      glimpse: 'glimpse',
+      glimpse_comments: 'glimpse',
       highscores: 'snek',
       hodlr: 'hodlr',
       invoices: 'bank',

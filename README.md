@@ -96,6 +96,13 @@ for players and seamless framework integration for server developers.
   reaches another reader, so alts stay uncorrelated. Not on the home screen out
   of the box: it is the first genuinely non-core app and installs from the
   Store.
+- **Glimpse** _(add-on)_: A photo feed under an `@handle`. Post photos from the
+  gallery with a caption, like with a heart, comment, and follow accounts into a
+  Following feed; a profile shows its posts as a grid. The owner of a post can
+  remove comments on it, and posts and comments can be reported to Admin.
+  Handles are separate from Blabber's, and the owning `citizenid` never reaches
+  another reader. A caption stays editable for 15 minutes —
+  `mica_glimpse_edit_window`. Installs from the Store.
 - **Marketplace**: Peer-to-peer classified listings — a feed with debounced
   search, a detail screen that can Call, Text or Report the seller, a create
   form capped at four photos, and a My Listings screen to mark sold or remove.
@@ -764,6 +771,7 @@ set mica_speaker_range 4
 set mica_speaker_volume 30
 setr mica_camera_quality 95
 set mica_blabber_edit_window 900
+set mica_glimpse_edit_window 900
 set mica_notification_retention 30
 set mica_restore_window_days 30
 set mica_media_quota_mb 64
@@ -825,6 +833,7 @@ set mica_location_interval 5
 | `mica_speaker_range`               | integer, meters, at most 10                             | `4`                                 | How far a call on speaker is heard; `0` hides the Speaker control                                                                     |
 | `mica_speaker_volume`              | integer, 1-100                                          | `30`                                | pma-voice call volume a bystander hears a speakerphone call at                                                                        |
 | `mica_blabber_edit_window`         | integer, seconds                                        | `900`                               | How long a Blab stays editable by its author                                                                                          |
+| `mica_glimpse_edit_window`         | integer, seconds                                        | `900`                               | How long a Glimpse caption stays editable by its author                                                                               |
 | `mica_notification_retention`      | integer, days                                           | `30`                                | How long notification rows are kept                                                                                                   |
 | `mica_restore_window_days`         | integer, days                                           | `30`                                | How long a deleted Contact/Note/Media stays restorable                                                                                |
 | `mica_camera_quality`              | integer, 1-100                                          | `95`                                | Encode quality of a stored photo (needs `setr`)                                                                                       |
@@ -855,31 +864,31 @@ set mica_location_interval 5
 
 Most are read on every use rather than cached, so changing one with `set` from
 the live console takes effect on the next request and needs no restart.
-`mica_blabber_edit_window` and `mica_notification_retention` are read once at
-resource start, so a change to either needs a restart, for the reasons given
-under them below. The three content-retention convars (`mica_media_retention`,
-`mica_message_retention`, `mica_dm_retention`) are read whenever a prune runs,
-which is at resource start, every six hours and on `micamedia prune`, and
-`mica_orphan_owner_table` whenever the orphan sweep runs, at resource start and
-on `micamedia prune`, so a change to any of them takes effect on the next run
-rather than needing a restart. `mica_camera_quality` is read on every use as
-well, but the phone only asks for it when the Camera app comes to the
-foreground, so a change reaches a player the next time they open the camera
-rather than the next time they take a photo. `mica_addon_hosts` and
-`mica_addon_catalog` are the same shape for the allowlist: read whenever asked
-for, and asked for once, when a player's phone UI loads — so a change reaches
-them when they next reconnect. The catalog the server fetches is cached for ten
-minutes (sixty seconds after a failed fetch), so a new catalog URL, or a new
-entry in the one you have, shows in the Store within that window.
-`mica_disabled_apps` and `mica_default_dock` are the same shape again: both are
-answered once, together, by `shell:ownerConfig` when a phone loads, so a change
-to either reaches a player on their next reconnect too. `mica_default_contacts`
-is read only when seeding a brand-new phone, so a change to it affects phones
-created after the change, never one already seeded — but that is only true of
-the convar's own value. When it points at a file, the resolved contacts are
-memoized against that value (`contactsMemo` in `server/lib/ownerConfig.ts`), so
-editing the file's contents without changing the convar is invisible until the
-resource restarts.
+`mica_blabber_edit_window`, `mica_glimpse_edit_window` and
+`mica_notification_retention` are read once at resource start, so a change to
+any of them needs a restart, for the reasons given under them below. The three
+content-retention convars (`mica_media_retention`, `mica_message_retention`,
+`mica_dm_retention`) are read whenever a prune runs, which is at resource start,
+every six hours and on `micamedia prune`, and `mica_orphan_owner_table` whenever
+the orphan sweep runs, at resource start and on `micamedia prune`, so a change
+to any of them takes effect on the next run rather than needing a restart.
+`mica_camera_quality` is read on every use as well, but the phone only asks for
+it when the Camera app comes to the foreground, so a change reaches a player the
+next time they open the camera rather than the next time they take a photo.
+`mica_addon_hosts` and `mica_addon_catalog` are the same shape for the
+allowlist: read whenever asked for, and asked for once, when a player's phone UI
+loads — so a change reaches them when they next reconnect. The catalog the
+server fetches is cached for ten minutes (sixty seconds after a failed fetch),
+so a new catalog URL, or a new entry in the one you have, shows in the Store
+within that window. `mica_disabled_apps` and `mica_default_dock` are the same
+shape again: both are answered once, together, by `shell:ownerConfig` when a
+phone loads, so a change to either reaches a player on their next reconnect too.
+`mica_default_contacts` is read only when seeding a brand-new phone, so a change
+to it affects phones created after the change, never one already seeded — but
+that is only true of the convar's own value. When it points at a file, the
+resolved contacts are memoized against that value (`contactsMemo` in
+`server/lib/ownerConfig.ts`), so editing the file's contents without changing
+the convar is invisible until the resource restarts.
 
 - **`mica_auto_schema`** — whether micaOS creates its own schema on first start
   (MICA-306). On by default. It acts only when the database holds **no** micaOS
@@ -1040,6 +1049,8 @@ resource restarts.
   where its default call volume is 60) a bystander hears a speakerphone call at.
   Their own call volume is saved and put back when they walk away or the call
   ends.
+- **`mica_glimpse_edit_window`** — the same rule for a Glimpse post's caption,
+  with its own number, and likewise read once at resource start.
 - **`mica_blabber_edit_window`** — how long after posting a Blab its author may
   still fix a typo; after it the post freezes and only deleting is left, since
   withdrawing your own words stays possible forever. One number does both jobs:

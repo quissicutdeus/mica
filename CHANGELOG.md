@@ -47,6 +47,14 @@ Entries are hand-written. See MICA-72 for why a generated one was rejected.
 
 ### Action required
 
+**Run `micaschema apply` to create Glimpse's tables (MICA-253).** Glimpse is a
+new photo-feed add-on, installed from the Store, and it stores posts, their
+photos and comments in three new tables: `mica_glimpse`,
+`mica_glimpse_attachments` and `mica_glimpse_comments`. The change is additive
+and needs no migration. A new convar, `mica_glimpse_edit_window` (seconds,
+default 900, read once at resource start), sets how long a caption stays
+editable.
+
 **If you imported from qb-phone and set a content key, run
 `micacrypt backfill --apply` and then `micaimport qb-phone --apply` once while
 the qb-phone tables still exist: the import ledger stops holding message bodies
