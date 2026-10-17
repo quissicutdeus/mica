@@ -22,13 +22,14 @@ const serviceMock = vi.hoisted(() => ({
 vi.mock('../../services/settings', () => serviceMock);
 
 /**
- * jsdom here has no `localStorage` (see `registry.test.ts`), and `registry.ts` and
- * `usePersisted` both read the bare global. One installed before any import, so every
- * module under test writes into this backing and "nothing persisted" means something.
+ * `registry.ts` and `usePersisted` both read the bare `localStorage` global, and jsdom's own
+ * (getter-only on `window`, so it can only be replaced through `vi.stubGlobal`) is not
+ * inspectable. A Map-backed one installed before any import, so every module under test
+ * writes into this backing and "nothing persisted" means something.
  */
 const storage = vi.hoisted(() => {
   const backing = new Map<string, string>();
-  (globalThis as unknown as { localStorage: Storage }).localStorage = {
+  vi.stubGlobal('localStorage', {
     get length() {
       return backing.size;
     },
@@ -37,7 +38,7 @@ const storage = vi.hoisted(() => {
     setItem: (k: string, v: string) => void backing.set(k, String(v)),
     removeItem: (k: string) => void backing.delete(k),
     clear: () => backing.clear()
-  };
+  } satisfies Storage);
   return backing;
 });
 

@@ -39,7 +39,18 @@ import * as fetchNuiModule from '../../nui/fetchNui';
 
 const names = () => get(runningApps).map((a) => a.id);
 
-beforeEach(() => closeAllApps());
+beforeEach(() => {
+  closeAllApps();
+  // `openApp` starts a real chunk load for any app whose component is not here yet, and
+  // nothing but the MICA-375 block below asserts on one. Left real, a load begun in an
+  // earlier test lands whenever the module graph finishes, and its nudge of `runningApps`
+  // is counted by whichever test happens to be waiting then.
+  vi.spyOn(appRegistryStore, 'loadComponent').mockResolvedValue(undefined);
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe('navigation store', () => {
   it('initializes to home app', () => {

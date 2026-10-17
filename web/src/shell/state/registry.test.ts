@@ -728,15 +728,12 @@ describe('installFromCatalog', () => {
 
 describe('remote app persistence and rehydration', () => {
   /**
-   * This jsdom test environment has no real `localStorage` (see `storage.test.ts`'s note on
-   * the same fact) — `typeof localStorage`/`window.localStorage` are both `undefined` here,
-   * even though the shell's actual runtime (browser/CEF) always has one. `registry.ts`'s
-   * persistence functions read the bare `localStorage` global directly (not through
-   * `useStorage`'s in-memory fallback), so these tests — which assert on what actually landed
-   * in storage, and on rehydration reading it back — need a real-shaped one to exist. A
-   * minimal in-memory polyfill, installed only around this describe block's tests and removed
-   * after, is the least-invasive way to give them that without changing the shared jsdom
-   * environment for every other test file.
+   * `registry.ts`'s persistence functions read the bare `localStorage` global directly (not
+   * through `useStorage`'s in-memory fallback), and these tests assert on what actually landed
+   * in storage, and on rehydration reading it back. jsdom's own `localStorage` is getter-only
+   * on `window`, so a minimal in-memory one is installed with `vi.stubGlobal` only around this
+   * describe block's tests and unstubbed after, leaving the shared jsdom environment alone for
+   * every other test file.
    */
   let localStorageBacking: Map<string, string>;
 
@@ -759,18 +756,18 @@ describe('remote app persistence and rehydration', () => {
     setTrustedRemoteAppHosts(['store.example.com']);
     vi.restoreAllMocks();
     localStorageBacking = new Map<string, string>();
-    (globalThis as any).localStorage = {
+    vi.stubGlobal('localStorage', {
       getItem: (key: string) => localStorageBacking.get(key) ?? null,
       setItem: (key: string, value: string) => localStorageBacking.set(key, String(value)),
       removeItem: (key: string) => localStorageBacking.delete(key)
-    };
+    });
   });
 
   afterEach(() => {
     if (get(appRegistryStore).some((a) => a.id === 'remote_rehydrate_app')) {
       appRegistryStore.unregisterApp('remote_rehydrate_app');
     }
-    delete (globalThis as any).localStorage;
+    vi.unstubAllGlobals();
   });
 
   it('persists the catalog entry for a catalog install, not just the URL — the pinned hash lives on entry.sha256', async () => {
