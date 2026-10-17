@@ -75,8 +75,8 @@
     "*.{ts,svelte,js,json,md,css}": "prettier --write"
   },
   "devDependencies": {
-    "@citizenfx/client": "2.0.34410-1",
-    "@citizenfx/server": "2.0.34410-1",
+    "@citizenfx/client": "2.0.37287-1",
+    "@citizenfx/server": "2.0.37287-1",
     "@mica/shared": "workspace:*",
     "@types/node": "^26.6.5",
     "concurrently": "^10.0.6",

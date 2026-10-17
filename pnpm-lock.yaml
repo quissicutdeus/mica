@@ -9,11 +9,11 @@ importers:
   .:
     devDependencies:
       '@citizenfx/client':
-        specifier: 2.0.34410-1
-        version: 2.0.34410-1
+        specifier: 2.0.37287-1
+        version: 2.0.37287-1
       '@citizenfx/server':
-        specifier: 2.0.34410-1
-        version: 2.0.34410-1
+        specifier: 2.0.37287-1
+        version: 2.0.37287-1
       '@mica/shared':
         specifier: workspace:*
         version: link:shared
@@ -271,11 +271,11 @@ packages:
   '@cacheable/utils@2.5.0':
     resolution: {integrity: sha512-buipgOVDkkPXNR5+xBpDw7Zk2n1EvU7qBJCNUcL7rhQ//kfpOXPAvQ511Os0vpLYJ1pZnvudNytkQt2hst3wqA==}
 
-  '@citizenfx/client@2.0.34410-1':
-    resolution: {integrity: sha512-k1qR3JkGAQi/hTeM5qww0Y/V5MqeRs4PqVMxmmDz6HFVol7pfkK/bJH+OP3kSoPCFAIogUfdp68HHmJjP/Jc6g==}
+  '@citizenfx/client@2.0.37287-1':
+    resolution: {integrity: sha512-U8FvKYvG6hWrN9JB3LlUN8BbTR8SebHXS0q3eMpIqbFUUQyzWnFigzDn2wxZ+aCx0es1sjZJe8VXLDGyb1nCKQ==}
 
-  '@citizenfx/server@2.0.34410-1':
-    resolution: {integrity: sha512-qymnmBV4RSGyxb6WhOQd+W4QWuKdOaILRQf4/tgfWGdAippJDOPOHikUWFFLZjTOgQTYYkyvgZf4AswHyI2W6Q==}
+  '@citizenfx/server@2.0.37287-1':
+    resolution: {integrity: sha512-JMjzNmtzZH6Zt6Kf6P795RwNvxsPgDEl3ppcxQvX4m5Rpkcoko+jbxS90YzrwXabV091DX9UeJxmtFqNEIsSow==}
 
   '@csstools/cascade-layer-name-parser@3.0.2':
     resolution: {integrity: sha512-B731RJ9pfJj3D5GJPp8ccsaaHMdwBmlOb4QWAYQUFpmMxonxJvNeeIoo0E89CjMJaKDvQXy9MKpSXY/i7XgeFA==}
@@ -3727,9 +3727,9 @@ snapshots:
       hashery: 1.5.1
       keyv: 5.6.0
 
-  '@citizenfx/client@2.0.34410-1': {}
+  '@citizenfx/client@2.0.37287-1': {}
 
-  '@citizenfx/server@2.0.34410-1': {}
+  '@citizenfx/server@2.0.37287-1': {}
 
   '@csstools/cascade-layer-name-parser@3.0.2(@csstools/css-parser-algorithms@4.0.2(@csstools/css-tokenizer@4.0.2))(@csstools/css-tokenizer@4.0.2)':
     dependencies:
