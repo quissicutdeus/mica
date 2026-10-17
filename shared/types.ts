@@ -774,6 +774,54 @@ export interface DarkchatMessage {
   created_at: Date | string;
 }
 
+/**
+ * One photo on a Spark profile (MICA-255). `id` is the Spark photo row, never the gallery's
+ * `mica_media.id`: that id is global, so the same gallery photo on a Glimpse account and a
+ * Spark profile would share it and tie the two together, and it also gives capture order.
+ */
+export interface SparkPhoto {
+  id: number;
+  media: Omit<MediaPreview, 'id'>;
+}
+
+/**
+ * A profile as the deck shows it to another player. The account is the one Spark account the
+ * player holds (one per citizen, unlisted); `display_name` is that account's. No citizenid,
+ * no handle from another app, no join or swipe information of any kind.
+ */
+export interface SparkCard {
+  id: number;
+  account_id: number;
+  display_name: string | null;
+  /** In-character, entered by the player, at least 18. */
+  age: number;
+  /** `mica_spark.bio`, at most 300 characters. */
+  bio: string | null;
+  /** `mica_spark.looking_for`, at most 60 characters. */
+  looking_for: string | null;
+  /** In the order the owner arranged them; one to four. */
+  photos: SparkPhoto[];
+}
+
+/** The owner's own profile: the card plus what only the owner edits. */
+export interface SparkProfile extends SparkCard {
+  status: 'active' | 'deleted' | 'moderated';
+  /** The gallery ids behind `photos`, for the editor. Never on another player's card. */
+  photo_ids: number[];
+}
+
+export type SparkVerdict = 'like' | 'pass';
+
+/**
+ * A mutual like. The thread between the two accounts is read through `useDirectMessages`
+ * (`dms`, app 'spark'), keyed by `profile.account_id`; nothing about it is duplicated here.
+ */
+export interface SparkMatch {
+  id: number;
+  profile: SparkCard;
+  created_at: Date | string;
+}
+
 export interface Note {
   id: number;
   citizenid: string;
