@@ -154,8 +154,14 @@ export const migration: Migration = {
     // renamed after it ran, or created in the final shape with no ledger. A re-import over an
     // older database creates an empty `mica_devices` but alters no existing table, so it fails
     // below on the missing `mica_phones` rather than recording work it never did.
-    if (!(await hasTable(PHONES)) && (await hasColumn('mica_contacts', 'device_id'))) {
-      return;
+    if (!(await hasTable(PHONES))) {
+      if (await hasColumn('mica_contacts', 'device_id')) return;
+      // MICA-389: nor any `mica_contacts`, which every install has had from its first start. That
+      // is a first-start create that stopped before it reached contacts: whatever tables it did
+      // create are in the final shape, with no `mica_phones` to key them on, and `micaschema
+      // apply`'s create pass makes the rest after this. Recorded as applied like any other run. A
+      // `mica_contacts` with no `device_id` is still the re-import above, and still fails below.
+      if (!(await hasTable('mica_contacts'))) return;
     }
     // 1. Which phones are already on an item.
     if (!(await hasColumn(PHONES, 'claimed'))) {

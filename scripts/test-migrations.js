@@ -83,12 +83,13 @@ const EXTERNAL_DB = Boolean(DB_HOST || DB_PORT || DB_USER || DB_PASSWORD);
  * `runContactKeyMigration`s (17 on each shape) to 455, and MICA-350's two more in each
  * `runWedgedPairsMigration` to 459, and MICA-330's `runMouthKeyMigration`s (18 on each shape)
  * to 495, and MICA-388's `runApplyCreatesMissingTables` (9 on each shape, over a current ledger
- * and over an empty one) to 531 — so the margin here is eight again.
+ * and over an empty one) to 531, and MICA-389's `runApplyFinishesHalfCreated` (11 on each
+ * shape) to 553 — so the margin here is eight again.
  * That is deliberately tight: losing any one fixture drops below it and fails, which is the
  * whole point. Raise the floor when you add checks, rather than letting the gap widen until it
  * stops catching anything.
  */
-const MINIMUM_CHECKS = 523;
+const MINIMUM_CHECKS = 545;
 let checksRun = 0;
 
 const check = (label, actual, expected) => {
@@ -256,7 +257,9 @@ const loadServerModule = async () => {
     `export { setOwnerTableResolver } from '${root}/server/lib/ownerWidth.ts';`,
     // MICA-300. What `micaschema apply` runs, and the start-up report of keys onto players.
     `export { runApply } from '${root}/server/services/Schema.ts';`,
-    `export { reportOwnerForeignKeys } from '${root}/server/lib/ownerForeignKeys.ts';`
+    `export { reportOwnerForeignKeys } from '${root}/server/lib/ownerForeignKeys.ts';`,
+    // MICA-389. The first-start bootstrap's statements and table order, to stop one part-way.
+    `export { bootstrapTables, createStatements } from '${root}/server/lib/schemaSql.ts';`
   ].join('\n');
 
   const outfile = path.join(root, 'node_modules', '.cache', 'mica-migration-harness.mjs');
@@ -3624,6 +3627,136 @@ const runApplyCreatesMissingTables = async ({
   );
 };
 
+/* ------------- MICA-389: micaschema apply finishes a half-created database */
+
+/**
+ * The table each of 0001, 0003 and 0002 altered without asking whether it was there: 0002's is
+ * `mica_phones`, which the final shape never has, so its case is a missing `mica_contacts`.
+ */
+const UNGUARDED_TABLES = ['mica_phone_numbers', 'mica_battery', 'mica_contacts'];
+
+/**
+ * MICA-389: `micaschema apply` alone finishes a database whose ledger is empty and whose tables
+ * are only partly there — what a first-start create that stopped part-way leaves. Apply runs
+ * every migration first, over whatever exists, then creates the rest; until 0001, 0002 and 0003
+ * asked whether their table existed, an `ALTER` of a missing one stopped it before a single
+ * create, which is why the bootstrap's refusal used to say to import the file first.
+ *
+ * Three shapes of it. One table missing from a current import, for each migration that was
+ * unguarded. The bootstrap's own statements (`createStatements`) stopped before **every** table
+ * in turn, from the ledger alone to one short of the end: each must end exactly as a fresh
+ * import of the same file, every migration recorded, and a second apply must find nothing to
+ * do. And the case 0002 must still refuse — a `mica_contacts` with no `device_id` beside no
+ * `mica_phones`, the re-import over an older database — where apply stops at 0002 and creates
+ * nothing.
+ */
+const runApplyFinishesHalfCreated = async ({ connection, schemaFile, hasPlayers, server }) => {
+  const variant = hasPlayers ? 'qb' : 'esx';
+  const label = `${schemaFile} half-created`;
+  step(`${schemaFile} — MICA-389 micaschema apply finishes a half-created ${variant} database`);
+
+  const empty = async (database) => {
+    await connection.query(`DROP DATABASE IF EXISTS \`${database}\``);
+    await connection.query(`CREATE DATABASE \`${database}\``);
+    await connection.changeUser({ database });
+    if (hasPlayers) await connection.query(PLAYERS_TABLE);
+  };
+  const imported = async (database) => {
+    await empty(database);
+    await connection.query(fs.readFileSync(path.join(root, schemaFile), 'utf8'));
+  };
+  const schemaNow = async () => ({
+    columns: await wholeSchema(connection),
+    keys: await allIndexes(connection),
+    foreignKeys: await ownForeignKeys(connection)
+  });
+  const problems = (lines) => lines.filter((line) => /fail|not attempted|up to date/i.test(line));
+
+  await imported(`mica_half_shape_${variant}`);
+  const shape = await schemaNow();
+  runningFramework(server, hasPlayers);
+
+  for (const table of UNGUARDED_TABLES) {
+    const what = `${label}, ${table} missing, ledger empty`;
+    await imported(`mica_half_${variant}_${table}`);
+    await connection.query('DELETE FROM mica_schema_migrations');
+    await connection.query(`DROP TABLE \`${table}\``);
+    const apply = await captured(() => server.runApply(0));
+    check(
+      `${what}: apply runs every migration, fails nothing, and creates it`,
+      [
+        problems(apply.lines),
+        await ledgerIds(connection),
+        apply.lines.includes(`[mica] create table ${table}`)
+      ],
+      [[], ALL_MIGRATIONS(), true]
+    );
+    check(`${what}: and ends exactly as a fresh import`, await schemaNow(), shape);
+  }
+
+  // Every stop point, collected and then checked three ways, so a failure names its cuts.
+  const tables = server.bootstrapTables();
+  const statements = server.createStatements(hasPlayers);
+  const unfinished = [];
+  const misshapen = [];
+  const restless = [];
+  for (let cut = 1; cut < tables.length; cut++) {
+    const at = `${cut}:${tables[cut]}`;
+    await empty(`mica_half_${variant}_cut_${cut}`);
+    for (const sql of statements.slice(0, cut)) await connection.query(sql);
+    const apply = await captured(() => server.runApply(0));
+    const trouble = problems(apply.lines);
+    const ledger = await ledgerIds(connection);
+    if (trouble.length > 0 || JSON.stringify(ledger) !== JSON.stringify(ALL_MIGRATIONS())) {
+      unfinished.push(`${at} ${trouble[0] ?? `ledger ${ledger.length}`}`);
+    }
+    if (JSON.stringify(await schemaNow()) !== JSON.stringify(shape)) misshapen.push(at);
+    const again = await captured(() => server.runApply(0));
+    if (JSON.stringify(again.lines) !== JSON.stringify(['[mica] schema is already up to date.'])) {
+      restless.push(`${at} ${again.lines[0] ?? '(silent)'}`);
+    }
+  }
+  check(
+    `${label}: stopped before every one of ${tables.length - 1} tables in turn`,
+    [tables.length - 1 > 30, tables[0], statements.length >= tables.length],
+    [true, 'mica_schema_migrations', true]
+  );
+  check(`${label}: at every stop, apply runs every migration and fails nothing`, unfinished, []);
+  check(`${label}: and every stop ends exactly as a fresh import`, misshapen, []);
+  check(`${label}: and a second apply at every stop changes nothing`, restless, []);
+
+  // The refusal 0002 keeps: contacts from before `device_id`, no `mica_phones`.
+  const refused = `${label}, contacts without device_id beside no mica_phones`;
+  await imported(`mica_half_${variant}_refused`);
+  await connection.query('DELETE FROM mica_schema_migrations');
+  await connection.query('DROP TABLE mica_battery');
+  await connection.query(
+    'ALTER TABLE mica_contacts CHANGE COLUMN device_id phone_id varchar(32) DEFAULT NULL'
+  );
+  const apply = await captured(() => server.runApply(0));
+  check(
+    `${refused}: apply still stops at 0002 on the missing mica_phones, and creates nothing`,
+    [
+      apply.lines.some(
+        (line) =>
+          line.startsWith('[mica] migration 0002_phone_data_follows_the_phone failed:') &&
+          line.includes('mica_phones')
+      ),
+      apply.lines.includes('[mica] additive changes were not applied — fix the migration first.'),
+      apply.lines.filter((line) => line.startsWith('[mica] create table')),
+      await ledgerIds(connection),
+      Number(
+        await scalar(
+          connection,
+          `SELECT COUNT(*) FROM information_schema.TABLES
+            WHERE table_schema = DATABASE() AND table_name = 'mica_battery'`
+        )
+      )
+    ],
+    [true, true, [], ['0001_phone_numbers_follow_the_phone'], 0]
+  );
+};
+
 const main = async () => {
   let container;
   let connection;
@@ -3853,6 +3986,20 @@ const main = async () => {
         ledger
       });
     }
+
+    // MICA-389. A half-created database, finished by `micaschema apply` alone, on both shapes.
+    await runApplyFinishesHalfCreated({
+      connection,
+      schemaFile: 'mica.sql',
+      hasPlayers: true,
+      server
+    });
+    await runApplyFinishesHalfCreated({
+      connection,
+      schemaFile: 'mica.esx.sql',
+      hasPlayers: false,
+      server
+    });
 
     if (checksRun < MINIMUM_CHECKS) {
       throw new Error(

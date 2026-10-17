@@ -191,8 +191,9 @@ describe('a database that already has micaOS tables', () => {
     const said = errors().filter((line) => line.includes('may be half-created'));
     expect(said).toHaveLength(1);
     expect(said[0]).toContain(`1 table(s) micaOS needs are missing (${added})`);
-    expect(said[0]).toContain('import mica.sql');
-    expect(said[0]).toContain("run 'micaschema apply'");
+    // MICA-389: `micaschema apply` alone finishes it, so nothing says to import a file first.
+    expect(said[0]).toContain("To finish it: run 'micaschema apply' from the server console");
+    expect(said[0]).not.toMatch(/import mica/);
     expect(db.statements).toEqual([]);
   });
 });
@@ -340,7 +341,10 @@ describe('a fresh database', () => {
     expect(outcome.reason).toBe('concurrent-create');
     expect(sleeps).toBe(60);
     expect(outcome.message).toContain('another server is creating');
-    expect(outcome.message).toContain('import mica.sql');
+    expect(outcome.message).toContain(
+      "To finish it: run 'micaschema apply' from the server console"
+    );
+    expect(outcome.message).not.toMatch(/import mica/);
     expect(creates()).toHaveLength(1);
   });
 
@@ -377,7 +381,10 @@ describe('a fresh database', () => {
         "Can't create table (errno: 150). Stopped there; the migrations ledger was not seeded."
     );
     expect(outcome.message).toContain('now half-created');
-    expect(outcome.message).toContain('import mica.sql');
+    expect(outcome.message).toContain(
+      "To finish it: run 'micaschema apply' from the server console"
+    );
+    expect(outcome.message).not.toMatch(/import mica/);
 
     // And the next start, no longer on a fresh database, says what it left and never resumes it.
     db.failOn = null;

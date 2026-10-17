@@ -74,11 +74,15 @@ const JOBS_HELD =
   "micaOS's start-up jobs (schema reports, sweeps, retention, invoice expiry) do not run " +
   'until it is fixed and micaOS restarted.';
 
-/** The way out of a half-created database, which no start of micaOS resumes. */
-const finishByHand = (file: string): string =>
-  `To finish it: import ${file} into this database (its CREATE TABLE IF NOT EXISTS creates ` +
-  "only what is missing and records nothing), run 'micaschema apply' from the server console, " +
-  'then restart micaOS.';
+/**
+ * The way out of a half-created database, which no start of micaOS resumes: `micaschema apply`
+ * alone. It runs every migration over the tables there are, each a no-op on a table already in
+ * its final shape or missing altogether, then creates every missing table (MICA-388, MICA-389).
+ * `test:migrations` stops the create at every table, on both shapes, and finishes each this way.
+ */
+const finishByHand = (): string =>
+  "To finish it: run 'micaschema apply' from the server console (it runs the migrations, " +
+  'then creates only the missing tables), then restart micaOS.';
 
 const realSleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 let sleep: (ms: number) => Promise<void> = realSleep;
@@ -187,8 +191,6 @@ const checkExisting = async (): Promise<SchemaOutcome> => {
   if (missing.length === 0) return { kind: 'existing' };
 
   const shown = missing.slice(0, 5).join(', ') + (missing.length > 5 ? ', …' : '');
-  const known = ownerTableKnown();
-  const file = known === null ? EITHER_FILE : SHAPE_FILE[shapeOf(known)];
   console.error(
     `[mica] this database may be half-created: ${SCHEMA_MIGRATIONS_TABLE} exists with no ` +
       `migration recorded, and ${missing.length} table(s) micaOS needs are missing (${shown}). ` +
@@ -196,7 +198,7 @@ const checkExisting = async (): Promise<SchemaOutcome> => {
       'that re-imported mica.sql and has since gained a table; micaOS creates nothing in a ' +
       'database that already has its tables. (If another server sharing this database is ' +
       'creating it right now, restart this one once that server has started.) ' +
-      finishByHand(file)
+      finishByHand()
   );
   return { kind: 'existing' };
 };
@@ -211,7 +213,7 @@ const awaitOwnerTable = async (): Promise<boolean | null> => {
 };
 
 /** Another server took the ledger. Wait for its seed, which it writes last. */
-const awaitOtherServer = async (file: string): Promise<SchemaOutcome> => {
+const awaitOtherServer = async (): Promise<SchemaOutcome> => {
   const tables = bootstrapTables();
   const seeded = shippedMigrationIds().length > 0;
   for (let poll = 0; poll < WAIT_POLLS; poll++) {
@@ -236,7 +238,7 @@ const awaitOtherServer = async (file: string): Promise<SchemaOutcome> => {
       `${SCHEMA_MIGRATIONS_TABLE} appeared after this one found the database empty, and its ` +
       `seed did not follow within ${WAIT_POLLS}s, so micaOS created nothing. If that server's ` +
       'create stopped part-way, this database is half-created. ' +
-      `${finishByHand(file)} ${JOBS_HELD}`
+      `${finishByHand()} ${JOBS_HELD}`
   );
 };
 
@@ -300,13 +302,13 @@ const createFresh = async (): Promise<SchemaOutcome> => {
           'there; the migrations ledger was not seeded.'
       );
 
-      if (i === 0 && errno === 1050) return awaitOtherServer(file);
+      if (i === 0 && errno === 1050) return awaitOtherServer();
 
       const after =
         i === 0
           ? 'Nothing was created.'
           : `${i} of ${total} statement(s) ran first, so this database is now half-created. ` +
-            finishByHand(file);
+            finishByHand();
 
       if (errno === 1142) {
         return refuse(

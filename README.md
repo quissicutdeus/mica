@@ -310,9 +310,9 @@ source" below, which is for changing the phone rather than running it.
      automatically.** Updates that change the schema go through
      `micaschema apply`, below.
    - **If the create stops part-way** (it logs the table and the error, and
-     records no migration), import the matching file below, run
-     `micaschema apply` from the server console, then restart micaOS. Its
-     `CREATE TABLE IF NOT EXISTS` creates only what is missing.
+     records no migration), run `micaschema apply` from the server console, then
+     restart micaOS. It runs the migrations and then creates only the tables
+     still missing (MICA-388, MICA-389).
    - **To import by hand instead**, `set mica_auto_schema 0` and import
      [`mica.sql`](mica.sql) on qbx_core or qb-core, or
      [`mica.esx.sql`](mica.esx.sql) on es_extended or standalone. On a qb core
@@ -345,9 +345,10 @@ source" below, which is for changing the phone rather than running it.
    in an empty database, micaOS applies no schema changes automatically:
    `micaschema` in the server console reports any difference between the
    database and what the code expects, and `micaschema apply` — console-only —
-   applies the safe, additive half of that difference plus any pending versioned
-   migration. A rename, a retype or a drop still needs its migration written and
-   reviewed first; `apply` only ever runs migrations that already exist in
+   applies any pending versioned migration and then the safe, additive half of
+   that difference: missing tables first, then missing columns and indexes. A
+   rename, a retype or a drop still needs its migration written and reviewed
+   first; `apply` only ever runs migrations that already exist in
    `server/migrations/`.
 
    **Resetting the schema during development:** `pnpm generate:sql:reset`

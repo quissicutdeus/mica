@@ -87,5 +87,5 @@ line here.
 - [Replay captured dbMock SQL on MariaDB](replay-captured-sql-on-mariadb.md) —
   dump calls from a temp suite copy; a fake-world id fails an FK, not the code
 - [apply runs migrations before it creates a missing table](apply-runs-migrations-before-creates.md)
-  — MICA-388; 0001/0003 ALTER unguarded (0005 returns), so half-created still
-  imports first
+  — MICA-388/389; a new migration must check its table exists, or the
+  half-created sweep fails

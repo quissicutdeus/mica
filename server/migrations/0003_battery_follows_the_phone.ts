@@ -9,6 +9,16 @@ import { Database } from '../lib/Database';
 const TABLE = 'mica_battery';
 const PHONES = 'mica_phones';
 
+/** Migrations do not share code; this is a copy on purpose, as 0011's is. */
+const hasTable = async (table: string): Promise<boolean> =>
+  Number(
+    await Database.scalar<number>(
+      `SELECT COUNT(*) FROM information_schema.TABLES
+        WHERE table_schema = DATABASE() AND table_name = ?`,
+      [table]
+    )
+  ) > 0;
+
 const hasColumn = async (table: string, column: string): Promise<boolean> => {
   const count = await Database.scalar<number>(
     `SELECT COUNT(*) FROM information_schema.COLUMNS
@@ -57,6 +67,11 @@ export const migration: Migration = {
     `no phone, puts every row on its owner's phone, and swaps citizenid_unique for ` +
     `phone_id_unique — two phones hold two charges`,
   up: async () => {
+    // MICA-389: no table, nothing to move. An empty ledger beside a missing `mica_battery`
+    // (a first-start create that stopped part-way) reaches here before `micaschema apply`'s
+    // create pass, which then makes the table in its final shape, as a fresh install has it.
+    // Recorded as applied like any other run, since that shape is past this migration.
+    if (!(await hasTable(TABLE))) return;
     // MICA-344: `device_id` is what 0008 renamed this column to, so a table carrying it is past
     // this migration — renamed after it ran, or created in the final shape with no ledger.
     if (await hasColumn(TABLE, 'device_id')) return;

@@ -15,8 +15,10 @@ import { migration } from '../migrations/0003_battery_follows_the_phone';
  * MICA-283's migration, as text. `pnpm test:migrations` runs it against a real MariaDB on
  * both framework shapes; this pins the ordering and the guards between runs of that.
  */
+/** A table is there unless named `false` (MICA-389). */
 const live = (present: Record<string, boolean>) => {
   dbMock.scalar.mockImplementation(async (sql: string, params: unknown[]) => {
+    if (/information_schema\.TABLES/.test(sql)) return present[String(params[0])] === false ? 0 : 1;
     if (/information_schema\.COLUMNS/.test(sql))
       return present[`${params[0]}.${params[1]}`] ? 1 : 0;
     if (/information_schema\.STATISTICS/.test(sql))
@@ -36,6 +38,21 @@ beforeEach(() => {
 describe('0003_battery_follows_the_phone', () => {
   it('is named for its file', () => {
     expect(migration.id).toBe('0003_battery_follows_the_phone');
+  });
+
+  /**
+   * MICA-389: an empty ledger beside a missing table, which a first-start create that stopped
+   * part-way leaves. An `ALTER` there stopped `micaschema apply` before its create pass.
+   */
+  it('does nothing at all where the table does not exist, no mint included', async () => {
+    live({ mica_battery: false });
+
+    await expect(migration.up()).resolves.toBeUndefined();
+
+    expect(ran()).toEqual([]);
+    expect(dbMock.scalar).toHaveBeenCalledTimes(1);
+    expect(String(dbMock.scalar.mock.calls[0][0])).toMatch(/information_schema\.TABLES/);
+    expect(dbMock.scalar.mock.calls[0][1]).toEqual(['mica_battery']);
   });
 
   it('adds the column and key, mints, backfills, then swaps the unique key — add before drop', async () => {

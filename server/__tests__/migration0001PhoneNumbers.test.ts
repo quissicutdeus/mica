@@ -22,9 +22,15 @@ import { migration } from '../migrations/0001_phone_numbers_follow_the_phone';
  * the ordering and the guards from regressing between runs of that.
  */
 
-/** What `information_schema` answers for each probe, keyed on the identifier asked about. */
+/**
+ * What `information_schema` answers for each probe, keyed on the identifier asked about. A table
+ * is there unless named `false` (MICA-389).
+ */
 const live = (present: Record<string, boolean>) => {
   dbMock.scalar.mockImplementation(async (sql: string, params: unknown[]) => {
+    if (/information_schema\.TABLES/.test(sql)) {
+      return present[String(params[0])] === false ? 0 : 1;
+    }
     if (/information_schema\.COLUMNS/.test(sql)) {
       const [table, column] = params as string[];
       return present[`${table}.${column}`] ? 1 : 0;
@@ -49,6 +55,21 @@ beforeEach(() => {
 describe('0001_phone_numbers_follow_the_phone', () => {
   it('is named for its file, so the ledger and the barrel agree', () => {
     expect(migration.id).toBe('0001_phone_numbers_follow_the_phone');
+  });
+
+  /**
+   * MICA-389: an empty ledger beside a missing table, which a first-start create that stopped
+   * part-way leaves. An `ALTER` there stopped `micaschema apply` before its create pass.
+   */
+  it('does nothing at all where the table does not exist, seed included', async () => {
+    live({ mica_phone_numbers: false, 'players.charinfo': true });
+
+    await expect(migration.up()).resolves.toBeUndefined();
+
+    expect(ran()).toEqual([]);
+    expect(dbMock.scalar).toHaveBeenCalledTimes(1);
+    expect(String(dbMock.scalar.mock.calls[0][0])).toMatch(/information_schema\.TABLES/);
+    expect(dbMock.scalar.mock.calls[0][1]).toEqual(['mica_phone_numbers']);
   });
 
   it('adds the column and its key, seeds from charinfo, and drops citizenid_unique last', async () => {
@@ -125,6 +146,7 @@ describe('0001_phone_numbers_follow_the_phone', () => {
     live({ 'players.charinfo': true });
     // Counts, in the order the migration asks: rows before, eligible characters, rows after.
     dbMock.scalar
+      .mockResolvedValueOnce(1) // the table (MICA-389)
       .mockResolvedValueOnce(0) // device_id column (MICA-344)
       .mockResolvedValueOnce(0) // phone_id column
       .mockResolvedValueOnce(0) // phone_id_unique

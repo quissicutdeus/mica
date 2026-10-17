@@ -1336,6 +1336,15 @@ of telling you to import `mica.sql`. If you ran `apply` for an earlier release
 that added a table, run it again: it creates whatever is still missing and
 changes nothing else.
 
+**`micaschema apply` alone now finishes a first-start create that stopped
+part-way (MICA-389).** Migrations 0001, 0002 and 0003 used to stop on a table
+that did not exist yet, so `apply` failed before it reached the tables it now
+creates. They now skip a missing table, still record themselves, and leave the
+create to build it in its current shape. A database with `mica_contacts` but no
+`device_id` column and no `mica_phones`, as an old re-import leaves it, still
+stops at 0002 as before. The start-up message for a half-created database now
+says to run `micaschema apply` and restart, not to import `mica.sql` first.
+
 **A text into a 1:1 nobody else is in is refused, and the thread says so
 (MICA-349).** After the other side left a 1:1, or was taken out of it by a
 privacy delete, or when a 1:1 was started to a number nobody holds, a text typed
