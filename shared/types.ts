@@ -472,6 +472,12 @@ export interface Report {
   /** Denormalised at review time so the queue survives the content disappearing. */
   target_preview?: string;
   target_author?: string;
+  /**
+   * The name the reporter goes by where the content was, written by the server when the
+   * reported service knows one (MICA-254: the reporter's alias in a Dark Chat channel). Never
+   * from the payload, and null for a service that has no such name.
+   */
+  reporter_label?: string | null;
   status?: 'active' | 'deleted';
   created_at: Date | string;
   updated_at: Date | string;
