@@ -11,7 +11,7 @@ pnpm workspace, three build targets:
 | Game server | `server/` | esbuild via `build/build-bundle.js` | FiveM server                         |
 | UI          | `web/`    | Vite                                | CEF **and** a plain browser — see §6 |
 
-Node 26 · Svelte **5** · Vite 8 · Vitest 4 · Playwright 1.x TypeScript is
+Node 26 · Svelte **5** · Vite 8 · Vitest 5 · Playwright 1.x TypeScript is
 **split by package** — see §3. Exact versions: `pnpm list`. `@citizenfx/client`
 and `@citizenfx/server` are **pinned exactly, no caret** — leave them that way.
 
