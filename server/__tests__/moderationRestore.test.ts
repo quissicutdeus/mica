@@ -34,6 +34,7 @@ import '../services/Media';
 import '../services/Accounts';
 import '../services/Blabber';
 import '../services/BlabberDms';
+import '../services/DarkchatMessages';
 import '../services/Glimpse';
 import '../services/GlimpseComments';
 import '../services/Marketplace';
@@ -243,12 +244,13 @@ const moderate = (id: number) => call('resolve', { id, action: 'moderate' });
 const reopen = (id: number) => call('reopen', { id });
 
 describe('a reopen puts back what the takedown replaced (MICA-386)', () => {
-  it('declares the eight reportable tables this suite walks', () => {
+  it('declares the nine reportable tables this suite walks', () => {
     // A loop over an empty registry asserts nothing, so the count is the first assertion.
     expect(Object.keys(REPORTABLE()).sort()).toEqual([
       'mica_accounts',
       'mica_blabber',
       'mica_blabber_dms',
+      'mica_darkchat_messages',
       'mica_glimpse',
       'mica_glimpse_comments',
       'mica_marketplace',
@@ -453,6 +455,8 @@ describe('a takedown with no record of what it replaced (MICA-386)', () => {
   const FALLBACK: Record<string, string> = {
     mica_accounts: 'active',
     mica_blabber_dms: 'active',
+    // A Dark Chat message leaves only by its window, a hard delete (MICA-254).
+    mica_darkchat_messages: 'active',
     mica_marketplace: 'removed',
     mica_blabber: 'deleted',
     mica_glimpse: 'deleted',

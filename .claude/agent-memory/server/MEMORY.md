@@ -89,3 +89,5 @@ line here.
 - [apply runs migrations before it creates a missing table](apply-runs-migrations-before-creates.md)
   — MICA-388/389; a new migration must check its table exists, or the
   half-created sweep fails
+- [The sealed-SQL guard cannot see an interpolated table](sealed-sql-guard-needs-a-literal-table.md)
+  — `${TABLE}` hides a body read from encryptedColumns.test; name it literally

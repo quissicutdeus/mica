@@ -54,6 +54,11 @@ its one-line summary.
   `grep -E "a|b"` beside a gate drops the batch; filter logs with `-e` flags
 - [`__resetAppEvents` wipes module subscribers](reset-app-events-wipes-module-subscribers.md)
   — import-time subscribers never re-register; drain with `clearAppEvents`
+- [No `<form>` submit in an add-on](no-form-submit-in-addon-frame.md) — the
+  frame lacks `allow-forms`; the handler silently never runs; click + Enter
+- [A union state does not narrow in `{:else if}`](svelte-template-union-narrowing.md)
+  — passes typecheck, fails `lint:web`; split the state. `ReportDialog` needs
+  `reports` + `notifications`
 - [A new app trips two pins](new-app-trips-two-pins.md) — appContract `APPS` row
   and the computed-class ratchet (Icon `class={className}`); `run()` answers a
   boolean

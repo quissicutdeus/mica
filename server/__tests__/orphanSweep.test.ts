@@ -100,6 +100,7 @@ const REPORTABLE_TABLES = [
   'mica_accounts',
   'mica_blabber',
   'mica_blabber_dms',
+  'mica_darkchat_messages',
   'mica_glimpse',
   'mica_glimpse_comments',
   'mica_marketplace',

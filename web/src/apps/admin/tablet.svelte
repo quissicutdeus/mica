@@ -177,7 +177,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         {@const report = selected}
         <div class="space-y-4">
           <div class="bg-surface-container text-body-medium rounded-box p-4">
-            <ReportPreview preview={report.target_preview} note={report.note} />
+            <ReportPreview
+              preview={report.target_preview}
+              note={report.note}
+              reporterLabel={report.reporter_label}
+            />
           </div>
 
           <div class="space-y-1">
@@ -189,7 +193,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               {labelFor(report)}
             </p>
             <p class="text-on-surface-variant text-body-small">
-              {$t('admin.reporter')}: {report.target_author || `#${report.id}`}
+              {$t('admin.author')}: {report.target_author || `#${report.id}`}
             </p>
             <p class="text-on-surface-variant text-body-small">
               {tab === 'pending'

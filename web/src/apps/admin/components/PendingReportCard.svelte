@@ -41,7 +41,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   </div>
 
   <div class="border-outline-variant border-t px-4 py-3">
-    <ReportPreview preview={report.target_preview} note={report.note} />
+    <ReportPreview
+      preview={report.target_preview}
+      note={report.note}
+      reporterLabel={report.reporter_label}
+    />
   </div>
 
   <div class="bg-surface-container-high grid grid-cols-2 gap-px">

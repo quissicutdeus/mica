@@ -40,7 +40,28 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   let { targetTable, targetId, appId, onclose }: Props = $props();
 
   const { submit: submitReport } = useReport();
-  const { toast } = usePhoneNotification();
+  const { toast, sendNotification } = usePhoneNotification();
+
+  /**
+   * Tells the player how the report went, in whichever way this side of the wall can.
+   *
+   * In-process `toast` is the shell's store and has `show`, which puts `appId`'s icon on the
+   * toast. In a `core: false` add-on's frame `toast` is a read-only twin with no `show` at
+   * all, and calling it threw after the report had already gone (MICA-254). It stays absent
+   * on purpose: `show` takes an `app`, and a frame choosing that could wear another app's
+   * icon. `sendNotification` is the member the frame is already answered on, and it takes no
+   * `app`, so the frame's toast carries no app identity and claims none. It is async over the
+   * wire, and a refusal there must not escape into the submit that already succeeded.
+   */
+  const tell = (type: 'success' | 'error', message: string) => {
+    if (typeof toast.show === 'function') {
+      toast.show({ type, app: appId, message });
+      return;
+    }
+    Promise.resolve()
+      .then(() => sendNotification({ type, message }))
+      .catch((e: unknown) => console.warn('[micaOS] The report notice could not be shown.', e));
+  };
 
   // The key, not the word: this list is module-level and would otherwise freeze whichever
   // locale happened to be active when the component first ran.
@@ -71,10 +92,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     sending = true;
     try {
       await submitReport({ targetTable, targetId, category, note: note.trim() || undefined });
-      toast.show({ type: 'success', app: appId, message: $t('ui.reportSent') });
+      tell('success', $t('ui.reportSent'));
       onclose();
     } catch (e) {
-      toast.show({ type: 'error', app: appId, message: messageOf(e, $t('ui.reportFailed')) });
+      tell('error', messageOf(e, $t('ui.reportFailed')));
     } finally {
       sending = false;
     }

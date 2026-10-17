@@ -27,6 +27,13 @@ export interface ReportableDefinition {
   label: string;
   /** The column to excerpt. Must exist on the table, alongside `citizenid` and `status`. */
   previewColumn: string;
+  /**
+   * What the reporter was called where they saw the row, when that is not their character
+   * (MICA-254): an alias in a Dark Chat channel. Asked once the report has passed its
+   * visibility check, and written to `mica_reports.reporter_label`, so staff read who reported
+   * it as the room knew them. Null when there is nothing to say.
+   */
+  reporterLabel?: (targetId: number, citizenid: string) => Promise<string | null>;
 }
 
 /**

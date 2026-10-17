@@ -422,10 +422,12 @@ the names are listed.
 `SendMessage` allows 120 calls a minute from each resource and answers
 `rate_limited` past that (`rateLimited` in `server/lib/exports.ts`). The threat
 it answers is a stuck loop in a well-meaning script, which the per-source
-limiter in `rateLimit.ts` cannot see: an export has no source. Nothing else at
-this boundary is limited, deliberately: a hostile resource is out of scope, and
-a bug that calls `SendNotification` in a loop costs a notification row per call
-where a text costs a thread, a participant and a push.
+limiter in `rateLimit.ts` cannot see: an export has no source. `PostToDarkChat`
+allows 30 a minute (MICA-254), for the same reason: every line it writes is
+pushed to each live member of a channel. Nothing else at this boundary is
+limited, deliberately: a hostile resource is out of scope, and a bug that calls
+`SendNotification` in a loop costs a notification row per call where a text
+costs a thread, a participant and a push.
 
 **`RegisterService` makes another resource answer player calls (MICA-308)**, and
 that resource is trusted the same way as any other here. What micaOS still
@@ -577,6 +579,60 @@ Four edges, each chosen rather than overlooked:
 
 **Lose the key and every body sealed with it is gone.** Back the key file up
 somewhere that is not the database backup.
+
+## Dark Chat: anonymous to players, not to staff
+
+Dark Chat (MICA-254) hides who is who from the other members of a channel. It
+does not hide anything from the server or from its staff, and it is not meant
+to.
+
+**What a member sees** is the channel's name, the aliases of its live members,
+and each message with its alias, its time and whether a script posted it. The
+owner sees the join code as well, and only the owner learns that they own the
+channel. No projection, push or error carries a citizenid, a phone number, an
+account handle, a member's join time, who owns the channel, or which other
+channels a member is in. A member is named to others by a random handle, never
+by its row id, which is a global sequence and would rank members by when they
+joined, mark the owner as the earliest, and tie together two aliases one player
+took in two channels one after the other. Membership is checked on the server
+for every read and write through `access.membership`, and a member who leaves or
+is removed stops reading at once, because their row's `left_at` is set. Blocks
+do not apply inside a channel: honouring one would tell the blocked player who
+blocked them.
+
+**What staff see.** A report from inside a channel records what every report
+does, the reporter's citizenid and the reported message's author citizenid
+(`target_author`), plus the reporter's alias in that channel (`reporter_label`),
+and Admin shows the alias, and on the tablet the author's citizenid. A report
+forwarded to Discord names the reporter's citizenid, as every forwarded report
+does. The excerpt a report stores outlives the message, as it does for every
+report. Staff cannot read a channel's history through Admin, only the reported
+message. A line a script posted cannot be reported: its row is owned by the
+channel's owner, so a report would name the owner as its author.
+
+**What the database holds.** Every member row and message row carries its
+player's citizenid, because ownership is how every micaOS table is authorized
+and swept. A message body is sealed under the content key when one is set
+(above), bound to its channel. A message is deleted permanently once it is past
+`mica_darkchat_retention` (24 hours by default, with no off switch), except one
+under an open report, which waits for the report to be resolved. The same sweep
+deletes the row that ties a member's alias to their citizenid once they have
+left and the window has passed, and a closed channel once nobody's row is left
+in it. A `removed` member's row is kept while the channel lives, because it is
+what stops them joining again. Every read filters to the window, so a row the
+sweep has not reached yet is never shown, and the player data export filters the
+same way. The export leaves out the join code, which is a credential for the
+channel, not the player's data.
+
+**Accepted.** Anyone with database access can tie an alias to a player while
+that player is in the channel, until the window after they leave, and for as
+long as a removed member's row is kept. The failed-join limit (ten wrong codes
+in ten minutes per character) lives in memory, so a server restart resets it; a
+code is eight characters from a 31-character alphabet, far beyond what that
+buys. When a character is deleted by the framework rather than through Settings,
+a channel it owned keeps a dead owner: its members still talk, but nobody can
+read or replace the code or remove a member. Membership follows the character,
+not the phone, so a burner phone handed to someone else carries no channels.
 
 ## Accepted risks
 

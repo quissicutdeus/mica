@@ -52,4 +52,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   >
     {isImage(report.target_preview) ? $t('admin.photo') : report.target_preview || '—'}
   </p>
+  {#if report.reporter_label}
+    <p class="text-on-surface-variant text-body-small truncate px-4 pb-2">
+      {$t('admin.reporterAlias')}: {report.reporter_label}
+    </p>
+  {/if}
 </div>

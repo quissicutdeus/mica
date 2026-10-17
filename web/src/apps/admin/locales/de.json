@@ -30,7 +30,8 @@
   "categoryOther": "Sonstiges",
   "resolutionActioned": "Inhalt entfernt",
   "resolutionDismissed": "Keine Maßnahme ergriffen",
-  "reporter": "Gemeldet von",
+  "author": "Verfasst von",
+  "reporterAlias": "Alias der meldenden Person",
   "selectReport": "Meldung auswählen",
   "selectReportHint": "Wähle links eine Meldung aus, um sie zu prüfen."
 }

@@ -279,6 +279,31 @@ const EXPORTED_COLUMNS: Record<string, { plain: string[]; sized: string[]; withh
     sized: [],
     withheld: []
   },
+  mica_darkchat: {
+    plain: ['id', 'status', 'created_at', 'updated_at', 'name'],
+    sized: [],
+    // MICA-254: a key to a room other people speak in.
+    withheld: ['code']
+  },
+  mica_darkchat_members: {
+    plain: ['id', 'channel_id', 'alias', 'status', 'left_at', 'created_at'],
+    sized: [],
+    withheld: ['handle', 'alias_key', 'live_citizen']
+  },
+  mica_darkchat_messages: {
+    plain: [
+      'id',
+      'status',
+      'created_at',
+      'updated_at',
+      'channel_id',
+      'author_member_id',
+      'bot_alias',
+      'body'
+    ],
+    sized: [],
+    withheld: []
+  },
   mica_glimpse: {
     plain: ['id', 'status', 'created_at', 'updated_at', 'account_id', 'caption'],
     sized: [],
@@ -484,7 +509,8 @@ const EXPORTED_COLUMNS: Record<string, { plain: string[]; sized: string[]; withh
       'target_id',
       'category',
       'note',
-      'resolution'
+      'resolution',
+      'reporter_label'
     ],
     sized: [],
     withheld: ['target_preview', 'target_author', 'target_prior_status']
@@ -515,7 +541,11 @@ describe('privacy:export', () => {
     // The moderation ledger is a record about the player, not theirs to take away.
     expect(selects().some((c: any[]) => String(c[0]).includes(AUDIT_LOG_TABLE))).toBe(false);
     expect(reply.categories.map((c: any) => c.category)).not.toContain('audit_logs');
-    for (const c of selects()) expect(c[1]).toEqual(['CIT_A', ROW_CAP + 1]);
+    for (const c of selects()) {
+      // Dark Chat's messages carry their window between the two (MICA-254).
+      const windowed = String(c[0]).includes('`mica_darkchat_messages`');
+      expect(c[1]).toEqual(windowed ? ['CIT_A', 24, ROW_CAP + 1] : ['CIT_A', ROW_CAP + 1]);
+    }
     expect(reply.categories.map((c: any) => c.category)).toContain('notes');
     // The id is all the server sends; the web labels it (`privacyLabels.test.ts`).
     expect(Object.keys(reply.categories[0]).toSorted()).toEqual([

@@ -71,6 +71,7 @@ describe('unique keys and soft deletes (MICA-321)', () => {
         'blabber',
         'blocklist',
         'conversations',
+        'darkchat',
         'devices',
         'highscores',
         'hodlr',

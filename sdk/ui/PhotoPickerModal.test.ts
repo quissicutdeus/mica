@@ -14,7 +14,9 @@ import type { MediaItem, MediaPreview } from '@mica/shared/types';
 
 const picker = vi.hoisted(() => ({
   full: null as Partial<MediaItem> | null,
-  toast: { show: vi.fn() }
+  toast: { show: vi.fn() },
+  phoneNotification: null as null | (() => unknown),
+  remoteCall: vi.fn(async (..._args: unknown[]): Promise<unknown> => 'toast-1')
 }));
 
 vi.mock('../host/useMedia', async () => {
@@ -27,8 +29,18 @@ vi.mock('../host/useMedia', async () => {
   };
 });
 vi.mock('../host/usePhoneNotification', () => ({
-  usePhoneNotification: () => ({ toast: picker.toast })
+  usePhoneNotification: () => picker.phoneNotification?.() ?? { toast: picker.toast }
 }));
+// The wire under the iframe twin, for the frame case: a call is a spy, a store its seed.
+vi.mock('../host/iframe/remote', async (importOriginal) => {
+  const { readable } = await import('svelte/store');
+  return {
+    ...(await importOriginal<typeof import('../host/iframe/remote')>()),
+    remoteCall: picker.remoteCall,
+    remoteStore: (_facet: string, _args: unknown, _member: string, initial: unknown) =>
+      readable(initial)
+  };
+});
 
 import PhotoPickerModal from './PhotoPickerModal.svelte';
 
@@ -41,6 +53,8 @@ import PhotoPickerModal from './PhotoPickerModal.svelte';
 describe('PhotoPickerModal single-select', () => {
   beforeEach(() => {
     picker.toast = { show: vi.fn() };
+    picker.phoneNotification = null;
+    picker.remoteCall.mockClear();
     vi.spyOn(console, 'warn').mockImplementation(() => {});
   });
 
@@ -65,6 +79,24 @@ describe('PhotoPickerModal single-select', () => {
   ])('refuses %s, and says so', async (data) => {
     const onselect = await pickTheOnlyPhoto(data);
     await waitFor(() => expect(picker.toast.show).toHaveBeenCalled());
+    expect(onselect).not.toHaveBeenCalled();
+  });
+
+  /**
+   * MICA-254. An add-on frame's `toast` is a read-only twin with no `show`, deliberately, so a
+   * refused photo used to throw inside the `catch` meant to report it. It says so through
+   * `sendNotification` instead, which names no app.
+   */
+  it("says so from an add-on's frame too, with no app named", async () => {
+    const twin = await import('../host/iframe/facets/phoneNotification');
+    picker.phoneNotification = twin.phoneNotification;
+    const onselect = await pickTheOnlyPhoto('https://logger.attacker.example/p.png');
+    await waitFor(() =>
+      expect(picker.remoteCall).toHaveBeenCalledWith('phoneNotification', [], 'sendNotification', {
+        type: 'error',
+        message: 'That photo could not be loaded. Try another.'
+      })
+    );
     expect(onselect).not.toHaveBeenCalled();
   });
 });

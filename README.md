@@ -103,6 +103,13 @@ for players and seamless framework integration for server developers.
   Handles are separate from Blabber's, and the owning `citizenid` never reaches
   another reader. A caption stays editable for 15 minutes —
   `mica_glimpse_edit_window`. Installs from the Store.
+- **Dark Chat** _(add-on)_: Anonymous channels joined by an eight-character
+  code. Each member picks an alias per channel, and no name, handle or phone
+  number is ever shown. The creator owns the channel: they can read and replace
+  its code and remove members, and if they leave, the longest-standing member
+  takes over. Messages are deleted after `mica_darkchat_retention` hours, a
+  member can report another's message to Admin, and a job script can post into a
+  channel with `PostToDarkChat`. Installs from the Store.
 - **Marketplace**: Peer-to-peer classified listings — a feed with debounced
   search, a detail screen that can Call, Text or Report the seller, a create
   form capped at four photos, and a My Listings screen to mark sold or remove.
@@ -785,6 +792,7 @@ set mica_media_image_host ""
 set mica_media_delete_url ""
 set mica_message_retention 180
 set mica_dm_retention 90
+set mica_darkchat_retention 24
 set mica_content_key_file ""
 set mica_orphan_owner_table ""
 setr mica_addon_hosts ""
@@ -848,6 +856,7 @@ set mica_location_interval 5
 | `mica_media_delete_url`            | https URL with `{url}` or `{name}`                      | empty (off)                         | Endpoint sent `DELETE` for a hosted photo once no row names it                                                                        |
 | `mica_message_retention`           | integer, days, or `off`                                 | `180`                               | How long text messages are kept                                                                                                       |
 | `mica_dm_retention`                | integer, days, or `off`                                 | `90`                                | How long Blabber direct messages are kept                                                                                             |
+| `mica_darkchat_retention`          | integer, hours, at least 1                              | `24`                                | How long a Dark Chat message is kept; there is no off switch                                                                          |
 | `mica_content_key_file`            | absolute file path                                      | empty (off)                         | Key file that seals message, DM and mail bodies at rest (`set`, never `setr`); see below                                              |
 | `mica_orphan_owner_table`          | `table.column`                                          | empty (off)                         | Overrides which table the orphan sweep checks against                                                                                 |
 | `mica_addon_hosts`                 | hostname list                                           | `mica.gg` when the catalog is unset | Hosts a Store add-on may be fetched from; the catalog's host is always among them                                                     |
@@ -1136,6 +1145,14 @@ the convar is invisible until the resource restarts.
   `retention:<table>:<days>d` rows in `mica_schema_migrations`; deleting one
   restarts that table's notice. Run `micamedia` first to see how large the media
   table is.
+- **`mica_darkchat_retention` — Dark Chat's window, in hours (24) (MICA-254).**
+  A Dark Chat message older than the window is never shown and is deleted
+  permanently by a sweep every 15 minutes, 500 rows at a time. Unlike the
+  content-retention convars above, it has no `0` or `off` and no first-start
+  notice: a value that is not a whole number of hours of at least one warns and
+  uses 24. A message under an open report is kept until the report is resolved,
+  and never reaches the player data export once it is past the window. Read on
+  every use, so a change takes effect without a restart.
 - **`mica_content_key_file` — message, DM and mail bodies encrypted at rest
   (MICA-165).** The path of a key file, never a key: `server.cfg` is the file
   that travels with a database dump. **The file has to sit inside a resource
@@ -1846,6 +1863,7 @@ MICA-264).
 | `RegisterService(declaration, handlers)`           | —                      | Gives your Store add-on a server half: micaOS answers its `useService` calls with your handlers. See below                |
 | `UnregisterService(id)`                            | —                      | Takes it down. Only the resource that registered it may                                                                   |
 | `PushToApp(id, citizenid, event, payload, notify)` | citizenid              | Pushes to your add-on on those players' phones; `citizenid` may be a list                                                 |
+| `PostToDarkChat(code, alias, body)`                | —                      | Posts a line into the live Dark Chat channel `code` opens, signed `alias` and badged as a script's. See below             |
 
 **citizenid or source, and it matters which.** Anything that must work while the
 player is offline takes a citizenid; anything inherently live takes a source. No
@@ -1874,6 +1892,22 @@ rate limited per calling resource at 120 a minute, answering `rate_limited` past
 that. The player can reply in the thread; nothing is delivered anywhere for a
 reply yet, so a script that wants to hear back registers the number and takes
 calls, or reads the thread it created.
+
+**`PostToDarkChat` speaks as a script, never as a member.** A dealer's restock
+bot or a gang's lookout posts into a Dark Chat channel by its join code:
+
+```lua
+local result = exports['mica']:PostToDarkChat('K7QX2MPV', 'Lookout', 'Patrols doubled tonight.')
+-- result.value = { messageId = 512 }
+```
+
+The line is badged as a script's in the app and cannot be reported. It is
+refused with `invalid_args` for a code no live channel has, for an alias a
+member of that channel goes by (compared ignoring case), and for an empty or
+over-long alias (24 characters) or body (500); with `app_disabled` when Dark
+Chat is switched off; and with `rate_limited` past 30 calls a minute from your
+resource. A replaced code stops working here as it does for players. The line
+expires with the channel's other messages.
 
 **`AddMedia` is how anything but a photo gets in.** The camera only ever
 produces a `photo`, so the other six kinds — `video`, `audio`, `gif`, `sticker`,

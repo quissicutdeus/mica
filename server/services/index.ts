@@ -11,6 +11,8 @@ import './Capabilities';
 import './Contacts';
 import './ContentKeys';
 import './Conversations';
+import './Darkchat';
+import './DarkchatMessages';
 import './Devices';
 import './Glimpse';
 import './GlimpseComments';

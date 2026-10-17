@@ -51,6 +51,7 @@ import '../services/Media';
 import '../services/Accounts';
 import '../services/Blabber';
 import '../services/BlabberDms';
+import '../services/DarkchatMessages';
 import '../services/Glimpse';
 import '../services/GlimpseComments';
 import '../services/Marketplace';
@@ -278,6 +279,8 @@ describe('a report is only of something the reporter can see', () => {
     blabAttachments?: { blab_id: number; media_id: number }[];
     listingAttachments?: { listing_id: number; media_id: number }[];
     glimpseAttachments?: { post_id: number; media_id: number }[];
+    /** `[channel_id, citizenid]` pairs with `left_at` null: live Dark Chat members. */
+    darkchatMembers?: [number, string][];
   }
 
   const activeIn = (sql: string, alias = '') =>
@@ -320,6 +323,20 @@ describe('a report is only of something the reporter can see', () => {
           (a) => a.media_id === id && activeIn(sql, 'g.')(find('mica_glimpse', a.post_id))
         );
         return own || blab || listing || post ? { 1: 1 } : null;
+      }
+      // A Dark Chat message: live, written by a member (not an export's line), and the
+      // caller a live member of its channel. The window is the database's to apply.
+      if (sql.includes('FROM `mica_darkchat_messages` WHERE `id` = ?')) {
+        const message = find('mica_darkchat_messages', params[0]);
+        const byMember =
+          !sql.includes('`author_member_id` IS NOT NULL') || message?.author_member_id;
+        return message && activeIn(sql)(message) && byMember ? message : null;
+      }
+      if (sql.includes('FROM `mica_darkchat_members`')) {
+        const [channel, citizenid] = params;
+        return (w.darkchatMembers ?? []).some(([c, who]) => c === channel && who === citizenid)
+          ? { 1: 1 }
+          : null;
       }
       // A Glimpse comment is visible while it and the post it sits under are both live.
       if (sql.includes('FROM `mica_glimpse_comments` c')) {
@@ -637,7 +654,9 @@ describe('a report is only of something the reporter can see', () => {
         conversation_id: 40,
         from_account: 2,
         to_account: 1,
-        post_id: 7
+        post_id: 7,
+        channel_id: 30,
+        author_member_id: 3
       };
       world({
         // The thread a photo was sent into, beside the target row itself.
@@ -648,6 +667,7 @@ describe('a report is only of something the reporter can see', () => {
           [table]: [row, ...(table === 'mica_messages' ? [message()] : [])]
         },
         members: [[40, REPORTER]],
+        darkchatMembers: [[30, REPORTER]],
         accounts: [{ id: 1, citizenid: REPORTER, status: 'active' }],
         messageAttachments: [{ message_id: 12, photo_id: 5 }]
       });

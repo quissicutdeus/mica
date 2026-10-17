@@ -167,7 +167,14 @@ const WITHHELD: Readonly<Record<string, readonly string[]>> = {
   mica_media: ['stored_bytes'],
   // MICA-330. `mouth_key` is `mouth_of` again while the mouth is live, and NULL otherwise: the
   // unique key's machinery, telling the player nothing `mouth_of` and `status` do not.
-  mica_blabber: ['mouth_key']
+  mica_blabber: ['mouth_key'],
+  // MICA-254. A Dark Chat channel's join code: a key to a room other people speak in, which an
+  // export copied out of the game would hand to whoever reads the file. The owner reads it in
+  // the app. `alias_key` is the alias again while the member is live (`live_citizen`, its twin,
+  // is a citizenid column and withheld as one). `handle` is what the channel knew the member by
+  // in place of the alias row's id: kept out of a file whose whole point is to name the player.
+  mica_darkchat: ['code'],
+  mica_darkchat_members: ['handle', 'alias_key']
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -351,7 +358,34 @@ const ident = (name: string): string => {
   return `\`${name}\``;
 };
 
-export const exportSql = (plan: ExportPlan): string => {
+/** A row filter on one table's export: SQL over the table's own unqualified columns. */
+export type ExportFilter = () => { sql: string; params: unknown[] };
+
+const exportFilters = new Map<string, ExportFilter>();
+
+/**
+ * Narrow one table's export to the rows a player may still be shown (MICA-254): Dark Chat's
+ * messages export only inside their retention window, as every read of them answers only inside
+ * it. Registered by the owning service, not imported here, for the reason
+ * `onBeforeSelfServiceDelete` is. The filter is asked on every export, so a window read from a
+ * convar is the window now.
+ *
+ * Its SQL is the service's own, never a payload's; it may name only the table's columns.
+ */
+export const registerExportFilter = (table: string, filter: ExportFilter): void => {
+  if (exportFilters.has(table)) {
+    throw new Error(`registerExportFilter: '${table}' already has a filter.`);
+  }
+  exportFilters.set(table, filter);
+};
+
+/** The registered filter for `table`, resolved now; null when it has none. */
+export const exportFilterFor = (table: string): { sql: string; params: unknown[] } | null => {
+  const filter = exportFilters.get(table);
+  return filter ? filter() : null;
+};
+
+export const exportSql = (plan: ExportPlan, filter: string | null = null): string => {
   const select = [
     ...plan.plain.map(ident),
     ...plan.context.map(ident),
@@ -359,7 +393,8 @@ export const exportSql = (plan: ExportPlan): string => {
   ];
   return (
     `SELECT ${select.length > 0 ? select.join(', ') : '1 AS `present`'} FROM ${ident(plan.table)} ` +
-    `WHERE ${ident(plan.owner)} = ?${plan.ordered ? ' ORDER BY `id`' : ''} LIMIT ?`
+    `WHERE ${ident(plan.owner)} = ?${filter ? ` AND (${filter})` : ''}` +
+    `${plan.ordered ? ' ORDER BY `id`' : ''} LIMIT ?`
   );
 };
 
@@ -416,10 +451,11 @@ export const buildExport = async (citizenid: string): Promise<PrivacyExport> => 
       continue;
     }
 
-    const rows = await Database.query<Record<string, unknown>[]>(exportSql(plan), [
-      citizenid,
-      ROW_CAP + 1
-    ]);
+    const filter = exportFilterFor(owned.table);
+    const rows = await Database.query<Record<string, unknown>[]>(
+      exportSql(plan, filter?.sql ?? null),
+      [citizenid, ...(filter?.params ?? []), ROW_CAP + 1]
+    );
     if (!Array.isArray(rows)) throw new Error(`privacy: ${owned.table} answered no rows array`);
 
     for (const selected of rows.slice(0, ROW_CAP)) {

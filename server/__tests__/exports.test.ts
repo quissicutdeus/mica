@@ -72,6 +72,8 @@ import { callAsResource } from './invokingResource';
 import { __resetLockState, isDeviceLocked } from '../lib/LockState';
 import { __resetOpenState } from '../lib/PhoneOpenState';
 import { __resetBatteryState, currentCharge } from '../services/Battery';
+// Publishes `PostToDarkChat` beside its service (MICA-254); `darkchat.test.ts` drives it.
+import '../services/DarkchatMessages';
 import { __setDeviceResolvers } from '../lib/deviceIdentity';
 import { PlayerFacingError } from '../lib/errors';
 import { installTestPhone, TEST_PHONE_ID, TEST_TABLET_ID } from './phoneStub';
@@ -144,6 +146,7 @@ describe('the public export surface', () => {
       'IsPhoneOpen',
       'LockPhone',
       'OpenApp',
+      'PostToDarkChat',
       'PushToApp',
       'RegisterNumber',
       'RegisterService',

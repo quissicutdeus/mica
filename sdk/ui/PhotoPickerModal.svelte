@@ -48,7 +48,23 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   const heading = $derived(title ?? $t('ui.selectPhoto'));
 
   const { media, fullMedia } = useMedia();
-  const { toast } = usePhoneNotification();
+  const { toast, sendNotification } = usePhoneNotification();
+
+  /**
+   * In-process `toast.show` names the Gallery as the toast's app. A `core: false` add-on's
+   * frame has no `show` on its read-only `toast` twin, deliberately — a frame choosing `app`
+   * could wear another app's icon — so it falls back to `sendNotification`, which takes no
+   * `app` and is already answered for the frame. See `ReportDialog`, which does the same.
+   */
+  const tellFailure = (message: string) => {
+    if (typeof toast.show === 'function') {
+      toast.show({ type: 'error', app: 'media', message });
+      return;
+    }
+    Promise.resolve()
+      .then(() => sendNotification({ type: 'error', message }))
+      .catch((e: unknown) => console.warn('[micaOS] The photo notice could not be shown.', e));
+  };
 
   const isSelected = (id: number) => selectedIds.includes(id);
   const selectedCount = $derived(selectedIds.length);
@@ -86,11 +102,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       onselect?.(full.data);
     } catch (e) {
       console.warn(`Photo ${photo.id} could not be loaded for selection.`, e);
-      toast.show({
-        type: 'error',
-        app: 'media',
-        message: $t('ui.photoLoadFailed')
-      });
+      tellFailure($t('ui.photoLoadFailed'));
     } finally {
       picking = null;
     }

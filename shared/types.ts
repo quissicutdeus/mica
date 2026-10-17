@@ -720,8 +720,8 @@ export interface DarkchatChannel {
   id: number;
   /** `mica_darkchat.name`, a varchar(32). */
   name: string;
-  /** The caller's own member row in this channel, and the alias it speaks under. */
-  my_member_id: number;
+  /** The caller's own member handle in this channel, and the alias it speaks under. */
+  my_member_id: string;
   my_alias: string;
   is_owner: boolean;
 }
@@ -731,7 +731,12 @@ export interface DarkchatChannel {
  * join time: the same join second across two channels would link two aliases.
  */
 export interface DarkchatMember {
-  id: number;
+  /**
+   * An opaque random handle, never the row's integer id: that id is a global sequence, so it
+   * would rank members by join order, mark the owner as the lowest, and tie one player's
+   * aliases together across channels they joined one after the other.
+   */
+  id: string;
   /** `mica_darkchat_members.alias`, a varchar(24), unique among a channel's live members. */
   alias: string;
 }
@@ -750,7 +755,8 @@ export interface DarkchatJoined {
 export interface DarkchatMessage {
   id: number;
   channel_id: number;
-  member_id: number | null;
+  /** The author's opaque member handle (see `DarkchatMember.id`), or null for a script's line. */
+  member_id: string | null;
   alias: string;
   bot: boolean;
   mine: boolean;

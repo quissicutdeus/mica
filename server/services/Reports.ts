@@ -8,6 +8,7 @@ import { Database } from '../lib/Database';
 import { reportsContract } from '@mica/shared/contracts/reports';
 import {
   MAX_NOTE_LENGTH,
+  REPORTABLE,
   REPORT_CATEGORIES,
   isReportCategory,
   isReportableTable,
@@ -23,10 +24,14 @@ import { openRows, storablePlaintext } from '../lib/contentCipher';
 
 /** `target_preview`'s plaintext bound, which the snapshot is held to. */
 const MAX_PREVIEW_CHARS = 300;
+
+/** `reporter_label`'s width. */
+const REPORTER_LABEL_MAX = 32;
 import { forwardReportFiled } from '../lib/DiscordWebhook';
 import { isAdmin } from './Admin';
 import { accountsByIds } from './Accounts';
 import { messages } from './Messages';
+import { darkchatMessages, retentionHours } from './DarkchatMessages';
 import type { Report, ReportResolution } from '@mica/shared/types';
 
 /**
@@ -36,10 +41,11 @@ import type { Report, ReportResolution } from '@mica/shared/types';
  * Per table, from what that table's own author can do to a row, because the status a takedown
  * replaced is unknowable here and the wrong guesses are not alike:
  *
- * - **`mica_accounts`, `mica_blabber_dms` → `active`.** Nothing deletes either — no generic
- *   delete, no named one — so `active` is the only status a takedown can have replaced. Any
- *   other guess loses the row, and an account its handle for good: `app_handle` opts out of
- *   `uniqueAfterDelete`.
+ * - **`mica_accounts`, `mica_blabber_dms`, `mica_darkchat_messages` → `active`.** Nothing
+ *   deletes any of them — no generic delete, no named one; a Dark Chat message leaves only by
+ *   its window, which is a hard delete — so `active` is the only status a takedown can have
+ *   replaced. Any other guess loses the row, and an account its handle for good: `app_handle`
+ *   opts out of `uniqueAfterDelete`.
  * - **`mica_marketplace` → `removed`.** Nothing produces `deleted` on a listing; a seller can
  *   mark one `sold` or `removed`, and `removed`, the seller's own takedown, is the guess that
  *   puts nothing back up for sale.
@@ -56,6 +62,7 @@ import type { Report, ReportResolution } from '@mica/shared/types';
 const UNRECORDED_BY_TABLE: ReadonlyMap<string, string> = new Map([
   ['mica_accounts', 'active'],
   ['mica_blabber_dms', 'active'],
+  ['mica_darkchat_messages', 'active'],
   ['mica_marketplace', 'removed']
 ]);
 
@@ -244,7 +251,11 @@ export const reports = defineService<Report, typeof reportsContract>({
     // The status the takedown replaced, which a reopen puts back rather than `active`
     // (MICA-386). Server-written, read off the reported row; null on a report moderated before
     // MICA-386, or when the row was already gone. Read only while the report is `actioned`.
-    target_prior_status: { type: 'string', length: 32 }
+    target_prior_status: { type: 'string', length: 32 },
+    // What the reporter was called where they saw the content, when not their character: their
+    // alias in a Dark Chat channel (MICA-254). Server-written from the reportable declaration's
+    // `reporterLabel`; null for every other table.
+    reporter_label: { type: 'string', length: REPORTER_LABEL_MAX }
   },
   indexes: [
     { name: 'resolution_created', columns: ['resolution', 'created_at'] },
@@ -366,9 +377,25 @@ const canSeeGlimpseComment: CanSee = async (id) =>
     )
   );
 
+/**
+ * A Dark Chat message: a live member of its channel, inside the retention window — what
+ * `darkchat_messages:list` answers. A line a server script posted (no member wrote it) is not
+ * reportable: its words are the script's, and the report would name the channel's owner, whose
+ * citizenid the row carries, as their author.
+ */
+const canSeeDarkchatMessage: CanSee = async (id, citizenid) => {
+  const row = await Database.single<{ channel_id: number } | null>(
+    "SELECT `channel_id` FROM `mica_darkchat_messages` WHERE `id` = ? AND `status` = 'active' " +
+      'AND `author_member_id` IS NOT NULL AND `created_at` > NOW() - INTERVAL ? HOUR LIMIT 1',
+    [id, retentionHours()]
+  );
+  return Boolean(row) && (await darkchatMessages.repo.isMember(row!.channel_id, citizenid));
+};
+
 const VISIBILITY = new Map<string, CanSee>([
   ['mica_messages', canSeeMessage],
   ['mica_blabber_dms', canSeeDm],
+  ['mica_darkchat_messages', canSeeDarkchatMessage],
   ['mica_media', canSeeMedia],
   ['mica_accounts', whileActive('mica_accounts')],
   ['mica_blabber', whileActive('mica_blabber')],
@@ -419,6 +446,9 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
     });
   }
 
+  // Asked only now the caller is known to see the row, so it says nothing about one they cannot.
+  const label = await REPORTABLE()[table]?.reporterLabel?.(targetId, citizenid);
+
   const id = await repo.create({
     citizenid,
     target_table: table,
@@ -432,7 +462,8 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
       target.preview === undefined
         ? undefined
         : await storablePlaintext(target.preview, MAX_PREVIEW_CHARS),
-    target_author: target.citizenid
+    target_author: target.citizenid,
+    ...(label ? { reporter_label: label.slice(0, REPORTER_LABEL_MAX) } : {})
   } as Partial<Report>);
 
   // The row is written; the staff channel hears about it now (MICA-242). The mirror is

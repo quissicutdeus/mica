@@ -13,9 +13,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     preview?: string;
     /** The reporter's own words, if they left any. */
     note?: string;
+    /**
+     * What the reporter goes by where the content was — their alias in a Dark Chat channel
+     * (MICA-254). Written by the server, never the payload; absent for most services.
+     */
+    reporterLabel?: string | null;
   }
 
-  let { preview, note }: Props = $props();
+  let { preview, note, reporterLabel }: Props = $props();
 
   const { t } = useLocale();
 </script>
@@ -31,5 +36,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 {#if note}
   <p class="border-outline text-on-surface-variant text-body-small mt-2 border-l-2 pl-2">
     {note}
+  </p>
+{/if}
+{#if reporterLabel}
+  <p class="text-on-surface-variant text-body-small mt-2" data-testid="admin-reporter-label">
+    {$t('admin.reporterAlias')}: {reporterLabel}
   </p>
 {/if}

@@ -30,7 +30,8 @@
   "categoryOther": "Other",
   "resolutionActioned": "Content removed",
   "resolutionDismissed": "No action taken",
-  "reporter": "Reported by",
+  "author": "Posted by",
+  "reporterAlias": "Reporter's alias",
   "selectReport": "Select a report",
   "selectReportHint": "Pick a report on the left to review it."
 }

@@ -278,6 +278,68 @@ CREATE TABLE IF NOT EXISTS `mica_messages_participants` (
         REFERENCES `mica_messages_conversations` (`id`) ON DELETE CASCADE
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
+-- Generated from the 'darkchat' defineService declaration.
+-- Do not edit by hand; change the declaration and regenerate.
+
+CREATE TABLE IF NOT EXISTS `mica_darkchat` (
+    `id` int(11) NOT NULL AUTO_INCREMENT,
+    `citizenid` varchar(60) NOT NULL,
+    `name` varchar(32) NOT NULL,
+    `code` varchar(8) NOT NULL,
+    `status` ENUM('active', 'deleted') NOT NULL DEFAULT 'active',
+    `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `status` (`status`),
+    KEY `citizenid_status` (`citizenid`, `status`),
+    UNIQUE KEY `code` (`code`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `mica_darkchat_members` (
+    `id` int(11) NOT NULL AUTO_INCREMENT,
+    `channel_id` int(11) NOT NULL,
+    `citizenid` varchar(60) NOT NULL,
+    `alias` varchar(24) NOT NULL,
+    `handle` varchar(16) NOT NULL,
+    `status` ENUM('active', 'left', 'removed') NOT NULL DEFAULT 'active',
+    `left_at` timestamp DEFAULT NULL,
+    `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `alias_key` varchar(24) GENERATED ALWAYS AS (CASE WHEN `left_at` IS NULL THEN `alias` ELSE NULL END) VIRTUAL,
+    `live_citizen` varchar(60) GENERATED ALWAYS AS (CASE WHEN `left_at` IS NULL THEN `citizenid` ELSE NULL END) VIRTUAL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `channel_alias` (`channel_id`, `alias_key`),
+    UNIQUE KEY `channel_citizen` (`channel_id`, `live_citizen`),
+    UNIQUE KEY `handle` (`handle`),
+    KEY `citizenid` (`citizenid`),
+    KEY `status_left_at` (`status`, `left_at`),
+    CONSTRAINT `fk_mica_darkchat_members_channel_id` FOREIGN KEY (`channel_id`)
+        REFERENCES `mica_darkchat` (`id`) ON DELETE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+-- Generated from the 'darkchat_messages' defineService declaration.
+-- Do not edit by hand; change the declaration and regenerate.
+
+CREATE TABLE IF NOT EXISTS `mica_darkchat_messages` (
+    `id` int(11) NOT NULL AUTO_INCREMENT,
+    `citizenid` varchar(60) NOT NULL,
+    `channel_id` int(11) NOT NULL,
+    `author_member_id` int(11) DEFAULT NULL,
+    `bot_alias` varchar(24) DEFAULT NULL,
+    `body` text NOT NULL,
+    `status` ENUM('active', 'deleted', 'moderated') NOT NULL DEFAULT 'active',
+    `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `status` (`status`),
+    KEY `citizenid_status` (`citizenid`, `status`),
+    KEY `channel_id_id` (`channel_id`, `id`),
+    KEY `created_at` (`created_at`),
+    CONSTRAINT `fk_mica_darkchat_messages_channel_id` FOREIGN KEY (`channel_id`)
+        REFERENCES `mica_darkchat` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_mica_darkchat_messages_author_member_id` FOREIGN KEY (`author_member_id`)
+        REFERENCES `mica_darkchat_members` (`id`) ON DELETE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
 -- Generated from the 'devices' defineService declaration.
 -- Do not edit by hand; change the declaration and regenerate.
 
@@ -787,6 +849,7 @@ CREATE TABLE IF NOT EXISTS `mica_reports` (
     `target_preview` varchar(1662) DEFAULT NULL,
     `target_author` varchar(60) DEFAULT NULL,
     `target_prior_status` varchar(32) DEFAULT NULL,
+    `reporter_label` varchar(32) DEFAULT NULL,
     `status` ENUM('active', 'deleted') NOT NULL DEFAULT 'active',
     `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

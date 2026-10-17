@@ -55,6 +55,20 @@ and needs no migration. A new convar, `mica_glimpse_edit_window` (seconds,
 default 900, read once at resource start), sets how long a caption stays
 editable.
 
+**Run `micaschema apply` to create Dark Chat's tables and add a column to
+reports (MICA-254).** Dark Chat is a new add-on, installed from the Store, for
+anonymous channels joined by a code. It stores channels, members and messages in
+three new tables, `mica_darkchat`, `mica_darkchat_members` and
+`mica_darkchat_messages`, and adds `mica_reports.reporter_label`, which records
+the alias a report was filed under so Admin can show it. The change is additive
+and needs no migration. A new convar, `mica_darkchat_retention` (whole hours,
+default 24, read on every use), sets how long a message is kept, and it has no
+off switch: a sweep deletes older messages every 15 minutes, except one under an
+open report, which is kept until the report is resolved. A new export,
+`PostToDarkChat(code, alias, body)`, lets a job script post into a channel.
+Staff see more than players do: `docs/security.md` lists what a moderator can
+and cannot see.
+
 **If you imported from qb-phone and set a content key, run
 `micacrypt backfill --apply` and then `micaimport qb-phone --apply` once while
 the qb-phone tables still exist: the import ledger stops holding message bodies
@@ -1608,6 +1622,14 @@ the tablet is on screen. The template's build passes `src/tablet.svelte` when
 the file exists. A tablet root needs `display` in the manifest's `permissions`,
 and the build refuses one without it. This is additive, and the contract version
 is unchanged.
+
+**`ReportDialog` and a single-select `PhotoPickerModal` no longer throw inside
+an add-on's frame (MICA-254).** Both confirmed by calling the toast store's
+`show`, which the sandboxed frame does not have, so a report was filed and the
+dialog then threw `show is not a function`. Inside a frame they now confirm
+through `sendNotification`, which the `notifications` permission they already
+need covers. The toast shows no app icon there. Nothing in an add-on's code or
+manifest has to change.
 
 **Reads that fail now say so instead of answering empty (MICA-384).** These now
 reject when the request fails or the reply is malformed, where they used to

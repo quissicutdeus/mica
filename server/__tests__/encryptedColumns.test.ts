@@ -86,6 +86,7 @@ const ALLOWLIST: Record<string, { column: string; files: readonly string[] }> = 
     ]
   },
   mica_blabber_dms: { column: 'body', files: ['server/services/BlabberDms.ts'] },
+  mica_darkchat_messages: { column: 'body', files: ['server/services/DarkchatMessages.ts'] },
   mica_mail: { column: 'content', files: ['server/services/Mail.ts'] },
   mica_reports: { column: 'target_preview', files: [] }
 };
@@ -262,6 +263,7 @@ describe('the encrypted-column guard (MICA-165)', () => {
     expect(scopes).toEqual({
       'mica_messages.message': ['conversation_id'],
       'mica_blabber_dms.body': ['from_account', 'to_account'],
+      'mica_darkchat_messages.body': ['channel_id'],
       'mica_mail.content': [],
       'mica_reports.target_preview': ['target_table', 'target_id']
     });
