@@ -36,7 +36,7 @@ jobs:
   mirror:
     name: Push every branch and tag to Forgejo
     if: github.server_url == 'https://github.com'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - name: Mirror
         env:

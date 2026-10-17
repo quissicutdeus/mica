@@ -41,7 +41,7 @@ export const fakeRootMissing = (): string | null => {
     return (
       '`unshare -Ur` is refused or absent: unprivileged user namespaces are off ' +
       '(kernel.unprivileged_userns_clone=0, or kernel.apparmor_restrict_unprivileged_userns=1 ' +
-      'as on GitHub-hosted Ubuntu 24.04 runners)'
+      'as on GitHub-hosted Ubuntu runners, 24.04 and later)'
     );
   }
   return null;

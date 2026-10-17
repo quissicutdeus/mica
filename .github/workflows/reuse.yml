@@ -16,7 +16,7 @@ permissions:
 jobs:
   reuse:
     name: Verify SPDX compliance
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     # Same carve-out as other jobs: skip the standing dev->main sync PR.
     if: github.event_name != 'pull_request' || github.head_ref != 'dev'
     steps:

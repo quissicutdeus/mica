@@ -41,7 +41,7 @@ concurrency:
 jobs:
   build:
     name: Build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -76,7 +76,7 @@ jobs:
     # job notifies nobody, which is the correct outcome here and the wrong one for the
     # build above — hence the split.
     if: github.ref == 'refs/heads/main' && github.server_url == 'https://github.com'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

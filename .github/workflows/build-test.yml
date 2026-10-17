@@ -43,7 +43,7 @@ permissions:
 jobs:
   verify:
     name: Verify
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     # Skip the standing "Release: sync dev into main" PR, whose head branch is dev.
     #
     # The trigger comment above scoped `push` to main and dev so a direct push gets its own
@@ -134,8 +134,9 @@ jobs:
       # Docker, pull two images and spend ~30s reaching a verdict that job has already
       # reached -- and would newly depend on Docker Hub to do it.
       # `server/__tests__/deployWrapper.test.ts` runs each root wrapper as uid 0 in a user
-      # namespace (`unshare -Ur`) to hold its root branch to what it promises (MICA-315). GitHub's
-      # Ubuntu 24.04 runner images set `kernel.apparmor_restrict_unprivileged_userns=1`, which
+      # namespace (`unshare -Ur`) to hold its root branch to what it promises (MICA-315).
+      # GitHub-hosted Ubuntu runner images (24.04 and later) set
+      # `kernel.apparmor_restrict_unprivileged_userns=1`, which
       # refuses that, and the test then cannot run -- and a skipped test reads as a pass. So the
       # test fails on GitHub when it cannot run, and this step makes it able to: it logs the
       # sysctl, lifts the restriction where it is set, and then tries the exact command, so a
@@ -179,7 +180,7 @@ jobs:
   # red run tells you about half the suite and stays silent about the rest.
   e2e:
     name: E2E ${{ matrix.shard }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     # Not on a push to dev. A push to dev runs `verify` and `schema` only; the e2e shards
     # and the image build run on every pull request -- the standing dev->main one
     # included, which is where they gate what reaches main -- on a push to main, and on a
@@ -277,7 +278,7 @@ jobs:
   # on failure.
   e2e-report:
     name: E2E report
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     needs: [e2e]
     # github.com only: it exists to download the shards' blobs, which only github.com
     # uploads (see the upload step above).
@@ -334,7 +335,7 @@ jobs:
   # build, since all four jobs run in parallel.
   container:
     name: Demo container
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     # Not on a push to dev -- the same condition as `e2e`, for the same reason.
     if: github.event_name != 'push' || github.ref == 'refs/heads/main'
     steps:
@@ -508,7 +509,7 @@ jobs:
   # container.
   schema:
     name: Schema tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     # Same carve-out as `verify` above. Every job needs its own copy: the condition is
     # per-job, so a new job without it silently reintroduces the doubled run on every
     # push to dev.
@@ -574,7 +575,7 @@ jobs:
   # from a service container exactly as `schema`'s does, and for the same reasons.
   endpoints:
     name: Endpoint tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     # Same carve-out as `verify` above, for the reason `schema` gives.
     if: github.event_name != 'pull_request' || github.head_ref != 'dev'
     env:
