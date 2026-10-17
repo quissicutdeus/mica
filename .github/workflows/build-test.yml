@@ -187,7 +187,7 @@ jobs:
     # manual run. On a single self-hosted runner the five jobs of a dev push serialised to
     # the better part of an hour; these two accounted for most of it.
     if: github.event_name != 'push' || github.ref == 'refs/heads/main'
-    # Pinned to the @playwright/test version in pnpm-lock.yaml (currently 1.62.1). This
+    # Pinned to the @playwright/test version in pnpm-lock.yaml (currently 1.63.0). This
     # image ships Chromium and its OS deps preinstalled, replacing what `--with-deps`
     # used to spend a minute-plus on every run downloading/apt-installing. Bump this tag
     # whenever the lockfile's playwright version changes, or the run fails on a missing
@@ -199,7 +199,7 @@ jobs:
     # tracks the lockfile, and the distro is only available for versions that shipped after
     # it, so a future playwright bump may have no `-resolute` build yet. Check
     # https://mcr.microsoft.com/v2/playwright/tags/list before changing either half.
-    container: mcr.microsoft.com/playwright:v1.62.1-resolute
+    container: mcr.microsoft.com/playwright:v1.63.0-resolute
     strategy:
       fail-fast: false
       matrix:
