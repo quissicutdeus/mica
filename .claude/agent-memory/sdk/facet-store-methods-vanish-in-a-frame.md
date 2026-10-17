@@ -21,7 +21,10 @@ fix was to feature-test `typeof toast.show === 'function'` and fall back to
 **How to apply:** any `sdk/ui/` primitive that reaches a facet store's method
 needs a frame-side test that swaps in the real twin from
 `sdk/host/iframe/facets/` over a mocked `../host/iframe/remote` (see
-`ReportDialog.test.ts`). Also: a kit row in `sdk/permissions.ts` must list every
-hook the component calls at init — `PhotoPickerModal: 'media'` omits the
-`notifications` its `usePhoneNotification` call needs (reported to the lead on
-MICA-254, not changed).
+`ReportDialog.test.ts`). Also: a kit row in `sdk/permissions.ts` must equal what
+the component's host imports reach, children included. `PhotoPickerModal` was
+`'media'` without the `notifications` its `usePhoneNotification` needs; fixed
+after MICA-254, and `permissions.test.ts` ("every kit row is exactly what…") now
+holds every kit row to that. `sdkChangelog.test.ts` passed that re-gate by
+coincidence, because an older entry already named both names. A green run there
+does not mean the entry's wording is still true.

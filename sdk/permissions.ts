@@ -140,7 +140,7 @@ export const PERMISSION_OF: Record<string, AppPermission | readonly AppPermissio
   useWallpaper: 'wallpaper',
   useWallpaperWrite: 'wallpaper-write',
   // kit components that call a host hook on the app's behalf
-  PhotoPickerModal: 'media',
+  PhotoPickerModal: ['media', 'notifications'],
   ReportDialog: ['reports', 'notifications']
 };
 

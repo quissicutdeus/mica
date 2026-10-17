@@ -1628,8 +1628,14 @@ an add-on's frame (MICA-254).** Both confirmed by calling the toast store's
 `show`, which the sandboxed frame does not have, so a report was filed and the
 dialog then threw `show is not a function`. Inside a frame they now confirm
 through `sendNotification`, which the `notifications` permission they already
-need covers. The toast shows no app icon there. Nothing in an add-on's code or
-manifest has to change.
+need covers. The toast shows no app icon there. Nothing in an add-on's code has
+to change.
+
+**`PhotoPickerModal` now needs `notifications` as well as `media`.** It always
+called `usePhoneNotification`, so an add-on that declared only `media` passed
+the manifest scan and then threw `AppPermissionError` when the picker mounted.
+The scan now asks for both. Add `notifications` to `permissions` if you render
+the picker; `ReportDialog` already needed it. The contract version is unchanged.
 
 **Reads that fail now say so instead of answering empty (MICA-384).** These now
 reject when the request fails or the reply is malformed, where they used to

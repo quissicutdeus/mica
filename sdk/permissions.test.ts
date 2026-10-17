@@ -259,6 +259,57 @@ describe('the permission table is total', () => {
     }
     expect(wrong).toEqual([]);
   });
+
+  /**
+   * A kit row is the permissions its component reaches, no more and no fewer (MICA-254).
+   *
+   * Nothing held a kit row to its component until this. `PhotoPickerModal` was `'media'`
+   * while it called `usePhoneNotification` too, so an add-on declaring only `media` passed
+   * the manifest scan and then threw `AppPermissionError` when the picker mounted. Every
+   * `../host/use*` import counts, followed through the `./*.svelte` primitives it renders
+   * (`MediaThumb` reads streamer mode), because a hook in a child gates the parent's mount
+   * just the same. Exact, not a superset: a stale extra asks every add-on for a permission
+   * the component no longer uses, which is the lie §7 names the other way round.
+   */
+  it('every kit row is exactly what its component and its children reach', () => {
+    const UI = join(__dirname, 'ui');
+    const reached = (file: string, seen = new Set<string>()): Set<string> => {
+      const out = new Set<string>();
+      if (seen.has(file)) return out;
+      seen.add(file);
+      const text = readFileSync(join(UI, file), 'utf8');
+      for (const m of text.matchAll(/import\s*\{([^}]*)\}\s*from\s*'\.\.\/host\/[^']+'/g)) {
+        for (const name of m[1].split(',').map((s) => s.trim().split(/\s+as\s+/)[0])) {
+          const row = name in PERMISSION_OF ? PERMISSION_OF[name] : null;
+          for (const p of row === null ? [] : typeof row === 'string' ? [row] : row) out.add(p);
+        }
+      }
+      for (const m of text.matchAll(/from\s*'\.\/([A-Za-z]+\.svelte)'/g)) {
+        for (const p of reached(m[1], seen)) out.add(p);
+      }
+      return out;
+    };
+
+    const wrong: string[] = [];
+    const checked: string[] = [];
+    for (const name of DISCLOSED_ELSEWHERE) {
+      if (!existsSync(join(UI, `${name}.svelte`))) continue;
+      checked.push(name);
+      const row = PERMISSION_OF[name];
+      const declared = (row === null ? [] : typeof row === 'string' ? [row] : [...row])
+        .sort()
+        .join(',');
+      const needed = [...reached(`${name}.svelte`)].sort().join(',');
+      if (needed === '') wrong.push(`${name}: reaches no host hook, so is not a kit row`);
+      if (declared !== needed)
+        wrong.push(`${name}: row [${declared}], component reaches [${needed}]`);
+    }
+    // Fails loud if the lookup above stops finding the components, rather than passing empty.
+    expect(checked.sort()).toEqual(['PhotoPickerModal', 'ReportDialog']);
+    expect(wrong, 'set the kit row in sdk/permissions.ts to what the component reaches').toEqual(
+      []
+    );
+  });
 });
 
 describe('HOOK_OF_FACET', () => {
