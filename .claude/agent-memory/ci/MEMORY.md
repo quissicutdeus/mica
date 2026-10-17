@@ -5,4 +5,5 @@ its one-line summary. A runner, cache or host that behaved differently from what
 its workflow file says goes in its own file and gets a line here. A lesson every
 lane needs goes to `lane-protocol` instead.
 
-No findings yet.
+- [Playwright 1.64 breaks cef-floor](playwright-1-64-breaks-cef-floor.md) — stay
+  on 1.63.x until the floor Chromium is 105 or newer
