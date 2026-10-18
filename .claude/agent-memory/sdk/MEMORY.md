@@ -30,5 +30,5 @@ in its own file and gets a line here.
   frame
 - [Adding a host facet](adding-a-facet.md) — eleven places; the
   `APP_SCOPED_FACETS` pin fails open if forgotten, so name it in a test
-- [Props baseline misreads inline types](props-baseline-misreads-inline-types.md)
-  — use `interface Props`; an inline `}: {…} = $props()` pins only one name
+- [Props baseline misread inline types](props-baseline-misreads-inline-types.md)
+  — fixed MICA-395; a new props form fails loud, add a fixture, never a row

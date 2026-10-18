@@ -1,23 +1,26 @@
-# The props baseline misreads an inline type
+# The props baseline misread an inline type
 
-`publicSurface.test.ts`'s `propsDestructure` finds `= $props(` and walks back to
-the nearest `}`. With an inline annotation
+Fixed in MICA-395: `publicSurface.test.ts`'s props parser now reads every form
+in this tree (an `interface Props`, an inline type literal, a `$props<…>()` type
+argument) and returns `null`, which the "read the props of every exported
+component" guard fails on, for anything else. Fixtures for each form sit in its
+"reads every props form, or refuses it" block.
+
+The trap, for the record: `propsDestructure` used to walk back from `= $props(`
+to the nearest `}`. With an inline annotation
 (`let { a }: { a: string } = $props()`) that `}` closes the **type literal**,
-not the destructure. The type's body has no top-level commas (members end in
-`;`), so it reads as one entry and the baseline records only the first member's
-name.
+not the destructure. Its members end in `;`, not `,`, so it read as one entry
+and the baseline froze the first member's name alone. `MessageBar` sat at
+`['value']` for months with every other prop pinned by nothing. MICA-392 caught
+it when `DmInbox` and `DmThread` came back as `appId` alone.
 
-That is why `MessageBar`'s frozen row is `['value']`: its `onsend`, `busy`,
-`above` and the rest are pinned by nothing, so dropping one would pass the gate.
-MICA-392 hit it writing `DmInbox`/`DmThread`: the live parse came back as
-`appId` alone and the suite reported every real prop as "removed".
+**Why:** the parser was written against `interface Props` components, where the
+`}` before `=` is the destructure's own. Prop additions pass the gate on
+purpose, so a short row never failed anything.
 
-**Why:** the parser was written against `interface Props` components
-(`ReportDialog`, `Avatar`), where the `}` before `=` is the destructure's own.
-
-**How to apply:** a new exported component declares `interface Props { … }` and
-destructures `}: Props = $props()`. A bare name in the baseline means "no
-default", `name?` means "has a default", whatever the type says. Before trusting
-an existing row, check the component's annotation style; an inline-typed
-component's row is suspect. Fixing the parser re-freezes those rows, which is a
-baseline edit to make deliberately, not on the way past.
+**How to apply:** a new props form the parser cannot read fails loudly now. Fix
+the parser and add a fixture for the form; never hand-write a row to get past
+it. Each entry must be `name`, `'name'`, `name: local`, any of those with a
+default, or `...rest` (`isDestructureEntry`), so a partial row cannot be frozen.
+Because additions pass silently, check a new component's frozen row against its
+real props by eye.

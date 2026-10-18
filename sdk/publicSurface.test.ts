@@ -295,34 +295,53 @@ const stripComments = (source: string): string => {
 /**
  * The text inside the `let { ... } = $props()` destructure, or `null` if there is none.
  *
- * Found by walking left from `$props` and balancing braces, which is what makes it work
- * for both shapes in this tree — `let { a }: Props = $props()` and
- * `let { a } = $props<{ a: string }>()` — without caring which one it is looking at.
+ * Read **forward from the declaration**, not backward from `$props`. MICA-395: walking left
+ * from the `=` and balancing braces found the nearest `}`, which in the inline form
+ * `let { a, b }: { a: string; b?: number } = $props()` closes the *type literal*. The type's
+ * members end in `;`, not `,`, so the whole literal read as one entry and the baseline froze
+ * its first name alone — `MessageBar` sat at `['value']` with every other prop pinned by
+ * nothing.
+ *
+ * So: the last `let {`/`const {` before `= $props`, balanced forward to its own `}`, and then
+ * the text between that `}` and the `=` must be nothing (`let { a } = $props<{ a: string }>()`)
+ * or an annotation (`let { a }: Props = $props()`, or the inline literal). Anything else —
+ * a `let {` that belongs to some earlier statement — is `null`, which the guard below fails
+ * on, rather than whatever the nearest braces happen to hold.
  */
 const propsDestructure = (script: string): string | null => {
   const call = /=\s*\$props\s*[<(]/.exec(script);
   if (!call) return null;
 
-  let close = call.index - 1;
-  while (close >= 0 && /\s/.test(script[close])) close--;
-  // `let { a }: Props = $props()` puts the annotation between the brace and the `=`.
-  if (script[close] !== '}') {
-    const colon = script.lastIndexOf('}', close);
-    if (colon === -1) return null;
-    close = colon;
-  }
-  if (script[close] !== '}') return null;
+  const declarations = [...script.slice(0, call.index).matchAll(/\b(?:let|const)\s*\{/g)];
+  const declaration = declarations[declarations.length - 1];
+  if (!declaration) return null;
+  const open = declaration.index + declaration[0].length - 1;
 
   let depth = 0;
-  for (let i = close; i >= 0; i--) {
+  let quote: string | null = null;
+  let close = -1;
+  for (let i = open; i < call.index; i++) {
     const c = script[i];
-    if (c === '}') depth++;
-    else if (c === '{') {
+    if (quote) {
+      if (c === '\\') i++;
+      else if (c === quote) quote = null;
+      continue;
+    }
+    if (c === "'" || c === '"' || c === '`') quote = c;
+    else if (c === '{') depth++;
+    else if (c === '}') {
       depth--;
-      if (depth === 0) return script.slice(i + 1, close);
+      if (depth === 0) {
+        close = i;
+        break;
+      }
     }
   }
-  return null;
+  if (close === -1) return null;
+
+  const between = script.slice(close + 1, call.index).trim();
+  if (between !== '' && !between.startsWith(':')) return null;
+  return script.slice(open + 1, close);
 };
 
 /** Split on commas that are not inside brackets or a string. */
@@ -368,12 +387,10 @@ const splitTopLevel = (body: string): string[] => {
  * The name is the **public** one — `class: className = ''` is `class?`, because `class` is
  * what a caller writes and `className` is a local variable nobody outside can see.
  */
-const encodeProp = (entry: string): string => {
-  if (entry.startsWith('...')) return '...';
-
+/** Where an entry's default starts — its top-level `=`, not `==`, `=>`, `<=` — or -1. */
+const defaultAt = (entry: string): number => {
   let depth = 0;
   let quote: string | null = null;
-  let split = -1;
   for (let i = 0; i < entry.length; i++) {
     const c = entry[i];
     if (quote) {
@@ -394,11 +411,16 @@ const encodeProp = (entry: string): string => {
       entry[i + 1] !== '>' &&
       !['=', '!', '<', '>'].includes(entry[i - 1])
     ) {
-      split = i;
-      break;
+      return i;
     }
   }
+  return -1;
+};
 
+const encodeProp = (entry: string): string => {
+  if (entry.startsWith('...')) return '...';
+
+  const split = defaultAt(entry);
   const head = (split === -1 ? entry : entry.slice(0, split)).trim();
   const name = head
     .split(':')[0]
@@ -408,17 +430,36 @@ const encodeProp = (entry: string): string => {
 };
 
 /**
+ * Whether `entry` is something a destructure can hold: `name`, `'name'`, `name: local`, any of
+ * those with `= default`, or `...rest`. MICA-395: a type member (`a: string;`) or a whole type
+ * literal is not, and a parse that produced one has read the wrong braces.
+ */
+const isDestructureEntry = (entry: string): boolean => {
+  const split = defaultAt(entry);
+  const head = (split === -1 ? entry : entry.slice(0, split)).trim();
+  return /^(?:\.\.\.[A-Za-z_$][\w$]*|(?:[A-Za-z_$][\w$]*|'[^']+'|"[^"]+")(?:\s*:\s*[A-Za-z_$][\w$]*)?)$/.test(
+    head
+  );
+};
+
+/**
  * A component's props, sorted, or `null` when the file declares `$props` and this parser
  * could not read it. `null` is a failure, not an empty answer — see the guard below.
  */
-const propsOf = (file: string): string[] | null => {
-  const script = stripComments(scriptOf(readFileSync(file, 'utf8')));
+const propsOfSource = (source: string): string[] | null => {
+  const script = stripComments(scriptOf(source));
   if (!/\$props\s*[<(]/.test(script)) return [];
 
   const body = propsDestructure(script);
   if (body === null) return null;
-  return splitTopLevel(body).map(encodeProp).sort();
+  const entries = splitTopLevel(body);
+  // All or nothing (MICA-395): one entry that is not a destructure entry means the braces
+  // were the wrong ones, and a partial row frozen into the baseline pins nothing it omits.
+  if (!entries.every(isDestructureEntry)) return null;
+  return entries.map(encodeProp).sort();
 };
+
+const propsOf = (file: string): string[] | null => propsOfSource(readFileSync(file, 'utf8'));
 
 /** Every exported component's props, keyed by the name a caller imports. */
 const liveProps = (): Record<string, string[] | null> => {
@@ -1502,6 +1543,8 @@ const BASELINE_PROPS: Record<string, string[]> = {
   ArchiveIcon: ['class?'],
   ArrowDownLeftIcon: ['class?'],
   ArrowUpRightIcon: ['class?'],
+  // MICA-395: exported and never frozen; recorded as they stand, not added to the surface.
+  AppIconTile: ['class?', 'color', 'icon', 'name', 'size?'],
   Avatar: ['bgClass?', 'initials?', 'showSilhouette?', 'size?', 'src?', 'textClass?'],
   BackspaceIcon: ['class?'],
   BatteryIcon: ['charge', 'class?'],
@@ -1559,7 +1602,18 @@ const BASELINE_PROPS: Record<string, string[]> = {
   ListItem: ['children', 'class?', 'onclick'],
   LocationIcon: ['class?'],
   MediaThumb: ['alt', 'class?', 'fit?', 'item', 'prefer?'],
-  MessageBar: ['value'],
+  // MICA-395: re-frozen once the parser read the inline `}: { … } = $props()` form. The old
+  // row was that type literal's first member alone, so every other prop was unpinned.
+  MessageBar: [
+    'above',
+    'busy?',
+    'canSend',
+    'leading',
+    'maxlength',
+    'onsend',
+    'placeholder?',
+    'value?'
+  ],
   MessageIcon: ['class?'],
   MessageStatusIcon: ['class?', 'status?'],
   MicrophoneIcon: ['class?'],
@@ -1584,27 +1638,36 @@ const BASELINE_PROPS: Record<string, string[]> = {
   RepeatIcon: ['class?'],
   RepeatOneIcon: ['class?'],
   ReplyIcon: ['class?'],
+  // MICA-395: exported and never frozen; recorded as they stand, not added to the surface.
+  RecentlyDeleted: ['emptyDescription?', 'emptyTitle?', 'items', 'onpermanentdelete', 'onrestore'],
   ReportButton: ['class?', 'onclick', 'size?', 'subject'],
   ReportDialog: ['appId', 'onclose', 'targetId', 'targetTable'],
   Screen: ['actions', 'children', 'class?', 'onback', 'ontitleclick', 'overlay', 'title'],
   SearchBar: ['class?', 'focus?', 'focusRingClass?', 'placeholder?', 'value?'],
   SearchIcon: ['class?'],
-  SegmentedControl: ['options'],
+  // MICA-395: re-frozen, as `MessageBar` above.
+  SegmentedControl: ['aria-label', 'onchange', 'options?', 'selected?'],
   SendIcon: ['class?'],
-  SettingsSection: ['title'],
+  // MICA-395: exported and never frozen; recorded as they stand, not added to the surface.
+  SettingsIcon: ['class?'],
+  // MICA-395: re-frozen, as `MessageBar` above.
+  SettingsSection: ['children', 'footer', 'headerAction', 'title'],
   ShareIcon: ['class?'],
   ShareSquareIcon: ['class?'],
   ShuffleIcon: ['class?'],
   SignalIcon: ['class?', 'level?'],
-  Skeleton: ['count?'],
+  // MICA-395: re-frozen, as `MessageBar` above.
+  Skeleton: ['class?', 'count?', 'height?', 'rounded?'],
   SkipNextIcon: ['class?'],
   SkipPreviousIcon: ['class?'],
   SpeakerIcon: ['class?'],
   SpeakerOffIcon: ['class?'],
   StarIcon: ['class?', 'filled?'],
   StopIcon: ['class?'],
-  TabBar: ['options'],
-  ToggleSwitch: ['checked?'],
+  // MICA-395: re-frozen, as `MessageBar` above.
+  TabBar: ['aria-label', 'onchange', 'options?', 'selected?'],
+  // MICA-395: re-frozen, as `MessageBar` above.
+  ToggleSwitch: ['checked?', 'description', 'disabled?', 'id', 'label', 'onchange'],
   TrashIcon: ['class?'],
   UsersIcon: ['class?']
 };
@@ -3956,6 +4019,82 @@ describe('the SDK public surface (MICA-125)', () => {
       ).toEqual(['@mica/sdk: ReactionBar (export removed)']);
     });
 
+    /**
+     * MICA-395. The parser over each way a component in this tree declares its props, as
+     * fixtures, so a form it misreads fails here rather than freezing a partial row. The
+     * inline form is the one that did: `MessageBar` was frozen as `['value']`.
+     */
+    describe('reads every props form, or refuses it', () => {
+      const svelte = (script: string) => `<script lang="ts">\n${script}\n</script>\n<div></div>`;
+
+      it('an interface', () => {
+        expect(
+          propsOfSource(
+            svelte(`interface Props { a: string; b?: number; onx: () => void }
+  let { a, b = 2, onx }: Props = $props();`)
+          )
+        ).toEqual(['a', 'b?', 'onx']);
+      });
+
+      it('an inline type literal, every member and not just the first', () => {
+        expect(
+          propsOfSource(
+            svelte(`let {
+    value = $bindable(''),
+    placeholder = undefined,
+    onsend,
+    above
+  }: {
+    value: string;
+    placeholder?: string;
+    onsend: () => void;
+    /** Anything stacked above the row. */
+    above?: Snippet;
+  } = $props();`)
+          )
+        ).toEqual(['above', 'onsend', 'placeholder?', 'value?']);
+      });
+
+      it('a type argument on $props', () => {
+        expect(
+          propsOfSource(
+            svelte(`let { a, b = { x: 1 } } = $props<{ a: string; b?: { x: number } }>();`)
+          )
+        ).toEqual(['a', 'b?']);
+      });
+
+      it('a renamed, a quoted and a rest entry', () => {
+        expect(
+          propsOfSource(
+            svelte(
+              `let { class: className = '', 'aria-label': ariaLabel, ...rest }: Props = $props();`
+            )
+          )
+        ).toEqual(['...', 'aria-label', 'class?']);
+      });
+
+      it('no $props at all is no props, not a failure', () => {
+        expect(propsOfSource(svelte(`const x = 1;`))).toEqual([]);
+      });
+
+      it('refuses props that are not destructured', () => {
+        expect(propsOfSource(svelte(`const props: Props = $props();`))).toBeNull();
+      });
+
+      it('refuses a destructure that belongs to an earlier statement', () => {
+        expect(
+          propsOfSource(svelte(`let { a } = other;\n  let props: Props = $props();`))
+        ).toBeNull();
+      });
+
+      it('refuses an entry that is not a destructure entry, rather than freezing part of it', () => {
+        expect(isDestructureEntry('value: string;\n    placeholder?: string')).toBe(false);
+        expect(isDestructureEntry("value = $bindable('')")).toBe(true);
+        expect(isDestructureEntry("'aria-label': ariaLabel")).toBe(true);
+        expect(isDestructureEntry('...rest')).toBe(true);
+      });
+    });
+
     it('reads props out of real components, so the parser is not asserted against itself', () => {
       // The differ above is driven with literals. This is the other half: the encoding
       // those literals are written in has to be what `propsOf` actually produces for a
@@ -3974,7 +4113,8 @@ describe('the SDK public surface (MICA-125)', () => {
       // into an unusable token cannot sit in the baseline looking like a checked one.
       const malformed = Object.entries(propsNow).flatMap(([component, props]) =>
         (props ?? [])
-          .filter((p) => !/^(?:\.\.\.|[A-Za-z_$][\w$]*\??)$/.test(p))
+          // A hyphen is legal: `'aria-label': ariaLabel` is a public prop named `aria-label`.
+          .filter((p) => !/^(?:\.\.\.|[A-Za-z_$][\w$-]*\??)$/.test(p))
           .map((p) => `${component}: ${p}`)
       );
       expect(malformed, 'the parser produced something that is not a prop name').toEqual([]);
