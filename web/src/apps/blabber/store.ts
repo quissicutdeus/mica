@@ -7,7 +7,6 @@ import type {
   Account,
   Blab,
   BlabEngagement,
-  BlabberDm,
   BlabberDmThread,
   FollowStats
 } from '@mica/shared/types';
@@ -558,7 +557,6 @@ export const loadMoreReplies = async (
  * person to.
  */
 export const dmThreads = writable<BlabberDmThread[]>([]);
-export const dmMessages = writable<BlabberDm[]>([]);
 
 /** Unread DMs across every account, for the badge. */
 export const unreadDms = derived(dmThreads, (threads) =>
@@ -567,47 +565,6 @@ export const unreadDms = derived(dmThreads, (threads) =>
 
 export const loadDmThreads = async (): Promise<void> => {
   dmThreads.set(await dmService().threads());
-};
-
-/**
- * `dmMessages` is **chronological — oldest first, newest last** — and the thread renders it in
- * that order, so a new message appends at the bottom like every other chat on the phone
- * (MICA-101).
- *
- * The wire order is the opposite and stays that way: `dms:get` is keyset-paged on
- * `id DESC`, so the newest page is the one a cursor-less read returns, and reversing the query
- * instead would mean paging from the wrong end of the thread. The reversal belongs here, once,
- * rather than in the component — `sendDm` has to agree with it, and a component-side `reverse()`
- * would leave the store's own order a thing every future reader has to rediscover.
- */
-export const loadDmMessages = async (peerAccountId: number): Promise<void> => {
-  const accountId = getActiveAccountId();
-  if (accountId === null) return;
-  const reply = await dmService().thread({
-    account_id: accountId,
-    peer_account_id: peerAccountId
-  });
-  dmMessages.set([...(reply.rows ?? [])].reverse());
-
-  // Opening the thread is what marks it read, so the badge falls for the same reason the player
-  // would expect it to.
-  await dmService().markRead({ account_id: accountId, peer_account_id: peerAccountId });
-  await loadDmThreads();
-};
-
-export const sendDm = async (peerAccountId: number, body: string): Promise<void> => {
-  const accountId = getActiveAccountId();
-  if (accountId === null) throw new Error('Claim a handle first.');
-
-  const created = await dmService().send({
-    account_id: accountId,
-    peer_account_id: peerAccountId,
-    body
-  });
-  // Appended, not prepended: the store is oldest-first (see `loadDmMessages`), so the message
-  // just sent is the last one in the thread.
-  dmMessages.update((current) => [...current, created]);
-  await loadDmThreads();
 };
 
 /**
@@ -658,7 +615,7 @@ export const dmReactions = createReactionStore({
 });
 
 /**
- * Never rejects: `Messages.svelte` fires it without waiting. A failed read leaves the chips
+ * Never rejects: `DmThread`'s `onpage` fires it without waiting. A failed read leaves the chips
  * the store already holds, and the next page of DMs asks again.
  */
 export const loadDmReactions = (ids: number[]): Promise<void> =>
@@ -771,11 +728,8 @@ export function useBlabber() {
     editWindow,
     engagement,
     dmThreads,
-    dmMessages,
     unreadDms,
     loadDmThreads: () => loadDmThreads(),
-    loadDmMessages: (peerAccountId: number) => loadDmMessages(peerAccountId),
-    sendDm: (peerAccountId: number, body: string) => sendDm(peerAccountId, body),
     dmReactions,
     loadDmReactions: (ids: number[]) => loadDmReactions(ids),
     toggleDmReaction: (messageId: number, emoji: string) => toggleDmReaction(messageId, emoji),

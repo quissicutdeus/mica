@@ -27,6 +27,13 @@ export { default as AppIconTile } from './ui/AppIconTile.svelte';
 export { default as Avatar } from './ui/Avatar.svelte';
 export { default as Button } from './ui/Button.svelte';
 export { default as ConfirmDialog } from './ui/ConfirmDialog.svelte';
+/**
+ * MICA-392: a direct-message inbox and thread over `useDirectMessages`, written once so an app
+ * with a DM policy gets messaging without writing either screen. Both reach `social` (the
+ * hook) and `app-events` (the `dm` push), and their rows in `permissions.ts` say so.
+ */
+export { default as DmInbox } from './ui/DmInbox.svelte';
+export { default as DmThread } from './ui/DmThread.svelte';
 export { default as EmojiPicker } from './ui/EmojiPicker.svelte';
 export { default as EmptyState } from './ui/EmptyState.svelte';
 export { default as FloatingActionButton } from './ui/FloatingActionButton.svelte';

@@ -66,7 +66,7 @@ test.describe('Spark', () => {
 
   const openMayaThread = async (frame: FrameLocator) => {
     await frame.getByTestId('spark-match').click();
-    await expect(frame.getByTestId('spark-message')).toHaveCount(1);
+    await expect(frame.getByTestId('dm-message')).toHaveCount(1);
   };
 
   const openMenu = async (frame: FrameLocator) => {
@@ -163,8 +163,8 @@ test.describe('Spark', () => {
     await expect(row.getByTestId('spark-match-unread')).toHaveText('1');
 
     await row.click();
-    await expect(frame.getByTestId('spark-message')).toHaveCount(1);
-    const theirs = frame.getByTestId('spark-message').first();
+    await expect(frame.getByTestId('dm-message')).toHaveCount(1);
+    const theirs = frame.getByTestId('dm-message').first();
     await expect(theirs).toContainText(OPENER);
     await expect(theirs).toHaveAttribute('data-mine', 'false');
 
@@ -173,8 +173,8 @@ test.describe('Spark', () => {
     await frame.getByRole('button', { name: 'Send', exact: true }).click();
 
     // The send's own answer and the app-event push both carry this line; the store merges by id.
-    await expect(frame.getByTestId('spark-message')).toHaveCount(2);
-    const sent = frame.getByTestId('spark-message').filter({ hasText: text });
+    await expect(frame.getByTestId('dm-message')).toHaveCount(2);
+    const sent = frame.getByTestId('dm-message').filter({ hasText: text });
     await expect(sent).toHaveCount(1);
     await expect(sent).toHaveAttribute('data-mine', 'true');
     await expect(frame.getByPlaceholder('Message Maya')).toHaveValue('');
@@ -205,7 +205,7 @@ test.describe('Spark', () => {
     await frame.getByTestId('spark-unmatch').click();
     await frame.getByRole('button', { name: 'Unmatch', exact: true }).click();
 
-    await expect(frame.getByTestId('spark-thread')).toHaveCount(0);
+    await expect(frame.getByTestId('dm-thread')).toHaveCount(0);
     await expect(frame.getByTestId('spark-match')).toHaveCount(0);
     await expect(frame.getByText('No matches yet')).toBeVisible();
   });
@@ -219,7 +219,7 @@ test.describe('Spark', () => {
     await frame.getByTestId('spark-block').click();
     await frame.getByRole('button', { name: 'Block', exact: true }).click();
 
-    await expect(frame.getByTestId('spark-thread')).toHaveCount(0);
+    await expect(frame.getByTestId('dm-thread')).toHaveCount(0);
     await expect(frame.getByTestId('spark-match')).toHaveCount(0);
     await expect(frame.getByText('No matches yet')).toBeVisible();
   });
@@ -243,7 +243,7 @@ test.describe('Spark', () => {
     await openMayaThread(frame);
 
     await frame
-      .getByTestId('spark-message')
+      .getByTestId('dm-message')
       .first()
       .getByRole('button', { name: 'Report message' })
       .click();
@@ -295,8 +295,8 @@ test.describe('Spark', () => {
     await frame.getByRole('button', { name: 'Matches', exact: true }).click();
     await expect(frame.getByTestId('spark-matches')).not.toContainText(leak);
     await openMayaThread(frame);
-    await expect(frame.getByTestId('spark-thread')).toContainText(OPENER);
-    await expect(frame.getByTestId('spark-thread')).not.toContainText(leak);
+    await expect(frame.getByTestId('dm-thread')).toContainText(OPENER);
+    await expect(frame.getByTestId('dm-thread')).not.toContainText(leak);
 
     await openMenu(frame);
     await frame.getByTestId('spark-view-profile').click();

@@ -72,5 +72,13 @@
   "musicPlaylistProgress": "Playlist · {index} von {count}",
   "musicEmbedBlocked": "Kann außerhalb von YouTube nicht abgespielt werden",
   "musicUnavailable": "Nicht verfügbar — entfernt oder privat",
-  "musicUnplayable": "Kann nicht abgespielt werden"
+  "musicUnplayable": "Kann nicht abgespielt werden",
+  "dmSomeone": "Jemand",
+  "dmNoMessages": "Noch keine Nachrichten",
+  "dmNoMessagesHint": "Unterhaltungen, die du beginnst oder erhältst, erscheinen hier.",
+  "dmNothingYet": "Noch nichts geschrieben",
+  "dmNothingYetHint": "Schick die erste Nachricht.",
+  "dmUnread": "{count} ungelesen",
+  "dmMessageNoun": "Nachricht",
+  "dmSendFailed": "Die Nachricht wurde nicht gesendet. Versuch es noch einmal."
 }

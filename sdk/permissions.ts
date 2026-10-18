@@ -23,9 +23,9 @@ import type { Facets } from './host/facets';
  *   carry no permission to check
  * - every app's manifest declares what its `@mica/sdk` imports need
  *
- * The two kit-component rows (`PhotoPickerModal`, `ReportDialog`) are exempt from the
- * assert check: they live under `sdk/ui`, not `sdk/host`, and disclose through the host
- * hook they call internally rather than asserting themselves. A kit-component row may list
+ * The kit-component rows (`DmInbox`, `DmThread`, `PhotoPickerModal`, `ReportDialog`) are
+ * exempt from the assert check: they live under `sdk/ui`, not `sdk/host`, and disclose
+ * through the host hook they call internally rather than asserting themselves. A kit-component row may list
  * more than one permission — a component can call several host hooks at init, not just
  * one — where every other row names exactly one, because a host hook asserts exactly one
  * capability.
@@ -143,6 +143,10 @@ export const PERMISSION_OF: Record<string, AppPermission | readonly AppPermissio
   useWallpaper: 'wallpaper',
   useWallpaperWrite: 'wallpaper-write',
   // kit components that call a host hook on the app's behalf
+  // MICA-392: the DM inbox and thread read and write through `useDirectMessages` and listen
+  // for the `dm` push through `useAppEvents`; neither toasts, so no `notifications`.
+  DmInbox: ['app-events', 'social'],
+  DmThread: ['app-events', 'social'],
   PhotoPickerModal: ['media', 'notifications'],
   ReportDialog: ['reports', 'notifications']
 };

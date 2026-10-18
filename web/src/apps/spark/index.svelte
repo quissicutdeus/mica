@@ -28,7 +28,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import type { SparkCard, SparkMatch } from '@mica/shared/types';
   import {
     block,
-    closeThread,
     deck,
     inbox,
     loadDeck,
@@ -37,11 +36,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     loadThreads,
     matches,
     matchesLoaded,
-    openPeer,
-    openThread,
     profile,
     profileLoaded,
-    receiveDm,
     receiveUnmatched,
     refillDeck,
     removeProfile,
@@ -84,7 +80,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   let editing = $state(false);
   /** The match whose thread is open, by id. */
   let openMatchId = $state<number | null>(null);
-  let threadLoading = $state(false);
   let menu = $state(false);
   let viewingProfile = $state(false);
   let confirmingUnmatch = $state(false);
@@ -110,32 +105,24 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   /**
    * Every visit, not once per session — the app is resident, so `onMount` would show whatever
-   * was true the first time it was ever opened (§11). An open thread re-reads too, so a message
-   * missed while away arrives.
+   * was true the first time it was ever opened (§11). An open thread is `DmThread`'s, which
+   * reads on open and merges each `dm` push while mounted.
    */
   onAppForeground('spark', () => {
     void loadProfile().then(() => {
-      if (!$profile) return;
-      loadAll();
-      if ($openPeer !== null) void openThread($openPeer).catch(() => undefined);
+      if ($profile) loadAll();
     });
   });
 
-  const showThread = async (match: SparkMatch) => {
+  /** `DmThread` reads the thread, and marks it read, as it mounts. */
+  const showThread = (match: SparkMatch) => {
     openMatchId = match.id;
-    threadLoading = true;
-    try {
-      await run(() => openThread(match.profile.account_id), { title: $t('spark.title') });
-    } finally {
-      threadLoading = false;
-    }
   };
 
   const leaveThread = () => {
     menu = false;
     viewingProfile = false;
     openMatchId = null;
-    closeThread();
   };
 
   /**
@@ -152,9 +139,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   events.on<{ match_id: number }>('unmatched', (event) => {
     if (typeof event.payload.match_id === 'number') receiveUnmatched(event.payload.match_id);
   });
+  // The open thread merges its own peer's lines and refreshes the inbox after marking them read;
+  // reading the inbox here as well would race that and flash the unread back.
   events.on<{ peer_account_id: number }>('dm', (event) => {
     if (event.replayed || typeof event.payload.peer_account_id !== 'number') return;
-    void receiveDm(event.payload.peer_account_id).catch(() => undefined);
+    if (
+      openMatch &&
+      !viewingProfile &&
+      openMatch.profile.account_id === event.payload.peer_account_id
+    )
+      return;
+    void loadThreads();
   });
 
   /** The open thread went away underneath it — unmatched, blocked, deleted: back to the list. */
@@ -179,7 +174,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     const match = $matches.find((m) =>
       'accountId' in wanted ? m.profile.account_id === wanted.accountId : m.id === wanted.matchId
     );
-    if (match) void showThread(match);
+    if (match) showThread(match);
   });
 
   /** Reading the matches is reading what the badge counted: messages from matches. */
@@ -251,7 +246,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     justMatched = null;
     if (!match) return;
     tab = 'matches';
-    void showThread(match);
+    showThread(match);
   };
 
   const selectTab = (next: string) => {
@@ -455,13 +450,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <ProfileCard card={openMatch.profile} />
     </div>
   {:else if openMatch}
-    <Thread match={openMatch} loading={threadLoading} />
+    <Thread match={openMatch} accountId={$profile.account_id} />
   {:else if tab === 'matches'}
     <Matches
       rows={$inbox}
       loaded={$matchesLoaded}
       myAccountId={$profile.account_id}
-      onopen={(match: SparkMatch) => void showThread(match)}
+      onopen={(match: SparkMatch) => showThread(match)}
     />
   {:else}
     <Deck

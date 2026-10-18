@@ -21,19 +21,13 @@ import type {
 import * as fetchNuiModule from '../../nui/fetchNui';
 import { registerNuiTransport } from '../../../../sdk/nui/transport';
 import {
-  closeThread,
   deck,
   inbox,
   loadDeck,
   matches,
-  messages,
-  openPeer,
-  openThread,
   profile,
-  receiveDm,
   receiveUnmatched,
   removeProfile,
-  sendMessage,
   swipe,
   threads
 } from './store';
@@ -101,7 +95,6 @@ describe('spark store', () => {
     profile.set(mine);
     matches.set([]);
     threads.set([]);
-    closeThread();
   });
 
   it('takes a swiped card out of the deck, and a first like adds no match', async () => {
@@ -146,58 +139,10 @@ describe('spark store', () => {
     ]);
   });
 
-  it('opens a thread oldest first, as my Spark account, and marks it read', async () => {
-    const spy = serve({
-      'dms:get': () => ({
-        rows: [dm(3, MAYA, ME), dm(2, ME, MAYA), dm(1, MAYA, ME)],
-        nextCursor: 1
-      }),
-      'dms:read': () => true,
-      'dms:threads': () => []
-    });
-    await openThread(MAYA);
-    expect(get(messages).map((m) => m.id)).toEqual([1, 2, 3]);
-    expect(callsTo(spy, 'dms:get')[0]).toMatchObject({
-      app: 'spark',
-      account_id: ME,
-      peer_account_id: MAYA
-    });
-    expect(callsTo(spy, 'dms:read')).toHaveLength(1);
-  });
-
-  it('dedupes my own send against the push of the same message', async () => {
-    openPeer.set(MAYA);
-    messages.set([dm(1, MAYA, ME)]);
-    const sent = dm(9, ME, MAYA);
-    serve({
-      'dms:send': () => sent,
-      'dms:get': () => ({ rows: [sent, dm(1, MAYA, ME)], nextCursor: null }),
-      'dms:read': () => true,
-      'dms:threads': () => []
-    });
-    await sendMessage(MAYA, 'hi');
-    await receiveDm(MAYA);
-    expect(get(messages).map((m) => m.id)).toEqual([1, 9]);
-  });
-
-  it('only refreshes the inbox for a push from a thread that is not open', async () => {
-    openPeer.set(MAYA);
-    messages.set([dm(1, MAYA, ME)]);
-    const spy = serve({ 'dms:threads': () => [] });
-    await receiveDm(32);
-    expect(callsTo(spy, 'dms:get')).toEqual([]);
-    expect(callsTo(spy, 'dms:threads')).toHaveLength(1);
-    expect(get(messages).map((m) => m.id)).toEqual([1]);
-  });
-
-  it('drops an unmatched match and closes its thread', () => {
+  it('drops an unmatched match', () => {
     matches.set([match(1, card(3, MAYA)), match(2, card(2, 32))]);
-    openPeer.set(MAYA);
-    messages.set([dm(1, MAYA, ME)]);
     receiveUnmatched(1);
     expect(get(matches).map((m) => m.id)).toEqual([2]);
-    expect(get(openPeer)).toBeNull();
-    expect(get(messages)).toEqual([]);
   });
 
   it('forgets the profile, matches and threads on delete', async () => {

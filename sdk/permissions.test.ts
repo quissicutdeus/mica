@@ -181,14 +181,20 @@ describe('the permission table is total', () => {
   // `lifecycle`, for `permissionOfFacet` to resolve at all), but have nothing to locate
   // here.
   //
-  // - `PhotoPickerModal`/`ReportDialog` (`sdk/ui`, not `sdk/host`): disclosed via the host
-  //   hook they call internally.
+  // - `DmInbox`/`DmThread`/`PhotoPickerModal`/`ReportDialog` (`sdk/ui`, not `sdk/host`):
+  //   disclosed via the host hook they call internally.
   // - `lifecycle` (MICA-27): no public hook at all, by design — it is the implicit,
   //   no-permission plumbing `onAppForeground`, `useDeepLink`, `onback`, and
   //   `useAppLevels`'s Back binding are each built out of, and each of *those* already
   //   goes through its own `guarded()` call under its own name. A `lifecycle` wrapper
   //   here would just be a second, redundant gate on the same capability.
-  const DISCLOSED_ELSEWHERE = new Set(['PhotoPickerModal', 'ReportDialog', 'lifecycle']);
+  const DISCLOSED_ELSEWHERE = new Set([
+    'DmInbox',
+    'DmThread',
+    'PhotoPickerModal',
+    'ReportDialog',
+    'lifecycle'
+  ]);
 
   /**
    * Find where `name` is exported from `sdk/host`, and the slice of source from that
@@ -305,7 +311,7 @@ describe('the permission table is total', () => {
         wrong.push(`${name}: row [${declared}], component reaches [${needed}]`);
     }
     // Fails loud if the lookup above stops finding the components, rather than passing empty.
-    expect(checked.sort()).toEqual(['PhotoPickerModal', 'ReportDialog']);
+    expect(checked.sort()).toEqual(['DmInbox', 'DmThread', 'PhotoPickerModal', 'ReportDialog']);
     expect(wrong, 'set the kit row in sdk/permissions.ts to what the component reaches').toEqual(
       []
     );

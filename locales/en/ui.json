@@ -72,5 +72,13 @@
   "musicPlaylistProgress": "Playlist · {index} of {count}",
   "musicEmbedBlocked": "Can't be played outside YouTube",
   "musicUnavailable": "Unavailable — removed or private",
-  "musicUnplayable": "Can't be played"
+  "musicUnplayable": "Can't be played",
+  "dmSomeone": "Someone",
+  "dmNoMessages": "No messages yet",
+  "dmNoMessagesHint": "Conversations you start or receive show up here.",
+  "dmNothingYet": "Nothing said yet",
+  "dmNothingYetHint": "Send the first message.",
+  "dmUnread": "{count} unread",
+  "dmMessageNoun": "message",
+  "dmSendFailed": "That message wasn't sent. Try again."
 }

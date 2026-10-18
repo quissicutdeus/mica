@@ -805,6 +805,9 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'ClockIcon',
     'CloseIcon',
     'ConfirmDialog',
+    // MICA-392: the shared DM inbox and thread, an addition.
+    'DmInbox',
+    'DmThread',
     'DocumentIcon',
     'EditIcon',
     'EmojiPicker',
@@ -1047,6 +1050,9 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'ClockIcon',
     'CloseIcon',
     'ConfirmDialog',
+    // MICA-392: the shared DM inbox and thread, an addition.
+    'DmInbox',
+    'DmThread',
     'DocumentIcon',
     'EditIcon',
     'EmojiPicker',
@@ -1518,6 +1524,22 @@ const BASELINE_PROPS: Record<string, string[]> = {
     'oncancel',
     'onconfirm',
     'title'
+  ],
+  // MICA-392.
+  DmInbox: ['accountId', 'appId', 'empty', 'onopen'],
+  DmThread: [
+    'accountId',
+    'appId',
+    'bodyMax?',
+    'bubble',
+    'emoji?',
+    'empty',
+    'header',
+    'onactivity',
+    'onpage',
+    'onreport',
+    'peerAccountId',
+    'placeholder'
   ],
   DocumentIcon: ['class?'],
   EditIcon: ['class?'],

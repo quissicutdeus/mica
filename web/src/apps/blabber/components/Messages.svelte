@@ -7,17 +7,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script lang="ts">
   import {
     Avatar,
+    DmInbox,
+    DmThread,
     EmptyState,
     ReactionBar,
-    ReportButton,
     ReportDialog,
-    Skeleton,
-    formatDate,
-    useLocale
+    useLocale,
+    type DirectMessage,
+    type DirectMessageThread
   } from '@mica/sdk';
   import { useBlabber } from '../store';
   import type { Account } from '@mica/shared/types';
-  import DmComposer from './DmComposer.svelte';
   import BlabBody from './BlabBody.svelte';
 
   /**
@@ -29,7 +29,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   type DmPeer = Pick<Account, 'handle' | 'display_name'> & { avatar?: string | null };
 
   /**
-   * The DM inbox, and one thread.
+   * The DM inbox, and one thread — the SDK's `DmInbox` and `DmThread` (MICA-392), with what is
+   * Blabber's own laid over them: the peer's header, a body that links handles and tags, the
+   * reactions under each line, and the report dialog against `mica_blabber_dms`.
    *
    * Strictly 1:1, so a thread is identified by the **peer account** rather than by a conversation
    * row — there is nothing to create before the first message, and nothing a third person could
@@ -42,7 +44,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * the literal title "Message".
    */
   let {
-    busy = false,
     peer = null,
     peerAccount = null,
     onopen,
@@ -50,7 +51,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     onhandle,
     ontag
   }: {
-    busy?: boolean;
     peer?: number | null;
     peerAccount?: DmPeer | null;
     onopen?: (peerAccountId: number | null, account?: DmPeer | null) => void;
@@ -63,44 +63,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   const { t } = useLocale();
 
   const {
+    activeAccount,
     dmThreads,
-    dmMessages,
     loadDmThreads,
-    loadDmMessages,
-    sendDm,
     dmReactions,
     loadDmReactions,
     toggleDmReaction
   } = useBlabber();
 
-  let loading = $state(true);
-
+  // The badge and the header both read `$dmThreads`; opening the inbox refreshes it, as it did
+  // when the inbox drew from that store itself.
   $effect(() => {
-    loading = true;
-    const task = peer === null ? loadDmThreads() : loadDmMessages(peer);
-    void task.finally(() => (loading = false));
-  });
-
-  $effect(() => {
-    const ids = $dmMessages.map((message) => message.id);
-    if (ids.length > 0) void loadDmReactions(ids);
-  });
-
-  /** The thread's scroller, bound so the newest message can be brought into view. */
-  let list: HTMLDivElement | undefined = $state();
-
-  /**
-   * Pin the thread to the bottom whenever its length changes — opening it, and every send.
-   *
-   * The store is oldest-first now (MICA-101), so the newest message is the one furthest down
-   * and a thread longer than the screen would otherwise open showing its oldest message. Reading
-   * `.length` rather than the array is deliberate: a reaction refresh replaces objects in place
-   * and must not yank the player back down while they are reading upward. `$effect` runs after
-   * the DOM is updated, so `scrollHeight` here already includes the message just appended.
-   */
-  $effect(() => {
-    void $dmMessages.length;
-    if (list) list.scrollTop = list.scrollHeight;
+    if (peer === null) void loadDmThreads();
   });
 
   const thread = $derived($dmThreads.find((row) => row.peer_account_id === peer));
@@ -113,132 +87,76 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     onpeername?.(active ? active.display_name || `@${active.handle}` : null);
   });
 
+  const openThread = (row: DirectMessageThread) =>
+    onopen?.(row.peer_account_id, { handle: row.handle ?? '', display_name: row.display_name });
+
   /** Which DM is being reported, by id. Null when the dialog is closed. */
   let reportingDm = $state<number | null>(null);
 </script>
 
-{#if peer === null}
-  <div class="flex-1 overflow-y-auto">
-    {#if loading && $dmThreads.length === 0}
-      <div class="p-4"><Skeleton count={3} height="h-16" /></div>
-    {:else if $dmThreads.length === 0}
-      <EmptyState title={$t('blabber.noMessages')} description={$t('blabber.noMessagesHint')} />
-    {:else}
-      {#each $dmThreads as thread (thread.peer_account_id)}
-        <button
-          type="button"
-          class="border-outline-variant flex w-full items-center gap-3 border-b px-4 py-3 text-left"
-          onclick={() =>
-            onopen?.(thread.peer_account_id, {
-              handle: thread.handle ?? '',
-              display_name: thread.display_name
-            })}
-        >
-          <Avatar
-            initials={(thread.handle ?? '?').slice(0, 2).toUpperCase()}
-            size="w-9 h-9"
-            showSilhouette={false}
-          />
-          <div class="min-w-0 flex-1">
-            <p class="text-body-small flex items-center gap-1.5">
-              <span class="text-on-surface truncate font-semibold"
-                >{thread.display_name || thread.handle}</span
-              >
-              <span class="text-on-surface-variant truncate">@{thread.handle}</span>
-            </p>
-            <p class="text-on-surface-variant text-body-small truncate">
-              {thread.last?.body ?? ''}
-            </p>
-          </div>
-          {#if thread.unread > 0}
-            <span
-              class="bg-primary-container text-on-primary-container text-label-small shrink-0 rounded-full px-2 py-0.5"
-            >
-              {thread.unread}
-            </span>
-          {/if}
-        </button>
-      {/each}
-    {/if}
-  </div>
-{:else}
-  <div class="flex min-h-0 flex-1 flex-col">
-    <div class="border-outline-variant flex items-center gap-2 border-b px-4 py-2.5">
-      <Avatar
-        initials={(active?.handle || '?').slice(0, 2).toUpperCase()}
-        src={peerAccount?.avatar ?? ''}
-        size="w-8 h-8"
-        showSilhouette={false}
-      />
-      <button
-        type="button"
-        class="min-w-0 text-left hover:underline"
-        onclick={() => active?.handle && onhandle?.(active.handle)}
-      >
-        <span class="text-on-surface text-body-medium block truncate">
-          {active?.display_name || (active?.handle ? `@${active.handle}` : $t('blabber.message'))}
-        </span>
-        {#if active?.display_name && active.handle}
-          <span class="text-on-surface-variant text-body-small block truncate"
-            >@{active.handle}</span
-          >
-        {/if}
-      </button>
-    </div>
+{#snippet inboxEmpty()}
+  <EmptyState title={$t('blabber.noMessages')} description={$t('blabber.noMessagesHint')} />
+{/snippet}
 
-    <!-- Oldest first, newest last, and scrolled to the bottom on arrival — standard chat order
-         (MICA-101). Scrolling the list rather than reversing the flex direction on purpose:
-         `flex-col-reverse` would order it visually while leaving the column sized by its content,
-         which is the shape MICA-89 was. -->
-    <div class="flex-1 overflow-y-auto" bind:this={list}>
-      {#if loading && $dmMessages.length === 0}
-        <div class="p-4"><Skeleton count={3} height="h-12" /></div>
-      {:else if $dmMessages.length === 0}
-        <EmptyState title={$t('blabber.nothingYet')} description={$t('blabber.nothingYetHint')} />
-      {:else}
-        {#each $dmMessages as message (message.id)}
-          {@const mine = message.to_account === peer}
-          <!-- The bubble's own `on-` role, handed to everything inside it. A sent bubble is a
-               tinted container, so `on-surface`/`on-surface-variant` are near-invisible on it
-               (MICA-102) — the timestamp measured about 1.07:1. -->
-          {@const onBubble = mine ? 'text-on-primary-container' : 'text-on-surface'}
-          {@const onBubbleVariant = mine ? 'text-on-primary-container' : 'text-on-surface-variant'}
-          <div class="flex px-4 py-1.5" class:justify-end={mine}>
-            <div
-              class="max-w-[80%] rounded-box px-3 py-2"
-              class:bg-primary-container={mine}
-              class:bg-surface-container={!mine}
-            >
-              <BlabBody body={message.body} class={onBubble} {onhandle} {ontag} />
-              <div class="mt-0.5 flex items-center gap-1">
-                <p class="text-label-small {onBubbleVariant}">
-                  {formatDate(message.created_at)}
-                </p>
-                <!-- Theirs only. Reporting your own message is not moderation, and the
-                     server refuses it — an affordance that always fails is worse than
-                     none. A DM is also the surface where reporting matters most, since
-                     it is the one a stranger can reach you on. -->
-                {#if !mine}
-                  <ReportButton
-                    subject="message"
-                    size="mini"
-                    onclick={() => (reportingDm = message.id)}
-                  />
-                {/if}
-              </div>
-              <ReactionBar
-                summary={$dmReactions[message.id]}
-                ontoggle={(emoji: string) => toggleDmReaction(message.id, emoji)}
-                class="mt-1"
-              />
-            </div>
-          </div>
-        {/each}
+{#snippet threadEmpty()}
+  <EmptyState title={$t('blabber.nothingYet')} description={$t('blabber.nothingYetHint')} />
+{/snippet}
+
+{#snippet header()}
+  <div class="border-outline-variant flex items-center gap-2 border-b px-4 py-2.5">
+    <Avatar
+      initials={(active?.handle || '?').slice(0, 2).toUpperCase()}
+      src={peerAccount?.avatar ?? ''}
+      size="w-8 h-8"
+      showSilhouette={false}
+    />
+    <button
+      type="button"
+      class="min-w-0 text-left hover:underline"
+      onclick={() => active?.handle && onhandle?.(active.handle)}
+    >
+      <span class="text-on-surface text-body-medium block truncate">
+        {active?.display_name || (active?.handle ? `@${active.handle}` : $t('blabber.message'))}
+      </span>
+      {#if active?.display_name && active.handle}
+        <span class="text-on-surface-variant text-body-small block truncate">@{active.handle}</span>
       {/if}
-    </div>
-
-    <DmComposer {busy} onsubmit={(body: string) => sendDm(peer, body)} />
+    </button>
   </div>
+{/snippet}
+
+<!-- The bubble's own `on-` role, handed to everything inside it. A sent bubble is a tinted
+     container, so `on-surface` is near-invisible on it (MICA-102). -->
+{#snippet bubble(message: DirectMessage, mine: boolean)}
+  <BlabBody
+    body={message.body}
+    class={mine ? 'text-on-primary-container' : 'text-on-surface'}
+    {onhandle}
+    {ontag}
+  />
+  <ReactionBar
+    summary={$dmReactions[message.id]}
+    ontoggle={(emoji: string) => toggleDmReaction(message.id, emoji)}
+    class="mt-1"
+  />
+{/snippet}
+
+{#if peer === null}
+  <DmInbox appId="blabber" accountId={null} empty={inboxEmpty} onopen={openThread} />
+{:else if $activeAccount}
+  <!-- As whoever the header menu says is posting; a switch there reopens the thread. -->
+  <DmThread
+    appId="blabber"
+    accountId={$activeAccount.id}
+    peerAccountId={peer}
+    emoji
+    {header}
+    empty={threadEmpty}
+    {bubble}
+    onreport={(message: DirectMessage) => (reportingDm = message.id)}
+    onactivity={() => void loadDmThreads()}
+    onpage={(rows: DirectMessage[]) => void loadDmReactions(rows.map((row) => row.id))}
+  />
 {/if}
 
 {#if reportingDm !== null}

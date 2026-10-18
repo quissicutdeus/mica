@@ -648,7 +648,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <Screen title={app.title} onback={app.back} actions={headerActions} overlay={overlays}>
   {#if view === 'dms'}
     <Messages
-      busy={$busy}
       peer={dmPeer}
       peerAccount={dmPeerAccount}
       onopen={(peer: number | null, account?: DmPeer | null) => {

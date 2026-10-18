@@ -20,7 +20,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * fix a typo — and nothing else. It is **not** the knob for a different kind of composer: the
    * DM thread used to reach it with `placeholder="Message"` and inherited a **Post** button, a
    * 280 counter against a `varchar(500)` column, and "Posting as @x" inside a private
-   * conversation with one other person. That caller is `DmComposer.svelte` now.
+   * conversation with one other person. That caller is the SDK's `DmThread` now.
    */
   let {
     handle,

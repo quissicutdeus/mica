@@ -1626,6 +1626,14 @@ somebody maintaining a `core: false` add-on outside this repo, and it answers
 one question: does that bundle still compile against this release, and does its
 manifest still ask for the right things.
 
+**`DmInbox` and `DmThread` are new components (MICA-392), behind `social` and
+`app-events`.** `DmInbox` lists an app's DM correspondents newest first and
+reads again on a live `dm` push; `DmThread` pages one thread from the newest
+end, marks it read on open, sends, and shows a failed send inline rather than as
+a toast. Both go through `useDirectMessages`, so a manifest that already
+declares `social` and `app-events` needs nothing more. Nothing was removed, and
+`SDK_CONTRACT_VERSION` stays `1`.
+
 **`useDirectMessages(appId)` is new, behind the existing `social` permission
 (MICA-390).** Private one-to-one messages between two accounts in your app:
 `threads()` lists every correspondent across your accounts there,
