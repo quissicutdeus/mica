@@ -339,6 +339,14 @@ DDL.
   the open palette. Core reads both from the declarations at call time
   (MICA-391), so an add-on's rows can take reactions without a list in Accounts
   naming its table; before that, Glimpse had to edit core to be reactable.
+- **A social app registers with the shared `accounts` and `dms` services through
+  one call**, `defineSocialApp(appId, { accounts?, dms?, onBlocked? })` from
+  `server/lib/socialApp.ts`, made once at import in the app's own service file
+  (MICA-394). `accounts` is the per-app account policy (cap, `listed`), `dms`
+  the DM policy (`canSend`, `canRead`, `notify`), `onBlocked` what a block in
+  that app also does. A second definition for the app throws before registering
+  anything, and a registry that refuses undoes the rest, so an app is never
+  half-wired. `reportable` and `reactable` stay on the declaration.
 - **`options` passes through to `ServiceEndpoint` to turn a generic action off**
   — `{ disableGet, disableCreate, disableUpdate, disableDelete }`. Reach for it
   when the generic shape is not merely incomplete but wrong: Blabber disables

@@ -58,6 +58,9 @@ export const notes = defineService<Note>({
   `canReact(account, rowId)`, `visibleTo(ids, citizenid, appId)`, and an
   optional `emoji` set (absent means the open palette). Core reads both at call
   time (MICA-391); no list in Accounts or Reports names a table.
+- A social app on the accounts layer registers its account policy, DM policy and
+  block handler through one `defineSocialApp(appId, {...})` call from
+  `server/lib/socialApp.ts` (MICA-394), never the individual registers.
 - `repositoryFactory` subclasses `SchemaRepository` for reads the single-table
   generic path cannot express, without losing the identifier allowlist or the
   ownership scoping. `server/repositories/` holds the two that need it.

@@ -240,10 +240,14 @@ export const registerDmPolicy = (appId: string, policy: DmPolicy): void => {
   policies.set(appId, { policy, channel: appEventChannel(appId) });
 };
 
-/** Test seam: forget a policy a suite registered. */
-export const unregisterDmPolicyForTests = (appId: string): void => {
+/** Undo a `registerDmPolicy`: `defineSocialApp`'s rollback, and a suite's own cleanup. */
+export const unregisterDmPolicy = (appId: string): void => {
   policies.delete(appId);
 };
+
+/** Test seam: the policy registered for an app, as the registry holds it. */
+export const dmPolicyForTests = (appId: string): DmPolicy | undefined =>
+  policies.get(appId)?.policy;
 
 /**
  * The gate every action opens with: the app is on, and it registered a policy. Before any read,

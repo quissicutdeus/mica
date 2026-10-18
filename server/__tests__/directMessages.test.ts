@@ -33,7 +33,7 @@ import {
   deleteThread,
   directMessages,
   registerDmPolicy,
-  unregisterDmPolicyForTests
+  unregisterDmPolicy
 } from '../services/DirectMessages';
 // Blabber's policy is registered by its own service file, as in game.
 import '../services/Blabber';
@@ -61,7 +61,7 @@ beforeEach(() => {
   dbMock.update.mockResolvedValue(true);
   dbMock.single.mockResolvedValue(null);
   (globalThis as any).GetConvar = (_n: string, f: string) => f;
-  for (const id of ['testapp', 'strictapp', 'readapp']) unregisterDmPolicyForTests(id);
+  for (const id of ['testapp', 'strictapp', 'readapp']) unregisterDmPolicy(id);
 });
 
 /** The pushes the shell received, on the shared app-event net event. */

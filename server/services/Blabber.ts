@@ -33,7 +33,7 @@ import { mentionedHandles, taggedTopics } from '@mica/shared/richText';
 import { BlabberRepository } from '../repositories/BlabberRepository';
 import { buildDeepLink } from '@mica/shared/deepLink';
 import { isInlineImage } from '@mica/shared/imageSource';
-import { registerDmPolicy } from './DirectMessages';
+import { defineSocialApp } from '../lib/socialApp';
 
 /** The app id, which is also the handle namespace accounts are claimed in. */
 const APP = 'blabber';
@@ -443,13 +443,15 @@ const channel = appEventChannel(APP);
  * service holds for every app. The notification is the sender's handle and the text, and opens
  * the thread, which Blabber keys on the peer's handle.
  */
-registerDmPolicy(APP, {
-  canSend: () => true,
-  notify: (from, text) => ({
-    title: `@${from.handle}`,
-    message: text.slice(0, 120),
-    deepLink: buildDeepLink(APP, { dmHandle: from.handle })
-  })
+defineSocialApp(APP, {
+  dms: {
+    canSend: () => true,
+    notify: (from, text) => ({
+      title: `@${from.handle}`,
+      message: text.slice(0, 120),
+      deepLink: buildDeepLink(APP, { dmHandle: from.handle })
+    })
+  }
 });
 
 /**

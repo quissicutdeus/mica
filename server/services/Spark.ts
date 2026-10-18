@@ -12,15 +12,9 @@ import { pageBounds } from '../lib/payload';
 import { isDuplicateKey } from '../lib/sqlErrors';
 import { RETENTION_BATCH } from '../lib/contentRetention';
 import { whenSchemaReady } from '../lib/schemaReady';
-import {
-  AccountRepository,
-  accounts,
-  accountHasBlocked,
-  onAccountBlocked,
-  registerAccountAppPolicy,
-  scrubAccount
-} from './Accounts';
-import { deleteThread, registerDmPolicy } from './DirectMessages';
+import { AccountRepository, accounts, accountHasBlocked, scrubAccount } from './Accounts';
+import { deleteThread, type DmPolicy } from './DirectMessages';
+import { defineSocialApp } from '../lib/socialApp';
 import { media } from './Media';
 import { onBeforeSelfServiceDelete } from './Privacy';
 import { defineContract, responseType } from '@mica/shared/contract';
@@ -261,9 +255,6 @@ export const spark = defineService<ProfileRow, typeof sparkContract>({
 const app = spark.app;
 const channel = appEventChannel(SPARK_APP);
 
-/** One account per citizen, and none of them in a directory (MICA-255). */
-registerAccountAppPolicy(SPARK_APP, { maxPerCitizen: 1, listed: false });
-
 // ---------------------------------------------------------------------------------------------
 // Refusals
 // ---------------------------------------------------------------------------------------------
@@ -493,9 +484,10 @@ export const accountsMatched = async (a: number, b: number): Promise<boolean> =>
  * the lock screen, so it says only that a message came. The deep link carries the sender's
  * account id, which the recipient's match list already holds as `profile.account_id`; the
  * policy's `notify` is synchronous and handed only the sender, so a match id is not
- * computable here without racing another send.
+ * computable here without racing another send. Registered with the rest by `defineSocialApp`
+ * below.
  */
-registerDmPolicy(SPARK_APP, {
+const sparkDms: DmPolicy = {
   canSend: async (mine: Account, peer: Account) => await accountsMatched(mine.id, peer.id),
   canRead: async (mine: Account, peer: Account) => await accountsMatched(mine.id, peer.id),
   notify: (from: Account) => ({
@@ -503,7 +495,7 @@ registerDmPolicy(SPARK_APP, {
     message: 'New message',
     deepLink: buildDeepLink(SPARK_APP, { accountId: from.id })
   })
-});
+};
 
 // ---------------------------------------------------------------------------------------------
 // The account
@@ -1007,7 +999,7 @@ app.requirePhoneFor('save', 'swipe', 'block');
  * written, and on a block that already existed too, so a match already gone is a no-op. Any
  * profile status: a match on a taken-down profile is still a match the blocker wants ended.
  */
-onAccountBlocked(SPARK_APP, async (blocker, blocked) => {
+const endMatchesOnBlock = async (blocker: Account, blocked: Account): Promise<void> => {
   const rows = await Database.query<(MatchRow & { a_account: number })[]>(
     `SELECT m.\`id\`, m.\`profile_a\`, m.\`profile_b\`, m.\`created_at\`, pa.\`account_id\` AS a_account
      FROM \`${MATCHES}\` m
@@ -1025,6 +1017,16 @@ onAccountBlocked(SPARK_APP, async (blocker, blocked) => {
     const other = await endMatch(match, { id: blockerSide, account_id: Number(blocker.id) });
     if (other) pushUnmatched(other, Number(match.id));
   }
+};
+
+/**
+ * Spark with the shared account and DM services (MICA-394): one account per citizen and none of
+ * them in a directory (MICA-255), DMs only between matches, and a block that ends the match.
+ */
+defineSocialApp(SPARK_APP, {
+  accounts: { maxPerCitizen: 1, listed: false },
+  dms: sparkDms,
+  onBlocked: endMatchesOnBlock
 });
 
 /**

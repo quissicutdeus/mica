@@ -19,7 +19,7 @@ import {
 // and Blabber already use.
 import { media } from './Media';
 import { GlimpseRepository } from '../repositories/GlimpseRepository';
-import { registerDmPolicy } from './DirectMessages';
+import { defineSocialApp } from '../lib/socialApp';
 import { defineContract, responseType } from '@mica/shared/contract';
 import { s } from '@mica/shared/schema';
 import { MAX_ATTACHMENTS } from '@mica/shared/attachments';
@@ -245,13 +245,15 @@ const channel = appEventChannel(GLIMPSE_APP);
  * block and the rest `dms` holds for every app. The notification is the sender's handle and the
  * text, and opens the thread, which Glimpse keys on the peer's handle as Blabber does.
  */
-registerDmPolicy(GLIMPSE_APP, {
-  canSend: () => true,
-  notify: (from, text) => ({
-    title: `@${from.handle}`,
-    message: text.slice(0, 120),
-    deepLink: buildDeepLink(GLIMPSE_APP, { dmHandle: from.handle })
-  })
+defineSocialApp(GLIMPSE_APP, {
+  dms: {
+    canSend: () => true,
+    notify: (from, text) => ({
+      title: `@${from.handle}`,
+      message: text.slice(0, 120),
+      deepLink: buildDeepLink(GLIMPSE_APP, { dmHandle: from.handle })
+    })
+  }
 });
 
 /** Non-null by construction: a public read without paging throws in `defineService` (§10). */

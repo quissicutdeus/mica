@@ -474,6 +474,15 @@ export const registerAccountAppPolicy = (appId: string, policy: AccountAppPolicy
   appPolicies.set(appId, Object.freeze({ ...policy }));
 };
 
+/** Undo a `registerAccountAppPolicy`: `defineSocialApp`'s rollback and its test seam. */
+export const unregisterAccountAppPolicy = (appId: string): void => {
+  appPolicies.delete(appId);
+};
+
+/** Test seam: the policy registered for an app, as the registry holds it. */
+export const accountAppPolicyForTests = (appId: string): Readonly<AccountAppPolicy> | undefined =>
+  appPolicies.get(appId);
+
 /** The cap for one app: its policy's, else the convar's. */
 const capFor = (appId: string): number => appPolicies.get(appId)?.maxPerCitizen ?? maxPerApp();
 
@@ -519,6 +528,16 @@ export const onAccountBlocked = (
   }
   blockHandlers.set(appId, handler);
 };
+
+/** Undo an `onAccountBlocked`: `defineSocialApp`'s rollback and its test seam. */
+export const unregisterAccountBlocked = (appId: string): void => {
+  blockHandlers.delete(appId);
+};
+
+/** Test seam: the block handler registered for an app, if any. */
+export const accountBlockHandlerForTests = (
+  appId: string
+): ((blocker: Account, blocked: Account) => Promise<void>) | undefined => blockHandlers.get(appId);
 
 /** Blank an account's profile, keeping the handle and the row. Server-only; see the method. */
 export const scrubAccount = (id: number, citizenid: string): Promise<boolean> =>
