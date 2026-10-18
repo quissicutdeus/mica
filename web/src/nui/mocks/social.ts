@@ -349,6 +349,28 @@ export const mockDms: DirectMessage[] = [
     status: 'active',
     created_at: '2026-08-02T12:30:00Z',
     updated_at: '2026-08-02T12:30:00Z'
+  },
+  // Glimpse (MICA-393): the player's @ada (20) and @lens_lena (21), one line each way, Lena's
+  // last and unread, so the inbox has a row with a count and the thread has both sides.
+  {
+    id: 2,
+    from_account: 20,
+    to_account: 21,
+    body: 'your pier shot is lovely',
+    read_at: '2026-09-05T18:01:00Z',
+    status: 'active',
+    created_at: '2026-09-05T18:00:00Z',
+    updated_at: '2026-09-05T18:00:00Z'
+  },
+  {
+    id: 3,
+    from_account: 21,
+    to_account: 20,
+    body: 'thanks! golden hour does the work',
+    read_at: null,
+    status: 'active',
+    created_at: '2026-09-05T18:05:00Z',
+    updated_at: '2026-09-05T18:05:00Z'
   }
 ];
 

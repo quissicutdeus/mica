@@ -39,12 +39,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   let {
     handle,
     onopen,
-    onedit
+    onedit,
+    onmessage
   }: {
     handle: string;
     onopen: (post: GlimpsePost) => void;
     /** Edit the display half of my own identity. Offered on a profile that is mine. */
     onedit?: () => void;
+    /** Open a direct-message thread with this account. Offered on someone else's profile. */
+    onmessage?: (account: Account) => void;
   } = $props();
 
   const { t } = useLocale();
@@ -182,6 +185,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               >
                 {stats?.followedByMe ? $t('glimpse.followingButton') : $t('glimpse.follow')}
               </Button>
+              {#if onmessage}
+                <Button
+                  variant="secondary"
+                  class="text-body-small flex-1 py-1.5"
+                  data-testid="glimpse-message"
+                  onclick={() => account && onmessage(account)}
+                >
+                  {$t('glimpse.message')}
+                </Button>
+              {/if}
             {/if}
             <ReportButton subject="account" onclick={() => (reporting = true)} />
           {/if}

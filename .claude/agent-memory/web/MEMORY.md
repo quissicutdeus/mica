@@ -64,3 +64,6 @@ its one-line summary.
   boolean
 - [`Object.hasOwn` fails web's typecheck](es2022-lib-gap-object-hasown.md) — CEF
   has it, web's TS lib does not; use a `Map`. No `m-4`/`mx-4`/`aspect-[3/4]`
+- [A `.svelte` module-script type fails lint](svelte-module-script-type-export.md)
+  — typecheck passes, eslint sees `error` types; declare it in `store.ts`
+  instead

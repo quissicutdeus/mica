@@ -100,9 +100,10 @@ for players and seamless framework integration for server developers.
   gallery with a caption, like with a heart, comment, and follow accounts into a
   Following feed; a profile shows its posts as a grid. The owner of a post can
   remove comments on it, and posts and comments can be reported to Admin.
-  Handles are separate from Blabber's, and the owning `citizenid` never reaches
-  another reader. A caption stays editable for 15 minutes —
-  `mica_glimpse_edit_window`. Installs from the Store.
+  Message another account privately from its profile; a DM shows up in a
+  Messages tab and as a notification. Handles are separate from Blabber's, and
+  the owning `citizenid` never reaches another reader. A caption stays editable
+  for 15 minutes — `mica_glimpse_edit_window`. Installs from the Store.
 - **Dark Chat** _(add-on)_: Anonymous channels joined by an eight-character
   code. Each member picks an alias per channel, and no name, handle or phone
   number is ever shown. The creator owns the channel: they can read and replace

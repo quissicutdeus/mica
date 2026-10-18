@@ -15,10 +15,13 @@ import { matchBetween } from '../spark';
  *
  * Blabber's (`Blabber.ts`) adds nothing to the checks every app gets. Spark's (MICA-255) serves
  * a thread only between two accounts with a live match: before the match, after an unmatch or
- * a block, the thread does not exist for either side.
+ * a block, the thread does not exist for either side. Glimpse's (MICA-393, `Glimpse.ts`) is
+ * Blabber's: any two Glimpse accounts, with the same-app peer and the block in either direction
+ * refused by the checks below, as the server's shared checks refuse them.
  */
 const POLICIES: ReadonlyMap<string, (mine: number, peer: number) => boolean> = new Map([
   ['blabber', () => true],
+  ['glimpse', () => true],
   ['spark', (mine: number, peer: number) => matchBetween(mine, peer) !== undefined]
 ]);
 

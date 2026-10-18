@@ -76,5 +76,12 @@
   "followingEmpty": "Noch nichts von anderen",
   "followingEmptyHint": "Folge jemandem über das Profil, dann erscheinen die Fotos hier.",
   "postUnavailable": "Beitrag nicht verfügbar",
-  "postUnavailableHint": "Dieser Beitrag wurde gelöscht oder ist nicht mehr sichtbar."
+  "postUnavailableHint": "Dieser Beitrag wurde gelöscht oder ist nicht mehr sichtbar.",
+  "messages": "Nachrichten",
+  "message": "Nachricht",
+  "messagePlaceholder": "Nachricht an @{handle}…",
+  "noMessages": "Noch keine Nachrichten",
+  "noMessagesHint": "Öffne ein Profil und tippe auf Nachricht, um ein Gespräch zu beginnen.",
+  "nothingYet": "Noch nichts",
+  "nothingYetHint": "Sag Hallo."
 }

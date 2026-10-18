@@ -30,17 +30,60 @@ describe('dms mocks', () => {
   });
 
   it('refuses an app that registered no policy, on every action', async () => {
-    // Glimpse has accounts on the identity layer and no DMs.
-    expect(() => dms['dms:threads']({ app: 'glimpse' })).toThrow(/direct messages/);
-    expect(() => dms['dms:get']({ app: 'glimpse', account_id: 20, peer_account_id: 21 })).toThrow(
+    // Notes has no accounts and no DMs; the refusal comes before either is looked at.
+    expect(() => dms['dms:threads']({ app: 'notes' })).toThrow(/direct messages/);
+    expect(() => dms['dms:get']({ app: 'notes', account_id: 20, peer_account_id: 21 })).toThrow(
       /direct messages/
     );
     expect(() =>
-      dms['dms:send']({ app: 'glimpse', account_id: 20, peer_account_id: 21, body: 'hi' })
+      dms['dms:send']({ app: 'notes', account_id: 20, peer_account_id: 21, body: 'hi' })
     ).toThrow(/direct messages/);
-    expect(() => dms['dms:read']({ app: 'glimpse', account_id: 20, peer_account_id: 21 })).toThrow(
+    expect(() => dms['dms:read']({ app: 'notes', account_id: 20, peer_account_id: 21 })).toThrow(
       /direct messages/
     );
+  });
+
+  it("serves Glimpse's seeded thread, as the player's Glimpse account only (MICA-393)", async () => {
+    const threads = (await dms['dms:threads']({ app: 'glimpse' })) as {
+      peer_account_id: number;
+      handle: string;
+      unread: number;
+    }[];
+    expect(threads).toEqual([
+      expect.objectContaining({ peer_account_id: 21, handle: 'lens_lena' })
+    ]);
+    expect(threads[0].unread).toBe(1);
+
+    const page = (await dms['dms:get']({
+      app: 'glimpse',
+      account_id: 20,
+      peer_account_id: 21
+    })) as {
+      rows: { id: number }[];
+    };
+    expect(page.rows.map((r) => r.id)).toEqual([3, 2]);
+
+    const sent = (await dms['dms:send']({
+      app: 'glimpse',
+      account_id: 20,
+      peer_account_id: 22,
+      body: 'hi'
+    })) as { to_account: number };
+    expect(sent.to_account).toBe(22);
+    // A Blabber account is not a Glimpse peer, and Blabber's inbox does not see Glimpse's lines.
+    expect(() =>
+      dms['dms:send']({ app: 'glimpse', account_id: 20, peer_account_id: 2, body: 'hi' })
+    ).toThrow("You can't message this account.");
+    const blabber = (await dms['dms:threads']({ app: 'blabber' })) as { peer_account_id: number }[];
+    expect(blabber.map((t) => t.peer_account_id)).toEqual([2]);
+  });
+
+  it('refuses a Glimpse send across a block, in either direction', async () => {
+    const { mockBlocks } = await import('./social');
+    mockBlocks.push({ blocker: 21, blocked: 20 });
+    expect(() =>
+      dms['dms:send']({ app: 'glimpse', account_id: 20, peer_account_id: 21, body: 'hi' })
+    ).toThrow("You can't message this account.");
   });
 
   it('refuses a peer in another app, and an account that is not in the app named', async () => {

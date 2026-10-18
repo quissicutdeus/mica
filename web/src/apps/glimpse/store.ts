@@ -288,6 +288,14 @@ export const removeComment = async (
   bumpComments(postId, -1);
 };
 
+/**
+ * Who a DM thread is with (MICA-393): enough to title it. An inbox row carries a handle and a
+ * display name and no avatar, so the avatar is optional rather than invented.
+ */
+export type GlimpsePeer = Pick<Account, 'id' | 'handle' | 'display_name'> & {
+  avatar?: string | null;
+};
+
 /** The account behind a handle, in Glimpse. Null when nobody holds it. Rejects on failure. */
 export const findAccount = async (handle: string): Promise<Account | null> => {
   const reply = await accounts().getAccounts({ app: APP, handle, limit: 1 });

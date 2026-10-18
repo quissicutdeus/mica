@@ -76,5 +76,12 @@
   "followingEmpty": "Nothing from anyone yet",
   "followingEmptyHint": "Follow somebody from their profile and their photos turn up here.",
   "postUnavailable": "Post unavailable",
-  "postUnavailableHint": "This post has been deleted or is no longer visible."
+  "postUnavailableHint": "This post has been deleted or is no longer visible.",
+  "messages": "Messages",
+  "message": "Message",
+  "messagePlaceholder": "Message @{handle}…",
+  "noMessages": "No messages yet",
+  "noMessagesHint": "Open someone's profile and tap Message to start a conversation.",
+  "nothingYet": "Nothing here yet",
+  "nothingYetHint": "Say hello."
 }

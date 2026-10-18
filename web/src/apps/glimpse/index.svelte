@@ -13,6 +13,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     EmptyState,
     FloatingActionButton,
     HomeIcon,
+    MessageIcon,
     Screen,
     Skeleton,
     TabBar,
@@ -41,6 +42,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     editWindow,
     engagement,
     feed,
+    findAccount,
     followingFeed,
     likes,
     loadEngagement,
@@ -50,12 +52,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     loadMyAccounts,
     myAccounts,
     toggleLike,
-    updateAccount
+    updateAccount,
+    type GlimpsePeer
   } from './store';
   import AccountMenu from './components/AccountMenu.svelte';
   import ClaimHandle from './components/ClaimHandle.svelte';
   import Composer from './components/Composer.svelte';
   import EditProfile from './components/EditProfile.svelte';
+  import Messages from './components/Messages.svelte';
   import PostCard from './components/PostCard.svelte';
   import PostDetail from './components/PostDetail.svelte';
   import Profile from './components/Profile.svelte';
@@ -66,9 +70,20 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   registerMessages('glimpse', { en, de });
   const { t } = useLocale();
 
-  /** Deep links: `glimpse?postId=<id>` (a comment or a mention) and `glimpse?handle=<h>`. */
-  let { onback, postId, handle }: AppProps & { postId?: number; handle?: string | number } =
-    $props();
+  /**
+   * Deep links: `glimpse?postId=<id>` (a comment or a mention), `glimpse?handle=<h>`, and
+   * `glimpse?dmHandle=<h>` (a direct message, MICA-393).
+   */
+  let {
+    onback,
+    postId,
+    handle,
+    dmHandle
+  }: AppProps & {
+    postId?: number;
+    handle?: string | number;
+    dmHandle?: string | number;
+  } = $props();
 
   const { run, busy } = useAppAction('glimpse');
 
@@ -78,9 +93,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   const followingHasMore = followingFeed.hasMore;
 
   /** The overlay stack above the tabs. */
-  let view = $state<'feed' | 'profile' | 'post'>('feed');
-  /** Which feed the bottom nav is on. */
-  let tab = $state<'feed' | 'following'>('feed');
+  let view = $state<'feed' | 'profile' | 'post' | 'dm'>('feed');
+  /** Which destination the bottom nav is on. */
+  let tab = $state<'feed' | 'following' | 'messages'>('feed');
+  /** Who the open DM thread is with, when `view` is `dm`. */
+  let dmPeer = $state<GlimpsePeer | null>(null);
+  /** A thread opened from a profile goes back to it; one from the inbox, to the inbox. */
+  let dmFromProfile = $state(false);
   let activePostId = $state<number | null>(null);
   let profileHandle = $state<string | null>(null);
   let composing = $state(false);
@@ -123,7 +142,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   });
 
   const selectTab = (next: string) => {
-    if (next !== 'feed' && next !== 'following') return;
+    if (next !== 'feed' && next !== 'following' && next !== 'messages') return;
     tab = next;
     if (tab === 'following') void loadFollowing();
   };
@@ -150,6 +169,35 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     view = 'profile';
   };
 
+  /**
+   * Open a thread. An inbox row has no avatar, so the header asks the accounts read for one —
+   * dropped if the player has moved to another thread by the time it answers.
+   */
+  const openDm = (peer: GlimpsePeer, fromProfile = false) => {
+    dmPeer = peer;
+    dmFromProfile = fromProfile;
+    view = 'dm';
+    if (peer.avatar !== undefined || !peer.handle) return;
+    void findAccount(peer.handle)
+      .then((account) => {
+        if (account && dmPeer?.id === account.id) dmPeer = { ...dmPeer, avatar: account.avatar };
+      })
+      .catch(() => undefined);
+  };
+
+  /**
+   * `glimpse?dmHandle=<h>`: the handle is resolved to an account, since a thread is keyed by the
+   * peer's id. Opened over the Messages tab, so Back lands in the inbox. A handle nobody holds,
+   * or one of the player's own, leaves the inbox showing rather than a thread that cannot exist.
+   */
+  const openDmByHandle = async (target: string) => {
+    tab = 'messages';
+    view = 'feed';
+    const account = await findAccount(target).catch(() => null);
+    if (!account || mineIds.has(account.id)) return;
+    openDm(account);
+  };
+
   const openPost = (post: GlimpsePost | number) => {
     activePostId = typeof post === 'number' ? post : post.id;
     view = 'post';
@@ -163,6 +211,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     if (handle !== undefined && handle !== '') {
       // A digit-only handle arrives as a number: `parseDeepLink` converts it.
       openProfile(String(handle));
+      return true;
+    }
+    if (dmHandle !== undefined && dmHandle !== '') {
+      // Resolved after the fact: `findAccount` answers whether or not the inbox has loaded.
+      void openDmByHandle(String(dmHandle));
       return true;
     }
     return false;
@@ -292,6 +345,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         title: () => $t('glimpse.post')
       },
       {
+        open: () => view === 'dm',
+        close: () => {
+          dmPeer = null;
+          view = dmFromProfile && profileHandle ? 'profile' : 'feed';
+          dmFromProfile = false;
+        },
+        title: () => (dmPeer ? dmPeer.display_name || `@${dmPeer.handle}` : $t('glimpse.message'))
+      },
+      {
         open: () => view === 'profile',
         close: () => (view = 'feed'),
         title: () => (profileHandle ? `@${profileHandle}` : $t('glimpse.profile'))
@@ -299,7 +361,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       {
         open: () => tab !== 'feed',
         close: () => (tab = 'feed'),
-        title: () => $t('glimpse.following')
+        title: () => (tab === 'messages' ? $t('glimpse.messages') : $t('glimpse.following'))
       }
     ]
   });
@@ -454,7 +516,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     />
   {/if}
 
-  {#if onTabs}
+  {#if onTabs && tab !== 'messages'}
     <FloatingActionButton
       label={$t('glimpse.newPost')}
       collapsed
@@ -465,14 +527,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <AddIcon class="text-on-surface size-icon-sm shrink-0" />
       {/snippet}
     </FloatingActionButton>
+  {/if}
 
+  {#if onTabs}
     <TabBar
       aria-label={$t('glimpse.sections')}
       selected={tab}
       onchange={selectTab}
       options={[
         { id: 'feed', label: $t('glimpse.forYou'), icon: HomeIcon },
-        { id: 'following', label: $t('glimpse.following'), icon: UsersIcon }
+        { id: 'following', label: $t('glimpse.following'), icon: UsersIcon },
+        { id: 'messages', label: $t('glimpse.messages'), icon: MessageIcon }
       ]}
     />
   {/if}
@@ -489,13 +554,31 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       onedit={(p: GlimpsePost) => (editing = p)}
       ondelete={(p: GlimpsePost) => (confirmingDelete = p)}
     />
+  {:else if view === 'dm' && dmPeer && $activeAccount}
+    <Messages
+      accountId={$activeAccount.id}
+      peer={dmPeer}
+      onopen={(peer: GlimpsePeer) => openDm(peer)}
+      onhandle={openProfile}
+    />
   {:else if view === 'profile' && profileHandle}
-    <Profile handle={profileHandle} onopen={openFromGrid} onedit={() => (editingProfile = true)} />
+    <Profile
+      handle={profileHandle}
+      onopen={openFromGrid}
+      onedit={() => (editingProfile = true)}
+      onmessage={(account: GlimpsePeer) => openDm(account, true)}
+    />
   {:else if !$accountsLoaded}
     <div class="p-4"><Skeleton count={2} height="h-64" /></div>
   {:else if $myAccounts.length === 0}
     <!-- Nothing to post, like or comment from yet. Told, rather than shown a dead feed. -->
     <ClaimHandle busy={$busy} onclaim={claim} />
+  {:else if tab === 'messages' && $activeAccount}
+    <Messages
+      accountId={$activeAccount.id}
+      onopen={(peer: GlimpsePeer) => openDm(peer)}
+      onhandle={openProfile}
+    />
   {:else if tab === 'following'}
     {@render feedList(
       followingPage.visible,

@@ -1,4 +1,4 @@
-import type { FrameLocator } from '@playwright/test';
+import type { FrameLocator, Page } from '@playwright/test';
 import { test, expect } from '../support/test';
 import { seedHomeGrid } from '../support/homeGrid';
 import { addOnFrame, dismissToasts, installAddOn } from '../support/addon';
@@ -16,7 +16,7 @@ import { addOnFrame, dismissToasts, installAddOn } from '../support/addon';
  */
 test.describe('Glimpse', () => {
   test.beforeEach(async ({ page }) => {
-    await seedHomeGrid(page, ['store']);
+    await seedHomeGrid(page, ['store', 'admin']);
     await page.goto('/');
     await installAddOn(page, 'Glimpse');
     await page.getByRole('button', { name: /Glimpse/ }).click();
@@ -280,6 +280,155 @@ test.describe('Glimpse', () => {
 
     await expect(frame.getByTestId('glimpse-grid')).toBeVisible();
   });
+
+  /** Direct messages (MICA-393). Seed: @lens_lena has a thread with the player, @nightowl none. */
+  const openMessagesTab = async (frame: FrameLocator) => {
+    await frame.getByRole('button', { name: 'Messages', exact: true }).click();
+    await expect(frame.getByTestId('glimpse-messages')).toBeVisible();
+  };
+  const lenaRow = (frame: FrameLocator) =>
+    frame.getByTestId('dm-inbox-row').filter({ hasText: 'lens_lena' });
+  const messageButton = (frame: FrameLocator) => frame.getByTestId('glimpse-message');
+  /** Open a profile from the feed through a post's author button, then wait for its grid. */
+  const openAuthorProfile = async (frame: FrameLocator, postId: number) => {
+    await post(frame, postId)
+      .getByRole('button', { name: /'s profile$/ })
+      .click();
+    await expect(frame.getByTestId('glimpse-grid')).toBeVisible();
+  };
+  /** Admin's pending queue: one "Remove for everyone" per outstanding report. */
+  const pendingReports = async (page: Page) => {
+    await page.locator("button[aria-label='Return to home screen']").click();
+    await page.getByRole('button', { name: /Admin/i }).first().click();
+    await expect(page.locator('h1', { hasText: 'Admin' })).toBeVisible();
+    return page.getByRole('button', { name: 'Remove for everyone' });
+  };
+
+  test('the Messages tab lists lens_lena with one unread and nobody else', async ({ page }) => {
+    const frame = addOnFrame(page, 'glimpse');
+    await openMessagesTab(frame);
+
+    await expect(frame.getByTestId('dm-inbox-row')).toHaveCount(1);
+    await expect(lenaRow(frame)).toHaveAttribute('data-peer-account-id', '21');
+    await expect(lenaRow(frame).getByTestId('dm-inbox-unread')).toHaveText('1');
+    await expect(frame.getByTestId('dm-inbox-row').filter({ hasText: 'nightowl' })).toHaveCount(0);
+  });
+
+  test('opening a thread shows both sides, and the unread badge is gone on return', async ({
+    page
+  }) => {
+    const frame = addOnFrame(page, 'glimpse');
+    await openMessagesTab(frame);
+    await lenaRow(frame).click();
+
+    await expect(frame.getByTestId('glimpse-dm-header')).toContainText('@lens_lena');
+    await expect(frame.getByTestId('dm-message')).toHaveCount(2);
+    const mine = frame.locator('[data-testid="dm-message"][data-message-id="2"]');
+    const theirs = frame.locator('[data-testid="dm-message"][data-message-id="3"]');
+    await expect(mine).toContainText('your pier shot is lovely');
+    await expect(mine).toHaveAttribute('data-mine', 'true');
+    await expect(theirs).toContainText('golden hour does the work');
+    await expect(theirs).toHaveAttribute('data-mine', 'false');
+
+    await page.keyboard.press('Backspace');
+
+    await expect(frame.getByTestId('dm-inbox')).toBeVisible();
+    await expect(lenaRow(frame)).toBeVisible();
+    await expect(lenaRow(frame).getByTestId('dm-inbox-unread')).toHaveCount(0);
+  });
+
+  test('a reply appears exactly once', async ({ page }) => {
+    const frame = addOnFrame(page, 'glimpse');
+    await openMessagesTab(frame);
+    await lenaRow(frame).click();
+    await expect(frame.getByTestId('dm-message')).toHaveCount(2);
+
+    const text = 'see you at the pier';
+    await frame.getByPlaceholder('Message @lens_lena…').fill(text);
+    await frame.getByRole('button', { name: 'Send', exact: true }).click();
+
+    // The send's answer and the app-event push both carry this line; the store merges by id.
+    await expect(frame.getByTestId('dm-message')).toHaveCount(3);
+    const sent = frame.getByTestId('dm-message').filter({ hasText: text });
+    await expect(sent).toHaveCount(1);
+    await expect(sent).toHaveAttribute('data-mine', 'true');
+    await expect(frame.getByPlaceholder('Message @lens_lena…')).toHaveValue('');
+  });
+
+  test("Message on a stranger's profile opens an empty thread, and a send creates it", async ({
+    page
+  }) => {
+    const frame = addOnFrame(page, 'glimpse');
+    await openAuthorProfile(frame, 10);
+    await messageButton(frame).click();
+
+    await expect(frame.getByTestId('glimpse-dm-header')).toContainText('@nightowl');
+    await expect(frame.getByTestId('dm-thread')).toBeVisible();
+    await expect(frame.getByTestId('dm-message')).toHaveCount(0);
+
+    const text = 'hello from the e2e';
+    await frame.getByPlaceholder('Message @nightowl…').fill(text);
+    await frame.getByRole('button', { name: 'Send', exact: true }).click();
+    await expect(frame.getByTestId('dm-message')).toHaveCount(1);
+    await expect(frame.getByTestId('dm-message')).toContainText(text);
+
+    // Back to the profile it was opened from, then out to the feed and across to the inbox.
+    await page.keyboard.press('Backspace');
+    await expect(frame.getByTestId('glimpse-grid')).toBeVisible();
+    await page.keyboard.press('Backspace');
+    await openMessagesTab(frame);
+    await expect(frame.getByTestId('dm-inbox-row')).toHaveCount(2);
+    await expect(frame.getByTestId('dm-inbox-row').filter({ hasText: 'nightowl' })).toHaveAttribute(
+      'data-peer-account-id',
+      '22'
+    );
+  });
+
+  test('your own profile offers no Message button', async ({ page }) => {
+    const frame = addOnFrame(page, 'glimpse');
+    await post(frame, 12).getByRole('button', { name: "Ada's profile" }).click();
+
+    await expect(frame.getByRole('button', { name: 'Edit profile' })).toBeVisible();
+    await expect(messageButton(frame)).toHaveCount(0);
+  });
+
+  test("another account's profile does offer Message", async ({ page }) => {
+    // The counterpart of the test above: without it, a button that never rendered passes both.
+    const frame = addOnFrame(page, 'glimpse');
+    await openAuthorProfile(frame, 11);
+
+    await expect(messageButton(frame)).toBeVisible();
+  });
+
+  test('a message in the thread can be reported, and Admin queues it', async ({ page }) => {
+    const frame = addOnFrame(page, 'glimpse');
+    await openMessagesTab(frame);
+    await lenaRow(frame).click();
+
+    await frame
+      .locator('[data-testid="dm-message"][data-message-id="3"]')
+      .getByRole('button', { name: 'Report message' })
+      .click();
+    await expect(frame.locator('text=Report content')).toBeVisible();
+    await frame.getByRole('button', { name: 'Report', exact: true }).click();
+    await expect(page.getByText('Report sent for review')).toBeVisible();
+
+    // The seeded report plus this one.
+    await expect(await pendingReports(page)).toHaveCount(2);
+  });
+
+  test('neither the inbox nor the thread shows a citizenid', async ({ page }) => {
+    const frame = addOnFrame(page, 'glimpse');
+    const leak = /citizen/i;
+    await openMessagesTab(frame);
+    await expect(lenaRow(frame)).toBeVisible();
+    await expect(frame.getByTestId('dm-inbox')).not.toContainText(leak);
+
+    await lenaRow(frame).click();
+    await expect(frame.getByTestId('dm-message')).toHaveCount(2);
+    await expect(frame.getByTestId('dm-thread')).not.toContainText(leak);
+    await expect(frame.getByTestId('glimpse-dm-header')).not.toContainText(leak);
+  });
 });
 
 /**
@@ -361,4 +510,38 @@ test('a deep link to a post that does not exist shows Post unavailable, and Back
 
   await expect(frame.locator('text=Post unavailable')).toHaveCount(0);
   await expect(frame.getByTestId('glimpse-post')).toHaveCount(12);
+});
+
+/** `glimpse?dmHandle=<handle>` resolves the handle and lands in that thread, over the inbox. */
+test('a deep link to a DM opens the thread with that account', async ({ page }) => {
+  // Not opened first, as above: a resident app would show the feed whatever the link did.
+  await seedHomeGrid(page, ['store']);
+  await page.goto('/');
+  await installAddOn(page, 'Glimpse');
+  await dismissToasts(page);
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: {
+          action: 'appEvent',
+          data: {
+            app: 'glimpse',
+            event: 'dm',
+            payload: {},
+            at: Date.now(),
+            deepLink: 'glimpse?dmHandle=lens_lena',
+            notify: { type: 'info', title: 'New DM e2e', message: 'Tap to read' }
+          }
+        }
+      })
+    );
+  });
+  await page.getByText('New DM e2e').click();
+
+  const frame = addOnFrame(page, 'glimpse');
+  await expect(frame.getByTestId('glimpse-dm-header')).toContainText('@lens_lena');
+  await expect(frame.getByTestId('dm-message')).toHaveCount(2);
+
+  await page.keyboard.press('Backspace');
+  await expect(frame.getByTestId('dm-inbox')).toBeVisible();
 });
