@@ -17,7 +17,23 @@ import '../web/src/host/registerFacets';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { get } from 'svelte/store';
 import { ALL_CAPABILITIES, ALL_PERMISSIONS, defineApp } from './manifest';
-import { ADD_ON_REFUSED_PERMISSIONS } from './permissions';
+import { ADD_ON_REFUSED_PERMISSIONS, RESERVED_ADD_ON_IDS } from './permissions';
+import { allContracts } from '@mica/shared/contract';
+import '@mica/shared/contracts';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
+
+/** Every `.ts` file under `dir`, tests excluded. */
+const walkSource = (dir: string): string[] =>
+  readdirSync(dir).flatMap((entry) => {
+    const full = join(dir, entry);
+    if (statSync(full).isDirectory()) return walkSource(full);
+    return entry.endsWith('.ts') && !entry.endsWith('.test.ts') ? [full] : [];
+  });
+
+/** A service an app owns by prefix: `glimpse_comments` belongs to `glimpse`. */
+const isAddOnService = (id: string, appIds: ReadonlySet<string>): boolean =>
+  [...appIds].some((app) => id.startsWith(`${app}_`));
 import { MICA_VERSION } from './version';
 import { appRegistryStore } from '../web/src/shell/state/registry';
 import { currentApp, openApp, goHome } from '../web/src/shell/state/navigation';
@@ -83,6 +99,78 @@ describe('defineApp: id casing', () => {
     defineApp({ id: 'crypto_tracker', name: 'x', color: 'bg-blue-600', icon: null, core: false });
 
     expect(warn).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * An add-on's id is held to the pattern and kept off the shell's own ids. A core app's is
+ * still only warned about: it is in this tree, and review sees it.
+ */
+describe('defineApp: an add-on id', () => {
+  const addOn = { color: 'bg-blue-600', icon: null, core: false } as const;
+
+  it('refuses one outside lower_snake_case, which could forge a compound key', () => {
+    expect(() => defineApp({ id: 'a:b', ...addOn })).toThrow(
+      /add-on id 'a:b' is not lower_snake_case/
+    );
+    expect(() => defineApp({ id: 'my-app', ...addOn })).toThrow(/add-on id 'my-app'/);
+    expect(() => defineApp({ id: '1st', ...addOn })).toThrow(/add-on id '1st'/);
+  });
+
+  it('refuses the ids the shell files its own things under', () => {
+    expect(() => defineApp({ id: 'system', ...addOn })).toThrow(/add-on id 'system' is reserved/);
+    expect(() => defineApp({ id: 'home', ...addOn })).toThrow(/add-on id 'home' is reserved/);
+  });
+
+  it('refuses them on a remote bundle that leaves core unsaid', () => {
+    expect(() =>
+      defineApp({ id: 'system', color: 'bg-blue-600', icon: null, isRemote: true } as never)
+    ).toThrow(/add-on id 'system' is reserved/);
+  });
+
+  it('still lowercases an add-on id first, so casing alone is not refused', () => {
+    expect(defineApp({ id: 'MyApp', ...addOn }).id).toBe('myapp');
+  });
+
+  /**
+   * The service half of the list. Nothing in `@mica/shared` marks a service as having no
+   * app, so the list is a literal; this is what keeps it honest in both directions.
+   */
+  it('reserves exactly what the phone answers to: a contract or a server scope, never a stray', () => {
+    const contractIds = new Set(allContracts().map((contract) => contract.id));
+    const serverSource = walkSource(join(__dirname, '..', 'server', 'services'))
+      .concat(walkSource(join(__dirname, '..', 'server', 'lib')))
+      .map((file) => readFileSync(file, 'utf8'))
+      .join('\n');
+    // Either input coming back empty would let both checks below pass over nothing.
+    expect(contractIds.size).toBeGreaterThan(20);
+    expect(serverSource.length).toBeGreaterThan(10_000);
+    const unfounded = RESERVED_ADD_ON_IDS.filter(
+      (id) =>
+        !['home', 'system'].includes(id) &&
+        !contractIds.has(id) &&
+        !serverSource.includes(`id: '${id}'`) &&
+        !serverSource.includes(`mica:server:${id}:`)
+    );
+    expect(unfounded, 'reserved, but no contract or server scope answers to it').toEqual([]);
+
+    // A contract with no app behind it is a service an add-on could otherwise name itself.
+    const appIds = new Set(readdirSync(join(__dirname, '..', 'web', 'src', 'apps')));
+    const unreserved = [...contractIds].filter(
+      (id) => !appIds.has(id) && !RESERVED_ADD_ON_IDS.includes(id) && !isAddOnService(id, appIds)
+    );
+    expect(unreserved, 'add it to RESERVED_ADD_ON_IDS in sdk/permissions.ts').toEqual([]);
+
+    for (const id of RESERVED_ADD_ON_IDS) {
+      expect(() => defineApp({ id, ...addOn })).toThrow(`add-on id '${id}' is reserved`);
+    }
+  });
+
+  it("leaves a core app's id as it was: normalised, warned about, never refused", () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(defineApp({ id: 'a:b', ...addOn, core: true }).id).toBe('a:b');
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('is not lower_snake_case'));
+    expect(defineApp({ id: 'system', ...addOn, core: true }).id).toBe('system');
   });
 });
 
@@ -722,7 +810,7 @@ describe('defineApp: version', () => {
 
     expect(
       defineWithoutStamp({
-        id: 'declared-addon',
+        id: 'declared_addon',
         tile: { bg: 'bg-indigo-600' },
         icon: null,
         core: false,

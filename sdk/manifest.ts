@@ -512,7 +512,11 @@ import { MICA_VERSION } from './version';
 // here would make it public forever (MICA-16's "adding an export is a one-way door");
 // living in `permissions.ts` instead — already outside both barrels — keeps it callable
 // and independently testable without widening what an add-on can reach.
-import { ADD_ON_REFUSED_PERMISSIONS, validateManifestPermissions } from './permissions';
+import {
+  ADD_ON_REFUSED_PERMISSIONS,
+  RESERVED_ADD_ON_IDS,
+  validateManifestPermissions
+} from './permissions';
 
 /**
  * Helper function to define and validate a micaOS application manifest.
@@ -713,21 +717,6 @@ export function defineApp(manifest: AppManifestInput): AppManifest {
     );
   }
 
-  if (import.meta.env.DEV) {
-    if (id !== manifest.id) {
-      console.warn(
-        `micaOS App Manifest: id '${manifest.id}' is not lowercase and has been read as ` +
-          `'${id}'. It is a directory name, a storage namespace and an event segment — ` +
-          `spell it lower_snake_case in the manifest.`
-      );
-    } else if (!ID_PATTERN.test(id)) {
-      console.warn(
-        `micaOS App Manifest: id '${id}' is not lower_snake_case. ` +
-          `'pnpm new:app' enforces ${ID_PATTERN}; a hand-written manifest does not.`
-      );
-    }
-  }
-
   const isRemote = manifest.isRemote === true;
 
   if (isRemote && manifest.core === true) {
@@ -749,6 +738,52 @@ export function defineApp(manifest: AppManifestInput): AppManifest {
         `can be uninstalled, and is deliberately not inferred — it used to be derived from ` +
         `'author', which made a display string load-bearing.`
     );
+  }
+
+  /**
+   * An add-on's id is refused, not warned about, when it is outside the pattern or one the
+   * shell files its own things under.
+   *
+   * The shell keys notices, drawer rows, storage, grants and event segments by app id, and
+   * builds some of those keys by joining the id to something else. A remote add-on is the
+   * one author this tree never reviews, so `a:b` could forge a compound key and `system`
+   * would file its notices beside the phone's own. A core app keeps the warning below: it
+   * is in this tree, `pnpm new:app` wrote it, and review sees it.
+   *
+   * `RESERVED_ADD_ON_IDS` is the shell's sentinels and the services with no app. An id a
+   * core app already holds is the registry's to refuse, since only the shell knows which
+   * apps it shipped.
+   */
+  if (!core) {
+    if (!ID_PATTERN.test(id)) {
+      throw new Error(
+        `micaOS App Manifest error: add-on id '${id}' is not lower_snake_case ` +
+          `(${ID_PATTERN}). The shell keys storage, notices, grants and event names by it, ` +
+          `so an add-on's id is held to the pattern 'pnpm new:app' enforces.`
+      );
+    }
+    if (RESERVED_ADD_ON_IDS.includes(id)) {
+      throw new Error(
+        `micaOS App Manifest error: add-on id '${id}' is reserved — the phone already ` +
+          `answers to it, as one of its own screens or as a server service an app id would ` +
+          `claim. Choose another id.`
+      );
+    }
+  }
+
+  if (import.meta.env.DEV) {
+    if (id !== manifest.id) {
+      console.warn(
+        `micaOS App Manifest: id '${manifest.id}' is not lowercase and has been read as ` +
+          `'${id}'. It is a directory name, a storage namespace and an event segment — ` +
+          `spell it lower_snake_case in the manifest.`
+      );
+    } else if (!ID_PATTERN.test(id)) {
+      console.warn(
+        `micaOS App Manifest: id '${id}' is not lower_snake_case. ` +
+          `'pnpm new:app' enforces ${ID_PATTERN}; a hand-written manifest does not.`
+      );
+    }
   }
 
   /**

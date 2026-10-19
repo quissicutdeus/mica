@@ -704,6 +704,47 @@ export const ADD_ON_REFUSED_PERMISSIONS: readonly AppPermission[] = (() => {
 })();
 
 /**
+ * Ids no add-on may take, because the phone already answers to them.
+ *
+ * - `home` and `system` are the shell's sentinels. `system` is what a notice with no app is
+ *   filed under (`Shell.svelte`, `BatteryWarning.svelte`, the registry's own notices); `home`
+ *   is `currentApp`'s id while no app is open (`navigation.ts`).
+ * - The rest are server service ids with no add-on behind them. An app owns the service
+ *   namespace `<id>` and `<id>_*`, and the registry's `assertServicesUnclaimed` only checks
+ *   that against installed apps, so an add-on named `shell` would own the shell's service. A
+ *   literal list, because nothing in `@mica/shared` says which services have no app, and
+ *   `defineApp` ships in every add-on bundle, so it cannot import every contract to find out.
+ *   Here rather than in `manifest.ts` because every export there is published. Taken
+ *   from the `mica:server:<service>:` scopes and the `defineService` ids under `server/`.
+ *   `admin` and `phone` are core apps as well; they are here because the shell's own event
+ *   scopes use them too. `manifest.test.ts` holds each one to a contract or a server scope,
+ *   and fails when a contract appears with no app and no line here.
+ */
+export const RESERVED_ADD_ON_IDS: readonly string[] = [
+  'home',
+  'system',
+  'accounts',
+  'admin',
+  'battery',
+  'blocklist',
+  'conversations',
+  'devices',
+  'dms',
+  'highscores',
+  'importledger',
+  'integration',
+  'invoices',
+  'lockscreen',
+  'notifications',
+  'phone',
+  'phonenumbers',
+  'privacy',
+  'reports',
+  'shell',
+  'signal'
+];
+
+/**
  * Cheap Levenshtein distance. Every comparison here is against a permission name — under
  * twenty characters, roughly thirty of them — so the naive O(n·m) table is nowhere near
  * worth replacing with anything smarter.
