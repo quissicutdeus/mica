@@ -444,6 +444,29 @@ released that resource's add-on services, `RegisterNumber` lines and invoice
 callbacks for the caller to take. That is the buggy-or-careless neighbour this
 section exists for, not the hostile one it cannot stop.
 
+### 4. The integration door, which is not an entry point on a live server
+
+The in-server suite (MICA-302) runs with no player connected, and every service
+action sits behind `ServiceEndpoint`, which resolves a connected player and
+replies to that player's source. So with `mica_integration` set to `1` **at
+resource start**, and never otherwise, `server/lib/integrationDoor.ts` registers
+three local events — `mica:server:integration:player`, `:invoke` and `:pushes` —
+that seed a synthetic player with an in-memory bank ledger, run a service action
+for it through the very same dispatch the net event uses (contract parse,
+limiter, phone gate, `clientWritable` reduction, handler), and hand back the
+pushes it would have received (MICA-397).
+
+What makes it not a hole: the events are registered with `on()`, never `onNet`,
+and FXServer refuses a client's `TriggerServerEvent` for an event that was not
+registered as a net event; there is no export and no NUI route; the convar is
+read once at start, so a live `set` opens nothing; and with the convar unset the
+module registers nothing at all, which
+`server/__tests__/integrationDoor.test.ts` and `reachability.test.ts` hold. The
+synthetic player never enters `FrameworkBridge`'s source table, so no real
+action can resolve to it. A server owner has one rule to keep: do not set
+`mica_integration` on a server players join. It is in the README's convar table
+with exactly that warning.
+
 ---
 
 ## Client-authoritative values

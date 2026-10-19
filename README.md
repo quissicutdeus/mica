@@ -839,6 +839,7 @@ set mica_location_interval 5
 | Convar                             | Type                                                    | Default                             | Controls                                                                                                                              |
 | ---------------------------------- | ------------------------------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
 | `mica_standalone`                  | boolean                                                 | empty (off)                         | Run with no framework resource at all                                                                                                 |
+| `mica_integration`                 | `1` or unset                                            | unset                               | Test servers only: opens the in-server suite's local door to service handlers. Never set it on a live server                          |
 | `mica_auto_schema`                 | boolean                                                 | `1` (on)                            | Create micaOS's schema on first start when the database holds none of its tables                                                      |
 | `mica_phone_item`                  | item name                                               | empty (off)                         | Gate the phone on holding this inventory item                                                                                         |
 | `mica_tablet`                      | boolean                                                 | `true` (on)                         | Turn the tablet on; the phone is always on. A tablet has its own identity and no phone number (MICA-264)                              |
@@ -954,6 +955,14 @@ the convar is invisible until the resource restarts.
   empty/`0`/`false`/`no`/`off`) is read as off and reported once, because
   `set mica_standalone yes-please` is an operator who meant to enable this and
   has not.
+- **`mica_integration`** — for the throwaway servers the in-server test suite
+  starts, and for nothing else. Set to `1` at resource start, it opens three
+  local events that let the suite seed a synthetic player with a ledger bank,
+  run a service action for it through the same dispatch a real request takes,
+  and read the pushes it would have received. They are plain `on()` handlers,
+  not net events, so a client cannot trigger them, and the convar is read once
+  at start, so a `set` on a running server opens nothing. Leave it unset on any
+  server players join; `docs/security.md` has the model.
 - **`mica_admin_aces`** — which ace objects grant micaOS admin: the phone's
   Developer Tools, and the `mica*` console commands. The default recognises two,
   and the second is the interesting one. `command` is the near-universal proxy

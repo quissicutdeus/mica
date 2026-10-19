@@ -53,6 +53,20 @@ const EXTENSIONS = ['.ts', '.svelte', '.js'];
  */
 const EXEMPT = new Set<string>([]);
 
+/**
+ * Segments that name no service, each owned by one file that registers it with `on()` alone.
+ *
+ * A service segment is checked against the registry below. These are the scopes that are not a
+ * service and never will be, so they cannot be: `integration` is the in-server suite's door
+ * (MICA-397), which runs *other* services' actions for a synthetic player. Local, so no client
+ * can reach it, and registered only while `mica_integration` was `1` at start. Not an exemption
+ * from the shape — the names still read `mica:server:integration:<action>` — and held below to
+ * the one file, and to that file never calling `onNet`.
+ */
+const LOCAL_SCOPES: ReadonlyMap<string, string> = new Map([
+  ['integration', 'server/lib/integrationDoor.ts']
+]);
+
 const walk = (dir: string): string[] => {
   const out: string[] = [];
   for (const entry of readdirSync(dir)) {
@@ -155,17 +169,43 @@ describe('net event naming', () => {
     // Reads the registry rather than a list kept here. This test used to carry
     // `NON_APP_SEGMENTS = ['shell', 'admin']` and a second exception for `bank` and
     // `phone`, because the vocabulary called every segment an "app" and four of them
-    // were not. Services declare themselves now, so there is nothing left to exempt.
+    // were not. Services declare themselves now, so the only names left outside the registry
+    // are a local scope's, which the next two tests hold to their own rules.
     const known = new Set<string>(knownServices());
     expect(known.size, 'services did not load').toBeGreaterThan(0);
 
     const unknown = ALL.filter(({ event }) => {
       if (EXEMPT.has(event)) return false;
       const parts = event.split(':');
-      return parts.length === 4 && !known.has(parts[2]);
+      return parts.length === 4 && !known.has(parts[2]) && !LOCAL_SCOPES.has(parts[2]);
     });
 
     expect(unknown.map(({ event, file }) => `${event}  (${file})`).toSorted()).toEqual([]);
+  });
+
+  it('a local scope is no service, and its names live in the one file that owns it', () => {
+    const known = new Set<string>(knownServices());
+    for (const [scope, owner] of LOCAL_SCOPES) {
+      // A service of the same name would make its net events and the local door one namespace.
+      expect(known.has(scope), `'${scope}' is also a service`).toBe(false);
+
+      const names = ALL.filter(({ event }) => event.split(':')[2] === scope);
+      expect(names.length, `no '${scope}' names found, so this checks nothing`).toBeGreaterThan(0);
+      expect(
+        names.filter(({ file }) => file !== owner).map(({ event, file }) => `${event}  (${file})`)
+      ).toEqual([]);
+    }
+  });
+
+  it('a local scope is registered with on() alone, never onNet()', () => {
+    for (const owner of new Set(LOCAL_SCOPES.values())) {
+      const text = readFileSync(join(ROOT, owner), 'utf8');
+      // Code, not prose: the file's own comments say why it never calls it.
+      const code = text.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+      expect(code, owner).not.toMatch(/\bonNet\s*\(/);
+      expect(code, owner).not.toMatch(/\bexports\s*\(/);
+      expect(code, owner).toMatch(/\bon\(\s*'mica:server:/);
+    }
   });
 });
 

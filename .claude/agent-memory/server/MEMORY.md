@@ -102,3 +102,8 @@ line here.
   — `private` does not apply there; a live outcome needs `registerExportFilter`
 - [node:crypto is a shim; convar names resolve at the call site](node-crypto-shim-and-convar-scan.md)
   — no `randomInt`; a `GetConvar(name)` helper fails convars.test
+- [A fresh module graph needs its own phone stub](reset-modules-needs-its-own-phone-stub.md)
+  — after `vi.resetModules`, setup.ts stubs the old deviceIdentity; import
+  phoneStub fresh
+- [A loop through the integration door meets the limiter at 60](door-loops-meet-the-limiter.md)
+  — per source and action a minute; steer a draw by the stored point or a convar

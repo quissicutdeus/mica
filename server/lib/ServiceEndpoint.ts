@@ -20,6 +20,43 @@ import { appDisabledError, disabledAppFor } from './ownerConfig';
 // thirteen times and do the same sweep thirteen times per disconnect.
 installRateLimitCleanup();
 
+/**
+ * One request to one action, as `dispatch` runs it: who is asking, what they sent, and where the
+ * answer goes.
+ *
+ * The net event fills `lookup` with `FrameworkBridge.getPlayer` and `reply` with an `emitNet`
+ * back to the source. The integration door (`lib/integrationDoor.ts`, MICA-397) fills them with
+ * its synthetic player and a callback. Two callers, one body, so the path the in-server suite
+ * proves is the path a player's request takes and the two cannot drift.
+ */
+interface EndpointRequest {
+  src: number;
+  cbId: CallbackId;
+  data: unknown;
+  rawDevice: unknown;
+  /** Who `src` is now. Asked once, and again after a validation that awaited (MICA-362). */
+  lookup: (src: number) => FrameworkPlayer | null;
+  /** What the net path hands `emitNet`. Called at most once; not at all for an `undefined`. */
+  reply: (result: unknown) => void;
+}
+
+/**
+ * Every bound action's dispatch, by `<service>:<action>`.
+ *
+ * Read by the integration door alone, and only while `mica_integration` was `1` at start. Kept
+ * whatever the convar says, because the endpoints are built before anything could ask: one
+ * function reference per action, the closure `onNet` already holds. Nothing outside this
+ * process can reach it — it is a module variable, not an event or an export.
+ */
+const dispatchers = new Map<string, (request: EndpointRequest) => Promise<void>>();
+
+/** The dispatch bound for this action, or undefined when no endpoint registered it. */
+export const dispatcherFor = (
+  service: string,
+  action: string
+): ((request: EndpointRequest) => Promise<void>) | undefined =>
+  dispatchers.get(`${service}:${action}`);
+
 export interface ServiceOptions<C extends ServiceContract = ServiceContract> {
   /**
    * This service's custom actions, declared once in `shared/contracts/`.
@@ -564,189 +601,225 @@ export class ServiceEndpoint<T, C extends ServiceContract = ServiceContract> {
     const eventName = requestEventFor(this.serviceName, action);
     const clientEventName = responseEventFor(this.serviceName, action);
 
-    const devices: readonly DeviceId[] = this.options.devices ?? [DEFAULT_DEVICE];
+    const dispatch = (request: EndpointRequest): Promise<void> =>
+      this.dispatch(eventName, action, input, handler, request);
+    dispatchers.set(`${this.serviceName}:${action}`, dispatch);
 
     onNet(eventName, async (cbId: CallbackId, data: unknown, rawDevice?: unknown) => {
+      // Read before anything awaits: `source` is only this event's while the handler is synchronous.
       const src = source;
-      try {
-        /**
-         * Before anything else, including the player lookup.
-         *
-         * `FrameworkBridge.getPlayer` walks the framework's player table, so doing it first
-         * would make the flood pay for itself in exactly the way a flood wants. And a caller
-         * with no loaded character still has a source and can still emit events.
-         *
-         * Answered rather than dropped: `fetchNui` waits on a reply and `ServiceProxy` times
-         * out after 15 seconds, so silence would cost the honest client a hang and tell it
-         * nothing. This is also why the message says what happened — a rate limit that reads
-         * as "Unknown error" gets debugged as a bug.
-         */
-        if (!allow(src, this.serviceName, action)) {
-          emitNet(clientEventName, src, cbId, {
-            error: `Too many ${this.serviceName} ${action} requests. Slow down and try again.`,
-            key: 'server.rateLimited'
-          });
-          return;
-        }
+      await dispatch({
+        src,
+        cbId,
+        data,
+        rawDevice,
+        lookup: (from) => FrameworkBridge.getPlayer(from),
+        reply: (result) => emitNet(clientEventName, src, cbId, result)
+      });
+    });
+  }
 
-        /**
-         * An app the owner switched off with `mica_disabled_apps` (MICA-234), refused here
-         * rather than in each handler so a custom action is covered as well as generic CRUD.
-         * After the limiter, so a flood still pays nothing, and before the player lookup, since
-         * the answer is the same for every caller. Only a service that declared its app is ever
-         * refused (`ServiceOptions.app`); `lib/ownerConfig.ts` says why a shared one never is.
-         */
-        const disabledApp = disabledAppFor(this.serviceName);
-        if (disabledApp) throw appDisabledError(disabledApp);
+  /**
+   * One request, start to finish: the limiter, the owner's app switch, the device, the player,
+   * validation, the device resolve, the handler, the answer.
+   *
+   * The body the net event always ran, with the two things that tie it to a real connection —
+   * who the source is and where the answer goes — taken as parameters (`EndpointRequest`), so
+   * the integration door can run it for a synthetic player (MICA-397) without a second copy.
+   */
+  private async dispatch(
+    eventName: string,
+    action: string,
+    input: Schema | undefined,
+    handler: (
+      source: number,
+      cbId: CallbackId,
+      data: unknown,
+      citizenid: string,
+      player: FrameworkPlayer,
+      deviceId?: string
+    ) => Promise<any>,
+    { src, cbId, data, rawDevice, lookup, reply }: EndpointRequest
+  ): Promise<void> {
+    const devices: readonly DeviceId[] = this.options.devices ?? [DEFAULT_DEVICE];
+    try {
+      /**
+       * Before anything else, including the player lookup.
+       *
+       * `FrameworkBridge.getPlayer` walks the framework's player table, so doing it first
+       * would make the flood pay for itself in exactly the way a flood wants. And a caller
+       * with no loaded character still has a source and can still emit events.
+       *
+       * Answered rather than dropped: `fetchNui` waits on a reply and `ServiceProxy` times
+       * out after 15 seconds, so silence would cost the honest client a hang and tell it
+       * nothing. This is also why the message says what happened — a rate limit that reads
+       * as "Unknown error" gets debugged as a bug.
+       */
+      if (!allow(src, this.serviceName, action)) {
+        reply({
+          error: `Too many ${this.serviceName} ${action} requests. Slow down and try again.`,
+          key: 'server.rateLimited'
+        });
+        return;
+      }
 
-        /**
-         * The device the request speaks for (MICA-264), the event's third argument. Absent is
-         * the phone, which is every client from before the tablet. Anything present that is
-         * not a device is refused whole with the generic answer and no log line: it is a
-         * modified client or a stale one, and dropping it instead would quietly turn a request
-         * meant for one identity into a request for another.
-         *
-         * Then the service's own list, before the player lookup, since the answer is the same
-         * for every caller: a tablet request to a phone-only service — contacts, the call log,
-         * the battery — is refused rather than answered from the phone's rows.
-         */
-        const device = parseDeviceArg(rawDevice);
-        if (device === null) {
-          emitNet(clientEventName, src, cbId, {
+      /**
+       * An app the owner switched off with `mica_disabled_apps` (MICA-234), refused here
+       * rather than in each handler so a custom action is covered as well as generic CRUD.
+       * After the limiter, so a flood still pays nothing, and before the player lookup, since
+       * the answer is the same for every caller. Only a service that declared its app is ever
+       * refused (`ServiceOptions.app`); `lib/ownerConfig.ts` says why a shared one never is.
+       */
+      const disabledApp = disabledAppFor(this.serviceName);
+      if (disabledApp) throw appDisabledError(disabledApp);
+
+      /**
+       * The device the request speaks for (MICA-264), the event's third argument. Absent is
+       * the phone, which is every client from before the tablet. Anything present that is
+       * not a device is refused whole with the generic answer and no log line: it is a
+       * modified client or a stale one, and dropping it instead would quietly turn a request
+       * meant for one identity into a request for another.
+       *
+       * Then the service's own list, before the player lookup, since the answer is the same
+       * for every caller: a tablet request to a phone-only service — contacts, the call log,
+       * the battery — is refused rather than answered from the phone's rows.
+       */
+      const device = parseDeviceArg(rawDevice);
+      if (device === null) {
+        reply({
+          error: GENERIC_ERROR_MESSAGE,
+          key: GENERIC_ERROR_KEY
+        });
+        return;
+      }
+      if (!devices.includes(device)) {
+        throw new PlayerFacingError(
+          `${this.serviceName} is not available on the ${DEVICES[device].label.toLowerCase()}.`,
+          {
+            key: 'server.device.unsupported',
+            params: { service: this.serviceName, device: DEVICES[device].label }
+          }
+        );
+      }
+
+      const player = lookup(src);
+
+      if (!player) {
+        reply({
+          error: 'Player not authenticated',
+          key: 'server.notAuthenticated'
+        });
+        return;
+      }
+
+      /**
+       * A request from any device but the phone is a claim to be holding one, checked now on
+       * every service, device-owned or not: a device this server has off, or one the player
+       * holds none of, is refused with a toast saying which. The phone keeps the check it
+       * always had, which is the device-owned resolver's below — a request with no device is
+       * also every boot-time call the shell makes, and refusing those over the phone item
+       * would be new behaviour this ticket does not ask for.
+       */
+      // Not the phone: its boot-time shell calls must still answer a player holding none.
+      // The phone's own actions that move money or publish do need one (MICA-339).
+      const mustHold = device !== DEFAULT_DEVICE || this.phoneRequired.has(action);
+      /**
+       * A request that is about to resolve its device answers the in-hand check from that
+       * resolve's slot read (MICA-362), after validation below; counting the item here as well
+       * would read the inventory twice for one question. Every other request is counted now.
+       */
+      const resolves = Boolean(this.options.deviceOwned) || this.deviceResolved.has(action);
+      if (mustHold && !resolves) requireDeviceInHand(player, device);
+
+      /**
+       * Validation slots in **after** authentication and before the handler
+       * (`docs/security.md`, "Entry points"), and the order is not cosmetic. Rate limiting
+       * comes first so a flood does not pay for a schema walk; the player lookup comes next
+       * because a caller with no character has nothing to be authorized as; only then is it
+       * worth asking whether what they sent is the shape the handler is about to read.
+       *
+       * A `SchemaError` from here lands in the catch below and reaches the player as a
+       * toast, which is why its messages name a field and never a table.
+       */
+      const checked = input ? await checkPayload(input, data) : { value: data, inPlace: true };
+      const payload = checked.value;
+
+      /**
+       * The player to resolve the device for (MICA-362). The one looked up above, handed
+       * through rather than looked up again, when nothing could have run in between — every
+       * micaOS schema answers in place (`checkPayload`). A schema that awaited may have let a
+       * character switch land, which keeps the source (`forgetOnPlayerLoaded`): the player
+       * above would then be the previous character while the inventory keyed by this source
+       * holds the new one's phone, and the resolve would hand that phone to the old citizen.
+       * So after an await the source is asked again, and a request whose source is no longer
+       * the character it was sent as is refused whole — generic answer, no log line, the same
+       * as any other stale client — rather than resolved for either character.
+       */
+      let holder = player;
+      if (resolves && !checked.inPlace) {
+        const now = lookup(src);
+        if (!now || now.citizenid !== player.citizenid) {
+          reply({
             error: GENERIC_ERROR_MESSAGE,
             key: GENERIC_ERROR_KEY
           });
           return;
         }
-        if (!devices.includes(device)) {
-          throw new PlayerFacingError(
-            `${this.serviceName} is not available on the ${DEVICES[device].label.toLowerCase()}.`,
-            {
-              key: 'server.device.unsupported',
-              params: { service: this.serviceName, device: DEVICES[device].label }
-            }
-          );
-        }
-
-        const player = FrameworkBridge.getPlayer(src);
-
-        if (!player) {
-          emitNet(clientEventName, src, cbId, {
-            error: 'Player not authenticated',
-            key: 'server.notAuthenticated'
-          });
-          return;
-        }
-
-        /**
-         * A request from any device but the phone is a claim to be holding one, checked now on
-         * every service, device-owned or not: a device this server has off, or one the player
-         * holds none of, is refused with a toast saying which. The phone keeps the check it
-         * always had, which is the device-owned resolver's below — a request with no device is
-         * also every boot-time call the shell makes, and refusing those over the phone item
-         * would be new behaviour this ticket does not ask for.
-         */
-        // Not the phone: its boot-time shell calls must still answer a player holding none.
-        // The phone's own actions that move money or publish do need one (MICA-339).
-        const mustHold = device !== DEFAULT_DEVICE || this.phoneRequired.has(action);
-        /**
-         * A request that is about to resolve its device answers the in-hand check from that
-         * resolve's slot read (MICA-362), after validation below; counting the item here as well
-         * would read the inventory twice for one question. Every other request is counted now.
-         */
-        const resolves = Boolean(this.options.deviceOwned) || this.deviceResolved.has(action);
-        if (mustHold && !resolves) requireDeviceInHand(player, device);
-
-        /**
-         * Validation slots in **after** authentication and before the handler
-         * (`docs/security.md`, "Entry points"), and the order is not cosmetic. Rate limiting
-         * comes first so a flood does not pay for a schema walk; the player lookup comes next
-         * because a caller with no character has nothing to be authorized as; only then is it
-         * worth asking whether what they sent is the shape the handler is about to read.
-         *
-         * A `SchemaError` from here lands in the catch below and reaches the player as a
-         * toast, which is why its messages name a field and never a table.
-         */
-        const checked = input ? await checkPayload(input, data) : { value: data, inPlace: true };
-        const payload = checked.value;
-
-        /**
-         * The player to resolve the device for (MICA-362). The one looked up above, handed
-         * through rather than looked up again, when nothing could have run in between — every
-         * micaOS schema answers in place (`checkPayload`). A schema that awaited may have let a
-         * character switch land, which keeps the source (`forgetOnPlayerLoaded`): the player
-         * above would then be the previous character while the inventory keyed by this source
-         * holds the new one's phone, and the resolve would hand that phone to the old citizen.
-         * So after an await the source is asked again, and a request whose source is no longer
-         * the character it was sent as is refused whole — generic answer, no log line, the same
-         * as any other stale client — rather than resolved for either character.
-         */
-        let holder = player;
-        if (resolves && !checked.inPlace) {
-          const now = FrameworkBridge.getPlayer(src);
-          if (!now || now.citizenid !== player.citizenid) {
-            emitNet(clientEventName, src, cbId, {
-              error: GENERIC_ERROR_MESSAGE,
-              key: GENERIC_ERROR_KEY
-            });
-            return;
-          }
-          holder = now;
-        }
-
-        /**
-         * Which device this is for, on a table that follows the device (MICA-282; the device
-         * the request named since MICA-264).
-         *
-         * After authentication, because a source with no character has no inventory, and
-         * after validation, because a payload that is not even the right shape should not
-         * cost an inventory read. The resolver throws a `PlayerFacingError` for a player
-         * holding no phone on a server that gates on one — it lands in the catch below and
-         * reaches them as a toast — and degrades to the citizen's identity phone where no
-         * phone identity can be had. `services/Devices.ts` has the three cases.
-         *
-         * It is handed `holder`, the player this source is known to be right now (above), so it
-         * does not walk the framework's players again (MICA-362). `requireHeld` makes the resolve
-         * the in-hand check skipped above, from the same slot read; never cached, so every
-         * request reads the slots again.
-         */
-        const deviceId = resolves
-          ? await deviceForRequest(src, player.citizenid, device, {
-              player: holder,
-              requireHeld: mustHold
-            })
-          : undefined;
-
-        const result = await handler(src, cbId, payload, player.citizenid, holder, deviceId);
-
-        if (result !== undefined) {
-          emitNet(clientEventName, src, cbId, result);
-        }
-      } catch (error) {
-        /**
-         * Only two kinds of error carry a message a player may read, and this is the whole
-         * allowlist: a `PlayerFacingError` a handler raised deliberately, and a `SchemaError`
-         * a declaration raised about the payload. See `lib/errors.ts`.
-         *
-         * Everything else used to leave through this same line with its message intact, which
-         * meant the class of an error was invisible on the wire: a driver failure carrying the
-         * statement text that failed, and a `Repository` invariant carrying a table name, both
-         * reached a toast looking exactly like "You cannot follow yourself." The stack is what
-         * a server owner needs and the player needs none of it.
-         */
-        const disclosable = error instanceof PlayerFacingError || error instanceof SchemaError;
-        if (!disclosable) console.error(`Error in ${eventName}:`, error);
-
-        // The key rides beside the text (MICA-216): a client whose catalog knows it says
-        // it in the player's language, one that does not shows the English. A `SchemaError`
-        // carries no key — its messages name the field and are not catalogued.
-        const keyed = error instanceof PlayerFacingError ? error : undefined;
-        emitNet(clientEventName, src, cbId, {
-          error: disclosable ? error.message : GENERIC_ERROR_MESSAGE,
-          key: keyed ? keyed.key : disclosable ? undefined : GENERIC_ERROR_KEY,
-          params: keyed?.params
-        });
+        holder = now;
       }
-    });
+
+      /**
+       * Which device this is for, on a table that follows the device (MICA-282; the device
+       * the request named since MICA-264).
+       *
+       * After authentication, because a source with no character has no inventory, and
+       * after validation, because a payload that is not even the right shape should not
+       * cost an inventory read. The resolver throws a `PlayerFacingError` for a player
+       * holding no phone on a server that gates on one — it lands in the catch below and
+       * reaches them as a toast — and degrades to the citizen's identity phone where no
+       * phone identity can be had. `services/Devices.ts` has the three cases.
+       *
+       * It is handed `holder`, the player this source is known to be right now (above), so it
+       * does not walk the framework's players again (MICA-362). `requireHeld` makes the resolve
+       * the in-hand check skipped above, from the same slot read; never cached, so every
+       * request reads the slots again.
+       */
+      const deviceId = resolves
+        ? await deviceForRequest(src, player.citizenid, device, {
+            player: holder,
+            requireHeld: mustHold
+          })
+        : undefined;
+
+      const result = await handler(src, cbId, payload, player.citizenid, holder, deviceId);
+
+      if (result !== undefined) {
+        reply(result);
+      }
+    } catch (error) {
+      /**
+       * Only two kinds of error carry a message a player may read, and this is the whole
+       * allowlist: a `PlayerFacingError` a handler raised deliberately, and a `SchemaError`
+       * a declaration raised about the payload. See `lib/errors.ts`.
+       *
+       * Everything else used to leave through this same line with its message intact, which
+       * meant the class of an error was invisible on the wire: a driver failure carrying the
+       * statement text that failed, and a `Repository` invariant carrying a table name, both
+       * reached a toast looking exactly like "You cannot follow yourself." The stack is what
+       * a server owner needs and the player needs none of it.
+       */
+      const disclosable = error instanceof PlayerFacingError || error instanceof SchemaError;
+      if (!disclosable) console.error(`Error in ${eventName}:`, error);
+
+      // The key rides beside the text (MICA-216): a client whose catalog knows it says
+      // it in the player's language, one that does not shows the English. A `SchemaError`
+      // carries no key — its messages name the field and are not catalogued.
+      const keyed = error instanceof PlayerFacingError ? error : undefined;
+      reply({
+        error: disclosable ? error.message : GENERIC_ERROR_MESSAGE,
+        key: keyed ? keyed.key : disclosable ? undefined : GENERIC_ERROR_KEY,
+        params: keyed?.params
+      });
+    }
   }
 }

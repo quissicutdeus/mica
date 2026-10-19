@@ -4,16 +4,24 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { dbMock, handlers } = vi.hoisted(() => {
+const { dbMock, handlers, localEvents } = vi.hoisted(() => {
   const captured = new Map<string, Function>();
   const previous = (globalThis as any).onNet;
   (globalThis as any).onNet = (event: string, handler: Function) => {
     captured.set(event, handler);
     return typeof previous === 'function' ? previous(event, handler) : undefined;
   };
+  // Local registrations too, for the integration door below: it must add none with the convar off.
+  const local = new Set<string>();
+  const previousOn = (globalThis as any).on;
+  (globalThis as any).on = (event: string, handler: Function) => {
+    local.add(event);
+    return typeof previousOn === 'function' ? previousOn(event, handler) : undefined;
+  };
   return {
     dbMock: { query: vi.fn(), insert: vi.fn(), update: vi.fn(), scalar: vi.fn(), single: vi.fn() },
-    handlers: captured
+    handlers: captured,
+    localEvents: local
   };
 });
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
@@ -51,6 +59,11 @@ import '../services/Mail';
  * registers is only visible once everything has registered.
  */
 import '../services';
+/**
+ * The in-server suite's door (MICA-397), loaded as `server.ts` loads it, with `mica_integration`
+ * unset as on every real server. See the last block of this file.
+ */
+import '../lib/integrationDoor';
 import { __resetRateLimits } from '../lib/rateLimit';
 import { registeredCustomActions } from '../lib/services';
 import { actionsOf, allContracts, contractFor } from '@mica/shared/contract';
@@ -328,5 +341,29 @@ describe('the contract and the registered surface agree', () => {
     // really did load every service, which is the thing that makes them mean something.
     expect(registered.size).toBeGreaterThan(80);
     expect(allContracts().length).toBeGreaterThan(15);
+  });
+});
+
+/**
+ * The integration door adds nothing a client can reach (MICA-397).
+ *
+ * `lib/integrationDoor.ts` lets the in-server suite run any registered action as a synthetic
+ * player. It is a local door, not a net one: its events are registered with `on()`, which
+ * FXServer never delivers a client's `TriggerServerEvent` to, and only when `mica_integration`
+ * was `1` at resource start — read once, so a live `set` opens nothing. With the convar off it
+ * registers nothing at all, which is what this file loads it under. What it does with the
+ * convar on, and that it still never touches `onNet`, is `integrationDoor.test.ts`.
+ */
+describe('the integration door is local and convar-gated', () => {
+  const DOOR = 'mica:server:integration:';
+
+  it('puts nothing in the integration scope on the network, whatever the convar', () => {
+    expect([...handlers.keys()].filter((event) => event.startsWith(DOOR))).toEqual([]);
+  });
+
+  it('registers nothing, locally either, with mica_integration unset', () => {
+    expect([...localEvents].filter((event) => event.startsWith(DOOR))).toEqual([]);
+    // The capture saw the services' own local registrations, so the absence above is the gate.
+    expect(localEvents.size).toBeGreaterThan(0);
   });
 });

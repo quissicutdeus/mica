@@ -8,6 +8,9 @@ import './lib/qbPhoneCompat';
 // Local framework listeners that push `jobs:changed` (MICA-227). Side-effect import, like
 // the two above: registering the listeners is the whole effect.
 import './lib/jobEvents';
+// The in-server suite's door (MICA-397): registers nothing unless `mica_integration` is `1` at
+// start. After `./services`, though it reads the endpoints only when asked.
+import './lib/integrationDoor';
 import { BankingBridge } from './lib/BankingBridge';
 import { FrameworkBridge } from './lib/FrameworkBridge';
 import { registerPublicApi } from './lib/publicApi';

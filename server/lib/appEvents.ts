@@ -135,6 +135,35 @@ function persistNotificationsAsync(
   return true;
 }
 
+/** Where one envelope goes: `emitNet` to a real source, or the integration door's buffer. */
+type Deliver = (envelope: AppEventEnvelope) => void;
+
+/**
+ * Who a push goes to: a connected player's source and `emitNet`, or — for a citizen no source
+ * answers for, claimed by the integration door (MICA-397) — its synthetic source and a buffer.
+ */
+interface Recipient {
+  source: number;
+  deliver: Deliver;
+}
+
+/**
+ * Installed by `lib/integrationDoor.ts` and only while `mica_integration` was `1` at start;
+ * null otherwise, which is every real server. Asked only for a citizen the registry and the
+ * walk both found offline, so it can never take a push meant for a connected player.
+ */
+let pushCapture: ((citizenid: string) => Recipient | null) | null = null;
+
+export const setPushCapture = (capture: ((citizenid: string) => Recipient | null) | null): void => {
+  pushCapture = capture;
+};
+
+/** A connected player's source, or the capture's claim on an offline citizen, or nobody. */
+const recipientFor = (citizenid: string, source: number | null | undefined): Recipient | null =>
+  typeof source === 'number'
+    ? { source, deliver: (envelope) => emitNet(APP_EVENT_NET_EVENT, source, envelope) }
+    : (pushCapture?.(citizenid) ?? null);
+
 export function appEventChannel(appId: string): AppEventChannel {
   const app = appId.toLowerCase();
   if (!APP_EVENT_NAME_PATTERN.test(app)) {
@@ -147,6 +176,7 @@ export function appEventChannel(appId: string): AppEventChannel {
   const send = (
     citizenid: string,
     source: number,
+    deliver: Deliver,
     event: string,
     payload: Record<string, unknown>,
     options: PushOptions | undefined,
@@ -160,7 +190,7 @@ export function appEventChannel(appId: string): AppEventChannel {
       );
       return { delivered: false, reason: size };
     }
-    emitNet(APP_EVENT_NET_EVENT, source, envelopeFor(app, event, payload, options, persisted));
+    deliver(envelopeFor(app, event, payload, options, persisted));
     return { delivered: true, source };
   };
 
@@ -175,9 +205,9 @@ export function appEventChannel(appId: string): AppEventChannel {
       // Persist notification asynchronously regardless of online state
       const persisted = persistNotificationsAsync(app, event, [citizenid], payload, options);
 
-      const source = FrameworkBridge.getSourceByCitizenId(citizenid);
-      if (source === null) return { delivered: false, reason: 'offline' };
-      return send(citizenid, source, event, payload, options, persisted);
+      const to = recipientFor(citizenid, FrameworkBridge.getSourceByCitizenId(citizenid));
+      if (!to) return { delivered: false, reason: 'offline' };
+      return send(citizenid, to.source, to.deliver, event, payload, options, persisted);
     },
 
     pushMany: (citizenids, event, payload = {}, options) => {
@@ -194,12 +224,12 @@ export function appEventChannel(appId: string): AppEventChannel {
       const offline: string[] = [];
 
       for (const citizenid of uniqueCitizenids) {
-        const source = sources.get(citizenid);
-        if (source === undefined) {
+        const to = recipientFor(citizenid, sources.get(citizenid));
+        if (!to) {
           offline.push(citizenid);
           continue;
         }
-        if (send(citizenid, source, event, payload, options, persisted).delivered) {
+        if (send(citizenid, to.source, to.deliver, event, payload, options, persisted).delivered) {
           delivered.push(citizenid);
         }
       }
