@@ -164,6 +164,21 @@ message reads as something to answer instead of something to execute.
   afterwards. Lanes on other files keep editing throughout; one on a file in the
   batch holds its next ticket until the commit lands. Used for six batches on
   2026-10-15.
+- **Landing from a worktree, three traps met on 2026-10-19.** The shell is zsh
+  and does not word-split an unquoted `$FILES`: `for f in $FILES; do cp …` ran
+  once with the whole list as one path, `cp` failed, and two worktrees verified
+  a clean tree and reported rc 0. Iterate a list file with
+  `while read -r f; do …; done < list.txt`, and prove the copy with
+  `git -C "$W" status --short | wc -l` before starting the gate. A file a lane
+  edits after the snapshot is committed from the verified copy, not the working
+  one:
+  `b=$(git hash-object -w "$W/$f"); git update-index --cacheinfo "100644,$b,$f"`
+  stages the blob without touching the working file, so the lane's later edit
+  survives as its own change; lint-staged then reports "hiding unstaged
+  changes", which is fine, but check the file afterwards.
+  `pkill -f 'worktrees/land-c'` killed the shell that ran it, because the
+  pattern matched its own command line; write the pattern so it cannot match
+  itself (`'land-[c]/node_modules'`).
 - **`pre-push` judges the uncommitted tree, not what is pushed.** `check:fast`
   selects suites from the working diff, so a lane's half-finished file (a
   migration with no CHANGELOG entry yet) refuses a push of verified commits.
