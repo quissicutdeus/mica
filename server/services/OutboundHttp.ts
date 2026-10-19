@@ -15,6 +15,7 @@ import {
   refreshCatalog,
   type CatalogRefresh
 } from './Store';
+import { reasonOf } from '../lib/sqlErrors';
 
 /**
  * `micahttp` (MICA-322): the console's way to exercise micaOS's two outbound HTTP callers that
@@ -161,10 +162,7 @@ export const runOutboundHttpCommand = async (source: number, args: string[]): Pr
     else reportCatalog(await refreshCatalog());
   } catch (error) {
     // Nothing above throws by design; this is for a bug, and a bug's message could quote a URL.
-    const why = (error instanceof Error ? error.message : String(error)).replace(
-      /[a-z][a-z0-9+.-]*:\/\/\S+/gi,
-      '<url>'
-    );
+    const why = reasonOf(error).replace(/[a-z][a-z0-9+.-]*:\/\/\S+/gi, '<url>');
     complain(`[micahttp] ${sub} failed: ${why}`);
   }
 };

@@ -284,6 +284,35 @@ describe('a failed post', () => {
     expect(error.mock.calls[0][0]).toContain(WEBHOOK_CONVAR);
   });
 
+  /**
+   * Node's fetch rejects every network failure as `TypeError: fetch failed` and says what
+   * happened on `cause`; the log carries both. A cause with nothing to say adds nothing, rather
+   * than "[object Object]".
+   */
+  it('names what the cause says, and nothing for a cause that says nothing', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    fetchMock.mockRejectedValueOnce(
+      new TypeError('fetch failed', { cause: new Error('getaddrinfo ENOTFOUND discord.com') })
+    );
+    forwardAudit(moderation({ targetId: 1 }));
+    await vi.advanceTimersByTimeAsync(COALESCE_MS);
+    expect(error.mock.calls[0][0]).toContain('fetch failed: getaddrinfo ENOTFOUND discord.com');
+
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 204 });
+    forwardAudit(moderation({ targetId: 2 }));
+    await vi.advanceTimersByTimeAsync(RATE_WINDOW_MS);
+
+    fetchMock.mockRejectedValueOnce(
+      new TypeError('fetch failed', { cause: { code: 'ECONNREFUSED' } })
+    );
+    forwardAudit(moderation({ targetId: 3 }));
+    await vi.advanceTimersByTimeAsync(RATE_WINDOW_MS);
+    expect(error).toHaveBeenCalledTimes(2);
+    expect(error.mock.calls[1][0]).toContain('fetch failed');
+    expect(error.mock.calls[1][0]).not.toContain('[object');
+    expect(error.mock.calls[1][0]).not.toMatch(/fetch failed: /);
+  });
+
   it('treats a non-2xx answer the same, and speaks again after a success', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     fetchMock.mockResolvedValueOnce({ ok: false, status: 429 });

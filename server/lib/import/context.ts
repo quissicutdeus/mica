@@ -18,6 +18,7 @@ import {
   rekeyEntry
 } from './ledgerKeys';
 import { SKIP, type ImportSource } from './report';
+import { NO_REASON, reasonOf } from '../sqlErrors';
 
 /**
  * What every source importer shares (MICA-233): the ledger, identity, and the writers.
@@ -300,7 +301,7 @@ export class Ledger {
     try {
       return (await Database.transaction(statements)) ? 'ok' : 'failed';
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = reasonOf(error, NO_REASON);
       console.error(`[micaimport] a write of ${batch.length} row(s) failed: ${message}`);
       return /did not answer within/.test(message) ? 'timeout' : 'failed';
     }

@@ -37,6 +37,7 @@
  */
 
 import type { AuditLogOptions } from './AuditLogger';
+import { reasonOf } from './sqlErrors';
 
 export const WEBHOOK_CONVAR = 'mica_discord_webhook';
 export const PAYMENT_MIN_CONVAR = 'mica_discord_webhook_payment_min';
@@ -233,16 +234,18 @@ const schedule = (delay: number): void => {
   }, delay);
 };
 
-const reasonOf = (error: unknown): string => {
-  if (!(error instanceof Error)) return String(error);
-  // Node's fetch says `fetch failed` and puts what happened on `cause`.
-  const cause = (error as { cause?: unknown }).cause;
-  return cause instanceof Error ? `${error.message}: ${cause.message}` : error.message;
+// Node's fetch says `fetch failed` and puts what happened on `cause`.
+const fetchReasonOf = (error: unknown): string => {
+  const reason = reasonOf(error);
+  const cause =
+    typeof error === 'object' && error !== null && 'cause' in error ? error.cause : undefined;
+  const why = reasonOf(cause);
+  return why === '' ? reason : `${reason}: ${why}`;
 };
 
 /** Why a post failed, fit for the console: the webhook URL, or any URL, reduced to its origin. */
 const safeReasonOf = (error: unknown, url: string): string =>
-  reasonOf(error)
+  fetchReasonOf(error)
     .split(url)
     .join(webhookOrigin(url))
     .replace(/[a-z][a-z0-9+.-]*:\/\/\S+/gi, (found) => webhookOrigin(found));

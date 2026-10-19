@@ -14,15 +14,68 @@
  */
 
 /**
- * The driver's own message: the last non-empty line of the text, which in oxmysql's shape is
- * mysql2's message and nothing of the query or its parameters above it. The whole text when
- * it is one line, which is mysql2's own shape.
+ * What a thrown value says, from any realm: its `message` when it has a string one, the value
+ * itself when it is a string, `String(value)` for anything else — and '' for `null`,
+ * `undefined`, a value whose `String` is only `[object Object]`, or one whose `message` getter
+ * or `toString` throws. Called from inside a `catch`, so nothing here may throw.
+ *
+ * Never `instanceof Error`. oxmysql builds its rejection with `new Error(output)` inside its own
+ * resource, so in micaOS's realm that check is false on every real driver failure and a reason
+ * read through it is empty. `errorReasons.test.ts` fails a `.message` read behind one anywhere
+ * in `server/`.
  */
-const lastLine = (error: unknown): string => {
-  const text = error instanceof Error ? error.message : String(error);
-  const lines = text.split('\n').filter((line) => line.trim() !== '');
-  return lines[lines.length - 1] ?? '';
+const textOf = (error: unknown): string => {
+  if (error === null || error === undefined) return '';
+  if (typeof error === 'string') return error;
+  try {
+    if (typeof error === 'object' && 'message' in error) {
+      const message: unknown = error.message;
+      if (typeof message === 'string') return message;
+    }
+    const text = String(error);
+    // A plain object says nothing about what went wrong.
+    return /^\[object [A-Za-z]+\]$/.test(text) ? '' : text;
+  } catch {
+    // A throwing `message` getter, a Proxy, or an object with no prototype and so no `toString`.
+    return '';
+  }
 };
+
+const OXMYSQL_HEADER = /unable to execute a query!/;
+
+/**
+ * Why something failed, fit for one log line: the last non-empty line of what the error says.
+ *
+ * In oxmysql's shape that is mysql2's own message and nothing of the statement or its
+ * parameters above it; in mysql2's shape, or any one-line message, it is the whole text. When
+ * mysql2's message is empty — Node's dual-stack `ECONNREFUSED` is an `AggregateError` with
+ * `message: ''` — oxmysql's last line is the parameters, or the query, or its own header, and
+ * none of those is answered, so a caller logging it never prints a player's message body.
+ *
+ * `fallback` (default '') is what to answer when there is no line to give: a caller whose line
+ * would otherwise end "failed: " with nothing after it passes `NO_REASON`.
+ */
+export const reasonOf = (error: unknown, fallback = ''): string => {
+  const text = textOf(error);
+  const lines = text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line !== '');
+  const last = lines[lines.length - 1] ?? '';
+  if (
+    OXMYSQL_HEADER.test(text) &&
+    (last.startsWith('[') ||
+      last.startsWith('{') ||
+      /^Query:/i.test(last) ||
+      OXMYSQL_HEADER.test(last))
+  ) {
+    return fallback;
+  }
+  return last === '' ? fallback : last;
+};
+
+/** For a reason that would otherwise print as nothing at all. */
+export const NO_REASON = 'no reason was given';
 
 /**
  * Did this write fail on a unique key (ER 1062)?
@@ -46,5 +99,5 @@ export const isDuplicateKey = (error: unknown): boolean => {
     if (typeof code === 'string' && code.toUpperCase() === 'ER_DUP_ENTRY') return true;
   }
   if (error === null || error === undefined) return false;
-  return /\bDuplicate entry\b.*\bfor key\b/i.test(lastLine(error));
+  return /\bDuplicate entry\b.*\bfor key\b/i.test(reasonOf(error));
 };

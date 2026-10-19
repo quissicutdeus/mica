@@ -18,6 +18,7 @@ import {
   type SchemaRefusal,
   type SchemaShape
 } from './schemaReady';
+import { reasonOf } from './sqlErrors';
 
 // The gate (`schemaReady()`, `whenSchemaReady`) and its outcome live in `schemaReady.ts`, which
 // imports nothing, so the jobs it gates can wait on it without closing an import cycle through
@@ -88,21 +89,6 @@ const realSleep = (ms: number): Promise<void> => new Promise((resolve) => setTim
 let sleep: (ms: number) => Promise<void> = realSleep;
 
 /**
- * The driver's own words from a failed query.
- *
- * oxmysql's `*_async` exports reject with `new Error(output)`, where `output` is
- * "<resource> was unable to execute a query!", the whole query, and only then mysql2's message
- * on the last line — no `errno`, no `code`. The last line is the part worth logging, and the
- * only part safe to classify: the query text above it is ours.
- */
-const driverMessage = (error: unknown): string => {
-  const text = error instanceof Error ? error.message : String(error);
-  if (!/unable to execute a query!/.test(text)) return text;
-  const lines = text.split('\n').filter((line) => line.trim() !== '');
-  return lines[lines.length - 1] ?? text;
-};
-
-/**
  * The MySQL errno of a failure, from `errno` where the error carries one (mysql2 in-process, as
  * `test:schema` runs it) and from the message where it does not (oxmysql across a resource
  * boundary, which carries only text). Null for anything else.
@@ -114,7 +100,7 @@ export const driverErrno = (error: unknown): number | null => {
     if (code === 'ER_TABLE_EXISTS_ERROR') return 1050;
     if (code === 'ER_TABLEACCESS_DENIED_ERROR') return 1142;
   }
-  const message = driverMessage(error);
+  const message = reasonOf(error);
   if (/^Table '[^']+' already exists$/i.test(message.trim())) return 1050;
   if (/\bcommand denied to user\b/i.test(message)) return 1142;
   return null;
@@ -181,7 +167,7 @@ const checkExisting = async (): Promise<SchemaOutcome> => {
     // The probe already answered "not fresh", so this changes nothing either way; an existing
     // database is left to the reports that run next, which say what they cannot read.
     console.warn(
-      `[mica] could not check whether this database's schema is complete (${driverMessage(error)}).`
+      `[mica] could not check whether this database's schema is complete (${reasonOf(error)}).`
     );
     return { kind: 'existing' };
   }
@@ -276,7 +262,7 @@ const createFresh = async (): Promise<SchemaOutcome> => {
       return refuse(
         'owner-table-missing',
         `[mica] this is a qbx/qb server, but its \`${OWNER_TABLE}\` table could not be read ` +
-          `(${driverMessage(error)}), so micaOS created nothing. Start qbx_core or qb-core, ` +
+          `(${reasonOf(error)}), so micaOS created nothing. Start qbx_core or qb-core, ` +
           `and let it create \`${OWNER_TABLE}\`, before micaOS; then restart micaOS. ${JOBS_HELD}`
       );
     }
@@ -295,7 +281,7 @@ const createFresh = async (): Promise<SchemaOutcome> => {
       await Database.query(statements[i], []);
     } catch (error) {
       const what = i < tables.length ? tables[i] : 'the migrations ledger seed';
-      const detail = driverMessage(error);
+      const detail = reasonOf(error);
       const errno = driverErrno(error);
       console.error(
         `[mica] creating ${what} failed (statement ${i + 1} of ${total}): ${detail}. Stopped ` +
@@ -338,7 +324,7 @@ const bootstrap = async (): Promise<SchemaOutcome> => {
   try {
     answer = await Database.scalar(freshDatabaseProbeSql(), []);
   } catch (error) {
-    const detail = driverMessage(error);
+    const detail = reasonOf(error);
     console.error(
       `[mica] could not tell whether this database already holds micaOS's tables (${detail}), ` +
         'so micaOS created nothing. If it is a fresh install, fix the connection and restart ' +

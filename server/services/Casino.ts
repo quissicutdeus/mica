@@ -8,7 +8,7 @@ import { Database } from '../lib/Database';
 import { appEventChannel } from '../lib/appEvents';
 import type { FrameworkPlayer } from '../lib/FrameworkBridge';
 import { pageBounds } from '../lib/payload';
-import { isDuplicateKey } from '../lib/sqlErrors';
+import { isDuplicateKey, reasonOf } from '../lib/sqlErrors';
 import { whenSchemaReady } from '../lib/schemaReady';
 import { registerExportFilter } from './Privacy';
 import { defineContract, responseType } from '@mica/shared/contract';
@@ -251,13 +251,6 @@ export const crashEdgePct = (): number => {
 
 const refuse = <R extends string>(reason: R): CasinoRefusal<R> => ({ ok: false, reason });
 
-/** The last line of a database error: oxmysql embeds the query and its parameters above it. */
-const lastLine = (error: unknown): string => {
-  const text = error instanceof Error ? error.message : String(error);
-  const lines = text.split('\n').filter((line) => line.trim() !== '');
-  return lines[lines.length - 1] ?? '';
-};
-
 // ---------------------------------------------------------------------------------------------
 // Money
 // ---------------------------------------------------------------------------------------------
@@ -433,7 +426,7 @@ app.registerEvent('spin', async (_source, _cbId, data, citizenid, player) => {
       JSON.stringify({ number, bets })
     ]);
   } catch (error) {
-    console.error(`[casino] spin for ${citizenid} could not be recorded: ${lastLine(error)}`);
+    console.error(`[casino] spin for ${citizenid} could not be recorded: ${reasonOf(error)}`);
   }
   if (!(roundId > 0)) {
     // No record of the round, so it did not happen: the whole stake goes back and nothing is
@@ -577,7 +570,7 @@ const onCrash = async (roundId: number, attempt = 1): Promise<void> => {
     const delay = Math.min(SETTLE_RETRY_MAX_MS, SETTLE_RETRY_MS * 2 ** (attempt - 1));
     console.error(
       `[casino] crash round ${roundId} for ${round.citizenid} could not be settled ` +
-        `(attempt ${attempt}): ${lastLine(error)}. Trying again in ${delay / 1000}s.`
+        `(attempt ${attempt}): ${reasonOf(error)}. Trying again in ${delay / 1000}s.`
     );
     round.timer = setTimeout(() => void onCrash(roundId, attempt + 1), delay);
     return;
@@ -632,7 +625,7 @@ app.registerEvent('crashStart', async (_source, _cbId, { stake }, citizenid, pla
     try {
       await sweepStaleCrashRounds(citizenid);
     } catch (error) {
-      console.error(`[casino] stale-round sweep for ${citizenid} failed: ${lastLine(error)}`);
+      console.error(`[casino] stale-round sweep for ${citizenid} failed: ${reasonOf(error)}`);
     }
     busy = await readBusy(citizenid);
   }
@@ -667,7 +660,7 @@ app.registerEvent('crashStart', async (_source, _cbId, { stake }, citizenid, pla
       duplicate = isDuplicateKey(error);
       if (!duplicate) {
         console.error(
-          `[casino] crash round for ${citizenid} could not be recorded: ${lastLine(error)}`
+          `[casino] crash round for ${citizenid} could not be recorded: ${reasonOf(error)}`
         );
       }
     }
@@ -954,7 +947,7 @@ export const sweepStaleCrashRounds = async (citizenid?: string): Promise<number>
     try {
       if (await settleLost(id)) settled += 1;
     } catch (error) {
-      console.error(`[casino] could not settle stale crash round ${id}: ${lastLine(error)}`);
+      console.error(`[casino] could not settle stale crash round ${id}: ${reasonOf(error)}`);
     }
   }
   if (settled > 0) console.log(`[casino] settled ${settled} stale crash round(s) as lost.`);
@@ -965,7 +958,7 @@ let staleSweep: ReturnType<typeof setInterval> | undefined;
 
 const sweepQuietly = (): void => {
   sweepStaleCrashRounds().catch((error: unknown) => {
-    console.error(`[casino] the stale-round sweep failed: ${lastLine(error)}`);
+    console.error(`[casino] the stale-round sweep failed: ${reasonOf(error)}`);
   });
 };
 

@@ -6,6 +6,7 @@ import { ServiceEndpoint } from '../lib/ServiceEndpoint';
 import { CONVAR_UNSET, resolveAddonConfig } from '@mica/shared/addonConfig';
 import { storeContract, type StoreCatalogResult } from '@mica/shared/contracts/store';
 import { SDK_CONTRACT_VERSION } from '../../sdk/version';
+import { reasonOf } from '../lib/sqlErrors';
 
 /**
  * The Store's add-on catalog, fetched by the server on the phones' behalf (MICA-237).
@@ -171,12 +172,14 @@ const refusalOf = (url: string, hosts: readonly string[]): string | null => {
   return null;
 };
 
-const reasonOf = (error: unknown): string => {
-  if (!(error instanceof Error)) return String(error);
-  // Node's fetch reports every network failure as `TypeError: fetch failed` and puts what
-  // actually happened — the redirect, the refused connection — on `cause`.
-  const cause = (error as { cause?: unknown }).cause;
-  return cause instanceof Error ? `${error.message}: ${cause.message}` : error.message;
+// Node's fetch reports every network failure as `TypeError: fetch failed` and puts what
+// actually happened — the redirect, the refused connection — on `cause`.
+const fetchReasonOf = (error: unknown): string => {
+  const reason = reasonOf(error);
+  const cause =
+    typeof error === 'object' && error !== null && 'cause' in error ? error.cause : undefined;
+  const why = reasonOf(cause);
+  return why === '' ? reason : `${reason}: ${why}`;
 };
 
 /** Read the body to its end, refusing at the first byte past the cap. */
@@ -299,7 +302,7 @@ const fetchAndCache = (url: string): Promise<Outcome> => {
       return { entries };
     },
     (error: unknown): Outcome => {
-      const reason = reasonOf(error);
+      const reason = fetchReasonOf(error);
       cache.set(url, { entries: null, until: Date.now() + CATALOG_FAILURE_TTL_MS });
       inFlight.delete(url);
       warnFailure(url, reason);

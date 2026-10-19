@@ -25,6 +25,7 @@ import {
 } from './Darkchat';
 import { darkchatMessagesContract } from '@mica/shared/contracts/darkchat_messages';
 import type { DarkchatMessage } from '@mica/shared/types';
+import { reasonOf } from '../lib/sqlErrors';
 
 const TABLE = 'mica_darkchat_messages';
 
@@ -259,7 +260,7 @@ const announce = (message: DarkchatMessage, except: string | null): void => {
       );
     })
     .catch((error: unknown) => {
-      const line = error instanceof Error ? error.message.split('\n').pop() : String(error);
+      const line = reasonOf(error);
       console.error(`[darkchat] push for message ${message.id} failed: ${line}`);
     });
 };
@@ -442,7 +443,7 @@ export const sweepDarkchat = async (): Promise<number> => {
     if (removed > 0) console.log(`[darkchat] removed ${removed} message(s) past ${hours}h.`);
   } catch (error) {
     // The driver's last line only: an oxmysql error embeds the statement and its parameters.
-    const line = error instanceof Error ? error.message.split('\n').pop() : String(error);
+    const line = reasonOf(error);
     console.error(`[darkchat] sweep failed: ${line}`);
   } finally {
     sweeping = false;

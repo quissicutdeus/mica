@@ -1382,7 +1382,18 @@ already taken, or two first texts racing to create one 1:1 or one business-line
 thread all reached the player as the generic error. Each now answers as a single
 attempt does — the reaction counts once, the ear, follow or block stays, the
 handle claim says the handle is taken, and both texts land in the one thread.
-Nothing is written twice.
+
+**A database failure now logs the driver's reason instead of nothing.** For the
+same cause, every place the server wrote a failure's reason to the console — the
+notification batch, the Casino, Spark, Reports, Dark Chat, the schema tools, the
+importer, outbound HTTP, the Discord webhook and the retention sweeps —
+recognised only an error made in micaOS's own realm, so an oxmysql failure
+logged an empty reason or "unknown database error". Each now logs the driver's
+own last line (a lock wait timeout, a missing table, a refused connection) and
+no longer the statement or its parameters, which carried message bodies and
+citizenids on the few paths that printed the whole error. Nothing a player sees
+changes; the fix is for whoever reads the server console. Nothing is written
+twice.
 
 **`micaschema apply` now creates a table that does not exist yet (MICA-388).**
 It creates a new app's table, its child tables and the audit ledger, in

@@ -15,6 +15,7 @@ import {
   type LiveTable,
   type MigrationPlan
 } from './migrate';
+import { NO_REASON, reasonOf } from './sqlErrors';
 
 /**
  * Reconcile the live database with the schema declarations, additively.
@@ -195,7 +196,7 @@ export const SchemaMigrator = {
           applied,
           failed: {
             description: statement.description,
-            error: error instanceof Error ? error.message : String(error)
+            error: reasonOf(error, NO_REASON)
           },
           remaining: statements.slice(i + 1).map((s) => s.description)
         };

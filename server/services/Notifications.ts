@@ -7,6 +7,7 @@ import { NotificationItem } from '@mica/shared/types';
 import { Database } from '../lib/Database';
 import { notificationsContract } from '@mica/shared/contracts/notifications';
 import { phoneForCitizen } from '../lib/deviceIdentity';
+import { reasonOf } from '../lib/sqlErrors';
 
 /** What a failure is logged as when no line of it is safe to print. */
 export const UNKNOWN_DB_ERROR = 'unknown database error';
@@ -16,33 +17,13 @@ export const UNKNOWN_DB_ERROR = 'unknown database error';
  *
  * oxmysql rejects with one message holding the whole statement **and its parameters** before
  * mysql2's reason on the last line, so logging the error as-is would print the notification's
- * body — a message preview, a mail subject — into the server console. Same rule as
- * `schemaBootstrap.ts`'s `driverMessage`, with one more case: when mysql2's own message is
- * empty (Node's dual-stack `ECONNREFUSED` is an `AggregateError` with `message: ''`), the last
- * non-blank line **is** the parameters, so a line that is the query, the parameters (JSON
- * array or object) or oxmysql's header is never answered — the constant is, as it is for an
- * error with no message at all.
+ * body — a message preview, a mail subject — into the server console. `reasonOf` answers the
+ * last line, and '' when mysql2's own message is empty (Node's dual-stack `ECONNREFUSED` is an
+ * `AggregateError` with `message: ''`) and that line is therefore the parameters, the query or
+ * oxmysql's header; the constant stands in for that, as it does for an error with no message.
  */
-export const notificationFailureReason = (error: unknown): string => {
-  let text: string;
-  if (error instanceof Error) text = error.message;
-  else if (typeof error === 'string') text = error;
-  else return UNKNOWN_DB_ERROR;
-  if (typeof text !== 'string' || text.trim() === '') return UNKNOWN_DB_ERROR;
-  if (!/unable to execute a query!/.test(text)) return text;
-  const lines = text.split('\n').filter((line) => line.trim() !== '');
-  const last = (lines[lines.length - 1] ?? '').trim();
-  if (
-    last === '' ||
-    last.startsWith('[') ||
-    last.startsWith('{') ||
-    /^Query:/i.test(last) ||
-    /unable to execute a query!/.test(last)
-  ) {
-    return UNKNOWN_DB_ERROR;
-  }
-  return last;
-};
+export const notificationFailureReason = (error: unknown): string =>
+  reasonOf(error, UNKNOWN_DB_ERROR);
 
 export class NotificationsRepository extends SchemaRepository<NotificationItem> {
   /**

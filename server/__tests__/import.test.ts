@@ -477,7 +477,8 @@ import {
   unregisterEncryptedColumnForTests
 } from '../lib/contentCipher';
 import { __resetLbPrefix } from '../lib/import/lbPhone';
-import { formatLedgerKeys, keyForms, walkLedgerKeys } from '../lib/import/ledgerKeys';
+import { formatLedgerKeys, keyForms, rekeyEntry, walkLedgerKeys } from '../lib/import/ledgerKeys';
+import { duplicateEntry, oxmysqlRejection } from './oxmysqlRejection';
 import { SKIP, threadTableUnusable } from '../lib/import/report';
 import { __resetImportTargets, postsTarget, registerImportTarget } from '../lib/import/targets';
 import { runImportCommand } from '../services/Import';
@@ -2102,5 +2103,32 @@ describe('MICA-165: an imported message is sealed like a sent one', () => {
   it('refuses to key the ledger with no key loaded, before reading it', async () => {
     noKey();
     await expect(walk(true)).rejects.toThrow('no content key is loaded');
+  });
+});
+
+/**
+ * A rekey refused by the ledger's unique key is a collision; anything else is a failure. Read off
+ * the driver's line only: oxmysql's text carries both keys among the parameters, and a source
+ * key is whatever the old phone resource stored, so it may say "duplicate entry" itself.
+ */
+describe('rekeyEntry: a collision is the driver’s word, not the parameters’', () => {
+  const sql = 'UPDATE `mica_import_ledger` SET `source_key` = ? WHERE `id` = ?';
+
+  it('answers collided for the unique key’s refusal, as oxmysql delivers it', async () => {
+    dbMock.update.mockRejectedValueOnce(
+      oxmysqlRejection(sql, ['new', 7], duplicateEntry('qb-new', 'source_key'))
+    );
+    await expect(rekeyEntry(7, 'old', 'new')).resolves.toBe('collided');
+  });
+
+  it('answers failed when only a parameter quotes the phrase', async () => {
+    dbMock.update.mockRejectedValueOnce(
+      oxmysqlRejection(
+        sql,
+        ["Duplicate entry 'x' for key 'y'", 7],
+        'Lock wait timeout exceeded; try restarting transaction'
+      )
+    );
+    await expect(rekeyEntry(7, 'old', "Duplicate entry 'x' for key 'y'")).resolves.toBe('failed');
   });
 });

@@ -42,6 +42,7 @@
 
 import { Database } from './Database';
 import { SCHEMA_MIGRATIONS_TABLE } from './schemaSql';
+import { reasonOf } from './sqlErrors';
 
 export const UPLOAD_URL_CONVAR = 'mica_media_upload_url';
 export const UPLOAD_HEADER_CONVAR = 'mica_media_upload_header';
@@ -288,7 +289,7 @@ export const rememberImageHost = async (host: string | null): Promise<void> => {
     warnOnce(
       `ledger-write:${host}`,
       `[micamedia] could not record ${host} as an image host in ${SCHEMA_MIGRATIONS_TABLE} ` +
-        `(${reasonOf(error)}); run micaschema apply. Until it is recorded, photos on it are ` +
+        `(${failureOf(error)}); run micaschema apply. Until it is recorded, photos on it are ` +
         `not counted once ${IMAGE_HOST_CONVAR} points elsewhere.`
     );
   } finally {
@@ -320,7 +321,7 @@ export const recordedImageHosts = async (): Promise<ReadonlySet<string>> => {
       warnOnce(
         'ledger-read',
         `[micamedia] could not read former image hosts from ${SCHEMA_MIGRATIONS_TABLE} ` +
-          `(${reasonOf(error)}); photos left on one are not counted until it can be read.`
+          `(${failureOf(error)}); photos left on one are not counted until it can be read.`
       );
     }
   }
@@ -443,9 +444,17 @@ export interface HostedImage {
   bytes: number;
 }
 
-/** Why an upload was not used, for the one log line that says so. */
-const reasonOf = (error: unknown): string =>
-  error instanceof Error ? error.message || error.name : String(error);
+/**
+ * Why an upload was not used, for the one log line that says so: the error's name when its
+ * message says nothing.
+ */
+const failureOf = (error: unknown): string => {
+  const reason = reasonOf(error);
+  if (reason !== '') return reason;
+  const name =
+    typeof error === 'object' && error !== null && 'name' in error ? error.name : undefined;
+  return typeof name === 'string' ? name : '';
+};
 
 /**
  * Post one photo to the host and answer with the URL to store, or `null` to store the bytes.
@@ -517,7 +526,7 @@ export const uploadImage = async (dataUri: unknown): Promise<HostedImage | null>
     void rememberImageHost(config.host);
     return { url, mimeType, bytes: bytes.length };
   } catch (error) {
-    return fail(reasonOf(error));
+    return fail(failureOf(error));
   }
 };
 

@@ -18,24 +18,30 @@ const { dbMock, handlers } = vi.hoisted(() => {
 });
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
 
+/** Which framework the bridge reports; es_extended is the one that reads a leaving number. */
+const framework = vi.hoisted(() => ({ kind: 'qb' as string }));
 vi.mock('../lib/FrameworkBridge', () => ({
   FrameworkBridge: {
     getPlayer: () => ({ citizenid: 'CIT_A', source: 5, setMeta: () => {} }),
     getSourceByCitizenId: () => null,
     getPlayerByPhone: () => null
-  }
+  },
+  detectFramework: () => framework.kind
 }));
 
 const directory = vi.hoisted(() => ({
   byPhone: new Map<string, { citizenid: string }>(),
   /** Every number `create` actually looked up, in order — the cap is a bound on this too. */
-  lookups: [] as string[]
+  lookups: [] as string[],
+  /** What a citizenid lookup answers; a test that needs it to fail replaces it. */
+  resolveMany: async (_citizenids: readonly string[]): Promise<Map<string, unknown>> => new Map()
 }));
 vi.mock('../lib/PlayerDirectory', () => ({
   resolveByPhone: async (phone: string) => {
     directory.lookups.push(phone);
     return directory.byPhone.get(phone) ?? null;
-  }
+  },
+  resolveMany: (citizenids: readonly string[]) => directory.resolveMany(citizenids)
 }));
 
 import { conversations } from '../services/Conversations';
@@ -62,6 +68,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   directory.byPhone.clear();
   directory.lookups.length = 0;
+  directory.resolveMany = async () => new Map();
+  framework.kind = 'qb';
   dbMock.query.mockResolvedValue([]);
   dbMock.insert.mockResolvedValue(101);
   dbMock.update.mockResolvedValue(true);
@@ -644,5 +652,63 @@ describe('conversations:archive — the direction is the status the caller names
     const reply = await call('archive', { conversation_id: 7, archive: false });
     expect(reply).toMatchObject({ error: expect.any(String) });
     expect(dbMock.update).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Leaving a 1:1 on es_extended reads the leaving phone's number from the directory, and a
+ * failure there is logged and answered as no number, never failing the leave (MICA-350). The
+ * reason logged is the driver's last line. oxmysql rejects with an `Error` from its own realm,
+ * which `instanceof Error` refused here, so every in-game failure logged an empty reason.
+ */
+describe('conversations:delete — a leaving number the directory cannot read', () => {
+  const leave = async () => {
+    dbMock.query.mockImplementation(async (sql: string) =>
+      String(sql).includes('p.left_at IS NULL')
+        ? [
+            {
+              id: 1,
+              conversation_id: 7,
+              citizenid: 'CIT_A',
+              device_id: TEST_PHONE_ID,
+              role: 'member',
+              status: 'active',
+              left_at: null
+            }
+          ]
+        : []
+    );
+    return call('delete', { conversation_id: 7 });
+  };
+
+  it('logs the driver’s own line from an in-game rejection, and still leaves', async () => {
+    framework.kind = 'esx';
+    directory.resolveMany = async () => {
+      throw oxmysqlRejection(
+        'SELECT `identifier`, `firstname` FROM `users` WHERE `identifier` IN (?)',
+        ['CIT_A'],
+        'Lock wait timeout exceeded; try restarting transaction'
+      );
+    };
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    expect(await leave()).toBe(true);
+
+    const line = logged.mock.calls
+      .map((args) => args.map(String).join(' '))
+      .find((text) => text.includes('could not read the number'));
+    expect(line).toContain('Lock wait timeout exceeded; try restarting transaction');
+    // The last line only: the statement and its parameters stay out of the log.
+    expect(line).not.toContain('`users`');
+    expect(line).not.toContain('CIT_A');
+    logged.mockRestore();
+  });
+
+  it('asks the directory nothing off es_extended', async () => {
+    const asked = vi.fn(async () => new Map());
+    directory.resolveMany = asked;
+
+    expect(await leave()).toBe(true);
+    expect(asked).not.toHaveBeenCalled();
   });
 });

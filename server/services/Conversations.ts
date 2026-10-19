@@ -22,7 +22,7 @@ import { resolveByPhone, resolveMany } from '../lib/PlayerDirectory';
 import { detectFramework } from '../lib/FrameworkBridge';
 import { conversationIdFrom, pageBounds, recencyCursor } from '../lib/payload';
 import { conversationsContract } from '@mica/shared/contracts/conversations';
-import { isDuplicateKey } from '../lib/sqlErrors';
+import { isDuplicateKey, reasonOf } from '../lib/sqlErrors';
 import { phoneForCitizen, deviceForRequest } from '../lib/deviceIdentity';
 import { readPhoneIdByNumber } from '../lib/phoneNumbers';
 import { onDeviceHandover } from './Devices';
@@ -424,7 +424,7 @@ const frameworkNumberOf = async (citizenid: string): Promise<string | null> => {
     return (await resolveMany([citizenid])).get(citizenid)?.phone ?? null;
   } catch (error) {
     // The last line only: a driver error carries the statement and its parameters.
-    const reason = error instanceof Error ? (error.message.split('\n').at(-1) ?? '') : '';
+    const reason = reasonOf(error);
     console.error(`[Conversation] could not read the number a leaving phone had: ${reason}`);
     return null;
   }

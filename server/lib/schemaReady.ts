@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { NO_REASON, reasonOf } from './sqlErrors';
+
 /**
  * The gate every start-up job that reads the database waits behind (MICA-306): the outcome of
  * the first-start schema check, settled once per resource start.
@@ -53,9 +55,6 @@ export const installSchemaCheck = (fn: () => Promise<SchemaOutcome>): void => {
 /** Whether `schemaBootstrap.ts` has filled the slot. For the test that proves the graph does. */
 export const schemaCheckInstalled = (): boolean => check !== null;
 
-const messageOf = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
-
 const notInstalled = async (): Promise<SchemaOutcome> => {
   const error = 'the first-start schema check was never installed (schemaBootstrap.ts)';
   console.error(`[mica] ${error}; start-up jobs run without it.`);
@@ -69,7 +68,7 @@ const notInstalled = async (): Promise<SchemaOutcome> => {
 export const schemaReady = (): Promise<SchemaOutcome> => {
   ready ??= (check ? check() : notInstalled())
     .catch((error: unknown): SchemaOutcome => {
-      const detail = messageOf(error);
+      const detail = reasonOf(error, NO_REASON);
       console.error(`[mica] the first-start schema check failed: ${detail}`);
       return { kind: 'unknown', error: detail };
     })

@@ -5,6 +5,7 @@
 import { createHash } from 'node:crypto';
 import { Database } from '../Database';
 import { activeKeyId, contentDigests, loadedKeyIds } from '../contentCipher';
+import { isDuplicateKey } from '../sqlErrors';
 
 /**
  * The import ledger's keys (MICA-233), and the ones that must not hold what they are built from
@@ -114,7 +115,8 @@ export const rekeyEntry = async (
     );
     return written ? 'rekeyed' : 'raced';
   } catch (error) {
-    return /duplicate entry/i.test(String(error)) ? 'collided' : 'failed';
+    // The driver's line only: oxmysql's text quotes both keys among the parameters above it.
+    return isDuplicateKey(error) ? 'collided' : 'failed';
   }
 };
 

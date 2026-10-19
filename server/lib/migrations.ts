@@ -16,6 +16,7 @@
 import { Database } from './Database';
 import { schemaMigrationsLedgerDdl, SCHEMA_MIGRATIONS_TABLE } from './schemaSql';
 import { migrations as migrationsOnDisk } from '../migrations';
+import { NO_REASON, reasonOf } from './sqlErrors';
 
 export interface Migration {
   id: string;
@@ -57,7 +58,7 @@ export async function runMigrations(
         applied,
         failed: {
           id: migration.id,
-          error: error instanceof Error ? error.message : String(error)
+          error: reasonOf(error, NO_REASON)
         },
         remaining: pending.slice(i + 1).map((m) => m.id)
       };
@@ -74,7 +75,7 @@ export async function runMigrations(
     try {
       await recordApplied(migration.id);
     } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
+      const detail = reasonOf(error, NO_REASON);
       return {
         applied,
         failed: {
@@ -141,7 +142,7 @@ async function readPendingMigrations(): Promise<{ pending: Migration[] } | { err
     const applied = await appliedMigrationIds();
     return { pending: pendingMigrations(migrationsOnDisk, applied) };
   } catch (error) {
-    return { error: error instanceof Error ? error.message : String(error) };
+    return { error: reasonOf(error, NO_REASON) };
   }
 }
 

@@ -36,6 +36,7 @@ import {
   UNKNOWN_DB_ERROR
 } from '../services/Notifications';
 import { appEventChannel } from '../lib/appEvents';
+import { oxmysqlRejection } from './oxmysqlRejection';
 
 const BODY = 'a private preview nobody else should read';
 const CITIZENS = ['CID_1', 'CID_2', 'CID_3', 'CID_4'];
@@ -188,7 +189,7 @@ describe('notificationFailureReason', () => {
     ['only the header', new Error('mica was unable to execute a query!\n\n')],
     ['undefined', undefined],
     ['an empty string', ''],
-    ['a plain object', { message: BODY }],
+    ['an in-game rejection with an empty driver reason', oxmysqlRejection('INSERT …', [BODY], '')],
     ['an Error with no message', new Error()]
   ])('answers the constant for %s', (_label, thrown) => {
     expect(notificationFailureReason(thrown)).toBe(UNKNOWN_DB_ERROR);
@@ -199,5 +200,20 @@ describe('notificationFailureReason', () => {
       "Data too long for column 'title' at row 1"
     );
     expect(notificationFailureReason(new Error('connection lost'))).toBe('connection lost');
+  });
+
+  /**
+   * oxmysql's rejection is an `Error` from its own resource, so `instanceof Error` refused it and
+   * every in-game failure logged the constant. A plain `{ message }` reads the same way now: the
+   * two cannot be told apart without that check.
+   */
+  it('keeps the driver reason of a rejection built in another realm', () => {
+    const thrown = oxmysqlRejection(
+      'INSERT INTO mica_notifications (citizenid, ...) VALUES (?, ...)',
+      ['CID_1', BODY],
+      "Data too long for column 'title' at row 1"
+    );
+    expect(thrown instanceof Error).toBe(false);
+    expect(notificationFailureReason(thrown)).toBe("Data too long for column 'title' at row 1");
   });
 });

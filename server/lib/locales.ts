@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { reasonOf } from './sqlErrors';
 
 /**
  * Languages an owner adds by dropping files in (MICA-235), no rebuild.
@@ -88,7 +89,7 @@ const readNamespace = (path: string, label: string): Messages | null => {
   try {
     parsed = JSON.parse(readFileSync(path, 'utf8'));
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
+    const reason = reasonOf(error);
     warn(`${label} is not valid JSON (${reason}); skipped.`);
     return null;
   }

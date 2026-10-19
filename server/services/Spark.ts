@@ -9,7 +9,7 @@ import { Database } from '../lib/Database';
 import { appEventChannel } from '../lib/appEvents';
 import { resolveOwnedAttachments } from '../lib/attachments';
 import { pageBounds } from '../lib/payload';
-import { isDuplicateKey } from '../lib/sqlErrors';
+import { isDuplicateKey, reasonOf } from '../lib/sqlErrors';
 import { RETENTION_BATCH } from '../lib/contentRetention';
 import { whenSchemaReady } from '../lib/schemaReady';
 import { AccountRepository, accounts, accountHasBlocked, scrubAccount } from './Accounts';
@@ -516,7 +516,7 @@ export const isDeadlock = (error: unknown): boolean => {
     const { errno, code } = error as { errno?: unknown; code?: unknown };
     if (errno === 1213 || code === 'ER_LOCK_DEADLOCK') return true;
   }
-  const text = error instanceof Error ? error.message : String(error ?? '');
+  const text = reasonOf(error);
   return /\bDeadlock found when trying to get lock\b/i.test(text);
 };
 
@@ -1079,7 +1079,7 @@ export const sweepSparkPasses = async (): Promise<number> => {
     if (removed > 0) console.log(`[spark] forgot ${removed} pass(es) past ${PASS_DAYS} days.`);
   } catch (error) {
     // The driver's last line only: an oxmysql error embeds the statement and its parameters.
-    const line = error instanceof Error ? error.message.split('\n').pop() : String(error);
+    const line = reasonOf(error);
     console.error(`[spark] sweep failed: ${line}`);
   } finally {
     sweeping = false;

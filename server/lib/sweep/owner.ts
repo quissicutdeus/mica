@@ -6,6 +6,7 @@ import { Database } from '../Database';
 import { FrameworkBridge, type OwnerTable } from '../FrameworkBridge';
 import { SAFE_IDENTIFIER, identifier } from './sql';
 import type { OwnedTable } from './tables';
+import { reasonOf } from '../sqlErrors';
 
 /** How many distinct owners are sampled to check the two sides speak the same identity. */
 const IDENTITY_SAMPLE = 25;
@@ -219,10 +220,6 @@ export interface OwnerMatch {
   collation: string;
 }
 
-/** Why a caught error is worth a line: the message, never the whole driver object. */
-const describeError = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
-
 /**
  * Read the owner column's collation from `information_schema`, or throw.
  *
@@ -272,7 +269,7 @@ export const resolveOwner = async (tables: readonly OwnedTable[]): Promise<Owner
     );
     population = Number(row?.total ?? 0);
   } catch (error) {
-    return { owner, skipped: 'owner-unreadable', detail: describeError(error) };
+    return { owner, skipped: 'owner-unreadable', detail: reasonOf(error) };
   }
   if (!Number.isFinite(population) || population <= 0) return { owner, skipped: 'owner-empty' };
 
@@ -285,7 +282,7 @@ export const resolveOwner = async (tables: readonly OwnedTable[]): Promise<Owner
     return {
       owner,
       skipped: 'owner-unreadable',
-      detail: `Its collation could not be read: ${describeError(error)}`
+      detail: `Its collation could not be read: ${reasonOf(error)}`
     };
   }
 
@@ -293,7 +290,7 @@ export const resolveOwner = async (tables: readonly OwnedTable[]): Promise<Owner
   try {
     sample = await sampleOwners(tables);
   } catch (error) {
-    return { owner, skipped: 'owner-unreadable', detail: describeError(error) };
+    return { owner, skipped: 'owner-unreadable', detail: reasonOf(error) };
   }
   // No micaOS rows at all: there is nothing to sweep, and nothing to check an identity
   // against either. Refusing rather than proceeding costs nothing — a sweep of an empty
@@ -309,7 +306,7 @@ export const resolveOwner = async (tables: readonly OwnedTable[]): Promise<Owner
     );
     matched = Number(row?.matched ?? 0);
   } catch (error) {
-    return { owner, skipped: 'owner-unreadable', detail: describeError(error) };
+    return { owner, skipped: 'owner-unreadable', detail: reasonOf(error) };
   }
   if (!Number.isFinite(matched) || matched <= 0) return { owner, skipped: 'identity-mismatch' };
 

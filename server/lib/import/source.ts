@@ -5,6 +5,7 @@
 import { Database } from '../Database';
 import { tablePresent } from './context';
 import { Tally } from './report';
+import { reasonOf } from '../sqlErrors';
 
 /**
  * Reading a source table a page at a time (MICA-233).
@@ -71,7 +72,7 @@ export async function* pages<Row extends object>(
     try {
       rows = (await Database.query<Row[]>(sql, params)) ?? [];
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = reasonOf(error);
       tally.unreadable = true;
       tally.skip(`could not read${seen ? ` past row ${seen}` : ''}: ${message}`, 0);
       return;
@@ -154,7 +155,7 @@ export async function* chronological<Row extends object>(
           ids
         )) ?? [];
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = reasonOf(error);
       tally.unreadable = true;
       tally.skip(`could not read past row ${i}: ${message}`, 0);
       return;

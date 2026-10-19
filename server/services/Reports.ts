@@ -33,6 +33,7 @@ import { accountsByIds } from './Accounts';
 import { messages } from './Messages';
 import { darkchatMessages, retentionHours } from './DarkchatMessages';
 import type { Report, ReportResolution } from '@mica/shared/types';
+import { reasonOf } from '../lib/sqlErrors';
 
 /**
  * What a reopen restores when the report holds no record of what its takedown replaced: a
@@ -709,7 +710,7 @@ app.registerEvent('resolve', async (source, cbId, data, citizenid) => {
         await repo.recordPriorStatus(id, isRestorableStatus(prior) ? prior : null);
       } catch (error) {
         // The driver's last line only: an oxmysql error embeds the whole statement above it.
-        const line = error instanceof Error ? error.message.split('\n').pop() : String(error);
+        const line = reasonOf(error);
         console.error(`[reports] report #${id}: the replaced status was not recorded: ${line}`);
       }
     }
