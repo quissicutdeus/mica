@@ -56,6 +56,10 @@ for players and seamless framework integration for server developers.
 
 ### 📱 Applications & UI
 
+Out of the box the home screen holds the core apps listed first below. Every
+entry marked _(add-on)_ installs from the Store and is not preinstalled — a
+decision, recorded in [`docs/decisions.md`](docs/decisions.md).
+
 - **Phone & Dialer**: Full contact dialing, active call management, and custom
   in-game phone prop animations.
 - **Contacts**: Contact management with favoriting, custom avatars, and soft
@@ -76,7 +80,8 @@ for players and seamless framework integration for server developers.
   authority; the app only asks, and hides itself on a server with no framework.
 - **Media & Camera**: In-game screenshot/camera integration, automatic image
   compression, gallery view, location sharing, and attachment sharing.
-- **Notes**: Full-featured note-taking app with instant saving.
+- **Notes** _(add-on)_: Full-featured note-taking app with instant saving.
+  Written in this repo, but a Store add-on like the others so marked.
 - **Bluetooth Proximity Sharing**: Share a contact or drop a photo to the
   nearest few Bluetooth-visible players — computed server-side from live in-game
   position, no external player list ever reaches the client. Range defaults to
@@ -2253,6 +2258,8 @@ mica/
   and what it ships.
 - [docs/addon-catalog.md](docs/addon-catalog.md) — the `CatalogEntry` shape a
   Store backend serves to describe an installable `core: false` add-on.
+- [docs/decisions.md](docs/decisions.md) — choices made on purpose that could
+  have gone the other way, with the date and the reasoning.
 - [docs/cef-baseline.md](docs/cef-baseline.md) — every Chromium 103
   accommodation in the tree, and what to do with each one when FiveM's CEF
   finally moves.
