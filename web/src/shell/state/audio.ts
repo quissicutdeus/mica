@@ -396,6 +396,18 @@ type OwnerKind = 'ring' | 'notify';
 /** How long a fetch or decode failure is remembered before the next attempt may retry it. */
 const OWNER_SOUND_RETRY_MS = 30_000;
 
+/**
+ * How long the context may sit with nothing sounding before it is suspended. MICA-373.
+ *
+ * A running `AudioContext` keeps Chromium's audio render thread mixing silence for as long
+ * as it exists, and CEF does that beside the game for the whole session. Ten seconds is
+ * long enough that a burst of clicks or a run of notifications never pays a resume between
+ * them, and short enough that the thread is idle for nearly all of a session spent not
+ * touching the phone. Every built-in effect is under a second, so the only thing that can
+ * still be sounding when this elapses is an owner sound — which `playing` tracks.
+ */
+const IDLE_SUSPEND_MS = 10_000;
+
 class SoundService {
   private audioCtx: AudioContext | null = null;
   private readonly buffers = new Map<string, AudioBuffer>();
@@ -418,6 +430,16 @@ class SoundService {
    * nothing, because "nothing" is the only state a call that already ended can be in).
    */
   private ringGeneration = 0;
+  /** The one idle timer: re-armed by every play and by `warm`, fires `suspendIfIdle`. */
+  private idleTimer: ReturnType<typeof setTimeout> | null = null;
+  /** In flight while the context resumes, so a burst of plays shares one `resume()`. */
+  private resuming: Promise<boolean> | null = null;
+  /**
+   * In flight while the context suspends. `state` still reads `running` until it settles,
+   * and a source started in that window is frozen with the context — so a play that lands
+   * then waits for it and resumes rather than trusting the stale state.
+   */
+  private suspending: Promise<void> | null = null;
 
   constructor() {
     // A stale failure must not survive an owner replacing the very file that failed;
@@ -464,10 +486,76 @@ class SoundService {
         this.audioCtx = new AudioCtxClass();
       }
     }
-    if (this.audioCtx && this.audioCtx.state === 'suspended') {
-      this.audioCtx.resume().catch(() => {});
-    }
     return this.audioCtx;
+  }
+
+  /**
+   * Run `render` against a running context, and restart the idle countdown.
+   *
+   * Synchronous when the context is already running, so a click lands on the frame it was
+   * pressed in. Otherwise `render` waits for the resume: a source started on a suspended
+   * context is scheduled against a frozen `currentTime` and would sound whenever something
+   * next resumed it — a stale click, or a ring for a call long over. A resume that fails
+   * is logged and the sound is skipped, never thrown into the caller.
+   */
+  private whenAwake(ctx: AudioContext, render: () => void): void {
+    this.armIdleSuspend();
+    if (ctx.state === 'running' && !this.suspending) {
+      render();
+      return;
+    }
+    void this.resume(ctx).then((awake) => {
+      if (awake) render();
+    });
+  }
+
+  private resume(ctx: AudioContext): Promise<boolean> {
+    if (this.resuming) return this.resuming;
+    const job = (async () => {
+      try {
+        if (this.suspending) await this.suspending;
+        if (ctx.state !== 'running') await ctx.resume();
+        return true;
+      } catch (e) {
+        console.warn('Audio context could not resume; the sound was skipped.', e);
+        return false;
+      }
+    })();
+    // Cleared from outside the job, never in a `finally` inside it: a `resume()` that throws
+    // synchronously would run that `finally` before this assignment, and the settled job
+    // would then sit here answering `true` to every later resume without making one.
+    this.resuming = job;
+    void job.then(() => {
+      if (this.resuming === job) this.resuming = null;
+    });
+    return job;
+  }
+
+  private armIdleSuspend(): void {
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.idleTimer = setTimeout(() => this.suspendIfIdle(), IDLE_SUSPEND_MS);
+  }
+
+  /**
+   * Suspend the context once nothing is sounding. A source still in `playing` — an owner
+   * ringtone or chime that outlasts the window — keeps it awake, and the countdown starts
+   * over from there; its `onended` restarts it too, so the ten seconds run from the end of
+   * the sound rather than its start.
+   */
+  private suspendIfIdle(): void {
+    this.idleTimer = null;
+    const ctx = this.audioCtx;
+    if (!ctx || ctx.state !== 'running' || this.suspending) return;
+    if (this.playing.size > 0 || this.resuming) {
+      this.armIdleSuspend();
+      return;
+    }
+    this.suspending = ctx
+      .suspend()
+      .catch((e: unknown) => console.warn('Audio context could not suspend.', e))
+      .finally(() => {
+        this.suspending = null;
+      });
   }
 
   /**
@@ -485,9 +573,7 @@ class SoundService {
     if (typeof window === 'undefined') return;
     if (!isBrowser()) {
       const ctx = this.getAudioContext();
-      if (ctx && ctx.state === 'suspended') {
-        ctx.resume().catch(() => {});
-      }
+      if (ctx) this.whenAwake(ctx, () => {});
     }
 
     if (this.warmingListenersAttached) return;
@@ -497,9 +583,7 @@ class SoundService {
 
     const unlock = () => {
       const activeCtx = this.getAudioContext();
-      if (activeCtx && activeCtx.state === 'suspended') {
-        activeCtx.resume().catch(() => {});
-      }
+      if (activeCtx) this.whenAwake(activeCtx, () => {});
       window.removeEventListener('pointerdown', unlock);
       window.removeEventListener('keydown', unlock);
       window.removeEventListener('touchstart', unlock);
@@ -581,6 +665,7 @@ class SoundService {
       gain.connect(ctx.destination);
       source.onended = () => {
         if (this.playing.get(kind) === source) this.playing.delete(kind);
+        this.armIdleSuspend();
       };
       this.playing.set(kind, source);
       source.start();
@@ -600,13 +685,17 @@ class SoundService {
       // The call this ring was for has already ended (`stopRing` bumped the generation)
       // — starting now, built-in fallback included, would ring a call nobody is on.
       if (kind === 'ring' && generation !== this.ringGeneration) return;
-      try {
-        if (buffer) start(buffer);
-        else fallback();
-      } catch (e) {
-        console.warn('Owner sound failed to start; using the built-in tone.', e);
-        fallback();
-      }
+      // The decode may have outlasted the idle window, so this goes through the same
+      // resume the original `play` did rather than starting on a suspended context.
+      this.whenAwake(ctx, () => {
+        try {
+          if (buffer) start(buffer);
+          else fallback();
+        } catch (e) {
+          console.warn('Owner sound failed to start; using the built-in tone.', e);
+          fallback();
+        }
+      });
     });
   }
 
@@ -638,7 +727,15 @@ class SoundService {
     const volume = get(soundVolume);
     const ctx = this.getAudioContext();
     if (!ctx) return;
+    this.whenAwake(ctx, () => this.render(ctx, volume, effect, options));
+  }
 
+  private render(
+    ctx: AudioContext,
+    volume: number,
+    effect: SoundEffect,
+    options?: { tone?: string | null }
+  ): void {
     try {
       switch (effect) {
         case 'click':
@@ -731,12 +828,13 @@ class SoundService {
     this.trackPreview(id);
     const ctx = this.getAudioContext();
     if (!ctx) return;
-
-    try {
-      this.playRingtoneId(ctx, get(soundVolume), id);
-    } catch (e) {
-      console.error('Audio playback error:', e);
-    }
+    this.whenAwake(ctx, () => {
+      try {
+        this.playRingtoneId(ctx, get(soundVolume), id);
+      } catch (e) {
+        console.error('Audio playback error:', e);
+      }
+    });
   }
 
   /** Audition a notification tone from Settings; answers to mute and volume, not the ringer. */
@@ -745,13 +843,15 @@ class SoundService {
     this.trackPreview(id);
     const ctx = this.getAudioContext();
     if (!ctx) return;
-    try {
-      const fallback = () => this.playNotificationSound(ctx, get(soundVolume));
-      if (isOwnerSoundId(id)) this.playOwner(ctx, get(soundVolume), id, 'notify', fallback);
-      else fallback();
-    } catch (e) {
-      console.error('Audio playback error:', e);
-    }
+    this.whenAwake(ctx, () => {
+      try {
+        const fallback = () => this.playNotificationSound(ctx, get(soundVolume));
+        if (isOwnerSoundId(id)) this.playOwner(ctx, get(soundVolume), id, 'notify', fallback);
+        else fallback();
+      } catch (e) {
+        console.error('Audio playback error:', e);
+      }
+    });
   }
 
   /**

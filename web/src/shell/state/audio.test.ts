@@ -42,6 +42,27 @@ import { useStorage } from '../../../../sdk/host/useStorage';
 import { charge, chargeOf } from './charge';
 import { setActiveDevice } from './device';
 
+/**
+ * MICA-373: the service arms a ten-second idle timer on every play. Nothing in this file
+ * outside the idle-suspend suite wants it to fire, so it is disarmed after every test —
+ * left armed, it would suspend whichever fake context the next suite installs.
+ */
+const internals = () =>
+  audio as unknown as {
+    idleTimer: ReturnType<typeof setTimeout> | null;
+    resuming: Promise<boolean> | null;
+    suspending: Promise<void> | null;
+    playing: Map<string, unknown>;
+  };
+
+afterEach(() => {
+  const svc = internals();
+  if (svc.idleTimer) clearTimeout(svc.idleTimer);
+  svc.idleTimer = null;
+  svc.resuming = null;
+  svc.suspending = null;
+});
+
 describe('audio', () => {
   beforeEach(() => {
     soundMuted.set(false);
@@ -288,12 +309,20 @@ const param = () => ({
   exponentialRampToValueAtTime: vi.fn()
 });
 
+/** `this`-bound rather than closed over, so a context spread into a richer fake still flips its own state. */
 const fakeAudioContext = () => ({
-  state: 'running',
+  state: 'running' as string,
   currentTime: 0,
   sampleRate: 44100,
   destination: {},
-  resume: () => Promise.resolve(),
+  resume: vi.fn(function (this: { state: string }) {
+    this.state = 'running';
+    return Promise.resolve();
+  }),
+  suspend: vi.fn(function (this: { state: string }) {
+    this.state = 'suspended';
+    return Promise.resolve();
+  }),
   createOscillator: vi.fn(() => ({
     type: 'sine',
     frequency: param(),
@@ -625,6 +654,32 @@ describe('owner sounds (MICA-256)', () => {
     expect(ctx.createOscillator).toHaveBeenCalled();
   });
 
+  /**
+   * MICA-373: an owner ringtone can run for minutes, far past the idle window. Suspending
+   * under it would cut the ring off mid-call; the window runs from the end of the sound.
+   */
+  it('never suspends while an owner sound is still sounding, and counts idle from its end', async () => {
+    vi.useFakeTimers();
+    try {
+      internals().playing.clear();
+      setRingtone('owner:Bell');
+      audio.play('ringtone');
+      await vi.advanceTimersByTimeAsync(0);
+      expect(sources).toHaveLength(1);
+
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(ctx.suspend).not.toHaveBeenCalled();
+
+      (sources[0] as unknown as { onended: () => void }).onended();
+      await vi.advanceTimersByTimeAsync(9_999);
+      expect(ctx.suspend).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(ctx.suspend).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('previews an owner sound and answers to mute', async () => {
     audio.preview('owner:Bell');
     await flush();
@@ -741,5 +796,126 @@ describe('owner sounds (MICA-256)', () => {
     expect(buffers.has(urlC)).toBe(false);
     await flush();
     expect([...buffers.keys()].sort()).toEqual([URL_A, urlB, urlD].sort());
+  });
+});
+
+/**
+ * MICA-373: `warm()` resumed the context at Shell mount and on every open, and nothing ever
+ * suspended it, so Chromium's audio render thread mixed silence beside the game all
+ * session. The context now suspends after ten seconds with nothing sounding, and the next
+ * play resumes it before starting a source.
+ */
+describe('idle suspend (MICA-373)', () => {
+  let ctx: ReturnType<typeof fakeAudioContext>;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    soundMuted.set(false);
+    soundVolume.set(0.5);
+    setRingMode('normal');
+    setRingtone('classic');
+    internals().playing.clear();
+    ctx = fakeAudioContext();
+    (audio as unknown as { audioCtx: unknown }).audioCtx = ctx;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    (audio as unknown as { audioCtx: unknown }).audioCtx = null;
+  });
+
+  it('suspends after ten idle seconds, and the next play resumes before it sounds', async () => {
+    audio.play('click');
+    expect(ctx.createOscillator).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect(ctx.suspend).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(ctx.suspend).toHaveBeenCalledTimes(1);
+    expect(ctx.state).toBe('suspended');
+
+    // Not started against the frozen clock — it waits for the resume.
+    audio.play('click');
+    expect(ctx.resume).toHaveBeenCalledTimes(1);
+    expect(ctx.createOscillator).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ctx.state).toBe('running');
+    expect(ctx.createOscillator).toHaveBeenCalledTimes(2);
+
+    // And the countdown is armed again from that play.
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(ctx.suspend).toHaveBeenCalledTimes(2);
+  });
+
+  it('runs one timer that every play restarts', async () => {
+    audio.play('click');
+    await vi.advanceTimersByTimeAsync(8_000);
+    audio.play('notification');
+    await vi.advanceTimersByTimeAsync(8_000);
+    expect(ctx.suspend).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(ctx.suspend).toHaveBeenCalledTimes(1);
+  });
+
+  it('warm still resumes in CEF, and restarts the same countdown', async () => {
+    vi.stubGlobal('invokeNative', () => {});
+    ctx.state = 'suspended';
+    audio.warm();
+    expect(ctx.resume).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ctx.state).toBe('running');
+
+    await vi.advanceTimersByTimeAsync(6_000);
+    audio.warm();
+    await vi.advanceTimersByTimeAsync(6_000);
+    expect(ctx.suspend).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(4_000);
+    expect(ctx.suspend).toHaveBeenCalledTimes(1);
+  });
+
+  it('a play that lands while a suspend is in flight waits for it, then resumes', async () => {
+    let settleSuspend!: () => void;
+    ctx.suspend.mockImplementation(function (this: { state: string }) {
+      return new Promise<void>((resolve) => {
+        settleSuspend = () => {
+          this.state = 'suspended';
+          resolve();
+        };
+      });
+    });
+    audio.play('click');
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(ctx.suspend).toHaveBeenCalledTimes(1);
+    expect(ctx.state).toBe('running'); // a real context reads `running` until it settles
+
+    audio.play('click');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ctx.createOscillator).toHaveBeenCalledTimes(1);
+
+    settleSuspend();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ctx.resume).toHaveBeenCalledTimes(1);
+    expect(ctx.createOscillator).toHaveBeenCalledTimes(2);
+  });
+
+  it('a resume that fails is logged and skips the sound, never throws, and the next play retries', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    ctx.state = 'suspended';
+    ctx.resume.mockRejectedValueOnce(new Error('NotAllowedError'));
+
+    expect(() => audio.play('click')).not.toThrow();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(warn).toHaveBeenCalledWith(
+      'Audio context could not resume; the sound was skipped.',
+      expect.any(Error)
+    );
+    expect(ctx.createOscillator).not.toHaveBeenCalled();
+
+    audio.play('click');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ctx.resume).toHaveBeenCalledTimes(2);
+    expect(ctx.createOscillator).toHaveBeenCalledTimes(1);
   });
 });
