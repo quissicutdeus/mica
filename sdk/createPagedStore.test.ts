@@ -2,10 +2,13 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { get } from 'svelte/store';
 import { createPagedStore } from './createPagedStore';
 import { forgetCharacterStores, keepAcrossCharacters } from './characterStores';
+import { ServiceRefusal } from './lib/errors';
+import { GENERIC_SERVICE_ACTION } from '@mica/shared/rpc';
+import { defineAddonService, addonOutput } from '@mica/shared/addonService';
 /**
  * MICA-172: the stub point is `sdk/nui/transport`, not `nui/fetchNui`.
  *
@@ -421,5 +424,145 @@ describe('createPagedStore when a page fails or the character changes', () => {
 
     expect(get(shared).map((r) => r.id)).toEqual([1]);
     expect(get(shared.loaded)).toBe(true);
+  });
+});
+
+/** As `createCrudStore`'s: what tells a refused page from a slow one. */
+describe('createPagedStore error', () => {
+  const page = (ids: number[], nextCursor: number | null = null) => ({
+    rows: ids.map((id) => ({ id, label: `row ${id}` })),
+    nextCursor
+  });
+
+  beforeEach(() => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  it('sets error on a refused first page, leaves loaded false, and a later page clears it', async () => {
+    const store = createPagedStore<Row>('getFeed');
+    const spy = vi
+      .spyOn(fetchNuiModule, 'fetchNui')
+      .mockRejectedValueOnce(new ServiceRefusal('server.rateLimited', 'Slow down a little.'));
+    expect(get(store.error)).toBeNull();
+
+    await expect(store.load()).resolves.toBeUndefined();
+    expect(get(store.error)).toBe('Slow down a little.');
+    expect(get(store.loaded)).toBe(false);
+    expect(get(store)).toEqual([]);
+
+    spy.mockResolvedValueOnce(page([]));
+    await store.load();
+    expect(get(store.error)).toBeNull();
+    expect(get(store.loaded)).toBe(true);
+  });
+
+  it('sets error for a reply that is not a page', async () => {
+    const store = createPagedStore<Row>('getFeed');
+    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValueOnce({ error: 'nope' });
+
+    await store.load();
+    expect(get(store.error)).toBe(`'getFeed' answered something not a page`);
+    expect(get(store.loaded)).toBe(false);
+  });
+
+  it('sets error when loadMore fails, keeps the window, and the retry clears it', async () => {
+    const store = createPagedStore<Row>('getFeed');
+    const spy = vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValueOnce(page([2], 2));
+    await store.load();
+
+    spy.mockRejectedValueOnce(new Error('Request timed out'));
+    expect(await store.loadMore()).toBe(false);
+    expect(get(store.error)).toBe('Request timed out');
+    expect(get(store).map((r) => r.id)).toEqual([2]);
+    expect(get(store.loaded)).toBe(true);
+
+    spy.mockResolvedValueOnce(page([1]));
+    expect(await store.loadMore()).toBe(true);
+    expect(get(store.error)).toBeNull();
+  });
+
+  it('ignores the failure of a request a newer one superseded', async () => {
+    const store = createPagedStore<Row>('getFeed');
+    let refuse!: (e: unknown) => void;
+    const spy = vi
+      .spyOn(fetchNuiModule, 'fetchNui')
+      .mockImplementationOnce(() => new Promise((_, reject) => (refuse = reject)))
+      .mockResolvedValueOnce(page([1]));
+
+    const older = store.load();
+    await store.load();
+    refuse(new Error('stale failure'));
+    await older;
+
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(get(store.error)).toBeNull();
+    expect(get(store).map((r) => r.id)).toEqual([1]);
+  });
+
+  it('clears error on a forget', async () => {
+    const store = createPagedStore<Row>('getFeed');
+    vi.spyOn(fetchNuiModule, 'fetchNui').mockRejectedValueOnce(new Error('first'));
+    await store.load();
+    expect(get(store.error)).toBe('first');
+
+    forgetCharacterStores();
+    expect(get(store.error)).toBeNull();
+  });
+
+  it('sets error from a reader too', async () => {
+    const read = vi.fn().mockRejectedValueOnce(new Error('refused'));
+    const store = createPagedStore<Row>(read);
+    await store.load();
+    expect(get(store.error)).toBe('refused');
+  });
+});
+
+/** As `createCrudStore`'s: a string action in a frame needs `service`, or nothing answers. */
+describe('createPagedStore in an add-on frame', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('throws at construction for a string action without service, naming the option', () => {
+    vi.stubGlobal('origin', 'null');
+    expect(() => createPagedStore<Row>('feed')).toThrow(
+      /createPagedStore\('feed'\).*\{ service: '<your app id>' \}/
+    );
+  });
+
+  it('builds with service, from a declaration, or over a reader', async () => {
+    vi.stubGlobal('origin', 'null');
+    const spy = vi
+      .spyOn(fetchNuiModule, 'fetchNui')
+      .mockResolvedValue({ rows: [], nextCursor: null });
+    const journal = defineAddonService({
+      id: 'journal',
+      actions: {
+        feed: {
+          input: { cursor: { type: 'integer', optional: true } },
+          output: addonOutput<{ rows: Row[]; nextCursor: number | null }>()
+        }
+      }
+    });
+
+    await createPagedStore<Row>('feed', { service: 'journal' }).load();
+    await createPagedStore(journal, 'feed').load();
+    const read = vi.fn().mockResolvedValue([]);
+    await createPagedStore<Row>(read).load();
+
+    const generic = [
+      GENERIC_SERVICE_ACTION,
+      { service: 'journal', action: 'feed', data: { cursor: undefined, limit: undefined } }
+    ];
+    expect(spy.mock.calls).toEqual([generic, generic]);
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves the phone's own paged stores on NUI action names", async () => {
+    vi.stubGlobal('origin', 'https://cfx-nui-mica');
+    const spy = vi
+      .spyOn(fetchNuiModule, 'fetchNui')
+      .mockResolvedValue({ rows: [], nextCursor: null });
+
+    await createPagedStore<Row>('getFeed').load();
+    expect(spy).toHaveBeenCalledWith('getFeed', { cursor: undefined, limit: undefined });
   });
 });

@@ -24,10 +24,10 @@ import { registerFacet } from './current';
 /**
  * The door an add-on can actually walk through.
  *
- * Every other data hook is core code named after an app, backed by a store in core and a
- * row per action in `shared/routes.ts` — none of which an app installed from the Store can
- * add. That is what made the add-on path support UI-only apps, and what
- * `coreBoundary.test.ts` measures the cost of.
+ * The SDK's other data hooks are the OS's own services, backed by stores in
+ * `web/src/services/` and, for Contacts, rows in `shared/routes.ts` — none of which an app
+ * installed from the Store can add. An app's own data layer is built on this instead, as
+ * Notes' and Blabber's are, which is why `coreBoundary.test.ts`'s grandfather list is empty.
  */
 beforeEach(() => {
   vi.clearAllMocks();

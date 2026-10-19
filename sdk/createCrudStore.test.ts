@@ -2,10 +2,13 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { get } from 'svelte/store';
 import { createCrudStore, byNewest } from './createCrudStore';
 import { forgetCharacterStores, keepAcrossCharacters } from './characterStores';
+import { ServiceRefusal } from './lib/errors';
+import { GENERIC_SERVICE_ACTION } from '@mica/shared/rpc';
+import { defineAddonService, addonOutput } from '@mica/shared/addonService';
 /**
  * MICA-172: the stub point is `sdk/nui/transport`, not `nui/fetchNui`.
  *
@@ -320,6 +323,154 @@ describe('createCrudStore when a read fails or the character changes', () => {
     expect(get(shared)).toEqual([{ id: 1, label: 'everyone' }]);
     expect(get(shared.loaded)).toBe(true);
     expect(get(own)).toEqual([]);
+  });
+});
+
+/**
+ * A refused read and a slow one both leave the list empty and `loaded` false, so neither
+ * told a component which it was: the skeleton stayed up forever over a read the server had
+ * already refused. `error` is the difference, and `load` still resolves either way.
+ */
+describe('createCrudStore error', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  it('sets error on a refused first read, leaves loaded false, and a later answer clears it', async () => {
+    const store = createCrudStore<Row>('Rows', events);
+    const spy = vi
+      .spyOn(fetchNuiModule, 'fetchNui')
+      .mockRejectedValueOnce(new ServiceRefusal('server.rateLimited', 'Slow down a little.'));
+    expect(get(store.error)).toBeNull();
+
+    await expect(store.load()).resolves.toBeUndefined();
+    expect(get(store.error)).toBe('Slow down a little.');
+    expect(get(store.loaded)).toBe(false);
+    expect(get(store)).toEqual([]);
+
+    spy.mockResolvedValueOnce([]);
+    await store.load();
+    // Now an empty list is an answer, and says so.
+    expect(get(store.error)).toBeNull();
+    expect(get(store.loaded)).toBe(true);
+    expect(get(store)).toEqual([]);
+  });
+
+  it('sets error for a reply that is not a list, naming the event', async () => {
+    const store = createCrudStore<Row>('Rows', events);
+    vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValueOnce({ error: 'nope' });
+
+    await store.load();
+    expect(get(store.error)).toBe(`'getRows' answered something that is not a list.`);
+    expect(get(store.loaded)).toBe(false);
+  });
+
+  it('sets error over the last list when a refresh fails, and keeps the list loaded', async () => {
+    const store = createCrudStore<Row>('Rows', events);
+    const spy = vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValueOnce([{ id: 1, label: 'a' }]);
+    await store.load();
+
+    spy.mockRejectedValueOnce(new Error('Request timed out'));
+    await store.load();
+    expect(get(store.error)).toBe('Request timed out');
+    expect(get(store)).toEqual([{ id: 1, label: 'a' }]);
+    expect(get(store.loaded)).toBe(true);
+  });
+
+  it('lets only the latest load decide error, whichever lands last', async () => {
+    const store = createCrudStore<Row>('Rows', events);
+    const answers: { resolve: (rows: Row[]) => void; reject: (e: unknown) => void }[] = [];
+    vi.spyOn(fetchNuiModule, 'fetchNui').mockImplementation(
+      () => new Promise((resolve, reject) => answers.push({ resolve, reject }))
+    );
+
+    // An older read failing after a newer one answered does not paint over the newer list.
+    const older = store.load();
+    const newer = store.load();
+    answers[1].resolve([{ id: 1, label: 'fresh' }]);
+    await newer;
+    answers[0].reject(new Error('stale failure'));
+    await older;
+    expect(get(store.error)).toBeNull();
+
+    // And an older read answering late does not wipe a newer read's failure.
+    const before = store.load();
+    const after = store.load();
+    answers[3].reject(new Error('the newest read failed'));
+    await after;
+    answers[2].resolve([{ id: 1, label: 'fresh' }]);
+    await before;
+    expect(get(store.error)).toBe('the newest read failed');
+  });
+
+  it('clears error on a forget, and ignores a failure from before it', async () => {
+    const store = createCrudStore<Row>('Rows', events);
+    let refuse!: (e: unknown) => void;
+    const spy = vi.spyOn(fetchNuiModule, 'fetchNui').mockRejectedValueOnce(new Error('first'));
+    await store.load();
+    expect(get(store.error)).toBe('first');
+
+    spy.mockImplementationOnce(() => new Promise((_, reject) => (refuse = reject)));
+    const inFlight = store.load();
+    forgetCharacterStores();
+    expect(get(store.error)).toBeNull();
+    refuse(new Error('previous character'));
+    await inFlight;
+    expect(get(store.error)).toBeNull();
+  });
+
+  it('leaves error alone on a write, which rejects to its caller instead', async () => {
+    const store = createCrudStore<Row>('Rows', events);
+    vi.spyOn(fetchNuiModule, 'fetchNui').mockRejectedValueOnce(new Error('refused'));
+    await expect(store.add({ label: 'x' })).rejects.toThrow('refused');
+    expect(get(store.error)).toBeNull();
+  });
+});
+
+/**
+ * The first argument is a label, and `service` is what reaches the server. An add-on that
+ * wrote `createCrudStore('journal', { list: 'get' })` sent NUI action `get`, which the
+ * sandbox refuses outright, so the store sat loading forever with one `console.warn`.
+ */
+describe('createCrudStore in an add-on frame', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('throws at construction for the string form without service, naming the option', () => {
+    // The sandboxed frame's opaque origin, which is how the store knows where it is.
+    vi.stubGlobal('origin', 'null');
+    expect(() => createCrudStore<Row>('journal', { list: 'get' })).toThrow(
+      /createCrudStore\('journal'\).*\{ service: '<your app id>' \}/
+    );
+  });
+
+  it('builds with service, or from a declaration, and sends through the generic route', async () => {
+    vi.stubGlobal('origin', 'null');
+    const spy = vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue([]);
+    const journal = defineAddonService({
+      id: 'journal',
+      actions: { get: { input: {}, output: addonOutput<Row[]>() } }
+    });
+
+    await createCrudStore<Row>('Journal', { list: 'get' }, { service: 'journal' }).load();
+    await createCrudStore(journal, { list: 'get' }).load();
+
+    const generic = [
+      GENERIC_SERVICE_ACTION,
+      { service: 'journal', action: 'get', data: null },
+      undefined
+    ];
+    expect(spy.mock.calls).toEqual([generic, generic]);
+  });
+
+  it("leaves the phone's own stores on NUI action names", async () => {
+    // Not a frame: the phone's origin is never opaque. This is the path `routes.test.ts`
+    // cross-references, and it must not learn to send anything else.
+    vi.stubGlobal('origin', 'https://cfx-nui-mica');
+    const spy = vi.spyOn(fetchNuiModule, 'fetchNui').mockResolvedValue([]);
+
+    await createCrudStore<Row>('Rows', events).load();
+    expect(spy).toHaveBeenCalledWith('getRows', null, undefined);
   });
 });
 

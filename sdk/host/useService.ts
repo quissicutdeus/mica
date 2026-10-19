@@ -47,17 +47,18 @@ interface DeclaredService<D extends AddonServiceDeclaration> {
 /**
  * Talk to your own server service.
  *
- * Every other data hook — `useNotes`, `useContacts`, `useMessages` — is core code named
- * after an app, backed by a store in `web/src/services/` and a row per action in
- * `shared/routes.ts`. That works for apps shipped in this repository and is unavailable to
- * anybody else: an app installed from the Store cannot add a hook to the SDK, a store to
- * core, or a route to the table. Which meant the add-on path supported UI-only apps, and
- * `sdk/coreBoundary.test.ts` measures exactly how much of Notes and Blabber depends on
- * being first-party.
+ * The SDK's other data hooks — `useContacts`, `useMessages` — are the OS's own services,
+ * each a store in `web/src/services/` behind a facet, and Contacts' four CRUD actions are
+ * rows in `shared/routes.ts`. An app installed from the Store can add none of those: not a
+ * hook to the SDK, a store to the phone, or a route to the table.
  *
- * This is the general door. One NUI callback carries `{ service, action, data }` and the
- * client derives the event from the two segments, so an app reaches its own service
- * without core knowing its name.
+ * This is the general door, and what an app's own data layer is built on instead. Notes is
+ * the in-tree example: `useNotes` is the app's own function in `apps/notes/store.ts`, over
+ * a `createCrudStore` with `service: 'notes'` and this hook for its custom actions, with no
+ * row in the route table — `sdk/coreBoundary.test.ts`'s grandfather list is empty because
+ * Notes and Blabber both work that way now. One NUI callback carries
+ * `{ service, action, data }` and the client derives the event from the two segments, so
+ * an app reaches its own service without core knowing its name.
  *
  * ## Two forms
  *
@@ -76,7 +77,7 @@ interface DeclaredService<D extends AddonServiceDeclaration> {
  * });
  *
  * // anywhere in the app
- * const entries = await useService(journal).call('list', {}, []); // Entry[]
+ * const entries = await useService(journal).call('list'); // Entry[], or it rejects
  * await useService(journal).call('create', { title }); // a typo in a name fails to compile
  * ```
  *
@@ -89,9 +90,24 @@ interface DeclaredService<D extends AddonServiceDeclaration> {
  *
  * ```ts
  * const journal = useService('journal');
- * const entries = await journal.call<Entry[]>('get', {}, []);
- * await journal.call('create', { title, body });
+ * const { run } = useAppAction('journal');
+ * let entries: Entry[] | undefined; // undefined: not read yet
+ * let failed: string | null = null;
+ * try {
+ *   entries = await journal.call<Entry[]>('get');
+ *   failed = null;
+ * } catch (e) {
+ *   failed = messageOf(e, 'Your entries could not be loaded.'); // show it, keep the last list
+ * }
+ * // A write rejects too; `useAppAction`'s `run` toasts the refusal and resolves false.
+ * await run(() => journal.call('create', { title, body }));
  * ```
+ *
+ * No `defaultValue` on that read, on purpose: `call('get', {}, [])` turns a refused or
+ * timed-out read into an empty list, and the player is told they have no entries. Pass one
+ * only where the fallback is still true when the call failed — Notes' `restore` defaults to
+ * `{ ok: false }`, and a refused restore did not happen — never for a list, a count, or
+ * anything else the player reads as fact.
  *
  * ## What this does not change
  *
@@ -121,12 +137,13 @@ interface DeclaredService<D extends AddonServiceDeclaration> {
  * key and rejects with a plain `Error`. All of this holds in a sandboxed frame too: the key
  * crosses `postMessage` beside the message, and nothing else of the error does.
  *
- * ## What you still have to do yourself
+ * ## What holds the state
  *
- * There is no store here, and that is deliberate rather than unfinished. `createCrudStore`
- * and `createPagedStore` live in core because core's own services use them; an add-on
- * holds its own state in its own module, which is the one part of being an add-on that is
- * genuinely different rather than accidentally so.
+ * Not this hook: `call` answers once and keeps nothing. For a list, `createCrudStore` and
+ * `createPagedStore` from `@mica/sdk` hold it — ordering, a cursor, `loaded`, and `error`
+ * for a read that failed — and both are exported to add-ons as well as used by the phone's
+ * own services. Give either the declaration, or `service:` with your own id, and it sends
+ * what `call` sends. Anything else an app keeps is its own module's state.
  */
 export function useService<const D extends AddonServiceDeclaration>(
   declaration: D

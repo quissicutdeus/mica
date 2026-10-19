@@ -5,6 +5,7 @@
 import { writable } from 'svelte/store';
 import { fetchNui } from './nui/transport';
 import { registerCharacterStore } from './characterStores';
+import { messageOf } from './lib/errors';
 import { GENERIC_SERVICE_ACTION } from '@mica/shared/rpc';
 import type {
   AddonActionInput,
@@ -52,9 +53,28 @@ export interface CrudOptions<T, TDraft> {
    * A core service sets it too whenever an action it lists is contracted (MICA-213):
    * `routes.test.ts` then holds each scoped mock to a registered server event, the same
    * check a named route got. Named routes remain only for generic CRUD reached by NUI name.
+   *
+   * **Required in an add-on.** A sandboxed frame has no named NUI actions at all, so a
+   * string-form store built there without it would have every read and write refused, and
+   * the factory throws instead, naming this option. The first argument is never read as the
+   * service: it is a label for the console, in an add-on as in core.
    */
   service?: string;
 }
+
+/**
+ * Whether this bundle is running in an add-on's sandboxed frame.
+ *
+ * The frame is `<iframe sandbox="allow-scripts" srcdoc>` with no `allow-same-origin`, so its
+ * origin is opaque and serialises as `"null"` — the same fact the shell checks on every
+ * message it accepts from one (`IframeHostServer`). The phone itself never has an opaque
+ * origin: `https://cfx-nui-<resource>` in game, a loopback origin in a browser. Read off the
+ * document rather than the manifest because what decides whether a named NUI action exists
+ * is which transport this bundle runs with, and the frame is the only place the add-on one is
+ * installed. `createPagedStore` reads the same answer from here.
+ */
+export const inSandboxedFrame = (): boolean =>
+  (globalThis as { origin?: unknown }).origin === 'null';
 
 const timeOf = (value: unknown): number => {
   if (value instanceof Date) return value.getTime();
@@ -135,6 +155,14 @@ function crudStore<T extends { id: number }, TDraft>(
   events: CrudEvents,
   options: CrudOptions<T, TDraft>
 ) {
+  if (!options.service && inSandboxedFrame()) {
+    throw new Error(
+      `createCrudStore('${name}'): an add-on has no named NUI actions, so without \`service\` ` +
+        `'${events.list}' and every write would be refused. Pass { service: '<your app id>' } ` +
+        `to send them to your own service, or build the store from your defineAddonService ` +
+        `declaration.`
+    );
+  }
   const { subscribe, set, update: mutate } = writable<T[]>([]);
 
   /**
@@ -181,6 +209,21 @@ function crudStore<T extends { id: number }, TDraft>(
    * keeps its loading state and the next load — the next foreground — is the retry.
    */
   const loaded = writable(false);
+
+  /**
+   * Why the last load failed, or `null` — so a component can tell a refused read from a
+   * slow one, which `loaded` alone cannot: both leave it false and the list empty.
+   *
+   * Set by a failed load (a throw, or a reply that is not a list) and cleared by one that
+   * answers. It holds the failure's message: a server refusal's is translated and ready to
+   * show (`ServiceRefusal`), anything else may read like a log line. Only the latest load
+   * started gets to set or clear it, so an earlier read landing late cannot paint an error
+   * over a fresher list, nor wipe the error of a newer read that failed. Writes never touch
+   * it — they reject to their caller instead.
+   */
+  const failure = writable<string | null>(null);
+  /** Bumped by every `load`, so only the latest one started decides `failure`. */
+  let reads = 0;
 
   const ordered = (rows: T[]): T[] => (options.sort ? [...rows].sort(options.sort) : rows);
 
@@ -233,14 +276,22 @@ function crudStore<T extends { id: number }, TDraft>(
   const store = {
     subscribe,
     loaded: { subscribe: loaded.subscribe },
+    error: { subscribe: failure.subscribe },
 
+    /**
+     * Resolves whether or not the read succeeded, so no caller needs a `catch` to stay
+     * quiet: a failure lands in `error`, and the next `load` is the retry.
+     */
     load: async (): Promise<void> => {
       const started = generation;
+      const read = ++reads;
+      const decides = () => started === generation && read === reads;
       let data: T[];
       try {
         data = await request<T[]>(events.list, null);
       } catch (e) {
         console.warn(`${name} store failed to load; keeping the last known list.`, e);
+        if (decides()) failure.set(messageOf(e, `The ${name} list could not be loaded.`));
         return;
       }
       // Not an answer either: an error-shaped reply is what a refused read looks like once
@@ -248,11 +299,13 @@ function crudStore<T extends { id: number }, TDraft>(
       // so does `loaded` (MICA-384; it used to empty the list and report it loaded).
       if (!Array.isArray(data)) {
         console.error(`${name} store received invalid data; keeping the last known list.`, data);
+        if (decides()) failure.set(`'${events.list}' answered something that is not a list.`);
         return;
       }
       if (started !== generation) return;
       set(ordered(data));
       loaded.set(true);
+      if (decides()) failure.set(null);
     },
 
     add: async (draft: TDraft): Promise<T> => {
@@ -295,6 +348,7 @@ function crudStore<T extends { id: number }, TDraft>(
     generation += 1;
     set([]);
     loaded.set(false);
+    failure.set(null);
   });
   return store;
 }
@@ -436,7 +490,14 @@ export function createCrudStore<
  * fall back to. `load` catches it itself and keeps the store's last known list — the
  * store has nothing better to show, and a background refresh that failed should not wipe
  * out what the player was already looking at. Nor does it set `loaded`: a first load that
- * failed leaves the store still loading, and calling `load` again is the retry.
+ * failed leaves the store still loading, and calling `load` again is the retry. What it does
+ * set is `error`, the failure's message until a load answers — so an empty list with
+ * `loaded` false and `error` set is a refused read, and with `error` null it is a slow one.
+ *
+ * `name` labels the store in the console and in its own error messages; it is never the service.
+ * Without `service` the events are NUI action names, which exist only in the phone's own
+ * bundle — so in an add-on's sandboxed frame the factory throws rather than build a store
+ * whose every call would be refused. Pass `service`, or use the declaration form above.
  */
 // Last on purpose: the string form is the general one, and the overload a reader of the type
 // (`ReturnType`, `publicSurface.test.ts`) sees — as `useService` orders its two.

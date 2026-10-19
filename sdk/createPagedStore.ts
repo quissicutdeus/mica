@@ -5,6 +5,8 @@
 import { writable, type Readable } from 'svelte/store';
 import { fetchNui } from './nui/transport';
 import { registerCharacterStore } from './characterStores';
+import { inSandboxedFrame } from './createCrudStore';
+import { messageOf } from './lib/errors';
 import { GENERIC_SERVICE_ACTION } from '@mica/shared/rpc';
 import type {
   AddonActionInput,
@@ -31,6 +33,14 @@ export interface PagedStore<T> extends Readable<T[]> {
    * page that failed does not set it (MICA-384); calling `load` again is the retry.
    */
   loaded: Readable<boolean>;
+  /**
+   * Why the last page read failed, or `null` once one answers — what tells a refused first
+   * page from a slow one, since both leave `loaded` false and the list empty. Set by a failed
+   * `load` or `loadMore`, cleared by any page that comes back, and decided only by the latest
+   * request, as the window is. A server refusal's message is translated and ready to show
+   * (`ServiceRefusal`); anything else may read like a log line.
+   */
+  error: Readable<string | null>;
   /** Whether the server said there is another page. */
   hasMore: Readable<boolean>;
   /** Replace the window with a fresh first page. */
@@ -86,6 +96,10 @@ interface PagedOptions {
    * open to it. Mirrors `CrudOptions.service`, deliberately: an app should not have to
    * learn two different ways to say the same thing depending on whether its list is
    * paged.
+   *
+   * **Required in an add-on** for a string `action`, as `CrudOptions.service` is: a
+   * sandboxed frame has no named NUI actions, so the factory throws without it rather than
+   * build a store whose every page would be refused. A reader needs neither.
    */
   service?: string;
 }
@@ -95,8 +109,16 @@ function pagedStore<T extends { id: number }>(
   action: string | PageReader<T>,
   options: PagedOptions
 ): PagedStore<T> {
+  if (typeof action === 'string' && !options.service && inSandboxedFrame()) {
+    throw new Error(
+      `createPagedStore('${action}'): an add-on has no named NUI actions, so without ` +
+        `\`service\` every page would be refused. Pass { service: '<your app id>' } to read it ` +
+        `from your own service, or build the store from your defineAddonService declaration.`
+    );
+  }
   const rows = writable<T[]>([]);
   const loaded = writable(false);
+  const failure = writable<string | null>(null);
   const hasMore = writable(false);
 
   let cursor: PageCursor | null = null;
@@ -144,6 +166,7 @@ function pagedStore<T extends { id: number }>(
   const store: PagedStore<T> = {
     subscribe: rows.subscribe,
     loaded: { subscribe: loaded.subscribe },
+    error: { subscribe: failure.subscribe },
     hasMore: { subscribe: hasMore.subscribe },
 
     load: async (next: Record<string, unknown> = {}) => {
@@ -169,8 +192,11 @@ function pagedStore<T extends { id: number }>(
         // first page read as an empty feed; now the store stays loading and the next `load`
         // is the retry.
         loaded.set(true);
+        failure.set(null);
       } catch (e) {
         console.warn(`Paged store '${label}' failed to load; keeping the last known page.`, e);
+        // A superseded request's failure says nothing about the window a newer one holds.
+        if (generation === myGeneration) failure.set(messageOf(e, `'${label}' failed to load.`));
       } finally {
         // Only the request that is still the latest gets to say the store is idle — an
         // earlier, now-superseded call finishing later must not clear a busy flag a newer
@@ -191,6 +217,7 @@ function pagedStore<T extends { id: number }>(
         if (generation !== myGeneration) return false;
         cursor = page.nextCursor;
         hasMore.set(page.nextCursor !== null);
+        failure.set(null);
         if (page.rows.length === 0) return false;
         // Appended, because the cursor walks backwards through whatever order the server sorts
         // by — `id DESC` for most lists, last-message recency for the inbox — so a later page
@@ -199,6 +226,7 @@ function pagedStore<T extends { id: number }>(
         return true;
       } catch (e) {
         console.warn(`Paged store '${label}' failed to load more; leaving the cursor as-is.`, e);
+        if (generation === myGeneration) failure.set(messageOf(e, `'${label}' failed to load.`));
         return false;
       } finally {
         if (generation === myGeneration) inFlight = false;
@@ -234,6 +262,7 @@ function pagedStore<T extends { id: number }>(
     rows.set([]);
     hasMore.set(false);
     loaded.set(false);
+    failure.set(null);
   });
   return store;
 }
