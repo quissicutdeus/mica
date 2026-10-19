@@ -32,3 +32,7 @@ in its own file and gets a line here.
   `APP_SCOPED_FACETS` pin fails open if forgotten, so name it in a test
 - [Props baseline misread inline types](props-baseline-misreads-inline-types.md)
   — fixed MICA-395; a new props form fails loud, add a fixture, never a row
+- [A contract bump has runtime reach](contract-bump-has-runtime-reach.md) — old
+  `sdkContract` refused, catalog URL moves, CHANGELOG `v<n>` needed
+- [A string store's name is a label](string-store-name-is-a-label.md) — frame
+  check is `origin === 'null'`, not `window.parent`; `service` not defaulted

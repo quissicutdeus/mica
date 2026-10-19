@@ -23,7 +23,8 @@ const serviceMock = vi.hoisted(() => ({
 vi.mock('../../services/settings', () => serviceMock);
 
 import { appRegistryStore, getFirstBootTime, type AppManifest } from './registry';
-import { hydrateSettings, useStorage } from '../../../../sdk/host/useStorage';
+import { useStorage } from '../../../../sdk/host/useStorage';
+import { hydrateSettings } from '../../../../sdk/host/seam/settingsHydration';
 import { setTrustedRemoteAppHosts, sha256Hex } from '../../../../sdk/remoteAppSecurity';
 import { SDK_CONTRACT_VERSION } from '../../../../sdk/version';
 import { capabilities, capabilitiesKnown } from '../../services/capabilities';

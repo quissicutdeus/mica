@@ -39,7 +39,7 @@ describe('onAppForeground', () => {
 
   it('fires again on every return to the front', () => {
     // The gap it exists to close: the app is mounted once and then only hidden, so
-    // `onAppMount` runs once per session and Bank showed a balance from whenever it was
+    // `onMount` runs once per session and Bank showed a balance from whenever it was
     // first opened.
     openApp('bank');
     const load = vi.fn();

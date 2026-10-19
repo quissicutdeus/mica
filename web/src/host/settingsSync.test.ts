@@ -22,7 +22,8 @@ const serviceMock = vi.hoisted(() => ({
 vi.mock('../services/settings', () => serviceMock);
 
 import { usePersisted } from '../../../sdk/host/usePersisted';
-import { clearAppStorage, hydrateSettings, useStorage } from '../../../sdk/host/useStorage';
+import { clearAppStorage, useStorage } from '../../../sdk/host/useStorage';
+import { hydrateSettings } from '../../../sdk/host/seam/settingsHydration';
 import { hydrateSettingsOnCharacterLoad } from './facets/storage';
 import { __resetSettingsSync, flushPendingWrites, hasPendingWrite } from './settingsSync';
 import { setActiveDevice } from '../shell/state/device';

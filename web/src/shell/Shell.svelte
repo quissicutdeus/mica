@@ -7,7 +7,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script lang="ts">
   import { onMount } from 'svelte';
   import { t } from './messages';
-  import { hydrateSettings } from '../../../sdk/host/useStorage';
+  import { hydrateSettings } from '../../../sdk/host/seam/settingsHydration';
   import { migrateAppDrawerHintForExistingSaves } from './state/onboarding';
   import { appRegistryStore } from './state/registry';
   import { loadRemoteAppConfig } from './state/remoteAppConfig';

@@ -160,7 +160,7 @@ import { SDK_CONTRACT_VERSION } from './version';
  * is where it went, for the reasons written there — briefly, `MICA_VERSION` is a CalVer
  * build stamp that moves on every push, and `package.json`'s `1.0.0` is read by no code.
  */
-const BASELINE_VERSION = '1';
+const BASELINE_VERSION = '2';
 
 const SDK_DIR = __dirname;
 
@@ -947,7 +947,6 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'formatTimestamp',
     'getRemoteCatalogUrl',
     'getTrustedRemoteAppHosts',
-    'hydrateSettings',
     'hostRuntime',
     'isBrowser',
     // MICA-310
@@ -956,14 +955,13 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'makeThumbnail',
     'messageOf',
     'onAppForeground',
-    'onAppMount',
+    // v2 took `onAppMount`, `hydrateSettings`, `registerPersistedReset` and
+    // `registerPersistedRehydrate` off both barrels — see the add-on bundle's list below.
     'onAppUnmount',
     'pendingReportCount',
     'placeholderAvatar',
     'placeholderPhoto',
     'placeholderPhotos',
-    'registerPersistedRehydrate',
-    'registerPersistedReset',
     'releaseCanvas',
     'renderMarkdown',
     // `setRemoteCatalogUrl` and `setTrustedRemoteAppHosts` stood here and were taken off on
@@ -1190,7 +1188,6 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'formatRelativeTime',
     'formatTime',
     'formatTimestamp',
-    'hydrateSettings',
     'hostRuntime',
     'isBrowser',
     // MICA-310
@@ -1199,11 +1196,14 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'makeThumbnail',
     'messageOf',
     'onAppForeground',
-    'onAppMount',
+    // v2 removed four names here, which is why the contract moved. `onAppMount` ran its
+    // handler once per session under an app that stays mounted, and synchronously when called
+    // outside a component; `onAppForeground` is the hook that does what it promised.
+    // `hydrateSettings`, `registerPersistedReset` and `registerPersistedRehydrate` are the
+    // shell's settings plumbing, reached through no permission; the shell imports them by
+    // path from `host/seam/`. `NEVER_EXPORTED` keeps those three off.
     'onAppUnmount',
     'pendingReportCount',
-    'registerPersistedRehydrate',
-    'registerPersistedReset',
     'releaseCanvas',
     'renderMarkdown',
     'thumbnailFromImage',
@@ -2868,8 +2868,21 @@ const SHELL_ONLY_BY_DESIGN = [
  * `forgetCharacterStores` (MICA-384) empties every in-process list store on a character
  * load. An app able to call it could blank every other app's list at will; the shell
  * imports it by path from `characterStores.ts`.
+ *
+ * `hydrateSettings`, `registerPersistedReset` and `registerPersistedRehydrate` (contract v2)
+ * are the shell's settings plumbing: re-read every saved setting, or register a callback the
+ * shell runs on every live persisted store when an app is cleared or a character loads. They
+ * were on both barrels with no permission behind them, through a re-export in `useStorage.ts`.
+ * The shell imports them by path from `host/seam/`.
  */
-const NEVER_EXPORTED = ['forgetCharacterStores', 'setRemoteCatalogUrl', 'setTrustedRemoteAppHosts'];
+const NEVER_EXPORTED = [
+  'forgetCharacterStores',
+  'hydrateSettings',
+  'registerPersistedRehydrate',
+  'registerPersistedReset',
+  'setRemoteCatalogUrl',
+  'setTrustedRemoteAppHosts'
+];
 
 /** On `addon.ts` only: the iframe entry point, which has no meaning in-process. */
 const ADD_ON_ONLY_BY_DESIGN = ['bootAddOn'];
@@ -2923,16 +2936,14 @@ const undeclaredDivergence = (a: string[], b: string[], declared: string[]): str
  *
  * **Two things it deliberately does not do.**
  *
- * First, `addon.ts` is in the frozen surface and absent from the map, and this gate
- * **records that rather than resolving it**. `@mica/sdk` means `index.ts` to the
- * typechecker and `addon.ts` inside a `core: false` bundle, and it is
- * `vite.addon.config.ts` — not the package — that performs the swap, so an out-of-tree
- * add-on building without that config resolves `.` to the shell barrel. Whether the package
- * should publish `addon.ts`, under what subpath, and what `.` ought to mean is an open
- * question tracked elsewhere and not this ticket's to answer. `UNPUBLISHED_BY_DESIGN` below
- * is the record of today's answer, and the gate fires if the map disagrees with it in
- * either direction — which puts the decision in a diff whenever somebody does make it,
- * without making it here.
+ * First, it does not decide what `.` means; it holds the map to the decision already made.
+ * MICA-125 settled it: `.` is `addon.ts`, the barrel a `core: false` bundle compiles
+ * against, because the audience that reads the map rather than an alias is outside this
+ * repo. `index.ts` is the shell's barrel and is published under no subpath; the shell
+ * reaches it through `web/vite.config.ts`'s alias. `SUBPATH_OF_ENTRY` and
+ * `UNPUBLISHED_BY_DESIGN` below are that decision written down, and `sdk/package.json`'s
+ * `//exports` says why. The gate fires if the map disagrees with them in either
+ * direction, so changing the answer means changing those two lists in the same diff.
  *
  * Second, **the stylesheets are out of contract** and stay that way. `sdk/version.ts` says
  * at length why `SDK_CONTRACT_VERSION` must not move for a colour tweak: an add-on's CSS is
@@ -3447,9 +3458,9 @@ describe('the SDK public surface (MICA-125)', () => {
     }
     expect(
       found,
-      'these configure which hosts an add-on may be fetched from and which catalog the ' +
-        'Store reads — the operator decides that at boot, through the shell, and no app ' +
-        'may. Import the module by path from `web/src/shell/` instead.'
+      "these are the shell's own — the add-on trust boundary the operator sets at boot, and " +
+        "the plumbing behind every app's storage — and no app may call them. Import the " +
+        'module by path instead; `NEVER_EXPORTED` says where each one lives.'
     ).toEqual([]);
   });
 

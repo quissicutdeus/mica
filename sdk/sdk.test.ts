@@ -26,7 +26,6 @@ import {
   useMail,
   useMessages,
   useNotifications,
-  onAppMount,
   onAppUnmount,
   MICA_VERSION
 } from './index';
@@ -318,12 +317,6 @@ describe('micaOS SDK (@mica/sdk)', () => {
   });
 
   describe('Lifecycle Wrappers', () => {
-    it('onAppMount executes callback gracefully', () => {
-      const mountSpy = vi.fn();
-      onAppMount(mountSpy);
-      expect(mountSpy).toHaveBeenCalled();
-    });
-
     it('onAppUnmount executes without throwing outside svelte component', () => {
       const unmountSpy = vi.fn();
       expect(() => onAppUnmount(unmountSpy)).not.toThrow();

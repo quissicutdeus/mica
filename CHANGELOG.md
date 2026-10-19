@@ -1672,6 +1672,31 @@ somebody maintaining a `core: false` add-on outside this repo, and it answers
 one question: does that bundle still compile against this release, and does its
 manifest still ask for the right things.
 
+**The contract moves to `v2`: four names leave the `.` entry.** `onAppMount` is
+gone. It ran a handler when the component mounted, which is what the app rules
+say never to do — apps are resident and mount once per session — so load with
+`onAppForeground` instead. `hydrateSettings`, `registerPersistedReset` and
+`registerPersistedRehydrate` were the shell's own persistence plumbing, exported
+with no permission behind them and never meant for an add-on; the shell now
+reaches them by path and they are no longer on `@mica/sdk`.
+`SDK_CONTRACT_VERSION` is `2`. A bundle that imported none of the four compiles
+unchanged. The public catalog a stock server's Store reads moves with the
+number, to `addons/sdk-2/catalog.json`; the same deploy rebuilds the site, so a
+server still running micaOS at contract `1` shows an empty Store until it
+updates. A saved add-on stamped `sdkContract: '1'` is refused at install and
+dropped at start-up with a warning; rebuild and republish it against `2`.
+
+**Five writes leave the add-on rows of `mail`, `messages` and
+`lockScreenWrite`.** `addReceivedMail` and `addReceivedMessage` wrote the
+phone's own inbox with no server behind them, so a frame could plant mail or a
+whole thread from any number, under the name the player saved for it.
+`setPasscode`, `clearPasscode` and `setAutoLockPolicy` could remove the player's
+passcode, or replace it with one they do not know, because the server never asks
+for the current one. A call to any of the five now fails at the shell with "core
+only", as a `keybindsWrite` call already did. The permission names are unchanged
+— `lock-screen-write` now grants an add-on nothing — and the types stop offering
+the five in a later entry below.
+
 **`DmInbox` and `DmThread` are new components (MICA-392), behind `social` and
 `app-events`.** `DmInbox` lists an app's DM correspondents newest first and
 reads again on a live `dm` push; `DmThread` pages one thread from the newest
