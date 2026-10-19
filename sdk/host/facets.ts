@@ -663,7 +663,12 @@ export interface Facets {
     resetBindings: () => void;
   };
   lifecycle: (appId: string) => {
-    currentApp: Writable<RunningApp>;
+    /**
+     * This app while it is in front, and `{ id: '', props: {} }` otherwise: no other app's
+     * id or props. Implicit, so every add-on holds it. The app actually in front is
+     * `navigation.currentApp`, behind the `navigation` permission.
+     */
+    currentApp: Readable<RunningApp>;
     /** Claim the physical Back key for as long as this component is mounted. */
     onBack: (handler: () => void) => () => void;
     goHome: () => void;
@@ -1058,10 +1063,18 @@ export interface Facets {
     initial: T,
     options?: PersistedOptions<T>
   ) => Writable<T>;
-  phoneNotification: () => {
+  /**
+   * Pinned to `appId`: notices are filed under it, `dismissNotification` refuses another
+   * app's toast, and `toast` subscribes to this app's toasts only. A sandboxed add-on's id
+   * is replaced by the shell, whatever it passes. With no id, a core app's notices file
+   * under `'system'`.
+   */
+  phoneNotification: (appId?: string) => {
     sendNotification: (options: SendNotificationOptions) => string;
+    /** Throws for an id this app did not send. */
     dismissNotification: (id: string) => void;
     toast: {
+      /** This app's toasts on screen. The other members are the shell's, for core apps. */
       subscribe: (
         this: void,
         run: Subscriber<ToastMessage[]>,

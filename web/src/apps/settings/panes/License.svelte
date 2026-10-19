@@ -43,7 +43,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    */
 
   const { t } = useLocale();
-  const { toast } = usePhoneNotification();
+  const { toast } = usePhoneNotification('settings');
 
   /**
    * The base comes from the server, the branch from this build.

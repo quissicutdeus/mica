@@ -53,8 +53,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   /**
    * In-process `toast.show` names the Gallery as the toast's app. A `core: false` add-on's
    * frame has no `show` on its read-only `toast` twin, deliberately — a frame choosing `app`
-   * could wear another app's icon — so it falls back to `sendNotification`, which takes no
-   * `app` and is already answered for the frame. See `ReportDialog`, which does the same.
+   * could wear another app's icon — so it falls back to `sendNotification`, which the shell
+   * files under the add-on's own id. The hook names no app: `show` is given the Gallery
+   * itself, and the shell pins a frame's id. See `ReportDialog`, which does the same.
    */
   const tellFailure = (message: string) => {
     if (typeof toast.show === 'function') {

@@ -84,6 +84,95 @@ export interface IframeHostServerOptions {
 const isStore = (v: unknown): v is { subscribe: (cb: (x: unknown) => void) => () => void } =>
   !!v && typeof v === 'object' && typeof (v as { subscribe?: unknown }).subscribe === 'function';
 
+/** What `toCloneable` returns for a value that is not data and has no place in the frame. */
+const OMIT: unique symbol = Symbol('omit');
+
+/**
+ * A store value as data the frame can receive: structured-cloneable, with whatever is not
+ * data left out.
+ *
+ * `postMessage` throws `DataCloneError` on a function, a symbol or a Proxy, and a push is
+ * made from inside a store's subscriber. Svelte runs every subscriber of every store off one
+ * shared queue, and a throw out of it leaves that queue full, so no store in the bundle
+ * notifies anyone again until reload. Shell values carry functions all the time: a registry
+ * manifest's `icon` is a Svelte component, a toast carries `onClick`. So one add-on holding
+ * `app-registry` wedged the whole phone on the first change to the registry.
+ *
+ * The rules:
+ * - A function (a Svelte component is one), a symbol, a `Promise`, a `WeakMap`/`WeakSet`
+ *   and any `EventTarget` (a DOM node, a window) are left out. As an object key the key
+ *   is dropped. As an array item it becomes `undefined`, so the indices stay put. As a
+ *   `Map` entry or a `Set` member it is dropped. As the whole value it becomes `undefined`.
+ * - A `Date` is a `Date`, a `Map` is a `Map` and a `Set` is a `Set`, with their contents
+ *   projected. A `RegExp`, `ArrayBuffer`, typed array or `Blob` crosses as it is. That is
+ *   what structured clone gives them, so the frame sees what an in-process reader would.
+ * - An `Error` is `{ name, message }` and nothing more, the same as a failed call's reply
+ *   (see `fail`). A shell stack never reaches the frame.
+ * - Any other object, a class instance or a `$state` proxy included, becomes a fresh plain
+ *   object of its own enumerable string keys. A prototype's methods were never data, and a
+ *   proxy cannot be cloned at all.
+ * - A shared or cyclic reference stays shared, the way structured clone keeps it.
+ */
+function toCloneable(value: unknown, seen = new Map<object, unknown>()): unknown {
+  if (typeof value === 'function' || typeof value === 'symbol') return OMIT;
+  if (value === null || typeof value !== 'object') return value;
+  const already = seen.get(value);
+  if (already !== undefined) return already;
+  if (
+    value instanceof Promise ||
+    value instanceof WeakMap ||
+    value instanceof WeakSet ||
+    (typeof EventTarget !== 'undefined' && value instanceof EventTarget)
+  ) {
+    return OMIT;
+  }
+  if (value instanceof Date) return new Date(value.getTime());
+  if (
+    value instanceof RegExp ||
+    value instanceof ArrayBuffer ||
+    ArrayBuffer.isView(value) ||
+    (typeof Blob !== 'undefined' && value instanceof Blob)
+  ) {
+    return value;
+  }
+  if (value instanceof Error) return { name: value.name, message: value.message };
+  if (value instanceof Map) {
+    const out = new Map<unknown, unknown>();
+    seen.set(value, out);
+    for (const [k, v] of value) {
+      const key = toCloneable(k, seen);
+      const item = toCloneable(v, seen);
+      if (key !== OMIT && item !== OMIT) out.set(key, item);
+    }
+    return out;
+  }
+  if (value instanceof Set) {
+    const out = new Set<unknown>();
+    seen.set(value, out);
+    for (const v of value) {
+      const item = toCloneable(v, seen);
+      if (item !== OMIT) out.add(item);
+    }
+    return out;
+  }
+  if (Array.isArray(value)) {
+    const out: unknown[] = [];
+    seen.set(value, out);
+    for (const v of value as unknown[]) {
+      const item = toCloneable(v, seen);
+      out.push(item === OMIT ? undefined : item);
+    }
+    return out;
+  }
+  const out: Record<string, unknown> = {};
+  seen.set(value, out);
+  for (const [k, v] of Object.entries(value)) {
+    const item = toCloneable(v, seen);
+    if (item !== OMIT) out[k] = item;
+  }
+  return out;
+}
+
 /**
  * Every `mica:<appId>:` key, raw — the frame's sync storage reads come from this.
  *
@@ -215,6 +304,8 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
    * that shape too, and calling it with no argument would clear the store.
    */
   const releases = new Set<number>();
+  /** `facet.member` stores whose push has failed once, so each is logged once, not per change. */
+  const failedPushes = new Set<string>();
   let nextHandle = 1;
   let disposed = false;
   /**
@@ -339,7 +430,10 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
     'locale',
     // MICA-390. Every member sends its factory's app id to the `dms` service; unpinned, an
     // add-on holding `social` could read and send another app's private messages.
-    'directMessages'
+    'directMessages',
+    // A notice is filed in the drawer under this id, and `toast` shows this id's toasts.
+    // Unpinned, an add-on could post rows under another app's name and read its toasts.
+    'phoneNotification'
   ]);
 
   /**
@@ -679,10 +773,22 @@ export function createIframeHostServer(opts: IframeHostServerOptions) {
       const obj = instance(msg.facet, msg.factoryArgs);
       const member = obj[msg.member];
       if (!isStore(member)) throw new Error(`[micaOS] '${msg.facet}.${msg.member}' is not a store`);
+      const name = `${msg.facet}.${msg.member}`;
       subscriptions.set(
         msg.id,
         member.subscribe((value) => {
-          if (!disposed) post({ kind: 'push', id: msg.id, value });
+          if (disposed) return;
+          // Never throws: this runs inside the store's own notify loop (see `toCloneable`).
+          // A value that still cannot cross is not sent, and the frame keeps the last one.
+          try {
+            const data = toCloneable(value);
+            post({ kind: 'push', id: msg.id, value: data === OMIT ? undefined : data });
+          } catch (e) {
+            if (!failedPushes.has(name)) {
+              failedPushes.add(name);
+              console.error(`[micaOS] add-on '${host.appId}' push of '${name}' failed:`, e);
+            }
+          }
         })
       );
     } catch (e) {

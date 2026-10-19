@@ -49,9 +49,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * toast. In a `core: false` add-on's frame `toast` is a read-only twin with no `show` at
    * all, and calling it threw after the report had already gone (MICA-254). It stays absent
    * on purpose: `show` takes an `app`, and a frame choosing that could wear another app's
-   * icon. `sendNotification` is the member the frame is already answered on, and it takes no
-   * `app`, so the frame's toast carries no app identity and claims none. It is async over the
-   * wire, and a refusal there must not escape into the submit that already succeeded.
+   * icon. `sendNotification` is the member the frame is already answered on, and the shell
+   * files it under the add-on's own id, so the frame's toast claims no other app. The hook
+   * names no app here because `appId` is a prop, and neither side would read the id: `show`
+   * is given `appId` itself, and the shell pins a frame's. It is async over the wire, and a
+   * refusal there must not escape into the submit that already succeeded.
    */
   const tell = (type: 'success' | 'error', message: string) => {
     if (typeof toast.show === 'function') {

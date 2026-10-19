@@ -45,7 +45,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   const { media, deletePhoto, dropNearby, getDeletedMedia, restoreMedia } = useMedia();
   const { busy, run } = useAppAction('media');
-  const { toast } = usePhoneNotification();
+  const { toast } = usePhoneNotification('media');
 
   let selectedPhoto: MediaItem | null = $state(null);
   let isSelectionMode = $state(false);

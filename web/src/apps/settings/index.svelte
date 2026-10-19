@@ -46,7 +46,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   let { onback }: AppProps = $props();
 
   const { fetchPhoneNumber } = useAccount();
-  const { toast } = usePhoneNotification();
+  const { toast } = usePhoneNotification('settings');
   const { devToolsUnlocked } = useDevTools();
   const { refreshAdmin } = useAdmin();
 

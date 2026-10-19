@@ -19,7 +19,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   const { t } = useLocale();
   const { bindings, groups, findConflict } = useKeybinds();
   const { setBinding, resetBindings } = useKeybindsWrite();
-  const { toast } = usePhoneNotification();
+  const { toast } = usePhoneNotification('settings');
   const { device } = useDisplay();
 
   /**

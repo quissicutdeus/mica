@@ -40,7 +40,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   const { themeStore, schemeStore, seedFromRgbString } = useTheme();
   const { setThemeMode } = useThemeWrite();
   const { media, fullMedia } = useMedia();
-  const { toast } = usePhoneNotification();
+  const { toast } = usePhoneNotification('settings');
   const { formattedTime } = useClock();
   const { phoneBox, frame } = useDisplay();
   // The preview is the device on screen (MICA-261): its ratio, and wider when landscape.

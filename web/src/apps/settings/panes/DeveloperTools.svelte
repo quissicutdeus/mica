@@ -27,7 +27,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   const { t, plural } = useLocale();
   const { charge, signalLevel, soundVolume, soundMuted } = useSystemHardware();
   const { setCharge, setSignal, setVolume, toggleMute } = useSystemHardwareWrite();
-  const { toast } = usePhoneNotification();
+  const { toast } = usePhoneNotification('settings');
   const { run } = useAppAction('settings');
   const { openApp } = useNavigation();
   const { fetchNui } = useNuiBridge();

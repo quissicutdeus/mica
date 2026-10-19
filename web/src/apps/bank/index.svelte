@@ -51,7 +51,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     fetchCitizenId
   } = useAccount();
   const { invoices, fetchInvoices } = useBank();
-  const { toast } = usePhoneNotification();
+  const { toast } = usePhoneNotification('bank');
 
   let showSendMoney = $state(false);
   let section = $state<'account' | 'invoices'>('account');

@@ -11,7 +11,7 @@
  */
 import '../../host/registerFacets';
 import { ServiceRefusal, type AppPermission } from '@mica/sdk';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, onTestFinished } from 'vitest';
 import { get, writable } from 'svelte/store';
 import { createInProcessHost } from '../../../../sdk/host/inProcess/createInProcessHost';
 import { registerFacet, resetHostsForTest } from '../../../../sdk/host/current';
@@ -30,8 +30,13 @@ import { recordConsent, resetGrantsForTest } from '../state/addOnGrants';
 import { pushStorageToAddOns, __resetSettingsSync } from '../../host/settingsSync';
 import { lifecycle } from '../../host/facets/lifecycle';
 import { keybinds } from '../../host/facets/keybinds';
+import { phoneNotification } from '../../host/facets/phoneNotification';
 import { activeHandlerFor } from '../state/keybinds';
+import { toast as shellToast } from '../state/toast';
+import { currentApp as shellCurrentApp } from '../state/navigation';
+import { shadeNotifications } from '../../services/notifications';
 import type { ToFrame } from '../../../../sdk/host/iframe/messages';
+import Skeleton from '../../../../sdk/ui/Skeleton.svelte';
 import '../../../../sdk/host/useContacts';
 import '../../../../sdk/host/useDisplay';
 import '../../../../sdk/host/useWallpaper';
@@ -65,7 +70,9 @@ const manifest = defineApp({
 function server(permissions = manifest.permissions!, granted = permissions) {
   recordConsent('probe', granted);
   const posted: ToFrame[] = [];
-  const makeWindow = () => ({ postMessage: (m: ToFrame) => posted.push(m) });
+  // Cloned, the way a real `postMessage` clones: a function, a symbol or a Proxy in a
+  // message throws `DataCloneError` here exactly where it would in the browser.
+  const makeWindow = () => ({ postMessage: (m: ToFrame) => posted.push(structuredClone(m)) });
   let current = makeWindow();
   const s = createIframeHostServer({
     host: createInProcessHost('probe', permissions),
@@ -603,6 +610,233 @@ describe('IframeHostServer', () => {
   });
 
   /**
+   * A push is made from inside the store's own subscriber, and Svelte runs every store's
+   * subscribers off one shared queue. A value `postMessage` cannot clone used to throw out of
+   * that queue and leave it full, so no store in the bundle notified anyone again. Registry
+   * manifests carry `icon` components and toasts carry `onClick`, so this was every change.
+   */
+  describe('pushed store values', () => {
+    let registry = writable<unknown>([]);
+
+    beforeEach(() => {
+      registry = writable<unknown>([{ id: 'probe', icon: Skeleton, open: () => {} }]);
+      registerFacet(
+        'appRegistry' as any,
+        (() => ({
+          registryStore: registry,
+          getFirstBootTime: () => 7,
+          unregisterApp: () => true,
+          installFromCatalog: () => true
+        })) as any
+      );
+    });
+
+    const subscribeRegistry = (from: (data: unknown) => void) =>
+      from({
+        kind: 'subscribe',
+        id: 2,
+        facet: 'appRegistry',
+        factoryArgs: [],
+        member: 'registryStore'
+      });
+
+    it('sends a value carrying a function and a component as data, without them', () => {
+      const { posted, from } = server(['app-registry'] as AppPermission[]);
+      subscribeRegistry(from);
+      expect(posted[posted.length - 1]).toEqual({ kind: 'push', id: 2, value: [{ id: 'probe' }] });
+    });
+
+    it('leaves every other subscriber, of this store and of any other, still notified', () => {
+      const { posted, from } = server(['app-registry'] as AppPermission[]);
+      subscribeRegistry(from);
+      // Subscribed after the frame, so it runs after the frame's push in the same loop.
+      const sameStore: unknown[] = [];
+      const offSame = registry.subscribe((v) => sameStore.push(v));
+      const elsewhere = writable(0);
+      const otherStore: number[] = [];
+      const offOther = elsewhere.subscribe((v) => otherStore.push(v));
+
+      const next = [
+        { id: 'probe', icon: Skeleton, open: () => {} },
+        { id: 'mail', icon: Skeleton, open: () => {} }
+      ];
+      registry.set(next);
+      elsewhere.set(1);
+
+      expect(sameStore).toHaveLength(2);
+      expect(sameStore[1]).toBe(next);
+      expect(otherStore).toEqual([0, 1]);
+      expect(posted[posted.length - 1]).toEqual({
+        kind: 'push',
+        id: 2,
+        value: [{ id: 'probe' }, { id: 'mail' }]
+      });
+      offSame();
+      offOther();
+    });
+
+    it('keeps a Date, a Map, a Set and a shared reference, and turns an Error into its name and message', () => {
+      const { posted, from } = server(['app-registry'] as AppPermission[]);
+      subscribeRegistry(from);
+      const shared = { n: 1, run: () => {} };
+      const error = new TypeError('nope');
+      registry.set({
+        when: new Date(0),
+        byId: new Map<unknown, unknown>([
+          ['a', shared],
+          ['b', () => {}]
+        ]),
+        tags: new Set<unknown>(['x', Symbol('y')]),
+        list: [1, () => {}, 3],
+        again: shared,
+        error
+      });
+
+      const push = posted[posted.length - 1] as Extract<ToFrame, { kind: 'push' }>;
+      const value = push.value as Record<string, any>;
+      expect(value.when).toEqual(new Date(0));
+      expect(value.byId).toEqual(new Map([['a', { n: 1 }]]));
+      expect(value.tags).toEqual(new Set(['x']));
+      expect(value.list).toEqual([1, undefined, 3]);
+      expect(value.again).toBe(value.byId.get('a'));
+      expect(value.error).toEqual({ name: 'TypeError', message: 'nope' });
+      expect(value.error).not.toBeInstanceOf(Error);
+    });
+
+    it('logs a push that still cannot cross once, and keeps the store loop running', () => {
+      const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const { posted, from } = server(['app-registry'] as AppPermission[]);
+      subscribeRegistry(from);
+      const before = posted.length;
+      const throwing = () => ({
+        get boom(): never {
+          throw new Error('getter');
+        }
+      });
+      const sameStore: unknown[] = [];
+      const off = registry.subscribe((v) => sameStore.push(v));
+
+      registry.set(throwing());
+      registry.set(throwing());
+
+      expect(posted).toHaveLength(before);
+      expect(sameStore).toHaveLength(3);
+      expect(errors.mock.calls.filter(([m]) => String(m).includes('push of'))).toHaveLength(1);
+      off();
+      errors.mockRestore();
+    });
+  });
+
+  /**
+   * The facet took no app id. An add-on's notice went in the drawer under `'system'`, or
+   * `'messages'` given `type: 'message'`; `toast` streamed every app's toasts to it, message
+   * text and all; and `dismissNotification` took down any id. The real facet and the real
+   * toast store, so the pin is proven where it is made.
+   */
+  describe('phoneNotification is pinned to the frame', () => {
+    const flush = async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    };
+    const call = (id: number, member: string, args: unknown[]) => ({
+      kind: 'call',
+      id,
+      facet: 'phoneNotification',
+      // Names another app, which is exactly what must not matter.
+      factoryArgs: ['messages'],
+      member,
+      args
+    });
+    const replyTo = (posted: ToFrame[], id: number) =>
+      posted.find((m) => m.kind === 'reply' && m.id === id) as Extract<ToFrame, { kind: 'reply' }>;
+
+    beforeEach(() => {
+      registerFacet('phoneNotification', phoneNotification);
+      shellToast.clear();
+      shadeNotifications.set([]);
+    });
+
+    afterEach(() => {
+      shellToast.clear();
+      shadeNotifications.set([]);
+    });
+
+    it('files a notice under the add-on, whatever app the frame names and whatever its type', async () => {
+      const { posted, from } = server(['notifications'] as AppPermission[]);
+      from(call(1, 'sendNotification', [{ title: 'Probe', message: 'hi', type: 'message' }]));
+      await flush();
+
+      expect(replyTo(posted, 1)).toMatchObject({ ok: true });
+      expect(get(shellToast)).toMatchObject([{ app: 'probe', title: 'Probe', message: 'hi' }]);
+      // The drawer row too: not 'messages', which `type: 'message'` used to pick, nor 'system'.
+      expect(get(shadeNotifications).map((n) => n.app)).toEqual(['probe']);
+    });
+
+    it("never pushes another app's toast to the frame, and pushes its own", async () => {
+      const { posted, from } = server(['notifications'] as AppPermission[]);
+      from({
+        kind: 'subscribe',
+        id: 2,
+        facet: 'phoneNotification',
+        factoryArgs: ['messages'],
+        member: 'toast'
+      });
+      expect(posted[posted.length - 1]).toEqual({ kind: 'push', id: 2, value: [] });
+      const pushes = () => posted.filter((m) => m.kind === 'push' && m.id === 2);
+
+      const foreign = shellToast.show({ app: 'messages', title: 'Ann', message: 'secret text' });
+      shellToast.dismiss(foreign);
+      // Not even an empty list: that alone would say some app just notified, and when.
+      expect(pushes()).toHaveLength(1);
+
+      from(call(3, 'sendNotification', [{ message: 'mine' }]));
+      await flush();
+
+      expect(pushes()).toHaveLength(2);
+      expect(pushes()[1]).toMatchObject({ value: [{ app: 'probe', message: 'mine' }] });
+      expect(JSON.stringify(posted)).not.toContain('secret text');
+    });
+
+    it("refuses to dismiss another app's toast, and dismisses its own", async () => {
+      const { posted, from } = server(['notifications'] as AppPermission[]);
+      const foreign = shellToast.show({ app: 'messages', message: 'still here' });
+
+      from(call(4, 'dismissNotification', [foreign]));
+      await flush();
+      expect(replyTo(posted, 4)).toMatchObject({
+        ok: false,
+        error: { message: expect.stringContaining('own notifications') }
+      });
+      expect(get(shellToast).map((t) => t.id)).toEqual([foreign]);
+
+      // Its own notice queues behind the visible one; dismissing it takes it out of line.
+      from(call(5, 'sendNotification', [{ message: 'mine' }]));
+      await flush();
+      const own = (replyTo(posted, 5) as { value: string }).value;
+      from(call(6, 'dismissNotification', [own]));
+      await flush();
+      expect(replyTo(posted, 6)).toMatchObject({ ok: true });
+      shellToast.dismiss(foreign);
+      expect(get(shellToast)).toEqual([]);
+    });
+
+    it('scopes a core app the same way in-process', () => {
+      const bank = phoneNotification('bank');
+      const seen: unknown[][] = [];
+      const off = bank.toast.subscribe((list) => seen.push(list.map((t) => t.app)));
+
+      shellToast.show({ app: 'messages', message: 'not the bank' });
+      expect(seen).toEqual([[]]);
+      shellToast.clear();
+
+      bank.sendNotification({ message: 'sent', type: 'message' });
+      expect(seen).toEqual([[], ['bank']]);
+      expect(get(shadeNotifications).map((n) => n.app)).toEqual(['bank', 'messages']);
+      off();
+    });
+  });
+
+  /**
    * MICA-162: MICA-127 split eight permissions into a read/write pair each and hard-
    * blocked six of the eight write facets in `MEMBER_ALLOWLIST` regardless of manifest
    * declaration (`appRegistryWrite: []`, `notificationSettingsWrite: []` above).
@@ -1059,10 +1293,42 @@ describe('IframeHostServer', () => {
       expect(backOwners).toEqual(['probe']);
     });
 
-    it('subscribes currentApp with no permission', () => {
+    /**
+     * `lifecycle` needs no permission, so this is every add-on's view of `currentApp`. It
+     * used to be the shell's store, so each app the player opened, and its deep-link props,
+     * reached every add-on, in front or not. The real facet over the real store here; a stub
+     * emitting the frame's own id is how the old test passed.
+     */
+    it('subscribes currentApp with no permission, and learns nothing about another app in front', () => {
+      registerFacet('lifecycle' as any, lifecycle as any);
+      onTestFinished(() => shellCurrentApp.set({ id: 'home', props: {} }));
+      shellCurrentApp.set({ id: 'mail', props: { thread: 'secret-thread' } });
       const { posted, from } = server([]);
-      from({ kind: 'subscribe', id: 1, facet: 'lifecycle', factoryArgs: [], member: 'currentApp' });
-      expect(posted[0]).toEqual({ kind: 'push', id: 1, value: { id: 'probe' } });
+      // Naming the app in front, which must not matter.
+      from({
+        kind: 'subscribe',
+        id: 1,
+        facet: 'lifecycle',
+        factoryArgs: ['mail'],
+        member: 'currentApp'
+      });
+      const away = { id: '', props: {} };
+      expect(posted).toEqual([{ kind: 'push', id: 1, value: away }]);
+
+      // Another app, then home: still away, so nothing is sent at all.
+      shellCurrentApp.set({ id: 'notes', props: { noteId: 3 } });
+      shellCurrentApp.set({ id: 'home', props: {} });
+      expect(posted).toHaveLength(1);
+
+      // Its own turn in front arrives whole, props included, and leaving it is one push.
+      shellCurrentApp.set({ id: 'probe', props: { from: 'link' } });
+      shellCurrentApp.set({ id: 'mail', props: { thread: 'other-thread' } });
+      expect(posted).toEqual([
+        { kind: 'push', id: 1, value: away },
+        { kind: 'push', id: 1, value: { id: 'probe', props: { from: 'link' } } },
+        { kind: 'push', id: 1, value: away }
+      ]);
+      expect(JSON.stringify(posted)).not.toMatch(/mail|notes|home|thread|noteId/);
     });
 
     it("subscribes visible (useAppVisible, MICA-294) with no permission, for the frame's own id only", () => {

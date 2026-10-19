@@ -8,16 +8,23 @@ import { fn, store, type AsTwin } from './_shared';
 
 type Twin = AsTwin<ReturnType<Facets['phoneNotification']>>;
 
-export function phoneNotification(): Twin {
+/**
+ * The id is sent, like `lifecycle`'s, but never trusted: the shell pins this facet to the
+ * frame's own app (`APP_SCOPED_FACETS`), so whatever is passed here, a notice is filed under
+ * the add-on, and `toast` carries only the add-on's own toasts.
+ */
+export function phoneNotification(appId?: string): Twin {
+  // No id, no argument: the wire stays what it was before the facet took one.
+  const args = appId === undefined ? [] : [appId];
   return {
     // Sync in-process (returns the new toast's id synchronously); async over the wire.
     sendNotification: fn(
       'phoneNotification',
-      [],
+      args,
       'sendNotification'
     ) as unknown as Twin['sendNotification'],
-    dismissNotification: fn('phoneNotification', [], 'dismissNotification'),
-    toast: store('phoneNotification', [], 'toast', [])
+    dismissNotification: fn('phoneNotification', args, 'dismissNotification'),
+    toast: store('phoneNotification', args, 'toast', [])
   };
 }
 

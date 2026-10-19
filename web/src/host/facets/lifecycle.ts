@@ -3,8 +3,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { registerFacet } from '../../../../sdk/host/current';
+import type { RunningApp } from '../../../../sdk/vocabulary/shell';
 import { onDestroy } from 'svelte';
-import { derived } from 'svelte/store';
+import { derived, type Readable } from 'svelte/store';
 import { currentApp, goHome, consumeAppProps } from '../../shell/state/navigation';
 import { appsOnScreen } from '../../shell/state/appsOnScreen';
 import { registerHandler } from '../../shell/state/keybinds';
@@ -50,6 +51,38 @@ registerFacet('onAppForeground', onAppForeground);
 registerFacet('onAppUnmount', onAppUnmount);
 
 /**
+ * `currentApp` as one app may see it: the shell's own value while `id` is in front, and
+ * `{ id: '', props: {} }` the rest of the time.
+ *
+ * `lifecycle` needs no permission, so this is what every add-on reads, in front or not.
+ * It used to be the shell's store itself, which told every add-on each app the player
+ * opened and the deep-link props it was opened with. The `navigation` permission's gate on
+ * `navigation.currentApp` meant nothing while this sat beside it. An app learns whether it
+ * is in front and with which props, and nothing about any other app. A core app that needs
+ * the app in front asks `useNavigation`.
+ *
+ * The "not in front" value is the iframe twin's seed, so a frame that is never in front
+ * sees what it saw before the shell first answered. It is not `home`, which would tell the
+ * home screen apart from another app. It is published once per change of whether `id` is in
+ * front, not once per change of app, so a switch between two other apps sends nothing.
+ */
+function ownCurrentApp(id: string): Readable<RunningApp> {
+  const away: RunningApp = { id: '', props: {} };
+  let last = away;
+  return derived(
+    currentApp,
+    ($app, set) => {
+      const next = $app.id === id ? $app : away;
+      if (next !== last) {
+        last = next;
+        set(next);
+      }
+    },
+    away
+  );
+}
+
+/**
  * MICA-27: the one implicit, no-permission door a sandboxed add-on's baseline plumbing
  * reaches the shell through — `onAppForeground`/`onAppUnmount` (this file's own twin, over
  * `currentApp`), `useDeepLink` (`consumeDeepLink`), the `onback` prop every app gets
@@ -71,7 +104,8 @@ registerFacet('onAppUnmount', onAppUnmount);
 export function lifecycle(appId: string) {
   const id = appId.toLowerCase();
   return {
-    currentApp,
+    /** This app while it is in front, and nothing about any other. See `ownCurrentApp`. */
+    currentApp: ownCurrentApp(id),
     /** Claim the physical Back key for as long as this component is mounted. */
     onBack: (handler: () => void): (() => void) => {
       const release = registerHandler('back', handler, id);

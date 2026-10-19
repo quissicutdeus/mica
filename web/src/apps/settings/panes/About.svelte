@@ -27,7 +27,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   const { t } = useLocale();
   const { myPhoneNumber } = useAccount();
   const { getFirstBootTime } = useAppRegistry();
-  const { toast } = usePhoneNotification();
+  const { toast } = usePhoneNotification('settings');
 
   /** Copy the player's number so it can be pasted into a message. */
   const copyPhoneNumber = async () => {

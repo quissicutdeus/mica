@@ -73,3 +73,6 @@ its one-line summary.
 - [Read the sibling server file first](sibling-server-contract-drift.md) — a
   brief's contract drifted from the parallel server lane (returned refusals,
   other slugs); handle returned and thrown refusals, then run `routes.test`
+- [A throwing store subscriber wedges every store](store-subscriber-throw-wedges-every-store.md)
+  — Svelte's shared queue never drains again; clone-check pushes in tests;
+  dedupe a scoped derived yourself

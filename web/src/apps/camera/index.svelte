@@ -45,7 +45,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   const { capturePhoto, media } = useMedia();
   const { openApp } = useNavigation();
   const { run } = useAppAction('camera');
-  const { toast } = usePhoneNotification();
+  const { toast } = usePhoneNotification('camera');
   const { after } = useTimer();
   import { sampleAvatars } from './mockViewfinder';
   import { onDestroy, tick } from 'svelte';

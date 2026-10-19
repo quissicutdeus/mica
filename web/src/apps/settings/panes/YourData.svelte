@@ -33,7 +33,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   } from '../yourData';
 
   const { t } = useLocale();
-  const { toast } = usePhoneNotification();
+  const { toast } = usePhoneNotification('settings');
 
   /**
    * What micaOS holds for this character, and the one way to erase it (MICA-168).

@@ -60,7 +60,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   const { contactsStore, getDeletedContacts, restoreContact } = useContacts();
   const { media } = useMedia();
-  const { toast } = usePhoneNotification();
+  const { toast } = usePhoneNotification('contacts');
   const { busy, run } = useAppAction('contacts');
 
   const contacts = contactsStore;

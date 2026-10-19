@@ -54,6 +54,8 @@ registerFacet('onAppUnmount', onAppUnmount);
  */
 export function lifecycle(appId: string): Twin {
   return {
+    // This app while it is in front, and this same seed the rest of the time: the shell
+    // scopes the store to the pinned app, so no other app's id or props ever arrive here.
     currentApp: store('lifecycle', [appId], 'currentApp', { id: '', props: {} }),
     // The inProcess twin's onBack returns the release function synchronously; over the
     // wire it can only promise one eventually (see appLevels.ts's own direct remoteCall,
@@ -69,8 +71,6 @@ export function lifecycle(appId: string): Twin {
   };
 }
 
-// The Twin above is what an iframe can honestly offer (MICA-26) -- Readable in place of
-// Writable, and (for the handful of members noted above) async where the wire makes
-// something inProcess exposes synchronously. This is the one place that gap is bridged,
-// once per facet, rather than a blanket cast hiding the whole object from the checker.
-registerFacet('lifecycle', lifecycle as unknown as Facets['lifecycle']);
+// No cast: every store member here is a `Readable` in the facet's own type, so the twin
+// already is what an iframe can honestly offer (MICA-26).
+registerFacet('lifecycle', lifecycle);
