@@ -594,7 +594,7 @@ seed_esx() {
 # itself.
 run_mode() {
     local mode=$1 id sd mounts start_timeout deadline started logs running results tables
-    local npass nfail nskip ndone want_pass want_skip got_pass got_skip created_re bridge_re bridge_name
+    local npass nfail nskip ndone want_pass want_skip got_pass got_skip created_re bridge_re bridge_name up
     id=${stage##*/run.}
     mode_tag=''
     [[ $mode == release ]] || mode_tag="[$mode mode] "
@@ -613,15 +613,26 @@ run_mode() {
     docker run -d --name "$db" --network "$net" \
         -e MARIADB_ROOT_PASSWORD=smoke -e MARIADB_DATABASE=mica \
         "$DB_IMAGE" >/dev/null
-    # An authenticated query, not a ping: the image's first-boot init runs a
-    # temporary server that answers ping before the root password exists, and an
-    # import sent to that one is refused with "Access denied".
-    ready() { docker exec "$db" mariadb -uroot -psmoke -e 'select 1' >/dev/null 2>&1; }
+    # An authenticated query over TCP, not a ping and not the socket. The image's first-boot init
+    # runs a temporary server with --skip-networking: it answers ping before the root password
+    # exists, and an import sent to that one is refused with "Access denied". Once the password
+    # is set it answers a login for a few tens of milliseconds and stops, and there is no server
+    # at all, one to two seconds, until the real one is ready for connections. A probe on the
+    # socket can pass against the temporary server and the next call meets the gap, which is how
+    # Release runs 39293409481 and 39294099614 died 5.7s after `docker run`. Only the real server
+    # listens on TCP, and once it does the socket is its too, so the imports below may use either.
+    ready() { docker exec "$db" mariadb -uroot -psmoke -h127.0.0.1 --protocol=tcp -e 'select 1' >/dev/null 2>&1; }
+    # The verdict is recorded in the loop and read after it: a second probe to decide would be
+    # a second roll of the dice, free to contradict a check that already passed.
+    up=0
     for _ in $(seq 1 90); do
-        ready && break
+        if ready; then
+            up=1
+            break
+        fi
         nap 1
     done
-    ready || mdie "$DB_IMAGE did not accept a root login within 90s"
+    [[ $up == 1 ]] || mdie "$DB_IMAGE did not accept a root login within 90s"
     # The release smoke test's import is itself half the test: the file an owner may import by
     # hand has to import. Standalone mode wants the ESX file: mica.sql reads qb's players table
     # first and fails without it, and this database has none. The standalone integration run

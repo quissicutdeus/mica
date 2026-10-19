@@ -134,6 +134,30 @@ case "$1" in
     inspect) echo "$FAKE_RUNNING" ;;
     exec)
         case "$*" in
+            *"-e select 1"*)
+                # The wrapper's wait for the database. FAKE_DB_TIMELINE says what each probe, in the
+                # order they arrive, meets: "temp" the image's first-boot server (answers on the
+                # socket, listens on no port), "gap" no server at all, "up" the real one. Probes
+                # past the list meet the real one, and so does every probe when it is empty.
+                echo probe >>"$FAKE_CALLS.ticks"
+                tick=$(($(wc -l <"$FAKE_CALLS.ticks")))
+                state=up
+                n=0
+                for s in $FAKE_DB_TIMELINE; do
+                    n=$((n + 1))
+                    if [ "$n" -eq "$tick" ]; then state=$s; fi
+                done
+                case "$state" in
+                    up) exit 0 ;;
+                    temp)
+                        case "$*" in
+                            *"--protocol=tcp"*) exit 1 ;;
+                            *) exit 0 ;;
+                        esac
+                        ;;
+                    *) exit 1 ;;
+                esac
+                ;;
             *"mica-smoke-db-esx-"*)
                 case "$*" in
                     *"table_name='users'"*) echo 1 ;;
@@ -341,6 +365,11 @@ interface WrapOptions {
   esxSeeded?: number;
   /** The settings file. Default: one naming the stand-in oxmysql, with the rest beside it. */
   env?: string;
+  /**
+   * What each probe of the database wait meets, in order (see FAKE_DOCKER): "temp", "gap" or "up".
+   * Default: the real server from the first probe.
+   */
+  dbTimeline?: string[];
   /** A docker call to fail: any call whose arguments contain this text. */
   fail?: string;
   /** A docker call to hang on for thirty seconds, so a signal can reach the wrapper mid-run. */
@@ -399,6 +428,7 @@ const prepare = (run: string, logs: string, options: WrapOptions) => {
     FAKE_CALLS: calls,
     FAKE_PROBE: probe,
     FAKE_LOCK: lock,
+    FAKE_DB_TIMELINE: (options.dbTimeline ?? []).join(' '),
     FAKE_FAIL: fail,
     FAKE_HANG: hang,
     FAKE_SD: sdCopy,
@@ -1636,6 +1666,67 @@ describe.skipIf(!trial)('mica-smoke-release.sh', () => {
       expect(r.status).not.toBe(0);
       expect(r.calls).not.toContain('run -d');
       victimUntouched();
+    });
+  });
+
+  /**
+   * Release runs 39293409481 and 39294099614 died at the database wait 5.7s after `docker run`,
+   * which a loop of ninety one-second tries cannot do. The image's first boot starts a temporary
+   * server on the socket alone, gives root its password on it, stops it, and only then starts the
+   * real one. A probe over the socket passed against the first, and the second probe the script
+   * made after its loop met the gap between the two. The stand-in's timeline (FAKE_DOCKER) is
+   * that sequence: "temp" answers on the socket only, "gap" answers nothing, "up" answers both.
+   */
+  describe('the wait for the database', () => {
+    const probesIn = (calls: string) =>
+      calls.split('\n').filter((line) => line.includes('-e select 1'));
+
+    it('is not fooled by the first-boot server, which listens on no port', () => {
+      const r = wrap(makeRun('none'), suite([]), {
+        running: 'true',
+        dbTimeline: ['temp', 'gap', 'up']
+      });
+
+      expect(r.status, r.out).toBe(0);
+      expect(r.out).not.toContain('did not accept a root login');
+      // Refused on the first, nothing on the second, answered on the third: and the import only after.
+      expect(probesIn(r.calls)).toHaveLength(3);
+      expect(r.out).toContain('imported mica.esx.sql');
+    });
+
+    it('asks over TCP, every time', () => {
+      const r = wrap(makeRun('none'), suite([]), {
+        running: 'true',
+        dbTimeline: ['temp', 'gap', 'up']
+      });
+
+      expect(probesIn(r.calls).length).toBeGreaterThan(0);
+      for (const probe of probesIn(r.calls)) {
+        expect(probe).toContain('-uroot -psmoke -h127.0.0.1 --protocol=tcp -e select 1');
+      }
+    });
+
+    it('takes the first answer as the verdict, and does not ask a second time to decide', () => {
+      // A server that answered once and would not answer again: the pass in the loop stands.
+      const r = wrap(makeRun('none'), suite([]), { running: 'true', dbTimeline: ['up', 'gap'] });
+
+      expect(r.status, r.out).toBe(0);
+      expect(probesIn(r.calls)).toHaveLength(1);
+      expect(r.out).toContain('imported mica.esx.sql');
+    });
+
+    it('still fails, naming the image, when no server ever accepts a login', () => {
+      // The loud half: the same wait, with the database never up, must end the run and say why.
+      const r = wrap(makeRun('none'), suite([]), {
+        running: 'true',
+        dbTimeline: Array.from({ length: 200 }, () => 'gap')
+      });
+
+      expect(r.status).toBe(1);
+      expect(r.out).toContain('mariadb:noble did not accept a root login within 90s');
+      expect(probesIn(r.calls)).toHaveLength(90);
+      expect(r.calls).not.toMatch(/^exec -i /m);
+      expect(r.calls).not.toContain('run -d -i');
     });
   });
 
