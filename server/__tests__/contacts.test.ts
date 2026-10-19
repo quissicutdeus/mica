@@ -43,6 +43,7 @@ vi.mock('../lib/proximity', () => ({
 import { contacts } from '../services/Contacts';
 import { __resetRateLimits } from '../lib/rateLimit';
 import { TEST_PHONE_ID } from './phoneStub';
+import { duplicateEntry, oxmysqlRejection } from './oxmysqlRejection';
 
 const SHARE_EVENT = 'mica:server:contacts:share';
 
@@ -69,15 +70,6 @@ const call = async (data: unknown) => {
 
 const pushesTo = (event: string) =>
   (globalThis.emitNet as any).mock.calls.filter((args: unknown[]) => args[0] === event);
-
-/**
- * The error oxmysql rejects with across a resource boundary: no `errno`, no `code`, the query
- * and its parameters in the text, and mysql2's own message on the last line only.
- */
-const oxmysqlError = (sql: string, params: unknown[], message: string): Error =>
-  new Error(
-    `mica was unable to execute a query!\nQuery: ${sql}\n${JSON.stringify(params)}\n${message}`
-  );
 
 describe('contacts:share', () => {
   it('does nothing for a source with no loaded character', async () => {
@@ -381,10 +373,10 @@ describe('contacts:restore (MICA-75)', () => {
 
   it('says so when another live contact on the phone holds the number now (MICA-335)', async () => {
     dbMock.update.mockRejectedValue(
-      oxmysqlError(
+      oxmysqlRejection(
         'UPDATE `mica_contacts` SET `status` = ...',
         [3, 'CID_A'],
-        `Duplicate entry '${TEST_PHONE_ID}-555-0100' for key 'device_phone_unique'`
+        duplicateEntry(`${TEST_PHONE_ID}-555-0100`, 'device_phone_unique')
       )
     );
 
@@ -397,7 +389,11 @@ describe('contacts:restore (MICA-75)', () => {
 
   it('still answers the generic failure for any other reason', async () => {
     dbMock.update.mockRejectedValue(
-      oxmysqlError('UPDATE `mica_contacts` SET `status` = ...', [3], 'Lock wait timeout exceeded')
+      oxmysqlRejection(
+        'UPDATE `mica_contacts` SET `status` = ...',
+        [3],
+        'Lock wait timeout exceeded'
+      )
     );
     vi.spyOn(console, 'error').mockImplementation(() => {});
 
@@ -448,10 +444,10 @@ describe('one live contact per number on a phone (MICA-335)', () => {
 
     it('answers the contact already there when the phone has the number', async () => {
       dbMock.insert.mockRejectedValue(
-        oxmysqlError(
+        oxmysqlRejection(
           'INSERT INTO `mica_contacts` ...',
           ['Dispatch', '911'],
-          `Duplicate entry '${TEST_PHONE_ID}-911' for key 'device_phone_unique'`
+          duplicateEntry(`${TEST_PHONE_ID}-911`, 'device_phone_unique')
         )
       );
       dbMock.scalar.mockResolvedValue(17);
@@ -467,7 +463,7 @@ describe('one live contact per number on a phone (MICA-335)', () => {
 
     it('fails, rather than answer nothing, when the refusing row is gone by the lookup', async () => {
       dbMock.insert.mockRejectedValue(
-        oxmysqlError('INSERT ...', [], "Duplicate entry 'x-911' for key 'device_phone_unique'")
+        oxmysqlRejection('INSERT ...', [], duplicateEntry('x-911', 'device_phone_unique'))
       );
       dbMock.scalar.mockResolvedValue(null);
 
@@ -477,7 +473,7 @@ describe('one live contact per number on a phone (MICA-335)', () => {
     });
 
     it('rethrows anything else, even with "Duplicate entry" among its parameters', async () => {
-      const failure = oxmysqlError(
+      const failure = oxmysqlRejection(
         'INSERT INTO `mica_contacts` ...',
         ["Duplicate entry '911' for key 'x'", '911'],
         'Lock wait timeout exceeded'
@@ -512,12 +508,12 @@ describe('one live contact per number on a phone (MICA-335)', () => {
       await (handler as any)('cb-1', data);
       return (globalThis.emitNet as any).mock.calls.at(-1)?.[3];
     };
-    const taken = oxmysqlError(
+    const taken = oxmysqlRejection(
       'INSERT INTO `mica_contacts` ...',
       ['Ada', '555-0100'],
-      `Duplicate entry '${TEST_PHONE_ID}-555-0100' for key 'mica_contacts.device_phone_unique'`
+      duplicateEntry(`${TEST_PHONE_ID}-555-0100`, 'mica_contacts.device_phone_unique')
     );
-    const lockWait = oxmysqlError('INSERT INTO `mica_contacts` ...', [], 'Lock wait timeout');
+    const lockWait = oxmysqlRejection('INSERT INTO `mica_contacts` ...', [], 'Lock wait timeout');
 
     it.each([
       ['create', { firstname: 'Ada', phone: '555-0100' }, 'insert'],

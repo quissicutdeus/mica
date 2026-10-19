@@ -819,6 +819,68 @@ describe('Blabber DMs (mica_blabber_dms.body)', () => {
   });
 });
 
+describe('Dark Chat (mica_darkchat_messages.body)', () => {
+  /**
+   * The channel page is Dark Chat's one read that opens bodies. Each row is sealed under its own
+   * `citizenid` — the author's, or the channel owner's for an export's line — and the channel, so
+   * the page must select both even though neither the author nor the owner may reach a reader.
+   */
+  it('opens a channel page from the columns it selects, and drops whose the rows are', async () => {
+    const sealedFor = (citizenid: string, text: string) =>
+      sealContent({ table: 'mica_darkchat_messages', column: 'body', citizenid, scope: [7] }, text);
+    const stored = [
+      {
+        id: 12,
+        citizenid: 'CIT_B',
+        channel_id: 7,
+        author_member_id: 3,
+        bot_alias: null,
+        body: await sealedFor('CIT_B', 'meet at dawn'),
+        status: 'active',
+        created_at: '2026-10-19 00:00:00',
+        updated_at: '2026-10-19 00:00:00',
+        member_alias: 'raven',
+        member_handle: 'h3'
+      },
+      {
+        id: 11,
+        citizenid: 'CIT_OWNER',
+        channel_id: 7,
+        author_member_id: null,
+        bot_alias: 'Dispatch',
+        body: await sealedFor('CIT_OWNER', 'shift starts'),
+        status: 'active',
+        created_at: '2026-10-19 00:00:00',
+        updated_at: '2026-10-19 00:00:00',
+        member_alias: null,
+        member_handle: null
+      }
+    ];
+    answerSingle = (sql) =>
+      sql.includes('FROM `mica_darkchat_members` m')
+        ? { id: 1, alias: 'crow', handle: 'h1' }
+        : null;
+    answerQuery = (sql) =>
+      sql.includes('FROM `mica_darkchat_messages` msg')
+        ? stored.map((row) => selectedFrom(sql, row))
+        : [];
+
+    const page = await call('darkchat_messages', 'list', { channel_id: 7 });
+
+    // A page, not the generic error a failed open answers — so a break shows the reply.
+    expect(page).toEqual({ rows: expect.any(Array), nextCursor: null });
+    expect(page.rows.map((row: { body: string }) => row.body)).toEqual([
+      'meet at dawn',
+      'shift starts'
+    ]);
+    expect(page.rows.map((row: { alias: string }) => row.alias)).toEqual(['raven', 'Dispatch']);
+    for (const row of page.rows) {
+      expect(row).not.toHaveProperty('citizenid');
+      expect(row).not.toHaveProperty('author_member_id');
+    }
+  });
+});
+
 describe('Mail (mica_mail.content)', () => {
   it('seals a system email, and the live push carries the text', async () => {
     const sent = await SendSystemEmail('CIT_A', {
