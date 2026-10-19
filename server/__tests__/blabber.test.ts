@@ -33,6 +33,7 @@ import { installTestPhone, NOT_HELD_REPLY, refusePhone } from './phoneStub';
 import { postsTarget } from '../lib/import/targets';
 import { moderateTarget, restoreTarget } from '../lib/moderation';
 import { PlayerFacingError } from '../lib/errors';
+import { duplicateEntry, oxmysqlRejection } from './oxmysqlRejection';
 
 const repo = blabber.repo as BlabberRepository;
 
@@ -616,6 +617,35 @@ describe('replies, mouths and ears', () => {
     dbMock.insert.mockRejectedValueOnce(new Error('Duplicate entry for key blab_account'));
 
     await expect(call('ear', { account_id: 1, blab_id: 9 })).resolves.toBe(true);
+  });
+
+  it('treats a duplicate ear as success in the shape oxmysql rejects with in game', async () => {
+    // Not this realm's `Error`: the old `instanceof Error` check read it as no message at all
+    // and answered a double tap with the generic error.
+    dbMock.single.mockResolvedValueOnce(MY_ACCOUNT);
+    dbMock.single.mockResolvedValueOnce({ id: 9, status: 'active' });
+    dbMock.insert.mockRejectedValueOnce(
+      oxmysqlRejection(
+        'INSERT INTO `mica_blabber_ears` (`blab_id`, `account_id`) VALUES (?, ?)',
+        [9, 1],
+        duplicateEntry('9-1', 'mica_blabber_ears.blab_account')
+      )
+    );
+
+    await expect(call('ear', { account_id: 1, blab_id: 9 })).resolves.toBe(true);
+  });
+
+  it('does not answer an ear that failed for any other reason as success', async () => {
+    dbMock.single.mockResolvedValueOnce(MY_ACCOUNT);
+    dbMock.single.mockResolvedValueOnce({ id: 9, status: 'active' });
+    dbMock.insert.mockRejectedValueOnce(
+      oxmysqlRejection('INSERT INTO `mica_blabber_ears` …', [9, 1], 'Lock wait timeout exceeded')
+    );
+
+    const reply = await call('ear', { account_id: 1, blab_id: 9 });
+
+    expect(reply).not.toBe(true);
+    expect(reply.error).toBeTruthy();
   });
 
   it('scopes an unear to the caller own account', async () => {

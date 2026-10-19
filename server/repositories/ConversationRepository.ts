@@ -15,6 +15,7 @@ import {
 } from '../lib/contentCipher';
 import { toSqlDateTime, type RecencyCursor } from '../lib/payload';
 import { PHONE_NUMBERS_TABLE } from '../lib/phoneNumbers';
+import { isDuplicateKey } from '../lib/sqlErrors';
 
 /**
  * A conversation as the server holds it — the row, not what a phone is shown (MICA-339).
@@ -425,10 +426,9 @@ export const openLineThread = async (
     conversationId = await repo.createConversation(created);
   } catch (error) {
     // Two texts from the same line in the same instant: `pair_key_unique` refused the
-    // second. The first one's thread is the answer.
-    const winner = /duplicate/i.test(error instanceof Error ? error.message : '')
-      ? await repo.findExternalThread(deviceId, key)
-      : null;
+    // second. The first one's thread is the answer. `isDuplicateKey`, not `instanceof
+    // Error`: oxmysql's rejection is an `Error` from its own resource, never this realm's, and its text embeds the label.
+    const winner = isDuplicateKey(error) ? await repo.findExternalThread(deviceId, key) : null;
     if (!winner) throw error;
     // Still added: the winner may not have written its participant row yet, and
     // `ensureLineParticipant` is a no-op when it already has.

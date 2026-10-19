@@ -249,6 +249,8 @@ import {
   type RegisteredLine
 } from '../lib/numberRegistry';
 import { __resetRateLimits } from '../lib/rateLimit';
+import { openLineThread, type ConversationRow } from '../repositories/ConversationRepository';
+import { duplicateEntry, oxmysqlRejection } from './oxmysqlRejection';
 
 const PLAYER = { citizenid: 'CIT_A', source: 5, phone: '5550100' };
 const LINE = '5550199';
@@ -795,5 +797,57 @@ describe('leaving a thread with a line', () => {
 
     expect(db.conversations.get(conversationId)?.status).toBe('deleted');
     expect(next.conversationId).not.toBe(conversationId);
+  });
+});
+
+/**
+ * Two texts from one line in the same instant: `pair_key_unique` refuses the second create and
+ * the first one's thread is the answer. Against a stand-in repository rather than the world
+ * above, because the refusal has to arrive in oxmysql's in-game shape — an `Error` from another
+ * realm — which the old `instanceof Error` check read as no message and rethrew.
+ */
+describe('two texts from one line in the same instant', () => {
+  const FROM = { name: 'Downtown Cab', number: LINE };
+  const WINNER = { id: 811, citizenid: 'CIT_A', is_group: false } as ConversationRow;
+
+  const racedRepo = (refusal: unknown) => {
+    const findExternalThread = vi
+      .fn<(deviceId: string, key: string) => Promise<ConversationRow | null>>()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValue(WINNER);
+    const createConversation = vi.fn(async (): Promise<number> => {
+      throw refusal;
+    });
+    const ensureLineParticipant = vi.fn(async () => {});
+    return { findExternalThread, createConversation, ensureLineParticipant };
+  };
+
+  it('answers the winner when the create loses at the pair key', async () => {
+    const repo = racedRepo(
+      oxmysqlRejection(
+        'INSERT INTO `mica_messages_conversations` …',
+        ['CIT_A', 'Downtown Cab'],
+        duplicateEntry(`dev-${LINE_KEY}`, 'mica_messages_conversations.pair_key_unique')
+      )
+    );
+
+    const thread = await openLineThread(repo, 'CIT_A', 'dev', FROM);
+
+    expect(thread).toBe(WINNER);
+    expect(repo.ensureLineParticipant).toHaveBeenCalledWith(WINNER.id, 'CIT_A', 'dev');
+  });
+
+  it('still fails a create that failed for any other reason', async () => {
+    const refusal = oxmysqlRejection(
+      'INSERT INTO `mica_messages_conversations` …',
+      ['CIT_A', 'Downtown Cab'],
+      'Lock wait timeout exceeded; try restarting transaction'
+    );
+    const repo = racedRepo(refusal);
+
+    await expect(openLineThread(repo, 'CIT_A', 'dev', FROM)).rejects.toBe(refusal);
+    // Only the pre-check: a failure that is not the race is not looked up as one.
+    expect(repo.findExternalThread).toHaveBeenCalledTimes(1);
+    expect(repo.ensureLineParticipant).not.toHaveBeenCalled();
   });
 });

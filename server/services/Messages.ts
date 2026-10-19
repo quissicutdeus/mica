@@ -34,6 +34,7 @@ import { resolveOwnedAttachments } from '../lib/attachments';
 import { detectFramework, FrameworkBridge } from '../lib/FrameworkBridge';
 import { AuditLogger } from '../lib/AuditLogger';
 import { Database } from '../lib/Database';
+import { isDuplicateKey } from '../lib/sqlErrors';
 import { numberOfPhone } from '../lib/phoneNumbers';
 import { blockedBy } from './Blocklist';
 import { phoneForCitizen } from './Devices';
@@ -542,8 +543,9 @@ app.registerEvent('react', async (source, cbId, data, citizenid, player) => {
       [messageId, citizenid, emoji]
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : '';
-    if (!/duplicate/i.test(message)) throw error;
+    // A second identical tap is one reaction. `isDuplicateKey`, not `instanceof Error`:
+    // oxmysql's rejection is an `Error` from its own resource, never this realm's.
+    if (!isDuplicateKey(error)) throw error;
   }
   return true;
 });

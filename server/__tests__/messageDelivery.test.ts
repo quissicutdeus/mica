@@ -6,6 +6,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { DbCall } from './dbMockTypes';
 import { __resetRateLimits } from '../lib/rateLimit';
 import { TEST_PHONE_ID } from './phoneStub';
+import { duplicateEntry, oxmysqlRejection } from './oxmysqlRejection';
 
 /**
  * A sent message has to reach the other people in the thread.
@@ -409,6 +410,40 @@ describe('reactions on Messages (MICA-143)', () => {
       const reply = await call('react', 5, 'OTHER', { message_id: 42, emoji: '👍' });
 
       expect(reply).toBe(true);
+    });
+
+    it('a second identical tap is idempotent in the shape oxmysql rejects with in game', async () => {
+      // Not this realm's `Error`: the old `instanceof Error` check read it as no message at all
+      // and answered a double tap with the generic error.
+      asParticipant();
+      dbMock.insert.mockRejectedValue(
+        oxmysqlRejection(
+          'INSERT INTO `mica_messages_reactions` (`message_id`, `citizenid`, `emoji`) VALUES (?, ?, ?)',
+          [42, 'OTHER', '👍'],
+          duplicateEntry('42-OTHER-👍', 'mica_messages_reactions.message_citizen_emoji')
+        )
+      );
+
+      const reply = await call('react', 5, 'OTHER', { message_id: 42, emoji: '👍' });
+
+      expect(reply).toBe(true);
+      expect(dbMock.update).not.toHaveBeenCalled();
+    });
+
+    it('does not answer a reaction that failed for any other reason as success', async () => {
+      asParticipant();
+      dbMock.insert.mockRejectedValue(
+        oxmysqlRejection(
+          'INSERT INTO `mica_messages_reactions` …',
+          [42, 'OTHER', '👍'],
+          "Table 'mica.mica_messages_reactions' doesn't exist"
+        )
+      );
+
+      const reply = await call('react', 5, 'OTHER', { message_id: 42, emoji: '👍' });
+
+      expect(reply).not.toBe(true);
+      expect(reply).toMatchObject({ error: expect.any(String) });
     });
   });
 

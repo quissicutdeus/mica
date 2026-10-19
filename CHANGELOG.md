@@ -1373,6 +1373,17 @@ first time it drove the service as a player, not by any unit test, and the unit
 test that let it through now cuts each stored row to the columns the handler's
 query names.
 
+**A repeated ear, follow, block, reaction or handle claim no longer answers
+"Something went wrong", and nor do two texts opening the same thread at once.**
+oxmysql's error object is created in its own resource, so the check micaOS used
+to recognise a duplicate-key failure never matched it in game: a second ❤️ on
+the same post or message, an ear, follow or block already in place, a handle
+already taken, or two first texts racing to create one 1:1 or one business-line
+thread all reached the player as the generic error. Each now answers as a single
+attempt does — the reaction counts once, the ear, follow or block stays, the
+handle claim says the handle is taken, and both texts land in the one thread.
+Nothing is written twice.
+
 **`micaschema apply` now creates a table that does not exist yet (MICA-388).**
 It creates a new app's table, its child tables and the audit ledger, in
 foreign-key order and in the same shape a fresh install gets, before it adds

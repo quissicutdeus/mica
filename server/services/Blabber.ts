@@ -704,8 +704,8 @@ app.registerEvent('ear', async (source, cbId, data, citizenid) => {
       [target.id, account.id]
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : '';
-    if (!/duplicate/i.test(message)) throw error;
+    // `isDuplicateKey`, not `instanceof Error`: oxmysql's rejection is an `Error` from its own resource, never this realm's.
+    if (!isDuplicateKey(error)) throw error;
   }
   return true;
 });

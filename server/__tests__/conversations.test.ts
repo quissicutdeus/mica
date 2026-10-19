@@ -41,6 +41,7 @@ vi.mock('../lib/PlayerDirectory', () => ({
 import { conversations } from '../services/Conversations';
 import { GENERIC_ERROR_MESSAGE } from '../lib/errors';
 import { TEST_PHONE_ID } from './phoneStub';
+import { duplicateEntry, oxmysqlRejection } from './oxmysqlRejection';
 
 const call = async (action: string, data: unknown) => {
   const handler = handlers.get(`mica:server:conversations:${action}`);
@@ -529,6 +530,45 @@ describe('conversations:create — participant_a/participant_b and the unique-in
     expect(created).not.toHaveProperty('citizenid');
     // No participant rows were written for a create that never actually happened.
     expect(participantsAdded()).toEqual([]);
+  });
+
+  it('resolves to the winner when the pair_key refusal arrives in oxmysql’s in-game shape', async () => {
+    // Not this realm's `Error`, no `code`: the old `instanceof Error` check read it as no
+    // message and failed a create that had only lost a race.
+    const winner = { id: 556, citizenid: 'CIT_B', is_group: false };
+    dbMock.insert.mockRejectedValueOnce(
+      oxmysqlRejection(
+        'INSERT INTO `mica_messages_conversations` …',
+        ['CIT_A', 'duplicate'],
+        duplicateEntry('CIT_A|CIT_B', 'mica_messages_conversations.pair_key_unique')
+      )
+    );
+    // The winner exists once the insert has been tried, and not before. Answered from state
+    // rather than a `…Once` queue, which `vi.clearAllMocks` keeps: had this failed before the
+    // lookup, a leftover `[winner]` would have answered the next test's read.
+    dbMock.query.mockImplementation(async () => (dbMock.insert.mock.calls.length ? [winner] : []));
+
+    const created = await call('create', { phone: '555-0100' });
+
+    expect(created).toMatchObject({ id: 556, is_group: false });
+    expect(participantsAdded()).toEqual([]);
+  });
+
+  it('still fails an in-game-shaped failure whose parameters merely say "duplicate"', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    dbMock.insert.mockRejectedValueOnce(
+      oxmysqlRejection(
+        'INSERT INTO `mica_messages_conversations` …',
+        ["Duplicate entry 'x' for key 'y'"],
+        'Lock wait timeout exceeded; try restarting transaction'
+      )
+    );
+
+    const reply = await call('create', { phone: '555-0100' });
+
+    expect(reply).toMatchObject({ error: GENERIC_ERROR_MESSAGE });
+    expect(participantsAdded()).toEqual([]);
+    logged.mockRestore();
   });
 
   it('still fails when the create fails for a reason that has nothing to do with the pair key', async () => {

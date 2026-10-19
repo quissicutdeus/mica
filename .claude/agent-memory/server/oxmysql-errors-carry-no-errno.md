@@ -34,3 +34,19 @@ The test that catches it throws the oxmysql shape with the body in its
 parameters and asserts the body is absent from every logged line —
 `notificationBatch.test.ts`. A mysql2-shaped error carries no parameters, so a
 suite that throws one cannot see this.
+
+## It is not this realm's `Error` either
+
+oxmysql builds `new Error(output)` in its own resource, so in mica
+`error instanceof Error` is **false** on every real rejection. A check written
+`error instanceof Error ? error.message : ''` reads every in-game duplicate as
+`''` and rethrows it: `accounts:react` answered a second ❤️ with the generic
+error until the in-server suite caught it (run 39242728050). A suite rejecting
+with this realm's `new Error('Duplicate entry')` passes that check.
+`isDuplicateKey` reads `String(error)`, which survives. The test that catches it
+rejects with `oxmysqlRejection` (`server/__tests__/oxmysqlRejection.ts`), built
+by `node:vm`'s `runInNewContext`. All eight `/duplicate/i` sites in `server/`
+moved to `isDuplicateKey` in the same change; grep for `instanceof Error` near a
+driver error before trusting a new one. `vi.clearAllMocks` keeps `…Once` queues,
+so a race test that fails before its lookup leaks `[winner]` into the next test
+— answer the lookup from state instead.

@@ -22,6 +22,7 @@ import { resolveByPhone, resolveMany } from '../lib/PlayerDirectory';
 import { detectFramework } from '../lib/FrameworkBridge';
 import { conversationIdFrom, pageBounds, recencyCursor } from '../lib/payload';
 import { conversationsContract } from '@mica/shared/contracts/conversations';
+import { isDuplicateKey } from '../lib/sqlErrors';
 import { phoneForCitizen, deviceForRequest } from '../lib/deviceIdentity';
 import { readPhoneIdByNumber } from '../lib/phoneNumbers';
 import { onDeviceHandover } from './Devices';
@@ -668,8 +669,9 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
      * rather than something to reconcile. Anything else is a genuine failure and must not
      * be swallowed as though it were this one.
      */
-    const message = error instanceof Error ? error.message : '';
-    if (pairPhoneId && /duplicate/i.test(message)) {
+    // `isDuplicateKey`, not `instanceof Error`: oxmysql's rejection is an `Error` from its own resource, never this realm's,
+    // and its text embeds the parameters — a thread name may say "duplicate".
+    if (pairPhoneId && isDuplicateKey(error)) {
       const winner = await conversationRepo.findOneToOne(ownPhoneId, pairPhoneId);
       if (winner) return conversationForReader(winner);
     }

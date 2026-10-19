@@ -44,8 +44,11 @@ import {
 // The DM reaction rule lives on `DirectMessages.ts`'s own declaration (MICA-391), so the
 // reactions tests below run the real one rather than a stand-in registered by hand.
 import '../services/DirectMessages';
+import { duplicateEntry, oxmysqlRejection } from './oxmysqlRejection';
 
 const SRC = 5;
+
+const DUPLICATE = (key: string): string => duplicateEntry(key, key);
 
 const call = async (action: string, data: unknown, citizenid = 'CIT_A') => {
   const handler = handlers.get(`mica:server:accounts:${action}`);
@@ -236,7 +239,13 @@ describe('claiming a handle', () => {
   it('translates a lost race at the unique index into something readable', async () => {
     // Two players claiming in the same instant both pass the pre-check and one loses at the
     // index. That is the correct outcome; the raw driver error is not what a player should read.
-    dbMock.insert.mockRejectedValueOnce(new Error("Duplicate entry 'blabber-ada' for key ..."));
+    dbMock.insert.mockRejectedValueOnce(
+      oxmysqlRejection(
+        'INSERT INTO `mica_accounts` ...',
+        ['blabber', 'ada'],
+        DUPLICATE('blabber-ada')
+      )
+    );
 
     const reply = await call('create', { app: 'blabber', handle: 'ada' });
 
@@ -506,7 +515,7 @@ describe('following', () => {
   it('treats a duplicate as success, because the unique index is what makes it idempotent', async () => {
     dbMock.single.mockResolvedValueOnce(MINE);
     dbMock.single.mockResolvedValueOnce({ id: 4 });
-    dbMock.insert.mockRejectedValueOnce(new Error('ER_DUP_ENTRY: Duplicate entry'));
+    dbMock.insert.mockRejectedValueOnce(oxmysqlRejection('INSERT ...', [3, 4], DUPLICATE('3-4')));
 
     const reply = await call('follow', {
       app: 'blabber',
@@ -669,7 +678,7 @@ describe('blocking', () => {
   it('treats a duplicate block as success, same as follow', async () => {
     dbMock.single.mockResolvedValueOnce(MINE);
     dbMock.single.mockResolvedValueOnce({ id: 4 });
-    dbMock.insert.mockRejectedValueOnce(new Error('ER_DUP_ENTRY: Duplicate entry'));
+    dbMock.insert.mockRejectedValueOnce(oxmysqlRejection('INSERT ...', [3, 4], DUPLICATE('3-4')));
 
     const reply = await call('block', {
       app: 'blabber',
@@ -888,9 +897,61 @@ describe('reactions', () => {
 
   it('treats a duplicate reaction as success', async () => {
     world();
-    dbMock.insert.mockRejectedValueOnce(new Error('ER_DUP_ENTRY: Duplicate entry'));
+    dbMock.insert.mockRejectedValueOnce(
+      oxmysqlRejection(
+        'INSERT INTO `mica_account_reactions` ...',
+        [3, 'mica_blabber_dms', 4, '👍'],
+        DUPLICATE('3-mica_blabber_dms-4-👍')
+      )
+    );
 
     expect(await react(4)).toBe(true);
+  });
+
+  /**
+   * The in-server suite's `glimpse-reactions-follow-the-declared-rule` (run 39242728050): a
+   * second identical tap, or a retry of one whose reply was lost, answered "Something went
+   * wrong". The unique key is what holds it to one row, so the insert is what refuses it, and
+   * the refusal is the success.
+   */
+  it('counts a repeated reaction once: the second tap answers success and writes nothing', async () => {
+    world();
+    const stored = new Set<string>();
+    dbMock.insert.mockImplementation(async (sql: string, params: unknown[]) => {
+      const key = params.join('-');
+      if (stored.has(key)) throw oxmysqlRejection(sql, params, DUPLICATE(key));
+      stored.add(key);
+      return stored.size;
+    });
+
+    expect(await react(4)).toBe(true);
+    expect(await react(4)).toBe(true);
+
+    expect([...stored]).toEqual(['3-mica_blabber_dms-4-👍']);
+    expect(dbMock.insert).toHaveBeenCalledTimes(2);
+    // Nothing "repairs" the second tap — no delete, no update.
+    expect(dbMock.update).not.toHaveBeenCalled();
+  });
+
+  it('does not answer a failure that is not a duplicate as success', async () => {
+    world();
+    dbMock.insert.mockRejectedValueOnce(
+      oxmysqlRejection(
+        'INSERT INTO `mica_account_reactions` ...',
+        [3, 'mica_blabber_dms', 4, '👍'],
+        "Table 'mica.mica_account_reactions' doesn't exist"
+      )
+    );
+
+    const reply = await react(4);
+
+    expect(reply).not.toBe(true);
+    expect(reply.error).toBeTruthy();
+  });
+
+  it('models the rejection oxmysql makes: not this realm’s Error', () => {
+    // If this ever reads true, the duplicate tests above stop proving the in-game shape.
+    expect(oxmysqlRejection('SELECT 1', [], DUPLICATE('x')) instanceof Error).toBe(false);
   });
 
   /**

@@ -7,6 +7,7 @@ import { defineService, SchemaRepository, type ResolvedService } from '../lib/de
 import { Database } from '../lib/Database';
 import { appEventChannel } from '../lib/appEvents';
 import { isReactableTable, reactableRule } from '../lib/reactions';
+import { isDuplicateKey } from '../lib/sqlErrors';
 import { Account } from '@mica/shared/types';
 import { pageBounds, requirePositiveInt } from '../lib/payload';
 import { accountsContract } from '@mica/shared/contracts/accounts';
@@ -354,8 +355,8 @@ export const accounts = defineService<Account, typeof accountsContract>({
         created_at: { type: 'timestamp', notNull: true, defaultNow: true }
       },
       indexes: [
-        // One reaction per account per emoji per target — tapping the same emoji twice toggles
-        // it off rather than stacking a duplicate row.
+        // One reaction per account per emoji per target — tapping the same emoji twice is one
+        // reaction, not a duplicate row. Taking it off is `unreact`; the client decides which.
         {
           name: 'account_target_emoji',
           columns: ['account_id', 'target_table', 'target_id', 'emoji'],
@@ -633,9 +634,9 @@ app.registerEvent('create', async (source, cbId, data, citizenid) => {
     return { id, citizenid, app: appId, handle, display_name: displayName, status: 'active' };
   } catch (error) {
     // The index did its job in a race. Translate it, because the raw driver error reaches a
-    // player's toast and reads as a crash.
-    const message = error instanceof Error ? error.message : '';
-    if (/duplicate/i.test(message)) {
+    // player's toast and reads as a crash. `isDuplicateKey`, never `instanceof Error`: oxmysql
+    // builds its rejection in its own resource, so in game it is not this realm's `Error`.
+    if (isDuplicateKey(error)) {
       // `{ cause }` is the constructor's ES2022 form; this repo's lib target is ES2021, so
       // the property is set directly instead — same effect, portable to the older lib.
       const takenError = new PlayerFacingError(`@${handle} is taken.`, {
@@ -730,8 +731,7 @@ app.registerEvent('follow', async (source, cbId, data, citizenid) => {
   } catch (error) {
     // The unique index refusing a duplicate. Reported as success: from the player's point of
     // view the follow is exactly as applied as they wanted.
-    const message = error instanceof Error ? error.message : '';
-    if (!/duplicate/i.test(message)) throw error;
+    if (!isDuplicateKey(error)) throw error;
   }
   return true;
 });
@@ -795,8 +795,7 @@ app.registerEvent('block', async (source, cbId, data, citizenid) => {
     );
   } catch (error) {
     // The unique index refusing a duplicate. Reported as success, same as `follow`.
-    const message = error instanceof Error ? error.message : '';
-    if (!/duplicate/i.test(message)) throw error;
+    if (!isDuplicateKey(error)) throw error;
   }
 
   await Database.update(
@@ -887,8 +886,11 @@ app.registerEvent('react', async (source, cbId, data, citizenid) => {
       [account.id, targetTable, targetId, data.emoji]
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : '';
-    if (!/duplicate/i.test(message)) throw error;
+    // The unique index refusing a second identical tap, or a retry whose first reply was lost:
+    // one reaction, answered as success. Not `instanceof Error` (MICA-391's first cut): oxmysql
+    // rejects with an `Error` built in its own resource, which is not this realm's, so that
+    // check read every real duplicate as an empty message and rethrew it as a generic failure.
+    if (!isDuplicateKey(error)) throw error;
   }
   return true;
 });
