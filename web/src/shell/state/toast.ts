@@ -126,15 +126,24 @@ function createToastStore() {
     }
   };
 
-  /** Same title or sender as an already-pending toast — a repeat, not a new one to queue. */
+  /**
+   * Same app, and same title or sender, as an already-pending toast — a repeat, not a new one
+   * to queue.
+   *
+   * The app has to match too. A repeat replaces the toast it matches, and a title is not
+   * proof of anything: an add-on's notice titled `Incoming Call` used to replace a ringing
+   * call's banner and take its Accept and Decline with it, or a message's reply box. That is
+   * the takedown `dismissNotification` refuses, reached another way.
+   */
   const findSpamMatch = (
     toasts: ToastMessage[],
     options: Partial<ToastMessage>
   ): ToastMessage | undefined =>
     toasts.find(
       (t) =>
-        (options.title && t.title === options.title) ||
-        (options.sender && t.sender === options.sender)
+        t.app === options.app &&
+        ((options.title && t.title === options.title) ||
+          (options.sender && t.sender === options.sender))
     );
 
   const show = (
@@ -281,6 +290,14 @@ function createToastStore() {
     }
   };
 
+  /**
+   * The toast with this id, on screen or waiting in line, or `undefined` once it is gone.
+   * How `phoneNotification` reads which app a toast belongs to before it lets an app take
+   * one down. It checks the record, never the shape of the id.
+   */
+  const find = (id: string): ToastMessage | undefined =>
+    get(store).find((t) => t.id === id) ?? queue.find((t) => t.id === id);
+
   const pauseDismiss = (id: string) => {
     clearToastTimer(id);
   };
@@ -292,6 +309,7 @@ function createToastStore() {
   return {
     subscribe,
     show,
+    find,
     dismiss,
     archive,
     pauseDismiss,

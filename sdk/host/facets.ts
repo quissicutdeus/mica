@@ -165,7 +165,13 @@ export interface SendNotificationOptions {
   title?: string;
   message: string;
   avatar?: string;
+  /**
+   * `info`, `success`, `warning` or `error`. Any other type is sent as `info`: a call, a
+   * message or a contact card changes how the shell treats the toast, and only the shell's
+   * own helpers may make one.
+   */
   type?: ToastMessage['type'];
+  /** In ms, at most 10 s. Zero or none is the shell's default: a notice always expires. */
   duration?: number;
   onClick?: () => void;
 }
@@ -1064,14 +1070,14 @@ export interface Facets {
     options?: PersistedOptions<T>
   ) => Writable<T>;
   /**
-   * Pinned to `appId`: notices are filed under it, `dismissNotification` refuses another
-   * app's toast, and `toast` subscribes to this app's toasts only. A sandboxed add-on's id
-   * is replaced by the shell, whatever it passes. With no id, a core app's notices file
-   * under `'system'`.
+   * Pinned to `appId`: notices are filed under it as app arrivals (Do Not Disturb and the
+   * app's mute apply), `dismissNotification` refuses another app's toast, and `toast`
+   * subscribes to this app's toasts only. A sandboxed add-on's id is replaced by the shell,
+   * whatever it passes. With no id, a core app's notices file under `'system'`.
    */
   phoneNotification: (appId?: string) => {
     sendNotification: (options: SendNotificationOptions) => string;
-    /** Throws for an id this app did not send. */
+    /** Throws for another app's toast. An id that is already gone does nothing. */
     dismissNotification: (id: string) => void;
     toast: {
       /** This app's toasts on screen. The other members are the shell's, for core apps. */

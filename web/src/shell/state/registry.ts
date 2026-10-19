@@ -694,6 +694,27 @@ function assertDeviceSupported(manifest: AppManifest): void {
 }
 
 /**
+ * Refuse anything that is not a core app under a core app's id.
+ *
+ * An id is a storage namespace, a service owner, a grant and a home-grid cell, so an add-on
+ * that took `bank` would sit in Bank's place and read and write as Bank. `record` used to
+ * guard this with `CORE_APP_IDS.has(id) && !loadedApps.some(...)`, but `CORE_APP_IDS` is
+ * built from `loadedApps`, so that was never true and nothing refused one. The dev add-on
+ * path had its own check; a catalog install had none.
+ *
+ * Called by every path before it writes anything: `installVerified` before the fetch,
+ * `registerAddOn` before the source is stashed, `registerApp` before the component is.
+ * Worded for the player, like the refusals above, because the Store toasts it.
+ */
+function assertNotCoreAppId(id: string, name: string, core = false): void {
+  if (core || !CORE_APP_IDS.has(id)) return;
+  throw new Error(
+    `${name} uses the id '${id}', which belongs to an app built into this phone, and cannot ` +
+      'be installed.'
+  );
+}
+
+/**
  * The manifest a catalog entry stands for — built from `entry` and nothing else, never from
  * anything the fetched bundle claims to be. Shared by `installVerified` and the dev add-on
  * loader (MICA-311), so the two cannot disagree on what an entry means.
@@ -784,15 +805,8 @@ function createAppRegistry() {
    * either way; only what gets stashed for later — a component or a source — differs.
    */
   function record(validatedManifest: AppManifest): void {
-    if (
-      CORE_APP_IDS.has(validatedManifest.id) &&
-      !loadedApps.some((a) => a.id === validatedManifest.id)
-    ) {
-      throw new Error(
-        `micaOS App Registry error: Overwriting core app '${validatedManifest.id}' is prohibited.`
-      );
-    }
-
+    // A core app's id is refused by the callers, before they stash anything: see
+    // `assertNotCoreAppId`. Anything new that calls this has to do the same.
     if (import.meta.env.DEV && get(installed).some((a) => a.id === validatedManifest.id)) {
       console.warn(
         `micaOS App Registry: '${validatedManifest.id}' is already registered and is ` +
@@ -880,6 +894,7 @@ function createAppRegistry() {
           'micaOS App Registry error: add-ons register through registerAddOn(manifest, source).'
         );
       }
+      assertNotCoreAppId(validatedManifest.id, validatedManifest.name, validatedManifest.core);
       componentRegistry.set(validatedManifest.id, component);
       record(validatedManifest);
     },
@@ -893,6 +908,7 @@ function createAppRegistry() {
      */
     registerAddOn: (manifest: AppManifest, source?: string) => {
       const validatedManifest = defineApp(manifest);
+      assertNotCoreAppId(validatedManifest.id, validatedManifest.name, validatedManifest.core);
       // MICA-234: the Store's own install path, refused before anything is recorded — the
       // same fact `bundledAddOns` (the facet's filtered answer) already keeps this add-on
       // from being offered for, restated here for a caller that reaches `registerAddOn`
@@ -1134,6 +1150,9 @@ function createAppRegistry() {
       );
     }
     assertNotDevAddOn(entry.id);
+    // Before the fetch, like the disabled check: a core id costs nothing and never reaches
+    // the network, and a rehydrated row under one adopts no grant.
+    assertNotCoreAppId(entry.id, entry.name);
     // `isTrustedRemoteUrl` exempts `data:` URLs — safe for its other callers, which only
     // ever build one internally from bytes already hash-verified, never from anything an
     // operator's catalog (or a saved/rehydrated row derived from one) supplied. A catalog

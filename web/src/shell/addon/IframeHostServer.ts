@@ -109,8 +109,8 @@ const OMIT: unique symbol = Symbol('omit');
  * - An `Error` is `{ name, message }` and nothing more, the same as a failed call's reply
  *   (see `fail`). A shell stack never reaches the frame.
  * - Any other object, a class instance or a `$state` proxy included, becomes a fresh plain
- *   object of its own enumerable string keys. A prototype's methods were never data, and a
- *   proxy cannot be cloned at all.
+ *   object of its own enumerable string keys, an own `__proto__` key among them. A
+ *   prototype's methods were never data, and a proxy cannot be cloned at all.
  * - A shared or cyclic reference stays shared, the way structured clone keeps it.
  */
 function toCloneable(value: unknown, seen = new Map<object, unknown>()): unknown {
@@ -168,7 +168,17 @@ function toCloneable(value: unknown, seen = new Map<object, unknown>()): unknown
   seen.set(value, out);
   for (const [k, v] of Object.entries(value)) {
     const item = toCloneable(v, seen);
-    if (item !== OMIT) out[k] = item;
+    // Defined, not assigned: `out[k] = item` with an own `__proto__` key (a JSON-parsed
+    // deep-link prop carries one) runs the prototype setter, which re-parents `out` and
+    // drops the key from the push.
+    if (item !== OMIT) {
+      Object.defineProperty(out, k, {
+        value: item,
+        enumerable: true,
+        writable: true,
+        configurable: true
+      });
+    }
   }
   return out;
 }

@@ -614,6 +614,24 @@ describe('installFromCatalog', () => {
     expect(result.manifest.requires).toEqual(['money']);
   });
 
+  /**
+   * `record` guarded this with a condition that could never be true (`CORE_APP_IDS` is built
+   * from the very list it checked against), so a catalog add-on with id `bank` installed
+   * over Bank, with Bank's storage namespace, services and home-grid cell.
+   */
+  it("refuses a catalog add-on with a core app's id, before fetching anything", async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(fetchResponse(bundleCode));
+    const bankBefore = get(appRegistryStore).find((a) => a.id === 'bank');
+    expect(bankBefore?.core).toBe(true);
+
+    await expect(
+      appRegistryStore.installFromCatalog({ ...catalogEntry, id: 'bank', name: 'Not Bank' })
+    ).rejects.toThrow("Not Bank uses the id 'bank', which belongs to an app built into this phone");
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(get(appRegistryStore).find((a) => a.id === 'bank')).toBe(bankBefore);
+  });
+
   it('leaves requires off a manifest whose entry declares none', async () => {
     // `defineApp` writes no default, so `undefined` and `[]` never have to be told apart —
     // an entry published before the field existed says exactly the right thing by omission.
@@ -724,6 +742,61 @@ describe('installFromCatalog', () => {
       appRegistryStore.installFromCatalog({ ...catalogEntry, sha256: await sha256Hex(devBuild) })
     ).rejects.toThrow('a development build cannot be installed');
     expect(get(appRegistryStore).some((a) => a.id === 'remote_catalog_app')).toBe(false);
+  });
+});
+
+/**
+ * The catalog test above refuses before the fetch. These are the other ways in, each of
+ * which stashes something under the id (a source, a component, a grant) before it records
+ * the app, so each has to refuse before that.
+ */
+describe("a core app's id is not for anything else", () => {
+  const notBank: AppManifest = {
+    id: 'bank',
+    name: 'Not Bank',
+    color: 'bg-red-500',
+    tile: { bg: 'bg-red-500' },
+    icon: null,
+    core: false
+  };
+
+  it('refuses registerAddOn with a source, and stashes none', async () => {
+    const bankBefore = get(appRegistryStore).find((a) => a.id === 'bank');
+
+    expect(() => appRegistryStore.registerAddOn(notBank, 'export {}')).toThrow(
+      "Not Bank uses the id 'bank'"
+    );
+
+    expect(get(appRegistryStore).find((a) => a.id === 'bank')).toBe(bankBefore);
+    await expect(appRegistryStore.getAddOnSource('bank')).resolves.toBeUndefined();
+  });
+
+  it("refuses registerApp's DEV path for a non-core manifest, and keeps Bank's component", () => {
+    const bankComponent = appRegistryStore.getComponent('bank');
+
+    expect(() => appRegistryStore.registerApp(notBank, {} as unknown as AppComponent)).toThrow(
+      "Not Bank uses the id 'bank'"
+    );
+
+    expect(appRegistryStore.getComponent('bank')).toBe(bankComponent);
+  });
+
+  it('still refuses a dev add-on under a core id', () => {
+    const entry: CatalogEntry = {
+      id: 'bank',
+      name: 'Not Bank',
+      version: '1.0.0',
+      description: 'A dev add-on that wants to be Bank.',
+      bundleUrl: 'http://127.0.0.1:5174/addon.js',
+      sha256: '0'.repeat(64),
+      color: 'bg-red-500',
+      permissions: []
+    };
+
+    expect(() => appRegistryStore.registerDevAddOn(entry, 'export {}')).toThrow(
+      "'bank' is already an app on this phone"
+    );
+    expect(appRegistryStore.isDevAddOn('bank')).toBe(false);
   });
 });
 

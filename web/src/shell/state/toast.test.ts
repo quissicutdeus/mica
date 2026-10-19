@@ -22,6 +22,7 @@ import type { Contact } from '@mica/shared/types';
 import { openDevice } from './phoneOpen';
 import { chargeOf } from './charge';
 import { setActiveDevice } from './device';
+import { phoneNotification } from '../../host/facets/phoneNotification';
 
 describe('toast store interactive notifications', () => {
   beforeEach(() => {
@@ -376,6 +377,46 @@ describe('a toast carries which app it came from', () => {
   ])('%s tags its own app', (_name, trigger, app) => {
     trigger();
     expect(get(toast)[0].app).toBe(app);
+  });
+});
+
+/**
+ * A repeat replaces the toast it matches, and matching was on title or sender alone. An
+ * add-on's notice titled `Incoming Call` replaced a ringing call's banner, Accept and
+ * Decline with it, and one titled with a sender's name replaced that sender's queued message
+ * and its reply box: the takedown `dismissNotification` refuses, reached by sending instead.
+ */
+describe('a repeat has to come from the same app', () => {
+  beforeEach(() => {
+    toast.clear();
+    shadeNotifications.set([]);
+    vi.useFakeTimers();
+  });
+  // Fake timers stay on, as everywhere in this file: the ring tests in the policy block
+  // below advance them without installing their own.
+  afterEach(() => toast.clear());
+
+  it("keeps a ringing call and a queued message when an add-on's notice takes their titles", () => {
+    const call = toast.showCall({ number: '555-0100', onAccept: () => {} });
+    toast.showIncomingMessage({ sender: 'Trevor', message: 'reply to me', onReply: () => {} });
+
+    const addOn = phoneNotification('probe');
+    addOn.sendNotification({ title: 'Incoming Call', message: 'not a call' });
+    addOn.sendNotification({ title: 'Trevor', message: 'not Trevor' });
+
+    expect(get(toast)).toMatchObject([
+      { id: call, type: 'call', actions: [{ label: 'Accept' }, { label: 'Decline' }] }
+    ]);
+    toast.dismiss(call);
+    expect(get(toast)).toMatchObject([
+      { app: 'messages', message: 'reply to me', hasReplyInput: true }
+    ]);
+  });
+
+  it('still folds a repeat from the same app', () => {
+    toast.show({ app: 'notes', title: 'Saved', message: 'one' });
+    toast.show({ app: 'notes', title: 'Saved', message: 'two' });
+    expect(get(toast)).toMatchObject([{ app: 'notes', message: 'two' }]);
   });
 });
 

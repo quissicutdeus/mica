@@ -35,6 +35,7 @@ import { activeHandlerFor } from '../state/keybinds';
 import { toast as shellToast } from '../state/toast';
 import { currentApp as shellCurrentApp } from '../state/navigation';
 import { shadeNotifications } from '../../services/notifications';
+import { dndEnabled } from '../state/notificationPolicy';
 import type { ToFrame } from '../../../../sdk/host/iframe/messages';
 import Skeleton from '../../../../sdk/ui/Skeleton.svelte';
 import '../../../../sdk/host/useContacts';
@@ -703,6 +704,22 @@ describe('IframeHostServer', () => {
       expect(value.error).not.toBeInstanceOf(Error);
     });
 
+    it('sends an own __proto__ key as a plain key, and re-parents nothing', () => {
+      const { posted, from } = server(['app-registry'] as AppPermission[]);
+      subscribeRegistry(from);
+      // What a JSON-parsed deep-link prop looks like: an own data property, not the accessor.
+      registry.set(JSON.parse('{"a":1,"__proto__":{"polluted":true}}'));
+
+      const push = posted[posted.length - 1] as Extract<ToFrame, { kind: 'push' }>;
+      const value = push.value as Record<string, unknown>;
+      expect(Object.keys(value)).toEqual(['a', '__proto__']);
+      expect(Object.getOwnPropertyDescriptor(value, '__proto__')?.value).toEqual({
+        polluted: true
+      });
+      expect(Object.getPrototypeOf(value)).toBe(Object.prototype);
+      expect((value as { polluted?: unknown }).polluted).toBeUndefined();
+    });
+
     it('logs a push that still cannot cross once, and keeps the store loop running', () => {
       const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
       const { posted, from } = server(['app-registry'] as AppPermission[]);
@@ -767,7 +784,9 @@ describe('IframeHostServer', () => {
       await flush();
 
       expect(replyTo(posted, 1)).toMatchObject({ ok: true });
-      expect(get(shellToast)).toMatchObject([{ app: 'probe', title: 'Probe', message: 'hi' }]);
+      expect(get(shellToast)).toMatchObject([
+        { app: 'probe', title: 'Probe', message: 'hi', type: 'info' }
+      ]);
       // The drawer row too: not 'messages', which `type: 'message'` used to pick, nor 'system'.
       expect(get(shadeNotifications).map((n) => n.app)).toEqual(['probe']);
     });
@@ -833,6 +852,86 @@ describe('IframeHostServer', () => {
       expect(seen).toEqual([[], ['bank']]);
       expect(get(shadeNotifications).map((n) => n.app)).toEqual(['bank', 'messages']);
       off();
+    });
+
+    /**
+     * A `call` jumps the banner on screen, is never dropped from the queue, never expires at
+     * `duration: 0`, and stops the ringtone when it goes, which silenced a real call waiting
+     * behind it. Only the shell's own `showCall` makes one.
+     */
+    it("sends a frame's 'call' as an info notice, in line behind what is on screen", async () => {
+      const { posted, from } = server(['notifications'] as AppPermission[]);
+      const visible = shellToast.show({ app: 'messages', title: 'Ann', message: 'first' });
+
+      from(
+        call(7, 'sendNotification', [{ title: 'Ring', message: 'x', type: 'call', duration: 0 }])
+      );
+      await flush();
+      const notice = (replyTo(posted, 7) as { value: string }).value;
+
+      expect(get(shellToast).map((t) => t.id)).toEqual([visible]);
+      shellToast.dismiss(visible);
+      expect(get(shellToast)).toMatchObject([{ id: notice, app: 'probe', type: 'info' }]);
+    });
+
+    it('holds the banner under Do Not Disturb, and still writes the drawer row', async () => {
+      dndEnabled.set(true);
+      onTestFinished(() => dndEnabled.set(false));
+      const { posted, from } = server(['notifications'] as AppPermission[]);
+
+      from(call(8, 'sendNotification', [{ title: 'Probe', message: 'quiet please' }]));
+      await flush();
+
+      expect(replyTo(posted, 8)).toMatchObject({ ok: true });
+      expect(get(shellToast)).toEqual([]);
+      expect(get(shadeNotifications)).toMatchObject([{ app: 'probe', body: 'quiet please' }]);
+    });
+
+    /**
+     * Ownership is read off the toast's record. It was parsed out of the id, `notice:<app>:`,
+     * so an app whose id began `probe:` (nothing refuses one outside DEV) had notices this
+     * frame could take down.
+     */
+    it("refuses a notice of an app whose id merely starts with the frame's, and ignores a gone id", async () => {
+      const { posted, from } = server(['notifications'] as AppPermission[]);
+      const lookalike = phoneNotification('probe:x').sendNotification({ message: 'not yours' });
+
+      from(call(9, 'dismissNotification', [lookalike]));
+      await flush();
+      expect(replyTo(posted, 9)).toMatchObject({ ok: false });
+      expect(get(shellToast).map((t) => t.id)).toEqual([lookalike]);
+
+      // An id with no toast behind it has nothing to take down, and is not an error.
+      from(call(10, 'dismissNotification', ['notice:probe:999999']));
+      await flush();
+      expect(replyTo(posted, 10)).toMatchObject({ ok: true });
+      expect(get(shellToast).map((t) => t.id)).toEqual([lookalike]);
+    });
+
+    /**
+     * Only one toast shows at a time, so a notice that never expired held every banner
+     * behind it until the player swiped it away. `duration: 0` was exactly that.
+     */
+    it("expires a frame's notice at zero duration, and cuts a long one to the ceiling", async () => {
+      const { posted, from } = server(['notifications'] as AppPermission[]);
+      // After the server, so its hello watchdog keeps a real timer and stays out of this.
+      vi.useFakeTimers();
+      onTestFinished(() => {
+        vi.useRealTimers();
+      });
+
+      from(call(11, 'sendNotification', [{ message: 'sticky', duration: 0 }]));
+      await flush();
+      expect(replyTo(posted, 11)).toMatchObject({ ok: true });
+      expect(get(shellToast)).toMatchObject([{ message: 'sticky', duration: 4500 }]);
+      vi.advanceTimersByTime(4500);
+      expect(get(shellToast)).toEqual([]);
+
+      from(call(12, 'sendNotification', [{ message: 'long', duration: 600_000 }]));
+      await flush();
+      expect(get(shellToast)).toMatchObject([{ message: 'long', duration: 10_000 }]);
+      vi.advanceTimersByTime(10_000);
+      expect(get(shellToast)).toEqual([]);
     });
   });
 
