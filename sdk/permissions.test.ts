@@ -28,7 +28,7 @@ import {
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join, sep } from 'node:path';
-import { ALL_PERMISSIONS, defineApp } from './manifest';
+import { ALL_PERMISSIONS, defineApp, type AppManifest, type AppPermission } from './manifest';
 import {
   HOOK_OF_FACET,
   PERMISSION_OF,
@@ -46,7 +46,12 @@ import {
 } from './permissions';
 import { declaredPermissions, permissionShortfall, sdkImportNames } from './lib/permissionScan';
 import type { Facets } from './host/facets';
+import { facets, registerFacet, resetHostsForTest } from './host/current';
+import { createInProcessHost } from './host/inProcess/createInProcessHost';
+import type { ToFrame } from './host/iframe/messages';
 import { bundledAddOns, registeredApps } from '../web/src/shell/state/registry';
+import { createIframeHostServer } from '../web/src/shell/addon/IframeHostServer';
+import { recordConsent, resetGrantsForTest } from '../web/src/shell/state/addOnGrants';
 
 /**
  * An app's declared permissions have to match what it actually reaches for.
@@ -514,6 +519,11 @@ describe('every reachable facet declares its members (MICA-196)', () => {
     for (const member of ['setDndEnabled', 'setAppNotificationPolicy', 'setToastsEnabled']) {
       expect(membersOfFacet('notificationSettings')).not.toContain(member);
     }
+    // The shell's own push landings: a frame naming them writes the inbox with no server.
+    expect(membersOfFacet('mail')).not.toContain('addReceivedMail');
+    expect(membersOfFacet('messages')).not.toContain('addReceivedMessage');
+    // The server clears a passcode without asking for the current one; `'never'` skips it.
+    expect(membersOfFacet('lockScreenWrite')).toEqual([]);
   });
 
   /**
@@ -587,6 +597,73 @@ describe('every reachable facet declares its members (MICA-196)', () => {
       'lifecycle.onBack'
     ]);
   });
+});
+
+/**
+ * The rows above, at the boundary they feed: a raw `postMessage` naming a removed member,
+ * from an add-on that declares the permission and was granted it, is refused before the
+ * facet is built. The rows alone prove what the table says; this proves the table is what
+ * `IframeHostServer` reads, so a later copy of the list in the shell cannot quietly win.
+ */
+describe('an add-on naming a core-only write is refused at the shell', () => {
+  const CASES = [
+    { facet: 'mail', member: 'addReceivedMail', permission: 'mail' },
+    { facet: 'messages', member: 'addReceivedMessage', permission: 'messages' },
+    { facet: 'lockScreenWrite', member: 'setPasscode', permission: 'lock-screen-write' },
+    { facet: 'lockScreenWrite', member: 'clearPasscode', permission: 'lock-screen-write' },
+    { facet: 'lockScreenWrite', member: 'setAutoLockPolicy', permission: 'lock-screen-write' }
+  ] as const;
+  const originals = new Map<keyof Facets, Facets[keyof Facets]>();
+
+  beforeAll(() => {
+    for (const { facet } of CASES) originals.set(facet, facets[facet]);
+  });
+  afterEach(() => {
+    resetHostsForTest();
+    resetGrantsForTest();
+  });
+  afterAll(() => {
+    for (const [facet, factory] of originals) registerFacet(facet, factory as never);
+  });
+
+  it.each(CASES)(
+    'refuses $member on $facet as core only',
+    async ({ facet, member, permission }) => {
+      const spy = vi.fn();
+      registerFacet(facet, (() => ({ [member]: spy })) as never);
+      const granted = [permission] as AppPermission[];
+      recordConsent('probe', granted);
+      const posted: ToFrame[] = [];
+      const guest = { postMessage: (m: ToFrame) => posted.push(m) };
+      const server = createIframeHostServer({
+        host: createInProcessHost('probe', granted),
+        manifest: { id: 'probe', name: 'Probe', icon: 'x', core: false } as AppManifest,
+        props: {},
+        guest: () => guest,
+        onError: vi.fn(),
+        onKey: vi.fn(),
+        onTyping: vi.fn()
+      });
+      server.handle({
+        data: { kind: 'call', id: 1, facet, factoryArgs: [], member, args: [] },
+        source: guest,
+        origin: 'null'
+      } as unknown as MessageEvent);
+      await Promise.resolve();
+      await Promise.resolve();
+      server.dispose();
+
+      expect(posted).toEqual([
+        {
+          kind: 'reply',
+          id: 1,
+          ok: false,
+          error: { name: 'Error', message: `[micaOS] '${facet}.${member}' is core only` }
+        }
+      ]);
+      expect(spy).not.toHaveBeenCalled();
+    }
+  );
 });
 
 /**

@@ -334,7 +334,7 @@ export const SAFE_IMPLICIT_FACETS: ReadonlySet<string> = new Set([
  *
  * ## The rows that are narrower than the wire
  *
- * Five facets deliberately allow less than their twin offers. The twin's own local throws
+ * These facets deliberately allow less than their twin offers. The twin's own local throws
  * (`appRegistryWrite`'s `refused()`, and its siblings') are the polite half of this pair,
  * not the enforcing half — they are code inside the sandbox, and a raw `postMessage` skips
  * them entirely, which is exactly the boundary this table is.
@@ -354,6 +354,14 @@ export const SAFE_IMPLICIT_FACETS: ReadonlySet<string> = new Set([
  *   `toggleMute` silences the whole device.
  * - `storage` has no `getItem`: the twin answers reads from the hydrate snapshot and only
  *   writes cross the wire.
+ * - `mail` and `messages` drop `addReceivedMail` and `addReceivedMessage`. Both write the
+ *   phone's own inbox with no server behind them: they are where the shell lands a server
+ *   push. From a frame they plant a thread from any number, under whatever name the player
+ *   saved for it, saying anything at all.
+ * - `lockScreenWrite` is empty. The server clears a passcode without asking for the current
+ *   one, so `clearPasscode` removes the player's and `setPasscode` replaces it with one they
+ *   do not know. `setAutoLockPolicy` goes too: `'never'` skips the lock screen entirely,
+ *   which is the passcode removed by another name.
  */
 export const FACET_MEMBERS = {
   // Player data.
@@ -417,14 +425,7 @@ export const FACET_MEMBERS = {
   highscores: ['submitScore', 'getLeaderboard'],
   jobs: ['jobs', 'jobsLoaded', 'fetchJobs', 'setActiveJob', 'setDuty'],
   location: ['shareLocation', 'setWaypoint'],
-  mail: [
-    'mailStore',
-    'unreadMailCount',
-    'deleteMail',
-    'markAsRead',
-    'archiveMail',
-    'addReceivedMail'
-  ],
+  mail: ['mailStore', 'unreadMailCount', 'deleteMail', 'markAsRead', 'archiveMail'],
   marketplace: [
     'feedStore',
     'mineStore',
@@ -449,7 +450,6 @@ export const FACET_MEMBERS = {
     'conversationsStore',
     'unreadMessagesCount',
     'sendMessage',
-    'addReceivedMessage',
     'startText',
     'messageReactions',
     'loadMessageReactions',
@@ -504,7 +504,7 @@ export const FACET_MEMBERS = {
   // MICA-294: `visible` is `useAppVisible`, scoped by the same pin as the rest of the row.
   lifecycle: ['currentApp', 'onBack', 'goHome', 'consumeDeepLink', 'visible'],
   lockScreen: ['hasPasscode', 'autoLockPolicy', 'autoLockPolicyChoices'],
-  lockScreenWrite: ['setAutoLockPolicy', 'setPasscode', 'clearPasscode'],
+  lockScreenWrite: [],
   music: [
     'musicSource',
     'musicQueue',
@@ -858,10 +858,6 @@ export const MEMBER_APP_ARGS = {
   'lifecycle.onBack': null,
   'location.setWaypoint': null,
   'location.shareLocation': null,
-  'lockScreenWrite.clearPasscode': null,
-  'lockScreenWrite.setAutoLockPolicy': null,
-  'lockScreenWrite.setPasscode': null,
-  'mail.addReceivedMail': null,
   'mail.archiveMail': null,
   'mail.deleteMail': null,
   'mail.markAsRead': null,
@@ -878,7 +874,6 @@ export const MEMBER_APP_ARGS = {
   'media.fullMedia': null,
   'media.getDeletedMedia': null,
   'media.restoreMedia': null,
-  'messages.addReceivedMessage': null,
   'messages.loadMessageReactions': null,
   'messages.sendMessage': null,
   'messages.startText': null,
