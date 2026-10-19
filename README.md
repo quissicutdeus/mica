@@ -959,9 +959,10 @@ the convar is invisible until the resource restarts.
   starts, and for nothing else. Set to `1` at resource start, it opens three
   local events that let the suite seed a synthetic player with a ledger bank,
   run a service action for it through the same dispatch a real request takes,
-  and read the pushes it would have received. They are plain `on()` handlers,
-  not net events, so a client cannot trigger them, and the convar is read once
-  at start, so a `set` on a running server opens nothing. Leave it unset on any
+  and read every event the server sent to it. They are plain `on()` handlers,
+  not net events, so a client cannot trigger them; the convar is read once at
+  start, so a `set` on a running server opens nothing; and the synthetic players
+  live only on sources no connected player can have. Leave it unset on any
   server players join; `docs/security.md` has the model.
 - **`mica_admin_aces`** — which ace objects grant micaOS admin: the phone's
   Developer Tools, and the `mica*` console commands. The default recognises two,

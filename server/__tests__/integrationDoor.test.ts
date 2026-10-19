@@ -12,6 +12,11 @@ import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vite
  * The action behind the door is Casino's own, unmocked: its contract, its limiter entry, its
  * `requirePhoneFor`, its handler. Only the database and the framework's player table are
  * stand-ins, and the framework's `getPlayer` is watched, because the door must never ask it.
+ *
+ * The bridge stand-in follows the real one's rule for synthetic players (`installSyntheticPlayers`
+ * in `lib/FrameworkBridge.ts`, proved against the real bridge in `FrameworkBridge.test.ts`): a
+ * citizenid is answered from the connected players first, and from the door's resolver only on a
+ * miss. So a push here finds a synthetic source the way it does in a real server.
  */
 
 const { dbMock, bridge } = vi.hoisted(() => ({
@@ -24,21 +29,34 @@ const { dbMock, bridge } = vi.hoisted(() => ({
   },
   bridge: {
     getPlayer: vi.fn(),
-    online: new Map<string, number>()
+    online: new Map<string, number>(),
+    install: vi.fn(),
+    synthetic: null as null | {
+      player(src: number): unknown;
+      sourceOf(citizenid: string): number | null;
+    }
   }
 }));
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
+/** The real bridge's order: a connected character first, the door's resolver only on a miss. */
+const sourceOf = (citizenid: string): number | null =>
+  bridge.online.get(citizenid) ?? bridge.synthetic?.sourceOf(citizenid) ?? null;
 vi.mock('../lib/FrameworkBridge', () => ({
+  SYNTHETIC_SOURCE_MAX: -1_000_000,
+  installSyntheticPlayers: (players: typeof bridge.synthetic) => {
+    bridge.install(players);
+    bridge.synthetic = players;
+  },
   FrameworkBridge: {
     getPlayer: bridge.getPlayer,
     getCitizenId: () => null,
     getAllPlayers: () => ({}),
-    getSourceByCitizenId: (citizenid: string) => bridge.online.get(citizenid) ?? null,
+    getSourceByCitizenId: (citizenid: string) => sourceOf(citizenid),
     getSourcesByCitizenId: (citizenids: readonly string[]) => {
       const found = new Map<string, number>();
       for (const citizenid of citizenids) {
-        const src = bridge.online.get(citizenid);
-        if (src !== undefined) found.set(citizenid, src);
+        const src = sourceOf(citizenid);
+        if (src !== null) found.set(citizenid, src);
       }
       return found;
     },
@@ -70,6 +88,8 @@ const load = async (doorConvar: string): Promise<Loaded> => {
   g.GetConvar = (name: string, fallback: string) =>
     name === 'mica_integration' ? doorConvar : fallback;
 
+  bridge.synthetic = null;
+  bridge.install.mockClear();
   vi.resetModules();
   const casino = await import('../services/Casino');
   const appEvents = await import('../lib/appEvents');
@@ -159,8 +179,13 @@ describe('with mica_integration off', () => {
     expect(outcome).toEqual({ delivered: false, reason: 'offline' });
   });
 
+  it('installs no synthetic players into the bridge', () => {
+    expect(bridge.install).not.toHaveBeenCalled();
+    expect(bridge.synthetic).toBeNull();
+  });
+
   it('leaves emitNet as it found it', () => {
-    (globalThis as any).emitNet('mica:client:casino:spin', -1000, 'cb', {});
+    (globalThis as any).emitNet('mica:client:casino:spin', -1_000_000, 'cb', {});
     expect(loaded.emitted).toHaveLength(1);
   });
 
@@ -198,6 +223,21 @@ describe('with mica_integration "1" at start', () => {
       expect(loaded.net.has(event), event).toBe(false);
     }
     expect([...loaded.net.keys()].filter((e) => e.includes(':integration:'))).toEqual([]);
+  });
+
+  it('installs its players into the bridge, answering only its own sources', async () => {
+    const resolver = bridge.synthetic!;
+    expect(resolver).not.toBeNull();
+    const { citizenid, source } = await seed(loaded, 10);
+
+    // At or below the bridge's SYNTHETIC_SOURCE_MAX, which the door writes out as -1,000,000.
+    expect(source).toBeLessThanOrEqual(-1_000_000);
+    expect(resolver.player(source)).toMatchObject({ citizenid, source });
+    expect(resolver.sourceOf(citizenid)).toBe(source);
+    // Nobody the door did not seed, and no source it did not hand out.
+    expect(resolver.player(source - 1)).toBeNull();
+    expect(resolver.player(5)).toBeNull();
+    expect(resolver.sourceOf('itx_never_seeded')).toBeNull();
   });
 
   it('debits and credits the ledger through Casino’s own spin', async () => {
@@ -370,13 +410,75 @@ describe('with mica_integration "1" at start', () => {
     });
   });
 
-  it('drops a handler’s own emitNet to a synthetic source, and passes a real one through', async () => {
-    const { source } = await seed(loaded, 0);
-    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
-    (globalThis as any).emitNet('mica:client:music:stop', source, {});
-    (globalThis as any).emitNet('mica:client:music:stop', 4, {});
-    expect(loaded.emitted).toEqual([['mica:client:music:stop', 4, {}]]);
-    expect(log).toHaveBeenCalledWith(expect.stringContaining('dropped'));
-    log.mockRestore();
+  it('captures an emit to a synthetic source, and passes every other target through', async () => {
+    const { citizenid, source } = await seed(loaded, 0);
+    const emit = (globalThis as any).emitNet as (...args: unknown[]) => unknown;
+
+    emit('mica:client:messages:received', source, { conversation_id: 3, message: 'hi' });
+    emit('mica:client:music:stop', String(source), 'a', 2);
+    emit('mica:client:messages:received', 4, { conversation_id: 3 });
+    emit('mica:client:messages:received', -1, { conversation_id: 3 });
+    // A negative source the door never handed out is not one of its players.
+    emit('mica:client:messages:received', -2_000_000, { conversation_id: 3 });
+
+    expect(loaded.emitted).toEqual([
+      ['mica:client:messages:received', 4, { conversation_id: 3 }],
+      ['mica:client:messages:received', -1, { conversation_id: 3 }],
+      ['mica:client:messages:received', -2_000_000, { conversation_id: 3 }]
+    ]);
+    expect(await drain(loaded, citizenid)).toEqual([
+      {
+        app: 'net',
+        event: 'mica:client:messages:received',
+        payload: { conversation_id: 3, message: 'hi' },
+        at: expect.any(Number),
+        persisted: false
+      },
+      {
+        app: 'net',
+        event: 'mica:client:music:stop',
+        payload: { args: ['a', 2] },
+        at: expect.any(Number),
+        persisted: false
+      }
+    ]);
+  });
+
+  it('takes an app-event push to a synthetic source as the envelope itself', async () => {
+    const { citizenid, source } = await seed(loaded, 0);
+    const outcome = loaded.appEvents.appEventChannel('casino').push(citizenid, 'crash', { n: 1 });
+    // The bridge answered the synthetic source, so the push was emitted, not captured offline.
+    expect(outcome).toEqual({ delivered: true, source });
+    expect(loaded.emitted).toEqual([]);
+    expect(await drain(loaded, citizenid)).toEqual([
+      expect.objectContaining({ app: 'casino', event: 'crash', payload: { n: 1 } })
+    ]);
+  });
+
+  it('refuses to act for a seeded citizen once a real character connects as them', async () => {
+    const { citizenid } = await seed(loaded, 1000);
+    // The positive twin: before the character connects, the action runs.
+    expect((await invoke(loaded, citizenid, 'casino', 'config', {})).result).toHaveProperty(
+      'bet_min'
+    );
+
+    bridge.online.set(citizenid, 21);
+    loaded.casino.__setWheelForTests(() => 17);
+    const { result, bank } = await invoke(loaded, citizenid, 'casino', 'spin', {
+      bets: [{ kind: 'red', amount: 10 }]
+    });
+    expect(result).toEqual({ error: 'citizen_online' });
+    expect(bank).toBe(1000);
+    expect(dbMock.insert).not.toHaveBeenCalledWith(
+      expect.stringContaining('mica_casino_rounds'),
+      expect.anything()
+    );
+  });
+
+  it('re-seeds a synthetic citizen it already knows, keeping the source', async () => {
+    const { citizenid, source } = await seed(loaded, 10);
+    expect(await ask(loaded, 'mica:server:integration:player', citizenid, { bank: 99 })).toEqual([
+      { ok: true, citizenid, source, bank: 99 }
+    ]);
   });
 });

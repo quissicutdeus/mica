@@ -7,15 +7,20 @@ import { addonServiceScenarios } from './addonService';
 import { casinoScenarios } from './casino';
 import { commandScenarios } from './commands';
 import { cryptoScenarios } from './crypto';
+import { darkchatScenarios } from './darkchat';
 import { deviceScenarios } from './devices';
+import { dmsScenarios } from './dms';
 import { esxScenarios } from './esx';
 import { exportScenarios } from './exports';
+import { glimpseScenarios } from './glimpse';
 import { httpScenarios } from './http';
 import { importerScenarios } from './importer';
+import { messagesScenarios } from './messages';
 import { oxmysqlScenarios } from './oxmysql';
 import { qbxScenarios } from './qbx';
 import { retentionScenarios } from './retention';
 import { schemaScenarios } from './schema';
+import { sparkScenarios } from './spark';
 
 /**
  * Every scenario, in the order they run. The order is for reading the console, not for
@@ -40,6 +45,11 @@ export const scenarios: readonly Scenario[] = [
   ...importerScenarios,
   ...httpScenarios,
   ...casinoScenarios,
+  ...messagesScenarios,
+  ...dmsScenarios,
+  ...glimpseScenarios,
+  ...darkchatScenarios,
+  ...sparkScenarios,
   ...qbxScenarios,
   ...esxScenarios
 ];

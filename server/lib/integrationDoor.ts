@@ -22,10 +22,22 @@
  * and it exists only on the harness's servers, which set the convar.
  *
  * What the door adds for a connected client is nothing: the net event and the door run the
- * same `dispatch`, and the door's players are not in `FrameworkBridge`'s registry, so no real
- * source ever resolves to one and no push for a real citizen is ever captured
- * (`appEvents.setPushCapture` is asked only for a citizen no source answers for, and seeding a
- * citizen who is online is refused).
+ * same `dispatch`, and no real source ever resolves to a synthetic player. The door installs
+ * its players into `FrameworkBridge` (`installSyntheticPlayers`), which throws unless the
+ * convar was `1` at start and refuses a second install. The bridge then answers them in two
+ * places only. `getPlayer` asks for a source at or below `SYNTHETIC_SOURCE_MAX` (-1,000,000), so a
+ * connected player's positive source never reaches the resolver. `getSourcesByCitizenId` asks
+ * only for a citizenid its registry and walk missed, so a connected character always answers
+ * with their real source. Seeding a citizen the registry has online is refused, and so is
+ * invoking for a seeded citizen once a real character has connected under that citizenid, so a
+ * synthetic player never acts as a connected character's twin.
+ *
+ * That is what lets a handler that asks the bridge again after an await (Messages' and
+ * PhoneNumbers' MICA-336 guards) run for a synthetic player, and lets a push to one find its
+ * source. Every `emitNet` whose target is a synthetic source is captured into that player's
+ * buffer instead of reaching the native: an app-event push as its own envelope, and any other
+ * event (`mica:client:messages:received`) as `{ app: 'net', event: <name>, payload }`. An emit
+ * to a positive source or to `-1` passes through untouched.
  *
  * ── What it is ────────────────────────────────────────────────────────────────────────────
  *
@@ -37,14 +49,15 @@
  *   the handler — and answers `reply(result, bankAfter)`, where `result` is exactly what
  *   `emitNet` would have carried (`{ error, key }` shapes included), or `null` where the net
  *   path sends nothing.
- * - `mica:server:integration:pushes(citizenid, reply)` answers `reply(envelopes)` with the
- *   app-event envelopes pushed to that synthetic citizen since the last ask, and drains them.
+ * - `mica:server:integration:pushes(citizenid, reply)` answers `reply(envelopes)` with what
+ *   was sent to that synthetic citizen since the last ask, and drains it: app-event envelopes,
+ *   and every other net event to their source as `{ app: 'net', event, payload, at }`.
  */
 
 import { CITIZENID_MAX_LENGTH } from '@mica/shared/framework';
-import type { AppEventEnvelope } from '@mica/shared/appEvents';
+import { APP_EVENT_NET_EVENT, type AppEventEnvelope } from '@mica/shared/appEvents';
 import { dispatcherFor } from './ServiceEndpoint';
-import { FrameworkBridge, type FrameworkPlayer } from './FrameworkBridge';
+import { FrameworkBridge, installSyntheticPlayers, type FrameworkPlayer } from './FrameworkBridge';
 import { setPushCapture } from './appEvents';
 
 /** Envelopes kept per synthetic citizen between two `pushes` asks; the oldest go first. */
@@ -56,9 +69,11 @@ const MAX_PLAYERS = 500;
 /**
  * Synthetic sources count down from here. Never a real server id (FiveM's are positive), never
  * `-1` (`emitNet`'s broadcast target), and refused by every `src > 0` guard in the tree — the
- * registry's `rememberSource`, a call's `notifyParty`.
+ * registry's `rememberSource`, a call's `notifyParty`. It is `FrameworkBridge`'s
+ * `SYNTHETIC_SOURCE_MAX`, the bound at or below which the bridge answers a synthetic player, and
+ * is written out rather than imported because a suite's bridge mock need not carry it.
  */
-const FIRST_SOURCE = -1000;
+const FIRST_SOURCE = -1_000_000;
 
 interface Synthetic {
   player: FrameworkPlayer;
@@ -131,7 +146,10 @@ const seed = (citizenid: unknown, options: unknown, reply: unknown): void => {
     return;
   }
   // A synthetic twin of a connected character would run that character's rows on a fake wallet.
-  if (FrameworkBridge.getSourceByCitizenId(citizenid) !== null) {
+  // The bridge asks its registry before the door's players, so a source that is not one of ours
+  // is a connected character's; one of ours is this citizen seeded before, re-seeded below.
+  const online = FrameworkBridge.getSourceByCitizenId(citizenid);
+  if (online !== null && !citizenBySyntheticSource.has(online)) {
     answer(reply, { ok: false, reason: 'citizen_online' });
     return;
   }
@@ -184,6 +202,15 @@ const invoke = async (
     answer(reply, { error: 'unknown_player' }, null);
     return;
   }
+  /**
+   * A real character who connected as this citizenid after it was seeded. The bridge asks its
+   * registry before the door's players, so a connected twin answers with their own positive
+   * source here, and the action is refused rather than run on their rows with the fake wallet.
+   */
+  if (FrameworkBridge.getSourceByCitizenId(citizenid) !== synthetic.player.source) {
+    answer(reply, { error: 'citizen_online' }, bankAfter());
+    return;
+  }
 
   let result: unknown = null;
   try {
@@ -210,32 +237,60 @@ const drain = (citizenid: unknown, reply: unknown): void => {
   answer(reply, synthetic ? synthetic.pushes.splice(0) : []);
 };
 
+/** Keep one envelope for a synthetic citizen, dropping the oldest past the buffer. */
+const keep = (synthetic: Synthetic, envelope: AppEventEnvelope): void => {
+  synthetic.pushes.push(envelope);
+  if (synthetic.pushes.length > PUSH_BUFFER) synthetic.pushes.shift();
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
 /**
- * Stop anything a handler sends straight to a synthetic source from reaching the native.
- *
- * Most handlers answer through their return value, which the door's `reply` takes, and push
- * through `appEventChannel`, which the capture takes. A few `emitNet` to the caller's source
- * themselves (a call's speaker, a music broadcast). The synthetic source is no connection, and
- * what FXServer does with an id that is no player is not something to leave to chance, so those
- * are dropped here, with one line per event name.
+ * What an emit to a synthetic source is kept as. An app-event push is its own envelope, as the
+ * shell would receive it. Any other net event becomes `{ app: 'net', event: <name>, payload }`, `persisted: false`,
+ * with the payload being its one object argument, or `{ args }` when it sent anything else.
  */
-const guardEmitNet = (): void => {
+const captured = (eventName: string, args: readonly unknown[]): AppEventEnvelope => {
+  const [first] = args;
+  if (eventName === APP_EVENT_NET_EVENT && args.length === 1 && isRecord(first)) {
+    return first as unknown as AppEventEnvelope;
+  }
+  return {
+    app: 'net',
+    event: eventName,
+    payload: args.length === 1 && isRecord(first) ? first : { args: [...args] },
+    at: Date.now(),
+    // A net event writes no notification row; only an app-event push can.
+    persisted: false
+  };
+};
+
+/**
+ * Capture everything a handler sends straight to a synthetic source, instead of letting it reach
+ * the native.
+ *
+ * Since the bridge answers synthetic players (`installSyntheticPlayers`), a push finds their
+ * source like a connected player's: `appEvents` emits the envelope on `APP_EVENT_NET_EVENT`, and
+ * `Messages.deliverToParticipants` emits `mica:client:messages:received`. The synthetic source
+ * is not a connection, and what FXServer does with an id that is no player is not something to
+ * leave to chance, so each such emit goes into that citizen's buffer, where `pushes` reads it.
+ * Only a target that is a synthetic source is taken. A positive source, `-1` (broadcast) and any
+ * other value go to the native exactly as they came.
+ */
+const captureEmitNet = (): void => {
   const native = (globalThis as { emitNet?: unknown }).emitNet;
   if (typeof native !== 'function') return;
-  const reported = new Set<string>();
   (globalThis as { emitNet: unknown }).emitNet = (
     eventName: string,
     target: unknown,
     ...args: unknown[]
   ): unknown => {
-    if (citizenBySyntheticSource.has(Number(target))) {
-      if (!reported.has(eventName)) {
-        reported.add(eventName);
-        console.log(
-          `[mica] integration door: dropped '${eventName}' to synthetic source ${String(target)}; ` +
-            'only replies and app-event pushes are captured.'
-        );
-      }
+    // `Number`, as the native reads it: a source handed over as a string is the same player.
+    const citizenid = citizenBySyntheticSource.get(Number(target));
+    const synthetic = citizenid === undefined ? undefined : players.get(citizenid);
+    if (synthetic) {
+      keep(synthetic, captured(eventName, args));
       return undefined;
     }
     return (native as (...a: unknown[]) => unknown)(eventName, target, ...args);
@@ -243,16 +298,25 @@ const guardEmitNet = (): void => {
 };
 
 if (GetConvar('mica_integration', '') === '1') {
-  guardEmitNet();
+  installSyntheticPlayers({
+    player: (src) => {
+      const citizenid = citizenBySyntheticSource.get(src);
+      return citizenid === undefined ? null : (players.get(citizenid)?.player ?? null);
+    },
+    sourceOf: (citizenid) => players.get(citizenid)?.player.source ?? null
+  });
+  captureEmitNet();
+  /**
+   * A backstop: with the bridge answering synthetic players, `appEvents` finds their source and
+   * emits, which `captureEmitNet` takes. The capture is asked only when no source answers, which
+   * for a seeded citizen is never; it stays so a push is never lost between the two.
+   */
   setPushCapture((citizenid) => {
     const synthetic = players.get(citizenid);
     if (!synthetic) return null;
     return {
       source: synthetic.player.source,
-      deliver: (envelope) => {
-        synthetic.pushes.push(envelope);
-        if (synthetic.pushes.length > PUSH_BUFFER) synthetic.pushes.shift();
-      }
+      deliver: (envelope) => keep(synthetic, envelope)
     };
   });
   on('mica:server:integration:player', seed);

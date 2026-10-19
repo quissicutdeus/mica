@@ -107,3 +107,11 @@ line here.
   phoneStub fresh
 - [A loop through the integration door meets the limiter at 60](door-loops-meet-the-limiter.md)
   — per source and action a minute; steer a draw by the stored point or a convar
+- [A new bridge export read at import breaks other suites' mocks](bridge-mock-lacks-a-new-export.md)
+  — reachability.test mocks FrameworkBridge; read it in a function or write it
+  out
+- [A text's live push is a raw net event](messages-push-is-a-raw-net-event.md) —
+  not appEventChannel; the door buffers it as `app: 'net'`
+- [Negative sources are not one namespace](negative-sources-are-not-one-namespace.md)
+  — `-1` broadcast, Phone's line sources from -2 down, the door's from
+  -1,000,000 down

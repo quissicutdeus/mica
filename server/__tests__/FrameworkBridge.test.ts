@@ -1190,3 +1190,138 @@ describe('FrameworkBridge offline lookups pick a table by framework', () => {
     expect(dbMock.single).not.toHaveBeenCalled();
   });
 });
+
+describe('FrameworkBridge and the integration door’s synthetic players (MICA-397)', () => {
+  type Bridge = typeof import('../lib/FrameworkBridge');
+
+  /** A fresh bridge, read with `mica_integration` as given: the convar is read at its import. */
+  const loadBridge = async (convar: string): Promise<Bridge> => {
+    const g = globalThis as Record<string, unknown>;
+    const saved = g.GetConvar;
+    g.GetConvar = (name: string, fallback: string) =>
+      name === 'mica_integration' ? convar : fallback;
+    try {
+      vi.resetModules();
+      return await import('../lib/FrameworkBridge');
+    } finally {
+      g.GetConvar = saved;
+    }
+  };
+
+  const SYNTHETIC = {
+    citizenid: 'itx_synth',
+    source: -1_000_000,
+    getMoney: () => 0,
+    removeMoney: () => false,
+    addMoney: () => false
+  } as unknown as import('../lib/FrameworkBridge').FrameworkPlayer;
+
+  /** A resolver that answers SYNTHETIC, and claims whatever else a case tells it to. */
+  const resolverFor = (claims: Record<string, number> = {}) => ({
+    player: vi.fn((src: number) => (src === SYNTHETIC.source ? SYNTHETIC : null)),
+    sourceOf: vi.fn((citizenid: string) =>
+      citizenid === SYNTHETIC.citizenid ? SYNTHETIC.source : (claims[citizenid] ?? null)
+    )
+  });
+
+  /** A qbx core with CIT_A connected on source 5. */
+  const connected = (fresh: Bridge) =>
+    fresh.__setResourceLookup(
+      (name) =>
+        (
+          ({
+            qbx_core: {
+              GetPlayer: (src: number) =>
+                src === 5 ? { PlayerData: { citizenid: 'CIT_A' } } : null,
+              GetQBPlayers: () => ({ 5: { PlayerData: { citizenid: 'CIT_A' } } })
+            }
+          }) as Record<string, any>
+        )[name]
+    );
+
+  it('refuses an install when mica_integration was not 1 at start', async () => {
+    for (const value of ['', '0', 'true', ' 1']) {
+      const fresh = await loadBridge(value);
+      const resolver = resolverFor();
+      expect(() => fresh.installSyntheticPlayers(resolver), value).toThrow(/mica_integration/);
+      expect(fresh.FrameworkBridge.getPlayer(-1_000_000)).toBeNull();
+      expect(fresh.FrameworkBridge.getSourceByCitizenId(SYNTHETIC.citizenid)).toBeNull();
+      expect(resolver.player).not.toHaveBeenCalled();
+      expect(resolver.sourceOf).not.toHaveBeenCalled();
+    }
+  });
+
+  it('bounds synthetic sources at -1,000,000, the door’s first source', async () => {
+    expect((await loadBridge('1')).SYNTHETIC_SOURCE_MAX).toBe(-1_000_000);
+  });
+
+  it('refuses a second install, and keeps the first', async () => {
+    const fresh = await loadBridge('1');
+    fresh.installSyntheticPlayers(resolverFor());
+    const second = resolverFor();
+    expect(() => fresh.installSyntheticPlayers(second)).toThrow(/already installed/);
+    expect(fresh.FrameworkBridge.getPlayer(-1_000_000)).toBe(SYNTHETIC);
+    expect(second.player).not.toHaveBeenCalled();
+  });
+
+  it('asks the resolver for a source at or below -1,000,000, and never above it', async () => {
+    const fresh = await loadBridge('1');
+    connected(fresh);
+    const resolver = resolverFor();
+    fresh.installSyntheticPlayers(resolver);
+
+    expect(fresh.FrameworkBridge.getPlayer(-1_000_000)?.citizenid).toBe('itx_synth');
+    expect(fresh.FrameworkBridge.getPlayer(5)?.citizenid).toBe('CIT_A');
+    expect(fresh.FrameworkBridge.getPlayer(6)).toBeNull();
+    expect(fresh.FrameworkBridge.getPlayer(-1)).toBeNull();
+    expect(fresh.FrameworkBridge.getPlayer(-999_999)).toBeNull();
+    // A line call's pseudo-source (`Phone.ts`, from -2 down) is never asked about.
+    expect(fresh.FrameworkBridge.getPlayer(-1000)).toBeNull();
+    expect(resolver.player.mock.calls).toEqual([[-1_000_000]]);
+    fresh.__setResourceLookup();
+  });
+
+  it('refuses a resolver answer whose source is not the one asked about', async () => {
+    const fresh = await loadBridge('1');
+    fresh.installSyntheticPlayers({
+      player: () => ({ ...SYNTHETIC, source: 5 }),
+      sourceOf: () => null
+    });
+    expect(fresh.FrameworkBridge.getPlayer(-1_000_001)).toBeNull();
+  });
+
+  it('answers a connected character from the registry, and the resolver only on a miss', async () => {
+    const fresh = await loadBridge('1');
+    connected(fresh);
+    // A resolver that claims the connected character too must never be believed for them.
+    const resolver = resolverFor({ CIT_A: -1_000_005 });
+    fresh.installSyntheticPlayers(resolver);
+
+    expect(fresh.FrameworkBridge.getSourceByCitizenId('CIT_A')).toBe(5);
+    expect(resolver.sourceOf).not.toHaveBeenCalledWith('CIT_A');
+
+    const sources = fresh.FrameworkBridge.getSourcesByCitizenId([
+      'CIT_A',
+      SYNTHETIC.citizenid,
+      'CIT_NOBODY'
+    ]);
+    expect([...sources]).toEqual([
+      ['CIT_A', 5],
+      [SYNTHETIC.citizenid, -1_000_000]
+    ]);
+    expect(resolver.sourceOf).not.toHaveBeenCalledWith('CIT_A');
+    expect(fresh.FrameworkBridge.getSourceByCitizenId(SYNTHETIC.citizenid)).toBe(-1_000_000);
+    fresh.__setResourceLookup();
+  });
+
+  it('never answers a positive source from the resolver, whatever it claims', async () => {
+    const fresh = await loadBridge('1');
+    fresh.installSyntheticPlayers(
+      resolverFor({ CIT_CLAIMED: 7, CIT_BROADCAST: -1, CIT_LINE: -1000 })
+    );
+    // A line call's pseudo-source, above the bound, is not a synthetic player's either.
+    expect(fresh.FrameworkBridge.getSourceByCitizenId('CIT_LINE')).toBeNull();
+    expect(fresh.FrameworkBridge.getSourceByCitizenId('CIT_CLAIMED')).toBeNull();
+    expect(fresh.FrameworkBridge.getSourceByCitizenId('CIT_BROADCAST')).toBeNull();
+  });
+});

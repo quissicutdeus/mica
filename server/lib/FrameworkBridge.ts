@@ -360,6 +360,79 @@ dropOn(CORE_RESOURCES, [], () => {
 
 const reseedDue = (): boolean => reseedDirty || Date.now() - lastReseedAt >= RESEED_INTERVAL_MS;
 
+/* ──────────────────────────────────────────────────────────────────────────────
+ * The integration door's synthetic players (MICA-397)
+ * ────────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * The highest source a synthetic player can have. The door counts down from here. FiveM's
+ * server ids are positive, and `-1` is `emitNet`'s broadcast target, so no connected player and
+ * no broadcast is ever at or below it.
+ *
+ * **The other negative sources in the tree must never reach it.** `services/Phone.ts` counts a
+ * line call's far end down from `-2`, one per call and with no floor, and `getCitizenId` on that
+ * pseudo-source must keep answering null. A bound at `-1000` was reached after 998 line calls in
+ * one process. At a million it is out of reach in practice, and the door's harness is the only
+ * server that installs synthetic players at all.
+ */
+export const SYNTHETIC_SOURCE_MAX = -1_000_000;
+
+/** What the door hands the bridge: its own players, by synthetic source and by citizenid. */
+export interface SyntheticPlayers {
+  /** The synthetic player on `src`, or null. Asked only for `src <= SYNTHETIC_SOURCE_MAX`. */
+  player(src: number): FrameworkPlayer | null;
+  /** The synthetic source of a citizen the door seeded, or null. Asked only on a registry miss. */
+  sourceOf(citizenid: string): number | null;
+}
+
+/**
+ * Read once, at module load — resource start — exactly as `lib/integrationDoor.ts` reads it, so
+ * nothing can install synthetic players on a server that did not start with the door open.
+ */
+const integrationAtStart = GetConvar('mica_integration', '') === '1';
+
+let synthetic: SyntheticPlayers | null = null;
+
+/**
+ * Let the integration door's players answer `getPlayer` and `getSourcesByCitizenId`, so a
+ * handler that asks the bridge who a source is again after an await, as Messages' and
+ * PhoneNumbers' MICA-336 guards do, gets an answer for a synthetic player too. Without this
+ * those services could never be driven through the door.
+ *
+ * Two limits make this safe, and each holds on every call. `getPlayer` asks the resolver only
+ * for a source at or below `SYNTHETIC_SOURCE_MAX`, so a connected player's positive source is
+ * never answered by it. `getSourcesByCitizenId` asks it only for a citizenid that the registry,
+ * and the walk behind it, did not find, so a connected character always answers with their real
+ * source. Throws when `mica_integration` was not `1` at start, and on a second install, so there
+ * is one resolver per process and only on a harness server.
+ */
+export const installSyntheticPlayers = (players: SyntheticPlayers): void => {
+  if (!integrationAtStart) {
+    throw new Error(
+      '[FrameworkBridge] synthetic players can be installed only when mica_integration was 1 ' +
+        'at resource start.'
+    );
+  }
+  if (synthetic) {
+    throw new Error('[FrameworkBridge] synthetic players are already installed.');
+  }
+  synthetic = players;
+};
+
+/** The synthetic player on `src`, or null; never asked for a source above the bound. */
+const syntheticPlayer = (src: number): FrameworkPlayer | null => {
+  if (!synthetic || !(src <= SYNTHETIC_SOURCE_MAX)) return null;
+  const player = synthetic.player(src);
+  return player && player.source === src ? player : null;
+};
+
+/** The synthetic source of `citizenid`, or null; never a source above the bound. */
+const syntheticSourceOf = (citizenid: string): number | null => {
+  if (!synthetic) return null;
+  const src = synthetic.sourceOf(citizenid);
+  return typeof src === 'number' && src <= SYNTHETIC_SOURCE_MAX ? src : null;
+};
+
 export class FrameworkBridge {
   /**
    * Where this server keeps the characters micaOS's rows belong to — or `null`.
@@ -452,6 +525,8 @@ export class FrameworkBridge {
 
   public static getPlayer(src: number): FrameworkPlayer | null {
     try {
+      // The door's players, on their own sources only; see `installSyntheticPlayers`.
+      if (synthetic && src <= SYNTHETIC_SOURCE_MAX) return syntheticPlayer(src);
       return servingGetPlayer()?.getPlayer(src) ?? null;
     } catch (error) {
       console.error('[FrameworkBridge] Error getting player:', error);
@@ -666,6 +741,19 @@ export class FrameworkBridge {
       }
     } catch (error) {
       console.error('[FrameworkBridge] Error resolving sources:', error);
+    }
+
+    // The door's players, only for citizenids the registry and its walk did not find.
+    if (synthetic && found.size < wanted.size) {
+      try {
+        for (const citizenid of wanted) {
+          if (found.has(citizenid)) continue;
+          const src = syntheticSourceOf(citizenid);
+          if (src !== null) found.set(citizenid, src);
+        }
+      } catch (error) {
+        console.error('[FrameworkBridge] Error resolving synthetic sources:', error);
+      }
     }
     return found;
   }

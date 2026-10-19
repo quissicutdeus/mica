@@ -461,11 +461,28 @@ and FXServer refuses a client's `TriggerServerEvent` for an event that was not
 registered as a net event; there is no export and no NUI route; the convar is
 read once at start, so a live `set` opens nothing; and with the convar unset the
 module registers nothing at all, which
-`server/__tests__/integrationDoor.test.ts` and `reachability.test.ts` hold. The
-synthetic player never enters `FrameworkBridge`'s source table, so no real
-action can resolve to it. A server owner has one rule to keep: do not set
-`mica_integration` on a server players join. It is in the README's convar table
-with exactly that warning.
+`server/__tests__/integrationDoor.test.ts` and `reachability.test.ts` hold.
+
+The synthetic players do answer `FrameworkBridge`, within two bounds that hold
+on every call (`installSyntheticPlayers`, `server/lib/FrameworkBridge.ts`).
+`getPlayer` consults them only for a source at or below `SYNTHETIC_SOURCE_MAX`
+(`-1000000`); FiveM's server ids are positive, `-1` is the broadcast target, and
+the Phone's line pseudo-sources count down from `-2` by one per call, so no
+connected player's source and no line ever reaches them. `getSourcesByCitizenId`
+consults them only for a citizenid the registry and its walk did not find, so a
+connected character always answers with their real source — and a citizen the
+registry has online is refused both at seed and on every `invoke`, so a
+synthetic player is never a connected character's twin. The install itself
+throws unless the convar was `1` at start, and on a second install.
+`server/__tests__/FrameworkBridge.test.ts` holds each bound. That is what lets a
+handler that asks the bridge again after an await (the MICA-336 guards in
+Messages and PhoneNumbers) run for a synthetic player, and what lets the door
+capture every `emitNet` aimed at a synthetic source — app-event pushes and raw
+events alike — while an emit to a positive source or to `-1` passes through
+untouched.
+
+A server owner has one rule to keep: do not set `mica_integration` on a server
+players join. It is in the README's convar table with exactly that warning.
 
 ---
 
