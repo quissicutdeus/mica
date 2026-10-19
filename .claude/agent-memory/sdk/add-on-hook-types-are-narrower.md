@@ -1,6 +1,6 @@
 # Add-on hook types are narrower than Facets
 
-Since contract v2 (2026-10-19), `addon.ts` re-types ten hooks through
+Since 2026-10-19, `addon.ts` re-types ten hooks through
 `sdk/host/iframe/addOnHooks.ts`. They return their facet minus `CoreOnlyMember`,
 so `useKeybindsWrite().setBinding` no longer compiles in an add-on. Before, it
 compiled and the shell refused it as "core only" at run time. Traps found while

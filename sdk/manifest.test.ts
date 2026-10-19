@@ -581,8 +581,8 @@ describe('defineApp: widget (MICA-245)', () => {
 });
 
 /**
- * Contract v2. A permission whose every facet member is refused to a sandboxed frame would
- * put a line on the Store's permission sheet that grants nothing.
+ * A permission whose every facet member is refused to a sandboxed frame would put a line on
+ * the Store's permission sheet that grants nothing.
  */
 describe('defineApp: permissions an add-on cannot use', () => {
   const addOn = { color: 'bg-green-600', icon: null, core: false } as const;

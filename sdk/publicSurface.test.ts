@@ -160,7 +160,7 @@ import { SDK_CONTRACT_VERSION } from './version';
  * is where it went, for the reasons written there — briefly, `MICA_VERSION` is a CalVer
  * build stamp that moves on every push, and `package.json`'s `1.0.0` is read by no code.
  */
-const BASELINE_VERSION = '2';
+const BASELINE_VERSION = '1';
 
 const SDK_DIR = __dirname;
 
@@ -955,8 +955,9 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'makeThumbnail',
     'messageOf',
     'onAppForeground',
-    // v2 took `onAppMount`, `hydrateSettings`, `registerPersistedReset` and
-    // `registerPersistedRehydrate` off both barrels — see the add-on bundle's list below.
+    // `onAppMount`, `hydrateSettings`, `registerPersistedReset` and
+    // `registerPersistedRehydrate` were taken off both barrels on 2026-10-19, in the add-on
+    // boundary wave — see the add-on bundle's list below.
     'onAppUnmount',
     'pendingReportCount',
     'placeholderAvatar',
@@ -965,9 +966,9 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'releaseCanvas',
     'renderMarkdown',
     // `setRemoteCatalogUrl` and `setTrustedRemoteAppHosts` stood here and were taken off on
-    // purpose, without a `SDK_CONTRACT_VERSION` bump — the one removal this list has seen
-    // that its own rule does not cover. This key is `index.ts`, which the package publishes
-    // under no subpath (`UNPUBLISHED_BY_DESIGN`), so nothing outside this tree compiled
+    // purpose, without a `SDK_CONTRACT_VERSION` bump, and on a different ground from the
+    // four above. This key is `index.ts`, which the package publishes under no subpath
+    // (`UNPUBLISHED_BY_DESIGN`), so nothing outside this tree compiled
     // against it; and the two were never on `addon.ts`, the barrel an add-on did compile
     // against. They let any in-process app rewrite the phone's trusted add-on hosts and its
     // Store catalog. `NEVER_EXPORTED` below is what keeps them off.
@@ -1196,9 +1197,10 @@ const BASELINE_EXPORTS: Record<string, string[]> = {
     'makeThumbnail',
     'messageOf',
     'onAppForeground',
-    // v2 removed four names here, which is why the contract moved. `onAppMount` ran its
-    // handler once per session under an app that stays mounted, and synchronously when called
-    // outside a component; `onAppForeground` is the hook that does what it promised.
+    // Four names were removed here on 2026-10-19 in the add-on boundary wave, and the
+    // contract stayed at 1 because SDK 1 is unreleased. `onAppMount` ran its handler once per
+    // session under an app that stays mounted, and synchronously when called outside a
+    // component; `onAppForeground` is the hook that does what it promised.
     // `hydrateSettings`, `registerPersistedReset` and `registerPersistedRehydrate` are the
     // shell's settings plumbing, reached through no permission; the shell imports them by
     // path from `host/seam/`. `NEVER_EXPORTED` keeps those three off.
@@ -2072,11 +2074,12 @@ const BASELINE_HOOK_RETURNS: Record<string, string[]> = {
 };
 
 /**
- * Contract v2: the members the **add-on** barrel's hooks leave out of what `index.ts`'s
- * return, keyed by hook.
+ * The members the **add-on** barrel's hooks leave out of what `index.ts`'s return, keyed
+ * by hook. They were taken off the add-on types on 2026-10-19 in the add-on boundary wave,
+ * and the contract stayed at 1 because SDK 1 is unreleased.
  *
  * `addon.ts` re-types ten hooks (`host/iframe/addOnHooks.ts`) so that a member the shell
- * refuses a sandboxed frame as "core only" no longer type-checks in an add-on: before v2,
+ * refuses a sandboxed frame as "core only" no longer type-checks in an add-on: before that,
  * `useKeybindsWrite().setBinding` compiled in a `core: false` bundle and failed at run time.
  * Each list here is exactly that hook's `CoreOnlyMember` set from `sdk/permissions.ts`.
  *
@@ -2930,7 +2933,7 @@ const SHELL_ONLY_BY_DESIGN = [
  * load. An app able to call it could blank every other app's list at will; the shell
  * imports it by path from `characterStores.ts`.
  *
- * `hydrateSettings`, `registerPersistedReset` and `registerPersistedRehydrate` (contract v2)
+ * `hydrateSettings`, `registerPersistedReset` and `registerPersistedRehydrate` (2026-10-19)
  * are the shell's settings plumbing: re-read every saved setting, or register a callback the
  * shell runs on every live persisted store when an app is cleared or a character loads. They
  * were on both barrels with no permission behind them, through a re-export in `useStorage.ts`.
@@ -2950,8 +2953,8 @@ const ADD_ON_ONLY_BY_DESIGN = ['bootAddOn'];
 
 /**
  * Named on `addon.ts` and reaching `index.ts` only through its `export *`: the ten hooks
- * `addon.ts` re-types for an add-on (contract v2). Same names and the same functions on both
- * barrels; what differs is what they return, which `ADD_ON_HOOK_OMISSIONS` freezes.
+ * `addon.ts` re-types for an add-on (since 2026-10-19). Same names and the same functions on
+ * both barrels; what differs is what they return, which `ADD_ON_HOOK_OMISSIONS` freezes.
  */
 const RETYPED_FOR_ADD_ONS = Object.keys(ADD_ON_HOOK_OMISSIONS);
 
@@ -3371,9 +3374,9 @@ describe('the SDK public surface (MICA-125)', () => {
   });
 
   /**
-   * Contract v2. The arm above reads hooks off `index.ts`, which a core app builds against;
-   * `addon.ts` now types ten of them narrower, so what an add-on compiled against is read
-   * off the add-on barrel here. Its baseline is `BASELINE_HOOK_RETURNS` minus
+   * The arm above reads hooks off `index.ts`, which a core app builds against; `addon.ts`
+   * now types ten of them narrower, so what an add-on compiled against is read off the add-on
+   * barrel here. Its baseline is `BASELINE_HOOK_RETURNS` minus
    * `ADD_ON_HOOK_OMISSIONS`, and the second half holds the omissions to the live checker, so
    * the add-on surface is exactly the frozen one minus the list and cannot drift in silence.
    */
@@ -3982,7 +3985,7 @@ describe('the SDK public surface (MICA-125)', () => {
       // since both barrels re-export the same `host/index.ts` and the parity block above
       // already keeps the two name lists together. `index.ts` is the superset, so scoping
       // to it covers `addon.ts` and costs nothing extra — except for the ten hooks `addon.ts`
-      // re-types narrower (contract v2), which `breaks no add-on through the hooks its own
+      // re-types narrower (since 2026-10-19), which `breaks no add-on through the hooks its own
       // barrel types` reads off the add-on barrel itself.
       const addonHooks = Object.keys(typedNow['@mica/sdk (add-on bundle)'].hooks);
       expect(addonHooks.length).toBeGreaterThan(0);

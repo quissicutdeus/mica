@@ -1672,19 +1672,18 @@ somebody maintaining a `core: false` add-on outside this repo, and it answers
 one question: does that bundle still compile against this release, and does its
 manifest still ask for the right things.
 
-**The contract moves to `v2`: four names leave the `.` entry.** `onAppMount` is
-gone. It ran a handler when the component mounted, which is what the app rules
-say never to do — apps are resident and mount once per session — so load with
-`onAppForeground` instead. `hydrateSettings`, `registerPersistedReset` and
-`registerPersistedRehydrate` were the shell's own persistence plumbing, exported
-with no permission behind them and never meant for an add-on; the shell now
-reaches them by path and they are no longer on `@mica/sdk`.
-`SDK_CONTRACT_VERSION` is `2`. A bundle that imported none of the four compiles
-unchanged. The public catalog a stock server's Store reads moves with the
-number, to `addons/sdk-2/catalog.json`; the same deploy rebuilds the site, so a
-server still running micaOS at contract `1` shows an empty Store until it
-updates. A saved add-on stamped `sdkContract: '1'` is refused at install and
-dropped at start-up with a warning; rebuild and republish it against `2`.
+**Four names leave the `.` entry, and `SDK_CONTRACT_VERSION` stays `1`.**
+`onAppMount` is gone. It ran a handler when the component mounted, which is what
+the app rules say never to do — apps are resident and mount once per session —
+so load with `onAppForeground` instead. `hydrateSettings`,
+`registerPersistedReset` and `registerPersistedRehydrate` were the shell's own
+persistence plumbing, exported with no permission behind them and never meant
+for an add-on; the shell now reaches them by path and they are no longer on
+`@mica/sdk`. A removal would normally move the contract number, and for one
+afternoon it did; SDK 1 has not been released and nothing outside this repo
+consumes it, so the number stays `1`, the public catalog stays at
+`addons/sdk-1/catalog.json`, and no stamped add-on is refused. A bundle that
+imported none of the four compiles unchanged.
 
 **Five writes leave the add-on rows of `mail`, `messages` and
 `lockScreenWrite`.** `addReceivedMail` and `addReceivedMessage` wrote the
@@ -1749,7 +1748,7 @@ runtime. Core apps keep the full types. A `core: false` manifest declaring
 build and at install, and a saved remote add-on that declares one is dropped at
 start-up with a warning. The template's permission scan says such a hook "is
 core only" and to stop importing it, where it used to ask you to declare the
-permission. All of this is under the same `v2`.
+permission. The contract number does not move, for the reason given above.
 
 **An add-on's id is `lower_snake_case`, and twenty-one ids are reserved.**
 `defineApp` refuses a `core: false` manifest, remote included, whose id is not

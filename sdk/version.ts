@@ -71,7 +71,7 @@
  * manifest surface that needs deciding on its own. This is a number an add-on author can
  * read and act on; it is not a number the shell enforces.
  */
-export const SDK_CONTRACT_VERSION: string = '2';
+export const SDK_CONTRACT_VERSION: string = '1';
 
 /**
  * The running phone's CalVer build stamp — `YYYY.MM.DD.N` — or the empty string when the

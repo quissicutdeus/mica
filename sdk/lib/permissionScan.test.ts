@@ -219,8 +219,8 @@ describe('permissionShortfall', () => {
   });
 
   /**
-   * Contract v2. Both add-on builds call this with three arguments, so an add-on is the
-   * default: the scan must never tell one to declare a permission `defineApp` then refuses.
+   * Both add-on builds call this with three arguments, so an add-on is the default: the scan
+   * must never tell one to declare a permission `defineApp` then refuses.
    */
   it('never tells an add-on to declare a permission only a core app can hold', () => {
     const coreOnly = [{ hook: 'useKeybindsWrite', permission: 'keybinds-write', coreOnly: true }];

@@ -5,7 +5,7 @@
 /**
  * `hydrateSettings`, and the one-slot seam behind it.
  *
- * Shell-only plumbing since contract v2: no barrel re-exports it, the shell imports it by
+ * Shell-only plumbing since 2026-10-19: no barrel re-exports it, the shell imports it by
  * path from this file, and `NEVER_EXPORTED` in `publicSurface.test.ts` holds it out.
  *
  * MICA-176. `hydrateSettings` only ever *does* anything in the shell: it copies this

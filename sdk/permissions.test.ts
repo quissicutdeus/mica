@@ -683,17 +683,17 @@ describe('an add-on naming a core-only write is refused at the shell', () => {
 });
 
 /**
- * Contract v2: what an add-on can name, it can call.
+ * What an add-on can name, it can call.
  *
- * `Facets` is one type for both sides, so before v2 every hook handed an add-on its facet's
- * whole shape, and twenty-nine members type-checked in a `core: false` bundle only to be
+ * `Facets` is one type for both sides, so before 2026-10-19 every hook handed an add-on its
+ * facet's whole shape, and twenty-nine members type-checked in a `core: false` bundle only to be
  * refused at run time as "core only" (thirty-four once the rows above were narrowed). The
  * add-on barrel now re-types the hooks behind them (`host/iframe/addOnHooks.ts`), and
  * `defineApp` refuses a permission with nothing behind it. This block holds the three
  * tables those read from — `FACET_MEMBERS`, `ANSWERED_IN_FRAME`, and the derived
  * `CoreOnlyMember` — to the twins and to each other.
  */
-describe('an add-on can name only what the shell will answer (contract v2)', () => {
+describe('an add-on can name only what the shell will answer', () => {
   const TWINS = join(__dirname, 'host', 'iframe', 'facets');
   type Equal<A, B> =
     (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;

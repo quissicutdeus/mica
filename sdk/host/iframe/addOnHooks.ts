@@ -9,7 +9,7 @@
  * `Facets` is one type for both sides, and every hook in `host/` returns its facet's whole
  * shape. So `useKeybindsWrite().setBinding` type-checked in an add-on and was refused at
  * run time as "core only", and twenty-nine members across seven facets read that way before
- * contract v2 (thirty-four with `lockScreenWrite` emptied and the two inbox landings taken
+ * 2026-10-19 (thirty-four with `lockScreenWrite` emptied and the two inbox landings taken
  * off `mail` and `messages`). Each export here is the very same function as the core hook,
  * re-typed to return what the shell will actually answer: the hook's own return type minus
  * `CoreOnlyMember` of its facet. `addon.ts` names these after `export * from

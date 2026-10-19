@@ -1,8 +1,10 @@
 # A contract bump has runtime reach
 
 Bumping `SDK_CONTRACT_VERSION` (`sdk/version.ts`) moves more than a number in a
-doc. Found on the v2 bump (2026-10-19): `onAppMount` and the three settings
-plumbing functions left the surface.
+doc. Found on the bump to `'2'` (2026-10-19): `onAppMount` and the three
+settings plumbing functions left the surface. That bump was flattened back to
+`'1'` the same day, because SDK 1 was unreleased and nothing outside this repo
+consumed it, so this note records the mechanism, not a live version.
 
 - **The shell refuses the old stamp.** `assertContractSupported` in
   `web/src/shell/state/registry.ts` (install) and the `hello` check in
