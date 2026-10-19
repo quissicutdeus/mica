@@ -46,3 +46,23 @@ provenance model inside a phone resource would duplicate what an economy script
 owns. Hodlr is a market to gamble on; the framing is set dressing, and that is
 the end of it. If a framework ever exposes a clean/dirty split through
 `FrameworkBridge`, the question can be reopened under a new key.
+
+## Casino: the house edge is ordinary casino math, fixed per game
+
+_2026-10-18, MICA-82._
+
+The Casino add-on ships two games. Roulette is a single-zero European wheel with
+the standard payouts (35:1 straight, 2:1 dozen and column, 1:1 the rest), so its
+edge is the 2.70% the zero gives and is not configurable. Crash takes
+`mica_casino_crash_edge_pct` (default 3) and applies it the way every public
+crash game does: the crash point is drawn so that the chance of reaching any
+multiplier `x` is `(1 − edge) / x`, and the round busts at 1.00 with probability
+`edge`.
+
+Both outcomes are drawn on the server from `crypto` before the player acts, and
+neither reads anything about the player: not their balance, not their history,
+not who they are. That is the point of writing the math down. An operator can
+set the edge and the bet limits and nothing else, so what the owner's players
+are told — a fair wheel and a fair curve with a stated edge — is what the code
+does. Stakes and payouts move through `FrameworkBridge` like every other money
+path, and a server with no framework hides the app, as it hides Hodlr.

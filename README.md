@@ -133,6 +133,15 @@ decision, recorded in [`docs/decisions.md`](docs/decisions.md).
   chart, and buy/sell settling against the player's bank balance. Both trades
   are atomic conditional SQL, so two concurrent taps cannot double-spend or lose
   an update.
+- **Casino** _(add-on)_: Two games for bank cash. European roulette — a
+  single-zero board with straight, dozen, column and even-money bets, standard
+  payouts, every bet on the board settled in one spin — and Crash, where a
+  multiplier climbs from 1.00 and the player cashes out before it busts at a
+  point the server drew before the round began. Outcomes come from the server's
+  `crypto`, read nothing about the player, and every round is kept in the
+  player's history. Bet limits and Crash's house edge are convars
+  (`mica_casino_bet_min`, `mica_casino_bet_max`, `mica_casino_crash_edge_pct`);
+  roulette's edge is the zero. Hidden on a server with no framework, like Hodlr.
 - **Snek** _(add-on)_: The phone's game, with a leaderboard on the shared
   `highscores` service.
 - **Store Application**: Built-in app marketplace to browse, install, and manage
@@ -783,6 +792,9 @@ set mica_default_frame "classic"
 set mica_bank_transfer_max 50000
 set mica_hodlr_trade_max 50000
 set mica_hodlr_spread_pct 2
+set mica_casino_bet_min 10
+set mica_casino_bet_max 5000
+set mica_casino_crash_edge_pct 3
 set mica_emergency_number "911"
 set mica_max_accounts_per_app 3
 set mica_bluetooth_range 15
@@ -847,6 +859,9 @@ set mica_location_interval 5
 | `mica_invoice_expiry_days`         | integer                                                 | `7`                                 | Days an unpaid invoice stays payable before it lapses                                                                                 |
 | `mica_hodlr_trade_max`             | integer                                                 | `50000`                             | Ceiling on what one Hodlr buy or sell is worth                                                                                        |
 | `mica_hodlr_spread_pct`            | number, percent                                         | `2`                                 | Gap between Hodlr's buy and sell quotes, around mid                                                                                   |
+| `mica_casino_bet_min`              | integer                                                 | `10`                                | Smallest single roulette bet or Crash stake                                                                                           |
+| `mica_casino_bet_max`              | integer                                                 | `5000`                              | Most one roulette spin (all bets together) or one Crash stake may be worth                                                            |
+| `mica_casino_crash_edge_pct`       | number, percent, 0–20                                   | `3`                                 | The house edge on Crash; roulette's is the single zero and has no setting                                                             |
 | `mica_emergency_number`            | phone number                                            | `911`                               | Always connects, regardless of any block                                                                                              |
 | `mica_max_accounts_per_app`        | integer                                                 | `3`                                 | Identities one player may hold in one social app                                                                                      |
 | `mica_bluetooth_range`             | integer, meters                                         | `15`                                | How far a proximity share reaches                                                                                                     |
@@ -1003,6 +1018,20 @@ the convar is invisible until the resource restarts.
   accepted and means exactly what it says: no spread, Hodlr trades at a single
   flat price the way it always has. Only a negative or non-numeric value falls
   back to the default of `2`.
+- **`mica_casino_bet_min`** and **`mica_casino_bet_max`** — the floor on one
+  roulette bet or Crash stake, and the ceiling on what one spin (every bet on
+  the board together) or one Crash stake may be worth. The ceiling is the
+  Casino's version of `mica_hodlr_trade_max`: a modified client can emit
+  `mica:server:casino:crashStart` with any stake, and this bounds what one
+  request can lose — or, at Crash's 1000× cap, win. Per round, not per session;
+  the rate limit bounds how many rounds a player starts. A non-numeric or
+  non-positive value falls back to the default.
+- **`mica_casino_crash_edge_pct`** — the house edge on Crash, in percent. The
+  crash point is drawn so that the chance of reaching any multiplier `x` is
+  `(1 − edge) / x`, and a round busts at 1.00 with probability `edge`, which is
+  the ordinary public crash-game formula; `docs/decisions.md` has why that is
+  written down. Roulette has no edge setting: its single zero is the edge, as on
+  any European wheel. Clamped to 0–20; a non-numeric value falls back to 3.
 - **`mica_emergency_number`** — the one number a block can never reach.
   `Phone.ts` skips the blocklist check entirely for a call dialing this number,
   so a player who has blocked someone (or been blocked) can still place, and

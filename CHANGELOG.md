@@ -79,6 +79,19 @@ The change is additive, needs no migration and adds no convar: a pass comes back
 after 14 days, which is a constant. A Spark account is one per character and
 unlisted, so it never appears in search, follows or the public account read.
 
+**Run `micaschema apply` to create the Casino's table (MICA-82).** Casino is a
+new add-on, installed from the Store, with two games: European roulette and
+Crash. Stakes and payouts are the player's bank cash through the framework, so
+the app hides itself on a server with no framework, as Hodlr does. Every round
+is recorded in one new table, `mica_casino_rounds`; the change is additive and
+needs no migration. Three new convars, each read per call: `mica_casino_bet_min`
+(whole cash, default 10), `mica_casino_bet_max` (whole cash, default 5000, the
+most one spin or one Crash stake may be worth) and `mica_casino_crash_edge_pct`
+(percent, default 3, clamped to 0–20). Roulette's edge is the single zero and is
+not a setting. The math is written down in `docs/decisions.md`; a Crash round
+whose server restarts before it settles is lost, stake included, and
+`docs/security.md` says what else is accepted.
+
 **If you imported from qb-phone and set a content key, run
 `micacrypt backfill --apply` and then `micaimport qb-phone --apply` once while
 the qb-phone tables still exist: the import ledger stops holding message bodies

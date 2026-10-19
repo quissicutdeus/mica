@@ -7,6 +7,7 @@ import './Battery';
 import './Blabber';
 import './Blocklist';
 import './Capabilities';
+import './Casino';
 import './Contacts';
 import './ContentKeys';
 import './Conversations';

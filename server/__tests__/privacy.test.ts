@@ -321,6 +321,27 @@ const EXPORTED_COLUMNS: Record<string, { plain: string[]; sized: string[]; withh
     sized: [],
     withheld: []
   },
+  // MICA-82. Every plain column is the player's own record of a round they staked: the game,
+  // what they staked and were paid, the cash-out multiplier, and `result` (their roulette bets
+  // and the number, or a Crash round's start time). `crash_point` is the hidden outcome while a
+  // round is in play, so it is player data only once settled: Casino's export filter keeps
+  // `active` rows out entirely. `active_crash` is the citizenid again while a round is live.
+  mica_casino_rounds: {
+    plain: [
+      'id',
+      'status',
+      'created_at',
+      'updated_at',
+      'game',
+      'stake',
+      'payout',
+      'multiplier',
+      'crash_point',
+      'result'
+    ],
+    sized: [],
+    withheld: ['active_crash']
+  },
   mica_glimpse_comments: {
     plain: ['id', 'status', 'created_at', 'updated_at', 'account_id', 'post_id', 'body'],
     sized: [],

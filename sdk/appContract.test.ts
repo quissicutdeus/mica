@@ -22,6 +22,7 @@ import Bank from '../web/src/apps/bank/index.svelte';
 import Blabber from '../web/src/apps/blabber/index.svelte';
 import Calculator from '../web/src/apps/calculator/index.svelte';
 import Camera from '../web/src/apps/camera/index.svelte';
+import Casino from '../web/src/apps/casino/index.svelte';
 import Contacts from '../web/src/apps/contacts/index.svelte';
 import Darkchat from '../web/src/apps/darkchat/index.svelte';
 import Glimpse from '../web/src/apps/glimpse/index.svelte';
@@ -64,6 +65,7 @@ const APPS: Record<string, AppComponent> = {
   blabber: Blabber,
   calculator: Calculator,
   camera: Camera,
+  casino: Casino,
   contacts: Contacts,
   darkchat: Darkchat,
   glimpse: Glimpse,

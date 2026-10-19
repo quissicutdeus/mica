@@ -416,6 +416,7 @@ describe('which services a disabled app takes down', () => {
   it('names the refused service-to-app pairs exactly', () => {
     expect(Object.fromEntries([...serviceApps()].sort(([a], [b]) => a.localeCompare(b)))).toEqual({
       blabber: 'blabber',
+      casino: 'casino',
       darkchat: 'darkchat',
       darkchat_messages: 'darkchat',
       glimpse: 'glimpse',

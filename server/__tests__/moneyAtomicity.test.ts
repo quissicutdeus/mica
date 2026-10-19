@@ -17,13 +17,14 @@ import { join, relative } from 'node:path';
 import * as ts from 'typescript-ast-parser';
 
 /**
- * MICA-134. Money moves in exactly two places that decide anything — `Payments.transfer`
- * and Hodlr's `buy`/`sell` — and each is safe for the same reason: the balance check and the
- * debit/credit it gates run in one synchronous span, so nothing can interleave between
- * deciding and acting. That is true because neither span contains an `await`, not because of
- * any SQL predicate — micaOS owns no money table, and the framework's own atomic decrement
- * was considered and rejected (`Payments.ts:108-112`: frameworks disagree about whether an
- * overdraw refuses or clamps, so the affordability decision does not belong to the framework).
+ * MICA-134. Money moves in three places that decide anything — `Payments.transfer`, Hodlr's
+ * `buy`/`sell` and Casino's `debit` (MICA-82) — and each is safe for the same reason: the
+ * balance check and the debit/credit it gates run in one synchronous span, so nothing can
+ * interleave between deciding and acting. That is true because no span contains an `await`,
+ * not because of any SQL predicate — micaOS owns no money table, and the framework's own
+ * atomic decrement was considered and rejected (`Payments.ts:108-112`: frameworks disagree
+ * about whether an overdraw refuses or clamps, so the affordability decision does not belong
+ * to the framework).
  *
  * That invariant is unenforced today. A future `await someAsyncCall()` slipped between a
  * `getMoney` check and the `removeMoney`/`addMoney` it gates reopens a double-spend class
@@ -48,6 +49,11 @@ const ROOT = join(__dirname, '..', '..');
 const ALLOWED_MONEY_FILES = new Set([
   'server/lib/Payments.ts',
   'server/services/Hodlr.ts',
+  /**
+   * Casino's stakes and payouts (MICA-82). Its check-then-debit is `debit`, a synchronous
+   * function of its own, so the span below is checked there; `credit` is the one later call.
+   */
+  'server/services/Casino.ts',
   /**
    * Implements `FrameworkPlayer.getMoney`/`removeMoney`/`addMoney` over qb and ESX, and reads
    * the raw ESX `xPlayer.getMoney()` once while computing a pre-account cash balance.
@@ -167,6 +173,7 @@ const scanFunction = (
 const MONEY_FILES = [
   'server/lib/Payments.ts',
   'server/services/Hodlr.ts',
+  'server/services/Casino.ts',
   'server/lib/FrameworkBridge.ts'
 ].map((rel) => parse(join(ROOT, rel)));
 
@@ -223,9 +230,9 @@ describe('a balance check and the debit/credit it gates never span an await', ()
    * debit — both calls drop out of `topLevelMoneyCalls` together, that function's count
    * falls under 2, and the `it.each` below silently `continue`s past it with no failure.
    * Nothing regresses today, so this passes — but it is what makes tomorrow's silent skip
-   * fail loud instead. Exactly two functions qualify right now, `Payments.transfer` and
-   * `Hodlr.buy`; a floor of 2 catches either one dropping out without pinning the total so
-   * tightly that a legitimate third money-moving function has to edit this number too.
+   * fail loud instead. Three functions qualify right now, `Payments.transfer`, `Hodlr.buy` and
+   * Casino's `debit`; a floor of 2 catches the first two dropping out without pinning the total
+   * so tightly that each new money-moving function has to edit this number too.
    */
   it('checks at least two functions where the invariant actually applies', () => {
     const qualifying = MONEY_FILES.flatMap(({ sourceFile }) =>

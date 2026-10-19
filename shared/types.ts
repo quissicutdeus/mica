@@ -945,6 +945,59 @@ export interface HodlrHolding {
 }
 
 /**
+ * One roulette bet (MICA-82). `value` is the number for `straight` (0..36) and the dozen or
+ * column for `dozen`/`column` (1..3); every other kind carries none. `amount` is whole bank cash.
+ */
+export interface CasinoBet {
+  kind: 'straight' | 'red' | 'black' | 'odd' | 'even' | 'low' | 'high' | 'dozen' | 'column';
+  value?: number;
+  amount: number;
+}
+
+/**
+ * A settled roulette spin. `stake` is the total of every bet, debited once before the spin;
+ * `payout` is everything credited back after it — each winning bet's amount plus its winnings,
+ * so a 35:1 straight of 10 pays 360 and a losing spin pays 0.
+ */
+export interface CasinoSpinResult {
+  round_id: number;
+  number: number;
+  color: 'red' | 'black' | 'green';
+  stake: number;
+  payout: number;
+}
+
+/**
+ * A Crash round still in play. `started_at` is the server's clock in epoch ms: the multiplier
+ * is a function of the server's time since then, and the client only draws it.
+ */
+export interface CasinoCrashRound {
+  round_id: number;
+  stake: number;
+  started_at: number;
+}
+
+/**
+ * One of the caller's own rounds, as `history` pages them. Multipliers are ×100 integers.
+ *
+ * `multiplier` is the Crash cash-out, null for a bust and for roulette. `crash_point` is null on
+ * a round still in play — it is the hidden outcome until the round settles — and on roulette.
+ * `number` and `bets` are roulette's, null on Crash.
+ */
+export interface CasinoRound {
+  id: number;
+  game: 'roulette' | 'crash';
+  status: 'active' | 'settled';
+  stake: number;
+  payout: number;
+  multiplier: number | null;
+  crash_point: number | null;
+  number: number | null;
+  bets: CasinoBet[] | null;
+  created_at: Date | string;
+}
+
+/**
  * A place the player named and kept, from the Places app (MICA-65).
  *
  * `x`/`y`/`z` are a snapshot at the moment the place was saved, resolved the same way a

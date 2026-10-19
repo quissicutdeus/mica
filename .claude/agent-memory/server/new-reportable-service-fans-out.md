@@ -25,3 +25,9 @@ showed all of them:
 them. **How to apply:** before reporting a new service, run the full server
 suite and name the out-of-fence four to the lead in the first message, so the
 catalog and doc lines can land alongside rather than after review.
+
+An add-on that is **not** reportable still fails six (Casino, MICA-82,
+2026-10-18): `ownerConfig`, `privacy` `EXPORTED_COLUMNS`, `privacyLabels`,
+`addonDiscovery`, `convars` and `changelog`. `orphanSweep` and `citizenIdWidth`
+stay green, even with a `citizenId` generated column. `generateLocales` goes red
+too, but that one is the web lane's catalog waiting on `pnpm generate:locales`.

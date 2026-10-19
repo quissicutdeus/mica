@@ -62,10 +62,14 @@ its one-line summary.
 - [A new app trips two pins](new-app-trips-two-pins.md) — appContract `APPS` row
   and the computed-class ratchet (Icon `class={className}`); `run()` answers a
   boolean
-- [`Object.hasOwn` fails web's typecheck](es2022-lib-gap-object-hasown.md) — CEF
-  has it, web's TS lib does not; use a `Map`. No `m-4`/`mx-4`/`aspect-[3/4]`
+- [`Object.hasOwn`/`.at()` fail web's typecheck](es2022-lib-gap-object-hasown.md)
+  — CEF has them, web's TS lib does not. Plus the utilities that look real and
+  aren't (`mx-4`, `pt-6`, `bg-gray-900`)
 - [A `.svelte` module-script type fails lint](svelte-module-script-type-export.md)
   — typecheck passes, eslint sees `error` types; declare it in `store.ts`
   instead
 - [jsdom keeps `inert` as a property](jsdom-inert-is-a-property.md) — Svelte
   sets `el.inert`; jsdom never reflects it, so `hasAttribute('inert')` is false
+- [Read the sibling server file first](sibling-server-contract-drift.md) — a
+  brief's contract drifted from the parallel server lane (returned refusals,
+  other slugs); handle returned and thrown refusals, then run `routes.test`

@@ -176,6 +176,28 @@ CREATE TABLE IF NOT EXISTS `mica_blocklist` (
     KEY `device_id` (`device_id`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
+-- Generated from the 'casino' defineService declaration.
+-- Do not edit by hand; change the declaration and regenerate.
+
+CREATE TABLE IF NOT EXISTS `mica_casino_rounds` (
+    `id` int(11) NOT NULL AUTO_INCREMENT,
+    `citizenid` varchar(60) NOT NULL,
+    `game` ENUM('roulette', 'crash') NOT NULL,
+    `stake` int(11) NOT NULL,
+    `payout` int(11) NOT NULL DEFAULT 0,
+    `multiplier` int(11) DEFAULT NULL,
+    `crash_point` int(11) DEFAULT NULL,
+    `result` text DEFAULT NULL,
+    `active_crash` varchar(60) GENERATED ALWAYS AS (CASE WHEN `status` = 'active' AND `game` = 'crash' THEN `citizenid` ELSE NULL END) VIRTUAL,
+    `status` ENUM('active', 'settled', 'deleted') NOT NULL DEFAULT 'active',
+    `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `status` (`status`),
+    KEY `citizenid_status` (`citizenid`, `status`),
+    UNIQUE KEY `active_crash` (`active_crash`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
 -- Generated from the 'contacts' defineService declaration.
 -- Do not edit by hand; change the declaration and regenerate.
 

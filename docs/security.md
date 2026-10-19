@@ -672,6 +672,46 @@ remakes their profile can appear in the other's deck again, and that
 reappearance tells them the profile was remade. Only a block survives a remade
 profile.
 
+## Casino: the crash point is the secret
+
+Casino (MICA-82) is a gambling add-on that moves bank cash, so it has the Bank
+and Hodlr problems — a modified client can emit any action with any payload —
+and one of its own: a Crash round's outcome exists before the player acts, and
+the whole game is that they do not know it. Every outcome is drawn on the server
+from `node:crypto`. A roulette spin is decided after the stake is debited and
+before any row exists, and the answer carries the number and the payout
+together, so there is nothing to read early. A Crash round stores its point in
+`mica_casino_rounds.crash_point`, a `private` column that no read projects: the
+player learns it when the round settles, from the cash-out answer or the `crash`
+push, and `history` never shows it for a round still in play. The multiplier a
+cash-out earns is computed from the server's clock and the moment the server
+started the round, never from anything the client sends, so a client that stops
+its animation or lies about elapsed time changes nothing. The timer that busts
+the round and a cash-out that races it both settle through one conditional
+`UPDATE` on the active state, so a round pays or busts once.
+
+Stakes follow the MICA-134 rule: the balance check and the debit sit in one
+synchronous span, the row is written after the money has moved, and a failed
+write refunds and logs rather than keeping the stake. One live Crash round per
+citizen is a unique key on a generated column, not a read-then-check, so two
+`crashStart`s racing past the read cannot both insert. A player's data export
+includes their settled rounds — game, stake, payout, multiplier, the roulette
+result and, once the round is over, the crash point — and leaves out a round
+still in play altogether, since any row for it would carry the point.
+
+**Accepted.** A Crash round live when the resource stops is settled as lost at
+the next start, stake included: the timer that would have busted or let it cash
+out is gone with the process, and paying it out at the point it would have
+reached rewards a restart. The house edge is the operator's to set within 0–20%
+on Crash and is the wheel's zero on roulette; nothing adjusts an outcome for a
+particular player, and `docs/decisions.md` says why that is written down.
+Network latency on a cash-out cuts both ways and is the player's: the server
+started the round before its reply reached the phone, and it reads the
+multiplier when the cash-out arrives, so the server's number runs ahead of the
+screen by the round trip. A cash-out that wins pays the server's reading, a
+little more than the screen showed; a cash-out clicked just under the point can
+arrive past it and bust.
+
 ## Accepted risks
 
 Accepted against the feature set at `0922a9b` (2026-08-29) — a risk below was

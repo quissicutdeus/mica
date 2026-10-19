@@ -98,3 +98,7 @@ line here.
   apps
 - [A unique key on a permanent parent's id freezes a soft delete](unique-key-on-a-permanent-parent.md)
   — revive refused by NOT NULL rule; use a status-aware generated key (MICA-255)
+- [The privacy export reads every owned column, secrets too](privacy-export-reads-hidden-outcomes.md)
+  — `private` does not apply there; a live outcome needs `registerExportFilter`
+- [node:crypto is a shim; convar names resolve at the call site](node-crypto-shim-and-convar-scan.md)
+  — no `randomInt`; a `GetConvar(name)` helper fails convars.test
