@@ -293,16 +293,19 @@ describe('who is behind an account (MICA-339)', () => {
     status: 'active'
   };
 
-  it('never names the column in a thread read', async () => {
+  /**
+   * A sealed body's authenticated data binds the sender's `citizenid` (MICA-165), so a read
+   * that opens `body` has to select it, and only the reply drops it. MICA-339 took it out of
+   * the SQL here, and every sealed thread read threw in game while this asserted its absence.
+   */
+  it('selects the context a sealed body opens against, and never `*`', async () => {
     dbMock.single.mockResolvedValueOnce(MY_ACCOUNT);
 
     await call('get', { app: 'blabber', account_id: 1, peer_account_id: 2 });
 
     const sql = String(dbMock.query.mock.calls[0][0]);
     expect(sql).not.toContain('*');
-    expect(sql).not.toContain('citizenid');
-    // The positive twin: the encryption scope a sealed body opens against is still selected.
-    expect(sql).toContain('`from_account`, `to_account`, `body`');
+    expect(sql).toContain('`citizenid`, `from_account`, `to_account`, `body`');
   });
 
   it("hands a thread read back without the sender's citizenid", async () => {
@@ -327,7 +330,7 @@ describe('who is behind an account (MICA-339)', () => {
 
     const sql = String(dbMock.query.mock.calls[2][0]);
     expect(sql).not.toContain('*');
-    expect(sql).not.toContain('citizenid');
+    expect(sql).toContain('`citizenid`, `from_account`, `to_account`, `body`');
     expect(reply[0].last).not.toHaveProperty('citizenid');
     expect(reply[0].last).toMatchObject({ id: 9, body: 'hi' });
   });

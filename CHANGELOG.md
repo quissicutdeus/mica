@@ -1362,6 +1362,17 @@ export instead, which authenticates its caller.
 
 ### Fixed
 
+**A direct message can be read again on a server with a content key
+(MICA-390).** Since `v2026.10.15.54`, opening a thread or the inbox in Blabber's
+direct messages on a server with `mica_content_key_file` set answered "Something
+went wrong": the read left out the column a sealed body's authenticated data is
+bound to, so every sealed body refused to open. The rows were never damaged and
+nothing needs re-sealing; they read as before once the server is updated. A
+server with no content key was not affected. Found by the in-server suite the
+first time it drove the service as a player, not by any unit test, and the unit
+test that let it through now cuts each stored row to the columns the handler's
+query names.
+
 **`micaschema apply` now creates a table that does not exist yet (MICA-388).**
 It creates a new app's table, its child tables and the audit ledger, in
 foreign-key order and in the same shape a fresh install gets, before it adds

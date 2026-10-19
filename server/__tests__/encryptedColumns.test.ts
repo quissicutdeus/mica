@@ -560,6 +560,58 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+/**
+ * `row` cut to what a statement's select list would hand back, the way a real result set is: a
+ * stub that answers the whole row hides a read that forgot a column the authenticated data
+ * binds, which then fails only against a database (the DM reads, in-server run 39242728050).
+ *
+ * Reads the list up to the top-level `FROM`, skipping subqueries and quoted text. An item is
+ * named by its `AS` alias, else its last identifier (`m.citizenid`, `` `body` ``); `*` or `m.*`
+ * keeps the whole row, which is that table's row. A name the row does not hold is left out, so
+ * a stub may carry a computed column (`edited`, `preview`) under its alias.
+ */
+const selectedFrom = <R extends Record<string, unknown>>(sql: string, row: R): Partial<R> => {
+  const head = /^\s*SELECT\s+(?:DISTINCT\s+)?/i.exec(sql);
+  if (!head) throw new Error(`selectedFrom: not a SELECT: ${sql}`);
+  const items: string[] = [];
+  let depth = 0;
+  let quote: string | null = null;
+  let item = '';
+  let i = head[0].length;
+  for (; i < sql.length; i += 1) {
+    const ch = sql[i];
+    if (quote !== null) {
+      if (ch === quote) quote = null;
+      item += ch;
+      continue;
+    }
+    if (ch === "'" || ch === '"') quote = ch;
+    else if (ch === '(') depth += 1;
+    else if (ch === ')') depth -= 1;
+    else if (depth === 0 && ch === ',') {
+      items.push(item);
+      item = '';
+      continue;
+    } else if (depth === 0 && /^FROM\b/i.test(sql.slice(i)) && /\s/.test(sql[i - 1])) break;
+    item += ch;
+  }
+  if (i >= sql.length) throw new Error(`selectedFrom: no top-level FROM in ${sql}`);
+  items.push(item);
+  const names = items.map((text) => {
+    const trimmed = text.trim();
+    if (trimmed === '*' || /^`?[a-z_]+`?\.\*$/i.test(trimmed)) return '*';
+    const alias = /\bAS\s+`?([a-z_]+)`?$/i.exec(trimmed);
+    if (alias) return alias[1];
+    const last = /`?([a-z_]+)`?$/i.exec(trimmed);
+    if (!last) throw new Error(`selectedFrom: cannot name '${trimmed}' in ${sql}`);
+    return last[1];
+  });
+  if (names.includes('*')) return { ...row };
+  return Object.fromEntries(
+    names.filter((name) => name in row).map((name) => [name, row[name]])
+  ) as Partial<R>;
+};
+
 describe('Messages (mica_messages.message)', () => {
   it('seals on send and hands the sender and the push the text', async () => {
     answerSingle = (sql) => (sql.includes('mica_messages_participants') ? { 1: 1 } : null);
@@ -580,7 +632,15 @@ describe('Messages (mica_messages.message)', () => {
     answerSingle = (sql) => (sql.includes('mica_messages_participants') ? { 1: 1 } : null);
     answerQuery = (sql) =>
       sql.includes('FROM mica_messages m')
-        ? [{ id: 1, conversation_id: 7, citizenid: 'CIT_B', message: sealed, edited: 0 }]
+        ? [
+            selectedFrom(sql, {
+              id: 1,
+              conversation_id: 7,
+              citizenid: 'CIT_B',
+              message: sealed,
+              edited: 0
+            })
+          ]
         : [];
 
     const reply = await call('messages', 'get', { conversation_id: 7 });
@@ -599,7 +659,7 @@ describe('Messages (mica_messages.message)', () => {
         ? [
             { id: 2, conversation_id: 7, citizenid: 'CIT_B', message: 'legacy text', edited: 0 },
             { id: 1, conversation_id: 7, citizenid: 'CIT_B', message: moved, edited: 0 }
-          ]
+          ].map((row) => selectedFrom(sql, row))
         : [];
 
     const reply = await call('messages', 'get', { conversation_id: 7 });
@@ -614,12 +674,11 @@ describe('Messages (mica_messages.message)', () => {
     );
     answerSingle = (sql) => {
       if (sql.includes('mica_messages_participants')) return { 1: 1 };
+      const stored = { id: 3, conversation_id: 7, citizenid: 'CIT_A', message: original };
       if (sql.startsWith('SELECT `citizenid`, `conversation_id`')) {
-        return { citizenid: 'CIT_A', conversation_id: 7 };
+        return selectedFrom(sql, stored);
       }
-      if (sql.startsWith('SELECT * FROM `mica_messages`')) {
-        return { id: 3, conversation_id: 7, citizenid: 'CIT_A', message: original };
-      }
+      if (sql.startsWith('SELECT * FROM `mica_messages`')) return selectedFrom(sql, stored);
       return null;
     };
 
@@ -657,13 +716,13 @@ describe('Messages (mica_messages.message)', () => {
     answerQuery = (sql) =>
       sql.includes('last_message_text')
         ? [
-            {
+            selectedFrom(sql, {
               id: 9,
               updated_at: '2026-09-01 10:00:00',
               last_message_text: sealed,
               last_message_time: '2026-09-01 10:00:00',
               last_message_sender: 'CIT_B'
-            }
+            })
           ]
         : [];
 
@@ -702,26 +761,44 @@ describe('Blabber DMs (mica_blabber_dms.body)', () => {
     expect(JSON.stringify(notification)).not.toContain('secret plans');
   });
 
-  it('opens a thread and the inbox’s last messages', async () => {
+  /**
+   * The stored row is handed back as MariaDB would: only the columns the SELECT names. This
+   * answered the whole row whatever was asked for, so it passed while both reads left out the
+   * `citizenid` the body's authenticated data binds, and every sealed thread read threw in a
+   * real server (in-server run 39242728050).
+   */
+  it('opens a thread and the inbox’s last messages from the columns they select', async () => {
     const sealed = await sealContent(
       { table: 'mica_blabber_dms', column: 'body', citizenid: 'CIT_B', scope: [2, 1] },
       'hello ada'
     );
-    const row = { id: 5, citizenid: 'CIT_B', from_account: 2, to_account: 1, body: sealed };
+    const stored = {
+      id: 5,
+      citizenid: 'CIT_B',
+      from_account: 2,
+      to_account: 1,
+      body: sealed,
+      read_at: null,
+      status: 'active',
+      created_at: '2026-10-19 00:00:00',
+      updated_at: '2026-10-19 00:00:00'
+    };
     answerSingle = (sql) => (sql.includes('mica_accounts') ? MINE : null);
     answerQuery = (sql) => {
       if (sql.includes('GROUP BY peer')) return [{ peer: 2, last_id: 5 }];
       if (sql.includes('COUNT(*) AS total')) return [];
-      if (sql.includes('mica_blabber_dms')) return [row];
+      if (sql.includes('mica_blabber_dms')) return [selectedFrom(sql, stored)];
       if (sql.includes('mica_accounts')) return [MINE, PEER];
       return [];
     };
 
     const thread = await call('dms', 'get', { app: 'blabber', account_id: 1, peer_account_id: 2 });
     expect(thread.rows[0].body).toBe('hello ada');
+    expect(thread.rows[0]).not.toHaveProperty('citizenid');
 
     const inbox = await call('dms', 'threads', { app: 'blabber' });
     expect(inbox[0].last.body).toBe('hello ada');
+    expect(inbox[0].last).not.toHaveProperty('citizenid');
   });
 
   it('opens through the generic projection, and drops the context it added', async () => {
@@ -761,7 +838,9 @@ describe('Mail (mica_mail.content)', () => {
       'your statement'
     );
     answerQuery = (sql) =>
-      sql.includes('FROM `mica_mail`') ? [{ id: 1, citizenid: 'CIT_A', content: sealed }] : [];
+      sql.includes('FROM `mica_mail`')
+        ? [selectedFrom(sql, { id: 1, citizenid: 'CIT_A', content: sealed })]
+        : [];
 
     const inbox = await call('mail', 'getMail', undefined);
 
@@ -789,7 +868,13 @@ describe('Reports (mica_reports.target_preview) and the review queue', () => {
     );
     answerSingle = (sql) =>
       sql.includes('FROM `mica_blabber_dms`')
-        ? { citizenid: 'CIT_B', status: 'active', preview: dm, from_account: 2, to_account: 1 }
+        ? selectedFrom(sql, {
+            citizenid: 'CIT_B',
+            status: 'active',
+            preview: dm,
+            from_account: 2,
+            to_account: 1
+          })
         : null;
     // The reporter has to be one of the DM's ends to report it (MICA-339): account 1 is theirs.
     answerQuery = (sql) =>
@@ -833,7 +918,7 @@ describe('Reports (mica_reports.target_preview) and the review queue', () => {
       created_at: '2026-09-01 10:00:00',
       updated_at: '2026-09-01 10:00:00'
     };
-    answerQuery = (sql) => (sql.includes('`mica_reports`') ? [row] : []);
+    answerQuery = (sql) => (sql.includes('`mica_reports`') ? [selectedFrom(sql, row)] : []);
 
     const queue = await call('reports', 'queue', undefined, 0);
     expect(queue[0].target_preview).toBe('you will regret this');
@@ -850,7 +935,7 @@ describe('the privacy export', () => {
     );
     answerQuery = (sql) =>
       /FROM `mica_messages` WHERE/.test(sql)
-        ? [{ id: 1, conversation_id: 7, message: sealed, citizenid: 'CIT_A' }]
+        ? [selectedFrom(sql, { id: 1, conversation_id: 7, message: sealed, citizenid: 'CIT_A' })]
         : [];
 
     const exported = await buildExport('CIT_A');

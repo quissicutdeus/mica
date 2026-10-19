@@ -295,14 +295,18 @@ const myAccounts = async (citizenid: string, appId: string): Promise<Account[]> 
  * Identity in a DM is the account, so the sender's character must never reach the other party
  * (MICA-339). `SELECT *` used to put `citizenid` on every row, and a peer reading their own
  * thread or inbox got the citizenid of whoever replied, which links one player's alts to each
- * other and to the character. Both reads below now list their columns, and this is the belt to
- * that: a future read that goes back to `*`, or a join that brings the column in, still cannot
- * hand a peer the sender's character.
+ * other and to the character.
+ *
+ * Both reads below still **select** `citizenid`, and must: a sealed body's authenticated data
+ * binds the sender's citizenid beside `from_account` and `to_account` (MICA-165), so `openRows`
+ * cannot open a row without it. MICA-339 dropped it from the SQL, and every sealed DM read
+ * then threw in game while the unit suite, whose stubbed rows carried the column whatever the
+ * SELECT asked for, stayed green. So this strip is the only thing between the column and the
+ * reply, and it runs after the open, never before.
  *
  * The lists are written out in each statement rather than shared through a constant, because
  * `encryptedColumns.test.ts` reads the SQL literal to find who touches `body`, and an
- * interpolated list hides it. `from_account` and `to_account` stay in: they are the encryption
- * scope a sealed body opens against (MICA-165).
+ * interpolated list hides it.
  */
 const toPeerSafe = (row: DirectMessage): DirectMessage => {
   if (!('citizenid' in row)) return row;
@@ -337,13 +341,13 @@ app.registerEvent('get', async (source, cbId, data, citizenid) => {
   if (cursor !== null) params.push(cursor);
   params.push(limit + 1);
 
-  // Bodies are sealed at rest (MICA-165); the account columns carry each row's context, so
-  // they open here.
+  // Bodies are sealed at rest (MICA-165); `citizenid` and the account columns carry each row's
+  // context, so they open here. `toPeerSafe` takes `citizenid` back off before the reply.
   const rows = openRows(
     directMessages.resolved.table,
     await Database.query<DirectMessage[]>(
-      `SELECT \`id\`, \`from_account\`, \`to_account\`, \`body\`, \`read_at\`, \`status\`,
-              \`created_at\`, \`updated_at\`
+      `SELECT \`id\`, \`citizenid\`, \`from_account\`, \`to_account\`, \`body\`, \`read_at\`,
+              \`status\`, \`created_at\`, \`updated_at\`
        FROM \`mica_blabber_dms\`
        WHERE ((\`from_account\` = ? AND \`to_account\` = ?)
           OR (\`from_account\` = ? AND \`to_account\` = ?))
@@ -398,8 +402,8 @@ app.registerEvent('threads', async (source, cbId, data, citizenid) => {
   const messages = openRows(
     directMessages.resolved.table,
     await Database.query<DirectMessage[]>(
-      `SELECT \`id\`, \`from_account\`, \`to_account\`, \`body\`, \`read_at\`, \`status\`,
-              \`created_at\`, \`updated_at\`
+      `SELECT \`id\`, \`citizenid\`, \`from_account\`, \`to_account\`, \`body\`, \`read_at\`,
+              \`status\`, \`created_at\`, \`updated_at\`
        FROM \`mica_blabber_dms\` WHERE \`id\` IN (${lastIds.map(() => '?').join(', ')})`,
       lastIds
     )

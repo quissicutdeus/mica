@@ -115,3 +115,5 @@ line here.
 - [Negative sources are not one namespace](negative-sources-are-not-one-namespace.md)
   — `-1` broadcast, Phone's line sources from -2 down, the door's from
   -1,000,000 down
+- [A read that opens a sealed column must select `citizenid`](a-read-that-opens-must-select-citizenid.md)
+  — the AAD binds it; strip after the open; stub rows must follow the SELECT
