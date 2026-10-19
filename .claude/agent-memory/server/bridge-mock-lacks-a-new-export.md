@@ -14,3 +14,10 @@ is not.
 value out locally and pin it equal in the bridge's own test. Run
 `reachability.test.ts` whenever a lib module imports something new from the
 bridge.
+
+**A new static method has the same trap at call time.** About 80 suites mock the
+bridge, and none carries a method added later. `isAdmin` runs in many of them,
+so calling `FrameworkBridge.isSyntheticAdmin` on every check would throw
+`not a function` all over the suite. MICA-386's door admin calls it only for
+`source <= -1_000_000`, with the bound written out in `Admin.ts`, and no mocked
+suite passes a source that low.

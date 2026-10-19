@@ -32,6 +32,14 @@
  * invoking for a seeded citizen once a real character has connected under that citizenid, so a
  * synthetic player never acts as a connected character's twin.
  *
+ * **A synthetic player may be seeded as an admin** (`{ admin: true }`, for MICA-386's in-server
+ * proof of a report's resolve and reopen). `services/Admin.ts`'s `isAdmin` answers a source at
+ * or below `SYNTHETIC_SOURCE_MAX` from the bridge's `isSyntheticAdmin` alone, which asks this
+ * module's flag and nothing else, so through the door another resource on a harness server can
+ * run the admin-gated service actions. That is no more than it could already do in its own
+ * code, and it reaches no connected player: every source above the bound takes the ace check as
+ * before, and with the convar off at start nothing is installed for the bridge to ask.
+ *
  * That is what lets a handler that asks the bridge again after an await (Messages' and
  * PhoneNumbers' MICA-336 guards) run for a synthetic player, and lets a push to one find its
  * source. Every `emitNet` whose target is a synthetic source is captured into that player's
@@ -41,9 +49,9 @@
  *
  * ── What it is ────────────────────────────────────────────────────────────────────────────
  *
- * - `mica:server:integration:player(citizenid, { bank }, reply)` seeds a synthetic player whose
- *   bank is a ledger here. `reply({ ok: true, citizenid, source, bank })` or
- *   `reply({ ok: false, reason })`.
+ * - `mica:server:integration:player(citizenid, { bank, admin? }, reply)` seeds a synthetic player
+ *   whose bank is a ledger here, an admin only when `admin` is `true`.
+ *   `reply({ ok: true, citizenid, source, bank, admin })` or `reply({ ok: false, reason })`.
  * - `mica:server:integration:invoke(service, action, citizenid, payload, reply)` runs the
  *   action's own `dispatch` — limiter, app switch, device, contract parse, `requirePhoneFor`,
  *   the handler — and answers `reply(result, bankAfter)`, where `result` is exactly what
@@ -79,6 +87,8 @@ interface Synthetic {
   player: FrameworkPlayer;
   ledger: { bank: number };
   pushes: AppEventEnvelope[];
+  /** Seeded with `{ admin: true }`: `isAdmin` answers true for this player's source alone. */
+  admin: boolean;
 }
 
 const players = new Map<string, Synthetic>();
@@ -135,12 +145,13 @@ const answer = (reply: unknown, ...args: unknown[]): void => {
 };
 
 const seed = (citizenid: unknown, options: unknown, reply: unknown): void => {
-  const bank = (options as { bank?: unknown } | null)?.bank;
+  const { bank, admin: rawAdmin } = (options ?? {}) as { bank?: unknown; admin?: unknown };
   if (
     typeof citizenid !== 'string' ||
     citizenid.trim() === '' ||
     citizenid.length > CITIZENID_MAX_LENGTH ||
-    !movable(bank)
+    !movable(bank) ||
+    (rawAdmin !== undefined && typeof rawAdmin !== 'boolean')
   ) {
     answer(reply, { ok: false, reason: 'bad_arguments' });
     return;
@@ -154,12 +165,16 @@ const seed = (citizenid: unknown, options: unknown, reply: unknown): void => {
     return;
   }
 
+  // Only a literal `true` grants it; a re-seed without it takes the flag away again.
+  const admin = rawAdmin === true;
+
   const existing = players.get(citizenid);
   if (existing) {
-    // Seeding again resets the wallet and the buffer and keeps the source.
+    // Seeding again resets the wallet, the buffer and the flag, and keeps the source.
     existing.ledger.bank = bank;
     existing.pushes.length = 0;
-    answer(reply, { ok: true, citizenid, source: existing.player.source, bank });
+    existing.admin = admin;
+    answer(reply, { ok: true, citizenid, source: existing.player.source, bank, admin });
     return;
   }
   if (players.size >= MAX_PLAYERS) {
@@ -173,10 +188,11 @@ const seed = (citizenid: unknown, options: unknown, reply: unknown): void => {
   players.set(citizenid, {
     player: syntheticPlayer(citizenid, source, ledger),
     ledger,
-    pushes: []
+    pushes: [],
+    admin
   });
   citizenBySyntheticSource.set(source, citizenid);
-  answer(reply, { ok: true, citizenid, source, bank });
+  answer(reply, { ok: true, citizenid, source, bank, admin });
 };
 
 const invoke = async (
@@ -298,12 +314,14 @@ const captureEmitNet = (): void => {
 };
 
 if (GetConvar('mica_integration', '') === '1') {
+  const bySource = (src: number): Synthetic | undefined => {
+    const citizenid = citizenBySyntheticSource.get(src);
+    return citizenid === undefined ? undefined : players.get(citizenid);
+  };
   installSyntheticPlayers({
-    player: (src) => {
-      const citizenid = citizenBySyntheticSource.get(src);
-      return citizenid === undefined ? null : (players.get(citizenid)?.player ?? null);
-    },
-    sourceOf: (citizenid) => players.get(citizenid)?.player.source ?? null
+    player: (src) => bySource(src)?.player ?? null,
+    sourceOf: (citizenid) => players.get(citizenid)?.player.source ?? null,
+    isAdmin: (src) => bySource(src)?.admin === true
   });
   captureEmitNet();
   /**

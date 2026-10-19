@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { ServiceEndpoint } from '../lib/ServiceEndpoint';
+import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { adminContract } from '@mica/shared/contracts/admin';
 
 /**
@@ -58,9 +59,25 @@ const app = new ServiceEndpoint<never, typeof adminContract>('admin', null, {
   disableDelete: true
 });
 
+/**
+ * `FrameworkBridge`'s `SYNTHETIC_SOURCE_MAX`: the integration door's sources (MICA-397) are at
+ * or below it. Written out rather than imported, as the door writes it: the bridge mocks in
+ * `reports`, `moderationRestore`, `battery`, `mediaRetention` and `mediaStorageStats` carry no
+ * such export, and every `isAdmin` call there would throw reading it. `admin.test.ts` pins the
+ * two equal.
+ */
+const SYNTHETIC_SOURCE_MAX = -1_000_000;
+
 export const isAdmin = (source: number): boolean => {
   // The server console has no principals and is trusted by definition.
   if (source === 0) return true;
+  /**
+   * A synthetic player is no connection and holds no ace; it is an admin only when the door
+   * seeded it as one, which the bridge answers only on a server started with `mica_integration`
+   * at `1`. Every source above the bound — a connected player, `-1`, a line call's pseudo-source
+   * — takes the ace check below and never reaches this.
+   */
+  if (source <= SYNTHETIC_SOURCE_MAX) return FrameworkBridge.isSyntheticAdmin(source);
   return adminAces().some((ace) => IsPlayerAceAllowed(String(source), ace));
 };
 

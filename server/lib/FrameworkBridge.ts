@@ -383,6 +383,11 @@ export interface SyntheticPlayers {
   player(src: number): FrameworkPlayer | null;
   /** The synthetic source of a citizen the door seeded, or null. Asked only on a registry miss. */
   sourceOf(citizenid: string): number | null;
+  /**
+   * Whether the synthetic player on `src` was seeded as an admin (MICA-386's in-server proof).
+   * Asked only for `src <= SYNTHETIC_SOURCE_MAX`, through `FrameworkBridge.isSyntheticAdmin`.
+   */
+  isAdmin(src: number): boolean;
 }
 
 /**
@@ -432,6 +437,10 @@ const syntheticSourceOf = (citizenid: string): number | null => {
   const src = synthetic.sourceOf(citizenid);
   return typeof src === 'number' && src <= SYNTHETIC_SOURCE_MAX ? src : null;
 };
+
+/** Whether the synthetic player on `src` holds the door's admin flag; see `isSyntheticAdmin`. */
+const syntheticAdmin = (src: number): boolean =>
+  syntheticPlayer(src) !== null && synthetic?.isAdmin(src) === true;
 
 export class FrameworkBridge {
   /**
@@ -532,6 +541,23 @@ export class FrameworkBridge {
       console.error('[FrameworkBridge] Error getting player:', error);
     }
     return null;
+  }
+
+  /**
+   * Whether `src` is a synthetic player the integration door seeded as an admin, which is how
+   * the in-server suite reaches the admin-gated report actions (`services/Admin.ts`'s
+   * `isAdmin`). False for every source above `SYNTHETIC_SOURCE_MAX`, so never for a connected
+   * player, a broadcast or a line call; false on a server that did not start with
+   * `mica_integration` at `1`, where nothing can be installed; and false for a synthetic source
+   * the door holds no player on, or one seeded without the flag. Never throws.
+   */
+  public static isSyntheticAdmin(src: number): boolean {
+    try {
+      return syntheticAdmin(src);
+    } catch (error) {
+      console.error('[FrameworkBridge] Error resolving a synthetic admin:', error);
+    }
+    return false;
   }
 
   public static getCitizenId(src: number): string | null {

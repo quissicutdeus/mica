@@ -962,8 +962,10 @@ the convar is invisible until the resource restarts.
   and read every event the server sent to it. They are plain `on()` handlers,
   not net events, so a client cannot trigger them; the convar is read once at
   start, so a `set` on a running server opens nothing; and the synthetic players
-  live only on sources no connected player can have. Leave it unset on any
-  server players join; `docs/security.md` has the model.
+  live only on sources no connected player can have — a seeded player can be
+  flagged admin, and that flag is read for those sources alone, never for a
+  connected one. Leave it unset on any server players join; `docs/security.md`
+  has the model.
 - **`mica_admin_aces`** — which ace objects grant micaOS admin: the phone's
   Developer Tools, and the `mica*` console commands. The default recognises two,
   and the second is the interesting one. `command` is the near-universal proxy

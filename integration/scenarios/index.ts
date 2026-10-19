@@ -18,6 +18,7 @@ import { importerScenarios } from './importer';
 import { messagesScenarios } from './messages';
 import { oxmysqlScenarios } from './oxmysql';
 import { qbxScenarios } from './qbx';
+import { reportsScenarios } from './reports';
 import { retentionScenarios } from './retention';
 import { schemaScenarios } from './schema';
 import { sparkScenarios } from './spark';
@@ -50,6 +51,7 @@ export const scenarios: readonly Scenario[] = [
   ...glimpseScenarios,
   ...darkchatScenarios,
   ...sparkScenarios,
+  ...reportsScenarios,
   ...qbxScenarios,
   ...esxScenarios
 ];

@@ -34,6 +34,7 @@ const { dbMock, bridge } = vi.hoisted(() => ({
     synthetic: null as null | {
       player(src: number): unknown;
       sourceOf(citizenid: string): number | null;
+      isAdmin(src: number): boolean;
     }
   }
 }));
@@ -60,7 +61,13 @@ vi.mock('../lib/FrameworkBridge', () => ({
       }
       return found;
     },
-    registerUsableItem: () => {}
+    registerUsableItem: () => {},
+    // The real bridge's rule: at or below the bound, on a source the door holds a player on.
+    isSyntheticAdmin: (src: number) =>
+      src <= -1_000_000 &&
+      bridge.synthetic !== null &&
+      bridge.synthetic.player(src) !== null &&
+      bridge.synthetic.isAdmin(src) === true
   }
 }));
 
@@ -71,6 +78,7 @@ interface Loaded {
   net: Map<string, Handler>;
   emitted: unknown[][];
   casino: typeof import('../services/Casino');
+  admin: typeof import('../services/Admin');
   appEvents: typeof import('../lib/appEvents');
   rateLimit: typeof import('../lib/rateLimit');
   phone: typeof import('./phoneStub');
@@ -92,11 +100,12 @@ const load = async (doorConvar: string): Promise<Loaded> => {
   bridge.install.mockClear();
   vi.resetModules();
   const casino = await import('../services/Casino');
+  const admin = await import('../services/Admin');
   const appEvents = await import('../lib/appEvents');
   await import('../lib/integrationDoor');
   const rateLimit = await import('../lib/rateLimit');
   const phone = await import('./phoneStub');
-  return { local, net, emitted, casino, appEvents, rateLimit, phone };
+  return { local, net, emitted, casino, admin, appEvents, rateLimit, phone };
 };
 
 const DOOR_EVENTS = [
@@ -187,6 +196,12 @@ describe('with mica_integration off', () => {
   it('leaves emitNet as it found it', () => {
     (globalThis as any).emitNet('mica:client:casino:spin', -1_000_000, 'cb', {});
     expect(loaded.emitted).toHaveLength(1);
+  });
+
+  it('makes no synthetic source an admin: nothing is installed for isAdmin to ask', () => {
+    for (const src of [-1_000_000, -1_000_001, -2_000_000]) {
+      expect(loaded.admin.isAdmin(src), String(src)).toBe(false);
+    }
   });
 
   it('treats any value but "1" as off', async () => {
@@ -475,10 +490,61 @@ describe('with mica_integration "1" at start', () => {
     );
   });
 
+  it('seeds an admin only on a literal true, answered by isAdmin for its source alone', async () => {
+    const citizenid = freshCitizen();
+    const [answer] = await ask(loaded, 'mica:server:integration:player', citizenid, {
+      bank: 0,
+      admin: true
+    });
+    expect(answer).toMatchObject({ ok: true, citizenid, admin: true });
+    const source = (answer as { source: number }).source;
+    const plain = await seed(loaded, 0);
+
+    expect(bridge.synthetic!.isAdmin(source)).toBe(true);
+    expect(loaded.admin.isAdmin(source)).toBe(true);
+    // Seeded without the flag: a synthetic source, and no admin.
+    expect(bridge.synthetic!.isAdmin(plain.source)).toBe(false);
+    expect(loaded.admin.isAdmin(plain.source)).toBe(false);
+    // A source the door handed out to nobody, and every source above the bound.
+    expect(loaded.admin.isAdmin(source - 1000)).toBe(false);
+    expect(bridge.synthetic!.isAdmin(5)).toBe(false);
+    for (const src of [5, -1, -2, -1000, -999_999]) {
+      expect(loaded.admin.isAdmin(src), String(src)).toBe(false);
+    }
+
+    // Through the door, as the in-server suite asks it: the action's own dispatch and gate.
+    const asAdmin = await invoke(loaded, citizenid, 'admin', 'check', undefined);
+    expect(asAdmin.result).toEqual({ isAdmin: true });
+    const asPlain = await invoke(loaded, plain.citizenid, 'admin', 'check', undefined);
+    expect(asPlain.result).toEqual({ isAdmin: false });
+  });
+
+  it('refuses an admin flag that is not a boolean, and takes it away on a re-seed', async () => {
+    for (const admin of ['true', 1, null, {}]) {
+      const [refused] = await ask(loaded, 'mica:server:integration:player', freshCitizen(), {
+        bank: 0,
+        admin
+      });
+      expect(refused, String(admin)).toEqual({ ok: false, reason: 'bad_arguments' });
+    }
+
+    const citizenid = freshCitizen();
+    const [first] = await ask(loaded, 'mica:server:integration:player', citizenid, {
+      bank: 0,
+      admin: true
+    });
+    const source = (first as { source: number }).source;
+    expect(loaded.admin.isAdmin(source)).toBe(true);
+
+    const [again] = await ask(loaded, 'mica:server:integration:player', citizenid, { bank: 0 });
+    expect(again).toMatchObject({ ok: true, source, admin: false });
+    expect(loaded.admin.isAdmin(source)).toBe(false);
+  });
+
   it('re-seeds a synthetic citizen it already knows, keeping the source', async () => {
     const { citizenid, source } = await seed(loaded, 10);
     expect(await ask(loaded, 'mica:server:integration:player', citizenid, { bank: 99 })).toEqual([
-      { ok: true, citizenid, source, bank: 99 }
+      { ok: true, citizenid, source, bank: 99, admin: false }
     ]);
   });
 });

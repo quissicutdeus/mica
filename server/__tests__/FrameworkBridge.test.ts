@@ -1216,12 +1216,19 @@ describe('FrameworkBridge and the integration door’s synthetic players (MICA-3
     addMoney: () => false
   } as unknown as import('../lib/FrameworkBridge').FrameworkPlayer;
 
-  /** A resolver that answers SYNTHETIC, and claims whatever else a case tells it to. */
-  const resolverFor = (claims: Record<string, number> = {}) => ({
+  /**
+   * A resolver that answers SYNTHETIC, and claims whatever else a case tells it to. Its admin
+   * flag answers `admins`' answer, which by default says no to every source.
+   */
+  const resolverFor = (
+    claims: Record<string, number> = {},
+    admins: (src: number) => boolean = () => false
+  ) => ({
     player: vi.fn((src: number) => (src === SYNTHETIC.source ? SYNTHETIC : null)),
     sourceOf: vi.fn((citizenid: string) =>
       citizenid === SYNTHETIC.citizenid ? SYNTHETIC.source : (claims[citizenid] ?? null)
-    )
+    ),
+    isAdmin: vi.fn(admins)
   });
 
   /** A qbx core with CIT_A connected on source 5. */
@@ -1246,8 +1253,10 @@ describe('FrameworkBridge and the integration door’s synthetic players (MICA-3
       expect(() => fresh.installSyntheticPlayers(resolver), value).toThrow(/mica_integration/);
       expect(fresh.FrameworkBridge.getPlayer(-1_000_000)).toBeNull();
       expect(fresh.FrameworkBridge.getSourceByCitizenId(SYNTHETIC.citizenid)).toBeNull();
+      expect(fresh.FrameworkBridge.isSyntheticAdmin(-1_000_000)).toBe(false);
       expect(resolver.player).not.toHaveBeenCalled();
       expect(resolver.sourceOf).not.toHaveBeenCalled();
+      expect(resolver.isAdmin).not.toHaveBeenCalled();
     }
   });
 
@@ -1285,9 +1294,12 @@ describe('FrameworkBridge and the integration door’s synthetic players (MICA-3
     const fresh = await loadBridge('1');
     fresh.installSyntheticPlayers({
       player: () => ({ ...SYNTHETIC, source: 5 }),
-      sourceOf: () => null
+      sourceOf: () => null,
+      isAdmin: () => true
     });
     expect(fresh.FrameworkBridge.getPlayer(-1_000_001)).toBeNull();
+    // Nor is it an admin, though the flag says yes: the player answer is not for that source.
+    expect(fresh.FrameworkBridge.isSyntheticAdmin(-1_000_001)).toBe(false);
   });
 
   it('answers a connected character from the registry, and the resolver only on a miss', async () => {
@@ -1323,5 +1335,43 @@ describe('FrameworkBridge and the integration door’s synthetic players (MICA-3
     expect(fresh.FrameworkBridge.getSourceByCitizenId('CIT_LINE')).toBeNull();
     expect(fresh.FrameworkBridge.getSourceByCitizenId('CIT_CLAIMED')).toBeNull();
     expect(fresh.FrameworkBridge.getSourceByCitizenId('CIT_BROADCAST')).toBeNull();
+  });
+
+  it('answers an admin only for a synthetic player the resolver flags', async () => {
+    const fresh = await loadBridge('1');
+    connected(fresh);
+    // A resolver that would call every source an admin: only its own player is believed.
+    const resolver = resolverFor({}, () => true);
+    fresh.installSyntheticPlayers(resolver);
+
+    expect(fresh.FrameworkBridge.isSyntheticAdmin(-1_000_000)).toBe(true);
+    // A connected player, a broadcast, a line call's pseudo-source, just above the bound.
+    for (const src of [5, 0, -1, -2, -1000, -999_999]) {
+      expect(fresh.FrameworkBridge.isSyntheticAdmin(src), String(src)).toBe(false);
+    }
+    // At or below the bound, but no player the door seeded.
+    expect(fresh.FrameworkBridge.isSyntheticAdmin(-1_000_001)).toBe(false);
+    expect(resolver.isAdmin.mock.calls).toEqual([[-1_000_000]]);
+    fresh.__setResourceLookup();
+  });
+
+  it('answers no admin for a synthetic player seeded without the flag, or a throwing resolver', async () => {
+    const fresh = await loadBridge('1');
+    fresh.installSyntheticPlayers(resolverFor());
+    expect(fresh.FrameworkBridge.isSyntheticAdmin(-1_000_000)).toBe(false);
+
+    const throwing = await loadBridge('1');
+    throwing.installSyntheticPlayers(
+      resolverFor({}, () => {
+        throw new Error('resolver down');
+      })
+    );
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      expect(throwing.FrameworkBridge.isSyntheticAdmin(-1_000_000)).toBe(false);
+      expect(error).toHaveBeenCalled();
+    } finally {
+      error.mockRestore();
+    }
   });
 });

@@ -38,6 +38,16 @@ export interface SyntheticPlayer {
   citizenid: string;
   source: number;
   bank: number;
+  /** Seeded as an admin: `isAdmin` answers true for this source, and for no other. */
+  admin: boolean;
+}
+
+export interface SeedOptions {
+  /**
+   * Seed an admin, for the admin-gated actions (`reports:resolve`, `reports:reopen`). The flag
+   * lives on the door's player; a re-seed without it takes it away.
+   */
+  admin?: boolean;
 }
 
 const describe = (value: unknown): string => {
@@ -73,16 +83,29 @@ const ask = (event: string, args: readonly unknown[]): Promise<unknown[]> =>
 
 /**
  * Seed (or re-seed) a synthetic player with `bank` in a ledger the door keeps. Re-seeding the
- * same citizen resets the bank and drops its unread pushes, and keeps its synthetic source, so
- * its rate-limit windows carry over: a scenario takes a fresh `unique()` citizen instead.
+ * same citizen resets the bank, the admin flag and its unread pushes, and keeps its synthetic
+ * source, so its rate-limit windows carry over: a scenario takes a fresh `unique()` citizen
+ * instead.
  */
-export const seedPlayer = async (citizenid: string, bank: number): Promise<SyntheticPlayer> => {
-  const [answer] = await ask('mica:server:integration:player', [citizenid, { bank }]);
+export const seedPlayer = async (
+  citizenid: string,
+  bank: number,
+  { admin = false }: SeedOptions = {}
+): Promise<SyntheticPlayer> => {
+  const [answer] = await ask('mica:server:integration:player', [citizenid, { bank, admin }]);
   const seeded = answer as { ok?: unknown; reason?: unknown } & Partial<SyntheticPlayer>;
   if (!seeded || seeded.ok !== true) {
     throw new Error(`the door refused to seed ${citizenid}: ${describe(answer)}`);
   }
-  return { citizenid, source: Number(seeded.source), bank: Number(seeded.bank) };
+  if (seeded.admin !== admin) {
+    throw new Error(`the door seeded ${citizenid} with admin ${describe(seeded.admin)}`);
+  }
+  return {
+    citizenid,
+    source: Number(seeded.source),
+    bank: Number(seeded.bank),
+    admin: seeded.admin
+  };
 };
 
 export interface Invoked<T> {

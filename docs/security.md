@@ -481,6 +481,19 @@ capture every `emitNet` aimed at a synthetic source — app-event pushes and raw
 events alike — while an emit to a positive source or to `-1` passes through
 untouched.
 
+The door can also seed a synthetic _admin_ (`{ admin: true }` on `:player`,
+MICA-386's scenarios). `isAdmin` in `server/services/Admin.ts` answers a source
+at or below `SYNTHETIC_SOURCE_MAX` from `FrameworkBridge.isSyntheticAdmin`
+alone, never from an ace, and that answers true only while a resolver is
+installed, the source holds a door player, and the door flagged it; a positive
+source never reaches the flag and stays on the ace path. So on a harness server
+another resource can run the admin-gated `ServiceEndpoint` actions — the Reports
+queue, history, resolve and reopen, and `admin:check` — as a seeded admin. Every
+command and raw `onNet` admin gate is not reachable through the door at all, and
+with the convar unset at start nothing can be installed.
+`server/__tests__/admin.test.ts` holds the routing and `FrameworkBridge.test.ts`
+the three conditions.
+
 A server owner has one rule to keep: do not set `mica_integration` on a server
 players join. It is in the README's convar table with exactly that warning.
 

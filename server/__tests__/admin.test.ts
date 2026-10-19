@@ -10,6 +10,7 @@ const { dbMock } = vi.hoisted(() => ({
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
 
 import { isAdmin, adminAces, DEFAULT_ADMIN_ACES } from '../services/Admin';
+import { FrameworkBridge, SYNTHETIC_SOURCE_MAX } from '../lib/FrameworkBridge';
 
 /** Aces the fake server has granted to source 5. */
 let granted = new Set<string>();
@@ -50,6 +51,62 @@ describe('admin ace resolution', () => {
 
   it('trusts the server console', () => {
     expect(isAdmin(0)).toBe(true);
+  });
+});
+
+describe('a synthetic source (the integration door, MICA-397)', () => {
+  /** Every ace granted to every source: only the bridge's answer may decide below the bound. */
+  const grantEverything = () => {
+    (globalThis as any).IsPlayerAceAllowed = () => true;
+  };
+
+  it('is no admin on a server that did not start with the door open', () => {
+    // This suite's bridge is the real one, loaded with `mica_integration` unset.
+    grantEverything();
+    expect(FrameworkBridge.isSyntheticAdmin(-1_000_000)).toBe(false);
+    expect(isAdmin(-1_000_000)).toBe(false);
+    expect(isAdmin(-1_000_001)).toBe(false);
+  });
+
+  it('is answered by the bridge alone, never by an ace', () => {
+    grantEverything();
+    const synthetic = vi.spyOn(FrameworkBridge, 'isSyntheticAdmin');
+    try {
+      synthetic.mockReturnValue(false);
+      expect(isAdmin(-1_000_000)).toBe(false);
+      synthetic.mockReturnValue(true);
+      expect(isAdmin(-1_000_000)).toBe(true);
+      expect(synthetic).toHaveBeenCalledWith(-1_000_000);
+    } finally {
+      synthetic.mockRestore();
+    }
+  });
+
+  it("routes at exactly the bridge's SYNTHETIC_SOURCE_MAX, which Admin writes out", () => {
+    const synthetic = vi.spyOn(FrameworkBridge, 'isSyntheticAdmin').mockReturnValue(true);
+    try {
+      expect(isAdmin(SYNTHETIC_SOURCE_MAX)).toBe(true);
+      expect(isAdmin(SYNTHETIC_SOURCE_MAX + 1)).toBe(false);
+      expect(synthetic.mock.calls).toEqual([[SYNTHETIC_SOURCE_MAX]]);
+    } finally {
+      synthetic.mockRestore();
+    }
+  });
+
+  it('never asks the bridge about a source above the bound, whatever it would say', () => {
+    const synthetic = vi.spyOn(FrameworkBridge, 'isSyntheticAdmin').mockReturnValue(true);
+    try {
+      // A player with no ace, a broadcast, a line call's pseudo-source, just above the bound.
+      for (const src of [5, -1, -2, -1000, -999_999]) {
+        expect(isAdmin(src), String(src)).toBe(false);
+      }
+      expect(synthetic).not.toHaveBeenCalled();
+      // The ace path still answers for a positive source that holds one.
+      granted.add('mica.admin');
+      expect(isAdmin(5)).toBe(true);
+    } finally {
+      synthetic.mockRestore();
+    }
   });
 });
 
