@@ -17,10 +17,12 @@ export function service(serviceId: string) {
     /**
      * Call one action and wait for the reply.
      *
-     * `defaultValue` behaves as it does everywhere else in the SDK: a failed round trip
-     * resolves to it rather than throwing, so a missing server half degrades to an empty
-     * list instead of a crashed app. Omit it when a failure should surface — a write
-     * wrapped in `useAppAction` wants the error so it can toast it.
+     * `defaultValue` behaves as it does in `fetchNui`: a failed round trip resolves to it
+     * rather than throwing. Pass one only for a value whose absence is itself an answer,
+     * never to hide a failed round trip. A list read that fails must reject rather than
+     * come back empty, or the player is told they have none (MICA-384). Omit it for every
+     * write, since `useAppAction` needs the error to toast it, and for any read whose empty
+     * answer means something.
      */
     call: <T = unknown>(action: string, data?: unknown, defaultValue?: T): Promise<T> =>
       fetchNui<T>(

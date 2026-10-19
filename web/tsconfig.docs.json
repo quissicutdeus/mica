@@ -6,7 +6,8 @@
     "../sdk/index.ts",
     "../sdk/addon.ts",
     "../sdk/app.ts",
-    "../sdk/core.ts"
+    "../sdk/core.ts",
+    "../sdk/dev.ts"
   ],
   "exclude": ["src/**/*.test.ts", "src/**/*.svelte"]
 }

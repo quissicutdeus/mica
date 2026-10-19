@@ -1697,6 +1697,73 @@ only", as a `keybindsWrite` call already did. The permission names are unchanged
 — `lock-screen-write` now grants an add-on nothing — and the types stop offering
 the five in a later entry below.
 
+**What a frame receives is now plain data.** A store value pushed into an
+add-on's frame is projected before it is posted: functions and components are
+left out (a key is dropped, an array slot becomes `undefined`), `Date`, `Map`
+and `Set` keep their shape, and an `Error` arrives as `{ name, message }`.
+Before, a value carrying a function — every registry manifest's `icon`, every
+toast's `onClick` — failed to clone and stopped every store in the shell until
+the page reloaded. If your add-on read `icon` or `onClick` off a pushed value it
+was unusable already; it is `undefined` by design now.
+
+**`lifecycle.currentApp` shows your own app only.** In a frame it carries the
+shell's value, props included, while your app is in front, and
+`{ id: '', props: {} }` otherwise; it no longer says which other app the player
+opened. `onAppForeground` and `useAppVisible` behave as before. An add-on that
+needs the foreground app's id declares `navigation` and reads
+`useNavigation().currentApp`.
+
+**Notifications are filed under your app, and `usePhoneNotification` takes an
+app id.** `usePhoneNotification(appId)`: the argument is optional for a core app
+(omitted, its notices file under `system`) and ignored in a frame, where the
+shell pins it to the add-on. From a frame, `sendNotification` always files the
+toast and the drawer row under your id; `type` is one of `info`, `success`,
+`warning` or `error` and anything else becomes `info`, so a frame cannot raise a
+call banner; the notice counts as an app notification, so Do Not Disturb and the
+player's per-app mute hold it; a duration of `0` no longer keeps it on screen; a
+repeat title folds only into your own earlier toast, never another app's;
+`toast` lists your own toasts only; and `dismissNotification` ignores an id that
+is not yours. Nothing in an add-on's code has to change; a frame that passed
+`type: 'message'` to land its row in the Messages drawer no longer can.
+
+**`createCrudStore` and `createPagedStore` gain `error`, and a frame's
+string-form store without `service` fails at construction.** `error` is a
+`Readable<string | null>`: a failed read sets it to the failure's message and
+the next answer clears it, so a component tells "still loading" from "the server
+refused" by `error`, never by an empty list; `load()` still resolves. In a
+frame, `createCrudStore('journal', { list: 'get' })` with no `service` used to
+hang on its skeleton forever, because the sandbox has no NUI action names; it
+now throws at construction with a message naming the option, so a store built at
+module scope stops the add-on from booting where before one list stayed blank.
+The phone's own stores are unchanged, and nothing was removed.
+
+**Add-on hook types now offer only what an add-on can call, and four permissions
+are refused in a `core: false` manifest.** Ten hooks on the add-on barrel —
+`useAppRegistryWrite`, `useSystemHardwareWrite`, `useNotificationSettingsWrite`,
+`useLockScreenWrite`, `useKeybindsWrite`, `useDisplayWrite`, `useLocale`,
+`useStreamerMode`, `useMail` and `useMessages` — are retyped without the 34
+members the shell answers "core only"; they compiled before and always failed at
+runtime. Core apps keep the full types. A `core: false` manifest declaring
+`app-registry-write`, `keybinds-write`, `lock-screen-write` or
+`notification-settings-write` is refused by `defineApp`, naming them, in its own
+build and at install, and a saved remote add-on that declares one is dropped at
+start-up with a warning. The template's permission scan says such a hook "is
+core only" and to stop importing it, where it used to ask you to declare the
+permission. All of this is under the same `v2`.
+
+**An add-on's id is `lower_snake_case`, and twenty-one ids are reserved.**
+`defineApp` refuses a `core: false` manifest, remote included, whose id is not
+`[a-z][a-z0-9_]*` after lowercasing (`a:b`, `my-app` and `1st` are refused;
+`MyApp` is accepted as `myapp`), or whose id is `home`, `system`, a core app's
+id (`bank`, `settings`, …), or one of the server services that have no app of
+their own: `accounts`, `admin`, `battery`, `blocklist`, `conversations`,
+`devices`, `dms`, `highscores`, `importledger`, `integration`, `invoices`,
+`lockscreen`, `notifications`, `phone`, `phonenumbers`, `privacy`, `reports`,
+`shell`, `signal`. Such an id would read as a screen the phone already has, or
+claim a service namespace the add-on does not own. The Store refuses the install
+before fetching anything, and a saved add-on with such an id is dropped at
+start-up with a warning. Core manifests behave as before.
+
 **`DmInbox` and `DmThread` are new components (MICA-392), behind `social` and
 `app-events`.** `DmInbox` lists an app's DM correspondents newest first and
 reads again on a live `dm` push; `DmThread` pages one thread from the newest

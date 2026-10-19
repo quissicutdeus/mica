@@ -70,10 +70,12 @@ const errorFrom = (reply: unknown): Error | null => {
  * The contract is decided by `defaultValue`, and the split is deliberate:
  *
  * - **Supplied** — never throws. Returns the default on a transport failure, an error
- *   reply, or a reply of the wrong shape. For reads, where an empty list beats an
- *   exception.
+ *   reply, or a reply of the wrong shape. Only for a value whose absence is itself an
+ *   answer, where "could not ask" and "nothing there" lead the caller to the same thing.
+ *   Never to hide a failed round trip: a list read that fails must not come back as an
+ *   empty list, which the player reads as "you have none" (MICA-384).
  * - **Omitted** — throws on either failure. For writes, where the caller has to be able
- *   to tell that nothing happened.
+ *   to tell that nothing happened, and for every read whose empty answer means something.
  *
  * The second half is new. This used to swallow everything and return `null`, which made
  * the `try/catch` in all five stores unreachable and let an error reply through as data:

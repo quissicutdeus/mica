@@ -11,8 +11,15 @@ re-read on every turn.
 you are writing a `core: false` add-on for somebody else's server and have no
 business in micaOS's own tree — start at
 [Building an add-on outside this repo](#building-an-add-on-outside-this-repo)
-instead, then come back here for everything from [The manifest](#the-manifest)
-onwards, which is identical either way.
+instead, then come back here for [The manifest](#the-manifest) onwards. Most of
+it is the same either way. Four parts are not, and each says so where it
+appears: [the rules table](#the-rules-that-are-enforced-not-suggested), whose
+tests live in this repository; [the browser mock](#the-browser-mock) and
+[testing](#testing-it), which lean on this repository's `web/` tree; and
+[Before you call it done](#before-you-call-it-done), which runs this
+repository's gates. The template carries its own counterpart to the rules table
+and to the browser mock, under the outside-the-repo heading below; testing has
+no counterpart there.
 
 ```sh
 pnpm new:app journal            # the app
@@ -50,7 +57,7 @@ is absent from the bundle.
 
 ```ts
 import Icon from './Icon.svelte';
-import { defineApp } from '@mica/sdk';
+import { defineApp } from '@mica/sdk/app';
 
 export default defineApp({
   id: 'journal',
@@ -62,6 +69,17 @@ export default defineApp({
 });
 ```
 
+A manifest imports `defineApp` from `@mica/sdk/app`, never from `@mica/sdk`. The
+shell loads every manifest to build the launcher before the SDK has finished
+loading, and the main barrel reaches back into the registry that holds them. A
+manifest importing the barrel closes that loop, every binding comes out
+`undefined`, and the symptom is `useService is not a function` on a line that
+plainly imports it. `@mica/sdk/app` is a leaf — `defineApp`, `lazyBadge` and
+nothing that can close a loop — and `sdk/app.ts` has the cycle in full. In this
+repository `sdk/boundary.test.ts` refuses a manifest that imports the barrel.
+Outside it nothing does, and the template's build does not check, so copy the
+import from the template's `src/manifest.ts`.
+
 `tile` is the launcher icon: `bg` is what the tile is painted, `fg` what the
 glyph on it inherits. Both are utility classes from `app-utilities.css`, never
 colour values — they land in a `class` attribute, and `defineApp` throws on
@@ -70,8 +88,24 @@ inherits a near-white default and comes out illegible. A guard in
 `web/src/lib/utilityClasses.test.ts` measures the contrast.
 
 Declare what you use — an undeclared hook crashes your app with
-`AppPermissionError`; `renderApp(App, { permissions: [] })` is how to see it in
-a test. The full list is `AppPermission` in `sdk/manifest.ts`.
+`AppPermissionError`. In this repository `renderApp(App, { permissions: [] })`
+is how to see it in a test ([Testing it](#testing-it)); outside it, the
+`pnpm dev` demo phone enforces the same check. The full list is `AppPermission`
+in `sdk/manifest.ts`.
+
+A `core: false` add-on may only declare a permission that gives it something.
+`app-registry-write`, `keybinds-write`, `lock-screen-write` and
+`notification-settings-write` give an add-on nothing: the shell answers a
+sandboxed frame "core only" for every member behind them, so listing one would
+put a line on the Store's permission sheet that grants nothing. `defineApp`
+throws on a `core: false` manifest that declares one, naming it, in the add-on's
+own build and again when the Store installs it. Ten hooks on the add-on barrel —
+`useKeybindsWrite`, `useLockScreenWrite`, `useAppRegistryWrite`, `useMail`,
+`useMessages` and `useLocale` among them — are typed without the thirty-four
+members the shell would refuse, so a call that could never work does not
+compile. Import one of those hooks anyway and the build's permission scan says
+it "is core only" and to stop importing it, rather than asking you to declare
+the permission.
 
 **For a `core: false` add-on, the build derives the list and refuses a manifest
 that understates it** (MICA-205). A Vite plugin reads every module that entered
@@ -192,7 +226,9 @@ than in game:
 
 The first two exist because an add-on installed through the Store resolves
 `@mica/sdk` and nothing else — every relative import out of an app is something
-a third-party app cannot do.
+a third-party app cannot do. The tests run in this repository; an author outside
+it is held to the build-time versions the template carries, described under
+[Building an add-on outside this repo](#building-an-add-on-outside-this-repo).
 
 ## Loading data
 
@@ -321,11 +357,41 @@ micaOS, and your app does not. `useService` is the door that does not require
 it. The id must be your own app id or `<id>_something` — `permissions.test.ts`
 refuses anything else, because a service you can name is a service you can read.
 
-```ts
-const journal = useService('journal');
-const entries = await journal.call<Entry[]>('get', {}, []);
-await journal.call('create', { title, body });
+```svelte
+<script lang="ts">
+  const journal = useService('journal');
+
+  let entries = $state<Entry[]>([]);
+  let failed = $state(false);
+
+  async function load() {
+    try {
+      entries = await journal.call<Entry[]>('get', {});
+      failed = false;
+    } catch {
+      failed = true;
+    }
+  }
+  onAppForeground('journal', () => void load());
+
+  const add = () => journal.call('create', { title, body });
+</script>
 ```
+
+Leave `call`'s third argument, `defaultValue`, off a read like this one. Without
+it a failed round trip throws and `failed` lets the screen say the read failed.
+With one, the same failure — an error reply, a reply of the wrong shape, a
+server half that is not running — resolves to the default instead:
+`call<Entry[]>('get', {}, [])` hands back `[]`, which is also what "you have no
+entries" looks like. The player whose read was refused is shown an empty diary
+and takes it for the truth. MICA-384 took that out of the shipped stores, which
+had been reporting a refused first read as "No contacts".
+
+A default is right where it is itself a true answer. Notes' `restoreNote` passes
+`{ ok: false }`, and `false` is exactly what a restore that failed means; a
+decorative read with a sensible fallback is the other case. A write wants the
+error more than a read does, so wrap it in `useAppAction`'s `run` and the
+failure reaches the player as a toast.
 
 A custom action on that service declares its input in a contract, in the same
 server file that registers it:
@@ -337,34 +403,75 @@ action has no entry. `docs/schema-and-services.md` has the worked example.
 
 For a list, `createCrudStore` with `service` set gives you ordering, a `loaded`
 flag and the rule that the list follows the server rather than guessing ahead of
-it:
+it. `loaded` stays `false` until a read has come back with an answer: a load
+that failed keeps the last list and leaves `loaded` where it was, and the next
+foreground load is the retry.
+
+A failed read also sets the store's `error`, a `Readable<string | null>` holding
+the failure's message and cleared by the next read that answers. That is how a
+component tells "still loading" from "refused": both leave `loaded` `false` and
+the list empty, so `error` is the signal and an empty list never is. `load()`
+resolves either way, so nothing needs a `catch` to stay quiet. A server
+refusal's message is ready to show; any other failure may read like a log line,
+so word the player-facing text yourself. `createPagedStore` has the same
+`error`, set by a failed `load` or `loadMore`.
+
+In an add-on, `service` is not optional. A sandboxed frame has no named NUI
+actions, so a store built there from a string and without `service` would have
+every read and write refused; the factory throws at construction instead, with a
+message naming the option. The first argument is only a label for the console,
+never the service. Building the store from your `defineAddonService`
+declaration, as above, supplies the service for you. The phone's own stores are
+unaffected.
 
 ```ts
-// apps/journal/store.ts — built on first use, see the warning below
-const build = () =>
-  createCrudStore<Entry, Omit<Entry, 'id' | 'citizenid'>>(
-    'Journal',
-    { list: 'get', create: 'create', update: 'update', remove: 'delete' },
-    { service: 'journal', sort: byNewest<Entry>('updated_at') }
-  );
+// apps/journal/store.ts
+import { createCrudStore, byNewest } from '@mica/sdk';
+
+export const entries = createCrudStore<Entry, Omit<Entry, 'id' | 'citizenid'>>(
+  'Journal',
+  { list: 'get', create: 'create', update: 'update', remove: 'delete' },
+  { service: 'journal', sort: byNewest<Entry>('updated_at') }
+);
 ```
 
-**Do not call the factory at module scope.** It runs whenever anything imports
-the file, and if that happens while the `@mica/sdk` barrel is still initialising
-you get `undefined` back — the symptom is `byNewest is not a function` on a line
-that plainly imports it. Build it on first use. A manifest is the usual trigger,
-because the registry loads every manifest eagerly, so use
-`preload: () => import('./store').then((m) => m.entries.load())` rather than
-importing at the top.
+Build the store at module scope, as Notes does. It used to have to be built on
+first use: calling the factory at the top level ran it whenever anything
+imported the file, and if that happened while the `@mica/sdk` barrel was still
+initialising the imports came back `undefined` — `byNewest is not a function`,
+on a line that plainly imports it. `@mica/sdk/app` removed the cause. A manifest
+now imports a leaf, so importing the barrel no longer drags every app in behind
+it, and the lazy construction went with the reason for it.
 
-`web/src/apps/notes/store.ts` is the worked example.
+What still holds is the other half of that rule: **a manifest must not import
+the store statically.** The registry loads every manifest eagerly, so a static
+import would evaluate the store, and with it the barrel, in the middle of that
+load. A manifest reaches the store only through a dynamic import, as in
+`preload: () => import('./store').then((m) => m.entries.load())`. Leave
+`preload` off unless the data has to be right before the app is opened, such as
+a badge on the launcher.
 
-Two things this does not give you. The browser mock registry is core too, so
-`pnpm dev` cannot stand in for your server — run against a real one. And there
-is no state helper beyond the store factory: your app holds its own state in its
-own module.
+`web/src/apps/notes/store.ts` is the worked example, and its comment holds the
+same account.
+
+Two things this does not give you. There is no state helper beyond the store
+factory: your app holds its own state in its own module. And the browser mock
+registry, `web/src/nui/mocks/`, is core code in this repository's `web/` tree,
+so an add-on built outside it cannot add to it. What answers for your server in
+the browser depends on where you are building:
+[The browser mock](#the-browser-mock) in this repository, and `@mica/sdk/dev`
+outside it, under
+[Building an add-on outside this repo](#building-an-add-on-outside-this-repo).
 
 ## Testing it
+
+**This section is for an app in this repository.** `@mica/sdk/testing` is not a
+package export. It is an alias that `web/vite.config.ts` and
+`web/tsconfig.app.json` declare for the `web/` Vitest project, pointing at
+`web/src/testing.ts`, and `sdk/package.json`'s `exports` leaves it out on
+purpose: the helper builds the shell's own in-process host, which is a phone
+concern the published SDK cannot carry. In a project outside this repository the
+import does not resolve.
 
 ```ts
 import { renderApp } from '@mica/sdk/testing';
@@ -372,10 +479,45 @@ import { renderApp } from '@mica/sdk/testing';
 const { findByText, onback } = renderApp(Journal, { id: 'journal' });
 ```
 
-`renderApp` sets the foreground transition — without it `onAppForeground` never
-fires and your app silently never fetches — and supplies `onback` as a spy. It
-cannot mock `fetchNui` for you (`vi.mock` is hoisted to the top of the test
-file) or reset your module-scoped stores between tests.
+`renderApp` does four things, in this order, and the first is the one that
+matters. It sets `id` as the foreground app — without that transition
+`onAppForeground` never fires and your app silently never fetches. It builds the
+in-process host for that id, granting every permission unless you pass
+`permissions` (`permissions: []` is how a test sees `AppPermissionError`). It
+registers that host and hands it to the component through Svelte context. And it
+renders with `onback` supplied as a spy, which it returns. It cannot mock
+`fetchNui` for you (`vi.mock` is hoisted to the top of the test file) or reset
+your module-scoped stores between tests.
+
+**Outside this repository there is no counterpart to `renderApp`.** Steps one to
+three are made of things the add-on barrel does not export: the shell's
+navigation state, `createInProcessHost` and the context key a component reads
+its host from. So there is no supported way to give a component that calls an
+SDK hook the host it expects, and a test of such a screen has nothing to stand
+on. Two things do work:
+
+- **Logic that never touches a hook** — a formatter, a reducer, the shape of
+  your service declaration — is plain TypeScript and needs only a test runner.
+- **A component that calls no SDK hook** renders with `@testing-library/svelte`
+  directly. This is `renderApp` with the three host steps removed, which is why
+  it only suits a component that needs none of them:
+
+  ```ts
+  import { render } from '@testing-library/svelte';
+  import { vi } from 'vitest';
+  import EntryRow from './EntryRow.svelte';
+
+  const onpick = vi.fn();
+  const { findByText } = render(EntryRow, { props: { entry, onpick } });
+  ```
+
+  The template installs neither Vitest nor `@testing-library/svelte`; add both,
+  with a DOM environment and the Svelte Vite plugin the template already uses.
+
+For a whole screen, the supported way to see it work is the demo phone:
+`pnpm dev` in the template, with your server half answered by `src/mock.ts`
+([Building an add-on outside this repo](#building-an-add-on-outside-this-repo)).
+That is a look at it running, not an assertion.
 
 ## `core: true` vs `core: false`, and why it forks almost everything below
 
@@ -425,14 +567,14 @@ half" above). That split is not stylistic: `shared/routes.ts` and
 cannot add to either. `sdk/coreBoundary.test.ts` measures how much of each
 `core: false` app still depends on being first-party.
 
-A paged read gets `createPagedStore` (`web/src/services/createPagedStore.ts`)
-instead of `createCrudStore` — it holds the keyset cursor and knows
-`nextCursor: null` is the end rather than "ask again". Pair it with
-`usePagedList`'s `loadOlder`. Do not page a `createCrudStore`: that factory
-fetches a whole list and re-sorts it, which is the opposite of a cursor walking
-backwards through one. It takes the same `service` option, so an add-on's paged
-feed goes through the generic route too — Blabber's `feed` and `followingFeed`
-are the worked examples.
+A paged read gets `createPagedStore` (`sdk/createPagedStore.ts`, exported from
+`@mica/sdk` like `createCrudStore`) instead of `createCrudStore` — it holds the
+keyset cursor and knows `nextCursor: null` is the end rather than "ask again".
+Pair it with `usePagedList`'s `loadOlder`. Do not page a `createCrudStore`: that
+factory fetches a whole list and re-sorts it, which is the opposite of a cursor
+walking backwards through one. It takes the same `service` option, so an
+add-on's paged feed goes through the generic route too — Blabber's `feed` and
+`followingFeed` are the worked examples.
 
 **The hook.** A core app's hook goes in `sdk/host/`; an add-on exports its own
 from its own directory, beside the store, because `sdk/host/` ships inside
@@ -505,6 +647,67 @@ pnpm check          # svelte-check, optional and not run by the build
 `degit` lifts the subdirectory out of GitHub's repository tarball — no clone, no
 `.git`. The template's own `README.md` is the reference; the parts that are
 decisions rather than instructions are below.
+
+**Running it in the browser (MICA-311).** `pnpm dev` in the template builds your
+add-on on every save and prints a link to the demo phone, which loads the bundle
+from `127.0.0.1:5174` into the same sandboxed frame, under the same permission
+checks, as an installed add-on. There is no FiveM server behind it, so the
+answers for your server half come from a mock that runs inside your own frame.
+You write it once, in `src/mock.ts`, with `defineAddonMock` from
+`@mica/sdk/dev`:
+
+```ts
+// src/mock.ts
+import { defineAddonMock } from '@mica/sdk/dev';
+import { addonError } from '@mica/shared/addonService';
+import { journal } from './service';
+
+const rows: { id: number; title: string }[] = [];
+
+export default defineAddonMock(journal, ({ push }) => ({
+  list: () => rows,
+  add: (_citizenid, { title }) => {
+    if (rows.length >= 50) return addonError('You already have 50 entries.');
+    const row = { id: rows.length + 1, title };
+    rows.push(row);
+    push('added', { id: row.id });
+    return row;
+  }
+}));
+```
+
+The handlers take the same arguments as the ones you give
+`exports.mica:RegisterService` — the citizen, the parsed input and the source —
+so the file reads as a sketch of your Lua server half. You do not call
+`installAddonMock` yourself: the template's generated dev entry does, in
+development mode only. What the mock keeps from the real path is the part that
+surprises people. Input is parsed against your declaration before a handler
+runs, and a refusal reaches your UI as it would in game. A handler that throws,
+an action the declaration does not name, or an answer that is not JSON gives the
+generic failure, with the cause on the console. A failed call rejects, or
+resolves to `defaultValue` if you passed one, exactly as above. Answers make the
+JSON round trip, so a `Date` arrives as a string. Every call is made as one
+fixed dev citizen, and `push(event, payload)` stands in for
+`exports.mica:PushToApp` and reaches `useAppEvents`.
+
+What it does not mock is the shell's per-frame rate limit, the server's
+per-action limiter and handler timeout, and the 15-second client timeout. A mock
+answers as fast as it runs, so a loop that is fine here can still be limited in
+game. And it answers only an id the phone would let your app call — your
+manifest's `services` if it lists them, otherwise your app id and ids starting
+`<id>_` — and throws at install, naming the rule, for any other, since the phone
+would refuse every call to it in game.
+
+**`@mica/sdk/dev` must never reach a bundle you ship**, and that is why it is
+off both barrels and why the template enforces it. In a bundle a player
+installs, the mock would answer your service itself, as a fake citizen, instead
+of your server — every write lost and every read invented, with nothing failing.
+`pnpm dev` builds into `dist-dev/`, never `dist/`, and `pnpm build` fails on the
+import of `@mica/sdk/dev` from anywhere, on the files behind it however they
+were reached, and on a finished chunk that still carries the mock's marker
+string, which catches a copy of the mock pasted into your own source. An app in
+this repository does not use it either: `sdk/boundary.test.ts` refuses the
+import, and those apps are answered by [the browser mock](#the-browser-mock).
 
 **Two packages, neither published.** An add-on's imports resolve `@mica/sdk`
 _and_ `@mica/shared` (the SDK re-exports from it, so its names are inside the
@@ -586,6 +789,12 @@ the `__MICA_*__` substitutions).
   busy flag, the success toast and the error toast together. Written by hand
   they come apart: Contacts' delete once had neither toast, so a refused delete
   looked exactly like a real one.
+- Send a notification with `usePhoneNotification(appId)`, passing your own app
+  id; it needs the `notifications` permission. A core app that omits the id has
+  its notices filed under `system`. An add-on may omit it, because the shell
+  pins the id to the add-on's own whatever is passed. `sendNotification` files
+  under your app whatever `type` it is given, `toast` carries your own toasts
+  only, and `dismissNotification` throws for an id your app did not send.
 - Act on deep-link props with `useDeepLink`. Return `false` while the data it
   names has not arrived and it will ask again; returning `true` consumes the
   props, which is what makes back work.
@@ -615,7 +824,10 @@ the `__MICA_*__` substitutions).
 - Show `Skeleton` until the store's `loaded` says the first fetch has come back,
   and only then the `EmptyState`. An empty list is not the same statement as
   "you have nothing"; every list in the phone used to make the second one while
-  still waiting for the first.
+  still waiting for the first. A first read that failed does not set `loaded`,
+  in either store factory (MICA-384), so watch the store's `error` beside it:
+  show the skeleton while `loaded` is false and `error` is `null`, and the
+  failure once `error` is set.
 
 ## Being findable from the home search
 
@@ -713,6 +925,11 @@ cannot see DOM focus (see [`security.md`](security.md)).
 
 ## The browser mock
 
+**This section is for an app in this repository.** An add-on built outside it
+cannot add a file to `web/`; its mock is `src/mock.ts`, written with
+`defineAddonMock` from `@mica/sdk/dev` (see
+[Building an add-on outside this repo](#building-an-add-on-outside-this-repo)).
+
 Add your app's fixtures to a file of its own,
 `web/src/nui/mocks/services/<id>.ts`, exporting `mocks`; the registry picks
 every file there up, so nothing central is edited (`pnpm new:app <id> --service`
@@ -728,10 +945,11 @@ disagrees with the server is a bug you cannot see in the browser.
 
 ## Before you call it done
 
-`pnpm verify`. It runs format, typecheck, unit, e2e, build and the dead-code
-scan in that order — cheapest first — and prints a per-gate summary naming every
-gate that failed and every gate that did not run. CI runs the same command, so
-the two cannot drift.
+In this repository, `pnpm verify`; outside it, `pnpm check` and `pnpm build` in
+the template are the gates. `pnpm verify` runs format, typecheck, unit, e2e,
+build and the dead-code scan in that order — cheapest first — and prints a
+per-gate summary naming every gate that failed and every gate that did not run.
+CI runs the same command, so the two cannot drift.
 
 `--quick` skips e2e, and only e2e. Do not finish on it: e2e is the only step
 that catches a stale mock or a gesture that stopped working. `--bail` stops at

@@ -180,7 +180,7 @@ decision, recorded in [`docs/decisions.md`](docs/decisions.md).
   `useDisplay`, `useCamera`, `useSound`, `useKeybinds`, `useLocation`), and for
   the app itself (`useNavigation`, `useAppLevels`, `useAppAction`, `useStorage`,
   `usePersisted`, `useTimer`, `useDeepLink`, `usePagedList`,
-  `usePhoneNotification`, `useAppRegistry`, `useAppEvents`, `useTheme`,
+  `usePhoneNotification(appId)`, `useAppRegistry`, `useAppEvents`, `useTheme`,
   `useWallpaper`, `useNotificationSettings`, `useAdmin`, `useDevTools`,
   `useService`). Plus `AppProps` — the one boundary every app crosses, and
   typechecked. Apps import the SDK and nothing else, enforced by a test rather
@@ -190,7 +190,10 @@ decision, recorded in [`docs/decisions.md`](docs/decisions.md).
 - **Written for app authors**: `pnpm new:app <id>` scaffolds a working app,
   `localhost:5173/?app=<id>` boots straight into one (`?device=tablet` boots the
   1280x800 tablet frame instead of the phone), and `renderApp` from
-  `@mica/sdk/testing` unit-tests one. See
+  `@mica/sdk/testing` unit-tests one — a helper for apps in this repository
+  only, since that specifier is an alias in `web/` and not a package export. An
+  add-on outside the repo runs in the demo phone with `pnpm dev` in
+  `tools/addon-template/`, its server half mocked with `@mica/sdk/dev`. See
   [docs/writing-an-app.md](docs/writing-an-app.md).
 - **Client & NUI Transport Safety**: Deterministic ID generation and 15-second
   safety timeouts (`ClientApp.ts`) preventing NUI callbacks from hanging CEF

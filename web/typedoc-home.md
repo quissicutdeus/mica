@@ -17,6 +17,7 @@ not export quite the same set:
 | `addon` | `sdk/addon.ts` | `web/vite.addon.config.ts` | an out-of-tree `core: false` add-on, in a sandboxed iframe  |
 | `app`   | `sdk/app.ts`   | `@mica/sdk/app`            | a manifest file, and only a manifest file                   |
 | `core`  | `sdk/core.ts`  | `@mica/sdk/core`           | a `core: true` app that needs the raw NUI transport         |
+| `dev`   | `sdk/dev.ts`   | `@mica/sdk/dev`            | an add-on's `pnpm dev` only, never a bundle you ship        |
 
 **If you are writing a Store add-on, `addon` is your surface.** It is the one
 that has `bootAddOn`, which is the function your bundle must call; a
@@ -29,10 +30,24 @@ out `undefined`. `core` is the surface a sandboxed add-on is refused:
 `useNuiBridge` can invoke any registered NUI callback by name, so it would
 defeat every permission the sandbox exists to enforce.
 
-Both `index` and `addon` are documented here on purpose. Neither is "the" barrel
-— the question of what `@mica/sdk`'s `.` export should ultimately resolve to is
-open, and this site describes what each file exports today rather than answering
-it.
+`dev` is the opposite case: something an add-on has during development and must
+never have in a bundle it ships. It is the in-frame mock of an add-on's server
+half (`defineAddonMock`, `installAddonMock`) that the add-on template's
+`pnpm dev` installs so a demo phone with no FiveM server behind it has something
+to answer `useService` (MICA-311). It is off both barrels on purpose, and the
+template's production build refuses any import of it, because a mock that
+reached a shipped bundle would answer the add-on's service itself instead of the
+server's.
+
+Both `index` and `addon` are documented here on purpose, because the bare
+specifier means a different file to each build: the shell's Vite config aliases
+`@mica/sdk` to `index`, and the add-on build aliases it to `addon`. What a
+package manager resolves for `.` is decided, though (MICA-125):
+`sdk/package.json` maps `.` to `addon.ts`. The map can only be right for one
+audience, and the one that reads it is outside this repository — add-on authors
+— while the shell always has a Vite config to alias in. So `index` is published
+under no subpath at all: an outside consumer resolving it would get names it
+cannot call and no `bootAddOn`.
 
 ## Which version is this?
 

@@ -347,7 +347,10 @@ A third refusal reads your own code: `vite.config.ts` derives the permissions
 your `@mica/sdk` imports need and fails the build if `permissions` in
 `src/manifest.ts` names fewer. Declaring **more** than you use is always fine.
 The mapping is the SDK's own, loaded out of the `@mica/sdk` you installed rather
-than copied here, so it is the same one micaOS holds its own apps to.
+than copied here, so it is the same one micaOS holds its own apps to. The
+exception is a hook only a core app can use, such as `useKeybindsWrite`: the
+scan says it "is core only" and to stop importing it, and `defineApp` refuses a
+manifest that declares its permission.
 
 Understating costs you nothing and costs the player something, which is why it
 is a build error rather than a lint: your permission list is what the Store
