@@ -30,6 +30,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join, sep } from 'node:path';
 import { ALL_PERMISSIONS, defineApp, type AppManifest, type AppPermission } from './manifest';
 import {
+  ADD_ON_REFUSED_PERMISSIONS,
+  ANSWERED_IN_FRAME,
   HOOK_OF_FACET,
   PERMISSION_OF,
   permissionOfFacet,
@@ -40,11 +42,21 @@ import {
   validateManifestPermissions,
   MEMBER_APP_ARGS,
   appIdArgOf,
+  type CoreOnlyMember,
+  type FacetWithCoreOnly,
   type MemberType,
   type ParamsOf,
   type ReachableCallable
 } from './permissions';
-import { declaredPermissions, permissionShortfall, sdkImportNames } from './lib/permissionScan';
+import {
+  ADD_ON_REFUSED_PERMISSIONS as SCAN_REFUSED_PERMISSIONS,
+  declaredPermissions,
+  permissionShortfall,
+  sdkImportNames
+} from './lib/permissionScan';
+import * as addOnHooks from './host/iframe/addOnHooks';
+import * as hostHooks from './host/index';
+import type * as addOnBarrel from './addon';
 import type { Facets } from './host/facets';
 import { facets, registerFacet, resetHostsForTest } from './host/current';
 import { createInProcessHost } from './host/inProcess/createInProcessHost';
@@ -109,8 +121,12 @@ describe('declared permissions', () => {
 
   it('covers every capability the app actually reaches for', () => {
     const understated = APPS.flatMap((app) =>
-      permissionShortfall(sdkImportsOf(app.id), app.permissions ?? [], PERMISSION_OF).map(
-        (need) => `${app.id}: uses ${need.hook}, does not declare '${need.permission}'`
+      permissionShortfall(sdkImportsOf(app.id), app.permissions ?? [], PERMISSION_OF, {
+        core: app.core
+      }).map((need) =>
+        need.coreOnly
+          ? `${app.id}: uses ${need.hook}, which is core only ('${need.permission}')`
+          : `${app.id}: uses ${need.hook}, does not declare '${need.permission}'`
       )
     );
     expect([...new Set(understated)].sort()).toEqual([]);
@@ -664,6 +680,163 @@ describe('an add-on naming a core-only write is refused at the shell', () => {
       expect(spy).not.toHaveBeenCalled();
     }
   );
+});
+
+/**
+ * Contract v2: what an add-on can name, it can call.
+ *
+ * `Facets` is one type for both sides, so before v2 every hook handed an add-on its facet's
+ * whole shape, and twenty-nine members type-checked in a `core: false` bundle only to be
+ * refused at run time as "core only" (thirty-four once the rows above were narrowed). The
+ * add-on barrel now re-types the hooks behind them (`host/iframe/addOnHooks.ts`), and
+ * `defineApp` refuses a permission with nothing behind it. This block holds the three
+ * tables those read from — `FACET_MEMBERS`, `ANSWERED_IN_FRAME`, and the derived
+ * `CoreOnlyMember` — to the twins and to each other.
+ */
+describe('an add-on can name only what the shell will answer (contract v2)', () => {
+  const TWINS = join(__dirname, 'host', 'iframe', 'facets');
+  type Equal<A, B> =
+    (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
+  type HookOf<F> = F extends keyof typeof HOOK_OF_FACET ? (typeof HOOK_OF_FACET)[F] : never;
+  type ReturnOf<T> = T extends (...args: never[]) => infer R ? R : never;
+  type InFrame = typeof ANSWERED_IN_FRAME;
+
+  /** Every `facet.member` hidden from an add-on, frozen: the finding's 29 plus the 5 above. */
+  const CORE_ONLY = [
+    'appRegistryWrite.fetchRemoteCatalog',
+    'appRegistryWrite.grantedPermissions',
+    'appRegistryWrite.installFromCatalog',
+    'appRegistryWrite.recordConsent',
+    'appRegistryWrite.refreshUpdates',
+    'appRegistryWrite.registerAddOn',
+    'appRegistryWrite.registerApp',
+    'appRegistryWrite.unregisterApp',
+    'appRegistryWrite.updateApp',
+    'displayWrite.setFrame',
+    'displayWrite.setFrameColor',
+    'keybindsWrite.resetBindings',
+    'keybindsWrite.setBinding',
+    'locale.setLocale',
+    'lockScreenWrite.clearPasscode',
+    'lockScreenWrite.setAutoLockPolicy',
+    'lockScreenWrite.setPasscode',
+    'mail.addReceivedMail',
+    'messages.addReceivedMessage',
+    'notificationSettingsWrite.clearAppNotificationPolicy',
+    'notificationSettingsWrite.setAppNotificationPolicy',
+    'notificationSettingsWrite.setBadgesEnabled',
+    'notificationSettingsWrite.setDndEnabled',
+    'notificationSettingsWrite.setNotificationSoundEnabled',
+    'notificationSettingsWrite.setToastsEnabled',
+    'streamerMode.setStreamerMode',
+    'systemHardwareWrite.setCharge',
+    'systemHardwareWrite.setNotificationTone',
+    'systemHardwareWrite.setRingtone',
+    'systemHardwareWrite.setSignal',
+    'systemHardwareWrite.setVolumeStep',
+    'systemHardwareWrite.toggleBluetooth',
+    'systemHardwareWrite.toggleCellService',
+    'systemHardwareWrite.toggleMute'
+  ] as const;
+
+  it('hides exactly the members the shell refuses as core only', () => {
+    type Derived = { [F in FacetWithCoreOnly]: `${F}.${CoreOnlyMember<F>}` }[FacetWithCoreOnly];
+    const exact: Equal<Derived, (typeof CORE_ONLY)[number]> = true;
+    expect(exact).toBe(true);
+    expect(CORE_ONLY).toHaveLength(34);
+
+    // The runtime half of the same claim: on neither list a frame is answered from.
+    const answered = CORE_ONLY.filter((key) => {
+      const [facet, member] = key.split('.');
+      const inFrame: readonly string[] =
+        (ANSWERED_IN_FRAME as Record<string, readonly string[]>)[facet] ?? [];
+      return (membersOfFacet(facet) ?? []).includes(member) || inFrame.includes(member);
+    });
+    expect(answered).toEqual([]);
+  });
+
+  it('answers every ANSWERED_IN_FRAME member inside the frame, never over the wire', () => {
+    type Unknown = {
+      [F in keyof InFrame & keyof Facets]: {
+        [M in InFrame[F][number]]: [MemberType<F, M>] extends [never] ? `${F}.${M}` : never;
+      }[InFrame[F][number]];
+    }[keyof InFrame & keyof Facets];
+    const none: [Unknown] extends [never] ? true : false = true;
+    expect(none).toBe(true);
+
+    const wrong: string[] = [];
+    for (const [facet, members] of Object.entries(ANSWERED_IN_FRAME)) {
+      const row = DENIED_FACETS.has(facet) ? undefined : membersOfFacet(facet);
+      if (row === undefined) wrong.push(`${facet}: not a facet a frame reaches`);
+      const file = ['.ts', '.svelte.ts']
+        .map((ext) => join(TWINS, `${facet}${ext}`))
+        .find(existsSync);
+      if (!file) {
+        wrong.push(`${facet}: no twin under sdk/host/iframe/facets`);
+        continue;
+      }
+      const source = readFileSync(file, 'utf8');
+      for (const member of members) {
+        if ((row ?? []).includes(member)) wrong.push(`${facet}.${member}: already on its row`);
+        // The twins name every wire member as a string argument (`fn('mail', [], 'x')`), so
+        // a quoted name passed to a call is one the twin sends, and belongs on the row. A
+        // type index (`Twin['presets']`) is not a call.
+        if (new RegExp(`[(,]\\s*['"]${member}['"]`).test(source)) {
+          wrong.push(`${facet}.${member}: the twin sends it over the wire`);
+        }
+      }
+    }
+    expect(wrong).toEqual([]);
+  });
+
+  it('refuses add-ons exactly the permissions with nothing behind them, and the scan agrees', () => {
+    expect(ADD_ON_REFUSED_PERMISSIONS).toEqual([
+      'app-registry-write',
+      'keybinds-write',
+      'lock-screen-write',
+      'notification-settings-write'
+    ]);
+    // `lib/permissionScan.ts` may import nothing, so it carries the list as a literal.
+    expect([...SCAN_REFUSED_PERMISSIONS].sort()).toEqual([...ADD_ON_REFUSED_PERMISSIONS]);
+    const declaring = APPS.filter((app) => !app.core).flatMap((app) =>
+      (app.permissions ?? [])
+        .filter((p) => ADD_ON_REFUSED_PERMISSIONS.includes(p))
+        .map((p) => `${app.id}: ${p}`)
+    );
+    expect(declaring).toEqual([]);
+  });
+
+  it('re-types the hook of every facet with a core-only member, and only those', () => {
+    const exact: Equal<keyof typeof addOnHooks, HookOf<FacetWithCoreOnly>> = true;
+    expect(exact).toBe(true);
+    expect(Object.keys(addOnHooks)).toHaveLength(10);
+    for (const [name, hook] of Object.entries(addOnHooks)) {
+      expect(hook, `${name} must be the core hook itself, only re-typed`).toBe(
+        hostHooks[name as keyof typeof hostHooks]
+      );
+    }
+  });
+
+  it('lets an add-on name none of them through the barrel it builds against', () => {
+    type Leak = {
+      [F in FacetWithCoreOnly]: Extract<
+        keyof ReturnOf<(typeof addOnBarrel)[HookOf<F> & keyof typeof addOnBarrel]>,
+        CoreOnlyMember<F>
+      >;
+    }[FacetWithCoreOnly];
+    const none: [Leak] extends [never] ? true : false = true;
+    expect(none).toBe(true);
+
+    // Spot checks in the shape an author meets them. A core app's barrel keeps every one.
+    // @ts-expect-error — `setBinding` is core only, so an add-on cannot name it.
+    type SetBinding = ReturnType<typeof addOnBarrel.useKeybindsWrite>['setBinding'];
+    // @ts-expect-error — `setLocale` is core only; `t` and `locale` stay.
+    type SetLocale = ReturnType<typeof addOnBarrel.useLocale>['setLocale'];
+    type Translate = ReturnType<typeof addOnBarrel.useLocale>['t'];
+    type CoreSetBinding = ReturnType<typeof hostHooks.useKeybindsWrite>['setBinding'];
+    const seen: [SetBinding?, SetLocale?, Translate?, CoreSetBinding?] = [];
+    expect(seen).toEqual([]);
+  });
 });
 
 /**

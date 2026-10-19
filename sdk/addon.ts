@@ -7,6 +7,25 @@ export * from './components';
 export * from './icons';
 export * from './utils';
 export * from './host/index';
+/**
+ * Contract v2: ten hooks from the line above, re-typed for an add-on. The same functions,
+ * returning their facet minus the members the shell refuses a sandboxed frame as "core
+ * only" — `setBinding`, `clearPasscode`, `setLocale` and the rest. A named export wins over
+ * the star export above, so a core app, which builds against `index.ts`, keeps the full
+ * types. `host/iframe/addOnHooks.ts` has the list and why.
+ */
+export {
+  useAppRegistryWrite,
+  useDisplayWrite,
+  useKeybindsWrite,
+  useLocale,
+  useLockScreenWrite,
+  useMail,
+  useMessages,
+  useNotificationSettingsWrite,
+  useStreamerMode,
+  useSystemHardwareWrite
+} from './host/iframe/addOnHooks';
 export * from './kit/index';
 /**
  * The list-store factory, so an add-on can have one.

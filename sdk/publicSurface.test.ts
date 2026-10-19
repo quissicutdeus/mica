@@ -2072,6 +2072,66 @@ const BASELINE_HOOK_RETURNS: Record<string, string[]> = {
 };
 
 /**
+ * Contract v2: the members the **add-on** barrel's hooks leave out of what `index.ts`'s
+ * return, keyed by hook.
+ *
+ * `addon.ts` re-types ten hooks (`host/iframe/addOnHooks.ts`) so that a member the shell
+ * refuses a sandboxed frame as "core only" no longer type-checks in an add-on: before v2,
+ * `useKeybindsWrite().setBinding` compiled in a `core: false` bundle and failed at run time.
+ * Each list here is exactly that hook's `CoreOnlyMember` set from `sdk/permissions.ts`.
+ *
+ * Held to the live checker both ways in `breaks no add-on through the hooks its own barrel
+ * types`: the add-on barrel's hook returns what `index.ts`'s does minus this list, no more
+ * and no fewer. So this is the frozen add-on surface, written as a difference rather than a
+ * second copy of 300 members. Frozen on the same terms as `BASELINE_HOOK_RETURNS`: adding a
+ * member here takes it away from every published add-on, which is a `SDK_CONTRACT_VERSION`
+ * bump, and taking one out is an addition and breaks nobody.
+ *
+ * `useAppRegistryWrite`, `useKeybindsWrite`, `useLockScreenWrite` and
+ * `useNotificationSettingsWrite` lose every member, and a `core: false` manifest may not
+ * declare their permissions at all (`ADD_ON_REFUSED_PERMISSIONS`). They stay exported, so
+ * an add-on that imported one still compiles until it reaches for a member.
+ */
+const ADD_ON_HOOK_OMISSIONS: Record<string, string[]> = {
+  useAppRegistryWrite: [
+    'fetchRemoteCatalog',
+    'grantedPermissions',
+    'installFromCatalog',
+    'recordConsent',
+    'refreshUpdates',
+    'registerAddOn',
+    'registerApp',
+    'unregisterApp',
+    'updateApp'
+  ],
+  useDisplayWrite: ['setFrame', 'setFrameColor'],
+  useKeybindsWrite: ['resetBindings', 'setBinding'],
+  useLocale: ['setLocale'],
+  useLockScreenWrite: ['clearPasscode', 'setAutoLockPolicy', 'setPasscode'],
+  useMail: ['addReceivedMail'],
+  useMessages: ['addReceivedMessage'],
+  useNotificationSettingsWrite: [
+    'clearAppNotificationPolicy',
+    'setAppNotificationPolicy',
+    'setBadgesEnabled',
+    'setDndEnabled',
+    'setNotificationSoundEnabled',
+    'setToastsEnabled'
+  ],
+  useStreamerMode: ['setStreamerMode'],
+  useSystemHardwareWrite: [
+    'setCharge',
+    'setNotificationTone',
+    'setRingtone',
+    'setSignal',
+    'setVolumeStep',
+    'toggleBluetooth',
+    'toggleCellService',
+    'toggleMute'
+  ]
+};
+
+/**
  * MICA-185. The shape of every published type, frozen: the field names of each object
  * type, and the members of each literal union, in the encoding `shapeMembers` produces —
  * `name` / `name?` for a field, `|value` for a union member.
@@ -2401,6 +2461,7 @@ const BASELINE_TYPE_SHAPES: Record<string, string[]> = {
     'threshold?'
   ],
   PagedStore: [
+    'error',
     'hasMore',
     'load',
     'loadMore',
@@ -2888,6 +2949,13 @@ const NEVER_EXPORTED = [
 const ADD_ON_ONLY_BY_DESIGN = ['bootAddOn'];
 
 /**
+ * Named on `addon.ts` and reaching `index.ts` only through its `export *`: the ten hooks
+ * `addon.ts` re-types for an add-on (contract v2). Same names and the same functions on both
+ * barrels; what differs is what they return, which `ADD_ON_HOOK_OMISSIONS` freezes.
+ */
+const RETYPED_FOR_ADD_ONS = Object.keys(ADD_ON_HOOK_OMISSIONS);
+
+/**
  * Divergences nobody chose. **This list is a defect, not a policy** — it is written down
  * so it cannot grow in silence, and every entry is something an add-on should be able to
  * name and cannot.
@@ -3302,6 +3370,65 @@ describe('the SDK public surface (MICA-125)', () => {
     ).toEqual([]);
   });
 
+  /**
+   * Contract v2. The arm above reads hooks off `index.ts`, which a core app builds against;
+   * `addon.ts` now types ten of them narrower, so what an add-on compiled against is read
+   * off the add-on barrel here. Its baseline is `BASELINE_HOOK_RETURNS` minus
+   * `ADD_ON_HOOK_OMISSIONS`, and the second half holds the omissions to the live checker, so
+   * the add-on surface is exactly the frozen one minus the list and cannot drift in silence.
+   */
+  it('breaks no add-on through the hooks its own barrel types', () => {
+    const entry = '@mica/sdk (add-on bundle)';
+    const addOnHooks = typedNow[entry].hooks;
+    const published = new Set(exportsNow[entry]);
+    const strip = (member: string) => member.replace(/\?$/, '');
+
+    const baseline: Record<string, string[]> = {};
+    for (const [hook, members] of Object.entries(BASELINE_HOOK_RETURNS)) {
+      if (!published.has(hook)) continue;
+      const omitted = new Set(ADD_ON_HOOK_OMISSIONS[hook] ?? []);
+      const kept = members.filter((member) => !omitted.has(strip(member)));
+      // A hook that keeps nothing has no return shape to read; the drift check below is
+      // what holds it to returning nothing at all.
+      if (kept.length > 0) baseline[hook] = kept;
+    }
+    const found = breakingChanges(
+      { exports: { [entry]: exportsNow[entry] }, props: {}, hooks: addOnHooks },
+      { exports: {}, props: {}, hooks: baseline }
+    ).map(describeBreak);
+    expect(
+      found,
+      'an add-on compiled against these hook members and `addon.ts` no longer types them. ' +
+        'If that is intended, it is a contract break: bump SDK_CONTRACT_VERSION, write the ' +
+        'CHANGELOG entry, and add the member to ADD_ON_HOOK_OMISSIONS.'
+    ).toEqual([]);
+
+    const drift: string[] = [];
+    for (const hook of Object.keys(hooksNow)) {
+      if (!published.has(hook)) continue;
+      const omitted = ADD_ON_HOOK_OMISSIONS[hook] ?? [];
+      const expected = hooksNow[hook].filter((member) => !omitted.includes(strip(member)));
+      const actual = addOnHooks[hook] ?? [];
+      if (expected.join() !== actual.join()) {
+        drift.push(
+          `${hook}: add-on barrel returns [${actual.join(', ')}], expected [${expected.join(', ')}]`
+        );
+      }
+      for (const member of omitted) {
+        if (!hooksNow[hook].map(strip).includes(member)) {
+          drift.push(`${hook}.${member}: omitted, but index.ts does not return it either`);
+        }
+      }
+    }
+    for (const hook of RETYPED_FOR_ADD_ONS) {
+      if (!published.has(hook)) drift.push(`${hook}: retyped, but addon.ts does not export it`);
+    }
+    expect(
+      drift,
+      'ADD_ON_HOOK_OMISSIONS no longer describes the difference between the two barrels'
+    ).toEqual([]);
+  });
+
   it('publishes nothing nobody decided to publish', () => {
     // The icons barrel is generated and republishes every icon on purpose, so its members
     // are derived rather than decided and adding one should cost nothing. Read from the
@@ -3374,7 +3501,10 @@ describe('the SDK public surface (MICA-125)', () => {
 
     it('declares every name addon.ts has and index.ts does not', () => {
       expect(
-        undeclaredDivergence(addonNamed, indexNamed, ADD_ON_ONLY_BY_DESIGN),
+        undeclaredDivergence(addonNamed, indexNamed, [
+          ...ADD_ON_ONLY_BY_DESIGN,
+          ...RETYPED_FOR_ADD_ONS
+        ]),
         'this name exists only inside an add-on bundle, so nothing in this tree ever ' +
           'compiles against it and no suite covers it'
       ).toEqual([]);
@@ -3851,7 +3981,9 @@ describe('the SDK public surface (MICA-125)', () => {
       // freezing only that would leave every `core: true` app's hooks ungated for no gain,
       // since both barrels re-export the same `host/index.ts` and the parity block above
       // already keeps the two name lists together. `index.ts` is the superset, so scoping
-      // to it covers `addon.ts` and costs nothing extra.
+      // to it covers `addon.ts` and costs nothing extra — except for the ten hooks `addon.ts`
+      // re-types narrower (contract v2), which `breaks no add-on through the hooks its own
+      // barrel types` reads off the add-on barrel itself.
       const addonHooks = Object.keys(typedNow['@mica/sdk (add-on bundle)'].hooks);
       expect(addonHooks.length).toBeGreaterThan(0);
       const missing = addonHooks.filter((hook) => !(hook in hooksNow));

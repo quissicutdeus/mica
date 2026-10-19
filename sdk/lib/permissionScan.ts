@@ -73,7 +73,33 @@ export interface PermissionShortfall {
   hook: string;
   /** The permission it requires, spelled as it must appear in `permissions`. */
   permission: string;
+  /**
+   * Contract v2: the permission is one a `core: false` manifest may not declare, so the fix
+   * is to drop the import, not to add the name. Set whether or not the manifest declares it.
+   */
+  coreOnly?: true;
 }
+
+/** Who a scan is for: an add-on unless said otherwise, since both add-on builds call it. */
+export interface ScanOptions {
+  /** A `core: true` app, which may declare every permission. */
+  core?: boolean;
+}
+
+/**
+ * The permissions a `core: false` manifest may not declare: every facet member behind each
+ * is refused to a sandboxed frame, so declaring one discloses a grant of nothing.
+ *
+ * A literal, because this module imports nothing (above). `ADD_ON_REFUSED_PERMISSIONS` in
+ * `sdk/permissions.ts` is the derivation from the facet tables, and `permissions.test.ts`
+ * holds the two equal.
+ */
+export const ADD_ON_REFUSED_PERMISSIONS: readonly string[] = [
+  'app-registry-write',
+  'keybinds-write',
+  'lock-screen-write',
+  'notification-settings-write'
+];
 
 /**
  * What a manifest declares, or why that could not be read.
@@ -235,14 +261,24 @@ export function neededPermissions(
  *
  * Declaring *more* than the scan finds stays fine — AGENTS.md §7: it is untidy, not a lie.
  * Declaring less is the failure this exists for.
+ *
+ * For an add-on (the default), an import needing one of `ADD_ON_REFUSED_PERMISSIONS` is
+ * reported `coreOnly` whether or not it is declared: telling the author to add the name
+ * would only move the failure to `defineApp`, which refuses it.
  */
 export function permissionShortfall(
   imported: Iterable<string>,
   declared: Iterable<string>,
-  table: PermissionTable
+  table: PermissionTable,
+  options: ScanOptions = {}
 ): PermissionShortfall[] {
   const have = new Set(declared);
-  return neededPermissions(imported, table).filter((need) => !have.has(need.permission));
+  return neededPermissions(imported, table).flatMap((need): PermissionShortfall[] => {
+    if (!options.core && ADD_ON_REFUSED_PERMISSIONS.includes(need.permission)) {
+      return [{ ...need, coreOnly: true }];
+    }
+    return have.has(need.permission) ? [] : [need];
+  });
 }
 
 /**
@@ -257,16 +293,32 @@ export function shortfallMessage(
   shortfall: readonly PermissionShortfall[]
 ): string {
   const width = Math.max(0, ...shortfall.map((need) => need.hook.length));
-  const rows = shortfall
-    .map((need) => `  ${need.hook.padEnd(width)}  needs '${need.permission}'`)
-    .join('\n');
+  const rows = (needs: readonly PermissionShortfall[], verb: string) =>
+    needs.map((need) => `  ${need.hook.padEnd(width)}  ${verb} '${need.permission}'`).join('\n');
+  const understated = shortfall.filter((need) => !need.coreOnly);
+  const coreOnly = shortfall.filter((need) => need.coreOnly);
+  const parts: string[] = [];
 
-  return (
-    `'${appId}' imports capabilities its manifest does not declare:\n\n${rows}\n\n` +
-    `Add those names to \`permissions\` in ${manifestPath}, or stop importing the hook. ` +
-    `A player is shown this list before they install, and is asked again when an update ` +
-    `widens it, so an add-on that declares less than it uses is a disclosure that is not ` +
-    `true — the shell refuses the undeclared call at run time and the player sees a toast ` +
-    `they cannot act on. Declaring more than you use is fine.`
-  );
+  if (understated.length > 0) {
+    parts.push(
+      `'${appId}' imports capabilities its manifest does not declare:\n\n` +
+        `${rows(understated, 'needs')}\n\n` +
+        `Add those names to \`permissions\` in ${manifestPath}, or stop importing the hook. ` +
+        `A player is shown this list before they install, and is asked again when an update ` +
+        `widens it, so an add-on that declares less than it uses is a disclosure that is not ` +
+        `true — the shell refuses the undeclared call at run time and the player sees a toast ` +
+        `they cannot act on. Declaring more than you use is fine.`
+    );
+  }
+  if (coreOnly.length > 0) {
+    parts.push(
+      `'${appId}' imports hooks only a core app can use:\n\n` +
+        `${rows(coreOnly, 'is core only, behind')}\n\n` +
+        `Stop importing them, and leave those names out of \`permissions\` in ` +
+        `${manifestPath}. A 'core: false' add-on runs in a sandboxed frame and the shell ` +
+        `refuses it every member these hooks return, so there is nothing to declare: ` +
+        `defineApp refuses a manifest that names one.`
+    );
+  }
+  return parts.join('\n\n');
 }

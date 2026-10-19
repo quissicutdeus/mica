@@ -630,6 +630,80 @@ export function membersOfFacet(facet: string): readonly string[] | undefined {
 }
 
 /**
+ * Members a sandboxed add-on can use although its facet's row above does not name them,
+ * because the facet's iframe twin answers them inside the frame and never asks the shell.
+ *
+ * `FACET_MEMBERS` is what crosses the wire, which is not the same as what an add-on can use.
+ * `storage.getItem` reads the hydrate snapshot; `display`'s defaults and bounds, `theme`'s
+ * and `wallpaper`'s presets, and `systemHardware.volumeStepChoices` arrive as constants in
+ * that message; `music`'s helpers and `theme`'s seed functions are pure functions the twin
+ * bundles; `appAction`, `appLevels`, `persisted` and `timer` are built in the frame out of
+ * members that do cross. `appRegistry`'s three update and add-on lists, and
+ * `notificationSettings.appPolicyStore`, answer with what an add-on is allowed to see, which
+ * is empty or its own.
+ *
+ * A member of a facet's type that is on neither list is one an add-on can name and the shell
+ * then refuses as "core only" — `CoreOnlyMember` below, which is what keeps it from
+ * type-checking in an add-on. Default-deny, like the rows: a new member is hidden from
+ * add-ons until somebody writes it down in one of the two places. `permissions.test.ts`
+ * holds every entry here to a twin that never names it on the wire.
+ */
+export const ANSWERED_IN_FRAME = {
+  appAction: ['busy', 'run'],
+  appLevels: ['back', 'release', 'title'],
+  appRegistry: ['bundledAddOns', 'updateCount', 'updatesStore'],
+  display: [
+    'displaySizeDefault',
+    'homeGridColumnsDefault',
+    'homeGridColumnsMax',
+    'homeGridColumnsMin',
+    'homeGridRowsDefault',
+    'homeGridRowsMax',
+    'homeGridRowsMin',
+    'motionPreferenceDefault'
+  ],
+  music: ['canPlay', 'describeMusicError', 'maxAudibleBroadcasts', 'thumbnailUrlFor'],
+  notificationSettings: ['appPolicyStore'],
+  persisted: ['set', 'subscribe', 'update'],
+  service: ['id'],
+  storage: ['getItem'],
+  systemHardware: ['volumeStepChoices'],
+  theme: ['defaultTheme', 'sanitizeSeed', 'seedFromRgbString'],
+  timer: ['after', 'clearAll', 'every'],
+  wallpaper: ['defaultWallpaper', 'presets']
+} as const satisfies { readonly [F in keyof typeof FACET_MEMBERS]?: readonly string[] };
+
+/** Through a `Map` for the reason `FACET_MEMBER_INDEX` is. */
+const IN_FRAME_INDEX = new Map<string, readonly string[]>(Object.entries(ANSWERED_IN_FRAME));
+
+/**
+ * The permissions a `core: false` manifest may not declare: every facet behind each one has
+ * nothing an add-on can use, on the wire or in the frame.
+ *
+ * Disclosing one would put a line on the Store's permission sheet that grants nothing, and a
+ * player would be asked to accept it. `defineApp` refuses such a manifest by name, and
+ * `lib/permissionScan.ts` carries the same list as a literal (it may import nothing) for the
+ * add-on builds; `permissions.test.ts` holds the two equal.
+ *
+ * Derived from the tables above, so emptying a row is all it takes to land a permission here,
+ * and giving a row a member takes it back out.
+ */
+export const ADD_ON_REFUSED_PERMISSIONS: readonly AppPermission[] = (() => {
+  const reachable = new Map<AppPermission, number>();
+  for (const [facet, hook] of Object.entries(HOOK_OF_FACET)) {
+    const needed = PERMISSION_OF[hook];
+    if (typeof needed !== 'string') continue;
+    const onWire = DENIED_FACETS.has(facet) ? 0 : (membersOfFacet(facet)?.length ?? 0);
+    const inFrame = IN_FRAME_INDEX.get(facet)?.length ?? 0;
+    reachable.set(needed, (reachable.get(needed) ?? 0) + onWire + inFrame);
+  }
+  return [...reachable]
+    .filter(([, count]) => count === 0)
+    .map(([permission]) => permission)
+    .sort();
+})();
+
+/**
  * Cheap Levenshtein distance. Every comparison here is against a permission name — under
  * twenty characters, roughly thirty of them — so the naive O(n·m) table is nowhere near
  * worth replacing with anything smarter.
@@ -728,6 +802,32 @@ export function validateManifestPermissions(
 }
 
 type Members = typeof FACET_MEMBERS;
+
+/** What a facet hands back, or `never` for a facet that is not a factory. */
+type FacetResult<F extends keyof Facets> = Facets[F] extends (...args: never[]) => infer R
+  ? R
+  : never;
+
+/** `ANSWERED_IN_FRAME`'s row for `F`, as a union, or `never`. */
+type InFrame<F> = F extends keyof typeof ANSWERED_IN_FRAME
+  ? (typeof ANSWERED_IN_FRAME)[F][number]
+  : never;
+
+/**
+ * Every member of facet `F` that type-checks in an add-on against `Facets` and is then
+ * refused by the shell as "core only": on the facet's type, and on neither `FACET_MEMBERS`
+ * nor `ANSWERED_IN_FRAME`. `host/iframe/addOnHooks.ts` omits exactly these from what the
+ * add-on barrel's hooks return, so an add-on reaching for one fails to compile instead.
+ */
+export type CoreOnlyMember<F extends keyof Facets & keyof Members> = Exclude<
+  keyof FacetResult<F> & string,
+  Members[F][number] | InFrame<F>
+>;
+
+/** The facets with at least one `CoreOnlyMember`. */
+export type FacetWithCoreOnly = {
+  [F in keyof Facets & keyof Members]: [CoreOnlyMember<F>] extends [never] ? never : F;
+}[keyof Facets & keyof Members];
 
 /** The type of `facet.member` on the facet's own object, or `never`. */
 export type MemberType<F extends keyof Facets, M> = Facets[F] extends (...args: never[]) => infer R

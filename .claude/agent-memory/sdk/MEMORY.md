@@ -36,3 +36,5 @@ in its own file and gets a line here.
   `sdkContract` refused, catalog URL moves, CHANGELOG `v<n>` needed
 - [A string store's name is a label](string-store-name-is-a-label.md) — frame
   check is `origin === 'null'`, not `window.parent`; `service` not defaulted
+- [Add-on hook types are narrower](add-on-hook-types-are-narrower.md) — rows are
+  the wire not the surface; named export beats `export *`; own baseline arm

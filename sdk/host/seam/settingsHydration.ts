@@ -5,14 +5,16 @@
 /**
  * `hydrateSettings`, and the one-slot seam behind it.
  *
- * MICA-176. `hydrateSettings` is on the public surface in both directions, but it only
- * ever *does* anything in the shell: it copies this character's saved settings out of the
- * database into the storage cache and re-reads every live persisted store. Inside a
- * sandboxed add-on there is nothing to fetch — the frame's storage arrives synchronously in
- * its `hydrate` message (`iframe/storageCache.ts`) — so the iframe twin of this was an
- * empty `async function` whose own doc comment said it existed only because
- * `useStorage.ts` re-exported the name "from whichever `storage` twin the build resolves
- * to, and the module graph needs the export to exist either way".
+ * Shell-only plumbing since contract v2: no barrel re-exports it, the shell imports it by
+ * path from this file, and `NEVER_EXPORTED` in `publicSurface.test.ts` holds it out.
+ *
+ * MICA-176. `hydrateSettings` only ever *does* anything in the shell: it copies this
+ * character's saved settings out of the database into the storage cache and re-reads every
+ * live persisted store. Inside a sandboxed add-on there is nothing to fetch — the frame's
+ * storage arrives synchronously in its `hydrate` message (`iframe/storageCache.ts`) — so
+ * the iframe twin of this was an empty `async function` whose own doc comment said it
+ * existed only because `useStorage.ts` re-exported the name "from whichever `storage` twin
+ * the build resolves to, and the module graph needs the export to exist either way".
  *
  * That "whichever the build resolves to" was `facetSwap()` in `vite.addon.config.ts`, which
  * this ticket deletes. So the choice moves to where every other one did: the entry point.

@@ -512,7 +512,7 @@ import { MICA_VERSION } from './version';
 // here would make it public forever (MICA-16's "adding an export is a one-way door");
 // living in `permissions.ts` instead — already outside both barrels — keeps it callable
 // and independently testable without widening what an add-on can reach.
-import { validateManifestPermissions } from './permissions';
+import { ADD_ON_REFUSED_PERMISSIONS, validateManifestPermissions } from './permissions';
 
 /**
  * Helper function to define and validate a micaOS application manifest.
@@ -877,6 +877,30 @@ export function defineApp(manifest: AppManifestInput): AppManifest {
   const color = flattenTile(tile);
 
   validateManifestPermissions(id, manifest.permissions ?? [], ALL_PERMISSIONS);
+
+  /**
+   * A permission that grants an add-on nothing is refused rather than disclosed. Every
+   * facet behind `keybinds-write`, `lock-screen-write` and the rest of
+   * `ADD_ON_REFUSED_PERMISSIONS` answers a sandboxed frame "core only" on every member, so
+   * the Store would put a line on the permission sheet that does nothing and ask the player
+   * to accept it. Thrown, like `widget.load` on an add-on, because it is a manifest that
+   * cannot mean what it says — not a typo, which `validateManifestPermissions` only warns
+   * about.
+   */
+  if (!core) {
+    const refused = (manifest.permissions ?? []).filter((permission) =>
+      (ADD_ON_REFUSED_PERMISSIONS as readonly string[]).includes(permission)
+    );
+    if (refused.length > 0) {
+      const names = refused.map((permission) => `'${permission}'`).join(', ');
+      throw new Error(
+        `micaOS App Manifest error: add-on '${id}' declares ${names}, which only a core app ` +
+          `can use. A 'core: false' add-on runs in a sandboxed frame, and the shell refuses ` +
+          `it every member these disclose, so the player would be asked to grant nothing. ` +
+          `Take them out of 'permissions', with the hooks that need them.`
+      );
+    }
+  }
 
   return {
     /**

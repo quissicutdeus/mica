@@ -17,6 +17,7 @@ import '../web/src/host/registerFacets';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { get } from 'svelte/store';
 import { ALL_CAPABILITIES, ALL_PERMISSIONS, defineApp } from './manifest';
+import { ADD_ON_REFUSED_PERMISSIONS } from './permissions';
 import { MICA_VERSION } from './version';
 import { appRegistryStore } from '../web/src/shell/state/registry';
 import { currentApp, openApp, goHome } from '../web/src/shell/state/navigation';
@@ -488,6 +489,55 @@ describe('defineApp: widget (MICA-245)', () => {
     expect(() =>
       defineApp({ id: 'notfn', ...core, widget: { sizes: ['2x1'], load: 'x' as never } })
     ).toThrow(/'widget.load' that is not a function/);
+  });
+});
+
+/**
+ * Contract v2. A permission whose every facet member is refused to a sandboxed frame would
+ * put a line on the Store's permission sheet that grants nothing.
+ */
+describe('defineApp: permissions an add-on cannot use', () => {
+  const addOn = { color: 'bg-green-600', icon: null, core: false } as const;
+
+  it('refuses each one on an add-on, naming it', () => {
+    expect(ADD_ON_REFUSED_PERMISSIONS.length).toBeGreaterThan(0);
+    for (const permission of ADD_ON_REFUSED_PERMISSIONS) {
+      expect(() => defineApp({ id: 'greedy', ...addOn, permissions: [permission] })).toThrow(
+        new RegExp(`add-on 'greedy' declares '${permission}', which only a core app can use`)
+      );
+    }
+  });
+
+  it('names every one it refuses, alongside the ones it would allow', () => {
+    expect(() =>
+      defineApp({
+        id: 'greedy',
+        ...addOn,
+        permissions: ['contacts', 'keybinds-write', 'lock-screen-write']
+      })
+    ).toThrow(/declares 'keybinds-write', 'lock-screen-write', which only a core app/);
+  });
+
+  it('refuses a remote bundle that leaves core unsaid, since a remote app is never core', () => {
+    expect(() =>
+      defineApp({
+        id: 'remote',
+        color: 'bg-green-600',
+        icon: null,
+        isRemote: true,
+        permissions: ['keybinds-write']
+      } as never)
+    ).toThrow(/add-on 'remote' declares 'keybinds-write'/);
+  });
+
+  it('lets a core app declare them, and an add-on declare the read halves', () => {
+    expect(
+      defineApp({ id: 'settingsy', ...addOn, core: true, permissions: ['keybinds-write'] })
+        .permissions
+    ).toEqual(['keybinds-write']);
+    expect(
+      defineApp({ id: 'reader', ...addOn, permissions: ['keybinds', 'lock-screen'] }).permissions
+    ).toEqual(['keybinds', 'lock-screen']);
   });
 });
 

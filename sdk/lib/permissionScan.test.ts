@@ -7,6 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
+  ADD_ON_REFUSED_PERMISSIONS,
   declaredPermissions,
   neededPermissions,
   permissionShortfall,
@@ -29,7 +30,8 @@ const TABLE: PermissionTable = {
   useContacts: 'contacts',
   useMedia: 'media',
   useAppLevels: null,
-  ReportDialog: ['reports', 'notifications']
+  ReportDialog: ['reports', 'notifications'],
+  useKeybindsWrite: 'keybinds-write'
 };
 
 describe('sdkImportNames', () => {
@@ -215,6 +217,35 @@ describe('permissionShortfall', () => {
       { hook: 'useMedia', permission: 'media' }
     ]);
   });
+
+  /**
+   * Contract v2. Both add-on builds call this with three arguments, so an add-on is the
+   * default: the scan must never tell one to declare a permission `defineApp` then refuses.
+   */
+  it('never tells an add-on to declare a permission only a core app can hold', () => {
+    const coreOnly = [{ hook: 'useKeybindsWrite', permission: 'keybinds-write', coreOnly: true }];
+    expect(permissionShortfall(['useKeybindsWrite'], [], TABLE)).toEqual(coreOnly);
+    // Declared or not: declaring it is not a fix, it is the next refusal.
+    expect(permissionShortfall(['useKeybindsWrite'], ['keybinds-write'], TABLE)).toEqual(coreOnly);
+  });
+
+  it('asks a core app to declare it like any other', () => {
+    expect(permissionShortfall(['useKeybindsWrite'], [], TABLE, { core: true })).toEqual([
+      { hook: 'useKeybindsWrite', permission: 'keybinds-write' }
+    ]);
+    expect(
+      permissionShortfall(['useKeybindsWrite'], ['keybinds-write'], TABLE, { core: true })
+    ).toEqual([]);
+  });
+
+  it('covers every refused name, so the literal cannot fall out of the table it mirrors', () => {
+    expect(ADD_ON_REFUSED_PERMISSIONS.length).toBeGreaterThan(0);
+    for (const permission of ADD_ON_REFUSED_PERMISSIONS) {
+      expect(permissionShortfall(['useThing'], [], { useThing: permission })).toEqual([
+        { hook: 'useThing', permission, coreOnly: true }
+      ]);
+    }
+  });
 });
 
 describe('shortfallMessage', () => {
@@ -226,6 +257,25 @@ describe('shortfallMessage', () => {
     expect(message).toContain('useMedia');
     expect(message).toContain("'media'");
     expect(message).toContain('src/manifest.ts');
+  });
+
+  it('says to drop a core-only import, never to declare it', () => {
+    const message = shortfallMessage('demo', 'src/manifest.ts', [
+      { hook: 'useKeybindsWrite', permission: 'keybinds-write', coreOnly: true }
+    ]);
+    expect(message).toContain("useKeybindsWrite  is core only, behind 'keybinds-write'");
+    expect(message).toContain('Stop importing them');
+    expect(message).not.toContain('Add those names');
+  });
+
+  it('says both things when a bundle does both', () => {
+    const message = shortfallMessage('demo', 'src/manifest.ts', [
+      { hook: 'useKeybindsWrite', permission: 'keybinds-write', coreOnly: true },
+      { hook: 'useMedia', permission: 'media' }
+    ]);
+    expect(message).toContain("useMedia          needs 'media'");
+    expect(message).toContain('Add those names');
+    expect(message).toContain('Stop importing them');
   });
 });
 
