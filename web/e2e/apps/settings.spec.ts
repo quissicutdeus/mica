@@ -88,7 +88,10 @@ test.describe('Settings App E2E', () => {
     // the same stamp through getGitInfo(); every other `text=` here is a long enough string
     // that the stamp cannot collide with it (MICA-35).
     await expect(
-      page.getByTestId('phone-screen').getByText('micaOS', { exact: true })
+      page
+        .getByTestId('phone-screen')
+        .getByText('micaOS', { exact: true })
+        .filter({ visible: true })
     ).toBeVisible();
     await expect(page.locator('text=867-5309')).toBeVisible();
     await expect(page.locator('text=First Boot')).toBeVisible();
@@ -261,7 +264,8 @@ test.describe('Settings App E2E', () => {
       await page.keyboard.press('Backspace');
 
       await openApps(page);
-      await page.locator('button', { hasText: 'Settings' }).first().click();
+      // Visible only: the hidden home tile named Settings precedes this pane's row in the DOM.
+      await page.locator('button:visible', { hasText: 'Settings' }).first().click();
       await expect(page.locator('text=Storage used')).toBeVisible();
 
       await page.getByRole('button', { name: 'Clear storage' }).click();

@@ -79,7 +79,7 @@ test.describe('Home screen search', () => {
       .click();
 
     await expect(page.getByRole('dialog', { name: 'App Drawer' })).toBeHidden();
-    await expect(page.locator('[data-testid="phone-screen"] h1').first()).toBeVisible();
+    await expect(page.getByTestId('phone-screen').getByRole('heading', { level: 1 })).toBeVisible();
   });
 
   test('an unmatched query says so instead of showing an empty sheet', async ({ page }) => {

@@ -40,7 +40,10 @@ test.describe('Store E2E', () => {
     // substring match and 'micaOS' appears in the OS name too. Scoped to the screen
     // because the preview header paints the same wordmark outside the device.
     await expect(
-      page.getByTestId('phone-screen').getByText('micaOS', { exact: true })
+      page
+        .getByTestId('phone-screen')
+        .getByText('micaOS', { exact: true })
+        .filter({ visible: true })
     ).toBeVisible();
   });
 
@@ -74,7 +77,7 @@ test.describe('Store E2E', () => {
     await expect(page.locator('text=System').first()).toBeVisible();
 
     // Click first installed app item button to open details modal and verify Installed Date field
-    const firstInstalledAppCard = page.locator('div.grid button').first();
+    const firstInstalledAppCard = page.locator('div.grid button:visible').first();
     await firstInstalledAppCard.dispatchEvent('click');
     await expect(page.locator('text=Installed Date')).toBeVisible();
   });

@@ -22,7 +22,7 @@ const openApp = async (page: import('@playwright/test').Page, name: string | Reg
    * — which is how this surfaced: `expect(0).toBeLessThan(0)`, from an assertion that had
    * been passing for the wrong reason.
    */
-  await expect(page.locator('[data-testid="phone-screen"] h1').first()).toBeVisible();
+  await expect(page.getByTestId('phone-screen').getByRole('heading', { level: 1 })).toBeVisible();
 };
 
 const goHome = async (page: import('@playwright/test').Page) => {
@@ -52,7 +52,7 @@ test.describe('Backspace closes the open item before leaving the app', () => {
     await page.keyboard.press('Backspace');
 
     await expect(page.locator('h1', { hasText: 'Contacts' })).toBeVisible();
-    await expect(page.locator('h1', { hasText: 'micaOS' })).toHaveCount(0);
+    await expect(page.locator('h1', { hasText: 'micaOS' })).toBeHidden();
   });
 });
 

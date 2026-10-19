@@ -50,7 +50,7 @@ test.describe('Home search reaches every source (MICA-248)', () => {
     await (await expectOneHit(page, 'Apps', /Calculator/)).click();
 
     await expect(sheet(page)).toBeHidden();
-    await expect(page.locator('[data-testid="phone-screen"] h1').first()).toBeVisible();
+    await expect(page.getByTestId('phone-screen').getByRole('heading', { level: 1 })).toBeVisible();
   });
 
   test('a contact, on its details', async ({ page }) => {
@@ -100,7 +100,9 @@ test.describe('Home search reaches every source (MICA-248)', () => {
     // The listing's own screen, not the feed it sits in (MICA-286). The description and
     // the seller's contact buttons only exist on the detail read, so this is what
     // separates "opened the listing" from "opened the app with the listing on screen".
-    await expect(page.getByText('Runs great, needs a new chain.')).toBeVisible();
+    await expect(
+      page.getByText('Runs great, needs a new chain.').filter({ visible: true })
+    ).toBeVisible();
     await expect(page.getByRole('button', { name: 'Call' })).toBeVisible();
   });
 });

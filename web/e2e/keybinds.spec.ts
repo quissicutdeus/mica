@@ -106,7 +106,7 @@ test.describe('Keyboard Shortcuts E2E', () => {
 
     // Both characters landed, and the shell did not navigate away.
     await expect(composerAfter).toHaveValue('qq');
-    await expect(page.locator('h1', { hasText: 'micaOS' })).toHaveCount(0);
+    await expect(page.locator('h1', { hasText: 'micaOS' })).toBeHidden();
   });
 
   test('a rebind set in Settings survives a UI reload', async ({ page }) => {

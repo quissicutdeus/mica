@@ -243,7 +243,7 @@ test.describe('Interactive Toast Notifications E2E', () => {
     );
 
     // Verify Mail app opens
-    await expect(page.locator('h1').first()).toBeVisible();
+    await expect(page.getByTestId('phone-screen').getByRole('heading', { level: 1 })).toBeVisible();
   });
 
   test('clicking shared contact toast body accepts contact without navigating', async ({

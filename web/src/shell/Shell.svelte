@@ -16,7 +16,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     isControlCenterOpen,
     markControlCenterRegistryReady
   } from './state/controlCenter';
-  import { drawerDragPhase, isDrawerOpen, searchQuery } from './state/appDrawer';
+  import { closeDrawer, drawerDragPhase, isDrawerOpen, searchQuery } from './state/appDrawer';
+  import { openFolderId } from './state/homeGrid';
   import { refreshCapabilities } from '../services/capabilities';
   import { ensureAdmin } from '../services/admin';
   import { createNuiMessageRouter } from './nuiMessages';
@@ -180,6 +181,27 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   );
   $effect(() => {
     if (visible && residentAppsShown) mountResidentApps();
+  });
+
+  /**
+   * MICA-363: the home layer stays mounted under the app on screen, so leaving it closes
+   * what it had open.
+   *
+   * The drawer and a folder each claim `back` while open, unscoped — `state/appDrawer.ts`
+   * and `FolderPopup.svelte`. Under a foreground app that claim is still topmost, so Back
+   * would close a sheet nobody can see instead of leaving the app. (It did before as well:
+   * neither registration was ever tied to the component being mounted.) Closing both is
+   * also what takes their two `backdrop-blur` scrims off the hidden layer — see the note
+   * on it below.
+   *
+   * Only on leaving home. A phone closed with the drawer up keeps it up for the reopen,
+   * which the MICA-356 effect above depends on.
+   */
+  const onHome = $derived($currentApp.id === 'home');
+  $effect(() => {
+    if (onHome) return;
+    if (get(isDrawerOpen) || get(drawerDragPhase) !== 'idle') closeDrawer();
+    if (get(openFolderId) !== null) openFolderId.set(null);
   });
 
   /**
@@ -895,12 +917,56 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                subtree containing the focused element. The console said so on every trip
                home. -->
   <div class="relative h-full w-full">
-    {#if $currentApp.id === 'home'}
+    <!-- The home layer stays mounted for the whole open and is hidden under an app
+         (MICA-363). It was `{#if}`-ed on the current app, so every trip home rebuilt the
+         grid and every widget, and an add-on widget re-booted its sandbox — and
+         `widgetPause.ts`'s storage round trip — each time. It is still rebuilt once per
+         open, with the rest of this snippet.
+
+         Not `display:none`: a widget's iframe would collapse to 0x0, as the add-on note
+         below describes. Hidden the way an add-on slot is, plus `opacity-0`, which is the
+         answer to the compositor objection in the note above — a hidden in-process app's
+         `backdrop-blur`/`transform` layers staying on screen over home. For this layer:
+
+         - Its only blur layers are the drawer's and an open folder's scrims, and neither
+           is rendered while it is hidden: leaving home closes both (the `onHome` effect).
+           What can still be promoted is an `AppIcon`'s scale transition, mid-flight when
+           a tap opens an app.
+         - `visibility` takes effect when a layer repaints, the step CEF 103 was seen to
+           skip. `opacity` is applied by the compositor to every layer beneath it, with
+           no repaint at all, so a layer that kept stale pixels still draws at zero.
+         - `opacity` also makes this box a stacking context, so while hidden the Dock's
+           `z-20` and the sheets' `z-55` sit inside it, beneath the app slots that follow
+           it in tree order, rather than above them. Anything retained is under the
+           foreground app. Only while hidden: on home those z-indices still interleave
+           with the shade and the status bar as they always have. The exception is the
+           camera in `transparent` mode, which paints nothing over this layer: there only
+           the `opacity` above stands between a retained layer and the screen.
+
+         `inert` keeps it out of the tab order, focus and the accessibility tree, so its
+         `region`, `toolbar` and `dialog` are not announced, or counted by axe, behind the
+         app — Chromium 102, under the 103 floor. `inert` and nothing else, for the reason
+         the note above gives. `pointer-events-none` as the add-on slot carries it: it is
+         inherited, so a descendant that sets its own `visibility` still takes no tap.
+         Keybinds: Home claims none of its own but the drawer's and a folder's `back`,
+         both unscoped and both closed on leaving home; the shell's `back` reads
+         `currentApp`.
+
+         Not `absolute inset-0`: that is the resident-app slot's shape, which specs and
+         `Shell.test.ts` select by. -->
+    <div
+      class="h-full w-full"
+      class:invisible={!onHome}
+      class:opacity-0={!onHome}
+      class:pointer-events-none={!onHome}
+      inert={!onHome}
+      data-testid="home-layer"
+    >
       <Home {openApp} />
       <Dock {openApp} />
       <Search />
       <AppDrawer {openApp} />
-    {/if}
+    </div>
 
     {#each $runningApps as instance (instance.id)}
       {@const AppComponent = appRegistryStore.getComponent(instance.id, $activeDevice)}
@@ -979,7 +1045,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <!-- The app's chunk is still arriving. Components load on demand now, so
                        there is a moment between opening an app and having its code — and
                        without something here the phone would be blank, with `<Home>` also
-                       skipped because the current app is not home. That is the exact
+                       hidden because the current app is not home. That is the exact
                        failure the `openApp` guard exists to prevent, arriving by a
                        different door. -->
           <div class="bg-surface flex h-full w-full items-center justify-center">

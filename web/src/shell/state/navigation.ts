@@ -230,8 +230,9 @@ export const openApp = (appName: string, props: Record<string, unknown> = {}) =>
   /**
    * An id nothing can render is refused here rather than downstream.
    *
-   * `Shell.svelte` renders `{#if AppComponent}` and skips `<Home>` whenever `currentApp`
-   * is not home — so an unresolvable id produced a blank screen with no back affordance,
+   * `Shell.svelte` renders `{#if AppComponent}` and hides the home layer whenever
+   * `currentApp` is not home — so an unresolvable id produced a blank screen with no back
+   * affordance,
    * and it stayed that way because CEF never reloads the page. A notification deep link
    * did this on every tap for months. The guard belongs at the entry point: every caller
    * would otherwise need its own check, and the one that forgot is the one that shipped.

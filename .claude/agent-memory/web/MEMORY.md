@@ -67,3 +67,5 @@ its one-line summary.
 - [A `.svelte` module-script type fails lint](svelte-module-script-type-export.md)
   — typecheck passes, eslint sees `error` types; declare it in `store.ts`
   instead
+- [jsdom keeps `inert` as a property](jsdom-inert-is-a-property.md) — Svelte
+  sets `el.inert`; jsdom never reflects it, so `hasAttribute('inert')` is false

@@ -39,7 +39,7 @@ test.describe('Phone Dialer App E2E', () => {
     await btn5.click();
 
     // Verify number display contains 555
-    const numberDisplay = page.locator('.text-4xl');
+    const numberDisplay = page.locator('.text-4xl:visible');
     await expect(numberDisplay).toHaveText('555');
 
     // Click Backspace button
