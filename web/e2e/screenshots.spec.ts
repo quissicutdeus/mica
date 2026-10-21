@@ -111,7 +111,7 @@ test.describe('README screenshots', () => {
 
   test('media gallery', async ({ page }) => {
     await page.goto('/?app=media');
-    await expect(page.getByRole('button', { name: /^Open photo \d+$/ }).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: /^Open photo \d+/ }).first()).toBeVisible();
     await capture(page, 'media');
   });
 

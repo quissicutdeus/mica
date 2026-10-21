@@ -77,6 +77,41 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   $effect(() => {
     for (const photo of page.visible) media.hydrate(photo);
   });
+
+  /**
+   * What `MediaThumb` draws as text on a tile, so the tile's name can carry it (MICA-404).
+   *
+   * Text inside a button has to be part of its name, as the same words in order (WCAG
+   * 2.5.3): a speech user says what they see. The thumb draws a GIF badge and a clip's
+   * running time over the picture; `Open photo 900` alone hid both from a screen reader.
+   * The placeholder a still-less item draws is the `alt` below, which is `photoAlt` —
+   * "Photo 900" — so it is already inside "Open photo 900" without being repeated.
+   *
+   * The `m:ss` format mirrors `MediaThumb`'s own `seconds`. If that one changes, the
+   * a11y sweep over this grid (`e2e/a11y.spec.ts`, whose fixtures hold a clip and a voice
+   * note) fails on this rule, which is how the two are kept in step.
+   */
+  const detailsOf = (photo: MediaItem): string => {
+    const details: string[] = [];
+    if (photo.kind === 'gif') details.push($t('media.gifBadge'));
+    if (photo.duration_ms) {
+      const total = Math.round(photo.duration_ms / 1000);
+      details.push(`${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`);
+    }
+    return details.join(', ');
+  };
+
+  const tileName = (photo: MediaItem): string => {
+    const details = detailsOf(photo);
+    if (isSelectionMode) {
+      return details
+        ? $t('media.selectPhotoDetails', { id: photo.id, details })
+        : $t('media.selectPhoto', { id: photo.id });
+    }
+    return details
+      ? $t('media.openPhotoDetails', { id: photo.id, details })
+      : $t('media.openPhoto', { id: photo.id });
+  };
 </script>
 
 <div class="no-scrollbar bg-surface min-h-0 flex-1 overflow-y-auto p-1" onscroll={page.onScroll}>
@@ -98,13 +133,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           class="group bg-surface-container relative aspect-square cursor-pointer"
           onclick={() => onphotoclick(photo)}
           aria-pressed={isSelectionMode ? selectedIds.has(photo.id) : undefined}
-          aria-label={isSelectionMode
-            ? $t('media.selectPhoto', { id: photo.id })
-            : $t('media.openPhoto', { id: photo.id })}
+          aria-label={tileName(photo)}
         >
           <MediaThumb
             item={photo}
-            alt={$t('media.captureAlt', { id: photo.id })}
+            alt={$t('media.photoAlt', { id: photo.id })}
             class="transition-opacity {isSelectionMode && selectedIds.has(photo.id)
               ? 'opacity-50'
               : 'group-hover:opacity-90'} duration-short ease-standard"

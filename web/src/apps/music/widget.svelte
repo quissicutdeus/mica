@@ -121,10 +121,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     </div>
   </div>
 {:else}
+  <!-- Named for what it shows, then what it does (MICA-404). "Open Music" alone dropped the
+       "Nothing playing" drawn on it: a screen reader never heard it, and a speech user
+       saying it reached nothing (WCAG 2.5.3). At 2x2 the hint on screen is the action. -->
   <button
     type="button"
     data-testid="widget-music-empty"
-    aria-label={$t('music.widgetOpenEmpty')}
+    aria-label={$t('music.widgetEmptyName', {
+      title: $t('music.widgetEmptyTitle'),
+      action: size === '2x2' ? $t('music.widgetEmptyHint') : $t('music.widgetOpenEmpty')
+    })}
     data-size={size}
     class="bg-surface-container text-on-surface-variant text-body-medium flex h-full w-full cursor-pointer flex-col items-center justify-center gap-1 overflow-hidden rounded-box p-3 text-center"
     onclick={open}

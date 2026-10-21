@@ -57,6 +57,7 @@
   "toggleAirplane": "Flugmodus",
   "toggleDnd": "Nicht stören",
   "toggleDndName": "Nicht stören",
+  "toggleNameExpanded": "{label} ({name})",
   "toggleFlashlight": "Taschenlampe",
   "notificationShade": "Mitteilungszentrale",
   "notifications": "Mitteilungen",

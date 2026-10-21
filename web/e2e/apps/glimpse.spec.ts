@@ -30,7 +30,9 @@ test.describe('Glimpse', () => {
 
   /** Open a post's own screen from the feed and wait for its comment section. */
   const openPost = async (frame: FrameLocator, id: number) => {
-    await post(frame, id).getByRole('button', { name: 'Comments', exact: true }).click();
+    await post(frame, id)
+      .getByRole('button', { name: /^Comments, \d+$/ })
+      .click();
     await expect(frame.getByTestId('glimpse-comments')).toBeVisible();
   };
 
@@ -73,13 +75,14 @@ test.describe('Glimpse', () => {
     const count = card.getByTestId('glimpse-like-count');
     await expect(count).toHaveText('2');
 
-    await card.getByRole('button', { name: 'Like', exact: true }).click();
-    const unlike = card.getByRole('button', { name: 'Unlike', exact: true });
+    // The name carries the count too (MICA-404), so it moves with the number on screen.
+    await card.getByRole('button', { name: 'Like, 2', exact: true }).click();
+    const unlike = card.getByRole('button', { name: 'Unlike, 3', exact: true });
     await expect(unlike).toHaveAttribute('aria-pressed', 'true');
     await expect(count).toHaveText('3');
 
     await unlike.click();
-    const like = card.getByRole('button', { name: 'Like', exact: true });
+    const like = card.getByRole('button', { name: 'Like, 2', exact: true });
     await expect(like).toHaveAttribute('aria-pressed', 'false');
     await expect(count).toHaveText('2');
   });

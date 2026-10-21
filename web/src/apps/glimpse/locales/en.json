@@ -28,6 +28,7 @@
   "like": "Like",
   "unlike": "Unlike",
   "comments": "Comments",
+  "actionCount": "{action}, {count}",
   "viewComments": "View comments ({count})",
   "addComment": "Add a comment…",
   "noComments": "No comments yet. Say something nice.",

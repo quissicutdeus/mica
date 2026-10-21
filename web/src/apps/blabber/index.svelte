@@ -96,6 +96,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   } = useBlabber();
   const { run, busy } = useAppAction('blabber');
   /**
+   * The unread badge on the Messages button, as drawn. The button's accessible name carries
+   * the same string (MICA-404): a bare "Messages" hid the count from a screen reader, and
+   * left a speech user nothing to say for the number they can see (WCAG 2.5.3).
+   */
+  const unreadBadge = $derived($unreadDms > 99 ? '99+' : String($unreadDms));
+  /**
    * The Notifications tab reads the OS shade filtered to this app, so the fetch is the shell's
    * rather than Blabber's — the app id only narrows the view.
    */
@@ -519,14 +525,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         class="text-on-surface hover:bg-surface-container-high duration-short ease-standard relative rounded-full p-2 transition-colors"
         onclick={() => openDms(null)}
         title={$t('blabber.messages')}
-        aria-label={$t('blabber.messages')}
+        aria-label={$unreadDms > 0
+          ? $t('blabber.messagesUnread', { count: unreadBadge })
+          : $t('blabber.messages')}
       >
         <MessageIcon class="size-icon-md" />
         {#if $unreadDms > 0}
           <span
             class="bg-primary-container text-on-primary-container text-label-small absolute top-0.5 right-0.5 min-w-4 rounded-full px-1"
           >
-            {$unreadDms > 99 ? '99+' : $unreadDms}
+            {unreadBadge}
           </span>
         {/if}
       </button>

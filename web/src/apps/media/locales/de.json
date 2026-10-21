@@ -35,7 +35,9 @@
   "deletePhotoTitle": "Foto löschen?",
   "deletePhotoMessage": "Möchtest du dieses Foto wirklich löschen?",
   "noPhotos": "Noch keine Fotos",
-  "captureAlt": "Aufnahme {id}",
   "selectPhoto": "Foto {id} auswählen",
-  "openPhoto": "Foto {id} öffnen"
+  "openPhoto": "Foto {id} öffnen",
+  "selectPhotoDetails": "Foto {id}, {details}, auswählen",
+  "openPhotoDetails": "Foto {id}, {details}, öffnen",
+  "gifBadge": "GIF"
 }

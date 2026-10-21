@@ -32,5 +32,6 @@
   "widgetNext": "Nächster Titel",
   "widgetEmptyTitle": "Nichts wird gespielt",
   "widgetEmptyHint": "Zum Öffnen von Musik tippen",
+  "widgetEmptyName": "{title}, {action}",
   "widgetOpenEmpty": "Musik öffnen"
 }

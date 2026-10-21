@@ -57,6 +57,7 @@
   "toggleAirplane": "Airplane",
   "toggleDnd": "DND",
   "toggleDndName": "Do Not Disturb",
+  "toggleNameExpanded": "{label} ({name})",
   "toggleFlashlight": "Flashlight",
   "notificationShade": "Notification Shade",
   "notifications": "Notifications",

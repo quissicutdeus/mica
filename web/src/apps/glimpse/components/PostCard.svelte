@@ -53,6 +53,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   const liked = $derived(likes?.mine.includes(LIKE) ?? false);
   const likeCount = $derived(likes?.counts[LIKE] ?? 0);
   const commentCount = $derived(stats?.comments ?? 0);
+  // Both counts are drawn inside their buttons, so both are in the buttons' names, as
+  // the visible words in order (MICA-404, WCAG 2.5.3). A bare "Like" hid the number from
+  // a screen reader and gave a speech user nothing to say for the one they can see.
   const author = $derived(post.display_name || post.handle || '');
 
   /** `updated_at > created_at`, derived, never stored — the row already knows. */
@@ -193,7 +196,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       type="button"
       class="hover:text-error duration-short ease-standard flex cursor-pointer items-center gap-1.5 transition-colors"
       class:text-error={liked}
-      aria-label={liked ? $t('glimpse.unlike') : $t('glimpse.like')}
+      aria-label={$t('glimpse.actionCount', {
+        action: liked ? $t('glimpse.unlike') : $t('glimpse.like'),
+        count: likeCount
+      })}
       aria-pressed={liked}
       data-testid="glimpse-like"
       onclick={() => onlike?.(post)}
@@ -218,7 +224,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <button
       type="button"
       class="hover:text-primary duration-short ease-standard flex cursor-pointer items-center gap-1.5 transition-colors disabled:cursor-default"
-      aria-label={$t('glimpse.comments')}
+      aria-label={$t('glimpse.actionCount', {
+        action: $t('glimpse.comments'),
+        count: commentCount
+      })}
       disabled={!onopen}
       onclick={() => onopen?.(post)}
     >

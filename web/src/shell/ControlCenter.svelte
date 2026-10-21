@@ -89,7 +89,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   const accessibleNameOf = (toggle: ControlCenterToggle, appName: string | null): string =>
     !toggle.builtin && appName
       ? $t('shell.toggleFromApp', { name: nameOf(toggle), app: appName })
-      : nameOf(toggle);
+      : spokenNameOf(toggle);
+
+  /**
+   * The abbreviation on the tile, then what it stands for (MICA-404). "Do Not Disturb" alone
+   * left out the "DND" a speech user can see and would say (WCAG 2.5.3). Only where the two
+   * differ: German draws the whole phrase on the tile, and saying it twice helps nobody.
+   */
+  const spokenNameOf = (toggle: ControlCenterToggle): string => {
+    const label = labelOf(toggle);
+    const name = nameOf(toggle);
+    return label === name ? name : $t('shell.toggleNameExpanded', { label, name });
+  };
 
   /**
    * An add-on names its icon by its `@mica/sdk` export (`'MoonIcon'`). A bare name

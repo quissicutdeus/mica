@@ -32,5 +32,6 @@
   "widgetNext": "Next track",
   "widgetEmptyTitle": "Nothing playing",
   "widgetEmptyHint": "Tap to open Music",
+  "widgetEmptyName": "{title}, {action}",
   "widgetOpenEmpty": "Open Music"
 }

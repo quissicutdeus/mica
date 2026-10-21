@@ -19,8 +19,11 @@ const THUMBNAIL_SIZE = 96;
 const THUMBNAILED_PHOTO = 20;
 const THUMBNAILLESS_PHOTO = 951;
 
-/** Every photo tile in the grid. `Open photo <id>` is the tile button's own label. */
-const photoTiles = (page: Page) => page.getByRole('button', { name: /^Open photo \d+$/ });
+/**
+ * Every photo tile in the grid. `Open photo <id>` starts the tile button's own label; a
+ * clip's running time or a GIF badge follows it when the tile draws one (MICA-404).
+ */
+const photoTiles = (page: Page) => page.getByRole('button', { name: /^Open photo \d+/ });
 
 /**
  * What crossed the mock bridge, by event name — see `window.mockCalls` in `nui/transport.ts`.
@@ -140,7 +143,7 @@ test.describe('Media gallery payloads (MICA-110)', () => {
   test('the grid draws the thumbnail, not the original', async ({ page }) => {
     await openMedia(page);
 
-    await expectStill(page, `Capture ${THUMBNAILED_PHOTO}`).toBe('thumbnail');
+    await expectStill(page, `Photo ${THUMBNAILED_PHOTO}`).toBe('thumbnail');
   });
 
   /**
@@ -195,7 +198,7 @@ test.describe('Media gallery payloads (MICA-110)', () => {
     const tile = page.getByRole('button', { name: `Open photo ${THUMBNAILLESS_PHOTO}` });
     await expect(tile, 'the thumbnail-less row must still be in the grid').toBeVisible();
 
-    await expectStill(page, `Capture ${THUMBNAILLESS_PHOTO}`).toBe('full');
+    await expectStill(page, `Photo ${THUMBNAILLESS_PHOTO}`).toBe('full');
   });
 
   /**

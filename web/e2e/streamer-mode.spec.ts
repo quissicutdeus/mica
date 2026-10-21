@@ -63,7 +63,7 @@ test.describe('the switch', () => {
   test('off means no picture carries the attribute at all', async ({ page }) => {
     await page.goto('/');
     await page.locator('button', { hasText: 'Media' }).first().click();
-    await expect(page.getByRole('button', { name: /^Open photo \d+$/ }).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: /^Open photo \d+/ }).first()).toBeVisible();
     await expect(page.locator('[data-streamer]')).toHaveCount(0);
   });
 });
@@ -78,7 +78,7 @@ test.describe('with streamer mode on', () => {
   }) => {
     await page.goto('/');
     await page.locator('button', { hasText: 'Media' }).first().click();
-    const tiles = page.getByRole('button', { name: /^Open photo \d+$/ });
+    const tiles = page.getByRole('button', { name: /^Open photo \d+/ });
     await expect(tiles.first()).toBeVisible();
 
     // Only a tile with a still is blurred: the fixture gallery also holds a voice note and

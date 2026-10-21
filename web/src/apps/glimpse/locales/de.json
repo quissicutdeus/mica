@@ -28,6 +28,7 @@
   "like": "Gefällt mir",
   "unlike": "Gefällt mir nicht mehr",
   "comments": "Kommentare",
+  "actionCount": "{action}, {count}",
   "viewComments": "Kommentare ansehen ({count})",
   "addComment": "Kommentar hinzufügen …",
   "noComments": "Noch keine Kommentare. Sag etwas Nettes.",
