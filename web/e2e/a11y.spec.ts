@@ -527,10 +527,7 @@ test('the wallpaper treatment reaches every run of text drawn on a photo', async
     { what: 'an app label', locator: page.getByText('Settings', { exact: true }).first() },
     {
       what: 'the status bar clock',
-      locator: page
-        .getByRole('button', { name: /notification shade/ })
-        .locator('span')
-        .first()
+      locator: page.getByTestId('status-bar-row').locator('span').first()
     }
   ];
 

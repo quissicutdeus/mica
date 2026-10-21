@@ -39,7 +39,7 @@ test.describe('Owner branding', () => {
       // The status bar's clock (left) ends before the cutout starts.
       const cutout = await page.getByTestId('camera-cutout').boundingBox();
       const clock = await frame
-        .locator('button[aria-label*="notification shade"] span')
+        .locator('[data-testid="status-bar-row"] span')
         .first()
         .boundingBox();
       if (!cutout || !clock) throw new Error('the status bar or cutout is not on screen');

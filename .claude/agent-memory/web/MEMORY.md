@@ -76,3 +76,6 @@ its one-line summary.
 - [A throwing store subscriber wedges every store](store-subscriber-throw-wedges-every-store.md)
   — Svelte's shared queue never drains again; clone-check pushes in tests;
   dedupe a scoped derived yourself
+- [axe 4.14 turns on `label-content-name-mismatch`](axe-414-label-content-name-mismatch.md)
+  — now on by default, matches whole words; `aria-hidden` does not exempt
+  visible text

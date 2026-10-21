@@ -137,10 +137,14 @@ describe('PhoneFrame transparency', () => {
     //
     // Delete or templatise this label and the flake comes back, in specs that do not
     // mention this file. Hence the assertion here rather than a comment there.
-    const bar = renderFrame(false).getByRole('button', { name: /notification shade/i });
+    const { getByRole, getByTestId } = renderFrame(false);
+    const bar = getByRole('button', { name: /notification shade/i });
     const label = bar.getAttribute('aria-label') ?? '';
     expect(label).not.toMatch(/\d/);
-    expect(bar.textContent ?? '').toMatch(/\d/); // the digits are still on screen
+    // The digits are still on screen, in the row beside the button rather than inside it
+    // (MICA-401): visible text inside a control has to be part of its accessible name.
+    expect(bar.textContent ?? '').toBe('');
+    expect(getByTestId('status-bar-row').textContent ?? '').toMatch(/\d/);
   });
 
   it('writes the theme onto the screen', () => {
@@ -558,7 +562,7 @@ describe('PhoneFrame music indicator', () => {
     expect(indicator).toBeTruthy();
     expect(tray.children[0]).toBe(indicator);
 
-    const statusBar = indicator?.closest('button');
+    const statusBar = indicator?.closest('[data-testid="status-bar-row"]');
     const [leftGroup, rightGroup] = Array.from(statusBar?.children ?? []);
     expect(leftGroup.contains(indicator)).toBe(true);
     expect(rightGroup.contains(indicator)).toBe(false);

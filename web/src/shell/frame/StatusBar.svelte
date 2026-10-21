@@ -158,25 +158,23 @@ SPDX-License-Identifier: AGPL-3.0-or-later
      part of this bar the stroke technique cannot help; they stay `on-surface` over
      an unknown photo, and that is recorded in MICA-109 rather than papered over. -->
 <!-- Split in two (MICA-247): the left ~60% is the shade's own long-standing hit
-     target, unchanged in content and accessible name (`PhoneFrame.test.ts` pins both,
-     including that its text still carries the clock's digits). The right ~40% is a
+     target, its accessible name unchanged (`PhoneFrame.test.ts` pins it digit-free,
+     and that the row beside it still carries the clock's digits). The right ~40% is a
      second, focusable button layered on top of the same visual row rather than a
      visually distinct one — it shares `CONTROL_CENTER_ZONE_START` with the drag
      gesture below, so the tap boundary and the drag boundary are the same line, and
      gives that zone its own accessible name and a keyboard route, neither of which a
      single button could have expressed for two different actions. -->
-<div bind:this={statusBarRef} class="absolute top-0 z-60 w-full">
-  <button
-    type="button"
-    class="text-on-surface duration-short ease-standard text-body-medium flex w-full cursor-pointer items-center justify-between px-8 pt-3 transition-opacity hover:opacity-90 active:opacity-75"
-    onclick={() => {
-      // The bar sits above every sheet, so a tap on one zone while the other sheet is
-      // up closes that sheet rather than stacking one on top of the other (MICA-247).
-      if ($isShadeOpen) closeShade();
-      else if ($isControlCenterOpen) closeControlCenter();
-      else openShade();
-    }}
-    aria-label={$isShadeOpen ? $t('shell.closeShade') : $t('shell.openShade')}
+<!-- MICA-401: the clock and the battery are drawn in a row *beside* the shade button,
+     not inside it. Inside, the button's digit-free `aria-label` (pinned by
+     `PhoneFrame.test.ts`) replaced them, so a screen reader heard neither the time nor
+     the charge, and a speech user saw "12:34" on a control that answers only to "open
+     notification shade" — axe 4.14's `label-content-name-mismatch` (WCAG 2.5.3). The
+     buttons are empty overlays, the same shape the control-center zone already had. -->
+<div bind:this={statusBarRef} class="group absolute top-0 z-60 w-full">
+  <div
+    data-testid="status-bar-row"
+    class="text-on-surface duration-short ease-standard text-body-medium flex w-full items-center justify-between px-8 pt-3 transition-opacity group-hover:opacity-90"
   >
     <div class="flex items-center gap-2">
       <span class:text-on-wallpaper={onWallpaper}>{$formattedTime}</span>
@@ -320,7 +318,19 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <BatteryIcon class="h-3 w-6" charge={$displayCharge} />
       </div>
     </div>
-  </button>
+  </div>
+  <button
+    type="button"
+    class="absolute inset-0 cursor-pointer"
+    onclick={() => {
+      // The bar sits above every sheet, so a tap on one zone while the other sheet is
+      // up closes that sheet rather than stacking one on top of the other (MICA-247).
+      if ($isShadeOpen) closeShade();
+      else if ($isControlCenterOpen) closeControlCenter();
+      else openShade();
+    }}
+    aria-label={$isShadeOpen ? $t('shell.closeShade') : $t('shell.openShade')}
+  ></button>
   <button
     type="button"
     class="focus-visible:ring-focus-ring absolute top-0 right-0 bottom-0 z-10 cursor-pointer focus-visible:ring-2 focus-visible:outline-none"

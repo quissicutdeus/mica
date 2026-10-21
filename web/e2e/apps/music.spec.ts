@@ -688,7 +688,7 @@ test.describe('Music', () => {
     // And it is on the left, not the right — the bug report in one assertion.
     expect(
       await indicator.evaluate((el) => {
-        const bar = el.closest('button');
+        const bar = el.closest('[data-testid="status-bar-row"]');
         return bar ? bar.children[0].contains(el) : null;
       })
     ).toBe(true);
