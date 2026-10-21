@@ -27,8 +27,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   registerMessages('snek', { en, de });
   const { t } = useLocale();
 
-  // The annotation, not `$props<AppProps>()` — that form only works for an inline object
-  // literal and reports "Expected 0 type arguments" for a named type.
+  // The annotation, not `$props<AppProps>()`: `$props()` takes no type argument, and since
+  // svelte-check 4.7.7 that form reports "Expected 0 type arguments" for any type (MICA-403).
   let { onback }: AppProps = $props();
 
   const { submitScore } = useHighscores();

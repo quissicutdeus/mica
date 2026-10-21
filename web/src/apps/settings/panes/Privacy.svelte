@@ -14,7 +14,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     useStreamerMode
   } from '@mica/sdk';
 
-  let { onyourdata } = $props<{ onyourdata: () => void }>();
+  type Props = { onyourdata: () => void };
+
+  let { onyourdata }: Props = $props();
 
   const { t } = useLocale();
   const { streamerMode, setStreamerMode } = useStreamerMode();

@@ -26,7 +26,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { shadeDragRevealDistance } from './state/display';
   import { appDrawerHintSeen } from './state/onboarding';
 
-  let { openApp } = $props<{ openApp: (id: string) => void }>();
+  type Props = { openApp: (id: string) => void };
+
+  let { openApp }: Props = $props();
 
   let dockElement = $state<HTMLElement | null>(null);
 

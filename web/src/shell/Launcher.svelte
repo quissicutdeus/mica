@@ -46,7 +46,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { shadeDragRevealDistance } from './state/display';
   import FolderPopup from './FolderPopup.svelte';
 
-  let { openApp } = $props<{ openApp: (id: string) => void }>();
+  type Props = { openApp: (id: string) => void };
+
+  let { openApp }: Props = $props();
 
   /**
    * Row-major: `position` 0 is top-left, increasing left-to-right then top-to-bottom.

@@ -10,7 +10,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import type { WidgetEntry } from './state/widgets';
   import type { WidgetSize } from './state/homeGrid';
 
-  let { entry, size } = $props<{ entry: WidgetEntry; size: WidgetSize }>();
+  type Props = { entry: WidgetEntry; size: WidgetSize };
+
+  let { entry, size }: Props = $props();
 
   let loaded = $state<{ default: Component<{ size: WidgetSize; appId?: string }> } | null>(null);
 

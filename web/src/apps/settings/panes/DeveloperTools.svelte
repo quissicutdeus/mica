@@ -22,7 +22,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   } from '@mica/sdk';
   import { useNuiBridge } from '@mica/sdk/core';
 
-  let { onhide } = $props<{ onhide: () => void }>();
+  type Props = { onhide: () => void };
+
+  let { onhide }: Props = $props();
 
   const { t, plural } = useLocale();
   const { charge, signalLevel, soundVolume, soundMuted } = useSystemHardware();

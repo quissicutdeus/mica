@@ -18,11 +18,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { OS_CODENAME } from '@mica/shared/brand';
   import { copyText } from '../clipboard';
 
-  let { ontapbuild, onprivacy, onlicense } = $props<{
+  type Props = {
     ontapbuild: () => void;
     onprivacy: () => void;
     onlicense: () => void;
-  }>();
+  };
+
+  let { ontapbuild, onprivacy, onlicense }: Props = $props();
 
   const { t } = useLocale();
   const { myPhoneNumber } = useAccount();

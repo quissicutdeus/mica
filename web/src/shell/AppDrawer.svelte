@@ -45,9 +45,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   } from './state/iconDrag';
 
   /** Two-arg `openApp` (not the Dock's single-arg one) — search results deep-link. */
-  let { openApp } = $props<{
+  type Props = {
     openApp: (id: string, props?: Record<string, unknown>) => void;
-  }>();
+  };
+
+  let { openApp }: Props = $props();
 
   /**
    * The registry itself is already alphabetical (`registry.ts`'s sort comparator), but the

@@ -24,7 +24,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     moveIconDrag
   } from './state/iconDrag';
 
-  let { openApp } = $props<{ openApp: (id: string) => void }>();
+  type Props = { openApp: (id: string) => void };
+
+  let { openApp }: Props = $props();
 
   let folder = $derived(
     $homeGridItems.find(
