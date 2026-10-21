@@ -16,3 +16,6 @@ its one-line summary.
 - [MICA-314 network-changed flake](mica-314-network-changed.md) — a blank page
   after goto was Chromium's ERR_NETWORK_CHANGED (Docker veth on the host), not
   load; read the trace console first; `support/networkChange.ts` re-navigates
+- [MICA-405 streamer axe pass](mica-405-streamer-a11y.md) — open modals never
+  reach zero `getAnimations()` (finished fill-both); tablet has no blurred
+  thumb; label-content-name-mismatch survives the nested-interactive fix

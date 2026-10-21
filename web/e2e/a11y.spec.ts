@@ -1,11 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { test, expect, type Page } from './support/test';
+import { test, expect, type FrameLocator, type Page } from './support/test';
 import AxeBuilder from '@axe-core/playwright';
 import type { AxeResults, Result } from 'axe-core';
+import { addOnFrame } from './support/addon';
 import { seedHomeGrid } from './support/homeGrid';
 import { settlePhoneOpen } from './support/phoneOpen';
+import { blurred, seedStreamerMode } from './support/streamerMode';
 
 /**
  * The accessibility gate (MICA-109 item 3).
@@ -48,7 +50,7 @@ import { settlePhoneOpen } from './support/phoneOpen';
  *
  * ## What is switched off
  *
- * Two rules that cannot apply here (`NOT_APPLICABLE`) and two defects this gate found and
+ * Two rules that cannot apply here (`NOT_APPLICABLE`) and three defects this gate found and
  * did not fix (`KNOWN_OPEN`) — both lists are below, each entry with its reason. Nothing
  * else: a new axe rule arrives here as a failure, which is the point.
  */
@@ -140,10 +142,19 @@ const NOT_APPLICABLE = ['region', 'landmark-one-main'];
  *   mode. The real fix is a scheme-aware positive-signal token generated in `m3.ts`
  *   alongside `error`, which is a change to the token set and therefore not this ticket's
  *   to make.
+ *
+ * - **`streamer: snatchr photo picker` / `heading-order`** (MICA-405) — `PhotoPickerModal`'s
+ *   `<h3>` is the first heading in Snatchr's new-listing screen, so axe sees a jump straight
+ *   to level 3. It fires with streamer mode off as well, so it is not the overlay's, and it
+ *   hid behind nothing before only because no scan ever opened this screen. Disabled here so
+ *   that pass goes green when the overlay is fixed rather than staying red for a reason that
+ *   is not the overlay. The picker is `sdk/ui`'s, and whether it should draw a different
+ *   level, or the screen under it an `h1` and `h2`, is a decision for whoever owns it.
  */
 const KNOWN_OPEN: Record<string, string[]> = {
   shade: ['nested-interactive'],
-  bank: ['color-contrast']
+  bank: ['color-contrast'],
+  'streamer: snatchr photo picker': ['heading-order']
 };
 
 const scan = (page: Page, surface: string) =>
@@ -460,6 +471,274 @@ for (const size of ['2x1', '2x2'] as const) {
     );
   });
 }
+
+/**
+ * Streamer mode on, over every screen that draws a blurred picture inside a control (MICA-405).
+ *
+ * With the mode on, `MediaThumb` draws a still blurred under a "tap to reveal" overlay that
+ * is itself focusable (MICA-249), and most thumbs sit inside a `<button>` that opens the
+ * picture. Interactive content inside a button is axe's `nested-interactive` rule, and
+ * nothing here ever saw it: every scan above runs with the mode off, where no overlay is
+ * drawn at all, and `streamer-mode.spec.ts` proves the *state* (`data-streamer`) without
+ * running axe. The two halves of the check lived in two files and neither could fail.
+ *
+ * The same scan, the same `scan()` and the same disabled rules as every test above: this is
+ * a second pass over screens, not a second configuration. What is new is the precondition.
+ * A scan of an unblurred thumb passes happily, so each test first waits for a still that
+ * announces `data-streamer="blurred"` in the scope it is about to scan. If a surface stops
+ * blurring (or stops drawing a picture), that wait fails and says so, rather than the pass
+ * turning vacuous.
+ *
+ * Screens that draw a blurred still, by what holds it:
+ *
+ * - **inside a button:** the Media grid, a Messages attachment, a Glimpse profile grid, a
+ *   Spark match row, the photo picker (reached from Snatchr's new listing and from Spark's
+ *   editor), Camera's last-photo button, Settings > Display's wallpaper tiles.
+ * - **free-standing:** a Glimpse post, Spark's deck and editor, a Blabber's picture. Not
+ *   where `nested-interactive` bites, but the same overlay, so the same colour and name
+ *   checks, and the first place to look if a restructure moves it into a control.
+ *
+ * What it does not reach: Snatchr's feed card and listing detail also draw a thumb inside a
+ * button, but `marketplace:create` in the browser mock answers with `attachments: []` and
+ * the fixture listings carry no photos, so neither can be shown a picture without a change
+ * to `nui/mocks/` (`streamer-mode.spec.ts` records the same gap). Both go through the same
+ * `MediaThumb` as the picker does. Nor does the tablet have a surface to sweep: the three
+ * apps with a tablet root draw no picture, and Settings' wallpaper tiles are empty there
+ * because the tablet's gallery is (the per-device mock), so `tablet/accessibility.spec.ts`
+ * has nothing blurred to scan.
+ */
+
+/** The manifest's own answer, so a renamed app fails loudly instead of sweeping nothing. */
+const appOf = (id: string) => {
+  const app = APPS.find((a) => a.id === id);
+  if (!app) throw new Error(`no app named '${id}' under src/apps/`);
+  return app;
+};
+
+type Scope = Page | FrameLocator;
+
+/**
+ * The phone has stopped moving: a scan mid-transition measures colours still compositing.
+ *
+ * Counts animations that are still *running*, not every animation `getAnimations()` returns.
+ * A modal's entrance (`animate-in`, `fill-mode: both`) stays in that list for as long as the
+ * dialog is open, `finished` and holding its last frame, so the photo picker would never
+ * reach zero and the wait the sweeps above use would time out on a screen that is perfectly
+ * still.
+ */
+const settleFrame = async (page: Page): Promise<void> => {
+  const frame = page.getByTestId('phone-frame');
+  await expect
+    .poll(
+      async () =>
+        frame.evaluate(
+          (el) =>
+            el.getAnimations({ subtree: true }).filter((a) => a.playState !== 'finished').length
+        ),
+      { timeout: 5000 }
+    )
+    .toBe(0);
+};
+
+/**
+ * Pick the first still in an open photo picker, the way a streamer has to: a blurred tile
+ * takes two taps on the tile itself, one to see what it is and one to choose it
+ * (`streamer-mode.spec.ts`).
+ * Matched on the attribute being present, since the reveal flips it to `revealed`.
+ */
+const pickRevealedPhoto = async (scope: Scope): Promise<void> => {
+  const tile = scope
+    .locator('button.aspect-square', { has: scope.locator('[data-streamer]') })
+    .first();
+  await tile.click();
+  await tile.click();
+};
+
+/** Spark's editor, filled and holding one photo, not yet saved. */
+const fillSparkEditor = async (frame: FrameLocator): Promise<void> => {
+  await expect(frame.getByTestId('spark-editor')).toBeVisible();
+  await frame.getByTestId('spark-name').fill('Ada');
+  await frame.getByTestId('spark-age').fill('29');
+  await frame.getByTestId('spark-bio').fill('Night shifts and good coffee.');
+  await frame.getByTestId('spark-add-photo').click();
+  const picker = frame.getByRole('dialog');
+  await expect(picker).toBeVisible();
+  await pickRevealedPhoto(frame);
+  await picker.getByRole('button', { name: /^Done/ }).click();
+  await expect(picker).toHaveCount(0);
+  await expect(frame.getByRole('button', { name: 'Remove photo' })).toHaveCount(1);
+};
+
+/** Opted in to Spark and looking at the first card of the deck. */
+const optInToSparkDeck = async (frame: FrameLocator): Promise<void> => {
+  await fillSparkEditor(frame);
+  await frame.getByTestId('spark-save').click();
+  await expect(frame.getByTestId('spark-editor')).toHaveCount(0);
+  await expect(frame.getByTestId('spark-card')).toHaveCount(1);
+};
+
+/** Each opens its screen and hands back the scope the blurred still must appear in. */
+const STREAMER_SURFACES: { surface: string; open: (page: Page) => Promise<Scope> }[] = [
+  {
+    surface: 'media grid',
+    open: async (page) => {
+      await openApp(page, appOf('media'));
+      await expect(page.getByRole('button', { name: /^Open photo \d+/ }).first()).toBeVisible();
+      return page;
+    }
+  },
+  {
+    surface: 'messages thread',
+    open: async (page) => {
+      await openApp(page, appOf('messages'));
+      const convItem = page.locator('[role="button"]').filter({ hasText: 'Trevor' }).first();
+      await expect(convItem).toBeVisible();
+      await convItem.click({ force: true });
+      const thread = page.locator('#messages-container');
+      await expect(thread).toBeVisible();
+      // Attachments sit on every twenty-fifth message; the three clicks `messages.spec.ts`
+      // and `streamer-mode.spec.ts` use fetch the rest of the thread deterministically.
+      for (let i = 0; i < 3; i += 1) {
+        await thread.locator('button', { hasText: 'Load older messages' }).dispatchEvent('click');
+      }
+      await expect(thread.locator('button', { hasText: 'Load older messages' })).not.toBeVisible();
+      await expect(thread.getByTestId('attachment-slot').first()).toBeVisible();
+      return page;
+    }
+  },
+  {
+    surface: 'glimpse feed',
+    open: async (page) => {
+      await openApp(page, appOf('glimpse'));
+      const frame = addOnFrame(page, 'glimpse');
+      await expect(frame.getByTestId('glimpse-post').first()).toBeVisible();
+      return frame;
+    }
+  },
+  {
+    surface: 'glimpse profile grid',
+    open: async (page) => {
+      await openApp(page, appOf('glimpse'));
+      const frame = addOnFrame(page, 'glimpse');
+      await frame
+        .locator('article[data-testid="glimpse-post"][data-post-id="11"]')
+        .getByRole('button', { name: "Lena's profile" })
+        .click();
+      await expect(frame.getByTestId('glimpse-grid')).toBeVisible();
+      return frame;
+    }
+  },
+  {
+    surface: 'spark photo picker',
+    open: async (page) => {
+      await openApp(page, appOf('spark'));
+      const frame = addOnFrame(page, 'spark');
+      await expect(frame.getByTestId('spark-editor')).toBeVisible();
+      await frame.getByTestId('spark-add-photo').click();
+      await expect(frame.getByRole('dialog')).toBeVisible();
+      return frame;
+    }
+  },
+  {
+    surface: 'spark editor',
+    open: async (page) => {
+      await openApp(page, appOf('spark'));
+      const frame = addOnFrame(page, 'spark');
+      await fillSparkEditor(frame);
+      return frame;
+    }
+  },
+  {
+    surface: 'spark deck',
+    open: async (page) => {
+      await openApp(page, appOf('spark'));
+      const frame = addOnFrame(page, 'spark');
+      await optInToSparkDeck(frame);
+      return frame;
+    }
+  },
+  {
+    surface: 'spark matches',
+    open: async (page) => {
+      await openApp(page, appOf('spark'));
+      const frame = addOnFrame(page, 'spark');
+      await optInToSparkDeck(frame);
+      // Maya has already liked the player, so liking her back is a match.
+      await frame.getByTestId('spark-like').click();
+      await expect(frame.getByTestId('spark-matched')).toBeVisible();
+      await frame.getByTestId('spark-keep-swiping').click();
+      await expect(frame.getByTestId('spark-matched')).toHaveCount(0);
+      await frame.getByRole('button', { name: 'Matches', exact: true }).click();
+      await expect(frame.getByTestId('spark-match')).toHaveCount(1);
+      return frame;
+    }
+  },
+  {
+    surface: 'blabber feed',
+    open: async (page) => {
+      await openApp(page, appOf('blabber'));
+      const frame = addOnFrame(page, 'blabber');
+      await frame.getByRole('button', { name: 'Blab', exact: true }).click();
+      await frame.locator('textarea').fill('pictured');
+      await frame.getByRole('button', { name: 'Attach photo' }).click();
+      await expect(frame.getByRole('dialog')).toBeVisible();
+      await pickRevealedPhoto(frame);
+      await frame.getByRole('button', { name: /^Done/ }).click();
+      await frame.getByRole('button', { name: 'Post', exact: true }).click();
+      const row = frame.locator('article', { hasText: 'pictured' });
+      await expect(row).toBeVisible();
+      return row;
+    }
+  },
+  {
+    surface: 'snatchr photo picker',
+    open: async (page) => {
+      await openApp(page, appOf('marketplace'));
+      await page.getByRole('button', { name: 'Create listing' }).click();
+      await page.getByRole('button', { name: /Add photos/ }).click();
+      await expect(page.getByRole('button', { name: /^Done/ })).toBeVisible();
+      return page;
+    }
+  },
+  {
+    surface: 'camera gallery button',
+    open: async (page) => {
+      await openApp(page, appOf('camera'));
+      return page;
+    }
+  },
+  {
+    surface: 'settings wallpaper photos',
+    open: async (page) => {
+      await openApp(page, appOf('settings'));
+      await page.locator('button', { hasText: 'Display' }).first().click();
+      await expect(page.locator('h1', { hasText: 'Display' })).toBeVisible();
+      return page;
+    }
+  }
+];
+
+test.describe('with streamer mode on', () => {
+  test.beforeEach(async ({ page }) => {
+    await seedStreamerMode(page);
+  });
+
+  for (const { surface, open } of STREAMER_SURFACES) {
+    test(`${surface} has no accessibility violations`, async ({ page }) => {
+      await seedHomeGrid(page, ['settings']);
+      const scope = await open(page);
+      // The precondition. Without a blurred still on screen there is no overlay to judge.
+      await expect(
+        blurred(scope).first(),
+        `${surface}: no still is blurred, so this scan would prove nothing`
+      ).toBeVisible();
+      await settleFrame(page);
+
+      const results = await scan(page, `streamer: ${surface}`);
+      expect(summarise(results), `${surface}:\n  ${summarise(results).join('\n  ')}`).toEqual([]);
+    });
+  }
+});
 
 /**
  * The focus ring, measured rather than assumed (MICA-109 item 2).

@@ -1,6 +1,13 @@
-import { test, expect, type Page, type FrameLocator } from './support/test';
+import { test, expect } from './support/test';
 import { seedHomeGrid } from './support/homeGrid';
 import { addOnFrame, dismissToasts, installAddOn } from './support/addon';
+import {
+  STREAMER_KEY,
+  blurred,
+  revealButton,
+  revealed,
+  seedStreamerMode
+} from './support/streamerMode';
 
 /**
  * Streamer mode (MICA-249): every player-supplied picture is blurred until tapped.
@@ -18,20 +25,7 @@ import { addOnFrame, dismissToasts, installAddOn } from './support/addon';
  * Mail has no picture surface and Blabber's DMs are text, so neither appears here.
  */
 
-const KEY = 'mica:settings:streamerMode';
-
-/** The flag as the settings service would hand it back for this character. */
-const seedStreamerMode = (page: Page) =>
-  page.addInitScript((key: string) => {
-    // Shell document only: an add-on frame has an opaque origin where this throws (MICA-206).
-    if (window !== window.top) return;
-    window.localStorage.setItem(key, 'true');
-  }, KEY);
-
-const blurred = (scope: Page | FrameLocator) => scope.locator('[data-streamer="blurred"]');
-const revealed = (scope: Page | FrameLocator) => scope.locator('[data-streamer="revealed"]');
-const revealButton = (scope: Page | FrameLocator) =>
-  scope.getByRole('button', { name: 'Tap to reveal' });
+const KEY = STREAMER_KEY;
 
 test.describe('the switch', () => {
   test('lives on Privacy, starts off, and stays on across a reload', async ({ page }) => {
@@ -89,16 +83,22 @@ test.describe('with streamer mode on', () => {
     await expect(blurred(page)).toHaveCount(count);
     await expect(revealed(page)).toHaveCount(0);
 
+    // The tile itself is the gate (MICA-405): there is no second button inside it, so a
+    // screen reader finds one control, named as before and described as the reveal.
+    await expect(stills.first()).toHaveAccessibleDescription('Tap to reveal');
+    await expect(revealButton(page)).toHaveCount(0);
+
     // The first tap is the reveal and nothing else: the grid tile is a button that opens
     // the photo, and the mode exists to keep the full-size original off screen.
-    await revealButton(page).first().click();
+    await stills.first().click();
     await expect(revealed(page)).toHaveCount(1);
     await expect(blurred(page)).toHaveCount(count - 1);
     await expect(page.getByRole('button', { name: 'Delete photo' })).toHaveCount(0);
+    await expect(stills.first()).not.toHaveAccessibleDescription('Tap to reveal');
 
     // The second tap opens it. The detail view replaces the grid and is a fresh thumb,
     // so the one picture on screen is blurred again.
-    await tiles.first().click();
+    await stills.first().click();
     await expect(page.getByRole('button', { name: 'Delete photo' })).toBeVisible();
     await expect(blurred(page)).toHaveCount(1);
     await expect(revealed(page)).toHaveCount(0);
@@ -107,13 +107,39 @@ test.describe('with streamer mode on', () => {
 
     // Leaving the app. The grid stays mounted while Media is backgrounded (apps are
     // resident), so the reveal has to be undone by the foreground app changing.
-    await revealButton(page).first().click();
+    await stills.first().click();
     await expect(revealed(page)).toHaveCount(1);
     await page.locator("button[aria-label='Return to home screen']").click();
     await page.locator('button', { hasText: 'Media' }).first().click();
     await expect(tiles.first()).toBeVisible();
     await expect(revealed(page)).toHaveCount(0);
     await expect(blurred(page)).toHaveCount(count);
+  });
+
+  test('Media: Enter on a blurred tile reveals it without opening, the next Enter opens', async ({
+    page
+  }) => {
+    await page.goto('/');
+    await page.locator('button', { hasText: 'Media' }).first().click();
+    const tiles = page.getByRole('button', { name: /^Open photo \d+/ });
+    await expect(tiles.first()).toBeVisible();
+    const stills = tiles.filter({ has: page.locator('img') });
+    const count = await stills.count();
+    expect(count).toBeGreaterThan(0);
+    await expect(blurred(page)).toHaveCount(count);
+
+    // A native button turns Enter into a click, and the gate takes that click: the same
+    // reveal as a tap, with no Enter handler of its own to double-fire against the tile's.
+    await stills.first().focus();
+    await expect(stills.first()).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(revealed(page)).toHaveCount(1);
+    await expect(blurred(page)).toHaveCount(count - 1);
+    await expect(page.getByRole('button', { name: 'Delete photo' })).toHaveCount(0);
+
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('button', { name: 'Delete photo' })).toBeVisible();
+    await expect(blurred(page)).toHaveCount(1);
   });
 
   test('Messages: every attachment in a thread is blurred until tapped', async ({ page }) => {
@@ -139,7 +165,10 @@ test.describe('with streamer mode on', () => {
       thread.locator('[data-testid="attachment-slot"] [data-streamer="blurred"]')
     ).toHaveCount(slotCount);
 
-    await slots.first().getByRole('button', { name: 'Tap to reveal' }).click();
+    // The slot sits inside the bubble's own button, so a tap on it is that button's
+    // activation: it reveals this one picture and reaches nothing else.
+    await expect(revealButton(thread)).toHaveCount(0);
+    await slots.first().click();
     await expect(slots.first().locator('[data-streamer="revealed"]')).toHaveCount(1);
     await expect(
       thread.locator('[data-testid="attachment-slot"] [data-streamer="blurred"]')
@@ -160,6 +189,8 @@ test.describe('with streamer mode on', () => {
     const picker = page.locator('div.z-30', { has: page.getByRole('button', { name: /^Done/ }) });
     await expect(blurred(picker).first()).toBeVisible();
     await expect(revealed(picker)).toHaveCount(0);
+    // The tile is a button already, so it is the gate and no second button is drawn in it.
+    await expect(revealButton(picker)).toHaveCount(0);
 
     // A blurred tile takes two taps, one to see what it is and one to pick it. Matched on
     // the attribute being present, not on `blurred`: the reveal flips it to `revealed`, and
@@ -168,7 +199,7 @@ test.describe('with streamer mode on', () => {
     const tile = picker
       .locator('button.aspect-square', { has: page.locator('[data-streamer]') })
       .first();
-    await tile.getByRole('button', { name: 'Tap to reveal' }).click();
+    await tile.click();
     await expect(revealed(picker)).toHaveCount(1);
     await expect(page.getByRole('button', { name: 'Add photos (0/4)' })).toBeVisible();
     await tile.click();
@@ -195,7 +226,8 @@ test.describe('with streamer mode on', () => {
     const tile = frame
       .locator('button.aspect-square', { has: frame.locator('[data-streamer]') })
       .first();
-    await tile.getByRole('button', { name: 'Tap to reveal' }).click();
+    await tile.click();
+    await expect(revealed(frame)).toHaveCount(1);
     await tile.click();
     await expect(frame.getByRole('button', { name: 'Remove attachment' })).toBeVisible();
     await frame.getByRole('button', { name: /^Done/ }).click();
@@ -204,7 +236,8 @@ test.describe('with streamer mode on', () => {
     const row = frame.locator('article', { hasText: 'pictured' });
     await expect(row).toBeVisible();
     await expect(blurred(row)).toHaveCount(1);
-    await row.getByRole('button', { name: 'Tap to reveal' }).click();
+    // A Blab's picture has no control around it, so this one keeps a real button.
+    await revealButton(row).click();
     await expect(revealed(row)).toHaveCount(1);
     await expect(blurred(row)).toHaveCount(0);
   });
