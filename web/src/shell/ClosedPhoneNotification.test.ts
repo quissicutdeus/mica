@@ -50,6 +50,8 @@ describe('ClosedPhoneNotification (MICA-141)', () => {
     expect(getByTestId('closed-phone-notification')).toBeTruthy();
     expect(getByText('@you were mentioned')).toBeTruthy();
     expect(getByText('Blabber')).toBeTruthy();
+    // A glance, not a heading: the title must not enter the open app's outline (MICA-409).
+    expect(getByText('Blabber').closest('h1, h2, h3, h4, h5, h6')).toBeNull();
   });
 
   it('is non-interactive — the whole point is a glance, not a second toast host', () => {

@@ -123,6 +123,15 @@ describe('SendMoneyModal', () => {
     expect(await screen.findByText('Player not authenticated')).toBeTruthy();
   });
 
+  it('is a named modal dialog with an h2 title, and takes focus when it opens (MICA-409)', () => {
+    render(SendMoneyModal, { props: { balance: 500, onsent: () => {}, onclose: () => {} } });
+    const dialog = screen.getByRole('dialog', { name: 'Send Money' });
+    expect(dialog.getAttribute('aria-modal')).toBe('true');
+    expect(screen.getByRole('heading', { level: 2, name: 'Send Money' })).toBeTruthy();
+    expect(dialog.querySelector('h3')).toBeNull();
+    expect(document.activeElement).toBe(dialog);
+  });
+
   it('tapping Cancel calls onclose', async () => {
     const onclose = vi.fn();
     render(SendMoneyModal, { props: { balance: 500, onsent: () => {}, onclose } });

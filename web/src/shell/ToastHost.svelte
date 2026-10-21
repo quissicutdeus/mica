@@ -247,9 +247,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               {/if}
             {/if}
             {#if t.title}
-              <h4 class="text-on-surface text-body-medium mb-0.5 truncate">
+              <!-- A paragraph, not a heading: the toast is announced through the live
+                   region above, and a heading here would land in the open app's outline
+                   at whatever level that app left off (MICA-409). -->
+              <p class="text-on-surface text-body-medium mb-0.5 truncate">
                 {t.title}
-              </h4>
+              </p>
             {/if}
             {#if t.message}
               <p class="text-on-surface text-body-small line-clamp-2 leading-relaxed">

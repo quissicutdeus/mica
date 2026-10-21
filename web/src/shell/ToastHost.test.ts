@@ -146,6 +146,15 @@ describe('ToastHost announcements', () => {
     expect(region(container)?.contains(matches[0])).toBe(true);
   });
 
+  it('announces its title through the region, not as a heading in the open app (MICA-409)', async () => {
+    const { container } = render(ToastHost);
+    toast.show({ id: 't1', type: 'info', title: 'Backup done', message: 'All set', duration: 0 });
+    await tick();
+
+    expect(region(container)?.textContent).toContain('Backup done');
+    expect(container.querySelector('h1, h2, h3, h4, h5, h6, [role="heading"]')).toBeNull();
+  });
+
   it('interrupts for an incoming call, and waits its turn for anything else', async () => {
     const { container } = render(ToastHost);
     toast.show({ id: 'c1', type: 'call', title: 'Incoming call', message: 'Ava', duration: 0 });

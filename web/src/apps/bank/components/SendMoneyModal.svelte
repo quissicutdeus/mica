@@ -8,6 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import {
     Button,
     CloseIcon,
+    focusTrap,
     formatCurrency,
     useBank,
     useLocale,
@@ -36,6 +37,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   // request never got a real answer at all.
   let refusal = $state<SendMoneyOutcome | null>(null);
   let error = $state('');
+
+  // A modal that opens without moving focus is announced to nobody, so focus lands on the
+  // dialog itself, as ConfirmDialog does: it reads the title, and Tab goes to the first
+  // field rather than to whatever was behind the scrim (MICA-409).
+  let dialogRef = $state<HTMLElement | null>(null);
+  $effect(() => {
+    dialogRef?.focus({ preventScroll: true });
+  });
 
   const canSend = $derived(
     phone.trim().length > 0 &&
@@ -88,9 +97,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   class="bg-scrim absolute inset-0 z-50 flex items-center justify-center p-6 backdrop-blur-sm"
   transition:fade
 >
-  <div class="bg-surface-container shadow-elevation-5 w-full rounded-box p-6">
+  <div
+    bind:this={dialogRef}
+    use:focusTrap
+    role="dialog"
+    aria-modal="true"
+    aria-label={$t('bank.sendMoney')}
+    tabindex="-1"
+    class="bg-surface-container shadow-elevation-5 w-full rounded-box p-6 outline-none"
+  >
     <div class="mb-4 flex items-center justify-between">
-      <h3 class="text-on-surface text-xl font-bold">{$t('bank.sendMoney')}</h3>
+      <h2 class="text-on-surface text-xl font-bold">{$t('bank.sendMoney')}</h2>
       <button
         type="button"
         onclick={onclose}

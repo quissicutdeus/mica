@@ -71,7 +71,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           </div>
         {/if}
         {#if t.title}
-          <h4 class="text-on-surface text-body-medium mb-0.5 truncate">{t.title}</h4>
+          <!-- Not a heading, for the same reason as ToastHost's title (MICA-409). -->
+          <p class="text-on-surface text-body-medium mb-0.5 truncate">{t.title}</p>
         {/if}
         {#if t.message}
           <p class="text-on-surface text-body-small line-clamp-2 leading-relaxed">
