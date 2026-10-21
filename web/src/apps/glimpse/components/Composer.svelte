@@ -61,9 +61,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <div class="flex min-h-0 flex-1 flex-col">
   <div class="min-h-0 flex-1 overflow-y-auto p-4">
-    <h3 class="text-on-surface mb-1 text-lg font-bold">
+    <h2 class="text-on-surface mb-1 text-lg font-bold">
       {editing ? $t('glimpse.editCaption') : $t('glimpse.newPost')}
-    </h3>
+    </h2>
     {#if handle}
       <p class="text-on-surface-variant text-body-small mb-3">
         {$t('glimpse.postingAs')} <span class="text-primary">@{handle}</span>

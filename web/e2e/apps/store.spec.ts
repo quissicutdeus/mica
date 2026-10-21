@@ -33,7 +33,7 @@ test.describe('Store E2E', () => {
   test('opens app permission and details inspector modal', async ({ page }) => {
     await catalogCard(page, 'Notes').locator('button').first().click();
 
-    await expect(page.locator('h3', { hasText: 'Notes' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Notes', level: 2 })).toBeVisible();
     await expect(page.locator('text=Local Storage')).toBeVisible();
     // micaOS, not 'Community': Notes is written in this repo, and its author no longer has
     // to lie to keep it out of the launcher. Exact, because `text=` is a case-insensitive

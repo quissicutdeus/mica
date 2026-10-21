@@ -57,7 +57,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <AppIconTile name={app.name} icon={app.icon} color={app.color} size="xl" />
 
     <div>
-      <h3 class="text-on-surface text-xl font-semibold">{app.name}</h3>
+      <h2 class="text-on-surface text-xl font-semibold">{app.name}</h2>
       <div
         class="text-on-surface-variant text-body-small mt-0.5 flex items-center justify-center gap-2"
       >
@@ -163,9 +163,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   <!-- Description Card -->
   <div class="space-y-1.5">
-    <h4 class="text-on-surface-variant text-body-small tracking-wider uppercase">
+    <h3 class="text-on-surface-variant text-body-small tracking-wider uppercase">
       {$t('store.about')}
-    </h4>
+    </h3>
     <p
       class="border-outline-variant bg-surface-container text-on-surface text-body-small rounded-box border p-3 leading-relaxed"
     >
@@ -175,9 +175,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   <!-- Technical Metadata Grid -->
   <div class="space-y-1.5">
-    <h4 class="text-on-surface-variant text-body-small tracking-wider uppercase">
+    <h3 class="text-on-surface-variant text-body-small tracking-wider uppercase">
       {$t('store.information')}
-    </h4>
+    </h3>
     <div class="text-body-small grid grid-cols-2 gap-2">
       <div class="border-outline-variant bg-surface-container rounded-box border p-3">
         <span class="text-on-surface-variant text-label-small block uppercase"
@@ -214,9 +214,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   <!-- Permissions Breakdown -->
   <div class="space-y-1.5 pb-4">
-    <h4 class="text-on-surface-variant text-body-small tracking-wider uppercase">
+    <h3 class="text-on-surface-variant text-body-small tracking-wider uppercase">
       {$t('store.permissionsRequested')}
-    </h4>
+    </h3>
     {#if (app.permissions && app.permissions.length > 0) || app.requiresNetwork}
       <div class="grid grid-cols-2 gap-2">
         {#each app.permissions ?? [] as perm (perm)}

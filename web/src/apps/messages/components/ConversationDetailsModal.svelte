@@ -53,7 +53,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 >
   <!-- Modal Header -->
   <div class="border-outline-variant pt-safe-top flex items-center justify-between border-b p-4">
-    <h3 class="text-on-surface text-body-large">{$t('messages.conversationDetails')}</h3>
+    <h2 class="text-on-surface text-body-large">{$t('messages.conversationDetails')}</h2>
     <button
       type="button"
       class="text-on-surface-variant hover:bg-surface-container hover:text-on-surface duration-short ease-standard cursor-pointer rounded-full p-1 transition-colors"
@@ -117,9 +117,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
       <!-- Group Participants Section -->
       <div class="space-y-2">
-        <h4 class="text-on-surface-variant text-body-small px-1 tracking-wider uppercase">
+        <h3 class="text-on-surface-variant text-body-small px-1 tracking-wider uppercase">
           {$t('messages.groupMembers', { count: currentConv.participants?.length || 0 })}
-        </h4>
+        </h3>
         <div
           class="divide-outline-variant border-outline-variant bg-surface-container shadow-elevation-3 divide-y overflow-hidden rounded-box border"
         >

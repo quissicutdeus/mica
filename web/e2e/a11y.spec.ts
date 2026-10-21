@@ -142,19 +142,10 @@ const NOT_APPLICABLE = ['region', 'landmark-one-main'];
  *   mode. The real fix is a scheme-aware positive-signal token generated in `m3.ts`
  *   alongside `error`, which is a change to the token set and therefore not this ticket's
  *   to make.
- *
- * - **`picker: glimpse composer` and `picker: contacts form` / `heading-order`** (MICA-406)
- *   — not the picker's: `PhotoPickerModal` titles itself with an `h2`. These two screens
- *   draw their *own* title as an `h3` under the app's `h1` (Glimpse's `Composer`, Contacts'
- *   `ContactForm`), so axe sees the jump on the screen beneath the dialog; it fires with
- *   the picker closed as well, and no sweep opens either screen. The fix is a level on
- *   each of those two titles, in `web/src/apps/`, and is not an `sdk/ui` change.
  */
 const KNOWN_OPEN: Record<string, string[]> = {
   shade: ['nested-interactive'],
-  bank: ['color-contrast'],
-  'picker: glimpse composer': ['heading-order'],
-  'picker: contacts form': ['heading-order']
+  bank: ['color-contrast']
 };
 
 const scan = (page: Page, surface: string) =>

@@ -81,3 +81,5 @@ its one-line summary.
   visible text
 - [svelte-eslint-parser 1.9.0 finds root's TypeScript 7](svelte-eslint-parser-finds-root-ts7.md)
   — crashes on script-less components; held at 1.8.1 by MICA-402's override
+- [A heading level change is invisible only with a size class](heading-level-change-is-not-free.md)
+  — app-reset zeroes heading margins only; UA font-size per level survives

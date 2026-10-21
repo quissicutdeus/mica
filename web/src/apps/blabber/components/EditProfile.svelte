@@ -58,7 +58,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <div
   class="pt-safe-top animate-in fade-in bg-surface duration-medium ease-emphasized absolute inset-0 z-30 flex flex-col p-5"
 >
-  <h3 class="text-on-surface mb-1 text-lg font-bold">{$t('blabber.editProfile')}</h3>
+  <h2 class="text-on-surface mb-1 text-lg font-bold">{$t('blabber.editProfile')}</h2>
   <p class="text-on-surface-variant text-body-small mb-4">
     {$t('blabber.handleFixed', { handle: account.handle })}
   </p>

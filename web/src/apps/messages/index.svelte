@@ -664,7 +664,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         class="animate-in slide-in-from-top border-outline-variant bg-surface shadow-elevation-5 duration-medium ease-emphasized sticky top-0 z-20 space-y-3 border-b p-4 backdrop-blur-md"
       >
         <div class="border-outline-variant flex items-center justify-between border-b pb-1">
-          <h3 class="text-on-surface text-body-large">{$t('messages.newConversation')}</h3>
+          <h2 class="text-on-surface text-body-large">{$t('messages.newConversation')}</h2>
           <button
             type="button"
             class="text-on-surface-variant hover:bg-surface-container hover:text-on-surface duration-short ease-standard rounded-full p-1 transition-colors"

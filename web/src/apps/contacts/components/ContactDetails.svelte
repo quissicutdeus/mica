@@ -244,9 +244,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     >
       <div class="flex items-center gap-2">
         <MessageIcon class="text-primary size-icon-sm" />
-        <h4 class="text-on-surface text-body-small tracking-wider uppercase">
+        <h3 class="text-on-surface text-body-small tracking-wider uppercase">
           {$t('contacts.recentTextMessages')}
-        </h4>
+        </h3>
       </div>
       {#if messageCount > 0}
         <button
