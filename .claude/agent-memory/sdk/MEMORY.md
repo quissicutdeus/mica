@@ -43,3 +43,6 @@ in its own file and gets a line here.
 - [axe visible text is text nodes](axe-visible-text-is-text-nodes.md) —
   aria-hidden, role=img, SVG text still count; `::before` content does not
   (MICA-404)
+- [Gating a parent control from inside](gate-a-parent-control-from-inside.md) —
+  capture listener on the `closest()` control; never gate a native button's
+  keydown (MICA-405)

@@ -14,6 +14,7 @@ import { render, fireEvent } from '@testing-library/svelte';
 import { get } from 'svelte/store';
 import MediaThumb from './MediaThumb.svelte';
 import MediaThumbInButton from './__fixtures__/MediaThumbInButton.svelte';
+import MediaThumbInRoleButton from './__fixtures__/MediaThumbInRoleButton.svelte';
 import type { MediaItem } from '@mica/shared/types';
 import { setStreamerMode, revealGeneration } from '../../web/src/shell/state/streamerMode';
 import { currentApp } from '../../web/src/shell/state/navigation';
@@ -211,9 +212,24 @@ describe('MediaThumb', () => {
    * (`data-streamer`), the first tap reveals and goes no further, and a reveal is undone
    * by the events after which the streamer no longer expects the picture. Whether the
    * pixels are actually soft is `blur-media` in `app-utilities.css`, and CEF's to render.
+   *
+   * MICA-405: inside a control the control itself is the gate, so nothing interactive is
+   * drawn inside it; standalone, the overlay is a real button.
    */
   describe('streamer mode', () => {
     const photo = item({ data: 'data:image/png;base64,AAA' });
+    const other = item({ id: 2, data: 'data:image/png;base64,BBB' });
+
+    /** Everything a screen reader or a tab key would treat as a control. */
+    const INTERACTIVE = 'button, a[href], [role], [tabindex]';
+    const descriptionOf = (element: Element) =>
+      (element.getAttribute('aria-describedby') ?? '')
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((id) => element.ownerDocument.getElementById(id)?.textContent?.trim())
+        .join(' ');
+    const state = (element: Element) =>
+      element.querySelector('[data-streamer]')?.getAttribute('data-streamer');
 
     beforeEach(() => {
       setStreamerMode(false);
@@ -225,41 +241,218 @@ describe('MediaThumb', () => {
       const root = container.firstElementChild as HTMLElement;
       expect(root.hasAttribute('data-streamer')).toBe(false);
       expect(container.querySelector('img')?.classList.contains('blur-media')).toBe(false);
-      expect(container.querySelector('[role="button"]')).toBeNull();
+      expect(container.querySelector('button')).toBeNull();
     });
 
-    it('blurs a still until it is tapped, and the tap goes no further', async () => {
-      setStreamerMode(true);
-      let opened = 0;
-      const { container, getByTestId } = render(MediaThumbInButton, {
-        item: photo,
-        onopen: () => (opened += 1)
+    describe('inside a button', () => {
+      it('draws nothing interactive inside it, and describes the button instead', () => {
+        setStreamerMode(true);
+        const { getByTestId } = render(MediaThumbInButton, {
+          item: photo,
+          onopen: () => {},
+          label: 'Open photo 1'
+        });
+        const opener = getByTestId('opener');
+        expect(state(opener)).toBe('blurred');
+        // Still an <img>: the mode hides, it does not withhold. The picture is the app's to
+        // fetch either way (AGENTS.md §7), so a blur that dropped the element would be theatre.
+        expect(opener.querySelector('img')?.getAttribute('src')).toBe(photo.data);
+        expect(opener.querySelector('img')?.classList.contains('blur-media')).toBe(true);
+
+        // The defect: a `role="button"` overlay inside the tile, a second tab stop.
+        expect(opener.querySelectorAll(INTERACTIVE)).toHaveLength(0);
+        // The tile keeps its own name and says what activating it will do now.
+        expect(opener.getAttribute('aria-label')).toBe('Open photo 1');
+        expect(descriptionOf(opener)).toBe('Tap to reveal');
+        // The painted words are generated content, so no text node a name must contain.
+        const painted = opener.querySelector('[data-reveal-label]');
+        expect(painted?.getAttribute('data-reveal-label')).toBe('Tap to reveal');
+        expect(painted?.textContent).toBe('');
+        expect(painted?.closest('[aria-hidden="true"]')).not.toBeNull();
       });
-      const root = getByTestId('opener').firstElementChild as HTMLElement;
-      expect(root.getAttribute('data-streamer')).toBe('blurred');
-      expect(container.querySelector('img')?.classList.contains('blur-media')).toBe(true);
-      // Still an <img>: the mode hides, it does not withhold. The picture is the app's to
-      // fetch either way (AGENTS.md §7), so a blur that dropped the element would be theatre.
-      expect(container.querySelector('img')?.getAttribute('src')).toBe(photo.data);
 
-      await fireEvent.click(container.querySelector('[role="button"]')!);
-      expect(root.getAttribute('data-streamer')).toBe('revealed');
-      expect(container.querySelector('img')?.classList.contains('blur-media')).toBe(false);
-      expect(container.querySelector('[role="button"]')).toBeNull();
-      expect(opened, 'the reveal tap must not open the picture').toBe(0);
+      it('reveals on the first tap, which goes no further, and opens on the second', async () => {
+        setStreamerMode(true);
+        let opened = 0;
+        const { getByTestId } = render(MediaThumbInButton, {
+          item: photo,
+          onopen: () => (opened += 1)
+        });
+        const opener = getByTestId('opener');
 
-      // The second tap is an ordinary tap on the tile.
-      await fireEvent.click(container.querySelector('img')!);
-      expect(opened).toBe(1);
+        await fireEvent.click(opener.querySelector('img')!);
+        expect(state(opener)).toBe('revealed');
+        expect(opener.querySelector('img')?.classList.contains('blur-media')).toBe(false);
+        expect(opened, 'the reveal tap must not open the picture').toBe(0);
+        // Revealed, the tile is an ordinary tile again: no description, no gate.
+        expect(opener.hasAttribute('aria-describedby')).toBe(false);
+
+        await fireEvent.click(opener.querySelector('img')!);
+        expect(opened).toBe(1);
+      });
+
+      /**
+       * Enter and Space on a focused native button dispatch a click at the button itself,
+       * which jsdom does not synthesize — so this dispatches that click, `detail: 0` as the
+       * browser sends it, after the key. The key alone must not be what reveals: the button
+       * is the browser's to activate, and swallowing its keydown would leave Space's click
+       * on keyup to land after the gate was gone.
+       */
+      it.each(['Enter', ' '])('reveals on %j and goes no further', async (key) => {
+        setStreamerMode(true);
+        let opened = 0;
+        const { getByTestId } = render(MediaThumbInButton, {
+          item: photo,
+          onopen: () => (opened += 1)
+        });
+        const opener = getByTestId('opener');
+        opener.focus();
+
+        await fireEvent.keyDown(opener, { key });
+        expect(state(opener)).toBe('blurred');
+        await fireEvent.click(opener, { detail: 0 });
+        expect(state(opener)).toBe('revealed');
+        expect(opened, 'the reveal key must not open the picture').toBe(0);
+        expect(document.activeElement, 'focus stays on the tile').toBe(opener);
+
+        await fireEvent.click(opener, { detail: 0 });
+        expect(opened).toBe(1);
+      });
+
+      it('gates every activation again once a reveal is undone', async () => {
+        setStreamerMode(true);
+        let opened = 0;
+        const { getByTestId } = render(MediaThumbInButton, {
+          item: photo,
+          onopen: () => (opened += 1)
+        });
+        const opener = getByTestId('opener');
+        await fireEvent.click(opener);
+        expect(state(opener)).toBe('revealed');
+
+        currentApp.set({ id: 'messages', props: {} });
+        await Promise.resolve();
+        expect(state(opener)).toBe('blurred');
+        expect(descriptionOf(opener)).toBe('Tap to reveal');
+        await fireEvent.click(opener);
+        expect(opened).toBe(0);
+        expect(state(opener)).toBe('revealed');
+      });
+
+      it('reveals the one still tapped, and any other activation reveals the rest', async () => {
+        setStreamerMode(true);
+        let opened = 0;
+        const { getByTestId } = render(MediaThumbInButton, {
+          item: photo,
+          second: other,
+          onopen: () => (opened += 1)
+        });
+        const opener = getByTestId('opener');
+        const [first, second] = opener.querySelectorAll<HTMLElement>('[data-streamer]');
+        expect(descriptionOf(opener)).toBe('Tap to reveal Tap to reveal');
+
+        await fireEvent.click(first.querySelector('img')!);
+        expect(first.getAttribute('data-streamer')).toBe('revealed');
+        expect(second.getAttribute('data-streamer')).toBe('blurred');
+        expect(descriptionOf(opener)).toBe('Tap to reveal');
+
+        // The button itself, or the revealed still: nothing it holds may be acted on unseen.
+        await fireEvent.click(first.querySelector('img')!);
+        expect(second.getAttribute('data-streamer')).toBe('revealed');
+        expect(opened).toBe(0);
+
+        await fireEvent.click(opener);
+        expect(opened).toBe(1);
+      });
+
+      it('leaves a click that belongs to a control nested inside alone', async () => {
+        setStreamerMode(true);
+        let opened = 0;
+        let quoted = 0;
+        const { getByTestId } = render(MediaThumbInButton, {
+          item: photo,
+          onopen: () => (opened += 1),
+          onquote: () => (quoted += 1)
+        });
+        await fireEvent.click(getByTestId('quote'));
+        expect(quoted).toBe(1);
+        expect(opened).toBe(0);
+        expect(state(getByTestId('opener'))).toBe('blurred');
+      });
+
+      it('returns the description it added, and keeps one the caller set', async () => {
+        setStreamerMode(true);
+        const { getByTestId, unmount } = render(MediaThumbInButton, {
+          item: photo,
+          onopen: () => {}
+        });
+        const opener = getByTestId('opener');
+        opener.setAttribute(
+          'aria-describedby',
+          `caller ${opener.getAttribute('aria-describedby')}`
+        );
+        setStreamerMode(false);
+        await Promise.resolve();
+        expect(opener.getAttribute('aria-describedby')).toBe('caller');
+        setStreamerMode(true);
+        await Promise.resolve();
+        expect(opener.getAttribute('aria-describedby')?.split(' ')[0]).toBe('caller');
+        unmount();
+      });
     });
 
-    it('reveals from the keyboard as well', async () => {
-      setStreamerMode(true);
-      const { container } = render(MediaThumb, { item: photo });
-      await fireEvent.keyDown(container.querySelector('[role="button"]')!, { key: 'Enter' });
-      expect((container.firstElementChild as HTMLElement).getAttribute('data-streamer')).toBe(
-        'revealed'
-      );
+    describe('inside a role="button" that handles its own keys', () => {
+      it.each(['Enter', ' '])('reveals on %j and the card never sees it', async (key) => {
+        setStreamerMode(true);
+        let activated = 0;
+        const { getByTestId } = render(MediaThumbInRoleButton, {
+          item: photo,
+          onactivate: () => (activated += 1)
+        });
+        const card = getByTestId('card');
+        expect(card.querySelectorAll(INTERACTIVE)).toHaveLength(0);
+        expect(descriptionOf(card)).toBe('Tap to reveal');
+
+        await fireEvent.keyDown(card, { key });
+        expect(state(card)).toBe('revealed');
+        expect(activated, 'the reveal key must not act on the picture').toBe(0);
+
+        await fireEvent.keyDown(card, { key });
+        expect(activated).toBe(1);
+      });
+
+      it('reveals on a click and the card never sees it', async () => {
+        setStreamerMode(true);
+        let activated = 0;
+        const { getByTestId } = render(MediaThumbInRoleButton, {
+          item: photo,
+          onactivate: () => (activated += 1)
+        });
+        const card = getByTestId('card');
+        await fireEvent.click(card.querySelector('img')!);
+        expect(state(card)).toBe('revealed');
+        expect(activated).toBe(0);
+        await fireEvent.click(card.querySelector('img')!);
+        expect(activated).toBe(1);
+      });
+    });
+
+    describe('standalone', () => {
+      it('draws the reveal as a real button, the one control there', async () => {
+        setStreamerMode(true);
+        const { container, getByRole } = render(MediaThumb, { item: photo });
+        const root = container.firstElementChild as HTMLElement;
+        expect(root.getAttribute('data-streamer')).toBe('blurred');
+        const button = getByRole('button', { name: 'Tap to reveal' });
+        expect(button.tagName).toBe('BUTTON');
+        expect(button.getAttribute('type')).toBe('button');
+        expect(container.querySelectorAll(INTERACTIVE)).toHaveLength(1);
+
+        // A native button: Enter and Space reach it as this click.
+        await fireEvent.click(button, { detail: 0 });
+        expect(root.getAttribute('data-streamer')).toBe('revealed');
+        expect(container.querySelector('button')).toBeNull();
+      });
     });
 
     it('never blurs a placeholder, which has no picture to hide', () => {
@@ -268,14 +461,14 @@ describe('MediaThumb', () => {
       expect((container.firstElementChild as HTMLElement).hasAttribute('data-streamer')).toBe(
         false
       );
-      expect(container.querySelector('[role="button"]')).toBeNull();
+      expect(container.querySelector('button')).toBeNull();
     });
 
     it('re-blurs a mounted thumb when the foreground app changes', async () => {
       setStreamerMode(true);
-      const { container } = render(MediaThumb, { item: photo });
+      const { container, getByRole } = render(MediaThumb, { item: photo });
       const root = container.firstElementChild as HTMLElement;
-      await fireEvent.click(container.querySelector('[role="button"]')!);
+      await fireEvent.click(getByRole('button', { name: 'Tap to reveal' }));
       expect(root.getAttribute('data-streamer')).toBe('revealed');
 
       // A resident app keeps its grid mounted while another app is in front; the reveal

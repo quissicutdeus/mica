@@ -139,8 +139,31 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * The reveal is a tap that goes no further. Most thumbs sit inside a button that opens
    * the picture, and a first tap on a blurred one must not also open it — that would put
    * the full-size original on screen, which is the exact thing the mode exists to stop.
-   * So the overlay swallows the event; the second tap reaches the parent as before. Not a
-   * `<button>`: that parent is often one already, and a button inside a button is invalid.
+   * The second tap reaches the parent as before.
+   *
+   * **Who owns the reveal depends on where the thumb is drawn (MICA-405).** Ten of the
+   * nineteen call sites put it inside a control — a grid tile, a picker cell, a message
+   * bubble — and an interactive element inside one is invalid ARIA whatever its tag: the
+   * `role="button"` overlay this used to draw gave a second tab stop and muddled the
+   * parent's name. So:
+   *
+   * - **Inside a control**, that control is the gate. While the still is blurred, a
+   *   capture-phase listener on it turns its own activation into the reveal — a click,
+   *   which is also what Enter and Space on a native button dispatch, and Enter or Space
+   *   on a `role="button"` that handles its keys itself. Capture on the control runs
+   *   before the control's own listeners and before Svelte's delegated root, so the
+   *   caller's handler never sees the first activation. The control is described as
+   *   "Tap to reveal" through `aria-describedby`, and the overlay is painted only:
+   *   `aria-hidden`, its label generated content, so the control's name is unchanged and
+   *   axe's visible-text check (`label-content-name-mismatch`) has no text node to read.
+   * - **Standalone** — a Blab's picture, the full view, a composer's attachment — there is
+   *   nothing to nest inside, so the overlay is a real `<button>`.
+   *
+   * Found by walking up the DOM rather than by a prop, so no caller had to change, and an
+   * add-on's own button gets the same gate. A click inside one blurred still reveals that
+   * one; any other activation of the control reveals every still it holds, since none of
+   * them should be acted on unseen. A click that belongs to another control nested inside
+   * this one — a quoted reply in a message bubble — is left alone.
    */
   const { streamerMode, revealGeneration } = useStreamerMode();
   let revealed = $state(false);
@@ -155,17 +178,71 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     $streamerMode && still ? (revealed ? 'revealed' : 'blurred') : undefined
   );
 
+  /** What counts as a control, for nesting. Widget roles that are activated, plus native. */
+  const CONTROL =
+    'button, a[href], summary, [role="button"], [role="link"], [role="menuitem"], ' +
+    '[role="menuitemcheckbox"], [role="menuitemradio"], [role="option"], [role="tab"], ' +
+    '[role="checkbox"], [role="radio"], [role="switch"]';
+  /** Controls whose Enter and Space the browser already turns into a click. */
+  const CLICKS_FROM_KEYS = 'button, a[href], summary';
+
+  const describedBy = $props.id();
+  let root: HTMLDivElement | undefined = $state();
+  /** The control this thumb is drawn inside: `null` when none, `undefined` until mounted. */
+  let control: HTMLElement | null | undefined = $state.raw(undefined);
+  $effect(() => {
+    control = root?.parentElement?.closest<HTMLElement>(CONTROL) ?? (root ? null : undefined);
+  });
+
+  $effect(() => {
+    const host = control;
+    if (!hidden || !host) return;
+
+    /** Whether this event is the control's own, not a nested control's. */
+    const owns = (event: Event) =>
+      event.target instanceof Element && event.target.closest(CONTROL) === host;
+    const gate = (event: Event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const hit = (event.target as Element).closest('[data-streamer="blurred"]');
+      if (!hit || hit === root) revealed = true;
+    };
+    const onClick = (event: MouseEvent) => {
+      if (owns(event)) gate(event);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.key === 'Enter' || event.key === ' ') && owns(event)) gate(event);
+    };
+
+    host.addEventListener('click', onClick, true);
+    const keys = !host.matches(CLICKS_FROM_KEYS);
+    if (keys) host.addEventListener('keydown', onKey, true);
+
+    const tokens = (host.getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean);
+    if (!tokens.includes(describedBy)) {
+      host.setAttribute('aria-describedby', [...tokens, describedBy].join(' '));
+    }
+
+    return () => {
+      host.removeEventListener('click', onClick, true);
+      if (keys) host.removeEventListener('keydown', onKey, true);
+      const rest = (host.getAttribute('aria-describedby') ?? '')
+        .split(/\s+/)
+        .filter((token) => token && token !== describedBy);
+      if (rest.length > 0) host.setAttribute('aria-describedby', rest.join(' '));
+      else host.removeAttribute('aria-describedby');
+    };
+  });
+
   const reveal = (event: Event) => {
     event.preventDefault();
     event.stopPropagation();
     revealed = true;
   };
-  const onRevealKey = (event: KeyboardEvent) => {
-    if (event.key === 'Enter' || event.key === ' ') reveal(event);
-  };
 </script>
 
 <div
+  bind:this={root}
   class="relative h-full w-full {hidden ? 'overflow-hidden' : ''} {className}"
   data-streamer={streamerState}
 >
@@ -190,19 +267,31 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     </div>
   {/if}
 
-  {#if hidden}
-    <div
-      role="button"
-      tabindex="0"
-      aria-label={$t('ui.revealMedia')}
+  {#if hidden && control === null}
+    <button
+      type="button"
       class="absolute inset-0 z-10 flex cursor-pointer items-center justify-center"
       onclick={reveal}
-      onkeydown={onRevealKey}
     >
       <span class="bg-media-overlay text-label-small rounded-chip px-2 py-1 text-white">
         {$t('ui.revealMedia')}
       </span>
+    </button>
+  {:else if hidden}
+    <!-- Inside a control, or not yet known to be outside one: paint only. The control is
+         the gate, and the words reach a screen reader as its description below. -->
+    <div
+      aria-hidden="true"
+      class="absolute inset-0 z-10 flex cursor-pointer items-center justify-center"
+    >
+      <span
+        class="bg-media-overlay text-label-small rounded-chip px-2 py-1 text-white"
+        data-reveal-label={$t('ui.revealMedia')}
+      ></span>
     </div>
+    {#if control}
+      <span id={describedBy} hidden>{$t('ui.revealMedia')}</span>
+    {/if}
   {/if}
 
   {#if item.kind === 'video'}
@@ -231,3 +320,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     </span>
   {/if}
 </div>
+
+<style>
+  /* The overlay's words inside a control, as generated content: a text node there would be
+     visible text the control's name does not contain (WCAG 2.5.3, MICA-404). attr() in
+     content is CSS 2, far below the Chromium 103 floor. */
+  [data-reveal-label]::before {
+    content: attr(data-reveal-label);
+  }
+</style>
