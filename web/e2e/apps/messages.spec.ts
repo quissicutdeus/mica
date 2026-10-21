@@ -1,3 +1,4 @@
+import type { Page } from '@playwright/test';
 import { test, expect } from '../support/test';
 import { MESSAGE_BODY_MAX } from '@mica/shared/contracts/messages';
 
@@ -561,5 +562,134 @@ test.describe('Messages App E2E', () => {
       message.getByRole('button', { name: /^🔥 reaction, 2,/ }),
       'taking it back leaves the other two participants alone'
     ).toBeVisible();
+  });
+
+  /**
+   * The attach menu's Photo button opens the photo picker (MICA-408).
+   *
+   * It opened nothing: `openPhotoPicker` set a flag in `index.svelte` that nothing rendered,
+   * and the picker the composer draws waits on its own flag, which nothing set. The same flag
+   * sat in the app's `levels`, so the next Back closed a picker nobody could see instead of
+   * leaving the thread. Every assertion here is on what a player sees or does, never on
+   * either flag.
+   */
+  test.describe('the photo picker', () => {
+    const picker = (page: Page) => page.getByRole('dialog', { name: 'Select Photos' });
+    const thread = (page: Page) => page.locator('#messages-container');
+
+    const openTrevor = async (page: Page) => {
+      const convItem = page.locator('[role="button"]').filter({ hasText: 'Trevor' }).first();
+      await expect(convItem).toBeVisible();
+      await convItem.click({ force: true });
+      await expect(thread(page)).toBeVisible();
+    };
+
+    const openPicker = async (page: Page) => {
+      await openTrevor(page);
+      await page.getByRole('button', { name: 'Attachments' }).click();
+      await page.getByRole('button', { name: 'Photo', exact: true }).click();
+      await expect(picker(page), 'attach > Photo must open the picker').toBeVisible();
+    };
+
+    /** Back is Backspace at shell level; a dialog has focus, not a text field, so it is Back. */
+    const back = async (page: Page) => {
+      await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+      await page.keyboard.press('Backspace');
+    };
+
+    test('Back with the attach menu open closes the menu and stays in the thread', async ({
+      page
+    }) => {
+      await openTrevor(page);
+      await page.getByRole('button', { name: 'Attachments' }).click();
+      const photo = page.getByRole('button', { name: 'Photo', exact: true });
+      await expect(photo).toBeVisible();
+
+      await back(page);
+      await expect(photo).toHaveCount(0);
+      await expect(thread(page), 'the first Back stays in the thread').toBeVisible();
+
+      await back(page);
+      await expect(thread(page)).toHaveCount(0);
+      await expect(page.locator('h1', { hasText: 'Messages' })).toBeVisible();
+    });
+
+    test('Photo closes the attach menu as the picker opens, and it stays closed after', async ({
+      page
+    }) => {
+      await openPicker(page);
+      await expect(
+        page.getByRole('button', { name: 'Photo', exact: true }),
+        'the menu and the picker are never both open'
+      ).toHaveCount(0);
+
+      await picker(page).getByRole('button', { name: 'Close photo picker' }).click();
+      await expect(picker(page)).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'Photo', exact: true })).toHaveCount(0);
+    });
+
+    test('attach, then Photo, opens the picker titled for the thread', async ({ page }) => {
+      await openPicker(page);
+      await expect(
+        picker(page).getByRole('heading', { level: 2, name: 'Select Photos' })
+      ).toBeVisible();
+      // The attach menu is closed behind it, not left open under the picker.
+      await expect(page.getByRole('button', { name: 'Photo', exact: true })).toHaveCount(0);
+    });
+
+    test('a chosen photo is a pending attachment, and sending puts it in the thread', async ({
+      page
+    }) => {
+      await openPicker(page);
+      const tiles = picker(page).locator('button.aspect-square');
+      await expect(tiles.first(), 'the gallery must hold a photo to choose').toBeVisible();
+      await tiles.first().click();
+      await picker(page).getByRole('button', { name: /^Done/ }).click();
+
+      await expect(picker(page)).toHaveCount(0);
+      await expect(
+        page.getByRole('button', { name: 'Remove attachment' }),
+        'the chosen photo waits in the composer'
+      ).toHaveCount(1);
+
+      const body = `photo-proof-${Date.now()}`;
+      await page.getByRole('textbox').last().fill(body);
+      await page.getByRole('button', { name: 'Send' }).click();
+
+      const sent = thread(page).locator('[id^="msg-"]', { hasText: body });
+      await expect(sent).toBeVisible();
+      await expect(
+        sent.getByTestId('attachment-slot'),
+        'the photo went with the message'
+      ).toHaveCount(1);
+      await expect(page.getByRole('button', { name: 'Remove attachment' })).toHaveCount(0);
+    });
+
+    test('Back with the picker open closes the picker only, the next Back leaves the thread', async ({
+      page
+    }) => {
+      await openPicker(page);
+
+      await back(page);
+      await expect(picker(page)).toHaveCount(0);
+      await expect(thread(page), 'the first Back stays in the thread').toBeVisible();
+
+      await back(page);
+      await expect(thread(page)).toHaveCount(0);
+      await expect(page.locator('h1', { hasText: 'Messages' })).toBeVisible();
+    });
+
+    test('Back after cancelling the picker leaves the thread, with no invisible level left', async ({
+      page
+    }) => {
+      await openPicker(page);
+      await picker(page).getByRole('button', { name: 'Close photo picker' }).click();
+      await expect(picker(page)).toHaveCount(0);
+      await expect(thread(page)).toBeVisible();
+
+      await back(page);
+      await expect(thread(page), 'one Back, not two').toHaveCount(0);
+      await expect(page.locator('h1', { hasText: 'Messages' })).toBeVisible();
+    });
   });
 });

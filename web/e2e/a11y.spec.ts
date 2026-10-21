@@ -691,6 +691,20 @@ const STREAMER_SURFACES: { surface: string; open: (page: Page) => Promise<Scope>
     }
   },
   {
+    surface: 'messages photo picker',
+    open: async (page) => {
+      await openApp(page, appOf('messages'));
+      const convItem = page.locator('[role="button"]').filter({ hasText: 'Trevor' }).first();
+      await expect(convItem).toBeVisible();
+      await convItem.click({ force: true });
+      await expect(page.locator('#messages-container')).toBeVisible();
+      await page.getByRole('button', { name: 'Attachments' }).click();
+      await page.getByRole('button', { name: 'Photo', exact: true }).click();
+      await expect(page.getByRole('button', { name: /^Done/ })).toBeVisible();
+      return page;
+    }
+  },
+  {
     surface: 'snatchr photo picker',
     open: async (page) => {
       await openApp(page, appOf('marketplace'));
@@ -754,16 +768,13 @@ test.describe('with streamer mode on', () => {
  * Same `scan()`, same disabled rules, no `KNOWN_OPEN` entry. Each test asserts the dialog is
  * open before scanning, so a renamed button fails loudly instead of scanning the screen
  * under a picker that never opened. Callers by `grep PhotoPickerModal web/src`: Snatchr's
- * new listing, Spark's editor, Blabber's and Glimpse's composers and Contacts' form.
+ * new listing, Spark's editor, Blabber's and Glimpse's composers, Contacts' form and Messages'
+ * composer.
  * (Glimpse's and Blabber's edit-profile screens name the modal in a comment only; neither
  * draws one.)
  *
- * **Messages is not here, because its picker cannot be opened.** `MessageComposer` renders
- * `{#if showPicker}` and nothing ever sets its `showPicker`: the "Photo" button calls
- * `index.svelte`'s `openPhotoPicker`, which sets a `showPhotoPicker` that nothing reads. The
- * button closes the attach menu and shows nothing. Dead since the app was split into files
- * (86837c87); when it is wired, add a `messages` surface — Trevor's thread, Attachments,
- * Photo — and this list is complete.
+ * Messages is here too (MICA-408): its Photo button opened nothing until the composer's
+ * picker was wired, and this entry is what notices if it stops.
  */
 const PICKER_SURFACES: { surface: string; open: (page: Page) => Promise<Scope> }[] = [
   {
@@ -772,6 +783,19 @@ const PICKER_SURFACES: { surface: string; open: (page: Page) => Promise<Scope> }
       await openApp(page, appOf('marketplace'));
       await page.getByRole('button', { name: 'Create listing' }).click();
       await page.getByRole('button', { name: /Add photos/ }).click();
+      return page;
+    }
+  },
+  {
+    surface: 'messages',
+    open: async (page) => {
+      await openApp(page, appOf('messages'));
+      const convItem = page.locator('[role="button"]').filter({ hasText: 'Trevor' }).first();
+      await expect(convItem).toBeVisible();
+      await convItem.click({ force: true });
+      await expect(page.locator('#messages-container')).toBeVisible();
+      await page.getByRole('button', { name: 'Attachments' }).click();
+      await page.getByRole('button', { name: 'Photo', exact: true }).click();
       return page;
     }
   },
