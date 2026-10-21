@@ -56,7 +56,7 @@ test.describe('Phone Navigation & Home Screen', () => {
     await page.locator('button', { hasText: 'Uninstall' }).first().click();
 
     // Confirm uninstallation in ConfirmDialog modal
-    await expect(page.locator('h3', { hasText: 'Uninstall Notes' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Uninstall Notes' })).toBeVisible();
     await page.locator('button', { hasText: 'Uninstall' }).last().click();
 
     // 4. Return Home and verify Notes is uninstalled

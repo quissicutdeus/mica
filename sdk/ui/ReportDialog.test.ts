@@ -156,3 +156,21 @@ describe('ReportDialog', () => {
     });
   });
 });
+
+/**
+ * MICA-406. The sheet opens over a screen whose own title is an `h1`, so its heading is an
+ * `h2`, as every sdk/ui dialog's is; an `h3` there is axe's `heading-order`.
+ */
+describe('ReportDialog heading', () => {
+  it('is a level-2 heading inside a dialog named by the same words', () => {
+    const { getByRole, container } = render(ReportDialog, {
+      targetTable: 'mica_glimpse_posts',
+      targetId: 9,
+      appId: 'glimpse',
+      onclose: () => {}
+    });
+    expect(getByRole('dialog', { name: 'Report content' }).getAttribute('aria-modal')).toBe('true');
+    expect(getByRole('heading', { level: 2, name: 'Report content' })).toBeTruthy();
+    expect(container.querySelector('h3')).toBeNull();
+  });
+});

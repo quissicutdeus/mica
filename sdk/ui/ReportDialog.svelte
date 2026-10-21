@@ -119,7 +119,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     tabindex="-1"
     class="bg-surface max-h-full w-full overflow-y-auto rounded-t-xl p-5 outline-none"
   >
-    <h3 class="text-on-surface mb-1 text-lg font-bold">{$t('ui.reportContent')}</h3>
+    <h2 class="text-on-surface mb-1 text-lg font-bold">{$t('ui.reportContent')}</h2>
     <p class="text-on-surface-variant text-body-medium mb-4">
       {$t('ui.reportContentNote')}
     </p>

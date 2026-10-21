@@ -72,7 +72,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     tabindex="-1"
     class="bg-surface-container shadow-elevation-5 w-full rounded-box p-6 outline-none"
   >
-    <h3 class="text-on-surface mb-2 text-xl font-bold">{title}</h3>
+    <h2 class="text-on-surface mb-2 text-xl font-bold">{title}</h2>
     <p class="text-on-surface-variant mb-6">{message}</p>
     <div class="flex gap-3">
       <Button class="flex-1" variant="secondary" onclick={oncancel} disabled={isLoading}>

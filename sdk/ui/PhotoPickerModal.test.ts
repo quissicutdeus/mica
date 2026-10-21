@@ -100,3 +100,24 @@ describe('PhotoPickerModal single-select', () => {
     expect(onselect).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * MICA-406. The picker opens over a screen whose own title is an `h1`, so its heading is an
+ * `h2`: an `h3` there is the jump axe reports as `heading-order`. The dialog keeps its name
+ * from `aria-label`, the way every sdk/ui dialog is named.
+ */
+describe('PhotoPickerModal heading', () => {
+  it('is a level-2 heading inside a dialog named by the same words', () => {
+    const { getByRole, container } = render(PhotoPickerModal, { onclose: () => {} });
+    const dialog = getByRole('dialog', { name: 'Select Photo' });
+    expect(dialog.getAttribute('aria-modal')).toBe('true');
+    expect(getByRole('heading', { level: 2, name: 'Select Photo' })).toBeTruthy();
+    expect(container.querySelector('h3')).toBeNull();
+  });
+
+  it("follows a caller's own title in both", () => {
+    const { getByRole } = render(PhotoPickerModal, { title: 'Add photos', onclose: () => {} });
+    expect(getByRole('dialog', { name: 'Add photos' })).toBeTruthy();
+    expect(getByRole('heading', { level: 2, name: 'Add photos' })).toBeTruthy();
+  });
+});

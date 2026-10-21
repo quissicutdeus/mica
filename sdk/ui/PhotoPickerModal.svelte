@@ -130,12 +130,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   tabindex="-1"
   class="animate-in fade-in bg-surface-container-high duration-medium ease-emphasized absolute inset-0 z-30 flex flex-col outline-none backdrop-blur-md"
 >
-  <!-- Header -->
+  <!-- Header. An `h2`, as every sdk/ui dialog titles itself: the screen under it holds the
+       `h1`, and a jump to `h3` is axe's `heading-order` (MICA-406). -->
   <div class="border-outline-variant flex items-center justify-between border-b p-4">
-    <h3 class="text-on-surface text-body-large flex items-center gap-2">
+    <h2 class="text-on-surface text-body-large flex items-center gap-2">
       <PhotoIcon class="text-primary size-icon-md" />
       {heading}
-    </h3>
+    </h2>
     <button
       class="text-on-surface-variant hover:bg-surface-container hover:text-on-surface duration-short ease-standard rounded-full p-1 transition-colors"
       onclick={onclose}

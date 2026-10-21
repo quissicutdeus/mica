@@ -46,3 +46,6 @@ in its own file and gets a line here.
 - [Gating a parent control from inside](gate-a-parent-control-from-inside.md) —
   capture listener on the `closest()` control; never gate a native button's
   keydown (MICA-405)
+- [axe heading-order is relative](axe-heading-order-is-relative.md) — first
+  heading always passes; a dialog title under a screen h1 is h2, not h3
+  (MICA-406)
