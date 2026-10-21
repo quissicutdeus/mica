@@ -40,3 +40,6 @@ in its own file and gets a line here.
   the wire not the surface; named export beats `export *`; own baseline arm
 - [`$props<T>()` is not Svelte 5](props-type-argument-is-not-svelte-5.md) —
   4.7.7 rejects it and callers cascade; typecheck:sdk also checks web apps
+- [axe visible text is text nodes](axe-visible-text-is-text-nodes.md) —
+  aria-hidden, role=img, SVG text still count; `::before` content does not
+  (MICA-404)
