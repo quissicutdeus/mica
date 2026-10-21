@@ -79,3 +79,5 @@ its one-line summary.
 - [axe 4.14 turns on `label-content-name-mismatch`](axe-414-label-content-name-mismatch.md)
   — now on by default, matches whole words; `aria-hidden` does not exempt
   visible text
+- [svelte-eslint-parser 1.9.0 finds root's TypeScript 7](svelte-eslint-parser-finds-root-ts7.md)
+  — crashes on script-less components; held at 1.8.1 by MICA-402's override
