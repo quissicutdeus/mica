@@ -10,6 +10,12 @@ packages:
 # `pnpm dlx` reads it too, so the release job's publint is covered.
 minimumReleaseAge: 4320
 
+# svelte-eslint-parser 1.9.0 asks for "the newest typescript it can find" and gets root's
+# 7.x, whose main export is only a version string, so lint crashes on any .svelte file
+# without a <script lang="ts"> (MICA-402). Drop this once a fixed release is old enough.
+overrides:
+  svelte-eslint-parser: 1.8.1
+
 allowBuilds:
   esbuild: false
 
