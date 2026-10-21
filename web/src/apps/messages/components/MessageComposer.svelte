@@ -29,10 +29,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    * `text` and `attachments` are bound because the draft belongs to the conversation,
    * not to this row — the app clears both when the thread closes and keeps them when a
    * send fails.
+   *
+   * `attachMenuOpen` and `pickerOpen` are bound for a different reason: Back closes them one
+   * at a time, and the `levels` stack that decides what Back closes is the app's. This row
+   * draws them and may close them; opening the picker goes through `onopenphotos`, so the
+   * app loads the gallery first (MICA-408 — a second copy here was why Photo opened nothing).
    */
   let {
     text = $bindable(''),
     attachments = $bindable([]),
+    attachMenuOpen = $bindable(false),
+    pickerOpen = $bindable(false),
     replyingTo = null,
     editing = null,
     currentConv = null,
@@ -44,6 +51,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   }: {
     text: string;
     attachments: { photo_id: number; media: MediaPreview }[];
+    attachMenuOpen?: boolean;
+    pickerOpen?: boolean;
     replyingTo?: UIMessage | null;
     /**
      * The message being rewritten, if any.
@@ -62,9 +71,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     oncancelreply?: () => void;
     oncanceledit?: () => void;
   } = $props();
-
-  let showAttachMenu = $state(false);
-  let showPicker = $state(false);
 
   const { shareLocation } = useLocation();
   const { run } = useAppAction('messages');
@@ -100,7 +106,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       },
       { error: $t('messages.shareLocationFailed') }
     );
-    showAttachMenu = false;
+    attachMenuOpen = false;
   };
 </script>
 
@@ -210,7 +216,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <button
         type="button"
         class="text-on-surface-variant hover:bg-surface-container-high hover:text-primary duration-short ease-standard flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors"
-        onclick={() => (showAttachMenu = !showAttachMenu)}
+        onclick={() => (attachMenuOpen = !attachMenuOpen)}
         aria-label={$t('messages.attachments')}
       >
         <PaperclipIcon class="size-icon-md" />
@@ -219,7 +225,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   {/snippet}
 </MessageBar>
 
-{#if showAttachMenu}
+{#if attachMenuOpen}
   <div
     class="border-outline-variant bg-surface-container shadow-elevation-4 absolute bottom-16 left-4 grid w-48 grid-cols-2 gap-2 rounded-box border p-2"
     transition:fly={{ y: 20, duration: 200 }}
@@ -249,7 +255,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   </div>
 {/if}
 
-{#if showPicker}
+{#if pickerOpen}
   <PhotoPickerModal
     title={$t('messages.selectPhotos')}
     multiSelect={true}
@@ -265,6 +271,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         attachments = [...attachments, { photo_id: photoId, media }];
       }
     }}
-    onclose={() => (showPicker = false)}
+    onclose={() => (pickerOpen = false)}
   />
 {/if}

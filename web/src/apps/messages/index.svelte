@@ -76,6 +76,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   let isComposing = $state(false);
   let newMessageText = $state('');
   let recipientQuery = $state(''); // For searching contacts when composing
+  // The composer draws both and is bound to them, but they are the app's: Back closes them
+  // one at a time through `levels` below, which can only close what it can see (MICA-408).
   let showAttachMenu = $state(false);
   let showPhotoPicker = $state(false);
   let selectedAttachments = $state<{ photo_id: number; media: MediaPreview }[]>([]);
@@ -422,10 +424,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   const handleSelectContactRaw = (contact: Contact) => handleStartTextRaw(contact.phone);
 
+  // Both flags change after the load in one synchronous step, so the menu and the picker are
+  // never drawn in the same frame.
   const openPhotoPicker = async () => {
     await media.load();
-    showPhotoPicker = true;
     showAttachMenu = false;
+    showPhotoPicker = true;
   };
 
   const handleScrollToMessage = (msgId: number) => {
@@ -791,6 +795,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <MessageComposer
           bind:text={newMessageText}
           bind:attachments={selectedAttachments}
+          bind:attachMenuOpen={showAttachMenu}
+          bind:pickerOpen={showPhotoPicker}
           replyingTo={replyingToMsg}
           editing={editingMsg}
           {currentConv}
