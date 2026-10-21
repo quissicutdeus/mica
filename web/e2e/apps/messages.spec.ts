@@ -234,6 +234,46 @@ test.describe('Messages App E2E', () => {
   });
 
   /**
+   * Tapping a quoted reply scrolls to the message it quotes and rings it (MICA-407).
+   *
+   * The quote lives inside the bubble that holds the reply, so this is the one control the
+   * bubble must not swallow: a tap on it jumps, and does not also toggle the bubble's own
+   * Reply/Edit/Unsend actions. The ring is `handleScrollToMessage`'s own 1.5s highlight, the
+   * only observable the jump leaves in a browser.
+   */
+  test('a tap on a quoted reply jumps to the original message', async ({ page }) => {
+    await page
+      .locator('[role="button"]')
+      .filter({ hasText: 'Trevor' })
+      .first()
+      .click({ force: true });
+    const thread = page.locator('#messages-container');
+    await expect(thread).toBeVisible();
+
+    await page.getByRole('textbox').last().fill('Quote target line');
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
+    await thread.locator('button', { hasText: 'Quote target line' }).last().click();
+    await page.getByRole('button', { name: 'Reply to message' }).click();
+    await page.getByRole('textbox').last().fill('A reply that quotes it');
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
+
+    const reply = thread.locator('[id^="msg-"]').filter({ hasText: 'A reply that quotes it' });
+    await expect(reply).toBeVisible();
+    // The original is the earlier row; the reply's own quote repeats its text.
+    const original = thread
+      .locator('[id^="msg-"]')
+      .filter({ hasText: 'Quote target line' })
+      .first();
+    await expect(original).not.toHaveClass(/ring-primary/);
+
+    await reply.getByTitle('Jump to original message').click();
+
+    await expect(original, 'the quote did not jump to the original').toHaveClass(/ring-primary/);
+    // Only the quote was tapped, so the reply's own actions stay closed.
+    await expect(reply.getByRole('button', { name: 'Reply to message' })).toHaveCount(0);
+  });
+
+  /**
    * Editing and unsending your own message (MICA-68).
    *
    * Driven end to end rather than asserted on the store, because the wiring is where this

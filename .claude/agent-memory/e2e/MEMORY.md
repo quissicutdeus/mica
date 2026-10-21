@@ -22,3 +22,6 @@ its one-line summary.
 - [MICA-406 picker sweep](mica-406-photo-picker-sweep.md) — heading-order is
   relative to the screen; Messages picker is dead code; dump headings before
   blaming the modal
+- [MICA-407 axe scan budget](mica-407-axe-scan-budget.md) — streamer messages
+  a11y timed out under full-suite load; axe cost scales with DOM, load one older
+  page not three

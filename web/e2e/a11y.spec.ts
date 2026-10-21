@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { test, expect, type FrameLocator, type Page } from './support/test';
+import { test, expect, type FrameLocator, type Locator, type Page } from './support/test';
 import AxeBuilder from '@axe-core/playwright';
 import type { AxeResults, Result } from 'axe-core';
 import { addOnFrame } from './support/addon';
@@ -587,12 +587,12 @@ const STREAMER_SURFACES: { surface: string; open: (page: Page) => Promise<Scope>
       await convItem.click({ force: true });
       const thread = page.locator('#messages-container');
       await expect(thread).toBeVisible();
-      // Attachments sit on every twenty-fifth message; the three clicks `messages.spec.ts`
-      // and `streamer-mode.spec.ts` use fetch the rest of the thread deterministically.
-      for (let i = 0; i < 3; i += 1) {
-        await thread.locator('button', { hasText: 'Load older messages' }).dispatchEvent('click');
-      }
-      await expect(thread.locator('button', { hasText: 'Load older messages' })).not.toBeVisible();
+      // Attachments sit on every twenty-fifth message, so one older page is enough to draw
+      // the first. This used to load the whole thread (three clicks) and hand axe about
+      // twice the DOM it needed: that scan took 18s under this file's own load and 37s
+      // under the full suite's, past the 30s budget on cef-floor. The surface is about a
+      // blurred still, and the slot assertion below still proves one is on screen.
+      await thread.locator('button', { hasText: 'Load older messages' }).dispatchEvent('click');
       await expect(thread.getByTestId('attachment-slot').first()).toBeVisible();
       return page;
     }
@@ -962,4 +962,66 @@ test('an incoming call announces assertively, and a message does not', async ({ 
   await page.evaluate(() => window.triggerTestToast('call'));
   await expect(region).toHaveAttribute('aria-live', 'assertive');
   await expect(region).toHaveAttribute('role', 'alert');
+});
+
+/**
+ * Message bubbles that hold a control of their own (MICA-407).
+ *
+ * The plain thread sweep (`messages thread` above) never draws either: the seeded thread has
+ * no quoted reply and no location, so a bubble that nests a second control inside its own
+ * `<button>` scanned clean because the nested control was never on screen. Each test makes
+ * its subject first, asserts it is visible, and only then scans — a scan of a thread that
+ * lacks the control would pass for the wrong reason.
+ */
+test.describe('a message bubble that holds its own control', () => {
+  const openTrevor = async (page: Page): Promise<Locator> => {
+    await seedHomeGrid(page, ['settings', 'messages']);
+    await openApp(page, appOf('messages'));
+    await page
+      .locator('[role="button"]')
+      .filter({ hasText: 'Trevor' })
+      .first()
+      .click({ force: true });
+    const thread = page.locator('#messages-container');
+    await expect(thread).toBeVisible();
+    return thread;
+  };
+
+  test('a quoted reply has no accessibility violations', async ({ page }) => {
+    const thread = await openTrevor(page);
+    await page.getByRole('textbox').last().fill('Original line');
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
+    await thread.locator('button', { hasText: 'Original line' }).last().click();
+    await page.getByRole('button', { name: 'Reply to message' }).click();
+    await page.getByRole('textbox').last().fill('Answering that');
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
+
+    await expect(
+      thread.getByText('Answering that'),
+      'the reply did not arrive, so the quote cannot be on screen'
+    ).toBeVisible();
+    const quote = thread.getByTitle('Jump to original message');
+    await expect(quote, 'the reply carries no quoted original').toBeVisible();
+    await settleFrame(page);
+
+    const results = await scan(page, 'messages quoted reply');
+    expect(summarise(results), `quoted reply:\n  ${summarise(results).join('\n  ')}`).toEqual([]);
+  });
+
+  test('a shared location has no accessibility violations', async ({ page }) => {
+    const thread = await openTrevor(page);
+    await page.getByRole('button', { name: 'Attachments' }).click();
+    await page.locator('button', { hasText: 'Location' }).click();
+    await expect(page.getByRole('button', { name: 'Remove attachment' })).toBeVisible();
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
+
+    await expect(
+      thread.locator('text=Vespucci Beach').last(),
+      'the location card is not on screen'
+    ).toBeVisible();
+    await settleFrame(page);
+
+    const results = await scan(page, 'messages location');
+    expect(summarise(results), `location:\n  ${summarise(results).join('\n  ')}`).toEqual([]);
+  });
 });
