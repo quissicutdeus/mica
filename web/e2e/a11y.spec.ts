@@ -50,7 +50,7 @@ import { blurred, seedStreamerMode } from './support/streamerMode';
  *
  * ## What is switched off
  *
- * Two rules that cannot apply here (`NOT_APPLICABLE`) and three defects this gate found and
+ * Two rules that cannot apply here (`NOT_APPLICABLE`) and four defects this gate found and
  * did not fix (`KNOWN_OPEN`) — both lists are below, each entry with its reason. Nothing
  * else: a new axe rule arrives here as a failure, which is the point.
  */
@@ -143,18 +143,18 @@ const NOT_APPLICABLE = ['region', 'landmark-one-main'];
  *   alongside `error`, which is a change to the token set and therefore not this ticket's
  *   to make.
  *
- * - **`streamer: snatchr photo picker` / `heading-order`** (MICA-405) — `PhotoPickerModal`'s
- *   `<h3>` is the first heading in Snatchr's new-listing screen, so axe sees a jump straight
- *   to level 3. It fires with streamer mode off as well, so it is not the overlay's, and it
- *   hid behind nothing before only because no scan ever opened this screen. Disabled here so
- *   that pass goes green when the overlay is fixed rather than staying red for a reason that
- *   is not the overlay. The picker is `sdk/ui`'s, and whether it should draw a different
- *   level, or the screen under it an `h1` and `h2`, is a decision for whoever owns it.
+ * - **`picker: glimpse composer` and `picker: contacts form` / `heading-order`** (MICA-406)
+ *   — not the picker's: `PhotoPickerModal` titles itself with an `h2`. These two screens
+ *   draw their *own* title as an `h3` under the app's `h1` (Glimpse's `Composer`, Contacts'
+ *   `ContactForm`), so axe sees the jump on the screen beneath the dialog; it fires with
+ *   the picker closed as well, and no sweep opens either screen. The fix is a level on
+ *   each of those two titles, in `web/src/apps/`, and is not an `sdk/ui` change.
  */
 const KNOWN_OPEN: Record<string, string[]> = {
   shade: ['nested-interactive'],
   bank: ['color-contrast'],
-  'streamer: snatchr photo picker': ['heading-order']
+  'picker: glimpse composer': ['heading-order'],
+  'picker: contacts form': ['heading-order']
 };
 
 const scan = (page: Page, surface: string) =>
@@ -735,6 +735,100 @@ test.describe('with streamer mode on', () => {
       await settleFrame(page);
 
       const results = await scan(page, `streamer: ${surface}`);
+      expect(summarise(results), `${surface}:\n  ${summarise(results).join('\n  ')}`).toEqual([]);
+    });
+  }
+});
+
+/**
+ * The photo picker, opened from every app that draws one, with streamer mode off (MICA-406).
+ *
+ * `PhotoPickerModal` is an `sdk/ui` modal that eight call sites share, and no sweep above
+ * ever opened it: `openApp` stops at each app's first screen and the picker sits behind a
+ * button. The streamer pass above reached it from Snatchr and Spark only, and with the mode
+ * *on* — which is how its `<h3>` (the first heading on screen, so axe's `heading-order`)
+ * was found, and why that finding was recorded as the overlay's when it was not: it fires
+ * with the mode off too. So this is the pass that owns the picker itself, and the streamer
+ * entries are the ones that owe it nothing.
+ *
+ * Same `scan()`, same disabled rules, no `KNOWN_OPEN` entry. Each test asserts the dialog is
+ * open before scanning, so a renamed button fails loudly instead of scanning the screen
+ * under a picker that never opened. Callers by `grep PhotoPickerModal web/src`: Snatchr's
+ * new listing, Spark's editor, Blabber's and Glimpse's composers and Contacts' form.
+ * (Glimpse's and Blabber's edit-profile screens name the modal in a comment only; neither
+ * draws one.)
+ *
+ * **Messages is not here, because its picker cannot be opened.** `MessageComposer` renders
+ * `{#if showPicker}` and nothing ever sets its `showPicker`: the "Photo" button calls
+ * `index.svelte`'s `openPhotoPicker`, which sets a `showPhotoPicker` that nothing reads. The
+ * button closes the attach menu and shows nothing. Dead since the app was split into files
+ * (86837c87); when it is wired, add a `messages` surface — Trevor's thread, Attachments,
+ * Photo — and this list is complete.
+ */
+const PICKER_SURFACES: { surface: string; open: (page: Page) => Promise<Scope> }[] = [
+  {
+    surface: 'snatchr',
+    open: async (page) => {
+      await openApp(page, appOf('marketplace'));
+      await page.getByRole('button', { name: 'Create listing' }).click();
+      await page.getByRole('button', { name: /Add photos/ }).click();
+      return page;
+    }
+  },
+  {
+    surface: 'spark',
+    open: async (page) => {
+      await openApp(page, appOf('spark'));
+      const frame = addOnFrame(page, 'spark');
+      await expect(frame.getByTestId('spark-editor')).toBeVisible();
+      await frame.getByTestId('spark-add-photo').click();
+      return frame;
+    }
+  },
+  {
+    surface: 'blabber composer',
+    open: async (page) => {
+      await openApp(page, appOf('blabber'));
+      const frame = addOnFrame(page, 'blabber');
+      await frame.getByRole('button', { name: 'Blab', exact: true }).click();
+      await frame.getByRole('button', { name: 'Attach photo' }).click();
+      return frame;
+    }
+  },
+  {
+    surface: 'glimpse composer',
+    open: async (page) => {
+      await openApp(page, appOf('glimpse'));
+      const frame = addOnFrame(page, 'glimpse');
+      await frame.getByRole('button', { name: 'New post' }).click();
+      await frame.getByRole('button', { name: 'Add photos' }).first().click();
+      return frame;
+    }
+  },
+  {
+    surface: 'contacts form',
+    open: async (page) => {
+      await openApp(page, appOf('contacts'));
+      await page.getByRole('button', { name: 'Add Contact' }).click();
+      await page.getByRole('button', { name: 'Select photo from gallery' }).click();
+      return page;
+    }
+  }
+];
+
+test.describe('with streamer mode off', () => {
+  for (const { surface, open } of PICKER_SURFACES) {
+    test(`${surface} photo picker has no accessibility violations`, async ({ page }) => {
+      await seedHomeGrid(page, ['settings']);
+      const scope = await open(page);
+      // The precondition: the picker itself, not the screen under it.
+      await expect(
+        scope.getByRole('dialog', { name: /^(Select|Choose) .*photos?$/i }),
+        `${surface}: the photo picker did not open, so this scan would prove nothing`
+      ).toBeVisible();
+      await settleFrame(page);
+
+      const results = await scan(page, `picker: ${surface}`);
       expect(summarise(results), `${surface}:\n  ${summarise(results).join('\n  ')}`).toEqual([]);
     });
   }

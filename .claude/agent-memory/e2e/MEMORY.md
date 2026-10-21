@@ -19,3 +19,6 @@ its one-line summary.
 - [MICA-405 streamer axe pass](mica-405-streamer-a11y.md) — open modals never
   reach zero `getAnimations()` (finished fill-both); tablet has no blurred
   thumb; label-content-name-mismatch survives the nested-interactive fix
+- [MICA-406 picker sweep](mica-406-photo-picker-sweep.md) — heading-order is
+  relative to the screen; Messages picker is dead code; dump headings before
+  blaming the modal
