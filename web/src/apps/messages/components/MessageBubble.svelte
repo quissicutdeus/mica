@@ -69,6 +69,30 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    */
   const isMine = $derived(msg.sender === 'me');
 
+  /**
+   * A shared location is its own control ("Add Waypoint") and a still is not, so the two
+   * are drawn apart (MICA-407): locations as sibling buttons above the bubble's toggle,
+   * stills inside it, where MediaThumb's streamer-mode gate finds the toggle as the control
+   * that owns the reveal (MICA-405). A message mixing both shows its locations first.
+   */
+  const locations = $derived(
+    (msg.attachments ?? []).filter((attach) => attach.media?.kind === 'location')
+  );
+  const stills = $derived(
+    (msg.attachments ?? []).filter((attach) => attach.media && attach.media.kind !== 'location')
+  );
+
+  /**
+   * The toggle is named by what it holds — the text, a still's alt. A message that is only
+   * a location leaves it empty, and an unnamed button is unreachable by name, so it is
+   * named for what the message is.
+   */
+  const toggleLabel = $derived.by(() => {
+    if (msg.message || stills.length > 0) return undefined;
+    if (locations.length > 0) return $t('messages.location');
+    return msg.attachments?.length ? $t('messages.attachment') : undefined;
+  });
+
   let confirmingUnsend = $state(false);
   let unsending = $state(false);
 
@@ -194,33 +218,28 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       ? 'flex-row-reverse'
       : 'flex-row'}"
   >
-    <button
-      type="button"
-      class="shadow-elevation-1 min-w-0 flex-1 cursor-pointer rounded-box px-4 py-2.5 text-left transition-all focus:outline-none {msg.sender ===
+    <!-- The bubble is a surface, not a control (MICA-407). It holds up to three kinds of
+         control, side by side and never one inside another: the quoted reply, each shared
+         location, and the bubble's own toggle. The toggle's `::after` stretches its hit
+         area over the whole bubble, so a tap anywhere that is not the quote or a location
+         still opens the actions, as it did when the bubble was one `<button>`. -->
+    <div
+      data-bubble
+      class="shadow-elevation-1 relative min-w-0 flex-1 rounded-box px-4 py-2.5 text-left transition-all {msg.sender ===
       'me'
         ? 'bg-primary-container text-on-primary-container rounded-tr-xs'
         : 'bg-surface-container text-on-surface rounded-tl-xs'} duration-short ease-standard"
-      onclick={() => (showActions = !showActions)}
     >
       {#if msg.replyToMsg}
         {@const replySender = getSenderInfo(msg.replyToMsg)}
-        <div
-          role="button"
-          tabindex="0"
-          class="border-primary bg-surface-container-high hover:bg-surface-container-highest duration-short ease-standard text-body-small mb-2 flex w-full flex-col overflow-hidden rounded-box border-l-4 p-2 text-left transition-colors select-none"
-          onclick={(e) => {
-            e.stopPropagation();
-            onscrollto?.(msg.replyToMsg!.id);
-          }}
-          onkeydown={(e) => {
-            if (e.key === 'Enter') {
-              e.stopPropagation();
-              onscrollto?.(msg.replyToMsg!.id);
-            }
-          }}
+        {@const originalId = msg.replyToMsg.id}
+        <button
+          type="button"
+          class="border-primary bg-surface-container-high hover:bg-surface-container-highest duration-short ease-standard text-body-small relative z-10 mb-2 flex w-full cursor-pointer flex-col overflow-hidden rounded-box border-l-4 p-2 text-left transition-colors select-none"
+          onclick={() => onscrollto?.(originalId)}
           title={$t('messages.jumpToOriginal')}
         >
-          <div class="text-primary flex items-center gap-1.5 font-semibold">
+          <span class="text-primary flex items-center gap-1.5 font-semibold">
             <Avatar
               src={replySender.avatar}
               initials={replySender.name[0] || '?'}
@@ -229,55 +248,59 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               bgClass="bg-surface-container border border-outline-variant"
             />
             <span class="text-label-small truncate">{replySender.name}</span>
-          </div>
-          <p class="text-label-small mt-0.5 truncate opacity-80">
+          </span>
+          <span class="text-label-small mt-0.5 block w-full truncate opacity-80">
             {msg.replyToMsg.message ||
               (msg.replyToMsg.attachments?.length ? $t('messages.attachmentTag') : '')}
-          </p>
-        </div>
+          </span>
+        </button>
       {/if}
 
-      {#if msg.attachments && msg.attachments.length > 0}
+      {#if locations.length > 0}
         <div class="mb-2 space-y-2">
-          {#each msg.attachments as attach (attach.id ?? attach.photo_id)}
-            {#if attach.media}
-              {@const media = attach.media}
-              {#if media.kind === 'location'}
-                <div
-                  role="button"
-                  tabindex="0"
-                  class="border-outline-variant hover:bg-surface-container-high duration-short ease-standard flex w-full flex-col overflow-hidden rounded-box border transition-colors"
-                  onclick={(e) => {
-                    e.stopPropagation();
-                    handleAddWaypoint(media);
-                  }}
-                  onkeydown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.stopPropagation();
-                      handleAddWaypoint(media);
-                    }
-                  }}
-                >
-                  <div class="h-24 w-full">
-                    <MediaThumb item={media} fit="contain" />
-                  </div>
-                  <span class="text-primary text-body-small px-2 py-1.5"
-                    >{$t('messages.addWaypoint')}</span
-                  >
-                </div>
-              {:else}
-                <div data-testid="attachment-slot" class="max-w-full overflow-hidden rounded-box">
-                  <MediaThumb item={media} fit="contain" alt={$t('messages.attachment')} />
-                </div>
-              {/if}
-            {/if}
+          {#each locations as attach (attach.id ?? attach.photo_id)}
+            {@const media = attach.media!}
+            <button
+              type="button"
+              class="border-outline-variant hover:bg-surface-container-high duration-short ease-standard relative z-10 flex w-full cursor-pointer flex-col overflow-hidden rounded-box border text-left transition-colors"
+              onclick={() => handleAddWaypoint(media)}
+            >
+              <span class="block h-24 w-full">
+                <MediaThumb item={media} fit="contain" />
+              </span>
+              <span class="text-primary text-body-small px-2 py-1.5"
+                >{$t('messages.addWaypoint')}</span
+              >
+            </button>
           {/each}
         </div>
       {/if}
-      <p class="text-body-medium leading-relaxed whitespace-pre-wrap">
-        {msg.message}
-      </p>
-    </button>
+
+      <button
+        type="button"
+        data-bubble-toggle
+        class="block w-full cursor-pointer text-left focus:outline-none"
+        aria-expanded={showActions}
+        aria-label={toggleLabel}
+        onclick={() => (showActions = !showActions)}
+      >
+        {#if stills.length > 0}
+          <span class="mb-2 block space-y-2">
+            {#each stills as attach (attach.id ?? attach.photo_id)}
+              <span
+                data-testid="attachment-slot"
+                class="block max-w-full overflow-hidden rounded-box"
+              >
+                <MediaThumb item={attach.media!} fit="contain" alt={$t('messages.attachment')} />
+              </span>
+            {/each}
+          </span>
+        {/if}
+        <span class="text-body-medium block leading-relaxed whitespace-pre-wrap">
+          {msg.message}
+        </span>
+      </button>
+    </div>
 
     {#if showActions}
       <div class="flex shrink-0 items-center gap-1.5">
@@ -366,3 +389,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     class="px-1"
   />
 </div>
+
+<style>
+  /* The stretched hit area (MICA-407). The toggle is left unpositioned so its `::after`
+     resolves against the bubble, and the quote and location buttons sit above it at z-10.
+     `isolation` keeps that z-10 inside the bubble, so it never paints over the thread's
+     sticky panels. Both are older than Chromium 103: `isolation` 41, `inset` 87. */
+  [data-bubble] {
+    isolation: isolate;
+  }
+  [data-bubble-toggle]::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+  }
+</style>

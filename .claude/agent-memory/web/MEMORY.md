@@ -83,3 +83,6 @@ its one-line summary.
   — crashes on script-less components; held at 1.8.1 by MICA-402's override
 - [A heading level change is invisible only with a size class](heading-level-change-is-not-free.md)
   — app-reset zeroes heading margins only; UA font-size per level survives
+- [A surface with several controls](stretched-control-in-a-surface.md) — sibling
+  buttons plus a stretched `::after`; a `<style>` class fails utilityClasses,
+  use a data attribute
