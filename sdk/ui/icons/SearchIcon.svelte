@@ -5,7 +5,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  let { class: className = 'size-icon-lg' } = $props<{ class?: string }>();
+  interface Props {
+    class?: string;
+  }
+
+  let { class: className = 'size-icon-lg' }: Props = $props();
 </script>
 
 <svg

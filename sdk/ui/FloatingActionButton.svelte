@@ -7,14 +7,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script lang="ts">
   import type { Snippet } from 'svelte';
 
-  let {
-    label,
-    title,
-    collapsed = false,
-    raised = false,
-    onclick,
-    icon
-  } = $props<{
+  interface Props {
     label: string;
     title?: string;
     collapsed?: boolean;
@@ -29,7 +22,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     raised?: boolean;
     onclick: () => void;
     icon: Snippet;
-  }>();
+  }
+
+  let { label, title, collapsed = false, raised = false, onclick, icon }: Props = $props();
 </script>
 
 <button

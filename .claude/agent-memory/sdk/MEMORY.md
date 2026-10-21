@@ -38,3 +38,5 @@ in its own file and gets a line here.
   check is `origin === 'null'`, not `window.parent`; `service` not defaulted
 - [Add-on hook types are narrower](add-on-hook-types-are-narrower.md) — rows are
   the wire not the surface; named export beats `export *`; own baseline arm
+- [`$props<T>()` is not Svelte 5](props-type-argument-is-not-svelte-5.md) —
+  4.7.7 rejects it and callers cascade; typecheck:sdk also checks web apps

@@ -8,10 +8,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { t } from '../../i18n';
   import '../messages';
 
-  let { status = 'delivered', class: className = 'w-3.5 h-3.5' } = $props<{
+  interface Props {
     status: 'delivered' | 'read';
     class?: string;
-  }>();
+  }
+
+  let { status = 'delivered', class: className = 'w-3.5 h-3.5' }: Props = $props();
 </script>
 
 {#if status === 'read'}

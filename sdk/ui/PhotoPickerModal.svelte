@@ -18,15 +18,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { t } from '../i18n';
   import './messages';
 
-  let {
-    title = undefined,
-    multiSelect = false,
-    selectedIds = [],
-    showRemove = false,
-    onselect,
-    onmultichange,
-    onclose
-  } = $props<{
+  interface Props {
     title?: string;
     /** Single-select mode (contacts): fires onselect with image URL */
     multiSelect?: boolean;
@@ -42,7 +34,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
      */
     onmultichange?: (photoId: number, media: MediaPreview) => void;
     onclose: () => void;
-  }>();
+  }
+
+  let {
+    title = undefined,
+    multiSelect = false,
+    selectedIds = [],
+    showRemove = false,
+    onselect,
+    onmultichange,
+    onclose
+  }: Props = $props();
 
   // A `$derived` fallback rather than a prop default, so the heading follows the locale.
   const heading = $derived(title ?? $t('ui.selectPhoto'));

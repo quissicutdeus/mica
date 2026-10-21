@@ -8,6 +8,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import type { Snippet } from 'svelte';
   import ScreenHeader from './ScreenHeader.svelte';
 
+  interface Props {
+    title: string;
+    onback?: () => void;
+    ontitleclick?: () => void;
+    actions?: Snippet;
+    overlay?: Snippet;
+    children: Snippet;
+    class?: string;
+  }
+
   let {
     title,
     onback,
@@ -16,15 +26,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     overlay,
     children,
     class: className = ''
-  } = $props<{
-    title: string;
-    onback?: () => void;
-    ontitleclick?: () => void;
-    actions?: Snippet;
-    overlay?: Snippet;
-    children: Snippet;
-    class?: string;
-  }>();
+  }: Props = $props();
 </script>
 
 <div class="bg-surface text-on-surface relative flex h-full flex-col {className}">

@@ -164,8 +164,15 @@ export type AppDevice = DeviceId;
  * Deep-link props are the app's own, and it should say so by extending this:
  *
  * ```ts
- * let { onback, mailId } = $props<AppProps & { mailId?: number }>();
+ * interface Props extends AppProps {
+ *   mailId?: number;
+ * }
+ *
+ * let { onback, mailId }: Props = $props();
  * ```
+ *
+ * Annotate the destructure rather than passing a type argument: Svelte 5's `$props()`
+ * takes none, and svelte-check 4.7.7 and later reject `$props<T>()` outright (MICA-403).
  *
  * Keep those optional. A deep link is one way in among several, and the same component
  * still has to render when opened from the launcher with nothing.
