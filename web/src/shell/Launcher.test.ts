@@ -12,11 +12,13 @@
 import '../host/registerFacets';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { get } from 'svelte/store';
 import Home from './Launcher.svelte';
 import { isAdmin } from '../services/admin';
 import { homeEditMode, homeGridItems, openFolderId } from './state/homeGrid';
 import { homeGridColumns, homeGridRows } from './state/homeGridSettings';
+import { activeHandlerFor, isTypingTarget, registerHandler } from './state/keybinds';
 
 /**
  * The launcher is now the configurable home grid only — every installed app used to
@@ -142,5 +144,78 @@ describe('home launcher widgets (MICA-245)', () => {
       homeEditMode.set(false);
       vi.useRealTimers();
     }
+  });
+});
+
+/**
+ * The add-widget sheet says `role="dialog"` and `aria-modal`, so it has to behave like one
+ * (MICA-410): Tab stays inside it, as in `FolderPopup` and the control center, and opening it
+ * moves focus in. Focus lands on the sheet itself, never on a field — no keybind fires while a
+ * text field has focus, and Back has to reach the shell exactly as it did before.
+ */
+describe('the add-widget sheet (MICA-410)', () => {
+  beforeEach(() => homeEditMode.set(true));
+
+  const openSheet = async () => {
+    const view = render(Home, { props: { openApp: () => {} } });
+    const opener = view.getByRole('button', { name: 'Add widget' });
+    opener.focus();
+    await fireEvent.click(opener);
+    await tick();
+    return { ...view, opener, sheet: view.getByRole('dialog', { name: 'Add widget' }) };
+  };
+
+  it('takes focus on open, on the sheet rather than a field, so Back still fires', async () => {
+    const { sheet } = await openSheet();
+
+    expect(document.activeElement).toBe(sheet);
+    expect(isTypingTarget(document.activeElement)).toBe(false);
+  });
+
+  it('keeps Tab inside the sheet, wrapping both ways', async () => {
+    const { sheet } = await openSheet();
+    const buttons = [...sheet.querySelectorAll('button')];
+    const first = buttons[0];
+    const last = buttons[buttons.length - 1];
+
+    last.focus();
+    // `fireEvent` answers false when the event was cancelled: the trap took the Tab.
+    expect(await fireEvent.keyDown(last, { key: 'Tab' })).toBe(false);
+    expect(document.activeElement).toBe(first);
+
+    expect(await fireEvent.keyDown(first, { key: 'Tab', shiftKey: true })).toBe(false);
+    expect(document.activeElement).toBe(last);
+  });
+
+  it('closes on Back, above the shell, and hands Back back once it is shut', async () => {
+    // Stands in for `Shell.svelte`'s fallback, which on home lowers the phone. The sheet is
+    // a level above it: Back closes the sheet, and only the next Back reaches the shell.
+    const shellBack = vi.fn();
+    const release = registerHandler('back', shellBack);
+    try {
+      const { queryByRole } = await openSheet();
+
+      activeHandlerFor('back')?.();
+      await tick();
+
+      expect(queryByRole('dialog', { name: 'Add widget' })).toBeNull();
+      expect(shellBack).not.toHaveBeenCalled();
+      expect(activeHandlerFor('back')).toBe(shellBack);
+    } finally {
+      release();
+    }
+  });
+
+  it('hands focus back to Add widget when it closes', async () => {
+    const { sheet, opener, getByRole } = await openSheet();
+    const buttons = [...sheet.querySelectorAll('button')];
+    const done = buttons[buttons.length - 1];
+    done.focus();
+
+    await fireEvent.click(done);
+    await tick();
+
+    expect(() => getByRole('dialog', { name: 'Add widget' })).toThrow();
+    expect(document.activeElement).toBe(opener);
   });
 });

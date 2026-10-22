@@ -6,7 +6,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script lang="ts">
   import { t } from './messages';
+  import { focusTrap } from '@mica/sdk';
   import { anySheetOpen } from './state/sheets';
+  import { registerHandler } from './state/keybinds';
   import { badgeAllowed } from './state/notificationPolicy';
   import { get } from 'svelte/store';
   import { appVisible } from './state/appVisibility';
@@ -79,6 +81,26 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     $availableWidgets.find((w) => w.widgetId === widgetId)?.render.kind === 'addon';
 
   let addSheetOpen = $state(false);
+  let addSheetRef = $state<HTMLElement | null>(null);
+
+  /**
+   * Into the sheet on open, as `FolderPopup` does (MICA-410): announced as the dialog it is,
+   * and Tab starts inside it. The sheet itself, never a field in it — no keybind fires while
+   * a text field has focus, so Back reaches the shell exactly as it did before.
+   */
+  $effect(() => {
+    if (addSheetOpen) addSheetRef?.focus({ preventScroll: true });
+  });
+
+  /**
+   * Back closes the sheet first, a level above the shell's fallback (which on home lowers the
+   * phone, sheet and all). Registered only while it is open, and released by the cleanup on
+   * close or unmount, so the next Back is the shell's again.
+   */
+  $effect(() => {
+    if (!addSheetOpen) return;
+    return registerHandler('back', () => (addSheetOpen = false));
+  });
   let unplacedWidgets = $derived(
     $availableWidgets.filter(
       (w) => !$homeGridItems.some((i) => i.kind === 'widget' && i.widgetId === w.widgetId)
@@ -496,11 +518,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </div>
 
 {#if addSheetOpen}
+  <!-- Modal, like the folder and the control center: the grid is still behind it and still in
+       the tab order, so Tab is held inside (`lib/focusTrap.ts`), and focus goes back to Add
+       widget when it closes. -->
   <div
-    class="bg-scrim absolute inset-0 z-56 flex items-end"
+    bind:this={addSheetRef}
+    use:focusTrap
+    class="bg-scrim absolute inset-0 z-56 flex items-end outline-none"
     role="dialog"
     aria-modal="true"
     aria-label={$t('shell.addWidget')}
+    tabindex="-1"
   >
     <div
       class="bg-surface-container shadow-elevation-5 pb-home-indicator flex w-full flex-col gap-3 rounded-box p-5"

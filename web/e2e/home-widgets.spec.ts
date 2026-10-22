@@ -89,6 +89,35 @@ test.describe('Home widgets', () => {
     await expect(widget(page)).toHaveCount(0);
   });
 
+  test('Back closes the add-widget sheet first; a second Back lowers the phone', async ({
+    page
+  }) => {
+    await seed(page, 4);
+    await page.goto('/');
+    await enterEditMode(page, 9);
+    await page.getByRole('button', { name: 'Add widget' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Add widget' });
+    await expect(sheet).toBeVisible();
+
+    await page.keyboard.press('Backspace');
+    await expect(sheet).toBeHidden();
+    // Only the sheet closed: the phone is still up, still in edit mode.
+    await expect(page.getByTestId('phone-frame')).toBeVisible();
+    await expect(page.getByTestId('home-edit-bar')).toBeVisible();
+    await expect(widget(page)).toHaveCount(0);
+    // Back reaches the shell's fallback only once nothing above it claims it, and on home
+    // that fallback is `hideFrame` — the in-browser frame stays up (only Escape drops it),
+    // so what crossed the mock bridge is what says the phone was lowered.
+    const hides = () =>
+      page.evaluate(
+        () => (window.mockCalls ?? []).filter((call) => call.event === 'hideFrame').length
+      );
+    expect(await hides()).toBe(0);
+
+    await page.keyboard.press('Backspace');
+    await expect.poll(hides).toBe(1);
+  });
+
   test('a placed widget survives reduced motion', async ({ page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await seed(page, 4);
