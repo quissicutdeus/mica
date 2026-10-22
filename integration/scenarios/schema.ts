@@ -41,9 +41,11 @@ const seededMigrations = (sql: string): string[] => {
 
 /**
  * Ids that share the ledger without being migrations, each written by a feature that documents
- * it: the content-encryption marker (MICA-165) and the retention grace markers (MICA-167).
+ * it: the content-encryption marker (MICA-165), the retention grace markers (MICA-167), and the
+ * install's log-token salt (MICA-433, `server/lib/who.ts`), in the exact shape it mints.
  */
-const NOT_A_MIGRATION = /^(content-cipher:enabled|retention:[a-z0-9_]+:\d+d)$/;
+const NOT_A_MIGRATION =
+  /^(content-cipher:enabled|retention:[a-z0-9_]+:\d+d|log-salt:[0-9a-f]{64})$/;
 
 const ledgerIds = async (): Promise<string[]> =>
   (await db.rows('SELECT `id` FROM `mica_schema_migrations` ORDER BY `id`')).map((r) =>

@@ -342,22 +342,25 @@ export const dmsScenarios: Scenario[] = [
         // read, with the key the harness wrote.
         const notice = await eventually(
           async () => {
-            const row = await db.row(
+            const notified = await db.row(
               'SELECT `citizenid`, `device_id`, `title`, `body`, `deep_link` ' +
                 'FROM `mica_notifications` ' +
                 "WHERE `citizenid` = ? AND `app` = 'blabber' AND `kind` = 'dm'",
               [recipient]
             );
-            if (!row) return null;
+            if (!notified) return null;
             const open = (column: 'title' | 'body'): string =>
-              openSealed(row[column], harnessKeys(), {
+              openSealed(notified[column], harnessKeys(), {
                 table: 'mica_notifications',
                 column,
-                citizenid: String(row.citizenid),
-                deviceId: (row.device_id as string | null) ?? null,
+                citizenid: String(notified.citizenid),
+                deviceId: (notified.device_id as string | null) ?? null,
                 scope: []
               });
-            return { ...row, title: open('title'), body: open('body') } as Record<string, unknown>;
+            return { ...notified, title: open('title'), body: open('body') } as Record<
+              string,
+              unknown
+            >;
           },
           5_000,
           signal,

@@ -44,6 +44,13 @@ declare module 'node:crypto' {
   ): DecipherGCM;
   export function randomBytes(size: number): Bytes;
 
+  interface Hmac {
+    update(data: string | Uint8Array): Hmac;
+    digest(): Bytes;
+  }
+  /** `integration/lib/logToken.ts`: the token micaOS's `who()` prints (MICA-433). */
+  export function createHmac(algorithm: 'sha256', key: Uint8Array): Hmac;
+
   export interface KeyObject {
     export(options: { type: 'spki'; format: 'der' }): Bytes;
     export(options: { type: 'pkcs8'; format: 'pem' }): string;

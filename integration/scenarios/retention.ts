@@ -5,6 +5,7 @@
 import type { Scenario } from '../runner';
 import { requireTap } from '../lib/console';
 import { db } from '../lib/db';
+import { serverWho } from '../lib/logToken';
 import { assert, unique } from '../lib/mica';
 import { runMediaPrune } from '../lib/mediaPrune';
 import { sleep } from '../lib/wait';
@@ -156,11 +157,13 @@ export const retentionScenarios: Scenario[] = [
         [gone, note]
       );
 
+      // The line names the character by its log token (MICA-433), not its citizenid.
+      const token = await serverWho(gone);
       const mark = tap.mark();
       emit('mica:server:shell:characterDeleted', gone);
       const said = await tap.waitFor(
         mark,
-        new RegExp(`^\\[mica\\] (purged \\d+ row\\(s\\)|purge for) .*${gone}`),
+        new RegExp(`^\\[mica\\] (purged \\d+ row\\(s\\)|purge for) .*${token}`),
         30_000,
         signal,
         "the purge's summary"

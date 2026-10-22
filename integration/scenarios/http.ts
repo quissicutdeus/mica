@@ -7,6 +7,7 @@ import { randomBytes } from 'node:crypto';
 import type { Scenario } from '../runner';
 import { requireTap, type ConsoleTap } from '../lib/console';
 import { db } from '../lib/db';
+import { serverWho } from '../lib/logToken';
 import {
   parseMultipart,
   withSink,
@@ -456,14 +457,14 @@ export const httpScenarios: Scenario[] = [
         );
 
         try {
+          // The line names the character by its log token (MICA-433), not its citizenid.
+          const token = await serverWho(gone.citizenid);
           const mark = tap.mark();
           const from = host.sink.mark();
           emit('mica:server:shell:characterDeleted', gone.citizenid);
           const said = await tap.waitFor(
             mark,
-            new RegExp(
-              `^\\[mica\\] (purged \\d+ row\\(s\\)|purge for) .*${literal(gone.citizenid)}`
-            ),
+            new RegExp(`^\\[mica\\] (purged \\d+ row\\(s\\)|purge for) .*${token}`),
             30_000,
             signal,
             "the purge's summary"
@@ -523,13 +524,15 @@ export const httpScenarios: Scenario[] = [
         const droppedName = await hostedName(dropped);
         host.onDelete((name) => (name === droppedName ? { drop: true } : { status: 500 }));
 
+        // The line names the character by its log token (MICA-433), not its citizenid.
+        const token = await serverWho(who.citizenid);
         const mark = tap.mark();
         const from = host.sink.mark();
         emit('mica:server:media:characterDeleted', who.citizenid);
         const said = await tap.waitFor(
           mark,
           new RegExp(
-            `^\\[micamedia\\] (purged \\d+ row\\(s\\) for deleted character ${literal(who.citizenid)}\\.` +
+            `^\\[micamedia\\] (purged \\d+ row\\(s\\) for deleted character ${token}\\.` +
               '|purge for a deleted character failed)'
           ),
           30_000,
