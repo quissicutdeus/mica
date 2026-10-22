@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { Avatar, formatDate, MediaThumb, ReportDialog, useLocale } from '@mica/sdk';
+  import { Avatar, formatDate, MediaThumb, ReportDialog, useLocale, initialsOf } from '@mica/sdk';
   import type { Blab, BlabEngagement } from '@mica/shared/types';
   import BlabBody from './BlabBody.svelte';
   import BlabActions from './BlabActions.svelte';
@@ -90,7 +90,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 {#snippet avatar()}
   <Avatar
     src={blab.avatar ?? undefined}
-    initials={(blab.handle ?? '?').slice(0, 2).toUpperCase()}
+    initials={initialsOf(blab.handle)}
     size="w-9 h-9"
     showSilhouette={!blab.handle}
   />

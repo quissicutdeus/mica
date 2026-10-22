@@ -12,6 +12,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     EmptyState,
     ReportDialog,
     useLocale,
+    initialsOf,
     type DirectMessage,
     type DirectMessageThread
   } from '@mica/sdk';
@@ -69,7 +70,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     data-testid="glimpse-dm-header"
   >
     <Avatar
-      initials={(peer?.handle || '?').slice(0, 2).toUpperCase()}
+      initials={initialsOf(peer?.handle)}
       src={peer?.avatar ?? ''}
       size="w-8 h-8"
       showSilhouette={false}

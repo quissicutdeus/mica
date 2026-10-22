@@ -15,7 +15,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     ReportDialog,
     Skeleton,
     useAppAction,
-    useLocale
+    useLocale,
+    initialsOf
   } from '@mica/sdk';
   import type { Account, GlimpsePost } from '@mica/shared/types';
   import {
@@ -135,7 +136,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div class="flex items-center gap-4 p-4">
         <Avatar
           src={account?.avatar ?? undefined}
-          initials={handle.slice(0, 2).toUpperCase()}
+          initials={initialsOf(handle)}
           size="w-16 h-16"
           showSilhouette={false}
         />

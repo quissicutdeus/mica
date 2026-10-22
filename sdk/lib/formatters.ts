@@ -4,7 +4,8 @@
 
 import { get } from 'svelte/store';
 import { is24HourNow } from '../host/seam/clockPreference';
-import { locale } from '../i18n';
+import { locale, t as translator, type Translate } from '../i18n';
+import '../ui/messages';
 
 /**
  * Every `Intl` call below formats under the phone's locale (MICA-61), read at call time so
@@ -43,19 +44,35 @@ export function formatTime(isoString?: string | number | Date, override24Hour?: 
   });
 }
 
-export function formatRelativeTime(dateStr: Date | string): string {
+/**
+ * How long ago, in the phone's language: "Just now", "5m ago", "3h ago", "Yesterday", then
+ * the date (MICA-412). The words are the `ui` catalog's (`ui.justNow`, `ui.minutesAgo`,
+ * `ui.hoursAgo`, `ui.yesterday`), so an owner's `locales/` files translate them like any
+ * other SDK string; the date past yesterday is `Intl` under the active locale.
+ *
+ * The catalog rather than `Intl.RelativeTimeFormat`: its narrow English differs between
+ * Chromium 103's ICU and a current one ("5 min. ago" against "5m ago"), and a catalog
+ * reads the same in game, in the dev browser and in a test.
+ *
+ * **Re-rendering on a locale switch:** called bare, it reads the locale when it runs, so a
+ * template that calls it re-formats only when something else re-renders it. Pass the
+ * translator — `formatRelativeTime(at, $t)`, `$t` from `useLocale()` — and the expression
+ * depends on `$t`, which changes with the locale, so it re-formats on the switch.
+ */
+export function formatRelativeTime(dateStr: Date | string, t?: Translate): string {
   if (!dateStr) return '';
   const date = new Date(dateStr);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMins = Math.floor(diffMs / (1000 * 60));
-  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  if (isNaN(date.getTime())) return '';
+  const translate = t ?? get(translator);
+  const diffMs = Date.now() - date.getTime();
+  const minutes = Math.floor(diffMs / (1000 * 60));
+  const hours = Math.floor(diffMs / (1000 * 60 * 60));
+  const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
-  if (diffMins < 1) return 'Just now';
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays === 1) return 'Yesterday';
+  if (minutes < 1) return translate('ui.justNow');
+  if (minutes < 60) return translate('ui.minutesAgo', { minutes });
+  if (hours < 24) return translate('ui.hoursAgo', { hours });
+  if (days === 1) return translate('ui.yesterday');
   return date.toLocaleDateString(activeLocale(), { month: 'short', day: 'numeric' });
 }
 
@@ -74,10 +91,9 @@ export function formatDate(isoString?: string | number | Date): string {
  * Seconds as `m:ss`, or `h:mm:ss` past an hour. MICA-111.
  *
  * Here rather than inline in the Music app because a "how long" readout is not
- * app-specific — `MediaThumb` and the Phone app's call timer each wrote their own, and a
- * third copy is how three surfaces end up disagreeing about what 90 seconds looks like.
- * Those two are left alone rather than refactored mid-flight; this is the one to reach for
- * next time.
+ * app-specific: `MediaThumb` and the Phone app's call timer each wrote their own, and
+ * separate copies are how surfaces end up disagreeing about what 90 seconds looks like.
+ * Both read through this one now (MICA-417).
  */
 export function formatDuration(totalSeconds: number): string {
   if (!Number.isFinite(totalSeconds) || totalSeconds < 0) return '0:00';

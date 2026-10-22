@@ -12,6 +12,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import MicrophoneIcon from './icons/MicrophoneIcon.svelte';
   import PlayIcon from './icons/PlayIcon.svelte';
   import { t } from '../i18n';
+  import { formatDuration } from '../lib/formatters';
   import './messages';
   import { useStreamerMode } from '../host/useStreamerMode';
   import { isDataImage } from '@mica/shared/imageSource';
@@ -117,10 +118,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   let label = $derived(alt ?? item.alt_text ?? `${item.kind} ${item.id}`);
   let objectFit = $derived(fit === 'cover' ? 'object-cover' : 'object-contain');
 
-  const seconds = (ms: number) => {
-    const total = Math.round(ms / 1000);
-    return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
-  };
+  /** Rounded to the second, then the SDK's one duration format (MICA-417). */
+  const seconds = (ms: number) => formatDuration(Math.round(ms / 1000));
 
   /**
    * Streamer mode (MICA-249): a still is blurred until tapped, and only here.

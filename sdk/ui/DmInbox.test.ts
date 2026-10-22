@@ -104,6 +104,20 @@ describe.each(['in-process', 'frame'] as const)('DmInbox, %s', (shape) => {
     }
   });
 
+  it("draws each row's avatar letters through initialsOf (MICA-417)", async () => {
+    world.threads.mockResolvedValue([
+      thread(30, 5, ME, false, { handle: 'ada_l' }),
+      thread(40, 9, ME, false, { handle: null })
+    ]);
+    const { container } = render(DmInbox, { appId: 'glimpse', accountId: ME, onopen: vi.fn() });
+    await waitFor(() => expect(peers(container)).toEqual([40, 30]));
+    const letters = [...container.querySelectorAll<HTMLElement>('[data-initials]')].map(
+      (el) => el.dataset.initials
+    );
+    // One letter for one word, as every other avatar draws it; '?' for no handle at all.
+    expect(letters).toEqual(['?', 'A']);
+  });
+
   it('keeps every account when accountId is null', async () => {
     world.threads.mockResolvedValue([thread(30, 5, ME, false), thread(50, 7, ALT, false)]);
     const { container } = render(DmInbox, { appId: 'glimpse', accountId: null, onopen: vi.fn() });

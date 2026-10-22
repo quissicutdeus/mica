@@ -200,6 +200,14 @@ describe('MediaThumb', () => {
     expect(video.getByText('1:05')).toBeTruthy();
   });
 
+  it('reads a clip past an hour the way Music reads a track (MICA-417)', () => {
+    const long = render(MediaThumb, {
+      item: item({ kind: 'video', thumbnail: 'https://x.test/p.jpg', duration_ms: 3_665_600 })
+    });
+    // Rounded to the second, then `formatDuration`: not "61:06".
+    expect(long.getByText('1:01:06')).toBeTruthy();
+  });
+
   it('names the item for a screen reader even without alt text', () => {
     const { container } = render(MediaThumb, {
       item: item({ kind: 'gif', url: 'https://x.test/a.gif' })

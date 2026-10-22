@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { Avatar, formatDate, ReportDialog, useLocale } from '@mica/sdk';
+  import { Avatar, formatDate, ReportDialog, useLocale, initialsOf } from '@mica/sdk';
   import type { GlimpseEngagement, GlimpsePost, ReactionSummary } from '@mica/shared/types';
   import { LIKE } from '../store';
   import Carousel from './Carousel.svelte';
@@ -70,7 +70,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 {#snippet avatar()}
   <Avatar
     src={post.avatar ?? undefined}
-    initials={(post.handle ?? '?').slice(0, 2).toUpperCase()}
+    initials={initialsOf(post.handle)}
     size="w-8 h-8"
     textClass="text-label-small"
     showSilhouette={!post.handle}

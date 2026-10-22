@@ -10,6 +10,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import { useDirectMessages } from '../host/useDirectMessages';
   import { useAppEvents } from '../host/useAppEvents';
   import { formatDate } from '../lib/formatters';
+  import { initialsOf } from '../lib/initials';
   import { t } from '../i18n';
   import Avatar from './Avatar.svelte';
   import EmptyState from './EmptyState.svelte';
@@ -106,11 +107,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         data-testid="dm-inbox-row"
         data-peer-account-id={thread.peer_account_id}
       >
-        <Avatar
-          initials={(thread.handle ?? '?').slice(0, 2).toUpperCase()}
-          size="w-10 h-10"
-          showSilhouette={false}
-        />
+        <Avatar initials={initialsOf(thread.handle)} size="w-10 h-10" showSilhouette={false} />
         <div class="min-w-0 flex-1">
           <div class="flex items-baseline gap-2">
             <span class="text-on-surface text-body-medium min-w-0 truncate font-semibold">

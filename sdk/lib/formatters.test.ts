@@ -10,7 +10,9 @@
  * which side it is standing in for. In-process, because a unit test stands in for the shell.
  */
 import '../../web/src/host/registerFacets';
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect } from 'vitest';
+import { get } from 'svelte/store';
+import { locale, t } from '../i18n';
 import {
   formatCurrency,
   formatDuration,
@@ -68,6 +70,39 @@ describe('formatters utility module', () => {
     it('returns hours ago for dates within 24 hours', () => {
       const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000);
       expect(formatRelativeTime(threeHoursAgo)).toBe('3h ago');
+    });
+
+    it('returns "Yesterday" a day back and a date before that', () => {
+      expect(formatRelativeTime(new Date(Date.now() - 30 * 60 * 60 * 1000))).toBe('Yesterday');
+      const older = formatRelativeTime(new Date(Date.now() - 5 * 24 * 60 * 60 * 1000));
+      expect(older).not.toMatch(/ago|Yesterday/);
+      expect(older.length).toBeGreaterThan(0);
+    });
+
+    it('returns empty string for an unparseable date', () => {
+      expect(formatRelativeTime('not a date')).toBe('');
+    });
+
+    describe('under the active locale (MICA-412)', () => {
+      afterEach(() => locale.set('en'));
+
+      it('answers in German when the phone is German', () => {
+        locale.set('de');
+        expect(formatRelativeTime(new Date())).toBe('Gerade eben');
+        expect(formatRelativeTime(new Date(Date.now() - 5 * 60 * 1000))).toBe('vor 5 Min.');
+        expect(formatRelativeTime(new Date(Date.now() - 3 * 60 * 60 * 1000))).toBe('vor 3 Std.');
+        expect(formatRelativeTime(new Date(Date.now() - 30 * 60 * 60 * 1000))).toBe('Gestern');
+      });
+
+      it('words through the translator it is handed, so `$t` re-renders it', () => {
+        const english = get(t);
+        locale.set('de');
+        const german = get(t);
+        expect(german).not.toBe(english);
+        const fiveMinsAgo = new Date(Date.now() - 5 * 60 * 1000);
+        expect(formatRelativeTime(fiveMinsAgo, english)).toBe('5m ago');
+        expect(formatRelativeTime(fiveMinsAgo, german)).toBe('vor 5 Min.');
+      });
     });
   });
 });

@@ -58,7 +58,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <div class="relative">
       <Avatar
         src={draft.avatar}
-        initials={(draft.firstname[0] || '') + (draft.lastname?.[0] || '')}
+        name="{draft.firstname} {draft.lastname ?? ''}"
         size="w-24 h-24"
         textClass="text-3xl"
       />

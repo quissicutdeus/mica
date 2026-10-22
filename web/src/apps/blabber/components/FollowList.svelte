@@ -5,7 +5,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { Avatar, EmptyState, ListItem, Skeleton, useLocale, usePagedList } from '@mica/sdk';
+  import {
+    Avatar,
+    EmptyState,
+    ListItem,
+    Skeleton,
+    useLocale,
+    usePagedList,
+    initialsOf
+  } from '@mica/sdk';
   import { useBlabber } from '../store';
   import type { Account } from '@mica/shared/types';
 
@@ -100,7 +108,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <ListItem onclick={() => onhandle(account.handle)} class="gap-3">
         <Avatar
           src={account.avatar ?? undefined}
-          initials={account.handle.slice(0, 2).toUpperCase()}
+          initials={initialsOf(account.handle)}
           size="w-10 h-10"
           showSilhouette={false}
         />

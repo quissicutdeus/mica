@@ -201,7 +201,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     >
       <Avatar
         src={senderInfo.avatar}
-        initials={senderInfo.name[0] || '?'}
+        name={senderInfo.name}
         size="w-4 h-4"
         textClass="text-label-small"
         bgClass="bg-surface-container border border-outline-variant"
@@ -242,7 +242,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <span class="text-primary flex items-center gap-1.5 font-semibold">
             <Avatar
               src={replySender.avatar}
-              initials={replySender.name[0] || '?'}
+              name={replySender.name}
               size="w-3.5 h-3.5"
               textClass="text-label-small"
               bgClass="bg-surface-container border border-outline-variant"

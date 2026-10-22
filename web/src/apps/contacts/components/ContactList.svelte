@@ -47,7 +47,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <div class="mr-4 shrink-0">
       <Avatar
         src={contact.avatar}
-        initials={(contact.firstname[0] || '') + (contact.lastname?.[0] || '')}
+        name="{contact.firstname} {contact.lastname ?? ''}"
         bgClass="bg-surface-container border border-outline-variant"
       />
     </div>

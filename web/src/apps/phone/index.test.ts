@@ -72,6 +72,32 @@ describe('Phone Recents tab', () => {
     expect(getByText('1:05')).toBeTruthy();
   });
 
+  it("writes an hour-long call as h:mm:ss, the SDK's formatDuration, not 62:05 (MICA-417)", async () => {
+    callLog.set([
+      { id: 1, citizenid: 'CID', kind: 'outgoing', number: '555-0100', duration: 3725 }
+    ] as never);
+
+    const { getByText, queryByText } = render(Phone, { props: { onback: () => {} } });
+    await fireEvent.click(getByText('Recents'));
+
+    expect(getByText('1:02:05')).toBeTruthy();
+    expect(queryByText('62:05')).toBeNull();
+  });
+
+  it('dates a call past yesterday rather than "3d ago", by the SDK\'s rule (MICA-412)', async () => {
+    const created_at = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+    callLog.set([
+      { id: 1, citizenid: 'CID', kind: 'missed', number: '555-0100', duration: 0, created_at }
+    ] as never);
+
+    const { getByText, queryByText } = render(Phone, { props: { onback: () => {} } });
+    await fireEvent.click(getByText('Recents'));
+
+    const date = new Date(created_at).toLocaleDateString('en', { month: 'short', day: 'numeric' });
+    expect(getByText(date)).toBeTruthy();
+    expect(queryByText('3d ago')).toBeNull();
+  });
+
   it('resolves a contact name instead of the raw number when one matches', async () => {
     contacts.set([
       {

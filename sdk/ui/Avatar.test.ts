@@ -57,4 +57,35 @@ describe('Avatar', () => {
     expect(container.querySelector('img')).toBeNull();
     expect(root(container).dataset.initials).toBe('AD');
   });
+
+  /** MICA-417: a name in, `initialsOf` letters out, and `initials` still wins when both arrive. */
+  describe('name', () => {
+    it('derives initials from a name or a handle', () => {
+      const named = render(Avatar, { name: 'Ada Lovelace', showSilhouette: false });
+      expect(root(named.container).dataset.initials).toBe('AL');
+
+      const handle = render(Avatar, { name: '@grace', showSilhouette: false });
+      expect(root(handle.container).dataset.initials).toBe('G');
+    });
+
+    it('keeps explicit initials over a name', () => {
+      const { container } = render(Avatar, {
+        name: 'Ada Lovelace',
+        initials: 'XY',
+        showSilhouette: false
+      });
+      expect(root(container).dataset.initials).toBe('XY');
+    });
+
+    it('draws the silhouette, not a "?", when the name holds nothing to draw', () => {
+      const { container } = render(Avatar, { name: '  @ ', showSilhouette: false });
+      expect(container.querySelector('svg')).not.toBeNull();
+      expect(root(container).hasAttribute('data-initials')).toBe(false);
+    });
+
+    it('names a photo by the name it was given', () => {
+      const { container } = render(Avatar, { src: 'https://x.test/a.png', name: 'Ada Lovelace' });
+      expect(container.querySelector('img')?.getAttribute('alt')).toBe('Ada Lovelace');
+    });
+  });
 });

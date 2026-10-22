@@ -20,6 +20,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     ArrowUpRightIcon,
     ArrowDownLeftIcon,
     registerMessages,
+    formatDuration,
+    formatRelativeTime,
     useLocale,
     type AppProps
   } from '@mica/sdk';
@@ -86,34 +88,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     previousCallStatus = status;
   });
 
-  const formatDuration = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
   const nameForNumber = (number: string): string => {
     const match = $contactsStore.find((c) => c.phone === number);
     if (!match) return number;
     return match.lastname ? `${match.firstname} ${match.lastname}` : match.firstname;
-  };
-
-  const formatCallTimestamp = (raw: Date | string) => {
-    try {
-      const date = new Date(raw);
-      if (isNaN(date.getTime())) return '';
-      const now = new Date();
-      const diffMs = now.getTime() - date.getTime();
-      const diffMins = Math.floor(diffMs / 60000);
-      if (diffMins < 1) return $t('phone.justNow');
-      if (diffMins < 60) return $t('phone.minutesAgo', { minutes: diffMins });
-      const diffHours = Math.floor(diffMins / 60);
-      if (diffHours < 24) return $t('phone.hoursAgo', { hours: diffHours });
-      const diffDays = Math.floor(diffHours / 24);
-      return $t('phone.daysAgo', { days: diffDays });
-    } catch {
-      return '';
-    }
   };
 
   // Ensure contacts and the call log are current on every visit, not just once.
@@ -297,7 +275,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                         </span>
                       </div>
                       <p class="text-on-surface-variant text-body-small">
-                        {formatCallTimestamp(entry.created_at)}
+                        {formatRelativeTime(entry.created_at, $t)}
                       </p>
                     </div>
                     {#if entry.kind !== 'missed'}

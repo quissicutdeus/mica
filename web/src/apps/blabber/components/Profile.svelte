@@ -17,7 +17,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     useAccounts,
     useAppAction,
     useLocale,
-    useService
+    useService,
+    initialsOf
   } from '@mica/sdk';
   import { useBlabber } from '../store';
   import type { Account, Blab } from '@mica/shared/types';
@@ -203,7 +204,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   <div class="border-outline-variant flex items-center gap-3 border-b p-4">
     <Avatar
       src={account?.avatar ?? undefined}
-      initials={handle.slice(0, 2).toUpperCase()}
+      initials={initialsOf(handle)}
       size="w-14 h-14"
       showSilhouette={false}
     />

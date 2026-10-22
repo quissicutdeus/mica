@@ -74,7 +74,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           onclick={() => toggle(contact.id)}
           disabled={busy}
         >
-          <Avatar src={contact.avatar} initials={contact.firstname.slice(0, 1)} />
+          <Avatar src={contact.avatar} name={nameOf(contact)} />
           <span class="text-on-surface min-w-0 flex-1 truncate">{nameOf(contact)}</span>
           <span
             class="size-icon-sm shrink-0 rounded-full border-2 {on

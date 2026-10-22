@@ -164,7 +164,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <ReplyIcon class="h-3.5 w-3.5 shrink-0" />
             <Avatar
               src={replySender.avatar}
-              initials={replySender.name[0] || '?'}
+              name={replySender.name}
               size="w-3.5 h-3.5"
               textClass="text-label-small"
             />

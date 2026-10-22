@@ -690,7 +690,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               onclick={() => handleSelectContactRaw(contact)}
             >
               <div class="mr-3 shrink-0">
-                <Avatar src={contact.avatar} initials={contact.firstname[0]} size="w-9 h-9" />
+                <Avatar
+                  src={contact.avatar}
+                  name="{contact.firstname} {contact.lastname ?? ''}"
+                  size="w-9 h-9"
+                />
               </div>
               <div class="min-w-0 flex-1">
                 <div class="text-on-surface text-body-medium truncate">

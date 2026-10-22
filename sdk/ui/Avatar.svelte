@@ -5,8 +5,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
+  import { initialsOf } from '../lib/initials';
+
   interface Props {
+    /** Drawn as given. Wins over `name` when both are passed. */
     initials?: string;
+    /**
+     * A name or `@handle` to draw the letters of, through `initialsOf` (MICA-417), and the
+     * photo's alt. Nothing drawable in it shows the silhouette rather than a "?".
+     */
+    name?: string;
     src?: string;
     size?: string;
     textClass?: string;
@@ -16,6 +24,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   let {
     initials = '',
+    name = '',
     src = '',
     size = 'w-10 h-10',
     textClass = 'text-sm',
@@ -25,8 +34,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   let imageError = $state(false);
 
+  const letters = $derived(initials || initialsOf(name, ''));
   const showImage = $derived(!!src && !imageError);
-  const showInitials = $derived(!showImage && !showSilhouette && !!initials);
+  const showInitials = $derived(!showImage && !showSilhouette && !!letters);
 </script>
 
 <!--
@@ -41,12 +51,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 <div
   class="{size} flex items-center justify-center rounded-full font-bold {bgClass} {textClass} shrink-0 overflow-hidden"
-  data-initials={showInitials ? initials : undefined}
+  data-initials={showInitials ? letters : undefined}
 >
   {#if showImage}
     <img
       {src}
-      alt={initials || 'Avatar'}
+      alt={name.trim() || letters || 'Avatar'}
       class="h-full w-full object-cover"
       onerror={() => (imageError = true)}
     />

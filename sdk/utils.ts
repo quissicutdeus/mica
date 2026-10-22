@@ -29,6 +29,8 @@ export {
   formatTime,
   formatTimestamp
 } from './lib/formatters';
+/** Avatar letters for a name or `@handle` (MICA-417); `Avatar`'s `name` prop goes through it. */
+export { initialsOf } from './lib/initials';
 export { renderMarkdown } from './lib/markdown';
 export { useScrollDetect } from './lib/useScrollDetect';
 /**

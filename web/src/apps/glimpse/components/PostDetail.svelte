@@ -14,7 +14,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     ReportDialog,
     Skeleton,
     useAppAction,
-    useLocale
+    useLocale,
+    initialsOf
   } from '@mica/sdk';
   import type { GlimpseComment, GlimpsePost } from '@mica/shared/types';
   import {
@@ -215,7 +216,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               >
                 <Avatar
                   src={comment.avatar ?? undefined}
-                  initials={(comment.handle ?? '?').slice(0, 2).toUpperCase()}
+                  initials={initialsOf(comment.handle)}
                   size="w-7 h-7"
                   textClass="text-label-small"
                   showSilhouette={!comment.handle}

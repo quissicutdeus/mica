@@ -13,6 +13,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     ReactionBar,
     ReportDialog,
     useLocale,
+    initialsOf,
     type DirectMessage,
     type DirectMessageThread
   } from '@mica/sdk';
@@ -105,7 +106,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 {#snippet header()}
   <div class="border-outline-variant flex items-center gap-2 border-b px-4 py-2.5">
     <Avatar
-      initials={(active?.handle || '?').slice(0, 2).toUpperCase()}
+      initials={initialsOf(active?.handle)}
       src={peerAccount?.avatar ?? ''}
       size="w-8 h-8"
       showSilhouette={false}
