@@ -561,17 +561,39 @@ messages can. What it stops is the far commoner leak: a FiveM database backup
 left on a share, pasted into a support thread, or sold, read by someone who
 never had the server (MICA-165).
 
-With `mica_content_key_file` set, five columns are sealed with AES-256-GCM in
+With `mica_content_key_file` set, twenty columns are sealed with AES-256-GCM in
 `server/lib/contentCipher.ts` before they reach SQL, and opened after every
-read:
+read. Five came with MICA-165, the bodies of conversations; fifteen more came
+with MICA-431, a phone's own private content:
 
-| Column                        | What it holds                            | Bound to, besides the table, column and `citizenid` |
-| ----------------------------- | ---------------------------------------- | --------------------------------------------------- |
-| `mica_messages.message`       | A text message                           | `conversation_id`                                   |
-| `mica_blabber_dms.body`       | A direct message, in any social app      | `from_account`, `to_account`                        |
-| `mica_mail.content`           | An email's body                          | nothing more; a mailbox is its own thread           |
-| `mica_darkchat_messages.body` | A Dark Chat line                         | `channel_id`                                        |
-| `mica_reports.target_preview` | The snapshot of a reported message or DM | `target_table`, `target_id`                         |
+| Column                                           | What it holds                            | Bound to, besides the table and column    |
+| ------------------------------------------------ | ---------------------------------------- | ----------------------------------------- |
+| `mica_messages.message`                          | A text message                           | `citizenid`, `conversation_id`            |
+| `mica_blabber_dms.body`                          | A direct message, in any social app      | `citizenid`, `from_account`, `to_account` |
+| `mica_mail.content`                              | An email's body                          | `citizenid`; a mailbox is its own thread  |
+| `mica_darkchat_messages.body`                    | A Dark Chat line                         | `citizenid`, `channel_id`                 |
+| `mica_darkchat_messages.bot_alias`               | The alias an export's line is signed as  | `citizenid`, `channel_id`                 |
+| `mica_reports.target_preview`                    | The snapshot of a reported message or DM | `citizenid`, `target_table`, `target_id`  |
+| `mica_reports.note`                              | The reporter's own note                  | `citizenid`, `target_table`, `target_id`  |
+| `mica_notes.title`, `.content`                   | A note                                   | the phone, `device_id`                    |
+| `mica_contacts.firstname`, `.lastname`, `.email` | A contact's name and email               | the phone, `device_id`                    |
+| `mica_phone_call_log.number`                     | The number of a call                     | the phone, `device_id`                    |
+| `mica_places.name`, `.street_label`              | A saved place                            | the phone, `device_id`                    |
+| `mica_media.data`, `.thumbnail`, `.alt_text`     | A photo, its thumbnail and alt text      | the phone, `device_id`                    |
+| `mica_notifications.title`, `.body`              | A notification                           | the phone, `device_id`                    |
+
+**A phone's data is bound to the phone, not the character** (MICA-431). A
+handover moves a phone's rows to its new holder by rewriting `citizenid` on
+every one of them (`Repository.transferDeviceRows`), so a value bound to the
+character would stop opening at the first handover and the new holder would find
+a phone full of 🔒. A value on a `deviceOwned` table is instead sealed under its
+own domain, with the `device_id` where a character would be, and nothing
+rewrites a `device_id`. A row with no phone, one written before phones were
+items, binds to its own character, tagged so it can never be mistaken for a
+device id. `transferDeviceRows` refuses a table that has a column sealed to the
+character, before moving a row: a handover must never strand ciphertext. Values
+sealed before MICA-431 open as they did, since a character-bound value's bytes
+did not change.
 
 Encrypting inside the application, not with MySQL's `AES_ENCRYPT`, is the whole
 point: that would put the key in every statement, so in the query log and the
@@ -600,13 +622,15 @@ client-writable, because a scope column rewritten after the fact would strand
 the ciphertext bound to it.
 
 What stays readable in a dump, deliberately: who talked to whom and when, mail
-subjects and senders (system-written, and what a notification shows), Blabs
-(public posts), attachments and photos, notification titles, and every other
-table. Nothing in micaOS searches these bodies in SQL, so none of that had to
-change: Home search (MICA-248) filters what the phone already has, and retention
-(MICA-167) and the purges delete by age and status without reading a body.
+subjects and senders (system-written), Blabs (public posts), attachments, and
+every other table, which includes columns MICA-432 has yet to cover. Photos,
+their thumbnails and alt text, and a notification's title and body are no longer
+among them. Nothing in micaOS searches these bodies in SQL, so none of that had
+to change: Home search (MICA-248) filters what the phone already has, and
+retention (MICA-167) and the purges delete by age and status without reading a
+body.
 
-Four edges, each chosen rather than overlooked:
+Six edges, each chosen rather than overlooked:
 
 - **No key is legal**, and stores plaintext as micaOS always did, with a warning
   every boot. But the first successful seal writes a marker into
@@ -621,7 +645,24 @@ Four edges, each chosen rather than overlooked:
   backfill are plaintext and stay that way; encrypting the live table does
   nothing for a copy that already left. A persisted DM notification no longer
   keeps the first 120 characters of the message; the backfill blanks the ones
-  written before.
+  written before, and does so before sealing, so a preview is never kept sealed.
+  Migration 0013 widens the columns the new values need; `micaschema apply` runs
+  it, and it copies the contacts, call log and Dark Chat tables, so allow for
+  the time on a large one.
+- **A note or other `text` that is too long to seal stays plaintext.** A sealed
+  value is longer than the text in it, and a `text` column has a fixed width, so
+  its plaintext bound drops to the most characters whose sealed form fits: about
+  12,276 for a note. The Notes editor caps content at that number and the title
+  at 255 characters (`web/src/apps/notes/limits.ts`), so the player sees the
+  limit while typing, and the server refuses anything longer. A longer note
+  already in the table is left as it is. `micacrypt status` counts it as too
+  long to seal, and `backfill` reports it rather than truncating it.
+- **Media bytes are sealed as ASCII.** A photo is base64, one byte a character,
+  and bounding it at utf8mb4's worst case of four would refuse a photo that a
+  `mediumtext` holds sealed with room to spare. A write with any other character
+  is refused, so the bound cannot be outrun. That includes media a script gives
+  through the `AddMedia` export or `addForPlayer`: it must be ASCII-only, so a
+  `data:` URI with non-ASCII bytes, such as a UTF-8 SVG, is refused.
 - **Text that begins with the sealed form's own prefix, `$mc1$`.** With a key it
   is sealed like any other text and reads back exactly. Without one it would be
   stored bare and then read as a sealed value, so a player's own message or DM
@@ -1216,12 +1257,13 @@ by this list until someone re-weighs it.
   columns (the lock-screen passcode hash and salt), columns naming another
   player (a report's target and preview, an invoice's payee, a conversation's
   other party), and the audit ledger, whose rows carry what admins read of other
-  players; media bytes become their size. Each owned table's exported columns
-  are pinned by a test, so exposing a new column is a decision, not a default.
-  Both actions are audit-logged with counts and no content, and an export is
-  never posted to the staff Discord. The rate limits (a few exports a minute,
-  one completed delete an hour) are in memory, so a resource restart resets
-  them.
+  players; media bytes become their size, the plaintext size even when the photo
+  is sealed (`plaintextBytesSql`), not the length of the stored ciphertext. Each
+  owned table's exported columns are pinned by a test, so exposing a new column
+  is a decision, not a default. Both actions are audit-logged with counts and no
+  content, and an export is never posted to the staff Discord. The rate limits
+  (a few exports a minute, one completed delete an hour) are in memory, so a
+  resource restart resets them.
 - **A hosted photo can outlive its character when the database deletes the rows
   (MICA-292).** With an image host configured (MICA-243), a photo is a public
   URL, so a file left behind is a privacy leak and not just a storage bill.

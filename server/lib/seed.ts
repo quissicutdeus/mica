@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { sealRow } from './contentCipher';
+import { openRows, sealRow } from './contentCipher';
 import { Database } from './Database';
 
 /**
@@ -95,6 +95,42 @@ const createCharacters = async (): Promise<void> => {
   }
 };
 
+/**
+ * Delete the contacts `createContacts` wrote: on a seed number, and named as the seed names them.
+ *
+ * Matched on the whole seeded contact, not just its number. This was once `WHERE phone IN
+ * (...)` alone, which deleted any row on a seed number whoever owned it: a player who had saved
+ * 5550101 themselves lost that contact at the next `micaseed clear`. The name is sealed now
+ * (MICA-431), so SQL cannot compare it: the rows on the number are read, opened, compared here,
+ * and deleted by id. A row that does not open is not the seed's to delete.
+ */
+const clearSeedContacts = async (): Promise<void> => {
+  for (const character of SEED_CHARACTERS) {
+    const rows = openRows(
+      'mica_contacts',
+      (await Database.query<
+        {
+          id: number;
+          citizenid: string;
+          device_id: string | null;
+          firstname: string;
+          lastname: string | null;
+        }[]
+      >('SELECT id, citizenid, device_id, firstname, lastname FROM mica_contacts WHERE phone = ?', [
+        character.phone
+      ])) ?? []
+    );
+    const ids = rows
+      .filter((row) => row.firstname === character.firstname && row.lastname === character.lastname)
+      .map((row) => Number(row.id));
+    if (ids.length === 0) continue;
+    await Database.query(
+      `DELETE FROM mica_contacts WHERE id IN (${ids.map(() => '?').join(', ')})`,
+      ids
+    );
+  }
+};
+
 /** Add the seed characters to a player's address book. */
 const createContacts = async (owner: string): Promise<number> => {
   let added = 0;
@@ -105,10 +141,17 @@ const createContacts = async (owner: string): Promise<number> => {
     );
     if (existing?.length) continue;
 
+    // Written on no phone, so sealed to the owner (MICA-431), as a NULL device_id says.
+    const sealed = await sealRow('mica_contacts', {
+      citizenid: owner,
+      device_id: null,
+      firstname: character.firstname,
+      lastname: character.lastname
+    });
     await Database.query(
       `INSERT INTO mica_contacts (citizenid, firstname, lastname, phone, status)
        VALUES (?, ?, ?, ?, 'active')`,
-      [owner, character.firstname, character.lastname, character.phone]
+      [owner, sealed.firstname, sealed.lastname, character.phone]
     );
     added += 1;
   }
@@ -231,19 +274,7 @@ export const clearSeed = async (): Promise<void> => {
     );
   }
 
-  // Matched on the whole seeded contact, not just its number.
-  //
-  // This was `WHERE phone IN (...)` with no other condition, which deleted any row on
-  // one of the seed numbers regardless of who owned it or where it came from. A player
-  // who had saved 5550101 themselves lost that contact the next time an admin ran
-  // `micaseed clear`. `createContacts` writes the name as well, so requiring it back
-  // means the delete only reaches rows the seed could have written.
-  for (const character of SEED_CHARACTERS) {
-    await Database.query(
-      `DELETE FROM mica_contacts WHERE phone = ? AND firstname = ? AND lastname = ?`,
-      [character.phone, character.firstname, character.lastname]
-    );
-  }
+  await clearSeedContacts();
 
   await Database.query(`DELETE FROM players WHERE license = ? AND citizenid IN (${placeholders})`, [
     SEED_LICENSE,

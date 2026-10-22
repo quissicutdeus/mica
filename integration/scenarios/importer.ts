@@ -144,13 +144,25 @@ export const importerScenarios: Scenario[] = [
           );
         }
 
+        // The name is sealed to the phone the contact landed on (MICA-431), so it is opened off
+        // the row's own `device_id`, with the key the harness wrote.
         const contact = await db.row(
-          'SELECT `firstname`, `lastname`, `phone` FROM `mica_contacts` WHERE `citizenid` = ?',
+          'SELECT `citizenid`, `device_id`, `firstname`, `phone` FROM `mica_contacts` ' +
+            'WHERE `citizenid` = ?',
           [alice.citizenid]
         );
+        const firstname = contact
+          ? openSealed(contact.firstname, harnessKeys(), {
+              table: 'mica_contacts',
+              column: 'firstname',
+              citizenid: String(contact.citizenid),
+              deviceId: (contact.device_id as string | null) ?? null,
+              scope: []
+            })
+          : null;
         assert(
-          contact?.firstname === 'Bob' && contact?.phone === bob.number,
-          `the imported contact is ${JSON.stringify(contact)}`
+          firstname === 'Bob' && contact?.phone === bob.number,
+          `the imported contact is ${JSON.stringify({ ...contact, firstname })}`
         );
 
         const ledger = await ledgerRows([alice.citizenid, bob.citizenid]);

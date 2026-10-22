@@ -26,6 +26,7 @@ import {
   openContent,
   registerEncryptedColumn,
   resetContentCipherForTests,
+  sealRow,
   sealedKeyId,
   unregisterEncryptedColumnForTests
 } from '../lib/contentCipher';
@@ -65,25 +66,33 @@ describe('clearSeed', () => {
     // The defect: `DELETE FROM mica_contacts WHERE phone IN (...)` and nothing else,
     // so a player who had saved 5550101 themselves lost it whenever an admin ran
     // `micaseed clear`. A contact row carries no marker saying the seed wrote it, so
-    // the delete has to match everything the seed would have written.
+    // the delete has to match everything the seed would have written. Since MICA-431 the
+    // name is sealed, so it is matched after the rows are read and opened, and deleted by id.
+    dbMock.query.mockImplementation(async (sql: string, params: unknown[] = []) =>
+      String(sql).startsWith('SELECT id, citizenid, device_id, firstname, lastname')
+        ? contactsOn(String(params[0]))
+        : []
+    );
+
     await clearSeed();
 
+    const reads = dbMock.query.mock.calls.filter((c) =>
+      String(c[0]).includes('FROM mica_contacts WHERE phone = ?')
+    );
+    expect(reads.map((c) => c[1][0]).toSorted()).toEqual(
+      SEED_CHARACTERS.map((c) => c.phone).toSorted()
+    );
     const contactDeletes = dbMock.query.mock.calls.filter((c) =>
       String(c[0]).includes('DELETE FROM mica_contacts')
     );
-    expect(contactDeletes.length).toBe(SEED_CHARACTERS.length);
-
-    for (const [sql, params] of contactDeletes) {
-      const flat = String(sql).replace(/\s+/g, ' ');
-      expect(flat).toContain('phone = ?');
-      expect(flat).toContain('firstname = ?');
-      expect(flat).toContain('lastname = ?');
-      expect(params).toHaveLength(3);
+    for (const [sql] of contactDeletes) {
+      // No name in SQL: it is sealed, and a comparison there would match nothing.
+      expect(String(sql)).not.toMatch(/firstname|lastname/);
+      expect(String(sql)).toContain('WHERE id IN');
     }
-
-    // Every seed character accounted for, and nothing else.
-    const phones = contactDeletes.map((c) => c[1][0]).toSorted();
-    expect(phones).toEqual(SEED_CHARACTERS.map((c) => c.phone).toSorted());
+    // The seed's rows and only those: the player's own contact on the same number stays.
+    const deleted = contactDeletes.flatMap((c) => c[1] as number[]).toSorted((a, b) => a - b);
+    expect(deleted).toEqual(SEED_CHARACTERS.map((_, i) => 100 + i));
   });
 
   it('requires the seed license as well as the seed ids before touching players', async () => {
@@ -128,6 +137,31 @@ describe('clearSeed', () => {
     );
   });
 });
+
+/**
+ * On each seed number: the row the seed wrote (id 100 + i), and a player's own contact on the
+ * same number under another name (id 200 + i).
+ */
+const contactsOn = (phone: string) => {
+  const at = SEED_CHARACTERS.findIndex((c) => c.phone === phone);
+  const character = SEED_CHARACTERS[at];
+  return [
+    {
+      id: 100 + at,
+      citizenid: 'REAL_PLAYER',
+      device_id: null,
+      firstname: character.firstname,
+      lastname: character.lastname
+    },
+    {
+      id: 200 + at,
+      citizenid: 'REAL_PLAYER',
+      device_id: 'PHONE1',
+      firstname: 'Mom',
+      lastname: null
+    }
+  ];
+};
 
 describe('seedFor', () => {
   it('scopes the contacts it creates to the player who asked', async () => {
@@ -178,11 +212,24 @@ describe('MICA-165: seeded messages are sealed', () => {
         scope: ['conversation_id'],
         hasUpdatedAt: true
       });
+      for (const column of ['firstname', 'lastname']) {
+        registerEncryptedColumn({
+          table: 'mica_contacts',
+          column,
+          scope: [],
+          hasUpdatedAt: true,
+          binding: 'device'
+        });
+      }
     }
   });
 
   afterEach(() => {
-    if (registered) unregisterEncryptedColumnForTests('mica_messages', 'message');
+    if (registered) {
+      unregisterEncryptedColumnForTests('mica_messages', 'message');
+      unregisterEncryptedColumnForTests('mica_contacts', 'firstname');
+      unregisterEncryptedColumnForTests('mica_contacts', 'lastname');
+    }
     (globalThis as any).GetConvar = (_name: string, fallback: string) => fallback;
     resetContentCipherForTests();
     rmSync(dir, { recursive: true, force: true });
@@ -207,6 +254,44 @@ describe('MICA-165: seeded messages are sealed', () => {
       expect(Object.values(SEED_OPENERS).flat()).toContain(plain);
     }
     expect(inserts[0][1][1]).toBe('SEED0001');
+  });
+
+  it('inserts each seeded contact sealed to its owner, on no phone (MICA-431)', async () => {
+    dbMock.query.mockImplementation(async (sql: string) =>
+      String(sql).includes('INSERT INTO mica_messages_conversations') ? { insertId: 41 } : []
+    );
+
+    await seedFor('REAL_PLAYER');
+
+    const inserts = dbMock.query.mock.calls.filter((c) =>
+      String(c[0]).includes('INSERT INTO mica_contacts')
+    );
+    expect(inserts).toHaveLength(SEED_CHARACTERS.length);
+    const first = encryptedColumn('mica_contacts', 'firstname')!;
+    for (const [, [owner, firstname, , phone]] of inserts) {
+      expect(sealedKeyId(firstname)).toBe('seed');
+      const named = SEED_CHARACTERS.find((c) => c.phone === phone)!;
+      const context = contentContext(first, { citizenid: owner, device_id: null });
+      expect(openContent(context, firstname)).toBe(named.firstname);
+    }
+  });
+
+  it("clears the sealed seed contacts by their opened names, and not a player's own", async () => {
+    const sealedOn = async (phone: string) =>
+      await Promise.all(contactsOn(phone).map(async (row) => await sealRow('mica_contacts', row)));
+    dbMock.query.mockImplementation(async (sql: string, params: unknown[] = []) =>
+      String(sql).startsWith('SELECT id, citizenid, device_id, firstname, lastname')
+        ? await sealedOn(String(params[0]))
+        : []
+    );
+
+    await clearSeed();
+
+    const deleted = dbMock.query.mock.calls
+      .filter((c) => String(c[0]).includes('DELETE FROM mica_contacts'))
+      .flatMap((c) => c[1] as number[])
+      .toSorted((a, b) => a - b);
+    expect(deleted).toEqual(SEED_CHARACTERS.map((_, i) => 100 + i));
   });
 });
 

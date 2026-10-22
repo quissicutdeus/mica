@@ -48,9 +48,16 @@ export const notes = defineService<Note, typeof notesContract>({
   devices: ['phone', 'tablet'],
   access: { read: 'owner', write: 'owner' },
   statuses: ['active', 'archived', 'deleted', 'moderated'],
+  /**
+   * Sealed at rest (MICA-431), bound to the phone the note is on: the row alone is the scope.
+   * `content` stays a `text`, as Mail's does (MICA-165), so its plaintext bound comes down to
+   * what fits sealed — about 12,000 characters. Not a `mediumtext`: the privacy export reports
+   * one by its size, as media bytes, and a player's own notes must come back as words.
+   */
+  encryptionScope: [],
   schema: {
-    title: { type: 'string', length: 255 },
-    content: 'text'
+    title: { type: 'string', length: 255, encrypted: true },
+    content: { type: 'text', encrypted: true }
   },
   indexes: [{ name: 'citizenid_status_updated', columns: ['citizenid', 'status', 'updated_at'] }]
 });

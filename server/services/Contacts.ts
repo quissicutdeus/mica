@@ -133,11 +133,17 @@ export const contacts = defineService<Contact, typeof contactsContract>({
   deviceOwned: true,
   access: { read: 'owner', write: 'owner' },
   statuses: ['active', 'deleted', 'moderated'],
+  /**
+   * The name and email are sealed at rest (MICA-431), bound to the phone the contact is on.
+   * `phone` is not: it is the lookup key — `phone_key`'s unique index, a caller's name by number
+   * — and sealing it needs a keyed digest beside it (MICA-432).
+   */
+  encryptionScope: [],
   schema: {
-    firstname: { type: 'string', length: 50, notNull: true },
-    lastname: { type: 'string', length: 50 },
+    firstname: { type: 'string', length: 50, notNull: true, encrypted: true },
+    lastname: { type: 'string', length: 50, encrypted: true },
     phone: { type: 'string', length: 20, notNull: true, clientFilterable: true },
-    email: { type: 'string', length: 100 },
+    email: { type: 'string', length: 100, encrypted: true },
     // Base64 image data. Blob rather than text to match the existing table.
     avatar: 'blob',
     /**

@@ -87,6 +87,17 @@ export const UNREADABLE_CONTENT = '\u{1F512}';
  */
 const AAD_DOMAIN = 'micaOS content v1';
 
+/**
+ * The domain of a value bound to a **phone** rather than a character (MICA-431): a column of a
+ * `deviceOwned` table, whose rows a handover moves to a new holder by rewriting `citizenid`
+ * (`Repository.transferDeviceRows`). Bound to `citizenid` such a value would stop opening at the
+ * first handover; bound to `device_id`, which nothing rewrites, it moves with the phone.
+ *
+ * A separate domain rather than the device id in the citizen slot, so no value sealed under one
+ * meaning can ever be read under the other.
+ */
+const AAD_DEVICE_DOMAIN = 'micaOS device content v1';
+
 /** Worst case for utf8mb4: every character four bytes. */
 const MAX_BYTES_PER_CHAR = 4;
 
@@ -103,6 +114,26 @@ export const sealedLength = (maxPlaintextBytes: number): number =>
   1 +
   4 * Math.ceil((IV_BYTES + maxPlaintextBytes + TAG_BYTES) / 3);
 
+/**
+ * SQL for the plaintext's size in bytes, as `LENGTH` measured it before the value was sealed,
+ * read off the sealed value's own length without opening it (MICA-431). GCM's ciphertext is as
+ * long as its plaintext, so the base64 after `$mc1$<kid>$` decodes to the IV, the plaintext and
+ * the tag, and padding says how many of its last bytes are not there. A value not in the sealed
+ * form is measured as it is; NULL stays NULL.
+ *
+ * For a size a reader is told — a privacy export's `<column>_bytes`, a quota measuring a row with
+ * no size recorded — where `LENGTH` of the stored form would read a third high. `expression` is
+ * a column reference built from declared identifiers, never from a payload.
+ */
+export const plaintextBytesSql = (expression: string): string =>
+  // Never below zero: a truncated or malformed sealed value is shorter than an IV and a tag, and
+  // read as a negative size it would lower whatever sum it is part of — a quota, above all.
+  // NULL stays NULL: `GREATEST` of a NULL is NULL.
+  `GREATEST((CASE WHEN ${expression} LIKE '${SEALED_PREFIX}%' ` +
+  `THEN ((LENGTH(${expression}) - LENGTH(SUBSTRING_INDEX(${expression}, '$', 3)) - 1) DIV 4) * 3 ` +
+  `- (RIGHT(${expression}, 1) = '=') - (RIGHT(${expression}, 2) = '==') - ${IV_BYTES + TAG_BYTES} ` +
+  `ELSE LENGTH(${expression}) END), 0)`;
+
 /** `sealedLength` for a bound in characters, at utf8mb4's worst case of four bytes each. */
 export const sealedLengthForChars = (maxChars: number): number =>
   sealedLength(maxChars * MAX_BYTES_PER_CHAR);
@@ -110,20 +141,25 @@ export const sealedLengthForChars = (maxChars: number): number =>
 /**
  * The most characters whose worst-case sealed form fits in `capacity` bytes — how long a
  * message may be when its column is a `text` (65,535 bytes) that now holds ciphertext.
+ *
+ * `bytesPerChar` is utf8mb4's worst case of four unless the column only ever holds ASCII
+ * (`ColumnDef.ascii`, MICA-431): a base64 photo is one byte a character, and bounding it at
+ * four would refuse a photo `mediumtext` holds sealed with room to spare.
  */
-export const maxPlaintextChars = (capacity: number): number => {
+export const maxPlaintextChars = (capacity: number, bytesPerChar = MAX_BYTES_PER_CHAR): number => {
+  const fits = (chars: number) => sealedLength(chars * bytesPerChar) <= capacity;
   let chars = Math.max(
     0,
     Math.floor(
       (Math.floor((capacity - (SEALED_PREFIX.length + MAX_KID_LENGTH + 1)) / 4) * 3 -
         IV_BYTES -
         TAG_BYTES) /
-        MAX_BYTES_PER_CHAR
+        bytesPerChar
     )
   );
   // The closed form rounds; the definition is the check.
-  while (chars > 0 && sealedLengthForChars(chars) > capacity) chars -= 1;
-  while (sealedLengthForChars(chars + 1) <= capacity) chars += 1;
+  while (chars > 0 && !fits(chars)) chars -= 1;
+  while (fits(chars + 1)) chars += 1;
   return chars;
 };
 
@@ -142,16 +178,24 @@ export const sealedKeyId = (value: unknown): string | null => {
 
 // ─── the registry ────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Who a value belongs to (MICA-431): the character (`citizenid`), or the phone (`device_id`) for
+ * a `deviceOwned` table, whose `citizenid` a handover rewrites.
+ */
+export type ContentBinding = 'citizen' | 'device';
+
 /** One encrypted column, as its service declared it. */
 export interface EncryptedColumn {
   readonly table: string;
   readonly column: string;
   /**
-   * The row's own columns bound into the AAD after `citizenid`, in this order — the thread a
+   * The row's own columns bound into the AAD after the owner, in this order — the thread a
    * value belongs to. A value that moved to another thread would stop opening, so nothing may
-   * ever rewrite one of these, or `citizenid`, on a row that holds ciphertext.
+   * ever rewrite one of these, or the owner, on a row that holds ciphertext.
    */
   readonly scope: readonly string[];
+  /** Who the value belongs to. Absent means `citizen`, as every column before MICA-431 was. */
+  readonly binding?: ContentBinding;
   /** Whether the table has `updated_at`, which a rewrite of the column must pin, not move. */
   readonly hasUpdatedAt: boolean;
 }
@@ -186,10 +230,18 @@ export const registerEncryptedColumn = (entry: EncryptedColumn): void => {
   if (bad !== undefined) {
     throw new Error(`[contentCipher] '${bad}' is not a lower_snake_case identifier.`);
   }
-  if (entry.scope.includes(entry.column) || entry.scope.includes('citizenid')) {
+  const binding = entry.binding ?? 'citizen';
+  if (binding !== 'citizen' && binding !== 'device') {
+    throw new Error(`[contentCipher] ${entry.table}.${entry.column}: no binding '${binding}'.`);
+  }
+  if (
+    entry.scope.includes(entry.column) ||
+    entry.scope.includes('citizenid') ||
+    entry.scope.includes('device_id')
+  ) {
     throw new Error(
-      `[contentCipher] ${entry.table}.${entry.column}: the scope names the column itself or ` +
-        "'citizenid', which is always bound already."
+      `[contentCipher] ${entry.table}.${entry.column}: the scope names the column itself, ` +
+        "'citizenid' or 'device_id', which the binding already binds."
     );
   }
   if (new Set(entry.scope).size !== entry.scope.length) {
@@ -198,7 +250,7 @@ export const registerEncryptedColumn = (entry: EncryptedColumn): void => {
   if (encryptedColumn(entry.table, entry.column)) {
     throw new Error(`[contentCipher] ${entry.table}.${entry.column} is already registered.`);
   }
-  registry.push({ ...entry, scope: [...entry.scope] });
+  registry.push({ ...entry, binding, scope: [...entry.scope] });
   reindex(entry.table);
 };
 
@@ -225,12 +277,22 @@ export const unregisterEncryptedColumnForTests = (table: string, column: string)
 export interface ContentContext {
   readonly table: string;
   readonly column: string;
-  readonly citizenid: string;
+  readonly binding: ContentBinding;
+  /**
+   * The owner the binding names: a `citizenid`, or for a phone-bound value its `device_id` — or,
+   * on a phone-bound row with no `device_id`, its `citizenid` (see `ownerOf`).
+   */
+  readonly owner: string;
+  /** For a phone-bound value: whether `owner` is a device id or the citizenid standing in. */
+  readonly ownerKind: 'citizen' | 'device';
   readonly scope: readonly (string | number | null)[];
 }
 
 /** The columns a row must carry for its encrypted values to be sealed or opened. */
-export const contextColumns = (entry: EncryptedColumn): string[] => ['citizenid', ...entry.scope];
+export const contextColumns = (entry: EncryptedColumn): string[] =>
+  entry.binding === 'device'
+    ? ['device_id', 'citizenid', ...entry.scope]
+    : ['citizenid', ...entry.scope];
 
 const contextValue = (
   entry: EncryptedColumn,
@@ -255,27 +317,62 @@ const contextValue = (
  * to select it, and guessing would seal a value no reader could open, or open none of them.
  */
 export const contentContext = (entry: EncryptedColumn, row: object): ContentContext => {
-  const citizenid = contextValue(entry, row, 'citizenid');
+  const scope = entry.scope.map((name) => contextValue(entry, row, name));
+  const text = (value: string | number | null): string => (value === null ? '' : String(value));
+  if (entry.binding !== 'device') {
+    return {
+      table: entry.table,
+      column: entry.column,
+      binding: 'citizen',
+      owner: text(contextValue(entry, row, 'citizenid')),
+      ownerKind: 'citizen',
+      scope
+    };
+  }
+  /**
+   * A phone-bound row with no `device_id` — one written before phones were items, which no
+   * phone's read reaches — binds to its own `citizenid` instead, tagged so it can never be
+   * mistaken for a device id. That citizenid is as fixed as a device id would be: a handover
+   * moves rows by `device_id` (`Repository.transferDeviceRows`), so it never touches one with
+   * none, and nothing in micaOS assigns a phone to such a row. Code that ever does must re-seal
+   * the row's values under its new device id first, or they stop opening.
+   *
+   * Not one shared empty owner for every such row: a value moved between two players' rows
+   * would then still open, which is the move the owner in the AAD exists to stop.
+   */
+  const device = contextValue(entry, row, 'device_id');
+  const ownerKind = device === null || device === '' ? 'citizen' : 'device';
   return {
     table: entry.table,
     column: entry.column,
-    citizenid: citizenid === null ? '' : String(citizenid),
-    scope: entry.scope.map((name) => contextValue(entry, row, name))
+    binding: 'device',
+    owner: ownerKind === 'device' ? text(device) : text(contextValue(entry, row, 'citizenid')),
+    ownerKind,
+    scope
   };
 };
 
-/** NUL-separated, so no two contexts can run together into the same bytes. */
+/**
+ * NUL-separated, so no two contexts can run together into the same bytes. A citizen-bound value
+ * reads exactly as it did before MICA-431 — the domain, the table, the column, the citizenid,
+ * the scope — so every value sealed then still opens (`contentCipher.test.ts` pins the bytes).
+ * A phone-bound one has its own domain, and says which kind of owner it names.
+ */
 const aadOf = (context: ContentContext): Bytes =>
   Buffer.from(
     [
-      AAD_DOMAIN,
+      context.binding === 'device' ? AAD_DEVICE_DOMAIN : AAD_DOMAIN,
       context.table,
       context.column,
-      context.citizenid,
+      ...(context.binding === 'device' ? [context.ownerKind] : []),
+      context.owner,
       ...context.scope.map((value) => (value === null ? '' : String(value)))
     ].join('\0'),
     'utf8'
   );
+
+/** Tests only: the authenticated data a context binds, as the bytes `aadOf` gives. */
+export const __aadForTests = (context: ContentContext): string => aadOf(context).toString('utf8');
 
 // ─── the keyring ─────────────────────────────────────────────────────────────────────────────
 

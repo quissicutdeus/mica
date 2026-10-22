@@ -35,6 +35,7 @@ import '../services';
 import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { __resetRateLimits } from '../lib/rateLimit';
 import { AUDIT_LOG_TABLE } from '../lib/AuditLogger';
+import { plaintextBytesSql } from '../lib/contentCipher';
 import { cascadeEdges, ownedTables, purgeOwnedRows } from '../lib/orphanSweep';
 import { moderateTarget, restoreTarget } from '../lib/moderation';
 import { readFileSync } from 'node:fs';
@@ -148,9 +149,12 @@ describe('what an export selects (MICA-168)', () => {
     expect(planOf('mica_contacts').sized).toEqual(['avatar']);
 
     const sql = exportSql(media);
-    expect(sql).toContain('LENGTH(`data`) AS `data_bytes`');
-    expect(sql).toContain('LENGTH(`thumbnail`) AS `thumbnail_bytes`');
+    // Sealed since MICA-431, so measured as the plaintext they hold, not their stored length.
+    expect(sql).toContain(`${plaintextBytesSql('`data`')} AS \`data_bytes\``);
+    expect(sql).toContain(`${plaintextBytesSql('`thumbnail`')} AS \`thumbnail_bytes\``);
     expect(sql).not.toMatch(/(^|[ ,])`data`,/);
+    // A column not sealed is measured as before.
+    expect(exportSql(planOf('mica_contacts'))).toContain('LENGTH(`avatar`) AS `avatar_bytes`');
   });
 
   it("withholds another player's identity and the other side of a thread", () => {

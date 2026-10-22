@@ -81,6 +81,12 @@ export const media = defineService<MediaItem, typeof mediaContract>({
   reportable: { label: 'Photo', previewColumn: 'data' },
   access: { read: 'owner', write: 'owner' },
   statuses: ['active', 'deleted', 'moderated'],
+  /**
+   * The bytes, the poster frame and the alt text are sealed at rest (MICA-431), bound to the
+   * phone the photo is on. `url` is not: it is matched by prefix against the image hosts, and
+   * the bytes it names live on the host, not here.
+   */
+  encryptionScope: [],
   schema: {
     /**
      * Deliberately over-provisioned, and this is the one decision here that cannot be
@@ -123,6 +129,12 @@ export const media = defineService<MediaItem, typeof mediaContract>({
       type: 'mediumtext',
       private: true,
       /**
+       * Sealed at rest (MICA-431), bound to the phone the photo is on. Base64, so `ascii`: the
+       * bound is one byte a character, and a 4 MiB photo still fits a `mediumtext` sealed.
+       */
+      encrypted: true,
+      ascii: true,
+      /**
        * An inline image only, never a URL (MICA-339): a remote address here made every viewer
        * of the row request it. `lib/media/clientWrite.ts` has the shapes and the reasons.
        */
@@ -131,7 +143,7 @@ export const media = defineService<MediaItem, typeof mediaContract>({
     /** Hotlinks — a remote GIF or video that is not ours to store. */
     url: { type: 'string', length: 512, clientWritable: false },
     /** Poster frame for video and GIF, so a feed has something before the media loads. */
-    thumbnail: { type: 'mediumtext', clientWritable: false },
+    thumbnail: { type: 'mediumtext', clientWritable: false, encrypted: true },
     mime_type: { type: 'string', length: 64, clientWritable: false },
     /** Reserve layout space, so a feed does not reflow as media arrives. */
     width: { type: 'int', clientWritable: false },
@@ -139,7 +151,7 @@ export const media = defineService<MediaItem, typeof mediaContract>({
     duration_ms: { type: 'int', clientWritable: false },
     byte_size: { type: 'int', clientWritable: false },
     /** Accessibility, and what RCS carries alongside an attachment. */
-    alt_text: { type: 'string', length: 255, clientWritable: false },
+    alt_text: { type: 'string', length: 255, clientWritable: false, encrypted: true },
     /**
      * What the row costs against its owner's quota, recorded when it is written (MICA-358):
      * `storedBytesOf`, the same number `storedBytesSql` measures from `data` and `thumbnail`.

@@ -1180,8 +1180,9 @@ the convar is invisible until the resource restarts.
   nobody bounds is a table that only ever grows; this is the bound, and it is
   the everyday one. It counts the rows a player can actually see — a photo they
   delete frees their allowance immediately — and it is measured the same way
-  `micamedia` reports sizes, so the number a player is held to and the number
-  you read in the console are the same number. With an external image host
+  `micamedia` reports sizes, by the photo's plaintext size even when it is
+  sealed, so the number a player is held to and the number you read in the
+  console are the same number. With an external image host
   (`mica_media_upload_url`), a hosted photo counts at the size it was uploaded
   at, or 320KiB for one hosted before that size was recorded, so a host does not
   turn the quota off (MICA-293). 64MiB is roughly 150 to 200 captures at the
@@ -1228,13 +1229,13 @@ the convar is invisible until the resource restarts.
   reopen restores is still subject to the window. Neither reaches the player
   data export once it is past the window. Read on every use, so a change takes
   effect without a restart.
-- **`mica_content_key_file` — message, DM, mail and Dark Chat bodies encrypted
-  at rest (MICA-165).** The path of a key file, never a key: `server.cfg` is the
-  file that travels with a database dump. **The file has to sit inside a
-  resource folder** — FXServer lets a resource read nothing outside one, with no
-  setting to lift it (MICA-303) — so it goes in a resource of its own,
-  `mica-keys`, never inside `mica` (an update replaces that folder). Best of
-  all, keep the real file outside `server-data` and put a symlink to it in
+- **`mica_content_key_file` — conversations and a phone's own content encrypted
+  at rest (MICA-165, MICA-431).** The path of a key file, never a key:
+  `server.cfg` is the file that travels with a database dump. **The file has to
+  sit inside a resource folder** — FXServer lets a resource read nothing outside
+  one, with no setting to lift it (MICA-303) — so it goes in a resource of its
+  own, `mica-keys`, never inside `mica` (an update replaces that folder). Best
+  of all, keep the real file outside `server-data` and put a symlink to it in
   `mica-keys`, so a backup of `server-data` does not carry it.
   `micacrypt keygen` from the console prints the exact steps; it writes nothing
   and never prints a key, because FXServer lets micaOS write nowhere a key
@@ -1244,9 +1245,13 @@ the convar is invisible until the resource restarts.
   `[Security.Cryptography.RandomNumberGenerator]::Fill($b)`, then
   `"<kid> " + [Convert]::ToBase64String($b)` gives the line to save. Set it with
   `set`, never `setr`. With it set, text messages, Blabber DMs, mail bodies,
-  Dark Chat lines and report snapshots are sealed with AES-256-GCM before they
-  reach the database; run `micacrypt backfill --apply` once to seal what was
-  already there. **This defends a leaked dump, not a curious operator** —
+  Dark Chat lines, and report snapshots and notes are sealed with AES-256-GCM
+  before they reach the database, and so is a phone's own content (MICA-431):
+  its notes, contacts, call log, saved places, photos with their thumbnails and
+  alt text, and notifications. A phone's content is tied to the phone, not the
+  character, so it survives a handover. Run `micaschema apply` first (migration
+  0013 widens the columns), then `micacrypt backfill --apply` once to seal what
+  was already there. **This defends a leaked dump, not a curious operator** —
   whoever runs the server has the key — and a backup taken before the backfill
   stays readable. [`docs/security.md`](docs/security.md#message-bodies-at-rest)
   has what stays readable and why. Keep the real file out of the database backup
@@ -1255,8 +1260,10 @@ the convar is invisible until the resource restarts.
   sealed with it gone**, shown as 🔒. Once anything has been sealed, a missing
   or unreadable key file refuses new messages rather than storing them in
   plaintext. Read once at resource start. Rotating it is in
-  [`docs/in-game-commands.md`](docs/in-game-commands.md). A text message is at
-  most 12,276 characters, so its sealed form still fits the column.
+  [`docs/in-game-commands.md`](docs/in-game-commands.md). A text message or a
+  note is at most 12,276 characters, so its sealed form still fits the column; a
+  longer note already stored stays plaintext, and `micacrypt status` counts it
+  as too long to seal.
 - **Image hosting: `mica_media_upload_url` and its five companions (MICA-243).**
   Off by default, and off means photos are base64 in `mica_media` exactly as
   above. Set `mica_media_upload_url` to an https upload endpoint and the server
@@ -1999,7 +2006,9 @@ expires with the channel's other messages.
 produces a `photo`, so the other six kinds — `video`, `audio`, `gif`, `sticker`,
 `file`, `link` — exist only through this export. Pass either `url` (http(s)
 only) or `data` (base64); a `video` also wants a `thumbnail`, since micaOS draws
-the poster frame rather than playing the clip.
+the poster frame rather than playing the clip. Media bytes are stored as ASCII
+(MICA-431), so `data` or a `data:` URI with non-ASCII bytes, such as a UTF-8
+SVG, is refused; base64 it. `addForPlayer` has the same rule.
 
 **Reception is one primitive with a precedence order**, not two. A blackout is a
 global level, a jammer is a zone, and the lowest applicable value wins — so they

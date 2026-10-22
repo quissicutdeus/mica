@@ -56,6 +56,7 @@ export const SKIP = {
   noText: 'no text (attachments are not imported)',
   bodyTooLong: 'longer than a Blab allows (280)',
   unsafeUrl: 'not an http(s) or data:image link',
+  tooLargeToSeal: 'an inline photo too large, or not ASCII, to store sealed',
   overQuota: 'over the owner’s media quota',
   hiddenInSource: 'deleted or hidden in the source',
   unparseable: 'history column is not JSON the importer understands (whole row, counted once)',

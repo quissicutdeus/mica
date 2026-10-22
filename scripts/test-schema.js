@@ -45,8 +45,9 @@ let checksRun = 0;
  * shape, and a keyed micaseed on qb. Plus MICA-306's first-start schema, below. Plus
  * `uniqueAfterDelete: 'revive'` on Hodlr and Battery, the seeded schema's one and eighteen on
  * each shape (REVIVE_CHECKS). Plus MICA-426's takedown and restore (MODERATION_CHECKS) and its
- * moderated rows through the purges (PURGE_MODERATED_CHECKS), and MICA-433's log-token salt
- * (LOG_SALT_CHECKS), on each shape.
+ * moderated rows through the purges (PURGE_MODERATED_CHECKS), MICA-433's log-token salt
+ * (LOG_SALT_CHECKS), and MICA-431's sealed note and photo through a phone handover
+ * (HANDOVER_SEALED_CHECKS), on each shape.
  */
 const IMPORT_CHECKS = 16;
 const RETENTION_CHECKS = 22;
@@ -66,6 +67,8 @@ const CRYPT_CHECKS = 13;
 const IMPORT_QB_CHECKS = 1;
 /** MICA-165: `micaseed` writes qb's `players`, so its sealed round trip runs on qb only. */
 const CRYPT_SEED_CHECKS = 1;
+/** MICA-431: a sealed note and photo through a phone handover, on each shape. */
+const HANDOVER_SEALED_CHECKS = 6;
 /**
  * MICA-306: a fresh database created by the first-start bootstrap against one built by importing
  * the shipped file (the import's one check and twelve), the bootstrap leaving non-fresh databases
@@ -102,6 +105,7 @@ const MINIMUM_CHECKS =
   BOOTSTRAP_CHECKS * 2 +
   CRYPT_CHECKS * 2 +
   CRYPT_SEED_CHECKS +
+  HANDOVER_SEALED_CHECKS * 2 +
   MEDIA_HOOK_CHECKS * 2 +
   2 +
   HOOK_CHECKS * 2 +
@@ -290,10 +294,12 @@ const loadServerModule = async () => {
     // MICA-414: the two services that still declare `uniqueAfterDelete: 'revive'`, whose declared
     // repositories' `create` is the revive under test.
     `export { batteryApp } from '${root}/server/services/Battery.ts';`,
+    // MICA-431: a phone's own notes, sealed to the phone, through a handover.
+    `export { notes } from '${root}/server/services/Notes.ts';`,
     `export { hodlr } from '${root}/server/services/Hodlr.ts';`,
     `export { walkContent } from '${root}/server/lib/contentBackfill.ts';`,
     `export { seedFor } from '${root}/server/lib/seed.ts';`,
-    `export { contentContext, encryptedColumn, openContent, registerEncryptedColumn, resetContentCipherForTests, sealContent, sealedKeyId, unregisterEncryptedColumnForTests } from '${root}/server/lib/contentCipher.ts';`
+    `export { contentContext, encryptedColumn, openContent, plaintextBytesSql, registerEncryptedColumn, resetContentCipherForTests, sealContent, sealedKeyId, unregisterEncryptedColumnForTests } from '${root}/server/lib/contentCipher.ts';`
   ].join('\n');
 
   const outfile = path.join(root, 'node_modules', '.cache', 'mica-schema-harness.mjs');
@@ -3047,10 +3053,21 @@ const runContentCipherVariant = async ({ connection, schemaFile, hasPlayers, mod
       stamps(after),
       stamps(before)
     );
+    // Blanked, then sealed by the same run: since MICA-431 the body column is sealed too, to
+    // the phone the notification is on. So each is opened off its own row, and none is bare.
+    const shade = await q(
+      'SELECT id, citizenid, device_id, body FROM mica_notifications ORDER BY id DESC LIMIT 3'
+    );
     check(
-      `${label}: the DM notification bodies are blanked, the mention's is kept`,
-      after.mica_notifications.slice(-3).map((r) => r.v),
-      ['', '', '@crypt_a hi']
+      `${label}: the DM notification bodies are blanked, the mention's is kept, all sealed`,
+      shade
+        .toReversed()
+        .map((r) => [open('mica_notifications', 'body', r), modules.sealedKeyId(r.body)]),
+      [
+        ['', 'new'],
+        ['', 'new'],
+        ['@crypt_a hi', 'new']
+      ]
     );
 
     step(`${label} — a second --apply takes the edited row, and a third changes nothing`);
@@ -3128,6 +3145,114 @@ const runContentCipherVariant = async ({ connection, schemaFile, hasPlayers, mod
         ]
       );
     }
+
+    /*
+     * MICA-431: a phone's own content is sealed to the phone, so it survives the handover that
+     * rewrites every row's citizenid — the statement `Devices.handOver` runs per table — and a
+     * row on no phone, which no handover moves, still opens for its citizen. On a real MariaDB,
+     * whose columns are as wide as the sealed bound says (an ASCII photo at the camera's cap,
+     * a title of three-byte characters at its own).
+     */
+    useKeys(rotated);
+    step(`${label} — a sealed note and photo through a phone handover`);
+    const PHONE = 'c'.repeat(32);
+    const notesRepo = modules.notes.repo;
+    const mediaRepo = modules.media.repo;
+    // The rule counts UTF-16 units, so the heaviest title is 255 three-byte ones.
+    const title = '€'.repeat(255);
+    const noteId = await notesRepo.create({
+      citizenid: A,
+      device_id: PHONE,
+      title,
+      content: 'milk, eggs, the usual'
+    });
+    const legacyId = await notesRepo.create({ citizenid: A, title: 'written on no phone' });
+    const photo = `data:image/png;base64,${'A'.repeat(4 * 1024 * 1024 - 22)}`;
+    const photoId = await mediaRepo.addForPlayer(A, {
+      kind: 'photo',
+      data: photo,
+      alt_text: 'the pier at dusk',
+      device_id: PHONE
+    });
+    const stored = await q(
+      `SELECT (SELECT \`title\` FROM mica_notes WHERE id = ?) AS title,
+              (SELECT \`content\` FROM mica_notes WHERE id = ?) AS content,
+              (SELECT \`data\` FROM mica_media WHERE id = ?) AS data,
+              (SELECT \`alt_text\` FROM mica_media WHERE id = ?) AS alt_text`,
+      [noteId, noteId, photoId, photoId]
+    );
+    check(
+      `${label}: a note's title and body and a 4 MiB photo and its alt text are stored sealed`,
+      Object.values(stored[0]).map((v) => modules.sealedKeyId(String(v))),
+      ['new', 'new', 'new', 'new']
+    );
+    check(
+      `${label}: the sealed photo fits its mediumtext, a byte a character`,
+      String(stored[0].data).length <= 16777215 && String(stored[0].data).length > photo.length,
+      true
+    );
+
+    await notesRepo.transferDeviceRows(PHONE, B);
+    await mediaRepo.transferDeviceRows(PHONE, B);
+    const moved = await q(
+      `SELECT (SELECT citizenid FROM mica_notes WHERE id = ?) AS note,
+              (SELECT citizenid FROM mica_media WHERE id = ?) AS photo,
+              (SELECT citizenid FROM mica_notes WHERE id = ?) AS legacy`,
+      [noteId, photoId, legacyId]
+    );
+    check(
+      `${label}: the handover moved the phone's rows to the new holder, and not the phoneless one`,
+      [moved[0].note, moved[0].photo, moved[0].legacy],
+      [B, B, A]
+    );
+    const note = await notesRepo.findById(noteId, B, PHONE);
+    const picture = await mediaRepo.findById(photoId, B, PHONE);
+    check(
+      `${label}: the new holder opens the note and the photo, sealed to the phone`,
+      [note?.title === title, note?.content, picture?.data === photo, picture?.alt_text],
+      [true, 'milk, eggs, the usual', true, 'the pier at dusk']
+    );
+    // The plaintext's size, read off the sealed value in SQL: what the privacy export reports
+    // and what the quota charges a row with no size recorded. Exact, for the photo and for
+    // values whose base64 ends in each of its three paddings.
+    const sizes = [];
+    const [photoSize] = await q(
+      `SELECT ${modules.plaintextBytesSql('`data`')} AS n FROM mica_media WHERE id = ?`,
+      [photoId]
+    );
+    sizes.push([Number(photoSize.n), photo.length]);
+    for (const text of ['x', 'xx', 'xxx', '€uro']) {
+      const id = await notesRepo.create({ citizenid: A, device_id: PHONE, content: text });
+      const [row] = await q(
+        `SELECT ${modules.plaintextBytesSql('`content`')} AS n FROM mica_notes WHERE id = ?`,
+        [id]
+      );
+      sizes.push([Number(row.n), Buffer.byteLength(text, 'utf8')]);
+    }
+    // A truncated sealed value measures nothing, never less: it would lower a quota sum.
+    const truncated = await q(
+      'INSERT INTO mica_notes (citizenid, device_id, content) VALUES (?, ?, ?)',
+      [A, PHONE, '$mc1$new$AAAA']
+    );
+    const [cut] = await q(
+      `SELECT ${modules.plaintextBytesSql('`content`')} AS n FROM mica_notes WHERE id = ?`,
+      [truncated.insertId]
+    );
+    sizes.push([Number(cut.n), 0]);
+    await q('UPDATE mica_media SET stored_bytes = NULL WHERE id = ?', [photoId]);
+    const used = modules.usedBytesQuery(B, []);
+    const [charged] = await q(used.sql, used.params);
+    check(
+      `${label}: a sealed value's plaintext size is measured exactly, and charged so`,
+      [sizes.every(([n, bytes]) => n === bytes), Number(charged.used)],
+      [true, photo.length]
+    );
+    const legacy = await notesRepo.findById(legacyId, A);
+    check(
+      `${label}: a note on no phone still opens for its own citizen`,
+      legacy?.title,
+      'written on no phone'
+    );
   } finally {
     beforeUpdates = [];
     globalThis.GetConvar = previousConvar;

@@ -8,9 +8,11 @@ import {
   activeKeyId,
   contentContext,
   contentEncryptionEnabled,
+  contextColumns,
   encryptedColumns,
   isSealed,
   loadedKeyIds,
+  SEALED_PREFIX,
   sealContent,
   sealedKeyId,
   sealedLength,
@@ -190,7 +192,8 @@ type Row = Record<string, unknown> & { id: number };
 
 /** The page after `after`, with every column the value's context binds. */
 const page = async (entry: EncryptedColumn, after: number, batch: number): Promise<Row[]> => {
-  const columns = ['id', 'citizenid', ...entry.scope, entry.column].map(q).join(', ');
+  // The binding's own columns (MICA-431): `device_id` too for a phone-bound value.
+  const columns = ['id', ...contextColumns(entry), entry.column].map(q).join(', ');
   const rows = await Database.query<Row[]>(
     `SELECT ${columns} FROM ${q(entry.table)} WHERE \`id\` > ? ORDER BY \`id\` LIMIT ?`,
     [after, batch]
@@ -206,7 +209,7 @@ const compareAndSet = async (
   sealed: string
 ): Promise<boolean> => {
   const pin = entry.hasUpdatedAt ? ', `updated_at` = `updated_at`' : '';
-  const bound = ['citizenid', ...entry.scope];
+  const bound = contextColumns(entry);
   // Byte-exact like the body: under the column's collation a citizenid that changed only in
   // case compares equal, and a value sealed for the old one would never open for the new.
   const scope = bound
@@ -300,11 +303,19 @@ const walkColumn = async (
   return report;
 };
 
+/**
+ * A preview still stored as plaintext. Since MICA-431 the body column is itself sealed, so a
+ * new DM notification's `''` is stored sealed: only a bare body is a preview to blank, or every
+ * run would blank a sealed `''` and the walk would seal it again, forever.
+ */
+const BARE_BODY = "`body` <> '' AND `body` NOT LIKE ?";
+const sealedPattern = `${SEALED_PREFIX}%`;
+
 const countNotifications = async (scope: NotificationScope): Promise<number> => {
   const rows = await Database.query<{ n: number | string }[]>(
     `SELECT COUNT(*) AS \`n\` FROM \`${NOTIFICATIONS_TABLE}\` ` +
-      "WHERE `app` = ? AND `kind` = ? AND `body` <> ''",
-    [scope.app, scope.kind]
+      `WHERE \`app\` = ? AND \`kind\` = ? AND ${BARE_BODY}`,
+    [scope.app, scope.kind, sealedPattern]
   );
   return Number((Array.isArray(rows) ? rows[0]?.n : 0) ?? 0) || 0;
 };
@@ -325,16 +336,16 @@ const blankNotifications = async (
   for (;;) {
     const rows = await Database.query<{ id: number }[]>(
       `SELECT \`id\` FROM \`${NOTIFICATIONS_TABLE}\` ` +
-        "WHERE `id` > ? AND `app` = ? AND `kind` = ? AND `body` <> '' ORDER BY `id` LIMIT ?",
-      [after, scope.app, scope.kind, batch]
+        `WHERE \`id\` > ? AND \`app\` = ? AND \`kind\` = ? AND ${BARE_BODY} ORDER BY \`id\` LIMIT ?`,
+      [after, scope.app, scope.kind, sealedPattern, batch]
     );
     const ids = (Array.isArray(rows) ? rows : []).map((row) => Number(row.id));
     if (ids.length === 0) break;
     const result = await Database.query(
       `UPDATE \`${NOTIFICATIONS_TABLE}\` SET \`body\` = '', \`updated_at\` = \`updated_at\` ` +
         `WHERE \`id\` IN (${ids.map(() => '?').join(', ')}) ` +
-        "AND `app` = ? AND `kind` = ? AND `body` <> ''",
-      [...ids, scope.app, scope.kind]
+        `AND \`app\` = ? AND \`kind\` = ? AND ${BARE_BODY}`,
+      [...ids, scope.app, scope.kind, sealedPattern]
     );
     blanked += affectedRows(result);
     after = ids[ids.length - 1];
@@ -363,18 +374,21 @@ export const walkContent = async (options: WalkOptions): Promise<ContentReport> 
   const loadedKeys = loadedKeyIds();
   const pause = options.pause ?? tick;
 
+  // Blanked before the walk (MICA-431): the walk now seals notification bodies too, and a
+  // preview it sealed first would be kept, sealed, rather than blanked.
+  const blanked =
+    options.notifications && options.apply
+      ? await blankNotifications(options.notifications, batch, pause)
+      : 0;
+
   const columns: ColumnReport[] = [];
   for (const entry of encryptedColumns()) {
     columns.push(await walkColumn(entry, { apply: options.apply, batch, pause }, active));
   }
 
-  let notifications: NotificationReport | null = null;
-  if (options.notifications) {
-    const blanked = options.apply
-      ? await blankNotifications(options.notifications, batch, pause)
-      : 0;
-    notifications = { pending: await countNotifications(options.notifications), blanked };
-  }
+  const notifications: NotificationReport | null = options.notifications
+    ? { pending: await countNotifications(options.notifications), blanked }
+    : null;
 
   return { apply: options.apply, key, activeKey: active, loadedKeys, columns, notifications };
 };

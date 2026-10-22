@@ -14,7 +14,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createHmac, randomBytes } from 'node:crypto';
+import { createCipheriv, createHmac, randomBytes } from 'node:crypto';
 
 /**
  * MICA-165: the content cipher. `Database` is a stub answering only the enabled-marker
@@ -35,6 +35,7 @@ vi.mock('../lib/Database', () => ({ Database: dbMock }));
 import {
   CONTENT_CIPHER_MARKER_ID,
   KeyringError,
+  __aadForTests,
   SEALED_PREFIX,
   UNREADABLE_CONTENT,
   activeKeyId,
@@ -54,6 +55,7 @@ import {
   openRow,
   openRows,
   parseKeyring,
+  plaintextBytesSql,
   registerEncryptedColumn,
   resetContentCipherForTests,
   sealContent,
@@ -136,7 +138,9 @@ afterEach(() => {
 const message = (over: Partial<ContentContext> = {}): ContentContext => ({
   table: 'mica_messages',
   column: 'message',
-  citizenid: 'ABC123',
+  binding: 'citizen',
+  owner: 'ABC123',
+  ownerKind: 'citizen',
   scope: [7],
   ...over
 });
@@ -252,7 +256,7 @@ describe('seal and open with a key', () => {
   });
 
   it.each([
-    ['another citizenid', message({ citizenid: 'XYZ999' })],
+    ['another citizenid', message({ owner: 'XYZ999' })],
     ['another conversation', message({ scope: [8] })],
     ['another column', message({ column: 'body' })],
     ['another table', message({ table: 'mica_mail' })]
@@ -678,10 +682,11 @@ describe('the registry and the context', () => {
   afterEach(() => unregisterEncryptedColumnForTests('test_threads', 'body'));
 
   it('lists what was registered, by table and by column', () => {
-    expect(encryptedColumns()).toContainEqual(entry);
-    expect(encryptedColumnsOf('test_threads')).toEqual([entry]);
+    // Registered with its binding stated (MICA-431): absent reads as the character.
+    expect(encryptedColumns()).toContainEqual({ ...entry, binding: 'citizen' });
+    expect(encryptedColumnsOf('test_threads')).toEqual([{ ...entry, binding: 'citizen' }]);
     expect(encryptedColumnsOf('elsewhere')).toEqual([]);
-    expect(encryptedColumn('test_threads', 'body')).toEqual(entry);
+    expect(encryptedColumn('test_threads', 'body')).toEqual({ ...entry, binding: 'citizen' });
     expect(contextColumns(entry)).toEqual(['citizenid', 'thread_id', 'peer_id']);
   });
 
@@ -701,7 +706,9 @@ describe('the registry and the context', () => {
     ).toEqual({
       table: 'test_threads',
       column: 'body',
-      citizenid: 'C1',
+      binding: 'citizen',
+      owner: 'C1',
+      ownerKind: 'citizen',
       scope: [3, null]
     });
     expect(() => contentContext(entry, { citizenid: 'C1', thread_id: 3 })).toThrow(/peer_id/);
@@ -752,5 +759,107 @@ describe('boot', () => {
     useKeyFile(keyFile(['k1 nope']));
     await announceContentCipher();
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining('unusable'));
+  });
+});
+
+/**
+ * MICA-431: a value on a phone's own table is bound to the phone, not the character, so it
+ * survives the handover that rewrites the row's `citizenid` — and every value sealed before
+ * still opens, because a character-bound value's authenticated data is byte for byte what it
+ * was.
+ */
+describe('the binding (MICA-431)', () => {
+  const notes = {
+    table: 'test_notes',
+    column: 'content',
+    scope: [] as string[],
+    hasUpdatedAt: true,
+    binding: 'device' as const
+  };
+  beforeEach(() => registerEncryptedColumn(notes));
+  afterEach(() => unregisterEncryptedColumnForTests('test_notes', 'content'));
+
+  it("keeps a character-bound value's authenticated data byte for byte", () => {
+    expect(__aadForTests(message())).toBe('micaOS content v1\0mica_messages\0message\0ABC123\x007');
+  });
+
+  it('opens a value sealed the way MICA-165 sealed it, built here by hand', () => {
+    // The ciphertext is made with node:crypto against the literal pre-MICA-431 AAD, not through
+    // the code under test, so a change to that AAD's bytes cannot pass by changing both sides.
+    const key = randomBytes(32);
+    useKeyFile(keyFile([`k1 ${key.toString('base64')}`]));
+    const iv = randomBytes(12);
+    const cipher = createCipheriv('aes-256-gcm', key, iv, { authTagLength: 16 });
+    cipher.setAAD(Buffer.from('micaOS content v1\0mica_messages\0message\0ABC123\x007', 'utf8'));
+    const body = Buffer.concat([cipher.update('from before', 'utf8'), cipher.final()]);
+    const stored =
+      `${SEALED_PREFIX}k1$` + Buffer.concat([iv, body, cipher.getAuthTag()]).toString('base64');
+    expect(openContent(message(), stored, 1)).toBe('from before');
+  });
+
+  it('binds a phone-bound value to device_id under its own domain', () => {
+    const context = contentContext(encryptedColumn('test_notes', 'content')!, {
+      citizenid: 'C1',
+      device_id: 'abc'
+    });
+    expect(context).toMatchObject({ binding: 'device', owner: 'abc', ownerKind: 'device' });
+    expect(__aadForTests(context)).toBe(
+      'micaOS device content v1\0test_notes\0content\0device\0abc'
+    );
+    expect(contextColumns(encryptedColumn('test_notes', 'content')!)).toEqual([
+      'device_id',
+      'citizenid'
+    ]);
+  });
+
+  it('opens a phone-bound value after a handover rewrites the citizenid', async () => {
+    useKeyFile(keyFile([`k1 ${b64()}`]));
+    const row = { id: 1, citizenid: 'C1', device_id: 'abc', content: 'shopping list' };
+    const sealed = await sealRow('test_notes', row);
+    expect(isSealed(sealed.content)).toBe(true);
+    // The handover: same phone, a new holder.
+    expect(openRow('test_notes', { ...sealed, citizenid: 'C2' }).content).toBe('shopping list');
+    // The positive twin: another phone's row will not open it.
+    expect(openRow('test_notes', { ...sealed, device_id: 'xyz' }).content).toBe(UNREADABLE_CONTENT);
+  });
+
+  it('binds a row with no device_id to its citizenid, which nothing then moves', async () => {
+    useKeyFile(keyFile([`k1 ${b64()}`]));
+    const legacy = { id: 2, citizenid: 'C1', device_id: null, content: 'old note' };
+    const context = contentContext(encryptedColumn('test_notes', 'content')!, legacy);
+    expect(context).toMatchObject({ owner: 'C1', ownerKind: 'citizen' });
+    expect(__aadForTests(context)).toBe(
+      'micaOS device content v1\0test_notes\0content\0citizen\0C1'
+    );
+    const sealed = await sealRow('test_notes', legacy);
+    expect(openRow('test_notes', sealed).content).toBe('old note');
+    // Not one shared owner: another player's legacy row will not open it.
+    expect(openRow('test_notes', { ...sealed, citizenid: 'C2' }).content).toBe(UNREADABLE_CONTENT);
+    // And a device id that happens to spell a citizenid is still another owner.
+    expect(openRow('test_notes', { ...sealed, device_id: 'C1' }).content).toBe(UNREADABLE_CONTENT);
+  });
+
+  it('refuses device_id in a scope, and an unknown binding', () => {
+    expect(() =>
+      registerEncryptedColumn({ ...notes, column: 'title', scope: ['device_id'] })
+    ).toThrow(/device_id/);
+    expect(() =>
+      registerEncryptedColumn({ ...notes, column: 'title', binding: 'phone' as never })
+    ).toThrow(/no binding/);
+  });
+
+  it('never measures a truncated sealed value below zero', () => {
+    // The arithmetic subtracts the IV and the tag, so `$mc1$k1$` with nothing after it would
+    // read as -30 and lower a quota sum. No suite here runs SQL; test:schema proves the value.
+    const sql = plaintextBytesSql('`data`');
+    expect(sql.startsWith('GREATEST((CASE WHEN `data` LIKE')).toBe(true);
+    expect(sql.endsWith('END), 0)')).toBe(true);
+  });
+
+  it('bounds an ASCII column at one byte a character, so a 4 MiB photo fits a mediumtext', () => {
+    expect(maxPlaintextChars(16777215, 1)).toBeGreaterThanOrEqual(4 * 1024 * 1024);
+    // The four-byte bound is the one that refused it.
+    expect(maxPlaintextChars(16777215)).toBeLessThan(4 * 1024 * 1024);
+    expect(sealedLength(maxPlaintextChars(16777215, 1))).toBeLessThanOrEqual(16777215);
   });
 });

@@ -4,6 +4,8 @@
 
 import { SchemaRepository, type ResolvedService } from '../lib/defineService';
 import { Database } from '../lib/Database';
+import { joinedMedia } from '../lib/media/joined';
+import { openRow } from '../lib/contentCipher';
 import { Blab, MediaPreview } from '@mica/shared/types';
 
 /**
@@ -150,7 +152,8 @@ export class BlabberRepository extends SchemaRepository<Blab> {
     const rows = await Database.query<any[]>(
       `SELECT a.id, a.blab_id,
               m.id AS media_id, m.kind, m.data, m.url, m.thumbnail,
-              m.mime_type, m.duration_ms, m.alt_text
+              m.mime_type, m.duration_ms, m.alt_text,
+              m.citizenid AS media_citizenid, m.device_id AS media_device_id
          FROM \`mica_blabber_attachments\` a
          JOIN \`mica_media\` m ON a.media_id = m.id AND m.status <> 'moderated'
         WHERE a.blab_id IN (${placeholders})
@@ -160,6 +163,8 @@ export class BlabberRepository extends SchemaRepository<Blab> {
 
     const byBlab = new Map<number, { id: number; media: MediaPreview }[]>();
     for (const row of rows) {
+      // Opened off the photo's own phone, which the join selected for this alone (MICA-431).
+      const media = openRow('mica_media', joinedMedia(row));
       const list = byBlab.get(row.blab_id) ?? [];
       list.push({
         id: row.id,
@@ -169,12 +174,12 @@ export class BlabberRepository extends SchemaRepository<Blab> {
           // `toString()` for the same reason `Photos.ts` coerces these: depending on driver
           // and column type a `mediumtext` arrives as a Buffer, which crosses NUI as
           // `{type:'Buffer',data:[...]}` and renders as nothing.
-          data: row.data ? String(row.data) : undefined,
+          data: media.data ?? undefined,
           url: row.url ?? undefined,
-          thumbnail: row.thumbnail ? String(row.thumbnail) : undefined,
+          thumbnail: media.thumbnail ?? undefined,
           mime_type: row.mime_type ?? undefined,
           duration_ms: row.duration_ms ?? undefined,
-          alt_text: row.alt_text ?? undefined
+          alt_text: media.alt_text ?? undefined
         }
       });
       byBlab.set(row.blab_id, list);

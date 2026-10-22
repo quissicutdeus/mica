@@ -138,3 +138,7 @@ line here.
   — key by source and citizenid; make an `atLogout` forgetter idempotent
 - [A scanner's string skip must honour escapes](scanner-string-skip-needs-escapes.md)
   — `'it\'s'` read the file inside out and credited a neighbour (MICA-414)
+- [One stub phone for everyone hides a device binding](one-stub-phone-hides-a-device-binding.md)
+  — give each party its own `device_id`; MICA-431's re-seal passed broken
+- [Sealing a column applies its rules to server writes](sealing-a-column-applies-its-rules-server-side.md)
+  — `accepts` broke `shareLocation`; `mediumtext` exports as a size

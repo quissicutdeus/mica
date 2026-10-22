@@ -6,6 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script lang="ts">
   import { CheckCircleIcon, ListBulletIcon, fade, useLocale, useTimer } from '@mica/sdk';
+  import { NOTE_CONTENT_MAX, NOTE_TITLE_MAX } from '../limits';
 
   /**
    * Notes' markdown editor: the title field, the content textarea, and the toolbar that
@@ -101,7 +102,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     const textBefore = text.substring(0, start);
     const textAfter = text.substring(end);
 
-    content = textBefore + prefix + selectedText + suffix + textAfter;
+    const next = textBefore + prefix + selectedText + suffix + textAfter;
+    // `maxlength` bounds typing, not a script setting the value: hold the toolbar to it too, or
+    // the save is refused on a note the field said fit.
+    if (next.length > NOTE_CONTENT_MAX) return;
+    content = next;
 
     // Restore focus and selection
     after(0, () => {
@@ -120,6 +125,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     class={style.titleField}
     placeholder={$t('notes.titlePlaceholder')}
     bind:value={title}
+    maxlength={NOTE_TITLE_MAX}
     use:focusIf={autofocusTitle}
     disabled={busy}
   />
@@ -130,6 +136,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       placeholder={$t(style.placeholder)}
       bind:this={textAreaRef}
       bind:value={content}
+      maxlength={NOTE_CONTENT_MAX}
       disabled={busy}></textarea>
 
     <!-- Markdown Toolbar -->

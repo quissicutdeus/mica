@@ -1315,8 +1315,14 @@ describe('blabber:search', () => {
 
     await call('search', { q: 'anything' });
 
-    for (const [sql] of dbMock.query.mock.calls) {
-      expect(String(sql)).not.toContain('citizenid');
+    // The one exception is an attached photo's own citizenid, selected under an alias only to
+    // open its sealed bytes and dropped before the reply (MICA-431; `lib/media/joined.ts`).
+    const selected = dbMock.query.mock.calls.map(([sql]: unknown[]) => String(sql));
+    expect(selected.some((sql: string) => sql.includes('m.citizenid AS media_citizenid'))).toBe(
+      true
+    );
+    for (const sql of selected) {
+      expect(sql.replace(/m\.citizenid AS media_citizenid/g, '')).not.toContain('citizenid');
     }
   });
 });

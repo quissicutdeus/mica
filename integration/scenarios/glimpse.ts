@@ -5,7 +5,8 @@
 import type { Scenario, RunSignal } from '../runner';
 import { db } from '../lib/db';
 import { call, invoke, pushes, seedPlayer, type PushEnvelope } from '../lib/door';
-import { assert, seedCitizen } from '../lib/mica';
+import { assert, harnessKeys, seedCitizen } from '../lib/mica';
+import { openSealed } from '../lib/sealed';
 import { eventually } from '../lib/wait';
 import { schemaCreated } from './qbx';
 
@@ -261,12 +262,26 @@ const notificationRow = async (
   what: string
 ): Promise<Record<string, unknown>> =>
   await eventually(
-    async () =>
-      await db.row(
-        'SELECT `app`, `kind`, `title`, `body`, `deep_link` FROM `mica_notifications` ' +
+    async () => {
+      const row = await db.row(
+        'SELECT `citizenid`, `device_id`, `app`, `kind`, `title`, `body`, `deep_link` ' +
+          'FROM `mica_notifications` ' +
           'WHERE `citizenid` = ? AND `kind` = ? ORDER BY `id` DESC LIMIT 1',
         [citizenid, kind]
-      ),
+      );
+      if (!row) return null;
+      // The title and body are sealed to the phone the row is on (MICA-431): opened as read,
+      // with the key the harness wrote, so every assertion below reads the words.
+      const open = (column: 'title' | 'body'): string =>
+        openSealed(row[column], harnessKeys(), {
+          table: 'mica_notifications',
+          column,
+          citizenid: String(row.citizenid),
+          deviceId: (row.device_id as string | null) ?? null,
+          scope: []
+        });
+      return { ...row, title: open('title'), body: open('body') };
+    },
     5_000,
     signal,
     what

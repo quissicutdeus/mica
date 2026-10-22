@@ -6,6 +6,8 @@ import { randomBytes } from 'node:crypto';
 import { PlayerFacingError } from '../lib/errors';
 import { defineService } from '../lib/defineService';
 import { Database } from '../lib/Database';
+import { joinedMedia } from '../lib/media/joined';
+import { openRow } from '../lib/contentCipher';
 import { appEventChannel } from '../lib/appEvents';
 import { resolveOwnedAttachments } from '../lib/attachments';
 import { pageBounds } from '../lib/payload';
@@ -332,11 +334,15 @@ interface PhotoRow {
   mime_type: string | null;
   duration_ms: number | null;
   alt_text: string | null;
+  /** Selected to open the sealed columns, and dropped with them (MICA-431). */
+  media_citizenid: string;
+  media_device_id: string | null;
 }
 
 /**
  * Each profile's photos whose gallery row is still active, in the owner's order. A photo deleted
- * from the gallery leaves the profile. Never selects a citizenid.
+ * from the gallery leaves the profile. Selects the photo's citizenid and phone only to open its
+ * sealed columns (MICA-431); neither leaves this function.
  */
 const photosFor = async (
   profileIds: readonly number[]
@@ -346,7 +352,8 @@ const photosFor = async (
   if (ids.length === 0) return out;
   const rows = await Database.query<PhotoRow[]>(
     `SELECT p.\`id\`, p.\`profile_id\`, p.\`media_id\`,
-            m.\`kind\`, m.\`data\`, m.\`url\`, m.\`thumbnail\`, m.\`mime_type\`, m.\`duration_ms\`, m.\`alt_text\`
+            m.\`kind\`, m.\`data\`, m.\`url\`, m.\`thumbnail\`, m.\`mime_type\`, m.\`duration_ms\`, m.\`alt_text\`,
+            m.\`citizenid\` AS media_citizenid, m.\`device_id\` AS media_device_id
      FROM \`${PHOTOS}\` p
      JOIN \`mica_media\` m ON m.\`id\` = p.\`media_id\` AND m.\`status\` = 'active'
      WHERE p.\`profile_id\` IN (${marks(ids)})
@@ -354,15 +361,17 @@ const photosFor = async (
     ids
   );
   for (const row of rows ?? []) {
+    // Opened off the photo's own phone, which the join selected for this alone (MICA-431).
+    const photo = openRow('mica_media', joinedMedia(row));
     const preview: Omit<MediaPreview, 'id'> = {
       kind: (row.kind ?? 'photo') as MediaPreview['kind'],
       // A `mediumtext` can arrive as a Buffer, which crosses NUI as `{type:'Buffer'}`.
-      data: row.data ? String(row.data) : undefined,
+      data: photo.data ?? undefined,
       url: row.url ?? undefined,
-      thumbnail: row.thumbnail ? String(row.thumbnail) : undefined,
+      thumbnail: photo.thumbnail ?? undefined,
       mime_type: row.mime_type ?? undefined,
       duration_ms: row.duration_ms ?? undefined,
-      alt_text: row.alt_text ?? undefined
+      alt_text: photo.alt_text ?? undefined
     };
     const profileId = Number(row.profile_id);
     const list = out.get(profileId) ?? [];

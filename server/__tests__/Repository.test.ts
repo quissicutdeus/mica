@@ -17,6 +17,7 @@ const { dbMock } = vi.hoisted(() => ({
 vi.mock('../lib/Database', () => ({ Database: dbMock }));
 
 import { Repository } from '../lib/Repository';
+import { registerEncryptedColumn, unregisterEncryptedColumnForTests } from '../lib/contentCipher';
 
 interface TestRow {
   id: number;
@@ -661,5 +662,42 @@ describe('handing a phone over', () => {
     const repo = new DeviceOwnedRepo();
     await expect(repo.transferDeviceRows('', 'CIT_THIEF')).rejects.toThrow(/both/);
     await expect(repo.transferDeviceRows('PHONE_X', '')).rejects.toThrow(/both/);
+  });
+
+  /**
+   * MICA-431: a handover rewrites `citizenid`, so a sealed value bound to the character would
+   * stop opening on every moved row — silently, at the first handover. Refused before a row
+   * moves; bound to the phone, the same table moves as it always did.
+   */
+  it('refuses to move rows holding a value sealed to the character, not one sealed to the phone', async () => {
+    const repo = new DeviceOwnedRepo();
+    registerEncryptedColumn({
+      table: 'mica_device_owned',
+      column: 'title',
+      scope: [],
+      hasUpdatedAt: true
+    });
+    try {
+      await expect(repo.transferDeviceRows('PHONE_X', 'CIT_THIEF')).rejects.toThrow(
+        /sealed to the character/
+      );
+      expect(dbMock.update).not.toHaveBeenCalled();
+    } finally {
+      unregisterEncryptedColumnForTests('mica_device_owned', 'title');
+    }
+
+    registerEncryptedColumn({
+      table: 'mica_device_owned',
+      column: 'title',
+      scope: [],
+      hasUpdatedAt: true,
+      binding: 'device'
+    });
+    try {
+      await repo.transferDeviceRows('PHONE_X', 'CIT_THIEF');
+      expect(dbMock.update).toHaveBeenCalledTimes(1);
+    } finally {
+      unregisterEncryptedColumnForTests('mica_device_owned', 'title');
+    }
   });
 });

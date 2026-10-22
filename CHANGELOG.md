@@ -47,6 +47,43 @@ Entries are hand-written. See MICA-72 for why a generated one was rejected.
 
 ### Action required
 
+**Run `micaschema apply`, then `micacrypt backfill --apply`, to encrypt notes,
+contacts, the call log, places, photos and notifications (MICA-431).**
+
+With a content key set, more private data is now sealed at rest:
+
+- note titles and bodies;
+- contact names and emails;
+- numbers in the call log;
+- saved place names and street labels;
+- photo, voice and video bytes, with their thumbnails and alt text;
+- notification titles and bodies;
+- a reporter's note;
+- the name a script posts under in Dark Chat.
+
+Data on a phone is bound to that phone, not to the character, so it still opens
+after the phone changes hands.
+
+Migration `0013_private_content_widens_its_columns` widens the affected columns
+so the encrypted form fits; nothing stored changes. Most tables are altered in
+place. `mica_contacts`, `mica_phone_call_log` and `mica_darkchat_messages` are
+copied, and the console says so while it runs, so do it at a quiet moment.
+
+`micacrypt backfill --apply` then seals what is already stored, and
+`micacrypt status` counts what is left.
+
+Two limits come with it:
+
+- A note is now capped at about 12,000 characters, and the Notes editor shows
+  the limit while you type. A longer note already stored stays unencrypted, and
+  the backfill reports it as too long.
+- A script adding media through the `AddMedia` export must pass ASCII-only data.
+  A `data:` URI with non-ASCII bytes in it, such as a UTF-8 SVG, is now refused,
+  so base64-encode it.
+
+A server with no content key stores all of this unencrypted, as before, and the
+two limits apply there too.
+
 **Run `micaschema apply` to create Glimpse's tables (MICA-253).** Glimpse is a
 new photo-feed add-on, installed from the Store, and it stores posts, their
 photos and comments in three new tables: `mica_glimpse`,

@@ -5,7 +5,13 @@
 import { MESSAGE_BODY_MAX } from '@mica/shared/contracts/messages';
 import { sealRow, storablePlaintext } from '../contentCipher';
 import { Database, type TransactionQuery } from '../Database';
-import { hostedUrlPrefixes, quotaBytes, storedBytesOf, usedBytesQuery } from '../../services/Media';
+import {
+  hostedUrlPrefixes,
+  media,
+  quotaBytes,
+  storedBytesOf,
+  usedBytesQuery
+} from '../../services/Media';
 import { isAppDisabled } from '../ownerConfig';
 import { type ImportContext } from './context';
 import { cutText } from './cutText';
@@ -146,21 +152,32 @@ export const importContacts = async (
         row.key,
         'mica_contacts',
         citizenid,
-        async () => [
-          {
-            query: `INSERT INTO \`mica_contacts\`
-               (\`citizenid\`, \`device_id\`, \`firstname\`, \`lastname\`, \`phone\`, \`favorite\`)
-             VALUES (?, ?, ?, ?, ?, ?)`,
-            params: [
-              citizenid,
-              deviceId,
-              cutText(row.firstname.trim() || phone, 50),
-              row.lastname ? cutText(row.lastname, 50) : null,
-              phone,
-              row.favorite ? 1 : 0
-            ]
-          }
-        ],
+        async () => {
+          // Sealed to the phone the contact lands on, as Contacts seals one (MICA-431), or to
+          // the citizen when it lands on none. Cut to the column's bound first, which is what
+          // fits once sealed; `storablePlaintext` for a name that starts like a sealed value.
+          const sealed = await sealRow('mica_contacts', {
+            citizenid,
+            device_id: deviceId ?? null,
+            firstname: await storablePlaintext(cutText(row.firstname.trim() || phone, 50), 50),
+            lastname: row.lastname ? await storablePlaintext(cutText(row.lastname, 50), 50) : null
+          });
+          return [
+            {
+              query: `INSERT INTO \`mica_contacts\`
+                 (\`citizenid\`, \`device_id\`, \`firstname\`, \`lastname\`, \`phone\`, \`favorite\`)
+               VALUES (?, ?, ?, ?, ?, ?)`,
+              params: [
+                citizenid,
+                deviceId,
+                sealed.firstname,
+                sealed.lastname,
+                phone,
+                row.favorite ? 1 : 0
+              ]
+            }
+          ];
+        },
         (id, reason) => {
           if (id !== null) {
             tally.written++;
@@ -188,6 +205,12 @@ export interface MediaIn {
 
 /** The same schemes `AddMedia` accepts, and the same ones `MediaThumb` will render. */
 const SAFE_URL = /^(https?:|data:image\/)/i;
+
+/**
+ * The longest inline photo `mica_media.data` holds once sealed: Media's own rule (MICA-431).
+ * Read when asked, not at import, so a suite mocking Media without it fails only the photo path.
+ */
+const mediaDataMax = (): number => media.resolved.columnRules.data.maxLength ?? 0;
 
 /*
  * The quota is Media's own — `quotaBytes`, `storedBytesOf` and `usedBytesQuery` are imported
@@ -235,6 +258,12 @@ export const importMedia = async (
         continue;
       }
       const isData = /^data:/i.test(link);
+      // Inline bytes are sealed (MICA-431), and the column's bound counts them a byte a
+      // character: a link longer than that, or not ASCII, would not fit once sealed.
+      if (isData && (link.length > mediaDataMax() || /[\u0080-\uffff]/.test(link))) {
+        tally.skip(SKIP.tooLargeToSeal);
+        continue;
+      }
       if (!isData) {
         const existing = await Database.scalar<number | null>(
           "SELECT 1 FROM `mica_media` WHERE `citizenid` = ? AND `url` = ? AND `status` = 'active' LIMIT 1",
@@ -275,25 +304,34 @@ export const importMedia = async (
         row.key,
         'mica_media',
         citizenid,
-        async () => [
-          {
-            // `stored_bytes` is `cost`: what the quota charged this row, recorded so the quota sums
-            // it rather than measuring the row again on every capture after (MICA-358).
-            query: `INSERT INTO \`mica_media\`
-               (\`citizenid\`, \`device_id\`, \`kind\`, \`data\`, \`url\`, \`stored_bytes\`,
-                \`created_at\`)
-             VALUES (?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP))`,
-            params: [
-              citizenid,
-              await deviceIdFor(ctx, citizenid, row.owner.number),
-              row.isVideo ? 'video' : 'photo',
-              isData ? link : null,
-              isData ? null : link,
-              cost,
-              row.at
-            ]
-          }
-        ],
+        async () => {
+          const deviceId = await deviceIdFor(ctx, citizenid, row.owner.number);
+          // Sealed to the phone the photo lands on (MICA-431), or to the citizen on none.
+          const sealed = await sealRow('mica_media', {
+            citizenid,
+            device_id: deviceId ?? null,
+            data: isData ? link : null
+          });
+          return [
+            {
+              // `stored_bytes` is `cost`: what the quota charged this row, recorded so the quota
+              // sums it rather than measuring the row again on every capture after (MICA-358).
+              query: `INSERT INTO \`mica_media\`
+                 (\`citizenid\`, \`device_id\`, \`kind\`, \`data\`, \`url\`, \`stored_bytes\`,
+                  \`created_at\`)
+               VALUES (?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP))`,
+              params: [
+                citizenid,
+                deviceId,
+                row.isVideo ? 'video' : 'photo',
+                sealed.data,
+                isData ? null : link,
+                cost,
+                row.at
+              ]
+            }
+          ];
+        },
         (id, reason) => {
           if (id !== null) {
             tally.written++;

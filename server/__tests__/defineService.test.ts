@@ -653,7 +653,8 @@ describe('float columns (MICA-65)', () => {
       values: null,
       min: null,
       max: null,
-      accepts: null
+      accepts: null,
+      ascii: false
     });
   });
 });

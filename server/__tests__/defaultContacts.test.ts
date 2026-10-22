@@ -255,7 +255,9 @@ describe('seeding never holds up the phone', () => {
 
     await expect(identityPhone(CID)).resolves.toMatch(ID_SHAPE);
     // The first contact insert was started and never finished; the phone did not wait for it.
-    expect(insertsInto('mica_contacts')).toHaveLength(1);
+    // Waited for, since a contact's name is sealed first (MICA-431) and the insert follows a
+    // tick later; it then hangs, so the count stays at one.
+    await vi.waitFor(() => expect(insertsInto('mica_contacts')).toHaveLength(1));
   });
 
   it('resolves the phone in hand while its contacts are still being written', async () => {

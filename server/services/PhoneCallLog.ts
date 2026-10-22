@@ -21,9 +21,11 @@ export const phoneCallLog = defineService<PhoneCallLogEntry>({
   access: { read: 'owner', write: 'server' },
   paging: {},
   statuses: ['active', 'deleted', 'moderated'],
+  /** Who was called is sealed at rest (MICA-431), bound to the phone that called. */
+  encryptionScope: [],
   schema: {
     kind: { type: 'enum', values: ['incoming', 'outgoing', 'missed'], notNull: true },
-    number: { type: 'string', length: 20, notNull: true },
+    number: { type: 'string', length: 20, notNull: true, encrypted: true },
     duration: { type: 'int', notNull: true }
   },
   indexes: [{ name: 'citizenid_status_created', columns: ['citizenid', 'status', 'created_at'] }],

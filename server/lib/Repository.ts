@@ -133,6 +133,38 @@ export abstract class Repository<T> {
   }
 
   /**
+   * Whether a value fits its column at all: the length, and for an `ascii` column, that it is
+   * ASCII. The part of `assertWritableValue` that every write needs, client or server — and all
+   * a sealed value's write needs (`assertSealablePlaintext`), whose sealed form is bounded by
+   * exactly these two. `accepts` is a rule about what a **client** may send, and is not here:
+   * `shareLocation` writes a location's JSON to `mica_media.data`, which is no inline image.
+   * Public for the one insert that builds its own statement, Media's quota-gated one.
+   */
+  public assertFitsColumn(column: string, value: unknown): void {
+    const rule = this.columnRules[column];
+    if (!rule || typeof value !== 'string') return;
+
+    // A citizenid column is as wide as this server's owner key (MICA-289), which the
+    // declaration could not know when it was resolved.
+    const maxLength = rule.citizenId ? citizenIdColumnWidth() : rule.maxLength;
+    if (maxLength !== null && value.length > maxLength) {
+      throw new PlayerFacingError(`'${column}' is limited to ${maxLength} characters.`, {
+        key: 'server.repository.maxLength',
+        params: { column, max: maxLength }
+      });
+    }
+
+    // An `ascii` column's sealed bound counts one byte a character (MICA-431), so anything wider
+    // could outrun the column once sealed. Said as the value not being accepted, which it is not.
+    if (rule.ascii && /[\u0080-\uffff]/.test(value)) {
+      throw new PlayerFacingError(`'${column}' is not a value this server accepts.`, {
+        key: 'server.repository.notAccepted',
+        params: { column }
+      });
+    }
+  }
+
+  /**
    * Reject a client-supplied value the column cannot actually hold.
    *
    * The declaration has always carried the answer — `length: 50`, `values: [...]` — and
@@ -165,15 +197,7 @@ export abstract class Repository<T> {
       });
     }
 
-    // A citizenid column is as wide as this server's owner key (MICA-289), which the
-    // declaration could not know when it was resolved.
-    const maxLength = rule.citizenId ? citizenIdColumnWidth() : rule.maxLength;
-    if (maxLength !== null && typeof value === 'string' && value.length > maxLength) {
-      throw new PlayerFacingError(`'${column}' is limited to ${maxLength} characters.`, {
-        key: 'server.repository.maxLength',
-        params: { column, max: maxLength }
-      });
-    }
+    this.assertFitsColumn(column, value);
 
     if (rule.accepts && !rule.accepts(String(value))) {
       throw new PlayerFacingError(`'${column}' is not a value this server accepts.`, {
@@ -419,6 +443,23 @@ export abstract class Repository<T> {
     if (!deviceId || !citizenid) {
       throw new Error(`[Repository] transferDeviceRows requires both a device id and a citizenid.`);
     }
+    /**
+     * Never under a value bound to the character (MICA-431). This statement rewrites
+     * `citizenid`, so every such value on the moved rows would stop opening — silently, at the
+     * first handover, after every suite had passed. A `deviceOwned` declaration binds its
+     * sealed columns to the phone instead (`defineService`); one that reaches here bound to the
+     * character was registered by hand, and is refused before a row moves.
+     */
+    const boundToCharacter = encryptedColumnsOf(this.tableName).find(
+      (entry) => (entry.binding ?? 'citizen') === 'citizen'
+    );
+    if (boundToCharacter) {
+      throw new Error(
+        `[Repository] transferDeviceRows on '${this.tableName}': ` +
+          `${boundToCharacter.column} is sealed to the character, and a handover rewrites ` +
+          'citizenid. Bind it to the phone (deviceOwned) before rows can change hands.'
+      );
+    }
     const pin = this.hasColumn('updated_at') ? ', `updated_at` = `updated_at`' : '';
     return await Database.update(
       `UPDATE \`${this.tableName}\` SET \`citizenid\` = ?${pin} ` +
@@ -470,7 +511,7 @@ export abstract class Repository<T> {
   private assertSealablePlaintext(data: Record<string, unknown>, columns: readonly string[]) {
     for (const column of columns) {
       const value = data[column];
-      if (value !== undefined && value !== null) this.assertWritableValue(column, value);
+      if (value !== undefined && value !== null) this.assertFitsColumn(column, value);
     }
   }
 
@@ -482,7 +523,11 @@ export abstract class Repository<T> {
       data,
       entries.map((entry) => entry.column)
     );
-    return await sealRow(this.tableName, data);
+    // A phone-bound row written with no phone is stored with `device_id` NULL, so it is sealed
+    // as one (MICA-431) — said explicitly, so the value and the row cannot disagree.
+    const unphoned =
+      data.device_id === undefined && entries.some((entry) => entry.binding === 'device');
+    return await sealRow(this.tableName, unphoned ? { ...data, device_id: null } : data);
   }
 
   /**

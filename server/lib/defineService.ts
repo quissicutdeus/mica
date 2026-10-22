@@ -3,7 +3,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { Repository } from './Repository';
-import { maxPlaintextChars, registerEncryptedColumn, sealedLengthForChars } from './contentCipher';
+import {
+  maxPlaintextChars,
+  registerEncryptedColumn,
+  sealedLength,
+  sealedLengthForChars
+} from './contentCipher';
 import { registerReportable, type ReportableDefinition } from './moderation';
 import type { ReactableDefinition } from './reactions';
 import { ServiceEndpoint, ServiceOptions } from './ServiceEndpoint';
@@ -107,6 +112,8 @@ export interface ColumnRule {
   max: number | null;
   /** The column's own value check (`ColumnDef.accepts`), or null. */
   accepts: ((value: string) => boolean) | null;
+  /** `ColumnDef.ascii`: a value with any non-ASCII character is refused. */
+  ascii: boolean;
 }
 
 /** A foreign key onto another table. `players` is implied for `citizenid`. */
@@ -237,8 +244,19 @@ export interface ColumnDef {
    * Requires the service to declare `encryptionScope`. Refused beside `clientFilterable`,
    * `index`, `default`, `generatedAs` and `citizenId`: none of them means anything over
    * ciphertext, and each would read as working.
+   *
+   * On a `deviceOwned` table the value is bound to the row's phone, `device_id`, not its
+   * `citizenid` (MICA-431): a handover rewrites `citizenid` on every row of the phone, and a
+   * value bound to the character would stop opening there.
    */
   encrypted?: boolean;
+  /**
+   * The column only ever holds ASCII (MICA-431): a base64 image. Only beside `encrypted`, where
+   * it sizes the plaintext bound at one byte a character rather than utf8mb4's worst case of
+   * four — a 4 MiB photo seals well inside a `mediumtext`, and a four-byte bound would refuse it.
+   * A write with any other character is refused, so the bound cannot be outrun.
+   */
+  ascii?: boolean;
 }
 
 /**
@@ -698,8 +716,18 @@ export interface ResolvedService {
  */
 const MAX_VARCHAR_CHARS = 16383;
 
+/** An encrypted `string`'s width once sealed: its plaintext bound, at its bytes a character. */
+const storedWidth = (def: ColumnDef): number =>
+  def.ascii === true ? sealedLength(def.length ?? 255) : sealedLengthForChars(def.length ?? 255);
+
 /** What an `encrypted: true` column may not also be (MICA-165). */
 const assertEncryptedColumn = (id: string, name: string, def: ColumnDef): void => {
+  if (def.ascii === true && !def.encrypted) {
+    throw new Error(
+      `defineService('${id}'): '${name}' is 'ascii' but not 'encrypted'. It sizes a sealed ` +
+        'bound and means nothing on its own.'
+    );
+  }
   if (!def.encrypted) return;
   const where = `defineService('${id}'): '${name}' is 'encrypted'`;
   if (def.type !== 'string' && def.type !== 'text' && def.type !== 'mediumtext') {
@@ -720,7 +748,7 @@ const assertEncryptedColumn = (id: string, name: string, def: ColumnDef): void =
         'value is different bytes, even for the same text.'
     );
   }
-  if (def.type === 'string' && sealedLengthForChars(def.length ?? 255) > MAX_VARCHAR_CHARS) {
+  if (def.type === 'string' && storedWidth(def) > MAX_VARCHAR_CHARS) {
     throw new Error(
       `${where}, and ${def.length ?? 255} characters seal to more than a varchar holds. ` +
         "Declare it 'text'."
@@ -754,11 +782,16 @@ const resolveEncryptionScope = (
   }
   const write = definition.access?.write ?? 'owner';
   for (const column of scope) {
-    if (!columns.includes(column) || column === 'citizenid' || column === 'id') {
+    if (
+      !columns.includes(column) ||
+      column === 'citizenid' ||
+      column === 'device_id' ||
+      column === 'id'
+    ) {
       throw new Error(
         `defineService('${id}'): encryptionScope names '${column}', which it cannot bind: ` +
-          "'citizenid' always is, 'id' does not exist before the insert, and anything else " +
-          'has to be a column of this table.'
+          "'citizenid' and 'device_id' are the owner the binding already names, 'id' does " +
+          'not exist before the insert, and anything else has to be a column of this table.'
       );
     }
     if (encryptedColumns.includes(column)) {
@@ -1238,13 +1271,14 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
         : def.type === 'string'
           ? (def.length ?? 255)
           : def.encrypted
-            ? maxPlaintextChars(MAX_LENGTH_BY_TYPE[def.type] ?? 0)
+            ? maxPlaintextChars(MAX_LENGTH_BY_TYPE[def.type] ?? 0, def.ascii === true ? 1 : 4)
             : MAX_LENGTH_BY_TYPE[def.type],
       citizenId: def.citizenId === true,
       values: def.type === 'enum' ? (def.values ?? null) : null,
       min: def.type === 'int' ? INT_MIN : null,
       max: def.type === 'int' ? INT_MAX : null,
-      accepts: def.accepts ?? null
+      accepts: def.accepts ?? null,
+      ascii: def.ascii === true
     };
   }
 
@@ -1260,7 +1294,7 @@ export function resolveAppSchema(definition: ServiceDefinition): ResolvedService
     field.def.encrypted && field.def.type === 'string'
       ? {
           name: field.name,
-          def: { ...field.def, length: sealedLengthForChars(field.def.length ?? 255) }
+          def: { ...field.def, length: storedWidth(field.def) }
         }
       : field
   );
@@ -1413,6 +1447,8 @@ export function defineService<T, C extends ServiceContract = ServiceContract>(
       table: resolved.table,
       column,
       scope: resolved.encryptionScope,
+      // A phone's rows change hands by `citizenid` (MICA-431): bound to the phone instead.
+      binding: resolved.deviceOwned ? 'device' : 'citizen',
       hasUpdatedAt: resolved.columns.includes('updated_at')
     });
   }

@@ -202,13 +202,18 @@ describe('media:drop', () => {
       // carries one — the decision is in the write rather than in front of it.
       const flat = String(sql).replace(/\s+/g, ' ');
       expect(flat).toContain('SUM(');
-      // Charged what the source row costs as it stands, in the same statement (MICA-293): its
-      // recorded size, else measured (MICA-358).
-      expect(flat).toMatch(
-        /AND quota\.used \+ COALESCE\(src\.`stored_bytes`, IFNULL\(LENGTH\(src\.`data`\), 0\).* <= \?$/
-      );
-      // And the copy records the size it was charged.
-      expect(flat).toContain('src.`stored_bytes` FROM');
+      // Charged what the source's bytes cost, bound rather than measured off the source row
+      // (MICA-431): that row's bytes are sealed to the sender's phone, and their sealed length
+      // is a third more than the photo. Measured from the opened bytes, as every write is.
+      expect(flat).toMatch(/AND quota\.used \+ \? <= \?$/);
+      const bound = params as unknown[];
+      expect(bound.at(-2)).toBe('base64-bytes'.length);
+      // And the copy records the size it was charged, in the same position.
+      expect(flat).toContain('`alt_text`, `stored_bytes`, `kind`');
+      expect(bound[5]).toBe('base64-bytes'.length);
+      // The bytes are bound, sealed for the recipient, never selected from the source.
+      expect(flat).not.toContain('src.`data`');
+      expect(bound[2]).toBe('base64-bytes');
       // And copied from the source row only while it still exists (MICA-293).
       expect(flat).toContain("src.`id` = ? AND src.`citizenid` = ? AND src.`status` = 'active'");
       // Every placeholder is bound, which is what keeps the statement parameterized.
@@ -700,7 +705,9 @@ describe('media:create — the size a photo may actually be (MICA-116)', () => {
     // The exact hole: `mediumtext` holds 16MB, so this row was written and reported as a
     // success before the cap existed. Shaped as an image, so it is the size that refuses it
     // and not MICA-339's rule that `data` is an inline image at all.
-    const reply = await callCreate({ kind: 'photo', data: photoOf(12 * 1024 * 1024) });
+    // Eight MiB: under the column's own bound once sealed (MICA-431: an ASCII column, a byte a
+    // character, about 12 million), so the camera's cap is what refuses it.
+    const reply = await callCreate({ kind: 'photo', data: photoOf(8 * 1024 * 1024) });
 
     expect(reply.error).toMatch(/too large/i);
     expect(dbMock.insert).not.toHaveBeenCalled();

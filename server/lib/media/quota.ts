@@ -6,6 +6,7 @@ import { Buffer } from 'node:buffer';
 import { PlayerFacingError } from '../errors';
 import { MediaItem } from '@mica/shared/types';
 import { Database } from '../Database';
+import { plaintextBytesSql, sealRow } from '../contentCipher';
 import { imageHost, recordedImageHosts } from '../mediaHost';
 
 /**
@@ -172,7 +173,11 @@ const columnOf = (name: string, alias: string): string => (alias ? `${alias}.\`$
 /** What a row costs measured from its columns, reading `data` and `thumbnail` to do it. */
 const measuredBytesSql = (prefixCount: number, alias = ''): string => {
   const column = (name: string): string => columnOf(name, alias);
-  const inline = `IFNULL(LENGTH(${column('data')}), 0) + IFNULL(LENGTH(${column('thumbnail')}), 0)`;
+  // The plaintext's size, which is what `stored_bytes` records: `data` and `thumbnail` are
+  // sealed (MICA-431), and `LENGTH` of a sealed value reads a third high.
+  const inline =
+    `IFNULL(${plaintextBytesSql(column('data'))}, 0) + ` +
+    `IFNULL(${plaintextBytesSql(column('thumbnail'))}, 0)`;
   if (prefixCount === 0) return inline;
   const hosted = Array.from(
     { length: prefixCount },
@@ -308,18 +313,33 @@ export const insertWithinQuota = async (
   citizenid: string,
   prefixes: readonly string[],
   incoming: number,
-  limit: number
+  limit: number,
+  fits: (column: string, value: unknown) => void
 ): Promise<number> => {
   const columnList = columns.map((column) => `\`${column}\``).join(', ');
   const selection = columns.map(() => '?').join(', ');
   const used = usedBytesQuery(citizenid, prefixes);
+  // Sealed here, at the statement (MICA-431): the row's sealed columns bound to its phone, or
+  // to its citizenid when it is written on none, which is what the stored NULL then says.
+  // `incoming` was measured by the caller from the plaintext, as every write's size is.
+  const row: Record<string, unknown> = Object.fromEntries(
+    columns.map((column, at) => [column, values[at]])
+  );
+  // Defence in depth: this statement is built here, not by `Repository.create`, so the column
+  // check that bounds every sealed write is run here too — the repository's own, passed in. A
+  // sealed value too long for its column is truncated into one that never opens again.
+  for (const [column, value] of Object.entries(row)) fits(column, value);
+  const sealed = await sealRow(
+    'mica_media',
+    'device_id' in row ? row : { ...row, device_id: null }
+  );
 
   return await Database.insert(
     `INSERT INTO \`mica_media\` (${columnList})
      SELECT ${selection}
      FROM (${used.sql}) AS quota
      WHERE quota.used + ? <= ?`,
-    [...values, ...used.params, incoming, limit]
+    [...columns.map((column) => sealed[column]), ...used.params, incoming, limit]
   );
 };
 

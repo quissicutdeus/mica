@@ -205,7 +205,15 @@ DDL.
   must then declare `encryptionScope`: its own columns that say which thread a
   row belongs to, bound with the table, the column and `citizenid` into every
   sealed value, so a ciphertext copied into another thread does not open. `[]`
-  is a real answer (a mail row is its own thread). A scope column may never be
+  is a real answer (a mail row is its own thread). On a `deviceOwned` table the
+  value is bound to the row's phone, `device_id`, not to `citizenid` (MICA-431):
+  a handover rewrites `citizenid` on every row of the phone, and a value bound
+  to the character would stop opening there. A row with no `device_id` binds to
+  its own character, and `Repository.transferDeviceRows` refuses a table with a
+  column sealed to the character, before it moves a row. `ascii: true` beside
+  `encrypted` is for a column that only ever holds ASCII (a base64 photo): it
+  sizes the plaintext bound at one byte a character rather than four, and a
+  write with any other character is refused. A scope column may never be
   client-writable, or rewritten by anything once the row exists: the value bound
   to it would no longer open. `Repository` seals on every generic write and
   opens on every generic read; SQL written by hand calls `lib/contentCipher.ts`

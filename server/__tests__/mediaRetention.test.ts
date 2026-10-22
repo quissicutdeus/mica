@@ -408,11 +408,12 @@ describe('a proximity drop respects the recipient\u2019s quota', () => {
       expect(flat).toMatch(/AND quota\.used \+ .* <= \?$/);
       // The recipient is measured, not the sender: the citizenid bound into the subquery is
       // the same one the row is written for. No image host here, so the subquery's owner is
-      // the third value, after the recipient and their phone.
+      // the seventh value, after the recipient, their phone, the three columns sealed for them
+      // and the size (MICA-431).
       const bound = params as unknown[];
-      expect(bound[2]).toBe(bound[0]);
+      expect(bound[6]).toBe(bound[0]);
       // And the sender is who the source row is looked up by (MICA-293).
-      expect(bound.at(-2)).toBe('CID_A');
+      expect(bound.at(-3)).toBe('CID_A');
     }
   });
 

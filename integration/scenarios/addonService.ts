@@ -14,7 +14,8 @@
 
 import type { Scenario } from '../runner';
 import { db } from '../lib/db';
-import { assert, expectOk, expectRefusal, seedCitizen } from '../lib/mica';
+import { assert, expectOk, expectRefusal, harnessKeys, seedCitizen } from '../lib/mica';
+import { openSealed } from '../lib/sealed';
 import { eventually } from '../lib/wait';
 import {
   addonError,
@@ -165,12 +166,26 @@ export const addonServiceScenarios: Scenario[] = [
           pushed.delivered.length === 0 && pushed.offline[0] === who.citizenid,
           `PushToApp answered ${JSON.stringify(pushed)} for an offline character`
         );
+        // The body is sealed to the phone the row is on (MICA-431), so it is matched opened, not
+        // by SQL, with the key the harness wrote.
         await eventually(
-          async () =>
-            (await db.count(
-              'SELECT COUNT(*) FROM `mica_notifications` WHERE `citizenid` = ? AND `app` = ? AND `body` = ?',
-              [who.citizenid, journal.id, 'A new journal entry']
-            )) || null,
+          async () => {
+            const rows = await db.rows(
+              'SELECT `citizenid`, `device_id`, `body` FROM `mica_notifications` ' +
+                'WHERE `citizenid` = ? AND `app` = ?',
+              [who.citizenid, journal.id]
+            );
+            const bodies = rows.map((row) =>
+              openSealed(row.body, harnessKeys(), {
+                table: 'mica_notifications',
+                column: 'body',
+                citizenid: String(row.citizenid),
+                deviceId: (row.device_id as string | null) ?? null,
+                scope: []
+              })
+            );
+            return bodies.includes('A new journal entry') || null;
+          },
           5_000,
           signal,
           "the add-on push's persisted notification"

@@ -227,7 +227,8 @@ export const reports = defineService<Report, typeof reportsContract>({
       notNull: true,
       default: 'other'
     },
-    note: { type: 'string', length: MAX_NOTE_LENGTH },
+    // The reporter's own words, sealed like the snapshot beside it (MICA-431).
+    note: { type: 'string', length: MAX_NOTE_LENGTH, encrypted: true },
     // Separate from the implicit `status`: that is the row's lifecycle, this is how far
     // review has got. Collapsing them would make "deleted" and "dismissed" the same.
     resolution: {

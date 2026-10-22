@@ -517,10 +517,14 @@ describe('the size a row records (MICA-358)', () => {
     });
   });
 
-  it('charges a drop its source row by the recorded size first, and copies it', async () => {
+  it('reads a row by its recorded size first, else measures its plaintext', async () => {
     const { storedBytesSql } = await import('../lib/media/quota');
+    const { plaintextBytesSql } = await import('../lib/contentCipher');
+    // Measured as the plaintext, not `LENGTH` of the stored form: `data` and `thumbnail` are
+    // sealed since MICA-431, and a sealed value is a third longer than the bytes it holds.
     expect(storedBytesSql(0, 'src')).toBe(
-      'COALESCE(src.`stored_bytes`, IFNULL(LENGTH(src.`data`), 0) + IFNULL(LENGTH(src.`thumbnail`), 0))'
+      `COALESCE(src.\`stored_bytes\`, IFNULL(${plaintextBytesSql('src.`data`')}, 0) + ` +
+        `IFNULL(${plaintextBytesSql('src.`thumbnail`')}, 0))`
     );
   });
 });

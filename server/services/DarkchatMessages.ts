@@ -160,8 +160,8 @@ export const darkchatMessages = defineService<MessageRow, typeof darkchatMessage
       clientWritable: false,
       references: { table: 'mica_darkchat_members', column: 'id' }
     },
-    /** What an export's line is signed as; NULL on a member's. */
-    bot_alias: { type: 'string', length: ALIAS_MAX, clientWritable: false },
+    /** What an export's line is signed as; NULL on a member's. Sealed at rest (MICA-431). */
+    bot_alias: { type: 'string', length: ALIAS_MAX, clientWritable: false, encrypted: true },
     /** Sealed at rest (MICA-165). At most `BODY_MAX` characters, by the contract and the export. */
     body: { type: 'text', notNull: true, encrypted: true, clientWritable: false }
   },

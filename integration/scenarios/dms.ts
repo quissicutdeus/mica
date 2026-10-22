@@ -338,13 +338,27 @@ export const dmsScenarios: Scenario[] = [
         const echoed = (await pushes(sender)).filter((envelope) => envelope.event === 'dm');
         assert(echoed.length === 0, `the sender was pushed their own DM: ${show(echoed)}`);
 
+        // Sealed to the phone it landed on (MICA-431), the empty body included: opened as it is
+        // read, with the key the harness wrote.
         const notice = await eventually(
-          async () =>
-            await db.row(
-              'SELECT `title`, `body`, `deep_link` FROM `mica_notifications` ' +
+          async () => {
+            const row = await db.row(
+              'SELECT `citizenid`, `device_id`, `title`, `body`, `deep_link` ' +
+                'FROM `mica_notifications` ' +
                 "WHERE `citizenid` = ? AND `app` = 'blabber' AND `kind` = 'dm'",
               [recipient]
-            ),
+            );
+            if (!row) return null;
+            const open = (column: 'title' | 'body'): string =>
+              openSealed(row[column], harnessKeys(), {
+                table: 'mica_notifications',
+                column,
+                citizenid: String(row.citizenid),
+                deviceId: (row.device_id as string | null) ?? null,
+                scope: []
+              });
+            return { ...row, title: open('title'), body: open('body') } as Record<string, unknown>;
+          },
           5_000,
           signal,
           "the recipient's stored dm notification"

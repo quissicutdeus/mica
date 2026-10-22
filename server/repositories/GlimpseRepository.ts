@@ -4,6 +4,8 @@
 
 import { SchemaRepository, type ResolvedService } from '../lib/defineService';
 import { Database } from '../lib/Database';
+import { joinedMedia } from '../lib/media/joined';
+import { openRow } from '../lib/contentCipher';
 import type { GlimpsePost, MediaPreview } from '@mica/shared/types';
 
 /**
@@ -153,7 +155,8 @@ export class GlimpseRepository extends SchemaRepository<GlimpsePost> {
     const rows = await Database.query<any[]>(
       `SELECT a.id, a.post_id,
               m.id AS media_id, m.kind, m.data, m.url, m.thumbnail,
-              m.mime_type, m.duration_ms, m.alt_text
+              m.mime_type, m.duration_ms, m.alt_text,
+              m.citizenid AS media_citizenid, m.device_id AS media_device_id
          FROM \`mica_glimpse_attachments\` a
          JOIN \`mica_media\` m ON a.media_id = m.id AND m.status <> 'moderated'
         WHERE a.post_id IN (${ids.map(() => '?').join(', ')})
@@ -163,6 +166,8 @@ export class GlimpseRepository extends SchemaRepository<GlimpsePost> {
 
     const byPost = new Map<number, { id: number; media: MediaPreview }[]>();
     for (const row of rows ?? []) {
+      // Opened off the photo's own phone, which the join selected for this alone (MICA-431).
+      const media = openRow('mica_media', joinedMedia(row));
       const postId = Number(row.post_id);
       const list = byPost.get(postId) ?? [];
       list.push({
@@ -171,12 +176,12 @@ export class GlimpseRepository extends SchemaRepository<GlimpsePost> {
           id: row.media_id,
           kind: row.kind ?? 'photo',
           // A `mediumtext` can arrive as a Buffer, which crosses NUI as `{type:'Buffer'}`.
-          data: row.data ? String(row.data) : undefined,
+          data: media.data ?? undefined,
           url: row.url ?? undefined,
-          thumbnail: row.thumbnail ? String(row.thumbnail) : undefined,
+          thumbnail: media.thumbnail ?? undefined,
           mime_type: row.mime_type ?? undefined,
           duration_ms: row.duration_ms ?? undefined,
-          alt_text: row.alt_text ?? undefined
+          alt_text: media.alt_text ?? undefined
         }
       });
       byPost.set(postId, list);

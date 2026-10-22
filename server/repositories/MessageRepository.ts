@@ -4,7 +4,8 @@
 
 import { SchemaRepository } from '../lib/defineService';
 import { Database } from '../lib/Database';
-import { openRows } from '../lib/contentCipher';
+import { joinedMedia } from '../lib/media/joined';
+import { openRow, openRows } from '../lib/contentCipher';
 import type { Message } from '@mica/shared/types';
 
 /**
@@ -283,7 +284,8 @@ export class MessageRepository extends SchemaRepository<MessageRow> {
     const attachments = await Database.query<any[]>(
       `SELECT a.id, a.message_id,
               p.id AS media_id, p.kind, p.data, p.url, p.thumbnail,
-              p.mime_type, p.duration_ms, p.alt_text
+              p.mime_type, p.duration_ms, p.alt_text,
+              p.citizenid AS media_citizenid, p.device_id AS media_device_id
          FROM mica_messages_attachments a
          JOIN mica_media p ON a.photo_id = p.id AND p.status <> 'moderated'
         WHERE a.message_id IN (${placeholders})`,
@@ -293,6 +295,8 @@ export class MessageRepository extends SchemaRepository<MessageRow> {
     // Map attachments to messages
     const attachmentMap = new Map<number, any[]>();
     for (const att of attachments) {
+      // Opened off the photo's own phone, which the join selected for this alone (MICA-431).
+      const media = openRow('mica_media', joinedMedia(att));
       let list = attachmentMap.get(att.message_id);
       if (!list) {
         list = [];
@@ -306,12 +310,12 @@ export class MessageRepository extends SchemaRepository<MessageRow> {
         media: {
           id: att.media_id,
           kind: att.kind ?? 'photo',
-          data: att.data ? String(att.data) : undefined,
+          data: media.data ?? undefined,
           url: att.url ?? undefined,
-          thumbnail: att.thumbnail ? String(att.thumbnail) : undefined,
+          thumbnail: media.thumbnail ?? undefined,
           mime_type: att.mime_type ?? undefined,
           duration_ms: att.duration_ms ?? undefined,
-          alt_text: att.alt_text ?? undefined
+          alt_text: media.alt_text ?? undefined
         }
       });
     }

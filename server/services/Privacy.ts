@@ -7,7 +7,12 @@ import { PlayerFacingError } from '../lib/errors';
 import { Database } from '../lib/Database';
 import { AUDIT_LOG_TABLE, AuditLogger } from '../lib/AuditLogger';
 import { declaredServices, type ColumnDef, type ColumnType } from '../lib/defineService';
-import { contextColumns, encryptedColumnsOf, openRow } from '../lib/contentCipher';
+import {
+  contextColumns,
+  encryptedColumnsOf,
+  openRow,
+  plaintextBytesSql
+} from '../lib/contentCipher';
 import {
   ownedTables,
   purgeOwnedRows,
@@ -393,10 +398,17 @@ export const exportFilterFor = (table: string): { sql: string; params: unknown[]
 };
 
 export const exportSql = (plan: ExportPlan, filter: string | null = null): string => {
+  const sealedHere = new Set(encryptedColumnsOf(plan.table).map((entry) => entry.column));
   const select = [
     ...plan.plain.map(ident),
     ...plan.context.map(ident),
-    ...plan.sized.map((name) => `LENGTH(${ident(name)}) AS ${ident(`${name}_bytes`)}`)
+    // A sealed column's size is its plaintext's (MICA-431): what the player stored, not the
+    // ciphertext, which reads a third high.
+    ...plan.sized.map(
+      (name) =>
+        `${sealedHere.has(name) ? plaintextBytesSql(ident(name)) : `LENGTH(${ident(name)})`} ` +
+        `AS ${ident(`${name}_bytes`)}`
+    )
   ];
   return (
     `SELECT ${select.length > 0 ? select.join(', ') : '1 AS `present`'} FROM ${ident(plan.table)} ` +

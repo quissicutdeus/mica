@@ -14,12 +14,17 @@ import {
   assertStorableData,
   hostedUrlPrefixes,
   insertWithinQuota,
-  prefixPatterns,
   quotaBytes,
   storedBytesOf,
-  storedBytesSql,
   usedBytesQuery
 } from './quota';
+import {
+  UNREADABLE_CONTENT,
+  contentContext,
+  encryptedColumn,
+  sealContent,
+  sealRow
+} from '../contentCipher';
 import { traceOf } from '../sqlErrors';
 import { who } from '../who';
 
@@ -37,17 +42,23 @@ import { who } from '../who';
  */
 const COPIED_COLUMNS = [
   'kind',
-  'data',
   'url',
-  'thumbnail',
   'mime_type',
   'width',
   'height',
   'duration_ms',
-  'byte_size',
-  'alt_text',
-  'stored_bytes'
+  'byte_size'
 ] as const;
+
+/**
+ * The columns a copy cannot take from the sender's row as stored (MICA-431): sealed to the
+ * sender's phone, they would not open on the recipient's. Each is opened once and sealed again
+ * per recipient, and bound into the same `INSERT … SELECT` — so a copy still exists only if its
+ * source does. `stored_bytes` is bound beside them, measured from the opened bytes: a sealed
+ * value is longer than the bytes it holds, and a copy charged by its ciphertext would cost its
+ * recipient a third more than it cost the sender.
+ */
+const RESEALED_COLUMNS = ['data', 'thumbnail', 'alt_text'] as const;
 
 /** A row about to be written, with the size `stored_bytes` records for it (MICA-358). */
 const withStoredBytes = (
@@ -150,7 +161,8 @@ export class MediaRepository extends SchemaRepository<MediaItem> {
       citizenid,
       prefixes,
       storedBytesOf(item, prefixes),
-      limit
+      limit,
+      (column, value) => this.assertFitsColumn(column, value)
     );
 
     // Zero rows inserted, so no insert id: the predicate refused. This is the only way
@@ -222,7 +234,13 @@ export class MediaRepository extends SchemaRepository<MediaItem> {
   async copyToPlayers(citizenids: readonly string[], source: MediaItem): Promise<string[]> {
     if (citizenids.length === 0) return [];
 
-    const columns = ['citizenid', 'device_id', ...COPIED_COLUMNS];
+    const columns = [
+      'citizenid',
+      'device_id',
+      ...RESEALED_COLUMNS,
+      'stored_bytes',
+      ...COPIED_COLUMNS
+    ];
     // Literals rather than payload keys, and still held to the table's own allowlist:
     // a column renamed out from under this list fails loudly instead of building SQL.
     for (const column of columns) {
@@ -232,11 +250,16 @@ export class MediaRepository extends SchemaRepository<MediaItem> {
     }
 
     const columnList = columns.map((column) => `\`${column}\``).join(', ');
+    const bound = ['?', '?', ...RESEALED_COLUMNS.map(() => '?'), '?'].join(', ');
     const copied = COPIED_COLUMNS.map((column) => `src.\`${column}\``).join(', ');
     // The source by id **and** owner and still active, the three things `drop` checked.
     const stillThere = "src.`id` = ? AND src.`citizenid` = ? AND src.`status` = 'active'";
     const limit = quotaBytes();
-    const prefixes = limit > 0 ? await hostedUrlPrefixes() : [];
+    const prefixes = await hostedUrlPrefixes();
+
+    const opened = this.openedForCopy(source);
+    if (opened === null) return [];
+    const bytes = storedBytesOf(opened as Partial<MediaItem>, prefixes);
 
     const written = await Promise.all(
       citizenids.map(async (citizenid) => {
@@ -244,32 +267,37 @@ export class MediaRepository extends SchemaRepository<MediaItem> {
           // Each copy lands on the phone its recipient is on (MICA-282) — they are nearby,
           // so almost always the one in their hand.
           const deviceId = await phoneForCitizen(citizenid);
+          const sealed = await sealRow(this.tableName, {
+            citizenid,
+            device_id: deviceId,
+            data: opened.data,
+            thumbnail: opened.thumbnail,
+            alt_text: opened.alt_text
+          });
+          const values = [
+            citizenid,
+            deviceId,
+            ...RESEALED_COLUMNS.map((column) => sealed[column]),
+            bytes
+          ];
           let id: number;
           if (limit <= 0) {
             id = await Database.insert(
               `INSERT INTO \`${this.tableName}\` (${columnList})
-               SELECT ?, ?, ${copied}
+               SELECT ${bound}, ${copied}
                FROM \`${this.tableName}\` AS src
                WHERE ${stillThere}`,
-              [citizenid, deviceId, source.id, source.citizenid]
+              [...values, source.id, source.citizenid]
             );
           } else {
             const used = usedBytesQuery(citizenid, prefixes);
             id = await Database.insert(
               `INSERT INTO \`${this.tableName}\` (${columnList})
-               SELECT ?, ?, ${copied}
+               SELECT ${bound}, ${copied}
                FROM \`${this.tableName}\` AS src, (${used.sql}) AS quota
                WHERE ${stillThere}
-               AND quota.used + ${storedBytesSql(prefixes.length, 'src')} <= ?`,
-              [
-                citizenid,
-                deviceId,
-                ...used.params,
-                source.id,
-                source.citizenid,
-                ...prefixPatterns(prefixes),
-                limit
-              ]
+               AND quota.used + ? <= ?`,
+              [...values, ...used.params, source.id, source.citizenid, bytes, limit]
             );
           }
           return id ? citizenid : null;
@@ -281,6 +309,35 @@ export class MediaRepository extends SchemaRepository<MediaItem> {
     );
 
     return written.filter((citizenid): citizenid is string => citizenid !== null);
+  }
+
+  /**
+   * The sender's sealed columns, opened, for `copyToPlayers` to seal again per recipient
+   * (MICA-431) — from `source`, which `drop` read and opened through `findById`. A photo or a
+   * poster frame that did not open there is the padlock, and copied it would be the padlock
+   * sealed so it opens, on every recipient's phone, for good: null then, and no copy. Neither
+   * can be the padlock honestly, being images. Alt text can, and is copied as the sender sees it.
+   */
+  private openedForCopy(source: MediaItem): {
+    data: string | null;
+    thumbnail: string | null;
+    alt_text: string | null;
+    url: string | undefined;
+    byte_size: number | undefined;
+  } | null {
+    const data = binaryText(source.data);
+    const thumbnail = binaryText(source.thumbnail);
+    if (data === UNREADABLE_CONTENT || thumbnail === UNREADABLE_CONTENT) {
+      console.error(`[media] copy of photo ${String(source.id)} skipped: it does not open.`);
+      return null;
+    }
+    return {
+      data,
+      thumbnail,
+      alt_text: binaryText(source.alt_text),
+      url: typeof source.url === 'string' ? source.url : undefined,
+      byte_size: typeof source.byte_size === 'number' ? source.byte_size : undefined
+    };
   }
 
   /**
@@ -338,12 +395,18 @@ export class MediaRepository extends SchemaRepository<MediaItem> {
     deviceId: string,
     thumbnail: string
   ): Promise<boolean> {
+    // Sealed to the phone the row is on (MICA-431); the predicate below names that phone, so a
+    // row on another one is matched by nothing. Sized from the plaintext, as every write is.
+    const entry = encryptedColumn(this.tableName, 'thumbnail');
+    const stored = entry
+      ? await sealContent(contentContext(entry, { citizenid, device_id: deviceId }), thumbnail)
+      : thumbnail;
     return await Database.update(
       `UPDATE \`${this.tableName}\` SET \`thumbnail\` = ?, ` +
         '`stored_bytes` = `stored_bytes` + ? ' +
         'WHERE `id` = ? AND `citizenid` = ? AND `device_id` = ? ' +
         "AND `status` = 'active' AND `thumbnail` IS NULL",
-      [thumbnail, storedBytesOf({ thumbnail }, []), id, citizenid, deviceId]
+      [stored, storedBytesOf({ thumbnail }, []), id, citizenid, deviceId]
     );
   }
 
@@ -363,6 +426,14 @@ export class MediaRepository extends SchemaRepository<MediaItem> {
  * `lib/nodeCrypto.d.ts` types it. That is the one other type that reaches here, so it is the
  * one this narrows to.
  */
+/** A text column's value as a string, whichever form the driver handed it in. */
+const binaryText = (value: unknown): string | null =>
+  value === null || value === undefined
+    ? null
+    : typeof value === 'string'
+      ? value
+      : (value as Bytes).toString('utf8');
+
 const coerceBinaryText = (item: MediaItem): MediaItem => {
   if (item.data && typeof item.data !== 'string') {
     item.data = (item.data as Bytes).toString('utf8');

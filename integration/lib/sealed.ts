@@ -17,6 +17,10 @@ import { createDecipheriv } from 'node:crypto';
  *
  * `$mc1$<kid>$<base64(iv[12] || ciphertext || tag[16])>`, AAD the NUL-joined
  * `micaOS content v1`, table, column, the row's citizenid, then the service's scope columns.
+ *
+ * A phone's own table (MICA-431) is bound to the phone instead: `micaOS device content v1`,
+ * table, column, `device` and the row's `device_id` — or, on a row with no phone, `citizen` and
+ * its citizenid — then the scope. Say which by passing the row's `deviceId`, null included.
  */
 export const SEALED_PREFIX = '$mc1$';
 
@@ -25,13 +29,33 @@ const IV_BYTES = 12;
 const TAG_BYTES = 16;
 const KEY_BYTES = 32;
 const AAD_DOMAIN = 'micaOS content v1';
+const AAD_DEVICE_DOMAIN = 'micaOS device content v1';
 
 export interface SealedContext {
   table: string;
   column: string;
   citizenid: string;
+  /**
+   * The row's `device_id`, on a table sealed to the phone (MICA-431). Absent on one sealed to
+   * the character; null or `''` on a phone's table whose row is on no phone.
+   */
+  deviceId?: string | null;
   scope: readonly (string | number | null)[];
 }
+
+/** The AAD's owner half: the citizenid, or the phone's kind of owner and its id. */
+const ownerOf = (context: SealedContext): string[] => {
+  if (context.deviceId === undefined)
+    return [AAD_DOMAIN, context.table, context.column, context.citizenid];
+  const phone = context.deviceId !== null && context.deviceId !== '';
+  return [
+    AAD_DEVICE_DOMAIN,
+    context.table,
+    context.column,
+    phone ? 'device' : 'citizen',
+    phone ? String(context.deviceId) : context.citizenid
+  ];
+};
 
 /** A keyring file's keys by id: `<kid> <base64 of 32 bytes>` a line, `#` and blanks ignored. */
 export const parseKeyFile = (text: string): Map<string, Bytes> => {
@@ -78,10 +102,7 @@ export const openSealed = (
 
   const aad = Buffer.from(
     [
-      AAD_DOMAIN,
-      context.table,
-      context.column,
-      context.citizenid,
+      ...ownerOf(context),
       ...context.scope.map((value) => (value === null ? '' : String(value)))
     ].join('\0'),
     'utf8'

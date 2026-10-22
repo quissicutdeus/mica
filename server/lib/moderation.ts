@@ -6,7 +6,13 @@ import { Database } from './Database';
 import { AuditLogger } from './AuditLogger';
 import { PlayerFacingError } from './errors';
 import { isDuplicateKey } from './sqlErrors';
-import { contentContext, encryptedColumn, isSealed, openContent } from './contentCipher';
+import {
+  contentContext,
+  contextColumns,
+  encryptedColumn,
+  isSealed,
+  openContent
+} from './contentCipher';
 import type { ReportCategory } from '@mica/shared/types';
 
 /**
@@ -127,7 +133,12 @@ export const summariseTarget = async (
    * report rather than to the content.
    */
   const sealed = encryptedColumn(table, previewColumn);
-  const scope = (sealed?.scope ?? []).map((column) => `, \`${column}\``).join('');
+  // What the value is bound to (`contextColumns`): the scope, and on a phone's own table the
+  // phone (MICA-431) — `citizenid` is selected below whatever.
+  const scope = (sealed ? contextColumns(sealed) : [])
+    .filter((column) => column !== 'citizenid')
+    .map((column) => `, \`${column}\``)
+    .join('');
   // `table`, `previewColumn` and the scope come from declarations, never from the payload.
   const row = await Database.single<Record<string, unknown>>(
     `SELECT \`citizenid\`, \`status\`, \`${previewColumn}\` AS preview${scope}

@@ -47,9 +47,14 @@ export const places = defineService<SavedPlace, typeof placesContract>({
   app: 'places',
   access: { read: 'owner', write: 'owner' },
   statuses: ['active', 'deleted', 'moderated'],
+  /**
+   * The name and the street are sealed at rest (MICA-431), bound to the phone. The coordinates
+   * are not: they are numbers, and sealing them is a type change (MICA-432).
+   */
+  encryptionScope: [],
   schema: {
-    name: { type: 'string', length: MAX_NAME_LENGTH, notNull: true },
-    street_label: { type: 'string', length: MAX_STREET_LABEL_LENGTH },
+    name: { type: 'string', length: MAX_NAME_LENGTH, notNull: true, encrypted: true },
+    street_label: { type: 'string', length: MAX_STREET_LABEL_LENGTH, encrypted: true },
     x: { type: 'float', clientWritable: false },
     y: { type: 'float', clientWritable: false },
     z: { type: 'float', clientWritable: false }

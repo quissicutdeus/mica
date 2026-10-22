@@ -139,7 +139,8 @@ describe('status and backfill', () => {
     const counted = dbMock.query.mock.calls.find((c) =>
       String(c[0]).includes('COUNT(*) AS `n` FROM `mica_notifications`')
     );
-    expect(counted?.[1]).toEqual(['blabber', 'dm']);
+    // And only a body still bare: a sealed one is past blanking (MICA-431).
+    expect(counted?.[1]).toEqual(['blabber', 'dm', '$mc1$%']);
     expect(dbMock.update).not.toHaveBeenCalled();
   });
 

@@ -126,20 +126,28 @@ one `status` or `backfill` runs at a time.
   is refused, since a key file with one id twice is refused whole. A path is
   refused: "keygen takes no path". Use `set`, never `setr`, which would send the
   path to every client.
+- **`status`** and **`backfill`** cover every sealed column, a phone's own
+  content included (MICA-431): notes, contacts, the call log, saved places,
+  photos, notifications, a report's note and a Dark Chat export's alias, as well
+  as the conversation bodies. A phone's rows are read under the phone they are
+  bound to, so a row that has changed hands still counts and seals correctly.
 - **`status`** counts, per sealed column, the rows under the active key, under
   each older key, still plaintext, sealed but unreadable, and plaintext too long
-  to seal, plus persisted DM notifications that still carry message text.
+  to seal (a note, say, longer than about 12,276 characters, which `backfill`
+  reports and leaves as it is), plus persisted DM notifications that still carry
+  message text.
 - **`backfill`** is the dry run of the same walk. **`backfill --apply`** seals
   every plaintext body, re-seals every body under an older key, and blanks the
-  old DM notifications. It walks each table by id, `--batch N` rows at a time
-  (default 500, at most 5000), one compare-and-set `UPDATE` per row, so no
-  statement locks or rewrites a table, and a body a player edits mid-run is left
-  for the next run rather than overwritten. `updated_at` is pinned, so nothing
-  reads as edited. A second run changes nothing. It refuses to start without a
-  usable key. After the bodies it walks the import ledger the same way and keys
-  each qb-phone message entry still holding its body verbatim with an HMAC under
-  the active key (MICA-340). An entry stored as a SHA-1, or keyed under an older
-  key, cannot be re-keyed from the ledger alone and is counted instead; a
+  old DM notifications, before it seals, so a preview is never kept sealed. It
+  walks each table by id, `--batch N` rows at a time (default 500, at most
+  5000), one compare-and-set `UPDATE` per row, so no statement locks or rewrites
+  a table, and a body a player edits mid-run is left for the next run rather
+  than overwritten. `updated_at` is pinned, so nothing reads as edited. A second
+  run changes nothing. It refuses to start without a usable key. After the
+  bodies it walks the import ledger the same way and keys each qb-phone message
+  entry still holding its body verbatim with an HMAC under the active key
+  (MICA-340). An entry stored as a SHA-1, or keyed under an older key, cannot be
+  re-keyed from the ledger alone and is counted instead; a
   `micaimport qb-phone --apply` re-run keys those it still has the source row
   for. `status` and `backfill` warn that entries under an older key match a
   re-import only while that key stays in the key file.

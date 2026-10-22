@@ -44,25 +44,32 @@ const dbMock = vi.hoisted(() => {
       return { affectedRows: 1 };
     }
     const notes = store.tables.get('mica_notifications') ?? [];
-    const dm = (r: Row, p: any[]) => r.app === p[0] && r.kind === p[1] && r.body !== '';
+    // A preview still bare: not empty, and not sealed (MICA-431) — the pattern is bound last.
+    // Read off the statement, so a statement that dropped the filter is answered without it.
+    const bareOnly = sql.includes("`body` <> '' AND `body` NOT LIKE ?");
+    const dm = (r: Row, p: any[]) =>
+      r.app === p[0] &&
+      r.kind === p[1] &&
+      r.body !== '' &&
+      !(bareOnly && String(r.body).startsWith(String(p[2]).replace(/%$/, '')));
     if (sql.startsWith('SELECT COUNT(*) AS `n` FROM `mica_notifications`')) {
       return [{ n: notes.filter((r) => dm(r, params)).length }];
     }
     if (sql.startsWith('SELECT `id` FROM `mica_notifications`')) {
-      const [after, app, kind, limit] = params;
+      const [after, app, kind, pattern, limit] = params;
       return notes
-        .filter((r) => r.id > after && dm(r, [app, kind]))
+        .filter((r) => r.id > after && dm(r, [app, kind, pattern]))
         .toSorted((a, b) => a.id - b.id)
         .slice(0, limit)
         .map((r) => ({ id: r.id }));
     }
     if (sql.startsWith('UPDATE `mica_notifications`')) {
       store.updates.push(sql);
-      const ids = params.slice(0, -2);
-      const [app, kind] = params.slice(-2);
+      const ids = params.slice(0, -3);
+      const [app, kind, pattern] = params.slice(-3);
       let affectedRows = 0;
       for (const r of notes) {
-        if (ids.includes(r.id) && dm(r, [app, kind])) {
+        if (ids.includes(r.id) && dm(r, [app, kind, pattern])) {
           r.body = '';
           affectedRows += 1;
         }
@@ -557,6 +564,52 @@ describe('the walk is bounded', () => {
     const writes = store.updates.filter((s) => s.startsWith('UPDATE `mica_notifications`'));
     expect(writes).toHaveLength(3);
     expect(writes.every((s) => s.includes('`updated_at` = `updated_at`'))).toBe(true);
+  });
+
+  /**
+   * MICA-431: the body column is itself sealed now, so a DM notification's `''` is stored
+   * sealed. Blanking it would write a bare `''` the walk then seals again, every run, forever;
+   * and a preview the walk sealed before the blank would be kept. So the blank runs first and
+   * reaches only a bare body.
+   */
+  it('blanks before it seals, never a sealed body, and a second run writes nothing', async () => {
+    const BODIES: EncryptedColumn = {
+      table: 'mica_notifications',
+      column: 'body',
+      scope: [],
+      hasUpdatedAt: true,
+      binding: 'device'
+    };
+    registerEncryptedColumn(BODIES);
+    try {
+      useKeys(keyFile(['new']));
+      store.capacity.set('mica_notifications.body', 1422);
+      const owned = { citizenid: 'CIT_A', device_id: 'PHONE1', app: 'blabber', kind: 'dm' };
+      const sealedEmpty = { id: 2, ...owned, body: '' };
+      sealedEmpty.body = await seal(BODIES, sealedEmpty, '');
+      store.tables.set('mica_notifications', [
+        { id: 1, ...owned, body: 'meet me at 10', updated_at: 'then' },
+        { ...sealedEmpty, updated_at: 'then' },
+        { id: 3, ...owned, kind: 'mention', body: '@alice hi', updated_at: 'then' }
+      ]);
+      const sealedBefore = store.tables.get('mica_notifications')![1].body;
+
+      const first = await walkContent({ apply: true, notifications: DM, pause: noPause });
+      expect(first.notifications).toEqual({ pending: 0, blanked: 1 });
+      const rows = store.tables.get('mica_notifications')!;
+      // The preview was blanked, then sealed: nothing of it is left, in either form.
+      expect(rows.map((r) => open(BODIES, r))).toEqual(['', '', '@alice hi']);
+      expect(JSON.stringify(rows)).not.toContain('meet me');
+      // The sealed `''` was never touched.
+      expect(rows[1].body).toBe(sealedBefore);
+
+      store.updates = [];
+      const second = await walkContent({ apply: true, notifications: DM, pause: noPause });
+      expect(second.notifications).toEqual({ pending: 0, blanked: 0 });
+      expect(store.updates).toEqual([]);
+    } finally {
+      unregisterEncryptedColumnForTests(BODIES.table, BODIES.column);
+    }
   });
 
   it('refuses a batch size outside 1..MAX_BATCH', async () => {

@@ -62,6 +62,11 @@ import { mail, SendSystemEmail } from '../services/Mail';
 import { reports } from '../services/Reports';
 import { conversations } from '../services/Conversations';
 import { buildExport } from '../services/Privacy';
+import { notes } from '../services/Notes';
+import { NOTE_CONTENT_MAX, NOTE_TITLE_MAX } from '../../web/src/apps/notes/limits';
+import { media } from '../services/Media';
+import { blabber } from '../services/Blabber';
+import { getNotificationsRepository } from '../services/Notifications';
 import { MESSAGE_BODY_MAX } from '@mica/shared/contracts/messages';
 import { MAIL_CONTENT_MAX } from '@mica/shared/contracts/mail';
 
@@ -74,21 +79,99 @@ const ROOT = join(__dirname, '..', '..');
  * statement in them is then held, one by one, to the function it sits in (see `sealedSql`).
  * A table with no files is still listed: it is encrypted, and nothing names it by literal.
  */
-const ALLOWLIST: Record<string, { column: string; files: readonly string[] }> = {
-  mica_messages: {
-    column: 'message',
-    files: [
-      'server/repositories/MessageRepository.ts',
-      'server/repositories/ConversationRepository.ts',
-      'server/lib/seed.ts',
-      'server/services/Seed.ts',
-      'server/lib/import/write.ts'
-    ]
-  },
-  mica_blabber_dms: { column: 'body', files: ['server/services/DirectMessages.ts'] },
-  mica_darkchat_messages: { column: 'body', files: ['server/services/DarkchatMessages.ts'] },
-  mica_mail: { column: 'content', files: ['server/services/Mail.ts'] },
-  mica_reports: { column: 'target_preview', files: [] }
+const ALLOWLIST: Record<string, readonly string[]> = {
+  'mica_messages.message': [
+    'server/repositories/MessageRepository.ts',
+    'server/repositories/ConversationRepository.ts',
+    'server/lib/seed.ts',
+    'server/services/Seed.ts',
+    'server/lib/import/write.ts',
+    'integration/scenarios/crypto.ts',
+    'integration/scenarios/exports.ts',
+    'integration/scenarios/importer.ts',
+    'integration/scenarios/messages.ts',
+    'integration/scenarios/retention.ts'
+  ],
+  'mica_blabber_dms.body': ['server/services/DirectMessages.ts'],
+  'mica_darkchat_messages.body': [
+    'server/services/DarkchatMessages.ts',
+    'integration/scenarios/darkchat.ts'
+  ],
+  'mica_darkchat_messages.bot_alias': [
+    'server/services/DarkchatMessages.ts',
+    'integration/scenarios/darkchat.ts'
+  ],
+  'mica_mail.content': ['server/services/Mail.ts', 'integration/scenarios/crypto.ts'],
+  'mica_reports.target_preview': [],
+  'mica_reports.note': [],
+  // MICA-431: the phone's own private content, bound to the phone.
+  'mica_notes.title': ['integration/scenarios/retention.ts'],
+  'mica_notes.content': ['integration/scenarios/retention.ts'],
+  'mica_contacts.firstname': [
+    'server/lib/import/write.ts',
+    'server/lib/seed.ts',
+    'integration/scenarios/importer.ts',
+    'integration/scenarios/retention.ts'
+  ],
+  'mica_contacts.lastname': ['server/lib/import/write.ts', 'server/lib/seed.ts'],
+  'mica_contacts.email': [],
+  'mica_phone_call_log.number': [],
+  'mica_places.name': [],
+  'mica_places.street_label': [],
+  // The five joins open the photo off its own phone (`lib/media/joined.ts`).
+  'mica_media.data': [
+    'server/lib/import/write.ts',
+    'server/repositories/BlabberRepository.ts',
+    'server/repositories/GlimpseRepository.ts',
+    'server/repositories/MarketplaceRepository.ts',
+    'server/repositories/MessageRepository.ts',
+    'server/services/Spark.ts',
+    'integration/scenarios/http.ts'
+  ],
+  'mica_media.thumbnail': [
+    'server/repositories/BlabberRepository.ts',
+    'server/repositories/GlimpseRepository.ts',
+    'server/repositories/MarketplaceRepository.ts',
+    'server/repositories/MessageRepository.ts',
+    'server/services/Spark.ts'
+  ],
+  'mica_media.alt_text': [
+    'server/repositories/BlabberRepository.ts',
+    'server/repositories/GlimpseRepository.ts',
+    'server/repositories/MarketplaceRepository.ts',
+    'server/repositories/MessageRepository.ts',
+    'server/services/Spark.ts'
+  ],
+  'mica_notifications.title': [
+    'server/services/Notifications.ts',
+    'integration/scenarios/dms.ts',
+    'integration/scenarios/glimpse.ts'
+  ],
+  'mica_notifications.body': [
+    'server/services/Notifications.ts',
+    'integration/scenarios/addonService.ts',
+    'integration/scenarios/dms.ts',
+    'integration/scenarios/glimpse.ts'
+  ]
+};
+
+/**
+ * In-server scenarios that touch an encrypted column raw **on purpose**, by file and column,
+ * never by line: each plants a plaintext row the way a database from before a key holds one,
+ * and either reads it back raw to prove nothing sealed it yet or lets a purge delete it unread.
+ * micaOS opens plaintext unchanged, so neither is a sealed value read as text. Anything else in
+ * `integration/` goes through `integration/lib/sealed.ts`.
+ */
+const RAW_ON_PURPOSE: Record<string, readonly string[]> = {
+  // A mail body stored before a key: `micacrypt status` must leave it, `backfill` seal it.
+  'integration/scenarios/crypto.ts': ['mica_mail.content'],
+  // Fixture rows for retention and the character purge, written plain and deleted unread.
+  'integration/scenarios/retention.ts': [
+    'mica_messages.message',
+    'mica_notes.title',
+    'mica_notes.content',
+    'mica_contacts.firstname'
+  ]
 };
 
 /** The calls that open or seal. The function holding the SQL has to make one. */
@@ -99,7 +182,9 @@ const HELPERS: ReadonlySet<string> = new Set([
   'tryOpenContent',
   'sealRow',
   'sealContent',
-  'sealContentWith'
+  'sealContentWith',
+  // The in-server suite's own reader (`integration/lib/sealed.ts`).
+  'openSealed'
 ]);
 
 /**
@@ -188,6 +273,7 @@ const statementText = (node: ts.Node): string => {
 };
 
 interface SealedSql {
+  /** `table.column`, the allowlist's key. */
   table: string;
   file: string;
   line: number;
@@ -220,7 +306,7 @@ export const sealedSql = (text: string, file: string): SealedSql[] => {
         let fn: ts.Node | undefined = node.parent;
         while (fn && !isFunctionLike(fn)) fn = fn.parent;
         out.push({
-          table: entry.table,
+          table: `${entry.table}.${entry.column}`,
           file,
           line: sourceFile.getLineAndCharacterOfPosition(node.getStart()).line + 1,
           handled: callsHelper(fn ?? sourceFile)
@@ -234,9 +320,16 @@ export const sealedSql = (text: string, file: string): SealedSql[] => {
   return out;
 };
 
+/**
+ * `server/`, and `integration/` (MICA-431): the in-server suite reads the database as it is, and
+ * on hoth a content key is loaded, so a scenario asserting on a sealed column raw fails there
+ * and nowhere else. It opens through its own reader, `integration/lib/sealed.ts`.
+ */
 const scan = (): SealedSql[] =>
-  walk(join(ROOT, 'server')).flatMap((full) =>
-    sealedSql(readFileSync(full, 'utf8'), relative(ROOT, full).split('\\').join('/'))
+  ['server', 'integration'].flatMap((dir) =>
+    walk(join(ROOT, dir)).flatMap((full) =>
+      sealedSql(readFileSync(full, 'utf8'), relative(ROOT, full).split('\\').join('/'))
+    )
   );
 
 describe('the encrypted-column guard (MICA-165)', () => {
@@ -248,9 +341,7 @@ describe('the encrypted-column guard (MICA-165)', () => {
     const declared = encryptedColumns()
       .map((entry) => `${entry.table}.${entry.column}`)
       .sort();
-    const listed = Object.entries(ALLOWLIST)
-      .map(([table, { column }]) => `${table}.${column}`)
-      .sort();
+    const listed = Object.keys(ALLOWLIST).sort();
     expect(declared, 'a column was encrypted or decrypted without this list moving').toEqual(
       listed
     );
@@ -264,14 +355,29 @@ describe('the encrypted-column guard (MICA-165)', () => {
       'mica_messages.message': ['conversation_id'],
       'mica_blabber_dms.body': ['from_account', 'to_account'],
       'mica_darkchat_messages.body': ['channel_id'],
+      'mica_darkchat_messages.bot_alias': ['channel_id'],
       'mica_mail.content': [],
-      'mica_reports.target_preview': ['target_table', 'target_id']
+      'mica_reports.target_preview': ['target_table', 'target_id'],
+      'mica_reports.note': ['target_table', 'target_id'],
+      'mica_notes.title': [],
+      'mica_notes.content': [],
+      'mica_contacts.firstname': [],
+      'mica_contacts.lastname': [],
+      'mica_contacts.email': [],
+      'mica_phone_call_log.number': [],
+      'mica_places.name': [],
+      'mica_places.street_label': [],
+      'mica_media.data': [],
+      'mica_media.thumbnail': [],
+      'mica_media.alt_text': [],
+      'mica_notifications.title': [],
+      'mica_notifications.body': []
     });
   });
 
   it('refuses SQL over an encrypted column in a file nobody listed', () => {
     const strays = scan()
-      .filter(({ table, file }) => !ALLOWLIST[table]?.files.includes(file))
+      .filter(({ table, file }) => !ALLOWLIST[table]?.includes(file))
       .map(({ table, file, line }) => `${file}:${line} (${table})`);
     expect(strays, 'open or seal through lib/contentCipher.ts, then list the file here').toEqual(
       []
@@ -280,14 +386,24 @@ describe('the encrypted-column guard (MICA-165)', () => {
 
   it('refuses such SQL in a function that neither opens nor seals', () => {
     const raw = scan()
-      .filter(({ handled }) => !handled)
+      .filter(({ handled, table, file }) => !handled && !RAW_ON_PURPOSE[file]?.includes(table))
       .map(({ table, file, line }) => `${file}:${line} (${table})`);
     expect(raw, 'the function holding this SQL calls no open or seal helper').toEqual([]);
   });
 
+  it('drops a raw-on-purpose entry that no longer matches raw SQL', () => {
+    const raw = scan().filter(({ handled }) => !handled);
+    const stale = Object.entries(RAW_ON_PURPOSE).flatMap(([file, columns]) =>
+      columns
+        .filter((column) => !raw.some((hit) => hit.file === file && hit.table === column))
+        .map((column) => `${file} (${column})`)
+    );
+    expect(stale).toEqual([]);
+  });
+
   it('drops a listed file that no longer names its column', () => {
     const found = scan();
-    const stale = Object.entries(ALLOWLIST).flatMap(([table, { files }]) =>
+    const stale = Object.entries(ALLOWLIST).flatMap(([table, files]) =>
       files
         .filter((file) => !found.some((hit) => hit.table === table && hit.file === file))
         .map((file) => `${file} (${table})`)
@@ -365,6 +481,18 @@ describe('what the declarations mean for size', () => {
     expect(MAIL_CONTENT_MAX).toBe(maxPlaintextChars(65535));
   });
 
+  it('holds a note to what fits sealed, and the notes editor caps typing at it (MICA-431)', () => {
+    expect(rule(notes, 'content')).toBe(maxPlaintextChars(65535));
+    expect(NOTE_CONTENT_MAX).toBe(maxPlaintextChars(65535));
+    expect(rule(notes, 'title')).toBe(NOTE_TITLE_MAX);
+    const editor = readFileSync(
+      join(ROOT, 'web/src/apps/notes/components/NoteEditor.svelte'),
+      'utf8'
+    );
+    expect(editor).toContain('maxlength={NOTE_CONTENT_MAX}');
+    expect(editor).toContain('maxlength={NOTE_TITLE_MAX}');
+  });
+
   it('keeps a varchar plaintext bound and emits the column as wide as its sealed form', () => {
     expect(rule(directMessages, 'body')).toBe(500);
     expect(stored(directMessages, 'body').length).toBe(sealedLengthForChars(500));
@@ -385,6 +513,36 @@ describe('what the declarations mean for size', () => {
     );
     expect(text).toContain(`width: ${sealedLengthForChars(500)}`);
     expect(text).toContain(`width: ${sealedLengthForChars(300)}`);
+  });
+
+  it('matches migration 0013, whose widths are frozen, for every varchar MICA-431 sealed', () => {
+    const text = readFileSync(
+      join(ROOT, 'server/migrations/0013_private_content_widens_its_columns.ts'),
+      'utf8'
+    ).replace(/\s+/g, ' ');
+    const sealedHere = [
+      ['notes', 'title'],
+      ['contacts', 'firstname'],
+      ['contacts', 'lastname'],
+      ['contacts', 'email'],
+      ['phone_call_log', 'number'],
+      ['places', 'name'],
+      ['places', 'street_label'],
+      ['media', 'alt_text'],
+      ['notifications', 'title'],
+      ['notifications', 'body'],
+      ['reports', 'note'],
+      ['darkchat_messages', 'bot_alias']
+    ];
+    for (const [id, column] of sealedHere) {
+      const service = declaredServices.find((s) => s.id === id)!;
+      const def = service.fields.find((f: any) => f.name === column)!.def as any;
+      expect(def.type, `${id}.${column}`).toBe('string');
+      expect(text, `${id}.${column}`).toContain(`table: '${service.table}', columns: [`);
+      expect(text, `${id}.${column}`).toContain(`{ column: '${column}', width: ${def.length},`);
+      // As wide as its plaintext bound, sealed at four bytes a character.
+      expect(def.length).toBe(sealedLengthForChars(service.columnRules[column].maxLength!));
+    }
   });
 
   it('registers a declared table exactly once', () => {
@@ -432,6 +590,43 @@ describe('what an encrypted declaration may say', () => {
     ['a varchar too long to seal', {}, { length: 5000 }, /Declare it 'text'/]
   ])('refuses %s', (_label, over, column, message) => {
     expect(() => declare(over, column)).toThrow(message);
+  });
+
+  it('refuses device_id in the scope, which a phone-bound value binds already (MICA-431)', () => {
+    expect(() =>
+      resolveAppSchema({
+        id: 'sealed_device_probe',
+        deviceOwned: true,
+        access: { read: 'owner', write: 'owner' },
+        schema: { body: { type: 'string', length: 100, encrypted: true } },
+        encryptionScope: ['device_id']
+      } as any)
+    ).toThrow(/cannot bind/);
+  });
+
+  it('sizes an ASCII column at one byte a character, and refuses ascii alone', () => {
+    const photo = resolveAppSchema({
+      id: 'sealed_ascii_probe',
+      schema: { data: { type: 'mediumtext', encrypted: true, ascii: true } },
+      encryptionScope: []
+    } as any);
+    expect(photo.columnRules.data.maxLength).toBeGreaterThanOrEqual(4 * 1024 * 1024);
+    expect(photo.columnRules.data.ascii).toBe(true);
+    expect(() =>
+      resolveAppSchema({ id: 'ascii_alone_probe', schema: { data: { type: 'text', ascii: true } } })
+    ).toThrow(/'ascii' but not 'encrypted'/);
+  });
+
+  it("binds every phone-owned table's sealed columns to the phone, and every other to the character", () => {
+    // A loop over an empty set asserts nothing: there are phone-owned sealed columns to check.
+    const phoneTables = new Set(declaredServices.filter((d) => d.deviceOwned).map((d) => d.table));
+    const sealed = encryptedColumns();
+    expect(sealed.some((entry) => phoneTables.has(entry.table))).toBe(true);
+    for (const entry of sealed) {
+      expect(entry.binding, `${entry.table}.${entry.column}`).toBe(
+        phoneTables.has(entry.table) ? 'device' : 'citizen'
+      );
+    }
   });
 
   it('refuses a scope with nothing encrypted', () => {
@@ -626,7 +821,14 @@ describe('Messages (mica_messages.message)', () => {
 
   it('opens a thread page, off each row’s own sender and conversation', async () => {
     const sealed = await sealContent(
-      { table: 'mica_messages', column: 'message', citizenid: 'CIT_B', scope: [7] },
+      {
+        table: 'mica_messages',
+        column: 'message',
+        binding: 'citizen',
+        owner: 'CIT_B',
+        ownerKind: 'citizen',
+        scope: [7]
+      },
       'hi there'
     );
     answerSingle = (sql) => (sql.includes('mica_messages_participants') ? { 1: 1 } : null);
@@ -650,7 +852,14 @@ describe('Messages (mica_messages.message)', () => {
 
   it('shows a padlock for a body copied into another conversation, and keeps the thread', async () => {
     const moved = await sealContent(
-      { table: 'mica_messages', column: 'message', citizenid: 'CIT_B', scope: [8] },
+      {
+        table: 'mica_messages',
+        column: 'message',
+        binding: 'citizen',
+        owner: 'CIT_B',
+        ownerKind: 'citizen',
+        scope: [8]
+      },
       'from elsewhere'
     );
     answerSingle = (sql) => (sql.includes('mica_messages_participants') ? { 1: 1 } : null);
@@ -669,7 +878,14 @@ describe('Messages (mica_messages.message)', () => {
 
   it('seals an edit against the row’s own context, read by id', async () => {
     const original = await sealContent(
-      { table: 'mica_messages', column: 'message', citizenid: 'CIT_A', scope: [7] },
+      {
+        table: 'mica_messages',
+        column: 'message',
+        binding: 'citizen',
+        owner: 'CIT_A',
+        ownerKind: 'citizen',
+        scope: [7]
+      },
       'teh plan'
     );
     answerSingle = (sql) => {
@@ -710,7 +926,14 @@ describe('Messages (mica_messages.message)', () => {
 
   it('opens the inbox’s last message, off its sender and the conversation', async () => {
     const sealed = await sealContent(
-      { table: 'mica_messages', column: 'message', citizenid: 'CIT_B', scope: [9] },
+      {
+        table: 'mica_messages',
+        column: 'message',
+        binding: 'citizen',
+        owner: 'CIT_B',
+        ownerKind: 'citizen',
+        scope: [9]
+      },
       'see you'
     );
     answerQuery = (sql) =>
@@ -757,7 +980,14 @@ describe('Blabber DMs (mica_blabber_dms.body)', () => {
     expect(isSealed(row.body)).toBe(true);
     await vi.waitFor(() => expect(insertedInto('mica_notifications')).toHaveLength(1));
     const [notification] = insertedInto('mica_notifications');
-    expect(notification.body).toBe('');
+    // The body is sealed itself since MICA-431, to the phone it landed on: still nothing in it.
+    expect(isSealed(notification.body)).toBe(true);
+    expect(
+      openContent(
+        contentContext(encryptedColumn('mica_notifications', 'body')!, notification),
+        String(notification.body)
+      )
+    ).toBe('');
     expect(JSON.stringify(notification)).not.toContain('secret plans');
   });
 
@@ -769,7 +999,14 @@ describe('Blabber DMs (mica_blabber_dms.body)', () => {
    */
   it('opens a thread and the inbox’s last messages from the columns they select', async () => {
     const sealed = await sealContent(
-      { table: 'mica_blabber_dms', column: 'body', citizenid: 'CIT_B', scope: [2, 1] },
+      {
+        table: 'mica_blabber_dms',
+        column: 'body',
+        binding: 'citizen',
+        owner: 'CIT_B',
+        ownerKind: 'citizen',
+        scope: [2, 1]
+      },
       'hello ada'
     );
     const stored = {
@@ -803,7 +1040,14 @@ describe('Blabber DMs (mica_blabber_dms.body)', () => {
 
   it('opens through the generic projection, and drops the context it added', async () => {
     const sealed = await sealContent(
-      { table: 'mica_blabber_dms', column: 'body', citizenid: 'CIT_A', scope: [1, 2] },
+      {
+        table: 'mica_blabber_dms',
+        column: 'body',
+        binding: 'citizen',
+        owner: 'CIT_A',
+        ownerKind: 'citizen',
+        scope: [1, 2]
+      },
       'projected'
     );
     answerQuery = (sql) =>
@@ -827,7 +1071,17 @@ describe('Dark Chat (mica_darkchat_messages.body)', () => {
    */
   it('opens a channel page from the columns it selects, and drops whose the rows are', async () => {
     const sealedFor = (citizenid: string, text: string) =>
-      sealContent({ table: 'mica_darkchat_messages', column: 'body', citizenid, scope: [7] }, text);
+      sealContent(
+        {
+          table: 'mica_darkchat_messages',
+          column: 'body',
+          binding: 'citizen',
+          owner: citizenid,
+          ownerKind: 'citizen',
+          scope: [7]
+        },
+        text
+      );
     const stored = [
       {
         id: 12,
@@ -896,7 +1150,14 @@ describe('Mail (mica_mail.content)', () => {
 
   it('opens the inbox', async () => {
     const sealed = await sealContent(
-      { table: 'mica_mail', column: 'content', citizenid: 'CIT_A', scope: [] },
+      {
+        table: 'mica_mail',
+        column: 'content',
+        binding: 'citizen',
+        owner: 'CIT_A',
+        ownerKind: 'citizen',
+        scope: []
+      },
       'your statement'
     );
     answerQuery = (sql) =>
@@ -925,7 +1186,14 @@ describe('Mail (mica_mail.content)', () => {
 describe('Reports (mica_reports.target_preview) and the review queue', () => {
   it('opens a sealed target to preview it, and seals the snapshot under the report', async () => {
     const dm = await sealContent(
-      { table: 'mica_blabber_dms', column: 'body', citizenid: 'CIT_B', scope: [2, 1] },
+      {
+        table: 'mica_blabber_dms',
+        column: 'body',
+        binding: 'citizen',
+        owner: 'CIT_B',
+        ownerKind: 'citizen',
+        scope: [2, 1]
+      },
       'you will regret this'
     );
     answerSingle = (sql) =>
@@ -965,7 +1233,9 @@ describe('Reports (mica_reports.target_preview) and the review queue', () => {
       {
         table: 'mica_reports',
         column: 'target_preview',
-        citizenid: 'CIT_A',
+        binding: 'citizen',
+        owner: 'CIT_A',
+        ownerKind: 'citizen',
         scope: ['mica_blabber_dms', 5]
       },
       'you will regret this'
@@ -989,10 +1259,207 @@ describe('Reports (mica_reports.target_preview) and the review queue', () => {
   });
 });
 
+/**
+ * MICA-431: a phone's own content, sealed to the phone. Each round trip seals through the real
+ * path, then opens under the row's context — and, the binding's point, still opens after a
+ * handover rewrites the row's citizenid, and not on another phone.
+ */
+describe("a phone's own content (MICA-431)", () => {
+  const PHONE = TEST_PHONE_ID;
+  const onPhone = (table: string, column: string, row: Record<string, unknown>) =>
+    openContent(contentContext(encryptedColumn(table, column)!, row), String(row[column]));
+
+  it('seals a note to the phone it is written on, and opens it after a handover', async () => {
+    const reply = await call('notes', 'create', { title: 'groceries', content: 'milk, eggs' });
+    expect(reply.title).toBe('groceries');
+
+    const [row] = insertedInto('mica_notes');
+    expect(row.device_id).toBe(PHONE);
+    expect(isSealed(row.title)).toBe(true);
+    expect(isSealed(row.content)).toBe(true);
+    expect(JSON.stringify(row)).not.toContain('milk');
+    expect(onPhone('mica_notes', 'content', row)).toBe('milk, eggs');
+    // The handover: the same phone, a new holder.
+    expect(onPhone('mica_notes', 'content', { ...row, citizenid: 'CIT_THIEF' })).toBe('milk, eggs');
+    // The positive twin's negative: another phone's row will not open it.
+    expect(onPhone('mica_notes', 'content', { ...row, device_id: 'f'.repeat(32) })).toBe(
+      UNREADABLE_CONTENT
+    );
+
+    // And the list opens it from the columns it selects.
+    const stored = { id: 101, status: 'active', updated_at: 'now', created_at: 'now', ...row };
+    answerQuery = (sql) => (sql.includes('`mica_notes`') ? [selectedFrom(sql, stored)] : []);
+    const list = await call('notes', 'get', {});
+    expect(list[0]).toMatchObject({ title: 'groceries', content: 'milk, eggs' });
+  });
+
+  it('seals a notification to the phone, clipped to its bound, and the shade opens it', async () => {
+    const repo = getNotificationsRepository()!;
+    await repo.createNotificationBatch([
+      { citizenid: 'CIT_A', app: 'mail', kind: 'new', title: 'é'.repeat(100), body: 'lunch?' }
+    ]);
+    const [row] = insertedInto('mica_notifications');
+    expect(row.device_id).toBe(PHONE);
+    expect(isSealed(row.title)).toBe(true);
+    expect(onPhone('mica_notifications', 'title', row)).toBe('é'.repeat(80));
+    expect(onPhone('mica_notifications', 'body', row)).toBe('lunch?');
+
+    answerQuery = (sql) => (sql.includes('mica_notifications') ? [{ id: 1, ...row }] : []);
+    const shade = await repo.findShadeNotifications('CIT_A', PHONE);
+    expect(shade[0]).toMatchObject({ title: 'é'.repeat(80), body: 'lunch?' });
+  });
+
+  it("re-seals a dropped photo for each recipient's own phone", async () => {
+    // On a phone of its own: the stub hands every recipient `PHONE`, and a copy sealed to the
+    // sender's phone must be told apart from one sealed to the recipient's.
+    const source = {
+      id: 42,
+      citizenid: 'CIT_A',
+      device_id: 'c'.repeat(32),
+      kind: 'photo',
+      data: 'data:image/png;base64,AAAA',
+      thumbnail: 'data:image/png;base64,TT',
+      alt_text: 'the pier',
+      url: null,
+      status: 'active'
+    };
+    const written = await (media.repo as any).copyToPlayers(['CIT_B'], source);
+    expect(written).toEqual(['CIT_B']);
+
+    const [[sql, params]] = dbMock.insert.mock.calls as [string, unknown[]][];
+    const copy = rowOf(String(sql), params);
+    expect(copy.citizenid).toBe('CIT_B');
+    expect(copy.device_id).toBe(PHONE);
+    for (const column of ['data', 'thumbnail', 'alt_text']) {
+      expect(isSealed(copy[column])).toBe(true);
+      expect(onPhone('mica_media', column, copy)).toBe((source as any)[column]);
+    }
+    // Sealed for the recipient's row, not for the sender's: under the sender's phone it does
+    // not open.
+    expect(onPhone('mica_media', 'data', { ...copy, device_id: source.device_id })).toBe(
+      UNREADABLE_CONTENT
+    );
+    // A source that did not open is not copied as a padlock.
+    dbMock.insert.mockClear();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect(
+      await (media.repo as any).copyToPlayers(['CIT_B'], { ...source, data: UNREADABLE_CONTENT })
+    ).toEqual([]);
+    expect(dbMock.insert).not.toHaveBeenCalled();
+  });
+
+  it("holds the quota-gated insert to the column's bound before it seals", async () => {
+    // The default ceiling is on, so this is `insertWithinQuota`'s own statement, not `create`'s.
+    const repo = media.repo as any;
+    const photo = { citizenid: 'CIT_A', device_id: PHONE, kind: 'photo', data: 'x' };
+    await expect(repo.insertOwned({ ...photo, alt_text: 'a'.repeat(256) })).rejects.toMatchObject({
+      key: 'server.repository.maxLength'
+    });
+    expect(dbMock.insert).not.toHaveBeenCalled();
+    // The twin: at the bound it is written, sealed.
+    await repo.insertOwned({ ...photo, alt_text: 'a'.repeat(255) });
+    const [sql] = dbMock.insert.mock.calls[0] as [string, unknown[]];
+    expect(String(sql)).toContain('AS quota');
+    const [row] = insertedInto('mica_media');
+    expect(onPhone('mica_media', 'alt_text', row)).toBe('a'.repeat(255));
+  });
+
+  it('seals a stored thumbnail to the phone the row is on', async () => {
+    await (media.repo as any).storeThumbnail(7, 'CIT_A', PHONE, 'data:image/png;base64,TT');
+    const [, params] = dbMock.update.mock.calls[0] as [string, unknown[]];
+    expect(isSealed(params[0])).toBe(true);
+    expect(
+      onPhone('mica_media', 'thumbnail', {
+        citizenid: 'CIT_A',
+        device_id: PHONE,
+        thumbnail: params[0]
+      })
+    ).toBe('data:image/png;base64,TT');
+  });
+
+  it("refuses a non-ASCII value in an ASCII column, and stores the server's own JSON", async () => {
+    const repo = media.repo as any;
+    await expect(
+      repo.addForPlayer('CIT_A', { kind: 'location', data: '{"label":"café"}', device_id: PHONE })
+    ).rejects.toMatchObject({ key: 'server.repository.notAccepted' });
+    expect(insertedInto('mica_media')).toHaveLength(0);
+    // The positive twin: a location's JSON is no inline image, and the client's `accepts` rule
+    // is not what a sealed write is held to.
+    await repo.addForPlayer('CIT_A', { kind: 'location', data: '{"x":1}', device_id: PHONE });
+    const [row] = insertedInto('mica_media');
+    expect(onPhone('mica_media', 'data', row)).toBe('{"x":1}');
+  });
+
+  it('opens a joined photo off its own phone, and hands back neither its owner nor its phone', async () => {
+    const photo = {
+      citizenid: 'CIT_UPLOADER',
+      device_id: 'a'.repeat(32),
+      data: 'x',
+      alt_text: 'y'
+    };
+    const sealedData = await sealContent(
+      contentContext(encryptedColumn('mica_media', 'data')!, photo),
+      'data:image/png;base64,AAAA'
+    );
+    const sealedAlt = await sealContent(
+      contentContext(encryptedColumn('mica_media', 'alt_text')!, photo),
+      'a dog'
+    );
+    answerQuery = (sql) =>
+      sql.includes('mica_blabber_attachments')
+        ? [
+            selectedFrom(sql, {
+              id: 1,
+              blab_id: 8,
+              media_id: 5,
+              kind: 'photo',
+              data: sealedData,
+              thumbnail: null,
+              alt_text: sealedAlt,
+              media_citizenid: photo.citizenid,
+              media_device_id: photo.device_id
+            })
+          ]
+        : [];
+    const found = await (blabber.repo as any).findAttachmentsFor([8]);
+    const [attachment] = found.get(8);
+    expect(attachment.media).toMatchObject({
+      data: 'data:image/png;base64,AAAA',
+      alt_text: 'a dog'
+    });
+    expect(JSON.stringify([...found])).not.toMatch(/CIT_UPLOADER|aaaaaaaa/);
+  });
+
+  it("opens a reported photo's preview off the photo's phone", async () => {
+    const photo = { citizenid: 'CIT_B', device_id: 'b'.repeat(32) };
+    const data = await sealContent(
+      contentContext(encryptedColumn('mica_media', 'data')!, photo),
+      'data:image/png;base64,QQ'
+    );
+    answerSingle = (sql) =>
+      sql.includes('FROM `mica_media`')
+        ? selectedFrom(sql.replace(/\s+/g, ' '), {
+            ...photo,
+            status: 'active',
+            preview: data
+          })
+        : null;
+    const summary = await summariseTarget('mica_media' as any, 3);
+    expect(summary).toMatchObject({ exists: true, preview: 'data:image/png;base64,QQ' });
+  });
+});
+
 describe('the privacy export', () => {
   it('returns a player their own words, not ciphertext, and adds no column', async () => {
     const sealed = await sealContent(
-      { table: 'mica_messages', column: 'message', citizenid: 'CIT_A', scope: [7] },
+      {
+        table: 'mica_messages',
+        column: 'message',
+        binding: 'citizen',
+        owner: 'CIT_A',
+        ownerKind: 'citizen',
+        scope: [7]
+      },
       'my own words'
     );
     answerQuery = (sql) =>

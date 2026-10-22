@@ -92,12 +92,31 @@ describe('the media table rename', () => {
       // participant — and the uploader's citizenid is the one field that ties a picture
       // back to a person who only meant to send it. `SELECT p.*` would hand it over
       // silently, which is why the column list is explicit (§10, publicColumns).
-      dbMock.query.mockResolvedValueOnce([{ id: 1, conversation_id: 4 }]);
-      await (messages.repo as MessageRepository).findByConversation(4);
+      //
+      // Since MICA-431 the photo's bytes are sealed to the uploader's phone, so the join selects
+      // that phone and the citizenid under aliases, to open them — and the reply must still
+      // carry neither. So what is pinned is the alias, and the reply.
+      dbMock.query.mockResolvedValueOnce([{ id: 1, conversation_id: 4 }]).mockResolvedValueOnce([
+        {
+          id: 9,
+          message_id: 1,
+          media_id: 5,
+          kind: 'photo',
+          data: 'data:image/png;base64,AAAA',
+          media_citizenid: 'UPLOADER_CID',
+          media_device_id: 'UPLOADERPHONE'
+        }
+      ]);
+      const page = await (messages.repo as MessageRepository).findByConversation(4);
 
       const joinSql = dbMock.query.mock.calls[1][0] as string;
-      expect(joinSql).not.toMatch(/p\.citizenid/);
+      expect(joinSql.replace('p.citizenid AS media_citizenid', '')).not.toMatch(/citizenid/);
       expect(joinSql).not.toMatch(/p\.\*/);
+      const reply = JSON.stringify(page);
+      // The positive twin: the attachment is there, opened.
+      expect(reply).toContain('data:image/png;base64,AAAA');
+      expect(reply).not.toContain('UPLOADER_CID');
+      expect(reply).not.toContain('UPLOADERPHONE');
     });
 
     it('carries enough of the row to draw a video', async () => {

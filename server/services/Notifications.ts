@@ -9,6 +9,18 @@ import { notificationsContract } from '@mica/shared/contracts/notifications';
 import { phoneForCitizen } from '../lib/deviceIdentity';
 import { reasonOf, traceOf } from '../lib/sqlErrors';
 import { who } from '../lib/who';
+import { openRows, sealRow, storablePlaintext } from '../lib/contentCipher';
+
+const TABLE = 'mica_notifications';
+/** The plaintext bounds, in characters; the columns are as wide as these sealed. */
+const TITLE_MAX = 80;
+const BODY_MAX = 255;
+
+/** At most `max` characters as MariaDB counts them — code points — never half a pair. */
+const clip = (text: string, max: number): string => {
+  const chars = Array.from(String(text));
+  return chars.length <= max ? String(text) : chars.slice(0, max).join('');
+};
 
 /** What a failure is logged as when no line of it is safe to print. */
 export const UNKNOWN_DB_ERROR = 'unknown database error';
@@ -55,6 +67,15 @@ export class NotificationsRepository extends SchemaRepository<NotificationItem> 
         continue;
       }
       try {
+        // Sealed to the phone it lands on (MICA-431). Clipped to the column's bound first: a
+        // sealed value too long for its column is truncated into a padlock, where plaintext
+        // was only cut short. `storablePlaintext`, because the words are somebody else's.
+        const sealed = await sealRow(TABLE, {
+          citizenid: item.citizenid,
+          device_id: deviceId,
+          title: await storablePlaintext(clip(item.title ?? item.app ?? '', TITLE_MAX), TITLE_MAX),
+          body: await storablePlaintext(clip(item.body ?? '', BODY_MAX), BODY_MAX)
+        });
         await Database.query(
           `INSERT INTO mica_notifications (citizenid, device_id, app, kind, title, body, avatar, deep_link, status, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', NOW(), NOW())`,
@@ -63,8 +84,8 @@ export class NotificationsRepository extends SchemaRepository<NotificationItem> 
             deviceId,
             item.app,
             item.kind ?? 'general',
-            item.title ?? item.app,
-            item.body ?? '',
+            sealed.title,
+            sealed.body,
             item.avatar ?? null,
             item.deep_link ?? null
           ]
@@ -89,11 +110,14 @@ export class NotificationsRepository extends SchemaRepository<NotificationItem> 
     deviceId: string,
     limit = 50
   ): Promise<NotificationItem[]> {
-    return await Database.query<NotificationItem[]>(
-      `SELECT * FROM mica_notifications
-       WHERE citizenid = ? AND device_id = ? AND cleared_at IS NULL AND status = 'active'
-       ORDER BY id DESC LIMIT ?`,
-      [citizenid, deviceId, limit]
+    return openRows(
+      TABLE,
+      await Database.query<NotificationItem[]>(
+        `SELECT * FROM mica_notifications
+         WHERE citizenid = ? AND device_id = ? AND cleared_at IS NULL AND status = 'active'
+         ORDER BY id DESC LIMIT ?`,
+        [citizenid, deviceId, limit]
+      )
     );
   }
 
@@ -102,11 +126,14 @@ export class NotificationsRepository extends SchemaRepository<NotificationItem> 
     deviceId: string,
     limit = 50
   ): Promise<NotificationItem[]> {
-    return await Database.query<NotificationItem[]>(
-      `SELECT * FROM mica_notifications
-       WHERE citizenid = ? AND device_id = ? AND cleared_at IS NOT NULL AND status = 'active'
-       ORDER BY cleared_at DESC LIMIT ?`,
-      [citizenid, deviceId, limit]
+    return openRows(
+      TABLE,
+      await Database.query<NotificationItem[]>(
+        `SELECT * FROM mica_notifications
+         WHERE citizenid = ? AND device_id = ? AND cleared_at IS NOT NULL AND status = 'active'
+         ORDER BY cleared_at DESC LIMIT ?`,
+        [citizenid, deviceId, limit]
+      )
     );
   }
 
@@ -205,11 +232,13 @@ export const notifications = defineService<NotificationItem, typeof notification
   access: { read: 'owner', write: 'server' },
   statuses: ['active', 'deleted', 'moderated'],
   paging: { pageSize: 30, maxPageSize: 60 },
+  encryptionScope: [],
   schema: {
     app: { type: 'string', length: 32, notNull: true, clientFilterable: true },
     kind: { type: 'string', length: 32, notNull: true },
-    title: { type: 'string', length: 80, notNull: true },
-    body: { type: 'string', length: 255, notNull: true },
+    /** Sealed at rest (MICA-431), bound to the phone the notification is on. */
+    title: { type: 'string', length: TITLE_MAX, notNull: true, encrypted: true },
+    body: { type: 'string', length: BODY_MAX, notNull: true, encrypted: true },
     avatar: { type: 'string', length: 255 },
     deep_link: { type: 'text' },
     read_at: { type: 'string', length: 32 },

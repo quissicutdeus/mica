@@ -15,7 +15,8 @@ import {
   type SinkReply,
   type SinkRequest
 } from '../lib/httpSink';
-import { assert, expectOk, runCommand, seedCitizen, unique } from '../lib/mica';
+import { assert, expectOk, harnessKeys, runCommand, seedCitizen, unique } from '../lib/mica';
+import { openSealed } from '../lib/sealed';
 import { QBX_SEED } from '../lib/qbxSeed';
 import { bootMediaOrphanSweepEnded, bootOrphanSweepEnded } from '../lib/bootSweep';
 import { runMediaPrune } from '../lib/mediaPrune';
@@ -175,8 +176,29 @@ const assertUpload = (request: SinkRequest, secret: string): void => {
   );
 };
 
-const mediaRow = (id: number) =>
-  db.row('SELECT `url`, `data`, `mime_type`, `byte_size` FROM `mica_media` WHERE `id` = ?', [id]);
+/**
+ * A media row as the scenarios read it. `data` is sealed to the phone the photo is on
+ * (MICA-431), so it is opened here off the row's own `device_id`, with the key the harness
+ * wrote; NULL stays NULL, which is what a hosted photo stores.
+ */
+const mediaRow = async (id: number): Promise<Record<string, unknown> | null> => {
+  const row = await db.row(
+    'SELECT `citizenid`, `device_id`, `url`, `data`, `mime_type`, `byte_size` ' +
+      'FROM `mica_media` WHERE `id` = ?',
+    [id]
+  );
+  if (!row || row.data === null || row.data === undefined) return row;
+  return {
+    ...row,
+    data: openSealed(String(row.data), harnessKeys(), {
+      table: 'mica_media',
+      column: 'data',
+      citizenid: String(row.citizenid),
+      deviceId: (row.device_id as string | null) ?? null,
+      scope: []
+    })
+  };
+};
 
 const exists = async (id: number): Promise<boolean> =>
   (await db.count('SELECT COUNT(*) FROM `mica_media` WHERE `id` = ?', [id])) === 1;
