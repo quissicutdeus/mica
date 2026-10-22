@@ -132,3 +132,5 @@ line here.
   — build handles and URLs that cannot contain the citizenid
 - [A switch forgetter must check who took the state](switch-forgetters-check-who-took-the-state.md)
   — key by source and citizenid; make an `atLogout` forgetter idempotent
+- [A scanner's string skip must honour escapes](scanner-string-skip-needs-escapes.md)
+  — `'it\'s'` read the file inside out and credited a neighbour (MICA-414)
