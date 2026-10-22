@@ -58,7 +58,8 @@ transcript ambiguous about who decided what.
 - **No `isolation`** — a teammate: its own pane, but it **shares the session's
   working directory**. Several writing teammates can share the main checkout
   only when every brief names a disjoint file fence, says "prettier your own
-  files only, never `pnpm format`", and says "do not commit; the lead commits".
+  files only, never `pnpm format`", and says "do not commit or run any git
+  command that writes; the lead commits".
 - **`isolation: "worktree"`** — a background subagent, no pane, its own tree.
   Required when two lanes need the same file, or a lane needs its own
   `pnpm install`.
@@ -179,6 +180,29 @@ message reads as something to answer instead of something to execute.
   `pkill -f 'worktrees/land-c'` killed the shell that ran it, because the
   pattern matched its own command line; write the pattern so it cannot match
   itself (`'land-[c]/node_modules'`).
+- **Commit in the landing worktree, not the shared checkout.** On 2026-10-22,
+  with ten lanes and about 200 dirty files in the main checkout, lint-staged's
+  pre-commit run put `web/e2e/a11y.spec.ts`, which nothing had staged, into the
+  first commit twice; the index held exactly the intended paths before
+  `git commit` both times. Committing each ticket by path inside the verified
+  worktree, then `git reset -q <tip>` (mixed) in the main checkout, landed 24
+  commits clean: dev moves and no working file changes, since the tree equals
+  them. It is the one HEAD move allowed with teammates live, and only because no
+  lane commits. After each commit, compare `git show --name-only HEAD` with the
+  intended list; the index before it is not enough.
+- **A batch that lands from one verify needs no per-ticket holds.** "Do not edit
+  a reported path until `landed`" left most lanes blocked on each other for an
+  hour on 2026-10-22. When the whole batch is verified and landed together, let
+  lanes keep editing reported files, snapshot once they are all idle, and give a
+  file two tickets share to the later commit, saying so in its body.
+- **Lanes run no git command that writes in a shared checkout**: no `add`, `rm`,
+  `restore --staged`, `stash`, `update-index`. They delete with plain `rm` and
+  report it. Two lanes staged a deletion into the shared index on 2026-10-22.
+  The brief says it, and so does a message when a wave starts.
+- **Agent-memory notes go by absolute path.** An empty
+  `web/src/apps/.claude/agent-memory/` left by a relative write made every a11y
+  test and `appContract` fail at load, because every directory under
+  `web/src/apps/` reads as an app.
 - **`pre-push` judges the uncommitted tree, not what is pushed.** `check:fast`
   selects suites from the working diff, so a lane's half-finished file (a
   migration with no CHANGELOG entry yet) refuses a push of verified commits.
