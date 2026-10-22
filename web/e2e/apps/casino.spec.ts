@@ -55,7 +55,7 @@ test.describe('Casino', () => {
   };
 
   const startCrash = async (frame: FrameLocator) => {
-    await frame.getByTestId('casino-tab-crash').click();
+    await frame.getByRole('button', { name: 'Crash', exact: true }).click();
     await expect(frame.getByTestId('casino-stake')).toHaveValue('10');
     await frame.getByTestId('casino-crash-start').click();
     await expect(frame.getByTestId('casino-crash-cashout')).toBeVisible();
@@ -63,8 +63,14 @@ test.describe('Casino', () => {
 
   test('installs from the Store and opens on the roulette tab', async ({ page }) => {
     const frame = await open(page, NEVER_BUSTS);
-    await expect(frame.getByTestId('casino-tab-roulette')).toHaveAttribute('aria-pressed', 'true');
-    await expect(frame.getByTestId('casino-tab-crash')).toHaveAttribute('aria-pressed', 'false');
+    await expect(frame.getByRole('button', { name: 'Roulette', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+    await expect(frame.getByRole('button', { name: 'Crash', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'false'
+    );
     await expect(frame.getByTestId('casino-board')).toBeVisible();
     // The chip row is built from the mock's limits: it proves `config` arrived, and that the
     // smallest chip is the table minimum.
@@ -79,7 +85,7 @@ test.describe('Casino', () => {
     await frame.getByTestId('casino-chip').first().click();
     await frame.getByTestId('casino-bet-red').click();
     await frame.getByTestId('casino-bet-straight-17').click();
-    await expect(frame.getByText('Staked $20 of $5000')).toBeVisible();
+    await expect(frame.getByText('Staked $20.00 of $5,000.00')).toBeVisible();
 
     await frame.getByTestId('casino-spin').click();
     const result = frame.getByTestId('casino-result');
@@ -90,7 +96,7 @@ test.describe('Casino', () => {
     await expect(result).toContainText('Broke even');
     // The board cleared once the server took the bets.
     await expect(frame.getByTestId('casino-spin')).toBeDisabled();
-    await expect(frame.getByText('Staked $0 of $5000')).toBeVisible();
+    await expect(frame.getByText('Staked $0.00 of $5,000.00')).toBeVisible();
   });
 
   test('a winning straight pays 35 to 1 on the stake', async ({ page }) => {
@@ -102,7 +108,7 @@ test.describe('Casino', () => {
     const result = frame.getByTestId('casino-result');
     await expect(result).toContainText('17');
     // 10 staked, 360 back: a net of 350.
-    await expect(result).toContainText('Won $350');
+    await expect(result).toContainText('Won $350.00');
   });
 
   test('a chip past bet_max is refused inline and placed nowhere', async ({ page }) => {
@@ -111,12 +117,12 @@ test.describe('Casino', () => {
     await expect(chips.last()).toHaveAttribute('data-value', '5000');
     await chips.last().click();
     await frame.getByTestId('casino-bet-red').click();
-    await expect(frame.getByText('Staked $5000 of $5000')).toBeVisible();
+    await expect(frame.getByText('Staked $5,000.00 of $5,000.00')).toBeVisible();
 
     // One more chip would be 10000 on the table.
     await frame.getByTestId('casino-bet-straight-17').click();
-    await expect(frame.getByText('Bets total at most $5000.')).toBeVisible();
-    await expect(frame.getByText('Staked $5000 of $5000')).toBeVisible();
+    await expect(frame.getByText('Bets total at most $5,000.00.')).toBeVisible();
+    await expect(frame.getByText('Staked $5,000.00 of $5,000.00')).toBeVisible();
   });
 
   test('Crash climbs, and a cash-out answers with a payout', async ({ page }) => {
@@ -153,7 +159,7 @@ test.describe('Casino', () => {
     // The mock's own timer pushes `casino:crash` at 1.19x, ~2.5s in.
     const result = frame.getByTestId('casino-crash-result');
     await expect(result).toContainText('Crashed at 1.19×', { timeout: 10_000 });
-    await expect(result).toContainText('Lost $10');
+    await expect(result).toContainText('Lost $10.00');
     await expect(frame.getByTestId('casino-multiplier')).toHaveText('1.19×');
     await expect(frame.getByTestId('casino-crash-cashout')).toHaveCount(0);
     await expect(frame.getByTestId('casino-crash-start')).toBeEnabled();
@@ -184,7 +190,7 @@ test.describe('Casino', () => {
 
   test('history lists the seeded rounds', async ({ page }) => {
     const frame = await open(page, NEVER_BUSTS);
-    await frame.getByTestId('casino-tab-history').click();
+    await frame.getByRole('button', { name: 'History', exact: true }).click();
     const rows = frame.getByTestId('casino-history-row');
     await expect(rows).toHaveCount(4);
     // Newest first: round 4 is the busted crash at 1.12x, round 1 the roulette 17.
@@ -206,7 +212,7 @@ test.describe('Casino', () => {
     }
     await expect(frame.getByTestId('casino-result')).toBeVisible();
 
-    await frame.getByTestId('casino-tab-history').click();
+    await frame.getByRole('button', { name: 'History', exact: true }).click();
     const rows = frame.getByTestId('casino-history-row');
     await expect(rows).toHaveCount(20);
     await frame.getByRole('button', { name: 'Load more' }).click();
@@ -221,7 +227,7 @@ test.describe('Casino', () => {
     expect(before).toBeGreaterThanOrEqual(1);
 
     await reopen(page);
-    await frame.getByTestId('casino-tab-crash').click();
+    await frame.getByRole('button', { name: 'Crash', exact: true }).click();
     await expect(frame.getByTestId('casino-crash-cashout')).toBeVisible();
     // Still live and still climbing: it rose past what it read before leaving.
     await expect.poll(() => multiplierOf(frame), { timeout: 10_000 }).toBeGreaterThan(before);

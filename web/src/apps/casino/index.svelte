@@ -7,6 +7,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script lang="ts">
   import {
     Screen,
+    SegmentedControl,
     onAppForeground,
     registerMessages,
     useAppLevels,
@@ -26,8 +27,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   let { onback }: AppProps = $props();
 
-  type Tab = 'roulette' | 'crash' | 'history';
-  let tab = $state<Tab>('roulette');
+  // `roulette`, `crash` or `history`: the ids of the options below, bound as a plain string
+  // because that is what `SegmentedControl` binds.
+  let tab = $state('roulette');
 
   const app = useAppLevels({
     appId: 'casino',
@@ -46,48 +48,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <Screen title={app.title} onback={app.back}>
   <div class="flex min-h-0 flex-1 flex-col">
     <div class="px-4 pt-2">
-      <div
-        role="group"
+      <SegmentedControl
         aria-label={$t('casino.tabs')}
-        class="border-outline-variant bg-surface-container-low flex rounded-box border p-1"
-      >
-        <button
-          type="button"
-          data-testid="casino-tab-roulette"
-          aria-pressed={tab === 'roulette'}
-          onclick={() => (tab = 'roulette')}
-          class="text-label-large flex-1 cursor-pointer rounded-chip py-1.5 text-center {tab ===
-          'roulette'
-            ? 'bg-surface-container-high-selected text-on-surface'
-            : 'text-on-surface-variant'}"
-        >
-          {$t('casino.tabRoulette')}
-        </button>
-        <button
-          type="button"
-          data-testid="casino-tab-crash"
-          aria-pressed={tab === 'crash'}
-          onclick={() => (tab = 'crash')}
-          class="text-label-large flex-1 cursor-pointer rounded-chip py-1.5 text-center {tab ===
-          'crash'
-            ? 'bg-surface-container-high-selected text-on-surface'
-            : 'text-on-surface-variant'}"
-        >
-          {$t('casino.tabCrash')}
-        </button>
-        <button
-          type="button"
-          data-testid="casino-tab-history"
-          aria-pressed={tab === 'history'}
-          onclick={() => (tab = 'history')}
-          class="text-label-large flex-1 cursor-pointer rounded-chip py-1.5 text-center {tab ===
-          'history'
-            ? 'bg-surface-container-high-selected text-on-surface'
-            : 'text-on-surface-variant'}"
-        >
-          {$t('casino.tabHistory')}
-        </button>
-      </div>
+        options={[
+          { id: 'roulette', label: $t('casino.tabRoulette') },
+          { id: 'crash', label: $t('casino.tabCrash') },
+          { id: 'history', label: $t('casino.tabHistory') }
+        ]}
+        bind:selected={tab}
+      />
     </div>
 
     <!-- Each game keeps its state in the store, so switching tabs loses nothing; a crash round
