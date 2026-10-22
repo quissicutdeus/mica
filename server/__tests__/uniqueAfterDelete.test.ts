@@ -26,8 +26,12 @@ import { Repository } from '../lib/Repository';
  * The mocked `Database` answers every insert, so it cannot see a duplicate-key refusal at all.
  * These run against a stand-in for the table that keeps its unique keys the way MariaDB does and
  * reads only the statements the repository sends — a statement it does not recognise fails the
- * test rather than answering. `test:endpoints` proves the same thing against MariaDB, through
- * the blocklist's handler.
+ * test rather than answering.
+ *
+ * This suite is now the only proof of the generic revive, and it runs against a mocked
+ * database. `test:endpoints` drove it against MariaDB through the blocklist's handler until
+ * MICA-414 took that handler away; no harness path reaches a reviving service since, so the
+ * real duplicate-key refusal this works around is unexercised outside these stand-ins.
  */
 
 type Row = Record<string, unknown> & { id: number; status: string };

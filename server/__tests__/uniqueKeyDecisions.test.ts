@@ -132,6 +132,6 @@ describe('unique keys and soft deletes (MICA-321)', () => {
       .filter((service) => service.uniqueAfterDelete === 'revive')
       .map((service) => service.id)
       .sort();
-    expect(revivers).toEqual(['battery', 'blocklist', 'hodlr']);
+    expect(revivers).toEqual(['battery', 'hodlr']);
   });
 });

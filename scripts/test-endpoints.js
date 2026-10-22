@@ -74,7 +74,7 @@ let checksRun = 0;
  */
 const FLOW_CHECKS = {
   connect: { standalone: 8, qb: 8 },
-  call: { standalone: 36, qb: 36 },
+  call: { standalone: 33, qb: 33 },
   groupRing: { standalone: 17, qb: 15 },
   text: { standalone: 15, qb: 15 },
   invoice: { standalone: 14, qb: 14 },
@@ -82,7 +82,7 @@ const FLOW_CHECKS = {
   reconnect: { standalone: 8, qb: 8 },
   createCall: { standalone: 25, qb: 25 },
   micacall: { standalone: 15, qb: 15 },
-  lineCall: { standalone: 23, qb: 23 },
+  lineCall: { standalone: 22, qb: 22 },
   lineText: { standalone: 13, qb: 13 },
   sendMessage: { standalone: 12, qb: 12 },
   qbMail: { standalone: 10, qb: 10 },
@@ -396,6 +396,25 @@ const startShape = async ({ db, kind }) => {
 
   const rows = async (sql, params = []) => (await admin.query(sql, params))[0];
 
+  /**
+   * A block, seeded as a row (MICA-414). The blocklist has no NUI route that writes any more,
+   * so the scenarios that prove a block is *enforced* put one in the table, as the screen
+   * that used to will again. Returns the row id; `person` is the PEOPLE entry, since a person's
+   * source moves on a reconnect and their rows do not.
+   */
+  const blockRow = async (person, number) =>
+    (
+      await admin.query('INSERT INTO `mica_blocklist` (`citizenid`, `number`) VALUES (?, ?)', [
+        citizenOf(person),
+        number
+      ])
+    )[0].insertId;
+
+  /** Lifts a block the way the old delete did: a soft delete. True if a row was lifted. */
+  const unblockRow = async (id) =>
+    (await admin.query("UPDATE `mica_blocklist` SET `status` = 'deleted' WHERE `id` = ?", [id]))[0]
+      .affectedRows === 1;
+
   const numberOf = async (person) =>
     (
       await rows(
@@ -418,6 +437,8 @@ const startShape = async ({ db, kind }) => {
     disconnect,
     citizenOf,
     numberOf,
+    blockRow,
+    unblockRow,
     rows,
     settle,
     /**
@@ -612,8 +633,8 @@ const runCall = async (shape, numbers) => {
   );
 
   step(`${kind}: 1 calls 2 when 2 has blocked 1 — indistinguishable from nobody`);
-  const blocked = await shape.call(2, 'blocklist', 'create', { number: numbers[1] });
-  check(`${kind}: 2's block is written`, typeof blocked?.id, 'number');
+  const blocked = await shape.blockRow(PEOPLE[2], numbers[1]);
+  check(`${kind}: 2's block is written`, typeof blocked, 'number');
   const refused = await shape.fire(1, 'mica:server:phone:start', numbers[2]);
   check(`${kind}: 2 is not rung`, to(refused.sent, INCOMING, 2).length, 0);
   check(
@@ -631,30 +652,14 @@ const runCall = async (shape, numbers) => {
     (await callLog(A)).map((r) => [r.kind, r.number]).slice(3),
     [['outgoing', numbers[2]]]
   );
-  const unblocked = await shape.call(2, 'blocklist', 'delete', { id: blocked.id });
+  const unblocked = await shape.unblockRow(blocked);
   check(`${kind}: 2 lifts the block`, unblocked, true);
 
-  // The unblock is a soft delete under `device_number_unique (device_id, number)`, so a second
-  // block of the same number from the same phone used to be refused as a duplicate (MICA-318).
-  // The revive is the generic `uniqueAfterDelete: 'revive'` path since MICA-321, so this is
-  // the check that runs its two statements against MariaDB through a real handler.
-  step(`${kind}: 2 blocks 1 again, and lifts it again`);
-  const reblocked = await shape.call(2, 'blocklist', 'create', { number: numbers[1] });
-  check(`${kind}: the second block revives the first row`, reblocked?.id, blocked.id);
-  check(
-    `${kind}: which is the one row for the pair, and active`,
-    (
-      await shape.rows('SELECT `id`, `status` FROM `mica_blocklist` WHERE `number` = ?', [
-        numbers[1]
-      ])
-    ).map((r) => [r.id, r.status]),
-    [[blocked.id, 'active']]
-  );
-  check(
-    `${kind}: 2 lifts it again`,
-    await shape.call(2, 'blocklist', 'delete', { id: reblocked?.id }),
-    true
-  );
+  // The generic `uniqueAfterDelete: 'revive'` check that stood here (block, lift, block the same
+  // number again, MICA-318/321) went with the blocklist's generic create and delete
+  // (MICA-414): nothing inserts a blocklist row through a handler now. Battery's and Hodlr's
+  // 'revive' is not reached through a handler in this harness either, so the two-statement
+  // revive has no MariaDB proof here until a screen brings a create path back.
 
   step(`${kind}: 1 calls themselves`);
   const self = await shape.fire(1, 'mica:server:phone:start', numbers[1]);
@@ -859,8 +864,8 @@ const runText = async (shape, numbers) => {
   check(`${kind}: and is shown no rows`, outsider?.rows, undefined);
 
   step(`${kind}: 1 blocks 2, and 2 texts`);
-  const block = await shape.call(1, 'blocklist', 'create', { number: numbers[2] });
-  check(`${kind}: 1's block is written`, typeof block?.id, 'number');
+  const block = await shape.blockRow(PEOPLE[1], numbers[2]);
+  check(`${kind}: 1's block is written`, typeof block, 'number');
   const mark2 = shape.runtime.sent.length;
   const second = await shape.call(2, 'messages', 'send', {
     conversation_id: thread.id,
@@ -880,11 +885,7 @@ const runText = async (shape, numbers) => {
   );
 
   step(`${kind}: 1 unblocks 2, and 2 texts again`);
-  check(
-    `${kind}: the block is lifted`,
-    await shape.call(1, 'blocklist', 'delete', { id: block.id }),
-    true
-  );
+  check(`${kind}: the block is lifted`, await shape.unblockRow(block), true);
   const mark3 = shape.runtime.sent.length;
   await shape.call(2, 'messages', 'send', { conversation_id: thread.id, message: 'yes' });
   check(
@@ -1190,8 +1191,8 @@ const runCreateCall = async (shape, numbers, live) => {
   check(`${kind}: and that it failed`, to(nowhere.sent, FAILED, B).length, 1);
 
   step(`${kind}: 2 blocks 4, and a resource places a call from 4 to 2`);
-  const block = await shape.call(B, 'blocklist', 'create', { number: numbers[4] });
-  check(`${kind}: 2's block is written`, typeof block?.id, 'number');
+  const block = await shape.blockRow(PEOPLE[2], numbers[4]);
+  check(`${kind}: 2's block is written`, typeof block, 'number');
   const blocked = await create(D, numbers[2]);
   check(
     `${kind}: CreateCall answers unknown_player, as for nobody`,
@@ -1204,11 +1205,7 @@ const runCreateCall = async (shape, numbers, live) => {
     nowhere.sent.map((m) => m.event)
   );
   check(`${kind}: and 2 is not rung`, to(blocked.sent, INCOMING, B).length, 0);
-  check(
-    `${kind}: 2 lifts the block`,
-    await shape.call(B, 'blocklist', 'delete', { id: block.id }),
-    true
-  );
+  check(`${kind}: 2 lifts the block`, await shape.unblockRow(block), true);
 
   step(`${kind}: a resource places a call to a line that rejects it`);
   check(
@@ -1431,8 +1428,8 @@ const runLineCall = async (shape, numbers, live) => {
     [before.result.value?.delivered, pushedTo(before.sent, A)],
     [true, ['Your cab is outside']]
   );
-  const block = await shape.call(A, 'blocklist', 'create', { number: CAB.number });
-  check(`${kind}: 1 blocks the line's number`, typeof block?.id, 'number');
+  const block = await shape.blockRow(PEOPLE[1], CAB.number);
+  check(`${kind}: 1 blocks the line's number`, typeof block, 'number');
   const after = await text('fake_cab', CAB.number, 'Still outside');
   check(
     `${kind}: after it the text is written but not delivered`,
@@ -1466,11 +1463,10 @@ const runLineCall = async (shape, numbers, live) => {
     }),
     { ok: true }
   );
-  check(
-    `${kind}: 1 blocks it`,
-    typeof (await shape.call(A, 'blocklist', 'create', { number: CAB_UNBLOCKABLE }))?.id,
-    'number'
-  );
+  // Seeded as a row. The old check here, that a generic create of a `blockable: false` number
+  // is accepted, went with the create path (MICA-414); what is proved below is that a block
+  // row on such a number is not *enforced*.
+  await shape.blockRow(PEOPLE[1], CAB_UNBLOCKABLE);
   const owner = await text('fake_cab', CAB_UNBLOCKABLE, 'Fare receipt');
   check(
     `${kind}: the owner's text is delivered and pushed anyway`,

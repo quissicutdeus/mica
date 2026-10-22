@@ -26,16 +26,6 @@ vi.mock('../lib/FrameworkBridge', () => ({
 
 import { blocklist, isBlocked } from '../services/Blocklist';
 import { __resetRateLimits } from '../lib/rateLimit';
-import { TEST_PHONE_ID } from './phoneStub';
-
-const call = async (action: string, data: unknown) => {
-  const handler = handlers.get(`mica:server:blocklist:${action}`);
-  if (!handler) throw new Error(`no handler for blocklist:${action}`);
-  (globalThis as any).source = 5;
-  (globalThis as any).emitNet = vi.fn();
-  await handler('cb-1', data);
-  return (globalThis.emitNet as any).mock.calls.at(-1)?.[3];
-};
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -47,30 +37,15 @@ beforeEach(() => {
 });
 
 describe('blocklist — the declaration', () => {
-  it('registers get/create/delete but not the generic update', () => {
-    expect(handlers.has('mica:server:blocklist:get')).toBe(true);
-    expect(handlers.has('mica:server:blocklist:create')).toBe(true);
-    expect(handlers.has('mica:server:blocklist:delete')).toBe(true);
-    expect(handlers.has('mica:server:blocklist:update')).toBe(false);
-  });
+  it.each(['get', 'create', 'update', 'delete'])(
+    'registers no generic %s — nothing in the phone calls it (MICA-414)',
+    (action) => {
+      expect(handlers.has(`mica:server:blocklist:${action}`)).toBe(false);
+    }
+  );
 
-  it('scopes create to the caller citizenid, never one the payload names', async () => {
-    await call('create', { number: '555-0100', citizenid: 'CIT_VICTIM' });
-
-    const [sql, params] = dbMock.insert.mock.calls[0];
-    // The phone beside the citizen (MICA-282): stamped by the server, never from the payload.
-    expect(String(sql)).toBe(
-      'INSERT INTO `mica_blocklist` (`number`, `citizenid`, `device_id`) VALUES (?, ?, ?)'
-    );
-    expect(params).toEqual(['555-0100', 'CIT_A', TEST_PHONE_ID]);
-  });
-
-  it('scopes get and delete to the caller citizenid', async () => {
-    await call('get', {});
-    expect(dbMock.query.mock.calls[0][1]).toEqual(['CIT_A', TEST_PHONE_ID, 'active']);
-
-    await call('delete', { id: 7 });
-    expect(dbMock.update.mock.calls[0][1]).toEqual(['deleted', 7, 'CIT_A', TEST_PHONE_ID]);
+  it('still declares the table the enforcement reads', () => {
+    expect(blocklist.resolved.table).toBe('mica_blocklist');
   });
 });
 
@@ -114,159 +89,5 @@ describe('blocklist schema', () => {
     expect(blocklist.resolved.indexes).toContainEqual(
       expect.objectContaining({ columns: ['device_id', 'number'], unique: true })
     );
-  });
-});
-
-/**
- * Block, unblock, block again (MICA-318), against a stand-in for the table that keeps
- * `device_number_unique` the way MariaDB does — the mocked `Database` above answers every
- * insert, so it could not see the duplicate-key refusal this is about. The stand-in reads
- * the statements the repository sends and nothing else; a statement it does not know fails
- * the test rather than answering. Since MICA-321 the revive is the generic one the blocklist
- * opts into with `uniqueAfterDelete: 'revive'`; `uniqueAfterDelete.test.ts` covers it alone.
- */
-describe('blocklist — a number blocked again after an unblock (MICA-318, MICA-321)', () => {
-  interface Row {
-    id: number;
-    citizenid: string;
-    device_id: string | null;
-    number: string;
-    status: string;
-  }
-  let rows: Row[];
-  const OTHER_PHONE = 'fedcba9876543210fedcba9876543210';
-
-  beforeEach(() => {
-    rows = [];
-    dbMock.insert.mockImplementation(async (sql: string, params: unknown[]) => {
-      expect(sql).toBe(
-        'INSERT INTO `mica_blocklist` (`number`, `citizenid`, `device_id`) VALUES (?, ?, ?)'
-      );
-      const [number, citizenid, device_id] = params as [string, string, string];
-      if (rows.some((r) => r.device_id === device_id && r.number === number)) {
-        throw new Error(`Duplicate entry '${device_id}-${number}' for key 'device_number_unique'`);
-      }
-      const id = rows.length + 1;
-      rows.push({ id, citizenid, device_id, number, status: 'active' });
-      return id;
-    });
-    dbMock.scalar.mockImplementation(async (sql: string, params: unknown[]) => {
-      expect(sql).toBe(
-        'SELECT `id` FROM `mica_blocklist` ' +
-          "WHERE `citizenid` = ? AND `device_id` <=> ? AND `status` = 'deleted' " +
-          'AND ((`device_id` = ? AND `number` = ?)) ORDER BY `id` LIMIT 1'
-      );
-      const [citizenid, owningPhone, device_id, number] = params as string[];
-      expect(owningPhone).toBe(device_id);
-      const hit = rows.find(
-        (r) =>
-          r.citizenid === citizenid &&
-          r.device_id === device_id &&
-          r.number === number &&
-          r.status === 'deleted'
-      );
-      return hit ? hit.id : null;
-    });
-    dbMock.update.mockImplementation(async (sql: string, params: unknown[]) => {
-      if (sql.includes("`status` = 'active'")) {
-        expect(sql).toBe(
-          "UPDATE `mica_blocklist` SET `number` = ?, `status` = 'active', " +
-            '`created_at` = CURRENT_TIMESTAMP ' +
-            "WHERE `id` = ? AND `citizenid` = ? AND `device_id` <=> ? AND `status` = 'deleted'"
-        );
-        const [, id, citizenid, device_id] = params as [string, number, string, string];
-        const hit = rows.find(
-          (r) =>
-            r.id === id &&
-            r.citizenid === citizenid &&
-            r.device_id === device_id &&
-            r.status === 'deleted'
-        );
-        if (hit) hit.status = 'active';
-        return Boolean(hit);
-      }
-      expect(sql).toContain('SET `status` = ?');
-      const [status, id, citizenid, device_id] = params as [string, number, string, string];
-      const hit = rows.find(
-        (r) =>
-          r.id === id &&
-          r.citizenid === citizenid &&
-          r.device_id === device_id &&
-          r.status !== 'moderated'
-      );
-      if (hit) hit.status = status;
-      return Boolean(hit);
-    });
-  });
-
-  it('blocks, unblocks and blocks again, reviving the one row', async () => {
-    const first = await call('create', { number: '5550100' });
-    expect(first?.id).toBe(1);
-    expect(await call('delete', { id: first.id })).toBe(true);
-    expect(rows[0].status).toBe('deleted');
-
-    const again = await call('create', { number: '5550100' });
-    expect(again?.error).toBeUndefined();
-    expect(again?.id).toBe(1);
-    expect(rows).toEqual([
-      { id: 1, citizenid: 'CIT_A', device_id: TEST_PHONE_ID, number: '5550100', status: 'active' }
-    ]);
-
-    // And the revived block lifts again, by the id the second create answered.
-    expect(await call('delete', { id: again.id })).toBe(true);
-    expect(rows[0].status).toBe('deleted');
-  });
-
-  it('refreshes created_at on the revived row, as a new block would set it', async () => {
-    const first = await call('create', { number: '5550100' });
-    await call('delete', { id: first.id });
-    await call('create', { number: '5550100' });
-    const revive = dbMock.update.mock.calls.find(([sql]) => String(sql).includes("'active'"));
-    expect(String(revive?.[0])).toContain('`created_at` = CURRENT_TIMESTAMP');
-  });
-
-  it("never revives another owner's row under the same key", async () => {
-    // The phone's previous holder unblocked the number and the rows have not followed the
-    // phone yet: the key is held by a row this caller does not own.
-    rows.push({
-      id: 1,
-      citizenid: 'CIT_B',
-      device_id: TEST_PHONE_ID,
-      number: '5550100',
-      status: 'deleted'
-    });
-
-    const reply = await call('create', { number: '5550100' });
-    expect(typeof reply?.error).toBe('string');
-    expect(rows).toEqual([
-      { id: 1, citizenid: 'CIT_B', device_id: TEST_PHONE_ID, number: '5550100', status: 'deleted' }
-    ]);
-  });
-
-  it("never revives the same citizen's row on another phone", async () => {
-    rows.push({
-      id: 1,
-      citizenid: 'CIT_A',
-      device_id: OTHER_PHONE,
-      number: '5550100',
-      status: 'deleted'
-    });
-
-    const reply = await call('create', { number: '5550100' });
-    expect(reply?.id).toBe(2);
-    expect(rows.map((r) => [r.device_id, r.status])).toEqual([
-      [OTHER_PHONE, 'deleted'],
-      [TEST_PHONE_ID, 'active']
-    ]);
-  });
-
-  it('names the session citizen and phone in the lookup, never the payload', async () => {
-    await call('create', { number: '5550100', citizenid: 'CIT_B', device_id: OTHER_PHONE });
-    expect(dbMock.scalar.mock.calls[0][1]).toEqual([
-      'CIT_A',
-      TEST_PHONE_ID,
-      TEST_PHONE_ID,
-      '5550100'
-    ]);
   });
 });

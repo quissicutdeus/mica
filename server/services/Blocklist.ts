@@ -9,16 +9,19 @@ import { phoneNumberFrom } from '../lib/netGuard';
 /**
  * Numbers a player has blocked (MICA-64).
  *
- * Server-enforced in two places, not just here: `Phone.ts`'s `start` handler refuses a
- * call from a blocked number before it ever rings, and `Messages.ts`'s
- * `deliverToParticipants` skips the live push to a recipient who has blocked the sender —
- * a client-side-only block is theatre, since a modified client can already emit
- * `mica:server:phone:start`/`mica:server:messages:send` directly (§2.9).
+ * Server-enforced in three places, not just here: `Phone.ts`'s `start` handler refuses a
+ * call from a blocked number before it ever rings, `Messages.ts`'s `deliverToParticipants`
+ * skips the live push to a recipient who has blocked the sender, and `PlacesLive.ts` shares a
+ * live location with nobody who has blocked the sharer — a client-side-only block is theatre,
+ * since a modified client can already emit `mica:server:phone:start`/`mica:server:messages:send`
+ * directly (§2.9).
  *
- * Owner-scoped generic CRUD, the same shape as any other small player-owned list
- * (Contacts, Notes): `get` lists a player's own blocked numbers, `create` adds one,
- * `delete` removes one. `update` is off — replacing a blocked number in place is not a
- * real action; block a different number and unblock the old one instead.
+ * No net events at all (MICA-414). The generic `get`, `create` and `delete` were registered
+ * for a list nothing in `web/` or `sdk/` ever showed or edited, and a registered event is
+ * reachable whether or not anything calls it (§2.9) — so they were surface with no feature
+ * behind it, and `genericCrudCallers.test.ts` now fails any generic event like them. The
+ * table and the two reads below stay: `Phone.ts`, `Messages.ts` and `PlacesLive.ts` enforce
+ * whatever rows it holds. A block-a-number screen brings its actions back with it.
  */
 export interface BlockedNumber {
   id: number;
@@ -44,14 +47,14 @@ export const blocklist = defineService<BlockedNumber>({
   // the *enforcement* in `isBlocked`/`blockedBy` stays by citizen — see their notes.
   indexes: [{ name: 'device_number_unique', columns: ['device_id', 'number'], unique: true }],
   /**
-   * Blocking a number this phone once blocked and then unblocked brings that row back
-   * (MICA-318, made generic by MICA-321). Unblocking is the generic soft `delete`, so the
-   * unblocked row keeps its `(device_id, number)` and a plain insert for the pair is refused by
-   * the key. The revive names this citizen and this phone, so a row the phone's previous holder
-   * left — before `transferDeviceRows` has moved it — is never revived; that insert is refused.
+   * Was `'revive'` (MICA-318, MICA-321), for the generic block-unblock-block-again. With no
+   * generic `create` there is nothing to revive through, and a decision that cannot happen
+   * should not read as one that does. A screen that brings `create` back brings `'revive'`.
    */
-  uniqueAfterDelete: 'revive',
-  options: { disableUpdate: true }
+  uniqueAfterDelete: {
+    optOut: 'no create path since MICA-414: nothing in micaOS inserts a row a delete could wedge'
+  },
+  options: { disableGet: true, disableCreate: true, disableUpdate: true, disableDelete: true }
 });
 
 /**
