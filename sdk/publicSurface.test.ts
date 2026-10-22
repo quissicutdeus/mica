@@ -4342,9 +4342,10 @@ describe('the SDK public surface (MICA-125)', () => {
     });
 
     it('sees an entry point added with no frozen surface behind it', () => {
+      // The target is never read from disk, only compared, so it is invented on purpose.
       expect(
         exportsMapProblems(
-          { '.': './index.ts', './app': './app.ts', './shell': './shell/state/catalog.ts' },
+          { '.': './index.ts', './app': './app.ts', './shell': './somewhere/new-entry.ts' },
           subpaths,
           files,
           []
