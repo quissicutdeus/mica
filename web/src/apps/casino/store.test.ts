@@ -15,8 +15,10 @@ const pushes = vi.hoisted(() => ({
  * `useAppEvents` — Hodlr's shape. The translator is the real one, by module path, so a refusal
  * assertion checks the catalog rather than a stub echoing its argument.
  */
-vi.mock('@mica/sdk', async () => {
+vi.mock('@mica/sdk', async (importOriginal) => {
   const { t, registerMessages } = await import('../../../../sdk/i18n');
+  // The real formatter, through the package rather than `sdk/lib` by path (ownership.test.ts).
+  const { formatCurrency } = await importOriginal<typeof import('@mica/sdk')>();
   return {
     useService: () => ({ call: service.call }),
     useAppEvents: () => ({
@@ -26,7 +28,8 @@ vi.mock('@mica/sdk', async () => {
       }
     }),
     t,
-    registerMessages
+    registerMessages,
+    formatCurrency
   };
 });
 
@@ -106,7 +109,7 @@ describe('spin', () => {
 
   it('refuses a board the mirror rejects without asking the server', async () => {
     bets.set([{ kind: 'red', amount: 5 }]);
-    await expect(spin()).rejects.toThrow('Each bet is at least $10.');
+    await expect(spin()).rejects.toThrow('Each bet is at least $10.00.');
     expect(service.call).not.toHaveBeenCalled();
   });
 
@@ -124,7 +127,7 @@ describe('refusals', () => {
     const placed = [{ kind: 'red' as const, amount: 500 }];
     bets.set(placed);
     answer({ spin: { ok: false, reason: 'above_max' } });
-    await expect(spin()).rejects.toThrow('Bets total at most $1000.');
+    await expect(spin()).rejects.toThrow('Bets total at most $1,000.00.');
     expect(get(bets)).toEqual(placed);
     expect(get(lastSpin)).toBeNull();
   });

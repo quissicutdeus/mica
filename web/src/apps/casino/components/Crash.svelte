@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { useAppAction, useLocale } from '@mica/sdk';
+  import { formatCurrency, useAppAction, useLocale } from '@mica/sdk';
   import { cashOut, config, crashOutcome, crashRound, startCrash } from '../store';
   import { crashPayout, formatMultiplier, multiplierAt, stakeProblem } from '../rules';
 
@@ -83,7 +83,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         class="text-6xl font-mono font-bold {outcome?.kind === 'busted' && !$crashRound
           ? 'text-error'
           : outcome?.kind === 'cashed' && !$crashRound
-            ? 'text-green-400'
+            ? 'text-on-surface'
             : 'text-on-surface'}"
       >
         {formatMultiplier(shown)}
@@ -93,12 +93,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           {#if outcome.kind === 'cashed'}
             {$t('casino.cashedOut', {
               multiplier: formatMultiplier(outcome.multiplier),
-              amount: outcome.payout
+              amount: formatCurrency(outcome.payout)
             })}
           {:else if outcome.kind === 'busted'}
             {$t('casino.busted', {
               multiplier: formatMultiplier(outcome.crash_at),
-              amount: outcome.stake
+              amount: formatCurrency(outcome.stake)
             })}
           {:else}
             {$t('casino.ended')}
@@ -123,7 +123,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         >
           {cashing
             ? $t('casino.cashingOut')
-            : $t('casino.cashOut', { amount: crashPayout($crashRound.stake, live) })}
+            : $t('casino.cashOut', {
+                amount: formatCurrency(crashPayout($crashRound.stake, live))
+              })}
         </button>
       {:else}
         <label class="text-on-surface-variant text-body-small flex flex-col gap-1">
@@ -140,7 +142,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           />
         </label>
         <p class="text-body-small text-on-surface-variant">
-          {$t('casino.limits', { min: $config.bet_min, max: $config.bet_max })}
+          {$t('casino.limits', {
+            min: formatCurrency($config.bet_min),
+            max: formatCurrency($config.bet_max)
+          })}
         </p>
         <button
           type="button"

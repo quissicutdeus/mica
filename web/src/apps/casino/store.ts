@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { get, writable } from 'svelte/store';
-import { t, useAppEvents, useService } from '@mica/sdk';
+import { formatCurrency, t, useAppEvents, useService } from '@mica/sdk';
 import type { CasinoCrashRound, CasinoRound, CasinoSpinResult } from '@mica/shared/types';
 import {
   MAX_BETS,
@@ -112,8 +112,8 @@ export const refusalMessage = (reason: string): string => {
   const translate = get(t);
   const limits = get(config);
   return translate(REFUSALS.get(reason) ?? 'casino.failGeneric', {
-    min: limits?.bet_min ?? 0,
-    max: limits?.bet_max ?? 0,
+    min: formatCurrency(limits?.bet_min ?? 0),
+    max: formatCurrency(limits?.bet_max ?? 0),
     count: MAX_BETS
   });
 };

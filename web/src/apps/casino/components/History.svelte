@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { EmptyState, Skeleton, formatTime, useLocale } from '@mica/sdk';
+  import { EmptyState, Skeleton, formatCurrency, formatTime, useLocale } from '@mica/sdk';
   import { history, historyCursor, historyLoaded, loadMoreHistory } from '../store';
   import { formatMultiplier } from '../rules';
 
@@ -51,7 +51,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               {/if}
             </p>
             <p class="text-body-small text-on-surface-variant">
-              {$t('casino.historyStake', { amount: round.stake })} · {formatTime(round.created_at)}
+              {$t('casino.historyStake', { amount: formatCurrency(round.stake) })} · {formatTime(
+                round.created_at
+              )}
             </p>
           </div>
           <!-- A crash round still in play has paid nothing yet, which is not the same as lost. -->
@@ -59,7 +61,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             class="text-title-medium shrink-0 {inPlay
               ? 'text-on-surface-variant'
               : net > 0
-                ? 'text-green-400'
+                ? 'text-on-surface'
                 : net < 0
                   ? 'text-error'
                   : 'text-on-surface-variant'}"
@@ -67,9 +69,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             {inPlay
               ? $t('casino.historyInPlay')
               : net > 0
-                ? $t('casino.won', { amount: net })
+                ? $t('casino.won', { amount: formatCurrency(net) })
                 : net < 0
-                  ? $t('casino.lost', { amount: -net })
+                  ? $t('casino.lost', { amount: formatCurrency(-net) })
                   : $t('casino.brokeEven')}
           </p>
         </li>

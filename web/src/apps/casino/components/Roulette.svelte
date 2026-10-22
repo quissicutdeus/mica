@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { useAppAction, useLocale } from '@mica/sdk';
+  import { formatCurrency, useAppAction, useLocale } from '@mica/sdk';
   import { bets, chip, config, lastBets, lastSpin, refusalMessage, spin } from '../store';
   import {
     addChip,
@@ -151,15 +151,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           </span>
           <span
             class="text-title-medium {net > 0
-              ? 'text-green-400'
+              ? 'text-on-surface'
               : net < 0
                 ? 'text-error'
                 : 'text-on-surface'}"
           >
             {net > 0
-              ? $t('casino.won', { amount: net })
+              ? $t('casino.won', { amount: formatCurrency(net) })
               : net < 0
-                ? $t('casino.lost', { amount: -net })
+                ? $t('casino.lost', { amount: formatCurrency(-net) })
                 : $t('casino.brokeEven')}
           </span>
         </div>
@@ -178,17 +178,25 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               ? 'border-yellow-400 bg-surface-container-high text-on-surface'
               : 'border-outline-variant text-on-surface-variant'}"
           >
+            <!-- A chip is a denomination, not a sum: whole dollars and no grouping, because six
+                 of them share one row and `formatCurrency`'s `$25,000.00` does not fit one
+                 (MICA-415). Every total and result on this screen goes through it. -->
             {$t('casino.chipValue', { amount: value })}
           </button>
         {/each}
       </div>
 
       <div class="text-body-small text-on-surface-variant flex justify-between">
-        <span>{$t('casino.staked', { stake, max: $config.bet_max })}</span>
+        <span
+          >{$t('casino.staked', {
+            stake: formatCurrency(stake),
+            max: formatCurrency($config.bet_max)
+          })}</span
+        >
         {#if refusedTap && stake > 0}
           <span class="text-error">{refusedTap}</span>
         {:else if stake > 0}
-          <span>{$t('casino.bestReturn', { amount: best })}</span>
+          <span>{$t('casino.bestReturn', { amount: formatCurrency(best) })}</span>
         {/if}
       </div>
 
