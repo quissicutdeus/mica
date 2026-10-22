@@ -92,3 +92,6 @@ its one-line summary.
 - [A new dialog breaks an unnamed e2e locator](new-dialog-breaks-unnamed-dialog-locator.md)
   — a nested picker makes two dialogs; grep e2e for a bare
   `getByRole('dialog')`. Also the add-on `index.svelte` unit harness
+- [Any directory under apps/ is an app](any-dir-under-apps-is-an-app.md) — an
+  empty stray `.claude/` broke appContract and a11y; write memory by absolute
+  path
