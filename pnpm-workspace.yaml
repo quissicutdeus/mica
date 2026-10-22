@@ -16,8 +16,9 @@ minimumReleaseAge: 4320
 overrides:
   svelte-eslint-parser: 1.8.1
 
+# pnpm 12 reads `allowBuilds` and `pnpm ignored-builds` lists esbuild as ignored by it: its
+# postinstall (which swaps the JS shim for the native binary) does not run, and the shim
+# works. The old `onlyBuiltDependencies: [esbuild]` that sat beside it said the opposite and
+# was not honored, so it is gone rather than left to mislead.
 allowBuilds:
   esbuild: false
-
-onlyBuiltDependencies:
-  - esbuild

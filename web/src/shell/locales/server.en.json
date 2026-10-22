@@ -26,7 +26,6 @@
   "spark.takenDown": "Your Spark profile was taken down.",
   "blabberDms.blocked": "You can't message this account.",
   "blabberDms.emptyMessage": "A message needs something in it.",
-  "blabberDms.noSuchAccount": "No such account.",
   "blabberDms.notYours": "That account is not yours.",
   "blabberDms.notYoursToSend": "That account is not yours to send from.",
   "blabberDms.selfMessage": "You cannot message yourself.",

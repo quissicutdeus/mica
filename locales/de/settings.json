@@ -251,7 +251,6 @@
   "yourData.loadFailed": "Deine Daten konnten nicht geladen werden.",
   "yourData.retry": "Erneut versuchen",
   "yourData.empty": "micaOS speichert nichts für diesen Charakter.",
-  "yourData.truncated": "{shown} von {count} angezeigt",
   "yourData.rowsOf": "{category}, Rohdaten",
   "yourData.copyAll": "Alles als JSON kopieren",
   "yourData.copied": "Deine Daten wurden kopiert",

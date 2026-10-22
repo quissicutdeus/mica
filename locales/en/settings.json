@@ -251,7 +251,6 @@
   "yourData.loadFailed": "Your data could not be loaded.",
   "yourData.retry": "Try again",
   "yourData.empty": "micaOS holds nothing for this character.",
-  "yourData.truncated": "Showing {shown} of {count}",
   "yourData.rowsOf": "{category}, raw rows",
   "yourData.copyAll": "Copy all as JSON",
   "yourData.copied": "Your data was copied",
