@@ -788,6 +788,21 @@ their character, and the column is what tells the phone the text arrived rather
 than left. Run `micaschema apply` after updating; until you do, the export fails
 with `internal_error` and the rest of Messages is unaffected.
 
+**On ESX, micaOS now needs ESX Legacy (MICA-421).** It reaches ESX only through
+the `getSharedObject` export that ESX Legacy's `es_extended` provides. The
+fallback to the `esx:getSharedObject` event, for ESX builds from before Legacy
+(about 2021), is gone on the server and the client. On such a build the phone
+finds no framework, and the server console and the player's F8 console each log
+one error naming the cause; update `es_extended` to Legacy. qb-core, qbx_core
+and standalone servers are unaffected.
+
+**A battery saved only under the old `phone_battery` metadata key starts full
+(MICA-421).** When a phone has no row in micaOS's battery table yet, its charge
+is taken from the character's `mica_battery` metadata, and no longer from the
+older `phone_battery` key, which nothing in micaOS writes. A phone whose only
+saved charge was `phone_battery` loads at 100% once and is saved normally from
+then on.
+
 ### Added
 
 **The tablet has a battery of its own (MICA-337).** It drains while carried and
@@ -1671,6 +1686,21 @@ Everything above is written for a server owner. This part is not. It is for
 somebody maintaining a `core: false` add-on outside this repo, and it answers
 one question: does that bundle still compile against this release, and does its
 manifest still ask for the right things.
+
+**A manifest's `color` is gone: write `tile`, and read `tile` (MICA-419).**
+`defineApp` used to accept the old `color` string beside `tile`, and every
+manifest it returned carried a `color` derived from the tile. Both are removed.
+`tile: { bg, fg? }` is now required, and a manifest that still sets `color`
+fails `defineApp` with an error naming it, with or without a `tile`. Code that
+read `manifest.color` reads `manifest.tile`, and `flattenTile(tile)`, now
+exported, gives the same class string `color` used to. The Store catalog's own
+`color` field is a wire format and is unchanged. As with the removals below,
+`SDK_CONTRACT_VERSION` stays `1`, because nothing outside this repo has built
+against it.
+
+**`GphoneSchema` in `@mica/shared/schema` is now `MicaSchema` (MICA-422).** It
+is the same type under the product's name, with no alias left behind. An add-on
+that names the old type changes the one word.
 
 **Four names leave the `.` entry, and `SDK_CONTRACT_VERSION` stays `1`.**
 `onAppMount` is gone. It ran a handler when the component mounted, which is what
