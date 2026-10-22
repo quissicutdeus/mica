@@ -36,7 +36,7 @@ test.describe('Spark', () => {
     await frame.getByTestId('spark-age').fill('29');
     await frame.getByTestId('spark-bio').fill('Night shifts and good coffee.');
     await frame.getByTestId('spark-add-photo').click();
-    const picker = frame.getByRole('dialog');
+    const picker = frame.getByRole('dialog', { name: 'Choose photos' });
     await expect(picker).toBeVisible();
     await picker.locator('.grid button').first().click();
     await picker.getByRole('button', { name: /^Done/ }).click();
@@ -104,7 +104,7 @@ test.describe('Spark', () => {
     await expect(frame.getByTestId('spark-save')).toBeDisabled();
 
     await frame.getByTestId('spark-add-photo').click();
-    const picker = frame.getByRole('dialog');
+    const picker = frame.getByRole('dialog', { name: 'Choose photos' });
     await picker.locator('.grid button').first().click();
     await picker.getByRole('button', { name: /^Done/ }).click();
     await expect(frame.getByTestId('spark-save')).toBeEnabled();

@@ -17,6 +17,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     TrashIcon,
     Avatar,
     Button,
+    focusTrap,
     useLocale
   } from '@mica/sdk';
 
@@ -46,10 +47,26 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       await conversationsStore.renameConversation(currentConv.id, editNameValue.trim());
     }
   };
+
+  let dialogRef = $state<HTMLElement | null>(null);
+
+  /** Announce the panel on open, and start Tab inside it — see `ConfirmDialog` (MICA-410). */
+  $effect(() => {
+    dialogRef?.focus({ preventScroll: true });
+  });
 </script>
 
+<!-- `inset-0` covers the thread, but covering is not hiding: its buttons stay in the tab
+     order underneath. Hence a dialog with a trap, as `PhotoPickerModal` is. Back still
+     closes it through the app's `useAppLevels` levels. -->
 <div
-  class="animate-in fade-in bg-surface-container-lowest duration-medium ease-emphasized absolute inset-0 z-40 flex flex-col backdrop-blur-md"
+  bind:this={dialogRef}
+  use:focusTrap
+  role="dialog"
+  aria-modal="true"
+  aria-label={$t('messages.conversationDetails')}
+  tabindex="-1"
+  class="animate-in fade-in bg-surface-container-lowest duration-medium ease-emphasized absolute inset-0 z-40 flex flex-col outline-none backdrop-blur-md"
 >
   <!-- Modal Header -->
   <div class="border-outline-variant pt-safe-top flex items-center justify-between border-b p-4">

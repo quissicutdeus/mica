@@ -23,6 +23,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     useDeepLink,
     useLocale,
     useNotifications,
+    focusTrap,
+    AccountMenu,
     type AppProps
   } from '@mica/sdk';
   import type { SparkCard, SparkMatch } from '@mica/shared/types';
@@ -47,7 +49,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     type SparkProfileInput
   } from './store';
   import Deck from './components/Deck.svelte';
-  import MatchMenu from './components/MatchMenu.svelte';
   import Matches from './components/Matches.svelte';
   import ProfileCard from './components/ProfileCard.svelte';
   import ProfileEditor from './components/ProfileEditor.svelte';
@@ -258,6 +259,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     }
   };
 
+  /**
+   * The "It's a match" screen, a full-screen dialog (MICA-410). `inset-0` covers the deck, but
+   * covering is not hiding: the deck keeps its buttons in the tab order, hence the trap. Focus
+   * lands on the panel on open so a screen reader announces it and Tab starts inside — the
+   * `PhotoPickerModal` / `ConfirmDialog` shape. Back still closes it through the levels below.
+   */
+  let matchedPanel = $state<HTMLElement | null>(null);
+  $effect(() => {
+    matchedPanel?.focus({ preventScroll: true });
+  });
+
   const app = useAppLevels({
     appId: 'spark',
     title: () => $t('spark.title'),
@@ -327,30 +339,59 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 {#snippet overlays()}
   {#if menu && openMatch}
-    <MatchMenu
-      onprofile={() => {
-        menu = false;
-        viewingProfile = true;
-      }}
-      onunmatch={() => {
-        menu = false;
-        confirmingUnmatch = true;
-      }}
-      onblock={() => {
-        menu = false;
-        confirmingBlock = true;
-      }}
-      onreport={() => {
-        menu = false;
-        reportingProfile = openMatch?.profile.id ?? null;
-      }}
+    <AccountMenu
+      label={$t('spark.matchActions')}
+      closeLabel={$t('spark.closeMenu')}
+      testid="spark-match-menu"
+      actions={[
+        {
+          label: $t('spark.viewProfile'),
+          testid: 'spark-view-profile',
+          onselect: () => {
+            menu = false;
+            viewingProfile = true;
+          }
+        },
+        {
+          label: $t('spark.unmatch'),
+          testid: 'spark-unmatch',
+          onselect: () => {
+            menu = false;
+            confirmingUnmatch = true;
+          }
+        },
+        {
+          label: $t('spark.block'),
+          tone: 'danger',
+          testid: 'spark-block',
+          onselect: () => {
+            menu = false;
+            confirmingBlock = true;
+          }
+        },
+        {
+          label: $t('spark.report'),
+          tone: 'danger',
+          testid: 'spark-report-profile',
+          onselect: () => {
+            menu = false;
+            reportingProfile = openMatch?.profile.id ?? null;
+          }
+        }
+      ]}
       onclose={() => (menu = false)}
     />
   {/if}
 
   {#if justMatched}
     <div
-      class="pt-safe-top animate-in fade-in bg-surface duration-medium ease-emphasized absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 p-6 pb-home-indicator text-center"
+      bind:this={matchedPanel}
+      use:focusTrap
+      role="dialog"
+      aria-modal="true"
+      aria-label={$t('spark.matchedTitle')}
+      tabindex="-1"
+      class="pt-safe-top animate-in fade-in bg-surface duration-medium ease-emphasized absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 p-6 pb-home-indicator text-center outline-none"
       data-testid="spark-matched"
     >
       <p class="text-primary text-title-large font-semibold">{$t('spark.matchedTitle')}</p>
