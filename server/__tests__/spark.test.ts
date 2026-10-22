@@ -77,6 +77,8 @@ import {
 } from '../services/Spark';
 import { registerAccountAppPolicy } from '../services/Accounts';
 import { selfServicePurge } from '../services/Privacy';
+// Registers the record a removal of a taken-down profile moves (MICA-426), as the server does.
+import '../services/Reports';
 import { REPORTABLE } from '../lib/moderation';
 import { __resetRateLimits } from '../lib/rateLimit';
 import { NOT_HELD_REPLY, installTestPhone, refusePhone } from './phoneStub';
@@ -92,6 +94,8 @@ interface World {
   matches: Row[];
   blocks: [number, number][];
   dms: Row[];
+  /** Rows whose takedowns were told their owner deleted them (MICA-426), as `[table, id]`. */
+  ownerDeletions: [string, number][];
   nextId: number;
   /** Runs inside the match insert, after the row is in: what a racing request did meanwhile. */
   duringMatchInsert?: () => void;
@@ -400,6 +404,10 @@ const install = () => {
       Object.assign(p, { age, bio, looking_for: lookingFor });
       return true;
     }
+    if (sql.startsWith("UPDATE `mica_reports` SET `target_prior_status` = 'deleted'")) {
+      w.ownerDeletions.push([params[0], params[1]]);
+      return true;
+    }
     if (sql.startsWith("UPDATE `mica_spark` SET `status` = 'deleted'")) {
       const p = w.profiles.find(
         (x) => x.id === params[0] && x.citizenid === params[1] && x.status === 'active'
@@ -593,6 +601,7 @@ beforeEach(() => {
     matches: [],
     blocks: [],
     dms: [],
+    ownerDeletions: [],
     nextId: 1000
   };
   install();
@@ -1005,8 +1014,40 @@ describe('unmatch, block, remove', () => {
 
   it('remove leaves a taken-down profile where the moderator put it', async () => {
     seed([{ ...ME, status: 'moderated' }]);
-    await call('spark:remove', {});
+    expect(await call('spark:remove', {})).toBe(true);
     expect(profileById(10)!.status).toBe('moderated');
+  });
+
+  it("remove records the owner's deletion on a taken-down profile's takedowns (MICA-426)", async () => {
+    // Its matches, threads and swipes go below, so a reopen restoring `active` would hand back a
+    // blank card nobody can match; the record makes it restore `deleted`.
+    matched();
+    profileById(10)!.status = 'moderated';
+    expect(await call('spark:remove', {})).toBe(true);
+    expect(profileById(10)!.status).toBe('moderated');
+    expect(w.ownerDeletions).toEqual([['mica_spark', 10]]);
+    expect(w.matches).toHaveLength(0);
+  });
+
+  it('remove records nothing over a live profile it can delete — the positive twin', async () => {
+    matched();
+    expect(await call('spark:remove', {})).toBe(true);
+    expect(profileById(10)!.status).toBe('deleted');
+    expect(w.ownerDeletions).toEqual([]);
+  });
+
+  it('remove deletes a profile a reopen put back live while the deletion was recorded', async () => {
+    matched();
+    profileById(10)!.status = 'moderated';
+    const update = dbMock.update.getMockImplementation()!;
+    dbMock.update.mockImplementation(async (raw: string, params: any[] = []) => {
+      const answer = await update(raw, params);
+      // The reopen queued ahead of the record finishes first and restores the profile live.
+      if (one(raw).startsWith('UPDATE `mica_reports`')) profileById(10)!.status = 'active';
+      return answer;
+    });
+    await call('spark:remove', {});
+    expect(profileById(10)!.status).toBe('deleted');
   });
 
   it('a self-service delete runs the same removal first, and a failure aborts the purge', async () => {

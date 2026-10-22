@@ -29,13 +29,14 @@ const CONTAINER_LABEL = 'mica-schema-harness';
 
 let checksRun = 0;
 /**
- * The repository checks (48), plus MICA-233's: for each of three import sources on each of
+ * The repository checks (52), plus MICA-233's: for each of three import sources on each of
  * two framework shapes, fifteen checks and the seeded schema's one. Plus MICA-167's
- * retention scenario on each shape: sixteen checks and the seeded schema's one. Plus
- * MICA-292's evidence hold on the purges and the sweep, ten checks and the seeded schema's one,
- * on qb and on ESX with `users` on each of two collations (MICA-299). Plus MICA-275's line
- * membership, eleven checks on each shape. Plus MICA-293's hosted quota and drop race,
- * sixteen checks and the seeded schema's one on each shape. Plus MICA-168's player export and
+ * retention scenario on each shape: twenty-one checks (MICA-390's five deleteThread ones
+ * among them) and the seeded schema's one. Plus MICA-292's evidence hold on the purges and
+ * the sweep, ten checks and the seeded schema's one, on qb and on ESX with `users` on each of
+ * two collations (MICA-299). Plus MICA-275's line membership, eleven checks on each shape.
+ * Plus MICA-293's hosted quota and drop race, sixteen checks and the seeded schema's one on
+ * each shape. Plus MICA-168's player export and
  * delete, twelve checks and the seeded schema's one on each shape, and its cascade guard, ten
  * and the seeded schema's one on each shape. Plus MICA-300's deleted character, cleaned up by
  * the hook (thirteen and the seeded schema's one) and by the sweep (seventeen and the seeded
@@ -43,10 +44,11 @@ let checksRun = 0;
  * MICA-165's keyed import and content backfill, eleven and the seeded schema's one on each
  * shape, and a keyed micaseed on qb. Plus MICA-306's first-start schema, below. Plus
  * `uniqueAfterDelete: 'revive'` on Hodlr and Battery, the seeded schema's one and eighteen on
- * each shape (REVIVE_CHECKS).
+ * each shape (REVIVE_CHECKS). Plus MICA-426's takedown and restore (MODERATION_CHECKS) and its
+ * moderated rows through the purges (PURGE_MODERATED_CHECKS), on each shape.
  */
 const IMPORT_CHECKS = 16;
-const RETENTION_CHECKS = 17;
+const RETENTION_CHECKS = 22;
 const EVIDENCE_CHECKS = 11;
 const LINE_CHECKS = 11;
 const HOSTED_CHECKS = 17;
@@ -77,9 +79,19 @@ const BOOTSTRAP_CHECKS = 23;
  * refused and leaves the deleted row deleted.
  */
 const REVIVE_CHECKS = 19;
+/**
+ * MICA-426: a takedown and a restore on a real `ON UPDATE` column, the Messages reads and a
+ * retention prune (the seeded schema's one and ten), and a moderated row through a player's own
+ * delete and the character-deleted purge's plan, hidden, and its reopens (the seeded schema's
+ * one and nine), on each shape.
+ */
+const MODERATION_CHECKS = 11;
+const PURGE_MODERATED_CHECKS = 10;
 const MINIMUM_CHECKS =
-  48 +
+  52 +
   REVIVE_CHECKS * 2 +
+  MODERATION_CHECKS * 2 +
+  PURGE_MODERATED_CHECKS * 2 +
   BOOTSTRAP_CHECKS * 2 +
   CRYPT_CHECKS * 2 +
   CRYPT_SEED_CHECKS +
@@ -261,6 +273,8 @@ const loadServerModule = async () => {
     `import '${root}/server/services/Messages.ts';`,
     // MICA-390: a thread's hard delete keeps a reported DM by the same hold retention does.
     `export { deleteThread } from '${root}/server/services/DirectMessages.ts';`,
+    // MICA-426: the takedown and the restore, whose status move must leave `updated_at` alone.
+    `export { moderateTarget, restoreTarget } from '${root}/server/lib/moderation.ts';`,
     `import '${root}/server/services/Marketplace.ts';`,
     // MICA-165: the cipher and the backfill, in the same bundle as the importer, so an import
     // seals through the same registry and keyring the backfill reads.
@@ -296,6 +310,8 @@ const loadPrivacyModule = async () => {
   const entry = [
     `import '${root}/server/services/index.ts';`,
     `export { buildExport, EXPORT_EXCLUDED, ROW_CAP, SELF_SERVICE_EXCEPT, selfServicePurge } from '${root}/server/services/Privacy.ts';`,
+    // MICA-426: the reopen's restore, in the same bundle as the purge whose record it reads.
+    `export { moderateTarget, restoreTarget } from '${root}/server/lib/moderation.ts';`,
     `export { __setPurgeHookForTests, ownedTables, purgeOwnedRows } from '${root}/server/lib/orphanSweep.ts';`,
     // MICA-300: the character-deleted hook and the start-up sweep are driven through the
     // handlers `lib/shell.ts` registers, so the sweep needs the framework stand-in.
@@ -1327,6 +1343,138 @@ const runEvidenceVariant = async ({
   );
 };
 
+/* ------------------------------------------- a takedown and its restore (MICA-426) */
+
+/**
+ * MICA-426 on each shape, against a real `ON UPDATE CURRENT_TIMESTAMP` column: a takedown and a
+ * restore move only `status`, so nothing reads the row as edited or re-dated; a Messages thread,
+ * its inbox preview and its unread count leave a moderated text out; and a retention prune keeps
+ * the moderated text while it takes its unmoderated siblings.
+ *
+ * The seeded schema's one and ten (MODERATION_CHECKS). The unit suites assert the SQL's text;
+ * only an engine can say that naming `updated_at` in the `SET` really stops `ON UPDATE`, and that
+ * the hold, the thread and the inbox read the status the takedown wrote.
+ */
+const runModerationVariant = async ({ connection, schemaFile, hasPlayers, modules }) => {
+  const framework = hasPlayers ? 'qb' : 'esx';
+  const A = hasPlayers ? 'CIT_A' : ESX_OWNER_A;
+  const B = hasPlayers ? 'CIT_B' : ESX_OWNER_B;
+  const label = `moderation on ${framework}`;
+
+  const database = await seedFrameworkAndMica({
+    connection,
+    schemaFile,
+    hasPlayers,
+    suffix: 'moderation'
+  });
+  modules.__setResourceLookup(FRAMEWORK[framework]);
+  const q = async (sql, params = []) => (await connection.query(sql, params))[0];
+  const phoneA = 'a'.repeat(32);
+  const phoneB = 'b'.repeat(32);
+
+  step(`${label} — A's thread with B: texts 1, 3 and the newest, 2; B has read none`);
+  await q('INSERT INTO mica_devices (citizenid, device_id, claimed) VALUES (?, ?, 0), (?, ?, 0)', [
+    A,
+    phoneA,
+    B,
+    phoneB
+  ]);
+  await q(
+    "INSERT INTO mica_messages_conversations (id, citizenid, is_group, status) VALUES (1, ?, 0, 'active'), (2, ?, 0, 'active')",
+    [A, A]
+  );
+  await q(
+    `INSERT INTO mica_messages_participants (conversation_id, citizenid, device_id, role, left_at, status, last_read)
+     VALUES (1, ?, ?, 'admin', NULL, 'active', NOW()), (1, ?, ?, 'member', NULL, 'active', '2019-01-01 00:00:00')`,
+    [A, phoneA, B, phoneB]
+  );
+  // `updated_at` written equal to `created_at`, as an unedited text's is; an insert never fires
+  // `ON UPDATE`. All three are past Messages' 180-day window.
+  await q(
+    `INSERT INTO mica_messages (id, conversation_id, citizenid, message, created_at, updated_at) VALUES
+     (1, 1, ?, 'one', '2020-01-01 00:00:00', '2020-01-01 00:00:00'),
+     (3, 1, ?, 'three', '2021-01-01 00:00:00', '2021-01-01 00:00:00'),
+     (2, 1, ?, 'two', '2022-01-01 00:00:00', '2022-01-01 00:00:00'),
+     (9, 2, ?, 'scratch', '2022-01-01 00:00:00', '2022-01-01 00:00:00')`,
+    [A, A, A, A]
+  );
+  const unedited = async (id) =>
+    (
+      await q('SELECT status, updated_at = created_at AS same FROM mica_messages WHERE id = ?', [
+        id
+      ])
+    ).map((r) => [r.status, Number(r.same)])[0];
+
+  // The positive twin first: the column really is `ON UPDATE`, so the pin below is what holds it.
+  await q("UPDATE mica_messages SET status = 'deleted' WHERE id = 9");
+  check(
+    `${label}: a status move that does not name updated_at re-dates the row`,
+    await unedited(9),
+    ['deleted', 0]
+  );
+  await q('DELETE FROM mica_messages WHERE id = 9');
+
+  const threadIds = async () =>
+    (await new modules.MessageRepository(database).findByConversation(1)).rows.map((r) => [
+      r.id,
+      Number(r.edited)
+    ]);
+  const inbox = async () => {
+    const { rows } = await new modules.ConversationRepository(database).findForPhone(B, phoneB, {
+      limit: 25,
+      cursor: null
+    });
+    const row = rows.find((r) => r.id === 1);
+    return [Number(row?.unread_count), row?.last_message_text ?? null];
+  };
+
+  step(`${label} — text 2 taken down`);
+  check(
+    `${label}: the takedown answers the status it replaced`,
+    await modules.moderateTarget('mica_messages', 2, 'ADMIN1', 'harness'),
+    'active'
+  );
+  check(`${label}: moderated, and updated_at untouched`, await unedited(2), ['moderated', 1]);
+  check(`${label}: the thread leaves the moderated text out`, await threadIds(), [
+    [1, 0],
+    [3, 0]
+  ]);
+  check(`${label}: the inbox neither counts nor previews it`, await inbox(), [2, 'three']);
+
+  step(`${label} — the report reopened: text 2 restored`);
+  check(
+    `${label}: the restore moves the row`,
+    await modules.restoreTarget('mica_messages', 2, 'active', 'ADMIN1', 'harness'),
+    true
+  );
+  check(`${label}: live again, and updated_at still untouched`, await unedited(2), ['active', 1]);
+  // By id, which a takedown never moves: between 1 and 3, where it was sent.
+  check(`${label}: back in its place in the thread, not marked edited`, await threadIds(), [
+    [1, 0],
+    [2, 0],
+    [3, 0]
+  ]);
+
+  step(`${label} — taken down again, then a retention prune past every window`);
+  await modules.moderateTarget('mica_messages', 2, 'ADMIN1', 'harness');
+  await q(
+    "INSERT INTO mica_schema_migrations (id, applied_at) VALUES ('retention:mica_messages:180d', NOW() - INTERVAL 25 HOUR)"
+  );
+  const policy = modules.retentionPolicies().find((p) => p.table === 'mica_messages');
+  let pruned;
+  try {
+    pruned = await modules.pruneTable(policy);
+  } finally {
+    modules.resetRetentionForTests();
+  }
+  check(`${label}: the prune takes the two unmoderated texts`, pruned, 2);
+  check(
+    `${label}: and keeps the moderated one`,
+    (await q('SELECT id, status FROM mica_messages ORDER BY id')).map((r) => [r.id, r.status]),
+    [[2, 'moderated']]
+  );
+};
+
 /**
  * MICA-293, on each shape: a hosted photo counts against the quota, and a proximity drop
  * cannot hand a recipient a file retention already released.
@@ -1653,6 +1801,140 @@ const runPrivacyVariant = async ({ connection, schemaFile, hasPlayers, privacy }
       (await q('SELECT id FROM mica_media WHERE citizenid = ?', [A])).map((r) => r.id)
     ],
     [0, [0, [], [], 0, 0], [20]]
+  );
+};
+
+/**
+ * MICA-426 on each shape: what a purge keeps for evidence survives a player's own delete and the
+ * character-deleted purge's plan, while the player's other rows go — and is hidden, never left
+ * live. Media, the reportable table every character owns rows in, and a Blabber post with the
+ * account it keeps.
+ *
+ * - A moderated row stays moderated, and its takedown is told the owner deleted it, so the reopen
+ *   puts it back `deleted` (MICA-426 review).
+ * - A row under a pending report moves to `deleted`, so a takedown after the delete records
+ *   `deleted` and its reopen puts back nothing showing (round three).
+ * - The account a held post keeps moves to `deleted` too, rather than staying public.
+ *
+ * The seeded schema's one and nine (PURGE_MODERATED_CHECKS).
+ */
+const runModeratedPurgeVariant = async ({ connection, schemaFile, hasPlayers, privacy }) => {
+  const framework = hasPlayers ? 'qb' : 'esx';
+  const A = hasPlayers ? 'CIT_A' : ESX_OWNER_A;
+  const B = hasPlayers ? 'CIT_B' : ESX_OWNER_B;
+  const label = `moderated rows in the purges on ${framework}`;
+
+  await seedFrameworkAndMica({ connection, schemaFile, hasPlayers, suffix: 'moderated_purge' });
+  const q = async (sql, params = []) => (await connection.query(sql, params))[0];
+  const mediaOf = async (owner) =>
+    (await q('SELECT id FROM mica_media WHERE citizenid = ? ORDER BY id', [owner])).map(
+      (r) => r.id
+    );
+  const statusOf = async (table, id) =>
+    (await q(`SELECT status FROM ${table} WHERE id = ?`, [id]))[0]?.status ?? null;
+  const photo = (id, owner, status) =>
+    q("INSERT INTO mica_media (id, citizenid, data, status) VALUES (?, ?, 'x', ?)", [
+      id,
+      owner,
+      status
+    ]);
+
+  step(
+    `${label} — A: 30 moderated, 31 live, 32 deleted, 35 and post 700 reported, a note; B: 33 moderated`
+  );
+  await photo(30, A, 'moderated');
+  await photo(31, A, 'active');
+  await photo(32, A, 'deleted');
+  await photo(33, B, 'moderated');
+  await photo(35, A, 'active');
+  await q("INSERT INTO mica_notes (citizenid, title, content) VALUES (?, 'a note', 'x')", [A]);
+  await q("INSERT INTO mica_accounts (id, citizenid, app, handle) VALUES (1, ?, 'blabber', 'a')", [
+    A
+  ]);
+  await q('INSERT INTO mica_blabber (id, citizenid, account_id) VALUES (700, ?, 1)', [A]);
+  // The takedowns that moderated 30 and 33, each recording the photo was live before it, and the
+  // pending reports on 35 and post 700. All filed by B: a resolved report A filed is A's own row,
+  // and A's delete takes it.
+  await q(
+    `INSERT INTO mica_reports (citizenid, target_table, target_id, resolution, target_prior_status)
+     VALUES (?, 'mica_media', 30, 'actioned', 'active'), (?, 'mica_media', 33, 'actioned', 'active'),
+            (?, 'mica_media', 35, 'pending', NULL), (?, 'mica_blabber', 700, 'pending', NULL)`,
+    [B, B, B, B]
+  );
+  const priorOf = async (id) =>
+    (
+      await q(
+        "SELECT target_prior_status AS p FROM mica_reports WHERE target_table = 'mica_media' AND target_id = ?",
+        [id]
+      )
+    )[0].p;
+
+  const purged = await privacy.selfServicePurge(A);
+  check(
+    `${label}: the player's own delete ran everywhere and kept what the holds keep`,
+    [purged.failures.map((f) => `${f.table}: ${f.error?.message ?? f.error}`), purged.kept],
+    [[], 4]
+  );
+  check(
+    `${label}: it kept the held photos and took the rest, B's untouched`,
+    [
+      await mediaOf(A),
+      (await q('SELECT COUNT(*) AS n FROM mica_notes WHERE citizenid = ?', [A]))[0].n,
+      await mediaOf(B)
+    ],
+    [[30, 35], 0, [33]]
+  );
+  check(
+    `${label}: the moderated photo's takedown now records its owner's deletion; B's is untouched`,
+    [await priorOf(30), await priorOf(33)],
+    ['deleted', 'active']
+  );
+  check(
+    `${label}: what the pending reports hold is hidden, the account its post keeps too`,
+    [
+      await statusOf('mica_media', 30),
+      await statusOf('mica_media', 35),
+      await statusOf('mica_blabber', 700),
+      await statusOf('mica_accounts', 1)
+    ],
+    ['moderated', 'deleted', 'deleted', 'deleted']
+  );
+
+  step(`${label} — the pending report on 35 actioned after the delete, then reopened`);
+  const recorded = await privacy.moderateTarget('mica_media', 35, 'ADMIN1', 'harness');
+  const reopened = await privacy.restoreTarget('mica_media', 35, recorded, 'ADMIN1', 'harness');
+  check(
+    `${label}: the takedown records deleted, and the reopen puts back deleted`,
+    [recorded, reopened, await statusOf('mica_media', 35)],
+    ['deleted', true, 'deleted']
+  );
+
+  step(`${label} — the character-deleted purge's plan, over a fresh live sibling`);
+  await photo(34, A, 'active');
+  const character = await privacy.purgeOwnedRows(A);
+  check(`${label}: the purge ran everywhere`, character.failures.length, 0);
+  check(`${label}: and kept the held photos only`, await mediaOf(A), [30, 35]);
+
+  step(`${label} — the report on 30 reopened: the photo is restored as its owner left it`);
+  const restored = await privacy.restoreTarget(
+    'mica_media',
+    30,
+    await priorOf(30),
+    'ADMIN1',
+    'harness'
+  );
+  check(
+    `${label}: the restore puts back deleted, not active`,
+    [restored, await statusOf('mica_media', 30)],
+    [true, 'deleted']
+  );
+  // Nothing holds them any more, so the next purge takes them like any other row.
+  await q("UPDATE mica_reports SET resolution = 'dismissed' WHERE resolution = 'pending'");
+  await privacy.purgeOwnedRows(A);
+  check(
+    `${label}: once nothing holds them, the next purge takes the rows and the account`,
+    [await mediaOf(A), await statusOf('mica_blabber', 700), await statusOf('mica_accounts', 1)],
+    [[], null, null]
   );
 };
 
@@ -3303,6 +3585,16 @@ const main = async () => {
       modules
     });
 
+    // MICA-426: a takedown and a restore leave updated_at alone, Messages hides a moderated text,
+    // and a retention prune keeps it.
+    await runModerationVariant({ connection, schemaFile: 'mica.sql', hasPlayers: true, modules });
+    await runModerationVariant({
+      connection,
+      schemaFile: 'mica.esx.sql',
+      hasPlayers: false,
+      modules
+    });
+
     // MICA-292: a reported photo outlives the purges and the sweep until its report resolves.
     await runEvidenceVariant({ connection, schemaFile: 'mica.sql', hasPlayers: true, modules });
     // MICA-299: and on ESX with `users` on both micaOS's collation and MariaDB 11's default.
@@ -3327,6 +3619,19 @@ const main = async () => {
     capture.release();
     await runPrivacyVariant({ connection, schemaFile: 'mica.sql', hasPlayers: true, privacy });
     await runPrivacyVariant({ connection, schemaFile: 'mica.esx.sql', hasPlayers: false, privacy });
+    // MICA-426: a moderated row survives a player's own delete and the character purge's plan.
+    await runModeratedPurgeVariant({
+      connection,
+      schemaFile: 'mica.sql',
+      hasPlayers: true,
+      privacy
+    });
+    await runModeratedPurgeVariant({
+      connection,
+      schemaFile: 'mica.esx.sql',
+      hasPlayers: false,
+      privacy
+    });
     await runCascadeVariant({ connection, schemaFile: 'mica.sql', hasPlayers: true, privacy });
     await runCascadeVariant({ connection, schemaFile: 'mica.esx.sql', hasPlayers: false, privacy });
 

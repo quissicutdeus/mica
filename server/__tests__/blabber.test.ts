@@ -725,7 +725,9 @@ describe('a mouth deleted and mouthed again (MICA-330)', () => {
       // Moderation's own unscoped form, by id and the status it read (MICA-386); else the
       // owner-scoped soft delete.
       const unscoped =
-        sql === 'UPDATE `mica_blabber` SET `status` = ? WHERE `id` = ? AND `status` = ?';
+        sql.replace(/\s+/g, ' ') ===
+        'UPDATE `mica_blabber` SET `status` = ?, `updated_at` = `updated_at` ' +
+          'WHERE `id` = ? AND `status` = ?';
       const [status, id, third] = params as [string, number, string];
       const hit = rows.find(
         (r) =>

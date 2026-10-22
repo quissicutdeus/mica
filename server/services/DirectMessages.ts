@@ -19,6 +19,7 @@ import {
 import type { Account, DirectMessage } from '@mica/shared/types';
 import { dmsContract } from '@mica/shared/contracts/dms';
 import { OPEN_REPORT, parseRetentionDays, registerRetention } from '../lib/contentRetention';
+import { recordOwnerDeletion } from '../lib/moderation';
 
 /**
  * Direct messages between two accounts on the shared identity layer, for **any** social app
@@ -610,6 +611,14 @@ const THREAD_HELD =
  * retention holds it: a reported DM without the messages around it is evidence without its
  * context. Answers how many DMs went, `0` for a held thread.
  *
+ * **A moderated DM stays, alone** (MICA-426). A takedown is a decision already made, so the
+ * context around it is no longer what a reviewer needs; the row is what the ledger and the
+ * actioned report point at, and what a reopen would put back. The rest of the thread goes, as
+ * the app's rule says it does. The kept row's takedowns are recorded as the thread's deletion
+ * (`recordOwnerDeletion`), so a reopen puts it back `deleted` — evidence still, and never one
+ * lone line resurfacing in a conversation that has ended. Before the deletes and again after
+ * them (`recordModerated` below), so neither a reopen nor a takedown running alongside slips by.
+ *
  * For an app's own rule that a conversation ends with nothing left — an unmatch in a dating
  * app. Not reachable from any net event: a sent message is not unsendable by a player
  * (`reachability.test.ts`), and this is a server-side call an app's service makes once its own
@@ -628,11 +637,30 @@ export const deleteThread = async (a: number, b: number): Promise<number> => {
   const table = directMessages.resolved.table;
   const held = [table, a, b, b, a];
 
+  // The thread's moderated lines, recorded as deleted with it. Asked before the deletes, so a
+  // reopen already running finishes first, and again after them, so a takedown that lands while
+  // they run is recorded too. Not in a thread an open report holds: that thread stays, live,
+  // and its moderated line is put back the way its siblings still are.
+  const recordModerated = async (): Promise<void> => {
+    const moderated = await Database.query<{ id: number }[]>(
+      `SELECT t.\`id\` FROM \`mica_blabber_dms\` t
+       WHERE ((t.\`from_account\` = ? AND t.\`to_account\` = ?)
+          OR (t.\`from_account\` = ? AND t.\`to_account\` = ?))
+         AND t.\`status\` = 'moderated' AND NOT ${THREAD_HELD}`,
+      [a, b, b, a, ...held]
+    );
+    await recordOwnerDeletion(
+      table,
+      (Array.isArray(moderated) ? moderated : []).map((row) => Number(row.id))
+    );
+  };
+  await recordModerated();
+
   const rows = await Database.query<{ id: number }[]>(
     `SELECT t.\`id\` FROM \`mica_blabber_dms\` t
      WHERE ((t.\`from_account\` = ? AND t.\`to_account\` = ?)
         OR (t.\`from_account\` = ? AND t.\`to_account\` = ?))
-       AND NOT ${THREAD_HELD}
+       AND t.\`status\` <> 'moderated' AND NOT ${THREAD_HELD}
      ORDER BY t.\`id\``,
     [a, b, b, a, ...held]
   );
@@ -648,7 +676,7 @@ export const deleteThread = async (a: number, b: number): Promise<number> => {
       `DELETE FROM \`mica_blabber_dms\` WHERE \`id\` IN (${marks})
          AND ((\`from_account\` = ? AND \`to_account\` = ?)
            OR (\`from_account\` = ? AND \`to_account\` = ?))
-         AND NOT ${THREAD_HELD}`,
+         AND \`status\` <> 'moderated' AND NOT ${THREAD_HELD}`,
       [...batch, a, b, b, a, ...held]
     );
     removed += Number(result?.affectedRows ?? 0) || 0;
@@ -660,5 +688,7 @@ export const deleteThread = async (a: number, b: number): Promise<number> => {
       [table, ...batch]
     );
   }
+
+  await recordModerated();
   return removed;
 };

@@ -154,6 +154,102 @@ export const summariseTarget = async (
 /** The status a takedown holds a row at, and the one status a restore never writes back. */
 const MODERATED = 'moderated';
 
+/**
+ * One decision about a reported row at a time (MICA-386 review; here since MICA-426).
+ *
+ * A takedown and a reopen each read state and then act on it — whether another report holds
+ * the row, what status the row is on, which record to inherit — across several statements,
+ * and two of them interleaved over one row got it wrong both ways: a reopen restoring a row
+ * another report's takedown had just claimed, leaving it live under an actioned report; two
+ * takedowns at once, the second inheriting a record the first had not written yet. An owner
+ * deleting a row under a takedown (`recordOwnerDeletion`) is a decision about it too, and
+ * queues behind the same key, so a reopen never reads the record half-way through one.
+ *
+ * Queued per row rather than refused, so an admin never sees a busy error. In process memory:
+ * oxmysql has no interactive transaction for a `SELECT … FOR UPDATE` to hold, and one FXServer
+ * owns its database — two servers sharing one would not be serialised by this. The CAS writes
+ * below and the report claims still hold on their own. **Not re-entrant**: work queued here
+ * must not queue behind the same row again, or it waits on itself.
+ */
+const decisions = new Map<string, Promise<void>>();
+
+export const oneDecisionAbout = async <T>(
+  table: string,
+  id: number,
+  work: () => Promise<T>
+): Promise<T> => {
+  const key = `${table}#${id}`;
+  const turn = (decisions.get(key) ?? Promise.resolve()).then(work);
+  const settled = turn.then(
+    () => undefined,
+    () => undefined
+  );
+  decisions.set(key, settled);
+  try {
+    return await turn;
+  } finally {
+    if (decisions.get(key) === settled) decisions.delete(key);
+  }
+};
+
+/**
+ * Moves every standing takedown's record of one row to `deleted`. Registered by the Reports
+ * service, which owns that record, rather than written here: this file is core and names no
+ * table (`mediaTable.test.ts`).
+ */
+type OwnerDeletionRecorder = (table: ReportableTable, id: number) => Promise<void>;
+let ownerDeletionRecorder: OwnerDeletionRecorder | null = null;
+
+/**
+ * Called by the Reports service at import; not something to call by hand. Answers the recorder
+ * it replaced, so a suite standing one in can put the real one back.
+ */
+export const registerOwnerDeletionRecorder = (
+  recorder: OwnerDeletionRecorder | null
+): OwnerDeletionRecorder | null => {
+  const previous = ownerDeletionRecorder;
+  ownerDeletionRecorder = recorder;
+  return previous;
+};
+
+/**
+ * An owner deleted rows that are under a takedown (MICA-426): the reopen puts back `deleted`.
+ *
+ * The owner's own deletion during a takedown wins. A reopen restores the status each takedown
+ * recorded, and that record was read while the content was live; a player who then deleted it
+ * — a Spark profile removed, a thread ended by an unmatch — would get it back from the reopen,
+ * half-empty, since what hung off it went with the delete. So every report whose takedown holds
+ * one of these rows has its record moved to `deleted`, and the row itself stays `moderated`:
+ * the evidence the ledger points at, held from every sweep while it is.
+ *
+ * Only for a path that deletes a row whatever its status. The generic delete refuses a
+ * moderated row outright (`Repository.delete`), and so does every named one that writes
+ * `status = 'active'` into its `WHERE`; those have nothing to record.
+ *
+ * Each row queues behind any decision in flight about it (`oneDecisionAbout`), so a takedown's
+ * own record lands first and is the one overwritten, and a reopen already running finishes
+ * first. Never called inside `oneDecisionAbout` for the same row. Throws, before writing
+ * anything, when no recorder is registered: a moderated row exists only because the Reports
+ * service took it down, so its absence is a wiring fault and a silent pass would let the
+ * reopen hand the content back.
+ */
+export const recordOwnerDeletion = async (
+  table: ReportableTable,
+  ids: readonly number[]
+): Promise<void> => {
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) return;
+  const recorder = ownerDeletionRecorder;
+  if (!recorder) {
+    throw new Error(
+      `[moderation] no record to move for ${table}: the Reports service is not loaded`
+    );
+  }
+  for (const id of unique) {
+    await oneDecisionAbout(table, id, () => recorder(table, id));
+  }
+};
+
 /** Every `statuses` list declares lowercase words; anything else did not come off a row. */
 const STATUS_SHAPE = /^[a-z_]{1,32}$/;
 
@@ -177,6 +273,12 @@ const MODERATE_ATTEMPTS = 3;
  *
  * Both statuses are bound, never interpolated: `from` was read off the row, `to` is either
  * `moderated` or a status a report recorded off the same row (MICA-386).
+ *
+ * **`updated_at` is pinned** (MICA-426). Every declared table carries `ON UPDATE
+ * CURRENT_TIMESTAMP`, and a takedown is not the author's edit: Messages, Blabber and Glimpse
+ * read `updated_at > created_at` as "Edited", and Media's Recently Deleted sorts and times its
+ * restore window by `updated_at`. A restore puts content back as it was, so neither half of
+ * the round trip may move it. Naming the column in the `SET` is what stops `ON UPDATE`.
  */
 const moveStatus = async (
   table: ReportableTable,
@@ -186,7 +288,8 @@ const moveStatus = async (
 ): Promise<boolean> => {
   try {
     return await Database.update(
-      `UPDATE \`${table}\` SET \`status\` = ? WHERE \`id\` = ? AND \`status\` = ?`,
+      `UPDATE \`${table}\` SET \`status\` = ?, \`updated_at\` = \`updated_at\`
+       WHERE \`id\` = ? AND \`status\` = ?`,
       [to, id, from]
     );
   } catch (error) {

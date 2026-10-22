@@ -166,10 +166,11 @@ decision, recorded in [`docs/decisions.md`](docs/decisions.md).
   messages.
 - **Your data**: Settings > Privacy > Your data shows a player everything micaOS
   holds for their character, by category, and copies it as JSON; or deletes it
-  after they type `DELETE`. It never takes another player's rows or content
-  under an open report, and keeps moderation records and the phone itself; both
-  requests are audit-logged. Details in [`docs/security.md`](docs/security.md)
-  (MICA-168).
+  after they type `DELETE`. It never takes another player's rows, content under
+  an open report, or content staff have taken down; what it keeps as evidence it
+  hides from everyone (it is no longer live), and it keeps moderation records
+  and the phone itself; both requests are audit-logged. Details in
+  [`docs/security.md`](docs/security.md) (MICA-168).
 
 ### 🛠️ Backend & Core Architecture
 
@@ -449,8 +450,11 @@ server event `mica:server:shell:characterDeleted`, if your deletion flow fires
 it, and the sweep at every resource start, which asks the framework's table
 (`users(identifier)` on ESX, `players(citizenid)` on qb) who exists and deletes
 the rows belonging to characters who do not. Both keep anything under an open
-report, what hangs off it (attachments, replies, photos), and anything another
-player's rows still reference; a deleted character's reports that staff have not
+report or taken down by staff, what hangs off a reported row (attachments,
+replies, photos), and anything another player's rows still reference. What is
+kept as evidence is hidden from everyone, including a player account a kept post
+names; an account kept only because another player's row references it (another
+player's DM to it) stays live; a deleted character's reports that staff have not
 resolved, and their audit-log entries, are kept too.
 
 **It refuses to run rather than guess, and you will see it say so.** Treating an
@@ -1200,47 +1204,51 @@ the convar is invisible until the resource restarts.
   `micamedia prune` runs it on demand. What is never deleted: anything under an
   open report -- the reported message's whole conversation, the reported DM's
   whole thread, and every DM of a reported account -- until the report is
-  resolved; and any photo still attached to a message, blab or listing that
-  exists. A conversation itself is never removed, only its old messages.
-  **Nothing is deleted on the first start with a window on.** The console says
-  how many rows would go and at what time, 24 hours later, and names the convar
-  that stops it; setting it to `0` before then keeps everything. Shortening a
-  window later gets its own 24-hour notice, and so does turning retention off
-  and back on. A table is not pruned at all until `micaschema apply` has added
-  its `created_at` index, and the console says so. The notices are recorded as
-  `retention:<table>:<days>d` rows in `mica_schema_migrations`; deleting one
-  restarts that table's notice. Run `micamedia` first to see how large the media
-  table is.
+  resolved; anything staff have taken down, for as long as it stays taken down
+  (the row is the evidence, and a reopen puts it back); and any photo still
+  attached to a message, blab or listing that exists. A conversation itself is
+  never removed, only its old messages. **Nothing is deleted on the first start
+  with a window on.** The console says how many rows would go and at what time,
+  24 hours later, and names the convar that stops it; setting it to `0` before
+  then keeps everything. Shortening a window later gets its own 24-hour notice,
+  and so does turning retention off and back on. A table is not pruned at all
+  until `micaschema apply` has added its `created_at` index, and the console
+  says so. The notices are recorded as `retention:<table>:<days>d` rows in
+  `mica_schema_migrations`; deleting one restarts that table's notice. Run
+  `micamedia` first to see how large the media table is.
 - **`mica_darkchat_retention` — Dark Chat's window, in hours (24) (MICA-254).**
   A Dark Chat message older than the window is never shown and is deleted
   permanently by a sweep every 15 minutes, 500 rows at a time. Unlike the
   content-retention convars above, it has no `0` or `off` and no first-start
   notice: a value that is not a whole number of hours of at least one warns and
   uses 24. A message under an open report is kept until the report is resolved,
-  and never reaches the player data export once it is past the window. Read on
-  every use, so a change takes effect without a restart.
-- **`mica_content_key_file` — message, DM and mail bodies encrypted at rest
-  (MICA-165).** The path of a key file, never a key: `server.cfg` is the file
-  that travels with a database dump. **The file has to sit inside a resource
-  folder** — FXServer lets a resource read nothing outside one, with no setting
-  to lift it (MICA-303) — so it goes in a resource of its own, `mica-keys`,
-  never inside `mica` (an update replaces that folder). Best of all, keep the
-  real file outside `server-data` and put a symlink to it in `mica-keys`, so a
-  backup of `server-data` does not carry it. `micacrypt keygen` from the console
-  prints the exact steps; it writes nothing and never prints a key, because
-  FXServer lets micaOS write nowhere a key belongs and the console is logged. On
-  Windows, write the key line with PowerShell's cryptographic generator instead
-  of `openssl` (never `Get-Random`, which is not one): `$b = [byte[]]::new(32)`,
-  then `[Security.Cryptography.RandomNumberGenerator]::Fill($b)`, then
+  and one staff have taken down is kept while it stays taken down. A line a
+  reopen restores is still subject to the window. Neither reaches the player
+  data export once it is past the window. Read on every use, so a change takes
+  effect without a restart.
+- **`mica_content_key_file` — message, DM, mail and Dark Chat bodies encrypted
+  at rest (MICA-165).** The path of a key file, never a key: `server.cfg` is the
+  file that travels with a database dump. **The file has to sit inside a
+  resource folder** — FXServer lets a resource read nothing outside one, with no
+  setting to lift it (MICA-303) — so it goes in a resource of its own,
+  `mica-keys`, never inside `mica` (an update replaces that folder). Best of
+  all, keep the real file outside `server-data` and put a symlink to it in
+  `mica-keys`, so a backup of `server-data` does not carry it.
+  `micacrypt keygen` from the console prints the exact steps; it writes nothing
+  and never prints a key, because FXServer lets micaOS write nowhere a key
+  belongs and the console is logged. On Windows, write the key line with
+  PowerShell's cryptographic generator instead of `openssl` (never `Get-Random`,
+  which is not one): `$b = [byte[]]::new(32)`, then
+  `[Security.Cryptography.RandomNumberGenerator]::Fill($b)`, then
   `"<kid> " + [Convert]::ToBase64String($b)` gives the line to save. Set it with
-  `set`, never `setr`. With it set, text messages, Blabber DMs, mail bodies and
-  report snapshots are sealed with AES-256-GCM before they reach the database;
-  run `micacrypt backfill --apply` once to seal what was already there. **This
-  defends a leaked dump, not a curious operator** — whoever runs the server has
-  the key — and a backup taken before the backfill stays readable.
-  [`docs/security.md`](docs/security.md#message-bodies-at-rest) has what stays
-  readable and why. Keep the real file out of the database backup and out of git
-  (the server warns at start when it sits inside `mica` or inside
+  `set`, never `setr`. With it set, text messages, Blabber DMs, mail bodies,
+  Dark Chat lines and report snapshots are sealed with AES-256-GCM before they
+  reach the database; run `micacrypt backfill --apply` once to seal what was
+  already there. **This defends a leaked dump, not a curious operator** —
+  whoever runs the server has the key — and a backup taken before the backfill
+  stays readable. [`docs/security.md`](docs/security.md#message-bodies-at-rest)
+  has what stays readable and why. Keep the real file out of the database backup
+  and out of git (the server warns at start when it sits inside `mica` or inside
   `server-data`), and back it up somewhere else: **a lost key is every body
   sealed with it gone**, shown as 🔒. Once anything has been sealed, a missing
   or unreadable key file refuses new messages rather than storing them in
@@ -1294,10 +1302,11 @@ rows whose owner no longer exists, and a deletion script of your own can trigger
 the server event `mica:server:shell:characterDeleted` with a citizenid to
 reclaim the space immediately, across every table rather than photos alone.
 `mica:server:media:characterDeleted` does the same for photos only, and removes
-only photos that are neither under an open report nor attached to a message,
-post or listing; attached ones go with the full purge. Both are local events —
-another server resource can fire them, a game client cannot. Neither ever takes
-a photo under an open report, or one another player's rows still use.
+only photos that are neither under an open report, taken down, nor attached to a
+message, post or listing; attached ones go with the full purge. Both are local
+events — another server resource can fire them, a game client cannot. Neither
+ever takes a photo under an open report or taken down, or one another player's
+rows still use.
 
 **The sweep refuses rather than guesses.** It skips, and logs which of these it
 hit, whenever it cannot prove what it is about to delete: no framework has

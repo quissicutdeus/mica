@@ -752,12 +752,16 @@ the orphan sweep at every resource start, which removes rows whose owner no
 longer exists. Both go through the cascade-safe plan in
 `server/lib/orphanSweep.ts` (MICA-168, MICA-300): the character's own rows go,
 but anything under an open report and what hangs off it (attachments, replies,
-photos), and any row another player's rows still reference, survive — the
-foreign keys _between_ micaOS's own tables still cascade, so a parent is only
-deleted when nothing it would take with it has to stay. Two accountability
-records outlive the character: reports they filed that staff have not resolved
-(which go on holding what they reported, and go on the next sweep once resolved)
-and their rows in the audit ledger, which are never swept.
+photos), any row a takedown holds (`status = 'moderated'`, MICA-426), and any
+row another player's rows still reference, survive — the foreign keys _between_
+micaOS's own tables still cascade, so a parent is only deleted when nothing it
+would take with it has to stay. Two accountability records outlive the
+character: reports they filed that staff have not resolved (which go on holding
+what they reported, and go on the next sweep once resolved) and their rows in
+the audit ledger, which are never swept. What survives as evidence is hidden,
+not left live: it moves to `deleted` (`updated_at` pinned) before the deletes
+run, and a `moderated` row stays `moderated`. A row kept only because another
+player's row references it stays as it was.
 
 ### Never read another resource's tables
 

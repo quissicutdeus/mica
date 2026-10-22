@@ -844,7 +844,7 @@ describe('the retention window', () => {
 });
 
 describe('the sweep', () => {
-  it('selects past the window, holds reported rows, and deletes exactly those ids', async () => {
+  it('selects past the window, holds reported and moderated rows, and deletes exactly those ids', async () => {
     dbMock.query.mockImplementation(async (sql: string) =>
       one(sql).startsWith('SELECT t.`id`') ? [{ id: 7 }, { id: 8 }] : { affectedRows: 2 }
     );
@@ -853,15 +853,17 @@ describe('the sweep', () => {
     log.mockRestore();
 
     const [select, delete_] = dbMock.query.mock.calls;
+    // A pending report holds a line, and so does a takedown standing on it (MICA-426): a reopen
+    // has to find the row it restores.
     const hold =
-      "NOT EXISTS (SELECT 1 FROM `mica_reports` r WHERE r.`target_table` = ? AND r.`target_id` = %.`id` AND r.`status` = 'active' AND r.`resolution` = 'pending')";
+      "NOT EXISTS (SELECT 1 FROM `mica_reports` r WHERE r.`target_table` = ? AND r.`target_id` = %.`id` AND r.`status` = 'active' AND r.`resolution` = 'pending') AND %.`status` <> 'moderated'";
     expect(one(select[0])).toContain(
-      't.`created_at` < NOW() - INTERVAL ? HOUR AND ' + hold.replace('%', 't')
+      't.`created_at` < NOW() - INTERVAL ? HOUR AND ' + hold.replaceAll('%', 't')
     );
     expect(select[1]).toEqual([24, 'mica_darkchat_messages']);
     expect(one(delete_[0])).toBe(
       'DELETE FROM `mica_darkchat_messages` WHERE `id` IN (?, ?) AND `created_at` < NOW() - INTERVAL ? HOUR AND ' +
-        hold.replace('%', '`mica_darkchat_messages`') +
+        hold.replaceAll('%', '`mica_darkchat_messages`') +
         ' LIMIT 500'
     );
     expect(delete_[1]).toEqual([7, 8, 24, 'mica_darkchat_messages']);

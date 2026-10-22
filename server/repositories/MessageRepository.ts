@@ -210,7 +210,9 @@ export class MessageRepository extends SchemaRepository<MessageRow> {
      *
      * A `deleted` message is filtered out for **every** participant, not just its sender:
      * unsending is a withdrawal from the conversation, and the soft delete is what keeps the
-     * row available to moderation afterwards.
+     * row available to moderation afterwards. So is a `moderated` one (MICA-426): live rows
+     * only, `= 'active'`, so a takedown hides the text from the thread and a reopen puts it
+     * back where it was — the keyset is `id`, which a takedown never moves.
      */
     const cursorClause = page.cursor === null ? '' : 'AND m.id < ?';
     const params: unknown[] = [conversationId];
@@ -237,7 +239,7 @@ export class MessageRepository extends SchemaRepository<MessageRow> {
                      AND p.citizenid = m.citizenid AND p.left_at IS NULL
                 ) END AS sender_id
            FROM mica_messages m
-          WHERE m.conversation_id = ? AND m.status != 'deleted'
+          WHERE m.conversation_id = ? AND m.status = 'active'
             ${cursorClause}
           ORDER BY m.id DESC
           LIMIT ?`,

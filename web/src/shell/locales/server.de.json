@@ -47,6 +47,7 @@
   "reports.notAuthorised": "Nicht berechtigt.",
   "reports.notModeratable": "Dieser Inhalt lässt sich nicht mehr moderieren.",
   "reports.notReportable": "Diese Art von Inhalt kann nicht gemeldet werden.",
+  "reports.notRestorable": "Dieser Inhalt lässt sich nicht mehr so zurückholen, wie er war, deshalb bleibt die Meldung bearbeitet.",
   "reports.noSuchReport": "Diese Meldung gibt es nicht.",
   "reports.ownContent": "Du kannst deine eigenen Inhalte nicht melden.",
   "reports.targetConflict": "Dieser Inhalt kollidiert mit einer neueren Kopie seines Autors, deshalb lässt sich sein Status nicht ändern.",

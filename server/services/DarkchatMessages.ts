@@ -7,7 +7,7 @@ import { defineService } from '../lib/defineService';
 import { Database } from '../lib/Database';
 import { appEventChannel } from '../lib/appEvents';
 import { openRows, storablePlaintext } from '../lib/contentCipher';
-import { openReportHold, RETENTION_BATCH } from '../lib/contentRetention';
+import { evidenceHold, RETENTION_BATCH } from '../lib/contentRetention';
 import { whenSchemaReady } from '../lib/schemaReady';
 import { isAppDisabled } from '../lib/ownerConfig';
 import { pageBounds } from '../lib/payload';
@@ -400,14 +400,17 @@ export const SWEEP_INTERVAL_MS = 15 * 60_000;
 let sweeping = false;
 
 /**
- * Delete the messages past the window, except any a pending report names, then the member and
- * channel rows nothing needs any more (`sweepMembersAndChannels`). **A hard delete.**
+ * Delete the messages past the window, except any a pending report names or a takedown holds
+ * (MICA-426), then the member and channel rows nothing needs any more
+ * (`sweepMembersAndChannels`). **A hard delete.**
  *
  * Its own sweep rather than a `contentRetention` policy: that one is measured in days, with a
  * day's grace and a six-hour interval, so a 24-hour message would live up to about two and a
- * half days. The report hold is the same predicate (`openReportHold`), so a reported message is
- * kept as evidence by one definition. Ids are selected, then exactly those ids deleted with the
- * window and the hold asked again, so a report filed between the two wins.
+ * half days. The hold is the same predicate (`evidenceHold`), so a reported or moderated
+ * message is kept as evidence by one definition; once a reopen puts it back, the next sweep
+ * takes it by its window, so a line that would have expired anyway stays expired. Ids are
+ * selected, then exactly those ids deleted with the window and the hold asked again, so a
+ * report filed between the two wins.
  *
  * Never rejects; returns the messages removed.
  */
@@ -417,8 +420,8 @@ export const sweepDarkchat = async (): Promise<number> => {
   let removed = 0;
   try {
     const hours = retentionHours();
-    const selectHold = openReportHold(TABLE, 't');
-    const deleteHold = openReportHold(TABLE, `\`${TABLE}\``);
+    const selectHold = evidenceHold(TABLE, 't');
+    const deleteHold = evidenceHold(TABLE, `\`${TABLE}\``);
     removed = await deleteInBatches(
       {
         sql: `SELECT t.\`id\` FROM \`${TABLE}\` t

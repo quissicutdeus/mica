@@ -371,6 +371,25 @@ describe('holds', () => {
     expect(select.params).toContain('mica_messages');
   });
 
+  /**
+   * MICA-426: once its report is actioned, the open-report hold no longer names a moderated row,
+   * and every prune took it at its age — so a reopen found nothing to put back. The row's own
+   * status holds it, in every retained table, in the select and again in the delete.
+   */
+  it.each(['mica_messages', 'mica_blabber_dms', 'mica_media'])(
+    '%s: a moderated row is held, in the select and again in the delete',
+    async (table) => {
+      const { select, remove } = await bothStatements(table);
+
+      expect(select.sql).toContain(`AND ${OPEN}) AND t.\`status\` <> 'moderated'`);
+      expect(remove.sql).toContain(`AND ${OPEN}) AND \`${table}\`.\`status\` <> 'moderated'`);
+      // Only `moderated`: a row its author deleted ages out as it always did.
+      for (const statement of [select, remove]) {
+        expect(statement.sql).not.toMatch(/`status` (=|<>|!=) 'deleted'/);
+      }
+    }
+  );
+
   it('messages: an open report on any message holds its whole conversation', async () => {
     const { select, remove } = await bothStatements('mica_messages');
 

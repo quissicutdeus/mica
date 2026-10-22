@@ -83,10 +83,13 @@ describe('a status move a unique key refuses (MICA-330)', () => {
   it('still moderates when nothing collides, and answers the status it replaced', async () => {
     dbMock.update.mockResolvedValueOnce(true);
     await expect(moderateTarget('mica_blabber', 11, 'ADMIN', 'r')).resolves.toBe('deleted');
-    expect(dbMock.update.mock.calls[0]).toEqual([
-      'UPDATE `mica_blabber` SET `status` = ? WHERE `id` = ? AND `status` = ?',
-      ['moderated', 11, 'deleted']
-    ]);
+    const [sql, params] = dbMock.update.mock.calls[0];
+    // `updated_at` named in the SET, so `ON UPDATE` cannot mark the row edited (MICA-426).
+    expect(String(sql).replace(/\s+/g, ' ')).toBe(
+      'UPDATE `mica_blabber` SET `status` = ?, `updated_at` = `updated_at` ' +
+        'WHERE `id` = ? AND `status` = ?'
+    );
+    expect(params).toEqual(['moderated', 11, 'deleted']);
   });
 });
 
@@ -137,10 +140,13 @@ describe('what a takedown replaced, and what a restore writes (MICA-386)', () =>
   it('restores the status it is given, and only over a row still moderated', async () => {
     dbMock.update.mockResolvedValueOnce(true);
     await expect(restoreTarget('mica_blabber', 11, 'deleted', 'ADMIN', 'r')).resolves.toBe(true);
-    expect(dbMock.update.mock.calls[0]).toEqual([
-      'UPDATE `mica_blabber` SET `status` = ? WHERE `id` = ? AND `status` = ?',
-      ['deleted', 11, 'moderated']
-    ]);
+    const [sql, params] = dbMock.update.mock.calls[0];
+    // `updated_at` named in the SET, so `ON UPDATE` cannot mark the row edited (MICA-426).
+    expect(String(sql).replace(/\s+/g, ' ')).toBe(
+      'UPDATE `mica_blabber` SET `status` = ?, `updated_at` = `updated_at` ' +
+        'WHERE `id` = ? AND `status` = ?'
+    );
+    expect(params).toEqual(['deleted', 11, 'moderated']);
   });
 
   it('writes nothing, and audits nothing, over a row no longer moderated', async () => {

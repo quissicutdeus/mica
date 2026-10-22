@@ -561,7 +561,7 @@ messages can. What it stops is the far commoner leak: a FiveM database backup
 left on a share, pasted into a support thread, or sold, read by someone who
 never had the server (MICA-165).
 
-With `mica_content_key_file` set, four columns are sealed with AES-256-GCM in
+With `mica_content_key_file` set, five columns are sealed with AES-256-GCM in
 `server/lib/contentCipher.ts` before they reach SQL, and opened after every
 read:
 
@@ -570,6 +570,7 @@ read:
 | `mica_messages.message`       | A text message                           | `conversation_id`                                   |
 | `mica_blabber_dms.body`       | A direct message, in any social app      | `from_account`, `to_account`                        |
 | `mica_mail.content`           | An email's body                          | nothing more; a mailbox is its own thread           |
+| `mica_darkchat_messages.body` | A Dark Chat line                         | `channel_id`                                        |
 | `mica_reports.target_preview` | The snapshot of a reported message or DM | `target_table`, `target_id`                         |
 
 Encrypting inside the application, not with MySQL's `AES_ENCRYPT`, is the whole
@@ -668,7 +669,8 @@ player's citizenid, because ownership is how every micaOS table is authorized
 and swept. A message body is sealed under the content key when one is set
 (above), bound to its channel. A message is deleted permanently once it is past
 `mica_darkchat_retention` (24 hours by default, with no off switch), except one
-under an open report, which waits for the report to be resolved. The same sweep
+under an open report, which waits for the report to be resolved, and one staff
+have taken down, which waits for as long as it is `moderated`. The same sweep
 deletes the row that ties a member's alias to their citizenid once they have
 left and the window has passed, and a closed channel once nobody's row is left
 in it. A `removed` member's row is kept while the channel lives, because it is
@@ -708,8 +710,9 @@ Spark row, not the gallery id, which is global and would tie the profile to a
 Glimpse post of the same picture. Messages after a match are the shared `dms`
 service under Spark's policy, which allows a thread only while a match exists
 and neither side has blocked the other; unmatch, block and profile delete each
-delete the thread, except one under an open report, which is kept whole. The
-notification says only "New message", because it shows on the lock screen.
+delete the thread, except one under an open report, which is kept whole, or
+holding a row staff have taken down, which stays as evidence. The notification
+says only "New message", because it shows on the lock screen.
 
 **What staff see.** A reported profile or message carries the reporter's and the
 author's citizenid, as every report does, and Admin previews the bio or the
@@ -764,6 +767,64 @@ multiplier when the cash-out arrives, so the server's number runs ahead of the
 screen by the round trip. A cash-out that wins pays the server's reading, a
 little more than the screen showed; a cash-out clicked just under the point can
 arrive past it and bust.
+
+## A takedown is hidden evidence, and a reopen puts it back
+
+When staff action a report, the reported row is not deleted: its `status`
+becomes `moderated` (MICA-386, MICA-426). That is deliberate. The audit ledger
+and the actioned report both point at the row, and a reopen, which is staff
+judging the content safe after all, has to have something to put back.
+
+**Hidden everywhere a player sees it.** A taken-down message leaves the thread,
+the inbox preview and the unread count in Messages as it does every other app's
+list. A reopen puts it back by id in its old place, unchanged and not marked
+"edited": `moveStatus` in `server/lib/moderation.ts` pins `updated_at` on both
+halves of the round trip, because every table's `ON UPDATE CURRENT_TIMESTAMP`
+would otherwise read as an edit, and would reset Media's Recently Deleted clock.
+
+**Held from everything that deletes.** A `moderated` row is kept by every
+retention prune (Messages, direct messages, Media), by the Dark Chat sweep, and
+by every purge: character delete, the start-up orphan sweep, the media-only
+purge, and a player's own privacy delete. This is `evidenceHold` in
+`server/lib/contentRetention.ts`, read off the row's own `status` rather than
+off `mica_reports`, because once a report is actioned the open-report hold no
+longer names the row. The hold ends when the row stops being `moderated`, and
+the next sweep takes it by its window as usual. That is why Dark Chat's 24-hour
+window still applies to a restored line: a line that would have expired anyway
+comes back and goes at the next sweep. A player's own reply under someone else's
+taken-down post is not part of that evidence, and goes with the player.
+
+**What a purge keeps, it hides.** A purge used to leave the rows it had to keep
+live, after the player had deleted everything else. That was wrong twice over: a
+kept account stayed public with its handle, bio and avatar, and a pending
+report's later takedown recorded `active`, so a reopen put a deleted player's
+content back up. Now every row a purge keeps for evidence moves to `deleted`,
+with `updated_at` pinned, before any `DELETE` (`hideKept` in
+`server/lib/sweep/purge.ts`), in the character delete, the orphan sweep, the
+media-only purge and a player's own privacy delete. That covers rows held by an
+open report or a takedown, what hangs off them, and a parent such a row
+references, such as the player's Blabber or Glimpse account. A `moderated` row
+stays `moderated`, with the owner's deletion recorded on its takedown. A row
+held by a pending report and later taken down records `deleted` too, so a reopen
+restores `deleted`. A failure to record or hide fails the purge, and the sweep
+logs that it stopped before deleting anything.
+
+One case is not hidden: an account kept only because another player's row
+references it, such as another player's DM to it, stays live. That is not
+evidence, and the purge leaves it as it always has.
+
+**The owner's deletion wins.** A reopen restores the status the takedown
+recorded, and that was read while the content was live. If the owner has since
+deleted it, handing it back would undo their decision, so the paths that delete
+a row whatever its status record it first: a Spark profile removal, a Spark
+unmatch's thread delete, and the purges. Each moves the takedown's record to
+`deleted` (`recordOwnerDeletion`), the row itself stays `moderated`, and a
+reopen restores `deleted`. A purge does this before its first `DELETE` and fails
+if it cannot.
+
+**A reopen that cannot restore says so.** If the content cannot be brought back
+as it was, the admin gets `server.reports.notRestorable` and the report stays
+actioned. Such a report cannot be reopened.
 
 ## Accepted risks
 
@@ -1031,9 +1092,14 @@ by this list until someone re-weighs it.
   player's rows, and their export withholds what is not theirs (MICA-168).**
   Settings > Privacy > Your data exports every owned table for the session's
   character — never a payload's — and deletes it behind a typed `DELETE`,
-  through `purgeOwnedRows` with the open-report hold, so content under an open
-  report is kept until the report resolves. The self-service delete also follows
-  the schema's `ON DELETE CASCADE` foreign keys, which a delete by owner column
+  through `purgeOwnedRows` with the evidence hold (`evidenceHold`, MICA-426), so
+  content under an open report is kept until the report resolves, and a row
+  staff have taken down (`status = 'moderated'`) is kept for as long as it is.
+  What is kept is hidden: it moves to `deleted`, not left live (see the takedown
+  section above). The owner's decision still counts: each takedown holding such
+  a row has its record moved to `deleted`, so a reopen restores it as deleted
+  rather than handing the content back. The self-service delete also follows the
+  schema's `ON DELETE CASCADE` foreign keys, which a delete by owner column
   alone does not: it deletes children before parents and keeps any parent that
   still has a row this request is not deleting — another player's message in a
   thread the player started, a reply under their post, a reaction to their
@@ -1042,8 +1108,9 @@ by this list until someone re-weighs it.
   by a test, so a new foreign key fails a suite until it is placed. It never
   removes accountability records either: the audit ledger (a staff member could
   otherwise erase their own moderation record), reports still pending review
-  (deleting one would release the hold on what it names), unpaid invoices
-  someone else issued, and the import ledger (without it a re-run of
+  (deleting one would release the hold on what it names), and rows a takedown
+  holds (the audit ledger and the actioned report point at them), unpaid
+  invoices someone else issued, and the import ledger (without it a re-run of
   `micaimport` restores what was deleted); nor the device's own phone, number,
   battery and lock, which a delete while the player is online would desync. The
   reply counts what was kept. Deleting the character removes the rest of those
@@ -1066,10 +1133,12 @@ by this list until someone re-weighs it.
   to delete each file no remaining row names (`lib/mediaHost.ts`
   `releaseHostedImages`); if it cannot read them it does not delete the rows.
   The purges and the sweep also keep any row under an open report, and its file,
-  by retention's own predicate (`openReportHold`), so deleting a character
-  cannot destroy reported evidence; the next orphan sweep takes it once the
-  report resolves. All three go through the cascade-safe plan (MICA-300), so a
-  photo an attachment of a held post or message still names is kept with it.
+  by retention's own predicate (`openReportHold`), and any row a takedown holds
+  (`evidenceHold`, MICA-426), so deleting a character cannot destroy reported
+  evidence, and hide what they keep (below); the next orphan sweep takes an
+  open-report row once the report resolves, and a taken-down one once it is no
+  longer `moderated`. All three go through the cascade-safe plan (MICA-300), so
+  a photo an attachment of a held post or message still names is kept with it.
   **The `ON DELETE CASCADE` from `players` on qb is gone** (migration 0006,
   MICA-300): it removed a character's rows inside MariaDB when the framework
   deleted the character, with no hold and no URL for micaOS to release. The

@@ -256,7 +256,10 @@ describe('shipped repositories — inherited guarantees', () => {
     // ...counts only messages newer than it, and never the caller's own.
     expect(sql).toContain('unread.created_at > me.last_read');
     expect(sql).toContain('unread.citizenid <> me.citizenid');
-    expect(sql).toContain("unread.status != 'deleted'");
+    // Live rows only, so a message an admin took down neither counts nor previews (MICA-426).
+    expect(sql).toContain("unread.status = 'active'");
+    expect(sql).toContain("WHERE conversation_id = c.id AND status = 'active'");
+    expect(sql).not.toMatch(/status (!=|<>) 'deleted'/);
     /**
      * The trailing bound parameter is the page size (MICA-197): this read had no `LIMIT` at
      * all, so opening Messages cost more every day a player used it. One *more* than the page

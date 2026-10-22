@@ -434,7 +434,7 @@ app.registerEvent('edit', async (source, cbId, data, citizenid, player) => {
  *
  * **This is an unsend, not a hide-for-me, and the UI says so.** `Repository.delete` moves
  * `status` to `deleted` — soft, so moderation and the audit ledger keep the evidence a
- * report may later be about — but `findByConversation` filters `status != 'deleted'` for
+ * report may later be about — but `findByConversation` reads only `active` rows for
  * *every* participant, so what a reader sees is the message gone from the thread. Hiding
  * it for the sender alone would need per-participant state this table does not have
  * (`mica_messages_participants` carries membership, not per-message visibility), and

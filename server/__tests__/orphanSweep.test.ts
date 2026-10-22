@@ -67,7 +67,7 @@ import {
   type OwnedTable
 } from '../lib/orphanSweep';
 import { FrameworkBridge, __setResourceLookup, detectFramework } from '../lib/FrameworkBridge';
-import { REPORTABLE } from '../lib/moderation';
+import { REPORTABLE, registerOwnerDeletionRecorder } from '../lib/moderation';
 import { CHARACTER_EXCEPT } from '../lib/shell';
 import { __setSchemaReadyForTests } from '../lib/schemaReady';
 import { SELF_SERVICE_EXCEPT } from '../services/Privacy';
@@ -91,9 +91,14 @@ const OWNER_GONE = (row: string) =>
  * with `openReportHold`, so a change to that predicate shows here instead of agreeing with
  * itself. MICA-292 put it on the purge and the sweep.
  */
-const REPORT_HOLD = (table: string) =>
+/** The open-report half of the evidence hold. */
+const OPEN_REPORT_HOLD = (table: string) =>
   'NOT EXISTS (SELECT 1 FROM `mica_reports` r WHERE r.`target_table` = ? ' +
   `AND r.\`target_id\` = ${table}.\`id\` AND r.\`status\` = 'active' AND r.\`resolution\` = 'pending')`;
+
+/** The evidence hold: an open report, or a takedown standing on the row (MICA-426). */
+const REPORT_HOLD = (table: string) =>
+  `${OPEN_REPORT_HOLD(table)} AND ${table}.\`status\` <> 'moderated'`;
 
 /** The tables a player can report, so the ones the purge and the sweep hold rows in. */
 const REPORTABLE_TABLES = [
@@ -981,7 +986,7 @@ describe("a player's own delete", () => {
     deleteResult,
     reported = new Map<string, Set<number>>()
   }: {
-    plan?: Record<string, { id: number; go: number; held: number; ex: number }[]>;
+    plan?: Record<string, { id: number; go: number; held: number; ex: number; mo?: number }[]>;
     links?: Record<string, { id?: number; ref: number }[]>;
     deleteResult?: (table: string, ids: number[]) => number;
     /** Rows under an open report by table; the parent-hold clause is honoured against it. */
@@ -1010,6 +1015,8 @@ describe("a player's own delete", () => {
       const link = /c\.`(\w+)` AS `ref` FROM `(\w+)` c/.exec(sql);
       if (link) return links[`${link[2]}.${link[1]}`] ?? [];
       if (sql.startsWith('SELECT')) return [];
+      // MICA-426: a kept row moved to `deleted`; nothing here reads status back.
+      if (sql.startsWith('UPDATE')) return { affectedRows: idsIn(sql, params).length };
       const table = /^DELETE FROM (\w+)/.exec(sql)![1];
       // `parentHold`: a row whose reportable parent is reported stays, when the statement asks.
       const heldByParent = (id: number): boolean =>
@@ -1031,7 +1038,10 @@ describe("a player's own delete", () => {
     dbMock.query.mock.calls
       .filter((c: any[]) => String(c[0]).startsWith(`DELETE FROM ${table} `))
       .flatMap((c: any[]) => (c[1] as unknown[]).filter((p): p is number => typeof p === 'number'));
-  const row = (id: number, over: Partial<{ go: number; held: number; ex: number }> = {}) => ({
+  const row = (
+    id: number,
+    over: Partial<{ go: number; held: number; ex: number; mo: number }> = {}
+  ) => ({
     id,
     go: 1,
     held: 0,
@@ -1151,7 +1161,7 @@ describe("a player's own delete", () => {
     expect(String(blab[0])).toContain(
       'NOT EXISTS (SELECT 1 FROM (SELECT DISTINCT pp.`id` AS `k` FROM `mica_blabber` pp ' +
         'JOIN `mica_blabber_attachments` cc ON cc.`blab_id` = pp.`id` WHERE cc.`citizenid` = ? ' +
-        `AND NOT (${REPORT_HOLD('pp')})) h WHERE h.\`k\` = mica_blabber_attachments.\`blab_id\`)`
+        `AND NOT (${OPEN_REPORT_HOLD('pp')})) h WHERE h.\`k\` = mica_blabber_attachments.\`blab_id\`)`
     );
     expect(blab[1]).toEqual(expect.arrayContaining(['CID_Z', 'mica_blabber']));
     // Its media parent is reportable too, so that reference is held the same way.
@@ -1161,6 +1171,168 @@ describe("a player's own delete", () => {
     );
     // A conversation cannot be reported, so its participants carry no such clause.
     expect(String(statement('mica_messages_participants')[0])).not.toContain('pp.`id` AS `k`');
+  });
+
+  /**
+   * MICA-426: a takedown leaves its row `moderated` as the evidence the ledger and the actioned
+   * report point at, and what a reopen puts back. Every purge keeps it — in the plan and again
+   * in the delete — a player's own delete included, by the owner's decision.
+   */
+  it('keeps a moderated row in the plan and the delete', async () => {
+    fakeDb({ plan: { mica_blabber: [row(700)] } });
+    await purgeOwnedRows('CID_Z', cascade);
+    const [plan, remove] = dbMock.query.mock.calls
+      .map((c: any[]) => String(c[0]))
+      .filter((sql) => /^(DELETE FROM|SELECT t\.`id` AS `id`, .* FROM) mica_blabber /.test(sql));
+    expect(plan).toContain(REPORT_HOLD('t'));
+    expect(remove).toContain(REPORT_HOLD('mica_blabber'));
+  });
+
+  /**
+   * MICA-426 review: a parent's open report keeps a player's child row, but a takedown on the
+   * parent does not. The moderated row is held as itself; a player's own reply under someone
+   * else's moderated post goes with the player.
+   */
+  it("asks a child's parent for an open report only, never for a takedown", async () => {
+    fakeDb({ plan: { mica_blabber_attachments: [row(9)] } });
+    await purgeOwnedRows('CID_Z', cascade);
+    const child = String(
+      dbMock.query.mock.calls.find((c: any[]) =>
+        String(c[0]).startsWith('DELETE FROM mica_blabber_attachments ')
+      )![0]
+    );
+    expect(child).toContain(`AND NOT (${OPEN_REPORT_HOLD('pp')})) h`);
+    expect(child).not.toContain("pp.`status` <> 'moderated'");
+    // The child's own row is not reportable, so nothing else here names a takedown.
+    expect(child).not.toContain("<> 'moderated'");
+  });
+
+  /**
+   * MICA-426 round three: what a purge keeps for evidence it hides. A held row, and the account a
+   * held row keeps by reference, move to `deleted` before any DELETE, with `updated_at` pinned;
+   * a moderated or already deleted one is left as it is.
+   */
+  describe('rows kept for evidence are hidden, not left live', () => {
+    const updates = (table: string) =>
+      dbMock.query.mock.calls
+        .filter((c: any[]) => String(c[0]).startsWith(`UPDATE ${table} `))
+        .map((c: any[]) => ({ sql: String(c[0]), ids: idsOfCall(c) }));
+    const idsOfCall = (c: any[]) =>
+      (c[1] as unknown[]).filter((p): p is number => typeof p === 'number');
+
+    it('moves a held row to deleted, before any DELETE, pinning updated_at', async () => {
+      fakeDb({ plan: { mica_blabber: [row(700, { go: 0, held: 1 }), row(701)] } });
+      await purgeOwnedRows('CID_Z', cascade);
+
+      const [hide] = updates('mica_blabber');
+      expect(hide.ids).toEqual([700]);
+      expect(hide.sql).toContain(
+        "SET `status` = 'deleted', `updated_at` = `updated_at` WHERE mica_blabber.`citizenid` = ?"
+      );
+      expect(hide.sql).toContain("AND mica_blabber.`status` NOT IN ('moderated', 'deleted')");
+      const statements = dbMock.query.mock.calls.map((c: any[]) => String(c[0]));
+      const firstDelete = statements.findIndex((sql) => sql.startsWith('DELETE'));
+      expect(statements.findIndex((sql) => sql.startsWith('UPDATE mica_blabber '))).toBeLessThan(
+        firstDelete
+      );
+      expect(deletedIds('mica_blabber')).toEqual([701]);
+    });
+
+    it('hides the account a held post keeps, and not one that goes', async () => {
+      fakeDb({
+        plan: {
+          mica_accounts: [row(1), row(2)],
+          mica_blabber: [row(700, { go: 0, held: 1 }), row(701)]
+        },
+        links: {
+          'mica_blabber.account_id': [
+            { id: 700, ref: 1 },
+            { id: 701, ref: 2 }
+          ]
+        }
+      });
+      await purgeOwnedRows('CID_Z', cascade);
+
+      // Account 1 stays for the held post and is hidden; account 2's only post went, so it goes.
+      expect(updates('mica_accounts').flatMap((u) => u.ids)).toEqual([1]);
+      expect(deletedIds('mica_accounts')).toEqual([2]);
+    });
+
+    it("does not hide a row kept only because another player's row references it", async () => {
+      // B's DM to A's account keeps the account (no tracked id: another owner's row).
+      fakeDb({
+        plan: { mica_accounts: [row(1)] },
+        links: { 'mica_blabber_dms.to_account': [{ ref: 1 }] }
+      });
+      await purgeOwnedRows('CID_Z', cascade);
+
+      expect(updates('mica_accounts')).toEqual([]);
+      expect(deletedIds('mica_accounts')).toEqual([]);
+    });
+  });
+
+  describe("a moderated row's takedowns are told the owner deleted it (MICA-426 review)", () => {
+    let recorded: [string, number][];
+    let order: string[];
+    let previous: ReturnType<typeof registerOwnerDeletionRecorder>;
+    beforeEach(() => {
+      recorded = [];
+      order = [];
+      previous = registerOwnerDeletionRecorder(async (table, id) => {
+        order.push('record');
+        recorded.push([table, id]);
+      });
+    });
+    afterEach(() => {
+      registerOwnerDeletionRecorder(previous);
+    });
+    const deletesSoFar = () =>
+      dbMock.query.mock.calls.filter((c: any[]) => String(c[0]).startsWith('DELETE')).length;
+
+    it('records every moderated row the plan holds, before any DELETE', async () => {
+      fakeDb({
+        plan: {
+          mica_blabber: [row(700, { go: 0, held: 1, mo: 1 }), row(701)],
+          mica_media: [row(30, { go: 0, held: 1, mo: 1 }), row(31, { go: 0, held: 1 })]
+        }
+      });
+      registerOwnerDeletionRecorder(async (table, id) => {
+        order.push(`record with ${deletesSoFar()} deletes run`);
+        recorded.push([table, id]);
+      });
+
+      await purgeOwnedRows('CID_Z', cascade);
+
+      // 31 is held by an open report, not a takedown: nothing to record for it.
+      expect(recorded.sort()).toEqual([
+        ['mica_blabber', 700],
+        ['mica_media', 30]
+      ]);
+      expect(order).toEqual(['record with 0 deletes run', 'record with 0 deletes run']);
+      const plan = String(
+        dbMock.query.mock.calls.find((c: any[]) =>
+          /^SELECT t\.`id` AS `id`, .* FROM mica_blabber t/.test(String(c[0]))
+        )![0]
+      );
+      expect(plan).toContain("CASE WHEN t.`status` = 'moderated' THEN 1 ELSE 0 END AS `mo`");
+    });
+
+    it('records nothing when no row is moderated — the positive twin', async () => {
+      fakeDb({ plan: { mica_blabber: [row(700, { go: 0, held: 1 }), row(701)] } });
+      await purgeOwnedRows('CID_Z', cascade);
+      expect(recorded).toEqual([]);
+      expect(deletesSoFar()).toBeGreaterThan(0);
+    });
+
+    it('fails the purge, deleting nothing, when the record cannot move', async () => {
+      fakeDb({ plan: { mica_blabber: [row(700, { go: 0, held: 1, mo: 1 }), row(701)] } });
+      registerOwnerDeletionRecorder(async () => {
+        throw new Error('reports table locked');
+      });
+
+      await expect(purgeOwnedRows('CID_Z', cascade)).rejects.toThrow('reports table locked');
+      expect(deletesSoFar()).toBe(0);
+    });
   });
 
   it('keeps the attachment of a post reported between the plan and the delete', async () => {

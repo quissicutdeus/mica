@@ -39,7 +39,8 @@ import '../services/Glimpse';
 import '../services/GlimpseComments';
 import '../services/Marketplace';
 import '../services/Spark';
-import { REPORTABLE } from '../lib/moderation';
+import { REPORTABLE, recordOwnerDeletion } from '../lib/moderation';
+import { __resetRateLimits } from '../lib/rateLimit';
 
 /**
  * Moderate, then reopen, and the row goes back to what it was (MICA-386).
@@ -63,13 +64,18 @@ interface ReportRow {
   status: 'active' | 'deleted';
 }
 
-let targets: Map<string, { id: number; status: string }[]>;
+/**
+ * A reported row. `updated_at` is a counter standing in for the timestamp: every `UPDATE` that
+ * does not name the column in its `SET` bumps it, as `ON UPDATE CURRENT_TIMESTAMP` would.
+ */
+let targets: Map<string, { id: number; status: string; updated_at: number }[]>;
 let reports: ReportRow[];
 /**
  * Where a test parks a statement to interleave two handlers. A read answers from the state when
  * it was asked, as the database would, and only then waits; a write waits, then applies.
  */
-let hold: ((what: 'count' | 'prior' | 'record', params: unknown[]) => Promise<void> | void) | null;
+type Parked = 'count' | 'prior' | 'record' | 'owner';
+let hold: ((what: Parked, params: unknown[]) => Promise<void> | void) | null;
 let replies: Map<string, any>;
 let sequence = 0;
 
@@ -93,6 +99,8 @@ const othersOn = (params: unknown[]) => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Every test is one admin at source 5; the suite makes more decisions than a minute allows.
+  __resetRateLimits();
   targets = new Map();
   reports = [];
   hold = null;
@@ -143,12 +151,33 @@ beforeEach(() => {
       row.target_prior_status = prior;
       return true;
     }
-    const move = /^UPDATE `(\w+)` SET `status` = \? WHERE `id` = \? AND `status` = \?$/.exec(text);
+    if (
+      text ===
+      "UPDATE `mica_reports` SET `target_prior_status` = 'deleted' WHERE `target_table` = ? " +
+        "AND `target_id` = ? AND `resolution` = 'actioned' AND `status` = 'active'"
+    ) {
+      await hold?.('owner', params);
+      const [table, targetId] = params as [string, number];
+      const standing = reports.filter(
+        (r) =>
+          r.target_table === table &&
+          r.target_id === Number(targetId) &&
+          r.resolution === 'actioned' &&
+          r.status === 'active'
+      );
+      for (const r of standing) r.target_prior_status = 'deleted';
+      return standing.length > 0;
+    }
+    const move =
+      /^UPDATE `(\w+)` SET `status` = \?(, `updated_at` = `updated_at`)? WHERE `id` = \? AND `status` = \?$/.exec(
+        text
+      );
     if (move) {
       const [to, id, from] = params as [string, number, string];
       const row = target(move[1], Number(id));
       if (!row || row.status !== from) return false;
       row.status = to;
+      if (!move[2]) row.updated_at += 1;
       return true;
     }
     throw new Error(`stand-in: unexpected update: ${text}`);
@@ -189,7 +218,7 @@ beforeEach(() => {
 
 const row = (table: string, id: number, status: string) => {
   if (!targets.has(table)) targets.set(table, []);
-  targets.get(table)!.push({ id, status });
+  targets.get(table)!.push({ id, status, updated_at: 0 });
 };
 
 const fileReport = (id: number, table: string, targetId: number): ReportRow => {
@@ -221,7 +250,7 @@ const call = async (action: 'resolve' | 'reopen', data: unknown) => {
  * at a time, `second` finishes inside the window; with it, `second` waits its turn.
  */
 const interleave = async (
-  match: (what: 'count' | 'prior' | 'record', params: unknown[]) => boolean,
+  match: (what: Parked, params: unknown[]) => boolean,
   first: () => Promise<unknown>,
   second: () => Promise<unknown>
 ) => {
@@ -240,6 +269,9 @@ const interleave = async (
   release();
   return await Promise.all([running, racing]);
 };
+
+/** The admin's toast for a reopen that put nothing back (MICA-426): a key, never a table. */
+const notRestorable = { key: 'server.reports.notRestorable' };
 
 const moderate = (id: number) => call('resolve', { id, action: 'moderate' });
 const reopen = (id: number) => call('reopen', { id });
@@ -538,7 +570,141 @@ describe('a takedown with no record of what it replaced (MICA-386)', () => {
     await moderate(1);
     target('mica_blabber', 40)!.status = 'deleted';
 
-    expect(await reopen(1)).toMatchObject({ ok: true, resolution: 'pending' });
+    // Nothing moved, so the reopen says so and the report stays actioned (MICA-426).
+    expect(await reopen(1)).toMatchObject(notRestorable);
     expect(statusOf('mica_blabber', 40)).toBe('deleted');
+    expect(reports[0].resolution).toBe('actioned');
+  });
+});
+
+describe('a reopen that cannot put the content back (MICA-426)', () => {
+  it('tells the admin in words when the row is gone, and leaves the report actioned', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    row('mica_darkchat_messages', 40, 'active');
+    fileReport(1, 'mica_darkchat_messages', 40);
+    await moderate(1);
+    targets.set('mica_darkchat_messages', []);
+
+    const reply = await reopen(1);
+    expect(reply).toMatchObject(notRestorable);
+    expect(JSON.stringify(reply)).not.toMatch(/mica_/);
+    expect(reports[0].resolution).toBe('actioned');
+    expect(reports[0].target_prior_status).toBe('active');
+  });
+
+  it('can be reopened once the content is back where a restore can reach it', async () => {
+    // The positive twin: the same report, the row moderated again, reopens and restores.
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    row('mica_blabber', 40, 'active');
+    fileReport(1, 'mica_blabber', 40);
+    await moderate(1);
+    target('mica_blabber', 40)!.status = 'deleted';
+    expect(await reopen(1)).toMatchObject(notRestorable);
+
+    target('mica_blabber', 40)!.status = 'moderated';
+    expect(await reopen(1)).toMatchObject({ ok: true, resolution: 'pending' });
+    expect(statusOf('mica_blabber', 40)).toBe('active');
+  });
+});
+
+describe('a takedown and a reopen leave the row as it was (MICA-426)', () => {
+  it.each(Object.keys(REPORTABLE()))(
+    'moves only the status of %s, so it is never marked edited or re-dated',
+    async (table) => {
+      row(table, 40, 'active');
+      fileReport(1, table, 40);
+
+      await moderate(1);
+      expect(statusOf(table, 40)).toBe('moderated');
+      await reopen(1);
+      expect(statusOf(table, 40)).toBe('active');
+      expect(target(table, 40)!.updated_at).toBe(0);
+    }
+  );
+
+  it('the stand-in bumps updated_at on a status move that does not pin it', async () => {
+    // The positive twin: without this the assertion above could pass on a stand-in that never
+    // moved the counter at all.
+    row('mica_blabber', 40, 'moderated');
+    await dbMock.update('UPDATE `mica_blabber` SET `status` = ? WHERE `id` = ? AND `status` = ?', [
+      'active',
+      40,
+      'moderated'
+    ]);
+    expect(target('mica_blabber', 40)!.updated_at).toBe(1);
+  });
+});
+
+describe("an owner's deletion during a takedown wins the restore (MICA-426)", () => {
+  it('reopens a row its owner deleted while it was moderated to deleted', async () => {
+    row('mica_spark', 40, 'active');
+    fileReport(1, 'mica_spark', 40);
+    await moderate(1);
+    expect(reports[0].target_prior_status).toBe('active');
+
+    await recordOwnerDeletion('mica_spark', [40]);
+    expect(reports[0].target_prior_status).toBe('deleted');
+    expect(statusOf('mica_spark', 40)).toBe('moderated');
+
+    await reopen(1);
+    expect(statusOf('mica_spark', 40)).toBe('deleted');
+  });
+
+  it('a row nobody deleted still comes back live — the positive twin', async () => {
+    row('mica_spark', 40, 'active');
+    row('mica_spark', 41, 'active');
+    fileReport(1, 'mica_spark', 40);
+    fileReport(2, 'mica_spark', 41);
+    await moderate(1);
+    await moderate(2);
+
+    await recordOwnerDeletion('mica_spark', [41]);
+    await reopen(1);
+    await reopen(2);
+    expect(statusOf('mica_spark', 40)).toBe('active');
+    expect(statusOf('mica_spark', 41)).toBe('deleted');
+  });
+
+  it('a later report of the same row inherits the deletion', async () => {
+    row('mica_spark', 40, 'active');
+    fileReport(1, 'mica_spark', 40);
+    fileReport(2, 'mica_spark', 40);
+    await moderate(1);
+    await recordOwnerDeletion('mica_spark', [40]);
+    await moderate(2);
+    expect(reports[1].target_prior_status).toBe('deleted');
+
+    await reopen(1);
+    await reopen(2);
+    expect(statusOf('mica_spark', 40)).toBe('deleted');
+  });
+
+  it('waits for a takedown in flight, so its record is the one replaced', async () => {
+    // The takedown has moved the row and is about to record `active` when the owner deletes.
+    // Recorded first, the deletion would be overwritten and the reopen bring the row back.
+    row('mica_spark', 40, 'active');
+    fileReport(1, 'mica_spark', 40);
+
+    await interleave(
+      (what) => what === 'record',
+      () => moderate(1),
+      () => recordOwnerDeletion('mica_spark', [40])
+    );
+    expect(reports[0].target_prior_status).toBe('deleted');
+    await reopen(1);
+    expect(statusOf('mica_spark', 40)).toBe('deleted');
+  });
+
+  it('a reopen waits for a deletion being recorded, and restores what it recorded', async () => {
+    row('mica_spark', 40, 'active');
+    fileReport(1, 'mica_spark', 40);
+    await moderate(1);
+
+    await interleave(
+      (what) => what === 'owner',
+      () => recordOwnerDeletion('mica_spark', [40]),
+      () => reopen(1)
+    );
+    expect(statusOf('mica_spark', 40)).toBe('deleted');
   });
 });

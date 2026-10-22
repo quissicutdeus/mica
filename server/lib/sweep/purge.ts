@@ -3,8 +3,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { Database } from '../Database';
-import { openReportHold } from '../contentRetention';
-import { isReportableTable } from '../moderation';
+import { evidenceHold as heldAsEvidence, openReportHold } from '../contentRetention';
+import { isReportableTable, recordOwnerDeletion } from '../moderation';
 import { identifier, type Clause } from './sql';
 import {
   cascadeEdges,
@@ -35,8 +35,8 @@ const DELETE_CHUNK = 500;
 const MAX_CHUNKS = 200;
 
 /**
- * Retention's open-report hold (`openReportHold`, MICA-167) for a table a player can report,
- * or `null` for one they cannot. MICA-292.
+ * Retention's evidence hold (`evidenceHold`, MICA-167, MICA-426) for a table a player can
+ * report, or `null` for one they cannot. MICA-292.
  *
  * The purge and the sweep used to take every row a character owned, reported or not, and
  * once they also delete the hosted file a player under an open report could delete their
@@ -44,11 +44,15 @@ const MAX_CHUNKS = 200;
  * these: a reported row, what hangs off it, and whatever those name, stay until the report
  * resolves, and the next sweep takes them then. The predicate is retention's own, not a copy.
  *
+ * A row a takedown holds (`moderated`) is evidence the same way (MICA-426): the audit ledger
+ * and the actioned report point at it, and a reopen puts it back. It stays while it is
+ * moderated, in every purge — a player's own delete included, by the owner's decision.
+ *
  * Only reportable tables, because only those have rows a report can name — and the hold
  * reads the row's `id`, which not every owned table has.
  */
 const evidenceHold = (table: string, row: string): { sql: string; params: unknown[] } | null =>
-  isReportableTable(table) ? openReportHold(table, row) : null;
+  isReportableTable(table) ? heldAsEvidence(table, row) : null;
 
 /**
  * The most references collected per chunk: far more than one chunk's rows can name, so a
@@ -229,9 +233,14 @@ const cascadeGuard = (
  * Keep a row whose parent is under an open report *now* (MICA-168). The plan already keeps a
  * held parent's children, but a report filed between the plan and the `DELETE` would not: the
  * child goes first, checking only its own row's hold. So each child's statement also asks
- * whether any reportable parent it references is held, with retention's own `openReportHold`
- * over the parent. Read through a `DISTINCT` derived table bounded to this purge's rows, which
- * is also what makes a self-reference (a reply under a post) legal on MySQL (error 1093).
+ * whether any reportable parent it references is under an open report, with retention's own
+ * `openReportHold` over the parent. Read through a `DISTINCT` derived table bounded to this
+ * purge's rows, which is also what makes a self-reference (a reply under a post) legal on MySQL
+ * (error 1093).
+ *
+ * The open report only, not a takedown (MICA-426): a moderated row is held as itself, and a
+ * player's own reply under someone else's moderated post is not part of that evidence — it
+ * goes with the player like any other row.
  */
 const parentHold = (
   owned: OwnedTable,
@@ -307,6 +316,13 @@ interface RowPlan {
   evidence: Set<number>;
   /** The scope's rows that are not excepted, for `kept`. */
   counted: number;
+  /** Ids held because a takedown holds them (`moderated`), for `recordOwnerDeletion`. */
+  moderated: number[];
+  /**
+   * Ids kept only so a held row keeps what it references (MICA-426): the account a held post
+   * names, the post a held reply hangs under. Hidden with the held rows; see `hideKept`.
+   */
+  keptForEvidence: Set<number>;
 }
 
 interface Link {
@@ -314,6 +330,47 @@ interface Link {
   /** Rows referencing the scope's rows in `edge.parent`; `id` null for an untracked table. */
   rows: { id: number | null; ref: number }[];
 }
+
+/**
+ * What a purge keeps for evidence, it hides (MICA-426). A row held by an open report or a
+ * takedown, what hangs off it, and what it keeps by reference — the account a held post names —
+ * move to `deleted` rather than staying live after the player deleted everything else. Left
+ * `active`, a pending report's later takedown recorded `active`, and a reopen put a deleted
+ * player's content back up; and the kept account stayed public, handle, bio and avatar.
+ *
+ * Only reportable tables, every one of which declares `deleted`; another table's kept rows (an
+ * attachment, a membership) show nothing once what they hang off is hidden. A table with an
+ * exception is left alone, since what it keeps it keeps whole. `moderated` stays as it is — the
+ * takedown holds it, and `recordOwnerDeletion` has told it the owner deleted it — and so does
+ * `deleted`. `updated_at` is pinned, as a takedown's is: hiding is not an edit, and a reopen puts
+ * back the row as it was. A row kept only because another player's row references it is not
+ * here: it is not evidence, and the purge leaves it as it always has.
+ *
+ * Before any `DELETE`; a failure fails the purge, like the record above.
+ */
+const hideKept = async (
+  scope: OwnerScope,
+  order: readonly OwnedTable[],
+  plans: ReadonlyMap<string, RowPlan>,
+  except: ReadonlyMap<string, PurgeException>
+): Promise<void> => {
+  for (const owned of order) {
+    if (!isReportableTable(owned.table) || except.has(owned.table)) continue;
+    const plan = plans.get(owned.table)!;
+    const ids = [...new Set([...plan.evidence, ...plan.keptForEvidence])].sort((a, b) => a - b);
+    const name = identifier(owned.table, 'a swept table');
+    for (let i = 0; i < ids.length; i += DELETE_CHUNK) {
+      const chunk = ids.slice(i, i + DELETE_CHUNK);
+      const bound = scope.owns(name, owned.column);
+      await Database.query(
+        `UPDATE ${name} SET \`status\` = 'deleted', \`updated_at\` = \`updated_at\` ` +
+          `WHERE ${bound.sql} AND ${name}.\`id\` IN (${chunk.map(() => '?').join(', ')}) ` +
+          `AND ${name}.\`status\` NOT IN ('moderated', 'deleted')`,
+        [...bound.params, ...chunk]
+      );
+    }
+  }
+};
 
 /**
  * The one delete behind all three callers (MICA-168, MICA-300): every row it removes is one it
@@ -339,7 +396,8 @@ interface Link {
  * read leaves both ends where they are. Each is a failure for its table, logged where it
  * happened, and every other table still goes — the character purge and the sweep always
  * worked table by table, and one missing table must not stop the rest. A plan that cannot be
- * made at all — a cycle, a key not on `id` — throws before any statement runs.
+ * made at all — a cycle, a key not on `id` — throws before any statement runs, and so does a
+ * takedown whose record of the owner's deletion cannot be moved (MICA-426), before any `DELETE`.
  */
 export const purgePlanned = async (
   scope: OwnerScope,
@@ -378,7 +436,13 @@ export const purgePlanned = async (
   // 1. Plan.
   const plans = new Map<string, RowPlan>();
   for (const owned of order) {
-    const plan: RowPlan = { go: new Set(), evidence: new Set(), counted: 0 };
+    const plan: RowPlan = {
+      go: new Set(),
+      evidence: new Set(),
+      counted: 0,
+      moderated: [],
+      keptForEvidence: new Set()
+    };
     plans.set(owned.table, plan);
     try {
       const name = identifier(owned.table, 'a swept table');
@@ -387,11 +451,18 @@ export const purgePlanned = async (
       const go = withKept(hold, exception, 't');
       const keep = exception?.keep?.('t');
       const bound = scope.owns('t', owned.column);
-      const rows = await selectRows<{ id: unknown; go: unknown; held: unknown; ex: unknown }>(
+      const rows = await selectRows<{
+        id: unknown;
+        go: unknown;
+        held: unknown;
+        ex: unknown;
+        mo: unknown;
+      }>(
         `SELECT t.\`id\` AS \`id\`, ` +
           `${go ? `CASE WHEN ${go.sql} THEN 1 ELSE 0 END` : '1'} AS \`go\`, ` +
           `${hold ? `CASE WHEN ${hold.sql} THEN 0 ELSE 1 END` : '0'} AS \`held\`, ` +
-          `${keep ? `CASE WHEN ${keep.sql} THEN 1 ELSE 0 END` : '0'} AS \`ex\` ` +
+          `${keep ? `CASE WHEN ${keep.sql} THEN 1 ELSE 0 END` : '0'} AS \`ex\`, ` +
+          `${hold ? "CASE WHEN t.`status` = 'moderated' THEN 1 ELSE 0 END" : '0'} AS \`mo\` ` +
           `FROM ${name} t WHERE ${bound.sql}`,
         [...(go?.params ?? []), ...(hold?.params ?? []), ...(keep?.params ?? []), ...bound.params]
       );
@@ -400,6 +471,7 @@ export const purgePlanned = async (
         if (Number(r.go) === 1) plan.go.add(id);
         if (Number(r.held) === 1) plan.evidence.add(id);
         if (Number(r.ex) !== 1) plan.counted += 1;
+        if (Number(r.mo) === 1 && Number(r.ex) !== 1) plan.moderated.push(id);
       }
     } catch (error) {
       fail(owned.table, error);
@@ -472,9 +544,31 @@ export const purgePlanned = async (
         }
         const childGoes = id !== null && child !== undefined && child.go.has(id);
         if (!childGoes && parent.go.delete(ref)) changed = true;
+        // A parent this player's evidence keeps is part of what gets hidden with it (MICA-426).
+        const keptByEvidence =
+          id !== null &&
+          child !== undefined &&
+          (child.evidence.has(id) || child.keptForEvidence.has(id));
+        if (keptByEvidence && !parent.go.has(ref) && !parent.keptForEvidence.has(ref)) {
+          parent.keptForEvidence.add(ref);
+          changed = true;
+        }
       }
     }
   }
+
+  /**
+   * The owner's deletion wins a takedown's restore (MICA-426). A moderated row stays — it is the
+   * evidence — but everything else of the player's goes, so a reopen restoring what its takedown
+   * recorded would put a deleted player's text or post back live. Each takedown holding one of
+   * these rows is told the owner deleted it, and a reopen restores `deleted`. Before any
+   * `DELETE`, and a failure fails the purge: deleting the rest with the record unmoved is the
+   * outcome this exists to prevent.
+   */
+  for (const [table, plan] of plans) {
+    if (plan.moderated.length > 0) await recordOwnerDeletion(table, plan.moderated);
+  }
+  await hideKept(scope, order, plans, except);
 
   // A report filed now, between the plan and the delete, is what the next change guards.
   if (beforeDelete) await beforeDelete();

@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const { dbMock, handlers } = vi.hoisted(() => {
   const captured = new Map<string, Function>();
@@ -37,6 +37,7 @@ import {
 } from '../services/DirectMessages';
 // Blabber's policy is registered by its own service file, as in game.
 import '../services/Blabber';
+import { registerOwnerDeletionRecorder } from '../lib/moderation';
 import { NOT_HELD_REPLY, refusePhone } from './phoneStub';
 
 const MY_ACCOUNT = { id: 1, citizenid: 'CIT_A', app: 'blabber', handle: 'ada', status: 'active' };
@@ -519,14 +520,47 @@ describe('the per-app policy (MICA-390)', () => {
 });
 
 describe('deleteThread (MICA-390)', () => {
+  /**
+   * The thread's statements: the candidates, a delete and its reactions per batch, and
+   * (MICA-426) the moderated rows, read before the deletes (`before`) and after them (`after`).
+   */
+  const thread = (
+    candidates: number[],
+    deleted: number,
+    before: number[] = [],
+    after: number[] = before
+  ) => {
+    let moderatedReads = 0;
+    dbMock.query.mockImplementation(async (sql: string) => {
+      const text = String(sql).replace(/\s+/g, ' ');
+      if (text.startsWith('DELETE FROM `mica_blabber_dms`')) return { affectedRows: deleted };
+      if (text.startsWith('DELETE FROM `mica_account_reactions`')) return { affectedRows: 0 };
+      if (text.includes("t.`status` = 'moderated'")) {
+        return (moderatedReads++ === 0 ? before : after).map((id) => ({ id }));
+      }
+      return candidates.map((id) => ({ id }));
+    });
+  };
+  const one = (sql: unknown) => String(sql).replace(/\s+/g, ' ');
+  const isModeratedRead = (c: any[]) => one(c[0]).includes("t.`status` = 'moderated'");
+  let recorded: [string, number][];
+  let previousRecorder: ReturnType<typeof registerOwnerDeletionRecorder>;
+  beforeEach(() => {
+    recorded = [];
+    previousRecorder = registerOwnerDeletionRecorder(async (table, id) => {
+      recorded.push([table, id]);
+    });
+  });
+  afterEach(() => {
+    registerOwnerDeletionRecorder(previousRecorder);
+  });
+
   it('deletes both directions unless the thread is held, then the reactions on what went', async () => {
-    dbMock.query.mockResolvedValueOnce([{ id: 3 }, { id: 4 }]);
-    dbMock.query.mockResolvedValueOnce({ affectedRows: 2 });
-    dbMock.query.mockResolvedValueOnce({ affectedRows: 1 });
+    thread([3, 4], 2);
 
     expect(await deleteThread(1, 2)).toBe(2);
 
-    const [select, remove, reactions] = dbMock.query.mock.calls;
+    const [select, remove, reactions] = dbMock.query.mock.calls.filter((c) => !isModeratedRead(c));
     const threadHeld =
       'NOT EXISTS (SELECT 1 FROM (SELECT DISTINCT r.`id` FROM `mica_reports` r ' +
       'JOIN `mica_blabber_dms` d ON d.`id` = r.`target_id` WHERE r.`target_table` = ?';
@@ -550,10 +584,66 @@ describe('deleteThread (MICA-390)', () => {
   });
 
   it('deletes nothing when the thread is held', async () => {
-    dbMock.query.mockResolvedValueOnce([]);
+    thread([], 0);
 
     expect(await deleteThread(1, 2)).toBe(0);
-    expect(dbMock.query).toHaveBeenCalledTimes(1);
+    expect(
+      dbMock.query.mock.calls.filter(([sql]: any[]) => String(sql).startsWith('DELETE'))
+    ).toEqual([]);
+  });
+
+  /**
+   * MICA-426: a takedown is evidence, so an unmatch's thread delete leaves a moderated DM where
+   * it is — alone; the rest of the thread still goes — and records the deletion on its
+   * takedowns, so a reopen puts it back `deleted` rather than live in an ended thread. Read
+   * before the deletes and after them, so neither a reopen nor a takedown alongside slips by.
+   */
+  it('keeps a moderated DM, deletes the rest, and records the deletion on its takedowns', async () => {
+    thread([3], 1, [5]);
+
+    expect(await deleteThread(1, 2)).toBe(1);
+
+    const calls = dbMock.query.mock.calls;
+    const [select, remove] = calls.filter((c) => !isModeratedRead(c));
+    // First and last: before the candidates are read, and after the last delete.
+    expect(isModeratedRead(calls[0])).toBe(true);
+    const moderated = calls[calls.length - 1];
+    // Asked in the select and again in the delete, so a takedown landing between the two wins.
+    expect(one(select[0])).toContain("AND t.`status` <> 'moderated' AND NOT EXISTS");
+    expect(one(remove[0])).toContain("AND `status` <> 'moderated' AND NOT EXISTS");
+    expect(remove[1]).toEqual([3, 1, 2, 2, 1, 'mica_blabber_dms', 1, 2, 2, 1]);
+    // Last, and not in a thread an open report holds, which stays live.
+    expect(one(moderated[0])).toContain("AND t.`status` = 'moderated' AND NOT EXISTS");
+    expect(moderated[1]).toEqual([1, 2, 2, 1, 'mica_blabber_dms', 1, 2, 2, 1]);
+    // Recorded at both reads; moving a record to `deleted` twice changes nothing.
+    expect(recorded).toEqual([
+      ['mica_blabber_dms', 5],
+      ['mica_blabber_dms', 5]
+    ]);
+  });
+
+  it('records a takedown that landed while the deletes ran', async () => {
+    // The candidates were read before the takedown, so 5 is among them; the delete's own
+    // re-check spares it, and only the read after the deletes finds it moderated.
+    thread([3, 5], 1, [], [5]);
+
+    expect(await deleteThread(1, 2)).toBe(1);
+    expect(recorded).toEqual([['mica_blabber_dms', 5]]);
+  });
+
+  it('records a moderated line read before the deletes, though not after', async () => {
+    // Moderated when the thread was read; restored live by a reopen while the deletes ran.
+    thread([3], 1, [5], []);
+
+    expect(await deleteThread(1, 2)).toBe(1);
+    expect(recorded).toEqual([['mica_blabber_dms', 5]]);
+  });
+
+  it('records nothing for a thread with no moderated DM — the positive twin', async () => {
+    thread([3, 5], 2);
+
+    expect(await deleteThread(1, 2)).toBe(2);
+    expect(recorded).toEqual([]);
   });
 
   it('refuses an id that is not one', async () => {

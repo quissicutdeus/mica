@@ -36,6 +36,7 @@ import { FrameworkBridge } from '../lib/FrameworkBridge';
 import { __resetRateLimits } from '../lib/rateLimit';
 import { AUDIT_LOG_TABLE } from '../lib/AuditLogger';
 import { cascadeEdges, ownedTables, purgeOwnedRows } from '../lib/orphanSweep';
+import { moderateTarget, restoreTarget } from '../lib/moderation';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
@@ -748,6 +749,129 @@ describe('privacy:delete', () => {
     expect(String(heldDelete[0])).toContain('NOT EXISTS (SELECT 1 FROM `mica_reports` r');
     expect(heldDelete[1]).toContain(1);
     expect(heldDelete[1]).not.toContain(2);
+  });
+
+  /**
+   * MICA-426, the owner's decision: a row a takedown holds (`moderated`) is evidence, and the
+   * player's own delete keeps it like every other purge. The plan's `held` is answered from
+   * each row's status, by the clause the plan actually sent, so a plan without the takedown
+   * hold would mark the moderated message deletable and this would fail.
+   */
+  it("keeps a moderated row in the player's own delete and removes their other rows", async () => {
+    const status = new Map([
+      [1, 'active'],
+      [2, 'moderated'],
+      [3, 'deleted']
+    ]);
+    dbMock.query.mockImplementation(async (raw: string, params: unknown[] = []) => {
+      const sql = String(raw);
+      // As many rows go as the statement names by id; the ids are its only numbers.
+      if (sql.startsWith('DELETE FROM mica_messages WHERE')) {
+        return { affectedRows: params.filter((p) => typeof p === 'number').length };
+      }
+      if (/^SELECT t\.`id` AS `id`, .* FROM mica_messages t WHERE/.test(sql)) {
+        const asksTakedown = sql.includes("t.`status` <> 'moderated'");
+        const marksTakedown = sql.includes("CASE WHEN t.`status` = 'moderated' THEN 1");
+        return [...status].map(([id, st]) => {
+          const held = asksTakedown && st === 'moderated' ? 1 : 0;
+          return { id, go: 1 - held, held, ex: 0, mo: marksTakedown && st === 'moderated' ? 1 : 0 };
+        });
+      }
+      return answer(sql);
+    });
+
+    const reply = await call('delete', { confirm: 'DELETE' });
+
+    expect(reply).toMatchObject({ complete: true, kept: 1, failed: [] });
+    const messagesDelete = dbMock.query.mock.calls.find((c: any[]) =>
+      String(c[0]).startsWith('DELETE FROM mica_messages WHERE')
+    )!;
+    // The live and the unsent message go; the moderated one stays, and the hold rides the
+    // statement too, for a takedown landing between the plan and the delete.
+    expect(messagesDelete[1]).toEqual(expect.arrayContaining([1, 3]));
+    expect(messagesDelete[1]).not.toContain(2);
+    expect(String(messagesDelete[0])).toContain("mica_messages.`status` <> 'moderated'");
+    // Every other table the player owns is still purged.
+    const deletes = dbMock.query.mock.calls.filter((c: any[]) => String(c[0]).startsWith('DELETE'));
+    expect(deletes).toHaveLength(ownedTables().length - WHOLE_KEPT.length);
+    // And the kept row's takedowns are told the player deleted it (MICA-426 review), so a reopen
+    // puts it back `deleted` rather than live for a player who asked for everything to go.
+    const records = dbMock.update.mock.calls.filter((c: any[]) =>
+      String(c[0]).startsWith("UPDATE `mica_reports` SET `target_prior_status` = 'deleted'")
+    );
+    expect(records.map((c: any[]) => c[1])).toEqual([['mica_messages', 2]]);
+  });
+
+  /**
+   * MICA-426 round three: a row under a pending report when its player deletes everything is
+   * kept as evidence — and hidden, `deleted`, not left live. A takedown afterwards then records
+   * `deleted`, and the reopen puts back what the player left: nothing showing.
+   */
+  it('a pending report, the delete, a takedown and a reopen: the row comes back deleted', async () => {
+    const status = new Map([
+      [1, 'active'],
+      [2, 'active']
+    ]);
+    const ids = (params: unknown[]) => params.filter((p): p is number => typeof p === 'number');
+    dbMock.query.mockImplementation(async (raw: string, params: unknown[] = []) => {
+      const sql = String(raw);
+      if (/^SELECT t\.`id` AS `id`, .* FROM mica_messages t WHERE/.test(sql)) {
+        // 2 is under a pending report, so the plan holds it.
+        return [
+          { id: 1, go: 1, held: 0, ex: 0, mo: 0 },
+          { id: 2, go: 0, held: 1, ex: 0, mo: 0 }
+        ];
+      }
+      if (
+        sql.startsWith("UPDATE mica_messages SET `status` = 'deleted', `updated_at` = `updated_at`")
+      ) {
+        for (const id of ids(params)) {
+          if (!['moderated', 'deleted'].includes(status.get(id)!)) status.set(id, 'deleted');
+        }
+        return { affectedRows: 1 };
+      }
+      if (sql.startsWith('DELETE FROM mica_messages WHERE')) {
+        for (const id of ids(params)) status.delete(id);
+        return { affectedRows: ids(params).length };
+      }
+      return answer(sql);
+    });
+    dbMock.single.mockImplementation(async (sql: string, params: unknown[]) =>
+      String(sql).startsWith('SELECT `status` FROM `mica_messages`') &&
+      status.has(Number(params[0]))
+        ? { status: status.get(Number(params[0])) }
+        : null
+    );
+    dbMock.update.mockImplementation(async (sql: string, params: unknown[]) => {
+      if (
+        !String(sql).startsWith(
+          'UPDATE `mica_messages` SET `status` = ?, `updated_at` = `updated_at`'
+        )
+      ) {
+        return true;
+      }
+      const [to, id, from] = params as [string, number, string];
+      if (status.get(id) !== from) return false;
+      status.set(id, to);
+      return true;
+    });
+    try {
+      expect(await call('delete', { confirm: 'DELETE' })).toMatchObject({ complete: true });
+      expect([...status]).toEqual([[2, 'deleted']]);
+
+      // The report is actioned: the takedown records what it replaced.
+      const recorded = await moderateTarget('mica_messages', 2, 'ADMIN1', 'report #1: spam');
+      expect([recorded, status.get(2)]).toEqual(['deleted', 'moderated']);
+
+      // Reopened: the restore puts back the recorded status, which hides it still.
+      expect(
+        await restoreTarget('mica_messages', 2, recorded!, 'ADMIN1', 'report #1 reopened')
+      ).toBe(true);
+      expect(status.get(2)).toBe('deleted');
+    } finally {
+      dbMock.single.mockReset();
+      dbMock.update.mockReset();
+    }
   });
 
   it('reports a partial delete as partial', async () => {

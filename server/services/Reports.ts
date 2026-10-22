@@ -14,6 +14,8 @@ import {
   isReportableTable,
   isRestorableStatus,
   moderateTarget,
+  oneDecisionAbout,
+  registerOwnerDeletionRecorder,
   restoreTarget,
   summariseTarget,
   type ReportableTable,
@@ -74,35 +76,12 @@ export const unrecordedPriorStatus = (table: string): string =>
   UNRECORDED_BY_TABLE.get(table) ?? UNRECORDED_DEFAULT;
 
 /**
- * One decision about a reported row at a time (MICA-386 review).
- *
- * A takedown and a reopen each read state and then act on it — whether another report holds
- * the row, what status the row is on, which record to inherit — across several statements,
- * and two of them interleaved over one row got it wrong both ways: a reopen restoring a row
- * another report's takedown had just claimed, leaving it live under an actioned report; two
- * takedowns at once, the second inheriting a record the first had not written yet.
- *
- * Queued per target rather than refused, so an admin never sees a busy error. In process
- * memory: oxmysql has no interactive transaction for a `SELECT … FOR UPDATE` to hold, and one
- * FXServer owns its database — two servers sharing one would not be serialised by this. The
- * CAS writes in `moderation.ts` and the report claims still hold on their own.
+ * One decision about a reported row at a time (MICA-386 review): `oneDecisionAbout` in
+ * `lib/moderation.ts`, keyed by the report's target, which an owner deleting the row under a
+ * takedown queues behind too (MICA-426).
  */
-const decisions = new Map<string, Promise<void>>();
-
-const oneDecisionAt = async <T>(report: Report, work: () => Promise<T>): Promise<T> => {
-  const key = `${report.target_table}#${report.target_id}`;
-  const turn = (decisions.get(key) ?? Promise.resolve()).then(work);
-  const settled = turn.then(
-    () => undefined,
-    () => undefined
-  );
-  decisions.set(key, settled);
-  try {
-    return await turn;
-  } finally {
-    if (decisions.get(key) === settled) decisions.delete(key);
-  }
-};
+const oneDecisionAt = <T>(report: Report, work: () => Promise<T>): Promise<T> =>
+  oneDecisionAbout(report.target_table, report.target_id, work);
 
 /** A report row with the column the shared `Report` wire type does not carry (MICA-386). */
 type ReportRow = Report & { target_prior_status?: string | null };
@@ -197,6 +176,19 @@ class ReportRepository extends SchemaRepository<Report> {
     return Number(count) > 0;
   }
 
+  /**
+   * An owner deleted the row a takedown holds (MICA-426, `recordOwnerDeletion`): every
+   * standing takedown of it restores `deleted` on its reopen, not what it recorded.
+   */
+  async recordOwnerDeletion(table: string, targetId: number): Promise<void> {
+    await Database.update(
+      `UPDATE \`${this.tableName}\` SET \`target_prior_status\` = 'deleted'
+       WHERE \`target_table\` = ? AND \`target_id\` = ?
+         AND \`resolution\` = 'actioned' AND \`status\` = 'active'`,
+      [table, targetId]
+    );
+  }
+
   async findAllResolved(): Promise<Report[]> {
     return openRows(
       this.tableName,
@@ -273,6 +265,8 @@ export const reports = defineService<Report, typeof reportsContract>({
 
 const app = reports.app;
 const repo = reports.repo as ReportRepository;
+
+registerOwnerDeletionRecorder((table, targetId) => repo.recordOwnerDeletion(table, targetId));
 
 /**
  * Whether a player can see a row: the question a report asks before it reads one (MICA-339).
@@ -625,13 +619,25 @@ app.registerEvent('reopen', async (source, cbId, data, citizenid) => {
     // of this same report, whose record is the one this cycle has to restore.
     const recorded = ((await repo.findById(id)) as ReportRow | null)?.target_prior_status;
     try {
-      await restoreTarget(
+      /**
+       * A restore that moves nothing is a failure, said in words (MICA-426): the row is gone,
+       * or something has moved it off `moderated`. Reporting the reopen as done would tell the
+       * admin the content is back when it is not, so the report is put back as it was, below,
+       * and the admin told why.
+       */
+      const restored = await restoreTarget(
         report.target_table as ReportableTable,
         report.target_id,
         isRestorableStatus(recorded) ? recorded : unrecordedPriorStatus(report.target_table),
         citizenid,
         `report #${id} reopened`
       );
+      if (!restored) {
+        throw new PlayerFacingError(
+          'That content can no longer be put back as it was, so the report stays resolved.',
+          { key: 'server.reports.notRestorable' }
+        );
+      }
     } catch (error) {
       // The claim already committed, so put it back rather than leave a report showing
       // open with the takedown it describes still in force — the same reasoning `Hodlr`

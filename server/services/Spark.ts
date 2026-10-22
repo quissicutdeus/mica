@@ -11,6 +11,7 @@ import { resolveOwnedAttachments } from '../lib/attachments';
 import { pageBounds } from '../lib/payload';
 import { isDuplicateKey, reasonOf } from '../lib/sqlErrors';
 import { RETENTION_BATCH } from '../lib/contentRetention';
+import { recordOwnerDeletion } from '../lib/moderation';
 import { whenSchemaReady } from '../lib/schemaReady';
 import { AccountRepository, accounts, accountHasBlocked, scrubAccount } from './Accounts';
 import { deleteThread, type DmPolicy } from './DirectMessages';
@@ -663,6 +664,12 @@ const forgetProfile = async (profileId: number, accountId: number): Promise<void
  * A player's profile, removed: soft-deleted if active (a taken-down one stays where the
  * moderator put it, holding its key), its matches, threads and swipes gone, and the account
  * blanked. Answers whether the player had a profile to remove.
+ *
+ * **The player's removal wins a takedown's restore** (MICA-426). A moderated profile cannot be
+ * moved to `deleted` — it is the evidence — but everything that made it a profile goes below,
+ * so a reopen putting it back `active` would return a card its owner removed, matchless and
+ * blank, to every deck. Its takedowns are recorded as the owner's deletion instead, and a
+ * reopen restores `deleted`.
  */
 const removeProfiles = async (citizenid: string): Promise<boolean> => {
   const rows = await Database.query<{ id: number; account_id: number; status: string }[]>(
@@ -678,11 +685,22 @@ const removeProfiles = async (citizenid: string): Promise<boolean> => {
       had = true;
       // Deleted first, then forgotten: a swipe that lands in between meets a profile no longer
       // active, and its own re-check takes back any match it made (`pairStillOpen`).
-      await Database.update(
-        `UPDATE \`${PROFILES}\` SET \`status\` = 'deleted'
-         WHERE \`id\` = ? AND \`citizenid\` = ? AND \`status\` = 'active'`,
-        [id, citizenid]
-      );
+      const softDelete = () =>
+        Database.update(
+          `UPDATE \`${PROFILES}\` SET \`status\` = 'deleted'
+           WHERE \`id\` = ? AND \`citizenid\` = ? AND \`status\` = 'active'`,
+          [id, citizenid]
+        );
+      if (!(await softDelete())) {
+        /**
+         * Not active: moderated, or taken down since the read above. Recorded behind any
+         * decision in flight about the row, so a takedown's own record lands first and is the
+         * one replaced; then the soft delete again, for a reopen that put it back live while
+         * this waited.
+         */
+        await recordOwnerDeletion(PROFILES, [id]);
+        await softDelete();
+      }
     }
     // Every profile, deleted ones too: a removal that failed part-way left its profile deleted
     // with matches still on it, and the retry has to find them.

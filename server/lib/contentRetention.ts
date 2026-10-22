@@ -21,6 +21,8 @@ import { whenSchemaReady } from './schemaReady';
  * - **A schedule.** At resource start and every `RETENTION_INTERVAL_MS`.
  * - **Holds.** A row is never removed while something still needs it:
  *   - an open report on it (`mica_reports`, `status = 'active'`, `resolution = 'pending'`);
+ *   - a takedown standing on it (`status = 'moderated'`, MICA-426): the row is the evidence the
+ *     ledger and the actioned report point at, and what a reopen puts back;
  *   - a live reference to it — a row in another service's declared child table (a photo
  *     attached to a message, blab or listing) whose parent row still exists. So media expires
  *     only when it is old **and** nothing live shows it; a year-old photo attached to this
@@ -257,6 +259,26 @@ export const openReportHold = (table: string, row: string): { sql: string; param
 });
 
 /**
+ * The evidence hold: true while the row `row` qualifies in `table` is neither named by a
+ * pending report (`openReportHold`) nor held down by a takedown (MICA-426).
+ *
+ * A takedown leaves the row `moderated` rather than deleting it, so the audit ledger and the
+ * actioned report still point at something, and so a reopen — the content judged safe — can
+ * put it back where and as it was. Once its report is actioned the open-report hold no longer
+ * names it, so without this every sweep took it at its age and a reopen found nothing. Held
+ * for as long as it is moderated: the next sweep after a reopen takes it by its window as
+ * usual, which is why a Dark Chat line that would have expired anyway stays expired.
+ *
+ * Read off the row itself, not off `mica_reports`: `moderated` is written by the takedown and
+ * by nothing else, and it is exactly the state a restore needs. Every reportable and retained
+ * table is declared, so every one has `status`; a `NULL` status reads as held.
+ */
+export const evidenceHold = (table: string, row: string): { sql: string; params: unknown[] } => {
+  const report = openReportHold(table, row);
+  return { sql: `${report.sql} AND ${row}.\`status\` <> 'moderated'`, params: report.params };
+};
+
+/**
  * Every hold on `policy.table`, for the row qualifier `row`, with its parameters in order.
  * See the file header for what each one is.
  */
@@ -264,7 +286,7 @@ export const holdClause = (
   policy: RetentionPolicy,
   row: string
 ): { sql: string; params: unknown[] } => {
-  const report = openReportHold(policy.table, row);
+  const report = evidenceHold(policy.table, row);
   const parts = [report.sql];
   const params: unknown[] = [...report.params];
   for (const ref of liveReferences(policy.table)) {

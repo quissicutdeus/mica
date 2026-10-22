@@ -931,12 +931,14 @@ export class ConversationRepository extends SchemaRepository<ConversationRow> {
     params.push(page.limit + 1);
 
     // Joined rather than EXISTS-filtered so the caller's own participant row
-    // (`me`) is in scope — `me.last_read` is what makes unread_count computable.
+    // (`me`) is in scope — `me.last_read` is what makes unread_count computable. The count and
+    // the preview read live rows only, as the thread does: a text an admin took down
+    // (`moderated`) neither counts as unread nor previews (MICA-426).
     const query = `
             SELECT c.*,
             (SELECT COUNT(*) FROM mica_messages unread
                 WHERE unread.conversation_id = c.id
-                AND unread.status != 'deleted'
+                AND unread.status = 'active'
                 AND (unread.citizenid <> me.citizenid OR unread.external_sender IS NOT NULL)
                 AND unread.created_at > me.last_read) as unread_count,
             m.message as last_message_text,
@@ -952,7 +954,7 @@ export class ConversationRepository extends SchemaRepository<ConversationRow> {
                 AND me.left_at IS NULL
             LEFT JOIN mica_messages m ON m.id = (
                 SELECT id FROM mica_messages
-                WHERE conversation_id = c.id AND status != 'deleted'
+                WHERE conversation_id = c.id AND status = 'active'
                 ORDER BY created_at DESC LIMIT 1
             )
             WHERE c.status = 'active'

@@ -492,15 +492,18 @@ describe('the retention prune', () => {
     expect((remove[1] as unknown[]).slice(0, 7)).toEqual([1, 2, 3, 4, 5, 6, 7]);
   });
 
-  it('covers every status, so the window an owner is told about has one exception only', async () => {
+  it('covers every status, so the window an owner is told about has the evidence exception only', async () => {
     withConvars({ mica_media_retention: 30 });
     expiredRows(0);
 
     await pruneExpiredMedia();
 
-    // The only status in the statement is the report's, never the photo's.
-    expect(retentionSelect()!.sql).not.toContain('t.`status`');
-    expect(retentionSelect()!.sql).toContain('`mica_reports`');
+    // The photo's status is asked once, for the one exception a takedown makes (MICA-426): a
+    // moderated photo is evidence and stays. A deleted or active one ages out alike.
+    const sql = retentionSelect()!.sql;
+    expect(sql.match(/t\.`status`/g)).toEqual(['t.`status`']);
+    expect(sql).toContain("t.`status` <> 'moderated'");
+    expect(sql).toContain('`mica_reports`');
   });
 
   it('reports zero rather than NaN when the driver answers something else', async () => {

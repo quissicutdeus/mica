@@ -300,6 +300,10 @@ describe('the edited marker is derived, not stored', () => {
 
     await repo().findByConversation(7);
 
-    expect(String(dbMock.query.mock.calls[0][0])).toContain("m.status != 'deleted'");
+    // Live rows only: an unsent (`deleted`) and a taken-down (`moderated`, MICA-426) message
+    // both leave the thread, and nothing else is read as one.
+    const sql = String(dbMock.query.mock.calls[0][0]).replace(/\s+/g, ' ');
+    expect(sql).toContain("WHERE m.conversation_id = ? AND m.status = 'active'");
+    expect(sql).not.toMatch(/m\.status (!=|<>) 'deleted'/);
   });
 });

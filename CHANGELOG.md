@@ -1377,6 +1377,29 @@ export instead, which authenticates its caller.
 
 ### Fixed
 
+**Content a moderator takes down and later reinstates comes back where it was
+and as it was (MICA-426).** Reopening a report puts the content back in its old
+place, unchanged. Before, a takedown or a restore marked a text, a Blab or a
+Glimpse post as edited, and re-dated a photo in Recently Deleted. A text taken
+down in Messages also stayed visible in the thread and the inbox, so there was
+nothing to reinstate.
+
+Taken-down content is now kept as evidence while it stays taken down. No
+retention window, Dark Chat sweep or purge removes it, and that includes a
+player's own privacy delete. Before, retention could delete it once the report
+was acted on, and a later reopen found nothing.
+
+A purge now hides what it has to keep instead of leaving it live. That covers a
+character delete, the start-up sweep and a player's privacy delete, and it hides
+the player's Blabber or Glimpse account when a kept post names it. A player's
+deletion during a takedown wins, so a reopen restores the content as deleted.
+That includes a Spark profile removed or a Spark match ended. A reopen that
+cannot bring the content back now tells the admin so in words, and the report
+stays as it was.
+
+A Marketplace listing that was sold or removed and is kept this way is recorded
+as deleted. The change needs no migration and no convar.
+
 **A direct message can be read again on a server with a content key
 (MICA-390).** Since `v2026.10.15.54`, opening a thread or the inbox in Blabber's
 direct messages on a server with `mica_content_key_file` set answered "Something

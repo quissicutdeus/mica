@@ -163,8 +163,10 @@ export const sweepOrphanedRows = async (options: SweepOptions = {}): Promise<Swe
     });
     return { ...done, skipped: null };
   } catch (error) {
-    // A plan that cannot be made at all — a cycle, a key not on `id` — before any DELETE.
-    console.error(`[${label}] orphan sweep could not plan, and deleted nothing:`, error);
+    // Everything that throws here does so before any DELETE: a plan that cannot be made at all
+    // (a cycle, a key not on `id`), or the evidence it keeps that could not be recorded and
+    // hidden (MICA-426). The error says which.
+    console.error(`[${label}] orphan sweep stopped before deleting anything:`, error);
     return { removed: 0, kept: 0, byTable: {}, skipped: null, failures: [{ table: '*', error }] };
   }
 };

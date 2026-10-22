@@ -107,6 +107,8 @@ line here.
   phoneStub fresh
 - [A loop through the integration door meets the limiter at 60](door-loops-meet-the-limiter.md)
   — per source and action a minute; steer a draw by the stored point or a convar
+- [A unit suite meets the limiter at 60 too](unit-suite-meets-the-limiter.md) —
+  passes alone, fails in the file; `__resetRateLimits()` in `beforeEach`
 - [A new bridge export read at import breaks other suites' mocks](bridge-mock-lacks-a-new-export.md)
   — reachability.test mocks FrameworkBridge; read it in a function or write it
   out
