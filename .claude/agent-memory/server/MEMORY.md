@@ -119,3 +119,6 @@ line here.
   — the AAD binds it; strip after the open; stub rows must follow the SELECT
 - [Set a table aside by copy, not by rename](set-a-table-aside-by-copy-not-rename.md)
   — FK names are schema-unique; a renamed table breaks apply's create
+- [Turning off a service's generic CRUD fails three pins](disabling-generic-crud-fans-out.md)
+  — deviceServices, uniqueKeyDecisions; genericCrudCallers fails the uncalled
+  ones

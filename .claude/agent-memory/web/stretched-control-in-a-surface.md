@@ -23,3 +23,17 @@ Three things that are easy to miss:
 A MediaThumb kept inside the toggle still finds it with `closest()` and gates
 its streamer-mode reveal there (MICA-405). Everything here is older than
 Chromium 103: `isolation` shipped in 41, `inset` in 87.
+
+Two more from MICA-411 (the notification shade's rows):
+
+- **Keep every bit of text a spec clicks inside the stretched button.** Text
+  left outside it sits under the `::after`, and Playwright's hit-target check
+  walks up from the button and never meets the text, so
+  `getByText(body).click()` fails as "intercepts pointer events". Text inside
+  the button retargets to it. So the button holds the content as block `<span>`s
+  (headings and `<p>` are not phrasing content), and only the extra control is a
+  sibling.
+- **A stretched button turns off any gesture that refuses to arm on a button.**
+  `lib/phone/sheetDrag.ts`'s `bodyShouldStart` checks `closest('button')`, so
+  the shade's close-drag no longer starts on top of a row. Check the drag
+  utilities before stretching a control over a draggable surface.

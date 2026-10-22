@@ -49,3 +49,7 @@ in its own file and gets a line here.
 - [axe heading-order is relative](axe-heading-order-is-relative.md) — first
   heading always passes; a dialog title under a screen h1 is h2, not h3
   (MICA-406)
+- [Relative time is a catalog](relative-time-is-a-catalog.md) — CEF 103 Intl
+  narrow differs from Node's; `ui` locale edits dirty root `locales/` (MICA-412)
+- [Twin `fn`'s `any` is load-bearing](twin-fn-any-is-load-bearing.md) —
+  `never[]` breaks void members; the disable stays with its reason (MICA-420)

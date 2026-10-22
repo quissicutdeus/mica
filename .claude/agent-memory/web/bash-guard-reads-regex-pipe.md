@@ -10,3 +10,8 @@ included.
 filter the log with repeated `-e` flags (`grep -e "Test Files" -e "FAIL" log`),
 never an alternation, and keep any real pipeline in a separate Bash call from
 the gate. Found on MICA-337.
+
+A gate's _name_ inside a grep pattern counts too:
+`grep -E "svelte-check found" log | head` was refused on MICA-410 with no gate
+running at all. And zsh does not word-split `$F`, so `prettier --check $F` with
+two paths in `F` is one nonexistent file (exit 2) — write the paths literally.

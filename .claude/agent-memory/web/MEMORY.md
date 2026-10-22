@@ -83,6 +83,12 @@ its one-line summary.
   — crashes on script-less components; held at 1.8.1 by MICA-402's override
 - [A heading level change is invisible only with a size class](heading-level-change-is-not-free.md)
   — app-reset zeroes heading margins only; UA font-size per level survives
+- [Measure role contrast from `m3.ts`](role-contrast-measured-from-m3.md) —
+  esbuild bundle `buildSchemes`; every role passes both schemes, seeded roles
+  lie about meaning
 - [A surface with several controls](stretched-control-in-a-surface.md) — sibling
   buttons plus a stretched `::after`; a `<style>` class fails utilityClasses,
-  use a data attribute
+  use a data attribute; keep clicked text inside the stretched button
+- [A new dialog breaks an unnamed e2e locator](new-dialog-breaks-unnamed-dialog-locator.md)
+  — a nested picker makes two dialogs; grep e2e for a bare
+  `getByRole('dialog')`. Also the add-on `index.svelte` unit harness
