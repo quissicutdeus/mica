@@ -64,5 +64,8 @@ No unit suite can see a duplicate key: they mock `Database`. The stand-ins in
 an unknown statement; copy that shape. The revive SQL was checked on MariaDB 11
 by hand (`<=>` with a NULL bind, `SET col = DEFAULT`, a racing second `UPDATE`
 matching 0 rows). `test:endpoints` drove it through the blocklist's handler
-until MICA-414 removed that handler, and drives no revive now:
-`uniqueAfterDelete.test.ts` is the only proof, against a mocked database.
+until MICA-414 removed that handler. `test:schema`'s `runReviveVariant` now
+proves it on a real MariaDB, on qb and ESX, through the declared Hodlr and
+Battery repositories (same id back, one row, unnamed column to DEFAULT,
+`created_at` refreshed, a foreign owner still refused); the mocked
+`uniqueAfterDelete.test.ts` stays for the SQL's shape.

@@ -658,8 +658,9 @@ const runCall = async (shape, numbers) => {
   // The generic `uniqueAfterDelete: 'revive'` check that stood here (block, lift, block the same
   // number again, MICA-318/321) went with the blocklist's generic create and delete
   // (MICA-414): nothing inserts a blocklist row through a handler now. Battery's and Hodlr's
-  // 'revive' is not reached through a handler in this harness either, so the two-statement
-  // revive has no MariaDB proof here until a screen brings a create path back.
+  // 'revive' is not reached through a handler in this harness either; the two-statement revive
+  // is proved on a real MariaDB by `runReviveVariant` in `test-schema.js`, through their
+  // declared repositories.
 
   step(`${kind}: 1 calls themselves`);
   const self = await shape.fire(1, 'mica:server:phone:start', numbers[1]);

@@ -41,7 +41,9 @@ let checksRun = 0;
  * the hook (thirteen and the seeded schema's one) and by the sweep (seventeen and the seeded
  * schema's one), on each shape, and two that `mica.sql` refuses an es_extended database. Plus
  * MICA-165's keyed import and content backfill, eleven and the seeded schema's one on each
- * shape, and a keyed micaseed on qb. Plus MICA-306's first-start schema, below.
+ * shape, and a keyed micaseed on qb. Plus MICA-306's first-start schema, below. Plus
+ * `uniqueAfterDelete: 'revive'` on Hodlr and Battery, the seeded schema's one and eighteen on
+ * each shape (REVIVE_CHECKS).
  */
 const IMPORT_CHECKS = 16;
 const RETENTION_CHECKS = 17;
@@ -67,8 +69,17 @@ const CRYPT_SEED_CHECKS = 1;
  * alone (six), and refusing with no DDL rights (four), on each shape.
  */
 const BOOTSTRAP_CHECKS = 23;
+/**
+ * MICA-414: the revive on a real MariaDB, the seeded schema's one and eighteen: Hodlr's eight
+ * (both rows soft-deleted, no duplicate key, the same id, one row `active` with the new value,
+ * `created_at` refreshed, another citizen's deleted row left alone, an unnamed column back to
+ * DEFAULT) and Battery's ten, which add that another owner's create under the key is still
+ * refused and leaves the deleted row deleted.
+ */
+const REVIVE_CHECKS = 19;
 const MINIMUM_CHECKS =
   48 +
+  REVIVE_CHECKS * 2 +
   BOOTSTRAP_CHECKS * 2 +
   CRYPT_CHECKS * 2 +
   CRYPT_SEED_CHECKS +
@@ -253,6 +264,10 @@ const loadServerModule = async () => {
     `import '${root}/server/services/Marketplace.ts';`,
     // MICA-165: the cipher and the backfill, in the same bundle as the importer, so an import
     // seals through the same registry and keyring the backfill reads.
+    // MICA-414: the two services that still declare `uniqueAfterDelete: 'revive'`, whose declared
+    // repositories' `create` is the revive under test.
+    `export { batteryApp } from '${root}/server/services/Battery.ts';`,
+    `export { hodlr } from '${root}/server/services/Hodlr.ts';`,
     `export { walkContent } from '${root}/server/lib/contentBackfill.ts';`,
     `export { seedFor } from '${root}/server/lib/seed.ts';`,
     `export { contentContext, encryptedColumn, openContent, registerEncryptedColumn, resetContentCipherForTests, sealContent, sealedKeyId, unregisterEncryptedColumnForTests } from '${root}/server/lib/contentCipher.ts';`
@@ -3133,6 +3148,124 @@ const runBootstrapNoDdlVariant = async ({ connection, hasPlayers, privacy }) => 
   }
 };
 
+/**
+ * `uniqueAfterDelete: 'revive'` against the engine (MICA-321, MICA-414).
+ *
+ * MICA-414 removed the blocklist's generic create, the one place `test:endpoints` drove the
+ * two-statement revive through a handler, so `uniqueAfterDelete.test.ts` — a mocked database —
+ * was left as its only proof. This drives the declared repositories of the two services that
+ * still revive: create, soft-delete exactly as `Repository.delete` does, create the same key
+ * again. Hodlr's key is the citizen; Battery's is the phone, which takes the null-safe
+ * `device_id <=> ?` half of the predicate.
+ */
+const runReviveVariant = async ({ connection, schemaFile, hasPlayers, modules }) => {
+  const framework = hasPlayers ? 'qb' : 'esx';
+  const A = hasPlayers ? 'CIT_A' : ESX_OWNER_A;
+  const B = hasPlayers ? 'CIT_B' : ESX_OWNER_B;
+  const phones = { [A]: 'a'.repeat(32), [B]: 'b'.repeat(32) };
+
+  await seedFrameworkAndMica({ connection, schemaFile, hasPlayers, suffix: 'revive' });
+  const q = async (sql, params = []) => (await connection.query(sql, params))[0];
+
+  const cases = [
+    {
+      label: `revive on ${framework}: hodlr`,
+      repo: modules.hodlr.repo,
+      table: 'mica_hodlr',
+      column: 'quantity',
+      first: 7,
+      second: 3,
+      fallback: 0,
+      extra: () => ({}),
+      remove: (repo, id, owner) => repo.delete(id, owner)
+    },
+    {
+      label: `revive on ${framework}: battery`,
+      repo: modules.batteryApp.repo,
+      table: 'mica_battery',
+      column: 'level',
+      first: 40,
+      second: 25,
+      fallback: 100,
+      extra: (owner) => ({ device_id: phones[owner] }),
+      remove: (repo, id, owner) => repo.delete(id, owner, phones[owner]),
+      // The key is the phone, so B asking for A's phone is another owner's create.
+      foreign: true
+    }
+  ];
+
+  for (const c of cases) {
+    step(`${c.label} — create, soft delete, create the same key again`);
+    const rowsOf = (owner) => q(`SELECT * FROM \`${c.table}\` WHERE citizenid = ?`, [owner]);
+    const idA = await c.repo.create({ citizenid: A, [c.column]: c.first, ...c.extra(A) });
+    const idB = await c.repo.create({ citizenid: B, [c.column]: c.first, ...c.extra(B) });
+    check(`${c.label}: the other citizen's row is deleted`, await c.remove(c.repo, idB, B), true);
+    check(`${c.label}: and so is the caller's`, await c.remove(c.repo, idA, A), true);
+    // `delete` is soft: the row is still here, holding the key. Backdated so a refreshed
+    // `created_at` is a certainty rather than the same second.
+    await q('UPDATE `' + c.table + "` SET created_at = '2000-01-01 00:00:00' WHERE id = ?", [idA]);
+
+    let error = null;
+    let revivedId = null;
+    try {
+      revivedId = await c.repo.create({ citizenid: A, [c.column]: c.second, ...c.extra(A) });
+    } catch (e) {
+      error = e.code ?? e.message;
+    }
+    check(`${c.label}: no duplicate-key error`, error, null);
+    check(`${c.label}: the same id comes back`, revivedId, idA);
+    const [own, ...extraRows] = await rowsOf(A);
+    check(
+      `${c.label}: one row under the key, active, with the new value`,
+      [extraRows.length, own.id, own.status, own[c.column]],
+      [0, idA, 'active', c.second]
+    );
+    check(
+      `${c.label}: created_at is refreshed`,
+      (
+        await q('SELECT created_at > ? AS fresh FROM `' + c.table + '` WHERE id = ?', [
+          '2001-01-01',
+          idA
+        ])
+      )[0].fresh,
+      1
+    );
+    const [other] = await rowsOf(B);
+    check(
+      `${c.label}: another citizen's deleted row is left alone`,
+      [other.id, other.status, other[c.column]],
+      [idB, 'deleted', c.first]
+    );
+
+    // A column the create does not name goes back to its default, not to the old value.
+    await c.remove(c.repo, idA, A);
+    const again = await c.repo.create({ citizenid: A, ...c.extra(A) });
+    const [reset] = await rowsOf(A);
+    check(
+      `${c.label}: an unnamed column is back to its default on the same row`,
+      [again, reset.status, reset[c.column]],
+      [idA, 'active', c.fallback]
+    );
+
+    if (c.foreign) {
+      // A's row is deleted again; B naming A's phone is not A, so the key still refuses it.
+      await c.remove(c.repo, idA, A);
+      let refused = null;
+      try {
+        await c.repo.create({ citizenid: B, [c.column]: 1, device_id: phones[A] });
+      } catch (e) {
+        refused = e.errno ?? e.code ?? e.message;
+      }
+      check(`${c.label}: another owner's create under the key is still refused`, refused, 1062);
+      check(
+        `${c.label}: and the deleted row stays deleted`,
+        (await rowsOf(A)).map((r) => [r.id, r.status]),
+        [[idA, 'deleted']]
+      );
+    }
+  }
+};
+
 const main = async () => {
   let database;
   let connection;
@@ -3156,6 +3289,10 @@ const main = async () => {
         await runImportVariant({ connection, schemaFile, hasPlayers, modules, source });
       }
     }
+
+    // MICA-414: the revive, on both shapes.
+    await runReviveVariant({ connection, schemaFile: 'mica.sql', hasPlayers: true, modules });
+    await runReviveVariant({ connection, schemaFile: 'mica.esx.sql', hasPlayers: false, modules });
 
     // MICA-167: the retention prune, on both shapes.
     await runRetentionVariant({ connection, schemaFile: 'mica.sql', hasPlayers: true, modules });
