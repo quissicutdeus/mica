@@ -388,8 +388,8 @@ test.describe('Blabber', () => {
     // rename would break every mention already posted.
     await expect(frame.locator('text=a handle is claimed once')).toBeVisible();
 
-    await frame.locator('#blabber-display-name').fill('Ada L');
-    await frame.locator('#blabber-bio').fill('counting machines');
+    await frame.getByLabel('Display name').fill('Ada L');
+    await frame.getByLabel('Bio').fill('counting machines');
     await frame.getByRole('button', { name: 'Save', exact: true }).click();
 
     // A `useAppAction` success toast is raised through the host and rendered by the

@@ -4,7 +4,7 @@
 
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fireEvent, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, waitFor } from '@testing-library/svelte';
 import { renderApp } from '@mica/sdk/testing';
 import type { Account } from '@mica/shared/types';
 
@@ -16,6 +16,7 @@ import { fetchNui } from '../../nui/fetchNui';
 import { registerNuiTransport } from '../../../../sdk/nui/transport';
 
 import Glimpse from './index.svelte';
+import LauncherIcon from './Icon.svelte';
 import { myAccounts, accountsLoaded } from './store';
 
 const account: Account = {
@@ -37,7 +38,11 @@ const actionOf = (name: string, payload: unknown): string => {
   return `${p?.service}:${p?.action}`;
 };
 
+/** What `accounts:mine` answers; one handle unless a test empties it. */
+let owned: Account[] = [];
+
 beforeEach(() => {
+  owned = [account];
   myAccounts.set([]);
   accountsLoaded.set(false);
   // The paged stores reach the transport through the SDK seam, not this module's import.
@@ -45,7 +50,7 @@ beforeEach(() => {
   vi.mocked(fetchNui).mockImplementation(
     async (name: string, payload?: unknown, options?: { defaultValue?: unknown }) => {
       const action = actionOf(name, payload);
-      if (action === 'accounts:mine') return { rows: [account], limit: 3 };
+      if (action === 'accounts:mine') return { rows: owned, limit: 3 };
       if (action === 'glimpse:feed') return { rows: [], nextCursor: null };
       return options?.defaultValue ?? null;
     }
@@ -119,5 +124,34 @@ describe('Glimpse full-screen panels', () => {
     const { findByRole } = renderApp(Glimpse, { id: 'glimpse' });
     const avatarButton = await findByRole('button', { name: 'Posting as @echo' });
     expect(avatarButton.querySelector('[data-initials]')?.getAttribute('data-initials')).toBe('E');
+  });
+
+  /** MICA-416: the SDK's `EditProfile`, a dialog named for its title that takes focus. */
+  it('opens Edit profile as a modal dialog that takes focus', async () => {
+    const { findByRole } = renderApp(Glimpse, { id: 'glimpse' });
+    await fireEvent.click(await findByRole('button', { name: 'Posting as @echo' }));
+    await fireEvent.click(await findByRole('button', { name: 'Edit profile' }));
+
+    const dialog = await findByRole('dialog', { name: 'Edit profile' });
+    expect(dialog.getAttribute('aria-modal')).toBe('true');
+    await waitFor(() => expect(document.activeElement).toBe(dialog));
+    expect(await findByRole('textbox', { name: 'Display name' })).toBeTruthy();
+  });
+
+  /** MICA-416: the gate is the SDK's `ClaimHandle`, whose field is named for its title. */
+  it('gates a player with no handle on a labelled claim field', async () => {
+    owned = [];
+    const { findByRole, findByText } = renderApp(Glimpse, { id: 'glimpse' });
+    expect(await findByRole('textbox', { name: 'Pick a handle' })).toBeTruthy();
+    // Glimpse keeps its own line under the title, through the SDK component's `hint`.
+    expect(await findByText(/how people find you on Glimpse/)).toBeTruthy();
+  });
+});
+
+/** MICA-420: the launcher glyph's fallback size is the `size-icon-xl` token, not a raw `h-8 w-8`. */
+describe('launcher icon', () => {
+  it('draws at the xl icon token when the shell passes no class', () => {
+    const { container } = render(LauncherIcon);
+    expect(container.querySelector('svg')?.getAttribute('class')).toBe('size-icon-xl');
   });
 });

@@ -28,6 +28,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     usePagedList,
     focusTrap,
     AccountMenu,
+    ClaimHandle,
+    EditProfile,
     initialsOf,
     type AccountMenuAction,
     type AppProps
@@ -59,9 +61,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     updateAccount,
     type GlimpsePeer
   } from './store';
-  import ClaimHandle from './components/ClaimHandle.svelte';
   import Composer from './components/Composer.svelte';
-  import EditProfile from './components/EditProfile.svelte';
   import Messages from './components/Messages.svelte';
   import PostCard from './components/PostCard.svelte';
   import PostDetail from './components/PostDetail.svelte';
@@ -532,7 +532,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       tabindex="-1"
       class="pt-safe-top animate-in fade-in bg-surface duration-medium ease-emphasized absolute inset-0 z-30 flex flex-col outline-none"
     >
-      <ClaimHandle busy={$busy} onclaim={claim} oncancel={() => (claiming = false)} />
+      <ClaimHandle
+        busy={$busy}
+        hint={$t('glimpse.pickHandleHint')}
+        onclaim={claim}
+        oncancel={() => (claiming = false)}
+      />
     </div>
   {/if}
 
@@ -622,7 +627,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <div class="p-4"><Skeleton count={2} height="h-64" /></div>
   {:else if $myAccounts.length === 0}
     <!-- Nothing to post, like or comment from yet. Told, rather than shown a dead feed. -->
-    <ClaimHandle busy={$busy} onclaim={claim} />
+    <ClaimHandle busy={$busy} hint={$t('glimpse.pickHandleHint')} onclaim={claim} />
   {:else if tab === 'messages' && $activeAccount}
     <Messages
       accountId={$activeAccount.id}

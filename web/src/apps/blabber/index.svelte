@@ -29,6 +29,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     registerMessages,
     focusTrap,
     AccountMenu,
+    ClaimHandle,
+    EditProfile,
     initialsOf,
     type AccountMenuAction,
     type AppProps
@@ -37,8 +39,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   import type { Account, Blab } from '@mica/shared/types';
   import BlabRow from './components/BlabRow.svelte';
   import Composer from './components/Composer.svelte';
-  import ClaimHandle from './components/ClaimHandle.svelte';
-  import EditProfile from './components/EditProfile.svelte';
   import FollowList from './components/FollowList.svelte';
   import Profile from './components/Profile.svelte';
   import BlabDetail from './components/BlabDetail.svelte';
