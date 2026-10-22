@@ -7,6 +7,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script lang="ts">
   import {
     EmptyState,
+    formatCurrency,
     Skeleton,
     MediaThumb,
     onAppForeground,
@@ -101,7 +102,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         {/if}
         <div class="min-w-0 flex-1">
           <p class="text-on-surface truncate text-body-large">{listing.title}</p>
-          <p class="text-on-surface-variant text-body-small">{listing.price}</p>
+          <p class="text-on-surface-variant text-body-small">${formatCurrency(listing.price)}</p>
         </div>
       </button>
     {/each}

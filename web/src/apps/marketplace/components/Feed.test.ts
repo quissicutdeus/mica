@@ -68,7 +68,8 @@ describe('Marketplace Feed', () => {
   it('renders each listing with title and price', async () => {
     render(Feed, { props: { onselect: () => {}, onCreate: () => {}, onMyListings: () => {} } });
     expect(await screen.findByText('Dirt Bike')).toBeTruthy();
-    expect(screen.getByText('4500')).toBeTruthy();
+    // MICA-415: through `formatCurrency` with Bank's `$`, not the bare number it was.
+    expect(screen.getByText('$4,500.00')).toBeTruthy();
   });
 
   it('tapping a card calls onselect with the listing id', async () => {

@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { Button, useAppAction, useLocale } from '@mica/sdk';
+  import { Button, formatCurrency, useAppAction, useLocale } from '@mica/sdk';
   import { useHodlr, buyPriceOf, sellPriceOf } from '../store';
 
   let { side, onback }: { side: 'buy' | 'sell'; onback: () => void } = $props();
@@ -78,7 +78,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <div class="flex flex-col gap-3 p-4">
   <p class="text-on-surface-variant text-body-medium">
     {#if open}
-      {side === 'buy' ? $t('hodlr.quoteBuy', { price }) : $t('hodlr.quoteSell', { price })}
+      {side === 'buy'
+        ? $t('hodlr.quoteBuy', { price: formatCurrency(price) })
+        : $t('hodlr.quoteSell', { price: formatCurrency(price) })}
     {:else}
       {side === 'buy' ? $t('hodlr.quoteBuyClosed') : $t('hodlr.quoteSellClosed')}
     {/if}
@@ -99,7 +101,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   {/if}
 
   <p class="text-on-surface text-body-large">
-    {side === 'buy' ? $t('hodlr.cost', { total }) : $t('hodlr.proceeds', { total })}
+    {side === 'buy'
+      ? $t('hodlr.cost', { total: formatCurrency(total) })
+      : $t('hodlr.proceeds', { total: formatCurrency(total) })}
   </p>
 
   {#if validation}

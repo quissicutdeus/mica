@@ -36,9 +36,9 @@ test.describe('Hodlr', () => {
 
     // The three reads the portfolio makes on foreground, all of which arrive over the
     // generic `useService('hodlr')` route rather than a `shared/routes.ts` row.
-    await expect(frame.getByText('$500', { exact: true })).toBeVisible();
+    await expect(frame.getByText('$500.00', { exact: true })).toBeVisible();
     await expect(frame.getByText('3 gCoin', { exact: true })).toBeVisible();
-    await expect(frame.getByText('worth $1500', { exact: true })).toBeVisible();
+    await expect(frame.getByText('worth $1,500.00', { exact: true })).toBeVisible();
 
     // The chart, not the "No history yet" branch beside it. Asserting the plotted points
     // rather than the `<svg>` box is what distinguishes a chart with the mock's three
@@ -48,12 +48,12 @@ test.describe('Hodlr', () => {
     await frame.getByRole('button', { name: 'Buy', exact: true }).click();
     // $505, not the $500 mid above: MICA-147's spread quotes a buy above mid — see
     // `mockHodlrBuyPrice` in `web/src/nui/mocks/data.ts`.
-    await expect(frame.getByText('Buy gCoin at $505 each')).toBeVisible();
+    await expect(frame.getByText('Buy gCoin at $505.00 each')).toBeVisible();
 
     // The running total is what a player checks before committing real money, and it is
     // priced from the same store the portfolio read.
     await frame.getByPlaceholder('Quantity').fill('2');
-    await expect(frame.getByText('Cost: $1010')).toBeVisible();
+    await expect(frame.getByText('Cost: $1,010.00')).toBeVisible();
 
     await frame.getByRole('button', { name: 'Confirm' }).click();
 
@@ -68,7 +68,7 @@ test.describe('Hodlr', () => {
     // `applyTrade` can be made a no-op and this spec stays green; that is measured, not
     // assumed. `src/apps/hodlr/store.test.ts` is what covers it.
     await expect(frame.getByText('5 gCoin', { exact: true })).toBeVisible();
-    await expect(frame.getByText('worth $2500', { exact: true })).toBeVisible();
+    await expect(frame.getByText('worth $2,500.00', { exact: true })).toBeVisible();
   });
 
   test('refuses a sell larger than the holding in words, then settles a legal one', async ({
@@ -79,7 +79,7 @@ test.describe('Hodlr', () => {
 
     // $495, not $500 mid: MICA-147's spread quotes a sell below mid — see
     // `mockHodlrSellPrice` in `web/src/nui/mocks/data.ts`.
-    await expect(frame.getByText('Sell gCoin at $495 each')).toBeVisible();
+    await expect(frame.getByText('Sell gCoin at $495.00 each')).toBeVisible();
     await expect(frame.getByText('You hold 3 gCoin.')).toBeVisible();
 
     /**
@@ -94,10 +94,10 @@ test.describe('Hodlr', () => {
 
     await frame.getByPlaceholder('Quantity').fill('2');
     await expect(frame.getByText('You only have 3 gCoin to sell.')).toHaveCount(0);
-    await expect(frame.getByText('Proceeds: $990')).toBeVisible();
+    await expect(frame.getByText('Proceeds: $990.00')).toBeVisible();
     await frame.getByRole('button', { name: 'Confirm' }).click();
 
     await expect(frame.getByText('1 gCoin', { exact: true })).toBeVisible();
-    await expect(frame.getByText('worth $500', { exact: true })).toBeVisible();
+    await expect(frame.getByText('worth $500.00', { exact: true })).toBeVisible();
   });
 });

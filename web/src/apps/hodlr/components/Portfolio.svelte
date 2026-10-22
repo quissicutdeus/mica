@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <script lang="ts">
-  import { EmptyState, Skeleton, onAppForeground, useLocale } from '@mica/sdk';
+  import { EmptyState, Skeleton, formatCurrency, onAppForeground, useLocale } from '@mica/sdk';
   import { useHodlr, buyPriceOf, sellPriceOf } from '../store';
   import Chart from './Chart.svelte';
 
@@ -49,7 +49,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <div class="bg-surface-container rounded-box p-4">
       <p class="text-on-surface-variant text-body-small">{$t('hodlr.price')}</p>
       {#if open}
-        <p class="text-on-surface text-title-large">${$priceStore.current}</p>
+        <p class="text-on-surface text-title-large">${formatCurrency($priceStore.current)}</p>
         <!-- Buy and sell, side by side rather than folded into one number — a spread
              means they can genuinely differ (MICA-147/MICA-149), and showing only the
              mid/reference price here would leave Trade's own quote as the first time a
@@ -57,11 +57,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <div class="mt-2 flex gap-4">
           <div>
             <p class="text-on-surface-variant text-body-small">{$t('hodlr.buy')}</p>
-            <p class="text-on-surface text-body-medium">${buyPrice}</p>
+            <p class="text-on-surface text-body-medium">${formatCurrency(buyPrice)}</p>
           </div>
           <div>
             <p class="text-on-surface-variant text-body-small">{$t('hodlr.sell')}</p>
-            <p class="text-on-surface text-body-medium">${sellPrice}</p>
+            <p class="text-on-surface text-body-medium">${formatCurrency(sellPrice)}</p>
           </div>
         </div>
       {:else}
@@ -88,7 +88,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </p>
       {#if open}
         <p class="text-on-surface-variant text-body-medium">
-          {$t('hodlr.worth', { value: $portfolioStore.currentValue })}
+          {$t('hodlr.worth', { value: formatCurrency($portfolioStore.currentValue) })}
         </p>
       {/if}
     </div>

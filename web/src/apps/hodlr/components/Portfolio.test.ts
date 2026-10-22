@@ -62,4 +62,19 @@ describe('Portfolio', () => {
     expect(loads.loadPrice).toHaveBeenCalledTimes(2);
     expect(loads.loadPortfolio).toHaveBeenCalledTimes(2);
   });
+
+  /**
+   * MICA-415: every amount through the SDK's `formatCurrency`, as Bank does. The quote was a
+   * raw `$` and number (`$1500`), beside Bank's `$1,500.00` for the same kind of money.
+   */
+  it('formats the quote, both sides and the holding as currency', async () => {
+    priceStore.set({ ready: true, current: 1500, buyPrice: 1515, sellPrice: 1485, history: [] });
+    portfolioStore.set({ ready: true, quantity: 2, currentPrice: 1500, currentValue: 3000 });
+    render(Portfolio, { props: { onbuy: () => {}, onsell: () => {} } });
+    await screen.findByRole('button', { name: 'Buy' });
+    expect(screen.getByText('$1,500.00')).toBeTruthy();
+    expect(screen.getByText('$1,515.00')).toBeTruthy();
+    expect(screen.getByText('$1,485.00')).toBeTruthy();
+    expect(screen.getByText('worth $3,000.00')).toBeTruthy();
+  });
 });
