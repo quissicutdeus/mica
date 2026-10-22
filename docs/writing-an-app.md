@@ -143,11 +143,14 @@ visibility contract like `requires`: an app whose list omits the device on
 screen has no icon on it and `openApp` refuses it. See "Your app on the tablet"
 below before listing the tablet.
 
-`color` is a utility **class** from `sdk/app-utilities.css` (e.g.
-`bg-blue-500`), not a color. It is interpolated into a `class` attribute, so a
-hex string renders an icon with no background at all. `defineApp` warns about
-that in dev, along with a capitalised id and an id another app has already
-claimed.
+`tile` is required, and `color` is gone (MICA-419). `defineApp` throws on a
+manifest that still declares `color`, naming `tile: { bg, fg? }` as the
+replacement, because a bundle built against an older SDK can still pass it and
+ignoring it would install an app whose author thinks the tile is painted. A `bg`
+that is not a single `bg-` class, or an `fg` that is not a `text-` class, throws
+too. Where you need the two as one `class` string, call `flattenTile(tile)` from
+`@mica/sdk`; it returns `bg` alone when there is no `fg`. An id that is
+capitalised or not `lower_snake_case` still only warns, in dev, for a core app.
 
 ## The app
 
@@ -816,6 +819,22 @@ the `__MICA_*__` substitutions).
 - Filter a list with `filterByQuery`, and use the shared primitives —
   `SegmentedControl` for tabs, `ToggleSwitch` for a setting, `Skeleton` while a
   fetch is in flight.
+- A social app does not draw its own identity screens. `EditProfile` is the
+  display-name and bio panel (the handle is shown, never editable, because a
+  rename would break every mention already posted), `ClaimHandle` is the pick-a-
+  handle gate, and `AccountMenu` is the dropdown that switches between accounts.
+  All three are dialogs that trap focus and leave Back to your `useAppLevels`
+  levels. Blabber and Glimpse use them.
+- `Avatar` takes a `name` (or an `@handle`) and draws its initials through
+  `initialsOf`, which is also exported: two or more words give the first and
+  last letter, one word its first, and nothing drawable gives the silhouette.
+  The photo is decorative unless you pass `alt`, which you should do only where
+  the avatar stands alone; beside a name it would be read twice.
+- A relative time that must follow the language is `formatRelativeTime(at, $t)`,
+  with `$t` from `useLocale()`. Called bare it reads the locale once and
+  re-formats only when something else re-renders it.
+- Size an icon with the `size-icon-xs` to `size-icon-xl` classes (0.875rem up to
+  2rem; `sm`, `md` and `lg` sit between) rather than an arbitrary width.
 - Page a long list with `usePagedList`. Set `olderAt: 'start'` for a chat, where
   older rows are above and revealing them must not move the reader, and `'end'`
   for a feed, where they are below and it cannot. Use its `offset` for anything

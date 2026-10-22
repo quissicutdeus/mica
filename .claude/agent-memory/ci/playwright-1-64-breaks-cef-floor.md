@@ -9,10 +9,12 @@ with `element.checkVisibility is not a function`. The other projects pass, so a
 run reads as "395 failed" only in the `cef-floor`, `cef-floor-tablet` and
 `cef-floor-tablet-light` projects.
 
-**How to apply:** stay on 1.63.x until the floor Chromium is 105 or newer; a
-`pnpm update` on the caret range will offer 1.64 again. The CI container tag in
-`build-test.yml` (`mcr.microsoft.com/playwright:v<version>-resolute`) has to
-move with the lockfile version; the tag list is at
+**How to apply:** stay on 1.63.0 until the floor Chromium is 105 or newer.
+`@playwright/test` in `web/package.json` is an exact pin, not a range, so a
+`pnpm update` no longer offers 1.64; raising the pin is the deliberate act. The
+CI container tag in `build-test.yml`
+(`mcr.microsoft.com/playwright:v<version>-resolute`) has to move with the
+lockfile version; the tag list is at
 `https://mcr.microsoft.com/v2/playwright/tags/list`.
 
 `pnpm test:e2e:install` prunes the shared `~/.cache/ms-playwright` of browsers

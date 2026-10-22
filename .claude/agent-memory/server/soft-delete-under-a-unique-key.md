@@ -14,7 +14,9 @@ named columns written, the rest `= DEFAULT`, `created_at` refreshed) or
 `{ optOut: '<reason>' }`. A child table with a unique index may only opt out.
 `uniqueKeyDecisions.test.ts` fails an undecided one.
 
-As of MICA-321 only battery, blocklist and hodlr revive. The rest opt out, each
+As of MICA-321 only battery, blocklist and hodlr revived; since MICA-414 the
+blocklist has no generic CRUD and opts out, so battery and hodlr are the two
+(`uniqueAfterDelete: 'revive'` in `server/services/`). The rest opt out, each
 for its own reason: accounts keep a handle forever, conversations' `pair_key` is
 NULL off `active`, phonenumbers' `assign` reads the refusal and `claimRow`
 reactivates by hand, the upsert tables (settings, lockscreen, highscores)
@@ -61,4 +63,6 @@ No unit suite can see a duplicate key: they mock `Database`. The stand-ins in
 `uniqueAfterDelete.test.ts` and `blocklist.test.ts` enforce the key and fail on
 an unknown statement; copy that shape. The revive SQL was checked on MariaDB 11
 by hand (`<=>` with a NULL bind, `SET col = DEFAULT`, a racing second `UPDATE`
-matching 0 rows). `test:endpoints`' blocklist re-block is the in-harness proof.
+matching 0 rows). `test:endpoints` drove it through the blocklist's handler
+until MICA-414 removed that handler, and drives no revive now:
+`uniqueAfterDelete.test.ts` is the only proof, against a mocked database.

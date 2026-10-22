@@ -7,7 +7,7 @@
  * catalog offers *newer* than what the player has installed?
  *
  * A version reaches us as a bare `string` and nothing validates it — `CatalogEntry.version`
- * is an operator-authored field (`shell/state/catalog.ts`) checked only for being non-empty,
+ * is an operator-authored field (`sdk/catalog.ts`) checked only for being non-empty,
  * and an installed manifest's `version` is either that same string (a catalog install) or
  * `MICA_VERSION`, which `defineApp` supplies as the default.
  *

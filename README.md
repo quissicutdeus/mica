@@ -221,15 +221,15 @@ decision, recorded in [`docs/decisions.md`](docs/decisions.md).
   `firstBoot` timestamps, app installation dates, runtime third-party app
   registration (`registerApp`, `unregisterApp`), and home screen grid updates.
 - **Framework Bridge**: Built-in support for **QBX Core** (`qbx_core`),
-  **QBCore** (`qb-core`) and **ESX** (`es_extended`), with automatic player
-  lookup and money handlers. A framework is detected, not configured — there is
-  no convar that picks one. micaOS also runs **standalone**, with no framework
-  resource at all, and that mode alone is opt-in via `mica_standalone`, because
-  "no framework is installed" and "the framework has not started yet" look
-  identical from inside the resource. On ESX a phone belongs to the **player**
-  where on a qb core it belongs to the **character**, and standalone is
-  per-player as well; that and the rest of the differences are set out under
-  Installation.
+  **QBCore** (`qb-core`) and **ESX Legacy** (`es_extended`), with automatic
+  player lookup and money handlers. A framework is detected, not configured —
+  there is no convar that picks one. micaOS also runs **standalone**, with no
+  framework resource at all, and that mode alone is opt-in via
+  `mica_standalone`, because "no framework is installed" and "the framework has
+  not started yet" look identical from inside the resource. On ESX a phone
+  belongs to the **player** where on a qb core it belongs to the **character**,
+  and standalone is per-player as well; that and the rest of the differences are
+  set out under Installation.
 - **Banking Bridge**: Reads transaction history and society balances through the
   banking resource's own exports rather than its tables, normalizing each
   script's record shape onto one contract. **Renewed-Banking** (verified against
@@ -288,11 +288,11 @@ requirements:
   `node_version '22'`, so the artifact has to be new enough to carry Node 22
 - **Dependencies**:
   - `oxmysql`
-  - Framework: `qbx_core`, `qb-core`, or `es_extended` — see the note on ESX
-    below before installing on the last of these. **Optional**: micaOS also runs
-    with no framework at all, which you turn on deliberately with
-    `mica_standalone`. See "Running with no framework" below for what that mode
-    costs you.
+  - Framework: `qbx_core`, `qb-core`, or `es_extended` (ESX **Legacy** only) —
+    see "Housekeeping on ESX" below before installing on the last of these.
+    **Optional**: micaOS also runs with no framework at all, which you turn on
+    deliberately with `mica_standalone`. See "Running with no framework" below
+    for what that mode costs you.
   - _(Optional)_ `ox_inventory`
 
 **No toolchain.** A release zip is prebuilt, and nothing on that list is Node or
@@ -424,6 +424,14 @@ phone.
 
 ### Housekeeping on ESX
 
+**ESX Legacy only.** micaOS reaches ESX through one route, es_extended's
+`getSharedObject` export, on the server and on the client alike. A build from
+before Legacy has no such export, and the old `esx:getSharedObject` event is
+never sent as a fallback, so such a server gets a phone with no ESX data and one
+logged error per side naming the missing export — a blank phone with a reason,
+not one that waits silently. Update es_extended rather than looking for a
+setting.
+
 Five differences an ESX operator will meet, none of which has a convar and most
 of which are consequences of the identity mapping rather than gaps waiting to be
 filled.
@@ -494,11 +502,11 @@ table says so without filling your console.
 
 **Other resources may not see the battery level.** micaOS mirrors a player's
 charge onto the framework player object so other scripts can read it. ESX Legacy
-1.10+ takes that mirror exactly as a qb core does. Older builds accept it only
-as a session value that does not survive a reconnect, and a build offering
-neither drops it and warns once per resource start — once for the server, not
-once per player, since it is a property of the build rather than of anyone
-playing on it. The phone is unaffected in every case — micaOS's own
+1.10+ takes that mirror exactly as a qb core does. Earlier Legacy builds accept
+it only as a session value that does not survive a reconnect, and a build
+offering neither drops it and warns once per resource start — once for the
+server, not once per player, since it is a property of the build rather than of
+anyone playing on it. The phone is unaffected in every case — micaOS's own
 `mica_battery` table is the source of truth and is written either way — so what
 degrades is a third-party integration reading the mirror, never the battery
 itself.

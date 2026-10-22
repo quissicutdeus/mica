@@ -924,17 +924,17 @@ by this list until someone re-weighs it.
   the server decides who, from its own positions, and only for a party to an
   answered call.
 - **Where the bytes are fetched from is checked, and checked again on update.**
-  `isTrustedRemoteUrl` (`web/src/shell/state/remoteAppSecurity.ts`) requires
-  HTTPS plus a hostname on an operator-configured allowlist. It exempts `data:`
-  URLs, because `installFromCatalog` only ever builds one internally from bytes
-  it has already hash-verified; that exemption is not safe to hand untrusted
-  input directly, so the caller is responsible for rejecting a `data:` URL first
-  — `nuiMessages.ts`'s `installApp` handler does exactly that, refusing a
-  `data:` `bundleUrl` at the NUI boundary before `isTrustedRemoteUrl` ever sees
-  it. An update is not exempt from any of this either: `appUpdates.ts`
-  re-fetches the bundle and re-verifies it against the catalog entry's **fresh**
-  `sha256`, the same check a first install runs, rather than trusting a
-  previously-verified hash to still apply.
+  `isTrustedRemoteUrl` (`sdk/remoteAppSecurity.ts`) requires HTTPS plus a
+  hostname on an operator-configured allowlist. It exempts `data:` URLs, because
+  `installFromCatalog` only ever builds one internally from bytes it has already
+  hash-verified; that exemption is not safe to hand untrusted input directly, so
+  the caller is responsible for rejecting a `data:` URL first —
+  `nuiMessages.ts`'s `installApp` handler does exactly that, refusing a `data:`
+  `bundleUrl` at the NUI boundary before `isTrustedRemoteUrl` ever sees it. An
+  update is not exempt from any of this either: `appUpdates.ts` re-fetches the
+  bundle and re-verifies it against the catalog entry's **fresh** `sha256`, the
+  same check a first install runs, rather than trusting a previously-verified
+  hash to still apply.
 - **A stock server offers the project's public catalog, and its host is the
   residual risk (MICA-237).** With `mica_addon_catalog` never set, the Store
   lists `https://mica.gg/addons/sdk-<n>/catalog.json` and `mica.gg` is on the

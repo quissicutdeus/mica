@@ -16,9 +16,8 @@ import { SDK_CONTRACT_VERSION } from '../../sdk/version';
 /**
  * The two convars that decide where the Store finds add-ons and whose code it may run.
  *
- * `web/src/shell/state/remoteAppSecurity.ts` holds a host allowlist and
- * `web/src/shell/state/catalog.ts` holds a catalog URL; this file is where the phone gets
- * both. What the two strings mean — the public catalog when the catalog convar was never
+ * `sdk/remoteAppSecurity.ts` holds a host allowlist and `sdk/catalog.ts` holds a catalog
+ * URL; this file is where the phone gets both. What the two strings mean — the public catalog when the catalog convar was never
  * set, the operator's own when it names one, nothing at all when it is `off` or set to empty
  * — is decided in `shared/addonConfig.ts`, once, because the server reads the same two
  * convars to fetch the catalog on the phones' behalf and must reach the same answer

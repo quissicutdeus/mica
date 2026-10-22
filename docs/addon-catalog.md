@@ -1,8 +1,8 @@
 # The add-on catalog
 
-A `CatalogEntry` (`web/src/shell/state/catalog.ts`) is what an operator's Store
-backend serves to describe an installable `core: false` add-on. It is not the
-bundle, and the bundle is never read to fill in what the entry doesn't say.
+A `CatalogEntry` (`sdk/catalog.ts`) is what an operator's Store backend serves
+to describe an installable `core: false` add-on. It is not the bundle, and the
+bundle is never read to fill in what the entry doesn't say.
 
 ```ts
 interface CatalogEntry {

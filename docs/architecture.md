@@ -52,9 +52,12 @@ itself a rename of `controllers/` — and renaming it did not fix the thing wron
 with it, which was that two unrelated kinds of file shared a name that described
 neither.
 
-**`services/` appears on two sides on purpose.** `server/services/Notes.ts` and
-`web/src/services/notes.ts` are the two ends of the one `notes` service, so they
-carry the same name deliberately — it is not a collision to tidy up.
+**`services/` appears on two sides on purpose.** `server/services/Contacts.ts`
+and `web/src/services/contacts.ts` are the two ends of the one `contacts`
+service, so they carry the same name deliberately — it is not a collision to
+tidy up. (A `core: false` add-on's client half sits in its app directory
+instead, below: `notes` is `server/services/Notes.ts` and
+`web/src/apps/notes/store.ts`.)
 
 **A core service's store lives outside `apps/`, not inside the app that uses
 it.** A tempting alternative is to move each store into the app that uses it

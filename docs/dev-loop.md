@@ -280,9 +280,11 @@ being configured".
 
 ### Adding a migration to it
 
-The fixtures live in `seedFixtures` and are the regression set for `0001`. A new
-migration wants its own fixtures and its own assertions; raise `MINIMUM_CHECKS`
-when you add them, or the new checks are not actually required to run.
+The rows live in `seedBaselineRows` (`scripts/test-migrations.js`): the smallest
+legal graph the rejection tests need, since the flattened baseline cannot hold
+the duplicates the old fixtures once seeded. A new migration wants its own rows
+and its own assertions; raise `MINIMUM_CHECKS` when you add them, or the new
+checks are not actually required to run.
 
 ## `pnpm verify` runs its gates without `CLAUDECODE`
 
@@ -450,3 +452,18 @@ it is the last check standing between you and losing work — go and look at
 Calls are the one feature this loop doesn't otherwise cover — a real one needs a
 second connected player. [`docs/testing-voip.md`](testing-voip.md) maps the four
 layers that get you most of the way solo, and where each one honestly stops.
+
+## Two dependencies are pinned exactly, and why
+
+Both are exact versions rather than ranges, and the pin is the thing to leave
+alone until the reason is gone.
+
+- **`knip` is `6.41.0`** (root `package.json`), for reproducibility. It once ran
+  as an unpinned `pnpm dlx knip`, so CI took whatever was newest. A newer knip's
+  Playwright plugin loaded `web/playwright.config.ts`, which throws under `CI`
+  without `CEF_FLOOR_CHROMIUM`, and `deadcode` went red with no change of ours
+  (`ba384ae6`). The plugin is disabled in `knip.jsonc` too.
+- **`@playwright/test` is `1.63.0`** (`web/package.json`), because 1.64 calls
+  `checkVisibility()` unguarded and Chromium 103, the `cef-floor` projects'
+  browser, lacks it (added in 105). Move the pin only once that floor does. The
+  CI container tag in `build-test.yml` moves with it.

@@ -3,8 +3,9 @@
 One file per finding; this index is what loads. Read the file before relying on
 its one-line summary.
 
-- [Module-scope `window` breaks node suites](vitest-node-env-window.md) — which
-  module graphs take eight suites down on import, and the two fixes
+- [`isBrowser()` is safe headless](vitest-node-env-window.md) — `hostRuntime()`
+  answers `headless` with no `window` (MICA-177); a raw `window.` read is still
+  a trap; the in-flight-promise rule for server-answered stores
 - [Building an add-on outside the repo](out-of-tree-addon-build.md) — pnpm 11
   reads overrides from `pnpm-workspace.yaml` only; the git specifier that works
 - [CSP violations in the add-on sandbox](csp-blockeduri-opaque-frame.md) —
@@ -95,3 +96,12 @@ its one-line summary.
 - [Any directory under apps/ is an app](any-dir-under-apps-is-an-app.md) — an
   empty stray `.claude/` broke appContract and a11y; write memory by absolute
   path
+- [A failure stub must follow fetchNui's contract](a-failure-stub-must-follow-fetchnui.md)
+  — `mockRejectedValue` skips the default-value path; return the default or
+  throw, as the real layer does
+- [A `beforeEach` arrow must not return the mock](beforeeach-must-not-return-the-mock.md)
+  — the returned function runs as teardown; use a block body
+- [`rerender` resets a component's `ready` flag](rerender-resets-ready.md) —
+  drive bound props through a `__fixtures__/` wrapper that binds the flag
+- [The real Shell renders in jsdom](the-real-shell-renders-in-jsdom.md) — stub
+  `Element.animate`, reset `openDevice`, assert on the real Shell

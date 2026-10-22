@@ -1,8 +1,8 @@
 # A new audit action is a schema change
 
 `mica_audit_logs.action` is a MariaDB `ENUM` in `auditLogDdl`
-(`server/lib/schemaSql.ts`; until MICA-306 it was the hand-written
-`scripts/framework-schema.sql`), mirrored by the `AuditAction` union in
+(`server/lib/schemaSql.ts`; until MICA-306 it was a hand-written SQL file under
+`scripts/`, since deleted), mirrored by the `AuditAction` union in
 `server/lib/AuditLogger.ts`. A brief that says "audit-log X through AuditLogger"
 for something that is not archive, delete, moderate or view needs three things:
 

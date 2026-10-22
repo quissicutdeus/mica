@@ -122,3 +122,13 @@ line here.
 - [Turning off a service's generic CRUD fails three pins](disabling-generic-crud-fans-out.md)
   — deviceServices, uniqueKeyDecisions; genericCrudCallers fails the uncalled
   ones
+- [A held core copy has stale data fields](a-held-core-copy-has-stale-data-fields.md)
+  — funcrefs on a held `GetCoreObject()` are live, plain fields are a snapshot
+- [A core still lists a character after announcing its unload](cores-list-a-character-after-unload.md)
+  — forgetting on the unload event is not enough; stop the reseed re-adding it
+- [InnoDB reads a blob named anywhere](innodb-reads-a-blob-named-anywhere.md) —
+  split the query so the fast half never names the column; measure pages read
+- [A whole-reply "no citizenid" check fails on fixtures](no-citizenid-check-fails-on-fixture-strings.md)
+  — build handles and URLs that cannot contain the citizenid
+- [A switch forgetter must check who took the state](switch-forgetters-check-who-took-the-state.md)
+  — key by source and citizenid; make an `atLogout` forgetter idempotent

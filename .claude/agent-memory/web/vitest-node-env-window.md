@@ -1,51 +1,27 @@
-# A store that reads `window` at module scope breaks node-environment suites
+# `isBrowser()` is safe in a node suite; `typeof window` is not
 
-`web/src/lib/isBrowser.ts` is `() => !window.invokeNative` — unguarded, which is
-correct everywhere it actually runs. The trap is that `web/`'s Vitest project
-does **not** use jsdom everywhere: a good number of suites run in the node
-environment, where `window` is undefined, and such a suite fails on **import**
-rather than on an assertion.
+`isBrowser` lives in `sdk/lib/isBrowser.ts` and is exported from `@mica/sdk`.
+Since MICA-177 it is built on `hostRuntime()`, which answers `'browser'`,
+`'cef'` or `'headless'`, and `'headless'` is what a node-environment suite gets:
+no `window` at all. `isBrowser()` is `false` there, so a module-scope
+`writable(isBrowser())` (`services/admin.ts`) no longer throws on import, and
+the old `ReferenceError: window is not defined` from a store graph is gone. This
+note used to describe that trap and its two fixes; both are retired.
 
-Two module graphs are wide enough that adding an `isBrowser()` call in module
-scope anywhere upstream of them takes suites down:
+What is still true:
 
-- `shell/state/registry.ts` — imported by `sdk/manifest.test.ts`,
-  `sdk/permissions.test.ts`, `sdk/host/useKeybinds.test.ts`,
-  `sdk/host/useTimer.test.ts`, `shell/state/appDrawer.test.ts`,
-  `shell/state/navigation.test.ts`, `shell/state/shade.test.ts`,
-  `shell/state/sheets.test.ts`. Eight suites, all node.
-- `shell/state/searchResults.ts` — its own suite is node, and the module's
-  docstring is explicit that it is pure and testable without standing up
-  services. `services/admin.ts` sits behind an `isBrowser()` at module scope
-  (`writable(isBrowser())`), so importing anything that reaches it from
-  `searchResults.ts` fails the same way.
-
-Symptom either way:
-
-```text
-ReferenceError: window is not defined
- ❯ isBrowser src/lib/isBrowser.ts:1:32
-```
-
-Two fixes, and which is right depends on the module:
-
-1. **A pure rule gets its own file with no store imports.**
-   `lib/appVisibility.ts` holds the app-visibility predicate;
-   `shell/state/appVisibility.ts` holds the same rule wired to stores.
-   `searchResults.ts` imports the first. Do not "fix" a pure module's suite by
-   stamping `// @vitest-environment jsdom` on it — that discards the property
-   the file was written for.
-2. **A store module that genuinely must be imported by `registry.ts` guards the
-   read**: `typeof window !== 'undefined' && isBrowser()`. See
-   `services/capabilities.ts`. Its own suite then needs
-   `// @vitest-environment jsdom` at the top, because a node run answers "not a
-   browser" whatever `isBrowser` is mocked to — that is the guard working, not a
-   bug.
-
-Mocking `../lib/isBrowser` with `vi.doMock` does **not** rescue a
-node-environment suite when the guard is a raw `window` deref: the module under
-test still evaluates `window.invokeNative` before the mock's return value
-matters.
+- **`false` under node means "not a browser tab", not "this is CEF".** A node
+  test that reaches a `!isBrowser()` branch takes the CEF path. That is why
+  `web/src/nui/transport.ts` asks `hostRuntime()` and refuses a headless runtime
+  out loud instead of picking a transport. If a suite needs the browser answer,
+  give it `// @vitest-environment jsdom`; mocking `isBrowser` is the other way.
+- **A raw `window.` read at module scope is still a trap.** Only `isBrowser()`
+  and `hostRuntime()` are guarded. Guard anything else with `typeof window`.
+- **A pure rule still gets its own file.** `web/src/lib/phone/appVisibility.ts`
+  holds the visibility predicate with no stores behind it;
+  `web/src/shell/state/appVisibility.ts` wires the same rule to stores.
+  `shell/state/searchResults.ts` stays a pure module with a node suite. Do not
+  stamp jsdom on a pure module's suite to quiet it.
 
 ## Related: an "ask once per session" latch is a character-switch bug
 
