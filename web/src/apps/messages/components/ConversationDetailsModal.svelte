@@ -86,7 +86,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <div class="flex flex-col items-center space-y-2 py-2 text-center">
       <Avatar
         src={currentConv.targetAvatar}
-        initials={currentConv.targetName ? currentConv.targetName[0] : '?'}
+        name={currentConv.targetName}
         size="w-20 h-20"
         textClass="text-2xl font-bold"
         bgClass={currentConv.is_group
@@ -160,7 +160,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <div class="flex items-center gap-3">
                 <Avatar
                   src={pContact?.avatar}
-                  initials={pContact ? pContact.firstname[0] : 'M'}
+                  name={pContact ? `${pContact.firstname} ${pContact.lastname ?? ''}` : ''}
                   size="w-8 h-8"
                   textClass="text-xs"
                   bgClass="bg-surface-container border border-outline-variant"

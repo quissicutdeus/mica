@@ -61,3 +61,21 @@ describe('ConversationDetailsModal (MICA-410)', () => {
     }
   });
 });
+
+describe('ConversationDetailsModal avatar (MICA-417)', () => {
+  it('the header photo stays silent: the name is the heading under it', () => {
+    render(ConversationDetailsModal, {
+      props: {
+        currentConv: {
+          ...conv,
+          targetName: 'Ada King',
+          targetAvatar: 'data:image/png;base64,iVBORw0KGgo='
+        } as UIConversation,
+        onclose: () => {},
+        ondelete: () => {}
+      }
+    });
+    expect(screen.getByRole('dialog').querySelector('img')?.getAttribute('alt')).toBe('');
+    expect(screen.getByRole('heading', { level: 2, name: 'Ada King' })).toBeTruthy();
+  });
+});

@@ -18,7 +18,7 @@ import de from './locales/de.json';
 registerMessages('places', { en, de });
 
 describe('ShareLiveSheet avatar (MICA-417)', () => {
-  it("names a contact's photo by their full name, as the row beside it does", () => {
+  it('a photo beside the name stays silent rather than read the name twice', () => {
     const contacts = [
       {
         id: 1,
@@ -29,9 +29,10 @@ describe('ShareLiveSheet avatar (MICA-417)', () => {
         avatar: 'data:image/png;base64,iVBORw0KGgo='
       } as Contact
     ];
-    const { container } = render(ShareLiveSheet, {
+    const { container, getByText } = render(ShareLiveSheet, {
       props: { contacts, durations: [15], busy: false, onstart: () => {}, oncancel: () => {} }
     });
-    expect(container.querySelector('img')?.getAttribute('alt')).toBe('Ada King');
+    expect(container.querySelector('img')?.getAttribute('alt')).toBe('');
+    expect(getByText('Ada King')).toBeTruthy();
   });
 });

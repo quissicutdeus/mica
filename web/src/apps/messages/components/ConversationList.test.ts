@@ -126,3 +126,28 @@ describe('ConversationList: the row time follows the locale (MICA-412)', () => {
     expect(getByText('vor 5 Min.')).toBeTruthy();
   });
 });
+
+describe('ConversationList: avatar (MICA-417)', () => {
+  it('a photo beside the name stays silent rather than read the name twice', () => {
+    const withPhoto = {
+      ...conversation(1),
+      targetName: 'Ada King',
+      targetAvatar: 'data:image/png;base64,iVBORw0KGgo='
+    };
+    const { container, getByText } = render(ConversationList, {
+      props: props({ conversations: [withPhoto] })
+    });
+    expect(container.querySelector('img')?.getAttribute('alt')).toBe('');
+    expect(getByText('Ada King')).toBeTruthy();
+  });
+});
+
+describe('ConversationList: status tick (MICA-420)', () => {
+  it('draws the tick on your own last message at the xs icon token', () => {
+    const mine = { ...conversation(1), last_message: { mine: true } } as unknown as UIConversation;
+    const { container } = render(ConversationList, { props: props({ conversations: [mine] }) });
+    const tick = container.querySelector('svg.text-blue-500, svg.text-gray-400');
+    expect(tick?.classList.contains('size-icon-xs')).toBe(true);
+    expect(tick?.classList.contains('h-3.5')).toBe(false);
+  });
+});

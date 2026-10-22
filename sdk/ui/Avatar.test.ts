@@ -36,13 +36,25 @@ describe('Avatar', () => {
     expect(root(container).hasAttribute('data-initials')).toBe(false);
   });
 
-  it('names a photo by its initials, and by "Avatar" without them', () => {
-    const named = render(Avatar, { src: 'https://x.test/a.png', initials: 'AD' });
-    expect(named.container.querySelector('img')?.getAttribute('alt')).toBe('AD');
-    expect(root(named.container).hasAttribute('data-initials')).toBe(false);
+  /**
+   * MICA-417 follow-up. An avatar sits beside the name it belongs to, so its photo is
+   * decorative: an alt there made a row read "Ada King Ada King". A caller whose avatar is a
+   * control's only content names the control, or passes `alt`.
+   */
+  it('draws a photo as decorative, whatever names it, unless the caller passes alt', () => {
+    for (const props of [{ initials: 'AD' }, { name: 'Ada King' }, {}]) {
+      const { container, unmount } = render(Avatar, { src: 'https://x.test/a.png', ...props });
+      expect(container.querySelector('img')?.getAttribute('alt')).toBe('');
+      expect(root(container).hasAttribute('data-initials')).toBe(false);
+      unmount();
+    }
 
-    const bare = render(Avatar, { src: 'https://x.test/b.png' });
-    expect(bare.container.querySelector('img')?.getAttribute('alt')).toBe('Avatar');
+    const labelled = render(Avatar, {
+      src: 'https://x.test/a.png',
+      name: 'Ada King',
+      alt: 'Ada King, online'
+    });
+    expect(labelled.container.querySelector('img')?.getAttribute('alt')).toBe('Ada King, online');
   });
 
   it('falls back to initials when the photo fails to load', async () => {
@@ -81,11 +93,6 @@ describe('Avatar', () => {
       const { container } = render(Avatar, { name: '  @ ', showSilhouette: false });
       expect(container.querySelector('svg')).not.toBeNull();
       expect(root(container).hasAttribute('data-initials')).toBe(false);
-    });
-
-    it('names a photo by the name it was given', () => {
-      const { container } = render(Avatar, { src: 'https://x.test/a.png', name: 'Ada Lovelace' });
-      expect(container.querySelector('img')?.getAttribute('alt')).toBe('Ada Lovelace');
     });
   });
 });

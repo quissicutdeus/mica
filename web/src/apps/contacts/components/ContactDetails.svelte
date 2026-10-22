@@ -83,7 +83,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   <div class="relative">
     <Avatar
       src={contact.avatar}
-      initials={(contact.firstname[0] || '') + (contact.lastname?.[0] || '')}
+      name="{contact.firstname} {contact.lastname ?? ''}"
       size="w-24 h-24"
       textClass="text-4xl"
       bgClass="bg-surface-container border border-outline-variant"
@@ -293,7 +293,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div
         class="text-on-surface-variant text-body-small flex flex-col items-center gap-2 p-6 text-center"
       >
-        <MessageIcon class="text-outline mb-1 h-8 w-8" />
+        <MessageIcon class="text-outline size-icon-xl mb-1" />
         <span>{$t('contacts.noRecentMessages', { name: contact.firstname })}</span>
         <button
           type="button"

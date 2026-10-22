@@ -151,7 +151,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                       onclick={() => startCall(fav.phone, `${fav.firstname} ${fav.lastname || ''}`)}
                     >
                       <Avatar
-                        initials={(fav.firstname[0] || '') + (fav.lastname?.[0] || '')}
+                        name="{fav.firstname} {fav.lastname ?? ''}"
                         size="w-12 h-12"
                         textClass="text-lg"
                         bgClass="bg-yellow-600 shadow-elevation-3"
@@ -218,7 +218,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   aria-label={$t('phone.call')}
                   onclick={() => startCall(enteredNumber)}
                 >
-                  <PhoneIcon class="text-on-surface h-8 w-8" />
+                  <PhoneIcon class="text-on-surface size-icon-xl" />
                 </button>
 
                 <!-- Backspace -->
@@ -229,7 +229,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                       onclick={handleBackspace}
                       aria-label={$t('phone.backspace')}
                     >
-                      <BackspaceIcon class="h-8 w-8" />
+                      <BackspaceIcon class="size-icon-xl" />
                     </button>
                   {/if}
                 </div>
@@ -253,7 +253,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                     onclick={() => startCall(entry.number, nameForNumber(entry.number))}
                   >
                     <Avatar
-                      initials={nameForNumber(entry.number)[0]?.toUpperCase() || '#'}
+                      name={nameForNumber(entry.number)}
                       size="w-10 h-10"
                       textClass="text-sm"
                     />
@@ -298,7 +298,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     >
       <!-- Avatar/Icon -->
       <Avatar
-        initials={$callStore.name?.[0] || '#'}
+        name={$callStore.name ?? ''}
         size="w-32 h-32"
         textClass="text-4xl text-on-surface-variant"
         bgClass="bg-surface-container-high shadow-elevation-5 mb-8"
@@ -421,7 +421,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             onclick={() => callStore.answerCall()}
             aria-label={$t('phone.answerCall')}
           >
-            <PhoneIcon class="text-on-surface h-8 w-8" />
+            <PhoneIcon class="text-on-surface size-icon-xl" />
           </button>
         {/if}
 
@@ -435,7 +435,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           }}
           aria-label={$t('phone.endCall')}
         >
-          <PhoneIcon class="text-on-error h-8 w-8 rotate-135" />
+          <PhoneIcon class="text-on-error size-icon-xl rotate-135" />
         </button>
       </div>
     </div>

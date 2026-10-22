@@ -69,7 +69,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div class="relative mr-4 shrink-0">
         <Avatar
           src={conv.targetAvatar}
-          initials={conv.targetName ? conv.targetName[0] : conv.target[0] || '?'}
+          name={conv.targetName || conv.target}
           size="w-12 h-12"
           textClass="text-lg"
           bgClass={conv.is_group
@@ -106,7 +106,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           {#if conv.last_message?.mine}
             <MessageStatusIcon
               status={isLastMsgReadByOther(conv) ? 'read' : 'delivered'}
-              class="mr-1.5 h-3.5 w-3.5 shrink-0"
+              class="size-icon-xs mr-1.5 shrink-0"
             />
           {/if}
           <p

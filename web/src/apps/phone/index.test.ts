@@ -209,3 +209,35 @@ describe('Phone ringing through a job line (MICA-307)', () => {
     expect(queryByTestId('call-via-line')).toBeNull();
   });
 });
+
+/** MICA-420: the call controls' glyphs sit on the `size-icon-xl` token (2rem), not `h-8 w-8`. */
+describe('Phone call-control glyphs (MICA-420)', () => {
+  beforeEach(() => {
+    callLog.set([]);
+    contacts.set([]);
+    callStore.setStatus('idle');
+  });
+
+  const glyph = (button: HTMLElement) => button.querySelector('svg');
+
+  it('draws the keypad Call and Backspace glyphs at the xl token', async () => {
+    const { getByLabelText, getByText } = render(Phone, { props: { onback: () => {} } });
+    await fireEvent.click(getByText('5'));
+    for (const label of ['Call', 'Backspace']) {
+      const icon = glyph(getByLabelText(label));
+      expect(icon?.classList.contains('size-icon-xl')).toBe(true);
+      expect(icon?.classList.contains('h-8')).toBe(false);
+    }
+  });
+
+  it('draws the Answer and End glyphs at the xl token', async () => {
+    const { getByLabelText } = render(Phone, { props: { onback: () => {} } });
+    callStore.setIncoming('555-0100');
+    await tick();
+    for (const label of ['Answer Call', 'End Call']) {
+      const icon = glyph(getByLabelText(label));
+      expect(icon?.classList.contains('size-icon-xl')).toBe(true);
+      expect(icon?.classList.contains('h-8')).toBe(false);
+    }
+  });
+});

@@ -35,13 +35,15 @@ const renderList = (others: Contact[]) =>
   });
 
 describe('ContactList avatar (MICA-417)', () => {
-  it("hands the Avatar the contact's name, so a photo is described by it rather than by letters", () => {
-    const { container } = renderList([contact({ lastname: 'King', avatar: PHOTO })]);
-    expect(container.querySelector('img')?.getAttribute('alt')).toBe('Ada King');
+  it('a photo beside the name stays silent rather than read the name twice', () => {
+    const { container, getByText } = renderList([contact({ lastname: 'King', avatar: PHOTO })]);
+    expect(container.querySelector('img')?.getAttribute('alt')).toBe('');
+    expect(getByText('Ada King')).toBeTruthy();
   });
 
   it('copes with a contact that has no last name', () => {
-    const { container } = renderList([contact({ avatar: PHOTO })]);
-    expect(container.querySelector('img')?.getAttribute('alt')).toBe('Ada');
+    const { container, getByText } = renderList([contact({ avatar: PHOTO })]);
+    expect(container.querySelector('img')?.getAttribute('alt')).toBe('');
+    expect(getByText('Ada')).toBeTruthy();
   });
 });

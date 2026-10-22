@@ -1584,7 +1584,16 @@ const BASELINE_PROPS: Record<string, string[]> = {
   ArrowUpRightIcon: ['class?'],
   // MICA-395: exported and never frozen; recorded as they stand, not added to the surface.
   AppIconTile: ['class?', 'color', 'icon', 'name', 'size?'],
-  Avatar: ['bgClass?', 'initials?', 'name?', 'showSilhouette?', 'size?', 'src?', 'textClass?'],
+  Avatar: [
+    'alt?',
+    'bgClass?',
+    'initials?',
+    'name?',
+    'showSilhouette?',
+    'size?',
+    'src?',
+    'textClass?'
+  ],
   BackspaceIcon: ['class?'],
   BatteryIcon: ['charge', 'class?'],
   BellIcon: ['class?'],

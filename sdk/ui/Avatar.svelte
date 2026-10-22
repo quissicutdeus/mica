@@ -11,10 +11,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     /** Drawn as given. Wins over `name` when both are passed. */
     initials?: string;
     /**
-     * A name or `@handle` to draw the letters of, through `initialsOf` (MICA-417), and the
-     * photo's alt. Nothing drawable in it shows the silhouette rather than a "?".
+     * A name or `@handle` to draw the letters of, through `initialsOf` (MICA-417). Nothing
+     * drawable in it shows the silhouette rather than a "?".
      */
     name?: string;
+    /**
+     * The photo's alt. Omitted, the photo is decorative (`alt=""`): an avatar sits beside the
+     * name it belongs to, and naming it again reads the name twice. Pass it only where the
+     * avatar stands alone; where it is a control's only content, name the control instead.
+     */
+    alt?: string;
     src?: string;
     size?: string;
     textClass?: string;
@@ -25,6 +31,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   let {
     initials = '',
     name = '',
+    alt = '',
     src = '',
     size = 'w-10 h-10',
     textClass = 'text-sm',
@@ -47,19 +54,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   read as visible text missing from the name; aria-hidden does not change that, because the
   rule measures what is painted, not what is announced. A pseudo-element is painted and is no
   text node. Chromium still exposes it to assistive tech as static text, so an avatar standing
-  on its own is announced exactly as before, and the image branch keeps its alt.
+  on its own is announced exactly as before. The photo is decorative unless the caller passes
+  `alt`, since the name it would repeat is already beside it.
 -->
 <div
   class="{size} flex items-center justify-center rounded-full font-bold {bgClass} {textClass} shrink-0 overflow-hidden"
   data-initials={showInitials ? letters : undefined}
 >
   {#if showImage}
-    <img
-      {src}
-      alt={name.trim() || letters || 'Avatar'}
-      class="h-full w-full object-cover"
-      onerror={() => (imageError = true)}
-    />
+    <img {src} {alt} class="h-full w-full object-cover" onerror={() => (imageError = true)} />
   {:else if !showInitials}
     <svg class="text-on-surface-variant h-2/3 w-2/3 fill-current" viewBox="0 0 24 24">
       <path
