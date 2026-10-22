@@ -60,9 +60,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   </div>
   <div class="flex items-center gap-3" role="img" aria-label={signalLabel}>
     {#if $airplaneModeEnabled}
-      <AirplaneIcon class="h-6 w-6 shrink-0" />
+      <AirplaneIcon class="size-icon-lg shrink-0" />
     {:else}
-      <SignalIcon class="h-6 w-6 shrink-0" level={$clampedSignalLevel} />
+      <SignalIcon class="size-icon-lg shrink-0" level={$clampedSignalLevel} />
     {/if}
     {#if size === '2x2'}
       <span class="text-body-large text-on-surface-variant" data-testid="widget-status-signal"

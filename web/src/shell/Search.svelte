@@ -49,7 +49,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       class="bg-surface-container-high text-on-surface-variant text-body-medium shadow-elevation-2 duration-short ease-standard flex h-11 w-full cursor-pointer items-center gap-2 rounded-box px-4 transition-colors hover:brightness-110"
       aria-label={$t('shell.search')}
     >
-      <SearchIcon class="h-4 w-4" />
+      <SearchIcon class="size-icon-sm" />
       <span>{$t('shell.search')}</span>
     </button>
   </div>

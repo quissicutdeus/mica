@@ -45,8 +45,7 @@ describe('SendMoneyModal', () => {
 
   it('Send is disabled until a phone number and a positive amount are entered', async () => {
     render(SendMoneyModal, { props: { balance: 500, onsent: () => {}, onclose: () => {} } });
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
-    const send = screen.getByText('Send') as HTMLButtonElement;
+    const send = screen.getByText<HTMLButtonElement>('Send');
     expect(send.disabled).toBe(true);
 
     await fireEvent.input(screen.getByPlaceholderText("Recipient's phone number"), {

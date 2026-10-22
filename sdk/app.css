@@ -281,12 +281,15 @@
 
   /**
    * Inline glyph icon sizes (status bar, list-item affordances, dialog icons), matching
-   * M3's icon scale. App icons stay the fixed 32px (`h-8 w-8`) mandated by AGENTS.md
-   * §11.1 and are not part of this scale.
+   * M3's icon scale. `xs` and `xl` arrived with MICA-420, for the 14px and 32px glyph groups
+   * apps had sized by hand. A launcher app icon is a tile, not a glyph: `AppIconTile` sizes
+   * it, and that size is not on this scale even where it happens to equal `xl`.
    */
+  --size-icon-xs: 0.875rem;
   --size-icon-sm: 1rem;
   --size-icon-md: 1.25rem;
   --size-icon-lg: 1.5rem;
+  --size-icon-xl: 2rem;
 
   /**
    * The frame's own insets. `PhoneFrame` expressed these as bare `pt-8`/`pb-4` with

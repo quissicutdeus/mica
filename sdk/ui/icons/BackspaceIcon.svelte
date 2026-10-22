@@ -8,7 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   interface Props {
     class?: string;
   }
-  let { class: className = 'h-8 w-8' }: Props = $props();
+  let { class: className = 'size-icon-xl' }: Props = $props();
 </script>
 
 <svg

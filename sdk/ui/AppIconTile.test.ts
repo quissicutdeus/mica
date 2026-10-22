@@ -41,7 +41,7 @@ describe('AppIconTile', () => {
   });
 
   it('sizes a component icon rather than leaving it at its own default', () => {
-    // Every `Icon.svelte` defaults `class` to `h-8 w-8`. Unsized, a 32px glyph landed in a
+    // Every `Icon.svelte` defaulted `class` to `h-8 w-8`. Unsized, a 32px glyph landed in a
     // 36px Settings row.
     const { container } = render(AppIconTile, { ...props, icon: Icon, size: 'sm' });
 

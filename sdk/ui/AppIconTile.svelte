@@ -18,7 +18,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
    *   Store's 44px catalog rows clamped to a circle while the launcher's 56px tiles read as
    *   squares. Same token, same intent, two different shapes, and no way to tell from the
    *   markup that it would happen.
-   * - **Nothing sized the glyph.** Every `Icon.svelte` defaults its `class` to `h-8 w-8`, so
+   * - **Nothing sized the glyph.** Every `Icon.svelte` defaulted its `class` to `h-8 w-8`, so
    *   a component icon rendered 32px whatever it was sitting in — fine in a 56px launcher
    *   tile, nearly edge to edge in Settings' 36px row.
    * - **`invert filter` on every `<img>`.** It was there to force a dark glyph light, from
@@ -65,7 +65,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     },
     lg: {
       box: 'h-14 w-14 rounded-box shadow-elevation-3',
-      glyph: 'h-8 w-8',
+      glyph: 'size-icon-xl',
       letter: 'text-title-medium'
     },
     xl: {

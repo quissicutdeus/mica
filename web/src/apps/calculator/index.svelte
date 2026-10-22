@@ -238,7 +238,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   });
 </script>
 
-<svelte:window on:keydown={handleKeydown} />
+<svelte:window onkeydown={handleKeydown} />
 
 <Screen title={app.title} onback={app.back}>
   <div class="flex flex-1 flex-col p-4">

@@ -13,7 +13,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     class?: string;
   }
 
-  let { status = 'delivered', class: className = 'w-3.5 h-3.5' }: Props = $props();
+  let { status = 'delivered', class: className = 'size-icon-xs' }: Props = $props();
 </script>
 
 {#if status === 'read'}

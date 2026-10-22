@@ -27,11 +27,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     usePagedList,
     useDeepLink,
     registerMessages,
+    focusTrap,
+    AccountMenu,
+    initialsOf,
+    type AccountMenuAction,
     type AppProps
   } from '@mica/sdk';
   import { useBlabber } from './store';
   import type { Account, Blab } from '@mica/shared/types';
-  import AccountMenu from './components/AccountMenu.svelte';
   import BlabRow from './components/BlabRow.svelte';
   import Composer from './components/Composer.svelte';
   import ClaimHandle from './components/ClaimHandle.svelte';
@@ -273,6 +276,43 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     if (dmPeerAccount) return dmPeerAccount.display_name || `@${dmPeerAccount.handle}`;
     return dmThreadName ?? $t('blabber.message');
   };
+
+  /**
+   * The composer and the claim screen, each a full-screen dialog (MICA-410). `inset-0` covers the
+   * feed, but covering is not hiding: the feed keeps its buttons in the tab order, hence the trap.
+   * Focus lands on the panel on open so a screen reader announces it and Tab starts inside —
+   * the `PhotoPickerModal` / `ConfirmDialog` shape. Back still closes each through the levels below.
+   */
+  let composerPanel = $state<HTMLElement | null>(null);
+  let claimPanel = $state<HTMLElement | null>(null);
+  $effect(() => {
+    composerPanel?.focus({ preventScroll: true });
+  });
+  $effect(() => {
+    claimPanel?.focus({ preventScroll: true });
+  });
+
+  /** The identity menu's rows below the accounts; Claim only while there is room for another. */
+  const menuActions = $derived<AccountMenuAction[]>([
+    {
+      label: $t('blabber.editProfile'),
+      onselect: () => {
+        menu = false;
+        editingProfile = true;
+      }
+    },
+    ...($canClaimAnother
+      ? [
+          {
+            label: $t('blabber.claimAnother'),
+            onselect: () => {
+              menu = false;
+              claiming = true;
+            }
+          }
+        ]
+      : [])
+  ]);
 
   const app = useAppLevels({
     appId: 'blabber',
@@ -548,7 +588,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         aria-label={$t('blabber.postingAsHandle', { handle: $activeAccount?.handle ?? '' })}
       >
         <Avatar
-          initials={($activeAccount?.handle ?? '?').slice(0, 2).toUpperCase()}
+          initials={initialsOf($activeAccount?.handle)}
           src={$activeAccount?.avatar ?? ''}
           size="w-7 h-7"
           textClass="text-label-small"
@@ -570,12 +610,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
          without the inset "Posting as @handle" landed on top of the clock (MICA-83). Any
          overlay in this snippet that starts its content at the top edge needs it. -->
     <div
-      class="pt-safe-top animate-in fade-in bg-surface duration-medium ease-emphasized absolute inset-0 z-30 flex flex-col"
+      bind:this={composerPanel}
+      use:focusTrap
+      role="dialog"
+      aria-modal="true"
+      aria-label={editing ? $t('blabber.edit') : $t('blabber.newBlab')}
+      tabindex="-1"
+      class="pt-safe-top animate-in fade-in bg-surface duration-medium ease-emphasized absolute inset-0 z-30 flex flex-col outline-none"
     >
       <Composer
         handle={$activeAccount?.handle}
         initial={editing?.body ?? ''}
-        placeholder={editing ? 'Fix a typo' : "What's happening?"}
+        placeholder={editing ? $t('blabber.fixATypo') : $t('blabber.whatsHappening')}
         busy={$busy}
         allowAttachments={!editing}
         onsubmit={editing ? saveEdit : post}
@@ -595,7 +641,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   {#if claiming}
     <div
-      class="pt-safe-top animate-in fade-in bg-surface duration-medium ease-emphasized absolute inset-0 z-30 flex flex-col"
+      bind:this={claimPanel}
+      use:focusTrap
+      role="dialog"
+      aria-modal="true"
+      aria-label={$t('blabber.newHandle')}
+      tabindex="-1"
+      class="pt-safe-top animate-in fade-in bg-surface duration-medium ease-emphasized absolute inset-0 z-30 flex flex-col outline-none"
     >
       <ClaimHandle busy={$busy} onclaim={claim} oncancel={() => (claiming = false)} />
     </div>
@@ -603,25 +655,19 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
   {#if menu}
     <AccountMenu
+      label={$t('blabber.postingAs')}
+      closeLabel={$t('blabber.closeMenu')}
+      heading={$t('blabber.postingAsCount', { count: $myAccounts.length, limit: $accountLimit })}
       accounts={$myAccounts}
       activeId={$activeAccount?.id ?? null}
-      canClaim={$canClaimAnother}
-      limit={$accountLimit}
-      onswitch={(id: number) => {
-        activeAccountId.set(id);
+      onswitch={(id: string | number) => {
+        activeAccountId.set(Number(id));
         menu = false;
         // A main and an alt follow different people, so the Following feed belongs to the account
         // rather than to the phone — switching identity has to refetch it.
         if (tab === 'following') void loadFollowing();
       }}
-      onclaim={() => {
-        menu = false;
-        claiming = true;
-      }}
-      onedit={() => {
-        menu = false;
-        editingProfile = true;
-      }}
+      actions={menuActions}
       onclose={() => (menu = false)}
     />
   {/if}

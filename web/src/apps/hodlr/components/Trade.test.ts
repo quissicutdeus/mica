@@ -64,11 +64,9 @@ import { priceStore, portfolioStore } from '../store';
  * server's own refusal beyond printing its slug.
  */
 describe('Trade', () => {
-  // eslint's type info disagrees with svelte-check here, as it does in
-  // `marketplace/components/CreateListing.test.ts`: `screen.getByText` is typed
-  // `HTMLElement`, which has no `.disabled`, so tsc genuinely needs the assertion.
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
-  const confirm = () => screen.getByText('Confirm') as HTMLButtonElement;
+  // The query's type parameter rather than an `as`, as in `CreateListing.test.ts`: `.disabled`
+  // needs `HTMLButtonElement`, and a generic leaves eslint no assertion to call redundant.
+  const confirm = () => screen.getByText<HTMLButtonElement>('Confirm');
 
   beforeEach(() => {
     vi.clearAllMocks();

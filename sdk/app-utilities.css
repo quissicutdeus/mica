@@ -1854,6 +1854,14 @@
   width: var(--size-icon-sm);
   height: var(--size-icon-sm);
 }
+.size-icon-xl {
+  width: var(--size-icon-xl);
+  height: var(--size-icon-xl);
+}
+.size-icon-xs {
+  width: var(--size-icon-xs);
+  height: var(--size-icon-xs);
+}
 .space-x-1 {
   & > :not(:last-child) {
     margin-right: 0.25rem;

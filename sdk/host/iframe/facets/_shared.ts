@@ -31,8 +31,9 @@ export type AsTwin<T> = {
  * wire genuinely returns `unknown` until decoded) to this single helper, instead of a blank
  * `as unknown as Twin` hiding an entire object's worth of members from the checker.
  */
-// A generic function-shape constraint; `unknown[]`/`Promise<unknown>` here would block inferring the real `F` at each call site.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+/* eslint-disable-next-line @typescript-eslint/no-explicit-any -- MICA-420 tried
+   `never[]` and `Promise<unknown>`: `F` then stops inferring for a member typed as returning
+   `void` (clockWrite, displayWrite) and for lifecycle's callback argument. */
 export const fn = <F extends (...args: any[]) => Promise<any>>(
   facet: string,
   factoryArgs: readonly unknown[],

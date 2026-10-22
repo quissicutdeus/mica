@@ -454,7 +454,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         aria-label={$t('ui.musicShuffle')}
         class={$musicShuffle ? 'text-on-primary-container bg-primary-container' : ''}
       >
-        <ShuffleIcon class="h-5 w-5" />
+        <ShuffleIcon class="size-icon-md" />
       </Button>
       <Button
         onclick={cycleRepeat}
@@ -463,9 +463,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         class={$musicRepeat === 'off' ? '' : 'text-on-primary-container bg-primary-container'}
       >
         {#if $musicRepeat === 'one'}
-          <RepeatOneIcon class="h-5 w-5" />
+          <RepeatOneIcon class="size-icon-md" />
         {:else}
-          <RepeatIcon class="h-5 w-5" />
+          <RepeatIcon class="size-icon-md" />
         {/if}
       </Button>
     </div>
@@ -473,7 +473,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <div class="flex items-center gap-1">
       {#if $musicHasPrevious}
         <Button onclick={previousTrack} variant="icon" aria-label={$t('ui.musicPrevious')}>
-          <SkipPreviousIcon class="h-5 w-5" />
+          <SkipPreviousIcon class="size-icon-md" />
         </Button>
       {/if}
 
@@ -485,23 +485,23 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           aria-label={isPlaying ? $t('ui.musicPause') : $t('ui.musicPlay')}
         >
           {#if isPlaying}
-            <PauseIcon class="h-5 w-5" />
+            <PauseIcon class="size-icon-md" />
           {:else}
-            <PlayIcon class="h-5 w-5" />
+            <PlayIcon class="size-icon-md" />
           {/if}
         </Button>
       {/if}
 
       {#if $musicHasNext}
         <Button onclick={nextTrack} variant="icon" aria-label={$t('ui.musicNext')}>
-          <SkipNextIcon class="h-5 w-5" />
+          <SkipNextIcon class="size-icon-md" />
         </Button>
       {/if}
 
       <!-- "Stop music", and it means exactly that: the audio stops and the queue is left
            alone. `clearQueue` is the Music app's own button, below the queue it empties. -->
       <Button onclick={stopMusic} variant="icon" aria-label={$t('ui.musicStop')}>
-        <StopIcon class="h-5 w-5" />
+        <StopIcon class="size-icon-md" />
       </Button>
     </div>
   </div>
